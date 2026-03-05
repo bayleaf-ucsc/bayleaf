@@ -26,7 +26,7 @@ LLMs:
 - **API key access** for off-campus use (self-issued via the service)
 - Injects a light system prompt prefix to orient downstream agents
 
-Source code for the API service: [github.com/rndmcnlly/bayleaf-api](https://github.com/rndmcnlly/bayleaf-api)
+Source: [`api/`](api/) in this repo
 
 ## Privacy
 
@@ -36,6 +36,7 @@ any third-party provider.
 
 ## This Repository
 
+- `api/` — BayLeaf API Cloudflare Worker ([api.bayleaf.chat](https://api.bayleaf.chat))
 - `docs/` — Static GitHub Pages site published at [about.bayleaf.chat](https://about.bayleaf.chat)
 - `owui/` *(forthcoming)* — Open WebUI filters, pipelines, and toolkits deployed on BayLeaf Chat
 

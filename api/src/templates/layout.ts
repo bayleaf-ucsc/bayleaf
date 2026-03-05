@@ -124,7 +124,7 @@ export function baseLayout(title: string, content: string): string {
     ${content}
   </main>
   <footer>
-    <p>A service of <a href="https://bayleaf.chat/about">BayLeaf Chat</a> for UC Santa Cruz. <a href="https://github.com/rndmcnlly/bayleaf-api">Source on GitHub</a>.</p>
+    <p>A service of <a href="https://bayleaf.chat/about">BayLeaf Chat</a> for UC Santa Cruz. <a href="https://github.com/rndmcnlly/bayleaf/tree/main/api">Source on GitHub</a>.</p>
   </footer>
 </body>
 </html>`;

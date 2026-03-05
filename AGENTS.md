@@ -13,8 +13,7 @@ Media). **Publicly visible; never commit secrets, API keys, or credentials.**
 - **BayLeaf Chat** — `https://bayleaf.chat` — Open WebUI with curated models,
   invite-code-gated groups, web search/browsing tools, and rate limiting.
 - **BayLeaf API** — `https://api.bayleaf.chat` — OpenRouter-proxying API with keyless
-  on-campus access and key-based off-campus access.
-  Source: `https://github.com/rndmcnlly/bayleaf-api`
+  on-campus access and key-based off-campus access. Source: `api/` in this repo.
 
 All LLM inference uses **zero-data-retention (ZDR)** providers via OpenRouter.
 
@@ -24,6 +23,11 @@ All LLM inference uses **zero-data-retention (ZDR)** providers via OpenRouter.
 
 ```
 bayleaf/
+├── api/                # BayLeaf API — Cloudflare Worker (has its own AGENTS.md)
+│   ├── src/
+│   ├── migrations/
+│   ├── wrangler.jsonc
+│   └── package.json
 ├── docs/               # GitHub Pages site → https://about.bayleaf.chat
 │   ├── CNAME
 │   ├── index.html      # Single-file about/landing page
@@ -35,11 +39,15 @@ bayleaf/
 `docs/` is published via GitHub Pages at `https://about.bayleaf.chat`. The apex
 domain `https://bayleaf.chat` runs Open WebUI and is **not** managed here.
 
+`api/` is a Cloudflare Worker deployed at `https://api.bayleaf.chat`. See
+`api/AGENTS.md` for API-specific guidelines, code style, and commands.
+
 ---
 
 ## Build / Lint / Test
 
-No build step or test suite. The site is a single static HTML file.
+The about site (`docs/`) has no build step or test suite — it is a single static HTML
+file. For the API (`api/`), see `api/AGENTS.md` for build and deploy commands.
 
 **Local preview:** Use the VS Code **Live Server** extension (right-click
 `docs/index.html` → *Open with Live Server*), which serves on `http://localhost:5500`

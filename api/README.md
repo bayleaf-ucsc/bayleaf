@@ -32,8 +32,8 @@ No database required - all state is managed via OpenRouter's API (keys are ident
 
 1. Clone and install dependencies:
    ```bash
-   git clone https://github.com/rndmcnlly/bayleaf-api.git
-   cd bayleaf-api
+   git clone https://github.com/rndmcnlly/bayleaf.git
+   cd bayleaf/api
    npm install
    ```
 
