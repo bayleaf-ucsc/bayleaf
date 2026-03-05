@@ -38,7 +38,7 @@ any third-party provider.
 
 - `api/` — BayLeaf API Cloudflare Worker ([api.bayleaf.chat](https://api.bayleaf.chat))
 - `docs/` — Static GitHub Pages site published at [about.bayleaf.chat](https://about.bayleaf.chat)
-- `owui/` *(forthcoming)* — Open WebUI filters, pipelines, and toolkits deployed on BayLeaf Chat
+- `chat/` — OWUI deployment backup: workspace models, custom tools, filters, and [design doc](chat/DESIGN.md)
 
 This repo is **publicly visible**. It never contains API keys, credentials, or
 other sensitive configuration.
