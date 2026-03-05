@@ -1,0 +1,50 @@
+{
+  "id": "datetime_converter_toolkit",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Datetime Converter",
+  "meta": {
+    "description": "Converts datetimes accurately.",
+    "manifest": {}
+  },
+  "access_grants": [
+    {
+      "id": "0d8697ff-2c5c-4755-98ca-14743d669deb",
+      "resource_type": "tool",
+      "resource_id": "datetime_converter_toolkit",
+      "principal_type": "user",
+      "principal_id": "*",
+      "permission": "read",
+      "created_at": 1771204151
+    }
+  ],
+  "updated_at": 1759876683,
+  "created_at": 1759343196,
+  "user": {
+    "id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+    "name": "Adam Smith",
+    "role": "admin",
+    "email": "amsmith@ucsc.edu"
+  },
+  "specs": [
+    {
+      "name": "localize_iso_date",
+      "description": "Takes an ISO date string (e.g., '2025-09-29T23:00:00Z') and a timezone (e.g., 'America/Los_Angeles'),\nand returns the localized datetime string.",
+      "parameters": {
+        "properties": {
+          "iso_date_str": {
+            "type": "string"
+          },
+          "timezone_str": {
+            "default": "America/Los_Angeles",
+            "type": "string"
+          }
+        },
+        "required": [
+          "iso_date_str"
+        ],
+        "type": "object"
+      }
+    }
+  ],
+  "has_user_valves": false
+}

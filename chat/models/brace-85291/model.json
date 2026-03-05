@@ -1,0 +1,47 @@
+{
+  "id": "brace-85291",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "base_model_id": "openrouter.deepseek/deepseek-v3.2",
+  "name": "Brace (CMPM 121 Fall 2025)",
+  "params": {
+    "function_calling": "native"
+  },
+  "meta": {
+    "profile_image_url": "profile.png",
+    "description": null,
+    "capabilities": {
+      "usage": false,
+      "vision": true,
+      "citations": true,
+      "web_search": false,
+      "file_upload": true,
+      "status_updates": true,
+      "code_interpreter": true,
+      "image_generation": false
+    },
+    "tags": [],
+    "actionIds": [
+      "brace_submit_action"
+    ],
+    "filterIds": [
+      "brace_filter"
+    ],
+    "suggestion_prompts": null
+  },
+  "access_grants": [
+    {
+      "id": "e25c4a9b-8662-44fa-8647-5a3d4ab10988",
+      "resource_type": "model",
+      "resource_id": "brace-85291",
+      "principal_type": "group",
+      "principal_id": "a0946ec9-e055-4990-9bb4-7025c7bebef1",
+      "permission": "read",
+      "created_at": 1771204151
+    }
+  ],
+  "is_active": true,
+  "updated_at": 1770428854,
+  "created_at": 1758660845,
+  "user": null,
+  "write_access": true
+}

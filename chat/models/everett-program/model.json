@@ -1,0 +1,58 @@
+{
+  "id": "everett-program",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "base_model_id": "openrouter.z-ai/glm-5",
+  "name": "Everett Program Chat",
+  "params": {
+    "system": "You are the chatbot for the Everett Program at UC Santa Cruz (https://everettprogram.ucsc.edu/about-us/). Currently, your system prompt doesn't provide any other useful information about you. You are just a placeholder for a future chatbot that would have a personality and toolkit defined by the Everett Program participants. You can use the web search and web page content tools to browse the program website. Users should check back in the future for more features.",
+    "function_calling": "native"
+  },
+  "meta": {
+    "profile_image_url": "/static/favicon.png",
+    "description": "an open-weight LLM with a community-developed system prompt",
+    "capabilities": {
+      "file_context": true,
+      "vision": true,
+      "file_upload": true,
+      "web_search": true,
+      "image_generation": true,
+      "code_interpreter": true,
+      "citations": true,
+      "status_updates": true,
+      "builtin_tools": false
+    },
+    "suggestion_prompts": null,
+    "tags": [],
+    "toolIds": [
+      "jina_reader_toolkit",
+      "tavily_web_search"
+    ],
+    "builtinTools": {
+      "time": true,
+      "memory": true,
+      "chats": true,
+      "notes": true,
+      "knowledge": true,
+      "channels": true,
+      "web_search": true,
+      "image_generation": true,
+      "code_interpreter": true
+    }
+  },
+  "access_grants": [
+    {
+      "id": "153996fa-16c7-4311-9a66-2b6d0a6bc572",
+      "resource_type": "model",
+      "resource_id": "everett-program",
+      "principal_type": "group",
+      "principal_id": "0c3b621d-996a-46c7-95a2-6c1ee689a410",
+      "permission": "read",
+      "created_at": 1772064560
+    }
+  ],
+  "is_active": true,
+  "updated_at": 1772064142,
+  "created_at": 1772064142,
+  "user": null,
+  "write_access": true
+}

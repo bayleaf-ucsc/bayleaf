@@ -1,0 +1,81 @@
+{
+  "id": "accept_invites_toolkit",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Accept Invites",
+  "meta": {
+    "description": "Use invite codes to join groups.",
+    "manifest": {}
+  },
+  "access_grants": [
+    {
+      "id": "6bd4695d-a250-46db-9a61-4d76cbe1f181",
+      "resource_type": "tool",
+      "resource_id": "accept_invites_toolkit",
+      "principal_type": "user",
+      "principal_id": "*",
+      "permission": "read",
+      "created_at": 1772072796
+    }
+  ],
+  "updated_at": 1772572385,
+  "created_at": 1758233848,
+  "user": {
+    "id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+    "name": "Adam Smith",
+    "role": "admin",
+    "email": "amsmith@ucsc.edu"
+  },
+  "specs": [
+    {
+      "name": "accept_invite",
+      "description": "Accept a group invitation using an invite key that starts with 'invite-' follows with a JWT. Users sometimes paste the code with _italic_ or *bold* formatting, but you should strip that when submitting the code. If the invite key is not already known from context, calling this tool without invite_key will offer the user a dialog box where they can provide it interactively without serializing it into the conversation history. This interactive input mode is preferred because LLMs sometimes make mistakes when copying detailed texts like keys.",
+      "parameters": {
+        "properties": {
+          "invite_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "create_invite",
+      "description": "Yields an 'invite-' style invite code to join the given group by name (the name of often also a URL).\nexpiry_delta is a phrase like \"1y\", \"6mo\", \"30d\", \"12h\", \"45m\", \"90s\" for how long the invite code stays valid. 30 days is a good default duration.\nrestrict_email optional makes an invite only usable by one user (otherwise all users, default)",
+      "parameters": {
+        "properties": {
+          "group_name": {
+            "type": "string"
+          },
+          "expiry_delta": {
+            "default": "30d",
+            "type": "string"
+          },
+          "restrict_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "group_name"
+        ],
+        "type": "object"
+      }
+    }
+  ],
+  "has_user_valves": false
+}

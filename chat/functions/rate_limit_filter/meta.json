@@ -1,0 +1,21 @@
+{
+  "id": "rate_limit_filter",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Rate limit Filter",
+  "type": "filter",
+  "meta": {
+    "description": "A filter that sets rate limits to prevent overuse of APIs.",
+    "manifest": {
+      "title": "Rate Limit Filter",
+      "author": "justinh-rahb with improvements by Yanyutin753",
+      "author_url": "https://github.com/justinh-rahb",
+      "funding_url": "https://github.com/open-webui",
+      "version": "0.2.1",
+      "license": "MIT"
+    }
+  },
+  "is_active": true,
+  "is_global": true,
+  "updated_at": 1767569800,
+  "created_at": 1754335781
+}

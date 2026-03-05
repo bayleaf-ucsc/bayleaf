@@ -1,0 +1,16 @@
+{
+  "id": "brace_submit_action",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Brace's submit action",
+  "type": "action",
+  "meta": {
+    "description": "Submit conversations to Canvas with a button.",
+    "manifest": {
+      "requirements": "dominate"
+    }
+  },
+  "is_active": true,
+  "is_global": false,
+  "updated_at": 1759451341,
+  "created_at": 1758839625
+}

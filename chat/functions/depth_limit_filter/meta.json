@@ -1,0 +1,14 @@
+{
+  "id": "depth_limit_filter",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Depth limit filter",
+  "type": "filter",
+  "meta": {
+    "description": "soft-limits the depth of conversations",
+    "manifest": {}
+  },
+  "is_active": false,
+  "is_global": true,
+  "updated_at": 1771744888,
+  "created_at": 1758234335
+}

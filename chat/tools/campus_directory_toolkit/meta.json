@@ -1,0 +1,65 @@
+{
+  "id": "campus_directory_toolkit",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Campus Directory",
+  "meta": {
+    "description": "Look up details for campus-affiliated students, faculty, and staff.",
+    "manifest": {}
+  },
+  "access_grants": [
+    {
+      "id": "120d6788-ed30-4131-b58b-9ffdd0416e90",
+      "resource_type": "tool",
+      "resource_id": "campus_directory_toolkit",
+      "principal_type": "user",
+      "principal_id": "*",
+      "permission": "read",
+      "created_at": 1771204151
+    }
+  ],
+  "updated_at": 1760484300,
+  "created_at": 1760482663,
+  "user": {
+    "id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+    "name": "Adam Smith",
+    "role": "admin",
+    "email": "amsmith@ucsc.edu"
+  },
+  "specs": [
+    {
+      "name": "get_person_details",
+      "description": "Get detailed information for a person by their uid (cruzid, the thing before the @ucsc.edu in their email).\n\nArgs:\nuid: The person's UID (username)\n\nReturns:\nDictionary containing detailed person information\n\nAdvice:\nOnly run this tool if we can already infer the relevant user's institutional email address.",
+      "parameters": {
+        "properties": {
+          "uid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "uid"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "search_campus_directory",
+      "description": "Search the campus directory (https://campusdirectory.ucsc.edu/).\n\nArgs:\nkeyword: Search keyword (name, email, department, etc.)\naffiliation: Type of affiliation (All, Faculty, Staff, Student, etc.)\n\nReturns:\nList of dictionaries containing person information\n\nAdvice:\nIt may be necessary to run multiple searches to account for nicknames or alternate spellings. This whole thing is mostly just an example of integrating with campus systems, so the user might be better off using the directory site directly for critical tasks.",
+      "parameters": {
+        "properties": {
+          "keyword": {
+            "type": "string"
+          },
+          "affiliation": {
+            "default": "All",
+            "type": "string"
+          }
+        },
+        "required": [
+          "keyword"
+        ],
+        "type": "object"
+      }
+    }
+  ],
+  "has_user_valves": false
+}

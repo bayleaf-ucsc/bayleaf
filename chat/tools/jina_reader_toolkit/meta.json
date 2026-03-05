@@ -1,0 +1,66 @@
+{
+  "id": "jina_reader_toolkit",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Web Page Content",
+  "meta": {
+    "description": "Fetch a Markdown few of public web pages using Jina Reader.",
+    "manifest": {}
+  },
+  "access_grants": [
+    {
+      "id": "6563f9b5-4146-42c4-a06f-a978b03cb79d",
+      "resource_type": "tool",
+      "resource_id": "jina_reader_toolkit",
+      "principal_type": "user",
+      "principal_id": "*",
+      "permission": "read",
+      "created_at": 1771204151
+    }
+  ],
+  "updated_at": 1772064151,
+  "created_at": 1758741110,
+  "user": {
+    "id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+    "name": "Adam Smith",
+    "role": "admin",
+    "email": "amsmith@ucsc.edu"
+  },
+  "specs": [
+    {
+      "name": "use_jina_reader_api",
+      "description": "Use the Jina Reader API to fetch a view of the content of a public web page.",
+      "parameters": {
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "const": "html",
+                "type": "string"
+              },
+              {
+                "const": "text",
+                "type": "string"
+              },
+              {
+                "const": "markdown",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      }
+    }
+  ],
+  "has_user_valves": false
+}

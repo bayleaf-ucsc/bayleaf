@@ -1,0 +1,41 @@
+{
+  "id": "deepinfra_key_generator_toolkit",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "DeepInfra Key Generator",
+  "meta": {
+    "description": "Generates a time and budget limited API key for DeepInfra",
+    "manifest": {
+      "requirements": "cachetools,aiohttp"
+    }
+  },
+  "access_grants": [
+    {
+      "id": "c4702d73-4282-4807-b0dc-29282abaef98",
+      "resource_type": "tool",
+      "resource_id": "deepinfra_key_generator_toolkit",
+      "principal_type": "user",
+      "principal_id": "*",
+      "permission": "read",
+      "created_at": 1771204151
+    }
+  ],
+  "updated_at": 1770074651,
+  "created_at": 1760417629,
+  "user": {
+    "id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+    "name": "Adam Smith",
+    "role": "admin",
+    "email": "amsmith@ucsc.edu"
+  },
+  "specs": [
+    {
+      "name": "generate_temporary_deepinfra_key",
+      "description": "Generates an API key for DeepInfra specific to this user, relevant for making LLM-powered demos inside of the chat UI.\nDo not call this tool unless the user is specifically requesting an API key for accessing LLM services outside of the BayLeaf platform.\nUsers can also visit https://api.bayleaf.chat personal API key for use in external tools like coding agents.",
+      "parameters": {
+        "properties": {},
+        "type": "object"
+      }
+    }
+  ],
+  "has_user_valves": false
+}

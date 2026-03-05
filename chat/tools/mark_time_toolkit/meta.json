@@ -1,0 +1,59 @@
+{
+  "id": "mark_time_toolkit",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Mark Time",
+  "meta": {
+    "description": "Mark and measure points in real time.",
+    "manifest": {
+      "requirements": "cachetools"
+    }
+  },
+  "access_grants": [],
+  "updated_at": 1758317348,
+  "created_at": 1758317348,
+  "user": {
+    "id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+    "name": "Adam Smith",
+    "role": "admin",
+    "email": "amsmith@ucsc.edu"
+  },
+  "specs": [
+    {
+      "name": "_get_marks",
+      "description": "",
+      "parameters": {
+        "properties": {
+          "chat_id": {}
+        },
+        "required": [
+          "chat_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "mark_time",
+      "description": "Gets the current time in the user's preferred timezone and associates it with a new, unique mark id.",
+      "parameters": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "name": "time_since",
+      "description": "Computes the duration between two times identified by mark ids.",
+      "parameters": {
+        "properties": {
+          "mark_start": {},
+          "mark_end": {}
+        },
+        "required": [
+          "mark_start",
+          "mark_end"
+        ],
+        "type": "object"
+      }
+    }
+  ],
+  "has_user_valves": false
+}

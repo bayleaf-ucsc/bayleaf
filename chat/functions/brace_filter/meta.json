@@ -1,0 +1,16 @@
+{
+  "id": "brace_filter",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Brace's filter",
+  "type": "filter",
+  "meta": {
+    "description": "A filter for use with Brace",
+    "manifest": {
+      "requirements": "async-lru"
+    }
+  },
+  "is_active": true,
+  "is_global": false,
+  "updated_at": 1760990148,
+  "created_at": 1758667581
+}

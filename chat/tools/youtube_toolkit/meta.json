@@ -1,0 +1,46 @@
+{
+  "id": "youtube_toolkit",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "YouTube",
+  "meta": {
+    "description": "Fetch the transcript of a YouTube video.",
+    "manifest": {}
+  },
+  "access_grants": [
+    {
+      "id": "ac9b0525-a105-4c98-851a-aba67d5f21cc",
+      "resource_type": "tool",
+      "resource_id": "youtube_toolkit",
+      "principal_type": "user",
+      "principal_id": "*",
+      "permission": "read",
+      "created_at": 1771204151
+    }
+  ],
+  "updated_at": 1761685382,
+  "created_at": 1761685382,
+  "user": {
+    "id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+    "name": "Adam Smith",
+    "role": "admin",
+    "email": "amsmith@ucsc.edu"
+  },
+  "specs": [
+    {
+      "name": "fetch_youtube_video_transcript",
+      "description": "",
+      "parameters": {
+        "properties": {
+          "video_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "video_id"
+        ],
+        "type": "object"
+      }
+    }
+  ],
+  "has_user_valves": false
+}

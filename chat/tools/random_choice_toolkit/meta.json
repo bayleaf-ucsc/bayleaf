@@ -1,0 +1,53 @@
+{
+  "id": "random_choice_toolkit",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Random Choice",
+  "meta": {
+    "description": "Allows the model to make truly random choices",
+    "manifest": {}
+  },
+  "access_grants": [
+    {
+      "id": "9ee960bc-aa46-4ac2-9b27-ef5ceb5989d3",
+      "resource_type": "tool",
+      "resource_id": "random_choice_toolkit",
+      "principal_type": "user",
+      "principal_id": "*",
+      "permission": "read",
+      "created_at": 1771204151
+    }
+  ],
+  "updated_at": 1767980108,
+  "created_at": 1767980099,
+  "user": {
+    "id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+    "name": "Adam Smith",
+    "role": "admin",
+    "email": "amsmith@ucsc.edu"
+  },
+  "specs": [
+    {
+      "name": "choice",
+      "description": "Make a choice from a list of options, sampled uniformly. Try to keep the options extremely compact for token efficiency.\nThis is a good tool to use when we think the user will want to regenerate the assistant's replies to see highly varied responses.",
+      "parameters": {
+        "properties": {
+          "purpose": {
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "purpose",
+          "options"
+        ],
+        "type": "object"
+      }
+    }
+  ],
+  "has_user_valves": false
+}

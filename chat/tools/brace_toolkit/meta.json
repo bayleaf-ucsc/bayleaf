@@ -1,0 +1,118 @@
+{
+  "id": "brace_toolkit",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Brace's toolkit",
+  "meta": {
+    "description": "Various tools used by the assistive chatbot, Brace.",
+    "manifest": {
+      "requirements": "jq,google-auth,google-api-python-client,google-auth-oauthlib,google-auth-httplib2"
+    }
+  },
+  "access_grants": [],
+  "updated_at": 1764015266,
+  "created_at": 1758667397,
+  "user": {
+    "id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+    "name": "Adam Smith",
+    "role": "admin",
+    "email": "amsmith@ucsc.edu"
+  },
+  "specs": [
+    {
+      "name": "get_google_drive_service_account_email",
+      "description": "The assistant can only access Google Drive files that are readable by \"anyone with the link\" or have been shared to the service account email address (sharing to anyone within the org is not enough).\nOften, a file appears to be missing when the underlying problem is permissions.\nDo not use this tool unless the user is specifically trying to share their own file with the assistant.",
+      "parameters": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "name": "localize_iso_date",
+      "description": "Takes an ISO date string (e.g., '2025-09-29T23:00:00Z') and a timezone (e.g., 'America/Los_Angeles'),\nand returns the localized datetime string.",
+      "parameters": {
+        "properties": {
+          "iso_date_str": {
+            "type": "string"
+          },
+          "timezone_str": {
+            "default": "America/Los_Angeles",
+            "type": "string"
+          }
+        },
+        "required": [
+          "iso_date_str"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "read_google_drive_file",
+      "description": "Reads a Google Drive file (Docs/Slides/Sheets) and returns its content in a near-text format.",
+      "parameters": {
+        "properties": {
+          "file_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "read_google_drive_folder",
+      "description": "Reads a Google Drive folder and gets a list of references to the files it contains.",
+      "parameters": {
+        "properties": {
+          "folder_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "folder_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "use_canvas_api",
+      "description": "Make request against the university's Canvas LMS using the instructor's credentials.\n\nBeware that Canvas always gives dates and times in the GMT time zone. If your reponse will mentions a date/time, you should localize it using the appropriate tool.\n\nAccess is limited to just a few non-sensitive, read-only endpoints. Examples with recommended fields:\n\nhttps://canvas.ucsc.edu/api/v1/courses/COURSE_ID?include[]=syllabus_body {syllabus_body} <-- the include[] part is critical\nhttps://canvas.ucsc.edu/api/v1/courses/COURSE_ID/assignments {id, name, due_at}\nhttps://canvas.ucsc.edu/api/v1/courses/COURSE_ID/assignments/ASSIGNMENT_ID {description, submission_types}\nhttps://canvas.ucsc.edu/api/v1/courses/COURSE_ID/quizzes/QUIZ_ID {title, description}\nhttps://canvas.ucsc.edu/api/v1/courses/COURSE_ID/pages {title, url}\nhttps://canvas.ucsc.edu/api/v1/courses/COURSE_ID/pages/URL {body}\n\n\nIf the URL of the course webpage is known, it can be used to identify the course id.\nPattern for selecting specific fields: `.[] | {x,y}`\n\nWhen searching for assignments, it is a good idea to get the id and name of all assignments to disambiguate results. Don't talk about precise dates unless they are specifically requested (and even then they should be appropriately localized).",
+      "parameters": {
+        "properties": {
+          "resource_url": {
+            "type": "string"
+          },
+          "jq_expr": {
+            "default": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_url"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "use_github_api",
+      "description": "Make a request against the GitHub API using public read only access. Examples (some with jq expressions):\n\nhttps://api.github.com/repos/OWNER/REPO/readme\nhttps://api.github.com/repos/OWNER/REPO/commits\nhttps://api.github.com/repos/OWNER/REPO/commits/REF\nhttps://api.github.com/repos/OWNER/REPO/contents .[]|{path,type}\nhttps://api.github.com/repos/OWNER/REPO/contents/PATH/TO/DIRECTORY/OR/FILE .content\nhttps://api.github.com/repos/OWNER/REPO/actions/runs\nhttps://api.github.com/gists/GIST_ID [{id: .[].id, filenames: .[].files | keys}]\n\nIf an API request fails, it is important to NOT guess or imagine what the result would be. Only use the authoritative data that is successfully fetched. (It is okay try multiple attempts with different arguments.)\n...",
+      "parameters": {
+        "properties": {
+          "resource_url": {
+            "type": "string"
+          },
+          "jq_expr": {
+            "default": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_url"
+        ],
+        "type": "object"
+      }
+    }
+  ],
+  "has_user_valves": false
+}

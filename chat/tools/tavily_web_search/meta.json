@@ -1,0 +1,63 @@
+{
+  "id": "tavily_web_search",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Web Search",
+  "meta": {
+    "description": "Let the assistant search the web on your behalf.",
+    "manifest": {
+      "title": "Tavily Search Tool",
+      "author": "victor1203",
+      "description": "This tool performs internet searches using the Tavily API to get real-time information with advanced context and Q&A capabilities",
+      "required_open_webui_version": "0.4.0",
+      "requirements": "tavily-python",
+      "version": "1.0.0",
+      "licence": "MIT"
+    }
+  },
+  "access_grants": [
+    {
+      "id": "eebb2733-e760-4749-a47c-58b8e3b5460f",
+      "resource_type": "tool",
+      "resource_id": "tavily_web_search",
+      "principal_type": "user",
+      "principal_id": "*",
+      "permission": "read",
+      "created_at": 1771204151
+    }
+  ],
+  "updated_at": 1772064151,
+  "created_at": 1758214763,
+  "user": {
+    "id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+    "name": "Adam Smith",
+    "role": "admin",
+    "email": "amsmith@ucsc.edu"
+  },
+  "specs": [
+    {
+      "name": "search",
+      "description": "Perform a Tavily search and return the results.\n\nArgs:\nquery: The search query string\nsearch_type: Type of search to perform:\n- regular: Standard search with full results\n- context: Optimized for RAG applications\n- qa: Quick answer to a specific question\n\nReturns:\nA formatted string containing the search results",
+      "parameters": {
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "search_type": {
+            "default": "regular",
+            "enum": [
+              "regular",
+              "context",
+              "qa"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    }
+  ],
+  "has_user_valves": false
+}
