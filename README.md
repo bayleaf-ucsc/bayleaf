@@ -20,10 +20,14 @@ UCSC students, faculty, and staff. Features include:
 ### BayLeaf API — [api.bayleaf.dev](https://api.bayleaf.dev)
 
 An OpenRouter-proxying API that gives the campus community programmatic access to
-LLMs:
+LLMs and sandboxed code execution:
 
 - **Keyless access** from the campus network (169.233.x.x)
 - **API key access** for off-campus use (self-issued via the service)
+- **Code sandbox** — persistent Linux environments (backed by
+  [Daytona](https://www.daytona.io/)) for running code, uploading/downloading
+  files, all authenticated with the same API key; campus-pass users get
+  ephemeral one-shot sandboxes
 - Injects a light system prompt prefix to orient downstream agents
 
 Source: [`api/`](api/) in this repo
