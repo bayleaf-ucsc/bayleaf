@@ -20,6 +20,7 @@ export interface SandboxInfo {
   id: string;
   state: string;           // started | stopped | archived | error | starting | stopping | archiving
   name?: string;
+  labels?: Record<string, string>;
   recoverable?: boolean;
   errorReason?: string;
   // Resource allocation
@@ -58,10 +59,6 @@ function authHeaders(env: Bindings): Record<string, string> {
   };
 }
 
-function labelFor(email: string, env: Bindings): string {
-  return `${env.DAYTONA_DEPLOYMENT_LABEL}:${email}`;
-}
-
 /**
  * Sleep without blocking the event loop.
  * Uses scheduler.wait when available (Cloudflare Workers), falls back to
@@ -80,18 +77,38 @@ function sleep(ms: number): Promise<void> {
 /**
  * Find an existing sandbox for a keyed user by label.
  * Returns null if none exists.
+ *
+ * Uses the `labels` (plural) query parameter with a JSON-encoded object
+ * so the Daytona API performs an exact key=value match.  After filtering
+ * server-side we also verify labels client-side and guard against
+ * duplicates — see https://github.com/rndmcnlly/lathe/issues/2.
  */
 export async function findSandboxByLabel(
   email: string,
   env: Bindings,
 ): Promise<SandboxInfo | null> {
-  const label = labelFor(email, env);
-  const url = `${apiUrl(env, '/sandbox')}?label=${encodeURIComponent(label)}`;
+  const deployLabel = env.DAYTONA_DEPLOYMENT_LABEL;
+  const labelsFilter = JSON.stringify({ [deployLabel]: email });
+  const url = `${apiUrl(env, '/sandbox')}?labels=${encodeURIComponent(labelsFilter)}`;
   const resp = await fetch(url, { headers: authHeaders(env) });
   if (!resp.ok) return null;
 
-  const sandboxes = await resp.json() as SandboxInfo[];
-  return sandboxes.length > 0 ? sandboxes[0] : null;
+  const sandboxes = (await resp.json() as SandboxInfo[]) ?? [];
+
+  // Client-side verification: only keep sandboxes whose labels exactly match
+  const matches = sandboxes.filter(
+    s => s.labels?.[deployLabel] === email,
+  );
+
+  if (matches.length > 1) {
+    const ids = matches.map(s => s.id).join(', ');
+    throw new Error(
+      `Found ${matches.length} sandboxes labelled ${deployLabel}=${email} (${ids}). ` +
+      `Expected at most 1. Delete the extras in the Daytona dashboard and try again.`,
+    );
+  }
+
+  return matches[0] ?? null;
 }
 
 /**
