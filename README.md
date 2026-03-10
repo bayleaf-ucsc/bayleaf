@@ -41,6 +41,7 @@ any third-party provider.
 ## This Repository
 
 - `api/` — BayLeaf API Cloudflare Worker ([api.bayleaf.dev](https://api.bayleaf.dev))
+- `courses/` — Courses service [design doc](courses/DESIGN.md) (planned — [courses.bayleaf.dev](https://courses.bayleaf.dev))
 - `docs/` — Static GitHub Pages site published at [bayleaf.dev](https://bayleaf.dev)
 - `chat/` — OWUI deployment backup: workspace models, custom tools, filters, and [design doc](chat/DESIGN.md)
 
