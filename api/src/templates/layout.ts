@@ -117,8 +117,9 @@ export function baseLayout(title: string, content: string): string {
   </style>
 </head>
 <body>
-  <header>
-    <h1>BayLeaf API</h1>
+  <header style="display: flex; align-items: baseline; gap: 1rem;">
+    <h1 style="margin: 0;">BayLeaf API</h1>
+    <a href="/docs" style="font-size: 0.95rem;">API Reference</a>
   </header>
   <main>
     ${content}
@@ -143,7 +144,7 @@ export function opencodeOnboardingSection(recommendedModel: string): string {
       <ol>
         <li><a href="https://opencode.ai/docs" target="_blank">Install OpenCode</a></li>
         <li>Launch <code>opencode</code> and ask it:<br>
-          <em>Help me set up BayLeaf as a provider. Load the skill from <a href="SKILL.md" target="_blank">https://api.bayleaf.dev/SKILL.md</a></em>
+          <em>Help me set up BayLeaf as a provider. Load the skill from <a href="docs/SKILL.md" target="_blank">https://api.bayleaf.dev/docs/SKILL.md</a></em>
         </li>
       </ol>
     </div>

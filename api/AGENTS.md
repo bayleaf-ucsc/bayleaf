@@ -32,6 +32,7 @@ src/
   routes/
     auth.ts             authRoutes: /login, /callback, /logout
     dashboard.ts        dashboardRoutes: /, /dashboard (self-heals sandbox ID cache)
+    docs.ts             docsRoutes: /docs (Scalar viewer), /docs/openapi.json, /docs/SKILL.md, /docs/recommended-model
     key.ts              keyRoutes: GET|POST|DELETE /key
     proxy.ts            proxyRoutes: POST /responses, /v1/* catch-all
     sandbox.ts          sandboxRoutes: POST /exec, GET|PUT /files/*, DELETE /
@@ -54,13 +55,17 @@ src/
 ## Routes
 
 ```
-/                  Landing       /login         OIDC start      /callback   OIDC callback
-/logout            Clear         /dashboard     User UI         /key        GET|POST|DELETE
-/v1/responses      Responses API proxy (system prompt via instructions field)
-/v1/*              Chat/general proxy (system prompt via system message)
-/sandbox/exec      POST: bash execution (campus-pass: ephemeral, keyed: persistent)
-/sandbox/files/*   GET: download file, PUT: upload file (keyed only)
-/sandbox           DELETE: destroy user's sandbox (keyed or session)
+/                       Landing       /login         OIDC start      /callback   OIDC callback
+/logout                 Clear         /dashboard     User UI         /key        GET|POST|DELETE
+/v1/responses           Responses API proxy (system prompt via instructions field)
+/v1/*                   Chat/general proxy (system prompt via system message)
+/sandbox/exec           POST: bash execution (campus-pass: ephemeral, keyed: persistent)
+/sandbox/files/*        GET: download file, PUT: upload file (keyed only)
+/sandbox                DELETE: destroy user's sandbox (keyed or session)
+/recommended-model      Current recommended model slug + display name (JSON, unauthenticated)
+/docs                   Interactive API docs (Scalar viewer, loads /docs/openapi.json)
+/docs/openapi.json      OpenAPI 3.1 spec (dynamic, embeds current recommended model)
+/docs/SKILL.md          Agent skill file for coding assistants and tool frameworks
 ```
 
 ## Don'ts
