@@ -1,8 +1,9 @@
 /**
  * Dashboard Route Handlers
+ * Browser-facing HTML routes — hidden from OpenAPI docs.
  */
 
-import { Hono } from 'hono';
+import { OpenAPIHono } from '@hono/zod-openapi';
 import type { AppEnv, UserKeyRow, OpenRouterKey } from '../types';
 import { getSession } from '../utils/session';
 import { isCampusPassEligible } from '../utils/ip';
@@ -11,7 +12,7 @@ import { findSandboxByLabel, getSandboxInfo, type SandboxInfo } from '../daytona
 import { landingPage } from '../templates/landing';
 import { dashboardPage } from '../templates/dashboard';
 
-export const dashboardRoutes = new Hono<AppEnv>();
+export const dashboardRoutes = new OpenAPIHono<AppEnv>();
 
 /** GET / - Landing page (redirects to dashboard if logged in) */
 dashboardRoutes.get('/', async (c) => {
@@ -50,9 +51,6 @@ dashboardRoutes.get('/dashboard', async (c) => {
   }
 
   // Fetch sandbox status (non-blocking — don't fail the page if this errors).
-  // Use cached ID from D1 when available to skip label lookup.
-  // Self-heals the cache: if the cached ID is stale, falls back to label
-  // lookup and writes the correct ID (or NULL) back to D1.
   let sandboxInfo: SandboxInfo | null = null;
   if (row && c.env.DAYTONA_API_KEY) {
     try {
@@ -60,16 +58,13 @@ dashboardRoutes.get('/dashboard', async (c) => {
         try {
           sandboxInfo = await getSandboxInfo(row.daytona_sandbox_id, c.env);
         } catch {
-          // Cached ID is stale — fall back to label lookup
           sandboxInfo = await findSandboxByLabel(session.email, c.env);
-          // Self-heal: update cache to correct ID (or NULL if gone)
           await c.env.DB.prepare(
             'UPDATE user_keys SET daytona_sandbox_id = ? WHERE email = ? AND revoked = 0',
           ).bind(sandboxInfo?.id ?? null, session.email).run();
         }
       } else {
         sandboxInfo = await findSandboxByLabel(session.email, c.env);
-        // Backfill cache if we found a sandbox that wasn't cached
         if (sandboxInfo) {
           await c.env.DB.prepare(
             'UPDATE user_keys SET daytona_sandbox_id = ? WHERE email = ? AND revoked = 0',
@@ -77,7 +72,6 @@ dashboardRoutes.get('/dashboard', async (c) => {
         }
       }
     } catch (e) {
-      // Daytona API down — degrade gracefully, show no sandbox info
       console.error('Failed to fetch sandbox status:', e);
     }
   }

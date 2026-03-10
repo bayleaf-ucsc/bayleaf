@@ -17,7 +17,7 @@
  *   DELETE /            Destroy the user's sandbox (keyed or session)
  */
 
-import { Hono } from 'hono';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv, UserKeyRow } from '../types';
 import { resolveAuth } from '../utils/auth';
 import { getSession } from '../utils/session';
@@ -33,22 +33,27 @@ import {
   findSandboxByLabel,
   deleteSandbox,
 } from '../daytona';
+import {
+  SandboxExecRequestSchema,
+  SandboxExecResponseSchema,
+  SandboxUploadResponseSchema,
+  SandboxDeleteResponseSchema,
+  ApiErrorSchema,
+} from '../schemas';
 
-export const sandboxRoutes = new Hono<AppEnv>();
+export const sandboxRoutes = new OpenAPIHono<AppEnv>();
 
 // ── Shared helper ──────────────────────────────────────────────────
 
 /**
  * Resolve the user's sandbox ID via D1 cache → ensureSandbox().
  * Writes the sandbox ID back to D1 if it changed (new creation, or
- * cached ID was stale).  Returns the sandbox ID on success, or null
- * with an error response already sent.
+ * cached ID was stale).  Returns the sandbox ID on success.
  */
 async function resolveSandboxId(
   email: string,
   env: AppEnv['Bindings'],
 ): Promise<string> {
-  // Load cached sandbox ID from D1
   const row = await env.DB.prepare(
     'SELECT daytona_sandbox_id FROM user_keys WHERE email = ? AND revoked = 0',
   ).bind(email).first<Pick<UserKeyRow, 'daytona_sandbox_id'>>();
@@ -56,7 +61,6 @@ async function resolveSandboxId(
   const cachedId = row?.daytona_sandbox_id ?? null;
   const result: EnsureResult = await ensureSandbox(email, env, cachedId);
 
-  // Write back if the ID changed (new sandbox, or cached ID was stale)
   if (result.changed) {
     await env.DB.prepare(
       'UPDATE user_keys SET daytona_sandbox_id = ? WHERE email = ? AND revoked = 0',
@@ -76,28 +80,102 @@ async function clearCachedSandboxId(
   ).bind(email).run();
 }
 
+/**
+ * Handle ephemeral sandbox execution for campus-pass users.
+ * Creates a sandbox, waits for it, executes the command, and tears it down.
+ */
+async function execEphemeral(
+  command: string,
+  workdir: string,
+  env: AppEnv['Bindings'],
+): Promise<{ exitCode: number; output: string }> {
+  let sandboxId: string | null = null;
+
+  try {
+    const sandbox = await createEphemeralSandbox(env);
+    sandboxId = sandbox.id;
+
+    if (sandbox.state !== 'started') {
+      await waitForStarted(sandboxId, env);
+    }
+    await waitForReady(sandboxId, env);
+
+    return await execCommand(sandboxId, command, workdir, env);
+  } finally {
+    if (sandboxId) {
+      deleteSandbox(sandboxId, env).catch((e) => {
+        console.error('Ephemeral sandbox cleanup failed:', e);
+      });
+    }
+  }
+}
+
 // ── POST /exec ─────────────────────────────────────────────────────
 
-sandboxRoutes.post('/exec', async (c) => {
+const execRoute = createRoute({
+  method: 'post',
+  path: '/exec',
+  operationId: 'sandboxExec',
+  tags: ['Sandbox'],
+  summary: 'Execute a command',
+  description:
+    'Runs a bash command in a sandboxed Linux environment. ' +
+    '**Keyed users** (`sk-bayleaf-...`) get a persistent sandbox that survives across requests. ' +
+    '**Campus Pass users** (on-campus, no key) get an ephemeral sandbox created and destroyed per-request. ' +
+    'Commands run with `set -e -o pipefail` and a 120-second timeout. ' +
+    'The sandbox is a full Debian-based Linux environment with network access.',
+  security: [{ Bearer: [] }],
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: SandboxExecRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Command output',
+      content: {
+        'application/json': {
+          schema: SandboxExecResponseSchema,
+          example: { exitCode: 0, output: '4\n' },
+        },
+      },
+    },
+    400: {
+      description: 'Missing or invalid `command` field',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
+    401: {
+      description: 'Missing, invalid, or revoked API key',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
+    403: {
+      description: 'Key type does not support sandbox (raw `sk-or-` keys)',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
+    502: {
+      description: 'Sandbox backend failure',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
+  },
+});
+
+sandboxRoutes.openapi(execRoute, async (c) => {
   const auth = await resolveAuth(c);
-  if (auth instanceof Response) return auth;
+  // Auth guard: resolveAuth() returns a pre-built error Response when auth
+  // fails — a raw Response, not a typed Hono response.
+  if (auth instanceof Response) return auth as any;
 
-  let body: { command?: string; workdir?: string };
-  try {
-    body = await c.req.json() as typeof body;
-  } catch {
-    return c.json({ error: { message: 'Invalid JSON in request body.', code: 400 } }, 400);
-  }
-
-  if (!body.command || typeof body.command !== 'string') {
-    return c.json({ error: { message: 'Missing required field: command', code: 400 } }, 400);
-  }
-
-  const workdir = body.workdir || '/home/daytona/workspace';
+  const { command, workdir } = c.req.valid('json');
 
   try {
     if (auth.isCampusMode) {
-      return await execEphemeral(body.command, workdir, c);
+      const result = await execEphemeral(command, workdir, c.env);
+      return c.json(result, 200);
     }
 
     if (!auth.userEmail) {
@@ -110,53 +188,71 @@ sandboxRoutes.post('/exec', async (c) => {
     }
 
     const sandboxId = await resolveSandboxId(auth.userEmail, c.env);
-    const result = await execCommand(sandboxId, body.command, workdir, c.env);
-    return c.json(result);
+    const result = await execCommand(sandboxId, command, workdir, c.env);
+    return c.json(result, 200);
   } catch (e) {
     console.error('Sandbox exec error:', e);
     return c.json({
       error: { message: 'Sandbox execution failed. Please try again.', code: 502 },
     }, 502);
   }
-});
-
-/**
- * Handle ephemeral sandbox execution for campus-pass users.
- * Creates a sandbox, waits for it, executes the command, and tears it down.
- * The cleanup runs in a finally block so the sandbox is deleted even on error.
- */
-async function execEphemeral(
-  command: string,
-  workdir: string,
-  c: { env: AppEnv['Bindings']; json: (data: unknown, status?: number) => Response },
-): Promise<Response> {
-  let sandboxId: string | null = null;
-
-  try {
-    const sandbox = await createEphemeralSandbox(c.env);
-    sandboxId = sandbox.id;
-
-    if (sandbox.state !== 'started') {
-      await waitForStarted(sandboxId, c.env);
-    }
-    await waitForReady(sandboxId, c.env);
-
-    const result = await execCommand(sandboxId, command, workdir, c.env);
-    return c.json(result);
-  } finally {
-    if (sandboxId) {
-      deleteSandbox(sandboxId, c.env).catch((e) => {
-        console.error('Ephemeral sandbox cleanup failed:', e);
-      });
-    }
+}, (result, c) => {
+  if (!result.success) {
+    // Hook return type is not modeled by the library's generics
+    return c.json({
+      error: { message: 'Missing required field: command', code: 400 },
+    }, 400) as any;
   }
-}
+});
 
 // ── GET /files/* ───────────────────────────────────────────────────
 
-sandboxRoutes.get('/files/*', async (c) => {
+const downloadFileRoute = createRoute({
+  method: 'get',
+  path: '/files/{path}',
+  operationId: 'sandboxDownloadFile',
+  tags: ['Sandbox'],
+  summary: 'Download a file',
+  description:
+    'Downloads a file from the user\'s persistent sandbox by absolute path. ' +
+    'Requires a BayLeaf API key (`sk-bayleaf-...`); Campus Pass and raw OpenRouter keys cannot access files.',
+  security: [{ Bearer: [] }],
+  request: {
+    params: z.object({
+      path: z.string().openapi({
+        description: 'Absolute file path inside the sandbox (e.g. `/home/daytona/workspace/output.txt`)',
+        example: 'home/daytona/workspace/output.txt',
+      }),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'File contents',
+      content: { 'application/octet-stream': { schema: z.string() } },
+    },
+    400: {
+      description: 'Missing file path',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
+    403: {
+      description: 'File access requires a BayLeaf API key',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
+    404: {
+      description: 'File not found',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
+    502: {
+      description: 'Sandbox backend failure',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
+  },
+});
+
+sandboxRoutes.openapi(downloadFileRoute, async (c) => {
   const auth = await resolveAuth(c);
-  if (auth instanceof Response) return auth;
+  // Auth guard — see note on execRoute handler.
+  if (auth instanceof Response) return auth as any;
 
   if (auth.isCampusMode || !auth.userEmail) {
     return c.json({
@@ -164,10 +260,7 @@ sandboxRoutes.get('/files/*', async (c) => {
     }, 403);
   }
 
-  const filePath = extractFilePath(c.req.url);
-  if (!filePath) {
-    return c.json({ error: { message: 'Missing file path.', code: 400 } }, 400);
-  }
+  const filePath = '/' + c.req.valid('param').path;
 
   try {
     const sandboxId = await resolveSandboxId(auth.userEmail, c.env);
@@ -179,9 +272,11 @@ sandboxRoutes.get('/files/*', async (c) => {
       return c.json({ error: { message, code: status } }, status as 404 | 502);
     }
 
+    // Binary passthrough: forwarding raw file bytes from the sandbox
+    // provider — not a typed Hono response.
     const headers = new Headers(resp.headers);
     headers.set('Access-Control-Allow-Origin', '*');
-    return new Response(resp.body, { status: 200, headers });
+    return new Response(resp.body, { status: 200, headers }) as any;
   } catch (e) {
     console.error('Sandbox file download error:', e);
     return c.json({
@@ -192,9 +287,62 @@ sandboxRoutes.get('/files/*', async (c) => {
 
 // ── PUT /files/* ───────────────────────────────────────────────────
 
-sandboxRoutes.put('/files/*', async (c) => {
+const uploadFileRoute = createRoute({
+  method: 'put',
+  path: '/files/{path}',
+  operationId: 'sandboxUploadFile',
+  tags: ['Sandbox'],
+  summary: 'Upload a file',
+  description:
+    'Uploads a file to the user\'s persistent sandbox by absolute path. ' +
+    'Parent directories are created automatically. ' +
+    'Requires a BayLeaf API key (`sk-bayleaf-...`).',
+  security: [{ Bearer: [] }],
+  request: {
+    params: z.object({
+      path: z.string().openapi({
+        description: 'Absolute file path inside the sandbox',
+        example: 'home/daytona/workspace/input.txt',
+      }),
+    }),
+    body: {
+      required: true,
+      content: {
+        'application/octet-stream': {
+          schema: z.string(),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Upload confirmation',
+      content: {
+        'application/json': {
+          schema: SandboxUploadResponseSchema,
+          example: { success: true, path: '/home/daytona/workspace/input.txt', bytes: 1234 },
+        },
+      },
+    },
+    400: {
+      description: 'Missing file path',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
+    403: {
+      description: 'File access requires a BayLeaf API key',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
+    502: {
+      description: 'Sandbox backend failure',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
+  },
+});
+
+sandboxRoutes.openapi(uploadFileRoute, async (c) => {
   const auth = await resolveAuth(c);
-  if (auth instanceof Response) return auth;
+  // Auth guard — see note on execRoute handler.
+  if (auth instanceof Response) return auth as any;
 
   if (auth.isCampusMode || !auth.userEmail) {
     return c.json({
@@ -202,17 +350,14 @@ sandboxRoutes.put('/files/*', async (c) => {
     }, 403);
   }
 
-  const filePath = extractFilePath(c.req.url);
-  if (!filePath) {
-    return c.json({ error: { message: 'Missing file path.', code: 400 } }, 400);
-  }
+  const filePath = '/' + c.req.valid('param').path;
 
   try {
     const body = await c.req.arrayBuffer();
     const sandboxId = await resolveSandboxId(auth.userEmail, c.env);
     await uploadFile(sandboxId, filePath, body, c.env);
 
-    return c.json({ success: true, path: filePath, bytes: body.byteLength });
+    return c.json({ success: true as const, path: filePath, bytes: body.byteLength }, 200);
   } catch (e) {
     console.error('Sandbox file upload error:', e);
     return c.json({
@@ -223,7 +368,36 @@ sandboxRoutes.put('/files/*', async (c) => {
 
 // ── DELETE / ───────────────────────────────────────────────────────
 
-sandboxRoutes.delete('/', async (c) => {
+const deleteSandboxRoute = createRoute({
+  method: 'delete',
+  path: '/',
+  operationId: 'sandboxDelete',
+  tags: ['Sandbox'],
+  summary: 'Destroy sandbox',
+  description:
+    'Permanently destroys the user\'s persistent sandbox and all its data. This is irreversible.',
+  security: [{ Bearer: [] }],
+  responses: {
+    200: {
+      description: 'Deletion result',
+      content: {
+        'application/json': {
+          schema: SandboxDeleteResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: 'Missing, invalid, or revoked API key',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
+    502: {
+      description: 'Sandbox backend failure',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
+  },
+});
+
+sandboxRoutes.openapi(deleteSandboxRoute, async (c) => {
   let email: string | null = null;
 
   const auth = await resolveAuth(c);
@@ -241,7 +415,6 @@ sandboxRoutes.delete('/', async (c) => {
   }
 
   try {
-    // Try cached ID first, then fall back to label lookup
     const row = await c.env.DB.prepare(
       'SELECT daytona_sandbox_id FROM user_keys WHERE email = ? AND revoked = 0',
     ).bind(email).first<Pick<UserKeyRow, 'daytona_sandbox_id'>>();
@@ -254,12 +427,12 @@ sandboxRoutes.delete('/', async (c) => {
     }
 
     if (!sandboxId) {
-      return c.json({ success: true, message: 'No sandbox found.' });
+      return c.json({ success: true as const, message: 'No sandbox found.' }, 200);
     }
 
     await deleteSandbox(sandboxId, c.env);
     await clearCachedSandboxId(email, c.env);
-    return c.json({ success: true, message: 'Sandbox deleted.' });
+    return c.json({ success: true as const, message: 'Sandbox deleted.' }, 200);
   } catch (e) {
     console.error('Sandbox delete error:', e);
     return c.json({
@@ -267,12 +440,3 @@ sandboxRoutes.delete('/', async (c) => {
     }, 502);
   }
 });
-
-// ── Helpers ────────────────────────────────────────────────────────
-
-function extractFilePath(url: string): string | null {
-  const parsed = new URL(url);
-  const match = parsed.pathname.match(/^\/sandbox\/files(\/.*)/);
-  if (!match || match[1] === '/') return null;
-  return decodeURIComponent(match[1]);
-}
