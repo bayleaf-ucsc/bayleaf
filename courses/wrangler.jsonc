@@ -1,6 +1,6 @@
 {
   "name": "bayleaf-courses",
-  "main": "src/index.ts",
+  "main": "src/index.tsx",
   "compatibility_date": "2025-01-31",
   "compatibility_flags": ["nodejs_compat"],
 
@@ -11,26 +11,8 @@
 
   "routes": [
     { "pattern": "courses.bayleaf.dev", "custom_domain": true }
-  ],
+  ]
 
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "bayleaf-courses",
-      "database_id": "fdcf7ec0-86a8-45cd-a8e6-31965bdc4b30"
-    }
-  ],
-
-  "vars": {
-    "ALLOWED_EMAIL_DOMAIN": "ucsc.edu",
-    "DEFAULT_BASE_MODEL": "openrouter.z-ai/glm-5",
-    "OWUI_BASE_URL": "https://chat.bayleaf.dev"
-  },
-
-  // Dev overrides: wrangler dev reads .dev.vars which sets USE_MOCK_DALS=true
-  // Production does NOT have USE_MOCK_DALS, so live DALs are used.
-
-  // Secrets (set via wrangler secret put):
-  //   OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, SESSION_SECRET,
-  //   OWUI_ADMIN_JWT, CANVAS_TOKEN
+  // D1, env vars, and secrets are commented out while the service is a teaser page.
+  // See git history for the full configuration.
 }
