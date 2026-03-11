@@ -1,0 +1,6 @@
+# Copy to .dev.vars and fill in real values
+OIDC_CLIENT_ID=your-google-client-id
+OIDC_CLIENT_SECRET=your-google-client-secret
+SESSION_SECRET=some-random-hmac-key
+OWUI_ADMIN_JWT=your-owui-admin-jwt
+CANVAS_TOKEN=your-canvas-api-token

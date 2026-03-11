@@ -1,0 +1,19 @@
+{
+  "name": "bayleaf-courses",
+  "version": "1.0.0",
+  "description": "BayLeaf Courses - Self-service course AI models for UC Santa Cruz",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250124.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^4.61.1"
+  },
+  "dependencies": {
+    "hono": "^4.11.9"
+  }
+}
