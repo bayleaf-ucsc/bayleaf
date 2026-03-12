@@ -24,8 +24,10 @@ export const ChatCompletionRequestSchema = z.object({
   messages: z.array(
     z.object({
       role: z.string().openapi({ example: 'user' }),
-      content: z.union([z.string(), z.null()]).optional().openapi({
-        description: 'Message content. Null for assistant messages with tool_calls.',
+      content: z.any().optional().openapi({
+        description:
+          'Message content. String, null (for tool-call assistant messages), ' +
+          'or an array of content parts (text, image_url, etc.).',
       }),
     }).passthrough(),
   ).openapi({
@@ -73,10 +75,12 @@ export const ResponseRequestSchema = z.object({
     z.string(),
     z.array(z.object({
       role: z.string(),
-      content: z.string(),
-    })),
+      content: z.any().optional(),
+    }).passthrough()),
   ]).openapi({
-    description: 'The input to the model. Can be a string or array of message objects.',
+    description:
+      'The input to the model. Can be a string or array of message objects. ' +
+      'Message content can be a string, null, or array of content parts.',
   }),
   instructions: z.string().optional().openapi({
     description: 'System instructions. BayLeaf prepends its own prefix to this field.',
