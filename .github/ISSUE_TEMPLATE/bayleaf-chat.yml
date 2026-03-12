@@ -1,0 +1,67 @@
+name: "BayLeaf Chat"
+description: "Bug reports, feature requests, tool proposals, data privacy questions, or anything else about the chat interface at chat.bayleaf.dev"
+labels: ["chat"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file an issue about [BayLeaf Chat](https://chat.bayleaf.dev)!
+
+        This covers the chat interface, available models, web search/browsing tools,
+        data privacy questions, proposals for new agent tools, and anything else
+        related to the chat experience. Bug reports, feature requests, and clarifying
+        questions are all welcome.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of issue is this?
+      options:
+        - Bug report
+        - Feature request / enhancement
+        - New tool proposal
+        - Data privacy question
+        - General question
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: |
+        Tell us what happened, what you expected, or what you'd like to see.
+        Be as specific as you can — model name, conversation context, browser, etc.
+      placeholder: "e.g. When I asked Claude to search the web for …, I got an error saying …"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce (for bugs)
+      description: If this is a bug, walk us through how to trigger it.
+      placeholder: |
+        1. Go to chat.bayleaf.dev
+        2. Start a new conversation with model X
+        3. Send the message "…"
+        4. See error
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: |
+        Please attach one or more screenshots if possible — they often reveal
+        details (error banners, UI state, model badges, timestamps) that are easy
+        to overlook in a text description. Drag and drop images here or paste from
+        your clipboard.
+      placeholder: "Drag and drop images here"
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser & OS (for bugs)
+      description: "e.g. Chrome 130 on macOS, Firefox on Android, Safari on iOS"
+      placeholder: "Chrome 130, macOS Sequoia"

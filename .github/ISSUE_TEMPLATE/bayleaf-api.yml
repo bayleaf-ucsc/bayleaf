@@ -1,0 +1,66 @@
+name: "BayLeaf API"
+description: "Bug reports, feature requests, API key requests, spend limit increases, or anything else about the API at api.bayleaf.dev"
+labels: ["api"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file an issue about the [BayLeaf API](https://api.bayleaf.dev)!
+
+        This covers API keys, daily spend limits, building apps on top of the API,
+        configuring agent software (e.g. OpenCode, Cursor, Continue) to use BayLeaf,
+        and anything else related to the API service. Bug reports, feature requests,
+        and clarifying questions are all welcome.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of issue is this?
+      options:
+        - Bug report
+        - Feature request / enhancement
+        - API key request
+        - Spend limit increase
+        - Integration help (OpenCode, Cursor, etc.)
+        - General question
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: |
+        Tell us what happened, what you expected, or what you'd like to do.
+        Include the endpoint, HTTP status code, error message, or model name if relevant.
+      placeholder: "e.g. I'm getting 429 responses when calling /v1/chat/completions with gpt-4o …"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Use case / context
+      description: |
+        If you're requesting a key, a limit increase, or building something on top
+        of the API, briefly describe your use case so we can help set things up.
+      placeholder: "e.g. I'm building a course project for CMPM 146 that needs …"
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or logs
+      description: |
+        Please attach one or more screenshots or paste relevant log output if
+        possible — they often reveal details (error codes, response headers,
+        configuration state) that are easy to overlook in a text description.
+        Drag and drop images here or paste from your clipboard.
+      placeholder: "Drag and drop images or paste log output here"
+
+  - type: input
+    id: client
+    attributes:
+      label: Client software & version (for bugs)
+      description: "e.g. OpenCode 0.5, curl 8.7, Python requests 2.31"
+      placeholder: "OpenCode 0.5.0"
