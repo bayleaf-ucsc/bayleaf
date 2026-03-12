@@ -23,10 +23,16 @@ export const ChatCompletionRequestSchema = z.object({
   model: z.string().openapi({ example: 'openrouter/auto' }),
   messages: z.array(
     z.object({
-      role: z.enum(['system', 'user', 'assistant']),
-      content: z.string(),
-    }),
-  ),
+      role: z.string().openapi({ example: 'user' }),
+      content: z.union([z.string(), z.null()]).optional().openapi({
+        description: 'Message content. Null for assistant messages with tool_calls.',
+      }),
+    }).passthrough(),
+  ).openapi({
+    description:
+      'Supports all OpenAI message roles: system, user, assistant, tool, function. ' +
+      'Extra fields (tool_calls, tool_call_id, name, etc.) are forwarded to the upstream provider.',
+  }),
   stream: z.boolean().optional().default(false).openapi({
     description: 'If true, response is streamed as server-sent events.',
   }),

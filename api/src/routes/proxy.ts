@@ -181,7 +181,7 @@ proxyRoutes.openapi(chatCompletionsRoute, async (c) => {
   if (auth instanceof Response) return auth as any;
 
   const body = c.req.valid('json') as {
-    messages?: Array<{ role: string; content: string }>;
+    messages?: Array<{ role: string; content?: string | null; [k: string]: unknown }>;
     user?: string;
     [k: string]: unknown;
   };
@@ -191,8 +191,10 @@ proxyRoutes.openapi(chatCompletionsRoute, async (c) => {
     const systemIndex = body.messages.findIndex(m => m.role === 'system');
 
     if (systemIndex >= 0) {
-      body.messages[systemIndex].content =
-        systemPrefix + '\n\n' + body.messages[systemIndex].content;
+      const existing = body.messages[systemIndex].content;
+      body.messages[systemIndex].content = existing
+        ? systemPrefix + '\n\n' + existing
+        : systemPrefix;
     } else {
       body.messages.unshift({ role: 'system', content: systemPrefix });
     }

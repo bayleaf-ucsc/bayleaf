@@ -54,7 +54,41 @@ curl -s https://api.bayleaf.dev/v1/chat/completions \
 
 ---
 
-## 2. LLM Proxy — Responses API
+## 2. LLM Proxy — Tool-use conversation
+
+Verify that multi-turn conversations with tool calls pass through
+validation. This exercises `role: 'tool'` messages, assistant messages
+with `content: null` + `tool_calls`, and extra fields like
+`tool_call_id` — all of which must survive schema validation and be
+forwarded to OpenRouter.
+
+```bash
+curl -s https://api.bayleaf.dev/v1/chat/completions \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "z-ai/glm-5",
+    "messages": [
+      {"role": "user", "content": "What is the weather in Santa Cruz?"},
+      {"role": "assistant", "content": null, "tool_calls": [
+        {"id": "call_abc123", "type": "function", "function": {"name": "get_weather", "arguments": "{\"location\": \"Santa Cruz, CA\"}"}}
+      ]},
+      {"role": "tool", "tool_call_id": "call_abc123", "content": "{\"temperature\": 62, \"condition\": \"sunny\"}"},
+      {"role": "user", "content": "Summarize that in one sentence."}
+    ]
+  }' | python3 -m json.tool
+```
+
+**Check:**
+
+- Response is valid JSON (not `"Invalid JSON in request body"`)
+- `choices[0].message.content` contains a weather summary referencing
+  the tool result (62 degrees, sunny)
+- `usage` object is present
+
+---
+
+## 3. LLM Proxy — Responses API
 
 Verify instructions-field injection on the `/v1/responses` endpoint.
 
@@ -79,7 +113,7 @@ curl -s https://api.bayleaf.dev/v1/responses \
 
 ---
 
-## 3. LLM Proxy — Models list
+## 4. LLM Proxy — Models list
 
 Verify the catch-all GET proxy works.
 
@@ -95,7 +129,7 @@ curl -s https://api.bayleaf.dev/v1/models \
 
 ---
 
-## 4. Sandbox — Execute a command
+## 5. Sandbox — Execute a command
 
 This creates (or reuses) a persistent sandbox tied to the key's user.
 The first request may take 10–30 seconds if the sandbox needs to be
@@ -117,7 +151,7 @@ curl -s https://api.bayleaf.dev/sandbox/exec \
 
 ---
 
-## 5. Sandbox — Upload a file
+## 6. Sandbox — Upload a file
 
 ```bash
 curl -s -X PUT \
@@ -132,7 +166,7 @@ curl -s -X PUT \
 
 ---
 
-## 6. Sandbox — Download the file
+## 7. Sandbox — Download the file
 
 ```bash
 curl -s "https://api.bayleaf.dev/sandbox/files/home/daytona/workspace/smoke-test.txt" \
@@ -145,7 +179,7 @@ curl -s "https://api.bayleaf.dev/sandbox/files/home/daytona/workspace/smoke-test
 
 ---
 
-## 7. Sandbox — Verify via exec
+## 8. Sandbox — Verify via exec
 
 Cross-check that the uploaded file is visible inside the sandbox.
 
@@ -164,7 +198,7 @@ curl -s https://api.bayleaf.dev/sandbox/exec \
 
 ---
 
-## 8. Sandbox — Destroy
+## 9. Sandbox — Destroy
 
 ```bash
 curl -s -X DELETE https://api.bayleaf.dev/sandbox \
@@ -176,12 +210,12 @@ curl -s -X DELETE https://api.bayleaf.dev/sandbox \
 
 - `{"success": true, "message": "Sandbox deleted."}`
 
-Optionally re-run step 4 afterward to confirm a fresh sandbox is
+Optionally re-run step 5 afterward to confirm a fresh sandbox is
 provisioned from scratch (the first request will be slow again).
 
 ---
 
-## 9. Error pages (browser-facing)
+## 10. Error pages (browser-facing)
 
 Verify the JSX error page template renders. No auth needed.
 
@@ -200,7 +234,7 @@ BayLeaf layout (header, footer, API Reference link).
 
 ## Notes
 
-- **Don't skip step 8.** The sandbox tests are ordered so that the
+- **Don't skip step 9.** The sandbox tests are ordered so that the
   final step cleans up. If you stop mid-sequence, a sandbox is left
   running (it will auto-stop after 15 min idle, but still).
 - **Streaming is not tested here.** A `"stream": true` test for chat
