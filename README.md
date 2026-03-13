@@ -32,6 +32,14 @@ LLMs and sandboxed code execution:
 
 Source: [`api/`](api/) in this repo
 
+## Support
+
+Questions, problems, or feature requests?
+**[Open an issue](https://github.com/rndmcnlly/bayleaf/issues)** on this repo.
+
+This is a small, faculty-operated project. Response times are best-effort, but
+every issue is read.
+
 ## Privacy
 
 All LLM inference routes through **zero-data-retention (ZDR)** providers via
