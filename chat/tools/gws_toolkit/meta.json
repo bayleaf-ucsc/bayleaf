@@ -1,0 +1,110 @@
+{
+  "id": "gws_toolkit",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Google Workspace",
+  "meta": {
+    "description": "Per-user OAuth2 access to Google Drive (read-only). Self-registers an OAuth callback endpoint.",
+    "manifest": {
+      "title": "Google Workspace",
+      "author": "Adam Smith",
+      "author_url": "https://adamsmith.as",
+      "description": "Per-user OAuth2 access to Google Drive (read-only). Self-registers an OAuth callback endpoint.",
+      "required_open_webui_version": "0.4.0",
+      "version": "0.3.2",
+      "licence": "MIT",
+      "requirements": "httpx"
+    }
+  },
+  "access_grants": [],
+  "updated_at": 1773131577,
+  "created_at": 1773131520,
+  "user": null,
+  "write_access": true,
+  "specs": [
+    {
+      "name": "_authed",
+      "description": "Common preamble: ensure routes, resolve token.\nReturns (app, user_id, token_or_none).",
+      "parameters": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "name": "_setup",
+      "description": "Lazy route registration, called once per tool invocation.",
+      "parameters": {
+        "properties": {
+          "app": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "app"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "connect_google_workspace",
+      "description": "Connect the user's Google account to enable Drive access.\nCall this when a user wants to link Google Workspace or when another\ntool method reports NOT_CONNECTED.",
+      "parameters": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "name": "disconnect_google_workspace",
+      "description": "Disconnect the user's Google account. Revokes tokens.",
+      "parameters": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_drive_folder",
+      "description": "List files in a Google Drive folder.",
+      "parameters": {
+        "properties": {
+          "folder_id": {
+            "default": "root",
+            "description": "Folder ID, or 'root' for the top level (default: root)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "read_drive_file",
+      "description": "Read a Google Drive file by ID. Exports Docs as markdown, Sheets as CSV, Slides as text.",
+      "parameters": {
+        "properties": {
+          "file_id": {
+            "description": "The file ID (from search results or a Drive URL)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "search_drive",
+      "description": "Search the user's Google Drive for files matching a text query.",
+      "parameters": {
+        "properties": {
+          "query": {
+            "description": "Search terms (e.g. 'budget 2025', 'syllabus')",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    }
+  ]
+}

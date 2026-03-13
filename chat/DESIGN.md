@@ -150,6 +150,7 @@ grants).
 
 | ID | Name | Description |
 |----|------|-------------|
+| `lathe` | Code Sandbox | Coding agent tools backed by per-user Daytona sandbox VMs (see below) |
 | `accept_invites_toolkit` | Accept Invites | JWT-based invite code system for joining groups |
 | `tavily_web_search` | Web Search | Tavily API search (valve: API key) |
 | `jina_reader_toolkit` | Web Page Content | Jina Reader API for fetching web pages as markdown (valve: API key) |
@@ -159,18 +160,98 @@ grants).
 | `campus_directory_toolkit` | Campus Directory | Scrapes UCSC campus directory with CSRF handling |
 | `datetime_converter_toolkit` | Datetime Converter | ISO date → localized string via pytz |
 
+### Code Sandbox (Lathe)
+
+The most substantial toolkit on the deployment. Source:
+[rndmcnlly/lathe](https://github.com/rndmcnlly/lathe). Available to all users
+but **not bound to any model by default** — users enable it per-chat via the
+tool picker in the chat composer.
+
+**What it does.** Gives any OWUI model a coding-agent tool surface — `bash`,
+`read`, `write`, `edit`, `attach`, `ingest`, `onboard`, `ssh`, `preview`,
+`destroy` — executing against per-user sandbox VMs
+([Daytona](https://www.daytona.io/)) with transparent lifecycle management. Each
+user gets a single persistent sandbox identified by email; the sandbox is
+created lazily on first tool call and survives across conversations.
+
+**Tools exposed to the model:**
+
+| Tool | Purpose |
+|------|---------|
+| `bash(command, workdir)` | Execute shell commands (2-min timeout, output truncated to last 2000 lines / 50 KB) |
+| `read(path, offset, limit)` | Read file with line numbers |
+| `write(path, content)` | Write/create file (parent dirs created automatically) |
+| `edit(path, old_string, new_string, replace_all)` | Exact string replacement |
+| `attach(path)` | Show file to user inline (syntax-highlighted text, images, binary download card) without consuming model context |
+| `ingest(prompt)` | Pull a file or pasted text from the user into the sandbox via browser modal |
+| `onboard(path)` | Load project context (AGENTS.md + skill catalog) for agentic workflows |
+| `ssh(expires_in_minutes)` | Generate a time-limited SSH command for interactive shell access |
+| `preview(port)` | Generate a signed URL for a service running in the sandbox |
+| `destroy(confirm, wipe_volume)` | Permanently delete the sandbox (safety guard: requires `confirm=true`) |
+
+**Sandbox lifecycle.** Sandboxes idle-stop after 15 min, archive after 60 min
+past stop. The first tool call in a conversation transparently creates, starts,
+or unarchives the sandbox as needed. `/home/daytona/volume` is S3/FUSE-backed
+persistent storage that survives even sandbox destruction.
+
+**UserValves.** Users can configure `env_vars` (a JSON object of environment
+variables like `{"GITHUB_TOKEN":"ghp_..."}`) that are injected into every
+`bash` command without exposing values to the model.
+
+**Admin valves** (configured in OWUI admin panel, never committed):
+
+- `daytona_api_key` — Daytona API key
+- `daytona_api_url` — Control plane URL (default: `https://app.daytona.io/api`)
+- `daytona_proxy_url` — Toolbox proxy URL
+- `deployment_label` — Label key for sandbox tagging (e.g. `chat.bayleaf.dev`)
+- `auto_stop_minutes` — Idle timeout (default: 15)
+- `auto_archive_minutes` — Archive delay after stop (default: 60)
+- `sandbox_language` — Default runtime (default: `python`)
+
 ### Restricted Tools
 
 | ID | Name | Access | Description |
 |----|------|--------|-------------|
+| `gws_toolkit` | Google Workspace | Admin only (no grants) | Per-user OAuth2 access to Google Drive (see below) |
 | `brace_toolkit` | Brace's toolkit | Admin only (no grants) | Canvas API, GitHub API, Google Drive (valve: multiple keys) |
 | `mark_time_toolkit` | Mark Time | Admin only (no grants) | Stopwatch/timer with per-chat LRU cache (user valve: timezone) |
+
+### Google Workspace (GWS Toolkit)
+
+Per-user OAuth2 integration with Google Drive. Source:
+[rndmcnlly/gws-toolkit](https://github.com/rndmcnlly/gws-toolkit). Users
+connect their own Google account via an in-chat OAuth flow; tokens are stored
+per-user and revocable. Currently **admin-only** — not yet granted to the
+general user population.
+
+**Tools exposed to the model:**
+
+| Tool | Purpose |
+|------|---------|
+| `connect_google_workspace` | Initiate OAuth flow to link the user's Google account |
+| `disconnect_google_workspace` | Revoke tokens and unlink |
+| `search_drive(query)` | Search the user's Google Drive by text query |
+| `list_drive_folder(folder_id)` | List files in a Drive folder (default: root) |
+| `read_drive_file(file_id)` | Read a file — exports Docs as markdown, Sheets as CSV, Slides as text |
+
+**Design.** The toolkit self-registers an OAuth callback route on the OWUI
+FastAPI app at startup. Token refresh is handled transparently. Read-only
+scope only (`drive.readonly`). The OAuth client credentials are configured
+via admin valves — the toolkit itself contains no secrets.
+
+**Admin valves** (configured in OWUI admin panel, never committed):
+
+- `google_client_id` — Google OAuth client ID
+- `google_client_secret` — Google OAuth client secret
+- `base_url` — OWUI base URL for the OAuth callback (e.g. `https://chat.bayleaf.dev`)
 
 ### Tool Valves (credentials configured in admin UI)
 
 Several tools require API keys configured as "valves" in the OWUI admin panel.
 These are **never** committed to this repo:
 
+- `lathe` — `daytona_api_key`, `daytona_api_url`, `daytona_proxy_url`, `deployment_label`, `auto_stop_minutes`, `auto_archive_minutes`, `sandbox_language`
+- `gws_toolkit` — `google_client_id`, `google_client_secret`, `base_url`
 - `tavily_web_search` — `tavily_api_key`
 - `jina_reader_toolkit` — `JINA_API_KEY`
 - `deepinfra_key_generator_toolkit` — `API_KEY`, `API_TOKEN_NAME`, `MODELS`, `EXPIRES_DELTA`
@@ -322,6 +403,9 @@ chat/
 │       ├── context.md      # Inlined UC policy documents (~670K chars)
 │       └── profile.png
 ├── tools/
+│   ├── lathe/
+│   │   ├── tool.py          # Code Sandbox — coding agent tools (Daytona sandboxes)
+│   │   └── meta.json
 │   ├── accept_invites_toolkit/
 │   │   ├── tool.py
 │   │   └── meta.json
@@ -336,6 +420,9 @@ chat/
 │   │   └── meta.json
 │   ├── random_choice_toolkit/
 │   │   ├── tool.py
+│   │   └── meta.json
+│   ├── gws_toolkit/
+│   │   ├── tool.py          # Google Workspace — per-user OAuth2 Drive access
 │   │   └── meta.json
 │   ├── brace_toolkit/
 │   │   ├── tool.py

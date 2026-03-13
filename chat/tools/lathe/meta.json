@@ -1,0 +1,227 @@
+{
+  "id": "lathe",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Code Sandbox",
+  "meta": {
+    "description": "Coding agent tools (bash, read, write, edit, attach, ingest, onboard) backed by per-user sandbox VMs with transparent lifecycle management.",
+    "manifest": {
+      "title": "Lathe",
+      "author": "Adam Smith",
+      "author_url": "https://adamsmith.as",
+      "description": "Coding agent tools (bash, read, write, edit, attach, ingest, onboard, ssh, preview) backed by per-user sandbox VMs with transparent lifecycle management.",
+      "required_open_webui_version": "0.4.0",
+      "requirements": "httpx",
+      "version": "0.7.0",
+      "licence": "MIT"
+    }
+  },
+  "access_grants": [
+    {
+      "id": "363080fd-5cad-4784-a2c1-afe7f0e75c6e",
+      "resource_type": "tool",
+      "resource_id": "lathe",
+      "principal_type": "user",
+      "principal_id": "*",
+      "permission": "read",
+      "created_at": 1773097882
+    }
+  ],
+  "updated_at": 1773434183,
+  "created_at": 1773079252,
+  "user": null,
+  "write_access": true,
+  "specs": [
+    {
+      "name": "attach",
+      "description": "Attach a file from the sandbox for the user to view inline.\nThe file content is rendered visually for the human but is NOT returned\nto the model. Use read() if you need to see file contents yourself.\nWorks with text files (syntax-highlighted), images (rendered inline),\nand binary files (download card with Save button for files under 10 MB).",
+      "parameters": {
+        "properties": {
+          "path": {
+            "description": "Absolute path or relative to /home/daytona (e.g. workspace/main.py).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "bash",
+      "description": "Execute a bash command in a persistent Linux sandbox.\nThe sandbox and its filesystem persist across conversations for this user.\n/home/daytona/volume is S3/FUSE-backed persistent storage that survives sandbox destruction.\nSupports pipes, redirects, &&, ||, and all standard bash syntax.\nCommands must be non-interactive (no prompts for input). Use -y flags where needed.\nFor long-running servers, background them: nohup cmd > /tmp/out.log 2>&1 & echo $!\nDefault working directory is /home/daytona/workspace.\nOutput is truncated to the last 2000 lines or 50 KB (whichever limit is hit first).\nIf truncated, the full output is saved to a file in /tmp/ and the path is shown.\nUse read() or another bash command to inspect specific parts of that file.\nUser-configured environment variables (set via the UserValves env_vars JSON field) are\nautomatically injected into every command \u2014 reference them by name without exposing values.",
+      "parameters": {
+        "properties": {
+          "command": {
+            "description": "The bash command to execute.",
+            "type": "string"
+          },
+          "workdir": {
+            "default": "/home/daytona/workspace",
+            "description": "Working directory for the command (default: /home/daytona/workspace).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "destroy",
+      "description": "Permanently destroy your sandbox. ALL files and state are lost forever.\nA fresh sandbox will be created automatically on your next tool call.\nOnly use this if your sandbox is in an unrecoverable state.\nYou must set confirm=true to proceed. Without it, no action is taken.\nBy default, the user's persistent volume (/home/daytona/volume) is kept intact\nand will be re-mounted on the next sandbox. Set wipe_volume=true to also\ndelete the volume for a completely clean slate.",
+      "parameters": {
+        "properties": {
+          "confirm": {
+            "default": false,
+            "description": "Must be set to true to confirm destruction. Defaults to false as a safety measure.",
+            "type": "boolean"
+          },
+          "wipe_volume": {
+            "default": false,
+            "description": "Also delete the persistent volume. Defaults to false (volume survives).",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "edit",
+      "description": "Edit a file in the persistent Linux sandbox by replacing exact string matches.\nThe sandbox filesystem persists across conversations for this user.",
+      "parameters": {
+        "properties": {
+          "path": {
+            "description": "Absolute path or relative to /home/daytona (e.g. workspace/main.py).",
+            "type": "string"
+          },
+          "old_string": {
+            "description": "The exact text to find and replace. Must match exactly including whitespace and indentation.",
+            "type": "string"
+          },
+          "new_string": {
+            "description": "The replacement text.",
+            "type": "string"
+          },
+          "replace_all": {
+            "default": false,
+            "description": "If true, replace all occurrences. If false (default), fail if multiple matches found.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "old_string",
+          "new_string"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "ingest",
+      "description": "Ask the user to provide content for the sandbox \u2014 either by uploading\na file from their local machine or by pasting text directly.  The\ncontent goes straight to the sandbox filesystem without entering the\nconversation context or the OWUI database.  Use read() afterward if\nyou need to inspect the contents yourself.",
+      "parameters": {
+        "properties": {
+          "prompt": {
+            "default": "",
+            "description": "Optional message shown to the user explaining what is needed, e.g. \"Upload your CSV dataset\" or \"Paste your configuration\".",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "onboard",
+      "description": "Load project context at the start of a conversation.\nCall this tool first when beginning work on a project. It returns the project's\nAGENTS.md (instructions, persona, conventions) and a catalog of available skills\n(name + description only). To load a skill's full instructions later, use read()\non the SKILL.md path shown in the catalog.\nFails if the path contains neither an AGENTS.md file nor a .agents/skills/ directory.",
+      "parameters": {
+        "properties": {
+          "path": {
+            "description": "Absolute path to the project root (e.g. /home/daytona/workspace/myproject).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "preview",
+      "description": "Generate a preview URL for a service running in the sandbox.\nThe server must already be running in the background (see bash docs).\nReturns a signed URL the user can open in a new browser tab.",
+      "parameters": {
+        "properties": {
+          "port": {
+            "default": 3000,
+            "description": "The port the sandbox service is listening on (3000\u20139999). Defaults to 3000.",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "read",
+      "description": "Read a file from the persistent Linux sandbox.\nReturns numbered lines. The sandbox filesystem persists across conversations for this user.",
+      "parameters": {
+        "properties": {
+          "path": {
+            "description": "Absolute path or relative to /home/daytona (e.g. workspace/main.py).",
+            "type": "string"
+          },
+          "offset": {
+            "default": 1,
+            "description": "Line number to start from (1-indexed, default 1).",
+            "type": "integer"
+          },
+          "limit": {
+            "default": 2000,
+            "description": "Maximum number of lines to return (default 2000).",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "ssh",
+      "description": "Generate a time-limited SSH access command for the user's sandbox.\nReturns an ssh command the user can paste into their local terminal,\nVS Code Remote SSH, or JetBrains Gateway to get an interactive shell.\nThis is a human tool \u2014 the model generates the token, the user connects.",
+      "parameters": {
+        "properties": {
+          "expires_in_minutes": {
+            "default": 60,
+            "description": "How long the SSH token is valid (1\u20131440 minutes). Defaults to 60.",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "write",
+      "description": "Write a file to the persistent Linux sandbox, creating it if it doesn't exist.\nParent directories are created automatically. The sandbox filesystem persists across conversations for this user.",
+      "parameters": {
+        "properties": {
+          "path": {
+            "description": "Absolute path or relative to /home/daytona (e.g. workspace/main.py).",
+            "type": "string"
+          },
+          "content": {
+            "description": "The full file content to write.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "type": "object"
+      }
+    }
+  ]
+}
