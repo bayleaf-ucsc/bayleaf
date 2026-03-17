@@ -81,7 +81,3 @@ Ask your vendor:
 
 If the answer to any of these is unclear, the tool is not ready for the classroom.
 
-## Contact
-
-**Adam Smith** · Associate Professor, Computational Media, UC Santa Cruz
-[amsmith@ucsc.edu](mailto:amsmith@ucsc.edu) · [github.com/rndmcnlly/bayleaf](https://github.com/rndmcnlly/bayleaf)
