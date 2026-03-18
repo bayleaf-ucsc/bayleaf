@@ -30,8 +30,6 @@ LLMs and sandboxed code execution:
   ephemeral one-shot sandboxes
 - Injects a light system prompt prefix to orient downstream agents
 
-Source: [`api/`](api/) in this repo
-
 ## Support
 
 Questions, problems, or feature requests?
@@ -50,7 +48,7 @@ any third-party provider.
 
 - `api/` — BayLeaf API Cloudflare Worker ([api.bayleaf.dev](https://api.bayleaf.dev))
 - `docs/` — Static GitHub Pages site published at [bayleaf.dev](https://bayleaf.dev)
-- `chat/` — OWUI deployment backup: workspace models, custom tools, filters, and [design doc](chat/DESIGN.md)
+- `chat/` — BayLeaf Chat DigitalOcean App ([chat.bayleaf.dev](https://chat.bayleaf.dev)): workspace models, custom tools, filters, and [design doc](chat/DESIGN.md)
 
 This repo is **publicly visible**. It never contains API keys, credentials, or
 other sensitive configuration.
