@@ -6,9 +6,10 @@ breaks if they change terms, and how fast we can switch. The framework is drawn 
 Audre Lorde's question — are these the master's tools? — applied as dependency
 analysis rather than rhetorical flourish.
 
-Honest answer up front: BayLeaf is a *legible* dependency with explicit exit paths.
-That is not liberation, but it is better than a procurement contract with a 5-year
-renewal and no exit clause.
+Honest answer up front: BayLeaf's answer to the
+[dependency ratchet](README.md#what-we-are-playing-against) is not "no dependencies"
+but *legible* dependencies with explicit exit paths. That is not liberation, but it
+is better than a procurement contract with a 5-year renewal and no exit clause.
 
 ## Full stack
 
@@ -18,11 +19,11 @@ renewal and no exit clause.
 | DNS / CDN / Workers | Cloudflare | Public (NYSE: NET) | Content moderation controversies. Traffic-level visibility into all requests. | Move Workers to any edge platform. | Moderate |
 | Chat hosting + DB | DigitalOcean | Public (NYSE: DOCN) | US cloud provider. Holds the OWUI PostgreSQL database: user accounts, conversation histories, access grants. | Migrate Docker + Postgres to any host. | Moderate |
 | Identity | Google Workspace (UCSC) | Google / UCSC admin | Sole authentication path. No fallback. Users do not exist to BayLeaf unless Google says they do. | Add secondary IdP (SAML). Requires institutional cooperation. | Hard |
-| LLM routing | OpenRouter | a16z, Menlo Ventures ($40M) | a16z founders donated $25M+ to Trump-aligned political committees in 2024. Every API call generates revenue flowing to a16z portfolio returns. | Direct API calls to providers or self-hosted inference. | Moderate |
+| LLM routing | OpenRouter | a16z, Menlo Ventures ($40M) | a16z founders donated $25M+ to Trump-aligned political committees in 2024. Every API call generates revenue flowing to a16z portfolio returns. | [LiteLLM](https://www.litellm.ai/) (self-hostable multi-provider router), direct API calls to providers, [NRP](https://nrp.ai) pooled capacity, or [vLLM](https://vllm.ai/) for on-campus inference. | Moderate |
 | Web search tool | Tavily | Nebius Group (ex-Yandex, $275M acquisition 2026) | Yandex successor entity. Microsoft $17B infrastructure deal. | Swap to SearXNG (self-hosted), Brave Search API, or similar. | Low |
 | Web reader tool | Jina AI | Berlin VC startup ($30M raised) | Low risk profile. | Swap reader API. | Trivial |
 | Code sandboxes | Daytona | VC-funded ($31M, FirstMark et al.) | Standard dev infra startup. | Any container orchestration platform. | Moderate |
-| LMS integration | Canvas (Instructure) | KKR ($4.8B acquisition 2024) | PE-owned edtech. PE optimizes for extraction on 5–7 year cycles. Deeply embedded in claim flow and course configuration. | Hard to replace. | High |
+| LMS integration | Canvas (Instructure) | KKR ($4.8B acquisition 2024) | PE-owned edtech. PE optimizes for extraction on 5–7 year cycles. Deeply embedded in claim flow and course configuration. This is the institution's dependency, not BayLeaf's — UCSC chose Canvas; BayLeaf inherited it. | Hard to replace. | High |
 | Application layer | Open WebUI | Open WebUI, Inc. (private company) | No formal governance, no foundation, no community steering committee. Active community debate about governance model. | Can fork. Maintaining fork solo is a different commitment than tracking upstream. | Moderate |
 
 ## Structural observations
@@ -41,8 +42,9 @@ either Google or the institutional Workspace admin.
 
 **The "any faculty member could build this" claim has a credential problem.** The
 architecture is open and replicable. The operation depends on one person's Canvas
-token, Cloudflare account, and GCP project. Until a second person at a second
-institution independently deploys it, the claim is architectural, not empirical.
+token, Cloudflare account, and GCP project. No second person at a second institution
+has independently deployed it. Until that happens, the claim is architectural, not
+empirical.
 
 **Environmental cost is unaccounted.** The multi-model architecture diffuses GPU
 usage across providers behind an abstraction layer. This makes environmental impact
