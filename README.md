@@ -49,6 +49,7 @@ any third-party provider.
 - `api/` — BayLeaf API Cloudflare Worker ([api.bayleaf.dev](https://api.bayleaf.dev))
 - `docs/` — Static GitHub Pages site published at [bayleaf.dev](https://bayleaf.dev)
 - `chat/` — BayLeaf Chat DigitalOcean App ([chat.bayleaf.dev](https://chat.bayleaf.dev)): workspace models, custom tools, filters, and [design doc](chat/DESIGN.md)
+- `politics/` — The case for universities owning their own AI infrastructure (manifesto)
 
 This repo is **publicly visible**. It never contains API keys, credentials, or
 other sensitive configuration.
