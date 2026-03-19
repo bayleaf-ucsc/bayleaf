@@ -82,6 +82,7 @@ const LlmCard: FC<{ orKey: OpenRouterKey; recommendedModel: string }> = ({ orKey
       </div>
       <p style="margin-top: 0.5rem; font-size: 0.85em; color: #666;">
         Daily limit: {limitDisplay} — resets <span id="resetHint">at midnight UTC</span>.
+        Increased limits are <a href="https://bayleaf.dev/support" style="color: #2a5298;">available upon request</a>.
       </p>
       <details style="margin-top: 1rem;">
         <summary style="cursor: pointer; color: #006aad; font-weight: 500;">Quick start</summary>

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Support — BayLeaf AI Playground</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+            line-height: 1.6;
+            color: #333;
+        }
+        h1 { color: #1a1a1a; }
+        h2 { color: #2a5298; margin-top: 2rem; }
+        a { color: #2a5298; }
+        .tagline {
+            font-size: 1.1rem;
+            color: #666;
+            margin-bottom: 2rem;
+        }
+        .channels {
+            display: flex;
+            gap: 1rem;
+            margin: 1.5rem 0;
+            flex-wrap: wrap;
+        }
+        .channel-link {
+            display: inline-block;
+            background: #2a5298;
+            color: white;
+            padding: 0.75rem 1.5rem;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        .channel-link:hover { background: #1e3a6e; }
+        .channel-link.email { background: #2d8659; }
+        .channel-link.email:hover { background: #1e5a3a; }
+        ul { padding-left: 1.5rem; }
+        li { margin-bottom: 0.5rem; }
+        .note {
+            background: #f8f9fa;
+            border-left: 3px solid #2a5298;
+            padding: 1rem 1.25rem;
+            margin: 1.5rem 0;
+            font-size: 0.95rem;
+            color: #444;
+        }
+        .contact { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #eee; }
+    </style>
+</head>
+<body>
+    <h1>Support</h1>
+    <p class="tagline"><a href="https://bayleaf.dev">BayLeaf AI Playground</a> — an experimental GenAI service for UC Santa Cruz</p>
+
+    <div class="note">
+        BayLeaf is currently a one-person operation, run by
+        <a href="https://campusdirectory.ucsc.edu/cd_detail?uid=amsmith">Adam Smith</a>
+        (Dept. of Computational Media). With the help of coding agents, we can
+        meaningfully act on major feature requests on timescales that multi-team
+        platform support organizations could not. That said, response times
+        depend on teaching schedules and other duties — your patience is
+        appreciated.
+    </div>
+
+    <h2>Public Issues (GitHub)</h2>
+    <p>
+        The best way to request features, report bugs, ask for spend limit
+        increases, or ask general questions is through a public GitHub issue.
+        Issues are tracked, searchable, and visible to the whole community — so
+        others can see if their question has already been answered.
+    </p>
+
+    <div class="channels">
+        <a href="https://github.com/rndmcnlly/bayleaf/issues/new?template=bayleaf-api.yml" class="channel-link">API Issue</a>
+        <a href="https://github.com/rndmcnlly/bayleaf/issues/new?template=bayleaf-chat.yml" class="channel-link">Chat Issue</a>
+        <a href="https://github.com/rndmcnlly/bayleaf/issues/new" class="channel-link">General Issue</a>
+    </div>
+
+    <p>Common reasons to file an issue:</p>
+    <ul>
+        <li>Bug reports (API errors, unexpected behavior in Chat)</li>
+        <li>Feature requests and enhancements</li>
+        <li>API key requests or daily spend limit increases</li>
+        <li>Integration help (OpenCode, Cursor, Continue, etc.)</li>
+        <li>Questions about privacy, data retention, or available models</li>
+    </ul>
+
+    <h2>Private Email</h2>
+    <p>
+        If your question involves something you'd rather not discuss publicly —
+        account-specific issues, sensitive use cases, political machinations,
+        allyship, well-crafted threats, or anything you're not comfortable
+        posting on GitHub — email directly.
+    </p>
+
+    <div class="channels">
+        <a href="mailto:amsmith@ucsc.edu?subject=BayLeaf%20Support" class="channel-link email">amsmith@ucsc.edu</a>
+    </div>
+
+    <div class="contact">
+        <a href="https://bayleaf.dev">Home</a> |
+        <a href="https://chat.bayleaf.dev">Chat</a> |
+        <a href="https://api.bayleaf.dev">API</a> |
+        <a href="https://github.com/rndmcnlly/bayleaf">GitHub</a>
+    </div>
+</body>
+</html>

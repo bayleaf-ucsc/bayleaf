@@ -77,6 +77,26 @@ wait for approval before touching git history or remote state.
 
 ---
 
+## Git Workflow
+
+**Deploy first, commit later.** All services in this repo can be deployed to
+production without committing. Use this to let the developer feel out changes in
+prod before recording them in git. For `docs/` (GitHub Pages), deployment is
+coupled to pushes — so use a local dev server (`python3 -m http.server 8000
+--directory docs`) to preview changes before committing.
+
+**Do not commit or push unless explicitly asked.** Deploying to a live service
+is non-destructive and reversible; pushing to `main` is immediate and public.
+These are different levels of commitment.
+
+**Clean commit story over chronological accuracy.** When a session produces
+multiple small, related changes (e.g. a feature + copy tweaks + style fixes),
+prefer squashing them into a single coherent commit rather than recording each
+micro-step. The git log should read like an intentional changelog, not a
+transcript of the development session.
+
+---
+
 ## Commit Style
 
 ```
