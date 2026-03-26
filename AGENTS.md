@@ -28,10 +28,16 @@ bayleaf/
 │   ├── migrations/
 │   ├── wrangler.jsonc
 │   └── package.json
+├── chat/               # BayLeaf Chat — Open WebUI config & backup (has its own AGENTS.md)
+│   ├── DESIGN.md       # Full architecture, env vars, recovery procedure
+│   ├── models/         # Workspace model definitions (JSON + avatars)
+│   ├── tools/          # Custom toolkit source code
+│   └── functions/      # Filter & action source code
 ├── docs/               # GitHub Pages site → https://bayleaf.dev
 │   ├── CNAME
 │   ├── index.html      # Single-file about/landing page
 │   └── images/
+├── politics/           # Dependency audit, position papers
 ├── README.md
 └── AGENTS.md           # This file
 ```
@@ -40,6 +46,10 @@ bayleaf/
 
 `api/` is a Cloudflare Worker deployed at `https://api.bayleaf.dev`. See
 `api/AGENTS.md` for API-specific guidelines, code style, and commands.
+
+`chat/` is an Open WebUI instance on DigitalOcean App Platform at
+`https://chat.bayleaf.dev`. Managed via `doctl`. See `chat/AGENTS.md` for
+operational commands and `chat/DESIGN.md` for full architecture.
 
 ---
 
