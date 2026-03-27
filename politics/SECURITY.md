@@ -172,8 +172,15 @@ the repository.
 - **ZDR is narrow.** It covers inference only. Conversation histories exist in the
   application database.
 - **No formal incident response plan.** Issues are handled ad hoc by the operator.
-- **No BAA or FERPA compliance certification.** The service is not designed for
-  regulated data (HIPAA, FERPA-protected educational records, etc.).
+- **FERPA.** BayLeaf's data handling practices are compatible with FERPA
+  requirements: student data is not shared with third parties for non-educational
+  purposes, inference providers retain nothing (ZDR), and conversation histories
+  are stored in a single encrypted database accessible only to the system
+  administrator — a university employee operating under legitimate educational
+  interest. However, BayLeaf has not been formally designated as an institutional
+  system by UC Santa Cruz. This is a governance gap, not a technical one.
+- **HIPAA.** The service is not designed for protected health information and no
+  BAA is in place with any provider.
 - **Dependency on commercial providers.** OpenRouter, DigitalOcean, and Cloudflare
   are commercially funded companies with their own data access capabilities. See the
   [dependency audit](DEPENDENCIES.md) for a full analysis.
