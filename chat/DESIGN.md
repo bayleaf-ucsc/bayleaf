@@ -66,7 +66,9 @@ All env vars are set with scope `RUN_AND_BUILD_TIME` unless noted.
 | `OAUTH_AUTHORIZE_PARAMS` | `{"idphint":"urn:mace:incommon:ucsc.edu"}` | Preselect UCSC IdP (requires v0.8.11+) |
 | `OAUTH_CLIENT_ID` | `cilogon:/client_id/...` | CILogon client |
 | `OAUTH_CLIENT_SECRET` | `<REDACTED>` | Encrypted in DO |
-| `WEBUI_SECRET_KEY` | `<REDACTED>` | Encrypted in DO |
+| `WEBUI_SECRET_KEY` | `<REDACTED>` | Encrypted in DO; must be set explicitly (see below) |
+| `CORS_ALLOW_ORIGIN` | `https://chat.bayleaf.dev` | Restrict CORS to production origin |
+| `USER_AGENT` | `BayLeaf/1.0 (https://chat.bayleaf.dev)` | Identify outbound HTTP requests |
 | `ENABLE_OAUTH_GROUP_MANAGEMENT` | `true` | Sync groups from OAuth claims; see §1a |
 | `ENABLE_OAUTH_GROUP_CREATION` | `true` | Auto-create groups from claims |
 | `OAUTH_GROUPS_CLAIM` | `affiliation` | CILogon eduPerson affiliation |
@@ -84,6 +86,14 @@ All env vars are set with scope `RUN_AND_BUILD_TIME` unless noted.
 | `S3_ACCESS_KEY_ID` | `<REDACTED>` | |
 | `S3_SECRET_ACCESS_KEY` | `<REDACTED>` | |
 | `WEBUI_URL` | `https://chat.bayleaf.dev` | Canonical URL for OAuth callbacks |
+
+**`WEBUI_SECRET_KEY` gotcha.** OWUI's Docker entrypoint (`start.sh`) checks
+for this env var *in the shell* before Python starts. If the var is missing or
+empty, OWUI generates a random key and writes it to `.webui_secret_key` inside
+the container. On ephemeral container platforms like DO App Platform, this file
+doesn't survive redeploys — so every deploy gets a new key, silently
+invalidating all JWTs and any invite codes signed with the old key. Always set
+`WEBUI_SECRET_KEY` explicitly as a `type: SECRET` env var in the app spec.
 
 ### OpenRouter Connection
 
