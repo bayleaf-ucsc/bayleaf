@@ -23,7 +23,7 @@ sufficient to reconstruct the service from scratch.
 | **App name** | `bayleaf-chat-owui-app` |
 | **App ID** | `7d0addd4-85db-4fe3-b931-501ae88d7f7f` |
 | **Region** | `sfo` |
-| **Image** | `ghcr.io/open-webui/open-webui:v0.8.10` |
+| **Image** | `ghcr.io/open-webui/open-webui:v0.8.11` |
 | **Instance** | `apps-s-1vcpu-2gb` (1 instance) |
 | **HTTP port** | `8080` |
 
@@ -57,13 +57,21 @@ All env vars are set with scope `RUN_AND_BUILD_TIME` unless noted.
 |----------|-------|-------|
 | `WEBUI_NAME` | `BayLeaf` | Branding |
 | `ENABLE_SIGNUP` | `false` | No direct registration |
-| `ENABLE_OAUTH_SIGNUP` | `true` | Users sign up via Google |
+| `ENABLE_OAUTH_SIGNUP` | `true` | Users sign up via CILogon |
 | `ENABLE_LOGIN_FORM` | `false` | No password login |
-| `OPENID_PROVIDER_URL` | `https://accounts.google.com/.well-known/openid-configuration` | Google OIDC |
-| `OAUTH_PROVIDER_NAME` | `Google` | Login button label |
-| `OAUTH_CLIENT_ID` | `47286725529-bddnlon8kne28k28e4vgnql32ne9f2ig.apps.googleusercontent.com` | Google OAuth |
+| `OAUTH_MERGE_ACCOUNTS_BY_EMAIL` | `true` | Merge accounts across auth migrations |
+| `OPENID_PROVIDER_URL` | `https://cilogon.org/.well-known/openid-configuration` | CILogon OIDC |
+| `OAUTH_PROVIDER_NAME` | `UCSC` | Login button label |
+| `OAUTH_SCOPES` | `openid email profile org.cilogon.userinfo` | Includes affiliation claim |
+| `OAUTH_AUTHORIZE_PARAMS` | `{"idphint":"urn:mace:incommon:ucsc.edu"}` | Preselect UCSC IdP (requires v0.8.11+) |
+| `OAUTH_CLIENT_ID` | `cilogon:/client_id/...` | CILogon client |
 | `OAUTH_CLIENT_SECRET` | `<REDACTED>` | Encrypted in DO |
 | `WEBUI_SECRET_KEY` | `<REDACTED>` | Encrypted in DO |
+| `ENABLE_OAUTH_GROUP_MANAGEMENT` | `true` | Sync groups from OAuth claims; see §1a |
+| `ENABLE_OAUTH_GROUP_CREATION` | `true` | Auto-create groups from claims |
+| `OAUTH_GROUPS_CLAIM` | `affiliation` | CILogon eduPerson affiliation |
+| `OAUTH_GROUPS_SEPARATOR` | `;` | CILogon uses semicolons |
+| `OAUTH_BLOCKED_GROUPS` | `["legacy:*"]` | Protect manually-managed groups; see §1a |
 | `ENABLE_EVALUATION_ARENA_MODELS` | `false` | |
 | `ENABLE_MESSAGE_RATING` | `false` | |
 | `ENABLE_COMMUNITY_SHARING` | `false` | |
@@ -82,6 +90,53 @@ All env vars are set with scope `RUN_AND_BUILD_TIME` unless noted.
 OWUI is configured (via admin UI, not env vars) with an OpenRouter API
 connection that exposes all ZDR-eligible models. The OpenRouter API key is
 stored in OWUI's admin settings, not in the app spec.
+
+### 1a. Group Management & Naming Convention
+
+BayLeaf uses OWUI's OAuth group sync to automatically assign users to groups
+based on CILogon's `affiliation` claim. When a user logs in, CILogon returns
+semicolon-separated eduPerson values like
+`Faculty@ucsc.edu;Employee@ucsc.edu;Member@ucsc.edu`. OWUI parses these into
+individual group names, creates groups that don't exist yet, and reconciles
+membership — adding the user to groups in the claim and removing them from
+groups not in the claim.
+
+**The clobbering problem.** OAuth group sync is a full reconcile: it removes
+users from any group not present in the current claim. Without protection,
+manually-managed groups (invite-code groups, course groups, research groups)
+would be stripped from users on their next login.
+
+**Solution: namespaced groups with `OAUTH_BLOCKED_GROUPS`.** Blocked groups are
+immune to OAuth sync in both directions — they are never added to or removed
+from during the login reconciliation. OWUI's `is_in_blocked_groups()` supports
+exact matches, shell-style wildcards (`*`, `?`), and regex patterns.
+
+**Naming convention:**
+
+| Prefix | Purpose | Examples |
+|--------|---------|---------|
+| `legacy:` | Pre-existing manually-managed groups | `legacy:amsmith-group`, `legacy:https://canvas.ucsc.edu/courses/89028` |
+| `course:` | Per-course access (future) | `course:CMPM 146 S26` |
+| `access:` | Special access tiers (future) | `access:beta-testers`, `access:elevated-rate` |
+| `admin:` | Operational groups (future) | `admin:operators` |
+| *(no prefix, `@ucsc.edu` suffix)* | OAuth-managed affiliation | `Faculty@ucsc.edu`, `Student@ucsc.edu`, `Member@ucsc.edu` |
+
+The current blocked pattern is `["legacy:*"]`. As new prefixes are introduced,
+add them: `["legacy:*", "course:*", "access:*", "admin:*"]`.
+
+**Key details:**
+
+- **Invite codes are UUID-based.** The `accept_invites_toolkit` encodes the
+  group UUID (not name) into invite JWTs. Renaming a group does not invalidate
+  outstanding invite codes.
+- **Model access grants use UUIDs.** Renaming a group does not affect which
+  users can see which models — `access_grants` reference group IDs, not names.
+- **User grants are unaffected.** OAuth group sync only touches group
+  membership. Direct user grants on models (via `access_grants` with
+  `principal_type: "user"`) are a separate system entirely.
+- **OAuth group creation is enabled.** If a user logs in with an affiliation
+  value that doesn't match any existing group, OWUI auto-creates it. This means
+  new affiliation groups (e.g. `Affiliate@ucsc.edu`) appear automatically.
 
 ---
 
