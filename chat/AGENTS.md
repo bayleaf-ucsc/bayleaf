@@ -32,8 +32,22 @@ new plaintext value — DO encrypts it on deploy.
 
 ## OWUI Admin API
 
-Model, tool, and function management uses the OWUI API with a bearer token.
-See `DESIGN.md` §6 for the sync workflow and `scripts/owui.py` for the CLI.
+Model, tool, function, user, and group management uses
+[`owui-cli`](https://github.com/rndmcnlly/owui-cli) — a purpose-built CLI
+for the OWUI admin API. Install via `uvx owui-cli`.
+
+```bash
+export OWUI_URL=https://chat.bayleaf.dev  # target instance
+export OWUI_TOKEN=<bearer-token>          # admin JWT (see §7 in DESIGN.md)
+owui-cli tools list                      # list all tools
+owui-cli tools pull <id>                 # dump tool source to stdout
+owui-cli tools deploy <source.py> [id]   # push tool source to live instance
+owui-cli users find <query>              # search users by name/email
+owui-cli groups add-user <id> <user-id>  # add user to group
+owui-cli --json models show <id>         # full model JSON
+```
+
+See `DESIGN.md` §7 for the full sync workflow.
 
 ## Don'ts
 

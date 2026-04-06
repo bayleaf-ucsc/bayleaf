@@ -162,9 +162,9 @@ students first log in.
 
 1. Pull the Canvas roster: `canvaslms users -c COURSE_ID -s -e`
 2. For each student email, create a placeholder:
-   `owui.py users add <email> <name>` (exits 2 if already exists — safe to re-run)
+   `owui-cli users add <email> <name>` (exits 2 if already exists — safe to re-run)
 3. Look up the user ID and add to the course group:
-   `owui.py groups add-user <group-id> <user-id>`
+   `owui-cli groups add-user <group-id> <user-id>`
 4. Student logs in via CILogon for the first time → OWUI finds the placeholder
    by email (`OAUTH_MERGE_ACCOUNTS_BY_EMAIL=true`), stamps the OIDC `sub` onto
    it, and updates the display name from the OIDC claim
@@ -172,18 +172,18 @@ students first log in.
 5. The course model (e.g. `brace3-92591`) is already in the group — Brace just
    appears in the student's model list with no action required from them.
 
-**Tooling:** See `scripts/owui.py` (`users add`, `users find`, `users show`,
-`groups add-user`) and `canvaslms` for roster export. A provisioning script for
-a given course should pull the roster programmatically rather than transcribing
-emails by hand to avoid transcription errors.
+**Tooling:** See [`owui-cli`](https://github.com/rndmcnlly/owui-cli) (`users add`,
+`users find`, `users show`, `groups add-user`) and `canvaslms` for roster export.
+A provisioning script for a given course should pull the roster programmatically
+rather than transcribing emails by hand to avoid transcription errors.
 
 **TAs and guests:** Add non-student enrollments (TAs, guests) the same way —
 `canvaslms users -c COURSE_ID -a -e` lists TAs. Add them to the group manually
 if not on the Canvas roster.
 
-**Re-running is safe:** `owui.py users add` exits with code 2 if the account
+**Re-running is safe:** `owui-cli users add` exits with code 2 if the account
 already exists (either a prior placeholder or a student who logged in early).
-`owui.py groups add-user` is idempotent for existing members. A provisioning
+`owui-cli groups add-user` is idempotent for existing members. A provisioning
 script can be re-run mid-term to catch late adds from the registrar.
 
 **Caveats:**
@@ -427,7 +427,7 @@ models and tools. BayLeaf uses skills to inject role-specific behavioral
 guidance and platform feature hints, scoped to the OAuth groups that
 correspond to each campus affiliation.
 
-Manage via `owui.py skills` or the admin API at `/api/v1/skills/`.
+Manage via `owui-cli skills` or the admin API at `/api/v1/skills/`.
 
 | ID | Active | Access | Description |
 |----|--------|--------|-------------|
@@ -502,57 +502,86 @@ To reconstruct BayLeaf Chat from this backup:
 ## 7. Synchronization Workflow
 
 This directory is the source of truth for model system prompts, tool source
-code, and function source code. Changes flow in two directions:
+code, and function source code. Changes flow in two directions.
 
-### Pull (backup from live instance)
+### CLI tool: `owui-cli`
+
+[`owui-cli`](https://github.com/rndmcnlly/owui-cli) is a purpose-built CLI
+for the OWUI admin API. Install via `uvx owui-cli`.
 
 ```bash
-OWUI_TOKEN=<bearer-token> python3 chat/_backup.py
+export OWUI_URL=https://chat.bayleaf.dev  # target instance
+export OWUI_TOKEN=<bearer-token>          # admin JWT
+owui-cli tools list                      # list all tools
+owui-cli tools pull <id>                 # dump tool source to stdout
+owui-cli tools deploy <source.py> [id]   # push tool source to live
+owui-cli functions pull <id>             # dump function source to stdout
+owui-cli functions deploy <source.py>    # push function source to live
+owui-cli --json models show <id>         # full model JSON
+owui-cli models update <model.json>      # push model config to live
+owui-cli users find <query>              # search users
+owui-cli groups add-user <id> <user-id>  # add user to group
+owui-cli schema                          # explore the full OWUI API surface
 ```
 
-Exports models, tools, and functions from the live OWUI instance into this
-directory. Then `git diff chat/` to review changes.
-
-### Push (apply repo changes to live instance)
-
-There is no automated push script. Use the OWUI admin API directly:
-
-| Resource | Endpoint | Method |
-|----------|----------|--------|
-| Model | `/api/v1/models/model/update` | `POST` (body: full model JSON with `id`, `name`, `meta`, `params`, `base_model_id`) |
-| Tool | `/api/v1/tools/id/{id}/update` | `POST` (body: full tool JSON with `id`, `name`, `meta`, `content`) |
-| Function | `/api/v1/functions/id/{id}/update` | `POST` (body: full function JSON with `id`, `name`, `meta`, `content`) |
-
-All endpoints require `Authorization: Bearer <token>` and admin role.
-
-Alternatively, edit each item manually in the OWUI admin UI (Admin Panel ->
-Workspace -> Models / Tools / Functions).
+Run `owui-cli` with no arguments for the full command listing.
 
 ### Bearer token
 
-Get a token from the OWUI web UI: open browser dev tools, find any API
-request, and copy the `Authorization: Bearer ...` header value. Tokens are
-session-scoped and expire.
+`owui-cli` reads `OWUI_URL` and `OWUI_TOKEN` from the environment. Tokens
+are JWTs that expire; refresh by copying a fresh token from
+`localStorage.getItem("token")` in the browser console.
 
-### API quirks
+### Pull (single item)
 
-- **Tools list** (`GET /api/v1/tools/`) uses `defer_content=True` internally,
-  so responses omit the `content` (source code) field. Fetch individual tools
-  via `GET /api/v1/tools/id/{id}` to get full data.
-- **Functions list** (`GET /api/v1/functions/`) returns `FunctionResponse`
-  which also omits `content`. Use `GET /api/v1/functions/id/{id}` for full
-  data including source. The backup script handles this by discovering IDs
-  from the list and then fetching each function individually.
+```bash
+owui-cli tools pull lathe > chat/tools/lathe/tool.py
+owui-cli functions pull rate_limit_filter > chat/functions/rate_limit_filter/function.py
+owui-cli --json models show basic > chat/models/basic/model.json
+```
 
-### Upstream API source (for future reference)
+Then `git diff chat/` to review changes.
 
-The authoritative route definitions live in the Open WebUI repo at:
+### Pull (full backup)
+
+```bash
+owui-cli tools pull-all chat/tools/
+owui-cli functions pull-all chat/functions/
+owui-cli skills pull-all chat/skills/
+owui-cli models pull-all chat/models/
+```
+
+Each `pull-all` command writes `<dir>/<id>/source + <dir>/<id>/meta.json`.
+Models pull-all filters to workspace models only (those with a
+`base_model_id`), discovers all models dynamically, and extracts base64
+data-URI profile images into separate files. Then `git diff chat/` to review.
+
+The legacy `_backup.py` script still exists for one feature `owui-cli`
+doesn't handle: splitting the procurement model's ~670K-char policy context
+from the system prompt into a separate `context.md` file. This is too
+app-specific for the CLI.
+
+### Push (apply repo changes to live instance)
+
+```bash
+owui-cli tools deploy chat/tools/lathe/tool.py lathe
+owui-cli functions deploy chat/functions/rate_limit_filter/function.py rate_limit_filter
+owui-cli models update chat/models/basic/model.json
+```
+
+Alternatively, edit items manually in the OWUI admin UI (Admin Panel →
+Workspace → Models / Tools / Functions).
+
+### Upstream API source (for reference)
+
+The authoritative route definitions live in the Open WebUI repo:
 
 - [`backend/open_webui/routers/models.py`](https://github.com/open-webui/open-webui/blob/main/backend/open_webui/routers/models.py)
 - [`backend/open_webui/routers/tools.py`](https://github.com/open-webui/open-webui/blob/main/backend/open_webui/routers/tools.py)
 - [`backend/open_webui/routers/functions.py`](https://github.com/open-webui/open-webui/blob/main/backend/open_webui/routers/functions.py)
 
-These are on the `main` branch and may change between OWUI releases.
+`owui-cli schema` and `owui-cli schema <resource>` can also be used to
+explore the API surface directly.
 
 ---
 

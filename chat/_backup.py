@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
 """
-Backup script for BayLeaf Chat (OWUI) configuration.
-Pulls models, tools, and functions from the OWUI API and writes them
-into the chat/ directory structure for version control.
+LEGACY backup script for BayLeaf Chat (OWUI) configuration.
 
-Usage:
-    OWUI_TOKEN=<bearer-token> python3 chat/_backup.py
+PREFER owui-cli pull-all commands instead:
+    owui-cli tools pull-all chat/tools/
+    owui-cli functions pull-all chat/functions/
+    owui-cli models pull-all chat/models/
 
-This script is disposable — delete it after running, or keep it for future backups.
+See https://github.com/rndmcnlly/owui-cli
+
+This script's only remaining purpose is splitting the procurement model's
+~670K-char policy context from the system prompt into a separate context.md.
+For everything else, owui-cli pull-all is better (dynamic model discovery,
+profile image extraction, source/metadata splitting).
+
+NOTE: MODEL_IDS is hardcoded and must be updated manually when workspace
+models are added or removed. Tools and functions are discovered dynamically.
 """
 
 import os
