@@ -44,12 +44,12 @@ bayleaf/
 
 `docs/` is published via GitHub Pages at `https://bayleaf.dev`.
 
-`api/` is a Cloudflare Worker deployed at `https://api.bayleaf.dev`. See
-`api/AGENTS.md` for API-specific guidelines, code style, and commands.
+`api/` is a Cloudflare Worker deployed at `https://api.bayleaf.dev`.
+**Read `api/AGENTS.md` before working on API code or infrastructure.**
 
 `chat/` is an Open WebUI instance on DigitalOcean App Platform at
-`https://chat.bayleaf.dev`. Managed via `doctl`. See `chat/AGENTS.md` for
-operational commands and `chat/DESIGN.md` for full architecture.
+`https://chat.bayleaf.dev`. **Read `chat/AGENTS.md` before working on Chat
+configuration, models, tools, functions, or user/group management.**
 
 ---
 

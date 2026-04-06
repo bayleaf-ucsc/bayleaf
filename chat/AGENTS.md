@@ -1,8 +1,14 @@
 # BayLeaf Chat
 
 Open WebUI deployment at `chat.bayleaf.dev` — OIDC auth (CILogon), curated
-workspace models, custom tools/functions, rate limiting. See `DESIGN.md` for
-full architecture and recovery docs.
+workspace models, custom tools/functions, rate limiting.
+
+**Read `DESIGN.md` before answering questions about this deployment.** It
+documents OIDC configuration, user provisioning workflows, group management,
+model access control, tool/function architecture, and recovery procedures.
+Many operational details (e.g. how placeholder accounts merge on first OIDC
+login, how OAuth group sync interacts with manually-managed groups) are only
+documented there.
 
 ## Infrastructure
 
