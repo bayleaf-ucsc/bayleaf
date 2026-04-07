@@ -8,7 +8,7 @@ import type { SandboxInfo } from '../daytona';
 import {
   BaseLayout,
   RecommendedModelHint,
-  OpencodeOnboarding,
+  CodingAgentCard,
   cardStyle,
   btnStyle,
   btnDangerStyle,
@@ -335,7 +335,7 @@ export const DashboardPage: FC<{
 
       {hasKey && <SandboxCard sandboxInfo={sandboxInfo ?? null} />}
 
-      <OpencodeOnboarding recommendedModel={recommendedModel} />
+      <CodingAgentCard recommendedModel={recommendedModel} />
 
       <DashboardScripts bayleafToken={row?.bayleaf_token || ''} />
     </BaseLayout>

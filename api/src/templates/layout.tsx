@@ -214,23 +214,38 @@ export const RecommendedModelHint: FC<{ model: string }> = ({ model }) => {
   );
 };
 
-export const OpencodeOnboarding: FC<{ recommendedModel: string }> = ({ recommendedModel: _ }) => (
+export const CodingAgentCard: FC<{ recommendedModel: string }> = ({ recommendedModel: _ }) => (
   <div class={cardStyle} style="background: #f5f0ff; border-color: #7c3aed;">
-    <h3>Use BayLeaf with OpenCode</h3>
+    <h3>Use the BayLeaf API in a coding agent</h3>
     <p>
-      <a href="https://opencode.ai/" target="_blank">OpenCode</a> is an open-source AI coding
-      agent that runs in your terminal. Connect it to BayLeaf for free LLM-powered coding assistance.
+      AI coding agents run in your terminal and can read, edit, and execute code on your behalf.
+      BayLeaf works with several open-source options — a free alternative to commercial tools
+      like <a href="https://claude.ai/code" target="_blank">Claude Code</a> or{' '}
+      <a href="https://github.com/openai/codex" target="_blank">Codex CLI</a>.
     </p>
-    <ol>
-      <li><a href="https://opencode.ai/docs" target="_blank">Install OpenCode</a></li>
+    <ul style="margin: 0.75rem 0; padding-left: 1.25rem; line-height: 1.8;">
       <li>
-        Launch <code>opencode</code> and ask it:<br />
-        <em>
-          Help me set up BayLeaf as a provider. Load the skill from{' '}
-          <a href="docs/SKILL.md" target="_blank">https://api.bayleaf.dev/docs/SKILL.md</a>
-        </em>
+        <a href="https://opencode.ai/" target="_blank"><strong>OpenCode</strong></a>{' '}
+        — good default; free models available via OpenCode Zen
       </li>
-    </ol>
+      <li>
+        <a href="https://github.com/block/goose" target="_blank"><strong>Goose</strong></a>{' '}
+        — includes free inference credit on first launch; optional desktop app
+      </li>
+      <li>
+        <a href="https://shittycodingagent.ai/" target="_blank"><strong>pi</strong></a>{' '}
+        — minimal core, strong extension model; bring your own API key
+      </li>
+    </ul>
+    <p>
+      Once you have a working agent, you can hand it the setup instructions and let it configure
+      itself — or follow them yourself:
+    </p>
+    <p style="margin: 0.5rem 0 0 0;">
+      <a href="/docs/SKILL.md" target="_blank" style="font-weight: 500;">
+        https://api.bayleaf.dev/docs/SKILL.md
+      </a>
+    </p>
   </div>
 );
 

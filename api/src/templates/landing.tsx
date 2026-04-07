@@ -6,7 +6,7 @@ import type { FC } from 'hono/jsx';
 import {
   BaseLayout,
   RecommendedModelHint,
-  OpencodeOnboarding,
+  CodingAgentCard,
   cardStyle,
   btnStyle,
 } from './layout';
@@ -42,6 +42,6 @@ export const LandingPage: FC<{ showCampusPass: boolean; recommendedModel: string
       </div>
     )}
 
-    <OpencodeOnboarding recommendedModel={recommendedModel} />
+    <CodingAgentCard recommendedModel={recommendedModel} />
   </BaseLayout>
 );
