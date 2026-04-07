@@ -249,5 +249,109 @@ your ${bt}sk-bayleaf-...${bt} key.
 ### 3. Select the model
 
 Run ${bt}/models${bt} and select ${bt}${model}${bt} under BayLeaf API.
+
+---
+
+## pi Setup
+
+To use BayLeaf with the [pi coding agent](https://github.com/badlogic/pi-mono)
+(${bt}npm install -g @mariozechner/pi-coding-agent${bt}):
+
+### 1. Store the API key
+
+${fence}bash
+mkdir -p ~/.tokens && chmod 700 ~/.tokens
+echo -n 'sk-bayleaf-...' > ~/.tokens/bayleaf-api
+chmod 600 ~/.tokens/bayleaf-api
+${fence}
+
+### 2. Add provider config
+
+Create or edit ${bt}~/.pi/agent/models.json${bt}:
+
+${fence}json
+{
+  "providers": {
+    "bayleaf": {
+      "baseUrl": "https://api.bayleaf.dev/v1",
+      "apiKey": "!cat ~/.tokens/bayleaf-api",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "${model}",
+          "name": "${modelName} (BayLeaf)"
+        }
+      ]
+    }
+  }
+}
+${fence}
+
+The ${bt}!${bt} prefix tells pi to resolve the value by running a shell command.
+If you prefer, you can set ${bt}BAYLEAF_API_KEY${bt} in your environment and use
+${bt}"apiKey": "BAYLEAF_API_KEY"${bt} instead (pi checks env vars by name before
+treating the string as a literal).
+
+### 3. Use the model
+
+${fence}bash
+pi --model bayleaf/${model} "Help me refactor this code"
+${fence}
+
+Or launch interactively and switch with ${bt}Ctrl+P${bt}:
+
+${fence}bash
+pi --model bayleaf/${model}
+${fence}
+
+---
+
+## Goose Setup
+
+To use BayLeaf with [Goose](https://github.com/block/goose)
+(${bt}curl -fsSL https://github.com/block/goose/releases/latest/download/install.sh | sh${bt}).
+Requires Goose **1.29+**.
+
+### 1. Create a custom provider file
+
+Create ${bt}~/.config/goose/custom_providers/bayleaf.json${bt}:
+
+${fence}json
+{
+  "name": "bayleaf",
+  "engine": "openai",
+  "display_name": "BayLeaf API",
+  "description": "OpenRouter-proxying LLM inference for UC Santa Cruz. Zero-data-retention.",
+  "api_key_env": "BAYLEAF_API_KEY",
+  "base_url": "https://api.bayleaf.dev/v1/chat/completions",
+  "models": [
+    {
+      "name": "${model}",
+      "context_limit": 128000,
+      "max_tokens": 16384
+    }
+  ],
+  "supports_streaming": true
+}
+${fence}
+
+### 2. Store the API key
+
+Run ${bt}goose configure${bt}, select **BayLeaf API** from the provider list, and paste
+your ${bt}sk-bayleaf-...${bt} key. Goose stores it in your system keychain.
+
+Alternatively, set ${bt}BAYLEAF_API_KEY${bt} in your environment for the session.
+
+### 3. Use the model
+
+${fence}bash
+GOOSE_PROVIDER=bayleaf GOOSE_MODEL=${model} goose session
+${fence}
+
+Or for non-interactive use:
+
+${fence}bash
+GOOSE_PROVIDER=bayleaf GOOSE_MODEL=${model} goose run --text "Help me refactor this code"
+${fence}
 `;
 }
