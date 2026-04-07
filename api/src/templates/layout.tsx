@@ -209,7 +209,7 @@ export const RecommendedModelHint: FC<{ model: string }> = ({ model }) => {
       <code><a href={modelUrl} target="_blank">{model}</a></code>{' '}
       as a reasonable default. Browse all models at{' '}
       <a href="https://openrouter.ai/models" target="_blank">openrouter.ai/models</a>
-      {' '}&mdash; only zero data retention (ZDR) providers are available through BayLeaf API.
+      {' '}Only zero-data-retention (ZDR) providers are available through BayLeaf API.
     </p>
   );
 };
@@ -219,7 +219,7 @@ export const CodingAgentCard: FC<{ recommendedModel: string }> = ({ recommendedM
     <h3>Use the BayLeaf API in a coding agent</h3>
     <p>
       AI coding agents run in your terminal and can read, edit, and execute code on your behalf.
-      BayLeaf works with several open-source options — a free alternative to commercial tools
+      BayLeaf works with several open-source options, a free alternative to commercial tools
       like <a href="https://claude.ai/code" target="_blank">Claude Code</a> or{' '}
       <a href="https://github.com/openai/codex" target="_blank">Codex CLI</a>.
     </p>
@@ -239,7 +239,7 @@ export const CodingAgentCard: FC<{ recommendedModel: string }> = ({ recommendedM
     </ul>
     <p>
       Once you have a working agent, you can hand it the setup instructions and let it configure
-      itself — or follow them yourself:
+      itself, or follow them yourself:
     </p>
     <p style="margin: 0.5rem 0 0 0;">
       <a href="/docs/SKILL.md" target="_blank" style="font-weight: 500;">

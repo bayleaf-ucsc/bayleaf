@@ -134,7 +134,7 @@ export const KeyInfoResponseSchema = z.object({
 export const KeyCreatedResponseSchema = z.object({
   success: z.literal(true),
   key: z.string().openapi({
-    description: 'The new BayLeaf API key (sk-bayleaf-...). Store it securely — it cannot be retrieved again.',
+    description: 'The new BayLeaf API key (sk-bayleaf-...). Store it securely; it cannot be retrieved again.',
   }),
 }).openapi('KeyCreatedResponse');
 

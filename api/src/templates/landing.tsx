@@ -36,7 +36,7 @@ export const LandingPage: FC<{ showCampusPass: boolean; recommendedModel: string
       <div class={cardStyle} style="background: #f0f4ff; border-color: #4a7abf;">
         <h3>On Campus?</h3>
         <p>
-          When you're on the UCSC network, you can use the API instantly &mdash; no sign-in or
+          When you're on the UCSC network, you can use the API instantly: no sign-in or
           API key required. Just connect to campus Wi-Fi and visit this page again.
         </p>
       </div>

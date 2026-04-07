@@ -81,7 +81,7 @@ const LlmCard: FC<{ orKey: OpenRouterKey; recommendedModel: string }> = ({ orKey
         </div>
       </div>
       <p style="margin-top: 0.5rem; font-size: 0.85em; color: #666;">
-        Daily limit: {limitDisplay} — resets <span id="resetHint">at midnight UTC</span>.
+        Daily limit: {limitDisplay}. Resets <span id="resetHint">at midnight UTC</span>.
         Increased limits are <a href="https://bayleaf.dev/support" style="color: #2a5298;">available upon request</a>.
       </p>
       <details style="margin-top: 1rem;">
@@ -290,7 +290,7 @@ const DashboardScripts: FC<{ bayleafToken: string }> = ({ bayleafToken }) => (
           displaySlot.innerHTML = \`
             <div class="success" style="margin-bottom: 1rem;">
               <strong>Your new API key is ready.</strong>
-              <p style="font-size: 0.9em; color: #155724; margin: 0.25rem 0 0 0;">Use the Copy button — the key is hidden to keep it safe during screen sharing.</p>
+              <p style="font-size: 0.9em; color: #155724; margin: 0.25rem 0 0 0;">Use the Copy button; the key is hidden to keep it safe during screen sharing.</p>
             </div>
             <div class="key-display" style="margin-bottom: 1rem;">
               <input type="password" value="\${newKey}" id="apiKey" readonly>
