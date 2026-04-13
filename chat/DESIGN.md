@@ -138,9 +138,9 @@ add them: `["legacy:*", "course:*", "access:*", "admin:*"]`.
 
 **Key details:**
 
-- **Invite codes are UUID-based.** The `accept_invites_toolkit` encodes the
-  group UUID (not name) into invite JWTs. Renaming a group does not invalidate
-  outstanding invite codes.
+- **Invite codes are UUID-based.** The `help_toolkit` (formerly
+  `accept_invites_toolkit`) encodes the group UUID (not name) into invite JWTs.
+  Renaming a group does not invalidate outstanding invite codes.
 - **Model access grants use UUIDs.** Renaming a group does not affect which
   users can see which models — `access_grants` reference group IDs, not names.
 - **User grants are unaffected.** OAuth group sync only touches group
@@ -232,9 +232,10 @@ throughput. Vision is disabled; file upload and code interpreter are enabled.
 Six suggestion prompts guide new users.
 
 **Help** — Minimal capabilities (no vision, no file upload, no code interpreter).
-Bound to `accept_invites_toolkit` so it can process invite codes. System prompt
-(`Help v1.1`) describes BayLeaf facts and firmly redirects non-help tasks to
-Basic.
+Uses `help_filter` to force-inject `help_toolkit` (stealth pattern, see §3a),
+giving users tools to list their groups, see available models, and process invite
+codes. System prompt (`Help v1.1`) describes BayLeaf facts and firmly redirects
+non-help tasks to Basic.
 
 **Brace (v2, `brace-85291`)** — Course assistant for CMPM 121 Fall 2025. No
 static system prompt — `brace_filter` fetches the system prompt from a Canvas
@@ -278,7 +279,6 @@ grants).
 | ID | Name | Description |
 |----|------|-------------|
 | `lathe` | Code Sandbox | Coding agent tools backed by per-user Daytona sandbox VMs (see below) |
-| `accept_invites_toolkit` | Accept Invites | JWT-based invite code system for joining groups |
 | `tavily_web_search` | Web Search | Tavily API search (valve: API key) |
 | `jina_reader_toolkit` | Web Page Content | Jina Reader API for fetching web pages as markdown (valve: API key) |
 | `deepinfra_key_generator_toolkit` | DeepInfra Key Generator | Generates scoped, time-limited DeepInfra API keys (valve: API key, token name, model list) |
@@ -336,14 +336,63 @@ variables like `{"GITHUB_TOKEN":"ghp_..."}`) that are injected into every
 - `auto_archive_minutes` — Archive delay after stop (default: 60)
 - `sandbox_language` — Default runtime (default: `python`)
 
-### Restricted Tools
+### Restricted Tools (Stealth Toolkits)
+
+| ID | Name | Access | Injected by | Description |
+|----|------|--------|-------------|-------------|
+| `help_toolkit` | Help | No grants (stealth) | `help_filter` | Group membership listing, model access listing, invite code acceptance/creation. Valve: `INVITE_SIGNING_KEY` (optional, falls back to `WEBUI_SECRET_KEY`). |
+| `brace3_canvas_toolkit` | Brace3 Canvas | No grants (stealth) | `brace3_filter` | Canvas LMS read access + date localization for Brace v3. Token snarfed from the filter at call time; no separate valve needed. |
+| `brace_toolkit` | Brace | No grants (stealth) | `brace_filter` | Canvas API, GitHub API, Google Drive used by Brace v2 (valve: multiple keys). |
+
+### Other Restricted Tools
 
 | ID | Name | Access | Description |
 |----|------|--------|-------------|
 | `gws_toolkit` | Google Workspace | Admin only (no grants) | Per-user OAuth2 access to Google Drive (see below) |
-| `brace_toolkit` | Brace's toolkit | Admin only (no grants) | Canvas API, GitHub API, Google Drive used by Brace v2 (valve: multiple keys) |
-| `brace3_canvas_toolkit` | Brace3 Canvas Toolkit | Admin only (no grants) | Canvas LMS read access + date localization for Brace v3. Not activated by users — force-injected by `brace3_filter`. Token is snarfed from the filter at call time; no separate valve needed. Allowlist-based URL validation; results filtered with `jq`. |
 | `mark_time_toolkit` | Mark Time | Admin only (no grants) | Stopwatch/timer with per-chat LRU cache (user valve: timezone) |
+
+### 3a. Stealth Toolkit Pattern
+
+Several toolkits are not directly visible to users. Instead, a paired filter
+force-injects the toolkit into the request at runtime. This gives the admin full
+control over which models get which tools, without users being able to
+accidentally enable or disable them via the chat composer's tool picker.
+
+**How it works:**
+
+1. **Create the toolkit** normally (`tools deploy`), but **do not grant any
+   access** (`access_grants: []`). With no grants, the toolkit is invisible in
+   the user-facing tool picker.
+
+2. **Create a paired filter** whose `inlet` method appends the toolkit ID to
+   `body["tool_ids"]`:
+
+   ```python
+   class Filter:
+       def inlet(self, body, __user__, __metadata__):
+           body.setdefault("tool_ids", []).append("my_toolkit")
+           return body
+   ```
+
+3. **Attach the filter to the model** (via `params.filter_ids` on the model
+   config). The filter runs before tool dispatch, so the toolkit is available
+   to the model even though the user never selected it.
+
+**Current instances:**
+
+| Filter | Toolkit | Model(s) |
+|--------|---------|----------|
+| `help_filter` | `help_toolkit` | `help` |
+| `brace3_filter` | `brace3_canvas_toolkit` | `brace3-*` |
+| `brace_filter` | `brace_toolkit` | `brace-*` |
+
+**When to use this pattern:**
+
+- The toolkit should always be available on a specific model, not user-selectable.
+- The toolkit exposes internal APIs (groups, models, access grants) that should
+  not be casually browsable from arbitrary models.
+- The filter needs to do additional setup (e.g. fetch a system prompt, derive
+  context from the model ID) alongside the toolkit injection.
 
 ### Google Workspace (GWS Toolkit)
 
@@ -384,6 +433,7 @@ These are **never** committed to this repo:
 - `tavily_web_search` — `tavily_api_key`
 - `jina_reader_toolkit` — `JINA_API_KEY`
 - `deepinfra_key_generator_toolkit` — `API_KEY`, `API_TOKEN_NAME`, `MODELS`, `EXPIRES_DELTA`
+- `help_toolkit` — `INVITE_SIGNING_KEY` (optional; falls back to `WEBUI_SECRET_KEY` if empty)
 - `brace_toolkit` — `GITHUB_API_TOKEN`, `CANVAS_ACCESS_TOKEN`, `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON`
 - `brace3_filter` — `CANVAS_ACCESS_TOKEN` (used by both `brace3_filter` and `brace3_canvas_toolkit`; the toolkit snarfs it from the filter instance)
 
@@ -398,6 +448,7 @@ pipeline. Each is in `functions/<id>/` with `function.py` and `meta.json`.
 |----|------|--------|--------|-------------|
 | `rate_limit_filter` | filter | yes | **yes** | Per-user rate limiting (10/min, 50/hr, 100/3hr sliding window) |
 | `depth_limit_filter` | filter | yes | no | Halves max response tokens with each turn (disabled) |
+| `help_filter` | filter | no | yes | Injects `help_toolkit` into the Help model (stealth pattern, see §3a). No valves. |
 | `brace_submit_action` | action | no | yes | Button to submit conversation HTML to Canvas assignment (Brace v2 only) |
 | `brace_filter` | filter | no | yes | Injects `brace_toolkit` and fetches system prompt from Canvas wiki page at hardcoded slug (Brace v2) |
 | `brace3_filter` | filter | no | yes | Injects `brace3_canvas_toolkit` and fetches system prompt from Canvas page by title "Brace3 System Prompt" (Brace v3). Derives course ID from model ID (`brace3-NNN`). Raises on missing page. Valve: `CANVAS_ACCESS_TOKEN`. |
@@ -616,9 +667,11 @@ chat/
 │   ├── lathe/
 │   │   ├── tool.py          # Code Sandbox — coding agent tools (Daytona sandboxes)
 │   │   └── meta.json
-│   ├── accept_invites_toolkit/
+│   ├── accept_invites_toolkit/  # Legacy — superseded by help_toolkit
 │   │   ├── tool.py
 │   │   └── meta.json
+│   ├── help_toolkit/            # Stealth — injected by help_filter
+│   │   └── tool.py
 │   ├── tavily_web_search/
 │   │   ├── tool.py
 │   │   └── meta.json
@@ -666,6 +719,8 @@ chat/
     ├── brace_filter/        # Brace v2 — hardcoded slug, fallback on error
     │   ├── function.py
     │   └── meta.json
+    ├── help_filter/         # Stealth toolkit injector for Help model
+    │   └── function.py
     └── brace3_filter/       # Brace v3 — title lookup, markdownify, raises on missing page
         └── function.py      # No meta.json
 ```
