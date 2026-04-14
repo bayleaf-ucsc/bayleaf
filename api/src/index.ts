@@ -16,7 +16,7 @@ import { OpenAPIHono, createRoute } from '@hono/zod-openapi';
 import { cors } from 'hono/cors';
 import type { AppEnv } from './types';
 import { renderErrorPage } from './templates/layout';
-import { getModelName } from './openrouter';
+import { getModelInfo } from './openrouter';
 import { authRoutes } from './routes/auth';
 import { dashboardRoutes } from './routes/dashboard';
 import { keyRoutes } from './routes/key';
@@ -77,8 +77,8 @@ const recommendedModelRoute = createRoute({
 
 app.openapi(recommendedModelRoute, async (c) => {
   const model = c.env.RECOMMENDED_MODEL;
-  const name = await getModelName(model);
-  return c.json({ model, name: name ?? model }, 200);
+  const info = await getModelInfo(model);
+  return c.json({ model, name: info?.name ?? model }, 200);
 });
 
 // ── Mount route groups ────────────────────────────────────────────

@@ -93,17 +93,70 @@ export async function createKey(name: string, env: Bindings): Promise<OpenRouter
   return keyData;
 }
 
+/** Per-million-token cost breakdown for a model. */
+export interface ModelCost {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
+/** Raw per-token cost strings from OpenRouter (used for Goose, which expects per-token USD). */
+export interface ModelCostRaw {
+  prompt: string;
+  completion: string;
+}
+
+/** Model metadata returned by getModelInfo. */
+export interface ModelInfo {
+  name: string;
+  cost: ModelCost;
+  costRaw: ModelCostRaw;
+}
+
 /**
- * Look up a model's display name from the OpenRouter public models list.
+ * Look up a model's display name and pricing from the OpenRouter public models list.
+ * Pricing is converted from OpenRouter's per-token strings to per-million-token numbers.
  * Returns null if the model isn't found or the request fails.
  */
-export async function getModelName(modelId: string): Promise<string | null> {
+export async function getModelInfo(modelId: string): Promise<ModelInfo | null> {
   const response = await fetch(`${OPENROUTER_API}/models`);
   if (!response.ok) return null;
 
-  const result = await response.json() as { data: { id: string; name: string }[] };
+  const result = await response.json() as {
+    data: {
+      id: string;
+      name: string;
+      pricing: {
+        prompt?: string;
+        completion?: string;
+        input_cache_read?: string;
+        input_cache_write?: string;
+      };
+    }[];
+  };
   const model = result.data.find((m) => m.id === modelId);
-  return model?.name ?? null;
+  if (!model) return null;
+
+  const toPerMillion = (v?: string): number => {
+    const n = parseFloat(v ?? '0');
+    return isNaN(n) ? 0 : Math.round(n * 1_000_000 * 1000) / 1000;
+  };
+
+  const p = model.pricing;
+  return {
+    name: model.name,
+    cost: {
+      input: toPerMillion(p.prompt),
+      output: toPerMillion(p.completion),
+      cacheRead: toPerMillion(p.input_cache_read),
+      cacheWrite: toPerMillion(p.input_cache_write),
+    },
+    costRaw: {
+      prompt: p.prompt ?? '0',
+      completion: p.completion ?? '0',
+    },
+  };
 }
 
 /**

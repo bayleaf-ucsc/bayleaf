@@ -13,7 +13,8 @@
 
 import { OpenAPIHono } from '@hono/zod-openapi';
 import type { AppEnv, UserKeyRow } from '../types';
-import { getModelName } from '../openrouter';
+import { getModelInfo } from '../openrouter';
+import type { ModelCost, ModelCostRaw } from '../openrouter';
 import { getSession } from '../utils/session';
 import { isCampusPassEligible } from '../utils/ip';
 import { BAYLEAF_TOKEN_PREFIX } from '../constants';
@@ -47,10 +48,13 @@ docsRoutes.get('/SKILL.md', async (c) => {
   }
 
   const model = c.env.RECOMMENDED_MODEL;
-  const name = await getModelName(model) ?? model;
+  const info = await getModelInfo(model);
+  const name = info?.name ?? model;
+  const cost = info?.cost ?? null;
+  const costRaw = info?.costRaw ?? null;
   const email = user === 'campus' ? 'your@ucsc.edu' : user;
   const gwsEnabled = gwsConfigured(c.env);
-  const content = buildSkillMd(model, name, email, gwsEnabled);
+  const content = buildSkillMd(model, name, cost, costRaw, email, gwsEnabled);
   return c.text(content, 200, { 'Content-Type': 'text/markdown; charset=utf-8' });
 });
 
@@ -123,7 +127,7 @@ docsRoutes.get('/gws-client-secret.json', async (c) => {
 
 // ── SKILL.md builder ──────────────────────────────────────────────
 
-function buildSkillMd(model: string, modelName: string, email: string, gwsEnabled: boolean): string {
+function buildSkillMd(model: string, modelName: string, cost: ModelCost | null, costRaw: ModelCostRaw | null, email: string, gwsEnabled: boolean): string {
   const bt = '`';
   const fence = '```';
 
@@ -307,7 +311,8 @@ ${fence}json
       },
       "models": {
         "${model}": {
-          "name": "${modelName}"
+          "name": "${modelName}"${cost ? `,
+          "cost": { "input": ${cost.input}, "output": ${cost.output}, "cache_read": ${cost.cacheRead}, "cache_write": ${cost.cacheWrite} }` : ''}
         }
       }
     }
@@ -355,7 +360,8 @@ ${fence}json
       "models": [
         {
           "id": "${model}",
-          "name": "${modelName} (BayLeaf)"
+          "name": "${modelName} (BayLeaf)"${cost ? `,
+          "cost": { "input": ${cost.input}, "output": ${cost.output}, "cacheRead": ${cost.cacheRead}, "cacheWrite": ${cost.cacheWrite} }` : ''}
         }
       ]
     }
@@ -404,7 +410,9 @@ ${fence}json
     {
       "name": "${model}",
       "context_limit": 128000,
-      "max_tokens": 16384
+      "max_tokens": 16384${costRaw ? `,
+      "input_token_cost": ${costRaw.prompt},
+      "output_token_cost": ${costRaw.completion}` : ''}
     }
   ],
   "supports_streaming": true
