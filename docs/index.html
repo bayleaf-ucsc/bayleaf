@@ -76,28 +76,42 @@
     </p>
     <ul>
         <li>
-            <strong>Energy and resource efficiency.</strong> Most models accessible through BayLeaf
-            are a fraction of the size of flagship models from mainstream providers: tens to hundreds
-            of billions of parameters versus trillions. The resources used to train and serve these
-            models scale with size, so by using mid-sized models, we use roughly 90–99% less energy
-            per unit of output.
+            <strong>Smaller models, smaller footprint.</strong> AI's growing energy and
+            resource footprint is a legitimate concern. The flagship models from mainstream
+            providers can have trillions of parameters, and training compute, energy, and cost
+            all <a href="https://epoch.ai/data/ai-models?view=graph&tab=notable&xAxis=Parameters">scale
+            with parameter count</a>. BayLeaf exclusively uses mid-sized models (tens to hundreds
+            of billions of parameters), consuming proportionally less energy and other resources.
         </li>
         <li>
-            <strong>Giving back to the public web.</strong> BayLeaf Chat is based on
-            <a href="https://artificialanalysis.ai/models/open-source">open-weight models</a>,
-            meaning the underlying LLMs are available for anyone to download from the public web.
-            This echoes the way the data likely used to train these models was originally harvested:
-            reciprocity rather than enclosure.
+            <strong>Built on open-weight models.</strong> Large-scale AI is often criticized for
+            concentrating power in a few corporations behind closed APIs. BayLeaf exclusively uses
+            <a href="https://huggingface.co/models">open-weight models</a>: models that are
+            contributed back to the public web, available for anyone to download, audit, or build
+            on. This is a form of structural reciprocity with the open ecosystem that makes this
+            technology possible.
         </li>
         <li>
-            <strong>Your data is never stored outside of BayLeaf.</strong> BayLeaf leverages
-            zero-data-retention (ZDR) inference services so that no LLM provider stores a copy of
-            your data, even temporarily. This differs from typical commercial agreements where the
-            provider promises to delete your data after some retention period (e.g. 30 days). Within
-            BayLeaf itself, the chat interface maintains one copy of your messages in an encrypted
-            database accessible only by the system administrator.
+            <strong>Your data is never stored outside of BayLeaf.</strong> Many commercial AI
+            services retain copies of user conversations, sometimes for 30 days or longer, creating
+            exposure that users cannot control. BayLeaf leverages
+            <a href="https://openrouter.ai/docs/guides/features/zdr">zero-data-retention (ZDR)</a>
+            inference services so that no LLM provider stores a copy of your data. Within BayLeaf
+            itself, the chat interface maintains one copy of your messages in an encrypted database
+            accessible only by the system administrator.
         </li>
     </ul>
+    <details>
+        <summary><strong>Subprocessors</strong> — services that handle data on behalf of BayLeaf</summary>
+        <ul>
+            <li><a href="https://openrouter.ai/">OpenRouter</a> — LLM request routing (ZDR providers only;
+                see <a href="https://openrouter.ai/docs/guides/privacy/provider-logging#data-retention--logging">provider data retention details</a>)</li>
+            <li><a href="https://www.digitalocean.com/">DigitalOcean</a> — hosts BayLeaf Chat (application and encrypted database)</li>
+            <li><a href="https://www.cloudflare.com/">Cloudflare</a> — hosts BayLeaf API (Worker and edge database)</li>
+            <li><a href="https://www.daytona.io/">Daytona</a> — sandboxed code execution environments</li>
+            <li><a href="https://www.cilogon.org/faq">CILogon</a> — user authentication (via CruzID Google Account OIDC)</li>
+        </ul>
+    </details>
 
     <h2>Chat Service</h2>
     <p>
