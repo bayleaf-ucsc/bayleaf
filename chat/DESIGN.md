@@ -209,54 +209,60 @@ is defined in `models/<id>/model.json`.
 
 | ID | Name | Base Model | Description |
 |----|------|-----------|-------------|
-| `basic` | Basic | `openrouter.z-ai/glm-5` | Default model for all users. Campus-aware system prompt (`Basic v1.1`), six suggestion prompts, no tools bound by default. System prompt mentions BayLeaf API access at `api.bayleaf.dev`. |
-| `help` | Help | `openrouter.z-ai/glm-5` | BayLeaf help desk. Answers questions about the service, processes invite codes via `accept_invites_toolkit`. |
+| `basic` | Basic | `openrouter.z-ai/glm-5.1` | Default model for all users. Campus-aware system prompt (`Basic v1.1`), builtin tools enabled, skills for Google Workspace, Canvas, web search, and code sandbox. |
+| `deep-research` | Deep Research | `openrouter.z-ai/glm-5.1` | Interactive research agent. Web search (Tavily) and web page retrieval (Jina Reader) toolkits. System prompt (`Deep Research v1.0`) instructs the model to narrate its search process and conduct research interactively. |
+| `help` | Help | `openrouter.z-ai/glm-5.1` | BayLeaf help desk. Lists user groups and available models, inspects model configurations, processes invite codes. Uses `help_filter` to stealth-inject `help_toolkit`. System prompt (`Help v1.3`). |
 
 ### Group-Restricted Models
 
 | ID | Name | Base Model | Group(s) |
 |----|------|-----------|----------|
-| `brace-85291` | Brace (CMPM 121 Fall 2025) | `openrouter.deepseek/deepseek-v3.2` | Course-specific (Brace v2) |
-| `brace3-92591` | Brace (CMPM 120 Spring 2026) | `openrouter.deepseek/deepseek-v3.2` | Course-specific |
-| `everett-program` | Everett Program Chat | `openrouter.z-ai/glm-5` | Program-specific |
-| `gambit` | Gambit (GLM-5) | `openrouter.z-ai/glm-5` | 2 groups |
-| `procurement` | Procurement | `openrouter.z-ai/glm-5` | Staff group |
+| `brace3-92591` | Brace (CMPM 120 Spring 2026) | `openrouter.z-ai/glm-5.1` | Course-specific |
+| `everett-program` | Everett Program Chat | `openrouter.z-ai/glm-5.1` | Program-specific |
+| `procurement` | Procurement | `openrouter.z-ai/glm-5.1` | Staff group |
+
+### Inactive (Archived) Models
+
+These models remain on the live instance but are deactivated (`is_active: false`).
+Their configurations are preserved in `models/` for reference.
+
+| ID | Name | Notes |
+|----|------|-------|
+| `brace-85291` | Brace (CMPM 121 Fall 2025) | Brace v2, superseded by `brace3-92591`. |
+| `gambit` | Gambit (GLM-5.1) | Rapid game prototyping assistant. Deactivated. |
 
 ### Model Configuration Details
 
 **Basic** — The default landing model. System prompt (`Basic v1.1`) orients the
 model as a campus assistant, encourages concise replies, warns about turn-depth
 limits, and suggests users start fresh conversations rather than extending long
-ones. Uses `function_calling: native` with OpenRouter provider sort by
-throughput. Vision is disabled; file upload and code interpreter are enabled.
-Six suggestion prompts guide new users.
+ones. Uses `function_calling: native`. Builtin tools enabled (time, memory,
+chats, notes, knowledge, channels). Skills bound: `google-workspace`,
+`bayleaf-for-students`, `bayleaf-for-faculty`, `bayleaf-for-employees`,
+`canvas-api`, `web-search`, `code-sandbox`. Vision disabled; file upload enabled.
+
+**Deep Research** — Interactive research agent (`Deep Research v1.0`). Bound to
+`tavily_web_search` and `jina_reader_toolkit`. System prompt instructs the model
+to narrate its intent before each tool call and summarize results, so users can
+follow the research path. Prefers interactive research over monolithic reports.
+Vision and file context enabled. All builtin tools enabled.
 
 **Help** — Minimal capabilities (no vision, no file upload, no code interpreter).
 Uses `help_filter` to force-inject `help_toolkit` (stealth pattern, see §3a),
-giving users tools to list their groups, see available models, and process invite
-codes. System prompt (`Help v1.1`) describes BayLeaf facts and firmly redirects
-non-help tasks to Basic.
-
-**Brace (v2, `brace-85291`)** — Course assistant for CMPM 121 Fall 2025. No
-static system prompt — `brace_filter` fetches the system prompt from a Canvas
-wiki page at the hardcoded slug `braces-system-prompt` at runtime. Bound to
-`brace_submit_action` (Canvas submission button) and `brace_filter`. Uses
-`brace_toolkit` (force-injected by the filter). Falls back to a generic prompt
-if the Canvas page is unreachable. (The original Brace v1 architecture lives at
-[rndmcnlly/brace](https://github.com/rndmcnlly/brace).)
+giving users tools to list their groups, see available models, inspect model
+configurations, and process invite codes. System prompt (`Help v1.3`) describes
+BayLeaf facts and firmly redirects non-help tasks to Basic.
 
 **Brace (v3, `brace3-92591`)** — Course assistant for CMPM 120 Spring 2026.
 Successor to Brace v2 with a cleaner design. No `brace_submit_action`. Uses
-`brace3_filter` + `brace3_canvas_toolkit` (see §3). Key differences from v2:
-system prompt is looked up by **page title** ("Brace3 System Prompt") rather
-than a hardcoded slug — raises cleanly if the page is missing instead of
-falling back silently; body is converted from HTML to markdown via
-`markdownify`. Vision and `file_context` enabled.
+`brace3_filter` + `brace3_canvas_toolkit` (see §3). System prompt is looked up
+by **page title** ("Brace3 System Prompt") rather than a hardcoded slug — raises
+cleanly if the page is missing instead of falling back silently; body is
+converted from HTML to markdown via `markdownify`. Vision and `file_context`
+enabled.
 
-**Gambit** — Rapid game prototyping assistant (`Gambit v1.5`). Extremely detailed
-system prompt (~14K chars) covering prototyping philosophy, HTML artifact
-generation, CDN library usage, publishing via gisthost, and cost-consciousness.
-Uses `reasoning_effort: low`.
+**Everett Program Chat** — Placeholder chatbot for the Everett Program with web
+search tools (`tavily_web_search`, `jina_reader_toolkit`).
 
 **Procurement** — UC procurement policy assistant. System prompt contains a
 behavioral preamble and a lookup table of file IDs for 11 UC policy documents.
@@ -265,6 +271,19 @@ toolkit to fetch full document text on demand, rather than having policy text in
 Documents live in the "Procurement" knowledge base (`8c7d7e27-6871-4871-a6b3-c197cf418072`).
 `context.md` in this backup is the original source used to populate the KB; it is no
 longer part of the system prompt.
+
+**Brace (v2, `brace-85291`)** *(inactive)* — Course assistant for CMPM 121 Fall
+2025. No static system prompt — `brace_filter` fetches the system prompt from a
+Canvas wiki page at the hardcoded slug `braces-system-prompt` at runtime. Bound
+to `brace_submit_action` (Canvas submission button) and `brace_filter`. Uses
+`brace_toolkit` (force-injected by the filter). Falls back to a generic prompt
+if the Canvas page is unreachable. (The original Brace v1 architecture lives at
+[rndmcnlly/brace](https://github.com/rndmcnlly/brace).)
+
+**Gambit** *(inactive)* — Rapid game prototyping assistant (`Gambit v1.5`).
+Extremely detailed system prompt (~14K chars) covering prototyping philosophy,
+HTML artifact generation, CDN library usage, publishing via gisthost, and
+cost-consciousness. Uses `reasoning_effort: low`.
 
 ---
 
@@ -646,23 +665,26 @@ chat/
 │   ├── basic/
 │   │   ├── model.json      # Params, meta, system prompt, capabilities
 │   │   └── profile.png     # Model avatar
+│   ├── deep-research/
+│   │   └── model.json
 │   ├── help/
 │   │   ├── model.json
 │   │   └── profile.png
-│   ├── brace-85291/        # Brace v2 — CMPM 121 Fall 2025
-│   │   ├── model.json
-│   │   └── profile.png
 │   ├── brace3-92591/       # Brace v3 — CMPM 120 Spring 2026
-│   │   └── model.json
-│   ├── everett-program/
-│   │   └── model.json
-│   ├── gambit/
 │   │   ├── model.json
 │   │   └── profile.webp
-│   └── procurement/
-│       ├── model.json      # Behavioral preamble only
-│       ├── context.md      # Inlined UC policy documents (~670K chars)
-│       └── profile.png
+│   ├── everett-program/
+│   │   └── model.json
+│   ├── procurement/
+│   │   ├── model.json      # Behavioral preamble only
+│   │   ├── context.md      # Inlined UC policy documents (~670K chars)
+│   │   └── profile.png
+│   ├── brace-85291/        # Inactive — Brace v2 (CMPM 121 Fall 2025)
+│   │   ├── model.json
+│   │   └── profile.png
+│   └── gambit/             # Inactive — rapid prototyping assistant
+│       ├── model.json
+│       └── profile.webp
 ├── tools/
 │   ├── lathe/
 │   │   ├── tool.py          # Code Sandbox — coding agent tools (Daytona sandboxes)

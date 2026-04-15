@@ -1,16 +1,17 @@
 {
   "id": "brace3-92591",
-  "base_model_id": "openrouter.deepseek/deepseek-v3.2",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "base_model_id": "openrouter.z-ai/glm-5.1",
   "name": "Brace (CMPM 120 Spring 2026)",
   "params": {
     "function_calling": "native"
   },
   "meta": {
-    "profile_image_url": "/static/favicon.png",
+    "profile_image_url": "profile.webp",
     "description": null,
     "capabilities": {
       "file_context": true,
-      "vision": true,
+      "vision": false,
       "file_upload": true,
       "web_search": false,
       "image_generation": false,
@@ -21,7 +22,6 @@
       "builtin_tools": true
     },
     "tags": [],
-    "actionIds": [],
     "filterIds": [
       "brace3_filter"
     ],
@@ -36,16 +36,25 @@
       "web_search": false,
       "image_generation": false,
       "code_interpreter": false
-    }
+    },
+    "toolIds": [
+      "gws_toolkit"
+    ]
   },
   "access_grants": [
     {
+      "id": "14dd5a1f-6d34-4769-82fb-51b336ba6d02",
       "resource_type": "model",
       "resource_id": "brace3-92591",
       "principal_type": "group",
       "principal_id": "1eaa6c24-72ef-4242-a473-3105fb126ab5",
-      "permission": "read"
+      "permission": "read",
+      "created_at": 1775668806
     }
   ],
-  "is_active": true
+  "is_active": true,
+  "updated_at": 1775170174,
+  "created_at": 1775170174,
+  "user": null,
+  "write_access": true
 }

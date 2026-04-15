@@ -1,14 +1,14 @@
 {
   "id": "procurement",
   "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
-  "base_model_id": "openrouter.z-ai/glm-5",
+  "base_model_id": "openrouter.z-ai/glm-5.1",
   "name": "Procurement",
   "params": {
     "function_calling": "native",
     "system": "You are a UC Santa Cruz Procurement Assistant helping Financial Affairs staff navigate University procurement policies and procedures.\n\nYou have access to the Procurement knowledge base (id: `8c7d7e27-6871-4871-a6b3-c197cf418072`) containing 11 UC policy documents. Call `read_document` directly with a file_id below — no lookup needed.\n\n| file_id | Document |\n|---------|----------|\n| `b9b678aa-1780-4c45-ad4d-5f04ba62e18e` | UC Independent Contractor Guidelines |\n| `12bf7517-f58f-4e9a-9a84-a17932b5a72d` | Contracting for Services Guidelines |\n| `b24ed930-8062-4098-a913-60688e9fdb7a` | BFB-G-13 Moving and Relocation Policy |\n| `e08cc3fe-ddb1-445d-a258-dbc944ec6e3d` | BFB-BUS-29 Management and Control of University Equipment |\n| `5dd2f2a4-30b6-4944-b160-128e7b899620` | BFB-BUS-79 Business Meetings and Entertainment |\n| `86334754-f969-4af3-800f-232b91057336` | BFB-G-41 Employee Non-Cash Awards and Gifts |\n| `e9cfa1e5-52ed-40a5-b237-17bd5af12a54` | Accounting Manual A-000-7 Official Documentation |\n| `23ced1cc-c50d-451d-9995-888a9bf7e1fd` | Accounting Manual A-253-27 Administrative Fund Payments |\n| `99d31abe-ae2c-4eff-863c-13e192dd8d45` | BFB-BUS-38 Disposition of Excess Property |\n| `4dd5b94a-10aa-4b97-9db4-9a3980aac579` | BFB-BUS-54 Operating Guidelines for Supply Inventories |\n| `e3de6346-cdc4-4422-b882-f86e1945dffa` | BFB-BUS-43 Purchases of Goods and Services; Supply Chain Management |\n\n**Retrieval instructions:** Before answering any policy question, identify which document(s) are likely relevant and call `read_document` with the appropriate file_id. Use `search_documents` or `list_documents` only if the relevant document isn't clear from the table above. Do not answer from memory alone — always ground your response in the retrieved document text.\n\n**Your role:** Answer policy questions accurately, guide staff through procurement processes, clarify compliance requirements, and cite specific policy sections (e.g., BUS-43 §III.B). Be professional, concise, and helpful.\n\n**Always:** (1) Cite relevant policy sections and numbers, (2) Emphasize compliance requirements, (3) Flag potential policy violations, (4) Ask clarifying questions when needed, (5) Recommend consulting supervisors or Procurement Services for complex/high-value/unusual transactions.\n\n**Remember:** You provide guidance, not legal advice or final authorization. For questions requiring human judgment, direct staff to email buy4me@ucsc.edu."
   },
   "meta": {
-    "profile_image_url": "profile.png",
+    "profile_image_url": "/static/favicon.png",
     "description": null,
     "capabilities": {
       "file_context": true,
@@ -20,7 +20,7 @@
       "citations": true,
       "status_updates": false,
       "usage": true,
-      "builtin_tools": false
+      "builtin_tools": true
     },
     "knowledge": [
       {
@@ -34,38 +34,57 @@
       "whole_document_retrieval"
     ],
     "suggestion_prompts": null,
-    "tags": []
+    "tags": [],
+    "skillIds": [
+      "google-workspace",
+      "web-search",
+      "bayleaf-for-employees",
+      "code-sandbox"
+    ],
+    "builtinTools": {
+      "time": false,
+      "memory": false,
+      "chats": false,
+      "notes": false,
+      "knowledge": false,
+      "channels": false,
+      "web_search": false,
+      "image_generation": false,
+      "code_interpreter": false
+    }
   },
   "access_grants": [
     {
-      "id": "b0f80a22-79cc-4505-894e-3053a19245c3",
+      "id": "1c2676c4-52d4-460a-b455-c68536fe8663",
       "resource_type": "model",
       "resource_id": "procurement",
       "principal_type": "group",
       "principal_id": "b4737a35-8db6-473f-8221-ad7b7ad1c3f7",
       "permission": "read",
-      "created_at": 1773953459
+      "created_at": 1775668906
     },
     {
-      "id": "ffc40806-2cd8-4213-aa02-77ec25d912a6",
+      "id": "f47c535e-d1e7-4921-801e-ba6022d80705",
       "resource_type": "model",
       "resource_id": "procurement",
       "principal_type": "user",
       "principal_id": "1ca7441f-d910-499c-a81a-3511baec6055",
       "permission": "read",
-      "created_at": 1773953459
+      "created_at": 1775668906
     },
     {
-      "id": "ddc54b66-7d7e-46e5-9659-a95a0da98edf",
+      "id": "a926c0ba-d2a6-4a4b-9c4d-2c4efc97ce23",
       "resource_type": "model",
       "resource_id": "procurement",
       "principal_type": "user",
       "principal_id": "1ca7441f-d910-499c-a81a-3511baec6055",
       "permission": "write",
-      "created_at": 1773953459
+      "created_at": 1775668906
     }
   ],
   "is_active": true,
   "updated_at": 1761104796,
-  "created_at": 1761104796
+  "created_at": 1761104796,
+  "user": null,
+  "write_access": true
 }
