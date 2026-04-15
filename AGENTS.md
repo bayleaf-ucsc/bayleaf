@@ -13,7 +13,8 @@ Media). **Publicly visible; never commit secrets, API keys, or credentials.**
 - **BayLeaf Chat** — `https://chat.bayleaf.dev` — Open WebUI with curated models,
   invite-code-gated groups, web search/browsing tools, and rate limiting.
 - **BayLeaf API** — `https://api.bayleaf.dev` — OpenRouter-proxying API with keyless
-  on-campus access and key-based off-campus access. Source: `api/` in this repo.
+  on-campus access and key-based off-campus access, plus web search/fetch and sandboxed
+  code execution. Source: `api/` in this repo.
 
 All LLM inference uses **zero-data-retention (ZDR)** providers via OpenRouter.
 
