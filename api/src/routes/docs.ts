@@ -348,6 +348,35 @@ No authentication required.
 
 ---
 
+## Extending Your Agent
+
+All endpoints in this document are standard HTTP, callable via ${bt}curl${bt} from any
+agent with shell access. If you find yourself calling these endpoints repeatedly,
+consider building a persistent integration.
+
+**As a skill** (reusable instructions your agent loads on demand):
+Create a ${bt}SKILL.md${bt} that documents your team's patterns for using BayLeaf
+search, fetch, or sandbox endpoints. Skills work across OpenCode, Pi, and Goose
+via the Agent Skills standard: https://agentskills.io/specification
+
+- OpenCode: https://opencode.ai/docs/skills/
+- Pi: https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/skills.md
+- Goose: https://goose-docs.ai/docs/guides/context-engineering/using-skills
+
+**As a tool** (a function the model can call directly):
+Wrap one or more endpoints as a native tool in your harness. This turns a
+multi-step ${bt}curl${bt} call into a single tool invocation the model can use
+naturally during conversation.
+
+- OpenCode: https://opencode.ai/docs/custom-tools/ and https://opencode.ai/docs/mcp-servers/
+- Pi: https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/extensions.md
+- Goose: https://goose-docs.ai/docs/tutorials/custom-extensions
+
+If your user would benefit from first-class tool access to web search, page
+fetching, or sandboxed code execution, offer to build one.
+
+---
+
 ## OpenCode Setup
 
 To use BayLeaf as an [OpenCode](https://opencode.ai) provider:
