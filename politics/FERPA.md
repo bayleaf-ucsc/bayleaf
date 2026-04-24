@@ -4,10 +4,9 @@
 **Service:** BayLeaf AI Playground  
 **Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz  
 **Status:** Working analysis. Not legal advice. Not reviewed by UCSC Office of
-General Counsel. The BayLeaf operator is a faculty member of the UCSC AI Council;
-an agenda item extending this analysis to the Council's formal consideration is
-scheduled for a summer 2026 meeting. Until then, this document is read as an
-individual faculty analysis, not a Council position.
+Campus Counsel. The BayLeaf operator is a faculty member of the UCSC AI
+Council. This document is an individual faculty analysis, not a Council
+position.
 
 This document describes how BayLeaf's current architecture relates to FERPA (the
 Family Educational Rights and Privacy Act, 20 U.S.C. § 1232g), and how it would
@@ -331,10 +330,8 @@ the raw API. The contractual difference, such as it is, is whatever additional
 protections the Workspace amendments provide beyond the base GCP agreement.
 
 **This is the question that BayLeaf's proposed direct Google integration
-raises, and it is the question now on the AI Council's agenda** (scheduled for
-a summer 2026 meeting). Until the Council takes up the question formally, this
-document presents the analysis as a faculty submission ahead of that
-discussion, not as a Council position.
+raises.** This document presents the analysis as a faculty contribution toward
+that eventual campus determination, not as a Council position.
 
 In either reading, a direct Google integration is *strictly better* for FERPA
 than the current OpenRouter-Gemini path. The question is whether it is
@@ -451,9 +448,8 @@ in its current OpenRouter-routed form is not among the campus-approved tools
 for FERPA-protected content, and users should instead use the Workspace-based
 Gemini and NotebookLM tools UCSC has already approved for that purpose; a
 proposed direct Google Cloud integration would bring BayLeaf's Google lane
-under the same UC–Google contracts as those approved tools, and the question
-of whether to extend the P3 approval accordingly is on the AI Council's
-agenda."**
+under the same UC–Google contracts as those approved tools, which would raise
+the question of whether to extend the P3 approval accordingly."**
 
 ---
 
@@ -462,8 +458,7 @@ agenda."**
 <!-- SEC:COUNCIL_QUESTIONS -->
 These are the questions that this analysis cannot resolve on its own, and that
 are most naturally addressed by the UCSC AI Council (with input from the Office
-of Campus Counsel and the Privacy Office as needed). The central question has
-already been placed on the Council's agenda for summer 2026 consideration.
+of Campus Counsel and the Privacy Office as needed).
 
 1. **Extending the P3 approval from Workspace-Gemini to Vertex/GCP-Gemini.**
    The Council has approved Google Workspace Gemini and NotebookLM for use with
