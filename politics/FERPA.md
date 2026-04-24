@@ -3,7 +3,11 @@
 <!-- SEC:INTRO -->
 **Service:** BayLeaf AI Playground
 **Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz
-**Status:** Working analysis. Not legal advice. Not reviewed by UCSC Office of General Counsel.
+**Status:** Working analysis. Not legal advice. Not reviewed by UCSC Office of
+General Counsel. The BayLeaf operator is a faculty member of the UCSC AI Council;
+an agenda item extending this analysis to the Council's formal consideration is
+scheduled for a summer 2026 meeting. Until then, this document is read as an
+individual faculty analysis, not a Council position.
 
 This document describes how BayLeaf's current architecture relates to FERPA (the
 Family Educational Rights and Privacy Act, 20 U.S.C. § 1232g), and how it would
@@ -16,11 +20,19 @@ using zero-data-retention (ZDR) provider endpoints. ZDR is a strong technical
 and contractual commitment, but it is a commercial ZDR flag, not an institutional
 agreement between UC and the model provider. UC's signed agreements with Google
 are materially stronger, and in one case use FERPA's "school official" language
-explicitly. BayLeaf can access that stronger contractual layer for Google models
-by adding a direct Google Cloud integration under UCSC's existing Customer
-Affiliate Agreement. Other providers (Anthropic, OpenAI, Meta) remain on the
-OpenRouter-ZDR path, which is the best contractual protection available for those
-models without separate UC-signed agreements.
+explicitly. UCSC has already applied this stronger layer to Gemini-in-Workspace
+and Notebook LM: the [campus AI Council's published guidance](https://campusai.ucsc.edu/faq/)
+approves both tools for use with data up to **Protection Level 3**, which
+explicitly includes FERPA-protected student education records. That approval is
+scoped to the Google Workspace form of Gemini, not to Vertex AI via the GCP API.
+
+BayLeaf could access the same contractual layer for programmatic use by adding a
+direct Google Cloud integration under UCSC's existing Customer Affiliate
+Agreement. Whether the campus's P3 approval for Workspace-Gemini *extends* to
+Vertex-API-Gemini (both of which sit under the same UC–Google agreement stack)
+is the narrower question this document now poses. Other providers (Anthropic,
+OpenAI, Meta) remain on the OpenRouter-ZDR path, which is the best contractual
+protection available for those models without separate UC-signed agreements.
 
 The long version follows.
 
@@ -267,7 +279,7 @@ GCP / Vertex AI / Gemini:     ✗ "school official" not named
                               ✓ Data Processing Addendum incorporated
 ```
 
-Two reasonable readings of this seam are possible.
+Two readings of this seam are possible.
 
 **Strict reading.** FERPA's school-official exception requires an explicit
 designation. The 2025 EA's § 15.1(d) is strong data protection, but it is not a
@@ -285,9 +297,44 @@ purposes. Under this reading, Vertex AI under UCSC's GCP project is suitable
 for FERPA-protected content, with a note that the coverage is by equivalent
 terms rather than by the "school official" phrase.
 
-**We do not know which reading UCSC's Office of General Counsel takes.** Both
-are defensible. The question is listed in § 8 below. Writing to OGC is the next
-step after this document.
+### What UCSC has already said
+
+The UCSC AI Council has **implicitly taken the pragmatic reading for Google
+Workspace Gemini**. The Council's [published FAQ](https://campusai.ucsc.edu/faq/)
+states (as of February 2026):
+
+> "For staff using either of these tools [Google Gemini, NotebookLM], data can
+> be shared securely up to and including [protection level P3]. UC Santa Cruz
+> and the UC System have negotiated agreements with Google that include
+> protections for university data. The university retains control over how data
+> is stored and reused, inputs are not used to train AI models, and
+> institutional support is available if something goes wrong."
+
+Protection Level 3, per [ITS's data classification guidance](https://its.ucsc.edu/get-support/it-guides/data-and-it-resource-classification/data-protection-levels/),
+explicitly includes "Student education records (these are protected by FERPA)."
+
+In other words: the campus has already determined that UC's Google agreements
+provide sufficient contractual protection for FERPA-covered content, at least
+when the vehicle is Google Workspace. That determination is the authoritative
+campus-level position as of this writing.
+
+### The narrower open question
+
+What the campus has *not* yet determined is whether that same P3 approval
+extends to Vertex AI / Gemini accessed through the GCP API, rather than through
+the Google Workspace interface. Both paths sit under the same UC–Google agreement
+stack and inherit the same § 15.1(d) no-training commitment, the same P4 data
+classification (UC's handling tier for GCP overall), and the same Data
+Processing Addendum. The technical difference is that Workspace-Gemini is a
+managed Google product built on top of Vertex, while direct Vertex access is
+the raw API. The contractual difference, such as it is, is whatever additional
+protections the Workspace amendments provide beyond the base GCP agreement.
+
+**This is the question that BayLeaf's proposed direct Google integration
+raises, and it is the question now on the AI Council's agenda** (scheduled for
+a summer 2026 meeting). Until the Council takes up the question formally, this
+document presents the analysis as a faculty submission ahead of that
+discussion, not as a Council position.
 
 In either reading, a direct Google integration is *strictly better* for FERPA
 than the current OpenRouter-Gemini path. The question is whether it is
@@ -336,22 +383,40 @@ institution. A paraphrased question about a student's behavior, stripped of
 identifiers, is not a FERPA disclosure. A pasted advising note with the
 student's name and ID is.
 
-If the content does contain FERPA-protected PII:
+FERPA-protected student education records are classified as P3 in UC's data
+protection levels. Current campus guidance for P3 data and AI tools
+([campusai.ucsc.edu/faq](https://campusai.ucsc.edu/faq/)):
 
-- **Do not use the current OpenRouter-default path.** The ZDR commitment is
-  real, but UCSC has not designated OpenRouter or its upstream providers as
-  school officials, and there is no UC-signed agreement covering the disclosure.
-- **If BayLeaf's direct Google integration is available**, this is the best
-  path within BayLeaf, and § 5's pragmatic reading probably applies. Whether
-  your specific use qualifies is a question to confirm with UCSC's Privacy
-  Office or OGC.
-- **Gemini-in-Workspace** (e.g., the Gemini side panel in Google Docs under
-  your UCSC account) is the cleanest path under § 5's strict reading, because
-  it inherits the explicit Workspace "school official" designation.
-- **Air-gapped paraphrasing** is almost always the right move. Remove
-  identifiers before the prompt; apply the AI's suggestions back onto the
-  identified record yourself. This reduces the FERPA surface regardless of
-  lane.
+- **Approved for P3:** Google Gemini (Workspace), NotebookLM, Zoom AI (meeting
+  summary, in-meeting questions). All accessed through your UCSC Google account.
+- **Not approved for P3:** consumer AI tools, any tool not covered by a
+  UC-signed institutional agreement.
+
+BayLeaf currently falls in the "not approved" set, because the OpenRouter path
+does not sit under a UC-signed institutional agreement. This applies regardless
+of which model you select (Gemini included, since today's Gemini-in-BayLeaf
+goes through OpenRouter rather than UC's Google contract).
+
+If the content contains FERPA-protected PII, the current options are:
+
+- **Use Gemini-in-Workspace** (the Gemini side panel in Google Docs, Gmail,
+  Drive, or gemini.google.com signed in with your UCSC account). This is
+  campus-approved for P3 data and inherits the explicit Workspace
+  "school official" designation in the UC–Google agreements.
+- **Use NotebookLM** under your UCSC account, also campus-approved for P3.
+- **Don't use BayLeaf in its current form** for P3 content. Use it for P1/P2
+  content: drafting, brainstorming, code, generic Q&A where no student
+  identifiers are involved.
+- **Air-gapped paraphrasing** is almost always the right move when the task
+  itself is P3. Remove identifiers before the prompt; apply the AI's suggestions
+  back onto the identified record yourself. This reduces the FERPA surface
+  regardless of which tool you use.
+
+If BayLeaf adds a direct Google Cloud integration (under UCSC's existing
+Customer Affiliate Agreement), the Google lane within BayLeaf would enter the
+same UC–Google contractual envelope as Workspace-Gemini, and the question of
+whether that warrants the same P3 approval is the one flagged in § 5 for the AI
+Council.
 
 ### For a student using BayLeaf
 
@@ -366,11 +431,13 @@ There are two versions of this question:
 
 1. *Can BayLeaf receive FERPA-protected records from an institutional role
    (faculty, staff, advisor) acting in their professional capacity?*
-   Today, no: there is no UC-signed agreement covering that data flow, and
-   we do not recommend this use. With a direct Google integration, Google-lane
-   models could receive such records under UC's signed GCP agreement, subject
-   to OGC's read of the school-official seam (§ 5). The OpenRouter lane remains
-   inappropriate for this use regardless.
+   Today, no: there is no UC-signed agreement covering BayLeaf's data flow to
+   OpenRouter, and campus guidance accordingly excludes it from P3-approved
+   tools. With a direct Google integration, BayLeaf's Google lane would sit
+   under the same UC–Google contracts that underpin the already-approved
+   Workspace-Gemini and NotebookLM tools, and the AI Council would need to
+   decide whether to extend the P3 approval. The OpenRouter lane remains
+   inappropriate for P3 content regardless.
 
 2. *Does BayLeaf hold education records on behalf of UCSC?*
    No. BayLeaf does not receive data pushes from the Student Information
@@ -380,62 +447,66 @@ There are two versions of this question:
    [SECURITY.md](SECURITY.md) for the full data-handling picture.
 
 The honest one-sentence answer to "is BayLeaf FERPA-compliant?" is: **"BayLeaf
-is not in a position to receive FERPA-protected records under current
-architecture; with a direct Google integration, Google-lane models would be a
-contractually defensible lane for such content, pending OGC confirmation that
-UC's GCP terms satisfy FERPA's school-official requirement."**
+in its current OpenRouter-routed form is not among the campus-approved tools
+for FERPA-protected content, and users should instead use the Workspace-based
+Gemini and NotebookLM tools UCSC has already approved for that purpose; a
+proposed direct Google Cloud integration would bring BayLeaf's Google lane
+under the same UC–Google contracts as those approved tools, and the question
+of whether to extend the P3 approval accordingly is on the AI Council's
+agenda."**
 
 ---
 
-## 8. Outstanding questions for OGC
+## 8. Open questions for the AI Council
 
-<!-- SEC:OGC_QUESTIONS -->
-These are the questions that this analysis cannot resolve from the contract
-text alone, and that should be directed to UCSC's Office of General Counsel
-and/or the UCSC Privacy Office.
+<!-- SEC:COUNCIL_QUESTIONS -->
+These are the questions that this analysis cannot resolve on its own, and that
+are most naturally addressed by the UCSC AI Council (with input from the Office
+of Campus Counsel and the Privacy Office as needed). The central question has
+already been placed on the Council's agenda for summer 2026 consideration.
 
-1. **School-official coverage for Vertex AI.** Under the 2024 UCSC GCP
-   Customer Affiliate Agreement and the 2025 UC Enterprise Addendum § 15.1(d),
-   when UCSC faculty or staff use Vertex AI (including Gemini models) through
-   a UCSC-administered GCP project, does Google's contractual no-AI-training
-   commitment combined with Protection Level 4 classification satisfy FERPA's
-   "school official" requirements, given that the explicit "school official"
-   designation in § 10.1 of the 2011 master agreement and § 5 of the Google
-   Workspace for Education Data Regionalization Amendment is scoped to
-   Workspace/Apps services rather than GCP?
+1. **Extending the P3 approval from Workspace-Gemini to Vertex/GCP-Gemini.**
+   The Council has approved Google Workspace Gemini and NotebookLM for use with
+   P3 data (which includes FERPA-protected education records) on the strength
+   of UC's negotiated Google agreements. Vertex AI accessed through the GCP API
+   sits under the same UC–Google agreement stack (2019 GCP License, 2025 EA
+   § 15.1(d), UCSC Customer Affiliate Agreement, P4 data classification). Does
+   the P3 approval extend by reason of contractual coverage, or should it be
+   conditioned on additional factors (access patterns, audit visibility, UCSC
+   project ownership, etc.)?
 
-2. **Preferred channel for FERPA content.** If BayLeaf offers two lanes
-   (Google via direct integration, other providers via OpenRouter ZDR), what
-   guidance should we give users about which lane to use for FERPA-protected
-   content? Specifically: is the Google lane acceptable, or should FERPA
-   content be directed to Gemini-in-Workspace instead?
+2. **Designation mechanism.** If the answer to (1) is "extends," is any formal
+   action needed (a written designation of Google as school official for
+   GCP-hosted services specifically, a security exception, a data-use agreement
+   review) beyond the existing agreement stack? Or is the existing stack
+   sufficient on its own?
 
-3. **Designation in writing.** If the Google-lane answer to (1) is "yes,
-   equivalently protected," does UCSC need to take any additional formal step
-   to designate Google as a school official for GCP/Vertex specifically
-   (beyond the existing Workspace designation), or is this covered by the
-   existing agreement stack?
+3. **Scope of the extension.** If GCP-Gemini is approved for P3, does the
+   approval extend to:
+   - Faculty-operated services like BayLeaf routing through a UCSC-owned GCP
+     project?
+   - Any UCSC faculty or staff making direct GCP API calls under a campus
+     project?
+   - Only specific patterns approved case by case?
 
 4. **Non-Google providers.** For Anthropic, OpenAI, Meta, and other providers
-   reached via OpenRouter's ZDR option, we understand that no UC-signed
-   institutional agreement exists. Is there a category of BayLeaf use for
-   which this is nevertheless acceptable under FERPA (for example, uses where
-   no FERPA-protected PII is disclosed, with appropriate user guidance), or
-   should these providers be excluded from any workflow that touches
-   education records, full stop?
+   reached via OpenRouter's ZDR option, no UC-signed institutional agreement
+   exists. The current campus guidance implicitly excludes these providers from
+   P3 use. Should there be a path to approve specific providers (e.g., those
+   with enterprise ZDR commitments, specific contract language, or separately
+   negotiated UC agreements) for P3, or should P3 remain Google-only for the
+   foreseeable future?
 
-5. **User-side designation.** When a UCSC faculty member pastes FERPA-protected
-   content into BayLeaf's OpenRouter-default lane, what is the correct
-   characterization? (The institution has not designated any provider as a
-   school official for this data flow; the user has chosen to disclose it to
-   BayLeaf; BayLeaf has disclosed it to OpenRouter under a commercial ZDR
-   agreement; OpenRouter has disclosed it to the provider.) Is this a FERPA
-   violation by the institution, by the user, neither, or does it depend on
-   facts we have not specified?
+5. **User-side characterization.** When a UCSC faculty member pastes
+   FERPA-protected content into any AI service that is not on the campus's
+   approved list, what is the correct characterization under UC policy? Is it a
+   user violation, an institutional gap, or (more realistically) a
+   communication problem that the existing guidance already addresses but users
+   do not always follow?
 
 Answers to these questions will let us replace the conditional language in
 this document with definite statements, update user-facing guidance, and
-decide whether to add or omit a direct Google integration.
+decide whether and how to add a direct Google integration to BayLeaf.
 
 ---
 
@@ -464,10 +535,22 @@ Held under UC Procurement; not public. Read for this analysis:
   under the UC Regents parent agreement.
 - BAA for G-Suite: HIPAA-scoped, not FERPA, noted for completeness.
 
-### UC policy
+### UC and UCSC policy
 
 - [UC Electronic Information Security Policy, IS-3](https://security.ucop.edu/policies/institutional-information-and-it-resource-classification.html)
-  (defines Protection Level 4).
+  (defines Protection Levels P1 through P4).
+- [UCSC ITS: Data and IT Resource Classification, Data Protection Levels](https://its.ucsc.edu/get-support/it-guides/data-and-it-resource-classification/data-protection-levels/)
+  (P3 explicitly includes FERPA-protected student education records).
+- [UC Responsible AI Principles](https://ai.universityofcalifornia.edu/_files/documents/ai-council-uc-responsible-ai-principles.pdf)
+  (the principles the UCSC AI Council applies).
+
+### UCSC AI Council guidance
+
+- [UCSC AI Council homepage (campusai.ucsc.edu)](https://campusai.ucsc.edu/)
+- [UCSC AI Council FAQ](https://campusai.ucsc.edu/faq/)
+  (approves Workspace-Gemini and NotebookLM for P3 data; the starting point for
+  this document's narrower open question).
+- [UCSC AI Council charge and membership (ITS)](https://its.ucsc.edu/about/it-governance/artificial-intelligence)
 
 ### Related BayLeaf documents
 
