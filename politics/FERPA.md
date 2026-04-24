@@ -1,8 +1,8 @@
 # FERPA and BayLeaf
 
 <!-- SEC:INTRO -->
-**Service:** BayLeaf AI Playground
-**Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz
+**Service:** BayLeaf AI Playground  
+**Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz  
 **Status:** Working analysis. Not legal advice. Not reviewed by UCSC Office of
 General Counsel. The BayLeaf operator is a faculty member of the UCSC AI Council;
 an agenda item extending this analysis to the Council's formal consideration is
