@@ -1,9 +1,9 @@
 # Security Exhibit
 
-**Service:** BayLeaf AI Playground
-**Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz
-**Date:** 2026-03-27
-**Review conducted by:** AI agent (Claude Opus 4.6 via OpenCode), supervised by Adam Smith
+**Service:** BayLeaf AI Playground  
+**Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz  
+**Date:** 2026-04-24  
+**Review conducted by:** AI agent (Claude Opus 4.7 via OpenCode), supervised by Adam Smith
 
 This document describes the security and data handling posture of BayLeaf. It is
 written for the audience that asks for a "security exhibit" — an ITS reviewer, an
@@ -44,21 +44,38 @@ path retains prompt or completion content.
 
 | Data | Storage | Encryption | Access |
 |---|---|---|---|
-| User accounts (email, name, OAuth tokens) | DigitalOcean Managed PostgreSQL | Encrypted at rest | System administrator only |
-| Conversation histories | DigitalOcean Managed PostgreSQL | Encrypted at rest | System administrator only |
-| Group memberships and access grants | DigitalOcean Managed PostgreSQL | Encrypted at rest | System administrator only |
-| Uploaded files | DigitalOcean Spaces (S3-compatible) | S3 default encryption | System administrator only |
-| API key mappings (email, token, OR key hash) | Cloudflare D1 | Cloudflare-managed | System administrator only |
-| Sandbox file contents | Daytona VMs with persistent volume | Provider-managed | Per-user isolation |
+| User accounts (email, name, OAuth tokens) | DigitalOcean Managed PostgreSQL | [Encrypted at rest](https://www.digitalocean.com/security/shared-responsibility-model-managed-databases) | System administrator only |
+| Conversation histories | DigitalOcean Managed PostgreSQL | [Encrypted at rest](https://www.digitalocean.com/security/shared-responsibility-model-managed-databases) | System administrator only |
+| Group memberships and access grants | DigitalOcean Managed PostgreSQL | [Encrypted at rest](https://www.digitalocean.com/security/shared-responsibility-model-managed-databases) | System administrator only |
+| Uploaded files | DigitalOcean Spaces (S3-compatible) | [Encrypted at rest (AES-256)](https://www.digitalocean.com/security/shared-responsibility-model-spaces) | System administrator only |
+| API key mappings (email, token, OR key hash) | Cloudflare D1 | [Encrypted at rest](https://developers.cloudflare.com/d1/reference/data-security/) | System administrator only |
+| Sandbox file contents | Daytona VMs with persistent volume | [Encrypted at rest](https://mintlify.wiki/daytonaio/daytona/concepts/security#data-at-rest) | Per-user isolation |
 
 ### 2.3 ZDR boundary disclosure
 
 The ZDR guarantee covers **inference only**. The application layer (Open WebUI
 database) retains conversation histories in an encrypted database accessible only
-to the system administrator. This is a single copy, not replicated to third parties.
+to the system administrator. The database is backed up by DigitalOcean's managed
+service; backups stay within the DigitalOcean trust boundary and are not
+replicated to third parties.
 
 The [dependency audit](DEPENDENCIES.md) makes this point directly: "The ZDR boundary
 is narrower than it sounds."
+
+### 2.4 Retention and deletion
+
+- **User-initiated deletion is honest.** When a user deletes a conversation
+  through the Chat interface, the record is removed from the application
+  database. It is not soft-deleted or retained in a recoverable tombstone.
+- **Otherwise, retention is indefinite.** There is no scheduled deletion policy
+  for conversation histories, user accounts, uploaded files, or API key
+  mappings. Data a user has not deleted persists for as long as BayLeaf
+  operates.
+- **Backups.** DigitalOcean's managed-database backup schedule applies.
+  User-deleted records age out of backups according to that schedule; BayLeaf
+  does not perform manual backup scrubs.
+- **Service wind-down.** If BayLeaf is decommissioned, the operator will
+  destroy the databases and object storage rather than transfer them.
 
 ---
 
@@ -104,7 +121,7 @@ upstream provider.
 | OpenRouter | LLM gateway (default) | US | Prompts and completions in transit (ZDR — not retained) |
 | NRP / SDSC | LLM inference (institutional) | US (UC San Diego / NSF) | Prompts and completions in transit on research infrastructure; open-weight models via Envoy AI Gateway |
 | CILogon / InCommon | Identity (OIDC) | US (Internet2) | Email, name, affiliation claim |
-| Daytona | Code sandboxes | Provider-managed | Per-user sandbox file contents |
+| Daytona | Code sandboxes | US | Per-user sandbox file contents |
 | Tavily | Web search tool | US | Search queries from tool-use |
 | Jina AI | Web page reader | Germany | URLs submitted for parsing |
 | GitHub (Microsoft) | Code hosting, static site | US | Public repository only; no user data |
@@ -124,9 +141,15 @@ For ownership, political profile, and exit paths for each provider, see the
 ### API
 
 - **Per-key spending limits:** Configurable daily dollar cap per provisioned
-  OpenRouter sub-key
-- **Campus pool:** Shared key for keyless campus users with aggregate spending limit
-- **Key revocation:** Immediate via D1 `revoked` flag, checked on every request
+  OpenRouter sub-key. Applies only to OpenRouter-routed requests; requests
+  served by alternative backends (e.g. NRP/SDSC) are not metered against this
+  cap.
+- **Campus pool:** Shared key for keyless campus users with aggregate spending
+  limit (OpenRouter-routed requests only, same caveat as above).
+- **Key revocation:** Immediate via D1 `revoked` flag, checked on every request.
+- **No request-rate limits on the API.** BayLeaf does not enforce per-key
+  requests-per-minute or requests-per-hour caps. Abuse prevention on the API
+  side is achieved through spending caps and revocation, not throttling.
 
 ### Sandboxes
 
@@ -159,7 +182,7 @@ the repository.
 
 1. **Proxy indirection.** Users never hold raw provider keys. BayLeaf tokens are
    an opaque layer enabling revocation and spending control.
-2. **Multi-backend inference.** ✨ Two inference backends are configured: OpenRouter
+2. **Multi-backend inference.** Two inference backends are configured: OpenRouter
    (commercial, ZDR) and NRP/SDSC (institutional, NSF-funded). Traffic can shift
    between them without user-facing changes. This is dual-sourcing, not redundancy
    — the backends have different political profiles and cost structures.
@@ -182,13 +205,14 @@ the repository.
 - **ZDR is narrow.** It covers inference only. Conversation histories exist in the
   application database.
 - **No formal incident response plan.** Issues are handled ad hoc by the operator.
-- **FERPA.** BayLeaf's data handling practices are compatible with FERPA
-  requirements: student data is not shared with third parties for non-educational
-  purposes, inference providers retain nothing (ZDR), and conversation histories
-  are stored in a single encrypted database accessible only to the system
-  administrator — a university employee operating under legitimate educational
-  interest. However, BayLeaf has not been formally designated as an institutional
-  system by UC Santa Cruz. This is a governance gap, not a technical one.
+- **FERPA.** BayLeaf in its current OpenRouter-routed form is not among the
+  campus-approved tools for FERPA-protected (P3) content; users handling such
+  content should instead use the Workspace-based Gemini and NotebookLM tools
+  UCSC has already approved for that purpose. See [FERPA.md](FERPA.md) for the
+  full analysis, including the contract-stack comparison and the open question
+  (on the AI Council's summer 2026 agenda) of whether a proposed direct Google
+  Cloud integration would extend the existing P3 approval to BayLeaf's Google
+  lane.
 - **HIPAA.** The service is not designed for protected health information and no
   BAA is in place with any provider.
 - **Dependency on commercial providers.** OpenRouter, DigitalOcean, and Cloudflare
