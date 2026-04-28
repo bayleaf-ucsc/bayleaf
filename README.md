@@ -32,6 +32,10 @@ LLMs, web search and page fetching, and sandboxed code execution:
   ephemeral one-shot sandboxes
 - Injects a light system prompt prefix to orient downstream agents
 
+### Status — [uptime dashboard](https://stats.uptimerobot.com/tJ1Qkm7L0R)
+
+Public uptime dashboard for all BayLeaf services.
+
 ## Support
 
 Questions, problems, or feature requests?
