@@ -353,7 +353,9 @@ variables like `{"GITHUB_TOKEN":"ghp_..."}`) that are injected into every
 - `deployment_label` — Label key for sandbox tagging (e.g. `chat.bayleaf.dev`)
 - `auto_stop_minutes` — Idle timeout (default: 15)
 - `auto_archive_minutes` — Archive delay after stop (default: 60)
+- `auto_delete_minutes` — Minutes after archive before permanent deletion (-1 = never)
 - `sandbox_language` — Default runtime (default: `python`)
+- `foreground_timeout_seconds` — Seconds to wait for bash/delegate before auto-backgrounding (default: 30)
 
 ### Restricted Tools (Stealth Toolkits)
 
@@ -500,7 +502,7 @@ Slides are scope-ready in the capability registry but have no handlers yet.
 Several tools require API keys configured as "valves" in the OWUI admin panel.
 These are **never** committed to this repo:
 
-- `lathe` — `daytona_api_key`, `daytona_api_url`, `daytona_proxy_url`, `deployment_label`, `auto_stop_minutes`, `auto_archive_minutes`, `sandbox_language`
+- `lathe` — `daytona_api_key`, `daytona_api_url`, `daytona_proxy_url`, `deployment_label`, `auto_stop_minutes`, `auto_archive_minutes`, `auto_delete_minutes`, `sandbox_language`, `foreground_timeout_seconds`
 - `gws_toolkit` — `google_client_id`, `google_client_secret`, `base_url`, `enabled_capabilities`
 - `tavily_web_search` — `tavily_api_key`
 - `jina_reader_toolkit` — `JINA_API_KEY`
@@ -508,6 +510,10 @@ These are **never** committed to this repo:
 - `help_toolkit` — `INVITE_SIGNING_KEY` (optional; falls back to `WEBUI_SECRET_KEY` if empty)
 - `brace_toolkit` — `GITHUB_API_TOKEN`, `CANVAS_ACCESS_TOKEN`, `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON`
 - `brace3_filter` — `CANVAS_ACCESS_TOKEN` (used by both `brace3_filter` and `brace3_canvas_toolkit`; the toolkit snarfs it from the filter instance)
+
+**Non-secret, non-default valve values** (safe to record as recovery backup):
+
+- `lathe`: `deployment_label` = `chat.bayleaf.dev`, `auto_delete_minutes` = `129600` (90 days)
 
 ---
 
