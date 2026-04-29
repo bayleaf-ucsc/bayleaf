@@ -114,13 +114,14 @@ export async function findSandboxByLabel(
 /**
  * Create a persistent sandbox for a keyed user.
  * Auto-stops after 15 min idle, auto-archives after 60 min stopped,
- * never auto-deletes (-1).
+ * auto-deletes after DAYTONA_AUTO_DELETE_MINUTES (default 90 days).
  */
 export async function createPersistentSandbox(
   email: string,
   env: Bindings,
 ): Promise<SandboxInfo> {
   const deployLabel = env.DAYTONA_DEPLOYMENT_LABEL;
+  const autoDelete = parseInt(env.DAYTONA_AUTO_DELETE_MINUTES, 10) || -1;
   const resp = await fetch(apiUrl(env, '/sandbox'), {
     method: 'POST',
     headers: authHeaders(env),
@@ -130,7 +131,7 @@ export async function createPersistentSandbox(
       labels: { [deployLabel]: email },
       autoStopInterval: 15,
       autoArchiveInterval: 60,
-      autoDeleteInterval: -1,
+      autoDeleteInterval: autoDelete,
     }),
   });
 
