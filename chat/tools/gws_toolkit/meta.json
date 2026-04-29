@@ -10,9 +10,9 @@
       "author_url": "https://github.com/rndmcnlly/gws-toolkit",
       "description": "Per-user, per-chat OAuth2 access to Google Workspace APIs. Ephemeral tokens — every chat starts unauthorized. Admin valves control which capabilities are available. Uses OWUI event emitters for self-contained OAuth authorization.",
       "required_open_webui_version": "0.4.0",
-      "version": "0.7.1",
+      "version": "0.7.2",
       "licence": "MIT",
-      "requirements": "httpx"
+      "requirements": "httpx, beautifulsoup4, html5lib"
     }
   },
   "access_grants": [
@@ -26,7 +26,7 @@
       "created_at": 1775510451
     }
   ],
-  "updated_at": 1777443182,
+  "updated_at": 1777444012,
   "created_at": 1773131520,
   "user": null,
   "write_access": true,
