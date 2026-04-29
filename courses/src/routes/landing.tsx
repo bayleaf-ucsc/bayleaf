@@ -33,7 +33,7 @@ landingRoutes.get('/', async (c) => {
         </div>
         <p style="font-size: 0.9rem; color: #666;">
           Follow development on{' '}
-          <a href="https://github.com/rndmcnlly/bayleaf">GitHub</a>.
+          <a href="https://github.com/bayleaf-ucsc/bayleaf">GitHub</a>.
         </p>
       </BaseLayout>,
     );

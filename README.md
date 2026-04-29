@@ -39,7 +39,7 @@ Public uptime dashboard for all BayLeaf services.
 ## Support
 
 Questions, problems, or feature requests?
-**[Open an issue](https://github.com/rndmcnlly/bayleaf/issues)** on this repo.
+**[Open an issue](https://github.com/bayleaf-ucsc/bayleaf/issues)** on this repo.
 
 This is a small, faculty-operated project. Response times are best-effort, but
 every issue is read.

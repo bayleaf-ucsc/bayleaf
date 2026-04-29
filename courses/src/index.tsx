@@ -2,7 +2,7 @@
  * BayLeaf Courses — Teaser Page
  *
  * Minimal placeholder while the service is being redesigned.
- * See https://github.com/rndmcnlly/bayleaf/issues/4
+ * See https://github.com/bayleaf-ucsc/bayleaf/issues/4
  */
 
 import { Hono } from 'hono';
@@ -66,15 +66,15 @@ app.get('*', (c) =>
             from an initial prototype. Follow progress on GitHub:
           </p>
           <p>
-            <a href="https://github.com/rndmcnlly/bayleaf/issues/4">
-              github.com/rndmcnlly/bayleaf — Issue #4
+            <a href="https://github.com/bayleaf-ucsc/bayleaf/issues/4">
+              github.com/bayleaf-ucsc/bayleaf — Issue #4
             </a>
           </p>
         </div>
         <footer>
           <p>
             A service of <a href="https://bayleaf.dev">BayLeaf</a> for UC Santa Cruz.{' '}
-            <a href="https://github.com/rndmcnlly/bayleaf">Source on GitHub</a>.
+            <a href="https://github.com/bayleaf-ucsc/bayleaf">Source on GitHub</a>.
           </p>
         </footer>
       </body>

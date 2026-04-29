@@ -141,7 +141,7 @@ app.doc31('/docs/openapi.json', (c) => ({
     },
     license: {
       name: 'MIT',
-      url: 'https://github.com/rndmcnlly/bayleaf/blob/main/api/LICENSE',
+      url: 'https://github.com/bayleaf-ucsc/bayleaf/blob/main/api/LICENSE',
     },
   },
   servers: [

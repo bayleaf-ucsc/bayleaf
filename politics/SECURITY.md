@@ -227,4 +227,4 @@ the repository.
 ## 9. Contact
 
 **System administrator:** Adam Smith — `amsmith@ucsc.edu`  
-**Source code:** https://github.com/rndmcnlly/bayleaf (public)
+**Source code:** https://github.com/bayleaf-ucsc/bayleaf (public)

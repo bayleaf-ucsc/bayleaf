@@ -154,7 +154,7 @@ users impacted), never user names, emails, chat titles, or IDs.
 
 The job runs as a **DO App Platform Job** component (type: `SCHEDULED`,
 cron: `0 6 * * *`, timezone: `America/Los_Angeles`, i.e. daily at 6am Pacific).
-It builds from `chat/Dockerfile.retention` in the `rndmcnlly/bayleaf` repo
+It builds from `chat/Dockerfile.retention` in the `bayleaf-ucsc/bayleaf` repo
 (`python:3.12-slim` + `uv`). The job component shares the app but authenticates
 to OWUI over HTTPS like any external client.
 

@@ -87,7 +87,7 @@ export const BaseLayout: FC<PropsWithChildren<{ title: string }>> = ({ title, ch
       <footer>
         <p>
           A service of <a href="https://bayleaf.dev">BayLeaf</a> for UC Santa Cruz.{' '}
-          <a href="https://github.com/rndmcnlly/bayleaf">Source on GitHub</a>.
+          <a href="https://github.com/bayleaf-ucsc/bayleaf">Source on GitHub</a>.
         </p>
       </footer>
     </body>

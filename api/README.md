@@ -50,7 +50,7 @@ user_keys
 
 1. Clone and install dependencies:
    ```bash
-   git clone https://github.com/rndmcnlly/bayleaf.git
+   git clone https://github.com/bayleaf-ucsc/bayleaf.git
    cd bayleaf/api
    npm install
    ```
