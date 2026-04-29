@@ -949,12 +949,14 @@ A complete review package for BayLeaf's designation would include:
    the category of data it handles, the contract under which it
    handles that data, and the term limits and deletion obligations.
    This appears as part of the designation memo's Appendix A.
-6. **HECVAT or equivalent security questionnaire.** Not yet prepared;
-   would be completed once the above artifacts are in a state Counsel
-   and the Privacy Office are ready to review.
+6. **HECVAT or equivalent security questionnaire.** Prepared; see
+   [`HECVAT.md`](HECVAT.md) in this directory. The questionnaire is
+   filled in with answers honest to BayLeaf's posture as a
+   faculty-operated service, with a framing memo at the top explaining
+   the vendor-shaped questions that do not apply.
 
 Items 1–3 exist in this repository. Item 4 is provided in [§ 8](#8-a-draft-designation-memo). Items 5
-and 6 can be prepared on request once the earlier items are reviewed.
+and 6 are also in this repository.
 
 ---
 

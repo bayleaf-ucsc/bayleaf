@@ -67,13 +67,32 @@ is narrower than it sounds."
 - **User-initiated deletion is honest.** When a user deletes a conversation
   through the Chat interface, the record is removed from the application
   database. It is not soft-deleted or retained in a recoverable tombstone.
-- **Otherwise, retention is indefinite.** There is no scheduled deletion policy
-  for conversation histories, user accounts, uploaded files, or API key
-  mappings. Data a user has not deleted persists for as long as BayLeaf
-  operates.
+- **Automated 90-day retention.** Conversations (active and archived) and
+  their attached uploaded files are automatically deleted after 90 days of
+  inactivity (keyed on `updated_at`). Enforcement is via a daily scheduled
+  job (DO App Platform Job, `chat/retention_cleanup.py`) that operates
+  through the OWUI admin API rather than direct database access. Full
+  policy, algorithm, and audit posture are documented in
+  [`chat/RETENTION.md`](../chat/RETENTION.md). A parallel policy for the
+  API and its Daytona-backed code sandboxes is in
+  [`api/RETENTION.md`](../api/RETENTION.md).
+- **Sunrise grace period.** The retention policy was announced on
+  2026-04-28, with all pre-existing conversations treated as if their last
+  activity occurred on or after that date. The grace period expires
+  2026-07-27, guaranteeing every user a full 90-day export window from the
+  announcement date.
+- **Records hold.** Conversations belonging to users in a `hold:*` group
+  (e.g. `hold:litigation-2026`, `hold:audit-q2`) are exempt from automatic
+  deletion for the duration of the hold. `hold:*` is protected from OAuth
+  group-sync clobbering via `OAUTH_BLOCKED_GROUPS`.
+- **Accounts, configurations, and operational data** (user accounts,
+  workspace models, tools, functions, knowledge bases) are retained
+  indefinitely while in use; out of scope for the 90-day conversation
+  retention window.
 - **Backups.** DigitalOcean's managed-database backup schedule applies.
-  User-deleted records age out of backups according to that schedule; BayLeaf
-  does not perform manual backup scrubs.
+  User-deleted records and records expired under the 90-day policy age out
+  of backups according to that schedule; BayLeaf does not perform manual
+  backup scrubs.
 - **Service wind-down.** If BayLeaf is decommissioned, the operator will
   destroy the databases and object storage rather than transfer them.
 
