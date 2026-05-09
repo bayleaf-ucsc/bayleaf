@@ -118,7 +118,7 @@ All env vars are set with scope `RUN_AND_BUILD_TIME` unless noted.
 | `ENABLE_EVALUATION_ARENA_MODELS` | `false` | |
 | `ENABLE_MESSAGE_RATING` | `false` | |
 | `ENABLE_COMMUNITY_SHARING` | `false` | |
-| `DATABASE_POOL_SIZE` | `5` | |
+| `DATABASE_POOL_SIZE` | `10` | Headroom above OWUI's default of 5; see §1c. |
 | `DATABASE_URL` | `${bayleaf-chat-db.DATABASE_URL}` | Scope: `RUN_TIME` only |
 | `STORAGE_PROVIDER` | `s3` | |
 | `S3_BUCKET_NAME` | `bayleaf-ucsc-storage` | |
@@ -236,6 +236,47 @@ script can be re-run mid-term to catch late adds from the registrar.
   future lookups.
 - CILogon does not send a `picture` claim, so `OAUTH_UPDATE_PICTURE_ON_LOGIN`
   is a no-op in practice but is set for correctness if the IdP ever changes.
+
+### 1c. Scaling Posture (Single Worker, Single Replica)
+
+BayLeaf Chat runs as **1 instance × 1 uvicorn worker**. The instance is
+`apps-s-1vcpu-2gb`; `UVICORN_WORKERS` is unset, which means OWUI's `start.sh`
+defaults to `--workers 1`. `DATABASE_POOL_SIZE=10` (above OWUI's default of
+`5`) provides headroom for the warm-up burst after process restarts without
+approaching the managed PG cluster's `max_connections=25` cap.
+
+This is intentional. Going to multiple workers (or multiple replicas) is **not
+a single-flag change** on this stack: it requires every shared-state
+subsystem to use external coordination, per Open WebUI's own guidance:
+
+- [Open WebUI: Multi-Replica, High Availability & Concurrency Troubleshooting](https://docs.openwebui.com/troubleshooting/multi-replica/)
+
+The gaps today, mapped to that doc's checklist:
+
+| Requirement | Current state | Notes |
+|---|---|---|
+| Shared `WEBUI_SECRET_KEY` | ✓ set explicitly as a SECRET env var | §1 already documents the gotcha |
+| External database (PostgreSQL) | ✓ managed PG 17 | `bayleaf-chat-db` |
+| Redis for WebSockets / config sync | ✗ not configured | streaming events and config-change broadcast would diverge across workers |
+| Shared file storage | ✓ DO Spaces (S3) | uploads land in the bucket regardless of worker |
+| External vector DB | ✗ default ChromaDB (SQLite-backed) | known to **crash workers** during RAG ingestion under multi-worker; affects the `procurement` model's KB |
+| Toolkit ephemeral state | ✗ `gws_toolkit` uses per-worker `app.state` | tracked at [rndmcnlly/gws-toolkit#7](https://github.com/rndmcnlly/gws-toolkit/issues/7) |
+
+The architectural cliff is the database connection cap: with 1 instance × 1
+worker × pool 10 = 10 connections out of 25 max. Going to 2 workers
+(20 conn) is still within budget; a second instance would force either a DB
+upgrade or a connection pooler.
+
+**Capacity sizing for "campus, not the world"**: even at full UCSC adoption
+(~95 concurrent active sessions estimated, ~5–15 in-flight requests at peak),
+a single worker with the pool bump should cope. The argument for going
+multi-worker is **availability** (cold-start tail mitigation, deploy-window
+coverage) rather than **throughput**. Until the readiness gaps above are
+closed, the cost of going multi-worker (broken RAG, broken Google integration)
+exceeds the benefit.
+
+Tracked as a longer-term, incremental readiness effort at
+[bayleaf-ucsc/bayleaf#35](https://github.com/bayleaf-ucsc/bayleaf/issues/35).
 
 ---
 
