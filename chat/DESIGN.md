@@ -114,7 +114,7 @@ All env vars are set with scope `RUN_AND_BUILD_TIME` unless noted.
 | `ENABLE_OAUTH_GROUP_CREATION` | `true` | Auto-create groups from claims |
 | `OAUTH_GROUPS_CLAIM` | `affiliation` | CILogon eduPerson affiliation |
 | `OAUTH_GROUPS_SEPARATOR` | `;` | CILogon uses semicolons |
-| `OAUTH_BLOCKED_GROUPS` | `["legacy:*","course:*"]` | Protect manually-managed groups; see §1a |
+| `OAUTH_BLOCKED_GROUPS` | `["legacy:*","course:*","hold:*"]` | Protect manually-managed groups; see §1a |
 | `ENABLE_EVALUATION_ARENA_MODELS` | `false` | |
 | `ENABLE_MESSAGE_RATING` | `false` | |
 | `ENABLE_COMMUNITY_SHARING` | `false` | |
@@ -170,10 +170,11 @@ exact matches, shell-style wildcards (`*`, `?`), and regex patterns.
 | `course:` | Per-course access; suffix is Canvas course ID | `course:92591` |
 | `access:` | Special access tiers (future) | `access:beta-testers`, `access:elevated-rate` |
 | `admin:` | Operational groups (future) | `admin:operators` |
+| `hold:` | Users on administrative hold | `hold:graduation-pending` |
 | *(no prefix, `@ucsc.edu` suffix)* | OAuth-managed affiliation | `Faculty@ucsc.edu`, `Student@ucsc.edu`, `Member@ucsc.edu` |
 
-The current blocked pattern is `["legacy:*", "course:*"]`. As new prefixes are introduced,
-add them: `["legacy:*", "course:*", "access:*", "admin:*"]`.
+The current blocked pattern is `["legacy:*", "course:*", "hold:*"]`. As new prefixes are introduced,
+add them: `["legacy:*", "course:*", "hold:*", "access:*", "admin:*"]`.
 
 **Key details:**
 

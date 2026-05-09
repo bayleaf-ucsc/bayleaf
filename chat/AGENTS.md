@@ -17,6 +17,7 @@ Managed via `doctl --context bayleaf`.
 
 - **App ID**: `f1a1e758-62e9-4e99-90cb-212cab12958d`
 - **Image**: `ghcr.io/open-webui/open-webui` (version pinned in app spec)
+- **Current version**: `v0.9.4` ✨
 - **Database**: Managed PostgreSQL 17 (`bayleaf-chat-db`, ID `ea8c7549-e761-44e1-a9c3-e45e478a5202`)
 - **Storage**: DO Spaces (`bayleaf-ucsc-storage`, bucket-scoped access key)
 
@@ -83,6 +84,24 @@ owui-cli --json models show <id>         # full model JSON
 ```
 
 See `DESIGN.md` §7 for the full sync workflow.
+
+## OWUI Version Upgrades
+
+1. Read the release notes for each version between current and target
+   (check the `Current version` line above for the starting point).
+2. Flag breaking changes: DB migrations, env var changes, plugin API
+   changes, auth endpoint changes.
+3. Consider `pg_dump` if DB migrations are involved (DO managed PG has
+   built-in PITR, but an explicit backup is belt-and-suspenders).
+4. Pull the live spec:
+   `doctl apps spec get f1a1e758-62e9-4e99-90cb-212cab12958d --context bayleaf > /tmp/bayleaf-chat-spec.yaml`
+5. Edit the image `tag:` in the spec to the target version.
+6. Deploy:
+   `doctl apps update f1a1e758-62e9-4e99-90cb-212cab12958d --spec /tmp/bayleaf-chat-spec.yaml --context bayleaf`
+7. Wait for ACTIVE deployment phase, then verify health:
+   `curl -sS -o /dev/null -w '%{http_code}' https://chat.bayleaf.dev/health`
+8. Update the `Current version` line in this file.
+9. Diff the live spec env vars against DESIGN.md §1 and sync any drift.
 
 ## Don'ts
 
