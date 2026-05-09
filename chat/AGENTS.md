@@ -103,6 +103,64 @@ See `DESIGN.md` §7 for the full sync workflow.
 8. Update the `Current version` line in this file.
 9. Diff the live spec env vars against DESIGN.md §1 and sync any drift.
 
+## Customization Route
+
+When you need to change OWUI behavior, climb this ladder only as far as
+necessary. Each rung adds capability and upgrade-time risk; never skip
+ahead without a reason.
+
+1. **Plugins** (filters, tools, functions, pipes). Source in `chat/tools/`
+   and `chat/functions/`, deployed via `owui-cli`. Survives version
+   upgrades cleanly. Limit: only intercepts what OWUI exposes hooks for.
+2. **Env-var configuration**. Many behaviors (log level, OAuth claim
+   names, signup gates) are tunable via env vars in the spec. Always
+   exhaust this rung before writing code.
+3. **`run_command` startup wrapper** in the App Platform spec. The DO
+   spec field `run_command` overrides the container's `CMD`. The
+   upstream OWUI image (`ghcr.io/open-webui/open-webui`) has
+   `WORKDIR=/app/backend`, no `ENTRYPOINT`, and `CMD=["bash","start.sh"]`,
+   so prepending shell or Python and ending with `exec bash start.sh`
+   inserts arbitrary boot-time logic without forking the image. Use
+   `PYTHONSTARTUP` to inject monkey-patches or logging filters into
+   every Python process the image starts. The whole patch lives in the
+   spec YAML (version-controlled in this repo); no separate registry,
+   no image build, no runtime fetch dependency.
+4. **Custom Dockerfile** that `FROM`s upstream and `COPY`s in patch
+   files. Pattern after `chat/Dockerfile.retention`. Worth it when
+   patches exceed ~20 lines or need to add files (not just patch
+   behavior). Adds a build step and a version-pinning ritual on every
+   OWUI upgrade.
+5. **Fork OWUI**. Only justified for sustained patches upstream won't
+   merge. Avoid.
+
+### Rung-3 sketch (not deployed; reference only)
+
+A worked example of injecting a logging filter that scrubs PII from the
+OWUI OAuth callback logger (which dumps the full userinfo dict on
+failure modes). Drop into the `open-webui` service block of the spec:
+
+```yaml
+run_command: |
+  set -e
+  cat > /tmp/bayleaf_logfilter.py <<'PY'
+  import logging
+  _SENSITIVE = ("email", "given_name", "family_name", "name")
+  class Scrub(logging.Filter):
+      def filter(self, r):
+          msg = r.getMessage()
+          if r.name.startswith("open_webui.utils.oauth") and any(k in msg for k in _SENSITIVE):
+              r.msg, r.args = f"[bayleaf: scrubbed {r.name} payload]", ()
+          return True
+  logging.getLogger().addFilter(Scrub())
+  PY
+  export PYTHONSTARTUP=/tmp/bayleaf_logfilter.py
+  exec bash start.sh
+```
+
+Verify after deploy: trigger a no-op OAuth flow and confirm logs show
+the scrubbed sentinel string instead of the original payload. Targets
+logger names (stable across versions), not internal APIs.
+
 ## Don'ts
 
 - Don't commit secret values (API keys, OAuth secrets, DB credentials)
