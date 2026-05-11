@@ -1,6 +1,6 @@
 # BayLeaf API
 
-Cloudflare Worker built with **Hono** + **@hono/zod-openapi**: OIDC auth (provider-agnostic via .well-known discovery; currently CILogon), OpenRouter key provisioning, LLM proxy with system prompt injection, sandboxed code execution (Daytona), web search and page fetching (Tavily/Jina), Campus Pass (IP-based auth).
+Cloudflare Worker built with **Hono** + **@hono/zod-openapi**: OIDC auth (provider-agnostic via .well-known discovery; currently CILogon), OpenRouter key provisioning, LLM proxy with system prompt injection, sandboxed code execution (Daytona), web search and page fetching (Tavily), Campus Pass (IP-based auth).
 
 **Architecture**: Multi-file TypeScript under `src/`, D1 for key mappings + cached sandbox IDs. Zod schemas are the single source of truth for request/response validation and OpenAPI spec generation. Bundled by Wrangler.
 
@@ -22,7 +22,7 @@ src/
   constants.ts          OIDC discovery helper, OPENROUTER_API, DAYTONA defaults, cookie config
   openrouter.ts         OpenRouter API helpers (findKeyByName, createKey, deleteKey)
   daytona.ts            Daytona sandbox API client (lifecycle, exec, file ops)
-  web.ts               Web search (Tavily) and page fetch (Jina Reader) clients
+  web.ts               Web search and page fetch clients (Tavily Search + Tavily Extract)
   utils/
     auth.ts             resolveAuth(): shared auth for proxy + sandbox routes (Campus Pass, Bayleaf token, raw key)
     ip.ts               IP range parsing, campus pass checks
@@ -72,7 +72,7 @@ src/
 /sandbox/files/*        GET: download file, PUT: upload file (keyed only)
 /sandbox                DELETE: destroy user's sandbox (keyed or session)
 /web/search              POST: web search (Tavily)
-/web/fetch               POST: fetch page content (Jina Reader)
+/web/fetch               POST: fetch page content from one or more URLs (Tavily Extract)
 /recommended-model      Current recommended model slug + display name (JSON, unauthenticated)
 /docs                   Interactive API docs (Scalar viewer, loads /docs/openapi.json)
 /docs/openapi.json      OpenAPI 3.1 spec (auto-generated from Zod schemas)

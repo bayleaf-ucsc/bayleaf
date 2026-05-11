@@ -1,12 +1,12 @@
 /**
  * Web Search & Fetch Provider Clients
  *
- * Stateless helpers for web search (Tavily) and page content fetching (Jina Reader).
- * Mirrors the pattern of daytona.ts — all functions take env bindings as a parameter
- * and use provider API keys from Bindings.
+ * Stateless helpers for web search and page content fetching, both backed by
+ * Tavily. Mirrors the pattern of daytona.ts — all functions take env bindings
+ * as a parameter and use provider API keys from Bindings.
  *
- * The API contract is provider-agnostic: Tavily/Jina could be swapped for Exa
- * or another provider without changing the route schemas.
+ * The API contract is provider-agnostic: Tavily could be swapped for Exa or
+ * another provider without changing the route schemas.
  */
 
 import type { Bindings } from './types';
@@ -24,9 +24,19 @@ export interface WebSearchResponse {
   answer?: string;
 }
 
-export interface WebFetchResponse {
+export interface WebFetchResult {
   url: string;
   content: string;
+}
+
+export interface WebFetchFailure {
+  url: string;
+  error: string;
+}
+
+export interface WebFetchResponse {
+  results: WebFetchResult[];
+  failed_results?: WebFetchFailure[];
 }
 
 // ── Web Search (Tavily) ────────────────────────────────────────────
@@ -80,43 +90,61 @@ export async function searchWeb(
   };
 }
 
-// ── Web Fetch (Jina Reader) ────────────────────────────────────────
+// ── Web Fetch (Tavily Extract) ─────────────────────────────────────
 
 /**
- * Fetch and extract clean content from a web page using Jina Reader.
+ * Fetch and extract clean content from one or more web pages using Tavily Extract.
  *
- * @param url     The URL to fetch
- * @param format  Response format: 'markdown', 'text', or 'html'
- * @param env     Worker bindings (must contain JINA_API_KEY)
+ * Accepts a single URL string or an array of URLs (up to 20). Returns
+ * successfully-extracted pages in `results`, plus any failed URLs in
+ * `failed_results`.
+ *
+ * @param urls    A URL or array of URLs to fetch
+ * @param format  Response format: 'markdown' or 'text'
+ * @param env     Worker bindings (must contain TAVILY_API_KEY)
  */
 export async function fetchPage(
-  url: string,
+  urls: string | string[],
   format: string,
   env: Bindings,
 ): Promise<WebFetchResponse> {
-  // Jina Reader uses URL path prefix: https://r.jina.ai/{url}
-  // Accept header controls output format
-  const jinaUrl = `https://r.jina.ai/${url}`;
+  const urlList = typeof urls === 'string' ? [urls] : urls;
+  const tavilyFormat = format === 'text' ? 'text' : 'markdown';
 
-  const acceptMap: Record<string, string> = {
-    markdown: 'text/markdown',
-    text: 'text/plain',
-    html: 'text/html',
-  };
-
-  const resp = await fetch(jinaUrl, {
+  const resp = await fetch('https://api.tavily.com/extract', {
+    method: 'POST',
     headers: {
-      'Authorization': `Bearer ${env.JINA_API_KEY}`,
-      'Accept': acceptMap[format] ?? 'text/markdown',
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${env.TAVILY_API_KEY}`,
     },
+    body: JSON.stringify({
+      urls: urlList,
+      format: tavilyFormat,
+      extract_depth: 'basic',
+    }),
   });
 
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`Jina Reader failed: HTTP ${resp.status} — ${text.slice(0, 200)}`);
+    throw new Error(`Tavily extract failed: HTTP ${resp.status} — ${text.slice(0, 200)}`);
   }
 
-  const content = await resp.text();
+  const data = await resp.json() as {
+    results?: Array<{ url?: string; raw_content?: string }>;
+    failed_results?: Array<{ url?: string; error?: string }>;
+  };
 
-  return { url, content };
+  const results: WebFetchResult[] = (data.results ?? []).map((r) => ({
+    url: r.url ?? '',
+    content: r.raw_content ?? '',
+  }));
+
+  const failed_results: WebFetchFailure[] = (data.failed_results ?? []).map((f) => ({
+    url: f.url ?? '',
+    error: f.error ?? 'unknown error',
+  }));
+
+  return failed_results.length > 0
+    ? { results, failed_results }
+    : { results };
 }

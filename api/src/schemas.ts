@@ -166,18 +166,37 @@ export const WebSearchResponseSchema = z.object({
 }).openapi('WebSearchResponse');
 
 export const WebFetchRequestSchema = z.object({
-  url: z.string().url().openapi({
-    description: 'URL of the page to fetch.',
+  urls: z.union([
+    z.string().url(),
+    z.array(z.string().url()).min(1).max(20),
+  ]).openapi({
+    description:
+      'A URL or array of URLs to fetch (up to 20). A single URL string returns a single result; ' +
+      'an array fetches all URLs in one call.',
     example: 'https://example.com/article',
   }),
-  format: z.enum(['markdown', 'text', 'html']).optional().default('markdown').openapi({
+  format: z.enum(['markdown', 'text']).optional().default('markdown').openapi({
     description: 'Desired response format (default: markdown).',
   }),
 }).openapi('WebFetchRequest');
 
-export const WebFetchResponseSchema = z.object({
-  url: z.string().openapi({ description: 'The requested URL.' }),
+export const WebFetchResultSchema = z.object({
+  url: z.string().openapi({ description: 'The fetched URL.' }),
   content: z.string().openapi({ description: 'Page content in the requested format.' }),
+}).openapi('WebFetchResult');
+
+export const WebFetchFailureSchema = z.object({
+  url: z.string().openapi({ description: 'The URL that failed to fetch.' }),
+  error: z.string().openapi({ description: 'Reason the URL could not be fetched.' }),
+}).openapi('WebFetchFailure');
+
+export const WebFetchResponseSchema = z.object({
+  results: z.array(WebFetchResultSchema).openapi({
+    description: 'Successfully fetched pages.',
+  }),
+  failed_results: z.array(WebFetchFailureSchema).optional().openapi({
+    description: 'URLs that could not be fetched, if any.',
+  }),
 }).openapi('WebFetchResponse');
 
 // ── Meta ─────────────────────────────────────────────────────────

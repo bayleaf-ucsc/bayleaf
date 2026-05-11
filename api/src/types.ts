@@ -39,8 +39,7 @@ export interface Bindings {
   DAYTONA_API_KEY: string;         // Sandbox provider API key
 
   // Web search and fetch providers
-  TAVILY_API_KEY: string;          // Tavily search API key
-  JINA_API_KEY: string;            // Jina Reader API key
+  TAVILY_API_KEY: string;          // Tavily API key (used for both /web/search and /web/fetch)
 
   // Google Workspace CLI (gws) — optional; enables /docs/gws-* endpoints
   GWS_CLIENT_ID: string;           // OAuth client ID from GCP project (Desktop app)

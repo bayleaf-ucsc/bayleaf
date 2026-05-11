@@ -221,7 +221,7 @@ const WebCard: FC = () => (
   <div class={cardStyle} style="background: #f0f0ff; border-color: #4a4aad;">
     <h2>Web Search & Fetch</h2>
     <p>
-      Search the web and extract page content via the API, powered by Tavily and Jina Reader.
+      Search the web and extract page content via the API, powered by Tavily.
     </p>
     <details style="margin-top: 1rem;">
       <summary style="cursor: pointer; color: #006aad; font-weight: 500;">Quick start</summary>
@@ -235,7 +235,7 @@ const WebCard: FC = () => (
         <pre><code>{`curl https://api.bayleaf.dev/web/fetch \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"url": "https://example.com", "format": "markdown"}'`}</code></pre>
+  -d '{"urls": "https://example.com", "format": "markdown"}'`}</code></pre>
       </div>
     </details>
   </div>

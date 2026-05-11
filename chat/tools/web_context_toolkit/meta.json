@@ -1,0 +1,96 @@
+{
+  "id": "web_context_toolkit",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Web Context",
+  "meta": {
+    "description": "Search the web and extract clean content from web pages.",
+    "manifest": {
+      "title": "Web Context Toolkit",
+      "author": "Adam Smith (BayLeaf), based on Tavily Search Tool by victor1203",
+      "description": "Search the web and extract clean page content via the Tavily API.",
+      "required_open_webui_version": "0.4.0",
+      "requirements": "tavily-python",
+      "version": "1.0.0",
+      "licence": "MIT"
+    }
+  },
+  "access_grants": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "resource_type": "tool",
+      "resource_id": "web_context_toolkit",
+      "principal_type": "user",
+      "principal_id": "*",
+      "permission": "read",
+      "created_at": 0
+    }
+  ],
+  "updated_at": 0,
+  "created_at": 0,
+  "user": {
+    "id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+    "name": "Adam Smith",
+    "role": "admin",
+    "email": "amsmith@ucsc.edu"
+  },
+  "specs": [
+    {
+      "name": "search",
+      "description": "Perform a Tavily search and return the results.\n\nArgs:\nquery: The search query string\nsearch_type: Type of search to perform:\n- regular: Standard search with full results\n- context: Optimized for RAG applications\n- qa: Quick answer to a specific question\n\nReturns:\nA formatted string containing the search results",
+      "parameters": {
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "search_type": {
+            "default": "regular",
+            "enum": [
+              "regular",
+              "context",
+              "qa"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "extract",
+      "description": "Extract clean content from one or more web pages using Tavily Extract.\n\nPass a single URL string for one page, or a list of URLs (up to 20) to fetch many pages in a single call. Returns a formatted string with each page's content separated by clear delimiters, plus a list of any URLs that failed.\n\nArgs:\nurls: A URL string, or a list of URL strings (up to 20)\nformat: Output format for page content - \"markdown\" (default) or \"text\"\n\nReturns:\nA formatted string containing the extracted page content",
+      "parameters": {
+        "properties": {
+          "urls": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "format": {
+            "default": "markdown",
+            "enum": [
+              "markdown",
+              "text"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "urls"
+        ],
+        "type": "object"
+      }
+    }
+  ],
+  "has_user_valves": false
+}

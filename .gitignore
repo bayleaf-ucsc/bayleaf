@@ -1,2 +1,4 @@
 .DS_Store
 .agentnb/
+__pycache__/
+*.pyc

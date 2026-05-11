@@ -24,8 +24,7 @@
     "suggestion_prompts": null,
     "tags": [],
     "toolIds": [
-      "jina_reader_toolkit",
-      "tavily_web_search"
+      "web_context_toolkit"
     ],
     "builtinTools": {
       "time": false,

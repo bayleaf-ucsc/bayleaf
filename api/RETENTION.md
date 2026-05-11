@@ -67,9 +67,9 @@ No server-side session store. Logout deletes the cookie immediately.
 
 ## Web Search and Fetch
 
-**Not stored.** Search queries are forwarded to Tavily; page fetches go through
-Jina Reader. Responses are returned to the caller without caching. Neither
-third-party service receives user identity.
+**Not stored.** Search queries and URL extractions are forwarded to Tavily;
+responses are returned to the caller without caching. Tavily does not receive
+user identity.
 
 ---
 

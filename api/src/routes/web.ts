@@ -3,11 +3,11 @@
  *
  * Exposes web search and page content fetching as API endpoints, symmetric
  * with how /sandbox/* wraps Daytona. Provider-agnostic contract: the API
- * shape is stable even if Tavily/Jina are swapped for another provider.
+ * shape is stable even if Tavily is swapped for another provider.
  *
  * Routes (mounted at /web):
  *   POST /search   Search the web (Tavily)
- *   POST /fetch    Fetch and extract page content (Jina Reader)
+ *   POST /fetch    Fetch and extract page content from one or more URLs (Tavily Extract)
  *
  * Auth: resolveAuth() — Campus Pass and keyed users both get access.
  * No per-user state, no D1 rows needed (stateless service).
@@ -111,7 +111,8 @@ const fetchRoute = createRoute({
   tags: ['Web'],
   summary: 'Fetch page content',
   description:
-    'Fetch a web page and extract its content as clean text, markdown, or HTML. ' +
+    'Fetch one or more web pages and extract their content as clean markdown or plain text. ' +
+    'Pass a single URL string for one page, or an array of URLs (up to 20) to fetch many in a single call. ' +
     'Useful for feeding web content to LLMs or other processing pipelines.',
   security: [{ Bearer: [] }],
   request: {
@@ -131,8 +132,12 @@ const fetchRoute = createRoute({
         'application/json': {
           schema: WebFetchResponseSchema,
           example: {
-            url: 'https://example.com/article',
-            content: '# Article Title\n\nContent here...',
+            results: [
+              {
+                url: 'https://example.com/article',
+                content: '# Article Title\n\nContent here...',
+              },
+            ],
           },
         },
       },
@@ -156,10 +161,10 @@ webRoutes.openapi(fetchRoute, async (c) => {
   const auth = await resolveAuth(c);
   if (auth instanceof Response) return auth as any;
 
-  const { url, format } = c.req.valid('json');
+  const { urls, format } = c.req.valid('json');
 
   try {
-    const result = await fetchPage(url, format, c.env);
+    const result = await fetchPage(urls, format, c.env);
     return c.json(result, 200);
   } catch (e) {
     console.error('Web fetch error:', e);
@@ -170,7 +175,7 @@ webRoutes.openapi(fetchRoute, async (c) => {
 }, (result, c) => {
   if (!result.success) {
     return c.json({
-      error: { message: 'Missing required field: url', code: 400 },
+      error: { message: 'Missing or invalid required field: urls', code: 400 },
     }, 400) as any;
   }
 });

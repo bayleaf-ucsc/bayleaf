@@ -44,7 +44,6 @@ two members has bus factor 2: enough to survive the handover.
 | **Daytona** | `amsmith@ucsc.edu` | Personal | Partial | Teams feature exists; not yet used. |
 | **Google Cloud** (project `gws-cli-playground-ucsc`) | `amsmith@ucsc.edu` | GCP project | Mostly | Project is the unit of sharing; just needs a second IAM member at Owner. |
 | **Tavily** | `amsmith@ucsc.edu` | Personal | Partial | Small-vendor dashboards often have no team tier; API-key rotation is the handover path. |
-| **Jina** | `amsmith@ucsc.edu` | Personal | Partial | Same shape as Tavily. |
 | **DeepInfra** | `amsmith@ucsc.edu` | Personal | Partial | Same. |
 | **CILogon** | Institutional registration via UCSC | Client registration | Ready | Already institutionally scoped; admin contact is `amsmith@ucsc.edu`. |
 | **GitHub** (`bayleaf-ucsc/bayleaf`) | `rndmcnlly` (verified for `amsmith@ucsc.edu`) is org owner | GitHub Organization | Partial | Org exists and is verified to `ucsc.edu`; awaits a second Owner when a UCSC IT counterpart steps in. |
@@ -141,7 +140,7 @@ Resources: OAuth client used by the `gws_toolkit` (Chat) and the
 `gws-cli-playground-ucsc` credentials served at
 `/docs/gws-client-secret.json` (API).
 
-### 5. OpenRouter, Daytona, Tavily, Jina, DeepInfra → key rotation is the handover
+### 5. OpenRouter, Daytona, Tavily, DeepInfra → key rotation is the handover
 
 These vendors either don't offer a Team tier or offer one that isn't worth
 the current overhead for a solo operator. Credentials are held as secrets

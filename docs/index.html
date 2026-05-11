@@ -90,8 +90,7 @@
             <li><a href="https://www.digitalocean.com/">DigitalOcean</a>: hosts BayLeaf Chat (application and encrypted database)</li>
             <li><a href="https://www.cloudflare.com/">Cloudflare</a>: hosts BayLeaf API (Worker and edge database)</li>
             <li><a href="https://www.daytona.io/">Daytona</a>: sandboxed code execution environments</li>
-            <li><a href="https://tavily.com/">Tavily</a>: web search API (no conversation data stored)</li>
-            <li><a href="https://jina.ai/reader/">Jina Reader</a>: web page content extraction</li>
+            <li><a href="https://tavily.com/">Tavily</a>: web search and page content extraction (no conversation data stored)</li>
             <li><a href="https://www.cilogon.org/faq">CILogon</a>: user authentication (via CruzID Google Account OIDC)</li>
         </ul>
     </details>
@@ -169,12 +168,11 @@
 
     <h3>Web Search & Fetch</h3>
     <p>
-        The API provides <strong>web search</strong> (backed by
-        <a href="https://tavily.com/">Tavily</a>) and <strong>page content extraction</strong>
-        (backed by <a href="https://jina.ai/reader/">Jina Reader</a>) as first-class endpoints.
-        Agents can search the web for information and fetch clean, extracted content from any
-        URL, all authenticated with the same <code>sk-bayleaf-</code> API key used for LLM
-        inference and sandbox access.
+        The API provides <strong>web search</strong> and <strong>page content extraction</strong>
+        as first-class endpoints, both backed by <a href="https://tavily.com/">Tavily</a>.
+        Agents can search the web for information and fetch clean, extracted content from one
+        or many URLs in a single call, all authenticated with the same <code>sk-bayleaf-</code>
+        API key used for LLM inference and sandbox access.
     </p>
 
     <h3>Tool Integrations</h3>

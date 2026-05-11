@@ -24,8 +24,9 @@ LLMs, web search and page fetching, and sandboxed code execution:
 
 - **Keyless access** from the campus network (169.233.x.x)
 - **API key access** for off-campus use (self-issued via the service)
-- **Web search & fetch** — search the web (Tavily) and extract clean page content
-  (Jina Reader), available to all authenticated users
+- **Web search & fetch** — search the web and extract clean page content from
+  one or many URLs at a time, both backed by Tavily, available to all
+  authenticated users
 - **Code sandbox** — persistent Linux environments (backed by
   [Daytona](https://www.daytona.io/)) for running code, uploading/downloading
   files, all authenticated with the same API key; campus-pass users get

@@ -141,8 +141,7 @@ upstream provider.
 | NRP / SDSC | LLM inference (institutional) | US (UC San Diego / NSF) | Prompts and completions in transit on research infrastructure; open-weight models via Envoy AI Gateway |
 | CILogon / InCommon | Identity (OIDC) | US (Internet2) | Email, name, affiliation claim |
 | Daytona | Code sandboxes | US | Per-user sandbox file contents |
-| Tavily | Web search tool | US | Search queries from tool-use |
-| Jina AI | Web page reader | Germany | URLs submitted for parsing |
+| Tavily | Web search and page extraction tools | US | Search queries and URLs submitted from tool-use |
 | GitHub (Microsoft) | Code hosting, static site | US | Public repository only; no user data |
 
 For ownership, political profile, and exit paths for each provider, see the
@@ -190,7 +189,7 @@ the repository.
 | Session signing key (`WEBUI_SECRET_KEY`) | DigitalOcean encrypted env var |
 | S3 access keys | DigitalOcean encrypted env vars |
 | Daytona API key | Open WebUI admin valves; Cloudflare Worker secrets |
-| Tool API keys (Tavily, Jina, etc.) | Open WebUI admin valves |
+| Tool API keys (Tavily, etc.) | Open WebUI admin valves |
 | Database URL | DigitalOcean runtime env var |
 | OpenRouter provisioning key | Cloudflare Worker secret |
 | Campus pool key | Cloudflare Worker secret |

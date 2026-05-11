@@ -291,7 +291,7 @@ is defined in `models/<id>/model.json`.
 | ID | Name | Base Model | Description |
 |----|------|-----------|-------------|
 | `basic` | Basic | `openrouter.z-ai/glm-5.1` | Default model for all users. Campus-aware system prompt (`Basic v1.1`), builtin tools enabled, skills for Google Workspace, Canvas, web search, and code sandbox. |
-| `deep-research` | Deep Research | `openrouter.z-ai/glm-5.1` | Interactive research agent. Web search (Tavily) and web page retrieval (Jina Reader) toolkits. System prompt (`Deep Research v1.0`) instructs the model to narrate its search process and conduct research interactively. |
+| `deep-research` | Deep Research | `openrouter.z-ai/glm-5.1` | Interactive research agent. Web Context toolkit (Tavily search + Tavily Extract). System prompt (`Deep Research v1.1`) instructs the model to narrate its search process and conduct research interactively. |
 | `help` | Help | `openrouter.z-ai/glm-5.1` | BayLeaf help desk. Lists user groups and available models, inspects model configurations, processes invite codes. Uses `help_filter` to stealth-inject `help_toolkit`. System prompt (`Help v1.3`). |
 
 ### Group-Restricted Models
@@ -322,8 +322,8 @@ chats, notes, knowledge, channels). Skills bound: `google-workspace`,
 `bayleaf-for-students`, `bayleaf-for-faculty`, `bayleaf-for-employees`,
 `canvas-api`, `web-search`, `code-sandbox`. Vision disabled; file upload enabled.
 
-**Deep Research** — Interactive research agent (`Deep Research v1.0`). Bound to
-`tavily_web_search` and `jina_reader_toolkit`. System prompt instructs the model
+**Deep Research** — Interactive research agent (`Deep Research v1.1`). Bound to
+`web_context_toolkit` (Tavily search + Tavily Extract). System prompt instructs the model
 to narrate its intent before each tool call and summarize results, so users can
 follow the research path. Prefers interactive research over monolithic reports.
 Vision and file context enabled. All builtin tools enabled.
@@ -342,8 +342,8 @@ cleanly if the page is missing instead of falling back silently; body is
 converted from HTML to markdown via `markdownify`. Vision and `file_context`
 enabled.
 
-**Everett Program Chat** — Placeholder chatbot for the Everett Program with web
-search tools (`tavily_web_search`, `jina_reader_toolkit`).
+**Everett Program Chat** — Placeholder chatbot for the Everett Program with the
+Web Context toolkit (`web_context_toolkit`).
 
 **Procurement** — UC procurement policy assistant. System prompt contains a
 behavioral preamble and a lookup table of file IDs for 11 UC policy documents.
@@ -379,8 +379,7 @@ grants).
 | ID | Name | Description |
 |----|------|-------------|
 | `lathe` | Code Sandbox | Coding agent tools backed by per-user Daytona sandbox VMs (see below) |
-| `tavily_web_search` | Web Search | Tavily API search (valve: API key) |
-| `jina_reader_toolkit` | Web Page Content | Jina Reader API for fetching web pages as markdown (valve: API key) |
+| `web_context_toolkit` | Web Context | Tavily-backed web search and page-content extraction in one toolkit (valve: API key) |
 | `deepinfra_key_generator_toolkit` | DeepInfra Key Generator | Generates scoped, time-limited DeepInfra API keys (valve: API key, token name, model list) |
 | `random_choice_toolkit` | Random Choice | Uniform random selection from a list — for varied regenerations |
 | `youtube_toolkit` | YouTube | Stub — tells users to run a local `uv` command to fetch transcripts |
@@ -585,8 +584,7 @@ These are **never** committed to this repo:
 
 - `lathe` — `daytona_api_key`, `daytona_api_url`, `daytona_proxy_url`, `deployment_label`, `auto_stop_minutes`, `auto_archive_minutes`, `auto_delete_minutes`, `persistent_volume`, `sandbox_language`, `foreground_timeout_seconds`
 - `gws_toolkit` — `google_client_id`, `google_client_secret`, `base_url`, `enabled_capabilities`
-- `tavily_web_search` — `tavily_api_key`
-- `jina_reader_toolkit` — `JINA_API_KEY`
+- `web_context_toolkit` — `tavily_api_key`, `search_depth`, `include_answer`, `max_results`, `extract_depth`
 - `deepinfra_key_generator_toolkit` — `API_KEY`, `API_TOKEN_NAME`, `MODELS`, `EXPIRES_DELTA`
 - `help_toolkit` — `INVITE_SIGNING_KEY` (optional; falls back to `WEBUI_SECRET_KEY` if empty)
 - `brace_toolkit` — `GITHUB_API_TOKEN`, `CANVAS_ACCESS_TOKEN`, `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON`
@@ -641,7 +639,7 @@ Manage via `owui-cli skills` or the admin API at `/api/v1/skills/`.
 
 | ID | Active | Access | Description |
 |----|--------|--------|-------------|
-| `web-search` | yes | all users (`user:*`) | Describes the Tavily web search and Jina Reader integrations and how to enable them. |
+| `web-search` | yes | all users (`user:*`) | Describes the Web Context toolkit (Tavily-backed search and page extraction) and how to enable it. |
 | `code-sandbox` | yes | 1 group | Points to the Lathe coding agent toolkit and Daytona sandboxes; tells users to enable the Code Sandbox toolkit. |
 | `canvas-api` | yes | 1 group | Guides agents using the Canvas LMS API via the Code Sandbox toolkit's `CANVAS_ACCESS_TOKEN` env var; includes `canvaslms` CLI usage, REST API pointer, data hygiene rules, and escalation to a desktop agent for complex tasks. |
 | `bayleaf-for-students` | yes | 1 group (`Student@ucsc.edu`) | Instructs the agent to prioritize learning, build writing literacy, and points to the learning-opportunities skill package. |
@@ -926,10 +924,7 @@ chat/
 │   │   └── meta.json
 │   ├── help_toolkit/            # Stealth — injected by help_filter
 │   │   └── tool.py
-│   ├── tavily_web_search/
-│   │   ├── tool.py
-│   │   └── meta.json
-│   ├── jina_reader_toolkit/
+│   ├── web_context_toolkit/
 │   │   ├── tool.py
 │   │   └── meta.json
 │   ├── deepinfra_key_generator_toolkit/

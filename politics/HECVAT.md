@@ -395,8 +395,7 @@ See START HERE section above.
 - **OpenRouter** — LLM gateway. Prompts/completions in transit. ZDR providers only (enforced by OpenRouter configuration).
 - **CILogon / InCommon** — OIDC federation (email, name, eduPerson affiliation claim). Under InCommon federation terms that UCSC is already party to.
 - **Daytona** — Per-user code-sandbox VMs (for the Lathe toolkit). Sandbox file contents only.
-- **Tavily** — Search queries from tool-use.
-- **Jina AI** — URLs submitted for parsing (Germany-hosted; only subprocessor not US-based).
+- **Tavily** — Search queries and URLs submitted from tool-use (web search and page-content extraction).
 - **DeepInfra** — Inference endpoint via OpenRouter routing; also directly used by the DeepInfra-key-generator toolkit to mint time-limited scoped keys.
 - **GitHub (Microsoft)** — Code hosting and issue tracking. Public repo only; no user data. One container-build-time dependency fetches a script from GitHub (documented and reviewed).
 - **Google** — Only invoked when an end user voluntarily authorizes the optional `gws_toolkit` for their own Workspace data within a single chat. Tokens are ephemeral, in-process, keyed by `(user_id, chat_id)`, and never persisted.
@@ -1164,7 +1163,7 @@ See START HERE section.
 
 - **DigitalOcean encrypted environment variables** for: `WEBUI_SECRET_KEY` (session signing), `OAUTH_CLIENT_SECRET`, `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY`, `DATABASE_URL`.
 - **Cloudflare Worker secrets** for: OpenRouter provisioning key, CILogon client secret, Daytona API key, campus-pool OpenRouter key.
-- **OWUI admin valves** for tool-layer keys (Tavily, Jina, Daytona, Canvas, GitHub, Google OAuth client).
+- **OWUI admin valves** for tool-layer keys (Tavily, Daytona, Canvas, GitHub, Google OAuth client).
 - **Rotation:** Keys are rotated on suspected compromise, on provider key-lifecycle events, or on operator-initiated schedules. No automated rotation in place for provider-issued keys.
 
 ---
@@ -2362,7 +2361,7 @@ See START HERE section.
 
 **Q:** Is institutional data coming into or going out of the United States at any point during collection, processing, storage, or archiving?
 
-**Answer:** Primarily US-resident. One subprocessor (Jina AI, Germany) is used only for the Web Reader tool when the user invokes it; URLs submitted to that tool transit to/from Germany. All other subprocessors are US-based.
+**Answer:** No. All subprocessors are US-based. Institutional data collected, processed, stored, and archived by the service remains in US regions throughout its lifecycle. Edge traffic may transit Cloudflare points-of-presence outside the US in flight, but storage and processing endpoints are US-resident.
 
 **Additional Information:**
 
@@ -2553,7 +2552,7 @@ See START HERE section.
 
 **Q:** Will data be collected from or processed in or stored in the European Economic Area (EEA)?
 
-**Answer:** Only incidentally. Data is stored in US regions; if a user is located in the EEA when they access BayLeaf, their request traverses Cloudflare's edge (which may be in the EEA) before reaching US storage. The Jina AI reader tool, when invoked, sends URLs to servers in Germany.
+**Answer:** Only incidentally. Data is stored in US regions; if a user is located in the EEA when they access BayLeaf, their request traverses Cloudflare's edge (which may be in the EEA) before reaching US storage. No subprocessor processes or stores institutional data in the EEA.
 
 **Additional Information:**
 
