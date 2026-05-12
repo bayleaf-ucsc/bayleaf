@@ -193,6 +193,54 @@
         </li>
     </ul>
 
+    <h2>Adoption</h2>
+    <p>
+        BayLeaf is in active use across UCSC courses. A representative sample:
+    </p>
+    <ul>
+        <li>
+            <strong>CMPM 120: Game Development Experience.</strong>
+            Spring 2026 (~30 students). Brace3, a generalized course agent customizable by instructors directly on Canvas.
+        </li>
+        <li>
+            <strong>CSE 185E: Technical Writing for CS&amp;E.</strong>
+            Spring 2026 (~120 students). Pre-draft brainstorming and drafting feedback.
+        </li>
+        <li>
+            <strong>CMPM 171: Game Design Studio.</strong>
+            Winter 2026 (~160 students). Gambit, an agent for rapid game prototyping.
+        </li>
+        <li>
+            <strong>CSE 185E: Technical Writing for CS&amp;E.</strong>
+            Winter 2026 (~50 students). Drafting feedback alongside other LLMs.
+        </li>
+        <li>
+            <strong>CMPM 121: Game Development Patterns.</strong>
+            Fall 2025 (~120 students). Brace2, the first course-specific agent built on BayLeaf.
+        </li>
+        <li>
+            <strong>CMPM 121: Game Development Patterns.</strong>
+            Fall 2024 (~170 students). The original Brace assistant, a precursor to BayLeaf.
+        </li>
+    </ul>
+    <p>
+        Course-specific agents (Brace, Brace2, Brace3, Gambit) are built atop BayLeaf Chat
+        with custom system prompts and toolkits. Other courses use BayLeaf's general-purpose
+        Basic model directly.
+    </p>
+
+    <h3>Ad-hoc faculty use</h3>
+    <p>
+        Beyond enrolled courses, faculty across campus use BayLeaf for one-off course-management
+        tasks: running scripts in the Chat <a href="#lathe">Code Sandbox</a> or driving agentic CLI
+        tools through the BayLeaf API to manipulate Canvas. Reported uses include:
+    </p>
+    <ul>
+        <li>Auditing multiple-choice quiz options to ensure each wrong answer has useful feedback.</li>
+        <li>Building custom interfaces for processing free-form feedback surveys.</li>
+        <li>Generating student project group rosters from enrollment and preference data.</li>
+    </ul>
+
     <h2>In the News</h2>
     <ul>
         <li>
@@ -211,7 +259,7 @@
 
     <h2>Related Projects</h2>
     <ul>
-        <li>
+        <li id="lathe">
             <a href="https://lathe.tools/">Lathe</a>:
             The open-source toolkit powering the Code Sandbox feature above. Reusable by any Open WebUI
             deployment. Includes support for tools like
