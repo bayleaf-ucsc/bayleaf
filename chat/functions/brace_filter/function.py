@@ -51,7 +51,7 @@ class Filter:
         system_prompt = await get_system_prompt_for_course(
             course_id, chat_id, self.valves.CANVAS_ACCESS_TOKEN
         )
-        system_prompt = prompt_template(system_prompt, __user__)
+        system_prompt = await prompt_template(system_prompt, __user__)
 
         body["messages"].insert(0, {"role": "system", "content": system_prompt})
 

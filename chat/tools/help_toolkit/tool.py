@@ -2,7 +2,7 @@
 title: Help
 author: Adam Smith
 description: Help users understand their group memberships, available models, and manage invite codes.
-version: 0.2.0
+version: 0.3.0
 """
 
 import re
@@ -69,12 +69,12 @@ class Tools:
 
     # ── Informational ───────────────────────────────────────────────
 
-    def list_my_groups(self, __user__: dict = {}):
+    async def list_my_groups(self, __user__: dict = {}):
         """
         List all groups the current user belongs to, with descriptions.
         Useful when a user asks "what groups am I in?" or wants to understand their access level.
         """
-        user_groups = Groups.get_groups_by_member_id(__user__["id"])
+        user_groups = await Groups.get_groups_by_member_id(__user__["id"])
         if not user_groups:
             return "You are not a member of any groups."
 
@@ -84,7 +84,7 @@ class Tools:
             lines.append(f"- **{g.name}**{desc}")
         return f"You belong to {len(user_groups)} group(s):\n\n" + "\n".join(lines)
 
-    def list_available_models(self, __user__: dict = {}):
+    async def list_available_models(self, __user__: dict = {}):
         """
         List all models the current user can access, with access reason annotations.
         Returns JSON: each model entry includes id, name, base_model_id, description, and an "access_reason" field
@@ -93,17 +93,17 @@ class Tools:
         """
         import json
 
-        accessible = Models.get_models_by_user_id(__user__["id"], permission="read")
+        accessible = await Models.get_models_by_user_id(__user__["id"], permission="read")
         if not accessible:
             return "You don't currently have access to any models."
 
-        user_groups = Groups.get_groups_by_member_id(__user__["id"])
+        user_groups = await Groups.get_groups_by_member_id(__user__["id"])
         group_names = {g.id: g.name for g in user_groups}
         user_group_ids = set(group_names.keys())
 
         result = []
         for m in accessible:
-            grants = AccessGrants.get_grants_by_resource("model", m.id)
+            grants = await AccessGrants.get_grants_by_resource("model", m.id)
             read_grants = [g for g in grants if g.permission == "read"]
 
             if any(g.principal_id == "*" for g in read_grants):
@@ -127,7 +127,7 @@ class Tools:
 
         return json.dumps(result, indent=2)
 
-    def get_model_details(self, model_id: str, __user__: dict = {}):
+    async def get_model_details(self, model_id: str, __user__: dict = {}):
         """
         Get detailed information about a specific model by its model ID (e.g. "basic", "help").
         Returns a curated JSON summary: id, name, description, base_model_id, system prompt,
@@ -138,12 +138,12 @@ class Tools:
         import json
 
         # Verify the user has access to this model
-        accessible = Models.get_models_by_user_id(__user__["id"], permission="read")
+        accessible = await Models.get_models_by_user_id(__user__["id"], permission="read")
         accessible_ids = {m.id for m in accessible}
         if model_id not in accessible_ids:
             return f"You don't have access to a model with ID `{model_id}`. Use `list_available_models` to see what's available."
 
-        model = Models.get_model_by_id(model_id)
+        model = await Models.get_model_by_id(model_id)
         if not model:
             return f"Model `{model_id}` not found."
 
@@ -199,7 +199,7 @@ class Tools:
                 raise ValueError(
                     "This invite key is incompatible with your email address."
                 )
-        group = Groups.get_group_by_id(invite["grp"])
+        group = await Groups.get_group_by_id(invite["grp"])
         if not group:
             raise ValueError("The group associated with this invite does not exist.")
 
@@ -213,7 +213,7 @@ class Tools:
             }
         )
         if confirmed:
-            res = Groups.add_users_to_group(group.id, [__user__["id"]])
+            res = await Groups.add_users_to_group(group.id, [__user__["id"]])
             if res:
                 return f"Successfully added user to group: {group.name}. Users should now start a *fresh* conversation rather than switching to any newly-available models in the middle of this conversation about invite codes."
             else:
@@ -221,7 +221,7 @@ class Tools:
         else:
             return "User declined to accept invite."
 
-    def create_invite(
+    async def create_invite(
         self,
         group_name: str,
         expiry_delta: str = "30d",
@@ -239,7 +239,7 @@ class Tools:
         invite = {}
 
         group_uuid = None
-        for g in Groups.get_groups(filter=None):
+        for g in await Groups.get_groups(filter=None):
             if g.name == group_name:
                 group_uuid = g.id
                 break
