@@ -1,4 +1,4 @@
-# HECVAT 4.1.5 — BayLeaf AI Playground
+# HECVAT 4.1.5: BayLeaf AI Playground
 
 **Solution Provider:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz  
 **Solution Name:** BayLeaf AI Playground  
@@ -24,25 +24,25 @@ Several HECVAT questions (e.g. SOC 2 audit, DRP testing, 24×7 SOC,
 enterprise IR team, formal BCP, SDLC documents, "parent and subsidiary
 relationships") presume an enterprise vendor posture. Those answers are
 "no" here, and the *Additional Information* field on each explains the
-honest substitute — typically either (a) the posture of the upstream
+honest substitute, typically either (a) the posture of the upstream
 platform provider (DigitalOcean, Cloudflare, CILogon/InCommon,
 OpenRouter) whose SOC 2s and controls BayLeaf rides on, or (b) the UCSC
 institutional controls that already apply to the operator.
 
 **Supporting documents (in-repo):**
 
-- `../chat/DESIGN.md` — full architectural backup (OIDC config, group sync,
+- `../chat/DESIGN.md`: full architectural backup (OIDC config, group sync,
   model access control, tool/function architecture, recovery procedure).
-- `SECURITY.md` (this directory) — security exhibit (architecture, data flows,
+- `SECURITY.md` (this directory): security exhibit (architecture, data flows,
   subprocessor inventory, credential management, honest disclosures).
-- `FERPA.md` — full FERPA analysis, contract-stack comparison
+- `FERPA.md`: full FERPA analysis, contract-stack comparison
   against UC's Google agreements, and draft designation memo (§ 8) for
   the proposed approval pathway.
-- `DEPENDENCIES.md` — dependency audit with exit paths.
-- `ACCOUNTS.md` — account/credential handover plan.
-- `../SECURITY.md` (repo root, <https://github.com/bayleaf-ucsc/bayleaf/blob/main/SECURITY.md>) — vulnerability-reporting policy.
+- `DEPENDENCIES.md`: dependency audit with exit paths.
+- `ACCOUNTS.md`: account/credential handover plan.
+- `../SECURITY.md` (repo root, <https://github.com/bayleaf-ucsc/bayleaf/blob/main/SECURITY.md>): vulnerability-reporting policy.
 
-**Scope of this HECVAT:** Both user surfaces as a single solution —
+**Scope of this HECVAT:** Both user surfaces as a single solution:
 BayLeaf Chat (`chat.bayleaf.dev`, Open WebUI on DigitalOcean App
 Platform) and BayLeaf API (`api.bayleaf.dev`, Cloudflare Worker).
 
@@ -59,8 +59,7 @@ BayLeaf to the P3-approved list.
 
 ## START HERE
 
-### — General Information —
-
+### General Information
 ### GNRL-01
 
 **Q:** Solution Provider Name
@@ -151,8 +150,7 @@ BayLeaf to the P3-approved list.
 
 ---
 
-### — Company Information —
-
+### Company Information
 ### COMP-01
 
 **Q:** Do you have a dedicated software and system development team(s) (e.g., customer support, implementation, product management, etc.)?*
@@ -189,7 +187,7 @@ BayLeaf to the P3-approved list.
 
 **Answer:** No at the BayLeaf layer; yes at the institutional layer.
 
-**Additional Information:** Single operator. BayLeaf relies on (a) UCSC's Information Security Office (ISO) and Privacy Office for institutional-level security governance that already applies to the operator as a UCSC employee; (b) the security programs of upstream providers (DigitalOcean, Cloudflare — both SOC 2 Type 2 attested) for platform-layer controls; and (c) GitHub Advanced Security and Dependabot for continuous dependency scanning on the source repositories.
+**Additional Information:** Single operator. BayLeaf relies on (a) UCSC's Information Security Office (ISO) and Privacy Office for institutional-level security governance that already applies to the operator as a UCSC employee; (b) the security programs of upstream providers (DigitalOcean and Cloudflare, both SOC 2 Type 2 attested) for platform-layer controls; and (c) GitHub Advanced Security and Dependabot for continuous dependency scanning on the source repositories.
 
 ---
 
@@ -244,7 +242,7 @@ BayLeaf to the P3-approved list.
 
 **Q:** Does your solution have AI features, or are there plans to implement AI features in the next 12 months?
 
-**Answer:** Yes — BayLeaf is primarily an AI service.
+**Answer:** Yes. BayLeaf is primarily an AI service.
 
 **Additional Information:** See the AI section below for detail.
 
@@ -254,7 +252,7 @@ BayLeaf to the P3-approved list.
 
 **Q:** Does your solution process protected health information (PHI) or any data covered by the Health Insurance Portability and Accountability Act (HIPAA)?
 
-**Answer:** No — not designed for PHI. No BAA is in place with any subprocessor.
+**Answer:** No. not designed for PHI. No BAA is in place with any subprocessor.
 
 **Additional Information:** Users are directed (via campus guidance and the Help model) not to enter PHI into BayLeaf. PHI use cases at UCSC should be served by campus-approved HIPAA-covered tools, not BayLeaf.
 
@@ -298,8 +296,7 @@ BayLeaf to the P3-approved list.
 
 See START HERE section above.
 
-### — Documentation —
-
+### Documentation
 ### DOCU-01
 
 **Q:** Do you have a well-documented business continuity plan (BCP), with a clear owner, that is tested annually?*
@@ -326,7 +323,7 @@ See START HERE section above.
 
 **Answer:** No at the BayLeaf layer; yes at the upstream provider layer.
 
-**Additional Information:** BayLeaf itself has not undergone a SOC 2 audit. The upstream hosting platforms — DigitalOcean (SOC 2 Type 2) and Cloudflare (SOC 2 Type 2, ISO 27001) — have recent audit reports available through their trust portals and are the basis for the datacenter and platform-level control assertions below.
+**Additional Information:** BayLeaf itself has not undergone a SOC 2 audit. The upstream hosting platforms (DigitalOcean with SOC 2 Type 2, and Cloudflare with SOC 2 Type 2 + ISO 27001) have recent audit reports available through their trust portals and are the basis for the datacenter and platform-level control assertions below.
 
 ---
 
@@ -370,8 +367,7 @@ See START HERE section above.
 
 ---
 
-### — Assessment of Third Parties —
-
+### Assessment of Third Parties
 ### THRD-01
 
 **Q:** Do you perform security assessments of third-party companies with which you share data?*
@@ -386,19 +382,19 @@ See START HERE section above.
 
 **Q:** Do you have contractual language in place with third parties governing access to institutional data?*
 
-**Answer:** Yes — under each subprocessor's standard commercial terms and DPA.
+**Answer:** Yes. under each subprocessor's standard commercial terms and DPA.
 
 **Additional Information:** Complete subprocessor list with data exposure per party is at `SECURITY.md §4`. Summary:
 
-- **DigitalOcean** — App Platform, Managed PostgreSQL 17, Spaces. Holds user accounts, conversation histories, file uploads. Under DO's published DPA.
-- **Cloudflare** — Workers, D1, KV, DNS, TLS. Holds API key mappings; all traffic transits Cloudflare's edge. Under Cloudflare's published DPA.
-- **OpenRouter** — LLM gateway. Prompts/completions in transit. ZDR providers only (enforced by OpenRouter configuration).
-- **CILogon / InCommon** — OIDC federation (email, name, eduPerson affiliation claim). Under InCommon federation terms that UCSC is already party to.
-- **Daytona** — Per-user code-sandbox VMs (for the Lathe toolkit). Sandbox file contents only.
-- **Tavily** — Search queries and URLs submitted from tool-use (web search and page-content extraction).
-- **DeepInfra** — Inference endpoint via OpenRouter routing; also directly used by the DeepInfra-key-generator toolkit to mint time-limited scoped keys.
-- **GitHub (Microsoft)** — Code hosting and issue tracking. Public repo only; no user data. One container-build-time dependency fetches a script from GitHub (documented and reviewed).
-- **Google** — Only invoked when an end user voluntarily authorizes the optional `gws_toolkit` for their own Workspace data within a single chat. Tokens are ephemeral, in-process, keyed by `(user_id, chat_id)`, and never persisted.
+- **DigitalOcean**: App Platform, Managed PostgreSQL 17, Spaces. Holds user accounts, conversation histories, file uploads. Under DO's published DPA.
+- **Cloudflare**: Workers, D1, KV, DNS, TLS. Holds API key mappings; all traffic transits Cloudflare's edge. Under Cloudflare's published DPA.
+- **OpenRouter**: LLM gateway. Prompts/completions in transit. ZDR providers only (enforced by OpenRouter configuration).
+- **CILogon / InCommon**: OIDC federation (email, name, eduPerson affiliation claim). Under InCommon federation terms that UCSC is already party to.
+- **Daytona**: Per-user code-sandbox VMs (for the Lathe toolkit). Sandbox file contents only.
+- **Tavily**: Search queries and URLs submitted from tool-use (web search and page-content extraction).
+- **DeepInfra**: Inference endpoint via OpenRouter routing; also directly used by the DeepInfra-key-generator toolkit to mint time-limited scoped keys.
+- **GitHub (Microsoft)**: Code hosting and issue tracking. Public repo only; no user data. One container-build-time dependency fetches a script from GitHub (documented and reviewed).
+- **Google**: Only invoked when an end user voluntarily authorizes the optional `gws_toolkit` for their own Workspace data within a single chat. Tokens are ephemeral, in-process, keyed by `(user_id, chat_id)`, and never persisted.
 
 No custom DPAs or FERPA addenda are in place with these parties beyond their standard commercial terms. `FERPA.md §5` analyzes the contract stack in detail, including the UC-signed agreements already in force with Google that would govern a proposed direct Google Cloud integration.
 
@@ -408,7 +404,7 @@ No custom DPAs or FERPA addenda are in place with these parties beyond their sta
 
 **Q:** Do the contracts in place with these third parties address liability in the event of a data breach?*
 
-**Answer:** Yes — per each provider's standard commercial terms.
+**Answer:** Yes. per each provider's standard commercial terms.
 
 **Additional Information:** BayLeaf has not negotiated custom liability terms with any subprocessor. Each provider's standard DPA and breach-notification clauses apply. `FERPA.md §5.2` notes that a proposed direct Google Cloud integration would, by inheriting UCSC's 2024 Customer Affiliate Agreement and the 2025 Google Cloud Enterprise Addendum, provide institutionally-negotiated enhanced liability caps ($20M data-breach cap, $10M cyber/privacy insurance) that are not available on BayLeaf's current OpenRouter-routed path.
 
@@ -428,14 +424,13 @@ No custom DPAs or FERPA addenda are in place with these parties beyond their sta
 
 **Q:** Do you have a process and implemented procedures for managing your hardware supply chain (e.g., telecommunications equipment, export licensing, computing devices)?
 
-**Answer:** Not applicable — no operator-managed hardware.
+**Answer:** Not applicable. no operator-managed hardware.
 
 **Additional Information:** BayLeaf operates no physical hardware. All compute, storage, and networking are provided by upstream cloud providers. Hardware supply chain risk sits within those providers (DigitalOcean, Cloudflare) and is covered by their SOC 2 programs.
 
 ---
 
-### — Change Management —
-
+### Change Management
 ### CHNG-01
 
 **Q:** Will the institution be notified of major changes to your environment that could impact the institution's security posture?*
@@ -450,7 +445,7 @@ No custom DPAs or FERPA addenda are in place with these parties beyond their sta
 
 **Q:** Does the system support client customizations from one release to another?*
 
-**Answer:** Not applicable — single-tenant campus service with no per-customer customization.
+**Answer:** Not applicable. single-tenant campus service with no per-customer customization.
 
 **Additional Information:** There is one BayLeaf deployment for the UCSC campus. Per-group access controls (invite-code groups, course groups) are operational customizations, not software customizations.
 
@@ -500,7 +495,7 @@ No custom DPAs or FERPA addenda are in place with these parties beyond their sta
 
 **Q:** Do you have policy and procedure, currently implemented, managing how critical patches are applied to all systems and applications?
 
-**Answer:** Yes — tracked via Dependabot and manual upstream monitoring; patches applied on a best-effort basis.
+**Answer:** Yes. tracked via Dependabot and manual upstream monitoring; patches applied on a best-effort basis.
 
 **Additional Information:** OWUI upstream releases are monitored. DigitalOcean and Cloudflare handle underlying infrastructure patching.
 
@@ -520,7 +515,7 @@ No custom DPAs or FERPA addenda are in place with these parties beyond their sta
 
 **Q:** Do clients have the option to not participate in or postpone an upgrade to a new release?
 
-**Answer:** Not applicable — no client-specific versioning.
+**Answer:** Not applicable. no client-specific versioning.
 
 **Additional Information:** One shared deployment.
 
@@ -550,7 +545,7 @@ No custom DPAs or FERPA addenda are in place with these parties beyond their sta
 
 **Q:** Do you have a technology roadmap, for at least the next two years, for enhancements and bug fixes for the solution being assessed?
 
-**Answer:** Partial — no formal multi-year roadmap document.
+**Answer:** Partial. no formal multi-year roadmap document.
 
 **Additional Information:** Near-term direction is visible in the repository's open issues and in `FERPA.md §5.2` (proposed direct Google Cloud integration). Longer-term direction is shaped by the UCSC AI Council's evolving positions on campus AI tools.
 
@@ -580,7 +575,7 @@ No custom DPAs or FERPA addenda are in place with these parties beyond their sta
 
 **Q:** Do procedures exist to provide that emergency changes are documented and authorized (including after-the-fact approval)?
 
-**Answer:** Yes — via the public git history.
+**Answer:** Yes. via the public git history.
 
 **Additional Information:** "Deploy first, commit later" means emergency changes are made to the live service immediately and reconciled to the repository after. The git log serves as the audit trail.
 
@@ -596,13 +591,12 @@ No custom DPAs or FERPA addenda are in place with these parties beyond their sta
 
 ---
 
-### — Policies, Processes, and Procedures —
-
+### Policies, Processes, and Procedures
 ### PPPR-01
 
 **Q:** Do you have a documented patch management process?*
 
-**Answer:** Yes — see CHNG-06/07. Continuous dependency scanning via Dependabot; upstream monitoring for OWUI and Workers runtime; platform-level patching delegated to DigitalOcean and Cloudflare.
+**Answer:** Yes. see CHNG-06/07. Continuous dependency scanning via Dependabot; upstream monitoring for OWUI and Workers runtime; platform-level patching delegated to DigitalOcean and Cloudflare.
 
 **Additional Information:**
 
@@ -634,7 +628,7 @@ No custom DPAs or FERPA addenda are in place with these parties beyond their sta
 
 **Answer:** Yes.
 
-**Additional Information:** TLS 1.2+ for all transport (Cloudflare-terminated for `chat.bayleaf.dev` and `api.bayleaf.dev`). At-rest encryption uses AES-256 via DigitalOcean Managed PostgreSQL, DO Spaces, and Cloudflare D1 — all industry-standard open algorithms.
+**Additional Information:** TLS 1.2+ for all transport (Cloudflare-terminated for `chat.bayleaf.dev` and `api.bayleaf.dev`). At-rest encryption uses AES-256 via DigitalOcean Managed PostgreSQL, DO Spaces, and Cloudflare D1: all industry-standard open algorithms.
 
 ---
 
@@ -672,7 +666,7 @@ No custom DPAs or FERPA addenda are in place with these parties beyond their sta
 
 **Q:** Do you have a documented information security policy?
 
-**Answer:** Yes — `SECURITY.md` is the security exhibit. Plus repo-root `SECURITY.md` covers vulnerability reporting.
+**Answer:** Yes. `SECURITY.md` is the security exhibit. Plus repo-root `SECURITY.md` covers vulnerability reporting.
 
 **Additional Information:**
 
@@ -712,7 +706,7 @@ No custom DPAs or FERPA addenda are in place with these parties beyond their sta
 
 **Q:** Is security awareness training mandatory for all employees?
 
-**Answer:** Yes — for the sole operator, via UCSC's annual mandatory training.
+**Answer:** Yes. for the sole operator, via UCSC's annual mandatory training.
 
 **Additional Information:**
 
@@ -722,7 +716,7 @@ No custom DPAs or FERPA addenda are in place with these parties beyond their sta
 
 **Q:** Do you have process and procedure(s) documented, and currently followed, that require a review and update of the access list(s) for privileged accounts?
 
-**Answer:** Yes at the platform level — single privileged account is the operator. No other privileged accounts exist.
+**Answer:** Yes at the platform level. The single privileged account is the operator. No other privileged accounts exist.
 
 **Additional Information:** See `ACCOUNTS.md` for the credential inventory and handover plan.
 
@@ -754,15 +748,14 @@ No custom DPAs or FERPA addenda are in place with these parties beyond their sta
 
 See START HERE section.
 
-### — Authentication, Authorization, and Account Management —
-
+### Authentication, Authorization, and Account Management
 ### AAAI-01
 
 **Q:** Does your solution support single sign-on (SSO) protocols for user and administrator authentication?*
 
-**Answer:** Yes — required, not optional.
+**Answer:** Yes. required, not optional.
 
-**Additional Information:** Chat uses OIDC via CILogon (InCommon Federation), with UCSC's IdP preselected (`urn:mace:incommon:ucsc.edu`). `ENABLE_LOGIN_FORM=false` — there is no password login for anyone, including the administrator. Administrator access uses the same OIDC flow.
+**Additional Information:** Chat uses OIDC via CILogon (InCommon Federation), with UCSC's IdP preselected (`urn:mace:incommon:ucsc.edu`). `ENABLE_LOGIN_FORM=false`: there is no password login for anyone, including the administrator. Administrator access uses the same OIDC flow.
 
 ---
 
@@ -770,7 +763,7 @@ See START HERE section.
 
 **Q:** For customers not using SSO, does your solution support local authentication protocols for user and administrator authentication?*
 
-**Answer:** Not applicable — local authentication is disabled.
+**Answer:** Not applicable. local authentication is disabled.
 
 **Additional Information:** See AAAI-01. No bypass exists.
 
@@ -780,7 +773,7 @@ See START HERE section.
 
 **Q:** Password complexity enforcement / limitations / reset procedures for non-SSO users.
 
-**Answer:** Not applicable — no non-SSO users exist.
+**Answer:** Not applicable. no non-SSO users exist.
 
 **Additional Information:** Any local passwords that might exist in the OWUI user table (e.g. for placeholder student accounts used in pre-provisioning, set to the literal string `placeholder-no-login`) cannot be used to log in because `ENABLE_LOGIN_FORM=false`. See `../chat/DESIGN.md §1b` for the placeholder-account workflow.
 
@@ -802,7 +795,7 @@ See START HERE section.
 
 **Answer:** No.
 
-**Additional Information:** All secrets (OAuth client secret, `WEBUI_SECRET_KEY`, S3 keys, API provider keys, OpenRouter keys, Canvas tokens, etc.) live in DigitalOcean encrypted environment variables, Cloudflare Worker secrets, or OWUI admin "valves" — never in committed source. The one pseudo-password that does exist is the literal string `placeholder-no-login` written into placeholder student accounts (see AAAI-03..05); it is not a credential because local login is disabled and it is documented as non-secret.
+**Additional Information:** All secrets (OAuth client secret, `WEBUI_SECRET_KEY`, S3 keys, API provider keys, OpenRouter keys, Canvas tokens, etc.) live in DigitalOcean encrypted environment variables, Cloudflare Worker secrets, or OWUI admin "valves", never in committed source. The one pseudo-password that does exist is the literal string `placeholder-no-login` written into placeholder student accounts (see AAAI-03..05); it is not a credential because local login is disabled and it is documented as non-secret.
 
 ---
 
@@ -848,7 +841,7 @@ See START HERE section.
 
 **Answer:**
 
-- **Retention:** Default platform retention — approximately 7 days for DO App Platform live application logs; longer for Cloudflare Workers analytics; DO Managed PostgreSQL backups per DO's managed-backup schedule.
+- **Retention:** Default platform retention. Approximately 7 days for DO App Platform live application logs; longer for Cloudflare Workers analytics; DO Managed PostgreSQL backups per DO's managed-backup schedule.
 - **Protection:** Logs are accessible only to the operator via authenticated DO and Cloudflare admin interfaces. DO and Cloudflare encrypt logs at rest as part of their SOC 2 program.
 - **Institution access:** UCSC ITS/ISO can be granted visibility on request. There is no general customer log portal today because there is only one institutional customer (UCSC) and one administrator (the operator).
 
@@ -860,7 +853,7 @@ See START HERE section.
 
 **Q:** For customers not using SSO, does your application support integration with other authentication and authorization systems?
 
-**Answer:** N/A — SSO is required.
+**Answer:** N/A. SSO is required.
 
 **Additional Information:**
 
@@ -870,7 +863,7 @@ See START HERE section.
 
 **Q:** Do you allow the customer to specify attribute mappings for any needed information beyond a user identifier?
 
-**Answer:** Yes — configured via the OWUI app spec environment variables (`OAUTH_SCOPES`, `OAUTH_GROUPS_CLAIM`, `OAUTH_GROUPS_SEPARATOR`).
+**Answer:** Yes. configured via the OWUI app spec environment variables (`OAUTH_SCOPES`, `OAUTH_GROUPS_CLAIM`, `OAUTH_GROUPS_SEPARATOR`).
 
 **Additional Information:** Current mapping: `openid`, `email`, `profile`, `org.cilogon.userinfo` scopes are requested; `affiliation` (eduPerson-equivalent, semicolon-separated) is the group claim. See `../chat/DESIGN.md §1` and §1a.
 
@@ -890,7 +883,7 @@ See START HERE section.
 
 **Q:** Does your solution support any of the following web SSO standards: SAML2 (with redirect flow), OIDC, CAS, or other?
 
-**Answer:** Yes — OIDC via CILogon.
+**Answer:** Yes. OIDC via CILogon.
 
 **Additional Information:** CILogon itself federates to UCSC's SAML IdP. OWUI's implementation is provider-agnostic (`OPENID_PROVIDER_URL` points at any `.well-known/openid-configuration`).
 
@@ -910,7 +903,7 @@ See START HERE section.
 
 **Q:** For customers not using SSO, does your application and/or user frontend/portal support multifactor authentication?
 
-**Answer:** N/A — MFA is provided by UCSC's IdP upstream of CILogon (Duo).
+**Answer:** N/A. MFA is provided by UCSC's IdP upstream of CILogon (Duo).
 
 **Additional Information:** Because all authentication flows through the UCSC IdP via CILogon, MFA posture matches whatever UCSC requires of the user's campus account. BayLeaf does not hold MFA enrollment itself.
 
@@ -920,14 +913,13 @@ See START HERE section.
 
 **Q:** Does your application automatically lock the session or log out an account after a period of inactivity?
 
-**Answer:** Yes — OWUI enforces JWT session timeouts per `WEBUI_SECRET_KEY`-signed tokens.
+**Answer:** Yes. OWUI enforces JWT session timeouts per `WEBUI_SECRET_KEY`-signed tokens.
 
 **Additional Information:** Session tokens expire per OWUI's default lifetime and must be re-issued via OIDC. API tokens (`sk-bayleaf-*`) do not expire on inactivity but are revocable at any time via the D1 `revoked` flag (see `SECURITY.md §3.2`).
 
 ---
 
-### — Data —
-
+### Data
 ### DATA-01
 
 **Q:** Will the institution's data be stored on any devices configured with non-RFC 1918 (i.e., publicly routable) IP addresses?*
@@ -942,7 +934,7 @@ See START HERE section.
 
 **Q:** Is the transport of sensitive data encrypted using security protocols/algorithms (e.g., system-to-client)?*
 
-**Answer:** Yes — TLS 1.2+ everywhere.
+**Answer:** Yes. TLS 1.2+ everywhere.
 
 **Additional Information:** User → Cloudflare: TLS terminated at Cloudflare edge (TLS 1.2+/1.3). Cloudflare → DO: TLS. OWUI → OpenRouter: TLS. OWUI → DO managed PostgreSQL: TLS. Worker → D1: platform-internal, Cloudflare-managed. No plaintext data transport.
 
@@ -987,9 +979,9 @@ See START HERE section.
 
 **Q:** Are ownership rights to all data, inputs, outputs, and metadata retained even through a provider acquisition or bankruptcy event?*
 
-**Answer:** Yes — users retain ownership of their inputs and outputs.
+**Answer:** Yes. users retain ownership of their inputs and outputs.
 
-**Additional Information:** BayLeaf does not claim ownership of user data. The operator has no saleable interest in user data to transfer in an acquisition/bankruptcy scenario. The service itself is not saleable — it is a faculty-operated artifact, not a business.
+**Additional Information:** BayLeaf does not claim ownership of user data. The operator has no saleable interest in user data to transfer in an acquisition/bankruptcy scenario. The service itself is not saleable: it is a faculty-operated artifact, not a business.
 
 ---
 
@@ -1007,7 +999,7 @@ See START HERE section.
 
 **Q:** Is media used for long-term retention of business data and archival purposes stored in a secure, environmentally protected area?*
 
-**Answer:** Yes — delegated to DigitalOcean. No operator-held media.
+**Answer:** Yes. delegated to DigitalOcean. No operator-held media.
 
 **Additional Information:** All long-term retention is on DO-managed storage (covered by DO's SOC 2 physical security controls).
 
@@ -1067,7 +1059,7 @@ See START HERE section.
 
 **Q:** Are data backups encrypted?
 
-**Answer:** Yes — encrypted at rest by DigitalOcean per their managed-database security model.
+**Answer:** Yes. encrypted at rest by DigitalOcean per their managed-database security model.
 
 **Additional Information:**
 
@@ -1097,7 +1089,7 @@ See START HERE section.
 
 **Q:** Does your staff (or third party) have access to institutional data (e.g., financial, PHI, or other sensitive information) through any means?
 
-**Answer:** The sole operator has administrative access to the OWUI database (conversation histories, user accounts, access grants) and to Cloudflare D1 (API key mappings) for operational reasons — troubleshooting, abuse response, and incident handling.
+**Answer:** The sole operator has administrative access to the OWUI database (conversation histories, user accounts, access grants) and to Cloudflare D1 (API key mappings) for operational reasons: troubleshooting, abuse response, and incident handling.
 
 **Additional Information:** Access is used only for operational purposes and only when needed. The operator does not routinely browse user content. See `SECURITY.md §7` (design principle 6: single-administrator model).
 
@@ -1127,7 +1119,7 @@ See START HERE section.
 
 **Q:** Are ownership rights to all data, inputs, outputs, and metadata retained by the institution?
 
-**Answer:** Yes — see DATA-06.
+**Answer:** Yes. see DATA-06.
 
 **Additional Information:**
 
@@ -1137,7 +1129,7 @@ See START HERE section.
 
 **Q:** In the event of imminent bankruptcy, closing of business, or retirement of service, will you provide 90 days for customers to get their data out of the system and migrate applications?
 
-**Answer:** Yes — the operator commits to providing at least 90 days' notice to UCSC before final wind-down, during which users can export their data via OWUI's chat-export UI.
+**Answer:** Yes. the operator commits to providing at least 90 days' notice to UCSC before final wind-down, during which users can export their data via OWUI's chat-export UI.
 
 **Additional Information:**
 
@@ -1149,7 +1141,7 @@ See START HERE section.
 
 **Answer:** Yes, via DigitalOcean managed-database backups.
 
-**Additional Information:** DO managed-PostgreSQL backup cadence applies (daily full + continuous WAL, with point-in-time recovery available per DO's default retention window). User-deleted records and records expired under the 90-day rolling retention policy (`../chat/RETENTION.md`) age out of these backups on DO's schedule. The operator does not perform manual backup scrubs. Retention periods end-to-end: conversations — 90 days from last activity; sandbox content — 90 days from last activity; revoked API keys — persist indefinitely for reject-on-use behavior (with a pending improvement to scrub `or_key_secret` after a grace period, see `../api/RETENTION.md`); session cookies — 24 hours; Cloudflare edge logs — ~72 hours.
+**Additional Information:** DO managed-PostgreSQL backup cadence applies (daily full + continuous WAL, with point-in-time recovery available per DO's default retention window). User-deleted records and records expired under the 90-day rolling retention policy (`../chat/RETENTION.md`) age out of these backups on DO's schedule. The operator does not perform manual backup scrubs. Retention periods end-to-end: conversations, 90 days from last activity; sandbox content, 90 days from last activity; revoked API keys, persist indefinitely for reject-on-use behavior (with a pending improvement to scrub `or_key_secret` after a grace period, see `../api/RETENTION.md`); session cookies, 24 hours; Cloudflare edge logs, ~72 hours.
 
 ---
 
@@ -1170,13 +1162,12 @@ See START HERE section.
 
 ## Infrastructure
 
-### — Application/Service Security —
-
+### Application/Service Security
 ### APPL-01
 
 **Q:** Are access controls for institutional accounts based on structured rules, such as RBAC, ABAC, or PBAC?*
 
-**Answer:** Yes — RBAC + ABAC.
+**Answer:** Yes. RBAC + ABAC.
 
 **Additional Information:** OWUI enforces role-based access (admin/user) plus attribute/group-based access via `access_grants` on models, tools, and skills. Groups are populated by (a) OAuth-sync from the CILogon `affiliation` claim (e.g. `Faculty@ucsc.edu`, `Student@ucsc.edu`) and (b) manually-managed namespaced groups (`legacy:*`, `course:*`, `access:*`, `admin:*`) protected from OAuth-sync clobbering via `OAUTH_BLOCKED_GROUPS`. See `../chat/DESIGN.md §1a`.
 
@@ -1186,7 +1177,7 @@ See START HERE section.
 
 **Q:** Are you using a web application firewall (WAF)?*
 
-**Answer:** Yes — Cloudflare WAF fronts both `chat.bayleaf.dev` and `api.bayleaf.dev`.
+**Answer:** Yes. Cloudflare WAF fronts both `chat.bayleaf.dev` and `api.bayleaf.dev`.
 
 **Additional Information:** Cloudflare's managed WAF ruleset is enabled, including the OWASP core ruleset equivalent. `CORS_ALLOW_ORIGIN` is explicitly set to `https://chat.bayleaf.dev` (no wildcard).
 
@@ -1208,7 +1199,7 @@ See START HERE section.
 
 **Answer:** No.
 
-**Additional Information:** BayLeaf does not request geolocation. IP-level source is visible for logging (and used for the Campus Pass IP-range check in the API — Cloudflare `CF-Connecting-IP` compared against UCSC's published CIDR ranges).
+**Additional Information:** BayLeaf does not request geolocation. IP-level source is visible for logging (and used for the Campus Pass IP-range check in the API: Cloudflare `CF-Connecting-IP` compared against UCSC's published CIDR ranges).
 
 ---
 
@@ -1226,7 +1217,7 @@ See START HERE section.
 
 **Q:** Do you subject your code to static code analysis and/or static application security testing prior to release?*
 
-**Answer:** Yes — GitHub Advanced Security (code scanning + secret scanning) and Dependabot are enabled on both source repositories, with findings resolved by fix rather than silenced.
+**Answer:** Yes. GitHub Advanced Security (code scanning + secret scanning) and Dependabot are enabled on both source repositories, with findings resolved by fix rather than silenced.
 
 **Additional Information:** See `DEPENDENCIES.md` for the dependency audit rationale.
 
@@ -1246,7 +1237,7 @@ See START HERE section.
 
 **Q:** Are access controls for staff within your organization based on structured rules, such as RBAC, ABAC, or PBAC?
 
-**Answer:** Yes — there is one staff member (the operator), who holds admin on all systems via OIDC. Third-party personnel with access: none.
+**Answer:** Yes. there is one staff member (the operator), who holds admin on all systems via OIDC. Third-party personnel with access: none.
 
 **Additional Information:**
 
@@ -1276,7 +1267,7 @@ See START HERE section.
 
 **Q:** Have your developers been trained in secure coding techniques?
 
-**Answer:** Yes — sole developer has formal training through doctoral research and academic experience in software systems; annual UCSC cybersecurity awareness training; active participation in campus security governance via the UCSC AI Council.
+**Answer:** Yes. sole developer has formal training through doctoral research and academic experience in software systems; annual UCSC cybersecurity awareness training; active participation in campus security governance via the UCSC AI Council.
 
 **Additional Information:**
 
@@ -1296,7 +1287,7 @@ See START HERE section.
 
 **Q:** If mobile, is the application available from a trusted source (e.g., App Store, Google Play Store)?
 
-**Answer:** N/A — no dedicated mobile app. The web interface is responsive and usable from mobile browsers.
+**Answer:** N/A. No dedicated mobile app. The web interface is responsive and usable from mobile browsers.
 
 **Additional Information:**
 
@@ -1312,13 +1303,12 @@ See START HERE section.
 
 ---
 
-### — Datacenter —
-
+### Datacenter
 ### DCTR-01
 
 **Q:** Select your hosting option.
 
-**Answer:** Public cloud (IaaS/PaaS) — DigitalOcean App Platform (SFO region) for Chat; Cloudflare Workers (US edge) for API; DO Spaces (SFO2) for object storage; DO Managed PostgreSQL for relational storage; Cloudflare D1 for API key mappings.
+**Answer:** Public cloud (IaaS/PaaS): DigitalOcean App Platform (SFO region) for Chat; Cloudflare Workers (US edge) for API; DO Spaces (SFO2) for object storage; DO Managed PostgreSQL for relational storage; Cloudflare D1 for API key mappings.
 
 **Additional Information:** BayLeaf operates no datacenters. All DCTR answers rely on the SOC 2 Type 2 audits of the upstream providers.
 
@@ -1338,7 +1328,7 @@ See START HERE section.
 
 **Q:** Are you generally able to accommodate storing each institution's data within its geographic region?
 
-**Answer:** Yes — all storage is in US regions (SFO/SFO2) today. BayLeaf is a single-institution service; all data stays in the US.
+**Answer:** Yes. all storage is in US regions (SFO/SFO2) today. BayLeaf is a single-institution service; all data stays in the US.
 
 **Additional Information:**
 
@@ -1388,7 +1378,7 @@ See START HERE section.
 
 **Q:** Is the service hosted in a high-availability environment?
 
-**Answer:** Yes — DO App Platform runs managed with automatic restart; Cloudflare Workers is globally redundant by design; DO Managed PostgreSQL runs with standby.
+**Answer:** Yes. DO App Platform runs managed with automatic restart; Cloudflare Workers is globally redundant by design; DO Managed PostgreSQL runs with standby.
 
 **Additional Information:**
 
@@ -1458,7 +1448,7 @@ See START HERE section.
 
 **Q:** Are you using your cloud provider's available hardening tools or pre-hardened images?
 
-**Answer:** Yes — OWUI runs from the upstream maintained image; DO App Platform provides platform-hardened runtimes; Cloudflare Workers runs on Cloudflare's hardened V8 isolate runtime.
+**Answer:** Yes. OWUI runs from the upstream maintained image; DO App Platform provides platform-hardened runtimes; Cloudflare Workers runs on Cloudflare's hardened V8 isolate runtime.
 
 **Additional Information:**
 
@@ -1468,14 +1458,13 @@ See START HERE section.
 
 **Q:** Does your cloud solution provider have access to your encryption keys?
 
-**Answer:** Yes — at-rest encryption keys are managed by the cloud providers (DO for Postgres/Spaces, Cloudflare for D1). This is the default managed-service model.
+**Answer:** Yes. at-rest encryption keys are managed by the cloud providers (DO for Postgres/Spaces, Cloudflare for D1). This is the default managed-service model.
 
 **Additional Information:** Application-layer secrets (OAuth client secret, session signing key, API provider keys) are encrypted by DO's env-var encryption / Cloudflare's Worker secrets store. Customer-managed keys (CMK) are not in use.
 
 ---
 
-### — Firewalls, IDS, IPS, and Networking —
-
+### Firewalls, IDS, IPS, and Networking
 ### FIDP-01
 
 **Q:** Are you utilizing a stateful packet inspection (SPI) firewall?*
@@ -1490,7 +1479,7 @@ See START HERE section.
 
 **Q:** Do you have a documented policy for firewall change requests?*
 
-**Answer:** No separate policy — firewall/WAF rule changes are made by the operator via Cloudflare console and recorded in the public GitHub repository when code-driven.
+**Answer:** No separate policy. Firewall/WAF rule changes are made by the operator via Cloudflare console and recorded in the public GitHub repository when code-driven.
 
 **Additional Information:**
 
@@ -1520,7 +1509,7 @@ See START HERE section.
 
 **Q:** Are audit logs available for all changes to the network, firewall, IDS, and IPS systems?*
 
-**Answer:** Yes — Cloudflare console audit logs record WAF/DNS/Workers configuration changes; DO App Platform surfaces spec changes in deployment history and app update audit logs.
+**Answer:** Yes. Cloudflare console audit logs record WAF/DNS/Workers configuration changes; DO App Platform surfaces spec changes in deployment history and app update audit logs.
 
 **Additional Information:**
 
@@ -1570,7 +1559,7 @@ See START HERE section.
 
 **Q:** Is intrusion monitoring performed internally or by a third-party service?
 
-**Answer:** By third parties — Cloudflare's managed detection, DO's managed platform detection, GitHub Advanced Security for code-level threats.
+**Answer:** By third parties: Cloudflare's managed detection, DO's managed platform detection, GitHub Advanced Security for code-level threats.
 
 **Additional Information:**
 
@@ -1586,13 +1575,12 @@ See START HERE section.
 
 ---
 
-### — Incident Handling —
-
+### Incident Handling
 ### HFIH-01
 
 **Q:** Do you have a formal incident response plan?
 
-**Answer:** Partial — vulnerability reporting is formalized in the repo-root `SECURITY.md` (<https://github.com/bayleaf-ucsc/bayleaf/blob/main/SECURITY.md>), with published acknowledgment and response SLAs (3 business days for acknowledgment, 10 business days for substantive response). A broader formal IR plan does not exist at the BayLeaf layer; incidents are handled by the operator with escalation to UCSC ISO as appropriate.
+**Answer:** Partial. vulnerability reporting is formalized in the repo-root `SECURITY.md` (<https://github.com/bayleaf-ucsc/bayleaf/blob/main/SECURITY.md>), with published acknowledgment and response SLAs (3 business days for acknowledgment, 10 business days for substantive response). A broader formal IR plan does not exist at the BayLeaf layer; incidents are handled by the operator with escalation to UCSC ISO as appropriate.
 
 **Additional Information:** `SECURITY.md §8` discloses this limitation explicitly.
 
@@ -1612,7 +1600,7 @@ See START HERE section.
 
 **Q:** Do you have the capability to respond to incidents on a 24 x 7 x 365 basis?
 
-**Answer:** No — best-effort by the solo operator. Automated mitigations (rate limits, revocation of API keys via D1 `revoked` flag, Cloudflare WAF rules) can be triggered quickly but the operator is not 24×7 on-call. UCSC ISO provides the institutional 24×7 backstop.
+**Answer:** No. best-effort by the solo operator. Automated mitigations (rate limits, revocation of API keys via D1 `revoked` flag, Cloudflare WAF rules) can be triggered quickly but the operator is not 24×7 on-call. UCSC ISO provides the institutional 24×7 backstop.
 
 **Additional Information:**
 
@@ -1628,8 +1616,7 @@ See START HERE section.
 
 ---
 
-### — Vulnerability Management —
-
+### Vulnerability Management
 ### VULN-01
 
 **Q:** Are your systems and applications scanned with an authenticated user account for vulnerabilities (that are remediated) prior to new releases?*
@@ -1674,7 +1661,7 @@ See START HERE section.
 
 **Q:** Do you regularly scan for common web application security vulnerabilities (e.g., SQL injection, XSS, XSRF, etc.)?
 
-**Answer:** Yes — via GitHub Advanced Security code scanning on both repositories. Cloudflare WAF provides runtime protection against common web attack patterns.
+**Answer:** Yes. via GitHub Advanced Security code scanning on both repositories. Cloudflare WAF provides runtime protection against common web attack patterns.
 
 **Additional Information:** Originally-flagged findings have been resolved by fix (not silenced). Prompt-injection attacks against the LLM layer are a separate concern addressed in AISC-04.
 
@@ -1836,7 +1823,7 @@ See START HERE section.
 
 **Q:** Do you expect your staff to maintain a current skill set in IT accessibility?
 
-**Answer:** Yes, for the sole operator — through UCSC professional development resources and through the operator's role as a faculty member engaging with accessibility as a pedagogical concern.
+**Answer:** Yes, for the sole operator, through UCSC professional development resources and through the operator's role as a faculty member engaging with accessibility as a pedagogical concern.
 
 **Additional Information:**
 
@@ -1874,8 +1861,7 @@ See START HERE section.
 
 ## AI
 
-### — AI Qualifying Questions —
-
+### AI Qualifying Questions
 ### AIQU-01
 
 **Q:** Does your solution leverage machine learning (ML) or do you plan to do so in the next 12 months?
@@ -1896,13 +1882,12 @@ See START HERE section.
 
 ---
 
-### — General AI Questions —
-
+### General AI Questions
 ### AIGN-01
 
 **Q:** Does your solution have an AI risk model when developing or implementing your solution's AI model?*
 
-**Answer:** Informally, yes — aligned with NIST AI RMF concepts and with UCSC AI Council guidance.
+**Answer:** Informally, yes: aligned with NIST AI RMF concepts and with UCSC AI Council guidance.
 
 **Additional Information:** `SECURITY.md` and `FERPA.md` capture the substantive risk analysis (data flows, contractual protections, ZDR boundary, subprocessor political profile). Specific risk categories addressed: model-provider data retention (mitigated by ZDR-only routing); prompt-injection via tool-using models (mitigated by stealth-toolkit pattern limiting which tools are exposed on which models and by user-in-the-loop confirmation for OAuth-scoped capabilities like GWS); environmental cost (disclosed in `DEPENDENCIES.md`); vendor lock-in (dependency audit with documented exit paths); over-reliance on upstream model providers with divergent political profiles (documented in `DEPENDENCIES.md`).
 
@@ -1954,8 +1939,7 @@ See START HERE section.
 
 ---
 
-### — AI Policy —
-
+### AI Policy
 ### AIPL-01
 
 **Q:** Are your AI developer's policies, processes, procedures, and practices across the organization related to the mapping, measuring, and managing of AI risks conspicuously posted, unambiguous, and implemented effectively?*
@@ -1990,7 +1974,7 @@ See START HERE section.
 
 **Q:** If disabled because of an incident, can your solution's AI features be re-enabled in a timely manner?*
 
-**Answer:** Yes — reactivation is the reverse of the deactivation procedure, performed by the operator.
+**Answer:** Yes. reactivation is the reverse of the deactivation procedure, performed by the operator.
 
 **Additional Information:**
 
@@ -2000,19 +1984,18 @@ See START HERE section.
 
 **Q:** Do you have documented technical and procedural processes to address potential negative impacts of AI as described by the AI Risk Management Framework (RMF)?
 
-**Answer:** Partial — `SECURITY.md` and `POSITION.md` document the operator's posture.
+**Answer:** Partial. `SECURITY.md` and `POSITION.md` document the operator's posture.
 
 **Additional Information:**
 
 ---
 
-### — AI Data Security —
-
+### AI Data Security
 ### AISC-01
 
 **Q:** If sensitive data is introduced to your solution's AI model, can the data be removed from the AI model by request?*
 
-**Answer:** Not applicable in the usual sense — BayLeaf does not train or fine-tune any model on user data. The ZDR contract at the inference layer means data is not retained in the model or its serving infrastructure after the response. Conversation history in the OWUI database can be deleted by the user or by the administrator on request; see DATA-09.
+**Answer:** Not applicable in the usual sense: BayLeaf does not train or fine-tune any model on user data. The ZDR contract at the inference layer means data is not retained in the model or its serving infrastructure after the response. Conversation history in the OWUI database can be deleted by the user or by the administrator on request; see DATA-09.
 
 **Additional Information:**
 
@@ -2065,8 +2048,7 @@ See START HERE section.
 
 ---
 
-### — AI Machine Learning —
-
+### AI Machine Learning
 ### AIML-01
 
 **Q:** Do you separate ML training data from your ML solution data?*
@@ -2079,14 +2061,13 @@ See START HERE section.
 
 ### AIML-02..08
 
-**Answer:** Not applicable — BayLeaf does not train, validate, or watermark its own ML models; it consumes third-party LLMs via API. See AIML-01.
+**Answer:** Not applicable. BayLeaf does not train, validate, or watermark its own ML models; it consumes third-party LLMs via API. See AIML-01.
 
 **Additional Information:**
 
 ---
 
-### — AI Large Language Model (LLM) —
-
+### AI Large Language Model (LLM)
 ### AILM-01
 
 **Q:** Do you limit your solution's LLM privileges by default?*
@@ -2101,7 +2082,7 @@ See START HERE section.
 
 **Q:** Is your LLM training data vetted, validated, and verified before training the solution's AI model?*
 
-**Answer:** N/A — BayLeaf does not train LLMs.
+**Answer:** N/A. BayLeaf does not train LLMs.
 
 **Additional Information:**
 
@@ -2149,8 +2130,7 @@ See START HERE section.
 
 ## Privacy
 
-### — General Privacy —
-
+### General Privacy
 ### PRGN-01
 
 **Q:** Does your solution process FERPA-related data?
@@ -2175,7 +2155,7 @@ See START HERE section.
 
 **Q:** Does your solution process personal data regulated by state law(s) (e.g., CCPA)?
 
-**Answer:** Yes — CCPA applies because the service is operated in California with California users.
+**Answer:** Yes. CCPA applies because the service is operated in California with California users.
 
 **Additional Information:** UC Regents is the data controller at the institutional layer; BayLeaf operates within that frame.
 
@@ -2185,7 +2165,7 @@ See START HERE section.
 
 **Q:** Does your solution process user-provided data that may contain regulated information?
 
-**Answer:** Yes — users can paste arbitrary content into prompts.
+**Answer:** Yes. users can paste arbitrary content into prompts.
 
 **Additional Information:** See AISC-04 and REQU-08. No input DLP. Contract and design controls (ZDR, SSO-only, per-user isolation) are the mitigations.
 
@@ -2201,8 +2181,7 @@ See START HERE section.
 
 ---
 
-### — Privacy-Specific Company Details —
-
+### Privacy-Specific Company Details
 ### PCOM-01
 
 **Q:** Have you had a personal data breach in the past three years that involved reporting to a governmental agency, notice to individuals, or notice to another organization or institution?*
@@ -2223,7 +2202,7 @@ See START HERE section.
 2. BayLeaf itself retains conversation histories, user profiles, and uploaded files in encrypted databases, accessible only to the sole administrator, who uses that access only for operational purposes.
 3. No data is sold, shared with advertisers, used for training, or exposed to data brokers.
 4. No cross-user content sharing, no cross-institution sharing, no analytics pixels, no third-party trackers embedded in the UI.
-5. Deletion initiated by the user is honest — records are removed from the database, not soft-deleted; they age out of DO managed backups on DO's schedule. Conversation and sandbox data is additionally subject to automatic 90-day inactivity-based deletion under the published retention policy (`../chat/RETENTION.md`, `../api/RETENTION.md`), with records-hold exemption via `hold:*` groups for litigation/audit/CPRA scenarios.
+5. Deletion initiated by the user is honest: records are removed from the database, not soft-deleted; they age out of DO managed backups on DO's schedule. Conversation and sandbox data is additionally subject to automatic 90-day inactivity-based deletion under the published retention policy (`../chat/RETENTION.md`, `../api/RETENTION.md`), with records-hold exemption via `hold:*` groups for litigation/audit/CPRA scenarios.
 
 **Additional Information:**
 
@@ -2249,13 +2228,12 @@ See START HERE section.
 
 ---
 
-### — Privacy-Specific Documentation —
-
+### Privacy-Specific Documentation
 ### PDOC-01
 
 **Q:** If you have completed a SOC 2 audit, does it include the Privacy Trust Service Principle?
 
-**Answer:** N/A — BayLeaf has not completed a SOC 2 audit (see DOCU-03).
+**Answer:** N/A. BayLeaf has not completed a SOC 2 audit (see DOCU-03).
 
 **Additional Information:**
 
@@ -2275,19 +2253,18 @@ See START HERE section.
 
 **Q:** Does your employee onboarding and offboarding policy include training of employees on information security and data privacy?
 
-**Answer:** Yes — operator's UCSC annual mandatory training covers both.
+**Answer:** Yes. operator's UCSC annual mandatory training covers both.
 
 **Additional Information:**
 
 ---
 
-### — Privacy of Third Parties —
-
+### Privacy of Third Parties
 ### PTHP-01
 
 **Q:** Do you have contractual agreements with third parties that require them to maintain standards and to comply with all regulatory requirements?*
 
-**Answer:** Yes — per each provider's standard DPA and terms. See THRD-02.
+**Answer:** Yes. per each provider's standard DPA and terms. See THRD-02.
 
 **Additional Information:**
 
@@ -2297,14 +2274,13 @@ See START HERE section.
 
 **Q:** Do you perform privacy impact assessments of third parties that collect, process, or have access to personal data?
 
-**Answer:** Informally — see `DEPENDENCIES.md`.
+**Answer:** Informally; see `DEPENDENCIES.md`.
 
 **Additional Information:**
 
 ---
 
-### — Privacy Change Management —
-
+### Privacy Change Management
 ### PCHG-01
 
 **Q:** Does your change management process include privacy review and approval?
@@ -2319,14 +2295,13 @@ See START HERE section.
 
 **Q:** Do you have policy and procedure, currently implemented, guiding how privacy risks are mitigated until they can be resolved?
 
-**Answer:** Informally — mitigations include deactivating affected tools/models, tightening rate limits, and communicating with affected users. No formal documented procedure.
+**Answer:** Informally. Mitigations include deactivating affected tools/models, tightening rate limits, and communicating with affected users. No formal documented procedure.
 
 **Additional Information:**
 
 ---
 
-### — Privacy of Sensitive Data —
-
+### Privacy of Sensitive Data
 ### PDAT-01
 
 **Q:** Do you collect, process, or store demographic information?*
@@ -2407,8 +2382,7 @@ See START HERE section.
 
 ---
 
-### — Privacy Policies and Procedures —
-
+### Privacy Policies and Procedures
 ### PRPO-01
 
 **Q:** Do you have a documented privacy management process?
@@ -2440,7 +2414,7 @@ See START HERE section.
 
 **Q:** Will you comply with applicable breach notification laws?
 
-**Answer:** Yes — see PPPR-10.
+**Answer:** Yes. see PPPR-10.
 
 **Additional Information:**
 
@@ -2450,7 +2424,7 @@ See START HERE section.
 
 **Q:** Will you comply with the institution's policies regarding user privacy and data protection?
 
-**Answer:** Yes — operator is already bound as a UCSC employee; BayLeaf's architecture is designed to be consistent with those obligations.
+**Answer:** Yes. operator is already bound as a UCSC employee; BayLeaf's architecture is designed to be consistent with those obligations.
 
 **Additional Information:**
 
@@ -2460,7 +2434,7 @@ See START HERE section.
 
 **Q:** Is your company subject to the laws and regulations of the institution's geographic region?
 
-**Answer:** Yes — California and US federal jurisdiction.
+**Answer:** Yes. California and US federal jurisdiction.
 
 **Additional Information:**
 
@@ -2546,8 +2520,7 @@ See START HERE section.
 
 ---
 
-### — International Privacy —
-
+### International Privacy
 ### INTL-01
 
 **Q:** Will data be collected from or processed in or stored in the European Economic Area (EEA)?
@@ -2592,19 +2565,18 @@ See START HERE section.
 
 **Q:** Do you comply with PIPL security, privacy, and data localization requirements?
 
-**Answer:** N/A — no PRC processing.
+**Answer:** N/A. No PRC processing.
 
 **Additional Information:**
 
 ---
 
-### — Data Privacy —
-
+### Data Privacy
 ### DRPV-01
 
 **Q:** Have you performed a Data Privacy Impact Assessment for the solution/project?
 
-**Answer:** Yes — documented across `SECURITY.md`, `FERPA.md`, and `DEPENDENCIES.md`. These are substantive, not checkbox, DPIA-equivalent analyses.
+**Answer:** Yes. documented across `SECURITY.md`, `FERPA.md`, and `DEPENDENCIES.md`. These are substantive, not checkbox, DPIA-equivalent analyses.
 
 **Additional Information:**
 
@@ -2644,7 +2616,7 @@ See START HERE section.
 
 **Q:** Do you have a documented list of personal data your service maintains?
 
-**Answer:** Yes — `SECURITY.md §2.2`:
+**Answer:** Yes. `SECURITY.md §2.2`:
 
 - User accounts: email, display name, OIDC `sub`, OAuth tokens.
 - Conversation histories: user's prompts, LLM completions, tool-call results.
@@ -2715,7 +2687,7 @@ See START HERE section.
 
 **Q:** Do you have procedures to address privacy-related noncompliance complaints and disputes?
 
-**Answer:** Yes — `amsmith@ucsc.edu`, GitHub issues, GitHub Private Vulnerability Reporting, or escalation to UCSC Privacy Office.
+**Answer:** Yes. `amsmith@ucsc.edu`, GitHub issues, GitHub Private Vulnerability Reporting, or escalation to UCSC Privacy Office.
 
 **Additional Information:**
 
@@ -2745,7 +2717,7 @@ See START HERE section.
 
 **Q:** Do you certify stop-processing requests, including any data that is processed by a third party on your behalf?
 
-**Answer:** Yes — the operator will certify stop-processing on request. Because the ZDR inference contract means provider-side stop-processing is the default (no retention), the primary surface is the OWUI database and uploads, both of which the operator controls.
+**Answer:** Yes. the operator will certify stop-processing on request. Because the ZDR inference contract means provider-side stop-processing is the default (no retention), the primary surface is the OWUI database and uploads, both of which the operator controls.
 
 **Additional Information:**
 
@@ -2761,13 +2733,12 @@ See START HERE section.
 
 ---
 
-### — Privacy and AI —
-
+### Privacy and AI
 ### DPAI-01
 
 **Q:** Does your service use AI for the processing of institutional data?
 
-**Answer:** Yes — the primary function. See REQU-04, AIQU-02.
+**Answer:** Yes. the primary function. See REQU-04, AIQU-02.
 
 **Additional Information:**
 
@@ -2777,7 +2748,7 @@ See START HERE section.
 
 **Q:** Is any institutional data retained in AI processing?*
 
-**Answer:** At the inference layer, no — ZDR terms at OpenRouter-routed provider endpoints prohibit retention of prompts and completions beyond response generation. At the application layer, conversation histories are stored in OWUI's encrypted PostgreSQL database and automatically deleted after 90 days of inactivity per the published retention policy (`../chat/RETENTION.md`), with records-hold exemption via `hold:*` group membership for litigation/audit/CPRA scenarios. User-initiated deletion is immediate and permanent.
+**Answer:** At the inference layer, no: ZDR terms at OpenRouter-routed provider endpoints prohibit retention of prompts and completions beyond response generation. At the application layer, conversation histories are stored in OWUI's encrypted PostgreSQL database and automatically deleted after 90 days of inactivity per the published retention policy (`../chat/RETENTION.md`), with records-hold exemption via `hold:*` group membership for litigation/audit/CPRA scenarios. User-initiated deletion is immediate and permanent.
 
 **Additional Information:** The "ZDR is narrow" disclosure in `SECURITY.md §8` is preserved: ZDR covers inference only. Beyond the inference layer, the protections are (a) the 90-day rolling deletion policy enforced by an automated daily job calling the OWUI admin API, (b) at-rest AES-256 encryption, (c) single-administrator access, and (d) honest user-initiated deletion that removes records from the application database rather than soft-deleting.
 
@@ -2787,9 +2758,9 @@ See START HERE section.
 
 **Q:** Do you have agreements in place with third parties or subprocessors regarding the protection of customer data and use of AI?*
 
-**Answer:** Yes — under each provider's standard DPA and terms, with ZDR as the specific commitment at OpenRouter and its downstream providers. See THRD-02.
+**Answer:** Yes. under each provider's standard DPA and terms, with ZDR as the specific commitment at OpenRouter and its downstream providers. See THRD-02.
 
-**Additional Information:** `FERPA.md §5.2` analyzes the proposed direct Google Cloud integration, which would inherit UCSC's 2024 Customer Affiliate Agreement (Google Customer Affiliate ID 7947-1465-9142) and the UC-wide GCP License Agreement and 2025 Enterprise Addendum — explicit contractual no-AI/ML-training commitment (§15.1(d)), P4 data classification, UC-negotiated breach/insurance caps.
+**Additional Information:** `FERPA.md §5.2` analyzes the proposed direct Google Cloud integration, which would inherit UCSC's 2024 Customer Affiliate Agreement (Google Customer Affiliate ID 7947-1465-9142) and the UC-wide GCP License Agreement and 2025 Enterprise Addendum: explicit contractual no-AI/ML-training commitment (§15.1(d)), P4 data classification, UC-negotiated breach/insurance caps.
 
 ---
 
@@ -2797,7 +2768,7 @@ See START HERE section.
 
 **Q:** Will institutional data be processed through a third party or subprocessor that also uses AI?
 
-**Answer:** Yes — the model providers themselves. ZDR terms prohibit their use of BayLeaf's traffic for their own AI development.
+**Answer:** Yes. the model providers themselves. ZDR terms prohibit their use of BayLeaf's traffic for their own AI development.
 
 **Additional Information:**
 
@@ -2807,7 +2778,7 @@ See START HERE section.
 
 **Q:** Is AI processing limited to fully licensed commercial enterprise AI services?
 
-**Answer:** Yes — all inference is via licensed commercial providers (Anthropic, Google, OpenAI, Meta via DeepInfra, Z-AI, etc., all under OpenRouter's ZDR contracts).
+**Answer:** Yes. all inference is via licensed commercial providers (Anthropic, Google, OpenAI, Meta via DeepInfra, Z-AI, etc., all under OpenRouter's ZDR contracts).
 
 **Additional Information:**
 

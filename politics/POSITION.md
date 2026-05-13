@@ -24,7 +24,7 @@ CIO or superintendent. Every call to action is "Contact sales." The buyer is the
 administrator. The instructor appears nowhere in the transaction.
 
 Notice what "customizable" means. All three products offer some form of
-side-channel customization — custom GPTs, Gems, Projects — where someone can
+side-channel customization (custom GPTs, Gems, Projects) where someone can
 create a narrowly-scoped AI character for a specific purpose. But these are
 opt-in extras, not defaults. The default experience is the same whether you sign
 in with your institutional account or your personal one. There is no mechanism
@@ -35,17 +35,17 @@ that SSO claims already encode these distinctions.
 This is not a minor UX issue. It is a privacy architecture failure. The entire
 data governance argument for enterprise AI rests on people using their
 institutional account for institutional work. But when the product is
-indistinguishable from the consumer version — same interface, same personality,
-same capabilities — people forget which account they are signed into, or stop
+indistinguishable from the consumer version (same interface, same personality,
+same capabilities), people forget which account they are signed into, or stop
 caring. The contract says use your campus identity. The product gives you no
 reason to. Every institution already struggles to get people to use campus email
 for campus business, respecting FERPA and other obligations. The reinforcement
-mechanism is making campus services *recognizably and functionally different* —
+mechanism is making campus services *recognizably and functionally different*:
 not just branded with the correct logo in the corner, but different in character,
 in knowledge, in what they can do. The vendor products do not support this.
 
 Notice the privacy framing. All three present data governance as a compliance
-checklist — FERPA, COPPA, FedRAMP — not as an architectural decision. None of
+checklist (FERPA, COPPA, FedRAMP), not as an architectural decision. None of
 them commit to zero data retention on the inference path as a baseline. Privacy
 is a contract term, not a design principle.
 
@@ -59,7 +59,7 @@ Before evaluating any AI tool for instruction, institutions should establish wha
 adequate looks like. Four criteria:
 
 1. **The institution and its instructors control the system prompt.** The
-   institution sets role-differentiated defaults — students, faculty, and staff
+   institution sets role-differentiated defaults: students, faculty, and staff
    get AI personalities shaped for their context, not the vendor's generic
    chatbot. Within that, the instructor writes the system prompt for their
    course's model. This is the act of articulating pedagogical intent in
@@ -77,12 +77,12 @@ adequate looks like. Four criteria:
    a minimum standard for putting students in conversation with a commercial AI
    system.
 
-4. **The model provider is switchable.** The pedagogical layer — prompt, tools,
-   access — is decoupled from the inference layer. If the vendor raises prices,
+4. **The model provider is switchable.** The pedagogical layer (prompt, tools,
+   access) is decoupled from the inference layer. If the vendor raises prices,
    degrades quality, or changes terms, the institution can switch providers
    without rebuilding the system. In a competitive market of pay-per-token
-   providers — and alongside NSF-funded institutional inference from the
-   [National Research Platform](https://nrp.ai/documentation/userdocs/ai/llm-managed/) —
+   providers, and alongside NSF-funded institutional inference from the
+   [National Research Platform](https://nrp.ai/documentation/userdocs/ai/llm-managed/),
    this is an architectural choice, not a fantasy.
 
 These criteria are not ambitious. They are minimal. Any tool that fails them is
@@ -113,7 +113,7 @@ baseline criteria. This is not because it is a superior product. It is because
 the criteria are easy to meet when the architecture is not optimized for vendor
 lock-in.
 
-- The default AI personality differs by role — students, faculty, and staff get
+- The default AI personality differs by role: students, faculty, and staff get
   context-appropriate assistants out of the box. Instructors write per-course
   system prompts by editing a Canvas page; BayLeaf syncs them to the model. The
   student can read the prompt.
@@ -122,7 +122,7 @@ lock-in.
   BayLeaf runs two configured inference backends in parallel: OpenRouter
   (commercial gateway to ZDR providers) and NRP/SDSC (NSF-funded institutional
   inference serving open-weight models via [Envoy AI Gateway](https://aigateway.envoyproxy.io/)).
-  The switchability criterion is not hypothetical — it is the current operating
+  The switchability criterion is not hypothetical: it is the current operating
   state.
 - The entire system is open source, runs on commodity cloud services, and has no
   proprietary dependency.
@@ -133,14 +133,14 @@ across departments. The total vendor commitment is month-to-month, pay-per-token
 
 The point is not that every university should run BayLeaf. The point is that a
 faculty member built a campus AI service that meets standards the enterprise
-products do not — and we expect to operate it at scale for less than the cost of
+products do not, and we expect to operate it at scale for less than the cost of
 the single FTE it would take to be the AI vendor liaison.
 
 ## The standard
 
 We are not asking institutions to adopt BayLeaf. We are asking them to hold
-every tool — including BayLeaf, including ChatGPT, including Claude, including
-Gemini — to the baseline.
+every tool (including BayLeaf, including ChatGPT, including Claude, including
+Gemini) to the baseline.
 
 The tools that meet it will be the ones that treat instructors as designers of
 learning experiences and students as participants with a right to understand the

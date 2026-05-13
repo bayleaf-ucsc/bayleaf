@@ -86,14 +86,14 @@ For AI services, the operative exception is § 99.31(a)(1), the
 The exception has two branches, one for people inside the institution and
 one for outside parties performing outsourced functions.
 
-**§ 99.31(a)(1)(i)(A) — internal school officials.** Disclosure is
+**§ 99.31(a)(1)(i)(A): internal school officials.** Disclosure is
 permitted to "other school officials, including teachers, within the
 agency or institution whom the agency or institution has determined to
 have legitimate educational interests." This is the branch that covers,
 e.g., a faculty member consulting with a colleague about a shared
 advisee. No contract is needed; the relationship is internal.
 
-**§ 99.31(a)(1)(i)(B) — outside parties as school officials.** A
+**§ 99.31(a)(1)(i)(B): outside parties as school officials.** A
 contractor, consultant, volunteer, or other party to whom the institution
 has outsourced institutional services or functions may be considered a
 school official, provided all three of the following conditions are met
@@ -114,7 +114,7 @@ contract terms that bind use to the institutional purpose, prohibit
 unauthorized redisclosure, require adequate data security, grant audit
 rights, and require return or destruction at contract end.
 
-**§ 99.7 — annual notification.** A separate obligation, sometimes
+**§ 99.7: annual notification.** A separate obligation, sometimes
 conflated with the designation itself, requires institutions to specify
 in their annual FERPA notice the criteria for who constitutes a school
 official and what constitutes a legitimate educational interest. This
@@ -136,7 +136,7 @@ or employee." This form is the in-practice UCSC artifact that
 discharges the (a)(1)(i)(A) side of the designation question for
 campus officials and employees.
 
-**§ 99.31(a)(1)(ii) — reasonable methods.** Institutions must use
+**§ 99.31(a)(1)(ii): reasonable methods.** Institutions must use
 reasonable methods to ensure school officials access only those
 education records in which they have legitimate educational interests.
 For outsourced parties this typically translates into scope-of-access
@@ -159,7 +159,7 @@ own subprocessors to fulfill the institutional function. Real vendors do
 use subprocessors (cloud infrastructure, managed databases, model
 providers), so a second provision supplies the necessary mechanism.
 
-§ 99.33(b) — the **"on behalf of" redisclosure exception**:
+§ 99.33(b), the **"on behalf of" redisclosure exception**:
 
 > "Paragraph (a) of this section does not prevent an educational agency
 > or institution from disclosing personally identifiable information
@@ -172,8 +172,8 @@ providers), so a second provision supplies the necessary mechanism.
 
 This is the provision that lets a designated vendor's subprocessor chain
 function. The subprocessor disclosures must themselves fit a § 99.31
-exception — in practice, each downstream party must itself meet the
-(a)(1)(i)(B) criteria *with respect to the vendor's contract with it* —
+exception (in practice, each downstream party must itself meet the
+(a)(1)(i)(B) criteria *with respect to the vendor's contract with it*),
 and the chain must be documented.
 
 This matters for BayLeaf in a specific way. When UCSC designates a
@@ -250,7 +250,7 @@ of those hops needs its own FERPA basis.
 
 There are two ways to provide one:
 
-- Each subprocessor is separately covered by some § 99.31 exception —
+- Each subprocessor is separately covered by some § 99.31 exception,
   most plausibly by § 99.31(a)(1)(i)(B) conditions satisfied in the
   vendor's contract with UCSC. This is the "transparent chain" reading
   where UCSC would need to look through BayLeaf to every subprocessor.
@@ -626,7 +626,7 @@ which continue to route through OpenRouter.
 ### 5.3 The "school official" seam in the Google stack
 
 FERPA's school-official exception, as it applies to Google, sits in two
-places in UC's agreement stack — both of which cover Google Workspace
+places in UC's agreement stack, both of which cover Google Workspace
 (Gmail, Drive, Docs) but *not* Google Cloud Platform (Vertex AI, Gemini
 via API).
 
@@ -791,7 +791,7 @@ OpenRouter rather than via UCSC's Google contract).
 
 The question this document raises is whether the designation framework
 proposed in [§§ 4](#4-the-designation-question) and [8](#8-a-draft-designation-memo), combined with architectural choices in [§ 5](#5-the-contract-stack-beneath-bayleaf),
-would support adding BayLeaf to the P3-approved list — either as a
+would support adding BayLeaf to the P3-approved list, either as a
 whole, or specifically for its Google lane under a direct Google Cloud
 integration.
 
@@ -898,7 +898,7 @@ audit obligations. BayLeaf has no such counterparty. The operator is a
 UCSC faculty member; the commercial subprocessors (DigitalOcean,
 Cloudflare, OpenRouter) are contracted personally, not institutionally.
 What UCSC would designate is the service, and what the operator would
-commit to is operational discipline — not a vendor relationship.
+commit to is operational discipline, not a vendor relationship.
 
 **No procurement event.** Because BayLeaf is offered at no cost and
 does not involve a UCSC purchase, Procurement has no transaction to
@@ -924,8 +924,8 @@ time-limited instrument, not acquiring a permanent capability. The
 designation memo should account for this (termination conditions,
 transition or shutdown obligations, data-handling at end of service).
 
-These are features, not bugs. The alternative — routing all campus AI
-needs through enterprise vendor procurement — is slower, more
+These are features, not bugs. The alternative (routing all campus AI
+needs through enterprise vendor procurement) is slower, more
 expensive, and less responsive to pedagogical needs than faculty-operated
 tools can be. What the process has to do is accommodate the shape.
 
@@ -975,7 +975,7 @@ not a UCSC document until an authorized UCSC official signs it.
 > **Memorandum of Designation: BayLeaf AI Playground as School Official
 > under FERPA**
 >
-> **From:** [UCSC signing official — candidates include the Provost,
+> **From:** [UCSC signing official; candidates include the Provost,
 > the Chief Information Officer, the Chief Privacy Officer, or another
 > official authorized to make FERPA designations on behalf of the
 > Regents of the University of California]

@@ -6,7 +6,7 @@
 **Review conducted by:** AI agent (Claude Opus 4.7 via OpenCode), supervised by Adam Smith
 
 This document describes the security and data handling posture of BayLeaf. It is
-written for the audience that asks for a "security exhibit" — an ITS reviewer, an
+written for the audience that asks for a "security exhibit": an ITS reviewer, an
 IRB protocol, a risk assessment form. It is honest about what the service does and
 does not guarantee.
 
@@ -16,7 +16,7 @@ does not guarantee.
 
 | Component | Platform | Function |
 |---|---|---|
-| BayLeaf Chat (`chat.bayleaf.dev`) | DigitalOcean App Platform | Open WebUI — curated LLM access with tools, groups, rate limiting |
+| BayLeaf Chat (`chat.bayleaf.dev`) | DigitalOcean App Platform | Open WebUI: curated LLM access with tools, groups, rate limiting |
 | BayLeaf API (`api.bayleaf.dev`) | Cloudflare Workers | OpenRouter-proxying API with key provisioning and sandbox execution |
 | About site (`bayleaf.dev`) | GitHub Pages | Static informational page |
 
@@ -104,7 +104,7 @@ is narrower than it sounds."
 
 - **Identity provider:** CILogon (InCommon Federation), OIDC protocol
 - **IdP hint:** UCSC (`urn:mace:incommon:ucsc.edu`)
-- **No password login** — OAuth only; direct signup disabled
+- **No password login**: OAuth only; direct signup disabled
 - **Group sync:** CILogon `affiliation` claim (e.g. `Faculty@ucsc.edu`) synced to
   Open WebUI groups on each login; full reconcile (adds and removes)
 - **Invite codes:** JWT-encoded, reference group UUID, processed server-side
@@ -115,7 +115,7 @@ is narrower than it sounds."
 
 | Tier | Mechanism | Persistence |
 |---|---|---|
-| Campus Pass | IP-range detection (UCSC CIDRs via Cloudflare `CF-Connecting-IP`) | Ephemeral — no account, no persistent sandbox |
+| Campus Pass | IP-range detection (UCSC CIDRs via Cloudflare `CF-Connecting-IP`) | Ephemeral (no account, no persistent sandbox) |
 | BayLeaf Token (`sk-bayleaf-*`) | Self-service key provisioned after OIDC auth; maps to OpenRouter sub-key with spending limits | Persistent sandbox, revocable |
 | Raw OpenRouter Key (`sk-or-*`) | Direct passthrough (legacy/compat) | N/A |
 
@@ -137,7 +137,7 @@ upstream provider.
 |---|---|---|---|
 | DigitalOcean | Chat hosting, PostgreSQL, S3 | US | User accounts, conversation histories, file uploads |
 | Cloudflare | DNS, CDN, Workers, D1 | US (edge) | All traffic transits Cloudflare; D1 holds API key mappings |
-| OpenRouter | LLM gateway (default) | US | Prompts and completions in transit (ZDR — not retained) |
+| OpenRouter | LLM gateway (default) | US | Prompts and completions in transit (ZDR, not retained) |
 | NRP / SDSC | LLM inference (institutional) | US (UC San Diego / NSF) | Prompts and completions in transit on research infrastructure; open-weight models via Envoy AI Gateway |
 | CILogon / InCommon | Identity (OIDC) | US (Internet2) | Email, name, affiliation claim |
 | Daytona | Code sandboxes | US | Per-user sandbox file contents |
@@ -202,8 +202,8 @@ the repository.
    an opaque layer enabling revocation and spending control.
 2. **Multi-backend inference.** Two inference backends are configured: OpenRouter
    (commercial, ZDR) and NRP/SDSC (institutional, NSF-funded). Traffic can shift
-   between them without user-facing changes. This is dual-sourcing, not redundancy
-   — the backends have different political profiles and cost structures.
+   between them without user-facing changes. This is dual-sourcing, not redundancy:
+   the backends have different political profiles and cost structures.
 3. **System prompt enforcement.** A BayLeaf system prompt prefix is prepended to all
    API-proxied requests. Users cannot suppress it.
 4. **Provider-agnostic OIDC.** Authentication discovers endpoints from
@@ -244,5 +244,5 @@ the repository.
 
 ## 9. Contact
 
-**System administrator:** Adam Smith — `amsmith@ucsc.edu`  
+**System administrator:** Adam Smith, `amsmith@ucsc.edu`  
 **Source code:** https://github.com/bayleaf-ucsc/bayleaf (public)
