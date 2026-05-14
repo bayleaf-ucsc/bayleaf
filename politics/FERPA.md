@@ -321,11 +321,13 @@ For the purpose of FERPA analysis, the question is: when a user sends a
 prompt to BayLeaf, where does that prompt go, and under what contract is
 it processed?
 
-There is **no direct UCSC-to-Google LLM connection** in the current
-architecture. When a user selects "Gemini 2.5 Pro" in BayLeaf Chat, the
-request goes to OpenRouter, which forwards it to Google's Vertex AI
-endpoint under OpenRouter's commercial agreement with Google, not under
-any UCSC agreement.
+For BayLeaf's general-user traffic, there is **no direct UCSC-to-Google
+LLM connection** in the current architecture. When a user selects
+"Gemini 2.5 Pro" in BayLeaf Chat, the request goes to OpenRouter,
+which forwards it to Google's Vertex AI endpoint under OpenRouter's
+commercial agreement with Google, not under any UCSC agreement. (A
+private admin-only demonstration of a direct path now exists; see
+[§ 5.2](#52-inference-layer-proposed-direct-google-cloud).)
 
 This is the fact that most shapes the designation question in [§ 4](#4-the-designation-question) and
 the contract-stack discussion in [§ 5](#5-the-contract-stack-beneath-bayleaf).
@@ -564,6 +566,20 @@ them.
 
 ### 5.2 Inference layer proposed: direct Google Cloud
 
+A working private proof-of-concept of this path now exists in BayLeaf
+Chat (admin-only, one Gemini model surfaced via the
+[`vertex_pipe`](../chat/functions/vertex_pipe/) function). The pipe
+holds a Google service-account JSON in an admin-only valve, mints
+short-lived access tokens locally, and proxies chat completions to the
+Vertex AI OpenAI-compatible endpoint
+(`{location}-aiplatform.googleapis.com/v1/projects/{project}/locations/{location}/endpoints/openapi/chat/completions`).
+This demonstrates that the architectural path is real and the contract
+chain below attaches to live traffic. Productionizing it (broader user
+exposure, an institutional GCP project under UCSC ITS, key-rotation
+policy, and a written Council-facing risk rating) is the conversation
+the [HECVAT](HECVAT.md) and AI Council designation work is now
+shaping.
+
 UCSC has a signed **Customer Affiliate Agreement** with Google (executed
 August 2024, Google Customer Affiliate ID 7947-1465-9142). This
 agreement makes UCSC a ratified affiliate under the parent **UC Regents
@@ -572,8 +588,9 @@ current **Enterprise Addendum** (2025). The affiliate agreement is
 administrative plumbing: it does not reopen contract terms, it simply
 binds UCSC to the UC-wide agreements already in force.
 
-If BayLeaf adds a direct Google Cloud integration, the contract chain
-for Gemini calls becomes:
+If BayLeaf routes Gemini traffic through this direct Google Cloud
+integration (as it does today for the private demo, and as the
+production path would extend), the contract chain for those calls is:
 
 ```
 User at UCSC

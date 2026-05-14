@@ -547,7 +547,7 @@ No custom DPAs or FERPA addenda are in place with these parties beyond their sta
 
 **Answer:** Partial. no formal multi-year roadmap document.
 
-**Additional Information:** Near-term direction is visible in the repository's open issues and in `FERPA.md §5.2` (proposed direct Google Cloud integration). Longer-term direction is shaped by the UCSC AI Council's evolving positions on campus AI tools.
+**Additional Information:** Near-term direction is visible in the repository's open issues and in `FERPA.md §5.2` (direct Google Cloud integration via Vertex AI: a private admin-only proof-of-concept exists today via the `vertex_pipe` function on `chat.bayleaf.dev`; productionization is scoped by the AI Council designation work). Longer-term direction is shaped by the UCSC AI Council's evolving positions on campus AI tools.
 
 ---
 
@@ -2817,10 +2817,12 @@ See START HERE section.
 ## End of HECVAT
 
 This document is the honest answer to each HECVAT prompt given BayLeaf's current
-posture (faculty-operated service, OpenRouter-ZDR inference, DigitalOcean +
+posture (faculty-operated service, OpenRouter-ZDR inference for general-user
+traffic, plus a private admin-only direct-Vertex demonstration; DigitalOcean +
 Cloudflare platform, CILogon/InCommon SSO, documented subprocessor inventory)
 and the proposed path to UCSC P3 approval (`FERPA.md §8` draft
-designation memo, potential direct Google Cloud integration for Gemini traffic).
+designation memo, productionizing the direct Google Cloud Vertex AI
+integration for Gemini traffic).
 
 Further questions should be directed to `amsmith@ucsc.edu` or via the
 GitHub-based reporting channels in the repo-root `SECURITY.md`.

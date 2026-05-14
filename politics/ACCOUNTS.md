@@ -42,7 +42,7 @@ two members has bus factor 2: enough to survive the handover.
 | **Cloudflare** (Workers for `api.bayleaf.dev` + `courses.bayleaf.dev`, D1, DNS, Registrar for `bayleaf.dev`) | `amsmith@ucsc.edu` | Personal (default account, renamed `bayleaf`) | Partial | Identity correct; needs a second member on the account. |
 | **OpenRouter** | `amsmith@ucsc.edu` | Personal | Partial | No native Org concept. Mitigations below. |
 | **Daytona** | `amsmith@ucsc.edu` | Personal | Partial | Teams feature exists; not yet used. |
-| **Google Cloud** (project `gws-cli-playground-ucsc`) | `amsmith@ucsc.edu` | GCP project | Mostly | Project is the unit of sharing; just needs a second IAM member at Owner. |
+| **Google Cloud** (projects `bayleafchat` and `gws-cli-playground-ucsc`) | `amsmith@ucsc.edu` | GCP projects | Mostly | The project is the unit of sharing; each just needs a second IAM member at Owner. `bayleafchat` hosts Vertex AI inference (see §4); `gws-cli-playground-ucsc` hosts the OAuth client used by the `gws_toolkit`. |
 | **Tavily** | `amsmith@ucsc.edu` | Personal | Partial | Small-vendor dashboards often have no team tier; API-key rotation is the handover path. |
 | **DeepInfra** | `amsmith@ucsc.edu` | Personal | Partial | Same. |
 | **CILogon** | Institutional registration via UCSC | Client registration | Ready | Already institutionally scoped; admin contact is `amsmith@ucsc.edu`. |
@@ -128,17 +128,31 @@ Resources: Workers `bayleaf-api` and the `courses` teaser, D1 `bayleaf-keys`
 (`e249d6a6-41cf-4ab7-93d6-b677ac95b524`), zone `bayleaf.dev` (registrar +
 DNS), custom domains `api.bayleaf.dev` and `courses.bayleaf.dev`.
 
-### 4. Google Cloud → add a second Project Owner
+### 4. Google Cloud → add a second Project Owner on each project
 
-The project `gws-cli-playground-ucsc` is already the correct unit. GCP
+BayLeaf uses two GCP projects, each scoped to a distinct concern. GCP
 projects are shared via IAM role grants; a second principal at
-`roles/owner` is all that's required when a UCSC IT counterpart exists.
-Billing is separately scoped from projects and will need the same
-treatment at its billing-account level.
+`roles/owner` on each project is all that's required when a UCSC IT
+counterpart exists. Billing is separately scoped from projects and will
+need the same treatment at its billing-account level.
 
-Resources: OAuth client used by the `gws_toolkit` (Chat) and the
+**Project `bayleafchat`** (project number `47286725529`, created
+2025-03-31). Hosts the Vertex AI inference path: a service account
+`bayleaf-chat-vertex@bayleafchat.iam.gserviceaccount.com` with
+`roles/aiplatform.user` is used by the `vertex_pipe` function in
+[chat/functions/vertex_pipe/](../chat/functions/vertex_pipe/) to call
+Gemini models on the OpenAI-compatible Vertex endpoint. Billing is
+attached. This is the project whose contract chain is described in
+[FERPA.md §5.2](FERPA.md#52-inference-layer-proposed-direct-google-cloud);
+moving institutional Vertex traffic to a UCSC-ITS-managed GCP project
+is a separate, future conversation.
+
+**Project `gws-cli-playground-ucsc`** (project number `412068790611`).
+Hosts the OAuth client used by the `gws_toolkit` (Chat) and exposes the
 `gws-cli-playground-ucsc` credentials served at
-`/docs/gws-client-secret.json` (API).
+`/docs/gws-client-secret.json` (API). The OAuth consent screen is set
+to *Internal*, so any `@ucsc.edu` user can authorize without manual
+allow-listing. No billable APIs are enabled.
 
 ### 5. OpenRouter, Daytona, Tavily, DeepInfra → key rotation is the handover
 
