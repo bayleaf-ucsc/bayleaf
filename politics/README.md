@@ -7,10 +7,11 @@ Universities are adopting AI through procurement. The products are
 The buyer is the CIO. The contract is the commitment. The faculty member
 receives a finished tool and is expected to use it.
 
-BayLeaf is a counterpower strategy: a faculty-operated AI service that runs on
-the institution's own infrastructure, uses its own identity system, and gives
-instructors direct control over the AI their students interact with. It exists
-to demonstrate that the vendor path is a choice, not a necessity.
+BayLeaf is a [counterpower](https://dl.acm.org/doi/10.1145/3290605.3300569)
+strategy: a faculty-operated AI service that runs on the institution's own
+infrastructure, uses its own identity system, and gives instructors direct
+control over the AI their students interact with. It exists to demonstrate that
+the vendor path is a choice, not a necessity.
 
 ## What we are playing against
 

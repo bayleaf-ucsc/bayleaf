@@ -79,7 +79,11 @@ The specific contributions this method produces:
    building a working alternative to the vendor path produces knowledge that
    studying the vendor path from outside cannot. The artifact is the argument.
    This is defensible as method -- it is what critical making looks like at
-   infrastructure scale.
+   infrastructure scale, and it is the
+   [prefigurative counterpower](https://dl.acm.org/doi/10.1145/3290605.3300569)
+   move Keyes, Hoy, and Drouhard articulate for HCI: build the small,
+   autonomous, justifiable system in the present rather than waiting for the
+   centralised one to reform itself.
 
 ## Alignment with national objectives
 
