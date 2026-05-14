@@ -82,6 +82,13 @@ function sleep(ms: number): Promise<void> {
  * so the Daytona API performs an exact key=value match.  After filtering
  * server-side we also verify labels client-side and guard against
  * duplicates — see https://github.com/rndmcnlly/lathe/issues/2.
+ *
+ * Response-shape note (Daytona pagination migration, May 2026): the
+ * `GET /sandbox` endpoint is transitioning from a flat `SandboxInfo[]`
+ * to a paginated envelope (`{ items: SandboxInfo[], ... }`) on May 24,
+ * 2026. We normalize both shapes here so the code keeps working across
+ * the cutover. Since we filter by exact label, at most one sandbox is
+ * expected to match — pagination doesn't need to be traversed.
  */
 export async function findSandboxByLabel(
   email: string,
@@ -93,7 +100,13 @@ export async function findSandboxByLabel(
   const resp = await fetch(url, { headers: authHeaders(env) });
   if (!resp.ok) return null;
 
-  const sandboxes = (await resp.json() as SandboxInfo[]) ?? [];
+  // Accept either the legacy flat array or the new paginated envelope.
+  // The envelope wraps results in `items`; cursor/page metadata is ignored
+  // because exact-label filtering yields ≤1 match (well within any page size).
+  const body = await resp.json() as SandboxInfo[] | { items?: SandboxInfo[] };
+  const sandboxes: SandboxInfo[] = Array.isArray(body)
+    ? body
+    : (body?.items ?? []);
 
   // Client-side verification: only keep sandboxes whose labels exactly match
   const matches = sandboxes.filter(
