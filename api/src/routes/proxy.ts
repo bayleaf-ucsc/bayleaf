@@ -243,7 +243,11 @@ proxyRoutes.openapi(chatCompletionsRoute, async (c) => {
     }
 
     // Rewrite model name
-    body.model = modelStr.replace('vertex:', '');
+    let targetModel = modelStr.replace('vertex:', '');
+    if (!targetModel.includes('/')) {
+      targetModel = `google/${targetModel}`;
+    }
+    body.model = targetModel;
 
     // Forward to Vertex OpenAI-compatible endpoint
     try {
