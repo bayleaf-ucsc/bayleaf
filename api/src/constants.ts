@@ -33,3 +33,42 @@ export const BAYLEAF_TOKEN_PREFIX = 'sk-bayleaf-';
 
 export const DAYTONA_DEFAULT_API_URL = 'https://app.daytona.io/api';
 export const DAYTONA_DEFAULT_PROXY_URL = 'https://proxy.app.daytona.io/toolbox';
+
+export const VERTEX_MODELS = [
+  {
+    id: "vertex:gemini-3.1-pro",
+    name: "Vertex: Gemini 3.1 Pro",
+    description: "Gemini 3.1 Pro is Google's flagship multimodal model on Vertex AI.",
+    pricing: { prompt: "0.00000125", completion: "0.00001" },
+    context_length: 2000000,
+    architecture: { modality: "text+image+video+audio->text", tokenizer: "Gemini" },
+    top_provider: { max_completion_tokens: 65536, is_moderated: false }
+  },
+  {
+    id: "vertex:gemini-2.5-pro",
+    name: "Vertex: Gemini 2.5 Pro",
+    description: "Gemini 2.5 Pro is Google's most capable 2.5-generation model on Vertex AI.",
+    pricing: { prompt: "0.00000125", completion: "0.00001" },
+    context_length: 2000000,
+    architecture: { modality: "text+image+video+audio->text", tokenizer: "Gemini" },
+    top_provider: { max_completion_tokens: 65536, is_moderated: false }
+  },
+  {
+    id: "vertex:gemini-2.5-flash",
+    name: "Vertex: Gemini 2.5 Flash",
+    description: "Gemini 2.5 Flash is a fast and cost-effective model on Vertex AI.",
+    pricing: { prompt: "0.0000003", completion: "0.0000025" },
+    context_length: 1000000,
+    architecture: { modality: "text+image+video+audio->text", tokenizer: "Gemini" },
+    top_provider: { max_completion_tokens: 65536, is_moderated: false }
+  },
+  {
+    id: "vertex:gemini-2.5-flash-lite",
+    name: "Vertex: Gemini 2.5 Flash Lite",
+    description: "Gemini 2.5 Flash Lite is Google's fastest and lowest-cost model on Vertex AI.",
+    pricing: { prompt: "0.0000001", completion: "0.0000004" },
+    context_length: 1000000,
+    architecture: { modality: "text+image+video+audio->text", tokenizer: "Gemini" },
+    top_provider: { max_completion_tokens: 65536, is_moderated: false }
+  }
+];

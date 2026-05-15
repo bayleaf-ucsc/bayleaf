@@ -14,7 +14,7 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { proxy } from 'hono/proxy';
 import type { AppEnv } from '../types';
-import { OPENROUTER_API } from '../constants';
+import { OPENROUTER_API, VERTEX_MODELS } from '../constants';
 import { resolveAuth, type AuthResult } from '../utils/auth';
 import { getGCPAccessToken } from '../utils/gcp';
 import {
@@ -273,6 +273,53 @@ proxyRoutes.openapi(chatCompletionsRoute, async (c) => {
     return c.json({ error: { message: 'Invalid JSON in request body.', code: 400 } }, 400) as any;
   }
 });
+
+// ── GET /models — Custom Models Interceptor ─────────────────────────
+// Intercepts the models list to inject Vertex AI models and prefix OpenRouter models.
+
+const modelsRoute = createRoute({
+  method: 'get',
+  path: '/models',
+  operationId: 'listModels',
+  tags: ['LLM'],
+  summary: 'List available models',
+  description: 'Lists models available via OpenRouter (prefixed with openrouter:) and Vertex AI (prefixed with vertex:).',
+  security: [{ Bearer: [] }],
+  responses: {
+    200: { description: 'Model list' },
+    401: { description: 'Missing or invalid API key' },
+  },
+});
+
+proxyRoutes.openapi(modelsRoute, async (c) => {
+  const auth = await resolveAuth(c);
+  if (auth instanceof Response) return auth as any;
+
+  try {
+    const res = await fetch(`${OPENROUTER_API}/models`, {
+      headers: { Authorization: auth.authorization }
+    });
+    
+    if (!res.ok) {
+      return new Response(await res.text(), { status: res.status, headers: { 'Access-Control-Allow-Origin': '*' } }) as any;
+    }
+
+    const data = await res.json() as { data: any[] };
+    
+    // Prefix all OpenRouter models
+    const orModels = data.data.map(model => ({
+      ...model,
+      id: `openrouter:${model.id}`,
+      name: `OpenRouter: ${model.name}`
+    }));
+
+    // Combine with Vertex models
+    return c.json({ data: [...orModels, ...VERTEX_MODELS] }, 200, { 'Access-Control-Allow-Origin': '*' }) as any;
+  } catch (e: any) {
+    return c.json({ error: { message: `Failed to fetch models: ${e.message}`, code: 500 } }, 500, { 'Access-Control-Allow-Origin': '*' }) as any;
+  }
+});
+
 
 // ── Catch-all — General OpenRouter proxy ──────────────────────────
 // Paths like /models, /auth/key, etc. These are documented in OpenAPI
