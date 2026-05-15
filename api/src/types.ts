@@ -34,7 +34,7 @@ export interface Bindings {
   // Sandbox (Daytona) configuration
   DAYTONA_API_URL: string;         // Control plane URL (e.g. https://app.daytona.io/api)
   DAYTONA_PROXY_URL: string;       // Toolbox proxy URL (e.g. https://proxy.app.daytona.io/toolbox)
-  DAYTONA_DEPLOYMENT_LABEL: string; // Label prefix for sandbox tagging (e.g. api.bayleaf.dev)
+  DAYTONA_DEPLOYMENT_LABEL: string; // Label prefix for sandbox tagging (e.g. chat.bayleaf.dev; shared with Lathe per issue #14)
   DAYTONA_AUTO_DELETE_MINUTES: string; // Minutes after archive before auto-delete (129600 = 90 days; "-1" = never)
 
   // Secrets (set via wrangler secret put)

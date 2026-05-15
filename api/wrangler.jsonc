@@ -62,7 +62,11 @@
     // Sandbox: sandboxed code execution via Daytona
     "DAYTONA_API_URL": "https://app.daytona.io/api",
     "DAYTONA_PROXY_URL": "https://proxy.app.daytona.io/toolbox",
-    "DAYTONA_DEPLOYMENT_LABEL": "api.bayleaf.dev",
+    // Unified with chat.bayleaf.dev (Lathe) so a user has one sandbox across
+    // both services. See issue #14. The API never reads/writes the volume
+    // mount Lathe may attach at /home/daytona/volume; only /home/daytona/workspace
+    // is the shared filesystem surface.
+    "DAYTONA_DEPLOYMENT_LABEL": "chat.bayleaf.dev",
     "DAYTONA_AUTO_DELETE_MINUTES": "129600"
   }
 

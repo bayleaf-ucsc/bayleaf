@@ -114,7 +114,7 @@ Then configure `OIDC_ISSUER` and related vars in `wrangler.jsonc`, and set `OIDC
 | `CAMPUS_SYSTEM_PREFIX` | Additional system prompt prefix for Campus Pass users | `Note: This user is using shared access...` |
 | `DAYTONA_API_URL` | Sandbox provider control plane URL | `https://app.daytona.io/api` |
 | `DAYTONA_PROXY_URL` | Sandbox provider toolbox proxy URL | `https://proxy.app.daytona.io/toolbox` |
-| `DAYTONA_DEPLOYMENT_LABEL` | Label prefix for sandbox tagging | `api.bayleaf.dev` |
+| `DAYTONA_DEPLOYMENT_LABEL` | Label prefix for sandbox tagging. Shared with chat.bayleaf.dev's Lathe so a user has one sandbox across both services (issue #14). | `chat.bayleaf.dev` |
 
 ### Secrets
 
