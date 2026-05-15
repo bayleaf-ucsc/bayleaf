@@ -25,6 +25,16 @@
     }
   ],
 
+  // KV namespace for Campus Pass per-IP RPD counters.
+  // Keys: `campus-rpd:<bucket>:<YYYY-MM-DD>` → JSON `{count: number}`, TTL 36h.
+  // Created via: wrangler kv namespace create CAMPUS_RPD
+  "kv_namespaces": [
+    {
+      "binding": "CAMPUS_RPD",
+      "id": "6b839ccbc7d14ddb86af4d7cb926eed2"
+    }
+  ],
+
   // Environment variables (set via wrangler secret or dashboard)
   // These are placeholders - actual values should be set as secrets
   "vars": {
@@ -58,6 +68,10 @@
     // Set CAMPUS_IP_RANGES to enable (empty string = disabled)
     "CAMPUS_IP_RANGES": "128.114.0.0/16,169.233.0.0/16,192.35.220.0/24,192.35.223.0/24,2607:F5F0::/32,127.0.0.1/32,::1/128",
     "CAMPUS_SYSTEM_PREFIX": "Note: This user is accessing the API via shared on-campus access. They can provision a personal API key at no cost by visiting https://api.bayleaf.dev/",
+    // Per-IP daily request limit for Campus Pass on /chat/completions and /responses.
+    // IPv4: per address. IPv6: per /64. Resets at midnight UTC. Provider-agnostic
+    // (charges against the same counter for OpenRouter and Vertex traffic).
+    "CAMPUS_RPD_LIMIT": "100",
 
     // Sandbox: sandboxed code execution via Daytona
     "DAYTONA_API_URL": "https://app.daytona.io/api",

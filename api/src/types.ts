@@ -13,6 +13,9 @@ export interface Bindings {
   // D1 database
   DB: D1Database;
 
+  // KV namespace for Campus Pass per-IP RPD counters
+  CAMPUS_RPD: KVNamespace;
+
   // Public configuration
   SPENDING_LIMIT_DOLLARS: string;
   SPENDING_LIMIT_RESET: string;
@@ -30,6 +33,7 @@ export interface Bindings {
   // Campus Pass configuration
   CAMPUS_IP_RANGES: string;        // Comma-separated CIDR ranges (e.g., "128.114.0.0/16,169.233.0.0/16")
   CAMPUS_SYSTEM_PREFIX: string;    // Additional system prompt prefix for campus mode
+  CAMPUS_RPD_LIMIT: string;        // Per-IP daily request limit for Campus Pass (parsed as integer)
   
   // Sandbox (Daytona) configuration
   DAYTONA_API_URL: string;         // Control plane URL (e.g. https://app.daytona.io/api)

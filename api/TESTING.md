@@ -257,6 +257,90 @@ BayLeaf layout (header, footer, API Reference link).
 
 ---
 
+## 11. Campus Pass — RPD counter (campus-only)
+
+**Run only from a UCSC IP or `127.0.0.1`.** Verifies the unified per-IP
+daily request counter that gates `/v1/chat/completions` and `/v1/responses`
+for Campus Pass users.
+
+Inspect the current counter without consuming a request:
+
+```bash
+curl -s https://api.bayleaf.dev/v1/auth/key \
+  | python3 -m json.tool
+```
+
+**Check:**
+
+- Response has `data.bayleaf.campus` with `requests_today`, `limit`,
+  `limit_remaining`, `resets_at`, and an `applies_to` describing the
+  per-network-address scope.
+- `limit` matches `CAMPUS_RPD_LIMIT` (default 100).
+- `resets_at` is a future ISO-8601 timestamp at midnight UTC.
+
+Make a billable Campus Pass call:
+
+```bash
+curl -s https://api.bayleaf.dev/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openrouter:z-ai/glm-5",
+    "messages": [{"role": "user", "content": "ping"}]
+  }' | python3 -m json.tool
+```
+
+Then re-inspect:
+
+```bash
+curl -s https://api.bayleaf.dev/v1/auth/key \
+  | python3 -m json.tool
+```
+
+**Check:**
+
+- `data.bayleaf.campus.requests_today` incremented by exactly 1.
+- `limit_remaining` decremented by exactly 1.
+
+---
+
+## 12. Campus Pass — Vertex routing (campus-only)
+
+Verify Campus Pass can now reach `vertex:` models (was 403 before the
+unified RPD scheme).
+
+```bash
+curl -s https://api.bayleaf.dev/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "vertex:gemini-2.5-flash-lite",
+    "messages": [{"role": "user", "content": "What is the capital of California?"}]
+  }' | python3 -m json.tool
+```
+
+**Check:**
+
+- Response is valid JSON with `choices[0].message.content` answering
+  "Sacramento" (no 403).
+- Response `model` is `google/gemini-2.5-flash-lite`.
+- Counter (via `/v1/auth/key`) incremented by 1, just like the OpenRouter
+  call in §11. The unified RPD covers both providers.
+
+---
+
+## 13. Campus Pass — Landing page card (campus-only, browser)
+
+Visit `https://api.bayleaf.dev/` from a campus IP in a browser.
+
+**Check:**
+
+- The Campus Pass card shows a usage line: "**N** of 100 requests used
+  today by your network address. Resets <time>."
+- No raw IP address appears anywhere on the page.
+- After making a Campus Pass call, refreshing the page shows the count
+  bumped by one.
+
+---
+
 ## Notes
 
 - **Don't skip step 9.** The sandbox tests are ordered so that the
@@ -266,9 +350,8 @@ BayLeaf layout (header, footer, API Reference link).
   completions would need to inspect SSE chunks, which is awkward in
   `curl`. If streaming behavior is suspect, use `curl --no-buffer` and
   visually inspect the `data:` lines.
-- **Campus Pass is not tested here.** Campus Pass (keyless on-network
-  access) requires being on the UCSC network or `127.0.0.1`. It cannot
-  be tested from an arbitrary remote machine.
+- **Campus Pass requires being on the UCSC network** or `127.0.0.1`. The
+  Campus Pass tests in §11–§13 cannot run from an arbitrary remote machine.
 - **Dashboard and landing pages** are session-authenticated HTML routes.
   They can be spot-checked by visiting `https://api.bayleaf.dev/` in a
   browser and signing in, but are not covered by this curl-based

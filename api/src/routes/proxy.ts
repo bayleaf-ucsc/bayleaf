@@ -17,6 +17,7 @@ import type { AppEnv } from '../types';
 import { OPENROUTER_API, VERTEX_MODELS } from '../constants';
 import { resolveAuth, type AuthResult } from '../utils/auth';
 import { getGCPAccessToken } from '../utils/gcp';
+import { checkAndIncrement, inspectCounter, parseLimit } from '../utils/campusRpd';
 import {
   ChatCompletionRequestSchema,
   ChatCompletionResponseSchema,
@@ -32,6 +33,39 @@ const VERTEX_RPD_LIMIT = 100;
 // ── GET / (mounted as /v1) — bare root returns 200 OK ─────────────
 // Some agent harnesses probe the base_url to test connectivity.
 proxyRoutes.get('/', (c) => c.body(null, 200));
+
+/**
+ * Enforce the Campus Pass per-IP daily request limit. No-op for keyed users.
+ * Returns null on pass, or a 429 JSON Response on cap-exceeded.
+ *
+ * Called at the top of /chat/completions and /responses handlers — the only
+ * billable LLM endpoints. Inspection routes (/models, /auth/key) and proxy
+ * passthroughs are not gated.
+ */
+async function enforceCampusRpd(
+  env: AppEnv['Bindings'],
+  auth: AuthResult,
+): Promise<Response | null> {
+  if (!auth.isCampusMode) return null;
+  const limit = parseLimit(env.CAMPUS_RPD_LIMIT);
+  const status = await checkAndIncrement(env.CAMPUS_RPD, auth.clientIp, limit);
+  if (status === null) return null;
+  return Response.json(
+    {
+      error: {
+        message:
+          `Campus Pass daily request limit reached (${status.limit} requests). ` +
+          `Resets at ${status.resetsAt}. ` +
+          `Provision a free personal API key at https://api.bayleaf.dev/ for higher limits.`,
+        code: 429,
+      },
+    },
+    {
+      status: 429,
+      headers: { 'Access-Control-Allow-Origin': '*' },
+    },
+  );
+}
 
 /** Build the system prompt prefix, adding campus suffix when applicable. */
 function buildSystemPrefix(env: AppEnv['Bindings'], isCampusMode: boolean): string {
@@ -121,6 +155,9 @@ proxyRoutes.openapi(responsesRoute, async (c) => {
   // auth layer is shared across routes and predates the OpenAPI types.
   if (auth instanceof Response) return auth as any;
 
+  const rpdRejection = await enforceCampusRpd(c.env, auth);
+  if (rpdRejection) return rpdRejection as any;
+
   const body = c.req.valid('json') as {
     instructions?: string;
     user?: string;
@@ -188,6 +225,9 @@ proxyRoutes.openapi(chatCompletionsRoute, async (c) => {
   // Auth guard — see note on responsesRoute handler above.
   if (auth instanceof Response) return auth as any;
 
+  const rpdRejection = await enforceCampusRpd(c.env, auth);
+  if (rpdRejection) return rpdRejection as any;
+
   const body = c.req.valid('json') as {
     messages?: Array<{ role: string; content?: unknown; [k: string]: unknown }>;
     user?: string;
@@ -224,25 +264,26 @@ proxyRoutes.openapi(chatCompletionsRoute, async (c) => {
   const modelStr = typeof body.model === 'string' ? body.model : '';
   
   if (modelStr.startsWith('vertex:')) {
-    // Enforce API key requirement for Vertex (no Campus Pass for now to ensure budget controls)
-    if (!auth.userKeyRow) {
-      return c.json({ error: { message: 'Vertex AI models are not available via anonymous Campus Pass. Please authenticate.', code: 403 } }, 403) as any;
-    }
+    // Keyed users: enforce per-key Vertex RPD against the user_keys row.
+    // Campus Pass users: already counted by enforceCampusRpd above (one
+    // unified per-IP counter applies across all providers); no per-key
+    // bookkeeping exists or is needed.
+    if (auth.userKeyRow) {
+      const RPD_LIMIT = VERTEX_RPD_LIMIT;
+      const today = new Date().toISOString().split('T')[0];
+      const user = auth.userKeyRow;
 
-    const RPD_LIMIT = VERTEX_RPD_LIMIT;
-    const today = new Date().toISOString().split('T')[0];
-    const user = auth.userKeyRow;
-
-    if (user.vertex_rpd_date !== today) {
-      await c.env.DB.prepare(
-        "UPDATE user_keys SET vertex_rpd_count = 1, vertex_rpd_date = ? WHERE bayleaf_token = ?"
-      ).bind(today, user.bayleaf_token).run();
-    } else if (user.vertex_rpd_count >= RPD_LIMIT) {
-      return c.json({ error: { message: `Vertex AI daily budget exceeded (${RPD_LIMIT} requests). Resets at midnight UTC.`, code: 429 } }, 429) as any;
-    } else {
-      await c.env.DB.prepare(
-        "UPDATE user_keys SET vertex_rpd_count = vertex_rpd_count + 1 WHERE bayleaf_token = ?"
-      ).bind(user.bayleaf_token).run();
+      if (user.vertex_rpd_date !== today) {
+        await c.env.DB.prepare(
+          "UPDATE user_keys SET vertex_rpd_count = 1, vertex_rpd_date = ? WHERE bayleaf_token = ?"
+        ).bind(today, user.bayleaf_token).run();
+      } else if (user.vertex_rpd_count >= RPD_LIMIT) {
+        return c.json({ error: { message: `Vertex AI daily budget exceeded (${RPD_LIMIT} requests). Resets at midnight UTC.`, code: 429 } }, 429) as any;
+      } else {
+        await c.env.DB.prepare(
+          "UPDATE user_keys SET vertex_rpd_count = vertex_rpd_count + 1 WHERE bayleaf_token = ?"
+        ).bind(user.bayleaf_token).run();
+      }
     }
 
     // Rewrite model name
@@ -343,9 +384,11 @@ const authKeyRoute = createRoute({
   description:
     'Returns the OpenRouter `/auth/key` response augmented with a `data.bayleaf` ' +
     'block reporting per-backend usage. The `bayleaf.openrouter` sub-object ' +
-    'mirrors the OR-side dollar budget; `bayleaf.vertex` reports the per-key ' +
-    'requests-per-day budget consumed by `vertex:` model traffic. Vertex info ' +
-    'is omitted for Campus Pass connections (Vertex requires a personal API key).',
+    'mirrors the OR-side dollar budget. For keyed users, `bayleaf.vertex` ' +
+    'reports the per-key requests-per-day budget consumed by `vertex:` model ' +
+    'traffic. For Campus Pass connections, `bayleaf.campus` reports the ' +
+    'unified per-IP requests-per-day budget covering all providers (Vertex ' +
+    'and OpenRouter alike).',
   security: [{ Bearer: [] }],
   responses: {
     200: { description: 'Key info' },
@@ -387,8 +430,9 @@ proxyRoutes.openapi(authKeyRoute, async (c) => {
     : (orLimit !== null && orUsage !== null ? orLimit - orUsage : null);
 
   // Build the bayleaf augmentation. OR sub-block always present; Vertex only
-  // when we have a keyed user (Campus Pass and raw sk-or- passthrough have no
-  // `user_keys` row, so no Vertex RPD counter exists for them).
+  // when we have a keyed user (the per-key Vertex RPD counter lives in the
+  // user_keys row). Campus sub-block present for Campus Pass connections,
+  // reporting the unified per-IP RPD that covers all providers.
   const bayleaf: {
     openrouter: {
       usage: number | null;
@@ -397,6 +441,13 @@ proxyRoutes.openapi(authKeyRoute, async (c) => {
       applies_to: string;
     };
     vertex?: {
+      requests_today: number;
+      limit: number;
+      limit_remaining: number;
+      resets_at: string;
+      applies_to: string;
+    };
+    campus?: {
       requests_today: number;
       limit: number;
       limit_remaining: number;
@@ -429,6 +480,18 @@ proxyRoutes.openapi(authKeyRoute, async (c) => {
       limit_remaining: Math.max(0, VERTEX_RPD_LIMIT - requestsToday),
       resets_at: tomorrow.toISOString(),
       applies_to: 'models with prefix "vertex:"',
+    };
+  }
+
+  if (auth.isCampusMode) {
+    const limit = parseLimit(c.env.CAMPUS_RPD_LIMIT);
+    const status = await inspectCounter(c.env.CAMPUS_RPD, auth.clientIp, limit);
+    bayleaf.campus = {
+      requests_today: status.count,
+      limit: status.limit,
+      limit_remaining: status.remaining,
+      resets_at: status.resetsAt,
+      applies_to: 'all /v1/chat/completions and /v1/responses requests (per network address)',
     };
   }
 

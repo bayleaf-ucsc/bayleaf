@@ -108,3 +108,36 @@ export function isCampusPassEligible(request: Request, env: Bindings): boolean {
   if (!env.CAMPUS_IP_RANGES || !env.CAMPUS_POOL_KEY) return false;
   return isOnCampus(getClientIP(request), env.CAMPUS_IP_RANGES);
 }
+
+/**
+ * Bucket an IP address into a stable key for per-client rate limiting.
+ *
+ * IPv4: returned verbatim (one bucket per address).
+ * IPv6: aggregated to /64 (the standard end-site allocation), so a single
+ * device's randomized addresses within its /64 share one bucket. The bucket
+ * key is the first four hextets joined with ":" (e.g. "2607:f5f0:0:0").
+ *
+ * Returns the input unchanged for malformed IPs; the caller is responsible
+ * for not feeding garbage in.
+ */
+export function bucketKey(ip: string): string {
+  if (!ip.includes(':')) {
+    // IPv4: per address
+    return ip;
+  }
+  // IPv6: expand and take the first 4 hextets (/64).
+  const doubleColonIndex = ip.indexOf('::');
+  let parts: string[];
+  if (doubleColonIndex !== -1) {
+    const before = ip.slice(0, doubleColonIndex).split(':').filter(p => p !== '');
+    const after = ip.slice(doubleColonIndex + 2).split(':').filter(p => p !== '');
+    const missing = 8 - before.length - after.length;
+    parts = [...before, ...Array(missing).fill('0'), ...after];
+  } else {
+    parts = ip.split(':');
+  }
+  if (parts.length < 4) return ip;
+  // Normalize each hextet by parsing and lower-casing for stable keying.
+  const prefix = parts.slice(0, 4).map(p => parseInt(p || '0', 16).toString(16));
+  return prefix.join(':');
+}

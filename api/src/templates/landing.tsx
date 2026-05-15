@@ -10,11 +10,37 @@ import {
   btnStyle,
 } from './layout';
 
-export const LandingPage: FC<{ showCampusPass: boolean; recommendedModel: string; loginButtonText: string }> = ({
-  showCampusPass,
-  recommendedModel,
-  loginButtonText,
-}) => (
+/** Per-IP Campus Pass usage, surfaced from /v1/auth/key's bayleaf.campus block. */
+export interface CampusUsage {
+  count: number;
+  limit: number;
+  remaining: number;
+  resetsAt: string; // ISO 8601
+}
+
+/** Format the reset time for human display. ISO timestamps are ugly on a card. */
+function formatResetTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    // "Nov 16, 04:00 PM PST" style. Use the user's locale.
+    return d.toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZoneName: 'short',
+    });
+  } catch {
+    return iso;
+  }
+}
+
+export const LandingPage: FC<{
+  showCampusPass: boolean;
+  recommendedModel: string;
+  loginButtonText: string;
+  campusUsage?: CampusUsage;
+}> = ({ showCampusPass, recommendedModel, loginButtonText, campusUsage }) => (
   <BaseLayout title="Welcome">
     <div class={cardStyle}>
       <h2>API Access for UCSC</h2>
@@ -29,6 +55,27 @@ export const LandingPage: FC<{ showCampusPass: boolean; recommendedModel: string
         <p>Just point any OpenAI-compatible client at:</p>
         <pre><code>https://api.bayleaf.dev/v1</code></pre>
         <p>No API key needed, or use <code>campus</code> as your key.</p>
+        {campusUsage ? (
+          <p style="margin-top: 1em; padding-top: 0.75em; border-top: 1px solid #b8d8b8; font-size: 0.95em; color: #2d5a2d;">
+            {campusUsage.remaining > 0 ? (
+              <>
+                <strong>{campusUsage.count}</strong> of {campusUsage.limit} requests
+                used today by your network address.
+                Resets {formatResetTime(campusUsage.resetsAt)}.
+              </>
+            ) : (
+              <>
+                <strong>Daily limit reached</strong> ({campusUsage.count}/{campusUsage.limit}) for your network address.
+                Resets {formatResetTime(campusUsage.resetsAt)}.{' '}
+                <a href="/login">Sign in</a> for a personal key with higher limits.
+              </>
+            )}
+            <br />
+            <span style="color: #5a7a5a; font-size: 0.9em;">
+              Counted per network address; users sharing a NAT share a budget.
+            </span>
+          </p>
+        ) : null}
         <RecommendedModelHint model={recommendedModel} />
       </div>
     ) : (

@@ -6,10 +6,11 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import type { AppEnv, UserKeyRow, OpenRouterKey } from '../types';
 import { getSession } from '../utils/session';
-import { isCampusPassEligible } from '../utils/ip';
+import { getClientIP, isCampusPassEligible } from '../utils/ip';
+import { inspectCounter, parseLimit } from '../utils/campusRpd';
 import { getKeyName, findKeyByHash, createKey } from '../openrouter';
 import { findSandboxByLabel, getSandboxInfo, type SandboxInfo } from '../daytona';
-import { LandingPage } from '../templates/landing';
+import { LandingPage, type CampusUsage } from '../templates/landing';
 import { DashboardPage } from '../templates/dashboard';
 import { renderPage } from '../templates/layout';
 
@@ -19,7 +20,38 @@ export const dashboardRoutes = new OpenAPIHono<AppEnv>();
 dashboardRoutes.get('/', async (c) => {
   const session = await getSession(c);
   if (session) return c.redirect('/dashboard');
-  return renderPage(c, <LandingPage showCampusPass={isCampusPassEligible(c.req.raw, c.env)} recommendedModel={c.env.RECOMMENDED_MODEL} loginButtonText={c.env.OIDC_LOGIN_BUTTON_TEXT} />);
+
+  const showCampusPass = isCampusPassEligible(c.req.raw, c.env);
+
+  // When the visitor is eligible for Campus Pass, look up their per-IP RPD
+  // counter and surface it on the card. The IP is the lookup key but is
+  // never sent back to the client — only the count, limit, and reset time.
+  let campusUsage: CampusUsage | undefined;
+  if (showCampusPass) {
+    try {
+      const limit = parseLimit(c.env.CAMPUS_RPD_LIMIT);
+      const status = await inspectCounter(c.env.CAMPUS_RPD, getClientIP(c.req.raw), limit);
+      campusUsage = {
+        count: status.count,
+        limit: status.limit,
+        remaining: status.remaining,
+        resetsAt: status.resetsAt,
+      };
+    } catch (e) {
+      // Don't fail the page if KV is briefly unavailable; just omit the usage line.
+      console.error('Failed to inspect campus RPD counter:', e);
+    }
+  }
+
+  return renderPage(
+    c,
+    <LandingPage
+      showCampusPass={showCampusPass}
+      recommendedModel={c.env.RECOMMENDED_MODEL}
+      loginButtonText={c.env.OIDC_LOGIN_BUTTON_TEXT}
+      campusUsage={campusUsage}
+    />,
+  );
 });
 
 /** GET /dashboard - Main user interface */

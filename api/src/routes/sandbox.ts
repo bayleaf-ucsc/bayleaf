@@ -153,10 +153,6 @@ const execRoute = createRoute({
       description: 'Missing, invalid, or revoked API key',
       content: { 'application/json': { schema: ApiErrorSchema } },
     },
-    403: {
-      description: 'Key type does not support sandbox (raw `sk-or-` keys)',
-      content: { 'application/json': { schema: ApiErrorSchema } },
-    },
     502: {
       description: 'Sandbox backend failure',
       content: { 'application/json': { schema: ApiErrorSchema } },
@@ -178,16 +174,9 @@ sandboxRoutes.openapi(execRoute, async (c) => {
       return c.json(result, 200);
     }
 
-    if (!auth.userEmail) {
-      return c.json({
-        error: {
-          message: 'Sandbox requires a BayLeaf API key (sk-bayleaf-...) or Campus Pass.',
-          code: 403,
-        },
-      }, 403);
-    }
-
-    const sandboxId = await resolveSandboxId(auth.userEmail, c.env);
+    // Non-campus auth always implies a `sk-bayleaf-` token, which always has
+    // a userEmail. The TypeScript narrowing relies on resolveAuth's contract.
+    const sandboxId = await resolveSandboxId(auth.userEmail!, c.env);
     const result = await execCommand(sandboxId, command, workdir, c.env);
     return c.json(result, 200);
   } catch (e) {
@@ -219,7 +208,7 @@ sandboxRoutes.openAPIRegistry.registerPath({
   summary: 'Download a file',
   description:
     'Downloads a file from the user\'s persistent sandbox by absolute path. ' +
-    'Requires a BayLeaf API key (`sk-bayleaf-...`); Campus Pass and raw OpenRouter keys cannot access files.',
+    'Requires a BayLeaf API key (`sk-bayleaf-...`); Campus Pass cannot access files (no persistent sandbox).',
   security: [{ Bearer: [] }],
   request: {
     params: z.object({
