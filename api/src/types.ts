@@ -4,6 +4,12 @@
 
 /** Cloudflare Worker bindings (env vars + secrets) */
 export interface Bindings {
+  // GCP / Vertex AI
+  GCP_PROJECT_ID: string;
+  GCP_REGION: string;
+  GCP_SERVICE_ACCOUNT_EMAIL: string;
+  GCP_SERVICE_ACCOUNT_PRIVATE_KEY: string;
+
   // D1 database
   DB: D1Database;
 
@@ -89,6 +95,8 @@ export interface UserKeyRow {
   revoked: number;           // 0 = active, 1 = revoked
   created_at: string;
   daytona_sandbox_id: string | null;  // cached sandbox ID (null = not yet provisioned)
+  vertex_rpd_count: number;
+  vertex_rpd_date: string;
 }
 
 /** Hono app environment type */

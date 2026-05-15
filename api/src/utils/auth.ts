@@ -14,6 +14,7 @@ export interface AuthResult {
   authorization: string;     // "Bearer sk-or-..."
   isCampusMode: boolean;
   userEmail: string | null;
+  userKeyRow?: UserKeyRow; // populated if auth via Bayleaf token
 }
 
 /**
@@ -59,10 +60,11 @@ export async function resolveAuth(
     }
 
     return {
-      authorization: `Bearer ${row.or_key_secret}`,
-      isCampusMode: false,
-      userEmail: row.email,
-    };
+        authorization: `Bearer ${row.or_key_secret}`,
+        isCampusMode: false,
+        userEmail: row.email,
+        userKeyRow: row,
+      };
   }
 
   // Raw sk-or- key passes through as-is (backwards compat)

@@ -16,6 +16,7 @@ import { proxy } from 'hono/proxy';
 import type { AppEnv } from '../types';
 import { OPENROUTER_API } from '../constants';
 import { resolveAuth, type AuthResult } from '../utils/auth';
+import { getGCPAccessToken } from '../utils/gcp';
 import {
   ChatCompletionRequestSchema,
   ChatCompletionResponseSchema,
@@ -216,8 +217,52 @@ proxyRoutes.openapi(chatCompletionsRoute, async (c) => {
 
   injectUser(body, auth);
 
-  // Proxy passthrough — see note on responsesRoute handler above.
-  return forwardJson(`${OPENROUTER_API}/chat/completions`, auth.authorization, body) as any;
+  // Prefix routing
+  const modelStr = typeof body.model === 'string' ? body.model : '';
+  
+  if (modelStr.startsWith('vertex:')) {
+    // Enforce API key requirement for Vertex (no Campus Pass for now to ensure budget controls)
+    if (!auth.userKeyRow) {
+      return c.json({ error: { message: 'Vertex AI models are not available via anonymous Campus Pass. Please authenticate.', code: 403 } }, 403) as any;
+    }
+
+    const RPD_LIMIT = 100;
+    const today = new Date().toISOString().split('T')[0];
+    const user = auth.userKeyRow;
+
+    if (user.vertex_rpd_date !== today) {
+      await c.env.DB.prepare(
+        "UPDATE keys SET vertex_rpd_count = 1, vertex_rpd_date = ? WHERE bayleaf_token = ?"
+      ).bind(today, user.bayleaf_token).run();
+    } else if (user.vertex_rpd_count >= RPD_LIMIT) {
+      return c.json({ error: { message: `Vertex AI daily budget exceeded (${RPD_LIMIT} requests). Resets at midnight UTC.`, code: 429 } }, 429) as any;
+    } else {
+      await c.env.DB.prepare(
+        "UPDATE keys SET vertex_rpd_count = vertex_rpd_count + 1 WHERE bayleaf_token = ?"
+      ).bind(user.bayleaf_token).run();
+    }
+
+    // Rewrite model name
+    body.model = modelStr.replace('vertex:', '');
+
+    // Forward to Vertex OpenAI-compatible endpoint
+    try {
+      const accessToken = await getGCPAccessToken(c.env.GCP_SERVICE_ACCOUNT_EMAIL, c.env.GCP_SERVICE_ACCOUNT_PRIVATE_KEY);
+      const projectId = c.env.GCP_PROJECT_ID;
+      const region = c.env.GCP_REGION || 'us-central1';
+      const vertexUrl = `https://${region}-aiplatform.googleapis.com/v1beta1/projects/${projectId}/locations/${region}/endpoints/openapi/chat/completions`;
+      
+      return forwardJson(vertexUrl, `Bearer ${accessToken}`, body) as any;
+    } catch (e: any) {
+      return c.json({ error: { message: `Failed to route to Vertex AI: ${e.message}`, code: 500 } }, 500) as any;
+    }
+  } else {
+    // OpenRouter passthrough
+    if (modelStr.startsWith('openrouter:')) {
+      body.model = modelStr.replace('openrouter:', '');
+    }
+    return forwardJson(`${OPENROUTER_API}/chat/completions`, auth.authorization, body) as any;
+  }
 }, (result, c) => {
   if (!result.success) {
     // Hook return type is not modeled by the library's generics
