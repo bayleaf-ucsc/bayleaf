@@ -1,8 +1,8 @@
 """
 title: Vertex Pipe
 author: Adam Smith
-description: Lean OpenAI-compatible pipe to Google Vertex AI. Holds a service-account JSON in an admin valve, mints short-lived access tokens locally (PyJWT), and proxies chat completions to the Vertex OpenAI-compatible endpoint. Used to demonstrate the P3-eligible inference path on BayLeaf Chat.
-version: 0.1.0
+description: Lean OpenAI-compatible manifold pipe to Google Vertex AI. Holds a service-account JSON in an admin valve, mints short-lived access tokens locally (PyJWT), and proxies chat completions to the Vertex OpenAI-compatible endpoint. Surfaces an admin-curated list of publisher/model ids (Gemini, Claude-on-Vertex, Mistral, etc.) as selectable models.
+version: 0.2.1
 """
 
 # Why this exists:
@@ -21,14 +21,30 @@ version: 0.1.0
 #   oauth2.googleapis.com/token, cache the token until a minute before
 #   expiry, and proxy chat completions through. Pure rung-1 plugin.
 #
+#   This is a manifold pipe: a single valve (MODELS) holds an admin-curated
+#   list of publisher/model ids, and pipes() exposes each as its own
+#   selectable model in the OWUI picker. The Vertex OpenAI-compat endpoint
+#   accepts any publisher's id with the appropriate prefix, so the same
+#   token + endpoint serve google/gemini-*, anthropic/claude-* (Claude on
+#   Vertex), mistralai/*, etc.
+#
+#   To discover what's currently available in the project, hit:
+#
+#       GET https://aiplatform.googleapis.com/v1beta1/publishers/<pub>/models
+#       Authorization: Bearer <SA token>
+#       X-Goog-User-Project: <PROJECT_ID>
+#
+#   for pub in {google, anthropic, mistralai, ...} and read launchStage.
+#
 #   ZDR posture: Vertex AI under a UCSC GCP project is governed by UC's
 #   Google Cloud agreement (P3-eligible). No prompt or completion content
 #   leaves UCSC's Google tenancy via this code path.
 
 import json
+import re
 import time
 import logging
-from typing import Any, AsyncIterator, Dict, List, Optional, Union
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple, Union
 
 import httpx
 import jwt  # PyJWT[crypto] (ships with OWUI)
@@ -44,6 +60,23 @@ _SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 # Default access token lifetime is 3600s; we refresh 60s before that to avoid
 # in-flight expiry on long completions.
 _TOKEN_REFRESH_LEEWAY = 60
+
+# OWUI uses '.' as the function_id / model_id separator on the wire (so the
+# model arrives as 'vertex_pipe.<entry-id>'), and historically has been finicky
+# about '/' in entry ids. We expose ids as 'publisher__model' and convert back
+# to the publisher/model form Vertex wants only inside _shape_request.
+_PUB_SEP = "__"
+
+# Default curated catalog. Edit MODELS valve (or this default) to add/remove.
+# Format: comma-separated entries of the form '<publisher>/<model>',
+# optionally followed by ' = <display name>'. Newlines and semicolons are
+# also accepted as separators (so a textarea-style edit still works), and
+# entries whose publisher/model substring starts with '#' are ignored.
+_DEFAULT_MODELS = (
+    "google/gemini-3.1-pro-preview = Gemini 3.1 Pro (preview), "
+    "google/gemma-4-26b-a4b-it-maas = Gemma 4 26B-A4B IT (MaaS), "
+    "zai-org/glm-5-maas = GLM 5 (MaaS)"
+)
 
 
 class _TokenCache:
@@ -73,7 +106,7 @@ class _TokenCache:
         self._expires_at = time.time() + ttl_seconds
 
 
-def _mint_access_token(sa_info: Dict[str, Any]) -> tuple[str, int]:
+def _mint_access_token(sa_info: Dict[str, Any]) -> Tuple[str, int]:
     """Sign a service-account JWT and exchange it for a Google access token.
 
     Returns (access_token, expires_in_seconds). Raises on any failure.
@@ -110,15 +143,88 @@ def _mint_access_token(sa_info: Dict[str, Any]) -> tuple[str, int]:
     return body["access_token"], int(body.get("expires_in", 3600))
 
 
-class Pipe:
-    """OWUI Pipe presenting one Vertex AI model as a selectable model.
+def _parse_models(spec: str) -> List[Tuple[str, str, str]]:
+    """Parse the MODELS valve.
 
-    Each instance of this Pipe surfaces a single Gemini model id (configured
-    in valves) so admins can wire one workspace model to it with a clear,
-    auditable identity ("BayLeaf Vertex Demo"). To expose multiple Vertex
-    models, install the function multiple times under different ids. We
-    deliberately avoid auto-discovering the model catalog: the demo's value
-    is precisely that one specific model is on a P3-eligible path.
+    Accepts a comma-, semicolon-, or newline-separated list of entries.
+    Each entry is '<publisher>/<model>', optionally followed by
+    ' = <display name>'. Entries whose publisher/model component starts
+    with '#' are treated as comments and skipped.
+
+    Returns a list of (entry_id, publisher_model, display_name) triples.
+    entry_id is OWUI-safe ('publisher__model'); publisher_model is the
+    Vertex-facing form ('publisher/model'); display_name is what shows in
+    the model picker.
+    """
+
+    out: List[Tuple[str, str, str]] = []
+    seen: set[str] = set()
+    # Split on any of comma, semicolon, or newline. We deliberately do *not*
+    # split on '/' (publisher separator) or '=' (display-name separator).
+    for raw in re.split(r"[,;\n]", spec or ""):
+        entry = raw.strip()
+        if not entry:
+            continue
+        if "=" in entry:
+            left, right = entry.split("=", 1)
+            pub_model = left.strip()
+            display = right.strip()
+        else:
+            pub_model = entry
+            display = ""
+        if pub_model.startswith("#") or "/" not in pub_model:
+            # Skip comments and malformed entries silently rather than
+            # failing the whole manifold; admins will notice the missing
+            # model in the picker.
+            continue
+        publisher, model = pub_model.split("/", 1)
+        publisher = publisher.strip()
+        model = model.strip()
+        if not publisher or not model:
+            continue
+        entry_id = f"{publisher}{_PUB_SEP}{model}"
+        if entry_id in seen:
+            continue
+        seen.add(entry_id)
+        if not display:
+            display = f"{model} ({publisher})"
+        out.append((entry_id, f"{publisher}/{model}", display))
+    return out
+
+
+def _entry_to_vertex_model(entry_id: str) -> str:
+    """Convert 'publisher__model' (or a prefixed 'vertex_pipe.publisher__model')
+    back to the 'publisher/model' form Vertex's OpenAI-compat endpoint wants.
+    """
+
+    # OWUI sends body['model'] as '<function_id>.<entry_id>'. The function id
+    # is a plain identifier without dots, but entry ids do contain dots
+    # (e.g. 'google__gemini-2.5-pro'), so we strip from the left, not the
+    # right. We only strip when the resulting entry id still contains the
+    # publisher separator, to be safe against future OWUI changes.
+    if "." in entry_id:
+        head, _, tail = entry_id.partition(".")
+        if _PUB_SEP in tail:
+            entry_id = tail
+    if _PUB_SEP not in entry_id:
+        # Fall back to assuming the caller already passed publisher/model.
+        return entry_id
+    publisher, _, model = entry_id.partition(_PUB_SEP)
+    return f"{publisher}/{model}"
+
+
+class Pipe:
+    """OWUI manifold Pipe presenting a curated set of Vertex AI models.
+
+    Each line in the MODELS valve becomes one selectable model in the OWUI
+    picker. The Vertex OpenAI-compat endpoint serves multiple publishers on
+    one URL, so we keep a single PROJECT_ID/LOCATION and dispatch by the
+    model id on each turn.
+
+    Region note: the publishers exposed in any given region differ
+    (e.g. Claude-on-Vertex availability varies by region). If a curated
+    model isn't served in this LOCATION, Vertex will return 404 and we
+    surface that to the chat surface verbatim.
     """
 
     class Valves(BaseModel):
@@ -138,11 +244,14 @@ class Pipe:
             default="us-central1",
             description="Vertex AI region (e.g. us-central1, us-west1, global).",
         )
-        MODEL_ID: str = Field(
-            default="gemini-2.5-flash",
+        MODELS: str = Field(
+            default=_DEFAULT_MODELS,
             description=(
-                "Gemini model id to call. Sent to Vertex as 'google/<MODEL_ID>'. "
-                "Examples: gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash."
+                "Comma-separated curated catalog. Each entry is "
+                "'publisher/model' or 'publisher/model = Display Name'. "
+                "Newlines and semicolons also work as separators. "
+                "Examples: 'google/gemini-2.5-pro, "
+                "anthropic/claude-sonnet-4-6 = Claude Sonnet 4.6'."
             ),
         )
         TIMEOUT_SECONDS: int = Field(
@@ -152,7 +261,9 @@ class Pipe:
 
     def __init__(self) -> None:
         self.valves = self.Valves()
-        self.name = "Vertex AI: "
+        # OWUI prepends self.name to each entry's display name in the model
+        # picker. Setting it to "" keeps our display names verbatim.
+        self.name = ""
         self._token_cache = _TokenCache()
         self._log = logging.getLogger("vertex_pipe")
         # OWUI's plugin loader sets a sensible level; default INFO is fine.
@@ -161,13 +272,10 @@ class Pipe:
 
     def pipes(self) -> List[Dict[str, str]]:
         """Models this pipe exposes. OWUI calls this to populate the picker."""
-        model_id = self.valves.MODEL_ID or "unconfigured"
-        return [
-            {
-                "id": model_id,
-                "name": f"{model_id} (Vertex)",
-            }
-        ]
+        entries = _parse_models(self.valves.MODELS or "")
+        if not entries:
+            return [{"id": "unconfigured", "name": "Vertex (no models configured)"}]
+        return [{"id": entry_id, "name": display} for entry_id, _, display in entries]
 
     # ---- internals --------------------------------------------------------
 
@@ -218,12 +326,13 @@ class Pipe:
         )
 
     @staticmethod
-    def _shape_request(body: Dict[str, Any], model_id: str) -> Dict[str, Any]:
+    def _shape_request(body: Dict[str, Any], vertex_model: str) -> Dict[str, Any]:
         """Map OWUI's outgoing body to Vertex's OpenAI-compat schema.
 
-        OWUI sends the model id namespaced as '<function_id>.<MODEL_ID>'.
-        Vertex wants the bare model id prefixed with the publisher 'google/'.
-        We also drop OWUI-internal metadata fields that Vertex would reject.
+        OWUI sends the model id namespaced as '<function_id>.<entry_id>'.
+        We've already resolved that to the bare 'publisher/model' form
+        Vertex wants. We also drop OWUI-internal metadata fields that
+        Vertex would reject.
         """
         cleaned = {
             k: v
@@ -244,7 +353,7 @@ class Pipe:
                 "response_format",
             }
         }
-        cleaned["model"] = f"google/{model_id}"
+        cleaned["model"] = vertex_model
         return cleaned
 
     # ---- the call ---------------------------------------------------------
@@ -266,7 +375,16 @@ class Pipe:
             # OWUI will render this as the assistant message.
             return f"Vertex Pipe error: {e}"
 
-        payload = self._shape_request(body, self.valves.MODEL_ID)
+        # Resolve the OWUI-side entry id back to Vertex's publisher/model form.
+        incoming_model = body.get("model", "")
+        vertex_model = _entry_to_vertex_model(incoming_model)
+        if "/" not in vertex_model:
+            return (
+                f"Vertex Pipe error: cannot resolve model id '{incoming_model}'. "
+                "Expected 'publisher__model' from the manifold; check MODELS valve."
+            )
+
+        payload = self._shape_request(body, vertex_model)
         stream = bool(payload.get("stream", False))
         headers = {
             "Authorization": f"Bearer {token}",

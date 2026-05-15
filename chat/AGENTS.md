@@ -161,6 +161,37 @@ Verify after deploy: trigger a no-op OAuth flow and confirm logs show
 the scrubbed sentinel string instead of the original payload. Targets
 logger names (stable across versions), not internal APIs.
 
+## Vertex Pipe
+
+`chat/functions/vertex_pipe/function.py` is a Rung-1 manifold pipe that
+exposes an admin-curated set of Google Vertex AI models as selectable
+models in the OWUI picker. It holds a service-account JSON in an admin
+valve, mints short-lived access tokens locally (PyJWT), and proxies chat
+completions to Vertex's OpenAI-compatible endpoint. No ADC key file on
+disk, no image rebuild.
+
+- **Status**: admin-only on chat.bayleaf.dev. Not surfaced to general
+  users pending the ZDR posture review (see issue #36).
+- **Configured models** are set via the `MODELS` valve as a comma-separated
+  list of `publisher/model` (optionally `= Display Name`). Newlines and
+  semicolons also work as separators. Discovery: `GET https://aiplatform.
+  googleapis.com/v1beta1/publishers/<pub>/models` with `X-Goog-User-Project`
+  header. Useful publishers: `google`, `anthropic`, `mistralai`. MaaS open
+  models (`zai-org`, `google` Gemma MaaS, etc.) are listed in the docs
+  rather than the publisher API.
+- **Region**: most Gemini and all MaaS-prefixed open models are served
+  from `location=global`. Partner models like Claude-on-Vertex are
+  region-pinned and require project-level access grants from the
+  publisher's Model Garden tile (a 404 from the OpenAI-compat path means
+  "not entitled in this region", not "wrong id").
+- **Reference manifold pattern**: the `pipes()` method returns one entry
+  per model with id `publisher__model` (the `__` separator avoids OWUI's
+  `.` namespace separator, and the embedded `/` of `publisher/model` is
+  historically risky in entry ids). On each turn, `body["model"]` arrives
+  as `vertex_pipe.<entry_id>`; we strip the function-id prefix from the
+  *left* (Gemini ids contain dots) and convert `__` back to `/` before
+  forwarding.
+
 ## Don'ts
 
 - Don't commit secret values (API keys, OAuth secrets, DB credentials)
