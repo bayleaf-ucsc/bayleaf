@@ -58,14 +58,20 @@ const KeyCard: FC<{ hasKey: boolean }> = ({ hasKey }) => {
   );
 };
 
-const LlmCard: FC<{ orKey: OpenRouterKey; recommendedModel: string }> = ({ orKey, recommendedModel }) => {
+const LlmCard: FC<{ orKey: OpenRouterKey; row: UserKeyRow; recommendedModel: string }> = ({ orKey, row, recommendedModel }) => {
   const remaining = orKey.limit_remaining?.toFixed(4) ?? 'N/A';
   const limitDisplay = orKey.limit != null ? `$${orKey.limit.toFixed(2)}` : 'unlimited';
+
+  const today = new Date().toISOString().split('T')[0];
+  const vertexRpd = row.vertex_rpd_date === today ? row.vertex_rpd_count : 0;
+  const vertexLimit = 100; // Aligned with RPD_LIMIT in proxy.ts
 
   return (
     <div class={cardStyle}>
       <h2>LLM Inference</h2>
       <p>OpenAI-compatible chat completions and responses API, proxied through BayLeaf with zero data retention.</p>
+      
+      <h3 style="margin-top: 1.5rem; margin-bottom: 0.75rem; font-size: 1.1em; color: #444;">OpenRouter (Any Provider)</h3>
       <div class={statsStyle}>
         <div class={statStyle}>
           <div class={statValueStyle}>${orKey.usage_daily.toFixed(4)}</div>
@@ -81,7 +87,29 @@ const LlmCard: FC<{ orKey: OpenRouterKey; recommendedModel: string }> = ({ orKey
         </div>
       </div>
       <p style="margin-top: 0.5rem; font-size: 0.85em; color: #555;">
-        Daily limit: {limitDisplay}. Resets <span id="resetHint">at midnight UTC</span>.
+        Daily limit: {limitDisplay}. Resets <span class="resetHint">at midnight UTC</span>.
+      </p>
+
+      <h3 style="margin-top: 1.5rem; margin-bottom: 0.75rem; font-size: 1.1em; color: #444;">Google Vertex AI</h3>
+      <div class={statsStyle}>
+        <div class={statStyle}>
+          <div class={statValueStyle}>{vertexRpd}</div>
+          <div class={statLabelStyle}>Today's Requests</div>
+        </div>
+        <div class={statStyle}>
+          <div class={statValueStyle}>{Math.max(0, vertexLimit - vertexRpd)}</div>
+          <div class={statLabelStyle}>Remaining Today</div>
+        </div>
+        <div class={statStyle}>
+          <div class={statValueStyle}>{vertexLimit}</div>
+          <div class={statLabelStyle}>Daily Limit</div>
+        </div>
+      </div>
+      <p style="margin-top: 0.5rem; font-size: 0.85em; color: #555;">
+        Resets <span class="resetHint">at midnight UTC</span>.
+      </p>
+
+      <p style="margin-top: 1.5rem; font-size: 0.85em; color: #555;">
         Increased limits are <a href="https://bayleaf.dev/support" style="color: #2a5298;">available upon request</a>.
       </p>
       <details style="margin-top: 1rem;">
@@ -362,15 +390,17 @@ const DashboardScripts: FC<{ bayleafToken: string }> = ({ bayleafToken }) => (
 
       // On page load: localize the reset hint
       (function() {
-        const el = document.getElementById('resetHint');
-        if (!el) return;
+        const els = document.querySelectorAll('.resetHint');
+        if (!els.length) return;
         try {
           const now = new Date();
           const midnightUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
           const h = Math.ceil((midnightUtc.getTime() - now.getTime()) / 3600000);
           const localTime = midnightUtc.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
           const countdown = h === 1 ? 'in ~1 hour' : 'in ~' + h + ' hours';
-          el.textContent = 'at ' + localTime + ' your time (' + countdown + ')';
+          els.forEach(el => {
+            el.textContent = 'at ' + localTime + ' your time (' + countdown + ')';
+          });
         } catch(e) {}
       })();
 
@@ -427,7 +457,7 @@ export const DashboardPage: FC<{
 
       <KeyCard hasKey={hasKey} />
 
-      {hasKey && orKey && <LlmCard orKey={orKey} recommendedModel={recommendedModel} />}
+      {hasKey && orKey && row && <LlmCard orKey={orKey} row={row} recommendedModel={recommendedModel} />}
 
       {hasKey && <SandboxCard sandboxInfo={sandboxInfo ?? null} />}
 
