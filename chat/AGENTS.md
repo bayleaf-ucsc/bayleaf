@@ -116,21 +116,30 @@ ahead without a reason.
    names, signup gates) are tunable via env vars in the spec. Always
    exhaust this rung before writing code.
 3. **`run_command` startup wrapper** in the App Platform spec.
-   ⚠️ **Suspect, never verified to work.** This rung is speculative.
-   The theory: DO `run_command` overrides the container's `CMD`; the
+   The DO spec field `run_command` overrides the container's `CMD`. The
    upstream OWUI image (`ghcr.io/open-webui/open-webui`) has
    `WORKDIR=/app/backend`, no `ENTRYPOINT`, and `CMD=["bash","start.sh"]`,
-   so prepending shell or Python and ending with `exec bash start.sh`
-   should insert boot-time logic without forking the image. In practice
-   (May 14 2026), three deploy attempts using a multi-line shell-style
-   `run_command` block all failed with
-   `error finding executable "set" in PATH` — DO appears to pass the
-   value as direct argv rather than wrapping with `sh -c`. Before
-   relying on this rung, prove it out with a trivial single-line
-   `run_command: bash -lc 'echo hello; exec bash start.sh'` first, and
-   only then attempt multi-line scripts. If single-line `bash -lc` also
-   fails, skip to rung 4. Do not document this rung as working until a
-   real deployment has reached ACTIVE with a non-trivial `run_command`.
+   so prepending shell logic and ending with `exec bash start.sh`
+   inserts arbitrary boot-time behavior without forking the image. The
+   whole patch lives in the spec YAML (version-controlled in this
+   repo); no separate registry, no image build, no runtime fetch
+   dependency.
+
+   **Empirically verified shape** (May 14 2026): single-line
+   `bash -lc '...'` with `;`-separated statements works. The image's
+   live spec currently carries a benign sentinel `run_command` so this
+   rung is permanently warm — see the `[bayleaf] rung-3 harness alive`
+   line in deploy/run logs on every restart.
+
+   ⚠️ **Multi-line YAML block scalars do NOT work.** A block like
+   `run_command: |\n  echo X\n  exec bash start.sh` causes DO to flatten
+   newlines to spaces, treat the *first* command as argv[0], and append
+   every subsequent statement (including `exec bash start.sh`) as
+   string arguments to it. Container exits 0, OWUI never starts, deploy
+   fails with `DeployContainerExitZero`. Always use the single-line
+   `bash -lc '...'` form. For complex logic, write a `bash -lc 'cat >
+   /tmp/script.sh <<EOF ... EOF; exec bash /tmp/script.sh'` heredoc, or
+   climb to rung 4.
 4. **Custom Dockerfile** that `FROM`s upstream and `COPY`s in patch
    files. Pattern after `chat/Dockerfile.retention`. Worth it when
    patches exceed ~20 lines or need to add files (not just patch
@@ -139,36 +148,29 @@ ahead without a reason.
 5. **Fork OWUI**. Only justified for sustained patches upstream won't
    merge. Avoid.
 
-### Rung-3 sketch (⚠️ never successfully deployed; reference only)
+### Rung-3 harness (live; extend in place)
 
-A speculative example of injecting a logging filter that scrubs PII
-from the OWUI OAuth callback logger (which dumps the full userinfo
-dict on failure modes). The shape below has *not* been verified to
-work on App Platform — see the warning on rung 3 above. Drop into the
-`open-webui` service block of the spec only after proving the rung is
-viable with a trivial test:
+The live spec carries this harness in the `open-webui` service block.
+It does nothing except echo a sentinel and `exec bash start.sh`, so the
+container behaves identically to the no-`run_command` baseline. To use
+rung 3, **edit the quoted string** of the existing `run_command` to add
+your boot logic before the final `exec bash start.sh`. Keep it on one
+line; statements separated by `;` or `&&`:
 
 ```yaml
-run_command: |
-  set -e
-  cat > /tmp/bayleaf_logfilter.py <<'PY'
-  import logging
-  _SENSITIVE = ("email", "given_name", "family_name", "name")
-  class Scrub(logging.Filter):
-      def filter(self, r):
-          msg = r.getMessage()
-          if r.name.startswith("open_webui.utils.oauth") and any(k in msg for k in _SENSITIVE):
-              r.msg, r.args = f"[bayleaf: scrubbed {r.name} payload]", ()
-          return True
-  logging.getLogger().addFilter(Scrub())
-  PY
-  export PYTHONSTARTUP=/tmp/bayleaf_logfilter.py
-  exec bash start.sh
+run_command: bash -lc 'echo "[bayleaf] rung-3 harness alive (extend this run_command for boot logic; ends with exec bash start.sh)"; exec bash start.sh'
 ```
 
-Verify after deploy: trigger a no-op OAuth flow and confirm logs show
-the scrubbed sentinel string instead of the original payload. Targets
-logger names (stable across versions), not internal APIs.
+For boot logic that needs more than a few statements, do **not** try
+to embed a multi-statement script directly: YAML quoting rules around
+multi-line flow scalars and DO's argv handling interact in
+under-documented ways. Either keep the `run_command` to a handful of
+short `;`-chained statements, or climb to rung 4 (custom Dockerfile)
+where you have a real shell script as a file.
+
+Verify after deploy: grep the deploy logs for the sentinel
+(`[bayleaf] rung-3 harness alive`), confirm OWUI's banner and `Started
+server process [1]` appear after it, and check `/health` returns 200.
 
 ## Vertex Pipe
 
