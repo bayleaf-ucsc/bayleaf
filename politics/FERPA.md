@@ -567,12 +567,21 @@ them.
 ### 5.2 Inference layer proposed: direct Google Cloud
 
 A working private proof-of-concept of this path now exists in BayLeaf
-Chat (admin-only, one Gemini model surfaced via the
-[`vertex_pipe`](../chat/functions/vertex_pipe/) function). The pipe
-holds a Google service-account JSON in an admin-only valve, mints
-short-lived access tokens locally, and proxies chat completions to the
-Vertex AI OpenAI-compatible endpoint
+Chat (admin-only, surfacing both Google's Gemini models and third-party
+MaaS open models via the [`vertex_pipe`](../chat/functions/vertex_pipe/) 
+function). The pipe holds a Google service-account JSON in an admin-only 
+valve, mints short-lived access tokens locally, and proxies chat completions 
+to the Vertex AI OpenAI-compatible endpoint
 (`{location}-aiplatform.googleapis.com/v1/projects/{project}/locations/{location}/endpoints/openapi/chat/completions`).
+
+Regarding Zero Data Retention (ZDR) on this Vertex path: Google's
+documentation confirms that for third-party MaaS open models (e.g., Zhipu AI,
+Mistral), prompts and responses are **not** shared with the third-party
+publisher. However, to achieve parity with OpenRouter's ZDR, a project-level
+exception for Google's Abuse Monitoring (which otherwise retains flagged prompts
+for up to 90 days) must be granted. That request has been filed for the
+`bayleafchat` GCP project (pending a standard ~2-week SLA).
+
 This demonstrates that the architectural path is real and the contract
 chain below attaches to live traffic. Productionizing it (broader user
 exposure, an institutional GCP project under UCSC ITS, key-rotation

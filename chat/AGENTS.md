@@ -182,7 +182,12 @@ completions to Vertex's OpenAI-compatible endpoint. No ADC key file on
 disk, no image rebuild.
 
 - **Status**: admin-only on chat.bayleaf.dev. Not surfaced to general
-  users pending the ZDR posture review (see issue #36).
+  users pending the ZDR posture review (see issue #36). Google documentation
+  confirms that third-party MaaS open models (like `zai-org/glm-5`) do *not*
+  receive customer prompts or responses. However, a 2-week SLA applies to the
+  project-level Abuse Monitoring opt-out request (which is required to disable
+  Google's 90-day retention for automated safety classifiers). Once approved,
+  this pipe can safely route general user traffic under true ZDR.
 - **Configured models** are set via the `MODELS` valve as a comma-separated
   list of `publisher/model` (optionally `= Display Name`). Newlines and
   semicolons also work as separators. Discovery: `GET https://aiplatform.
