@@ -232,13 +232,13 @@ proxyRoutes.openapi(chatCompletionsRoute, async (c) => {
 
     if (user.vertex_rpd_date !== today) {
       await c.env.DB.prepare(
-        "UPDATE keys SET vertex_rpd_count = 1, vertex_rpd_date = ? WHERE bayleaf_token = ?"
+        "UPDATE user_keys SET vertex_rpd_count = 1, vertex_rpd_date = ? WHERE bayleaf_token = ?"
       ).bind(today, user.bayleaf_token).run();
     } else if (user.vertex_rpd_count >= RPD_LIMIT) {
       return c.json({ error: { message: `Vertex AI daily budget exceeded (${RPD_LIMIT} requests). Resets at midnight UTC.`, code: 429 } }, 429) as any;
     } else {
       await c.env.DB.prepare(
-        "UPDATE keys SET vertex_rpd_count = vertex_rpd_count + 1 WHERE bayleaf_token = ?"
+        "UPDATE user_keys SET vertex_rpd_count = vertex_rpd_count + 1 WHERE bayleaf_token = ?"
       ).bind(user.bayleaf_token).run();
     }
 
