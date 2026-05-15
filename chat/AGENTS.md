@@ -17,7 +17,7 @@ Managed via `doctl --context bayleaf`.
 
 - **App ID**: `f1a1e758-62e9-4e99-90cb-212cab12958d`
 - **Image**: `ghcr.io/open-webui/open-webui` (version pinned in app spec)
-- **Current version**: `v0.9.4` ✨
+- **Current version**: `v0.9.5` ✨
 - **Database**: Managed PostgreSQL 17 (`bayleaf-chat-db`, ID `ea8c7549-e761-44e1-a9c3-e45e478a5202`)
 - **Storage**: DO Spaces (`bayleaf-ucsc-storage`, bucket-scoped access key)
 
@@ -115,16 +115,22 @@ ahead without a reason.
 2. **Env-var configuration**. Many behaviors (log level, OAuth claim
    names, signup gates) are tunable via env vars in the spec. Always
    exhaust this rung before writing code.
-3. **`run_command` startup wrapper** in the App Platform spec. The DO
-   spec field `run_command` overrides the container's `CMD`. The
+3. **`run_command` startup wrapper** in the App Platform spec.
+   ⚠️ **Suspect, never verified to work.** This rung is speculative.
+   The theory: DO `run_command` overrides the container's `CMD`; the
    upstream OWUI image (`ghcr.io/open-webui/open-webui`) has
    `WORKDIR=/app/backend`, no `ENTRYPOINT`, and `CMD=["bash","start.sh"]`,
    so prepending shell or Python and ending with `exec bash start.sh`
-   inserts arbitrary boot-time logic without forking the image. Use
-   `PYTHONSTARTUP` to inject monkey-patches or logging filters into
-   every Python process the image starts. The whole patch lives in the
-   spec YAML (version-controlled in this repo); no separate registry,
-   no image build, no runtime fetch dependency.
+   should insert boot-time logic without forking the image. In practice
+   (May 14 2026), three deploy attempts using a multi-line shell-style
+   `run_command` block all failed with
+   `error finding executable "set" in PATH` — DO appears to pass the
+   value as direct argv rather than wrapping with `sh -c`. Before
+   relying on this rung, prove it out with a trivial single-line
+   `run_command: bash -lc 'echo hello; exec bash start.sh'` first, and
+   only then attempt multi-line scripts. If single-line `bash -lc` also
+   fails, skip to rung 4. Do not document this rung as working until a
+   real deployment has reached ACTIVE with a non-trivial `run_command`.
 4. **Custom Dockerfile** that `FROM`s upstream and `COPY`s in patch
    files. Pattern after `chat/Dockerfile.retention`. Worth it when
    patches exceed ~20 lines or need to add files (not just patch
@@ -133,11 +139,14 @@ ahead without a reason.
 5. **Fork OWUI**. Only justified for sustained patches upstream won't
    merge. Avoid.
 
-### Rung-3 sketch (not deployed; reference only)
+### Rung-3 sketch (⚠️ never successfully deployed; reference only)
 
-A worked example of injecting a logging filter that scrubs PII from the
-OWUI OAuth callback logger (which dumps the full userinfo dict on
-failure modes). Drop into the `open-webui` service block of the spec:
+A speculative example of injecting a logging filter that scrubs PII
+from the OWUI OAuth callback logger (which dumps the full userinfo
+dict on failure modes). The shape below has *not* been verified to
+work on App Platform — see the warning on rung 3 above. Drop into the
+`open-webui` service block of the spec only after proving the rung is
+viable with a trivial test:
 
 ```yaml
 run_command: |
