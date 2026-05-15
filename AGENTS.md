@@ -49,7 +49,9 @@ bayleaf/
 │   ├── CNAME
 │   ├── index.html      # Single-file about/landing page
 │   └── images/
+
 ├── politics/           # Dependency audit, position papers
+├── training/           # Work-in-progress React site for training users in effective GenAI usage
 ├── README.md
 └── AGENTS.md           # This file
 ```

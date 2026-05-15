@@ -2,3 +2,6 @@
 .agentnb/
 __pycache__/
 *.pyc
+
+# Work-in-progress training site
+training/
