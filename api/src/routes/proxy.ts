@@ -249,13 +249,15 @@ proxyRoutes.openapi(chatCompletionsRoute, async (c) => {
     }
     body.model = targetModel;
 
-    // Forward to Vertex OpenAI-compatible endpoint
+    // Forward to Vertex OpenAI-compatible endpoint.
+    // We route all Vertex traffic through the `global` location because some
+    // partner MaaS models (e.g. zai-org/glm-*) are only published there. Gemini
+    // models are also available globally, so a single endpoint covers all cases.
     try {
       const accessToken = await getGCPAccessToken(c.env.GCP_SERVICE_ACCOUNT_EMAIL, c.env.GCP_SERVICE_ACCOUNT_PRIVATE_KEY);
       const projectId = c.env.GCP_PROJECT_ID;
-      const region = c.env.GCP_REGION || 'us-central1';
-      const vertexUrl = `https://${region}-aiplatform.googleapis.com/v1beta1/projects/${projectId}/locations/${region}/endpoints/openapi/chat/completions`;
-      
+      const vertexUrl = `https://aiplatform.googleapis.com/v1beta1/projects/${projectId}/locations/global/endpoints/openapi/chat/completions`;
+
       return forwardJson(vertexUrl, `Bearer ${accessToken}`, body) as any;
     } catch (e: any) {
       return c.json({ error: { message: `Failed to route to Vertex AI: ${e.message}`, code: 500 } }, 500) as any;

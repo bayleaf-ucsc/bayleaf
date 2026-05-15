@@ -70,5 +70,21 @@ export const VERTEX_MODELS = [
     context_length: 1000000,
     architecture: { modality: "text+image+video+audio->text", tokenizer: "Gemini" },
     top_provider: { max_completion_tokens: 65536, is_moderated: false }
+  },
+  {
+    id: "vertex:zai-org/glm-5-maas",
+    name: "Vertex: GLM 5",
+    description: "Z.AI's GLM 5, targeting complex systems engineering and long-horizon agentic tasks. Served via Vertex AI MaaS (global endpoint).",
+    context_length: 200000,
+    architecture: { modality: "text->text", tokenizer: "GLM" },
+    top_provider: { max_completion_tokens: 128000, is_moderated: false }
+  },
+  {
+    id: "vertex:zai-org/glm-4.7-maas",
+    name: "Vertex: GLM 4.7",
+    description: "Z.AI's GLM 4.7, designed for core/vibe coding, tool use, and complex reasoning. Served via Vertex AI MaaS (global endpoint).",
+    context_length: 200000,
+    architecture: { modality: "text->text", tokenizer: "GLM" },
+    top_provider: { max_completion_tokens: 128000, is_moderated: false }
   }
 ];

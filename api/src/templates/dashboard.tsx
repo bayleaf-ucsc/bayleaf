@@ -131,6 +131,14 @@ const LlmCard: FC<{ orKey: OpenRouterKey; row: UserKeyRow; recommendedModel: str
           <RecommendedModelHint model={recommendedModel} />
         </div>
       </details>
+      <details style="margin-top: 1rem;" id="modelsDetails" ontoggle="loadModels(this)">
+        <summary style="cursor: pointer; color: #006aad; font-weight: 500;">Available models</summary>
+        <div style="margin-top: 0.75rem; max-height: 400px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 0.5rem; background: #fafafa;">
+          <div id="modelsLoading">Loading models...</div>
+          <ul id="modelsList" style="list-style: none; margin: 0; padding: 0; display: none; font-family: monospace; font-size: 0.9em;">
+          </ul>
+        </div>
+      </details>
     </div>
   );
 };
@@ -385,6 +393,58 @@ const DashboardScripts: FC<{ bayleafToken: string }> = ({ bayleafToken }) => (
           location.reload();
         } else {
           alert('Failed to delete sandbox');
+        }
+      }
+
+      let modelsLoaded = false;
+      async function loadModels(detailsEl) {
+        if (!detailsEl.open || modelsLoaded) return;
+        if (!BAYLEAF_TOKEN) {
+          document.getElementById('modelsLoading').textContent = 'Please create an API key first.';
+          return;
+        }
+
+        try {
+          const res = await fetch('/v1/models', {
+            headers: { 'Authorization': 'Bearer ' + BAYLEAF_TOKEN }
+          });
+          if (!res.ok) throw new Error('Failed to fetch models');
+          const data = await res.json();
+
+          const list = document.getElementById('modelsList');
+          list.innerHTML = '';
+
+          data.data.sort((a, b) => a.id.localeCompare(b.id)).forEach(model => {
+            const provider = model.id.split(':')[0];
+            const originalId = model.id.substring(provider.length + 1);
+            let docsLink = '#';
+
+            if (provider === 'openrouter') {
+              docsLink = 'https://openrouter.ai/' + originalId;
+            } else if (provider === 'vertex') {
+              const publisher = originalId.startsWith('gemini-') ? 'google' : 'google';
+              docsLink = 'https://console.cloud.google.com/vertex-ai/publishers/' + publisher + '/model-garden/' + originalId;
+            }
+
+            const li = document.createElement('li');
+            li.style.padding = '0.2rem 0';
+
+            const a = document.createElement('a');
+            a.href = docsLink;
+            a.target = '_blank';
+            a.style.color = '#006aad';
+            a.style.textDecoration = 'none';
+            a.textContent = model.id;
+
+            li.appendChild(a);
+            list.appendChild(li);
+          });
+
+          document.getElementById('modelsLoading').style.display = 'none';
+          list.style.display = 'block';
+          modelsLoaded = true;
+        } catch (e) {
+          document.getElementById('modelsLoading').textContent = 'Error loading models: ' + e.message;
         }
       }
 
