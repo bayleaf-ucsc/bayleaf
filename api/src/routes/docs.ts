@@ -198,10 +198,66 @@ ${fence}
 
 ### Other OpenRouter endpoints
 
-Any ${bt}/v1/*${bt} path is proxied directly to OpenRouter. This includes endpoints like
-${bt}/v1/models${bt} (list available models), ${bt}/v1/auth/key${bt} (check your key usage),
-and any future OpenRouter endpoints. The proxy does no model filtering — any model
-ID accepted by OpenRouter works.
+Any ${bt}/v1/*${bt} path is proxied directly to OpenRouter, including future
+OpenRouter endpoints we don't intercept.
+
+### Listing available models
+
+${fence}
+GET /v1/models
+${fence}
+
+Returns the union of OpenRouter models (with ${bt}id${bt} prefixed ${bt}openrouter:${bt})
+and BayLeaf's curated Vertex AI catalog (prefixed ${bt}vertex:${bt}). Use these
+prefixed IDs as the ${bt}model${bt} field in chat completion requests.
+
+### Inspecting your budget
+
+${fence}
+GET /v1/auth/key
+${fence}
+
+Returns the OpenRouter ${bt}/auth/key${bt} response augmented with a
+${bt}data.bayleaf${bt} block that splits usage by backend:
+
+${fence}json
+{
+  "data": {
+    "label": "bayleaf-...",
+    "usage": 0.42, "limit": 1.0, "limit_remaining": 0.58,
+    "bayleaf": {
+      "openrouter": { "usage": 0.42, "limit": 1.0, "limit_remaining": 0.58, "applies_to": "..." },
+      "vertex":     { "requests_today": 47, "limit": 100, "limit_remaining": 53, "resets_at": "...", "applies_to": "..." }
+    }
+  }
+}
+${fence}
+
+The OR-shaped top-level fields (${bt}usage${bt}, ${bt}limit${bt}, ${bt}limit_remaining${bt})
+report only ${bt}openrouter:${bt} traffic. For a complete picture across both
+backends, read ${bt}data.bayleaf${bt}. The ${bt}bayleaf.vertex${bt} sub-object is
+omitted on Campus Pass connections (Vertex requires a personal API key).
+
+---
+
+## Model Namespaces
+
+BayLeaf routes requests based on a prefix on the ${bt}model${bt} field:
+
+| Prefix | Backend | Notes |
+|--------|---------|-------|
+| ${bt}openrouter:${bt} | OpenRouter (ZDR providers) | Hundreds of models; per-token pricing varies. |
+| ${bt}vertex:${bt} | Google Vertex AI | Gemini family + select MaaS partners (e.g. GLM 5). Requires a BayLeaf API key (no Campus Pass) and is rate-limited at 100 requests/day per key. |
+
+Examples:
+
+- ${bt}"model": "openrouter:z-ai/glm-5.1"${bt}
+- ${bt}"model": "vertex:gemini-3.1-pro"${bt}
+- ${bt}"model": "vertex:zai-org/glm-5-maas"${bt}
+
+A bare slug (no prefix) is treated as ${bt}openrouter:${bt} for backwards compatibility,
+but new integrations should always include the prefix to match the IDs returned by
+${bt}/v1/models${bt}.
 
 ---
 

@@ -3,7 +3,7 @@
  */
 
 import type { Bindings, OpenRouterKey, OpenRouterKeyCreated } from './types';
-import { OPENROUTER_API } from './constants';
+import { OPENROUTER_API, VERTEX_MODELS } from './constants';
 
 /**
  * Generate the key name for a user based on their email
@@ -110,16 +110,54 @@ export interface ModelCostRaw {
 /** Model metadata returned by getModelInfo. */
 export interface ModelInfo {
   name: string;
-  cost: ModelCost;
-  costRaw: ModelCostRaw;
+  /** Pricing details. May be null for namespaces where we don't track pricing
+   * uniformly (e.g. Vertex MaaS partner models). */
+  cost: ModelCost | null;
+  /** Raw OpenRouter per-token cost strings. Only populated for openrouter: models. */
+  costRaw: ModelCostRaw | null;
+}
+
+/** Convert OpenRouter's per-token USD string to per-million-token USD number. */
+function toPerMillion(v?: string): number {
+  const n = parseFloat(v ?? '0');
+  return isNaN(n) ? 0 : Math.round(n * 1_000_000 * 1000) / 1000;
 }
 
 /**
- * Look up a model's display name and pricing from the OpenRouter public models list.
- * Pricing is converted from OpenRouter's per-token strings to per-million-token numbers.
- * Returns null if the model isn't found or the request fails.
+ * Look up a model's display name and pricing.
+ *
+ * Accepts BayLeaf's namespaced model IDs:
+ *   - `openrouter:<slug>` — fetched from OpenRouter's public /models list (with pricing).
+ *   - `vertex:<slug>`     — looked up in the local VERTEX_MODELS table. Pricing is
+ *                           only returned when our static table includes it (Gemini),
+ *                           and we never expose `costRaw` for Vertex since the
+ *                           Goose-style per-token-string format is OpenRouter-specific.
+ *   - bare `<slug>`       — treated as OpenRouter for backwards compatibility.
+ *
+ * Returns null if the model can't be resolved.
  */
 export async function getModelInfo(modelId: string): Promise<ModelInfo | null> {
+  if (modelId.startsWith('vertex:')) {
+    const entry = VERTEX_MODELS.find((m) => m.id === modelId);
+    if (!entry) return null;
+    const p = (entry as { pricing?: { prompt?: string; completion?: string } }).pricing;
+    return {
+      name: entry.name,
+      cost: p
+        ? {
+            input: toPerMillion(p.prompt),
+            output: toPerMillion(p.completion),
+            cacheRead: 0,
+            cacheWrite: 0,
+          }
+        : null,
+      costRaw: null, // Vertex pricing isn't surfaced in OR's per-token-string format.
+    };
+  }
+
+  // openrouter: prefix or bare slug — both query OpenRouter's /models endpoint.
+  const orSlug = modelId.startsWith('openrouter:') ? modelId.slice('openrouter:'.length) : modelId;
+
   const response = await fetch(`${OPENROUTER_API}/models`);
   if (!response.ok) return null;
 
@@ -135,13 +173,8 @@ export async function getModelInfo(modelId: string): Promise<ModelInfo | null> {
       };
     }[];
   };
-  const model = result.data.find((m) => m.id === modelId);
+  const model = result.data.find((m) => m.id === orSlug);
   if (!model) return null;
-
-  const toPerMillion = (v?: string): number => {
-    const n = parseFloat(v ?? '0');
-    return isNaN(n) ? 0 : Math.round(n * 1_000_000 * 1000) / 1000;
-  };
 
   const p = model.pricing;
   return {

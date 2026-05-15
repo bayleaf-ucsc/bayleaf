@@ -119,28 +119,12 @@ export const SandboxDeleteResponseSchema = z.object({
 }).openapi('SandboxDeleteResponse');
 
 // ── Key management ───────────────────────────────────────────────
-
-export const KeyInfoResponseSchema = z.object({
-  exists: z.literal(true),
-  key: z.object({
-    usage_daily: z.number(),
-    usage_monthly: z.number(),
-    limit: z.number().nullable(),
-    limit_remaining: z.number().nullable(),
-    created_at: z.string(),
-  }),
-}).openapi('KeyInfoResponse');
-
-export const KeyCreatedResponseSchema = z.object({
-  success: z.literal(true),
-  key: z.string().openapi({
-    description: 'The new BayLeaf API key (sk-bayleaf-...). Store it securely; it cannot be retrieved again.',
-  }),
-}).openapi('KeyCreatedResponse');
-
-export const KeyRevokedResponseSchema = z.object({
-  success: z.literal(true),
-}).openapi('KeyRevokedResponse');
+//
+// The /key endpoints are dashboard plumbing (browser session-gated,
+// called by the dashboard JS to provision/inspect/revoke a personal key).
+// They are intentionally not part of the public OpenAPI surface, so no
+// schemas are exported here. Agent-facing budget introspection lives at
+// /v1/auth/key, which works with bearer tokens and reports both backends.
 
 // ── Web Search & Fetch ───────────────────────────────────────────
 

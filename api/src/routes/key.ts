@@ -3,19 +3,19 @@
  *
  * Issues opaque proxy keys (sk-bayleaf-...) backed by persistent OR keys.
  * The real OR key never reaches the client.
+ *
+ * These routes back the dashboard UI (provision, view, revoke a personal key
+ * after browser login). They are intentionally NOT registered in the OpenAPI
+ * spec — agents should not be programming against them. The canonical
+ * agent-facing budget endpoint is `/v1/auth/key`, which works with bearer
+ * tokens and reports both backends.
  */
 
-import { OpenAPIHono, createRoute } from '@hono/zod-openapi';
+import { OpenAPIHono } from '@hono/zod-openapi';
 import type { AppEnv, UserKeyRow } from '../types';
 import { getSession } from '../utils/session';
 import { generateBayleafToken } from '../utils/token';
 import { getKeyName, findKeyByName, findKeyByHash, createKey } from '../openrouter';
-import {
-  KeyInfoResponseSchema,
-  KeyCreatedResponseSchema,
-  KeyRevokedResponseSchema,
-  ApiErrorSchema,
-} from '../schemas';
 
 export const keyRoutes = new OpenAPIHono<AppEnv>();
 
@@ -69,37 +69,9 @@ async function ensureOrKey(
   return null;
 }
 
-// ── GET /key ───────────────────────────────────────────────────────
+// ── GET /key — Dashboard key info ─────────────────────────────────
 
-const getKeyRoute = createRoute({
-  method: 'get',
-  path: '/key',
-  operationId: 'getKey',
-  tags: ['Key'],
-  summary: 'Get key info',
-  description: 'Returns usage stats for the authenticated user\'s BayLeaf API key.',
-  security: [{ Bearer: [] }],
-  responses: {
-    200: {
-      description: 'Key info with usage stats',
-      content: { 'application/json': { schema: KeyInfoResponseSchema } },
-    },
-    401: {
-      description: 'Not authenticated (session required)',
-      content: { 'application/json': { schema: ApiErrorSchema } },
-    },
-    404: {
-      description: 'No key found for this user',
-      content: { 'application/json': { schema: ApiErrorSchema } },
-    },
-    500: {
-      description: 'Failed to validate key against OpenRouter',
-      content: { 'application/json': { schema: ApiErrorSchema } },
-    },
-  },
-});
-
-keyRoutes.openapi(getKeyRoute, async (c) => {
+keyRoutes.get('/key', async (c) => {
   const session = c.get('session');
   const row = await c.env.DB.prepare(
     'SELECT * FROM user_keys WHERE email = ? AND revoked = 0',
@@ -127,37 +99,9 @@ keyRoutes.openapi(getKeyRoute, async (c) => {
   }, 200);
 });
 
-// ── POST /key ──────────────────────────────────────────────────────
+// ── POST /key — Provision a new key (called by dashboard) ─────────
 
-const createKeyRoute = createRoute({
-  method: 'post',
-  path: '/key',
-  operationId: 'createKey',
-  tags: ['Key'],
-  summary: 'Create a key',
-  description: 'Provisions a new BayLeaf API key for the authenticated user. Returns the key once — store it securely.',
-  security: [{ Bearer: [] }],
-  responses: {
-    200: {
-      description: 'Key created successfully',
-      content: { 'application/json': { schema: KeyCreatedResponseSchema } },
-    },
-    401: {
-      description: 'Not authenticated (session required)',
-      content: { 'application/json': { schema: ApiErrorSchema } },
-    },
-    409: {
-      description: 'Key already exists',
-      content: { 'application/json': { schema: ApiErrorSchema } },
-    },
-    500: {
-      description: 'Failed to provision key from OpenRouter',
-      content: { 'application/json': { schema: ApiErrorSchema } },
-    },
-  },
-});
-
-keyRoutes.openapi(createKeyRoute, async (c) => {
+keyRoutes.post('/key', async (c) => {
   const session = c.get('session');
   const keyName = getKeyName(session.email, c.env.KEY_NAME_TEMPLATE);
 
@@ -218,33 +162,9 @@ keyRoutes.openapi(createKeyRoute, async (c) => {
   return c.json({ success: true as const, key: bayleafToken }, 200);
 });
 
-// ── DELETE /key ────────────────────────────────────────────────────
+// ── DELETE /key — Revoke a key (called by dashboard) ──────────────
 
-const deleteKeyRoute = createRoute({
-  method: 'delete',
-  path: '/key',
-  operationId: 'deleteKey',
-  tags: ['Key'],
-  summary: 'Revoke key',
-  description: 'Revokes the user\'s BayLeaf API key. The underlying OpenRouter key stays alive for future reactivation.',
-  security: [{ Bearer: [] }],
-  responses: {
-    200: {
-      description: 'Key revoked',
-      content: { 'application/json': { schema: KeyRevokedResponseSchema } },
-    },
-    401: {
-      description: 'Not authenticated (session required)',
-      content: { 'application/json': { schema: ApiErrorSchema } },
-    },
-    404: {
-      description: 'No key found',
-      content: { 'application/json': { schema: ApiErrorSchema } },
-    },
-  },
-});
-
-keyRoutes.openapi(deleteKeyRoute, async (c) => {
+keyRoutes.delete('/key', async (c) => {
   const session = c.get('session');
   const existing = await c.env.DB.prepare(
     'SELECT * FROM user_keys WHERE email = ? AND revoked = 0',

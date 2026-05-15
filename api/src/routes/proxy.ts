@@ -26,6 +26,9 @@ import {
 
 export const proxyRoutes = new OpenAPIHono<AppEnv>();
 
+/** Per-key daily request limit for Vertex AI traffic. Resets at midnight UTC. */
+const VERTEX_RPD_LIMIT = 100;
+
 // ── GET / (mounted as /v1) — bare root returns 200 OK ─────────────
 // Some agent harnesses probe the base_url to test connectivity.
 proxyRoutes.get('/', (c) => c.body(null, 200));
@@ -226,7 +229,7 @@ proxyRoutes.openapi(chatCompletionsRoute, async (c) => {
       return c.json({ error: { message: 'Vertex AI models are not available via anonymous Campus Pass. Please authenticate.', code: 403 } }, 403) as any;
     }
 
-    const RPD_LIMIT = 100;
+    const RPD_LIMIT = VERTEX_RPD_LIMIT;
     const today = new Date().toISOString().split('T')[0];
     const user = auth.userKeyRow;
 
@@ -323,6 +326,120 @@ proxyRoutes.openapi(modelsRoute, async (c) => {
 });
 
 
+// ── GET /auth/key — Augmented key info interceptor ────────────────
+// OpenRouter exposes /v1/auth/key as a way for an agent to introspect its
+// budget. Since BayLeaf splits traffic across two backends, we intercept this
+// endpoint, forward to OpenRouter to get the OR-side limits, and splice in a
+// `data.bayleaf` block describing per-backend usage. The OR-shaped top-level
+// fields (data.usage, data.limit, data.limit_remaining, data.label, data.rate_limit)
+// are passed through unchanged so existing OR-aware clients keep working.
+
+const authKeyRoute = createRoute({
+  method: 'get',
+  path: '/auth/key',
+  operationId: 'getKeyInfo',
+  tags: ['LLM'],
+  summary: 'Inspect API key budget',
+  description:
+    'Returns the OpenRouter `/auth/key` response augmented with a `data.bayleaf` ' +
+    'block reporting per-backend usage. The `bayleaf.openrouter` sub-object ' +
+    'mirrors the OR-side dollar budget; `bayleaf.vertex` reports the per-key ' +
+    'requests-per-day budget consumed by `vertex:` model traffic. Vertex info ' +
+    'is omitted for Campus Pass connections (Vertex requires a personal API key).',
+  security: [{ Bearer: [] }],
+  responses: {
+    200: { description: 'Key info' },
+    401: { description: 'Missing or invalid API key' },
+  },
+});
+
+proxyRoutes.openapi(authKeyRoute, async (c) => {
+  const auth = await resolveAuth(c);
+  if (auth instanceof Response) return auth as any;
+
+  // Fetch the OR-side response. We keep its status code and payload shape
+  // for the top-level fields, then splice in our `bayleaf` augmentation.
+  let orStatus = 200;
+  let orPayload: { data?: Record<string, unknown> } = {};
+  try {
+    const res = await fetch(`${OPENROUTER_API}/auth/key`, {
+      headers: { Authorization: auth.authorization },
+    });
+    orStatus = res.status;
+    if (res.ok) {
+      orPayload = await res.json() as { data?: Record<string, unknown> };
+    } else {
+      // Forward OR's error verbatim — no augmentation makes sense here.
+      return new Response(await res.text(), {
+        status: res.status,
+        headers: { 'Access-Control-Allow-Origin': '*' },
+      }) as any;
+    }
+  } catch (e: any) {
+    return c.json({ error: { message: `Failed to fetch key info: ${e.message}`, code: 500 } }, 500, { 'Access-Control-Allow-Origin': '*' }) as any;
+  }
+
+  const orData = orPayload.data ?? {};
+  const orUsage = typeof orData.usage === 'number' ? orData.usage : null;
+  const orLimit = typeof orData.limit === 'number' ? orData.limit : null;
+  const orRemaining = typeof orData.limit_remaining === 'number'
+    ? orData.limit_remaining
+    : (orLimit !== null && orUsage !== null ? orLimit - orUsage : null);
+
+  // Build the bayleaf augmentation. OR sub-block always present; Vertex only
+  // when we have a keyed user (Campus Pass and raw sk-or- passthrough have no
+  // `user_keys` row, so no Vertex RPD counter exists for them).
+  const bayleaf: {
+    openrouter: {
+      usage: number | null;
+      limit: number | null;
+      limit_remaining: number | null;
+      applies_to: string;
+    };
+    vertex?: {
+      requests_today: number;
+      limit: number;
+      limit_remaining: number;
+      resets_at: string;
+      applies_to: string;
+    };
+  } = {
+    openrouter: {
+      usage: orUsage,
+      limit: orLimit,
+      limit_remaining: orRemaining,
+      applies_to: 'models with prefix "openrouter:"',
+    },
+  };
+
+  if (auth.userKeyRow) {
+    const today = new Date().toISOString().split('T')[0];
+    // If the stored date is stale, the next /v1/chat/completions call will
+    // reset the counter to 1. From the agent's perspective, today's usage is
+    // effectively zero — report it that way.
+    const requestsToday = auth.userKeyRow.vertex_rpd_date === today
+      ? auth.userKeyRow.vertex_rpd_count
+      : 0;
+    // Next midnight UTC: bump to tomorrow's date and pin to 00:00:00Z.
+    const tomorrow = new Date();
+    tomorrow.setUTCHours(24, 0, 0, 0);
+    bayleaf.vertex = {
+      requests_today: requestsToday,
+      limit: VERTEX_RPD_LIMIT,
+      limit_remaining: Math.max(0, VERTEX_RPD_LIMIT - requestsToday),
+      resets_at: tomorrow.toISOString(),
+      applies_to: 'models with prefix "vertex:"',
+    };
+  }
+
+  return c.json(
+    { data: { ...orData, bayleaf } },
+    orStatus as 200,
+    { 'Access-Control-Allow-Origin': '*' },
+  ) as any;
+});
+
+
 // ── Catch-all — General OpenRouter proxy ──────────────────────────
 // Paths like /models, /auth/key, etc. These are documented in OpenAPI
 // as a generic proxy but the handler forwards everything transparently.
@@ -332,15 +449,17 @@ const proxyGetRoute = createRoute({
   path: '/{path}',
   operationId: 'proxyGet',
   tags: ['LLM'],
-  summary: 'OpenRouter proxy (GET)',
+  summary: 'Generic /v1/* proxy (GET)',
   description:
-    'Catch-all proxy for any OpenRouter `/v1/*` GET endpoint. ' +
-    'The request is forwarded to `openrouter.ai/api/v1/{path}` with your resolved credentials. ' +
-    'Notable paths: `/v1/models` (list available models), `/v1/auth/key` (check key usage).',
+    'Catch-all GET proxy for any `/v1/*` path not handled by a more specific route above. ' +
+    'Forwards to OpenRouter with your resolved credentials. ' +
+    'Note: chat completions are routed by `model` prefix to OpenRouter or Vertex AI; ' +
+    'this catch-all only covers OpenRouter-only paths (rarely needed once `/v1/models`, ' +
+    '`/v1/auth/key`, `/v1/chat/completions`, and `/v1/responses` are accounted for).',
   security: [{ Bearer: [] }],
   request: {
     params: z.object({
-      path: z.string().openapi({ example: 'models' }),
+      path: z.string().openapi({ example: 'credits' }),
     }),
   },
   responses: {
@@ -357,10 +476,10 @@ const proxyPostRoute = createRoute({
   path: '/{path}',
   operationId: 'proxyPost',
   tags: ['LLM'],
-  summary: 'OpenRouter proxy (POST)',
+  summary: 'Generic /v1/* proxy (POST)',
   description:
-    'Catch-all proxy for any OpenRouter `/v1/*` POST endpoint not listed above. ' +
-    'The request is forwarded to `openrouter.ai/api/v1/{path}` with your resolved credentials.',
+    'Catch-all POST proxy for any `/v1/*` path not handled by a more specific route above. ' +
+    'Forwards to OpenRouter with your resolved credentials.',
   security: [{ Bearer: [] }],
   request: {
     params: z.object({

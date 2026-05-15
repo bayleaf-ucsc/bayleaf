@@ -219,13 +219,22 @@ export const BaseLayout: FC<PropsWithChildren<{ title: string }>> = ({ title, ch
 // ── Shared Components ────────────────────────────────────────────
 
 export const RecommendedModelHint: FC<{ model: string }> = ({ model }) => {
-  const modelUrl = `https://openrouter.ai/${model}`;
+  // The model id is namespaced (e.g. "openrouter:z-ai/glm-5.1" or "vertex:gemini-3.1-pro").
+  // For OpenRouter models we deep-link to the openrouter.ai model page; for Vertex
+  // models we don't have a public catalog URL, so render the slug as plain code.
+  const isOpenRouter = model.startsWith('openrouter:') || !model.includes(':');
+  const orSlug = model.startsWith('openrouter:') ? model.slice('openrouter:'.length) : model;
   return (
     <p>
       If you aren't sure which model to use, we recommend{' '}
-      <code><a href={modelUrl} target="_blank">{model}</a></code>{' '}
+      {isOpenRouter ? (
+        <code><a href={`https://openrouter.ai/${orSlug}`} target="_blank">{model}</a></code>
+      ) : (
+        <code>{model}</code>
+      )}{' '}
       as a reasonable default. Browse all models at{' '}
-      <a href="https://openrouter.ai/models" target="_blank">openrouter.ai/models</a>
+      <a href="/v1/models" target="_blank">/v1/models</a> (BayLeaf catalog) or{' '}
+      <a href="https://openrouter.ai/models" target="_blank">openrouter.ai/models</a>.
       {' '}Only zero-data-retention (ZDR) providers are available through BayLeaf API.
     </p>
   );
