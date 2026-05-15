@@ -2,7 +2,7 @@
 title: Vertex Pipe
 author: Adam Smith
 description: Lean OpenAI-compatible manifold pipe to Google Vertex AI. Holds a service-account JSON in an admin valve, mints short-lived access tokens locally (PyJWT), and proxies chat completions to the Vertex OpenAI-compatible endpoint. Surfaces an admin-curated list of publisher/model ids (Gemini, Claude-on-Vertex, Mistral, etc.) as selectable models.
-version: 0.2.2
+version: 0.2.3
 """
 
 # Why this exists:
@@ -449,6 +449,10 @@ class Pipe:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.post(url, headers=headers, json=payload)
                 if resp.status_code >= 400:
+                    self._log.warning(
+                        "vertex_pipe non-stream error: status=%s",
+                        resp.status_code,
+                    )
                     return f"Vertex error {resp.status_code}: {resp.text[:500]}"
                 return resp.json()
 
@@ -458,8 +462,16 @@ class Pipe:
                     "POST", url, headers=headers, json=payload
                 ) as resp:
                     if resp.status_code >= 400:
-                        # Drain body for diagnostic context, then yield error.
+                        # Drain body so we can surface it to the chat
+                        # surface (the user already saw their own prompt;
+                        # echoing it back in the error is fine). Logs
+                        # record only the status code: error bodies from
+                        # Vertex echo request content and would leak PII.
                         text = (await resp.aread()).decode("utf-8", errors="replace")
+                        self._log.warning(
+                            "vertex_pipe stream error: status=%s",
+                            resp.status_code,
+                        )
                         yield f"Vertex error {resp.status_code}: {text[:500]}"
                         return
                     async for line in resp.aiter_lines():
