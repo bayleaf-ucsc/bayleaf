@@ -125,9 +125,34 @@ curl -s https://api.bayleaf.dev/v1/models \
 
 **Check:**
 
-- Prints `OK: <N> models` where N is a positive number (typically 300+)
+- Prints `OK: <N> models` where N is a positive number (typically 300+).
+- Note: All OpenRouter models will be prefixed with `openrouter:` and the custom Vertex models will be at the end of the list.
+
 
 ---
+
+## 4.5. LLM Proxy — Vertex Routing
+
+Verify that the proxy correctly handles the `vertex:` model prefix, authenticates with Google Cloud, and enforces the RPD budget limit.
+
+```bash
+curl -s https://api.bayleaf.dev/v1/chat/completions \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "vertex:gemini-2.5-flash",
+    "messages": [{"role": "user", "content": "What is the capital of California?"}]
+  }' | python3 -m json.tool
+```
+
+**Check:**
+
+- Response is valid JSON with `choices[0].message.content`
+- The model's output answers the question (Sacramento)
+- The `model` in the response is `google/gemini-2.5-flash`
+- `usage` object is present (Google's format)
+
+
 
 ## 5. Sandbox — Execute a command
 
