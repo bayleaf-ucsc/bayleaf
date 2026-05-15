@@ -2,7 +2,7 @@
 title: Vertex Pipe
 author: Adam Smith
 description: Lean OpenAI-compatible manifold pipe to Google Vertex AI. Holds a service-account JSON in an admin valve, mints short-lived access tokens locally (PyJWT), and proxies chat completions to the Vertex OpenAI-compatible endpoint. Surfaces an admin-curated list of publisher/model ids (Gemini, Claude-on-Vertex, Mistral, etc.) as selectable models.
-version: 0.2.1
+version: 0.2.2
 """
 
 # Why this exists:
@@ -354,7 +354,60 @@ class Pipe:
             }
         }
         cleaned["model"] = vertex_model
+        Pipe._backfill_thought_signatures(cleaned.get("messages"))
         return cleaned
+
+    @staticmethod
+    def _backfill_thought_signatures(messages: Any) -> None:
+        """Inject the dummy thought-signature sentinel on tool calls that lack one.
+
+        Gemini 3+ requires every assistant `function_call` replayed in chat
+        history to carry a `thoughtSignature` (a crypto blob over the model's
+        prior reasoning). Vertex enforces this strictly: a missing signature
+        on any historical tool call yields HTTP 400 INVALID_ARGUMENT, which
+        kills the whole conversation.
+
+        OWUI does not preserve Gemini-specific fields when it stores and
+        replays chat history, so by the time we see the request the real
+        signatures are already gone. Google publishes a sentinel string,
+        `skip_thought_signature_validator`, that bypasses validation on both
+        Gemini API and Vertex (the other documented sentinel,
+        `context_engineering_is_the_way_to_go`, is Gemini-API-only). Using
+        it slightly degrades multi-turn reasoning quality (per Google's
+        docs) but is far better than a 400 crash.
+
+        The OpenAI-compat shape — empirically validated by the merged fix in
+        Vercel's `@ai-sdk/openai-compatible` (PR vercel/ai#11745) — is to
+        attach `extra_content.google.thought_signature` to each individual
+        `tool_calls[i]`, not to the message itself.
+
+        This is a last-pass backfill: if OWUI ever starts preserving real
+        signatures upstream, we don't overwrite them.
+        """
+        if not isinstance(messages, list):
+            return
+        sentinel = "skip_thought_signature_validator"
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("role") != "assistant":
+                continue
+            tool_calls = msg.get("tool_calls")
+            if not isinstance(tool_calls, list):
+                continue
+            for call in tool_calls:
+                if not isinstance(call, dict):
+                    continue
+                extra = call.get("extra_content")
+                if not isinstance(extra, dict):
+                    extra = {}
+                    call["extra_content"] = extra
+                google = extra.get("google")
+                if not isinstance(google, dict):
+                    google = {}
+                    extra["google"] = google
+                if not google.get("thought_signature"):
+                    google["thought_signature"] = sentinel
 
     # ---- the call ---------------------------------------------------------
 
