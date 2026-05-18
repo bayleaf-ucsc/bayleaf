@@ -281,6 +281,9 @@ official, and does BayLeaf's posture justify that designation?"
 ## 3. BayLeaf's architecture and data flows
 
 <!-- SEC:BAYLEAF_ARCHITECTURE -->
+
+### 3.1 Subprocessor chain and inference paths
+
 BayLeaf is a faculty-operated AI service at UCSC. It runs two user-facing
 surfaces:
 
@@ -331,6 +334,231 @@ private admin-only demonstration of a direct path now exists; see
 
 This is the fact that most shapes the designation question in [§ 4](#4-the-designation-question) and
 the contract-stack discussion in [§ 5](#5-the-contract-stack-beneath-bayleaf).
+
+### 3.2 Data taxonomy: FERPA categories BayLeaf would handle
+
+The designation analysis in [§ 4](#4-the-designation-question) is abstract about *what* education
+records flow through BayLeaf. This subsection makes the data concrete.
+It is organized by entry path (how the data arrives at BayLeaf) rather
+than by FERPA sub-classification, because the entry path is what
+determines which subprocessors see the data and under what contract.
+
+The categories below are written to be read by reviewers from Counsel,
+the Privacy Office, and ISO who need to know what the designation
+would actually cover. Some of this data already transits BayLeaf today
+(via user copy-paste and existing tools); some is speculative under
+the BayLeaf Courses redesign tracked in
+[GitHub issue #4](https://github.com/rndmcnlly/bayleaf/issues/4).
+
+#### 3.2.1 Data already transiting BayLeaf today
+
+These flows exist now, regardless of any Courses redesign or expanded
+tooling. They are the floor of the FERPA surface.
+
+- **Account identity tied to enrollment status.** OWUI accounts on
+  `chat.bayleaf.dev` are keyed by UCSC SSO (CruzID + email). The mere
+  existence of an account is a weak FERPA signal (the account-holder
+  is a current or recent UCSC affiliate); group membership is a
+  stronger one. The invite-code-gated user groups described in
+  [chat/AGENTS.md](../chat/AGENTS.md) function in practice as a
+  derived enrollment list for each course that uses BayLeaf, even
+  though no Canvas integration pushes the data: students self-select
+  into the group, and the group membership becomes a record of "these
+  people are in CMPM-X-fall-2026."
+- **Conversation histories.** Open WebUI persists every chat in its
+  Postgres database on DigitalOcean until administratively deleted.
+  Whatever a faculty member, TA, or advisor pastes into a prompt
+  becomes durable state at the platform layer, before any inference-
+  provider ZDR boundary applies. Real examples already observed
+  include pasted advising notes, draft assignment feedback, screenshots
+  of SpeedGrader, exported gradebook CSVs, and lists of students who
+  have not submitted. Retention is governed by
+  [chat/RETENTION.md](../chat/RETENTION.md); the FERPA point is that
+  OWUI's database is itself an education-records store the moment a
+  user pastes one in.
+- **Tool-call return values cached in conversation history.** When a
+  tool like the campus directory or Google Workspace toolkit returns
+  results, those results are serialized into the message stream and
+  persisted with the rest of the conversation. Tool returns inherit
+  the storage and retention posture of conversation histories. As
+  agent autonomy grows (more tools, longer tool chains), the volume
+  of FERPA-relevant data deposited via this path scales accordingly.
+- **Workspace model definitions.** Course-specific system prompts
+  authored by teachers may name students, reference accommodation
+  status, or embed roster-derived norming examples. These live in
+  OWUI's model-configuration tables, not in chat history, and have
+  different access patterns (admin-readable, exported in backups).
+  Today this is rare; under the Courses redesign it becomes routine
+  ([§ 3.2.2](#322-data-plausible-under-the-courses-redesign)).
+- **Derived outputs that become FERPA on departure.** Agent-generated
+  drafts of feedback, recommendation letters, advising emails, or
+  conduct referrals are not FERPA records inside BayLeaf, but the
+  moment a user pastes them into Canvas, an advising file, or
+  institutional email, they become education records. The boundary
+  moves with the artifact's destination, not its origin. This matters
+  for designation because the upstream prompt that produced the draft
+  often did contain FERPA inputs (the student's prior work, grades,
+  or accommodation context), and the draft itself was held in OWUI
+  during its creation.
+
+#### 3.2.2 Data plausible under the Courses redesign
+
+The redesign tracked in
+[GitHub issue #4](https://github.com/rndmcnlly/bayleaf/issues/4)
+keeps BayLeaf Courses itself stateless (Canvas and OWUI are sources
+of truth) but introduces flows of FERPA data through prompts and tool
+returns that do not exist today. The list below names the categories
+the designation should anticipate.
+
+**Roster and section-level enrollment.** A student-facing course
+agent that gives section-aware advice ("you are in Section B, your TA
+holds office hours Tuesday at 3pm") needs section-of-enrollment data
+in its context. Today this is approximated by invite-code groups; the
+redesign makes it a direct Canvas-API read. The data class is
+unambiguously FERPA: enrollment is an education record, and
+section-of-enrollment joined with name is sufficient to re-identify.
+
+**Assignment-level academic record.** A course agent that helps a
+student interpret feedback on a past submission needs read access to:
+the rubric, the student's submission, the grader's comments, and the
+score (whether published or still provisional in SpeedGrader).
+Provisional grades are an extra-sensitive sub-category: they are
+records the institution holds about the student that the student has
+not yet been told about. A grading-automation agent operated by
+teaching staff reads the same data class for the entire roster in a
+loop, with proportionally larger blast radius.
+
+**Disability accommodation status (DRC letters).** The single
+highest-policy-weight FERPA sub-category. If a course agent is asked
+to "tailor advice" or if a teacher-side agent is asked to design
+section-appropriate quizzes, the prompt context can naturally pull in
+"three students in Section B have extended-time accommodations." DRC
+data is FERPA, classified P3 under UC IS-3, and additionally subject
+to UC accessibility-policy redisclosure conventions.
+
+**Attendance and engagement signals.** Canvas analytics (page views,
+last-login timestamps, participation rates) are records "directly
+related to a student and maintained by the institution," squarely
+inside FERPA's definition. A "student check-in" agent or a
+teacher-side "who is at risk" agent leans on these.
+
+**Behavioral, conduct, and academic-integrity context.** A course-
+admin agent helping a teacher draft an academic-integrity referral,
+a late-add petition response, or a SOAR follow-up will be exposed to
+FERPA records that carry additional release restrictions (Title IX
+redaction conventions, conduct-office handling rules). The data
+class is FERPA at its core; the policy stack on top is heavier than
+for, e.g., assignment scores.
+
+**Letters of recommendation and underlying records.** Faculty using
+BayLeaf to draft an LOR will paste transcripts, GPA, prior course
+performance, and comments from past instructors. Note the FERPA
+waiver consideration: a student waiver authorizing release of
+education records to a *named recipient* (e.g., a graduate program)
+does not authorize redisclosure to OpenRouter, Anthropic, or any
+inference subprocessor. The drafting workflow needs FERPA cover from
+the institutional designation, not from the student's recipient-
+specific waiver.
+
+**Advising notes and degree-progress data.** Major declarations,
+holds, prerequisite completion, registration restrictions, advisor
+session notes. The student-facing "tailored advice" use case bleeds
+into this surface as soon as the agent knows enough to say "you have
+not yet completed the prerequisite for X."
+
+**RAG corpora of prior student work.** If teachers attach exemplary
+past submissions, grader-norming exemplars, or canonical-mistake
+collections to a course agent's knowledge base, those are student
+work products. Even with originating-student permission, redisclosure
+to model-provider subprocessors is governed by § 99.33; the
+permission was given to the institution, not to the subprocessor
+chain.
+
+**Lecture recordings and transcripts naming students.** Class
+recordings and Q&A transcripts contain student utterances and names.
+Zoom AI is already P3-approved campus-side, but feeding transcripts
+into a course agent for "make a study guide from last week's class"
+re-disclosures the student utterances inside through BayLeaf's
+inference path.
+
+**Discussion-board posts and group-work records.** Canvas discussions,
+group submissions, and peer-review records all name students. A
+teacher-side agent summarizing class participation reads across all
+of these.
+
+**Quiz-attempt logs and timing data.** Quiz answer logs with
+timestamps, attempt counts, and per-question response times are
+education records. They are also the data class most frequently
+involved in academic-integrity questions, which links this category
+to the conduct sub-category above.
+
+**Joins across categories.** The cross-product is often more
+sensitive than any individual column. Name + section is mild; name +
+section + assignment scores + attendance + accommodation status
+becomes a re-identifiable academic profile even if any one column
+looks innocuous on its own. Course-specific agents that "know which
+section the student is in" are constructing exactly this join inside
+the prompt, and the designation needs to cover the join, not just
+the columns.
+
+#### 3.2.3 Inbound paths from the Canvas API
+
+The teacher-staff use case is the highest-volume and highest-risk
+flow, both today (in policy-violating form) and under the redesign
+(in policy-covered form, contingent on designation). Today, teaching
+staff use the BayLeaf Code Sandbox feature with command-line tools
+like [`canvaslms`](https://github.com/dbosk/canvaslms) to manipulate
+student data via the Canvas API; this exceeds BayLeaf's current P2
+ceiling and is one of the practices the designation needs to cover
+(or explicitly prohibit). The data classes that flow through this
+path include all of [§ 3.2.2](#322-data-plausible-under-the-courses-redesign), with two architectural
+notes:
+
+- **The data transits the inference provider's context window.** Tool
+  results from Canvas API calls are appended to the conversation
+  before the next model turn. Whatever ZDR posture the inference
+  provider has, the data passes through.
+- **The data also transits the sandbox runtime.** If the Code Sandbox
+  feature is the execution venue, student data is written to a
+  Daytona / Lathe sandbox file system and stdout, which has its own
+  retention and access posture distinct from the OWUI database.
+
+#### 3.2.4 Blast-radius asymmetry between user and teacher use cases
+
+Student-facing course agents handle a small cone of data per student
+per session: one student's enrollment, one student's submissions, one
+student's prior feedback. Teacher-facing course-administration agents
+read the entire roster's data in a loop. The volume difference is two
+to three orders of magnitude, and the contractual exposure scales
+with volume even when the per-record posture is identical.
+
+This asymmetry matters for the protection-level decision in § 8 of
+the designation memo ([§ 8](#8-a-draft-designation-memo)). A designation that authorizes BayLeaf
+for P3 in the student-facing use case but is silent on the teacher-
+facing automation case leaves the highest-volume flows uncovered. A
+designation that authorizes both should include a corresponding
+expectation in Appendix B (security controls) about the handling of
+high-volume teacher-side flows specifically: rate limits on
+automation, logging requirements, and review of agent-driven Canvas
+API usage patterns.
+
+#### 3.2.5 Data BayLeaf does not and would not handle
+
+For completeness, the categories the designation memo's § 7 already
+disclaims:
+
+- **Direct Student Information System pushes.** BayLeaf does not
+  receive AIS / Banner / SIS data feeds. It does not maintain a
+  shadow registrar's database.
+- **Pre-enrollment applicant data.** Admissions records are not in
+  scope.
+- **Financial-aid records.** Not in scope; covered by separate
+  federal frameworks (GLBA, plus FERPA's financial-aid carve-outs)
+  that the designation does not cross.
+- **Health records covered by HIPAA.** UCSC's BAA stack covers
+  Workspace for HIPAA, not BayLeaf. Health information that happens
+  to also be FERPA-protected (some DRC documentation) is in scope as
+  FERPA, but the designation does not extend to HIPAA-only categories.
 
 ---
 
