@@ -351,9 +351,9 @@ See START HERE section above.
 
 **Q:** Does your organization have a data privacy policy?
 
-**Answer:** BayLeaf's privacy posture is documented in `SECURITY.md §2` and `FERPA.md`, and operates within UCSC's published privacy policies and UC's Statement of Privacy Values and Privacy Principles.
+**Answer:** Yes. A user-facing privacy notice is published at <https://bayleaf.dev/privacy.html>, linked from the landing page and Support page footers. The canonical retention policies it summarizes (`../chat/RETENTION.md`, `../api/RETENTION.md`) and the underlying security posture (`SECURITY.md §2`, `FERPA.md`) are version-controlled in this repository. BayLeaf operates within UCSC's published privacy policies and UC's Statement of Privacy Values and Privacy Principles.
 
-**Additional Information:** There is no standalone bayleaf.dev privacy page as of this HECVAT. A published privacy notice is a reasonable item to produce as part of the approval process and is under consideration.
+**Additional Information:**
 
 ---
 
@@ -2175,9 +2175,9 @@ See START HERE section.
 
 **Q:** Web Link to Product/Service Privacy Notice
 
-**Answer:** No standalone privacy notice exists at `bayleaf.dev` today. The service's privacy posture is documented in `SECURITY.md §2` and `FERPA.md`. A published privacy notice at `bayleaf.dev/privacy` is a reasonable artifact to produce as part of the approval process and is under consideration.
+**Answer:** <https://bayleaf.dev/privacy.html>
 
-**Additional Information:**
+**Additional Information:** Plain-language summary of data collected, retention windows (linking to canonical `RETENTION.md` files), user controls, full subprocessor list, and posture statements. Linked from the landing page and Support page footers.
 
 ---
 
@@ -2196,7 +2196,7 @@ See START HERE section.
 
 **Q:** Use this area to share information about your privacy practices that will assist those who are assessing your company data privacy program.*
 
-**Answer:** Key points:
+**Answer:** Key points (also summarized for end users at <https://bayleaf.dev/privacy.html>):
 
 1. All LLM inference is routed to ZDR-contracted provider endpoints via OpenRouter. Prompts and completions are not retained by model providers.
 2. BayLeaf itself retains conversation histories, user profiles, and uploaded files in encrypted databases, accessible only to the sole administrator, who uses that access only for operational purposes.
@@ -2586,7 +2586,7 @@ See START HERE section.
 
 **Q:** Do you provide an end-user privacy notice about privacy policies and procedures that identify the purpose(s) for which personal information is collected, used, retained, and disclosed?
 
-**Answer:** Documented in `SECURITY.md §2`; not yet published as a user-facing privacy page at `bayleaf.dev/privacy`. This is a reasonable artifact to produce as part of approval.
+**Answer:** Yes. Published at <https://bayleaf.dev/privacy.html>, with the canonical retention schedule and security posture documented in `../chat/RETENTION.md`, `../api/RETENTION.md`, `SECURITY.md §2`, and `FERPA.md`.
 
 **Additional Information:**
 
@@ -2596,7 +2596,7 @@ See START HERE section.
 
 **Q:** Do you describe the choices available to the individual and obtain implicit or explicit consent with respect to the collection, use, and disclosure of personal information?
 
-**Answer:** Implicit consent via OIDC login flow (CILogon's consent screen discloses attribute release); explicit consent for optional capabilities (GWS OAuth per-chat).
+**Answer:** Implicit consent via OIDC login flow (CILogon's consent screen discloses attribute release); explicit consent for optional capabilities (GWS OAuth per-chat). Collection, use, retention, and disclosure are summarized for users in plain language at <https://bayleaf.dev/privacy.html>.
 
 **Additional Information:**
 
@@ -2616,7 +2616,7 @@ See START HERE section.
 
 **Q:** Do you have a documented list of personal data your service maintains?
 
-**Answer:** Yes. `SECURITY.md §2.2`:
+**Answer:** Yes. `SECURITY.md §2.2` is the canonical inventory; the user-facing version is in the "What gets collected" section of <https://bayleaf.dev/privacy.html>:
 
 - User accounts: email, display name, OIDC `sub`, OAuth tokens.
 - Conversation histories: user's prompts, LLM completions, tool-call results.
