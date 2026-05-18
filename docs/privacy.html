@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy: BayLeaf AI Playground</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <main id="main">
+    <h1>Privacy</h1>
+    <p class="tagline"><a href="https://bayleaf.dev">BayLeaf AI Playground</a>: an experimental GenAI service for UC Santa Cruz</p>
+
+    <div class="note">
+        This is a plain-spoken summary of what BayLeaf collects, where it goes, and how
+        long it lives. The canonical retention policies for each service are kept in
+        the public repository and linked below. Last updated: May 2026.
+    </div>
+
+    <h2>What BayLeaf is, for privacy purposes</h2>
+    <p>
+        BayLeaf is a single-operator experimental service run by
+        <a href="mailto:amsmith@ucsc.edu">Adam Smith</a> (Dept. of Computational Media)
+        for the UC Santa Cruz campus community. It is <em>not</em> a system of record.
+        Anything users want to keep should be copied into an appropriate destination
+        (Google Drive, email, Canvas, GitHub, etc.) before retention windows close.
+    </p>
+    <p>
+        BayLeaf has not been certified for handling Protected Level 3 (P3) or higher
+        data under <a href="https://its.ucsc.edu/policies/data-classification.html">UCSC's
+        data classification policy</a>. Treat it as suitable for P1/P2 data only. Do not
+        paste student records, FERPA-protected information, health information, or
+        anything you would not put into a chat with a colleague.
+    </p>
+
+    <h2>What gets collected</h2>
+    <ul>
+        <li>
+            <strong>Identity (Chat and API):</strong> CruzID, email, and display name
+            from CILogon at sign-in. The email is used to identify your account, route
+            you to the right groups, and (for the API) tag upstream requests for
+            per-user rate limiting.
+        </li>
+        <li>
+            <strong>Conversations (Chat only):</strong> messages, attachments, and
+            chat metadata are stored in BayLeaf Chat's encrypted PostgreSQL database
+            so you can return to past conversations. They are accessible only to you
+            and the system administrator.
+        </li>
+        <li>
+            <strong>Sandbox files (Chat and API, opt-in):</strong> if you use the
+            Code Sandbox, files you create live inside a per-user Daytona VM. There is
+            no persistent volume backing it: deleting the sandbox is final.
+        </li>
+        <li>
+            <strong>Prompt and completion traffic (API and Chat):</strong> not stored
+            by BayLeaf. Requests are streamed through to LLM providers operating under
+            <a href="https://openrouter.ai/docs/guides/features/zdr">zero-data-retention</a>
+            via OpenRouter, which means providers do not log or train on your prompts
+            and completions.
+        </li>
+        <li>
+            <strong>Web search and page fetch (Chat and API):</strong> queries and URLs
+            you ask BayLeaf to look up are forwarded to Tavily and not retained by
+            BayLeaf. Tavily does not receive your identity.
+        </li>
+        <li>
+            <strong>Edge logs:</strong> standard Cloudflare and DigitalOcean platform
+            logs (IPs, status codes, timestamps) are kept by those vendors at their
+            default retention (~72 hours for Cloudflare).
+        </li>
+    </ul>
+
+    <h2>How long things stick around</h2>
+    <p>
+        BayLeaf publishes its full retention schedules in the public source repo,
+        version-controlled alongside the code that enforces them:
+    </p>
+    <ul>
+        <li>
+            <a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/chat/RETENTION.md">Chat
+            retention policy</a>: conversations are auto-deleted <strong>90 days</strong>
+            after their last activity. Files attached to deleted conversations go with
+            them. A daily cleanup job enforces this; logs contain only aggregate counts,
+            never identifiers.
+        </li>
+        <li>
+            <a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/api/RETENTION.md">API
+            retention policy</a>: prompts and completions are <strong>not stored</strong>.
+            Account records (D1) persist while your key is active. Persistent sandboxes
+            auto-delete <strong>90 days</strong> after their last activity.
+        </li>
+    </ul>
+
+    <h2>Your controls</h2>
+    <ul>
+        <li>
+            <strong>Delete on demand.</strong> In Chat, <em>Settings &rarr; Data Controls</em>
+            lets you delete individual conversations or all of them. In the API
+            dashboard you can revoke your key and destroy your sandbox.
+        </li>
+        <li>
+            <strong>Export.</strong> <em>Settings &rarr; Data Controls &rarr; Export Chats</em>
+            in the Chat interface gives you a JSON dump of everything BayLeaf holds for you.
+        </li>
+        <li>
+            <strong>Records hold.</strong> If you are subject to a litigation hold,
+            audit, or CPRA request, your conversations are exempted from auto-deletion
+            until the hold is lifted (see Chat retention policy &sect;3).
+        </li>
+        <li>
+            <strong>Account closure.</strong> Email <a href="mailto:amsmith@ucsc.edu">amsmith@ucsc.edu</a>
+            to request your account and all associated data be deleted.
+        </li>
+    </ul>
+
+    <h2>Subprocessors</h2>
+    <p>
+        These are the third-party services that handle data on behalf of BayLeaf.
+        BayLeaf selects them with privacy in mind: LLM providers operate under
+        zero-data-retention via OpenRouter, infrastructure vendors are bound by
+        their own data-protection terms, and authentication is handled by a
+        non-profit research-and-education identity broker.
+    </p>
+    <ul>
+        <li>
+            <a href="https://openrouter.ai/">OpenRouter</a>: LLM request routing.
+            BayLeaf restricts upstream traffic to ZDR providers; see
+            <a href="https://openrouter.ai/docs/guides/privacy/provider-logging#data-retention--logging">provider
+            data retention details</a>.
+        </li>
+        <li>
+            <a href="https://www.digitalocean.com/">DigitalOcean</a>: hosts BayLeaf
+            Chat (the Open WebUI application and its encrypted PostgreSQL database).
+        </li>
+        <li>
+            <a href="https://www.cloudflare.com/">Cloudflare</a>: hosts BayLeaf API
+            (the Worker and its D1 edge database).
+        </li>
+        <li>
+            <a href="https://www.daytona.io/">Daytona</a>: sandboxed Linux execution
+            environments for the Code Sandbox feature (opt-in).
+        </li>
+        <li>
+            <a href="https://tavily.com/">Tavily</a>: web search and page content
+            extraction. No conversation data is stored by Tavily.
+        </li>
+        <li>
+            <a href="https://www.cilogon.org/faq">CILogon</a>: research-and-education
+            identity broker that mediates sign-in via your CruzID Google Account
+            (OIDC). BayLeaf does not see your password.
+        </li>
+    </ul>
+
+    <h2>What BayLeaf does not do</h2>
+    <ul>
+        <li>BayLeaf does not sell or share your data with third parties for advertising or marketing.</li>
+        <li>BayLeaf does not train models on your conversations.</li>
+        <li>BayLeaf does not retain LLM prompts or completions on its own infrastructure.</li>
+        <li>BayLeaf does not use cookies for tracking. Session cookies expire in 24 hours (API) or are managed by Open WebUI (Chat).</li>
+    </ul>
+
+    <h2>Changes and questions</h2>
+    <p>
+        Material changes to this notice are announced via the BayLeaf source repository
+        and (for changes that meaningfully affect existing data) by email to
+        affected users. The full revision history of the retention policies is
+        public in the repository.
+    </p>
+    <p>
+        Questions about your data, this notice, or BayLeaf's privacy posture are
+        best routed through the
+        <a href="support.html">Support page</a>: file a public GitHub issue if it
+        is a general question, or email <a href="mailto:amsmith@ucsc.edu">amsmith@ucsc.edu</a>
+        if it concerns your specific account.
+    </p>
+    </main>
+
+    <footer class="contact">
+        <a href="https://bayleaf.dev">Home</a> |
+        <a href="support.html">Support</a> |
+        <a href="https://chat.bayleaf.dev">Chat</a> |
+        <a href="https://api.bayleaf.dev">API</a> |
+        <a href="https://github.com/bayleaf-ucsc/bayleaf">GitHub</a>
+    </footer>
+</body>
+</html>
