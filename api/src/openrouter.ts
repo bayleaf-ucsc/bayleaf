@@ -74,7 +74,7 @@ export async function createKey(name: string, env: Bindings): Promise<OpenRouter
     },
     body: JSON.stringify({
       name,
-      limit: parseFloat(env.SPENDING_LIMIT_DOLLARS) || 1.0,
+      limit: parseFloat(env.SPENDING_LIMIT_DOLLARS) || 5.0,
       limit_reset: env.SPENDING_LIMIT_RESET || 'daily',
     }),
   });
@@ -190,6 +190,31 @@ export async function getModelInfo(modelId: string): Promise<ModelInfo | null> {
       completion: p.completion ?? '0',
     },
   };
+}
+
+/**
+ * Update a key's spending limit on OpenRouter (PATCH).
+ * Used for lazy migration when the default limit increases.
+ */
+export async function updateKeyLimit(hash: string, newLimit: number, env: Bindings): Promise<boolean> {
+  const response = await fetch(`${OPENROUTER_API}/keys/${hash}`, {
+    method: 'PATCH',
+    headers: {
+      'Authorization': `Bearer ${env.OPENROUTER_PROVISIONING_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      limit: newLimit,
+      limit_reset: env.SPENDING_LIMIT_RESET || 'daily',
+    }),
+  });
+
+  if (!response.ok) {
+    console.error('Failed to update key limit:', hash, await response.text());
+    return false;
+  }
+
+  return true;
 }
 
 /**

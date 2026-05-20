@@ -43,7 +43,7 @@
     "GCP_REGION": "us-central1",
     // GCP_SERVICE_ACCOUNT_EMAIL and GCP_SERVICE_ACCOUNT_PRIVATE_KEY should be set via `wrangler secret put`
 
-    "SPENDING_LIMIT_DOLLARS": "1.0",
+    "SPENDING_LIMIT_DOLLARS": "5.0",
     "SPENDING_LIMIT_RESET": "daily",
     "KEY_NAME_TEMPLATE": "BayLeaf API for $email",
     "ALLOWED_EMAIL_DOMAIN": "ucsc.edu",
