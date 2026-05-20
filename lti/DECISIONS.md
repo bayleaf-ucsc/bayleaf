@@ -481,3 +481,165 @@ Files added/changed:
 - `scripts/_apply_do_secrets.py`: monorepo-level helper to inject
   local `.env` and PEM contents into the DO App spec without ever
   echoing them to terminal.
+
+## 2026-05-20: conceptual notes on what the connector can know and store
+
+This entry is observational rather than decisional: a record of the
+architectural ground we walked while the Spike was settling, so future
+work has a shared mental model.
+
+### LTI launches are the only writer-side trigger we have today
+
+The connector knows nothing until someone clicks. Each launch is a
+self-attested, signed assertion from Canvas:
+
+> "At this moment, the user identified by `(tool_consumer_instance_guid,
+> user_id)` -- whose human-readable name is X and email is Y -- is
+> acting in the course identified by `(tool_consumer_instance_guid,
+> context_id)` -- whose title is Z -- with role(s) R."
+
+The platform GUID is forever-stable. `(platform_guid, user_id)` is
+forever-stable per consumer+user. `(platform_guid, context_id)` is
+forever-stable per consumer+course. The role assertion is **only valid
+for that moment**; a TA who gets demoted tomorrow keeps the same user_id
+and context_id but their next launch reports different roles.
+
+This is materially different from `chat/tools/gws_toolkit/tool.py`'s
+model. Google Workspace uses OAuth2 authorization-code with a
+refresh token, so the toolkit can poll Google's APIs at any time. LTI
+launches are closer to webhooks: discrete, user-initiated, never pushed
+by the platform.
+
+### NRPS (LTI Advantage Names and Role Provisioning Services) changes this
+
+With NRPS scopes granted by the developer key (LTI 1.3) or with the
+legacy "Memberships" extension enabled at install time (LTI 1.1, present
+as `ext_ims_lis_memberships_url` in launch payloads), the connector
+gains a new capability: **call Canvas back to fetch a roster of any
+course we've been launched from.**
+
+NRPS does NOT push anything to us; we still poll. But it lets us know:
+
+- Who else is enrolled in this course (not just the launching user).
+- Authoritative role assignments (server-attested, not user-attested).
+- Section structure within the course.
+- Detection of users who *can* launch but haven't yet.
+
+NRPS is the keystone for any teacher-facing control panel that needs to
+say "this affects 47 students" or "preview as a typical TA." Without it,
+all you can do is "configure for the people who happen to launch."
+
+### What a future database might store
+
+Imagine the connector grew Postgres. Three tables, in growing order of
+usefulness:
+
+1. **`platforms`**: one row per LMS instance (today this is one row's
+   worth of `.env`). Multi-tenancy lives here. Schema includes
+   `platform_guid PK, issuer_url, client_id (1.3) or consumer_key (1.1),
+   shared_secret, jwks_url, name`.
+
+2. **`users`**: populated incrementally as people launch. Schema
+   `(platform_guid, lti_user_id) PK, email, name_full, first_seen_at,
+   last_seen_at`. The PK tuple is the stable identity. Email and name
+   are user-attested (Canvas vouches via `privacy_level=public`, but
+   the level is itself a config choice).
+
+3. **`course_memberships`** (the launch fact table): each launch upserts.
+   Schema `(platform_guid, lti_user_id, context_id) PK, roles,
+   course_title, course_label, first_seen_at, last_seen_at`. Crucially,
+   what we record is **"X claimed role Y in course Z at time T"**, not
+   "X currently has role Y." Most-recent-claim is the most-authoritative
+   thing we have but is not the same as live truth.
+
+A fourth table once we get to teacher controls:
+
+4. **`course_policy`**: `(platform_guid, context_id) PK, enabled,
+   persona_instructions, allowed_sections, ...`. This is what teachers
+   configure. Doesn't need NRPS; needs only the teacher's launch.
+
+### The temporal authority question
+
+A subtle point that will matter for OWUI toolkit design later:
+
+| Authority claim | Trust window | Can we recheck? |
+|---|---|---|
+| "X has role Y in course Z at this exact second" | The launch itself, valid for that moment | Only via fresh launch or NRPS call |
+| "X is in course Z (membership-only)" | Stable over weeks-months | NRPS call gives current view |
+| "X may currently see this assignment's data" | Authorization decision; minutes-fresh | Canvas REST API call w/ a service token |
+| "X has launched into our system at some point" | Forever once observed | Database lookup |
+
+When a student launches at 9 AM, then opens BayLeaf Chat at 3 PM and
+asks "what's due in CMPM 120?" -- the toolkit calling into the
+connector is trusting a 6-hour-old claim. Fine for navigation
+("remember which courses they're in"), inappropriate for high-stakes
+authorization ("they're allowed to read this submission's content").
+
+The cleanest separation:
+
+- **Database stores observed launch facts.** Used for navigation,
+  preferences, last-known-courses lists.
+- **Real-time authorization checks call back to Canvas.** Either via
+  NRPS / LTI Advantage or via a separate token flow. The database is
+  *not* the source of truth for "may this person see this data right
+  now."
+
+### The teacher control panel is the connector's first real UI
+
+`/lti/launch` currently renders a debug payload. It needs to become a
+real page when a teacher (role check on launch) lands there.
+
+Considered hosting the control panel inside OWUI (single front door,
+unified UX) versus rendering server-side from the connector. **Decided:
+connector renders.** OWUI is upstream third-party code; our
+customization surface is plugins/tools/functions/filters, not template
+or admin-page injection. Building a parallel admin UI inside OWUI's
+plugin model would either hack templates we don't own or fight the
+plugin sandbox. The control panel is launch-bound configuration, not
+chat-bound, and that's the right place for it to live.
+
+So: FastAPI + a templating choice (Jinja2 likely) + form submissions to
+sibling connector endpoints + state in the connector's DB. Iframe
+shows it on launch. Teacher's session in the iframe is bounded by the
+launch event itself (LTI's session model is "this iframe is
+authenticated for this launch"); persistent teacher sessions are a
+separate problem we don't have to solve yet.
+
+### Per-student vs per-course vs per-section policy
+
+The control panel needs to be honest about who its decisions reach:
+
+- **Course-level toggles** (Brace on/off for course Z): trivial, one
+  row. Doesn't need NRPS. Applies to anyone who launches as a member
+  of Z.
+- **Section-level policy** ("Brace allowed in Section 02 only"):
+  needs NRPS to know section structure. Applies the moment any user
+  launches; their section is in their launch payload.
+- **Per-student overrides** ("Joe gets accommodation X"): needs the
+  student to have launched at least once so we have their LTI user_id
+  to bind to. Teacher's view of the roster (via NRPS) shows
+  enrollment vs activation status: "47 students should launch, only
+  12 have so far."
+
+Teacher's first action becomes setup: "Have your students click the
+Brace icon at least once during a class meeting." This is the LTI-side
+analog to OAuth-consent-once.
+
+### What's deferred
+
+- Database (Postgres or SQLite via DO Managed). Right now the
+  connector is stateless across requests except for the in-process
+  nonce-replay cache.
+- Multi-tenant `(consumer_key -> shared_secret)` lookup. Today there's
+  one consumer key in env vars; tomorrow's lookup is a table swap.
+- NRPS call wiring (HTTP client + signature plumbing for the LTI 1.1
+  legacy memberships endpoint, OR proper `client_credentials` flow for
+  LTI 1.3 NRPS scopes once a dev key exists).
+- Canvas REST API access for course-content grounding (assignments,
+  syllabus, pages). The /lti/launch payload doesn't carry this; the
+  toolkit half will need a separate credential flow.
+- The OWUI toolkit (`chat/tools/canvas_toolkit/tool.py`). Mirrors
+  `gws_toolkit`'s shape; HMAC-authenticated calls from OWUI to
+  connector; connector consults course_policy and
+  course_memberships before serving up Canvas-grounded content.
+
