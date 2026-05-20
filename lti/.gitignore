@@ -1,0 +1,22 @@
+# Credentials and keys: NEVER commit these.
+.env
+.env.*
+!.env.example
+keys/
+*.pem
+*.key
+
+# Python / uv
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local-process state: PIDs, logs, sockets.
+.run/
+
+# Editor
+.vscode/
+.idea/

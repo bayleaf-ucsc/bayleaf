@@ -1,0 +1,84 @@
+# DigitalOcean App Platform spec for the bayleaf-lti service.
+#
+# Apply with:
+#   doctl apps create --spec lti/.do/app.yaml         # first time
+#   doctl apps update <APP_ID> --spec lti/.do/app.yaml # subsequent edits
+#
+# Image is pulled from public GHCR. Push a new image tag with:
+#   docker buildx build --platform=linux/amd64 -t ghcr.io/bayleaf-ucsc/lti:latest \
+#     --push -f lti/Dockerfile lti
+# then trigger a redeploy:
+#   doctl apps create-deployment <APP_ID>
+#
+# Secrets (LTI_1P1_SHARED_SECRET, LTI_PRIVATE_KEY_PEM, LTI_PUBLIC_KEY_PEM,
+# CANVAS_SESSION_COOKIE) are NOT in this file. They are set per-app via:
+#   doctl apps update <APP_ID> --spec ... # with EV[1:...] encrypted values
+# or via the DO web console: Settings -> Components -> bayleaf-lti -> Edit
+# environment variables.
+
+name: bayleaf-lti
+region: sfo
+alerts:
+  - rule: DEPLOYMENT_FAILED
+  - rule: DOMAIN_FAILED
+
+domains:
+  - domain: lti.bayleaf.dev
+    type: PRIMARY
+
+services:
+  - name: bayleaf-lti
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    http_port: 8080
+
+    image:
+      registry_type: GHCR
+      registry: bayleaf-ucsc
+      repository: lti
+      tag: latest
+      # Re-pull on every deploy invocation, so a `:latest` push followed by
+      # `doctl apps create-deployment` actually picks up the new image.
+      deploy_on_push:
+        enabled: true
+
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 10
+      period_seconds: 15
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 5
+
+    envs:
+      - key: PUBLIC_BASE_URL
+        scope: RUN_TIME
+        value: https://lti.bayleaf.dev
+
+      # All credentials below are placeholders. Set real values via the DO
+      # console or `doctl apps update` with `type: SECRET` so they are
+      # encrypted at rest as EV[1:...] blobs.
+      - key: LTI_1P1_CONSUMER_KEY
+        scope: RUN_TIME
+        value: ""
+
+      - key: LTI_1P1_SHARED_SECRET
+        scope: RUN_TIME
+        type: SECRET
+        value: ""
+
+      - key: LTI_PRIVATE_KEY_PEM
+        scope: RUN_TIME
+        type: SECRET
+        value: ""
+
+      - key: LTI_PUBLIC_KEY_PEM
+        scope: RUN_TIME
+        type: SECRET
+        value: ""
+
+      # /debug/echo gating. Default off in prod; turn on temporarily by
+      # editing this value and redeploying.
+      - key: DEBUG_ECHO
+        scope: RUN_TIME
+        value: "0"

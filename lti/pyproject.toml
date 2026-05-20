@@ -1,0 +1,32 @@
+[project]
+name = "bayleaf-lti"
+version = "0.0.1"
+description = "BayLeaf LTI connector (spike). Targets Canvas; protocol-layer naming so it can serve other LMSes too."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "httpx>=0.28",                  # outbound POST for LTI 1.3 dynamic registration
+    "python-multipart>=0.0.20",     # required by FastAPI for form parsing on /lti/launch
+    "cryptography>=43",             # RSA keypair, JWK rendering
+    "oauthlib>=3.2",                # OAuth 1.0a HMAC-SHA1 verification for LTI 1.1
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/connector"]

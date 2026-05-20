@@ -1,0 +1,26 @@
+# Mirror .gitignore for image hygiene, plus a few container-specific excludes.
+.env
+.env.*
+!.env.example
+keys/
+*.pem
+*.key
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.run/
+.vscode/
+.idea/
+
+# Don't recursively copy the Dockerfile/dockerignore into the image.
+Dockerfile
+.dockerignore
+
+# Local docs we don't need at runtime. Saves a few KB.
+README.md
+AGENTS.md
+DECISIONS.md
+.do/
