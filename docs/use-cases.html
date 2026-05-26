@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Use Cases: BayLeaf AI Playground</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <main id="main">
+    <h1>Use Cases</h1>
+    <p class="tagline"><a href="https://bayleaf.dev">BayLeaf AI Playground</a>: concrete recipes for getting work done</p>
+
+    <p>
+        These are illustrative scenarios drawn from real campus use, written for people
+        who want to know <em>what BayLeaf is good for</em> before they invest time learning
+        it. Each entry names the situation, the recommended approach (which service, which
+        integrations, sometimes the literal prompt to start with), and any honest caveats.
+    </p>
+
+    <div class="note">
+        <strong>These are not speculative.</strong> Each vignette below was lightly
+        generalized from something a real BayLeaf user has actually done. Names, courses,
+        and specifics have been blurred where appropriate, but the workflows, prompts,
+        and integrations are the ones people are using right now.
+    </div>
+
+    <div class="note">
+        <strong>Choosing between Chat and API:</strong>
+        Reach for <a href="https://chat.bayleaf.dev">BayLeaf Chat</a> when you want a
+        quick, mobile-friendly browser session, possibly with built-in toolkits like web
+        search, code sandbox, or Google Workspace. Reach for the
+        <a href="https://api.bayleaf.dev">BayLeaf API</a> through a local coding-agent
+        harness when you need the agent to read files on your own computer or when you
+        want zero copies of the conversation stored on a BayLeaf service.
+    </div>
+
+    <h2>Faculty</h2>
+
+    <h3 id="funding-opportunity">Research: chasing down a half-heard funding opportunity</h3>
+    <p>
+        A colleague made passing verbal reference to a potentially relevant funding
+        opportunity, and you want to follow up without disrupting the flow of the
+        conversation, or losing the lead by tomorrow morning.
+    </p>
+    <p>
+        <strong>With BayLeaf:</strong> open BayLeaf Chat on your phone (you can install it
+        as a Progressive Web App so it lives on your home screen like a native app). Start
+        a new chat with the Basic model, enable the <strong>Web Context</strong>
+        integration, and type something like:
+    </p>
+    <blockquote>
+        I'm <em>{your name}</em>, faculty at UCSC. Help me track down the funding
+        opportunity with a name like <em>{vague phrase}</em> and sketch how the work of
+        my lab might fit it.
+    </blockquote>
+    <p>
+        Send the message and put your phone away. By the time you return, the agent will
+        likely have used multiple web searches in a row to figure out who you are and
+        chase down the funder's details. The conversation syncs across devices, so you
+        can continue from your laptop later.
+    </p>
+    <div class="note">
+        <strong>Tip:</strong> If you often have research-flavored chats, put a line like
+        <code>User is {academic webpage URL}</code> in your Chat system prompt so all
+        future conversations are grounded in your academic identity without you having
+        to reintroduce yourself each time.
+    </div>
+
+    <h3 id="canvas-group-cleanup">Teaching: rescuing a misconfigured Canvas group assignment</h3>
+    <p>
+        Yesterday you posted a group assignment on Canvas. Today, reviewing submissions,
+        you notice you forgot to mark it as a group assignment: now you have a
+        disorganized pile of individual submissions. Students figured it out anyway
+        (one person from each team submitted), but you still owe everyone group credit
+        and need to identify the missing teams. Clicking through Canvas at scale is
+        error-prone; pushing it back onto students invites confusion because most
+        assumed a teammate had it covered.
+    </p>
+    <p>
+        <strong>With BayLeaf:</strong> start a chat with the Basic model and enable the
+        <strong>Code Sandbox</strong> integration. If you've previously set up the
+        <a href="https://github.com/dbosk/canvaslms"><code>canvaslms</code></a> CLI in
+        your sandbox, the agent can act quickly: create a new correctly-configured
+        group assignment, append <code>[deprecated]</code> to the old one, and copy
+        submissions and comments across, attaching each one to the right team. In the
+        same conversation you can then ask <em>"so, which teams still haven't
+        submitted?"</em> or <em>"draft a Canvas announcement explaining the
+        deprecation shuffle we just did."</em>
+    </p>
+    <div class="note">
+        <strong>Caveat:</strong> BayLeaf is not currently approved to handle the kinds
+        of student data involved in this scenario. Use your judgment about whether the
+        speed-and-accuracy tradeoff is appropriate for your context, and read the
+        <a href="privacy.html">privacy notice</a> first.
+    </div>
+
+    <h2>Students</h2>
+
+    <h3 id="local-rubric-check">Cross-checking a draft against a rubric without uploading the draft</h3>
+    <p>
+        You're writing a class assignment in Microsoft Word and want to cross-check
+        your current draft against the rubric on Canvas. Your draft includes a personal
+        story you're comfortable sharing with course staff but <em>not</em> with the
+        BayLeaf administrator. Pasting the whole thing into a new Chat conversation
+        would store a copy in BayLeaf's encrypted database. Is giving up that privacy
+        the price of getting early feedback?
+    </p>
+    <p>
+        <strong>With BayLeaf:</strong> use the API instead of Chat. Pick a graphical
+        coding-agent harness like <a href="https://block.github.io/goose/">Goose</a> or
+        <a href="https://openchamber.dev/">OpenChamber</a> (a CLI harness like
+        <a href="https://opencode.ai">OpenCode</a> or
+        <a href="https://pi.dev/">Pi</a> works too if you're comfortable in a
+        terminal). Point the default agent at
+        <a href="https://api.bayleaf.dev/docs/SKILL.md">https://api.bayleaf.dev/docs/SKILL.md</a>
+        and it will walk itself through the setup. From then on, your agent reads the
+        relevant files directly from your laptop, sends only what it needs to BayLeaf
+        for inference, and keeps the only record of the conversation on your own
+        machine. The personal story stays local.
+    </p>
+    <div class="note">
+        <strong>Tip:</strong> This same pattern (local files, local transcript, BayLeaf
+        only for inference) is the right default any time you're working with anything
+        you wouldn't paste into a public chat: draft research, unpublished writing,
+        anything covered by a confidentiality expectation.
+    </div>
+
+    <h2>Staff</h2>
+
+    <h3 id="workflow-doc">Turning scattered email threads into a clean workflow doc</h3>
+    <p>
+        You're assembling workflow documentation for teammates in a Google Doc, but
+        the only existing record of how the workflow has been done in the past lives
+        in disorganized email threads and your own head. How do you gather that loose
+        context and assemble it into something shareable?
+    </p>
+    <p>
+        <strong>With BayLeaf:</strong> use either the <strong>Google Workspace</strong>
+        integration in BayLeaf Chat, or the
+        <a href="https://github.com/googleworkspace/cli"><code>gws</code></a> CLI in a
+        local agent powered by the BayLeaf API. Either way, the agent can search your
+        email, follow links to other shared docs, and run a structured interview to
+        grill you for missing details before writing a compact summary into either
+        your working document or a private staging doc you review before publishing.
+    </p>
+    <div class="note">
+        <strong>Tip:</strong> Ask the agent to produce the interview questions
+        <em>first</em>, before doing any writing. You'll catch missing context and
+        wrong assumptions earlier, and you'll end up with a better document for less
+        total effort.
+    </div>
+
+    <h2>Contributing a use case</h2>
+    <p>
+        If you've used BayLeaf to do something concretely useful (and especially if it
+        was something the obvious tools made painful), consider contributing your own
+        write-up. Open a
+        <a href="https://github.com/bayleaf-ucsc/bayleaf/issues/new">GitHub issue</a>
+        with the situation, the approach you took, and any caveats worth flagging,
+        and we'll work it into this page.
+    </p>
+    </main>
+
+    <footer class="contact">
+        <a href="https://bayleaf.dev">Home</a> |
+        <a href="https://chat.bayleaf.dev">Chat</a> |
+        <a href="https://api.bayleaf.dev">API</a> |
+        <a href="https://github.com/bayleaf-ucsc/bayleaf">GitHub</a> |
+        <a href="support.html">Support</a> |
+        <a href="privacy.html">Privacy</a>
+    </footer>
+</body>
+</html>
