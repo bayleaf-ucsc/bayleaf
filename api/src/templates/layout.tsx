@@ -203,7 +203,7 @@ export const BaseLayout: FC<PropsWithChildren<{ title: string }>> = ({ title, ch
         <h1 style="margin: 0;">BayLeaf API</h1>
         <nav aria-label="Documentation" style="display: flex; gap: 1rem;">
           <a href="/docs" style="font-size: 0.95rem;">API Reference</a>
-          <a href="/docs/SKILL.md" style="font-size: 0.95rem;">Agent Skill</a>
+          <a href="/llms.txt" style="font-size: 0.95rem;">llms.txt</a>
         </nav>
       </header>
       <main>
@@ -272,10 +272,61 @@ export const CodingAgentCard: FC<{ recommendedModel: string }> = ({ recommendedM
       itself, or follow them yourself:
     </p>
     <p style="margin: 0.5rem 0 0 0;">
-      <a href="/docs/SKILL.md" target="_blank" style="font-weight: 500;">
-        https://api.bayleaf.dev/docs/SKILL.md
+      <a href="/llms.txt" target="_blank" style="font-weight: 500;">
+        https://api.bayleaf.dev/llms.txt
       </a>
     </p>
+  </div>
+);
+
+/**
+ * One-command OpenCode quickstart card. Uses OpenCode's `.well-known/opencode`
+ * provider-onboarding mechanism (see api/src/routes/wellknown.ts) so the user
+ * never edits opencode.json or pastes their key into a config file. The
+ * dashboard's value-add over /llms.txt is the prominent Copy button on the
+ * single command — the key is read interactively by OpenCode after the
+ * command runs, so this card never needs to render the key value at all.
+ */
+export const OpenCodeQuickstartCard: FC = () => (
+  <div class={cardStyle} style="background: #eef7ee; border-color: #2d7d46;">
+    <h2>Connect <a href="https://opencode.ai/" target="_blank">OpenCode</a> in one command</h2>
+    <p>
+      OpenCode is a terminal coding agent. After you have it{' '}
+      <a href="https://opencode.ai/docs/" target="_blank">installed</a>, run this command to register
+      BayLeaf as a provider, no config files to edit:
+    </p>
+    <button type="button" class={copyBoxStyle} onclick="copyToClipboard(this)" style="margin-top: 0.5rem;">
+      <code>opencode auth login https://api.bayleaf.dev</code>
+      <span class="copy-hint">Click to copy</span>
+    </button>
+    <p style="margin-top: 0.75rem;">
+      OpenCode will prompt you for your BayLeaf API key on the terminal (the key won't echo to screen).
+      Paste it from the card above. After that, run <code>opencode</code>, pick a BayLeaf model with{' '}
+      <code>/models</code>, and you're done. Re-running <code>opencode auth login …</code> any time
+      rotates the stored key.
+    </p>
+    <details style="margin-top: 1rem;">
+      <summary style="cursor: pointer; color: #006aad; font-weight: 500;">How it works</summary>
+      <div style="margin-top: 0.5rem; font-size: 0.95em;">
+        <p>
+          OpenCode fetches{' '}
+          <a href="/.well-known/opencode" target="_blank"><code>/.well-known/opencode</code></a>{' '}
+          to learn how to authenticate, prompts you for the key locally, and stores it under your
+          BayLeaf URL in <code>~/.local/share/opencode/auth.json</code> (mode 0600). On every launch
+          it then fetches{' '}
+          <a href="/.well-known/opencode/config" target="_blank"><code>/.well-known/opencode/config</code></a>{' '}
+          (with your key as a Bearer token) and merges the returned provider definition into your
+          OpenCode configuration. That means <strong>you don't edit <code>opencode.json</code></strong>,
+          and the recommended model and curated picks update automatically as we change them on the server.
+        </p>
+        <p>
+          <strong>Windows users:</strong> the auth command runs a POSIX shell script. Use{' '}
+          <a href="https://learn.microsoft.com/en-us/windows/wsl/install" target="_blank">WSL</a>{' '}
+          (or fall back to{' '}
+          <a href="/llms.txt" target="_blank">manual <code>opencode.json</code> setup</a>).
+        </p>
+      </div>
+    </details>
   </div>
 );
 

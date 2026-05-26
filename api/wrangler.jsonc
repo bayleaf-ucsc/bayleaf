@@ -52,6 +52,13 @@
     // Campus Pass: allow on-campus users to access without personal API keys
     "RECOMMENDED_MODEL": "openrouter:z-ai/glm-5.1",
 
+    // Curated companion models for the OpenCode wellknown remote config.
+    // Comma-separated namespaced slugs (openrouter: / vertex:). RECOMMENDED_MODEL is
+    // injected automatically as the first entry; this list adds further picks the
+    // user can select from /models in OpenCode without a full /v1/models browse.
+    // Empty string is allowed and means "recommended model only".
+    "OPENCODE_CURATED_MODELS": "openrouter:qwen/qwen3.6-27b,vertex:zai-org/glm-5-maas",
+
     // OIDC authentication — provider-agnostic via .well-known discovery.
     // Currently configured for CILogon (https://www.cilogon.org/oidc).
     // For Google, use:

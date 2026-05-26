@@ -9,6 +9,7 @@ import {
   BaseLayout,
   RecommendedModelHint,
   CodingAgentCard,
+  OpenCodeQuickstartCard,
   cardStyle,
   btnStyle,
   btnDangerStyle,
@@ -244,8 +245,8 @@ const GwsCard: FC = () => (
           Or hand the full setup guide to your coding agent (GWS setup is included):
         </p>
         <p style="margin: 0.25rem 0 0 0;">
-          <a href="/docs/SKILL.md" target="_blank" style="font-weight: 500;">
-            https://api.bayleaf.dev/docs/SKILL.md
+          <a href="/llms.txt" target="_blank" style="font-weight: 500;">
+            https://api.bayleaf.dev/llms.txt
           </a>
         </p>
       </div>
@@ -308,8 +309,8 @@ pipx inject canvaslms cryptography`}</code></pre>
           Or hand the full details to your coding agent (Canvas setup is included):
         </p>
         <p style="margin: 0.25rem 0 0 0;">
-          <a href="/docs/SKILL.md" target="_blank" style="font-weight: 500;">
-            https://api.bayleaf.dev/docs/SKILL.md
+          <a href="/llms.txt" target="_blank" style="font-weight: 500;">
+            https://api.bayleaf.dev/llms.txt
           </a>
         </p>
       </div>
@@ -522,6 +523,8 @@ export const DashboardPage: FC<{
       {hasKey && <SandboxCard sandboxInfo={sandboxInfo ?? null} />}
 
       {hasKey && <WebCard />}
+
+      {hasKey && <OpenCodeQuickstartCard />}
 
       <CodingAgentCard recommendedModel={recommendedModel} />
 

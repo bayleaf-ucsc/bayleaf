@@ -23,6 +23,7 @@ export interface Bindings {
   ALLOWED_EMAIL_DOMAIN: string;
   SYSTEM_PROMPT_PREFIX: string;
   RECOMMENDED_MODEL: string;       // Model slug shown in dashboard examples
+  OPENCODE_CURATED_MODELS: string; // Comma-separated namespaced slugs for OpenCode wellknown config (in addition to RECOMMENDED_MODEL)
 
   // OIDC configuration (provider-agnostic: works with CILogon, Google, etc.)
   OIDC_ISSUER: string;             // e.g. "https://cilogon.org" or "https://accounts.google.com"
