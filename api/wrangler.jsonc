@@ -28,10 +28,18 @@
   // KV namespace for Campus Pass per-IP RPD counters.
   // Keys: `campus-rpd:<bucket>:<YYYY-MM-DD>` → JSON `{count: number}`, TTL 36h.
   // Created via: wrangler kv namespace create CAMPUS_RPD
+  //
+  // KV namespace for the generic /auth/claim/* device-flow handshake.
+  // Keys: `claim:<CODE>` → JSON ClaimRecord (see routes/claim.ts), TTL 600s.
+  // Created via: wrangler kv namespace create CLAIM_CODES
   "kv_namespaces": [
     {
       "binding": "CAMPUS_RPD",
       "id": "6b839ccbc7d14ddb86af4d7cb926eed2"
+    },
+    {
+      "binding": "CLAIM_CODES",
+      "id": "f435dc71d19148bab46fb0b14b99de2b"
     }
   ],
 

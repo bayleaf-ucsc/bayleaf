@@ -26,6 +26,7 @@ import { webRoutes } from './routes/web';
 import { docsRoutes } from './routes/docs';
 import { llmsRoutes } from './routes/llms';
 import { wellKnownRoutes } from './routes/wellknown';
+import { claimRoutes } from './routes/claim';
 import { RecommendedModelResponseSchema, HealthResponseSchema } from './schemas';
 
 const app = new OpenAPIHono<AppEnv>();
@@ -118,6 +119,7 @@ app.route('/sandbox', sandboxRoutes);
 app.route('/web', webRoutes);
 app.route('/docs', docsRoutes);
 app.route('/.well-known', wellKnownRoutes);
+app.route('/auth/claim', claimRoutes);
 app.route('/', llmsRoutes);
 app.route('/', authRoutes);
 app.route('/', keyRoutes);

@@ -88,9 +88,11 @@ ${fence}bash
 opencode auth login https://api.bayleaf.dev
 ${fence}
 
-OpenCode prompts for your BayLeaf API key on the terminal (no echo, not written to shell
-history). Paste an ${bt}sk-bayleaf-...${bt} token from https://api.bayleaf.dev/, or just
-press Enter on the campus network. Then run ${bt}opencode${bt}, pick a BayLeaf model with
+OpenCode opens the [claim-code device flow](#claim-flow): your terminal prints a short
+URL and a code, you open the URL in a browser, sign in with UCSC credentials if you
+aren't already, confirm the code matches, and click **Approve**. Your BayLeaf API key
+is delivered straight from the browser approval to OpenCode without ever appearing on
+screen or in your shell history. Then run ${bt}opencode${bt}, pick a BayLeaf model with
 ${bt}/models${bt}, and you're done.
 
 The recommended model and curated picks update automatically on every OpenCode launch,
@@ -99,6 +101,10 @@ model picker under the provider id ${bt}bayleaf-remote${bt}, e.g.
 ${bt}bayleaf-remote/${model}${bt}. The ${bt}bayleaf-remote${bt} naming is deliberate:
 it leaves the unqualified ${bt}bayleaf${bt} provider id available for you to author by
 hand if you want full control (next section).
+
+**Requirements:** ${bt}curl${bt} and ${bt}python3${bt} on the system path. Both are
+present by default on macOS, modern Linux, and WSL. If either is missing, the auth
+command exits with a clear message and you can fall back to the manual config below.
 
 **Windows users:** the auth command runs a POSIX shell script. Use
 [WSL](https://learn.microsoft.com/en-us/windows/wsl/install), or follow the manual
@@ -222,6 +228,77 @@ Any client that accepts a base URL plus API key works:
 - **Base URL:** ${bt}https://api.bayleaf.dev/v1${bt}
 - **API key:** an ${bt}sk-bayleaf-...${bt} token from https://api.bayleaf.dev/ (or omit on the campus network)
 - **Default model:** ${bt}${model}${bt}
+
+---
+
+## Claim a key without pasting {#claim-flow}
+
+BayLeaf exposes a generic browser-mediated handshake at ${bt}/auth/claim/*${bt} that
+lets any agent or script acquire your existing API key without you having to copy
+it from the dashboard, paste it into a terminal, or store it in a config file.
+The OpenCode integration above uses this internally; any other agent (Goose, pi,
+custom MCP servers, etc.) can do the same thing.
+
+The flow uses two codes (modeled on RFC 8628 OAuth device authorization grant):
+
+- **${bt}user_code${bt}** (e.g. ${bt}5JMY-C2V6${bt}): short, human-readable, shown
+  on screen and in the browser approval URL so you can verify you're approving
+  the same session your terminal initiated. **Safe to display** during a screen
+  share or live demo.
+- **${bt}device_code${bt}** (32 hex chars): the bearer credential the polling
+  terminal uses against ${bt}/auth/claim/poll${bt}. **Never displayed** on screen,
+  never in any URL the user opens. Held in the script's process memory only.
+
+The flow:
+
+1. The terminal calls ${bt}POST /auth/claim/initiate${bt}, which returns both
+   ${bt}user_code${bt} and ${bt}device_code${bt} plus a one-time approval URL.
+2. The terminal displays the URL and the ${bt}user_code${bt}, then polls
+   ${bt}GET /auth/claim/poll?d=DEVICE_CODE${bt}.
+3. You open the URL in a browser, sign in if needed, verify the code matches what
+   your terminal printed, and click **Approve**.
+4. The next poll returns your ${bt}sk-bayleaf-...${bt} key, which the terminal captures
+   and uses. The server immediately deletes its copy: one-shot delivery.
+
+The whole flow has a 10-minute timeout, codes are good for one approval each, and
+the key is delivered exactly once: a second poll for the same device_code returns 404.
+
+Why two codes? An attacker watching your screen during a live demo sees only the
+${bt}user_code${bt}. They could try to visit the approval URL (and might attempt
+social engineering: "I see your code is XXXX, please approve..."), but they can't
+poll for the resulting key without the ${bt}device_code${bt}, which never leaves
+your terminal's process memory.
+
+A minimal driver script (POSIX ${bt}sh${bt} + ${bt}curl${bt} + ${bt}python3${bt}):
+
+${fence}bash
+#!/bin/sh
+init=$(curl -fsS -X POST -H 'Content-Type: application/json' \\
+  -d '{"client":"my-tool"}' https://api.bayleaf.dev/auth/claim/initiate)
+user_code=$(printf '%s' "$init" | python3 -c 'import sys,json; print(json.load(sys.stdin)["user_code"])')
+device_code=$(printf '%s' "$init" | python3 -c 'import sys,json; print(json.load(sys.stdin)["device_code"])')
+url=$(printf '%s' "$init" | python3 -c 'import sys,json; print(json.load(sys.stdin)["claim_url"])')
+echo "Open: $url"
+echo "Code: $user_code"
+# Note: \$device_code is intentionally not echoed.
+while :; do
+  resp=$(curl -sS "https://api.bayleaf.dev/auth/claim/poll?d=$device_code") || { sleep 1; continue; }
+  status=$(printf '%s' "$resp" | python3 -c 'import sys,json; print(json.load(sys.stdin)["status"])')
+  case "$status" in
+    pending) sleep 1 ;;
+    approved)
+      key=$(printf '%s' "$resp" | python3 -c 'import sys,json; print(json.load(sys.stdin)["key"])')
+      printf '%s' "$key"   # send to your tool's secret store, then exit
+      exit 0
+      ;;
+    *) echo "Status: $status" >&2; exit 1 ;;
+  esac
+done
+${fence}
+
+The ${bt}client${bt} field is a free-form short label (max 40 chars; alphanumeric and
+a few safe punctuation marks) shown verbatim on the approval page so the user can
+recognize what they're authorizing. Use a distinctive name for your tool.
 
 ---
 

@@ -15,6 +15,7 @@ import type { AppEnv } from '../types';
 import { discoverOIDC } from '../constants';
 import { setSessionCookie, clearSessionCookie } from '../utils/session';
 import { ErrorPage, renderPage } from '../templates/layout';
+import { consumeClaimReturnTo } from './claim';
 
 export const authRoutes = new OpenAPIHono<AppEnv>();
 
@@ -113,7 +114,11 @@ authRoutes.get('/callback', async (c) => {
     name: user.name,
     picture: user.picture,
   });
-  return c.redirect('/dashboard', 302);
+  // If a claim flow stashed a return-to cookie, send the user back to it.
+  // The cookie value is sanity-checked inside consumeClaimReturnTo (must be
+  // a `/auth/claim?c=<short-code>` path) to prevent open-redirect abuse.
+  const returnTo = consumeClaimReturnTo(c);
+  return c.redirect(returnTo ?? '/dashboard', 302);
 });
 
 /**

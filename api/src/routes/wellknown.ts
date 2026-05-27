@@ -85,38 +85,28 @@ function parseCuratedModels(raw: string | undefined): string[] {
  * NOT inlined here, because (a) it depends on per-user model entitlement and
  * (b) OpenCode's templated-header mechanism only works on `remote_config.url`.
  *
- * `auth.command` is a POSIX `sh -c` invocation that prompts the user for
- * their key on the controlling terminal with echo disabled, then prints it
- * to stdout for OpenCode to capture. Windows users without WSL will see the
- * subprocess fail; /llms.txt documents WSL as the recommended path on Windows.
+ * `auth.command` runs the BayLeaf claim-code device flow (see
+ * routes/claim.tsx). The script:
+ *   1. POSTs to /auth/claim/initiate to get a short claim code and URL.
+ *   2. Prints those to /dev/tty (or stderr if no tty) so the user can open
+ *      the URL in a browser, sign in if needed, and approve the request.
+ *   3. Polls /auth/claim/poll every 2s for up to 10 min.
+ *   4. On approval, the captured `sk-bayleaf-...` key is printed to stdout
+ *      (and only stdout) for OpenCode to capture and store.
+ *
+ * The script depends on `curl` and `python3`. Both are present by default on
+ * macOS, modern Linux, and WSL. Systems without `python3` see the script fail
+ * fast with a clear message; /llms.txt documents the manual `bayleaf` provider
+ * config as the documented escape hatch.
+ *
+ * Windows: pure POSIX `sh`. Use WSL or set up the manual provider config.
  */
 wellKnownRoutes.get('/opencode', (c) => {
   const baseUrl = absoluteBaseUrl(c.req.url); // e.g. https://api.bayleaf.dev
 
-  // sh -c command. Single-quoted in the source, no shell-interpolation traps.
-  // Reads a line from /dev/tty so it works even if stdin/stdout are piped,
-  // disables terminal echo so the key never appears on screen, and prints
-  // a literal '\n' to stderr after the read so the user's terminal advances
-  // a line. The trailing `printf %s "$key"` writes the captured key to stdout
-  // without a trailing newline; OpenCode `.trim()`s the result anyway, but we
-  // keep the contract crisp.
-  const shScript =
-    'tty="/dev/tty"; ' +
-    '[ -r "$tty" ] || tty=""; ' +
-    'if [ -n "$tty" ]; then ' +
-    '  stty -echo < "$tty" 2>/dev/null; ' +
-    '  printf "Paste your BayLeaf API key (sk-bayleaf-...): " > "$tty"; ' +
-    '  IFS= read -r key < "$tty"; ' +
-    '  stty echo < "$tty" 2>/dev/null; ' +
-    '  printf "\\n" > "$tty"; ' +
-    'else ' +
-    '  IFS= read -r key; ' +
-    'fi; ' +
-    'printf "%s" "$key"';
-
   return c.json({
     auth: {
-      command: ['sh', '-c', shScript],
+      command: ['sh', '-c', buildAuthCommand(baseUrl, 'OpenCode')],
       env: TOKEN_ENV_NAME,
     },
     remote_config: {
@@ -221,4 +211,109 @@ function absoluteBaseUrl(reqUrl: string): string {
   const u = new URL(reqUrl);
   const isLocal = u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '0.0.0.0';
   return `${isLocal ? u.protocol.replace(':', '') : 'https'}://${u.host}`;
+}
+
+/**
+ * Build the POSIX `sh -c` script that drives the claim-code device flow.
+ *
+ * Contract: the script must print *only* the captured `sk-bayleaf-...` key
+ * (no trailing newline) to stdout. Everything else — prompts, the claim URL,
+ * progress dots, errors — goes to /dev/tty (with stderr fallback). The
+ * encompassing `agent` (OpenCode here) reads stdout and stores the result;
+ * any stray bytes on stdout would corrupt the stored credential.
+ *
+ * Dependencies: `curl` and `python3`. Failures during the curl/python pipeline
+ * are caught and reported to the user via the tty, exit code 1.
+ */
+function buildAuthCommand(apiBase: string, clientName: string): string {
+  // Inline the api base + client name. The client name is hard-coded by us
+  // (not user input) so we can JSON-stringify it without escape hazards.
+  // Both are embedded as literal sh strings; we double-quote them in shell
+  // so spaces/special chars in clientName won't matter.
+  const apiBaseSh = JSON.stringify(apiBase);            // "https://api.bayleaf.dev"
+  const clientNameSh = JSON.stringify(clientName);      // "OpenCode"
+  const initiateBodySh = JSON.stringify(JSON.stringify({ client: clientName }));
+
+  // Heredoc-style multi-line POSIX script. Newlines inside `sh -c <arg>` are
+  // fine, no need to chain with `;`. Single-quoted python snippets pass
+  // through as one shell argument.
+  return `set -u
+api=${apiBaseSh}
+client=${clientNameSh}
+
+# Detect a usable controlling terminal. We can't just test \`[ -r /dev/tty ]\`
+# because /dev/tty exists and is "readable" in a definitional sense even when
+# the calling process has no controlling tty (e.g. an OpenCode subprocess). The
+# only reliable test is to actually try writing to it and check the exit status.
+tty="/dev/tty"
+if ! ( : > "$tty" ) 2>/dev/null; then tty=""; fi
+
+log() {
+  if [ -n "$tty" ]; then printf '%s\\n' "$1" > "$tty"; else printf '%s\\n' "$1" >&2; fi
+}
+fail() { log "$1"; exit 1; }
+
+command -v curl >/dev/null 2>&1 || fail "BayLeaf claim flow needs 'curl'. Install it or use manual setup: https://api.bayleaf.dev/llms.txt"
+command -v python3 >/dev/null 2>&1 || fail "BayLeaf claim flow needs 'python3'. Install it or use manual setup: https://api.bayleaf.dev/llms.txt"
+
+init=$(curl -fsS -X POST -H 'Content-Type: application/json' -d ${initiateBodySh} "$api/auth/claim/initiate") || fail "Could not reach $api to start the claim flow."
+
+# Two codes:
+#   user_code   short, screen-safe; shown to the user; appears in the browser URL.
+#   device_code 32-char hex; held only by this script; the bearer credential we
+#               present at /poll. Never displayed, never logged.
+# An attacker who watches a screen share sees only the user_code; without the
+# device_code they can't poll for the resulting key.
+user_code=$(printf '%s' "$init" | python3 -c 'import sys,json; print(json.load(sys.stdin)["user_code"])' 2>/dev/null) || fail "Claim flow returned an unexpected response."
+device_code=$(printf '%s' "$init" | python3 -c 'import sys,json; print(json.load(sys.stdin)["device_code"])' 2>/dev/null) || fail "Claim flow returned an unexpected response."
+url=$(printf '%s' "$init" | python3 -c 'import sys,json; print(json.load(sys.stdin)["claim_url"])' 2>/dev/null) || fail "Claim flow returned an unexpected response."
+
+log ""
+log "To authorize $client to access BayLeaf, open this URL in your browser:"
+log ""
+log "  $url"
+log ""
+log "Code (verify it matches the page): $user_code"
+log ""
+
+# Try to open the browser automatically. webbrowser.open() handles platform
+# differences (macOS \`open\`, Linux \`xdg-open\`, WSL via Windows host, etc.)
+# and silently no-ops if no GUI is available. Run in the background and
+# discard output: a failure here is not user-visible because the URL is
+# already printed above for them to open by hand. We pass the URL via env
+# rather than interpolating it into the python source, to avoid quoting hazards
+# even though we control the source of $url.
+BAYLEAF_CLAIM_URL="$url" python3 -c 'import os, webbrowser; webbrowser.open(os.environ["BAYLEAF_CLAIM_URL"])' >/dev/null 2>&1 &
+
+log "Waiting for approval (10 min timeout)..."
+
+deadline=$(( $(date +%s) + 600 ))
+while :; do
+  now=$(date +%s)
+  if [ "$now" -ge "$deadline" ]; then fail "Timed out waiting for approval."; fi
+
+  # Note: -sS, not -fsS. We want to *receive* the body even on 4xx (the server
+  # returns 410 for denied and 404 for expired with a JSON body whose .status
+  # field is the source of truth). -f would suppress the body and dump us into
+  # the retry-after-sleep branch, hanging forever after a deny.
+  body=$(curl -sS "$api/auth/claim/poll?d=$device_code" 2>/dev/null) || { sleep 1; continue; }
+  status=$(printf '%s' "$body" | python3 -c 'import sys,json
+try: print(json.load(sys.stdin)["status"])
+except Exception: print("error")
+' 2>/dev/null)
+
+  case "$status" in
+    pending) sleep 1 ;;
+    approved)
+      key=$(printf '%s' "$body" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("key",""))' 2>/dev/null)
+      [ -n "$key" ] || fail "Approved but no key was returned."
+      log "Approved."
+      printf '%s' "$key"
+      exit 0
+      ;;
+    denied) fail "Authorization denied." ;;
+    expired) fail "Claim code expired before approval." ;;
+    *) sleep 1 ;;
+  esac
+done`;
 }

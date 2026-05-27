@@ -15,6 +15,7 @@ export interface Bindings {
 
   // KV namespace for Campus Pass per-IP RPD counters
   CAMPUS_RPD: KVNamespace;
+  CLAIM_CODES: KVNamespace;
 
   // Public configuration
   SPENDING_LIMIT_DOLLARS: string;
