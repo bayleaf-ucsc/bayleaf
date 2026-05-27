@@ -484,6 +484,13 @@ claimRoutes.post('/approve', async (c) => {
   }
   record.status = 'approved';
   record.approved_by = session.email;
+  // Key briefly lives at rest in KV between approve and the first successful
+  // poll (typically <1s, capped at CLAIM_TTL_SECONDS by TTL). The alternative
+  // is mint-at-poll-time using only `approved_by`, which is more secure at
+  // rest but shifts ensureUserToken failures from approve-time (human in
+  // browser, can act on the error) to poll-time (script, can only retry or
+  // surface a generic auth failure to the user). We accept the brief at-rest
+  // exposure in exchange for keeping error visibility on the human side.
   record.key = token;
   await c.env.CLAIM_CODES.put(`claim:device:${deviceCode}`, JSON.stringify(record), {
     expirationTtl: CLAIM_TTL_SECONDS,
