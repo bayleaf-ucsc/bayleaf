@@ -40,8 +40,17 @@ export const wellKnownRoutes = new Hono<AppEnv>();
 
 // ── Configuration ────────────────────────────────────────────────
 
-/** OpenCode provider id under which BayLeaf appears in the merged config. */
-const PROVIDER_ID = 'bayleaf';
+/**
+ * OpenCode provider id under which BayLeaf appears in the merged config.
+ *
+ * We deliberately use `bayleaf-remote` rather than `bayleaf` so that users
+ * who want full control over their provider definition (custom model list,
+ * custom defaults, different baseURL for testing, etc.) can author a
+ * `bayleaf` provider in their own opencode.json without it being shadowed
+ * or merged with our remote-injected config. The /llms.txt section
+ * "Roll your own bayleaf provider" documents that path.
+ */
+const PROVIDER_ID = 'bayleaf-remote';
 
 /** Name of the env var the wellknown token is bound to inside OpenCode. */
 const TOKEN_ENV_NAME = 'BAYLEAF_API_KEY';
@@ -162,7 +171,7 @@ wellKnownRoutes.get('/opencode/config', async (c) => {
   // requests still work.
   const providerEntry = {
     npm: '@ai-sdk/openai-compatible',
-    name: 'BayLeaf API',
+    name: 'BayLeaf (Remote)',
     options: {
       baseURL: `${baseUrl}/v1`,
       apiKey: `{env:${TOKEN_ENV_NAME}}`,

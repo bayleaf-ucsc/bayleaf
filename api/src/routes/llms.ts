@@ -94,13 +94,54 @@ press Enter on the campus network. Then run ${bt}opencode${bt}, pick a BayLeaf m
 ${bt}/models${bt}, and you're done.
 
 The recommended model and curated picks update automatically on every OpenCode launch,
-served from https://api.bayleaf.dev/.well-known/opencode/config.
+served from https://api.bayleaf.dev/.well-known/opencode/config. They appear in the
+model picker under the provider id ${bt}bayleaf-remote${bt}, e.g.
+${bt}bayleaf-remote/${model}${bt}. The ${bt}bayleaf-remote${bt} naming is deliberate:
+it leaves the unqualified ${bt}bayleaf${bt} provider id available for you to author by
+hand if you want full control (next section).
 
 **Windows users:** the auth command runs a POSIX shell script. Use
 [WSL](https://learn.microsoft.com/en-us/windows/wsl/install), or follow the manual
 ${bt}opencode.json${bt} setup at https://opencode.ai/docs/providers/#custom-provider with the
 fields ${bt}npm: "@ai-sdk/openai-compatible"${bt}, ${bt}options.baseURL: "https://api.bayleaf.dev/v1"${bt},
 ${bt}options.apiKey: "{env:BAYLEAF_API_KEY}"${bt}.
+
+#### Roll your own ${bt}bayleaf${bt} provider (optional)
+
+The remote-injected ${bt}bayleaf-remote${bt} provider gives you a curated, auto-updating
+slice of what BayLeaf offers. If you want to define your own model list (more models,
+fewer models, custom display names, custom defaults, a different baseURL for testing),
+add a ${bt}bayleaf${bt} provider to your own ${bt}~/.config/opencode/opencode.json${bt} or
+project-local ${bt}opencode.json${bt}. OpenCode merges by provider id, so ${bt}bayleaf${bt}
+and ${bt}bayleaf-remote${bt} coexist without shadowing each other:
+
+${fence}json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "bayleaf": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "BayLeaf (Custom)",
+      "options": {
+        "baseURL": "https://api.bayleaf.dev/v1",
+        "apiKey": "{env:BAYLEAF_API_KEY}"
+      },
+      "models": {
+        "${model}": { "name": "${modelName}" }
+      }
+    }
+  }
+}
+${fence}
+
+Browse all valid model slugs at https://api.bayleaf.dev/v1/models. Set
+${bt}BAYLEAF_API_KEY${bt} in your shell environment, or run
+${bt}opencode auth login https://api.bayleaf.dev${bt} once to populate it via the
+wellknown auth flow (the same env var is shared between both providers).
+
+You can also use this hand-rolled definition without the wellknown flow at all by
+omitting ${bt}bayleaf-remote${bt} entirely: just don't run ${bt}opencode auth login${bt}
+against this URL, and instead export ${bt}BAYLEAF_API_KEY${bt} yourself.
 
 ### Goose
 
