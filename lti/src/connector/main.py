@@ -25,12 +25,15 @@ Both run on the same /lti/launch endpoint via protocol auto-detection.
 from __future__ import annotations
 
 import hmac
+import html
+import ipaddress
 import json
 import logging
 import os
 import time
 from base64 import urlsafe_b64encode
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 from cryptography.hazmat.primitives import serialization
@@ -52,7 +55,37 @@ KEY_ID = "bayleaf-lti-2026-05"  # stable kid; bump on key rotation
 # launches here. Override via env var if running on a different hostname.
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://lti.bayleaf.dev")
 
+# Allowlist of LMS hostnames that may drive LTI 1.3 Dynamic Registration via
+# `/lti/register`. The registration endpoint accepts caller-supplied URLs
+# (`openid_configuration` and the `registration_endpoint` returned in its
+# JSON), then makes outbound HTTP calls to them with our bearer token
+# attached. Without an allowlist that's full SSRF (CodeQL py/full-ssrf,
+# alert #8 on this repo). Match is exact-host or one-level-suffix:
+# `instructure.com` permits `*.instructure.com` but NOT `evil-instructure.com`.
+# Comma-separated; trailing dots and case are ignored.
+_DEFAULT_CANVAS_HOSTS = "instructure.com,canvas.ucsc.edu"
+CANVAS_ALLOWED_HOSTS = tuple(
+    h.strip().lower().rstrip(".")
+    for h in os.environ.get("LTI_CANVAS_HOSTS", _DEFAULT_CANVAS_HOSTS).split(",")
+    if h.strip()
+)
+
 app = FastAPI(title="bayleaf-lti", version="0.0.1")
+
+
+def _h(value: object) -> str:
+    """HTML-escape any value for safe interpolation into an HTML response.
+
+    The connector reflects attacker-controllable input into several debug
+    HTML pages: launch claims, OIDC login params, registration error
+    bodies. Without escaping, these are reflective XSS sinks (CodeQL
+    py/reflective-xss alerts #4-#7 on this repo). Use this helper for
+    every f-string interpolation into HTML.
+
+    Accepts any type; coerces to str first. `quote=True` so this is also
+    safe inside attribute values.
+    """
+    return html.escape(str(value), quote=True)
 
 
 def _load_pem(env_var: str, disk_path: Path) -> bytes | None:
@@ -275,6 +308,70 @@ def build_registration_body(canvas_openid_config: dict) -> dict:
     }
 
 
+def _host_is_allowed(host: str) -> bool:
+    """Match `host` against `CANVAS_ALLOWED_HOSTS`, exact or one-level suffix.
+
+    `instructure.com` allows `instructure.com` and `*.instructure.com`,
+    but NOT `evil-instructure.com` (the `.` boundary blocks substring tricks).
+    """
+    host = host.lower().rstrip(".")
+    for allowed in CANVAS_ALLOWED_HOSTS:
+        if host == allowed or host.endswith("." + allowed):
+            return True
+    return False
+
+
+def _validate_canvas_url(url: str, *, label: str) -> str:
+    """Reject anything that isn't a plausible Canvas URL.
+
+    The connector accepts caller-supplied URLs at `/lti/register` and then
+    makes authenticated outbound HTTP calls to them. Without validation
+    that's a server-side request forgery primitive (CodeQL py/full-ssrf).
+    Defense in layers:
+
+    1. Must parse as an absolute https URL.
+    2. Hostname must be in the configured allowlist (`LTI_CANVAS_HOSTS`).
+    3. Hostname must not be a literal IP address (private or otherwise);
+       Canvas Cloud only ever uses DNS names, so an IP literal is either
+       a misconfiguration or an attacker probing internal infra.
+
+    Returns the URL unchanged on success; raises HTTPException(400) on
+    rejection. The `label` is included in the error message so the
+    operator can tell which field tripped the check.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise HTTPException(
+            status_code=400,
+            detail=f"{label} must be an https:// URL (got scheme={parsed.scheme!r})",
+        )
+    host = parsed.hostname or ""
+    if not host:
+        raise HTTPException(status_code=400, detail=f"{label} has no hostname")
+
+    # Reject IP literals outright. Canvas always uses DNS names.
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        pass  # not an IP literal, proceed to allowlist check
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{label} hostname must be a DNS name, not an IP literal",
+        )
+
+    if not _host_is_allowed(host):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{label} hostname {host!r} is not in the configured Canvas "
+                f"allowlist. Set LTI_CANVAS_HOSTS to include it if this is a "
+                f"legitimate LMS tenant."
+            ),
+        )
+    return url
+
+
 @app.api_route("/lti/register", methods=["GET", "POST"])
 async def lti_register(request: Request) -> HTMLResponse:
     """LTI 1.3 Dynamic Registration entry point.
@@ -327,13 +424,19 @@ manually. That's fine; nothing has happened.</p>
         reg_token[:6],
     )
 
+    # Validate the caller-supplied URL BEFORE making any outbound request.
+    # Without this, /lti/register is a full SSRF primitive: an attacker can
+    # send us any URL and we'll GET it with a bearer token attached
+    # (CodeQL py/full-ssrf, alert #8).
+    openid_url = _validate_canvas_url(openid_url, label="openid_configuration")
+
     headers = {
         "Authorization": f"Bearer {reg_token}",
         "User-Agent": "bayleaf-lti/0.0.1",
         "Accept": "application/json",
     }
 
-    async with httpx.AsyncClient(timeout=20.0) as c:
+    async with httpx.AsyncClient(timeout=20.0, follow_redirects=False) as c:
         r = await c.get(openid_url, headers=headers)
         if r.status_code != 200:
             log.error("openid_configuration fetch failed: %s %s", r.status_code, r.text[:500])
@@ -347,6 +450,13 @@ manually. That's fine; nothing has happened.</p>
             raise HTTPException(
                 status_code=502, detail="Canvas openid_configuration missing registration_endpoint"
             )
+        # Re-validate: even though we just fetched canvas_cfg from an
+        # allowlisted host, the JSON body itself is attacker-influenceable
+        # (an allowlisted host could be MITM'd, or a sub-host could be
+        # compromised). Belt and suspenders.
+        registration_endpoint = _validate_canvas_url(
+            registration_endpoint, label="registration_endpoint"
+        )
         log.info("registration_endpoint=%s", registration_endpoint)
 
         body = build_registration_body(canvas_cfg)
@@ -366,15 +476,18 @@ manually. That's fine; nothing has happened.</p>
         if rr.status_code not in (200, 201):
             # Surface Canvas's error so the admin can see what went wrong.
             log.error("registration POST failed: %s %s", rr.status_code, rr.text[:1000])
+            safe_status = _h(rr.status_code)
+            safe_text = _h(rr.text[:2000])
+            safe_body = _h(json.dumps(body, indent=2))
             return HTMLResponse(
                 f"""<!doctype html>
 <html><head><title>Registration failed</title></head>
 <body style="font-family: system-ui; max-width: 50rem; margin: 2rem auto;">
 <h1>Registration failed</h1>
-<p>Canvas rejected our registration with HTTP {rr.status_code}.</p>
-<pre style="background:#fee;padding:1rem;white-space:pre-wrap;">{rr.text[:2000]}</pre>
+<p>Canvas rejected our registration with HTTP {safe_status}.</p>
+<pre style="background:#fee;padding:1rem;white-space:pre-wrap;">{safe_text}</pre>
 <p>Posted body:</p>
-<pre style="background:#eef;padding:1rem;white-space:pre-wrap;">{json.dumps(body, indent=2)}</pre>
+<pre style="background:#eef;padding:1rem;white-space:pre-wrap;">{safe_body}</pre>
 </body></html>""",
                 status_code=200,  # 200 so Canvas's iframe shows our error page
             )
@@ -395,7 +508,7 @@ manually. That's fine; nothing has happened.</p>
 <html><head><title>Registration complete</title></head>
 <body style="font-family: system-ui; max-width: 40rem; margin: 2rem auto;">
 <h1>Registration complete</h1>
-<p>Tool registered with Canvas. <code>client_id = {client_id}</code></p>
+<p>Tool registered with Canvas. <code>client_id = {_h(client_id)}</code></p>
 <p>Click below to return to Canvas and confirm the installation.</p>
 <button id="close-btn" onclick="closeRegistration()" style="font-size:1rem;padding:0.5rem 1rem;">
   Return to Canvas
@@ -420,7 +533,7 @@ def lti_login(request: Request) -> HTMLResponse:
     """
     params = dict(request.query_params)
     return HTMLResponse(
-        f"<h1>/lti/login (stub)</h1><pre>{json.dumps(params, indent=2)}</pre>"
+        f"<h1>/lti/login (stub)</h1><pre>{_h(json.dumps(params, indent=2))}</pre>"
     )
 
 
@@ -455,8 +568,9 @@ async def lti_launch(request: Request) -> HTMLResponse:
         if not ok:
             log.warning("LTI 1.1 launch REJECTED: %s", why)
             return HTMLResponse(
-                f"<h1>Launch rejected</h1><p>{why}</p>"
-                f"<details><summary>params</summary><pre>{json.dumps(payload, indent=2)}</pre></details>",
+                f"<h1>Launch rejected</h1><p>{_h(why)}</p>"
+                f"<details><summary>params</summary>"
+                f"<pre>{_h(json.dumps(payload, indent=2))}</pre></details>",
                 status_code=401,
             )
         log.info(
@@ -473,7 +587,7 @@ async def lti_launch(request: Request) -> HTMLResponse:
 
     return HTMLResponse(
         f"<h1>/lti/launch</h1><p>Unrecognized launch shape (no id_token, no oauth_*).</p>"
-        f"<pre>{json.dumps(payload, indent=2)}</pre>",
+        f"<pre>{_h(json.dumps(payload, indent=2))}</pre>",
         status_code=400,
     )
 
@@ -665,13 +779,19 @@ def lti_1p1_cartridge() -> Response:
 
 
 def _render_launch_debug(*, title: str, note: str, payload: dict) -> str:
+    """Render the launch debug page. ALL inputs are HTML-escaped: callers
+    pass plain text, never pre-formatted HTML. This is the inversion of
+    the original design and the load-bearing piece of the XSS fix."""
+    safe_title = _h(title)
+    safe_note = _h(note)
+    safe_payload = _h(json.dumps(payload, indent=2))
     return f"""<!doctype html>
-<html><head><title>{title}</title></head>
+<html><head><title>{safe_title}</title></head>
 <body style="font-family: system-ui; max-width: 50rem; margin: 2rem auto;">
-<h1>{title}</h1>
-<p>{note}</p>
+<h1>{safe_title}</h1>
+<p>{safe_note}</p>
 <h2>Launch claims</h2>
-<pre style="background:#eef;padding:1rem;white-space:pre-wrap;">{json.dumps(payload, indent=2)}</pre>
+<pre style="background:#eef;padding:1rem;white-space:pre-wrap;">{safe_payload}</pre>
 </body></html>"""
 
 
