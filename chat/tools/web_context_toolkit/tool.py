@@ -4,12 +4,12 @@ author: Adam Smith (BayLeaf), based on Tavily Search Tool by victor1203
 description: Search the web and extract clean page content via the Tavily API.
 required_open_webui_version: 0.4.0
 requirements: tavily-python
-version: 1.0.0
+version: 1.1.0
 licence: MIT
 """
 
 from pydantic import BaseModel, Field
-from typing import Literal, Union
+from typing import List, Literal
 
 from tavily import TavilyClient
 
@@ -169,20 +169,22 @@ class Tools:
 
     async def extract(
         self,
-        urls: Union[str, list[str]],
+        urls: List[str],
         format: Literal["markdown", "text"] = "markdown",
         __event_emitter__=None,
     ) -> str:
         """
         Extract clean content from one or more web pages using Tavily Extract.
 
-        Pass a single URL string for one page, or a list of URLs (up to 20)
-        to fetch many pages in a single call. Returns a formatted string with
-        each page's content separated by clear delimiters, plus a list of any
-        URLs that failed.
+        Always pass a JSON array of URL strings, even for a single page
+        (e.g. ["https://example.com"]). Up to 20 URLs per call. Returns a
+        formatted string with each page's content separated by clear delimiters,
+        plus a list of any URLs that failed.
 
         Args:
-            urls: A URL string, or a list of URL strings (up to 20)
+            urls: A JSON array of 1-20 URL strings. Always pass a real array,
+                never a single string. For a single page, use a one-element
+                array: ["https://example.com"].
             format: Output format for page content - "markdown" (default) or "text"
 
         Returns:
@@ -192,11 +194,10 @@ class Tools:
             if not self.valves.tavily_api_key:
                 return "Error: Tavily API key not configured. Please set up the API key in the tool settings."
 
-            # Normalize: accept a single URL or a list
-            url_list = [urls] if isinstance(urls, str) else list(urls)
+            if not urls:
+                return "Error: No URLs provided. Pass a non-empty JSON array of URL strings."
 
-            if not url_list:
-                return "Error: No URLs provided."
+            url_list = list(urls)
 
             if len(url_list) > 20:
                 return f"Error: Tavily Extract accepts at most 20 URLs per call (got {len(url_list)})."
