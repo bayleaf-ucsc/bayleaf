@@ -85,6 +85,49 @@ owui-cli --json models show <id>         # full model JSON
 
 See `DESIGN.md` §7 for the full sync workflow.
 
+### Pulling models/skills back into the repo (strip inlined images)
+
+When you `owui-cli --json models show <id>` (or `skills pull` / `pull-all`),
+the live JSON inlines the profile image as a giant
+`meta.profile_image_url: "data:image/png;base64,..."` blob. **Don't commit the
+base64.** It bloats the file ~10x (e.g. `basic` goes 4.5KB → 65KB) and makes
+the JSON undiffable, drowning real content changes in one unreadable line.
+
+The repo convention (see every model under `chat/models/*/model.json`) is to
+store the image as a **sibling file** and reference it by bare filename:
+
+```json
+"profile_image_url": "profile.png"
+```
+
+Reconcile workflow for any pulled model/skill:
+
+1. Pull the raw JSON to the model/skill dir.
+2. If `meta.profile_image_url` starts with `data:image`, decode it. If the
+   bytes match the existing sibling image (`profile.png` / `profile.webp`),
+   just replace the field value with that bare filename. If it differs, write
+   the decoded bytes to the sibling file, then set the bare-filename reference.
+3. Pretty-print the JSON (`json.dump(..., indent=2, ensure_ascii=False)` +
+   trailing newline) so future diffs are line-oriented, not one minified blob.
+4. `git diff` should now show only real drift (prompt text, capabilities,
+   params, grant IDs/timestamps).
+
+Quick strip helper:
+
+```python
+import json
+d = json.load(open("model.json"))
+u = d.get("meta", {}).get("profile_image_url", "")
+if u.startswith("data:image"):
+    d["meta"]["profile_image_url"] = "profile.png"  # confirm sibling matches first
+json.dump(d, open("model.json", "w"), indent=2, ensure_ascii=False)
+open("model.json", "a").write("\n")
+```
+
+Note the rotating-but-meaningless fields that will always show as drift:
+`access_grants[].id`, `*.created_at` / `updated_at` timestamps. These are not
+content changes; don't chase them.
+
 ## OWUI Version Upgrades
 
 1. Read the release notes for each version between current and target

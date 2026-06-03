@@ -8,7 +8,8 @@
     "function_calling": "native",
     "custom_params": {
       "provider": "{\"sort\": \"throughput\"}"
-    }
+    },
+    "reasoning_effort": "none"
   },
   "meta": {
     "profile_image_url": "profile.png",
@@ -20,6 +21,7 @@
       "web_search": false,
       "image_generation": false,
       "code_interpreter": false,
+      "terminal": true,
       "citations": true,
       "status_updates": true,
       "usage": true,
@@ -93,17 +95,17 @@
   },
   "access_grants": [
     {
-      "id": "458e9fb2-197f-489a-940c-aa434b98c2fb",
+      "id": "8e679602-3ba8-4f2e-964d-fc183ba2be9e",
       "resource_type": "model",
       "resource_id": "basic",
       "principal_type": "user",
       "principal_id": "*",
       "permission": "read",
-      "created_at": 1775668928
+      "created_at": 1778638444
     }
   ],
   "is_active": true,
-  "updated_at": 1743444662,
+  "updated_at": 1778638444,
   "created_at": 1743444662,
   "user": null,
   "write_access": true

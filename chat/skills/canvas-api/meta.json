@@ -1,0 +1,25 @@
+{
+  "id": "canvas-api",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "canvas-api",
+  "description": "Access the Canvas LMS API using the user's CANVAS_ACCESS_TOKEN in environment variables.",
+  "meta": {
+    "tags": []
+  },
+  "is_active": true,
+  "access_grants": [
+    {
+      "id": "12b25ae8-0371-4534-8d5c-020a43c576e6",
+      "resource_type": "skill",
+      "resource_id": "canvas-api",
+      "principal_type": "group",
+      "principal_id": "48a08425-792f-49ea-a4cc-ba89648c0444",
+      "permission": "read",
+      "created_at": 1775271333
+    }
+  ],
+  "updated_at": 1775271333,
+  "created_at": 1774843302,
+  "user": null,
+  "write_access": true
+}

@@ -1,0 +1,25 @@
+{
+  "id": "google-workspace",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "google-workspace",
+  "description": "Read files from Google Drive/Docs/Sheets and maybe even GMail.",
+  "meta": {
+    "tags": []
+  },
+  "is_active": true,
+  "access_grants": [
+    {
+      "id": "4df95ee9-b9e8-4ed3-9c6a-3725ac3b80ed",
+      "resource_type": "skill",
+      "resource_id": "google-workspace",
+      "principal_type": "group",
+      "principal_id": "040cd9fe-8945-4c76-93b9-0360362c5ed3",
+      "permission": "read",
+      "created_at": 1775510648
+    }
+  ],
+  "updated_at": 1775510648,
+  "created_at": 1775510584,
+  "user": null,
+  "write_access": true
+}
