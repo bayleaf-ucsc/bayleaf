@@ -327,8 +327,8 @@ const DashboardScripts: FC<{ bayleafToken: string }> = ({ bayleafToken }) => (
       // utils/token.ts (sk-bayleaf- + base64url) and cannot today contain a
       // quote, slash, angle bracket, or newline. The .stringify guarantees
       // safety even if the token format ever changes (e.g. a future
-      // randomness layer that happens to produce </script> by accident),
-      // and turns this into syntactically inert JS regardless.
+      // randomness layer that happens to produce a script-closing tag by
+      // accident) and turns this into syntactically inert JS regardless.
       const BAYLEAF_TOKEN = ${JSON.stringify(bayleafToken)};
 
       function copyToClipboard(el) {
