@@ -484,18 +484,18 @@ const DashboardScripts: FC<{ bayleafToken: string }> = ({ bayleafToken }) => (
               <strong>Your new API key is ready.</strong>
               <p style="font-size: 0.9em; color: #155724; margin: 0.25rem 0 0 0;">Use the Copy button; the key is hidden to keep it safe during screen sharing.</p>
             </div>
-            <div class="key-display" style="margin-bottom: 1rem;">
-              <input type="password" value="\${newKey}" id="apiKey" readonly aria-label="Your BayLeaf API key (hidden)">
+            <form onsubmit="return false" class="key-display" style="margin-bottom: 1rem;">
+              <input type="password" value="\${newKey}" id="apiKey" readonly autocomplete="off" aria-label="Your BayLeaf API key (hidden)">
               <button type="button" class="btn copy-btn" id="copyBtn" onclick="copyToken()">Copy</button>
-            </div>
+            </form>
           \`;
         } else if (BAYLEAF_TOKEN) {
           displaySlot.innerHTML = \`
-            <div class="key-display" style="margin-bottom: 1rem;">
-              <input type="password" value="\${BAYLEAF_TOKEN}" id="apiKey" readonly aria-label="Your BayLeaf API key (hidden)">
+            <form onsubmit="return false" class="key-display" style="margin-bottom: 1rem;">
+              <input type="password" value="\${BAYLEAF_TOKEN}" id="apiKey" readonly autocomplete="off" aria-label="Your BayLeaf API key (hidden)">
               <button type="button" class="btn copy-btn" id="copyBtn" onclick="copyToken()">Copy</button>
               <button type="button" class="btn copy-btn" id="toggleBtn" onclick="toggleKeyVisibility()" style="right: 4rem;">Show</button>
-            </div>
+            </form>
           \`;
         }
       })();
