@@ -2,6 +2,8 @@
  * BayLeaf API Constants
  */
 
+import type { Bindings } from './types';
+
 /** OIDC endpoint discovery result */
 export interface OIDCEndpoints {
   authorization_endpoint: string;
@@ -25,6 +27,72 @@ export async function discoverOIDC(issuer: string): Promise<OIDCEndpoints> {
 }
 
 export const OPENROUTER_API = 'https://openrouter.ai/api/v1';
+
+// ── Alternate inference backends ─────────────────────────────────────
+//
+// BayLeaf routes chat completions by a `<prefix>:` on the model id. OpenRouter
+// (`openrouter:`, or no prefix) is the always-on default. Everything else is an
+// "alternate backend": a non-OpenRouter inference path we expose only when its
+// ZDR posture is established and its enablement flag is set.
+//
+// Each alternate backend is one row here. A backend is live only when its env
+// flag (`<BACKEND>_ENABLED`) is exactly the string "true". Anything else
+// (empty, unset, "false", "0") means disabled, and all of its routing, model
+// listing, and curated-model exposure is suppressed. Fail closed.
+//
+// Vertex (Google) is the first such backend and is currently disabled pending a
+// credible ZDR path with Google (issue #36). Amazon Bedrock is the anticipated
+// next one (issue #41): UCSC's existing AWS BAA makes it the most likely route
+// to BAA-covered ZDR inference, and its `bedrock-mantle` endpoint speaks OpenAI
+// Chat Completions with a plain bearer token (no SigV4, no JWT minting). When it
+// lands it should be a single new row here (`bedrock` / `bedrock:` /
+// `BEDROCK_ENABLED`) plus its own routing block. Note the routing blocks differ
+// per backend (Vertex mints a GCP JWT; Bedrock and OpenRouter use a static
+// bearer), but the enable/expose/strip surface this table governs is identical.
+export interface AltBackend {
+  /** Stable internal id, e.g. "vertex". */
+  key: string;
+  /** Model-id prefix on the wire, e.g. "vertex:". */
+  prefix: string;
+  /**
+   * Bindings env var that gates this backend; must equal "true" to enable.
+   * One per backend, named `<BACKEND>_ENABLED` (e.g. "VERTEX_ENABLED",
+   * future "BEDROCK_ENABLED").
+   */
+  envFlag: string;
+  /** Human-readable label for error messages and docs. */
+  label: string;
+}
+
+export const ALT_BACKENDS: readonly AltBackend[] = [
+  {
+    key: 'vertex',
+    prefix: 'vertex:',
+    envFlag: 'VERTEX_ENABLED',
+    label: 'Google Vertex AI',
+  },
+  // Future: { key: 'bedrock', prefix: 'bedrock:', envFlag: 'BEDROCK_ENABLED', label: 'Amazon Bedrock' },
+];
+
+/** True iff the named alternate backend's env flag is exactly "true". */
+export function isBackendEnabled(env: Bindings, key: string): boolean {
+  const backend = ALT_BACKENDS.find((b) => b.key === key);
+  if (!backend) return false;
+  return (env as unknown as Record<string, unknown>)[backend.envFlag] === 'true';
+}
+
+/** Convenience wrapper for the Vertex backend (the only one today). */
+export function isVertexEnabled(env: Bindings): boolean {
+  return isBackendEnabled(env, 'vertex');
+}
+
+/**
+ * If `modelId` targets an alternate backend, return that backend; else null.
+ * Lets callers decide whether a given model id needs an enablement check.
+ */
+export function altBackendForModel(modelId: string): AltBackend | null {
+  return ALT_BACKENDS.find((b) => modelId.startsWith(b.prefix)) ?? null;
+}
 
 export const SESSION_COOKIE = 'bayleaf_session';
 export const SESSION_DURATION_HOURS = 24;

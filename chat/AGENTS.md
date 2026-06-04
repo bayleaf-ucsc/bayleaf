@@ -224,13 +224,19 @@ valve, mints short-lived access tokens locally (PyJWT), and proxies chat
 completions to Vertex's OpenAI-compatible endpoint. No ADC key file on
 disk, no image rebuild.
 
-- **Status**: admin-only on chat.bayleaf.dev. Not surfaced to general
-  users pending the ZDR posture review (see issue #36). Google documentation
-  confirms that third-party MaaS open models (like `zai-org/glm-5`) do *not*
-  receive customer prompts or responses. However, a 2-week SLA applies to the
-  project-level Abuse Monitoring opt-out request (which is required to disable
-  Google's 90-day retention for automated safety classifiers). Once approved,
-  this pipe can safely route general user traffic under true ZDR.
+- **Status**: **disabled** on chat.bayleaf.dev. The function is set
+  `is_active: false` (re-enable with `owui-cli functions toggle vertex_pipe`),
+  which removes its models from the picker while preserving the function source
+  and admin valves (service-account JSON, MODELS list) for a fast restore. It
+  was never surfaced to general users. We disabled it after Google failed to
+  respond to the project-level Abuse Monitoring opt-out request (required to
+  disable Google's 90-day retention for automated safety classifiers) for more
+  than three weeks, so we cannot promise ZDR parity with our OpenRouter path
+  (see issue #36). Google documentation does confirm that third-party MaaS open
+  models (like `zai-org/glm-5`) do *not* receive customer prompts or responses,
+  but that alone is not sufficient for our ZDR posture. The most likely route
+  back to a BAA-covered ZDR backend is Amazon Bedrock (issue #41). Do **not**
+  re-enable this pipe for general users without a documented ZDR path.
 - **Configured models** are set via the `MODELS` valve as a comma-separated
   list of `publisher/model` (optionally `= Display Name`). Newlines and
   semicolons also work as separators. Discovery: `GET https://aiplatform.

@@ -35,6 +35,7 @@ import type { AppEnv } from '../types';
 import { resolveAuth } from '../utils/auth';
 import { getModelInfo } from '../openrouter';
 import type { ModelCost } from '../openrouter';
+import { altBackendForModel, isBackendEnabled } from '../constants';
 
 export const wellKnownRoutes = new Hono<AppEnv>();
 
@@ -146,7 +147,15 @@ wellKnownRoutes.get('/opencode/config', async (c) => {
   // fetch — OpenCode startup must not be blocked by a flaky upstream.
   const recommended = c.env.RECOMMENDED_MODEL;
   const curated = parseCuratedModels(c.env.OPENCODE_CURATED_MODELS);
-  const slugOrder = [recommended, ...curated.filter((s) => s !== recommended)];
+  // Drop any slug routed to an alternate backend that is currently disabled, so
+  // OpenCode never lists a model whose /v1/chat/completions call would 503.
+  // OpenRouter slugs have no alternate backend and always pass.
+  const isSlugLive = (slug: string): boolean => {
+    const backend = altBackendForModel(slug);
+    return backend === null || isBackendEnabled(c.env, backend.key);
+  };
+  const slugOrder = [recommended, ...curated.filter((s) => s !== recommended)]
+    .filter(isSlugLive);
 
   const models: Record<string, OpenCodeModelEntry> = {};
   for (const slug of slugOrder) {

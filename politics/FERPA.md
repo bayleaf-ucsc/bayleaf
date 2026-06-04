@@ -832,8 +832,26 @@ documentation confirms that for third-party MaaS open models (e.g., Zhipu AI,
 Mistral), prompts and responses are **not** shared with the third-party
 publisher. However, to achieve parity with OpenRouter's ZDR, a project-level
 exception for Google's Abuse Monitoring (which otherwise retains flagged prompts
-for up to 90 days) must be granted. That request has been filed for the
-`bayleafchat` GCP project (pending a standard ~2-week SLA).
+for up to 90 days) must be granted. That request was filed for the
+`bayleafchat` GCP project but **received no response from Google after more
+than three weeks** (well past the stated ~2-week SLA).
+
+**Status (disabled): Because we could not obtain the Abuse Monitoring
+opt-out, we cannot promise ZDR parity with our OpenRouter path, and the
+Vertex backend has been disabled on both services** (issue #36):
+
+- **BayLeaf Chat:** the `vertex_pipe` function is set inactive, removing its
+  models from the picker. The function and its admin valves are retained so
+  the path can be restored quickly if a credible ZDR path opens.
+- **BayLeaf API:** a `VERTEX_ENABLED` env flag (default `"false"`) gates all
+  `vertex:` routing, model listing, and curated-model exposure; `vertex:`
+  completions are rejected with HTTP 503 while disabled.
+
+The contract analysis below remains valid as analysis, but no live traffic
+flows over this path while it is disabled. The most likely route back to a
+BAA-covered ZDR backend is **Amazon Bedrock** under UCSC's existing AWS
+agreement (issue #41), which is ZDR-by-default; the API's backend-enablement
+design is built to admit Bedrock symmetrically.
 
 This demonstrates that the architectural path is real and the contract
 chain below attaches to live traffic. Productionizing it (broader user

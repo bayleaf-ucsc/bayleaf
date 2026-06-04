@@ -5,6 +5,11 @@
 /** Cloudflare Worker bindings (env vars + secrets) */
 export interface Bindings {
   // GCP / Vertex AI
+  // Master kill-switch for the Vertex backend. When not exactly the string
+  // "true", all `vertex:` routing, model listing, and curated-model exposure
+  // is disabled (see isVertexEnabled in constants.ts). Disabled by default
+  // pending a credible ZDR path with Google (issue #36).
+  VERTEX_ENABLED: string;
   GCP_PROJECT_ID: string;
   GCP_REGION: string;
   GCP_SERVICE_ACCOUNT_EMAIL: string;

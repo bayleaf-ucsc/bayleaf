@@ -47,6 +47,18 @@
   // These are placeholders - actual values should be set as secrets
   "vars": {
     // GCP Vertex AI Configuration
+    //
+    // VERTEX_ENABLED is the master kill-switch for the Vertex backend. It must
+    // be exactly the string "true" to enable any `vertex:` routing, model
+    // listing, or curated-model exposure. Any other value (including the empty
+    // string or omission) disables Vertex entirely: `vertex:` chat completions
+    // are rejected with 503, Vertex models are dropped from GET /models, and
+    // `vertex:` entries are stripped from the OpenCode curated list.
+    //
+    // Disabled pending a credible zero-data-retention path with Google. The
+    // project-level Abuse Monitoring opt-out request never received a response,
+    // so we cannot promise ZDR parity with our OpenRouter path (issue #36).
+    "VERTEX_ENABLED": "false",
     "GCP_PROJECT_ID": "bayleafchat",
     "GCP_REGION": "us-central1",
     // GCP_SERVICE_ACCOUNT_EMAIL and GCP_SERVICE_ACCOUNT_PRIVATE_KEY should be set via `wrangler secret put`

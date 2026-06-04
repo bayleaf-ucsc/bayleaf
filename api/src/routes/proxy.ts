@@ -14,7 +14,7 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { proxy } from 'hono/proxy';
 import type { AppEnv } from '../types';
-import { OPENROUTER_API, VERTEX_MODELS } from '../constants';
+import { OPENROUTER_API, VERTEX_MODELS, isVertexEnabled } from '../constants';
 import { resolveAuth, type AuthResult } from '../utils/auth';
 import { getGCPAccessToken } from '../utils/gcp';
 import { checkAndIncrement, inspectCounter, parseLimit } from '../utils/campusRpd';
@@ -264,6 +264,12 @@ proxyRoutes.openapi(chatCompletionsRoute, async (c) => {
   const modelStr = typeof body.model === 'string' ? body.model : '';
   
   if (modelStr.startsWith('vertex:')) {
+    // Master kill-switch: when the Vertex backend is disabled, reject `vertex:`
+    // traffic before any GCP auth. Fail closed (issue #36 — no credible ZDR
+    // path with Google). Mirror this guard for any future alternate backend.
+    if (!isVertexEnabled(c.env)) {
+      return c.json({ error: { message: 'The Vertex AI backend is currently disabled. Use an `openrouter:` model instead. See https://api.bayleaf.dev/llms.txt for available models.', code: 503 } }, 503) as any;
+    }
     // Keyed users: enforce per-key Vertex RPD against the user_keys row.
     // Campus Pass users: already counted by enforceCampusRpd above (one
     // unified per-IP counter applies across all providers); no per-key
@@ -359,8 +365,10 @@ proxyRoutes.openapi(modelsRoute, async (c) => {
       name: `OpenRouter: ${model.name}`
     }));
 
-    // Combine with Vertex models
-    return c.json({ data: [...orModels, ...VERTEX_MODELS] }, 200, { 'Access-Control-Allow-Origin': '*' }) as any;
+    // Combine with Vertex models, but only when the Vertex backend is enabled.
+    // When disabled, the picker must not advertise models we will reject.
+    const vertexModels = isVertexEnabled(c.env) ? VERTEX_MODELS : [];
+    return c.json({ data: [...orModels, ...vertexModels] }, 200, { 'Access-Control-Allow-Origin': '*' }) as any;
   } catch (e: any) {
     return c.json({ error: { message: `Failed to fetch models: ${e.message}`, code: 500 } }, 500, { 'Access-Control-Allow-Origin': '*' }) as any;
   }

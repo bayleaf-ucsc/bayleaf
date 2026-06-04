@@ -60,6 +60,34 @@ src/
 - Each file exports only what other files need
 - Types live in `src/types.ts`; import with `import type` where possible
 
+## Inference Backends
+
+Chat completions are routed by a `<prefix>:` on the `model` id. **OpenRouter**
+(`openrouter:`, or no prefix) is the always-on default. Anything else is an
+**alternate backend** declared in the `ALT_BACKENDS` table in `src/constants.ts`
+(internal key, wire prefix, `<BACKEND>_ENABLED` env flag, label).
+
+Each alternate backend has a kill-switch env var that must equal the string
+`"true"` to enable it; any other value (including unset) **fails closed**. When
+disabled, the backend's `/v1/chat/completions` routing is rejected with 503, its
+models are dropped from `GET /v1/models`, and its `<prefix>:` entries are
+stripped from the OpenCode curated list in `routes/wellknown.ts`. Use
+`isBackendEnabled(c.env, key)` / `isVertexEnabled(c.env)` (`src/constants.ts`).
+
+- **`vertex:` — Google Vertex AI. Currently DISABLED** (`VERTEX_ENABLED: "false"`
+  in `wrangler.jsonc`). We could not obtain Google's Abuse Monitoring opt-out, so
+  we cannot promise ZDR parity with OpenRouter (issue #36). The routing block
+  (`routes/proxy.ts`) and GCP JWT minting (`utils/gcp.ts`) remain in place; flip
+  the flag to `"true"` to re-enable. Note the GCP service-account secrets must be
+  set for it to function.
+- **`bedrock:` — Amazon Bedrock. Anticipated, not yet implemented** (issue #41).
+  UCSC's existing AWS BAA makes it the most likely BAA-covered ZDR backend, and
+  its `bedrock-mantle` endpoint speaks OpenAI Chat Completions with a plain
+  bearer token (no SigV4). The `ALT_BACKENDS` table and the enable/expose/strip
+  helpers are built so Bedrock is a one-row add plus its own routing block; the
+  routing blocks differ per backend (Vertex mints a JWT; Bedrock/OpenRouter use
+  a static bearer) but the gating surface is shared.
+
 ## Routes
 
 ```
