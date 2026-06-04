@@ -1,5 +1,6 @@
 .DS_Store
 .agentnb/
+.perk/
 __pycache__/
 *.pyc
 

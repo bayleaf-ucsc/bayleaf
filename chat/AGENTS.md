@@ -234,8 +234,9 @@ disk, no image rebuild.
   than three weeks, so we cannot promise ZDR parity with our OpenRouter path
   (see issue #36). Google documentation does confirm that third-party MaaS open
   models (like `zai-org/glm-5`) do *not* receive customer prompts or responses,
-  but that alone is not sufficient for our ZDR posture. The most likely route
-  back to a BAA-covered ZDR backend is Amazon Bedrock (issue #41). Do **not**
+  but that alone is not sufficient for our ZDR posture. The route back to a
+  BAA-covered ZDR backend is Amazon Bedrock (issue #41), now established as a
+  native OWUI connection (see "Bedrock Connection" below). Do **not**
   re-enable this pipe for general users without a documented ZDR path.
 - **Configured models** are set via the `MODELS` valve as a comma-separated
   list of `publisher/model` (optionally `= Display Name`). Newlines and
@@ -256,6 +257,54 @@ disk, no image rebuild.
   as `vertex_pipe.<entry_id>`; we strip the function-id prefix from the
   *left* (Gemini ids contain dots) and convert `__` back to `/` before
   forwarding.
+
+## Bedrock Connection (Amazon Bedrock mantle)
+
+A **native OWUI OpenAI-compatible Connection** (not a pipe) to Amazon
+Bedrock's `bedrock-mantle` endpoint. See issue #41 for the full motivation
+and the proof-of-concept findings.
+
+Unlike the Vertex Pipe, Bedrock needs **no code**: the `bedrock-mantle`
+endpoint speaks OpenAI Chat Completions natively and authenticates with a
+static bearer token, which fits OWUI's Connections feature directly. (Vertex
+needed a pipe precisely because its OAuth bearer token is short-lived; mantle's
+is long-lived, so the JWT-minting machinery is unnecessary.) The connection
+is therefore stored in OWUI's config DB, not in this repo or the DO spec.
+
+- **Mechanism**: a row in the OpenAI connections array (`/openai/config`),
+  appended after the OpenRouter/NRP entries. Mirror the OpenRouter entry's
+  shape: `connection_type: external`, `auth_type: bearer`, `prefix_id:
+  bedrock`. To inspect or edit, GET/POST `/openai/config` and
+  `/openai/config/update` (the update replaces the **whole** config object,
+  indexed by position, so always read-modify-write the full arrays:
+  `OPENAI_API_BASE_URLS`, `OPENAI_API_KEYS`, `OPENAI_API_CONFIGS`).
+- **Base URL**: `https://bedrock-mantle.us-west-2.api.aws/v1` (register the
+  `/v1` root; OWUI appends `/models` and `/chat/completions`).
+- **Prefix**: `bedrock`, so models surface as `bedrock.<owner>.<model>`
+  (e.g. `bedrock.zai.glm-5`). Same word as the planned `bedrock:` API lane,
+  so one term means one backend across Chat and API.
+- **Auth**: a long-term Bedrock bearer token (IAM `CreateServiceSpecificCredential`
+  with `service-name=bedrock.amazonaws.com`). The POC key is from a *personal*
+  AWS account and carries **no UCSC BAA coverage**; production must use a key
+  minted in the UCSC enterprise AWS account (issue #41, Track B). Rotate by
+  editing `OPENAI_API_KEYS[<idx>]` via `/openai/config/update`.
+- **Catalog**: mantle exposes an **open-weight** catalog (Qwen, GLM, Kimi,
+  gpt-oss, DeepSeek, Mistral, Gemma 3, Nemotron, ~40 models), **not** the
+  frontier Claude/Nova set the issue originally assumed. Claude/Nova are not
+  served by mantle's `/models`; frontier Claude is sales-gated per-account.
+  This inverts issue #41's framing (mantle is the open-weight lane, not the
+  Claude lane) and is *more* useful to a Chat service that prioritizes open
+  weights. Mantle is **ZDR-by-default** and BAA-covered (in an enterprise
+  account), which is the documented ZDR path the Vertex Pipe lacked.
+- **Curation**: `model_ids: []` exposes all 40, but every model is
+  **private-by-default**, so general users don't see them until granted via
+  workspace models / groups (the standard BayLeaf exposure pattern).
+- **Gotcha (not our bug)**: calling `/api/chat/completions` directly with a
+  bare `{model, messages}` body (no `chat_id`/`metadata`) trips a
+  `'NoneType' object has no attribute 'startswith'` 400 in OWUI v0.9.5's
+  `process_chat`. The normal browser path (and any client that sends full
+  chat metadata) works fine. Verify Bedrock changes through the **browser
+  UI**, e.g. `/?model=bedrock.google.gemma-3-12b-it`, not bare curl.
 
 ## Don'ts
 
