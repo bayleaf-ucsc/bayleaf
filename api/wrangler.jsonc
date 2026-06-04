@@ -63,6 +63,20 @@
     "GCP_REGION": "us-central1",
     // GCP_SERVICE_ACCOUNT_EMAIL and GCP_SERVICE_ACCOUNT_PRIVATE_KEY should be set via `wrangler secret put`
 
+    // Amazon Bedrock (bedrock-mantle) Configuration
+    //
+    // BEDROCK_ENABLED is the master kill-switch for the Bedrock backend, with
+    // identical semantics to VERTEX_ENABLED: must be exactly "true" to enable
+    // `bedrock:` routing, model listing, and curated-model exposure. Any other
+    // value fails closed (503 on chat completions, dropped from GET /models,
+    // stripped from the OpenCode curated list).
+    //
+    // The bearer token (BEDROCK_BEARER_TOKEN, a secret) is OpenAI-compatible
+    // and static — no SigV4, no JWT minting. The POC token is from a personal
+    // AWS account and carries NO UCSC BAA coverage; production must use a key
+    // minted in the UCSC enterprise AWS account (issue #41).
+    "BEDROCK_ENABLED": "true",
+
     "SPENDING_LIMIT_DOLLARS": "5.0",
     "SPENDING_LIMIT_RESET": "daily",
     "KEY_NAME_TEMPLATE": "BayLeaf API for $email",
@@ -117,6 +131,7 @@
   // - OIDC_CLIENT_SECRET   (from your OIDC provider)
   // - CAMPUS_POOL_KEY (for Campus Pass feature)
   // - DAYTONA_API_KEY (for sandbox provider)
+  // - BEDROCK_BEARER_TOKEN (Amazon Bedrock mantle bearer token; enterprise account in prod)
   // - GWS_CLIENT_ID        (Google Workspace CLI OAuth client ID)
   // - GWS_CLIENT_SECRET    (Google Workspace CLI OAuth client secret)
   // - GWS_PROJECT_ID       (GCP project ID, e.g. "gws-cli-playground-ucsc")

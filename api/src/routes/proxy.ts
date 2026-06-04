@@ -14,7 +14,7 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { proxy } from 'hono/proxy';
 import type { AppEnv } from '../types';
-import { OPENROUTER_API, VERTEX_MODELS, isVertexEnabled } from '../constants';
+import { OPENROUTER_API, BEDROCK_MANTLE_API, VERTEX_MODELS, isVertexEnabled, isBedrockEnabled } from '../constants';
 import { resolveAuth, type AuthResult } from '../utils/auth';
 import { getGCPAccessToken } from '../utils/gcp';
 import { checkAndIncrement, inspectCounter, parseLimit } from '../utils/campusRpd';
@@ -29,6 +29,9 @@ export const proxyRoutes = new OpenAPIHono<AppEnv>();
 
 /** Per-key daily request limit for Vertex AI traffic. Resets at midnight UTC. */
 const VERTEX_RPD_LIMIT = 100;
+
+/** Per-key daily request limit for Bedrock traffic. Resets at midnight UTC. */
+const BEDROCK_RPD_LIMIT = 100;
 
 // ── GET / (mounted as /v1) — bare root returns 200 OK ─────────────
 // Some agent harnesses probe the base_url to test connectivity.
@@ -102,6 +105,32 @@ async function forwardJson(
   });
   res.headers.set('Access-Control-Allow-Origin', '*');
   return res;
+}
+
+/**
+ * Fetch the Bedrock mantle catalog and shape it into prefixed `/v1/models`
+ * entries. Returns [] when the backend is disabled or the upstream call fails,
+ * so a flaky mantle never breaks the combined model listing. Each id is
+ * namespaced with `bedrock:` and the display name gets a "Bedrock: " prefix to
+ * match the OpenRouter/Vertex convention.
+ */
+async function fetchBedrockModels(env: AppEnv['Bindings']): Promise<any[]> {
+  if (!isBedrockEnabled(env)) return [];
+  try {
+    const res = await fetch(`${BEDROCK_MANTLE_API}/models`, {
+      headers: { Authorization: `Bearer ${env.BEDROCK_BEARER_TOKEN}` },
+    });
+    if (!res.ok) return [];
+    const data = await res.json() as { data?: any[] };
+    if (!Array.isArray(data.data)) return [];
+    return data.data.map((model) => ({
+      ...model,
+      id: `bedrock:${model.id}`,
+      name: model.name ? `Bedrock: ${model.name}` : `Bedrock: ${model.id}`,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 // ── POST /responses — Responses API proxy ─────────────────────────
@@ -312,6 +341,43 @@ proxyRoutes.openapi(chatCompletionsRoute, async (c) => {
     } catch (e: any) {
       return c.json({ error: { message: `Failed to route to Vertex AI: ${e.message}`, code: 500 } }, 500) as any;
     }
+  } else if (modelStr.startsWith('bedrock:')) {
+    // Master kill-switch: when the Bedrock backend is disabled, reject
+    // `bedrock:` traffic before any upstream call. Fail closed (issue #41 —
+    // the POC token is from a non-BAA personal account; production needs an
+    // enterprise-account key). Mirror of the Vertex guard above.
+    if (!isBedrockEnabled(c.env)) {
+      return c.json({ error: { message: 'The Amazon Bedrock backend is currently disabled. Use an `openrouter:` model instead. See https://api.bayleaf.dev/llms.txt for available models.', code: 503 } }, 503) as any;
+    }
+    // Keyed users: enforce per-key Bedrock RPD against the user_keys row.
+    // Bedrock spend goes to AWS, not OpenRouter, so it is not metered by the
+    // OpenRouter dollar budget and needs its own counter. Campus Pass users
+    // are already counted by enforceCampusRpd above (unified per-IP counter
+    // across all providers); no per-key bookkeeping exists or is needed.
+    if (auth.userKeyRow) {
+      const RPD_LIMIT = BEDROCK_RPD_LIMIT;
+      const today = new Date().toISOString().split('T')[0];
+      const user = auth.userKeyRow;
+
+      if (user.bedrock_rpd_date !== today) {
+        await c.env.DB.prepare(
+          "UPDATE user_keys SET bedrock_rpd_count = 1, bedrock_rpd_date = ? WHERE bayleaf_token = ?"
+        ).bind(today, user.bayleaf_token).run();
+      } else if (user.bedrock_rpd_count >= RPD_LIMIT) {
+        return c.json({ error: { message: `Amazon Bedrock daily budget exceeded (${RPD_LIMIT} requests). Resets at midnight UTC.`, code: 429 } }, 429) as any;
+      } else {
+        await c.env.DB.prepare(
+          "UPDATE user_keys SET bedrock_rpd_count = bedrock_rpd_count + 1 WHERE bayleaf_token = ?"
+        ).bind(user.bayleaf_token).run();
+      }
+    }
+
+    // Strip the `bedrock:` prefix; forward the mantle model id verbatim
+    // (e.g. `bedrock:google.gemma-3-12b-it` -> `google.gemma-3-12b-it`).
+    // mantle ids already carry their owner segment, so no rewrite beyond
+    // prefix removal. Auth is a static bearer token (no JWT minting).
+    body.model = modelStr.replace('bedrock:', '');
+    return forwardJson(`${BEDROCK_MANTLE_API}/chat/completions`, `Bearer ${c.env.BEDROCK_BEARER_TOKEN}`, body) as any;
   } else {
     // OpenRouter passthrough
     if (modelStr.startsWith('openrouter:')) {
@@ -335,7 +401,7 @@ const modelsRoute = createRoute({
   operationId: 'listModels',
   tags: ['LLM'],
   summary: 'List available models',
-  description: 'Lists models available via OpenRouter (prefixed with openrouter:) and Vertex AI (prefixed with vertex:).',
+  description: 'Lists models available via OpenRouter (prefixed with openrouter:), Vertex AI (prefixed with vertex:), and Amazon Bedrock (prefixed with bedrock:). Alternate backends appear only when enabled.',
   security: [{ Bearer: [] }],
   responses: {
     200: { description: 'Model list' },
@@ -368,7 +434,16 @@ proxyRoutes.openapi(modelsRoute, async (c) => {
     // Combine with Vertex models, but only when the Vertex backend is enabled.
     // When disabled, the picker must not advertise models we will reject.
     const vertexModels = isVertexEnabled(c.env) ? VERTEX_MODELS : [];
-    return c.json({ data: [...orModels, ...vertexModels] }, 200, { 'Access-Control-Allow-Origin': '*' }) as any;
+
+    // Bedrock (mantle) models are fetched live and prefixed with `bedrock:`,
+    // only when the backend is enabled. Unlike Vertex's hardcoded curated
+    // list, mantle's catalog shifts often, so we mirror its `/models` at
+    // request time. A mantle failure must not break the whole listing — we
+    // tolerate it by contributing no Bedrock entries (same posture as an OR
+    // 5xx affecting only its own slice).
+    const bedrockModels = await fetchBedrockModels(c.env);
+
+    return c.json({ data: [...orModels, ...vertexModels, ...bedrockModels] }, 200, { 'Access-Control-Allow-Origin': '*' }) as any;
   } catch (e: any) {
     return c.json({ error: { message: `Failed to fetch models: ${e.message}`, code: 500 } }, 500, { 'Access-Control-Allow-Origin': '*' }) as any;
   }
@@ -455,6 +530,13 @@ proxyRoutes.openapi(authKeyRoute, async (c) => {
       resets_at: string;
       applies_to: string;
     };
+    bedrock?: {
+      requests_today: number;
+      limit: number;
+      limit_remaining: number;
+      resets_at: string;
+      applies_to: string;
+    };
     campus?: {
       requests_today: number;
       limit: number;
@@ -488,6 +570,17 @@ proxyRoutes.openapi(authKeyRoute, async (c) => {
       limit_remaining: Math.max(0, VERTEX_RPD_LIMIT - requestsToday),
       resets_at: tomorrow.toISOString(),
       applies_to: 'models with prefix "vertex:"',
+    };
+
+    const bedrockRequestsToday = auth.userKeyRow.bedrock_rpd_date === today
+      ? auth.userKeyRow.bedrock_rpd_count
+      : 0;
+    bayleaf.bedrock = {
+      requests_today: bedrockRequestsToday,
+      limit: BEDROCK_RPD_LIMIT,
+      limit_remaining: Math.max(0, BEDROCK_RPD_LIMIT - bedrockRequestsToday),
+      resets_at: tomorrow.toISOString(),
+      applies_to: 'models with prefix "bedrock:"',
     };
   }
 

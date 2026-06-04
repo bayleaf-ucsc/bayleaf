@@ -80,13 +80,26 @@ stripped from the OpenCode curated list in `routes/wellknown.ts`. Use
   (`routes/proxy.ts`) and GCP JWT minting (`utils/gcp.ts`) remain in place; flip
   the flag to `"true"` to re-enable. Note the GCP service-account secrets must be
   set for it to function.
-- **`bedrock:` — Amazon Bedrock. Anticipated, not yet implemented** (issue #41).
-  UCSC's existing AWS BAA makes it the most likely BAA-covered ZDR backend, and
-  its `bedrock-mantle` endpoint speaks OpenAI Chat Completions with a plain
-  bearer token (no SigV4). The `ALT_BACKENDS` table and the enable/expose/strip
-  helpers are built so Bedrock is a one-row add plus its own routing block; the
-  routing blocks differ per backend (Vertex mints a JWT; Bedrock/OpenRouter use
-  a static bearer) but the gating surface is shared.
+- **`bedrock:` — Amazon Bedrock (`bedrock-mantle`). Implemented, gated by
+  `BEDROCK_ENABLED`** (default `"false"` in `wrangler.jsonc`; flip to `"true"`
+  and set the `BEDROCK_BEARER_TOKEN` secret to enable). mantle speaks OpenAI
+  Chat Completions and `/models` with a **static bearer token** (no SigV4, no
+  JWT minting), so the routing block (`routes/proxy.ts`) is a thin
+  prefix-strip + `forwardJson`, much simpler than Vertex's JWT block. mantle
+  serves an **open-weight** catalog (Qwen, GLM, Kimi, gpt-oss, DeepSeek,
+  Mistral, Gemma, Nemotron), not the frontier Claude/Nova set (issue #41).
+  - **Models** are **live-fetched** from mantle's `/models` at `GET /v1/models`
+    time and prefixed with `bedrock:` (unlike Vertex's hardcoded
+    `VERTEX_MODELS`), since the catalog shifts often. A mantle failure
+    contributes zero entries rather than breaking the listing.
+  - **Per-key RPD**: Bedrock spend goes to AWS, not OpenRouter, so it is not
+    metered by the OR dollar budget. A per-key daily counter (`bedrock_rpd_count`
+    / `bedrock_rpd_date`, migration `0004`, limit `BEDROCK_RPD_LIMIT`) mirrors
+    Vertex's. Campus Pass users are covered by the unified per-IP counter.
+    Surfaced under `data.bayleaf.bedrock` in `GET /v1/auth/key`.
+  - **BAA caveat**: the POC token is from a *personal* AWS account with **no
+    UCSC BAA coverage**; production must use an enterprise-account key (Track B,
+    issue #41).
 
 ## Routes
 

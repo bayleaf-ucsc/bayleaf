@@ -28,6 +28,15 @@ export async function discoverOIDC(issuer: string): Promise<OIDCEndpoints> {
 
 export const OPENROUTER_API = 'https://openrouter.ai/api/v1';
 
+/**
+ * Amazon Bedrock `bedrock-mantle` OpenAI-compatible endpoint (us-west-2).
+ * Speaks OpenAI Chat Completions and `/models` with a static bearer token
+ * (no SigV4, no JWT minting). Serves an open-weight catalog (Qwen, GLM, Kimi,
+ * gpt-oss, DeepSeek, Mistral, Gemma, Nemotron). ZDR-by-default and BAA-covered
+ * in an enterprise account (issue #41).
+ */
+export const BEDROCK_MANTLE_API = 'https://bedrock-mantle.us-west-2.api.aws/v1';
+
 // ── Alternate inference backends ─────────────────────────────────────
 //
 // BayLeaf routes chat completions by a `<prefix>:` on the model id. OpenRouter
@@ -40,15 +49,14 @@ export const OPENROUTER_API = 'https://openrouter.ai/api/v1';
 // (empty, unset, "false", "0") means disabled, and all of its routing, model
 // listing, and curated-model exposure is suppressed. Fail closed.
 //
-// Vertex (Google) is the first such backend and is currently disabled pending a
-// credible ZDR path with Google (issue #36). Amazon Bedrock is the anticipated
-// next one (issue #41): UCSC's existing AWS BAA makes it the most likely route
-// to BAA-covered ZDR inference, and its `bedrock-mantle` endpoint speaks OpenAI
-// Chat Completions with a plain bearer token (no SigV4, no JWT minting). When it
-// lands it should be a single new row here (`bedrock` / `bedrock:` /
-// `BEDROCK_ENABLED`) plus its own routing block. Note the routing blocks differ
-// per backend (Vertex mints a GCP JWT; Bedrock and OpenRouter use a static
-// bearer), but the enable/expose/strip surface this table governs is identical.
+// Vertex (Google) is currently disabled pending a credible ZDR path with
+// Google (issue #36). Amazon Bedrock (issue #41) is enabled via its
+// `bedrock-mantle` endpoint, which speaks OpenAI Chat Completions with a plain
+// bearer token (no SigV4, no JWT minting) and serves an open-weight catalog.
+// Each backend is one row below (`bedrock` / `bedrock:` / `BEDROCK_ENABLED`)
+// plus its own routing block in routes/proxy.ts. The routing blocks differ per
+// backend (Vertex mints a GCP JWT; Bedrock and OpenRouter use a static bearer),
+// but the enable/expose/strip surface this table governs is identical.
 export interface AltBackend {
   /** Stable internal id, e.g. "vertex". */
   key: string;
@@ -71,7 +79,12 @@ export const ALT_BACKENDS: readonly AltBackend[] = [
     envFlag: 'VERTEX_ENABLED',
     label: 'Google Vertex AI',
   },
-  // Future: { key: 'bedrock', prefix: 'bedrock:', envFlag: 'BEDROCK_ENABLED', label: 'Amazon Bedrock' },
+  {
+    key: 'bedrock',
+    prefix: 'bedrock:',
+    envFlag: 'BEDROCK_ENABLED',
+    label: 'Amazon Bedrock',
+  },
 ];
 
 /** True iff the named alternate backend's env flag is exactly "true". */
@@ -81,9 +94,14 @@ export function isBackendEnabled(env: Bindings, key: string): boolean {
   return (env as unknown as Record<string, unknown>)[backend.envFlag] === 'true';
 }
 
-/** Convenience wrapper for the Vertex backend (the only one today). */
+/** Convenience wrapper for the Vertex backend. */
 export function isVertexEnabled(env: Bindings): boolean {
   return isBackendEnabled(env, 'vertex');
+}
+
+/** Convenience wrapper for the Bedrock backend. */
+export function isBedrockEnabled(env: Bindings): boolean {
+  return isBackendEnabled(env, 'bedrock');
 }
 
 /**

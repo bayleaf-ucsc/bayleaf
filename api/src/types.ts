@@ -15,6 +15,14 @@ export interface Bindings {
   GCP_SERVICE_ACCOUNT_EMAIL: string;
   GCP_SERVICE_ACCOUNT_PRIVATE_KEY: string;
 
+  // Amazon Bedrock (bedrock-mantle, OpenAI-compatible)
+  // Master kill-switch for the Bedrock backend. When not exactly the string
+  // "true", all `bedrock:` routing, model listing, and curated-model exposure
+  // is disabled (see isBedrockEnabled in constants.ts). The POC bearer token is
+  // from a personal AWS account with no UCSC BAA coverage; production must use
+  // an enterprise-account key (issue #41).
+  BEDROCK_ENABLED: string;
+
   // D1 database
   DB: D1Database;
 
@@ -54,6 +62,10 @@ export interface Bindings {
   OIDC_CLIENT_SECRET: string;
   CAMPUS_POOL_KEY: string;         // Shared OpenRouter key for campus access
   DAYTONA_API_KEY: string;         // Sandbox provider API key
+
+  // Amazon Bedrock bearer token (bedrock-mantle). Long-term Bedrock API key
+  // (IAM CreateServiceSpecificCredential, service bedrock.amazonaws.com).
+  BEDROCK_BEARER_TOKEN: string;
 
   // Web search and fetch providers
   TAVILY_API_KEY: string;          // Tavily API key (used for both /web/search and /web/fetch)
@@ -108,6 +120,8 @@ export interface UserKeyRow {
   daytona_sandbox_id: string | null;  // cached sandbox ID (null = not yet provisioned)
   vertex_rpd_count: number;
   vertex_rpd_date: string;
+  bedrock_rpd_count: number;
+  bedrock_rpd_date: string;
 }
 
 /** Hono app environment type */
