@@ -70,7 +70,7 @@ const LlmCard: FC<{ orKey: OpenRouterKey; row: UserKeyRow; recommendedModel: str
   return (
     <div class={cardStyle}>
       <h2>LLM Inference</h2>
-      <p>OpenAI-compatible chat completions and responses API, proxied through BayLeaf with zero data retention.</p>
+      <p>OpenAI-compatible chat completions and responses API, proxied through BayLeaf. We retain no copy of your prompts or completions and have no standing access to your request content in flight: only request metadata (model, token counts, timestamps) is observable. Upstream inference is restricted to zero-data-retention (ZDR) providers.</p>
       
       <h3 style="margin-top: 1.5rem; margin-bottom: 0.75rem; font-size: 1.1em; color: #444;">OpenRouter (Any Provider)</h3>
       <div class={statsStyle}>

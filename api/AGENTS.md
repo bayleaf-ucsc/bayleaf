@@ -4,6 +4,33 @@ Cloudflare Worker built with **Hono** + **@hono/zod-openapi**: OIDC auth (provid
 
 **Architecture**: Multi-file TypeScript under `src/`, D1 for key mappings + cached sandbox IDs. Zod schemas are the single source of truth for request/response validation and OpenAPI spec generation. Bundled by Wrangler.
 
+## Data posture: ZDR + ZOA target
+
+This service is the platform's **zero-operator-access (ZOA) target**, in the
+sense of the [AWS Mantle design](https://aws.amazon.com/blogs/machine-learning/exploring-the-zero-operator-access-design-of-mantle/).
+Two layered commitments:
+
+- **ZDR (zero data retention)** — the baseline. Prompts and completions are
+  streamed through to the upstream provider with **no local caching** and are
+  **never written to D1, logs, or any store** (see `RETENTION.md`). Only ZDR
+  provider endpoints are reachable, so providers retain only request metadata.
+- **ZOA posture** — the API additionally exposes **no operator interface to read
+  request content in flight**: Workers Observability is **disabled**
+  (`wrangler.jsonc`), there is no request-body logging, and no interactive shell
+  into the runtime. The only operator-observable signal is request *metadata*
+  (model, token counts, timestamps). An operator therefore has **no standing
+  access** to prompt or completion content.
+
+This is a ZOA **posture**, not a hardware-attested ZOA **guarantee** like
+Mantle: there is no NitroTPM-style attestation or signed-deploy barrier, so an
+operator with deploy rights *could* ship a revision that logs request bodies.
+**Treat any change that stores or logs request/response content as a material
+break of this posture.** In particular: do not add request-body logging, do not
+re-enable Workers Observability for content, do not introduce response caching of
+prompt/completion text, and do not inject the user identity anywhere it would be
+persisted. Public wording must claim the *posture* ("retains no content, no
+standing operator access to content in flight"), not full attested ZOA.
+
 ## Commands
 
 ```bash

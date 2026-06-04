@@ -23,6 +23,40 @@ Media). **Publicly visible; never commit secrets, API keys, or credentials.**
 
 All LLM inference uses **zero-data-retention (ZDR)** providers via OpenRouter.
 
+## Data posture: ZDR everywhere, ZOA where possible
+
+Two distinct properties, often conflated:
+
+- **ZDR (zero data retention)** is a *retention* property: data is processed
+  transiently and not persisted. It is the floor for the whole platform. Every
+  inference path routes only to provider endpoints that contract not to retain
+  prompts or completions (and never train on them); they keep only request
+  metadata. BayLeaf applies ZDR to *itself* as well: the API proxy stores no
+  prompt or completion content.
+- **ZOA (zero operator access)**, as articulated in the
+  [AWS Mantle design](https://aws.amazon.com/blogs/machine-learning/exploring-the-zero-operator-access-design-of-mantle/),
+  is a stronger *access* property: there is no technical means for an operator
+  to read user content even while it transits, enforced architecturally (no
+  interactive shells, signed/attested code, encrypted-in-use). ZOA implies ZDR,
+  but ZDR does **not** imply ZOA: a ZDR system can still let an operator tail a
+  log or deploy a logging build.
+
+**Stance:** pursue ZOA *where practical*, ZDR everywhere as the baseline.
+
+- **BayLeaf API** is the ZOA target. It already retains no content, disables
+  Workers observability, and does no caching, so an operator has **no standing
+  access** to prompts or completions: only request metadata (model, token
+  counts, timestamps) is observable. This is a strong ZOA *posture*, not a
+  hardware-attested ZOA *guarantee* like Mantle, because an operator with deploy
+  rights could ship a revision that logs request bodies; there is no
+  attestation/signed-deploy barrier preventing it. Claim the posture honestly;
+  do not overclaim full ZOA. Any change that begins storing or logging request
+  content breaks this posture and must be treated as a material change.
+- **BayLeaf Chat** cannot be ZOA: it deliberately stores chat history so users
+  can carry conversations across devices. The administrator can read that
+  database. Chat is ZDR *at the inference layer only*; be explicit that the ZDR
+  boundary does not cover stored conversation history.
+
 ---
 
 ## Repository Structure

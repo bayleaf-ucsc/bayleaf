@@ -439,7 +439,7 @@ ${gwsEnabled ? buildGwsSection(placeholderEmail, bt, fence) : ''}${buildCanvasSe
 
 ## Notes
 
-- All inference uses zero-data-retention (ZDR) providers via OpenRouter or Google Vertex AI. Conversations are never used for training, and BayLeaf retains only minimal operational metadata (see https://api.bayleaf.dev/RETENTION.md).
+- All inference uses zero-data-retention (ZDR) providers via OpenRouter or Google Vertex AI. Conversations are never used for training. BayLeaf retains no copy of your prompts or completions and has no standing operator access to your request content in flight: only minimal request metadata (model, token counts, timestamps) is observable (see https://api.bayleaf.dev/RETENTION.md).
 - The ${bt}sk-bayleaf-...${bt} token is yours to manage. Re-running setup commands rotates the stored token; revoking the key from https://api.bayleaf.dev/ invalidates it across all configured agents at once.
 - Increased limits are [available upon request](https://bayleaf.dev/support).
 - This service is operated by Adam Smith (Computational Media, UCSC). Source on GitHub: https://github.com/bayleaf-ucsc/bayleaf.

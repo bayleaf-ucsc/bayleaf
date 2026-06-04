@@ -3,6 +3,17 @@
 Open WebUI deployment at `chat.bayleaf.dev` — OIDC auth (CILogon), curated
 workspace models, custom tools/functions, rate limiting.
 
+## Data posture: ZDR at the inference layer only (not ZOA)
+
+Chat is **ZDR at the inference layer** — prompts and completions route only to
+zero-data-retention provider endpoints via OpenRouter, which retain only request
+metadata. But Chat is **deliberately not** zero-operator-access (ZOA): it stores
+conversation history in the OWUI PostgreSQL database so users can carry chats
+across devices, and the system administrator can read that database. When
+describing Chat's data posture, always say the ZDR boundary covers **inference
+only** and does **not** extend to stored conversation history. (The ZOA target
+is BayLeaf API; see `../AGENTS.md` and `../api/AGENTS.md`.)
+
 **Read `DESIGN.md` before answering questions about this deployment.** It
 documents OIDC configuration, user provisioning workflows, group management,
 model access control, tool/function architecture, and recovery procedures.

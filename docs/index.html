@@ -73,13 +73,19 @@
             technology possible.
         </li>
         <li>
-            <strong>Privacy: Your data is never stored outside of BayLeaf.</strong> Many commercial AI
+            <strong>Privacy: Providers never retain your data, and our API never stores it.</strong> Many commercial AI
             services retain copies of user conversations, sometimes for 30 days or longer, creating
             exposure that users cannot control. BayLeaf leverages
             <a href="https://openrouter.ai/docs/guides/features/zdr">zero-data-retention (ZDR)</a>
-            inference services so that no LLM provider stores a copy of your data. Within BayLeaf
-            itself, the chat interface maintains one copy of your messages in an encrypted database
-            accessible only by the system administrator.
+            inference services so that no LLM provider stores a copy of your data; they keep only
+            request metadata. We apply that standard to ourselves: the
+            <a href="https://api.bayleaf.dev">BayLeaf API</a> retains no copy of your prompts or
+            completions and has no standing operator access to your request content as it passes
+            through, an approach inspired by
+            <a href="https://aws.amazon.com/blogs/machine-learning/exploring-the-zero-operator-access-design-of-mantle/">zero-operator-access</a>
+            designs. Chat is different by necessity: so you can carry conversations between devices,
+            the chat interface keeps one copy of your messages in an encrypted database accessible
+            only by the system administrator.
         </li>
         <li>
             <strong>Pedagogy: Support and resistance, not just answers.</strong> Commercial AI

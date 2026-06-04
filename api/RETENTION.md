@@ -2,13 +2,25 @@
 
 What `api.bayleaf.dev` stores, where, and for how long.
 
+This service is the platform's **zero-operator-access (ZOA) target**, in the
+sense of the [AWS Mantle design](https://aws.amazon.com/blogs/machine-learning/exploring-the-zero-operator-access-design-of-mantle/):
+it retains no prompt or completion content, and exposes no operator interface to
+read request content in flight (no request-body logging, Workers Observability
+disabled, no interactive shell into the runtime). The only operator-observable
+signal is request metadata. This is a strong ZOA *posture*, not a
+hardware-attested ZOA *guarantee*: there is no signed-deploy/attestation barrier,
+so an operator with deploy rights could in principle ship a content-logging
+revision. We commit not to, and treat any such change as material.
+
 ---
 
 ## LLM Proxy Traffic
 
-**Not stored.** Requests and responses are streamed through to OpenRouter with
-zero local caching. OpenRouter operates under zero-data-retention (ZDR): prompts
-and completions are not logged or used for training.
+**Not stored, not logged, not observable in flight.** Requests and responses are
+streamed through to the upstream provider with zero local caching and are never
+written to any store or log. The provider operates under zero-data-retention
+(ZDR): prompts and completions are not logged or used for training, and only
+request metadata is retained provider-side.
 
 The user's email is injected as the `user` field in upstream requests (keyed
 users only; campus-pass users send `"campus-anonymous"`). OpenRouter receives
@@ -75,9 +87,11 @@ user identity.
 
 ## Cloudflare Workers Platform
 
-Observability (request tracing) is **disabled** in the worker configuration.
-Standard Cloudflare edge logs (IP, URL, status code) are subject to
-Cloudflare's platform retention (~72 hours for non-Enterprise).
+Observability (request tracing) is **disabled** in the worker configuration, so
+no request or response bodies are captured by the platform. Standard Cloudflare
+edge logs (IP, URL, status code) are subject to Cloudflare's platform retention
+(~72 hours for non-Enterprise); these are metadata only and never include
+prompt or completion content.
 
 ---
 
@@ -85,7 +99,7 @@ Cloudflare's platform retention (~72 hours for non-Enterprise).
 
 | Data class | Location | Retention |
 |---|---|---|
-| Prompts and completions | Not stored (ZDR passthrough) | — |
+| Prompts and completions | Not stored, not logged (ZDR passthrough, ZOA posture) | — |
 | Account records (D1) | Cloudflare D1 | Indefinite while active |
 | Sandbox content | Daytona | 90 days after last activity |
 | Session state | Client cookie | 24 hours |

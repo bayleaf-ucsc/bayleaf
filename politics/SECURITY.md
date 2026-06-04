@@ -62,6 +62,35 @@ replicated to third parties.
 The [dependency audit](DEPENDENCIES.md) makes this point directly: "The ZDR boundary
 is narrower than it sounds."
 
+### 2.3a Zero-operator-access posture (API)
+
+Two distinct properties are at play and should not be conflated:
+
+- **ZDR (zero data retention)** is a *retention* property: data is processed
+  transiently and not persisted. It is the platform baseline.
+- **ZOA (zero operator access)**, as articulated in the
+  [AWS Mantle design](https://aws.amazon.com/blogs/machine-learning/exploring-the-zero-operator-access-design-of-mantle/),
+  is a stronger *access* property: there is no technical means for an operator
+  to read user content even while it transits. ZOA implies ZDR; ZDR does not
+  imply ZOA.
+
+BayLeaf applies ZDR everywhere and pursues ZOA where practical.
+
+- **BayLeaf API** is the ZOA target. It retains no prompt or completion content,
+  disables Workers Observability, performs no caching, and exposes no
+  request-body logging or interactive shell into the runtime. An operator
+  therefore has **no standing access** to prompts or completions: only request
+  metadata (model, token counts, timestamps) is observable. This is a strong ZOA
+  *posture*, not a hardware-attested ZOA *guarantee* like Mantle: there is no
+  NitroTPM-style attestation or signed-deploy barrier, so an operator with
+  deploy rights could in principle ship a content-logging revision. BayLeaf
+  commits not to, and treats any such change as material. The claim made
+  publicly is the posture ("no content retained, no standing operator access to
+  content in flight"), not full attested ZOA.
+- **BayLeaf Chat** cannot be ZOA: it deliberately stores conversation history so
+  users can carry chats across devices, and the system administrator can read
+  that database (§2.2, §2.3). Chat is ZDR at the inference layer only.
+
 ### 2.4 Retention and deletion
 
 - **User-initiated deletion is honest.** When a user deletes a conversation

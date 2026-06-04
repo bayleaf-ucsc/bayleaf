@@ -803,6 +803,18 @@ training, no retention, no secondary use. This is a meaningful
 protection and is substantively compatible with § 99.33(b) redisclosure
 terms.
 
+BayLeaf applies this same no-retention standard to **itself** on the
+intermediary hops. The BayLeaf API (Cloudflare) stores no prompt or
+completion content, disables request tracing, and exposes no operator
+interface to read request content in flight: a zero-operator-access
+*posture* in the sense of the [AWS Mantle design](https://aws.amazon.com/blogs/machine-learning/exploring-the-zero-operator-access-design-of-mantle/),
+though not a hardware-attested guarantee (`SECURITY.md §2.3a`). BayLeaf
+Chat is the deliberate exception: it stores conversation history so users
+can carry chats across devices, and that history sits in an
+administrator-readable database outside the ZDR boundary. The ZDR/ZOA
+posture covers the **inference and proxy layers**, not Chat's stored
+conversation history.
+
 What this path does *not* provide:
 
 - A **UC-signed** agreement with the model provider.
