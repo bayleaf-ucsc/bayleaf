@@ -11,7 +11,8 @@ An [Open WebUI](https://openwebui.com/) deployment offering curated AI models to
 UCSC students, faculty, and staff. Features include:
 
 - A **Basic** model backed by a rotating open-weight LLM, customized with a
-  campus-aware system prompt
+  campus-aware system prompt. All Chat agents are backed by open-weight,
+  sub-trillion-parameter models.
 - **Invite-code-gated groups** for course-, department-, or role-specific models
   and toolkits
 - **Web Search** and **Web Page Content** tools available to all users
@@ -32,6 +33,8 @@ LLMs, web search and page fetching, and sandboxed code execution:
   files, all authenticated with the same API key; campus-pass users get
   ephemeral one-shot sandboxes
 - Injects a light system prompt prefix to orient downstream agents
+- Recommends an open-weight model as the default, while allowing optional access
+  to proprietary models for tasks that warrant them
 
 ### Status — [uptime dashboard](https://stats.uptimerobot.com/tJ1Qkm7L0R)
 
@@ -49,7 +52,19 @@ every issue is read.
 
 All LLM inference routes through **zero-data-retention (ZDR)** providers via
 [OpenRouter](https://openrouter.ai/). No message content is logged or stored by
-any third-party provider.
+any third-party LLM provider. Non-AI features that require persistent storage
+(e.g. the Daytona-backed Code Sandbox) store user files by necessity.
+
+BayLeaf has speculatively integrated institutional inference back-ends for which
+UC holds in-place data-protection agreements: **Google Cloud / Vertex AI**
+(serving the Gemini family) and **AWS Bedrock**. These demonstrate a clear path
+toward a UCSC ITS-managed BayLeaf with both technical and legal data protection.
+Two caveats: the project runs from a personal admin account rather than one
+managed by UCSC ITS, so those agreements do not currently cover BayLeaf traffic;
+and the Vertex AI back-end is integrated but **disabled** pending removal of
+abuse-monitoring data retention from our accounts, because BayLeaf requires ZDR
+for every *active* provider. See [`politics/FERPA.md`](politics/FERPA.md) for the
+full analysis.
 
 ## This Repository
 

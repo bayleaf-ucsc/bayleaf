@@ -61,16 +61,22 @@
             resource footprint is a legitimate concern. The flagship models from mainstream
             providers can have trillions of parameters, and training compute, energy, and cost
             all <a href="https://epoch.ai/data/ai-models?view=graph&tab=notable&xAxis=Parameters">scale
-            with parameter count</a>. BayLeaf exclusively uses mid-sized models (tens to hundreds
-            of billions of parameters), consuming proportionally less energy and other resources.
+            with parameter count</a>. The agents in BayLeaf Chat are always backed by mid-sized,
+            sub-trillion-parameter models (tens to hundreds of billions of parameters), consuming
+            proportionally less energy and other resources. Our API recommends a model of the same
+            kind by default, while letting developers opt into larger proprietary models when a task
+            warrants it.
         </li>
         <li>
             <strong>Reciprocity: Built on open-weight models.</strong> Large-scale AI is often criticized for
-            concentrating power in a few corporations behind closed APIs. BayLeaf exclusively uses
+            concentrating power in a few corporations behind closed APIs. BayLeaf Chat agents are
+            always backed by
             <a href="https://huggingface.co/models">open-weight models</a>: models that are
             contributed back to the public web, available for anyone to download, audit, or build
             on. This is a form of structural reciprocity with the open ecosystem that makes this
-            technology possible.
+            technology possible. The API holds to the same value by offering an open-weight model as
+            its default recommendation, while giving developers the option to call proprietary models
+            for specific needs.
         </li>
         <li>
             <strong>Privacy: Providers never retain your data, and our API never stores it.</strong> Many commercial AI
@@ -115,6 +121,27 @@
         <a href="privacy.html">privacy notice</a> for the full list, what each one
         does, and the retention policies that govern your data.
     </p>
+
+    <div class="note">
+        <strong>A path toward institution-managed inference.</strong> UC has in-place
+        data-protection agreements with both <strong>Google Cloud (Vertex AI, now serving
+        the Gemini family)</strong> and <strong>Amazon Web Services (Bedrock)</strong>. BayLeaf
+        has integrated both back-ends to demonstrate that a technically <em>and</em> legally
+        protected data flow is achievable: a clear path toward a future version of BayLeaf
+        operated directly by UCSC ITS. Two honest caveats. First, BayLeaf is run from a
+        personal administrator account, not one managed by UCSC ITS, so those institutional
+        agreements do not currently cover data flowing through BayLeaf; they show the path,
+        not its present legal footing. Second, BayLeaf holds a hard line of requiring
+        zero data retention for every <em>active</em> AI provider, so the Vertex AI back-end
+        is integrated but <strong>disabled</strong> pending removal of data retention for abuse
+        monitoring from our accounts. We integrate such providers speculatively to build the
+        path forward, but we never let user data be logged by a third-party LLM service.
+        (Non-AI services such as the Daytona-backed Code Sandbox necessarily store user files,
+        since persistent storage is their function.) The full contract and retention analysis
+        is public in
+        <a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/politics/FERPA.md">our FERPA
+        notes</a>.
+    </div>
 
     <h2>Chat Service</h2>
     <p>Our Chat service provides three models to all users:</p>
@@ -173,7 +200,10 @@
         are subject to a reasonable total daily spending limit.
     </p>
     <p>
-        For a list of models and per-token prices, visit
+        The API recommends an open-weight model as the default for new users; the dashboard's
+        sample request is pre-filled with it. Developers may freely call any model in the
+        catalog, including larger proprietary ones, when a task calls for it. For the full list
+        of models and per-token prices, visit
         <a href="https://openrouter.ai/models">OpenRouter's model directory</a>.
     </p>
 
