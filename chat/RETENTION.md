@@ -275,7 +275,9 @@ This policy will be reviewed:
 
 - Annually, or
 - When UC/UCSC records retention guidance changes, or
-- When BayLeaf's data classification level changes (e.g. P3 approval granted), or
+- When BayLeaf's data-handling authorization changes (ITS has cleared P3-grade data
+  on technical security grounds; FERPA authorization for student education records is
+  a separate Registrar process, still pending), or
 - When OWUI ships a native retention feature that supersedes this mechanism.
 
 ---
