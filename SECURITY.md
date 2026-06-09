@@ -4,6 +4,16 @@ BayLeaf is a running service, not a reusable software package. This document
 describes what "supported" means in that context and how to report a
 vulnerability responsibly.
 
+## Review status
+
+BayLeaf has undergone a security review by UC Santa Cruz Information Technology
+Services (ITS). The campus Chief Information Security Officer (CISO) and his team
+reviewed the service and deemed it **ready to launch**: safe for use by the UCSC
+campus community. This attests to BayLeaf's security posture; it is **not** an
+adoption of BayLeaf as an ITS-operated or ITS-supported service. BayLeaf remains
+faculty-operated. See [`politics/SECURITY.md`](politics/SECURITY.md) for the full
+security exhibit.
+
 ## Supported versions
 
 The GitHub template asks which release lines receive security fixes. BayLeaf

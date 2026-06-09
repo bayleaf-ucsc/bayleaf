@@ -10,6 +10,13 @@ written for the audience that asks for a "security exhibit": an ITS reviewer, an
 IRB protocol, a risk assessment form. It is honest about what the service does and
 does not guarantee.
 
+**ITS review status.** BayLeaf has undergone a security review by UC Santa Cruz
+Information Technology Services (ITS). The campus Chief Information Security
+Officer (CISO) and his team reviewed the service and deemed it **ready to
+launch**: safe for use by the UCSC campus community. This is a review of the
+service's security posture, **not** an adoption of BayLeaf as an ITS-operated or
+ITS-supported service. BayLeaf remains faculty-operated.
+
 ---
 
 ## 1. Architecture

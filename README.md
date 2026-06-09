@@ -3,6 +3,13 @@
 An experimental Generative AI service for the UC Santa Cruz campus community,
 operated by [Adam Smith](https://adamsmith.as) (Dept. of Computational Media).
 
+BayLeaf has undergone a security review by UC Santa Cruz ITS: the campus Chief
+Information Security Officer (CISO) and his team deemed it **ready to launch**,
+safe for use by the UCSC campus community. This attests to its security posture
+and is **not** an adoption of BayLeaf as an ITS-operated or ITS-supported
+service; it remains faculty-operated. See [`SECURITY.md`](SECURITY.md) and
+[`politics/SECURITY.md`](politics/SECURITY.md).
+
 ## Services
 
 ### BayLeaf Chat — [chat.bayleaf.dev](https://chat.bayleaf.dev)
