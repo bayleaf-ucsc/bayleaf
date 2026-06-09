@@ -39,7 +39,7 @@ two members has bus factor 2: enough to survive the handover.
 
 | Account | Login identity | Structure | Handover-ready? | Notes |
 |---|---|---|---|---|
-| **Cloudflare** (Workers for `api.bayleaf.dev` + `courses.bayleaf.dev`, D1, DNS, Registrar for `bayleaf.dev`) | `amsmith@ucsc.edu` | Personal (default account, renamed `bayleaf`) | Partial | Identity correct; needs a second member on the account. |
+| **Cloudflare** (Workers for `api.bayleaf.dev`, D1, DNS, Registrar for `bayleaf.dev`) | `amsmith@ucsc.edu` | Personal (default account, renamed `bayleaf`) | Partial | Identity correct; needs a second member on the account. |
 | **OpenRouter** | `amsmith@ucsc.edu` | Personal | Partial | No native Org concept. Mitigations below. |
 | **Daytona** | `amsmith@ucsc.edu` | Personal | Partial | Teams feature exists; not yet used. |
 | **Google Cloud** (projects `bayleafchat` and `gws-cli-playground-ucsc`) | `amsmith@ucsc.edu` | GCP projects | Mostly | The project is the unit of sharing; each just needs a second IAM member at Owner. `bayleafchat` hosts Vertex AI inference (see §4); `gws-cli-playground-ucsc` hosts the OAuth client used by the `gws_toolkit`. |
@@ -124,9 +124,9 @@ so no resource migration is needed; just a second Administrator when a UCSC
 IT counterpart exists.
 
 Account renamed to `bayleaf` (from the default `Adam Smith's Account`).
-Resources: Workers `bayleaf-api` and the `courses` teaser, D1 `bayleaf-keys`
+Resources: Worker `bayleaf-api`, D1 `bayleaf-keys`
 (`e249d6a6-41cf-4ab7-93d6-b677ac95b524`), zone `bayleaf.dev` (registrar +
-DNS), custom domains `api.bayleaf.dev` and `courses.bayleaf.dev`.
+DNS), custom domain `api.bayleaf.dev`.
 
 ### 4. Google Cloud → add a second Project Owner on each project
 

@@ -370,7 +370,7 @@ the Privacy Office, and ISO who need to know what the acknowledgment
 would actually cover. Some of this data already transits BayLeaf today
 (via user copy-paste and existing tools); some is speculative under
 the BayLeaf Courses redesign tracked in
-[GitHub issue #4](https://github.com/rndmcnlly/bayleaf/issues/4).
+[GitHub issue #5](https://github.com/rndmcnlly/bayleaf/issues/5).
 
 #### 3.2.1 Data already transiting BayLeaf today
 
@@ -426,7 +426,7 @@ tooling. They are the floor of the FERPA surface.
 #### 3.2.2 Data plausible under the Courses redesign
 
 The redesign tracked in
-[GitHub issue #4](https://github.com/rndmcnlly/bayleaf/issues/4)
+[GitHub issue #5](https://github.com/rndmcnlly/bayleaf/issues/5)
 keeps BayLeaf Courses itself stateless (Canvas and OWUI are sources
 of truth) but introduces flows of FERPA data through prompts and tool
 returns that do not exist today. The list below names the categories

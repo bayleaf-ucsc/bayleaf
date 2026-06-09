@@ -15,11 +15,10 @@ Media). **Publicly visible; never commit secrets, API keys, or credentials.**
 - **BayLeaf API** — `https://api.bayleaf.dev` — OpenRouter-proxying API with keyless
   on-campus access and key-based off-campus access, plus web search/fetch and sandboxed
   code execution. Source: `api/` in this repo.
-- **BayLeaf Courses** — `https://courses.bayleaf.dev` — self-service course AI models
-  for instructors. **Currently a teaser page only** (single Hono Worker serving a
-  placeholder); the full service is being redesigned, see GitHub issue #4. The
-  `courses/` directory still contains prototype scaffolding (D1 migrations, DAL,
-  routes, templates) that is not wired up.
+
+A self-service course-AI service (BayLeaf Courses) was prototyped and then retired
+(GitHub issues #4 and #5); the Spring 2026 course need was met instead by the Brace3
+OWUI configuration under `chat/`. It may be rebuilt with richer context in the future.
 
 All LLM inference uses **zero-data-retention (ZDR)** providers via OpenRouter.
 
@@ -73,12 +72,6 @@ bayleaf/
 │   ├── models/         # Workspace model definitions (JSON + avatars)
 │   ├── tools/          # Custom toolkit source code
 │   └── functions/      # Filter & action source code
-├── courses/            # BayLeaf Courses — teaser Hono Worker (redesign pending, issue #4)
-│   ├── src/index.tsx   # Single-page teaser currently served at courses.bayleaf.dev
-│   ├── src/            # Stale prototype scaffolding (routes, dal, templates); not wired up
-│   ├── migrations/     # Stale D1 migrations from prototype; D1 binding currently disabled
-│   ├── wrangler.jsonc
-│   └── package.json
 ├── docs/               # GitHub Pages site → https://bayleaf.dev
 │   ├── CNAME
 │   ├── index.html      # Single-file about/landing page
