@@ -6,83 +6,48 @@
     "description": "Search the web and extract clean content from web pages.",
     "manifest": {
       "title": "Web Context Toolkit",
-      "author": "Adam Smith (BayLeaf), based on Tavily Search Tool by victor1203",
-      "description": "Search the web and extract clean page content via the Tavily API.",
+      "author": "Adam Smith (BayLeaf), based on Tavily Search Tool by victor1203 (https://github.com/victor1203)",
+      "description": "Search the web and extract clean page content via the Tavily API. Batch + concurrent search returns compact, relevance-ranked summaries; extract returns bounded verbatim chunks by default. Async and non-blocking. Uses Tavily's zero-data-retention endpoints.",
       "required_open_webui_version": "0.4.0",
       "requirements": "tavily-python",
-      "version": "1.0.0",
+      "version": "3.1.0",
       "licence": "MIT"
     }
   },
   "access_grants": [
     {
-      "id": "00000000-0000-0000-0000-000000000000",
+      "id": "93b10be2-b4e6-42d4-89b2-1f02a7c4f399",
       "resource_type": "tool",
       "resource_id": "web_context_toolkit",
       "principal_type": "user",
       "principal_id": "*",
       "permission": "read",
-      "created_at": 0
+      "created_at": 1778525834
     }
   ],
-  "updated_at": 0,
-  "created_at": 0,
-  "user": {
-    "id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
-    "name": "Adam Smith",
-    "role": "admin",
-    "email": "amsmith@ucsc.edu"
-  },
+  "updated_at": 1781042644,
+  "created_at": 1778525802,
+  "user": null,
+  "write_access": true,
   "specs": [
     {
-      "name": "search",
-      "description": "Perform a Tavily search and return the results.\n\nArgs:\nquery: The search query string\nsearch_type: Type of search to perform:\n- regular: Standard search with full results\n- context: Optimized for RAG applications\n- qa: Quick answer to a specific question\n\nReturns:\nA formatted string containing the search results",
-      "parameters": {
-        "properties": {
-          "query": {
-            "type": "string"
-          },
-          "search_type": {
-            "default": "regular",
-            "enum": [
-              "regular",
-              "context",
-              "qa"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "query"
-        ],
-        "type": "object"
-      }
-    },
-    {
       "name": "extract",
-      "description": "Extract clean content from one or more web pages using Tavily Extract.\n\nPass a single URL string for one page, or a list of URLs (up to 20) to fetch many pages in a single call. Returns a formatted string with each page's content separated by clear delimiters, plus a list of any URLs that failed.\n\nArgs:\nurls: A URL string, or a list of URL strings (up to 20)\nformat: Output format for page content - \"markdown\" (default) or \"text\"\n\nReturns:\nA formatted string containing the extracted page content",
+      "description": "Read the content of one or more public web pages with Tavily Extract.\nAccepts up to 20 URLs in a single call. This is the deep-read step after\na search.\n\nBy default this returns only the top relevance-ranked verbatim excerpts\n(chunks, ~500 chars each, taken directly from the page, NOT re-summarized),\nwhich keeps results compact and avoids dumping huge pages into the chat.\nFor a chunked read you should pass a query describing what you're after.\n\nTo pull a page's FULL text instead, set chunks_per_source=0.\n\nArgs:\nurls: A JSON array of 1-20 URL strings, e.g. [\"https://a.com\", \"https://b.com\"].\nAlways pass a real array, never a single string. For one page,\npass a one-element array: [\"https://a.com\"].\nquery: What you're looking for on these pages. Used to rank the\nreturned chunks by relevance. Strongly recommended; required for\nchunked mode to be meaningful.\nchunks_per_source: 1-5 top excerpts per page (default 3). Set to 0 to\nretrieve each page's full text instead (larger; only when needed).",
       "parameters": {
         "properties": {
           "urls": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              }
-            ]
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
-          "format": {
-            "default": "markdown",
-            "enum": [
-              "markdown",
-              "text"
-            ],
+          "query": {
+            "default": "",
             "type": "string"
+          },
+          "chunks_per_source": {
+            "default": 3,
+            "type": "integer"
           }
         },
         "required": [
@@ -90,7 +55,25 @@
         ],
         "type": "object"
       }
+    },
+    {
+      "name": "search",
+      "description": "Run one or more Tavily web searches concurrently and return merged,\ndeduplicated, relevance-ranked results. Pass a single query as a\none-element array; pass several to run them all at once (much faster\nthan searching one at a time).\n\nApproximate current date: June 2026. Do NOT hardcode older years\ninto queries based on your training cutoff; only add a year when the\nuser explicitly asks about a specific one.\n\nEach result gives a title, URL, relevance score, and a short summary,\nenough to decide which sources are worth reading. To read a page's\nactual text, follow up with extract() on the chosen URLs.\n\nArgs:\nqueries: A JSON array of 1-8 query strings, e.g. [\"who is X\", \"X recent news\"].\nAlways pass a real array, never a bare string. For a single search,\npass a one-element array: [\"my query\"].",
+      "parameters": {
+        "properties": {
+          "queries": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "queries"
+        ],
+        "type": "object"
+      }
     }
   ],
-  "has_user_valves": false
+  "content_length": 8256
 }
