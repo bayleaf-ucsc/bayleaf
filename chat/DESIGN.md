@@ -292,7 +292,7 @@ is defined in `models/<id>/model.json`.
 |----|------|-----------|-------------|
 | `basic` | Basic | `openrouter.z-ai/glm-5.1` | Default model for all users. Campus-aware system prompt (`Basic v1.1`), builtin tools enabled, skills for Google Workspace, Canvas, web search, and code sandbox. |
 | `deep-research` | Deep Research | `openrouter.z-ai/glm-5.1` | Interactive research agent. Web Context toolkit (Tavily search + Tavily Extract). System prompt (`Deep Research v1.1`) instructs the model to narrate its search process and conduct research interactively. |
-| `help` | Help | `openrouter.z-ai/glm-5.1` | BayLeaf help desk. Lists user groups and available models, inspects model configurations, processes invite codes. Uses `help_filter` to stealth-inject `help_toolkit`. System prompt (`Help v1.3`). |
+| `help` | Help | `openrouter.z-ai/glm-5.1` | BayLeaf help desk. Lists user groups and available models, inspects model configurations, processes invite codes. Binds `help_toolkit` and `web_context_toolkit` directly via the model's `toolIds`. System prompt (`Help v1.5`). |
 
 ### Group-Restricted Models
 
@@ -329,10 +329,14 @@ follow the research path. Prefers interactive research over monolithic reports.
 Vision and file context enabled. All builtin tools enabled.
 
 **Help** — Minimal capabilities (no vision, no file upload, no code interpreter).
-Uses `help_filter` to force-inject `help_toolkit` (stealth pattern, see §3a),
-giving users tools to list their groups, see available models, inspect model
-configurations, and process invite codes. System prompt (`Help v1.3`) describes
-BayLeaf facts and firmly redirects non-help tasks to Basic.
+Binds `help_toolkit` and `web_context_toolkit` directly via the model's
+`toolIds` (no filter; the stealth injection via `help_filter` was retired in
+June 2026 in favor of plain model-bound tools), giving users tools to list
+their groups, see available models, inspect model configurations, process
+invite codes, and search the web for self-discovery (including consulting
+BayLeaf's own source on GitHub). System prompt
+(`Help v1.5`) describes BayLeaf facts and firmly redirects non-help tasks to
+Basic.
 
 **Brace (v3, `brace3-92591`)** — Course assistant for CMPM 120 Spring 2026.
 Successor to Brace v2 with a cleaner design. No `brace_submit_action`. Uses
@@ -441,7 +445,6 @@ variables like `{"GITHUB_TOKEN":"ghp_..."}`) that are injected into every
 
 | ID | Name | Access | Injected by | Description |
 |----|------|--------|-------------|-------------|
-| `help_toolkit` | Help | No grants (stealth) | `help_filter` | Group membership listing, model access listing, invite code acceptance/creation. Valve: `INVITE_SIGNING_KEY` (optional, falls back to `WEBUI_SECRET_KEY`). |
 | `brace3_canvas_toolkit` | Brace3 Canvas | No grants (stealth) | `brace3_filter` | Canvas LMS read access + date localization for Brace v3. Token snarfed from the filter at call time; no separate valve needed. |
 | `brace_toolkit` | Brace | No grants (stealth) | `brace_filter` | Canvas API, GitHub API, Google Drive used by Brace v2 (valve: multiple keys). |
 
@@ -449,6 +452,7 @@ variables like `{"GITHUB_TOKEN":"ghp_..."}`) that are injected into every
 
 | ID | Name | Access | Description |
 |----|------|--------|-------------|
+| `help_toolkit` | Help | No grants (model-bound via `toolIds` on `help`) | Group membership listing, model access listing, invite code acceptance/creation. Valve: `INVITE_SIGNING_KEY` (optional, falls back to `WEBUI_SECRET_KEY`). |
 | `gws_toolkit` | Google Workspace | All users (`user:*`) | Per-user, per-chat OAuth2 access to Google Workspace APIs (see below) |
 | `mark_time_toolkit` | Mark Time | Admin only (no grants) | Stopwatch/timer with per-chat LRU cache (user valve: timezone) |
 
@@ -483,9 +487,13 @@ accidentally enable or disable them via the chat composer's tool picker.
 
 | Filter | Toolkit | Model(s) |
 |--------|---------|----------|
-| `help_filter` | `help_toolkit` | `help` |
 | `brace3_filter` | `brace3_canvas_toolkit` | `brace3-*` |
 | `brace_filter` | `brace_toolkit` | `brace-*` |
+
+(`help_filter` was a former instance; it was retired in June 2026 because the
+Help model needs no filter-time setup — its toolkit is now bound directly via
+the model's `toolIds`, which is less magical and equally invisible to the tool
+picker when the toolkit has no access grants.)
 
 **When to use this pattern:**
 
@@ -605,7 +613,6 @@ pipeline. Each is in `functions/<id>/` with `function.py` and `meta.json`.
 |----|------|--------|--------|-------------|
 | `rate_limit_filter` | filter | yes | **yes** | Per-user rate limiting (10/min, 50/hr, 100/3hr sliding window) |
 | `depth_limit_filter` | filter | yes | no | Halves max response tokens with each turn (disabled) |
-| `help_filter` | filter | no | yes | Injects `help_toolkit` into the Help model (stealth pattern, see §3a). No valves. |
 | `brace_submit_action` | action | no | yes | Button to submit conversation HTML to Canvas assignment (Brace v2 only) |
 | `brace_filter` | filter | no | yes | Injects `brace_toolkit` and fetches system prompt from Canvas wiki page at hardcoded slug (Brace v2) |
 | `brace3_filter` | filter | no | yes | Injects `brace3_canvas_toolkit` and fetches system prompt from Canvas page by title "Brace3 System Prompt" (Brace v3). Derives course ID from model ID (`brace3-NNN`). Raises on missing page. Valve: `CANVAS_ACCESS_TOKEN`. |
@@ -922,7 +929,7 @@ chat/
 │   ├── accept_invites_toolkit/  # Legacy — superseded by help_toolkit
 │   │   ├── tool.py
 │   │   └── meta.json
-│   ├── help_toolkit/            # Stealth — injected by help_filter
+│   ├── help_toolkit/            # Bound to Help model via toolIds (no grants)
 │   │   └── tool.py
 │   ├── web_context_toolkit/
 │   │   ├── tool.py
@@ -968,8 +975,6 @@ chat/
     ├── brace_filter/        # Brace v2 — hardcoded slug, fallback on error
     │   ├── function.py
     │   └── meta.json
-    ├── help_filter/         # Stealth toolkit injector for Help model
-    │   └── function.py
     └── brace3_filter/       # Brace v3 — title lookup, markdownify, raises on missing page
         └── function.py      # No meta.json
 ```
