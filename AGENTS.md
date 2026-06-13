@@ -159,3 +159,9 @@ chore:  tooling, deps, CI
 ```
 
 Concise, imperative mood: `add screenshot gallery to about page` ✓
+
+---
+
+*BayLeaf is a convivial, sufficiency-capped degrowth artifact funded by a gift
+economy and animated, in places, by an innovation-accelerationist pulse it
+hasn't fully reconciled.*
