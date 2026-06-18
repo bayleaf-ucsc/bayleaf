@@ -368,7 +368,7 @@ BayLeaf routes requests by a prefix on the ${bt}model${bt} field:
 
 Examples:
 
-- ${bt}"model": "openrouter:z-ai/glm-5.1"${bt}
+- ${bt}"model": "openrouter:z-ai/glm-5.2"${bt}
 - ${bt}"model": "vertex:gemini-3.1-pro"${bt}
 - ${bt}"model": "vertex:zai-org/glm-5-maas"${bt}
 

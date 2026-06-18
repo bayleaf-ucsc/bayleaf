@@ -84,7 +84,7 @@
     "SYSTEM_PROMPT_PREFIX": "You are accessing the BayLeaf API (https://api.bayleaf.dev/),  UC Santa Cruz's locally-operated AI service. Help users develop capability they can carry forward—into their own work and into collaboration with others. Make reasoning visible. Teach what generalizes. Conversations are private and never used for training.",
     
     // Campus Pass: allow on-campus users to access without personal API keys
-    "RECOMMENDED_MODEL": "openrouter:z-ai/glm-5.1",
+    "RECOMMENDED_MODEL": "openrouter:z-ai/glm-5.2",
 
     // Curated companion models for the OpenCode wellknown remote config.
     // Comma-separated namespaced slugs (openrouter: / vertex:). RECOMMENDED_MODEL is
