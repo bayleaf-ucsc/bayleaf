@@ -102,6 +102,31 @@ ${bt}bayleaf-remote/${model}${bt}. The ${bt}bayleaf-remote${bt} naming is delibe
 it leaves the unqualified ${bt}bayleaf${bt} provider id available for you to author by
 hand if you want full control (next section).
 
+The same remote config also makes OpenCode safe to use out of the box by setting two
+top-level defaults on your behalf:
+
+- ${bt}model${bt} is set to ${bt}bayleaf-remote/${model}${bt}, so OpenCode opens on a
+  BayLeaf (ZDR) model without a ${bt}/models${bt} trip.
+- ${bt}disabled_providers${bt} includes ${bt}opencode${bt}, the built-in provider that
+  routes through OpenCode Zen (${bt}opencode.ai/zen/v1${bt}) rather than directly to a
+  model provider. Zen's free models (Big Pickle, DeepSeek V4 Flash Free, MiMo-V2.5 Free,
+  North Mini Code Free, Nemotron 3 Ultra Free) persist every prompt and completion
+  server-side to train or improve those models, with no opt-out; OpenAI/Anthropic-backed
+  Zen models are retained 30 days by the upstream provider. Only paid Zen models are
+  zero-retention. Disabling ${bt}opencode${bt} keeps your session aligned with the ZDR
+  posture BayLeaf claims everywhere else. (OpenCode Go, a separate ${bt}opencode-go${bt}
+  paid subscription, is unaffected and is itself ZDR.)
+
+Both are overrides you can win back in your own ${bt}~/.config/opencode/opencode.json${bt}
+or a project-local ${bt}opencode.json${bt}: set ${bt}model${bt} to any slug, or set
+${bt}disabled_providers${bt} in full to replace the remote-injected list.
+
+To remove a BayLeaf credential from OpenCode entirely (for example to switch accounts,
+revoke a leaked key, or stop loading the remote config), run
+${bt}opencode providers logout${bt} and pick ${bt}https://api.bayleaf.dev${bt} from the
+list. This deletes the wellknown entry from ${bt}~/.local/share/opencode/auth.json${bt};
+the remote config will no longer be fetched on startup.
+
 **Requirements:** ${bt}curl${bt} and ${bt}python3${bt} on the system path. Both are
 present by default on macOS, modern Linux, and WSL. If either is missing, the auth
 command exits with a clear message and you can fall back to the manual config below.

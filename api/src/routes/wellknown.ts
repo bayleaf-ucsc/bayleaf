@@ -130,9 +130,27 @@ wellKnownRoutes.get('/opencode', (c) => {
  * string as the token in that case (the user just hits Enter at the prompt),
  * and Campus Pass IP eligibility carries the rest.
  *
- * The returned shape is `{ "config": { ... opencode config ... } }`. We
- * include only the `provider.bayleaf` block; the user's own opencode.json,
- * agent definitions, and other settings are preserved by OpenCode's merge.
+ * The returned shape is `{ "config": { ... opencode config ... } }`. In addition
+ * to the `provider.bayleaf-remote` block, we set two top-level fields that
+ * mirror the recommended power-user setup (see /llms.txt):
+ *
+ *   - `model`: `${PROVIDER_ID}/<recommended>` — an agent-independent default,
+ *     so OpenCode lands on a BayLeaf model on first launch without a /models
+ *     trip. Overridden by any `model` in the user's own opencode.json.
+ *   - `disabled_providers: ["opencode"]` — disables OpenCode Zen (the built-in
+ *     `opencode` provider), whose free models persist every prompt and completion
+ *     server-side to train or improve those models, with no opt-out. This aligns
+ *     the OpenCode experience with the ZDR posture BayLeaf claims everywhere
+ *     else. A user who wants Zen back can set their own `disabled_providers`
+ *     in full (mergeDeep replaces arrays), or omit it and set `model` to an
+ *     `opencode/...` slug. OpenCode Go (separate `opencode-go` provider id,
+ *     paid, itself ZDR) is unaffected.
+ *
+ * Merge order in OpenCode (config.ts:593→599→608) is remote-first, then the
+ * user's global opencode.json, then project-local. mergeDeep replaces scalars
+ * and arrays (only `instructions` is concatenated), so every field below is a
+ * default the user can override in full. The user's own opencode.json, agent
+ * definitions, and other settings are preserved by the merge.
  */
 wellKnownRoutes.get('/opencode/config', async (c) => {
   // Auth: Campus Pass or sk-bayleaf-. Same path as /v1/*.
@@ -178,14 +196,22 @@ wellKnownRoutes.get('/opencode/config', async (c) => {
     models,
   };
 
-  return c.json({
-    config: {
-      $schema: 'https://opencode.ai/config.json',
-      provider: {
-        [PROVIDER_ID]: providerEntry,
-      },
+  // Top-level `model` and `disabled_providers` (documented above). We only
+  // set `model` when the recommended slug actually survived the live-filter
+  // and produced a model entry, so we never point OpenCode at a model that
+  // isn't in the provider's own `models` map.
+  const config: Record<string, unknown> = {
+    $schema: 'https://opencode.ai/config.json',
+    disabled_providers: ['opencode'],
+    provider: {
+      [PROVIDER_ID]: providerEntry,
     },
-  });
+  };
+  if (recommended && models[recommended]) {
+    config.model = `${PROVIDER_ID}/${recommended}`;
+  }
+
+  return c.json({ config });
 });
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -318,6 +344,9 @@ except Exception: print("error")
       [ -n "$key" ] || fail "Approved but no key was returned."
       log "Approved."
       printf '%s' "$key"
+      # Hint goes to tty/stderr, never stdout (which holds only the key).
+      log ""
+      log "Saved. To remove this credential later: opencode providers logout"
       exit 0
       ;;
     denied) fail "Authorization denied." ;;
