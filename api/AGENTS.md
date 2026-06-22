@@ -145,7 +145,7 @@ stripped from the OpenCode curated list in `routes/wellknown.ts`. Use
 /docs                   Interactive API docs (Scalar viewer, loads /docs/openapi.json)
 /docs/openapi.json      OpenAPI 3.1 spec (auto-generated from Zod schemas)
 /docs/SKILL.md          Agent skill file (public; personalized with email when authenticated)
-/docs/gws-client-secret.json  Google Workspace CLI OAuth config (authenticated or campus)
+/docs/gws-oauth-client.json  Google Workspace CLI OAuth config (authenticated or campus)
 ```
 
 ## Don'ts

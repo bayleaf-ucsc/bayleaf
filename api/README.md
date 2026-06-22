@@ -215,7 +215,7 @@ Default working directory is `/home/daytona/workspace`. No output truncation.
 | `/docs` | GET | Public | Interactive API docs (Scalar viewer) |
 | `/docs/openapi.json` | GET | Public | OpenAPI 3.1 spec |
 | `/docs/SKILL.md` | GET | Authenticated or campus | Agent skill file (LLM, sandbox, coding agent setup, GWS, Canvas) |
-| `/docs/gws-client-secret.json` | GET | Authenticated or campus | Google Workspace CLI OAuth client config |
+| `/docs/gws-oauth-client.json` | GET | Authenticated or campus | Google Workspace CLI OAuth client config |
 | `/recommended-model` | GET | Public | Current recommended model slug and display name |
 
 The SKILL.md endpoint serves a dynamic Markdown document that coding agents can fetch to self-configure. It includes setup instructions for OpenCode, Goose, and pi, as well as Google Workspace CLI and Canvas LMS CLI integration guides. When GWS env vars are configured, the GWS section includes full onboarding instructions; when they are absent, the section is omitted.

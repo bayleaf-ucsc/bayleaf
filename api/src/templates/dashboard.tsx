@@ -246,7 +246,7 @@ const GwsCard: FC = () => (
         <p><strong>1. Install:</strong></p>
         <pre><code>npm install -g @googleworkspace/cli</code></pre>
         <p style="margin-top: 0.75rem;"><strong>2. Download credentials:</strong></p>
-        <pre><code>{`curl -s https://api.bayleaf.dev/docs/gws-client-secret.json \\
+        <pre><code>{`curl -s https://api.bayleaf.dev/docs/gws-oauth-client.json \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -o ~/.config/gws/client_secret.json`}</code></pre>
         <p style="margin-top: 0.75rem;"><strong>3. Authenticate (one-time, opens browser):</strong></p>

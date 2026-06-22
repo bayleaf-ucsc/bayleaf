@@ -493,7 +493,7 @@ client secret):
 
 ${fence}bash
 mkdir -p ~/.config/gws
-curl -s https://api.bayleaf.dev/docs/gws-client-secret.json \\
+curl -s https://api.bayleaf.dev/docs/gws-oauth-client.json \\
   -H "Authorization: Bearer sk-bayleaf-..." \\
   -o ~/.config/gws/client_secret.json
 ${fence}
