@@ -14,7 +14,7 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { proxy } from 'hono/proxy';
 import type { AppEnv } from '../types';
-import { OPENROUTER_API, BEDROCK_MANTLE_API, VERTEX_MODELS, isVertexEnabled, isBedrockEnabled } from '../constants';
+import { OPENROUTER_API, BEDROCK_MANTLE_API, VERTEX_MODELS, isVertexEnabled, isBedrockEnabled, altBackend } from '../constants';
 import { resolveAuth, type AuthResult } from '../utils/auth';
 import { getGCPAccessToken } from '../utils/gcp';
 import { checkAndIncrement, inspectCounter, parseLimit } from '../utils/campusRpd';
@@ -27,11 +27,13 @@ import {
 
 export const proxyRoutes = new OpenAPIHono<AppEnv>();
 
-/** Per-key daily request limit for Vertex AI traffic. Resets at midnight UTC. */
-const VERTEX_RPD_LIMIT = 100;
-
-/** Per-key daily request limit for Bedrock traffic. Resets at midnight UTC. */
-const BEDROCK_RPD_LIMIT = 100;
+/**
+ * Per-key daily request limits, sourced from the ALT_BACKENDS table so the
+ * dashboard, error messages, and `data.bayleaf` payload all agree. Resets at
+ * midnight UTC.
+ */
+const VERTEX_RPD_LIMIT = altBackend('vertex')!.rpdLimit;
+const BEDROCK_RPD_LIMIT = altBackend('bedrock')!.rpdLimit;
 
 // ── GET / (mounted as /v1) — bare root returns 200 OK ─────────────
 // Some agent harnesses probe the base_url to test connectivity.

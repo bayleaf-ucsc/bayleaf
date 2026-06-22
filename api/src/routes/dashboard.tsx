@@ -11,8 +11,9 @@ import { inspectCounter, parseLimit } from '../utils/campusRpd';
 import { getKeyName, findKeyByHash, createKey } from '../openrouter';
 import { findSandboxByLabel, getSandboxInfo, type SandboxInfo } from '../daytona';
 import { LandingPage, type CampusUsage } from '../templates/landing';
-import { DashboardPage } from '../templates/dashboard';
+import { DashboardPage, type AltBackendUsage } from '../templates/dashboard';
 import { renderPage } from '../templates/layout';
+import { ALT_BACKENDS, isBackendEnabled } from '../constants';
 
 export const dashboardRoutes = new OpenAPIHono<AppEnv>();
 
@@ -110,5 +111,18 @@ dashboardRoutes.get('/dashboard', async (c) => {
   }
 
   const gwsEnabled = !!(c.env.GWS_CLIENT_ID && c.env.GWS_CLIENT_SECRET && c.env.GWS_PROJECT_ID);
-  return renderPage(c, <DashboardPage session={session} row={row} orKey={orKey} recommendedModel={c.env.RECOMMENDED_MODEL} sandboxInfo={sandboxInfo} gwsEnabled={gwsEnabled} />);
+
+  // Build the per-backend RPD view model from ALT_BACKENDS so the LLM card
+  // stays in sync with the actual set of alternate backends. Only enabled
+  // backends are surfaced; today's count falls back to 0 when the stored
+  // date is stale (the next request resets the counter).
+  const today = new Date().toISOString().split('T')[0];
+  const altBackendUsage: AltBackendUsage[] = row
+    ? ALT_BACKENDS.filter((b) => isBackendEnabled(c.env, b.key)).map((b) => {
+        const count = row[b.rpdDateField] === today ? row[b.rpdCountField] : 0;
+        return { label: b.label, count, limit: b.rpdLimit };
+      })
+    : [];
+
+  return renderPage(c, <DashboardPage session={session} row={row} orKey={orKey} recommendedModel={c.env.RECOMMENDED_MODEL} sandboxInfo={sandboxInfo} gwsEnabled={gwsEnabled} altBackendUsage={altBackendUsage} />);
 });

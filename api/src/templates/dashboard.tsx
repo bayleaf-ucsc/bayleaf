@@ -37,6 +37,16 @@ function timeSince(date: Date): string {
 
 // ── Sub-components ───────────────────────────────────────────────
 
+/** Per-backend daily-request view model for the LLM card. */
+export interface AltBackendUsage {
+  /** Human-readable backend label, e.g. "Google Vertex AI". */
+  label: string;
+  /** Today's request count (0 when the stored counter date is stale). */
+  count: number;
+  /** Per-key daily request limit. */
+  limit: number;
+}
+
 const KeyCard: FC<{ hasKey: boolean }> = ({ hasKey }) => {
   if (hasKey) {
     return (
@@ -59,13 +69,9 @@ const KeyCard: FC<{ hasKey: boolean }> = ({ hasKey }) => {
   );
 };
 
-const LlmCard: FC<{ orKey: OpenRouterKey; row: UserKeyRow; recommendedModel: string }> = ({ orKey, row, recommendedModel }) => {
+const LlmCard: FC<{ orKey: OpenRouterKey; recommendedModel: string; altBackendUsage: AltBackendUsage[] }> = ({ orKey, recommendedModel, altBackendUsage }) => {
   const remaining = orKey.limit_remaining?.toFixed(4) ?? 'N/A';
   const limitDisplay = orKey.limit != null ? `$${orKey.limit.toFixed(2)}` : 'unlimited';
-
-  const today = new Date().toISOString().split('T')[0];
-  const vertexRpd = row.vertex_rpd_date === today ? row.vertex_rpd_count : 0;
-  const vertexLimit = 100; // Aligned with RPD_LIMIT in proxy.ts
 
   return (
     <div class={cardStyle}>
@@ -91,24 +97,28 @@ const LlmCard: FC<{ orKey: OpenRouterKey; row: UserKeyRow; recommendedModel: str
         Daily limit: {limitDisplay}. Resets <span class="resetHint">at midnight UTC</span>.
       </p>
 
-      <h3 style="margin-top: 1.5rem; margin-bottom: 0.75rem; font-size: 1.1em; color: #444;">Google Vertex AI</h3>
-      <div class={statsStyle}>
-        <div class={statStyle}>
-          <div class={statValueStyle}>{vertexRpd}</div>
-          <div class={statLabelStyle}>Today's Requests</div>
-        </div>
-        <div class={statStyle}>
-          <div class={statValueStyle}>{Math.max(0, vertexLimit - vertexRpd)}</div>
-          <div class={statLabelStyle}>Remaining Today</div>
-        </div>
-        <div class={statStyle}>
-          <div class={statValueStyle}>{vertexLimit}</div>
-          <div class={statLabelStyle}>Daily Limit</div>
-        </div>
-      </div>
-      <p style="margin-top: 0.5rem; font-size: 0.85em; color: #555;">
-        Resets <span class="resetHint">at midnight UTC</span>.
-      </p>
+      {altBackendUsage.map((b) => (
+        <>
+          <h3 style="margin-top: 1.5rem; margin-bottom: 0.75rem; font-size: 1.1em; color: #444;">{b.label}</h3>
+          <div class={statsStyle}>
+            <div class={statStyle}>
+              <div class={statValueStyle}>{b.count}</div>
+              <div class={statLabelStyle}>Today's Requests</div>
+            </div>
+            <div class={statStyle}>
+              <div class={statValueStyle}>{Math.max(0, b.limit - b.count)}</div>
+              <div class={statLabelStyle}>Remaining Today</div>
+            </div>
+            <div class={statStyle}>
+              <div class={statValueStyle}>{b.limit}</div>
+              <div class={statLabelStyle}>Daily Limit</div>
+            </div>
+          </div>
+          <p style="margin-top: 0.5rem; font-size: 0.85em; color: #555;">
+            Resets <span class="resetHint">at midnight UTC</span>.
+          </p>
+        </>
+      ))}
 
       <p style="margin-top: 1.5rem; font-size: 0.85em; color: #555;">
         Increased limits are <a href="https://bayleaf.dev/support" style="color: #2a5298;">available upon request</a>.
@@ -512,7 +522,8 @@ export const DashboardPage: FC<{
   recommendedModel: string;
   sandboxInfo?: SandboxInfo | null;
   gwsEnabled?: boolean;
-}> = ({ session, row, orKey, recommendedModel, sandboxInfo, gwsEnabled }) => {
+  altBackendUsage?: AltBackendUsage[];
+}> = ({ session, row, orKey, recommendedModel, sandboxInfo, gwsEnabled, altBackendUsage }) => {
   const greeting = session.name
     ? `Welcome, ${session.name} (${session.email})`
     : `Welcome, ${session.email}`;
@@ -524,7 +535,7 @@ export const DashboardPage: FC<{
 
       <KeyCard hasKey={hasKey} />
 
-      {hasKey && orKey && row && <LlmCard orKey={orKey} row={row} recommendedModel={recommendedModel} />}
+      {hasKey && orKey && row && <LlmCard orKey={orKey} recommendedModel={recommendedModel} altBackendUsage={altBackendUsage ?? []} />}
 
       {hasKey && <SandboxCard sandboxInfo={sandboxInfo ?? null} />}
 

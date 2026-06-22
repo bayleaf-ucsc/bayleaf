@@ -70,6 +70,12 @@ export interface AltBackend {
   envFlag: string;
   /** Human-readable label for error messages and docs. */
   label: string;
+  /** Per-key daily request limit. Resets at midnight UTC. */
+  rpdLimit: number;
+  /** `user_keys` column holding this backend's per-key daily counter. */
+  rpdCountField: 'vertex_rpd_count' | 'bedrock_rpd_count';
+  /** `user_keys` column holding the date the counter was last reset (UTC). */
+  rpdDateField: 'vertex_rpd_date' | 'bedrock_rpd_date';
 }
 
 export const ALT_BACKENDS: readonly AltBackend[] = [
@@ -78,14 +84,25 @@ export const ALT_BACKENDS: readonly AltBackend[] = [
     prefix: 'vertex:',
     envFlag: 'VERTEX_ENABLED',
     label: 'Google Vertex AI',
+    rpdLimit: 100,
+    rpdCountField: 'vertex_rpd_count',
+    rpdDateField: 'vertex_rpd_date',
   },
   {
     key: 'bedrock',
     prefix: 'bedrock:',
     envFlag: 'BEDROCK_ENABLED',
     label: 'Amazon Bedrock',
+    rpdLimit: 100,
+    rpdCountField: 'bedrock_rpd_count',
+    rpdDateField: 'bedrock_rpd_date',
   },
 ];
+
+/** Look up an alternate backend by its stable internal key, or null. */
+export function altBackend(key: string): AltBackend | null {
+  return ALT_BACKENDS.find((b) => b.key === key) ?? null;
+}
 
 /** True iff the named alternate backend's env flag is exactly "true". */
 export function isBackendEnabled(env: Bindings, key: string): boolean {
