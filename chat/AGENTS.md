@@ -28,7 +28,7 @@ Managed via `doctl --context bayleaf`.
 
 - **App ID**: `f1a1e758-62e9-4e99-90cb-212cab12958d`
 - **Image**: `ghcr.io/open-webui/open-webui` (version pinned in app spec)
-- **Current version**: `v0.9.5` ✨
+- **Current version**: `v0.10.1` ✨
 - **Database**: Managed PostgreSQL 17 (`bayleaf-chat-db`, ID `ea8c7549-e761-44e1-a9c3-e45e478a5202`)
 - **Storage**: DO Spaces (`bayleaf-ucsc-storage`, bucket-scoped access key)
 
@@ -310,12 +310,6 @@ is therefore stored in OWUI's config DB, not in this repo or the DO spec.
 - **Curation**: `model_ids: []` exposes all 40, but every model is
   **private-by-default**, so general users don't see them until granted via
   workspace models / groups (the standard BayLeaf exposure pattern).
-- **Gotcha (not our bug)**: calling `/api/chat/completions` directly with a
-  bare `{model, messages}` body (no `chat_id`/`metadata`) trips a
-  `'NoneType' object has no attribute 'startswith'` 400 in OWUI v0.9.5's
-  `process_chat`. The normal browser path (and any client that sends full
-  chat metadata) works fine. Verify Bedrock changes through the **browser
-  UI**, e.g. `/?model=bedrock.google.gemma-3-12b-it`, not bare curl.
 
 ## Don'ts
 
