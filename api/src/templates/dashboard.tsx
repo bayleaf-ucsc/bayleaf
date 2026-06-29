@@ -244,13 +244,14 @@ const GwsCard: FC = () => (
       <summary style="cursor: pointer; color: #006aad; font-weight: 500;">Setup instructions</summary>
       <div style="margin-top: 0.75rem;">
         <p><strong>1. Install:</strong></p>
-        <pre><code>npm install -g @googleworkspace/cli</code></pre>
+        <pre><code>brew install googleworkspace-cli</code></pre>
         <p style="margin-top: 0.75rem;"><strong>2. Download credentials:</strong></p>
-        <pre><code>{`curl -s https://api.bayleaf.dev/docs/gws-oauth-client.json \\
+        <pre><code>{`mkdir -p ~/.config/gws
+curl -s https://api.bayleaf.dev/docs/gws-oauth-client.json \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -o ~/.config/gws/client_secret.json`}</code></pre>
-        <p style="margin-top: 0.75rem;"><strong>3. Authenticate (one-time, opens browser):</strong></p>
-        <pre><code>gws auth login --account your@ucsc.edu --full</code></pre>
+        <p style="margin-top: 0.75rem;"><strong>3. Authenticate (one-time, opens browser; pick your account there):</strong></p>
+        <pre><code>gws auth login --full</code></pre>
         <p style="margin-top: 0.75rem; font-size: 0.9em; color: #555;">
           Or hand the full setup guide to your coding agent (GWS setup is included):
         </p>

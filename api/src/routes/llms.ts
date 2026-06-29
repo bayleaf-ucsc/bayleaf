@@ -481,11 +481,15 @@ The [Google Workspace CLI](https://github.com/googleworkspace/cli) gives agents
 access to Drive, Gmail, Calendar, Sheets, Docs, Slides, and Tasks on behalf of the
 authenticated user. Operations run as ${bt}${email}${bt} (replace with your own UCSC email).
 
-Install:
+Install (Homebrew, the canonical Rust build):
 
 ${fence}bash
-npm install -g @googleworkspace/cli
+brew install googleworkspace-cli
 ${fence}
+
+(Or download a release binary from https://github.com/googleworkspace/cli/releases,
+or ${bt}npm install -g @googleworkspace/cli${bt}. Don't mix installs: they share the
+${bt}gws${bt} binary name.)
 
 Download the OAuth client configuration (BayLeaf distributes a shared GCP project's
 client credentials; the security comes from the OAuth browser consent flow, not the
@@ -500,16 +504,16 @@ ${fence}
 
 On the campus network the ${bt}-H${bt} header can be omitted.
 
-Authenticate (one-time, opens a browser):
+Authenticate (one-time, opens a browser). You pick your account in the browser, so
+there is no account flag:
 
 ${fence}bash
-gws auth login --account YOUR_CRUZID@ucsc.edu --full
+gws auth login --full
 ${fence}
 
 The ${bt}--full${bt} flag requests broad scopes (Drive, Gmail, Calendar, Sheets, Docs,
 Slides, Tasks). Credentials store encrypted on disk and refresh automatically.
-
-${bt}gws${bt} can also run as an MCP server: ${bt}gws mcp -s drive,gmail,calendar${bt}.
+Check state any time with ${bt}gws auth status${bt}.
 
 Common services (each command also self-documents via ${bt}gws <service> --help${bt}):
 
@@ -523,9 +527,9 @@ Common services (each command also self-documents via ${bt}gws <service> --help$
 
 Troubleshooting:
 
-- **401 auth error:** re-run ${bt}gws auth login --account YOUR_CRUZID@ucsc.edu --full${bt}
+- **401 auth error:** re-run ${bt}gws auth login --full${bt}
 - **403 API not enabled:** contact the BayLeaf admin
-- **Wrong account's data:** check ${bt}gws auth list${bt} and ${bt}gws auth default${bt}
+- **Check current account / scopes:** ${bt}gws auth status${bt}
 `;
 }
 
