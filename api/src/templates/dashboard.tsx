@@ -200,7 +200,10 @@ const SandboxCard: FC<{ sandboxInfo: SandboxInfo | null }> = ({ sandboxInfo }) =
         )}
       </div>
       {sandboxInfo ? (
-        <button type="button" class={btnDangerStyle} style="margin-top: 1rem;" onclick="deleteSandbox()">Delete Sandbox</button>
+        <div style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+          <button type="button" class={btnStyle} id="pokeBtn" onclick="pokeSandbox()">Keep Alive</button>
+          <button type="button" class={btnDangerStyle} onclick="deleteSandbox()">Delete Sandbox</button>
+        </div>
       ) : (
         <p style="margin-top: 0.75rem; color: #555; font-size: 0.9em;">
           A sandbox will be created automatically on your first <code>POST /sandbox/exec</code> request.
@@ -411,6 +414,26 @@ const DashboardScripts: FC<{ bayleafToken: string }> = ({ bayleafToken }) => (
           location.reload();
         } else {
           alert('Failed to delete sandbox');
+        }
+      }
+
+      async function pokeSandbox() {
+        const btn = document.getElementById('pokeBtn');
+        const original = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Waking...';
+        try {
+          const res = await fetch('/sandbox/poke', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + BAYLEAF_TOKEN }
+          });
+          if (!res.ok) throw new Error('poke failed');
+          btn.textContent = 'Awake!';
+          setTimeout(() => { location.reload(); }, 600);
+        } catch (e) {
+          btn.textContent = original;
+          btn.disabled = false;
+          alert('Failed to keep sandbox alive');
         }
       }
 

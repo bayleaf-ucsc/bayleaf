@@ -442,6 +442,11 @@ File I/O (keyed users only):
 
 - ${bt}GET /sandbox/files/{path}${bt} returns raw file bytes.
 - ${bt}PUT /sandbox/files/{path}${bt} uploads bytes (parent dirs auto-created).
+
+Lifecycle (keyed users only):
+
+- ${bt}GET /sandbox${bt} reports status without side effects (${bt}state: "none"${bt} if none exists).
+- ${bt}POST /sandbox/poke${bt} refreshes the inactivity timer (default auto-stop is 15 min idle) and wakes a stopped sandbox. Cheaper than a no-op exec.
 - ${bt}DELETE /sandbox${bt} destroys the sandbox.
 
 ### Web search and page fetch

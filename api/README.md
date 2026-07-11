@@ -199,7 +199,9 @@ Off-campus users will receive a 401 error directing them to get a personal key a
 
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
+| `/sandbox` | GET | Keyed only | Report sandbox status without side effects (`state: "none"` if none exists) |
 | `/sandbox/exec` | POST | Campus Pass or keyed | Execute a bash command. Body: `{"command": "...", "workdir?": "..."}`. Returns `{"exitCode": 0, "output": "..."}` |
+| `/sandbox/poke` | POST | Keyed only | Refresh the inactivity timer to prevent auto-stop; wakes a stopped sandbox. Returns `{"id": "...", "state": "started", "poked": true}` |
 | `/sandbox/files/*` | GET | Keyed only | Download a file by absolute path |
 | `/sandbox/files/*` | PUT | Keyed only | Upload a file by absolute path (raw body) |
 | `/sandbox` | DELETE | Keyed or session | Destroy the user's sandbox |

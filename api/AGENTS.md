@@ -65,7 +65,7 @@ src/
     docs.ts             docsRoutes: /docs (Scalar viewer), /docs/SKILL.md
     key.ts              keyRoutes: GET|POST|DELETE /key (OpenAPI-documented)
     proxy.ts            proxyRoutes: POST /responses, POST /chat/completions, /v1/* catch-all
-    sandbox.ts          sandboxRoutes: POST /exec, GET|PUT /files/*, DELETE / (OpenAPI-documented)
+    sandbox.ts          sandboxRoutes: GET / (status), POST /exec, POST /poke, GET|PUT /files/*, DELETE / (OpenAPI-documented)
     web.ts               webRoutes: POST /search, POST /fetch (OpenAPI-documented)
 ```
 
@@ -136,7 +136,9 @@ stripped from the OpenCode curated list in `routes/wellknown.ts`. Use
 /v1/responses           Responses API proxy (system prompt via instructions field)
 /v1/chat/completions    Chat completions proxy (system prompt via system message)
 /v1/*                   General OpenRouter proxy (models, auth/key, etc.)
+/sandbox                GET: sandbox status (keyed only, no side effects)
 /sandbox/exec           POST: bash execution (campus-pass: ephemeral, keyed: persistent)
+/sandbox/poke           POST: refresh inactivity timer / wake sandbox (keyed only)
 /sandbox/files/*        GET: download file, PUT: upload file (keyed only)
 /sandbox                DELETE: destroy user's sandbox (keyed or session)
 /web/search              POST: web search (Tavily)

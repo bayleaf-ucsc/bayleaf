@@ -118,6 +118,36 @@ export const SandboxDeleteResponseSchema = z.object({
   message: z.string(),
 }).openapi('SandboxDeleteResponse');
 
+export const SandboxStatusResponseSchema = z.object({
+  id: z.string().nullable().openapi({
+    description: 'Sandbox ID, or null if no sandbox exists yet.',
+  }),
+  state: z.string().openapi({
+    description:
+      'Current sandbox state: started, stopped, archived, error, starting, ' +
+      'stopping, archiving — or "none" if no sandbox exists yet.',
+  }),
+  cpu: z.number().optional().openapi({ description: 'Allocated vCPUs.' }),
+  memory: z.number().optional().openapi({ description: 'Allocated memory in GiB.' }),
+  disk: z.number().optional().openapi({ description: 'Allocated disk in GiB.' }),
+  autoStopInterval: z.number().optional().openapi({
+    description: 'Minutes of inactivity before the sandbox auto-stops.',
+  }),
+  autoArchiveInterval: z.number().optional().openapi({
+    description: 'Minutes stopped before the sandbox auto-archives.',
+  }),
+  createdAt: z.string().optional().openapi({ description: 'Creation timestamp (ISO 8601).' }),
+  updatedAt: z.string().optional().openapi({ description: 'Last update timestamp (ISO 8601).' }),
+}).openapi('SandboxStatusResponse');
+
+export const SandboxPokeResponseSchema = z.object({
+  id: z.string().openapi({ description: 'Sandbox ID.' }),
+  state: z.string().openapi({ description: 'Sandbox state after the poke (started).' }),
+  poked: z.literal(true).openapi({
+    description: 'Confirms the inactivity timer was refreshed.',
+  }),
+}).openapi('SandboxPokeResponse');
+
 // ── Key management ───────────────────────────────────────────────
 //
 // The /key endpoints are dashboard plumbing (browser session-gated,

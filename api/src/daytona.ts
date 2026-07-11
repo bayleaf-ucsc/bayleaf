@@ -207,6 +207,28 @@ export async function deleteSandbox(id: string, env: Bindings): Promise<void> {
   }
 }
 
+/**
+ * Refresh the sandbox's last-activity timestamp.
+ *
+ * Resets the auto-stop inactivity timer without changing runtime state.
+ * Daytona counts only "external interactions" (toolbox requests, lifecycle
+ * changes, previews, SSH) as activity; internal processes do not reset the
+ * timer. This endpoint is the purpose-built way to signal activity from an
+ * external orchestrator — cheaper than issuing a no-op exec.
+ * See https://www.daytona.io/docs/en/sandboxes.md (Update sandbox last activity).
+ */
+export async function refreshActivity(id: string, env: Bindings): Promise<void> {
+  const resp = await fetch(apiUrl(env, `/sandbox/${id}/last-activity`), {
+    method: 'POST',
+    headers: authHeaders(env),
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Failed to refresh sandbox activity: HTTP ${resp.status} — ${text.slice(0, 200)}`);
+  }
+}
+
 /** Get current sandbox info (state, etc.). */
 export async function getSandboxInfo(id: string, env: Bindings): Promise<SandboxInfo> {
   const resp = await fetch(apiUrl(env, `/sandbox/${id}`), {

@@ -11,7 +11,9 @@
  * with how we cache OpenRouter key hashes.
  *
  * Routes (mounted at /sandbox):
+ *   GET  /              Report sandbox status without side effects (keyed only)
  *   POST /exec         Execute a bash command (campus-pass or keyed)
+ *   POST /poke         Refresh the inactivity timer to prevent auto-stop (keyed only)
  *   GET  /files/*      Download a file by absolute path (keyed only)
  *   PUT  /files/*      Upload a file by absolute path (keyed only)
  *   DELETE /            Destroy the user's sandbox (keyed or session)
@@ -23,6 +25,7 @@ import { resolveAuth } from '../utils/auth';
 import { getSession } from '../utils/session';
 import {
   type EnsureResult,
+  type SandboxInfo,
   ensureSandbox,
   createEphemeralSandbox,
   waitForReady,
@@ -31,6 +34,8 @@ import {
   downloadFile,
   uploadFile,
   findSandboxByLabel,
+  getSandboxInfo,
+  refreshActivity,
   deleteSandbox,
 } from '../daytona';
 import {
@@ -38,6 +43,8 @@ import {
   SandboxExecResponseSchema,
   SandboxUploadResponseSchema,
   SandboxDeleteResponseSchema,
+  SandboxStatusResponseSchema,
+  SandboxPokeResponseSchema,
   ApiErrorSchema,
 } from '../schemas';
 
@@ -78,6 +85,43 @@ async function clearCachedSandboxId(
   await env.DB.prepare(
     'UPDATE user_keys SET daytona_sandbox_id = NULL WHERE email = ?',
   ).bind(email).run();
+}
+
+/**
+ * Look up the user's sandbox WITHOUT side effects (no create, no start).
+ * Mirrors the dashboard's status lookup: try the cached ID, fall back to a
+ * label lookup, and self-heal the D1 cache when the two disagree. Returns
+ * null when the user has no sandbox at all. Use this for read-only status;
+ * use resolveSandboxId() when the sandbox must actually be running.
+ */
+async function lookupSandboxInfo(
+  email: string,
+  env: AppEnv['Bindings'],
+): Promise<SandboxInfo | null> {
+  const row = await env.DB.prepare(
+    'SELECT daytona_sandbox_id FROM user_keys WHERE email = ? AND revoked = 0',
+  ).bind(email).first<Pick<UserKeyRow, 'daytona_sandbox_id'>>();
+
+  const cachedId = row?.daytona_sandbox_id ?? null;
+
+  if (cachedId) {
+    try {
+      return await getSandboxInfo(cachedId, env);
+    } catch {
+      // Stale cached ID (deleted externally, 404, etc.) — fall through.
+    }
+  }
+
+  const sandbox = await findSandboxByLabel(email, env);
+
+  // Self-heal the cache when the label lookup found a different (or first) ID.
+  if (sandbox && sandbox.id !== cachedId) {
+    await env.DB.prepare(
+      'UPDATE user_keys SET daytona_sandbox_id = ? WHERE email = ? AND revoked = 0',
+    ).bind(sandbox.id, email).run();
+  }
+
+  return sandbox;
 }
 
 /**
@@ -345,6 +389,154 @@ sandboxRoutes.put('/files/*', async (c) => {
     console.error('Sandbox file upload error:', e);
     return c.json({
       error: { message: 'Failed to upload file to sandbox.', code: 502 },
+    }, 502);
+  }
+});
+
+// ── GET / (status) ─────────────────────────────────────────────────
+// Registered manually (like the file routes) rather than via .openapi()
+// because a createRoute() GET on path '/' collides with the DELETE '/'
+// route in the generated OpenAPI spec: @hono/zod-openapi merges same-path
+// path-items and drops one method depending on registration order. The
+// Hono router itself dispatches both fine (it keys on method+path), so we
+// keep a plain .get('/') handler and register the docs by hand.
+
+sandboxRoutes.openAPIRegistry.registerPath({
+  method: 'get',
+  path: '/',
+  operationId: 'sandboxStatus',
+  tags: ['Sandbox'],
+  summary: 'Get sandbox status',
+  description:
+    'Reports the current state of the user\'s persistent sandbox without side effects: ' +
+    'it does **not** create or start a sandbox. Returns `state: "none"` when no sandbox ' +
+    'exists yet (one is created automatically on the first `POST /sandbox/exec`). ' +
+    'Requires a BayLeaf API key (`sk-bayleaf-...`); Campus Pass users have no persistent sandbox.',
+  security: [{ Bearer: [] }],
+  responses: {
+    200: {
+      description: 'Sandbox status',
+      content: {
+        'application/json': {
+          schema: SandboxStatusResponseSchema,
+          example: {
+            id: 'a1b2c3d4', state: 'started', cpu: 1, memory: 1, disk: 3,
+            autoStopInterval: 15, autoArchiveInterval: 60,
+          },
+        },
+      },
+    },
+    401: {
+      description: 'Missing, invalid, or revoked API key',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
+    403: {
+      description: 'Sandbox status requires a BayLeaf API key',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
+    502: {
+      description: 'Sandbox backend failure',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
+  },
+});
+
+sandboxRoutes.get('/', async (c) => {
+  const auth = await resolveAuth(c);
+  if (auth instanceof Response) return auth;
+
+  if (auth.isCampusMode || !auth.userEmail) {
+    return c.json({
+      error: { message: 'Sandbox status requires a BayLeaf API key.', code: 403 },
+    }, 403);
+  }
+
+  try {
+    const sandbox = await lookupSandboxInfo(auth.userEmail, c.env);
+
+    if (!sandbox) {
+      return c.json({ id: null, state: 'none' }, 200);
+    }
+
+    return c.json({
+      id: sandbox.id,
+      state: sandbox.state,
+      cpu: sandbox.cpu,
+      memory: sandbox.memory,
+      disk: sandbox.disk,
+      autoStopInterval: sandbox.autoStopInterval,
+      autoArchiveInterval: sandbox.autoArchiveInterval,
+      createdAt: sandbox.createdAt,
+      updatedAt: sandbox.updatedAt,
+    }, 200);
+  } catch (e) {
+    console.error('Sandbox status error:', e);
+    return c.json({
+      error: { message: 'Failed to fetch sandbox status.', code: 502 },
+    }, 502);
+  }
+});
+
+// ── POST /poke ─────────────────────────────────────────────────────
+
+const pokeRoute = createRoute({
+  method: 'post',
+  path: '/poke',
+  operationId: 'sandboxPoke',
+  tags: ['Sandbox'],
+  summary: 'Keep the sandbox alive',
+  description:
+    'Refreshes the sandbox\'s inactivity timer to prevent it from auto-stopping ' +
+    '(default: 15 minutes idle). If the sandbox is stopped or archived, it is ' +
+    'started first — so a poke both wakes a sleeping sandbox and keeps a running ' +
+    'one awake. Cheaper than a no-op `exec`. Requires a BayLeaf API key (`sk-bayleaf-...`).',
+  security: [{ Bearer: [] }],
+  responses: {
+    200: {
+      description: 'Inactivity timer refreshed',
+      content: {
+        'application/json': {
+          schema: SandboxPokeResponseSchema,
+          example: { id: 'a1b2c3d4', state: 'started', poked: true },
+        },
+      },
+    },
+    401: {
+      description: 'Missing, invalid, or revoked API key',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
+    403: {
+      description: 'Poke requires a BayLeaf API key',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
+    502: {
+      description: 'Sandbox backend failure',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
+  },
+});
+
+sandboxRoutes.openapi(pokeRoute, async (c) => {
+  const auth = await resolveAuth(c);
+  if (auth instanceof Response) return auth as any;
+
+  if (auth.isCampusMode || !auth.userEmail) {
+    return c.json({
+      error: { message: 'Sandbox poke requires a BayLeaf API key.', code: 403 },
+    }, 403);
+  }
+
+  try {
+    // ensureSandbox() (via resolveSandboxId) starts a stopped/archived sandbox
+    // and waits for 'started'. That lifecycle change already counts as activity;
+    // refreshActivity() then resets the timer for an already-running sandbox.
+    const sandboxId = await resolveSandboxId(auth.userEmail, c.env);
+    await refreshActivity(sandboxId, c.env);
+    return c.json({ id: sandboxId, state: 'started', poked: true as const }, 200);
+  } catch (e) {
+    console.error('Sandbox poke error:', e);
+    return c.json({
+      error: { message: 'Failed to poke sandbox.', code: 502 },
     }, 502);
   }
 });
