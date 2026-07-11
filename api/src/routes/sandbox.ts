@@ -246,7 +246,7 @@ sandboxRoutes.openapi(execRoute, async (c) => {
 
 sandboxRoutes.openAPIRegistry.registerPath({
   method: 'get',
-  path: '/sandbox/files/{path}',
+  path: '/files/{path}',
   operationId: 'sandboxDownloadFile',
   tags: ['Sandbox'],
   summary: 'Download a file',
@@ -322,7 +322,7 @@ sandboxRoutes.get('/files/*', async (c) => {
 
 sandboxRoutes.openAPIRegistry.registerPath({
   method: 'put',
-  path: '/sandbox/files/{path}',
+  path: '/files/{path}',
   operationId: 'sandboxUploadFile',
   tags: ['Sandbox'],
   summary: 'Upload a file',
