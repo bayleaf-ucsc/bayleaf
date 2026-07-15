@@ -39,8 +39,8 @@
       "created_at": 1771204151
     }
   ],
-  "is_active": true,
-  "updated_at": 1770428854,
+  "is_active": false,
+  "updated_at": 1775668790,
   "created_at": 1758660845,
   "user": null,
   "write_access": true

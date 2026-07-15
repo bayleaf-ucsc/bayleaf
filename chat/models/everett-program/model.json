@@ -40,35 +40,35 @@
   },
   "access_grants": [
     {
-      "id": "825aee3a-36f7-44cd-98dd-f31d792afe61",
+      "id": "80aa31a0-6ff8-4f1b-848c-2c101581def9",
       "resource_type": "model",
       "resource_id": "everett-program",
       "principal_type": "group",
       "principal_id": "0c3b621d-996a-46c7-95a2-6c1ee689a410",
       "permission": "read",
-      "created_at": 1775668867
+      "created_at": 1778525981
     },
     {
-      "id": "4e536ca7-30fa-4ae1-9dbb-6fd00d55daf4",
+      "id": "364978d3-cec2-480c-979a-be5a9090dee2",
       "resource_type": "model",
       "resource_id": "everett-program",
       "principal_type": "user",
       "principal_id": "4a6381c5-b458-4d1b-88b5-9624caf7314c",
       "permission": "read",
-      "created_at": 1775668867
+      "created_at": 1778525981
     },
     {
-      "id": "a81a6105-f7b9-450a-995f-7a10890211b0",
+      "id": "5918ac97-0145-418c-8416-b20c769bd9f9",
       "resource_type": "model",
       "resource_id": "everett-program",
       "principal_type": "user",
       "principal_id": "4a6381c5-b458-4d1b-88b5-9624caf7314c",
       "permission": "write",
-      "created_at": 1775668867
+      "created_at": 1778525981
     }
   ],
-  "is_active": true,
-  "updated_at": 1772064142,
+  "is_active": false,
+  "updated_at": 1784134221,
   "created_at": 1772064142,
   "user": null,
   "write_access": true

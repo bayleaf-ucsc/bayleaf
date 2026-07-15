@@ -290,43 +290,45 @@ is defined in `models/<id>/model.json`.
 
 | ID | Name | Base Model | Description |
 |----|------|-----------|-------------|
-| `basic` | Basic | `openrouter.z-ai/glm-5.1` | Default model for all users. Campus-aware system prompt (`Basic v1.1`), builtin tools enabled, skills for Google Workspace, Canvas, web search, and code sandbox. |
-| `deep-research` | Deep Research | `openrouter.z-ai/glm-5.1` | Interactive research agent. Web Context toolkit (Tavily search + Tavily Extract). System prompt (`Deep Research v1.1`) instructs the model to narrate its search process and conduct research interactively. |
-| `help` | Help | `openrouter.z-ai/glm-5.1` | BayLeaf help desk. Lists user groups and available models, inspects model configurations, processes invite codes. Binds `help_toolkit` and `web_context_toolkit` directly via the model's `toolIds`. System prompt (`Help v1.5`). |
+| `basic` | Basic | `openrouter.z-ai/glm-5.2` | Default model for all users. Campus-aware system prompt (`Basic v1.2`), builtin tools enabled, skills for Google Workspace, Canvas, web search, and code sandbox. |
+| `help` | Help | `openrouter.z-ai/glm-5.2` | BayLeaf help desk. Lists user groups and available models, inspects model configurations, processes invite codes. Binds `help_toolkit` and `web_context_toolkit` directly via the model's `toolIds`. System prompt (`Help v1.5`). |
 
 ### Group-Restricted Models
 
-| ID | Name | Base Model | Group(s) |
-|----|------|-----------|----------|
-| `brace3-92591` | Brace (CMPM 120 Spring 2026) | `openrouter.z-ai/glm-5.1` | Course-specific |
-| `everett-program` | Everett Program Chat | `openrouter.z-ai/glm-5.1` | Program-specific |
-| `procurement` | Procurement | `openrouter.z-ai/glm-5.1` | Staff group |
+*None currently active.* Course and program models have been deactivated as their
+terms ended. See the Inactive table below for preserved configurations.
 
 ### Inactive (Archived) Models
 
 These models remain on the live instance but are deactivated (`is_active: false`).
 Their configurations are preserved in `models/` for reference.
 
-| ID | Name | Notes |
-|----|------|-------|
-| `brace-85291` | Brace (CMPM 121 Fall 2025) | Brace v2, superseded by `brace3-92591`. |
-| `gambit` | Gambit (GLM-5.1) | Rapid game prototyping assistant. Deactivated. |
+| ID | Name | Base Model | Notes |
+|----|------|-----------|-------|
+| `deep-research` | Deep Research | `openrouter.z-ai/glm-5.2` | Interactive research agent. Retired now that Basic has a skill system for web search. |
+| `brace3-92591` | Brace (CMPM 120 Spring 2026) | `openrouter.z-ai/glm-5.1` | Course-specific. Spring 2026 term ended. |
+| `everett-program` | Everett Program Chat | `openrouter.z-ai/glm-5.1` | Program-specific. |
+| `procurement` | Procurement | `openrouter.z-ai/glm-5.2` | Staff group. |
+| `brace-85291` | Brace (CMPM 121 Fall 2025) | `openrouter.deepseek/deepseek-v3.2` | Brace v2, superseded by `brace3-92591`. |
+| `gambit` | Gambit | `openrouter.z-ai/glm-5` | Rapid game prototyping assistant (`Gambit v1.6`). |
 
 ### Model Configuration Details
 
-**Basic** — The default landing model. System prompt (`Basic v1.1`) orients the
-model as a campus assistant, encourages concise replies, warns about turn-depth
-limits, and suggests users start fresh conversations rather than extending long
-ones. Uses `function_calling: native`. Builtin tools enabled (time, memory,
-chats, notes, knowledge, channels). Skills bound: `google-workspace`,
-`bayleaf-for-students`, `bayleaf-for-faculty`, `bayleaf-for-employees`,
-`canvas-api`, `web-search`, `code-sandbox`. Vision disabled; file upload enabled.
+**Basic** — The default landing model. System prompt (`Basic v1.2`) orients the
+model as a sub-trillion-parameter open-weight campus assistant, encourages
+concise replies, warns about turn-depth limits, and suggests users start fresh
+conversations rather than extending long ones. Uses `function_calling: native`.
+Builtin tools enabled (time, memory, chats, notes, knowledge, channels). Skills
+bound: `google-workspace`, `bayleaf-for-students`, `bayleaf-for-faculty`,
+`bayleaf-for-employees`, `canvas-api`, `web-search`, `code-sandbox`. Vision
+disabled; file upload enabled.
 
-**Deep Research** — Interactive research agent (`Deep Research v1.1`). Bound to
-`web_context_toolkit` (Tavily search + Tavily Extract). System prompt instructs the model
-to narrate its intent before each tool call and summarize results, so users can
-follow the research path. Prefers interactive research over monolithic reports.
-Vision and file context enabled. All builtin tools enabled.
+**Deep Research** *(inactive)* — Interactive research agent (`Deep Research v1.1`).
+Bound to `web_context_toolkit` (Tavily search + Tavily Extract). System prompt
+instructs the model to narrate its intent before each tool call and summarize
+results, so users can follow the research path. Retired now that Basic's skill
+system covers web search. Vision disabled; file context and all builtin tools
+enabled.
 
 **Help** — Minimal capabilities (no vision, no file upload, no code interpreter).
 Binds `help_toolkit` and `web_context_toolkit` directly via the model's
@@ -338,24 +340,26 @@ BayLeaf's own source on GitHub). System prompt
 (`Help v1.5`) describes BayLeaf facts and firmly redirects non-help tasks to
 Basic.
 
-**Brace (v3, `brace3-92591`)** — Course assistant for CMPM 120 Spring 2026.
-Successor to Brace v2 with a cleaner design. No `brace_submit_action`. Uses
-`brace3_filter` + `brace3_canvas_toolkit` (see §3). System prompt is looked up
-by **page title** ("Brace3 System Prompt") rather than a hardcoded slug — raises
+**Brace (v3, `brace3-92591`)** *(inactive)* — Course assistant for CMPM 120
+Spring 2026. Successor to Brace v2 with a cleaner design. No
+`brace_submit_action`. Uses `brace3_filter` + `brace3_canvas_toolkit` (see §3).
+The system prompt is no longer stored in the model JSON; it is looked up at
+runtime by **page title** ("Brace3 System Prompt") from Canvas — raises
 cleanly if the page is missing instead of falling back silently; body is
 converted from HTML to markdown via `markdownify`. Vision and `file_context`
 enabled.
 
-**Everett Program Chat** — Placeholder chatbot for the Everett Program with the
-Web Context toolkit (`web_context_toolkit`).
+**Everett Program Chat** *(inactive)* — Placeholder chatbot for the Everett
+Program with the Web Context toolkit (`web_context_toolkit`).
 
-**Procurement** — UC procurement policy assistant. System prompt contains a
-behavioral preamble and a lookup table of file IDs for 11 UC policy documents.
-Retrieval is agentic: the model calls `read_document` via the `whole_document_retrieval`
-toolkit to fetch full document text on demand, rather than having policy text inlined.
-Documents live in the "Procurement" knowledge base (`8c7d7e27-6871-4871-a6b3-c197cf418072`).
-`context.md` in this backup is the original source used to populate the KB; it is no
-longer part of the system prompt.
+**Procurement** *(inactive)* — UC procurement policy assistant. System prompt
+contains a behavioral preamble and a lookup table of file IDs for 11 UC policy
+documents. Retrieval is agentic: the model calls `read_document` via the
+`whole_document_retrieval` toolkit to fetch full document text on demand,
+rather than having policy text inlined. Documents live in the "Procurement"
+knowledge base (`8c7d7e27-6871-4871-a6b3-c197cf418072`). `context.md` in this
+backup is the original source used to populate the KB; it is no longer part of
+the system prompt.
 
 **Brace (v2, `brace-85291`)** *(inactive)* — Course assistant for CMPM 121 Fall
 2025. No static system prompt — `brace_filter` fetches the system prompt from a
@@ -365,10 +369,10 @@ to `brace_submit_action` (Canvas submission button) and `brace_filter`. Uses
 if the Canvas page is unreachable. (The original Brace v1 architecture lives at
 [rndmcnlly/brace](https://github.com/rndmcnlly/brace).)
 
-**Gambit** *(inactive)* — Rapid game prototyping assistant (`Gambit v1.5`).
+**Gambit** *(inactive)* — Rapid game prototyping assistant (`Gambit v1.6`).
 Extremely detailed system prompt (~14K chars) covering prototyping philosophy,
 HTML artifact generation, CDN library usage, publishing via gisthost, and
-cost-consciousness. Uses `reasoning_effort: low`.
+cost-consciousness.
 
 ---
 
@@ -440,6 +444,9 @@ variables like `{"GITHUB_TOKEN":"ghp_..."}`) that are injected into every
 - `auto_delete_minutes` — Minutes after archive before permanent deletion (-1 = never)
 - `sandbox_language` — Default runtime (default: `python`)
 - `foreground_timeout_seconds` — Seconds to wait for bash/delegate before auto-backgrounding (default: 30)
+- `auto_create_sandbox` — Automatically create a sandbox when none exists for the user (default: `true`; disable for deployments where sandboxes are provisioned externally)
+- `sandbox_missing_message` — Custom message returned to the agent when no sandbox exists and auto-create is off (empty falls back to a generic message)
+- `sandbox_create_overrides` — JSON object of extra Daytona create args merged into the request, e.g. `{"cpu":2,"memory":4,"snapshot":"my-snapshot"}`. Cannot override `name`, `labels`, or `volumes` (managed by lathe).
 
 ### Restricted Tools (Stealth Toolkits)
 
@@ -590,7 +597,7 @@ Slides are scope-ready in the capability registry but have no handlers yet.
 Several tools require API keys configured as "valves" in the OWUI admin panel.
 These are **never** committed to this repo:
 
-- `lathe` — `daytona_api_key`, `daytona_api_url`, `daytona_proxy_url`, `deployment_label`, `auto_stop_minutes`, `auto_archive_minutes`, `auto_delete_minutes`, `persistent_volume`, `sandbox_language`, `foreground_timeout_seconds`
+- `lathe` — `daytona_api_key`, `daytona_api_url`, `daytona_proxy_url`, `deployment_label`, `auto_stop_minutes`, `auto_archive_minutes`, `auto_delete_minutes`, `persistent_volume`, `sandbox_language`, `foreground_timeout_seconds`, `auto_create_sandbox`, `sandbox_missing_message`, `sandbox_create_overrides`
 - `gws_toolkit` — `google_client_id`, `google_client_secret`, `base_url`, `enabled_capabilities`
 - `web_context_toolkit` — `tavily_api_key`, `search_depth`, `include_answer`, `max_results`, `extract_depth`
 - `deepinfra_key_generator_toolkit` — `API_KEY`, `API_TOKEN_NAME`, `MODELS`, `EXPIRES_DELTA`
@@ -902,17 +909,17 @@ chat/
 │   ├── basic/
 │   │   ├── model.json      # Params, meta, system prompt, capabilities
 │   │   └── profile.png     # Model avatar
-│   ├── deep-research/
+│   ├── deep-research/        # Inactive — retired in favor of Basic's skill system
 │   │   └── model.json
 │   ├── help/
 │   │   ├── model.json
 │   │   └── profile.png
-│   ├── brace3-92591/       # Brace v3 — CMPM 120 Spring 2026
+│   ├── brace3-92591/       # Inactive — Brace v3 (CMPM 120 Spring 2026)
 │   │   ├── model.json
 │   │   └── profile.webp
-│   ├── everett-program/
+│   ├── everett-program/   # Inactive
 │   │   └── model.json
-│   ├── procurement/
+│   ├── procurement/        # Inactive
 │   │   ├── model.json      # Behavioral preamble only
 │   │   ├── context.md      # Inlined UC policy documents (~670K chars)
 │   │   └── profile.png
@@ -925,9 +932,6 @@ chat/
 ├── tools/
 │   ├── lathe/
 │   │   ├── tool.py          # Code Sandbox — coding agent tools (Daytona sandboxes)
-│   │   └── meta.json
-│   ├── accept_invites_toolkit/  # Legacy — superseded by help_toolkit
-│   │   ├── tool.py
 │   │   └── meta.json
 │   ├── help_toolkit/            # Bound to Help model via toolIds (no grants)
 │   │   └── tool.py

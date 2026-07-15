@@ -1,7 +1,7 @@
 {
   "id": "procurement",
   "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
-  "base_model_id": "openrouter.z-ai/glm-5.1",
+  "base_model_id": "openrouter.z-ai/glm-5.2",
   "name": "Procurement",
   "params": {
     "function_calling": "native",
@@ -17,6 +17,7 @@
       "web_search": false,
       "image_generation": false,
       "code_interpreter": false,
+      "terminal": true,
       "citations": true,
       "status_updates": false,
       "usage": true,
@@ -50,40 +51,43 @@
       "channels": false,
       "web_search": false,
       "image_generation": false,
-      "code_interpreter": false
+      "code_interpreter": false,
+      "tasks": false,
+      "automations": false,
+      "calendar": false
     }
   },
   "access_grants": [
     {
-      "id": "1c2676c4-52d4-460a-b455-c68536fe8663",
+      "id": "9a04eb05-efb9-4db0-adaf-21af12e410f0",
       "resource_type": "model",
       "resource_id": "procurement",
       "principal_type": "group",
       "principal_id": "b4737a35-8db6-473f-8221-ad7b7ad1c3f7",
       "permission": "read",
-      "created_at": 1775668906
+      "created_at": 1781761363
     },
     {
-      "id": "f47c535e-d1e7-4921-801e-ba6022d80705",
+      "id": "dff8f3e1-59c8-4057-a2ff-fd07a203c41b",
       "resource_type": "model",
       "resource_id": "procurement",
       "principal_type": "user",
       "principal_id": "1ca7441f-d910-499c-a81a-3511baec6055",
       "permission": "read",
-      "created_at": 1775668906
+      "created_at": 1781761363
     },
     {
-      "id": "a926c0ba-d2a6-4a4b-9c4d-2c4efc97ce23",
+      "id": "5100b7fb-8ca3-4539-97b0-9449b3483910",
       "resource_type": "model",
       "resource_id": "procurement",
       "principal_type": "user",
       "principal_id": "1ca7441f-d910-499c-a81a-3511baec6055",
       "permission": "write",
-      "created_at": 1775668906
+      "created_at": 1781761363
     }
   ],
-  "is_active": true,
-  "updated_at": 1761104796,
+  "is_active": false,
+  "updated_at": 1784134223,
   "created_at": 1761104796,
   "user": null,
   "write_access": true

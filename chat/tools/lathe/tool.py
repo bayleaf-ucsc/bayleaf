@@ -1,11 +1,11 @@
 """
-title: Lathe
+title: Code Sandbox
 author: Adam Smith
 author_url: https://adamsmith.as
 description: Coding agent tools (lathe, bash, read, write, edit, glob, grep, interpret, delegate, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.
 required_open_webui_version: 0.4.0
 requirements: httpx, httpx-ws, pydantic-ai-slim[openai], cachetools
-version: 0.23.0
+version: 0.24.0
 licence: MIT
 """
 
@@ -74,6 +74,26 @@ def _api(valves, path: str) -> str:
 
 def _toolbox(valves, sandbox_id: str, path: str) -> str:
     return f"{valves.daytona_proxy_url.rstrip('/')}/{sandbox_id}{path}"
+
+
+def _extract_sandbox_list(payload) -> list:
+    """Tolerate both legacy and post-2026-05-24 shapes for GET /api/sandbox.
+
+    Legacy (≤ May 24, 2026): a flat JSON array of sandbox objects.
+    New (cursor pagination): {"items": [...], "cursor": "..."} (or similar).
+    Lathe filters by label client-side and expects 0–1 matches per user, so
+    the default page size is plenty; we don't paginate further. If a future
+    deployment ever has >page_size sandboxes sharing the label prefix, this
+    would silently return only the first page — acceptable given the design
+    invariant of one sandbox per user.
+    """
+    if payload is None:
+        return []
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        return payload.get("items") or []
+    return []
 
 
 async def _emit(emitter, description: str, done: bool = False):
@@ -234,6 +254,47 @@ def _parse_env_vars(env_vars: str) -> list[tuple[str, str]]:
             f"{', '.join(skipped)}. Keys must match [A-Za-z_][A-Za-z0-9_]*."
         )
     return pairs
+
+
+# Keys lathe manages itself; admin create-overrides may not clobber them.
+# - name/labels: the per-user lookup invariant (one sandbox per email).
+# - volumes: managed by the persistent_volume valve and _ensure_volume.
+_PROTECTED_CREATE_KEYS = frozenset({"name", "labels", "volumes"})
+
+
+def _parse_create_overrides(raw: str) -> dict:
+    """Parse the sandbox_create_overrides valve into a dict of create args.
+
+    Expects a JSON object, e.g. '{"cpu":2,"memory":4,"snapshot":"my-snap"}'.
+    Returns {} on empty input (not an error). Raises ValueError on malformed
+    input or on any attempt to override a lathe-managed key, so the caller
+    can surface it to the agent.
+    """
+    s = raw.strip()
+    if not s or s == "{}":
+        return {}
+    try:
+        overrides = json.loads(s)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise ValueError(
+            f"Valves sandbox_create_overrides is not valid JSON: {exc}. "
+            f"Fix the sandbox_create_overrides field in Tool settings (it should "
+            f'look like {{"cpu":2,"memory":4}}) and retry.'
+        ) from exc
+    if not isinstance(overrides, dict):
+        raise ValueError(
+            f"Valves sandbox_create_overrides must be a JSON object, got "
+            f"{type(overrides).__name__}. Expected something like "
+            f'{{"cpu":2,"memory":4,"snapshot":"my-snapshot"}}.'
+        )
+    clobbered = _PROTECTED_CREATE_KEYS & overrides.keys()
+    if clobbered:
+        raise ValueError(
+            f"Valves sandbox_create_overrides may not set lathe-managed keys: "
+            f"{', '.join(sorted(clobbered))}. These are derived per user "
+            f"(name/labels) or controlled by the persistent_volume valve (volumes)."
+        )
+    return overrides
 
 
 def _get_email(user: dict) -> str:
@@ -1062,6 +1123,13 @@ def _check_tool_params(kwargs: dict, annotations: dict) -> str | None:
         value = kwargs[name]
         # get_origin resolves list[str] -> list, etc.
         base_type = typing.get_origin(expected_type) or expected_type
+        # Defensive: under OWUI's loader, annotations may arrive stringized
+        # (PEP 563) or otherwise unresolved.  A non-type base_type would make
+        # isinstance() raise "arg 2 must be a type".  Skip rather than crash:
+        # callers (_standard_tool) now resolve via get_type_hints, but a
+        # hand-written caller could still pass an unresolved annotation.
+        if not isinstance(base_type, type):
+            continue
         if not isinstance(value, base_type):
             return (
                 f"Error: parameter '{name}' expected type "
@@ -1132,11 +1200,22 @@ def _standard_tool(core_fn, *, emit_start: str, emit_done: str,
 
     # Names of tool params for extracting kwargs at call time
     tool_param_names = [p.name for p in tool_params]
-    # Annotation map for strict type checking at the boundary
+    # Annotation map for strict type checking at the boundary.
+    #
+    # We resolve via get_type_hints(core_fn), NOT the raw
+    # inspect.Parameter.annotation, because OWUI's tool loader
+    # (open_webui.utils.plugin.load_tool_module_by_id) execs tool source
+    # from within a module that has `from __future__ import annotations`.
+    # exec() inherits the caller's __future__ flags, so PEP 563 stringized
+    # annotations are in effect: raw signature annotations come back as the
+    # STRING 'int', not the class int, which would make _check_tool_params'
+    # isinstance() raise "arg 2 must be a type".  get_type_hints() resolves
+    # those strings back to real classes against the module globals.
+    _core_hints = typing.get_type_hints(core_fn)
     tool_annotations = {
-        p.name: p.annotation
+        p.name: _core_hints.get(p.name, p.annotation)
         for p in tool_params
-        if p.annotation is not inspect.Parameter.empty
+        if p.name in _core_hints or p.annotation is not inspect.Parameter.empty
     }
 
     async def _method(self, *args, **kwargs):
@@ -1201,8 +1280,11 @@ def _standard_tool(core_fn, *, emit_start: str, emit_done: str,
     # OWUI uses get_type_hints() (which reads __annotations__) for the
     # JSON schema type mapping, NOT inspect.signature().annotation.
     # Without this, all _standard_tool params fall back to "string".
+    # Use resolved hints (see tool_annotations above): under OWUI's loader
+    # the synth_param annotations are stringized (PEP 563), so prefer the
+    # get_type_hints()-resolved class where available.
     _method.__annotations__ = {
-        p.name: p.annotation
+        p.name: _core_hints.get(p.name, p.annotation)
         for p in synth_params
         if p.annotation is not inspect.Parameter.empty and p.name != "self"
     }
@@ -2077,6 +2159,62 @@ async def _ensure_chat_init(
 _DELEGATE_FOREGROUND_SECONDS = 30
 
 
+class _ChatIdInjectingTransport(httpx.AsyncBaseTransport):
+    """Wraps an httpx transport to inject `chat_id` into JSON request bodies
+    sent to OWUI's /api/chat/completions, working around an OWUI 0.9.5 bug
+    (open-webui#24550, fix in #24556) where get_event_emitter() crashes with
+    `AttributeError: 'NoneType' object has no attribute 'startswith'` when
+    the request body has no chat_id key.
+
+    Only mutates POST requests to a chat-completions path with a JSON body
+    that lacks a non-null chat_id. Leaves all other requests untouched.
+    """
+
+    def __init__(self, inner: httpx.AsyncBaseTransport, chat_id: str):
+        self._inner = inner
+        self._chat_id = chat_id
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        try:
+            path = request.url.path or ""
+            if (
+                request.method == "POST"
+                and path.endswith("/chat/completions")
+                and "application/json" in (request.headers.get("content-type") or "")
+            ):
+                raw = request.content
+                if raw:
+                    body = json.loads(raw)
+                    if isinstance(body, dict) and not body.get("chat_id"):
+                        body["chat_id"] = self._chat_id
+                        new_bytes = json.dumps(body).encode("utf-8")
+                        new_headers = list(request.headers.raw)
+                        # Replace content-length with the new size; httpx
+                        # uses lowercase header names internally.
+                        new_headers = [
+                            (k, v) for (k, v) in new_headers
+                            if k.lower() != b"content-length"
+                        ]
+                        new_headers.append((b"content-length", str(len(new_bytes)).encode("ascii")))
+                        request = httpx.Request(
+                            method=request.method,
+                            url=request.url,
+                            headers=new_headers,
+                            content=new_bytes,
+                            extensions=request.extensions,
+                        )
+        except Exception as e:
+            # Never let body mutation break the request: log and pass
+            # through unmodified. The original 400 will surface and be
+            # diagnosable upstream.
+            logger.debug("ChatIdInjectingTransport: passthrough due to %s: %s",
+                         type(e).__name__, e)
+        return await self._inner.handle_async_request(request)
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
+
+
 
 
 
@@ -2524,7 +2662,7 @@ async def _ensure_sandbox(valves, email: str, client: httpx.AsyncClient, emitter
         timeout=30.0,
     )
     resp.raise_for_status()
-    sandboxes = resp.json() or []
+    sandboxes = _extract_sandbox_list(resp.json())
 
     matches = [s for s in sandboxes if s.get("labels", {}).get(label_key) == email]
 
@@ -2540,14 +2678,30 @@ async def _ensure_sandbox(valves, email: str, client: httpx.AsyncClient, emitter
     warning: str | None = None
 
     if sandbox is None:
-        # 2. Optionally get or create a persistent volume for this user
+        if not valves.auto_create_sandbox:
+            msg = valves.sandbox_missing_message.strip()
+            raise RuntimeError(
+                msg or (
+                    f"No sandbox exists for {email} and automatic creation is "
+                    f"disabled on this deployment. A sandbox must be provisioned "
+                    f"separately before lathe's tools can be used."
+                )
+            )
+
+        # 2. Build the create request. Admin overrides layer over lathe's
+        # tunable defaults (language, autoStop/Archive/Delete); the
+        # structural keys (name/labels/volumes) are forced last so a
+        # misconfigured override can never break the per-user lookup
+        # invariant. _parse_create_overrides already rejects those keys,
+        # but forcing them here is belt-and-suspenders.
+        overrides = _parse_create_overrides(valves.sandbox_create_overrides)
         create_json: dict = {
-            "language": valves.sandbox_language,
-            "name": f"{label_key}/{email}",
-            "labels": {label_key: email},
             "autoStopInterval": valves.auto_stop_minutes,
             "autoArchiveInterval": valves.auto_archive_minutes,
             "autoDeleteInterval": valves.auto_delete_minutes,
+            **overrides,
+            "name": f"{label_key}/{email}",
+            "labels": {label_key: email},
         }
         if valves.persistent_volume:
             volume_name = f"{label_key}/{email}"
@@ -2684,9 +2838,32 @@ class Tools:
             True,
             description="Mount a persistent S3/FUSE volume at /home/daytona/volume. Disable for deployments with limited data retention.",
         )
-        sandbox_language: str = Field(
-            "python",
-            description="Default language runtime (python, typescript, javascript)",
+        auto_create_sandbox: bool = Field(
+            True,
+            description=(
+                "Automatically create a sandbox when none exists for the user. "
+                "Disable for deployments where sandboxes are provisioned by another "
+                "system; the agent then receives sandbox_missing_message instead."
+            ),
+        )
+        sandbox_missing_message: str = Field(
+            "",
+            description=(
+                "Message returned to the agent when no sandbox exists and "
+                "auto_create_sandbox is disabled. Use it to give site-specific "
+                "setup advice (e.g. a URL to provision a sandbox). Empty falls "
+                "back to a generic message."
+            ),
+        )
+        sandbox_create_overrides: str = Field(
+            "{}",
+            description=(
+                "JSON object of extra arguments merged into the Daytona sandbox "
+                "create request, e.g. "
+                '{"cpu":2,"memory":4,"disk":20,"snapshot":"my-snapshot","target":"us"}. '
+                "Resource fields (cpu/memory/disk) are integers in cores/GB. "
+                "Cannot override name, labels, or volumes (managed by lathe)."
+            ),
         )
         foreground_timeout_seconds: int = Field(
             30,
@@ -2742,14 +2919,13 @@ class Tools:
     #   tool docstrings can then be further scrunched by adding
     #   breadcrumbs like 'see lathe(manpage="bash") for details'.
 
-    # WARNING: Manpage strings are NOT passed through str.format()
-    # unconditionally.  Only pages containing the literal placeholder
-    # "{tool_catalog}" are formatted (see the lathe() method).  This
-    # means shell snippets with curly braces (${VAR}, {sh,pid,log,exit},
-    # {"key":"value"}, etc.) are safe in all other pages.  If you add a
-    # new dynamic placeholder, gate the .format() call on its presence
-    # rather than calling .format() on every page — otherwise any page
-    # with literal braces will blow up with a KeyError at runtime.
+    # Manpage strings are interpolated via plain str.replace() in the
+    # lathe() method, NOT str.format().  Known placeholders today:
+    # {tool_catalog}, {volume_note}, {destroy_volume_note}.  Unknown
+    # placeholders pass through unchanged (no KeyError), and literal
+    # braces in shell/JSON/regex snippets (${VAR}, {sh,pid,log,exit},
+    # {"key":"value"}, {n,m}) are always safe.  If you add a new dynamic
+    # placeholder, register a corresponding .replace() call in lathe().
     _MANPAGES: dict[str, str] = {
         "egress": textwrap.dedent("""\
             # Lathe — Egress Restrictions
@@ -2837,7 +3013,7 @@ class Tools:
             **Poll until done (bounded):**
             ```
             for i in 1 2 3 4 5; do
-              test -f $CMD/exit && {{ cat $CMD/exit; break; }} || sleep 2
+              test -f $CMD/exit && { cat $CMD/exit; break; } || sleep 2
             done
             test -f $CMD/exit || echo STILL_RUNNING
             ```
@@ -3300,7 +3476,7 @@ class Tools:
               replace_all=true.
             - delegate() auto-backgrounds after ~30 seconds (configurable via
               foreground_seconds). Backgrounded delegates write to
-              /tmp/delegate/<id>/{{log,result,error,usage}}. Use foreground_seconds=0
+              /tmp/delegate/<id>/{log,result,error,usage}. Use foreground_seconds=0
               to fire-and-forget for parallel agent teams.
             - expose() URLs expire after ~1 hour (call expose again for a fresh URL). The sandbox itself stops on
               idle (~15 min default), killing servers.
@@ -3348,8 +3524,6 @@ class Tools:
 
         if manpage in self._MANPAGES:
             content = self._MANPAGES[manpage]
-            if "{tool_catalog}" in content:
-                content = content.format(tool_catalog=tool_catalog)
             volume_note = (
                 "- /home/daytona/volume is S3/FUSE-backed persistent storage that\n"
                 "              survives sandbox destruction.\n            "
@@ -3358,6 +3532,11 @@ class Tools:
             destroy_volume_note = (
                 " The volume is preserved." if self.valves.persistent_volume else ""
             )
+            # Use .replace() rather than .format() so manpages with literal
+            # braces (e.g. shell snippets like ${VAR}, regex {n,m}) don't blow
+            # up with KeyError, and so missing placeholders are silently
+            # tolerated rather than fatal.
+            content = content.replace("{tool_catalog}", tool_catalog)
             content = content.replace("{volume_note}", volume_note)
             content = content.replace("{destroy_volume_note}", destroy_volume_note)
             await _emit(__event_emitter__, f"Manual page: {manpage}", done=True)
@@ -3447,7 +3626,7 @@ class Tools:
                     timeout=30.0,
                 )
                 resp.raise_for_status()
-                sandboxes = resp.json() or []
+                sandboxes = _extract_sandbox_list(resp.json())
                 matches = [
                     s for s in sandboxes
                     if s.get("labels", {}).get(label_key) == email
@@ -3480,7 +3659,7 @@ class Tools:
                         timeout=30.0,
                     )
                     remaining = [
-                        s for s in (resp.json() or [])
+                        s for s in _extract_sandbox_list(resp.json())
                         if s.get("labels", {}).get(label_key) == email
                     ]
                     if not remaining:
@@ -3687,6 +3866,7 @@ class Tools:
         foreground_seconds: int = -1,
         __user__: dict = {},
         __chat_id__: str = "",
+        __metadata__: dict = {},
         __model__: dict = {},
         __request__=None,
         __event_emitter__=None,
@@ -3726,7 +3906,15 @@ class Tools:
             if __request__ is None:
                 return "Error: delegate() requires the OWUI request context (__request__). This tool only works inside Open WebUI."
 
-            model_id = __model__.get("id", "")
+            # OWUI dispatch quirk: __model__["id"] is not always the
+            # user-selected model. In multi-model chats and certain tool-
+            # invocation paths, __model__ has been observed to carry a
+            # different model than the one the user picked, while
+            # __metadata__["model"]["id"] reliably reflects the actual
+            # selection. Prefer metadata; fall back to __model__.
+            metadata_model = __metadata__.get("model") if isinstance(__metadata__, dict) else None
+            metadata_model_id = metadata_model.get("id") if isinstance(metadata_model, dict) else None
+            model_id = metadata_model_id or __model__.get("id", "")
             if not model_id:
                 return "Error: delegate() could not determine the current model ID."
 
@@ -3743,8 +3931,27 @@ class Tools:
             # models (which have custom routing like Anthropic caching).
             # The /openai/chat/completions endpoint only knows about raw
             # connection models and cannot route pipe models.
+            #
+            # OWUI 0.9.5 bug workaround (open-webui#24550, fix in #24556,
+            # discussion #24720): /api/chat/completions crashes with
+            #   "'NoneType' object has no attribute 'startswith'"
+            # when the request body has no chat_id, because
+            # get_event_emitter() does .get('chat_id', '').startswith(...)
+            # and dict.get returns None (not '') when the key is present
+            # with an explicit None value. Browser UI always supplies
+            # chat_id; pydantic-ai's OpenAI client does not.
+            #
+            # We wrap the ASGI transport so JSON-bodied requests to
+            # /api/chat/completions get a chat_id key injected before
+            # OWUI sees it. We use the parent chat_id when available so
+            # the sub-agent's events are conceptually attached to the
+            # same chat the user is watching; otherwise we synthesize a
+            # local-scoped id (no message_id is sent, so OWUI's DB
+            # update branch in get_event_emitter is short-circuited).
             app = __request__.app
-            transport = httpx.ASGITransport(app=app)
+            base_transport = httpx.ASGITransport(app=app)
+            injected_chat_id = __chat_id__ or "lathe-delegate-local"
+            transport = _ChatIdInjectingTransport(base_transport, injected_chat_id)
             inner_client = httpx.AsyncClient(transport=transport, base_url="http://localhost")
 
             from pydantic_ai import Agent, UsageLimits
