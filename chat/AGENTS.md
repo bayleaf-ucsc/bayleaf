@@ -28,7 +28,7 @@ Managed via `doctl --context bayleaf`.
 
 - **App ID**: `f1a1e758-62e9-4e99-90cb-212cab12958d`
 - **Image**: `ghcr.io/open-webui/open-webui` (version pinned in app spec)
-- **Current version**: `v0.10.1` ✨
+- **Current version**: `v0.10.2` ✨
 - **Database**: Managed PostgreSQL 17 (`bayleaf-chat-db`, ID `ea8c7549-e761-44e1-a9c3-e45e478a5202`)
 - **Storage**: DO Spaces (`bayleaf-ucsc-storage`, bucket-scoped access key)
 
