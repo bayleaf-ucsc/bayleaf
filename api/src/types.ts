@@ -49,6 +49,10 @@ export interface Bindings {
   CAMPUS_IP_RANGES: string;        // Comma-separated CIDR ranges (e.g., "128.114.0.0/16,169.233.0.0/16")
   CAMPUS_SYSTEM_PREFIX: string;    // Additional system prompt prefix for campus mode
   CAMPUS_RPD_LIMIT: string;        // Per-IP daily request limit for Campus Pass (parsed as integer)
+  // Dev-only: when exactly "true", getAuthIP() falls back to 127.0.0.1 when
+  // CF-Connecting-IP is absent (local dev has no Cloudflare edge). Never set in
+  // production — it would re-introduce the CWE-290 fail-open getAuthIP prevents.
+  DEV_LOOPBACK_AUTH: string;
   
   // Sandbox (Daytona) configuration
   DAYTONA_API_URL: string;         // Control plane URL (e.g. https://app.daytona.io/api)

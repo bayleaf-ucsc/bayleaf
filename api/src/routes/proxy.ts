@@ -52,6 +52,9 @@ async function enforceCampusRpd(
   auth: AuthResult,
 ): Promise<Response | null> {
   if (!auth.isCampusMode) return null;
+  // In campus mode, isCampusPassEligible guarantees clientIp is non-null
+  // (getAuthIP returned an on-campus IP). Guard for the type system.
+  if (!auth.clientIp) return null;
   const limit = parseLimit(env.CAMPUS_RPD_LIMIT);
   const status = await checkAndIncrement(env.CAMPUS_RPD, auth.clientIp, limit);
   if (status === null) return null;
@@ -586,7 +589,7 @@ proxyRoutes.openapi(authKeyRoute, async (c) => {
     };
   }
 
-  if (auth.isCampusMode) {
+  if (auth.isCampusMode && auth.clientIp) {
     const limit = parseLimit(c.env.CAMPUS_RPD_LIMIT);
     const status = await inspectCounter(c.env.CAMPUS_RPD, auth.clientIp, limit);
     bayleaf.campus = {

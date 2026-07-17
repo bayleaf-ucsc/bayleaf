@@ -6,7 +6,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import type { AppEnv, UserKeyRow, OpenRouterKey } from '../types';
 import { getSession } from '../utils/session';
-import { getClientIP, isCampusPassEligible } from '../utils/ip';
+import { getAuthIP, isCampusPassEligible } from '../utils/ip';
 import { inspectCounter, parseLimit } from '../utils/campusRpd';
 import { getKeyName, findKeyByHash, createKey } from '../openrouter';
 import { findSandboxByLabel, getSandboxInfo, type SandboxInfo } from '../daytona';
@@ -30,8 +30,10 @@ dashboardRoutes.get('/', async (c) => {
   let campusUsage: CampusUsage | undefined;
   if (showCampusPass) {
     try {
+      const ip = getAuthIP(c.req.raw, c.env);
+      if (!ip) throw new Error('No auth IP despite campus eligibility');
       const limit = parseLimit(c.env.CAMPUS_RPD_LIMIT);
-      const status = await inspectCounter(c.env.CAMPUS_RPD, getClientIP(c.req.raw), limit);
+      const status = await inspectCounter(c.env.CAMPUS_RPD, ip, limit);
       campusUsage = {
         count: status.count,
         limit: status.limit,

@@ -7,3 +7,12 @@ OIDC_CLIENT_ID=your-oidc-client-id
 OIDC_CLIENT_SECRET=your-oidc-client-secret
 CAMPUS_POOL_KEY=sk-or-v1-your-campus-pool-key-here
 DAYTONA_API_KEY=dtn_your-daytona-api-key-here
+
+# Campus Pass local dev (issue #52):
+# Local dev has no Cloudflare edge, so CF-Connecting-IP is never set.
+# DEV_LOOPBACK_AUTH=true makes getAuthIP() fall back to 127.0.0.1 so campus
+# access works from localhost. NEVER set this in production — it re-introduces
+# the CWE-290 fail-open that getAuthIP() exists to prevent.
+DEV_LOOPBACK_AUTH=true
+# Override the production CAMPUS_IP_RANGES to include loopback for local dev.
+CAMPUS_IP_RANGES=128.114.0.0/16,169.233.0.0/16,192.35.220.0/24,192.35.223.0/24,2607:F5F0::/32,127.0.0.1/32,::1/128

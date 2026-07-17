@@ -14,14 +14,14 @@
 import type { Context } from 'hono';
 import type { AppEnv, UserKeyRow } from '../types';
 import { BAYLEAF_TOKEN_PREFIX } from '../constants';
-import { getClientIP, isCampusPassEligible } from './ip';
+import { getAuthIP, isCampusPassEligible } from './ip';
 
 export interface AuthResult {
   authorization: string;     // "Bearer sk-or-..." — always a BayLeaf-managed OR key, never user-supplied
   isCampusMode: boolean;
   userEmail: string | null;
   userKeyRow?: UserKeyRow; // populated if auth via Bayleaf token
-  clientIp: string;        // CF-Connecting-IP (or fallback); used for Campus Pass RPD
+  clientIp: string | null;  // CF-Connecting-IP (or dev loopback); null if absent. Used for Campus Pass RPD.
 }
 
 /**
@@ -33,7 +33,7 @@ export async function resolveAuth(
 ): Promise<AuthResult | Response> {
   const authHeader = c.req.header('Authorization');
   const providedKey = authHeader?.replace(/^Bearer\s+/i, '').trim();
-  const clientIp = getClientIP(c.req.raw);
+  const clientIp = getAuthIP(c.req.raw, c.env);
 
   // If no key, empty key, or "campus" token, check for campus access
   if (!providedKey || providedKey === '' || providedKey.toLowerCase() === 'campus') {
