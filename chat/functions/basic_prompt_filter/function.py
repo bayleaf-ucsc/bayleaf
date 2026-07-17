@@ -1,8 +1,8 @@
 """
 title: Basic Prompt Filter
 author: Adam Smith
-description: Appends per-request system-prompt augmentations for the Basic model. Runs an ordered list of augmentors in inlet (server-side, no tool call); the first injects role-based suffixes keyed by OAuth group membership. Built to host future augmentors (e.g. concept-of-the-day). Attach to the Basic model. See issue #44 for the design rationale and v0.9.5 prompt-merge mechanics.
-version: 0.3.0
+description: Appends per-request system-prompt augmentations for the Basic model. Runs an ordered list of augmentors in inlet (server-side, no tool call); injects role and current chat-storage context. Attach to the Basic model. See issue #44 for the design rationale and v0.9.5 prompt-merge mechanics.
+version: 0.4.1
 """
 
 from open_webui.models.groups import Groups
@@ -91,8 +91,32 @@ def augment_roles(user, metadata, group_names) -> str | None:
     return "\n\n".join(chunks) if chunks else None
 
 
+def augment_chat_storage(user, metadata, group_names) -> str:
+    # OWUI assigns temporary chats a server-visible local:<socket-id> identifier.
+    # All other chat IDs are persisted conversation records.
+    if metadata.get("chat_id", "").startswith("local:"):
+        return (
+            "## Current chat storage\n\n"
+            "This is an off-the-record Temporary Chat. BayLeaf does not save its "
+            "conversation record. Mention this only when privacy, data handling, or "
+            "the user's wish to revisit the conversation makes it relevant. To keep a "
+            "durable copy, use Save Chat."
+        )
+
+    return (
+        "## Current chat storage\n\n"
+        "This is a saved chat. Its conversation record is stored in BayLeaf Chat's "
+        "database and may be readable by the service administrator. Inference is "
+        "zero-data-retention, but stored chat history is outside that boundary. "
+        "Deleting this chat through the UI permanently removes its conversation "
+        "record from the database. "
+        "Mention this only when privacy or data handling makes it relevant."
+    )
+
+
 AUGMENTORS = [
     augment_roles,
+    augment_chat_storage,
 ]
 
 
