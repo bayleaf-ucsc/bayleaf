@@ -343,9 +343,10 @@ All machine-facing endpoints accept ${bt}Authorization: Bearer <key>${bt}.
 | **BayLeaf key** (${bt}sk-bayleaf-...${bt}) | Off-campus, or when you need a persistent sandbox and file access. Provision free at https://api.bayleaf.dev/. |
 | **Campus Pass** (omit header) | On the UCSC campus network. No key needed. Sandbox access is ephemeral (one-shot). |
 
-Daily spending limit per key: $5 (resets daily). Increased limits are
-[available upon request](https://bayleaf.dev/support). All rate limiting is handled by
-the upstream provider; the API itself imposes no request-rate limits.
+BayLeaf applies a daily limit to each backend: some are price-based and others
+are request-based. Your current limits and remaining allowance are shown in the
+[dashboard](https://api.bayleaf.dev/dashboard) and by ${bt}GET /v1/auth/key${bt}.
+Increased limits are [available upon request](https://bayleaf.dev/support).
 
 ### LLM inference
 
