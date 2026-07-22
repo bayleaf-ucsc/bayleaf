@@ -12,6 +12,8 @@ sufficient to reconstruct the service from scratch.
 > credentials) are listed by name but redacted. Actual values live in the DO
 > App Platform console and are never committed.
 
+Note from Adam (not sure where to organize this, but I need to write it somewhere): There are a some important ways the skills you practice as a user of BayLeaf Chat *don't* transfer over to services like ChatGPT. On BayLeaf Chat, you can edit your old messages, you can edit assistant messages, and you can easily branch or even navigate between branches of a chat. The chat structure is a user-malleable document. This means you'll be able to practice certain *writing* aspects of AI literacy (narrowly, kinds of context engineering) that would be difficult to impossible on other services. The interface to BayLeaf Chat tries to make cached and uncached token counts visible along side output token counts and processing costs so that you can, if you want, get a bit technical about the quantitative aspects of your interactions with the models. You can practice a kind of manual session compaction so that you can develop the taste needed to critique automatic session compaction mechanisms. These features are important to me as the system designer. However, I'll admit that they weren't strategically chosen by me so much as adopted after experience comparing Open WebUI to ChatGPT across several months of parallel use a while back. This makes me curious about other ways of having BayLeaf Chat (or ideally OWUI generally) not be a simple clone of the ChatGPT interface. Admin and user-level extensibility via code seems to be another important and open-ended example of this intentional gap.
+
 ---
 
 ## 1. Infrastructure
