@@ -22,6 +22,20 @@ OWUI configuration under `chat/`. It may be rebuilt with richer context in the f
 
 All LLM inference uses **zero-data-retention (ZDR)** providers via OpenRouter.
 
+## Project Frame
+
+BayLeaf describes itself as a **situated counterplatform for Generative AI at
+UC Santa Cruz**. A counterplatform is not a rival seeking scale or a claim that
+building infrastructure supersedes critique, organizing, policy, or refusal.
+It is one situated mode of response: operating a platform makes alternative
+technical and institutional terms concrete, usable, scrutinizable, and
+revisable.
+
+Treat AI as consequential but normal technology, neither autonomous nor
+inevitable. Discuss risk at the level of situated use cases and sociotechnical
+relations, not models or safeguards alone. Technical controls are interventions,
+not proof that BayLeaf is safe by definition.
+
 ## Data posture: ZDR everywhere, ZOA where possible
 
 Two distinct properties, often conflated:

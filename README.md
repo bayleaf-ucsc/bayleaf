@@ -1,7 +1,9 @@
 # BayLeaf AI Playground
 
-An experimental Generative AI service for the UC Santa Cruz campus community,
-operated by [Adam Smith](https://adamsmith.as) (Dept. of Computational Media).
+BayLeaf is a situated counterplatform for Generative AI at UC Santa Cruz: an
+experimental service operated by [Adam Smith](https://adamsmith.as) (Dept. of
+Computational Media). It offers a working platform on different terms: local,
+bounded, revisable, and answerable to the contexts in which it is used.
 
 BayLeaf has undergone a security review by UC Santa Cruz ITS: the campus Chief
 Information Security Officer (CISO) and his team deemed it **ready to launch**,
