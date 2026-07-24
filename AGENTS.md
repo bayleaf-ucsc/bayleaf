@@ -88,10 +88,13 @@ bayleaf/
 │   └── functions/      # Filter & action source code
 ├── docs/               # GitHub Pages site → https://bayleaf.dev
 │   ├── CNAME
-│   ├── index.html      # Single-file about/landing page
-│   └── images/
-
-├── politics/           # Dependency audit, position papers
+│   ├── index.html      # Landing page
+│   ├── use-cases.html  # Role-keyed task recipes
+│   ├── support.html    # How to get help
+│   ├── privacy.html    # Privacy notice, subprocessor list
+│   ├── style.css       # Shared stylesheet (carries a WCAG contrast invariant)
+│   └── images/         # og-card.png + the script that generates it
+├── politics/           # Dependency audit, VPATs, position papers
 ├── training/           # Work-in-progress React site for training users in effective GenAI usage
 ├── README.md
 └── AGENTS.md           # This file
@@ -110,8 +113,21 @@ configuration, models, tools, functions, or user/group management.**
 
 ## Build / Lint / Test
 
-The about site (`docs/`) has no build step or test suite — it is a single static HTML
-file. For the API (`api/`), see `api/AGENTS.md` for build and deploy commands.
+The about site (`docs/`) has no build step or test suite: it is four hand-written
+static HTML pages sharing one stylesheet. For the API (`api/`), see
+`api/AGENTS.md` for build and deploy commands.
+
+Two things in `docs/` are generated rather than hand-written, and both need
+regenerating when their inputs change:
+
+- `docs/images/og-card.png`, the Open Graph share card referenced by every
+  page's `<meta>` block. Regenerate with `./docs/images/make-og-card.py` after
+  changing the tagline or the palette. Its source art is
+  `chat/models/basic/profile.png`, the BayLeaf logo.
+- The empirical claims in `politics/VPAT-pages.md`. Any change to `docs/*.html`
+  or `docs/style.css` can invalidate a measured contrast ratio, a reflow result,
+  or a structural claim. **Adding a page to `docs/` requires folding it into
+  that ACR**, which has slipped before.
 
 **Local preview:** Use the VS Code **Live Server** extension (right-click
 `docs/index.html` → *Open with Live Server*), which serves on `http://localhost:5500`

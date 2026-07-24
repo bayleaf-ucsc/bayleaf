@@ -46,6 +46,21 @@ When an unauthenticated visitor requests `/dashboard`, the same route handler
 renders the landing page, so the two views are interleaved in the source rather
 than living in separate code paths.
 
+**Two other pages on this host are outside this ACR**, named here so a reviewer
+does not mistake silence for coverage (see also
+[VPAT-overview.md § Out of scope](VPAT-overview.md#4-per-surface-acrs)):
+
+- [`/docs`](https://api.bayleaf.dev/docs), the interactive API reference. BayLeaf
+  authors only the HTML shell; the rendered UI is the
+  [Scalar](https://scalar.com/) viewer loaded from a CDN, with its own visual
+  language and its own conformance responsibility. The shell's
+  `<html lang="en">` attribute (WCAG 3.1.1) was missing and was added
+  2026-07-24; the widget itself remains unevaluated.
+- `/auth/claim`, the one-shot terminal-authorization approval page. This one is
+  BayLeaf-authored: it deliberately bypasses `BaseLayout` in favor of inline
+  styles, so none of the empirical findings below transfer to it. It is a real
+  coverage gap, not a third-party exclusion, and should be folded into this ACR.
+
 **Source files (small, directly inspectable).**
 
 - [`api/src/templates/layout.tsx`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/api/src/templates/layout.tsx):
@@ -285,7 +300,7 @@ checks are in [§ 1](#1-surface-description).
 | 2.5.2 | [Pointer Cancellation](https://www.w3.org/WAI/WCAG21/Understanding/pointer-cancellation) | Supports | Uses default `<a>` and `<button>` activation behavior; no custom pointer handlers that act on `mousedown`. |
 | 2.5.3 | [Label in Name](https://www.w3.org/WAI/WCAG21/Understanding/label-in-name) | Supports | Button and link visible text matches accessible name on both views. The masked key input uses `aria-label` (no conflicting visible label text). |
 | 2.5.4 | [Motion Actuation](https://www.w3.org/WAI/WCAG21/Understanding/motion-actuation) | N/A | No motion-based functionality. |
-| 3.1.1 | [Language of Page](https://www.w3.org/WAI/WCAG21/Understanding/language-of-page) | Supports | `<html lang="en">` present on both views. |
+| 3.1.1 | [Language of Page](https://www.w3.org/WAI/WCAG21/Understanding/language-of-page) | Supports | `<html lang="en">` present on both in-scope views (landing and dashboard), emitted by `BaseLayout`. The out-of-scope `/docs` shell was missing the attribute until 2026-07-24; it now sets it too, though the Scalar widget it hosts remains unevaluated. |
 | 3.2.1 | [On Focus](https://www.w3.org/WAI/WCAG21/Understanding/on-focus) | Supports | No focus-triggered context changes. |
 | 3.2.2 | [On Input](https://www.w3.org/WAI/WCAG21/Understanding/on-input) | Supports | The landing has no inputs. The dashboard's masked key input is `readonly`; no `onchange` handlers. |
 | 3.3.1 | [Error Identification](https://www.w3.org/WAI/WCAG21/Understanding/error-identification) | Partially Supports | The landing has no forms. On the dashboard, the key-create and key-revoke flows use `fetch()` against `/key`; a failure path surfaces the error via browser `alert()`. `alert()` announces via screen readers (it blocks the main thread and shifts focus), but the presentation is modal and not in-DOM. Sandbox-delete similarly uses `alert()` on failure. This is functional but not best practice; consider replacing with in-DOM error regions with `aria-live`. |
