@@ -22,8 +22,11 @@ export const docsRoutes = new OpenAPIHono<AppEnv>();
 // ── GET / — Scalar API reference viewer ───────────────────────────
 
 docsRoutes.get('/', (c) => {
+  // lang="en" is required for WCAG 3.1.1 (Language of Page). The Scalar viewer
+  // renders its own chrome inside this shell but does not set it for us, so the
+  // attribute has to live here.
   const html = `<!doctype html>
-<html>
+<html lang="en">
 <head>
   <title>BayLeaf API Reference</title>
   <meta charset="utf-8" />
