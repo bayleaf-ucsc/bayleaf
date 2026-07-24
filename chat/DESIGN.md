@@ -411,6 +411,17 @@ tool picker in the chat composer.
 user gets a single persistent sandbox identified by email; the sandbox is
 created lazily on first tool call and survives across conversations.
 
+**Zero-token artifacts.** In Kelsey Hightower's
+[sense](https://www.youtube.com/watch?v=A7WFt2JQ5sg&t=767s), the Code Sandbox is
+a construction and maintenance site where inference tokens can be spent to
+produce deterministic artifacts that subsequently run without inference.
+Gambit's one-prototype, edit-directly discipline prefigures this: the generated
+artifact is the output, not a reason to keep an LLM in its runtime loop. The
+`preview` tool provides transient execution; durable Pages and Apps export
+layers remain planned in issues
+[#57](https://github.com/bayleaf-ucsc/bayleaf/issues/57) and
+[#51](https://github.com/bayleaf-ucsc/bayleaf/issues/51), respectively.
+
 **Tools exposed to the model:**
 
 | Tool | Purpose |
