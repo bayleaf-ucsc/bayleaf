@@ -75,6 +75,16 @@ Managed PostgreSQL 17 cluster `bayleaf-chat-db`.
 | **Region** | `sfo2` |
 | **Size** | `db-s-1vcpu-1gb` (10 GB storage, 25 max connections) |
 | **Connection** | `${bayleaf-chat-db.DATABASE_URL}` at runtime (spec binding) |
+| **Network access** | Trusted sources: one rule of type `app` scoped to app `f1a1e758-…`. No IP or VPC rules. |
+
+**App-only database access is intentional.** The cluster's trusted-source list
+contains exactly one entry, the OWUI app itself, so the database is not
+reachable from the public internet (or from an admin laptop) even with valid
+credentials. App Platform components egress from outside the VPC, so the
+`app`-type rule is the correct mechanism rather than a VPC rule; the cluster's
+`private_connection` endpoint goes unused. The retention-cleanup job is a
+component of the same app and is therefore covered, though it holds no DB
+credentials and reaches OWUI over HTTPS (see `RETENTION.md`).
 
 ### Object Storage
 
