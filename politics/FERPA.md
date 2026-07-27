@@ -38,42 +38,102 @@ make that chain defensible.
 Today, the chain is governed by commercial Data Processing Addenda
 (DigitalOcean, Cloudflare) and OpenRouter's zero-data-retention (ZDR)
 provider routing. These are real protections but they are not under
-UC-signed agreements, and UCSC has not yet acknowledged BayLeaf as an
-instrument operating under § 99.33(b). UCSC has approved Workspace-Gemini
-and NotebookLM for use with FERPA-protected data at Protection Level 3
-per the [UCSC AI Council's published guidance](https://campusai.ucsc.edu/faq/);
-BayLeaf is not on that list.
+UC-signed agreements, and there is no written UCSC instrument
+acknowledging BayLeaf as operating under § 99.33(b). UCSC has approved
+Workspace-Gemini and NotebookLM for use with FERPA-protected data at
+Protection Level 3 per the
+[UCSC AI Council's published guidance](https://campusai.ucsc.edu/faq/);
+BayLeaf is not on that published list, though see the July 2026 status
+note immediately below, which reports that the responsible campus
+officers assess BayLeaf as having reached the same risk threshold as the
+tools that are.
 
-> **Status note (June 2026).** The UCSC Information Security Office
-> completed a security review of BayLeaf against the
+> **Status note (June 2026): security controls.** The UCSC Information
+> Security Office completed a security review of BayLeaf against the
 > [HECVAT](HECVAT.md) and determined that **P3-classified data may be
 > used in the BayLeaf system** (review by Brian Hall and Mike Ware,
 > reported to the AI Council June 2026). That determination answers the
 > UC IS-3 *controls* question: is BayLeaf's architecture secure enough
-> to hold data at this tier. It does **not** by itself answer the FERPA
-> *authorization* question this document addresses: whether there is a
-> lawful basis for education records to transit BayLeaf's subprocessor
-> chain under § 99.33(b). The AI Council co-chair has confirmed that
-> "tool approval for processing FERPA-level data follows a different
-> review process," now underway with the University Registrar
-> (Tchad Sanger) and the Office of Campus Counsel. BayLeaf is therefore
-> **security-cleared for P3 but not yet FERPA-authorized**, and remains
-> off the AI Council's published P3-approved tools list pending that
-> separate review. The conditional language throughout this document
-> ("not approved," "if UCSC executes the acknowledgment") refers to the
-> FERPA-authorization gate, not the now-completed security review.
+> to hold data at this tier. The AI Council co-chair then referred the
+> separate question of processing FERPA-level data to the University
+> Registrar (Tchad Sanger) and, subsequently, the Office of Campus
+> Counsel.
 
-Two things would change that:
+> **Status note (July 2026): the referral came back, and it reframed the
+> question.** The Registrar and the Vice Provost and Dean of
+> Undergraduate Education and Global Engagement (Richard Hughey)
+> responded jointly in June 2026 (per correspondence with the operator,
+> 22 and 30 June 2026). Their position departs from this document's
+> original premise in three ways, and readers should carry that
+> departure through the sections below.
+>
+> 1. **The certification frame was rejected as a category error, not
+>    declined on the merits.** Because FERPA is a prohibitory statute
+>    (it constrains disclosure rather than granting permissions), the
+>    Registrar's office does not regard "certifying a tool as
+>    FERPA-compliant" as a coherent act, though tools and practices can
+>    certainly be identified as *non*-compliant. There is accordingly no
+>    affirmative FERPA authorization instrument for the Registrar to
+>    execute. The draft memorandum in [§ 8](#8-a-draft-acknowledgment-memo)
+>    is retained as an analytical artifact, not as the operative
+>    pathway; see [§ 7.2](#72-what-the-registrars-office-actually-does).
+> 2. **The operative campus mechanism is procurement-style data-security
+>    review, not a FERPA determination.** Campus exposure is managed
+>    through training, development of best practices, and the UC
+>    purchasing review processes (**Appendix DS**) that assessed Google's
+>    tools and Canvas/Instructure. See
+>    [§ 7.3](#73-appendix-ds-the-mechanism-this-document-originally-missed).
+> 3. **BayLeaf was assessed as having reached the same risk threshold as
+>    the already-approved Google tools.** Treating BayLeaf's HECVAT
+>    response as the substantive equivalent of an Appendix DS review, and
+>    adding the student-data steward's own input, the Registrar's office
+>    characterized BayLeaf as an *internal tool* at the same low risk
+>    threshold as Gemini, in the same status as Gemini, and suggested it
+>    could be announced in a similar way. Hughey went further, observing
+>    that BayLeaf's local origination and operator commitment could make
+>    it a better choice for student data than Gemini.
+>
+> **What this does and does not settle.** It is a considered position
+> from the two campus officers to whom the AI Council referred the
+> question, and it is the most authoritative statement available on the
+> matter. It is also **email correspondence, not a signed determination
+> or a published listing**: BayLeaf does not appear on the AI Council's
+> published P3-approved tools list at
+> [campusai.ucsc.edu/faq](https://campusai.ucsc.edu/faq/), and Principal
+> Campus Counsel (Jessica Espinoza), added to the thread on 30 June 2026,
+> has not responded as of this writing. This document therefore no longer
+> asserts a distinct "FERPA-authorization gate" that BayLeaf has failed
+> to clear, because the officers responsible for that gate say it does
+> not exist in that form. User-facing guidance in
+> [§ 9](#9-what-this-means-in-practice) nonetheless stays conservative
+> until the published list changes, since the published list is what a
+> user can actually check.
+>
+> The next step identified in that correspondence is **communication
+> rather than execution**: joint outreach on how the three campus tools
+> (Workspace-Gemini, NotebookLM, BayLeaf) can be used in teaching,
+> paired with recurring reminders about student-records privacy, business
+> need to know ([§ 4.6](#46-business-need-to-know-the-user-level-control)),
+> and IRB review where use crosses into research
+> ([§ 4.7](#47-the-ferpairb-boundary)).
 
-1. **A written acknowledgment from UCSC** ([§§ 4](#4-bayleafs-ferpa-basis),
-   [7](#7-the-approval-pathway), [8](#8-a-draft-acknowledgment-memo)) that
-   BayLeaf is an instrument operated by a UCSC school official, that the
-   subprocessor chain beneath it is governed by § 99.33(b), and that the
-   chain's protection level is sufficient for the categories of data
-   users are expected to share with it. This is the lever. It does not
-   require UCSC to separately vet every subprocessor; it requires UCSC
-   to set the protection-level scope and hold the operator accountable
-   for the chain.
+Two things would close the remaining distance between that assessment
+and a listing a user can check:
+
+1. **Inclusion in published campus guidance** ([§ 7](#7-the-approval-pathway)).
+   This is the lever, and it is a communication artifact rather than a
+   legal one. Earlier versions of this document named a *written
+   acknowledgment from UCSC* here, on the theory that an affirmative
+   FERPA instrument was the missing piece; the Registrar's office has
+   since made clear that no such instrument exists to be executed
+   ([§ 7.2](#72-what-the-registrars-office-actually-does)). What is
+   actually missing is BayLeaf's appearance in the AI Council's
+   P3-approved tools list and in the campus outreach that tells faculty
+   which tools may be used for which work. The analysis in
+   [§ 4](#4-bayleafs-ferpa-basis) and the draft memo in
+   [§ 8](#8-a-draft-acknowledgment-memo) remain useful for showing *why*
+   the posture is sound, and would support such an instrument if a
+   reviewer wanted one, but they are no longer presented as the gate.
 2. **Architectural choices that make the chain defensible** ([§ 5](#5-the-contract-stack-beneath-bayleaf)).
    A direct Google Cloud integration under UCSC's existing Customer
    Affiliate Agreement (now demonstrated in private preview via the
@@ -85,9 +145,22 @@ Two things would change that:
    remain on the OpenRouter-ZDR path, which is the best contractual
    protection available without separate UC-signed agreements.
 
+A caution about proportion, added in July 2026. The subprocessor-chain
+analysis that occupies [§§ 4.3](#43-how-the--9933b-chain-is-bound) and
+[5](#5-the-contract-stack-beneath-bayleaf) is the most technically
+developed material in this document, and it is not what the campus
+reviewers engaged. No reviewer in the referral thread raised OpenRouter,
+ZDR routing, DigitalOcean, Cloudflare, Vertex, Bedrock, § 99.33(b), or
+§ 99.31. What proved load-bearing was the HECVAT response, the
+student-data steward's consult, and the characterization of BayLeaf as an
+*internal tool*. Readers preparing material for campus review should
+weight accordingly: the chain analysis establishes that the posture is
+sound, but the artifacts that move a campus process are the
+security-review response and the institutional characterization.
+
 This document focuses on the FERPA frame. The platform layer (DigitalOcean,
 Cloudflare, Open WebUI's conversation storage) sits under the same
-acknowledgment umbrella but is treated in detail in [SECURITY.md](SECURITY.md).
+umbrella but is treated in detail in [SECURITY.md](SECURITY.md).
 Where platform facts are FERPA-relevant they are summarized here with
 pointers.
 
@@ -97,7 +170,10 @@ the primary path, this version treats § 99.31(a)(1)(i)(A) plus § 99.33(b)
 as primary, because the operator's pre-existing school-official status is
 the most accurate description of how BayLeaf actually relates to UCSC.
 The (B) framing is preserved as an alternative in [§ 4.4](#44-an-alternative-framing-under-a1ib)
-in case a reviewer prefers a vendor-shaped instrument.
+in case a reviewer prefers a vendor-shaped instrument. The campus
+officers who reviewed BayLeaf independently reached the *internal tool*
+characterization without reference to either subsection, which is
+external support for the (A) framing over the vendor-shaped one.
 
 ---
 
@@ -389,7 +465,7 @@ the Privacy Office, and ISO who need to know what the acknowledgment
 would actually cover. Some of this data already transits BayLeaf today
 (via user copy-paste and existing tools); some is speculative under
 the BayLeaf Courses redesign tracked in
-[GitHub issue #5](https://github.com/rndmcnlly/bayleaf/issues/5).
+[GitHub issue #5](https://github.com/bayleaf-ucsc/bayleaf/issues/5).
 
 #### 3.2.1 Data already transiting BayLeaf today
 
@@ -445,7 +521,7 @@ tooling. They are the floor of the FERPA surface.
 #### 3.2.2 Data plausible under the Courses redesign
 
 The redesign tracked in
-[GitHub issue #5](https://github.com/rndmcnlly/bayleaf/issues/5)
+[GitHub issue #5](https://github.com/bayleaf-ucsc/bayleaf/issues/5)
 keeps BayLeaf Courses itself stateless (Canvas and OWUI are sources
 of truth) but introduces flows of FERPA data through prompts and tool
 returns that do not exist today. The list below names the categories
@@ -545,15 +621,28 @@ the columns.
 #### 3.2.3 Inbound paths from the Canvas API
 
 The teacher-staff use case is the highest-volume and highest-risk
-flow, both today (in policy-violating form) and under the redesign
-(in policy-covered form, contingent on acknowledgment). Today, teaching
+flow, both today and under the redesign. Today, teaching
 staff use the BayLeaf Code Sandbox feature with command-line tools
 like [`canvaslms`](https://github.com/dbosk/canvaslms) to manipulate
-student data via the Canvas API; this runs ahead of BayLeaf's
-*authorized*-use ceiling (the tool is now ISO-cleared for P3 security
-controls, but FERPA-authorization for education-record use remains
-pending, so this practice is not yet covered) and is one of the
-practices the acknowledgment needs to cover (or explicitly prohibit).
+student data via the Canvas API. The status of this practice was
+restated in July 2026: BayLeaf is ISO-cleared for P3 security controls
+(June 2026) and was assessed by the Registrar's office as an internal
+tool at the same risk threshold as the campus's approved Google tools,
+but BayLeaf is not on the published P3-approved list, so a cautious
+reading has this practice running ahead of what the *published* guidance
+covers. Earlier versions of this document called it "policy-violating"
+and awaiting an acknowledgment; that overstated both the prohibition and
+the remedy, since no tool-level FERPA authorization is issued
+([§ 7.2](#72-what-the-registrars-office-actually-does)).
+
+The sharper question for this flow is not which service processes the
+prompt but whether the operating user has a business need to know the
+records their agent reaches
+([§ 4.6](#46-business-need-to-know-the-user-level-control)). A faculty
+member automating work on their own course's Canvas data is inside the
+boundary the campus actually polices. The same tooling pointed at data
+reached through broader institutional access is not, whatever tool is
+used and whatever list it appears on.
 The data classes that flow through this
 path include all of [§ 3.2.2](#322-data-plausible-under-the-courses-redesign), with two architectural
 notes:
@@ -771,20 +860,138 @@ are in fact not required by FERPA:
 What acknowledgment *does* require is the three-part instrument in
 [§ 4.2](#42-what-ucscs-acknowledgment-would-say): role recognition, chain documentation under § 99.33(b),
 protection-level scope. The memo in [§ 8](#8-a-draft-acknowledgment-memo) provides all three in
-concrete form.
+concrete form. Note the July 2026 qualification in the
+[introduction](#ferpa-and-bayleaf): the Registrar's office does not treat
+such an instrument as something it issues, so this subsection describes
+what an acknowledgment *would* require rather than a live requirement.
+
+### 4.6 Business need to know: the user-level control
+
+The analysis to this point locates FERPA risk in the *chain*: which
+subprocessor sees what, under which contract. When the Registrar and
+VPDUEGE reviewed BayLeaf in June 2026, they located it somewhere else
+entirely, in the **user**. Their operative doctrine is *business need to
+know*, and it is worth stating plainly because it decodes an otherwise
+vague concern and because this document previously underweighted it.
+
+The doctrine, as the Registrar's office applies it:
+
+- Within the University, access to student information requires a
+  business need to know. This is the operational face of "legitimate
+  educational interest" ([§ 1.2](#12-the-school-official-exception)).
+- **All faculty have a business need to know the student records for the
+  classes they have offered.** A department analyzing its own course
+  offerings or curriculum is likewise fine. These are the ordinary cases,
+  and they are unproblematic.
+- A **limited number** of faculty hold broader access, through MyUCSC,
+  through Infoview / AIS-Daily, or through staff who have such access.
+  This is where the concern lives: data reached through those broader
+  channels can be explored in ways that exceed the explorer's business
+  need to know, whether for internal purposes or by drifting into human
+  subjects research ([§ 4.7](#47-the-ferpairb-boundary)).
+
+Two consequences for reading the rest of this document.
+
+**First, this decodes the Registrar's stated concern about "merging data
+beyond a faculty member's specific class information."** That phrase does
+not describe a subprocessor-redisclosure problem. It describes a faculty
+member with institution-wide data access using a capable tool to join and
+roam across records they have no business need to know. The concern was
+explicitly noted as **not specific to BayLeaf or the Gemini tools**: it
+attaches to any system that makes such exploration easy.
+
+**Second, it reframes the blast-radius argument in
+[§ 3.2.4](#324-blast-radius-asymmetry-between-user-and-teacher-use-cases).**
+That subsection treats teacher-side automation as a protection-level
+question (higher volume implies more contractual exposure). The
+need-to-know frame asks a different and sharper question: is the *scope*
+of records a given agent run touches bounded by the operating user's
+legitimate interest? A faculty member's own roster is in bounds at any
+volume. A cross-department join is out of bounds at volume one. Volume
+and scope are independent axes, and the campus control is on the scope
+axis.
+
+This is a control BayLeaf can support but not enforce. BayLeaf has no
+knowledge of which records a given user has a business need to know,
+because it holds no roster or enrollment data of its own
+([§ 3.2.5](#325-data-bayleaf-does-not-and-would-not-handle)); the
+credentials a user supplies to a tool or sandbox determine reach. What
+BayLeaf can do is make the boundary salient at the point of use: name it
+in user-facing guidance, and surface it in the tool descriptions for
+anything that reaches institutional data through user-supplied
+credentials. That is the concrete ask arising from this subsection.
+
+### 4.7 The FERPA/IRB boundary
+
+Both the Registrar and the VPDUEGE raised human subjects research
+independently, and neither treated it as settled by anything in this
+document. Earlier versions of this file said nothing about IRB at all,
+which was a genuine gap: the data taxonomy in
+[§ 3.2](#32-data-taxonomy-ferpa-categories-bayleaf-would-handle) is
+organized by entry path and protection level, with no axis for *purpose
+of use*.
+
+The scenario the Registrar posed: a faculty member has survey responses
+that students completed as part of a course. Using that data to run the
+course is ordinary instructional use. Using it to write a paper about the
+relationship between the survey responses and student performance is a
+shift from class information to human subjects research, and most likely
+requires IRB review to determine whether the use is exempt or falls into
+another category.
+
+Three points that matter for BayLeaf specifically:
+
+1. **The boundary is about purpose, not about the tool, and not about
+   FERPA.** Nothing in the FERPA analysis in this document authorizes
+   research use of education records. Any of the three campus tools could
+   be used for research on student data; the IRB obligation attaches to
+   the research, not to the software. Were UCSC to execute the memo in
+   [§ 8](#8-a-draft-acknowledgment-memo), it would not touch this
+   obligation, and § 6 of that memo ("Scope of data") should not be read
+   to imply otherwise.
+2. **Agent assistance makes the drift easier and less deliberate.** The
+   analysis in this document has previously argued that BayLeaf gives
+   faculty no data-collection capability they lacked (they could already
+   send a Google Form or a Canvas quiz); what is new is agent-assisted
+   *analysis* of data already collected. That is precisely the step where
+   instructional use slides into research use, and it can now happen in a
+   single conversational turn, without the deliberate project setup that
+   used to prompt a researcher to think about IRB.
+3. **Campus guidance is being written.** The Office of Research Compliance
+   Administration (ORCA) is working with the University Registrar on
+   guidance for researchers using education record information. BayLeaf's
+   user-facing material should point at that guidance once published
+   rather than restating it, and the joint three-tool outreach identified
+   in the July 2026 status note should carry an IRB reminder.
+
+For present purposes the operative statement is: **BayLeaf is not
+operated as a research instrument.** It does not collect data for the
+operator's own findings, and it does not maintain a corpus for research
+use. But it is fully capable of being *used* for research on student
+data by a faculty member who has that data, and that use requires IRB
+review independent of any FERPA posture described here.
 
 ---
 
 ## 5. The contract stack beneath BayLeaf
 
 <!-- SEC:CONTRACT_STACK -->
-The acknowledgment in [§ 4](#4-bayleafs-ferpa-basis) is the lever; the contract stack beneath
-BayLeaf determines how strong the lever is. § 99.33(b) requires that
+The FERPA basis in [§ 4](#4-bayleafs-ferpa-basis) describes the shape of
+the arrangement; the contract stack beneath BayLeaf determines how strong
+it is. § 99.33(b) requires that
 each downstream disclosure fit a § 99.31 exception, which in practice
 requires each subprocessor to be bound by terms equivalent to the
 (a)(1)(i)(B) "direct control" conditions ([§ 4.3](#43-how-the--9933b-chain-is-bound)). This section
 walks the inference layer in detail and references the platform layer
 briefly.
+
+Read this section as establishing that the posture is sound rather than
+as satisfying a campus requirement. As the July 2026 status note records,
+no campus reviewer engaged the subprocessor chain, and the review that
+actually cleared BayLeaf was a security-controls assessment. The contract
+analysis remains the honest account of where prompts go and under what
+terms, which is worth having on its own merits and is what a future
+reviewer would need if the chain ever became contested.
 
 **Platform layer.** DigitalOcean and Cloudflare both publish standard
 Data Processing Addenda that bind them to use customer data only to
@@ -1133,6 +1340,54 @@ content, at least when the vehicle is Google Workspace. That
 determination is the authoritative campus-level position as of this
 writing.
 
+#### What the seam analysis got wrong about process
+
+The two readings above ask which contractual formulation the campus
+*relied on* when it approved Workspace-Gemini for P3. Correspondence with
+the VPDUEGE in June 2026 indicates the premise is faulty: the campus does
+not appear to have made a FERPA determination about Gemini in either the
+strict or the pragmatic reading. Asked directly whether there had been any
+review or affirmation regarding FERPA data with Gemini, the answer was
+that Google's tools are presumed to fall under the same **Appendix DS**
+purchasing review processes that gave the University confidence in
+Canvas/Instructure: a data-security risk assessment, not a
+school-official analysis. See
+[§ 7.3](#73-appendix-ds-the-mechanism-this-document-originally-missed).
+
+Two corrections follow.
+
+**The pragmatic reading was not adopted; it was bypassed.** This
+subsection previously asserted that the AI Council had "implicitly taken
+the pragmatic reading." That over-reads the FAQ. The Council's P3
+statement rests on the existence of negotiated UC-Google agreements
+assessed through procurement, and the FAQ language quoted above says
+exactly that (negotiated agreements, control over storage and reuse, no
+training, institutional support) without invoking FERPA's school-official
+exception at all. The seam described above is real as a matter of contract
+text, but the campus resolved the practical question without adjudicating
+it.
+
+**The FERPA framing of the Gemini rollout was itself flagged as a gap.**
+The VPDUEGE noted not having been consulted on the campus Gemini
+announcement and expressed concern that it did not refer to FERPA, in
+both directions: positively (a contracted tool is one it is acceptable to
+upload student work to, in contrast with non-contracted tools) and
+negatively (any system that retains or processes education record data
+carries risk of unintentional FERPA disclosure). The desired remedy is
+that tool announcements carry FERPA framing. That is a point in favor of
+the joint three-tool outreach identified in the July 2026 status note,
+and it means BayLeaf's own user-facing material should model the framing
+the Gemini announcement omitted rather than match its silence.
+
+The consequence for BayLeaf is favorable but should be stated carefully.
+If Workspace-Gemini reached P3 through a procurement data-security
+assessment rather than a FERPA determination, then BayLeaf's completed
+HECVAT review is the *same kind* of artifact as the one that cleared
+Gemini, which is the reasoning by which the Registrar's office placed the
+two tools at the same risk threshold. This does not make the § 99.33(b)
+analysis in [§ 4](#4-bayleafs-ferpa-basis) wrong; it makes it supererogatory
+relative to what the campus process actually asks for.
+
 #### The narrower open question
 
 What the campus has *not* yet determined is whether that same P3
@@ -1201,15 +1456,15 @@ guidance:
 
 BayLeaf in its current form is not on the published P3-approved list.
 Its inference paths today route through OpenRouter under commercial ZDR
-terms, which is real protection but not under a UC-signed agreement,
-and UCSC has not yet acknowledged BayLeaf's § 99.33(b) chain. This
-applies regardless of which model the user selects, including Gemini
+terms, which is real protection but not under a UC-signed agreement.
+This applies regardless of which model the user selects, including Gemini
 (which currently reaches Google via OpenRouter rather than via UCSC's
 Google contract).
 
 A distinction matters here, and it is easy to elide because FERPA
 records *are* P3. UCSC's review of a P3-eligible tool has two
-components, and they have come apart for BayLeaf:
+components, and tracking them separately is what lets this document
+state BayLeaf's status precisely:
 
 - **The IS-3 security-controls review** asks whether the tool's
   architecture is secure enough to hold data at this protection level.
@@ -1217,26 +1472,46 @@ components, and they have come apart for BayLeaf:
   (Brian Hall, Mike Ware) reviewed the [HECVAT](HECVAT.md) and
   determined P3-classified data may be used in the system (reported to
   the AI Council, June 2026).
-- **The FERPA-authorization review** asks whether there is a lawful
-  basis for education records to flow through the subprocessor chain
-  (the § 99.33(b) question developed in [§ 4](#4-bayleafs-ferpa-basis)).
-  For BayLeaf this is **open**, and the AI Council has explicitly
-  routed it through a separate process led by the University Registrar
-  and Campus Counsel.
+- **The FERPA question** was referred separately, by the AI Council
+  co-chair, to the University Registrar and Campus Counsel. Earlier
+  versions of this document called this a *FERPA-authorization review*
+  and treated it as a gate BayLeaf had not cleared. That
+  characterization did not survive contact with the reviewers. The
+  Registrar's office does not conduct tool-level FERPA authorization
+  and does not regard certifying a tool as FERPA-compliant as a
+  meaningful act ([§ 7.2](#72-what-the-registrars-office-actually-does));
+  campus exposure is managed instead through training, best practices,
+  and Appendix DS purchasing review
+  ([§ 7.3](#73-appendix-ds-the-mechanism-this-document-originally-missed)).
+  Their response, in June 2026, was that BayLeaf as an internal tool has
+  reached the same low risk threshold as Google's tools and Canvas, is in
+  the same status as Gemini, and could be announced in a similar way.
 
-So BayLeaf is presently **security-cleared for P3 but not
-FERPA-authorized**, and accordingly not yet on the AI Council's
-published P3-approved tools list. The security clearance is a
-necessary input to the FERPA review (it satisfies the controls
-expectation Appendix B of the [§ 8](#8-a-draft-acknowledgment-memo) memo would otherwise have to
-establish), but it is not a substitute for it.
+So the accurate statement of BayLeaf's status has three parts, and
+collapsing any two of them produces a claim this document does not make:
+
+1. BayLeaf's **P3 security controls are cleared** by ISO (June 2026).
+2. The **Registrar and VPDUEGE assess BayLeaf at the same risk threshold
+   as the P3-approved Google tools** (June 2026 correspondence), and
+   identified no FERPA-specific gate for it to clear.
+3. BayLeaf **is not on the published P3-approved tools list**, no signed
+   or published campus artifact records (2), and Campus Counsel has not
+   weighed in.
+
+What (3) means is narrower than "not approved for P3." It means a user
+who checks the published list will not find BayLeaf there, which is a
+real and material fact for anyone deciding what to paste into which
+tool today, and is why the user-facing guidance in
+[§ 9](#9-what-this-means-in-practice) remains conservative. It is no
+longer accurate, though, to describe BayLeaf as awaiting a FERPA
+authorization that the responsible office says it does not issue.
 
 The architectural shift now under way (the Vertex AI demo in private
 preview, AWS Bedrock as a second institutional back-end) brings the
 inference layer of the chain into UC-signed agreement territory for the
-models those back-ends serve. Combined with the acknowledgment in
-[§§ 4](#4-bayleafs-ferpa-basis) and [8](#8-a-draft-acknowledgment-memo), this is the path for adding BayLeaf to the
-P3-approved list, either as a whole or scoped by inference path.
+models those back-ends serve. That strengthens the posture on its own
+terms, and remains worth doing, but on the evidence of the June 2026
+review it is not what the published listing is waiting for.
 
 ---
 
@@ -1267,17 +1542,133 @@ distributed:
   positions on AI-tool approvals to date (Workspace-Gemini, NotebookLM).
   Natural venue for the policy decision about whether to extend the
   P3-approved list, typically deferring to Counsel, Privacy, and ISO
-  for the underlying review.
+  for the underlying review. In BayLeaf's case the Council's co-chair
+  performed the referral to the Registrar and VPDUEGE that produced the
+  June 2026 response.
 - **Procurement / Strategic Sourcing.** Executes contracts on UCSC's
   behalf. Because BayLeaf involves no UCSC purchase, this office has no
-  transaction to execute; the acknowledgment memo can be signed by an
-  authorized UCSC official without a procurement event.
+  transaction to execute. Note, however, that the *review* this office
+  ordinarily performs (Appendix DS) turns out to be the substantive
+  mechanism the campus relies on, even where there is no transaction;
+  see [§ 7.3](#73-appendix-ds-the-mechanism-this-document-originally-missed).
+- **University Registrar.** Data steward for student data. This
+  document originally assumed the Registrar was the office that would
+  authorize FERPA-level use of a tool. That assumption was wrong; see
+  [§ 7.2](#72-what-the-registrars-office-actually-does).
 
 The typical path is a review package circulated among Privacy, ISO, and
 Counsel, with the AI Council making the final policy determination
 once the review is clean.
 
-### 7.2 Fit and mismatch with the standard vendor pathway
+### 7.2 What the Registrar's office actually does
+
+This subsection corrects the premise of
+[§ 7.1](#71-which-ucsc-offices-are-involved) above and of the memo in
+[§ 8](#8-a-draft-acknowledgment-memo) below.
+
+The operator's June 2026 message to the Registrar asserted that using
+BayLeaf for FERPA-relevant work would require "some affirmative legal
+document, executed by the registrar." The response established that this
+is not how the office works.
+
+**The Registrar's stated roles**, per that correspondence:
+
+1. Being knowledgeable about FERPA and its campus implementation.
+2. Stewarding campus definitions, such as which specific fields are
+   treated as public directory information for this campus.
+3. Stewarding non-release elections (students' FERPA holds).
+4. Reporting FERPA violations that come to light, where law or policy
+   requires.
+
+**Tool authorization is not on that list**, and the omission is
+principled rather than incidental. Because FERPA is a prohibitory
+statute, constraining what an institution may disclose rather than
+enumerating permitted tools, the Registrar's office does not regard
+"certifying a tool as FERPA-compliant" as a coherent act. Tools and
+practices *can* be identified as non-compliant; the converse
+certification has no corresponding instrument.
+
+Instead, the campus reduces financial and legal exposure to FERPA (and
+other) violations through a mix of:
+
+- **training**, slightly at the UC system level and mostly at the campus
+  level;
+- **development of best practices**; and
+- **careful procurement practices**
+  ([§ 7.3](#73-appendix-ds-the-mechanism-this-document-originally-missed)).
+
+Three consequences for this document.
+
+**The memo in [§ 8](#8-a-draft-acknowledgment-memo) is not the pathway.**
+It is retained because it is a compact and accurate statement of the
+obligations BayLeaf's operator accepts, and because a reviewer who wants
+a signed artifact would find it useful. But it should not be circulated
+as a document awaiting signature, and nothing in BayLeaf's status is
+contingent on its execution. See the framing note at the head of that
+section.
+
+**The right ask is inclusion, not execution.** What the Registrar's
+office offered was an assessment of risk parity with the already-approved
+tools and a suggestion that BayLeaf be announced similarly. The
+actionable follow-through is therefore addition to the published
+P3-approved list and participation in campus guidance, both of which run
+through the AI Council rather than the Registrar.
+
+**The user-level controls are where the Registrar's substantive concerns
+land.** Business need to know
+([§ 4.6](#46-business-need-to-know-the-user-level-control)) and the
+IRB boundary ([§ 4.7](#47-the-ferpairb-boundary)) are the two things the
+Registrar's office actually raised about BayLeaf's use, and both are
+addressed by training and guidance rather than by architecture. This is
+the most useful thing the referral produced, and it was not what this
+document was built to elicit.
+
+### 7.3 Appendix DS: the mechanism this document originally missed
+
+Every prior version of this document analyzed FERPA authorization
+through the regulation (§ 99.31, § 99.33) and through UC's data
+classification policy (IS-3, protection levels). Neither is the
+instrument the campus actually uses to decide whether a tool may hold
+student data. That instrument is **Appendix DS**, the UC purchasing
+system's data-security appendix, applied through UC's standard
+procurement review processes.
+
+Per the June 2026 correspondence, Appendix DS review is understood to be
+what gives the University as much confidence as possible that data is
+protected, while acknowledging that no system is perfect. It is the
+process presumed to cover Google's tools, and it is explicitly the
+process Canvas/Instructure completed. It assesses data-security risk.
+It does not perform a FERPA school-official analysis, and it does not
+issue a FERPA certification.
+
+For BayLeaf, the significant move in the June 2026 response was to treat
+the operator's **HECVAT response** ([HECVAT.md](HECVAT.md)) as the
+functional equivalent of an Appendix DS review, and then to add the
+student-data steward's own input as a supplement. On that basis BayLeaf
+was assessed as an internal tool that has reached the same risk threshold
+as the tools cleared through procurement: low risk, characterized as the
+best available.
+
+This inverts a worry that runs through
+[§ 7.4](#74-fit-and-mismatch-with-the-standard-vendor-pathway) below.
+That subsection treats the absence of a procurement event as a structural
+mismatch to be worked around, on the reasoning that BayLeaf cannot pass
+through the pathway the campus is built for. The correction is that
+BayLeaf effectively did pass through the substantive part of that
+pathway: the data-security assessment is separable from the purchasing
+transaction, and completing the assessment without a transaction is not a
+defect. Read [§ 7.4](#74-fit-and-mismatch-with-the-standard-vendor-pathway)
+with that in mind.
+
+Two open items follow. First, this document has not seen Appendix DS
+itself; the characterization above is drawn from correspondence, and a
+reviewer with access should confirm the mapping between its control
+expectations and the HECVAT responses. Second, if HECVAT-as-Appendix-DS
+is the operative equivalence, it is worth asking whether that equivalence
+should be recorded somewhere more durable than email, which is the same
+question as item (3) in [§ 6](#6-protection-levels-and-whats-already-approved).
+
+### 7.4 Fit and mismatch with the standard vendor pathway
 
 UCSC's standard P3-vendor approval sequence (intake → security/privacy
 review → Counsel review → procurement → AI Council policy addition) is
@@ -1292,21 +1683,29 @@ partially applicable and partially mismatched for BayLeaf:
   vendor contract to negotiate. What Counsel reviews is the
   acknowledgment memo ([§ 8](#8-a-draft-acknowledgment-memo)) and the adequacy of the underlying
   subprocessor contracts.
-- **Procurement is skipped.** No purchase, no procurement event. The
-  signing official is whoever Counsel and the Provost identify as
-  appropriate for this kind of acknowledgment.
+- **Procurement is skipped, but its review is not.** No purchase, no
+  procurement event. This was originally read as a gap; per
+  [§ 7.3](#73-appendix-ds-the-mechanism-this-document-originally-missed),
+  the substantive Appendix DS data-security review was effectively
+  satisfied by the HECVAT response, and the assessment turns out to be
+  separable from the transaction.
 - **AI Council policy addition is the visible outcome.** Addition to
-  the campus-approved AI tools list is what changes operationally.
+  the campus-approved AI tools list is what changes operationally. On
+  the June 2026 assessment, this is now the only step outstanding.
 
 The structural facts that drive this fit:
 
 - **No vendor counterparty.** The operator is a UCSC faculty member;
   the commercial subprocessors are contracted personally, not
   institutionally. UCSC is acknowledging an instrument, not contracting
-  with a vendor.
+  with a vendor. The Registrar's office reached the same conclusion by a
+  different route, characterizing BayLeaf as an **internal tool**.
 - **The operator is already a school official.** The acknowledgment
   does not create that status; it scopes the subprocessor chain that
-  the school official may use under § 99.33(b).
+  the school official may use under § 99.33(b). In the campus's own
+  idiom, the equivalent point is that faculty have a business need to
+  know the records of the classes they have offered
+  ([§ 4.6](#46-business-need-to-know-the-user-level-control)).
 - **Scope of benefit is campus-wide.** BayLeaf is offered to the whole
   UCSC community, more like a campus ITS service than a
   department-scoped vendor.
@@ -1314,15 +1713,20 @@ The structural facts that drive this fit:
   continued institutional role: if the operator's appointment ends, the
   acknowledgment terminates and remaining records are destroyed
   ([§ 8](#8-a-draft-acknowledgment-memo) memo, § 9). UCSC is acknowledging a time-limited instrument,
-  not acquiring a permanent capability.
+  not acquiring a permanent capability. Absent an executed memo, this
+  reversibility is a property of the operator's commitment rather than a
+  contractual term, which is an argument for recording it somewhere.
 
 These are features, not bugs. The alternative (routing all campus AI
 needs through enterprise vendor procurement) is slower, more expensive,
 and less responsive to pedagogical needs than faculty-operated tools
 can be. The process needs to accommodate the shape, not the other way
-around.
+around. The June 2026 review suggests it did accommodate the shape,
+without anyone needing to redesign the process: an internal tool with a
+completed security questionnaire and a data-steward consult was assessed
+on the same terms as a procured vendor.
 
-### 7.3 Review package artifacts
+### 7.5 Review package artifacts
 
 A complete review package includes:
 
@@ -1331,7 +1735,8 @@ A complete review package includes:
 3. **Dependency audit** ([DEPENDENCIES.md](DEPENDENCIES.md)).
 4. **HECVAT 4.1.5 response** ([HECVAT.md](HECVAT.md)), with a framing
    memo addressing the vendor-shaped questions that do not apply.
-5. **Draft acknowledgment memo** ([§ 8](#8-a-draft-acknowledgment-memo) below).
+5. **Draft acknowledgment memo** ([§ 8](#8-a-draft-acknowledgment-memo) below), optional; see
+   [§ 7.2](#72-what-the-registrars-office-actually-does).
 6. **Subprocessor appendix** (Appendix A of the memo): each
    subprocessor, the category of data it handles, the contract under
    which it handles that data, and the term limits and deletion
@@ -1340,6 +1745,13 @@ A complete review package includes:
 Items 1–4 exist in this repository. Item 5 is provided in [§ 8](#8-a-draft-acknowledgment-memo).
 Item 6 is to be assembled in coordination with ISO during the security
 review.
+
+In practice, item 4 carried the review. The ISO security determination
+(June 2026) and the Registrar's risk-parity assessment both rested on the
+HECVAT response; items 1 and 5, the FERPA analysis and the draft memo,
+were referenced by the operator but did not drive either outcome. A future
+review package for a comparable faculty-operated tool should lead with the
+HECVAT.
 
 ---
 
@@ -1361,6 +1773,34 @@ authorized redisclosure on UCSC's behalf). A short concluding note
 records the (a)(1)(i)(B) translation for reviewers who prefer the
 outsourced-party frame; the substantive obligations are the same under
 either framing.
+
+> **Standing of this draft, as of July 2026.** This memorandum is
+> **not the active pathway** and is not awaiting anyone's signature.
+> When the AI Council referred the FERPA question to the University
+> Registrar in June 2026, the response was that the Registrar's office
+> does not issue tool-level FERPA authorizations and does not regard
+> certifying a tool as FERPA-compliant as a coherent act, FERPA being a
+> prohibitory statute
+> ([§ 7.2](#72-what-the-registrars-office-actually-does)). The campus
+> mechanism is Appendix DS data-security review plus training and best
+> practices ([§ 7.3](#73-appendix-ds-the-mechanism-this-document-originally-missed)),
+> which BayLeaf has substantively completed by way of its
+> [HECVAT](HECVAT.md) response.
+>
+> The draft is retained for three reasons. It is the most compact
+> statement available of the obligations BayLeaf's operator accepts, and
+> § 4 in particular is a useful self-binding checklist independent of
+> whether anyone signs it. It would serve if a reviewer, most plausibly
+> Campus Counsel, did want a signed artifact. And § 7's
+> protection-level options remain a clean way to frame the one decision
+> that is still genuinely open: which inference paths are appropriate for
+> which data.
+>
+> Do not circulate it as a document pending execution. Sections that
+> speak of what UCSC "would" acknowledge, or of termination and audit
+> obligations, describe an instrument that does not exist, and the
+> operator's commitments in § 4 are currently commitments of practice
+> rather than contract.
 
 ---
 
@@ -1398,9 +1838,9 @@ either framing.
 > Chat at `chat.bayleaf.dev` and BayLeaf API at `api.bayleaf.dev`) and
 > a chain of cloud subprocessors enumerated in Appendix A.
 >
-> (c) UCSC has determined that the function BayLeaf supports — AI-assisted
+> (c) UCSC has determined that the function BayLeaf supports (AI-assisted
 > analysis, drafting, and related language tasks in support of teaching,
-> research, and administrative work — is a function for which UCSC
+> research, and administrative work) is a function for which UCSC
 > would otherwise use employees, and that Operator's use of BayLeaf in
 > performing that work falls within the scope of his school-official
 > status.
@@ -1623,9 +2063,24 @@ campus to take a position on its P3 sufficiency.
 **Termination tied to the operator's role (§ 8).** The acknowledgment
 self-terminates when the operator ceases to hold an institutional role
 that includes school-official status. This addresses the reversibility
-point from [§ 7.2](#72-fit-and-mismatch-with-the-standard-vendor-pathway): UCSC is acknowledging a time-limited
+point from [§ 7.4](#74-fit-and-mismatch-with-the-standard-vendor-pathway): UCSC is acknowledging a time-limited
 instrument bounded by the faculty appointment that supports it, not
 acquiring a permanent capability.
+
+**What the June 2026 review implies about all three.** The framing choice
+was vindicated from an unexpected direction: the Registrar's office
+independently characterized BayLeaf as an *internal tool*, which is the
+(a)(1)(i)(A) reading arrived at without reference to the regulation, and
+is evidence against bothering with the (a)(1)(i)(B) translation in § 12.
+The protection-level options survive as the live question, though the
+decision now belongs to the AI Council as a listing decision rather than
+to a signing official as a contract term. The termination provision is
+the one piece with no substitute: absent an executed memo, nothing
+records what happens to BayLeaf's stored conversation history if the
+operator's appointment ends. That gap is properly a retention question
+rather than a FERPA-authorization one, and it belongs in
+[chat/RETENTION.md](../chat/RETENTION.md) whether or not any memo is ever
+signed.
 
 ---
 
@@ -1649,40 +2104,70 @@ the AI tools approved for P3 data:
 - **Approved for P3:** Google Gemini (Workspace), NotebookLM, Zoom AI.
   All accessed through the user's UCSC Google account.
 - **Not approved for P3:** consumer AI tools, and any tool not covered
-  by a UC-signed institutional agreement or a UCSC FERPA acknowledgment.
+  by a UC-signed institutional agreement or an equivalent campus review.
 
-BayLeaf currently falls in the "not approved" set, for the reasons
-discussed in [§§ 4](#4-bayleafs-ferpa-basis), [5](#5-the-contract-stack-beneath-bayleaf), [6](#6-protection-levels-and-whats-already-approved). This applies regardless of which model you select
-in BayLeaf (Gemini included, since today's Gemini-in-BayLeaf goes
-through OpenRouter rather than UC's Google contract). Note that
-"not approved" here means **not yet FERPA-authorized and not on the
-published P3 list**; BayLeaf's *security controls* for P3 were cleared
-by ISO in June 2026 (see the status note in the [introduction](#ferpa-and-bayleaf) and [§ 6](#6-protection-levels-and-whats-already-approved)).
-The authorization review with the Registrar and Counsel is the
-remaining gate.
+BayLeaf is **not on that published list**, and that is the fact to act
+on when deciding what to paste where today: the list is what you can
+check, and it does not name BayLeaf. This applies regardless of which
+model you select in BayLeaf (Gemini included, since today's
+Gemini-in-BayLeaf goes through OpenRouter rather than UC's Google
+contract).
+
+Two qualifications, because "not on the list" is doing narrower work here
+than "disallowed":
+
+- BayLeaf's **P3 security controls were cleared by ISO** in June 2026.
+- The **University Registrar and the VPDUEGE assessed BayLeaf, in June
+  2026 correspondence, as an internal tool at the same low risk threshold
+  as the P3-approved Google tools**, in the same status as Gemini, and
+  suggested it could be announced similarly. That assessment is not a
+  published listing, is not signed, and has not been reviewed by Campus
+  Counsel. See the July 2026 status note in the
+  [introduction](#ferpa-and-bayleaf) and
+  [§ 6](#6-protection-levels-and-whats-already-approved).
+
+So the guidance below is cautious by choice, not because a campus officer
+has told the operator that BayLeaf may not hold P3 data. Earlier versions
+of this section said BayLeaf was awaiting FERPA authorization; that was
+never quite right, and per
+[§ 7.2](#72-what-the-registrars-office-actually-does) no such
+authorization is issued by anyone.
 
 If the content contains FERPA-protected PII, the current options are:
 
 - **Use Gemini-in-Workspace** (the Gemini side panel in Google Docs,
   Gmail, Drive, or gemini.google.com signed in with your UCSC account).
-  Campus-approved for P3; inherits the explicit Workspace
-  "school official" designation.
+  Campus-approved for P3 and on the published list; inherits the explicit
+  Workspace "school official" designation.
 - **Use NotebookLM** under your UCSC account; also campus-approved
   for P3.
-- **Don't use BayLeaf in its current form for P3 content.** Use it for
-  P1/P2 content: drafting, brainstorming, code, generic Q&A where no
-  student identifiers are involved.
+- **Prefer the published-list tools for P3 work while BayLeaf is
+  unlisted.** BayLeaf is unreservedly appropriate for P1/P2 content:
+  drafting, brainstorming, code, generic Q&A where no student identifiers
+  are involved. For P3 content, the conservative reading is to use a
+  listed tool; the operator will not represent that BayLeaf is
+  campus-approved for P3 until it appears on the list.
 - **Air-gapped paraphrasing** is almost always the right move when the
   task itself is P3. Remove identifiers before the prompt; apply the
   AI's suggestions back onto the identified record yourself. This
   reduces the FERPA surface regardless of which tool you use.
+- **Check your business need to know before you check your tool.** The
+  concern campus reviewers actually raised about agent-assisted work on
+  student data was not which service processes the prompt but whether the
+  user has a business need to know the records in question
+  ([§ 4.6](#46-business-need-to-know-the-user-level-control)). Your own
+  classes: yes. Data reached through MyUCSC, Infoview / AIS-Daily, or a
+  colleague's broader access: ask first. Choosing a listed tool does not
+  cure a need-to-know problem.
+- **If you are heading toward a publication, that is research.** Using
+  course data to produce findings is human subjects research and needs
+  IRB review, independent of which AI tool you use
+  ([§ 4.7](#47-the-ferpairb-boundary)).
 
-If UCSC executes the acknowledgment memo in [§ 8](#8-a-draft-acknowledgment-memo), BayLeaf's posture
-changes in ways that will be specified in the signed memo itself. At
-minimum: UCSC has acknowledged the operator's school-official use of
-BayLeaf, and the subprocessor chain is brought within the § 99.33(b)
-authorized-redisclosure framework. Whether this carries P3 authorization
-depends on the protection-level option selected in § 7 of the memo.
+The change that would simplify all of this is BayLeaf's addition to the
+published P3 list, which per the June 2026 assessment is the remaining
+step. The memo in [§ 8](#8-a-draft-acknowledgment-memo) is no longer
+presented as the mechanism for that.
 
 ### For a student using BayLeaf
 
@@ -1695,20 +2180,30 @@ If you are a student worker handling education records in an
 institutional role (e.g., a peer advisor, a teaching assistant with
 grade access, a student employee in an administrative office), then
 the faculty/staff guidance above applies to you when you are acting in
-that role.
+that role, including the business-need-to-know limit
+([§ 4.6](#46-business-need-to-know-the-user-level-control)): a TA's
+access runs to the course they support, not to the institution's student
+records generally.
 
 ### For a reviewer asking "is BayLeaf FERPA-compliant?"
 
-There are two versions of this question:
+The framing of the question is itself contested. The Registrar's office
+holds that certifying any tool as FERPA-compliant is not a coherent act,
+since FERPA constrains disclosure rather than blessing tools, though
+tools and practices can be identified as *non*-compliant
+([§ 7.2](#72-what-the-registrars-office-actually-does)). With that noted,
+there are two answerable versions:
 
 1. *Can BayLeaf receive FERPA-protected records from an institutional
    role-holder (faculty, staff, advisor) acting in their professional
    capacity?*
-   Today, not yet: BayLeaf's P3 *security controls* have been cleared
-   by ISO (June 2026), but BayLeaf is not yet *FERPA-authorized* and is
-   not on the campus-approved AI-tools list for P3 data. With execution
-   of the acknowledgment memo in [§ 8](#8-a-draft-acknowledgment-memo), and at
-   the protection level selected in § 7 of that memo, yes.
+   No campus officer has said it may not. BayLeaf's P3 security controls
+   were cleared by ISO (June 2026), and the Registrar and VPDUEGE
+   assessed it at the same risk threshold as the P3-approved Google tools
+   (June 2026). What is missing is a *published* statement to that
+   effect: BayLeaf does not appear on the campus-approved AI-tools list
+   for P3 data, and Campus Counsel has not weighed in. Until it is
+   listed, this document declines to tell users it is approved.
 
 2. *Does BayLeaf hold education records on behalf of UCSC?*
    No. BayLeaf does not receive data pushes from the Student Information
@@ -1719,16 +2214,17 @@ There are two versions of this question:
 
 The honest one-sentence answer to "is BayLeaf FERPA-compliant?" is:
 **"BayLeaf is operated by a UCSC school official as an instrument in
-support of his institutional role; its P3 security controls have been
-cleared by the Information Security Office (June 2026), but in its
-current un-acknowledged form it is not yet FERPA-authorized and is not
-among the campus-approved AI tools for FERPA-protected content, so
-users should use the Workspace-based Gemini and NotebookLM tools UCSC
-has already approved for that purpose; a proposed acknowledgment by
-UCSC of BayLeaf's operating posture under 34 CFR § 99.31(a)(1)(i)(A),
-with the subprocessor chain governed by § 99.33(b), would close the
-remaining authorization gate at a protection level to be specified in
-the signed memorandum."**
+support of his institutional role; its P3 security controls were cleared
+by the Information Security Office in June 2026, and the University
+Registrar and the VPDUEGE subsequently assessed it as an internal tool at
+the same low risk threshold as the Google tools UCSC has approved for
+FERPA-protected content; but that assessment lives in correspondence
+rather than in the campus's published list of P3-approved AI tools, and
+Campus Counsel has not yet weighed in, so users working with
+FERPA-protected content should still prefer the listed tools
+(Workspace-Gemini, NotebookLM) until BayLeaf is listed, and should
+attend at least as carefully to their own business need to know and to
+IRB obligations, which no tool listing addresses."**
 
 ---
 
@@ -1740,63 +2236,120 @@ that are most naturally addressed by the UCSC AI Council (with input
 from Campus Counsel, the Privacy Office, and the Information Security
 Office as needed).
 
+Two of the three gates this document was written to address have closed.
 The Information Security Office's P3 security-controls review is
-**complete** (June 2026; see the [introduction](#ferpa-and-bayleaf)
-status note). The questions below are therefore the
-*FERPA-authorization* questions that remain, now in the hands of the
-University Registrar and Campus Counsel.
+**complete** (June 2026). The FERPA referral to the University Registrar
+has **come back**, with the answer that no tool-level FERPA
+authorization exists to be granted and that BayLeaf, as an internal tool
+with a completed security questionnaire, sits at the same risk threshold
+as the already-approved Google tools (June 2026; see the
+[introduction](#ferpa-and-bayleaf) status notes). The questions below are
+what remains, and the character of the list has changed: what was a
+legal-basis inquiry is now mostly a communication and scoping agenda.
 
-1. **The acknowledgment itself.** Given the draft memo in [§ 8](#8-a-draft-acknowledgment-memo), is
-   UCSC willing to acknowledge BayLeaf as an instrument of a school
-   official under 34 CFR § 99.31(a)(1)(i)(A) with the subprocessor
-   chain authorized under § 99.33(b)? Which of the three
-   protection-level options in § 7 of the memo should apply? What
-   office is the appropriate signer?
+1. **Listing and announcement.** The Registrar's office suggested BayLeaf
+   could be announced in the same way as Gemini. Will the Council add
+   BayLeaf to the published P3-approved tools list at
+   [campusai.ucsc.edu/faq](https://campusai.ucsc.edu/faq/)? If the answer
+   is yes, that single edit resolves most of the hedging in
+   [§ 9](#9-what-this-means-in-practice). If the answer is not yet, what
+   is the remaining obstacle, so this document can name it accurately
+   instead of inferring one?
 
-2. **Conditions and controls.** ISO has cleared BayLeaf's P3 security
-   controls; what subset of those controls does ISO want transcribed
-   into Appendix B as binding conditions of the acknowledgment?
-   Particular attention is warranted for the teacher-side automation
-   flows described in [§ 3.2.4](#324-blast-radius-asymmetry-between-user-and-teacher-use-cases): rate limits, logging
-   requirements, review of agent-driven Canvas API usage.
+2. **The three-tool guidance.** The proposal coming out of the June 2026
+   correspondence was joint outreach on how Workspace-Gemini, NotebookLM,
+   and BayLeaf can each be used in teaching, with recurring reminders
+   about student-records privacy and business need to know. Does the
+   Council want to own that document? What should it say about choosing
+   among the three, given that the tools differ in capability more than
+   in FERPA posture? The BayLeaf operator can draft the BayLeaf portion
+   and has an interest in not being the sole author of the comparison.
 
-3. **Extending the P3 approval to direct institutional inference
-   back-ends.** The Council has approved Workspace-Gemini and
-   NotebookLM for P3 on the strength of UC's negotiated Google
-   agreements. Two architectural extensions of that posture are now in
-   view: (a) Vertex AI under UCSC's GCP project ([§ 5.2](#52-inference-layer-proposed-direct-google-cloud), already
-   demonstrated in private preview), and (b) AWS Bedrock under
-   UC ↔ AWS enterprise agreements ([§ 5.3](#53-inference-layer-proposed-aws-bedrock)). Does the P3
-   approval extend to these direct-API back-ends, given that they sit
-   under the same UC-signed agreement stacks as the
-   already-approved Workspace surfaces?
+3. **FERPA framing in tool announcements.** The VPDUEGE raised, as a
+   general concern rather than a BayLeaf-specific one, that the campus
+   Gemini announcement did not mention FERPA in either direction:
+   positively (a contracted tool is one it is acceptable to upload
+   student work to, unlike a non-contracted tool) or negatively (any
+   system processing education records carries risk of unintentional
+   disclosure), and noted not having been consulted on it. Should the
+   Council adopt a standing expectation that AI tool announcements carry
+   FERPA framing, with the Registrar consulted?
 
-4. **OpenRouter-ZDR for non-FERPA work.** Even if P3 is restricted to
-   institutional back-ends (Option C in § 7 of the memo), the
-   OpenRouter-ZDR path remains valuable for P1/P2 work and for models
-   not yet available on Vertex or Bedrock. Does the Council want this
-   distinction enforced technically (per-model access gates by
-   protection level) or organizationally (user training plus the
-   model labeling already in place)?
+4. **Recording the HECVAT-as-Appendix-DS equivalence.** The June 2026
+   assessment treated BayLeaf's HECVAT response as the substantive
+   equivalent of an Appendix DS review
+   ([§ 7.3](#73-appendix-ds-the-mechanism-this-document-originally-missed)).
+   That equivalence currently exists only in email. Should it be recorded
+   somewhere durable, and if so by whom and in what form? This is the
+   narrow question the draft memo in
+   [§ 8](#8-a-draft-acknowledgment-memo) could still usefully serve, in a
+   much shorter form than currently drafted.
 
-5. **User-side characterization.** When a UCSC faculty member pastes
-   FERPA-protected content into any AI service that is not on the
-   campus-approved list, what is the correct characterization under UC
-   policy? User violation, institutional gap, or communication problem
-   the existing guidance already addresses? This question predates
-   BayLeaf; BayLeaf makes it concrete.
+5. **Extending P3 to direct institutional inference back-ends.** The
+   Council has approved Workspace-Gemini and NotebookLM for P3 on the
+   strength of UC's negotiated Google agreements. Two architectural
+   extensions of that posture are in view: (a) Vertex AI under UCSC's GCP
+   project ([§ 5.2](#52-inference-layer-proposed-direct-google-cloud),
+   demonstrated in private preview but currently disabled for want of a
+   ZDR abuse-monitoring exception), and (b) AWS Bedrock under UC ↔ AWS
+   enterprise agreements ([§ 5.3](#53-inference-layer-proposed-aws-bedrock)).
+   Does the P3 approval extend to these direct-API back-ends, given that
+   they sit under the same UC-signed agreement stacks as the
+   already-approved Workspace surfaces? This is now a question about
+   architectural strength rather than about clearing a gate.
 
-6. **Precedent for faculty-operated instruments.** If UCSC acknowledges
-   BayLeaf under [§ 8](#8-a-draft-acknowledgment-memo), does that establish a pattern that could
-   support similar acknowledgments for other faculty-operated services
-   in the future? What should that pattern look like (minimum viable
-   review package, standing signer, mechanism for keeping the
-   subprocessor appendix current)?
+6. **OpenRouter-ZDR and per-path scoping.** If the Council wants P3 work
+   confined to institutional back-ends while leaving the OpenRouter-ZDR
+   path available for P1/P2 work and for models not on Vertex or Bedrock,
+   does it want that distinction enforced technically (per-model access
+   gates by protection level) or organizationally (user training plus the
+   model labeling already in place)? Note that the technical option is
+   only meaningful if a listing distinguishes the paths.
 
-Answers to these let us replace the conditional language in this
-document with definite statements, update user-facing guidance, and
-decide whether and how to productionize the institutional inference
-back-ends.
+7. **Business need to know and agent autonomy.** The substantive concern
+   the Registrar's office raised is a user-scope concern
+   ([§ 4.6](#46-business-need-to-know-the-user-level-control)): faculty
+   with broad data access (MyUCSC, Infoview / AIS-Daily) using capable
+   agents to explore beyond their business need to know. It is explicitly
+   not BayLeaf-specific. Does the Council want a campus-level position on
+   agent-assisted access to institutional data, and does it want any
+   technical expectations of BayLeaf specifically for the teacher-side
+   automation flows in
+   [§ 3.2.4](#324-blast-radius-asymmetry-between-user-and-teacher-use-cases)
+   (rate limits, logging, review of agent-driven Canvas API usage)?
+
+8. **The IRB seam.** ORCA is working with the University Registrar on
+   guidance for researchers using education record information
+   ([§ 4.7](#47-the-ferpairb-boundary)). Should AI-tool guidance point at
+   that work, and should agent-assisted analysis of course data get
+   explicit treatment there, given how easily instructional use slides
+   into research use in a single conversational turn?
+
+9. **User-side characterization.** When a UCSC faculty member pastes
+   FERPA-protected content into an AI service not on the campus-approved
+   list, what is the correct characterization under UC policy? User
+   violation, institutional gap, or communication problem the existing
+   guidance already addresses? This question predates BayLeaf; BayLeaf
+   makes it concrete, and the answer determines how the three-tool
+   guidance in item 2 should be worded.
+
+10. **Precedent for faculty-operated instruments.** BayLeaf's review
+    established a workable pattern almost by accident: an internal tool
+    completes a HECVAT, ISO reviews it, the relevant data steward is
+    consulted, and the tool is assessed at a risk threshold comparable to
+    procured vendors, with no procurement event. Should that be codified
+    as a standing pathway for other faculty-operated services? What is
+    the minimum viable review package
+    ([§ 7.5](#75-review-package-artifacts) suggests the HECVAT carries
+    most of the weight), and who keeps the subprocessor inventory
+    current?
+
+Answers to items 1 through 4 would let this document replace most of its
+remaining hedged language with definite statements and simplify the
+user-facing guidance in [§ 9](#9-what-this-means-in-practice)
+considerably. Items 5 and 6 shape whether and how to productionize the
+institutional inference back-ends. Items 7 through 10 are campus-level
+questions that BayLeaf has surfaced but does not own.
 
 ---
 
@@ -1857,6 +2410,38 @@ Held under UC Procurement; not public. Read for this analysis:
   notification of rights, and the written-form mechanism in §IX.C).
 - [UC Policies Applying to Disclosure of Information from Student Records (§130.00)](http://www.ucop.edu/ucophome/coordrev/ucpolicies/aos/documents/sec-130.pdf)
   (the Universitywide policy UCSC's Public Disclosures page implements).
+- **Appendix DS**, the UC purchasing system's data-security appendix.
+  Not consulted directly for this analysis; characterized here from the
+  June 2026 correspondence below, which identifies it as the review
+  process covering Google's tools and Canvas/Instructure. A reviewer with
+  access should confirm the mapping between its control expectations and
+  the [HECVAT](HECVAT.md) responses
+  ([§ 7.3](#73-appendix-ds-the-mechanism-this-document-originally-missed)).
+- Office of Research Compliance Administration (ORCA), reported in June
+  2026 to be developing guidance with the University Registrar on
+  researcher use of education record information
+  ([§ 4.7](#47-the-ferpairb-boundary)). Not yet published as of this
+  writing.
+
+### Campus correspondence
+
+Several claims in this document, particularly the July 2026 status note,
+[§ 7.2](#72-what-the-registrars-office-actually-does), and
+[§ 7.3](#73-appendix-ds-the-mechanism-this-document-originally-missed),
+rest on an email thread rather than on published or signed artifacts.
+Recorded here so a reader can weigh the provenance:
+
+- Thread: "Processing FERPA-level data in BayLeaf AI," 18–30 June 2026.
+  Initiated by the UCSC AI Council co-chair (Michael Tassio) as a
+  referral to the University Registrar (Tchad Sanger) and the Vice
+  Provost and Dean of Undergraduate Education and Global Engagement
+  (Richard Hughey), following the Information Security Office's P3
+  determination. Principal Campus Counsel (Jessica Espinoza) was added
+  on 30 June 2026 and had not responded as of this writing.
+- Nothing in that thread constitutes a signed determination, a published
+  campus position, or advice from Campus Counsel. Where this document
+  reports the Registrar's or the VPDUEGE's position, it paraphrases that
+  correspondence and says so.
 
 ### UCSC AI Council guidance
 

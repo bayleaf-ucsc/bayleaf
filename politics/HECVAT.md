@@ -487,7 +487,7 @@ No custom DPAs or FERPA addenda are in place with these parties beyond their sta
 
 **Answer:** Yes.
 
-**Additional Information:** GitHub Advanced Security with Dependabot is enabled on both source repositories (`bayleaf-ucsc/bayleaf` and `rndmcnlly/bayleaf`). Flagged vulnerabilities are resolved by upstream bumps or fixes, not silenced. OWUI version pins are reviewed before upgrade per `../chat/AGENTS.md` ("Don't deploy OWUI version upgrades without checking the changelog for breaking changes").
+**Additional Information:** GitHub Advanced Security with Dependabot is enabled on the source repository (`bayleaf-ucsc/bayleaf`). Flagged vulnerabilities are resolved by upstream bumps or fixes, not silenced. OWUI version pins are reviewed before upgrade per `../chat/AGENTS.md` ("Don't deploy OWUI version upgrades without checking the changelog for breaking changes").
 
 ---
 
