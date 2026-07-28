@@ -8,7 +8,7 @@ body:
         Thanks for taking the time to file an issue about the [BayLeaf API](https://api.bayleaf.dev)!
 
         This covers API keys, daily spend limits, building apps on top of the API,
-        configuring agent software (e.g. OpenCode, Cursor, Continue) to use BayLeaf,
+        configuring coding agents and other API clients to use BayLeaf,
         and anything else related to the API service. Bug reports, feature requests,
         and clarifying questions are all welcome.
 
@@ -21,7 +21,7 @@ body:
         - Feature request / enhancement
         - API key request
         - Spend limit increase
-        - Integration help (OpenCode, Cursor, etc.)
+        - Coding-agent integration help
         - General question
         - Other
     validations:
@@ -62,5 +62,5 @@ body:
     id: client
     attributes:
       label: Client software & version (for bugs)
-      description: "e.g. OpenCode 0.5, curl 8.7, Python requests 2.31"
-      placeholder: "OpenCode 0.5.0"
+      description: "e.g. OpenChamber 1.13 with OpenCode 1.18, curl 8.7, Python requests 2.31"
+      placeholder: "OpenChamber 1.13.9 / OpenCode 1.18.9"

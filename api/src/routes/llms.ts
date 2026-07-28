@@ -70,19 +70,23 @@ https://api.bayleaf.dev/docs).
 
 ## Quick start: connect a coding agent
 
-If you are deciding which terminal coding agent to start with:
+If you are deciding which coding-agent interface to start with:
 
-- [**OpenCode**](https://opencode.ai/): friendly defaults, native one-command BayLeaf onboarding (see below). Recommended.
+- [**OpenChamber**](https://openchamber.dev/): approachable graphical interface for OpenCode. Recommended for most people; BayLeaf setup currently begins with the one OpenCode command below.
+- [**OpenCode**](https://opencode.ai/): the lower-level terminal interface and backend used by OpenChamber, with native one-command BayLeaf onboarding.
 - [**Goose**](https://github.com/block/goose): includes free inference credit on first launch; optional desktop app.
 - [**pi**](https://github.com/badlogic/pi-mono): minimal core, strong extension model; bring your own API key.
-- [Generic OpenAI-compatible client](#generic): any tool that accepts a base URL and API key (continue.dev, Cline, custom scripts).
+- [Generic OpenAI-compatible client](#generic): any tool or custom script that accepts a base URL and API key.
 
 You only need to do one of these.
 
-### OpenCode (one command)
+### OpenChamber via OpenCode (one command)
 
-OpenCode supports a provider-discovery mechanism via ${bt}.well-known/opencode${bt}, so
-BayLeaf-as-a-provider needs zero edits to ${bt}opencode.json${bt}:
+[OpenChamber](https://openchamber.dev/) uses OpenCode as its backend and shares
+OpenCode's providers, models, and credentials. OpenCode supports a provider-discovery
+mechanism via ${bt}.well-known/opencode${bt}, so connecting BayLeaf needs zero edits
+to ${bt}opencode.json${bt}. The setup command currently requires
+[OpenCode](https://opencode.ai/docs/) to be installed on your command line:
 
 ${fence}bash
 opencode auth login https://api.bayleaf.dev
@@ -92,21 +96,23 @@ OpenCode opens the [claim-code device flow](#claim-flow): your terminal prints a
 URL and a code, you open the URL in a browser, sign in with UCSC credentials if you
 aren't already, confirm the code matches, and click **Approve**. Your BayLeaf API key
 is delivered straight from the browser approval to OpenCode without ever appearing on
-screen or in your shell history. Then run ${bt}opencode${bt}, pick a BayLeaf model with
-${bt}/models${bt}, and you're done.
+screen or in your shell history. Then open or restart OpenChamber: BayLeaf will appear
+in its model picker. If you prefer the terminal interface, run ${bt}opencode${bt} and
+pick a BayLeaf model with ${bt}/models${bt}.
 
-The recommended model and curated picks update automatically on every OpenCode launch,
-served from https://api.bayleaf.dev/.well-known/opencode/config. They appear in the
+The recommended model and curated picks update automatically whenever the OpenCode
+backend starts, including under OpenChamber. They are served from
+https://api.bayleaf.dev/.well-known/opencode/config and appear in the
 model picker under the provider id ${bt}bayleaf-remote${bt}, e.g.
 ${bt}bayleaf-remote/${model}${bt}. The ${bt}bayleaf-remote${bt} naming is deliberate:
 it leaves the unqualified ${bt}bayleaf${bt} provider id available for you to author by
 hand if you want full control (next section).
 
-The same remote config also makes OpenCode safe to use out of the box by setting two
-top-level defaults on your behalf:
+The same remote config also makes the OpenCode backend, and therefore OpenChamber,
+safe to use out of the box by setting two top-level defaults on your behalf:
 
-- ${bt}model${bt} is set to ${bt}bayleaf-remote/${model}${bt}, so OpenCode opens on a
-  BayLeaf (ZDR) model without a ${bt}/models${bt} trip.
+- ${bt}model${bt} is set to ${bt}bayleaf-remote/${model}${bt}, so new sessions open on
+  a BayLeaf (ZDR) model without a model-picker trip.
 - ${bt}disabled_providers${bt} includes ${bt}opencode${bt}, the built-in provider that
   routes through OpenCode Zen (${bt}opencode.ai/zen/v1${bt}) rather than directly to a
   model provider. Zen's free models (Big Pickle, DeepSeek V4 Flash Free, MiMo-V2.5 Free,
@@ -413,6 +419,7 @@ access. If your agent supports it, register them as native tools or MCP servers 
 model can call them naturally during conversation. **You only need to do this once
 per agent**, not per conversation.
 
+OpenChamber MCP settings: https://docs.openchamber.dev/mcp/.
 OpenCode tool/MCP docs: https://opencode.ai/docs/custom-tools/, https://opencode.ai/docs/mcp-servers/.
 pi extension docs: https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/extensions.md.
 Goose extension docs: https://goose-docs.ai/docs/tutorials/custom-extensions.

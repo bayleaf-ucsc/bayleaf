@@ -220,7 +220,7 @@ Default working directory is `/home/daytona/workspace`. No output truncation.
 | `/docs/gws-oauth-client.json` | GET | Authenticated or campus | Google Workspace CLI OAuth client config |
 | `/recommended-model` | GET | Public | Current recommended model slug and display name |
 
-The SKILL.md endpoint serves a dynamic Markdown document that coding agents can fetch to self-configure. It includes setup instructions for OpenCode, Goose, and pi, as well as Google Workspace CLI and Canvas LMS CLI integration guides. When GWS env vars are configured, the GWS section includes full onboarding instructions; when they are absent, the section is omitted.
+The SKILL.md endpoint serves a dynamic Markdown document that coding agents can fetch to self-configure. It recommends OpenChamber as the graphical frontend for the OpenCode integration and includes setup instructions for OpenCode, Goose, and pi, as well as Google Workspace CLI and Canvas LMS CLI integration guides. When GWS env vars are configured, the GWS section includes full onboarding instructions; when they are absent, the section is omitted.
 
 ## License
 

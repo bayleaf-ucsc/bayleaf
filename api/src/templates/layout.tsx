@@ -244,8 +244,9 @@ export const CodingAgentCard: FC<{ recommendedModel: string }> = ({ recommendedM
   <div class={cardStyle} style="background: #f5f0ff; border-color: #7c3aed;">
     <h2>Use the BayLeaf API in a coding agent</h2>
     <p>
-      AI coding agents run in your terminal and can read, edit, and execute code on your behalf.
-      (If you aren't ready for work in the command line, you can access coding agent features
+      AI coding agents can read, edit, and execute code on your behalf through a graphical or
+      terminal interface. (If you aren't ready to let an agent work with files on your computer,
+      you can access coding agent features
       in <a href="https://chat.bayleaf.dev/">BayLeaf Chat</a> by enabling the <em>Code Sandbox</em> feature
       in a new chat. It is like a more powerful version of
       ChatGPT's <a href="https://help.openai.com/en/articles/8437071-data-analysis-with-chatgpt" target="_blank">code execution environment</a>.)
@@ -255,8 +256,12 @@ export const CodingAgentCard: FC<{ recommendedModel: string }> = ({ recommendedM
     </p>
     <ul style="margin: 0.75rem 0; padding-left: 1.25rem; line-height: 1.8;">
       <li>
+        <a href="https://openchamber.dev/" target="_blank"><strong>OpenChamber</strong></a>:{' '}
+        approachable graphical interface for OpenCode; recommended for most people
+      </li>
+      <li>
         <a href="https://opencode.ai/" target="_blank"><strong>OpenCode</strong></a>:{' '}
-        good default; free models available via OpenCode Zen
+        lower-level terminal interface and the backend used by OpenChamber
       </li>
       <li>
         <a href="https://github.com/block/goose" target="_blank"><strong>Goose</strong></a>:{' '}
@@ -280,30 +285,32 @@ export const CodingAgentCard: FC<{ recommendedModel: string }> = ({ recommendedM
 );
 
 /**
- * One-command OpenCode quickstart card. Uses OpenCode's `.well-known/opencode`
- * provider-onboarding mechanism (see api/src/routes/wellknown.ts) so the user
- * never edits opencode.json or pastes their key into a config file. The
- * dashboard's value-add over /llms.txt is the prominent Copy button on the
- * single command — the key is read interactively by OpenCode after the
- * command runs, so this card never needs to render the key value at all.
+ * One-command OpenChamber/OpenCode quickstart card. Uses OpenCode's
+ * `.well-known/opencode` provider-onboarding mechanism (see
+ * api/src/routes/wellknown.ts) so the user never edits opencode.json or pastes
+ * their key into a config file. OpenChamber shares the resulting backend
+ * configuration. The dashboard's value-add over /llms.txt is the prominent
+ * Copy button on the single command.
  */
 export const OpenCodeQuickstartCard: FC = () => (
   <div class={cardStyle} style="background: #eef7ee; border-color: #2d7d46;">
-    <h2>Connect <a href="https://opencode.ai/" target="_blank">OpenCode</a> in one command</h2>
+    <h2>Connect BayLeaf to <a href="https://openchamber.dev/" target="_blank">OpenChamber</a> in one command</h2>
     <p>
-      OpenCode is a terminal coding agent. After you have it{' '}
-      <a href="https://opencode.ai/docs/" target="_blank">installed</a>, run this command to register
-      BayLeaf as a provider, no config files to edit:
+      OpenChamber is a graphical interface over OpenCode and shares its provider settings.
+      The setup step currently requires OpenCode to be{' '}
+      <a href="https://opencode.ai/docs/" target="_blank">installed on your command line</a>.
+      Run this command once to register BayLeaf, with no config files to edit:
     </p>
     <button type="button" class={copyBoxStyle} onclick="copyToClipboard(this)" style="margin-top: 0.5rem;">
       <code>opencode auth login https://api.bayleaf.dev</code>
       <span class="copy-hint">Click to copy</span>
     </button>
     <p style="margin-top: 0.75rem;">
-      OpenCode will prompt you for your BayLeaf API key on the terminal (the key won't echo to screen).
-      Paste it from the card above. After that, run <code>opencode</code>, pick a BayLeaf model with{' '}
-      <code>/models</code>, and you're done. Re-running <code>opencode auth login …</code> any time
-      rotates the stored key.
+      Your terminal will show a short URL and claim code. Open the URL, sign in with UCSC,
+      verify the code, and approve the connection. Your key is delivered directly to OpenCode
+      without appearing on screen or in your shell history. Then open or restart OpenChamber;
+      BayLeaf will appear in its model picker. Re-running <code>opencode auth login …</code> any
+      time rotates the stored key.
     </p>
     <details style="margin-top: 1rem;">
       <summary style="cursor: pointer; color: #006aad; font-weight: 500;">How it works</summary>
@@ -311,9 +318,10 @@ export const OpenCodeQuickstartCard: FC = () => (
         <p>
           OpenCode fetches{' '}
           <a href="/.well-known/opencode" target="_blank"><code>/.well-known/opencode</code></a>{' '}
-          to learn how to authenticate, prompts you for the key locally, and stores it under your
-          BayLeaf URL in <code>~/.local/share/opencode/auth.json</code> (mode 0600). On every launch
-          it then fetches{' '}
+          to learn how to authenticate, opens BayLeaf's browser approval flow, and stores the
+          resulting credential under your BayLeaf URL in{' '}
+          <code>~/.local/share/opencode/auth.json</code> (mode 0600). Whenever the OpenCode backend
+          starts, including under OpenChamber, it fetches{' '}
           <a href="/.well-known/opencode/config" target="_blank"><code>/.well-known/opencode/config</code></a>{' '}
           (with your key as a Bearer token) and merges the returned provider definition into your
           OpenCode configuration. That means <strong>you don't edit <code>opencode.json</code></strong>,

@@ -120,13 +120,15 @@
     </p>
     <p>
         <strong>With BayLeaf:</strong> use the API instead of Chat. Pick a graphical
-        coding-agent harness like <a href="https://block.github.io/goose/">Goose</a> or
-        <a href="https://openchamber.dev/">OpenChamber</a> (a CLI harness like
+        coding-agent harness like <a href="https://openchamber.dev/">OpenChamber</a> or
+        <a href="https://block.github.io/goose/">Goose</a> (a CLI harness like
         <a href="https://opencode.ai">OpenCode</a> or
         <a href="https://pi.dev/">Pi</a> works too if you're comfortable in a
-        terminal). Point the default agent at
+        terminal). OpenChamber uses OpenCode as its backend, so connecting BayLeaf
+        currently requires <a href="https://api.bayleaf.dev/llms.txt">one OpenCode
+        command</a> in a terminal. After connecting, point the default agent at
         <a href="https://api.bayleaf.dev/docs/SKILL.md">https://api.bayleaf.dev/docs/SKILL.md</a>
-        and it will walk itself through the setup. From then on, your agent reads the
+        for the rest of the setup. From then on, your agent reads the
         relevant files directly from your laptop, sends only what it needs to BayLeaf
         for inference, and keeps the only record of the conversation on your own
         machine. The personal story stays local.
