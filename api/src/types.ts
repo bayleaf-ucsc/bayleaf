@@ -23,6 +23,14 @@ export interface Bindings {
   // an enterprise-account key (issue #41).
   BEDROCK_ENABLED: string;
 
+  // BayLeaf Sealed — attested confidential-inference lane (issue #55)
+  // Master kill-switch, same fail-closed semantics as VERTEX_ENABLED /
+  // BEDROCK_ENABLED: must be exactly the string "true" or the entire /sealed
+  // surface answers 503. Unlike the other backends this is NOT an ALT_BACKENDS
+  // row: the sealed lane has no `<prefix>:` model routing and never forwards
+  // plaintext. See routes/sealed.ts.
+  SEALED_ENABLED: string;
+
   // D1 database
   DB: D1Database;
 
@@ -65,11 +73,50 @@ export interface Bindings {
   OIDC_CLIENT_ID: string;
   OIDC_CLIENT_SECRET: string;
   CAMPUS_POOL_KEY: string;         // Shared OpenRouter key for campus access
+  // Shared Tinfoil key for Campus Pass on the Sealed lane. Campus Pass has no
+  // email and therefore no D1 row, so it cannot hold a per-user key; a pool
+  // credential is the only option, and it is consequently NOT healable from the
+  // request path (see utils/backend.ts). Sealed spend by campus users is
+  // attributable only in aggregate, which is the same tradeoff the OpenRouter
+  // pool key already makes.
+  CAMPUS_SEALED_KEY: string;
+
   DAYTONA_API_KEY: string;         // Sandbox provider API key
 
   // Amazon Bedrock bearer token (bedrock-mantle). Long-term Bedrock API key
   // (IAM CreateServiceSpecificCredential, service bedrock.amazonaws.com).
   BEDROCK_BEARER_TOKEN: string;
+
+  // Tinfoil inference credential for the Sealed lane (issue #55).
+  //
+  // LEGACY / FALLBACK: a single `bayleaf`-org key, still used for the plaintext
+  // catalog at GET /sealed/models. Per-user keys (migration 0005) cover the
+  // ciphertext relay; the catalog deliberately stays on the org key so a user
+  // who has exhausted their token cap can still list models.
+  //
+  // This credential is NEVER vended to a client. The relay substitutes it for
+  // the caller's BayLeaf credential. A user who held it could call Tinfoil
+  // directly over plain HTTPS with no attestation and no EHBP, which would
+  // silently void the lane's entire confidentiality claim.
+  TINFOIL_API_KEY: string;
+
+  // Tinfoil ADMIN credential, used only to mint and delete per-user keys.
+  //
+  // Strictly more dangerous than OPENROUTER_PROVISIONING_KEY: Tinfoil's admin
+  // API re-reveals key secrets on read (`GET /api/keys` returns every user's
+  // `tk_` in plaintext), so a leak of this exposes every user's inference
+  // credential, not merely the ability to create and destroy keys. Do not use
+  // it for anything that a mint/delete does not strictly require, and prefer a
+  // separate Worker for billing reconciliation so the request path never gains
+  // the ability to enumerate user credentials.
+  TINFOIL_ADMIN_KEY: string;
+
+  // Lifetime token cap stamped on each per-user Tinfoil key at mint time.
+  // A fuse, not a budget: Tinfoil's `max_tokens` does not reset on a schedule
+  // the way OpenRouter's `limit`/`limit_reset` does, so exhausting it disables
+  // the user's Sealed access until an operator raises it.
+  SEALED_TOKEN_CAP: string;
+
 
   // Web search and fetch providers
   TAVILY_API_KEY: string;          // Tavily API key (used for both /web/search and /web/fetch)
@@ -117,8 +164,13 @@ export interface Variables {
 export interface UserKeyRow {
   email: string;
   bayleaf_token: string;
-  or_key_hash: string;
-  or_key_secret: string;
+  // Backend provider credentials are NULL until the user first touches that
+  // backend (migration 0005). They are caches hanging off the bayleaf_token,
+  // not co-equal columns: the token is the identity record and the only
+  // mandatory credential. Never assume these are populated — go through
+  // `ensureBackendKey` in provision.ts.
+  or_key_hash: string | null;
+  or_key_secret: string | null;
   revoked: number;           // 0 = active, 1 = revoked
   created_at: string;
   daytona_sandbox_id: string | null;  // cached sandbox ID (null = not yet provisioned)
@@ -126,7 +178,48 @@ export interface UserKeyRow {
   vertex_rpd_date: string;
   bedrock_rpd_count: number;
   bedrock_rpd_date: string;
+  // Tinfoil / Sealed lane (issue #55). `tinfoil_key` is both the inference
+  // credential and the management handle, since Tinfoil has no separate id.
+  // `tinfoil_key_name` is the join column back to the out-of-band billing
+  // report, which indexes spend by key name.
+  tinfoil_key: string | null;
+  tinfoil_key_name: string | null;
+  sealed_rpd_count: number;
+  sealed_rpd_date: string;
 }
+
+/**
+ * A Tinfoil inference key as returned by the admin API.
+ *
+ * Note the absence of any `id`/`hash` field: `key` is the identifier, which is
+ * why `UserKeyRow` needs no Tinfoil analogue of `or_key_hash`.
+ */
+export interface TinfoilKey {
+  key: string;
+  name: string;
+  disabled: boolean;
+  expires_at: string | null;
+  max_tokens: number | null;
+  tokens_used: number;
+  input_tokens_used: number;
+  output_tokens_used: number;
+  request_count: number;
+  is_admin: boolean;
+  /** Always null in practice: provider-side model scoping is not supported. */
+  scope: unknown;
+  metadata: Record<string, string>;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+/**
+ * Create returns the same shape as a list entry. Unlike OpenRouter, the secret
+ * is not create-time-only — Tinfoil re-reveals it on every admin read — so
+ * there is no separate "…Created" variant carrying an extra field. The alias
+ * exists to keep `provision.ts` symmetric across the two providers.
+ */
+export type TinfoilKeyCreated = TinfoilKey;
+
 
 /** Hono app environment type */
 export type AppEnv = {

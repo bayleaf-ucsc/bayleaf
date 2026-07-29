@@ -8,7 +8,7 @@ import type { AppEnv, OpenRouterKey } from '../types';
 import { getSession } from '../utils/session';
 import { getAuthIP, isCampusPassEligible } from '../utils/ip';
 import { inspectCounter, parseLimit } from '../utils/campusRpd';
-import { getActiveRow, resolveOrKey } from '../provision';
+import { getActiveRow, resolveOrKeyInfo } from '../provision';
 import { findSandboxByLabel, getSandboxInfo, type SandboxInfo } from '../daytona';
 import { LandingPage, type CampusUsage } from '../templates/landing';
 import { DashboardPage, type AltBackendUsage } from '../templates/dashboard';
@@ -66,7 +66,7 @@ dashboardRoutes.get('/dashboard', async (c) => {
   // key if it has gone away. A null orKey here is not fatal: we render the
   // page without usage numbers rather than erroring out the whole dashboard.
   const row = await getActiveRow(session.email, c.env);
-  const orKey: OpenRouterKey | null = row ? (await resolveOrKey(row, c.env))?.orKey ?? null : null;
+  const orKey: OpenRouterKey | null = row ? (await resolveOrKeyInfo(row, c.env))?.orKey ?? null : null;
 
   // Fetch sandbox status (non-blocking — don't fail the page if this errors).
   let sandboxInfo: SandboxInfo | null = null;

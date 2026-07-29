@@ -28,6 +28,41 @@ this for per-user rate limiting but does not retain it under ZDR.
 
 ---
 
+## Sealed Lane Traffic (`/sealed/*`, currently disabled)
+
+**Not stored, not logged, and not readable by BayLeaf at all.** The Sealed lane
+(issue #55) differs from the proxy above in kind, not degree. For the ordinary
+proxy, "we do not read your prompts" is a *commitment* an operator could break by
+deploying a body-logging revision. For Sealed it is a *structural* property:
+clients verify a hardware attestation and encrypt request bodies to the enclave's
+public key (EHBP, RFC 9180 HPKE, applied at the application layer independently
+of TLS) before those bytes reach BayLeaf. BayLeaf does not hold the
+enclave-bound private key, so a body-logging revision would capture ciphertext.
+
+Requests lacking end-to-end encryption are **rejected**, not served over a
+readable path. There is no plaintext fallback on this lane.
+
+What BayLeaf *does* observe on Sealed traffic, and this is the honest boundary of
+the claim:
+
+- caller identity (BayLeaf key or Campus Pass IP), timestamps, request counts;
+- request and response byte sizes;
+- token counts for non-streaming requests, via an upstream response header.
+  (Streaming token counts arrive in an HTTP trailer that the Cloudflare Workers
+  runtime does not expose, so they are observed by no one.)
+
+None of the above is written to D1 or to any log. Content is unreachable; the
+fact that you asked is not.
+
+The Sealed lane also introduces the confidential-inference provider (prototype:
+Tinfoil) as a **metadata processor**: it receives a per-user API key, token
+counts, and timestamps. It cannot decrypt prompts or completions. As of
+2026-07-29 the deliberate decision is that the per-user key may carry the user's
+email, on the grounds that the property being defended is the opacity of *data*,
+not of identity or metadata.
+
+---
+
 ## D1 Database (`user_keys`)
 
 | Column | Sensitivity | Notes |
@@ -100,6 +135,7 @@ prompt or completion content.
 | Data class | Location | Retention |
 |---|---|---|
 | Prompts and completions | Not stored, not logged (ZDR passthrough, ZOA posture) | — |
+| Sealed-lane prompts and completions | Not stored, not logged, and not decryptable by BayLeaf (attested E2EE) | — |
 | Account records (D1) | Cloudflare D1 | Indefinite while active |
 | Sandbox content | Daytona | 90 days after last activity |
 | Session state | Client cookie | 24 hours |

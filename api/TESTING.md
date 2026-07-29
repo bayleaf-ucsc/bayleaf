@@ -16,6 +16,38 @@ final step destroys the sandbox.
 
 ---
 
+### Running the Sealed harness against a deployed instance
+
+Simpler than the local HTTPS setup below, and now the preferred path: prod
+already serves real TLS, so the Tinfoil SDK's https requirement for the
+attestation bundle URL is satisfied with no cert generation and none of the two
+TLS traps.
+
+```bash
+# Seed a throwaway token (backend keys are minted on first use, so a
+# token-only row is a valid, complete row).
+npx wrangler d1 execute bayleaf-keys --remote --command \
+  "INSERT INTO user_keys (email, bayleaf_token) VALUES ('sealed-harness@ucsc.edu','sk-bayleaf-...');"
+
+SEALED_BASE=https://api.bayleaf.dev/sealed \
+SEALED_AUTH=sk-bayleaf-... \
+  ./scripts/harness-sealed.py
+
+# Attestation-mutation suite still needs a local cert: it stands up its own
+# HTTPS server serving tampered bundles and asserts the CLIENT refuses them.
+SEALED_CA=<dev-cert.pem> SEALED_BASE=https://api.bayleaf.dev/sealed \
+SEALED_TAMPER_PORT=8801 ./scripts/harness-sealed-attestation.py
+
+# Clean up: delete the row AND the per-user Tinfoil key the run minted.
+```
+
+`SEALED_AUTH` defaults to `campus`, which only resolves from a campus IP. Use a
+keyed token off-campus, and prefer it regardless: Campus Pass shares an env-held
+pool key and exercises none of the minting, CAS, or healing paths.
+
+Requires `SEALED_ENABLED: "true"`, which means a deploy. Flip it back afterwards
+unless the disclosure items in `AGENTS.md` are done.
+
 ## Automated: the key lifecycle harness
 
 `scripts/harness-provision.mjs` is the one part of this file that runs itself.
@@ -45,6 +77,106 @@ If it ever aborts mid-run, sweep manually:
 # list any survivors before deleting
 node -e 'fetch("https://openrouter.ai/api/v1/keys?limit=100",{headers:{Authorization:"Bearer "+process.env.K}}).then(r=>r.json()).then(j=>console.log(j.data.filter(k=>(k.name||"").includes("example.invalid"))))'
 ```
+
+---
+
+## Automated: the Sealed lane conformance harness
+
+`scripts/harness-sealed.py` and `scripts/harness-sealed-attestation.py` exercise
+the BayLeaf Sealed lane (`src/routes/sealed.ts`, issue #55): the EHBP ciphertext
+relay that carries end-to-end-encrypted bodies to an attested Tinfoil enclave.
+33 checks total, no prod involvement.
+
+Between them they assert the three properties the lane exists to claim:
+
+1. an encrypted completion succeeds end to end through the Worker;
+2. the Worker observes only ciphertext, yet still receives usage metadata;
+3. plaintext, tampered ciphertext, destination substitution, client-supplied
+   provider credentials, and mutated attestation bundles all fail **closed**.
+
+### Why this one needs HTTPS locally
+
+Unlike every other harness here, this cannot run against plain
+`http://localhost`. The Tinfoil SDK **hard-requires an `https`
+`attestation_bundle_url`** (`_parse_http_url(..., https_only=True)`), because the
+bundle is the entire trust root for verification. So `wrangler dev` has to serve
+TLS, which means generating a throwaway cert and telling the Python client to
+trust it.
+
+```bash
+# 1. Throwaway cert for localhost. $TMPDIR, never the work tree.
+mkdir -p "$TMPDIR/sealed-tls" && cd "$TMPDIR/sealed-tls"
+openssl req -x509 -newkey rsa:2048 -sha256 -days 7 -nodes \
+  -keyout dev-key.pem -out dev-cert.pem \
+  -subj "/CN=localhost" \
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
+  -addext "basicConstraints=critical,CA:TRUE"
+
+# 2. Sealed lane needs its kill-switch on plus a server-side Tinfoil key.
+#    SEALED_ENABLED is "false" in wrangler.jsonc; .dev.vars overrides it.
+#    Get a tk_ from the `bayleaf` Tinfoil org; never commit it.
+cd -
+grep -q '^SEALED_ENABLED=' .dev.vars || cat >> .dev.vars <<'EOF'
+SEALED_ENABLED=true
+TINFOIL_API_KEY=tk_...
+EOF
+
+# 3. wrangler dev over TLS
+npx wrangler dev --port 8787 --local-protocol https \
+  --https-cert-path "$TMPDIR/sealed-tls/dev-cert.pem" \
+  --https-key-path  "$TMPDIR/sealed-tls/dev-key.pem" &
+sleep 14
+
+# 4. Run both harnesses
+SEALED_CA="$TMPDIR/sealed-tls/dev-cert.pem" ./scripts/harness-sealed.py
+SEALED_CA="$TMPDIR/sealed-tls/dev-cert.pem" ./scripts/harness-sealed-attestation.py
+```
+
+**`.dev.vars` is not hot-reloaded.** Flipping `SEALED_ENABLED` requires a
+restart of `wrangler dev`, which is easy to mistake for a broken kill-switch.
+To verify it fails closed, set it to `false`, restart, and confirm all four
+`/sealed/*` endpoints answer `503` (including `/sealed/health`, so a disabled
+lane leaks no upstream state).
+
+### Two traps in the client-side TLS setup
+
+Both cost real debugging time; the harnesses handle them, but anything
+hand-rolled will hit them.
+
+- **Do not `export` `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE`.** It breaks `uv`'s
+  own TLS when it resolves dependencies (`invalid peer certificate:
+  UnknownIssuer`). The harnesses set them *inside* the process instead, from
+  `$SEALED_CA`.
+- **The CA bundle must be certifi's roots PLUS the dev cert, not the dev cert
+  alone.** Attestation verification also reaches Sigstore's TUF CDN over real
+  TLS; a dev-cert-only bundle fails with `Failed to refresh TUF metadata`, which
+  looks like an attestation bug and is not one.
+
+### Known-absent: streaming usage accounting
+
+`harness-sealed.py` reports streaming usage as `ABSENT (trailer not surfaced)`.
+That is expected, not a regression. Tinfoil returns usage for streamed responses
+as an **HTTP trailer** (it announces `Trailer: X-Tinfoil-Usage-Metrics` and
+emits the value after the body), and the Cloudflare Workers `fetch()` API
+exposes no trailer accessor. Verified live: a direct request to the enclave
+receives the trailer, the same request through the relay does not, and it is
+dropped rather than passed to the client. Non-streaming responses report usage
+in an ordinary response header and work fine.
+
+Consequence: **token-based quota cannot be enforced in-flight for streaming
+traffic.** It does not follow that quota must be request-count based. The
+authoritative per-key, per-model dollar cost is available out-of-band from
+`GET /api/billing/usage?time=<window>`, it includes streamed usage, and it
+reconciles within about 6 seconds. See the cost accounting section of
+`AGENTS.md`.
+
+### Non-determinism to expect
+
+`atc.tinfoil.sh/attestation` answers `GET` with whichever router enclave is
+current, and it varies between calls (observed alternating between
+`router.inf6.tinfoil.sh` and `inference.tinfoil.sh`). Never assert on a specific
+enclave hostname, and never compare HPKE public keys across two separate
+`verify()` calls: they legitimately differ.
 
 ---
 

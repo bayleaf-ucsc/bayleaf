@@ -29,6 +29,16 @@ export async function discoverOIDC(issuer: string): Promise<OIDCEndpoints> {
 export const OPENROUTER_API = 'https://openrouter.ai/api/v1';
 
 /**
+ * Tinfoil admin/control plane, used only for per-user key lifecycle on the
+ * Sealed lane (issue #55). Distinct from the *inference* plane, which is an
+ * attested enclave origin under `*.tinfoil.sh` supplied per-request and
+ * allowlisted in `routes/sealed.ts` — never hardcoded here, because the enclave
+ * host legitimately varies and must be validated rather than assumed.
+ */
+export const TINFOIL_ADMIN_API = 'https://api.tinfoil.sh/api';
+
+
+/**
  * Amazon Bedrock `bedrock-mantle` OpenAI-compatible endpoint (us-west-2).
  * Speaks OpenAI Chat Completions and `/models` with a static bearer token
  * (no SigV4, no JWT minting). Serves an open-weight catalog (Qwen, GLM, Kimi,

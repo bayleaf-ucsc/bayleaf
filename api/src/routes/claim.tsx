@@ -87,7 +87,7 @@ import { Hono } from 'hono';
 import { html } from 'hono/html';
 import type { AppEnv, Session } from '../types';
 import { getSession } from '../utils/session';
-import { ensureUserKey } from '../provision';
+import { ensureUserRow } from '../provision';
 import { renderPage, ErrorPage } from '../templates/layout';
 import { setCookie, getCookie, deleteCookie } from 'hono/cookie';
 
@@ -228,13 +228,17 @@ function constantTimeEqual(a: string, b: string): boolean {
  * Thin wrapper over the shared lifecycle in ../provision, which is also what
  * the dashboard and the /key routes use. Keeping it named locally documents
  * the one thing the claim flow actually needs: a token, not a key object.
+ *
+ * Note this deliberately provisions no backend provider keys. A terminal
+ * claiming a token has not yet said which backend it will use, and since
+ * migration 0005 those are minted on first use of each lane.
  */
 async function ensureUserToken(
   email: string,
   env: AppEnv['Bindings'],
 ): Promise<string | null> {
-  const resolved = await ensureUserKey(email, env);
-  return resolved?.row.bayleaf_token ?? null;
+  const row = await ensureUserRow(email, env);
+  return row?.bayleaf_token ?? null;
 }
 
 // ── POST /auth/claim/initiate ────────────────────────────────────

@@ -31,6 +31,26 @@ prompt/completion text, and do not inject the user identity anywhere it would be
 persisted. Public wording must claim the *posture* ("retains no content, no
 standing operator access to content in flight"), not full attested ZOA.
 
+### The one exception: BayLeaf Sealed
+
+`/sealed/*` (`src/routes/sealed.ts`, issue #55, **disabled by default**) is the
+only lane where the above is stronger than a posture. Clients verify a hardware
+attestation and encrypt request bodies to the enclave's HPKE key (EHBP, RFC 9180
+HPKE at the application layer, independent of TLS). The Worker relays ciphertext.
+A body-logging revision would capture ciphertext, so BayLeaf-operator
+zero-operator-access becomes structural rather than promised.
+
+The claim to make is narrow and testable, and **is not** "traffic never touches
+BayLeaf":
+
+> BayLeaf carries encrypted traffic but does not possess the enclave-bound key
+> required to read it. Plaintext requests are rejected rather than downgraded.
+
+Metadata is explicitly **not** covered. BayLeaf still sees caller identity,
+timing, byte sizes, request counts, and (non-streaming) token usage. Say both
+halves.
+
+
 ## Commands
 
 ```bash
@@ -54,11 +74,14 @@ src/
   schemas.ts            Zod schemas — single source of truth for validation + OpenAPI spec
   constants.ts          OIDC discovery helper, OPENROUTER_API, ALT_BACKENDS, DAYTONA defaults, cookie config
   openrouter.ts         OpenRouter API primitives (findKeyByHash, createKey, deleteKey, getModelInfo)
-  provision.ts          User key lifecycle: getActiveRow, resolveOrKey (self-heal), provisionKey, ensureUserKey
+  tinfoil.ts            Tinfoil admin primitives (createTinfoilKey, deleteTinfoilKey, sanitizeTinfoilKeyName)
+  provision.ts          Row + per-backend key lifecycle: getActiveRow, provisionToken, ensureUserRow,
+                        ensureBackendKey, healBackendKey, resolveOrKeyInfo
   daytona.ts            Daytona sandbox API client (lifecycle, exec, file ops)
   web.ts                Web search and page fetch clients (Tavily Search + Tavily Extract)
   utils/
-    auth.ts             resolveAuth(): shared auth for proxy + sandbox routes (Campus Pass, Bayleaf token, raw key)
+    auth.ts             resolveAuth(): IDENTITY only — Campus Pass or Bayleaf token. Returns no credential.
+    backend.ts          resolveBackendCredential() + sendWithHeal(): per-backend credential + 401 heal-retry
     campusRpd.ts        Per-IP requests-per-day counter for Campus Pass (KV-backed)
     gcp.ts              GCP service-account JWT minting (Vertex backend, currently disabled)
     ip.ts               IP range parsing, campus pass checks
@@ -76,28 +99,85 @@ src/
     key.ts              keyRoutes: POST|DELETE /key (session-gated, hidden from the spec)
     llms.ts             llmsRoutes: /llms.txt and the agent-facing skill prose
     proxy.ts            proxyRoutes: POST /responses, POST /chat/completions, /v1/* catch-all
+    sealed.ts           sealedRoutes: BayLeaf Sealed EHBP ciphertext relay (issue #55, off by default)
     sandbox.ts          sandboxRoutes: GET / (status), POST /exec, POST /poke, GET|PUT /files/*, DELETE /
     web.ts              webRoutes: POST /search, POST /fetch (OpenAPI-documented)
     wellknown.ts        wellknownRoutes: OpenCode curated model list and related discovery docs
-migrations/             D1 schema, applied in order (0001 user_keys … 0004 bedrock RPD)
+migrations/             D1 schema, applied in order (0001 user_keys … 0005 decouple backend keys)
 scripts/
   spend-limits.mjs      Operator tool: adjust OR-side daily caps by roster or by current cap
+  harness-sealed.py     Sealed lane conformance suite (needs wrangler dev over HTTPS; see TESTING.md)
+  harness-sealed-attestation.py  Serves mutated attestation bundles; asserts the client refuses all of them
 ```
 
 **Key lifecycle lives in one place.** `provision.ts` is the only module that
-creates, self-heals, or re-provisions a user's OpenRouter key. The dashboard
+creates, heals, or re-provisions a user's backend provider keys. The dashboard
 render, all three `/key` verbs, and the claim flow's approve step all go
 through it. Four near-copies of this logic previously drifted apart; don't
-reintroduce a fifth. Two invariants it protects: the `sk-bayleaf-` token
-survives an upstream OR key loss (self-heal swaps the hash/secret in place),
-and there is at most one active row per email.
+reintroduce a fifth.
+
+**Token issuance and backend keys are decoupled (migration 0005).** The
+`sk-bayleaf-` token is the identity record; provider keys are caches minted on
+**first use of each backend** via `ensureBackendKey`. So `or_key_secret` and
+`tinfoil_key` are nullable and may legitimately be NULL on a valid active row —
+never assume they are populated, and never read them directly from a route.
+
+The payoff is that "user never had a key" and "user's key vanished upstream"
+became the same code path. Both are `swapBackendKey`, a compare-and-swap
+differing only in its expected value (`NULL` to mint, the failed secret to
+heal). They were previously `provisionKey`'s revoked-row-reuse branch and
+`resolveOrKey`'s self-heal branch, which is precisely what drifted.
+
+Three invariants it protects:
+
+1. **The bayleaf token outlives every backend key.** Healing rewrites provider
+   columns in place and never touches `bayleaf_token`. Only revocation mints a
+   new token.
+2. **One active row per email** (`email` is the primary key).
+3. **A mint race never leaks a billable provider key.** Concurrent requests can
+   both see an absent key and both mint; the CAS lets one win and the losers
+   delete what they created. Verified under load: 8 concurrent first-use
+   requests produced 7 `Discarding redundant` cleanups and exactly 1 surviving
+   upstream key.
+
+**Credentials are acquired per backend, not by `resolveAuth`.** `resolveAuth`
+answers *who is calling*; `utils/backend.ts` answers *which upstream credential
+to use*. Keep them separate: of the five route files that call `resolveAuth`,
+only `proxy.ts` and `sealed.ts` need an inference credential. Folding
+acquisition into `resolveAuth` would mint an OpenRouter key for a user whose
+only request was ever a `/sandbox/exec`.
+
+**Liveness is discovered by use, not by checking.** The request path trusts the
+stored secret and treats an upstream 401/403 as the heal signal, retrying once
+inline (`sendWithHeal`). This is forced for Tinfoil, whose admin API has no
+single-key read (`GET /api/keys/{key}` is 405), so a proactive check would mean
+enumerating every key in the org on every request. Two routes deliberately do
+**not** retry because they stream the client's body and so cannot replay it:
+the `/v1/*` catch-all (returns the 401; a later replayable route heals) and the
+Sealed relay (heals without retrying, then asks the client to retry, because
+Sealed is the only consumer of Tinfoil credentials and would otherwise
+dead-end). Only 401/403 heals: re-minting on 429/5xx would churn keys under
+load and, since a fresh key resets to the global spend default, hand out budget
+as a side effect of provider trouble.
 
 **Spend limits are not mirrored in D1.** OpenRouter is the system of record for
 a key's daily cap. `createKey()` stamps the global `SPENDING_LIMIT_DOLLARS` at
 creation time; per-user or per-cohort caps are set OR-side with
-`scripts/spend-limits.mjs`. This means a self-heal or a revoke/re-provision
+`scripts/spend-limits.mjs`. This means a heal or a revoke/re-provision
 returns a key to the global default, which is the accepted cost of having one
 source of truth rather than two that disagree. Do not add a D1 limit column.
+The same rule holds for Tinfoil, where `SEALED_TOKEN_CAP` is stamped at mint
+time: a lifetime fuse, not a resetting budget.
+
+**Key names are provider-constrained, and Tinfoil's are lossy.** Tinfoil rejects
+`@ : + ( ) , / '` in key names (`400 "must not contain special characters"`;
+alphanumerics, space, `-`, `_`, `.` are fine), so the canonical
+`KEY_NAME_TEMPLATE` value is *not* a legal Tinfoil name.
+`sanitizeTinfoilKeyName` maps the rejects to `_`, and `tinfoil_key_name` stores
+the name the provider echoed back, so attribution never has to invert the
+sanitizer. The exact email survives in the key's `metadata.bayleaf_email`.
+Collision risk is nil while `ALLOWED_EMAIL_DOMAIN` restricts sign-up to one
+domain; revisit if that ever changes.
 
 ## Code Style
 
@@ -196,6 +276,191 @@ a routing boundary (issue #25).
     Vertex's. Campus Pass users are covered by the unified per-IP counter.
     Surfaced under `data.bayleaf.bedrock` in `GET /v1/auth/key`.
 
+## BayLeaf Sealed (`/sealed/*`, issue #55)
+
+**Status: implemented and verified in production, `SEALED_ENABLED: "false"`.**
+33/33 harness checks pass against the deployed `api.bayleaf.dev` (27 relay +
+6 attestation-mutation), including per-user Tinfoil key minting, and prod
+migration `0005` is applied. The lane is deliberately left **disabled**: see
+"Before flipping the switch" below, where the remaining blocker is disclosure
+(`docs/privacy.html` does not yet list Tinfoil as a subprocessor) rather than
+anything technical.
+
+**Testing the lane requires keyed auth off-campus.** `scripts/harness-sealed.py`
+honours `SEALED_AUTH`, defaulting to `campus`. Campus Pass only resolves from a
+campus IP, so verifying a deployed instance from elsewhere needs a
+`sk-bayleaf-` token: `SEALED_BASE=https://api.bayleaf.dev/sealed
+SEALED_AUTH=sk-bayleaf-... ./scripts/harness-sealed.py`. Prefer keyed auth
+anyway, since Campus Pass shares an env-held pool key and therefore exercises
+*none* of the minting, compare-and-swap, or healing logic. Note that testing
+against prod also removes the local-HTTPS cert dance, because the Tinfoil SDK's
+https requirement is satisfied natively.
+
+**One observation worth not re-debugging:** immediately after `wrangler deploy`,
+Cloudflare serves old and new versions concurrently for tens of seconds, so
+`/sealed/*` probes flap between the old behaviour and the new one. A single
+surprising status right after a deploy is almost certainly propagation, not a
+bug. Confirm with repeated probes before investigating.
+
+Sealed is deliberately **not** an `ALT_BACKENDS` row. It has no `<prefix>:` model
+routing and it never forwards plaintext, so it shares no code with
+`routes/proxy.ts`. The two files have *opposite* obligations — `proxy.ts` must
+parse the body to inject a system prompt; `sealed.ts` must never parse the body —
+which is why this is a separate route and **must never become a mode flag on the
+plaintext proxy**.
+
+```
+GET      /sealed/health        Kill-switch state + upstream reachability
+GET|POST /sealed/attestation   Relay of the signed attestation bundle (BOTH verbs required)
+GET      /sealed/models        Provider-qualified catalog (tinfoil:<model>)
+POST     /sealed/v1/*          EHBP ciphertext relay. POST only.
+```
+
+### Invariants. Do not relax these without reading why they exist.
+
+1. `SEALED_ENABLED` must equal `"true"`; anything else 503s the whole lane,
+   `/sealed/health` included.
+2. **`/sealed/v1/*` is POST-only, and this is cryptographic, not stylistic.** A
+   bodyless request has no encrypted body, and per the EHBP spec the encrypted
+   body is what implicitly authenticates the encapsulated key. Without it an
+   intermediary — us — could substitute its own key and read the enclave's
+   *reply*. Allowing `GET` here would hand the relay the exact capability the
+   lane exists to deny it. The catalog lives at `/sealed/models` for this reason.
+3. `Ehbp-Encapsulated-Key` required, strict `^[0-9a-f]{64}$`. Its absence means
+   the body is not encrypted; rejecting is what makes "no plaintext fallback"
+   operational rather than aspirational.
+4. `X-Tinfoil-Enclave-Url` is **untrusted input**, allowlisted to `https` +
+   `*.tinfoil.sh`. Without it, our credential-substituting relay is an open
+   proxy. The upstream path comes from *our* routing, never from the header.
+5. Client-supplied `tk_`/`admin_` credentials are rejected (403); the caller's
+   BayLeaf credential is stripped and the server-side key substituted. Headers
+   are built by **allowlist**, not copy-and-delete, so nothing leaks by
+   forgetting to strip it.
+6. The body is never parsed, cloned, buffered, schema-validated, or logged. No
+   `c.req.json()`, `.text()`, `.arrayBuffer()`, or `.clone()` on this route.
+7. A 2xx upstream response must carry a valid `Ehbp-Response-Nonce` or we return
+   502. That header is the fail-closed signal that the reply came back encrypted.
+8. No fallback to `/v1/*`, ever. Every failure is an error, never a downgrade.
+
+### Three Workers-specific gotchas, all found the hard way
+
+- **`redirect: 'error'` does not exist in Workers** ("won't be implemented since
+  it does not make sense at the edge"), which is what Tinfoil's Go reference
+  proxy uses. The no-redirect invariant needs *both* halves of the `NO_REDIRECT`
+  idiom: ask for `manual`, then explicitly treat 3xx as failure. Dropping either
+  half silently reopens the hole.
+- **`Content-Encoding: identity` is load-bearing.** Workers/the CF edge will gzip
+  a compressible-looking `Content-Type` when `Accept-Encoding` permits. That
+  corrupts EHBP, because a client's EHBP transport parses length-prefixed frames
+  *below* its HTTP library's content-decoding layer, so it receives gzip bytes
+  and fails. An ordinary buffered client would have decompressed transparently
+  and shown nothing wrong, which makes this a nasty one to diagnose. Compressing
+  ciphertext is pointless anyway.
+- **Streaming usage accounting is unavailable *in the Worker*.** Tinfoil sends usage
+  for streamed responses as an HTTP trailer; the Workers `fetch()` API has no
+  trailer accessor, and the trailer is dropped rather than passed through to the
+  client. Non-streaming reports in a header and works. This constrains
+  *in-flight* accounting only — see the cost accounting section, because the
+  authoritative numbers are available out-of-band and do include streaming.
+
+### Cost accounting: reconciliation, not request counting
+
+Measured 2026-07-29. The relay's in-flight visibility is poor, but the
+out-of-band accounting is excellent, so **spend enforcement should be
+dollar-denominated, not request-count based**.
+
+What the Worker sees at request time:
+
+- Non-streaming: `X-Tinfoil-Usage-Metrics: prompt=,completion=,total=,model=`.
+  Note `model=` is present *even though EHBP encrypted `model` in the request
+  body*, so the relay learns which model ran without decrypting anything.
+- Streaming: nothing at all (see the trailer gotcha above).
+- Neither carries dollars, only tokens.
+
+What is available out-of-band, and this is the useful part:
+
+```
+GET /api/billing/usage?time=<window>     # org admin key
+```
+
+One call returns org-wide spend broken down **per key, then per model**, with
+`cost` in dollars. Windows: `5m, 15m, 30m, 1h, 24h, today, 7d, 30d, 60d, 90d,
+180d, 365d, 3mo, 6mo, 12mo, all`. Measured properties:
+
+- **Includes streaming.** Verified: a streamed request moved `tokens_used` by
+  exactly its reported total (3587 -> 3849) and `requests` 24 -> 25.
+- **Reconciles fast.** Already correct at the first poll, 6s after the request.
+  Not bisected below that.
+- **`keys` is indexed by key NAME.** With per-user keys named after the user,
+  this response *is* a per-user dollar table with no local join. This is a
+  concrete payoff of the decision to allow the email in the key name.
+- `POST /api/billing/usage/key?time=<window>` with `{"key":"tk_..."}` gives the
+  same for a single key, if per-user granularity is ever needed on demand.
+
+**Tinfoil is the system of record for Sealed spend**, exactly as OpenRouter is
+for the proxy lane. D1 caches a recent *reading* for the fast path; it does not
+hold a second copy of the *limit*. That distinction keeps the "do not add a D1
+limit column" rule above intact.
+
+**Do not also debit from the response header.** Two accounting paths that can
+disagree is the failure this file already warns about for spend limits. Use
+reconciliation as the accountant and treat the usage header as telemetry (it is
+the only place model popularity is observable without decrypting).
+
+**What a rate limit is still for.** Enforcement necessarily lags reconciliation,
+so a user can overspend by roughly (requests in flight x worst-case cost per
+request). A per-user concurrency cap plus a request rate limit exists to *bound
+that window* and to deter abuse. It is not the cost model.
+
+**Suggested split.** Put the reconciler in a **separate Worker** with its own
+`TINFOIL_ADMIN_KEY` binding, sharing D1. The inference Worker then holds only
+per-user `tk_` values read from D1 and literally cannot mint, enumerate, or read
+billing. Cloudflare secrets are per-Worker, so a cron handler in the *same*
+Worker does not achieve this — it would leave admin authority reachable from the
+request path.
+
+Not yet established: whether `keys` includes revoked/deleted keys (matters for
+reconciling a departed user), Admin API rate limits for polling frequency, and
+whether reconciliation is faster than 6s.
+
+### Before flipping the switch
+
+1. **Per-user Tinfoil keys — DONE (migration `0005`).** One Tinfoil key per user
+   email, minted on **first use of the lane** and stored in `tinfoil_key`, so
+   usage is attributable per user and the *provider* enforces a per-user token
+   fuse — the only cost bound available when EHBP hides `model` and `max_tokens`
+   from us. Campus Pass has no email and so shares `CAMPUS_SEALED_KEY`,
+   mirroring `CAMPUS_POOL_KEY`; pool credentials live in env and are therefore
+   not healable from the request path.
+
+   Two decisions worth not re-litigating. **The email may appear in the Tinfoil
+   key name** (2026-07-29): the line being defended is that *data* is opaque to
+   the provider, not that identity or metadata is. If that ever changes, apply
+   the same policy to OpenRouter in the same pass rather than treating the lanes
+   differently. And **the admin credential is accepted on the inference path**
+   (2026-07-29), reversing an earlier "mint at provisioning time only" stance:
+   minting at token issuance would let a Tinfoil outage block signup and would
+   issue Sealed credentials to users who never touch the lane. The mitigation is
+   that `tinfoil.ts` exports no key-enumeration function, so a compromised
+   request path can mint and delete but not read other users' credentials.
+   Note this makes `TINFOIL_ADMIN_KEY` more dangerous than
+   `OPENROUTER_PROVISIONING_KEY`: Tinfoil re-reveals secrets on read, so a leak
+   of the admin key exposes every user's inference credential.
+2. **Dollar-denominated spend enforcement** via the reconciliation loop described
+   above, plus a per-user concurrency cap and request rate limit to bound the
+   reconciliation-lag overspend window. `SEALED_TOKEN_CAP` remains a backstop
+   fuse (it admits measured overspend), not the control. The RPD guardrail is a
+   *component* of this design, not an alternative to it: enforcement necessarily
+   lags reconciliation, so something must bound the in-flight window.
+3. **`/sealed/policy`** publishing the C1–C6 rubric plus a pinned enclave
+   measurement allowlist. This matters more than it looks: BayLeaf cannot forge
+   the attestation bundle (verified — all five mutation classes are refused
+   client-side), but a client that skips verification or accepts whatever the
+   enclave self-reports gets none of the guarantee. Pinning is the client-side
+   obligation we cannot enforce, only publish.
+5. **Add Tinfoil to `docs/privacy.html` subprocessors.** It is a new content
+   processor. Accurate today only because the lane is off.
+
 ## Routes
 
 ```
@@ -211,6 +476,10 @@ a routing boundary (issue #25).
 /sandbox                DELETE: destroy user's sandbox (keyed or session)
 /web/search              POST: web search (Tavily)
 /web/fetch               POST: fetch page content from one or more URLs (Tavily Extract)
+/sealed/health          GET: Sealed kill-switch state + upstream reachability (issue #55)
+/sealed/attestation     GET|POST: relay of the signed Tinfoil attestation bundle
+/sealed/models          GET: Sealed catalog, provider-qualified (tinfoil:<model>)
+/sealed/v1/*            POST: EHBP ciphertext relay. POST only, no plaintext fallback
 /recommended-model      Current recommended model slug + display name (JSON, unauthenticated)
 /docs                   Interactive API docs (Scalar viewer, loads /docs/openapi.json)
 /docs/openapi.json      OpenAPI 3.1 spec (auto-generated from Zod schemas)
@@ -224,3 +493,7 @@ a routing boundary (issue #25).
 - Don't throw — return null/error responses
 - Don't hand-code OpenAPI schemas — define Zod schemas in `schemas.ts` and use `createRoute()`
 - Don't display API keys in plaintext (no `type="text"` inputs, no visible tokens in the page). Users may screen-share while demoing the system. Always use `type="password"` inputs and "Copy" buttons that write to the clipboard. The key value should never be visible on screen.
+- Don't add body parsing, buffering, logging, or a `GET` handler to
+  `routes/sealed.ts`, and don't merge it into `routes/proxy.ts`. Read the
+  invariants section above first: several of those look like cleanups and are
+  actually the security properties.

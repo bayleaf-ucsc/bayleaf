@@ -21,6 +21,7 @@ import { authRoutes } from './routes/auth';
 import { dashboardRoutes } from './routes/dashboard';
 import { keyRoutes } from './routes/key';
 import { proxyRoutes } from './routes/proxy';
+import { sealedRoutes } from './routes/sealed';
 import { sandboxRoutes } from './routes/sandbox';
 import { webRoutes } from './routes/web';
 import { docsRoutes } from './routes/docs';
@@ -115,6 +116,10 @@ app.openapi(healthRoute, (c) => {
 // ── Mount route groups ────────────────────────────────────────────
 
 app.route('/v1', proxyRoutes);
+// BayLeaf Sealed (issue #55): EHBP ciphertext relay. Mounted as a sibling of
+// /v1, never inside it, so no path or middleware is shared with the plaintext
+// proxy. Gated by SEALED_ENABLED, which fails closed.
+app.route('/sealed', sealedRoutes);
 app.route('/sandbox', sandboxRoutes);
 app.route('/web', webRoutes);
 app.route('/docs', docsRoutes);

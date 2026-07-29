@@ -16,6 +16,7 @@ import { proxy } from 'hono/proxy';
 import type { AppEnv } from '../types';
 import { OPENROUTER_API, BEDROCK_MANTLE_API, VERTEX_MODELS, isVertexEnabled, isBedrockEnabled, altBackend, ALT_BACKENDS, isBackendEnabled } from '../constants';
 import { resolveAuth, type AuthResult } from '../utils/auth';
+import { resolveBackendCredential, sendWithHeal } from '../utils/backend';
 import { getGCPAccessToken } from '../utils/gcp';
 import { checkAndIncrement, inspectCounter, parseLimit } from '../utils/campusRpd';
 import {
@@ -92,6 +93,28 @@ function injectUser(body: { user?: string }, auth: AuthResult): void {
   } else if (auth.isCampusMode) {
     body.user = 'campus-anonymous';
   }
+}
+
+/**
+ * No usable upstream credential could be obtained for this caller.
+ *
+ * Reached when a per-user key could not be minted (provider admin API down or
+ * rejecting) or when the Campus Pass pool binding is unset. Deliberately a 503
+ * rather than a 401: the caller authenticated fine, it is our side that cannot
+ * currently talk to the provider on their behalf.
+ *
+ * Note there is no fallback to the campus pool key for a keyed user. Silently
+ * substituting a shared credential would keep the request working while
+ * destroying the per-user attribution that spend accounting depends on, and it
+ * would bill one user's traffic to the shared pool.
+ */
+function upstreamCredentialUnavailable(c: Context<AppEnv>) {
+  return c.json({
+    error: {
+      message: 'Could not obtain an upstream credential for your account. This is a BayLeaf-side problem, not a problem with your key; please retry shortly.',
+      code: 503,
+    },
+  }, 503);
 }
 
 /** Forward a modified JSON body to OpenRouter and return the response. */
@@ -228,7 +251,11 @@ proxyRoutes.openapi(responsesRoute, async (c) => {
 
   // Proxy passthrough: forwarding the upstream response verbatim. The actual
   // response shape comes from OpenRouter, not from our Zod schema.
-  return forwardJson(`${OPENROUTER_API}/responses`, auth.authorization, body) as any;
+  const cred = await resolveBackendCredential(auth, 'openrouter', c.env);
+  if (!cred) return upstreamCredentialUnavailable(c) as any;
+
+  return sendWithHeal(cred, c.env, (secret) =>
+    forwardJson(`${OPENROUTER_API}/responses`, `Bearer ${secret}`, body)) as any;
 }, (result, c) => {
   if (!result.success) {
     // Hook return type is not modeled by the library's generics
@@ -409,7 +436,11 @@ proxyRoutes.openapi(chatCompletionsRoute, async (c) => {
     if (modelStr.startsWith('openrouter:')) {
       body.model = modelStr.replace('openrouter:', '');
     }
-    return forwardJson(`${OPENROUTER_API}/chat/completions`, auth.authorization, body) as any;
+    const cred = await resolveBackendCredential(auth, 'openrouter', c.env);
+    if (!cred) return upstreamCredentialUnavailable(c) as any;
+
+    return sendWithHeal(cred, c.env, (secret) =>
+      forwardJson(`${OPENROUTER_API}/chat/completions`, `Bearer ${secret}`, body)) as any;
   }
 }, (result, c) => {
   if (!result.success) {
@@ -440,9 +471,11 @@ proxyRoutes.openapi(modelsRoute, async (c) => {
   if (auth instanceof Response) return auth as any;
 
   try {
-    const res = await fetch(`${OPENROUTER_API}/models`, {
-      headers: { Authorization: auth.authorization }
-    });
+    const cred = await resolveBackendCredential(auth, 'openrouter', c.env);
+    if (!cred) return upstreamCredentialUnavailable(c) as any;
+
+    const res = await sendWithHeal(cred, c.env, (secret) =>
+      fetch(`${OPENROUTER_API}/models`, { headers: { Authorization: `Bearer ${secret}` } }));
     
     if (!res.ok) {
       return new Response(await res.text(), { status: res.status, headers: { 'Access-Control-Allow-Origin': '*' } }) as any;
@@ -525,9 +558,11 @@ proxyRoutes.openapi(authKeyRoute, async (c) => {
   let orStatus = 200;
   let orPayload: { data?: Record<string, unknown> } = {};
   try {
-    const res = await fetch(`${OPENROUTER_API}/auth/key`, {
-      headers: { Authorization: auth.authorization },
-    });
+    const cred = await resolveBackendCredential(auth, 'openrouter', c.env);
+    if (!cred) return upstreamCredentialUnavailable(c) as any;
+
+    const res = await sendWithHeal(cred, c.env, (secret) =>
+      fetch(`${OPENROUTER_API}/auth/key`, { headers: { Authorization: `Bearer ${secret}` } }));
     orStatus = res.status;
     if (res.ok) {
       orPayload = await res.json() as { data?: Record<string, unknown> };
@@ -696,11 +731,21 @@ async function handleProxy(c: Context<AppEnv>): Promise<Response> {
   const auth = await resolveAuth(c);
   if (auth instanceof Response) return auth;
 
+  const cred = await resolveBackendCredential(auth, 'openrouter', c.env);
+  if (!cred) return upstreamCredentialUnavailable(c);
+
+  // No sendWithHeal here, deliberately. This handler streams the client's
+  // request body straight through, so the call is not replayable: a retry would
+  // send an already-consumed stream. Buffering arbitrary passthrough traffic to
+  // make it retryable would mean holding request bodies in memory on a lane
+  // whose whole point is not to, so a dead credential surfaces as a 401 here and
+  // is healed by the next request that goes through a replayable route
+  // (/chat/completions, /v1/models, /v1/auth/key).
   const res = await proxy(openRouterUrl, {
     ...c.req,
     headers: {
       ...c.req.header(),
-      Authorization: auth.authorization,
+      Authorization: `Bearer ${cred.secret}`,
       host: undefined,
     },
   });

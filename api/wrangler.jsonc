@@ -103,6 +103,56 @@
     //   4. Add AWS to docs/privacy.html subprocessors.
     "BEDROCK_ENABLED": "false",
 
+    // BayLeaf Sealed — attested confidential-inference lane (issue #55).
+    //
+    // SEALED_ENABLED is the master kill-switch, with the same fail-closed
+    // semantics as VERTEX_ENABLED / BEDROCK_ENABLED: it must be exactly the
+    // string "true" or the entire /sealed/* surface answers 503, including
+    // /sealed/health, so a disabled lane leaks no upstream state.
+    //
+    // Unlike those two, Sealed is NOT an ALT_BACKENDS row. It has no `<prefix>:`
+    // model routing and it never forwards plaintext. It relays EHBP-encrypted
+    // (RFC 9180 HPKE) request bodies to a client-attested Tinfoil enclave, so
+    // BayLeaf stays on the auth and metering path while lacking the
+    // enclave-bound key needed to read prompts or completions. That makes it
+    // the only lane where BayLeaf-operator zero-operator-access is a structural
+    // property rather than a posture.
+    //
+    // SPIKE, disabled in production. Before flipping to "true":
+    //   1. Secrets set via `wrangler secret put`: TINFOIL_ADMIN_KEY (mints
+    //      per-user keys), TINFOIL_API_KEY (org key, now used only for the
+    //      plaintext catalog at /sealed/models), and CAMPUS_SEALED_KEY (pool
+    //      key for Campus Pass, which has no email and so cannot hold a
+    //      per-user key).
+    //   2. Apply migration 0005. It rebuilds user_keys to make the OpenRouter
+    //      columns nullable and add the Tinfoil ones, because backend keys are
+    //      now minted on first use of each lane rather than at token issuance.
+    //   3. Confirm streaming works: usage accounting for streamed responses
+    //      arrives in an HTTP trailer, which the Workers runtime does not
+    //      expose. Non-streaming reports in a response header. Note the
+    //      authoritative numbers are available out-of-band and DO include
+    //      streaming, so this is a visibility gap, not an accounting gap.
+    //   4. Publish /sealed/policy (the C1-C6 rubric plus pinned enclave
+    //      measurements) and add Tinfoil to docs/privacy.html subprocessors.
+    //   5. Per-user RPD guardrail, mirroring the Bedrock RPD pattern. This
+    //      bounds the reconciliation-lag overspend window; it is a required
+    //      component of dollar-denominated enforcement, not a substitute for it.
+    //      SEALED_TOKEN_CAP is a provider-side fuse, not a budget.
+    "SEALED_ENABLED": "false",
+
+    // Lifetime token cap stamped on each per-user Tinfoil key at mint time.
+    // Unlike OpenRouter's SPENDING_LIMIT_DOLLARS this does NOT reset on a
+    // schedule: Tinfoil's max_tokens is a hard lifetime ceiling, so exhausting
+    // it disables that user's Sealed access until an operator raises it. Sized
+    // as a fuse against runaway cost, deliberately well above ordinary use.
+    //
+    // A token cap is the only provider-side limit available here: `scope`
+    // model restrictions are silently ignored by the Tinfoil admin API
+    // (verified 2026-07-29), so there is no way to constrain a per-user key to
+    // a model subset.
+    "SEALED_TOKEN_CAP": "2000000",
+
+
     "SPENDING_LIMIT_DOLLARS": "5.0",
     "SPENDING_LIMIT_RESET": "daily",
     "KEY_NAME_TEMPLATE": "BayLeaf API for $email",
@@ -161,6 +211,25 @@
   // - CAMPUS_POOL_KEY (for Campus Pass feature)
   // - DAYTONA_API_KEY (for sandbox provider)
   // - BEDROCK_BEARER_TOKEN (Amazon Bedrock mantle bearer token; enterprise account in prod)
+  // - TINFOIL_ADMIN_KEY    (Sealed lane: mints/deletes per-user Tinfoil keys.
+  //                         Strictly more dangerous than OPENROUTER_PROVISIONING_KEY
+  //                         because Tinfoil's admin API re-reveals key secrets on
+  //                         read, so a leak exposes every user's inference
+  //                         credential rather than only create/destroy rights.)
+  // - TINFOIL_API_KEY      (Sealed lane: org key, used only for GET /sealed/models)
+  // - CAMPUS_SEALED_KEY    (Sealed lane: shared pool key for Campus Pass.
+  //                         DELIBERATELY UNCAPPED, decided 2026-07-29. A Tinfoil
+  //                         max_tokens cap is a LIFETIME fuse with no reset, unlike
+  //                         OpenRouter's daily-resetting limit, so a capped pool key
+  //                         would eventually blow and silently break Sealed for all
+  //                         on-campus users at once -- and because pool credentials
+  //                         live in env rather than a D1 row, sendWithHeal cannot
+  //                         repair it. Campus exposure is bounded instead by
+  //                         CAMPUS_RPD_LIMIT per-IP throttling (IPv4 per address,
+  //                         IPv6 aggregated to /64 by bucketKey, so the campus IPv6
+  //                         /32 is not an amplification hole). Caveat: RPD bounds
+  //                         REQUESTS, not cost per request, and EHBP hides max_tokens
+  //                         from us -- see the Sealed pre-flip checklist in AGENTS.md.)
   // - GWS_CLIENT_ID        (Google Workspace CLI OAuth client ID)
   // - GWS_CLIENT_SECRET    (Google Workspace CLI OAuth client secret)
   // - GWS_PROJECT_ID       (GCP project ID, e.g. "gws-cli-playground-ucsc")

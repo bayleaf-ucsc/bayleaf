@@ -19,7 +19,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import type { AppEnv } from '../types';
 import { getSession } from '../utils/session';
-import { getActiveRow, provisionKey } from '../provision';
+import { getActiveRow, provisionToken } from '../provision';
 
 export const keyRoutes = new OpenAPIHono<AppEnv>();
 
@@ -40,12 +40,12 @@ keyRoutes.post('/key', async (c) => {
     return c.json({ error: { message: 'Key already exists', code: 409 } }, 409);
   }
 
-  const resolved = await provisionKey(session.email, c.env);
-  if (!resolved) {
+  const row = await provisionToken(session.email, c.env);
+  if (!row) {
     return c.json({ error: { message: 'Failed to create key', code: 500 } }, 500);
   }
 
-  return c.json({ success: true as const, key: resolved.row.bayleaf_token }, 200);
+  return c.json({ success: true as const, key: row.bayleaf_token }, 200);
 });
 
 // ── DELETE /key — Revoke a key (called by dashboard) ──────────────
