@@ -47,6 +47,15 @@ const call = async (method, path, c) => {
   return { status: res.status, json, text };
 };
 
+/** Hit the canonical agent-facing budget endpoint with a bayleaf token. */
+const authKey = async (token) => {
+  const res = await fetch(`${BASE}/v1/auth/key`, { headers: { Authorization: `Bearer ${token}` } });
+  const text = await res.text();
+  let json = null;
+  try { json = JSON.parse(text); } catch {}
+  return { status: res.status, json, text };
+};
+
 const d1 = (sql) => {
   const out = execFileSync('npx',
     ['wrangler', 'd1', 'execute', 'bayleaf-keys', '--local', '--json', '--command', sql],
@@ -79,8 +88,8 @@ async function main() {
   const c = await cookie();
   d1(`DELETE FROM user_keys WHERE email='${EMAIL}'`);
 
-  console.log('\n1. GET /key with no row → 404');
-  check('404', (await call('GET', '/key', c)).status === 404);
+  console.log('\n1. DELETE /key with no row → 404');
+  check('404', (await call('DELETE', '/key', c)).status === 404);
 
   console.log('\n2. POST /key → fresh provision (INSERT path)');
   let r = await call('POST', '/key', c);
@@ -99,12 +108,29 @@ async function main() {
   console.log('\n3. POST /key again → 409 (one active row per email)');
   check('409', (await call('POST', '/key', c)).status === 409);
 
-  console.log('\n4. GET /key → usage numbers, no secret leak');
-  r = await call('GET', '/key', c);
-  check('200', r.status === 200);
-  check('exists:true', r.json?.exists === true);
-  check('has limit + usage_daily', typeof r.json?.key?.limit === 'number' && typeof r.json?.key?.usage_daily === 'number');
-  check('response leaks no sk- value', !/sk-(or-|bayleaf-)/.test(r.text));
+  console.log('\n4. GET /v1/auth/key with the token → budget, no secret leak');
+  r = await authKey(token1);
+  check('200', r.status === 200, `got ${r.status}`);
+  check('data.limit is a number', typeof r.json?.data?.limit === 'number');
+  check('data.bayleaf.openrouter present', !!r.json?.data?.bayleaf?.openrouter);
+  // Only *enabled* alternate backends may appear. Advertising a budget for a
+  // backend that answers 503 makes an agent plan around a capability it lacks;
+  // /v1/models and the routing block already gate on this, and this surface
+  // used to not. Read the flags from wrangler.jsonc so the check tracks config.
+  const wrangler = JSON.parse(readFileSync('wrangler.jsonc', 'utf8').replace(/^\s*\/\/.*$/gm, ''));
+  for (const [name, flag] of [['vertex', 'VERTEX_ENABLED'], ['bedrock', 'BEDROCK_ENABLED']]) {
+    const enabled = wrangler.vars[flag] === 'true';
+    const present = !!r.json?.data?.bayleaf?.[name];
+    check(`bayleaf.${name} present iff ${flag}=true`, present === enabled,
+      `${flag}=${wrangler.vars[flag]} present=${present}`);
+  }
+  // OpenRouter echoes an *elided* label ("sk-or-v1-9fa...4a4") for the caller's
+  // own key. That's safe by upstream design. What must never appear is a whole
+  // secret, so require every sk-or- occurrence to carry the "..." elision — this
+  // fires if OR starts returning raw keys or if we ever inject or_key_secret.
+  const orRefs = [...r.text.matchAll(/sk-or-[A-Za-z0-9.\-_]*/g)].map((m) => m[0]);
+  check('every sk-or- reference is elided, none is a whole secret',
+    orRefs.length > 0 && orRefs.every((v) => v.includes('...')), orRefs.join(' '));
 
   console.log('\n5. GET /dashboard → renders, no secret in HTML');
   r = await call('GET', '/dashboard', c);
@@ -124,13 +150,13 @@ async function main() {
   check('bayleaf token PRESERVED across self-heal', db.bayleaf_token === token1);
   check('new OR key alive', !!(await orGet(db.or_key_hash)));
 
-  console.log('\n7. GET /key after self-heal still works');
-  check('200', (await call('GET', '/key', c)).status === 200);
+  console.log('\n7. Same token still authenticates after self-heal');
+  check('/v1/auth/key 200', (await authKey(token1)).status === 200);
 
   console.log('\n8. DELETE /key → revoke');
   check('200', (await call('DELETE', '/key', c)).status === 200);
   check('D1 revoked=1', row().revoked === 1);
-  check('GET /key now 404', (await call('GET', '/key', c)).status === 404);
+  check('revoked token no longer authenticates', (await authKey(token1)).status === 401);
 
   console.log('\n9. POST /key after revoke → reuses the still-alive OR key, mints NEW token');
   const revokedHash = row().or_key_hash;

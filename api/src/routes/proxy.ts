@@ -14,7 +14,7 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { proxy } from 'hono/proxy';
 import type { AppEnv } from '../types';
-import { OPENROUTER_API, BEDROCK_MANTLE_API, VERTEX_MODELS, isVertexEnabled, isBedrockEnabled, altBackend } from '../constants';
+import { OPENROUTER_API, BEDROCK_MANTLE_API, VERTEX_MODELS, isVertexEnabled, isBedrockEnabled, altBackend, ALT_BACKENDS, isBackendEnabled } from '../constants';
 import { resolveAuth, type AuthResult } from '../utils/auth';
 import { getGCPAccessToken } from '../utils/gcp';
 import { checkAndIncrement, inspectCounter, parseLimit } from '../utils/campusRpd';
@@ -521,35 +521,25 @@ proxyRoutes.openapi(authKeyRoute, async (c) => {
   // when we have a keyed user (the per-key Vertex RPD counter lives in the
   // user_keys row). Campus sub-block present for Campus Pass connections,
   // reporting the unified per-IP RPD that covers all providers.
-  const bayleaf: {
-    openrouter: {
-      usage: number | null;
-      limit: number | null;
-      limit_remaining: number | null;
-      applies_to: string;
-    };
-    vertex?: {
-      requests_today: number;
-      limit: number;
-      limit_remaining: number;
-      resets_at: string;
-      applies_to: string;
-    };
-    bedrock?: {
-      requests_today: number;
-      limit: number;
-      limit_remaining: number;
-      resets_at: string;
-      applies_to: string;
-    };
-    campus?: {
-      requests_today: number;
-      limit: number;
-      limit_remaining: number;
-      resets_at: string;
-      applies_to: string;
-    };
-  } = {
+  // A request-per-day block: one per enabled alternate backend, plus `campus`.
+  interface RpdBlock {
+    requests_today: number;
+    limit: number;
+    limit_remaining: number;
+    resets_at: string;
+    applies_to: string;
+  }
+  // The dollar-denominated OpenRouter block; shape differs from RpdBlock because
+  // OR meters spend, not request count.
+  interface SpendBlock {
+    usage: number | null;
+    limit: number | null;
+    limit_remaining: number | null;
+    applies_to: string;
+  }
+  // Keyed by backend name so the ALT_BACKENDS loop below can fill it without a
+  // hardcoded field per backend.
+  const bayleaf: Record<string, RpdBlock | SpendBlock> = {
     openrouter: {
       usage: orUsage,
       limit: orLimit,
@@ -558,35 +548,30 @@ proxyRoutes.openapi(authKeyRoute, async (c) => {
     },
   };
 
+  // Per-backend RPD, driven off ALT_BACKENDS so this surface can't drift from
+  // /v1/models and the routing block. Only *enabled* backends are reported:
+  // advertising a budget for a backend that answers 503 is worse than silence,
+  // because an agent will plan around a capability it doesn't have.
   if (auth.userKeyRow) {
+    const row = auth.userKeyRow;
     const today = new Date().toISOString().split('T')[0];
-    // If the stored date is stale, the next /v1/chat/completions call will
-    // reset the counter to 1. From the agent's perspective, today's usage is
-    // effectively zero — report it that way.
-    const requestsToday = auth.userKeyRow.vertex_rpd_date === today
-      ? auth.userKeyRow.vertex_rpd_count
-      : 0;
     // Next midnight UTC: bump to tomorrow's date and pin to 00:00:00Z.
     const tomorrow = new Date();
     tomorrow.setUTCHours(24, 0, 0, 0);
-    bayleaf.vertex = {
-      requests_today: requestsToday,
-      limit: VERTEX_RPD_LIMIT,
-      limit_remaining: Math.max(0, VERTEX_RPD_LIMIT - requestsToday),
-      resets_at: tomorrow.toISOString(),
-      applies_to: 'models with prefix "vertex:"',
-    };
-
-    const bedrockRequestsToday = auth.userKeyRow.bedrock_rpd_date === today
-      ? auth.userKeyRow.bedrock_rpd_count
-      : 0;
-    bayleaf.bedrock = {
-      requests_today: bedrockRequestsToday,
-      limit: BEDROCK_RPD_LIMIT,
-      limit_remaining: Math.max(0, BEDROCK_RPD_LIMIT - bedrockRequestsToday),
-      resets_at: tomorrow.toISOString(),
-      applies_to: 'models with prefix "bedrock:"',
-    };
+    for (const backend of ALT_BACKENDS) {
+      if (!isBackendEnabled(c.env, backend.key)) continue;
+      // If the stored date is stale, the next /v1/chat/completions call will
+      // reset the counter to 1. From the agent's perspective, today's usage is
+      // effectively zero — report it that way.
+      const requestsToday = row[backend.rpdDateField] === today ? row[backend.rpdCountField] : 0;
+      bayleaf[backend.key] = {
+        requests_today: requestsToday,
+        limit: backend.rpdLimit,
+        limit_remaining: Math.max(0, backend.rpdLimit - requestsToday),
+        resets_at: tomorrow.toISOString(),
+        applies_to: `models with prefix "${backend.prefix}"`,
+      };
+    }
   }
 
   if (auth.isCampusMode && auth.clientIp) {

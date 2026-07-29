@@ -181,7 +181,6 @@ Off-campus users will receive a 401 error directing them to get a personal key a
 | `/callback` | GET | OIDC callback |
 | `/logout` | GET | Clear session |
 | `/dashboard` | GET | Dashboard (key management, LLM stats, sandbox status) |
-| `/key` | GET | Get current key info (JSON) |
 | `/key` | POST | Create new key (returns key in JSON) |
 | `/key` | DELETE | Revoke current key |
 

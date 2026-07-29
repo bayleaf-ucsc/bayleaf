@@ -4,11 +4,13 @@
  * Issues opaque proxy keys (sk-bayleaf-...) backed by persistent OR keys.
  * The real OR key never reaches the client.
  *
- * These routes back the dashboard UI (provision, view, revoke a personal key
- * after browser login). They are intentionally NOT registered in the OpenAPI
- * spec — agents should not be programming against them. The canonical
- * agent-facing budget endpoint is `/v1/auth/key`, which works with bearer
- * tokens and reports every backend.
+ * These two routes back the dashboard's "Create API Key" and "Revoke" buttons
+ * and nothing else. They are intentionally NOT registered in the OpenAPI spec —
+ * agents should not be programming against them. The canonical agent-facing
+ * budget endpoint is `/v1/auth/key`, which works with bearer tokens and reports
+ * every backend; the dashboard reads usage server-side in routes/dashboard.tsx.
+ * (A `GET /key` used to exist as a third way to read usage. It had no caller and
+ * was strictly worse than `/v1/auth/key`, so it's gone.)
  *
  * The OR key lifecycle itself lives in `../provision` — see that module for
  * the self-heal and revoked-row-reuse rules these handlers rely on.
@@ -17,7 +19,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import type { AppEnv } from '../types';
 import { getSession } from '../utils/session';
-import { getActiveRow, resolveOrKey, provisionKey } from '../provision';
+import { getActiveRow, provisionKey } from '../provision';
 
 export const keyRoutes = new OpenAPIHono<AppEnv>();
 
@@ -27,33 +29,6 @@ keyRoutes.use('/key', async (c, next) => {
   if (!session) return c.json({ error: 'Unauthorized' }, 401);
   c.set('session', session);
   await next();
-});
-
-// ── GET /key — Dashboard key info ─────────────────────────────────
-
-keyRoutes.get('/key', async (c) => {
-  const session = c.get('session');
-  const row = await getActiveRow(session.email, c.env);
-  if (!row) {
-    return c.json({ error: { message: 'No key found', code: 404 } }, 404);
-  }
-
-  const resolved = await resolveOrKey(row, c.env);
-  if (!resolved) {
-    return c.json({ error: { message: 'Failed to validate key', code: 500 } }, 500);
-  }
-
-  const { orKey } = resolved;
-  return c.json({
-    exists: true as const,
-    key: {
-      usage_daily: orKey.usage_daily,
-      usage_monthly: orKey.usage_monthly,
-      limit: orKey.limit,
-      limit_remaining: orKey.limit_remaining,
-      created_at: row.created_at,
-    },
-  }, 200);
 });
 
 // ── POST /key — Provision a new key (called by dashboard) ─────────

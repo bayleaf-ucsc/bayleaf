@@ -73,7 +73,7 @@ src/
     claim.tsx           claimRoutes: RFC 8628-style device flow for handing a key to a terminal
     dashboard.tsx       dashboardRoutes: / (landing), /dashboard (self-heals sandbox ID cache)
     docs.ts             docsRoutes: /docs (Scalar viewer), /docs/openapi.json, /docs/SKILL.md
-    key.ts              keyRoutes: GET|POST|DELETE /key (session-gated, hidden from the spec)
+    key.ts              keyRoutes: POST|DELETE /key (session-gated, hidden from the spec)
     llms.ts             llmsRoutes: /llms.txt and the agent-facing skill prose
     proxy.ts            proxyRoutes: POST /responses, POST /chat/completions, /v1/* catch-all
     sandbox.ts          sandboxRoutes: GET / (status), POST /exec, POST /poke, GET|PUT /files/*, DELETE /
@@ -162,7 +162,7 @@ stripped from the OpenCode curated list in `routes/wellknown.ts`. Use
 
 ```
 /                       Landing       /login         OIDC start      /callback   OIDC callback
-/logout                 Clear         /dashboard     User UI         /key        GET|POST|DELETE
+/logout                 Clear         /dashboard     User UI         /key        POST|DELETE
 /v1/responses           Responses API proxy (system prompt via instructions field)
 /v1/chat/completions    Chat completions proxy (system prompt via system message)
 /v1/*                   General OpenRouter proxy (models, auth/key, etc.)

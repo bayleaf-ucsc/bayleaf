@@ -150,11 +150,11 @@ export const SandboxPokeResponseSchema = z.object({
 
 // ── Key management ───────────────────────────────────────────────
 //
-// The /key endpoints are dashboard plumbing (browser session-gated,
-// called by the dashboard JS to provision/inspect/revoke a personal key).
-// They are intentionally not part of the public OpenAPI surface, so no
-// schemas are exported here. Agent-facing budget introspection lives at
-// /v1/auth/key, which works with bearer tokens and reports both backends.
+// POST|DELETE /key are dashboard plumbing (browser session-gated, called by the
+// dashboard JS to provision or revoke a personal key). They are intentionally
+// not part of the public OpenAPI surface, so no schemas are exported here.
+// Agent-facing budget introspection lives at /v1/auth/key, which works with
+// bearer tokens and reports every backend.
 
 // ── Web Search & Fetch ───────────────────────────────────────────
 
