@@ -112,6 +112,9 @@
  * OpenAPI documentation, `/sealed/policy` (the C1–C6 rubric artifact), and
  * per-key request quotas are deliberately deferred until the surface settles.
  * Handlers are plain Hono, not `createRoute()`, for that reason.
+ * The `SEALED_ENABLED` checklist in `wrangler.jsonc` is also the documentation
+ * gate: enabling this route requires updating the status claims in the public
+ * privacy, retention, dependency, and security documents named there.
  */
 
 import { OpenAPIHono } from '@hono/zod-openapi';

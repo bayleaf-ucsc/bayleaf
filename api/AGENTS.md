@@ -263,9 +263,10 @@ a routing boundary (issue #25).
     plane, and only the mantle plane matters to us; (3) resolve the weights-listing question: the ZDR
     filter still admits closed-weight ZDR-capable models (claude-haiku,
     grok), so re-enabling needs either a mantle weights predicate or an
-    accepted maintained list; (4) add AWS to `docs/privacy.html`
-    subprocessors (the list was incomplete while bedrock served traffic; it
-    is accurate only because the backend is paused).
+    accepted maintained list; (4) complete the documentation gate listed beside
+    `BEDROCK_ENABLED` in `wrangler.jsonc`: add AWS to `docs/privacy.html` and
+    update the status, account-coverage, and data-flow claims in the named
+    security, dependency, FERPA, retention, and landing-page documents.
   - **Models** are **live-fetched** from mantle's `/models` at `GET /v1/models`
     time and prefixed with `bedrock:` (unlike Vertex's hardcoded
     `VERTEX_MODELS`), since the catalog shifts often. A mantle failure
@@ -282,9 +283,8 @@ a routing boundary (issue #25).
 33/33 harness checks pass against the deployed `api.bayleaf.dev` (27 relay +
 6 attestation-mutation), including per-user Tinfoil key minting, and prod
 migration `0005` is applied. The lane is deliberately left **disabled**: see
-"Before flipping the switch" below, where the remaining blocker is disclosure
-(`docs/privacy.html` does not yet list Tinfoil as a subprocessor) rather than
-anything technical.
+"Before flipping the switch" below. The Tinfoil subprocessor disclosure is now
+written in `docs/privacy.html`, but must be published before the lane is enabled.
 
 **Testing the lane requires keyed auth off-campus.** `scripts/harness-sealed.py`
 honours `SEALED_AUTH`, defaulting to `campus`. Campus Pass only resolves from a
@@ -458,8 +458,9 @@ whether reconciliation is faster than 6s.
    client-side), but a client that skips verification or accepts whatever the
    enclave self-reports gets none of the guarantee. Pinning is the client-side
    obligation we cannot enforce, only publish.
-5. **Add Tinfoil to `docs/privacy.html` subprocessors.** It is a new content
-   processor. Accurate today only because the lane is off.
+4. **Publish the Tinfoil subprocessor disclosure — source DONE.**
+   `docs/privacy.html` now identifies the content and metadata boundaries, but
+   the GitHub Pages revision must be live before the lane is enabled.
 
 ## Routes
 

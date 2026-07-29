@@ -26,7 +26,7 @@
     <div class="note">
         This is a plain-spoken summary of what BayLeaf collects, where it goes, and how
         long it lives. The canonical retention policies for each service are kept in
-        the public repository and linked below. Last updated: May 2026.
+        the public repository and linked below. Last updated: July 2026.
     </div>
 
     <h2>What BayLeaf is, for privacy purposes</h2>
@@ -76,10 +76,14 @@
         </li>
         <li>
             <strong>Prompt and completion traffic (API and Chat):</strong> not stored
-            by BayLeaf. Requests are streamed through to LLM providers operating under
-            <a href="https://openrouter.ai/docs/guides/features/zdr">zero-data-retention</a>
-            via OpenRouter, which means providers do not log or train on your prompts
-            and completions, and retain only request metadata. The
+            by BayLeaf. Ordinary requests are streamed through OpenRouter to LLM
+            providers operating under
+            <a href="https://openrouter.ai/docs/guides/features/zdr">zero-data-retention</a>,
+            which means they do not log or train on your prompts and completions, and
+            retain only request metadata. Requests made through the API's optional
+            Sealed route are encrypted by your client directly to a verified Tinfoil
+            secure enclave; BayLeaf relays ciphertext and cannot read the prompt or
+            completion. The
             <a href="https://api.bayleaf.dev">BayLeaf API</a> goes further: it keeps no
             copy of this traffic and offers no operator interface to read your request
             content as it passes through (request-tracing is disabled), an approach
@@ -146,17 +150,29 @@
     <h2>Subprocessors</h2>
     <p>
         These are the third-party services that handle data on behalf of BayLeaf.
-        BayLeaf selects them with privacy in mind: LLM providers operate under
-        zero-data-retention via OpenRouter, infrastructure vendors are bound by
-        their own data-protection terms, and authentication is handled by a
-        non-profit research-and-education identity broker.
+        BayLeaf selects them with privacy in mind: ordinary LLM providers operate
+        under zero-data-retention via OpenRouter, Sealed inference uses
+        client-verified confidential computing through Tinfoil, infrastructure
+        vendors are bound by their own data-protection terms, and authentication is
+        handled by a non-profit research-and-education identity broker.
     </p>
     <ul>
         <li>
             <a href="https://openrouter.ai/">OpenRouter</a>: LLM request routing.
             BayLeaf restricts upstream traffic to ZDR providers; see
             <a href="https://openrouter.ai/docs/guides/privacy/provider-logging#data-retention--logging">provider
-            data retention details</a>.
+            data retention details</a>. OpenRouter receives model, token-count, and
+            timing metadata. For keyed API users it also receives the email in each
+            request for rate limiting, but does not retain that field under ZDR.
+        </li>
+        <li>
+            <a href="https://tinfoil.sh/">Tinfoil</a>: confidential LLM inference for
+            the API's optional Sealed route. Prompt and completion bodies are encrypted
+            directly to an attested secure enclave. When the client verifies that
+            attestation, the route is designed to make the content inaccessible to
+            BayLeaf, Tinfoil, and their infrastructure operators. Tinfoil receives
+            operational metadata including the user's email, request timing, model, and
+            token counts; see its <a href="https://tinfoil.sh/privacy">privacy policy</a>.
         </li>
         <li>
             <a href="https://www.digitalocean.com/">DigitalOcean</a>: hosts BayLeaf

@@ -58,6 +58,12 @@
     // Disabled pending a credible zero-data-retention path with Google. The
     // project-level Abuse Monitoring opt-out request never received a response,
     // so we cannot promise ZDR parity with our OpenRouter path (issue #36).
+    // Before flipping to "true", confirm the account's institutional contract
+    // coverage and ZDR posture, then update the active/disabled and data-flow
+    // claims in docs/privacy.html, docs/index.html, api/RETENTION.md,
+    // politics/SECURITY.md, politics/FERPA.md, politics/HECVAT.md,
+    // politics/POSITION.md, and politics/RESEARCH.md. Google is not listed as
+    // an active subprocessor while this lane is off.
     "VERTEX_ENABLED": "false",
     "GCP_PROJECT_ID": "bayleafchat",
     "GCP_REGION": "us-central1",
@@ -100,7 +106,11 @@
     //   3. Weights listing: fetchBedrockModels already filters to ZDR-capable
     //      models, but closed-weight ZDR-capable ones (haiku, grok) pass, so
     //      a weights answer is still required before flip.
-    //   4. Add AWS to docs/privacy.html subprocessors.
+    //   4. Add AWS to docs/privacy.html subprocessors and update the
+    //      active/disabled, account-coverage, and data-flow claims in
+    //      docs/index.html, api/RETENTION.md, politics/SECURITY.md,
+    //      politics/FERPA.md, politics/HECVAT.md, politics/DEPENDENCIES.md,
+    //      politics/POSITION.md, and politics/RESEARCH.md.
     "BEDROCK_ENABLED": "false",
 
     // BayLeaf Sealed — attested confidential-inference lane (issue #55).
@@ -133,7 +143,11 @@
     //      authoritative numbers are available out-of-band and DO include
     //      streaming, so this is a visibility gap, not an accounting gap.
     //   4. Publish /sealed/policy (the C1-C6 rubric plus pinned enclave
-    //      measurements) and add Tinfoil to docs/privacy.html subprocessors.
+    //      measurements) and publish the Tinfoil subprocessor disclosure that
+    //      is now written in docs/privacy.html. On enablement, update the status
+    //      claims in api/AGENTS.md, api/RETENTION.md, politics/SECURITY.md,
+    //      politics/HECVAT.md, politics/DEPENDENCIES.md, politics/POSITION.md,
+    //      and politics/RESEARCH.md.
     //   5. Per-user RPD guardrail, mirroring the Bedrock RPD pattern. This
     //      bounds the reconciliation-lag overspend window; it is a required
     //      component of dollar-denominated enforcement, not a substitute for it.

@@ -60,12 +60,14 @@ export const BEDROCK_MANTLE_API = 'https://bedrock-mantle.us-west-2.api.aws/v1';
 // listing, and curated-model exposure is suppressed. Fail closed.
 //
 // Vertex (Google) is currently disabled pending a credible ZDR path with
-// Google (issue #36). Amazon Bedrock (issue #41) is enabled via its
+// Google (issue #36). Amazon Bedrock (issue #41) is implemented via its
 // `bedrock-mantle` endpoint, which speaks OpenAI Chat Completions with a plain
 // bearer token (no SigV4, no JWT minting). Its catalog is MOSTLY open-weight
 // but not mechanically so: closed frontier models (Claude, GPT-5.x, Grok)
 // appear in it with no weights-availability field to filter on, so the
 // backend is currently paused (issue #25 follow-up; see wrangler.jsonc).
+// `wrangler.jsonc` is the enablement gate and names the public/security
+// documents that must be maintained when either lane changes status.
 // Each backend is one row below (`bedrock` / `bedrock:` / `BEDROCK_ENABLED`)
 // plus its own routing block in routes/proxy.ts. The routing blocks differ per
 // backend (Vertex mints a GCP JWT; Bedrock and OpenRouter use a static bearer),
