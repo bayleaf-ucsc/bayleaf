@@ -406,7 +406,7 @@ const modelsRoute = createRoute({
   operationId: 'listModels',
   tags: ['LLM'],
   summary: 'List available models',
-  description: 'Lists models available via OpenRouter (prefixed with openrouter:), Vertex AI (prefixed with vertex:), and Amazon Bedrock (prefixed with bedrock:). Alternate backends appear only when enabled.',
+  description: 'Lists open-weight models: OpenRouter entries (prefixed with openrouter:) are filtered to those OpenRouter reports as having published HuggingFace weights, plus Vertex AI (vertex:) and Amazon Bedrock (bedrock:) models when those backends are enabled. Unlisted OpenRouter slugs still route at /chat/completions for users who craft them manually.',
   security: [{ Bearer: [] }],
   responses: {
     200: { description: 'Model list' },
@@ -428,13 +428,24 @@ proxyRoutes.openapi(modelsRoute, async (c) => {
     }
 
     const data = await res.json() as { data: any[] };
-    
-    // Prefix all OpenRouter models
-    const orModels = data.data.map(model => ({
-      ...model,
-      id: `openrouter:${model.id}`,
-      name: `OpenRouter: ${model.name}`
-    }));
+
+    // Open-weight listing policy (issue #25): list only models OpenRouter
+    // reports as having published weights on HuggingFace. The predicate must be
+    // truthiness, NOT != null: OR emits "" for most weightless models (127 of
+    // 367 on 2026-07-29, including gpt-5.5), so a null check would silently
+    // fail open. No hand-maintained override list: genuine misses (e.g.
+    // mistral-large-2512) fail closed and are OpenRouter's to fix upstream.
+    // Listing-only by design: unlisted slugs still route at /chat/completions,
+    // a deliberate escape hatch for comparative model research. If OR degrades
+    // the field to null-everything, the list shrinks toward empty rather than
+    // leaking closed models, matching the ALT_BACKENDS fail-closed posture.
+    const orModels = data.data
+      .filter(model => Boolean(model.hugging_face_id))
+      .map(model => ({
+        ...model,
+        id: `openrouter:${model.id}`,
+        name: `OpenRouter: ${model.name}`
+      }));
 
     // Combine with Vertex models, but only when the Vertex backend is enabled.
     // When disabled, the picker must not advertise models we will reject.
