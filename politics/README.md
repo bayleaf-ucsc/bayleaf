@@ -71,8 +71,13 @@ inversion of the structures above, made operational.
    power in a few corporations behind closed APIs. BayLeaf exclusively serves
    [open-weight models](https://huggingface.co/models): models contributed
    back to the public web, available for anyone to download, audit, or build
-   on. This is structural reciprocity with the open ecosystem that makes the
-   technology possible, not a marketing posture.
+   on. In the API this commitment lives at the listing layer: the catalog
+   includes only models OpenRouter reports as having published weights on
+   HuggingFace, while other slugs still route when crafted manually. That
+   escape hatch is deliberate (comparative research needs the contrast), and
+   it is documented rather than hidden. This is structural reciprocity with
+   the open ecosystem that makes the technology possible, not a marketing
+   posture.
 
 3. **Privacy: zero data retention as architecture.** Commercial AI services
    retain copies of user conversations, sometimes for 30 days or longer,

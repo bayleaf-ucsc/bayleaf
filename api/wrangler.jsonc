@@ -75,7 +75,33 @@
     // and static — no SigV4, no JWT minting. The POC token is from a personal
     // AWS account and carries NO UCSC BAA coverage; production must use a key
     // minted in the UCSC enterprise AWS account (issue #41).
-    "BEDROCK_ENABLED": "true",
+    //
+    // PAUSED 2026-07-29 (issue #25 follow-up): mantle's catalog turned out to
+    // include closed-weight frontier models (claude-haiku-4-5, gpt-5.4/5.6,
+    // grok-4.3) with no mechanical weights-availability field to filter on,
+    // and its per-model data_retention metadata shows no 'none' mode for
+    // those models. A hand-maintained list is exactly what issue #25 rejected,
+    // so the backend is off until mantle exposes a predicate (or we accept a
+    // maintained list). One env flip restores it; the code path is untouched.
+    //
+    // Re-enable checklist (details in api/AGENTS.md):
+    //   1. Enterprise-account token with UCSC BAA (issue #41 Track B). For the
+    //      enterprise setup, also apply AWS's SCP pattern denying
+    //      bedrock-mantle:PutAccountDataRetention / project writes unless the
+    //      mode is 'none' (condition key bedrock-mantle:DataRetentionMode),
+    //      so no operator can ever flip the account to provider_data_share.
+    //   2. DONE on the POC account 2026-07-29: mantle retention mode set to
+    //      'none' (PUT /v1/data_retention) after granting the API-key IAM
+    //      user bedrock-mantle:PutAccountDataRetention (the key ships without
+    //      it; 403 access_denied until added). Verified live: gpt-5.4 reports
+    //      status "unavailable", direct invocation rejected (HTTP 400),
+    //      gpt-oss-120b still serves (HTTP 200). Account-scoped, so re-apply
+    //      on the enterprise account; the item-1 SCP makes it permanent there.
+    //   3. Weights listing: fetchBedrockModels already filters to ZDR-capable
+    //      models, but closed-weight ZDR-capable ones (haiku, grok) pass, so
+    //      a weights answer is still required before flip.
+    //   4. Add AWS to docs/privacy.html subprocessors.
+    "BEDROCK_ENABLED": "false",
 
     "SPENDING_LIMIT_DOLLARS": "5.0",
     "SPENDING_LIMIT_RESET": "daily",

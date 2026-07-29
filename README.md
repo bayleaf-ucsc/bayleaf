@@ -42,8 +42,9 @@ LLMs, web search and page fetching, and sandboxed code execution:
   files, all authenticated with the same API key; campus-pass users get
   ephemeral one-shot sandboxes
 - Injects a light system prompt prefix to orient downstream agents
-- Recommends an open-weight model as the default, while allowing optional access
-  to proprietary models for tasks that warrant them
+- Lists exclusively open-weight models (those OpenRouter reports as having
+  published weights on HuggingFace). Any other OpenRouter slug still routes
+  when crafted manually: a deliberate escape hatch for comparative research
 
 ### Status — [uptime dashboard](https://stats.uptimerobot.com/tJ1Qkm7L0R)
 

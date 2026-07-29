@@ -119,6 +119,27 @@ async function forwardJson(
  * namespaced with `bedrock:` and the display name gets a "Bedrock: " prefix to
  * match the OpenRouter/Vertex convention.
  */
+/**
+ * ZDR floor for the bedrock listing (issue #25 follow-up): only models that
+ * CAN run zero-retention may be listed. mantle exposes per-model
+ * data_retention.allowed_modes; 'none' means AWS persists nothing and shares
+ * nothing with the provider. The closed gpt-5.x entries accept only
+ * ['default', 'provider_data_share'] and can never run ZDR, so this filter
+ * excludes them regardless of the AWS account's configured mode. Missing or
+ * malformed metadata fails closed (model dropped from the listing).
+ *
+ * This is a RETENTION predicate, not a weights predicate: closed-weight but
+ * ZDR-capable models (claude-haiku, grok) still pass, which is one reason the
+ * backend stays paused until the weights question is resolved. Routing
+ * enforcement for crafted slugs comes from setting the AWS account's mantle
+ * mode to 'none' (PUT /v1/data_retention), which makes non-ZDR models
+ * unavailable server-side. See the re-enable checklist in wrangler.jsonc.
+ */
+function isZdrCapable(model: any): boolean {
+  const modes = model?.data_retention?.allowed_modes;
+  return Array.isArray(modes) && modes.includes('none');
+}
+
 async function fetchBedrockModels(env: AppEnv['Bindings']): Promise<any[]> {
   if (!isBedrockEnabled(env)) return [];
   try {
@@ -128,7 +149,7 @@ async function fetchBedrockModels(env: AppEnv['Bindings']): Promise<any[]> {
     if (!res.ok) return [];
     const data = await res.json() as { data?: any[] };
     if (!Array.isArray(data.data)) return [];
-    return data.data.map((model) => ({
+    return data.data.filter(isZdrCapable).map((model) => ({
       ...model,
       id: `bedrock:${model.id}`,
       name: model.name ? `Bedrock: ${model.name}` : `Bedrock: ${model.id}`,

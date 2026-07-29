@@ -131,20 +131,61 @@ models are dropped from `GET /v1/models`, and its `<prefix>:` entries are
 stripped from the OpenCode curated list in `routes/wellknown.ts`. Use
 `isBackendEnabled(c.env, key)` / `isVertexEnabled(c.env)` (`src/constants.ts`).
 
+Independently of backends, `GET /v1/models` lists only OpenRouter entries with
+published HuggingFace weights (truthy `hugging_face_id`, NOT `!= null`: OR
+emits `""` for most weightless models, so a null check fails open). Unlisted
+slugs still route at `/chat/completions`; the filter is a listing policy, not
+a routing boundary (issue #25).
+
 - **`vertex:` — Google Vertex AI. Currently DISABLED** (`VERTEX_ENABLED: "false"`
   in `wrangler.jsonc`). We could not obtain Google's Abuse Monitoring opt-out, so
   we cannot promise ZDR parity with OpenRouter (issue #36). The routing block
   (`routes/proxy.ts`) and GCP JWT minting (`utils/gcp.ts`) remain in place; flip
   the flag to `"true"` to re-enable. Note the GCP service-account secrets must be
   set for it to function.
-- **`bedrock:` — Amazon Bedrock (`bedrock-mantle`). Implemented, gated by
-  `BEDROCK_ENABLED`** (default `"false"` in `wrangler.jsonc`; flip to `"true"`
-  and set the `BEDROCK_BEARER_TOKEN` secret to enable). mantle speaks OpenAI
-  Chat Completions and `/models` with a **static bearer token** (no SigV4, no
-  JWT minting), so the routing block (`routes/proxy.ts`) is a thin
-  prefix-strip + `forwardJson`, much simpler than Vertex's JWT block. mantle
-  serves an **open-weight** catalog (Qwen, GLM, Kimi, gpt-oss, DeepSeek,
-  Mistral, Gemma, Nemotron), not the frontier Claude/Nova set (issue #41).
+- **`bedrock:` — Amazon Bedrock (`bedrock-mantle`). Implemented, currently
+  DISABLED** (`BEDROCK_ENABLED: "false"` in `wrangler.jsonc`). mantle speaks
+  OpenAI Chat Completions and `/models` with a **static bearer token** (no
+  SigV4, no JWT minting), so the routing block (`routes/proxy.ts`) is a thin
+  prefix-strip + `forwardJson`, much simpler than Vertex's JWT block.
+  - **Why paused (2026-07-29, issue #25 follow-up):** mantle's catalog is
+    mostly open-weight but not mechanically so. Closed frontier models
+    (claude-haiku-4-5, gpt-5.4/5.6, grok-4.3, palmyra-vision) appear in it,
+    and mantle exposes **no weights-availability field** to filter on, so the
+    open-weight listing policy cannot be enforced the way it is for
+    OpenRouter. An earlier claim in this file that mantle "serves an
+    open-weight catalog" was wrong.
+  - **Retention mechanics (verified against AWS docs):** every mantle model
+    carries `data_retention.allowed_modes`. Models accepting `'none'` run
+    zero-retention regardless of account config; the closed gpt-5.x entries
+    accept only `['default', 'provider_data_share']` and **cannot** run ZDR.
+    Setting the AWS account's mantle mode to `'none'`
+    (`PUT /v1/data_retention`) makes non-ZDR models report
+    `status: "unavailable"` and blocks them server-side, including crafted
+    slugs. `fetchBedrockModels` independently filters the listing to
+    ZDR-capable models (`'none' in allowed_modes`), which fails closed if
+    mantle ever drops the metadata.
+  - **Re-enable checklist:** (1) enterprise-account token with UCSC BAA
+    (issue #41 Track B; the POC token is a personal AWS account with **no BAA
+    coverage**), and in the enterprise setup apply AWS's SCP pattern denying
+    `bedrock-mantle:PutAccountDataRetention` and project writes unless the
+    mode is `'none'` (condition key `bedrock-mantle:DataRetentionMode`), so
+    no operator can ever flip the account to `provider_data_share`; (2) **DONE
+    on the POC account 2026-07-29:** account mantle mode set to `'none'`
+    (`PUT /v1/data_retention`) after granting the API-key IAM user an identity
+    policy allowing `bedrock-mantle:PutAccountDataRetention` (the key ships
+    without it; 403 `access_denied` until added). Verified live: gpt-5.4
+    reports `status: "unavailable"`, a direct invocation is rejected (HTTP
+    400), and gpt-oss-120b still serves under mode `'none'` (HTTP 200). The
+    setting is account-scoped, so it must be re-applied on the enterprise
+    account, where the item-(1) SCP should make it permanent. Note the mantle
+    inference plane is configured separately from the bedrock-runtime control
+    plane, and only the mantle plane matters to us; (3) resolve the weights-listing question: the ZDR
+    filter still admits closed-weight ZDR-capable models (claude-haiku,
+    grok), so re-enabling needs either a mantle weights predicate or an
+    accepted maintained list; (4) add AWS to `docs/privacy.html`
+    subprocessors (the list was incomplete while bedrock served traffic; it
+    is accurate only because the backend is paused).
   - **Models** are **live-fetched** from mantle's `/models` at `GET /v1/models`
     time and prefixed with `bedrock:` (unlike Vertex's hardcoded
     `VERTEX_MODELS`), since the catalog shifts often. A mantle failure
@@ -154,9 +195,6 @@ stripped from the OpenCode curated list in `routes/wellknown.ts`. Use
     / `bedrock_rpd_date`, migration `0004`, limit `BEDROCK_RPD_LIMIT`) mirrors
     Vertex's. Campus Pass users are covered by the unified per-IP counter.
     Surfaced under `data.bayleaf.bedrock` in `GET /v1/auth/key`.
-  - **BAA caveat**: the POC token is from a *personal* AWS account with **no
-    UCSC BAA coverage**; production must use an enterprise-account key (Track B,
-    issue #41).
 
 ## Routes
 

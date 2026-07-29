@@ -53,7 +53,7 @@ function buildLlmsTxt(input: LlmsTxtInput): string {
 > BayLeaf API (https://api.bayleaf.dev) provides free LLM inference, sandboxed code
 > execution, web search, and Google Workspace / Canvas LMS access for the UC Santa Cruz
 > campus community. It is an OpenAI-compatible proxy fronting OpenRouter (zero-data-retention
-> providers, prefixed ${bt}openrouter:${bt}) and Google Vertex AI (prefixed ${bt}vertex:${bt}).
+> providers, prefixed ${bt}openrouter:${bt}), listing exclusively open-weight models.
 > Personal API keys (${bt}sk-bayleaf-...${bt}) are issued at https://api.bayleaf.dev/; on the
 > UCSC campus network, no key is needed. Conversations are private and never used for training.
 
@@ -171,7 +171,8 @@ ${fence}json
 }
 ${fence}
 
-Browse all valid model slugs at https://api.bayleaf.dev/v1/models. Set
+Browse the model catalog at https://api.bayleaf.dev/v1/models (open-weight
+models only; other OpenRouter slugs still route when supplied explicitly). Set
 ${bt}BAYLEAF_API_KEY${bt} in your shell environment, or run
 ${bt}opencode auth login https://api.bayleaf.dev${bt} once to populate it via the
 wellknown auth flow (the same env var is shared between both providers).
@@ -395,18 +396,22 @@ BayLeaf routes requests by a prefix on the ${bt}model${bt} field:
 
 | Prefix | Backend | Notes |
 |--------|---------|-------|
-| ${bt}openrouter:${bt} | OpenRouter (ZDR providers) | Hundreds of models; per-token pricing varies. |
-| ${bt}vertex:${bt} | Google Vertex AI | Gemini family + select MaaS partners (e.g. GLM 5). Requires a BayLeaf API key (no Campus Pass), rate-limited at 100 requests/day per key. |
+| ${bt}openrouter:${bt} | OpenRouter (ZDR providers) | Open-weight models only (~150, live-filtered from OpenRouter's catalog); per-token pricing varies. |
+| ${bt}vertex:${bt} | Google Vertex AI | Currently disabled (no credible ZDR path; requests return 503). |
 
-Examples:
+Example:
 
 - ${bt}"model": "openrouter:z-ai/glm-5.2"${bt}
-- ${bt}"model": "vertex:gemini-3.1-pro"${bt}
-- ${bt}"model": "vertex:zai-org/glm-5-maas"${bt}
 
 A bare slug (no prefix) is treated as ${bt}openrouter:${bt} for backwards compatibility,
 but new integrations should always include the prefix to match the IDs returned by
 ${bt}/v1/models${bt}.
+
+The ${bt}/v1/models${bt} catalog lists exclusively open-weight models: those OpenRouter
+reports as having published weights on HuggingFace. Routing is wider than listing by
+design: any other OpenRouter slug, including proprietary models, still works when
+supplied explicitly. This is deliberate (comparative research needs the contrast);
+the curated listing is the policy statement, not an enforcement boundary.
 
 Recommended default for general use: ${bt}${model}${bt} (${modelName}).
 
