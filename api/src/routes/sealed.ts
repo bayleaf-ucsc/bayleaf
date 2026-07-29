@@ -107,21 +107,28 @@
  * yes. Say both.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * SPIKE SCOPE
+ * DEFERRED SCOPE
  *
- * OpenAPI documentation, `/sealed/policy` (the C1–C6 rubric artifact), and
- * per-key request quotas are deliberately deferred until the surface settles.
- * Handlers are plain Hono, not `createRoute()`, for that reason.
- * The `SEALED_ENABLED` checklist in `wrangler.jsonc` is also the documentation
- * gate: enabling this route requires updating the status claims in the public
- * privacy, retention, dependency, and security documents named there.
+ * `/sealed/policy` (the C1–C6 rubric and pinned-measurement artifact) remains
+ * deferred. OpenAPI paths are registered manually below while handlers remain
+ * plain Hono: this preserves the wildcard route and, more importantly, ensures
+ * no validation middleware ever parses the opaque EHBP request body.
  */
 
-import { OpenAPIHono } from '@hono/zod-openapi';
+import { OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv, Bindings } from '../types';
 import { resolveAuth } from '../utils/auth';
 import { resolveBackendCredential } from '../utils/backend';
 import { healBackendKey } from '../provision';
+import { clearTinfoilTokenCap } from '../tinfoil';
+import { checkAndIncrement, parseLimit } from '../utils/campusRpd';
+import {
+  SealedAttestationRequestSchema,
+  SealedAttestationResponseSchema,
+  SealedErrorSchema,
+  SealedHealthResponseSchema,
+  SealedModelsResponseSchema,
+} from '../schemas';
 
 // ── Sealed lane constants ────────────────────────────────────────────
 
@@ -207,7 +214,7 @@ function allowedEnclaveOrigin(raw: string | undefined): string | null {
 }
 
 /** JSON error that never echoes request content back to the caller. */
-function sealedError(message: string, status: 400 | 401 | 403 | 405 | 502 | 503) {
+function sealedError(message: string, status: 400 | 401 | 403 | 405 | 429 | 502 | 503) {
   return Response.json(
     { error: { message, code: status, lane: 'sealed' } },
     { status },
@@ -217,6 +224,196 @@ function sealedError(message: string, status: 400 | 401 | 403 | 405 | 502 | 503)
 // ── Route app ────────────────────────────────────────────────────────
 
 export const sealedRoutes = new OpenAPIHono<AppEnv>();
+
+// Register documentation separately from runtime handlers. In particular,
+// never convert the ciphertext relay to `.openapi()`: request validation would
+// parse or buffer the body, violating the route's central security invariant.
+sealedRoutes.openAPIRegistry.registerPath({
+  method: 'get',
+  path: '/health',
+  operationId: 'sealedHealth',
+  tags: ['Sealed'],
+  summary: 'Check Sealed lane health',
+  description:
+    'Reports whether the EHBP confidential-inference lane is enabled, configured, and able to reach the Tinfoil attestation service. Carries no user content.',
+  security: [],
+  responses: {
+    200: {
+      description: 'Sealed lane status',
+      content: { 'application/json': { schema: SealedHealthResponseSchema } },
+    },
+    503: {
+      description: 'Sealed is disabled on this deployment',
+      content: { 'application/json': { schema: SealedErrorSchema } },
+    },
+  },
+});
+
+sealedRoutes.openAPIRegistry.registerPath({
+  method: 'get',
+  path: '/attestation',
+  operationId: 'getSealedAttestation',
+  tags: ['Sealed'],
+  summary: 'Get the current signed attestation bundle',
+  description:
+    'Relays Tinfoil\'s signed enclave attestation bundle. The client must verify the bundle before encrypting any request; serving it through BayLeaf does not make BayLeaf a trusted attestation authority.',
+  security: [],
+  responses: {
+    200: {
+      description: 'Signed attestation bundle for the current inference router',
+      content: { 'application/json': { schema: SealedAttestationResponseSchema } },
+    },
+    502: {
+      description: 'Attestation service failure or refused redirect',
+      content: { 'application/json': { schema: SealedErrorSchema } },
+    },
+    503: {
+      description: 'Sealed is disabled on this deployment',
+      content: { 'application/json': { schema: SealedErrorSchema } },
+    },
+  },
+});
+
+sealedRoutes.openAPIRegistry.registerPath({
+  method: 'post',
+  path: '/attestation',
+  operationId: 'postSealedAttestation',
+  tags: ['Sealed'],
+  summary: 'Get a signed attestation bundle after enclave key rotation',
+  description:
+    'Relays the Tinfoil SDK\'s attestation lookup for a specific enclave. Both GET and POST are required because the SDK re-verifies after an HPKE key rotation. The routing body contains no prompt or completion content.',
+  security: [],
+  request: {
+    body: {
+      required: true,
+      content: { 'application/json': { schema: SealedAttestationRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Signed attestation bundle for the requested enclave',
+      content: { 'application/json': { schema: SealedAttestationResponseSchema } },
+    },
+    502: {
+      description: 'Attestation service failure or refused redirect',
+      content: { 'application/json': { schema: SealedErrorSchema } },
+    },
+    503: {
+      description: 'Sealed is disabled on this deployment',
+      content: { 'application/json': { schema: SealedErrorSchema } },
+    },
+  },
+});
+
+sealedRoutes.openAPIRegistry.registerPath({
+  method: 'get',
+  path: '/models',
+  operationId: 'listSealedModels',
+  tags: ['Sealed'],
+  summary: 'List Sealed models',
+  description:
+    'Returns Tinfoil\'s complete live catalog with the bare model IDs clients must place inside encrypted requests. This plaintext catalog call contains no user content and does not mint a per-user provider key.',
+  security: [],
+  responses: {
+    200: {
+      description: 'Complete live Sealed model catalog',
+      content: { 'application/json': { schema: SealedModelsResponseSchema } },
+    },
+    502: {
+      description: 'Tinfoil catalog unavailable',
+      content: { 'application/json': { schema: SealedErrorSchema } },
+    },
+    503: {
+      description: 'Sealed is disabled or misconfigured',
+      content: { 'application/json': { schema: SealedErrorSchema } },
+    },
+  },
+});
+
+sealedRoutes.openAPIRegistry.registerPath({
+  method: 'post',
+  path: '/v1/{path}',
+  operationId: 'sealedInference',
+  tags: ['Sealed'],
+  summary: 'Relay an EHBP-encrypted inference request',
+  description:
+    'POST-only ciphertext relay for Tinfoil SDK requests. Use an EHBP-capable Tinfoil SDK rather than constructing this request manually. The SDK verifies hardware attestation, encrypts the complete OpenAI-compatible JSON body to the enclave, and decrypts the response. BayLeaf authenticates and rate-limits the caller, substitutes a server-held Tinfoil credential, and streams the bytes unchanged. BayLeaf never parses, buffers, clones, logs, or schema-validates the body. There is no plaintext fallback. The path may contain multiple segments, for example `chat/completions` or `responses`.',
+  security: [{ Bearer: [] }],
+  request: {
+    params: z.object({
+      path: z.string().openapi({
+        description: 'Tinfoil v1 operation path; may contain multiple slash-separated segments.',
+        example: 'chat/completions',
+      }),
+    }),
+    headers: z.object({
+      'Ehbp-Encapsulated-Key': z.string().regex(/^[0-9a-f]{64}$/).openapi({
+        description: 'Lowercase hex X25519 HPKE encapsulated key generated by the verified client.',
+      }),
+      'X-Tinfoil-Enclave-Url': z.string().url().openapi({
+        description: 'Attested HTTPS enclave origin under tinfoil.sh, selected by the verified client.',
+        example: 'https://inference.tinfoil.sh',
+      }),
+    }),
+    body: {
+      required: true,
+      description: 'Opaque EHBP ciphertext. This is not plaintext JSON, even if the SDK retains `Content-Type: application/json`.',
+      content: {
+        'application/octet-stream': {
+          schema: { type: 'string', format: 'binary' },
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Opaque EHBP-encrypted response. Decrypt with the same verified client transport.',
+      headers: {
+        'Ehbp-Response-Nonce': {
+          description: 'Required lowercase hex response nonce proving the successful response is encrypted.',
+          schema: { type: 'string', pattern: '^[0-9a-f]{64}$' },
+        },
+        'X-Tinfoil-Usage-Metrics': {
+          description: 'Non-streaming token usage metadata when available. Streaming usage arrives in an upstream trailer that Cloudflare Workers cannot expose.',
+          schema: { type: 'string' },
+        },
+        'X-Bayleaf-Sealed-Relay': {
+          description: 'Always `ciphertext` on relayed responses.',
+          schema: { type: 'string', enum: ['ciphertext'] },
+        },
+      },
+      content: {
+        'application/octet-stream': {
+          schema: { type: 'string', format: 'binary' },
+        },
+      },
+    },
+    400: {
+      description: 'Missing encryption headers, unapproved enclave, or malformed encrypted request',
+      content: { 'application/json': { schema: SealedErrorSchema } },
+    },
+    401: {
+      description: 'Missing, invalid, or revoked BayLeaf API key',
+      content: { 'application/json': { schema: SealedErrorSchema } },
+    },
+    403: {
+      description: 'Client supplied a provider credential instead of a BayLeaf credential',
+      content: { 'application/json': { schema: SealedErrorSchema } },
+    },
+    429: {
+      description: 'Daily Sealed request limit reached',
+      content: { 'application/json': { schema: SealedErrorSchema } },
+    },
+    502: {
+      description: 'Enclave unreachable, refused redirect, or successful upstream response was not encrypted',
+      content: { 'application/json': { schema: SealedErrorSchema } },
+    },
+    503: {
+      description: 'Sealed disabled, misconfigured, or provider credential replaced',
+      content: { 'application/json': { schema: SealedErrorSchema } },
+    },
+  },
+});
 
 /**
  * Kill-switch guard for the whole lane. Runs before every handler so a
@@ -341,9 +538,43 @@ sealedRoutes.post('/v1/*', async (c) => {
     );
   }
 
-  // ── 5. Resolve the caller's own upstream credential, minting one on first
+  // ── 5. Enforce BayLeaf's daily request limit before acquiring or using an
+  // upstream credential. Campus Pass shares the provider-agnostic per-IP
+  // counter with standard inference. Keyed users have an atomic D1 counter
+  // dedicated to Sealed, since its spend does not pass through OpenRouter.
+  if (auth.isCampusMode && auth.clientIp) {
+    const limit = parseLimit(c.env.CAMPUS_RPD_LIMIT);
+    const status = await checkAndIncrement(c.env.CAMPUS_RPD, auth.clientIp, limit);
+    if (status) {
+      return sealedError(
+        `Campus Pass daily request limit reached (${status.limit} requests). Resets at ${status.resetsAt}.`,
+        429,
+      );
+    }
+  } else if (auth.userKeyRow) {
+    const limit = parseLimit(c.env.SEALED_RPD_LIMIT);
+    const today = new Date().toISOString().split('T')[0];
+    const result = await c.env.DB.prepare(
+      `UPDATE user_keys
+          SET sealed_rpd_count = CASE
+                WHEN sealed_rpd_date = ? THEN sealed_rpd_count + 1
+                ELSE 1
+              END,
+              sealed_rpd_date = ?
+        WHERE bayleaf_token = ? AND revoked = 0
+          AND (sealed_rpd_date != ? OR sealed_rpd_count < ?)`,
+    ).bind(today, today, auth.userKeyRow.bayleaf_token, today, limit).run();
+    if (result.meta.changes === 0) {
+      return sealedError(
+        `Sealed daily request limit reached (${limit} requests). Resets at midnight UTC.`,
+        429,
+      );
+    }
+  }
+
+  // ── 6. Resolve the caller's own upstream credential, minting one on first
   // use of this lane (migration 0005). Keyed users get a per-user Tinfoil key
-  // so that Sealed spend is attributable and capped per user; Campus Pass has
+  // so that Sealed spend is attributable per user; Campus Pass has
   // no email and therefore no row, so it shares a pool key.
   //
   // Per-user keys are what make the out-of-band billing report useful: it
@@ -360,14 +591,38 @@ sealedRoutes.post('/v1/*', async (c) => {
       503,
     );
   }
-  const serverKey = cred.secret;
+  let serverKey = cred.secret;
 
-  // ── 6. Build the upstream URL from OUR path, not from client input.
+  // Keys minted before migration 0006 carry a lifetime 2M-token cap. Clear it
+  // in place once, then record that fact locally so later requests stay on the
+  // inference plane. New keys are minted unlimited and set this marker during
+  // the same compare-and-swap that installs their secret.
+  if (cred.row && cred.row.tinfoil_unlimited !== 1) {
+    const uncap = await clearTinfoilTokenCap(serverKey, c.env);
+    if (uncap === 'missing') {
+      // The user deleted a legacy capped key before its one-time migration.
+      // We have not touched the ciphertext body yet, so unlike post-forward
+      // healing we can replace the key and continue this same request safely.
+      const healed = await healBackendKey(cred.row, 'tinfoil', serverKey, c.env);
+      if (!healed) {
+        return sealedError('Could not replace your deleted Sealed credential. Please retry shortly.', 503);
+      }
+      serverKey = healed.secret;
+    } else if (uncap === 'error') {
+      return sealedError('Could not remove the legacy token cap from your Sealed credential. Please retry shortly.', 503);
+    } else {
+      await c.env.DB.prepare(
+        'UPDATE user_keys SET tinfoil_unlimited = 1 WHERE email = ? AND tinfoil_key = ? AND revoked = 0',
+      ).bind(cred.row.email, serverKey).run();
+    }
+  }
+
+  // ── 7. Build the upstream URL from OUR path, not from client input.
   // `/sealed/v1/chat/completions` → `<enclave>/v1/chat/completions`.
   const path = new URL(c.req.url).pathname.replace(/^\/sealed/, '');
   const upstreamUrl = `${enclaveOrigin}${path}`;
 
-  // ── 7. Construct a fresh header set. Allowlist, never copy-and-delete:
+  // ── 8. Construct a fresh header set. Allowlist, never copy-and-delete:
   // an inherited header is a leak waiting for someone to forget to strip it.
   // Note what is absent: the caller's BayLeaf credential, their IP, their
   // email, and every `x-stainless-*` client telemetry header.
@@ -382,7 +637,7 @@ sealedRoutes.post('/v1/*', async (c) => {
   const accept = c.req.header('Accept');
   if (accept) upstreamHeaders.set('Accept', accept);
 
-  // ── 8. Forward the body as an opaque stream.
+  // ── 9. Forward the body as an opaque stream.
   // This is the load-bearing line of the whole lane. We do not call
   // `c.req.json()`, `.text()`, `.arrayBuffer()`, or `.clone()`. The bytes are
   // never materialized in Worker memory as a value we could log.
@@ -404,7 +659,7 @@ sealedRoutes.post('/v1/*', async (c) => {
     );
   }
 
-  // ── 8b. A rejected credential is healed but NOT retried.
+  // ── 9b. A rejected credential is healed but NOT retried.
   //
   // Every other lane retries inline via `sendWithHeal`, which requires the call
   // to be replayable. This one is not: we streamed the client's ciphertext body
@@ -424,12 +679,12 @@ sealedRoutes.post('/v1/*', async (c) => {
   if ((upstream.status === 401 || upstream.status === 403) && cred.row) {
     await healBackendKey(cred.row, 'tinfoil', cred.secret, c.env);
     return sealedError(
-      'Your Sealed credential was rejected upstream and has been replaced. Retry the request. If this repeats, your token allowance may be exhausted.',
+      'Your Sealed credential was rejected upstream and has been replaced. Retry the request.',
       503,
     );
   }
 
-  // ── 9. A successful response MUST be encrypted. The response nonce is the
+  // ── 10. A successful response MUST be encrypted. The response nonce is the
   // proof; without it the enclave would be handing back readable bytes, which
   // on this lane is a protocol violation rather than a convenience.
   const responseNonce = upstream.headers.get(EHBP_RESPONSE_NONCE)?.trim().toLowerCase();
@@ -440,7 +695,7 @@ sealedRoutes.post('/v1/*', async (c) => {
     );
   }
 
-  // ── 10. Meter from the usage header only. This is the entire cost-control
+  // ── 11. Meter from the usage header only. This is the entire cost-control
   // surface available to us: we cannot read token counts out of an encrypted
   // body. Non-streaming responses report here; streaming reports in an HTTP
   // trailer, which the Workers runtime does not expose (see TESTING.md).
@@ -494,12 +749,12 @@ sealedRoutes.all('/v1/*', (c) =>
 );
 
 /**
- * GET /sealed/models — provider-qualified catalog.
+ * GET /sealed/models — Tinfoil's catalog with bare upstream model IDs.
  *
- * Names are explicit about provenance (`tinfoil:glm-5-2`), not cross-provider
- * aliases. If BayLeaf later adds another confidential-inference provider it
- * publishes new provider-qualified names; it does not silently swap a model
- * out from under a user.
+ * The dedicated `/sealed` route establishes provider provenance. Unlike the
+ * plaintext proxy, this relay cannot strip a model prefix because the model
+ * field is inside the EHBP-encrypted body. The catalog therefore advertises
+ * the exact bare IDs clients must encrypt and send (for example `glm-5-2`).
  *
  * This is a plaintext catalog request carrying no user content, which is why it
  * is a separate endpoint from the ciphertext relay rather than a GET on it.
@@ -507,9 +762,8 @@ sealedRoutes.all('/v1/*', (c) =>
 sealedRoutes.get('/models', async (c) => {
   // Deliberately the ORG key, not the caller's per-user key. Listing models is
   // a plaintext, user-content-free request, and pinning it to a per-user
-  // credential would mean a user who exhausted their Tinfoil token cap could no
-  // longer discover which models exist — a confusing failure whose cause is
-  // invisible. It also avoids minting a per-user key as a side effect of mere
+  // credential would make catalog availability depend on a user's inference
+  // credential state. It also avoids minting a per-user key as a side effect of mere
   // catalog browsing, which would defeat the on-demand minting in the relay.
   const serverKey = c.env.TINFOIL_API_KEY;
   if (!serverKey) return sealedError('Sealed lane is misconfigured.', 503);
@@ -521,9 +775,6 @@ sealedRoutes.get('/models', async (c) => {
   if (!res.ok || isRedirect(res)) return sealedError('Sealed catalog unavailable upstream.', 502);
 
   const body = await res.json() as { data?: Array<Record<string, unknown>> };
-  const data = (body.data ?? []).map((m) => ({
-    ...m,
-    id: `tinfoil:${String(m.id)}`,
-  }));
+  const data = body.data ?? [];
   return c.json({ object: 'list', data });
 });

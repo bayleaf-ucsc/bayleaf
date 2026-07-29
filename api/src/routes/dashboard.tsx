@@ -14,6 +14,7 @@ import { LandingPage, type CampusUsage } from '../templates/landing';
 import { DashboardPage, type AltBackendUsage } from '../templates/dashboard';
 import { renderPage } from '../templates/layout';
 import { ALT_BACKENDS, isBackendEnabled } from '../constants';
+import { isSealedEnabled } from './sealed';
 
 export const dashboardRoutes = new OpenAPIHono<AppEnv>();
 
@@ -95,7 +96,6 @@ dashboardRoutes.get('/dashboard', async (c) => {
   }
 
   const gwsEnabled = !!(c.env.GWS_CLIENT_ID && c.env.GWS_CLIENT_SECRET && c.env.GWS_PROJECT_ID);
-
   // Build the per-backend RPD view model from ALT_BACKENDS so the LLM card
   // stays in sync with the actual set of alternate backends. Only enabled
   // backends are surfaced; today's count falls back to 0 when the stored
@@ -108,5 +108,5 @@ dashboardRoutes.get('/dashboard', async (c) => {
       })
     : [];
 
-  return renderPage(c, <DashboardPage session={session} row={row} orKey={orKey} recommendedModel={c.env.RECOMMENDED_MODEL} sandboxInfo={sandboxInfo} gwsEnabled={gwsEnabled} altBackendUsage={altBackendUsage} />);
+  return renderPage(c, <DashboardPage session={session} row={row} orKey={orKey} recommendedModel={c.env.RECOMMENDED_MODEL} sandboxInfo={sandboxInfo} gwsEnabled={gwsEnabled} sealedEnabled={isSealedEnabled(c.env)} sealedRecommendedModel={c.env.SEALED_RECOMMENDED_MODEL} altBackendUsage={altBackendUsage} />);
 });

@@ -20,9 +20,8 @@
  *
  * 3. **No provider-side model scoping.** `scope: {"models": [...]}` on create
  *    returns 200 and silently stores `scope: null` (verified 2026-07-29), so a
- *    per-user key cannot be restricted to a model subset. `max_tokens` is the
- *    only provider-side fuse available, which is why BayLeaf still needs its
- *    own request-rate guardrail.
+ *    per-user key cannot be restricted to a model subset. BayLeaf therefore
+ *    enforces its own per-user request-rate guardrail.
  *
  * There is no `listKeys` here on purpose. Enumerating keys is a reconciler
  * concern, not an inference-path one, and exporting it from a module the
@@ -79,11 +78,6 @@ export function sanitizeTinfoilKeyName(name: string): string {
  * column back to a user. It is sanitized on the way out (see above) and the
  * sanitized form is what gets returned for storage.
  *
- * `max_tokens` is a hard lifetime cap enforced by Tinfoil, not a daily reset
- * like OpenRouter's `limit`/`limit_reset`. It is a fuse, not a budget: once a
- * user burns through it the key stops working until an operator raises it.
- * Sized from `SEALED_TOKEN_CAP` so it can be tuned without a deploy.
- *
  * Returns null on any failure. Callers decide whether that is fatal.
  */
 export async function createTinfoilKey(
@@ -91,7 +85,6 @@ export async function createTinfoilKey(
   metadata: Record<string, string>,
   env: Bindings,
 ): Promise<TinfoilKeyCreated | null> {
-  const cap = parseInt(env.SEALED_TOKEN_CAP, 10);
   const safeName = sanitizeTinfoilKeyName(name);
 
   const response = await fetch(`${TINFOIL_ADMIN_API}/keys`, {
@@ -105,7 +98,6 @@ export async function createTinfoilKey(
       // The unsanitized email lives here, so the exact identity survives even
       // though the name is lossy.
       metadata,
-      ...(Number.isFinite(cap) && cap > 0 ? { max_tokens: cap } : {}),
     }),
   });
 
@@ -120,6 +112,25 @@ export async function createTinfoilKey(
 
   const key = await response.json() as TinfoilKeyCreated;
   return key?.key ? key : null;
+}
+
+/** Remove a legacy lifetime cap, distinguishing a deleted key from other failures. */
+export async function clearTinfoilTokenCap(
+  key: string,
+  env: Bindings,
+): Promise<'cleared' | 'missing' | 'error'> {
+  const response = await fetch(`${TINFOIL_ADMIN_API}/keys/update`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.TINFOIL_ADMIN_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ key, max_tokens: 0 }),
+  });
+
+  if (response.ok) return 'cleared';
+  if (response.status === 404) return 'missing';
+  return 'error';
 }
 
 /**

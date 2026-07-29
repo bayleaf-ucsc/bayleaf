@@ -89,7 +89,7 @@ interface BackendSpec {
   /** Mint upstream. Returns the secret plus any companion columns to store. */
   mint(name: string, email: string, env: Bindings): Promise<{
     secret: string;
-    extra: Record<string, string>;
+    extra: Record<string, string | number>;
   } | null>;
   /** Destroy upstream, used to clean up the loser of a mint race. */
   destroy(secret: string, row: UserKeyRow, env: Bindings): Promise<boolean>;
@@ -124,7 +124,10 @@ const BACKENDS: Record<BackendKind, BackendSpec> = {
       // Tinfoil rejects `@` in key names, so `createTinfoilKey` sanitizes on the
       // way out; storing the echoed value keeps `tinfoil_key_name` a valid join
       // key for the billing report instead of a name that exists only here.
-      return { secret: created.key, extra: { tinfoil_key_name: created.name } };
+      return {
+        secret: created.key,
+        extra: { tinfoil_key_name: created.name, tinfoil_unlimited: 1 },
+      };
     },
     // Tinfoil has no management handle: the secret is the identifier.
     async destroy(secret, _row, env) {

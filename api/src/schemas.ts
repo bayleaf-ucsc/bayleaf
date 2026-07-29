@@ -87,6 +87,50 @@ export const ResponseRequestSchema = z.object({
   }),
 }).passthrough().openapi('ResponseRequest');
 
+// ── Sealed confidential inference ────────────────────────────────
+
+export const SealedErrorSchema = z.object({
+  error: z.object({
+    message: z.string(),
+    code: z.number().int(),
+    lane: z.literal('sealed'),
+  }),
+}).openapi('SealedError');
+
+export const SealedHealthResponseSchema = z.object({
+  lane: z.literal('sealed'),
+  enabled: z.literal(true),
+  transport: z.literal('ehbp'),
+  provider: z.literal('tinfoil'),
+  server_credential_configured: z.boolean(),
+  attestation_reachable: z.boolean(),
+}).openapi('SealedHealthResponse');
+
+export const SealedAttestationRequestSchema = z.object({}).passthrough().openapi('SealedAttestationRequest', {
+  description:
+    'Tinfoil SDK routing metadata, relayed without interpretation. Clients should let the SDK construct this body.',
+});
+
+export const SealedAttestationResponseSchema = z.object({}).passthrough().openapi('SealedAttestationResponse', {
+  description:
+    'Signed attestation bundle verified by the client, including enclave evidence, certificate, and HPKE public key.',
+});
+
+export const SealedModelSchema = z.object({
+  id: z.string().openapi({ example: 'glm-5-2' }),
+  name: z.string().openapi({ example: 'GLM-5.2' }),
+  object: z.string().openapi({ example: 'model' }),
+  owned_by: z.string().openapi({ example: 'tinfoil' }),
+  type: z.string().optional().openapi({ example: 'chat' }),
+  context_window: z.number().int().optional(),
+  endpoints: z.array(z.string()).optional(),
+}).passthrough().openapi('SealedModel');
+
+export const SealedModelsResponseSchema = z.object({
+  object: z.literal('list'),
+  data: z.array(SealedModelSchema),
+}).openapi('SealedModelsResponse');
+
 // ── Sandbox ──────────────────────────────────────────────────────
 
 export const SandboxExecRequestSchema = z.object({

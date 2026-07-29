@@ -35,7 +35,7 @@ import type { AppEnv } from '../types';
 import { resolveAuth } from '../utils/auth';
 import { getModelInfo } from '../openrouter';
 import type { ModelCost } from '../openrouter';
-import { altBackendForModel, isBackendEnabled } from '../constants';
+import { altBackendForModel, isBackendEnabled, parseModelList } from '../constants';
 
 export const wellKnownRoutes = new Hono<AppEnv>();
 
@@ -55,25 +55,6 @@ const PROVIDER_ID = 'bayleaf-remote';
 
 /** Name of the env var the wellknown token is bound to inside OpenCode. */
 const TOKEN_ENV_NAME = 'BAYLEAF_API_KEY';
-
-/**
- * Parse the operator-curated companion model list from
- * `c.env.OPENCODE_CURATED_MODELS`. Comma-separated, surrounding whitespace
- * tolerated, empty entries dropped, duplicates removed. The recommended model
- * is added separately by the caller (always first in the resulting picker).
- */
-function parseCuratedModels(raw: string | undefined): string[] {
-  if (!raw) return [];
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const part of raw.split(',')) {
-    const slug = part.trim();
-    if (!slug || seen.has(slug)) continue;
-    seen.add(slug);
-    out.push(slug);
-  }
-  return out;
-}
 
 // ── GET /.well-known/opencode ────────────────────────────────────
 
@@ -164,7 +145,7 @@ wellKnownRoutes.get('/opencode/config', async (c) => {
   // 5xx) by skipping the affected entry rather than failing the whole config
   // fetch — OpenCode startup must not be blocked by a flaky upstream.
   const recommended = c.env.RECOMMENDED_MODEL;
-  const curated = parseCuratedModels(c.env.OPENCODE_CURATED_MODELS);
+  const curated = parseModelList(c.env.OPENCODE_CURATED_MODELS);
   // Drop any slug routed to an alternate backend that is currently disabled, so
   // OpenCode never lists a model whose /v1/chat/completions call would 503.
   // OpenRouter slugs have no alternate backend and always pass.

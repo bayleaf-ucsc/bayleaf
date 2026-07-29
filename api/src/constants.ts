@@ -37,6 +37,20 @@ export const OPENROUTER_API = 'https://openrouter.ai/api/v1';
  */
 export const TINFOIL_ADMIN_API = 'https://api.tinfoil.sh/api';
 
+/** Parse a comma-separated model list, preserving order and removing duplicates. */
+export function parseModelList(raw: string | undefined): string[] {
+  if (!raw) return [];
+  const seen = new Set<string>();
+  const models: string[] = [];
+  for (const part of raw.split(',')) {
+    const model = part.trim();
+    if (!model || seen.has(model)) continue;
+    seen.add(model);
+    models.push(model);
+  }
+  return models;
+}
+
 
 /**
  * Amazon Bedrock `bedrock-mantle` OpenAI-compatible endpoint (us-west-2).

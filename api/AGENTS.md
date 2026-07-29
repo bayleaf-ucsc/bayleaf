@@ -166,8 +166,9 @@ creation time; per-user or per-cohort caps are set OR-side with
 `scripts/spend-limits.mjs`. This means a heal or a revoke/re-provision
 returns a key to the global default, which is the accepted cost of having one
 source of truth rather than two that disagree. Do not add a D1 limit column.
-The same rule holds for Tinfoil, where `SEALED_TOKEN_CAP` is stamped at mint
-time: a lifetime fuse, not a resetting budget.
+Tinfoil credentials are minted without a provider-side lifetime token cap.
+BayLeaf enforces `SEALED_RPD_LIMIT` against the keyed user's D1 row instead;
+Campus Pass uses the shared per-IP `CAMPUS_RPD_LIMIT`.
 
 **Key names are provider-constrained, and Tinfoil's are lossy.** Tinfoil rejects
 `@ : + ( ) , / '` in key names (`400 "must not contain special characters"`;
@@ -279,12 +280,10 @@ a routing boundary (issue #25).
 
 ## BayLeaf Sealed (`/sealed/*`, issue #55)
 
-**Status: implemented and verified in production, `SEALED_ENABLED: "false"`.**
-33/33 harness checks pass against the deployed `api.bayleaf.dev` (27 relay +
-6 attestation-mutation), including per-user Tinfoil key minting, and prod
-migration `0005` is applied. The lane is deliberately left **disabled**: see
-"Before flipping the switch" below. The Tinfoil subprocessor disclosure is now
-written in `docs/privacy.html`, but must be published before the lane is enabled.
+**Status: enabled in production.** The relay and attestation-mutation harnesses
+pass against `api.bayleaf.dev`, including per-user Tinfoil key minting. Keyed
+users and Campus Pass are each limited to 100 Sealed requests per day by default.
+Tinfoil credentials have no provider-side lifetime token cap.
 
 **Testing the lane requires keyed auth off-campus.** `scripts/harness-sealed.py`
 honours `SEALED_AUTH`, defaulting to `campus`. Campus Pass only resolves from a
@@ -312,7 +311,7 @@ plaintext proxy**.
 ```
 GET      /sealed/health        Kill-switch state + upstream reachability
 GET|POST /sealed/attestation   Relay of the signed attestation bundle (BOTH verbs required)
-GET      /sealed/models        Provider-qualified catalog (tinfoil:<model>)
+GET      /sealed/models        Tinfoil catalog with bare model IDs
 POST     /sealed/v1/*          EHBP ciphertext relay. POST only.
 ```
 
@@ -427,9 +426,8 @@ whether reconciliation is faster than 6s.
 
 1. **Per-user Tinfoil keys — DONE (migration `0005`).** One Tinfoil key per user
    email, minted on **first use of the lane** and stored in `tinfoil_key`, so
-   usage is attributable per user and the *provider* enforces a per-user token
-   fuse — the only cost bound available when EHBP hides `model` and `max_tokens`
-   from us. Campus Pass has no email and so shares `CAMPUS_SEALED_KEY`,
+   usage is attributable per user and BayLeaf enforces a per-user RPD limit.
+   Campus Pass has no email and so shares `CAMPUS_SEALED_KEY`,
    mirroring `CAMPUS_POOL_KEY`; pool credentials live in env and are therefore
    not healable from the request path.
 
@@ -448,10 +446,9 @@ whether reconciliation is faster than 6s.
    of the admin key exposes every user's inference credential.
 2. **Dollar-denominated spend enforcement** via the reconciliation loop described
    above, plus a per-user concurrency cap and request rate limit to bound the
-   reconciliation-lag overspend window. `SEALED_TOKEN_CAP` remains a backstop
-   fuse (it admits measured overspend), not the control. The RPD guardrail is a
-   *component* of this design, not an alternative to it: enforcement necessarily
-   lags reconciliation, so something must bound the in-flight window.
+   reconciliation-lag overspend window. The RPD guardrail is a *component* of
+   this design, not an alternative to it: enforcement necessarily lags
+   reconciliation, so something must bound the in-flight window.
 3. **`/sealed/policy`** publishing the C1–C6 rubric plus a pinned enclave
    measurement allowlist. This matters more than it looks: BayLeaf cannot forge
    the attestation bundle (verified — all five mutation classes are refused
@@ -479,7 +476,7 @@ whether reconciliation is faster than 6s.
 /web/fetch               POST: fetch page content from one or more URLs (Tavily Extract)
 /sealed/health          GET: Sealed kill-switch state + upstream reachability (issue #55)
 /sealed/attestation     GET|POST: relay of the signed Tinfoil attestation bundle
-/sealed/models          GET: Sealed catalog, provider-qualified (tinfoil:<model>)
+/sealed/models          GET: Sealed Tinfoil catalog with bare model IDs
 /sealed/v1/*            POST: EHBP ciphertext relay. POST only, no plaintext fallback
 /recommended-model      Current recommended model slug + display name (JSON, unauthenticated)
 /docs                   Interactive API docs (Scalar viewer, loads /docs/openapi.json)

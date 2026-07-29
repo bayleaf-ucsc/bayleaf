@@ -139,8 +139,8 @@ app.doc31('/docs/openapi.json', (c) => ({
     version: '1.0.0',
     description:
       'BayLeaf API provides free LLM inference and sandboxed code execution for the UC Santa Cruz campus community. ' +
-      'It is an OpenAI-compatible proxy fronting OpenRouter (zero-data-retention providers, prefixed `openrouter:`) ' +
-      'and Google Vertex AI (Gemini and select MaaS partners, prefixed `vertex:`).\n\n' +
+      'Standard inference is an OpenAI-compatible proxy fronting zero-data-retention OpenRouter providers. ' +
+      'BayLeaf Sealed is a separate hardware-attested EHBP path where BayLeaf relays encrypted bodies without possessing the enclave-bound decryption key.\n\n' +
       '**Authentication:** Include `Authorization: Bearer <key>` on all requests. ' +
       'On the UCSC campus network, you may omit the header entirely (Campus Pass). ' +
       'Off-campus, provision a free personal key at https://api.bayleaf.dev/.\n\n' +
@@ -162,6 +162,7 @@ app.doc31('/docs/openapi.json', (c) => ({
   security: [{ Bearer: [] }],
   tags: [
     { name: 'LLM', description: 'OpenAI-compatible inference endpoints, routed by `model` prefix to OpenRouter (`openrouter:`) or Vertex AI (`vertex:`)' },
+    { name: 'Sealed', description: 'Hardware-attested confidential inference using client-verified EHBP encryption; requires a compatible Tinfoil SDK' },
     { name: 'Sandbox', description: 'Sandboxed Linux code execution and file I/O' },
     { name: 'Web', description: 'Web search and page content fetching' },
     { name: 'Meta', description: 'API metadata and documentation' },

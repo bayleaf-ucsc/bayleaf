@@ -148,23 +148,13 @@
     //      claims in api/AGENTS.md, api/RETENTION.md, politics/SECURITY.md,
     //      politics/HECVAT.md, politics/DEPENDENCIES.md, politics/POSITION.md,
     //      and politics/RESEARCH.md.
-    //   5. Per-user RPD guardrail, mirroring the Bedrock RPD pattern. This
-    //      bounds the reconciliation-lag overspend window; it is a required
-    //      component of dollar-denominated enforcement, not a substitute for it.
-    //      SEALED_TOKEN_CAP is a provider-side fuse, not a budget.
     "SEALED_ENABLED": "true",
 
-    // Lifetime token cap stamped on each per-user Tinfoil key at mint time.
-    // Unlike OpenRouter's SPENDING_LIMIT_DOLLARS this does NOT reset on a
-    // schedule: Tinfoil's max_tokens is a hard lifetime ceiling, so exhausting
-    // it disables that user's Sealed access until an operator raises it. Sized
-    // as a fuse against runaway cost, deliberately well above ordinary use.
-    //
-    // A token cap is the only provider-side limit available here: `scope`
-    // model restrictions are silently ignored by the Tinfoil admin API
-    // (verified 2026-07-29), so there is no way to constrain a per-user key to
-    // a model subset.
-    "SEALED_TOKEN_CAP": "2000000",
+    // Per-user daily request guardrail for keyed Sealed traffic. Campus Pass
+    // uses the shared CAMPUS_RPD_LIMIT instead. Tinfoil credentials themselves
+    // are unlimited because provider max_tokens is a lifetime ceiling rather
+    // than a resetting budget; BayLeaf owns the daily policy at the API layer.
+    "SEALED_RPD_LIMIT": "100",
 
 
     "SPENDING_LIMIT_DOLLARS": "5.0",
@@ -182,6 +172,12 @@
     // user can select from /models in OpenCode without a full /v1/models browse.
     // Empty string is allowed and means "recommended model only".
     "OPENCODE_CURATED_MODELS": "openrouter:qwen/qwen3.6-27b,vertex:zai-org/glm-5-maas,openrouter:deepseek/deepseek-v4-flash",
+
+    // Sealed recommendation and curated companions. These are bare Tinfoil IDs:
+    // the dedicated /sealed route establishes provider provenance, while the
+    // model field is inside the encrypted body and cannot be rewritten here.
+    "SEALED_RECOMMENDED_MODEL": "glm-5-2",
+    "SEALED_CURATED_MODELS": "kimi-k2-6,gemma4-31b,gpt-oss-120b",
 
     // OIDC authentication — provider-agnostic via .well-known discovery.
     // Currently configured for CILogon (https://www.cilogon.org/oidc).
@@ -225,25 +221,15 @@
   // - CAMPUS_POOL_KEY (for Campus Pass feature)
   // - DAYTONA_API_KEY (for sandbox provider)
   // - BEDROCK_BEARER_TOKEN (Amazon Bedrock mantle bearer token; enterprise account in prod)
-  // - TINFOIL_ADMIN_KEY    (Sealed lane: mints/deletes per-user Tinfoil keys.
+  // - TINFOIL_ADMIN_KEY    (Sealed lane: mints/uncaps/deletes per-user Tinfoil keys.
   //                         Strictly more dangerous than OPENROUTER_PROVISIONING_KEY
   //                         because Tinfoil's admin API re-reveals key secrets on
   //                         read, so a leak exposes every user's inference
   //                         credential rather than only create/destroy rights.)
   // - TINFOIL_API_KEY      (Sealed lane: org key, used only for GET /sealed/models)
-  // - CAMPUS_SEALED_KEY    (Sealed lane: shared pool key for Campus Pass.
-  //                         DELIBERATELY UNCAPPED, decided 2026-07-29. A Tinfoil
-  //                         max_tokens cap is a LIFETIME fuse with no reset, unlike
-  //                         OpenRouter's daily-resetting limit, so a capped pool key
-  //                         would eventually blow and silently break Sealed for all
-  //                         on-campus users at once -- and because pool credentials
-  //                         live in env rather than a D1 row, sendWithHeal cannot
-  //                         repair it. Campus exposure is bounded instead by
-  //                         CAMPUS_RPD_LIMIT per-IP throttling (IPv4 per address,
-  //                         IPv6 aggregated to /64 by bucketKey, so the campus IPv6
-  //                         /32 is not an amplification hole). Caveat: RPD bounds
-  //                         REQUESTS, not cost per request, and EHBP hides max_tokens
-  //                         from us -- see the Sealed pre-flip checklist in AGENTS.md.)
+  // - CAMPUS_SEALED_KEY    (Sealed lane: shared, uncapped pool key for Campus Pass.
+  //                         Campus exposure is bounded by CAMPUS_RPD_LIMIT per-IP
+  //                         throttling: IPv4 per address, IPv6 aggregated to /64.)
   // - GWS_CLIENT_ID        (Google Workspace CLI OAuth client ID)
   // - GWS_CLIENT_SECRET    (Google Workspace CLI OAuth client secret)
   // - GWS_PROJECT_ID       (GCP project ID, e.g. "gws-cli-playground-ucsc")

@@ -54,7 +54,7 @@ const KeyCard: FC<{ hasKey: boolean }> = ({ hasKey }) => {
         <h2>Your API Key</h2>
         <div id="keyDisplaySlot" />
         <p style="margin-top: 0.5rem; font-size: 0.9em; color: #555;">
-          This key authenticates both the LLM inference and sandbox services below.
+          This key authenticates the inference and sandbox services below.
         </p>
         <button type="button" class={btnDangerStyle} style="margin-top: 0.75rem;" onclick="revokeKey()">Revoke Key</button>
       </div>
@@ -69,13 +69,13 @@ const KeyCard: FC<{ hasKey: boolean }> = ({ hasKey }) => {
   );
 };
 
-const LlmCard: FC<{ orKey: OpenRouterKey; recommendedModel: string; altBackendUsage: AltBackendUsage[] }> = ({ orKey, recommendedModel, altBackendUsage }) => {
+const StandardLlmCard: FC<{ orKey: OpenRouterKey; recommendedModel: string; altBackendUsage: AltBackendUsage[] }> = ({ orKey, recommendedModel, altBackendUsage }) => {
   const remaining = orKey.limit_remaining?.toFixed(4) ?? 'N/A';
   const limitDisplay = orKey.limit != null ? `$${orKey.limit.toFixed(2)}` : 'unlimited';
 
   return (
     <div class={cardStyle}>
-      <h2>LLM Inference</h2>
+      <h2>Standard LLM Inference</h2>
       <p>OpenAI-compatible chat completions and responses API, proxied through BayLeaf. We retain no copy of your prompts or completions and have no standing access to your request content in flight: only request metadata (model, token counts, timestamps) is observable. Upstream inference is restricted to zero-data-retention (ZDR) providers.</p>
       
       <h3 style="margin-top: 1.5rem; margin-bottom: 0.75rem; font-size: 1.1em; color: #444;">OpenRouter (Any Provider)</h3>
@@ -147,6 +147,58 @@ const LlmCard: FC<{ orKey: OpenRouterKey; recommendedModel: string; altBackendUs
         <div style="margin-top: 0.75rem; max-height: 400px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 0.5rem; background: #fafafa;">
           <div id="modelsLoading">Loading models...</div>
           <ul id="modelsList" style="list-style: none; margin: 0; padding: 0; display: none; font-family: monospace; font-size: 0.9em;">
+          </ul>
+        </div>
+      </details>
+    </div>
+  );
+};
+
+const SealedLlmCard: FC<{ recommendedModel: string }> = ({ recommendedModel }) => {
+  return (
+    <div class={cardStyle} style="background: #f2f7f8; border-color: #26616d;">
+      <h2>Sealed LLM Inference</h2>
+      <p>
+        Hardware-attested confidential inference through Tinfoil. A compatible client verifies the
+        enclave and encrypts each request and response at the application layer. BayLeaf carries the
+        encrypted traffic but does not possess the enclave-bound key required to read it. Plaintext
+        requests are rejected rather than downgraded.
+      </p>
+      <p style="font-size: 0.9em; color: #555;">
+        This protects message content, not metadata. BayLeaf still sees your identity, timing, byte
+        sizes, request counts, and non-streaming token usage.
+      </p>
+      <p style="margin-top: 1rem;">
+        Sealed uses the same BayLeaf API key as the standard path, but requires an EHBP-compatible
+        client such as the Tinfoil Python SDK. Generic OpenAI clients cannot use this endpoint safely.
+      </p>
+      <details style="margin-top: 1rem;">
+        <summary style="cursor: pointer; color: #006aad; font-weight: 500;">Quick start</summary>
+        <div style="margin-top: 0.75rem;">
+          <p><strong>Python:</strong></p>
+          <pre><code>{`from tinfoil import TinfoilAI
+
+client = TinfoilAI(
+    api_key="YOUR_API_KEY",
+    base_url="https://api.bayleaf.dev/sealed/v1/",
+    attestation_bundle_url="https://api.bayleaf.dev/sealed",
+)
+
+response = client.chat.completions.create(
+    model="${recommendedModel}",
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+print(response.choices[0].message.content)`}</code></pre>
+          <p style="margin-top: 0.75rem; font-size: 0.9em; color: #555;">
+            Install with <code>pip install tinfoil</code>.
+          </p>
+        </div>
+      </details>
+      <details style="margin-top: 1rem;" id="sealedModelsDetails" ontoggle="loadSealedModels(this)">
+        <summary style="cursor: pointer; color: #006aad; font-weight: 500;">Available models</summary>
+        <div style="margin-top: 0.75rem; max-height: 400px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 0.5rem; background: #fafafa;">
+          <div id="sealedModelsLoading">Loading models...</div>
+          <ul id="sealedModelsList" style="list-style: none; margin: 0; padding: 0; display: none; font-family: monospace; font-size: 0.9em;">
           </ul>
         </div>
       </details>
@@ -489,6 +541,40 @@ const DashboardScripts: FC<{ bayleafToken: string }> = ({ bayleafToken }) => (
         }
       }
 
+      let sealedModelsLoaded = false;
+      async function loadSealedModels(detailsEl) {
+        if (!detailsEl.open || sealedModelsLoaded) return;
+
+        try {
+          const res = await fetch('/sealed/models');
+          if (!res.ok) throw new Error('Failed to fetch models');
+          const data = await res.json();
+
+          const list = document.getElementById('sealedModelsList');
+          list.innerHTML = '';
+          data.data.sort((a, b) => a.id.localeCompare(b.id)).forEach(model => {
+            const li = document.createElement('li');
+            li.style.padding = '0.2rem 0';
+
+            const a = document.createElement('a');
+            a.href = 'https://tinfoil.sh/models/' + model.id;
+            a.target = '_blank';
+            a.style.color = '#006aad';
+            a.style.textDecoration = 'none';
+            a.textContent = model.id;
+
+            li.appendChild(a);
+            list.appendChild(li);
+          });
+
+          document.getElementById('sealedModelsLoading').style.display = 'none';
+          list.style.display = 'block';
+          sealedModelsLoaded = true;
+        } catch (e) {
+          document.getElementById('sealedModelsLoading').textContent = 'Error loading models: ' + e.message;
+        }
+      }
+
       // On page load: localize the reset hint
       (function() {
         const els = document.querySelectorAll('.resetHint');
@@ -546,8 +632,10 @@ export const DashboardPage: FC<{
   recommendedModel: string;
   sandboxInfo?: SandboxInfo | null;
   gwsEnabled?: boolean;
+  sealedEnabled?: boolean;
+  sealedRecommendedModel?: string;
   altBackendUsage?: AltBackendUsage[];
-}> = ({ session, row, orKey, recommendedModel, sandboxInfo, gwsEnabled, altBackendUsage }) => {
+}> = ({ session, row, orKey, recommendedModel, sandboxInfo, gwsEnabled, sealedEnabled, sealedRecommendedModel, altBackendUsage }) => {
   const greeting = session.name
     ? `Welcome, ${session.name} (${session.email})`
     : `Welcome, ${session.email}`;
@@ -559,7 +647,9 @@ export const DashboardPage: FC<{
 
       <KeyCard hasKey={hasKey} />
 
-      {hasKey && orKey && row && <LlmCard orKey={orKey} recommendedModel={recommendedModel} altBackendUsage={altBackendUsage ?? []} />}
+      {hasKey && orKey && row && <StandardLlmCard orKey={orKey} recommendedModel={recommendedModel} altBackendUsage={altBackendUsage ?? []} />}
+
+      {hasKey && sealedEnabled && sealedRecommendedModel && <SealedLlmCard recommendedModel={sealedRecommendedModel} />}
 
       {hasKey && <SandboxCard sandboxInfo={sandboxInfo ?? null} />}
 

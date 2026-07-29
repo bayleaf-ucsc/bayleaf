@@ -30,6 +30,7 @@ export interface Bindings {
   // row: the sealed lane has no `<prefix>:` model routing and never forwards
   // plaintext. See routes/sealed.ts.
   SEALED_ENABLED: string;
+  SEALED_RPD_LIMIT: string;
 
   // D1 database
   DB: D1Database;
@@ -46,6 +47,8 @@ export interface Bindings {
   SYSTEM_PROMPT_PREFIX: string;
   RECOMMENDED_MODEL: string;       // Model slug shown in dashboard examples
   OPENCODE_CURATED_MODELS: string; // Comma-separated namespaced slugs for OpenCode wellknown config (in addition to RECOMMENDED_MODEL)
+  SEALED_RECOMMENDED_MODEL: string; // Bare Tinfoil model ID used in Sealed examples
+  SEALED_CURATED_MODELS: string;   // Comma-separated companion IDs, in addition to SEALED_RECOMMENDED_MODEL
 
   // OIDC configuration (provider-agnostic: works with CILogon, Google, etc.)
   OIDC_ISSUER: string;             // e.g. "https://cilogon.org" or "https://accounts.google.com"
@@ -91,8 +94,8 @@ export interface Bindings {
   //
   // LEGACY / FALLBACK: a single `bayleaf`-org key, still used for the plaintext
   // catalog at GET /sealed/models. Per-user keys (migration 0005) cover the
-  // ciphertext relay; the catalog deliberately stays on the org key so a user
-  // who has exhausted their token cap can still list models.
+  // ciphertext relay; the catalog deliberately stays on the org key so listing
+  // models has no per-user credential dependency or minting side effect.
   //
   // This credential is NEVER vended to a client. The relay substitutes it for
   // the caller's BayLeaf credential. A user who held it could call Tinfoil
@@ -100,7 +103,7 @@ export interface Bindings {
   // silently void the lane's entire confidentiality claim.
   TINFOIL_API_KEY: string;
 
-  // Tinfoil ADMIN credential, used only to mint and delete per-user keys.
+  // Tinfoil ADMIN credential, used only to mint, uncap, and delete per-user keys.
   //
   // Strictly more dangerous than OPENROUTER_PROVISIONING_KEY: Tinfoil's admin
   // API re-reveals key secrets on read (`GET /api/keys` returns every user's
@@ -110,13 +113,6 @@ export interface Bindings {
   // separate Worker for billing reconciliation so the request path never gains
   // the ability to enumerate user credentials.
   TINFOIL_ADMIN_KEY: string;
-
-  // Lifetime token cap stamped on each per-user Tinfoil key at mint time.
-  // A fuse, not a budget: Tinfoil's `max_tokens` does not reset on a schedule
-  // the way OpenRouter's `limit`/`limit_reset` does, so exhausting it disables
-  // the user's Sealed access until an operator raises it.
-  SEALED_TOKEN_CAP: string;
-
 
   // Web search and fetch providers
   TAVILY_API_KEY: string;          // Tavily API key (used for both /web/search and /web/fetch)
@@ -184,6 +180,8 @@ export interface UserKeyRow {
   // report, which indexes spend by key name.
   tinfoil_key: string | null;
   tinfoil_key_name: string | null;
+  /** 1 once this key is known to have no provider-side lifetime token cap. */
+  tinfoil_unlimited: number;
   sealed_rpd_count: number;
   sealed_rpd_date: string;
 }

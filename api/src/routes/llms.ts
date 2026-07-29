@@ -18,6 +18,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import type { AppEnv } from '../types';
 import { getModelInfo } from '../openrouter';
 import type { ModelCost, ModelCostRaw } from '../openrouter';
+import { parseModelList } from '../constants';
 
 export const llmsRoutes = new OpenAPIHono<AppEnv>();
 
@@ -27,8 +28,19 @@ llmsRoutes.get('/llms.txt', async (c) => {
   const name = info?.name ?? model;
   const cost = info?.cost ?? null;
   const costRaw = info?.costRaw ?? null;
+  const sealedModel = c.env.SEALED_RECOMMENDED_MODEL;
+  const sealedCuratedModels = parseModelList(c.env.SEALED_CURATED_MODELS);
   const gwsEnabled = !!(c.env.GWS_CLIENT_ID && c.env.GWS_CLIENT_SECRET && c.env.GWS_PROJECT_ID);
-  const body = buildLlmsTxt({ model, modelName: name, cost, costRaw, gwsEnabled });
+  const body = buildLlmsTxt({
+    model,
+    modelName: name,
+    cost,
+    costRaw,
+    sealedEnabled: c.env.SEALED_ENABLED === 'true',
+    sealedModel,
+    sealedCuratedModels,
+    gwsEnabled,
+  });
   return c.text(body, 200, { 'Content-Type': 'text/markdown; charset=utf-8' });
 });
 
@@ -39,14 +51,18 @@ interface LlmsTxtInput {
   modelName: string;
   cost: ModelCost | null;
   costRaw: ModelCostRaw | null;
+  sealedEnabled: boolean;
+  sealedModel: string;
+  sealedCuratedModels: string[];
   gwsEnabled: boolean;
 }
 
 function buildLlmsTxt(input: LlmsTxtInput): string {
-  const { model, modelName, cost, costRaw, gwsEnabled } = input;
+  const { model, modelName, cost, costRaw, sealedEnabled, sealedModel, sealedCuratedModels, gwsEnabled } = input;
   const bt = '`';
   const fence = '```';
   const placeholderEmail = 'bslug@ucsc.edu'; // CruzID convention; users replace with their own.
+  const sealedPicks = [sealedModel, ...sealedCuratedModels.filter((m) => m !== sealedModel)];
 
   return `# BayLeaf API
 
@@ -54,6 +70,8 @@ function buildLlmsTxt(input: LlmsTxtInput): string {
 > execution, web search, and Google Workspace / Canvas LMS access for the UC Santa Cruz
 > campus community. It is an OpenAI-compatible proxy fronting OpenRouter (zero-data-retention
 > providers, prefixed ${bt}openrouter:${bt}), listing exclusively open-weight models.
+> A separate Sealed path provides hardware-attested, application-layer encrypted inference
+> through Tinfoil, where BayLeaf carries ciphertext but lacks the key required to read it.
 > Personal API keys (${bt}sk-bayleaf-...${bt}) are issued at https://api.bayleaf.dev/; on the
 > UCSC campus network, no key is needed. Conversations are private and never used for training.
 
@@ -377,7 +395,47 @@ Supports ${bt}stream: true${bt} for SSE streaming. All standard OpenAI parameter
 ${bt}/v1/*${bt} path is proxied directly to OpenRouter, including the Responses API
 (${bt}POST /v1/responses${bt}) and ${bt}/v1/auth/key${bt} for budget inspection.
 
-### Inspecting your budget
+${sealedEnabled ? `### Sealed LLM inference
+
+BayLeaf Sealed is a separate confidential-inference path. A compatible client verifies
+Tinfoil's hardware attestation and encrypts request and response bodies at the application
+layer. BayLeaf carries the ciphertext but does not possess the enclave-bound key required
+to read it; plaintext requests are rejected rather than downgraded. BayLeaf can still see
+metadata including caller identity, timing, byte sizes, request counts, and non-streaming
+token usage.
+
+- **Recommended model:** ${bt}${sealedModel}${bt}
+- **Curated companions:** ${sealedPicks.slice(1).map((m) => `${bt}${m}${bt}`).join(', ')}
+- **Complete live catalog:** https://api.bayleaf.dev/sealed/models
+
+Generic OpenAI clients are not sufficient because they do not perform attestation or EHBP
+encryption. Install the Tinfoil Python SDK and configure both BayLeaf Sealed URLs:
+
+${fence}bash
+pip install tinfoil
+${fence}
+
+${fence}python
+from tinfoil import TinfoilAI
+
+client = TinfoilAI(
+    api_key="YOUR_BAYLEAF_API_KEY",
+    base_url="https://api.bayleaf.dev/sealed/v1/",
+    attestation_bundle_url="https://api.bayleaf.dev/sealed",
+)
+
+response = client.chat.completions.create(
+    model="${sealedModel}",
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+print(response.choices[0].message.content)
+${fence}
+
+Sealed model IDs are bare (for example ${bt}${sealedModel}${bt}), because the dedicated
+${bt}/sealed${bt} route already selects Tinfoil and the model field is inside the encrypted
+body. BayLeaf cannot inspect or rewrite it.
+
+` : ''}### Inspecting your budget
 
 ${fence}
 GET /v1/auth/key
