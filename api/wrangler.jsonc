@@ -152,7 +152,7 @@
     //      bounds the reconciliation-lag overspend window; it is a required
     //      component of dollar-denominated enforcement, not a substitute for it.
     //      SEALED_TOKEN_CAP is a provider-side fuse, not a budget.
-    "SEALED_ENABLED": "false",
+    "SEALED_ENABLED": "true",
 
     // Lifetime token cap stamped on each per-user Tinfoil key at mint time.
     // Unlike OpenRouter's SPENDING_LIMIT_DOLLARS this does NOT reset on a
