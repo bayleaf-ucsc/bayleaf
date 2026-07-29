@@ -16,6 +16,38 @@ final step destroys the sandbox.
 
 ---
 
+## Automated: the key lifecycle harness
+
+`scripts/harness-provision.mjs` is the one part of this file that runs itself.
+It exercises every path through `src/provision.ts` (fresh provision, 409 on
+double-provision, self-heal after upstream key loss, revoke, re-provision with
+and without a live upstream key, and both claim-flow entry points) against
+`wrangler dev --local`, asserting on both the local D1 row and the real
+OpenRouter key state. 45 assertions, no prod involvement.
+
+```bash
+# .dev.vars has a stale OPENROUTER_PROVISIONING_KEY; override it with the
+# working management key from .env for the duration of the run.
+python3 -c "import os;e=dict(l.strip().split('=',1) for l in open('.env') if '=' in l);p=os.environ['TMPDIR']+'/or-override.env';open(p,'w').write('OPENROUTER_PROVISIONING_KEY='+e['OPENROUTER_MAINTENANCE_KEY']+'\n');os.chmod(p,0o600)"
+npx wrangler dev --port 8799 --local --env-file .dev.vars --env-file "$TMPDIR/or-override.env" &
+sleep 12
+node scripts/harness-provision.mjs
+```
+
+It creates real OpenRouter keys for `*@example.invalid` addresses and deletes
+them on the way out. **It refuses to run if the OpenRouter admin key is
+rejected**, because a 401 makes every upstream lookup return `null`, which
+turns both the assertions and the cleanup check into false greens — that
+failure mode leaked two real keys the first time this harness was written.
+If it ever aborts mid-run, sweep manually:
+
+```bash
+# list any survivors before deleting
+node -e 'fetch("https://openrouter.ai/api/v1/keys?limit=100",{headers:{Authorization:"Bearer "+process.env.K}}).then(r=>r.json()).then(j=>console.log(j.data.filter(k=>(k.name||"").includes("example.invalid"))))'
+```
+
+---
+
 ## Prerequisites
 
 The user must supply:
@@ -240,7 +272,56 @@ provisioned from scratch (the first request will be slow again).
 
 ---
 
-## 10. Error pages (browser-facing)
+## 10. Key lifecycle — read-only checks
+
+The provision/self-heal path in `src/provision.ts` backs four surfaces: the
+dashboard render, all three `/key` verbs, and the claim flow's approve step.
+Exercise the non-destructive half here.
+
+**Do not run the revoke/re-provision test below on your own primary key unless
+you're willing to have a new `sk-bayleaf-` token minted** — revoking mints a new
+token and invalidates the old one everywhere it's configured.
+
+Budget introspection (the canonical, agent-facing endpoint):
+
+```bash
+curl -s https://api.bayleaf.dev/v1/auth/key \
+  -H "Authorization: Bearer $KEY" | python3 -m json.tool
+```
+
+**Check:**
+
+- `data.limit` and `data.limit_remaining` are present, `data.usage` is a number
+- `data.bayleaf.openrouter` mirrors those with an `applies_to` naming the
+  `openrouter:` prefix
+- One block per *enabled* alternate backend (`bedrock`, `vertex`) with
+  `requests_today` / `limit` / `resets_at`. A disabled backend must be absent.
+
+Dashboard render for a signed-in user (browser, or with a session cookie):
+
+```bash
+curl -s https://api.bayleaf.dev/dashboard -H "Cookie: $SESSION_COOKIE" | rg -o 'Daily spend[^<]*'
+```
+
+**Check:**
+
+- The key card shows daily/monthly usage, i.e. `resolveOrKey` found the
+  upstream key. If usage is missing but the page still renders, the OR key
+  lookup failed — that's the deliberate non-fatal path, worth investigating but
+  not a page break.
+- No `sk-` value appears anywhere in the HTML (see the "Don'ts" in AGENTS.md).
+
+**Self-heal (destructive to the upstream OR key, safe for the user).** Delete
+the user's key on OpenRouter, then load the dashboard. A new OR key should be
+created, the D1 row updated in place, and the user's `sk-bayleaf-` token should
+keep working unchanged. Confirm the token still authenticates afterward with the
+`/v1/auth/key` call above, and note that the new key carries the *global*
+`SPENDING_LIMIT_DOLLARS`, not any cohort limit previously set via
+`scripts/spend-limits.mjs`.
+
+---
+
+## 11. Error pages (browser-facing)
 
 Verify the JSX error page template renders. No auth needed.
 
@@ -257,7 +338,7 @@ BayLeaf layout (header, footer, API Reference link).
 
 ---
 
-## 11. Campus Pass — RPD counter (campus-only)
+## 12. Campus Pass — RPD counter (campus-only)
 
 **Run only from a UCSC IP or `127.0.0.1`.** Verifies the unified per-IP
 daily request counter that gates `/v1/chat/completions` and `/v1/responses`
@@ -303,7 +384,7 @@ curl -s https://api.bayleaf.dev/v1/auth/key \
 
 ---
 
-## 12. Campus Pass — Vertex routing (campus-only)
+## 13. Campus Pass — Vertex routing (campus-only)
 
 Verify Campus Pass can now reach `vertex:` models (was 403 before the
 unified RPD scheme).
@@ -327,7 +408,7 @@ curl -s https://api.bayleaf.dev/v1/chat/completions \
 
 ---
 
-## 13. Campus Pass — Landing page card (campus-only, browser)
+## 14. Campus Pass — Landing page card (campus-only, browser)
 
 Visit `https://api.bayleaf.dev/` from a campus IP in a browser.
 

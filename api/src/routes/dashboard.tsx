@@ -4,11 +4,11 @@
  */
 
 import { OpenAPIHono } from '@hono/zod-openapi';
-import type { AppEnv, UserKeyRow, OpenRouterKey } from '../types';
+import type { AppEnv, OpenRouterKey } from '../types';
 import { getSession } from '../utils/session';
 import { getAuthIP, isCampusPassEligible } from '../utils/ip';
 import { inspectCounter, parseLimit } from '../utils/campusRpd';
-import { getKeyName, findKeyByHash, createKey } from '../openrouter';
+import { getActiveRow, resolveOrKey } from '../provision';
 import { findSandboxByLabel, getSandboxInfo, type SandboxInfo } from '../daytona';
 import { LandingPage, type CampusUsage } from '../templates/landing';
 import { DashboardPage, type AltBackendUsage } from '../templates/dashboard';
@@ -62,29 +62,11 @@ dashboardRoutes.get('/dashboard', async (c) => {
   const session = await getSession(c);
   if (!session) return c.redirect('/login');
 
-  // Look up the user's proxy key mapping in D1
-  const row = await c.env.DB.prepare(
-    'SELECT * FROM user_keys WHERE email = ? AND revoked = 0',
-  ).bind(session.email).first<UserKeyRow>();
-
-  let orKey: OpenRouterKey | null = null;
-
-  if (row) {
-    // Validate the OR key is still alive
-    orKey = await findKeyByHash(row.or_key_hash, c.env);
-
-    if (!orKey || orKey.disabled) {
-      // Self-heal: provision a new OR key, keep the same bayleaf token
-      const keyName = getKeyName(session.email, c.env.KEY_NAME_TEMPLATE);
-      const newOrKey = await createKey(keyName, c.env);
-      if (newOrKey?.key) {
-        await c.env.DB.prepare(
-          'UPDATE user_keys SET or_key_hash = ?, or_key_secret = ? WHERE email = ?',
-        ).bind(newOrKey.hash, newOrKey.key, session.email).run();
-        orKey = newOrKey;
-      }
-    }
-  }
+  // Look up the user's proxy key mapping in D1, self-healing the upstream OR
+  // key if it has gone away. A null orKey here is not fatal: we render the
+  // page without usage numbers rather than erroring out the whole dashboard.
+  const row = await getActiveRow(session.email, c.env);
+  const orKey: OpenRouterKey | null = row ? (await resolveOrKey(row, c.env))?.orKey ?? null : null;
 
   // Fetch sandbox status (non-blocking — don't fail the page if this errors).
   let sandboxInfo: SandboxInfo | null = null;

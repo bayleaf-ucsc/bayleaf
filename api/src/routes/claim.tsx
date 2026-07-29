@@ -85,15 +85,9 @@
 
 import { Hono } from 'hono';
 import { html } from 'hono/html';
-import type { AppEnv, Session, UserKeyRow } from '../types';
+import type { AppEnv, Session } from '../types';
 import { getSession } from '../utils/session';
-import { generateBayleafToken } from '../utils/token';
-import {
-  getKeyName,
-  findKeyByName,
-  findKeyByHash,
-  createKey,
-} from '../openrouter';
+import { ensureUserKey } from '../provision';
 import { renderPage, ErrorPage } from '../templates/layout';
 import { setCookie, getCookie, deleteCookie } from 'hono/cookie';
 
@@ -231,74 +225,16 @@ function constantTimeEqual(a: string, b: string): boolean {
  * Resolve the user's current sk-bayleaf-... token, minting one if they don't
  * have an active key yet. Returns null on persistent failure to provision.
  *
- * This duplicates a chunk of POST /key intentionally rather than refactoring;
- * the path is simple enough that pulling it into a shared helper would just
- * push the orchestration around without making it clearer. If the dashboard
- * provisioning logic grows further we'll factor it.
+ * Thin wrapper over the shared lifecycle in ../provision, which is also what
+ * the dashboard and the /key routes use. Keeping it named locally documents
+ * the one thing the claim flow actually needs: a token, not a key object.
  */
 async function ensureUserToken(
   email: string,
   env: AppEnv['Bindings'],
 ): Promise<string | null> {
-  const active = await env.DB.prepare(
-    'SELECT * FROM user_keys WHERE email = ? AND revoked = 0',
-  ).bind(email).first<UserKeyRow>();
-  if (active) {
-    // Self-heal if the OR key is gone — same logic as ensureOrKey in routes/key.ts
-    const orKey = await findKeyByHash(active.or_key_hash, env);
-    if (orKey && !orKey.disabled) return active.bayleaf_token;
-
-    console.log(`Self-healing OR key for ${email} during claim flow`);
-    const keyName = getKeyName(email, env.KEY_NAME_TEMPLATE);
-    const newOrKey = await createKey(keyName, env);
-    if (!newOrKey?.key) return null;
-    await env.DB.prepare(
-      'UPDATE user_keys SET or_key_hash = ?, or_key_secret = ? WHERE email = ?',
-    ).bind(newOrKey.hash, newOrKey.key, email).run();
-    return active.bayleaf_token;
-  }
-
-  // No active row — provision a fresh key, reusing a revoked OR key only if
-  // it's still alive upstream. Mirrors POST /key's logic.
-  const revoked = await env.DB.prepare(
-    'SELECT * FROM user_keys WHERE email = ? AND revoked = 1',
-  ).bind(email).first<UserKeyRow>();
-
-  const keyName = getKeyName(email, env.KEY_NAME_TEMPLATE);
-  let orKeyHash: string;
-  let orKeySecret: string;
-
-  if (revoked) {
-    const orKey = await findKeyByHash(revoked.or_key_hash, env);
-    if (orKey && !orKey.disabled) {
-      orKeyHash = revoked.or_key_hash;
-      orKeySecret = revoked.or_key_secret;
-    } else {
-      const newOrKey = await createKey(keyName, env);
-      if (!newOrKey?.key) return null;
-      orKeyHash = newOrKey.hash;
-      orKeySecret = newOrKey.key;
-    }
-  } else {
-    const _existingOrKey = await findKeyByName(keyName, env); // defensive lookup, can't adopt without secret
-    void _existingOrKey;
-    const newOrKey = await createKey(keyName, env);
-    if (!newOrKey?.key) return null;
-    orKeyHash = newOrKey.hash;
-    orKeySecret = newOrKey.key;
-  }
-
-  const bayleafToken = generateBayleafToken();
-  if (revoked) {
-    await env.DB.prepare(
-      "UPDATE user_keys SET bayleaf_token = ?, or_key_hash = ?, or_key_secret = ?, revoked = 0, created_at = datetime('now') WHERE email = ?",
-    ).bind(bayleafToken, orKeyHash, orKeySecret, email).run();
-  } else {
-    await env.DB.prepare(
-      'INSERT INTO user_keys (email, bayleaf_token, or_key_hash, or_key_secret) VALUES (?, ?, ?, ?)',
-    ).bind(email, bayleafToken, orKeyHash, orKeySecret).run();
-  }
-  return bayleafToken;
+  const resolved = await ensureUserKey(email, env);
+  return resolved?.row.bayleaf_token ?? null;
 }
 
 // ── POST /auth/claim/initiate ────────────────────────────────────

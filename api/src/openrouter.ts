@@ -13,38 +13,6 @@ export function getKeyName(email: string, template: string): string {
 }
 
 /**
- * List all keys and find one by name.
- * Used during migration to adopt pre-existing OR keys.
- */
-export async function findKeyByName(name: string, env: Bindings): Promise<OpenRouterKey | null> {
-  let offset = 0;
-  const limit = 100;
-  
-  while (true) {
-    const response = await fetch(`${OPENROUTER_API}/keys?offset=${offset}&limit=${limit}`, {
-      headers: {
-        'Authorization': `Bearer ${env.OPENROUTER_PROVISIONING_KEY}`,
-        'Content-Type': 'application/json',
-      },
-    });
-    
-    if (!response.ok) {
-      console.error('Failed to list keys:', await response.text());
-      return null;
-    }
-    
-    const result = await response.json() as { data: OpenRouterKey[] };
-    const key = result.data.find(k => k.name === name);
-    if (key) return key;
-    
-    if (result.data.length < limit) break;
-    offset += limit;
-  }
-  
-  return null;
-}
-
-/**
  * Look up a specific key by its hash.
  * Used for state reconciliation (checking if an OR key is still alive).
  */
@@ -63,7 +31,14 @@ export async function findKeyByHash(hash: string, env: Bindings): Promise<OpenRo
 }
 
 /**
- * Create a new API key (no expiry -- the OR key lives forever).
+ * Create a new API key.
+ *
+ * The OR key itself never expires; only the daily spend cap resets. The cap is
+ * stamped from the global `SPENDING_LIMIT_DOLLARS` at creation time and is not
+ * mirrored in D1 — OpenRouter is the system of record for a key's limit, and
+ * operators adjust individual keys OR-side (`scripts/spend-limits.mjs`).
+ * A consequence worth knowing: a self-heal re-creates the key and therefore
+ * returns it to the global default.
  */
 export async function createKey(name: string, env: Bindings): Promise<OpenRouterKeyCreated | null> {
   const response = await fetch(`${OPENROUTER_API}/keys`, {
@@ -190,31 +165,6 @@ export async function getModelInfo(modelId: string): Promise<ModelInfo | null> {
       completion: p.completion ?? '0',
     },
   };
-}
-
-/**
- * Update a key's spending limit on OpenRouter (PATCH).
- * Used for lazy migration when the default limit increases.
- */
-export async function updateKeyLimit(hash: string, newLimit: number, env: Bindings): Promise<boolean> {
-  const response = await fetch(`${OPENROUTER_API}/keys/${hash}`, {
-    method: 'PATCH',
-    headers: {
-      'Authorization': `Bearer ${env.OPENROUTER_PROVISIONING_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      limit: newLimit,
-      limit_reset: env.SPENDING_LIMIT_RESET || 'daily',
-    }),
-  });
-
-  if (!response.ok) {
-    console.error('Failed to update key limit:', hash, await response.text());
-    return false;
-  }
-
-  return true;
 }
 
 /**

@@ -37,7 +37,13 @@ standing operator access to content in flight"), not full attested ZOA.
 npm run dev      # Local dev
 npm run deploy   # Deploy
 npx tsc --noEmit # Type check
+node scripts/harness-provision.mjs   # Key lifecycle integration test (needs wrangler dev; see TESTING.md)
 ```
+
+**Heads-up on local dev:** `.dev.vars` carries a stale
+`OPENROUTER_PROVISIONING_KEY` (OpenRouter answers 401 "Invalid management
+key"), so anything that provisions a key fails locally with a 500 until you
+override it. See the recipe at the top of `TESTING.md`.
 
 ## File Structure
 
@@ -46,28 +52,52 @@ src/
   index.ts              Entry point: OpenAPIHono app, cors, route mounting, .doc31() spec, error handler
   types.ts              Bindings, Session, OpenRouterKey, UserKeyRow, AppEnv (Hono generics)
   schemas.ts            Zod schemas — single source of truth for validation + OpenAPI spec
-  constants.ts          OIDC discovery helper, OPENROUTER_API, DAYTONA defaults, cookie config
-  openrouter.ts         OpenRouter API helpers (findKeyByName, createKey, deleteKey)
+  constants.ts          OIDC discovery helper, OPENROUTER_API, ALT_BACKENDS, DAYTONA defaults, cookie config
+  openrouter.ts         OpenRouter API primitives (findKeyByHash, createKey, deleteKey, getModelInfo)
+  provision.ts          User key lifecycle: getActiveRow, resolveOrKey (self-heal), provisionKey, ensureUserKey
   daytona.ts            Daytona sandbox API client (lifecycle, exec, file ops)
-  web.ts               Web search and page fetch clients (Tavily Search + Tavily Extract)
+  web.ts                Web search and page fetch clients (Tavily Search + Tavily Extract)
   utils/
     auth.ts             resolveAuth(): shared auth for proxy + sandbox routes (Campus Pass, Bayleaf token, raw key)
+    campusRpd.ts        Per-IP requests-per-day counter for Campus Pass (KV-backed)
+    gcp.ts              GCP service-account JWT minting (Vertex backend, currently disabled)
     ip.ts               IP range parsing, campus pass checks
     session.ts          HMAC session tokens, cookie helpers
     token.ts            sk-bayleaf- token generator
   templates/
-    layout.ts           Base HTML layout, errorPage, recommendedModelHint
-    landing.ts          Landing page template
-    dashboard.ts        Dashboard page template (key card, LLM card, sandbox card + client JS)
+    layout.tsx          Base HTML layout, renderPage, ErrorPage, recommendedModelHint
+    landing.tsx         Landing page template
+    dashboard.tsx       Dashboard page template (key card, LLM card, sandbox card + client JS)
   routes/
-    auth.ts             authRoutes: /login, /callback, /logout
-    dashboard.ts        dashboardRoutes: /, /dashboard (self-heals sandbox ID cache)
-    docs.ts             docsRoutes: /docs (Scalar viewer), /docs/SKILL.md
-    key.ts              keyRoutes: GET|POST|DELETE /key (OpenAPI-documented)
+    auth.tsx            authRoutes: /login, /callback, /logout
+    claim.tsx           claimRoutes: RFC 8628-style device flow for handing a key to a terminal
+    dashboard.tsx       dashboardRoutes: / (landing), /dashboard (self-heals sandbox ID cache)
+    docs.ts             docsRoutes: /docs (Scalar viewer), /docs/openapi.json, /docs/SKILL.md
+    key.ts              keyRoutes: GET|POST|DELETE /key (session-gated, hidden from the spec)
+    llms.ts             llmsRoutes: /llms.txt and the agent-facing skill prose
     proxy.ts            proxyRoutes: POST /responses, POST /chat/completions, /v1/* catch-all
-    sandbox.ts          sandboxRoutes: GET / (status), POST /exec, POST /poke, GET|PUT /files/*, DELETE / (OpenAPI-documented)
-    web.ts               webRoutes: POST /search, POST /fetch (OpenAPI-documented)
+    sandbox.ts          sandboxRoutes: GET / (status), POST /exec, POST /poke, GET|PUT /files/*, DELETE /
+    web.ts              webRoutes: POST /search, POST /fetch (OpenAPI-documented)
+    wellknown.ts        wellknownRoutes: OpenCode curated model list and related discovery docs
+migrations/             D1 schema, applied in order (0001 user_keys … 0004 bedrock RPD)
+scripts/
+  spend-limits.mjs      Operator tool: adjust OR-side daily caps by roster or by current cap
 ```
+
+**Key lifecycle lives in one place.** `provision.ts` is the only module that
+creates, self-heals, or re-provisions a user's OpenRouter key. The dashboard
+render, all three `/key` verbs, and the claim flow's approve step all go
+through it. Four near-copies of this logic previously drifted apart; don't
+reintroduce a fifth. Two invariants it protects: the `sk-bayleaf-` token
+survives an upstream OR key loss (self-heal swaps the hash/secret in place),
+and there is at most one active row per email.
+
+**Spend limits are not mirrored in D1.** OpenRouter is the system of record for
+a key's daily cap. `createKey()` stamps the global `SPENDING_LIMIT_DOLLARS` at
+creation time; per-user or per-cohort caps are set OR-side with
+`scripts/spend-limits.mjs`. This means a self-heal or a revoke/re-provision
+returns a key to the global default, which is the accepted cost of having one
+source of truth rather than two that disagree. Do not add a D1 limit column.
 
 ## Code Style
 
