@@ -4,7 +4,7 @@
 # dependencies = ["tinfoil", "certifi", "httpx"]
 # ///
 """
-BayLeaf Sealed conformance harness (issue #55 spike).
+BayLeaf Sealed conformance harness (issue #55).
 
 Exercises the three demonstrations the issue asked for, plus the negative tests
 that make the lane's claim falsifiable rather than merely asserted:

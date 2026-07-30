@@ -28,7 +28,7 @@ this for per-user rate limiting but does not retain it under ZDR.
 
 ---
 
-## Sealed Lane Traffic (`/sealed/*`, currently disabled)
+## Sealed Lane Traffic (`/sealed/*`, enabled)
 
 **Not stored, not logged, and not readable by BayLeaf at all.** The Sealed lane
 (issue #55) differs from the proxy above in kind, not degree. For the ordinary
@@ -54,7 +54,7 @@ the claim:
 None of the above is written to D1 or to any log. Content is unreachable; the
 fact that you asked is not.
 
-The Sealed lane also introduces the confidential-inference provider (prototype:
+The Sealed lane also introduces the confidential-inference provider (currently
 Tinfoil) as a **metadata processor**: it receives a per-user API key, token
 counts, and timestamps. It cannot decrypt prompts or completions. As of
 2026-07-29 the deliberate decision is that the per-user key may carry the user's

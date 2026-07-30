@@ -115,6 +115,10 @@ Then configure `OIDC_ISSUER` and related vars in `wrangler.jsonc`, and set `OIDC
 | `DAYTONA_API_URL` | Sandbox provider control plane URL | `https://app.daytona.io/api` |
 | `DAYTONA_PROXY_URL` | Sandbox provider toolbox proxy URL | `https://proxy.app.daytona.io/toolbox` |
 | `DAYTONA_DEPLOYMENT_LABEL` | Label prefix for sandbox tagging. Shared with chat.bayleaf.dev's Lathe so a user has one sandbox across both services (issue #14). | `chat.bayleaf.dev` |
+| `SEALED_ENABLED` | Master kill-switch for the Sealed lane. Must be exactly `"true"`; anything else 503s all of `/sealed/*`. | `true` |
+| `SEALED_RPD_LIMIT` | Per-user daily request guardrail for keyed Sealed traffic | `100` |
+| `SEALED_RECOMMENDED_MODEL` | Recommended Sealed model (bare Tinfoil ID) | `glm-5-2` |
+| `SEALED_CURATED_MODELS` | Comma-separated companion Sealed models (bare Tinfoil IDs) | `kimi-k2-6,gemma4-31b` |
 
 ### Secrets
 
@@ -128,6 +132,9 @@ Then configure `OIDC_ISSUER` and related vars in `wrangler.jsonc`, and set `OIDC
 | `GWS_CLIENT_ID` | Google Workspace CLI OAuth client ID (optional, enables GWS distribution) |
 | `GWS_CLIENT_SECRET` | Google Workspace CLI OAuth client secret |
 | `GWS_PROJECT_ID` | GCP project ID for the OAuth client |
+| `TINFOIL_ADMIN_KEY` | Sealed lane: mints and deletes per-user Tinfoil keys. Higher blast radius than the OpenRouter provisioning key, because Tinfoil re-reveals key secrets on read. |
+| `TINFOIL_API_KEY` | Sealed lane: org key, used only for the plaintext catalog at `/sealed/models` |
+| `CAMPUS_SEALED_KEY` | Sealed lane: shared pool key for Campus Pass, which has no email and so cannot hold a per-user key |
 
 ## Campus Pass
 
@@ -188,6 +195,21 @@ Off-campus users will receive a 401 error directing them to get a personal key a
 | `/v1/completions` | Text completions |
 | `/v1/models` | List available models |
 | `/v1/*` | All other OpenRouter endpoints |
+
+### BayLeaf Sealed (Confidential Inference)
+
+An opt-in, end-to-end-encrypted inference lane. Mounted as a sibling of `/v1`, never inside it, so it shares no path or middleware with the plaintext proxy.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/sealed/health` | GET | Kill-switch state and upstream attestation reachability. Carries no user content. |
+| `/sealed/attestation` | GET, POST | Relay of the signed Tinfoil attestation bundle. Both verbs are required: the client re-verifies with POST after an enclave key rotation. |
+| `/sealed/models` | GET | Sealed catalog with **bare** model IDs (no prefix), because the `model` field lives inside the encrypted body and cannot be rewritten by the relay. |
+| `/sealed/v1/*` | POST | EHBP ciphertext relay. POST only; anything else is 405. |
+
+The client verifies a hardware attestation and encrypts the request body to the enclave's HPKE key (EHBP, RFC 9180 HPKE at the application layer, independent of TLS) before those bytes reach BayLeaf. BayLeaf substitutes a server-side provider credential, meters the request, and relays the ciphertext without parsing it. **There is no plaintext fallback:** a request missing a valid `Ehbp-Encapsulated-Key` is rejected with 400 rather than served over a readable path. A generic OpenAI-compatible client is therefore not sufficient; see `https://api.bayleaf.dev/llms.txt` for the supported client setup.
+
+BayLeaf sees caller identity, timing, byte sizes, request counts, and non-streaming token counts. It cannot see prompts or completions. Say both halves.
 
 ### Code Sandbox
 

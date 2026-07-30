@@ -45,8 +45,9 @@ SEALED_TAMPER_PORT=8801 ./scripts/harness-sealed-attestation.py
 keyed token off-campus, and prefer it regardless: Campus Pass shares an env-held
 pool key and exercises none of the minting, CAS, or healing paths.
 
-Requires `SEALED_ENABLED: "true"`, which means a deploy. Flip it back afterwards
-unless the disclosure items in `AGENTS.md` are done.
+`SEALED_ENABLED` is `"true"` in production, so no deploy or flag flip is needed
+to run this against `api.bayleaf.dev`. Note that the harness mints a real
+per-user Tinfoil key and spends real credit, so clean up the row and the key.
 
 ## Automated: the key lifecycle harness
 
@@ -113,7 +114,8 @@ openssl req -x509 -newkey rsa:2048 -sha256 -days 7 -nodes \
   -addext "basicConstraints=critical,CA:TRUE"
 
 # 2. Sealed lane needs its kill-switch on plus a server-side Tinfoil key.
-#    SEALED_ENABLED is "false" in wrangler.jsonc; .dev.vars overrides it.
+#    SEALED_ENABLED is "true" in wrangler.jsonc, but set it in .dev.vars anyway
+#    so local runs do not depend on that file, and supply a server-side key.
 #    Get a tk_ from the `bayleaf` Tinfoil org; never commit it.
 cd -
 grep -q '^SEALED_ENABLED=' .dev.vars || cat >> .dev.vars <<'EOF'

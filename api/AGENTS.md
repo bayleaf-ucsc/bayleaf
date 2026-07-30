@@ -33,7 +33,7 @@ standing operator access to content in flight"), not full attested ZOA.
 
 ### The one exception: BayLeaf Sealed
 
-`/sealed/*` (`src/routes/sealed.ts`, issue #55, **disabled by default**) is the
+`/sealed/*` (`src/routes/sealed.ts`, issue #55, **enabled in production**) is the
 only lane where the above is stronger than a posture. Clients verify a hardware
 attestation and encrypt request bodies to the enclave's HPKE key (EHBP, RFC 9180
 HPKE at the application layer, independent of TLS). The Worker relays ciphertext.
@@ -99,7 +99,7 @@ src/
     key.ts              keyRoutes: POST|DELETE /key (session-gated, hidden from the spec)
     llms.ts             llmsRoutes: /llms.txt and the agent-facing skill prose
     proxy.ts            proxyRoutes: POST /responses, POST /chat/completions, /v1/* catch-all
-    sealed.ts           sealedRoutes: BayLeaf Sealed EHBP ciphertext relay (issue #55, off by default)
+    sealed.ts           sealedRoutes: BayLeaf Sealed EHBP ciphertext relay (issue #55, enabled; fails closed)
     sandbox.ts          sandboxRoutes: GET / (status), POST /exec, POST /poke, GET|PUT /files/*, DELETE /
     web.ts              webRoutes: POST /search, POST /fetch (OpenAPI-documented)
     wellknown.ts        wellknownRoutes: OpenCode curated model list and related discovery docs
@@ -422,9 +422,13 @@ Not yet established: whether `keys` includes revoked/deleted keys (matters for
 reconciling a departed user), Admin API rate limits for polling frequency, and
 whether reconciliation is faster than 6s.
 
-### Before flipping the switch
+### Enablement record
 
-1. **Per-user Tinfoil keys — DONE (migration `0005`).** One Tinfoil key per user
+The lane is live. Two of the four original gate items were satisfied, and two
+were deliberately dropped or deferred. The reasoning matters more than the
+checkbox, so it is recorded rather than deleted.
+
+1. **Per-user Tinfoil keys: DONE (migration `0005`).** One Tinfoil key per user
    email, minted on **first use of the lane** and stored in `tinfoil_key`, so
    usage is attributable per user and BayLeaf enforces a per-user RPD limit.
    Campus Pass has no email and so shares `CAMPUS_SEALED_KEY`,
@@ -444,20 +448,28 @@ whether reconciliation is faster than 6s.
    Note this makes `TINFOIL_ADMIN_KEY` more dangerous than
    `OPENROUTER_PROVISIONING_KEY`: Tinfoil re-reveals secrets on read, so a leak
    of the admin key exposes every user's inference credential.
-2. **Dollar-denominated spend enforcement** via the reconciliation loop described
-   above, plus a per-user concurrency cap and request rate limit to bound the
-   reconciliation-lag overspend window. The RPD guardrail is a *component* of
-   this design, not an alternative to it: enforcement necessarily lags
-   reconciliation, so something must bound the in-flight window.
-3. **`/sealed/policy`** publishing the C1–C6 rubric plus a pinned enclave
-   measurement allowlist. This matters more than it looks: BayLeaf cannot forge
-   the attestation bundle (verified — all five mutation classes are refused
-   client-side), but a client that skips verification or accepts whatever the
-   enclave self-reports gets none of the guarantee. Pinning is the client-side
-   obligation we cannot enforce, only publish.
-4. **Publish the Tinfoil subprocessor disclosure — source DONE.**
-   `docs/privacy.html` now identifies the content and metadata boundaries, but
-   the GitHub Pages revision must be live before the lane is enabled.
+2. **Dollar-denominated spend enforcement: STILL OPEN.** The reconciliation loop
+   described above, plus a per-user concurrency cap and request rate limit to
+   bound the reconciliation-lag overspend window. The RPD guardrail is a
+   *component* of this design, not an alternative to it: enforcement necessarily
+   lags reconciliation, so something must bound the in-flight window. The lane
+   was enabled with `SEALED_RPD_LIMIT` alone, so today exposure is bounded by
+   request count rather than by dollars. This is the largest outstanding gap.
+3. **`/sealed/policy`: DROPPED as a prerequisite.** The original plan was to
+   publish the C1–C6 rubric plus a pinned enclave measurement allowlist. The
+   reason it was dropped is that a BayLeaf-served trust policy is circular: the
+   guarantee is carried entirely by the client, and Tinfoil's verifier already
+   checks SEV-SNP hardware, Sigstore source provenance against a pinned config
+   repo, runtime measurement, and HPKE key binding. BayLeaf cannot forge the
+   attestation bundle (verified: all five mutation classes are refused
+   client-side), and a client that skips verification gets none of the guarantee
+   no matter what we publish. Pinning is a client-side obligation we can neither
+   enforce nor usefully substitute for. Revisit only when there is a mechanical
+   consumer of an accepted-measurement policy; issue #62 is the first plausible
+   one.
+4. **Tinfoil subprocessor disclosure: DONE and live.** `docs/privacy.html`
+   identifies the content and metadata boundaries, and the GitHub Pages revision
+   is published at `https://bayleaf.dev/privacy.html`.
 
 ## Routes
 

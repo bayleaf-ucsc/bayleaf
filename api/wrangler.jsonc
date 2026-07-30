@@ -128,26 +128,38 @@
     // the only lane where BayLeaf-operator zero-operator-access is a structural
     // property rather than a posture.
     //
-    // SPIKE, disabled in production. Before flipping to "true":
-    //   1. Secrets set via `wrangler secret put`: TINFOIL_ADMIN_KEY (mints
+    // ENABLED in production (2026-07-29). What the enablement gate required,
+    //   and what it actually got:
+    //   1. DONE. Secrets set via `wrangler secret put`: TINFOIL_ADMIN_KEY (mints
     //      per-user keys), TINFOIL_API_KEY (org key, now used only for the
     //      plaintext catalog at /sealed/models), and CAMPUS_SEALED_KEY (pool
     //      key for Campus Pass, which has no email and so cannot hold a
     //      per-user key).
-    //   2. Apply migration 0005. It rebuilds user_keys to make the OpenRouter
-    //      columns nullable and add the Tinfoil ones, because backend keys are
-    //      now minted on first use of each lane rather than at token issuance.
-    //   3. Confirm streaming works: usage accounting for streamed responses
+    //   2. DONE. Migration 0005 applied. It rebuilds user_keys to make the
+    //      OpenRouter columns nullable and add the Tinfoil ones, because backend
+    //      keys are now minted on first use of each lane rather than at token
+    //      issuance.
+    //   3. DONE. Streaming confirmed. Usage accounting for streamed responses
     //      arrives in an HTTP trailer, which the Workers runtime does not
-    //      expose. Non-streaming reports in a response header. Note the
+    //      expose. Non-streaming reports in a response header. The
     //      authoritative numbers are available out-of-band and DO include
     //      streaming, so this is a visibility gap, not an accounting gap.
-    //   4. Publish /sealed/policy (the C1-C6 rubric plus pinned enclave
-    //      measurements) and publish the Tinfoil subprocessor disclosure that
-    //      is now written in docs/privacy.html. On enablement, update the status
-    //      claims in api/AGENTS.md, api/RETENTION.md, politics/SECURITY.md,
-    //      politics/HECVAT.md, politics/DEPENDENCIES.md, politics/POSITION.md,
-    //      and politics/RESEARCH.md.
+    //   4. DONE. The Tinfoil subprocessor disclosure is live in
+    //      docs/privacy.html and published at https://bayleaf.dev/privacy.html.
+    //
+    // Two gate items were deliberately NOT met. The reasoning is recorded here
+    // rather than the requirement quietly dropped:
+    //   - /sealed/policy (the C1-C6 rubric plus pinned enclave measurements) is
+    //     NOT published, and is no longer treated as a prerequisite. A
+    //     BayLeaf-served trust policy is circular: the guarantee is carried by
+    //     the client, whose verifier already checks SEV-SNP hardware, Sigstore
+    //     source provenance against a pinned config repo, runtime measurement,
+    //     and HPKE key binding. Revisit only when a mechanical consumer needs an
+    //     accepted-measurement policy (issue #62).
+    //   - Dollar-denominated spend enforcement is NOT built. SEALED_RPD_LIMIT
+    //     bounds exposure by request count instead. See the cost accounting
+    //     section of api/AGENTS.md for the reconciliation design that supersedes
+    //     it.
     "SEALED_ENABLED": "true",
 
     // Per-user daily request guardrail for keyed Sealed traffic. Campus Pass

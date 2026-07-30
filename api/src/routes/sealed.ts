@@ -1,5 +1,5 @@
 /**
- * BayLeaf Sealed — EHBP ciphertext relay (SPIKE, issue #55)
+ * BayLeaf Sealed: EHBP ciphertext relay (issue #55, enabled in production)
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * WHAT THIS IS
@@ -700,7 +700,7 @@ sealedRoutes.post('/v1/*', async (c) => {
   });
   if (responseNonce) responseHeaders.set(EHBP_RESPONSE_NONCE, responseNonce);
   if (usage) responseHeaders.set(USAGE_METRICS, usage);
-  // Spike observability: surface what the relay could actually see, so the
+  // Relay observability: surface what the relay could actually see, so the
   // "BayLeaf is blind to content but not to metadata" claim is demonstrable
   // rather than asserted. Not a retention mechanism — nothing is stored.
   responseHeaders.set('X-Bayleaf-Sealed-Relay', 'ciphertext');

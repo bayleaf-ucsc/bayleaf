@@ -36,7 +36,7 @@ retention and account posture meet BayLeaf's requirements are enabled:
 | **NRP/SDSC** | Configured, disabled | NSF-funded institutional inference via Envoy AI Gateway on the National Research Platform. Disabled because NRP's documented policy permits prompt logging, which does not meet BayLeaf's ZDR floor. |
 | **Google Vertex AI** | Implemented, disabled | UC/UCSC has institutional Google Cloud agreements, including data-protection terms applicable to covered institutional use. BayLeaf's current operator-controlled GCP project is not treated as proven covered by those terms, and Google did not grant or confirm the Abuse Monitoring opt-out needed for ZDR parity. |
 | **Amazon Bedrock (mantle)** | Implemented, disabled | UC has institutional AWS/BAA arrangements, but the proof-of-concept credential is from the operator's personal AWS account and has **no UCSC BAA coverage**. The lane is also paused pending an enforceable open-weight listing policy; account retention mode is set to `none` on the POC account. |
-| **BayLeaf Sealed / Tinfoil** | Implemented and production-tested, disabled | Client-verifiable confidential inference. A compatible client verifies enclave attestation and encrypts content before it reaches BayLeaf. Pending publication of the measurement policy and operational guardrails before enablement. |
+| **BayLeaf Sealed / Tinfoil** | Active (opt-in route) | Client-verifiable confidential inference. A compatible client verifies enclave attestation and encrypts content before it reaches BayLeaf. Enabled 2026-07-29 with a per-user daily request guardrail; dollar-denominated spend reconciliation remains outstanding. BayLeaf publishes no accepted-measurement policy of its own, deliberately: the guarantee is carried by the client's verifier, not by an operator-served artifact. |
 
 The institutional Google and AWS agreements establish credible migration paths,
 not present coverage BayLeaf claims for its operator-controlled accounts. Moving
@@ -115,8 +115,11 @@ BayLeaf applies ZDR everywhere and pursues ZOA where practical.
   responses fail closed rather than falling back to the ordinary proxy. This
   excludes the BayLeaf operator from content access even if a logging revision
   were deployed. The full provider-side claim remains conditional on correct
-  client verification and pinning an approved workload measurement; publishing
-  that policy is a prerequisite to enabling the lane. Identity, timing, byte
+  client verification and on the client pinning an approved workload
+  measurement. BayLeaf deliberately publishes no measurement policy of its own,
+  because an operator-served trust policy is circular; the client's verifier
+  independently checks the hardware attestation, signed source provenance,
+  runtime measurement, and the enclave's encryption key. Identity, timing, byte
   sizes, model, token counts, and billing metadata remain outside ZOA.
 
 ### 2.4 Retention and deletion
@@ -196,7 +199,7 @@ without making the user manage provider credentials.
 | DigitalOcean | Chat hosting, PostgreSQL, S3 | US | User accounts, conversation histories, file uploads |
 | Cloudflare | DNS, CDN, Workers, D1 | US (edge) | All traffic transits Cloudflare; D1 holds API key mappings |
 | OpenRouter | LLM gateway (default) | US | Prompts and completions in transit (ZDR, not retained) |
-| Tinfoil | Confidential LLM inference (Sealed, disabled) | US | Encrypted request/response bodies; identity-linked key metadata, timing, model, token counts, and billing data |
+| Tinfoil | Confidential LLM inference (Sealed, active) | US | Encrypted request/response bodies; identity-linked key metadata, timing, model, token counts, and billing data |
 | NRP / SDSC | LLM inference (configured, disabled) | US (UC San Diego / NSF) | Would receive prompts and completions on research infrastructure; disabled because its logging policy does not meet BayLeaf's ZDR floor |
 | Google Cloud / Vertex AI | LLM inference (implemented, disabled) | US / global | Would receive prompts and completions plus request metadata; current project coverage and ZDR Abuse Monitoring opt-out are unresolved |
 | Amazon Web Services / Bedrock | LLM inference (implemented, disabled) | US | Would receive prompts and completions plus request metadata; POC account is personal and not covered by UCSC's BAA |
@@ -228,8 +231,10 @@ For ownership, political profile, and exit paths for each provider, see the
   per-IP daily request counter across chat-completion and Responses requests.
 - **Alternative backends:** Vertex and Bedrock have separate per-key daily
   request counters because their spend does not pass through OpenRouter. Their
-  lanes are currently disabled. Sealed cost reconciliation and request/concurrency
-  guardrails remain prerequisites to enabling that lane.
+  lanes are currently disabled. Sealed is active and carries its own per-user
+  daily request counter; its spend is metered by the confidential-inference
+  provider rather than OpenRouter, and dollar-denominated reconciliation plus a
+  concurrency cap remain outstanding work.
 - **Key revocation:** Immediate via D1 `revoked` flag, checked on every request.
 - **No general per-key RPM limit.** OpenRouter-keyed traffic is controlled by
   spending caps and revocation rather than a universal requests-per-minute cap.
@@ -263,7 +268,7 @@ the repository.
 | Campus pool key | Cloudflare Worker secret |
 | GCP service-account credential (Vertex, disabled) | Open WebUI admin valve; Cloudflare Worker secret |
 | Bedrock bearer token (disabled) | Open WebUI connection configuration; Cloudflare Worker secret |
-| Tinfoil inference/admin keys (Sealed, disabled) | Cloudflare Worker secrets; per-user inference credentials cached in D1 |
+| Tinfoil inference/admin keys (Sealed, active) | Cloudflare Worker secrets; per-user inference credentials cached in D1 |
 
 ---
 
@@ -272,12 +277,13 @@ the repository.
 1. **Proxy indirection.** BayLeaf-token users never hold raw provider keys.
    BayLeaf tokens are an opaque layer enabling revocation and spending control;
    raw OpenRouter keys remain a legacy compatibility mode.
-2. **Fail-closed multi-backend inference.** OpenRouter is active. NRP, Vertex,
-   Bedrock, and Sealed are separately implemented or configured and disabled.
-   The API's Vertex, Bedrock, and Sealed kill switches fail closed unless their
-   environment flags equal `"true"`; disabled API lanes reject requests and
-   disappear from model listings. Provider portability does not imply equivalent
-   retention, contracts, security properties, or model provenance.
+2. **Fail-closed multi-backend inference.** OpenRouter is active, as is Sealed.
+   NRP, Vertex, and Bedrock are separately implemented or configured and
+   disabled. The API's Vertex, Bedrock, and Sealed kill switches fail closed
+   unless their environment flags equal `"true"`; disabled API lanes reject
+   requests and disappear from model listings. Provider portability does not
+   imply equivalent retention, contracts, security properties, or model
+   provenance.
 3. **System prompt enforcement.** A BayLeaf system prompt prefix is prepended to
    ordinary plaintext API-proxy requests. Sealed traffic is intentionally opaque:
    BayLeaf cannot inspect or modify its encrypted body.
