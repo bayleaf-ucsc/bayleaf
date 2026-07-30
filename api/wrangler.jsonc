@@ -221,7 +221,7 @@
   // - CAMPUS_POOL_KEY (for Campus Pass feature)
   // - DAYTONA_API_KEY (for sandbox provider)
   // - BEDROCK_BEARER_TOKEN (Amazon Bedrock mantle bearer token; enterprise account in prod)
-  // - TINFOIL_ADMIN_KEY    (Sealed lane: mints/uncaps/deletes per-user Tinfoil keys.
+  // - TINFOIL_ADMIN_KEY    (Sealed lane: mints/deletes per-user Tinfoil keys.
   //                         Strictly more dangerous than OPENROUTER_PROVISIONING_KEY
   //                         because Tinfoil's admin API re-reveals key secrets on
   //                         read, so a leak exposes every user's inference

@@ -120,7 +120,6 @@ import type { AppEnv, Bindings } from '../types';
 import { resolveAuth } from '../utils/auth';
 import { resolveBackendCredential } from '../utils/backend';
 import { healBackendKey } from '../provision';
-import { clearTinfoilTokenCap } from '../tinfoil';
 import { checkAndIncrement, parseLimit } from '../utils/campusRpd';
 import {
   SealedAttestationRequestSchema,
@@ -591,31 +590,7 @@ sealedRoutes.post('/v1/*', async (c) => {
       503,
     );
   }
-  let serverKey = cred.secret;
-
-  // Keys minted before migration 0006 carry a lifetime 2M-token cap. Clear it
-  // in place once, then record that fact locally so later requests stay on the
-  // inference plane. New keys are minted unlimited and set this marker during
-  // the same compare-and-swap that installs their secret.
-  if (cred.row && cred.row.tinfoil_unlimited !== 1) {
-    const uncap = await clearTinfoilTokenCap(serverKey, c.env);
-    if (uncap === 'missing') {
-      // The user deleted a legacy capped key before its one-time migration.
-      // We have not touched the ciphertext body yet, so unlike post-forward
-      // healing we can replace the key and continue this same request safely.
-      const healed = await healBackendKey(cred.row, 'tinfoil', serverKey, c.env);
-      if (!healed) {
-        return sealedError('Could not replace your deleted Sealed credential. Please retry shortly.', 503);
-      }
-      serverKey = healed.secret;
-    } else if (uncap === 'error') {
-      return sealedError('Could not remove the legacy token cap from your Sealed credential. Please retry shortly.', 503);
-    } else {
-      await c.env.DB.prepare(
-        'UPDATE user_keys SET tinfoil_unlimited = 1 WHERE email = ? AND tinfoil_key = ? AND revoked = 0',
-      ).bind(cred.row.email, serverKey).run();
-    }
-  }
+  const serverKey = cred.secret;
 
   // ── 7. Build the upstream URL from OUR path, not from client input.
   // `/sealed/v1/chat/completions` → `<enclave>/v1/chat/completions`.

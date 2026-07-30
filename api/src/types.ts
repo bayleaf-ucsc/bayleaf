@@ -103,7 +103,7 @@ export interface Bindings {
   // silently void the lane's entire confidentiality claim.
   TINFOIL_API_KEY: string;
 
-  // Tinfoil ADMIN credential, used only to mint, uncap, and delete per-user keys.
+  // Tinfoil ADMIN credential, used only to mint and delete per-user keys.
   //
   // Strictly more dangerous than OPENROUTER_PROVISIONING_KEY: Tinfoil's admin
   // API re-reveals key secrets on read (`GET /api/keys` returns every user's
@@ -180,8 +180,6 @@ export interface UserKeyRow {
   // report, which indexes spend by key name.
   tinfoil_key: string | null;
   tinfoil_key_name: string | null;
-  /** 1 once this key is known to have no provider-side lifetime token cap. */
-  tinfoil_unlimited: number;
   sealed_rpd_count: number;
   sealed_rpd_date: string;
 }

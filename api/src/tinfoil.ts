@@ -114,25 +114,6 @@ export async function createTinfoilKey(
   return key?.key ? key : null;
 }
 
-/** Remove a legacy lifetime cap, distinguishing a deleted key from other failures. */
-export async function clearTinfoilTokenCap(
-  key: string,
-  env: Bindings,
-): Promise<'cleared' | 'missing' | 'error'> {
-  const response = await fetch(`${TINFOIL_ADMIN_API}/keys/update`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${env.TINFOIL_ADMIN_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ key, max_tokens: 0 }),
-  });
-
-  if (response.ok) return 'cleared';
-  if (response.status === 404) return 'missing';
-  return 'error';
-}
-
 /**
  * Delete a Tinfoil key by its secret.
  *
