@@ -10,7 +10,7 @@ API key provisioning, LLM inference proxy, and sandboxed code execution for UC S
 - **Code Sandbox**: Persistent Linux sandbox per user for code execution, file upload/download — backed by Daytona
 - **Self-Service Dashboard**: Create, view, and revoke API keys; see LLM usage stats and sandbox status
 - **Tool Integrations**: Distributes setup instructions and credentials for Google Workspace CLI and Canvas LMS CLI
-- **Campus Pass**: On-campus users can access inference and ephemeral sandboxes without authentication
+- **Campus Pass**: On-campus users can access inference and web tools without authentication; sandbox access requires a personal key
 
 ## Architecture
 
@@ -131,14 +131,14 @@ Then configure `OIDC_ISSUER` and related vars in `wrangler.jsonc`, and set `OIDC
 
 ## Campus Pass
 
-Campus Pass allows users on the UC Santa Cruz campus network to access the API without signing in or creating a personal API key.
+Campus Pass allows users on the UC Santa Cruz campus network to access inference, web search/fetch, and other supported API routes without signing in or creating a personal API key. Sandbox routes require a personal key.
 
 ### How it works
 
-1. When a request arrives at `/v1/*` or `/sandbox/exec` with no API key (or `Bearer campus`), the system checks the client IP
-2. If the IP matches a configured campus CIDR range, the request is proxied using a shared pool key (for LLM) or an ephemeral sandbox (for code execution)
-3. Ephemeral sandboxes are created per-request and deleted immediately after execution
-4. An additional system prompt prefix is injected for LLM requests to inform the model about the shared access context
+1. When a supported request arrives with no API key (or `Bearer campus`), the system checks the client IP
+2. If the IP matches a configured campus CIDR range, inference requests are proxied using a shared pool key
+3. An additional system prompt prefix is injected for LLM requests to inform the model about the shared access context
+4. Sandbox requests return `403`; users can provision a free personal key for sandbox access
 
 ### Configuration
 
@@ -161,11 +161,6 @@ On-campus users can access the API without any authentication:
 curl https://api.bayleaf.dev/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model": "deepseek/deepseek-v3.2", "messages": [{"role": "user", "content": "Hello!"}]}'
-
-# Sandbox — ephemeral, one-shot execution on campus
-curl https://api.bayleaf.dev/sandbox/exec \
-  -H "Content-Type: application/json" \
-  -d '{"command": "echo hello from campus"}'
 ```
 
 Off-campus users will receive a 401 error directing them to get a personal key at https://api.bayleaf.dev/
@@ -199,13 +194,13 @@ Off-campus users will receive a 401 error directing them to get a personal key a
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
 | `/sandbox` | GET | Keyed only | Report sandbox status without side effects (`state: "none"` if none exists) |
-| `/sandbox/exec` | POST | Campus Pass or keyed | Execute a bash command. Body: `{"command": "...", "workdir?": "..."}`. Returns `{"exitCode": 0, "output": "..."}` |
+| `/sandbox/exec` | POST | Keyed only | Execute a bash command. Body: `{"command": "...", "workdir?": "..."}`. Returns `{"exitCode": 0, "output": "..."}` |
 | `/sandbox/poke` | POST | Keyed only | Refresh the inactivity timer to prevent auto-stop; wakes a stopped sandbox. Returns `{"id": "...", "state": "started", "poked": true}` |
 | `/sandbox/files/*` | GET | Keyed only | Download a file by absolute path |
 | `/sandbox/files/*` | PUT | Keyed only | Upload a file by absolute path (raw body) |
 | `/sandbox` | DELETE | Keyed or session | Destroy the user's sandbox |
 
-Keyed users get a persistent sandbox (auto-stops after 15 min idle, auto-archives after 60 min stopped, recreated transparently on next request). Campus Pass users get ephemeral sandboxes that are deleted after each execution.
+A personal BayLeaf key is required to use the sandbox APIs. Each keyed user gets a persistent sandbox (auto-stops after 15 min idle, auto-archives after 60 min stopped, recreated transparently on next request).
 
 Default working directory is `/home/daytona/workspace`. No output truncation.
 

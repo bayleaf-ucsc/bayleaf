@@ -38,7 +38,7 @@ app.openAPIRegistry.registerComponent('securitySchemes', 'Bearer', {
   type: 'http',
   scheme: 'bearer',
   description:
-    'BayLeaf API key (`sk-bayleaf-...`), or omit entirely on the UCSC campus network for Campus Pass access.',
+    'BayLeaf API key (`sk-bayleaf-...`). On supported routes, users on the UCSC campus network may omit it for Campus Pass access; sandbox routes require a personal key.',
 });
 
 // ── CORS middleware ───────────────────────────────────────────────
@@ -142,7 +142,7 @@ app.doc31('/docs/openapi.json', (c) => ({
       'Standard inference is an OpenAI-compatible proxy fronting zero-data-retention OpenRouter providers. ' +
       'BayLeaf Sealed is a separate hardware-attested EHBP path where BayLeaf relays encrypted bodies without possessing the enclave-bound decryption key.\n\n' +
       '**Authentication:** Include `Authorization: Bearer <key>` on all requests. ' +
-      'On the UCSC campus network, you may omit the header entirely (Campus Pass). ' +
+      'On supported routes, users on the UCSC campus network may omit the header (Campus Pass); sandbox routes require a personal key. ' +
       'Off-campus, provision a free personal key at https://api.bayleaf.dev/.\n\n' +
       `**Recommended model:** \`${c.env.RECOMMENDED_MODEL}\`. ` +
       'Fetch the latest recommendation from [/recommended-model](/recommended-model).',

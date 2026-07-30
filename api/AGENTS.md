@@ -468,7 +468,7 @@ whether reconciliation is faster than 6s.
 /v1/chat/completions    Chat completions proxy (system prompt via system message)
 /v1/*                   General OpenRouter proxy (models, auth/key, etc.)
 /sandbox                GET: sandbox status (keyed only, no side effects)
-/sandbox/exec           POST: bash execution (campus-pass: ephemeral, keyed: persistent)
+/sandbox/exec           POST: bash execution (keyed only, persistent)
 /sandbox/poke           POST: refresh inactivity timer / wake sandbox (keyed only)
 /sandbox/files/*        GET: download file, PUT: upload file (keyed only)
 /sandbox                DELETE: destroy user's sandbox (keyed or session)

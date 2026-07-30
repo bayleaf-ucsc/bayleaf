@@ -365,8 +365,8 @@ All machine-facing endpoints accept ${bt}Authorization: Bearer <key>${bt}.
 
 | Method | When to use |
 |--------|-------------|
-| **BayLeaf key** (${bt}sk-bayleaf-...${bt}) | Off-campus, or when you need a persistent sandbox and file access. Provision free at https://api.bayleaf.dev/. |
-| **Campus Pass** (omit header) | On the UCSC campus network. No key needed. Sandbox access is ephemeral (one-shot). |
+| **BayLeaf key** (${bt}sk-bayleaf-...${bt}) | Required for sandbox execution and file access, and for off-campus API use. Provision free at https://api.bayleaf.dev/. |
+| **Campus Pass** (omit header) | On the UCSC campus network. No key needed for inference, web search/fetch, and other supported routes. Sandbox access requires a personal key. |
 
 BayLeaf applies a daily limit to each backend: some are price-based and others
 are request-based. Your current limits and remaining allowance are shown in the
@@ -506,8 +506,8 @@ Returns ${bt}{ "exitCode": 0, "output": "4\\n" }${bt}. Commands run under
 ${bt}set -e -o pipefail${bt} with a 120-second timeout. Full Debian-based Linux with
 network access. Workdir defaults to ${bt}/home/daytona/workspace${bt} if omitted.
 
-- **Keyed users** get a persistent sandbox surviving across requests.
-- **Campus Pass users** get an ephemeral sandbox per-request.
+- A personal BayLeaf key is required, including on campus.
+- The sandbox persists across requests.
 
 File I/O (keyed users only):
 

@@ -172,7 +172,7 @@ BayLeaf applies ZDR everywhere and pursues ZOA where practical.
 
 | Tier | Mechanism | Persistence |
 |---|---|---|
-| Campus Pass | IP-range detection (UCSC CIDRs via Cloudflare `CF-Connecting-IP`) | Ephemeral (no account, no persistent sandbox) |
+| Campus Pass | IP-range detection (UCSC CIDRs via Cloudflare `CF-Connecting-IP`) | No account; no sandbox access |
 | BayLeaf Token (`sk-bayleaf-*`) | Self-service key provisioned after OIDC auth; maps on first use to backend-specific credentials | Persistent sandbox, revocable |
 | Raw OpenRouter Key (`sk-or-*`) | Direct passthrough (legacy/compat) | N/A |
 

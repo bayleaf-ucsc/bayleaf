@@ -156,30 +156,6 @@ export async function createPersistentSandbox(
   return await resp.json() as SandboxInfo;
 }
 
-/**
- * Create an ephemeral sandbox for campus-pass (anonymous) users.
- * Marked ephemeral so Daytona auto-deletes it when stopped.
- * autoStopInterval=5 is a safety net; we explicitly delete after exec.
- */
-export async function createEphemeralSandbox(env: Bindings): Promise<SandboxInfo> {
-  const resp = await fetch(apiUrl(env, '/sandbox'), {
-    method: 'POST',
-    headers: authHeaders(env),
-    body: JSON.stringify({
-      language: 'python',
-      ephemeral: true,
-      autoStopInterval: 5,
-    }),
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Failed to create ephemeral sandbox: HTTP ${resp.status} — ${text.slice(0, 200)}`);
-  }
-
-  return await resp.json() as SandboxInfo;
-}
-
 /** Start a stopped or archived sandbox. */
 export async function startSandbox(id: string, env: Bindings): Promise<void> {
   const resp = await fetch(apiUrl(env, `/sandbox/${id}/start`), {
@@ -386,10 +362,10 @@ export async function ensureSandbox(
 /**
  * Execute a bash command in a sandbox.
  *
- * Mirrors Lathe's approach: writes the command verbatim to a temp script
- * (/tmp/_cmd.sh) with `set -e -o pipefail` and non-interactive env vars,
- * then executes `bash /tmp/_cmd.sh`. This avoids all quoting/escaping
- * issues with Daytona's argv-splitting execute API.
+ * Writes the command verbatim to a request-scoped temp script with
+ * `set -e -o pipefail` and non-interactive env vars, then executes it.
+ * This avoids quoting/escaping issues with Daytona's argv-splitting execute
+ * API while keeping concurrent requests isolated from one another.
  *
  * No output truncation — full stdout/stderr is returned.
  */
@@ -409,14 +385,14 @@ export async function execCommand(
     'CI=true\n' +
     command + '\n';
 
-  const scriptPath = '/tmp/_cmd.sh';
+  const scriptPath = `/tmp/bayleaf-exec-${crypto.randomUUID()}.sh`;
   const scriptBlob = new Blob([script], { type: 'application/octet-stream' });
 
   // Upload the script via multipart form
   const uploadForm = new FormData();
   uploadForm.append('file', scriptBlob, 'file');
 
-  await fetch(
+  const uploadResp = await fetch(
     `${toolboxUrl(env, sandboxId, '/files/upload')}?path=${encodeURIComponent(scriptPath)}`,
     {
       method: 'POST',
@@ -425,27 +401,46 @@ export async function execCommand(
     },
   );
 
-  // Execute the script
-  const resp = await fetch(toolboxUrl(env, sandboxId, '/process/execute'), {
-    method: 'POST',
-    headers: authHeaders(env),
-    body: JSON.stringify({
-      command: `bash ${scriptPath}`,
-      cwd: workdir,
-      timeout: 120000,
-    }),
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Command execution failed: HTTP ${resp.status} — ${text.slice(0, 200)}`);
+  if (!uploadResp.ok) {
+    const text = await uploadResp.text();
+    throw new Error(`Command upload failed: HTTP ${uploadResp.status} — ${text.slice(0, 200)}`);
   }
 
-  const data = await resp.json() as { result?: string; exitCode?: number };
-  return {
-    exitCode: data.exitCode ?? -1,
-    output: data.result ?? '',
-  };
+  try {
+    const resp = await fetch(toolboxUrl(env, sandboxId, '/process/execute'), {
+      method: 'POST',
+      headers: authHeaders(env),
+      body: JSON.stringify({
+        command: `bash ${scriptPath}`,
+        cwd: workdir,
+        timeout: 120000,
+      }),
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`Command execution failed: HTTP ${resp.status} — ${text.slice(0, 200)}`);
+    }
+
+    const data = await resp.json() as { result?: string; exitCode?: number };
+    return {
+      exitCode: data.exitCode ?? -1,
+      output: data.result ?? '',
+    };
+  } finally {
+    try {
+      await fetch(toolboxUrl(env, sandboxId, '/process/execute'), {
+        method: 'POST',
+        headers: authHeaders(env),
+        body: JSON.stringify({
+          command: `rm -f -- ${scriptPath}`,
+          timeout: 5000,
+        }),
+      });
+    } catch {
+      // Best-effort cleanup; never replace the command's result or error.
+    }
+  }
 }
 
 /**

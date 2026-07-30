@@ -32,15 +32,14 @@ UCSC students, faculty, and staff. Features include:
 An OpenRouter-proxying API that gives the campus community programmatic access to
 LLMs, web search and page fetching, and sandboxed code execution:
 
-- **Keyless access** from the campus network (169.233.x.x)
+- **Keyless inference and web-tool access** from the campus network (169.233.x.x)
 - **API key access** for off-campus use (self-issued via the service)
 - **Web search & fetch** — search the web and extract clean page content from
   one or many URLs at a time, both backed by Tavily, available to all
   authenticated users
 - **Code sandbox** — persistent Linux environments (backed by
   [Daytona](https://www.daytona.io/)) for running code, uploading/downloading
-  files, all authenticated with the same API key; campus-pass users get
-  ephemeral one-shot sandboxes
+  files, all authenticated with the same personal API key, including on campus
 - Injects a light system prompt prefix to orient downstream agents
 - Lists exclusively open-weight models (those OpenRouter reports as having
   published weights on HuggingFace). Any other OpenRouter slug still routes

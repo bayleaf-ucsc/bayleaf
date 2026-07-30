@@ -54,7 +54,8 @@ const KeyCard: FC<{ hasKey: boolean }> = ({ hasKey }) => {
         <h2>Your API Key</h2>
         <div id="keyDisplaySlot" />
         <p style="margin-top: 0.5rem; font-size: 0.9em; color: #555;">
-          This key authenticates the inference and sandbox services below.
+          This key authenticates the inference and sandbox services below. A personal key is
+          required for sandbox access, including on campus.
         </p>
         <button type="button" class={btnDangerStyle} style="margin-top: 0.75rem;" onclick="revokeKey()">Revoke Key</button>
       </div>

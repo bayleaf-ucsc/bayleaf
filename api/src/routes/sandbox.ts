@@ -2,9 +2,8 @@
  * Sandbox Route Handlers
  *
  * Proxies sandboxed code execution and file operations to the sandbox
- * provider (Daytona). Reuses the same auth model as the LLM proxy:
- *   - Campus Pass users get ephemeral one-shot sandboxes
- *   - Keyed users get persistent sandboxes identified by email
+ * provider (Daytona). Sandbox access requires a personal BayLeaf API key;
+ * keyed users get persistent sandboxes identified by email.
  *
  * Keyed users' sandbox IDs are cached in D1 (daytona_sandbox_id column)
  * to avoid a control-plane label lookup on every request — symmetric
@@ -12,7 +11,7 @@
  *
  * Routes (mounted at /sandbox):
  *   GET  /              Report sandbox status without side effects (keyed only)
- *   POST /exec         Execute a bash command (campus-pass or keyed)
+ *   POST /exec         Execute a bash command (keyed only)
  *   POST /poke         Refresh the inactivity timer to prevent auto-stop (keyed only)
  *   GET  /files/*      Download a file by absolute path (keyed only)
  *   PUT  /files/*      Upload a file by absolute path (keyed only)
@@ -27,9 +26,6 @@ import {
   type EnsureResult,
   type SandboxInfo,
   ensureSandbox,
-  createEphemeralSandbox,
-  waitForReady,
-  waitForStarted,
   execCommand,
   downloadFile,
   uploadFile,
@@ -124,36 +120,6 @@ async function lookupSandboxInfo(
   return sandbox;
 }
 
-/**
- * Handle ephemeral sandbox execution for campus-pass users.
- * Creates a sandbox, waits for it, executes the command, and tears it down.
- */
-async function execEphemeral(
-  command: string,
-  workdir: string,
-  env: AppEnv['Bindings'],
-): Promise<{ exitCode: number; output: string }> {
-  let sandboxId: string | null = null;
-
-  try {
-    const sandbox = await createEphemeralSandbox(env);
-    sandboxId = sandbox.id;
-
-    if (sandbox.state !== 'started') {
-      await waitForStarted(sandboxId, env);
-    }
-    await waitForReady(sandboxId, env);
-
-    return await execCommand(sandboxId, command, workdir, env);
-  } finally {
-    if (sandboxId) {
-      deleteSandbox(sandboxId, env).catch((e) => {
-        console.error('Ephemeral sandbox cleanup failed:', e);
-      });
-    }
-  }
-}
-
 // ── POST /exec ─────────────────────────────────────────────────────
 
 const execRoute = createRoute({
@@ -164,8 +130,8 @@ const execRoute = createRoute({
   summary: 'Execute a command',
   description:
     'Runs a bash command in a sandboxed Linux environment. ' +
-    '**Keyed users** (`sk-bayleaf-...`) get a persistent sandbox that survives across requests. ' +
-    '**Campus Pass users** (on-campus, no key) get an ephemeral sandbox created and destroyed per-request. ' +
+    'Requires a personal BayLeaf API key (`sk-bayleaf-...`). Campus Pass does not include sandbox access. ' +
+    'The persistent sandbox survives across requests. ' +
     'Commands run with `set -e -o pipefail` and a 120-second timeout. ' +
     'The sandbox is a full Debian-based Linux environment with network access.',
   security: [{ Bearer: [] }],
@@ -197,6 +163,10 @@ const execRoute = createRoute({
       description: 'Missing, invalid, or revoked API key',
       content: { 'application/json': { schema: ApiErrorSchema } },
     },
+    403: {
+      description: 'Sandbox execution requires a personal BayLeaf API key',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
     502: {
       description: 'Sandbox backend failure',
       content: { 'application/json': { schema: ApiErrorSchema } },
@@ -210,17 +180,19 @@ sandboxRoutes.openapi(execRoute, async (c) => {
   // fails — a raw Response, not a typed Hono response.
   if (auth instanceof Response) return auth as any;
 
+  if (auth.isCampusMode || !auth.userEmail) {
+    return c.json({
+      error: {
+        message: 'Sandbox execution requires a personal BayLeaf API key. Provision one free at https://api.bayleaf.dev/.',
+        code: 403,
+      },
+    }, 403);
+  }
+
   const { command, workdir } = c.req.valid('json');
 
   try {
-    if (auth.isCampusMode) {
-      const result = await execEphemeral(command, workdir, c.env);
-      return c.json(result, 200);
-    }
-
-    // Non-campus auth always implies a `sk-bayleaf-` token, which always has
-    // a userEmail. The TypeScript narrowing relies on resolveAuth's contract.
-    const sandboxId = await resolveSandboxId(auth.userEmail!, c.env);
+    const sandboxId = await resolveSandboxId(auth.userEmail, c.env);
     const result = await execCommand(sandboxId, command, workdir, c.env);
     return c.json(result, 200);
   } catch (e) {

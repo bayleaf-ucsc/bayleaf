@@ -324,6 +324,20 @@ This creates (or reuses) a persistent sandbox tied to the key's user.
 The first request may take 10–30 seconds if the sandbox needs to be
 provisioned or started.
 
+From the campus network (or local development), first verify that Campus Pass
+cannot create a sandbox:
+
+```bash
+curl -s -w '\nHTTP %{http_code}\n' \
+  https://api.bayleaf.dev/sandbox/exec \
+  -H "Authorization: Bearer campus" \
+  -H "Content-Type: application/json" \
+  -d '{"command": "echo this-must-not-run"}'
+```
+
+**Check:** HTTP `403`, with a message directing the caller to provision a free
+personal key. Confirm in Daytona that no sandbox was created.
+
 ```bash
 curl -s https://api.bayleaf.dev/sandbox/exec \
   -H "Authorization: Bearer $KEY" \
