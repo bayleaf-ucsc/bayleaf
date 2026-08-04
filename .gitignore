@@ -4,5 +4,5 @@
 __pycache__/
 *.pyc
 
-# Work-in-progress training site
+blog/
 training/

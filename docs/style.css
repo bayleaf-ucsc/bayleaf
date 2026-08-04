@@ -39,9 +39,11 @@ a { color: #2a5298; }
  *                                    (#1e5a3a, 8.14:1); used for BayLeaf API on
  *                                    landing and the direct-email button on
  *                                    support.
- *   .service-link with inline style="background: #555;" : dark-gray secondary
- *                                    (7.46:1); used for Source/Status/Support
- *                                    on landing.
+ *   .service-link.secondary        : dark-gray, smaller supplementary nav
+ *                                    (#555, 7.46:1); used for the landing's
+ *                                    second-row Blog/Use Cases/Source/Support
+ *                                    links, which are pages about the service
+ *                                    rather than the two production services.
  */
 .service-link {
     display: inline-block;
@@ -55,6 +57,13 @@ a { color: #2a5298; }
 .service-link:hover { background: #1e3a6e; }
 .service-link.primary-action { background: #1e5a3a; }
 .service-link.primary-action:hover { background: #164a2e; }
+.service-link.secondary {
+    background: #555;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.9rem;
+    font-weight: 400;
+}
+.service-link.secondary:hover { background: #3a3a3a; }
 .service-link:focus-visible {
     outline: 3px solid #fff;
     outline-offset: 2px;
@@ -67,6 +76,12 @@ a { color: #2a5298; }
     gap: 1rem;
     margin: 1.5rem 0;
     flex-wrap: wrap;
+}
+
+/* The landing's demoted second row sits tight under the service buttons. */
+.services-secondary {
+    gap: 0.6rem;
+    margin-top: -0.75rem;
 }
 
 ul { padding-left: 1.5rem; }

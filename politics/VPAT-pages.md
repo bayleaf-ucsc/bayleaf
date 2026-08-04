@@ -41,8 +41,8 @@ domain per [`docs/CNAME`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs
   `#canvas-group-cleanup`, `#local-rubric-check`, `#workflow-doc`).
 - [`docs/style.css`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs/style.css):
   shared stylesheet covering layout, typography, the button-styled
-  link system (`.service-link` with `.primary-action` modifier), the
-  responsive `.lecture-embed` video wrapper, and the
+  link system (`.service-link` with `.primary-action` and `.secondary`
+  modifiers), the responsive `.lecture-embed` video wrapper, and the
   `:focus-visible` indicator. No JavaScript, no build step.
 
 **Why this scope.** All four pages are small, hand-written HTML with no
@@ -132,8 +132,10 @@ direct CDP calls to
 [`Emulation.setDeviceMetricsOverride`](https://chromedevtools.github.io/devtools-protocol/tot/Emulation/#method-setDeviceMetricsOverride).
 Dates of evaluation: 2026-04-29 (landing and support page), extended
 2026-07-24 to bring `privacy.html` and `use-cases.html` into scope and
-to re-evaluate the landing after the video embed shipped. The
-2026-07-24 pass re-ran contrast enumeration, reflow at 320/400/1280 CSS
+to re-evaluate the landing after the video embed shipped, and
+2026-08-04 to re-verify reflow after the landing nav was split into a
+two-button service row and a smaller four-button supplementary row
+(Blog, Use Cases, Source, Support). The 2026-07-24 pass re-ran contrast enumeration, reflow at 320/400/1280 CSS
 px, 200% text zoom, the 1.4.12 text-spacing override, structure and
 ID-uniqueness checks, and W3C Nu validation across all four pages; it
 did not re-run the CVD simulations or the focus-visibility screenshot
@@ -232,7 +234,8 @@ has been corrected above rather than quietly dropped.
   [3.2.3 Consistent Navigation](https://www.w3.org/WAI/WCAG21/Understanding/consistent-navigation):
   these became applicable when the page count passed one, and are the
   weakest structural point of this surface. There is no shared header
-  navigation: the landing carries a button row, the other three carry
+  navigation: the landing carries two button rows (production services
+  above, supplementary links below), the other three carry
   only a tagline back-link, and each of the four `<footer>` blocks
   offers a *different* set of links (the landing omits Support and Use
   Cases entirely; privacy omits Use Cases; support omits Use Cases;
@@ -255,7 +258,12 @@ has been corrected above rather than quietly dropped.
   (the `.note` callout, 9.24:1), `#2a5298` on `#f8f9fa` (link inside
   `.note`, 7.22:1). All pass AA with comfortable headroom (lowest
   ratio 5.74:1, above the 4.5:1 AA threshold). No new pair was
-  introduced by the pages added in 2026-07-24.
+  introduced by the pages added in 2026-07-24, nor by the 2026-08-04
+  landing nav change: promoting the previously inline
+  `style="background: #555;"` secondary buttons to a
+  `.service-link.secondary` class reuses the already-measured
+  white-on-`#555` pair at a smaller type size, and the `#3a3a3a` hover
+  state is darker still (11.37:1).
 - [1.4.4 Resize Text](https://www.w3.org/WAI/WCAG21/Understanding/resize-text):
   simulated at 200% root font size on all four pages; document scroll
   width remained within the viewport and no element clipped its
@@ -375,6 +383,25 @@ the *content*. The absence of an author-provided caption track on the
 video is BayLeaf's defect, not Google's, and is reported as such in
 [§ 3](#3-wcag-21-level-a-conformance).
 
+**BayLeaf Blog (`blog.bayleaf.dev`).** The landing's supplementary nav
+row links out to the BayLeaf Blog, added 2026-08-04. Despite the
+`bayleaf.dev` subdomain, that surface is a hosted
+[Substack](https://substack.com/) publication, not a page in `docs/`:
+its markup, subscription modal, keyboard handling, and screen-reader
+exposure are Substack's product surface and are not covered by this
+ACR. This is a **courtesy disclosure** with a caveat worth stating
+plainly rather than burying: the custom domain makes the boundary
+*invisible* to a reader, who has no cue that they have left a
+BayLeaf-authored page. That is a weaker position than the outbound
+GitHub links, where the destination announces itself. The *prose* of
+each post is BayLeaf's responsibility (plain-language headings,
+meaningful link text, text alternatives for any images), and defects
+there should be reported to the operator. Substack does not currently
+publish a VPAT or ACR that this document can cite, which is itself the
+finding: if blog accessibility becomes load-bearing for campus use, the
+remediation is to move the blog onto `docs/` where it can be brought
+into scope like any other page.
+
 **Practical implication for the ACR table in [the conformance tables below](#3-wcag-21-level-a-conformance):**
 outbound GitHub links need no special annotation; they are out of
 scope by virtue of not being BayLeaf surfaces. A reviewer concerned
@@ -439,7 +466,7 @@ Level AA is the target set for [ADA Title II](https://www.ada.gov/resources/2024
 | 1.4.3 | [Contrast (Minimum)](https://www.w3.org/WAI/WCAG21/Understanding/contrast-minimum) | Supports | Pages: every rendered text/background pair passes AA with comfortable headroom on all four pages, verified empirically against WCAG relative-luminance formulas (see [§ 1](#1-surface-description) for per-pair ratios). The lowest ratio on any page is the `.tagline` text (`#666` on white) at 5.74:1, well above the 4.5:1 AA threshold. The landing's `figcaption` (`#555` on white) is 7.46:1. |
 | 1.4.4 | [Resize Text](https://www.w3.org/WAI/WCAG21/Understanding/resize-text) | Supports | Pages: verified empirically by setting `document.documentElement.style.fontSize = "200%"` in headless Chromium on all four pages; no horizontal overflow, no element clipping, layout reflows cleanly. The shared stylesheet uses `rem` and unitless relative sizes throughout. |
 | 1.4.5 | [Images of Text](https://www.w3.org/WAI/WCAG21/Understanding/images-of-text) | N/A | No images of text rendered on BayLeaf-authored pages. The Open Graph share card does contain text, but it is link-preview metadata rather than page content, it duplicates the page's own `<h1>` and tagline verbatim, and `og:image:alt` carries the same text. See [VPAT-chat.md § AI-generated output](VPAT-chat.md#ai-generated-output-as-an-accessibility-surface) for AI-generated output. |
-| 1.4.10 | [Reflow](https://www.w3.org/WAI/WCAG21/Understanding/reflow) | Supports | Pages: verified empirically in headless Chromium via CDP `Emulation.setDeviceMetricsOverride`. At 320 CSS px viewport width (the WCAG threshold, equivalent to 400% zoom of a 1280 px window), all four pages have document scroll width of 305 px with zero horizontally overflowing elements. The landing's five-button nav row wraps, and the `.lecture-embed` video wrapper scales via `aspect-ratio` rather than overflowing. Also verified at 400 px and 1280 px. |
+| 1.4.10 | [Reflow](https://www.w3.org/WAI/WCAG21/Understanding/reflow) | Supports | Pages: verified empirically in headless Chromium via CDP `Emulation.setDeviceMetricsOverride`. At 320 CSS px viewport width (the WCAG threshold, equivalent to 400% zoom of a 1280 px window), all four pages have document scroll width of 305 px with zero horizontally overflowing elements. The landing's two-tier nav (a two-button service row above a four-button supplementary row) wraps, and the `.lecture-embed` video wrapper scales via `aspect-ratio` rather than overflowing. Also verified at 400 px and 1280 px. Re-verified 2026-08-04 after the supplementary row was split out and the Blog button added: unchanged at all three widths. |
 | 1.4.11 | [Non-text Contrast](https://www.w3.org/WAI/WCAG21/Understanding/non-text-contrast) | Supports | Pages: the button-styled links pass the 3:1 UI-component threshold on every page (lowest button background ratio is `#555` at 7.46:1 on the landing). The `.note` callouts have a 3 px `#2a5298` left border against the `#f8f9fa` callout background (7.22:1). Contrast of the embedded player's own controls is Google's; see [§ 2](#2-out-of-scope-neighbors-and-platform-acrs). No other BayLeaf-authored non-text UI component conveys information. |
 | 1.4.12 | [Text Spacing](https://www.w3.org/WAI/WCAG21/Understanding/text-spacing) | Supports | Pages: verified empirically by injecting a `<style>` element with the WCAG 1.4.12 user-override thresholds (`line-height: 1.5`, `letter-spacing: 0.12em`, `word-spacing: 0.16em`, paragraph margin 2em) as `!important` rules on all four pages; no horizontal overflow and no element clipping resulted. The shared stylesheet has no fixed `height` on text containers. |
 | 1.4.13 | [Content on Hover or Focus](https://www.w3.org/WAI/WCAG21/Understanding/content-on-hover-or-focus) | N/A | Pages: no hover tooltips or popovers. |
