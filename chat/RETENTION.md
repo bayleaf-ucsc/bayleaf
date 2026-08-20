@@ -22,13 +22,23 @@ email, Canvas, etc.) before the retention window closes.
 |---|---|---|
 | Active conversations | **90 days** since last activity | `updated_at` timestamp |
 | Archived conversations | **90 days** since last activity | `updated_at` timestamp (archival does not reset or alter the clock) |
-| Uploaded files attached to conversations | Inherited from owning conversation | Deleted when the conversation is deleted (CASCADE) |
+| Uploaded files attached to conversations | Inherited from owning conversation | Deleting the conversation does **not** delete the file (see note below); the file becomes an orphan and is removed by the sweep described in the next row |
 | Orphan files (no live conversation or knowledge-base reference) | Deleted on next cleanup run after a **24-hour grace window** | `created_at` timestamp |
 | Temporary conversations | Ephemeral (OWUI handles) | Not persisted |
 
 **"Last activity"** means any event that updates the conversation's `updated_at`
 timestamp: a new message (user or assistant), an edit, a title change, or any
 other mutation through the OWUI interface.
+
+**No file cascade.** Deleting a conversation does not delete its attachments.
+Verified against OWUI v0.10.2 (`models/chats.py`, `delete_chat_by_id`): the
+operation unlinks automation runs, deletes the `chat_message` rows, deletes the
+`chat` row, and revokes any share. It does **not** touch the `file` or
+`chat_file` tables. Attachments therefore survive their conversation as orphans
+and are reclaimed by the Phase B sweep (§5) on a subsequent run, once the
+24-hour grace window has passed. Practical effect: an attachment outlives its
+conversation by up to roughly 48 hours (grace window plus the wait for the next
+daily run), not zero. This absence of a cascade is the reason Phase B exists.
 
 ### Regulatory basis
 
@@ -113,8 +123,10 @@ the OWUI application process, using the OWUI admin API.
 The job communicates exclusively through the OWUI REST API. It does not connect
 to the database directly. This ensures:
 
-- Deletion respects any application-layer cascades (file cleanup, tag removal,
-  share revocation).
+- Deletion respects whatever application-layer cleanup OWUI performs (message
+  rows, share revocation, automation unlinking). Note this set is narrower than
+  once assumed: it does **not** include file cleanup, which is why Phase B is a
+  separate sweep rather than a convenience. See "No file cascade" in §2.
 - The job survives OWUI schema migrations without modification.
 - Access is gated by the same authentication and authorization as any admin.
 
