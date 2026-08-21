@@ -173,7 +173,6 @@
     "SPENDING_LIMIT_RESET": "daily",
     "KEY_NAME_TEMPLATE": "BayLeaf API for $email",
     "ALLOWED_EMAIL_DOMAIN": "ucsc.edu",
-    "SYSTEM_PROMPT_PREFIX": "You are accessing the BayLeaf API (https://api.bayleaf.dev/),  UC Santa Cruz's locally-operated AI service. Help users develop capability they can carry forward—into their own work and into collaboration with others. Make reasoning visible. Teach what generalizes. Conversations are private and never used for training.",
     
     // Campus Pass: allow on-campus users to access without personal API keys
     "RECOMMENDED_MODEL": "openrouter:deepseek/deepseek-v4-flash-0731",
@@ -209,7 +208,6 @@
     // and overrides CAMPUS_IP_RANGES to include 127.0.0.1/32,::1/128 in .dev.vars
     // (see issue #52: getAuthIP trusts only CF-Connecting-IP and fails closed).
     "CAMPUS_IP_RANGES": "128.114.0.0/16,169.233.0.0/16,192.35.220.0/24,192.35.223.0/24,2607:F5F0::/32",
-    "CAMPUS_SYSTEM_PREFIX": "Note: This user is accessing the API via shared on-campus access. They can provision a personal API key at no cost by visiting https://api.bayleaf.dev/",
     // Per-IP daily request limit for Campus Pass on /chat/completions and /responses.
     // IPv4: per address. IPv6: per /64. Resets at midnight UTC. Provider-agnostic
     // (charges against the same counter for OpenRouter and Vertex traffic).

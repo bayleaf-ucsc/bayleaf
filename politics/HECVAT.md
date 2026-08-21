@@ -678,7 +678,7 @@ No custom DPAs or FERPA addenda are in place with these parties beyond their sta
 
 **Answer:** Yes.
 
-**Additional Information:** Design principles from `SECURITY.md §7`: proxy indirection (users never hold raw provider keys), multi-backend inference capability, system prompt enforcement, provider-agnostic OIDC, screen-sharing safety (API keys never displayed in plaintext), single-administrator model. Secrets never committed; TLS and at-rest encryption by default; SSO-only with no password login; stealth-toolkit pattern to limit which tools are exposed on which models.
+**Additional Information:** Design principles from `SECURITY.md §7`: proxy indirection (users never hold raw provider keys), fail-closed multi-backend inference, caller-controlled API instructions, provider-agnostic OIDC, screen-sharing safety (API keys never displayed in plaintext), single-administrator model. Secrets never committed; TLS and at-rest encryption by default; SSO-only with no password login; stealth-toolkit pattern to limit which tools are exposed on which models.
 
 ---
 

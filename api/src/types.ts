@@ -44,7 +44,6 @@ export interface Bindings {
   SPENDING_LIMIT_RESET: string;
   KEY_NAME_TEMPLATE: string;
   ALLOWED_EMAIL_DOMAIN: string;
-  SYSTEM_PROMPT_PREFIX: string;
   RECOMMENDED_MODEL: string;       // Model slug shown in dashboard examples
   OPENCODE_CURATED_MODELS: string; // Comma-separated namespaced slugs for OpenCode wellknown config (in addition to RECOMMENDED_MODEL)
   SEALED_RECOMMENDED_MODEL: string; // Bare Tinfoil model ID used in Sealed examples
@@ -58,7 +57,6 @@ export interface Bindings {
   
   // Campus Pass configuration
   CAMPUS_IP_RANGES: string;        // Comma-separated CIDR ranges (e.g., "128.114.0.0/16,169.233.0.0/16")
-  CAMPUS_SYSTEM_PREFIX: string;    // Additional system prompt prefix for campus mode
   CAMPUS_RPD_LIMIT: string;        // Per-IP daily request limit for Campus Pass (parsed as integer)
   // Dev-only: when exactly "true", getAuthIP() falls back to 127.0.0.1 when
   // CF-Connecting-IP is absent (local dev has no Cloudflare edge). Never set in

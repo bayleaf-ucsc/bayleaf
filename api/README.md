@@ -6,7 +6,7 @@ API key provisioning, LLM inference proxy, and sandboxed code execution for UC S
 
 - **OIDC Authentication**: Provider-agnostic sign-in (CILogon, Google, or any OIDC provider)
 - **API Key Provisioning**: Automatic key management (one key per user, authenticates all services)
-- **Inference Proxy**: OpenAI-compatible Chat Completions and Responses API endpoints with campus-specific system prompt injection
+- **Inference Proxy**: OpenAI-compatible Chat Completions and Responses API endpoints with caller-controlled instructions
 - **Code Sandbox**: Persistent Linux sandbox per user for code execution, file upload/download — backed by Daytona
 - **Self-Service Dashboard**: Create, view, and revoke API keys; see LLM usage stats and sandbox status
 - **Tool Integrations**: Distributes setup instructions and credentials for Google Workspace CLI and Canvas LMS CLI
@@ -18,7 +18,7 @@ This is a Cloudflare Worker (Hono) with a D1 database:
 
 1. Authenticates users via OIDC (endpoints discovered from `OIDC_ISSUER`, restricted to `@ucsc.edu` by default)
 2. Uses the OpenRouter Provisioning API to manage per-user LLM API keys
-3. Proxies `/v1/*` requests to OpenRouter, injecting a configurable system prompt prefix
+3. Proxies `/v1/*` requests to inference providers without adding system instructions
 4. Proxies `/sandbox/*` requests to Daytona for sandboxed code execution and file operations
 
 A single `sk-bayleaf-` token authenticates both the LLM inference proxy and the sandbox service. D1 stores the key mapping and caches the Daytona sandbox ID to avoid a control-plane lookup per request.
@@ -109,9 +109,7 @@ Then configure `OIDC_ISSUER` and related vars in `wrangler.jsonc`, and set `OIDC
 | `OIDC_SCOPES` | Space-separated OIDC scopes | `openid email profile org.cilogon.userinfo` |
 | `OIDC_AUTHORIZE_PARAMS` | Extra query params for authorize URL | `idphint=urn:mace:incommon:ucsc.edu` |
 | `OIDC_LOGIN_BUTTON_TEXT` | Login button label | `Sign in with UCSC` |
-| `SYSTEM_PROMPT_PREFIX` | Prefix injected into all chat requests | `You are an AI assistant...` |
 | `CAMPUS_IP_RANGES` | CIDR ranges for Campus Pass (comma-separated, empty = disabled) | `128.114.0.0/16,169.233.0.0/16` |
-| `CAMPUS_SYSTEM_PREFIX` | Additional system prompt prefix for Campus Pass users | `Note: This user is using shared access...` |
 | `DAYTONA_API_URL` | Sandbox provider control plane URL | `https://app.daytona.io/api` |
 | `DAYTONA_PROXY_URL` | Sandbox provider toolbox proxy URL | `https://proxy.app.daytona.io/toolbox` |
 | `DAYTONA_DEPLOYMENT_LABEL` | Label prefix for sandbox tagging. Shared with chat.bayleaf.dev's Lathe so a user has one sandbox across both services (issue #14). | `chat.bayleaf.dev` |
@@ -144,7 +142,7 @@ Campus Pass allows users on the UC Santa Cruz campus network to access inference
 
 1. When a supported request arrives with no API key (or `Bearer campus`), the system checks the client IP
 2. If the IP matches a configured campus CIDR range, inference requests are proxied using a shared pool key
-3. An additional system prompt prefix is injected for LLM requests to inform the model about the shared access context
+3. Inference requests count against a shared per-network-address daily limit
 4. Sandbox requests return `403`; users can provision a free personal key for sandbox access
 
 ### Configuration
@@ -190,8 +188,8 @@ Off-campus users will receive a 401 error directing them to get a personal key a
 
 | Endpoint | Description |
 |----------|-------------|
-| `/v1/responses` | Responses API (system prompt injected via `instructions` field) |
-| `/v1/chat/completions` | Chat completions (system prompt injected via system message) |
+| `/v1/responses` | Responses API (caller instructions forwarded unchanged) |
+| `/v1/chat/completions` | Chat completions (caller messages forwarded unchanged) |
 | `/v1/completions` | Text completions |
 | `/v1/models` | List available models |
 | `/v1/*` | All other OpenRouter endpoints |

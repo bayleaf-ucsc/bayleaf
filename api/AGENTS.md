@@ -1,6 +1,6 @@
 # BayLeaf API
 
-Cloudflare Worker built with **Hono** + **@hono/zod-openapi**: OIDC auth (provider-agnostic via .well-known discovery; currently CILogon), OpenRouter key provisioning, LLM proxy with system prompt injection, sandboxed code execution (Daytona), web search and page fetching (Tavily), Campus Pass (IP-based auth).
+Cloudflare Worker built with **Hono** + **@hono/zod-openapi**: OIDC auth (provider-agnostic via .well-known discovery; currently CILogon), OpenRouter key provisioning, LLM proxy with caller-controlled instructions, sandboxed code execution (Daytona), web search and page fetching (Tavily), Campus Pass (IP-based auth).
 
 **Architecture**: Multi-file TypeScript under `src/`, D1 for key mappings + cached sandbox IDs. Zod schemas are the single source of truth for request/response validation and OpenAPI spec generation. Bundled by Wrangler.
 
@@ -303,10 +303,10 @@ bug. Confirm with repeated probes before investigating.
 
 Sealed is deliberately **not** an `ALT_BACKENDS` row. It has no `<prefix>:` model
 routing and it never forwards plaintext, so it shares no code with
-`routes/proxy.ts`. The two files have *opposite* obligations — `proxy.ts` must
-parse the body to inject a system prompt; `sealed.ts` must never parse the body —
-which is why this is a separate route and **must never become a mode flag on the
-plaintext proxy**.
+`routes/proxy.ts`. The plaintext proxy parses JSON for schema validation,
+attribution, model routing, metering, and replayable credential healing;
+`sealed.ts` must never parse the body. These opposite obligations are why Sealed
+is a separate route and **must never become a mode flag on the plaintext proxy**.
 
 ```
 GET      /sealed/health        Kill-switch state + upstream reachability
@@ -476,8 +476,8 @@ checkbox, so it is recorded rather than deleted.
 ```
 /                       Landing       /login         OIDC start      /callback   OIDC callback
 /logout                 Clear         /dashboard     User UI         /key        POST|DELETE
-/v1/responses           Responses API proxy (system prompt via instructions field)
-/v1/chat/completions    Chat completions proxy (system prompt via system message)
+/v1/responses           Responses API proxy (caller instructions forwarded unchanged)
+/v1/chat/completions    Chat completions proxy (caller messages forwarded unchanged)
 /v1/*                   General OpenRouter proxy (models, auth/key, etc.)
 /sandbox                GET: sandbox status (keyed only, no side effects)
 /sandbox/exec           POST: bash execution (keyed only, persistent)

@@ -1,9 +1,8 @@
 /**
  * API Proxy Route Handlers
  *
- * Proxies requests to OpenRouter with system prompt injection.
- * Handles both Chat Completions (/v1/chat/completions) and
- * Responses API (/v1/responses) with format-appropriate injection.
+ * Proxies Chat Completions (/v1/chat/completions) and Responses API
+ * (/v1/responses) requests without modifying caller instructions.
  * Resolves sk-bayleaf- proxy tokens to real OR keys via D1.
  * Supports Campus Pass for on-campus users.
  *
@@ -74,15 +73,6 @@ async function enforceCampusRpd(
       headers: { 'Access-Control-Allow-Origin': '*' },
     },
   );
-}
-
-/** Build the system prompt prefix, adding campus suffix when applicable. */
-function buildSystemPrefix(env: AppEnv['Bindings'], isCampusMode: boolean): string {
-  let prefix = env.SYSTEM_PROMPT_PREFIX;
-  if (isCampusMode && env.CAMPUS_SYSTEM_PREFIX) {
-    prefix += '\n\n' + env.CAMPUS_SYSTEM_PREFIX;
-  }
-  return prefix;
 }
 
 /** Inject the `user` field for OR per-user analytics. */
@@ -191,8 +181,7 @@ const responsesRoute = createRoute({
   tags: ['LLM'],
   summary: 'Responses API',
   description:
-    'OpenAI Responses API endpoint. The BayLeaf system prompt is injected via the `instructions` field. ' +
-    'If you provide your own `instructions`, the prefix is prepended.',
+    'OpenAI Responses API endpoint. Caller-provided `instructions` are forwarded unchanged.',
   security: [{ Bearer: [] }],
   request: {
     body: {
@@ -237,15 +226,9 @@ proxyRoutes.openapi(responsesRoute, async (c) => {
   if (rpdRejection) return rpdRejection as any;
 
   const body = c.req.valid('json') as {
-    instructions?: string;
     user?: string;
     [k: string]: unknown;
   };
-
-  const systemPrefix = buildSystemPrefix(c.env, auth.isCampusMode);
-  body.instructions = body.instructions
-    ? systemPrefix + '\n\n' + body.instructions
-    : systemPrefix;
 
   injectUser(body, auth);
 
@@ -273,8 +256,7 @@ const chatCompletionsRoute = createRoute({
   summary: 'Chat Completions',
   description:
     'OpenAI-compatible chat completions endpoint. Supports streaming via `stream: true`. ' +
-    'A system prompt identifying the BayLeaf service is prepended automatically; ' +
-    'if you include your own system message, the prefix is prepended to it.',
+    'Caller-provided system and developer messages are forwarded unchanged.',
   security: [{ Bearer: [] }],
   request: {
     body: {
@@ -311,34 +293,10 @@ proxyRoutes.openapi(chatCompletionsRoute, async (c) => {
   if (rpdRejection) return rpdRejection as any;
 
   const body = c.req.valid('json') as {
-    messages?: Array<{ role: string; content?: unknown; [k: string]: unknown }>;
+    model?: unknown;
     user?: string;
     [k: string]: unknown;
   };
-
-  if (body.messages && Array.isArray(body.messages)) {
-    const systemPrefix = buildSystemPrefix(c.env, auth.isCampusMode);
-    // Look for system or developer message (developer replaces system on newer models)
-    const systemIndex = body.messages.findIndex(
-      m => m.role === 'system' || m.role === 'developer',
-    );
-
-    if (systemIndex >= 0) {
-      const msg = body.messages[systemIndex];
-      const existing = msg.content;
-      if (typeof existing === 'string') {
-        msg.content = systemPrefix + '\n\n' + existing;
-      } else if (Array.isArray(existing)) {
-        // Content is an array of content parts — prepend as a text part
-        existing.unshift({ type: 'text', text: systemPrefix + '\n\n' });
-      } else {
-        // null, undefined, or unexpected — replace with prefix string
-        msg.content = systemPrefix;
-      }
-    } else {
-      body.messages.unshift({ role: 'system', content: systemPrefix });
-    }
-  }
 
   injectUser(body, auth);
 

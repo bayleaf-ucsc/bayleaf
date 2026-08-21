@@ -83,7 +83,7 @@ export const ResponseRequestSchema = z.object({
       'Message content can be a string, null, or array of content parts.',
   }),
   instructions: z.string().optional().openapi({
-    description: 'System instructions. BayLeaf prepends its own prefix to this field.',
+    description: 'System instructions forwarded unchanged to the inference provider.',
   }),
 }).passthrough().openapi('ResponseRequest');
 

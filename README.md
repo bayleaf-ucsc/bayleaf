@@ -40,7 +40,7 @@ LLMs, web search and page fetching, and sandboxed code execution:
 - **Code sandbox** — persistent Linux environments (backed by
   [Daytona](https://www.daytona.io/)) for running code, uploading/downloading
   files, all authenticated with the same personal API key, including on campus
-- Injects a light system prompt prefix to orient downstream agents
+- Leaves system and developer instructions under the API caller's control
 - Lists exclusively open-weight models (those OpenRouter reports as having
   published weights on HuggingFace). Any other OpenRouter slug still routes
   when crafted manually: a deliberate escape hatch for comparative research

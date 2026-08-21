@@ -5,10 +5,9 @@
  * Handles Campus Pass and Bayleaf proxy tokens (D1).
  *
  * Raw OpenRouter keys (`sk-or-...`) supplied by the user are NOT accepted:
- * BayLeaf injects system prompts, tags `user` for analytics, and meters
- * traffic. Forwarding a user-supplied OR key bypasses all of that, so
- * we'd just be a worse-UX proxy for openrouter.ai. Keyed users provision
- * a `sk-bayleaf-` token; on-campus users use Campus Pass.
+ * BayLeaf tags `user` for attribution and meters traffic through managed
+ * credentials. Forwarding a user-supplied OR key would bypass those controls.
+ * Keyed users provision a `sk-bayleaf-` token; on-campus users use Campus Pass.
  *
  * **This resolves who is calling, not what credential to call upstream with.**
  * Backend credentials come from `utils/backend.ts`, and the split is load-bearing
@@ -94,8 +93,8 @@ export async function resolveAuth(
 
   // Anything else (including raw sk-or- keys) is rejected. BayLeaf only
   // accepts its own sk-bayleaf- tokens or Campus Pass; user-supplied OR
-  // keys are not a supported path because they bypass system prompt
-  // injection, user-field tagging, and budget enforcement.
+  // keys are not a supported path because they bypass user-field tagging
+  // and budget enforcement.
   return c.json({
     error: {
       message: 'Unsupported API key. Use a BayLeaf-issued key (sk-bayleaf-...) or Campus Pass. Provision a free key at https://api.bayleaf.dev/.',

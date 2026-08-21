@@ -29,11 +29,12 @@
  *
  * A boolean on the plaintext proxy would be one inverted condition away from
  * silently downgrading sealed traffic to a readable path. The two routes have
- * opposite obligations: `proxy.ts` MUST parse the body (to inject a system
- * prompt); this route MUST NEVER parse the body. Those cannot safely share a
- * handler. Sealed constants also live here rather than in `constants.ts`
- * because this lane is not an `ALT_BACKENDS` row — it has no `<prefix>:` model
- * routing and no plaintext forwarding block.
+ * opposite obligations: `proxy.ts` parses JSON for validation, attribution,
+ * routing, metering, and replayable credential healing; this route MUST NEVER
+ * parse the body. Those cannot safely share a handler. Sealed constants also
+ * live here rather than in `constants.ts` because this lane is not an
+ * `ALT_BACKENDS` row — it has no `<prefix>:` model routing and no plaintext
+ * forwarding block.
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * POKA-YOKE INVARIANTS (each maps to a check below; do not relax casually)

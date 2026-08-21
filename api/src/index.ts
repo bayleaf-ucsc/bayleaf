@@ -4,7 +4,7 @@
  * A Cloudflare Worker that provides:
  * 1. OIDC authentication (provider-agnostic: CILogon, Google, etc.)
  * 2. OpenRouter API key provisioning for authenticated users
- * 3. LLM inference proxy with campus-specific system prompt injection
+ * 3. LLM inference proxy with caller-controlled instructions
  * 4. Sandboxed code execution (Daytona)
  *
  * OpenAPI spec is auto-generated from Zod schemas via @hono/zod-openapi.

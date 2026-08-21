@@ -276,7 +276,7 @@ the repository.
 
 1. **Proxy indirection.** BayLeaf-token users never hold raw provider keys.
    BayLeaf tokens are an opaque layer enabling revocation and spending control;
-   raw OpenRouter keys remain a legacy compatibility mode.
+   raw OpenRouter keys supplied by callers are rejected.
 2. **Fail-closed multi-backend inference.** OpenRouter is active, as is Sealed.
    NRP, Vertex, and Bedrock are separately implemented or configured and
    disabled. The API's Vertex, Bedrock, and Sealed kill switches fail closed
@@ -284,9 +284,9 @@ the repository.
    requests and disappear from model listings. Provider portability does not
    imply equivalent retention, contracts, security properties, or model
    provenance.
-3. **System prompt enforcement.** A BayLeaf system prompt prefix is prepended to
-   ordinary plaintext API-proxy requests. Sealed traffic is intentionally opaque:
-   BayLeaf cannot inspect or modify its encrypted body.
+3. **Caller-controlled instructions.** The plaintext API proxy does not add or
+   rewrite system instructions. Sealed traffic is additionally opaque: BayLeaf
+   cannot inspect or modify its encrypted body.
 4. **Provider-agnostic OIDC.** Authentication discovers endpoints from
    `.well-known/openid-configuration`. Identity provider switches are configuration
    changes, not code changes.
