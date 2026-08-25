@@ -109,6 +109,17 @@ bayleaf/
 `https://chat.bayleaf.dev`. **Read `chat/AGENTS.md` before working on Chat
 configuration, models, tools, functions, or user/group management.**
 
+### Repo-local agent skills (experimental)
+
+`.agents/skills/` holds repo-specific skills, currently the
+`bayleaf-ops-router` operations playbooks (issue #65). These are
+**experimental and unproven**: most have never guided a real run. Expect to
+deviate from them, and treat every deviation as data — after finishing a
+workflow, record what differed in the playbook's refinement log and fix any
+step that reality contradicted (the router's own instructions say the same).
+They will earn their keep only through practice, not by being followed
+faithfully.
+
 ---
 
 ## Build / Lint / Test
