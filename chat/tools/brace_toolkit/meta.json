@@ -6,17 +6,14 @@
     "description": "Various tools used by the assistive chatbot, Brace.",
     "manifest": {
       "requirements": "jq,google-auth,google-api-python-client,google-auth-oauthlib,google-auth-httplib2"
-    }
+    },
+    "has_user_valves": false
   },
   "access_grants": [],
-  "updated_at": 1764015266,
+  "updated_at": 1775169698,
   "created_at": 1758667397,
-  "user": {
-    "id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
-    "name": "Adam Smith",
-    "role": "admin",
-    "email": "amsmith@ucsc.edu"
-  },
+  "user": null,
+  "write_access": true,
   "specs": [
     {
       "name": "get_google_drive_service_account_email",
@@ -113,6 +110,5 @@
         "type": "object"
       }
     }
-  ],
-  "has_user_valves": false
+  ]
 }

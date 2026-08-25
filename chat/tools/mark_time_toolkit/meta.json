@@ -6,17 +6,14 @@
     "description": "Mark and measure points in real time.",
     "manifest": {
       "requirements": "cachetools"
-    }
+    },
+    "has_user_valves": false
   },
   "access_grants": [],
   "updated_at": 1758317348,
   "created_at": 1758317348,
-  "user": {
-    "id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
-    "name": "Adam Smith",
-    "role": "admin",
-    "email": "amsmith@ucsc.edu"
-  },
+  "user": null,
+  "write_access": true,
   "specs": [
     {
       "name": "_get_marks",
@@ -54,6 +51,5 @@
         "type": "object"
       }
     }
-  ],
-  "has_user_valves": false
+  ]
 }

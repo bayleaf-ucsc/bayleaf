@@ -13,14 +13,14 @@
     "capabilities": {
       "file_context": true,
       "vision": false,
-      "file_upload": false,
+      "file_upload": true,
       "web_search": false,
       "image_generation": false,
       "code_interpreter": false,
       "terminal": false,
       "citations": false,
       "status_updates": true,
-      "usage": false,
+      "usage": true,
       "builtin_tools": false
     },
     "suggestion_prompts": null,
@@ -28,21 +28,24 @@
     "toolIds": [
       "web_context_toolkit",
       "help_toolkit"
+    ],
+    "skillIds": [
+      "offramp"
     ]
   },
   "access_grants": [
     {
-      "id": "e809281d-87cc-49e2-aeaf-1b36f73862cc",
+      "id": "f951e3e1-127b-478c-9c15-224e6aac2d1a",
       "resource_type": "model",
       "resource_id": "help",
       "principal_type": "user",
       "principal_id": "*",
       "permission": "read",
-      "created_at": 1781761389
+      "created_at": 1787675200
     }
   ],
   "is_active": true,
-  "updated_at": 1781761389,
+  "updated_at": 1787675200,
   "created_at": 1744229432,
   "user": null,
   "write_access": true

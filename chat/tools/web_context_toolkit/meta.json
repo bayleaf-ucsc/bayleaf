@@ -12,7 +12,8 @@
       "requirements": "tavily-python",
       "version": "3.1.0",
       "licence": "MIT"
-    }
+    },
+    "has_user_valves": false
   },
   "access_grants": [
     {
@@ -74,6 +75,5 @@
         "type": "object"
       }
     }
-  ],
-  "content_length": 8256
+  ]
 }

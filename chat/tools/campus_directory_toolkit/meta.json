@@ -4,7 +4,8 @@
   "name": "Campus Directory",
   "meta": {
     "description": "Look up details for campus-affiliated students, faculty, and staff.",
-    "manifest": {}
+    "manifest": {},
+    "has_user_valves": false
   },
   "access_grants": [
     {
@@ -17,14 +18,10 @@
       "created_at": 1771204151
     }
   ],
-  "updated_at": 1760484300,
+  "updated_at": 1776117199,
   "created_at": 1760482663,
-  "user": {
-    "id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
-    "name": "Adam Smith",
-    "role": "admin",
-    "email": "amsmith@ucsc.edu"
-  },
+  "user": null,
+  "write_access": true,
   "specs": [
     {
       "name": "get_person_details",
@@ -60,6 +57,5 @@
         "type": "object"
       }
     }
-  ],
-  "has_user_valves": false
+  ]
 }

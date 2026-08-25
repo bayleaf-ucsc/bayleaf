@@ -1,0 +1,109 @@
+{
+  "id": "whole_document_retrieval",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Whole Document Retrieval",
+  "meta": {
+    "description": "Agentic retrieval from OWUI Knowledge bases — list and read full documents by name rather than relying on vector/embedding search. Useful when \"Bypass Embedding and Retrieval\" is enabled or when the model needs to reason about which documents to consult before reading them.",
+    "manifest": {
+      "title": "Whole Document Retrieval",
+      "author": "Adam Smith",
+      "author_url": "https://adamsmith.as",
+      "description": "Agentic retrieval from OWUI Knowledge bases — list and read full documents by name rather than relying on vector/embedding search. Useful when \"Bypass Embedding and Retrieval\" is enabled or when the model needs to reason about which documents to consult before reading them. All operations are gated by the calling user's KB access grants.",
+      "required_open_webui_version": "0.9.0",
+      "version": "0.5.0",
+      "licence": "MIT"
+    },
+    "has_user_valves": false
+  },
+  "access_grants": [
+    {
+      "id": "19875983-4050-4876-b336-156fe4a340dc",
+      "resource_type": "tool",
+      "resource_id": "whole_document_retrieval",
+      "principal_type": "user",
+      "principal_id": "*",
+      "permission": "read",
+      "created_at": 1773953962
+    }
+  ],
+  "updated_at": 1778620094,
+  "created_at": 1773953904,
+  "user": null,
+  "write_access": true,
+  "specs": [
+    {
+      "name": "list_all_accessible_knowledge_bases",
+      "description": "List ALL Knowledge bases the current user has read access to across the\nentire deployment. Only call this when the user has explicitly asked to\nsearch or browse knowledge outside of this model's configured scope —\nprefer list_model_knowledge_bases for normal use.",
+      "parameters": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_documents",
+      "description": "List all documents in a Knowledge base by ID. Returns document names\nand their file IDs. Use this to discover what documents are available\nbefore calling read_document.",
+      "parameters": {
+        "properties": {
+          "knowledge_base_id": {
+            "description": "The UUID of the knowledge base to list.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "knowledge_base_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_model_knowledge_bases",
+      "description": "List the Knowledge bases explicitly attached to this model by its\ndesigner. Returns their IDs, names, descriptions, and document counts.\nCall this first when you need to look up documents — it reflects what\nthe model was configured to use.\n\nIf the result is empty, this model was intentionally configured with no\nattached knowledge bases. Do NOT automatically fall back to\nlist_all_accessible_knowledge_bases unless the user has explicitly\nasked you to search outside this model's configured knowledge.",
+      "parameters": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "name": "read_document",
+      "description": "Read the full text content of a document by its file ID. Returns the\ncomplete document text for the model to reason over. Prefer this over\nvector search when you need the full policy text or when embeddings are\nbypassed.",
+      "parameters": {
+        "properties": {
+          "file_id": {
+            "description": "The file UUID returned by list_documents.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "search_documents",
+      "description": "Search documents within a Knowledge base for those likely relevant to a\nquery.\n\nBy default (full_text=False), matches only against filenames and\ndescriptions — fast, but will miss topic mentions that don't appear in\nthe filename. File descriptions are often empty, making this effectively\na filename-only search.\n\nWith full_text=True, matches against the complete extracted text of each\ndocument — finds any topic regardless of filename, but reads all\ndocuments into memory and is much slower. Use it when the filename-only\nsearch returns nothing and you need to locate which document covers a\ntopic.\n\nReturns matching document names and file IDs for use with read_document.",
+      "parameters": {
+        "properties": {
+          "knowledge_base_id": {
+            "description": "The UUID of the knowledge base to search.",
+            "type": "string"
+          },
+          "query": {
+            "description": "Keywords to search for.",
+            "type": "string"
+          },
+          "full_text": {
+            "default": false,
+            "description": "If True, search document content instead of just filenames.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "knowledge_base_id",
+          "query"
+        ],
+        "type": "object"
+      }
+    }
+  ]
+}

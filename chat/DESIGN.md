@@ -332,8 +332,8 @@ concise replies, warns about turn-depth limits, and suggests users start fresh
 conversations rather than extending long ones. Uses `function_calling: native`.
 Builtin tools enabled (time, memory, chats, notes, knowledge, channels). Skills
 bound: `google-workspace`, `bayleaf-for-students`, `bayleaf-for-faculty`,
-`bayleaf-for-employees`, `canvas-api`, `web-search`, `code-sandbox`. Vision
-disabled; file upload enabled.
+`bayleaf-for-employees`, `canvas-api`, `web-search`, `code-sandbox`,
+`offramp`. Vision disabled; file upload enabled.
 
 **Deep Research** *(inactive)* — Interactive research agent (`Deep Research v1.1`).
 Bound to `web_context_toolkit` (Tavily search + Tavily Extract). System prompt
@@ -342,13 +342,14 @@ results, so users can follow the research path. Retired now that Basic's skill
 system covers web search. Vision disabled; file context and all builtin tools
 enabled.
 
-**Help** — Minimal capabilities (no vision, no file upload, no code interpreter).
-Binds `help_toolkit` and `web_context_toolkit` directly via the model's
+**Help** — Minimal capabilities (no vision, no code interpreter; file upload and
+usage display enabled). Binds `help_toolkit` and `web_context_toolkit` directly via the model's
 `toolIds` (no filter; the stealth injection via `help_filter` was retired in
 June 2026 in favor of plain model-bound tools), giving users tools to list
 their groups, see available models, inspect model configurations, process
 invite codes, and search the web for self-discovery (including consulting
-BayLeaf's own source on GitHub). System prompt
+BayLeaf's own source on GitHub). Binds the `offramp` skill via `skillIds` (its
+only bound skill). System prompt
 (`Help v1.5`) describes BayLeaf facts and firmly redirects non-help tasks to
 Basic.
 
@@ -405,7 +406,7 @@ grants).
 | `youtube_toolkit` | YouTube | Stub — tells users to run a local `uv` command to fetch transcripts |
 | `campus_directory_toolkit` | Campus Directory | Scrapes UCSC campus directory with CSRF handling |
 | `datetime_converter_toolkit` | Datetime Converter | ISO date → localized string via pytz |
-| `whole_document_retrieval_toolkit` | Whole Document Retrieval | Agentic KB retrieval — list and read full documents by file ID, bypassing vector/embedding search. Access-controlled via `__user__` and `__model_knowledge__`. |
+| `whole_document_retrieval` | Whole Document Retrieval | Agentic KB retrieval — list and read full documents by file ID, bypassing vector/embedding search. Access-controlled via `__user__` and `__model_knowledge__`. |
 
 ### Code Sandbox (Lathe)
 
@@ -414,9 +415,9 @@ The most substantial toolkit on the deployment. Source:
 but **not bound to any model by default** — users enable it per-chat via the
 tool picker in the chat composer.
 
-**What it does.** Gives any OWUI model a coding-agent tool surface — `bash`,
-`read`, `write`, `edit`, `attach`, `ingest`, `onboard`, `ssh`, `preview`,
-`destroy` — executing against per-user sandbox VMs
+**What it does.** Gives any OWUI model a coding-agent tool surface — `lathe`,
+`bash`, `read`, `write`, `edit`, `glob`, `grep`, `interpret`, `delegate`,
+`onboard`, `expose`, `destroy` — executing against per-user sandbox VMs
 ([Daytona](https://www.daytona.io/)) with transparent lifecycle management. Each
 user gets a single persistent sandbox identified by email; the sandbox is
 created lazily on first tool call and survives across conversations.
@@ -427,7 +428,8 @@ a construction and maintenance site where inference tokens can be spent to
 produce deterministic artifacts that subsequently run without inference.
 Gambit's one-prototype, edit-directly discipline prefigures this: the generated
 artifact is the output, not a reason to keep an LLM in its runtime loop. The
-`preview` tool provides transient execution; durable Pages and Apps export
+`expose` tool provides transient file and service access; durable Pages and
+Apps export
 layers remain planned in issues
 [#57](https://github.com/bayleaf-ucsc/bayleaf/issues/57) and
 [#51](https://github.com/bayleaf-ucsc/bayleaf/issues/51), respectively.
@@ -436,16 +438,19 @@ layers remain planned in issues
 
 | Tool | Purpose |
 |------|---------|
-| `bash(command, workdir)` | Execute shell commands (2-min timeout, output truncated to last 2000 lines / 50 KB) |
-| `read(path, offset, limit)` | Read file with line numbers |
+| `lathe(manpage)` | Toolkit manual; `lathe("overview")` before first use teaches the sandbox model and workflows |
+| `bash(command, workdir, foreground_seconds)` | Execute shell commands; long-running commands auto-background with log paths for monitoring. Output truncated to last 2000 lines / 50 KB |
+| `read(path, start, stop)` | Read file with line numbers |
 | `write(path, content)` | Write/create file (parent dirs created automatically) |
-| `edit(path, old_string, new_string, replace_all)` | Exact string replacement |
-| `attach(path)` | Show file to user inline (syntax-highlighted text, images, binary download card) without consuming model context |
-| `ingest(prompt)` | Pull a file or pasted text from the user into the sandbox via browser modal |
-| `onboard(path)` | Load project context (AGENTS.md + skill catalog) for agentic workflows |
-| `ssh(expires_in_minutes)` | Generate a time-limited SSH command for interactive shell access |
-| `preview(port)` | Generate a signed URL for a service running in the sandbox |
-| `destroy(confirm, wipe_volume)` | Permanently delete the sandbox (safety guard: requires `confirm=true`) |
+| `edit(path, old_string, new_string, replace_all)` | Exact string replacement; fails on ambiguous matches unless `replace_all=true` |
+| `glob(pattern, max_lines)` | Search for files in the workspace by glob pattern |
+| `grep(pattern, files, max_lines)` | Search file contents in the workspace by regex |
+| `interpret(code, timeout)` | Run Python in a persistent REPL session (variables and imports persist across calls) |
+| `delegate(task, context_files, max_steps, foreground_seconds)` | Delegate a multi-step task to an autonomous sub-agent with the same tools; long delegations auto-background like `bash` |
+| `onboard(path)` | Load project context (directory listing, AGENTS.md, skill catalog) for agentic workflows |
+| `expose(target)` | Expose a sandbox service to the user (pass `"dufs"` for one-step file access) |
+| `handoff()` | Prepare a handoff document for continuing the work in a fresh conversation |
+| `destroy()` | Permanently destroy the sandbox VM (irreversible) |
 
 **Sandbox lifecycle.** Sandboxes idle-stop after 15 min, archive after 60 min
 past stop. The first tool call in a conversation transparently creates, starts,
@@ -465,6 +470,7 @@ variables like `{"GITHUB_TOKEN":"ghp_..."}`) that are injected into every
 - `auto_stop_minutes` — Idle timeout (default: 15)
 - `auto_archive_minutes` — Archive delay after stop (default: 60)
 - `auto_delete_minutes` — Minutes after archive before permanent deletion (-1 = never)
+- `persistent_volume` — Mount a persistent S3/FUSE volume at `/home/daytona/volume` (default: `true`; disable for deployments with limited data retention)
 - `sandbox_language` — Default runtime (default: `python`)
 - `foreground_timeout_seconds` — Seconds to wait for bash/delegate before auto-backgrounding (default: 30)
 - `auto_create_sandbox` — Automatically create a sandbox when none exists for the user (default: `true`; disable for deployments where sandboxes are provisioned externally)
@@ -642,9 +648,10 @@ pipeline. Each is in `functions/<id>/` with `function.py` and `meta.json`.
 | ID | Type | Global | Active | Description |
 |----|------|--------|--------|-------------|
 | `rate_limit_filter` | filter | yes | **yes** | Per-user rate limiting (10/min, 50/hr, 100/3hr sliding window) |
-| `depth_limit_filter` | filter | yes | no | Halves max response tokens with each turn (disabled) |
-| `brace_submit_action` | action | no | yes | Button to submit conversation HTML to Canvas assignment (Brace v2 only) |
-| `brace_filter` | filter | no | yes | Injects `brace_toolkit` and fetches system prompt from Canvas wiki page at hardcoded slug (Brace v2) |
+| `basic_prompt_filter` | filter | no | **yes** | Assembles per-request system-prompt augmentations for the Basic model (OAuth role + chat-storage context); attached via Basic's `filterIds`. See issue #44. |
+| `depth_limit_filter` | filter | yes | **yes** | Halves max response tokens with each turn |
+| `brace_submit_action` | action | no | no | Button to submit conversation HTML to Canvas assignment (Brace v2 only) |
+| `brace_filter` | filter | no | no | Injects `brace_toolkit` and fetches system prompt from Canvas wiki page at hardcoded slug (Brace v2) |
 | `brace3_filter` | filter | no | yes | Injects `brace3_canvas_toolkit` and fetches system prompt from Canvas page by title "Brace3 System Prompt" (Brace v3). Derives course ID from model ID (`brace3-NNN`). Raises on missing page. Valve: `CANVAS_ACCESS_TOKEN`. |
 
 ### Rate Limit Filter
@@ -658,7 +665,7 @@ admins). Default thresholds:
 
 ### Depth Limit Filter
 
-Currently **disabled**. When active, it divides an `initial_token_budget`
+Currently **enabled**. When active, it divides an `initial_token_budget`
 (default 16384) by the number of user turns, making responses progressively
 shorter in long conversations.
 
@@ -678,10 +685,12 @@ Manage via `owui-cli skills` or the admin API at `/api/v1/skills/`.
 |----|--------|--------|-------------|
 | `web-search` | yes | all users (`user:*`) | Describes the Web Context toolkit (Tavily-backed search and page extraction) and how to enable it. |
 | `code-sandbox` | yes | 1 group | Points to the Lathe coding agent toolkit and Daytona sandboxes; tells users to enable the Code Sandbox toolkit. |
+| `google-workspace` | yes | 1 group (same group as `code-sandbox`) | Points to the Google Workspace toolkit (`gws_toolkit`): how to enable the integration and complete the per-service OAuth consent flow. |
 | `canvas-api` | yes | 1 group | Guides agents using the Canvas LMS API via the Code Sandbox toolkit's `CANVAS_ACCESS_TOKEN` env var; includes `canvaslms` CLI usage, REST API pointer, data hygiene rules, and escalation to a desktop agent for complex tasks. |
-| `bayleaf-for-students` | yes | 1 group (`Student@ucsc.edu`) | Instructs the agent to prioritize learning, build writing literacy, and points to the learning-opportunities skill package. |
-| `bayleaf-for-employees` | yes | 1 group (`Employee@ucsc.edu`) | Placeholder — acknowledges employee role, no special instructions yet. |
-| `bayleaf-for-faculty` | yes | 0 grants (owner-only) | Suggests AI integration paths for research and teaching; mentions Canvas LMS and BayLeaf as a campus-scoped alternative to commercial tools. |
+| `offramp` | yes | all users (`user:*`) | Exit-path guidance for users outgrowing Chat or wanting stronger privacy: local harnesses (OpenChamber + BayLeaf API), individual ZDR subscriptions, confidential inference (Tinfoil), local inference. Frames leaving BayLeaf Chat as a legitimate use of BayLeaf Chat. |
+| `bayleaf-for-students` | no | 1 group (`Student@ucsc.edu`) | Instructs the agent to prioritize learning, build writing literacy, and points to the learning-opportunities skill package. |
+| `bayleaf-for-employees` | no | 1 group (`Employee@ucsc.edu`) | Placeholder — acknowledges employee role, no special instructions yet. |
+| `bayleaf-for-faculty` | no | 0 grants (owner-only) | Suggests AI integration paths for research and teaching; mentions Canvas LMS and BayLeaf as a campus-scoped alternative to commercial tools. |
 
 ### Role-scoped skills and OAuth groups
 
@@ -695,6 +704,11 @@ requiring separate models per role.
 
 `bayleaf-for-faculty` currently has no grants (owner-only) — it is visible
 only to admins while its content is being refined.
+
+All three `bayleaf-for-*` skills are currently **deactivated** in prod
+(`is_active: false`). Their grants and content are preserved for a fast
+restore. Role-scoped context for Basic now comes from
+`basic_prompt_filter`'s per-request augmentations instead (see §4).
 
 ---
 
@@ -952,12 +966,22 @@ chat/
 │   └── gambit/             # Inactive — rapid prototyping assistant
 │       ├── model.json
 │       └── profile.webp
+├── skills/                 # One dir per skill: skill.md + meta.json
+│   ├── web-search/         # Active — all users
+│   ├── code-sandbox/       # Active — 1 group
+│   ├── google-workspace/   # Active — 1 group
+│   ├── canvas-api/         # Active — 1 group
+│   ├── offramp/            # Active — all users
+│   ├── bayleaf-for-students/   # Inactive — 1 group (Student@ucsc.edu)
+│   ├── bayleaf-for-employees/  # Inactive — 1 group (Employee@ucsc.edu)
+│   └── bayleaf-for-faculty/    # Inactive — owner-only
 ├── tools/
 │   ├── lathe/
 │   │   ├── tool.py          # Code Sandbox — coding agent tools (Daytona sandboxes)
 │   │   └── meta.json
 │   ├── help_toolkit/            # Bound to Help model via toolIds (no grants)
-│   │   └── tool.py
+│   │   ├── tool.py
+│   │   └── meta.json
 │   ├── web_context_toolkit/
 │   │   ├── tool.py
 │   │   └── meta.json
@@ -974,7 +998,8 @@ chat/
 │   │   ├── tool.py
 │   │   └── meta.json
 │   ├── brace3_canvas_toolkit/  # Brace v3 — Canvas read-only, force-injected by brace3_filter
-│   │   └── tool.py          # No meta.json — admin-only, no grants
+│   │   ├── tool.py
+│   │   └── meta.json
 │   ├── youtube_toolkit/
 │   │   ├── tool.py
 │   │   └── meta.json
@@ -987,8 +1012,9 @@ chat/
 │   ├── mark_time_toolkit/
 │   │   ├── tool.py
 │   │   └── meta.json
-│   └── whole_document_retrieval_toolkit/
-│       └── tool.py          # No meta.json
+│   └── whole_document_retrieval/
+│       ├── tool.py
+│       └── meta.json
 └── functions/
     ├── rate_limit_filter/
     │   ├── function.py
@@ -996,12 +1022,19 @@ chat/
     ├── depth_limit_filter/
     │   ├── function.py
     │   └── meta.json
-    ├── brace_submit_action/ # Brace v2 only
+    ├── basic_prompt_filter/ # Basic model prompt augmentations (active)
     │   ├── function.py
     │   └── meta.json
-    ├── brace_filter/        # Brace v2 — hardcoded slug, fallback on error
+    ├── brace_submit_action/ # Brace v2 only (inactive)
     │   ├── function.py
     │   └── meta.json
-    └── brace3_filter/       # Brace v3 — title lookup, markdownify, raises on missing page
-        └── function.py      # No meta.json
+    ├── brace_filter/        # Brace v2 — hardcoded slug, fallback on error (inactive)
+    │   ├── function.py
+    │   └── meta.json
+    ├── brace3_filter/       # Brace v3 — title lookup, markdownify, raises on missing page
+    │   ├── function.py
+    │   └── meta.json
+    └── vertex_pipe/         # Disabled — Google Vertex manifold pipe
+        ├── function.py
+        └── meta.json
 ```

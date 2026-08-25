@@ -1,0 +1,19 @@
+{
+  "id": "basic_prompt_filter",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Basic Prompt Filter",
+  "type": "filter",
+  "meta": {
+    "description": "Assembles per-request system-prompt augmentations for the Basic model. Runs an ordered list of augmentors in inlet (before the first assistant response, no tool call required) and appends their output as a system message. The first augmentor injects role-based suffixes keyed by OAuth group membership; the structure is built to host future dynamic augmentors (e.g. concept-of-the-day). Attach to the Basic model.",
+    "manifest": {
+      "title": "Basic Prompt Filter",
+      "author": "Adam Smith",
+      "description": "Appends per-request system-prompt augmentations for the Basic model. Runs an ordered list of augmentors in inlet (server-side, no tool call); injects role and current chat-storage context. Attach to the Basic model. See issue #44 for the design rationale and v0.9.5 prompt-merge mechanics.",
+      "version": "0.4.1"
+    }
+  },
+  "is_active": true,
+  "is_global": false,
+  "updated_at": 1784318269,
+  "created_at": 1780518410
+}

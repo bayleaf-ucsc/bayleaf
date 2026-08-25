@@ -1,0 +1,20 @@
+{
+  "id": "brace3_filter",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Brace3 Filter",
+  "type": "filter",
+  "meta": {
+    "description": "Injects the Brace3 Canvas toolkit and fetches the course-specific system prompt from a Canvas wiki page. Attach to any model named brace3-NNN where NNN is the Canvas course ID.",
+    "manifest": {
+      "title": "Brace3 Filter",
+      "author": "Adam Smith",
+      "description": "Injects the Brace3 Canvas toolkit and fetches the course-specific system prompt from a Canvas wiki page. Attach to any model named brace3-NNN where NNN is the Canvas course ID.",
+      "requirements": "async-lru,markdownify",
+      "version": "1.0.0"
+    }
+  },
+  "is_active": true,
+  "is_global": false,
+  "updated_at": 1778624200,
+  "created_at": 1775169358
+}

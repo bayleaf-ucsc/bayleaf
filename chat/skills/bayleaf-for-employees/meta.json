@@ -6,7 +6,7 @@
   "meta": {
     "tags": []
   },
-  "is_active": true,
+  "is_active": false,
   "access_grants": [
     {
       "id": "34cf9d3d-1735-4b7a-9da6-34a67a48521f",
@@ -18,7 +18,7 @@
       "created_at": 1774986992
     }
   ],
-  "updated_at": 1774986992,
+  "updated_at": 1780519079,
   "created_at": 1774986753,
   "user": null,
   "write_access": true

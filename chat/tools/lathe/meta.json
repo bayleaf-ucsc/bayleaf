@@ -3,17 +3,18 @@
   "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
   "name": "Code Sandbox",
   "meta": {
-    "description": "Coding agent tools (bash, read, write, edit, attach, ingest, onboard) backed by per-user sandbox VMs with transparent lifecycle management.",
+    "description": "Coding agent tools (lathe, bash, read, write, edit, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.",
     "manifest": {
       "title": "Lathe",
       "author": "Adam Smith",
       "author_url": "https://adamsmith.as",
-      "description": "Coding agent tools (bash, read, write, edit, attach, ingest, onboard, ssh, preview) backed by per-user sandbox VMs with transparent lifecycle management.",
+      "description": "Coding agent tools (lathe, bash, read, write, edit, glob, grep, interpret, delegate, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.",
       "required_open_webui_version": "0.4.0",
-      "requirements": "httpx",
-      "version": "0.7.0",
+      "requirements": "httpx, httpx-ws, pydantic-ai-slim[openai]~=1.60, cachetools",
+      "version": "0.24.1",
       "licence": "MIT"
-    }
+    },
+    "has_user_valves": true
   },
   "access_grants": [
     {
@@ -26,30 +27,14 @@
       "created_at": 1773097882
     }
   ],
-  "updated_at": 1773434183,
+  "updated_at": 1784225071,
   "created_at": 1773079252,
   "user": null,
   "write_access": true,
   "specs": [
     {
-      "name": "attach",
-      "description": "Attach a file from the sandbox for the user to view inline.\nThe file content is rendered visually for the human but is NOT returned\nto the model. Use read() if you need to see file contents yourself.\nWorks with text files (syntax-highlighted), images (rendered inline),\nand binary files (download card with Save button for files under 10 MB).",
-      "parameters": {
-        "properties": {
-          "path": {
-            "description": "Absolute path or relative to /home/daytona (e.g. workspace/main.py).",
-            "type": "string"
-          }
-        },
-        "required": [
-          "path"
-        ],
-        "type": "object"
-      }
-    },
-    {
       "name": "bash",
-      "description": "Execute a bash command in a persistent Linux sandbox.\nThe sandbox and its filesystem persist across conversations for this user.\n/home/daytona/volume is S3/FUSE-backed persistent storage that survives sandbox destruction.\nSupports pipes, redirects, &&, ||, and all standard bash syntax.\nCommands must be non-interactive (no prompts for input). Use -y flags where needed.\nFor long-running servers, background them: nohup cmd > /tmp/out.log 2>&1 & echo $!\nDefault working directory is /home/daytona/workspace.\nOutput is truncated to the last 2000 lines or 50 KB (whichever limit is hit first).\nIf truncated, the full output is saved to a file in /tmp/ and the path is shown.\nUse read() or another bash command to inspect specific parts of that file.\nUser-configured environment variables (set via the UserValves env_vars JSON field) are\nautomatically injected into every command \u2014 reference them by name without exposing values.",
+      "description": "Execute a bash command in the sandbox. Non-interactive only.\nCommands that finish within the foreground window return output directly.\nLong-running commands auto-background and return a descriptor with log\nfile paths for monitoring.\n\nWhen creating git commits, add an Assisted-by: Lathe trailer to the\ncommit message to acknowledge AI assistance.",
       "parameters": {
         "properties": {
           "command": {
@@ -58,8 +43,13 @@
           },
           "workdir": {
             "default": "/home/daytona/workspace",
-            "description": "Working directory for the command (default: /home/daytona/workspace).",
+            "description": "Working directory (default: /home/daytona/workspace).",
             "type": "string"
+          },
+          "foreground_seconds": {
+            "default": -1,
+            "description": "Seconds to wait before auto-backgrounding. Omit or set -1 to use the server default. Set 0 for immediate background (fire-and-forget). Use higher positive values for known-slow commands.",
+            "type": "integer"
           }
         },
         "required": [
@@ -69,44 +59,67 @@
       }
     },
     {
-      "name": "destroy",
-      "description": "Permanently destroy your sandbox. ALL files and state are lost forever.\nA fresh sandbox will be created automatically on your next tool call.\nOnly use this if your sandbox is in an unrecoverable state.\nYou must set confirm=true to proceed. Without it, no action is taken.\nBy default, the user's persistent volume (/home/daytona/volume) is kept intact\nand will be re-mounted on the next sandbox. Set wipe_volume=true to also\ndelete the volume for a completely clean slate.",
+      "name": "delegate",
+      "description": "Delegate a multi-step task to an autonomous sub-agent with sandbox access.\nThe sub-agent runs the same model, has bash/read/write/edit/glob/grep tools,\nand returns a summary when done. Use for exploration, refactoring, debugging,\nor any multi-step work that doesn't need user interaction.\nLong-running delegations auto-background and return a descriptor with log/result\nfile paths for monitoring, exactly like bash() does for long commands.",
       "parameters": {
         "properties": {
-          "confirm": {
-            "default": false,
-            "description": "Must be set to true to confirm destruction. Defaults to false as a safety measure.",
-            "type": "boolean"
+          "task": {
+            "description": "What the sub-agent should accomplish. Be specific — it cannot ask clarifying questions. Include any context (error messages, prior findings, instructions) directly in the task description.",
+            "type": "string"
           },
-          "wipe_volume": {
-            "default": false,
-            "description": "Also delete the persistent volume. Defaults to false (volume survives).",
-            "type": "boolean"
+          "context_files": {
+            "default": [],
+            "description": "Absolute sandbox file paths to inject into the sub-agent's prompt (e.g. AGENTS.md, SKILL.md, config files). Fetched at delegation time — the sub-agent sees their contents without spending steps reading them.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "max_steps": {
+            "default": 10,
+            "description": "Maximum inference calls the sub-agent may make (default: 10, max: 30).",
+            "type": "integer"
+          },
+          "foreground_seconds": {
+            "default": -1,
+            "description": "Seconds to wait before auto-backgrounding (default: 30, max: 300). Set 0 for immediate background (fire-and-forget). Omit or set -1 to use the default.",
+            "type": "integer"
           }
         },
+        "required": [
+          "task"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "destroy",
+      "description": "Permanently destroy the sandbox VM. Irreversible.\nPrompts the user for confirmation before proceeding.\nIf a persistent volume is attached, its data is preserved and will reappear in the next sandbox.",
+      "parameters": {
+        "properties": {},
         "type": "object"
       }
     },
     {
       "name": "edit",
-      "description": "Edit a file in the persistent Linux sandbox by replacing exact string matches.\nThe sandbox filesystem persists across conversations for this user.",
+      "description": "Edit a file by exact string replacement. Fails on ambiguous matches unless replace_all=true.",
       "parameters": {
         "properties": {
           "path": {
-            "description": "Absolute path or relative to /home/daytona (e.g. workspace/main.py).",
+            "description": "Absolute path to the file.",
             "type": "string"
           },
           "old_string": {
-            "description": "The exact text to find and replace. Must match exactly including whitespace and indentation.",
+            "description": "Exact text to find.",
             "type": "string"
           },
           "new_string": {
-            "description": "The replacement text.",
+            "description": "Replacement text.",
             "type": "string"
           },
           "replace_all": {
             "default": false,
-            "description": "If true, replace all occurrences. If false (default), fail if multiple matches found.",
+            "description": "Replace all occurrences (default: false).",
             "type": "boolean"
           }
         },
@@ -119,13 +132,105 @@
       }
     },
     {
-      "name": "ingest",
-      "description": "Ask the user to provide content for the sandbox \u2014 either by uploading\na file from their local machine or by pasting text directly.  The\ncontent goes straight to the sandbox filesystem without entering the\nconversation context or the OWUI database.  Use read() afterward if\nyou need to inspect the contents yourself.",
+      "name": "expose",
+      "description": "Expose a sandbox service to the user. Pass \"dufs\" for a one-step file\nbrowser, \"code-server\" for a one-step IDE, \"http:<port>\" for a web\nserver you already started, or \"ssh\" for interactive shell access.",
       "parameters": {
         "properties": {
-          "prompt": {
-            "default": "",
-            "description": "Optional message shown to the user explaining what is needed, e.g. \"Upload your CSV dataset\" or \"Paste your configuration\".",
+          "target": {
+            "description": "What to expose — \"dufs\" for file upload/download, \"code-server\" for a browser IDE, \"ssh\" for a shell, or \"http:<port>\" (e.g. \"http:5000\", port range 3000–9999) for an HTTP service you started manually.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "glob",
+      "description": "Search for files in the sandbox workspace by glob pattern.\nReturns a hierarchical listing of matches with absolute paths.\nDense directories are collapsed with match counts; narrow the\npattern or increase max_lines to expand them.",
+      "parameters": {
+        "properties": {
+          "pattern": {
+            "description": "Comma-separated globs, !-prefix to exclude. Examples: '**/*.py', 'src/**/*.ts,!**/node_modules/**'.",
+            "type": "string"
+          },
+          "max_lines": {
+            "default": 100,
+            "description": "Max output lines (default: 100).",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pattern"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "grep",
+      "description": "Search file contents in the sandbox workspace by regex.\nReturns matches grouped by file with line numbers. Dense\ndirectories and files are collapsed with match counts;\nnarrow the file scope or increase max_lines to expand them.",
+      "parameters": {
+        "properties": {
+          "pattern": {
+            "description": "Regex to search for (e.g. 'import.*asyncio', 'TODO|FIXME').",
+            "type": "string"
+          },
+          "files": {
+            "default": "**/*",
+            "description": "File scope as comma-separated globs (default: '**/*'). !-prefix to exclude.",
+            "type": "string"
+          },
+          "max_lines": {
+            "default": 100,
+            "description": "Max output lines (default: 100).",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pattern"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "handoff",
+      "description": "Prepare a handoff document for continuing this work in a new conversation. Call this when the user asks to compact, hand off, or save context for a fresh chat. After calling, write the handoff as your reply — do not make any more tool calls.",
+      "parameters": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "name": "interpret",
+      "description": "Run Python code in a persistent REPL session. Variables, imports, and\ndefinitions survive across calls within the same conversation.\nUse this for iterative data exploration, incremental computation, or\nany workflow where you need state to persist between executions.\nFor one-shot shell commands or non-Python work, prefer bash() instead.",
+      "parameters": {
+        "properties": {
+          "code": {
+            "description": "Python code to execute. Top-level await is not supported.",
+            "type": "string"
+          },
+          "timeout": {
+            "default": 120,
+            "description": "Max execution time in seconds (default: 120). Use 0 for no limit.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "lathe",
+      "description": "Manual for the lathe toolkit. Call lathe(manpage=\"overview\") before your first tool use in a new conversation to learn the sandbox model, available workflows, and gotchas. Costs one tool call, saves many.",
+      "parameters": {
+        "properties": {
+          "manpage": {
+            "default": "overview",
+            "description": "Which manual page to return. Use \"overview\" for big-picture orientation, \"version\" for the installed version.",
             "type": "string"
           }
         },
@@ -134,7 +239,7 @@
     },
     {
       "name": "onboard",
-      "description": "Load project context at the start of a conversation.\nCall this tool first when beginning work on a project. It returns the project's\nAGENTS.md (instructions, persona, conventions) and a catalog of available skills\n(name + description only). To load a skill's full instructions later, use read()\non the SKILL.md path shown in the catalog.\nFails if the path contains neither an AGENTS.md file nor a .agents/skills/ directory.",
+      "description": "Load project context (directory listing, AGENTS.md, skill catalog) at the start of a conversation.\nAlways returns a directory listing of the target path. Additionally\nsearches the project directory and ~/.agents/ for agent instructions and skills.\nUse read() on a skill's SKILL.md path to load its full instructions later.",
       "parameters": {
         "properties": {
           "path": {
@@ -149,36 +254,22 @@
       }
     },
     {
-      "name": "preview",
-      "description": "Generate a preview URL for a service running in the sandbox.\nThe server must already be running in the background (see bash docs).\nReturns a signed URL the user can open in a new browser tab.",
-      "parameters": {
-        "properties": {
-          "port": {
-            "default": 3000,
-            "description": "The port the sandbox service is listening on (3000\u20139999). Defaults to 3000.",
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      }
-    },
-    {
       "name": "read",
-      "description": "Read a file from the persistent Linux sandbox.\nReturns numbered lines. The sandbox filesystem persists across conversations for this user.",
+      "description": "Read a file from the sandbox. Returns numbered lines.\nSupports Python-style negative indexing: start=-10 reads from\n10 lines before the end, stop=-3 stops 3 lines before the end.\nAll positive values are 1-indexed. stop is exclusive (half-open).\nstop=0 (default) means end of file.",
       "parameters": {
         "properties": {
           "path": {
-            "description": "Absolute path or relative to /home/daytona (e.g. workspace/main.py).",
+            "description": "Absolute path to the file.",
             "type": "string"
           },
-          "offset": {
+          "start": {
             "default": 1,
-            "description": "Line number to start from (1-indexed, default 1).",
+            "description": "First line to return (1-indexed). Negative counts from end. 0 is treated as 1.",
             "type": "integer"
           },
-          "limit": {
-            "default": 2000,
-            "description": "Maximum number of lines to return (default 2000).",
+          "stop": {
+            "default": 0,
+            "description": "Line to stop before (exclusive, 1-indexed). Negative counts from end. 0 means end of file.",
             "type": "integer"
           }
         },
@@ -189,30 +280,16 @@
       }
     },
     {
-      "name": "ssh",
-      "description": "Generate a time-limited SSH access command for the user's sandbox.\nReturns an ssh command the user can paste into their local terminal,\nVS Code Remote SSH, or JetBrains Gateway to get an interactive shell.\nThis is a human tool \u2014 the model generates the token, the user connects.",
-      "parameters": {
-        "properties": {
-          "expires_in_minutes": {
-            "default": 60,
-            "description": "How long the SSH token is valid (1\u20131440 minutes). Defaults to 60.",
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      }
-    },
-    {
       "name": "write",
-      "description": "Write a file to the persistent Linux sandbox, creating it if it doesn't exist.\nParent directories are created automatically. The sandbox filesystem persists across conversations for this user.",
+      "description": "Write a file to the sandbox (creates parents automatically).\n\nFor large files, prefer a skeleton-then-edit workflow: write the file first\nwith overall structure and ``# PLACEHOLDER: <section>`` markers, then use\n``edit()`` to expand each placeholder incrementally. This makes progress\nvisible to the user in real time and keeps partial work on disk if\ngeneration is interrupted.",
       "parameters": {
         "properties": {
           "path": {
-            "description": "Absolute path or relative to /home/daytona (e.g. workspace/main.py).",
+            "description": "Absolute path to write to.",
             "type": "string"
           },
           "content": {
-            "description": "The full file content to write.",
+            "description": "The full file content.",
             "type": "string"
           }
         },

@@ -93,7 +93,8 @@
       "canvas-api",
       "web-search",
       "bayleaf-for-employees",
-      "code-sandbox"
+      "code-sandbox",
+      "offramp"
     ],
     "filterIds": [
       "basic_prompt_filter"
@@ -101,17 +102,17 @@
   },
   "access_grants": [
     {
-      "id": "aceac03b-2d11-4295-af6b-66902b95615b",
+      "id": "c9f10a7d-e25a-4a66-b998-28e1b4e288fa",
       "resource_type": "model",
       "resource_id": "basic",
       "principal_type": "user",
       "principal_id": "*",
       "permission": "read",
-      "created_at": 1781761346
+      "created_at": 1787675156
     }
   ],
   "is_active": true,
-  "updated_at": 1781761345,
+  "updated_at": 1787675156,
   "created_at": 1743444662,
   "user": null,
   "write_access": true

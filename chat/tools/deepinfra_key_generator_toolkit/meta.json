@@ -6,7 +6,8 @@
     "description": "Generates a time and budget limited API key for DeepInfra",
     "manifest": {
       "requirements": "cachetools,aiohttp"
-    }
+    },
+    "has_user_valves": false
   },
   "access_grants": [
     {
@@ -19,14 +20,10 @@
       "created_at": 1772692761
     }
   ],
-  "updated_at": 1772692761,
+  "updated_at": 1774588632,
   "created_at": 1760417629,
-  "user": {
-    "id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
-    "name": "Adam Smith",
-    "role": "admin",
-    "email": "amsmith@ucsc.edu"
-  },
+  "user": null,
+  "write_access": true,
   "specs": [
     {
       "name": "generate_temporary_deepinfra_key",
@@ -36,6 +33,5 @@
         "type": "object"
       }
     }
-  ],
-  "has_user_valves": false
+  ]
 }

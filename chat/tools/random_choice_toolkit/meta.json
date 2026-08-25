@@ -4,7 +4,8 @@
   "name": "Random Choice",
   "meta": {
     "description": "Allows the model to make truly random choices",
-    "manifest": {}
+    "manifest": {},
+    "has_user_valves": false
   },
   "access_grants": [
     {
@@ -17,14 +18,10 @@
       "created_at": 1771204151
     }
   ],
-  "updated_at": 1767980108,
+  "updated_at": 1776361738,
   "created_at": 1767980099,
-  "user": {
-    "id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
-    "name": "Adam Smith",
-    "role": "admin",
-    "email": "amsmith@ucsc.edu"
-  },
+  "user": null,
+  "write_access": true,
   "specs": [
     {
       "name": "choice",
@@ -48,6 +45,5 @@
         "type": "object"
       }
     }
-  ],
-  "has_user_valves": false
+  ]
 }

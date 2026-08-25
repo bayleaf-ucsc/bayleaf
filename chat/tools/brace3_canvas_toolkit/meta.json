@@ -1,0 +1,60 @@
+{
+  "id": "brace3_canvas_toolkit",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Brace3 Canvas Toolkit",
+  "meta": {
+    "description": "Canvas LMS access and date localization tools for Brace3. Not intended for direct user activation — force-injected by brace3_filter. The Canvas API token is snarfed from the filter instance at call time, requiring no separate valve configuration.",
+    "manifest": {
+      "title": "Brace3 Canvas Toolkit",
+      "author": "Adam Smith",
+      "description": "Canvas LMS access and date localization tools for Brace3. Not intended for direct user activation — force-injected by brace3_filter. The Canvas API token is snarfed from the filter instance at call time, requiring no separate valve configuration.",
+      "version": "1.0.0"
+    },
+    "has_user_valves": false
+  },
+  "access_grants": [],
+  "updated_at": 1778474075,
+  "created_at": 1775169735,
+  "user": null,
+  "write_access": true,
+  "specs": [
+    {
+      "name": "localize_iso_date",
+      "description": "Converts a UTC ISO date string (e.g. '2025-09-29T23:00:00Z') to a localized\ndatetime string (default timezone: America/Los_Angeles).\n\nAlways use this when presenting Canvas dates to students — Canvas returns all\ndates in GMT.",
+      "parameters": {
+        "properties": {
+          "iso_date_str": {
+            "type": "string"
+          },
+          "timezone_str": {
+            "default": "America/Los_Angeles",
+            "type": "string"
+          }
+        },
+        "required": [
+          "iso_date_str"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "use_canvas_api",
+      "description": "Make a read-only, paginated request against the UCSC Canvas LMS using\nthe course instructor's credentials.\n\nAccess is limited to a specific allowlist of non-sensitive endpoints.\nCanvas always returns dates in GMT — use localize_iso_date before\npresenting any date or time to a student.\n\nAllowed URL patterns and recommended jq field selectors:\n\nhttps://canvas.ucsc.edu/api/v1/courses/COURSE_ID?include[]=syllabus_body  {syllabus_body}\nhttps://canvas.ucsc.edu/api/v1/courses/COURSE_ID/assignments              .[] | {id, name, due_at}\nhttps://canvas.ucsc.edu/api/v1/courses/COURSE_ID/assignments/ASSIGNMENT_ID {description, submission_types}\nhttps://canvas.ucsc.edu/api/v1/courses/COURSE_ID/quizzes/QUIZ_ID          {title, description}\nhttps://canvas.ucsc.edu/api/v1/courses/COURSE_ID/pages                    .[] | {title, url}\nhttps://canvas.ucsc.edu/api/v1/courses/COURSE_ID/pages/PAGE_URL_OR_SLUG   {body}\n\nWhen listing assignments, always fetch id and name first to disambiguate\nbefore fetching details. Do not mention specific dates unless asked, and\nalways localize them when you do.\n\nIf an API request fails, do NOT guess or invent data. Report the failure\nand try a different approach if possible.",
+      "parameters": {
+        "properties": {
+          "resource_url": {
+            "type": "string"
+          },
+          "jq_expr": {
+            "default": ".",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_url"
+        ],
+        "type": "object"
+      }
+    }
+  ]
+}

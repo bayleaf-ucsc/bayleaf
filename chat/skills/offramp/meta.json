@@ -1,0 +1,25 @@
+{
+  "id": "offramp",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "offramp",
+  "description": "Consult this skill when the user wants to know how to grow beyond using BayLeaf Chat or is discussing a sensitive subject for which they might benefit from enhanced privacy protections.",
+  "meta": {
+    "tags": []
+  },
+  "is_active": true,
+  "access_grants": [
+    {
+      "id": "5bbbca11-8f21-43b2-93d9-c7b483eb185a",
+      "resource_type": "skill",
+      "resource_id": "offramp",
+      "principal_type": "user",
+      "principal_id": "*",
+      "permission": "read",
+      "created_at": 1787675707
+    }
+  ],
+  "updated_at": 1787675707,
+  "created_at": 1787675107,
+  "user": null,
+  "write_access": true
+}

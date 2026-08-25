@@ -6,9 +6,9 @@
   "meta": {
     "tags": []
   },
-  "is_active": true,
+  "is_active": false,
   "access_grants": [],
-  "updated_at": 1775271518,
+  "updated_at": 1780519079,
   "created_at": 1774986788,
   "user": null,
   "write_access": true
