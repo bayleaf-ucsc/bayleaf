@@ -305,6 +305,19 @@ is defined in `models/<id>/model.json`.
 | `basic` | Basic | `openrouter.z-ai/glm-5.2` | Default model for all users. Campus-aware system prompt (`Basic v1.2`), builtin tools enabled, skills for Google Workspace, Canvas, web search, and code sandbox. |
 | `help` | Help | `openrouter.z-ai/glm-5.2` | BayLeaf help desk. Lists user groups and available models, inspects model configurations, processes invite codes. Binds `help_toolkit` and `web_context_toolkit` directly via the model's `toolIds`. System prompt (`Help v1.5`). |
 
+### Canary Models
+
+Admin-private models used to exercise a candidate base model in prod before
+swapping a production model to it. The canary's configuration is an
+intentional clone of its production counterpart except for `base_model_id`
+and reasoning-effort tuning, so the model is the only variable. No
+campus-wide grants: a single read grant for the admin user (zero grants
+would hide the model even from the admin on the completions path).
+
+| ID | Name | Base Model | Purpose |
+|----|------|-----------|---------|
+| `basic-canary` | Basic Canary | `openrouter.z-ai/glm-5.3` | Clone of `basic` for evaluating glm-5.3 (ZDR ✓ via Z.AI first-party endpoint; single-provider and foreign-first-party concerns noted in the model-swap playbook). `reasoning_effort: low` because glm-5.3 cannot disable reasoning. |
+
 ### Group-Restricted Models
 
 *None currently active.* Course and program models have been deactivated as their
@@ -334,6 +347,12 @@ Builtin tools enabled (time, memory, chats, notes, knowledge, channels). Skills
 bound: `google-workspace`, `bayleaf-for-students`, `bayleaf-for-faculty`,
 `bayleaf-for-employees`, `canvas-api`, `web-search`, `code-sandbox`,
 `offramp`. Vision disabled; file upload enabled.
+
+**Basic Canary** — Canary clone of `basic` (see Canary Models above). Identical
+system prompt, skills, filters, and capabilities; differs only in base model
+(`glm-5.3`) and `reasoning_effort: low` (glm-5.3 cannot disable reasoning, so
+`low` is the responsiveness-prioritizing setting). Private to admins; delete or
+retarget it after each evaluation cycle rather than exposing it.
 
 **Deep Research** *(inactive)* — Interactive research agent (`Deep Research v1.1`).
 Bound to `web_context_toolkit` (Tavily search + Tavily Extract). System prompt
