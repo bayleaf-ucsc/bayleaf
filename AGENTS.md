@@ -95,6 +95,7 @@ bayleaf/
 │   ├── style.css       # Shared stylesheet (carries a WCAG contrast invariant)
 │   └── images/         # og-card.png + the script that generates it
 ├── politics/           # Dependency audit, VPATs, position papers
+├── scripts/            # GitHub Pages artifact builder
 ├── training/           # Work-in-progress React site for training users in effective GenAI usage
 ├── README.md
 └── AGENTS.md           # This file
@@ -124,12 +125,14 @@ faithfully.
 
 ## Build / Lint / Test
 
-The about site (`docs/`) has no build step or test suite: it is four hand-written
-static HTML pages sharing one stylesheet. For the API (`api/`), see
-`api/AGENTS.md` for build and deploy commands.
+The about site source (`docs/`) is four hand-written static HTML pages sharing
+one stylesheet. GitHub Actions runs `scripts/build_pages.py` to copy that source
+into a Pages artifact and replace the landing page's recent-posts fallback with
+five entries from the public BayLeaf Blog RSS feed. The deployed site still has
+no runtime JavaScript. For the API (`api/`), see `api/AGENTS.md` for build and
+deploy commands.
 
-Two things in `docs/` are generated rather than hand-written, and both need
-regenerating when their inputs change:
+Three things in or deployed from `docs/` are generated rather than hand-written:
 
 - `docs/images/og-card.png`, the Open Graph share card referenced by every
   page's `<meta>` block. Regenerate with `./docs/images/make-og-card.py` after
@@ -139,13 +142,18 @@ regenerating when their inputs change:
   or `docs/style.css` can invalidate a measured contrast ratio, a reflow result,
   or a structural claim. **Adding a page to `docs/` requires folding it into
   that ACR**, which has slipped before.
+- The recent-post rows in deployed `index.html`. They are generated only in the
+  Pages artifact by `scripts/build_pages.py`; do not commit them to the source
+  template. The scheduled and manually dispatchable Pages workflow refreshes
+  them.
 
-**Local preview:** Use the VS Code **Live Server** extension (right-click
-`docs/index.html` → *Open with Live Server*), which serves on `http://localhost:5500`
-by default. Alternatively:
+**Local preview of the source fallback:** Use the VS Code **Live Server**
+extension (right-click `docs/index.html` → *Open with Live Server*), which serves
+on `http://localhost:5500` by default. To preview the generated site:
 
 ```bash
-python3 -m http.server 8000 --directory docs
+python3 scripts/build_pages.py --output /tmp/bayleaf-pages
+python3 -m http.server 8000 --directory /tmp/bayleaf-pages
 ```
 
 ---
@@ -173,9 +181,10 @@ wait for approval before touching git history or remote state.
 
 **Deploy first, commit later.** All services in this repo can be deployed to
 production without committing. Use this to let the developer feel out changes in
-prod before recording them in git. For `docs/` (GitHub Pages), deployment is
-coupled to pushes — so use a local dev server (`python3 -m http.server 8000
---directory docs`) to preview changes before committing.
+prod before recording them in git. The Pages workflow deploys committed source
+changes on push and refreshes public-data snapshots on a schedule or manual
+dispatch; use the generated local preview above to inspect source changes before
+committing.
 
 **Do not commit or push unless explicitly asked.** Deploying to a live service
 is non-destructive and reversible; pushing to `main` is immediate and public.

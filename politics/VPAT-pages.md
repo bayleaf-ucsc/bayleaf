@@ -42,12 +42,16 @@ domain per [`docs/CNAME`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs
 - [`docs/style.css`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs/style.css):
   shared stylesheet covering layout, typography, the button-styled
   link system (`.service-link` with `.primary-action` and `.secondary`
-  modifiers), the responsive `.lecture-embed` video wrapper, and the
-  `:focus-visible` indicator. No JavaScript, no build step.
+  modifiers), the responsive `.lecture-embed` video wrapper, the
+  generated recent-post list, and `:focus-visible` indicators. A
+  GitHub Actions build replaces a source fallback with five escaped
+  entries from the BayLeaf Blog RSS feed before deploying an immutable
+  Pages artifact. The deployed pages contain no runtime JavaScript.
 
-**Why this scope.** All four pages are small, hand-written HTML with no
-framework, no runtime DOM manipulation, and no user input. They share
-all styling, so a single empirical verification pass covers them.
+**Why this scope.** All four pages are small HTML documents with no
+framework, no runtime DOM manipulation, and no user input. One bounded
+landing-page section is generated at build time from public RSS. They
+share all styling, so a single empirical verification pass covers them.
 Source inspection can meaningfully cover most WCAG 2.1 AA criteria;
 criteria that require a rendered browser (actual color rendering,
 zoom/reflow behavior, focus visibility in practice, text-spacing
@@ -123,9 +127,10 @@ over:
 
 ### Evaluation methodology
 
-All empirical claims in this ACR are reproducible. The verification
-pass ran against the local working tree served from
-`python3 -m http.server 8765 --directory docs`, under headless
+All empirical claims in this ACR are reproducible. The latest verification
+pass ran against the locally built Pages artifact produced by
+`python3 scripts/build_pages.py --output /tmp/bayleaf-pages` and served
+with `python3 -m http.server 8765 --directory /tmp/bayleaf-pages`, under headless
 Chromium (via [`uvx rodney`](https://github.com/simonw/rodney)
 v0.4.0, Chromium 147) with viewport emulation controlled through
 direct CDP calls to
@@ -135,7 +140,11 @@ Dates of evaluation: 2026-04-29 (landing and support page), extended
 to re-evaluate the landing after the video embed shipped, and
 2026-08-04 to re-verify reflow after the landing nav was split into a
 two-button service row and a smaller four-button supplementary row
-(Blog, Use Cases, Source, Support). The 2026-07-24 pass re-ran contrast enumeration, reflow at 320/400/1280 CSS
+(Blog, Use Cases, Source, Support), and 2026-08-25 to verify the
+generated recent-post list and artifact build. The 2026-08-25 pass
+checked the generated landing with W3C Nu validation, reflow at 320 CSS
+px, 200% text zoom at 1280 CSS px, the text-spacing override at 320 CSS
+px, focus visibility, and Chromium's accessibility tree. The 2026-07-24 pass re-ran contrast enumeration, reflow at 320/400/1280 CSS
 px, 200% text zoom, the 1.4.12 text-spacing override, structure and
 ID-uniqueness checks, and W3C Nu validation across all four pages; it
 did not re-run the CVD simulations or the focus-visibility screenshot
@@ -177,12 +186,12 @@ added pages (same stylesheet, same button system).
 ### Structure observed
 
 All four pages use valid HTML5 with `<html lang="en">`. Each has a
-single `<h1>`, `<h2>` section headings in order, `<ul>` lists,
+single `<h1>`, `<h2>` section headings in order, and semantic lists,
 primary content wrapped in `<main id="main">`, and a
 `<footer class="contact">` for the post-content link block. The
-landing additionally uses three `<h3>` subsections under "API
-Service" and the `<figure>`/`<iframe>` video embed described under
-[Embedded media](#embedded-media). `use-cases.html` uses `<h3>`
+landing additionally uses an `<h3>` for the recent-post list, three
+`<h3>` subsections under "API Service," and the `<figure>`/`<iframe>`
+video embed described under [Embedded media](#embedded-media). `use-cases.html` uses `<h3>`
 subsections with `id` anchors and one `<blockquote>` holding a sample
 prompt. Support and use-cases pages add `.note` callout blocks (styled
 `<div>`, not a landmark); `privacy.html` uses one `.note` plus a plain
@@ -208,7 +217,7 @@ has been corrected above rather than quietly dropped.
 - [1.3.1 Info and Relationships](https://www.w3.org/WAI/WCAG21/Understanding/info-and-relationships):
   headings are in hierarchical order (h1 → h2 → h3, no skipped
   levels, verified by enumerating heading tags in document order on
-  each page); lists use `<ul>` not presentational `<div>`s; the video
+  each page); lists use `<ul>` or `<ol>`, not presentational `<div>`s; the video
   embed is wrapped in `<figure>`/`<figcaption>` so its caption is
   programmatically associated.
 - [1.4.1 Use of Color](https://www.w3.org/WAI/WCAG21/Understanding/use-of-color):
@@ -257,8 +266,10 @@ has been corrected above rather than quietly dropped.
   `figcaption`, 7.46:1), `#666` on white (5.74:1), `#444` on `#f8f9fa`
   (the `.note` callout, 9.24:1), `#2a5298` on `#f8f9fa` (link inside
   `.note`, 7.22:1). All pass AA with comfortable headroom (lowest
-  ratio 5.74:1, above the 4.5:1 AA threshold). No new pair was
-  introduced by the pages added in 2026-07-24, nor by the 2026-08-04
+  ratio 5.74:1, above the 4.5:1 AA threshold). The recent-post list
+  reuses the measured `#2a5298`, `#555`, and `#666` text colors on
+  white. No new text/background pair was introduced by the pages added
+  in 2026-07-24 or the 2026-08-04
   landing nav change: promoting the previously inline
   `style="background: #555;"` secondary buttons to a
   `.service-link.secondary` class reuses the already-measured
@@ -284,14 +295,14 @@ has been corrected above rather than quietly dropped.
   necessary for 2.4.7 conformance, not optional.
 - [4.1.1 Parsing](https://www.w3.org/WAI/WCAG21/Understanding/parsing):
   all four pages validate with zero messages from the
-  [W3C Nu HTML Checker](https://validator.w3.org/nu/), re-checked
-  2026-07-24 after the Open Graph `<meta>` block was added. DOM-level
+  [W3C Nu HTML Checker](https://validator.w3.org/nu/); the generated
+  landing was re-checked 2026-08-25. DOM-level
   ID-uniqueness check finds no duplicate IDs on any page (landing:
-  `#main`, `#lathe`; support and privacy: `#main`; use-cases: `#main`
+  `#main`, `#recent-writing-heading`, `#lathe`; support and privacy: `#main`; use-cases: `#main`
   plus four section anchors).
 - [4.1.2 Name, Role, Value](https://www.w3.org/WAI/WCAG21/Understanding/name-role-value):
-  uses native elements (`<a>`, `<main>`, `<footer>`, `<figure>`,
-  `<figcaption>`, `<blockquote>`) with correct default roles; no custom
+  uses native elements (`<a>`, `<main>`, `<section>`, `<ol>`, `<time>`,
+  `<footer>`, `<figure>`, `<figcaption>`, `<blockquote>`) with correct default roles; no custom
   ARIA. The one `<iframe>` takes its accessible name from its `title`
   attribute. (Earlier revisions of this document cited a
   `<details>/<summary>` subprocessor disclosure on the landing; that
