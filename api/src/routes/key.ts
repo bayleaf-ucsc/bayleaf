@@ -48,7 +48,7 @@ keyRoutes.post('/key', async (c) => {
   return c.json({ success: true as const, key: row.bayleaf_token }, 200);
 });
 
-// ── DELETE /key — Revoke a key (called by dashboard) ──────────────
+// ── DELETE /key — Revoke the BayLeaf token (called by dashboard) ──
 
 keyRoutes.delete('/key', async (c) => {
   const session = c.get('session');

@@ -91,8 +91,8 @@ interface BackendSpec {
     secret: string;
     extra: Record<string, string>;
   } | null>;
-  /** Destroy upstream, used to clean up the loser of a mint race. */
-  destroy(secret: string, row: UserKeyRow, env: Bindings): Promise<boolean>;
+  /** Destroy the just-minted credential if this request loses the CAS race. */
+  destroy(secret: string, extra: Record<string, string>, env: Bindings): Promise<boolean>;
 }
 
 const BACKENDS: Record<BackendKind, BackendSpec> = {
@@ -103,10 +103,11 @@ const BACKENDS: Record<BackendKind, BackendSpec> = {
       if (!created?.key) return null;
       return { secret: created.key, extra: { or_key_hash: created.hash } };
     },
-    // Deletion is by OpenRouter's opaque handle, not by the secret, so this
-    // reads the hash from the row rather than deriving it from the credential.
-    async destroy(_secret, row, env) {
-      return row.or_key_hash ? deleteKey(row.or_key_hash, env) : false;
+    // Deletion is by OpenRouter's opaque handle, not by the secret. Use the
+    // newly minted hash: the row still contains the old/absent value precisely
+    // because this request lost the compare-and-swap race.
+    async destroy(_secret, extra, env) {
+      return extra.or_key_hash ? deleteKey(extra.or_key_hash, env) : false;
     },
   },
   tinfoil: {
@@ -127,7 +128,7 @@ const BACKENDS: Record<BackendKind, BackendSpec> = {
       return { secret: created.key, extra: { tinfoil_key_name: created.name } };
     },
     // Tinfoil has no management handle: the secret is the identifier.
-    async destroy(secret, _row, env) {
+    async destroy(secret, _extra, env) {
       return deleteTinfoilKey(secret, env);
     },
   },
@@ -195,7 +196,7 @@ async function swapBackendKey(
   // key we just created is unreferenced, so destroy it before adopting whatever
   // is actually stored now.
   console.log(`Discarding redundant ${kind} key for ${row.email} (lost mint race or row revoked)`);
-  await spec.destroy(minted.secret, row, env);
+  await spec.destroy(minted.secret, minted.extra, env);
 
   const fresh = await getActiveRow(row.email, env);
   const winner = fresh?.[spec.secretColumn] ?? null;
@@ -248,12 +249,13 @@ export async function healBackendKey(
  * from blocking signup, and what stops a user who only ever uses the sandbox
  * from being issued inference credentials they never touch.
  *
- * A revoked row is reused (UPDATE clearing `revoked`) rather than inserted, and
- * its stale backend columns are cleared: the old keys were destroyed at
- * revocation, so leaving the columns populated would hand the user a dead
- * credential and defer the repair to a 401 that `healBackendKey` would then
- * have to fix. Clearing them is cheaper and keeps "populated means plausibly
- * live" true.
+ * A revoked row is reused (UPDATE clearing `revoked`) rather than inserted.
+ * Its backend credentials are deliberately retained: dashboard revocation
+ * rotates the public BayLeaf token, not the internal provider credentials.
+ * Reusing those credentials preserves provider-side spend and usage state, so
+ * revoke/re-provision cannot reset a user's budget. If a retained credential
+ * has actually disappeared upstream, the normal healing path replaces it on
+ * first use.
  *
  * Precondition: the caller has already established there is no active row.
  */
@@ -267,9 +269,7 @@ export async function provisionToken(email: string, env: Bindings): Promise<User
   if (revoked) {
     await env.DB.prepare(
       `UPDATE user_keys
-          SET bayleaf_token = ?, revoked = 0, created_at = datetime('now'),
-              or_key_hash = NULL, or_key_secret = NULL,
-              tinfoil_key = NULL, tinfoil_key_name = NULL
+          SET bayleaf_token = ?, revoked = 0, created_at = datetime('now')
         WHERE email = ?`,
     ).bind(bayleafToken, email).run();
   } else {

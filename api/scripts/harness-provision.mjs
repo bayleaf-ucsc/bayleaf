@@ -12,6 +12,7 @@ import { execFileSync } from 'node:child_process';
 
 const BASE = 'http://localhost:8799';
 const EMAIL = 'refactor-test@example.invalid';
+const EMAIL2 = 'refactor-test2@example.invalid';
 const OR = 'https://openrouter.ai/api/v1';
 
 const parseEnv = (path) => Object.fromEntries(
@@ -69,6 +70,18 @@ const orGet = async (hash) => {
 };
 const orDelete = (hash) =>
   fetch(`${OR}/keys/${hash}`, { method: 'DELETE', headers: { Authorization: `Bearer ${ADMIN}` } });
+const orListByName = async (name) => {
+  const found = [];
+  for (let offset = 0; ; offset += 100) {
+    const r = await fetch(`${OR}/keys?offset=${offset}&limit=100`, {
+      headers: { Authorization: `Bearer ${ADMIN}` },
+    });
+    if (!r.ok) throw new Error(`OpenRouter key listing failed: ${r.status} ${await r.text()}`);
+    const batch = (await r.json()).data ?? [];
+    found.push(...batch.filter((key) => key.name === name));
+    if (batch.length < 100) return found;
+  }
+};
 
 const created = new Set();
 const row = () => d1(`SELECT * FROM user_keys WHERE email='${EMAIL}'`)[0] ?? null;
@@ -86,12 +99,15 @@ async function preflight() {
 async function main() {
   await preflight();
   const c = await cookie();
-  d1(`DELETE FROM user_keys WHERE email='${EMAIL}'`);
+  for (const email of [EMAIL, EMAIL2]) {
+    for (const key of await orListByName(`BayLeaf API for ${email}`)) await orDelete(key.hash);
+  }
+  d1(`DELETE FROM user_keys WHERE email IN ('${EMAIL}','${EMAIL2}')`);
 
   console.log('\n1. DELETE /key with no row → 404');
   check('404', (await call('DELETE', '/key', c)).status === 404);
 
-  console.log('\n2. POST /key → fresh provision (INSERT path)');
+  console.log('\n2. POST /key → fresh token-only provision (INSERT path)');
   let r = await call('POST', '/key', c);
   check('200', r.status === 200, `got ${r.status}`);
   const token1 = r.json?.key;
@@ -99,18 +115,20 @@ async function main() {
   let db = row();
   check('D1 row inserted, revoked=0', db && db.revoked === 0);
   check('D1 token matches response', db?.bayleaf_token === token1);
-  if (db) created.add(db.or_key_hash);
-  let live = db && (await orGet(db.or_key_hash));
-  check('OR key exists upstream', !!live);
-  check('OR key named from template', live?.name === `BayLeaf API for ${EMAIL}`, live?.name);
-  check('OR limit = global default (5)', live?.limit === 5, `limit=${live?.limit}`);
+  check('OR key remains absent until first use', db?.or_key_hash === null && db?.or_key_secret === null);
 
   console.log('\n3. POST /key again → 409 (one active row per email)');
   check('409', (await call('POST', '/key', c)).status === 409);
 
-  console.log('\n4. GET /v1/auth/key with the token → budget, no secret leak');
+  console.log('\n4. GET /v1/auth/key → lazy OR mint, budget, no secret leak');
   r = await authKey(token1);
   check('200', r.status === 200, `got ${r.status}`);
+  db = row();
+  if (db?.or_key_hash) created.add(db.or_key_hash);
+  let live = db?.or_key_hash && (await orGet(db.or_key_hash));
+  check('OR key minted on first use', !!live);
+  check('OR key named from template', live?.name === `BayLeaf API for ${EMAIL}`, live?.name);
+  check('OR limit = global default (5)', live?.limit === 5, `limit=${live?.limit}`);
   check('data.limit is a number', typeof r.json?.data?.limit === 'number');
   check('data.bayleaf.openrouter present', !!r.json?.data?.bayleaf?.openrouter);
   // Only *enabled* alternate backends may appear. Advertising a budget for a
@@ -168,16 +186,23 @@ async function main() {
   check('revoked cleared', db.revoked === 0);
   check('OR key REUSED, not orphaned', db.or_key_hash === revokedHash, `${revokedHash} -> ${db.or_key_hash}`);
 
-  console.log('\n10. Revoke + kill OR key, then POST /key → must create a new OR key');
+  console.log('\n10. Revoke + kill OR key → POST retains it; first use heals it');
   await call('DELETE', '/key', c);
   await orDelete(revokedHash);
+  check('missing OR key confirmed on management plane', (await orGet(revokedHash)) === null);
   r = await call('POST', '/key', c);
   check('200', r.status === 200);
+  const token3 = r.json?.key;
+  db = row();
+  check('POST retains the missing OR hash without eager minting', db.or_key_hash === revokedHash);
+  check('token rotated again', token3 && token3 !== token2);
+  check('dashboard heals the missing OR key', (await call('GET', '/dashboard', c)).status === 200);
   db = row();
   created.add(db.or_key_hash);
   check('new OR key created', db.or_key_hash !== revokedHash);
   check('new OR key alive', !!(await orGet(db.or_key_hash)));
-  check('token rotated again', db.bayleaf_token !== token2);
+  check('bayleaf token preserved across heal', db.bayleaf_token === token3);
+  check('new token authenticates through healed key', (await authKey(token3)).status === 200);
 
   console.log('\n11. Claim device flow → hands back the SAME existing token');
   const init = await (await fetch(`${BASE}/auth/claim/initiate`, {
@@ -207,9 +232,7 @@ async function main() {
   check('one-shot: second poll 404', poll3.status === 404);
 
   console.log('\n12. Claim flow for a user with NO row → provisions one');
-  const email2 = 'refactor-test2@example.invalid';
-  d1(`DELETE FROM user_keys WHERE email='${email2}'`);
-  const c2 = `bayleaf_session=${await sign({ email: email2, name: 'T2', exp: Math.floor(Date.now() / 1000) + 3600 }, env.OIDC_CLIENT_SECRET)}`;
+  const c2 = `bayleaf_session=${await sign({ email: EMAIL2, name: 'T2', exp: Math.floor(Date.now() / 1000) + 3600 }, env.OIDC_CLIENT_SECRET)}`;
   const init2 = await (await fetch(`${BASE}/auth/claim/initiate`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client: 'HarnessTest2' }),
   })).json();
@@ -220,16 +243,25 @@ async function main() {
     body: new URLSearchParams({ code: init2.user_code, action: 'approve', token: csrf2[1] }),
   });
   const got2 = await (await fetch(`${BASE}/auth/claim/poll?d=${init2.device_code}`)).json();
-  const db2 = d1(`SELECT * FROM user_keys WHERE email='${email2}'`)[0];
-  if (db2) created.add(db2.or_key_hash);
+  let db2 = d1(`SELECT * FROM user_keys WHERE email='${EMAIL2}'`)[0];
   check('row created for new user', !!db2);
   check('claim token matches the new row', got2.key === db2?.bayleaf_token);
-  check('OR key alive for new user', !!(db2 && (await orGet(db2.or_key_hash))));
+  check('claim does not eagerly mint an OR key', db2?.or_key_hash === null);
+
+  console.log('\n13. Eight concurrent first uses → one surviving OR key');
+  const firstUses = await Promise.all(Array.from({ length: 8 }, () => authKey(got2.key)));
+  check('all concurrent requests succeed', firstUses.every((response) => response.status === 200));
+  db2 = d1(`SELECT * FROM user_keys WHERE email='${EMAIL2}'`)[0];
+  if (db2?.or_key_hash) created.add(db2.or_key_hash);
+  const raceKeys = await orListByName(`BayLeaf API for ${EMAIL2}`);
+  for (const key of raceKeys) created.add(key.hash);
+  check('exactly one OR key survives the mint race', raceKeys.length === 1, `${raceKeys.length} found`);
+  check('surviving key is the one stored in D1', raceKeys[0]?.hash === db2?.or_key_hash);
 
   // ── cleanup ────────────────────────────────────────────────────
   console.log('\nCleanup: deleting test OR keys + local D1 rows');
   for (const h of created) await orDelete(h);
-  d1(`DELETE FROM user_keys WHERE email IN ('${EMAIL}','${email2}')`);
+  d1(`DELETE FROM user_keys WHERE email IN ('${EMAIL}','${EMAIL2}')`);
   let leaked = 0;
   for (const h of created) if (await orGet(h)) leaked++;
   check('all test OR keys deleted upstream', leaked === 0, `${leaked} leaked`);

@@ -52,11 +52,11 @@ per-user Tinfoil key and spends real credit, so clean up the row and the key.
 ## Automated: the key lifecycle harness
 
 `scripts/harness-provision.mjs` is the one part of this file that runs itself.
-It exercises every path through `src/provision.ts` (fresh provision, 409 on
-double-provision, self-heal after upstream key loss, revoke, re-provision with
-and without a live upstream key, and both claim-flow entry points) against
-`wrangler dev --local`, asserting on both the local D1 row and the real
-OpenRouter key state. 45 assertions, no prod involvement.
+It exercises every path through `src/provision.ts` (fresh token provision, lazy
+backend minting, 409 on double-provision, self-heal after upstream key loss,
+revoke/re-provision with retained provider state, both claim-flow entry points,
+and concurrent first-use cleanup) against `wrangler dev --local`, asserting on
+both the local D1 row and the real OpenRouter key inventory. No prod involvement.
 
 ```bash
 # .dev.vars has a stale OPENROUTER_PROVISIONING_KEY; override it with the

@@ -9,12 +9,11 @@
  * does. It is the only tool that should be doing it.
  *
  * Corollary worth internalizing before you use this: limits set here are not
- * durable across key re-creation. If a user's OR key is ever self-healed
- * (provision.ts resolveOrKey) or they revoke and re-provision from the
- * dashboard, the new key carries the global default again. That is the honest
- * cost of keeping limits in exactly one place instead of mirroring them into
- * D1 and having two sources of truth disagree. Re-run this script if it
- * happens; nothing will alert you.
+ * durable across key re-creation. If a user's OR key is ever self-healed, the
+ * new key carries the global default again. Dashboard revoke/re-provision does
+ * not recreate the provider key: it rotates only the BayLeaf token and retains
+ * provider-side spend state. Re-run this script after a genuine self-heal;
+ * nothing will alert you.
  *
  * ── Selecting who to act on (exactly one required) ────────────────
  *

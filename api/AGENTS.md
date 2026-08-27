@@ -163,9 +163,11 @@ as a side effect of provider trouble.
 **Spend limits are not mirrored in D1.** OpenRouter is the system of record for
 a key's daily cap. `createKey()` stamps the global `SPENDING_LIMIT_DOLLARS` at
 creation time; per-user or per-cohort caps are set OR-side with
-`scripts/spend-limits.mjs`. This means a heal or a revoke/re-provision
-returns a key to the global default, which is the accepted cost of having one
-source of truth rather than two that disagree. Do not add a D1 limit column.
+`scripts/spend-limits.mjs`. This means a heal returns a key to the global
+default, which is the accepted cost of having one source of truth rather than
+two that disagree. Dashboard revoke/re-provision rotates only the BayLeaf token
+and retains backend keys, so it does not reset provider-side spend. Do not add
+a D1 limit column.
 Tinfoil credentials are minted without a provider-side lifetime token cap.
 BayLeaf enforces `SEALED_RPD_LIMIT` against the keyed user's D1 row instead;
 Campus Pass uses the shared per-IP `CAMPUS_RPD_LIMIT`.
