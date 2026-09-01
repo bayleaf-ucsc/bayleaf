@@ -1,6 +1,6 @@
 # University AI infrastructure landscape
 
-Last updated: 2026-08-31
+Last updated: 2026-09-01
 
 ## Intent
 
@@ -240,6 +240,106 @@ reported completion of voluntary training was 0.7% among students and 16% among
 faculty. Faculty organized against renewal during simultaneous budget cuts. CSU
 nevertheless renewed the agreement and says future work will emphasize measurable
 impact and long-term sustainability.
+
+#### University of California, Riverside, United States
+
+**Last verified:** 2026-09-01<br>
+**Status:** Campus-licensed tools active; The Grove in soft launch; ChatGPT Edu
+under negotiation<br>
+**Form:** Commercial services, an institution-configured agent platform, and
+research cloud infrastructure
+
+**Adoption and scope.** UCR provides standard Gemini and NotebookLM at no user
+charge to faculty, staff, and students. Its
+[AI service page](https://its.ucr.edu/ai) also lists Google AI Pro at $96 per
+year and Microsoft 365 Copilot at $204 per year for faculty and staff. Zoom AI
+Companion is included with UCR Zoom. ChatGPT Edu is not available; UCR lists a
+$120 annual price but says negotiations with OpenAI remain underway.
+
+UCR [soft-launched The Grove](https://its.ucr.edu/explore-the-grove) on April
+29, 2026 for early adopters among faculty, staff, and students. Built on Gemini
+Enterprise, The Grove combines chat and notebook tools with UCR data connectors
+and agents that can send email, schedule meetings, and submit support tickets.
+Users authenticate with a UCR account and Duo, then authorize the service to
+inspect data they can access and act on their behalf. The
+[August 2026 update](https://its.ucr.edu/blog/2026/08/10/grove-summer-update)
+documents live DocuSign and Slack connectors, a separate Gemini Notebook,
+Gemini Canvas, and a marketplace where administrators must approve third-party
+agents. Canvas LMS, broader ServiceNow access, and several other connectors
+were still planned rather than operational.
+
+**Rationale.** UCR says the services provide protected alternatives to consumer
+accounts and support teaching, research, and administrative work. The Grove is
+intended to reduce time spent navigating separate campus information systems.
+
+**Cost and procurement.** An
+[institutional account](https://insideucr.ucr.edu/stories/2026/03/20/ucr-community-urged-use-google-ai-tools)
+dates UCR's broader Google enterprise agreement to approximately 2023. No
+reviewed source discloses its value, procurement method, license count, renewal
+terms, or The Grove's incremental cost. Copilot and
+[Google AI Pro](https://its.ucr.edu/googleaipro) licenses are requested through
+campus units. The $96 Google AI Pro rate depends on sufficient bulk demand, and
+users or units fund later renewals.
+
+**Governance.** UCR announced a joint Senate-administrative
+[AI Council](https://www.senate.ucr.edu/news/article/34) in February 2026. The
+Senate-led body is charged with academic guidance, needs assessment, procurement
+advice, infrastructure recommendations, and attention to equity and
+accessibility. Its standing members include faculty, administrators, ITS, the
+teaching center, and a librarian. Students may be consulted at selected points;
+privacy officers, counsel, and the Registrar are also consultative rather than
+standing members. The [committee page](https://www.senate.ucr.edu/committees/125)
+lists no meetings, decisions, or reports. The Google agreement predates this
+body, and no public source establishes Council review of The Grove.
+
+**Allowed use and data practices.** UCR limits AI tools without campus contracts
+to P1 public data. Its service table permits P1 through P3 in most supported
+tools and permits specified tools, including The Grove, to process P4 data after
+ITS consultation. The table limits standard Gemini to P3, while the separate
+[Google AI Pro page](https://its.ucr.edu/googleaipro) says standard Gemini and
+NotebookLM may process P4. The applicable rule is therefore contradictory.
+
+UCR says content submitted through its Google enterprise services remains in
+the university-controlled tenant and is not used to train Google's public
+models. This is a negotiated no-training protection, not evidence of zero
+retention. Public pages do not specify retention periods, deletion controls,
+processing regions, subprocessors, support or administrator access, abuse
+review, metadata use, or user opt-outs. The services support continuing
+conversations, notebooks, and uploaded sources, so the overall arrangement is
+not established as ZDR. No reviewed source establishes E2EE or ZOA.
+
+**Foreseeable content.** UCR expressly contemplates P4 use in The Grove and
+other supported tools after consultation. The Grove can inspect email,
+calendars, documents, and connected administrative systems under a user's
+permissions and can take actions for that user. P4 content is therefore both a
+permitted and foreseeable exposure for approved deployments, not only a risk of
+policy-violating input.
+
+**Pedagogy.** UCR's September 2025
+[instructional guidance](https://provost.ucr.edu/media/2947/download?attachment=)
+preserves instructor authority over course use, requires equal access when an
+AI tool is required, and calls for explicit course expectations and attribution.
+It warns that automated AI-detection tools can be inaccurate and biased. A
+Canvas LMS connector for The Grove was planned for Fall 2026 but was not
+documented as live at verification.
+
+**Model development and agents.** UCR's
+[Ursa Major](https://ucr-research-computing.github.io/pages/ursa_major.html)
+research service provides Vertex AI, Gemini API access, model-training
+infrastructure, and P4 research enclaves. Baseline allocations may be
+subsidized; GPU-intensive work is recharged to grants. This establishes campus
+capacity, not evidence that UCR pretrained, fine-tuned, distilled, or
+commissioned a specific generative model. The Grove supports no-code agents,
+institutional connectors, task execution, and administrator-approved third-party
+agents. No public `SKILL.md` packages, Agent Skills registry, or format-specific
+Agent Skills guidance were found.
+
+**Evaluation and open questions.** UCR collects early-adopter intake and
+in-product feedback to prioritize features. It publishes no activation count,
+usage rate, outcome study, accessibility audit, security evaluation, or agent
+error analysis. Contract value and lineage, retention, human access, agent
+authorization and audit controls, Council involvement, and the status of
+planned Canvas and ServiceNow integrations remain unknown.
 
 #### University of California, Santa Cruz, United States
 
@@ -1652,6 +1752,12 @@ The following records await primary-source research:
   challenges, which are less consistently announced than purchases.
 
 ## Update log
+
+### 2026-09-01
+
+- Added UC Riverside's licensed AI portfolio, The Grove agent platform,
+  governance, data rules, research infrastructure, and unresolved evidence
+  gaps.
 
 ### 2026-08-31
 
