@@ -1,20 +1,28 @@
 ---
 source-skill: bayleaf-ops-router
-description: Change the LLM powering Basic or Help (base_model_id swap, incl. vision capability handling), or evaluate a candidate via the canary first.
-status: tested once (dry run)
-last-reviewed: 2026-08-25
+description: Select, evaluate, and deploy a model for Chat's Basic or Help workspace models or the BayLeaf API recommendation.
+status: Chat path tested once (dry run); API path tested once (production)
+last-reviewed: 2026-09-01
 ---
 
-# Model Swap (Basic / Help)
+# Model Swap (Chat / API)
 
 ## When to use
 
-Changing `base_model_id` on the `basic` or `help` workspace models (currently
-both `openrouter.z-ai/glm-5.2`), including flips of the vision capability.
-Also covers evaluating a candidate model beforehand via the `basic-canary`
-workspace model without touching production.
+Selecting, evaluating, and deploying a model in either of two independent roles:
 
-## Prerequisites
+- **BayLeaf Chat:** change `base_model_id` on the `basic` or `help` Open WebUI
+  workspace model, including vision capability handling. A private
+  `basic-canary` workspace model isolates evaluation from production users.
+- **BayLeaf API:** change the general-use recommendation exposed by
+  `/recommended-model`, documentation and dashboard examples, and OpenCode
+  onboarding. This does **not** provide a server-side fallback when callers omit
+  `model`; callers still choose a model on every inference request.
+
+These roles share selection policy but not deployment state. The API
+recommendation does not need to match Chat's Basic or Help model.
+
+## Shared selection gates
 
 - **[HUMAN GATE]** Adam already has personal experience with the candidate
   model (used it himself, not just seen benchmarks). If not, candidates are
@@ -41,7 +49,50 @@ workspace model without touching production.
   "not on the list yet" is expected for week-old releases — a deviation to
   acknowledge, not necessarily a blocker.
 
-## Steps
+### API recommendation criteria
+
+The API recommendation is specifically for general-purpose coding-agent
+harnesses running on users' local machines. It is not BayLeaf's answer to every
+inference workload, and narrow jobs such as bulk classification may rationally
+select a different model.
+
+- Published open weights are required, not merely preferred.
+- The model should be extremely inexpensive at its sustainable list price while
+  remaining strong at coding, tool use, instruction following, and long-running
+  agent work. Do not justify the choice from a temporary discount alone.
+
+#### Interpreting DeepSWE
+
+Consult [DeepSWE](https://deepswe.datacurve.ai/) as a recurring comparative
+signal for coding-agent capability and cost. The leaderboard ranks runs, not
+bare model names, and changes over time. Interpret its metrics as follows:
+
+- **Score:** an estimate of the probability that an agent driven by this
+  configuration can satisfactorily complete a task. The benchmark tasks are
+  software engineering, so transfer to other general-purpose work is an
+  informed extrapolation, not a measured probability.
+- **Average cost per task:** the provider inference cost of getting work done,
+  not merely the price of one token or request.
+- **Agent steps:** a proxy for human oversight cost. High-step agents tend to be
+  clumsy (creating mistakes they later repair) or unwise (acting before enough
+  context exists or taking unnecessary actions). More steps also give a human
+  observer more activity to inspect and understand.
+- **Output tokens:** a weak diagnostic here. Providers generate tokens at
+  different rates for a given model, and most are hidden reasoning tokens a
+  human usually does not review.
+
+Compare score, average task cost, and agent steps at equivalent reasoning
+effort. A candidate that improves all three is an easy swap. A candidate that
+sacrifices one to improve the others may still win, but requires explicit debate
+rather than an automatic weighted score. DeepSWE remains one input, not a
+deployment gate: triangulate it with Adam's sustained use, live ZDR/provider
+facts, and the API canary below.
+
+Record which role is changing and apply these gates before following that
+role's path below. Passing the gates for one role does not imply that both roles
+should move together.
+
+## Chat path (Basic / Help)
 
 1. **Canary first, always.** Create or retarget `basic-canary` (a private
    clone of `basic`) in `chat/models/basic-canary/model.json` to point at the
@@ -83,21 +134,62 @@ workspace model without touching production.
 7. Record: commit the model.json + DESIGN.md edit as
    `update: swap <model> to <slug>`.
 
-## Verification
+### Chat verification
 
 - `uvx owui-cli --json models show <id>` returns the new `base_model_id`.
 - User confirms conversation quality (manual gate).
 
-## Rollback
+### Chat rollback
 
-```bash
-git checkout chat/models/<id>/model.json
-uvx owui-cli models update chat/models/<id>/model.json
-```
+Restore the prior `base_model_id`, capability fields, and any model-specific
+parameters in `chat/models/<id>/model.json`, then run `models update` again.
 
 Instant and complete; this is why the repo file is edited first and pushed,
 never hand-edited in the OWUI UI. The canary needs no rollback at all:
 retarget it or delete it (`owui-cli models delete basic-canary`).
+
+## API path (recommended model)
+
+1. **Canary by explicit request.** No separate API deployment or canary object is
+   needed: callers already select arbitrary model slugs. Send representative
+   requests to the production API with the candidate's full namespaced slug
+   (`openrouter:<owner>/<model>`), without changing `RECOMMENDED_MODEL`.
+   On Adam's machine, load the credential with `set -a && source
+   ~/.tokens/bayleaf-api && set +a`, then use `$BAYLEAF_API_KEY`. The file is a
+   shell assignment, not a raw token; passing its complete contents as the
+   Bearer value produces a misleading 401. Use the request shapes in
+   `api/TESTING.md` rather than duplicating them here.
+2. Test the behavior that recommendation consumers will actually receive:
+   omit optional reasoning/provider parameters unless the integration normally
+   supplies them. At minimum, run one ordinary response and one agentic tool-use
+   workload. Add multimodal input when that capability contributes to the
+   selection. Confirm valid responses, tool-call shape, latency, and plausible
+   usage accounting; quality judgment remains Adam's human gate.
+3. Edit `api/wrangler.jsonc`: set `RECOMMENDED_MODEL` to the full namespaced
+   slug. Decide explicitly whether the displaced recommendation belongs in
+   `OPENCODE_CURATED_MODELS`; do not retain or remove it accidentally. The
+   recommended slug is injected into OpenCode's model list automatically, so it
+   need not also appear in the curated companion string.
+4. Run `npx tsc --noEmit` from `api/`, then deploy with `npm run deploy`.
+5. Verify after Cloudflare propagation:
+   - `GET https://api.bayleaf.dev/recommended-model` returns the candidate slug
+     and display name.
+   - An authenticated `GET /.well-known/opencode/config` contains the candidate
+     in the provider model map and sets top-level `model` to it.
+   - Repeat the ordinary and tool-use canary requests against the deployed API.
+   The inference route itself is unchanged, but these checks catch upstream
+   drift and malformed model metadata at the moment of promotion.
+6. **[HUMAN GATE]** Adam confirms the promoted recommendation behaves as
+   expected in a real agent session. This is distinct from changing Chat's
+   Basic model.
+7. Record: commit `api/wrangler.jsonc` and any playbook refinement as
+   `update: recommend <slug> for BayLeaf API`.
+
+### API rollback
+
+Restore the prior `RECOMMENDED_MODEL` and curated-list decision in
+`api/wrangler.jsonc`, redeploy, and repeat the endpoint and OpenCode-config
+checks. Inference requests that explicitly named either model are unaffected.
 
 ## Refinement log
 
@@ -116,3 +208,17 @@ retarget it or delete it (`owui-cli models delete basic-canary`).
   read grant; (b) a brand-new base model can hit "Model not found" from
   OWUI's stale connection-model cache while OpenRouter itself serves it
   fine — flip to a known-good slug to diagnose, refresh via `/api/models`.
+- 2026-09-01: first production API run (`deepseek-v4-flash-0731` →
+  `glm-5.3-flash`). Split shared selection gates from independent Chat and API
+  paths. Adam supplied the quality gate from sustained use and clarified that
+  this role targets cheap, strong, open-weight models for local coding-agent
+  harnesses; DeepSWE is a recurring comparison source, not a universal ranking.
+  Explicit-slug ordinary and forced-tool canaries passed before and after
+  deployment; `/recommended-model` and the authenticated OpenCode config
+  reflected the promotion. Initial probes returned 401 because the local token
+  file was consumed as raw text rather than sourced as a shell assignment; the
+  credential recipe now records that distinction. DeepSWE made this promotion
+  unusually clear: GLM 5.3 Flash improved score while reducing both inference
+  cost and agent steps. Adam identified steps as a human oversight cost and
+  output tokens as a weak diagnostic; the selection rubric now preserves that
+  interpretation for future, less dominant tradeoffs.
