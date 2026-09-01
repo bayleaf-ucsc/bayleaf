@@ -175,7 +175,7 @@
     "ALLOWED_EMAIL_DOMAIN": "ucsc.edu",
     
     // Campus Pass: allow on-campus users to access without personal API keys
-    "RECOMMENDED_MODEL": "openrouter:deepseek/deepseek-v4-flash-0731",
+    "RECOMMENDED_MODEL": "openrouter:z-ai/glm-5.3-flash",
 
     // Curated companion models for the OpenCode wellknown remote config.
     // Comma-separated namespaced slugs (openrouter: / vertex:). RECOMMENDED_MODEL is
