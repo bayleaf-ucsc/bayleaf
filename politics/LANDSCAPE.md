@@ -241,6 +241,258 @@ faculty. Faculty organized against renewal during simultaneous budget cuts. CSU
 nevertheless renewed the agreement and says future work will emphasize measurable
 impact and long-term sustainability.
 
+#### University of California system and Office of the President, United States
+
+**Last verified:** 2026-09-01<br>
+**Status:** Systemwide procurement and governance active; UCOP services active<br>
+**Form:** Master agreement, system governance, and office-level commercial services
+
+**Adoption and scope.** UC's
+[systemwide OpenAI agreement](https://procurement.ucop.edu/news/openai-it-uc-wide-agreement)
+covers ChatGPT Enterprise and Edu from June 13, 2024 through June 12, 2027,
+with two optional one-year renewals. It lets UC locations buy the services but
+does not itself license every student or employee. UCOP separately offers
+[ChatGPT Edu](https://www.ucop.edu/information-technology-services/services/ucop-it-services/software/chatgpt.html)
+to employees with manager approval and departmental funding.
+
+**Cost and procurement.** Public sources do not disclose the master agreement's
+value, unit prices, minimum purchase, or campus orders. The agreement includes a
+BAA, data-processing agreement, Appendix DS, completed systemwide supplier risk
+assessment, confidentiality protection for prompts and responses, and an
+obligation to reach WCAG 2.1 AA within 12 months. UCOP recharges ChatGPT Edu
+annually but does not publish the price outside its authenticated request form.
+
+**Governance.** UC adopted Responsible AI Principles in 2021 and established a
+standing [AI Council](https://ucop.edu/ethics-compliance-audit-services/compliance/aicouncil/index.html)
+in 2022. Its charge includes procurement, risk and impact assessment, monitoring,
+campus coordination, and a public inventory. The council publishes systemwide
+guidance and training, but locations retain responsibility for approving tools,
+data, and use cases.
+
+**Allowed use and data practices.** UCOP approves ChatGPT Edu through P3. Its
+[OpenAI API service](https://www.ucop.edu/information-technology-services/services/ucop-it-services/software/openaiapi.html)
+is approved through P4, including fewer than 500 PII records, after use-case and
+manager approval. ZDR is the default API configuration; the alternate API mode
+may retain inputs and outputs for up to 30 days. OpenAI says API data is not used
+for training without consent. UCOP charges model usage plus a 10% administrative
+fee. These UCOP settings do not establish another location's configuration.
+
+**Open questions.** Contract value, campus order volumes, ChatGPT retention
+settings, administrator and support access, use rates, and outcomes are not
+public. No reviewed source establishes ZOA. The status of the proposed public AI
+inventory and OpenAI's compliance with the contract's accessibility deadline are
+unclear.
+
+#### University of California Agriculture and Natural Resources, United States
+
+**Last verified:** 2026-09-01<br>
+**Status:** AI review process active; institution-licensed assistant reported<br>
+**Form:** Organization-wide governance with an authenticated service inventory
+
+**Adoption and scope.** UC ANR's
+[communications guidance](https://ucanr.edu/dept/communications-toolkit/ai-tools)
+directs employees to an authenticated register of reviewed vendors and tools,
+including each tool's approved protection level. The public page does not expose
+that inventory. UC San Diego
+[reports](https://today.ucsd.edu/story/tritongpt-is-here-and-ready-to-help) that
+it licenses a branded TritonGPT instance to UC ANR, but no reviewed public ANR
+page documents its scope, eligibility, models, or current status.
+
+**Governance.** New tools require a vendor risk assessment. UC ANR's
+[implementation guidance](https://ucanr.edu/dept/human-resources/guidelines-ai-tools)
+also requires an AI Project Request and review by HR and IT for labor-relations,
+privacy, and cybersecurity implications. It identifies union notification and
+human oversight as requirements for uses affecting employment conditions.
+Additional legal review may apply. This process gives named offices review
+responsibility but does not publish approvals, decisions, appeals, or monitoring
+results.
+
+**Allowed use and data practices.** Employees may use P1 public information in
+AI tools after vendor risk review. P2 through P4 information, non-public output,
+and uses affecting employee personal information, health and safety, or working
+conditions require approval or are prohibited. The public record does not
+identify the approved tools for those classes or disclose retention, training
+use, human access, processing regions, subprocessors, ZDR, or ZOA.
+
+**Evaluation and open questions.** A
+[2024 employee survey](https://ucanr.edu/sites/default/files/2025-04/UC_ANR-GenAI_Report.pdf)
+received 298 usable responses. Forty-five percent reported using generative AI
+in UC ANR work and another 20% planned to do so. ChatGPT was the most-used tool,
+although the report said it was not then approved for P2 through P4 data. The
+sample was voluntary and does not establish organization-wide use. Tool
+availability, TritonGPT adoption, costs, outcomes, accessibility review, and
+incident history remain unknown.
+
+#### University of California, Berkeley, United States
+
+**Last verified:** 2026-09-01<br>
+**Status:** Licensed tools active; multi-model and assistant services in pilot<br>
+**Form:** Bundled commercial tools and campus-operated AI services
+
+**Adoption and scope.** Berkeley provides Gemini and Microsoft Copilot to
+students and employees and offers paid ChatGPT Edu to employees and student
+workers through its
+[licensed-tools catalog](https://ai.berkeley.edu/tools-training/licensed-ai-tools).
+Its [Campus AI Sandbox](https://ai.berkeley.edu/tools-training/campus-ai-sandbox-beta)
+is an AWS-hosted LibreChat deployment offering OpenAI, Anthropic, Google, and
+other models, web search, and image generation. The pilot began March 20, 2025
+and covers faculty, staff, student workers, and students in Engineering and Haas.
+It is for administrative work, not general student academic use.
+
+[BearGPT Enterprise Assistants](https://ai.berkeley.edu/tools-training/beargpt-enterprise-assistants)
+lets employees commission internal assistants grounded in official university
+content and public chatbots for campus websites. UC San Diego hosts BearGPT on
+its infrastructure using OpenAI's open-weight GPT-OSS model. Internal assistants
+are approved through P2; public bots are limited to P1.
+
+**Rationale, governance, and cost.** The Provost's Advisory Council on AI
+requested the pilot to test productivity, equitable model access, demand, and a
+sustainable funding model. Berkeley IT operates it with campus security, the
+College of Engineering, Haas, and AWS. The Sandbox and internal BearGPT
+assistants have no user charge during their pilots. Public BearGPT chatbots cost
+$6,000 annually. Public sources do not disclose total cost or contract value.
+
+**Allowed use and data practices.** The Sandbox is approved through P3 and uses
+models covered by UC privacy, security, and intellectual-property agreements.
+Berkeley's catalog assigns each licensed tool a maximum protection level; tools
+outside negotiated agreements are not approved for confidential UC data. Public
+sources reviewed do not disclose retention, model-provider or operator access,
+feedback use, processing regions, ZDR, or ZOA.
+
+**Pedagogy and evaluation.** Instructors retain authority over course use.
+Berkeley says the pilot will measure cost drivers and how participants benefit,
+but it has not published activation, usage, outcome, or equity results.
+
+#### University of California, Davis, United States
+
+**Last verified:** 2026-09-01<br>
+**Status:** Multi-tool campus portfolio active<br>
+**Form:** Bundled commercial tools, paid licenses, and institution-built services
+
+**Adoption and scope.** The [Aggie AI portfolio](https://iet.ucdavis.edu/aggie-ai/ai-tools)
+includes Gemini for Education and Microsoft 365 Copilot Chat at no user charge
+for campus students, faculty, and staff, plus Zoom AI Companion and the
+institution-built Rocky campus assistant. Gemini is not available to UC Davis
+Health. Campus faculty and staff can buy
+[ChatGPT Edu](https://iet.ucdavis.edu/aggie-ai/ai-tools/chatgpt-edu) annually
+through a departmental chart string; Health access was still pending. Paid
+Microsoft 365 Copilot is separate from free Copilot Chat.
+
+**Rationale and governance.** UC Davis presents Aggie AI as a common service
+layer for teaching, research, and operations. A campus AI steering committee's
+[2026 report](https://leadership.ucdavis.edu/sites/g/files/dgvnsk1166/files/media/documents/AISteeringCommitteeReportFinal.pdf)
+calls for build-versus-buy review, pilots, security and privacy coordination,
+campus guidance, and measured use of Rocky and related internal services.
+
+**Allowed use and data practices.** UC Davis says institutional
+[Gemini](https://iet.ucdavis.edu/aggie-ai/ai-tools/google-gemini) and
+[Copilot](https://iet.ucdavis.edu/aggie-ai/ai-tools/microsoft-copilot) chat data
+are not used for model training. Its Gemini page also says chats and uploaded
+files are not reviewed by humans. Sensitive-data use still requires
+tool-specific review; public pages do not establish a common maximum protection
+level for the whole portfolio. Retention, campus administrator access, ZDR, and
+ZOA are not disclosed.
+
+**Model development and Agent Skills.** Rocky is an institution-built service;
+no reviewed source establishes a trained institutional foundation model. UC
+Davis also maintains a public Agent Skills registry, recorded
+separately below. The steering report proposes service and pilot metrics, but
+current activation, outcome, cost, and accessibility results are not public.
+
+#### University of California, Irvine, United States
+
+**Last verified:** 2026-09-01<br>
+**Status:** Campus multi-model platform and licensed tools active<br>
+**Form:** Institution-built chat, API, course-agent, and assistant services
+
+**Adoption and scope.** UCI's [ZotGPT](https://www.oit.uci.edu/services/ai/zotgpt/)
+portfolio provides free multi-model chat to students, faculty, and staff. It
+also includes an API gateway with UCInetID authentication, budgets, and
+observability; ClassChat for instructor-built course bots; and Creator for
+custom assistants. Copilot Chat and Gemini are separately available through UCI
+accounts. ZotGPT uses Microsoft Azure AI, AWS, and open-source components.
+
+**Cost and pedagogy.** Chat, Copilot Chat, and Gemini have no additional user
+charge. The [gateway](https://zotgpt.uci.edu/) uses metered pricing and offers
+new users an initial credit. ClassChat lets faculty ground assistants in course
+content. Public sources do not disclose total service cost, procurement method,
+activation, or course outcomes.
+
+**Allowed use and data practices.** UCI approves ZotGPT, Copilot Chat, and Gemini
+through P3. ZotGPT may process P4 under an MOU; the
+[security guide](https://www.security.uci.edu/how-to/ai-chatbot/) otherwise
+discourages duplicate P4 data and requires a reviewed business case. UCI says
+content processed through the [ZotGPT service](https://zotgpt.uci.edu/) is not
+used for commercial model training. Chat history is a service feature, so ZotGPT
+is not ZDR as a whole. Retention periods, operator
+access, provider abuse review, processing regions, and ZOA are not disclosed.
+
+**Agents and open questions.** ZotGPT supports custom bots and linked agents,
+but no public Agent Skills packages were found. The public record does not
+establish how agent permissions, tool actions, evaluation, or incident review
+are governed.
+
+#### University of California, Los Angeles, United States
+
+**Last verified:** 2026-09-01<br>
+**Status:** Licensed tools active; OpenAI pilot completed<br>
+**Form:** Bundled services, paid licenses, and a project-based pilot
+
+**Adoption and scope.** UCLA provides Gemini, NotebookLM, and basic Copilot at no
+additional charge to eligible students and employees. Its
+[tool matrix](https://dts.ucla.edu/initiatives/ai/available-tools) offers
+ChatGPT Edu to faculty and staff for $103.60 per year plus optional advanced
+model credits at $0.04 each. Departments may also buy Microsoft 365 Copilot.
+Zoom AI features are available campus-wide but disabled by default.
+
+**Pilot and evaluation.** UCLA's 2024 campus call selected 68 projects from 74
+proposals across 20 departments and distributed more than 400 ChatGPT Enterprise
+licenses. The [institutional account](https://dts.ucla.edu/newsroom/openai)
+describes projects in teaching, research, and operations but does not publish
+project-level outcomes. A separate Gemini and Copilot pilot reported that 76%
+of respondents valued summarization and content generation, 41% estimated
+immediate productivity gains of at least 25%, and 58% raised privacy or accuracy
+concerns; sample size and survey instrument are not given on the
+[summary page](https://dts.ucla.edu/newsroom/microsoft-google).
+
+**Allowed use and data practices.** UCLA approves its listed campus-account
+tools through P3 and permits P4 only with unit-head and CISO approval. UCLA
+Health users may not enter protected health information into the campus tools.
+ChatGPT connectors remain disabled pending privacy and security review. Public
+sources reviewed do not disclose retention, administrator access, ZDR, or ZOA.
+
+**Governance and open questions.** Digital & Technology Solutions manages the
+portfolio and publishes responsible-use guidance. The source record does not
+identify continuing faculty, student, labor, or independent oversight of tool
+selection, nor total contract cost, use rates, or educational outcomes.
+
+#### University of California, Merced, United States
+
+**Last verified:** 2026-09-01<br>
+**Status:** Licensed commercial tools active<br>
+**Form:** Bundled and individually purchased commercial services
+
+**Adoption and scope.** UC Merced's
+[service comparison](https://libguides.ucmerced.edu/artificial-intelligence/home)
+lists Microsoft Copilot for students, faculty, and staff at no additional
+charge; Microsoft 365 Copilot for faculty and staff at $360 annually; and
+ChatGPT Edu for faculty and staff by request at approximately $360 annually.
+Zoom AI Companion and Canva Magic Studio are also available under campus or
+paid licenses.
+
+**Allowed use and data practices.** The comparison page marks Copilot, Microsoft
+365 Copilot, and ChatGPT Edu as approved through P4, while Zoom and Canva are
+limited to P2. It does not state the approval conditions, retention periods,
+training use, human or administrator access, processing regions, ZDR, or ZOA.
+Those omissions are material because the page authorizes highly sensitive data.
+
+**Governance, pedagogy, and open questions.**
+[OIT](https://it.ucmerced.edu/news/2025/uc-merced-ai) describes the portfolio as
+a cross-campus effort to collect reviewed tools and guidance. Public sources do
+not identify a standing governance body, instructor decision rules, contract
+values, license counts, use rates, outcomes, or independent security and
+accessibility assessments.
+
 #### University of California, Riverside, United States
 
 **Last verified:** 2026-09-01<br>
@@ -340,6 +592,122 @@ usage rate, outcome study, accessibility audit, security evaluation, or agent
 error analysis. Contract value and lineage, retention, human access, agent
 authorization and audit controls, Council involvement, and the status of
 planned Canvas and ServiceNow integrations remain unknown.
+
+#### University of California, San Diego, United States
+
+**Last verified:** 2026-09-01<br>
+**Status:** Campus platform active<br>
+**Form:** Institution-operated multi-model chat, API, assistant, and agent platform
+
+**Adoption and scope.** UC San Diego began developing TritonGPT in June 2023,
+launched it to campus and Health Sciences employees in Spring 2024, and added
+student access in June 2025. The
+[institutional account](https://today.ucsd.edu/story/tritongpt-is-here-and-ready-to-help)
+describes campus, administrative, and course assistants available through chat,
+Canvas, websites, and the UC San Diego mobile application. IT Services operates
+the platform at the San Diego Supercomputer Center using locally installed
+middleware, locally hosted open models, and approved commercial model APIs.
+
+**Architecture and governance.** [TritonAI](https://tritonai.ucsd.edu/about/index.html)
+extends TritonGPT with a managed model gateway, developer APIs, a workflow
+harness, institutional connectors, tools, and reusable skills. Supported
+services require a named owner, approved hosting and data sources, accessibility
+and evaluation checks, human review for consequential actions, and an escalation
+path. Model routes include SDSC-hosted models and enterprise AWS, Azure, and
+Google Vertex AI services.
+
+**Allowed use and data practices.** TritonGPT and TritonAI Harness are approved
+through P3 in approved services; P4 is prohibited. The
+[privacy statement](https://tritonai.ucsd.edu/tritongpt/privacy.html) says UCSD
+stores chats, feedback, IP addresses, user agents, and interaction metadata;
+interaction records are deleted after 90 days and users may delete chats sooner.
+Prompts are not used to train underlying models. Authorized personnel can access
+logs, while identifiers are removed from analytical interfaces. Some assistants
+call commercial APIs under UC agreements. This is not ZDR or ZOA.
+
+**Pedagogy and model development.** Faculty can ground course assistants in
+materials placed in an approved Drive location and expose Socratic tutors through
+TritonGPT or Canvas. This is retrieval and prompting, not model training. The
+default and available models change over time; UCSD also hosts open-weight models
+locally. No reviewed source establishes that UCSD changes model weights.
+
+**Cost, evaluation, and open questions.** The Chancellor funded initial
+development, and UCSD licenses branded instances to other institutions. Contract
+values, operating cost, revenue, current active use, error rates, and educational
+outcomes are not public. The relationship between service-level review and
+Academic Senate, student, labor, and privacy governance remains unclear.
+
+#### University of California, San Francisco, United States
+
+**Last verified:** 2026-09-01<br>
+**Status:** ChatGPT Enterprise active; institution-built API and assistants active<br>
+**Form:** Campus-wide commercial chat plus institution-built clinical and research services
+
+**Adoption and scope.** UCSF
+[launched ChatGPT Enterprise](https://it.ucsf.edu/news-events/news/open-ais-chatgpt-enterprise-february-2026-launch)
+in February 2026. More than 9,000 existing Versa Chat users received initial
+access; other people with UCSF accounts could then request access. The
+[service FAQ](https://ai.ucsf.edu/ucsf-chatgpt-enterprise-faqs) says ChatGPT
+Enterprise replaces UCSF-developed Versa Chat for general-purpose chat. The
+[Versa platform](https://ai.ucsf.edu/platforms-tools-and-resources/ucsf-versa)
+continues to provide API access and specialized assistants for research,
+clinical, and institutional workflows.
+
+**Rationale and cost.** UCSF describes the change as broader access to current
+models while retaining institutional privacy and security controls. Public
+sources do not disclose contract value, license count, recharge terms, or the
+cost and funding of Versa.
+
+**Allowed use and data practices.** [UCSF](https://ai.ucsf.edu/) approves ChatGPT
+Enterprise through P4 and describes it as supporting HIPAA-regulated use. The
+public page calls the service data-secure and user-private but places detailed
+terms behind UCSF authentication. Retention, deletion, training use, OpenAI and
+UCSF operator access, processing regions, subprocessors, ZDR, and ZOA remain
+unverified publicly. Approval through P4 is not evidence of any of those
+properties.
+
+**Governance, agents, and open questions.** UCSF publishes separate Health AI
+oversight, IRB guidance, and directories for approved clinical, research, and
+productivity tools. Versa supports more than 100 assistants and programmatic
+model access, but no public Agent Skills packages were found. Activation after
+the initial migration, clinical outcomes, incident reporting, model routing,
+assistant evaluation, and the continuing role of Versa Chat are not public.
+
+#### University of California, Santa Barbara, United States
+
+**Last verified:** 2026-09-01<br>
+**Status:** Licensed tools and campus multi-model service active; premium pilot active<br>
+**Form:** Bundled commercial tools, centrally funded multi-model service, and pilot
+
+**Adoption and scope.** UCSB provides Gemini, NotebookLM, and Zoom AI Companion
+to faculty and staff under existing licenses. Its
+[tool catalog](https://cio.ucsb.edu/artificial-intelligence/genai-tools-ucsb)
+also lists the centrally funded UCSB AI Commons. The
+[AI Commons](https://aicommons.ucsb.edu/home) provides multiple models, file and
+image input, custom assistants, API access, and an initial monthly allowance of
+one million tokens per user. It currently serves faculty, staff, and members of
+the campus AI community of practice, with broader access planned.
+
+UCSB also selected 300 employees for a one-year
+[Google AI Pro pilot](https://cio.ucsb.edu/google.ai.pro.education). Participants
+receive premium models, expanded NotebookLM, Workspace integration, custom Gems,
+media generation, and agentic features, and must complete onboarding and two or
+three feedback surveys.
+
+**Allowed use and data practices.** Gemini, NotebookLM, and AI Commons are
+approved through P4 after required consultation with Information Security; Zoom
+AI Companion is approved through P3. UCSB says Google enterprise content is not
+used for model training or human review. Public sources do not disclose AI
+Commons model providers, retention, operator access, provider access, processing
+regions, or deletion controls. Neither the Google tools nor AI Commons are
+established as ZDR or ZOA.
+
+**Governance, cost, and open questions.** The CIO's office maintains campus AI
+guidance and service approvals. AI Commons is centrally funded with usage
+limits; the total budget and procurement method are not public. Pilot survey
+results, service activation, model-specific cost, agent review, educational
+outcomes, and standing faculty, student, labor, or privacy decision rights remain
+unknown.
 
 #### University of California, Santa Cruz, United States
 
@@ -1755,9 +2123,11 @@ The following records await primary-source research:
 
 ### 2026-09-01
 
-- Added UC Riverside's licensed AI portfolio, The Grove agent platform,
-  governance, data rules, research infrastructure, and unresolved evidence
-  gaps.
+- Expanded coverage to the UC system and Office of the President, UC Agriculture
+  and Natural Resources, and all ten UC campuses, adding eight campus records and
+  two system-location records. The records distinguish systemwide procurement
+  from local adoption and cover licensed tools, institution-operated platforms,
+  governance, data rules, evaluation, and unresolved evidence gaps.
 
 ### 2026-08-31
 
