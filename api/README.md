@@ -116,7 +116,7 @@ Then configure `OIDC_ISSUER` and related vars in `wrangler.jsonc`, and set `OIDC
 | `SEALED_ENABLED` | Master kill-switch for the Sealed lane. Must be exactly `"true"`; anything else 503s all of `/sealed/*`. | `true` |
 | `SEALED_RPD_LIMIT` | Per-user daily request guardrail for keyed Sealed traffic | `100` |
 | `SEALED_RECOMMENDED_MODEL` | Recommended Sealed model (bare Tinfoil ID) | `glm-5-2` |
-| `SEALED_CURATED_MODELS` | Comma-separated companion Sealed models (bare Tinfoil IDs) | `kimi-k2-6,gemma4-31b` |
+| `SEALED_CURATED_MODELS` | Comma-separated companion Sealed models (bare Tinfoil IDs) | `deepseek-v4-flash,gemma4-31b` |
 
 ### Secrets
 
