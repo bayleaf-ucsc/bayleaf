@@ -124,7 +124,12 @@ https://api.bayleaf.dev/.well-known/opencode/config and appear in the
 model picker under the provider id ${bt}bayleaf-remote${bt}, e.g.
 ${bt}bayleaf-remote/${model}${bt}. The ${bt}bayleaf-remote${bt} naming is deliberate:
 it leaves the unqualified ${bt}bayleaf${bt} provider id available for you to author by
-hand if you want full control (next section).
+hand if you want full control (next section). The same setup also installs the pinned
+${bt}opencode-tinfoil${bt} transport and adds curated confidential-inference models under
+${bt}bayleaf-sealed-remote${bt}. The ${bt}-remote${bt} suffix means BayLeaf supplies and
+updates the configuration; ${bt}bayleaf-sealed${bt} remains available for a transparent,
+hand-authored definition. Both verify enclave attestation and encrypt content on your
+machine before it traverses BayLeaf.
 
 The same remote config also makes the OpenCode backend, and therefore OpenChamber,
 safe to use out of the box by setting two top-level defaults on your behalf:
@@ -145,11 +150,33 @@ Both are overrides you can win back in your own ${bt}~/.config/opencode/opencode
 or a project-local ${bt}opencode.json${bt}: set ${bt}model${bt} to any slug, or set
 ${bt}disabled_providers${bt} in full to replace the remote-injected list.
 
-To remove a BayLeaf credential from OpenCode entirely (for example to switch accounts,
-revoke a leaked key, or stop loading the remote config), run
-${bt}opencode providers logout${bt} and pick ${bt}https://api.bayleaf.dev${bt} from the
-list. This deletes the wellknown entry from ${bt}~/.local/share/opencode/auth.json${bt};
-the remote config will no longer be fetched on startup.
+#### Stop loading BayLeaf's remote config
+
+The one-command setup makes OpenCode fetch BayLeaf's well-known configuration on every
+startup. OpenCode currently handles an unreachable well-known server poorly, so this can
+stall or break startup while offline. To uninstall the remote configuration, run:
+
+${fence}bash
+opencode auth logout https://api.bayleaf.dev
+${fence}
+
+This removes the ${bt}https://api.bayleaf.dev${bt} well-known credential entry from
+${bt}~/.local/share/opencode/auth.json${bt}. OpenCode will stop contacting BayLeaf at
+startup, and ${bt}bayleaf-remote${bt}, ${bt}bayleaf-sealed-remote${bt}, and BayLeaf's
+remotely supplied defaults will disappear. Existing local conversations are not deleted;
+a conversation that selected a remote provider may ask you to choose another model.
+
+The downloaded plugin under OpenCode's npm cache is inert once the well-known entry is
+gone, so deleting it is optional. For a complete cleanup, remove
+${bt}~/.cache/opencode/packages/opencode-tinfoil@0.1.0${bt} and Tinfoil's prompt-cache
+namespace secret at ${bt}~/.tinfoil/user_cache_secret${bt}. If you also added a manual
+${bt}opencode-tinfoil${bt} entry to ${bt}opencode.json${bt}, remove that entry separately.
+
+To keep using BayLeaf without any startup fetch, first configure the hand-authored
+${bt}bayleaf${bt} and/or ${bt}bayleaf-sealed${bt} providers below and make
+${bt}BAYLEAF_API_KEY${bt} available in your environment, then run the logout command.
+Logging out removes OpenCode's stored copy of the BayLeaf key along with the remote-config
+registration; it does not revoke the key at BayLeaf.
 
 **Requirements:** ${bt}curl${bt} and ${bt}python3${bt} on the system path. Both are
 present by default on macOS, modern Linux, and WSL. If either is missing, the auth
@@ -198,6 +225,47 @@ wellknown auth flow (the same env var is shared between both providers).
 You can also use this hand-rolled definition without the wellknown flow at all by
 omitting ${bt}bayleaf-remote${bt} entirely: just don't run ${bt}opencode auth login${bt}
 against this URL, and instead export ${bt}BAYLEAF_API_KEY${bt} yourself.
+
+#### Roll your own ${bt}bayleaf-sealed${bt} provider (optional)
+
+The Sealed transport can be equally explicit. Add the exact-pinned public plugin,
+BayLeaf endpoints, credential source, and bare model definitions to your own
+${bt}opencode.json${bt}:
+
+${fence}json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    [
+      "opencode-tinfoil@0.1.0",
+      {
+        "providerID": "bayleaf-sealed",
+        "name": "BayLeaf Sealed (Custom)",
+        "apiKey": "{env:BAYLEAF_API_KEY}",
+        "baseURL": "https://api.bayleaf.dev/sealed/v1/",
+        "attestationBundleURL": "https://api.bayleaf.dev/sealed",
+        "transport": "ehbp",
+        "models": {
+          "${sealedModel}": { "name": "${sealedModel}" }
+        }
+      }
+    ]
+  ]
+}
+${fence}
+
+Browse https://api.bayleaf.dev/sealed/models for bare IDs and display names. The model
+field is encrypted, so BayLeaf cannot rewrite a prefixed slug: select models as
+${bt}bayleaf-sealed/${sealedModel}${bt}. Review and update the exact plugin version
+deliberately; it pins the verifier and encrypted transport, not merely presentation code.
+
+If you previously used ${bt}opencode auth login https://api.bayleaf.dev${bt}, your local
+entry for the same plugin package takes precedence over BayLeaf's remote entry. This
+replaces ${bt}bayleaf-sealed-remote${bt} with your ${bt}bayleaf-sealed${bt} definition while
+retaining the one-stop credential flow and the remotely curated plaintext provider. For
+a fully manual setup with no remote configuration, do not log in against the URL: export
+${bt}BAYLEAF_API_KEY${bt} yourself and define both ${bt}bayleaf${bt} and
+${bt}bayleaf-sealed${bt} locally.
 
 ### Goose
 
@@ -409,10 +477,25 @@ token usage.
 - **Complete live catalog:** https://api.bayleaf.dev/sealed/models
 
 Generic OpenAI clients are not sufficient because they do not perform attestation or EHBP
-encryption. BayLeaf now provides an experimental local proxy that adds this verified
-transport for any OpenAI-compatible client. It binds only to localhost, verifies the
-enclave before opening its listener, and fails the request rather than falling back to
-plaintext if attestation or EHBP fails:
+encryption. OpenCode and OpenChamber users get the managed ${bt}bayleaf-sealed-remote${bt}
+provider from the same one-command setup described above. Select a model such as
+${bt}bayleaf-sealed-remote/${sealedModel}${bt}; the exact-pinned ${bt}opencode-tinfoil@0.1.0${bt}
+plugin verifies attestation before its first inference and has no plaintext fallback.
+It reuses your BayLeaf credential, while BayLeaf substitutes the Tinfoil credential
+server-side.
+
+The remote config is a recommendation served by BayLeaf, so BayLeaf chooses which plugin
+version it suggests. For an independent trust anchor, copy the complete plugin entry from
+https://api.bayleaf.dev/.well-known/opencode/config into your own
+${bt}opencode.json${bt}, including the exact package version, BayLeaf URLs, credential
+placeholder, and model definitions. OpenCode's local entry for the same package takes
+precedence over the remote one. To remove BayLeaf and stop loading the plugin, log out of
+${bt}https://api.bayleaf.dev${bt}. To also remove Tinfoil's local prompt-cache namespace
+secret, delete ${bt}~/.tinfoil/user_cache_secret${bt}.
+
+For other OpenAI-compatible clients, BayLeaf also provides an experimental local proxy.
+It binds only to localhost, verifies the enclave before opening its listener, and fails
+the request rather than falling back to plaintext if attestation or EHBP fails:
 
 ${fence}bash
 git clone https://github.com/bayleaf-ucsc/bayleaf.git
@@ -428,9 +511,9 @@ The proxy runs in the foreground and stops with Ctrl-C; set ${bt}BAYLEAF_SEALED_
 to choose another port. Source and fuller setup notes:
 https://github.com/bayleaf-ucsc/bayleaf/tree/main/sealed.
 
-This is a working generic transport, not yet the managed OpenCode integration tracked in
-https://github.com/bayleaf-ucsc/bayleaf/issues/62: installation, automatic process
-lifecycle, credential handoff, and remote model configuration remain manual.
+This proxy is a generic compatibility bridge. OpenCode and OpenChamber do not need it:
+their managed plugin runs the verified transport in-process, with no localhost plaintext
+hop or sidecar lifecycle.
 
 Python applications can instead install the Tinfoil SDK and configure both BayLeaf
 Sealed URLs directly:

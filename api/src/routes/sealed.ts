@@ -189,6 +189,24 @@ export function isSealedEnabled(env: Bindings): boolean {
   return env.SEALED_ENABLED === 'true';
 }
 
+/** Fetch Tinfoil's model catalog without minting a per-user credential. */
+export async function fetchSealedModels(env: Bindings): Promise<Array<Record<string, unknown>> | null> {
+  const serverKey = env.TINFOIL_API_KEY;
+  if (!serverKey) return null;
+
+  try {
+    const res = await fetch('https://inference.tinfoil.sh/v1/models', {
+      headers: { Authorization: `Bearer ${serverKey}` },
+      ...NO_REDIRECT,
+    });
+    if (!res.ok || isRedirect(res)) return null;
+    const body = await res.json() as { data?: Array<Record<string, unknown>> };
+    return body.data ?? [];
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Validate a client-supplied enclave URL against the allowlist.
  * Returns the normalized origin, or null if unacceptable.
@@ -744,13 +762,7 @@ sealedRoutes.get('/models', async (c) => {
   const serverKey = c.env.TINFOIL_API_KEY;
   if (!serverKey) return sealedError('Sealed lane is misconfigured.', 503);
 
-  const res = await fetch('https://inference.tinfoil.sh/v1/models', {
-    headers: { Authorization: `Bearer ${serverKey}` },
-    ...NO_REDIRECT,
-  });
-  if (!res.ok || isRedirect(res)) return sealedError('Sealed catalog unavailable upstream.', 502);
-
-  const body = await res.json() as { data?: Array<Record<string, unknown>> };
-  const data = body.data ?? [];
+  const data = await fetchSealedModels(c.env);
+  if (!data) return sealedError('Sealed catalog unavailable upstream.', 502);
   return c.json({ object: 'list', data });
 });

@@ -72,3 +72,7 @@ uvx owui-cli tools deploy chat/tools/<id>/tool.py <id>
 
 - 2026-08-25: drafted from issue #65 + chat/AGENTS.md; never yet run as a
   playbook.
+- 2026-09-01: `opencode-tinfoil` showed that independently published client
+  plugins consumed by the API do not fit this Chat-only deployment playbook;
+  treat their BayLeaf integration as ordinary API work unless a package bump is
+  the task itself.

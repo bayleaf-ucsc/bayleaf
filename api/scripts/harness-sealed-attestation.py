@@ -20,6 +20,7 @@ import http.server
 import json
 import os
 import ssl
+import subprocess
 import sys
 import threading
 
@@ -131,6 +132,47 @@ threading.Thread(target=httpd.serve_forever, daemon=True).start()
 EVIL = f"https://localhost:{PORT}"
 
 failures = []
+
+# Optional integration check: prove the OpenCode plugin also propagates a
+# verifier failure instead of substituting ordinary fetch. The SDK checks below
+# remain the default so this harness does not require OpenCode unless requested.
+if os.environ.get("SEALED_OPENCODE") == "1":
+    served["bundle"] = mutate_digest(GENUINE)
+    plugin_config = {
+        "plugin": [[
+            "opencode-tinfoil@0.1.0",
+            {
+                "providerID": "bayleaf-sealed",
+                "name": "BayLeaf Sealed",
+                "apiKey": "not-sent-before-attestation",
+                "baseURL": f"{BASE}/v1/",
+                "attestationBundleURL": EVIL,
+                "transport": "ehbp",
+                "models": {"glm-5-2": {"name": "GLM-5.2"}},
+            },
+        ]],
+    }
+    opencode_env = os.environ.copy()
+    opencode_env["NODE_EXTRA_CA_CERTS"] = CERT
+    opencode_env["OPENCODE_CONFIG_CONTENT"] = json.dumps(plugin_config)
+    canary = "TAMPERED-ATTESTATION-MUST-NOT-RUN"
+    try:
+        run = subprocess.run(
+            ["opencode", "run", "-m", "bayleaf-sealed/glm-5-2", canary],
+            env=opencode_env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        accepted = run.returncode == 0 or canary in run.stdout
+        print(f"  [{'FAIL' if accepted else 'PASS'}] OpenCode refuses mutated attestation")
+        if accepted:
+            failures.append("OpenCode mutated attestation")
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        print(f"  [FAIL] OpenCode mutation check could not run ({type(exc).__name__})")
+        failures.append("OpenCode mutation check")
+    finally:
+        served["bundle"] = GENUINE
 
 # Control: the rogue server serving the GENUINE bundle must still verify. This
 # proves the rejections below come from bundle contents, not from the fact that

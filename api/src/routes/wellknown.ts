@@ -36,6 +36,7 @@ import { resolveAuth } from '../utils/auth';
 import { getModelInfo } from '../openrouter';
 import type { ModelCost } from '../openrouter';
 import { altBackendForModel, isBackendEnabled, parseModelList } from '../constants';
+import { fetchSealedModels, isSealedEnabled } from './sealed';
 
 export const wellKnownRoutes = new Hono<AppEnv>();
 
@@ -52,6 +53,12 @@ export const wellKnownRoutes = new Hono<AppEnv>();
  * "Roll your own bayleaf provider" documents that path.
  */
 const PROVIDER_ID = 'bayleaf-remote';
+
+/** Provider id created by the pinned, fail-closed Tinfoil transport plugin. */
+const SEALED_PROVIDER_ID = 'bayleaf-sealed-remote';
+
+/** Exact pin: verifier and encrypted-transport changes require deliberate review. */
+const SEALED_PLUGIN = 'opencode-tinfoil@0.1.0';
 
 /** Name of the env var the wellknown token is bound to inside OpenCode. */
 const TOKEN_ENV_NAME = 'BAYLEAF_API_KEY';
@@ -112,7 +119,9 @@ wellKnownRoutes.get('/opencode', (c) => {
  * and Campus Pass IP eligibility carries the rest.
  *
  * The returned shape is `{ "config": { ... opencode config ... } }`. In addition
- * to the `provider.bayleaf-remote` block, we set two top-level fields that
+ * to the `provider.bayleaf-remote` block, we may add the exact-pinned
+ * `opencode-tinfoil` plugin that creates `bayleaf-sealed-remote`, and set two top-level
+ * fields that
  * mirror the recommended power-user setup (see /llms.txt):
  *
  *   - `model`: `${PROVIDER_ID}/<recommended>` — an agent-independent default,
@@ -162,6 +171,12 @@ wellKnownRoutes.get('/opencode/config', async (c) => {
     if (entry) models[slug] = entry;
   }
 
+  // Bare IDs are required because the model field is encrypted before BayLeaf
+  // sees it. A catalog failure omits the plugin rather than blocking startup.
+  const sealedModels = isSealedEnabled(c.env)
+    ? await buildSealedModelEntries(c.env, c.env.SEALED_RECOMMENDED_MODEL, c.env.SEALED_CURATED_MODELS)
+    : {};
+
   // Provider entry. `apiKey` substitution resolves to the wellknown token
   // OpenCode stored at `opencode auth login` time (see config.ts:555 in
   // opencode dev). For Campus Pass users the token is the empty string, but
@@ -191,6 +206,19 @@ wellKnownRoutes.get('/opencode/config', async (c) => {
   if (recommended && models[recommended]) {
     config.model = `${PROVIDER_ID}/${recommended}`;
   }
+  if (Object.keys(sealedModels).length > 0) {
+    config.plugin = [
+      [SEALED_PLUGIN, {
+        providerID: SEALED_PROVIDER_ID,
+        name: 'BayLeaf Sealed (Remote)',
+        apiKey: `{env:${TOKEN_ENV_NAME}}`,
+        baseURL: `${baseUrl}/sealed/v1/`,
+        attestationBundleURL: `${baseUrl}/sealed`,
+        transport: 'ehbp',
+        models: sealedModels,
+      }],
+    ];
+  }
 
   return c.json({ config });
 });
@@ -200,6 +228,34 @@ wellKnownRoutes.get('/opencode/config', async (c) => {
 interface OpenCodeModelEntry {
   name: string;
   cost?: ModelCost;
+}
+
+interface SealedCatalogModel {
+  id?: unknown;
+  name?: unknown;
+}
+
+/** Build the configured Sealed model slice from BayLeaf's live public catalog. */
+async function buildSealedModelEntries(
+  env: AppEnv['Bindings'],
+  recommended: string | undefined,
+  curatedRaw: string | undefined,
+): Promise<Record<string, OpenCodeModelEntry>> {
+  const order = [recommended, ...parseModelList(curatedRaw).filter((id) => id !== recommended)]
+    .filter((id): id is string => Boolean(id));
+  if (order.length === 0) return {};
+
+  const catalog = await fetchSealedModels(env) as SealedCatalogModel[] | null;
+  if (!catalog) return {};
+  const names = new Map(
+    catalog
+      .filter((model): model is { id: string; name?: unknown } => typeof model.id === 'string')
+      .map((model) => [model.id, typeof model.name === 'string' ? model.name : model.id]),
+  );
+
+  return Object.fromEntries(
+    order.filter((id) => names.has(id)).map((id) => [id, { name: names.get(id)! }]),
+  );
 }
 
 /**
@@ -327,7 +383,7 @@ except Exception: print("error")
       printf '%s' "$key"
       # Hint goes to tty/stderr, never stdout (which holds only the key).
       log ""
-      log "Saved. To remove this credential later: opencode providers logout"
+      log "Saved. To stop loading BayLeaf's remote config: opencode auth logout https://api.bayleaf.dev"
       exit 0
       ;;
     denied) fail "Authorization denied." ;;

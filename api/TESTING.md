@@ -36,10 +36,16 @@ SEALED_AUTH=sk-bayleaf-... \
 # Attestation-mutation suite still needs a local cert: it stands up its own
 # HTTPS server serving tampered bundles and asserts the CLIENT refuses them.
 SEALED_CA=<dev-cert.pem> SEALED_BASE=https://api.bayleaf.dev/sealed \
-SEALED_TAMPER_PORT=8801 ./scripts/harness-sealed-attestation.py
+SEALED_TAMPER_PORT=8801 SEALED_OPENCODE=1 \
+  ./scripts/harness-sealed-attestation.py
 
 # Clean up: delete the row AND the per-user Tinfoil key the run minted.
 ```
+
+`SEALED_OPENCODE=1` additionally points the exact-pinned
+`opencode-tinfoil@0.1.0` plugin at a mutated bundle and asserts that an OpenCode
+run fails before inference. Omit it to run the SDK-level mutation suite without
+requiring OpenCode.
 
 `SEALED_AUTH` defaults to `campus`, which only resolves from a campus IP. Use a
 keyed token off-campus, and prefer it regardless: Campus Pass shares an env-held
