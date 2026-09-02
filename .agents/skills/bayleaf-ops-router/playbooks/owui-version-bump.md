@@ -33,30 +33,38 @@ revert the image tag. Prod is the staging server; treat it accordingly.
 
 1. Follow steps 4-7 of "OWUI Version Upgrades" in `chat/AGENTS.md` verbatim:
    pull the live spec, edit the image `tag:`, deploy with `doctl apps update`,
-   wait for ACTIVE, then `curl -sS -o /dev/null -w '%{http_code}'
+   monitor the deployment to ACTIVE with a perk-backed poll rather than a
+   fixed `sleep`, then `curl -sS -o /dev/null -w '%{http_code}'
    https://chat.bayleaf.dev/health` (expect `200`).
 2. If the spec carries the rung-3 `run_command` harness, grep deploy logs for
-   the `[bayleaf] rung-3 harness alive` sentinel and confirm
-   `Started server process [1]` appears after it.
-3. **Exercise Basic and Help manually** (the user does this; the agent cannot):
+    the `[bayleaf] rung-3 harness alive` sentinel and confirm
+    `Started server process [1]` appears after it.
+3. Run an authenticated `curl` smoke test against `/api/chat/completions` for
+   Basic and Help, with a known short response. This verifies OWUI's model
+   routing without depending on browser automation. It does not exercise the
+   browser UI, attached tools, uploads, or skill surfacing.
+4. **Exercise Basic and Help manually** (the user does this; the agent cannot)
+   when browser acceptance is required:
    a real conversation with each, tool calls where applicable (Code Sandbox on
    Basic, help queries on Help), file upload, skill surfacing. Expect this to
    reveal model-configuration changes the bump inspires (capability flags,
    prompt tweaks). Make those via `prompt-tool-edit.md` / `model-swap.md`
    while still in this workflow.
-4. Run `backup-reconcile.md` to pull the post-bump state into the repo. The
+5. Run `backup-reconcile.md` to pull the post-bump state into the repo. The
    bump is the natural time for it (issue #65): model JSONs, function metas,
    and skill lists all move together.
-5. Update the `Current version` line in `chat/AGENTS.md`.
-6. Diff the live spec's env vars against `chat/DESIGN.md` §1 and sync drift.
-7. Record: one coordinated commit, e.g. `update: OWUI v0.X.Y with model config
+6. Update the `Current version` line in `chat/AGENTS.md`.
+7. Diff the live spec's env vars against `chat/DESIGN.md` §1 and sync drift.
+8. Record: one coordinated commit, e.g. `update: OWUI v0.X.Y with model config
    sync and backup pull`.
 
 ## Verification
 
 - `/health` returns 200 (automated).
-- User confirms Basic and Help behave (manual; this is the whole point given
-  no staging).
+- Basic and Help return a known response through authenticated
+  `/api/chat/completions` calls (automated).
+- User confirms Basic and Help behave in the browser when that acceptance is
+  required; this remains the point given no staging.
 - Backup pull diff shows only expected changes.
 
 ## Rollback
@@ -70,3 +78,7 @@ configs to restore if step 3's changes misbehave: re-push with
 
 - 2026-08-25: drafted from issue #65 and chat/AGENTS.md; never yet run as a
   playbook.
+- 2026-09-01: first live run to v0.11.3. Perk polling reached ACTIVE precisely;
+  health, migration, harness, and authenticated Basic/Help/Canary curl checks
+  passed. Browser automation was explored but not relied on; add it only after
+  a dedicated cultivation run.

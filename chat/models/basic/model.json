@@ -27,6 +27,7 @@
       "usage": true,
       "builtin_tools": true
     },
+    "knowledge": null,
     "suggestion_prompts": [
       {
         "content": "Which model are you? (Which LLM? Which inference provider?)",

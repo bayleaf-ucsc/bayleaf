@@ -23,6 +23,7 @@
       "usage": true,
       "builtin_tools": false
     },
+    "knowledge": null,
     "suggestion_prompts": null,
     "tags": [],
     "toolIds": [

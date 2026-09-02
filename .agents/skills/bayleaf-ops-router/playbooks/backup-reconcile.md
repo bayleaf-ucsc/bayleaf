@@ -80,3 +80,6 @@ through the appropriate playbook, don't paper over it in the backup.
   rollout captured, lathe v0.24.1, activation flips confirmed deliberate,
   whole_document_retrieval id drift resolved, DESIGN.md six-spot stale
   claims fixed. Status set stable on the strength of one complete run.
+- 2026-09-01: post-OWUI-v0.11.3 pull was limited to a new null `meta.knowledge`
+  field and the Canary's live null avatar reference; rotating grant IDs and
+  timestamps were stripped as noise. No resource ID drift found.
