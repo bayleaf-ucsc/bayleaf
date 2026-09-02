@@ -24,3 +24,6 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# Operator reports (may contain user emails)
+reports/
