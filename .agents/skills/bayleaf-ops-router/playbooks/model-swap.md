@@ -1,7 +1,7 @@
 ---
 source-skill: bayleaf-ops-router
 description: Select, evaluate, and deploy a model for Chat's Basic or Help workspace models or the BayLeaf API recommendation.
-status: Chat path tested once (dry run); API path tested once (production)
+status: Both paths tested in production (Chat 2026-09-01: basic+help → glm-5.3-flash; API 2026-09-01: glm-5.3-flash)
 last-reviewed: 2026-09-01
 ---
 
@@ -42,9 +42,17 @@ recommendation does not need to match Chat's Basic or Help model.
   deemed acceptable, also ask whether paying OpenRouter overhead to reach
   that one provider is a responsible use of funds versus accessing the
   provider directly.
-- `GET https://api.bayleaf.dev/v1/models` lists only open-weight entries
-  (truthy `hugging_face_id`); Chat curation follows the same open-weight
-  preference. Prefer candidates on that list. Note the timing interaction:
+- **Availability where the swap lands.** Chat does not depend on the BayLeaf
+  API, so the operative Chat check is the candidate being served by a provider
+  **configured in OWUI** (OpenRouter as of 2026-09): translate the slug to
+  OWUI's `openrouter.<owner>/<model>` form and, if the connection curates or
+  disables models, ask the admin whether to enable the candidate. The
+  open-weight preference still holds as policy; its machine check
+  (`GET https://api.bayleaf.dev/v1/models`, filter truthy `hugging_face_id`)
+  is an **API-path** signal — it drives API-caller discovery, not Chat
+  routing. Off-campus it requires a bearer token (`~/.tokens/bayleaf-api`,
+  same recipe as the API canary); unauthenticated it returns an empty list,
+  which reads as "no open-weight models" if unexamined. Timing interaction:
   brand-new models appear there only after weights drop on Hugging Face, so
   "not on the list yet" is expected for week-old releases — a deviation to
   acknowledge, not necessarily a blocker.
@@ -109,28 +117,42 @@ should move together.
    canary to a known-good slug (differential test); if that works, hit
    `GET /api/models` to refresh the cache, point the canary back at the
    candidate, and retest.
-2. **Reasoning effort.** Enumerate the candidate's supported reasoning
-   efforts from its OpenRouter listing *before* pushing anything. If the
-   current model.json pins an effort the candidate does not support (e.g.
-   `basic` pins `reasoning_effort: none`, but glm-5.3 is always-on with
-   low/high/max only), pick the setting that prioritizes responsiveness
-   over depth for user-facing default models, and record the choice. A
-   candidate that cannot disable reasoning changes the production model's
-   character (latency, cost, tone) even with identical prompts.
+2. **Reasoning effort is a posture decision, not a model constant.** Set it
+   from the pair of the underlying model's character and the role it plays
+   here. Enumerate the candidate's supported reasoning efforts from its
+   OpenRouter listing *before* pushing anything, and if the current model.json
+   pins an effort the candidate does not support (e.g. `basic` pinned
+   `reasoning_effort: none` until the glm-5.3 family made `none` invalid),
+   the pin must change: a candidate that cannot disable reasoning changes the
+   production model's character (latency, cost, tone) even with identical
+   prompts. For a chat-facing model, prioritize responsiveness over depth:
+   glm-5.3-flash is particularly thinky by default, so Chat pins it to `low`.
+   Heavy thinking is not a defect — it is what the API path's consumers
+   (autonomous coding-agent harnesses) want from the same model, which is why
+   one candidate can rationally run hot there and cool here. Record the
+   choice either way.
 3. Edit `chat/models/<id>/model.json` in the repo: set `base_model_id` to the
    OpenRouter slug (e.g. `openrouter.<owner>/<model>`).
-4. Vision handling (the recurring flip-flop, recorded for honesty): if the
-   new model is vision-capable, set `meta.capabilities.vision: true` so OWUI
-   routes image inputs; if not, `false`. Running without vision is a
-   legitimate, cheaper posture we have used repeatedly; the prompt should not
-   promise image understanding the model can't do. Update
-   `chat/DESIGN.md` §2's model description in the same pass.
+4. Vision handling (the recurring flip-flop, recorded for honesty): like
+    reasoning effort, a posture decision, set from the underlying model's
+    capabilities and the target's role. If the new model is vision-capable,
+    set `meta.capabilities.vision: true` so OWUI
+    routes image inputs; if not, `false`. Running without vision is a
+    legitimate, cheaper posture we have used repeatedly; the prompt should not
+    promise image understanding the model can't do. When swapping several
+    models in one pass, decide vision **per target** and record the posture
+    call explicitly: a vision-capable base does not obligate every target to
+    advertise it, and a target's old minimal posture shouldn't silently
+    disable a capability its new base offers (Help's vision was held off,
+    then flipped on the same session by explicit call). Update
+    `chat/DESIGN.md` §2's model description in the same pass.
 5. Push: `set -a && source ~/.tokens/owui/chat-bayleaf-dev && set +a && uvx
    owui-cli models update chat/models/<id>/model.json`
 6. **[HUMAN GATE]** The user exercises the swapped model in prod: a real
-   conversation, an image upload if vision is on, a tool call. Model quality
-   judgment is not delegable. The canary exists so this gate runs on the
-   candidate *before* production is exposed to it.
+    conversation, an image upload if vision is on, a tool call. Model quality
+    judgment is not delegable. Exercise this gate **on the canary first** —
+    production models are never the first to run a candidate — and push
+    production only on a canary pass; a prod spot-check closes the cycle.
 7. Record: commit the model.json + DESIGN.md edit as
    `update: swap <model> to <slug>`.
 
@@ -221,4 +243,20 @@ checks. Inference requests that explicitly named either model are unaffected.
   unusually clear: GLM 5.3 Flash improved score while reducing both inference
   cost and agent steps. Adam identified steps as a human oversight cost and
   output tokens as a weak diagnostic; the selection rubric now preserves that
-  interpretation for future, less dominant tradeoffs.
+   interpretation for future, less dominant tradeoffs.
+- 2026-09-01: first production Chat run — `basic` and `help` swapped together
+  (glm-5.2 → glm-5.3-flash, effort low; canary passed first). Adam's
+  clarification rewritten into the gates: Chat availability is about the
+  OWUI-configured provider (slug translation, possibly enabling a disabled
+  model), not the API-served open-weight list, which moved to API-path status
+  and gained its auth caveat (unauthenticated GET returns empty — a silently
+  vacuous check). Vision decided per target (basic on; help initially held
+  off per its minimal posture, then flipped on the same session by explicit
+  call); step 4 now says so. Human gate re-sequenced to run on the
+  canary before any production push. Fresh-slug cache gotcha did not trigger;
+  slug translation to `openrouter.z-ai/glm-5.3-flash` was the only
+  OWUI-specific transform needed. Adam generalized both settings afterward:
+  `reasoning_effort` and vision are posture decisions from model character ×
+  deployment role — flash is thinky by default, which suits autonomous agent
+  harnesses (the API path) rather than chat latency, hence the `low` pin on
+  the chat-facing models.

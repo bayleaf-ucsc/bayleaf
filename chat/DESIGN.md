@@ -302,8 +302,8 @@ is defined in `models/<id>/model.json`.
 
 | ID | Name | Base Model | Description |
 |----|------|-----------|-------------|
-| `basic` | Basic | `openrouter.z-ai/glm-5.2` | Default model for all users. Campus-aware system prompt (`Basic v1.2`), builtin tools enabled, skills for Google Workspace, Canvas, web search, and code sandbox. |
-| `help` | Help | `openrouter.z-ai/glm-5.2` | BayLeaf help desk. Lists user groups and available models, inspects model configurations, processes invite codes. Binds `help_toolkit` and `web_context_toolkit` directly via the model's `toolIds`. System prompt (`Help v1.5`). |
+| `basic` | Basic | `openrouter.z-ai/glm-5.3-flash` | Default model for all users. Campus-aware system prompt (`Basic v1.2`), builtin tools enabled, skills for Google Workspace, Canvas, web search, and code sandbox. Vision enabled (glm-5.3-flash is vision-capable); `reasoning_effort: low`. |
+| `help` | Help | `openrouter.z-ai/glm-5.3-flash` | BayLeaf help desk. Lists user groups and available models, inspects model configurations, processes invite codes. Binds `help_toolkit` and `web_context_toolkit` directly via the model's `toolIds`. System prompt (`Help v1.5`). `reasoning_effort: low`; vision on (glm-5.3-flash is vision-capable). |
 
 ### Canary Models
 
@@ -316,7 +316,7 @@ would hide the model even from the admin on the completions path).
 
 | ID | Name | Base Model | Purpose |
 |----|------|-----------|---------|
-| `basic-canary` | Basic Canary | `openrouter.z-ai/glm-5.3` | Clone of `basic` for evaluating glm-5.3 (ZDR ✓ via Z.AI first-party endpoint; single-provider and foreign-first-party concerns noted in the model-swap playbook). `reasoning_effort: low` because glm-5.3 cannot disable reasoning. |
+| `basic-canary` | Basic Canary | `openrouter.z-ai/glm-5.3-flash` | Clone of `basic` used to evaluate glm-5.3-flash before the 2026-09-01 production swap (ZDR ✓ via 18 OpenRouter endpoints, several US-based). Currently matches production; retarget per evaluation cycle. |
 
 ### Group-Restricted Models
 
@@ -346,12 +346,15 @@ conversations rather than extending long ones. Uses `function_calling: native`.
 Builtin tools enabled (time, memory, chats, notes, knowledge, channels). Skills
 bound: `google-workspace`, `bayleaf-for-students`, `bayleaf-for-faculty`,
 `bayleaf-for-employees`, `canvas-api`, `web-search`, `code-sandbox`,
-`offramp`. Vision disabled; file upload enabled.
+`offramp`. Vision enabled (glm-5.3-flash is vision-capable); file upload
+enabled. `reasoning_effort: low` (the flash model is always-on reasoning, so
+`low` is the responsiveness-prioritizing setting).
 
-**Basic Canary** — Canary clone of `basic` (see Canary Models above). Identical
-system prompt, skills, filters, and capabilities; differs only in base model
-(`glm-5.3`) and `reasoning_effort: low` (glm-5.3 cannot disable reasoning, so
-`low` is the responsiveness-prioritizing setting). Private to admins; delete or
+**Basic Canary** — Canary clone of `basic` (see Canary Models above): identical
+system prompt, skills, filters, and capabilities. It carried the glm-5.3-flash
+canary evaluation (vision on, `reasoning_effort: low`) that passed on
+2026-09-01 and now matches production `basic` exactly; retarget it to the next
+candidate during the next model-swap evaluation. Private to admins; delete or
 retarget it after each evaluation cycle rather than exposing it.
 
 **Deep Research** *(inactive)* — Interactive research agent (`Deep Research v1.1`).
@@ -361,8 +364,10 @@ results, so users can follow the research path. Retired now that Basic's skill
 system covers web search. Vision disabled; file context and all builtin tools
 enabled.
 
-**Help** — Minimal capabilities (no vision, no code interpreter; file upload and
-usage display enabled). Binds `help_toolkit` and `web_context_toolkit` directly via the model's
+**Help** — Capabilities match the flash base model's offering (vision and file
+upload enabled; no code interpreter, usage display enabled). Vision was
+initially held off as a minimal-capabilities posture, then enabled once the
+vision-capable glm-5.3-flash base landed (2026-09-01). Binds `help_toolkit` and `web_context_toolkit` directly via the model's
 `toolIds` (no filter; the stealth injection via `help_filter` was retired in
 June 2026 in favor of plain model-bound tools), giving users tools to list
 their groups, see available models, inspect model configurations, process
