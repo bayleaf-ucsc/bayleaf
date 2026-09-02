@@ -36,7 +36,7 @@ OpenChamber):
       "name": "BayLeaf Sealed",
       "options": {
         "baseURL": "http://127.0.0.1:3310/v1",
-        "apiKey": "local-sidecar"
+        "apiKey": "local-proxy"
       },
       "models": {
         "gpt-oss-120b": { "name": "gpt-oss-120b" }
@@ -47,7 +47,7 @@ OpenChamber):
 ```
 
 The model IDs must be the bare IDs returned by `GET https://api.bayleaf.dev/sealed/models`.
-The `local-sidecar` value is not a provider credential and is never forwarded.
+The `local-proxy` value is not a provider credential and is never forwarded.
 
 BayLeaf receives identity, timing, sizes, request counts, and (for non-streaming
 responses) token metadata. BayLeaf and Tinfoil cannot decrypt prompts or

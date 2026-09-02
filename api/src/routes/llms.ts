@@ -409,7 +409,31 @@ token usage.
 - **Complete live catalog:** https://api.bayleaf.dev/sealed/models
 
 Generic OpenAI clients are not sufficient because they do not perform attestation or EHBP
-encryption. Install the Tinfoil Python SDK and configure both BayLeaf Sealed URLs:
+encryption. BayLeaf now provides an experimental local proxy that adds this verified
+transport for any OpenAI-compatible client. It binds only to localhost, verifies the
+enclave before opening its listener, and fails the request rather than falling back to
+plaintext if attestation or EHBP fails:
+
+${fence}bash
+git clone https://github.com/bayleaf-ucsc/bayleaf.git
+cd bayleaf
+export BAYLEAF_API_KEY=sk-bayleaf-...
+uv run --script sealed/proxy.py
+${fence}
+
+Point the client at ${bt}http://127.0.0.1:3310/v1${bt}; any local API-key placeholder is
+acceptable because the proxy does not forward it. Model discovery comes from
+${bt}/sealed/models${bt}, and inference requests contain the bare model IDs listed there.
+The proxy runs in the foreground and stops with Ctrl-C; set ${bt}BAYLEAF_SEALED_PORT${bt}
+to choose another port. Source and fuller setup notes:
+https://github.com/bayleaf-ucsc/bayleaf/tree/main/sealed.
+
+This is a working generic transport, not yet the managed OpenCode integration tracked in
+https://github.com/bayleaf-ucsc/bayleaf/issues/62: installation, automatic process
+lifecycle, credential handoff, and remote model configuration remain manual.
+
+Python applications can instead install the Tinfoil SDK and configure both BayLeaf
+Sealed URLs directly:
 
 ${fence}bash
 pip install tinfoil

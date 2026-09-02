@@ -51,3 +51,7 @@ flag failing closed) so rollback is an env flip, not a redeploy.
 
 - 2026-08-25: stub drafted; issue #65's own description is unfinished. First
   real run should rewrite this file.
+- 2026-09-01: A generic local client proxy for the existing Sealed lane did not
+  constitute a new service facet: it reused the lane's data flow, disclosure,
+  limits, and kill switch. Reserve this playbook for new server-side surfaces
+  or materially new data flows, not client adapters.
