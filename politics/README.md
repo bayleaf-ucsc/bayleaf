@@ -67,16 +67,14 @@ inversion of the structures above, made operational.
    products. The institutional pressure to deploy "the best" model is real;
    the environmental cost of treating that pressure as binding is also real.
 
-2. **Reciprocity: open-weight models by default.** Large-scale AI concentrates
+2. **Reciprocity: open-weight models.** Large-scale AI concentrates
    power in a few corporations behind closed APIs. BayLeaf exclusively serves
    [open-weight models](https://huggingface.co/models): models contributed
    back to the public web, available for anyone to download, audit, or build
-   on. In the API this commitment lives at the listing layer: the catalog
-   includes only models OpenRouter reports as having published weights on
-   HuggingFace, while other slugs still route when crafted manually. That
-   escape hatch is deliberate (comparative research needs the contrast), and
-   it is documented rather than hidden. This is structural reciprocity with
-   the open ecosystem that makes the technology possible, not a marketing
+   on. The API enforces this commitment at inference time: OpenRouter must
+   report published weights on Hugging Face and the repository must resolve.
+   Missing or unavailable evidence fails closed. This is structural reciprocity
+   with the open ecosystem that makes the technology possible, not a marketing
    posture.
 
 3. **Privacy: zero data retention as architecture.** Commercial AI services

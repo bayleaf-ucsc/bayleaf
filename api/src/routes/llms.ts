@@ -217,7 +217,7 @@ ${fence}json
 ${fence}
 
 Browse the model catalog at https://api.bayleaf.dev/v1/models (open-weight
-models only; other OpenRouter slugs still route when supplied explicitly). Set
+models only; OpenRouter inference fails closed when that status cannot be verified). Set
 ${bt}BAYLEAF_API_KEY${bt} in your shell environment, or run
 ${bt}opencode auth login https://api.bayleaf.dev${bt} once to populate it via the
 wellknown auth flow (the same env var is shared between both providers).
@@ -573,10 +573,9 @@ but new integrations should always include the prefix to match the IDs returned 
 ${bt}/v1/models${bt}.
 
 The ${bt}/v1/models${bt} catalog lists exclusively open-weight models: those OpenRouter
-reports as having published weights on HuggingFace. Routing is wider than listing by
-design: any other OpenRouter slug, including proprietary models, still works when
-supplied explicitly. This is deliberate (comparative research needs the contrast);
-the curated listing is the policy statement, not an enforcement boundary.
+reports as having published weights on Hugging Face. OpenRouter inference enforces a
+stronger boundary: the reported repository must also resolve successfully. Missing or
+unavailable evidence fails closed with HTTP 403. Decisions are cached for 24 hours.
 
 Recommended default for general use: ${bt}${model}${bt} (${modelName}).
 

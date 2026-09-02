@@ -227,6 +227,22 @@ curl -s https://api.bayleaf.dev/v1/chat/completions \
 - The response does not contain a BayLeaf-added system instruction
 - `usage` object is present with `prompt_tokens` and `completion_tokens`
 
+### Open-weight enforcement
+
+Request a known proprietary model and verify it is rejected before inference:
+
+```bash
+curl -i https://api.bayleaf.dev/v1/chat/completions \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"openai/gpt-5.4","messages":[{"role":"user","content":"Hello"}]}'
+```
+
+**Check:** HTTP 403 with an error stating that published open weights could not
+be verified. Repeat the request to exercise the cached negative decision. A
+known open-weight request above must continue to succeed; repeat it to exercise
+the cached positive decision.
+
 ---
 
 ## 2. LLM Proxy — Tool-use conversation

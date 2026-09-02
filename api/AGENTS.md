@@ -214,11 +214,15 @@ models are dropped from `GET /v1/models`, and its `<prefix>:` entries are
 stripped from the OpenCode curated list in `routes/wellknown.ts`. Use
 `isBackendEnabled(c.env, key)` / `isVertexEnabled(c.env)` (`src/constants.ts`).
 
-Independently of backends, `GET /v1/models` lists only OpenRouter entries with
-published HuggingFace weights (truthy `hugging_face_id`, NOT `!= null`: OR
-emits `""` for most weightless models, so a null check fails open). Unlisted
-slugs still route at `/chat/completions`; the filter is a listing policy, not
-a routing boundary (issue #25).
+Independently of backends, OpenRouter access is restricted to verifiably
+open-weight models. `GET /v1/models` lists only entries with a truthy
+`hugging_face_id` (NOT `!= null`: OR emits `""` for most weightless models, so a
+null check fails open). Every OpenRouter inference path additionally requires
+that repository URL to resolve. Positive and definite-negative decisions are
+cached in `MODEL_STATUS` KV for 24 hours; lookup failures are denied but not
+cached. Missing, malformed, or unavailable evidence fails closed with 403.
+Tinfoil is outside this check because its catalog is exclusively open-weight and
+the Sealed request body, including its model field, is encrypted from BayLeaf.
 
 - **`vertex:` — Google Vertex AI. Currently DISABLED** (`VERTEX_ENABLED: "false"`
   in `wrangler.jsonc`). We could not obtain Google's Abuse Monitoring opt-out, so

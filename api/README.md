@@ -194,6 +194,11 @@ Off-campus users will receive a 401 error directing them to get a personal key a
 | `/v1/models` | List available models |
 | `/v1/*` | All other OpenRouter endpoints |
 
+OpenRouter inference is limited to models for which OpenRouter publishes a
+nonempty Hugging Face repository ID and that repository resolves successfully.
+Missing or unavailable evidence returns HTTP 403. Model-policy decisions are
+cached for 24 hours; prompts and completions are never cached.
+
 ### BayLeaf Sealed (Confidential Inference)
 
 An opt-in, end-to-end-encrypted inference lane. Mounted as a sibling of `/v1`, never inside it, so it shares no path or middleware with the plaintext proxy.

@@ -40,6 +40,12 @@
     {
       "binding": "CLAIM_CODES",
       "id": "f435dc71d19148bab46fb0b14b99de2b"
+    },
+    {
+      // OpenRouter model-policy decisions. Keys contain only model slugs and
+      // open/closed verdicts; each entry expires after 24 hours.
+      "binding": "MODEL_STATUS",
+      "id": "9928d784d7f84c60bc448a955f34e7ec"
     }
   ],
 

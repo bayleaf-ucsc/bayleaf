@@ -735,10 +735,9 @@ course agents and gives instructors control over course instructions and tools.
 **Model policy.** UCSC's campus-licensed tools do not publish a model-size or
 open-weight restriction. BayLeaf's [public description](https://bayleaf.dev/) states
 that its Chat agents use mid-sized, sub-trillion-parameter open-weight models. The API
-recommends an open-weight model and limits its displayed catalog to models for which
-OpenRouter supplies a valid Hugging Face reference. The API still routes a manually
-specified closed-weight model slug. This is a default and discovery policy, not an
-inference allowlist.
+restricts OpenRouter inference to models for which OpenRouter supplies a Hugging Face
+reference and the repository resolves successfully. Missing or unavailable evidence
+fails closed. This is an enforced inference allowlist, not only a catalog preference.
 
 **Cost and procurement.** UCSC states that Gemini Chat, Gemini Notebook, and Zoom AI
 Companion are included in existing campus licenses. The university does not publish an

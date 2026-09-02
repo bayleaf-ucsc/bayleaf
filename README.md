@@ -41,9 +41,9 @@ LLMs, web search and page fetching, and sandboxed code execution:
   [Daytona](https://www.daytona.io/)) for running code, uploading/downloading
   files, all authenticated with the same personal API key, including on campus
 - Leaves system and developer instructions under the API caller's control
-- Lists exclusively open-weight models (those OpenRouter reports as having
-  published weights on HuggingFace). Any other OpenRouter slug still routes
-  when crafted manually: a deliberate escape hatch for comparative research
+- Permits only verifiably open-weight OpenRouter models: OpenRouter must report
+  published Hugging Face weights and the repository must resolve. Missing or
+  unavailable evidence fails closed
 
 ### Status — [uptime dashboard](https://stats.uptimerobot.com/tJ1Qkm7L0R)
 

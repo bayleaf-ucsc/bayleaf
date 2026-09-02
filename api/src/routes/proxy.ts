@@ -18,6 +18,7 @@ import { resolveAuth, type AuthResult } from '../utils/auth';
 import { resolveBackendCredential, sendWithHeal } from '../utils/backend';
 import { getGCPAccessToken } from '../utils/gcp';
 import { checkAndIncrement, inspectCounter, parseLimit } from '../utils/campusRpd';
+import { checkOpenWeightModel, hasPublishedWeights, openRouterSlug } from '../openWeight';
 import {
   ChatCompletionRequestSchema,
   ChatCompletionResponseSchema,
@@ -105,6 +106,15 @@ function upstreamCredentialUnavailable(c: Context<AppEnv>) {
       code: 503,
     },
   }, 503);
+}
+
+function openWeightForbidden(c: Context<AppEnv>, model: string) {
+  return c.json({
+    error: {
+      message: `BayLeaf API could not verify published open weights for OpenRouter model "${model}". Closed-weight models and models with indeterminate status are not permitted.`,
+      code: 403,
+    },
+  }, 403);
 }
 
 /** Forward a modified JSON body to OpenRouter and return the response. */
@@ -212,6 +222,10 @@ const responsesRoute = createRoute({
       description: 'Missing, invalid, or revoked API key',
       content: { 'application/json': { schema: ApiErrorSchema } },
     },
+    403: {
+      description: 'The requested OpenRouter model is not verifiably open-weight',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
   },
 });
 
@@ -226,9 +240,16 @@ proxyRoutes.openapi(responsesRoute, async (c) => {
   if (rpdRejection) return rpdRejection as any;
 
   const body = c.req.valid('json') as {
+    model: string;
     user?: string;
     [k: string]: unknown;
   };
+
+  const model = openRouterSlug(body.model);
+  if (await checkOpenWeightModel(model, c.env) !== 'open') {
+    return openWeightForbidden(c, model) as any;
+  }
+  body.model = model;
 
   injectUser(body, auth);
 
@@ -279,6 +300,10 @@ const chatCompletionsRoute = createRoute({
     },
     401: {
       description: 'Missing, invalid, or revoked API key',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
+    403: {
+      description: 'The requested OpenRouter model is not verifiably open-weight',
       content: { 'application/json': { schema: ApiErrorSchema } },
     },
   },
@@ -391,9 +416,11 @@ proxyRoutes.openapi(chatCompletionsRoute, async (c) => {
     return forwardJson(`${BEDROCK_MANTLE_API}/chat/completions`, `Bearer ${c.env.BEDROCK_BEARER_TOKEN}`, body) as any;
   } else {
     // OpenRouter passthrough
-    if (modelStr.startsWith('openrouter:')) {
-      body.model = modelStr.replace('openrouter:', '');
+    const model = openRouterSlug(modelStr);
+    if (await checkOpenWeightModel(model, c.env) !== 'open') {
+      return openWeightForbidden(c, model) as any;
     }
+    body.model = model;
     const cred = await resolveBackendCredential(auth, 'openrouter', c.env);
     if (!cred) return upstreamCredentialUnavailable(c) as any;
 
@@ -416,7 +443,7 @@ const modelsRoute = createRoute({
   operationId: 'listModels',
   tags: ['LLM'],
   summary: 'List available models',
-  description: 'Lists open-weight models: OpenRouter entries (prefixed with openrouter:) are filtered to those OpenRouter reports as having published HuggingFace weights, plus Vertex AI (vertex:) and Amazon Bedrock (bedrock:) models when those backends are enabled. Unlisted OpenRouter slugs still route at /chat/completions for users who craft them manually.',
+  description: 'Lists open-weight models: OpenRouter entries (prefixed with openrouter:) are filtered to those OpenRouter reports as having published Hugging Face weights, plus Vertex AI (vertex:) and Amazon Bedrock (bedrock:) models when those backends are enabled. OpenRouter inference additionally verifies that the reported Hugging Face repository resolves.',
   security: [{ Bearer: [] }],
   responses: {
     200: { description: 'Model list' },
@@ -447,12 +474,11 @@ proxyRoutes.openapi(modelsRoute, async (c) => {
     // 367 on 2026-07-29, including gpt-5.5), so a null check would silently
     // fail open. No hand-maintained override list: genuine misses (e.g.
     // mistral-large-2512) fail closed and are OpenRouter's to fix upstream.
-    // Listing-only by design: unlisted slugs still route at /chat/completions,
-    // a deliberate escape hatch for comparative model research. If OR degrades
-    // the field to null-everything, the list shrinks toward empty rather than
-    // leaking closed models, matching the ALT_BACKENDS fail-closed posture.
+    // Inference performs the stronger live repository check on cache misses.
+    // If OR degrades the field to null-everything, both listing and routing
+    // shrink closed rather than leaking proprietary models.
     const orModels = data.data
-      .filter(model => Boolean(model.hugging_face_id))
+      .filter(hasPublishedWeights)
       .map(model => ({
         ...model,
         id: `openrouter:${model.id}`,
@@ -689,16 +715,30 @@ async function handleProxy(c: Context<AppEnv>): Promise<Response> {
   const auth = await resolveAuth(c);
   if (auth instanceof Response) return auth;
 
+  if (c.req.method === 'POST') {
+    let body: Record<string, unknown>;
+    try {
+      body = await c.req.json() as Record<string, unknown>;
+    } catch {
+      return openWeightForbidden(c, 'unknown');
+    }
+    if (typeof body.model !== 'string') return openWeightForbidden(c, 'unknown');
+
+    const model = openRouterSlug(body.model);
+    if (await checkOpenWeightModel(model, c.env) !== 'open') {
+      return openWeightForbidden(c, model);
+    }
+    body.model = model;
+
+    const cred = await resolveBackendCredential(auth, 'openrouter', c.env);
+    if (!cred) return upstreamCredentialUnavailable(c);
+    return sendWithHeal(cred, c.env, (secret) =>
+      forwardJson(openRouterUrl, `Bearer ${secret}`, body));
+  }
+
+  // GET passthroughs have no request body and need no model-policy decision.
   const cred = await resolveBackendCredential(auth, 'openrouter', c.env);
   if (!cred) return upstreamCredentialUnavailable(c);
-
-  // No sendWithHeal here, deliberately. This handler streams the client's
-  // request body straight through, so the call is not replayable: a retry would
-  // send an already-consumed stream. Buffering arbitrary passthrough traffic to
-  // make it retryable would mean holding request bodies in memory on a lane
-  // whose whole point is not to, so a dead credential surfaces as a 401 here and
-  // is healed by the next request that goes through a replayable route
-  // (/chat/completions, /v1/models, /v1/auth/key).
   const res = await proxy(openRouterUrl, {
     ...c.req,
     headers: {
