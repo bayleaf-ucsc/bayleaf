@@ -892,6 +892,84 @@ public source reviewed establishes ZDR or ZOA.
 **Open questions.** Watch for the second-year funding decision, any student fee,
 activation and usage data, and publication of contract attachments or evaluations.
 
+#### Massachusetts Institute of Technology, United States
+
+**Last verified:** 2026-09-01<br>
+**Status:** Active; chat launched March 17, 2026 and API launched July 8, 2026<br>
+**Form:** MIT-hosted, centrally operated multi-model chat and API service
+
+**Adoption and scope.** MIT Information Systems and Technology launched Parley after a
+fall 2025 pilot with faculty, staff, and students. The
+[March announcement](https://ist.mit.edu/parleynowavailable) gives all MIT faculty,
+staff, and students free access through institutional credentials; a preceding
+[leadership letter](https://orgchart.mit.edu/letters/important-ai-update) excludes
+Lincoln Laboratory personnel. The interface offers file and image uploads,
+conversation branching, image generation, and short-code execution. At launch it
+listed Llama, Gemini, Claude Opus, Sonnet, and Haiku, DALL-E, and OpenAI models. The
+mutable [live service configuration](https://parley.mit.edu/api/config) identifies a
+LibreChat deployment, routes listed Claude and Llama models through an endpoint labeled
+AWS Bedrock, and configures OpenAI and Google endpoints, file search, Serper web search,
+Firecrawl page retrieval, Cohere reranking, and image generation. This operational
+configuration is not a contract or durable model catalog.
+
+The [Parley API announcement](https://orgchart.mit.edu/letters/parley-api-now-available-mit-community)
+reports that a July 2026 release after a beta opened programmatic access to faculty,
+staff, postdocs, and graduate and undergraduate students. It supports personal and
+shared accounts for classes, labs, research grants, and other projects, plus
+integrations with Claude Code, Codex CLI, and OpenCode. These integrations are agent
+harness access, not evidence that MIT publishes Agent Skills.
+
+**Rationale and pedagogy.** MIT leaders attributed the deployment to two immediate
+problems: unequal access to paid tools and the security risk of community members
+sending MIT data to consumer services. They describe Parley as infrastructure for
+learning, research, and administration, separate from the work of the teaching and
+learning AI committee. Instructor and student use remains governed by course rules and
+MIT's general academic-integrity policies rather than a Parley-wide teaching mandate.
+
+**Cost and procurement.** MIT's
+[tools catalog](https://ist.mit.edu/ai-tools) calls chat access free to eligible users.
+The [2026 education committee report](https://aiandeducation.mit.edu/report) states
+that chat users receive up to $30 in monthly credits and records concerns that this is
+insufficient for some software-engineering and AI-focused classes. API credits are
+separate: $30 monthly for faculty, staff, postdocs, and graduate students, and
+[$10 monthly for undergraduates](https://orgchart.mit.edu/letters/parley-api-now-available-mit-community-undergraduate-students).
+Additional API use can be purchased by employees with an MIT cost object and by
+students with a personal card. Total development and operating cost, contracts,
+provider rates, and procurement method are not disclosed publicly.
+
+**Governance and evaluation.** IS&T operates the service and says pilot feedback shaped
+it; the public launch materials do not identify pilot size, selection, findings, or a
+formal review process. MIT's AI guidance says IS&T works with the IT Governance
+Committee, Information Technology Policy Committee, and Office of General Counsel on
+AI vendor terms, but does not establish which body approved Parley or who holds ongoing
+model-selection authority. By July, MIT said thousands had used Parley, but did not
+publish activation, request, outcome, demographic, or accessibility data. The ad hoc
+Committee on AI Use in Teaching, Learning, and Research Training endorsed continued
+model-agnostic access while recommending expanded course allocations, more locally
+hosted open models, environmental and financial cost reporting, and explicit privacy,
+logging, and auditing rules.
+
+**Allowed use and data practices.** MIT's
+[AI guidance](https://ist.mit.edu/ai-guidance) permits low- and medium-risk information
+in MIT-licensed tools, prohibits high-risk information in all generative-AI tools, and
+says its agreements prevent Parley model providers from using MIT data for training or
+external sharing. The launch page also says conversations occur either in MIT's
+environment or under MIT licensing terms. These are contractual no-training and
+sharing restrictions, not ZDR. As a general-purpose service for research, teaching,
+and administration, high-risk content remains foreseeable despite the prohibition.
+Public sources reviewed do not disclose conversation or file retention, deletion
+controls, processing regions, complete subprocessors, tool-provider data flows, or
+which models MIT hosts itself. The committee report notes that IS&T could in theory see
+requests and model responses and calls for policy on logging, auditing, anonymization,
+and instructor access. No public source establishes E2EE or ZOA.
+
+**Model development and open questions.** The inclusion of Llama and other open models
+does not establish that MIT trained or fine-tuned their weights. The record does not
+establish model-specific hosting, local-inference coverage, interface or gateway
+software, accessibility conformance, service-level terms, total subsidy, or the exact
+retention and administrator-access settings. It also does not establish whether the
+committee's governance recommendations have been adopted.
+
 #### University of Michigan, United States
 
 **Last verified:** 2026-08-31<br>
@@ -2123,6 +2201,9 @@ The following records await primary-source research:
 
 ### 2026-09-01
 
+- Added the Massachusetts Institute of Technology, covering Parley chat and API access,
+  models, quotas, institutional data rules, committee recommendations, and unresolved
+  retention and operator-access questions.
 - Expanded coverage to the UC system and Office of the President, UC Agriculture
   and Natural Resources, and all ten UC campuses, adding eight campus records and
   two system-location records. The records distinguish systemwide procurement
