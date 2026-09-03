@@ -55,3 +55,7 @@ flag failing closed) so rollback is an env flip, not a redeploy.
   constitute a new service facet: it reused the lane's data flow, disclosure,
   limits, and kill switch. Reserve this playbook for new server-side surfaces
   or materially new data flows, not client adapters.
+- 2026-09-03: Splitting OpenCode onboarding into Standard and Sealed login URLs
+  likewise reused existing data flows and controls. A new discovery URL alone
+  is not a new service facet; only the human ship gate and route verification
+  applied.

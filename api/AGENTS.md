@@ -102,7 +102,7 @@ src/
     sealed.ts           sealedRoutes: BayLeaf Sealed EHBP ciphertext relay (issue #55, enabled; fails closed)
     sandbox.ts          sandboxRoutes: GET / (status), POST /exec, POST /poke, GET|PUT /files/*, DELETE /
     web.ts              webRoutes: POST /search, POST /fetch (OpenAPI-documented)
-    wellknown.ts        wellknownRoutes: OpenCode curated model list and related discovery docs
+    wellknown.ts        Standard + opt-in Sealed OpenCode discovery and curated remote configs
 migrations/             D1 schema, applied in order (0001 user_keys … 0005 decouple backend keys)
 scripts/
   spend-limits.mjs      Operator tool: adjust OR-side daily caps by roster or by current cap
@@ -498,6 +498,10 @@ checkbox, so it is recorded rather than deleted.
 /sealed/attestation     GET|POST: relay of the signed Tinfoil attestation bundle
 /sealed/models          GET: Sealed Tinfoil catalog with bare model IDs
 /sealed/v1/*            POST: EHBP ciphertext relay. POST only, no plaintext fallback
+/.well-known/opencode                 GET: OpenCode discovery for standard BayLeaf
+/.well-known/opencode/config          GET: Authenticated standard OpenCode config
+/sealed/.well-known/opencode          GET: OpenCode discovery for opt-in BayLeaf Sealed
+/sealed/.well-known/opencode/config   GET: Authenticated Sealed OpenCode config
 /recommended-model      Current recommended model slug + display name (JSON, unauthenticated)
 /docs                   Interactive API docs (Scalar viewer, loads /docs/openapi.json)
 /docs/openapi.json      OpenAPI 3.1 spec (auto-generated from Zod schemas)

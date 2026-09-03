@@ -26,7 +26,7 @@ import { sandboxRoutes } from './routes/sandbox';
 import { webRoutes } from './routes/web';
 import { docsRoutes } from './routes/docs';
 import { llmsRoutes } from './routes/llms';
-import { wellKnownRoutes } from './routes/wellknown';
+import { sealedWellKnownRoutes, wellKnownRoutes } from './routes/wellknown';
 import { claimRoutes } from './routes/claim';
 import { RecommendedModelResponseSchema, HealthResponseSchema } from './schemas';
 
@@ -116,6 +116,9 @@ app.openapi(healthRoute, (c) => {
 // ── Mount route groups ────────────────────────────────────────────
 
 app.route('/v1', proxyRoutes);
+// OpenCode keys well-known configuration by login URL. Mount Sealed discovery
+// before the broader /sealed relay so users can opt into exactly one lane.
+app.route('/sealed/.well-known', sealedWellKnownRoutes);
 // BayLeaf Sealed (issue #55): EHBP ciphertext relay. Mounted as a sibling of
 // /v1, never inside it, so no path or middleware is shared with the plaintext
 // proxy. Gated by SEALED_ENABLED, which fails closed.

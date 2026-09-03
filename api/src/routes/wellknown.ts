@@ -2,9 +2,10 @@
  * OpenCode well-known endpoints.
  *
  * Implements OpenCode's `.well-known/opencode` provider-onboarding contract,
- * letting a user run a single command:
+ * letting a user run one of two commands:
  *
  *   opencode auth login https://api.bayleaf.dev
+ *   opencode auth login https://api.bayleaf.dev/sealed
  *
  * to register BayLeaf as a fully-configured provider, with no manual edits to
  * `opencode.json` and no key pasted into a config file. Verified against
@@ -16,12 +17,14 @@
  * substitution map, the `.well-known/opencode` doc is re-fetched, and any
  * `remote_config.url` is fetched (with templated headers like
  * `Authorization: Bearer {env:BAYLEAF_API_KEY}`) and merged into the user's
- * effective config. We use that round trip to inject a `provider.bayleaf`
- * block whose `apiKey` substitutes from the same wellknown token.
+ * effective config. We use that round trip to inject either the standard
+ * BayLeaf provider or the opt-in BayLeaf Sealed provider.
  *
  * This file exposes:
- *   GET /.well-known/opencode          (public; static-ish discovery doc)
- *   GET /.well-known/opencode/config   (auth: Campus Pass or sk-bayleaf-...)
+ *   GET /.well-known/opencode                 Standard discovery
+ *   GET /.well-known/opencode/config          Standard remote config
+ *   GET /sealed/.well-known/opencode          Sealed discovery
+ *   GET /sealed/.well-known/opencode/config   Sealed remote config
  *
  * Reference (read at design time, not pinned in code):
  *   - packages/opencode/src/cli/cmd/providers.ts (login command)
@@ -31,6 +34,7 @@
  */
 
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import type { AppEnv } from '../types';
 import { resolveAuth } from '../utils/auth';
 import { getModelInfo } from '../openrouter';
@@ -39,6 +43,7 @@ import { altBackendForModel, isBackendEnabled, parseModelList } from '../constan
 import { fetchSealedModels, isSealedEnabled } from './sealed';
 
 export const wellKnownRoutes = new Hono<AppEnv>();
+export const sealedWellKnownRoutes = new Hono<AppEnv>();
 
 // ── Configuration ────────────────────────────────────────────────
 
@@ -62,6 +67,8 @@ const SEALED_PLUGIN = 'opencode-tinfoil@0.2.0';
 
 /** Name of the env var the wellknown token is bound to inside OpenCode. */
 const TOKEN_ENV_NAME = 'BAYLEAF_API_KEY';
+
+type OpenCodeMode = 'standard' | 'sealed';
 
 // ── GET /.well-known/opencode ────────────────────────────────────
 
@@ -90,21 +97,34 @@ const TOKEN_ENV_NAME = 'BAYLEAF_API_KEY';
  *
  * Windows: pure POSIX `sh`. Use WSL or set up the manual provider config.
  */
-wellKnownRoutes.get('/opencode', (c) => {
-  const baseUrl = absoluteBaseUrl(c.req.url); // e.g. https://api.bayleaf.dev
+function discoveryDocument(requestUrl: string, mode: OpenCodeMode) {
+  const apiBase = absoluteBaseUrl(requestUrl);
+  const loginUrl = mode === 'sealed' ? `${apiBase}/sealed` : apiBase;
+  const clientName = mode === 'sealed' ? 'OpenCode for BayLeaf Sealed' : 'OpenCode for BayLeaf';
 
-  return c.json({
+  return {
     auth: {
-      command: ['sh', '-c', buildAuthCommand(baseUrl, 'OpenCode')],
+      command: ['sh', '-c', buildAuthCommand(apiBase, loginUrl, clientName)],
       env: TOKEN_ENV_NAME,
     },
     remote_config: {
-      url: `${baseUrl}/.well-known/opencode/config`,
+      url: `${loginUrl}/.well-known/opencode/config`,
       headers: {
         Authorization: `Bearer {env:${TOKEN_ENV_NAME}}`,
       },
     },
-  });
+  };
+}
+
+wellKnownRoutes.get('/opencode', (c) => {
+  return c.json(discoveryDocument(c.req.url, 'standard'));
+});
+
+sealedWellKnownRoutes.get('/opencode', (c) => {
+  if (!isSealedEnabled(c.env)) {
+    return c.json({ error: 'BayLeaf Sealed is currently unavailable.' }, 503);
+  }
+  return c.json(discoveryDocument(c.req.url, 'sealed'));
 });
 
 // ── GET /.well-known/opencode/config ─────────────────────────────
@@ -118,15 +138,14 @@ wellKnownRoutes.get('/opencode', (c) => {
  * string as the token in that case (the user just hits Enter at the prompt),
  * and Campus Pass IP eligibility carries the rest.
  *
- * The returned shape is `{ "config": { ... opencode config ... } }`. In addition
- * to the `provider.bayleaf-remote` block, we may add the exact-pinned
- * `opencode-tinfoil` plugin that upgrades `bayleaf-sealed-remote` with
- * verified transport, and set two top-level fields that
- * mirror the recommended power-user setup (see /llms.txt):
+ * The returned shape is `{ "config": { ... opencode config ... } }`. The two
+ * login URLs return separate provider definitions; only the Sealed URL adds
+ * the exact-pinned `opencode-tinfoil` transport plugin. Both set top-level
+ * fields that mirror the recommended power-user setup (see /llms.txt):
  *
- *   - `model`: `${PROVIDER_ID}/<recommended>` — an agent-independent default,
- *     so OpenCode lands on a BayLeaf model on first launch without a /models
- *     trip. Overridden by any `model` in the user's own opencode.json.
+ *   - `model`: the selected lane's recommended model, an agent-independent
+ *     default so OpenCode lands on BayLeaf without a /models trip. Overridden
+ *     by any `model` in the user's own opencode.json.
  *   - `disabled_providers: ["opencode"]` — disables OpenCode Zen (the built-in
  *     `opencode` provider), whose free models persist every prompt and completion
  *     server-side to train or improve those models, with no opt-out. This aligns
@@ -142,10 +161,17 @@ wellKnownRoutes.get('/opencode', (c) => {
  * default the user can override in full. The user's own opencode.json, agent
  * definitions, and other settings are preserved by the merge.
  */
-wellKnownRoutes.get('/opencode/config', async (c) => {
+async function authenticateRemoteConfig(c: Context<AppEnv>) {
   // Auth: Campus Pass or sk-bayleaf-. Same path as /v1/*.
   const authResult = await resolveAuth(c);
   if (authResult instanceof Response) return authResult;
+
+  return null;
+}
+
+wellKnownRoutes.get('/opencode/config', async (c) => {
+  const authError = await authenticateRemoteConfig(c);
+  if (authError) return authError;
 
   const baseUrl = absoluteBaseUrl(c.req.url);
 
@@ -171,12 +197,6 @@ wellKnownRoutes.get('/opencode/config', async (c) => {
     if (entry) models[slug] = entry;
   }
 
-  // Bare IDs are required because the model field is encrypted before BayLeaf
-  // sees it. A catalog failure omits the plugin rather than blocking startup.
-  const sealedModels = isSealedEnabled(c.env)
-    ? await buildSealedModelEntries(c.env, c.env.SEALED_RECOMMENDED_MODEL, c.env.SEALED_CURATED_MODELS)
-    : {};
-
   // Provider entry. `apiKey` substitution resolves to the wellknown token
   // OpenCode stored at `opencode auth login` time (see config.ts:555 in
   // opencode dev). For Campus Pass users the token is the empty string, but
@@ -184,7 +204,7 @@ wellKnownRoutes.get('/opencode/config', async (c) => {
   // requests still work.
   const providerEntry = {
     npm: '@ai-sdk/openai-compatible',
-    name: 'BayLeaf (Remote)',
+    name: 'BayLeaf',
     options: {
       baseURL: `${baseUrl}/v1`,
       apiKey: `{env:${TOKEN_ENV_NAME}}`,
@@ -206,11 +226,36 @@ wellKnownRoutes.get('/opencode/config', async (c) => {
   if (recommended && models[recommended]) {
     config.model = `${PROVIDER_ID}/${recommended}`;
   }
+  return c.json({ config });
+});
+
+sealedWellKnownRoutes.get('/opencode/config', async (c) => {
+  if (!isSealedEnabled(c.env)) {
+    return c.json({ error: 'BayLeaf Sealed is currently unavailable.' }, 503);
+  }
+
+  const authError = await authenticateRemoteConfig(c);
+  if (authError) return authError;
+
+  const baseUrl = absoluteBaseUrl(c.req.url);
+  // Bare IDs are required because the model field is encrypted before BayLeaf
+  // sees it. A catalog failure omits the provider rather than blocking startup.
+  const sealedModels = await buildSealedModelEntries(
+    c.env,
+    c.env.SEALED_RECOMMENDED_MODEL,
+    c.env.SEALED_CURATED_MODELS,
+  );
+  const config: Record<string, unknown> = {
+    $schema: 'https://opencode.ai/config.json',
+    disabled_providers: ['opencode'],
+    provider: {},
+  };
+
   if (Object.keys(sealedModels).length > 0) {
     config.plugin = [[SEALED_PLUGIN, { defaultProvider: false }]];
     (config.provider as Record<string, unknown>)[SEALED_PROVIDER_ID] = {
       npm: '@ai-sdk/openai-compatible',
-      name: 'BayLeaf Sealed (Remote)',
+      name: 'BayLeaf Sealed',
       options: {
         baseURL: `${baseUrl}/sealed/v1/`,
         apiKey: `{env:${TOKEN_ENV_NAME}}`,
@@ -221,6 +266,10 @@ wellKnownRoutes.get('/opencode/config', async (c) => {
       },
       models: sealedModels,
     };
+    const recommended = c.env.SEALED_RECOMMENDED_MODEL;
+    if (recommended && sealedModels[recommended]) {
+      config.model = `${SEALED_PROVIDER_ID}/${recommended}`;
+    }
   }
 
   return c.json({ config });
@@ -300,12 +349,13 @@ function absoluteBaseUrl(reqUrl: string): string {
  * Dependencies: `curl` and `python3`. Failures during the curl/python pipeline
  * are caught and reported to the user via the tty, exit code 1.
  */
-function buildAuthCommand(apiBase: string, clientName: string): string {
+function buildAuthCommand(apiBase: string, loginUrl: string, clientName: string): string {
   // Inline the api base + client name. The client name is hard-coded by us
   // (not user input) so we can JSON-stringify it without escape hazards.
   // Both are embedded as literal sh strings; we double-quote them in shell
   // so spaces/special chars in clientName won't matter.
   const apiBaseSh = JSON.stringify(apiBase);            // "https://api.bayleaf.dev"
+  const loginUrlSh = JSON.stringify(loginUrl);          // "https://api.bayleaf.dev[/sealed]"
   const clientNameSh = JSON.stringify(clientName);      // "OpenCode"
   const initiateBodySh = JSON.stringify(JSON.stringify({ client: clientName }));
 
@@ -314,6 +364,7 @@ function buildAuthCommand(apiBase: string, clientName: string): string {
   // through as one shell argument.
   return `set -u
 api=${apiBaseSh}
+login_url=${loginUrlSh}
 client=${clientNameSh}
 
 # Detect a usable controlling terminal. We can't just test \`[ -r /dev/tty ]\`
@@ -386,7 +437,7 @@ except Exception: print("error")
       printf '%s' "$key"
       # Hint goes to tty/stderr, never stdout (which holds only the key).
       log ""
-      log "Saved. To stop loading BayLeaf's remote config: opencode auth logout https://api.bayleaf.dev"
+      log "Saved. To stop loading this BayLeaf configuration: opencode auth logout $login_url"
       exit 0
       ;;
     denied) fail "Authorization denied." ;;

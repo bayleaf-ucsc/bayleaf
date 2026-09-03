@@ -285,12 +285,12 @@ export const CodingAgentCard: FC<{ recommendedModel: string }> = ({ recommendedM
 );
 
 /**
- * One-command OpenChamber/OpenCode quickstart card. Uses OpenCode's
+ * OpenChamber/OpenCode quickstart card. Uses OpenCode's
  * `.well-known/opencode` provider-onboarding mechanism (see
  * api/src/routes/wellknown.ts) so the user never edits opencode.json or pastes
  * their key into a config file. OpenChamber shares the resulting backend
  * configuration. The dashboard's value-add over /llms.txt is the prominent
- * Copy button on the single command.
+ * Copy button on the recommended command, with Sealed as an explicit opt-in.
  */
 export const OpenCodeQuickstartCard: FC = () => (
   <div class={cardStyle} style="background: #eef7ee; border-color: #2d7d46;">
@@ -309,9 +309,29 @@ export const OpenCodeQuickstartCard: FC = () => (
       Your terminal will show a short URL and claim code. Open the URL, sign in with UCSC,
       verify the code, and approve the connection. Your key is delivered directly to OpenCode
       without appearing on screen or in your shell history. Then open or restart OpenChamber;
-      BayLeaf will appear in its model picker. Re-running <code>opencode auth login …</code> any
-      time rotates the stored key.
+      BayLeaf will appear in its model picker. This standard setup uses zero-data-retention
+      inference and offers the widest compatibility and model choice.
     </p>
+    <details style="margin-top: 1rem;">
+      <summary style="cursor: pointer; color: #006aad; font-weight: 500;">Use BayLeaf Sealed instead</summary>
+      <div style="margin-top: 0.5rem; font-size: 0.95em;">
+        <p>
+          Sealed encrypts your prompts on this machine to a verified hardware enclave, so
+          BayLeaf carries the traffic but cannot read it. It has a smaller model catalog and
+          installs a specialized encrypted transport. To choose Sealed rather than standard
+          BayLeaf, run:
+        </p>
+        <button type="button" class={copyBoxStyle} onclick="copyToClipboard(this)" style="margin-top: 0.5rem;">
+          <code>opencode auth login https://api.bayleaf.dev/sealed</code>
+          <span class="copy-hint">Click to copy</span>
+        </button>
+        <p style="margin-top: 0.75rem;">
+          If standard BayLeaf is already connected, first run{' '}
+          <code>opencode auth logout https://api.bayleaf.dev</code>. Connecting both URLs will
+          put both catalogs in the model picker.
+        </p>
+      </div>
+    </details>
     <details style="margin-top: 1rem;">
       <summary style="cursor: pointer; color: #006aad; font-weight: 500;">How it works</summary>
       <div style="margin-top: 0.5rem; font-size: 0.95em;">
