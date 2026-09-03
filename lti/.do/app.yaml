@@ -1,4 +1,5 @@
-# DigitalOcean App Platform spec for the bayleaf-lti service.
+# DigitalOcean App Platform spec for the dormant bayleaf-lti service.
+# No app is currently deployed; this file is retained for reconstruction.
 #
 # Apply with:
 #   doctl apps create --spec lti/.do/app.yaml         # first time

@@ -9,11 +9,12 @@ A development spike for an LTI connector. The connector itself is
 platform-agnostic — every launch carries `tool_consumer_instance_guid`
 (LTI 1.1) or the equivalent `tool_platform.guid` claim (LTI 1.3) plus
 the consumer key / client_id, so multi-tenant deployments are an
-extension of the credential lookup, not a rewrite. Currently exercised
-against UCSC's sandbox at `https://ucscdev.instructure.com/`. Live at
-<https://lti.bayleaf.dev>. Tracking issue: [#42](https://github.com/bayleaf-ucsc/bayleaf/issues/42).
+extension of the credential lookup, not a rewrite. Previously exercised
+against UCSC's sandbox at `https://ucscdev.instructure.com/`. The former
+DigitalOcean deployment was deleted on 2026-09-03 to stop idle hosting
+costs. Tracking issue: [#42](https://github.com/bayleaf-ucsc/bayleaf/issues/42).
 
-This is *running* but is *not yet the production connector*. Pedagogical
+This is a dormant spike, not the production connector. Pedagogical
 clarity and architectural agility outrank production hardening: bias
 toward single-file modules (`main.py`), split only when a real second
 concern shows up.
@@ -23,7 +24,7 @@ What's working today (see `DECISIONS.md` for the chronological story):
 - LTI 1.1 launches verified end-to-end via OAuth 1.0a HMAC-SHA1.
 - LTI 1.3 endpoints (`/lti/jwks`, `/lti/login`, `/lti/register`) wired
   but not exercised yet, blocked on UCSC ITS registering a developer key.
-- Deployed on DigitalOcean App Platform from a public GHCR image.
+- Previously verified on DigitalOcean App Platform from a public GHCR image.
 
 What's not yet there:
 
@@ -85,7 +86,7 @@ uv run uvicorn connector.main:app --reload --app-dir src
 uv run ruff check src
 ```
 
-Production deploy:
+Recreate the inactive DigitalOcean deployment:
 
 ```bash
 # Build and push image
@@ -93,14 +94,16 @@ docker buildx build --platform=linux/amd64 \
   -t ghcr.io/bayleaf-ucsc/lti:latest --push \
   -f Dockerfile .
 
-# Trigger redeploy (image is :latest so DO repulls)
+doctl apps create --spec .do/app.yaml
+
+# Trigger a later redeploy (image is :latest so DO repulls)
 doctl apps create-deployment <APP_ID>
 
 # Tail runtime logs
 doctl apps logs <APP_ID> --type=run --tail=50
 ```
 
-App ID is in `DECISIONS.md` (deliberately not duplicated here).
+The deleted app's former ID is retained in `DECISIONS.md` for the historical record.
 
 ## Useful references
 

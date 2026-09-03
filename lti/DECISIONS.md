@@ -643,3 +643,16 @@ analog to OAuth-consent-once.
   connector; connector consults course_policy and
   course_memberships before serving up Canvas-grounded content.
 
+## 2026-09-03: Delete the idle DigitalOcean deployment
+
+Deleted the `bayleaf-lti` App Platform app
+(`1e1e5691-dbe6-401f-8274-f37933ea31f3`) to stop its $5/month idle
+hosting cost. LTI experimentation remains limited to UCSC's staging
+Canvas environment, no real students used this deployment, and there
+is no active experiment that requires a continuously reachable service.
+
+The source, public GHCR image, and non-secret App Platform spec remain
+available for a future staging-only deployment. DigitalOcean-held env
+secrets were deleted with the app and must be configured anew before
+redeployment. BayLeaf Chat and its database and object storage were not
+changed.

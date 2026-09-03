@@ -1,8 +1,8 @@
 # bayleaf-lti
 
-LTI connector for BayLeaf. Currently exercised against UCSC's sandboxed Canvas instance, but the connector itself is platform-instance-agnostic: each launch carries the platform GUID and consumer key needed to identify the issuer. Tracking issue: [bayleaf-ucsc/bayleaf#42](https://github.com/bayleaf-ucsc/bayleaf/issues/42). Hostname is protocol-named (`lti.bayleaf.dev`) so the connector can serve other LMSes (Moodle, Brightspace) without renaming.
+LTI connector for BayLeaf. Previously exercised against UCSC's sandboxed Canvas instance, but the connector itself is platform-instance-agnostic: each launch carries the platform GUID and consumer key needed to identify the issuer. Tracking issue: [bayleaf-ucsc/bayleaf#42](https://github.com/bayleaf-ucsc/bayleaf/issues/42). The reserved hostname is protocol-named (`lti.bayleaf.dev`) so the connector can serve other LMSes (Moodle, Brightspace) without renaming.
 
-Status: development spike. Live at <https://lti.bayleaf.dev> on DigitalOcean App Platform, accepting real LTI 1.1 launches. LTI 1.3 endpoints are wired but the dev key registration is blocked on UCSC ITS (see DECISIONS.md). Production-grade hardening (multi-tenant key store, persistent nonce cache, key rotation procedure, full LTI Advantage scopes) is deferred.
+Status: dormant development spike. Its DigitalOcean App Platform deployment was deleted on 2026-09-03 to stop idle hosting costs; it was never used with real students. LTI 1.3 endpoints are wired but the dev key registration is blocked on UCSC ITS (see DECISIONS.md). Production-grade hardening (multi-tenant key store, persistent nonce cache, key rotation procedure, full LTI Advantage scopes) is deferred.
 
 ## What this is
 
@@ -21,23 +21,24 @@ uv run uvicorn connector.main:app --reload --app-dir src
 
 The connector binds to `:8000`. Hit `/health`, `/lti/jwks`, `/lti/config.xml` to confirm wiring.
 
-## Production
+## Deployment (inactive)
 
-Deployed as a single-service DigitalOcean App Platform app. Image source: `ghcr.io/bayleaf-ucsc/lti:latest` (public). Spec at `.do/app.yaml`.
+The former deployment was a single-service DigitalOcean App Platform app. Image source: `ghcr.io/bayleaf-ucsc/lti:latest` (public). The reconstructable spec remains at `.do/app.yaml`; no app is currently deployed.
 
-Deploy a new image:
+Create a new app and deploy its image:
 
 ```bash
 docker buildx build --platform=linux/amd64 \
   -t ghcr.io/bayleaf-ucsc/lti:latest --push \
   -f Dockerfile .
-doctl apps create-deployment <APP_ID>
+doctl apps create --spec .do/app.yaml
 ```
 
 Update the app spec (e.g. add an env var):
 
 ```bash
 doctl apps update <APP_ID> --spec .do/app.yaml
+doctl apps create-deployment <APP_ID>
 ```
 
 Secrets (`LTI_1P1_SHARED_SECRET`, `LTI_PRIVATE_KEY_PEM`, `LTI_PUBLIC_KEY_PEM`, `CANVAS_*`) are set per-app via the DO web console at *Settings → Components → bayleaf-lti → Edit environment variables*; never commit them to `.do/app.yaml`.
@@ -50,7 +51,7 @@ Secrets (`LTI_1P1_SHARED_SECRET`, `LTI_PRIVATE_KEY_PEM`, `LTI_PUBLIC_KEY_PEM`, `
 
 The connector authenticates Canvas in one of two ways:
 
-1. **LTI 1.1 shared secret** (`LTI_1P1_CONSUMER_KEY` + `LTI_1P1_SHARED_SECRET`): proves the launch came from Canvas via OAuth 1.0a HMAC-SHA1. Used by the production app today.
+1. **LTI 1.1 shared secret** (`LTI_1P1_CONSUMER_KEY` + `LTI_1P1_SHARED_SECRET`): proves the launch came from Canvas via OAuth 1.0a HMAC-SHA1. Used by the former deployment.
 2. **LTI 1.3 service credential** (eventual): `client_credentials` JWT bearer flow against Canvas's OAuth2 token endpoint, signed with our RSA keypair (`LTI_PRIVATE_KEY_PEM` / `LTI_PUBLIC_KEY_PEM`). Issued by Canvas after an admin registers our developer key. Endpoints exist; the dev-key registration is blocked on UCSC ITS.
 
 The legacy `CANVAS_SESSION_COOKIE` and `CANVAS_TOKEN_ADMIN` slots in `.env.example` are documented for future read-only Canvas API work; the connector itself doesn't use them.
