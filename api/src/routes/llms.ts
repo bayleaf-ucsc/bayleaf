@@ -568,7 +568,7 @@ BayLeaf routes requests by a prefix on the ${bt}model${bt} field:
 
 Example:
 
-- ${bt}"model": "openrouter:z-ai/glm-5.2"${bt}
+- ${bt}"model": "${model}"${bt}
 
 A bare slug (no prefix) is treated as ${bt}openrouter:${bt} for backwards compatibility,
 but new integrations should always include the prefix to match the IDs returned by

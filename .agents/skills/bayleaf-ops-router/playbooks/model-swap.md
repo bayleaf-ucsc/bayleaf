@@ -1,6 +1,6 @@
 ---
 source-skill: bayleaf-ops-router
-description: Select, evaluate, and deploy a model for Chat's Basic or Help workspace models or the BayLeaf API recommendation.
+description: Select, evaluate, and deploy a model for Chat's Basic or Help workspace models or a BayLeaf API recommendation.
 status: Both paths tested in production (Chat 2026-09-01: basic+help → glm-5.3-flash; API 2026-09-01: glm-5.3-flash)
 last-reviewed: 2026-09-01
 ---
@@ -14,10 +14,12 @@ Selecting, evaluating, and deploying a model in either of two independent roles:
 - **BayLeaf Chat:** change `base_model_id` on the `basic` or `help` Open WebUI
   workspace model, including vision capability handling. A private
   `basic-canary` workspace model isolates evaluation from production users.
-- **BayLeaf API:** change the general-use recommendation exposed by
+- **BayLeaf API plaintext:** change the general-use recommendation exposed by
   `/recommended-model`, documentation and dashboard examples, and OpenCode
   onboarding. This does **not** provide a server-side fallback when callers omit
   `model`; callers still choose a model on every inference request.
+- **BayLeaf API Sealed:** change the recommended Tinfoil model and curated
+  companions exposed in documentation and the OpenCode remote provider.
 
 These roles share selection policy but not deployment state. The API
 recommendation does not need to match Chat's Basic or Help model.
@@ -27,7 +29,7 @@ recommendation does not need to match Chat's Basic or Help model.
 - **[HUMAN GATE]** Adam already has personal experience with the candidate
   model (used it himself, not just seen benchmarks). If not, candidates are
   discussion, not deployment. Experience gained through a canary run counts.
-- The candidate must be reachable through a **ZDR provider endpoint** via
+- A plaintext candidate must be reachable through a **ZDR provider endpoint** via
   OpenRouter (platform floor; see root `AGENTS.md`). Do not scrape the
   provider's listing page: the machine-checkable source of truth is
   `GET https://openrouter.ai/api/v1/endpoints/zdr` (filter on model name).
@@ -216,6 +218,36 @@ Restore the prior `RECOMMENDED_MODEL` and curated-list decision in
 `api/wrangler.jsonc`, redeploy, and repeat the endpoint and OpenCode-config
 checks. Inference requests that explicitly named either model are unaffected.
 
+## API Sealed path (recommended and curated models)
+
+1. Confirm each candidate is present in `GET /sealed/models`, has the required
+   chat endpoint and capabilities, and remains consistent with BayLeaf's
+   open-weight policy. Tinfoil does not provide a mechanical weights field, so
+   do not automatically expose its entire future catalog.
+2. Canary the candidate through `opencode-tinfoil` and the production Sealed
+   relay before changing discovery. Use the candidate's bare Tinfoil ID and an
+   explicit temporary provider if it is not yet curated.
+3. Update `SEALED_RECOMMENDED_MODEL` and `SEALED_CURATED_MODELS` in
+   `api/wrangler.jsonc`. Keep the recommendation out of the companion list;
+   `buildSealedModelEntries` injects it first and removes duplicates.
+4. Update current Sealed examples, run `npx tsc --noEmit`, and deploy.
+5. Verify the authenticated OpenCode config contains the recommendation first,
+   all intended companions, and the complete Tinfoil marker. Leave
+   `enclaveURL` unset for the standard router: the verifier derives it from the
+   signed attestation bundle. Set it only when deliberately targeting a specific
+   enclave, paired with any non-default `configRepo`.
+6. Run a real request through the deployed `bayleaf-sealed-remote/<model>`
+   provider in an isolated OpenCode configuration. This avoids mistaking local
+   auth or plugin-version drift for a production failure.
+7. Record `api/wrangler.jsonc`, synchronized examples, and this refinement log
+   as `update: recommend <model> for BayLeaf Sealed`.
+
+### API Sealed rollback
+
+Restore the previous recommendation and companion list, redeploy, and repeat
+the remote-config and encrypted-inference checks. Explicit model requests remain
+available whenever Tinfoil still serves the model.
+
 ## Refinement log
 
 - 2026-08-25: drafted from issue #65; never yet run as a playbook.
@@ -269,3 +301,12 @@ checks. Inference requests that explicitly named either model are unaffected.
   deviation; reality contradicted that because listing checks metadata only,
   while inference enforces repository resolution. The gate now requires an
   actual successful BayLeaf API inference request and treats 403 as a blocker.
+- 2026-09-03: first Sealed recommendation run (`glm-5-2` →
+  `glm-5-3-flash`, adding `glm-5-3` as a premium companion). The playbook had
+  no Sealed path, so one was added. A faulty canary combined `configRepo` with
+  an obsolete `enclaveName`, briefly producing the wrong conclusion that relay
+  configurations require explicit `enclaveURL`; inspection of the SDK showed
+  the standard router is correctly inferred from the signed bundle. Normal
+  local verification also proved unreliable when the machine lacked a
+  well-known auth registration, so the new path calls for an isolated
+  fetch-and-run check.

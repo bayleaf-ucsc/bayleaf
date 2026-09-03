@@ -193,8 +193,8 @@
     // Sealed recommendation and curated companions. These are bare Tinfoil IDs:
     // the dedicated /sealed route establishes provider provenance, while the
     // model field is inside the encrypted body and cannot be rewritten here.
-    "SEALED_RECOMMENDED_MODEL": "glm-5-2",
-    "SEALED_CURATED_MODELS": "deepseek-v4-flash,gemma4-31b",
+    "SEALED_RECOMMENDED_MODEL": "glm-5-3-flash",
+    "SEALED_CURATED_MODELS": "glm-5-3,deepseek-v4-flash,gemma4-31b",
 
     // OIDC authentication — provider-agnostic via .well-known discovery.
     // Currently configured for CILogon (https://www.cilogon.org/oidc).

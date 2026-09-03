@@ -117,8 +117,8 @@ export const SealedAttestationResponseSchema = z.object({}).passthrough().openap
 });
 
 export const SealedModelSchema = z.object({
-  id: z.string().openapi({ example: 'glm-5-2' }),
-  name: z.string().openapi({ example: 'GLM-5.2' }),
+  id: z.string().openapi({ example: 'glm-5-3-flash' }),
+  name: z.string().openapi({ example: 'GLM-5.3 Flash' }),
   object: z.string().openapi({ example: 'model' }),
   owned_by: z.string().openapi({ example: 'tinfoil' }),
   type: z.string().optional().openapi({ example: 'chat' }),

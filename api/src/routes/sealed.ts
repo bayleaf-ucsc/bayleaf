@@ -748,7 +748,7 @@ sealedRoutes.all('/v1/*', (c) =>
  * The dedicated `/sealed` route establishes provider provenance. Unlike the
  * plaintext proxy, this relay cannot strip a model prefix because the model
  * field is inside the EHBP-encrypted body. The catalog therefore advertises
- * the exact bare IDs clients must encrypt and send (for example `glm-5-2`).
+ * the exact bare IDs clients must encrypt and send (for example `glm-5-3-flash`).
  *
  * This is a plaintext catalog request carrying no user content, which is why it
  * is a separate endpoint from the ciphertext relay rather than a GET on it.

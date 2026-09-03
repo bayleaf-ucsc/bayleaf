@@ -119,8 +119,8 @@ Then configure `OIDC_ISSUER` and related vars in `wrangler.jsonc`, and set `OIDC
 | `DAYTONA_DEPLOYMENT_LABEL` | Label prefix for sandbox tagging. Shared with chat.bayleaf.dev's Lathe so a user has one sandbox across both services (issue #14). | `chat.bayleaf.dev` |
 | `SEALED_ENABLED` | Master kill-switch for the Sealed lane. Must be exactly `"true"`; anything else 503s all of `/sealed/*`. | `true` |
 | `SEALED_RPD_LIMIT` | Per-user daily request guardrail for keyed Sealed traffic | `100` |
-| `SEALED_RECOMMENDED_MODEL` | Recommended Sealed model (bare Tinfoil ID) | `glm-5-2` |
-| `SEALED_CURATED_MODELS` | Comma-separated companion Sealed models (bare Tinfoil IDs) | `deepseek-v4-flash,gemma4-31b` |
+| `SEALED_RECOMMENDED_MODEL` | Recommended Sealed model (bare Tinfoil ID) | `glm-5-3-flash` |
+| `SEALED_CURATED_MODELS` | Comma-separated companion Sealed models (bare Tinfoil IDs) | `glm-5-3,deepseek-v4-flash,gemma4-31b` |
 
 ### Secrets
 
