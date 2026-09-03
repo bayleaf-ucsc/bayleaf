@@ -43,7 +43,7 @@ SEALED_TAMPER_PORT=8801 SEALED_OPENCODE=1 \
 ```
 
 `SEALED_OPENCODE=1` additionally points the exact-pinned
-`opencode-tinfoil@0.1.0` plugin at a mutated bundle and asserts that an OpenCode
+`opencode-tinfoil@0.2.0` plugin at a mutated bundle and asserts that an OpenCode
 run fails before inference. Omit it to run the SDK-level mutation suite without
 requiring OpenCode.
 

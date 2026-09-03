@@ -76,3 +76,7 @@ uvx owui-cli tools deploy chat/tools/<id>/tool.py <id>
   plugins consumed by the API do not fit this Chat-only deployment playbook;
   treat their BayLeaf integration as ordinary API work unless a package bump is
   the task itself.
+- 2026-09-03: `opencode-tinfoil` 0.2.0 validated the release order: publish and
+  verify the client package first, then deploy its exact-pinned API consumer.
+  Local well-known config probes caught npm-plugin deduplication behavior before
+  the production update.

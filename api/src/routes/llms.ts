@@ -168,7 +168,7 @@ a conversation that selected a remote provider may ask you to choose another mod
 
 The downloaded plugin under OpenCode's npm cache is inert once the well-known entry is
 gone, so deleting it is optional. For a complete cleanup, remove
-${bt}~/.cache/opencode/packages/opencode-tinfoil@0.1.0${bt} and Tinfoil's prompt-cache
+${bt}~/.cache/opencode/packages/opencode-tinfoil@0.2.0${bt} and Tinfoil's prompt-cache
 namespace secret at ${bt}~/.tinfoil/user_cache_secret${bt}. If you also added a manual
 ${bt}opencode-tinfoil${bt} entry to ${bt}opencode.json${bt}, remove that entry separately.
 
@@ -228,29 +228,32 @@ against this URL, and instead export ${bt}BAYLEAF_API_KEY${bt} yourself.
 
 #### Roll your own ${bt}bayleaf-sealed${bt} provider (optional)
 
-The Sealed transport can be equally explicit. Add the exact-pinned public plugin,
-BayLeaf endpoints, credential source, and bare model definitions to your own
-${bt}opencode.json${bt}:
+The Sealed transport can be equally explicit. Add the exact-pinned public plugin and
+mark a normal provider definition for Tinfoil's verified transport. This separation lets
+the provider coexist with remotely supplied Sealed configuration even though OpenCode
+loads a given npm plugin version only once:
 
 ${fence}json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": [
-    [
-      "opencode-tinfoil@0.1.0",
-      {
-        "providerID": "bayleaf-sealed",
-        "name": "BayLeaf Sealed (Custom)",
-        "apiKey": "{env:BAYLEAF_API_KEY}",
+  "plugin": ["opencode-tinfoil@0.2.0"],
+  "provider": {
+    "bayleaf-sealed": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "BayLeaf Sealed (Custom)",
+      "options": {
         "baseURL": "https://api.bayleaf.dev/sealed/v1/",
-        "attestationBundleURL": "https://api.bayleaf.dev/sealed",
-        "transport": "ehbp",
-        "models": {
-          "${sealedModel}": { "name": "${sealedModel}" }
+        "apiKey": "{env:BAYLEAF_API_KEY}",
+        "tinfoil": {
+          "attestationBundleURL": "https://api.bayleaf.dev/sealed",
+          "transport": "ehbp"
         }
+      },
+      "models": {
+        "${sealedModel}": { "name": "${sealedModel}" }
       }
-    ]
-  ]
+    }
+  }
 }
 ${fence}
 
@@ -259,13 +262,12 @@ field is encrypted, so BayLeaf cannot rewrite a prefixed slug: select models as
 ${bt}bayleaf-sealed/${sealedModel}${bt}. Review and update the exact plugin version
 deliberately; it pins the verifier and encrypted transport, not merely presentation code.
 
-If you previously used ${bt}opencode auth login https://api.bayleaf.dev${bt}, your local
-entry for the same plugin package takes precedence over BayLeaf's remote entry. This
-replaces ${bt}bayleaf-sealed-remote${bt} with your ${bt}bayleaf-sealed${bt} definition while
-retaining the one-stop credential flow and the remotely curated plaintext provider. For
-a fully manual setup with no remote configuration, do not log in against the URL: export
-${bt}BAYLEAF_API_KEY${bt} yourself and define both ${bt}bayleaf${bt} and
-${bt}bayleaf-sealed${bt} locally.
+If you previously used ${bt}opencode auth login https://api.bayleaf.dev${bt}, the one
+surviving plugin invocation upgrades both ${bt}bayleaf-sealed-remote${bt} and your local
+${bt}bayleaf-sealed${bt} provider. Both remain selectable, alongside the remotely curated
+plaintext provider. For a fully manual setup with no remote configuration, do not log in
+against the URL: export ${bt}BAYLEAF_API_KEY${bt} yourself and define both
+${bt}bayleaf${bt} and ${bt}bayleaf-sealed${bt} locally.
 
 ### Goose
 
@@ -479,7 +481,7 @@ token usage.
 Generic OpenAI clients are not sufficient because they do not perform attestation or EHBP
 encryption. OpenCode and OpenChamber users get the managed ${bt}bayleaf-sealed-remote${bt}
 provider from the same one-command setup described above. Select a model such as
-${bt}bayleaf-sealed-remote/${sealedModel}${bt}; the exact-pinned ${bt}opencode-tinfoil@0.1.0${bt}
+${bt}bayleaf-sealed-remote/${sealedModel}${bt}; the exact-pinned ${bt}opencode-tinfoil@0.2.0${bt}
 plugin verifies attestation before its first inference and has no plaintext fallback.
 It reuses your BayLeaf credential, while BayLeaf substitutes the Tinfoil credential
 server-side.

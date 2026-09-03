@@ -139,18 +139,22 @@ failures = []
 if os.environ.get("SEALED_OPENCODE") == "1":
     served["bundle"] = mutate_digest(GENUINE)
     plugin_config = {
-        "plugin": [[
-            "opencode-tinfoil@0.1.0",
-            {
-                "providerID": "bayleaf-sealed",
+        "plugin": [["opencode-tinfoil@0.2.0", {"defaultProvider": False}]],
+        "provider": {
+            "bayleaf-sealed": {
+                "npm": "@ai-sdk/openai-compatible",
                 "name": "BayLeaf Sealed",
-                "apiKey": "not-sent-before-attestation",
-                "baseURL": f"{BASE}/v1/",
-                "attestationBundleURL": EVIL,
-                "transport": "ehbp",
+                "options": {
+                    "apiKey": "not-sent-before-attestation",
+                    "baseURL": f"{BASE}/v1/",
+                    "tinfoil": {
+                        "attestationBundleURL": EVIL,
+                        "transport": "ehbp",
+                    },
+                },
                 "models": {"glm-5-2": {"name": "GLM-5.2"}},
             },
-        ]],
+        },
     }
     opencode_env = os.environ.copy()
     opencode_env["NODE_EXTRA_CA_CERTS"] = CERT

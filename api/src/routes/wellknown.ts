@@ -54,11 +54,11 @@ export const wellKnownRoutes = new Hono<AppEnv>();
  */
 const PROVIDER_ID = 'bayleaf-remote';
 
-/** Provider id created by the pinned, fail-closed Tinfoil transport plugin. */
+/** Provider id supplied remotely and upgraded by the fail-closed Tinfoil transport plugin. */
 const SEALED_PROVIDER_ID = 'bayleaf-sealed-remote';
 
 /** Exact pin: verifier and encrypted-transport changes require deliberate review. */
-const SEALED_PLUGIN = 'opencode-tinfoil@0.1.0';
+const SEALED_PLUGIN = 'opencode-tinfoil@0.2.0';
 
 /** Name of the env var the wellknown token is bound to inside OpenCode. */
 const TOKEN_ENV_NAME = 'BAYLEAF_API_KEY';
@@ -120,8 +120,8 @@ wellKnownRoutes.get('/opencode', (c) => {
  *
  * The returned shape is `{ "config": { ... opencode config ... } }`. In addition
  * to the `provider.bayleaf-remote` block, we may add the exact-pinned
- * `opencode-tinfoil` plugin that creates `bayleaf-sealed-remote`, and set two top-level
- * fields that
+ * `opencode-tinfoil` plugin that upgrades `bayleaf-sealed-remote` with
+ * verified transport, and set two top-level fields that
  * mirror the recommended power-user setup (see /llms.txt):
  *
  *   - `model`: `${PROVIDER_ID}/<recommended>` — an agent-independent default,
@@ -207,17 +207,20 @@ wellKnownRoutes.get('/opencode/config', async (c) => {
     config.model = `${PROVIDER_ID}/${recommended}`;
   }
   if (Object.keys(sealedModels).length > 0) {
-    config.plugin = [
-      [SEALED_PLUGIN, {
-        providerID: SEALED_PROVIDER_ID,
-        name: 'BayLeaf Sealed (Remote)',
-        apiKey: `{env:${TOKEN_ENV_NAME}}`,
+    config.plugin = [[SEALED_PLUGIN, { defaultProvider: false }]];
+    (config.provider as Record<string, unknown>)[SEALED_PROVIDER_ID] = {
+      npm: '@ai-sdk/openai-compatible',
+      name: 'BayLeaf Sealed (Remote)',
+      options: {
         baseURL: `${baseUrl}/sealed/v1/`,
-        attestationBundleURL: `${baseUrl}/sealed`,
-        transport: 'ehbp',
-        models: sealedModels,
-      }],
-    ];
+        apiKey: `{env:${TOKEN_ENV_NAME}}`,
+        tinfoil: {
+          attestationBundleURL: `${baseUrl}/sealed`,
+          transport: 'ehbp',
+        },
+      },
+      models: sealedModels,
+    };
   }
 
   return c.json({ config });
