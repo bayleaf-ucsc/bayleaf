@@ -1,4 +1,4 @@
-# BayLeaf AI Playground
+# BayLeaf
 
 BayLeaf is a situated counterplatform for Generative AI at UC Santa Cruz: an
 experimental service operated by [Adam Smith](https://adamsmith.as) (Dept. of
@@ -19,9 +19,9 @@ service; it remains faculty-operated. See [`SECURITY.md`](SECURITY.md) and
 An [Open WebUI](https://openwebui.com/) deployment offering curated AI models to
 UCSC students, faculty, and staff. Features include:
 
-- A **Basic** model backed by a rotating open-weight LLM, customized with a
-  campus-aware system prompt. All Chat agents are backed by open-weight,
-  sub-trillion-parameter models.
+- A **Basic** model backed by a rotating LLM and customized with a campus-aware
+  system prompt
+- Curated proprietary and open-weight models, all routed through OpenRouter ZDR
 - **Invite-code-gated groups** for course-, department-, or role-specific models
   and toolkits
 - **Web Search** and **Web Page Content** tools available to all users
@@ -29,8 +29,8 @@ UCSC students, faculty, and staff. Features include:
 
 ### BayLeaf API — [api.bayleaf.dev](https://api.bayleaf.dev)
 
-An OpenRouter-proxying API that gives the campus community programmatic access to
-LLMs, web search and page fetching, and sandboxed code execution:
+An API that gives the campus community programmatic access to LLMs, web search
+and page fetching, and sandboxed code execution:
 
 - **Keyless inference and web-tool access** from the campus network (169.233.x.x)
 - **API key access** for off-campus use (self-issued via the service)
@@ -41,9 +41,12 @@ LLMs, web search and page fetching, and sandboxed code execution:
   [Daytona](https://www.daytona.io/)) for running code, uploading/downloading
   files, all authenticated with the same personal API key, including on campus
 - Leaves system and developer instructions under the API caller's control
-- Permits only verifiably open-weight OpenRouter models: OpenRouter must report
-  published Hugging Face weights and the repository must resolve. Missing or
-  unavailable evidence fails closed
+- **Plaintext inference via OpenRouter**, limited to models with a nonempty
+  `hugging_face_id` and a resolving Hugging Face repository. Missing, negative,
+  or unavailable evidence fails closed with HTTP 403
+- **Sealed confidential inference via Tinfoil**, whose current catalog lists
+  only open-weight models. The requested model and body are encrypted from
+  BayLeaf, though non-streaming usage metadata can report the executed model
 
 ### Status — [uptime dashboard](https://stats.uptimerobot.com/tJ1Qkm7L0R)
 
@@ -59,21 +62,12 @@ every issue is read.
 
 ## Privacy
 
-All LLM inference routes through **zero-data-retention (ZDR)** providers via
-[OpenRouter](https://openrouter.ai/). No message content is logged or stored by
-any third-party LLM provider. Non-AI features that require persistent storage
-(e.g. the Daytona-backed Code Sandbox) store user files by necessity.
-
-BayLeaf has speculatively integrated institutional inference back-ends for which
-UC holds in-place data-protection agreements: **Google Cloud / Vertex AI**
-(serving the Gemini family) and **AWS Bedrock**. These demonstrate a clear path
-toward a UCSC ITS-managed BayLeaf with both technical and legal data protection.
-Two caveats: the project runs from a personal admin account rather than one
-managed by UCSC ITS, so those agreements do not currently cover BayLeaf traffic;
-and the Vertex AI back-end is integrated but **disabled** pending removal of
-abuse-monitoring data retention from our accounts, because BayLeaf requires ZDR
-for every *active* provider. See [`politics/FERPA.md`](politics/FERPA.md) for the
-full analysis.
+All active LLM inference uses **zero-data-retention (ZDR)** providers. Chat and
+the API's plaintext lane use [OpenRouter](https://openrouter.ai/); API Sealed
+uses Tinfoil, with the requested model and body encrypted from BayLeaf. No LLM
+provider stores prompts or completions. Vertex AI, AWS Bedrock, and NRP are
+disabled and carry no traffic. Non-AI features that require persistent storage,
+such as the Daytona-backed Code Sandbox, store user files by necessity.
 
 ## This Repository
 

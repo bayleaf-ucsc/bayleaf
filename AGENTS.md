@@ -6,21 +6,25 @@ Guidelines for agentic coding agents working in this repository.
 
 ## Project Overview
 
-Public repo for the **BayLeaf AI Playground** — an experimental Generative AI service
-for the UC Santa Cruz campus community, operated by Adam Smith (Dept. of Computational
+Public repo for **BayLeaf**, a situated counterplatform for Generative AI serving the
+UC Santa Cruz campus community and operated by Adam Smith (Dept. of Computational
 Media). **Publicly visible; never commit secrets, API keys, or credentials.**
 
-- **BayLeaf Chat** — `https://chat.bayleaf.dev` — Open WebUI with curated models,
-  invite-code-gated groups, web search/browsing tools, and rate limiting.
-- **BayLeaf API** — `https://api.bayleaf.dev` — OpenRouter-proxying API with keyless
-  on-campus access and key-based off-campus access, plus web search/fetch and sandboxed
-  code execution. Source: `api/` in this repo.
+- **BayLeaf Chat** — `https://chat.bayleaf.dev` — Open WebUI with curated
+  OpenRouter ZDR models, both proprietary and open-weight, invite-code-gated
+  groups, web search/browsing tools, and rate limiting.
+- **BayLeaf API** — `https://api.bayleaf.dev` — plaintext OpenRouter inference
+  restricted to verifiably open-weight models, plus Sealed confidential
+  inference through Tinfoil. It provides keyless on-campus access, key-based
+  off-campus access, web search/fetch, and sandboxed code execution. Source:
+  `api/` in this repo.
 
 A self-service course-AI service (BayLeaf Courses) was prototyped and then retired
 (GitHub issues #4 and #5); the Spring 2026 course need was met instead by the Brace3
 OWUI configuration under `chat/`. It may be rebuilt with richer context in the future.
 
-All LLM inference uses **zero-data-retention (ZDR)** providers via OpenRouter.
+All active LLM inference uses **zero-data-retention (ZDR)** providers. Chat and
+the API's plaintext lane use OpenRouter; API Sealed uses Tinfoil.
 
 ## Project Frame
 
@@ -30,6 +34,11 @@ building infrastructure supersedes critique, organizing, policy, or refusal.
 It is one situated mode of response: operating a platform makes alternative
 technical and institutional terms concrete, usable, scrutinizable, and
 revisable.
+
+**Naming:** `BayLeaf` is the proper name; "situated counterplatform" describes
+what it is. Do not use "BayLeaf AI Playground" or substitute "Counterplatform"
+as a product-name suffix. Preserve "playground" only inside immutable external
+identifiers or genuine historical quotations.
 
 Treat AI as consequential but normal technology, neither autonomous nor
 inevitable. Discuss risk at the level of situated use cases and sociotechnical
@@ -56,15 +65,20 @@ Two distinct properties, often conflated:
 
 **Stance:** pursue ZOA *where practical*, ZDR everywhere as the baseline.
 
-- **BayLeaf API** is the ZOA target. It already retains no content, disables
-  Workers observability, and does no caching, so an operator has **no standing
-  access** to prompts or completions: only request metadata (model, token
-  counts, timestamps) is observable. This is a strong ZOA *posture*, not a
+- **BayLeaf API** is the ZOA target. It retains no prompt or completion content,
+  disables Workers observability, and does no content caching, so an operator
+  has **no standing access** to prompts or completions: only request metadata
+  (model, token counts, timestamps) is observable. Positive and definite-negative
+  plaintext model-eligibility verdicts, never request content, are cached in
+  `MODEL_STATUS` KV for 24 hours. Unknown verdicts fail closed with HTTP 403 and
+  are not cached. This is a strong ZOA *posture*, not a
   hardware-attested ZOA *guarantee* like Mantle, because an operator with deploy
   rights could ship a revision that logs request bodies; there is no
   attestation/signed-deploy barrier preventing it. Claim the posture honestly;
   do not overclaim full ZOA. Any change that begins storing or logging request
-  content breaks this posture and must be treated as a material change.
+  content breaks this posture and must be treated as a material change. API
+  Sealed is stronger: clients encrypt the model and request body to an attested
+  Tinfoil enclave, so BayLeaf carries ciphertext it cannot decrypt.
 - **BayLeaf Chat** cannot be ZOA: it deliberately stores chat history so users
   can carry conversations across devices. The administrator can read that
   database. Chat is ZDR *at the inference layer only*; be explicit that the ZDR
@@ -161,7 +175,9 @@ python3 -m http.server 8000 --directory /tmp/bayleaf-pages
 ## Security & Privacy
 
 - **No secrets in the repo.** No API keys, tokens, passwords, or `.env` files.
-- Any code calling LLM APIs must use ZDR providers via OpenRouter; note this in comments.
+- Any code calling LLM APIs must use an approved ZDR path. Plaintext inference
+  uses OpenRouter; Sealed inference uses Tinfoil and must remain encrypted from
+  BayLeaf. Note the applicable boundary in comments.
 - Invite codes, filter names, and internal operational details must not appear in
   committed files.
 

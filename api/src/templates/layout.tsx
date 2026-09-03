@@ -210,7 +210,7 @@ export const BaseLayout: FC<PropsWithChildren<{ title: string }>> = ({ title, ch
         {children}
       </main>
       <footer>
-        <p>A service of the <a href="https://bayleaf.dev">BayLeaf AI Playground</a> for UC Santa Cruz. <a href="https://github.com/bayleaf-ucsc/bayleaf/tree/main/api">Source on GitHub</a>.</p>
+        <p>A service of <a href="https://bayleaf.dev">BayLeaf</a>, a situated counterplatform for Generative AI at UC Santa Cruz. <a href="https://github.com/bayleaf-ucsc/bayleaf/tree/main/api">Source on GitHub</a>.</p>
       </footer>
     </body>
   </html>

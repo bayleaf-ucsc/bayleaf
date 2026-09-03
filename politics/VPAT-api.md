@@ -4,8 +4,8 @@
 covering both the public landing at [api.bayleaf.dev](https://api.bayleaf.dev)
 and the authenticated dashboard at [api.bayleaf.dev/dashboard](https://api.bayleaf.dev/dashboard).
 Both surfaces share a single hono/jsx component stack served as a
-Cloudflare Worker.  
-**Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz  
+Cloudflare Worker.<br>
+**Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz<br>
 **Status:** Working draft, upgraded to empirical verification for
 contrast, reflow, focus visibility, text zoom, text spacing, HTML
 parsing, heading hierarchy, keyboard traversal, and color-vision-deficiency
@@ -18,7 +18,7 @@ passes on every card border, [1.4.3 Contrast](#4-wcag-21-level-aa-conformance)
 passes AA on every text/background pair, [2.4.7 Focus Visible](#4-wcag-21-level-aa-conformance)
 has an explicit double-ring indicator, [2.1.1 Keyboard](#3-wcag-21-level-a-conformance)
 no longer has a div-as-button, and [1.3.1 Info and Relationships](#3-wcag-21-level-a-conformance)
-now has a clean H1 → H2 hierarchy on the dashboard.  
+now has a clean H1 → H2 hierarchy on the dashboard.<br>
 **Template:** [VPAT® 2.5 INT](https://www.itic.org/policy/accessibility/vpat), covering [WCAG 2.1](https://www.w3.org/TR/WCAG21/) Level A and AA, [Revised Section 508](https://www.access-board.gov/ict/), and [EN 301 549](https://www.etsi.org/deliver/etsi_en/301500_301599/301549/).
 
 > This is a per-surface ACR. Framing, inheritance map, evaluation methodology, open questions, and references live in [VPAT-overview.md](VPAT-overview.md). Read that document first for the posture; read this one for surface-specific findings and the conformance table.
@@ -192,7 +192,7 @@ against `/key`.
   `<nav aria-label="Documentation">`. Four landmarks available to AT.
 - [2.4.4 Link Purpose (In Context)](https://www.w3.org/WAI/WCAG21/Understanding/link-purpose-in-context):
   link text is descriptive on both surfaces (e.g., "Sign in with UCSC",
-  "BayLeaf AI Playground", "Source on GitHub", "Sign out"). The
+  "BayLeaf", "Source on GitHub", "Sign out"). The
   dashboard's two appearances of `https://api.bayleaf.dev/docs/SKILL.md`
   as visible link text is acceptable: visible URL as link text is a
   recognized pattern and the URL itself describes the destination.
@@ -295,7 +295,7 @@ checks are in [§ 1](#1-surface-description).
 | 2.4.1 | [Bypass Blocks](https://www.w3.org/WAI/WCAG21/Understanding/bypass-blocks) | Supports | Both views wrap primary content in `<main>`, header links in `<nav aria-label="Documentation">`, and the post-content block in `<footer>`. Four landmarks exposed in Chromium's accessibility tree on each page. |
 | 2.4.2 | [Page Titled](https://www.w3.org/WAI/WCAG21/Understanding/page-titled) | Supports | Landing: `<title>Welcome - BayLeaf API</title>`. Dashboard: `<title>Dashboard - BayLeaf API</title>`. Both titles are descriptive and distinct. |
 | 2.4.3 | [Focus Order](https://www.w3.org/WAI/WCAG21/Understanding/focus-order) | Supports | DOM order matches reading order on both views; no `tabindex` manipulation. Verified by walking the full tab traversal one `Tab` press at a time. |
-| 2.4.4 | [Link Purpose (In Context)](https://www.w3.org/WAI/WCAG21/Understanding/link-purpose-in-context) | Supports | Link text is descriptive on both views (e.g., "Sign in with UCSC", "API Reference", "Agent Skill", "Sign out", "BayLeaf AI Playground", "Source on GitHub", "available upon request", "BayLeaf Chat"); no "click here". The visible URL `https://api.bayleaf.dev/docs/SKILL.md` used as link text on the dashboard is acceptable: the URL itself describes the destination. |
+| 2.4.4 | [Link Purpose (In Context)](https://www.w3.org/WAI/WCAG21/Understanding/link-purpose-in-context) | Supports | Link text is descriptive on both views (e.g., "Sign in with UCSC", "API Reference", "Agent Skill", "Sign out", "BayLeaf", "Source on GitHub", "available upon request", "BayLeaf Chat"); no "click here". The visible URL `https://api.bayleaf.dev/docs/SKILL.md` used as link text on the dashboard is acceptable: the URL itself describes the destination. |
 | 2.5.1 | [Pointer Gestures](https://www.w3.org/WAI/WCAG21/Understanding/pointer-gestures) | Supports | No multi-point or path-based gestures. |
 | 2.5.2 | [Pointer Cancellation](https://www.w3.org/WAI/WCAG21/Understanding/pointer-cancellation) | Supports | Uses default `<a>` and `<button>` activation behavior; no custom pointer handlers that act on `mousedown`. |
 | 2.5.3 | [Label in Name](https://www.w3.org/WAI/WCAG21/Understanding/label-in-name) | Supports | Button and link visible text matches accessible name on both views. The masked key input uses `aria-label` (no conflicting visible label text). |

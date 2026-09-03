@@ -117,13 +117,19 @@ lock-in.
   context-appropriate assistants out of the box. Instructors write per-course
   system prompts by editing a Canvas page; BayLeaf syncs them to the model. The
   student can read the prompt.
-- All inference routes through zero-data-retention providers. The provider has
-  been swapped multiple times with zero user disruption. As of March 2026,
-  BayLeaf runs two configured inference backends in parallel: OpenRouter
-  (commercial gateway to ZDR providers) and NRP/SDSC (NSF-funded institutional
-  inference serving open-weight models via [Envoy AI Gateway](https://aigateway.envoyproxy.io/)).
-  The switchability criterion is not hypothetical: it is the current operating
-  state.
+- Active plaintext inference routes through zero-data-retention providers, and
+  the provider has been swapped multiple times with zero user disruption.
+  BayLeaf Chat uses a separately curated OpenRouter-ZDR catalog that may include
+  frontier proprietary and open-weight models. BayLeaf API plaintext enforces a
+  narrower reciprocity policy: a model is allowed only when OpenRouter supplies
+  a nonempty Hugging Face identifier and the repository resolves; unknown models
+  fail closed with HTTP 403. API Sealed is active through Tinfoil's current
+  open-weight catalog, with the requested model and body encrypted from BayLeaf;
+  non-streaming usage metadata may reveal the executed model. Unlike plaintext,
+  BayLeaf does not enforce Sealed catalog composition itself. Vertex, Bedrock,
+  and NRP are disabled. The switchability criterion is
+  demonstrated by the architecture and by prior provider swaps, not by a claim
+  that all configured backends are simultaneously active.
 - The entire system is open source, runs on commodity cloud services, and has no
   proprietary dependency.
 

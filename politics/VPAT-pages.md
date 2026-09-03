@@ -7,9 +7,9 @@ privacy notice at
 [`bayleaf.dev/privacy.html`](https://bayleaf.dev/privacy.html), and the
 use-cases page at
 [`bayleaf.dev/use-cases.html`](https://bayleaf.dev/use-cases.html). All
-four are surfaces of the BayLeaf AI Playground.  
-**Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz  
-**Status:** Working draft, upgraded to empirical verification for contrast, reflow, focus visibility, text zoom, text spacing, HTML parsing, accessibility-tree structure, and color-vision-deficiency simulation, using headless Chromium via [`rodney`](https://github.com/simonw/rodney) and direct [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/). All previously flagged defects have been fixed and re-verified: [1.4.3 Contrast](#4-wcag-21-level-aa-conformance) now passes AA on every rendered text/background pair with comfortable headroom, [2.4.7 Focus Visible](#4-wcag-21-level-aa-conformance) now has an explicit high-contrast indicator, and [2.4.1 Bypass Blocks](#3-wcag-21-level-a-conformance) now provides a `<main>` landmark. **Open defect:** the guest-lecture videos embedded on the landing are captioned (verified author-provided tracks, so [1.2.2](#3-wcag-21-level-a-conformance) is met), but have no audio description and no text alternative, so [1.2.3](#3-wcag-21-level-a-conformance) (Level A) and [1.2.5](#4-wcag-21-level-aa-conformance) (Level AA) remain unmet. See [§ 1 Embedded media](#embedded-media) for the remediation plan.  
+four are surfaces of BayLeaf.<br>
+**Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz<br>
+**Status:** Working draft, upgraded to empirical verification for contrast, reflow, focus visibility, text zoom, text spacing, HTML parsing, accessibility-tree structure, and color-vision-deficiency simulation, using headless Chromium via [`rodney`](https://github.com/simonw/rodney) and direct [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/). All previously flagged defects have been fixed and re-verified: [1.4.3 Contrast](#4-wcag-21-level-aa-conformance) now passes AA on every rendered text/background pair with comfortable headroom, [2.4.7 Focus Visible](#4-wcag-21-level-aa-conformance) now has an explicit high-contrast indicator, and [2.4.1 Bypass Blocks](#3-wcag-21-level-a-conformance) now provides a `<main>` landmark. **Open defect:** the guest-lecture videos embedded on the landing are captioned (verified author-provided tracks, so [1.2.2](#3-wcag-21-level-a-conformance) is met), but have no audio description and no text alternative, so [1.2.3](#3-wcag-21-level-a-conformance) (Level A) and [1.2.5](#4-wcag-21-level-aa-conformance) (Level AA) remain unmet. See [§ 1 Embedded media](#embedded-media) for the remediation plan.<br>
 **Template:** [VPAT® 2.5 INT](https://www.itic.org/policy/accessibility/vpat), covering [WCAG 2.1](https://www.w3.org/TR/WCAG21/) Level A and AA, [Revised Section 508](https://www.access-board.gov/ict/), and [EN 301 549](https://www.etsi.org/deliver/etsi_en/301500_301599/301549/).
 
 > This is a per-surface ACR. Framing, inheritance map, evaluation methodology, open questions, and references live in [VPAT-overview.md](VPAT-overview.md). Read that document first for the posture; read this one for surface-specific findings and the conformance table.
@@ -144,7 +144,14 @@ two-button service row and a smaller four-button supplementary row
 generated recent-post list and artifact build. The 2026-08-25 pass
 checked the generated landing with W3C Nu validation, reflow at 320 CSS
 px, 200% text zoom at 1280 CSS px, the text-spacing override at 320 CSS
-px, focus visibility, and Chromium's accessibility tree. The 2026-07-24 pass re-ran contrast enumeration, reflow at 320/400/1280 CSS
+px, focus visibility, and Chromium's accessibility tree. A 2026-09-03
+terminology pass re-verified all four page titles with W3C Nu and
+`html-validate`, rendered the generated landing at 1440 x 900 and
+390 x 844 without horizontal overflow or browser errors, and ran
+axe-core 4.13.0 against all four generated pages. The three subsidiary
+pages had zero violations; the landing's three violations originated
+inside the embedded YouTube player rather than BayLeaf-authored markup.
+The 2026-07-24 pass re-ran contrast enumeration, reflow at 320/400/1280 CSS
 px, 200% text zoom, the 1.4.12 text-spacing override, structure and
 ID-uniqueness checks, and W3C Nu validation across all four pages; it
 did not re-run the CVD simulations or the focus-visibility screenshot
@@ -447,7 +454,7 @@ Remarks have been trimmed to the bayleaf.dev static-pages surface. Sentences in 
 | 2.2.2 | [Pause, Stop, Hide](https://www.w3.org/WAI/WCAG21/Understanding/pause-stop-hide) | Supports | Pages: no auto-starting motion. The embedded video begins only on user activation and exposes pause and stop controls, so the criterion is satisfied rather than inapplicable. No other moving, blinking, or auto-updating content. |
 | 2.3.1 | [Three Flashes or Below Threshold](https://www.w3.org/WAI/WCAG21/Understanding/three-flashes-or-below-threshold) | Supports | No flashing content in BayLeaf-authored markup; the embedded lecture is a static-camera talk with slides and contains no flashing. |
 | 2.4.1 | [Bypass Blocks](https://www.w3.org/WAI/WCAG21/Understanding/bypass-blocks) | Supports | Pages: every page wraps primary content in `<main id="main">` and the contact block in `<footer>`, providing navigable landmarks. Verified in Chromium's accessibility tree (`[main]` role exposed at root level on each page). |
-| 2.4.2 | [Page Titled](https://www.w3.org/WAI/WCAG21/Understanding/page-titled) | Supports | Pages: `BayLeaf AI Playground`, `Support: BayLeaf AI Playground`, `Privacy: BayLeaf AI Playground`, `Use Cases: BayLeaf AI Playground`. All four are descriptive, distinct, and follow one `Section: Site` convention. |
+| 2.4.2 | [Page Titled](https://www.w3.org/WAI/WCAG21/Understanding/page-titled) | Supports | Pages: `BayLeaf`, `Support: BayLeaf`, `Privacy: BayLeaf`, `Use Cases: BayLeaf`. All four are descriptive, distinct, and follow one `Section: Site` convention. |
 | 2.4.3 | [Focus Order](https://www.w3.org/WAI/WCAG21/Understanding/focus-order) | Supports | Pages: DOM order is reading order; no `tabindex` manipulation. |
 | 2.4.4 | [Link Purpose (In Context)](https://www.w3.org/WAI/WCAG21/Understanding/link-purpose-in-context) | Supports | Pages: link text is descriptive on all pages (e.g., "UCSC's Newly Established AI Council Is at a Crossroads", "OpenRouter's model directory", "API Issue", "amsmith@ucsc.edu"); no "click here". |
 | 2.5.1 | [Pointer Gestures](https://www.w3.org/WAI/WCAG21/Understanding/pointer-gestures) | Supports | Pages: no multi-point or path-based gestures. |

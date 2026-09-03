@@ -1,8 +1,8 @@
 # FERPA and BayLeaf
 
 <!-- SEC:HEADER -->
-**Service:** BayLeaf AI Playground  
-**Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz  
+**Service:** BayLeaf<br>
+**Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz<br>
 **Status:** Working analysis. Not legal advice. Not reviewed by UCSC Office of
 Campus Counsel. The BayLeaf operator is a faculty member of the UCSC AI
 Council. This document is an individual faculty analysis, not a Council
@@ -36,9 +36,10 @@ is documented. The technical architecture and contract stack exist to
 make that chain defensible.
 
 Today, the chain is governed by commercial Data Processing Addenda
-(DigitalOcean, Cloudflare) and OpenRouter's zero-data-retention (ZDR)
-provider routing. These are real protections but they are not under
-UC-signed agreements, and there is no written UCSC instrument
+(DigitalOcean, Cloudflare), OpenRouter's zero-data-retention (ZDR)
+provider routing for Chat and API plaintext, and Tinfoil's
+client-verified confidential inference for API Sealed. These are real
+protections but they are not under UC-signed agreements, and there is no written UCSC instrument
 acknowledging BayLeaf as operating under § 99.33(b). UCSC has approved
 Workspace-Gemini and NotebookLM for use with FERPA-protected data at
 Protection Level 3 per the
@@ -135,15 +136,14 @@ and a listing a user can check:
    the posture is sound, and would support such an instrument if a
    reviewer wanted one, but they are no longer presented as the gate.
 2. **Architectural choices that make the chain defensible** ([§ 5](#5-the-contract-stack-beneath-bayleaf)).
-   A direct Google Cloud integration under UCSC's existing Customer
-   Affiliate Agreement (now demonstrated in private preview via the
-   `vertex_pipe` function) puts BayLeaf's Gemini traffic under the same
-   UC-signed contracts that cover Workspace-Gemini. AWS Bedrock has been
-   identified as a second institutional back-end with a wider model
-   catalog (Anthropic, Meta, Mistral, Amazon Nova) under terms parallel
-   to GCP's. Models not available through these institutional back-ends
-   remain on the OpenRouter-ZDR path, which is the best contractual
-   protection available without separate UC-signed agreements.
+   Current production inference consists of separately curated
+   OpenRouter-ZDR paths for Chat and API plaintext, plus API Sealed via
+   Tinfoil. Chat may expose frontier proprietary and open-weight models;
+   API plaintext permits only models with verifiable Hugging Face
+   provenance, while Tinfoil's current Sealed catalog lists only open-weight
+   models without a separate BayLeaf-side enforcement gate.
+   Earlier direct Vertex and Bedrock proposals remain useful comparative
+   analyses, but Vertex, Bedrock, and NRP are disabled.
 
 A caution about proportion, added in July 2026. The subprocessor-chain
 analysis that occupies [§§ 4.3](#43-how-the--9933b-chain-is-bound) and
@@ -396,8 +396,10 @@ surfaces:
   DigitalOcean, offering curated model access to the UCSC campus
   community.
 - **BayLeaf API** (`api.bayleaf.dev`): a Cloudflare Worker that
-  provisions OpenRouter-compatible API keys for campus users, with
-  routing restricted to ZDR provider endpoints.
+  provides an OpenRouter-compatible interface for campus users. Its
+  plaintext OpenRouter path is restricted both to ZDR provider endpoints
+  and to models with verifiable open-weight provenance; its active Sealed
+  path uses Tinfoil confidential inference.
 
 The subprocessor chain beneath BayLeaf has two layers:
 
@@ -417,20 +419,23 @@ server-side until administratively deleted; DigitalOcean and Cloudflare
 both publish DPAs covering their handling of customer data; neither has
 a UC-signed FERPA-specific agreement with UCSC for the BayLeaf deployment.
 
-**Inference layer.** Where prompts are processed by a model. Three
-back-ends are now relevant:
+**Inference layer.** Where prompts are processed by a model. The two
+active providers support three distinct paths:
 
-- **OpenRouter** (current default for most models): commercial
-  intermediary routing to provider endpoints with ZDR flag enabled.
-- **Direct Google Cloud / Vertex AI** (private admin-only preview today;
-  productionization scoped by AI Council designation work): UCSC-managed
-  GCP project under UCSC's August 2024 Customer Affiliate Agreement,
-  which inherits the UC ↔ Google master agreements. See
-  [§ 5.2](#52-inference-layer-proposed-direct-google-cloud).
-- **AWS Bedrock** (identified as a second institutional back-end with a
-  wider model catalog: Anthropic Claude, Meta Llama, Mistral, Amazon
-  Nova): under UC's enterprise AWS agreements. See
-  [§ 5.3](#53-inference-layer-proposed-aws-bedrock).
+- **Chat via OpenRouter:** a separately curated catalog, potentially
+  including both frontier proprietary and open-weight models, routed only
+  to provider endpoints with the ZDR flag enabled.
+- **API plaintext via OpenRouter:** ZDR routing plus a fail-closed
+  open-weight policy. A model is permitted only when OpenRouter reports a
+  nonempty `hugging_face_id` and the corresponding Hugging Face repository
+  resolves; unknown or unverifiable models are denied with HTTP 403.
+- **API Sealed via Tinfoil:** a currently open-weight catalog using
+  client-verified confidential inference. The model identifier and body
+  are encrypted and opaque to BayLeaf.
+- **Direct Google Cloud / Vertex AI and AWS Bedrock:** implemented or
+  investigated institutional paths, currently disabled. Their comparative
+  contract analyses are retained in [§ 5.2](#52-inference-layer-proposed-direct-google-cloud)
+  and [§ 5.3](#53-inference-layer-proposed-aws-bedrock).
 - **NRP / SDSC** ([National Research Platform](https://nrp.ai/)):
   configured alternative serving open-weight models on NSF-funded
   research infrastructure at UC San Diego. Currently disabled because
@@ -440,14 +445,16 @@ For the purpose of FERPA analysis, the question is: when a user sends a
 prompt to BayLeaf, where does that prompt go, and under what contract is
 it processed?
 
-For most of BayLeaf's user-facing traffic today, there is **no direct
+For BayLeaf's user-facing traffic today, there is **no direct
 UCSC-to-provider LLM connection**. When a user selects "Gemini 2.5 Pro"
-or "Claude Sonnet" in BayLeaf Chat, the request goes to OpenRouter,
+or "Claude Sonnet" in BayLeaf Chat, where offered by its curated catalog,
+the request goes to OpenRouter,
 which forwards it to the provider's endpoint under OpenRouter's
-commercial agreement, not under any UCSC agreement. The Vertex AI demo
-exists in private preview; productionizing it (and adding a Bedrock
-sibling) is the architectural change that pairs with the FERPA
-acknowledgment described in this document.
+commercial agreement, not under any UCSC agreement. API plaintext calls
+also use OpenRouter but cannot select those proprietary models: they are
+subject to the Hugging Face provenance control above. API Sealed calls go
+to Tinfoil as encrypted bodies. Vertex, Bedrock, and NRP receive no
+production traffic.
 
 This is the fact that most shapes [§ 4](#4-bayleafs-ferpa-basis) and the contract-stack
 discussion in [§ 5](#5-the-contract-stack-beneath-bayleaf).
@@ -790,12 +797,13 @@ routing to ZDR provider endpoints, where the no-training and
 no-retention commitments are enforced contractually. The non-uniform
 piece of the chain is the model-provider layer: those providers'
 commitments to OpenRouter are not under UC-signed agreements. Direct
-Google Cloud (already demonstrated in private preview) and AWS Bedrock
-(identified as a second institutional back-end) bring large slices of
-that layer under UC-signed terms. Models without an institutional
-back-end available remain on the OpenRouter-ZDR path; the
-acknowledgment can scope which protection levels are appropriate for
-which inference path.
+Google Cloud was demonstrated in a now-disabled proof of concept, and
+AWS Bedrock was identified as a second institutional back-end. Those
+historical proposals would bring slices of that layer under UC-signed
+terms if re-enabled under institutionally covered accounts. Current
+production traffic instead uses the distinct Chat/OpenRouter,
+API-plaintext/OpenRouter, and API-Sealed/Tinfoil paths described in
+[§ 5.1](#51-inference-layer-today-active-paths).
 
 ### 4.4 An alternative framing under (a)(1)(i)(B)
 
@@ -1004,23 +1012,23 @@ this section, the platform layer is taken as background.
 
 The inference layer is where the substantive FERPA variation lives.
 
-### 5.1 Inference layer today: OpenRouter-ZDR
+### 5.1 Inference layer today: active paths
 
-For any BayLeaf model call today (Gemini, Claude, GPT, Llama, etc.),
-the contract chain is:
+Chat and API plaintext both use OpenRouter ZDR, but they do not expose the
+same model policy. Their contract chain is:
 
 ```
 User at UCSC
    │
    ▼
-BayLeaf Chat (DigitalOcean) or BayLeaf API (Cloudflare)
+BayLeaf Chat (DigitalOcean) or BayLeaf API plaintext (Cloudflare)
    │   [operational terms: BayLeaf's own service commitments]
    ▼
 OpenRouter
    │   [contract: OpenRouter ZDR commercial terms]
    │   [BayLeaf restricts to ZDR-flagged provider endpoints]
    ▼
-Model provider (Anthropic, Google Vertex, OpenAI, Meta, etc.)
+Model provider (Anthropic, Google, OpenAI, Meta, etc.)
        [contract: OpenRouter ↔ provider, commercial terms]
        [UCSC is not a party to this contract]
 ```
@@ -1031,6 +1039,33 @@ discard prompts and completions after generating a response. No
 training, no retention, no secondary use. This is a meaningful
 protection and is substantively compatible with § 99.33(b) redisclosure
 terms.
+
+The catalogs are deliberately distinct. Chat is curated separately and
+may expose both frontier proprietary and open-weight models. API plaintext
+allows a model only when OpenRouter reports a nonempty `hugging_face_id`
+and the corresponding Hugging Face repository resolves. Unknown or
+unverifiable models fail closed with HTTP 403. This is a model-provenance
+policy control, not an additional FERPA contract.
+
+API Sealed has a different chain:
+
+```
+Compatible client
+   │   [verifies enclave attestation; encrypts model and body]
+   ▼
+BayLeaf API (Cloudflare)
+   │   [relays ciphertext; cannot inspect requested model or content]
+   ▼
+Tinfoil attested confidential-inference workload
+       [current catalog lists only open-weight models]
+```
+
+The requested model and request/response bodies are encrypted from BayLeaf.
+The structural claim depends on correct client verification of the attested
+workload; identity, timing, byte counts, billing metadata, and the executed
+model reported in non-streaming usage metadata remain outside that encrypted
+content boundary. BayLeaf does not independently enforce the composition of
+Tinfoil's catalog. See `SECURITY.md §2.3a`.
 
 BayLeaf applies this same no-retention standard to **itself** on the
 intermediary hops. The BayLeaf API (Cloudflare) stores no prompt or
@@ -1060,7 +1095,7 @@ them.
 
 ### 5.2 Inference layer proposed: direct Google Cloud
 
-A working private proof-of-concept of this path now exists in BayLeaf
+A private proof-of-concept of this path previously existed in BayLeaf
 Chat (admin-only, surfacing both Google's Gemini models and third-party
 MaaS open models via the [`vertex_pipe`](../chat/functions/vertex_pipe/) 
 function). The pipe holds a Google service-account JSON in an admin-only 
@@ -1094,8 +1129,8 @@ BAA-covered ZDR backend is **Amazon Bedrock** under UCSC's existing AWS
 agreement (issue #41), which is ZDR-by-default; the API's backend-enablement
 design is built to admit Bedrock symmetrically.
 
-This demonstrates that the architectural path is real and the contract
-chain below attaches to live traffic. Productionizing it (broader user
+This demonstrated that the architectural path was real, but the contract
+chain below does not attach to current traffic. Productionizing it (broader user
 exposure, an institutional GCP project under UCSC ITS, key-rotation
 policy, and a written Council-facing risk rating) is the conversation
 the [HECVAT](HECVAT.md) and AI Council designation work is now
@@ -1109,9 +1144,8 @@ current **Enterprise Addendum** (2025). The affiliate agreement is
 administrative plumbing: it does not reopen contract terms, it simply
 binds UCSC to the UC-wide agreements already in force.
 
-If BayLeaf routes Gemini traffic through this direct Google Cloud
-integration (as it does today for the private demo, and as the
-production path would extend), the contract chain for those calls is:
+If BayLeaf were to route Gemini traffic through this direct Google Cloud
+integration again, the contract chain for those calls would be:
 
 ```
 User at UCSC
@@ -1455,11 +1489,12 @@ guidance:
   UC-signed institutional agreement.
 
 BayLeaf in its current form is not on the published P3-approved list.
-Its inference paths today route through OpenRouter under commercial ZDR
-terms, which is real protection but not under a UC-signed agreement.
-This applies regardless of which model the user selects, including Gemini
-(which currently reaches Google via OpenRouter rather than via UCSC's
-Google contract).
+Chat and API plaintext route through OpenRouter under commercial ZDR
+terms, while API Sealed routes encrypted requests to Tinfoil; none is
+under a UC-signed inference agreement. Chat's catalog may include both
+proprietary and open-weight models. API plaintext and Sealed are limited
+to open-weight models, by runtime provenance enforcement and Tinfoil's
+catalog respectively.
 
 A distinction matters here, and it is easy to elide because FERPA
 records *are* P3. UCSC's review of a P3-eligible tool has two
@@ -1506,12 +1541,12 @@ tool today, and is why the user-facing guidance in
 longer accurate, though, to describe BayLeaf as awaiting a FERPA
 authorization that the responsible office says it does not issue.
 
-The architectural shift now under way (the Vertex AI demo in private
-preview, AWS Bedrock as a second institutional back-end) brings the
-inference layer of the chain into UC-signed agreement territory for the
-models those back-ends serve. That strengthens the posture on its own
-terms, and remains worth doing, but on the evidence of the June 2026
-review it is not what the published listing is waiting for.
+The historical Vertex proof of concept and Bedrock proposal show how the
+inference layer could be brought into UC-signed agreement territory for
+the models those back-ends serve. Both are disabled, as is NRP. Such a
+future shift could strengthen the posture on its own terms, but on the
+evidence of the June 2026 review it is not what the published listing is
+waiting for.
 
 ---
 
@@ -1804,7 +1839,7 @@ either framing.
 
 ---
 
-> **Memorandum acknowledging BayLeaf AI Playground as an instrument of
+> **Memorandum acknowledging BayLeaf as an instrument of
 > a UCSC school official under FERPA**
 >
 > **From:** [UCSC signing official; candidates include the Provost,
@@ -1813,8 +1848,7 @@ either framing.
 > Regents of the University of California]
 >
 > **To:** Adam Smith, Associate Professor, Department of Computational
-> Media, UC Santa Cruz, in his capacity as operator of the BayLeaf AI
-> Playground ("BayLeaf")
+> Media, UC Santa Cruz, in his capacity as operator of BayLeaf
 >
 > **Date:** [to be supplied]
 >
@@ -1833,7 +1867,7 @@ either framing.
 > Administrative Procedures Applying to Disclosure of Information from
 > Student Records as a condition of UCSC employment.
 >
-> (b) Operator has built and operates the BayLeaf AI Playground
+> (b) Operator has built and operates BayLeaf
 > ("BayLeaf"), a service consisting of two user-facing surfaces (BayLeaf
 > Chat at `chat.bayleaf.dev` and BayLeaf API at `api.bayleaf.dev`) and
 > a chain of cloud subprocessors enumerated in Appendix A.
@@ -2010,17 +2044,17 @@ either framing.
 >
 > _____________________________________
 > Adam Smith, Associate Professor
-> Operator, BayLeaf AI Playground
+> Operator, BayLeaf
 >
 > ---
 >
 > **Appendix A: Subprocessors**
 >
 > *[This appendix would list each subprocessor (DigitalOcean,
-> Cloudflare, OpenRouter, NRP, the specific model providers reached
-> via OpenRouter's ZDR endpoints, plus the UCSC-managed Google Cloud
-> project for direct Vertex AI access and the UCSC-managed AWS account
-> for Bedrock if those institutional back-ends are added), with the
+> Cloudflare, OpenRouter, Tinfoil, the specific model providers reached
+> via OpenRouter's ZDR endpoints, plus NRP, the UCSC-managed Google Cloud
+> project for direct Vertex AI access, and the UCSC-managed AWS account
+> for Bedrock if those disabled or proposed institutional back-ends are added), with the
 > contractual instrument governing each, the category of data handled,
 > the retention and training posture, and the termination obligations.
 > To be prepared as a companion document when the memorandum is
@@ -2109,9 +2143,9 @@ the AI tools approved for P3 data:
 BayLeaf is **not on that published list**, and that is the fact to act
 on when deciding what to paste where today: the list is what you can
 check, and it does not name BayLeaf. This applies regardless of which
-model you select in BayLeaf (Gemini included, since today's
-Gemini-in-BayLeaf goes through OpenRouter rather than UC's Google
-contract).
+active BayLeaf path or model you select: Chat and API plaintext use
+commercial OpenRouter-ZDR terms, and API Sealed uses Tinfoil confidential
+inference, not a UC-signed inference agreement.
 
 Two qualifications, because "not on the list" is doing narrower work here
 than "disallowed":
@@ -2287,10 +2321,10 @@ legal-basis inquiry is now mostly a communication and scoping agenda.
 
 5. **Extending P3 to direct institutional inference back-ends.** The
    Council has approved Workspace-Gemini and NotebookLM for P3 on the
-   strength of UC's negotiated Google agreements. Two architectural
-   extensions of that posture are in view: (a) Vertex AI under UCSC's GCP
+   strength of UC's negotiated Google agreements. Two historical/proposed
+   extensions of that posture are documented here: (a) Vertex AI under UCSC's GCP
    project ([§ 5.2](#52-inference-layer-proposed-direct-google-cloud),
-   demonstrated in private preview but currently disabled for want of a
+   previously demonstrated in private preview but currently disabled for want of a
    ZDR abuse-monitoring exception), and (b) AWS Bedrock under UC ↔ AWS
    enterprise agreements ([§ 5.3](#53-inference-layer-proposed-aws-bedrock)).
    Does the P3 approval extend to these direct-API back-ends, given that
@@ -2348,7 +2382,7 @@ Answers to items 1 through 4 would let this document replace most of its
 remaining hedged language with definite statements and simplify the
 user-facing guidance in [§ 9](#9-what-this-means-in-practice)
 considerably. Items 5 and 6 shape whether and how to productionize the
-institutional inference back-ends. Items 7 through 10 are campus-level
+institutional inference back-ends if that work resumes. Items 7 through 10 are campus-level
 questions that BayLeaf has surfaced but does not own.
 
 ---

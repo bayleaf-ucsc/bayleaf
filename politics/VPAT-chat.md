@@ -1,8 +1,8 @@
 # VPAT and BayLeaf Chat
 
-**Service:** BayLeaf Chat ([`chat.bayleaf.dev`](https://chat.bayleaf.dev)), a surface of the BayLeaf AI Playground  
-**Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz  
-**Status:** Working draft. Not a signed ACR. A first empirical pass (2026-04-29) covered the authenticated landing page and produced concrete findings for the criteria most relevant to a chat surface; the remainder are still Not Evaluated, pending (in part) a published ACR from upstream Open WebUI (see [§ 1](#1-surface-description)).  
+**Service:** BayLeaf Chat ([`chat.bayleaf.dev`](https://chat.bayleaf.dev)), a surface of BayLeaf<br>
+**Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz<br>
+**Status:** Working draft. Not a signed ACR. A first empirical pass (2026-04-29) covered the authenticated landing page and produced concrete findings for the criteria most relevant to a chat surface; the remainder are still Not Evaluated, pending (in part) a published ACR from upstream Open WebUI (see [§ 1](#1-surface-description)).<br>
 **Template:** [VPAT® 2.5 INT](https://www.itic.org/policy/accessibility/vpat), covering [WCAG 2.1](https://www.w3.org/TR/WCAG21/) Level A and AA, [Revised Section 508](https://www.access-board.gov/ict/), and [EN 301 549](https://www.etsi.org/deliver/etsi_en/301500_301599/301549/).
 
 **Methodology.** The 2026-04-29 pass used headless Chromium driven by [rodney](https://github.com/simonw/rodney), authenticated to `chat.bayleaf.dev` via JWT cookie, running [axe-core](https://github.com/dequelabs/axe-core) v4.10.2 with the `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa` tag filter, plus targeted DOM/CSS probes for focus visibility, landmarks, headings, live-region structure, and accessible-name coverage on composer and send controls. The pass did **not** include a real screen-reader run (NVDA/VoiceOver) and did **not** cover settings modals, admin views, or the model workspace builder. Findings below therefore establish Does Not Support claims where evidence is unambiguous, and leave Supports claims off the table until a screen-reader pass is done.

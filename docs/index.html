@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BayLeaf AI Playground</title>
+    <title>BayLeaf</title>
     <meta name="description" content="A situated counterplatform for Generative AI at UC Santa Cruz: chat and API services for students, faculty, and staff, operated by a faculty member.">
     <link rel="canonical" href="https://bayleaf.dev/">
     <link rel="stylesheet" href="style.css">
@@ -11,21 +11,21 @@
          Mastodon do not resolve relative paths. Regenerate the image with
          images/make-og-card.py if the tagline or palette changes. -->
     <meta property="og:type" content="website">
-    <meta property="og:site_name" content="BayLeaf AI Playground">
-    <meta property="og:title" content="BayLeaf AI Playground">
+    <meta property="og:site_name" content="BayLeaf">
+    <meta property="og:title" content="BayLeaf">
     <meta property="og:description" content="A situated counterplatform for Generative AI at UC Santa Cruz: chat and API services for students, faculty, and staff.">
     <meta property="og:url" content="https://bayleaf.dev/">
     <meta property="og:image" content="https://bayleaf.dev/images/og-card.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
-    <meta property="og:image:alt" content="The BayLeaf logo, a white bay leaf and a yellow banana slug on a green circle, beside the words BayLeaf AI Playground.">
+    <meta property="og:image:alt" content="The BayLeaf logo, a white bay leaf and a yellow banana slug on a green circle, beside the name BayLeaf and the words A situated counterplatform for Generative AI at UC Santa Cruz.">
     <meta name="twitter:card" content="summary_large_image">
 </head>
 <body>
     <main id="main">
-    <h1>BayLeaf AI Playground</h1>
+    <h1>BayLeaf</h1>
     <p class="tagline">A situated counterplatform for Generative AI at UC Santa Cruz</p>
-    
+
     <div class="services">
         <a href="https://chat.bayleaf.dev/" class="service-link">BayLeaf Chat</a>
         <a href="https://api.bayleaf.dev" class="service-link primary-action">BayLeaf API</a>
@@ -38,12 +38,13 @@
         <a href="support.html" class="service-link secondary">Support</a>
     </div>
 
-    <h2>About the AI Playground</h2>
+    <h2>About BayLeaf</h2>
     <p>
-        BayLeaf Chat and BayLeaf API form an experimental Generative AI Playground designed to serve 
-        the entire UC Santa Cruz campus community (students, faculty, and staff). The system is operated 
-        by <a href="mailto:amsmith@ucsc.edu">Adam Smith</a> (faculty from the Department of Computational Media), 
-        as a living prototype of a possible future university-managed service.
+        BayLeaf Chat and BayLeaf API are the working services of a situated counterplatform for
+        Generative AI, designed to serve the entire UC Santa Cruz campus community (students,
+        faculty, and staff). BayLeaf is operated by
+        <a href="mailto:amsmith@ucsc.edu">Adam Smith</a> (faculty from the Department of
+        Computational Media) as a living prototype of a possible future university-managed service.
     </p>
 
     <p>
@@ -97,22 +98,20 @@
             resource footprint is a legitimate concern. The flagship models from mainstream
             providers can have trillions of parameters, and training compute, energy, and cost
             all <a href="https://epoch.ai/data/ai-models?view=graph&tab=notable&xAxis=Parameters">scale
-            with parameter count</a>. The agents in BayLeaf Chat are always backed by mid-sized,
-            sub-trillion-parameter models (tens to hundreds of billions of parameters), consuming
-            proportionally less energy and other resources. Our API recommends a model of the same
-            kind by default, and its catalog lists only open-weight models.
+            with parameter count</a>. BayLeaf Chat uses a curated model selection rather than an
+            unrestricted catalog, with resource footprint among the selection criteria. The API
+            recommends a mid-sized model by default. Plaintext API inference enforces an
+            open-weight policy, while API Sealed currently draws from Tinfoil's open-weight catalog.
         </li>
         <li>
-            <strong>Reciprocity: Built on open-weight models.</strong> Large-scale AI is often criticized for
-            concentrating power in a few corporations behind closed APIs. BayLeaf Chat agents are
-            always backed by
-            <a href="https://huggingface.co/models">open-weight models</a>: models that are
-            contributed back to the public web, available for anyone to download, audit, or build
-            on. This is a form of structural reciprocity with the open ecosystem that makes this
-            technology possible. The API holds to the same value: its catalog lists exclusively
-            open-weight models. Developers who need a proprietary model for comparative research
-            can still reach one by crafting its slug manually; the listing is curated, the routing
-            is open.
+            <strong>Reciprocity: Keep open-weight models available.</strong> Large-scale AI is often criticized for
+            concentrating power in a few corporations behind closed APIs. BayLeaf Chat's curated
+            OpenRouter ZDR selection can include both proprietary and
+            <a href="https://huggingface.co/models">open-weight models</a>. The API holds a stricter
+            line: plaintext OpenRouter inference permits only open-weight models. OpenRouter must
+            publish a nonempty Hugging Face repository ID and that repository must resolve;
+            otherwise BayLeaf returns HTTP 403. API Sealed currently offers only the open-weight
+            models in Tinfoil's catalog, a provider-catalog property rather than a BayLeaf-side check.
         </li>
         <li>
             <strong>Privacy: Providers never retain your data, and our API never stores it.</strong> Many commercial AI
@@ -120,7 +119,10 @@
             exposure that users cannot control. BayLeaf leverages
             <a href="https://openrouter.ai/docs/guides/features/zdr">zero-data-retention (ZDR)</a>
             inference services so that no LLM provider stores a copy of your data; they keep only
-            request metadata. We apply that standard to ourselves: the
+            request metadata. Chat and plaintext API inference use OpenRouter ZDR. API Sealed uses
+            Tinfoil, with the requested model and body encrypted from BayLeaf. Non-streaming usage
+            metadata can report which model executed. We apply the
+            non-retention standard to ourselves: the
             <a href="https://api.bayleaf.dev">BayLeaf API</a> retains no copy of your prompts or
             completions and has no standing operator access to your request content as it passes
             through, an approach inspired by
@@ -176,21 +178,11 @@
 
     <div class="note">
         <strong>A path toward institution-managed inference.</strong> UC has in-place
-        data-protection agreements with both <strong>Google Cloud (Vertex AI, now serving
-        the Gemini family)</strong> and <strong>Amazon Web Services (Bedrock)</strong>. BayLeaf
-        has integrated both back-ends to demonstrate that a technically <em>and</em> legally
-        protected data flow is achievable: a clear path toward a future version of BayLeaf
-        operated directly by UCSC ITS. Two honest caveats. First, BayLeaf is run from a
-        personal administrator account, not one managed by UCSC ITS, so those institutional
-        agreements do not currently cover data flowing through BayLeaf; they show the path,
-        not its present legal footing. Second, BayLeaf holds a hard line of requiring
-        zero data retention for every <em>active</em> AI provider, so the Vertex AI back-end
-        is integrated but <strong>disabled</strong> pending removal of data retention for abuse
-        monitoring from our accounts. We integrate such providers speculatively to build the
-        path forward, but we never let user data be logged by a third-party LLM service.
-        (Non-AI services such as the Daytona-backed Code Sandbox necessarily store user files,
-        since persistent storage is their function.) The full contract and retention analysis
-        is public in
+        data-protection agreements with Google Cloud and Amazon Web Services, but BayLeaf is
+        faculty-operated from a personal administrator account and is not covered by those
+        agreements. Its Vertex AI, AWS Bedrock, and NRP inference back-ends are
+        <strong>disabled</strong> and carry no traffic. Active inference uses OpenRouter ZDR or
+        Tinfoil Sealed. The full contract and retention analysis is public in
         <a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/politics/FERPA.md">our FERPA
         notes</a>.
     </div>
@@ -233,25 +225,29 @@
         specific access groups (e.g. course sections, departments, or programs).
     </p>
     <p>
+        Chat uses a curated OpenRouter ZDR selection that can include both proprietary and
+        open-weight models.
+    </p>
+    <p>
         The <strong>Code Sandbox</strong> toolkit gives models access to a persistent, sandboxed Linux
         environment, making it possible to run command-line tools directly from the browser. This enables
         tasks like file processing, scripting, and interacting with external services through CLI tools
         without leaving the chat interface.
     </p>
     <p>
-        Most chat models are subject to a rate limit mechanism that ensures fair and cost-efficient 
+        Most chat models are subject to a rate limit mechanism that ensures fair and cost-efficient
         access for all.
     </p>
     <p>
-        <em>Tip:</em> Chat message replies from models are limited in length based on the number of 
-        turns in the conversation so far. Users should prefer many short conversations on distinct 
+        <em>Tip:</em> Chat message replies from models are limited in length based on the number of
+        turns in the conversation so far. Users should prefer many short conversations on distinct
         topics rather than one long one that meanders through unrelated topics.
     </p>
 
     <h2>API Service</h2>
     <p>
-        Our API service provides <strong>key-less access</strong> to users connecting from the campus 
-        network (e.g. 169.233.x.x), and it allows authenticated users to grant themselves an API key 
+        Our API service provides <strong>key-less access</strong> to users connecting from the campus
+        network (e.g. 169.233.x.x), and it allows authenticated users to grant themselves an API key
         for off-campus access.
     </p>
     <p>
@@ -259,15 +255,22 @@
         adding BayLeaf-specific instructions to proxied requests.
     </p>
     <p>
-        To allow for experimentation, API requests are not closely rate limited, but individual keys 
+        To allow for experimentation, API requests are not closely rate limited, but individual keys
         are subject to a reasonable total daily spending limit.
     </p>
     <p>
-        The API recommends an open-weight model as the default for new users; the dashboard's
-        sample request is pre-filled with it. The API's own model catalog lists exclusively
-        open-weight models, with per-token prices. Developers who need a proprietary model for
-        comparative work can still call one by crafting its
-        <a href="https://openrouter.ai/models">OpenRouter</a> slug manually.
+        The plaintext API uses OpenRouter but permits only verifiably open-weight models. OpenRouter
+        must publish a nonempty <code>hugging_face_id</code> and the Hugging Face repository must
+        resolve. Positive and definite-negative decisions are cached in <code>MODEL_STATUS</code>
+        KV for 24 hours. An unknown result fails closed with HTTP 403 and is not cached.
+        <a href="https://openrouter.ai/models">OpenRouter's public catalog</a> is broader than
+        BayLeaf's permitted set and includes models BayLeaf will reject.
+    </p>
+    <p>
+        <strong>API Sealed</strong> is an active confidential-inference lane through Tinfoil. It
+        currently offers only open-weight models, and clients encrypt the requested model and body
+        to an attested enclave before either reaches BayLeaf. Non-streaming usage metadata can report
+        which model executed. There is no plaintext fallback.
     </p>
 
     <h3>Code Sandbox</h3>
@@ -279,7 +282,7 @@
         including on campus; the same key authenticates both LLM inference and sandbox access.
     </p>
 
-    <h3>Web Search & Fetch</h3>
+    <h3>Web Search &amp; Fetch</h3>
     <p>
         The API provides <strong>web search</strong> and <strong>page content extraction</strong>
         as first-class endpoints, both backed by <a href="https://tavily.com/">Tavily</a>.
@@ -470,7 +473,7 @@
     </main>
 
     <footer class="contact">
-        <strong>Contact:</strong> <a href="mailto:amsmith@ucsc.edu">Adam Smith</a> | 
+        <strong>Contact:</strong> <a href="mailto:amsmith@ucsc.edu">Adam Smith</a> |
         <a href="https://campusdirectory.ucsc.edu/cd_detail?uid=amsmith">UCSC Directory</a> |
         <a href="https://github.com/bayleaf-ucsc/bayleaf">GitHub</a> |
         <a href="https://stats.uptimerobot.com/tJ1Qkm7L0R">Status</a> |

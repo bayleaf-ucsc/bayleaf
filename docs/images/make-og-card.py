@@ -42,7 +42,7 @@ MUTED = "#555555"
 TITLE_FONT = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
 BODY_FONT = "/System/Library/Fonts/Supplemental/Arial.ttf"
 
-TITLE = "BayLeaf AI Playground"
+TITLE = "BayLeaf"
 TAGLINE = "A situated counterplatform for\nGenerative AI at UC Santa Cruz"
 FOOTER = "bayleaf.dev"
 

@@ -229,19 +229,50 @@ curl -s https://api.bayleaf.dev/v1/chat/completions \
 
 ### Open-weight enforcement
 
-Request a known proprietary model and verify it is rejected before inference:
+OpenRouter inference requires both a nonempty `hugging_face_id` in OpenRouter's
+catalog and successful resolution of that Hugging Face repository. The ordinary
+request above is therefore also the positive gate test: repeat it to exercise
+the 24-hour positive cache.
+
+Request a known proprietary model through every OpenRouter POST path and verify
+it is rejected before inference:
 
 ```bash
+# Dedicated Chat Completions route
 curl -i https://api.bayleaf.dev/v1/chat/completions \
   -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
   -d '{"model":"openai/gpt-5.4","messages":[{"role":"user","content":"Hello"}]}'
+
+# Dedicated Responses route
+curl -i https://api.bayleaf.dev/v1/responses \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"openai/gpt-5.4","input":"Hello"}'
+
+# Generic POST catch-all
+curl -i https://api.bayleaf.dev/v1/completions \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"openai/gpt-5.4","prompt":"Hello"}'
+
+# The generic POST catch-all must also fail closed when model is absent
+curl -i https://api.bayleaf.dev/v1/completions \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"Hello"}'
 ```
 
-**Check:** HTTP 403 with an error stating that published open weights could not
-be verified. Repeat the request to exercise the cached negative decision. A
-known open-weight request above must continue to succeed; repeat it to exercise
-the cached positive decision.
+**Check:** all four requests return HTTP 403 with an error stating that
+published open weights could not be verified. Repeat a proprietary-model
+request to exercise the 24-hour definite-negative cache. Lookup failures such
+as OpenRouter/Hugging Face timeouts also return 403, but are deliberately not
+cached; verifying that distinction requires inspecting or controlling
+`MODEL_STATUS`, not merely repeating a live smoke test.
+
+The dedicated Chat Completions and Responses schemas require `model`; omitting
+it there returns HTTP 400 during schema validation. The explicit missing-model
+403 above covers the generic POST path, whose body is parsed by the catch-all.
 
 ---
 
@@ -311,37 +342,37 @@ Verify the catch-all GET proxy works.
 ```bash
 curl -s https://api.bayleaf.dev/v1/models \
   -H "Authorization: Bearer $KEY" \
-  | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'OK: {len(d[\"data\"])} models')"
+  | python3 -c 'import sys,json; d=json.load(sys.stdin)["data"]; assert d; assert all(m["id"].startswith("openrouter:") for m in d); assert all(isinstance(m.get("hugging_face_id"),str) and m["hugging_face_id"].strip() for m in d); print(f"OK: {len(d)} open-weight candidates")'
 ```
 
 **Check:**
 
-- Prints `OK: <N> models` where N is a positive number (typically 300+).
-- Note: All OpenRouter models will be prefixed with `openrouter:` and the custom Vertex models will be at the end of the list.
+- Prints `OK: <N> open-weight candidates` where N is a positive number.
+- Every listed model is prefixed with `openrouter:` and has a nonempty
+  `hugging_face_id`. This listing predicate does not resolve every repository;
+  the stronger resolution check happens when a model is used for inference.
+- No `vertex:` or `bedrock:` entries appear while those backends are disabled.
 
 
 ---
 
-## 4.5. LLM Proxy — Vertex Routing
+## 4.5. LLM Proxy — Disabled Vertex Routing
 
-Verify that the proxy correctly handles the `vertex:` model prefix, authenticates with Google Cloud, and enforces the RPD budget limit.
+Verify that the disabled Vertex backend fails closed before GCP authentication
+or inference.
 
 ```bash
-curl -s https://api.bayleaf.dev/v1/chat/completions \
+curl -i https://api.bayleaf.dev/v1/chat/completions \
   -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "vertex:gemini-2.5-flash",
     "messages": [{"role": "user", "content": "What is the capital of California?"}]
-  }' | python3 -m json.tool
+  }'
 ```
 
-**Check:**
-
-- Response is valid JSON with `choices[0].message.content`
-- The model's output answers the question (Sacramento)
-- The `model` in the response is `google/gemini-2.5-flash`
-- `usage` object is present (Google's format)
+**Check:** HTTP `503`, with an error stating that the Vertex AI backend is
+currently disabled and directing the caller to an `openrouter:` model.
 
 
 
@@ -535,7 +566,7 @@ curl -s https://api.bayleaf.dev/v1/auth/key \
 Make a billable Campus Pass call:
 
 ```bash
-curl -s https://api.bayleaf.dev/v1/chat/completions \
+curl -i https://api.bayleaf.dev/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "openrouter:z-ai/glm-5",
@@ -557,27 +588,24 @@ curl -s https://api.bayleaf.dev/v1/auth/key \
 
 ---
 
-## 13. Campus Pass — Vertex routing (campus-only)
+## 13. Campus Pass — Disabled Vertex routing (campus-only)
 
-Verify Campus Pass can now reach `vertex:` models (was 403 before the
-unified RPD scheme).
+Verify Campus Pass does not bypass the Vertex backend kill-switch.
 
 ```bash
-curl -s https://api.bayleaf.dev/v1/chat/completions \
+curl -i https://api.bayleaf.dev/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "vertex:gemini-2.5-flash-lite",
     "messages": [{"role": "user", "content": "What is the capital of California?"}]
-  }' | python3 -m json.tool
+  }'
 ```
 
 **Check:**
 
-- Response is valid JSON with `choices[0].message.content` answering
-  "Sacramento" (no 403).
-- Response `model` is `google/gemini-2.5-flash-lite`.
-- Counter (via `/v1/auth/key`) incremented by 1, just like the OpenRouter
-  call in §11. The unified RPD covers both providers.
+- Response is HTTP `503`, with an error stating that Vertex AI is disabled.
+- No GCP inference occurs. The Campus Pass counter may already have incremented:
+  its unified limit is enforced before backend-prefix routing.
 
 ---
 

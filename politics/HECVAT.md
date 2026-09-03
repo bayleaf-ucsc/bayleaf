@@ -1,7 +1,7 @@
-# HECVAT 4.1.5: BayLeaf AI Playground
+# HECVAT 4.1.5: BayLeaf
 
-**Solution Provider:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz  
-**Solution Name:** BayLeaf AI Playground  
+**Solution Provider:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz<br>
+**Solution Name:** BayLeaf<br>
 **Date:** 2026-04-29
 
 ---
@@ -74,7 +74,7 @@ BayLeaf to the P3-approved list.
 
 **Q:** Solution Name
 
-**Answer:** BayLeaf AI Playground.
+**Answer:** BayLeaf.
 
 **Additional Information:** Two user surfaces under the same name: BayLeaf Chat (`chat.bayleaf.dev`) and BayLeaf API (`api.bayleaf.dev`). Landing page at `bayleaf.dev`.
 
@@ -84,7 +84,7 @@ BayLeaf to the P3-approved list.
 
 **Q:** Solution Description
 
-**Answer:** BayLeaf is a curated, campus-scoped generative-AI service for the UCSC community. Chat is an Open WebUI deployment offering chat access to frontier and open-weight LLMs via OpenRouter (zero-data-retention routing only), with curated workspace models, invite-code-gated groups, per-user sandbox VMs for agentic coding, and rate limiting. API is an OpenRouter-compatible endpoint providing keyless on-campus access and key-based off-campus access, with spending caps and revocation at the proxy layer.
+**Answer:** BayLeaf is a curated, campus-scoped generative-AI service for the UCSC community. Chat is an Open WebUI deployment offering a separately curated catalog of frontier proprietary and open-weight LLMs via OpenRouter (zero-data-retention routing only), with curated workspace models, invite-code-gated groups, per-user sandbox VMs for agentic coding, and rate limiting. API is an OpenRouter-compatible endpoint providing keyless on-campus access and key-based off-campus access, with spending caps and revocation at the proxy layer. API plaintext OpenRouter inference is limited to models with verified Hugging Face provenance; API Sealed provides confidential inference through Tinfoil, whose current catalog lists only open-weight models.
 
 **Additional Information:** Purpose: give UCSC faculty, staff, and students access to current AI tools with meaningful contractual protections (ZDR), SSO, and group-based access, as an alternative to consumer AI tools that carry weaker commitments. See `../chat/DESIGN.md` for architectural detail and `SECURITY.md` for the security exhibit.
 
@@ -198,7 +198,7 @@ BayLeaf to the P3-approved list.
 **Answer:** Key points for the reviewer:
 
 1. **Operator status.** Adam Smith is a tenured UCSC faculty member and an existing school official under 34 CFR § 99.31(a)(1)(i)(A). He is bound by UC Electronic Communications Policy, UC IS-3, UCSC Administrative Procedures Applying to Disclosure of Information from Student Records (§IX.C written-form requirement), and other UC policies as a condition of employment.
-2. **Inference posture.** All LLM inference goes through OpenRouter restricted to zero-data-retention (ZDR) provider endpoints. No prompt or completion text is retained by any model provider; providers retain only request metadata. The BayLeaf API applies this standard to itself: it stores no prompt or completion content, disables request tracing, and exposes no operator interface to read request content in flight (a zero-operator-access *posture* in the sense of the [AWS Mantle design](https://aws.amazon.com/blogs/machine-learning/exploring-the-zero-operator-access-design-of-mantle/), though not a hardware-attested guarantee; see `SECURITY.md §2.3a`). A NRP/SDSC institutional path is configured but currently disabled because NRP's policy is to log prompts.
+2. **Inference posture.** Chat and API plaintext use OpenRouter restricted to zero-data-retention (ZDR) provider endpoints; Chat has a separately curated proprietary/open-weight catalog, while API plaintext permits only models with a nonempty OpenRouter `hugging_face_id` whose Hugging Face repository resolves, denying unknown or unverifiable models with HTTP 403. API Sealed is active through Tinfoil's current open-weight catalog: a compatible client verifies attestation and encrypts the requested model and body from BayLeaf, while non-streaming usage metadata may reveal the executed model. BayLeaf does not independently enforce Tinfoil's catalog composition. The BayLeaf API stores no prompt or completion content and disables request tracing (see `SECURITY.md §2.3a`). Vertex, Bedrock, and NRP are disabled.
 3. **Data retained.** User accounts (email, name, OAuth tokens), conversation histories, group memberships, and uploaded files are stored in DigitalOcean Managed PostgreSQL 17 and DO Spaces (AES-256 at rest). API key mappings are stored in Cloudflare D1 (encrypted at rest). Conversation data and sandbox content are automatically deleted after 90 days of inactivity per a published, automated retention policy (`../chat/RETENTION.md`, `../api/RETENTION.md`). See `SECURITY.md §2.2`.
 4. **Authentication.** SSO-only via CILogon/InCommon (OIDC); no password login. Direct signup disabled. MFA inherited from the UCSC IdP.
 5. **Documentation.** Full security exhibit at `SECURITY.md`. Full FERPA analysis with draft designation memo at `FERPA.md`. Dependency audit at `DEPENDENCIES.md`. Vulnerability reporting policy at repo-root `SECURITY.md`.
@@ -343,7 +343,7 @@ See START HERE section above.
 
 **Answer:** Yes.
 
-**Additional Information:** `SECURITY.md §1` (architecture table) and §2 (data handling) document the component inventory and data flows. `FERPA.md §5` contains ASCII data-flow diagrams for both inference paths (current OpenRouter-ZDR and proposed direct Google Cloud). `../chat/DESIGN.md` documents the full OWUI deployment including model, tool, filter, and skill architecture. Formal boxed diagrams can be produced on request.
+**Additional Information:** `SECURITY.md §1` (architecture table) and §2 (data handling) document the component inventory and data flows. `FERPA.md §5` contains ASCII data-flow diagrams for the current OpenRouter-ZDR and Tinfoil Sealed paths and preserves the proposed direct Google Cloud comparison as historical analysis. `../chat/DESIGN.md` documents the full OWUI deployment including model, tool, filter, and skill architecture. Formal boxed diagrams can be produced on request.
 
 ---
 
@@ -389,6 +389,11 @@ See START HERE section above.
 - **DigitalOcean**: App Platform, Managed PostgreSQL 17, Spaces. Holds user accounts, conversation histories, file uploads. Under DO's published DPA.
 - **Cloudflare**: Workers, D1, KV, DNS, TLS. Holds API key mappings; all traffic transits Cloudflare's edge. Under Cloudflare's published DPA.
 - **OpenRouter**: LLM gateway. Prompts/completions in transit. ZDR providers only (enforced by OpenRouter configuration).
+- **Tinfoil**: Active API Sealed confidential inference. The compatible client
+  verifies attestation and encrypts the requested model and body; BayLeaf relays
+  ciphertext and cannot inspect either. Non-streaming usage metadata may reveal
+  the executed model. Tinfoil's current catalog lists only open-weight models,
+  but BayLeaf does not independently enforce its composition.
 - **CILogon / InCommon**: OIDC federation (email, name, eduPerson affiliation claim). Under InCommon federation terms that UCSC is already party to.
 - **Daytona**: Per-user code-sandbox VMs (for the Lathe toolkit). Sandbox file contents only.
 - **Tavily**: Search queries and URLs submitted from tool-use (web search and page-content extraction).
@@ -547,7 +552,7 @@ No custom DPAs or FERPA addenda are in place with these parties beyond their sta
 
 **Answer:** Partial. no formal multi-year roadmap document.
 
-**Additional Information:** Near-term direction is visible in the repository's open issues and in `FERPA.md §5.2` (direct Google Cloud integration via Vertex AI: a private admin-only proof-of-concept exists today via the `vertex_pipe` function on `chat.bayleaf.dev`; productionization is scoped by the AI Council designation work). Longer-term direction is shaped by the UCSC AI Council's evolving positions on campus AI tools.
+**Additional Information:** Near-term direction is visible in the repository's open issues. `FERPA.md §5.2` preserves the direct Google Cloud integration via Vertex AI as comparative historical analysis: a private admin-only proof of concept previously existed, but Vertex is now disabled. Bedrock and NRP are also disabled. Longer-term direction is shaped by the UCSC AI Council's evolving positions on campus AI tools.
 
 ---
 
@@ -608,7 +613,7 @@ No custom DPAs or FERPA addenda are in place with these parties beyond their sta
 
 **Answer:** Yes.
 
-**Additional Information:** The operator is already bound by UCSC privacy policy and UC IS-3 as a condition of employment. BayLeaf's architectural choices (ZDR-only inference, no PHI/PCI, no data sale, no training on user input) align with those obligations.
+**Additional Information:** The operator is already bound by UCSC privacy policy and UC IS-3 as a condition of employment. BayLeaf's architectural choices (ZDR-only plaintext inference, client-verified confidential inference for API Sealed, no PHI/PCI, no data sale, no training on user input) align with those obligations.
 
 ---
 
@@ -678,7 +683,7 @@ No custom DPAs or FERPA addenda are in place with these parties beyond their sta
 
 **Answer:** Yes.
 
-**Additional Information:** Design principles from `SECURITY.md §7`: proxy indirection (users never hold raw provider keys), fail-closed multi-backend inference, caller-controlled API instructions, provider-agnostic OIDC, screen-sharing safety (API keys never displayed in plaintext), single-administrator model. Secrets never committed; TLS and at-rest encryption by default; SSO-only with no password login; stealth-toolkit pattern to limit which tools are exposed on which models.
+**Additional Information:** Design principles from `SECURITY.md §7`: proxy indirection (users never hold raw provider keys), fail-closed multi-backend inference, a fail-closed open-weight model policy for API plaintext, reliance on Tinfoil's current open-weight Sealed catalog, caller-controlled API instructions, provider-agnostic OIDC, screen-sharing safety (API keys never displayed in plaintext), single-administrator model. Secrets never committed; TLS and at-rest encryption by default; SSO-only with no password login; stealth-toolkit pattern to limit which tools are exposed on which models.
 
 ---
 
@@ -1154,7 +1159,7 @@ See START HERE section.
 **Additional Information:** See `SECURITY.md §6` for the full credential inventory:
 
 - **DigitalOcean encrypted environment variables** for: `WEBUI_SECRET_KEY` (session signing), `OAUTH_CLIENT_SECRET`, `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY`, `DATABASE_URL`.
-- **Cloudflare Worker secrets** for: OpenRouter provisioning key, CILogon client secret, Daytona API key, campus-pool OpenRouter key.
+- **Cloudflare Worker secrets** for: OpenRouter provisioning key, Tinfoil inference/admin keys, CILogon client secret, Daytona API key, campus-pool OpenRouter key.
 - **OWUI admin valves** for tool-layer keys (Tavily, Daytona, Canvas, GitHub, Google OAuth client).
 - **Rotation:** Keys are rotated on suspected compromise, on provider key-lifecycle events, or on operator-initiated schedules. No automated rotation in place for provider-issued keys.
 
@@ -1249,7 +1254,7 @@ See START HERE section.
 
 **Answer:** Yes, at OWUI and Worker layers.
 
-**Additional Information:** OWUI validates JSON schemas on admin API endpoints and model/tool specifications. The API validates OpenAI-compatible chat request schemas before forwarding to OpenRouter. For AI-specific input handling, see AISC-04 in the AI section.
+**Additional Information:** OWUI validates JSON schemas on admin API endpoints and model/tool specifications. The API validates OpenAI-compatible request schemas before forwarding plaintext traffic to OpenRouter. On Sealed routes it validates encryption and routing headers and rejects malformed or unencrypted protocol traffic without parsing or schema-validating the encrypted body. For AI-specific input handling, see AISC-04 in the AI section.
 
 ---
 
@@ -1878,7 +1883,7 @@ See START HERE section.
 
 **Answer:** Yes. BayLeaf's primary function is to provide access to LLMs.
 
-**Additional Information:** Models reached via OpenRouter, restricted to endpoints contracted for zero-data-retention (ZDR). Providers include Anthropic (Claude), Google (Gemini), OpenAI (GPT), Meta (Llama), Z-AI (GLM-5.1), and others, each via their ZDR-flagged endpoints. An NRP/SDSC institutional path is configured but currently disabled because NRP's policy is to log prompts.
+**Additional Information:** Chat reaches a separately curated selection of frontier proprietary and open-weight models via OpenRouter endpoints contracted for zero-data-retention (ZDR). API plaintext also uses OpenRouter ZDR but permits only models with a nonempty `hugging_face_id` whose Hugging Face repository resolves; unknown or unverifiable models are denied with HTTP 403. API Sealed uses Tinfoil's current open-weight catalog, with the requested model and body encrypted from BayLeaf; non-streaming usage metadata may reveal the executed model, and BayLeaf does not independently enforce catalog composition. Vertex, Bedrock, and NRP are disabled.
 
 ---
 
@@ -1889,7 +1894,7 @@ See START HERE section.
 
 **Answer:** Informally, yes: aligned with NIST AI RMF concepts and with UCSC AI Council guidance.
 
-**Additional Information:** `SECURITY.md` and `FERPA.md` capture the substantive risk analysis (data flows, contractual protections, ZDR boundary, subprocessor political profile). Specific risk categories addressed: model-provider data retention (mitigated by ZDR-only routing); prompt-injection via tool-using models (mitigated by stealth-toolkit pattern limiting which tools are exposed on which models and by user-in-the-loop confirmation for OAuth-scoped capabilities like GWS); environmental cost (disclosed in `DEPENDENCIES.md`); vendor lock-in (dependency audit with documented exit paths); over-reliance on upstream model providers with divergent political profiles (documented in `DEPENDENCIES.md`).
+**Additional Information:** `SECURITY.md` and `FERPA.md` capture the substantive risk analysis (data flows, contractual protections, ZDR boundary, confidential-inference boundary, model provenance, subprocessor political profile). Specific risk categories addressed: model-provider data retention (mitigated by ZDR routing or Sealed confidential inference); API plaintext use of proprietary or unverifiable models (denied by the Hugging Face provenance check); Sealed catalog composition (currently open-weight, monitored as a provider dependency rather than enforced by BayLeaf); prompt-injection via tool-using models (mitigated by stealth-toolkit pattern limiting which tools are exposed on which models and by user-in-the-loop confirmation for OAuth-scoped capabilities like GWS); environmental cost (disclosed in `DEPENDENCIES.md`); vendor lock-in (dependency audit with documented exit paths); over-reliance on upstream model providers with divergent political profiles (documented in `DEPENDENCIES.md`).
 
 ---
 
@@ -1995,7 +2000,7 @@ See START HERE section.
 
 **Q:** If sensitive data is introduced to your solution's AI model, can the data be removed from the AI model by request?*
 
-**Answer:** Not applicable in the usual sense: BayLeaf does not train or fine-tune any model on user data. The ZDR contract at the inference layer means data is not retained in the model or its serving infrastructure after the response. Conversation history in the OWUI database can be deleted by the user or by the administrator on request; see DATA-09.
+**Answer:** Not applicable in the usual sense: BayLeaf does not train or fine-tune any model on user data. OpenRouter ZDR terms prohibit retention after the response; Tinfoil Sealed processing is transient and its encrypted bodies are opaque to BayLeaf. Conversation history in the OWUI database can be deleted by the user or by the administrator on request; see DATA-09.
 
 **Additional Information:**
 
@@ -2053,7 +2058,7 @@ See START HERE section.
 
 **Q:** Do you separate ML training data from your ML solution data?*
 
-**Answer:** Not applicable. BayLeaf does no training or fine-tuning. Upstream model providers are contracted under ZDR terms that prohibit the use of BayLeaf's prompts/completions for training.
+**Answer:** Not applicable. BayLeaf does no training or fine-tuning. OpenRouter-routed model providers are contracted under ZDR terms that prohibit using BayLeaf prompts or completions for training; Tinfoil Sealed traffic uses its confidential-inference terms and open-weight catalog.
 
 **Additional Information:**
 
@@ -2198,7 +2203,7 @@ See START HERE section.
 
 **Answer:** Key points (also summarized for end users at <https://bayleaf.dev/privacy.html>):
 
-1. All LLM inference is routed to ZDR-contracted provider endpoints via OpenRouter. Prompts and completions are not retained by model providers.
+1. Chat and API plaintext inference route to ZDR-contracted provider endpoints via OpenRouter. API Sealed routes encrypted model identifiers and bodies to Tinfoil confidential inference. Prompts and completions are not retained by active inference providers.
 2. BayLeaf itself retains conversation histories, user profiles, and uploaded files in encrypted databases, accessible only to the sole administrator, who uses that access only for operational purposes.
 3. No data is sold, shared with advertisers, used for training, or exposed to data brokers.
 4. No cross-user content sharing, no cross-institution sharing, no analytics pixels, no third-party trackers embedded in the UI.
@@ -2400,7 +2405,9 @@ See START HERE section.
 **Answer:** Yes. Key privacy-by-design choices:
 
 - SSO-only with no password login.
-- ZDR-only inference routing.
+- ZDR-only inference routing on plaintext paths; client-verified confidential inference on API Sealed.
+- Fail-closed open-weight model policy on API plaintext: models require a resolvable Hugging Face repository. Tinfoil's current Sealed catalog lists only open-weight models, but BayLeaf does not independently enforce its composition.
+- Raw OpenRouter keys (`sk-or-*`) are rejected rather than passed through.
 - No cross-user data sharing by architecture.
 - Ephemeral OAuth tokens for optional Workspace integration (in-process memory, keyed by `(user, chat)`, lost on restart).
 - API key masking in the UI (never displayed in plaintext) to protect users during screen-share.
@@ -2622,7 +2629,7 @@ See START HERE section.
 - Conversation histories: user's prompts, LLM completions, tool-call results.
 - Group memberships and access grants.
 - Uploaded files.
-- API key mappings (email ↔ `sk-bayleaf-*` ↔ OpenRouter sub-key).
+- API key mappings (email ↔ `sk-bayleaf-*` ↔ cached OpenRouter/Tinfoil credentials).
 - Sandbox file contents (per-user Daytona VM state).
 
 **Additional Information:**
@@ -2638,7 +2645,7 @@ See START HERE section.
 **Additional Information:** Retention is documented and automated at both service layers:
 
 - **Chat** (`../chat/RETENTION.md`): 90-day rolling retention on conversations (active and archived) keyed on `updated_at`. Enforced by a daily scheduled cleanup job (DO App Platform Job, `chat/retention_cleanup.py`) that calls the OWUI admin API. Uploaded files are not deleted by the conversation deletion itself; they become orphans and are reclaimed by a second sweep in the same daily job, after a 24-hour grace window, so an attachment outlives its conversation by up to roughly 48 hours. User-initiated deletion of a conversation is immediate and permanent in the live database; deleted rows persist in managed-database backups until those age out on the provider's schedule. A published sunrise grace period (announced 2026-04-28, expires 2026-07-27) gives every user a full 90-day window from policy announcement to export. Records-hold via `hold:*` group membership exempts users under litigation/audit/CPRA hold (protected from OAuth clobbering via `OAUTH_BLOCKED_GROUPS`). Uniform basis: UCSC Records Retention guidance classifying chat/IM as non-records to be deleted "promptly, or as soon as no longer immediately useful."
-- **API** (`../api/RETENTION.md`): LLM proxy traffic not stored (ZDR passthrough). D1 account records persist while active. Revoked key rows retained for reject-on-use behavior (future scrub of `or_key_secret` on revoked rows under consideration). Session cookies expire in 24 hours. Cloudflare edge logs retained ~72 hours per platform default.
+- **API** (`../api/RETENTION.md`): LLM proxy traffic is not stored. Plaintext traffic uses OpenRouter ZDR; Sealed traffic relays Tinfoil ciphertext opaque to BayLeaf. D1 account records persist while active. Revoked key rows retained for reject-on-use behavior (future scrub of `or_key_secret` on revoked rows under consideration). Session cookies expire in 24 hours. Cloudflare edge logs retained ~72 hours per platform default.
 - **Code Sandbox (Lathe)**: per-user Daytona VMs auto-stop at 15 min idle, auto-archive 60 min after stop, and auto-delete 90 days after archive (`DAYTONA_AUTO_DELETE_MINUTES=129600`). No persistent volume. Aligns with the 90-day conversation retention window.
 
 ---
@@ -2717,7 +2724,7 @@ See START HERE section.
 
 **Q:** Do you certify stop-processing requests, including any data that is processed by a third party on your behalf?
 
-**Answer:** Yes. the operator will certify stop-processing on request. Because the ZDR inference contract means provider-side stop-processing is the default (no retention), the primary surface is the OWUI database and uploads, both of which the operator controls.
+**Answer:** Yes. the operator will certify stop-processing on request. OpenRouter ZDR and transient Tinfoil Sealed processing mean inference providers retain no prompt or completion content, so the primary retained surface is the OWUI database and uploads, both of which the operator controls.
 
 **Additional Information:**
 
@@ -2748,7 +2755,7 @@ See START HERE section.
 
 **Q:** Is any institutional data retained in AI processing?*
 
-**Answer:** At the inference layer, no: ZDR terms at OpenRouter-routed provider endpoints prohibit retention of prompts and completions beyond response generation. At the application layer, conversation histories are stored in OWUI's encrypted PostgreSQL database and automatically deleted after 90 days of inactivity per the published retention policy (`../chat/RETENTION.md`), with records-hold exemption via `hold:*` group membership for litigation/audit/CPRA scenarios. User-initiated deletion is immediate and permanent.
+**Answer:** At the inference layer, no: ZDR terms at OpenRouter-routed provider endpoints prohibit retention of prompts and completions beyond response generation, and Tinfoil Sealed processing is transient with encrypted bodies opaque to BayLeaf. At the application layer, conversation histories are stored in OWUI's encrypted PostgreSQL database and automatically deleted after 90 days of inactivity per the published retention policy (`../chat/RETENTION.md`), with records-hold exemption via `hold:*` group membership for litigation/audit/CPRA scenarios. User-initiated deletion is immediate and permanent.
 
 **Additional Information:** The "ZDR is narrow" disclosure in `SECURITY.md §8` is preserved: ZDR covers inference only. Beyond the inference layer, the protections are (a) the 90-day rolling deletion policy enforced by an automated daily job calling the OWUI admin API, (b) at-rest AES-256 encryption, (c) single-administrator access, and (d) honest user-initiated deletion that removes records from the application database rather than soft-deleting.
 
@@ -2758,7 +2765,7 @@ See START HERE section.
 
 **Q:** Do you have agreements in place with third parties or subprocessors regarding the protection of customer data and use of AI?*
 
-**Answer:** Yes. under each provider's standard DPA and terms, with ZDR as the specific commitment at OpenRouter and its downstream providers. See THRD-02.
+**Answer:** Yes. under each provider's standard DPA and terms, with ZDR as the specific commitment at OpenRouter and its downstream providers and confidential-inference terms at Tinfoil. See THRD-02.
 
 **Additional Information:** `FERPA.md §5.2` analyzes the proposed direct Google Cloud integration, which would inherit UCSC's 2024 Customer Affiliate Agreement (Google Customer Affiliate ID 7947-1465-9142) and the UC-wide GCP License Agreement and 2025 Enterprise Addendum: explicit contractual no-AI/ML-training commitment (§15.1(d)), P4 data classification, UC-negotiated breach/insurance caps.
 
@@ -2778,7 +2785,7 @@ See START HERE section.
 
 **Q:** Is AI processing limited to fully licensed commercial enterprise AI services?
 
-**Answer:** Yes. all inference is via licensed commercial providers (Anthropic, Google, OpenAI, Meta via DeepInfra, Z-AI, etc., all under OpenRouter's ZDR contracts).
+**Answer:** Yes. Active inference uses commercial OpenRouter ZDR endpoints or Tinfoil confidential inference. Chat's curated catalog may include proprietary and open-weight models; API plaintext enforces an open-weight restriction, while API Sealed currently draws from Tinfoil's open-weight catalog without a separate BayLeaf-side enforcement gate.
 
 **Additional Information:**
 
@@ -2798,7 +2805,7 @@ See START HERE section.
 
 **Q:** Do you have safeguards in place to protect institutional data and data privacy from unintended AI queries or processing?
 
-**Answer:** Yes. ZDR contract, SSO-only access, per-user isolation, rate limiting, stealth-toolkit pattern, no cross-user memory, explicit user consent for external-action tools (GWS, Canvas submission).
+**Answer:** Yes. OpenRouter ZDR contracts, Tinfoil Sealed confidential inference, the API's fail-closed open-weight policy, SSO-only access, per-user isolation, rate limiting, stealth-toolkit pattern, no cross-user memory, and explicit user consent for external-action tools (GWS, Canvas submission).
 
 **Additional Information:**
 
@@ -2817,12 +2824,13 @@ See START HERE section.
 ## End of HECVAT
 
 This document is the honest answer to each HECVAT prompt given BayLeaf's current
-posture (faculty-operated service, OpenRouter-ZDR inference for general-user
-traffic, plus a private admin-only direct-Vertex demonstration; DigitalOcean +
-Cloudflare platform, CILogon/InCommon SSO, documented subprocessor inventory)
-and the proposed path to UCSC P3 approval (`FERPA.md §8` draft
-designation memo, productionizing the direct Google Cloud Vertex AI
-integration for Gemini traffic).
+posture: a faculty-operated service; a separately curated Chat catalog over
+OpenRouter ZDR; open-weight-only API plaintext enforced by resolvable Hugging
+Face provenance; active Tinfoil Sealed inference over a currently open-weight
+catalog with the requested model and body encrypted from BayLeaf; Vertex, Bedrock, and NRP
+disabled; DigitalOcean and Cloudflare platforms; CILogon/InCommon SSO; and a
+documented subprocessor inventory. `FERPA.md` preserves earlier institutional
+backend and designation proposals as historical and comparative analysis.
 
 Further questions should be directed to `amsmith@ucsc.edu` or via the
 GitHub-based reporting channels in the repo-root `SECURITY.md`.

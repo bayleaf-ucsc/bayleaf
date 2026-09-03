@@ -60,3 +60,7 @@ git: `git show HEAD:chat/models/<id>/model.json`), or
 - 2026-08-25: drafted from issue #65 + chat/AGENTS.md; reconciles the AGENTS.md
   "don't edit in admin UI" rule (tools/functions) with the issue's "edit
   directly on OWUI for quick iteration" (prompts).
+- 2026-09-03: the in-app browser timed out opening Workspace, so a narrow
+  three-model prompt edit used `owui-cli models update` from reviewed repo JSON.
+  Live readback matched, and a Basic identity probe exercised the new wording;
+  the human playtest gate remains distinct from this automated check.

@@ -1,8 +1,8 @@
 # Security Exhibit
 
-**Service:** BayLeaf AI Playground  
-**Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz  
-**Date:** 2026-07-29
+**Service:** BayLeaf<br>
+**Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz<br>
+**Date:** 2026-07-29<br>
 **Review conducted by:** AI agents via OpenCode, supervised by Adam Smith
 
 This document describes the security and data handling posture of BayLeaf. It is
@@ -32,11 +32,12 @@ retention and account posture meet BayLeaf's requirements are enabled:
 
 | Lane | Status | Security and contractual posture |
 |---|---|---|
-| **OpenRouter** | Active default | Commercial gateway restricted to **zero-data-retention (ZDR)** provider endpoints. This is a commercial agreement, not a UC-negotiated provider contract. |
+| **OpenRouter (Chat)** | Active | Commercial gateway restricted to **zero-data-retention (ZDR)** provider endpoints. Chat exposes a curated catalog that may include both frontier proprietary and open-weight models. This is a commercial agreement, not a UC-negotiated provider contract. |
+| **OpenRouter (API plaintext)** | Active | Commercial gateway restricted to ZDR provider endpoints and to verifiable open-weight models. A model is allowed only when OpenRouter reports a nonempty `hugging_face_id` and the corresponding Hugging Face repository resolves; unknown or unverifiable models are denied with HTTP 403. |
 | **NRP/SDSC** | Configured, disabled | NSF-funded institutional inference via Envoy AI Gateway on the National Research Platform. Disabled because NRP's documented policy permits prompt logging, which does not meet BayLeaf's ZDR floor. |
 | **Google Vertex AI** | Implemented, disabled | UC/UCSC has institutional Google Cloud agreements, including data-protection terms applicable to covered institutional use. BayLeaf's current operator-controlled GCP project is not treated as proven covered by those terms, and Google did not grant or confirm the Abuse Monitoring opt-out needed for ZDR parity. |
 | **Amazon Bedrock (mantle)** | Implemented, disabled | UC has institutional AWS/BAA arrangements, but the proof-of-concept credential is from the operator's personal AWS account and has **no UCSC BAA coverage**. The lane is also paused pending an enforceable open-weight listing policy; account retention mode is set to `none` on the POC account. |
-| **BayLeaf Sealed / Tinfoil** | Active (opt-in route) | Client-verifiable confidential inference. A compatible client verifies enclave attestation and encrypts content before it reaches BayLeaf. Enabled 2026-07-29 with a per-user daily request guardrail; dollar-denominated spend reconciliation remains outstanding. BayLeaf publishes no accepted-measurement policy of its own, deliberately: the guarantee is carried by the client's verifier, not by an operator-served artifact. |
+| **BayLeaf API Sealed / Tinfoil** | Active (opt-in route) | Client-verifiable confidential inference over Tinfoil's current open-weight catalog. A compatible client verifies enclave attestation and encrypts the requested model and body before they reach BayLeaf. Non-streaming usage metadata may reveal the executed model. BayLeaf does not independently enforce catalog composition. Enabled 2026-07-29 with a per-user daily request guardrail; dollar-denominated spend reconciliation remains outstanding. BayLeaf publishes no accepted-measurement policy of its own, deliberately: the guarantee is carried by the client's verifier, not by an operator-served artifact. |
 
 The institutional Google and AWS agreements establish credible migration paths,
 not present coverage BayLeaf claims for its operator-controlled accounts. Moving
@@ -50,10 +51,12 @@ technical enablement checklist for that lane.
 
 ### 2.1 What is not retained
 
-- **No message content on active inference lanes.** OpenRouter-routed providers
-  receive prompts, generate responses, and discard both under ZDR. Disabled lanes
-  do not receive production traffic. Sealed content is encrypted to the enclave
-  and cannot be read by BayLeaf or Tinfoil when the client verifies attestation.
+- **No message content retained by active inference providers.** OpenRouter-routed
+  providers receive prompts, generate responses, and discard both under ZDR.
+  Disabled lanes do not receive production traffic. Sealed request and response
+  bodies, including the requested model, are encrypted to the enclave and remain
+  opaque to BayLeaf; Tinfoil's attested workload processes them transiently when
+  the client verifies attestation.
 - **No API keys displayed in plaintext.** Masked inputs with clipboard-copy buttons
   only, because users may screen-share while using the system.
 - **No secrets in the public repository.** Enforced by contributor policy and review.
@@ -67,6 +70,7 @@ technical enablement checklist for that lane.
 | Group memberships and access grants | DigitalOcean Managed PostgreSQL | [Encrypted at rest](https://www.digitalocean.com/security/shared-responsibility-model-managed-databases) | System administrator only |
 | Uploaded files | DigitalOcean Spaces (S3-compatible) | [Encrypted at rest (AES-256)](https://www.digitalocean.com/security/shared-responsibility-model-spaces) | System administrator only |
 | API account and credential mappings (email, BayLeaf token, cached OpenRouter/Tinfoil credentials, quota counters, sandbox ID) | Cloudflare D1 | [Encrypted at rest](https://developers.cloudflare.com/d1/reference/data-security/) | System administrator only |
+| API model-eligibility verdicts (model identifier and provenance result; no request content) | Cloudflare KV | [Encrypted at rest](https://developers.cloudflare.com/kv/reference/data-security/) | System administrator only; definite verdicts cached for 24 hours, unknown verdicts not cached |
 | Sandbox file contents | Daytona sandbox VM filesystem (no separate persistent volume) | Daytona-managed storage | Per-user isolation; destroyed with sandbox |
 
 ### 2.3 ZDR boundary disclosure
@@ -95,10 +99,12 @@ Two distinct properties are at play and should not be conflated:
 BayLeaf applies ZDR everywhere and pursues ZOA where practical.
 
 - **BayLeaf API** is the ZOA target. It retains no prompt or completion content,
-  disables Workers Observability, performs no caching, and exposes no
+  disables Workers Observability, performs no content caching, and exposes no
   request-body logging or interactive shell into the runtime. An operator
   therefore has **no standing access** to prompts or completions: only request
-  metadata (model, token counts, timestamps) is observable. This is a strong ZOA
+  metadata (model, token counts, timestamps) is observable. The plaintext
+  open-weight control caches only definite model-eligibility verdicts, never
+  request content, for 24 hours; unknown verdicts are not cached. This is a strong ZOA
   *posture*, not a hardware-attested ZOA *guarantee* like Mantle: there is no
   NitroTPM-style attestation or signed-deploy barrier, so an operator with
   deploy rights could in principle ship a content-logging revision. BayLeaf
@@ -120,7 +126,8 @@ BayLeaf applies ZDR everywhere and pursues ZOA where practical.
   because an operator-served trust policy is circular; the client's verifier
   independently checks the hardware attestation, signed source provenance,
   runtime measurement, and the enclave's encryption key. Identity, timing, byte
-  sizes, model, token counts, and billing metadata remain outside ZOA.
+  sizes, executed-model metadata on non-streaming responses, and billing metadata
+  remain outside ZOA; the requested model field and body remain opaque to BayLeaf.
 
 ### 2.4 Retention and deletion
 
@@ -171,24 +178,33 @@ BayLeaf applies ZDR everywhere and pursues ZOA where practical.
 - **Session:** JWT-based, signed with a persistent secret key stored in DigitalOcean
   encrypted environment variables
 
-### 3.2 API (three tiers)
+### 3.2 API (two access modes)
 
 | Tier | Mechanism | Persistence |
 |---|---|---|
 | Campus Pass | IP-range detection (UCSC CIDRs via Cloudflare `CF-Connecting-IP`) | No account; no sandbox access |
 | BayLeaf Token (`sk-bayleaf-*`) | Self-service key provisioned after OIDC auth; maps on first use to backend-specific credentials | Persistent sandbox, revocable |
-| Raw OpenRouter Key (`sk-or-*`) | Direct passthrough (legacy/compat) | N/A |
 
 BayLeaf tokens provide **proxy indirection**: users never see underlying
 OpenRouter or Tinfoil credentials. Backend keys are minted lazily on first use.
 This enables BayLeaf-side revocation and provider-specific spending controls
-without making the user manage provider credentials.
+without making the user manage provider credentials. Raw OpenRouter keys
+(`sk-or-*`) are rejected rather than passed through.
 
 ### 3.3 Model access control
 
-- Public models available to all authenticated users
-- Group-restricted models gated by group UUID in access grants
-- User-level grants available independently of group membership
+- **Chat:** a separately curated OpenRouter-ZDR catalog may expose both frontier
+  proprietary and open-weight models. Public models are available to all
+  authenticated users; group-restricted models are gated by group UUID in access
+  grants, and user-level grants are available independently of group membership.
+- **API plaintext:** OpenRouter models fail closed unless OpenRouter supplies a
+  nonempty `hugging_face_id` and the named Hugging Face repository resolves.
+  Unknown or unverifiable models are denied with HTTP 403. This runtime check is
+  the policy control that limits plaintext API inference to open-weight models.
+- **API Sealed:** Tinfoil's current catalog lists only open-weight models, but
+  BayLeaf cannot inspect the encrypted request to enforce that property itself.
+  The requested model is opaque; non-streaming usage metadata may reveal the
+  executed model.
 
 ---
 
@@ -198,8 +214,8 @@ without making the user manage provider credentials.
 |---|---|---|---|
 | DigitalOcean | Chat hosting, PostgreSQL, S3 | US | User accounts, conversation histories, file uploads |
 | Cloudflare | DNS, CDN, Workers, D1 | US (edge) | All traffic transits Cloudflare; D1 holds API key mappings |
-| OpenRouter | LLM gateway (default) | US | Prompts and completions in transit (ZDR, not retained) |
-| Tinfoil | Confidential LLM inference (Sealed, active) | US | Encrypted request/response bodies; identity-linked key metadata, timing, model, token counts, and billing data |
+| OpenRouter | LLM gateway (Chat and API plaintext) | US | Prompts and completions in transit (ZDR, not retained); Chat catalog is curated, while API plaintext additionally enforces verifiable open-weight provenance |
+| Tinfoil | Confidential LLM inference (API Sealed, active) | US | Requested model and request/response bodies encrypted from BayLeaf; identity-linked key metadata, timing, byte counts, non-streaming executed-model and token metadata, and billing data remain visible outside the encrypted body |
 | NRP / SDSC | LLM inference (configured, disabled) | US (UC San Diego / NSF) | Would receive prompts and completions on research infrastructure; disabled because its logging policy does not meet BayLeaf's ZDR floor |
 | Google Cloud / Vertex AI | LLM inference (implemented, disabled) | US / global | Would receive prompts and completions plus request metadata; current project coverage and ZDR Abuse Monitoring opt-out are unresolved |
 | Amazon Web Services / Bedrock | LLM inference (implemented, disabled) | US | Would receive prompts and completions plus request metadata; POC account is personal and not covered by UCSC's BAA |
@@ -277,21 +293,28 @@ the repository.
 1. **Proxy indirection.** BayLeaf-token users never hold raw provider keys.
    BayLeaf tokens are an opaque layer enabling revocation and spending control;
    raw OpenRouter keys supplied by callers are rejected.
-2. **Fail-closed multi-backend inference.** OpenRouter is active, as is Sealed.
+2. **Fail-closed multi-backend inference.** OpenRouter is active for separately
+   curated Chat and policy-restricted API plaintext paths; Sealed is also active.
    NRP, Vertex, and Bedrock are separately implemented or configured and
    disabled. The API's Vertex, Bedrock, and Sealed kill switches fail closed
    unless their environment flags equal `"true"`; disabled API lanes reject
    requests and disappear from model listings. Provider portability does not
    imply equivalent retention, contracts, security properties, or model
    provenance.
-3. **Caller-controlled instructions.** The plaintext API proxy does not add or
+3. **Open-weight API policy.** Plaintext API inference is allowed only when
+   OpenRouter reports a nonempty `hugging_face_id` whose Hugging Face repository
+   resolves; unknown models fail closed with HTTP 403. Tinfoil's current Sealed
+   catalog lists only open-weight models, but BayLeaf does not independently
+   enforce its composition. The plaintext restriction does not apply to Chat's
+   separately curated catalog.
+4. **Caller-controlled instructions.** The plaintext API proxy does not add or
    rewrite system instructions. Sealed traffic is additionally opaque: BayLeaf
-   cannot inspect or modify its encrypted body.
-4. **Provider-agnostic OIDC.** Authentication discovers endpoints from
+   cannot inspect or modify its encrypted requested-model field or body.
+5. **Provider-agnostic OIDC.** Authentication discovers endpoints from
    `.well-known/openid-configuration`. Identity provider switches are configuration
    changes, not code changes.
-5. **Screen-sharing safety.** API keys are never displayed in plaintext.
-6. **Single-administrator model.** One operator has administrative access to all
+6. **Screen-sharing safety.** API keys are never displayed in plaintext.
+7. **Single-administrator model.** One operator has administrative access to all
    components. No shared admin accounts.
 
 ---
@@ -304,14 +327,14 @@ the repository.
 - **ZDR is narrow.** It covers inference only. Conversation histories exist in the
   application database.
 - **No formal incident response plan.** Issues are handled ad hoc by the operator.
-- **FERPA.** BayLeaf in its current OpenRouter-routed form is not among the
+- **FERPA.** BayLeaf's active Chat, API plaintext, and API Sealed inference paths
+  are not among the
   campus-approved tools for FERPA-protected (P3) content; users handling such
   content should instead use the Workspace-based Gemini and NotebookLM tools
   UCSC has already approved for that purpose. See [FERPA.md](FERPA.md) for the
-  full analysis, including the contract-stack comparison and the open question
-  (on the AI Council's summer 2026 agenda) of whether a proposed direct Google
-  Cloud integration would extend the existing P3 approval to BayLeaf's Google
-  lane.
+  full analysis, including the historical contract-stack comparison. Vertex,
+  Bedrock, and NRP are disabled; no active institutional inference lane extends
+  the existing P3 approval for Workspace-based Google tools to BayLeaf.
 - **HIPAA and BAAs.** The service is not designed or authorized for protected
   health information. UC/UCSC has institutional arrangements with Google Cloud
   and AWS that include BAA coverage for qualifying institutional accounts, but

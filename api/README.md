@@ -1,12 +1,13 @@
 # BayLeaf API
 
-API key provisioning, LLM inference proxy, and sandboxed code execution for UC Santa Cruz, part of the [BayLeaf AI Playground](https://bayleaf.dev).
+API key provisioning, LLM inference proxy, and sandboxed code execution for UC Santa Cruz, part of [BayLeaf](https://bayleaf.dev), a situated counterplatform for Generative AI.
 
 ## Features
 
 - **OIDC Authentication**: Provider-agnostic sign-in (CILogon, Google, or any OIDC provider)
 - **API Key Provisioning**: Automatic key management (one key per user, authenticates all services)
-- **Inference Proxy**: OpenAI-compatible Chat Completions and Responses API endpoints with caller-controlled instructions
+- **Plaintext Inference**: OpenAI-compatible OpenRouter endpoints with caller-controlled instructions, restricted to verifiably open-weight models
+- **Sealed Inference**: Active Tinfoil confidential-inference lane whose current catalog lists only open-weight models, with request bodies encrypted from BayLeaf
 - **Code Sandbox**: Persistent Linux sandbox per user for code execution, file upload/download — backed by Daytona
 - **Self-Service Dashboard**: Create, view, and revoke API keys; see LLM usage stats and sandbox status
 - **Tool Integrations**: Distributes setup instructions and credentials for Google Workspace CLI and Canvas LMS CLI
@@ -18,10 +19,11 @@ This is a Cloudflare Worker (Hono) with a D1 database:
 
 1. Authenticates users via OIDC (endpoints discovered from `OIDC_ISSUER`, restricted to `@ucsc.edu` by default)
 2. Uses the OpenRouter Provisioning API to manage per-user LLM API keys
-3. Proxies `/v1/*` requests to inference providers without adding system instructions
-4. Proxies `/sandbox/*` requests to Daytona for sandboxed code execution and file operations
+3. Proxies plaintext `/v1/*` requests to OpenRouter without adding system instructions
+4. Relays encrypted `/sealed/v1/*` request bodies to attested Tinfoil enclaves without parsing them
+5. Proxies `/sandbox/*` requests to Daytona for sandboxed code execution and file operations
 
-A single `sk-bayleaf-` token authenticates both the LLM inference proxy and the sandbox service. D1 stores the key mapping and caches the Daytona sandbox ID to avoid a control-plane lookup per request.
+A single `sk-bayleaf-` token authenticates plaintext and Sealed inference and the sandbox service. D1 stores the key mapping and caches provider credentials and the Daytona sandbox ID. `MODEL_STATUS` KV stores only plaintext model-policy verdicts, never prompts or completions.
 
 ### D1 Schema
 
@@ -29,11 +31,13 @@ A single `sk-bayleaf-` token authenticates both the LLM inference proxy and the 
 user_keys
 ├── email                TEXT PRIMARY KEY
 ├── bayleaf_token        TEXT NOT NULL UNIQUE   ← user-facing key
-├── or_key_hash          TEXT NOT NULL          ← OpenRouter key hash (for lookup)
-├── or_key_secret        TEXT NOT NULL          ← OpenRouter key secret (for proxying)
+├── or_key_hash          TEXT                    ← OpenRouter key hash (nullable until first use)
+├── or_key_secret        TEXT                    ← OpenRouter key secret (nullable until first use)
 ├── revoked              INTEGER DEFAULT 0
 ├── created_at           TEXT DEFAULT now()
-└── daytona_sandbox_id   TEXT DEFAULT NULL      ← cached sandbox ID
+├── daytona_sandbox_id   TEXT DEFAULT NULL      ← cached sandbox ID
+├── tinfoil_key          TEXT DEFAULT NULL      ← Sealed credential (nullable until first use)
+└── tinfoil_key_name     TEXT DEFAULT NULL      ← Tinfoil billing attribution
 ```
 
 ## Deployment
@@ -196,12 +200,20 @@ Off-campus users will receive a 401 error directing them to get a personal key a
 
 OpenRouter inference is limited to models for which OpenRouter publishes a
 nonempty Hugging Face repository ID and that repository resolves successfully.
-Missing or unavailable evidence returns HTTP 403. Model-policy decisions are
-cached for 24 hours; prompts and completions are never cached.
+Positive and definite-negative verdicts are cached in `MODEL_STATUS` KV for 24
+hours. Lookup failures and malformed responses are `unknown`: they return HTTP
+403 but are not cached. Prompts and completions are never cached. OpenRouter's
+[public catalog](https://openrouter.ai/models) is broader than BayLeaf's
+permitted set and includes models BayLeaf rejects.
+
+Vertex AI, AWS Bedrock, and NRP are disabled and carry no inference traffic.
 
 ### BayLeaf Sealed (Confidential Inference)
 
-An opt-in, end-to-end-encrypted inference lane. Mounted as a sibling of `/v1`, never inside it, so it shares no path or middleware with the plaintext proxy.
+An active, opt-in, end-to-end-encrypted inference lane through Tinfoil. Its
+current catalog lists only open-weight models, but BayLeaf does not independently
+enforce that composition. It is mounted as a sibling of `/v1`, never inside it,
+so it shares no path or middleware with the plaintext proxy.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|

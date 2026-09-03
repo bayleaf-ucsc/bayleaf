@@ -246,8 +246,8 @@ disk, no image rebuild.
   (see issue #36). Google documentation does confirm that third-party MaaS open
   models (like `zai-org/glm-5`) do *not* receive customer prompts or responses,
   but that alone is not sufficient for our ZDR posture. The route back to a
-  BAA-covered ZDR backend is Amazon Bedrock (issue #41), now established as a
-  native OWUI connection (see "Bedrock Connection" below). Do **not**
+  BAA-covered ZDR backend may be Amazon Bedrock (issue #41), currently retained
+  as a disabled native OWUI connection (see "Bedrock Connection" below). Do **not**
   re-enable this pipe for general users without a documented ZDR path.
 - **Configured models** are set via the `MODELS` valve as a comma-separated
   list of `publisher/model` (optionally `= Display Name`). Newlines and
@@ -275,6 +275,11 @@ A **native OWUI OpenAI-compatible Connection** (not a pipe) to Amazon
 Bedrock's `bedrock-mantle` endpoint. See issue #41 for the full motivation
 and the proof-of-concept findings.
 
+**Status: disabled.** Mantle's catalog is mostly open-weight but includes
+closed-weight entries, and `/models` exposes no mechanical weights predicate.
+Do not enable or expose this connection until that policy gate is resolved and
+the enterprise-account/BAA requirements below are met.
+
 Unlike the Vertex Pipe, Bedrock needs **no code**: the `bedrock-mantle`
 endpoint speaks OpenAI Chat Completions natively and authenticates with a
 static bearer token, which fits OWUI's Connections feature directly. (Vertex
@@ -299,15 +304,14 @@ is therefore stored in OWUI's config DB, not in this repo or the DO spec.
   AWS account and carries **no UCSC BAA coverage**; production must use a key
   minted in the UCSC enterprise AWS account (issue #41, Track B). Rotate by
   editing `OPENAI_API_KEYS[<idx>]` via `/openai/config/update`.
-- **Catalog**: mantle exposes an **open-weight** catalog (Qwen, GLM, Kimi,
-  gpt-oss, DeepSeek, Mistral, Gemma 3, Nemotron, ~40 models), **not** the
-  frontier Claude/Nova set the issue originally assumed. Claude/Nova are not
-  served by mantle's `/models`; frontier Claude is sales-gated per-account.
-  This inverts issue #41's framing (mantle is the open-weight lane, not the
-  Claude lane) and is *more* useful to a Chat service that prioritizes open
-  weights. Mantle is **ZDR-by-default** and BAA-covered (in an enterprise
-  account), which is the documented ZDR path the Vertex Pipe lacked.
-- **Curation**: `model_ids: []` exposes all 40, but every model is
+- **Catalog**: mantle's shifting catalog is **mostly open-weight** (including
+  Qwen, GLM, Kimi, gpt-oss, DeepSeek, Mistral, Gemma, and Nemotron), but it also
+  includes closed-weight entries such as Claude, GPT-5.x, Grok, and Palmyra.
+  Mantle exposes retention metadata but no weights-availability field, so a ZDR
+  filter cannot mechanically enforce BayLeaf's open-weight policy. Enterprise
+  BAA coverage and zero-retention configuration remain necessary but are not
+  sufficient for enablement.
+- **Curation**: `model_ids: []` exposes the full catalog, but every model is
   **private-by-default**, so general users don't see them until granted via
   workspace models / groups (the standard BayLeaf exposure pattern).
 

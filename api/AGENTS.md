@@ -221,8 +221,10 @@ null check fails open). Every OpenRouter inference path additionally requires
 that repository URL to resolve. Positive and definite-negative decisions are
 cached in `MODEL_STATUS` KV for 24 hours; lookup failures are denied but not
 cached. Missing, malformed, or unavailable evidence fails closed with 403.
-Tinfoil is outside this check because its catalog is exclusively open-weight and
-the Sealed request body, including its model field, is encrypted from BayLeaf.
+Tinfoil is outside this check because its current catalog lists only open-weight
+models and the Sealed request body, including its model field, is encrypted from
+BayLeaf. Unlike plaintext, BayLeaf does not enforce that catalog property itself:
+if Tinfoil adds a proprietary model, policy must be revisited before exposing it.
 
 - **`vertex:` — Google Vertex AI. Currently DISABLED** (`VERTEX_ENABLED: "false"`
   in `wrangler.jsonc`). We could not obtain Google's Abuse Monitoring opt-out, so

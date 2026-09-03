@@ -47,15 +47,15 @@ recommendation does not need to match Chat's Basic or Help model.
   **configured in OWUI** (OpenRouter as of 2026-09): translate the slug to
   OWUI's `openrouter.<owner>/<model>` form and, if the connection curates or
   disables models, ask the admin whether to enable the candidate. The
-  open-weight preference still holds as policy; its machine check
-  (`GET https://api.bayleaf.dev/v1/models`, filter truthy `hugging_face_id`)
-  is an **API-path** signal — it drives API-caller discovery, not Chat
-  routing. Off-campus it requires a bearer token (`~/.tokens/bayleaf-api`,
-  same recipe as the API canary); unauthenticated it returns an empty list,
-  which reads as "no open-weight models" if unexamined. Timing interaction:
-  brand-new models appear there only after weights drop on Hugging Face, so
-  "not on the list yet" is expected for week-old releases — a deviation to
-  acknowledge, not necessarily a blocker.
+  open-weight preference still holds as policy. Do not treat presence in
+  `GET https://api.bayleaf.dev/v1/models` as passing the gate: that listing
+  checks only for a nonempty `hugging_face_id`. Make an authenticated inference
+  request through BayLeaf API with the candidate instead. HTTP success proves
+  the stronger current gate passed, including successful resolution of the
+  reported Hugging Face repository; 403 is a blocker, not a timing deviation.
+  Off-campus, source `~/.tokens/bayleaf-api` and use `$BAYLEAF_API_KEY` (same
+  recipe as the API canary). This API request is policy evidence even though
+  Chat's production traffic routes directly through its OWUI connection.
 
 ### API recommendation criteria
 
@@ -180,7 +180,10 @@ retarget it or delete it (`owui-cli models delete basic-canary`).
    ~/.tokens/bayleaf-api && set +a`, then use `$BAYLEAF_API_KEY`. The file is a
    shell assignment, not a raw token; passing its complete contents as the
    Bearer value produces a misleading 401. Use the request shapes in
-   `api/TESTING.md` rather than duplicating them here.
+   `api/TESTING.md` rather than duplicating them here. The request must return
+   an actual successful inference response: catalog presence alone does not
+   prove that the Hugging Face repository resolves, and HTTP 403 fails the
+   open-weight gate.
 2. Test the behavior that recommendation consumers will actually receive:
    omit optional reasoning/provider parameters unless the integration normally
    supplies them. At minimum, run one ordinary response and one agentic tool-use
@@ -260,3 +263,9 @@ checks. Inference requests that explicitly named either model are unaffected.
   deployment role — flash is thinky by default, which suits autonomous agent
   harnesses (the API path) rather than chat latency, hence the `low` pin on
   the chat-facing models.
+- 2026-09-02: real policy-documentation run after the API adopted live
+  Hugging Face repository resolution. The prior availability step treated
+  `/v1/models` presence as the machine check and allowed a fresh-model timing
+  deviation; reality contradicted that because listing checks metadata only,
+  while inference enforces repository resolution. The gate now requires an
+  actual successful BayLeaf API inference request and treats 403 as a blocker.

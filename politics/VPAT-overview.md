@@ -1,8 +1,8 @@
 # VPAT and BayLeaf: Overview
 
-**Service:** BayLeaf AI Playground  
-**Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz  
-**Status:** Working draft. Not a signed ACR. Per-surface ACRs are published as sibling documents; see [§ 4](#4-per-surface-acrs).  
+**Service:** BayLeaf<br>
+**Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz<br>
+**Status:** Working draft. Not a signed ACR. Per-surface ACRs are published as sibling documents; see [§ 4](#4-per-surface-acrs).<br>
 **Template:** [VPAT® 2.5 INT](https://www.itic.org/policy/accessibility/vpat), covering [WCAG 2.1](https://www.w3.org/TR/WCAG21/) Level A and AA, [Revised Section 508](https://www.access-board.gov/ict/), and [EN 301 549](https://www.etsi.org/deliver/etsi_en/301500_301599/301549/).
 
 This document is the framing, scope, inheritance map, and evaluation scaffold for BayLeaf's working-draft Accessibility Conformance Report (ACR). It uses the [VPAT 2.5 INT template](https://www.itic.org/policy/accessibility/vpat) published by the [Information Technology Industry Council (ITI)](https://www.itic.org/), which covers [WCAG 2.1](https://www.w3.org/TR/WCAG21/) Level A and AA, the [Revised Section 508 standards](https://www.access-board.gov/ict/), and [EN 301 549](https://www.etsi.org/deliver/etsi_en/301500_301599/301549/) in a single report.
