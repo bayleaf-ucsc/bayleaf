@@ -9,11 +9,13 @@ last-reviewed: 2026-08-25
 
 ## When to use
 
-Any change to `docs/privacy.html`, the subprocessor list, retention policy
-(`chat/RETENTION.md`, `api/RETENTION.md`), or the data-posture claims. These
-affect both Chat and API even when the trigger is one service.
+Any material change to `docs/privacy.html`, the subprocessor list, retention
+policy (`chat/RETENTION.md`, `api/RETENTION.md`), or the data-posture claims.
+These affect both Chat and API even when the trigger is one service.
 
 Not for: routine docs edits that don't touch claims about data handling.
+Terminology-only edits and corrections that make the documentation match
+existing behavior use the normal docs workflow and do not require user notice.
 
 ## Prerequisites
 
@@ -43,7 +45,8 @@ Not for: routine docs edits that don't touch claims about data handling.
    relaxation does not apply).
 4. Commit and push when approved: `docs: update privacy notice` (single
    revision: page + ACR + any RETENTION.md changes).
-5. **Notify active users.** Both populations:
+5. **Notify active users when the change meaningfully affects existing data.**
+   Both populations:
    - **Chat:** users active within the retention window. Enumerate with
      `owui-cli users list` (paginated, 30/page) or a DB query for
      `last_active_at` after the cutoff; collect emails.
@@ -72,3 +75,7 @@ this is why step 3's approval gate precedes both publishing and notifying.
 
 - 2026-08-25: drafted from issue #65; the notification mechanics (exact
   queries for active users) are untested sketches.
+- 2026-09-03: a terminology revision also corrected documentation of existing
+  Sealed metadata visibility. No data handling changed, so user notification
+  would have contradicted the public notice's material-change threshold; scope
+  and step 5 now use that threshold explicitly.
