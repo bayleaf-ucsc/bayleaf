@@ -271,7 +271,7 @@ The gaps today, mapped to that doc's checklist:
 | External database (PostgreSQL) | ✓ managed PG 17 | `bayleaf-chat-db` |
 | Redis for WebSockets / config sync | ✗ not configured | streaming events and config-change broadcast would diverge across workers |
 | Shared file storage | ✓ DO Spaces (S3) | uploads land in the bucket regardless of worker |
-| External vector DB | ✗ default ChromaDB (SQLite-backed) | known to **crash workers** during RAG ingestion under multi-worker; affects the `procurement` model's KB |
+| External vector DB | ✗ default ChromaDB (SQLite-backed) | known to **crash workers** during RAG ingestion under multi-worker |
 | Toolkit ephemeral state | ✗ `gws_toolkit` uses per-worker `app.state` | tracked at [rndmcnlly/gws-toolkit#7](https://github.com/rndmcnlly/gws-toolkit/issues/7) |
 
 The architectural cliff is the database connection cap: with 1 instance × 1
@@ -328,14 +328,7 @@ terms ended. See the Inactive table below for preserved configurations.
 These models remain on the live instance but are deactivated (`is_active: false`).
 Their configurations are preserved in `models/` for reference.
 
-| ID | Name | Base Model | Notes |
-|----|------|-----------|-------|
-| `deep-research` | Deep Research | `openrouter.z-ai/glm-5.2` | Interactive research agent. Retired now that Basic has a skill system for web search. |
-| `brace3-92591` | Brace (CMPM 120 Spring 2026) | `openrouter.z-ai/glm-5.1` | Course-specific. Spring 2026 term ended. |
-| `everett-program` | Everett Program Chat | `openrouter.z-ai/glm-5.1` | Program-specific. |
-| `procurement` | Procurement | `openrouter.z-ai/glm-5.2` | Staff group. |
-| `brace-85291` | Brace (CMPM 121 Fall 2025) | `openrouter.deepseek/deepseek-v3.2` | Brace v2, superseded by `brace3-92591`. |
-| `gambit` | Gambit | `openrouter.z-ai/glm-5` | Rapid game prototyping assistant (`Gambit v1.6`). |
+*None.*
 
 ### Model Configuration Details
 
@@ -357,13 +350,6 @@ canary evaluation (vision on, `reasoning_effort: low`) that passed on
 candidate during the next model-swap evaluation. Private to admins; delete or
 retarget it after each evaluation cycle rather than exposing it.
 
-**Deep Research** *(inactive)* — Interactive research agent (`Deep Research v1.1`).
-Bound to `web_context_toolkit` (Tavily search + Tavily Extract). System prompt
-instructs the model to narrate its intent before each tool call and summarize
-results, so users can follow the research path. Retired now that Basic's skill
-system covers web search. Vision disabled; file context and all builtin tools
-enabled.
-
 **Help** — Capabilities match the flash base model's offering (vision and file
 upload enabled; no code interpreter, usage display enabled). Vision was
 initially held off as a minimal-capabilities posture, then enabled once the
@@ -377,39 +363,35 @@ only bound skill). System prompt
 (`Help v1.5`) describes BayLeaf facts and firmly redirects non-help tasks to
 Basic.
 
-**Brace (v3, `brace3-92591`)** *(inactive)* — Course assistant for CMPM 120
-Spring 2026. Successor to Brace v2 with a cleaner design. No
-`brace_submit_action`. Uses `brace3_filter` + `brace3_canvas_toolkit` (see §3).
-The system prompt is no longer stored in the model JSON; it is looked up at
-runtime by **page title** ("Brace3 System Prompt") from Canvas — raises
-cleanly if the page is missing instead of falling back silently; body is
-converted from HTML to markdown via `markdownify`. Vision and `file_context`
-enabled.
+**Deep Research** (removed September 2026) predated BayLeaf's skill system and
+made it straightforward to start a research chat without external-data tools.
+Basic can now use a skill to remind users to choose that posture themselves.
 
-**Everett Program Chat** *(inactive)* — Placeholder chatbot for the Everett
-Program with the Web Context toolkit (`web_context_toolkit`).
+**Gambit** (removed September 2026) was a highly effective, tool-free rapid
+game-prototyping assistant for CMPM 171. Its full pre-agentic system prompt is
+preserved in [`archive/gambit-system-prompt.md`](archive/gambit-system-prompt.md).
 
-**Procurement** *(inactive)* — UC procurement policy assistant. System prompt
-contains a behavioral preamble and a lookup table of file IDs for 11 UC policy
-documents. Retrieval is agentic: the model calls `read_document` via the
-`whole_document_retrieval` toolkit to fetch full document text on demand,
-rather than having policy text inlined. Documents live in the "Procurement"
-knowledge base (`8c7d7e27-6871-4871-a6b3-c197cf418072`). `context.md` in this
-backup is the original source used to populate the KB; it is no longer part of
-the system prompt.
+**Brace3** (removed September 2026) paired a workspace model with
+`brace3_filter`, which force-enabled `brace3_canvas_toolkit` so users could not
+turn off the course toolkit. This stealth pattern is preserved as an historical
+reference, but future workspace models should bind required toolkits directly
+at the model level instead.
 
-**Brace (v2, `brace-85291`)** *(inactive)* — Course assistant for CMPM 121 Fall
-2025. No static system prompt — `brace_filter` fetches the system prompt from a
-Canvas wiki page at the hardcoded slug `braces-system-prompt` at runtime. Bound
-to `brace_submit_action` (Canvas submission button) and `brace_filter`. Uses
-`brace_toolkit` (force-injected by the filter). Falls back to a generic prompt
-if the Canvas page is unreachable. (The original Brace v1 architecture lives at
-[rndmcnlly/brace](https://github.com/rndmcnlly/brace).)
+### Retired Model Experiments
 
-**Gambit** *(inactive)* — Rapid game prototyping assistant (`Gambit v1.6`).
-Extremely detailed system prompt (~14K chars) covering prototyping philosophy,
-HTML artifact generation, CDN library usage, publishing via gisthost, and
-cost-consciousness.
+**Procurement** (removed September 2026) established the `whole_document_retrieval`
+toolkit pattern: agentic, access-gated reads of complete OWUI Knowledge Base
+documents by file ID, without relying on vector or embedding retrieval. The
+toolkit remains available for a future use; the model configuration and its
+large checked-in policy source were removed.
+
+**Everett Program Chat** (removed September 2026) was an early trial of having
+a non-technical community manage a workspace model. OWUI configuration proved
+too unfamiliar to sustain participation. A future approach could let a
+community manage a bounded Google Doc or Drive folder, potentially shared with
+a dedicated service account for sensitive scopes, while an agent reads that
+source. This would also let people use agents that access the same materials
+through their own Google accounts rather than requiring OWUI adoption.
 
 ---
 
@@ -749,13 +731,7 @@ To reconstruct BayLeaf Chat from this backup:
 
 3. **Import models** — The model JSON files in `models/` match the OWUI import
    format. Use the admin API `POST /api/v1/models/import` or recreate them
-   manually in the Workspace → Models UI. For procurement, the system prompt is
-   complete as-is in `model.json`; re-populate the KB from `context.md` (see step 3a).
-
-   3a. **Repopulate Procurement KB** — Split `models/procurement/context.md` into
-   individual policy files and upload each to a new knowledge base, then attach it to
-   the model and update the file IDs in the system prompt table. The
-   `whole_document_retrieval` toolkit must also be deployed (see step 4).
+   manually in the Workspace → Models UI.
 
 4. **Import tools** — For each tool in `tools/`, create a new tool in the admin
    UI (Workspace → Tools), paste the source from `tool.py`, and configure the
@@ -931,11 +907,6 @@ Models pull-all filters to workspace models only (those with a
 `base_model_id`), discovers all models dynamically, and extracts base64
 data-URI profile images into separate files. Then `git diff chat/` to review.
 
-The legacy `_backup.py` script still exists for one feature `owui-cli`
-doesn't handle: splitting the procurement model's ~670K-char policy context
-from the system prompt into a separate `context.md` file. This is too
-app-specific for the CLI.
-
 ### Push (apply repo changes to live instance)
 
 ```bash
@@ -965,31 +936,15 @@ explore the API surface directly.
 ```
 chat/
 ├── DESIGN.md               # This file
-├── _backup.py              # Script used to pull this data from the OWUI API
 ├── models/
 │   ├── basic/
 │   │   ├── model.json      # Params, meta, system prompt, capabilities
 │   │   └── profile.png     # Model avatar
-│   ├── deep-research/        # Inactive — retired in favor of Basic's skill system
-│   │   └── model.json
 │   ├── help/
 │   │   ├── model.json
 │   │   └── profile.png
-│   ├── brace3-92591/       # Inactive — Brace v3 (CMPM 120 Spring 2026)
-│   │   ├── model.json
-│   │   └── profile.webp
-│   ├── everett-program/   # Inactive
-│   │   └── model.json
-│   ├── procurement/        # Inactive
-│   │   ├── model.json      # Behavioral preamble only
-│   │   ├── context.md      # Inlined UC policy documents (~670K chars)
-│   │   └── profile.png
-│   ├── brace-85291/        # Inactive — Brace v2 (CMPM 121 Fall 2025)
-│   │   ├── model.json
-│   │   └── profile.png
-│   └── gambit/             # Inactive — rapid prototyping assistant
-│       ├── model.json
-│       └── profile.webp
+├── archive/
+│   └── gambit-system-prompt.md  # Preserved pre-agentic rapid-prototyping prompt
 ├── skills/                 # One dir per skill: skill.md + meta.json
 │   ├── web-search/         # Active — all users
 │   ├── code-sandbox/       # Active — 1 group
