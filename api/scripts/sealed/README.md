@@ -11,7 +11,7 @@ Requires Python 3.11+ and `uv`:
 
 ```bash
 export BAYLEAF_API_KEY=sk-bayleaf-...
-uv run --script sealed/proxy.py
+uv run --script api/scripts/sealed/proxy.py
 ```
 
 Campus Pass is supported on the UCSC network by setting `BAYLEAF_API_KEY=campus`.

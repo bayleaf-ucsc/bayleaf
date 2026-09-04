@@ -29,8 +29,8 @@ would block; it does not itself configure or enforce routing.
 From the repository root:
 
 ```bash
-node analysis/open-weight-policy/analyze.mjs
-node analysis/open-weight-policy/analyze.mjs \
+node api/scripts/open-weight-policy/analyze.mjs
+node api/scripts/open-weight-policy/analyze.mjs \
   --start=2026-08-01 --end=2026-09-01
 ```
 

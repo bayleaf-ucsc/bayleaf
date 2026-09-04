@@ -108,6 +108,12 @@ scripts/
   spend-limits.mjs      Operator tool: adjust OR-side daily caps by roster or by current cap
   harness-sealed.py     Sealed lane conformance suite (needs wrangler dev over HTTPS; see TESTING.md)
   harness-sealed-attestation.py  Serves mutated attestation bundles; asserts the client refuses all of them
+  open-weight-policy/   Historical OpenRouter-spend analysis for the evidence policy
+    analyze.mjs          Writes local, mode-0600 metadata and spend reports
+    README.md            Policy scope and invocation
+  sealed/               Local fail-closed proxy for clients without native EHBP support
+    proxy.py            OpenAI-compatible Tinfoil SDK proxy
+    README.md           Usage and OpenCode/OpenChamber configuration
 ```
 
 **Key lifecycle lives in one place.** `provision.ts` is the only module that

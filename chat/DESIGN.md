@@ -945,6 +945,8 @@ chat/
 │   │   └── profile.png
 ├── archive/
 │   └── gambit-system-prompt.md  # Preserved pre-agentic rapid-prototyping prompt
+├── analysis/
+│   └── clio-gist/       # Privacy-preserving aggregate Chat-use analysis pipeline
 ├── skills/                 # One dir per skill: skill.md + meta.json
 │   ├── web-search/         # Active — all users
 │   ├── code-sandbox/       # Active — 1 group

@@ -120,6 +120,10 @@ bayleaf/
 `api/` is a Cloudflare Worker deployed at `https://api.bayleaf.dev`.
 **Read `api/AGENTS.md` before working on API code or infrastructure.**
 
+Place scripts and analysis machinery for a specific service inside that service's
+directory (for example, `api/scripts/` or `chat/analysis/`), not at the
+repository root.
+
 `chat/` is an Open WebUI instance on DigitalOcean App Platform at
 `https://chat.bayleaf.dev`. **Read `chat/AGENTS.md` before working on Chat
 configuration, models, tools, functions, or user/group management.**

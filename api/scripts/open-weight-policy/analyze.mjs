@@ -13,7 +13,7 @@
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-const ROOT = join(dirname(new URL(import.meta.url).pathname), '..', '..');
+const ROOT = join(dirname(new URL(import.meta.url).pathname), '..', '..', '..');
 const API_DIR = join(ROOT, 'api');
 const OPENROUTER_API = 'https://openrouter.ai/api/v1';
 const PERSONAL_KEY_PREFIX = 'BayLeaf API for '; // derived from KEY_NAME_TEMPLATE
@@ -58,7 +58,7 @@ function parseArgs(argv) {
   const args = { ...previousUtcMonth(), outputDir: join(API_DIR, 'reports') };
   for (const arg of argv) {
     if (arg === '--help') {
-      console.log('Usage: node analysis/open-weight-policy/analyze.mjs [--start=YYYY-MM-DD --end=YYYY-MM-DD] [--output-dir=PATH]');
+      console.log('Usage: node api/scripts/open-weight-policy/analyze.mjs [--start=YYYY-MM-DD --end=YYYY-MM-DD] [--output-dir=PATH]');
       process.exit(0);
     } else if (arg.startsWith('--start=')) args.start = arg.slice('--start='.length);
     else if (arg.startsWith('--end=')) args.end = arg.slice('--end='.length);
