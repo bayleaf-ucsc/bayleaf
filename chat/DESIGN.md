@@ -909,15 +909,35 @@ Free, not a public service or metrics store. Source and operational instructions
 [`probe/README.md`](probe/README.md). It submits a fixed opening prompt through
 Basic as a dedicated non-admin user, consumes the complete HTTP stream, then
 returns a status code. Both GET and HEAD withhold headers until completion.
-It retains no prompt or answer and creates no saved conversation. Browser
-rendering, Socket.IO, campus login, and saved-chat persistence are not tested.
+The deployed HTTP layer retains no prompt or answer and creates no saved
+conversation. It does not test browser rendering, Socket.IO, campus login, or
+saved-chat persistence. A browser layer at `/chat/basic/e2e` was deployed and
+qualified on 2026-09-08 with both Worker and browser running in Cloudflare.
+It lives in the same Worker, verifies rendering and persistence, then
+deletes its marked synthetic chat. Session injection still skips campus login.
+
+The deployed `/openrouter/basic` route runs in this same Worker, using an
+inference-only OpenRouter secret, fixed `z-ai/glm-5.3-flash`, and enforced
+`provider.zdr: true`. It omits Basic's system prompt and injected context, so
+independent request differences are not pure OWUI overhead. Metrics v2 returns
+authenticated GET JSON and HEAD timing headers for all three layers, including
+admission failures. Sequential awaited durations and overlapping event offsets
+are separate; browser close and exact-chat cleanup are measured independently.
+All three routes passed authenticated GET/HEAD and anonymous 401 checks in
+production. Independent observation verified both synthetic browser chats were
+deleted. Browser work has a 55-second deadline plus bounded close/cleanup;
+HTTP routes retain 25 seconds. See the probe README for version, measurements,
+and exact semantics. No new monitor was created.
 
 API keys were enabled for this on 2026-09-07. Ordinary default permissions and
 existing group permissions remain unchanged; only the dedicated operational
 group received `features.api_keys`. An instance-wide API-key endpoint allowlist
 permits only `/api/chat/completions`. Session JWTs are unaffected. The Worker
-holds the dedicated account's API key, never an admin credential. API-key expiry
-is not enforced by OWUI 0.11.3; explicitly revoke/rotate when required.
+holds the dedicated account's API key and its ordinary monitoring
+session JWT for the browser layer, never an admin credential or JWT-signing
+secret. API-key expiry is not enforced by OWUI 0.11.3; explicitly revoke/rotate
+when required. The deployed session expires 2026-10-08 at 19:38:04 UTC;
+manual renewal is required, with no automatic renewal scheduled.
 
 The existing UptimeRobot monitor remains the basic reachability check. The new
 transaction monitor is configured manually by Adam; verify its first samples

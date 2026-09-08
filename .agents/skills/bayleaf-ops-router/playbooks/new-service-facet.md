@@ -40,14 +40,25 @@ workflow turns out to be.
 
 ## Verification
 
-Depends entirely on the facet; write it into this section when first run.
+Depends on the facet. For authenticated synthetic probes, verify anonymous
+denial without detailed metrics, completed-work GET/HEAD parity, bounded rate
+and deadline configuration, and independent exact-record cleanup. Record the
+deployed version and credential expiry, not merely a local test result.
 
 ## Rollback
 
 New facets should ship behind a kill-switch (cf. every `<BACKEND>_ENABLED`
-flag failing closed) so rollback is an env flip, not a redeploy.
+flag failing closed). For Workers with configuration-bound variables, changing
+that flag still requires a deployment; pausing the external monitor stops its
+traffic without changing the Worker.
 
 ## Refinement log
+
+- 2026-09-08: Unified probe deployment used ordinary 30-day sign-in, not a signing
+  secret or long-lived minted JWT. Local Wrangler startup failure did not block
+  authorized production qualification. Browser work needed its own 55-second
+  deadline to preserve the existing HTTP monitor's 25-second contract; independent
+  observation confirmed exact synthetic deletion for both live GET and HEAD.
 
 - 2026-09-07: `chat/probe/` adds an operational Worker hostname, not a public
   service. Its fixed synthetic content uses the existing Chat/OpenRouter path;
