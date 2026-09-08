@@ -49,6 +49,14 @@ flag failing closed) so rollback is an env flip, not a redeploy.
 
 ## Refinement log
 
+- 2026-09-07: `chat/probe/` adds an operational Worker hostname, not a public
+  service. Its fixed synthetic content uses the existing Chat/OpenRouter path;
+  no new human-content subprocessor or public-site page was introduced. Scoped
+  credentials, authenticated HEAD timing, rate/deadline guards, and a kill switch
+  were the relevant gates. A non-admin probe exposed missing base-model grants
+  that an admin smoke test had missed. UptimeRobot setup remains a human handoff;
+  do not claim its collection or alerts verified from Worker tests alone.
+
 - 2026-08-25: stub drafted; issue #65's own description is unfinished. First
   real run should rewrite this file.
 - 2026-09-01: A generic local client proxy for the existing Sealed lane did not

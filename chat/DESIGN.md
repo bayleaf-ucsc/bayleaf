@@ -305,6 +305,25 @@ is defined in `models/<id>/model.json`.
 | `basic` | Basic | `openrouter.z-ai/glm-5.3-flash` | Default model for all users. Campus-aware system prompt (`Basic v1.2`), builtin tools enabled, skills for Google Workspace, Canvas, web search, and code sandbox. Vision enabled (glm-5.3-flash is vision-capable); `reasoning_effort: low`. |
 | `help` | Help | `openrouter.z-ai/glm-5.3-flash` | BayLeaf help desk. Lists user groups and available models, inspects model configurations, processes invite codes. Binds `help_toolkit` and `web_context_toolkit` directly via the model's `toolIds`. System prompt (`Help v1.5`). `reasoning_effort: low`; vision on (glm-5.3-flash is vision-capable). |
 
+### Underlying Model Access (OWUI 0.11.3) ✨
+
+Sharing a workspace preset is not sufficient: OWUI also requires non-admin
+callers to have read access to every underlying model in its `base_model_id`
+chain. A model discovered from OpenRouter but absent from OWUI's model table is
+admin-only for this check. The picker can still display the shared preset even
+when inference will fail with `Model not found`.
+
+The shared underlying `openrouter.z-ai/glm-5.3-flash` model is now registered as
+**active, public read, and hidden**. Source:
+`models/base-glm-5.3-flash/model.json`. Hidden removes it from the normal picker,
+not from authorization or API discovery: users may invoke the raw model directly.
+That tradeoff was explicitly accepted on 2026-09-07 when the new non-admin probe
+exposed the missing grant. The outage's start time was not established.
+
+Every model swap must check the new base's record/grants and perform an actual
+non-admin inference request. Admin canary success and model-list visibility do
+not establish campus-user access.
+
 ### Canary Models
 
 Admin-private models used to exercise a candidate base model in prod before
@@ -882,6 +901,27 @@ Run `owui-cli` with no arguments for the full command listing.
 `owui-cli` reads `OWUI_URL` and `OWUI_TOKEN` from the environment. Tokens
 are JWTs that expire; refresh by copying a fresh token from
 `localStorage.getItem("token")` in the browser console.
+
+### Synthetic Availability Probe ✨
+
+`probe.bayleaf.dev/chat/basic` is a separate Cloudflare Worker for UptimeRobot
+Free, not a public service or metrics store. Source and operational instructions:
+[`probe/README.md`](probe/README.md). It submits a fixed opening prompt through
+Basic as a dedicated non-admin user, consumes the complete HTTP stream, then
+returns a status code. Both GET and HEAD withhold headers until completion.
+It retains no prompt or answer and creates no saved conversation. Browser
+rendering, Socket.IO, campus login, and saved-chat persistence are not tested.
+
+API keys were enabled for this on 2026-09-07. Ordinary default permissions and
+existing group permissions remain unchanged; only the dedicated operational
+group received `features.api_keys`. An instance-wide API-key endpoint allowlist
+permits only `/api/chat/completions`. Session JWTs are unaffected. The Worker
+holds the dedicated account's API key, never an admin credential. API-key expiry
+is not enforced by OWUI 0.11.3; explicitly revoke/rotate when required.
+
+The existing UptimeRobot monitor remains the basic reachability check. The new
+transaction monitor is configured manually by Adam; verify its first samples
+and alert delivery before treating setup as complete.
 
 ### Pull (single item)
 

@@ -99,7 +99,8 @@ bayleaf/
 │   ├── DESIGN.md       # Full architecture, env vars, recovery procedure
 │   ├── models/         # Workspace model definitions (JSON + avatars)
 │   ├── tools/          # Custom toolkit source code
-│   └── functions/      # Filter & action source code
+│   ├── functions/      # Filter & action source code
+│   └── probe/          # Operational Worker adapter for synthetic Chat monitoring
 ├── docs/               # GitHub Pages site → https://bayleaf.dev
 │   ├── CNAME
 │   ├── index.html      # Landing page

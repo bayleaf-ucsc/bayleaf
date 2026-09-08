@@ -119,6 +119,14 @@ should move together.
    canary to a known-good slug (differential test); if that works, hit
    `GET /api/models` to refresh the cache, point the canary back at the
    candidate, and retest.
+   **Non-admin access gate (OWUI 0.11.3):** provider discovery and a public
+   preset grant are not enough. The candidate must have an active OWUI model
+   record with read grants covering the preset's audience, including every
+   intermediate base-model hop. Public presets use a public-read base record
+   with `meta.hidden: true` to keep the raw model out of the picker. Hidden is
+   not access control: direct raw-model invocation remains allowed. This
+   tradeoff was accepted for Basic/Help; do not silently apply public grants
+   to a restricted model. See `chat/models/base-glm-5.3-flash/model.json`.
 2. **Reasoning effort is a posture decision, not a model constant.** Set it
    from the pair of the underlying model's character and the role it plays
    here. Enumerate the candidate's supported reasoning efforts from its
@@ -162,6 +170,12 @@ should move together.
 
 - `uvx owui-cli --json models show <id>` returns the new `base_model_id`.
 - User confirms conversation quality (manual gate).
+- An actual **non-admin** request completes through each changed preset. A
+  successful admin canary does not pass this gate; neither does seeing the model
+  in `/api/models`. Use the dedicated synthetic user where its permissions fit
+  the intended audience. After a Basic swap, verify the authenticated
+  `probe.bayleaf.dev/chat/basic` check as well. Do not add probe-only grants that
+  hide an access failure affecting ordinary users.
 
 ### Chat rollback
 
@@ -249,6 +263,14 @@ the remote-config and encrypted-inference checks. Explicit model requests remain
 available whenever Tinfoil still serves the model.
 
 ## Refinement log
+
+- 2026-09-07: the new non-admin availability probe found Basic invocation failing
+  despite a public preset grant and successful admin use. The running 0.11.3
+  code requires a model-table row and read grant for the underlying model too;
+  listing does not enforce that same chain. Registering glm-5.3-flash as active,
+  public-read, and hidden repaired the non-admin failure. Added a base-grant and
+  non-admin inference gate. The failure may date to the September 1 swap, but
+  its actual start was not established.
 
 - 2026-08-25: drafted from issue #65; never yet run as a playbook.
 - 2026-08-25: first real run (dry run: glm-5.2 → glm-5.3 evaluation). ZDR

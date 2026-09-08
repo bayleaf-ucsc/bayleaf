@@ -1,0 +1,20 @@
+{
+  "name": "bayleaf-probe",
+  "account_id": "1a49fb69291d42e23c4ed4dcffce5bbc",
+  "main": "index.mjs",
+  "compatibility_date": "2026-09-07",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": false },
+  "routes": [{ "pattern": "probe.bayleaf.dev", "custom_domain": true }],
+  "vars": {
+    "ENABLED": "true",
+    "DEADLINE_MS": "25000"
+  },
+  "ratelimits": [{
+    "name": "LIMITER",
+    "namespace_id": "1001",
+    "simple": { "limit": 6, "period": 60 }
+  }]
+  // Secrets: PROBE_PASSWORD (HTTP Basic username: probe), OWUI_API_KEY.
+}
