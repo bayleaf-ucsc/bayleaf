@@ -18,6 +18,11 @@ Media). **Publicly visible; never commit secrets, API keys, or credentials.**
   inference through Tinfoil. It provides keyless on-campus access, key-based
   off-campus access, web search/fetch, and sandboxed code execution. Source:
   `api/` in this repo.
+- **BayLeaf Probe**: `https://probe.bayleaf.dev`, a non-public,
+  HTTP-Basic-authenticated Cloudflare Worker powering UptimeRobot synthetic
+  monitoring. It tests browser-based Chat, OWUI HTTP inference, and direct
+  OpenRouter inference. Source: `chat/probe/`. The public monitoring/status
+  surface is **`https://status.bayleaf.dev`**, served by UptimeRobot.
 
 A self-service course-AI service (BayLeaf Courses) was prototyped and then retired
 (GitHub issues #4 and #5); the Spring 2026 course need was met instead by the Brace3
@@ -100,7 +105,7 @@ bayleaf/
 │   ├── models/         # Workspace model definitions (JSON + avatars)
 │   ├── tools/          # Custom toolkit source code
 │   ├── functions/      # Filter & action source code
-│   └── probe/          # Operational Worker adapter for synthetic Chat monitoring
+│   └── probe/          # Private layered monitoring Worker (has its own AGENTS.md)
 ├── docs/               # GitHub Pages site → https://bayleaf.dev
 │   ├── CNAME
 │   ├── index.html      # Landing page
@@ -128,6 +133,24 @@ repository root.
 `chat/` is an Open WebUI instance on DigitalOcean App Platform at
 `https://chat.bayleaf.dev`. **Read `chat/AGENTS.md` before working on Chat
 configuration, models, tools, functions, or user/group management.**
+
+`chat/probe/` is a separate Cloudflare Worker, not part of the OWUI deployment
+or BayLeaf API. **Read `chat/probe/AGENTS.md` before working on monitoring**;
+it explains the three probe contracts, latency metrics, current measurement
+snapshot, cleanup requirements, and credential expiry. Keep all probe layers in
+this single Worker.
+
+UptimeRobot calls the private probe endpoints as ordinary authenticated HTTP
+monitors. Both GET and HEAD wait for completed work; the resulting status and
+response time power availability monitoring and `https://status.bayleaf.dev`.
+UptimeRobot owns history, public status presentation, and alerts; the Worker
+returns content-free diagnostics and creates no metrics store. Browser probes
+temporarily persist only marked synthetic chats and must verify their deletion.
+Detailed phase timings are available from authenticated probe responses, not
+assumed to be archived by UptimeRobot. Verify monitor configuration and alert
+delivery separately from endpoint health. These probes do not test CILogon or
+the BayLeaf API/Sealed paths, and the browser's worst-case execution currently
+exceeds UptimeRobot's maximum timeout; see the probe guide before enabling alerts.
 
 ### Repo-local agent skills (experimental)
 
