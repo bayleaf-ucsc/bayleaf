@@ -220,6 +220,10 @@ retarget it or delete it (`owui-cli models delete basic-canary`).
    - Repeat the ordinary and tool-use canary requests against the deployed API.
    The inference route itself is unchanged, but these checks catch upstream
    drift and malformed model metadata at the moment of promotion.
+   Update `chat/probe/index.mjs`'s `API_MODEL` in the same change, run its drift
+   test, and, when that route is deployed, verify `/api/recommended`. The probe
+   intentionally pins checked-in configuration rather than discovering the
+   recommendation at runtime.
 6. **[HUMAN GATE]** Adam confirms the promoted recommendation behaves as
    expected in a real agent session. This is distinct from changing Chat's
    Basic model.

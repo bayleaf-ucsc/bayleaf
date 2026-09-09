@@ -20,6 +20,7 @@ whole clump.
 | Editing a system prompt, or a tool's docstring/implementation | `playbooks/prompt-tool-edit.md` |
 | Privacy notice / subprocessor / retention change | `playbooks/privacy-notice-change.md` |
 | New service or API facet (new lane, subdomain, connection) | `playbooks/new-service-facet.md` |
+| New synthetic probe route, probe contract, or UptimeRobot monitor | `playbooks/probe-extension.md` |
 | Bumping a spin-off module (Lathe, gws-toolkit, other toolkits) | `playbooks/spinoff-module-bump.md` |
 | Pulling prod state back into the repo (backup, drift reconcile) | `playbooks/backup-reconcile.md` |
 

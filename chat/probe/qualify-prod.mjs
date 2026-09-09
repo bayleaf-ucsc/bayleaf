@@ -64,9 +64,11 @@ try {
   assert.ok(claims.exp * 1000 > Date.now());
   output({ ordinary_user: true, same_api_key_identity: true, session_expires_utc: new Date(claims.exp * 1000).toISOString() });
 
-  if (process.argv.includes('--install-secrets')) {
+  const installSecrets = process.argv.includes('--install-secrets');
+  const installApiSecret = process.argv.includes('--install-api-secret');
+  if (installSecrets || installApiSecret) {
     stage = 'secret_upload';
-    assert.ok(process.env.OPENROUTER_API_KEY);
+    assert.ok(installApiSecret ? process.env.BAYLEAF_API_KEY : process.env.OPENROUTER_API_KEY);
     // Only the documented inference credential is accepted from the environment.
     // No temporary secret file, arguments containing values, or raw CLI output.
     const child = spawn(process.execPath, ['node_modules/wrangler/bin/wrangler.js', 'secret', 'bulk'], {
@@ -77,15 +79,21 @@ try {
     child.stderr.resume();
     const exited = new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', resolve); });
     child.stdin.on('error', () => {});
-    child.stdin.end(JSON.stringify({ OWUI_E2E_TOKEN: token, OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY }));
+    const installed = installApiSecret
+      ? { BAYLEAF_API_KEY: process.env.BAYLEAF_API_KEY }
+      : { OWUI_E2E_TOKEN: token, OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY };
+    child.stdin.end(JSON.stringify(installed));
     assert.equal(await exited, 0);
-    output({ installed_secret_names: ['OWUI_E2E_TOKEN', 'OPENROUTER_API_KEY'] });
+    output({ installed_secret_names: Object.keys(installed) });
   } else {
     stage = 'baseline';
     const baseline = await api(listPath);
     assert.equal(baseline.status, 200);
     assert.deepEqual(baseline.data, []); // Never inspect human history or adopt old records.
-    const routes = [['owui', '/chat/basic'], ['openrouter', '/openrouter/basic'], ['browser', '/chat/basic/e2e']];
+    const routes = process.argv.includes('--api-only')
+      ? [['api', '/api/recommended']]
+      : [['owui', '/chat/basic'], ['openrouter', '/openrouter/basic'],
+        ['api', '/api/recommended'], ['browser', '/chat/basic/e2e']];
     for (const [, path] of routes) {
       for (const method of ['GET', 'HEAD']) {
         stage = 'unauthorized';
@@ -96,7 +104,7 @@ try {
         assert.equal(await response.text(), method === 'HEAD' ? '' : 'Unauthorized\n');
       }
     }
-    output({ unauthorized_checks: 6, status: 401, detailed_metrics: false });
+    output({ unauthorized_checks: routes.length * 2, status: 401, detailed_metrics: false });
     for (const [layer, path] of routes) {
       for (const method of ['GET', 'HEAD']) {
         stage = `${layer}_${method}`;
@@ -163,7 +171,8 @@ try {
   output({ qualification: 'failed', stage });
   process.exitCode = 1;
 } finally {
-  if (token && userId && !process.argv.includes('--install-secrets')) {
+  if (token && userId && !process.argv.includes('--install-secrets') &&
+      !process.argv.includes('--install-api-secret')) {
     try {
       // Allow independent Worker cleanup to finish after a transport failure.
       if (uncertainUntil > Date.now()) await sleep(uncertainUntil - Date.now());

@@ -3,6 +3,7 @@ import puppeteer from '@cloudflare/puppeteer';
 const MAX_BYTES = 1024 * 1024;
 const MAX_EVENT_CHARS = 64 * 1024;
 export const DIRECT_MODEL = 'z-ai/glm-5.3-flash';
+export const API_MODEL = 'openrouter:z-ai/glm-5.3-flash';
 
 // One Worker monotonic clock. Phases are serial awaits; events may overlap them.
 export function metrics(now = () => performance.now()) {
@@ -153,18 +154,19 @@ export async function checkStream(body, { timing = metrics(), signal = new Abort
 }
 
 export async function probeDetail(apiKey, signal, fetcher = fetch, {
-  direct = false, timing = metrics(),
+  direct = false, api = false, timing = metrics(),
 } = {}) {
   signal ??= new AbortController().signal;
-  const prefix = direct ? 'openrouter' : 'chat';
-  // Uses Chat's existing ZDR inference connection. No parent/chat/session IDs:
-  // OWUI does not create a conversation record on this direct HTTP path.
+  const prefix = direct ? 'openrouter' : api ? 'api' : 'chat';
+  // The OWUI request sends no parent/chat/session IDs, so its direct HTTP path
+  // does not create a conversation record. Other targets are stateless proxies.
   let response;
   try {
     response = await timing.phase('response_headers', () => bounded(() => {
       timing.mark('request_start');
       return fetcher(direct
         ? 'https://openrouter.ai/api/v1/chat/completions'
+        : api ? 'https://api.bayleaf.dev/v1/chat/completions'
         : 'https://chat.bayleaf.dev/api/chat/completions', {
         method: 'POST',
         redirect: 'manual',
@@ -175,11 +177,11 @@ export async function probeDetail(apiKey, signal, fetcher = fetch, {
           Accept: 'text/event-stream',
         },
         body: JSON.stringify({
-          model: direct ? DIRECT_MODEL : 'basic',
+          model: direct ? DIRECT_MODEL : api ? API_MODEL : 'basic',
           messages: [{ role: 'user', content: "What's BayLeaf?" }],
           stream: true,
-          // Direct inference enforces ZDR at routing, independently of Chat config.
-          ...(direct ? { provider: { zdr: true, sort: 'throughput' },
+          // Direct and API inference explicitly require ZDR provider routing.
+          ...(direct || api ? { provider: { zdr: true, sort: 'throughput' },
             reasoning: { effort: 'low' }, max_tokens: 2048 } : {}),
         }),
       });
@@ -525,7 +527,8 @@ export default {
       },
     );
     const url = new URL(request.url);
-    const layer = { '/chat/basic': 'owui', '/chat/basic/e2e': 'browser', '/openrouter/basic': 'openrouter' }[url.pathname];
+    const layer = { '/chat/basic': 'owui', '/chat/basic/e2e': 'browser',
+      '/openrouter/basic': 'openrouter', '/api/recommended': 'api' }[url.pathname];
     if (!layer || url.search) return respond(404, 'Not found');
     if (!['HEAD', 'GET'].includes(request.method)) {
       return respond(405, 'Method not allowed', { Allow: 'GET, HEAD' });
@@ -569,6 +572,7 @@ export default {
     }
     if ((layer === 'owui' && !env.OWUI_API_KEY) ||
         (layer === 'openrouter' && !env.OPENROUTER_API_KEY) ||
+        (layer === 'api' && !env.BAYLEAF_API_KEY) ||
         (layer === 'browser' && (!env.OWUI_E2E_TOKEN || !env.BROWSER))) {
       timing.fail();
       return finish(503, 'not_configured');
@@ -600,8 +604,9 @@ export default {
           ? 'browser_client_aborted' : report.result;
         return finish(result === 'ok' ? 200 : 503, result, report);
       }
-      const running = probeDetail(layer === 'openrouter' ? env.OPENROUTER_API_KEY : env.OWUI_API_KEY,
-        controller.signal, fetch, { direct: layer === 'openrouter', timing });
+      const running = probeDetail(layer === 'openrouter' ? env.OPENROUTER_API_KEY
+        : layer === 'api' ? env.BAYLEAF_API_KEY : env.OWUI_API_KEY,
+        controller.signal, fetch, { direct: layer === 'openrouter', api: layer === 'api', timing });
       ctx?.waitUntil(running.catch(() => {}));
       const outcome = await running;
       const result = timedOut ? 'deadline' : request.signal.aborted ? 'client_aborted' : outcome;

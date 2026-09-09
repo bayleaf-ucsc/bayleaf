@@ -3,15 +3,24 @@
 A small Cloudflare Worker that makes a synthetic opening conversation measurable
 by UptimeRobot Free. No UI, historical storage, or alerting machinery of its own.
 
-**Deployment state (2026-09-08): all three layers deployed and qualified at `probe.bayleaf.dev`.** The dedicated
-non-admin Chat account and restricted API key exist. Authenticated HEAD checks
-wait for actual completed answers; unauthenticated requests return 401. Adam is
-configuring UptimeRobot by hand; collection and alert delivery are not yet verified.
+**Deployment state (2026-09-09 UTC): all four layers are deployed at
+`probe.bayleaf.dev`; the new `/api/recommended` layer is credentialed and
+production-qualified.** Adam created its UptimeRobot monitor manually at a
+15-minute interval before deployment, so its initial history may include setup
+failures. Initial green samples and failure/recovery alert delivery are not yet
+verified.
 
-Browser, direct OpenRouter, and metrics v2 run in this same Worker. Production
-qualification is recorded below. Earlier localhost/remote-browser experiments
-are retained as historical evidence, not the current deployment state. No new
-monitor or Chat grant change was made during this deployment.
+The dedicated non-admin Chat account and restricted API key exist. The same
+`probe@bayleaf.dev` pseudo-user now has a separate BayLeaf API token and `$1/day`
+OpenRouter cap. Authenticated HEAD checks wait for actual completed answers;
+unauthenticated requests return 401.
+Source preflight passed 33 tests, qualification-script syntax checks, Wrangler
+4.130.0 dry-run bundling, and `git diff --check`.
+
+Browser, direct OpenRouter, BayLeaf API, and metrics v2 run in this same Worker.
+Production qualification is recorded below. Earlier localhost/remote-browser
+experiments are retained as historical evidence, not the current deployment
+state. No Chat grant change was made for the API layer.
 
 Initial qualification found a real non-admin authorization failure: Basic was
 shared, but its new base model lacked a model-table record and read grant.
@@ -94,6 +103,30 @@ when changing Basic; there is no runtime admin/configuration lookup. Direct
 transport/protocol/HTTP failures use `openrouter_transport`,
 `openrouter_protocol`, and `openrouter_http_<status>`; SSE codes are shared.
 
+## BayLeaf API
+
+`GET` and `HEAD /api/recommended` use the same Worker, HTTP Basic boundary, kill
+switch, HTTP deadline, and SSE parser. The route holds a dedicated
+`BAYLEAF_API_KEY` (`sk-bayleaf-...`) for the `probe@bayleaf.dev` pseudo-user. It
+does not use Adam's personal key, Campus Pass, an OpenRouter management
+credential, or the direct route's OpenRouter inference key.
+
+The fixed upstream is `https://api.bayleaf.dev/v1/chat/completions`; redirects
+are not followed. The fixed model is `openrouter:z-ai/glm-5.3-flash`, matching
+`api/wrangler.jsonc`'s namespaced `RECOMMENDED_MODEL`; a drift test fails when
+they diverge. The request explicitly includes `provider: {zdr: true, sort:
+"throughput"}`, low reasoning effort, and `max_tokens: 2048`. The API still
+performs its normal keyed bearer and D1 lookup, per-user OpenRouter credential
+acquisition/healing, model-prefix routing, and open-weight evidence check.
+
+Success establishes one complete, nonempty keyed plaintext inference through
+those controls. It does not test the unauthenticated recommendation endpoint,
+Campus Pass, Tinfoil/Sealed, API web search, sandbox execution, factual
+correctness, or a human user's key. BayLeaf API and the probe both retain no
+prompt or completion content; the fixed synthetic bytes are consumed in memory.
+Transport/protocol/HTTP failures use `api_transport`, `api_protocol`, and
+`api_http_<status>`; SSE codes are shared.
+
 ## Metrics v2
 
 All elapsed measurements use the Worker's monotonic `performance.now()`, not
@@ -134,7 +167,7 @@ the unaccounted remainder. Gate denials also identify their failed phase.
 Work deadline starts after authenticated configuration
 checks and covers admission plus work, not independent cleanup budgets.
 
-### HTTP phases and events (OWUI and direct OpenRouter)
+### HTTP phases and events (OWUI, direct OpenRouter, and BayLeaf API)
 
 | Phase | Sequential blocking interval |
 |---|---|
@@ -208,8 +241,10 @@ deliberate rather than filled with misleading derived numbers.
 - Maximum received stream: 1 MiB; maximum individual SSE event: 64 Ki characters.
 - Cloudflare's rate-limit binding permits 6 authenticated checks/minute **per
   route per Cloudflare location**, not globally. Fixed independent keys are
-  `owui`, `browser`, and `openrouter` (up to 18 total/minute/location). Chat's ordinary per-user limits remain
-  enabled. No exemption from campus rate limits and no internal inference retry.
+  `owui`, `browser`, `openrouter`, and `api` (up to 24 total/minute/location).
+  Chat's ordinary per-user limits and the API pseudo-user's provider-side spend
+  cap remain enabled. No exemption from campus rate limits and no internal
+  inference retry.
 - UptimeRobot may issue confirmation retries. Every authorized, admitted request
   performs fresh work: neither failures nor successes are cached. Concurrent
   requests can run; these rate guards are not a global concurrency lock.
@@ -268,6 +303,33 @@ retains the last attempted work stage. The older browser qualification below
 used cumulative checkpoints; **v2 uses the separate phase/event semantics above**.
 No screenshots, page logs, request bodies, or answers are emitted or saved.
 
+## BayLeaf API Production Qualification (2026-09-09)
+
+The `BAYLEAF_API_KEY` secret was installed before code deployment. Version
+`1af21000-c643-46c8-95b6-97cd65ee86a9` reached the custom domain at
+**02:35:02 UTC**. Targeted qualification completed at **02:37:48 UTC**: anonymous
+GET and HEAD both returned 401 without detailed metrics, and authenticated GET
+and HEAD returned 200 / `ok` after complete streams.
+
+| Route | GET Worker Total | HEAD Worker Total |
+|---|---:|---:|
+| `/api/recommended` | 3.115 s | 2.407 s |
+
+These are independent observations, not a benchmark or SLO. GET/HEAD client
+elapsed times were 3.238/2.509 s. Additive phase accounting passed, GET returned
+metrics-v2 JSON, HEAD was bodyless, and no response content was printed. A prior
+all-layer run also passed API GET/HEAD at 6.623/1.973 s, but exited nonzero when
+an unrelated browser HEAD failed during remote-browser launch/close. Its exact
+cleanup check found zero remaining chats. This motivated the targeted
+`qualify-prod.mjs --api-only` mode rather than coupling API evidence to browser
+availability.
+
+The `probe@bayleaf.dev` D1 row was independently verified active with a complete
+OpenRouter credential mapping, and the spend-limit dry run confirmed its
+provider-side cap is `$1/day`. Temporary roster and SQL files were removed. Adam
+created the UptimeRobot monitor manually at a 15-minute interval before setup;
+its first green sample and alert behavior remain a separate verification gate.
+
 ## Production Qualification (2026-09-08)
 
 Deployed at **19:38:12 UTC** (12:38:12 PDT), version
@@ -313,6 +375,14 @@ empty. It creates no server, secret file, or monitor. To explicitly install or
 renew the two additional secrets, source only `~/.tokens/openrouter-api` into
 the environment and run `node qualify-prod.mjs --install-secrets`. That option
 uploads secrets to the existing Worker but does not deploy code or run inference.
+After independently confirming that `BAYLEAF_API_KEY` is the dedicated
+`probe@bayleaf.dev` token, `node qualify-prod.mjs --install-api-secret` uploads
+only that one secret. It never folds an ambient BayLeaf token into the existing
+secret-renewal command.
+`node qualify-prod.mjs --api-only` restricts production qualification to
+anonymous and authenticated GET/HEAD checks of `/api/recommended`; use it when
+the API route needs independent evidence rather than coupling its result to a
+transient remote-browser acquisition.
 Local durable secret files are left unchanged. No commit or push was made.
 
 ## Earlier Local Qualification (2026-09-08)
@@ -329,11 +399,17 @@ only this experiment's marked synthetic cleanup. It creates no persistent monito
 `node qualify.mjs --openrouter` additionally runs direct GET/HEAD if an
 inference-only `OPENROUTER_API_KEY` is available in the ignored Worker secrets
 file or environment. Without opt-in or a key it explicitly skips direct work.
+`node qualify.mjs --bayleaf-api` similarly adds local Worker GET/HEAD checks for
+`/api/recommended` using the dedicated token from `worker.secrets.json` or
+`BAYLEAF_API_KEY`.
 Source only the documented inference credential (`~/.tokens/openrouter-api`),
 never the management credential. `node qualify.mjs --direct-only` uses that
 environment key to run the same direct inference/parser in Node without reading
 Chat credentials or starting Wrangler. This fallback does **not** qualify the
 Worker HTTP route. Neither mode provisions credentials or uploads Worker secrets.
+`node qualify.mjs --api-only` provides the equivalent parser-only fallback for
+BayLeaf API and requires `BAYLEAF_API_KEY`; it likewise does not qualify the
+Worker route.
 
 Earlier metrics-v2 verification (2026-09-08): two attempts to start the local Worker
 exited during Wrangler startup, before browser launch. Safe diagnostics did not
@@ -428,6 +504,9 @@ scheduled. Manual renewal is available through `qualify-prod.mjs --install-secre
 
 Local `worker.secrets.json` initially contains `OWUI_API_KEY` and `PROBE_PASSWORD`;
 it may additionally hold the authorized inference-only `OPENROUTER_API_KEY`.
+For local qualification of `/api/recommended`, it may also hold the dedicated
+`BAYLEAF_API_KEY`. The production Worker may hold that token after the API layer
+is provisioned; never substitute a personal user token.
 Production deployment installed the additional secrets in Cloudflare without
 modifying the local secret files.
 `bootstrap.secrets.json` contains the dedicated account's setup credentials and
@@ -452,6 +531,11 @@ Rollback: set `ENABLED` false and redeploy, or pause the UptimeRobot monitor.
 Revoke the dedicated account's API key when retiring the probe. Do not restore
 an old whole-instance configuration blindly: preserve later operator changes.
 
+For the API layer, revoke the `probe@bayleaf.dev` D1 row and remove the Worker's
+`BAYLEAF_API_KEY` secret when retiring it. OpenRouter remains the system of
+record for its daily spend cap; follow the probe-extension playbook rather than
+adding a D1 limit.
+
 ## UptimeRobot Setup (By Adam)
 
 Use an ordinary HTTP monitor, not the paid API-monitor type:
@@ -463,6 +547,21 @@ Use an ordinary HTTP monitor, not the paid API-monitor type:
 - Five-minute interval initially; email alerts to the existing contact.
 - Timeout must exceed the Worker's deadline with network headroom.
 - No custom headers, paid integrations, or ntfy bridge required.
+
+For the BayLeaf API layer, Adam manually adds a second ordinary HTTP monitor
+after production qualification:
+
+- URL: `https://probe.bayleaf.dev/api/recommended`
+- Name: `BayLeaf API: recommended inference`
+- HTTP Basic: username `probe`, the same monitoring password.
+- Fifteen-minute interval and the existing email alert contact.
+- Timeout greater than `DEADLINE_MS` with network headroom.
+
+Manual UptimeRobot setup is an intentional **human gate**. The playbook records
+the fields and required checks but does not automate account changes: probes are
+added too rarely for automation to earn its maintenance and credential cost.
+After creation, Adam verifies the first samples, status-page inclusion if
+desired, and one controlled failure/recovery alert before monitoring is complete.
 
 The Free account UI exposes Basic/Digest/Bearer choices and a timeout control;
 successful monitor creation and timing semantics still need live verification.

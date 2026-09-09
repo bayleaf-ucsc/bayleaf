@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import puppeteer from '@cloudflare/puppeteer';
 import worker, { checkStream, probe, probeDetail, probeBrowser, cleanupSynthetic, metrics,
-  DIRECT_MODEL, renderedAnswer } from './index.mjs';
+  DIRECT_MODEL, API_MODEL, renderedAnswer } from './index.mjs';
 
 const frame = value => `data: ${JSON.stringify(value)}\n\n`;
 const choice = (delta, finish_reason = null) => ({ choices: [{ index: 0, delta, finish_reason }] });
@@ -72,6 +72,19 @@ test('upstream request is fixed, non-persisting, and redirects are not followed'
   }
 });
 
+test('BayLeaf API request uses the namespaced recommendation and explicit ZDR routing', async () => {
+  assert.equal(await probeDetail('bayleaf-key', null, async (url, options) => {
+    assert.equal(url, 'https://api.bayleaf.dev/v1/chat/completions');
+    assert.equal(options.redirect, 'manual');
+    assert.equal(options.headers.Authorization, 'Bearer bayleaf-key');
+    assert.deepEqual(JSON.parse(options.body), {
+      model: API_MODEL, messages: [{ role: 'user', content: "What's BayLeaf?" }], stream: true,
+      provider: { zdr: true, sort: 'throughput' }, reasoning: { effort: 'low' }, max_tokens: 2048,
+    });
+    return new Response(good, { headers: { 'Content-Type': 'text/event-stream' } });
+  }, { api: true }), 'ok');
+});
+
 test('upstream failures have stable, content-free diagnostic codes', async () => {
   assert.equal(await probeDetail('test-key', null, async () => new Response('sensitive error', { status: 401 })),
     'chat_http_401');
@@ -82,6 +95,8 @@ test('upstream failures have stable, content-free diagnostic codes', async () =>
   })), 'stream_incomplete');
   assert.equal(await probeDetail('test-key', null, async () => { throw new Error('sensitive error'); }),
     'chat_transport');
+  assert.equal(await probeDetail('test-key', null, async () => new Response('denied', { status: 403 }),
+    { api: true }), 'api_http_403');
 });
 
 const env = {
@@ -100,6 +115,7 @@ test('routing, authentication, disabled state and rate limit fail closed', async
     [request('GET', '/chat/basic', false), env, 401],
     [request(), { ...env, ENABLED: 'false' }, 503],
     [request(), { ...env, OWUI_API_KEY: '' }, 503],
+    [request('GET', '/api/recommended'), env, 503],
     [request(), { ...env, DEADLINE_MS: '0' }, 503],
     [request(), { ...env, LIMITER: { async limit() { return { success: false }; } } }, 429],
   ]) {
@@ -216,6 +232,19 @@ test('browser routes authenticate and use independent admission before browser w
   }
   assert.equal((await worker.fetch(request('POST', '/chat/basic/e2e'), env)).status, 405);
   assert.equal((await worker.fetch(request('GET', '/chat/basic/e2e?model=other'), env)).status, 404);
+});
+
+test('BayLeaf API route uses independent admission before inference', async t => {
+  const fetchMock = t.mock.method(globalThis, 'fetch', async () => assert.fail('no inference'));
+  const response = await worker.fetch(request('GET', '/api/recommended'), {
+    ...env, BAYLEAF_API_KEY: 'bayleaf-token', LIMITER: { async limit({ key }) {
+      assert.equal(key, 'api');
+      return { success: false };
+    } },
+  });
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get('x-bayleaf-probe-result'), 'rate_limited');
+  assert.equal(fetchMock.mock.callCount(), 0);
 });
 
 const userId = '00000000-0000-4000-8000-000000000001';
@@ -451,8 +480,10 @@ test('late browser launch after cancellation closes without opening a page', asy
   await closed;
 });
 
-test('both HTTP layers share exact additive timings with delayed chunks and distinct SSE markers', async () => {
-  for (const direct of [false, true]) {
+test('all HTTP layers share exact additive timings with delayed chunks and distinct SSE markers', async () => {
+  for (const target of ['owui', 'openrouter', 'api']) {
+    const direct = target === 'openrouter';
+    const api = target === 'api';
     let clock = 0;
     const timing = metrics(() => clock);
     const chunks = [
@@ -463,13 +494,14 @@ test('both HTTP layers share exact additive timings with delayed chunks and dist
     ];
     const result = await probeDetail('inference-key', new AbortController().signal, async (url, options) => {
       assert.equal(url, direct ? 'https://openrouter.ai/api/v1/chat/completions'
+        : api ? 'https://api.bayleaf.dev/v1/chat/completions'
         : 'https://chat.bayleaf.dev/api/chat/completions');
       assert.equal(options.redirect, 'manual');
       assert.equal(options.headers.Authorization, 'Bearer inference-key');
       const payload = JSON.parse(options.body);
-      assert.deepEqual(payload, { model: direct ? DIRECT_MODEL : 'basic', stream: true,
+      assert.deepEqual(payload, { model: direct ? DIRECT_MODEL : api ? API_MODEL : 'basic', stream: true,
         messages: [{ role: 'user', content: "What's BayLeaf?" }],
-        ...(direct ? { provider: { zdr: true, sort: 'throughput' }, reasoning: { effort: 'low' }, max_tokens: 2048 } : {}),
+        ...(direct || api ? { provider: { zdr: true, sort: 'throughput' }, reasoning: { effort: 'low' }, max_tokens: 2048 } : {}),
       });
       clock += 7;
       return new Response(new ReadableStream({ pull(c) {
@@ -478,7 +510,7 @@ test('both HTTP layers share exact additive timings with delayed chunks and dist
         if (text === null) c.close();
         else c.enqueue(new TextEncoder().encode(text));
       } }, { highWaterMark: 0 }), { headers: { 'Content-Type': 'text/event-stream' } });
-    }, { direct, timing });
+    }, { direct, api, timing });
     assert.equal(result, 'ok');
     const m = timing.snapshot();
     assert.deepEqual(m.events, { request_start: 0, response_headers: 7, first_byte: 10,
@@ -496,6 +528,13 @@ test('direct model tracks the checked-in Basic base model', async () => {
   const { readFile } = await import('node:fs/promises');
   const basic = JSON.parse(await readFile(new URL('../models/basic/model.json', import.meta.url), 'utf8'));
   assert.equal(`openrouter.${DIRECT_MODEL}`, basic.base_model_id);
+});
+
+test('API model tracks the checked-in BayLeaf API recommendation', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const config = await readFile(new URL('../../api/wrangler.jsonc', import.meta.url), 'utf8');
+  const recommended = config.match(/"RECOMMENDED_MODEL"\s*:\s*"([^"]+)"/)?.[1];
+  assert.equal(API_MODEL, recommended);
 });
 
 test('partial SSE frames and split reasoning tags cannot advance first answer', async () => {
@@ -547,20 +586,22 @@ test('authenticated gates expose bounded metrics, unauthenticated gates expose n
       if (method === 'GET') assert.equal((await response.json()).result, result);
       else assert.equal(await response.text(), '');
     }
-    const response = await worker.fetch(request(method, '/openrouter/basic', false), env);
-    assert.equal(response.status, 401);
-    assert.equal(response.headers.get('server-timing'), null);
-    assert.equal(response.headers.get('x-bayleaf-probe-events'), null);
+    for (const path of ['/openrouter/basic', '/api/recommended']) {
+      const response = await worker.fetch(request(method, path, false), env);
+      assert.equal(response.status, 401);
+      assert.equal(response.headers.get('server-timing'), null);
+      assert.equal(response.headers.get('x-bayleaf-probe-events'), null);
+    }
   }
   assert.equal(fetchMock.mock.callCount(), 0);
 });
 
-test('GET/HEAD metric headers match on both HTTP routes and never return payloads', async t => {
+test('GET/HEAD metric headers match on all HTTP routes and never return payloads', async t => {
   t.mock.method(performance, 'now', () => 0);
   const calls = t.mock.method(globalThis, 'fetch', async () => new Response(good,
     { headers: { 'Content-Type': 'text/event-stream' } }));
-  for (const path of ['/chat/basic', '/openrouter/basic']) {
-    const bindings = { ...env, OPENROUTER_API_KEY: 'direct-secret' };
+  for (const path of ['/chat/basic', '/openrouter/basic', '/api/recommended']) {
+    const bindings = { ...env, OPENROUTER_API_KEY: 'direct-secret', BAYLEAF_API_KEY: 'bayleaf-secret' };
     const get = await worker.fetch(request('GET', path), bindings);
     const head = await worker.fetch(request('HEAD', path), bindings);
     assert.deepEqual([...head.headers], [...get.headers]);
@@ -572,7 +613,7 @@ test('GET/HEAD metric headers match on both HTTP routes and never return payload
     assert.ok(get.headers.get('server-timing').length < 4096);
     assert.ok(get.headers.get('x-bayleaf-probe-events').length < 2048);
   }
-  assert.equal(calls.mock.callCount(), 4);
+  assert.equal(calls.mock.callCount(), 6);
 });
 
 test('HEAD withholds failure headers until response body cleanup finishes', async t => {

@@ -28,7 +28,10 @@ async function qualifyWorker() {
   // lets the operator source the documented inference token without copying it.
   const directKey = process.argv.includes('--openrouter')
     ? (secrets.OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY) : null;
+  const apiKey = process.argv.includes('--bayleaf-api')
+    ? (secrets.BAYLEAF_API_KEY || process.env.BAYLEAF_API_KEY) : null;
   output({ openrouter: directKey ? 'included' : 'skipped_no_opt_in_or_inference_key' });
+  output({ bayleaf_api: apiKey ? 'included' : 'skipped_no_opt_in_or_api_key' });
   if (bootstrap.role !== 'user' || !bootstrap.email || !bootstrap.password ||
       !secrets.OWUI_API_KEY || !secrets.PROBE_PASSWORD) throw new Error('credentials');
   stage = 'signin';
@@ -46,6 +49,7 @@ async function qualifyWorker() {
   await writeFile(devVars, Object.entries({
     PROBE_PASSWORD: secrets.PROBE_PASSWORD, OWUI_API_KEY: secrets.OWUI_API_KEY, OWUI_E2E_TOKEN: token,
     ...(directKey ? { OPENROUTER_API_KEY: directKey } : {}),
+    ...(apiKey ? { BAYLEAF_API_KEY: apiKey } : {}),
   }).map(([key, value]) => `${key}=${JSON.stringify(value)}`).join('\n') + '\n', { flag: 'wx', mode: 0o600 });
   createdVars = true;
   stage = 'wrangler_start';
@@ -76,6 +80,7 @@ async function qualifyWorker() {
   for (const [layer, method, path] of [
     ['browser', 'GET', '/chat/basic/e2e'], ['http', 'GET', '/chat/basic'], ['http', 'HEAD', '/chat/basic'],
     ...(directKey ? [['openrouter', 'GET', '/openrouter/basic'], ['openrouter', 'HEAD', '/openrouter/basic']] : []),
+    ...(apiKey ? [['api', 'GET', '/api/recommended'], ['api', 'HEAD', '/api/recommended']] : []),
   ]) {
     const begin = performance.now();
     const response = await fetch(`http://127.0.0.1:8791${path}`, {
@@ -102,15 +107,17 @@ async function qualifyWorker() {
 }
 
 try {
-  if (process.argv.includes('--direct-only')) {
+  if (process.argv.includes('--direct-only') || process.argv.includes('--api-only')) {
     // Fallback when remote Wrangler startup is unavailable. This runs the exact
     // inference/parser code in Node, not the deployed or local HTTP handler.
-    if (!process.env.OPENROUTER_API_KEY) throw new Error('credentials');
+    const api = process.argv.includes('--api-only');
+    const apiKey = api ? process.env.BAYLEAF_API_KEY : process.env.OPENROUTER_API_KEY;
+    if (!apiKey) throw new Error('credentials');
     stage = 'direct_inference';
     const timing = metrics();
     const signal = AbortSignal.timeout(55000);
-    const result = await probeDetail(process.env.OPENROUTER_API_KEY, signal, fetch, { direct: true, timing });
-    output({ layer: 'openrouter', execution: 'node_direct', result: signal.aborted ? 'deadline' : result,
+    const result = await probeDetail(apiKey, signal, fetch, { direct: !api, api, timing });
+    output({ layer: api ? 'api' : 'openrouter', execution: 'node_direct', result: signal.aborted ? 'deadline' : result,
       metrics: timing.snapshot() });
     if (signal.aborted || result !== 'ok') process.exitCode = 1;
   } else await qualifyWorker();

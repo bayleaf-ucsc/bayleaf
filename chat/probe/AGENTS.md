@@ -13,19 +13,21 @@ All routes accept GET and HEAD, use the fixed prompt `What's BayLeaf?`, and
 perform fresh work. HEAD withholds headers until the transaction finishes,
 including browser cleanup. HTTP 200 means the whole contract passed, not just
 that a server answered. The two OWUI layers use the same dedicated non-admin
-account under ordinary model permissions and rate limits.
+`probe@bayleaf.dev` account under ordinary model permissions and rate limits.
+The BayLeaf API layer uses a distinct credential for that same pseudo-user.
 
 | Route | What success establishes | What it does not test |
 |---|---|---|
 | `/chat/basic` | OWUI API-key authentication, model authorization, filters, OpenRouter connection, and a complete nonempty SSE answer from Basic | Browser UI, Socket.IO, saved conversations, or campus login; no chat/session IDs are sent |
 | `/chat/basic/e2e` | Remote Cloudflare browser loads Basic, submits through the UI, renders a completed answer, verifies its persisted record, closes the browser, and deletes the exact synthetic chat | Campus login: an ordinary session JWT is injected rather than exercising CILogon |
 | `/openrouter/basic` | Direct OpenRouter streaming inference on `z-ai/glm-5.3-flash`, explicitly restricted to ZDR providers, using the shared SSE validator | OWUI, its credentials, or Basic's system prompt and injected context |
+| `/api/recommended` | Keyed BayLeaf API auth and D1 resolution, per-user OpenRouter credential acquisition, open-weight enforcement, explicit ZDR routing, and complete SSE inference on the namespaced recommended model | Campus Pass, Sealed, sandbox/web routes, recommendation discovery, or factual correctness |
 
 Browser failure with HTTP success points toward the browser/session/persistence
 path; OWUI HTTP failure with direct success points toward the OWUI-specific path.
 These are diagnostic leads, not proofs: credentials, provider routing, context,
-output length, caches, and transient load differ. None checks factual correctness
-or BayLeaf API/Sealed availability.
+output length, caches, and transient load differ. None checks factual correctness.
+`/api/recommended` checks the plaintext keyed API path, not BayLeaf Sealed.
 
 ## Measurement Snapshot (2026-09-08)
 
@@ -53,6 +55,15 @@ Browser detail distinguishes cumulative event offsets from additive phases:
 Both synthetic chats were independently observed and confirmed deleted; no chats
 remained. Totals exclude monitor-to-Worker transport and response delivery.
 UptimeRobot response times therefore need not equal these Worker totals.
+
+The API layer was deployed as version
+`1af21000-c643-46c8-95b6-97cd65ee86a9` and independently qualified at
+02:37-02:38 UTC on 2026-09-09. Authenticated GET/HEAD returned 200 / `ok` with
+Worker totals of 3.115/2.407 s; anonymous GET/HEAD returned 401 without detailed
+metrics. The `probe@bayleaf.dev` API identity has a verified `$1/day` OpenRouter
+cap. These are also single observations, not a baseline. Adam created the
+UptimeRobot monitor at a 15-minute interval; initial collection and alerts still
+require verification.
 
 ## Metrics and Monitoring
 
@@ -86,11 +97,15 @@ UptimeRobot response times therefore need not equal these Worker totals.
 
 - Keep all probe layers in this one Worker, separate from BayLeaf API. It may
   hold the dedicated non-admin Chat API key, ordinary monitoring session JWT,
-  and an OpenRouter inference-only key. Never an administrator credential,
-  JWT-signing secret, or OpenRouter management/provisioning key.
+  an OpenRouter inference-only key, and a dedicated BayLeaf API token for
+  `probe@bayleaf.dev`. Never an administrator credential, JWT-signing secret,
+  or OpenRouter management/provisioning key.
 - Direct `/openrouter/basic` pins Basic's checked-in base model and enforces
   `provider.zdr: true`. Update its constant and drift test with Basic model swaps.
   It omits Basic's system prompt and injected context, not a matched workload.
+- `/api/recommended` pins the checked-in `RECOMMENDED_MODEL`; update its constant
+  and drift test with API recommendation changes. Keep its BayLeaf token and
+  OpenRouter spend cap separate from human users.
 - Metrics v2: authenticated GET JSON and HEAD headers include additive,
   nonoverlapping monotonic phases, separately named event offsets, and failed
   phases plus independent cleanup. Never label cumulative offsets as durations

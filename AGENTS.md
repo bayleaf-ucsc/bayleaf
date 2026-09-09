@@ -20,8 +20,9 @@ Media). **Publicly visible; never commit secrets, API keys, or credentials.**
   `api/` in this repo.
 - **BayLeaf Probe**: `https://probe.bayleaf.dev`, a non-public,
   HTTP-Basic-authenticated Cloudflare Worker powering UptimeRobot synthetic
-  monitoring. It tests browser-based Chat, OWUI HTTP inference, and direct
-  OpenRouter inference. Source: `chat/probe/`. The public monitoring/status
+  monitoring. Its deployed layers test browser-based Chat, OWUI HTTP inference,
+  direct OpenRouter inference, and keyed BayLeaf API inference. Source:
+  `chat/probe/`. The public monitoring/status
   surface is **`https://status.bayleaf.dev`**, served by UptimeRobot.
 
 A self-service course-AI service (BayLeaf Courses) was prototyped and then retired
@@ -136,7 +137,7 @@ configuration, models, tools, functions, or user/group management.**
 
 `chat/probe/` is a separate Cloudflare Worker, not part of the OWUI deployment
 or BayLeaf API. **Read `chat/probe/AGENTS.md` before working on monitoring**;
-it explains the three probe contracts, latency metrics, current measurement
+it explains the probe contracts, latency metrics, current measurement
 snapshot, cleanup requirements, and credential expiry. Keep all probe layers in
 this single Worker.
 
@@ -149,8 +150,9 @@ temporarily persist only marked synthetic chats and must verify their deletion.
 Detailed phase timings are available from authenticated probe responses, not
 assumed to be archived by UptimeRobot. Verify monitor configuration and alert
 delivery separately from endpoint health. These probes do not test CILogon or
-the BayLeaf API/Sealed paths, and the browser's worst-case execution currently
-exceeds UptimeRobot's maximum timeout; see the probe guide before enabling alerts.
+BayLeaf Sealed; the keyed API layer does not test Campus Pass or the API's
+non-inference facets. The browser's worst-case execution currently exceeds
+UptimeRobot's maximum timeout; see the probe guide before enabling alerts.
 
 ### Repo-local agent skills (experimental)
 

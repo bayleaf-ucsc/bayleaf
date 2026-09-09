@@ -929,6 +929,16 @@ deleted. Browser work has a 55-second deadline plus bounded close/cleanup;
 HTTP routes retain 25 seconds. See the probe README for version, measurements,
 and exact semantics. No new monitor was created.
 
+A fourth `/api/recommended` layer for keyed BayLeaf API inference was deployed
+and qualified on 2026-09-09 UTC. It uses a separate `sk-bayleaf-` credential for
+the same `probe@bayleaf.dev` pseudo-user and the checked-in namespaced API
+recommendation, exercising D1 auth resolution, per-user upstream credential
+handling, open-weight enforcement, explicit ZDR routing, and complete SSE
+consumption. Its OpenRouter key is capped at `$1/day`. Adam created its
+UptimeRobot monitor manually at a 15-minute interval before deployment; initial
+green samples and alert delivery remain to be verified. See the probe playbook
+and README.
+
 API keys were enabled for this on 2026-09-07. Ordinary default permissions and
 existing group permissions remain unchanged; only the dedicated operational
 group received `features.api_keys`. An instance-wide API-key endpoint allowlist

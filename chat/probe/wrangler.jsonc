@@ -21,5 +21,7 @@
   }]
   // Secrets: PROBE_PASSWORD (HTTP Basic username: probe), OWUI_API_KEY,
   // OWUI_E2E_TOKEN (normal session JWT for the dedicated probe account),
-  // OPENROUTER_API_KEY (inference-only credential for /openrouter/basic).
+  // OPENROUTER_API_KEY (inference-only credential for /openrouter/basic),
+  // BAYLEAF_API_KEY (dedicated sk-bayleaf- token for probe@bayleaf.dev and
+  // /api/recommended; its OpenRouter key is capped at $1/day).
 }
