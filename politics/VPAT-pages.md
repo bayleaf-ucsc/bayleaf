@@ -9,7 +9,12 @@ use-cases page at
 [`bayleaf.dev/use-cases.html`](https://bayleaf.dev/use-cases.html). All
 four are surfaces of BayLeaf.<br>
 **Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz<br>
-**Status:** Working draft, upgraded to empirical verification for contrast, reflow, focus visibility, text zoom, text spacing, HTML parsing, accessibility-tree structure, and color-vision-deficiency simulation, using headless Chromium via [`rodney`](https://github.com/simonw/rodney) and direct [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/). All previously flagged defects have been fixed and re-verified: [1.4.3 Contrast](#4-wcag-21-level-aa-conformance) now passes AA on every rendered text/background pair with comfortable headroom, [2.4.7 Focus Visible](#4-wcag-21-level-aa-conformance) now has an explicit high-contrast indicator, and [2.4.1 Bypass Blocks](#3-wcag-21-level-a-conformance) now provides a `<main>` landmark. **Open defect:** the guest-lecture videos embedded on the landing are captioned (verified author-provided tracks, so [1.2.2](#3-wcag-21-level-a-conformance) is met), but have no audio description and no text alternative, so [1.2.3](#3-wcag-21-level-a-conformance) (Level A) and [1.2.5](#4-wcag-21-level-aa-conformance) (Level AA) remain unmet. See [§ 1 Embedded media](#embedded-media) for the remediation plan.<br>
+**Status:** Working draft, upgraded to empirical verification for contrast, reflow, focus visibility, text zoom, text spacing, HTML parsing, accessibility-tree structure, and color-vision-deficiency simulation, using headless Chromium driven by a
+CLI-accessible browser harness ([`rodney`](https://github.com/simonw/rodney)
+in earlier passes) or a harness-provided browser panel (OpenChamber's
+in-app browser, 2026-09-09 onward), plus direct
+[Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/)
+calls where a CLI harness is unavailable. All previously flagged defects have been fixed and re-verified: [1.4.3 Contrast](#4-wcag-21-level-aa-conformance) now passes AA on every rendered text/background pair with comfortable headroom, [2.4.7 Focus Visible](#4-wcag-21-level-aa-conformance) now has an explicit high-contrast indicator, and [2.4.1 Bypass Blocks](#3-wcag-21-level-a-conformance) now provides a `<main>` landmark. **Open defect:** the guest-lecture videos embedded on the landing are captioned (verified author-provided tracks, so [1.2.2](#3-wcag-21-level-a-conformance) is met), but have no audio description and no text alternative, so [1.2.3](#3-wcag-21-level-a-conformance) (Level A) and [1.2.5](#4-wcag-21-level-aa-conformance) (Level AA) remain unmet. See [§ 1 Embedded media](#embedded-media) for the remediation plan.<br>
 **Template:** [VPAT® 2.5 INT](https://www.itic.org/policy/accessibility/vpat), covering [WCAG 2.1](https://www.w3.org/TR/WCAG21/) Level A and AA, [Revised Section 508](https://www.access-board.gov/ict/), and [EN 301 549](https://www.etsi.org/deliver/etsi_en/301500_301599/301549/).
 
 > This is a per-surface ACR. Framing, inheritance map, evaluation methodology, open questions, and references live in [VPAT-overview.md](VPAT-overview.md). Read that document first for the posture; read this one for surface-specific findings and the conformance table.
@@ -127,14 +132,16 @@ over:
 
 ### Evaluation methodology
 
-All empirical claims in this ACR are reproducible. The latest verification
-pass ran against the locally built Pages artifact produced by
+All empirical claims in this ACR are reproducible. Verification passes run
+against the locally built Pages artifact produced by
 `python3 scripts/build_pages.py --output /tmp/bayleaf-pages` and served
-with `python3 -m http.server 8765 --directory /tmp/bayleaf-pages`, under headless
-Chromium (via [`uvx rodney`](https://github.com/simonw/rodney)
-v0.4.0, Chromium 147) with viewport emulation controlled through
-direct CDP calls to
-[`Emulation.setDeviceMetricsOverride`](https://chromedevtools.github.io/devtools-protocol/tot/Emulation/#method-setDeviceMetricsOverride).
+with `python3 -m http.server 8765 --directory /tmp/bayleaf-pages`, under a
+harness-provided or CLI-accessible browser: earliest passes used headless
+Chromium via [`uvx rodney`](https://github.com/simonw/rodney) v0.4.0
+(via direct CDP calls to
+[`Emulation.setDeviceMetricsOverride`](https://chromedevtools.github.io/devtools-protocol/tot/Emulation/#method-setDeviceMetricsOverride)
+for viewport control); the 2026-09-09 pass used OpenChamber's browser
+panel at mobile (390 x 844) and desktop (1440 x 900) viewports.
 Dates of evaluation: 2026-04-29 (landing and support page), extended
 2026-07-24 to bring `privacy.html` and `use-cases.html` into scope and
 to re-evaluate the landing after the video embed shipped, and
@@ -151,6 +158,13 @@ terminology pass re-verified all four page titles with W3C Nu and
 axe-core 4.13.0 against all four generated pages. The three subsidiary
 pages had zero violations; the landing's three violations originated
 inside the embedded YouTube player rather than BayLeaf-authored markup.
+A 2026-09-09 pass verified the landing's new `details[name]` FAQ
+accordion (Open WebUI-independent, no JavaScript): exclusive open/close
+via CDP-driven clicks, all panels closed by default, and reflow at 390
+and 1440 CSS px with one panel expanded (no horizontal overflow). The
+FAQ introduces no new colors (it reuses `#1a1a1a`, `#2a5298`, and the
+existing `#eee` hairline), so the contrast enumeration below is
+unchanged by it.
 The 2026-07-24 pass re-ran contrast enumeration, reflow at 320/400/1280 CSS
 px, 200% text zoom, the 1.4.12 text-spacing override, structure and
 ID-uniqueness checks, and W3C Nu validation across all four pages; it
@@ -177,8 +191,8 @@ added pages (same stylesheet, same button system).
   interactive element (`.focus()`) and inspecting computed
   `outline*` and `boxShadow` styles, plus screenshot inspection via
   a vision-capable subagent for perceptual confirmation.
-- **Accessibility tree** dumped via rodney's `ax-tree` command
-  (which proxies Chromium's
+- **Accessibility tree** dumped via the browser harness's accessibility
+  commands (rodney's `ax-tree`, which proxies Chromium's
   [`Accessibility.getFullAXTree`](https://chromedevtools.github.io/devtools-protocol/tot/Accessibility/#method-getFullAXTree)).
 - **HTML validity** checked via the
   [W3C Nu HTML Checker](https://validator.w3.org/nu/) public API

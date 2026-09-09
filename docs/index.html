@@ -81,6 +81,217 @@
         <!-- recent-posts:end -->
     </section>
 
+    <section class="faq" aria-labelledby="faq-heading">
+        <h2 id="faq-heading">FAQ</h2>
+        <details name="faq">
+            <summary><h3>Can BayLeaf handle student data?</h3></summary>
+            <div class="faq__answer">
+                <p>
+                    Yes. BayLeaf services have undergone a security review by UCSC ITS, and it has
+                    been approved to handle <a href="https://its.ucsc.edu/get-support/it-guides/data-and-it-resource-classification/data-protection-levels/">P3
+                    data</a> including FERPA-protected student records. However, users should take
+                    care not to use BayLeaf to handle P4 data or use the service in ways restricted
+                    by FERPA, HIPAA, or other regulations that apply to all information technology
+                    services.
+                </p>
+            </div>
+        </details>
+        <details name="faq">
+            <summary><h3>Who can access the chat or agent data that passes through BayLeaf?</h3></summary>
+            <div class="faq__answer">
+                <p>There are three channels to consider:</p>
+                <ul>
+                    <li>
+                        In BayLeaf Chat, your data is visible only to yourself and the (sole)
+                        BayLeaf operator. If you delete your chats (or let them be
+                        <a href="privacy.html">automatically cleaned up after a period of
+                        inactivity</a>), they are truly deleted. If you
+                        use the Temporary Chat feature, BayLeaf servers never keep, even
+                        temporarily, a copy of your chat data.
+                    </li>
+                    <li>
+                        In the standard inference route of the BayLeaf API, consistent with
+                        problematic industry standards that already far exceed the protection of
+                        other campus-approved AI services, your data is handled by BayLeaf and our
+                        inference providers as cleartext. In standard inference, the BayLeaf API
+                        and its inference providers operate on a zero data retention (ZDR) basis,
+                        but you have to trust our written agreements that we don't save your data
+                        for future use.
+                    </li>
+                    <!-- Original fragment completed per Adam 2026-09-09; revise in your voice. -->
+                    <li>
+                        In the sealed inference route of the BayLeaf API, your data is encrypted
+                        end-to-end in a way that neither the BayLeaf operator nor the inference
+                        provider can decrypt it: only the specific, attested server can decrypt it,
+                        and only you can decode the reply it encrypts.
+                    </li>
+                </ul>
+            </div>
+        </details>
+        <details name="faq">
+            <summary><h3>Is BayLeaf really free to use?</h3></summary>
+            <div class="faq__answer">
+                <p>
+                    Yes, by anyone who can log in with their UCSC account, but it is not quite
+                    unlimited. In BayLeaf Chat, your conversations with the Basic agent are
+                    subject to rate limits (e.g. messages per minute/hour/day) and depth limits
+                    (e.g. size of assistant reply as a function of the number of conversation
+                    turns). In the BayLeaf API, your activity is subject to a daily spending limit
+                    (allowing more usage of cheaper models). If your usage pattern outgrows these
+                    free limits, we can recommend outside low-cost subscription and/or
+                    pay-per-usage services that provide privacy equivalent to BayLeaf.
+                </p>
+            </div>
+        </details>
+        <details name="faq">
+            <summary><h3>Who pays for BayLeaf?</h3></summary>
+            <div class="faq__answer">
+                <p>
+                    Development, maintenance, and operation of BayLeaf is supported by the
+                    personal funds of a single faculty member. BayLeaf is not supported by campus,
+                    state, or federal grants, and does not involve special deals or agreements
+                    with upstream AI infrastructure providers. Thanks go to
+                    <a href="https://incommon.org/federation">InCommon Federation</a> (via
+                    CILogon) for
+                    providing authentication services that allow us to identify the UCSC community
+                    among thousands of other institutional partners.
+                </p>
+            </div>
+        </details>
+        <details name="faq">
+            <summary><h3>Does BayLeaf use a custom-trained LLM? Does it run its own GPUs?</h3></summary>
+            <div class="faq__answer">
+                <p>
+                    No. BayLeaf services only use pre-existing models. Specificity to the campus
+                    comes through prompts, skill documents, and other retrieved context data, not
+                    training. We access commodity inference services on a pay-per-token basis. At
+                    this time, it does not make sense to use a campus-specific model or operate
+                    on-campus inference services.
+                </p>
+            </div>
+        </details>
+        <details name="faq">
+            <summary><h3>Is BayLeaf a wrapper around ChatGPT, Claude, or Gemini?</h3></summary>
+            <div class="faq__answer">
+                <p>
+                    Nope. For political, ethical, economic, and other reasons, OpenAI, Anthropic,
+                    and Google AI services have been carefully cut out from BayLeaf. However,
+                    because we support standard protocols, parts of BayLeaf can be
+                    <a href="https://docs.openwebui.com/features/chat-conversations/direct-connections/">directly
+                    connected</a> to these services on an individual basis (recommended for
+                    advanced users also).
+                </p>
+            </div>
+        </details>
+        <details name="faq">
+            <summary><h3>Which models can I access through BayLeaf?</h3></summary>
+            <div class="faq__answer">
+                <p>
+                    The landscape of available models (e.g. for text, image, audio, and other
+                    modalities) is rapidly evolving, faster than we care to update this FAQ.
+                    Currently, the model powering the Basic agent on BayLeaf Chat is a medium-sized
+                    (sub-trillion-parameter) open-weight language model. The BayLeaf API can be
+                    used to access almost <a href="https://openrouter.ai/models">any model
+                    available through OpenRouter</a>, under the condition that it is an open-weight
+                    model being served by a zero data retention (ZDR) provider. These conditions
+                    are enforced programmatically, so the available model catalog can shift from
+                    day to day without intervention or direct oversight from the BayLeaf operator.
+                    On the extreme side for privacy and                     autonomy, we can help you set up local
+                    inference on your personal devices.
+                </p>
+            </div>
+        </details>
+        <details name="faq">
+            <summary><h3>Can BayLeaf access the data on my computer?</h3></summary>
+            <div class="faq__answer">
+                <p>It depends on how you use it:</p>
+                <ul>
+                    <li>
+                        Typical conversations on BayLeaf Chat are isolated from your computer and
+                        the broader internet. (Enable the Web Context toolkit to allow your agent
+                        to search the web in that conversation.)
+                    </li>
+                    <li>
+                        If you enable the Code Sandbox toolkit, your agent can access a virtual
+                        machine, that we call your sandbox, assigned only to you. Your agent can
+                        use this to build and deploy custom tools on your behalf or work with data
+                        across conversations. Although you can drag and drop files between your
+                        personal computer and your sandbox, agents cannot use the Code Sandbox
+                        feature to directly read data from your computer.
+                    </li>
+                    <li>
+                        If you use a desktop agent harness like OpenCode or OpenChamber on your
+                        personal computer, with free inference services from the BayLeaf API, the
+                        agent can access your local files subject to the in-app permission system
+                        (which typically limits access to just a specific, user-selected project
+                        folder by default). This has risks and benefits from a privacy perspective.
+                        The agent can see more of your data, but your conversation data is no
+                        longer stored on BayLeaf servers, only your personal computer.
+                    </li>
+                </ul>
+            </div>
+        </details>
+        <details name="faq">
+            <summary><h3>Is there an equivalent of the Claude Cowork or ChatGPT desktop app for BayLeaf? How about Claude Code or Codex?</h3></summary>
+            <div class="faq__answer">
+                <p>
+                    Yes, but it is not a BayLeaf-specific app. We can help you install the
+                    OpenChamber desktop app (based on the lower level OpenCode agent harness) and
+                    connect it to the BayLeaf API for free inference. Or you can connect it to
+                    other services. Meanwhile, many of the productivity features of those
+                    commercial apps are available inside of BayLeaf Chat when you enable the Code
+                    Sandbox toolkit. You don't need to give up access to your personal files for
+                    most tasks.
+                </p>
+            </div>
+        </details>
+        <details name="faq">
+            <summary><h3>Can a teacher (or anyone else) restrict how BayLeaf is used in a course?</h3></summary>
+            <div class="faq__answer">
+                <p>
+                    Somewhat, and via multiple channels. Instructors can work with the BayLeaf
+                    operator to develop course-specific agents in BayLeaf Chat (alternatives to
+                    the Basic agent) that start from custom prompts and/or have access to specific
+                    tools. Instructors can also provide texts that students should copy-paste into
+                    the start of generic chat sessions or attach to a folder that contains all of
+                    the chats for a specific course. If students are using coding agents,
+                    instructors can provide course-specific <a href="https://agents.md/">AGENTS.md</a>
+                    or <a href="https://agentskills.io/">skill</a> files in project
+                    starter code. This strategy is reasonable to use outside of computer
+                    programming courses because the agent, if instructed to do so, can handle
+                    software version control on the student's behalf.
+                </p>
+            </div>
+        </details>
+        <details name="faq">
+            <summary><h3>Does BayLeaf connect to the Canvas LMS? (And how about GMail and other campus-related cloud services?)</h3></summary>
+            <div class="faq__answer">
+                <p>
+                    Not automatically, but you can set it up. If you can get yourself a Canvas
+                    Access Token, your agent (running code on your computer or in a BayLeaf-provided
+                    sandbox) can access and manipulate Canvas on your behalf. A similar strategy is
+                    possible for GMail and other campus-related cloud services. Ask your agent for
+                    help setting it up, but be ready to accept responsibility for anything it does
+                    on your behalf.
+                </p>
+            </div>
+        </details>
+        <details name="faq">
+            <summary><h3>Will BayLeaf be adopted as an officially supported UCSC IT service? Will it get shut down by the administration?</h3></summary>
+            <div class="faq__answer">
+                <p>
+                    We hope neither will happen. Among other reasons, BayLeaf exists to set a very
+                    high privacy and autonomy bar and very low cost bar on whatever AI services
+                    that campus may adopt. At the same time, it lets the community safely access
+                    and experiment with AI in ways that are completely decoupled from the current
+                    mainstream AI vendors. Even after BayLeaf shuts down, the upstream
+                    contributions we've made to associated open-source software efforts will make
+                    it easier for other campuses to adopt and support BayLeaf-like AI services.
+                </p>
+            </div>
+        </details>
+    </section>
+
     <h2>Counterplatform Design</h2>
     <p>
         BayLeaf is a counterplatform: one situated response to the terms on which
