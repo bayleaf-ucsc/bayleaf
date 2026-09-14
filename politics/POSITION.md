@@ -1,160 +1,197 @@
-# Position: Infrastructure Is Pedagogy
+# Position: Procure Inference, Preserve Agency
 
-## The thesis
+*Working position, revised with Adam through discussion on September 14, 2026. ✨
+These are developing commitments, not a finished procurement specification.*
 
-The system prompt is the pedagogical frame. The tool bindings are the capability
-boundary. The access model is the enrollment policy. These are not metaphors.
-When a vendor sets the system prompt, a vendor sets the pedagogical frame. When
-procurement selects the model, procurement selects the epistemology. When IT
-controls tool access, IT controls who learns with what.
+## The choice before the campus
 
-Every AI deployment in a course is a pedagogical decision. The question is
-whether that decision is made by the instructor or by someone else.
+Universities can purchase model inference separately from the software through
+which people use it. That supply market already exists. The political question is
+whether campuses recognize this as a credible form of AI provision, or define
+their needs around integrated, per-seat chatbot subscriptions.
 
-## What the vendors are selling
+The distinction is between buying access to computation and buying a package of
+models, interfaces, conversation storage, tools, and administration. An
+organization can operate a lightweight harness, or help participants configure
+desktop software, while purchasing inference separately. By *harness* we mean the
+software surrounding a model: it manages context, instructions, tools, and the
+interaction through which someone works.
 
-Three products define the emerging market for AI in higher education:
+The analogy is campus internet access: shop for connectivity, not just
+subscriptions to particular services delivered over that connectivity. Models
+are not interchangeable in the way electrical outlets are. Their capabilities,
+behavior, and interfaces differ. The practical requirement is that changing an
+inference supplier need not require replacing the whole working environment.
 
-- [ChatGPT Edu](https://chatgpt.com/business/education/) (OpenAI)
-- [Claude for Education](https://claude.com/solutions/education) (Anthropic)
-- [Gemini for Education](https://edu.google.com/intl/ALL_us/ai/gemini-for-education/) (Google)
+BayLeaf is a situated counterplatform at UC Santa Cruz. Its role in this argument
+is operational evidence that alternative arrangements can be organizationally,
+technically, and economically feasible and useful within a stated scope. This is
+not a request for funding BayLeaf or a claim that every institution should adopt
+it. It is an argument that procurement should permit BayLeaf-like arrangements to
+qualify and compete on their merits.
 
-Visit those pages. Notice who they are talking to. Every testimonial is from a
-CIO or superintendent. Every call to action is "Contact sales." The buyer is the
-administrator. The instructor appears nowhere in the transaction.
+## Make the alternative eligible
 
-Notice what "customizable" means. All three products offer some form of
-side-channel customization (custom GPTs, Gems, Projects) where someone can
-create a narrowly-scoped AI character for a specific purpose. But these are
-opt-in extras, not defaults. The default experience is the same whether you sign
-in with your institutional account or your personal one. There is no mechanism
-for the institution to differentiate the AI by role: a student, a faculty
-member, and a staff member all get the same default chatbot, despite the fact
-that SSO claims already encode these distinctions.
+A specification can exclude an architecture before anyone evaluates its merits.
+If an “AI solution” must arrive from one vendor with its own model, interface,
+history storage, and administrative console, an institution-operated arrangement
+is off the table by definition.
 
-This is not a minor UX issue. It is a privacy architecture failure. The entire
-data governance argument for enterprise AI rests on people using their
-institutional account for institutional work. But when the product is
-indistinguishable from the consumer version (same interface, same personality,
-same capabilities), people forget which account they are signed into, or stop
-caring. The contract says use your campus identity. The product gives you no
-reason to. Every institution already struggles to get people to use campus email
-for campus business, respecting FERPA and other obligations. The reinforcement
-mechanism is making campus services *recognizably and functionally different*:
-not just branded with the correct logo in the corner, but different in character,
-in knowledge, in what they can do. The vendor products do not support this.
+Procurement should evaluate the complete service arrangement, including internal
+provision and separately purchased components. Security, accessibility, support,
+maintenance, and continuity remain real responsibilities. They can be allocated
+and documented across an organization and its suppliers.
 
-Notice the privacy framing. All three present data governance as a compliance
-checklist (FERPA, COPPA, FedRAMP), not as an architectural decision. None of
-them commit to zero data retention on the inference path as a baseline. Privacy
-is a contract term, not a design principle.
+We want campuses to ask:
 
-Notice the integration story. Every product goes deeper into its own ecosystem:
-Workspace, Canvas connectors, proprietary plugins. The path in is easy. The path
-out is not discussed.
+- Can participants use independently chosen software with the inference service?
+- Can the institution replace a supplier without replacing its interfaces,
+  instructional resources, and working practices?
+- Who retains content, who can access it, and who could change the system to
+  acquire access?
+- Can courses and groups extend the service without maintaining a fork of its
+  core software?
+- What are the full costs, including operation, support, accessibility,
+  integration, and exit?
 
-## The baseline
+Integrated products may still be useful purchases. They should not define the
+shape of foundational campus AI provision. A corporate supplier could offer
+better privacy assurances and lower full costs through economies of scale, and
+could reasonably win a fair comparison. Autonomy and privacy nevertheless have
+value that a subscription-price comparison can miss.
 
-Before evaluating any AI tool for instruction, institutions should establish what
-adequate looks like. Four criteria:
+## Integrated chatbots should be optional at the campus level
 
-1. **The institution and its instructors control the system prompt.** The
-   institution sets role-differentiated defaults: students, faculty, and staff
-   get AI personalities shaped for their context, not the vendor's generic
-   chatbot. Within that, the instructor writes the system prompt for their
-   course's model. This is the act of articulating pedagogical intent in
-   machine-readable form. It is intellectual work, not configuration. A tool
-   that does not support this layered authorship has removed both the
-   institution and the instructor from the design of the experience.
+An institution can reject ChatGPT or another corporate package while supporting
+selected uses of AI under different terms. Criticism of retention, operator
+access, and dependency should be able to change what the campus provides.
 
-2. **The student can read the system prompt.** A student who cannot inspect the
-   AI's instructions is in the same position as a student who cannot read the
-   syllabus. Transparency is not a feature. It is a prerequisite for informed
-   participation.
+Participants should not need an integrated chatbot to obtain ordinary university
+services, such as advice about completing a degree. A supported inference route
+and adequate onboarding should let ordinary users configure an alternative,
+including desktop software. **Exemption from surveillance should not be a
+power-user-only feature.** Additional hosted chat services can coexist with that
+route.
 
-3. **Zero data retention on inference.** No student message content is stored by
-   any third-party model provider. This is not a negotiable contract term. It is
-   a minimum standard for putting students in conversation with a commercial AI
-   system.
+This campus-level commitment does not prescribe every course's tool choices.
+Instructors may require engagement with particular technologies when teaching
+disciplinary ways of knowing. Our aim is to make open alternatives easy for them
+to offer, rather than let proprietary products appear to be the only options.
+The institutional optionality claim does not, by itself, resolve disputes about
+compulsion within a course.
 
-4. **The model provider is switchable.** The pedagogical layer (prompt, tools,
-   access) is decoupled from the inference layer. If the vendor raises prices,
-   degrades quality, or changes terms, the institution can switch providers
-   without rebuilding the system. In a competitive market of pay-per-token
-   providers, and alongside NSF-funded institutional inference from the
-   [National Research Platform](https://nrp.ai/documentation/userdocs/ai/llm-managed/),
-   this is an architectural choice, not a fantasy.
+## Retention and operator access are different questions
 
-These criteria are not ambitious. They are minimal. Any tool that fails them is
-asking faculty and students to accept less than they should.
+“Not used for training” does not establish either zero retention or zero operator
+access. A service can retain no content while still allowing an operator to
+inspect it in transit or deploy a revision that records it.
 
-Are these the final and most important criteria? No. This is a living document,
-and further collective experience operating AI in educational settings will
-likely clarify the need for additional baseline criteria.
+Procurement should distinguish:
 
-## What the vendors fail
+- **Retention:** where prompts, responses, files, and histories persist.
+- **Standing access:** which operators can routinely inspect content.
+- **Change authority:** who could modify the service to acquire content access.
+- **Architectural protection:** which operators are technically prevented from
+  accessing content, and how that protection is verified.
+- **Metadata:** what remains visible when content is protected.
 
-Test the three products against the baseline:
+The campus should support at least some mode in which neither campus nor
+inference-provider operators can access content. Standards and client support
+for this mode are not yet widely adopted. We accept weaker arrangements during
+this transition with their limitations explicit, including services that retain
+no content but whose deployers could introduce capture.
 
-| Criterion | ChatGPT Edu | Claude for Education | Gemini for Education |
-|---|---|---|---|
-| Institution/instructor controls system prompt | No. Optional side-channel "custom GPTs." No role-differentiated defaults. | No. Organization admin configures. No per-course instructor authorship. | No. Optional side-channel "Gems." No role-differentiated defaults. |
-| Student can read system prompt | No. | No. | No. |
-| Zero data retention on inference | Contract-dependent. | Contract-dependent. | No. Standard data processing terms apply. |
-| Model provider is switchable | No. Locked to OpenAI. | No. Locked to Anthropic. | No. Locked to Google. |
+Institution-custodied chat and privately accessed inference can have different
+boundaries. Some organizational visibility can be acceptable in a supported Chat
+service if participants have practical offramps. The guiding intuition is that
+visibility should be proportional to support, not a general entitlement to
+inspect people's work. Its precise limits still need development.
 
-Four criteria. Four failures across the board, as of March 2026, based on
-publicly available product documentation.
+Campus email versus HTTPS traffic to an external email service is a useful
+custody analogy: providing connectivity does not require custody of the
+application's contents. This is a technical-access distinction, not a claim that
+externally held records are immune from legal discovery or records obligations.
 
-## What BayLeaf demonstrates
+**Open question:** how quickly must the strongest protected mode become usable
+by ordinary participants? A specialist-only protected route and a well-supported
+weaker route expose a tension between transitional acceptance and the commitment
+that privacy not be reserved for power users.
 
-BayLeaf is a faculty-operated AI service at UC Santa Cruz. It meets all four
-baseline criteria. This is not because it is a superior product. It is because
-the criteria are easy to meet when the architecture is not optimized for vendor
-lock-in.
+## Local authorship without local forks
 
-- The default AI personality differs by role: students, faculty, and staff get
-  context-appropriate assistants out of the box. Instructors write per-course
-  system prompts by editing a Canvas page; BayLeaf syncs them to the model. The
-  student can read the prompt.
-- Active plaintext inference routes through zero-data-retention providers, and
-  the provider has been swapped multiple times with zero user disruption.
-  BayLeaf Chat uses a separately curated OpenRouter-ZDR catalog that may include
-  frontier proprietary and open-weight models. BayLeaf API plaintext enforces a
-  narrower reciprocity policy: a model is allowed only when OpenRouter supplies
-  a nonempty Hugging Face identifier and the repository resolves; unknown models
-  fail closed with HTTP 403. API Sealed is active through Tinfoil's current
-  open-weight catalog, with the requested model and body encrypted from BayLeaf;
-  non-streaming usage metadata may reveal the executed model. Unlike plaintext,
-  BayLeaf does not enforce Sealed catalog composition itself. Vertex, Bedrock,
-  and NRP are disabled. The switchability criterion is
-  demonstrated by the architecture and by prior provider swaps, not by a claim
-  that all configured backends are simultaneously active.
-- The entire system is open source, runs on commodity cloud services, and has no
-  proprietary dependency.
+Institutional sovereignty is not enough. Campus administrators can become
+overseers, and instructor control is not identical to student agency. We favor
+participant autonomy and distributed authority.
 
-BayLeaf was built by a single faculty member using generative AI in agentic
-coding tools. It has been running since Fall 2024 with multiple course models
-across departments. The total vendor commitment is month-to-month, pay-per-token.
+Educators should be able to write prompts, skills, and disciplinary resources
+that participants' agents can read. That need not give educators control of the
+agents themselves. Courses, departments, and other groups should also be able to
+offer tools accessed with appropriate authorization.
 
-The point is not that every university should run BayLeaf. The point is that a
-faculty member built a campus AI service that meets standards the enterprise
-products do not, and we expect to operate it at scale for less than the cost of
-the single FTE it would take to be the AI vendor liaison.
+This resembles the software open–closed principle: a stable core that supports
+extension without requiring modification of the core. The political objective
+is that specific groups can adapt their practices without maintaining divergent
+versions of campus infrastructure or making their needs universal first.
 
-## The standard
+A broadly used commercial desktop client can fit this arrangement. Regional
+autonomy means the capacity to adapt and leave, not an obligation to produce
+distinct software everywhere. The important exercise of that capacity may occur
+in course or group resources and tools.
 
-We are not asking institutions to adopt BayLeaf. We are asking them to hold
-every tool (including BayLeaf, including ChatGPT, including Claude, including
-Gemini) to the baseline.
+Coding agents may reduce the costs of repairing and integrating local
+adaptations. This is a hypothesis, not evidence that maintenance disappears. If
+slightly incompatible regional variants become a persistent integration burden,
+that weighs against recommending the arrangement.
 
-The tools that meet it will be the ones that treat instructors as designers of
-learning experiences and students as participants with a right to understand the
-systems they interact with.
+## Open weights and bounded provision
 
-The tools that fail it will be the ones where a product manager at a vendor
-decides what your course's AI does, and neither you nor your students can see
-the instructions it was given.
+Open-weight access matters as a contribution back to a shared technical
+ecosystem and as a counterweight to concentrated ownership. That value does not
+depend on every participant running a model themselves.
 
-That is the current state of every major enterprise AI product marketed to
-universities. It does not have to be.
+At this stage, publishing usable weights is a sufficient contribution for this
+catalog-policy purpose. As the landscape matures, more specific criteria may be
+appropriate. Weight publication does not settle questions about licenses,
+training data, labor, or compensation, and does not imply that every debt to
+contributors has been repaid.
+
+A campus catalog need not include every model. Exclusions should have published,
+contestable criteria and a route to request alternatives. Participants who gain
+experience through BayLeaf should be better equipped to seek what they need from
+third parties. A bounded service can teach capabilities that travel beyond it.
+
+## What BayLeaf currently demonstrates
+
+BayLeaf separates interfaces and access arrangements from inference suppliers,
+and has changed providers in operation. Its privacy boundaries differ by service:
+
+- **Chat** uses curated OpenRouter zero-data-retention inference endpoints, with
+  proprietary and open-weight models. BayLeaf stores conversation history, which
+  its administrator can access. Provider-side inference retention guarantees do
+  not cover that history.
+- **API plaintext** retains no prompt or completion content at BayLeaf and routes
+  through OpenRouter ZDR endpoints. It enforces a published-weight eligibility
+  policy. Its deployer could nevertheless modify it to capture content: this is
+  not a hardware-attested zero-operator-access guarantee.
+- **API Sealed** carries encrypted requests to an attested Tinfoil enclave.
+  BayLeaf cannot decrypt the requested model or body. Usage metadata remains a
+  separate boundary; non-streaming usage may reveal the executed model. The
+  available model catalog is controlled by Tinfoil, not enforced by BayLeaf.
+
+BayLeaf still depends on commercial cloud and inference services. Its argument
+is about how those dependencies are organized and made replaceable. Its
+operational evidence should include actual costs and labor, support limits,
+provider-switching experience, and what participants find useful. A working
+service establishes possibility; broader recommendations require those details.
+
+## The agenda
+
+Make disaggregated, institution-operated arrangements eligible. Make integrated
+chatbots optional for campus services. Support ordinary participants in using
+content-private inference. Preserve group-level authorship and authorized tool
+extension. Include open-weight access, contestable catalog choices, and practical
+exits.
+
+These commitments give campuses a way to respond to criticism through changes in
+provision. Whether a particular use of AI is worthwhile remains a question for
+the people and practices involved.

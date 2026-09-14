@@ -1,152 +1,99 @@
 # Politics
 
-Universities are adopting AI through procurement. The products are
-[ChatGPT Edu](https://chatgpt.com/business/education/),
-[Claude for Education](https://claude.com/solutions/education), and
-[Gemini for Education](https://edu.google.com/intl/ALL_us/ai/gemini-for-education/).
-The buyer is the CIO. The contract is the commitment. The faculty member
-receives a finished tool and is expected to use it.
+*Working argument, revised with Adam on September 14, 2026. ✨*
 
-BayLeaf is a [counterpower](https://dl.acm.org/doi/10.1145/3290605.3300569)
-strategy: a faculty-operated AI service that runs on the institution's own
-infrastructure, uses its own identity system, and gives instructors direct
-control over the AI their students interact with. It exists to demonstrate that
-the vendor path is a choice, not a necessity.
+BayLeaf is a **situated counterplatform for Generative AI at UC Santa Cruz**.
+Operating it makes alternative technical and institutional terms concrete,
+usable, scrutinizable, and revisable. It is one response alongside critique,
+organizing, policy, and refusal.
 
-## What we are playing against
+## What we want campuses to recognize
 
-Five structures make the vendor path dangerous. None require a villain.
+Model inference can be purchased separately from the interfaces, histories,
+instructions, and tools through which people use it. Campuses can operate
+lightweight harnesses and support desktop clients rather than organize all AI
+provision around integrated, per-seat chatbot subscriptions.
 
-1. **The procurement default.** AI enters the university as infrastructure
-   (like email, like the LMS) and routes through IT procurement. The instructor
-   is not in the room. The pedagogical question is asked at a remove, through
-   advisory councils, after the contract is already shaped.
+The supply market already offers separately purchasable inference. Procurement
+must allow arrangements built from it to qualify and compete. Defining an “AI
+solution” as a single vendor's complete package excludes alternatives before
+their usefulness, cost, security, or accessibility is considered.
 
-2. **The product-as-pedagogy substitution.** When a vendor ships a product with
-   a fixed system prompt and fixed tool bindings, they have made pedagogical
-   decisions and disguised them as product design. The instructor inherits a
-   pedagogy they did not choose and cannot inspect. The vendor makes it look
-   like the only difference between the university service and the consumer
-   product is which account you sign in with: no meaningful difference in
-   character or capability.
+The guiding analogy is campus connectivity: purchase access to computation that
+independently chosen software can use. Model differences make substitution less
+uniform than electricity or networking, but replacing an inference supplier need
+not require replacing an entire working environment.
 
-3. **The dependency ratchet.** Every integration (Canvas plugin, SSO binding,
-   Workspace connector) makes switching harder. The vendor knows the switching
-   cost is the real moat, not the product quality. The 5-year renewal is the
-   business model. In a world with a competitive market of pay-per-token
-   zero-data-retention AI providers, long-term agreements are not a requirement
-   to get started in providing campus AI services.
+BayLeaf supplies practical evidence for this argument. The agenda is not a
+funding request for BayLeaf or a demand that other organizations adopt it.
 
-4. **The legibility trap.** Universities want one dashboard, one vendor, one
-   compliance narrative. This is rational for the administrator and
-   catastrophic for the classroom. When "we have an AI tool" means one product
-   with one configuration, the actual diversity of how faculty use AI becomes
-   invisible. The institution can describe its AI strategy; no individual
-   instructor can describe theirs.
+## Commitments taking shape
 
-5. **The consent vacuum.** Students are enrolled into AI tools they did not
-   choose, running system prompts they cannot read, sending data under terms
-   they did not negotiate. AI interaction is conversational, open-ended, and
-   generative: closer to talking to a tutor than submitting a form. The power
-   asymmetry in that interaction, where the student cannot see the instructions
-   the tutor was given, represents a level of authorial control over the
-   educational experience that universities would never have ceded to a
-   textbook publisher. No one is treating it as new.
+1. **Fair eligibility for alternative arrangements.** Evaluate the complete
+   service, including institution-operated components. Support, maintenance,
+   accessibility, and security responsibilities must be met, but can be
+   distributed across the organization and its suppliers.
+2. **Integrated chatbots optional at the campus level.** Ordinary university
+   services should not require them. Adequate onboarding should make alternative
+   clients usable by ordinary participants: exemption from surveillance must not
+   be a power-user-only feature. Individual courses retain their tool choices;
+   make open alternatives easier for instructors to offer.
+3. **Retention and operator access made explicit.** Aim for a supported mode
+   that technically prevents both campus and provider operators from accessing
+   content. Accept weaker transitional arrangements with eyes open. Hosted Chat
+   has a different custody boundary and needs practical offramps.
+4. **Local extension without maintaining a fork.** Groups should be able to
+   publish agent-readable prompts, skills, and resources, and offer tools with
+   authorization. Educator authorship need not mean educator control of students'
+   agents. A stable shared core should accommodate local practices.
+5. **Open-weight access and contestable boundaries.** Published usable weights
+   are a sufficient contribution for our present reciprocity criterion, without
+   settling the politics of model production. Catalogs can be bounded, with
+   published and contestable criteria. Participants should gain capabilities
+   they can carry beyond BayLeaf.
 
-## What we are designing for
+See [POSITION.md](POSITION.md) for the developed argument, current service
+boundaries, and unresolved questions. In particular, the transition from
+specialist-only strong privacy to ordinary-user access needs further work.
 
-Naming the failure modes is not enough. BayLeaf is also a positive proposal:
-five commitments that shape every architectural decision. They are the
-inversion of the structures above, made operational.
+## Refusal can change provision
 
-1. **Energy: smaller models, smaller footprints.** Training compute, energy,
-   and cost all
-   [scale with parameter count](https://epoch.ai/data/ai-models?view=graph&tab=notable&xAxis=Parameters).
-   BayLeaf exclusively uses mid-sized models (tens to hundreds of billions of
-   parameters), not the trillion-parameter flagships that dominate the vendor
-   products. The institutional pressure to deploy "the best" model is real;
-   the environmental cost of treating that pressure as binding is also real.
+Institutions can reject corporate AI packages while supporting selected uses of
+AI. Objections to retention, operator access, and dependency should change what
+the institution offers. This does not answer every objection to AI or establish
+that every use deserves support.
 
-2. **Reciprocity: open-weight models.** Large-scale AI concentrates
-   power in a few corporations behind closed APIs. BayLeaf exclusively serves
-   [open-weight models](https://huggingface.co/models): models contributed
-   back to the public web, available for anyone to download, audit, or build
-   on. The API enforces this commitment at inference time: OpenRouter must
-   report published weights on Hugging Face and the repository must resolve.
-   Missing or unavailable evidence fails closed. This is structural reciprocity
-   with the open ecosystem that makes the technology possible, not a marketing
-   posture.
+Nor does transferring power from a vendor to campus IT settle the politics.
+Participant autonomy, distributed authority, and practical exits matter.
+Regional autonomy is the capacity to adapt and leave; it does not require unique
+software in every region. That capacity may be exercised through course,
+department, or group-specific resources and tools.
 
-3. **Privacy: zero data retention as architecture.** Commercial AI services
-   retain copies of user conversations, sometimes for 30 days or longer,
-   creating exposure that users cannot control. BayLeaf routes all inference
-   through
-   [zero-data-retention (ZDR)](https://openrouter.ai/docs/guides/features/zdr)
-   providers, so no LLM provider stores a copy of student or faculty data.
-   Privacy is a design principle here, not a contract term to be renegotiated.
+## Evidence and limits
 
-4. **Pedagogy: instructor-authored prompts, student-readable.** Commercial AI
-   assistants are optimized to be maximally helpful, which in practice means
-   maximally doing-it-for-you: students mistake speed for understanding, and
-   the skills education is supposed to build quietly atrophy. BayLeaf's models
-   use system prompts and agent skills written by educators for their students
-   and peers, designed to scaffold learning rather than shortcut it. Crucially,
-   students can read the prompt their AI was given. A student who cannot
-   inspect the AI's instructions is in the same position as a student who
-   cannot read the syllabus.
+BayLeaf's service boundaries differ. Chat stores administratively accessible
+conversation history while using ZDR inference providers. The plaintext API
+retains no prompt or completion content, but its deployer could change that.
+Sealed carries encrypted requests to an attested inference service. Chat includes
+proprietary and open-weight models; the plaintext API enforces a narrower
+published-weight eligibility policy. Commercial dependencies remain.
 
-5. **Inquiry: grounded in sources of truth.** General-purpose chatbots
-   [reward fluent output over rigorous inquiry](https://calearninglab.substack.com/p/my-robot-teacher-episode-9-transcript):
-   they generate plausible answers without grounding them in the user's actual
-   data, documents, or methods. BayLeaf connects models to grounded tools (web
-   search, Google Workspace, code execution) so AI-assisted inquiry can be
-   anchored in evidence the user can verify.
+The economic argument needs full operating costs, including labor and continuity,
+rather than token prices alone. Privacy and autonomy can justify additional cost.
+A corporate provider can also reasonably win a fair comparison. Coding agents
+may make local adaptation easier to sustain, but persistent integration friction
+would count against regional variants.
 
-See [POSITION.md](POSITION.md) for the version of this argument written as a
-baseline standard against which to evaluate any AI tool, including BayLeaf
-itself.
-
-## Dual power
-
-BayLeaf operates alongside institutional procurement, not against it. It uses
-the institution's own primitives (Canvas, SSO, Google Workspace) to build a
-governance model that procurement would never produce but that the institution
-can absorb. If the institution decides to adopt BayLeaf formally, the admin
-can take over with no migration. If the institution decides to shut it down,
-the admin can do that too. All authority flows through systems the institution
-already controls.
-
-This is not revolution. It is a demonstration that the alternative is
-operational, and cheaper than what procurement would buy.
-
-## Counterfoil research
-
-Ivan Illich used the term *counterfoil research* for inquiry conducted against
-the grain of institutional self-interest: research that questions the
-necessity of the institution's own expansion rather than justifying it.
-BayLeaf is counterfoil research applied to AI procurement: the artifact is
-the finding, the repository is the lab notebook, and this folder is the
-analysis.
-
-The method is deliberate. The entire project is built using generative AI in
-agentic coding tools, by a single faculty member, in a public repository.
-This is not an efficiency claim. It is an empirical argument: that the
-capacity to build and operate university AI infrastructure exists within the
-university, and that the vendor's role as sole provider is a political
-arrangement, not a technical constraint.
-
-The evidence is operational. BayLeaf has been running since Fall 2024, with
-course-specific deployments across the Computational Media and Computer
-Science & Engineering departments (Brace, Brace2, Brace3, Gambit), serving
-roughly 700 students across six course offerings to date. The total vendor
-commitment is month-to-month, pay-per-token. See the
-[adoption section of bayleaf.dev](https://bayleaf.dev/#adoption) for the
-current roster.
+The project is also an exercise in *counterfoil research*: questioning which
+forms of institutional expansion and dependency are necessary by building and
+examining an alternative. Operating the service generates evidence and exposes
+limits; it does not prove the political argument by itself.
 
 ## This folder
 
-These documents are a workspace, not a publication. They are written alongside
-the project, revised as the argument sharpens, and visible to anyone at any
-stage, in the tradition of
-[open notebook science](https://en.wikipedia.org/wiki/Open-notebook_science),
-where the process is public record, not just the findings.
+These documents are a public workspace, revised alongside the project in the
+tradition of [open notebook science](https://en.wikipedia.org/wiki/Open-notebook_science).
+The service assessments, dependency audit, landscape research, and position
+papers serve different purposes and may be at different stages of revision.
+Current technical claims should be checked against service documentation rather
+than inferred from an older political formulation.
