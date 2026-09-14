@@ -23,6 +23,14 @@ calls where a CLI harness is unavailable. All previously flagged defects have be
 
 ## 1. Surface description
 
+**2026-09-14 copy revision.** The landing's About, institutional-adoption FAQ,
+Counterplatform Design, and Beyond UCSC copy was revised. Existing semantic
+elements and shared styles were reused; two list items were added to the design
+section. A local source preview was opened in OpenChamber at 390 × 844 and its
+rendered text and link bounds inspected. This was a limited content check, not a
+repeat of the earlier contrast, 320px reflow, zoom, keyboard, or assistive-technology
+tests. Earlier measurements below retain their original evaluation scope.
+
 **UI origin.** Four static HTML files sharing one external stylesheet,
 all served via [GitHub Pages](https://pages.github.com/) with custom
 domain per [`docs/CNAME`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs/CNAME):

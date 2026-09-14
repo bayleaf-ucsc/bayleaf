@@ -30,6 +30,21 @@ not a request for funding BayLeaf or a claim that every institution should adopt
 it. It is an argument that procurement should permit BayLeaf-like arrangements to
 qualify and compete on their merits.
 
+## A normal technology in a continuing history
+
+We place Generative AI in the succession Internet → Web → Cloud → Generative AI.
+Each layer builds on earlier infrastructure. The Internet, Web, and Cloud found
+wide adoption and changed university practices without destroying higher
+education. This history supports a cool-headed approach to the next layer:
+curiosity, criticism, experimentation, and selective adoption or refusal.
+
+We reject both promotional hype and narratives that treat the technology as an
+inherent existential danger to education. Historical continuity does not prove
+that a particular use is harmless, worthwhile, or inevitable. It gives us grounds
+to treat GenAI as consequential normal technology whose terms and uses can be
+shaped. The question is what it does in a practice, who controls it, and whether
+the arrangement is worth supporting.
+
 ## Make the alternative eligible
 
 A specification can exclude an architecture before anyone evaluates its merits.
@@ -160,6 +175,26 @@ contestable criteria and a route to request alternatives. Participants who gain
 experience through BayLeaf should be better equipped to seek what they need from
 third parties. A bounded service can teach capabilities that travel beyond it.
 
+## Ecological sufficiency
+
+Energy, water, hardware production, and disposal belong in the assessment of AI
+provision. These costs are unevenly borne and are not fully represented in the
+price of inference. Lower prices or more efficient models are not reasons to
+expand consumption indefinitely.
+
+We favor enough capability for a worthwhile task: smaller models where adequate,
+bounded use, and declining computation that adds little value. Campuses should
+not treat access to the largest model or rising usage as measures of success.
+This leaves room for demanding tasks that justify more computation without
+making their requirements the default for everyone.
+
+BayLeaf's usage limits and mid-sized API recommendation put some of this
+commitment into practice. They do not establish a measured environmental
+advantage. Comparisons need evidence about actual workloads, hardware, energy
+sources, and resource use; parameter counts and token prices alone are
+insufficient. Operational reporting should distinguish what is measured from
+what remains unknown.
+
 ## What BayLeaf currently demonstrates
 
 BayLeaf separates interfaces and access arrangements from inference suppliers,
@@ -190,7 +225,7 @@ Make disaggregated, institution-operated arrangements eligible. Make integrated
 chatbots optional for campus services. Support ordinary participants in using
 content-private inference. Preserve group-level authorship and authorized tool
 extension. Include open-weight access, contestable catalog choices, and practical
-exits.
+exits. Orient provision toward sufficient capability and bounded resource use.
 
 These commitments give campuses a way to respond to criticism through changes in
 provision. Whether a particular use of AI is worthwhile remains a question for

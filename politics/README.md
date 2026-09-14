@@ -7,6 +7,15 @@ Operating it makes alternative technical and institutional terms concrete,
 usable, scrutinizable, and revisable. It is one response alongside critique,
 organizing, policy, and refusal.
 
+## A cool-headed perspective
+
+Generative AI belongs in a succession: Internet → Web → Cloud → Generative AI.
+Each builds on earlier infrastructure. The preceding layers found wide adoption
+and changed universities without destroying higher education. We approach this
+layer as consequential normal technology, resisting both hype and narratives of
+inherent danger. That leaves room to investigate particular harms and benefits,
+change the terms of provision, and decline uses that do not serve a purpose.
+
 ## What we want campuses to recognize
 
 Model inference can be purchased separately from the interfaces, histories,
@@ -51,6 +60,11 @@ funding request for BayLeaf or a demand that other organizations adopt it.
    settling the politics of model production. Catalogs can be bounded, with
    published and contestable criteria. Participants should gain capabilities
    they can carry beyond BayLeaf.
+6. **Ecological sufficiency.** Enough capability and bounded consumption should
+   guide provision, rather than maximum model capability or ever-growing usage.
+   Favor smaller models where adequate and decline computation that adds little
+   value. Energy, water, and hardware impacts extend beyond the inference bill;
+   claims of environmental savings need workload and infrastructure evidence.
 
 See [POSITION.md](POSITION.md) for the developed argument, current service
 boundaries, and unresolved questions. In particular, the transition from

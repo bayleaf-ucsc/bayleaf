@@ -44,7 +44,8 @@
         Generative AI, designed to serve the entire UC Santa Cruz campus community (students,
         faculty, and staff). BayLeaf is operated by
         <a href="mailto:amsmith@ucsc.edu">Adam Smith</a> (faculty from the Department of
-        Computational Media) as a living prototype of a possible future university-managed service.
+        Computational Media) as a working example of campus AI infrastructure that separates
+        access to model inference from the apps people use with it.
     </p>
 
     <p>
@@ -280,13 +281,13 @@
             <summary><h3>Will BayLeaf be adopted as an officially supported UCSC IT service? Will it get shut down by the administration?</h3></summary>
             <div class="faq__answer">
                 <p>
-                    We hope neither will happen. Among other reasons, BayLeaf exists to set a very
-                    high privacy and autonomy bar and very low cost bar on whatever AI services
-                    that campus may adopt. At the same time, it lets the community safely access
-                    and experiment with AI in ways that are completely decoupled from the current
-                    mainstream AI vendors. Even after BayLeaf shuts down, the upstream
-                    contributions we've made to associated open-source software efforts will make
-                    it easier for other campuses to adopt and support BayLeaf-like AI services.
+                    We hope neither will happen. BayLeaf demonstrates that a campus can support
+                    useful AI without buying an integrated chatbot package for everyone. We want
+                    procurement to let arrangements like this compete on their usefulness,
+                    privacy, accessibility, and full operating costs, including maintenance and
+                    support. The aim is to make alternatives credible, not to secure adoption of
+                    BayLeaf itself. Our contributions to shared open-source tools can also help
+                    other groups operate services on their own terms.
                 </p>
             </div>
         </details>
@@ -321,6 +322,7 @@
         </details>
     </section>
 
+    <!-- ✨ Political framing revised with Adam, September 14, 2026. -->
     <h2>Counterplatform Design</h2>
     <p>
         BayLeaf is a counterplatform: one situated response to the terms on which
@@ -329,19 +331,46 @@
         revision. BayLeaf treats AI as
         <a href="https://knightcolumbia.org/content/ai-as-normal-technology">normal
         technology</a>: consequential, but neither autonomous nor inevitable. The
-        commitments below govern how this alternative is designed and operated at
-        UC Santa Cruz.
+        commitments below guide this working experiment and what we want campuses
+        to make possible.
+    </p>
+    <p>
+        Think of the succession <strong>Internet → Web → Cloud → Generative AI</strong>.
+        Each builds on earlier infrastructure. The Internet, Web, and Cloud found wide
+        adoption and changed university practices without destroying higher education.
+        That history gives us reason to approach this next layer with curiosity and
+        judgment rather than hype or panic. It does not make adoption inevitable or
+        every use worthwhile. We can ask what helps a particular practice, what it
+        costs, and which terms we are willing to accept.
     </p>
     <ul>
         <li>
-            <strong>Energy: Smaller models, smaller footprints.</strong> AI's growing energy and
-            resource footprint is a legitimate concern. The flagship models from mainstream
-            providers can have trillions of parameters, and training compute, energy, and cost
-            all <a href="https://epoch.ai/data/ai-models?view=graph&tab=notable&xAxis=Parameters">scale
-            with parameter count</a>. BayLeaf Chat uses a curated model selection rather than an
-            unrestricted catalog, with resource footprint among the selection criteria. The API
-            recommends a mid-sized model by default. Plaintext API inference enforces an
-            open-weight policy, while API Sealed currently draws from Tinfoil's open-weight catalog.
+            <strong>Procurement: Buy inference separately from the app.</strong>
+            Campuses can purchase metered inference and support independently chosen
+            desktop software or institution-operated interfaces. Think campus internet
+            access, rather than subscriptions to a few services delivered over it.
+            Models differ, but changing suppliers need not mean replacing everyone's
+            working environment. Procurement should evaluate these arrangements on
+            their merits instead of requiring a single vendor's complete package.
+        </li>
+        <li>
+            <strong>Autonomy: Integrated chatbots should be optional.</strong>
+            Ordinary campus services, such as advice about completing a degree, should
+            not require a particular chatbot. A university should help ordinary users
+            set up alternative clients: exemption from surveillance must not be a
+            power-user-only feature. Courses retain their own tool choices; we want
+            open alternatives to be easy for instructors to offer. Refusing a corporate
+            package can coexist with learning and using AI.
+        </li>
+        <li>
+            <strong>Energy: Enough capability, bounded consumption.</strong>
+            AI uses energy, water, and hardware whose costs extend beyond the inference
+            bill. Maximum model capability and ever-growing usage should not be campus
+            goals. We favor smaller models where they are adequate, bounded use, and
+            declining computation that adds little value. BayLeaf caps usage and recommends
+            a mid-sized model through the API. These are interventions toward sufficiency,
+            not proof of a smaller footprint: environmental comparisons need evidence
+            about the actual workload and infrastructure, not parameter counts alone.
         </li>
         <li>
             <strong>Reciprocity: Keep open-weight models available.</strong> Large-scale AI is often criticized for
@@ -352,11 +381,14 @@
             publish a nonempty Hugging Face repository ID and that repository must resolve;
             otherwise BayLeaf returns HTTP 403. API Sealed currently offers only the open-weight
             models in Tinfoil's catalog, a provider-catalog property rather than a BayLeaf-side check.
+            Publishing usable weights is a contribution back to a shared technical ecosystem
+            and a counterweight to concentrated ownership, even for people who never run a
+            model themselves. It does not settle the politics of training data or labor.
         </li>
         <li>
-            <strong>Privacy: Providers never retain your data, and our API never stores it.</strong> Many commercial AI
-            services retain copies of user conversations, sometimes for 30 days or longer, creating
-            exposure that users cannot control. BayLeaf leverages
+            <strong>Privacy: Distinguish retention from operator access.</strong>
+            A service can retain no content while still allowing an operator to inspect it
+            in transit or deploy code that captures it. BayLeaf uses
             <a href="https://openrouter.ai/docs/guides/features/zdr">zero-data-retention (ZDR)</a>
             inference services so that no LLM provider stores a copy of your data; they keep only
             request metadata. Chat and plaintext API inference use OpenRouter ZDR. API Sealed uses
@@ -367,9 +399,13 @@
             completions and has no standing operator access to your request content as it passes
             through, an approach inspired by
             <a href="https://aws.amazon.com/blogs/machine-learning/exploring-the-zero-operator-access-design-of-mantle/">zero-operator-access</a>
-            designs. Chat is different by necessity: so you can carry conversations between devices,
-            the chat interface keeps one copy of your messages in an encrypted database accessible
-            only by the system administrator.
+            designs. The plaintext API's deployer could still change the service to capture
+            content. Sealed offers stronger protection through an attested enclave, although
+            compatible client support remains limited. Our goal is a supported mode that
+            prevents both campus and provider operators from accessing content, while being
+            explicit about weaker transitional arrangements. Chat stores history for use
+            across devices; its administrator can read that history. See the
+            <a href="privacy.html">privacy notice</a> for the service boundaries.
         </li>
         <li>
             <strong>Governance: Start with harms in context, not model safety in isolation.</strong>
@@ -386,14 +422,12 @@
             questions remain public so affected communities can scrutinize and reshape them.
         </li>
         <li>
-            <strong>Pedagogy: Support and resistance, not just answers.</strong> Commercial AI
-            assistants are optimized to be maximally helpful, which in practice means maximally
-            doing-it-for-you: students mistake speed for understanding, and the skills education
-            is supposed to build quietly atrophy. BayLeaf's models use
-            <a href="https://www.changetechnically.fyi/2396236/episodes/18692591-you-can-learn-with-ai">system
-            prompts and agent skills written by educators</a> for their students and peers,
-            designed to scaffold learning rather than shortcut it. Faculty control means the tool
-            can be co-designed with students, not imposed by a product team.
+            <strong>Local authorship: Extend shared services without maintaining a fork.</strong>
+            Educators and groups can write prompts, skills, and disciplinary resources that
+            participants' agents can read, and offer tools with appropriate authorization.
+            Writing for students' agents need not mean controlling those agents. A stable
+            shared core should let courses and departments adapt their practices without
+            maintaining separate versions of campus infrastructure.
         </li>
         <li>
             <strong>Inquiry: Grounded in sources of truth.</strong> General-purpose chatbots
@@ -677,12 +711,14 @@
     <p>
         BayLeaf is open source, built in a
         <a href="https://en.wikipedia.org/wiki/Municipalism">municipalist</a> spirit: it serves
-        one campus, not the entire higher education sector. The architecture is not
-        UCSC-specific, but it is intentionally local: designed to be copied and remixed to fit
-        the needs of other campuses, not scaled into a platform that governs them. This is the
+        one campus, not the entire higher education sector. Regional autonomy means the
+        capacity to adapt and leave, not an obligation to maintain unique software everywhere.
+        Shared clients and core services can support course-, department-, and group-specific
+        resources and tools. This is a
         <a href="https://dl.acm.org/doi/10.1145/3290605.3300569">prefigurative counterpower</a>
-        move: build small, autonomous systems that embody the values you want to see, rather
-        than waiting for centralised infrastructure to be reformed from within.
+        approach: make alternative arrangements available for use and scrutiny. BayLeaf's
+        catalog can remain bounded while participants gain skills they can carry to other
+        services. Local provision should expand their options.
     </p>
     <p>
         A 2026 <a href="https://www.insidehighered.com/news/tech-innovation/artificial-intelligence/2026/05/12/half-campus-tech-leaders-question-ais-roi"><em>Inside Higher Ed</em> survey of campus CTOs</a>
@@ -695,7 +731,8 @@
     <p>
         If you're evaluating AI tools for your campus,
         <a href="https://github.com/bayleaf-ucsc/bayleaf/tree/main/politics">read the case</a>
-        for universities owning their own AI infrastructure, or
+        for separately purchased inference, participant autonomy, and locally extensible
+        campus services, or
         <a href="https://github.com/bayleaf-ucsc/bayleaf">explore the source</a>.
     </p>
 
