@@ -22,12 +22,21 @@ The BayLeaf API layer uses a distinct credential for that same pseudo-user.
 | `/chat/basic/e2e` | Remote Cloudflare browser loads Basic, submits through the UI, renders a completed answer, verifies its persisted record, closes the browser, and deletes the exact synthetic chat | Campus login: an ordinary session JWT is injected rather than exercising CILogon |
 | `/openrouter/basic` | Direct OpenRouter streaming inference on `z-ai/glm-5.3-flash`, explicitly restricted to ZDR providers, using the shared SSE validator | OWUI, its credentials, or Basic's system prompt and injected context |
 | `/api/recommended` | Keyed BayLeaf API auth and D1 resolution, per-user OpenRouter credential acquisition, open-weight enforcement, explicit ZDR routing, and complete SSE inference on the namespaced recommended model | Campus Pass, Sealed, sandbox/web routes, recommendation discovery, or factual correctness |
+| `/models/curated` | Both curated model lists (api/wrangler.jsonc `RECOMMENDED_MODEL` + `OPENCODE_CURATED_MODELS` on OpenRouter, `SEALED_RECOMMENDED_MODEL` + `SEALED_CURATED_MODELS` on Tinfoil) still resolve against each provider's live public `/v1/models` catalog | Provider deprecation notices before removal (reported 200 with `deprecated` in the JSON); inference health of listed models; other API models |
 
 Browser failure with HTTP success points toward the browser/session/persistence
 path; OWUI HTTP failure with direct success points toward the OWUI-specific path.
 These are diagnostic leads, not proofs: credentials, provider routing, context,
 output length, caches, and transient load differ. None checks factual correctness.
 `/api/recommended` checks the plaintext keyed API path, not BayLeaf Sealed.
+
+`/models/curated` is the credential-free exception: it fetches (never infers)
+the two public provider catalogs, so probe runs cost nothing beyond Worker
+invocation. Its constants mirror the API's curated lists and are pinned to
+`api/wrangler.jsonc` by a drift test; update them together (+1) with any list
+grooming. A Tinfoil `deprecated: true` flag appears in the authenticated JSON
+as `deprecated: ["tinfoil:<id>"]`, while HTTP stays 200 — groom proactively on
+that signal; absence (503) means the slug no longer resolves at all.
 
 ## Measurement Snapshot (2026-09-08)
 

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import puppeteer from '@cloudflare/puppeteer';
 import worker, { checkStream, probe, probeDetail, probeBrowser, cleanupSynthetic, metrics,
-  DIRECT_MODEL, API_MODEL, renderedAnswer } from './index.mjs';
+  DIRECT_MODEL, API_MODEL, renderedAnswer, probeCatalog, CATALOG_URL, CATALOG_BASE, CURATED_LISTS } from './index.mjs';
 
 const frame = value => `data: ${JSON.stringify(value)}\n\n`;
 const choice = (delta, finish_reason = null) => ({ choices: [{ index: 0, delta, finish_reason }] });
@@ -535,6 +535,100 @@ test('API model tracks the checked-in BayLeaf API recommendation', async () => {
   const config = await readFile(new URL('../../api/wrangler.jsonc', import.meta.url), 'utf8');
   const recommended = config.match(/"RECOMMENDED_MODEL"\s*:\s*"([^"]+)"/)?.[1];
   assert.equal(API_MODEL, recommended);
+});
+
+test('checked-in curated lists track the checked-in BayLeaf API configuration', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const config = await readFile(new URL('../../api/wrangler.jsonc', import.meta.url), 'utf8');
+  const grab = name => config.match(new RegExp(`"${name}"\\s*:\\s*"([^"]+)"`))?.[1];
+  const openrouter = [grab('RECOMMENDED_MODEL'), ...grab('OPENCODE_CURATED_MODELS').split(',')]
+    .map(entry => entry.replace(/^openrouter:/, ''));
+  const tinfoil = [grab('SEALED_RECOMMENDED_MODEL'), ...grab('SEALED_CURATED_MODELS').split(',')]
+    .filter(Boolean);
+  assert.deepEqual([CATALOG_BASE.openrouter, ...CURATED_LISTS.openrouter], openrouter);
+  assert.deepEqual([CATALOG_BASE.tinfoil, ...CURATED_LISTS.tinfoil], tinfoil);
+  assert.deepEqual(Object.values(CATALOG_URL).sort(), [
+    'https://inference.tinfoil.sh/v1/models', 'https://openrouter.ai/api/v1/models']);
+});
+
+test('catalog absence and provider-originated deprecation flags are distinguished', async () => {
+  const rows = side => [
+    ...Object.entries(CATALOG_BASE).filter(([side2]) => side2 === side).map(([, id]) => ({ id })),
+    ...CURATED_LISTS[side].map((id, i) => ({ id, ...(side === 'tinfoil' && i === 0 ? { deprecated: true } : {}) })),
+  ];
+  const fetcher = async url => Response.json({
+    data: url.includes('openrouter') ? rows('openrouter') : rows('tinfoil'),
+  });
+  const report = await probeCatalog(null, fetcher);
+  assert.equal(report.result, 'ok');
+  assert.deepEqual(report.missing, []);
+  assert.deepEqual(report.deprecated, ['tinfoil:' + CURATED_LISTS.tinfoil[0]]);
+  // Every entry for an unreachable provider counts as absent, but transport
+  // failure wins the diagnostic priority over absence.
+  const halfDown = async url => {
+    if (url.includes('tinfoil')) return new Response('error', { status: 503 });
+    return Response.json({ data: rows('openrouter') });
+  };
+  const transport = await probeCatalog(null, halfDown);
+  assert.equal(transport.result, 'catalog_transport');
+  assert.deepEqual(transport.catalogs.tinfoil, 'unavailable');
+  // absence path
+  const fetcherAbsence = async url => Response.json({
+    data: url.includes('openrouter')
+      ? rows('openrouter').slice(1) : rows('tinfoil'),
+  });
+  const absence = await probeCatalog(null, fetcherAbsence);
+  assert.equal(absence.result, 'catalog_absence');
+  assert.deepEqual(absence.missing, ['openrouter:z-ai/glm-5.3-flash']);
+  assert.deepEqual(absence.catalogs, {});
+});
+
+test('curated-models route authenticates, admits independently, and reports layered outcomes', async t => {
+  const fetchMock = t.mock.method(globalThis, 'fetch', async url => {
+    assert.ok(url === 'https://openrouter.ai/api/v1/models' ||
+      url === 'https://inference.tinfoil.sh/v1/models');
+    const side = url.includes('tinfoil') ? 'tinfoil' : 'openrouter';
+    return Response.json({ data: [CATALOG_BASE[side], ...CURATED_LISTS[side]].map(id => ({ id })) });
+  });
+  const catalogEnv = { ...env };
+  {
+    const response = await worker.fetch(request('GET', '/models/curated', false), catalogEnv);
+    assert.equal(response.status, 401);
+  }
+  {
+    const response = await worker.fetch(request('GET', '/models/curated'), {
+      ...catalogEnv, LIMITER: { async limit({ key }) {
+        assert.equal(key, 'catalog');
+        return { success: false };
+      } },
+    });
+    assert.equal(response.status, 429);
+    assert.equal(response.headers.get('x-bayleaf-probe-result'), 'rate_limited');
+    assert.equal(fetchMock.mock.callCount(), 0);
+  }
+  {
+    const response = await worker.fetch(request('GET', '/models/curated'), catalogEnv);
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.result, 'ok');
+    assert.equal(body.layer, 'catalog');
+    assert.deepEqual(body.missing, []);
+  }
+  {
+    // Curated entry vanished upstream: 503 without leaking catalog contents.
+    t.mock.method(globalThis, 'fetch', async () => Response.json({ data: [] }));
+    const response = await worker.fetch(request('HEAD', '/models/curated'), catalogEnv);
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get('x-bayleaf-probe-result'), 'catalog_absence');
+    assert.equal(await response.text(), '');
+  }
+  {
+    t.mock.restoreAll();
+    t.mock.method(globalThis, 'fetch', async () => { throw new Error('secret'); });
+    const response = await worker.fetch(request('GET', '/models/curated'), catalogEnv);
+    assert.equal(response.status, 503);
+    assert.doesNotMatch(await response.text(), /secret/);
+  }
 });
 
 test('partial SSE frames and split reasoning tags cannot advance first answer', async () => {

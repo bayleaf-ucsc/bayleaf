@@ -5,6 +5,56 @@ const MAX_EVENT_CHARS = 64 * 1024;
 export const DIRECT_MODEL = 'z-ai/glm-5.3-flash';
 export const API_MODEL = 'openrouter:z-ai/glm-5.3-flash';
 
+// Checked-in mirrors of the BayLeaf API's curated model lists (api/wrangler.jsonc).
+// index.test.mjs asserts parity with that file. Absence from a provider's live
+// /v1/models listing proves a curated entry no longer resolves; Tinfoil also
+// publishes deprecated:true ahead of removal, reported as metadata, not failure.
+export const CATALOG_BASE = { openrouter: 'z-ai/glm-5.3-flash', tinfoil: 'glm-5-3-flash' };
+export const CURATED_LISTS = {
+  openrouter: ['qwen/qwen3.8-27b', 'deepseek/deepseek-v4.1-flash'],
+  tinfoil: ['glm-5-3', 'deepseek-v4-1-flash', 'kimi-k3', 'gemma4-31b'],
+};
+export const CATALOG_URL = {
+  openrouter: 'https://openrouter.ai/api/v1/models',
+  tinfoil: 'https://inference.tinfoil.sh/v1/models',
+};
+
+export async function probeCatalog(signal, fetcher = fetch, timing = metrics()) {
+  const report = { missing: [], deprecated: [], catalogs: {} };
+  const catalogs = { openrouter: null, tinfoil: null };
+  await timing.phase('catalog_fetch', () => Promise.all(
+    Object.entries(CATALOG_URL).map(async ([side, url]) => {
+      try {
+        const response = await fetcher(url, { redirect: 'manual', signal });
+        if (response.status !== 200) throw new Error('dead');
+        const body = await response.json();
+        const rows = body?.data;
+        if (!Array.isArray(rows)) throw new Error('dead');
+        catalogs[side] = new Map(rows.filter(row => typeof row?.id === 'string')
+          .map(row => [row.id, row]));
+      } catch {
+        report.catalogs[side] = 'unavailable';
+      }
+    }),
+  ));
+  for (const side of ['openrouter', 'tinfoil']) {
+    const ids = [CATALOG_BASE[side], ...CURATED_LISTS[side]];
+    for (const id of ids) {
+      const row = catalogs[side]?.get(id);
+      if (!row) {
+        report.missing.push(`${side}:${id}`);
+      } else if (side === 'tinfoil' && row.deprecated === true) {
+        report.deprecated.push(`${side}:${id}`);
+      }
+    }
+  }
+  const unreachable = Object.keys(report.catalogs).length > 0;
+  return {
+    ...report,
+    result: unreachable ? 'catalog_transport' : report.missing.length ? 'catalog_absence' : 'ok',
+  };
+}
+
 // One Worker monotonic clock. Phases are serial awaits; events may overlap them.
 export function metrics(now = () => performance.now()) {
   const start = now();
@@ -528,7 +578,8 @@ export default {
     );
     const url = new URL(request.url);
     const layer = { '/chat/basic': 'owui', '/chat/basic/e2e': 'browser',
-      '/openrouter/basic': 'openrouter', '/api/recommended': 'api' }[url.pathname];
+      '/openrouter/basic': 'openrouter', '/api/recommended': 'api',
+      '/models/curated': 'catalog' }[url.pathname];
     if (!layer || url.search) return respond(404, 'Not found');
     if (!['HEAD', 'GET'].includes(request.method)) {
       return respond(405, 'Method not allowed', { Allow: 'GET, HEAD' });
@@ -573,8 +624,7 @@ export default {
     if ((layer === 'owui' && !env.OWUI_API_KEY) ||
         (layer === 'openrouter' && !env.OPENROUTER_API_KEY) ||
         (layer === 'api' && !env.BAYLEAF_API_KEY) ||
-        (layer === 'browser' && (!env.OWUI_E2E_TOKEN || !env.BROWSER))) {
-      timing.fail();
+        (layer === 'browser' && (!env.OWUI_E2E_TOKEN || !env.BROWSER))) {      timing.fail();
       return finish(503, 'not_configured');
     }
     timing.end();
@@ -603,6 +653,14 @@ export default {
         const result = report.result === 'browser_deadline' && request.signal.aborted
           ? 'browser_client_aborted' : report.result;
         return finish(result === 'ok' ? 200 : 503, result, report);
+      }
+      if (layer === 'catalog') {
+        // Credential-free layer: public provider catalogs only. Absence of any
+        // curated/recommended entry from a live catalog returns 503 so the
+        // daily UptimeRobot monitor alerts; deprecation flags stay 200.
+        const outcome = await probeCatalog(controller.signal, fetch, timing);
+        const result = timedOut ? 'deadline' : request.signal.aborted ? 'client_aborted' : outcome.result;
+        return finish(result === 'ok' ? 200 : 503, result, outcome);
       }
       const running = probeDetail(layer === 'openrouter' ? env.OPENROUTER_API_KEY
         : layer === 'api' ? env.BAYLEAF_API_KEY : env.OWUI_API_KEY,
