@@ -188,13 +188,13 @@
     // injected automatically as the first entry; this list adds further picks the
     // user can select from /models in OpenCode without a full /v1/models browse.
     // Empty string is allowed and means "recommended model only".
-    "OPENCODE_CURATED_MODELS": "openrouter:qwen/qwen3.8-27b,vertex:zai-org/glm-5-maas,openrouter:deepseek/deepseek-v4-flash-0731",
+    "OPENCODE_CURATED_MODELS": "openrouter:qwen/qwen3.8-27b,openrouter:deepseek/deepseek-v4.1-flash",
 
     // Sealed recommendation and curated companions. These are bare Tinfoil IDs:
     // the dedicated /sealed route establishes provider provenance, while the
     // model field is inside the encrypted body and cannot be rewritten here.
     "SEALED_RECOMMENDED_MODEL": "glm-5-3-flash",
-    "SEALED_CURATED_MODELS": "glm-5-3,deepseek-v4-flash,gemma4-31b",
+    "SEALED_CURATED_MODELS": "glm-5-3,deepseek-v4-1-flash,kimi-k3,gemma4-31b",
 
     // OIDC authentication — provider-agnostic via .well-known discovery.
     // Currently configured for CILogon (https://www.cilogon.org/oidc).
