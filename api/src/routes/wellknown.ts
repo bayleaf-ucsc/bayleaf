@@ -121,12 +121,15 @@ sealedWellKnownRoutes.get('/opencode', (c) => {
 });
 
 function buildCurlAuthCommand(apiBase: string, mode: OpenCodeMode): string[] {
-  // A nonexistent cookie-input filename enables curl's in-memory cookie engine
-  // portably. Passing an empty cookie argument works on macOS but Windows curl
-  // rejects it; no file is created by -b.
-  const cookieEngine = '.bayleaf-cookie-engine-42f7c1';
+  // File-form -b preserves response cookies across --next. This source is the
+  // Windows NUL device and a protected, nonexistent absolute path on Unix, so
+  // neither platform reads a working-directory-controlled cookie file.
+  const cookieEngine = '/dev/NUL';
   return [
     'curl',
+    // Must be curl's first argument: ignore .curlrc so tracing/output settings
+    // cannot persist the key or add bytes to the stdout OpenCode captures.
+    '-q',
     '-s',
     '-b',
     cookieEngine,

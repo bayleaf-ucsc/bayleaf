@@ -529,7 +529,14 @@ claimRoutes.post('/approve', async (c) => {
     expirationTtl: CLAIM_TTL_SECONDS,
   });
   console.log(`claim approve: user_code=${userCode} email=${session.email} client=${record.client}`);
-  return renderPage(c, <ResultPage kind="approved" client={record.client} />);
+  return renderPage(
+    c,
+    <ResultPage
+      kind="approved"
+      client={record.client}
+      restartOpenCode={record.curl_platform !== undefined}
+    />,
+  );
 });
 
 // ── GET /auth/claim/poll?d=DEVICE_CODE ───────────────────────────
@@ -658,12 +665,15 @@ function ApprovalPage({ session, userCode, record, approveTok, denyTok }: Approv
 interface ResultPageProps {
   kind: 'approved' | 'denied';
   client: string;
+  restartOpenCode?: boolean;
 }
 
-function ResultPage({ kind, client }: ResultPageProps) {
+function ResultPage({ kind, client, restartOpenCode = false }: ResultPageProps) {
   const title = kind === 'approved' ? 'Approved' : 'Denied';
   const msg = kind === 'approved'
-    ? `${client} has been authorized. Return to your terminal, then restart OpenCode to access BayLeaf.`
+    ? restartOpenCode
+      ? `${client} has been authorized. Return to your terminal, then restart OpenCode to access BayLeaf.`
+      : `${client} has been authorized. Return to your terminal to finish setup.`
     : `Authorization for ${client} was denied. You can close this tab.`;
   return (
     <html lang="en">
