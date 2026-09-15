@@ -117,6 +117,8 @@ All env vars are set with scope `RUN_AND_BUILD_TIME` unless noted.
 | `OAUTH_PROVIDER_NAME` | `UCSC` | Login button label |
 | `OAUTH_SCOPES` | `openid email profile org.cilogon.userinfo` | Includes affiliation claim |
 | `OAUTH_AUTHORIZE_PARAMS` | `{"idphint":"urn:mace:incommon:ucsc.edu"}` | Preselect UCSC IdP (requires v0.8.11+) |
+| `OAUTH_ALLOWED_DOMAINS` | `ucsc.edu` | Exact email-domain gate on every OAuth callback; not a wildcard or suffix match |
+| `ENABLE_OAUTH_PERSISTENT_CONFIG` | `false` | Keep the deployment environment authoritative for the OAuth domain gate |
 | `OAUTH_CLIENT_ID` | `cilogon:/client_id/...` | CILogon client |
 | `OAUTH_CLIENT_SECRET` | `<REDACTED>` | Encrypted in DO |
 | `WEBUI_SECRET_KEY` | `<REDACTED>` | Encrypted in DO; must be set explicitly (see below) |
@@ -147,6 +149,23 @@ the container. On ephemeral container platforms like DO App Platform, this file
 doesn't survive redeploys — so every deploy gets a new key, silently
 invalidating all JWTs and any invite codes signed with the old key. Always set
 `WEBUI_SECRET_KEY` explicitly as a `type: SECRET` env var in the app spec.
+
+**OAuth access boundary.** CILogon login is restricted to an asserted email
+whose domain is exactly `ucsc.edu`. Open WebUI lowercases the asserted email and
+compares the portion after the final `@` to `OAUTH_ALLOWED_DOMAINS`; subdomains
+and suffix lookalikes do not match. The check runs on every OAuth callback before
+new-versus-existing account lookup, so previously admitted non-UCSC accounts
+cannot sign in again through CILogon. When the gate was enabled on 2026-09-15,
+the two existing non-UCSC human accounts were also moved to `pending` so their
+already-issued sessions did not remain an access path; their stored data was
+preserved.
+
+The dedicated `probe@bayleaf.dev` user is not an OAuth-domain exception. It uses
+the hidden password endpoint only for local credential renewal, an OWUI API key
+for the HTTP probe, and an ordinary injected session JWT for the browser probe.
+`ENABLE_LOGIN_FORM=false` keeps password login unavailable in the public UI.
+The probe remains a non-admin `user`; see `probe/README.md` for its narrower
+credential and endpoint constraints.
 
 ### OpenRouter Connection
 
