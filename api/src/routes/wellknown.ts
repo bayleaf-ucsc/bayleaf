@@ -62,7 +62,12 @@ const PROVIDER_ID = 'bayleaf-remote';
 /** Provider id supplied remotely and upgraded by the fail-closed Tinfoil transport plugin. */
 const SEALED_PROVIDER_ID = 'bayleaf-sealed-remote';
 
-/** Exact pin: verifier and encrypted-transport changes require deliberate review. */
+/**
+ * Exact pin: verifier and encrypted-transport changes require deliberate review.
+ * If models appear but requests lack Ehbp-Encapsulated-Key, check for an interrupted
+ * `~/.cache/opencode/packages/${SEALED_PLUGIN}` install. Rename it, retry once, and
+ * restart OpenCode: failed plugin imports are cached for the process lifetime.
+ */
 const SEALED_PLUGIN = 'opencode-tinfoil@0.2.0';
 
 /** Name of the env var the wellknown token is bound to inside OpenCode. */
@@ -81,30 +86,18 @@ type OpenCodeMode = 'standard' | 'sealed';
  * NOT inlined here, because (a) it depends on per-user model entitlement and
  * (b) OpenCode's templated-header mechanism only works on `remote_config.url`.
  *
- * `auth.command` runs the BayLeaf claim-code device flow (see
- * routes/claim.tsx). The script:
- *   1. POSTs to /auth/claim/initiate to get a short claim code and URL.
- *   2. Prints those to /dev/tty (or stderr if no tty) so the user can open
- *      the URL in a browser, sign in if needed, and approve the request.
- *   3. Polls /auth/claim/poll every 2s for up to 10 min.
- *   4. On approval, the captured `sk-bayleaf-...` key is printed to stdout
- *      (and only stdout) for OpenCode to capture and store.
- *
- * The script depends on `curl` and `python3`. Both are present by default on
- * macOS, modern Linux, and WSL. Systems without `python3` see the script fail
- * fast with a clear message; /llms.txt documents the manual `bayleaf` provider
- * config as the documented escape hatch.
- *
- * Windows: pure POSIX `sh`. Use WSL or set up the manual provider config.
+ * `auth.command` is a shell-free curl device flow (see routes/claim.tsx).
+ * curl imports Windows' standard OS environment variable, defaulting to Unix,
+ * so BayLeaf can send instructions to CON or /dev/stderr while reserving stdout
+ * exclusively for the approved key that OpenCode captures.
  */
 function discoveryDocument(requestUrl: string, mode: OpenCodeMode) {
   const apiBase = absoluteBaseUrl(requestUrl);
   const loginUrl = mode === 'sealed' ? `${apiBase}/sealed` : apiBase;
-  const clientName = mode === 'sealed' ? 'OpenCode for BayLeaf Sealed' : 'OpenCode for BayLeaf';
 
   return {
     auth: {
-      command: ['sh', '-c', buildAuthCommand(apiBase, loginUrl, clientName)],
+      command: buildCurlAuthCommand(apiBase, mode),
       env: TOKEN_ENV_NAME,
     },
     remote_config: {
@@ -126,6 +119,44 @@ sealedWellKnownRoutes.get('/opencode', (c) => {
   }
   return c.json(discoveryDocument(c.req.url, 'sealed'));
 });
+
+function buildCurlAuthCommand(apiBase: string, mode: OpenCodeMode): string[] {
+  // A nonexistent cookie-input filename enables curl's in-memory cookie engine
+  // portably. Passing an empty cookie argument works on macOS but Windows curl
+  // rejects it; no file is created by -b.
+  const cookieEngine = '.bayleaf-cookie-engine-42f7c1';
+  return [
+    'curl',
+    '-s',
+    '-b',
+    cookieEngine,
+    '--variable',
+    '%OS=unix',
+    '--expand-url',
+    `${apiBase}/auth/claim/curl/start/${mode}/{{OS:url}}`,
+    '--next',
+    '-sf',
+    '-b',
+    cookieEngine,
+    '-o',
+    '/dev/stderr',
+    `${apiBase}/auth/claim/curl/instructions/unix`,
+    '--next',
+    '-sf',
+    '-b',
+    cookieEngine,
+    '-o',
+    '\\\\.\\CON',
+    `${apiBase}/auth/claim/curl/instructions/windows`,
+    '--next',
+    '-fsL',
+    '--max-redirs',
+    '70',
+    '-b',
+    cookieEngine,
+    `${apiBase}/auth/claim/curl/poll`,
+  ];
+}
 
 // ── GET /.well-known/opencode/config ─────────────────────────────
 
@@ -335,114 +366,4 @@ function absoluteBaseUrl(reqUrl: string): string {
   const u = new URL(reqUrl);
   const isLocal = u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '0.0.0.0';
   return `${isLocal ? u.protocol.replace(':', '') : 'https'}://${u.host}`;
-}
-
-/**
- * Build the POSIX `sh -c` script that drives the claim-code device flow.
- *
- * Contract: the script must print *only* the captured `sk-bayleaf-...` key
- * (no trailing newline) to stdout. Everything else — prompts, the claim URL,
- * progress dots, errors — goes to /dev/tty (with stderr fallback). The
- * encompassing `agent` (OpenCode here) reads stdout and stores the result;
- * any stray bytes on stdout would corrupt the stored credential.
- *
- * Dependencies: `curl` and `python3`. Failures during the curl/python pipeline
- * are caught and reported to the user via the tty, exit code 1.
- */
-function buildAuthCommand(apiBase: string, loginUrl: string, clientName: string): string {
-  // Inline the api base + client name. The client name is hard-coded by us
-  // (not user input) so we can JSON-stringify it without escape hazards.
-  // Both are embedded as literal sh strings; we double-quote them in shell
-  // so spaces/special chars in clientName won't matter.
-  const apiBaseSh = JSON.stringify(apiBase);            // "https://api.bayleaf.dev"
-  const loginUrlSh = JSON.stringify(loginUrl);          // "https://api.bayleaf.dev[/sealed]"
-  const clientNameSh = JSON.stringify(clientName);      // "OpenCode"
-  const initiateBodySh = JSON.stringify(JSON.stringify({ client: clientName }));
-
-  // Heredoc-style multi-line POSIX script. Newlines inside `sh -c <arg>` are
-  // fine, no need to chain with `;`. Single-quoted python snippets pass
-  // through as one shell argument.
-  return `set -u
-api=${apiBaseSh}
-login_url=${loginUrlSh}
-client=${clientNameSh}
-
-# Detect a usable controlling terminal. We can't just test \`[ -r /dev/tty ]\`
-# because /dev/tty exists and is "readable" in a definitional sense even when
-# the calling process has no controlling tty (e.g. an OpenCode subprocess). The
-# only reliable test is to actually try writing to it and check the exit status.
-tty="/dev/tty"
-if ! ( : > "$tty" ) 2>/dev/null; then tty=""; fi
-
-log() {
-  if [ -n "$tty" ]; then printf '%s\\n' "$1" > "$tty"; else printf '%s\\n' "$1" >&2; fi
-}
-fail() { log "$1"; exit 1; }
-
-command -v curl >/dev/null 2>&1 || fail "BayLeaf claim flow needs 'curl'. Install it or use manual setup: https://api.bayleaf.dev/llms.txt"
-command -v python3 >/dev/null 2>&1 || fail "BayLeaf claim flow needs 'python3'. Install it or use manual setup: https://api.bayleaf.dev/llms.txt"
-
-init=$(curl -fsS -X POST -H 'Content-Type: application/json' -d ${initiateBodySh} "$api/auth/claim/initiate") || fail "Could not reach $api to start the claim flow."
-
-# Two codes:
-#   user_code   short, screen-safe; shown to the user; appears in the browser URL.
-#   device_code 32-char hex; held only by this script; the bearer credential we
-#               present at /poll. Never displayed, never logged.
-# An attacker who watches a screen share sees only the user_code; without the
-# device_code they can't poll for the resulting key.
-user_code=$(printf '%s' "$init" | python3 -c 'import sys,json; print(json.load(sys.stdin)["user_code"])' 2>/dev/null) || fail "Claim flow returned an unexpected response."
-device_code=$(printf '%s' "$init" | python3 -c 'import sys,json; print(json.load(sys.stdin)["device_code"])' 2>/dev/null) || fail "Claim flow returned an unexpected response."
-url=$(printf '%s' "$init" | python3 -c 'import sys,json; print(json.load(sys.stdin)["claim_url"])' 2>/dev/null) || fail "Claim flow returned an unexpected response."
-
-log ""
-log "To authorize $client to access BayLeaf, open this URL in your browser:"
-log ""
-log "  $url"
-log ""
-log "Code (verify it matches the page): $user_code"
-log ""
-
-# Try to open the browser automatically. webbrowser.open() handles platform
-# differences (macOS \`open\`, Linux \`xdg-open\`, WSL via Windows host, etc.)
-# and silently no-ops if no GUI is available. Run in the background and
-# discard output: a failure here is not user-visible because the URL is
-# already printed above for them to open by hand. We pass the URL via env
-# rather than interpolating it into the python source, to avoid quoting hazards
-# even though we control the source of $url.
-BAYLEAF_CLAIM_URL="$url" python3 -c 'import os, webbrowser; webbrowser.open(os.environ["BAYLEAF_CLAIM_URL"])' >/dev/null 2>&1 &
-
-log "Waiting for approval (10 min timeout)..."
-
-deadline=$(( $(date +%s) + 600 ))
-while :; do
-  now=$(date +%s)
-  if [ "$now" -ge "$deadline" ]; then fail "Timed out waiting for approval."; fi
-
-  # Note: -sS, not -fsS. We want to *receive* the body even on 4xx (the server
-  # returns 410 for denied and 404 for expired with a JSON body whose .status
-  # field is the source of truth). -f would suppress the body and dump us into
-  # the retry-after-sleep branch, hanging forever after a deny.
-  body=$(curl -sS "$api/auth/claim/poll?d=$device_code" 2>/dev/null) || { sleep 1; continue; }
-  status=$(printf '%s' "$body" | python3 -c 'import sys,json
-try: print(json.load(sys.stdin)["status"])
-except Exception: print("error")
-' 2>/dev/null)
-
-  case "$status" in
-    pending) sleep 1 ;;
-    approved)
-      key=$(printf '%s' "$body" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("key",""))' 2>/dev/null)
-      [ -n "$key" ] || fail "Approved but no key was returned."
-      log "Approved."
-      printf '%s' "$key"
-      # Hint goes to tty/stderr, never stdout (which holds only the key).
-      log ""
-      log "Saved. To stop loading this BayLeaf configuration: opencode auth logout $login_url"
-      exit 0
-      ;;
-    denied) fail "Authorization denied." ;;
-    expired) fail "Claim code expired before approval." ;;
-    *) sleep 1 ;;
-  esac
-done`;
 }

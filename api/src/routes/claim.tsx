@@ -85,6 +85,7 @@
 
 import { Hono } from 'hono';
 import { html } from 'hono/html';
+import type { Context } from 'hono';
 import type { AppEnv, Session } from '../types';
 import { getSession } from '../utils/session';
 import { ensureUserRow } from '../provision';
@@ -110,6 +111,9 @@ const DEFAULT_CLIENT_LABEL = 'a coding agent';
 /** Cookie name for "where to send the user after they sign in" (claim flow only). */
 const RETURN_TO_COOKIE = 'claim_return_to';
 
+/** Device-code cookie used by shell-free OpenCode onboarding. */
+const CURL_DEVICE_COOKIE = 'bayleaf_claim_device';
+
 // ── Types ────────────────────────────────────────────────────────
 
 type ClaimStatus = 'pending' | 'approved' | 'denied';
@@ -123,6 +127,7 @@ interface ClaimRecord {
   initiator_country: string | null;
   key?: string;
   approved_by?: string;
+  curl_platform?: 'windows' | 'unix';
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -241,24 +246,11 @@ async function ensureUserToken(
   return row?.bayleaf_token ?? null;
 }
 
-// ── POST /auth/claim/initiate ────────────────────────────────────
-
-claimRoutes.post('/initiate', async (c) => {
-  // Body is optional (just a client label). Tolerate empty/non-JSON bodies.
-  let clientLabel = DEFAULT_CLIENT_LABEL;
-  try {
-    const ct = c.req.header('Content-Type') ?? '';
-    if (ct.includes('application/json')) {
-      const body = await c.req.json<{ client?: unknown }>().catch(() => ({} as { client?: unknown }));
-      clientLabel = sanitizeClientLabel(body.client);
-    } else if (ct.includes('application/x-www-form-urlencoded')) {
-      const form = await c.req.parseBody().catch(() => ({}));
-      clientLabel = sanitizeClientLabel((form as Record<string, unknown>).client);
-    }
-  } catch {
-    // fall through with default label
-  }
-
+async function createClaim(
+  c: Context<AppEnv>,
+  clientLabel: string,
+  curlPlatform?: 'windows' | 'unix',
+) {
   // Generate codes, retrying on the (vanishingly rare) collision in either index.
   let userCode = generateUserCode();
   let deviceCode = generateDeviceCode();
@@ -277,10 +269,10 @@ claimRoutes.post('/initiate', async (c) => {
     created_at: Date.now(),
     initiator_ip: c.req.header('CF-Connecting-IP') ?? null,
     initiator_country: c.req.header('CF-IPCountry') ?? null,
+    curl_platform: curlPlatform,
   };
-  // Two writes: canonical record under device_code, lookup pointer under user_code.
-  // KV writes are independent; if the second one fails the first is harmless and
-  // will TTL out. (Workers KV doesn't offer transactions; this pair is idempotent.)
+  // KV has no transactions. If the index write fails, the unreachable canonical
+  // record is harmless and expires with the same short TTL.
   await c.env.CLAIM_CODES.put(`claim:device:${deviceCode}`, JSON.stringify(record), {
     expirationTtl: CLAIM_TTL_SECONDS,
   });
@@ -288,19 +280,120 @@ claimRoutes.post('/initiate', async (c) => {
     expirationTtl: CLAIM_TTL_SECONDS,
   });
 
-  const url = new URL(c.req.url);
-  const baseUrl = absoluteBaseUrl(url);
-  // Note: device_code is intentionally NOT logged. The user_code is fine to log
-  // (carries no secret value) and is useful for support / audit.
+  const baseUrl = absoluteBaseUrl(new URL(c.req.url));
   console.log(`claim initiate: user_code=${userCode} client=${clientLabel} ip=${record.initiator_ip ?? '-'} country=${record.initiator_country ?? '-'}`);
+  return {
+    deviceCode,
+    userCode,
+    claimUrl: `${baseUrl}/auth/claim?c=${encodeURIComponent(userCode)}`,
+  };
+}
+
+// ── POST /auth/claim/initiate ────────────────────────────────────
+
+claimRoutes.post('/initiate', async (c) => {
+  // Body is optional (just a client label). Tolerate empty/non-JSON bodies.
+  let clientLabel = DEFAULT_CLIENT_LABEL;
+  try {
+    const ct = c.req.header('Content-Type') ?? '';
+    if (ct.includes('application/json')) {
+      const body = await c.req.json<{ client?: unknown }>().catch(() => ({} as { client?: unknown }));
+      clientLabel = sanitizeClientLabel(body.client);
+    } else if (ct.includes('application/x-www-form-urlencoded')) {
+      const form = await c.req.parseBody().catch(() => ({}));
+      clientLabel = sanitizeClientLabel((form as Record<string, unknown>).client);
+    }
+  } catch {
+    // fall through with default label
+  }
+
+  const claim = await createClaim(c, clientLabel);
 
   return c.json({
-    device_code: deviceCode,
-    user_code: userCode,
-    claim_url: `${baseUrl}/auth/claim?c=${encodeURIComponent(userCode)}`,
+    device_code: claim.deviceCode,
+    user_code: claim.userCode,
+    claim_url: claim.claimUrl,
     expires_in: CLAIM_TTL_SECONDS,
     poll_interval: POLL_INTERVAL_SECONDS,
   });
+});
+
+// ── Shell-free OpenCode claim transport ───────────────────────────
+
+claimRoutes.get('/curl/start/:mode/:platform', async (c) => {
+  const mode = c.req.param('mode');
+  if (mode !== 'standard' && mode !== 'sealed') return c.body(null, 404);
+  const platform = c.req.param('platform').toLowerCase() === 'windows_nt' ? 'windows' : 'unix';
+  const client = mode === 'sealed' ? 'OpenCode for BayLeaf Sealed' : 'OpenCode for BayLeaf';
+  const claim = await createClaim(c, client, platform);
+  setCookie(c, CURL_DEVICE_COOKIE, claim.deviceCode, {
+    path: '/auth/claim/curl',
+    httpOnly: true,
+    sameSite: 'Strict',
+    maxAge: CLAIM_TTL_SECONDS,
+    secure: new URL(c.req.url).hostname !== 'localhost',
+  });
+  return c.body(null, 204);
+});
+
+claimRoutes.get('/curl/instructions/:platform', async (c) => {
+  const platform = c.req.param('platform');
+  if (platform !== 'windows' && platform !== 'unix') return c.body(null, 404);
+
+  const deviceCode = (getCookie(c, CURL_DEVICE_COOKIE) ?? '').trim();
+  if (!isWellFormedDeviceCode(deviceCode)) return c.body(null, 404);
+  const recordRaw = await c.env.CLAIM_CODES.get(`claim:device:${deviceCode}`);
+  if (!recordRaw) return c.body(null, 404);
+  const record = JSON.parse(recordRaw) as ClaimRecord;
+  if (record.curl_platform !== platform) return c.body(null, 404);
+
+  const baseUrl = absoluteBaseUrl(new URL(c.req.url));
+  c.header('Cache-Control', 'no-store');
+  return c.text(
+    `\nOpen this URL to approve access:\n${baseUrl}/auth/claim?c=${encodeURIComponent(record.user_code)}` +
+    `\n\nRequest code: ${record.user_code}\nWaiting for approval...` +
+    `\nAfter approval, restart OpenCode to access BayLeaf.\n\n`,
+  );
+});
+
+claimRoutes.get('/curl/poll', async (c) => {
+  const deviceCode = (getCookie(c, CURL_DEVICE_COOKIE) ?? '').trim();
+  if (!isWellFormedDeviceCode(deviceCode)) {
+    return c.text('Claim session is missing or expired.', 404);
+  }
+
+  // Hold each request briefly to avoid a hot redirect loop. curl follows the
+  // pending redirect silently, preserving its in-memory cookie jar.
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const recordRaw = await c.env.CLAIM_CODES.get(`claim:device:${deviceCode}`);
+    if (!recordRaw) {
+      deleteCookie(c, CURL_DEVICE_COOKIE, { path: '/auth/claim/curl' });
+      return c.text('Claim session expired.', 404);
+    }
+    const record = JSON.parse(recordRaw) as ClaimRecord;
+
+    if (record.status === 'denied') {
+      await c.env.CLAIM_CODES.delete(`claim:device:${deviceCode}`);
+      await c.env.CLAIM_CODES.delete(`claim:user:${record.user_code}`);
+      deleteCookie(c, CURL_DEVICE_COOKIE, { path: '/auth/claim/curl' });
+      return c.text('Authorization denied.', 403);
+    }
+    if (record.status === 'approved') {
+      if (!record.key) {
+        return c.text('Approved claim has no key.', 500);
+      }
+      await c.env.CLAIM_CODES.delete(`claim:device:${deviceCode}`);
+      await c.env.CLAIM_CODES.delete(`claim:user:${record.user_code}`);
+      deleteCookie(c, CURL_DEVICE_COOKIE, { path: '/auth/claim/curl' });
+      console.log(`claim curl-success: user_code=${record.user_code} email=${record.approved_by ?? '-'}`);
+      c.header('Cache-Control', 'no-store');
+      return c.text(record.key);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+
+  return c.redirect('/auth/claim/curl/poll', 302);
 });
 
 // ── GET /auth/claim?c=USER_CODE ──────────────────────────────────
@@ -502,11 +595,10 @@ function ApprovalPage({ session, userCode, record, approveTok, denyTok }: Approv
           body { font-family: system-ui,-apple-system,sans-serif; line-height: 1.6;
             max-width: 560px; margin: 0 auto; padding: 2rem 1rem; background: #fafafa; color: #333; }
           h1 { color: #003c6c; margin-top: 0; }
-          .code { font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size: 2rem;
-            background: #1a1a1a; color: #0f0; padding: 1rem 1.25rem; border-radius: 6px;
-            text-align: center; letter-spacing: 0.1em; margin: 1.5rem 0; user-select: all; }
           .ident { background: white; border: 1px solid #ccc; border-radius: 6px; padding: 1rem; margin: 1rem 0; }
           .ident strong { color: #003c6c; }
+          .request-code { font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+            background: #f0f0f0; padding: 0.15rem 0.35rem; border-radius: 3px; user-select: all; }
           .meta { color: #555; font-size: 0.9rem; }
           form { display: inline; }
           button { padding: 0.75rem 1.5rem; border: none; border-radius: 4px; font-size: 1rem; cursor: pointer; }
@@ -521,13 +613,14 @@ function ApprovalPage({ session, userCode, record, approveTok, denyTok }: Approv
       <body>
         <h1>Authorize {record.client}</h1>
         <p>
-          A program in your terminal is requesting access to BayLeaf as you. Confirm
-          that the code below matches the one shown in your terminal:
+          Only approve if you just started this connection from your terminal.
         </p>
-        <div class="code">{userCode}</div>
         <div class="ident">
           <p style="margin: 0 0 0.5rem 0;">
-            Sign in as: <strong>{session.email}</strong>
+            <strong>Request code:</strong> <span class="request-code">{userCode}</span>
+          </p>
+          <p style="margin: 0 0 0.5rem 0;">
+            <strong>Signed in as:</strong> {session.email}
           </p>
           <p class="meta" style="margin: 0;">
             Request {ipLine}.
@@ -540,9 +633,8 @@ function ApprovalPage({ session, userCode, record, approveTok, denyTok }: Approv
           screen and is not written to your shell history.
         </p>
         <p class="warn">
-          If you didn't initiate this request, click <strong>Deny</strong>. If the
-          code above doesn't match what you see in your terminal,
-          {' '}<strong>do not approve.</strong>
+          If you didn't initiate this request, or the request code doesn't match
+          your terminal, click <strong>Deny</strong>.
         </p>
         <div class="actions">
           <form method="post" action="/auth/claim/approve">
@@ -571,7 +663,7 @@ interface ResultPageProps {
 function ResultPage({ kind, client }: ResultPageProps) {
   const title = kind === 'approved' ? 'Approved' : 'Denied';
   const msg = kind === 'approved'
-    ? `${client} has been authorized. Return to your terminal — your agent should be configured automatically within a few seconds.`
+    ? `${client} has been authorized. Return to your terminal, then restart OpenCode to access BayLeaf.`
     : `Authorization for ${client} was denied. You can close this tab.`;
   return (
     <html lang="en">

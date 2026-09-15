@@ -297,19 +297,18 @@ export const OpenCodeQuickstartCard: FC = () => (
     <h2>Connect BayLeaf to <a href="https://openchamber.dev/" target="_blank">OpenChamber</a> in one command</h2>
     <p>
       OpenChamber is a graphical interface over OpenCode and shares its provider settings.
-      The setup step currently requires OpenCode to be{' '}
-      <a href="https://opencode.ai/docs/" target="_blank">installed on your command line</a>.
-      Run this command once to register BayLeaf, with no config files to edit:
+      Open its built-in terminal and run this command once to register BayLeaf,
+      with no config files to edit:
     </p>
     <button type="button" class={copyBoxStyle} onclick="copyToClipboard(this)" style="margin-top: 0.5rem;">
       <code>opencode auth login https://api.bayleaf.dev</code>
       <span class="copy-hint">Click to copy</span>
     </button>
     <p style="margin-top: 0.75rem;">
-      Your terminal will show a short URL and claim code. Open the URL, sign in with UCSC,
-      verify the code, and approve the connection. Your key is delivered directly to OpenCode
-      without appearing on screen or in your shell history. Then open or restart OpenChamber;
-      BayLeaf will appear in its model picker. This standard setup uses zero-data-retention
+      Your terminal will show a short URL and request code. Open the URL, sign in with UCSC,
+      check the compact request code, and approve the connection. Your key is delivered directly
+      to OpenCode without appearing on screen or in your shell history. Then restart OpenCode to
+      access BayLeaf. This standard setup uses zero-data-retention
       inference and offers the widest compatibility and model choice.
     </p>
     <details style="margin-top: 1rem;">
@@ -338,7 +337,7 @@ export const OpenCodeQuickstartCard: FC = () => (
         <p>
           OpenCode fetches{' '}
           <a href="/.well-known/opencode" target="_blank"><code>/.well-known/opencode</code></a>{' '}
-          to learn how to authenticate, opens BayLeaf's browser approval flow, and stores the
+          to learn how to authenticate, displays BayLeaf's browser approval link, and stores the
           resulting credential under your BayLeaf URL in{' '}
           <code>~/.local/share/opencode/auth.json</code> (mode 0600). Whenever the OpenCode backend
           starts, including under OpenChamber, it fetches{' '}
@@ -348,10 +347,9 @@ export const OpenCodeQuickstartCard: FC = () => (
           and the recommended model and curated picks update automatically as we change them on the server.
         </p>
         <p>
-          <strong>Windows users:</strong> the auth command runs a POSIX shell script. Use{' '}
-          <a href="https://learn.microsoft.com/en-us/windows/wsl/install" target="_blank">WSL</a>{' '}
-          (or fall back to{' '}
-          <a href="/llms.txt" target="_blank">manual <code>opencode.json</code> setup</a>).
+          The shell-free setup requires <code>curl</code> 8.3 or newer. Current Windows and macOS
+          include it; Linux users with an older curl can use the{' '}
+          <a href="/llms.txt" target="_blank">manual <code>opencode.json</code> setup</a>.
         </p>
       </div>
     </details>

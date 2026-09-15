@@ -103,8 +103,8 @@ You only need to do one of these.
 [OpenChamber](https://openchamber.dev/) uses OpenCode as its backend and shares
 OpenCode's providers, models, and credentials. OpenCode supports a provider-discovery
 mechanism via ${bt}.well-known/opencode${bt}, so connecting BayLeaf needs zero edits
-to ${bt}opencode.json${bt}. Choose one of the two configurations below. Setup currently requires
-[OpenCode](https://opencode.ai/docs/) to be installed on your command line:
+to ${bt}opencode.json${bt}. Open OpenChamber's built-in terminal and choose one of the two
+configurations below. OpenChamber Desktop bundles the matching OpenCode command:
 
 **BayLeaf (recommended for most uses):** zero-data-retention inference with the widest
 compatibility and model choice.
@@ -121,13 +121,13 @@ ${fence}bash
 opencode auth login https://api.bayleaf.dev/sealed
 ${fence}
 
-OpenCode opens the [claim-code device flow](#claim-flow): your terminal prints a short
-URL and a code, you open the URL in a browser, sign in with UCSC credentials if you
-aren't already, confirm the code matches, and click **Approve**. Your BayLeaf API key
+OpenCode starts the [claim-code device flow](#claim-flow): your terminal prints a short
+URL and request code, you open the URL in a browser, sign in with UCSC credentials if you
+aren't already, check the compact request code, and click **Approve**. Your BayLeaf API key
 is delivered straight from the browser approval to OpenCode without ever appearing on
 screen or in your shell history. The approval page names the configuration you selected.
-Then open or restart OpenChamber: either ${bt}BayLeaf${bt} or ${bt}BayLeaf Sealed${bt}
-will appear in its model picker. If you prefer the terminal interface, run ${bt}opencode${bt}
+Then restart OpenCode to access BayLeaf: either ${bt}BayLeaf${bt} or ${bt}BayLeaf Sealed${bt}
+will appear in OpenChamber's model picker. If you prefer the terminal interface, run ${bt}opencode${bt}
 and pick a BayLeaf model with ${bt}/models${bt}.
 
 The recommended model and curated picks update automatically whenever the OpenCode
@@ -210,15 +210,9 @@ ${bt}BAYLEAF_API_KEY${bt} available in your environment, then run the logout com
 Logging out removes OpenCode's stored copy of the BayLeaf key along with the remote-config
 registration; it does not revoke the key at BayLeaf.
 
-**Requirements:** ${bt}curl${bt} and ${bt}python3${bt} on the system path. Both are
-present by default on macOS, modern Linux, and WSL. If either is missing, the auth
-command exits with a clear message and you can fall back to the manual config below.
-
-**Windows users:** the auth command runs a POSIX shell script. Use
-[WSL](https://learn.microsoft.com/en-us/windows/wsl/install), or follow the manual
-${bt}opencode.json${bt} setup at https://opencode.ai/docs/providers/#custom-provider with the
-fields ${bt}npm: "@ai-sdk/openai-compatible"${bt}, ${bt}options.baseURL: "https://api.bayleaf.dev/v1"${bt},
-${bt}options.apiKey: "{env:BAYLEAF_API_KEY}"${bt}.
+**Requirement:** ${bt}curl${bt} 8.3 or newer on the system path. Current Windows and
+macOS include it. Linux users with an older curl can follow the manual ${bt}opencode.json${bt}
+setup below.
 
 #### Roll your own ${bt}bayleaf${bt} provider (optional)
 
