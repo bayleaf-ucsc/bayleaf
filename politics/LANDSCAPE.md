@@ -1,6 +1,6 @@
 # University AI infrastructure landscape
 
-Last updated: 2026-09-01
+Last updated: 2026-09-15
 
 ## Intent
 
@@ -1564,10 +1564,11 @@ monitoring; batch and cache behavior; dedicated deployment; and certifications.
 
 Tracked services include the US National Research Platform/SDSC service,
 university research-computing centers, national supercomputing programs, and consortial
-cloud frameworks such as GÉANT OCRE. NRP serves open-weight models through Envoy AI
-Gateway and vLLM with CILogon authentication. Its documentation states that prompts
-are logged. The record therefore classifies the service as non-ZDR. NRP's managed LLM
-service specifically offers open-weight models.
+cloud frameworks such as GÉANT OCRE. NRP serves open-weight models through what its
+documentation calls Envoy AI Gateway (now Agent Router) and vLLM with CILogon
+authentication. Its documentation states that prompts are logged. The record therefore
+classifies the service as non-ZDR. NRP's managed LLM service specifically offers
+open-weight models.
 
 Track eligibility, funding, queue and quota models, supported weights, service levels,
 retention, operator access, identity federation, governance, and whether teaching and
@@ -1643,17 +1644,42 @@ identity, audit, and governance features are commercial. Track release and secur
 history, license boundaries, provider coverage, policy enforcement, secret handling,
 logs, identity, cost accounting, MCP permissions, and operational complexity.
 
-#### Envoy AI Gateway
+#### Agent Router (formerly Envoy AI Gateway)
 
-**Last verified:** 2026-08-31<br>
-**Role:** Open infrastructure-level AI gateway
+**Last verified:** 2026-09-15<br>
+**Role:** Apache-2.0 infrastructure-level AI and MCP gateway<br>
+**Status:** Active; version 1.1 released August 21, 2026
 
-[Envoy AI Gateway](https://aigateway.envoyproxy.io/) extends Envoy and Kubernetes
-Gateway API patterns to model routing, authentication, token-aware limits, and cost
-controls. It is used by NRP and is structurally different from a hosted marketplace:
-the deploying institution controls the gateway, while downstream providers still
-determine inference privacy. Track CNCF governance, releases, provider adapters,
-identity, budget enforcement, observability, MCP support, and institutional adopters.
+[Agent Router](https://theagentrouter.ai/docs/) is the new project name for Envoy AI
+Gateway. On September 10, 2026 it moved from an Envoy subproject to the Linux
+Foundation's Agentic AI Foundation. The
+[announcement](https://theagentrouter.ai/blog/envoy-ai-gateway-is-now-agent-router/)
+states that the maintainers, Apache-2.0 license, release cadence, CRDs, API group,
+container names, `aigw` CLI, and Envoy data plane did not change.
+
+The gateway presents OpenAI- and Anthropic-compatible endpoints and applies routing,
+provider translation, upstream credentials, failover, model-name virtualization, and
+token accounting. [Version 1.1](https://github.com/theagentrouter/agent-router/releases/tag/v1.1.0)
+added per-request upstream credentials, pre-response streaming failover, token-counting
+endpoints, and additional MCP routing controls. Its
+[quota policy](https://theagentrouter.ai/docs/capabilities/traffic/quota-policy) uses
+Redis-backed per-model token budgets; service-wide quotas are present in the API but
+not yet enforced. The [MCP gateway](https://theagentrouter.ai/docs/capabilities/mcp/)
+aggregates servers and applies OAuth, tool filtering, header forwarding, and CEL-based
+authorization.
+
+The [quickstart](https://theagentrouter.ai/docs/getting-started/) provides a standalone
+binary for local use and prescribes Envoy Gateway on Kubernetes for production. Agent
+Router is routing software, not a hosted model marketplace: an institution operating
+it must separately obtain provider accounts, credentials, contracts, model catalogs,
+and billing. The gateway processes plaintext on ordinary inference paths, and downstream
+provider terms still determine retention and training use. Its
+[OpenInference tracing](https://theagentrouter.ai/docs/capabilities/observability/tracing)
+records full request and response content by default when an operator configures a
+collector, unless hiding controls are set. Track AAIF governance, releases, Kubernetes
+and Redis operating costs, provider adapters, identity, quota correctness, log and trace
+configuration, MCP authorization, institutional adopters, and the separate commercial
+services built from the project.
 
 #### Other gateways
 
@@ -2197,6 +2223,12 @@ The following records await primary-source research:
   challenges, which are less consistently announced than purchases.
 
 ## Update log
+
+### 2026-09-15
+
+- Replaced the Envoy AI Gateway ecosystem record with Agent Router, recording its move
+  to the Agentic AI Foundation, unchanged deployment identifiers, version 1.1 feature
+  set, production dependencies, marketplace boundary, and content-tracing risk.
 
 ### 2026-09-01
 

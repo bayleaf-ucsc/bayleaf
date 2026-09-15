@@ -55,7 +55,6 @@ export async function createKey(name: string, env: Bindings): Promise<OpenRouter
   });
   
   const responseText = await response.text();
-  console.log('OpenRouter create key response:', response.status, responseText);
   
   if (!response.ok) {
     return null;

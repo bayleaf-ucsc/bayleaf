@@ -19,8 +19,8 @@ is better than a procurement contract with a 5-year renewal and no exit clause.
 | DNS / CDN / Workers | Cloudflare | Public (NYSE: NET) | Content moderation controversies. Traffic-level visibility into all requests. | Move Workers to any edge platform. | Moderate |
 | Chat hosting + DB | DigitalOcean | Public (NYSE: DOCN) | US cloud provider. Holds the OWUI PostgreSQL database: user accounts, conversation histories, access grants. | Migrate Docker + Postgres to any host. | Moderate |
 | Identity | CILogon (InCommon Federation) | Internet2 / UCSC IdP | Authentication via institutional SAML/OIDC through CILogon. Users authenticate against UCSC's own IdP, not Google directly. Exposes `affiliation` claim (student/staff/faculty). Could extend to any InCommon institution. | Switch OIDC_ISSUER to any compliant provider. Google config documented as fallback. | Low |
-| LLM gateway | OpenRouter | a16z, Menlo Ventures ($40M) | a16z founders donated $25M+ to Trump-aligned political committees in 2024. Every API call generates revenue flowing to a16z portfolio returns. | [Envoy AI Gateway](https://aigateway.envoyproxy.io/) (open source, used by NRP), [LiteLLM](https://www.litellm.ai/) (self-hostable), or direct API calls to providers. | Moderate |
-| LLM inference (institutional) | [NRP / SDSC](https://nrp.ai/documentation/userdocs/ai/llm-managed/) | NSF-funded, operated by SDSC (UC San Diego) | Public research infrastructure. Open-weight models served via Envoy AI Gateway on NRP Nautilus with CILogon auth. Configured but disabled because NRP's documented prompt-logging policy does not meet BayLeaf's ZDR floor. | Technically integrated, but not a current exit until the retention policy changes or a non-logging endpoint is established. | Low |
+| LLM gateway | OpenRouter | a16z, Menlo Ventures ($40M) | a16z founders donated $25M+ to Trump-aligned political committees in 2024. Every API call generates revenue flowing to a16z portfolio returns. | [Agent Router](https://theagentrouter.ai/) (formerly Envoy AI Gateway; open source and used by NRP), [LiteLLM](https://www.litellm.ai/) (self-hostable), or direct API calls to providers. These replace routing software, not OpenRouter's provider marketplace, contracts, catalog, or billing. | Moderate |
+| LLM inference (institutional) | [NRP / SDSC](https://nrp.ai/documentation/userdocs/ai/llm-managed/) | NSF-funded, operated by SDSC (UC San Diego) | Public research infrastructure. Open-weight models served via what NRP documents as Envoy AI Gateway (now Agent Router) on NRP Nautilus with CILogon auth. Configured but disabled because NRP's documented prompt-logging policy does not meet BayLeaf's ZDR floor. | Technically integrated, but not a current exit until the retention policy changes or a non-logging endpoint is established. | Low |
 | LLM inference (institutional commercial path) | Google Vertex AI | Alphabet (NASDAQ: GOOGL) | UC/UCSC has negotiated Google Cloud data-protection agreements, but coverage of BayLeaf's operator-controlled project is not confirmed. Disabled because Google did not grant or confirm the Abuse Monitoring opt-out required for ZDR parity. | Bedrock for overlapping models, OpenRouter ZDR endpoints, or an ITS-managed GCP project with confirmed coverage and retention settings. | Moderate |
 | LLM inference (institutional commercial path) | Amazon Bedrock (mantle) | Amazon (NASDAQ: AMZN) | UC has institutional AWS/BAA arrangements, but BayLeaf's POC credential is from the operator's personal account and is uncovered. The account was tested in retention mode `none`; the lane remains disabled pending an institutional credential and an enforceable open-weight listing policy. | Vertex for overlapping models, OpenRouter ZDR endpoints, or a UCSC enterprise AWS account satisfying the enablement checklist. | Moderate |
 | LLM inference (confidential) | [Tinfoil](https://tinfoil.sh/) | Private, venture-funded startup (Y Combinator S25) | Open-weight models inside hardware-isolated enclaves. A correctly verifying client encrypts content to the attested workload, architecturally excluding BayLeaf, Tinfoil, and infrastructure operators from plaintext access. Tinfoil still receives identity-linked key metadata, timing, model, token counts, and billing data. Security depends on TEE hardware and firmware, attestation roots, reproducible builds, an approved-measurement policy, and correct client verification. | [NEAR AI Cloud](https://near.ai/) offers a close architectural alternative using TDX + NVIDIA confidential computing, open verification tooling, and direct per-model endpoints. Its contractual ZDR language and independent evidence remain less settled; run the same conformance suite before switching. | Moderate |
@@ -32,30 +32,35 @@ is better than a procurement contract with a 5-year renewal and no exit clause.
 ## Structural observations
 
 **The inference stack now has two layers of indirection.** ✨ The dependency table above
-separates *gateway* (OpenRouter, Envoy AI Gateway) from *provider* (DeepInfra,
+separates *gateway* (OpenRouter, Agent Router) from *provider* (DeepInfra,
 SDSC/NRP, etc.). These are different kinds of dependency with different political
 profiles and different exit paths. OpenRouter is a commercial gateway that multiplexes
-across commercial providers. NRP runs its own [Envoy AI Gateway](https://aigateway.envoyproxy.io/)
-in front of [vLLM](https://vllm.ai/) on NSF-funded GPUs: open-source software on
-public infrastructure, serving open-weight models. That path demonstrates technical
-portability, but NRP is disabled because its prompt-logging policy does not meet
-BayLeaf's ZDR floor. It is an implemented exit path, not a currently usable one.
+across commercial providers. NRP runs what its documentation calls Envoy AI Gateway
+(the project is now [Agent Router](https://theagentrouter.ai/)) in front of
+[vLLM](https://vllm.ai/) on NSF-funded GPUs: open-source software on public
+infrastructure, serving open-weight models. That path demonstrates technical portability,
+but NRP is disabled because its prompt-logging policy does not meet BayLeaf's ZDR floor.
+It is an implemented exit path, not a currently usable one.
 
-**Envoy AI Gateway is the open-source counterpart to OpenRouter.** NRP adopted it;
-Bloomberg, Nutanix, and Tencent Cloud are listed adopters. It routes to the same
-provider APIs (OpenAI-compatible) and supports the same protocol surface. Where
-OpenRouter is a commercial SaaS gateway with VC funding, Envoy AI Gateway is an
-open-source project under the Envoy/CNCF umbrella. The relationship between them is
-the same as between a managed service and a self-hosted alternative: functionally
-equivalent, politically different. Gateway portability does not erase the retention
-policy of the service operating it.
+**Agent Router can replace OpenRouter's routing layer, not OpenRouter as a service.**
+[Agent Router](https://theagentrouter.ai/blog/envoy-ai-gateway-is-now-agent-router/),
+formerly Envoy AI Gateway, is Apache-2.0 software under the Linux Foundation's Agentic
+AI Foundation. It normalizes provider APIs and supplies routing, credentials, failover,
+token quotas, observability, and MCP policy. OpenRouter additionally sells access to a
+provider marketplace and supplies provider selection, catalog metadata, ZDR routing,
+per-user key provisioning, spend accounting, and consolidated billing. Replacing it
+with Agent Router would require BayLeaf to obtain direct provider accounts and contracts,
+verify retention and model eligibility, operate Kubernetes and Redis for the production
+feature set, and preserve its own identity and policy layer. Gateway portability does
+not erase the retention policy of the service operating the gateway or of its downstream
+providers.
 
 **SDSC/NRP is a provider-layer alternative, not a gateway-layer one.** The right
-analogy: NRP is to DeepInfra as Envoy AI Gateway is to OpenRouter. NRP replaces a
-specific commercial inference provider with institutional GPU capacity. Envoy AI
-Gateway replaces a specific commercial routing service with open-source gateway
-software. Both substitutions are architecturally available; the current NRP service
-is not policy-compatible while prompt logging remains enabled.
+analogy: NRP is to DeepInfra as Agent Router is to OpenRouter's routing layer. NRP
+replaces a specific commercial inference provider with institutional GPU capacity.
+Agent Router replaces gateway software, but not OpenRouter's provider relationships and
+commercial aggregation. Both substitutions are architecturally available; the current
+NRP service is not policy-compatible while prompt logging remains enabled.
 
 **The ZDR boundary is narrower than it sounds.** "No message content is stored by
 any third-party provider" is true for the LLM inference path. The OWUI database on
