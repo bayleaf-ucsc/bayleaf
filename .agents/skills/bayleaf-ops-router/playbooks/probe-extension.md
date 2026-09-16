@@ -125,3 +125,8 @@ files. Do not commit or push without explicit approval.
   remote-browser HEAD; adding `--api-only` made layer evidence independent.
   Endpoint qualification passed; initial monitor sampling and controlled
   failure/recovery alert verification remain Adam gates.
+- 2026-09-15: Issue #68's recorded VPAT sessions reused the probe identity and
+  cleanup discipline but were correctly implemented as an operator-run harness,
+  not a monitor route. Cloudflare session recordings are rrweb event archives,
+  not videos; producing reference MP4s requires a separately verified replay and
+  encoding step.

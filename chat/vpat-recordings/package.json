@@ -1,0 +1,14 @@
+{
+  "name": "bayleaf-vpat-recordings",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "record": "node record.mjs",
+    "check": "node --check record.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.61.1",
+    "puppeteer-core": "^25.11.0",
+    "rrweb-player": "^2.1.4"
+  }
+}

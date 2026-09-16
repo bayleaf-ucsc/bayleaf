@@ -1,0 +1,179 @@
+{
+  "schema": 2,
+  "flow": "2.1.1-keyboard-two-turn-delete",
+  "captured_at": "2026-09-15T23:34:01.484Z",
+  "surface": "https://chat.bayleaf.dev",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "model": "basic",
+  "prompts": [
+    "What is BayLeaf? Answer in two sentences.",
+    "In one sentence, who can use it?"
+  ],
+  "cloudflare_recording": {
+    "duration_ms": 36159,
+    "target": "2BD6B18D03F3FE60739ECDBC02FB6B63",
+    "event_count": 241
+  },
+  "evidence": {
+    "shift_tab_reached_composer": true,
+    "first_prompt_submitted": true,
+    "first_answer_completed": true,
+    "follow_up_submitted": true,
+    "follow_up_answer_completed": true,
+    "chat_menu_keyboard_reached": true,
+    "delete_command_keyboard_reached": true,
+    "delete_dialog_keyboard_confirmed": true,
+    "exact_chat_deleted_in_ui": true
+  },
+  "focus_trail": [
+    {
+      "tag": "body",
+      "id": null,
+      "role": null,
+      "label": null,
+      "outlineStyle": "none",
+      "outlineWidth": "0px",
+      "boxShadow": "none"
+    },
+    {
+      "tag": "button",
+      "id": null,
+      "role": "listitem",
+      "label": null,
+      "outlineStyle": "solid",
+      "outlineWidth": "2px",
+      "boxShadow": "none"
+    },
+    {
+      "tag": "button",
+      "id": null,
+      "role": "listitem",
+      "label": null,
+      "outlineStyle": "solid",
+      "outlineWidth": "2px",
+      "boxShadow": "none"
+    },
+    {
+      "tag": "button",
+      "id": null,
+      "role": "listitem",
+      "label": null,
+      "outlineStyle": "solid",
+      "outlineWidth": "2px",
+      "boxShadow": "none"
+    },
+    {
+      "tag": "button",
+      "id": null,
+      "role": "listitem",
+      "label": null,
+      "outlineStyle": "solid",
+      "outlineWidth": "2px",
+      "boxShadow": "none"
+    },
+    {
+      "tag": "button",
+      "id": null,
+      "role": "listitem",
+      "label": null,
+      "outlineStyle": "solid",
+      "outlineWidth": "2px",
+      "boxShadow": "none"
+    },
+    {
+      "tag": "button",
+      "id": null,
+      "role": "listitem",
+      "label": null,
+      "outlineStyle": "solid",
+      "outlineWidth": "2px",
+      "boxShadow": "none"
+    },
+    {
+      "tag": "button",
+      "id": "model-selector-model-button",
+      "role": null,
+      "label": "Selected model: Basic",
+      "outlineStyle": "solid",
+      "outlineWidth": "2px",
+      "boxShadow": "none"
+    },
+    {
+      "tag": "button",
+      "id": null,
+      "role": null,
+      "label": "Available Skills",
+      "outlineStyle": "solid",
+      "outlineWidth": "2px",
+      "boxShadow": "none"
+    },
+    {
+      "tag": "button",
+      "id": "integration-menu-button",
+      "role": null,
+      "label": "Integrations",
+      "outlineStyle": "solid",
+      "outlineWidth": "2px",
+      "boxShadow": "none"
+    },
+    {
+      "tag": "button",
+      "id": "input-menu-button",
+      "role": null,
+      "label": "More",
+      "outlineStyle": "solid",
+      "outlineWidth": "2px",
+      "boxShadow": "none"
+    },
+    {
+      "tag": "div",
+      "id": "chat-input",
+      "role": null,
+      "label": "How can I help you today?",
+      "outlineStyle": "none",
+      "outlineWidth": "0px",
+      "boxShadow": "none"
+    }
+  ],
+  "delete_focus_trail": [
+    {
+      "id": null,
+      "text": "Skip to main content",
+      "label": null
+    },
+    {
+      "id": null,
+      "text": null,
+      "label": null
+    },
+    {
+      "id": null,
+      "text": null,
+      "label": "Open Sidebar"
+    },
+    {
+      "id": null,
+      "text": null,
+      "label": "New Chat"
+    },
+    {
+      "id": null,
+      "text": null,
+      "label": "Search"
+    },
+    {
+      "id": null,
+      "text": null,
+      "label": "User menu"
+    },
+    {
+      "id": "chat-context-menu-button",
+      "text": null,
+      "label": "Chat actions"
+    }
+  ],
+  "cleanup": "confirmed_ui"
+}

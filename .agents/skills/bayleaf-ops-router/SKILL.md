@@ -1,6 +1,6 @@
 ---
 name: bayleaf-ops-router
-description: Operations playbooks for the BayLeaf platform (Chat at chat.bayleaf.dev, API at api.bayleaf.dev). Use when the user mentions Dependabot or dependency bumps for the API, upgrading Open WebUI, changing the LLM behind Basic or Help, editing system prompts or tools in prod, privacy notice changes, bumping spin-off modules like Lathe, adding a new service facet, or running the prod-to-repo backup/reconcile procedure.
+description: Operations playbooks for the BayLeaf platform (Chat at chat.bayleaf.dev, API at api.bayleaf.dev). Use when the user mentions Dependabot or dependency bumps for the API, upgrading Open WebUI, changing the LLM behind Basic or Help, editing system prompts or tools in prod, accessibility evidence or VPAT recordings, privacy notice changes, bumping spin-off modules like Lathe, adding a new service facet, or running the prod-to-repo backup/reconcile procedure.
 ---
 
 # BayLeaf Operations Playbooks
@@ -21,6 +21,7 @@ whole clump.
 | Privacy notice / subprocessor / retention change | `playbooks/privacy-notice-change.md` |
 | New service or API facet (new lane, subdomain, connection) | `playbooks/new-service-facet.md` |
 | New synthetic probe route, probe contract, or UptimeRobot monitor | `playbooks/probe-extension.md` |
+| Accessibility evidence, keyboard-flow recording, or Chat VPAT update | `playbooks/accessibility-evidence.md` |
 | Bumping a spin-off module (Lathe, gws-toolkit, other toolkits) | `playbooks/spinoff-module-bump.md` |
 | Pulling prod state back into the repo (backup, drift reconcile) | `playbooks/backup-reconcile.md` |
 

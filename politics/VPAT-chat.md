@@ -2,10 +2,10 @@
 
 **Service:** BayLeaf Chat ([`chat.bayleaf.dev`](https://chat.bayleaf.dev)), a surface of BayLeaf<br>
 **Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz<br>
-**Status:** Working draft. Not a signed ACR. A first empirical pass (2026-04-29) covered the authenticated landing page and produced concrete findings for the criteria most relevant to a chat surface; the remainder are still Not Evaluated, pending (in part) a published ACR from upstream Open WebUI (see [§ 1](#1-surface-description)).<br>
+**Status:** Working draft. Not a signed ACR. A first empirical pass (2026-04-29) covered the authenticated landing page and produced concrete findings for the criteria most relevant to a chat surface. A recorded keyboard-only chat flow (2026-09-15) added inspectable evidence for keyboard reachability and focus visibility. The remainder are still Not Evaluated, pending (in part) a published ACR from upstream Open WebUI (see [§ 1](#1-surface-description)).<br>
 **Template:** [VPAT® 2.5 INT](https://www.itic.org/policy/accessibility/vpat), covering [WCAG 2.1](https://www.w3.org/TR/WCAG21/) Level A and AA, [Revised Section 508](https://www.access-board.gov/ict/), and [EN 301 549](https://www.etsi.org/deliver/etsi_en/301500_301599/301549/).
 
-**Methodology.** The 2026-04-29 pass used headless Chromium driven by [rodney](https://github.com/simonw/rodney), authenticated to `chat.bayleaf.dev` via JWT cookie, running [axe-core](https://github.com/dequelabs/axe-core) v4.10.2 with the `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa` tag filter, plus targeted DOM/CSS probes for focus visibility, landmarks, headings, live-region structure, and accessible-name coverage on composer and send controls. The pass did **not** include a real screen-reader run (NVDA/VoiceOver) and did **not** cover settings modals, admin views, or the model workspace builder. Findings below therefore establish Does Not Support claims where evidence is unambiguous, and leave Supports claims off the table until a screen-reader pass is done.
+**Methodology.** The 2026-04-29 pass used headless Chromium driven by [rodney](https://github.com/simonw/rodney), authenticated to `chat.bayleaf.dev` via JWT cookie, running [axe-core](https://github.com/dequelabs/axe-core) v4.10.2 with the `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa` tag filter, plus targeted DOM/CSS probes for focus visibility, landmarks, headings, live-region structure, and accessible-name coverage on composer and send controls. On 2026-09-15, a Cloudflare Browser Run session traversed the production Basic chat by keyboard: `Shift+Tab` to the composer, first prompt and completed answer, follow-up prompt and completed answer, then Chat actions, Delete, confirmation, and return to the empty opening screen. The exact marked chat was deleted through the UI and its absence independently verified through the API. The [MP4 rendering](vpat-chat-videos/2.1.1-keyboard-two-turn-delete.mp4) and [measurement manifest](vpat-chat-videos/2.1.1-keyboard-two-turn-delete.json) are retained as reference evidence; the full-DOM rrweb intermediate is not retained. This recorded pass used an injected ordinary-user session and therefore did not test CILogon. Neither pass included a real screen-reader run (NVDA/VoiceOver), settings modals, admin views, or the model workspace builder. Findings below therefore establish Does Not Support claims where evidence is unambiguous, and leave broad Supports claims off the table until a screen-reader pass is done.
 
 > This is a per-surface ACR. Framing, inheritance map, evaluation methodology, open questions, and references live in [VPAT-overview.md](VPAT-overview.md). Read that document first for the posture; read this one for surface-specific findings and the conformance table.
 
@@ -83,23 +83,29 @@ Each item maps to a row in [§ 3](#3-wcag-21-level-a-conformance) or
   to reach content.
 - **Missing `:focus-visible` styling on core chrome** (2.4.7): an inspection
   of loaded stylesheets found nine `:focus-visible` rules, all for third-party
-  widgets (Sonner toasts, Svelte Flow). The sidebar controls, model selector,
-  composer, send button, and banner close buttons have `outline: none` from
-  Tailwind resets with no authored replacement style. Keyboard users receive
-  no consistent visual focus indicator on Open WebUI's own UI.
-- **Composer has no accessible name** (4.1.2, 3.3.2): `#chat-input` is a
-  `<div contenteditable="true">` with no `role`, no `aria-label`, and no
-  `aria-placeholder`. The visible "How can I help you today?" / "Send a
-  Message" placeholder is a Tiptap CSS `::before` pseudo-element on a
-  `data-placeholder` attribute and is not exposed to the accessibility tree.
+  widgets (Sonner toasts, Svelte Flow). In that pass, the core Open WebUI chrome
+  had no consistent authored replacement style. The 2026-09-15 recorded pass
+  found Chromium's 2px default outline on the 10 traversed buttons between the
+  body and composer, but reached the composer after 12 `Shift+Tab` presses and measured its
+  focused style as `outline: none 0px` with no box shadow. The criterion still
+  fails for that essential control.
+- **Composer name and role** (4.1.2, 3.3.2): on 2026-04-29, `#chat-input` was a
+  `<div contenteditable="true">` with no `role`, `aria-label`, or
+  `aria-placeholder`; its visible placeholder came from a CSS pseudo-element.
+  The 2026-09-15 pass found that upstream now supplies `aria-label="How can I
+  help you today?"`, but still found no explicit role. The prior accessible-name
+  defect is not claimed as current; role and accessibility-tree behavior need a
+  targeted screen-reader/AX-tree re-evaluation.
 - **Send button has no accessible name** (4.1.2): `#send-message-button` is a
   `<button>` containing only an SVG, with no `aria-label`, no `title`, and no
   `<title>` inside the SVG. The button only renders after text is entered
   in the composer, which is why axe-core did not flag it in the automated
   pass. The same structural issue likely affects the voice-input and
   stop-generation buttons visible during streaming.
-- **Icon button without accessible name** (4.1.2, axe `button-name`):
-  `#temporary-chat-button` in the top bar renders an SVG with no label.
+- **Icon button without accessible name** (4.1.2, axe `button-name`): on
+  2026-04-29, `#temporary-chat-button` rendered an SVG with no label. The
+  2026-09-15 keyboard pass found `aria-label="Temporary Chat"`, so this specific
+  defect appears fixed upstream and awaits a broader 4.1.2 re-test.
 - **Focusable `aria-hidden` element** (4.1.2, axe `aria-hidden-focus`):
   a button labeled "Get information on Basic in the UI" is marked
   `aria-hidden="true"` while remaining focusable, which exposes
@@ -253,7 +259,7 @@ Remarks have been trimmed to the Chat surface. Sentences in the pre-split draft 
 | 1.3.3 | [Sensory Characteristics](https://www.w3.org/WAI/WCAG21/Understanding/sensory-characteristics) | N/E | Not yet evaluated for this surface; see [VPAT-api.md](VPAT-api.md), [VPAT-pages.md](VPAT-pages.md) for sibling-surface observations. |
 | 1.4.1 | [Use of Color](https://www.w3.org/WAI/WCAG21/Understanding/use-of-color) | N/E | Not yet evaluated for this surface; see [VPAT-api.md](VPAT-api.md), [VPAT-pages.md](VPAT-pages.md) for sibling-surface observations. |
 | 1.4.2 | [Audio Control](https://www.w3.org/WAI/WCAG21/Understanding/audio-control) | N/A | No auto-playing audio. |
-| 2.1.1 | [Keyboard](https://www.w3.org/WAI/WCAG21/Understanding/keyboard) | N/E | Not yet evaluated for this surface; see [VPAT-api.md](VPAT-api.md), [VPAT-pages.md](VPAT-pages.md) for sibling-surface observations. |
+| 2.1.1 | [Keyboard](https://www.w3.org/WAI/WCAG21/Understanding/keyboard) | N/E | 2026-09-15 recorded pass: one production flow reached the Basic composer after 12 `Shift+Tab` presses; submitted a prompt and follow-up with `Enter`; rendered both completed answers; reached Chat actions, Delete, and confirmation by keyboard; and deleted the exact marked chat through the UI. See the [video and manifest](vpat-chat-videos/). This establishes keyboard operation for that bounded flow only, not all Chat functionality, so the criterion remains Not Evaluated. |
 | 2.1.2 | [No Keyboard Trap](https://www.w3.org/WAI/WCAG21/Understanding/no-keyboard-trap) | N/E | Not yet evaluated for this surface; see [VPAT-api.md](VPAT-api.md), [VPAT-pages.md](VPAT-pages.md) for sibling-surface observations. |
 | 2.1.4 | [Character Key Shortcuts](https://www.w3.org/WAI/WCAG21/Understanding/character-key-shortcuts) | Supports (provisional) | 2026-04-29 pass: no `accesskey` attributes and no single-character shortcut bindings observed on the landing page. Open WebUI's documented shortcuts use Ctrl/Cmd/Shift modifiers. Re-verify if upstream adds new shortcuts. |
 | 2.2.1 | [Timing Adjustable](https://www.w3.org/WAI/WCAG21/Understanding/timing-adjustable) | N/E | Not yet evaluated for this surface; see [VPAT-api.md](VPAT-api.md), [VPAT-pages.md](VPAT-pages.md) for sibling-surface observations. |
@@ -271,9 +277,9 @@ Remarks have been trimmed to the Chat surface. Sentences in the pre-split draft 
 | 3.2.1 | [On Focus](https://www.w3.org/WAI/WCAG21/Understanding/on-focus) | N/E | Not yet evaluated for this surface; see [VPAT-api.md](VPAT-api.md), [VPAT-pages.md](VPAT-pages.md) for sibling-surface observations. |
 | 3.2.2 | [On Input](https://www.w3.org/WAI/WCAG21/Understanding/on-input) | N/E | Not yet evaluated for this surface; see [VPAT-api.md](VPAT-api.md), [VPAT-pages.md](VPAT-pages.md) for sibling-surface observations. |
 | 3.3.1 | [Error Identification](https://www.w3.org/WAI/WCAG21/Understanding/error-identification) | N/E | Not yet evaluated for this surface; see [VPAT-api.md](VPAT-api.md), [VPAT-pages.md](VPAT-pages.md) for sibling-surface observations. |
-| 3.3.2 | [Labels or Instructions](https://www.w3.org/WAI/WCAG21/Understanding/labels-or-instructions) | Does Not Support | 2026-04-29 pass: the chat composer (`#chat-input`, a `contenteditable` div) has no programmatic label; its visible placeholder is a CSS pseudo-element not exposed to assistive technology. Upstream Tiptap/ProseMirror integration defect. |
+| 3.3.2 | [Labels or Instructions](https://www.w3.org/WAI/WCAG21/Understanding/labels-or-instructions) | N/E | The 2026-04-29 pass found no programmatic label on the chat composer. The 2026-09-15 recorded pass found that upstream now supplies `aria-label="How can I help you today?"`; this specific defect was not reproduced. A complete labels/instructions pass is still required before making a Supports claim. |
 | 4.1.1 | [Parsing](https://www.w3.org/WAI/WCAG21/Understanding/parsing) | N/E | Not yet evaluated for this surface; see [VPAT-api.md](VPAT-api.md), [VPAT-pages.md](VPAT-pages.md) for sibling-surface observations. |
-| 4.1.2 | [Name, Role, Value](https://www.w3.org/WAI/WCAG21/Understanding/name-role-value) | Does Not Support | 2026-04-29 pass: multiple defects. (a) Chat composer is a `contenteditable` div with no `role`/`aria-label`. (b) `#send-message-button` is SVG-only with no accessible name. (c) `#temporary-chat-button` icon button has no accessible name (axe `button-name`). (d) A button with `aria-hidden="true"` remains focusable (axe `aria-hidden-focus`). (e) Nested interactive controls observed (axe `nested-interactive`). All upstream Open WebUI defects. |
+| 4.1.2 | [Name, Role, Value](https://www.w3.org/WAI/WCAG21/Understanding/name-role-value) | Does Not Support | 2026-04-29 pass: multiple upstream defects, including an unnamed composer and Temporary Chat button, an SVG-only send button with no accessible name, a focusable `aria-hidden` button, and nested interactive controls. The 2026-09-15 bounded pass found `aria-label` values on the composer and Temporary Chat button, so those two name defects appear fixed; the composer still had no explicit role. Re-test the full criterion against the current version before narrowing or removing this claim. |
 
 ---
 
@@ -295,8 +301,8 @@ Level AA is the target set for [ADA Title II](https://www.ada.gov/resources/2024
 | 1.4.12 | [Text Spacing](https://www.w3.org/WAI/WCAG21/Understanding/text-spacing) | N/E | Not yet evaluated for this surface; see [VPAT-api.md](VPAT-api.md), [VPAT-pages.md](VPAT-pages.md) for sibling-surface observations. |
 | 1.4.13 | [Content on Hover or Focus](https://www.w3.org/WAI/WCAG21/Understanding/content-on-hover-or-focus) | N/E | Not yet evaluated for this surface; see [VPAT-api.md](VPAT-api.md), [VPAT-pages.md](VPAT-pages.md) for sibling-surface observations. |
 | 2.4.5 | [Multiple Ways](https://www.w3.org/WAI/WCAG21/Understanding/multiple-ways) | N/A | Not applicable to this surface. |
-| 2.4.6 | [Headings and Labels](https://www.w3.org/WAI/WCAG21/Understanding/headings-and-labels) | Does Not Support | 2026-04-29 pass: landing page has no heading elements at all; visually-prominent titles ("Basic", "Suggested") are styled divs. Also covers composer / send button label defects noted at 3.3.2 and 4.1.2. Upstream defect. |
-| 2.4.7 | [Focus Visible](https://www.w3.org/WAI/WCAG21/Understanding/focus-visible) | Does Not Support | 2026-04-29 pass: stylesheet inspection found only nine `:focus-visible` rules, all for third-party widgets (Sonner, Svelte Flow). Core Open WebUI chrome (sidebar, model selector, composer, send, banner close) has `outline: none` from Tailwind resets with no authored replacement. Keyboard users receive no consistent visual focus indicator. Upstream defect. |
+| 2.4.6 | [Headings and Labels](https://www.w3.org/WAI/WCAG21/Understanding/headings-and-labels) | Does Not Support | 2026-04-29 pass: landing page has no heading elements at all; visually-prominent titles ("Basic", "Suggested") are styled divs. Also covers the send-button label defect noted at 4.1.2. Upstream defect. |
+| 2.4.7 | [Focus Visible](https://www.w3.org/WAI/WCAG21/Understanding/focus-visible) | Does Not Support | 2026-04-29 pass: stylesheet inspection found only nine `:focus-visible` rules, all for third-party widgets (Sonner, Svelte Flow). Core Open WebUI chrome has no consistent authored replacement. The 2026-09-15 [recorded keyboard pass](vpat-chat-videos/2.1.1-keyboard-two-turn-delete.mp4) reached the composer after 12 `Shift+Tab` presses and measured its focused style as `outline: none 0px` with no box shadow. Upstream defect. |
 | 3.1.2 | [Language of Parts](https://www.w3.org/WAI/WCAG21/Understanding/language-of-parts) | N/A | No foreign-language passages on BayLeaf-authored surfaces. |
 | 3.2.3 | [Consistent Navigation](https://www.w3.org/WAI/WCAG21/Understanding/consistent-navigation) | N/A | Single-page surfaces. |
 | 3.2.4 | [Consistent Identification](https://www.w3.org/WAI/WCAG21/Understanding/consistent-identification) | N/E | Not yet evaluated for this surface; see [VPAT-api.md](VPAT-api.md), [VPAT-pages.md](VPAT-pages.md) for sibling-surface observations. |
