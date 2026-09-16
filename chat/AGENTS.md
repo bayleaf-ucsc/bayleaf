@@ -111,6 +111,19 @@ store the image as a **sibling file** and reference it by bare filename:
 "profile_image_url": "profile.png"
 ```
 
+**Push inlines sibling images (owui-cli ≥ 0.5.2):** OWUI v0.11.x's stored-model
+validator (`backend/open_webui/utils/validate.py`) rejects bare filenames as
+`profile_image_url` and silently clears them to null — which is exactly what
+happened when the v0.11.3-era pushes (commit e13976d, see GitHub issue #67)
+sent `"profile.png"` verbatim. `owui-cli models update` / `models create`
+therefore expand a bare sibling reference in `meta.profile_image_url` into a
+`data:image/...;base64,` URI before POSTing; `models_pull_all` inlines the
+data URI back out to the sibling file on pull. The repo keeps the
+bare-filename convention; prod stores the inlined data URI. Also note: on
+v0.11.x the raw list/read API responses **strip** `profile_image_url`, so an
+apparent `null` means nothing — check rendering via
+`GET /api/v1/models/model/profile/image?id=<id>` instead.
+
 Reconcile workflow for any pulled model/skill:
 
 1. Pull the raw JSON to the model/skill dir.

@@ -83,3 +83,11 @@ through the appropriate playbook, don't paper over it in the backup.
 - 2026-09-01: post-OWUI-v0.11.3 pull was limited to a new null `meta.knowledge`
   field and the Canary's live null avatar reference; rotating grant IDs and
   timestamps were stripped as noise. No resource ID drift found.
+- 2026-09-16: (issue #67 root cause) the "live null avatar reference" from
+  2026-09-01 turned out to be the actual bug: OWUI v0.11.x rejects bare
+  filenames as `profile_image_url` and nulls them, *and* strips the field from
+  all list/read responses (icons moved to `GET /model/profile/image`), so
+  pulled model.json can report a null field instead of a `data:` URI — "no
+  output from extract" no longer distinguishes broken from stripped. Push-side
+  sibling inlining added in owui-cli ≥ 0.5.2; prod icons re-pushed and verified
+  bytewise via the image endpoint.
