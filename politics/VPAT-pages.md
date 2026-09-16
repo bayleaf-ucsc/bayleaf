@@ -10,9 +10,10 @@ rendered by GitHub's UI and covered by GitHub's product ACRs (see
 [§ 2](#2-out-of-scope-neighbors-and-platform-acrs)). All measurements in this
 document dated before that migration were taken against the superseded
 four-page surface (`docs/*.html`); remarks saying "all four pages" should be
-read in that context. The landing's structure, stylesheet, and embed are
-unchanged by the migration apart from link destinations, but no fresh
-empirical pass has yet been run against the migrated surface.<br>
+read in that context. A 2026-09-16 post-migration pass re-verified the
+migrated landing (see the methodology section); its structure, stylesheet,
+and embed were unchanged from the last pre-migration pass apart from link
+destinations.<br>
 **Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz<br>
 **Status:** Working draft, upgraded to empirical verification for contrast, reflow, focus visibility, text zoom, text spacing, HTML parsing, accessibility-tree structure, and color-vision-deficiency simulation, using headless Chromium driven by a
 CLI-accessible browser harness ([`rodney`](https://github.com/simonw/rodney)
@@ -142,6 +143,39 @@ Chromium via [`uvx rodney`](https://github.com/simonw/rodney) v0.4.0
 [`Emulation.setDeviceMetricsOverride`](https://chromedevtools.github.io/devtools-protocol/tot/Emulation/#method-setDeviceMetricsOverride)
 for viewport control); the 2026-09-09 pass used OpenChamber's browser
 panel at mobile (390 x 844) and desktop (1440 x 900) viewports.
+
+**2026-09-16 post-migration pass.** Run against the deployed
+`landing/`-artifact site at [bayleaf.dev](https://bayleaf.dev) (its
+structure, stylesheet, and embed are unchanged from the 2026-09-09/09-14
+passes except link destinations). Re-verified:
+
+- W3C Nu validation of the served page: **zero messages**.
+- Full link inventory (46 unique outbound links, including the new
+  absolute GitHub URLs to `PRIVACY.md`, `SUPPORT.md`,
+  `USE-CASES.md`): all reachable; two destinations return HTTP 403 to
+  scripted requests (`dl.acm.org`, `news.ucsc.edu`) — bot protection,
+  not dead links (both open in browsers).
+- Reflow via CDP `Emulation.setDeviceMetricsOverride` at 320/400/1280
+  CSS px: scrollWidth 305/385/1265, **zero overflowing elements** at
+  all three widths (numeric match to the pre-migration measurements,
+  as expected from the unchanged stylesheet).
+- 200% text zoom at 1280 CSS px and the 1.4.12 text-spacing override
+  at 320 CSS px: no horizontal overflow.
+- [2.4.7 Focus Visible](#4-wcag-21-level-aa-conformance): verified
+  with **real Tab key events** (`Input.dispatchKeyEvent`) rather than
+  programmatic `.focus()`: every `.service-link` button shows the
+  double ring (3 px white outline + 5 px `#2a5298` box shadow); inline
+  prose links show Chromium's default blue ring.
+- Headings enumerate in h1 → h2 → h3 order with no skipped levels;
+  no duplicate IDs; one `<main>`.
+- Mobile (390 x 844) render via a second browser panel: full snapshot
+  clean, no browser errors.
+
+Not repeated this pass (unchanged surface, prior measurements carry):
+contrast enumeration and CVD simulations (stylesheet byte-identical
+apart from comments), the FAQ accordion interaction, screenshot-level
+focus review, and the axe-core run.
+
 Dates of evaluation: 2026-04-29 (landing and support page), extended
 2026-07-24 to bring `privacy.html` and `use-cases.html` into scope and
 to re-evaluate the landing after the video embed shipped, and
@@ -368,9 +402,11 @@ has been corrected above rather than quietly dropped.
 - Remaining open items: a transcript (with slide descriptions) for the
   embedded lecture series, which closes the open Level A defect at
   1.2.3, and an audio description track for 1.2.5; re-timing the 88
-  overlapping cues in Part 3; one consistent footer
-  link set across the four pages; screen reader traversal of landmarks
-  in NVDA, JAWS, VoiceOver; human keyboard-only pass.
+  overlapping cues in Part 3; screen reader traversal of landmarks
+  in NVDA, JAWS, VoiceOver; human keyboard-only pass. (The former
+  "one consistent footer link set across the four pages" item is
+  obsolete since the 2026-09-16 migration collapsed the surface to
+  one page.)
 
 ---
 
