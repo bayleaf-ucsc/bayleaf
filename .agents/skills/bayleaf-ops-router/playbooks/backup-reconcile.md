@@ -10,7 +10,7 @@ last-reviewed: 2026-08-25
 ## When to use
 
 Scheduled drift catch-up, after any prod-side change series, or as the final
-step of `owui-version-bump.md` / `prompt-tool-edit.md` /
+step of `owui-version-bump.md` / `prompt-tool-skill-edit.md` /
 `spinoff-module-bump.md`. Also run standalone whenever prod might have
 drifted (the 2026-08-25 run found a week of accumulated drift in one pull).
 

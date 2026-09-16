@@ -2,7 +2,7 @@
   "id": "code-sandbox",
   "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
   "name": "code-sandbox",
-  "description": "Access a private virtual machine for running linux commands.",
+  "description": "Use BayLeaf Chat's private Linux sandbox for bounded coding and file work, and help users move to a local coding agent when a project outgrows it.",
   "meta": {
     "tags": []
   },

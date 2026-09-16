@@ -80,3 +80,6 @@ uvx owui-cli tools deploy chat/tools/<id>/tool.py <id>
   verify the client package first, then deploy its exact-pinned API consumer.
   Local well-known config probes caught npm-plugin deduplication behavior before
   the production update.
+- 2026-09-16: BayLeaf-specific preview-sharing guidance briefly leaked into the
+  vendored Lathe source. Reverted it: general `expose()` semantics must change in
+  the upstream Lathe project, soak on the personal instance, then flow downstream.

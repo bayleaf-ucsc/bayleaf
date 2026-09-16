@@ -48,7 +48,7 @@ revert the image tag. Prod is the staging server; treat it accordingly.
    a real conversation with each, tool calls where applicable (Code Sandbox on
    Basic, help queries on Help), file upload, skill surfacing. Expect this to
    reveal model-configuration changes the bump inspires (capability flags,
-   prompt tweaks). Make those via `prompt-tool-edit.md` / `model-swap.md`
+   prompt tweaks). Make those via `prompt-tool-skill-edit.md` / `model-swap.md`
    while still in this workflow.
 5. Run `backup-reconcile.md` to pull the post-bump state into the repo. The
    bump is the natural time for it (issue #65): model JSONs, function metas,

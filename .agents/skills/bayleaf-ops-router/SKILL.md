@@ -17,7 +17,7 @@ whole clump.
 | New Open WebUI version for Chat | `playbooks/owui-version-bump.md` |
 | Changing the LLM behind Basic or Help, or the BayLeaf API recommended model | `playbooks/model-swap.md` |
 | Evaluating a candidate LLM (canary run, no production swap) | `playbooks/model-swap.md` |
-| Editing a system prompt, or a tool's docstring/implementation | `playbooks/prompt-tool-edit.md` |
+| Editing a system prompt, tool/function, or OWUI skill | `playbooks/prompt-tool-skill-edit.md` |
 | Privacy notice / subprocessor / retention change | `playbooks/privacy-notice-change.md` |
 | New service or API facet (new lane, subdomain, connection) | `playbooks/new-service-facet.md` |
 | New synthetic probe route, probe contract, or UptimeRobot monitor | `playbooks/probe-extension.md` |
