@@ -279,7 +279,7 @@ if Tinfoil adds a proprietary model, policy must be revisited before exposing it
     filter still admits closed-weight ZDR-capable models (claude-haiku,
     grok), so re-enabling needs either a mantle weights predicate or an
     accepted maintained list; (4) complete the documentation gate listed beside
-    `BEDROCK_ENABLED` in `wrangler.jsonc`: add AWS to `docs/privacy.html` and
+    `BEDROCK_ENABLED` in `wrangler.jsonc`: add AWS to `PRIVACY.md` and
     update the status, account-coverage, and data-flow claims in the named
     security, dependency, FERPA, retention, and landing-page documents.
   - **Models** are **live-fetched** from mantle's `/models` at `GET /v1/models`
@@ -481,9 +481,9 @@ checkbox, so it is recorded rather than deleted.
    enforce nor usefully substitute for. Revisit only when there is a mechanical
    consumer of an accepted-measurement policy; issue #62 is the first plausible
    one.
-4. **Tinfoil subprocessor disclosure: DONE and live.** `docs/privacy.html`
+4. **Tinfoil subprocessor disclosure: DONE and live.** `PRIVACY.md`
    identifies the content and metadata boundaries, and the GitHub Pages revision
-   is published at `https://bayleaf.dev/privacy.html`.
+   is published at `https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md`.
 
 ## Routes
 

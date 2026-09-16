@@ -383,7 +383,7 @@ WCAG path; see [§ 4](#4-wcag-21-level-aa-conformance).
 | § | Criterion | Applies? | Remarks |
 |---|---|---|---|
 | [602.2](https://www.access-board.gov/ict/#602.2) | Accessibility and Compatibility Features | Supports | This document plus [HECVAT.md](HECVAT.md), [FERPA.md](FERPA.md), and [SECURITY.md](SECURITY.md) are provided as accessible web content. |
-| [602.3](https://www.access-board.gov/ict/#602.3) | Electronic Support Documentation | Supports | Support is documented via the [support page](https://bayleaf.dev/support.html) (covered by [VPAT-pages.md](VPAT-pages.md)) and the [SKILL.md at /docs/SKILL.md](https://api.bayleaf.dev/docs/SKILL.md) (BayLeaf-authored Markdown served as `text/markdown`). |
+| [602.3](https://www.access-board.gov/ict/#602.3) | Electronic Support Documentation | Supports | Support is documented via [SUPPORT.md](https://github.com/bayleaf-ucsc/bayleaf/blob/main/SUPPORT.md) (GitHub-served markdown, outside the [VPAT-pages.md](VPAT-pages.md) scope) and the [SKILL.md at /docs/SKILL.md](https://api.bayleaf.dev/docs/SKILL.md) (BayLeaf-authored Markdown served as `text/markdown`). |
 | [602.4](https://www.access-board.gov/ict/#602.4) | Alternate Formats for Non-Electronic Support Documentation | N/A | No non-electronic documentation. |
 | [603](https://www.access-board.gov/ict/#603) | Support Services | Supports | Support is via email to the operator ([amsmith@ucsc.edu](mailto:amsmith@ucsc.edu)); email is an accessible medium. |
 

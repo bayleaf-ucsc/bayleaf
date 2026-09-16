@@ -1,13 +1,18 @@
 # VPAT and bayleaf.dev Pages
 
 **Service:** BayLeaf bayleaf.dev static pages: the landing at
-[`bayleaf.dev`](https://bayleaf.dev), the support page at
-[`bayleaf.dev/support.html`](https://bayleaf.dev/support.html), the
-privacy notice at
-[`bayleaf.dev/privacy.html`](https://bayleaf.dev/privacy.html), and the
-use-cases page at
-[`bayleaf.dev/use-cases.html`](https://bayleaf.dev/use-cases.html). All
-four are surfaces of BayLeaf.<br>
+[`bayleaf.dev`](https://bayleaf.dev). Effective 2026-09-16 this is the
+*only* surface in scope: support, privacy, and use-cases content
+migrated to GitHub-served markdown ([`PRIVACY.md`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md),
+[`SUPPORT.md`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/SUPPORT.md),
+[`USE-CASES.md`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/USE-CASES.md)),
+rendered by GitHub's UI and covered by GitHub's product ACRs (see
+[§ 2](#2-out-of-scope-neighbors-and-platform-acrs)). All measurements in this
+document dated before that migration were taken against the superseded
+four-page surface (`docs/*.html`); remarks saying "all four pages" should be
+read in that context. The landing's structure, stylesheet, and embed are
+unchanged by the migration apart from link destinations, but no fresh
+empirical pass has yet been run against the migrated surface.<br>
 **Operator:** Adam Smith, Associate Professor, Dept. of Computational Media, UC Santa Cruz<br>
 **Status:** Working draft, upgraded to empirical verification for contrast, reflow, focus visibility, text zoom, text spacing, HTML parsing, accessibility-tree structure, and color-vision-deficiency simulation, using headless Chromium driven by a
 CLI-accessible browser harness ([`rodney`](https://github.com/simonw/rodney)
@@ -31,45 +36,32 @@ rendered text and link bounds inspected. This was a limited content check, not a
 repeat of the earlier contrast, 320px reflow, zoom, keyboard, or assistive-technology
 tests. Earlier measurements below retain their original evaluation scope.
 
-**UI origin.** Four static HTML files sharing one external stylesheet,
-all served via [GitHub Pages](https://pages.github.com/) with custom
-domain per [`docs/CNAME`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs/CNAME):
+**UI origin.** One static HTML file with one external stylesheet,
+served via [GitHub Pages](https://pages.github.com/) with custom
+domain per [`landing/CNAME`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/landing/CNAME):
 
-- [`docs/index.html`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs/index.html):
-  the landing at [bayleaf.dev](https://bayleaf.dev).
-- [`docs/support.html`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs/support.html):
-  the support page at
-  [bayleaf.dev/support.html](https://bayleaf.dev/support.html),
-  linked from the landing's "Support" button.
-- [`docs/privacy.html`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs/privacy.html):
-  the privacy notice at
-  [bayleaf.dev/privacy.html](https://bayleaf.dev/privacy.html), linked
-  from every page footer. Holds the subprocessor list that previously
-  lived in a `<details>` disclosure on the landing.
-- [`docs/use-cases.html`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs/use-cases.html):
-  role-keyed task recipes at
-  [bayleaf.dev/use-cases.html](https://bayleaf.dev/use-cases.html),
-  linked from the landing's "Use Cases" button. The only page with
-  in-page anchor targets (`#funding-opportunity`,
-  `#canvas-group-cleanup`, `#local-rubric-check`, `#workflow-doc`).
-- [`docs/style.css`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs/style.css):
-  shared stylesheet covering layout, typography, the button-styled
+- [`landing/index.html`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/landing/index.html):
+  the comprehensive landing at [bayleaf.dev](https://bayleaf.dev). Since
+  2026-09-16 it is the sole bayleaf.dev page; support, privacy, and
+  use-cases are GitHub-served markdown (see above this section and
+  [§ 2](#2-out-of-scope-neighbors-and-platform-acrs)).
+- [`landing/style.css`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/landing/style.css):
+  stylesheet covering layout, typography, the button-styled
   link system (`.service-link` with `.primary-action` and `.secondary`
   modifiers), the responsive `.lecture-embed` video wrapper, the
   generated recent-post list, and `:focus-visible` indicators. A
   GitHub Actions build replaces a source fallback with five escaped
   entries from the BayLeaf Blog RSS feed before deploying an immutable
-  Pages artifact. The deployed pages contain no runtime JavaScript.
+  Pages artifact. The deployed page contains no runtime JavaScript.
 
-**Why this scope.** All four pages are small HTML documents with no
+**Why this scope.** The landing is a small HTML document with no
 framework, no runtime DOM manipulation, and no user input. One bounded
-landing-page section is generated at build time from public RSS. They
-share all styling, so a single empirical verification pass covers them.
+section is generated at build time from public RSS.
 Source inspection can meaningfully cover most WCAG 2.1 AA criteria;
 criteria that require a rendered browser (actual color rendering,
 zoom/reflow behavior, focus visibility in practice, text-spacing
 override tolerance) have been verified empirically against the served
-pages using headless Chromium.
+page using headless Chromium.
 
 ### Embedded media
 
@@ -364,17 +356,15 @@ has been corrected above rather than quietly dropped.
 
 ### Links for the future evaluation pass
 
-- Live pages:
-  [bayleaf.dev](https://bayleaf.dev),
-  [bayleaf.dev/support.html](https://bayleaf.dev/support.html),
-  [bayleaf.dev/privacy.html](https://bayleaf.dev/privacy.html),
-  [bayleaf.dev/use-cases.html](https://bayleaf.dev/use-cases.html).
+- Live page:
+  [bayleaf.dev](https://bayleaf.dev).
 - Source:
-  [docs/index.html](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs/index.html),
-  [docs/support.html](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs/support.html),
-  [docs/privacy.html](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs/privacy.html),
-  [docs/use-cases.html](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs/use-cases.html),
-  [docs/style.css](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs/style.css).
+  [landing/index.html](https://github.com/bayleaf-ucsc/bayleaf/blob/main/landing/index.html),
+  [landing/style.css](https://github.com/bayleaf-ucsc/bayleaf/blob/main/landing/style.css).
+- Migrated out of scope (GitHub-served markdown, conformance is GitHub's):
+  [PRIVACY.md](https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md),
+  [SUPPORT.md](https://github.com/bayleaf-ucsc/bayleaf/blob/main/SUPPORT.md),
+  [USE-CASES.md](https://github.com/bayleaf-ucsc/bayleaf/blob/main/USE-CASES.md).
 - Remaining open items: a transcript (with slide descriptions) for the
   embedded lecture series, which closes the open Level A defect at
   1.2.3, and an audio description track for 1.2.5; re-timing the 88
@@ -403,13 +393,27 @@ github.com and related products. This VPAT notes those ACRs as a
 into a GitHub-rendered page is landing on a surface covered by
 GitHub's own conformance report, not by BayLeaf's.
 
+**2026-09-16 consequence for this ACR's scope:** the migrated documents
+([`PRIVACY.md`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md),
+[`SUPPORT.md`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/SUPPORT.md),
+[`USE-CASES.md`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/USE-CASES.md))
+are BayLeaf-*authored* content but GitHub-*rendered* surfaces: their
+markup (typography, headings, lists, blockquote styling, anchors) is
+generated by GitHub's markdown pipeline, not by BayLeaf. The content
+(readable language, meaningful link text, no images of text) is ours;
+if a defect is found there it should be reported to the operator. This
+mirrors the earlier "Substack blog prose is ours, Substack mechanics
+are not" split in the courtesy disclosure below, with one difference:
+the GitHub destination *announces itself* through repo chrome, so the
+boundary is visible to the reader in a way the Substack custom-domain
+boundary is not.
+
 This is not a claim that GitHub's ACRs cover BayLeaf-authored content
-hosted on GitHub Pages. All four pages listed in
+hosted on GitHub Pages. GitHub Pages surfaces listed in
 [§ 1](#1-surface-description) are BayLeaf's responsibility regardless
-of the hosting platform, and all four are now in scope for this ACR.
-Any future pages added to `docs/` will be brought into scope at the
-time they ship. (`privacy.html` and `use-cases.html` shipped without
-being folded in promptly; the 2026-07-24 pass closed that gap.)
+of the hosting platform, and the landing remains in scope for this ACR.
+Any future pages added to `landing/` will be brought into scope at the
+time they ship.
 
 **Embedded YouTube player.** The landing embeds a `youtube-nocookie.com`
 iframe (see [§ 1 Embedded media](#embedded-media)). The player chrome
@@ -476,7 +480,7 @@ Remarks have been trimmed to the bayleaf.dev static-pages surface. Sentences in 
 | 2.2.2 | [Pause, Stop, Hide](https://www.w3.org/WAI/WCAG21/Understanding/pause-stop-hide) | Supports | Pages: no auto-starting motion. The embedded video begins only on user activation and exposes pause and stop controls, so the criterion is satisfied rather than inapplicable. No other moving, blinking, or auto-updating content. |
 | 2.3.1 | [Three Flashes or Below Threshold](https://www.w3.org/WAI/WCAG21/Understanding/three-flashes-or-below-threshold) | Supports | No flashing content in BayLeaf-authored markup; the embedded lecture is a static-camera talk with slides and contains no flashing. |
 | 2.4.1 | [Bypass Blocks](https://www.w3.org/WAI/WCAG21/Understanding/bypass-blocks) | Supports | Pages: every page wraps primary content in `<main id="main">` and the contact block in `<footer>`, providing navigable landmarks. Verified in Chromium's accessibility tree (`[main]` role exposed at root level on each page). |
-| 2.4.2 | [Page Titled](https://www.w3.org/WAI/WCAG21/Understanding/page-titled) | Supports | Pages: `BayLeaf`, `Support: BayLeaf`, `Privacy: BayLeaf`, `Use Cases: BayLeaf`. All four are descriptive, distinct, and follow one `Section: Site` convention. |
+| 2.4.2 | [Page Titled](https://www.w3.org/WAI/WCAG21/Understanding/page-titled) | Supports | Pages: `` `BayLeaf` `` (before the 2026-09-16 migration, `Support: BayLeaf`, `Privacy: BayLeaf`, `Use Cases: BayLeaf` under four-page scope). Descriptive and distinct. |
 | 2.4.3 | [Focus Order](https://www.w3.org/WAI/WCAG21/Understanding/focus-order) | Supports | Pages: DOM order is reading order; no `tabindex` manipulation. |
 | 2.4.4 | [Link Purpose (In Context)](https://www.w3.org/WAI/WCAG21/Understanding/link-purpose-in-context) | Supports | Pages: link text is descriptive on all pages (e.g., "UCSC's Newly Established AI Council Is at a Crossroads", "OpenRouter's model directory", "API Issue", "amsmith@ucsc.edu"); no "click here". |
 | 2.5.1 | [Pointer Gestures](https://www.w3.org/WAI/WCAG21/Understanding/pointer-gestures) | Supports | Pages: no multi-point or path-based gestures. |
@@ -510,11 +514,11 @@ Level AA is the target set for [ADA Title II](https://www.ada.gov/resources/2024
 | 1.4.11 | [Non-text Contrast](https://www.w3.org/WAI/WCAG21/Understanding/non-text-contrast) | Supports | Pages: the button-styled links pass the 3:1 UI-component threshold on every page (lowest button background ratio is `#555` at 7.46:1 on the landing). The `.note` callouts have a 3 px `#2a5298` left border against the `#f8f9fa` callout background (7.22:1). Contrast of the embedded player's own controls is Google's; see [§ 2](#2-out-of-scope-neighbors-and-platform-acrs). No other BayLeaf-authored non-text UI component conveys information. |
 | 1.4.12 | [Text Spacing](https://www.w3.org/WAI/WCAG21/Understanding/text-spacing) | Supports | Pages: verified empirically by injecting a `<style>` element with the WCAG 1.4.12 user-override thresholds (`line-height: 1.5`, `letter-spacing: 0.12em`, `word-spacing: 0.16em`, paragraph margin 2em) as `!important` rules on all four pages; no horizontal overflow and no element clipping resulted. The shared stylesheet has no fixed `height` on text containers. |
 | 1.4.13 | [Content on Hover or Focus](https://www.w3.org/WAI/WCAG21/Understanding/content-on-hover-or-focus) | N/A | Pages: no hover tooltips or popovers. |
-| 2.4.5 | [Multiple Ways](https://www.w3.org/WAI/WCAG21/Understanding/multiple-ways) | Partially supports | Pages: this became applicable when the surface grew from one page to four. Every page's footer links to siblings and the landing acts as a hub, which is one mechanism; there is no second (no site map, no search, no shared header nav), and the footer link sets are not uniform, so some pages are not reachable in one hop from others. Remediation: one consistent footer link set covering all four pages, which also closes 3.2.3. |
+| 2.4.5 | [Multiple Ways](https://www.w3.org/WAI/WCAG21/Understanding/multiple-ways) | N/A | Single page since the 2026-09-16 scope reduction. (Under the superseded four-page scope this was "Partially supports" over non-uniform footer link sets; see the migration note in [§ 1](#1-surface-description).) |
 | 2.4.6 | [Headings and Labels](https://www.w3.org/WAI/WCAG21/Understanding/headings-and-labels) | Supports | Pages: headings describe their sections clearly. |
 | 2.4.7 | [Focus Visible](https://www.w3.org/WAI/WCAG21/Understanding/focus-visible) | Supports | Pages: `.service-link:focus-visible` in the shared stylesheet renders a 3 px white outline at 2 px offset plus a 5 px blue box-shadow, producing a double-ring indicator visible against every button background (blue, green, dark gray). Verified by screenshot. Inline prose links use Chromium's default focus ring against white. The platform-default ring alone is barely perceptible on colored buttons, so the explicit rule is necessary, not cosmetic. |
 | 3.1.2 | [Language of Parts](https://www.w3.org/WAI/WCAG21/Understanding/language-of-parts) | N/A | No foreign-language passages on BayLeaf-authored surfaces. |
-| 3.2.3 | [Consistent Navigation](https://www.w3.org/WAI/WCAG21/Understanding/consistent-navigation) | Partially supports | Pages: the `<footer class="contact">` link block appears in the same position with the same styling on all four pages, but its *contents* differ page to page (see [§ 1](#structural-observations-that-inform-the-conformance-tables-below)): the landing omits Support and Use Cases, privacy and support omit Use Cases, and only use-cases links to every sibling. Relative order of the links that do recur is preserved, so this is a completeness defect rather than a reordering defect. Remediation: one shared footer link set. |
+| 3.2.3 | [Consistent Navigation](https://www.w3.org/WAI/WCAG21/Understanding/consistent-navigation) | N/A | Single page since the 2026-09-16 scope reduction; no navigation is repeated across pages. (Under the superseded four-page scope this was "Partially supports" over non-uniform footer contents; see [§ 1](#structural-observations-that-inform-the-conformance-tables-below).) |
 | 3.2.4 | [Consistent Identification](https://www.w3.org/WAI/WCAG21/Understanding/consistent-identification) | Supports | Pages: recurring components (the `.service-link` button system, the `.note` callout, the `.contact` footer block) are styled and labelled consistently across all four pages via the shared stylesheet; the same link text refers to the same destination everywhere. |
 | 3.3.3 | [Error Suggestion](https://www.w3.org/WAI/WCAG21/Understanding/error-suggestion) | N/A | No forms on any page. |
 | 3.3.4 | [Error Prevention (Legal, Financial, Data)](https://www.w3.org/WAI/WCAG21/Understanding/error-prevention-legal-financial-data) | N/A | Not applicable to this surface. |
@@ -566,7 +570,7 @@ WCAG path; see [§ 4](#4-wcag-21-level-aa-conformance).
 | § | Criterion | Applies? | Remarks |
 |---|---|---|---|
 | [602.2](https://www.access-board.gov/ict/#602.2) | Accessibility and Compatibility Features | Supports | This document plus [HECVAT.md](HECVAT.md), [FERPA.md](FERPA.md), and [SECURITY.md](SECURITY.md) are provided as accessible web content. |
-| [602.3](https://www.access-board.gov/ict/#602.3) | Electronic Support Documentation | Supports | The support page at [`docs/support.html`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs/support.html) is in scope for this ACR (see [§ 1](#1-surface-description)) and conforms per [§§ 3](#3-wcag-21-level-a-conformance)–[4](#4-wcag-21-level-aa-conformance). (Earlier revisions of this row described the support page as out of scope, contradicting § 1; corrected 2026-07-24.) |
+| [602.3](https://www.access-board.gov/ict/#602.3) | Electronic Support Documentation | Supports | Support documentation migrated 2026-09-16 to [`SUPPORT.md`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/SUPPORT.md), rendered by GitHub's markdown pipeline and covered by GitHub's product ACRs (see [§ 2](#2-out-of-scope-neighbors-and-platform-acrs)); the content (readable language, meaningful links) is BayLeaf's responsibility. Electronic support documentation also includes this document plus [HECVAT.md](HECVAT.md), [FERPA.md](FERPA.md), and [SECURITY.md](SECURITY.md). (Earlier revisions of this row described a support page at `docs/support.html` as in scope below WCAG §§ 3–4; that page no longer exists.) |
 | [602.4](https://www.access-board.gov/ict/#602.4) | Alternate Formats for Non-Electronic Support Documentation | N/A | No non-electronic documentation. |
 | [603](https://www.access-board.gov/ict/#603) | Support Services | Supports | Support is via email to the operator ([amsmith@ucsc.edu](mailto:amsmith@ucsc.edu)); email is an accessible medium. |
 

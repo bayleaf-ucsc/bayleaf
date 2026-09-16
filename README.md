@@ -72,7 +72,7 @@ such as the Daytona-backed Code Sandbox, store user files by necessity.
 ## This Repository
 
 - `api/` — BayLeaf API Cloudflare Worker ([api.bayleaf.dev](https://api.bayleaf.dev))
-- `docs/` — Static GitHub Pages site published at [bayleaf.dev](https://bayleaf.dev)
+- `landing/` — Static GitHub Pages site published at [bayleaf.dev](https://bayleaf.dev): one comprehensive landing page (privacy, support, and use cases live as GitHub-served markdown: [PRIVACY.md](PRIVACY.md), [SUPPORT.md](SUPPORT.md), [USE-CASES.md](USE-CASES.md))
 - `chat/` — BayLeaf Chat DigitalOcean App ([chat.bayleaf.dev](https://chat.bayleaf.dev)): workspace models, custom tools, filters, and [design doc](chat/DESIGN.md)
 - `politics/` — The case for universities owning their own AI infrastructure (manifesto)
 

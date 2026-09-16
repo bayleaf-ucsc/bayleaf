@@ -122,7 +122,7 @@ const StandardLlmCard: FC<{ orKey: OpenRouterKey; recommendedModel: string; altB
       ))}
 
       <p style="margin-top: 1.5rem; font-size: 0.85em; color: #555;">
-        Increased limits are <a href="https://bayleaf.dev/support" style="color: #2a5298;">available upon request</a>.
+        Increased limits are <a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/SUPPORT.md" style="color: #2a5298;">available upon request</a>.
       </p>
       <details style="margin-top: 1rem;">
         <summary style="cursor: pointer; color: #006aad; font-weight: 500;">Quick start</summary>

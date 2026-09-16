@@ -750,7 +750,7 @@ allows campus-licensed AI tools to process P1, P2, and P3 data. P4 data is prohi
 apart from a stated prior-security-consultation exception for some Zoom AI Companion
 uses. Unlicensed AI tools are limited to P1 and P2 data.
 
-BayLeaf's [privacy notice](https://bayleaf.dev/privacy.html) states that a UCSC ITS
+BayLeaf's [privacy notice](https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md) states that a UCSC ITS
 security review cleared the service technically for data through P3. That review did
 not authorize use with regulated records. Authorization to process actual FERPA
 student records remains pending, and the service instructs users not to submit those
@@ -797,7 +797,7 @@ separate copy of prompts or completions in that path. Its API also offers an opt
 client-verified route encrypted to a Tinfoil enclave. The operator relays ciphertext
 and has no standing access to request content on that route. These are service-level
 arrangements, not terms negotiated by UC. The
-[public privacy notice](https://bayleaf.dev/privacy.html) documents retention,
+[public privacy notice](https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md) documents retention,
 subprocessors, access, and deletion controls.
 
 **Institutional secondary use.** BayLeaf's operator conducted one documented use-case characterization of stored Chat

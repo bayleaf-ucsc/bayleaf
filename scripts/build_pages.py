@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the GitHub Pages artifact from docs/ and public data sources."""
+"""Build the GitHub Pages artifact from landing/ and public data sources."""
 
 from __future__ import annotations
 
@@ -117,7 +117,7 @@ def build(source: Path, output: Path, feed_url: str, post_count: int) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--source", type=Path, default=Path("docs"))
+    parser.add_argument("--source", type=Path, default=Path("landing"))
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--feed", default=BLOG_FEED)
     parser.add_argument("--post-count", type=int, default=5)

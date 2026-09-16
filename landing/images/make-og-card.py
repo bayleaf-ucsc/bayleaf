@@ -6,16 +6,16 @@
 """
 Generate the Open Graph share card for bayleaf.dev.
 
-    ./docs/images/make-og-card.py
+    ./landing/images/make-og-card.py
 
-Writes docs/images/og-card.png at 1200x630 (the size Slack, Discord, Canvas,
+Writes landing/images/og-card.png at 1200x630 (the size Slack, Discord, Canvas,
 Mastodon, and Bluesky all render as a large summary image).
 
 Design notes:
   - The mark is chat/models/basic/profile.png, the BayLeaf logo (bay leaf plus
     banana slug). It lived only as an Open WebUI model avatar until this card
     started reusing it; treat that file as the canonical source art.
-  - Colors track docs/style.css: #2a5298 headings, #555 secondary text. If the
+  - Colors track landing/style.css: #2a5298 headings, #555 secondary text. If the
     site palette changes, change them here too. There is no shared token file
     yet (see the site-wide palette question in AGENTS.md).
   - Fonts are macOS system faces resolved by path. On another platform, point

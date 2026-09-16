@@ -107,22 +107,30 @@ bayleaf/
 │   ├── tools/          # Custom toolkit source code
 │   ├── functions/      # Filter & action source code
 │   └── probe/          # Private layered monitoring Worker (has its own AGENTS.md)
-├── docs/               # GitHub Pages site → https://bayleaf.dev
+├── landing/              # GitHub Pages site → https://bayleaf.dev
 │   ├── CNAME
-│   ├── index.html      # Landing page
-│   ├── use-cases.html  # Role-keyed task recipes
-│   ├── support.html    # How to get help
-│   ├── privacy.html    # Privacy notice, subprocessor list
-│   ├── style.css       # Shared stylesheet (carries a WCAG contrast invariant)
-│   └── images/         # og-card.png + the script that generates it
-├── politics/           # Dependency audit, VPATs, position papers
-├── scripts/            # GitHub Pages artifact builder
-├── training/           # Work-in-progress React site for training users in effective GenAI usage
+│   ├── index.html        # Comprehensive landing page (the only bayleaf.dev page)
+│   ├── style.css         # Stylesheet (carries a WCAG contrast invariant)
+│   └── images/           # og-card.png + the script that generates it
+├── politics/             # Dependency audit, VPATs, position papers
+├── scripts/              # GitHub Pages artifact builder
+├── training/             # Work-in-progress React site for training users in effective GenAI usage
 ├── README.md
-└── AGENTS.md           # This file
+└── AGENTS.md             # This file
 ```
 
-`docs/` is published via GitHub Pages at `https://bayleaf.dev`.
+(USE-CASES.md, PRIVACY.md, SUPPORT.md at the repo root appear before `api/`
+alphabetically; see the top-level listing.)
+
+`landing/` is published via GitHub Pages at `https://bayleaf.dev`. It is the
+*only* hand-written HTML surface: a single comprehensive landing page. Companion
+user-facing documents (use cases, privacy notice, support channels) live as
+top-level markdown (`USE-CASES.md`, `PRIVACY.md`, `SUPPORT.md`) served by
+GitHub's rendered markdown, not as bayleaf.dev pages. The landing page links
+to them with absolute GitHub URLs; markdown files link to each other and to
+repo files with relative links. Treat "a new page on bayleaf.dev" as a
+high bar: prefer editing the markdown files and linking to them, and before
+adding any platform surface, consider whether GitHub-served markdown suffices.
 
 `api/` is a Cloudflare Worker deployed at `https://api.bayleaf.dev`.
 **Read `api/AGENTS.md` before working on API code or infrastructure.**
@@ -169,30 +177,29 @@ faithfully.
 
 ## Build / Lint / Test
 
-The about site source (`docs/`) is four hand-written static HTML pages sharing
-one stylesheet. GitHub Actions runs `scripts/build_pages.py` to copy that source
+The landing site source (`landing/`) is one hand-written static HTML page with a
+stylesheet. GitHub Actions runs `scripts/build_pages.py` to copy that source
 into a Pages artifact and replace the landing page's recent-posts fallback with
 five entries from the public BayLeaf Blog RSS feed. The deployed site still has
 no runtime JavaScript. For the API (`api/`), see `api/AGENTS.md` for build and
 deploy commands.
 
-Three things in or deployed from `docs/` are generated rather than hand-written:
+Three things in or deployed from `landing/` are generated rather than hand-written:
 
-- `docs/images/og-card.png`, the Open Graph share card referenced by every
-  page's `<meta>` block. Regenerate with `./docs/images/make-og-card.py` after
-  changing the tagline or the palette. Its source art is
-  `chat/models/basic/profile.png`, the BayLeaf logo.
-- The empirical claims in `politics/VPAT-pages.md`. Any change to `docs/*.html`
-  or `docs/style.css` can invalidate a measured contrast ratio, a reflow result,
-  or a structural claim. **Adding a page to `docs/` requires folding it into
-  that ACR**, which has slipped before.
+- `landing/images/og-card.png`, the Open Graph share card. Regenerate with
+  `./landing/images/make-og-card.py` after changing the tagline or the palette.
+  Its source art is `chat/models/basic/profile.png`, the BayLeaf logo.
+- The empirical claims in `politics/VPAT-pages.md`. Any change to
+  `landing/index.html` or `landing/style.css` can invalidate a measured contrast
+  ratio, a reflow result, or a structural claim. GitHub-served markdown files
+  (`PRIVACY.md`, etc.) render in GitHub's UI and are outside that ACR's scope.
 - The recent-post rows in deployed `index.html`. They are generated only in the
   Pages artifact by `scripts/build_pages.py`; do not commit them to the source
   template. The scheduled and manually dispatchable Pages workflow refreshes
   them.
 
 **Local preview of the source fallback:** Use the VS Code **Live Server**
-extension (right-click `docs/index.html` → *Open with Live Server*), which serves
+extension (right-click `landing/index.html` → *Open with Live Server*), which serves
 on `http://localhost:5500` by default. To preview the generated site:
 
 ```bash

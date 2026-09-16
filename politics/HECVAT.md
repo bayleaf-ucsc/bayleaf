@@ -199,7 +199,7 @@ BayLeaf to the P3-approved list.
 
 1. **Operator status.** Adam Smith is a tenured UCSC faculty member and an existing school official under 34 CFR § 99.31(a)(1)(i)(A). He is bound by UC Electronic Communications Policy, UC IS-3, UCSC Administrative Procedures Applying to Disclosure of Information from Student Records (§IX.C written-form requirement), and other UC policies as a condition of employment.
 2. **Inference posture.** Chat and API plaintext use OpenRouter restricted to zero-data-retention (ZDR) provider endpoints; Chat has a separately curated proprietary/open-weight catalog, while API plaintext permits only models with a nonempty OpenRouter `hugging_face_id` whose Hugging Face repository resolves, denying unknown or unverifiable models with HTTP 403. API Sealed is active through Tinfoil's current open-weight catalog: a compatible client verifies attestation and encrypts the requested model and body from BayLeaf, while non-streaming usage metadata may reveal the executed model. BayLeaf does not independently enforce Tinfoil's catalog composition. The BayLeaf API stores no prompt or completion content and disables request tracing (see `SECURITY.md §2.3a`). Vertex, Bedrock, and NRP are disabled.
-3. **Data retained.** User accounts (email, name, OAuth tokens), conversation histories, group memberships, and uploaded files are stored in DigitalOcean Managed PostgreSQL 17 and DO Spaces (AES-256 at rest). API key mappings are stored in Cloudflare D1 (encrypted at rest). Conversation data and sandbox content are automatically deleted after 90 days of inactivity per a published, automated retention policy (`../chat/RETENTION.md`, `../api/RETENTION.md`). See `SECURITY.md §2.2`.
+3. **Data retained.** User accounts (email, name, OAuth tokens), conversation histories, group memberships, and uploaded files are stored in DigitalOcean Managed PostgreSQL 17 and DO Spaces (AES-256 at rest). API key mappings are stored in Cloudflare D1 (encrypted at rest). Conversation data and sandbox content are automatically deleted after 90 days of inactivity per a published, automated retention policy (`chat/RETENTION.md`, `api/RETENTION.md`). See `SECURITY.md §2.2`.
 4. **Authentication.** SSO-only via CILogon/InCommon (OIDC); no password login. Direct signup disabled. MFA inherited from the UCSC IdP.
 5. **Documentation.** Full security exhibit at `SECURITY.md`. Full FERPA analysis with draft designation memo at `FERPA.md`. Dependency audit at `DEPENDENCIES.md`. Vulnerability reporting policy at repo-root `SECURITY.md`.
 6. **Approval posture.** BayLeaf is not currently on the UCSC AI Council's P3-approved list. This HECVAT is part of the process to change that.
@@ -351,7 +351,7 @@ See START HERE section above.
 
 **Q:** Does your organization have a data privacy policy?
 
-**Answer:** Yes. A user-facing privacy notice is published at <https://bayleaf.dev/privacy.html>, linked from the landing page and Support page footers. The canonical retention policies it summarizes (`../chat/RETENTION.md`, `../api/RETENTION.md`) and the underlying security posture (`SECURITY.md §2`, `FERPA.md`) are version-controlled in this repository. BayLeaf operates within UCSC's published privacy policies and UC's Statement of Privacy Values and Privacy Principles.
+**Answer:** Yes. A user-facing privacy notice is published at <https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md>, linked from the bayleaf.dev landing page (footers and privacy question). The canonical retention policies it summarizes (`../chat/RETENTION.md`, `../api/RETENTION.md`) and the underlying security posture (`SECURITY.md §2`, `FERPA.md`) are version-controlled in this repository. BayLeaf operates within UCSC's published privacy policies and UC's Statement of Privacy Values and Privacy Principles.
 
 **Additional Information:**
 
@@ -2180,9 +2180,9 @@ See START HERE section.
 
 **Q:** Web Link to Product/Service Privacy Notice
 
-**Answer:** <https://bayleaf.dev/privacy.html>
+**Answer:** <https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md>
 
-**Additional Information:** Plain-language summary of data collected, retention windows (linking to canonical `RETENTION.md` files), user controls, full subprocessor list, and posture statements. Linked from the landing page and Support page footers.
+**Additional Information:** Plain-language summary of data collected, retention windows (linking to canonical `RETENTION.md` files), user controls, full subprocessor list, and posture statements. Linked from the bayleaf.dev landing page (footer and privacy question).
 
 ---
 
@@ -2201,13 +2201,13 @@ See START HERE section.
 
 **Q:** Use this area to share information about your privacy practices that will assist those who are assessing your company data privacy program.*
 
-**Answer:** Key points (also summarized for end users at <https://bayleaf.dev/privacy.html>):
+**Answer:** Key points (also summarized for end users at <https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md>):
 
 1. Chat and API plaintext inference route to ZDR-contracted provider endpoints via OpenRouter. API Sealed routes encrypted model identifiers and bodies to Tinfoil confidential inference. Prompts and completions are not retained by active inference providers.
 2. BayLeaf itself retains conversation histories, user profiles, and uploaded files in encrypted databases, accessible only to the sole administrator, who uses that access only for operational purposes.
 3. No data is sold, shared with advertisers, used for training, or exposed to data brokers.
 4. No cross-user content sharing, no cross-institution sharing, no analytics pixels, no third-party trackers embedded in the UI.
-5. Deletion initiated by the user is honest: records are removed from the database, not soft-deleted; they age out of DO managed backups on DO's schedule. Conversation and sandbox data is additionally subject to automatic 90-day inactivity-based deletion under the published retention policy (`../chat/RETENTION.md`, `../api/RETENTION.md`), with records-hold exemption via `hold:*` groups for litigation/audit/CPRA scenarios.
+5. Deletion initiated by the user is honest: records are removed from the database, not soft-deleted; they age out of DO managed backups on DO's schedule. Conversation and sandbox data is additionally subject to automatic 90-day inactivity-based deletion under the published retention policy (`chat/RETENTION.md`, `api/RETENTION.md`), with records-hold exemption via `hold:*` groups for litigation/audit/CPRA scenarios.
 
 **Additional Information:**
 
@@ -2593,7 +2593,7 @@ See START HERE section.
 
 **Q:** Do you provide an end-user privacy notice about privacy policies and procedures that identify the purpose(s) for which personal information is collected, used, retained, and disclosed?
 
-**Answer:** Yes. Published at <https://bayleaf.dev/privacy.html>, with the canonical retention schedule and security posture documented in `../chat/RETENTION.md`, `../api/RETENTION.md`, `SECURITY.md §2`, and `FERPA.md`.
+**Answer:** Yes. Published at <https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md>, with the canonical retention schedule and security posture documented in `../chat/RETENTION.md`, `../api/RETENTION.md`, `SECURITY.md §2`, and `FERPA.md`.
 
 **Additional Information:**
 
@@ -2603,7 +2603,7 @@ See START HERE section.
 
 **Q:** Do you describe the choices available to the individual and obtain implicit or explicit consent with respect to the collection, use, and disclosure of personal information?
 
-**Answer:** Implicit consent via OIDC login flow (CILogon's consent screen discloses attribute release); explicit consent for optional capabilities (GWS OAuth per-chat). Collection, use, retention, and disclosure are summarized for users in plain language at <https://bayleaf.dev/privacy.html>.
+**Answer:** Implicit consent via OIDC login flow (CILogon's consent screen discloses attribute release); explicit consent for optional capabilities (GWS OAuth per-chat). Collection, use, retention, and disclosure are summarized for users in plain language at <https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md>.
 
 **Additional Information:**
 
@@ -2623,7 +2623,7 @@ See START HERE section.
 
 **Q:** Do you have a documented list of personal data your service maintains?
 
-**Answer:** Yes. `SECURITY.md §2.2` is the canonical inventory; the user-facing version is in the "What gets collected" section of <https://bayleaf.dev/privacy.html>:
+**Answer:** Yes. `SECURITY.md §2.2` is the canonical inventory; the user-facing version is in the "What gets collected" section of <https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md>:
 
 - User accounts: email, display name, OIDC `sub`, OAuth tokens.
 - Conversation histories: user's prompts, LLM completions, tool-call results.

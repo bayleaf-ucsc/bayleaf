@@ -13,7 +13,7 @@ Because BayLeaf composes surfaces from multiple sources (see [§ 2](#2-framing-m
 
 - [VPAT-chat.md](VPAT-chat.md): [`chat.bayleaf.dev`](https://chat.bayleaf.dev), Open WebUI deployment.
 - [VPAT-api.md](VPAT-api.md): [`api.bayleaf.dev`](https://api.bayleaf.dev), BayLeaf-authored Hono/JSX templates (public landing and authenticated dashboard).
-- [VPAT-pages.md](VPAT-pages.md): the four static pages on [`bayleaf.dev`](https://bayleaf.dev) (landing, [support](https://bayleaf.dev/support.html), [privacy](https://bayleaf.dev/privacy.html), [use cases](https://bayleaf.dev/use-cases.html)) sharing one stylesheet at [`docs/style.css`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs/style.css).
+- [VPAT-pages.md](VPAT-pages.md): the landing page on [`bayleaf.dev`](https://bayleaf.dev) (from [`landing/index.html`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/landing/index.html)); since 2026-09-16 the only page there, after support/privacy/use-cases content moved to GitHub-served markdown ([PRIVACY.md](https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md), [SUPPORT.md](https://github.com/bayleaf-ucsc/bayleaf/blob/main/SUPPORT.md), [USE-CASES.md](https://github.com/bayleaf-ucsc/bayleaf/blob/main/USE-CASES.md)), which is covered by GitHub's product ACRs.
 
 This overview document holds everything common across those surfaces: the template explainer, framing memo, policy drivers, evaluation methodology, open questions for campus stakeholders, future work, and references. See [§ 4](#4-per-surface-acrs) for the surface inventory and [§ 5](#5-evaluation-methodology-for-future-passes) for methodology.
 
@@ -66,7 +66,7 @@ multiple sources:
   BayLeaf-authored [Hono](https://hono.dev/) / JSX templates (a landing
   page and a dashboard) plus a JSON API that is not itself a UI.
 - **bayleaf.dev** serves a single static HTML landing page from the
-  repository's [`docs/`](https://github.com/bayleaf-ucsc/bayleaf/tree/main/docs)
+  repository's [`landing/`](https://github.com/bayleaf-ucsc/bayleaf/tree/main/landing)
   directory via [GitHub Pages](https://pages.github.com/).
 
 Several VPAT questions (evaluation methodology from the vendor's
@@ -157,13 +157,13 @@ BayLeaf operates three assessed web surfaces. The accessibility posture of each 
 |---|---|---|---|---|---|
 | BayLeaf Chat | [chat.bayleaf.dev](https://chat.bayleaf.dev) | [Open WebUI](https://openwebui.com/) (OSS, upstream) | Shared: upstream owns the UI; BayLeaf owns deployment, theme config, and model output shaping | Not Evaluated; blocked on upstream ACR question | [VPAT-chat.md](VPAT-chat.md) |
 | BayLeaf API | [api.bayleaf.dev](https://api.bayleaf.dev) | BayLeaf [Hono/JSX](https://hono.dev/) templates (public landing + authenticated dashboard) | BayLeaf | **Evaluated empirically via headless Chromium** (both views) | [VPAT-api.md](VPAT-api.md) |
-| bayleaf.dev pages | [bayleaf.dev](https://bayleaf.dev), [bayleaf.dev/support.html](https://bayleaf.dev/support.html), [bayleaf.dev/privacy.html](https://bayleaf.dev/privacy.html), [bayleaf.dev/use-cases.html](https://bayleaf.dev/use-cases.html) | Static HTML ([`docs/index.html`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs/index.html), [`docs/support.html`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs/support.html), [`docs/privacy.html`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs/privacy.html), [`docs/use-cases.html`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs/use-cases.html)) sharing [`docs/style.css`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/docs/style.css) | BayLeaf | **Evaluated empirically via headless Chromium**; one open Level A defect (no text alternative or audio description for the embedded lecture series; captions verified present) | [VPAT-pages.md](VPAT-pages.md) |
+| bayleaf.dev pages | [bayleaf.dev](https://bayleaf.dev) | Static HTML ([`landing/index.html`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/landing/index.html)) with [`landing/style.css`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/landing/style.css). Since 2026-09-16 the only page there; support/privacy/use-cases are GitHub-served markdown ([PRIVACY.md](https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md), [SUPPORT.md](https://github.com/bayleaf-ucsc/bayleaf/blob/main/SUPPORT.md), [USE-CASES.md](https://github.com/bayleaf-ucsc/bayleaf/blob/main/USE-CASES.md)), under GitHub's platform ACRs. | BayLeaf | **Evaluated empirically via headless Chromium**; one open Level A defect (no text alternative or audio description for the embedded lecture series; captions verified present) | [VPAT-pages.md](VPAT-pages.md) |
 
 Each per-surface document carries its own header (with the service's current status line), a surface description, a full WCAG 2.1 A/AA conformance table targeting that surface, and (where applicable) surface-specific considerations. The Section 508 Chapter 3/5/6 and EN 301 549 Chapter 4-13 tables appear in each per-surface ACR because they apply to the service as a whole; the entries are identical across documents and are maintained by hand rather than generated.
 
 **Out of scope (for all surfaces):**
 
-- Any static pages added to [`docs/`](https://github.com/bayleaf-ucsc/bayleaf/tree/main/docs) beyond the four covered by [VPAT-pages.md](VPAT-pages.md). New pages are folded into that ACR at the time they ship. This has slipped once: `privacy.html` and `use-cases.html` shipped and ran unaudited until the 2026-07-24 pass brought them in. Treat "a new page in `docs/`" as a trigger for an ACR update, not an optional follow-up.
+- Any static pages added to [`landing/`](https://github.com/bayleaf-ucsc/bayleaf/tree/main/landing) beyond the landing covered by [VPAT-pages.md](VPAT-pages.md). New pages are folded into that ACR at the time they ship. This has slipped once: `privacy.html` and `use-cases.html` shipped and ran unaudited until the 2026-07-24 pass brought them in. (The 2026-09-16 migration removed those two pages and `support.html` in favor of GitHub-served markdown; the defect-and-remediation spirit now applies to content edits within the GitHub-rendered markdown files.) Treat "a new page in `landing/`" as a trigger for an ACR update, not an optional follow-up.
 - **[`api.bayleaf.dev/docs`](https://api.bayleaf.dev/docs)**, the interactive API reference. BayLeaf authors only the HTML shell (`<html lang="en">`, title, viewport); the rendered UI is the [Scalar](https://scalar.com/) API reference viewer loaded from a CDN, a third-party component with its own visual language and its own conformance responsibility. BayLeaf's OpenAPI *content* (endpoint summaries, descriptions) is BayLeaf's; the widget rendering it is not. Not covered by [VPAT-api.md](VPAT-api.md), whose scope is the landing and the dashboard.
 - **[`api.bayleaf.dev/auth/claim`](https://api.bayleaf.dev/auth/claim)**, the one-shot terminal-authorization approval page. BayLeaf-authored, deliberately built with inline styles outside the shared `BaseLayout`, and therefore not covered by the empirical pass behind [VPAT-api.md](VPAT-api.md). It is a genuine gap rather than a third-party exclusion, and should be folded into that ACR.
 - **The dormant LTI 1.1/1.3 connector spike**, formerly at `lti.bayleaf.dev`. Its DigitalOcean deployment was deleted on 2026-09-03 and it was never offered to the campus community. Not evaluated. If the connector becomes a supported service, it needs its own ACR before launch.
@@ -377,7 +377,7 @@ code but does own the responsibility to push the chain to improve.
 Reasonable cadences:
 
 - On every non-trivial change to BayLeaf-authored templates (the
-  API landing, dashboard, and `docs/` pages). Automated scans on
+  API landing, dashboard, and `landing/index.html`). Automated scans on
   pull request.
 - On Open WebUI version bumps. Smoke-test the changed areas.
 - Annually, a full manual pass. This matches the cadence of the UC

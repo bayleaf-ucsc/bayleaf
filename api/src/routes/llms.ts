@@ -466,7 +466,7 @@ All machine-facing endpoints accept ${bt}Authorization: Bearer <key>${bt}.
 BayLeaf applies a daily limit to each backend: some are price-based and others
 are request-based. Your current limits and remaining allowance are shown in the
 [dashboard](https://api.bayleaf.dev/dashboard) and by ${bt}GET /v1/auth/key${bt}.
-Increased limits are [available upon request](https://bayleaf.dev/support).
+Increased limits are [available upon request](https://github.com/bayleaf-ucsc/bayleaf/blob/main/SUPPORT.md).
 
 ### LLM inference
 
@@ -681,7 +681,7 @@ ${gwsEnabled ? buildGwsSection(placeholderEmail, bt, fence) : ''}${buildCanvasSe
 
 - All inference uses zero-data-retention (ZDR) providers. Conversations are never used for training. BayLeaf retains no copy of your prompts or completions and has no standing operator access to your request content in flight: only minimal request metadata (model, token counts, timestamps) is observable (see https://api.bayleaf.dev/RETENTION.md).
 - The ${bt}sk-bayleaf-...${bt} token is yours to manage. Both OpenCode configurations use the same token. Revoking it from https://api.bayleaf.dev/ invalidates it across all configured agents at once.
-- Increased limits are [available upon request](https://bayleaf.dev/support).
+- Increased limits are [available upon request](https://github.com/bayleaf-ucsc/bayleaf/blob/main/SUPPORT.md).
 - This service is operated by Adam Smith (Computational Media, UCSC). Source on GitHub: https://github.com/bayleaf-ucsc/bayleaf.
 `;
 }

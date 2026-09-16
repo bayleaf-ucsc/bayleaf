@@ -29,7 +29,7 @@ workflow turns out to be.
    granted (workspace model + group grants). The standard BayLeaf pattern.
 3. **Documentation set:** an `AGENTS.md` for the new component if it has a
    directory; `chat/DESIGN.md` section if it's a Chat facet;
-   `docs/privacy.html` subprocessor disclosure; root `AGENTS.md` structure
+   `PRIVACY.md` subprocessor disclosure; root `AGENTS.md` structure
    tree.
 4. **Rate limits / funding frame.** Every facet is sufficiency-capped and
    centrally funded; state its cap and its abuse bounds at birth

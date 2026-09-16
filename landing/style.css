@@ -1,5 +1,5 @@
 /*
- * BayLeaf shared stylesheet for GitHub Pages surfaces (index.html, support.html).
+ * BayLeaf stylesheet for the GitHub Pages landing page (index.html).
  *
  * Accessibility invariants (see politics/VPAT-pages.md for the ACR):
  *   - All text/background pairs pass WCAG 2.1 AA (lowest contrast 5.74:1).
@@ -88,7 +88,7 @@ ul { padding-left: 1.5rem; }
 li { margin-bottom: 0.5rem; }
 code { overflow-wrap: anywhere; }
 
-/* Callout box (support.html uses this for the one-person-operation disclosure). */
+/* Callout box (the former support page uses this for the one-person-operation disclosure). */
 .note {
     background: #f8f9fa;
     border-left: 3px solid #2a5298;

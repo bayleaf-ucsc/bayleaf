@@ -66,7 +66,7 @@
     // so we cannot promise ZDR parity with our OpenRouter path (issue #36).
     // Before flipping to "true", confirm the account's institutional contract
     // coverage and ZDR posture, then update the active/disabled and data-flow
-    // claims in docs/privacy.html, docs/index.html, api/RETENTION.md,
+    // claims in PRIVACY.md, landing/index.html, api/RETENTION.md,
     // politics/SECURITY.md, politics/FERPA.md, politics/HECVAT.md,
     // politics/POSITION.md, and politics/RESEARCH.md. Google is not listed as
     // an active subprocessor while this lane is off.
@@ -112,9 +112,9 @@
     //   3. Weights listing: fetchBedrockModels already filters to ZDR-capable
     //      models, but closed-weight ZDR-capable ones (haiku, grok) pass, so
     //      a weights answer is still required before flip.
-    //   4. Add AWS to docs/privacy.html subprocessors and update the
+    //   4. Add AWS to PRIVACY.md subprocessors and update the
     //      active/disabled, account-coverage, and data-flow claims in
-    //      docs/index.html, api/RETENTION.md, politics/SECURITY.md,
+    //      landing/index.html, api/RETENTION.md, politics/SECURITY.md,
     //      politics/FERPA.md, politics/HECVAT.md, politics/DEPENDENCIES.md,
     //      politics/POSITION.md, and politics/RESEARCH.md.
     "BEDROCK_ENABLED": "false",
@@ -151,7 +151,7 @@
     //      authoritative numbers are available out-of-band and DO include
     //      streaming, so this is a visibility gap, not an accounting gap.
     //   4. DONE. The Tinfoil subprocessor disclosure is live in
-    //      docs/privacy.html and published at https://bayleaf.dev/privacy.html.
+    //      PRIVACY.md and published at https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md.
     //
     // Two gate items were deliberately NOT met. The reasoning is recorded here
     // rather than the requirement quietly dropped:
