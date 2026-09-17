@@ -2,14 +2,15 @@
 title: Lathe
 author: Adam Smith
 author_url: https://adamsmith.as
-description: Coding agent tools (lathe, bash, read, write, edit, glob, grep, interpret, delegate, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.
+description: Coding agent tools (lathe, bash, read, write, edit, glob, grep, view, interpret, delegate, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.
 required_open_webui_version: 0.4.0
-requirements: httpx, httpx-ws, pydantic-ai-slim[openai]~=1.60, cachetools
-version: 0.24.1
+requirements: httpx, httpx-ws, pydantic-ai-slim[openai]~=2.5, cachetools
+version: 0.27.0
 licence: MIT
 """
 
 import asyncio
+import base64
 import inspect
 import io
 import json
@@ -20,6 +21,7 @@ import time
 import typing
 import urllib.parse
 import uuid
+from datetime import datetime, timezone
 
 import httpx
 from cachetools import LRUCache
@@ -94,6 +96,38 @@ def _extract_sandbox_list(payload) -> list:
     if isinstance(payload, dict):
         return payload.get("items") or []
     return []
+
+
+def _multiple_sandboxes_error(label_key: str, email: str, sandboxes: list[dict]) -> str:
+    """Explain why an ambiguous per-user sandbox association is refused."""
+    ids = ", ".join(str(s.get("id", "unknown"))[:12] for s in sandboxes)
+    return (
+        "Multiple sandboxes appear to be associated with your account. Lathe will not "
+        "choose, start, or destroy any of them because doing so could affect the wrong "
+        "environment. Please contact your system administrator and include this message. "
+        f"They should inspect the Daytona deployment label {label_key}={email} and "
+        f"reconcile these sandbox IDs: {ids}."
+    )
+
+
+async def _get_live_sandbox(valves, sandbox_id: str, client: httpx.AsyncClient) -> dict | None:
+    """Return authoritative sandbox data, or None for a deleted/deleting ghost.
+
+    GET /sandbox?labels=... is an eventually consistent discovery index. Once its
+    cardinality gate admits one candidate, this per-ID endpoint is authoritative.
+    """
+    resp = await client.get(
+        _api(valves, f"/sandbox/{sandbox_id}"),
+        headers=_headers(valves),
+        timeout=30.0,
+    )
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+    sandbox = resp.json()
+    if sandbox.get("state") in ("destroying", "destroyed"):
+        return None
+    return sandbox
 
 
 async def _emit(emitter, description: str, done: bool = False):
@@ -209,21 +243,27 @@ def _format_bg_delegate_notice(delegate_id: str, elapsed: int,
     return "\n".join(lines)
 
 
-def _unwrap_delegate_exception(exc: Exception) -> Exception:
-    """Recover an exception masked by pydantic-ai's old async cleanup bug."""
-    cleanup_exc = exc.__context__
-    if (
-        isinstance(exc, RuntimeError)
-        and str(exc) == "async generator raised StopAsyncIteration"
-        and isinstance(cleanup_exc, StopAsyncIteration)
-        and isinstance(cleanup_exc.__context__, Exception)
-    ):
-        return cleanup_exc.__context__
-    return exc
-
-
 def _shell_quote(s: str) -> str:
     return "'" + s.replace("'", "'\\''") + "'"
+
+
+_EPHEMERAL_ROOT = "/dev/shm/lathe"
+_DURABLE_ROOT = "/tmp/lathe"
+
+
+def _bash_sidecar_dir(cmd_id: str) -> str:
+    """Return the tmpfs directory for one bash invocation."""
+    return f"{_EPHEMERAL_ROOT}/cmd/{cmd_id}"
+
+
+def _delegate_sidecar_dir(delegate_id: str) -> str:
+    """Return the tmpfs directory for one delegate invocation."""
+    return f"{_EPHEMERAL_ROOT}/delegate/{delegate_id}"
+
+
+def _onboard_script_path(script_id: str) -> str:
+    """Return the tmpfs path for one generated onboarding script."""
+    return f"{_EPHEMERAL_ROOT}/onboard/{script_id}.py"
 
 
 def _parse_env_vars(env_vars: str) -> list[tuple[str, str]]:
@@ -321,6 +361,77 @@ def _extract_pid(output: str) -> str:
     """Extract PID=<number> from ensure-script output. Returns the number or '?'."""
     m = re.search(r"PID=(\d+)", output)
     return m.group(1) if m else "?"
+
+
+async def _http_preview(valves, sandbox_id: str, port: int, user: dict,
+                        client: httpx.AsyncClient) -> tuple[str, str]:
+    """Obtain a signed URL privately, then optionally wrap it before disclosure.
+
+    The wrapper is an administrator-trusted service, not a model-selected URL.
+    Catch failures inside this credential boundary: _tool_context otherwise
+    includes raw response bodies and exception text in model-visible output.
+    """
+    endpoint = valves.preview_wrapper_url.strip()
+    credential = valves.preview_wrapper_key
+    wrapped = bool(endpoint or credential)
+    error = "HTTP preview unavailable. "
+    if wrapped:
+        error += "Protected preview registration failed; no direct URL was returned. Ask the administrator to check the wrapping service."
+    else:
+        error += "Could not obtain a signed preview URL. Try expose again."
+    try:
+        if wrapped:
+            parsed = urllib.parse.urlsplit(endpoint)
+            if (not endpoint or not credential or parsed.scheme != "https" or not parsed.hostname
+                    or parsed.username or parsed.password or parsed.fragment
+                    or any(c.isspace() for c in endpoint)
+                    or not isinstance(user.get("id"), str) or not user["id"]
+                    or not isinstance(user.get("email"), str) or not user["email"]):
+                raise ValueError()
+        response = await client.get(
+            _api(valves, f"/sandbox/{sandbox_id}/ports/{port}/signed-preview-url"),
+            params={"expiresInSeconds": valves.preview_expiry_seconds},
+            headers=_headers(valves), timeout=30.0, follow_redirects=False,
+        )
+        response.raise_for_status()
+        upstream = response.json()["url"]
+        upstream_parts = urllib.parse.urlsplit(upstream)
+        if (upstream_parts.scheme != "https" or not upstream_parts.hostname
+                or upstream_parts.username or upstream_parts.password
+                or any(c.isspace() for c in upstream)):
+            raise ValueError()
+        lifetime = f"{valves.preview_expiry_seconds / 3600:g} hour(s)"
+        if not wrapped:
+            return upstream, (
+                f"Direct signed preview: this URL is a bearer credential, valid for up to {lifetime}. "
+                "Anyone who copies it can access the service. You may see a Daytona warning on first visit. "
+                "Sandbox sleep or service failure can end access sooner; call expose again to renew."
+            )
+        response = await client.post(endpoint, headers={"Authorization": f"Bearer {credential}"},
+            json={"owner": {"subject": user["id"], "email": user["email"]},
+                  "slot": str(port), "upstream_url": upstream},
+            timeout=30.0, follow_redirects=False)
+        response.raise_for_status()
+        result = response.json()
+        url = result["url"]
+        parsed = urllib.parse.urlsplit(url)
+        expiry = datetime.fromisoformat(result["expires_at"].replace("Z", "+00:00"))
+        if (result.get("access_mode") != "owner-authenticated"
+                or parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
+                or parsed.fragment or parsed.hostname == upstream_parts.hostname
+                or upstream_parts.hostname in urllib.parse.unquote(url)
+                or credential in url or any(c.isspace() for c in url)
+                or expiry.tzinfo is None or expiry <= datetime.now(timezone.utc)):
+            raise ValueError()
+        return url, (
+            f"Owner-authenticated preview: sign in as the owning user. Copying the URL does not grant access. "
+            f"Registration expires {expiry.astimezone(timezone.utc).isoformat()}; "
+            f"upstream access lasts up to {lifetime}. "
+            "Sandbox sleep or service failure can end availability sooner. "
+            "Call expose again to replace/renew the registration; the wrapper may invalidate previous browser sessions."
+        )
+    except Exception:
+        raise RuntimeError(error) from None
 
 
 def _require_abs_path(path: str, param_name: str = "path") -> str | None:
@@ -1423,6 +1534,123 @@ async def _core_grep(valves, sandbox_id: str, client: httpx.AsyncClient, *,
     )
 
 
+# ── view core (model-facing image perception) ───────────────────────
+#
+# Relies on OWUI's image-return convention (shipped in 0.11.0): a tool
+# result string starting with "data:image/<mime>;base64," is moved out of
+# the text channel and re-injected as an input_image part, so the model
+# sees the image on its next turn.  History replay flattens it back into
+# a user image message (convert_output_to_messages with
+# flatten_tool_images=True, the open-webui#27126-equivalent fix).
+#
+# Two hard requirements fall out of that convention:
+#   1. The result must START with the data URI.  Any prepended text (e.g.
+#      harness messages) breaks OWUI's startswith() detection, and the
+#      base64 lands in the model's text context instead.  The Tools
+#      wrapper uses defer_harness_messages=True for this reason.
+#   2. On OWUI < 0.11.0 the current turn works but replayed history is
+#      NOT flattened — strict providers reject the conversation on later
+#      turns.  Only deploy with view() on OWUI >= 0.11.0.
+#   3. Injection is NOT capability-gated upstream: a non-vision model
+#      receives an image part it cannot consume, and strict providers may
+#      then reject every later turn.  The Tools wrapper refuses view() up
+#      front for such models (_model_supports_vision), before any sandbox
+#      work happens.
+#
+# view() is deliberately withheld from the delegate sub-agent: pydantic-ai
+# returns tool results to the sub-model as plain text, so the data URI
+# convention never fires and the base64 would flood the sub-agent context.
+
+_VIEW_MAX_BYTES = 4 * 1024 * 1024  # 4 MiB, under Anthropic's 5 MB/image limit
+
+
+def _model_supports_vision(model: dict) -> bool:
+    """Best-effort vision-capability inference from an OWUI model dict.
+
+    Provider-declared architecture metadata (present on connection models)
+    is authoritative.  Otherwise fall back to the admin-declared
+    info.meta.capabilities.vision flag.  When neither says otherwise,
+    allow: a false refusal would silently disable view() for capable
+    models, which is worse than the residual risk of an unmarked
+    non-vision model.
+    """
+    if not isinstance(model, dict):
+        return True
+    arch = model.get("architecture") or {}
+    input_mods = arch.get("input_modalities")
+    if isinstance(input_mods, list) and input_mods:
+        return "image" in input_mods
+    modality = arch.get("modality")
+    if isinstance(modality, str) and "->" in modality:
+        return "image" in modality.split("->", 1)[0]
+    caps = ((model.get("info") or {}).get("meta") or {}).get("capabilities") or {}
+    if caps.get("vision") is False:
+        return False
+    return True
+
+
+def _sniff_image_mime(header: bytes) -> str | None:
+    """Return the MIME type for recognized raster image magic bytes, else None.
+
+    Checks content, not extension: the model can't be trusted to name files
+    accurately, and providers reject mislabeled image payloads.  SVG and
+    other text formats return None (they are not viewable raster images).
+    """
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if header.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if header[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if header[:4] == b"RIFF" and header[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+async def _core_view(valves, sandbox_id: str, client: httpx.AsyncClient, *,
+                     path: str) -> str:
+    """View an image file from the sandbox, loading it into your visual context.
+    Use for screenshots, charts, rendered pages, or generated images.
+    Requires a vision-capable model; if the current model cannot accept image
+    input, the call is refused with a reminder instead of the image.
+    Supported formats: PNG, JPEG, GIF, WebP (detected from file contents, not
+    extension). Max 4 MB; downscale larger images first via bash (e.g. with
+    ImageMagick or Pillow).
+
+    :param path: Absolute path to the image file.
+    """
+    err = _require_abs_path(path)
+    if err:
+        return err
+    resp = await client.get(
+        _toolbox(valves, sandbox_id, "/files/download"),
+        params={"path": path},
+        headers=_headers(valves),
+        timeout=60.0,
+    )
+    if resp.status_code == 404:
+        return f"Error: File not found: {path}"
+    resp.raise_for_status()
+    data = resp.content
+
+    mime = _sniff_image_mime(data[:16])
+    if mime is None:
+        return (
+            f"Error: {path} is not a PNG, JPEG, GIF, or WebP image "
+            f"(checked file contents, not extension). Convert it to PNG "
+            f"first via bash (e.g. with ImageMagick or Pillow). SVG and "
+            f"other text/vector formats cannot be viewed directly."
+        )
+    if len(data) > _VIEW_MAX_BYTES:
+        return (
+            f"Error: {path} is {_human_size(len(data))}, over the "
+            f"{_human_size(_VIEW_MAX_BYTES)} limit for view(). Downscale or "
+            f"recompress it via bash (e.g. ImageMagick or Pillow) and view "
+            f"the smaller result."
+        )
+    return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+
+
 # ── bash core (session + sidecar protocol) ──────────────────────────
 
 
@@ -1462,7 +1690,7 @@ def _format_bash_result(output: str, exit_code: int | None,
         bg_notice = (
             f"\n\n[Backgrounded after {elapsed}s — command is still running]\n"
             f"CMD={cmd_id}\n"
-            f"Ref /tmp/cmd/$CMD/{{sh,pid,log,exit}}\n"
+            f"Ref {_EPHEMERAL_ROOT}/cmd/$CMD/{{sh,pid,log,exit}}\n"
             f"See lathe(manpage=\"background\") for peek/poll/kill recipes.\n"
             f"Tell the user the command is running. Don't poll until they ask or "
             f"you have a concrete reason to expect completion."
@@ -1516,7 +1744,7 @@ async def _core_bash(valves, sandbox_id: str, client: httpx.AsyncClient, *,
     :param foreground_seconds: Seconds to wait before auto-backgrounding. Omit or set -1 to use the server default. Set 0 for immediate background (fire-and-forget). Use higher positive values for known-slow commands.
     """
     cmd_id = str(uuid.uuid4())
-    cmd_dir = f"/tmp/cmd/{cmd_id}"
+    cmd_dir = _bash_sidecar_dir(cmd_id)
     log_path = f"{cmd_dir}/log"
     pid_path = f"{cmd_dir}/pid"
     exit_path = f"{cmd_dir}/exit"
@@ -2127,7 +2355,7 @@ async def _chat_auto_init(
     except Exception as e:
         logger.debug("auto-init: sandbox metadata fetch failed: %s", e)
 
-    # ── User env var names (values never exposed) ────────────────
+    # ── User env var names for auto-init (values stay out of this message) ──
     try:
         user_valves = user.get("valves")
         if user_valves:
@@ -2240,7 +2468,7 @@ def _format_delegate_background(delegate_id: str, elapsed: int, log_preview: str
         f"{log_preview}\n\n"
         f"[Backgrounded after {elapsed}s — sub-agent is still running]\n"
         f"DELEGATE={did}\n"
-        f"Ref /tmp/delegate/$DELEGATE/{{task,log,result,error,usage}}\n"
+        f"Ref {_EPHEMERAL_ROOT}/delegate/$DELEGATE/{{task,log,result,error,usage}}\n"
         f"See lathe(manpage=\"delegate\") for background monitoring recipes.\n"
         f"Tell the user the delegate is running. Don't poll until they ask or "
         f"you have a concrete reason to expect completion."
@@ -2310,7 +2538,10 @@ def _build_delegate_system_prompt(max_steps: int, *, has_volume: bool = True) ->
 #   expose()   — user-facing; sub-agent has no user to give a URL to
 #   destroy()  — irreversible lifecycle operation
 #   delegate() — no recursion
-_DELEGATE_WITHHELD = {"lathe", "onboard", "expose", "destroy", "delegate", "handoff"}
+#   view()     — data-URI image returns only fire through OWUI's tool
+#                middleware; the sub-agent's pydantic-ai result channel is
+#                plain text, so the base64 would flood its context
+_DELEGATE_WITHHELD = {"lathe", "onboard", "expose", "destroy", "delegate", "handoff", "view"}
 
 
 # ── handoff() instructions ──────────────────────────────────────────
@@ -2511,42 +2742,42 @@ VOLUME_MOUNT_PATH = "/home/daytona/volume"
 
 # ── Service fast-path constants ──────────────────────────────────────
 
-_DUFS_BIN = "/tmp/dufs"
+_DUFS_BIN = f"{_DURABLE_ROOT}/dufs"
 _DUFS_PORT = 5000  # dufs default
 _DUFS_ROOT = "/home/daytona/workspace"
 
 # Single idempotent script: install if missing, start if not listening.
 # Exit 0 = ready (prints READY); non-zero = install or start failed.
 _DUFS_ENSURE_SCRIPT = (
-    f'set -e; '
+    f'set -e; mkdir -p {_DURABLE_ROOT}; '
     f'if ! test -x {_DUFS_BIN}; then '
     f'  TAG=$(curl -sf https://api.github.com/repos/sigoden/dufs/releases/latest '
     f'    | python3 -c "import sys,json; print(json.load(sys.stdin)[\'tag_name\'])") '
     f'  && curl -sL "https://github.com/sigoden/dufs/releases/download/${{TAG}}/'
     f'dufs-${{TAG}}-x86_64-unknown-linux-musl.tar.gz" '
-    f'  | tar xz -C /tmp && chmod +x {_DUFS_BIN}; '
+    f'  | tar xz -C {_DURABLE_ROOT} && chmod +x {_DUFS_BIN}; '
     f'fi; '
     f'if ! ss -tlnp | grep -q ":{_DUFS_PORT} "; then '
-    f'  nohup {_DUFS_BIN} {_DUFS_ROOT} --allow-all > /tmp/dufs.log 2>&1 & '
+    f'  nohup {_DUFS_BIN} {_DUFS_ROOT} --allow-all > {_DURABLE_ROOT}/dufs.log 2>&1 & '
     f'  sleep 0.5; '
     f'fi; '
     f'PID=$(ss -tlnp | grep ":{_DUFS_PORT} " | grep -o "pid=[0-9]*" | head -1 | cut -d= -f2); '
     f'echo "READY PID=$PID"'
 )
 
-_CS_BIN = "/tmp/code-server/bin/code-server"
+_CS_BIN = f"{_DURABLE_ROOT}/code-server/bin/code-server"
 _CS_PORT = 8080
 _CS_ROOT = "/home/daytona/workspace"
 
 _CS_ENSURE_SCRIPT = (
-    f'set -e; '
+    f'set -e; mkdir -p {_DURABLE_ROOT}; '
     f'if ! test -x {_CS_BIN}; then '
     f'  curl -fsSL https://code-server.dev/install.sh '
-    f'  | sh -s -- --method=standalone --prefix=/tmp/code-server; '
+    f'  | sh -s -- --method=standalone --prefix={_DURABLE_ROOT}/code-server; '
     f'fi; '
     f'if ! ss -tlnp | grep -q ":{_CS_PORT} "; then '
     f'  nohup {_CS_BIN} --bind-addr 0.0.0.0:{_CS_PORT} --auth none {_CS_ROOT} '
-    f'  > /tmp/code-server.log 2>&1 & '
+    f'  > {_DURABLE_ROOT}/code-server.log 2>&1 & '
     f'  sleep 1; '
     f'fi; '
     f'PID=$(ss -tlnp | grep ":{_CS_PORT} " | grep -o "pid=[0-9]*" | head -1 | cut -d= -f2); '
@@ -2680,14 +2911,15 @@ async def _ensure_sandbox(valves, email: str, client: httpx.AsyncClient, emitter
     matches = [s for s in sandboxes if s.get("labels", {}).get(label_key) == email]
 
     if len(matches) > 1:
-        ids = ", ".join(s["id"] for s in matches)
-        raise RuntimeError(
-            f"Found {len(matches)} sandboxes labelled {label_key}={email} ({ids}). "
-            f"Expected at most 1. Please delete the extras in the Daytona dashboard "
-            f"and try again."
-        )
+        raise RuntimeError(_multiple_sandboxes_error(label_key, email, matches))
 
-    sandbox = matches[0] if matches else None
+    # The label list is an eventually consistent discovery index. Its only
+    # permitted live cardinality is zero or one, so this adds at most one
+    # authoritative per-ID request per tool call.
+    sandbox = (
+        await _get_live_sandbox(valves, matches[0]["id"], client)
+        if matches else None
+    )
     warning: str | None = None
 
     if sandbox is None:
@@ -2831,6 +3063,17 @@ class Tools:
             "https://proxy.app.daytona.io/toolbox",
             description="Daytona toolbox proxy URL",
         )
+        preview_wrapper_url: str = Field(
+            "", description="Optional HTTPS registration endpoint for owner-authenticated HTTP previews. Configured wrapping fails closed.",
+        )
+        preview_wrapper_key: str = Field(
+            "", description="Installation bearer credential for the preview wrapper (admin only).",
+            json_schema_extra={"input": {"type": "password"}},
+        )
+        preview_expiry_seconds: int = Field(
+            86400, ge=60, le=86400,
+            description="Lifetime of upstream HTTP signed previews, in seconds (default/max: 24 hours). Independent of wrapper registration expiry. Does not affect SSH.",
+        )
         deployment_label: str = Field(
             "",
             description="Label key used to tag sandboxes for this OWUI deployment (e.g. 'chat.example.com')",
@@ -2890,7 +3133,7 @@ class Tools:
             description=(
                 'Environment variables injected into every bash command. '
                 'JSON object mapping variable names to values, e.g. {"MY_TOKEN":"abc123","FOO":"bar"}. '
-                "Values are shell-quoted before injection and never shown to the model."
+                "Values are shell-quoted before injection and entrusted to the model-controlled shell."
             ),
             json_schema_extra={"input": {"type": "password"}},
         )
@@ -2967,7 +3210,7 @@ class Tools:
             Ask the user to download the file on their own machine, then
             upload it to the sandbox through the dufs file browser. Call
             expose(target="dufs") to get the URL. This handles any file
-            type and any host with no size constraints.
+            type and any host, subject to the deployment's upload limits.
 
             **Rare — custom browser-side fetch service:**
             For repeated fetch needs (e.g. crawling an API the sandbox
@@ -3000,12 +3243,12 @@ class Tools:
             When bash() auto-backgrounds a command, it returns a descriptor with
             two paths:
 
-              CMD=/tmp/cmd/<id>   — the job's sidecar directory
-              PID=/tmp/cmd/<id>/pid — process ID file
+              CMD=/dev/shm/lathe/cmd/<id>   — the job's sidecar directory
+              PID=/dev/shm/lathe/cmd/<id>/pid — process ID file
 
             ## Sidecar files
 
-            Where CMD=/tmp/cmd/<id>:
+            Where CMD=/dev/shm/lathe/cmd/<id>:
 
               CMD/sh    — the full wrapper script that was executed
               CMD/pid   — PID of the bash process (written before exec)
@@ -3015,6 +3258,7 @@ class Tools:
             Absence of CMD/exit means the process is still running *or* the
             sandbox was restarted (in which case the PID is stale). To
             distinguish the two, check whether the PID is still alive.
+            Sidecars remain available until the sandbox stops or restarts.
 
             ## Recipes
 
@@ -3114,8 +3358,8 @@ class Tools:
             # Lathe — Recipes
 
             Tested scripts for bootstrapping common tools from a cold sandbox.
-            These tools live in /tmp and survive sandbox stop/restart but not
-            destroy(). If /tmp/dufs or /tmp/code-server is missing, re-run the
+            These tools live in /tmp/lathe and survive sandbox stop/restart but not
+            destroy(). If /tmp/lathe/dufs or /tmp/lathe/code-server is missing, re-run the
             install script.
 
             ## File browser — dufs
@@ -3131,12 +3375,12 @@ class Tools:
             ```
             This installs dufs if missing, starts it on port 5000 serving
             /home/daytona/workspace with full upload/download, and returns a
-            signed URL. Idempotent — safe to call again after sandbox restart.
+            preview URL. Safe to call again after sandbox restart.
 
             **Custom directory or read-only access:**
             For non-default configurations, install and start dufs manually:
             ```
-            nohup /tmp/dufs /home/daytona/workspace/output --allow-all &
+            nohup /tmp/lathe/dufs /home/daytona/workspace/output --allow-all &
             ```
             Then call expose(target="http:5000").
 
@@ -3150,13 +3394,15 @@ class Tools:
             expose(target="code-server")
             ```
             This installs code-server if missing, starts it on port 8080
-            serving /home/daytona/workspace with no auth, and returns a signed
-            URL. Idempotent — safe to call again after sandbox restart.
+            serving /home/daytona/workspace with no application-level auth, and
+            returns a preview URL. Safe to call again after sandbox restart.
+
+            {preview_access_note}
 
             **Custom configuration:**
             For non-default settings, install and start code-server manually:
             ```
-            nohup /tmp/code-server/bin/code-server --bind-addr 0.0.0.0:8080 --auth none /home/daytona/workspace &
+            nohup /tmp/lathe/code-server/bin/code-server --bind-addr 0.0.0.0:8080 --auth none /home/daytona/workspace &
             ```
             Then call expose(target="http:8080").
             """),
@@ -3188,7 +3434,7 @@ class Tools:
 
             ### Sidecar files
 
-            Where DELEGATE=/tmp/delegate/<id>:
+            Where DELEGATE=/dev/shm/lathe/delegate/<id>:
 
               DELEGATE/task    — the original task description
               DELEGATE/log     — timestamped progress entries (live)
@@ -3198,6 +3444,7 @@ class Tools:
 
             DELEGATE/result or DELEGATE/error appears when the sub-agent
             finishes. Absence of both means it's still running.
+            Sidecars remain available until the sandbox stops or restarts.
 
             ### Monitoring recipes
 
@@ -3397,7 +3644,7 @@ class Tools:
 
             **Running services and exposing them:**
             The sandbox is a server. Background a web server with nohup, then
-            call expose(target="http:N") to get a public HTTPS URL the user can open.
+            call expose(target="http:N") to get an HTTPS preview URL the user can open.
             The sandbox auto-stops on idle, which kills background processes —
             restart the server and call expose() again if needed.
 
@@ -3483,16 +3730,19 @@ class Tools:
               is already done.
             - bash() output is truncated to the last 2000 lines / 50 KB. If
               truncated, the full output is available in the log file at
-              /tmp/cmd/<id>/log — use read() to inspect specific sections.
+              /dev/shm/lathe/cmd/<id>/log — use read() to inspect specific sections.
             - edit() requires an exact string match (including whitespace). If
               the match is ambiguous, provide more surrounding context or use
               replace_all=true.
             - delegate() auto-backgrounds after ~30 seconds (configurable via
               foreground_seconds). Backgrounded delegates write to
-              /tmp/delegate/<id>/{log,result,error,usage}. Use foreground_seconds=0
+              /dev/shm/lathe/delegate/<id>/{log,result,error,usage}. Use foreground_seconds=0
               to fire-and-forget for parallel agent teams.
-            - expose() URLs expire after ~1 hour (call expose again for a fresh URL). The sandbox itself stops on
-              idle (~15 min default), killing servers.
+            - {preview_access_note}
+            - The sandbox stops on idle (~15 min default), killing servers.
+              A preview registration does not keep it awake or restart a service.
+            - HTTP preview wrapping does not protect SSH commands: they contain
+              access credentials and should not be exposed in screen recordings.
             - destroy() prompts for user confirmation via a dialog before proceeding. Irreversible.{destroy_volume_note}
             - **Network egress may be restricted.** Depending on the admin's
               Daytona tier, the sandbox may only reach a curated allowlist of
@@ -3552,6 +3802,15 @@ class Tools:
             content = content.replace("{tool_catalog}", tool_catalog)
             content = content.replace("{volume_note}", volume_note)
             content = content.replace("{destroy_volume_note}", destroy_volume_note)
+            preview_note = (
+                "HTTP expose uses an owner-authenticated wrapper. Return only its URL; "
+                "never work around a wrapping failure by obtaining or sharing a direct signed URL. "
+                "The tool result states registration expiry; copying the URL does not grant access."
+                if self.valves.preview_wrapper_url or self.valves.preview_wrapper_key else
+                "HTTP expose returns a direct signed bearer URL: anyone who copies it can access the service."
+            )
+            preview_note += f" Upstream HTTP access lasts up to {self.valves.preview_expiry_seconds / 3600:g} hour(s); call expose again to renew."
+            content = content.replace("{preview_access_note}", preview_note)
             await _emit(__event_emitter__, f"Manual page: {manpage}", done=True)
             return content
 
@@ -3645,50 +3904,56 @@ class Tools:
                     if s.get("labels", {}).get(label_key) == email
                 ]
 
-                if not matches:
+                if len(matches) > 1:
+                    return f"Error: {_multiple_sandboxes_error(label_key, email, matches)}"
+
+                sandbox = (
+                    await _get_live_sandbox(valves, matches[0]["id"], client)
+                    if matches else None
+                )
+
+                if sandbox is None:
                     await _emit(__event_emitter__, "No sandbox found", done=True)
                     return "No sandbox found. One will be created on your next tool call."
 
-                deleted = []
-                for s in matches:
-                    sid = s["id"]
-                    await _emit(__event_emitter__, f"Destroying sandbox {sid[:12]}...")
-                    resp = await client.delete(
-                        _api(valves, f"/sandbox/{sid}"),
-                        headers=_headers(valves),
-                        params={"force": "true"},
-                        timeout=30.0,
-                    )
-                    resp.raise_for_status()
-                    deleted.append(sid)
+                sid = sandbox["id"]
+                await _emit(__event_emitter__, f"Destroying sandbox {sid[:12]}...")
+                resp = await client.delete(
+                    _api(valves, f"/sandbox/{sid}"),
+                    headers=_headers(valves),
+                    params={"force": "true"},
+                    timeout=30.0,
+                )
+                resp.raise_for_status()
 
-                # Poll until deletion propagates
+                # The label list may transiently disappear then reappear with a
+                # stale pre-delete state. Only the per-ID 404 is completion.
                 for _ in range(30):
                     await asyncio.sleep(1)
                     resp = await client.get(
-                        _api(valves, "/sandbox"),
-                        params={"labels": labels_filter},
+                        _api(valves, f"/sandbox/{sid}"),
                         headers=_headers(valves),
                         timeout=30.0,
                     )
-                    remaining = [
-                        s for s in _extract_sandbox_list(resp.json())
-                        if s.get("labels", {}).get(label_key) == email
-                    ]
-                    if not remaining:
+                    if resp.status_code == 404:
                         break
+                    resp.raise_for_status()
+                else:
+                    raise RuntimeError(
+                        f"Sandbox {sid[:12]} did not finish deletion within 30 seconds."
+                    )
 
                 await _emit(__event_emitter__, "Sandbox destroyed", done=True)
-                ids = ", ".join(d[:12] for d in deleted)
+                ids = sid[:12]
                 if has_volume:
                     return (
-                        f"Destroyed {len(deleted)} sandbox(es) ({ids})."
+                        f"Destroyed 1 sandbox(es) ({ids})."
                         f" Your persistent files in {VOLUME_MOUNT_PATH} are intact"
                         f" and will reappear in your next sandbox."
                         f" A fresh sandbox will be created on the next tool call."
                     )
                 return (
-                    f"Destroyed {len(deleted)} sandbox(es) ({ids})."
+                    f"Destroyed 1 sandbox(es) ({ids})."
                     f" A fresh sandbox will be created on the next tool call."
                 )
 
@@ -3729,8 +3994,7 @@ class Tools:
             p = p.rstrip("/")
             script = _build_onboard_script(p)
 
-            # Write script to temp file and execute it
-            script_path = f"/tmp/_onboard_{uuid.uuid4()}.py"
+            script_path = _onboard_script_path(str(uuid.uuid4()))
             await _upload_file(
                 self.valves, sandbox_id, client,
                 script_path, script.encode("utf-8"),
@@ -3870,6 +4134,59 @@ class Tools:
             "chat_id": chat_id,
         },
     )
+
+    async def view(
+        self,
+        path: str,
+        __user__: dict = {},
+        __chat_id__: str = "",
+        __model__: dict = {},
+        __metadata__: dict = {},
+        __event_emitter__=None,
+    ) -> str:
+        # Capability gate: refuse cleanly when the current model cannot
+        # accept image input.  Checked BEFORE _ensure_sandbox so a refusal
+        # never spins up a VM.  __metadata__["model"] reflects the user's
+        # actual selection more reliably than __model__ (same dispatch
+        # quirk noted in delegate()).
+        model = __metadata__.get("model") if isinstance(__metadata__, dict) else None
+        if not isinstance(model, dict) or not model:
+            model = __model__ if isinstance(__model__, dict) else {}
+        if not _model_supports_vision(model):
+            modality = (model.get("architecture") or {}).get("modality", "unknown")
+            return (
+                f"Error: the current model ({model.get('id', 'unknown')}) does not "
+                f"accept image input (modality: {modality}), so view() would deliver "
+                f"an image you cannot perceive, and some providers then reject every "
+                f"later turn of the conversation. Ask the user to switch to a "
+                f"vision-capable model, or extract the information without vision "
+                f"(e.g. OCR or metadata inspection via bash)."
+            )
+
+        async def _run(client):
+            email = _get_email(__user__)
+            sandbox_id, _sb_warning = await _ensure_sandbox(self.valves, email, client, __event_emitter__)
+            await _ensure_chat_init(
+                self.valves, sandbox_id, client,
+                self._chat_state, __chat_id__, __user__, __event_emitter__,
+            )
+
+            await _emit(__event_emitter__, f"Loading image {path}...")
+            result = await _core_view(self.valves, sandbox_id, client, path=path)
+
+            await _emit(__event_emitter__, "Image loaded", done=True)
+            # The result must stay byte-identical to the core output: OWUI
+            # detects image tool results with startswith("data:image/"), and
+            # prepended harness text would silently break that detection and
+            # flood the model's text context with base64.  Defer (don't drop)
+            # the sandbox warning; leave pending messages queued for the
+            # next non-deferring tool call.
+            if _sb_warning:
+                _push_bg_notice(self._chat_state, __chat_id__, _sb_warning)
+            return result
+
+        return await _tool_context(__event_emitter__, _run)
+    view.__doc__ = inspect.getdoc(_core_view)
 
     async def delegate(
         self,
@@ -4034,7 +4351,7 @@ class Tools:
 
             # ── Sidecar directory on the sandbox ─────────────────────
             delegate_id = str(uuid.uuid4())
-            delegate_dir = f"/tmp/delegate/{delegate_id}"
+            delegate_dir = _delegate_sidecar_dir(delegate_id)
             log_path = f"{delegate_dir}/log"
             result_path = f"{delegate_dir}/result"
             error_path = f"{delegate_dir}/error"
@@ -4117,20 +4434,16 @@ class Tools:
                                     and remaining > 0
                                     and not nudge_injected
                                 ):
-                                    from pydantic_ai.messages import ModelRequest, UserPromptPart
-                                    nudge_msg = ModelRequest(parts=[UserPromptPart(
-                                        content=(
-                                            f"[SYSTEM: You have {remaining} step(s) remaining out of "
-                                            f"{clamped_steps}. Do not make any more tool calls. Use "
-                                            f"your final step to hand off your work. Write:\n"
-                                            f"1. What you accomplished.\n"
-                                            f"2. What remains unresolved — specific next steps.\n"
-                                            f"3. Absolute paths to critical sandbox files the calling "
-                                            f"agent or a follow-up sub-agent needs to continue "
-                                            f"(modified sources, failing tests, relevant logs).]"
-                                        ),
-                                    )])
-                                    agent_run._graph_run.state.message_history.append(nudge_msg)
+                                    agent_run.enqueue(
+                                        f"[SYSTEM: You have {remaining} step(s) remaining out of "
+                                        f"{clamped_steps}. Do not make any more tool calls. Use "
+                                        f"your final step to hand off your work. Write:\n"
+                                        f"1. What you accomplished.\n"
+                                        f"2. What remains unresolved — specific next steps.\n"
+                                        f"3. Absolute paths to critical sandbox files the calling "
+                                        f"agent or a follow-up sub-agent needs to continue "
+                                        f"(modified sources, failing tests, relevant logs).]"
+                                    )
                                     nudge_injected = True
 
                             elif Agent.is_call_tools_node(node):
@@ -4162,7 +4475,7 @@ class Tools:
                                     if emit_to_owui:
                                         await _emit(__event_emitter__, tool_status)
 
-                        usage = agent_run.usage()
+                        usage = agent_run.usage
                         result_output = agent_run.result.output if agent_run.result else "(no output)"
 
                     # ── Write sidecar result files ────────────────────
@@ -4192,9 +4505,8 @@ class Tools:
                     })
 
                 except Exception as e:
-                    root_error = _unwrap_delegate_exception(e)
-                    error_type = type(root_error).__name__
-                    error_detail = str(root_error)
+                    error_type = type(e).__name__
+                    error_detail = str(e)
                     # Detect provider-level failures (malformed upstream responses)
                     # and surface a concise, actionable message instead of raw
                     # pydantic validation noise.
@@ -4364,20 +4676,11 @@ class Tools:
                     await _emit(__event_emitter__, f"Generating URL for port {svc_port}...")
 
                 await _emit(__event_emitter__, "Generating URL...")
-                resp = await client.get(
-                    _api(self.valves, f"/sandbox/{sandbox_id}/ports/{svc_port}/signed-preview-url"),
-                    params={"expiresInSeconds": 3600},
-                    headers=_headers(self.valves),
-                    timeout=30.0,
-                )
-                resp.raise_for_status()
-                url = resp.json().get("url", "")
-                if not url:
-                    return "Error: Daytona returned an empty URL."
+                url, access_note = await _http_preview(self.valves, sandbox_id, svc_port, __user__, client)
 
                 await _emit(__event_emitter__, ready_status, done=True)
                 messages = _drain_harness_messages(self._chat_state, __chat_id__, _sb_warning)
-                return _prepend_harness_messages(result_msg(url, pid), messages)
+                return _prepend_harness_messages(result_msg(url, pid) + "\n\n" + access_note, messages)
 
             if target_stripped == "ssh":
                 await _emit(__event_emitter__, "Creating SSH access token...")
@@ -4405,7 +4708,8 @@ class Tools:
                     f"The user can paste this into their terminal, VS Code Remote SSH, "
                     f"or JetBrains Gateway.\n\n"
                     f"Note: the sandbox auto-stops after ~{self.valves.auto_stop_minutes} min of inactivity. "
-                    f"Active SSH sessions keep the sandbox alive.",
+                    f"Active SSH sessions keep the sandbox alive. "
+                    f"This command contains an access credential; HTTP preview wrapping does not protect it.",
                     messages,
                 )
 
@@ -4417,7 +4721,7 @@ class Tools:
                     ready_status="File browser ready",
                     fail_status="dufs setup failed",
                     result_msg=lambda url, pid: (
-                        f"File browser URL (valid ~1 hour): {url}\n\n"
+                        f"File browser URL: {url}\n\n"
                         f"Give this URL to the user. In their browser they can:\n"
                         f"- **Upload**: drag and drop files onto the page\n"
                         f"- **Download**: click any file\n"
@@ -4434,7 +4738,7 @@ class Tools:
                     ready_status="IDE ready",
                     fail_status="code-server setup failed",
                     result_msg=lambda url, pid: (
-                        f"IDE URL (valid ~1 hour): {url}\n\n"
+                        f"IDE URL: {url}\n\n"
                         f"Give this URL to the user. They get VS Code in the browser with:\n"
                         f"- Full terminal access\n"
                         f"- File editing and navigation\n"
@@ -4468,9 +4772,9 @@ class Tools:
                 ready_status=f"URL ready (port {port})",
                 fail_status="",
                 result_msg=lambda url, pid: (
-                    f"Public URL (valid ~1 hour): {url}\n\n"
+                    f"Service URL: {url}\n\n"
                     f"The user can open this in a new browser tab. "
-                    f"They may see a Daytona security warning on first visit — they can click through it.\n\n"
+                    f"\n\n"
                     f"Note: the sandbox auto-stops after ~{self.valves.auto_stop_minutes} min of inactivity regardless of "
                     f"running background processes, killing the server. If the user reports "
                     f"the URL stopped working, restart the server and call expose() again."

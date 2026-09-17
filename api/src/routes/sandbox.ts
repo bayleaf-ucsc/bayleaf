@@ -13,6 +13,8 @@
  *   GET  /              Report sandbox status without side effects (keyed only)
  *   POST /exec         Execute a bash command (keyed only)
  *   POST /poke         Refresh the inactivity timer to prevent auto-stop (keyed only)
+ *   POST /expose       Wrap an already-running HTTP service (keyed only, gated POC)
+ *   DELETE /expose/:slot Revoke the caller's preview (keyed only)
  *   GET  /files/*      Download a file by absolute path (keyed only)
  *   PUT  /files/*      Upload a file by absolute path (keyed only)
  *   DELETE /            Destroy the user's sandbox (keyed or session)
@@ -33,7 +35,9 @@ import {
   getSandboxInfo,
   refreshActivity,
   deleteSandbox,
+  createSignedPreview,
 } from '../daytona';
+import { previewsEnabled, registerUserPreview, revokeUserPreview } from './previews';
 import {
   SandboxExecRequestSchema,
   SandboxExecResponseSchema,
@@ -42,9 +46,68 @@ import {
   SandboxStatusResponseSchema,
   SandboxPokeResponseSchema,
   ApiErrorSchema,
+  SandboxExposeRequestSchema,
+  SandboxExposeSlotSchema,
+  PreviewRegistrationResponseSchema,
 } from '../schemas';
 
 export const sandboxRoutes = new OpenAPIHono<AppEnv>();
+
+// Expose an already-running service. Ownership comes exclusively from the user
+// key; installation credentials, browser cookies, and Campus Pass cannot use it.
+const exposeRoute = createRoute({
+  method: 'post', path: '/expose', operationId: 'sandboxExpose', tags: ['Sandbox'],
+  summary: 'Get an owner-authenticated URL for a running sandbox service',
+  description: 'Exposes an existing HTTP service without starting or waking the sandbox. ' +
+    'Returns a fresh owner-authenticated URL with a random nonce and no visible port. ' +
+    'The registration lasts 24 hours, independently of the service and upstream access URL. ' +
+    'The Daytona access URL is also issued for 24 hours. Re-expose to renew access.',
+  security: [{ Bearer: [] }],
+  request: { body: { required: true, content: { 'application/json': { schema: SandboxExposeRequestSchema } } } },
+  responses: {
+    200: { description: 'Protected preview URL', content: { 'application/json': { schema: PreviewRegistrationResponseSchema } } },
+    401: { description: 'Invalid or missing user API key' },
+    403: { description: 'Personal user API key required' },
+    409: { description: 'Sandbox not running or slot registration conflict' },
+    502: { description: 'Preview unavailable' },
+    503: { description: 'Preview service disabled' },
+  },
+});
+sandboxRoutes.openapi(exposeRoute, async (c) => {
+  c.header('Cache-Control', 'no-store');
+  if (!previewsEnabled(c.env)) return c.json({ error: { message: 'Preview service disabled.', code: 503 } }, 503);
+  const auth = await resolveAuth(c);
+  if (auth instanceof Response) return auth as any;
+  if (auth.isCampusMode || !auth.userEmail) return c.json({ error: { message: 'Personal API key required.', code: 403 } }, 403);
+  try {
+    const sandbox = await lookupSandboxInfo(auth.userEmail, c.env);
+    if (sandbox?.state !== 'started') return c.json({ error: { message: 'Start your sandbox and HTTP service before exposing it.', code: 409 } }, 409);
+    const { port } = c.req.valid('json');
+    const upstream = await createSignedPreview(sandbox.id, port, c.env);
+    if (!upstream) return c.json({ error: { message: 'Preview unavailable.', code: 502 } }, 502);
+    const result = await registerUserPreview(c.env, auth.userEmail, String(port), upstream.url);
+    return result instanceof Response ? result as any : c.json(result, 200);
+  } catch {
+    // This path handles an upstream bearer credential. No exception logging.
+    return c.json({ error: { message: 'Preview unavailable.', code: 502 } }, 502);
+  }
+});
+
+sandboxRoutes.openapi(createRoute({
+  method: 'delete', path: '/expose/{slot}', operationId: 'sandboxRevokeExposure', tags: ['Sandbox'],
+  summary: 'Revoke a sandbox preview', security: [{ Bearer: [] }],
+  request: { params: SandboxExposeSlotSchema },
+  responses: { 204: { description: 'Revoked, or no such preview owned by caller' },
+    401: { description: 'Invalid or missing user API key' }, 403: { description: 'Personal API key required' },
+    503: { description: 'Preview service disabled' } },
+}), async (c) => {
+  if (!previewsEnabled(c.env)) return c.body('Preview service disabled.', 503);
+  const auth = await resolveAuth(c);
+  if (auth instanceof Response) return auth as any;
+  if (auth.isCampusMode || !auth.userEmail) return c.body('Personal API key required.', 403);
+  if (!await revokeUserPreview(c.env, auth.userEmail, c.req.valid('param').slot)) return c.body('Preview revocation unavailable.', 503);
+  return c.body(null, 204);
+});
 
 // ── Shared helper ──────────────────────────────────────────────────
 

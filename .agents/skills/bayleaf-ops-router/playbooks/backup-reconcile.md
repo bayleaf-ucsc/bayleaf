@@ -76,6 +76,11 @@ through the appropriate playbook, don't paper over it in the backup.
 
 ## Refinement log
 
+- 2026-09-17: A long feature session had an intentionally dirty API tree, so full
+  before/after pulls went to a private snapshot directory first. Review found only
+  the intended Lathe/skill changes and old model timestamp/grant-ID noise. Full
+  repo pulls followed; model noise was restored without discarding unrelated work.
+
 - 2026-08-25: promoted from a live run (commit `05d9d85`): offramp skill
   rollout captured, lathe v0.24.1, activation flips confirmed deliberate,
   whole_document_retrieval id drift resolved, DESIGN.md six-spot stale

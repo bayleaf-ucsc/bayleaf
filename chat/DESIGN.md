@@ -459,9 +459,14 @@ The most substantial toolkit on the deployment. Source:
 but **not bound to any model by default** — users enable it per-chat via the
 tool picker in the chat composer.
 
+**Current version: 0.27.0** (2026-09-17), byte-identical to the upstream
+checkout. This upgrade adopts Pydantic AI `~=2.5` and enables the generic
+owner-authenticated HTTP preview wrapper. The installation credential is an
+admin valve backed by the API's `PREVIEWS_INSTALLATION_KEY` Worker Secret. ✨
+
 **What it does.** Gives any OWUI model a coding-agent tool surface — `lathe`,
-`bash`, `read`, `write`, `edit`, `glob`, `grep`, `interpret`, `delegate`,
-`onboard`, `expose`, `destroy` — executing against per-user sandbox VMs
+`bash`, `read`, `write`, `edit`, `glob`, `grep`, `view`, `interpret`, `delegate`,
+`onboard`, `expose`, `handoff`, `destroy` — executing against per-user sandbox VMs
 ([Daytona](https://www.daytona.io/)) with transparent lifecycle management. Each
 user gets a single persistent sandbox identified by email; the sandbox is
 created lazily on first tool call and survives across conversations.
@@ -489,6 +494,7 @@ layers remain planned in issues
 | `edit(path, old_string, new_string, replace_all)` | Exact string replacement; fails on ambiguous matches unless `replace_all=true` |
 | `glob(pattern, max_lines)` | Search for files in the workspace by glob pattern |
 | `grep(pattern, files, max_lines)` | Search file contents in the workspace by regex |
+| `view(path)` | Load a PNG, JPEG, GIF, or WebP image into a vision-capable model's context (up to 4 MiB) |
 | `interpret(code, timeout)` | Run Python in a persistent REPL session (variables and imports persist across calls) |
 | `delegate(task, context_files, max_steps, foreground_seconds)` | Delegate a multi-step task to an autonomous sub-agent with the same tools; long delegations auto-background like `bash` |
 | `onboard(path)` | Load project context (directory listing, AGENTS.md, skill catalog) for agentic workflows |
@@ -498,28 +504,63 @@ layers remain planned in issues
 
 **Sandbox lifecycle.** Sandboxes idle-stop after 15 min, archive after 60 min
 past stop. The first tool call in a conversation transparently creates, starts,
-or unarchives the sandbox as needed. `/home/daytona/volume` is S3/FUSE-backed
-persistent storage that survives even sandbox destruction.
+or unarchives the sandbox as needed. BayLeaf disables Lathe's optional persistent
+volume: the VM filesystem survives stop/archive, but deleting the sandbox is
+final. Ephemeral command/delegate sidecars now live under `/dev/shm/lathe` and
+are lost on stop; reusable dufs/code-server installations live under `/tmp/lathe`.
+
+**Protected previews.** HTTP `expose` calls for arbitrary services, dufs, and
+code-server register with `https://api.bayleaf.dev/previews/registrations`.
+The model receives only `https://{cruzid}-{nonce}.bayleaf-proxies.dev/`; a wrapping
+failure returns an error rather than a direct upstream bearer URL. Browser access
+requires the owner's API login, which is separate from Chat login. Upstream
+signed URLs and registrations default to 24 hours. Every registration gets a
+fresh random origin, with no visible port or stable alias. Renewing replaces the
+registration and invalidates its old grants/connections. The gateway does not
+manage sandbox wake/sleep or service relaunch. SSH commands remain bearer
+credentials. See [the gateway contract and evidence](../api/PREVIEWS.md).
+
+The gateway supports WebSockets, service workers on fresh nonce origins, and
+server-managed application cookies. JavaScript-managed original cookie names
+are not supported. Browser caches can outlive the server-side grant. The
+current 1-GiB sandbox OOM-killed code-server during qualification; a disposable
+4-GiB test confirmed core IDE and terminal operation. This did not change
+BayLeaf's default sandbox size or its off-ramp policy.
 
 **UserValves.** Users can configure `env_vars` (a JSON object of environment
 variables like `{"GITHUB_TOKEN":"ghp_..."}`) that are injected into every
-`bash` command without exposing values to the model.
+`bash` command. The field is masked in the settings UI, but the model-controlled
+shell can read and disclose those values; use narrowly scoped credentials.
 
 **Admin valves** (configured in OWUI admin panel, never committed):
 
 - `daytona_api_key` — Daytona API key
 - `daytona_api_url` — Control plane URL (default: `https://app.daytona.io/api`)
 - `daytona_proxy_url` — Toolbox proxy URL
+- `preview_wrapper_url`: HTTPS registration endpoint (configured for BayLeaf API)
+- `preview_wrapper_key`: secret installation credential (admin-only password field)
+- `preview_expiry_seconds`: upstream HTTP signed-URL lifetime (configured as `86400`)
 - `deployment_label` — Label key for sandbox tagging (e.g. `chat.bayleaf.dev`)
 - `auto_stop_minutes` — Idle timeout (default: 15)
 - `auto_archive_minutes` — Archive delay after stop (default: 60)
 - `auto_delete_minutes` — Minutes after archive before permanent deletion (-1 = never)
 - `persistent_volume` — Mount a persistent S3/FUSE volume at `/home/daytona/volume` (default: `true`; disable for deployments with limited data retention)
-- `sandbox_language` — Default runtime (default: `python`)
 - `foreground_timeout_seconds` — Seconds to wait for bash/delegate before auto-backgrounding (default: 30)
 - `auto_create_sandbox` — Automatically create a sandbox when none exists for the user (default: `true`; disable for deployments where sandboxes are provisioned externally)
 - `sandbox_missing_message` — Custom message returned to the agent when no sandbox exists and auto-create is off (empty falls back to a generic message)
-- `sandbox_create_overrides` — JSON object of extra Daytona create args merged into the request, e.g. `{"cpu":2,"memory":4,"snapshot":"my-snapshot"}`. Cannot override `name`, `labels`, or `volumes` (managed by lathe).
+- `sandbox_create_overrides`: JSON of extra Daytona create args. Cannot override `name`, `labels`, or `volumes`. Snapshot resources come from the snapshot; current Daytona rejects cpu/memory overrides with a snapshot (including the default). The disposable custom-shape test used `buildInfo`.
+
+**Upgrade evidence (2026-09-17).** Full OWUI regression passed 7/7 scenarios:
+source/schema, bash, write/read, interpreter, view, delegate, and protected expose.
+A separate smoke test invoked production `lathe` and received a protected CruzID
+URL. Original grants and existing valves were preserved. Rollback source/valves
+and full before/after snapshots are private under
+`~/.tokens/bayleaf-lathe-rollout-20260917`. The service restart completed as
+deployment `a25ae1e8-7d81-481b-aa09-e6f57c595b1b`; the OWUI image remains v0.11.3.
+OWUI installs requirements when code changes. This restart was a precaution
+against cached imports across the dependency major-version change, not evidence
+that missing-dependency installation requires restarting. Personal proxy
+dogfooding was deferred; the coordinated rollout was explicitly approved.
 
 ### Restricted Tools (Stealth Toolkits)
 
@@ -670,7 +711,7 @@ Slides are scope-ready in the capability registry but have no handlers yet.
 Several tools require API keys configured as "valves" in the OWUI admin panel.
 These are **never** committed to this repo:
 
-- `lathe` — `daytona_api_key`, `daytona_api_url`, `daytona_proxy_url`, `deployment_label`, `auto_stop_minutes`, `auto_archive_minutes`, `auto_delete_minutes`, `persistent_volume`, `sandbox_language`, `foreground_timeout_seconds`, `auto_create_sandbox`, `sandbox_missing_message`, `sandbox_create_overrides`
+- `lathe`: `daytona_api_key`, `daytona_api_url`, `daytona_proxy_url`, `deployment_label`, `auto_stop_minutes`, `auto_archive_minutes`, `auto_delete_minutes`, `persistent_volume`, `foreground_timeout_seconds`, `auto_create_sandbox`, `sandbox_missing_message`, `sandbox_create_overrides`, `preview_wrapper_url`, `preview_wrapper_key`, `preview_expiry_seconds`
 - `gws_toolkit` — `google_client_id`, `google_client_secret`, `base_url`, `enabled_capabilities`
 - `web_context_toolkit` — `tavily_api_key`, `search_depth`, `include_answer`, `max_results`, `extract_depth`
 - `deepinfra_key_generator_toolkit` — `API_KEY`, `API_TOKEN_NAME`, `MODELS`, `EXPIRES_DELTA`

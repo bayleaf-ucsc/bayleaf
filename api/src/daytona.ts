@@ -219,6 +219,21 @@ export async function getSandboxInfo(id: string, env: Bindings): Promise<Sandbox
   return await resp.json() as SandboxInfo;
 }
 
+/** Port-scoped credential, kept server-side by the owner-authenticated wrapper. */
+export async function createSignedPreview(
+  id: string, port: number, env: Bindings,
+): Promise<{ url: string } | null> {
+  try {
+    const response = await fetch(apiUrl(env,
+      `/sandbox/${encodeURIComponent(id)}/ports/${port}/signed-preview-url?expiresInSeconds=86400`), {
+      headers: authHeaders(env), redirect: 'manual', signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) { await response.body?.cancel(); return null; }
+    const data = await response.json() as { url?: string };
+    return typeof data.url === 'string' ? { url: data.url } : null;
+  } catch { return null; } // Fetch errors may contain bearer URLs; never log them.
+}
+
 // ── Lifecycle orchestration ────────────────────────────────────────
 
 /**

@@ -4,6 +4,15 @@
 
 /** Cloudflare Worker bindings (env vars + secrets) */
 export interface Bindings {
+  // Owner-authenticated HTTP preview POC. Fail closed unless explicitly enabled.
+  PREVIEWS_ENABLED?: string;
+  PREVIEWS_API_ORIGIN?: string;
+  PREVIEWS_DOMAIN?: string;
+  PREVIEWS_SECRET?: string;
+  PREVIEWS_INSTALLATION_KEY?: string;
+  PREVIEWS_UPSTREAM_SUFFIXES?: string;
+  PREVIEW_CONNECTIONS: DurableObjectNamespace;
+
   // GCP / Vertex AI
   // Master kill-switch for the Vertex backend. When not exactly the string
   // "true", all `vertex:` routing, model listing, and curated-model exposure

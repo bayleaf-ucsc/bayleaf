@@ -11,8 +11,18 @@
   },
 
   "routes": [
-    { "pattern": "api.bayleaf.dev", "custom_domain": true }
+    { "pattern": "api.bayleaf.dev", "custom_domain": true },
+    { "pattern": "*.bayleaf-proxies.dev/*", "zone_name": "bayleaf-proxies.dev" }
   ],
+
+  // Removes expired preview credentials and login transactions. The handler is
+  // a no-op while PREVIEWS_ENABLED is false; owner-name reservations persist.
+  "triggers": { "crons": ["0 * * * *"] },
+
+  "durable_objects": {
+    "bindings": [{ "name": "PREVIEW_CONNECTIONS", "class_name": "PreviewConnections" }]
+  },
+  "migrations": [{ "tag": "preview-connections-v1", "new_sqlite_classes": ["PreviewConnections"] }],
 
   // D1 database for proxy key mappings
   // Create with: wrangler d1 create bayleaf-keys
@@ -44,6 +54,12 @@
   // Environment variables (set via wrangler secret or dashboard)
   // These are placeholders - actual values should be set as secrets
   "vars": {
+    // Owner-authenticated HTTP/WebSocket previews, issue #71. Enabled after
+    // synthetic local/live qualification; rollout boundaries are in PREVIEWS.md.
+    "PREVIEWS_ENABLED": "true",
+    "PREVIEWS_API_ORIGIN": "https://api.bayleaf.dev",
+    "PREVIEWS_DOMAIN": "bayleaf-proxies.dev",
+    "PREVIEWS_UPSTREAM_SUFFIXES": ".proxy.daytona.work,.daytonaproxy01.net",
     // GCP Vertex AI Configuration
     //
     // VERTEX_ENABLED is the master kill-switch for the Vertex backend. It must
@@ -223,6 +239,8 @@
   }
 
   // Secrets to configure via `wrangler secret put`:
+  // - PREVIEWS_INSTALLATION_KEY (one approved Lathe installation, bearer auth)
+  // - PREVIEWS_SECRET (independent base64-encoded 32-byte encryption/session key)
   // - OPENROUTER_PROVISIONING_KEY
   // - OIDC_CLIENT_ID       (from your OIDC provider: CILogon, Google, etc.)
   // - OIDC_CLIENT_SECRET   (from your OIDC provider)

@@ -268,3 +268,37 @@ export const HealthResponseSchema = z.object({
   status: z.literal('ok'),
   timestamp: z.string().datetime(),
 }).openapi('HealthResponse');
+
+// ── Owner-authenticated previews ───────────────────────────────────
+
+// Generic owner-wrapping input; BayLeaf's initial slot policy is applied by the
+// handler. Keeping slot opaque allows future named services without a new wire format.
+export const PreviewRegistrationSchema = z.object({
+  owner: z.object({
+    subject: z.string().min(1).max(200),
+    email: z.email().max(254),
+  }).strict(),
+  slot: z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/),
+  upstream_url: z.url().max(2048),
+  expires_at: z.iso.datetime({ offset: true }).optional().openapi({
+    description: 'Optional registration expiry, independent of upstream availability. Defaults to 24 hours and is capped at 24 hours.',
+  }),
+}).strict().openapi('PreviewRegistration');
+
+export const PreviewRegistrationResponseSchema = z.object({
+  url: z.url(),
+  access_mode: z.literal('owner-authenticated'),
+  expires_at: z.iso.datetime(),
+}).openapi('PreviewRegistrationResponse');
+
+export const PreviewLabelSchema = z.object({
+  label: z.string().regex(/^[a-z0-9-]{1,63}$/),
+}).openapi('PreviewLabel');
+
+export const SandboxExposeRequestSchema = z.object({
+  port: z.number().int().min(3000).max(9999).openapi({ example: 5000 }),
+}).strict().openapi('SandboxExposeRequest');
+
+export const SandboxExposeSlotSchema = z.object({
+  slot: z.string().regex(/^[3-9][0-9]{3}$/),
+}).openapi('SandboxExposeSlot');

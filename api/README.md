@@ -13,6 +13,13 @@ API key provisioning, LLM inference proxy, and sandboxed code execution for UC S
 - **Tool Integrations**: Distributes setup instructions and credentials for Google Workspace CLI and Canvas LMS CLI
 - **Campus Pass**: On-campus users can access inference and web tools without authentication; sandbox access requires a personal key
 
+**Owner-authenticated previews:** [Transient previews](PREVIEWS.md) provide fresh,
+login-protected `{cruzid}-{nonce}` URLs for running sandbox services. The gateway adds
+keyed `POST /sandbox/expose` and installation-authenticated Lathe registration.
+The gateway supports HTTP, WebSockets, and server-managed application cookies;
+live dufs and code-server core-operation checks passed. BayLeaf Chat now uses
+upstream Lathe 0.27.0 with owner-authenticated wrapping enabled. ✨
+
 ## Architecture
 
 This is a Cloudflare Worker (Hono) with a D1 database:

@@ -92,6 +92,7 @@ src/
     landing.tsx         Landing page template
     dashboard.tsx       Dashboard page template (key card, LLM card, sandbox card + client JS)
   routes/
+    previews.ts         Owner-authenticated HTTP preview POC; contract and live evidence in PREVIEWS.md
     auth.tsx            authRoutes: /login, /callback, /logout
     claim.tsx           claimRoutes: RFC 8628-style device flow for handing a key to a terminal
     dashboard.tsx       dashboardRoutes: / (landing), /dashboard (self-heals sandbox ID cache)
@@ -486,6 +487,33 @@ checkbox, so it is recorded rather than deleted.
    is published at `https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md`.
 
 ## Routes
+
+### Owner-authenticated preview POC (issue #71)
+
+`PREVIEWS_ENABLED=true` for the bounded POC deployed 2026-09-17. See `PREVIEWS.md` before changing this
+facet. `POST /previews/registrations` and its DELETE counterpart accept only
+the single Lathe installation's `PREVIEWS_INSTALLATION_KEY` Worker Secret.
+`POST /sandbox/expose` and `DELETE /sandbox/expose/{slot}` accept only the
+caller's normal BayLeaf user key. Both share canonical email/opaque-slot
+ownership; no model-provided owner is accepted on the user-key path.
+
+Preview-host dispatch precedes all API CORS and routes. The broker uses the
+existing API browser login plus a two-host transaction proof. Migration 0007
+stores encrypted upstream credentials, permanent owner-name reservations,
+installation-subject mappings, and expiring login transactions. The hourly
+scheduled handler removes expired registrations/flows when enabled.
+
+`npm run test:previews` is the local workerd/D1/Durable Object security harness.
+The gateway supports WebSockets with active expiry/revocation and server-set app
+cookies with host/generation isolation. Ordinary workers and same-origin frames
+are permitted, including service workers on fresh `{cruzid}-{nonce}` origins.
+There are no stable aliases or visible ports. Migration 0009 queues retired
+hostnames atomically for socket invalidation. See PREVIEWS.md for live dufs and
+code-server evidence, the 1-GiB code-server OOM, and the successful 4-GiB terminal
+test. Four-hour wall-clock soak and full browser-feature compatibility are not
+established. Production Chat runs upstream Lathe 0.27.0 with wrapping enabled;
+full OWUI regression and a production-tool exposure smoke passed. See the
+rollout record in `chat/DESIGN.md` and `PREVIEWS.md`. ✨
 
 ```
 /                       Landing       /login         OIDC start      /callback   OIDC callback

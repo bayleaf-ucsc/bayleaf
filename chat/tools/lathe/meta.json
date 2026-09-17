@@ -8,10 +8,10 @@
       "title": "Lathe",
       "author": "Adam Smith",
       "author_url": "https://adamsmith.as",
-      "description": "Coding agent tools (lathe, bash, read, write, edit, glob, grep, interpret, delegate, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.",
+      "description": "Coding agent tools (lathe, bash, read, write, edit, glob, grep, view, interpret, delegate, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.",
       "required_open_webui_version": "0.4.0",
-      "requirements": "httpx, httpx-ws, pydantic-ai-slim[openai]~=1.60, cachetools",
-      "version": "0.24.1",
+      "requirements": "httpx, httpx-ws, pydantic-ai-slim[openai]~=2.5, cachetools",
+      "version": "0.27.0",
       "licence": "MIT"
     },
     "has_user_valves": true
@@ -27,7 +27,7 @@
       "created_at": 1773097882
     }
   ],
-  "updated_at": 1784225071,
+  "updated_at": 1789681896,
   "created_at": 1773079252,
   "user": null,
   "write_access": true,
@@ -271,6 +271,22 @@
             "default": 0,
             "description": "Line to stop before (exclusive, 1-indexed). Negative counts from end. 0 means end of file.",
             "type": "integer"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "view",
+      "description": "View an image file from the sandbox, loading it into your visual context.\nUse for screenshots, charts, rendered pages, or generated images.\nRequires a vision-capable model; if the current model cannot accept image\ninput, the call is refused with a reminder instead of the image.\nSupported formats: PNG, JPEG, GIF, WebP (detected from file contents, not\nextension). Max 4 MB; downscale larger images first via bash (e.g. with\nImageMagick or Pillow).",
+      "parameters": {
+        "properties": {
+          "path": {
+            "description": "Absolute path to the image file.",
+            "type": "string"
           }
         },
         "required": [

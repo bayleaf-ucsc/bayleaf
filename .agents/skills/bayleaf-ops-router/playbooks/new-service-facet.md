@@ -54,6 +54,24 @@ traffic without changing the Worker.
 
 ## Refinement log
 
+- 2026-09-17: Issue #71's local preview POC needed distinct user-key and
+  installation-key authority, plus a two-host browser proof before owner login.
+  Miniflare's own Origin rejection initially masked gateway checks; synthetic
+  browser headers must reach the actual handler. Live qualification additionally
+  found Daytona's actual signed-host suffix differed from its docs, and redirects
+  may already use the protected origin. Wrangler OAuth lacked DNS-write scope;
+  the authenticated browser handled DNS. Toolkit dogfooding remains a later gate.
+- 2026-09-17 (interactive applications): code-server 4.137.0 loaded but then hit
+  the existing 1-GiB sandbox's OOM limit. A disposable 4-GiB test confirmed terminal
+  execution. Custom resource shapes required `buildInfo`; the default snapshot
+  rejected cpu/memory overrides. Deletion lingered in `destroying` for minutes,
+  so the tracked ID was retained until per-ID 404. Durable Object alarms handle
+  live socket expiry; browser cookie support is explicitly server-managed only.
+- 2026-09-17 (final naming): Adam chose fresh `{cruzid}-{nonce}` origins with no
+  visible port or stable alias. Root-scoped service workers are now permitted
+  within a generation; cached content can outlive network access. D1 retirement
+  triggers preserve socket invalidation under concurrent re-registration.
+
 - 2026-09-08: Unified probe deployment used ordinary 30-day sign-in, not a signing
   secret or long-lived minted JWT. Local Wrangler startup failure did not block
   authorized production qualification. Browser work needed its own 55-second

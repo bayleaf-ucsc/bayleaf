@@ -125,12 +125,39 @@ Users who need to preserve sandbox artifacts should copy them out before the
 
 ## Session Cookies
 
+### Owner-authenticated previews (bounded POC)
+
+Preview traffic on `*.bayleaf-proxies.dev` passes through the API Worker to the
+sandbox application. The gateway does not store or log HTTP bodies. It stores
+the upstream access URL encrypted in D1 so it can forward requests; this
+credential is decryptable by the gateway, not a zero-operator-access guarantee.
+The application and sandbox may retain their own files and state. ✨
+
+| State | Retention |
+|---|---|
+| Preview registration, encrypted upstream URL, owner email, slot, issuer, generation | Registration defaults to 24 hours, capped at 24 hours; hourly cleanup removes expired rows (normally within the following hour). Upstream unavailability does not remove the registration. |
+| Browser-login transaction and cookie/code digests | Transaction expires within five minutes, issued code within 60 seconds; successful redemption deletes it; hourly cleanup removes expired leftovers |
+| Canonical owner email/hostname reservation and installation-subject mapping | Indefinite, to prevent hostname reassignment and subject rebinding |
+| Preview-host session cookie | Secure, HttpOnly, host-only; until registration expiry, at most 24 hours |
+| Preview transaction, API broker, and login-resume cookies | Secure, HttpOnly, host-only; at most five minutes |
+| Transported application cookies | Browser-only, Secure/HttpOnly/host-only, registration-generation scoped; no longer than registration expiry |
+| WebSocket connection-manager metadata | Durable Object stores the public hostname and alarm; removed when its last connection is gone (normally on the next alarm, within 30 seconds). Frames are never persisted. |
+| Retired-origin invalidation queue | Public hostname, owner, and slot until successful connection invalidation; hourly cleanup retries leftovers |
+
+D1's backup retention also applies to deleted rows. Registration replacement and
+revocation invalidate gateway grants, but do not erase application local storage
+or stop scripts in already-open browser tabs. Each new registration has a fresh
+nonce origin. Service workers and browser caches may persist on retired origins,
+but those origins are not reused for the next application registration.
+
+### API login
+
 | Cookie | Content | Expiry |
 |---|---|---|
 | `bayleaf_session` | JWT with email, name, picture (signed, not encrypted) | 24 hours |
 | `oauth_state` | Random UUID (OIDC CSRF token) | 10 minutes |
 
-No server-side session store. Logout deletes the cookie immediately.
+API login has no server-side session store. Logout deletes its cookie immediately.
 
 ---
 

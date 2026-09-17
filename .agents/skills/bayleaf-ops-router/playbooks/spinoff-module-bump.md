@@ -70,6 +70,18 @@ uvx owui-cli tools deploy chat/tools/<id>/tool.py <id>
 
 ## Refinement log
 
+- 2026-09-17: Lathe preview wrapping was developed upstream and tested in an
+  isolated OWUI copy. BayLeaf's 0.24.1 still requires Pydantic AI 1.x; upstream
+  0.27.0 requires 2.x. The preview-only staging copy omitted dependency-install
+  frontmatter to avoid changing the live process. That is a narrow expose-path
+  check, not qualification of the complete upgrade. Adam deferred personal
+  proxy dogfooding; do not silently treat staging as satisfying that human gate.
+- 2026-09-17 (rollout): Adam explicitly approved adopting the newer upstream
+  Lathe in passing. Full regression passed 7/7 and a separate production-tool
+  exposure smoke passed. Original source/valves/grants were privately snapshotted.
+  OWUI auto-installs requirements on source changes; a restart was used as a
+  precaution against cached old-major imports, not demonstrated as necessary.
+
 - 2026-08-25: drafted from issue #65 + chat/AGENTS.md; never yet run as a
   playbook.
 - 2026-09-01: `opencode-tinfoil` showed that independently published client

@@ -16,6 +16,7 @@ import { discoverOIDC } from '../constants';
 import { setSessionCookie, clearSessionCookie } from '../utils/session';
 import { ErrorPage, renderPage } from '../templates/layout';
 import { consumeClaimReturnTo } from './claim';
+import { consumePreviewReturnTo } from './previews';
 
 export const authRoutes = new OpenAPIHono<AppEnv>();
 
@@ -114,10 +115,9 @@ authRoutes.get('/callback', async (c) => {
     name: user.name,
     picture: user.picture,
   });
-  // If a claim flow stashed a return-to cookie, send the user back to it.
-  // The cookie value is sanity-checked inside consumeClaimReturnTo (must be
-  // a `/auth/claim?c=<short-code>` path) to prevent open-redirect abuse.
-  const returnTo = consumeClaimReturnTo(c);
+  // Both return-to helpers construct constrained local paths. Preview resume
+  // additionally requires the original broker transaction cookie at authorize.
+  const returnTo = consumePreviewReturnTo(c) ?? consumeClaimReturnTo(c);
   return c.redirect(returnTo ?? '/dashboard', 302);
 });
 

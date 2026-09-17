@@ -28,9 +28,28 @@ import { docsRoutes } from './routes/docs';
 import { llmsRoutes } from './routes/llms';
 import { sealedWellKnownRoutes, wellKnownRoutes } from './routes/wellknown';
 import { claimRoutes } from './routes/claim';
+import { previewRoutes, handlePreviewHost, cleanupPreviews } from './routes/previews';
+export { PreviewConnections } from './routes/previews';
 import { RecommendedModelResponseSchema, HealthResponseSchema } from './schemas';
 
 const app = new OpenAPIHono<AppEnv>();
+
+// Preview origins must never inherit API routes, CORS, cookies, or error logs.
+app.use('*', async (c, next) => {
+  const hostname = new URL(c.req.url).hostname;
+  // A missing binding must not expose API routes on the production preview
+  // domain while its wildcard route still exists.
+  const domain = c.env.PREVIEWS_DOMAIN || 'bayleaf-proxies.dev';
+  if (hostname === domain || hostname.endsWith(`.${domain}`)) {
+    return handlePreviewHost(c);
+  }
+  await next();
+});
+
+app.openAPIRegistry.registerComponent('securitySchemes', 'PreviewDeployment', {
+  type: 'http', scheme: 'bearer',
+  description: 'Lathe installation credential. Distinct from user BayLeaf API keys.',
+});
 
 // ── Security scheme (shared across all routes) ───────────────────
 
@@ -43,12 +62,13 @@ app.openAPIRegistry.registerComponent('securitySchemes', 'Bearer', {
 
 // ── CORS middleware ───────────────────────────────────────────────
 
-app.use('*', cors({
+const apiCors = cors({
   origin: '*',
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Authorization', 'Content-Type'],
   maxAge: 86400,
-}));
+});
+app.use('*', (c, next) => c.req.path.startsWith('/previews/') ? next() : apiCors(c, next));
 
 // Redirect old /api/v1/* paths for backwards compatibility
 app.all('/api/v1/*', (c) => c.redirect(c.req.url.replace('/api/v1', '/v1'), 301));
@@ -128,6 +148,7 @@ app.route('/web', webRoutes);
 app.route('/docs', docsRoutes);
 app.route('/.well-known', wellKnownRoutes);
 app.route('/auth/claim', claimRoutes);
+app.route('/previews', previewRoutes);
 app.route('/', llmsRoutes);
 app.route('/', authRoutes);
 app.route('/', keyRoutes);
@@ -183,4 +204,9 @@ app.onError((err, c) => {
   return renderPage(c, renderErrorPage('Server Error', 'An unexpected error occurred.'), 500);
 });
 
-export default app;
+export default {
+  fetch: app.fetch,
+  scheduled: async (_event: ScheduledController, env: AppEnv['Bindings']) => {
+    if (env.PREVIEWS_ENABLED === 'true') await cleanupPreviews(env);
+  },
+};

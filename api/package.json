@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "test:previews": "node scripts/harness-previews.mjs",
     "tail": "wrangler tail"
   },
   "overrides": {
@@ -25,6 +26,8 @@
   "license": "MIT",
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260817.1",
+    "esbuild": "^0.28.1",
+    "miniflare": "5.20260811.1-alpha",
     "typescript": "^5.7.0",
     "wrangler": "^4.123.0"
   },
