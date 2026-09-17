@@ -29,9 +29,7 @@
  *   POST /auth/claim/initiate
  *     Public. Body: { client?: string } (free-form short label, e.g. "OpenCode").
  *     Returns: { device_code, user_code, claim_url, expires_in, poll_interval }.
- *     Writes two KV entries (TTL 600s):
- *       claim:device:<DEVICE_CODE>  →  ClaimRecord (the canonical record)
- *       claim:user:<USER_CODE>      →  device_code (lookup index)
+ *     Writes one expiring D1 row, indexed by both codes.
  *
  *   GET /auth/claim?c=USER_CODE
  *     Browser-facing. Looks up via the user_code index, then the canonical
@@ -44,17 +42,17 @@
  *   POST /auth/claim/approve
  *     Browser-facing. Session-required, CSRF-checked. Body: form-encoded
  *     user_code + token + action (approve|deny). On approve, fetches (or
- *     mints) the user's existing sk-bayleaf-... token and writes it into the
- *     canonical record with status 'approved'. On deny, sets status 'denied'.
+ *     mints) the user's existing sk-bayleaf-... token and marks the row
+ *     approved. On deny, sets status 'denied'. The token stays in user_keys.
  *
  *   GET /auth/claim/poll?d=DEVICE_CODE
  *     Public. Looks up the canonical record directly by device_code. Returns:
  *       202 { status: "pending" }
- *       200 { status: "approved", key: "sk-bayleaf-..." }  (then deletes KV)
- *       410 { status: "denied" }                            (then deletes KV)
- *       404 { status: "expired" }                           (KV TTL elapsed)
+ *       200 { status: "approved", key: "sk-bayleaf-..." }  (then deletes row)
+ *       410 { status: "denied" }                            (then deletes row)
+ *       404 { status: "expired" }
  *
- * KV record (under `claim:device:<DEVICE_CODE>`):
+ * D1 row:
  *   ClaimRecord = {
  *     status: 'pending' | 'approved' | 'denied',
  *     user_code: string,             // for cross-reference / cleanup
@@ -62,8 +60,8 @@
  *     created_at: number,            // ms since epoch (initiate time)
  *     initiator_ip: string | null,   // CF-Connecting-IP at initiate time
  *     initiator_country: string | null, // CF-IPCountry at initiate time
- *     key?: string,                  // populated on approve, deleted on poll
- *     approved_by?: string,          // email of approving user
+ *     expires_at: number,            // ms since epoch
+ *     approved_by: string | null,    // email of approving user
  *   }
  *
  * Security notes:
@@ -76,7 +74,7 @@
  * - The CSRF token on the approve form is a HMAC over (user_code, email,
  *   action) signed with OIDC_CLIENT_SECRET. An attacker who tricks a logged-in
  *   user into visiting a malicious URL cannot forge the form submission.
- * - One-shot delivery: GET /auth/claim/poll deletes both KV entries as soon
+ * - One-shot delivery: GET /auth/claim/poll conditionally deletes the row as soon
  *   as it returns the key (or on deny). A second poll returns 404 expired.
  * - Existing-key delivery: we hand back the user's current dashboard key. If
  *   they don't have one yet, we mint one (same code path as POST /key).
@@ -96,7 +94,7 @@ export const claimRoutes = new Hono<AppEnv>();
 
 // ── Configuration ────────────────────────────────────────────────
 
-/** TTL on KV records (must align with `expires_in` we return to clients). */
+/** Claim lifetime (must align with `expires_in` we return to clients). */
 const CLAIM_TTL_SECONDS = 600;
 
 /** Poll interval we ask polling clients to honor (informational). */
@@ -119,15 +117,16 @@ const CURL_DEVICE_COOKIE = 'bayleaf_claim_device';
 type ClaimStatus = 'pending' | 'approved' | 'denied';
 
 interface ClaimRecord {
+  device_code: string;
   status: ClaimStatus;
   user_code: string;
   client: string;
   created_at: number;
+  expires_at: number;
   initiator_ip: string | null;
   initiator_country: string | null;
-  key?: string;
-  approved_by?: string;
-  curl_platform?: 'windows' | 'unix';
+  approved_by: string | null;
+  curl_platform: 'windows' | 'unix' | null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -246,47 +245,71 @@ async function ensureUserToken(
   return row?.bayleaf_token ?? null;
 }
 
+function claimDb(c: Context<AppEnv>): D1DatabaseSession {
+  // Device-flow coordination cannot tolerate a replica lagging behind approval.
+  return c.env.DB.withSession('first-primary');
+}
+
+async function getClaimByDevice(c: Context<AppEnv>, deviceCode: string): Promise<ClaimRecord | null> {
+  return claimDb(c).prepare(
+    'SELECT * FROM claim_codes WHERE device_code = ? AND expires_at > ?',
+  ).bind(deviceCode, Date.now()).first<ClaimRecord>();
+}
+
+async function getClaimByUser(c: Context<AppEnv>, userCode: string): Promise<ClaimRecord | null> {
+  return claimDb(c).prepare(
+    'SELECT * FROM claim_codes WHERE user_code = ? AND expires_at > ?',
+  ).bind(userCode, Date.now()).first<ClaimRecord>();
+}
+
+async function consumeClaim(c: Context<AppEnv>, record: ClaimRecord): Promise<boolean> {
+  const result = await claimDb(c).prepare(
+    'DELETE FROM claim_codes WHERE device_code = ? AND status = ? AND expires_at > ?',
+  ).bind(record.device_code, record.status, Date.now()).run();
+  return result.meta.changes === 1;
+}
+
 async function createClaim(
   c: Context<AppEnv>,
   clientLabel: string,
   curlPlatform?: 'windows' | 'unix',
 ) {
-  // Generate codes, retrying on the (vanishingly rare) collision in either index.
-  let userCode = generateUserCode();
-  let deviceCode = generateDeviceCode();
+  // Opportunistic cleanup bounds storage even if an expired claim is never revisited.
+  await claimDb(c).prepare('DELETE FROM claim_codes WHERE expires_at <= ?').bind(Date.now()).run();
+
+  // INSERT OR IGNORE makes either unique-code collision safe without a check/write race.
   for (let i = 0; i < 5; i++) {
-    const userCollision = await c.env.CLAIM_CODES.get(`claim:user:${userCode}`);
-    const deviceCollision = await c.env.CLAIM_CODES.get(`claim:device:${deviceCode}`);
-    if (!userCollision && !deviceCollision) break;
-    if (userCollision) userCode = generateUserCode();
-    if (deviceCollision) deviceCode = generateDeviceCode();
+    const userCode = generateUserCode();
+    const deviceCode = generateDeviceCode();
+    const createdAt = Date.now();
+    const initiatorIp = c.req.header('CF-Connecting-IP') ?? null;
+    const initiatorCountry = c.req.header('CF-IPCountry') ?? null;
+    const result = await claimDb(c).prepare(
+      `INSERT OR IGNORE INTO claim_codes
+       (device_code, user_code, status, client, created_at, expires_at,
+        initiator_ip, initiator_country, curl_platform)
+       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      deviceCode,
+      userCode,
+      clientLabel,
+      createdAt,
+      createdAt + CLAIM_TTL_SECONDS * 1000,
+      initiatorIp,
+      initiatorCountry,
+      curlPlatform ?? null,
+    ).run();
+    if (result.meta.changes !== 1) continue;
+
+    const baseUrl = absoluteBaseUrl(new URL(c.req.url));
+    console.log(`claim initiate: user_code=${userCode} client=${clientLabel} ip=${initiatorIp ?? '-'} country=${initiatorCountry ?? '-'}`);
+    return {
+      deviceCode,
+      userCode,
+      claimUrl: `${baseUrl}/auth/claim?c=${encodeURIComponent(userCode)}`,
+    };
   }
-
-  const record: ClaimRecord = {
-    status: 'pending',
-    user_code: userCode,
-    client: clientLabel,
-    created_at: Date.now(),
-    initiator_ip: c.req.header('CF-Connecting-IP') ?? null,
-    initiator_country: c.req.header('CF-IPCountry') ?? null,
-    curl_platform: curlPlatform,
-  };
-  // KV has no transactions. If the index write fails, the unreachable canonical
-  // record is harmless and expires with the same short TTL.
-  await c.env.CLAIM_CODES.put(`claim:device:${deviceCode}`, JSON.stringify(record), {
-    expirationTtl: CLAIM_TTL_SECONDS,
-  });
-  await c.env.CLAIM_CODES.put(`claim:user:${userCode}`, deviceCode, {
-    expirationTtl: CLAIM_TTL_SECONDS,
-  });
-
-  const baseUrl = absoluteBaseUrl(new URL(c.req.url));
-  console.log(`claim initiate: user_code=${userCode} client=${clientLabel} ip=${record.initiator_ip ?? '-'} country=${record.initiator_country ?? '-'}`);
-  return {
-    deviceCode,
-    userCode,
-    claimUrl: `${baseUrl}/auth/claim?c=${encodeURIComponent(userCode)}`,
-  };
+  return null;
 }
 
 // ── POST /auth/claim/initiate ────────────────────────────────────
@@ -308,6 +331,7 @@ claimRoutes.post('/initiate', async (c) => {
   }
 
   const claim = await createClaim(c, clientLabel);
+  if (!claim) return c.json({ error: 'Could not create a claim.' }, 500);
 
   return c.json({
     device_code: claim.deviceCode,
@@ -326,6 +350,7 @@ claimRoutes.get('/curl/start/:mode/:platform', async (c) => {
   const platform = c.req.param('platform').toLowerCase() === 'windows_nt' ? 'windows' : 'unix';
   const client = mode === 'sealed' ? 'OpenCode for BayLeaf Sealed' : 'OpenCode for BayLeaf';
   const claim = await createClaim(c, client, platform);
+  if (!claim) return c.text('Could not create a claim.', 500);
   setCookie(c, CURL_DEVICE_COOKIE, claim.deviceCode, {
     path: '/auth/claim/curl',
     httpOnly: true,
@@ -342,9 +367,8 @@ claimRoutes.get('/curl/instructions/:platform', async (c) => {
 
   const deviceCode = (getCookie(c, CURL_DEVICE_COOKIE) ?? '').trim();
   if (!isWellFormedDeviceCode(deviceCode)) return c.body(null, 404);
-  const recordRaw = await c.env.CLAIM_CODES.get(`claim:device:${deviceCode}`);
-  if (!recordRaw) return c.body(null, 404);
-  const record = JSON.parse(recordRaw) as ClaimRecord;
+  const record = await getClaimByDevice(c, deviceCode);
+  if (!record) return c.body(null, 404);
   if (record.curl_platform !== platform) return c.body(null, 404);
 
   const baseUrl = absoluteBaseUrl(new URL(c.req.url));
@@ -362,38 +386,34 @@ claimRoutes.get('/curl/poll', async (c) => {
     return c.text('Claim session is missing or expired.', 404);
   }
 
-  // Hold each request briefly to avoid a hot redirect loop. curl follows the
-  // pending redirect silently, preserving its in-memory cookie jar.
-  for (let attempt = 0; attempt < 10; attempt++) {
-    const recordRaw = await c.env.CLAIM_CODES.get(`claim:device:${deviceCode}`);
-    if (!recordRaw) {
-      deleteCookie(c, CURL_DEVICE_COOKIE, { path: '/auth/claim/curl' });
-      return c.text('Claim session expired.', 404);
-    }
-    const record = JSON.parse(recordRaw) as ClaimRecord;
-
-    if (record.status === 'denied') {
-      await c.env.CLAIM_CODES.delete(`claim:device:${deviceCode}`);
-      await c.env.CLAIM_CODES.delete(`claim:user:${record.user_code}`);
-      deleteCookie(c, CURL_DEVICE_COOKIE, { path: '/auth/claim/curl' });
-      return c.text('Authorization denied.', 403);
-    }
-    if (record.status === 'approved') {
-      if (!record.key) {
-        return c.text('Approved claim has no key.', 500);
-      }
-      await c.env.CLAIM_CODES.delete(`claim:device:${deviceCode}`);
-      await c.env.CLAIM_CODES.delete(`claim:user:${record.user_code}`);
-      deleteCookie(c, CURL_DEVICE_COOKIE, { path: '/auth/claim/curl' });
-      console.log(`claim curl-success: user_code=${record.user_code} email=${record.approved_by ?? '-'}`);
-      c.header('Cache-Control', 'no-store');
-      return c.text(record.key);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+  const record = await getClaimByDevice(c, deviceCode);
+  if (!record) {
+    deleteCookie(c, CURL_DEVICE_COOKIE, { path: '/auth/claim/curl' });
+    return c.text('Claim session expired.', 404);
   }
 
-  return c.redirect('/auth/claim/curl/poll', 302);
+  if (record.status === 'pending') {
+    // curl retries 429 and honors Retry-After, giving every poll a fresh Worker
+    // request and D1 primary session without a hot loop.
+    c.header('Cache-Control', 'no-store');
+    c.header('Retry-After', String(POLL_INTERVAL_SECONDS));
+    return c.body(null, 429);
+  }
+  if (record.status === 'denied') {
+    if (!await consumeClaim(c, record)) return c.text('Claim session expired.', 404);
+    deleteCookie(c, CURL_DEVICE_COOKIE, { path: '/auth/claim/curl' });
+    return c.text('Authorization denied.', 403);
+  }
+  if (!record.approved_by) {
+    return c.text('Approved claim has no identity.', 500);
+  }
+  const token = await ensureUserToken(record.approved_by, c.env);
+  if (!token) return c.text('Could not resolve the approved key.', 500);
+  if (!await consumeClaim(c, record)) return c.text('Claim session expired.', 404);
+  deleteCookie(c, CURL_DEVICE_COOKIE, { path: '/auth/claim/curl' });
+  console.log(`claim curl-success: user_code=${record.user_code} email=${record.approved_by ?? '-'}`);
+  c.header('Cache-Control', 'no-store');
+  return c.text(token);
 });
 
 // ── GET /auth/claim?c=USER_CODE ──────────────────────────────────
@@ -423,25 +443,14 @@ claimRoutes.get('/', async (c) => {
     return c.redirect('/login', 302);
   }
 
-  // Lookup user_code -> device_code -> record.
-  const deviceCode = await c.env.CLAIM_CODES.get(`claim:user:${userCode}`);
-  if (!deviceCode) {
+  const record = await getClaimByUser(c, userCode);
+  if (!record) {
     return renderPage(
       c,
       <ErrorPage title="Claim code expired" message="This claim code has expired or was already used. Return to your terminal and run the setup command again to start over." />,
       404,
     );
   }
-  const recordRaw = await c.env.CLAIM_CODES.get(`claim:device:${deviceCode}`);
-  if (!recordRaw) {
-    return renderPage(
-      c,
-      <ErrorPage title="Claim code expired" message="This claim code has expired or was already used. Return to your terminal and run the setup command again to start over." />,
-      404,
-    );
-  }
-  const record = JSON.parse(recordRaw) as ClaimRecord;
-
   if (record.status !== 'pending') {
     return renderPage(
       c,
@@ -487,25 +496,22 @@ claimRoutes.post('/approve', async (c) => {
     return renderPage(c, <ErrorPage title="Security check failed" message="Form token didn't validate. Reload the approval page and try again." />, 403);
   }
 
-  const deviceCode = await c.env.CLAIM_CODES.get(`claim:user:${userCode}`);
-  if (!deviceCode) {
+  const record = await getClaimByUser(c, userCode);
+  if (!record) {
     return renderPage(c, <ErrorPage title="Claim code expired" message="This claim code has expired. Return to your terminal and run the setup command again." />, 404);
   }
-  const recordRaw = await c.env.CLAIM_CODES.get(`claim:device:${deviceCode}`);
-  if (!recordRaw) {
-    return renderPage(c, <ErrorPage title="Claim code expired" message="This claim code has expired. Return to your terminal and run the setup command again." />, 404);
-  }
-  const record = JSON.parse(recordRaw) as ClaimRecord;
   if (record.status !== 'pending') {
     return renderPage(c, <ErrorPage title="Already responded" message={`This claim was already ${record.status}.`} />, 409);
   }
 
   if (action === 'deny') {
-    record.status = 'denied';
-    record.approved_by = session.email;
-    await c.env.CLAIM_CODES.put(`claim:device:${deviceCode}`, JSON.stringify(record), {
-      expirationTtl: CLAIM_TTL_SECONDS,
-    });
+    const result = await claimDb(c).prepare(
+      `UPDATE claim_codes SET status = 'denied', approved_by = ?
+       WHERE device_code = ? AND status = 'pending' AND expires_at > ?`,
+    ).bind(session.email, record.device_code, Date.now()).run();
+    if (result.meta.changes !== 1) {
+      return renderPage(c, <ErrorPage title="Claim code expired" message="This claim has expired or was already answered." />, 409);
+    }
     console.log(`claim deny: user_code=${userCode} email=${session.email} client=${record.client}`);
     return renderPage(c, <ResultPage kind="denied" client={record.client} />);
   }
@@ -515,19 +521,13 @@ claimRoutes.post('/approve', async (c) => {
   if (!token) {
     return renderPage(c, <ErrorPage title="Could not provision a key" message="Failed to provision your BayLeaf API key. Try the dashboard's Get key flow first, then run the setup command again." />, 500);
   }
-  record.status = 'approved';
-  record.approved_by = session.email;
-  // Key briefly lives at rest in KV between approve and the first successful
-  // poll (typically <1s, capped at CLAIM_TTL_SECONDS by TTL). The alternative
-  // is mint-at-poll-time using only `approved_by`, which is more secure at
-  // rest but shifts ensureUserToken failures from approve-time (human in
-  // browser, can act on the error) to poll-time (script, can only retry or
-  // surface a generic auth failure to the user). We accept the brief at-rest
-  // exposure in exchange for keeping error visibility on the human side.
-  record.key = token;
-  await c.env.CLAIM_CODES.put(`claim:device:${deviceCode}`, JSON.stringify(record), {
-    expirationTtl: CLAIM_TTL_SECONDS,
-  });
+  const result = await claimDb(c).prepare(
+    `UPDATE claim_codes SET status = 'approved', approved_by = ?
+     WHERE device_code = ? AND status = 'pending' AND expires_at > ?`,
+  ).bind(session.email, record.device_code, Date.now()).run();
+  if (result.meta.changes !== 1) {
+    return renderPage(c, <ErrorPage title="Claim code expired" message="This claim has expired or was already answered." />, 409);
+  }
   console.log(`claim approve: user_code=${userCode} email=${session.email} client=${record.client}`);
   return renderPage(
     c,
@@ -547,32 +547,29 @@ claimRoutes.get('/poll', async (c) => {
     return c.json({ status: 'expired' }, 404);
   }
 
-  const recordRaw = await c.env.CLAIM_CODES.get(`claim:device:${deviceCode}`);
-  if (!recordRaw) {
+  const record = await getClaimByDevice(c, deviceCode);
+  if (!record) {
     return c.json({ status: 'expired' }, 404);
   }
-  const record = JSON.parse(recordRaw) as ClaimRecord;
 
   if (record.status === 'pending') {
     return c.json({ status: 'pending' }, 202);
   }
   if (record.status === 'denied') {
     // One-shot delete on denial too, so a denied code can't be polled forever.
-    await c.env.CLAIM_CODES.delete(`claim:device:${deviceCode}`);
-    await c.env.CLAIM_CODES.delete(`claim:user:${record.user_code}`);
+    if (!await consumeClaim(c, record)) return c.json({ status: 'expired' }, 404);
     return c.json({ status: 'denied' }, 410);
   }
   // approved
-  if (!record.key) {
-    // Shouldn't happen — defensive.
-    await c.env.CLAIM_CODES.delete(`claim:device:${deviceCode}`);
-    await c.env.CLAIM_CODES.delete(`claim:user:${record.user_code}`);
+  if (!record.approved_by) {
+    await consumeClaim(c, record);
     return c.json({ status: 'expired' }, 404);
   }
-  await c.env.CLAIM_CODES.delete(`claim:device:${deviceCode}`);
-  await c.env.CLAIM_CODES.delete(`claim:user:${record.user_code}`);
+  const token = await ensureUserToken(record.approved_by, c.env);
+  if (!token) return c.json({ status: 'error' }, 500);
+  if (!await consumeClaim(c, record)) return c.json({ status: 'expired' }, 404);
   console.log(`claim poll-success: user_code=${record.user_code} email=${record.approved_by ?? '-'}`);
-  return c.json({ status: 'approved', key: record.key }, 200);
+  return c.json({ status: 'approved', key: token }, 200);
 });
 
 // ── Pages ─────────────────────────────────────────────────────────

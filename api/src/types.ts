@@ -37,7 +37,6 @@ export interface Bindings {
 
   // KV namespace for Campus Pass per-IP RPD counters
   CAMPUS_RPD: KVNamespace;
-  CLAIM_CODES: KVNamespace;
   // OpenRouter model decisions only. No prompts or completions are cached.
   MODEL_STATUS: KVNamespace;
 

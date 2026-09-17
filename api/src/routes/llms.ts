@@ -392,7 +392,8 @@ The flow uses two codes (modeled on RFC 8628 OAuth device authorization grant):
   share or live demo.
 - **${bt}device_code${bt}** (32 hex chars): the bearer credential the polling
   terminal uses against ${bt}/auth/claim/poll${bt}. **Never displayed** on screen,
-  never in any URL the user opens. Held in the script's process memory only.
+  never in any URL the user opens. Held by the terminal and sent only to BayLeaf's
+  polling endpoint over TLS; BayLeaf stores it only for the claim's short lifetime.
 
 The flow:
 
@@ -403,7 +404,8 @@ The flow:
 3. You open the URL in a browser, sign in if needed, verify the code matches what
    your terminal printed, and click **Approve**.
 4. The next poll returns your ${bt}sk-bayleaf-...${bt} key, which the terminal captures
-   and uses. The server immediately deletes its copy: one-shot delivery.
+   and uses. BayLeaf never copies the key into claim storage: the successful poll
+   resolves it from your canonical account row, then deletes the one-shot claim.
 
 The whole flow has a 10-minute timeout, codes are good for one approval each, and
 the key is delivered exactly once: a second poll for the same device_code returns 404.
@@ -412,7 +414,7 @@ Why two codes? An attacker watching your screen during a live demo sees only the
 ${bt}user_code${bt}. They could try to visit the approval URL (and might attempt
 social engineering: "I see your code is XXXX, please approve..."), but they can't
 poll for the resulting key without the ${bt}device_code${bt}, which never leaves
-your terminal's process memory.
+the terminal through a visible or browser-facing channel.
 
 A minimal driver script (POSIX ${bt}sh${bt} + ${bt}curl${bt} + ${bt}python3${bt}):
 
