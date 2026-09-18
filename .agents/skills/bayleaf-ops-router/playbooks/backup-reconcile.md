@@ -76,6 +76,10 @@ through the appropriate playbook, don't paper over it in the backup.
 
 ## Refinement log
 
+- 2026-09-18: The Lathe 0.28.0 full pull produced only the expected source/schema
+  delta plus rotating model and skill timestamps/grant IDs. Removing SSH also
+  required reconciling stale guidance in DESIGN.md, RETENTION.md, and the live
+  Code Sandbox skill, not just vendoring the upstream tool.
 - 2026-09-17: A long feature session had an intentionally dirty API tree, so full
   before/after pulls went to a private snapshot directory first. Review found only
   the intended Lathe/skill changes and old model timestamp/grant-ID noise. Full

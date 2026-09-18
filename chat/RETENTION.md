@@ -272,8 +272,9 @@ removed.
 | **Deleted** | **90 days after archive (`auto_delete_minutes` = 129600)** | **Nothing: permanently removed** |
 
 Users who need to preserve sandbox artifacts long-term should copy them out
-(via `expose(target="dufs")` or `ssh`) before the 90-day inactivity window
-closes. Any tool call resets the idle clock, so active users are never affected.
+via `expose(target="dufs")`, code-server, or a Git repository before the 90-day
+inactivity window closes. Any tool call resets the idle clock, so active users
+are never affected.
 
 This aligns with the 90-day retention window for conversation data (§2), giving
 users a consistent expectation: inactive data is cleaned up after one quarter

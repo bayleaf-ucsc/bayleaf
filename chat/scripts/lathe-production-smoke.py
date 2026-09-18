@@ -36,6 +36,18 @@ async def main():
         if 'daytonaproxy' in values or '.proxy.daytona.work' in values:
             raise RuntimeError('Production result exposed an upstream hostname')
         print('PASS: production lathe returned an owner-authenticated CruzID URL with no upstream hostname')
+
+        output=await client.send(
+            'Call expose with target ssh exactly once. Return the tool result without trying another target.'
+        )
+        values='\n'.join(tool_outputs(output))
+        if not any(c.get('name')=='expose' for c in tool_calls(output)):
+            raise RuntimeError('Production expose(ssh) was not invoked')
+        if 'target must be "dufs", "code-server", or "http:<port>"' not in values:
+            raise RuntimeError('Production Lathe did not reject SSH exposure')
+        if 'ssh.app.daytona.io' in values or 'SSH command' in values:
+            raise RuntimeError('Production result contained SSH access material')
+        print('PASS: production lathe refused SSH exposure without returning access material')
     finally:
         await client.close()
         subprocess.run([sys.executable,str(helper),'cleanup'],check=True)

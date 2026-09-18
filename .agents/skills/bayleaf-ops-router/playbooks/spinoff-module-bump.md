@@ -70,6 +70,10 @@ uvx owui-cli tools deploy chat/tools/<id>/tool.py <id>
 
 ## Refinement log
 
+- 2026-09-18: Lathe 0.28.0 removed its unwrapped bearer-token SSH path. Adam
+  explicitly approved rollout despite the short soak. The existing production
+  smoke was extended to verify both protected HTTP exposure and SSH refusal;
+  no restart was needed because dependencies and valves were unchanged.
 - 2026-09-17: Lathe preview wrapping was developed upstream and tested in an
   isolated OWUI copy. BayLeaf's 0.24.1 still requires Pydantic AI 1.x; upstream
   0.27.0 requires 2.x. The preview-only staging copy omitted dependency-install

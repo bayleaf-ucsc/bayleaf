@@ -459,10 +459,11 @@ The most substantial toolkit on the deployment. Source:
 but **not bound to any model by default** — users enable it per-chat via the
 tool picker in the chat composer.
 
-**Current version: 0.27.0** (2026-09-17), byte-identical to the upstream
-checkout. This upgrade adopts Pydantic AI `~=2.5` and enables the generic
-owner-authenticated HTTP preview wrapper. The installation credential is an
-admin valve backed by the API's `PREVIEWS_INSTALLATION_KEY` Worker Secret. ✨
+**Current version: 0.28.0** (2026-09-18), byte-identical to the upstream
+checkout. Version 0.28.0 removes bearer-token SSH exposure; interactive access
+now goes through the owner-authenticated code-server preview. The installation
+credential is an admin valve backed by the API's `PREVIEWS_INSTALLATION_KEY`
+Worker Secret. ✨
 
 **What it does.** Gives any OWUI model a coding-agent tool surface — `lathe`,
 `bash`, `read`, `write`, `edit`, `glob`, `grep`, `view`, `interpret`, `delegate`,
@@ -517,8 +518,8 @@ requires the owner's API login, which is separate from Chat login. Upstream
 signed URLs and registrations default to 24 hours. Every registration gets a
 fresh random origin, with no visible port or stable alias. Renewing replaces the
 registration and invalidates its old grants/connections. The gateway does not
-manage sandbox wake/sleep or service relaunch. SSH commands remain bearer
-credentials. See [the gateway contract and evidence](../api/PREVIEWS.md).
+manage sandbox wake/sleep or service relaunch. See
+[the gateway contract and evidence](../api/PREVIEWS.md).
 
 The gateway supports WebSockets, service workers on fresh nonce origins, and
 server-managed application cookies. JavaScript-managed original cookie names
@@ -561,6 +562,15 @@ OWUI installs requirements when code changes. This restart was a precaution
 against cached imports across the dependency major-version change, not evidence
 that missing-dependency installation requires restarting. Personal proxy
 dogfooding was deferred; the coordinated rollout was explicitly approved.
+
+**Upgrade evidence (2026-09-18).** Version 0.28.0 was explicitly approved for
+rollout despite a short soak because it closes the unwrapped bearer-token SSH
+path. Upstream unit tests passed 722/722. Production source matched upstream
+byte-for-byte, access grants and valves were preserved, `/health` returned 200,
+and the protected-expose smoke test returned an owner-authenticated URL with no
+upstream hostname. The same production smoke confirmed that `expose("ssh")` is
+refused without returning access material. Rollback snapshots are private under
+`~/.tokens/bayleaf-lathe-rollout-20260918`.
 
 ### Restricted Tools (Stealth Toolkits)
 

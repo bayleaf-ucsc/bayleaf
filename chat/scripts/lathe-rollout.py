@@ -8,10 +8,11 @@ from pathlib import Path
 import re
 import shlex
 import subprocess
+from datetime import date
 
 ROOT = Path(__file__).resolve().parents[2]
 UPSTREAM = ROOT.parent / 'lathe'
-BACKUP = Path.home() / '.tokens/bayleaf-lathe-rollout-20260917'
+BACKUP = Path.home() / f'.tokens/bayleaf-lathe-rollout-{date.today():%Y%m%d}'
 APP = 'f1a1e758-62e9-4e99-90cb-212cab12958d'
 
 

@@ -11,7 +11,7 @@
       "description": "Coding agent tools (lathe, bash, read, write, edit, glob, grep, view, interpret, delegate, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.",
       "required_open_webui_version": "0.4.0",
       "requirements": "httpx, httpx-ws, pydantic-ai-slim[openai]~=2.5, cachetools",
-      "version": "0.27.0",
+      "version": "0.28.0",
       "licence": "MIT"
     },
     "has_user_valves": true
@@ -27,7 +27,7 @@
       "created_at": 1773097882
     }
   ],
-  "updated_at": 1789681896,
+  "updated_at": 1789769903,
   "created_at": 1773079252,
   "user": null,
   "write_access": true,
@@ -133,11 +133,11 @@
     },
     {
       "name": "expose",
-      "description": "Expose a sandbox service to the user. Pass \"dufs\" for a one-step file\nbrowser, \"code-server\" for a one-step IDE, \"http:<port>\" for a web\nserver you already started, or \"ssh\" for interactive shell access.",
+      "description": "Expose a sandbox service to the user. Pass \"dufs\" for a one-step file\nbrowser, \"code-server\" for a one-step IDE, \"http:<port>\" for a web\nserver you already started.",
       "parameters": {
         "properties": {
           "target": {
-            "description": "What to expose — \"dufs\" for file upload/download, \"code-server\" for a browser IDE, \"ssh\" for a shell, or \"http:<port>\" (e.g. \"http:5000\", port range 3000–9999) for an HTTP service you started manually.",
+            "description": "What to expose — \"dufs\" for file upload/download, \"code-server\" for a browser IDE, or \"http:<port>\" (e.g. \"http:5000\", port range 3000–9999) for an HTTP service you started manually.",
             "type": "string"
           }
         },
