@@ -16,7 +16,7 @@ final step destroys the sandbox.
 
 ---
 
-## Local: owner-authenticated preview harness
+## Local: transient preview harness
 
 ```bash
 npm run test:previews
@@ -25,8 +25,9 @@ npx tsc --noEmit
 
 Runs the bundled Worker in workerd with ephemeral D1, synthetic credentials,
 and mock upstreams. No live services or local `.dev.vars` secrets are used.
-Tests registration authority, the two-host login handoff, copied-URL rejection,
-origin checks, forwarding, keyed exposure, expiry, revocation, and cleanup.
+Tests strict v2 registration, public and private enforcement, the two-host login
+handoff, copied-URL rejection, origin checks, forwarding, keyed exposure,
+expiry, revocation, and cleanup.
 See [PREVIEWS.md](PREVIEWS.md) for the separate real-browser and Daytona
 qualification gates. The harness does not prove those gates. ✨
 

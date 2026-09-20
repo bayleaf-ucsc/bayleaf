@@ -54,6 +54,12 @@ traffic without changing the Worker.
 
 ## Refinement log
 
+- 2026-09-20: Preview hostnames became `{cruzid}-{access}-{nonce}` after
+  production use showed that ownership and the agent-selected access policy
+  must remain legible when a URL leaves its initiating conversation. The nonce
+  remains the service-worker/browser-state isolation boundary; the umbrella
+  domain supplies branding, so no application tag is published.
+
 - 2026-09-17: Issue #71's local preview POC needed distinct user-key and
   installation-key authority, plus a two-host browser proof before owner login.
   Miniflare's own Origin rejection initially masked gateway checks; synthetic
@@ -67,7 +73,7 @@ traffic without changing the Worker.
   rejected cpu/memory overrides. Deletion lingered in `destroying` for minutes,
   so the tracked ID was retained until per-ID 404. Durable Object alarms handle
   live socket expiry; browser cookie support is explicitly server-managed only.
-- 2026-09-17 (final naming): Adam chose fresh `{cruzid}-{nonce}` origins with no
+- 2026-09-17 (then-final naming): Adam chose fresh `{cruzid}-{nonce}` origins with no
   visible port or stable alias. Root-scoped service workers are now permitted
   within a generation; cached content can outlive network access. D1 retirement
   triggers preserve socket invalidation under concurrent re-registration.

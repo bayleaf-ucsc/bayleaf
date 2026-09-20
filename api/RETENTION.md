@@ -125,7 +125,7 @@ Users who need to preserve sandbox artifacts should copy them out before the
 
 ## Session Cookies
 
-### Owner-authenticated previews (bounded POC)
+### Transient previews (bounded POC)
 
 Preview traffic on `*.bayleaf-proxies.dev` passes through the API Worker to the
 sandbox application. The gateway does not store or log HTTP bodies. It stores
@@ -135,7 +135,7 @@ The application and sandbox may retain their own files and state. ✨
 
 | State | Retention |
 |---|---|
-| Preview registration, encrypted upstream URL, owner email, slot, issuer, generation | Registration defaults to 24 hours, capped at 24 hours; hourly cleanup removes expired rows (normally within the following hour). Upstream unavailability does not remove the registration. |
+| Preview registration, access policy, encrypted upstream URL, owner email, internal slot, issuer, generation | Registration lasts 24 hours; hourly cleanup removes expired rows (normally within the following hour). Upstream unavailability does not remove the registration. |
 | Browser-login transaction and cookie/code digests | Transaction expires within five minutes, issued code within 60 seconds; successful redemption deletes it; hourly cleanup removes expired leftovers |
 | Canonical owner email/hostname reservation and installation-subject mapping | Indefinite, to prevent hostname reassignment and subject rebinding |
 | Preview-host session cookie | Secure, HttpOnly, host-only; until registration expiry, at most 24 hours |

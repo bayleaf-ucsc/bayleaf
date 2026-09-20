@@ -5,12 +5,13 @@ author_url: https://adamsmith.as
 description: Coding agent tools (lathe, bash, read, write, edit, glob, grep, view, interpret, delegate, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.
 required_open_webui_version: 0.4.0
 requirements: httpx, httpx-ws, pydantic-ai-slim[openai]~=2.5, cachetools
-version: 0.28.0
+version: 0.29.6
 licence: MIT
 """
 
 import asyncio
 import base64
+import hashlib
 import inspect
 import io
 import json
@@ -364,30 +365,36 @@ def _extract_pid(output: str) -> str:
 
 
 async def _http_preview(valves, sandbox_id: str, port: int, user: dict,
-                        client: httpx.AsyncClient) -> tuple[str, str]:
-    """Obtain a signed URL privately, then optionally wrap it before disclosure.
+                         access: str, tag: str,
+                         client: httpx.AsyncClient) -> tuple[str, str]:
+    """Obtain a signed URL and enforce the caller-selected disclosure level.
 
-    The wrapper is an administrator-trusted service, not a model-selected URL.
-    Catch failures inside this credential boundary: _tool_context otherwise
-    includes raw response bodies and exception text in model-visible output.
+    Public requests fail open to the direct signed bearer URL when wrapping is
+    unavailable or refused. Private requests fail closed unless the trusted
+    wrapper successfully registers an owner-authenticated URL. Wrapper failures
+    stay inside this credential boundary so raw response bodies never reach the model.
     """
     endpoint = valves.preview_wrapper_url.strip()
     credential = valves.preview_wrapper_key
-    wrapped = bool(endpoint or credential)
-    error = "HTTP preview unavailable. "
-    if wrapped:
-        error += "Protected preview registration failed; no direct URL was returned. Ask the administrator to check the wrapping service."
-    else:
-        error += "Could not obtain a signed preview URL. Try expose again."
+    wrapper_configured = bool(endpoint or credential)
+    lifetime = f"{valves.preview_expiry_seconds / 3600:g} hour(s)"
+
+    # Private requests should fail before minting an upstream bearer URL when
+    # the wrapper configuration or trusted caller identity is unusable.
+    if access == "private":
+        endpoint_parts = urllib.parse.urlsplit(endpoint)
+        if (not endpoint or not credential or endpoint_parts.scheme != "https"
+                or not endpoint_parts.hostname or endpoint_parts.username
+                or endpoint_parts.password or endpoint_parts.fragment
+                or any(c.isspace() for c in endpoint)
+                or not isinstance(user.get("id"), str) or not user["id"]
+                or not isinstance(user.get("email"), str) or not user["email"]):
+            raise RuntimeError(
+                "Private HTTP preview unavailable. The wrapping service is not configured correctly; "
+                "no public URL was returned."
+            )
+
     try:
-        if wrapped:
-            parsed = urllib.parse.urlsplit(endpoint)
-            if (not endpoint or not credential or parsed.scheme != "https" or not parsed.hostname
-                    or parsed.username or parsed.password or parsed.fragment
-                    or any(c.isspace() for c in endpoint)
-                    or not isinstance(user.get("id"), str) or not user["id"]
-                    or not isinstance(user.get("email"), str) or not user["email"]):
-                raise ValueError()
         response = await client.get(
             _api(valves, f"/sandbox/{sandbox_id}/ports/{port}/signed-preview-url"),
             params={"expiresInSeconds": valves.preview_expiry_seconds},
@@ -400,38 +407,82 @@ async def _http_preview(valves, sandbox_id: str, port: int, user: dict,
                 or upstream_parts.username or upstream_parts.password
                 or any(c.isspace() for c in upstream)):
             raise ValueError()
-        lifetime = f"{valves.preview_expiry_seconds / 3600:g} hour(s)"
-        if not wrapped:
-            return upstream, (
-                f"Direct signed preview: this URL is a bearer credential, valid for up to {lifetime}. "
-                "Anyone who copies it can access the service. You may see a Daytona warning on first visit. "
-                "Sandbox sleep or service failure can end access sooner; call expose again to renew."
-            )
-        response = await client.post(endpoint, headers={"Authorization": f"Bearer {credential}"},
-            json={"owner": {"subject": user["id"], "email": user["email"]},
-                  "slot": str(port), "upstream_url": upstream},
-            timeout=30.0, follow_redirects=False)
+    except Exception:
+        raise RuntimeError(
+            "HTTP preview unavailable. Could not obtain a signed preview URL. Try expose again."
+        ) from None
+
+    def direct_public(reason: str) -> tuple[str, str]:
+        return upstream, (
+            f"Public direct preview ({reason}): this URL is a bearer credential, valid for up to {lifetime}. "
+            "Anyone who copies it can access the service. You may see a Daytona warning on first visit. "
+            "Sandbox sleep or service failure can end access sooner; call expose again to renew."
+        )
+
+    if not wrapper_configured:
+        if access == "public":
+            return direct_public("no wrapping service is configured")
+        raise RuntimeError(
+            "Private HTTP preview unavailable. No wrapping service is configured; no public URL was returned."
+        )
+
+    try:
+        endpoint_parts = urllib.parse.urlsplit(endpoint)
+        if (not endpoint or not credential or endpoint_parts.scheme != "https"
+                or not endpoint_parts.hostname or endpoint_parts.username
+                or endpoint_parts.password or endpoint_parts.fragment
+                or any(c.isspace() for c in endpoint)
+                or not isinstance(user.get("id"), str) or not user["id"]
+                or not isinstance(user.get("email"), str) or not user["email"]):
+            raise ValueError()
+        registration = {
+            "owner": {"subject": user["id"], "email": user["email"]},
+            "upstream_url": upstream,
+            "access": access,
+        }
+        if tag:
+            registration["tag"] = tag
+        response = await client.post(
+            endpoint,
+            headers={"Authorization": f"Bearer {credential}"},
+            json=registration,
+            timeout=30.0,
+            follow_redirects=False,
+        )
         response.raise_for_status()
         result = response.json()
         url = result["url"]
         parsed = urllib.parse.urlsplit(url)
         expiry = datetime.fromisoformat(result["expires_at"].replace("Z", "+00:00"))
-        if (result.get("access_mode") != "owner-authenticated"
-                or parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
-                or parsed.fragment or parsed.hostname == upstream_parts.hostname
+        if (parsed.scheme != "https" or not parsed.hostname
+                or parsed.username or parsed.password or parsed.fragment
+                or parsed.hostname == upstream_parts.hostname
                 or upstream_parts.hostname in urllib.parse.unquote(url)
                 or credential in url or any(c.isspace() for c in url)
                 or expiry.tzinfo is None or expiry <= datetime.now(timezone.utc)):
             raise ValueError()
-        return url, (
-            f"Owner-authenticated preview: sign in as the owning user. Copying the URL does not grant access. "
-            f"Registration expires {expiry.astimezone(timezone.utc).isoformat()}; "
-            f"upstream access lasts up to {lifetime}. "
-            "Sandbox sleep or service failure can end availability sooner. "
-            "Call expose again to replace/renew the registration; the wrapper may invalidate previous browser sessions."
-        )
     except Exception:
-        raise RuntimeError(error) from None
+        if access == "public":
+            return direct_public("wrapping was unavailable or refused")
+        raise RuntimeError(
+            "Private HTTP preview unavailable. Protected preview registration failed; "
+            "no public URL was returned. Ask the administrator to check the wrapping service."
+        ) from None
+
+    if access == "public":
+        access_note = (
+            "Public wrapped preview: anyone who has this URL can access the service."
+        )
+    else:
+        access_note = (
+            "Owner-authenticated private preview: sign in as the owning user. "
+            "Copying the URL does not grant access."
+        )
+    return url, (
+        f"{access_note} Registration expires {expiry.astimezone(timezone.utc).isoformat()}; "
+        f"upstream access lasts up to {lifetime}. "
+        "Sandbox sleep or service failure can end availability sooner; call expose again to renew."
+    )
 
 
 def _require_abs_path(path: str, param_name: str = "path") -> str | None:
@@ -2765,6 +2816,86 @@ _DUFS_ENSURE_SCRIPT = (
     f'echo "READY PID=$PID"'
 )
 
+_TTYD_BIN = f"{_DURABLE_ROOT}/ttyd"
+_TTYD_PORT = 7681
+_TTYD_ROOT = "/home/daytona/workspace"
+
+# Resolve both assets from one release document, verify before installation,
+# then refuse to treat an unrelated listener on ttyd's port as success.
+_TTYD_ENSURE_SCRIPT = textwrap.dedent(f"""\
+    set -e
+    mkdir -p {_DURABLE_ROOT}
+    if ! test -x {_TTYD_BIN}; then
+      TMP=$(mktemp -d)
+      trap 'rm -rf "$TMP"' EXIT
+      curl -fsSL https://api.github.com/repos/tsl0922/ttyd/releases/latest -o "$TMP/release.json"
+      BIN_URL=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(next(a["browser_download_url"] for a in d["assets"] if a["name"] == "ttyd.x86_64"))' "$TMP/release.json")
+      SUMS_URL=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(next(a["browser_download_url"] for a in d["assets"] if a["name"] == "SHA256SUMS"))' "$TMP/release.json")
+      curl -fsSL "$BIN_URL" -o "$TMP/ttyd.x86_64"
+      curl -fsSL "$SUMS_URL" -o "$TMP/SHA256SUMS"
+      EXPECTED=$(python3 -c 'import pathlib,sys; print(next(line.split()[0] for line in pathlib.Path(sys.argv[1]).read_text().splitlines() if line.split() and line.split()[-1].lstrip("*") == "ttyd.x86_64"))' "$TMP/SHA256SUMS")
+      ACTUAL=$(sha256sum "$TMP/ttyd.x86_64" | cut -d' ' -f1)
+      test "$ACTUAL" = "$EXPECTED"
+      install -m 755 "$TMP/ttyd.x86_64" {_TTYD_BIN}
+    fi
+    if ss -tlnp | grep -q ':{_TTYD_PORT} '; then
+      ss -tlnp | grep ':{_TTYD_PORT} ' | grep -q ttyd \
+        || {{ echo 'Port {_TTYD_PORT} is occupied by a non-ttyd process' >&2; exit 1; }}
+    else
+      nohup {_TTYD_BIN} -W -p {_TTYD_PORT} -w {_TTYD_ROOT} /bin/bash \
+        > {_DURABLE_ROOT}/ttyd.log 2>&1 &
+      for i in 1 2 3 4 5; do
+        ss -tlnp | grep -q ':{_TTYD_PORT} ' && break
+        sleep 0.2
+      done
+    fi
+    PID=$(ss -tlnp | grep ':{_TTYD_PORT} ' | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2)
+    test -n "$PID"
+    echo "READY PID=$PID"
+    """)
+
+_SITE_STATE_DIR = f"{_DURABLE_ROOT}/site"
+
+
+def _site_port(site_root: str) -> int:
+    """Map a site root stably into the high unprivileged port range."""
+    digest = hashlib.sha256(site_root.encode("utf-8")).digest()
+    return 20000 + int.from_bytes(digest[:2], "big") % 40000
+
+
+def _build_site_ensure_script(site_root: str, port: int) -> str:
+    """Build an idempotent static-site server script for one absolute root."""
+    root = _shell_quote(site_root)
+    state_dir = f"{_SITE_STATE_DIR}/{port}"
+    return textwrap.dedent(f"""\
+        set -e
+        SITE_ROOT={root}
+        test -d "$SITE_ROOT" || {{ echo "Site directory does not exist: $SITE_ROOT" >&2; exit 1; }}
+        mkdir -p {state_dir}
+        PID=$(ss -tlnp | grep ':{port} ' | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2 || true)
+        if test -n "$PID"; then
+          CMD=$(tr '\\0' ' ' < "/proc/$PID/cmdline")
+          printf '%s' "$CMD" | grep -Fq 'python3 -m http.server {port}' \
+            || {{ echo 'Assigned site port {port} is occupied by another process' >&2; exit 1; }}
+          if test -f {state_dir}/root && test "$(cat {state_dir}/root)" = "$SITE_ROOT"; then
+            echo "READY PID=$PID"
+            exit 0
+          fi
+          echo 'Assigned site port {port} belongs to a different Lathe site (hash collision)' >&2
+          exit 1
+        fi
+        printf '%s' "$SITE_ROOT" > {state_dir}/root
+        nohup python3 -m http.server {port} --bind 0.0.0.0 --directory "$SITE_ROOT" \
+          > {state_dir}/log 2>&1 &
+        for i in 1 2 3 4 5; do
+          ss -tlnp | grep -q ':{port} ' && break
+          sleep 0.2
+        done
+        PID=$(ss -tlnp | grep ':{port} ' | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2)
+        test -n "$PID"
+        echo "READY PID=$PID"
+        """)
+
 _CS_BIN = f"{_DURABLE_ROOT}/code-server/bin/code-server"
 _CS_PORT = 8080
 _CS_ROOT = "/home/daytona/workspace"
@@ -3064,7 +3195,7 @@ class Tools:
             description="Daytona toolbox proxy URL",
         )
         preview_wrapper_url: str = Field(
-            "", description="Optional HTTPS registration endpoint for owner-authenticated HTTP previews. Configured wrapping fails closed.",
+            "", description="Optional HTTPS registration endpoint for public or owner-authenticated HTTP previews. Public requests fall back to the direct signed URL; private requests fail closed.",
         )
         preview_wrapper_key: str = Field(
             "", description="Installation bearer credential for the preview wrapper (admin only).",
@@ -3209,7 +3340,7 @@ class Tools:
             **Common — user downloads and uploads via dufs:**
             Ask the user to download the file on their own machine, then
             upload it to the sandbox through the dufs file browser. Call
-            expose(target="dufs") to get the URL. This handles any file
+            expose(target="dufs", access="public") to get the URL. This handles any file
             type and any host, subject to the deployment's upload limits.
 
             **Rare — custom browser-side fetch service:**
@@ -3354,57 +3485,56 @@ class Tools:
             outer model later reads, or vice versa. This is useful for
             parallel data pipelines.
             """),
-        "recipes": textwrap.dedent("""\
-            # Lathe — Recipes
+        "services": textwrap.dedent("""\
+            # Lathe — Service Details
 
-            Tested scripts for bootstrapping common tools from a cold sandbox.
-            These tools live in /tmp/lathe and survive sandbox stop/restart but not
-            destroy(). If /tmp/lathe/dufs or /tmp/lathe/code-server is missing, re-run the
-            install script.
+            Use the expose() tool description or the overview's target table for
+            normal one-step operation. This page is for implementation details,
+            recovery, and configurations outside the named fast paths.
 
-            ## File browser — dufs
+            ## Lifecycle and state
 
-            When the user asks to upload files, download files, browse files,
-            or transfer files, the answer is expose(target="dufs"). Do NOT
-            attempt to relay file contents through the conversation — give the
-            user a URL they can use directly in their browser.
+            Named targets install and start themselves when called. Call the same
+            expose() target again after sandbox sleep or a failed process; there is
+            no separate install command. Binaries and logs under /tmp/lathe survive
+            stop/restart but not destroy(). A preview registration neither keeps the
+            sandbox awake nor restarts its process.
 
-            **One-step setup:**
-            ```
-            expose(target="dufs")
-            ```
-            This installs dufs if missing, starts it on port 5000 serving
-            /home/daytona/workspace with full upload/download, and returns a
-            preview URL. Safe to call again after sandbox restart.
+            - dufs: port 5000; binary /tmp/lathe/dufs; log /tmp/lathe/dufs.log.
+            - ttyd: port 7681; binary /tmp/lathe/ttyd; log /tmp/lathe/ttyd.log.
+            - code-server: port 8080; install /tmp/lathe/code-server; log
+              /tmp/lathe/code-server.log.
+            - site:/absolute/path: stable path-derived port in 20000–59999; state
+              and logs under /tmp/lathe/site/<port>/.
 
-            **Custom directory or read-only access:**
-            For non-default configurations, install and start dufs manually:
-            ```
-            nohup /tmp/lathe/dufs /home/daytona/workspace/output --allow-all &
-            ```
-            Then call expose(target="http:5000").
+            Multiple site: paths can run simultaneously. The same path reuses its
+            server. A path-hash collision or unrelated listener on an assigned port
+            fails rather than replacing or exposing the wrong process.
 
-            ## Full IDE — code-server
-
-            When the user asks for an IDE, editor, or VS Code in the browser,
-            use code-server.
-
-            **One-step setup:**
-            ```
-            expose(target="code-server")
-            ```
-            This installs code-server if missing, starts it on port 8080
-            serving /home/daytona/workspace with no application-level auth, and
-            returns a preview URL. Safe to call again after sandbox restart.
+            ttyd is private-only because it grants arbitrary shell access. Its
+            binary is resolved from the latest GitHub release and verified against
+            that release's SHA256SUMS before installation.
 
             {preview_access_note}
 
-            **Custom configuration:**
-            For non-default settings, install and start code-server manually:
+            ## Manual configurations
+
+            Named targets intentionally cover common configurations. For a custom
+            service, start it with bash() and expose its port with http:<port>.
+            This includes custom dufs roots or permissions, ttyd options, and
+            code-server flags. The generic route does not inherit named-target
+            policy: the caller remains responsible for process lifecycle and the
+            explicit public/private access choice.
+
+            Example custom code-server process:
             ```
             nohup /tmp/lathe/code-server/bin/code-server --bind-addr 0.0.0.0:8080 --auth none /home/daytona/workspace &
             ```
-            Then call expose(target="http:8080").
+            Then expose target="http:8080" with private access.
+
+            If a named target fails, report its returned setup error rather than
+            silently substituting another service or weaker access mode. Use bash()
+            to inspect the corresponding log only when diagnosis is needed.
             """),
         "delegate": textwrap.dedent("""\
             # Lathe — Delegate
@@ -3642,23 +3772,23 @@ class Tools:
 
             ## Key workflows
 
-            **Running services and exposing them:**
-            The sandbox is a server. Background a web server with nohup, then
-            call expose(target="http:N") to get an HTTPS preview URL the user can open.
+            **Choosing browser access:**
+
+            | User need | expose target | Access constraint |
+            |---|---|---|
+            | Upload, download, or browse files | dufs | public or private |
+            | Serve an existing static directory | site:/absolute/path | public or private |
+            | Lightweight interactive shell | ttyd | private only |
+            | Full editor, terminal, and extensions | code-server | normally private |
+            | Already-running custom web service | http:<port> | public or private |
+
+            Named targets install, start, and recover their services. For
+            http:<port>, start the service yourself before calling expose().
+            Public requests fall back to the direct signed bearer URL if wrapping
+            is unavailable or refused. Private requests never downgrade to public.
             The sandbox auto-stops on idle, which kills background processes —
-            restart the server and call expose() again if needed.
-
-            **File upload/download/browsing:**
-            When the user wants to upload, download, or browse files, call
-            expose(target="dufs"). This installs and starts dufs automatically
-            and returns a URL with drag-and-drop upload/download — one tool call.
-            See lathe(manpage="recipes") for custom configurations.
-
-            **Browser IDE:**
-            When the user wants an IDE, call expose(target="code-server"). This
-            installs and starts code-server automatically and returns a URL —
-            VS Code in the browser with terminal, extensions, and file editing.
-            See lathe(manpage="recipes") for custom configurations.
+            call the same named target again to recover. See
+            lathe(manpage="services") only for custom configuration or diagnosis.
 
             **Project context:**
             Call onboard() at the start of a conversation to get a directory
@@ -3708,8 +3838,8 @@ class Tools:
             ## Gotchas
 
             - Commands are non-interactive. No stdin prompts or curses UIs. Use
-              -y or equivalent flags. For an interactive terminal, expose
-              code-server and use its browser terminal.
+              -y or equivalent flags. For an interactive terminal, expose ttyd;
+              use code-server when the user also needs a browser IDE.
             - bash() auto-backgrounds commands that exceed ~30 seconds. When this
               happens, it returns a background descriptor with CMD and PID paths.
               Use foreground_seconds= to extend the wait (e.g. foreground_seconds=120
@@ -3753,7 +3883,7 @@ class Tools:
         "interpret": "Persistent Python REPL: state model, when to use vs bash, limitations.",
         "delegate": "Sub-agent delegation: foreground/background, sidecar files, agent teams, cost model.",
         "handoff": "Context handoff: writing a handoff document for continuing work in a new conversation.",
-        "recipes": "Bootstrap scripts for common tools: dufs (file browser), code-server (IDE).",
+        "services": "Advanced service details: lifecycle, ports, logs, manual configuration, and recovery.",
         "background": "Background job sidecar files, and peek/poll/kill recipes.",
         "egress": "Egress restrictions, workarounds (dufs upload, browser-side fetch), Tier 3.",
         "version": "Show the installed Lathe toolkit version.",
@@ -3796,11 +3926,14 @@ class Tools:
             content = content.replace("{volume_note}", volume_note)
             content = content.replace("{destroy_volume_note}", destroy_volume_note)
             preview_note = (
-                "HTTP expose uses an owner-authenticated wrapper. Return only its URL; "
-                "never work around a wrapping failure by obtaining or sharing a direct signed URL. "
-                "The tool result states registration expiry; copying the URL does not grant access."
+                "HTTP expose requires an explicit public/private access choice. Public requests try the wrapper, "
+                "then fall back to a direct signed bearer URL if wrapping is unavailable or refused. "
+                "Private requests require successful owner-authenticated wrapper registration and never downgrade to public. "
+                "Choose private unless the user specifically requested public/world access."
                 if self.valves.preview_wrapper_url or self.valves.preview_wrapper_key else
-                "HTTP expose returns a direct signed bearer URL: anyone who copies it can access the service."
+                "HTTP expose requires an explicit public/private access choice. Only public direct signed bearer URLs "
+                "are available on this deployment; private requests fail closed. Choose private unless the user "
+                "specifically requested public/world access."
             )
             preview_note += f" Upstream HTTP access lasts up to {self.valves.preview_expiry_seconds / 3600:g} hour(s); call expose again to renew."
             content = content.replace("{preview_access_note}", preview_note)
@@ -4618,22 +4751,56 @@ class Tools:
     async def expose(
         self,
         target: str,
+        access: str,
+        tag: str = "",
         __user__: dict = {},
         __chat_id__: str = "",
         __event_emitter__=None,
     ) -> str:
         """
-        Expose a sandbox service to the user. Pass "dufs" for a one-step file
-        browser, "code-server" for a one-step IDE, "http:<port>" for a web
-        server you already started.
-        :param target: What to expose — "dufs" for file upload/download, "code-server" for a browser IDE, or "http:<port>" (e.g. "http:5000", port range 3000–9999) for an HTTP service you started manually.
+        Expose a sandbox service. Named targets manage startup and recovery;
+        http:<port> requires an already-running service. ttyd is private-only.
+        :param target: Choose by need: "dufs" for file transfer, "site:/absolute/path" for static files, "ttyd" for a lightweight shell, "code-server" for a full IDE, or "http:<port>" for an existing service (port 3000–9999).
+        :param access: Required policy: "private" authenticates the owner and fails closed; "public" allows anyone with the URL and may fall back to a direct bearer URL. Choose private unless the user explicitly requests public/world access.
+        :param tag: Optional untrusted hostname hint, such as "vscode" or "files": lowercase letters, digits, and internal hyphens, max 32 characters. The deployment may ignore it. Hostname text never proves identity or purpose.
         """
-        async def _run(client):
-            target_stripped = target.strip().lower()
+        target_value = target.strip()
+        target_stripped = target_value.lower()
+        access_stripped = access.strip().lower()
+        site_root = None
 
-            if target_stripped not in ("dufs", "code-server") and not target_stripped.startswith("http:"):
+        if target_stripped.startswith("site:"):
+            site_root = target_value[len("site:"):].rstrip("/") or "/"
+            path_error = _require_abs_path(site_root, "site path")
+            if path_error:
+                return path_error
+
+        if target_stripped == "ttyd" and access_stripped != "private":
+            return (
+                "Error: ttyd is private-only because it provides arbitrary command "
+                "execution and access to the sandbox environment. Use access=\"private\". "
+                "An expert who deliberately needs an unauthenticated terminal may start "
+                "ttyd manually and expose target=\"http:7681\"."
+            )
+
+        async def _run(client):
+
+            if access_stripped not in ("public", "private"):
                 return (
-                    f"Error: target must be \"dufs\", \"code-server\", or \"http:<port>\" "
+                    f"Error: access must be \"public\" or \"private\". Got: \"{access}\""
+                )
+
+            tag_stripped = tag.strip().lower()
+            if tag_stripped and not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?", tag_stripped):
+                return (
+                    "Error: tag must be empty or a lowercase DNS label using letters, "
+                    f"digits, and internal hyphens (max 32 characters). Got: \"{tag}\""
+                )
+
+            if (target_stripped not in ("dufs", "ttyd", "code-server")
+                    and site_root is None and not target_stripped.startswith("http:")):
+                return (
+                    f"Error: target must be \"dufs\", \"site:/absolute/path\", \"ttyd\", \"code-server\", or \"http:<port>\" "
                     f"(e.g. \"http:5000\"). Got: \"{target}\""
                 )
 
@@ -4668,14 +4835,17 @@ class Tools:
                             f"{result[:500]}\n\n"
                             f"This usually means the sandbox cannot reach the install host "
                             f"(egress filtering). See lathe(manpage=\"egress\") for workarounds, or "
-                            f"install {svc_name} manually and use expose(target=\"http:{svc_port}\")."
+                            f"install {svc_name} manually and use expose(target=\"http:{svc_port}\", access=\"{access_stripped}\")."
                         )
                     pid = _extract_pid(result)
                 else:
                     await _emit(__event_emitter__, f"Generating URL for port {svc_port}...")
 
                 await _emit(__event_emitter__, "Generating URL...")
-                url, access_note = await _http_preview(self.valves, sandbox_id, svc_port, __user__, client)
+                url, access_note = await _http_preview(
+                    self.valves, sandbox_id, svc_port, __user__, access_stripped,
+                    tag_stripped, client,
+                )
 
                 await _emit(__event_emitter__, ready_status, done=True)
                 messages = _drain_harness_messages(self._chat_state, __chat_id__, _sb_warning)
@@ -4695,6 +4865,41 @@ class Tools:
                         f"- **Download**: click any file\n"
                         f"- **Browse**: navigate folders\n\n"
                         f"dufs is serving {_DUFS_ROOT} on port {_DUFS_PORT} (PID {pid})."
+                    ),
+                )
+
+            if site_root is not None:
+                site_port = _site_port(site_root)
+                return await _ensure_and_sign(
+                    ensure_script=_build_site_ensure_script(site_root, site_port),
+                    script_timeout_ms=15000, http_timeout=30.0,
+                    svc_port=site_port, svc_name="static site",
+                    ready_status="Static site ready",
+                    fail_status="Static site setup failed",
+                    result_msg=lambda url, pid: (
+                        f"Static site URL: {url}\n\n"
+                        f"Give this URL to the user. Python is serving {site_root} "
+                        f"on port {site_port} (PID {pid}). The sandbox auto-stops "
+                        f"after ~{self.valves.auto_stop_minutes} min of inactivity, "
+                        f"which ends the server; call expose again to restart it."
+                    ),
+                )
+
+            if target_stripped == "ttyd":
+                return await _ensure_and_sign(
+                    ensure_script=_TTYD_ENSURE_SCRIPT,
+                    script_timeout_ms=60000, http_timeout=90.0,
+                    svc_port=_TTYD_PORT, svc_name="ttyd",
+                    ready_status="Terminal ready",
+                    fail_status="ttyd setup failed",
+                    result_msg=lambda url, pid: (
+                        f"Terminal URL: {url}\n\n"
+                        f"Give this private URL to the user. It provides a full writable "
+                        f"shell with access to the sandbox environment and files.\n\n"
+                        f"ttyd is serving {_TTYD_ROOT} on port {_TTYD_PORT} (PID {pid}). "
+                        f"The sandbox auto-stops after ~{self.valves.auto_stop_minutes} min "
+                        f"of inactivity, which ends the terminal process; call expose again "
+                        f"to restart it."
                     ),
                 )
 

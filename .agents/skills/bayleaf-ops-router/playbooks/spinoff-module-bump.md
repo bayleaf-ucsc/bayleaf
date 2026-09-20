@@ -70,6 +70,13 @@ uvx owui-cli tools deploy chat/tools/<id>/tool.py <id>
 
 ## Refinement log
 
+- 2026-09-20: Lathe 0.29.6 required a coordinated API contract migration before
+  the toolkit bump. Back-to-back isolated deployment runs exposed Daytona's
+  eventually consistent list returning an already-deleted sandbox; upstream's
+  cleanup harness treats the authoritative DELETE 404 as fatal, so wait before
+  retrying. Cloudflare bot policy also blocks Python's default user agent on
+  preview hosts; browser-shaped smoke requests distinguish that edge policy
+  from gateway authorization.
 - 2026-09-18: Lathe 0.28.0 removed its unwrapped bearer-token SSH path. Adam
   explicitly approved rollout despite the short soak. The existing production
   smoke was extended to verify both protected HTTP exposure and SSH refusal;

@@ -137,12 +137,18 @@ async function next(client, url) {
   assert.equal(response.status, 302, `${url}: ${response.status} ${await response.clone().text()}`);
   return new URL(response.headers.get('Location'), url).href;
 }
-const input = () => ({ owner: { subject: 'owui-owner', email: 'owner@example.test' }, slot: '5000',
-  upstream_url: upstream + '/' });
+const input = () => ({ owner: { subject: 'owui-owner', email: 'owner@example.test' },
+  upstream_url: upstream + '/', access: 'private' });
 async function register(overrides = {}, credential = key) {
   return dispatch(api + '/previews/registrations', { method: 'POST', headers: {
     Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json',
   }, body: JSON.stringify({ ...input(), ...overrides }) });
+}
+async function revoke(url) {
+  const label = new URL(url).hostname.split('.')[0];
+  return dispatch(api + `/previews/registrations/${label}`, {
+    method: 'DELETE', headers: { Authorization: `Bearer ${key}` },
+  });
 }
 async function login(client, url) {
   let current = url;
@@ -176,9 +182,23 @@ try {
       await db.prepare('INSERT INTO preview_owners(email,slug) VALUES (?,?)')
         .bind('owner@example.test', 'owner-legacy-digest').run();
     }
+    if (file === '0010_preview_access_policy.sql') {
+      await db.prepare('INSERT INTO preview_owners(email,slug) VALUES (?,?)').bind('legacy@example.test', 'legacy').run();
+      await db.prepare(`INSERT INTO preview_registrations
+        (hostname,email,deployment,slot,generation,upstream_encrypted,expires_at)
+        VALUES (?,?,?,?,?,?,?)`).bind('legacy.previews.example.test', 'legacy@example.test', 'lathe',
+          '5000', 'legacy-generation', 'legacy-ciphertext', Math.floor(Date.now() / 1000) + 3600).run();
+    }
     const sql = (await readFile(root + 'migrations/' + file, 'utf8')).replace(/^\s*--.*$/gm, '');
     const statements = file === '0009_preview_origin_invalidation.sql' ? sql.split(/;\s*(?=CREATE|$)/) : sql.split(';');
     for (const statement of statements.map(s => s.trim()).filter(Boolean)) await db.prepare(statement).run();
+    if (file === '0010_preview_access_policy.sql') {
+      assert.equal((await db.prepare('SELECT access FROM preview_registrations WHERE hostname=?')
+        .bind('legacy.previews.example.test').first()).access, 'private');
+      await db.prepare('DELETE FROM preview_registrations WHERE hostname=?').bind('legacy.previews.example.test').run();
+      await db.prepare('DELETE FROM preview_invalidations WHERE hostname=?').bind('legacy.previews.example.test').run();
+      await db.prepare('DELETE FROM preview_owners WHERE email=?').bind('legacy@example.test').run();
+    }
   }
   assert.equal((await db.prepare('SELECT slug FROM preview_owners WHERE email=?')
     .bind('owner@example.test').first()).slug, 'owner');
@@ -193,19 +213,31 @@ try {
     assert.equal(malformed.status, 401);
   });
   let url;
-  await check('registration returns only protected URL and stores encrypted upstream', async () => {
+  await check('private registration returns only a wrapped URL and stores encrypted upstream', async () => {
     const response = await register();
     assert.equal(response.status, 200, await response.clone().text());
     const data = await response.json(); url = data.url;
-    assert.equal(data.access_mode, 'owner-authenticated');
+    assert.deepEqual(Object.keys(data).sort(), ['expires_at', 'url']);
     const ttl = (Date.parse(data.expires_at) - Date.now()) / 1000;
     assert.ok(ttl > 86390 && ttl <= 86400, 'registration defaults to 24 hours');
-    assert.match(url, /^https:\/\/owner-[a-f0-9]{24}\.previews\.example\.test\/$/);
+    assert.match(url, /^https:\/\/owner-private-[a-f0-9]{24}\.previews\.example\.test\/$/);
     assert.ok(!JSON.stringify(data).includes('synthetic-bearer'));
     const row = await db.prepare('SELECT * FROM preview_registrations').first();
     assert.ok(!JSON.stringify(row).includes('synthetic-bearer'));
   });
-  await check('destination, owner, expiry, and initial numeric-slot policy fail closed', async () => {
+  await check('public registration serves directly while private registration requires owner login', async () => {
+    const response = await register({ access: 'public', tag: 'demo' });
+    assert.equal(response.status, 200, await response.clone().text());
+    const publicUrl = (await response.json()).url;
+    assert.match(publicUrl, /^https:\/\/owner-public-[a-f0-9]{24}\.previews\.example\.test\/$/);
+    const served = await dispatch(publicUrl);
+    assert.equal(served.status, 200);
+    assert.equal(await served.text(), 'synthetic service');
+    assert.equal((await dispatch(publicUrl + '__preview/start')).status, 404);
+    assert.equal((await dispatch(url)).status, 401);
+  });
+  await check('legacy shapes, destination, owner, and access policy fail closed', async () => {
+    const before = outboundCalls;
     for (const upstream_url of ['http://x.preview.example.test/', 'https://preview.example.test/',
       'https://x.preview.example.test.evil.test/', 'https://x.preview.example.test:444/',
       'https://user:pass@x.preview.example.test/', 'https://x.preview.example.test/path',
@@ -216,45 +248,42 @@ try {
     for (const email of ['owner+alias@example.test', 'ow.ner@example.test', 'a'.repeat(60) + '@example.test']) {
       assert.equal((await register({ owner: { subject: 'invalid-name', email } })).status, 403);
     }
-    assert.equal((await register({ expires_at: '2020-01-01T00:00:00Z' })).status, 403);
-    assert.equal((await register({ slot: 'editor' })).status, 403);
+    for (const legacy of [{ slot: '5000' }, { requested_access: 'private' }, { expires_at: '2020-01-01T00:00:00Z' }]) {
+      assert.equal((await register(legacy)).status, 400);
+    }
+    for (const access of ['', 'owner-authenticated', 'PRIVATE']) assert.equal((await register({ access })).status, 400);
     assert.equal((await register({ owner: { subject: 'owui-owner', email: 'other@example.test' } })).status, 409);
-    assert.equal(outboundCalls, 0);
+    assert.equal(outboundCalls, before);
   });
-  await check('registration permits requested shorter retention and caps longer requests at 24 hours', async () => {
-    const shortExpiry = new Date(Date.now() + 600_000).toISOString();
-    const short = await (await register({ expires_at: shortExpiry })).json();
-    assert.ok(Math.abs(Date.parse(short.expires_at) - Date.parse(shortExpiry)) < 1000);
-    const capped = await (await register({ expires_at: new Date(Date.now() + 48 * 3600_000).toISOString() })).json();
-    const ttl = (Date.parse(capped.expires_at) - Date.now()) / 1000;
-    assert.ok(ttl > 86390 && ttl <= 86400);
-    assert.notEqual(short.url, url);
-    assert.notEqual(capped.url, short.url);
-    assert.equal((await dispatch(url)).status, 404);
-    assert.equal((await dispatch(short.url)).status, 404);
-    url = capped.url;
+  await check('Lathe registrations are independent 24-hour leases', async () => {
+    const first = await (await register()).json();
+    const second = await (await register()).json();
+    for (const registration of [first, second]) {
+      const ttl = (Date.parse(registration.expires_at) - Date.now()) / 1000;
+      assert.ok(ttl > 86390 && ttl <= 86400);
+      assert.equal((await dispatch(registration.url)).status, 401);
+    }
+    assert.notEqual(first.url, second.url);
   });
-  await check('registration size and active-slot bounds include expired-slot replacements', async () => {
+  await check('registration size and active-preview bounds ignore expired leases', async () => {
     const oversized = await dispatch(api + '/previews/registrations', { method: 'POST', headers: {
       Authorization: `Bearer ${key}`, 'Content-Type': 'application/json',
     }, body: JSON.stringify({ ...input(), padding: 'x'.repeat(9000) }) });
     assert.equal(oversized.status, 413);
     const owner = { subject: 'cap-user', email: 'cap@example.test' };
-    for (let port = 3000; port < 3016; port++) assert.equal((await register({ owner, slot: String(port) })).status, 200);
-    assert.equal((await register({ owner, slot: '3016' })).status, 409);
-    await db.prepare("UPDATE preview_registrations SET expires_at=0 WHERE email='cap@example.test' AND slot='3000'").run();
-    assert.equal((await register({ owner, slot: '3016' })).status, 200);
-    assert.equal((await register({ owner, slot: '3000' })).status, 409);
+    for (let i = 0; i < 16; i++) assert.equal((await register({ owner, tag: `p${i}` })).status, 200);
+    assert.equal((await register({ owner })).status, 409);
+    await db.prepare("UPDATE preview_registrations SET expires_at=0 WHERE hostname=(SELECT hostname FROM preview_registrations WHERE email='cap@example.test' LIMIT 1)").run();
+    assert.equal((await register({ owner })).status, 200);
   });
-  await check('concurrent registrations leave one live origin and retire every displaced hostname', async () => {
-    const responses = await Promise.all(Array.from({length: 6}, () => register()));
+  await check('concurrent Lathe registrations create independent live origins', async () => {
+    const raceOwner = { subject: 'race-user', email: 'race@example.test' };
+    const responses = await Promise.all(Array.from({length: 6}, () => register({ owner: raceOwner })));
     const urls = await Promise.all(responses.map(async r => { assert.equal(r.status,200); return (await r.json()).url; }));
     assert.equal(new Set(urls).size, 6);
-    const current = await db.prepare('SELECT hostname FROM preview_registrations WHERE email=? AND slot=?')
-      .bind('owner@example.test','5000').first();
-    url = `https://${current.hostname}/`;
-    assert.ok(urls.includes(url));
-    for (const retired of urls.filter(u => u !== url)) assert.equal((await dispatch(retired)).status, 404);
+    for (const live of urls) assert.equal((await dispatch(live)).status, 401);
+    assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM preview_registrations WHERE email=? AND expires_at>?')
+      .bind(raceOwner.email, Math.floor(Date.now() / 1000)).first()).n, 6);
     assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM preview_invalidations').first()).n, 0);
   });
   await check('preview hosts cannot reach API routes or wildcard CORS', async () => {
@@ -358,7 +387,7 @@ try {
     assert.equal(attack.headers.get('Set-Cookie'), null);
     assert.equal(owner.cookies.get(new URL(url).host).get('__Host-bl-preview-session'), original);
   });
-  await check('authenticated WebSockets relay text and binary, reconnect, and close on replacement', async () => {
+  await check('authenticated WebSockets relay text and binary, reconnect, and close on revocation', async () => {
     let socket = await connect(owner, url);
     let received = event(socket, 'message'); socket.send('hello');
     assert.equal((await received).data, 'hello');
@@ -370,22 +399,25 @@ try {
     socket.close(1000);
     socket = await connect(owner, url);
     const closed = event(socket, 'close');
-    const replaced = await register();
-    assert.equal(replaced.status, 200);
+    assert.equal((await revoke(url)).status, 204);
     assert.equal((await closed).code, 1008);
     assert.equal((await owner.visit(url)).status, 404);
     const oldToken = owner.cookies.get(new URL(url).host).get('__Host-bl-preview-session');
     const oldUrl = url;
-    url = (await replaced.json()).url;
+    const replacement = await register();
+    assert.equal(replacement.status, 200);
+    url = (await replacement.json()).url;
     assert.notEqual(url, oldUrl);
     owner.cookies.set(new URL(url).host, new Map([['__Host-bl-preview-session', oldToken]]));
     assert.equal((await owner.visit(url)).status, 302);
     await login(owner, url);
   });
   await check('Durable Object alarm closes an idle WebSocket at registration expiry', async () => {
-    const registered = await register({ slot: '5001', expires_at: new Date(Date.now() + 9000).toISOString() });
+    const registered = await register();
     assert.equal(registered.status, 200);
     const shortUrl = (await registered.json()).url;
+    await db.prepare('UPDATE preview_registrations SET expires_at=? WHERE hostname=?')
+      .bind(Math.floor(Date.now() / 1000) + 9, new URL(shortUrl).hostname).run();
     const client = browser('owner@example.test');
     await login(client, shortUrl);
     const socket = await connect(client, shortUrl);
@@ -432,17 +464,25 @@ try {
     }, body: '{"port":5000,"owner":{"email":"owner@example.test"}}' });
     assert.equal(spoof.status, 400);
   });
-  await check('keyed expose shares the canonical Chat owner/slot and invalidates the previous generation', async () => {
+  await check('keyed expose keeps port-based replacement without replacing Lathe leases', async () => {
     const r = await dispatch(api + '/sandbox/expose', { method: 'POST', headers: {
       Authorization: 'Bearer sk-bayleaf-owner', 'Content-Type': 'application/json',
     }, body: '{"port":5000}' });
     assert.equal(r.status, 200, await r.clone().text());
     const fresh = (await r.json()).url;
     assert.notEqual(fresh, url);
-    assert.equal((await owner.visit(url)).status, 404);
+    assert.equal((await owner.visit(url)).status, 200);
     url = fresh;
     assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM preview_registrations WHERE email=? AND slot=?')
       .bind('owner@example.test','5000').first()).n, 1);
+    await login(owner, url);
+    const renewed = await dispatch(api + '/sandbox/expose', { method: 'POST', headers: {
+      Authorization: 'Bearer sk-bayleaf-owner', 'Content-Type': 'application/json',
+    }, body: '{"port":5000}' });
+    assert.equal(renewed.status, 200);
+    const renewedUrl = (await renewed.json()).url;
+    assert.equal((await owner.visit(url)).status, 404);
+    url = renewedUrl;
     await login(owner, url);
     sandboxState = 'stopped';
     const stopped = await dispatch(api + '/sandbox/expose', { method: 'POST', headers: {

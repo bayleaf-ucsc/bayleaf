@@ -11,7 +11,7 @@
       "description": "Coding agent tools (lathe, bash, read, write, edit, glob, grep, view, interpret, delegate, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.",
       "required_open_webui_version": "0.4.0",
       "requirements": "httpx, httpx-ws, pydantic-ai-slim[openai]~=2.5, cachetools",
-      "version": "0.28.0",
+      "version": "0.29.6",
       "licence": "MIT"
     },
     "has_user_valves": true
@@ -27,7 +27,7 @@
       "created_at": 1773097882
     }
   ],
-  "updated_at": 1789769903,
+  "updated_at": 1789921970,
   "created_at": 1773079252,
   "user": null,
   "write_access": true,
@@ -133,16 +133,26 @@
     },
     {
       "name": "expose",
-      "description": "Expose a sandbox service to the user. Pass \"dufs\" for a one-step file\nbrowser, \"code-server\" for a one-step IDE, \"http:<port>\" for a web\nserver you already started.",
+      "description": "Expose a sandbox service. Named targets manage startup and recovery;\nhttp:<port> requires an already-running service. ttyd is private-only.",
       "parameters": {
         "properties": {
           "target": {
-            "description": "What to expose — \"dufs\" for file upload/download, \"code-server\" for a browser IDE, or \"http:<port>\" (e.g. \"http:5000\", port range 3000–9999) for an HTTP service you started manually.",
+            "description": "Choose by need: \"dufs\" for file transfer, \"site:/absolute/path\" for static files, \"ttyd\" for a lightweight shell, \"code-server\" for a full IDE, or \"http:<port>\" for an existing service (port 3000–9999).",
+            "type": "string"
+          },
+          "access": {
+            "description": "Required policy: \"private\" authenticates the owner and fails closed; \"public\" allows anyone with the URL and may fall back to a direct bearer URL. Choose private unless the user explicitly requests public/world access.",
+            "type": "string"
+          },
+          "tag": {
+            "default": "",
+            "description": "Optional untrusted hostname hint, such as \"vscode\" or \"files\": lowercase letters, digits, and internal hyphens, max 32 characters. The deployment may ignore it. Hostname text never proves identity or purpose.",
             "type": "string"
           }
         },
         "required": [
-          "target"
+          "target",
+          "access"
         ],
         "type": "object"
       }

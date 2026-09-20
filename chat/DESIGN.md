@@ -459,11 +459,12 @@ The most substantial toolkit on the deployment. Source:
 but **not bound to any model by default** — users enable it per-chat via the
 tool picker in the chat composer.
 
-**Current version: 0.28.0** (2026-09-18), byte-identical to the upstream
-checkout. Version 0.28.0 removes bearer-token SSH exposure; interactive access
-now goes through the owner-authenticated code-server preview. The installation
-credential is an admin valve backed by the API's `PREVIEWS_INSTALLATION_KEY`
-Worker Secret. ✨
+**Current version: 0.29.6** (2026-09-20), byte-identical to the upstream
+checkout. `expose` requires an explicit `private` or `public` policy and accepts
+an optional untrusted hostname tag, which BayLeaf ignores. Private is the
+default guidance and fails closed; public may fall back to Daytona's direct
+signed URL if wrapping fails. The installation credential is an admin valve
+backed by the API's `PREVIEWS_INSTALLATION_KEY` Worker Secret. ✨
 
 **What it does.** Gives any OWUI model a coding-agent tool surface — `lathe`,
 `bash`, `read`, `write`, `edit`, `glob`, `grep`, `view`, `interpret`, `delegate`,
@@ -499,7 +500,7 @@ layers remain planned in issues
 | `interpret(code, timeout)` | Run Python in a persistent REPL session (variables and imports persist across calls) |
 | `delegate(task, context_files, max_steps, foreground_seconds)` | Delegate a multi-step task to an autonomous sub-agent with the same tools; long delegations auto-background like `bash` |
 | `onboard(path)` | Load project context (directory listing, AGENTS.md, skill catalog) for agentic workflows |
-| `expose(target)` | Expose a sandbox service to the user (pass `"dufs"` for one-step file access) |
+| `expose(target, access, tag)` | Expose dufs, static files, ttyd, code-server, or an existing HTTP service; `access` is required (`private` or `public`) and `tag` is optional |
 | `handoff()` | Prepare a handoff document for continuing the work in a fresh conversation |
 | `destroy()` | Permanently destroy the sandbox VM (irreversible) |
 
@@ -510,14 +511,16 @@ volume: the VM filesystem survives stop/archive, but deleting the sandbox is
 final. Ephemeral command/delegate sidecars now live under `/dev/shm/lathe` and
 are lost on stop; reusable dufs/code-server installations live under `/tmp/lathe`.
 
-**Protected previews.** HTTP `expose` calls for arbitrary services, dufs, and
-code-server register with `https://api.bayleaf.dev/previews/registrations`.
-The model receives only `https://{cruzid}-{nonce}.bayleaf-proxies.dev/`; a wrapping
-failure returns an error rather than a direct upstream bearer URL. Browser access
-requires the owner's API login, which is separate from Chat login. Upstream
-signed URLs and registrations default to 24 hours. Every registration gets a
-fresh random origin, with no visible port or stable alias. Renewing replaces the
-registration and invalidates its old grants/connections. The gateway does not
+**Transient previews.** HTTP `expose` calls register with
+`https://api.bayleaf.dev/previews/registrations`. Private access requires the
+owner's API login, which is separate from Chat login, and never downgrades.
+Public access serves anyone with the URL; Lathe may return Daytona's direct
+signed URL if public wrapping fails. BayLeaf-wrapped URLs use
+`https://{cruzid}-{access}-{nonce}.bayleaf-proxies.dev/`, with no visible port,
+application tag, or stable alias. CruzID makes ownership legible in group
+settings, while the access segment preserves the agent's policy choice after a
+URL leaves its initiating conversation. Each Lathe registration is an independent 24-hour
+lease because upstream no longer sends a stable slot. The gateway does not
 manage sandbox wake/sleep or service relaunch. See
 [the gateway contract and evidence](../api/PREVIEWS.md).
 
@@ -571,6 +574,17 @@ and the protected-expose smoke test returned an owner-authenticated URL with no
 upstream hostname. The same production smoke confirmed that `expose("ssh")` is
 refused without returning access material. Rollback snapshots are private under
 `~/.tokens/bayleaf-lathe-rollout-20260918`.
+
+**Upgrade evidence (2026-09-20).** Version 0.29.6 and BayLeaf's integrated v2
+wrapper contract were deployed together. Upstream's 118 offline tests, the
+25-check workerd/D1 preview suite, TypeScript checks, isolated private and public
+OWUI exposure tests, and production-tool private/public smokes passed. The
+production public URL served the tracked fixture without login; private returned
+only an owner-authenticated CruzID URL; neither exposed the Daytona hostname.
+SSH refusal still passed. The full isolated seven-scenario run passed its first
+six checks, then its final model-mediated expose timed out; the same path passed
+separately before and after that nondeterministic timeout. Rollback snapshots are
+private under `~/.tokens/bayleaf-lathe-rollout-20260920`.
 
 ### Restricted Tools (Stealth Toolkits)
 

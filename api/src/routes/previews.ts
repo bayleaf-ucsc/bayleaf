@@ -1,4 +1,4 @@
-/** Owner-authenticated HTTP preview POC. See PREVIEWS.md for protocol and limits. */
+/** Public/private transient preview gateway. See PREVIEWS.md for protocol and limits. */
 import { OpenAPIHono, createRoute } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
@@ -23,6 +23,7 @@ interface Registration {
   upstream_encrypted: string;
   expires_at: number;
   email: string;
+  access: 'public' | 'private';
 }
 interface Flow {
   id: string;
@@ -114,8 +115,9 @@ async function decrypt(env: Bindings, r: Registration): Promise<string> {
     additionalData: new TextEncoder().encode(r.hostname) }, await cryptKey(env), bytes.slice(12)));
 }
 async function registration(env: Bindings, hostname: string): Promise<Registration | null> {
-  return env.DB.prepare('SELECT * FROM preview_registrations WHERE hostname=? AND expires_at>?')
+  const row = await env.DB.prepare('SELECT * FROM preview_registrations WHERE hostname=? AND expires_at>?')
     .bind(hostname, now()).first<Registration>();
+  return row && ['public', 'private'].includes(row.access) ? row : null;
 }
 
 async function previewSession(request: Request, env: Bindings, r: Registration): Promise<number | null> {
@@ -176,12 +178,12 @@ const registerRoute = createRoute({
   security: [{ PreviewDeployment: [] }],
   request: { body: { required: true, content: { 'application/json': { schema: PreviewRegistrationSchema } } } },
   responses: {
-    200: { description: 'Owner-authenticated preview registration', content: {
+    200: { description: 'Policy-enforced preview registration', content: {
       'application/json': { schema: PreviewRegistrationResponseSchema },
     } },
-    403: { description: 'Deployment, owner, destination, or slot rejected' },
+    403: { description: 'Deployment, owner, destination, or access policy rejected' },
     401: { description: 'Missing or invalid installation credential' },
-    409: { description: 'Owner mapping conflict or slot limit reached' },
+    409: { description: 'Owner mapping conflict or active-preview limit reached' },
     413: { description: 'Registration exceeds 8 KiB' },
     503: { description: 'Preview service disabled or unavailable' },
   },
@@ -199,30 +201,24 @@ previewRoutes.openapi(registerRoute, async (c) => {
 
 interface PreviewInput {
   owner: { subject: string; email: string };
-  slot: string;
   upstream_url: string;
-  expires_at?: string;
+  access: 'public' | 'private';
+  tag?: string;
 }
 
 /** Shared registration path: issuer authority differs, canonical ownership does not. */
-async function registerPreview(env: Bindings, policy: Deployment, input: PreviewInput) {
+async function registerPreview(env: Bindings, policy: Deployment, input: PreviewInput, stableSlot?: string) {
   if (!configured(env)) return failure(503);
   const email = input.owner.email.toLowerCase();
   // The campus email namespace already supplies the public username. Preserve
   // it exactly rather than inventing aliases by stripping punctuation or hashing.
   const slug = email.split('@')[0];
   if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(slug) ||
-      slug.length + 1 + 24 > 63) return failure();
-  // Deployment policy, not the registry's data model: future named slots belong here.
-  if (!/^[3-9][0-9]{3}$/.test(input.slot) ||
-      email.split('@')[1] !== policy.email_domain || !upstreamAllowed(input.upstream_url, policy)) return failure();
+      slug.length + 1 + input.access.length + 1 + 24 > 63) return failure();
+  if (email.split('@')[1] !== policy.email_domain || !upstreamAllowed(input.upstream_url, policy)) return failure();
   // Registration retention is independent of sandbox or upstream-token lifetime.
-  // An unavailable upstream does not delete the mapping; re-registration replaces it.
-  const ceiling = now() + 24 * 3600;
-  const expiry = input.expires_at
-    ? Math.min(Math.floor(Date.parse(input.expires_at) / 1000), ceiling)
-    : ceiling;
-  if (!Number.isFinite(expiry) || expiry <= now() + 5) return failure();
+  // An unavailable upstream does not delete the mapping.
+  const expiry = now() + 24 * 3600;
   await env.DB.prepare('INSERT OR IGNORE INTO preview_owners (email,slug) VALUES (?,?)').bind(email, slug).run();
   const owner = await env.DB.prepare('SELECT email,slug FROM preview_owners WHERE email=?')
     .bind(email).first<{ email: string; slug: string }>();
@@ -234,24 +230,29 @@ async function registerPreview(env: Bindings, policy: Deployment, input: Preview
       .bind(policy.id, input.owner.subject).first<{ email: string }>();
     if (identity?.email !== email) return failure(409);
   }
-  // A 96-bit random public identifier, not an access credential. Every
-  // registration gets a new browser origin, including renewal of the same slot.
-  const hostname = `${owner.slug}-${random().slice(0, 24)}.${env.PREVIEWS_DOMAIN}`;
+  // Keep ownership and access policy legible when a URL leaves its initiating
+  // conversation: this explains group-access denial and makes public exposure
+  // visible. The 96-bit nonce still supplies fresh-origin isolation for service
+  // workers and browser state; none of the hostname text is an access credential.
+  const hostname = `${owner.slug}-${input.access}-${random().slice(0, 24)}.${env.PREVIEWS_DOMAIN}`;
+  // Lathe v2 intentionally supplies no stable slot. Its previews are independent
+  // leases; BayLeaf's keyed API keeps port-based replacement via stableSlot.
+  const slot = stableSlot ?? `lathe-${random()}`;
   const encrypted = await encrypt(env, new URL(input.upstream_url).origin, hostname);
   const result = await env.DB.prepare(`INSERT INTO preview_registrations
-    (hostname,email,deployment,slot,generation,upstream_encrypted,expires_at)
-    SELECT ?,?,?,?,?,?,? WHERE
+    (hostname,email,deployment,slot,generation,upstream_encrypted,expires_at,access)
+    SELECT ?,?,?,?,?,?,?,? WHERE
       (SELECT COUNT(*) FROM preview_registrations WHERE email=? AND expires_at>?) < 16
       OR EXISTS (SELECT 1 FROM preview_registrations WHERE email=? AND slot=? AND expires_at>?)
     ON CONFLICT(email,slot) DO UPDATE SET hostname=excluded.hostname, generation=excluded.generation,
-      upstream_encrypted=excluded.upstream_encrypted, expires_at=excluded.expires_at, deployment=excluded.deployment
+      upstream_encrypted=excluded.upstream_encrypted, expires_at=excluded.expires_at,
+      deployment=excluded.deployment, access=excluded.access
     WHERE email=excluded.email
-    RETURNING hostname`).bind(hostname, email, policy.id, input.slot, random(), encrypted, expiry,
-      email, now(), email, input.slot, now()).first();
+    RETURNING hostname`).bind(hostname, email, policy.id, slot, random(), encrypted, expiry, input.access,
+      email, now(), email, slot, now()).first();
   if (!result) return failure(409);
-  if (!await invalidateRetiredOrigins(env, email, input.slot)) return failure(503);
-  return { url: `https://${hostname}/`, access_mode: 'owner-authenticated' as const,
-    expires_at: new Date(expiry * 1000).toISOString() };
+  if (!await invalidateRetiredOrigins(env, email, slot)) return failure(503);
+  return { url: `https://${hostname}/`, expires_at: new Date(expiry * 1000).toISOString() };
 }
 
 function apiPolicy(env: Bindings): Deployment {
@@ -262,8 +263,8 @@ function apiPolicy(env: Bindings): Deployment {
 
 export async function registerUserPreview(env: Bindings, email: string, slot: string, url: string) {
   return registerPreview(env, apiPolicy(env), {
-    owner: { subject: email, email }, slot, upstream_url: url,
-  });
+    owner: { subject: email, email }, upstream_url: url, access: 'private',
+  }, slot);
 }
 
 export function previewsEnabled(env: Bindings): boolean { return configured(env); }
@@ -357,6 +358,7 @@ export async function handlePreviewHost(c: Context<AppEnv>): Promise<Response> {
     if (decodedPath.startsWith('/__preview') && !u.pathname.startsWith(PREFIX)) return failure(404);
 
     if (u.pathname.startsWith(PREFIX)) {
+      if (r.access === 'public') return failure(404);
       if (c.req.method !== 'GET' || upgrade || serviceWorker) return failure();
       for (const [key, value] of secureHeaders()) c.header(key, value);
       if (u.pathname === `${PREFIX}start`) {
@@ -403,15 +405,15 @@ export async function handlePreviewHost(c: Context<AppEnv>): Promise<Response> {
       return failure(404);
     }
 
-    const authenticated = await previewSession(c.req.raw, c.env, r);
-    if (!authenticated) {
+    const authenticated = r.access === 'private' ? await previewSession(c.req.raw, c.env, r) : r.expires_at;
+    if (r.access === 'private' && !authenticated) {
       if (navigation && !upgrade) return new Response(null, { status: 302,
         headers: new Headers([...secureHeaders(), ['Location', `${PREFIX}start`]]) });
       return failure(401);
     }
     // Modern browser Fetch Metadata or an exact Origin is required. A browser
     // omitting both cannot silently bypass sibling-origin request checks.
-    if (!site && origin !== u.origin) return failure();
+    if (r.access === 'private' && !site && origin !== u.origin) return failure();
     if (upgrade) {
       const stub = c.env.PREVIEW_CONNECTIONS.get(c.env.PREVIEW_CONNECTIONS.idFromName(u.hostname));
       return await stub.fetch(c.req.raw);
@@ -512,7 +514,9 @@ export class PreviewConnections {
         if (!configured(this.env) || !r || request.method !== 'GET' ||
             request.headers.get('Upgrade')?.toLowerCase() !== 'websocket' ||
             request.headers.get('Origin') !== u.origin) return failure();
-        const sessionExpiry = await previewSession(request, this.env, r);
+        const sessionExpiry = r.access === 'private'
+          ? await previewSession(request, this.env, r)
+          : r.expires_at;
         if (!sessionExpiry) return failure();
         if (this.sockets.size >= 16) return failure(429);
         const prepared = await upstreamRequest(request, this.env, r);

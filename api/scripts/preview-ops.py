@@ -6,11 +6,13 @@ import http.cookiejar
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import shlex
 import subprocess
 import tomllib
 import urllib.error
+import urllib.parse
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -181,11 +183,9 @@ def identity():
 
 
 def nonowner():
-    from datetime import datetime, timedelta, timezone
     values = dict(line.split("=", 1) for line in TOKEN_FILE.read_text().splitlines())
     body = {"owner": {"subject": "issue71-synthetic-nonowner", "email": "preview-qualification-nonowner@ucsc.edu"},
-        "slot": "8787", "upstream_url": signed_destination(),
-        "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()}
+        "upstream_url": signed_destination(), "access": "private", "tag": "qualification"}
     request = urllib.request.Request("https://api.bayleaf.dev/previews/registrations", data=json.dumps(body).encode(),
         headers={"Authorization": "Bearer " + values["PREVIEWS_INSTALLATION_KEY"],
             "Content-Type": "application/json", "User-Agent": "BayLeaf-Preview-Qualification/1.0"})
@@ -210,11 +210,69 @@ def copy_start():
         print("Copy-test authorization URL:", error.headers["Location"])
 
 
+def contract():
+    """Exercise the deployed Lathe v2 registration contract without disclosing credentials."""
+    values = dict(line.split("=", 1) for line in TOKEN_FILE.read_text().splitlines())
+    headers = {"Authorization": "Bearer " + values["PREVIEWS_INSTALLATION_KEY"],
+        "Content-Type": "application/json", "User-Agent": "BayLeaf-Preview-Qualification/1.0"}
+    upstream = signed_destination()
+    base = {"owner": {"subject": "issue72-contract", "email": "amsmith@ucsc.edu"},
+        "upstream_url": upstream, "tag": "contract-test"}
+    urls = []
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args):
+            return None
+    try:
+        legacy = urllib.request.Request("https://api.bayleaf.dev/previews/registrations",
+            data=json.dumps({**base, "slot": "8787", "access": "private"}).encode(), headers=headers)
+        try:
+            urllib.request.urlopen(legacy, timeout=30)
+            raise SystemExit("Legacy registration unexpectedly succeeded")
+        except urllib.error.HTTPError as error:
+            if error.code != 400: raise
+        print("PASS: legacy registration shape rejected")
+
+        for access in ["public", "private"]:
+            request = urllib.request.Request("https://api.bayleaf.dev/previews/registrations",
+                data=json.dumps({**base, "access": access}).encode(), headers=headers)
+            with urllib.request.urlopen(request, timeout=30) as response:
+                result = json.load(response)
+            if set(result) != {"url", "expires_at"}: raise SystemExit("Unexpected response shape")
+            urls.append(result["url"])
+            hostname = urllib.parse.urlsplit(result["url"]).hostname
+            if not re.fullmatch(rf"amsmith-{access}-[a-f0-9]{{24}}\.bayleaf-proxies\.dev", hostname):
+                raise SystemExit("Unexpected policy-labeled hostname")
+            stored = cloudflare(f"/accounts/{ACCOUNT}/d1/database/e249d6a6-41cf-4ab7-93d6-b677ac95b524/query",
+                {"sql": "SELECT access,deployment FROM preview_registrations WHERE hostname=?", "params": [hostname]})[0]["results"]
+            if stored != [{"access": access, "deployment": "lathe"}]: raise SystemExit("Stored access policy mismatch")
+            opener = urllib.request.build_opener(NoRedirect())
+            preview_request = urllib.request.Request(result["url"], headers={
+                "Sec-Fetch-Site": "none", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document",
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140 Safari/537.36",
+            })
+            try:
+                with opener.open(preview_request, timeout=30) as response:
+                    status, body = response.status, response.read().decode()
+            except urllib.error.HTTPError as error:
+                status, body = error.code, ""
+            if access == "public" and (status != 200 or "Owner-authenticated preview" not in body):
+                raise SystemExit(f"Public preview was not served directly (status {status})")
+            if access == "private" and status != 302:
+                raise SystemExit("Private preview did not require browser authentication")
+            print(f"PASS: {access} registration enforced")
+    finally:
+        for url in urls:
+            label = urllib.parse.urlsplit(url).hostname.split(".", 1)[0]
+            request = urllib.request.Request("https://api.bayleaf.dev/previews/registrations/" + label,
+                method="DELETE", headers=headers)
+            with urllib.request.urlopen(request, timeout=30): pass
+
+
 def cleanup():
     record = TOKEN_FILE.with_name("bayleaf-preview-fixture.json")
     previous = json.loads(record.read_text())
     registered = cloudflare(f"/accounts/{ACCOUNT}/d1/database/e249d6a6-41cf-4ab7-93d6-b677ac95b524/query",
-        {"sql":"SELECT hostname,email FROM preview_registrations WHERE slot='8787' AND email IN (?,?)",
+        {"sql":"SELECT hostname,email FROM preview_registrations WHERE (slot='8787' AND email=?) OR email=?",
          "params":['amsmith@ucsc.edu','preview-qualification-nonowner@ucsc.edu']})[0]['results']
     old_path = previous["path"]
     assert old_path.startswith("/tmp/bayleaf-preview-poc-")
@@ -260,7 +318,7 @@ PY"""
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["bootstrap", "inspect", "fixture", "expose", "destination", "identity", "nonowner", "copy-start", "cleanup"])
+    parser.add_argument("action", choices=["bootstrap", "inspect", "fixture", "expose", "destination", "identity", "nonowner", "copy-start", "contract", "cleanup"])
     args = parser.parse_args()
     {"bootstrap": bootstrap, "inspect": inspect, "fixture": fixture, "expose": expose, "destination": destination,
-        "identity": identity, "nonowner": nonowner, "copy-start": copy_start, "cleanup": cleanup}[args.action]()
+        "identity": identity, "nonowner": nonowner, "copy-start": copy_start, "contract": contract, "cleanup": cleanup}[args.action]()

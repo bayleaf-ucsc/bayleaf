@@ -11,6 +11,7 @@ import argparse
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--full', action='store_true', help='Full regression, including installation of upstream requirements; use after the coordinated production upgrade')
+parser.add_argument('--access', choices=['private', 'public'], default='private', help='Preview policy to verify (default: private)')
 args = parser.parse_args()
 
 env = dict(os.environ)
@@ -28,8 +29,9 @@ env.update({
     'LATHE_TEST_TOOL_ID': 'lathe_preview_test',
     'LATHE_PREVIEW_WRAPPER_URL': 'https://api.bayleaf.dev/previews/registrations',
     'LATHE_PREVIEW_WRAPPER_KEY': env['PREVIEWS_INSTALLATION_KEY'],
-    'LATHE_PREVIEW_EXPECTED_PATTERN': r'https://amsmith-[a-f0-9]{24}\.bayleaf-proxies\.dev/',
+    'LATHE_PREVIEW_EXPECTED_PATTERN': rf'https://amsmith-{args.access}-[a-f0-9]{{24}}\.bayleaf-proxies\.dev/',
     'LATHE_PREVIEW_REVOKE_URL': 'https://api.bayleaf.dev/previews/registrations/{label}',
+    'LATHE_PREVIEW_ACCESS': args.access,
 })
 root = Path(__file__).resolve().parents[3] / 'lathe'
 command=['uv','run','--directory',str(root),'python','test_deployment.py']

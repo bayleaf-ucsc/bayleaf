@@ -269,25 +269,24 @@ export const HealthResponseSchema = z.object({
   timestamp: z.string().datetime(),
 }).openapi('HealthResponse');
 
-// ── Owner-authenticated previews ───────────────────────────────────
+// ── Transient previews ─────────────────────────────────────────────
 
-// Generic owner-wrapping input; BayLeaf's initial slot policy is applied by the
-// handler. Keeping slot opaque allows future named services without a new wire format.
+// Lathe's command-style v2 contract: access is a required policy, not a
+// negotiated result. The optional tag is an untrusted hint that BayLeaf ignores.
 export const PreviewRegistrationSchema = z.object({
   owner: z.object({
     subject: z.string().min(1).max(200),
     email: z.email().max(254),
   }).strict(),
-  slot: z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/),
   upstream_url: z.url().max(2048),
-  expires_at: z.iso.datetime({ offset: true }).optional().openapi({
-    description: 'Optional registration expiry, independent of upstream availability. Defaults to 24 hours and is capped at 24 hours.',
+  access: z.enum(['public', 'private']),
+  tag: z.string().regex(/^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/).optional().openapi({
+    description: 'Optional untrusted display hint. BayLeaf does not include it in hostnames.',
   }),
 }).strict().openapi('PreviewRegistration');
 
 export const PreviewRegistrationResponseSchema = z.object({
   url: z.url(),
-  access_mode: z.literal('owner-authenticated'),
   expires_at: z.iso.datetime(),
 }).openapi('PreviewRegistrationResponse');
 

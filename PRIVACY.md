@@ -42,13 +42,14 @@ ITS-operated or ITS-supported one.
 - **Sandbox files (Chat and API, opt-in):** if you use the Code Sandbox, files
   you create live inside a per-user Daytona VM. There is no persistent volume
   backing it: deleting the sandbox is final.
-- **Protected previews (Chat and API, experimental and opt-in):** opening a protected
-  sandbox URL sends application traffic through Cloudflare to Daytona. The
-  gateway stores an encrypted temporary upstream access URL, owner/slot metadata,
+- **Transient previews (Chat and API, experimental and opt-in):** opening a
+  public or private sandbox URL sends application traffic through Cloudflare to
+  Daytona. The gateway stores an encrypted temporary upstream access URL,
+  access policy, owner/internal-slot metadata,
   and short-lived login transactions, but does not store HTTP bodies. Owner-name
   reservations and installation identity mappings persist to prevent names being
   reassigned. Browser application state can survive preview expiry. See the
-  [preview retention schedule](api/RETENTION.md#owner-authenticated-previews-bounded-poc). ✨
+  [preview retention schedule](api/RETENTION.md#transient-previews-bounded-poc). ✨
 - **Prompt and completion traffic (API and Chat):** not stored by BayLeaf.
   Ordinary requests are streamed through OpenRouter to LLM providers operating
   under [zero-data-retention](https://openrouter.ai/docs/guides/features/zdr),

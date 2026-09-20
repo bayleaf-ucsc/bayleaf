@@ -79,7 +79,7 @@ def expose(port):
     values = dict(line.split('=',1) for line in ops.TOKEN_FILE.read_text().splitlines())
     request = urllib.request.Request('https://api.bayleaf.dev/previews/registrations',data=json.dumps({
         'owner':{'subject':'issue71-4gib-qualification','email':'amsmith@ucsc.edu'},
-        'slot':str(port),'upstream_url':signed['url'],
+        'upstream_url':signed['url'],'access':'private','tag':'qualification',
     }).encode(),headers={'Authorization':'Bearer '+values['PREVIEWS_INSTALLATION_KEY'],
         'Content-Type':'application/json','User-Agent':'BayLeaf-Preview-Qualification/1.0'})
     with urllib.request.urlopen(request,timeout=30) as response: return json.load(response)

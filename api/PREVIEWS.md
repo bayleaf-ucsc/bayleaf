@@ -1,17 +1,21 @@
-# Owner-authenticated previews: issue #71
+# Transient preview gateway: issues #71 and #72
 
-Status: owner-authenticated HTTP/WebSocket gateway deployed and enabled on
-2026-09-17. Generic wrapping is implemented in the upstream Lathe checkout and
-passed isolated and production OWUI tests. BayLeaf Chat now runs upstream Lathe
-0.27.0 with wrapping enabled. Evidence and limitations are below. ✨
+Status: public and owner-authenticated HTTP/WebSocket gateway deployed and
+enabled. BayLeaf Chat runs upstream Lathe 0.29.6 with its command-style preview
+contract. Both access policies passed isolated and production OWUI tests on
+2026-09-20. Evidence and limitations are below. ✨
 
 ## Contract
 
-**Final naming decision (2026-09-17):** `{cruzid}-{nonce}.bayleaf-proxies.dev`,
-with a fresh 96-bit random nonce on every registration, no visible port, and no
-stable redirect alias. Ports/opaque slots stay server-side. This supersedes the
-stable-name experiments recorded later in the evidence history. A future named
-launcher would be a separate Worker-served surface that creates transient URLs.
+**Current naming decision (2026-09-20):**
+`{cruzid}-{access}-{nonce}.bayleaf-proxies.dev`, with a fresh 96-bit random
+nonce on every registration, no visible port, and no stable redirect alias.
+CruzID gives a useful explanation when one participant in a group cannot enter
+another's private preview. The explicit `public` or `private` segment keeps the
+agent's access-control choice visible when someone uses the URL away from the
+initiating conversation. The nonce remains necessary to isolate service workers
+and browser state. BayLeaf ignores Lathe's optional untrusted application `tag`;
+the umbrella domain already supplies the service branding.
 
 ### Lathe installation
 
@@ -21,10 +25,16 @@ installation's bearer credential, accepts:
 ```json
 {
   "owner": { "subject": "owui-user-id", "email": "person@ucsc.edu" },
-  "slot": "5000",
-  "upstream_url": "https://5000-token.proxy.daytona.work/"
+  "upstream_url": "https://5000-token.proxy.daytona.work/",
+  "access": "private",
+  "tag": "vscode"
 }
 ```
+
+`access` is required and must be `public` or `private`. It is a command, not a
+negotiation: the gateway enforces that policy or rejects registration. `tag` is
+optional and ignored by BayLeaf. Legacy `slot`, `requested_access`,
+`access_mode`, and request-level `expires_at` fields are rejected.
 
 The registering deployment obtains identity from OWUI's injected user context.
 The model must never supply ownership. The deployment is trusted to assert an
@@ -32,8 +42,9 @@ email in `ALLOWED_EMAIL_DOMAIN`. Browser ownership is exact normalized email
 equality with the existing API login session. A subject's email cannot change
 through re-registration. Account relinking requires an operator migration.
 
-The response is `{ "url": "https://<cruzid>-<nonce>.bayleaf-proxies.dev/",
-"access_mode": "owner-authenticated", "expires_at": "..." }`.
+The response is `{ "url": "https://<cruzid>-<access>-<nonce>.bayleaf-proxies.dev/",
+"expires_at": "..." }`. Public registrations proxy immediately for anyone
+with the URL. Private registrations use the owner-login protocol below.
 The public username is the CruzID, the exact local part of the normalized campus
 email. The random suffix isolates each registration's browser state; it is not
 an authentication credential or a hash of identity. Unsupported DNS characters and
@@ -41,19 +52,13 @@ overlong labels are rejected rather than silently rewritten. Database uniqueness
 and ownership checks still enforce the binding. The
 installation-local subject maps to that email, and cannot be rebound to another
 email through this endpoint. Retired URLs are not redirected or deliberately reused.
-Slots are opaque strings in
-the generic contract; this deployment accepts canonical ports 3000–9999.
 
-Registrations default to 24 hours, with a 24-hour ceiling. The optional request
-field `expires_at` requests a shorter registration lifetime; it is not an
-upstream-lifecycle assertion. The response's `expires_at` describes when the
-registration expires, not how long the application or upstream credential will
-remain usable. The gateway keeps stale mappings until replacement, revocation,
-or expiry, returning an upstream-unavailable error while the target is down.
-Every successful registration replaces the slot, rotates its generation, and
-invalidates its sessions and unfinished login flows. Lathe can revoke a slot it
-last registered with `DELETE /previews/registrations/<returned-host-label>`.
-No list/read endpoint returns upstream URLs. Maximum 16 active slots per owner.
+Registrations last 24 hours. The response's `expires_at` describes gateway
+retention, not how long the application or upstream credential remains usable.
+Lathe registrations are independent leases because v2 supplies no stable slot;
+repeated exposure does not revoke an earlier Lathe URL. The installation can
+revoke a known hostname with `DELETE /previews/registrations/<host-label>`.
+No list/read endpoint returns upstream URLs. Maximum 16 active previews per owner.
 
 The POC accepts HTTPS origin URLs only (root path, no query, fragment, userinfo,
 or alternate port), under explicitly configured upstream DNS suffixes. This
@@ -66,19 +71,15 @@ generic path/query bearer URLs. Redirects are never followed server-side.
 API key. It resolves the caller's existing, running sandbox, obtains the
 port-scoped signed URL internally, and returns the same response format. It
 does not start, wake, or launch a service. `DELETE /sandbox/expose/5000` revokes
-the caller's slot, including one registered by Lathe. Neither endpoint accepts
+the caller's keyed port registration. Neither endpoint accepts
 Campus Pass, an installation credential, or a browser session as authority.
 
 The keyed API obtains a 24-hour Daytona signed URL and keeps its registration
-for 24 hours. Re-exposing refreshes that URL. Lathe can choose a
-different upstream lifetime without changing the gateway; omitting `expires_at`
-uses the gateway's 24-hour registration policy regardless of that choice.
+for 24 hours. Re-exposing the same port replaces that keyed registration.
 
-Both entry points use the same canonical email owner and slot. BayLeaf
-explicitly trusts its one Chat installation to assert that identity, so a
-registration from either path replaces the previous registration. A future
-second installation must receive an explicit namespace/identity policy, not
-automatic authority based on matching email text.
+Both entry points use the same canonical email owner, but only the keyed API has
+a stable port slot. A future second installation must receive an explicit
+namespace/identity policy, not automatic authority based on matching email text.
 
 ### Installation authentication
 
@@ -126,15 +127,15 @@ stage must fail in a browser lacking the appropriate original cookie.
 ## Origin and application policy
 
 Adam revised the initial stable-origin choice on 2026-09-17: each registration
-now receives a fresh origin. Replacing the same owner/slot retires the previous
-hostname and closes its sockets. Its service workers, caches, and local storage
-cannot control the next origin. The flat hostname works with the existing
+now receives a fresh origin. Replacing a keyed owner/port registration or
+revoking any known hostname closes its sockets. Its service workers, caches,
+and local storage cannot control the next origin. The flat hostname works with the existing
 single-level wildcard certificate; a nested `{nonce}.{cruzid}` shape would need
 additional TLS provisioning and would still be same-site for cookie purposes.
 
 Service workers are allowed on nonce origins. Root-relative
 `Service-Worker-Allowed` headers are preserved, supporting root-scoped workers.
-Script fetches still require owner authentication; reserved authentication routes
+Private script fetches still require owner authentication; reserved authentication routes
 cannot be fetched as worker scripts or forwarded upstream. A worker installed by
 the current app can observe/intercept that generation's navigations, including
 the auth handoff. It cannot read HttpOnly cookies or transfer the browser-bound
@@ -162,7 +163,7 @@ This supports server-managed application sessions, not arbitrary
 names through this transport. Applications depending on that behavior require
 separate compatibility work. Upstream attempts to set gateway cookies are dropped.
 
-Authenticated requests require Fetch Metadata or an exact matching Origin;
+Authenticated private requests require Fetch Metadata or an exact matching Origin;
 legacy browsers that provide neither are denied. Request and response headers
 use allowlists. Redirects may only target the same upstream origin or the exact
 protected preview origin, are translated to the preview origin, and carry no
@@ -198,27 +199,30 @@ reservations to exact CruzIDs. It requires zero preview registrations: ciphertex
 is bound to its original hostname, so renaming active rows would break it. This
 naming revision was migrated and deployed on 2026-09-17; earlier live evidence
 below describes the preceding hashed-name version.
+Migration `0010_preview_access_policy.sql` records `public | private`, migrating
+all pre-v2 registrations to `private`.
 Expired registrations and flows are deleted by the scheduled cleanup; owner
 slug mappings persist to prevent origin reassignment. Upstream URLs are encrypted
 at rest, but the gateway decrypts them to forward traffic. They are credentials,
 not application content. D1 backup retention still applies to deleted ciphertext
 and identity metadata. Runtime observability remains disabled.
 
-New active state is bounded to 16 slots per owner and 64 pending login flows per
+New active state is bounded to 16 previews per owner and 64 pending login flows per
 hostname. Registration bodies are limited to 8 KiB. Upstream HTTP operations
 have a five-minute deadline, bounded further by registration expiry. Cloudflare's
 platform request/upload limits also apply. This is an initial resource bound,
 not per-owner traffic accounting or a guarantee against unauthenticated traffic
 exhausting a hostname's pending-login allowance.
 
-WebSocket upgrades require the exact preview Origin and a valid owner session.
+WebSocket upgrades require the exact preview Origin; private previews also
+require a valid owner session.
 A `PreviewConnections` Durable Object per hostname relays frames and owns socket
 lifetime. Up to 16 connections per hostname and 4 MiB per frame are allowed.
 Establishment has a ten-second timeout which is cleared after the handshake.
 Negotiated subprotocols are checked and forwarded; text and binary frames work.
 
-Registration replacement and revocation synchronously invalidate old-generation
-connections. A Durable Object alarm closes idle sockets at the earlier of browser
+Keyed registration replacement and all revocation synchronously invalidate
+old-generation connections. A Durable Object alarm closes idle sockets at the earlier of browser
 grant or registration expiry; it also rechecks D1 every 30 seconds while sockets
 are open. Message handlers independently refuse expired/closed grants. No frame
 payloads are persisted or logged. Outbound sockets keep the object active, so
@@ -262,7 +266,7 @@ exposure remains a separate credential-bearing path.
 
 ## Local evidence (2026-09-17)
 
-`npm run test:previews` passes 24 grouped security checks against the actual
+`npm run test:previews` passes 25 grouped security checks against the actual
 bundled Worker under Miniflare/workerd
 and applies all D1 migrations to an ephemeral database. Synthetic tests cover
 installation/user credential separation; destination and identity policy;
@@ -415,7 +419,7 @@ through Wrangler and retries once on HTTP 401.
 Upstream Lathe implementation: [bf7e0e8](https://github.com/rndmcnlly/lathe/commit/bf7e0e8).
 
 Deployed version `b64dc0ea-8724-4915-8725-a67b7c27c815`, migration 0009.
-Final URLs are `{cruzid}-{nonce}.bayleaf-proxies.dev`: no port, stable alias, or
+That rollout's URLs were `{cruzid}-{nonce}.bayleaf-proxies.dev`: no port, stable alias, or
 implicit launcher. Each registration replaces its owner/slot's previous origin.
 The nonce is 96 random bits, not identity hashing or an authorization credential.
 The 24-check workerd suite includes concurrent replacement, retired-origin
@@ -427,3 +431,28 @@ completed another auth handoff with that worker installed. Re-registration
 produced a new origin with zero worker registrations and no controller; the
 retired origin returned HTTP 404 at the network boundary. The production Lathe
 smoke also returned the nonce URL. Synthetic resources were cleaned up.
+
+### Access-policy v2 rollout (2026-09-20)
+
+BayLeaf retained its integrated API Worker rather than adopting Lathe's bundled
+standalone wrapper. Migration 0010 added an explicit `public | private` access
+policy and migrated every existing registration to `private`. The strict request
+schema rejects legacy protocol fields. Public records bypass owner login;
+private records retain the two-host proof. BayLeaf ignores `tag`; new hostnames
+make the CruzID and access policy legible while retaining nonce origin isolation.
+
+Access-policy v2 Worker version: `9e80e504-7207-4eb8-b2c6-885bfe4bafc4`. The local
+25-check workerd/D1 suite and live raw-contract checks passed. Isolated OWUI
+tests passed private and public wrapped exposure. Production Chat then adopted
+upstream Lathe 0.29.6; the actual production toolkit returned a private wrapped
+URL, a public wrapped URL that served the tracked fixture without login, and no
+Daytona hostname. It continued to reject SSH exposure. Synthetic fixtures,
+toolkits, sandboxes, and registrations were removed; D1 reported zero remaining
+test registrations. Cloudflare's zone bot policy rejects Python's default user
+agent before the Worker, so non-browser smoke clients use an explicit test user
+agent; this is not a preview authorization result.
+
+The policy-legible hostname revision deployed as Worker
+`e45384c2-13f4-4bc2-89c8-c6386bdac09c`. Raw and production-Lathe smokes returned
+`amsmith-private-<nonce>` and `amsmith-public-<nonce>` as requested; private
+remained owner-authenticated and public served the tracked fixture directly.
