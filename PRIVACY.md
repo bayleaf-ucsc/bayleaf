@@ -137,6 +137,10 @@ research-and-education identity broker.
   or marketing.
 - BayLeaf does not train models on your conversations.
 - BayLeaf does not retain LLM prompts or completions on its own infrastructure.
+- When you configure a local agent to use Google Workspace or Canvas directly,
+  BayLeaf does not proxy those service API calls or receive the service token.
+  The agent may still send selected service-derived context to BayLeaf for
+  inference; see [`DIRECT-INTEGRATIONS.md`](DIRECT-INTEGRATIONS.md).
 - BayLeaf does not use cookies for tracking. Session cookies expire in 24
   hours (API login and protected previews), or are managed by
   Open WebUI (Chat).

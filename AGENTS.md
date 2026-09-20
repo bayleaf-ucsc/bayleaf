@@ -115,12 +115,14 @@ bayleaf/
 ├── politics/             # Dependency audit, VPATs, position papers
 ├── scripts/              # GitHub Pages artifact builder
 ├── training/             # Work-in-progress React site for training users in effective GenAI usage
+├── DIRECT-INTEGRATIONS.md # Trust boundaries for direct GWS/Canvas agent integrations
 ├── README.md
 └── AGENTS.md             # This file
 ```
 
-(USE-CASES.md, PRIVACY.md, SUPPORT.md at the repo root appear before `api/`
-alphabetically; see the top-level listing.)
+(DIRECT-INTEGRATIONS.md, GETTING-STARTED.md, USE-CASES.md, PRIVACY.md, and
+SUPPORT.md at the repo root appear before `api/` alphabetically; see the
+top-level listing.)
 
 `landing/` is published via GitHub Pages at `https://bayleaf.dev`. It is the
 *only* hand-written HTML surface: a single comprehensive landing page. Companion

@@ -732,6 +732,16 @@ The ${bt}--full${bt} flag requests broad scopes (Drive, Gmail, Calendar, Sheets,
 Slides, Tasks). Credentials store encrypted on disk and refresh automatically.
 Check state any time with ${bt}gws auth status${bt}.
 
+BayLeaf's shared Google Cloud project grants UCSC accounts permission to consume its
+API quota. Your OAuth token still controls access to your own Workspace data; this
+project permission does not grant BayLeaf or other UCSC users access to it.
+
+Verify setup with a read-only Gmail request:
+
+${fence}bash
+gws gmail users messages list --params '{"userId":"me","maxResults":5,"q":"in:inbox"}'
+${fence}
+
 Common services (each command also self-documents via ${bt}gws <service> --help${bt}):
 
 | Service | Example |
@@ -745,6 +755,7 @@ Common services (each command also self-documents via ${bt}gws <service> --help$
 Troubleshooting:
 
 - **401 auth error:** re-run ${bt}gws auth login --full${bt}
+- **403 mentioning ${bt}serviceusage.services.use${bt}:** the shared project's campus access binding is missing; contact the BayLeaf admin
 - **403 API not enabled:** contact the BayLeaf admin
 - **Check current account / scopes:** ${bt}gws auth status${bt}
 `;

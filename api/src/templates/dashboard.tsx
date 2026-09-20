@@ -308,6 +308,13 @@ curl -s https://api.bayleaf.dev/docs/gws-oauth-client.json \\
   -o ~/.config/gws/client_secret.json`}</code></pre>
         <p style="margin-top: 0.75rem;"><strong>3. Authenticate (one-time, opens browser; pick your account there):</strong></p>
         <pre><code>gws auth login --full</code></pre>
+        <p style="margin-top: 0.75rem;"><strong>4. Verify with a read-only Gmail request:</strong></p>
+        <pre><code>{`gws gmail users messages list --params \\
+  '{"userId":"me","maxResults":5,"q":"in:inbox"}'`}</code></pre>
+        <p style="margin-top: 0.75rem; font-size: 0.9em; color: #555;">
+          BayLeaf's shared Google Cloud project supplies API quota. Your OAuth token still
+          controls access to your own Workspace data.
+        </p>
         <p style="margin-top: 0.75rem; font-size: 0.9em; color: #555;">
           Or hand the full setup guide to your coding agent (GWS setup is included):
         </p>

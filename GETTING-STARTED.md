@@ -267,8 +267,22 @@ The BayLeaf API wraps access to the Tavily search engine and the Daytona sandbox
 
 If you want the agent running on your computer to manipulate the sandbox used in BayLeaf Chat (so you can continue your project away from your laptop, perhaps from your phone's browser), you might direct your agent to upload files to the sandbox via the BayLeaf API.
 
-### Canvas LMS and Google Workspace, at the API Level
+### Canvas LMS and Google Workspace as Direct Integrations
 
-While BayLeaf Chat needs to use specific toolkits (written by my agents) to connect you to services we often use on campus, such as the Canvas LMS or Google Workspace, our `llms.txt` gives your agent some clues about how to access these services directly. When you do this, you aren't using the BayLeaf API; you are using the other service's API directly. We've documented those integration patterns in our `llms.txt` file because it's much more likely that your agent, rather than you directly, will be building and maintaining those integrations.
+BayLeaf Chat uses specific toolkits to connect to services used on campus, such
+as Canvas LMS and Google Workspace. A local agent can instead use those
+services' command-line clients directly. In that arrangement, the Google or
+Canvas API traffic does not pass through BayLeaf: BayLeaf may supply model
+inference and setup support, while the service credential stays on your
+computer.
 
-If you figure out how to get your agent to integrate with another service widely used by the campus community, contact [me](mailto:amsmith@ucsc.edu) about adding some documentation to our `llms.txt` file so that others can learn from your experience directly.
+That distinction does not make every resulting workflow private by definition.
+Your agent can still include selected email, document, or course context in a
+model request. See [`DIRECT-INTEGRATIONS.md`](DIRECT-INTEGRATIONS.md) for the
+credential flows, data boundaries, FERPA caveat, and rationale. The live
+[`llms.txt`](https://api.bayleaf.dev/llms.txt) remains the agent-facing setup
+surface with current commands.
+
+If you develop another direct integration that would be useful across the
+campus community, use the channels in [`SUPPORT.md`](SUPPORT.md) so its design
+and onboarding can be documented for others.

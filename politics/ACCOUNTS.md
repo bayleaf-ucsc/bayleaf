@@ -150,9 +150,13 @@ is a separate, future conversation.
 **Project `gws-cli-playground-ucsc`** (project number `412068790611`).
 Hosts the OAuth client used by the `gws_toolkit` (Chat) and exposes the
 `gws-cli-playground-ucsc` credentials served at
-`/docs/gws-client-secret.json` (API). The OAuth consent screen is set
+`/docs/gws-oauth-client.json` (API). The OAuth consent screen is set
 to *Internal*, so any `@ucsc.edu` user can authorize without manual
-allow-listing. No billable APIs are enabled.
+allow-listing. The project grants `domain:ucsc.edu` the
+project-local `gwsQuotaConsumer` role, containing only
+`serviceusage.services.use`, so campus users can consume its API quota. Each
+user's OAuth token remains the authority for their own Workspace data, and the
+quota permission grants no product-specific access to other project resources.
 
 ### 5. OpenRouter, Daytona, Tavily, DeepInfra → key rotation is the handover
 

@@ -52,6 +52,13 @@ and page fetching, and sandboxed code execution:
 
 Public uptime dashboard for all BayLeaf services.
 
+### Direct Agent Integrations
+
+BayLeaf also documents ways for local agents to use campus services such as
+Google Workspace and Canvas without routing those service API calls through
+BayLeaf Chat or BayLeaf API. See the architecture, credential flows, and trust
+boundaries in [`DIRECT-INTEGRATIONS.md`](DIRECT-INTEGRATIONS.md).
+
 ## Support
 
 Questions, problems, or feature requests?
@@ -72,7 +79,7 @@ such as the Daytona-backed Code Sandbox, store user files by necessity.
 ## This Repository
 
 - `api/` — BayLeaf API Cloudflare Worker ([api.bayleaf.dev](https://api.bayleaf.dev))
-- `landing/` — Static GitHub Pages site published at [bayleaf.dev](https://bayleaf.dev): one comprehensive landing page (privacy, support, and use cases live as GitHub-served markdown: [PRIVACY.md](PRIVACY.md), [SUPPORT.md](SUPPORT.md), [USE-CASES.md](USE-CASES.md))
+- `landing/` — Static GitHub Pages site published at [bayleaf.dev](https://bayleaf.dev): one comprehensive landing page (privacy, support, use cases, and direct integration design live as GitHub-served markdown: [PRIVACY.md](PRIVACY.md), [SUPPORT.md](SUPPORT.md), [USE-CASES.md](USE-CASES.md), [DIRECT-INTEGRATIONS.md](DIRECT-INTEGRATIONS.md))
 - `chat/` — BayLeaf Chat DigitalOcean App ([chat.bayleaf.dev](https://chat.bayleaf.dev)): workspace models, custom tools, filters, and [design doc](chat/DESIGN.md)
 - `politics/` — The case for universities owning their own AI infrastructure (manifesto)
 
