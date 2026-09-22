@@ -223,6 +223,12 @@ Because only a fraction of my conversations in the BayLeaf folder pertain to ope
 
 Again, you don't need to be super thoughtful about what goes into a skill or how skills are organized. Keep accumulating reusable knowledge in your `AGENTS.md` files. When they get too messy, ask your agent, "Do you think we could clean up this project by moving some of the stuff from the `AGENTS.md` files into distinct skills?"
 
+#### Set Up Your Agent to Help You Learn
+
+General-purpose agents tend to optimize for completing work, not for helping you understand it. The 37-minute [*You can learn with AI* podcast episode](https://www.changetechnically.fyi/2396236/episodes/18692591-you-can-learn-with-ai), hosted by neuroscientist Ashley Juavinett and psychologist Cat Hicks, explains how metacognition, deliberate pauses, and classroom co-design can turn AI assistance into active learning.
+
+The episode's companion [Learning Opportunities agent skill](https://github.com/DrCatHicks/learning-opportunities/tree/main/learning-opportunities/skills/learning-opportunities) puts those principles into practice through optional prediction, explanation, code-tracing, and teach-back exercises. Ask your agent to inspect that skill package and offer to install it in your user-level skills directory. It should explain where the files will go and ask before changing your persistent instructions. This is an optional extension, not a requirement for using BayLeaf.
+
 ### Project Folders as Git Repositories
 
 Suppose you have a project folder set up nicely. Maybe it is one you are using for writing a research paper. Maybe your `AGENTS.md` file has a link to the publication venue's call for papers, and you have various agent skills for keeping your bibliographic database up to date, rerunning some analysis scripts, or fact-checking citations in your messy draft. Would you like to share this rich environment with a coauthor?
