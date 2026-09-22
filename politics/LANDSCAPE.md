@@ -1,6 +1,6 @@
 # University AI infrastructure landscape
 
-Last updated: 2026-09-15
+Last updated: 2026-09-22
 
 ## Intent
 
@@ -21,7 +21,8 @@ independent research unit.
 
 ## What this document tracks
 
-Each institutional record uses the following facets when evidence is available.
+The document uses the following facets when evidence is available. Institutional and
+cross-institutional records apply only the fields relevant to their subject.
 
 - **Status and dates:** Proposed, pilot, active, renewed, suspended, or ended;
   announcement, launch, and contract dates.
@@ -59,6 +60,10 @@ Each institutional record uses the following facets when evidence is available.
   evidence of benefit or harm.
 - **Disputes and gaps:** Organized opposition, contradictory accounts, missing
   records, and claims that remain unverified.
+- **Collective action:** Activist, labor, and accountability guides; their publishers,
+  constituencies, political analysis, targets, leverage, tactics, evidence methods,
+  sample demands, enforcement mechanisms, and documented outcomes. Publication of a
+  guide is not evidence that an institution adopted it or that its tactics succeeded.
 
 `Not disclosed` means the relevant source was found but did not publish the fact.
 `Unknown` means no authoritative source establishing the fact has yet been found.
@@ -133,6 +138,10 @@ Sources are preferred in this order:
 Material claims link to evidence near the claim. Vendor descriptions of privacy,
 educational value, or adoption are attributed to the vendor. Reviews that find no
 material change still update the record's `Last verified` date.
+
+Activist and labor guides are primary sources for their publishers' analysis,
+demands, and proposed tactics. Claims about institutional conduct or campaign
+outcomes still require the underlying records or independent corroboration.
 
 Institutional records use public-facing sources. Repository-internal documentation may
 support research but is not cited as evidence for an institution.
@@ -1343,6 +1352,186 @@ processing region. The contractual basis and ZDR or ZOA status are not disclosed
 **Open questions.** Confirm launch status, contract terms, privacy documentation,
 governance membership, course-level control, and evaluation plans.
 
+## Collective action and accountability infrastructure
+
+This section tracks reusable resources for contesting, reshaping, pausing, or ending
+institutional technology adoption. Each record identifies the publisher and intended
+constituency; its diagnosis and theory of change; target actors and decision points;
+sources of leverage; tactics and escalation paths; records or other evidence produced;
+whether demands create consultation or enforceable authority; maintenance status; and
+documented outcomes. Advocacy resources are not treated as neutral assessments. Their
+political commitments are part of the record rather than a reason to omit them.
+
+Outcomes are coded separately as proposed, mobilized, disclosed, resolved, negotiated,
+suspended, terminated, divested, enacted, or enforced. A campaign can win information
+or an advisory seat without changing the underlying decision. Contractual language can
+be binding but weak, while disruptive action can exercise power without creating a
+durable right.
+
+### AAUP Toolkit for Activism on AI
+
+**Last verified:** 2026-09-22<br>
+**Status:** Active national toolkit; includes a live bargaining tracker<br>
+**Publisher:** American Association of University Professors, ad hoc Committee on
+Artificial Intelligence and Academic Professions<br>
+**Constituency:** Higher-education workers, unions, AAUP chapters, students, and
+campus or state coalitions
+
+**Position in the AAUP resource system.** The AAUP says its
+[Toolkit for Activism on AI](https://www.aaup.org/issues-higher-education/teaching-and-research/artificial-intelligence/toolkit-activism-ai)
+was developed to oppose top-down technology adoption and build shared governance and
+public oversight from departments and chapters through state policy. It is the campaign
+layer of a larger [AAUP AI resource collection](https://www.aaup.org/issues-higher-education/teaching-and-research/artificial-intelligence)
+that also includes policy statements, model resolutions and memoranda, syllabus
+language, surveillance interventions, and refusal arguments. The toolkit's
+[September 9, 2026 launch slides](https://www.aaup.org/sites/default/files/2026-09/Webinar-Slides-Intro-Toolkit.pdf)
+name institution-level faculty and student-worker collectives and state or regional
+blocs as organizing forms. Their intended outputs include surveys, workshops, vendor
+information demands, testimony, petitions, media work, public actions, and bargaining
+or resolution language.
+
+**Political diagnosis.** The introductory zine,
+[*Resisting Technologies of Capture*](https://www.aaup.org/sites/default/files/2026-08/Zine--Resisisting_Technologies_of_Capture.pdf),
+situates AI adoption within higher-education austerity rather than presenting it as an
+isolated technical transition. It groups harms as displacement of workers, destruction
+or degradation of the educational service, and dehumanization of social relations. Its
+object is not only model error: it is a transfer of authority, money, intellectual work,
+and institutional capacity from workers and publics to firms. The zine rejects training
+as a sufficient remedy for work intensification, surveillance, deskilling, job loss, or
+corporate control. It treats adoption as politically contingent because higher education
+supplies public money, labor, legitimacy, research, and future workers to the industry.
+This is an explicit labor analysis and organizing narrative, not an independent impact
+evaluation.
+
+**Theory of change.** The toolkit's principal political subject is organized labor,
+including workers acting outside a recognized union. Its theory combines situated
+knowledge with collective capacity: workers map who decides, acquire records, convert
+individual harms into shared demands, intervene before requirements harden into a
+contract, negotiate durable rights, monitor implementation, and impose costs when
+participation fails. Students and communities appear as affected people, coalition
+partners, and sources of evidence, but the guides rarely specify independent student or
+community decision rights. Formal unions hold the strongest tools because information
+rights, bargaining, grievances, arbitration, and strike capacity can make participation
+consequential.
+
+**Procurement as a contested cycle.** The 2026
+[*On the Field* playbook](https://www.aaup.org/sites/default/files/2026-09/On-the-Field-Strategies-for-Workers-2026.pdf)
+divides procurement into problem definition, requests for information or proposals,
+technology sourcing, solution design, vendor negotiation, and contract monitoring. It
+treats pilots, add-ons, function changes, incidents, renewals, and nonrenewals as recurring
+decision points rather than regarding contract signature as the end of governance. Its
+thirteen plays begin with power mapping, contract review, and workplace education;
+intervene through alternative problem definitions, worker-authored requirements, public
+advocacy, and vendor evaluation; and continue through monitoring, remedies, pauses,
+strikes, work stoppages, and removal. Documentation has a political purpose: recording
+what administrators and vendors knew can support later bargaining, public pressure,
+litigation, or attribution of harm.
+
+The playbook therefore contains an escalation repertoire rather than one prescribed
+sequence: one-on-one organizing and a technology committee; power and contract mapping;
+surveys and technical investigation; alternative problem definitions; demands for
+notice, records, and participation in requirements or scoring; bargaining and public
+advocacy; monitoring, grievances, shadow reports, and litigation; then moratoria,
+nonrenewal, work stoppage, or removal. Political education continues throughout. It is
+preparation for collective action, not a substitute for authority.
+
+**Evidence pipeline.** The
+[public-records guide](https://www.aaup.org/sites/default/files/2026-09/AAUP-AFT-AI-Tech-FOIA-Guide.pdf)
+targets executed contracts and amendments, sole-source justifications, solicitations,
+vendor scoring, correspondence, privacy and security addenda, incident records,
+invoices, ledgers, and budgets. It distinguishes federal FOIA from state public-records
+law, identifies likely custodians, and anticipates deliberative-process and trade-secret
+claims. Public institutions are generally more reachable through state law; private
+institutions and contractor-held records present a structural gap.
+
+The
+[AI/Tech Audit Guide](https://www.aaup.org/sites/default/files/2026-09/AAUP-AFT-Higher-Ed-AI-Tech-Audit-Guide.pdf)
+turns those records into a sociotechnical and political-economic audit. It calls for
+triangulation among contracts, vendor claims, terms, interviews or surveys, and hands-on
+testing. Its worksheets cover actual use and nontechnical alternatives; data ownership,
+access, storage, and secondary use; intellectual property and liability; technical
+methods; accessibility and disparate effects; reliability and surveillance; effects on
+teaching, research, service, job categories, workload, and precarity; institutional cost;
+corporate ownership and shareholder value; and compute, water, and energy. The intended
+output is an argument and recommendations for institutional change, not a neutral score.
+The guides thus specify a pipeline from records to audit to organizing and bargaining,
+but do not document a completed case in which that whole pipeline produced a victory.
+
+**Authority and enforceability.** The
+[AI/Edtech Bargaining Tracker](https://docs.google.com/spreadsheets/d/1-tqZYazG58Yx_5NW5aeUIhX3ZCH8QE0tyKSXgyatp5s/edit?usp=sharing)
+mixes executed agreements, memoranda, side letters, proposals, developing demands, and
+general technology clauses. It shows why "faculty participation" is too coarse a field:
+
+| Authority level | Examples in the tracker | Material limit |
+|---|---|---|
+| Notice or discussion | Brown requires notice and discussion of AI policies affecting working conditions; Miami requires labor-management discussion | Workers can raise concerns without controlling adoption; Miami makes the meeting duty grievable, not the resulting guideline mandatory |
+| Recurring advisory body | CUNY creates a parity labor-management committee that meets at least twice per semester | Its recommendations are advisory |
+| Resourced prior review | Heartland's faculty-majority instructional-AI committee receives notice and can request contracts and data protocols before implementation | It can recommend a temporary pause, not exercise a veto |
+| Effects bargaining | Yale's general technology language supplies notice, demonstration, and bargaining over effects | Management retains the implementation decision |
+| Substantive right or prohibition | Michigan LEO-GLAM protects employee discretion and requires consent for synthetic voice or likeness; other entries restrict surveillance, training uses, displacement, or mandatory use | Scope, management-rights clauses, expiration, grievance coverage, and actual enforcement still determine strength |
+
+This gradient separates invitation, consultation, procedurally supported participation,
+enforceable co-governance, and independent collective power. "Human review" is likewise
+weak unless the agreement defines who reviews, access to evidence, override authority,
+documentation, liability, appeal, and remedy. No tracker entry reviewed establishes a
+general worker veto over institutional AI procurement.
+
+The tracker is useful for discovery but not an authoritative outcomes database. It
+contains won, ratifying, negotiating, and developing statuses; entries without executed
+language; at least one blank institution field; AI-specific terms alongside older
+educational-technology clauses; and inconsistent source quality. It does not state a
+verification method, update date, inclusion rule, archive, or implementation check.
+"Won" does not by itself establish ratification, current effect, compliance, grievance
+history, or worker outcomes. Each clause requires review in its complete agreement.
+
+**Beyond the employer-purchaser.** The remaining guides treat a university as more than
+a buyer: it is also an employer, investor, research institution, infrastructure consumer,
+workforce pipeline, and site of state surveillance.
+
+- The
+  [state-policy guide](https://www.aaup.org/sites/default/files/2026-09/Tracking-State-Policy-Around-Technology-AI-Education-and-Labor.pdf)
+  seeks rights to bargain, opt out, receive monitoring notice, challenge algorithmic
+  decisions, protect worker-created material, and limit job loss, work intensification,
+  and data-center harms. State law could establish rights before any one procurement,
+  but the guide supplies research routes and organizing structures rather than model
+  legislation or enforcement language.
+- The
+  [AI/Tech Divestment Guide](https://www.aaup.org/sites/default/files/2026-09/AI-Tech-Divestment-Guide.pdf)
+  addresses workers as pension participants and traces leverage through public funds,
+  TIAA and Nuveen, endowments, banks, utilities, private equity, private credit, and
+  data-center finance. It links campus labor to communities facing energy, water,
+  pollution, and utility burdens. Its fiduciary argument that harmful AI investments
+  create portfolio risk can open access to trustees, but also makes justice claims partly
+  contingent on financial materiality.
+- The
+  [*Purge Palantir* guide](https://www.aaup.org/sites/default/files/2026-09/Purge-Palantir-AAUP-Pushback-Guide.pdf)
+  links Palantir's immigration-enforcement and surveillance business to campus and state
+  contracts, research ties, recruitment, pensions, and endowments. It proposes records
+  requests, recruitment disruption, research refusal, and divestment. These tactics use
+  the university's labor supply, legitimacy, knowledge production, and capital as
+  leverage rather than focusing only on product performance.
+
+Together these guides open institutional, state, capital, infrastructure, surveillance,
+research, and recruitment fronts. They do not provide a method for choosing among them,
+governing coalitions, resolving conflicts between pension-return, labor, environmental,
+and immigrant-justice priorities, or protecting contingent workers and students who bear
+retaliation risk. Directly affected communities are named as coalition partners, but the
+guides do not consistently assign them campaign leadership or decision rights.
+
+**Evidence and open questions.** The toolkit is primary evidence of AAUP's analysis,
+demands, and proposed tactics. Its examples demonstrate possibility, not general
+effectiveness. Reported petitions, meetings, resolutions, pauses, press conferences, and
+legislator requests must not be collapsed into contract cancellation, divestment, enacted
+law, or prevented construction. No guide supplies comparative evidence about failed
+campaigns, cost, retaliation, durability, or which tactics changed a decision.
+
+Future reviews should track revisions and removals; accessibility and reuse terms;
+bargaining-tracker provenance; campaigns using each guide; coalition composition and
+leadership; the exact authority demanded and won; implementation, grievances, and
+enforcement; and outcomes using the status vocabulary above. They should also track
+decentralized purchases, bundled feature releases, foundation-funded pilots, and
+individual subscriptions that bypass a visible procurement process.
+
 ## Broader ecosystem
 
 This section tracks components used in institutional services. Product claims are
@@ -2223,6 +2412,15 @@ The following records await primary-source research:
   challenges, which are less consistently announced than purchases.
 
 ## Update log
+
+### 2026-09-22
+
+- Added collective action as a tracked facet and a cross-institutional section for
+  activist, labor, and accountability infrastructure.
+- Added the AAUP Toolkit for Activism on AI, covering its theory of change, procurement
+  cycle, evidence pipeline, escalation repertoire, bargaining-authority gradient,
+  state-policy work, divestment strategy, and Palantir campaign. The record separates
+  guidance, reported precedent, enforceable rights, and verified outcomes.
 
 ### 2026-09-15
 
