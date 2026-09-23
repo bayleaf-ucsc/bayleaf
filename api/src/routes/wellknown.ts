@@ -64,11 +64,14 @@ const SEALED_PROVIDER_ID = 'bayleaf-sealed-remote';
 
 /**
  * Exact pin: verifier and encrypted-transport changes require deliberate review.
+ * OpenCode V1 loads the plugin tuple directly; V2 normalizes that tuple to its
+ * plugin format and the dual-version package upgrades marked models after
+ * providers are registered. Keep this pin in sync with the Sealed guidance.
  * If models appear but requests lack Ehbp-Encapsulated-Key, check for an interrupted
  * `~/.cache/opencode/packages/${SEALED_PLUGIN}` install. Rename it, retry once, and
  * restart OpenCode: failed plugin imports are cached for the process lifetime.
  */
-const SEALED_PLUGIN = 'opencode-tinfoil@0.2.0';
+const SEALED_PLUGIN = 'opencode-tinfoil@0.3.0';
 
 /** Name of the env var the wellknown token is bound to inside OpenCode. */
 const TOKEN_ENV_NAME = 'BAYLEAF_API_KEY';

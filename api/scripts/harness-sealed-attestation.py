@@ -139,7 +139,7 @@ failures = []
 if os.environ.get("SEALED_OPENCODE") == "1":
     served["bundle"] = mutate_digest(GENUINE)
     plugin_config = {
-        "plugin": [["opencode-tinfoil@0.2.0", {"defaultProvider": False}]],
+        "plugin": [["opencode-tinfoil@0.3.0", {"defaultProvider": False}]],
         "provider": {
             "bayleaf-sealed": {
                 "npm": "@ai-sdk/openai-compatible",

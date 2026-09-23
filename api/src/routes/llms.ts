@@ -159,7 +159,8 @@ ${bt}opencode-tinfoil${bt} transport and adds curated confidential-inference mod
 ${bt}bayleaf-sealed-remote${bt}. The ${bt}-remote${bt} suffixes mean BayLeaf supplies and
 updates the configurations; ${bt}bayleaf-sealed${bt} remains available for a transparent,
 hand-authored definition. The managed Sealed transport verifies enclave attestation and
-encrypts content on your machine before it traverses BayLeaf.
+encrypts content on your machine before it traverses BayLeaf. The same Sealed login and
+provider ID work on OpenCode V1 (1.18.29+) and V2.
 
 Each remote config also makes the OpenCode backend, and therefore OpenChamber,
 safe to use out of the box by setting two top-level defaults on your behalf:
@@ -215,7 +216,7 @@ model picker.
 
 If you used Sealed, its downloaded plugin under OpenCode's npm cache is inert once the
 well-known entry is gone, so deleting it is optional. For a complete cleanup, remove
-${bt}~/.cache/opencode/packages/opencode-tinfoil@0.2.0${bt} and Tinfoil's prompt-cache
+${bt}~/.cache/opencode/packages/opencode-tinfoil@0.3.0${bt} and Tinfoil's prompt-cache
 namespace secret at ${bt}~/.tinfoil/user_cache_secret${bt}. If you also added a manual
 ${bt}opencode-tinfoil${bt} entry to ${bt}opencode.json${bt}, remove that entry separately.
 
@@ -277,7 +278,7 @@ loads a given npm plugin version only once:
 ${fence}json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-tinfoil@0.2.0"],
+  "plugin": ["opencode-tinfoil@0.3.0"],
   "provider": {
     "bayleaf-sealed": {
       "npm": "@ai-sdk/openai-compatible",
@@ -302,6 +303,45 @@ Browse https://api.bayleaf.dev/sealed/models for bare IDs and display names. The
 field is encrypted, so BayLeaf cannot rewrite a prefixed slug: select models as
 ${bt}bayleaf-sealed/${sealedModel}${bt}. Review and update the exact plugin version
 deliberately; it pins the verifier and encrypted transport, not merely presentation code.
+For a hand-authored V2 configuration, the equivalent is:
+
+${fence}json
+{
+  "plugins": [{ "package": "opencode-tinfoil@0.3.0", "options": { "defaultProvider": false } }],
+  "providers": {
+    "bayleaf-sealed": {
+      "package": "opencode-tinfoil/provider",
+      "name": "BayLeaf Sealed (Custom)",
+      "settings": {
+        "baseURL": "https://api.bayleaf.dev/sealed/v1/",
+        "apiKey": "{env:BAYLEAF_API_KEY}",
+        "tinfoil": {
+          "attestationBundleURL": "https://api.bayleaf.dev/sealed",
+          "transport": "ehbp"
+        }
+      },
+      "models": { "${sealedModel}": { "name": "${sealedModel}" } }
+    }
+  }
+}
+${fence}
+
+V2 can also manage the transport plugin globally rather than loading it from
+BayLeaf's remote config or a project file:
+
+${fence}bash
+opencode plugin add opencode-tinfoil@0.3.0
+${fence}
+
+Then omit the ${bt}plugins${bt} line from the V2 JSON above and keep the
+${bt}providers.bayleaf-sealed${bt} definition. Obtain your own BayLeaf API key
+at https://api.bayleaf.dev/ and make ${bt}BAYLEAF_API_KEY${bt} available to
+the OpenCode process; this path does not run the Sealed well-known login or
+automatically refresh BayLeaf's curated model list. The exact npm version is
+your own pin to review when updating. The GitHub shortcut for this package is
+not currently usable: Git installs omit its generated provider runtime.
+
+The managed remote configuration is already compatible with both versions.
 
 If you used ${bt}opencode auth login https://api.bayleaf.dev/sealed${bt}, the one plugin
 invocation upgrades both ${bt}bayleaf-sealed-remote${bt} and your local
@@ -529,7 +569,7 @@ opencode auth login https://api.bayleaf.dev/sealed
 ${fence}
 
 Select a model such as
-${bt}bayleaf-sealed-remote/${sealedModel}${bt}; the exact-pinned ${bt}opencode-tinfoil@0.2.0${bt}
+${bt}bayleaf-sealed-remote/${sealedModel}${bt}; the exact-pinned ${bt}opencode-tinfoil@0.3.0${bt}
 plugin verifies attestation before its first inference and has no plaintext fallback.
 It reuses your BayLeaf credential, while BayLeaf substitutes the Tinfoil credential
 server-side.
