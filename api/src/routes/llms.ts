@@ -767,6 +767,25 @@ Common services (each command also self-documents via ${bt}gws <service> --help$
 | Sheets | ${bt}gws sheets spreadsheets values get --params '{"spreadsheetId": "...", "range": "Sheet1!A1:C10"}'${bt} |
 | Docs | ${bt}gws docs documents get --params '{"documentId": "..."}'${bt} |
 
+**Agent setup: create a separate Google Workspace skill in your own agent
+harness.** Record the commands you use and a review-first operating policy there,
+so it applies whenever the agent reaches for ${bt}gws${bt}, not only during this
+setup. Broad OAuth scopes make many actions possible; they do not authorize an
+agent to take them unprompted. Default to reading and preparing work for review:
+suggest edits or add review comments instead of silently changing shared Docs,
+Sheets, or Slides; compose an email draft instead of sending it. A posted comment
+is itself a visible write, and a saved draft may contain sensitive content, so
+check the target, audience, and content before either action. Require the user's
+specific, affirmative approval before sending mail, modifying or deleting files,
+changing sharing permissions, inviting attendees, or making other consequential
+changes. Show the exact recipients, resources, and proposed action at that gate;
+do not treat a general request to help with Workspace as blanket consent.
+
+If your harness or operating system supports it, back this policy with tool or
+command permissions: allow read-only ${bt}gws${bt} calls by default, and require
+an interactive approval for writes and sends (including equivalent API, browser,
+or shell paths). A skill's prose alone cannot enforce a permission boundary.
+
 Troubleshooting:
 
 - **401 auth error:** re-run ${bt}gws auth login --full${bt}
