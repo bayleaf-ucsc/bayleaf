@@ -445,12 +445,12 @@ grants).
 |----|------|-------------|
 | `lathe` | Code Sandbox | Coding agent tools backed by per-user Daytona sandbox VMs (see below) |
 | `web_context_toolkit` | Web Context | Tavily-backed web search and page-content extraction in one toolkit (valve: API key) |
-| `deepinfra_key_generator_toolkit` | DeepInfra Key Generator | Generates scoped, time-limited DeepInfra API keys (valve: API key, token name, model list) |
-| `random_choice_toolkit` | Random Choice | Uniform random selection from a list — for varied regenerations |
-| `youtube_toolkit` | YouTube | Stub — tells users to run a local `uv` command to fetch transcripts |
 | `campus_directory_toolkit` | Campus Directory | Scrapes UCSC campus directory with CSRF handling |
-| `datetime_converter_toolkit` | Datetime Converter | ISO date → localized string via pytz |
 | `whole_document_retrieval` | Whole Document Retrieval | Agentic KB retrieval — list and read full documents by file ID, bypassing vector/embedding search. Access-controlled via `__user__` and `__model_knowledge__`. |
+
+The former YouTube stub, Random Choice example, DateTime Converter, and
+DeepInfra key generator were retired on 2026-09-24. Scoped keys backed by a
+user's BayLeaf API budget are proposed in [issue #76](https://github.com/bayleaf-ucsc/bayleaf/issues/76).
 
 ### Code Sandbox (Lathe)
 
@@ -459,8 +459,9 @@ The most substantial toolkit on the deployment. Source:
 but **not bound to any model by default** — users enable it per-chat via the
 tool picker in the chat composer.
 
-**Current version: 0.29.6** (2026-09-20), byte-identical to the upstream
-checkout. `expose` requires an explicit `private` or `public` policy and accepts
+**Current version: 0.30.5** (2026-09-24), byte-identical to the upstream
+checkout and the personal Chat instance. `expose` requires an explicit
+`private` or `public` policy and accepts
 an optional untrusted hostname tag, which BayLeaf ignores. Private is the
 default guidance and fails closed; public may fall back to Daytona's direct
 signed URL if wrapping fails. The installation credential is an admin valve
@@ -586,6 +587,21 @@ six checks, then its final model-mediated expose timed out; the same path passed
 separately before and after that nondeterministic timeout. Rollback snapshots are
 private under `~/.tokens/bayleaf-lathe-rollout-20260920`.
 
+**Upgrade evidence (2026-09-24).** Version 0.30.5 was deployed from the source
+running on `chat.adamsmith.as`, byte-identical to upstream `main`. The personal
+install was from the same day; Adam explicitly waived the usual soak gate. This
+version raises the Open WebUI floor to 0.11.0 (BayLeaf runs 0.11.3) and changes
+sandbox lifecycle, command cleanup, delegation, and file searches; its admin
+valves, dependencies, and tool names/parameters are unchanged. Upstream Python
+CI and CodeQL passed. The isolated live monitor passed source/schema, bash,
+write/read, and interpreter checks; its view check failed when the model called
+`lathe("overview")` instead of `view`. BayLeaf production source matched the
+candidate byte-for-byte after deployment; grants, active state, and valves
+were preserved, and `/health` returned 200. Rollback snapshots are private
+under `~/.tokens/bayleaf-lathe-rollout-20260924`. A model-mediated BayLeaf
+playtest passed: Basic selected Code Sandbox, called Lathe `bash`, and returned
+the expected `lathe-0305-ok` output.
+
 ### Restricted Tools (Stealth Toolkits)
 
 | ID | Name | Access | Injected by | Description |
@@ -599,7 +615,6 @@ private under `~/.tokens/bayleaf-lathe-rollout-20260920`.
 |----|------|--------|-------------|
 | `help_toolkit` | Help | No grants (model-bound via `toolIds` on `help`) | Group membership listing, model access listing, invite code acceptance/creation. Valve: `INVITE_SIGNING_KEY` (optional, falls back to `WEBUI_SECRET_KEY`). |
 | `gws_toolkit` | Google Workspace | All users (`user:*`) | Per-user, per-chat OAuth2 access to Google Workspace APIs (see below) |
-| `mark_time_toolkit` | Mark Time | Admin only (no grants) | Stopwatch/timer with per-chat LRU cache (user valve: timezone) |
 
 ### 3a. Stealth Toolkit Pattern
 
@@ -738,7 +753,6 @@ These are **never** committed to this repo:
 - `lathe`: `daytona_api_key`, `daytona_api_url`, `daytona_proxy_url`, `deployment_label`, `auto_stop_minutes`, `auto_archive_minutes`, `auto_delete_minutes`, `persistent_volume`, `foreground_timeout_seconds`, `auto_create_sandbox`, `sandbox_missing_message`, `sandbox_create_overrides`, `preview_wrapper_url`, `preview_wrapper_key`, `preview_expiry_seconds`
 - `gws_toolkit` — `google_client_id`, `google_client_secret`, `base_url`, `enabled_capabilities`
 - `web_context_toolkit` — `tavily_api_key`, `search_depth`, `include_answer`, `max_results`, `extract_depth`
-- `deepinfra_key_generator_toolkit` — `API_KEY`, `API_TOKEN_NAME`, `MODELS`, `EXPIRES_DELTA`
 - `help_toolkit` — `INVITE_SIGNING_KEY` (optional; falls back to `WEBUI_SECRET_KEY` if empty)
 - `brace_toolkit` — `GITHUB_API_TOKEN`, `CANVAS_ACCESS_TOKEN`, `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON`
 - `brace3_filter` — `CANVAS_ACCESS_TOKEN` (used by both `brace3_filter` and `brace3_canvas_toolkit`; the toolkit snarfs it from the filter instance)
@@ -1120,12 +1134,6 @@ chat/
 │   ├── web_context_toolkit/
 │   │   ├── tool.py
 │   │   └── meta.json
-│   ├── deepinfra_key_generator_toolkit/
-│   │   ├── tool.py
-│   │   └── meta.json
-│   ├── random_choice_toolkit/
-│   │   ├── tool.py
-│   │   └── meta.json
 │   ├── gws_toolkit/
 │   │   ├── tool.py          # Google Workspace — per-user, per-chat OAuth2 (Drive, Gmail, Calendar, Sheets)
 │   │   └── meta.json
@@ -1135,16 +1143,7 @@ chat/
 │   ├── brace3_canvas_toolkit/  # Brace v3 — Canvas read-only, force-injected by brace3_filter
 │   │   ├── tool.py
 │   │   └── meta.json
-│   ├── youtube_toolkit/
-│   │   ├── tool.py
-│   │   └── meta.json
 │   ├── campus_directory_toolkit/
-│   │   ├── tool.py
-│   │   └── meta.json
-│   ├── datetime_converter_toolkit/
-│   │   ├── tool.py
-│   │   └── meta.json
-│   ├── mark_time_toolkit/
 │   │   ├── tool.py
 │   │   └── meta.json
 │   └── whole_document_retrieval/

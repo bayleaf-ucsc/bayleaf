@@ -70,6 +70,13 @@ uvx owui-cli tools deploy chat/tools/<id>/tool.py <id>
 
 ## Refinement log
 
+- 2026-09-24: Lathe 0.30.5 on the personal instance matched upstream `main`
+  exactly but had only same-day soak; Adam explicitly waived the gate. The
+  release list's `latest` entry was a demo-video artifact, so version was
+  established from source frontmatter and both live deployments. Upstream
+  CI passed except a nondeterministic model-choice view scenario in the
+  isolated monitor. BayLeaf readback and preserved grants/valves passed;
+  Adam's Basic + Code Sandbox playtest returned the expected `bash` output.
 - 2026-09-20: Lathe 0.29.6 required a coordinated API contract migration before
   the toolkit bump. Back-to-back isolated deployment runs exposed Daytona's
   eventually consistent list returning an already-deleted sandbox; upstream's

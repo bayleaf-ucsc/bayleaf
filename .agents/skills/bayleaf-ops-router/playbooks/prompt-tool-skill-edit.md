@@ -83,3 +83,17 @@ the UI (recover it from git: `git show HEAD:chat/models/<id>/model.json`), or
 - 2026-09-16: renamed and expanded this playbook to cover skills explicitly.
   The Code Sandbox run's post-rollback repeat playtest was waived by Adam after
   close review of the plain-language skill diff.
+- 2026-09-24: deployed mechanical quality fixes to 11 Chat tools/functions after
+  comparing every live source to repo HEAD; all 11 pulled back byte-identical.
+  Lathe was excluded: its 0.29.6 frontmatter identifies an upstream release,
+  so a local lint-only change would break the byte-identical upstream pin.
+  Manual conversation playtest is still pending.
+- 2026-09-24: while playtesting, Adam retired five legacy toolkits rather than
+  testing them. Snapshot each live tool's source and metadata first, check for
+  model bindings, then delete in OWUI and remove repo source and DESIGN entries.
+  Issue #76 tracks a future BayLeaf-scoped-key replacement for DeepInfra.
+- 2026-09-24: Adam's live Basic reply exercised the global rate-limit filter,
+  and his Campus Directory tool call succeeded. The changed API auth/key route
+  returned 200 with the expected budget fields. No Brace3 course model appeared
+  in the live model list, so its stealth Canvas toolkit could not be exercised
+  through a normal conversation in this run.

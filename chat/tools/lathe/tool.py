@@ -3,14 +3,15 @@ title: Lathe
 author: Adam Smith
 author_url: https://adamsmith.as
 description: Coding agent tools (lathe, bash, read, write, edit, glob, grep, view, interpret, delegate, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.
-required_open_webui_version: 0.4.0
+required_open_webui_version: 0.11.0
 requirements: httpx, httpx-ws, pydantic-ai-slim[openai]~=2.5, cachetools
-version: 0.29.6
+version: 0.30.5
 licence: MIT
 """
 
 import asyncio
 import base64
+import contextlib
 import hashlib
 import inspect
 import io
@@ -126,7 +127,7 @@ async def _get_live_sandbox(valves, sandbox_id: str, client: httpx.AsyncClient) 
         return None
     resp.raise_for_status()
     sandbox = resp.json()
-    if sandbox.get("state") in ("destroying", "destroyed"):
+    if sandbox.get("state") in ("deleted", "destroyed"):
         return None
     return sandbox
 
@@ -565,6 +566,7 @@ def _human_size(n: int) -> str:
 # so the logic lives in one place.
 
 _GLOB_COMMON = r'''
+import fnmatch
 import os
 import sys
 from pathlib import Path
@@ -573,23 +575,21 @@ from pathlib import Path
 def _parse_pattern(pattern):
     """Parse comma-separated glob string into (positive, negative) lists.
 
-    Commas inside {braces} are part of glob syntax, not delimiters.
-    !-prefixed terms go into the negative list.
+    Braces are deliberately unsupported rather than silently treated as
+    literals. !-prefixed terms go into the negative list.
     """
-    terms, current, depth = [], [], 0
-    for ch in pattern:
-        if ch == "{": depth += 1
-        elif ch == "}": depth -= 1
-        elif ch == "," and depth == 0:
-            terms.append("".join(current).strip())
-            current = []
-            continue
-        current.append(ch)
-    terms.append("".join(current).strip())
+    if "{" in pattern or "}" in pattern:
+        raise ValueError(
+            "brace expansion is not supported; use comma-separated globs instead"
+        )
+    terms = [term.strip() for term in pattern.split(",")]
     positive, negative = [], []
     for term in terms:
         if not term:
             continue
+        glob = term[1:] if term.startswith("!") else term
+        if any("**" in part and part != "**" for part in glob.split(os.sep)):
+            raise ValueError("recursive wildcard ** must be a complete path component")
         if term.startswith("!"):
             negative.append(term[1:])
         else:
@@ -606,33 +606,132 @@ def _resolve_glob(base, g):
     as the root and glob relative to it, so the agent can glob
     anywhere on the filesystem, not just within the workspace.
     """
-    if not g.startswith("/"):
-        return base, g
+    absolute = g.startswith("/")
     parts = g.split(os.sep)
-    root_parts = []
+    prefix = []
     for i, part in enumerate(parts):
-        if any(c in part for c in ("*", "?", "[", "{")):
+        if any(c in part for c in ("*", "?", "[")):
             break
-        root_parts.append(part)
+        prefix.append(part)
     else:
-        root_dir = Path(g).resolve()
-        return root_dir, "**/*"
-    root_dir = Path(os.sep.join(root_parts) or os.sep).resolve()
+        path = Path(g) if absolute else base / g
+        if path.is_dir():
+            return path.resolve(), "**/*"
+        return path.parent.resolve(), path.name
+    if absolute:
+        root_dir = Path(os.sep.join(prefix) or os.sep).resolve()
+    else:
+        root_dir = (base / os.sep.join(prefix)).resolve()
     rel = os.sep.join(parts[i:])
     return root_dir, rel
 
 
-def _collect_files(base, globs):
-    """Glob all patterns and return a set of resolved absolute file paths."""
-    result = set()
+def _glob_matches(path, pattern):
+    """Match slash-separated path components with explicit ** semantics."""
+    path_parts = path.replace(os.sep, "/").split("/") if path else []
+    pattern_parts = pattern.replace(os.sep, "/").split("/")
+    memo = {}
+
+    def match(path_i, pattern_i):
+        key = (path_i, pattern_i)
+        if key in memo:
+            return memo[key]
+        if pattern_i == len(pattern_parts):
+            result = path_i == len(path_parts)
+        elif pattern_parts[pattern_i] == "**":
+            result = match(path_i, pattern_i + 1) or (
+                path_i < len(path_parts) and match(path_i + 1, pattern_i)
+            )
+        else:
+            result = (
+                path_i < len(path_parts)
+                and fnmatch.fnmatchcase(path_parts[path_i], pattern_parts[pattern_i])
+                and match(path_i + 1, pattern_i + 1)
+            )
+        memo[key] = result
+        return result
+
+    return match(0, 0)
+
+
+def _iter_tree_files(root, max_depth=None, depth=1):
+    """Yield files depth-first without retaining the traversed tree."""
+    try:
+        entries = os.scandir(root)
+    except OSError:
+        return
+    with entries:
+        for entry in entries:
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    if max_depth is None or depth < max_depth:
+                        yield from _iter_tree_files(entry.path, max_depth, depth + 1)
+                elif entry.is_file():
+                    yield os.path.abspath(entry.path)
+            except OSError:
+                continue
+
+
+def _prepare_globs(base, globs):
+    prepared = []
     for g in globs:
         root, rel = _resolve_glob(base, g)
-        if not root.is_dir():
+        if root.is_dir():
+            prepared.append((str(root), rel))
+    return prepared
+
+
+def _is_excluded(filepath, negative_globs):
+    for root, pattern in negative_globs:
+        try:
+            rel = os.path.relpath(filepath, root)
+        except ValueError:
             continue
-        for p in root.glob(rel):
-            if p.is_file():
-                result.add(str(p.resolve()))
-    return result
+        if rel != os.pardir and not rel.startswith(os.pardir + os.sep):
+            if _glob_matches(rel, pattern):
+                return True
+    return False
+
+
+def _matches_any(filepath, globs):
+    for root, pattern in globs:
+        rel = os.path.relpath(filepath, root)
+        if rel != os.pardir and not rel.startswith(os.pardir + os.sep):
+            if _glob_matches(rel, pattern):
+                return True
+    return False
+
+
+def _traversal_roots(globs):
+    """Return non-overlapping roots so each candidate file is visited once."""
+    roots = []
+    for root in sorted({root for root, _ in globs}, key=lambda p: (p.count(os.sep), p)):
+        if not any(os.path.commonpath((root, kept)) == kept for kept in roots):
+            roots.append(root)
+    return roots
+
+
+def _iter_matching_files(base, positive, negative):
+    """Yield included files once without retaining candidates."""
+    negative_globs = _prepare_globs(base, negative)
+    positive_globs = _prepare_globs(base, positive)
+    for root in _traversal_roots(positive_globs):
+        max_depth = 0
+        for glob_root, pattern in positive_globs:
+            if os.path.commonpath((glob_root, root)) != root:
+                continue
+            parts = pattern.split(os.sep)
+            if "**" in parts:
+                max_depth = None
+                break
+            root_depth = len(os.path.relpath(glob_root, root).split(os.sep))
+            if glob_root == root:
+                root_depth = 0
+            max_depth = max(max_depth, root_depth + len(parts))
+        for filepath in _iter_tree_files(root, max_depth):
+            if (_matches_any(filepath, positive_globs)
+                    and not _is_excluded(filepath, negative_globs)):
+                yield filepath
 '''
 
 # ── hierarchical glob (runs on sandbox) ──────────────────────────────
@@ -647,17 +746,38 @@ def glob_hierarchy(base_dir, pattern, max_lines):
     if not base.is_dir():
         return f"Error: not a directory: {base_dir}"
 
-    positive, negative = _parse_pattern(pattern)
+    try:
+        positive, negative = _parse_pattern(pattern)
+    except ValueError as e:
+        return f"Error: invalid glob pattern {pattern!r}: {e}"
     if not positive:
         return f"Error: pattern must include at least one positive glob (got {pattern!r})"
 
-    included = _collect_files(base, positive)
-    if negative:
-        included -= _collect_files(base, negative)
-    matches = sorted(included)
+    matches = []
+    match_count = 0
+    common_path = None
+    for filepath in _iter_matching_files(base, positive, negative):
+        match_count += 1
+        common_path = filepath if common_path is None else os.path.commonpath((common_path, filepath))
+        if len(matches) < max_lines:
+            matches.append(filepath)
 
-    if not matches:
+    if match_count == 0:
         return f"0 matches for {pattern!r} in {base}"
+
+    # Detailed paths cannot fit in the output budget, so retaining a full trie
+    # would only consume memory for information the caller cannot receive.
+    if match_count > max_lines:
+        effective_base = common_path
+        if not os.path.isdir(effective_base):
+            effective_base = os.path.dirname(effective_base)
+        header = (
+            f"{match_count} matches for {pattern!r} in {effective_base} "
+            f"(budget: {max_lines} lines, some directories collapsed)"
+        )
+        return header + f"\n{effective_base}/ ({match_count} matches)"
+
+    matches.sort()
 
     # ── Compute effective base for trie rendering ────────────────
     # When all results are under the workspace, effective_base == base.
@@ -822,40 +942,72 @@ def grep_hierarchy(base_dir, regex, files_pattern, max_lines):
     except re.error as e:
         return f"Error: invalid regex {regex!r}: {e}"
 
-    positive, negative = _parse_pattern(files_pattern)
+    try:
+        positive, negative = _parse_pattern(files_pattern)
+    except ValueError as e:
+        return f"Error: invalid files pattern {files_pattern!r}: {e}"
     if not positive:
         return f"Error: files pattern must include at least one positive glob (got {files_pattern!r})"
 
-    included = _collect_files(base, positive)
-    if negative:
-        included -= _collect_files(base, negative)
-    files = sorted(included)
-
-    if not files:
-        return f"0 files match {files_pattern!r} in {base}"
-
     # ── Scan files for matches ───────────────────────────────────
     file_matches = {}
+    files_scanned = 0
+    matched_files = 0
+    matched_common_path = None
+    fully_collapsed = False
     total_matches = 0
 
-    for filepath in files:
+    for filepath in _iter_matching_files(base, positive, negative):
+        files_scanned += 1
         try:
+            with open(filepath, "rb") as raw:
+                header = raw.read(8192)
+            if b"\0" in header:
+                continue
             with open(filepath, "r", errors="replace") as f:
                 hits = []
+                hit_count = 0
                 for i, line in enumerate(f, 1):
                     if pat.search(line):
-                        text = line.rstrip("\n\r")
-                        if len(text) > _MAX_LINE_WIDTH:
-                            text = text[:_MAX_LINE_WIDTH] + "..."
-                        hits.append((i, text))
-                if hits:
-                    file_matches[filepath] = hits
-                    total_matches += len(hits)
+                        hit_count += 1
+                        if len(hits) < max_lines:
+                            text = line.rstrip("\n\r")
+                            if len(text) > _MAX_LINE_WIDTH:
+                                text = text[:_MAX_LINE_WIDTH] + "..."
+                            hits.append((i, text))
+            if hit_count:
+                matched_files += 1
+                matched_common_path = (
+                    filepath if matched_common_path is None
+                    else os.path.commonpath((matched_common_path, filepath))
+                )
+                total_matches += hit_count
+                if not fully_collapsed and len(file_matches) < max_lines:
+                    file_matches[filepath] = {"hits": hits, "count": hit_count}
+                else:
+                    # Once matching files exceed the output budget, no detailed
+                    # trie can be rendered. Keep exact aggregates only.
+                    fully_collapsed = True
+                    file_matches.clear()
         except (OSError, UnicodeDecodeError):
             continue
 
-    if not file_matches:
-        return f"0 matches for {regex!r} in {len(files)} files"
+    if files_scanned == 0:
+        return f"0 files match {files_pattern!r} in {base}"
+
+    if matched_files == 0:
+        return f"0 matches for {regex!r} in {files_scanned} files"
+
+    if fully_collapsed:
+        effective_base = matched_common_path
+        if not os.path.isdir(effective_base):
+            effective_base = os.path.dirname(effective_base)
+        header = (
+            f"{total_matches} matches across {matched_files} files for {regex!r} "
+            f"(budget: {max_lines} lines, some entries collapsed)"
+        )
+        files_label = "file" if matched_files == 1 else "files"
+        return header + f"\n{effective_base}/ ({total_matches} matches in {matched_files} {files_label})"
 
     # ── Compute effective base for trie rendering ────────────────
     matched_paths = list(file_matches.keys())
@@ -872,12 +1024,13 @@ def grep_hierarchy(base_dir, regex, files_pattern, max_lines):
         "n_files": 0, "n_matches": 0,
     }
 
-    for filepath, hits in sorted(file_matches.items()):
+    for filepath, match_data in sorted(file_matches.items()):
+        hit_count = match_data["count"]
         rel = os.path.relpath(filepath, effective_base)
         parts = rel.split(os.sep)
         node = root
         node["n_files"] += 1
-        node["n_matches"] += len(hits)
+        node["n_matches"] += hit_count
 
         for part in parts[:-1]:
             if part not in node["children"]:
@@ -887,9 +1040,9 @@ def grep_hierarchy(base_dir, regex, files_pattern, max_lines):
                 }
             node = node["children"][part]
             node["n_files"] += 1
-            node["n_matches"] += len(hits)
+            node["n_matches"] += hit_count
 
-        node["files"][filepath] = hits
+        node["files"][filepath] = match_data
 
     # ── Two-level budget-driven expansion ────────────────────────
     dir_expanded = {id(root)}
@@ -900,13 +1053,14 @@ def grep_hierarchy(base_dir, regex, files_pattern, max_lines):
         if id(node) not in dir_expanded:
             return 1
         total = 0
-        for fp, hits in node["files"].items():
+        for fp, match_data in node["files"].items():
+            hit_count = match_data["count"]
             if fp in file_expanded:
                 limit = file_partial.get(fp)
-                if limit is not None and limit < len(hits):
+                if limit is not None and limit < hit_count:
                     total += limit + 1
                 else:
-                    total += len(hits)
+                    total += hit_count
             else:
                 total += 1
         for child in node["children"].values():
@@ -923,9 +1077,9 @@ def grep_hierarchy(base_dir, regex, files_pattern, max_lines):
     def _file_candidates(node):
         if id(node) not in dir_expanded:
             return
-        for fp, hits in node["files"].items():
+        for fp, match_data in node["files"].items():
             if fp not in file_expanded:
-                yield (len(hits), "file", fp, hits)
+                yield (match_data["count"], "file", fp, match_data)
         for child in node["children"].values():
             yield from _file_candidates(child)
 
@@ -970,8 +1124,8 @@ def grep_hierarchy(base_dir, regex, files_pattern, max_lines):
                 break
 
         if best_type == "file":
-            _, _, fp, hits = best_file
-            n_hits = len(hits)
+            _, _, fp, match_data = best_file
+            n_hits = match_data["count"]
 
             if n_hits <= 1:
                 file_expanded.add(fp)
@@ -1004,15 +1158,17 @@ def grep_hierarchy(base_dir, regex, files_pattern, max_lines):
             return
 
         for fp in sorted(node["files"]):
-            hits = node["files"][fp]
+            match_data = node["files"][fp]
+            hits = match_data["hits"]
+            hit_count = match_data["count"]
             if fp not in file_expanded:
-                output.append(f"{fp} ({len(hits)} matches)")
+                output.append(f"{fp} ({hit_count} matches)")
                 continue
             limit = file_partial.get(fp)
-            if limit is not None and limit < len(hits):
+            if limit is not None and limit < hit_count:
                 for line_num, text in hits[:limit]:
                     output.append(f"{fp}:{line_num}: {text}")
-                output.append(f"{fp}: ... and {len(hits) - limit} more matches")
+                output.append(f"{fp}: ... and {hit_count - limit} more matches")
             else:
                 for line_num, text in hits:
                     output.append(f"{fp}:{line_num}: {text}")
@@ -1060,42 +1216,53 @@ def read_file(path, start, stop):
     if not os.path.exists(path):
         return f"Error: File not found: {path}"
 
-    try:
-        with open(path, "r", errors="replace") as f:
-            content = f.read()
-    except OSError as e:
-        return f"Error: Cannot read {path}: {e}"
+    # Negative endpoints need the final line count before their indices can be
+    # resolved. Preserve their existing behavior; positive ranges retain only
+    # the requested (capped) lines while streaming the file.
+    if start < 0 or stop < 0:
+        try:
+            with open(path, "r", errors="replace") as f:
+                content = f.read()
+        except OSError as e:
+            return f"Error: Cannot read {path}: {e}"
 
-    lines = content.split("\n")
-    if lines and lines[-1] == "":
-        lines = lines[:-1]
-    total_lines = len(lines)
+        lines = content.split("\n")
+        if lines and lines[-1] == "":
+            lines = lines[:-1]
+        total_lines = len(lines)
 
-    # Resolve start to 0-based index.
-    if start == 0:
-        start_idx = 0
-    elif start > 0:
-        start_idx = start - 1
+        start_idx = max(0, total_lines + start) if start < 0 else max(0, start - 1)
+        if stop < 0:
+            end_idx = max(0, total_lines + stop)
+        elif stop > 0:
+            end_idx = stop - 1
+        else:
+            end_idx = total_lines
+        start_idx = max(0, min(start_idx, total_lines))
+        end_idx = max(start_idx, min(end_idx, total_lines))
+        end_idx = min(end_idx, start_idx + 2000)
+        selected = lines[start_idx:end_idx]
     else:
-        start_idx = max(0, total_lines + start)
+        start_idx = max(0, start - 1) if start else 0
+        requested_end = stop - 1 if stop else None
+        selected = []
+        total_lines = 0
+        try:
+            with open(path, "r", errors="replace") as f:
+                for line_idx, line in enumerate(f):
+                    total_lines = line_idx + 1
+                    if (line_idx >= start_idx
+                            and (requested_end is None or line_idx < requested_end)
+                            and len(selected) < 2000):
+                        selected.append(line[:-1] if line.endswith("\n") else line)
+        except OSError as e:
+            return f"Error: Cannot read {path}: {e}"
+        start_idx = min(start_idx, total_lines)
+        if requested_end is None:
+            end_idx = min(total_lines, start_idx + 2000)
+        else:
+            end_idx = max(start_idx, min(requested_end, total_lines, start_idx + 2000))
 
-    # Resolve stop to 0-based exclusive index.
-    if stop == 0:
-        end_idx = total_lines
-    elif stop > 0:
-        end_idx = stop - 1
-    else:
-        end_idx = max(0, total_lines + stop)
-
-    # Clamp to valid range.
-    start_idx = max(0, min(start_idx, total_lines))
-    end_idx = max(start_idx, min(end_idx, total_lines))
-
-    # Cap at 2000 lines.
-    if end_idx - start_idx > 2000:
-        end_idx = start_idx + 2000
-
-    selected = lines[start_idx:end_idx]
     numbered = "\n".join(
         f"{start_idx + i + 1}: {line}"
         for i, line in enumerate(selected)
@@ -1284,33 +1451,60 @@ async def _run_sandbox_script(valves, sandbox_id: str, client: httpx.AsyncClient
 
 
 
-def _check_tool_params(kwargs: dict, annotations: dict) -> str | None:
+def _type_name(annotation) -> str:
+    """Render the supported runtime annotations without implementation noise."""
+    origin = typing.get_origin(annotation)
+    if origin is list:
+        args = typing.get_args(annotation)
+        member = _type_name(args[0]) if args else "Any"
+        return f"list[{member}]"
+    return getattr(annotation, "__name__", str(annotation))
+
+
+def _check_param_type(name: str, value, expected_type) -> str | None:
+    """Recursively validate one value using exact runtime type semantics."""
+    origin = typing.get_origin(expected_type)
+    if origin is list:
+        if type(value) is not list:
+            return (
+                f"Error: parameter '{name}' expected type {_type_name(expected_type)}, "
+                f"got {type(value).__name__}"
+            )
+        args = typing.get_args(expected_type)
+        if args:
+            for index, member in enumerate(value):
+                error = _check_param_type(f"{name}[{index}]", member, args[0])
+                if error:
+                    return error
+        return None
+
+    # All current tool annotations resolve to concrete classes. Keep this guard
+    # so a future unsupported annotation cannot reach type() comparison after an
+    # unusual loader has left it unresolved.
+    if not isinstance(expected_type, type):
+        return None
+    if type(value) is not expected_type:
+        return (
+            f"Error: parameter '{name}' expected type {_type_name(expected_type)}, "
+            f"got {type(value).__name__}"
+        )
+    return None
+
+
+def _check_tool_params(kwargs: dict, annotated_fn) -> str | None:
     """Strict type check for tool params at the wrapper boundary.
 
-    Returns an error string if any param has the wrong runtime type,
-    or None if all params are valid.  Only checks params that appear
-    in both kwargs and annotations.  Skips str params (everything
-    arrives as a string at minimum).
+    Resolve annotations through get_type_hints() for PEP 563 safety, then
+    recursively require exact runtime types. Error messages identify locations
+    and types but never include parameter values.
     """
-    for name, expected_type in annotations.items():
-        if name not in kwargs or expected_type is str:
+    annotations = typing.get_type_hints(annotated_fn)
+    for name, value in kwargs.items():
+        if name not in annotations:
             continue
-        value = kwargs[name]
-        # get_origin resolves list[str] -> list, etc.
-        base_type = typing.get_origin(expected_type) or expected_type
-        # Defensive: under OWUI's loader, annotations may arrive stringized
-        # (PEP 563) or otherwise unresolved.  A non-type base_type would make
-        # isinstance() raise "arg 2 must be a type".  Skip rather than crash:
-        # callers (_standard_tool) now resolve via get_type_hints, but a
-        # hand-written caller could still pass an unresolved annotation.
-        if not isinstance(base_type, type):
-            continue
-        if not isinstance(value, base_type):
-            return (
-                f"Error: parameter '{name}' expected type "
-                f"{expected_type.__name__ if hasattr(expected_type, '__name__') else str(expected_type)}"
-                f", got {type(value).__name__}: {value!r}"
-            )
+        error = _check_param_type(name, value, annotations[name])
+        if error:
+            return error
     return None
 
 
@@ -1375,8 +1569,8 @@ def _standard_tool(core_fn, *, emit_start: str, emit_done: str,
 
     # Names of tool params for extracting kwargs at call time
     tool_param_names = [p.name for p in tool_params]
-    # Annotation map for strict type checking at the boundary.
-    #
+    # Resolve annotations for the generated OWUI schema. Runtime validation
+    # independently resolves the same core function through _check_tool_params.
     # We resolve via get_type_hints(core_fn), NOT the raw
     # inspect.Parameter.annotation, because OWUI's tool loader
     # (open_webui.utils.plugin.load_tool_module_by_id) execs tool source
@@ -1387,11 +1581,6 @@ def _standard_tool(core_fn, *, emit_start: str, emit_done: str,
     # isinstance() raise "arg 2 must be a type".  get_type_hints() resolves
     # those strings back to real classes against the module globals.
     _core_hints = typing.get_type_hints(core_fn)
-    tool_annotations = {
-        p.name: _core_hints.get(p.name, p.annotation)
-        for p in tool_params
-        if p.name in _core_hints or p.annotation is not inspect.Parameter.empty
-    }
 
     async def _method(self, *args, **kwargs):
         # Bind positional + keyword args to the synthetic signature.
@@ -1410,7 +1599,7 @@ def _standard_tool(core_fn, *, emit_start: str, emit_done: str,
         tool_kwargs = {k: ba[k] for k in tool_param_names if k in ba}
 
         # Strict type check at the wrapper boundary.
-        type_err = _check_tool_params(tool_kwargs, tool_annotations)
+        type_err = _check_tool_params(tool_kwargs, core_fn)
         if type_err:
             return type_err
 
@@ -1548,7 +1737,7 @@ async def _core_glob(valves, sandbox_id: str, client: httpx.AsyncClient, *,
     Dense directories are collapsed with match counts; narrow the
     pattern or increase max_lines to expand them.
 
-    :param pattern: Comma-separated globs, !-prefix to exclude. Examples: '**/*.py', 'src/**/*.ts,!**/node_modules/**'.
+    :param pattern: Comma-separated globs, !-prefix to exclude. Supports *, ?, character classes, and ** as a complete component for directory recursion; brace expansion is not supported. Examples: '**/*.py', 'src/**/*.ts,!**/node_modules/**'.
     :param max_lines: Max output lines (default: 100).
     """
     clamped = max(1, min(500, max_lines))
@@ -1571,7 +1760,7 @@ async def _core_grep(valves, sandbox_id: str, client: httpx.AsyncClient, *,
     narrow the file scope or increase max_lines to expand them.
 
     :param pattern: Regex to search for (e.g. 'import.*asyncio', 'TODO|FIXME').
-    :param files: File scope as comma-separated globs (default: '**/*'). !-prefix to exclude.
+    :param files: File scope as comma-separated globs (default: '**/*'). !-prefix to exclude. Supports *, ?, character classes, and ** as a complete component for directory recursion; brace expansion is not supported.
     :param max_lines: Max output lines (default: 100).
     """
     clamped = max(1, min(500, max_lines))
@@ -1706,7 +1895,8 @@ async def _core_view(valves, sandbox_id: str, client: httpx.AsyncClient, *,
 
 
 def _build_bash_script(command: str, user_pairs: list[tuple[str, str]],
-                       pid_path: str, log_path: str) -> str:
+                       pid_path: str, log_path: str, keep_path: str,
+                       lease_path: str) -> str:
     """Build the bash wrapper script with sidecar file setup."""
     user_env_lines = "".join(
         f"export {k}={_shell_quote(v)}\n" for k, v in user_pairs
@@ -1714,17 +1904,165 @@ def _build_bash_script(command: str, user_pairs: list[tuple[str, str]],
     return (
         "#!/usr/bin/env bash\n"
         "set -e -o pipefail\n"
+        "rm -f -- \"${BASH_SOURCE[0]}\"\n"
+        + f": > {_shell_quote(lease_path)}\n"
         "export DEBIAN_FRONTEND=noninteractive "
         "GIT_TERMINAL_PROMPT=0 "
         "PIP_NO_INPUT=1 "
         "NPM_CONFIG_YES=true "
         "CI=true\n"
         + user_env_lines
+        + "_lathe_record_jobs() {\n"
+        + "  _lathe_ec=$?\n"
+        + f"  : > {_shell_quote(keep_path)}\n"
+        + "  for _lathe_pid in $(jobs -pr); do\n"
+        + "    if kill -0 \"$_lathe_pid\" 2>/dev/null && test -r \"/proc/$_lathe_pid/stat\"; then\n"
+        + "      _lathe_stat=$(cat \"/proc/$_lathe_pid/stat\")\n"
+        + "      read -ra _lathe_fields <<< \"${_lathe_stat##*) }\"\n"
+        + f"      echo \"$_lathe_pid:${{_lathe_fields[19]}}\" >> {_shell_quote(keep_path)}\n"
+        + "    fi\n"
+        + "  done\n"
+        + "  return $_lathe_ec\n"
+        + "}\n"
+        + "trap _lathe_record_jobs EXIT\n"
         + f"echo $BASHPID > {_shell_quote(pid_path)}\n"
         + f"exec > >(tee {_shell_quote(log_path)}) 2>&1\n"
         + command
         + "\n"
     )
+
+
+_BASH_COMPLETION_LEASE_SECONDS = 960
+
+
+def _build_bash_reap_script(preserve_log_for: str | None = None,
+                            release_lease_for: str | None = None,
+                            proc_root: str = "/proc") -> str:
+    """Build the sandbox-side completed-command scrubber."""
+    return textwrap.dedent(f"""\
+        import os
+        import time
+
+        root = {_EPHEMERAL_ROOT + '/cmd'!r}
+        proc_root = {proc_root!r}
+        preserve = {preserve_log_for!r}
+        release = {release_lease_for!r}
+        if os.path.isdir(root):
+            for command_id in os.listdir(root):
+                command_dir = os.path.join(root, command_id)
+                lease_path = os.path.join(command_dir, "lease")
+                if command_id == release:
+                    try:
+                        os.unlink(lease_path)
+                    except OSError:
+                        pass
+                else:
+                    try:
+                        if time.time() - os.path.getmtime(lease_path) < {_BASH_COMPLETION_LEASE_SECONDS}:
+                            continue
+                    except OSError:
+                        pass
+                if not any(os.path.isfile(os.path.join(command_dir, name))
+                           for name in ("exit", "keep", "spill", "reap")):
+                    continue
+                keep_path = os.path.join(command_dir, "keep")
+                live = False
+                try:
+                    with open(keep_path) as f:
+                        identities = [line.strip().split(":", 1) for line in f
+                                      if ":" in line]
+                except OSError:
+                    identities = []
+                for raw_pid, expected_start in identities:
+                    try:
+                        pid = int(raw_pid)
+                        os.kill(pid, 0)
+                        stat = open(os.path.join(proc_root, str(pid), "stat")).read()
+                        fields = stat[stat.rfind(")") + 2:].split()
+                        if len(fields) > 19 and fields[19] == expected_start:
+                            live = True
+                            break
+                    except (OSError, ValueError, IndexError):
+                        pass
+                for name in ("sh", "pid", "exit"):
+                    try:
+                        os.unlink(os.path.join(command_dir, name))
+                    except OSError:
+                        pass
+                if command_id == preserve and os.path.isfile(os.path.join(command_dir, "log")):
+                    open(os.path.join(command_dir, "spill"), "a").close()
+                else:
+                    for name in ("log", "spill"):
+                        try:
+                            os.unlink(os.path.join(command_dir, name))
+                        except OSError:
+                            pass
+                if live:
+                    print("retain " + command_id)
+                else:
+                    try:
+                        os.unlink(keep_path)
+                    except OSError:
+                        pass
+                    open(os.path.join(command_dir, "reap"), "a").close()
+                    print("delete " + command_id)
+        """)
+
+
+async def _reap_bash_commands(valves, sandbox_id: str, client: httpx.AsyncClient,
+                              preserve_log_for: str | None = None,
+                              release_lease_for: str | None = None) -> None:
+    """Scrub completed sidecars and delete sessions with no live background jobs."""
+    try:
+        result = await _run_sandbox_script(
+            valves, sandbox_id, client,
+            _build_bash_reap_script(preserve_log_for, release_lease_for),
+            error_prefix="bash cleanup failed",
+        )
+        if result.startswith("Error:"):
+            logger.warning("%s", result)
+            return
+        for line in result.splitlines():
+            action, _, command_id = line.partition(" ")
+            if action != "delete" or not command_id:
+                continue
+            response = await client.delete(
+                _toolbox(valves, sandbox_id, f"/process/session/lathe-cmd-{command_id}"),
+                headers=_headers(valves), timeout=30.0,
+            )
+            if response.status_code not in (204, 404):
+                logger.warning("bash cleanup: session %s returned HTTP %s",
+                               command_id, response.status_code)
+                continue
+            if command_id != preserve_log_for:
+                response = await client.delete(
+                    _toolbox(valves, sandbox_id, "/files/"),
+                    params={"path": _bash_sidecar_dir(command_id), "recursive": "true"},
+                    headers=_headers(valves), timeout=30.0,
+                )
+                if response.status_code not in (204, 404):
+                    logger.warning("bash cleanup: sidecar %s returned HTTP %s",
+                                   command_id, response.status_code)
+    except Exception as exc:
+        logger.warning("bash cleanup failed: %s", exc)
+
+
+async def _discard_bash_setup(valves, sandbox_id: str, client: httpx.AsyncClient,
+                              command_id: str, session_created: bool) -> None:
+    """Best-effort cleanup when a command could not be launched."""
+    try:
+        await client.delete(
+            _toolbox(valves, sandbox_id, "/files/"),
+            params={"path": _bash_sidecar_dir(command_id), "recursive": "true"},
+            headers=_headers(valves), timeout=30.0,
+        )
+        if session_created:
+            await client.delete(
+                _toolbox(valves, sandbox_id, f"/process/session/lathe-cmd-{command_id}"),
+                headers=_headers(valves), timeout=30.0,
+            )
+    except Exception as exc:
+        logger.warning("bash setup cleanup failed: %s", exc)
 
 
 def _format_bash_result(output: str, exit_code: int | None,
@@ -1741,7 +2079,7 @@ def _format_bash_result(output: str, exit_code: int | None,
         bg_notice = (
             f"\n\n[Backgrounded after {elapsed}s — command is still running]\n"
             f"CMD={cmd_id}\n"
-            f"Ref {_EPHEMERAL_ROOT}/cmd/$CMD/{{sh,pid,log,exit}}\n"
+            f"Ref {_EPHEMERAL_ROOT}/cmd/$CMD/{{pid,log,exit}}\n"
             f"See lathe(manpage=\"background\") for peek/poll/kill recipes.\n"
             f"Tell the user the command is running. Don't poll until they ask or "
             f"you have a concrete reason to expect completion."
@@ -1800,53 +2138,52 @@ async def _core_bash(valves, sandbox_id: str, client: httpx.AsyncClient, *,
     pid_path = f"{cmd_dir}/pid"
     exit_path = f"{cmd_dir}/exit"
     script_path = f"{cmd_dir}/sh"
+    keep_path = f"{cmd_dir}/keep"
+    lease_path = f"{cmd_dir}/lease"
 
-    script = _build_bash_script(command, user_pairs, pid_path, log_path)
-
-    # Upload the script (creates parent dirs automatically)
-    await client.post(
-        _toolbox(valves, sandbox_id, "/files/upload"),
-        params={"path": script_path},
-        headers={"Authorization": f"Bearer {valves.daytona_api_key}"},
-        files={"file": ("file", io.BytesIO(script.encode("utf-8")), "application/octet-stream")},
-        timeout=60.0,
+    await _reap_bash_commands(valves, sandbox_id, client)
+    script = _build_bash_script(
+        command, user_pairs, pid_path, log_path, keep_path, lease_path,
     )
 
-    # ── Create a per-command session ─────────────────────────────
-    # Each bash() call gets its own session so commands never
-    # queue behind each other.  This is critical: a shared
-    # session serialises commands, so monitoring a backgrounded
-    # build via tail/cat would block until the build finishes.
     session_id = f"lathe-cmd-{cmd_id}"
-    resp = await client.post(
-        _toolbox(valves, sandbox_id, f"/process/session"),
-        headers=_headers(valves),
-        json={"sessionId": session_id},
-        timeout=30.0,
-    )
-    if resp.status_code not in (200, 409):
+    session_created = False
+    try:
+        # Each command gets a session so concurrent calls never queue.
+        resp = await client.post(
+            _toolbox(valves, sandbox_id, "/files/upload"),
+            params={"path": script_path},
+            headers={"Authorization": f"Bearer {valves.daytona_api_key}"},
+            files={"file": ("file", io.BytesIO(script.encode("utf-8")), "application/octet-stream")},
+            timeout=60.0,
+        )
         resp.raise_for_status()
+        resp = await client.post(
+            _toolbox(valves, sandbox_id, "/process/session"),
+            headers=_headers(valves), json={"sessionId": session_id}, timeout=30.0,
+        )
+        if resp.status_code not in (200, 201, 409):
+            resp.raise_for_status()
+        session_created = True
 
-    # ── Execute asynchronously in the session ────────────────────
-    # The actual command writes exit code to a sidecar file so
-    # the agent can check completion even after backgrounding.
-    # Session exec has no cwd parameter, so we cd explicitly.
-    exec_command = (
-        f"cd {_shell_quote(workdir)} && "
-        f"bash {script_path}; EC=$?; "
-        f"echo $EC > {_shell_quote(exit_path)}; "
-        f"(exit $EC)"
-    )
-    resp = await client.post(
-        _toolbox(valves, sandbox_id, f"/process/session/{session_id}/exec"),
-        headers=_headers(valves),
-        json={
-            "command": exec_command,
-            "runAsync": True,
-        },
-        timeout=30.0,
-    )
-    resp.raise_for_status()
+        # Session exec has no cwd parameter, so change directory explicitly.
+        exec_command = (
+            f"cd {_shell_quote(workdir)} && "
+            f"bash {script_path}; EC=$?; "
+            f"echo $EC > {_shell_quote(exit_path)}; "
+            f"(exit $EC)"
+        )
+        resp = await client.post(
+            _toolbox(valves, sandbox_id, f"/process/session/{session_id}/exec"),
+            headers=_headers(valves),
+            json={"command": exec_command, "runAsync": True}, timeout=30.0,
+        )
+        resp.raise_for_status()
+    except BaseException:
+        await _discard_bash_setup(
+            valves, sandbox_id, client, cmd_id, session_created,
+        )
+        raise
     session_cmd_id = resp.json().get("cmdId", "")
 
     # ── Foreground polling window ────────────────────────────────
@@ -1897,14 +2234,6 @@ async def _core_bash(valves, sandbox_id: str, client: httpx.AsyncClient, *,
             last_status_at = now
 
     # ── Fetch logs ──────────────────────────────────────────────
-    # NOTE: We intentionally do NOT delete the session here.
-    # Daytona session deletion kills all processes spawned within
-    # it, including children backgrounded with nohup/&. Since
-    # "nohup server & ... expose()" is the primary workflow for
-    # exposing services, deleting the session would silently kill
-    # the server the user just asked for. Sessions are lightweight
-    # and the sandbox itself is reaped on idle, so accumulation
-    # is not a practical concern.
     logs_resp = await client.get(
         _toolbox(valves, sandbox_id, f"/process/session/{session_id}/command/{session_cmd_id}/logs"),
         headers=_headers(valves),
@@ -1927,10 +2256,16 @@ async def _core_bash(valves, sandbox_id: str, client: httpx.AsyncClient, *,
 
     # Command finished within foreground window
     spill_path = log_path if was_truncated else None
-    return _format_bash_result(
+    formatted = _format_bash_result(
         output, exit_code, was_truncated, meta,
         spill_path=spill_path,
     )
+    await _reap_bash_commands(
+        valves, sandbox_id, client,
+        preserve_log_for=cmd_id if was_truncated else None,
+        release_lease_for=cmd_id,
+    )
+    return formatted
 
 
 # ── Background bash completion polling ───────────────────────────────
@@ -1998,6 +2333,9 @@ async def _poll_bg_bash(valves, sandbox_id: str, session_id: str,
                 logger.debug("bg-poll: failed to fetch log tail: %s", e)
 
             notice = _format_bg_bash_notice(cmd_id, exit_code, elapsed, tail)
+            await _reap_bash_commands(
+                valves, sandbox_id, poll_client, release_lease_for=cmd_id,
+            )
             _push_bg_notice(chat_state, chat_id, notice)
 
         except Exception as e:
@@ -2451,65 +2789,6 @@ async def _ensure_chat_init(
 _DELEGATE_FOREGROUND_SECONDS = 30
 
 
-class _ChatIdInjectingTransport(httpx.AsyncBaseTransport):
-    """Wraps an httpx transport to inject `chat_id` into JSON request bodies
-    sent to OWUI's /api/chat/completions, working around an OWUI 0.9.5 bug
-    (open-webui#24550, fix in #24556) where get_event_emitter() crashes with
-    `AttributeError: 'NoneType' object has no attribute 'startswith'` when
-    the request body has no chat_id key.
-
-    Only mutates POST requests to a chat-completions path with a JSON body
-    that lacks a non-null chat_id. Leaves all other requests untouched.
-    """
-
-    def __init__(self, inner: httpx.AsyncBaseTransport, chat_id: str):
-        self._inner = inner
-        self._chat_id = chat_id
-
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        try:
-            path = request.url.path or ""
-            if (
-                request.method == "POST"
-                and path.endswith("/chat/completions")
-                and "application/json" in (request.headers.get("content-type") or "")
-            ):
-                raw = request.content
-                if raw:
-                    body = json.loads(raw)
-                    if isinstance(body, dict) and not body.get("chat_id"):
-                        body["chat_id"] = self._chat_id
-                        new_bytes = json.dumps(body).encode("utf-8")
-                        new_headers = list(request.headers.raw)
-                        # Replace content-length with the new size; httpx
-                        # uses lowercase header names internally.
-                        new_headers = [
-                            (k, v) for (k, v) in new_headers
-                            if k.lower() != b"content-length"
-                        ]
-                        new_headers.append((b"content-length", str(len(new_bytes)).encode("ascii")))
-                        request = httpx.Request(
-                            method=request.method,
-                            url=request.url,
-                            headers=new_headers,
-                            content=new_bytes,
-                            extensions=request.extensions,
-                        )
-        except Exception as e:
-            # Never let body mutation break the request: log and pass
-            # through unmodified. The original 400 will surface and be
-            # diagnosable upstream.
-            logger.debug("ChatIdInjectingTransport: passthrough due to %s: %s",
-                         type(e).__name__, e)
-        return await self._inner.handle_async_request(request)
-
-    async def aclose(self) -> None:
-        await self._inner.aclose()
-
-
-
-
-
 def _format_delegate_background(delegate_id: str, elapsed: int, log_preview: str) -> str:
     """Format the background descriptor returned when a delegate is auto-backgrounded."""
     did = delegate_id
@@ -2541,17 +2820,22 @@ def _build_delegate_system_prompt(max_steps: int, *, has_volume: bool = True) ->
         "- /home/daytona/volume is persistent storage that survives sandbox destruction.\n"
         if has_volume else ""
     )
+    step_word = "step" if max_steps == 1 else "steps"
     return textwrap.dedent(f"""\
         You are a focused sub-agent with direct access to a Linux sandbox.
         You have been delegated a specific task by the calling agent.
 
         ## Step budget
 
-        You have {max_steps} steps total. Each step is one inference call (thinking +
+        You have {max_steps} {step_word} total. Each step is one inference call (thinking +
         tool calls count as one step). When you stop calling tools and produce a
         text response, that is your final step.
 
         Plan accordingly:
+        - With a one-step budget, finish directly from the task and reference files.
+          No tools are available. If the task requires sandbox access or changes,
+          state that it cannot be completed with max_steps=1 and that the caller
+          should retry with max_steps>=2. Do not claim unperformed work was completed.
         - For a {max_steps}-step budget, reserve at least the last step for writing
           your summary. Do not start new investigation branches when you are near
           the limit.
@@ -2592,7 +2876,6 @@ def _build_delegate_system_prompt(max_steps: int, *, has_volume: bool = True) ->
 #   view()     — data-URI image returns only fire through OWUI's tool
 #                middleware; the sub-agent's pydantic-ai result channel is
 #                plain text, so the base64 would flood its context
-_DELEGATE_WITHHELD = {"lathe", "onboard", "expose", "destroy", "delegate", "handoff", "view"}
 
 
 # ── handoff() instructions ──────────────────────────────────────────
@@ -2797,24 +3080,89 @@ _DUFS_BIN = f"{_DURABLE_ROOT}/dufs"
 _DUFS_PORT = 5000  # dufs default
 _DUFS_ROOT = "/home/daytona/workspace"
 
-# Single idempotent script: install if missing, start if not listening.
-# Exit 0 = ready (prints READY); non-zero = install or start failed.
-_DUFS_ENSURE_SCRIPT = (
-    f'set -e; mkdir -p {_DURABLE_ROOT}; '
-    f'if ! test -x {_DUFS_BIN}; then '
-    f'  TAG=$(curl -sf https://api.github.com/repos/sigoden/dufs/releases/latest '
-    f'    | python3 -c "import sys,json; print(json.load(sys.stdin)[\'tag_name\'])") '
-    f'  && curl -sL "https://github.com/sigoden/dufs/releases/download/${{TAG}}/'
-    f'dufs-${{TAG}}-x86_64-unknown-linux-musl.tar.gz" '
-    f'  | tar xz -C {_DURABLE_ROOT} && chmod +x {_DUFS_BIN}; '
-    f'fi; '
-    f'if ! ss -tlnp | grep -q ":{_DUFS_PORT} "; then '
-    f'  nohup {_DUFS_BIN} {_DUFS_ROOT} --allow-all > {_DURABLE_ROOT}/dufs.log 2>&1 & '
-    f'  sleep 0.5; '
-    f'fi; '
-    f'PID=$(ss -tlnp | grep ":{_DUFS_PORT} " | grep -o "pid=[0-9]*" | head -1 | cut -d= -f2); '
-    f'echo "READY PID=$PID"'
-)
+def _build_verified_archive_install(repo: str, product: str,
+                                    install_root: str) -> str:
+    """Build the shared GitHub release-asset verification and install block."""
+    return textwrap.dedent(f"""\
+        TMP=$(mktemp -d {_shell_quote(install_root + '/.install.XXXXXX')})
+        trap 'rm -rf "$TMP"' EXIT
+        curl -fsSL https://api.github.com/repos/{repo}/releases/latest -o "$TMP/release.json"
+        python3 - "$TMP/release.json" "$TMP/asset.json" <<'PY'
+        import json
+        import re
+        import sys
+
+        repo = {repo!r}
+        product = {product!r}
+        release = json.load(open(sys.argv[1]))
+        tag = release.get("tag_name")
+        canonical = release.get("url")
+        if not isinstance(tag, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", tag):
+            raise SystemExit("invalid release tag")
+        if not isinstance(canonical, str) or not re.fullmatch(
+            rf"https://api\\.github\\.com/repos/{{re.escape(repo)}}/releases/[1-9][0-9]*",
+            canonical,
+        ):
+            raise SystemExit("release document has no canonical release ID")
+        if product == "dufs":
+            name = f"dufs-{{tag}}-x86_64-unknown-linux-musl.tar.gz"
+        else:
+            if not tag.startswith("v") or len(tag) == 1:
+                raise SystemExit("invalid code-server release tag")
+            name = f"code-server-{{tag[1:]}}-linux-amd64.tar.gz"
+        matches = [asset for asset in release.get("assets", []) if asset.get("name") == name]
+        if len(matches) != 1:
+            raise SystemExit(f"expected exactly one release asset named {{name}}")
+        asset = matches[0]
+        expected_url = f"https://github.com/{{repo}}/releases/download/{{tag}}/{{name}}"
+        if asset.get("browser_download_url") != expected_url:
+            raise SystemExit("release asset URL is inconsistent with its release")
+        digest = asset.get("digest")
+        if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{{64}}", digest):
+            raise SystemExit("release asset has no valid SHA-256 digest")
+        json.dump({{"name": name, "url": expected_url, "sha256": digest[7:]}}, open(sys.argv[2], "w"))
+        PY
+        ASSET_URL=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["url"])' "$TMP/asset.json")
+        EXPECTED=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sha256"])' "$TMP/asset.json")
+        curl -fsSL "$ASSET_URL" -o "$TMP/archive.tar.gz"
+        ACTUAL=$(sha256sum "$TMP/archive.tar.gz" | cut -d' ' -f1)
+        test "$ACTUAL" = "$EXPECTED"
+        mkdir "$TMP/unpack"
+        tar -xzf "$TMP/archive.tar.gz" -C "$TMP/unpack"
+        """)
+
+
+def _build_dufs_ensure_script(install_root: str = _DURABLE_ROOT,
+                              serve_root: str = _DUFS_ROOT) -> str:
+    """Build dufs' idempotent, verified install and startup script."""
+    binary = f"{install_root}/dufs"
+    script = textwrap.dedent(f"""\
+        set -e
+        mkdir -p {_shell_quote(install_root)}
+        if ! test -x {_shell_quote(binary)}; then
+        """)
+    script += _build_verified_archive_install("sigoden/dufs", "dufs", install_root)
+    script += textwrap.dedent(f"""\
+          test -f "$TMP/unpack/dufs"
+          chmod 755 "$TMP/unpack/dufs"
+          python3 -c 'import os,sys; os.replace(sys.argv[1], sys.argv[2])' \
+            "$TMP/unpack/dufs" {_shell_quote(binary)}
+        fi
+        if ! ss -tlnp | grep -q ':{_DUFS_PORT} '; then
+          nohup {_shell_quote(binary)} {_shell_quote(serve_root)} --allow-all > {_shell_quote(install_root + '/dufs.log')} 2>&1 &
+          for i in 1 2 3 4 5; do
+            ss -tlnp | grep -q ':{_DUFS_PORT} ' && break
+            sleep 0.2
+          done
+        fi
+        PID=$(ss -tlnp | grep ':{_DUFS_PORT} ' | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2)
+        test -n "$PID"
+        echo "READY PID=$PID"
+        """)
+    return script
+
+
+_DUFS_ENSURE_SCRIPT = _build_dufs_ensure_script()
 
 _TTYD_BIN = f"{_DURABLE_ROOT}/ttyd"
 _TTYD_PORT = 7681
@@ -2900,20 +3248,58 @@ _CS_BIN = f"{_DURABLE_ROOT}/code-server/bin/code-server"
 _CS_PORT = 8080
 _CS_ROOT = "/home/daytona/workspace"
 
-_CS_ENSURE_SCRIPT = (
-    f'set -e; mkdir -p {_DURABLE_ROOT}; '
-    f'if ! test -x {_CS_BIN}; then '
-    f'  curl -fsSL https://code-server.dev/install.sh '
-    f'  | sh -s -- --method=standalone --prefix={_DURABLE_ROOT}/code-server; '
-    f'fi; '
-    f'if ! ss -tlnp | grep -q ":{_CS_PORT} "; then '
-    f'  nohup {_CS_BIN} --bind-addr 0.0.0.0:{_CS_PORT} --auth none {_CS_ROOT} '
-    f'  > {_DURABLE_ROOT}/code-server.log 2>&1 & '
-    f'  sleep 1; '
-    f'fi; '
-    f'PID=$(ss -tlnp | grep ":{_CS_PORT} " | grep -o "pid=[0-9]*" | head -1 | cut -d= -f2); '
-    f'echo "READY PID=$PID"'
-)
+def _build_code_server_ensure_script(install_root: str = _DURABLE_ROOT,
+                                     serve_root: str = _CS_ROOT) -> str:
+    """Build code-server's idempotent, verified install and startup script."""
+    install_dir = f"{install_root}/code-server"
+    binary = f"{install_dir}/bin/code-server"
+    script = textwrap.dedent(f"""\
+        set -e
+        mkdir -p {_shell_quote(install_root)}
+        if ! test -x {_shell_quote(binary)}; then
+        """)
+    script += _build_verified_archive_install("coder/code-server", "code-server", install_root)
+    script += textwrap.dedent(f"""\
+          NAME=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["name"])' "$TMP/asset.json")
+          VERSION=${{NAME#code-server-}}
+          VERSION=${{VERSION%-linux-amd64.tar.gz}}
+          STAGED="$TMP/unpack/code-server-$VERSION-linux-amd64"
+          test -x "$STAGED/bin/code-server"
+          python3 - "$STAGED" {_shell_quote(install_dir)} {_shell_quote(install_root + '/.code-server-install.lock')} <<'PY'
+        import fcntl
+        import os
+        import shutil
+        import sys
+
+        staged, destination, lock_path = sys.argv[1:]
+        with open(lock_path, "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            binary = os.path.join(destination, "bin", "code-server")
+            if os.access(binary, os.X_OK):
+                raise SystemExit(0)
+            if os.path.isdir(destination) and not os.path.islink(destination):
+                shutil.rmtree(destination)
+            elif os.path.lexists(destination):
+                os.unlink(destination)
+            os.rename(staged, destination)
+        PY
+        fi
+        if ! ss -tlnp | grep -q ':{_CS_PORT} '; then
+          nohup {_shell_quote(binary)} --bind-addr 0.0.0.0:{_CS_PORT} --auth none {_shell_quote(serve_root)} \
+            > {_shell_quote(install_root + '/code-server.log')} 2>&1 &
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            ss -tlnp | grep -q ':{_CS_PORT} ' && break
+            sleep 0.5
+          done
+        fi
+        PID=$(ss -tlnp | grep ':{_CS_PORT} ' | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2)
+        test -n "$PID"
+        echo "READY PID=$PID"
+        """)
+    return script
+
+
+_CS_ENSURE_SCRIPT = _build_code_server_ensure_script()
 
 
 async def _ensure_volume(valves, volume_name: str, client: httpx.AsyncClient) -> str:
@@ -3010,6 +3396,19 @@ async def _wait_for_toolbox(valves, sandbox_id: str, client: httpx.AsyncClient, 
     raise RuntimeError("Sandbox started but toolbox daemon did not become responsive (30s)")
 
 
+_SANDBOX_START_STATES = frozenset({"stopped", "paused", "archived"})
+_SANDBOX_WAIT_STATES = frozenset({
+    # Provisioning: never interrupt creation with a start request.
+    "unknown", "pending_build", "pulling_snapshot", "building_snapshot", "creating",
+    # Start/resume and lifecycle operations converge without intervention.
+    "starting", "resuming", "restoring", "stopping", "pausing", "archiving",
+    "resizing", "snapshotting", "forking",
+})
+_SANDBOX_DELETION_STATES = frozenset({
+    "deleting", "deleted", "destroying", "destroyed",
+})
+
+
 async def _ensure_sandbox(valves, email: str, client: httpx.AsyncClient, emitter=None) -> tuple[str, str | None]:
     """Find or create a running sandbox for this user.
 
@@ -3071,12 +3470,13 @@ async def _ensure_sandbox(valves, email: str, client: httpx.AsyncClient, emitter
         # invariant. _parse_create_overrides already rejects those keys,
         # but forcing them here is belt-and-suspenders.
         overrides = _parse_create_overrides(valves.sandbox_create_overrides)
+        sandbox_name = f"{label_key}/{email}"
         create_json: dict = {
             "autoStopInterval": valves.auto_stop_minutes,
             "autoArchiveInterval": valves.auto_archive_minutes,
             "autoDeleteInterval": valves.auto_delete_minutes,
             **overrides,
-            "name": f"{label_key}/{email}",
+            "name": sandbox_name,
             "labels": {label_key: email},
         }
         if valves.persistent_volume:
@@ -3094,63 +3494,124 @@ async def _ensure_sandbox(valves, email: str, client: httpx.AsyncClient, emitter
             json=create_json,
             timeout=30.0,
         )
-        resp.raise_for_status()
-        sandbox = resp.json()
-        warning = "[Sandbox was created — this is a fresh environment with no prior files]"
+        if resp.status_code == 409:
+            # Daytona's control-plane source makes (organizationId, name) unique
+            # and translates duplicate inserts to 409; labels only have a
+            # non-unique GIN index.
+            # Evidence: https://github.com/daytonaio/daytona/blob/b5a5d9e78d76c8bcf351f2049620250e0f34eea4/apps/api/src/sandbox/entities/sandbox.entity.ts#L31-L55
+            # and https://github.com/daytonaio/daytona/blob/b5a5d9e78d76c8bcf351f2049620250e0f34eea4/apps/api/src/sandbox/services/sandbox.service.ts#L711-L713
+            # Resolve the winning cross-process create by that unique name, not
+            # the eventually consistent label index that allowed the race.
+            lookup = await client.get(
+                _api(valves, f"/sandbox/{urllib.parse.quote(sandbox_name, safe='')}"),
+                headers=_headers(valves),
+                timeout=30.0,
+            )
+            if lookup.status_code == 404:
+                raise RuntimeError(
+                    "Sandbox creation conflicted, but Daytona did not return the "
+                    "winning sandbox by its unique name. Retry this tool call; if "
+                    "the conflict persists, ask the Daytona administrator to inspect "
+                    f"sandbox name {sandbox_name}."
+                )
+            lookup.raise_for_status()
+            sandbox = lookup.json()
+            if (sandbox.get("name") != sandbox_name
+                    or sandbox.get("labels", {}).get(label_key) != email):
+                raise RuntimeError(
+                    f"Daytona sandbox name {sandbox_name} is already in use without "
+                    f"the expected {label_key}={email} association. Lathe will not "
+                    "select it. Ask the Daytona administrator to reconcile that name."
+                )
+        else:
+            resp.raise_for_status()
+            sandbox = resp.json()
+            warning = "[Sandbox was created — this is a fresh environment with no prior files]"
 
     sandbox_id = sandbox["id"]
     state = sandbox.get("state", "unknown")
 
-    # 3. Ensure it's running
-    if state == "started":
-        await _wait_for_toolbox(valves, sandbox_id, client, emitter)
-        await _emit(emitter, "Sandbox ready", done=True)
-        return sandbox_id, warning
-
-    if state in ("stopped", "archived"):
-        await _emit(emitter, "Preparing sandbox...")
-        resp = await client.post(
-            _api(valves, f"/sandbox/{sandbox_id}/start"),
-            headers=_headers(valves),
-            timeout=30.0,
-        )
-        resp.raise_for_status()
-        if not warning:
-            warning = (
-                "[Sandbox was restarted from archived state — running processes were lost]"
-                if state == "archived" else
-                "[Sandbox was restarted — running processes were lost]"
-            )
-
-    elif state == "error" and sandbox.get("recoverable"):
-        await _emit(emitter, "Preparing sandbox...")
-        resp = await client.post(
-            _api(valves, f"/sandbox/{sandbox_id}/recover"),
-            headers=_headers(valves),
-            timeout=30.0,
-        )
-        resp.raise_for_status()
-        resp = await client.post(
-            _api(valves, f"/sandbox/{sandbox_id}/start"),
-            headers=_headers(valves),
-            timeout=30.0,
-        )
-        resp.raise_for_status()
-        if not warning:
-            warning = "[Sandbox was recovered from error — check that expected files and processes still exist]"
-
-    elif state in ("starting", "stopping", "archiving"):
-        await _emit(emitter, "Preparing sandbox...")
-    else:
-        if state == "error":
-            raise RuntimeError(
-                f"Sandbox is in non-recoverable error state: {sandbox.get('errorReason', 'unknown')}"
-            )
-
-    # 4. Poll until started
+    # 4. Drive every observed lifecycle state toward started. The same policy
+    # runs before and during polling so stopping -> stopped and archiving ->
+    # archived issue the start request that their terminal states require.
     deadline = time.time() + 120
     poll_interval = 1.0
+    info = sandbox
+    recovery_attempted = False
+    start_requested = False
+    preparing_emitted = False
     while time.time() < deadline:
+        state = info.get("state", "unknown")
+
+        if state == "started":
+            await _wait_for_toolbox(valves, sandbox_id, client, emitter)
+            await _emit(emitter, "Sandbox ready", done=True)
+            return sandbox_id, warning
+
+        if not preparing_emitted:
+            await _emit(emitter, "Preparing sandbox...")
+            preparing_emitted = True
+
+        if state in _SANDBOX_START_STATES and not start_requested:
+            resp = await client.post(
+                _api(valves, f"/sandbox/{sandbox_id}/start"),
+                headers=_headers(valves),
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+            start_requested = True
+            if not warning:
+                if state == "archived":
+                    warning = "[Sandbox was restarted from archived state — running processes were lost]"
+                elif state == "paused":
+                    warning = "[Sandbox was resumed from paused state]"
+                else:
+                    warning = "[Sandbox was restarted — running processes were lost]"
+
+        if state == "error":
+            if info.get("recoverable") and not recovery_attempted:
+                recovery_attempted = True
+                resp = await client.post(
+                    _api(valves, f"/sandbox/{sandbox_id}/recover"),
+                    headers=_headers(valves),
+                    timeout=30.0,
+                )
+                resp.raise_for_status()
+                resp = await client.post(
+                    _api(valves, f"/sandbox/{sandbox_id}/start"),
+                    headers=_headers(valves),
+                    timeout=30.0,
+                )
+                resp.raise_for_status()
+                start_requested = True
+                if not warning:
+                    warning = "[Sandbox was recovered from error — check that expected files and processes still exist]"
+            else:
+                reason = info.get("errorReason", "unknown")
+                detail = " after recovery was attempted" if recovery_attempted else ""
+                raise RuntimeError(
+                    f"Sandbox is in a non-recoverable error state{detail}: {reason}. "
+                    "Ask the Daytona administrator to inspect or replace this sandbox."
+                )
+
+        elif state == "build_failed":
+            raise RuntimeError(
+                "Sandbox snapshot build failed. Ask the Daytona administrator to "
+                "inspect the failed build and replace or retry this sandbox."
+            )
+
+        elif state in _SANDBOX_DELETION_STATES:
+            raise RuntimeError(
+                f"Sandbox is being deleted (state: {state}). Retry after deletion completes "
+                "so Lathe can provision a replacement."
+            )
+
+        elif state not in _SANDBOX_START_STATES and state not in _SANDBOX_WAIT_STATES:
+            raise RuntimeError(
+                f"Sandbox has unsupported Daytona lifecycle state '{state}'. "
+                "Ask the administrator to inspect the sandbox and update Lathe if this state is expected."
+            )
+
         await asyncio.sleep(poll_interval)
         resp = await client.get(
             _api(valves, f"/sandbox/{sandbox_id}"),
@@ -3159,17 +3620,6 @@ async def _ensure_sandbox(valves, email: str, client: httpx.AsyncClient, emitter
         )
         resp.raise_for_status()
         info = resp.json()
-        state = info.get("state", "unknown")
-
-        if state == "started":
-            await _wait_for_toolbox(valves, sandbox_id, client, emitter)
-            await _emit(emitter, "Sandbox ready", done=True)
-            return sandbox_id, warning
-
-        if state == "error":
-            raise RuntimeError(
-                f"Sandbox entered error state: {info.get('errorReason', 'unknown')}"
-            )
 
         poll_interval = min(poll_interval * 1.2, 5.0)
 
@@ -3310,7 +3760,7 @@ class Tools:
     # lathe() method, NOT str.format().  Known placeholders today:
     # {tool_catalog}, {volume_note}, {destroy_volume_note}.  Unknown
     # placeholders pass through unchanged (no KeyError), and literal
-    # braces in shell/JSON/regex snippets (${VAR}, {sh,pid,log,exit},
+    # braces in shell/JSON/regex snippets (${VAR}, {pid,log,exit},
     # {"key":"value"}, {n,m}) are always safe.  If you add a new dynamic
     # placeholder, register a corresponding .replace() call in lathe().
     _MANPAGES: dict[str, str] = {
@@ -3381,7 +3831,7 @@ class Tools:
 
             Where CMD=/dev/shm/lathe/cmd/<id>:
 
-              CMD/sh    — the full wrapper script that was executed
+              CMD/sh    — the wrapper script, unlinked as soon as execution starts
               CMD/pid   — PID of the bash process (written before exec)
               CMD/log   — stdout+stderr, written live via tee
               CMD/exit  — exit code; present only when the process ends
@@ -3389,7 +3839,15 @@ class Tools:
             Absence of CMD/exit means the process is still running *or* the
             sandbox was restarted (in which case the PID is stale). To
             distinguish the two, check whether the PID is still alive.
-            Sidecars remain available until the sandbox stops or restarts.
+            While a command runs, its sidecar remains available for monitoring.
+            Once Lathe observes completion, it removes the wrapper, PID, exit status,
+            and log, then deletes the Daytona session unless a live shell-backgrounded
+            job still depends on it. A short lease prevents another OWUI worker from
+            racing the background completion poller. A retained service session is
+            reduced to only a PID marker and is
+            reaped by a later bash() call after the job exits. A truncated foreground
+            command's full log remains readable until the next bash() call. Sandbox
+            stop or restart clears all sidecars and sessions.
 
             ## Recipes
 
@@ -3511,9 +3969,10 @@ class Tools:
             server. A path-hash collision or unrelated listener on an assigned port
             fails rather than replacing or exposing the wrong process.
 
-            ttyd is private-only because it grants arbitrary shell access. Its
-            binary is resolved from the latest GitHub release and verified against
-            that release's SHA256SUMS before installation.
+            Managed dufs, ttyd, and code-server artifacts are resolved from one
+            saved GitHub release document and verified before atomic installation.
+            dufs and code-server use GitHub's immutable release-asset SHA-256 digest;
+            ttyd uses that release's upstream SHA256SUMS asset.
 
             {preview_access_note}
 
@@ -3552,6 +4011,12 @@ class Tools:
             upfront and receives a wrap-up nudge when close to the limit, so
             it can prioritize producing a useful summary over starting new
             work.
+
+            A one-step delegation is context-only: the sub-agent receives the task
+            and any context_files, but no tools. Use max_steps=1 for single-shot
+            analysis of supplied material. Tasks requiring sandbox inspection or
+            changes need max_steps>=2 so one request can call tools and another can
+            produce the final response.
 
             ## Foreground vs. background execution
 
@@ -3855,7 +4320,8 @@ class Tools:
               is already done.
             - bash() output is truncated to the last 2000 lines / 50 KB. If
               truncated, the full output is available in the log file at
-              /dev/shm/lathe/cmd/<id>/log — use read() to inspect specific sections.
+              /dev/shm/lathe/cmd/<id>/log until the next bash() call — use read()
+              to inspect specific sections before running another command.
             - edit() requires an exact string match (including whitespace). If
               the match is ambiguous, provide more surrounding context or use
               replace_all=true.
@@ -3899,6 +4365,10 @@ class Tools:
         Manual for the lathe toolkit. Call lathe(manpage="overview") before your first tool use in a new conversation to learn the sandbox model, available workflows, and gotchas. Costs one tool call, saves many.
         :param manpage: Which manual page to return. Use "overview" for big-picture orientation, "version" for the installed version.
         """
+        type_err = _check_tool_params({"manpage": manpage}, type(self).lathe)
+        if type_err:
+            return type_err
+
         tool_catalog = _build_tool_catalog(self)
 
         if manpage == "version":
@@ -4101,6 +4571,10 @@ class Tools:
         Use read() on a skill's SKILL.md path to load its full instructions later.
         :param path: Absolute path to the project root (e.g. /home/daytona/workspace/myproject).
         """
+        type_err = _check_tool_params({"path": path}, type(self).onboard)
+        if type_err:
+            return type_err
+
         async def _run(client):
             email = _get_email(__user__)
             sandbox_id, _sb_warning = await _ensure_sandbox(self.valves, email, client, __event_emitter__)
@@ -4160,10 +4634,10 @@ class Tools:
         __chat_id__: str = "",
         __event_emitter__=None,
     ) -> str:
-        # Strict type check at the wrapper boundary.
         type_err = _check_tool_params(
-            {"foreground_seconds": foreground_seconds},
-            {"foreground_seconds": int},
+            {"command": command, "workdir": workdir,
+             "foreground_seconds": foreground_seconds},
+            type(self).bash,
         )
         if type_err:
             return type_err
@@ -4270,6 +4744,10 @@ class Tools:
         __metadata__: dict = {},
         __event_emitter__=None,
     ) -> str:
+        type_err = _check_tool_params({"path": path}, type(self).view)
+        if type_err:
+            return type_err
+
         # Capability gate: refuse cleanly when the current model cannot
         # accept image input.  Checked BEFORE _ensure_sandbox so a refusal
         # never spins up a VM.  __metadata__["model"] reflects the user's
@@ -4336,14 +4814,13 @@ class Tools:
         file paths for monitoring, exactly like bash() does for long commands.
         :param task: What the sub-agent should accomplish. Be specific — it cannot ask clarifying questions. Include any context (error messages, prior findings, instructions) directly in the task description.
         :param context_files: Absolute sandbox file paths to inject into the sub-agent's prompt (e.g. AGENTS.md, SKILL.md, config files). Fetched at delegation time — the sub-agent sees their contents without spending steps reading them.
-        :param max_steps: Maximum inference calls the sub-agent may make (default: 10, max: 30).
+        :param max_steps: Maximum inference calls the sub-agent may make (default: 10, max: 30). With max_steps=1, it receives the task and context_files but no tools, so it must answer directly from that supplied context. Use at least 2 for tasks requiring sandbox access or changes.
         :param foreground_seconds: Seconds to wait before auto-backgrounding (default: 30, max: 300). Set 0 for immediate background (fire-and-forget). Omit or set -1 to use the default.
         """
-        # Strict type check at the wrapper boundary.
         type_err = _check_tool_params(
-            {"context_files": context_files, "max_steps": max_steps,
+            {"task": task, "context_files": context_files, "max_steps": max_steps,
              "foreground_seconds": foreground_seconds},
-            {"context_files": list, "max_steps": int, "foreground_seconds": int},
+            type(self).delegate,
         )
         if type_err:
             return type_err
@@ -4381,66 +4858,8 @@ class Tools:
             except AttributeError:
                 return "Error: delegate() could not extract authentication token from request."
 
-            # ASGI transport — in-process call to OWUI's FastAPI app.
-            # Uses /api/chat/completions which handles all model types:
-            # direct connection models, workspace models, AND pipe/manifold
-            # models (which have custom routing like Anthropic caching).
-            # The /openai/chat/completions endpoint only knows about raw
-            # connection models and cannot route pipe models.
-            #
-            # OWUI 0.9.5 bug workaround (open-webui#24550, fix in #24556,
-            # discussion #24720): /api/chat/completions crashes with
-            #   "'NoneType' object has no attribute 'startswith'"
-            # when the request body has no chat_id, because
-            # get_event_emitter() does .get('chat_id', '').startswith(...)
-            # and dict.get returns None (not '') when the key is present
-            # with an explicit None value. Browser UI always supplies
-            # chat_id; pydantic-ai's OpenAI client does not.
-            #
-            # We wrap the ASGI transport so JSON-bodied requests to
-            # /api/chat/completions get a chat_id key injected before
-            # OWUI sees it. We use the parent chat_id when available so
-            # the sub-agent's events are conceptually attached to the
-            # same chat the user is watching; otherwise we synthesize a
-            # local-scoped id (no message_id is sent, so OWUI's DB
-            # update branch in get_event_emitter is short-circuited).
-            app = __request__.app
-            base_transport = httpx.ASGITransport(app=app)
-            injected_chat_id = __chat_id__ or "lathe-delegate-local"
-            transport = _ChatIdInjectingTransport(base_transport, injected_chat_id)
-            inner_client = httpx.AsyncClient(transport=transport, base_url="http://localhost")
-
-            from pydantic_ai import Agent, UsageLimits
-            from pydantic_ai.models.openai import OpenAIChatModel
-            from pydantic_ai.providers.openai import OpenAIProvider
-
-            provider = OpenAIProvider(
-                base_url="http://localhost/api",
-                api_key=token,
-                http_client=inner_client,
-            )
-            model = OpenAIChatModel(model_id, provider=provider)
-
-            # ── Collect user env vars for sub-agent bash ─────────────
-            user_valves = __user__.get("valves")
-            user_pairs: list[tuple[str, str]] = []
-            if user_valves:
-                raw_env = getattr(user_valves, "env_vars", "") or ""
-                user_pairs = _parse_env_vars(raw_env)
-
-            # ── Background-safe client for the sub-agent ─────────────
-            # _tool_context closes `client` when _run() returns, which
-            # happens immediately when we background.  The sub-agent's
-            # tool closures and sidecar writes need a client that stays
-            # open for the lifetime of the background task.  We create
-            # bg_client here; _run_agent closes it in its finally block.
-            bg_client = httpx.AsyncClient()
-
-            # ── Build sub-agent tools ────────────────────────────────
-            tools = _build_delegate_tools(self.valves, sandbox_id, bg_client, user_pairs,
-                                            chat_state=self._chat_state, chat_id=__chat_id__)
-
-            # ── Fetch context_files from sandbox ─────────────────────
+            # Fetch and validate context before allocating the clients owned by
+            # the delegate. The outer tool client remains owned by _tool_context.
             file_sections: list[str] = []
             if context_files:
                 for fpath in context_files:
@@ -4462,40 +4881,83 @@ class Tools:
                     resp.raise_for_status()
                     file_sections.append(f"### {fpath}\n\n{resp.text}")
 
-            # ── Build the prompt ─────────────────────────────────────
-            user_message = _build_delegate_prompt(task, file_sections)
+            # ASGI transport — in-process call to OWUI's FastAPI app.
+            # Uses /api/chat/completions which handles all model types:
+            # direct connection models, workspace models, AND pipe/manifold
+            # models (which have custom routing like Anthropic caching).
+            # The /openai/chat/completions endpoint only knows about raw
+            # connection models and cannot route pipe models.
+            #
+            # These clients belong to setup until the agent task is launched.
+            # AsyncExitStack closes every client if any setup stage raises;
+            # after launch, _run_agent owns the stack until completion.
+            agent_clients = contextlib.AsyncExitStack()
+            try:
+                app = __request__.app
+                transport = httpx.ASGITransport(app=app)
+                inner_client = await agent_clients.enter_async_context(
+                    httpx.AsyncClient(transport=transport, base_url="http://localhost")
+                )
 
-            # ── Create and run the agent ─────────────────────────────
-            clamped_steps = max(1, min(30, max_steps))
+                from pydantic_ai import Agent, UsageLimits
+                from pydantic_ai.models.openai import OpenAIChatModel
+                from pydantic_ai.providers.openai import OpenAIProvider
 
-            agent = Agent(
-                model,
-                system_prompt=_build_delegate_system_prompt(clamped_steps, has_volume=self.valves.persistent_volume),
-                tools=tools,
-                output_type=str,
-            )
+                provider = OpenAIProvider(
+                    base_url="http://localhost/api",
+                    api_key=token,
+                    http_client=inner_client,
+                )
+                model = OpenAIChatModel(model_id, provider=provider)
 
-            # ── Sidecar directory on the sandbox ─────────────────────
-            delegate_id = str(uuid.uuid4())
-            delegate_dir = _delegate_sidecar_dir(delegate_id)
-            log_path = f"{delegate_dir}/log"
-            result_path = f"{delegate_dir}/result"
-            error_path = f"{delegate_dir}/error"
-            usage_path = f"{delegate_dir}/usage"
-            task_path = f"{delegate_dir}/task"
+                # ── Collect user env vars for sub-agent bash ─────────
+                user_valves = __user__.get("valves")
+                user_pairs: list[tuple[str, str]] = []
+                if user_valves:
+                    raw_env = getattr(user_valves, "env_vars", "") or ""
+                    user_pairs = _parse_env_vars(raw_env)
 
-            # Write the task file immediately
-            await _core_write(
-                self.valves, sandbox_id, client,
-                path=task_path, content=task,
-            )
-            # Initialize empty log file
-            await _core_write(
-                self.valves, sandbox_id, client,
-                path=log_path, content="",
-            )
+                # _tool_context closes `client` when _run() returns, so tools
+                # and sidecars use a client retained by the delegate task.
+                bg_client = await agent_clients.enter_async_context(httpx.AsyncClient())
+                user_message = _build_delegate_prompt(task, file_sections)
+                clamped_steps = max(1, min(30, max_steps))
+                tools = (
+                    _build_delegate_tools(
+                        self.valves, sandbox_id, bg_client, user_pairs,
+                        chat_state=self._chat_state, chat_id=__chat_id__,
+                    )
+                    if clamped_steps > 1 else []
+                )
+                agent = Agent(
+                    model,
+                    system_prompt=_build_delegate_system_prompt(
+                        clamped_steps, has_volume=self.valves.persistent_volume,
+                    ),
+                    tools=tools,
+                    output_type=str,
+                )
 
-            await _emit(__event_emitter__, "Sub-agent starting...")
+                delegate_id = str(uuid.uuid4())
+                delegate_dir = _delegate_sidecar_dir(delegate_id)
+                log_path = f"{delegate_dir}/log"
+                result_path = f"{delegate_dir}/result"
+                error_path = f"{delegate_dir}/error"
+                usage_path = f"{delegate_dir}/usage"
+                task_path = f"{delegate_dir}/task"
+
+                await _core_write(
+                    self.valves, sandbox_id, client,
+                    path=task_path, content=task,
+                )
+                await _core_write(
+                    self.valves, sandbox_id, client,
+                    path=log_path, content="",
+                )
+                await _emit(__event_emitter__, "Sub-agent starting...")
+            except BaseException:
+                await agent_clients.aclose()
+                raise
 
             # ── Foreground timeout ───────────────────────────────────
             # The signature default is -1 (meaning "use the module default").
@@ -4676,8 +5138,7 @@ class Tools:
                             error=agent_result.get("error"),
                         )
                         _push_bg_notice(self._chat_state, __chat_id__, notice)
-                    await inner_client.aclose()
-                    await bg_client.aclose()
+                    await agent_clients.aclose()
 
             # ── Launch and wait with foreground timeout ───────────────
             # We run _run_agent as a background task. During the foreground
@@ -4685,7 +5146,11 @@ class Tools:
             # inline. Otherwise, we return a background descriptor and the
             # task continues.
 
-            bg_task = asyncio.ensure_future(_run_agent())
+            try:
+                bg_task = asyncio.ensure_future(_run_agent())
+            except BaseException:
+                await agent_clients.aclose()
+                raise
 
             # Wait for completion or timeout
             try:
@@ -4764,6 +5229,13 @@ class Tools:
         :param access: Required policy: "private" authenticates the owner and fails closed; "public" allows anyone with the URL and may fall back to a direct bearer URL. Choose private unless the user explicitly requests public/world access.
         :param tag: Optional untrusted hostname hint, such as "vscode" or "files": lowercase letters, digits, and internal hyphens, max 32 characters. The deployment may ignore it. Hostname text never proves identity or purpose.
         """
+        type_err = _check_tool_params(
+            {"target": target, "access": access, "tag": tag},
+            type(self).expose,
+        )
+        if type_err:
+            return type_err
+
         target_value = target.strip()
         target_stripped = target_value.lower()
         access_stripped = access.strip().lower()
@@ -4854,7 +5326,7 @@ class Tools:
             if target_stripped == "dufs":
                 return await _ensure_and_sign(
                     ensure_script=_DUFS_ENSURE_SCRIPT,
-                    script_timeout_ms=30000, http_timeout=60.0,
+                    script_timeout_ms=60000, http_timeout=90.0,
                     svc_port=_DUFS_PORT, svc_name="dufs",
                     ready_status="File browser ready",
                     fail_status="dufs setup failed",
@@ -4906,7 +5378,7 @@ class Tools:
             if target_stripped == "code-server":
                 return await _ensure_and_sign(
                     ensure_script=_CS_ENSURE_SCRIPT,
-                    script_timeout_ms=60000, http_timeout=120.0,
+                    script_timeout_ms=240000, http_timeout=270.0,
                     svc_port=_CS_PORT, svc_name="code-server",
                     ready_status="IDE ready",
                     fail_status="code-server setup failed",
