@@ -24,7 +24,6 @@ import asyncio
 import json
 import os
 import statistics
-import sys
 import time
 from dataclasses import dataclass, field
 

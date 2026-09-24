@@ -51,7 +51,7 @@ async def embed(client, sem, text):
                     json={"model": EMBED_MODEL, "input": text},
                     timeout=60,
                 )
-                if r.status_code == 429:
+                if r.status_code == 429 and attempt < 3:
                     await asyncio.sleep(3 * (attempt + 1))
                     continue
                 r.raise_for_status()

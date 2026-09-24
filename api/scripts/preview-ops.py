@@ -308,7 +308,7 @@ PY"""
         hosts.append(urlsplit(previous['url']).hostname)
     hosts = list(set(hosts))
     placeholders = ','.join('?' for _ in hosts) or "NULL"
-    result = cloudflare(f"/accounts/{ACCOUNT}/d1/database/e249d6a6-41cf-4ab7-93d6-b677ac95b524/query",
+    cloudflare(f"/accounts/{ACCOUNT}/d1/database/e249d6a6-41cf-4ab7-93d6-b677ac95b524/query",
         {"sql": f"DELETE FROM preview_flows WHERE hostname IN ({placeholders})", "params": hosts})
     result = cloudflare(f"/accounts/{ACCOUNT}/d1/database/e249d6a6-41cf-4ab7-93d6-b677ac95b524/query",
         {"sql": f"SELECT COUNT(*) AS remaining FROM preview_registrations WHERE hostname IN ({placeholders})", "params": hosts})

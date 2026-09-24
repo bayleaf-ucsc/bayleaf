@@ -1,8 +1,4 @@
-import os
-import requests
 from typing import *
-from datetime import datetime
-from pydantic import BaseModel, Field
 import aiohttp
 from bs4 import BeautifulSoup
 

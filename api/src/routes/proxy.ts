@@ -539,7 +539,7 @@ proxyRoutes.openapi(authKeyRoute, async (c) => {
 
   // Fetch the OR-side response. We keep its status code and payload shape
   // for the top-level fields, then splice in our `bayleaf` augmentation.
-  let orStatus = 200;
+  let orStatus: number;
   let orPayload: { data?: Record<string, unknown> } = {};
   try {
     const cred = await resolveBackendCredential(auth, 'openrouter', c.env);

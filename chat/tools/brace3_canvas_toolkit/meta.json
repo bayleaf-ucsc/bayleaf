@@ -8,7 +8,7 @@
       "title": "Brace3 Canvas Toolkit",
       "author": "Adam Smith",
       "description": "Canvas LMS access and date localization tools for Brace3. Not intended for direct user activation — force-injected by brace3_filter. The Canvas API token is snarfed from the filter instance at call time, requiring no separate valve configuration.",
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     "has_user_valves": false
   },

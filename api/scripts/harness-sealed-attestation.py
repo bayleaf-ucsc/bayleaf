@@ -28,10 +28,10 @@ _ca = os.environ["SEALED_CA"]
 import certifi
 
 _combined = os.path.join(os.path.dirname(os.path.abspath(_ca)), "combined-ca.pem")
-with open(_combined, "w") as out:
-    out.write(open(certifi.where()).read())
+with open(certifi.where()) as roots, open(_ca) as dev_cert, open(_combined, "w") as out:
+    out.write(roots.read())
     out.write("\n")
-    out.write(open(_ca).read())
+    out.write(dev_cert.read())
 os.environ["SSL_CERT_FILE"] = _combined
 os.environ["REQUESTS_CA_BUNDLE"] = _combined
 

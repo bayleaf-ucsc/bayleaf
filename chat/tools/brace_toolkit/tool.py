@@ -3,13 +3,10 @@ requirements: jq,google-auth,google-api-python-client,google-auth-oauthlib,googl
 """
 
 import jq
-import os
 import io
 import re
 import json
-import requests
 from typing import Optional
-from datetime import datetime
 from pydantic import BaseModel, Field
 import aiohttp
 
@@ -40,7 +37,7 @@ def is_allowed_canvas_url(url: str) -> Optional[str]:
             if any(pattern.match(path) for pattern in CANVAS_ALLOWED_PATTERNS)
             else None
         )
-    except:
+    except (ValueError, TypeError):
         return None
 
 
@@ -60,9 +57,6 @@ class Tools:
 
     def __init__(self):
         self.valves = self.Valves()
-
-    # def get_current_canvas_course_id(self, __metadata__):
-    #     return repr(__metadata__["model"].get("id").removeprefix("brace-"))
 
     def localize_iso_date(
         self, iso_date_str: str, timezone_str: str = "America/Los_Angeles"
@@ -196,14 +190,6 @@ class Tools:
                         "status": response.status,
                         "message": await response.text(),
                     }
-
-    # def submit_conversation_to_canvas_assignment(self, assignment_url):
-    #     """
-    #     Submits a transcript of this conversation to a Canvas assignment as an HTML file attachment as the current user (presumed to be a student and verified upon submission).
-    #     """
-    #     return dict(
-    #         failure="Agentic submissions are disabled at this time. The user should use the sparkle (✨) tool below the last assistant message to submit the conversation to a specific assignment on Canvas."
-    #     )
 
     def get_google_drive_service_account_email(self):
         """

@@ -2,7 +2,7 @@
 title: Brace3 Canvas Toolkit
 author: Adam Smith
 description: Canvas LMS access and date localization tools for Brace3. Not intended for direct user activation — force-injected by brace3_filter. The Canvas API token is snarfed from the filter instance at call time, requiring no separate valve configuration.
-version: 1.0.0
+version: 1.0.1
 """
 
 import re
@@ -45,6 +45,7 @@ def _get_canvas_token() -> str:
             if valves is not None:
                 return valves.CANVAS_ACCESS_TOKEN
     except Exception:
+        # A missing optional filter or its valves means Canvas is unavailable.
         pass
     return ""
 

@@ -3,7 +3,6 @@ requirements: async-lru
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional
 
 from async_lru import alru_cache
 import aiohttp

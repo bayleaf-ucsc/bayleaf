@@ -273,14 +273,6 @@ class Action:
                 }
             )
 
-        async def append_message_content(content):
-            await __event_emitter__(
-                {
-                    "type": "message",
-                    "data": {"content": content},
-                }
-            )
-
         try:
 
             html_filename = "conversation.html"

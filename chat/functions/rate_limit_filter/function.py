@@ -3,14 +3,13 @@ title: Rate Limit Filter
 author: justinh-rahb with improvements by Yanyutin753
 author_url: https://github.com/justinh-rahb
 funding_url: https://github.com/open-webui
-version: 0.2.1
+version: 0.2.2
 license: MIT
 """
 
 import time
 from typing import Optional, Tuple
 from pydantic import BaseModel, Field
-from datetime import datetime, timedelta
 
 
 class Filter:
@@ -216,10 +215,6 @@ class Filter:
                 user_id, model_id
             )
             if rate_limited:
-                current_time = datetime.now()
-                future_time = current_time + timedelta(seconds=wait_time)
-                future_time_str = future_time.strftime("%I:%M %p")
-
                 raise Exception(
                     f"Rate limit exceeded. You have made {request_count} requests to model '{model_id}'. Please try again in {wait_time} seconds."
                 )
