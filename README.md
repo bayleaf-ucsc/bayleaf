@@ -5,6 +5,18 @@ experimental service operated by [Adam Smith](https://adamsmith.as) (Dept. of
 Computational Media). It offers a working platform on different terms: local,
 bounded, revisable, and answerable to the contexts in which it is used.
 
+It is built by connecting shared projects, not by rebuilding a model company.
+[Open WebUI](https://openwebui.com/) powers Chat, with BayLeaf's Python tools,
+filters, and prompts running inside it. [OpenCode](https://opencode.ai/) and
+[OpenChamber](https://openchamber.dev/) provide local agent experiences; the
+Cloudflare-based BayLeaf API supplies inference, authentication, and client
+configuration. OpenRouter and Tinfoil provide metered inference rather than
+BayLeaf-operated GPUs. Providers serving open-weight models may use shared
+inference stacks such as [vLLM](https://github.com/vllm-project/vllm)
+and [SGLang](https://github.com/sgl-project/sglang); BayLeaf does not control
+which stack handles a request. We contribute interoperable fixes upstream and
+publish reusable integrations rather than maintaining campus-specific forks.
+
 BayLeaf has undergone a security review by UC Santa Cruz ITS: the campus Chief
 Information Security Officer (CISO) and his team deemed it **ready to launch**,
 safe for use by the UCSC campus community. This attests to its security posture
