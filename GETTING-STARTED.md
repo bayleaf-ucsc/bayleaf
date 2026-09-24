@@ -1,6 +1,6 @@
 # Getting Started Guide
 
-This guide is intended for members of the campus community who are new to BayLeaf. You might be a Generative AI skeptic, a seasoned Claude user, or a refugee from Gemini. Regardless of your background, this guide will help you get started with BayLeaf Chat and the BayLeaf API.
+This guide is intended for members of the campus community who are new to BayLeaf. You might be a Generative AI critic, a seasoned Claude user, or a refugee from Gemini. Regardless of your background, this guide will help you get started with BayLeaf Chat and the BayLeaf API.
 
 BayLeaf is free to use for anyone with a UCSC identity. It covers almost every use case of mainstream chat and agent services while offering levels of control over the experience and user privacy that are not available from any other consumer or institution-facing platform.
 
