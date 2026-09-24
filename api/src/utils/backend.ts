@@ -79,10 +79,11 @@ export async function resolveBackendCredential(
  * caller that has already consumed the client's request body cannot re-send it,
  * which is why the `/v1/*` streaming passthrough does not use this helper.
  *
- * Only 401/403 triggers a heal. A 429 or 5xx says nothing about credential
- * validity, and re-minting on those would churn keys under load — and, since a
- * fresh key resets to the global spend default, would hand out budget as a
- * side effect of provider trouble.
+ * OpenRouter returns 403 for an exhausted per-key daily spend cap, as well as
+ * other valid-key denials. Never heal an OpenRouter 403: doing so creates a new
+ * $5/day key and lets the caller spend again. Its invalid/revoked-key response
+ * is 401. Tinfoil can reject an invalid credential with 401 or 403. A 429 or
+ * 5xx says nothing about either credential's validity.
  */
 export async function sendWithHeal(
   handle: BackendCredentialHandle,
@@ -90,7 +91,7 @@ export async function sendWithHeal(
   send: (secret: string) => Promise<Response>,
 ): Promise<Response> {
   const res = await send(handle.secret);
-  if (res.status !== 401 && res.status !== 403) return res;
+  if (res.status !== 401 && (handle.kind !== 'tinfoil' || res.status !== 403)) return res;
 
   // Campus Pass: pool key lives in env, so there is nothing to rewrite.
   if (!handle.row) return res;

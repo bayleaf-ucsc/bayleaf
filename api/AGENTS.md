@@ -163,9 +163,10 @@ enumerating every key in the org on every request. Two routes deliberately do
 the `/v1/*` catch-all (returns the 401; a later replayable route heals) and the
 Sealed relay (heals without retrying, then asks the client to retry, because
 Sealed is the only consumer of Tinfoil credentials and would otherwise
-dead-end). Only 401/403 heals: re-minting on 429/5xx would churn keys under
-load and, since a fresh key resets to the global spend default, hand out budget
-as a side effect of provider trouble.
+dead-end). OpenRouter heals only on 401: its 403 can mean a daily key cap was
+reached, and healing that would mint a fresh budget. Tinfoil heals on 401/403.
+Re-minting on 429/5xx would churn keys under load and, since a fresh key resets
+to the global spend default, hand out budget as a side effect of provider trouble.
 
 **Spend limits are not mirrored in D1.** OpenRouter is the system of record for
 a key's daily cap. `createKey()` stamps the global `SPENDING_LIMIT_DOLLARS` at

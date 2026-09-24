@@ -72,6 +72,30 @@ per-user Tinfoil key and spends real credit, so clean up the row and the key.
 
 ## Automated: the key lifecycle harness
 
+### Empirical OpenRouter spend-cap response (2026-09-23)
+
+Tested with disposable keys created using the BayLeaf workspace management key
+from `api/.env`, direct `POST /api/v1/chat/completions` requests with
+`provider.data_collection: "deny"`, and `GET /api/v1/auth/key` with the same
+disposable credential. Both keys were deleted after the experiment.
+
+- A key created with `limit: 0, limit_reset: "daily"` returned **HTTP 403**
+  for two different paid models, with `error.code: 403` and message
+  `Key limit exceeded (daily limit). Manage it using ...`. The key remained
+  enabled and `/auth/key` returned 200, with zero remaining.
+- A second key at $0.0001/day first completed a paid request. Its cap was
+  lowered below the first request's reported cost. Two further requests
+  succeeded before the next returned the same **403**. At that point
+  `/auth/key` returned 200 with `limit_remaining: 0`. OpenRouter's spend
+  accounting and enforcement are not instantaneous; this test does not
+  establish a strict per-key dollar ceiling for concurrent or closely spaced
+  requests.
+
+The production bug this exposed: treating an OpenRouter 403 as an invalid key
+in `sendWithHeal` minted a fresh key with a fresh $5/day cap. An exhausted key
+is still valid; only OpenRouter 401 is a healing signal. This is different from
+Tinfoil, where 403 remains a possible credential rejection.
+
 `scripts/harness-provision.mjs` is the one part of this file that runs itself.
 It exercises every path through `src/provision.ts` (fresh token provision, lazy
 backend minting, 409 on double-provision, self-heal after upstream key loss,

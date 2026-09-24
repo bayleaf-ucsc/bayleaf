@@ -154,15 +154,15 @@ async function createKeyAtLimit(auth, name, newLimit) {
 
 // ── D1 (read-only here; writes are emitted as SQL) ───────────────
 
-/** email -> revoked flag, for every row in user_keys. */
+/** email -> row status and current OpenRouter hash, for every user. */
 function readD1Rows() {
   const out = execFileSync(
     'npx',
     ['wrangler', 'd1', 'execute', D1_DATABASE, '--remote', '--json',
-     '--command', 'SELECT email, revoked FROM user_keys'],
+      '--command', 'SELECT email, revoked, or_key_hash FROM user_keys'],
     { cwd: API_DIR, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] },
   );
-  return new Map(JSON.parse(out)[0].results.map((r) => [r.email, r.revoked]));
+  return new Map(JSON.parse(out)[0].results.map((r) => [r.email, r]));
 }
 
 /** sk-bayleaf- + 32 hex chars. Mirrors utils/token.ts generateBayleafToken(). */
@@ -180,19 +180,21 @@ const sqlQuote = (s) => `'${String(s).replace(/'/g, "''")}'`;
 function buildPlan(args, orKeysByName, d1) {
   if (args.roster !== null) {
     return readRoster(args.roster).map((email) => {
-      const or = orKeysByName.get(keyName(email));
-      const revoked = d1.get(email);
-      if (or && revoked === 0) return { email, action: 'BUMP', or };
-      if (!or && revoked === undefined) return { email, action: 'PROVISION' };
+      const matches = orKeysByName.get(keyName(email)) ?? [];
+      const row = d1.get(email);
+      if (matches.length > 1) return { email, action: 'SKIP', why: `${matches.length} OR keys share this name; reconcile by hash first` };
+      const or = matches[0];
+      if (or && row?.revoked === 0 && row.or_key_hash === or.hash) return { email, action: 'BUMP', or };
+      if (!or && !row) return { email, action: 'PROVISION' };
       const why = or
-        ? (revoked === 1 ? 'OR key exists but D1 row is revoked' : 'OR key exists but no D1 row')
+        ? (row?.revoked === 1 ? 'OR key exists but D1 row is revoked' : row ? 'OR hash does not match D1' : 'OR key exists but no D1 row')
         : 'D1 row exists but no OR key (heals on next dashboard load)';
       return { email, action: 'SKIP', why };
     });
   }
 
   const plan = [];
-  for (const or of orKeysByName.values()) {
+  for (const matches of orKeysByName.values()) for (const or of matches) {
     if (or.disabled || or.limit !== args.from) continue;
     const email = emailFromKeyName(or.name);
     if (!email) {
@@ -201,10 +203,13 @@ function buildPlan(args, orKeysByName, d1) {
       plan.push({ email: or.name, action: 'SKIP', why: 'not a per-user key' });
       continue;
     }
+    const row = d1.get(email);
     plan.push(
-      d1.get(email) === 0
-        ? { email, action: 'BUMP', or }
-        : { email, action: 'SKIP', why: d1.has(email) ? 'D1 row is revoked' : 'no D1 row' },
+      matches.length > 1
+        ? { email, action: 'SKIP', why: `${matches.length} OR keys share this name; reconcile by hash first` }
+        : row?.revoked === 0 && row.or_key_hash === or.hash
+          ? { email, action: 'BUMP', or }
+          : { email, action: 'SKIP', why: row ? 'OR hash does not match active D1 row' : 'no D1 row' },
     );
   }
   return plan.sort((a, b) => a.email.localeCompare(b.email));
@@ -227,7 +232,12 @@ async function main() {
   console.log(args.apply ? 'Mode: APPLY\n' : 'Mode: DRY RUN (pass --apply to mutate)\n');
 
   const orKeysByName = new Map();
-  for (const k of await listAllKeys(auth)) if (k.name) orKeysByName.set(k.name, k);
+  for (const k of await listAllKeys(auth)) {
+    if (!k.name || k.disabled) continue;
+    const matches = orKeysByName.get(k.name) ?? [];
+    matches.push(k);
+    orKeysByName.set(k.name, matches);
+  }
   const d1 = readD1Rows();
   console.log(`OpenRouter: ${orKeysByName.size} named key(s). D1: ${d1.size} row(s).\n`);
 
