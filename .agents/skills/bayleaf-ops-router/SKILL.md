@@ -24,6 +24,7 @@ whole clump.
 | Accessibility evidence, keyboard-flow recording, or Chat VPAT update | `playbooks/accessibility-evidence.md` |
 | Bumping a spin-off module (Lathe, gws-toolkit, other toolkits) | `playbooks/spinoff-module-bump.md` |
 | Pulling prod state back into the repo (backup, drift reconcile) | `playbooks/backup-reconcile.md` |
+| Provisioning Brace3 access for a course roster, TAs, and instructor | `playbooks/brace3-course-access.md` |
 
 When two apply (an OWUI bump usually triggers `backup-reconcile` and often
 `model-swap` afterward), run them in that order and say so.

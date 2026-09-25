@@ -97,3 +97,18 @@ the UI (recover it from git: `git show HEAD:chat/models/<id>/model.json`), or
   returned 200 with the expected budget fields. No Brace3 course model appeared
   in the live model list, so its stealth Canvas toolkit could not be exercised
   through a normal conversation in this run.
+- 2026-09-24: Brace3 toolkit/filter refactor: deployed repo source, copied the
+  existing Canvas token from the filter valve to the new toolkit valve without
+  exposing it, bound the toolkit on the newly provisioned course model, then
+  removed runtime injection. Pulled the new model to a sibling-image-backed
+  repo file. `tools deploy` / `functions deploy` preserved the old live
+  descriptions even though their manifests updated: synchronized descriptions
+  separately through the update endpoints without changing grants or valves.
+  An end-to-end non-admin Canvas tool playtest remains a human gate.
+- 2026-09-25: Renamed the Brace3 prompt filter by creating a new OWUI function
+  ID, copying the configured Canvas token in memory, rebinding the course model,
+  and retiring the old function only after confirming no models referenced it.
+  Renaming a live function is a migration, not merely an edit to its display name.
+  `functions deploy` cannot create this ID because the missing-function GET
+  returns HTTP 401; a direct create POST worked, then the valve was copied and
+  the new filter activated before binding the model.

@@ -1,0 +1,20 @@
+{
+  "id": "brace3_canvas_system_prompt_filter",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Brace3 Canvas System Prompt Filter",
+  "type": "filter",
+  "meta": {
+    "description": "Fetches the course-specific system prompt from a Canvas wiki page. Attach to any model named brace3-NNN where NNN is the Canvas course ID; bind the Canvas toolkit directly on that model.",
+    "manifest": {
+      "title": "Brace3 Canvas System Prompt Filter",
+      "author": "Adam Smith",
+      "description": "Fetches the course-specific system prompt from a Canvas wiki page. Attach to any model named brace3-NNN where NNN is the Canvas course ID; bind the Canvas toolkit directly on that model.",
+      "requirements": "async-lru,markdownify",
+      "version": "1.0.1"
+    }
+  },
+  "is_active": true,
+  "is_global": false,
+  "updated_at": 1778624200,
+  "created_at": 1775169358
+}

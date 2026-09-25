@@ -18,6 +18,12 @@ drifted (the 2026-08-25 run found a week of accumulated drift in one pull).
 
 - `set -a && source ~/.tokens/owui/chat-bayleaf-dev && set +a`
 - Clean git tree (so the diff is purely this run's findings).
+  If the tree is already dirty, pull all resources into a private temporary
+  directory first and compare without overwriting in-progress work.
+- **Public-backup boundary:** pull models, tools, functions, and skills only.
+  Never pull groups, users, chats, or course rosters into this repository.
+  Model `access_grants` contain principal UUIDs, not group membership; treat
+  roster-based membership as deliberately outside this backup.
 
 ## Steps
 
@@ -28,8 +34,14 @@ drifted (the 2026-08-25 run found a week of accumulated drift in one pull).
    uvx owui-cli tools pull-all chat/tools/
    uvx owui-cli functions pull-all chat/functions/
    uvx owui-cli skills pull-all chat/skills/
-   uvx owui-cli models pull-all chat/models/
-   ```
+    uvx owui-cli models pull-all chat/models/
+    ```
+
+   `models pull-all` can omit hidden underlying model records (e.g. the public
+   read grant for `openrouter.z-ai/glm-5.3-flash`). Verify each known base
+   model by ID with `models show` or `GET /api/v1/models/model?id=...` and
+   retain its recovery definition. Do not delete a repo-only base model just
+   because it is absent from the pull-all directory.
 
 2. `git status --short chat/ && git diff --stat chat/`, then triage every
    changed file into exactly one bucket:
@@ -58,6 +70,10 @@ drifted (the 2026-08-25 run found a week of accumulated drift in one pull).
 - `git diff --cached` contains no `data:image` base64 blobs (models pull-all
   extracts profile images to sibling files; any inline blob must be stripped
   per `chat/AGENTS.md`'s strip workflow).
+- When a course roster was handled during the session, compare its email
+  addresses and resolved user IDs against the candidate backup **in memory**;
+  report only aggregate matches. Check that no credential valve value entered
+  the files. Do not publish the roster, a group export, or per-user results.
 - Every new/changed item is either explained or explicitly questioned.
 
 ## Known failure mode: invisible id drift
@@ -76,6 +92,15 @@ through the appropriate playbook, don't paper over it in the backup.
 
 ## Refinement log
 
+- 2026-09-25: Recovery pull after Brace3 course provisioning ran all four
+  resources into a private temp directory because the repo had in-progress
+  edits. No roster emails, student IDs, Canvas token, group exports, or chat
+  exports entered the candidate backup. `models pull-all` omitted the hidden
+  GLM base record even though `models show` found it active with public read;
+  added a separate base-model check rather than deleting the repo record.
+  Remaining differences were rotating metadata, a dropped Lathe
+  `content_length`, and two optional-null schema defaults on the inactive
+  Brace v2 toolkit: no substantive prod drift.
 - 2026-09-18: The Lathe 0.28.0 full pull produced only the expected source/schema
   delta plus rotating model and skill timestamps/grant IDs. Removing SSH also
   required reconciling stale guidance in DESIGN.md, RETENTION.md, and the live

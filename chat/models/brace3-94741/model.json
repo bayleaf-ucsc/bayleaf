@@ -1,0 +1,70 @@
+{
+  "id": "brace3-94741",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "base_model_id": "openrouter.z-ai/glm-5.3-flash",
+  "name": "Brace (CMPM 121, Fall 2026)",
+  "params": {},
+  "meta": {
+    "profile_image_url": "profile.webp",
+    "description": null,
+    "capabilities": {
+      "file_context": true,
+      "vision": true,
+      "file_upload": true,
+      "web_search": true,
+      "image_generation": true,
+      "code_interpreter": true,
+      "terminal": true,
+      "citations": true,
+      "status_updates": true,
+      "usage": true,
+      "memory": true,
+      "builtin_tools": true
+    },
+    "knowledge": null,
+    "suggestion_prompts": null,
+    "tags": [],
+    "filterIds": [
+      "brace3_canvas_system_prompt_filter"
+    ],
+    "actionIds": [
+      "brace_submit_action"
+    ],
+    "builtinTools": {
+      "code_interpreter": false,
+      "notifications": false,
+      "knowledge": false,
+      "memory": false,
+      "calendar": false,
+      "automations": false,
+      "image_generation": false,
+      "channels": false,
+      "notes": false,
+      "chats": false,
+      "files": false,
+      "web_search": false,
+      "tasks": false,
+      "subagents": false,
+      "time": false
+    },
+    "toolIds": [
+      "brace3_canvas_toolkit"
+    ]
+  },
+  "access_grants": [
+    {
+      "id": "9850a6b2-ab18-416a-b985-3aa7136d19e8",
+      "resource_type": "model",
+      "resource_id": "brace3-94741",
+      "principal_type": "group",
+      "principal_id": "106b8f25-21df-4d0a-af97-26d18eb5a5cf",
+      "permission": "read",
+      "created_at": 1790318494
+    }
+  ],
+  "is_active": true,
+  "updated_at": 1790318494,
+  "created_at": 1790315275,
+  "user": null,
+  "write_access": true
+}

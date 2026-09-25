@@ -1,14 +1,15 @@
 """
 title: Brace3 Canvas Toolkit
 author: Adam Smith
-description: Canvas LMS access and date localization tools for Brace3. Not intended for direct user activation — force-injected by brace3_filter. The Canvas API token is snarfed from the filter instance at call time, requiring no separate valve configuration.
-version: 1.0.1
+description: Canvas LMS access and date localization tools for Brace3. Bound directly to the course workspace model; its own Canvas token valve supplies API access.
+version: 1.0.2
 """
 
 import re
 import aiohttp
 import jq
 from datetime import datetime
+from pydantic import BaseModel, Field
 from zoneinfo import ZoneInfo
 from urllib.parse import urlparse
 
@@ -35,25 +36,14 @@ def _is_allowed_canvas_url(url: str) -> bool:
         return False
 
 
-def _get_canvas_token() -> str:
-    """Snarf the Canvas token from the brace3_filter instance at call time."""
-    try:
-        from open_webui.main import app
-        mod = app.state.FUNCTIONS.get("brace3_filter")
-        if mod is not None:
-            valves = getattr(mod, "valves", None)
-            if valves is not None:
-                return valves.CANVAS_ACCESS_TOKEN
-    except Exception:
-        # A missing optional filter or its valves means Canvas is unavailable.
-        pass
-    return ""
-
-
 class Tools:
+    class Valves(BaseModel):
+        CANVAS_ACCESS_TOKEN: str = Field(
+            default="", description="Canvas API token used for Brace3's read-only course tools."
+        )
 
     def __init__(self):
-        pass
+        self.valves = self.Valves()
 
     def localize_iso_date(self, iso_date_str: str, timezone_str: str = "America/Los_Angeles") -> str:
         """
@@ -95,9 +85,9 @@ class Tools:
         if not _is_allowed_canvas_url(resource_url):
             return {"failure": "URL not in the allowed Canvas API endpoint list."}
 
-        token = _get_canvas_token()
+        token = self.valves.CANVAS_ACCESS_TOKEN
         if not token:
-            return {"failure": "Canvas API token unavailable — brace3_filter may not be loaded."}
+            return {"failure": "Canvas API token unavailable — configure the Brace3 Canvas toolkit valve."}
 
         headers = {
             "Authorization": f"Bearer {token}",

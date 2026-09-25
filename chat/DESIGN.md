@@ -358,8 +358,21 @@ would hide the model even from the admin on the completions path).
 
 ### Group-Restricted Models
 
-*None currently active.* Course and program models have been deactivated as their
-terms ended. See the Inactive table below for preserved configurations.
+| ID | Name | Base Model | Access |
+|----|------|------------|--------|
+| `brace3-94741` | Brace (CMPM 121, Fall 2026) | `openrouter.z-ai/glm-5.3-flash` | `course:94741` (84 roster students, 2 TAs, instructor; provisioned 2026-09-24) |
+
+The model's `meta.toolIds` directly binds `brace3_canvas_toolkit` (no standalone
+user grant, so students cannot casually toggle it in the tool picker). The
+`brace3_canvas_system_prompt_filter` fetches the course prompt from Canvas; it
+does not inject tools.
+Both have separate `CANVAS_ACCESS_TOKEN` valves with the same credential for
+this Adam-taught course. The toolkit currently restricts endpoint types but
+**not the course ID** in its URL allowlist: Canvas token permissions remain the
+only cross-course boundary. Scope that boundary and revisit credential
+ownership before onboarding another instructor's course. See the playbook under
+`../.agents/skills/bayleaf-ops-router/playbooks/brace3-course-access.md` for
+the provisioning and verification procedure.
 
 ### Inactive (Archived) Models
 
@@ -409,11 +422,12 @@ Basic can now use a skill to remind users to choose that posture themselves.
 game-prototyping assistant for CMPM 171. Its full pre-agentic system prompt is
 preserved in [`archive/gambit-system-prompt.md`](archive/gambit-system-prompt.md).
 
-**Brace3** (removed September 2026) paired a workspace model with
-`brace3_filter`, which force-enabled `brace3_canvas_toolkit` so users could not
-turn off the course toolkit. This stealth pattern is preserved as an historical
-reference, but future workspace models should bind required toolkits directly
-at the model level instead.
+**Earlier Brace3 course models** (removed September 2026) paired a workspace
+model with a filter that force-enabled `brace3_canvas_toolkit` so users
+could not turn off the course toolkit. The Fall 2026 course model retains the
+dynamic prompt filter but binds its required toolkit directly on the model,
+without granting standalone access to the toolkit. This makes the binding
+explicit in the model configuration while preserving the required-tool posture.
 
 ### Retired Model Experiments
 
@@ -606,7 +620,7 @@ the expected `lathe-0305-ok` output.
 
 | ID | Name | Access | Injected by | Description |
 |----|------|--------|-------------|-------------|
-| `brace3_canvas_toolkit` | Brace3 Canvas | No grants (stealth) | `brace3_filter` | Canvas LMS read access + date localization for Brace v3. Token snarfed from the filter at call time; no separate valve needed. |
+| `brace3_canvas_toolkit` | Brace3 Canvas | No standalone grants (model-bound) | `brace3-94741` via `meta.toolIds` | Canvas LMS read access + date localization for Brace v3. Own `CANVAS_ACCESS_TOKEN` valve. |
 | `brace_toolkit` | Brace | No grants (stealth) | `brace_filter` | Canvas API, GitHub API, Google Drive used by Brace v2 (valve: multiple keys). |
 
 ### Other Restricted Tools
@@ -647,13 +661,13 @@ accidentally enable or disable them via the chat composer's tool picker.
 
 | Filter | Toolkit | Model(s) |
 |--------|---------|----------|
-| `brace3_filter` | `brace3_canvas_toolkit` | `brace3-*` |
 | `brace_filter` | `brace_toolkit` | `brace-*` |
 
 (`help_filter` was a former instance; it was retired in June 2026 because the
-Help model needs no filter-time setup — its toolkit is now bound directly via
-the model's `toolIds`, which is less magical and equally invisible to the tool
-picker when the toolkit has no access grants.)
+Help model needs no filter-time setup. Brace3 still needs a filter for its
+Canvas-sourced system prompt, but no longer uses it for toolkit injection.
+Both models bind their toolkits via `toolIds`: explicit in the model config and
+still absent from the tool picker when the toolkit has no access grants.)
 
 **When to use this pattern:**
 
@@ -755,7 +769,8 @@ These are **never** committed to this repo:
 - `web_context_toolkit` — `tavily_api_key`, `search_depth`, `include_answer`, `max_results`, `extract_depth`
 - `help_toolkit` — `INVITE_SIGNING_KEY` (optional; falls back to `WEBUI_SECRET_KEY` if empty)
 - `brace_toolkit` — `GITHUB_API_TOKEN`, `CANVAS_ACCESS_TOKEN`, `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON`
-- `brace3_filter` — `CANVAS_ACCESS_TOKEN` (used by both `brace3_filter` and `brace3_canvas_toolkit`; the toolkit snarfs it from the filter instance)
+- `brace3_canvas_system_prompt_filter` — `CANVAS_ACCESS_TOKEN` (fetches the course system prompt)
+- `brace3_canvas_toolkit` — `CANVAS_ACCESS_TOKEN` (independent tool-time Canvas access; currently duplicated from the filter valve)
 
 **Non-secret, non-default valve values** (safe to record as recovery backup):
 
@@ -775,7 +790,7 @@ pipeline. Each is in `functions/<id>/` with `function.py` and `meta.json`.
 | `depth_limit_filter` | filter | yes | **yes** | Halves max response tokens with each turn |
 | `brace_submit_action` | action | no | no | Button to submit conversation HTML to Canvas assignment (Brace v2 only) |
 | `brace_filter` | filter | no | no | Injects `brace_toolkit` and fetches system prompt from Canvas wiki page at hardcoded slug (Brace v2) |
-| `brace3_filter` | filter | no | yes | Injects `brace3_canvas_toolkit` and fetches system prompt from Canvas page by title "Brace3 System Prompt" (Brace v3). Derives course ID from model ID (`brace3-NNN`). Raises on missing page. Valve: `CANVAS_ACCESS_TOKEN`. |
+| `brace3_canvas_system_prompt_filter` | filter | no | yes | Fetches system prompt from Canvas page by title "Brace3 System Prompt" (Brace v3). Derives course ID from model ID (`brace3-NNN`). Raises on missing page. Valve: `CANVAS_ACCESS_TOKEN`. Toolkit bound separately on the model. |
 
 ### Rate Limit Filter
 
@@ -854,24 +869,33 @@ To reconstruct BayLeaf Chat from this backup:
    UI (Workspace → Tools), paste the source from `tool.py`, and configure the
    access grants and valves per `meta.json`.
 
-   Note: `brace3_canvas_toolkit` has no `meta.json` — it is admin-only with no
-   grants. Its Canvas token comes from the `brace3_filter` valve at runtime;
-   no valve configuration is needed on the toolkit itself.
+   `brace3_canvas_toolkit` has no standalone grants. Configure its own
+   `CANVAS_ACCESS_TOKEN` valve for tool-time Canvas reads; do not rely on the
+   filter's separate prompt-fetch token valve.
 
 5. **Import functions** — Same process via Workspace → Functions. Set
    `is_global` and `is_active` flags per `meta.json`. Configure function
    valves (Canvas tokens etc.) in the admin panel.
 
-   For `brace3_filter`: set `CANVAS_ACCESS_TOKEN` in the filter's valve. This
-   same token is used by `brace3_canvas_toolkit` at call time (snarfed via
-   `app.state.FUNCTIONS`). Attach to any model with ID matching `brace3-NNN`
-   where `NNN` is the Canvas course ID.
+   For `brace3_canvas_system_prompt_filter`: set `CANVAS_ACCESS_TOKEN` in the filter's valve for
+   dynamic prompt fetching. Attach to a model with ID `brace3-NNN`, where
+   `NNN` is the Canvas course ID, and set the toolkit's token valve separately.
 
 6. **Configure model bindings** — Attach tools, filters, and actions to models
    per the `toolIds`, `filterIds`, and `actionIds` in each `model.json`.
 
 7. **Set access grants** — Configure group-based access for restricted models
    and tools. Group UUIDs will differ in a new deployment; map by group name.
+
+**Public-backup privacy boundary:** `models/` preserves model configuration and
+grant *references*, not course rosters, group records, membership lists, user
+accounts, or chats. Never add roster files or a groups/users export to this
+public repo. To recover a course group on a fresh deployment, obtain a current
+roster from the authorized instructor, recreate `course:<Canvas ID>`, provision
+accounts/memberships as in §1b, and grant the new group UUID access to the
+restored model. The old grant UUID in `model.json` is not portable. Canvas
+credential valves are also intentionally absent from this backup and must be
+restored through an authorized private channel.
 
 ---
 
@@ -1140,7 +1164,7 @@ chat/
 │   ├── brace_toolkit/       # Brace v2 — Canvas + GitHub + Drive
 │   │   ├── tool.py
 │   │   └── meta.json
-│   ├── brace3_canvas_toolkit/  # Brace v3 — Canvas read-only, force-injected by brace3_filter
+│   ├── brace3_canvas_toolkit/  # Brace v3 — Canvas read-only, model-bound with own token valve
 │   │   ├── tool.py
 │   │   └── meta.json
 │   ├── campus_directory_toolkit/
@@ -1165,7 +1189,7 @@ chat/
     ├── brace_filter/        # Brace v2 — hardcoded slug, fallback on error (inactive)
     │   ├── function.py
     │   └── meta.json
-    ├── brace3_filter/       # Brace v3 — title lookup, markdownify, raises on missing page
+    ├── brace3_canvas_system_prompt_filter/ # Brace v3 — Canvas-sourced prompt
     │   ├── function.py
     │   └── meta.json
     └── vertex_pipe/         # Disabled — Google Vertex manifold pipe

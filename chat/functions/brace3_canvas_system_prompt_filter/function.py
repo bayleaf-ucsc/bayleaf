@@ -1,9 +1,9 @@
 """
-title: Brace3 Filter
+title: Brace3 Canvas System Prompt Filter
 author: Adam Smith
-description: Injects the Brace3 Canvas toolkit and fetches the course-specific system prompt from a Canvas wiki page. Attach to any model named brace3-NNN where NNN is the Canvas course ID.
+description: Fetches the course-specific system prompt from a Canvas wiki page. Attach to any model named brace3-NNN where NNN is the Canvas course ID; bind the Canvas toolkit directly on that model.
 requirements: async-lru,markdownify
-version: 1.0.0
+version: 1.0.1
 """
 
 from pydantic import BaseModel, Field
@@ -14,7 +14,6 @@ import aiohttp
 from open_webui.utils.task import prompt_template
 
 CANVAS_PAGE_TITLE = "Brace3 System Prompt"
-TOOLKIT_IDS = ["brace3_canvas_toolkit"]
 CANVAS_BASE_URL = "https://canvas.ucsc.edu/api/v1"
 
 
@@ -80,15 +79,11 @@ class Filter:
         self.valves = self.Valves()
 
     async def inlet(self, body, __user__, __metadata__):
-        # Force-inject the Brace3 toolkits for this request
-        for toolkit_id in TOOLKIT_IDS:
-            body.setdefault("tool_ids", []).append(toolkit_id)
-
         # Derive course ID from the model ID: brace3-92591 -> 92591
         model_id = __metadata__["model"]["id"]
         if not model_id.startswith("brace3-"):
             raise RuntimeError(
-                f"brace3_filter is attached to model '{model_id}' which is not named brace3-NNN. "
+                f"brace3_canvas_system_prompt_filter is attached to model '{model_id}' which is not named brace3-NNN. "
                 f"This filter should only be attached to models with IDs matching 'brace3-<course_id>'."
             )
         course_id = model_id.removeprefix("brace3-")
