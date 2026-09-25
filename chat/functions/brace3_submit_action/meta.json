@@ -1,0 +1,20 @@
+{
+  "id": "brace3_submit_action",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Submit Brace3 conversation to Canvas",
+  "type": "action",
+  "meta": {
+    "description": "Submit a Brace3 conversation to a Canvas assignment in course 94741.",
+    "manifest": {
+      "title": "Submit Brace3 conversation to Canvas",
+      "author": "Adam Smith",
+      "description": "Submit this Brace3 conversation as an HTML file to a Canvas assignment in the Fall 2026 CMPM 121 course.",
+      "requirements": "pyyaml",
+      "version": "1.6.0"
+    }
+  },
+  "is_active": true,
+  "is_global": false,
+  "updated_at": 1790326009,
+  "created_at": 1790325980
+}

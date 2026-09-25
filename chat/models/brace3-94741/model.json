@@ -30,7 +30,7 @@
       "brace3_canvas_system_prompt_filter"
     ],
     "actionIds": [
-      "brace_submit_action"
+      "brace3_submit_action"
     ],
     "builtinTools": {
       "code_interpreter": false,

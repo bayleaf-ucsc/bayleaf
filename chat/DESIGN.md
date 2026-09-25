@@ -429,6 +429,34 @@ dynamic prompt filter but binds its required toolkit directly on the model,
 without granting standalone access to the toolkit. This makes the binding
 explicit in the model configuration while preserving the required-tool posture.
 
+**Fall 2026 Canvas submission Action.** `brace3-94741` binds
+`brace3_submit_action` via `meta.actionIds`. It is active and non-global; the
+legacy `brace_submit_action` remains inactive. The new Action accepts only
+assignment URLs in course 94741, requires HTML file-upload submissions,
+matches non-admin users to Canvas student enrollments by BayLeaf email, and
+asks for confirmation before uploading. It scans user messages on the selected
+chat branch for exactly one valid assignment URL; with zero or multiple matches
+it prompts for the URL. Submission success shows a dialog and toast. The Canvas
+token is an admin valve, copied from the Brace3 prompt filter, never committed.
+Admin trials use course-94741 Test Student ID `152664`. A test submission to
+assignment `897740` succeeded; a non-admin student submission and the latest
+export format have not yet been verified end to end. Canvas's `201 Created`
+upload Location provides a file ID without a follow-up GET (which can return
+403 for a student-private file); 3xx redirects still require confirmation.
+
+The Action reads the owner's stored chat branch, not the flattened Action
+payload. Its script-free HTML uses `<article data-schema="brace3-transcript"
+data-schema-version="1">` with course, assignment, and chat IDs; ordered
+`.turn` and `.event` elements identify roles, message/event IDs and indices,
+tool names, and linking `data-call-id` values. Escaped `<pre class="payload">`
+elements declare `data-format="markdown|text|yaml"`; tool YAML can be parsed
+with `yaml.safe_load`. Only recorded times get `<time datetime="…">` and
+`data-timestamp`: tool times are never inferred. Tool calls start expanded,
+reasoning starts collapsed, and tool results start collapsed only above 256
+bytes of UTF-8 YAML. The transcript includes reasoning and tool outputs and
+is stored in Canvas, outside Chat's history-retention boundary; grading tools
+must treat it as student work with the submission's access restrictions.
+
 ### Retired Model Experiments
 
 **Procurement** (removed September 2026) established the `whole_document_retrieval`
@@ -800,6 +828,7 @@ pipeline. Each is in `functions/<id>/` with `function.py` and `meta.json`.
 | `basic_prompt_filter` | filter | no | **yes** | Assembles per-request system-prompt augmentations for the Basic model (OAuth role + chat-storage context); attached via Basic's `filterIds`. See issue #44. |
 | `depth_limit_filter` | filter | yes | **yes** | Halves max response tokens with each turn |
 | `brace_submit_action` | action | no | no | Button to submit conversation HTML to Canvas assignment (Brace v2 only) |
+| `brace3_submit_action` | action | no | yes | Model-bound button to submit a structured Brace3 transcript to an HTML-upload assignment in course 94741. |
 | `brace_filter` | filter | no | no | Injects `brace_toolkit` and fetches system prompt from Canvas wiki page at hardcoded slug (Brace v2) |
 | `brace3_canvas_system_prompt_filter` | filter | no | yes | Fetches system prompt from Canvas page by title "Brace3 System Prompt" (Brace v3). Derives course ID from model ID (`brace3-NNN`). Raises on missing page. Valve: `CANVAS_ACCESS_TOKEN`. Toolkit bound separately on the model. |
 
