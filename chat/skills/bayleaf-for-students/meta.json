@@ -4,6 +4,7 @@
   "name": "bayleaf-for-students",
   "description": "User has the student role on this campus, consult this skill for specific instructions for them.",
   "meta": {
+    "i18n": null,
     "tags": []
   },
   "is_active": false,

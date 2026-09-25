@@ -10,7 +10,9 @@
   },
   "meta": {
     "profile_image_url": "profile.png",
+    "background_image_url": null,
     "description": "General help and advice for BayLeaf users",
+    "i18n": null,
     "capabilities": {
       "file_context": true,
       "vision": true,

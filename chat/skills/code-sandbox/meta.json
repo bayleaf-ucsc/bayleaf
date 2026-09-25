@@ -4,6 +4,7 @@
   "name": "code-sandbox",
   "description": "Use BayLeaf Chat's private Linux sandbox for bounded coding and file work, and help users move to a local coding agent when a project outgrows it.",
   "meta": {
+    "i18n": null,
     "tags": []
   },
   "is_active": true,

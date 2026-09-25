@@ -13,7 +13,9 @@
   },
   "meta": {
     "profile_image_url": "profile.png",
+    "background_image_url": null,
     "description": "Available to the entire campus community.",
+    "i18n": null,
     "capabilities": {
       "file_context": true,
       "vision": true,

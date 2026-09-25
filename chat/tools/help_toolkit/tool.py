@@ -2,7 +2,7 @@
 title: Help
 author: Adam Smith
 description: Help users understand their group memberships, available models, and manage invite codes.
-version: 0.3.0
+version: 0.3.1
 """
 
 import re
@@ -10,6 +10,7 @@ import jwt
 from pydantic import BaseModel, Field
 
 from open_webui.env import WEBUI_SECRET_KEY
+from open_webui.config import BYPASS_ADMIN_ACCESS_CONTROL
 from open_webui.models.groups import Groups
 from open_webui.models.models import Models
 from open_webui.models.access_grants import AccessGrants
@@ -69,6 +70,25 @@ class Tools:
 
     # ── Informational ───────────────────────────────────────────────
 
+    async def _accessible_models(self, user: dict):
+        """List workspace models using OWUI's read-access filter, including every page."""
+        if user["role"] == "admin" and BYPASS_ADMIN_ACCESS_CONTROL:
+            return await Models.get_models()
+
+        groups = await Groups.get_groups_by_member_id(user["id"])
+        access_filter = {"user_id": user["id"]}
+        if groups:
+            access_filter["group_ids"] = [group.id for group in groups]
+
+        models = []
+        while True:
+            page = await Models.search_models(
+                user["id"], filter=access_filter, skip=len(models), limit=100
+            )
+            models.extend(page.items)
+            if len(models) >= page.total or not page.items:
+                return models
+
     async def list_my_groups(self, __user__: dict = {}):
         """
         List all groups the current user belongs to, with descriptions.
@@ -93,7 +113,7 @@ class Tools:
         """
         import json
 
-        accessible = await Models.get_models_by_user_id(__user__["id"], permission="read")
+        accessible = await self._accessible_models(__user__)
         if not accessible:
             return "You don't currently have access to any models."
 
@@ -106,8 +126,12 @@ class Tools:
             grants = await AccessGrants.get_grants_by_resource("model", m.id)
             read_grants = [g for g in grants if g.permission == "read"]
 
-            if any(g.principal_id == "*" for g in read_grants):
+            if any(g.principal_type == "user" and g.principal_id == "*" for g in read_grants):
                 reason = "public"
+            elif m.user_id == __user__["id"]:
+                reason = "owner"
+            elif __user__["role"] == "admin" and BYPASS_ADMIN_ACCESS_CONTROL:
+                reason = "admin"
             else:
                 matched_group = None
                 for g in read_grants:
@@ -137,15 +161,18 @@ class Tools:
         """
         import json
 
-        # Verify the user has access to this model
-        accessible = await Models.get_models_by_user_id(__user__["id"], permission="read")
-        accessible_ids = {m.id for m in accessible}
-        if model_id not in accessible_ids:
-            return f"You don't have access to a model with ID `{model_id}`. Use `list_available_models` to see what's available."
-
         model = await Models.get_model_by_id(model_id)
-        if not model:
-            return f"Model `{model_id}` not found."
+        if not model or model.base_model_id is None or not (
+            (__user__["role"] == "admin" and BYPASS_ADMIN_ACCESS_CONTROL)
+            or model.user_id == __user__["id"]
+            or await AccessGrants.has_access(
+                user_id=__user__["id"],
+                resource_type="model",
+                resource_id=model_id,
+                permission="read",
+            )
+        ):
+            return f"You don't have access to a model with ID `{model_id}`. Use `list_available_models` to see what's available."
 
         data = model.model_dump()
         meta = data.get("meta") or {}

@@ -4,6 +4,7 @@
   "name": "bayleaf-for-faculty",
   "description": "User has the faculty role on this campus, consult this skill for specific instructions for them.",
   "meta": {
+    "i18n": null,
     "tags": []
   },
   "is_active": false,

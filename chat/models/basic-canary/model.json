@@ -13,7 +13,9 @@
   },
   "meta": {
     "profile_image_url": "profile.png",
+    "background_image_url": null,
     "description": "Canary for evaluating candidate base models before a production swap. Currently evaluating glm-5.3-flash. Admin-private.",
+    "i18n": null,
     "capabilities": {
       "file_context": true,
       "vision": true,

@@ -3,6 +3,7 @@
   "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
   "name": "Code Sandbox",
   "meta": {
+    "i18n": null,
     "description": "Coding agent tools (lathe, bash, read, write, edit, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.",
     "manifest": {
       "title": "Lathe",
@@ -326,6 +327,5 @@
         "type": "object"
       }
     }
-  ],
-  "content_length": 231525
+  ]
 }

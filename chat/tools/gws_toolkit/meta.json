@@ -3,6 +3,7 @@
   "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
   "name": "Google Workspace",
   "meta": {
+    "i18n": null,
     "description": "Per-user OAuth2 access to Google Drive (read-only). Self-registers an OAuth callback endpoint.",
     "manifest": {
       "title": "Google Workspace",

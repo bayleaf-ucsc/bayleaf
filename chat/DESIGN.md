@@ -630,6 +630,17 @@ the expected `lathe-0305-ok` output.
 | `help_toolkit` | Help | No grants (model-bound via `toolIds` on `help`) | Group membership listing, model access listing, invite code acceptance/creation. Valve: `INVITE_SIGNING_KEY` (optional, falls back to `WEBUI_SECRET_KEY`). |
 | `gws_toolkit` | Google Workspace | All users (`user:*`) | Per-user, per-chat OAuth2 access to Google Workspace APIs (see below) |
 
+**Model-prompt transparency.** BayLeaf Chat rejects the idea that someone can
+converse with an agent but not know its system prompt. Help's
+`get_model_details` returns the system prompt to anyone with **read access**
+to that workspace model, even though OWUI's ordinary model API strips `params`
+for read-only callers. This is intentional: BayLeaf's model definitions are
+public on GitHub, and Help also makes non-sensitive live configuration
+inspectable. The toolkit must still verify the caller's model read access
+before returning live details; transparency is not permission to reveal
+models the caller cannot access. A Canvas-generated prompt may be absent from
+the static model record because the filter assembles it at request time.
+
 ### 3a. Stealth Toolkit Pattern
 
 Several toolkits are not directly visible to users. Instead, a paired filter
@@ -811,11 +822,13 @@ shorter in long conversations.
 
 ## 5. Skills
 
-Skills are markdown documents surfaced to the LLM as context (Workspace →
-Skills). Access is controlled by `access_grants` — the same mechanism as
-models and tools. BayLeaf uses skills to inject role-specific behavioral
-guidance and platform feature hints, scoped to the OAuth groups that
-correspond to each campus affiliation.
+Skills are markdown documents (Workspace → Skills). In OWUI v0.11.4, the
+model can discover available skills by name and description and load their
+full text when needed, even if the user did not explicitly select a skill.
+Access is controlled by `access_grants` — the same mechanism as models and
+tools; inactive skills are not available for discovery. BayLeaf uses skills
+for platform feature hints and has inactive role-specific guidance scoped to
+OAuth groups corresponding to campus affiliations.
 
 Manage via `owui-cli skills` or the admin API at `/api/v1/skills/`.
 
@@ -835,10 +848,9 @@ Manage via `owui-cli skills` or the admin API at `/api/v1/skills/`.
 The `bayleaf-for-*` skills implement a lightweight skill system: each skill is
 granted `read` access to the OAuth-managed group that corresponds to the
 relevant `eduPerson` affiliation (e.g. `Student@ucsc.edu`,
-`Employee@ucsc.edu`). When a user with that affiliation opens a conversation,
-the OWUI skill engine surfaces the matching skill(s) as additional context for
-the model. This gives the model role-aware behavioral guidance without
-requiring separate models per role.
+`Employee@ucsc.edu`). When active, a skill granted to that affiliation can be
+discovered and loaded by the model without requiring a separate workspace model
+per role.
 
 `bayleaf-for-faculty` currently has no grants (owner-only) — it is visible
 only to admins while its content is being refined.

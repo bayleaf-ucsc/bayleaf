@@ -4,6 +4,7 @@
   "name": "bayleaf-for-employees",
   "description": "User has the employee role on this campus, consult this skill for specific instructions for them.",
   "meta": {
+    "i18n": null,
     "tags": []
   },
   "is_active": false,

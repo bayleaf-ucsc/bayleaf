@@ -3,12 +3,13 @@
   "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
   "name": "Help",
   "meta": {
+    "i18n": null,
     "description": "Help users understand their group memberships, available models, and manage invite codes.",
     "manifest": {
       "title": "Help",
       "author": "Adam Smith",
       "description": "Help users understand their group memberships, available models, and manage invite codes.",
-      "version": "0.3.0"
+      "version": "0.3.1"
     },
     "has_user_valves": false
   },

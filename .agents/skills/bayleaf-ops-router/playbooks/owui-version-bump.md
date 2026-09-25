@@ -70,8 +70,8 @@ revert the image tag. Prod is the staging server; treat it accordingly.
 ## Rollback
 
 Re-edit the image `tag:` in the spec back to the previous version and
-`doctl apps update` again. The repo backup from step 4 provides the model
-configs to restore if step 3's changes misbehave: re-push with
+`doctl apps update` again. The repo backup from step 5 provides the model
+configs to restore if step 4's changes misbehave: re-push with
 `owui-cli models update chat/models/<id>/model.json`.
 
 ## Refinement log
@@ -82,3 +82,9 @@ configs to restore if step 3's changes misbehave: re-push with
   health, migration, harness, and authenticated Basic/Help/Canary curl checks
   passed. Browser automation was explored but not relied on; add it only after
   a dedicated cultivation run.
+- 2026-09-25: v0.11.4 upgrade passed the personal-instance soak gate, reached
+  ACTIVE, and passed health, startup-harness, and authenticated Basic/Help API
+  smokes. Backup pull contained only v0.11.4 schema defaults and pre-existing
+  metadata drift, not changed prompts or grants. Corrected rollback step references;
+  Adam reported the skill system seems okay in the browser. The inactive
+  role-scoped skills were not exercised.

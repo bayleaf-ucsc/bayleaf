@@ -6,7 +6,9 @@
   "params": {},
   "meta": {
     "profile_image_url": "profile.webp",
+    "background_image_url": null,
     "description": null,
+    "i18n": null,
     "capabilities": {
       "file_context": true,
       "vision": true,

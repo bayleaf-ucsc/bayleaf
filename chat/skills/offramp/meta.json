@@ -4,6 +4,7 @@
   "name": "offramp",
   "description": "Consult this skill when the user wants to know how to grow beyond using BayLeaf Chat or is discussing a sensitive subject for which they might benefit from enhanced privacy protections.",
   "meta": {
+    "i18n": null,
     "tags": []
   },
   "is_active": true,

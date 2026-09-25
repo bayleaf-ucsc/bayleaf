@@ -3,6 +3,7 @@
   "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
   "name": "Brace's toolkit",
   "meta": {
+    "i18n": null,
     "description": "Various tools used by the assistive chatbot, Brace.",
     "manifest": {
       "requirements": "jq,google-auth,google-api-python-client,google-auth-oauthlib,google-auth-httplib2"
@@ -81,7 +82,6 @@
             "type": "string"
           },
           "jq_expr": {
-            "default": null,
             "type": "string"
           }
         },
@@ -100,7 +100,6 @@
             "type": "string"
           },
           "jq_expr": {
-            "default": null,
             "type": "string"
           }
         },

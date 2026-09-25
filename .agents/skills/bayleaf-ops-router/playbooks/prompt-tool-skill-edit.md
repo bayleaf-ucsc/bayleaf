@@ -112,3 +112,9 @@ the UI (recover it from git: `git show HEAD:chat/models/<id>/model.json`), or
   `functions deploy` cannot create this ID because the missing-function GET
   returns HTTP 401; a direct create POST worked, then the valve was copied and
   the new filter activated before binding the model.
+- 2026-09-25: Repaired Help's model-inspection tools after a real chat exposed
+  a missing OWUI model-table method, already absent in v0.11.3. Read access
+  checks still precede prompt disclosure: BayLeaf deliberately makes system
+  prompts visible to model readers. Local authorization tests, live source
+  readback, and an authenticated model-list call passed; Adam confirmed the
+  browser replay works correctly.
