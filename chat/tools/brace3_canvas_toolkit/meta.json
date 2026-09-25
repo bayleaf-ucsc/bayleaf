@@ -4,17 +4,27 @@
   "name": "Brace3 Canvas Toolkit",
   "meta": {
     "i18n": null,
-    "description": "Canvas LMS access and date localization tools for Brace3. Bound directly to the course workspace model; its own Canvas token valve supplies API access.",
+    "description": "Course-scoped Canvas LMS access and date localization tools for Brace3. Its own Canvas token valve supplies API access.",
     "manifest": {
       "title": "Brace3 Canvas Toolkit",
       "author": "Adam Smith",
-      "description": "Canvas LMS access and date localization tools for Brace3. Bound directly to the course workspace model; its own Canvas token valve supplies API access.",
-      "version": "1.0.2"
+      "description": "Course-scoped Canvas LMS access and date localization tools for Brace3. Its own Canvas token valve supplies API access.",
+      "version": "1.0.3"
     },
     "has_user_valves": false
   },
-  "access_grants": [],
-  "updated_at": 1778474075,
+  "access_grants": [
+    {
+      "id": "a4c4982a-8a01-4921-bb09-d0f02afb9478",
+      "resource_type": "tool",
+      "resource_id": "brace3_canvas_toolkit",
+      "principal_type": "group",
+      "principal_id": "106b8f25-21df-4d0a-af97-26d18eb5a5cf",
+      "permission": "read",
+      "created_at": 1790360741
+    }
+  ],
+  "updated_at": 1790360821,
   "created_at": 1775169735,
   "user": null,
   "write_access": true,
@@ -40,7 +50,7 @@
     },
     {
       "name": "use_canvas_api",
-      "description": "Make a read-only, paginated request against the UCSC Canvas LMS using\nthe course instructor's credentials.\n\nAccess is limited to a specific allowlist of non-sensitive endpoints.\nCanvas always returns dates in GMT — use localize_iso_date before\npresenting any date or time to a student.\n\nAllowed URL patterns and recommended jq field selectors:\n\nhttps://canvas.ucsc.edu/api/v1/courses/COURSE_ID?include[]=syllabus_body  {syllabus_body}\nhttps://canvas.ucsc.edu/api/v1/courses/COURSE_ID/assignments              .[] | {id, name, due_at}\nhttps://canvas.ucsc.edu/api/v1/courses/COURSE_ID/assignments/ASSIGNMENT_ID {description, submission_types}\nhttps://canvas.ucsc.edu/api/v1/courses/COURSE_ID/quizzes/QUIZ_ID          {title, description}\nhttps://canvas.ucsc.edu/api/v1/courses/COURSE_ID/pages                    .[] | {title, url}\nhttps://canvas.ucsc.edu/api/v1/courses/COURSE_ID/pages/PAGE_URL_OR_SLUG   {body}\n\nWhen listing assignments, always fetch id and name first to disambiguate\nbefore fetching details. Do not mention specific dates unless asked, and\nalways localize them when you do.\n\nIf an API request fails, do NOT guess or invent data. Report the failure\nand try a different approach if possible.",
+      "description": "Make a read-only, paginated request against the UCSC Canvas LMS using\nthe course instructor's credentials.\n\nAccess is limited to non-sensitive endpoints in course 94741.\nCanvas always returns dates in GMT — use localize_iso_date before\npresenting any date or time to a student.\n\nAllowed URL patterns and recommended jq field selectors:\n\nhttps://canvas.ucsc.edu/api/v1/courses/94741?include[]=syllabus_body  {syllabus_body}\nhttps://canvas.ucsc.edu/api/v1/courses/94741/assignments              .[] | {id, name, due_at}\nhttps://canvas.ucsc.edu/api/v1/courses/94741/assignments/ASSIGNMENT_ID {description, submission_types}\nhttps://canvas.ucsc.edu/api/v1/courses/94741/quizzes/QUIZ_ID          {title, description}\nhttps://canvas.ucsc.edu/api/v1/courses/94741/pages                    .[] | {title, url}\nhttps://canvas.ucsc.edu/api/v1/courses/94741/pages/PAGE_URL_OR_SLUG   {body}\n\nWhen listing assignments, always fetch id and name first to disambiguate\nbefore fetching details. Do not mention specific dates unless asked, and\nalways localize them when you do.\n\nIf an API request fails, do NOT guess or invent data. Report the failure\nand try a different approach if possible.",
       "parameters": {
         "properties": {
           "resource_url": {

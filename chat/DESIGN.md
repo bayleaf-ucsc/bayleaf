@@ -362,14 +362,15 @@ would hide the model even from the admin on the completions path).
 |----|------|------------|--------|
 | `brace3-94741` | Brace (CMPM 121, Fall 2026) | `openrouter.z-ai/glm-5.3-flash` | `course:94741` (84 roster students, 2 TAs, instructor; provisioned 2026-09-24) |
 
-The model's `meta.toolIds` directly binds `brace3_canvas_toolkit` (no standalone
-user grant, so students cannot casually toggle it in the tool picker). The
-`brace3_canvas_system_prompt_filter` fetches the course prompt from Canvas; it
-does not inject tools.
+The model's `meta.toolIds` directly binds `brace3_canvas_toolkit`. OWUI 0.11.4
+also requires a **tool read grant** for non-admin execution, so the toolkit has
+a `course:94741` group grant and can appear in those users' tool pickers on
+other models. The `brace3_canvas_system_prompt_filter` fetches the course
+prompt from Canvas; it does not inject tools.
 Both have separate `CANVAS_ACCESS_TOKEN` valves with the same credential for
-this Adam-taught course. The toolkit currently restricts endpoint types but
-**not the course ID** in its URL allowlist: Canvas token permissions remain the
-only cross-course boundary. Scope that boundary and revisit credential
+this Adam-taught course. The toolkit restricts endpoint types and URLs to
+**course 94741**, including pagination links; the group grant must not expose
+Adam's other Canvas courses. Revisit credential
 ownership before onboarding another instructor's course. See the playbook under
 `../.agents/skills/bayleaf-ops-router/playbooks/brace3-course-access.md` for
 the provisioning and verification procedure.
@@ -423,11 +424,11 @@ game-prototyping assistant for CMPM 171. Its full pre-agentic system prompt is
 preserved in [`archive/gambit-system-prompt.md`](archive/gambit-system-prompt.md).
 
 **Earlier Brace3 course models** (removed September 2026) paired a workspace
-model with a filter that force-enabled `brace3_canvas_toolkit` so users
-could not turn off the course toolkit. The Fall 2026 course model retains the
-dynamic prompt filter but binds its required toolkit directly on the model,
-without granting standalone access to the toolkit. This makes the binding
-explicit in the model configuration while preserving the required-tool posture.
+model with a filter that force-enabled `brace3_canvas_toolkit`. The Fall 2026
+course model retains the dynamic prompt filter and binds the toolkit directly.
+OWUI 0.11.4 still checks tool-level access on dispatch: the toolkit needs a
+course group grant, so students can also select it on other models. Its
+course-specific URL allowlist limits what that choice can read.
 
 **Fall 2026 Canvas submission Action.** `brace3-94741` binds
 `brace3_submit_action` via `meta.actionIds`. It is active and non-global; the
@@ -648,7 +649,7 @@ the expected `lathe-0305-ok` output.
 
 | ID | Name | Access | Injected by | Description |
 |----|------|--------|-------------|-------------|
-| `brace3_canvas_toolkit` | Brace3 Canvas | No standalone grants (model-bound) | `brace3-94741` via `meta.toolIds` | Canvas LMS read access + date localization for Brace v3. Own `CANVAS_ACCESS_TOKEN` valve. |
+| `brace3_canvas_toolkit` | Brace3 Canvas | `course:94741` group read grant | `brace3-94741` via `meta.toolIds` | Course-94741-only Canvas read access + date localization for Brace v3. Own `CANVAS_ACCESS_TOKEN` valve. |
 | `brace_toolkit` | Brace | No grants (stealth) | `brace_filter` | Canvas API, GitHub API, Google Drive used by Brace v2 (valve: multiple keys). |
 
 ### Other Restricted Tools
@@ -705,8 +706,9 @@ accidentally enable or disable them via the chat composer's tool picker.
 (`help_filter` was a former instance; it was retired in June 2026 because the
 Help model needs no filter-time setup. Brace3 still needs a filter for its
 Canvas-sourced system prompt, but no longer uses it for toolkit injection.
-Both models bind their toolkits via `toolIds`: explicit in the model config and
-still absent from the tool picker when the toolkit has no access grants.)
+Both models bind their toolkits via `toolIds`. Unlike Help's admin-only toolkit,
+Brace3 needs a course-group tool grant for non-admin users. On OWUI 0.11.4,
+model binding does not bypass `get_tools()`'s access check.)
 
 **When to use this pattern:**
 
@@ -910,7 +912,7 @@ To reconstruct BayLeaf Chat from this backup:
    UI (Workspace → Tools), paste the source from `tool.py`, and configure the
    access grants and valves per `meta.json`.
 
-   `brace3_canvas_toolkit` has no standalone grants. Configure its own
+   `brace3_canvas_toolkit` has a course-group read grant. Configure its own
    `CANVAS_ACCESS_TOKEN` valve for tool-time Canvas reads; do not rely on the
    filter's separate prompt-fetch token valve.
 

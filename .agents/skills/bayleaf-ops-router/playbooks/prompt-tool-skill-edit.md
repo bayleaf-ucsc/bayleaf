@@ -118,3 +118,9 @@ the UI (recover it from git: `git show HEAD:chat/models/<id>/model.json`), or
   prompts visible to model readers. Local authorization tests, live source
   readback, and an authenticated model-list call passed; Adam confirmed the
   browser replay works correctly.
+- 2026-09-25: A student-shared Brace3 chat revealed that model-bound tools
+  without tool-level grants are silently skipped for non-admin users in OWUI
+  0.11.4. Course-scoped the Canvas tool (including pagination), deployed the
+  new source, synchronized its live description separately, and added a course
+  group tool grant without disturbing its valve. A non-admin chat playtest is
+  still needed; model binding alone is not proof of tool availability.

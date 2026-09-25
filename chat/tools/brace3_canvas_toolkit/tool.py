@@ -1,8 +1,8 @@
 """
 title: Brace3 Canvas Toolkit
 author: Adam Smith
-description: Canvas LMS access and date localization tools for Brace3. Bound directly to the course workspace model; its own Canvas token valve supplies API access.
-version: 1.0.2
+description: Course-scoped Canvas LMS access and date localization tools for Brace3. Its own Canvas token valve supplies API access.
+version: 1.0.3
 """
 
 import re
@@ -11,17 +11,18 @@ import jq
 from datetime import datetime
 from pydantic import BaseModel, Field
 from zoneinfo import ZoneInfo
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
 CANVAS_BASE_URL = "https://canvas.ucsc.edu"
+COURSE_ID = 94741
 
 CANVAS_ALLOWED_PATTERNS = [
-    re.compile(r"^/api/v1/courses/[\d]+(\?include\[]=syllabus_body)?$"),
-    re.compile(r"^/api/v1/courses/[\d]+/assignments$"),
-    re.compile(r"^/api/v1/courses/[\d]+/assignments/[\d]+$"),
-    re.compile(r"^/api/v1/courses/[\d]+/quizzes/[\d]+$"),
-    re.compile(r"^/api/v1/courses/[\d]+/pages$"),
-    re.compile(r"^/api/v1/courses/[\d]+/pages/[\d\w%-]+$"),
+    re.compile(rf"^/api/v1/courses/{COURSE_ID}$"),
+    re.compile(rf"^/api/v1/courses/{COURSE_ID}/assignments$"),
+    re.compile(rf"^/api/v1/courses/{COURSE_ID}/assignments/[\d]+$"),
+    re.compile(rf"^/api/v1/courses/{COURSE_ID}/quizzes/[\d]+$"),
+    re.compile(rf"^/api/v1/courses/{COURSE_ID}/pages$"),
+    re.compile(rf"^/api/v1/courses/{COURSE_ID}/pages/[\d\w-]+$"),
 ]
 
 
@@ -29,9 +30,18 @@ def _is_allowed_canvas_url(url: str) -> bool:
     try:
         parsed = urlparse(url)
         expected = urlparse(CANVAS_BASE_URL)
-        if parsed.scheme != expected.scheme or parsed.netloc != expected.netloc:
+        if (parsed.scheme != expected.scheme or parsed.netloc != expected.netloc
+                or parsed.fragment or parsed.username or parsed.password):
             return False
-        return any(pattern.match(parsed.path) for pattern in CANVAS_ALLOWED_PATTERNS)
+        if not any(pattern.fullmatch(parsed.path) for pattern in CANVAS_ALLOWED_PATTERNS):
+            return False
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True, strict_parsing=True):
+            if key == "include[]" and value == "syllabus_body" and parsed.path == f"/api/v1/courses/{COURSE_ID}":
+                continue
+            if key in ("page", "per_page") and value.isdecimal() and int(value) > 0:
+                continue
+            return False
+        return True
     except Exception:
         return False
 
@@ -62,18 +72,18 @@ class Tools:
         Make a read-only, paginated request against the UCSC Canvas LMS using
         the course instructor's credentials.
 
-        Access is limited to a specific allowlist of non-sensitive endpoints.
+        Access is limited to non-sensitive endpoints in course 94741.
         Canvas always returns dates in GMT — use localize_iso_date before
         presenting any date or time to a student.
 
         Allowed URL patterns and recommended jq field selectors:
 
-        https://canvas.ucsc.edu/api/v1/courses/COURSE_ID?include[]=syllabus_body  {syllabus_body}
-        https://canvas.ucsc.edu/api/v1/courses/COURSE_ID/assignments              .[] | {id, name, due_at}
-        https://canvas.ucsc.edu/api/v1/courses/COURSE_ID/assignments/ASSIGNMENT_ID {description, submission_types}
-        https://canvas.ucsc.edu/api/v1/courses/COURSE_ID/quizzes/QUIZ_ID          {title, description}
-        https://canvas.ucsc.edu/api/v1/courses/COURSE_ID/pages                    .[] | {title, url}
-        https://canvas.ucsc.edu/api/v1/courses/COURSE_ID/pages/PAGE_URL_OR_SLUG   {body}
+        https://canvas.ucsc.edu/api/v1/courses/94741?include[]=syllabus_body  {syllabus_body}
+        https://canvas.ucsc.edu/api/v1/courses/94741/assignments              .[] | {id, name, due_at}
+        https://canvas.ucsc.edu/api/v1/courses/94741/assignments/ASSIGNMENT_ID {description, submission_types}
+        https://canvas.ucsc.edu/api/v1/courses/94741/quizzes/QUIZ_ID          {title, description}
+        https://canvas.ucsc.edu/api/v1/courses/94741/pages                    .[] | {title, url}
+        https://canvas.ucsc.edu/api/v1/courses/94741/pages/PAGE_URL_OR_SLUG   {body}
 
         When listing assignments, always fetch id and name first to disambiguate
         before fetching details. Do not mention specific dates unless asked, and
@@ -99,7 +109,9 @@ class Tools:
 
         async with aiohttp.ClientSession() as session:
             while url:
-                async with session.get(url, headers=headers) as response:
+                if not _is_allowed_canvas_url(url):
+                    return {"failure": "Canvas pagination URL left the allowed course endpoints."}
+                async with session.get(url, headers=headers, allow_redirects=False) as response:
                     if response.status != 200:
                         return {
                             "error": True,

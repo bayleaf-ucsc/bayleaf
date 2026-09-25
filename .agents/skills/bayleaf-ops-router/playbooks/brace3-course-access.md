@@ -25,8 +25,9 @@ Read `chat/AGENTS.md` and `chat/DESIGN.md` §§1a–1b and 2 first. Use
    arrangement and who controls the course-specific prompt before exposing the
    model. The filter and toolkit currently use separate copies of Adam's Canvas
    token; do not assume either should read another instructor's course. The
-   toolkit's URL allowlist does not check course ID, so Canvas token permissions
-   are currently the only cross-course boundary.
+   Fall 2026 toolkit is pinned to course 94741 in code; a new course needs its
+   own course-scoped boundary and credential ownership review before granting
+   access. Do not reuse that toolkit's instructor token across courses.
 2. Accept a roster of student UCSC email addresses, optionally with names.
    Ask separately about TAs, other staff, and the instructor: a student-only
    Canvas export omits them. Keep roster files outside this public repository;
@@ -49,8 +50,10 @@ Read `chat/AGENTS.md` and `chat/DESIGN.md` §§1a–1b and 2 first. Use
    use the authenticated `GET /api/v1/users/all` for an exact-email census,
    or page explicitly. Report **aggregate** existing/new counts to the
    instructor. Check that the model is active, binds `brace3_canvas_toolkit`
-   through `meta.toolIds`, has `brace3_canvas_system_prompt_filter` attached, and its underlying
-   model is readable by the intended audience. Confirm both Canvas token
+   through `meta.toolIds`, has `brace3_canvas_system_prompt_filter` attached,
+   and its underlying model is readable by the intended audience. Check the
+   toolkit's own course-group read grant: model binding alone does not pass
+   OWUI 0.11.4's `get_tools()` access check. Confirm both Canvas token
    valves are configured without displaying them. Do not overwrite other grants.
 2. Create or reuse `course:<id>` using `uvx owui-cli groups create`. The
    `course:*` namespace is protected from OAuth group reconciliation by
@@ -77,13 +80,19 @@ Read `chat/AGENTS.md` and `chat/DESIGN.md` §§1a–1b and 2 first. Use
    and then re-read to verify. This access-only endpoint avoids overwriting
    the model configuration or its inlined profile image. It is also safe to
    grant before adding members, provided the final checks cover both.
+6. Grant the same group **tool read** access on a toolkit scoped to this
+   course. `POST /api/v1/tools/id/<tool-id>/access/update` replaces all grants:
+   preserve existing grants, append the group grant, then read back. This
+   makes the toolkit selectable on other models, so first restrict its URL
+   and pagination allowlist to this course and exclude sensitive routes and
+   redirects. Never grant access to an unscoped instructor credential.
 
 ## Verification and handoff
 
 - Compare the roster's unique emails to `GET /api/v1/users/all` and the group's
   exported `user_ids`; verify every intended person is a member. Check the
-  model is active, has the group read grant, and that the underlying base-model
-  chain permits non-admin inference. Seeing a model in a picker is not enough
+  model is active, both model and toolkit have group read grants, and the
+  underlying base-model chain permits non-admin inference. Seeing a model in a picker is not enough
   to prove inference works on OWUI 0.11.3.
 - **[HUMAN GATE]** Have an authorized non-admin course member sign in via
   CILogon and make a fresh-chat request. Verify Brace loads its course prompt
@@ -132,3 +141,9 @@ user's explicit approval.
   `owui-cli functions deploy` failed on the new ID because OWUI returns 401,
   not 404, for an absent function. Use `POST /api/v1/functions/create`, copy the
   valve, activate, rebind and verify every model, then delete the old ID.
+- 2026-09-25: A student-shared chat showed Brace using public web search, then
+  asking for assignment text. OWUI 0.11.4's `get_tools()` dropped the bound
+  Canvas toolkit because it had no tool grant. Scoped its URLs and pagination
+  to course 94741, deployed the fix, then granted `course:94741` tool read
+  access. The grant exposes the toolkit in course members' tool pickers on
+  other models. Non-admin end-to-end playtest remains a human gate.
