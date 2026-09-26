@@ -39,6 +39,13 @@ default context points at the personal `Just Adam` team.
 | **Instance** | `apps-s-1vcpu-2gb` (1 instance) |
 | **HTTP port** | `8080` |
 
+**Image choice.** Use version-specific standard-image tags (currently
+`v0.11.4`), not rolling `main` or `slim`. BayLeaf stores uploads in DO Spaces
+via OWUI's S3 provider (§1, Object Storage); [OWUI's slim image](https://docs.openwebui.com/getting-started/quick-start/#what-slim-leaves-out)
+omits S3 support and refuses to start with S3 storage configured. Moving to a
+version-pinned `vX.Y.Z-slim` tag would require changing the storage architecture
+or maintaining a custom image, not just changing the tag.
+
 ### Domain & Ingress
 
 | Rule | Target |
