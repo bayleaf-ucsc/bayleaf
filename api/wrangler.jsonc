@@ -182,7 +182,7 @@
     // uses the shared CAMPUS_RPD_LIMIT instead. Tinfoil credentials themselves
     // are unlimited because provider max_tokens is a lifetime ceiling rather
     // than a resetting budget; BayLeaf owns the daily policy at the API layer.
-    "SEALED_RPD_LIMIT": "100",
+    "SEALED_RPD_LIMIT": "500",
 
 
     "SPENDING_LIMIT_DOLLARS": "5.0",

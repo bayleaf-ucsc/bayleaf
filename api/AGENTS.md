@@ -298,8 +298,14 @@ if Tinfoil adds a proprietary model, policy must be revisited before exposing it
 
 **Status: enabled in production.** The relay and attestation-mutation harnesses
 pass against `api.bayleaf.dev`, including per-user Tinfoil key minting. Keyed
-users and Campus Pass are each limited to 100 Sealed requests per day by default.
+users are limited to 500 Sealed requests per day by default. Campus Pass retains
+its shared 100 inference requests per day per IP bucket, including Sealed.
 Tinfoil credentials have no provider-side lifetime token cap.
+
+The keyed limit was raised from 100 to 500 on 2026-09-29 after a representative
+GLM-5.3 agentic task used 91 requests and cost $1.88. At that observed average,
+500 requests would cost about $10.33, not the standard lane's $5 daily budget.
+This is deliberate agentic-task headroom, not dollar-denominated enforcement. ✨
 
 **Testing the lane requires keyed auth off-campus.** `scripts/harness-sealed.py`
 honours `SEALED_AUTH`, defaulting to `campus`. Campus Pass only resolves from a
