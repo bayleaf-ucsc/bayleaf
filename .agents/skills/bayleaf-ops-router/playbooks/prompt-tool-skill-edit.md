@@ -2,7 +2,7 @@
 source-skill: bayleaf-ops-router
 description: Edit an OWUI model prompt, tool/function, or skill, iterate in production, playtest, then record in git.
 status: rough
-last-reviewed: 2026-09-16
+last-reviewed: 2026-09-28
 ---
 
 # Prompt / Tool / Skill Edit
@@ -16,9 +16,37 @@ whole-model swaps (`model-swap.md`) or OWUI bumps.
 
 ## The three edit loops
 
-**System prompts** iterate in the OWUI admin UI (Workspace → Models): that is
-their native surface, quick iteration is the point, and the OWUI UI is where
-the user can playtest in the same breath. Changes land in prod immediately.
+**System prompts** have two loops. For human-led iteration, use the OWUI admin
+UI (Workspace → Models): it is the native surface, and the user can playtest
+there in the same breath. Changes land in prod immediately. For agent-driven,
+reviewable edits to a repo-backed prompt, use the repo-first loop below, then
+`owui-cli models update` and live readback. Do not treat readback as a playtest.
+
+### Agent-driven system prompt edits (repo-first)
+
+1. Read the model JSON in `chat/models/<id>/model.json` and the live model with
+   `owui-cli --json models show <id>`. Confirm `params.system` matches, and check
+   other substantive fields for drift before pushing the whole model. If there
+   is drift, stop and reconcile or ask which version to preserve; do not let a
+   prompt edit overwrite unrelated production changes. Ignore rotating grant
+   IDs and timestamps, and account for the sibling image convention in
+   `chat/AGENTS.md`.
+2. Extract `params.system` to a **temporary plain-text file**. Edit that file
+   with a narrow patch, not by copying or retyping the entire JSON string line.
+   Keep a snapshot or digest of the original model JSON so a concurrent edit can
+   be detected before reinsertion. For a prompt version header, bump it deliberately.
+3. Reinsert with a JSON-aware script: re-read the model JSON, assert it still
+   equals that snapshot, replace only `params.system` with the edited text, and
+   serialize in the repo's existing format (two-space indent, UTF-8,
+   `ensure_ascii=False`, trailing newline). Do not include inline
+   `data:image` content or copy live timestamps/grants into the repo. Validate
+   the JSON and compare parsed before/after objects with `params.system` removed:
+   they must be identical. Review a **line-level diff of the decoded prompts**,
+   not just git's one-line JSON-string diff, before deployment.
+4. Push with `owui-cli models update chat/models/<id>/model.json`, then read
+   back the live model. Confirm the live `params.system` equals the reviewed
+   repo prompt and verify the avatar is retained. Continue with the human
+   playtest and reconciliation steps below.
 
 **Tool/function source** follows the `chat/AGENTS.md` Don't: never edit
 source in the OWUI admin UI. Edit `chat/tools/<id>/tool.py` or
@@ -50,25 +78,35 @@ live fields. Always verify with `owui-cli skills pull <id>`.
    and what the model actually does are different things; only playtesting
    reveals the difference.
 3. Pull the result back per `backup-reconcile.md` (for UI-edited prompts this
-   is the only way the change reaches git). Diff, triage, confirm the change
-   is what was intended.
+   is the only way the change reaches git). For repo-first prompts, compare the
+   live readback and pulled backup with the reviewed repo file. Diff, triage,
+   and confirm the change is what was intended.
 4. Record: `update: <what> for <model|tool|skill>`.
 
 ## Verification
 
 - Playtest (manual, above).
-- Backup pull shows the intended diff and nothing else.
+- For repo-first prompts: only the intended decoded-prompt lines changed;
+  other parsed model fields are untouched, and live readback matches.
+- Backup pull shows the intended diff and nothing else. A live readback alone
+  does not complete the backup-reconcile step.
 
 ## Rollback
 
-For repo-deployed tools or skills, restore the prior repo content and redeploy;
-for a skill metadata rollback, also synchronize the prior description through
-the update endpoint. For UI-edited prompts, paste the previous prompt back in
+For repo-deployed prompts, tools, or skills, restore the prior repo content and
+redeploy; for a skill metadata rollback, also synchronize the prior description
+through the update endpoint. For UI-edited prompts, paste the previous prompt back in
 the UI (recover it from git: `git show HEAD:chat/models/<id>/model.json`), or
 `uvx owui-cli models update` the checked-out file.
 
 ## Refinement log
 
+- 2026-09-28: Follow-up on the Basic Canvas-link edit: retyping the entire
+  JSON-encoded prompt line to add one sentence was error-prone and unreadable
+  in review. Agent-driven prompt edits should extract text, patch the text,
+  reinsert with a checked JSON transform, and review the decoded prompt diff.
+  Live readback in that run did not replace the pending human playtest or full
+  backup pull; this playbook now makes those boundaries explicit.
 - 2026-09-28: Basic's live prompt matched the repo before a narrow Canvas-link
   handoff edit, so a reviewed `models update` avoided browser UI friction. Live
   readback confirmed the new prompt and retained avatar; human conversation
