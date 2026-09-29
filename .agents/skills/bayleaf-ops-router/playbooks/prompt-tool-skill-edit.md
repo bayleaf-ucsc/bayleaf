@@ -69,6 +69,11 @@ the UI (recover it from git: `git show HEAD:chat/models/<id>/model.json`), or
 
 ## Refinement log
 
+- 2026-09-28: Basic's live prompt matched the repo before a narrow Canvas-link
+  handoff edit, so a reviewed `models update` avoided browser UI friction. Live
+  readback confirmed the new prompt and retained avatar; human conversation
+  playtest is still pending. Basic Canary's prompt now lags Basic, so DESIGN.md
+  no longer claims an exact clone between evaluation cycles.
 - 2026-08-25: drafted from issue #65 + chat/AGENTS.md; reconciles the AGENTS.md
   "don't edit in admin UI" rule (tools/functions) with the issue's "edit
   directly on OWUI for quick iteration" (prompts).

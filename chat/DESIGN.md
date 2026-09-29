@@ -328,7 +328,7 @@ is defined in `models/<id>/model.json`.
 
 | ID | Name | Base Model | Description |
 |----|------|-----------|-------------|
-| `basic` | Basic | `openrouter.z-ai/glm-5.3-flash` | Default model for all users. Campus-aware system prompt (`Basic v1.2`), builtin tools enabled, skills for Google Workspace, Canvas, web search, and code sandbox. Vision enabled (glm-5.3-flash is vision-capable); `reasoning_effort: low`. |
+| `basic` | Basic | `openrouter.z-ai/glm-5.3-flash` | Default model for all users. Campus-aware system prompt (`Basic v1.4`), builtin tools enabled, skills for Google Workspace, Canvas, web search, and code sandbox. Vision enabled (glm-5.3-flash is vision-capable); `reasoning_effort: low`. |
 | `help` | Help | `openrouter.z-ai/glm-5.3-flash` | BayLeaf help desk. Lists user groups and available models, inspects model configurations, processes invite codes. Binds `help_toolkit` and `web_context_toolkit` directly via the model's `toolIds`. System prompt (`Help v1.5`). `reasoning_effort: low`; vision on (glm-5.3-flash is vision-capable). |
 
 ### Underlying Model Access (OWUI 0.11.3) ✨
@@ -361,7 +361,7 @@ would hide the model even from the admin on the completions path).
 
 | ID | Name | Base Model | Purpose |
 |----|------|-----------|---------|
-| `basic-canary` | Basic Canary | `openrouter.z-ai/glm-5.3-flash` | Clone of `basic` used to evaluate glm-5.3-flash before the 2026-09-01 production swap (ZDR ✓ via 18 OpenRouter endpoints, several US-based). Currently matches production; retarget per evaluation cycle. |
+| `basic-canary` | Basic Canary | `openrouter.z-ai/glm-5.3-flash` | Clone of `basic` used to evaluate glm-5.3-flash before the 2026-09-01 production swap (ZDR ✓ via 18 OpenRouter endpoints, several US-based). Its prompt may lag Basic between evaluations; retarget per evaluation cycle. |
 
 ### Group-Restricted Models
 
@@ -391,10 +391,12 @@ Their configurations are preserved in `models/` for reference.
 
 ### Model Configuration Details
 
-**Basic** — The default landing model. System prompt (`Basic v1.2`) orients the
+**Basic** — The default landing model. System prompt (`Basic v1.4`) orients the
 model as a sub-trillion-parameter open-weight campus assistant, encourages
 concise replies, warns about turn-depth limits, and suggests users start fresh
-conversations rather than extending long ones. Uses `function_calling: native`.
+conversations rather than extending long ones. It flags when an opening Canvas
+assignment link might mean the user intended a course-specific agent and directs
+them to their instructor for access instructions. Uses `function_calling: native`.
 Builtin tools enabled (time, memory, chats, notes, knowledge, channels). Skills
 bound: `google-workspace`, `bayleaf-for-students`, `bayleaf-for-faculty`,
 `bayleaf-for-employees`, `canvas-api`, `web-search`, `code-sandbox`,
@@ -402,12 +404,12 @@ bound: `google-workspace`, `bayleaf-for-students`, `bayleaf-for-faculty`,
 enabled. `reasoning_effort: low` (the flash model is always-on reasoning, so
 `low` is the responsiveness-prioritizing setting).
 
-**Basic Canary** — Canary clone of `basic` (see Canary Models above): identical
-system prompt, skills, filters, and capabilities. It carried the glm-5.3-flash
-canary evaluation (vision on, `reasoning_effort: low`) that passed on
-2026-09-01 and now matches production `basic` exactly; retarget it to the next
-candidate during the next model-swap evaluation. Private to admins; delete or
-retarget it after each evaluation cycle rather than exposing it.
+**Basic Canary** — Canary clone of `basic` (see Canary Models above): its
+system prompt can lag production between evaluations; skills, filters, and
+capabilities remain aligned. It carried the glm-5.3-flash canary evaluation
+(vision on, `reasoning_effort: low`) that passed on 2026-09-01; retarget it to
+the next candidate during the next model-swap evaluation. Private to admins;
+delete or retarget it after each evaluation cycle rather than exposing it.
 
 **Help** — Capabilities match the flash base model's offering (vision and file
 upload enabled; no code interpreter, usage display enabled). Vision was
