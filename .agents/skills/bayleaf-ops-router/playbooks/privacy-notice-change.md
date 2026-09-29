@@ -75,6 +75,11 @@ this is why step 3's approval gate precedes both publishing and notifying.
 
 ## Refinement log
 
+- 2026-09-29: Drafted opt-in disposable-grant metadata retention alongside a
+  disabled local implementation. No new processor or inference-content storage;
+  existing data handling is unchanged until rollout. No publication or notices
+  were sent during implementation.
+
 - 2026-08-25: drafted from issue #65; the notification mechanics (exact
   queries for active users) are untested sketches.
 - 2026-09-03: a terminology revision also corrected documentation of existing

@@ -23,6 +23,7 @@ import type { Context } from 'hono';
 import type { AppEnv, UserKeyRow } from '../types';
 import { BAYLEAF_TOKEN_PREFIX } from '../constants';
 import { getAuthIP, isCampusPassEligible } from './ip';
+import { GRANT_PREFIX, guardGrant } from '../grants';
 
 export interface AuthResult {
   isCampusMode: boolean;
@@ -46,6 +47,15 @@ export async function resolveAuth(
   const authHeader = c.req.header('Authorization');
   const providedKey = authHeader?.replace(/^Bearer\s+/i, '').trim();
   const clientIp = getAuthIP(c.req.raw, c.env);
+
+  if (providedKey?.startsWith(GRANT_PREFIX)) {
+    if (!c.get('grantOwner')) {
+      const rejection = await guardGrant(c, providedKey);
+      if (rejection) return rejection;
+    }
+    const row = c.get('grantOwner')!;
+    return { isCampusMode: false, userEmail: row.email, userKeyRow: row, clientIp };
+  }
 
   // If no key, empty key, or "campus" token, check for campus access
   if (!providedKey || providedKey === '' || providedKey.toLowerCase() === 'campus') {

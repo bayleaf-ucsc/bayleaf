@@ -13,7 +13,7 @@ import { z } from '@hono/zod-openapi';
 export const ApiErrorSchema = z.object({
   error: z.object({
     message: z.string(),
-    code: z.number().int(),
+    code: z.union([z.number().int(), z.string()]),
   }),
 }).openapi('ApiError');
 
@@ -301,3 +301,34 @@ export const SandboxExposeRequestSchema = z.object({
 export const SandboxExposeSlotSchema = z.object({
   slot: z.string().regex(/^[3-9][0-9]{3}$/),
 }).openapi('SandboxExposeSlot');
+// Temporary inference grants: seconds are positive; administrator policy sets
+// the ceiling at runtime so clients receive the current maximum on rejection.
+export const GrantRequestSchema = z.object({
+  model: z.string().min(1).max(200),
+  expires_in: z.number().int().positive(),
+}).strict().openapi('GrantRequest');
+export const GrantTokenSchema = z.object({
+  grant_id: z.string(), name: z.string(), key: z.string(), access_token: z.string(),
+  token_type: z.literal('Bearer'), model: z.string(),
+  expires_at: z.number().int(), expires_in: z.number().int(), base_url: z.string(),
+}).openapi('GrantToken');
+export const GrantErrorSchema = z.object({ error: z.object({ code: z.string(), message: z.string() }) }).openapi('GrantError');
+export const ClientDescriptorRequestSchema = z.object({
+  client_name: z.string().trim().min(1).max(80),
+  redirect_uri: z.string().min(1).max(2048),
+}).strict().openapi('ClientDescriptorRequest');
+export const ClientDescriptorSchema = z.object({ client_id: z.string(), expires_at: z.number().int() }).openapi('ClientDescriptor');
+export const GrantExchangeSchema = z.object({
+  grant_type: z.literal('authorization_code'), code: z.string().min(1).max(128),
+  client_id: z.string().min(1).max(8192), redirect_uri: z.string().min(1).max(2048),
+  code_verifier: z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/),
+}).strict().openapi('GrantExchange');
+export const GrantListSchema = z.object({ grants: z.array(z.object({
+  id: z.string(), name: z.string().nullable(), model: z.string(), expires_at: z.number().int(), created_at: z.number().int(),
+  client_name: z.string().nullable(), redirect_uri: z.string().nullable(),
+})) }).openapi('GrantList');
+
+export const GrantModelsSchema = z.object({
+  models: z.array(z.object({ id: z.string(), name: z.string() })),
+  backends: z.array(z.object({ id: z.string(), label: z.string(), enabled: z.boolean(), available: z.boolean() })),
+}).openapi('GrantModels');

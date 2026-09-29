@@ -54,6 +54,39 @@ traffic without changing the Worker.
 
 ## Refinement log
 
+- 2026-09-29 (standard-backend grants): Separated BayLeaf token authority from
+  OpenRouter-specific eligibility. Full catalog discovery preserves prefixes,
+  and synthetic enabled-backend tests cover Vertex/Bedrock routing, disabled
+  flags, and shared atomic per-user limits. No provider was enabled in production.
+  The alternate counters previously used read/check/update and could exceed their
+  cap under concurrent calls; conditional SQL now consumes the final slot once.
+
+- 2026-09-29 (named-token rollout): Applied additive migration 0012, deployed
+  the integrated dashboard card and curated dropdown, and verified live named
+  token creation/revocation. Existing unnamed credentials remain compatible.
+  llms.txt reorganization remains explicitly deferred at Adam's request.
+
+- 2026-09-29 (named-token follow-up): User-facing terminology is “temporary
+  inference token”; “grant” remains the permission/protocol term. Moved management
+  into a standalone main-dashboard card, carrying over no-store/framing headers.
+  Public recognition names need per-owner uniqueness only; signatures bind names
+  to credentials, and expiry cleanup releases names without a history ledger.
+  Chromium verified clipboard copy and no credential in DOM; the embedded preview
+  denied clipboard permission and exercised the safe error path. Placement and
+  the corresponding llms.txt reorganization remain subject to Adam's feedback.
+
+- 2026-09-29 (rollout): At Adam's request, applied migration 0011 and deployed
+  the grant facet. `cf` verified the BayLeaf account; the existing Wrangler
+  build/deploy workflow handled migration and upload. Live descriptor validation
+  and dashboard create/revoke passed using the existing browser login. Fresh
+  CILogon and real disposable-token inference remain unqualified.
+
+- 2026-09-29: Disposable inference grants (#76) were implemented and tested
+  locally behind a disabled flag. Signed client descriptors avoid a permanent
+  app registry; ephemeral grant/transaction tables still require a retention
+  disclosure. Browser form testing caught Referrer-Policy suppressing Origin,
+  which synthetic HTTP checks alone did not exercise. Live rollout remains gated.
+
 - 2026-09-20: Preview hostnames became `{cruzid}-{access}-{nonce}` after
   production use showed that ownership and the agent-selected access policy
   must remain legible when a URL leaves its initiating conversation. The nonce

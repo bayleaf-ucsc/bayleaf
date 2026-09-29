@@ -18,7 +18,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import type { AppEnv } from '../types';
 import { getModelInfo } from '../openrouter';
 import type { ModelCost, ModelCostRaw } from '../openrouter';
-import { parseModelList } from '../constants';
+import { parseModelList, ALT_BACKENDS, isBackendEnabled } from '../constants';
 
 export const llmsRoutes = new OpenAPIHono<AppEnv>();
 
@@ -40,6 +40,8 @@ llmsRoutes.get('/llms.txt', async (c) => {
     sealedModel,
     sealedCuratedModels,
     gwsEnabled,
+    grantsEnabled: c.env.GRANTS_ENABLED === 'true',
+    standardBackends: ALT_BACKENDS.map(b => ({ prefix: b.prefix, label: b.label, enabled: isBackendEnabled(c.env, b.key) })),
   });
   return c.text(body, 200, { 'Content-Type': 'text/markdown; charset=utf-8' });
 });
@@ -55,6 +57,8 @@ interface LlmsTxtInput {
   sealedModel: string;
   sealedCuratedModels: string[];
   gwsEnabled: boolean;
+  grantsEnabled: boolean;
+  standardBackends: { prefix: string; label: string; enabled: boolean }[];
 }
 
 function buildLlmsTxt(input: LlmsTxtInput): string {
@@ -73,16 +77,26 @@ function buildLlmsTxt(input: LlmsTxtInput): string {
 > A separate Sealed path provides hardware-attested, application-layer encrypted inference
 > through Tinfoil, where BayLeaf carries ciphertext but lacks the key required to read it.
 > Personal API keys (${bt}sk-bayleaf-...${bt}) are issued at https://api.bayleaf.dev/; on the
-> UCSC campus network, no key is needed. Conversations are private and never used for training.
+> UCSC campus network, supported routes also offer keyless Campus Pass access.
+> BayLeaf API retains no prompt or completion content; inference providers do not train on it.
 
-This document is intended for a one-time read: by you, when you are setting up a coding
-agent against BayLeaf, or by an LLM helping you do so. **Once your agent is configured,
-neither you nor it should need to load this file again.** Calls into BayLeaf are just
-calls into an OpenAI-compatible endpoint; the agent doesn't need to know it's BayLeaf.
+Read this when connecting a coding agent or building an app that uses BayLeaf.
+It is an integration reference, not context to reload on every inference request.
 
 The ${bt}/v1/*${bt} surface is best understood through the OpenAPI spec at
 https://api.bayleaf.dev/docs/openapi.json (or the interactive viewer at
 https://api.bayleaf.dev/docs).
+
+Choose the access you need:
+
+- [Connect a coding agent](#quick-start-connect-a-coding-agent): use your ordinary
+  API key for model discovery, inference, and the other supported services.
+- [API keys and Campus Pass](#api-keys-and-campus-pass): account access and allowances.
+- [Temporary inference tokens](#temporary-inference-tokens): give a script or app
+  one-model, expiring access, or let each visitor authorize their own allowance.
+- [Standard LLM inference](#standard-llm-inference): the full model catalog and
+  backend-qualified model IDs, distinct from curated onboarding recommendations.
+${sealedEnabled ? '- [Sealed LLM inference](#sealed-llm-inference): a separate encrypted path requiring\n  an attestation-capable client and an ordinary API key or Campus Pass.' : ''}
 
 ---
 
@@ -439,6 +453,10 @@ it from the dashboard, paste it into a terminal, or store it in a config file.
 The OpenCode integration above uses this internally; any other agent (Goose, pi,
 custom MCP servers, etc.) can do the same thing.
 
+This hands over the ordinary account API key. For an app that only needs temporary
+inference, use the [temporary-token authorization flow](#temporary-inference-tokens)
+instead; the two handoffs grant different authority.
+
 The flow uses two codes (modeled on RFC 8628 OAuth device authorization grant):
 
 - **${bt}user_code${bt}** (e.g. ${bt}5JMY-C2V6${bt}): short, human-readable, shown
@@ -511,21 +529,163 @@ recognize what they're authorizing. Use a distinctive name for your tool.
 - **Available models:** https://api.bayleaf.dev/v1/models
 - **Recommended model (current default):** https://api.bayleaf.dev/recommended-model
 
-### Authentication
+### API keys and Campus Pass
 
-All machine-facing endpoints accept ${bt}Authorization: Bearer <key>${bt}.
+Protected endpoints use ${bt}Authorization: Bearer <credential>${bt}. Credentials
+are not interchangeable; eligible Campus Pass requests omit the header:
 
 | Method | When to use |
 |--------|-------------|
-| **BayLeaf key** (${bt}sk-bayleaf-...${bt}) | Required for sandbox execution and file access, and for off-campus API use. Provision free at https://api.bayleaf.dev/. |
+| **Ordinary API key** (${bt}sk-bayleaf-...${bt}) | Account credential for model discovery, supported inference lanes, sandbox/web tools, and issuing/managing temporary tokens. Provision free at https://api.bayleaf.dev/. |
 | **Campus Pass** (omit header) | On the UCSC campus network. No key needed for inference, web search/fetch, and other supported routes. Sandbox access requires a personal key. |
+| **Temporary inference token** (${bt}sk-bayleaf-grant-...${bt}) | One backend-qualified standard-inference model until expiry or revocation. No discovery, Sealed, other tools, account management, or token issuance. |
 
 BayLeaf applies a daily limit to each backend: some are price-based and others
 are request-based. Your current limits and remaining allowance are shown in the
-[dashboard](https://api.bayleaf.dev/dashboard) and by ${bt}GET /v1/auth/key${bt}.
+[dashboard](https://api.bayleaf.dev/dashboard). Standard-backend allowance is also
+available through ${bt}GET /v1/auth/key${bt}.
 Increased limits are [available upon request](https://github.com/bayleaf-ucsc/bayleaf/blob/main/SUPPORT.md).
 
-### LLM inference
+${bt}GET /v1/auth/key${bt} reports the OpenRouter-shaped spend fields plus
+${bt}data.bayleaf${bt}: OpenRouter spend, per-user request quotas for enabled alternate
+standard backends, and a Campus Pass counter when applicable. Read the backend
+blocks rather than treating OpenRouter dollars as a universal quota. Temporary
+tokens cannot inspect this endpoint; use the ordinary API key.
+
+### Temporary inference tokens
+
+Status: ${input.grantsEnabled ? 'enabled' : 'not enabled on this deployment'}.
+
+A temporary inference token represents one **grant**: permission to use a specific
+backend-qualified standard-inference model until an explicit deadline. BayLeaf
+issues and validates it. It is not an upstream provider key. All tokens belonging
+to an owner share that owner's existing backend allowance with their ordinary API
+key. Creating more tokens does not create more credit or reset request quotas.
+
+Two workflows produce the same token type:
+
+- **Direct issuance:** you or your authorized agent creates a token for a script,
+  local app, or creator-sponsored demo.
+- **Visitor authorization:** each app visitor signs in to BayLeaf and explicitly
+  approves temporary inference access against their own allowance. No copied API
+  key or permanent app registration is required.
+
+Tokens support ${bt}POST /v1/chat/completions${bt} for every enabled standard backend.
+${bt}POST /v1/responses${bt} currently supports OpenRouter only. Backend enablement
+and eligibility policies still apply; disabled backends cannot issue usable tokens.
+Sealed is separate: BayLeaf cannot inspect its encrypted model field to enforce
+one-model authority. Temporary tokens cannot list models, use web/sandbox tools,
+manage accounts, or mint or renew tokens. Model fallbacks, routing overrides, and
+provider plugins are unavailable with these tokens.
+
+#### Names and dashboard controls
+
+Use the [Temporary inference tokens card](https://api.bayleaf.dev/dashboard#temporary-inference-tokens)
+to create, copy, or revoke tokens. Creation uses the full model catalog, grouped by
+backend with prefixes preserved. A token's public name (for example
+${bt}snarky-aardvark-7k3m${bt}) and expiry appear on one compact line; restrictions and
+app details are in its tooltip. Names are recognition aids, not credentials.
+
+The readable name is bound into the token's signature. Copy token copies the full
+credential without displaying it; the dashboard retains newly created credentials
+only in page memory until reload or revocation. Older tokens, including ones
+delivered to apps, can be listed and revoked but their credentials cannot be
+retrieved from the dashboard. Treat the token itself as opaque: applications do
+not need to parse its signed payload. Keep full credentials out of URLs and logs.
+
+#### Direct issuance and model discovery
+
+Use your ordinary API key or the signed-in dashboard. Campus Pass cannot issue
+temporary tokens because it has no personal allowance owner.
+
+| Endpoint | Purpose |
+|----------|---------|
+| ${bt}GET /grants/models${bt} | Full standard-inference catalog as ${bt}models${bt}, plus ${bt}backends${bt} with enabled/available status. Requires an ordinary key or BayLeaf browser session. |
+| ${bt}POST /grants${bt} | Issue a token with JSON ${bt}model${bt} and ${bt}expires_in${bt}. |
+| ${bt}GET /grants${bt} | List your active grants with public names and restrictions, never credentials. |
+| ${bt}DELETE /grants/{grant_id}${bt} | Revoke one of your tokens. |
+
+For example, send this JSON to ${bt}POST /grants${bt}:
+
+${fence}json
+{"model":"${model}","expires_in":3600}
+${fence}
+
+Lifetime must be a positive integer number of seconds. An excessive request fails
+with the current administrator maximum instead of silently shortening the grant.
+An agent should choose the required model and duration, not an estimated dollar budget.
+
+Issuance returns ${bt}access_token${bt} (also ${bt}key${bt}, a compatibility alias),
+${bt}token_type: Bearer${bt}, ${bt}name${bt}, ${bt}grant_id${bt}, ${bt}model${bt},
+${bt}base_url${bt}, ${bt}expires_at${bt} (Unix seconds), and ${bt}expires_in${bt}.
+Use the returned model ID unchanged, including its backend prefix. A bare OpenRouter
+slug is accepted for compatibility, but new integrations should preserve prefixes.
+Send ${bt}Authorization: Bearer <access_token>${bt} to the returned ${bt}base_url${bt}
+plus ${bt}/chat/completions${bt} (or ${bt}/responses${bt} for OpenRouter).
+Temporary tokens cannot call the management or catalog endpoints themselves.
+
+#### Let app visitors authorize their own access
+
+This is BayLeaf-specific stateless client onboarding around authorization code
+and S256 PKCE. It is not CIMD or a general OAuth server. The token exchange uses
+JSON; no client secret or refresh token is issued.
+
+1. Generate a cryptographically random PKCE verifier and random ${bt}state${bt}.
+   Retain them across navigation in the initiating tab (for example, in
+   ${bt}sessionStorage${bt}). The challenge is the
+   base64url-encoded SHA-256 digest of the verifier (without padding).
+2. ${bt}POST /grants/clients${bt} with JSON ${bt}client_name${bt} and
+   ${bt}redirect_uri${bt}. Save the returned ${bt}client_id${bt}: a signed descriptor
+   valid for ten minutes. This unauthenticated step creates no app-registration row.
+3. Navigate to ${bt}/grants/authorize${bt} with query parameters ${bt}client_id${bt},
+   ${bt}response_type=code${bt}, ${bt}model${bt}, ${bt}expires_in${bt}, ${bt}state${bt},
+   ${bt}code_challenge${bt}, and ${bt}code_challenge_method=S256${bt}.
+4. BayLeaf signs the visitor in if necessary and shows explicit consent naming the
+   destination, model, duration, and allowance owner. Mere login grants no inference.
+5. The exact callback receives ${bt}code${bt} and ${bt}state${bt}, or
+   ${bt}error=access_denied${bt} and ${bt}state${bt}. Verify state before proceeding
+   and remove callback parameters from the address bar.
+6. ${bt}POST /grants/token${bt} with JSON ${bt}grant_type=authorization_code${bt},
+   ${bt}code${bt}, the same ${bt}client_id${bt} and ${bt}redirect_uri${bt}, and
+   ${bt}code_verifier${bt}. The response is the same token object as direct issuance.
+
+These onboarding and exchange endpoints do not require the visitor's ordinary
+API key in the app. The authorization transaction lasts at most ten minutes;
+after approval, the code lasts at most two minutes and can be exchanged once.
+The grant lifetime starts at approval, not code exchange.
+
+Local callbacks may use HTTP ${bt}localhost${bt}, ${bt}127.0.0.1${bt}, or ${bt}[::1]${bt},
+for example ${bt}http://127.0.0.1:5173/${bt}. Preserve the exact host, port, and path:
+these hosts are different browser origins. Other callbacks require HTTPS. The
+browser follows the redirect, so no public hosting, certificate, or tunnel is
+needed for a local app. Callback fragments and credentials are rejected.
+
+The token is a bearer credential: its receiving app can use or copy it elsewhere,
+within the same model/lifetime restriction. It does not reveal the owner's ordinary
+API key. Apps have their own content-handling practices; BayLeaf's no-content-retention
+commitment does not describe what an app stores.
+
+#### Expiry, revocation, and cleanup
+
+- Expired token: HTTP ${bt}401${bt} with ${bt}error.code=token_expired${bt}.
+- Invalid or revoked token: HTTP ${bt}401${bt} with ${bt}error.code=invalid_token${bt}.
+- Both carry ${bt}WWW-Authenticate: Bearer error="invalid_token"${bt}, exposed through CORS.
+- Wrong model or out-of-scope operation: HTTP ${bt}403${bt} with ${bt}error.code=insufficient_scope${bt}.
+- Backend disabled: outstanding tokens cannot bypass the backend's disabled state.
+
+After a 401, offer **Authorize again** for a fresh, manually approved grant. Do not
+silently renew tokens or create automatic authorization redirect loops. Expiry and
+revocation prevent new requests, not already-running completions. Rotating the
+owner's ordinary API key also invalidates its outstanding temporary tokens.
+
+Expired grants and abandoned authorization transactions are swept hourly while
+the feature is enabled; enforcement does not wait for cleanup. Names are unique
+among each owner's retained grants, not globally or forever. Cleanup removes the
+name reservation too; no permanent app registry or naming history is kept.
+
+See the [integration guide and local browser example](https://github.com/bayleaf-ucsc/bayleaf/blob/main/api/GRANTS.md).
+
+### Standard LLM inference
 
 Chat completions:
 
@@ -542,10 +702,42 @@ Authorization: Bearer sk-bayleaf-...
 }
 ${fence}
 
-Supports ${bt}stream: true${bt} for SSE streaming. All standard OpenAI parameters
-(${bt}temperature${bt}, ${bt}max_tokens${bt}, ${bt}tools${bt}, etc.) are forwarded. Any other
-${bt}/v1/*${bt} path is proxied directly to OpenRouter, including the Responses API
-(${bt}POST /v1/responses${bt}) and ${bt}/v1/auth/key${bt} for budget inspection.
+Supports ${bt}stream: true${bt} for SSE streaming and ordinary OpenAI request
+parameters (${bt}temperature${bt}, ${bt}max_tokens${bt}, ${bt}tools${bt}, etc.). Use an
+ordinary API key, Campus Pass where eligible, or a temporary token matching the
+model. Temporary tokens have the narrower permissions described above.
+
+Chat Completions routes by backend prefix. ${bt}POST /v1/responses${bt} is currently
+OpenRouter-only. Other supported ${bt}/v1/*${bt} passthroughs require an ordinary key
+or eligible Campus Pass; a temporary token cannot use them.
+
+#### Model catalog and namespaces
+
+| Prefix | Backend | Current deployment |
+|--------|---------|--------------------|
+| ${bt}openrouter:${bt} | OpenRouter (ZDR providers, published-weights eligibility) | Enabled |
+${input.standardBackends.map(b => `| ${bt}${b.prefix}${bt} | ${b.label} | ${b.enabled ? 'Enabled' : 'Disabled'} |`).join('\n')}
+
+Use the full live catalog, not the curated models suggested for onboarding:
+
+- ${bt}GET /v1/models${bt}: enabled standard backends, authenticated with an ordinary
+  API key or eligible Campus Pass.
+- ${bt}GET /grants/models${bt}: the temporary-token selector's catalog and backend
+  availability, authenticated with an ordinary key or BayLeaf browser session.
+- ${bt}GET /recommended-model${bt}: current recommended default, unauthenticated.
+
+Model IDs retain their backend prefix, for example ${bt}${model}${bt}. A bare slug
+is treated as OpenRouter for compatibility. Different prefixes identify different
+backend permissions, even if the rest of the model name is similar.
+
+OpenRouter listings require a published Hugging Face weights reference; inference
+also verifies that the repository resolves. Missing or unavailable evidence fails
+closed with 403. Positive and definite-negative decisions are cached for 24 hours.
+Vertex and Bedrock have their own catalog and eligibility gates; listing them as
+implemented does not enable them. Vertex remains gated on its ZDR posture; Bedrock
+also has unresolved published-weights and institutional-coverage gates.
+
+Recommended default for general use: ${bt}${model}${bt} (${modelName}).
 
 ${sealedEnabled ? `### Sealed LLM inference
 
@@ -632,44 +824,7 @@ Sealed model IDs are bare (for example ${bt}${sealedModel}${bt}), because the de
 ${bt}/sealed${bt} route already selects Tinfoil and the model field is inside the encrypted
 body. BayLeaf cannot inspect or rewrite it.
 
-` : ''}### Inspecting your budget
-
-${fence}
-GET /v1/auth/key
-${fence}
-
-Returns the OpenRouter response augmented with a ${bt}data.bayleaf${bt} block that splits
-usage by backend (${bt}openrouter${bt} and ${bt}vertex${bt}). The OR-shaped top-level fields
-(${bt}usage${bt}, ${bt}limit${bt}, ${bt}limit_remaining${bt}) report only ${bt}openrouter:${bt}
-traffic; for a complete picture across both backends, read ${bt}data.bayleaf${bt}.
-
----
-
-## Model namespaces
-
-BayLeaf routes requests by a prefix on the ${bt}model${bt} field:
-
-| Prefix | Backend | Notes |
-|--------|---------|-------|
-| ${bt}openrouter:${bt} | OpenRouter (ZDR providers) | Open-weight models only (~150, live-filtered from OpenRouter's catalog); per-token pricing varies. |
-| ${bt}vertex:${bt} | Google Vertex AI | Currently disabled (no credible ZDR path; requests return 503). |
-
-Example:
-
-- ${bt}"model": "${model}"${bt}
-
-A bare slug (no prefix) is treated as ${bt}openrouter:${bt} for backwards compatibility,
-but new integrations should always include the prefix to match the IDs returned by
-${bt}/v1/models${bt}.
-
-The ${bt}/v1/models${bt} catalog lists exclusively open-weight models: those OpenRouter
-reports as having published weights on Hugging Face. OpenRouter inference enforces a
-stronger boundary: the reported repository must also resolve successfully. Missing or
-unavailable evidence fails closed with HTTP 403. Decisions are cached for 24 hours.
-
-Recommended default for general use: ${bt}${model}${bt} (${modelName}).
-
----
+` : ''}---
 
 ## Capabilities you can wire as agent tools
 

@@ -50,6 +50,13 @@ ITS-operated or ITS-supported one.
   reservations and installation identity mappings persist to prevent names being
   reassigned. Browser application state can survive preview expiry. See the
   [preview retention schedule](api/RETENTION.md#transient-previews-bounded-poc). ✨
+- **Temporary inference access (API, opt-in when enabled):** approving an app
+  gives it a temporary bearer token against your existing allowance. BayLeaf
+  stores grant metadata (owner, token name, model, expiry, optional app name and callback)
+  and short-lived authorization transactions, not a permanent app registration.
+  Expired records are removed by hourly cleanup while the feature is enabled;
+  D1 backup retention also applies. The receiving app may handle or retain what
+  you enter. See the [grant retention schedule](api/RETENTION.md#temporary-inference-tokens-enabled). ✨
 - **Prompt and completion traffic (API and Chat):** not stored by BayLeaf.
   Ordinary requests are streamed through OpenRouter to LLM providers operating
   under [zero-data-retention](https://openrouter.ai/docs/guides/features/zdr),

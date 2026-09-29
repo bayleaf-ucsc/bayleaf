@@ -107,6 +107,31 @@ so the stored value is inert).
 
 ---
 
+## Temporary inference tokens (enabled) ✨
+
+This opt-in capability uses the existing plaintext inference path and adds no
+provider or content store. Apps receiving a token may handle or retain the
+content entered into them; BayLeaf's no-content-retention commitment does not
+describe those apps.
+
+| State | Retention |
+|---|---|
+| Signed client descriptor (app-supplied name and exact callback) | Valid ten minutes; held by the app, with no app-registration row |
+| Authorization transaction: descriptor, callback, app name, model, lifetime, state, browser-proof hash, PKCE challenge; after approval, code hash, owner email and key fingerprint | Expires within ten minutes; approved code within two minutes; successful exchange or denial deletes the row |
+| Grant: ID, memorable name (named-token revision), owner email and key fingerprint, model, creation/expiry, optional app name and callback | Until expiry (administrator maximum, initially one hour) or individual revocation |
+| Browser proof and login-return cookies (`bl_grant_flow`, `bl_grant_return`) | Host-only, HttpOnly, SameSite=Lax, Secure on HTTPS; at most ten minutes |
+
+The hourly scheduler deletes expired transaction and grant rows, normally within
+the following hour, while `GRANTS_ENABLED=true`. Cleanup pauses when disabled.
+D1 backup retention also applies to deleted rows. Tokens are signed credentials,
+not plaintext secrets stored in these tables. There is no separate app registry,
+remembered app consent, or per-grant inference-content/usage ledger.
+
+See [GRANTS.md](GRANTS.md) for the grant/token distinction, expiry and revocation
+semantics, and rollout status.
+
+---
+
 ## Code Sandbox (Daytona)
 
 | User type | Sandbox lifecycle | Auto-delete |

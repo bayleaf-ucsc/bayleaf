@@ -489,6 +489,41 @@ checkbox, so it is recorded rather than deleted.
 
 ## Routes
 
+### Temporary inference tokens (issue #76)
+
+Enabled in production on 2026-09-29 with a one-hour maximum. Read `GRANTS.md`
+for the contract, rollout evidence, and browser example. Migration `0011`
+adds expiring grants and authorization transactions, never a durable app registry.
+`src/grants.ts` owns purpose-separated signed descriptors/tokens, global scope
+enforcement, and cleanup. `routes/grants.tsx` owns direct issuance, management UI,
+browser consent, and atomic S256 PKCE code exchange. `npm run test:grants` uses
+synthetic workerd/D1 and mocked providers; `--serve` on its script enables a
+synthetic browser preview. It does not test live CILogon or real provider spend.
+
+The global grant gate must run before API routes, and the model gate before
+either plaintext inference handler forwards. Never resolve a disposable token
+as an unrestricted owner identity outside that gate. Both issuance paths reuse
+the owner's provider credential and allowance; issuance must not provision a
+provider key. Expiry is signed so `401 token_expired` survives row cleanup.
+Owner-key fingerprints prevent grant revival after normal-key rotation. ✨
+
+The named-token follow-up (migration `0012`, deployed 2026-09-29) adds a public
+memorable name unique among each owner's retained grants, with collision retry.
+The name is bound into the signature and readable token prefix; legacy unnamed
+tokens remain valid. `templates/grants.tsx` places create/copy/revoke controls in
+the main dashboard, displaying recognition metadata only. Temporary credentials
+remain in a JS closure until reload; no secret input or Show button. Keep “grant”
+for permissions/protocol identifiers and “temporary inference token” for users.
+`llms.txt` distinguishes ordinary keys, temporary tokens, standard inference, and Sealed.
+
+The all-standard-backend follow-up was deployed on 2026-09-29. `standardModels.ts`
+canonicalizes model IDs, checks backend eligibility and supplies `/grants/models`
+for the full dropdown (prefixes preserved, disabled backends unselectable).
+Temporary tokens support enabled OpenRouter, Vertex and Bedrock chat inference;
+Responses remains OpenRouter-only and Sealed remains excluded. Vertex/Bedrock
+per-user counters are atomic and shared by ordinary keys and temporary tokens.
+No new migration or production backend enablement is part of this change.
+
 ### Transient preview gateway (issues #71 and #72)
 
 `PREVIEWS_ENABLED=true` for the bounded POC deployed 2026-09-17. See `PREVIEWS.md` before changing this

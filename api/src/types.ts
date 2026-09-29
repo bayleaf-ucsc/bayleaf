@@ -4,6 +4,8 @@
 
 /** Cloudflare Worker bindings (env vars + secrets) */
 export interface Bindings {
+  GRANTS_ENABLED?: string;
+  GRANTS_MAX_SECONDS?: string;
   // Owner-authenticated HTTP preview POC. Fail closed unless explicitly enabled.
   PREVIEWS_ENABLED?: string;
   PREVIEWS_API_ORIGIN?: string;
@@ -162,6 +164,37 @@ export interface OpenRouterKeyCreated extends OpenRouterKey {
 /** Hono context variables (set by middleware, read by handlers) */
 export interface Variables {
   session: Session;
+  inferenceGrant?: InferenceGrant;
+  grantOwner?: UserKeyRow;
+}
+
+export interface InferenceGrant {
+  id: string;
+  name: string | null;
+  owner_email: string;
+  owner_token_hash: string;
+  model: string;
+  expires_at: number;
+  created_at: number;
+  client_name: string | null;
+  redirect_uri: string | null;
+}
+
+export interface GrantTransaction {
+  id: string;
+  browser_hash: string;
+  client_id: string;
+  client_name: string;
+  redirect_uri: string;
+  model: string;
+  lifetime: number;
+  challenge: string;
+  state: string;
+  expires_at: number;
+  code_hash: string | null;
+  owner_email: string | null;
+  owner_token_hash: string | null;
+  grant_expires_at: number | null;
 }
 
 /** Row from the user_keys D1 table */

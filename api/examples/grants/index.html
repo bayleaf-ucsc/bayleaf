@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BayLeaf temporary inference token demo</title>
+<style>
+body { max-width: 46rem; margin: 3rem auto; padding: 0 1rem; font: 1.1rem/1.5 system-ui; color: #172d26; background: #f7faf8; }
+label { display: block; margin-top: 1rem; } input, textarea { box-sizing: border-box; width: 100%; font: inherit; padding: .5rem; }
+button { font: inherit; margin: 1rem .5rem 1rem 0; padding: .5rem 1rem; } pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>
+<h1>Use your BayLeaf allowance</h1>
+<p>This local demo requests one model for one hour. Authorization happens on BayLeaf. Tokens stay in this tab's memory and are never displayed.</p>
+<label for="api">BayLeaf API origin</label><input id="api" value="https://api.bayleaf.dev">
+<label for="model">Model</label><input id="model" placeholder="Load the recommended model or enter a model slug">
+<button id="recommend">Load recommended model</button>
+<button id="authorize">Authorize inference</button>
+<label for="prompt">Message</label><textarea id="prompt">Explain why localhost and 127.0.0.1 are different browser origins in two sentences.</textarea>
+<button id="send" disabled>Send</button><button id="forget">Forget token</button>
+<p id="status" role="status"></p><pre id="output"></pre>
+<script type="module">
+const $ = id => document.getElementById(id);
+const b64 = bytes => btoa(String.fromCharCode(...bytes)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+const random = () => b64(crypto.getRandomValues(new Uint8Array(32)));
+let token, grantedModel;
+function api() {
+  const url = new URL($('api').value);
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) throw new Error('Use HTTPS or an HTTP loopback API origin.');
+  return url.origin;
+}
+async function json(url, body) {
+  const response = await fetch(url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error?.message || 'Request failed');
+  return result;
+}
+function report(error) { $('status').textContent = error.message; }
+$('recommend').onclick = async () => { try { $('model').value = (await json(api() + '/recommended-model')).model; } catch (e) { report(e); } };
+$('authorize').onclick = async () => {
+  try {
+    const origin = api();
+    const redirect_uri = location.origin + location.pathname;
+    const verifier = random(), state = random();
+    const challenge = b64(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
+    const { client_id } = await json(origin + '/grants/clients', { client_name: 'Local inference demo', redirect_uri });
+    sessionStorage.setItem('bayleaf-pending', JSON.stringify({ origin, verifier, state, client_id, redirect_uri }));
+    const query = new URLSearchParams({ client_id, response_type: 'code', model: $('model').value,
+      expires_in: '3600', code_challenge: challenge, code_challenge_method: 'S256', state });
+    location.assign(origin + '/grants/authorize?' + query);
+  } catch (e) { report(e); }
+};
+const params = new URLSearchParams(location.search);
+if (params.has('code') || params.has('error')) {
+  // Remove authorization material from the address bar before further requests.
+  history.replaceState(null, '', location.pathname);
+  try {
+    const pending = JSON.parse(sessionStorage.getItem('bayleaf-pending') || 'null');
+    sessionStorage.removeItem('bayleaf-pending');
+    if (!pending || params.get('state') !== pending.state) throw new Error('Authorization state did not match. Start again.');
+    $('api').value = pending.origin;
+    if (params.has('error')) throw new Error('Authorization cancelled.');
+    const result = await json(pending.origin + '/grants/token', { grant_type: 'authorization_code', code: params.get('code'),
+      client_id: pending.client_id, redirect_uri: pending.redirect_uri, code_verifier: pending.verifier });
+    token = result.access_token; grantedModel = result.model; $('model').value = result.model;
+    $('api').disabled = true;
+    $('status').textContent = 'Authorized until ' + new Date(result.expires_at * 1000).toLocaleString(); $('send').disabled = false;
+  } catch (e) { report(e); }
+}
+$('send').onclick = async () => {
+  try {
+    const response = await fetch(api() + '/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ model: grantedModel, messages: [{ role: 'user', content: $('prompt').value }] }) });
+    const result = await response.json();
+    if (response.status === 401) { token = null; $('send').disabled = true; throw new Error('Access expired or was revoked. Click Authorize inference to approve a new token.'); }
+    if (!response.ok) throw new Error(result.error?.message || 'Inference failed');
+    $('output').textContent = result.choices[0].message.content;
+  } catch (e) { report(e); }
+};
+$('forget').onclick = () => { token = null; $('send').disabled = true; $('api').disabled = false; $('status').textContent = 'Token forgotten by this tab. Revoke it on the BayLeaf dashboard to invalidate other copies.'; };
+</script>
+</html>

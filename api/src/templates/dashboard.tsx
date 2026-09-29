@@ -5,6 +5,7 @@
 import type { FC } from 'hono/jsx';
 import type { Session, UserKeyRow, OpenRouterKey } from '../types';
 import type { SandboxInfo } from '../daytona';
+import { TemporaryInferenceTokens } from './grants';
 import {
   BaseLayout,
   RecommendedModelHint,
@@ -641,9 +642,11 @@ export const DashboardPage: FC<{
   sandboxInfo?: SandboxInfo | null;
   gwsEnabled?: boolean;
   sealedEnabled?: boolean;
+  grantsEnabled?: boolean;
+  grantMaxSeconds?: number;
   sealedRecommendedModel?: string;
   altBackendUsage?: AltBackendUsage[];
-}> = ({ session, row, orKey, recommendedModel, sandboxInfo, gwsEnabled, sealedEnabled, sealedRecommendedModel, altBackendUsage }) => {
+}> = ({ session, row, orKey, recommendedModel, sandboxInfo, gwsEnabled, sealedEnabled, grantsEnabled, grantMaxSeconds = 3600, sealedRecommendedModel, altBackendUsage }) => {
   const greeting = session.name
     ? `Welcome, ${session.name} (${session.email})`
     : `Welcome, ${session.email}`;
@@ -654,6 +657,8 @@ export const DashboardPage: FC<{
       <p>{greeting} | <a href="/logout">Sign out</a></p>
 
       <KeyCard hasKey={hasKey} />
+
+      {grantsEnabled && <TemporaryInferenceTokens model={recommendedModel} maxSeconds={grantMaxSeconds}/>}
 
       {hasKey && orKey && row && <StandardLlmCard orKey={orKey} recommendedModel={recommendedModel} altBackendUsage={altBackendUsage ?? []} />}
 

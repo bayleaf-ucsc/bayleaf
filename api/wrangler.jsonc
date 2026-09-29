@@ -15,8 +15,7 @@
     { "pattern": "*.bayleaf-proxies.dev/*", "zone_name": "bayleaf-proxies.dev" }
   ],
 
-  // Removes expired preview credentials and login transactions. The handler is
-  // a no-op while PREVIEWS_ENABLED is false; owner-name reservations persist.
+  // Removes expired preview and inference-grant credentials/transactions.
   "triggers": { "crons": ["0 * * * *"] },
 
   "durable_objects": {
@@ -54,6 +53,9 @@
   // Environment variables (set via wrangler secret or dashboard)
   // These are placeholders - actual values should be set as secrets
   "vars": {
+    // Disposable inference grants, issue #76. Migration 0011 applied 2026-09-29.
+    "GRANTS_ENABLED": "true",
+    "GRANTS_MAX_SECONDS": "3600",
     // Owner-authenticated HTTP/WebSocket previews, issue #71. Enabled after
     // synthetic local/live qualification; rollout boundaries are in PREVIEWS.md.
     "PREVIEWS_ENABLED": "true",

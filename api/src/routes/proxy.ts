@@ -19,6 +19,8 @@ import { resolveBackendCredential, sendWithHeal } from '../utils/backend';
 import { getGCPAccessToken } from '../utils/gcp';
 import { checkAndIncrement, inspectCounter, parseLimit } from '../utils/campusRpd';
 import { checkOpenWeightModel, hasPublishedWeights, openRouterSlug } from '../openWeight';
+import { enforceGrantModel } from '../grants';
+import { fetchBedrockModels } from '../standardModels';
 import {
   ChatCompletionRequestSchema,
   ChatCompletionResponseSchema,
@@ -86,6 +88,22 @@ function injectUser(body: { user?: string }, auth: AuthResult): void {
   }
 }
 
+/** Ordinary keys and all their temporary tokens share one atomic daily counter. */
+async function enforceKeyedBackendRpd(c: Context<AppEnv>, auth: AuthResult, key: string): Promise<Response | null> {
+  if (!auth.userKeyRow) return null; // Campus Pass has its own shared guard.
+  const backend = altBackend(key)!;
+  const today = new Date().toISOString().slice(0, 10);
+  // Column identifiers come exclusively from the internal backend table.
+  const count = backend.rpdCountField, date = backend.rpdDateField;
+  const accepted = await c.env.DB.prepare(`UPDATE user_keys
+    SET ${count} = CASE WHEN ${date} = ? THEN ${count} + 1 ELSE 1 END, ${date} = ?
+    WHERE bayleaf_token = ? AND revoked = 0 AND (${date} <> ? OR ${count} < ?)
+    RETURNING email`).bind(today, today, auth.userKeyRow.bayleaf_token, today, backend.rpdLimit).first();
+  return accepted ? null : c.json({ error: {
+    message: `${backend.label} daily budget exceeded (${backend.rpdLimit} requests). Resets at midnight UTC.`, code: 429,
+  } }, 429);
+}
+
 /**
  * No usable upstream credential could be obtained for this caller.
  *
@@ -135,53 +153,6 @@ async function forwardJson(
   return res;
 }
 
-/**
- * Fetch the Bedrock mantle catalog and shape it into prefixed `/v1/models`
- * entries. Returns [] when the backend is disabled or the upstream call fails,
- * so a flaky mantle never breaks the combined model listing. Each id is
- * namespaced with `bedrock:` and the display name gets a "Bedrock: " prefix to
- * match the OpenRouter/Vertex convention.
- */
-/**
- * ZDR floor for the bedrock listing (issue #25 follow-up): only models that
- * CAN run zero-retention may be listed. mantle exposes per-model
- * data_retention.allowed_modes; 'none' means AWS persists nothing and shares
- * nothing with the provider. The closed gpt-5.x entries accept only
- * ['default', 'provider_data_share'] and can never run ZDR, so this filter
- * excludes them regardless of the AWS account's configured mode. Missing or
- * malformed metadata fails closed (model dropped from the listing).
- *
- * This is a RETENTION predicate, not a weights predicate: closed-weight but
- * ZDR-capable models (claude-haiku, grok) still pass, which is one reason the
- * backend stays paused until the weights question is resolved. Routing
- * enforcement for crafted slugs comes from setting the AWS account's mantle
- * mode to 'none' (PUT /v1/data_retention), which makes non-ZDR models
- * unavailable server-side. See the re-enable checklist in wrangler.jsonc.
- */
-function isZdrCapable(model: any): boolean {
-  const modes = model?.data_retention?.allowed_modes;
-  return Array.isArray(modes) && modes.includes('none');
-}
-
-async function fetchBedrockModels(env: AppEnv['Bindings']): Promise<any[]> {
-  if (!isBedrockEnabled(env)) return [];
-  try {
-    const res = await fetch(`${BEDROCK_MANTLE_API}/models`, {
-      headers: { Authorization: `Bearer ${env.BEDROCK_BEARER_TOKEN}` },
-    });
-    if (!res.ok) return [];
-    const data = await res.json() as { data?: any[] };
-    if (!Array.isArray(data.data)) return [];
-    return data.data.filter(isZdrCapable).map((model) => ({
-      ...model,
-      id: `bedrock:${model.id}`,
-      name: model.name ? `Bedrock: ${model.name}` : `Bedrock: ${model.id}`,
-    }));
-  } catch {
-    return [];
-  }
-}
-
 // ── POST /responses — Responses API proxy ─────────────────────────
 
 const responsesRoute = createRoute({
@@ -219,11 +190,11 @@ const responsesRoute = createRoute({
       content: { 'application/json': { schema: ApiErrorSchema } },
     },
     401: {
-      description: 'Missing, invalid, or revoked API key',
+      description: 'Missing, invalid, revoked, or expired credential. Temporary token expiry uses error.code=token_expired and WWW-Authenticate: Bearer error="invalid_token".',
       content: { 'application/json': { schema: ApiErrorSchema } },
     },
     403: {
-      description: 'The requested OpenRouter model is not verifiably open-weight',
+      description: 'The model is not verifiably open-weight, or exceeds the temporary inference token scope (error.code=insufficient_scope).',
       content: { 'application/json': { schema: ApiErrorSchema } },
     },
   },
@@ -246,6 +217,8 @@ proxyRoutes.openapi(responsesRoute, async (c) => {
   };
 
   const model = openRouterSlug(body.model);
+  const grantRejection = enforceGrantModel(c, body);
+  if (grantRejection) return grantRejection as any;
   if (await checkOpenWeightModel(model, c.env) !== 'open') {
     return openWeightForbidden(c, model) as any;
   }
@@ -299,11 +272,11 @@ const chatCompletionsRoute = createRoute({
       },
     },
     401: {
-      description: 'Missing, invalid, or revoked API key',
+      description: 'Missing, invalid, revoked, or expired credential. Temporary token expiry uses error.code=token_expired and WWW-Authenticate: Bearer error="invalid_token".',
       content: { 'application/json': { schema: ApiErrorSchema } },
     },
     403: {
-      description: 'The requested OpenRouter model is not verifiably open-weight',
+      description: 'The model is not verifiably open-weight, or exceeds the temporary inference token scope (error.code=insufficient_scope).',
       content: { 'application/json': { schema: ApiErrorSchema } },
     },
   },
@@ -326,6 +299,8 @@ proxyRoutes.openapi(chatCompletionsRoute, async (c) => {
   injectUser(body, auth);
 
   // Prefix routing
+  const grantRejection = enforceGrantModel(c, body);
+  if (grantRejection) return grantRejection as any;
   const modelStr = typeof body.model === 'string' ? body.model : '';
   
   if (modelStr.startsWith('vertex:')) {
@@ -339,23 +314,8 @@ proxyRoutes.openapi(chatCompletionsRoute, async (c) => {
     // Campus Pass users: already counted by enforceCampusRpd above (one
     // unified per-IP counter applies across all providers); no per-key
     // bookkeeping exists or is needed.
-    if (auth.userKeyRow) {
-      const RPD_LIMIT = VERTEX_RPD_LIMIT;
-      const today = new Date().toISOString().split('T')[0];
-      const user = auth.userKeyRow;
-
-      if (user.vertex_rpd_date !== today) {
-        await c.env.DB.prepare(
-          "UPDATE user_keys SET vertex_rpd_count = 1, vertex_rpd_date = ? WHERE bayleaf_token = ?"
-        ).bind(today, user.bayleaf_token).run();
-      } else if (user.vertex_rpd_count >= RPD_LIMIT) {
-        return c.json({ error: { message: `Vertex AI daily budget exceeded (${RPD_LIMIT} requests). Resets at midnight UTC.`, code: 429 } }, 429) as any;
-      } else {
-        await c.env.DB.prepare(
-          "UPDATE user_keys SET vertex_rpd_count = vertex_rpd_count + 1 WHERE bayleaf_token = ?"
-        ).bind(user.bayleaf_token).run();
-      }
-    }
+    const backendLimit = await enforceKeyedBackendRpd(c, auth, 'vertex');
+    if (backendLimit) return backendLimit as any;
 
     // Rewrite model name
     let targetModel = modelStr.replace('vertex:', '');
@@ -390,23 +350,8 @@ proxyRoutes.openapi(chatCompletionsRoute, async (c) => {
     // OpenRouter dollar budget and needs its own counter. Campus Pass users
     // are already counted by enforceCampusRpd above (unified per-IP counter
     // across all providers); no per-key bookkeeping exists or is needed.
-    if (auth.userKeyRow) {
-      const RPD_LIMIT = BEDROCK_RPD_LIMIT;
-      const today = new Date().toISOString().split('T')[0];
-      const user = auth.userKeyRow;
-
-      if (user.bedrock_rpd_date !== today) {
-        await c.env.DB.prepare(
-          "UPDATE user_keys SET bedrock_rpd_count = 1, bedrock_rpd_date = ? WHERE bayleaf_token = ?"
-        ).bind(today, user.bayleaf_token).run();
-      } else if (user.bedrock_rpd_count >= RPD_LIMIT) {
-        return c.json({ error: { message: `Amazon Bedrock daily budget exceeded (${RPD_LIMIT} requests). Resets at midnight UTC.`, code: 429 } }, 429) as any;
-      } else {
-        await c.env.DB.prepare(
-          "UPDATE user_keys SET bedrock_rpd_count = bedrock_rpd_count + 1 WHERE bayleaf_token = ?"
-        ).bind(user.bayleaf_token).run();
-      }
-    }
+    const backendLimit = await enforceKeyedBackendRpd(c, auth, 'bedrock');
+    if (backendLimit) return backendLimit as any;
 
     // Strip the `bedrock:` prefix; forward the mantle model id verbatim
     // (e.g. `bedrock:google.gemma-3-12b-it` -> `google.gemma-3-12b-it`).

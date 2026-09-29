@@ -15,6 +15,7 @@ import { DashboardPage, type AltBackendUsage } from '../templates/dashboard';
 import { renderPage } from '../templates/layout';
 import { ALT_BACKENDS, isBackendEnabled } from '../constants';
 import { isSealedEnabled } from './sealed';
+import { maxGrantSeconds } from '../grants';
 
 export const dashboardRoutes = new OpenAPIHono<AppEnv>();
 
@@ -60,6 +61,11 @@ dashboardRoutes.get('/', async (c) => {
 
 /** GET /dashboard - Main user interface */
 dashboardRoutes.get('/dashboard', async (c) => {
+  // Token management now lives here; retain its cache and framing protections.
+  c.header('Cache-Control', 'no-store');
+  c.header('Referrer-Policy', 'same-origin');
+  c.header('X-Frame-Options', 'DENY');
+  c.header('Content-Security-Policy', "frame-ancestors 'none'; base-uri 'none'");
   const session = await getSession(c);
   if (!session) return c.redirect('/login');
 
@@ -108,5 +114,5 @@ dashboardRoutes.get('/dashboard', async (c) => {
       })
     : [];
 
-  return renderPage(c, <DashboardPage session={session} row={row} orKey={orKey} recommendedModel={c.env.RECOMMENDED_MODEL} sandboxInfo={sandboxInfo} gwsEnabled={gwsEnabled} sealedEnabled={isSealedEnabled(c.env)} sealedRecommendedModel={c.env.SEALED_RECOMMENDED_MODEL} altBackendUsage={altBackendUsage} />);
+  return renderPage(c, <DashboardPage session={session} row={row} orKey={orKey} recommendedModel={c.env.RECOMMENDED_MODEL} sandboxInfo={sandboxInfo} gwsEnabled={gwsEnabled} sealedEnabled={isSealedEnabled(c.env)} grantsEnabled={c.env.GRANTS_ENABLED === 'true'} grantMaxSeconds={maxGrantSeconds(c.env)} sealedRecommendedModel={c.env.SEALED_RECOMMENDED_MODEL} altBackendUsage={altBackendUsage} />);
 });

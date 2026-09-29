@@ -28,6 +28,8 @@ import { docsRoutes } from './routes/docs';
 import { llmsRoutes } from './routes/llms';
 import { sealedWellKnownRoutes, wellKnownRoutes } from './routes/wellknown';
 import { claimRoutes } from './routes/claim';
+import { grantRoutes } from './routes/grants';
+import { GRANT_PREFIX, guardGrant, cleanupGrants } from './grants';
 import { previewRoutes, handlePreviewHost, cleanupPreviews } from './routes/previews';
 export { PreviewConnections } from './routes/previews';
 import { RecommendedModelResponseSchema, HealthResponseSchema } from './schemas';
@@ -57,7 +59,7 @@ app.openAPIRegistry.registerComponent('securitySchemes', 'Bearer', {
   type: 'http',
   scheme: 'bearer',
   description:
-    'BayLeaf API key (`sk-bayleaf-...`). On supported routes, users on the UCSC campus network may omit it for Campus Pass access; sandbox routes require a personal key.',
+    'BayLeaf API key (`sk-bayleaf-...`). Temporary inference tokens (`sk-bayleaf-grant-...`) permit only POST /v1/chat/completions and /v1/responses with their specified model. On supported routes, campus users may omit a key for Campus Pass access.',
 });
 
 // ── CORS middleware ───────────────────────────────────────────────
@@ -66,9 +68,19 @@ const apiCors = cors({
   origin: '*',
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Authorization', 'Content-Type'],
+  exposeHeaders: ['WWW-Authenticate'],
   maxAge: 86400,
 });
 app.use('*', (c, next) => c.req.path.startsWith('/previews/') ? next() : apiCors(c, next));
+
+app.use('*', async (c, next) => {
+  const token = c.req.header('Authorization')?.replace(/^Bearer\s+/i, '').trim();
+  if (token?.startsWith(GRANT_PREFIX)) {
+    const rejection = await guardGrant(c, token);
+    if (rejection) return rejection;
+  }
+  await next();
+});
 
 // Redirect old /api/v1/* paths for backwards compatibility
 app.all('/api/v1/*', (c) => c.redirect(c.req.url.replace('/api/v1', '/v1'), 301));
@@ -148,6 +160,7 @@ app.route('/web', webRoutes);
 app.route('/docs', docsRoutes);
 app.route('/.well-known', wellKnownRoutes);
 app.route('/auth/claim', claimRoutes);
+app.route('/grants', grantRoutes);
 app.route('/previews', previewRoutes);
 app.route('/', llmsRoutes);
 app.route('/', authRoutes);
@@ -168,6 +181,10 @@ app.doc31('/docs/openapi.json', (c) => ({
       '**Authentication:** Include `Authorization: Bearer <key>` on all requests. ' +
       'On supported routes, users on the UCSC campus network may omit the header (Campus Pass); sandbox routes require a personal key. ' +
       'Off-campus, provision a free personal key at https://api.bayleaf.dev/.\n\n' +
+      '**Temporary inference tokens:** Direct issuance and visitor authorization produce the same one-model, expiring bearer token. ' +
+      'Use the Grants endpoints and [integration guide](https://github.com/bayleaf-ucsc/bayleaf/blob/main/api/GRANTS.md). ' +
+      'Browser apps use a stateless client descriptor plus authorization code and S256 PKCE, with explicit consent and no refresh token. ' +
+      'Expiry returns HTTP 401 with error.code=token_expired; wrong-model or out-of-scope requests return 403 insufficient_scope.\n\n' +
       `**Recommended model:** \`${c.env.RECOMMENDED_MODEL}\`. ` +
       'Fetch the latest recommendation from [/recommended-model](/recommended-model).',
     contact: {
@@ -190,6 +207,7 @@ app.doc31('/docs/openapi.json', (c) => ({
     { name: 'Sandbox', description: 'Sandboxed Linux code execution and file I/O' },
     { name: 'Web', description: 'Web search and page content fetching' },
     { name: 'Meta', description: 'API metadata and documentation' },
+    { name: 'Grants', description: 'Permissions behind one-model temporary inference tokens: direct issuance, revocation, and visitor-funded browser authorization. Requires GRANTS_ENABLED.' },
   ],
 }));
 
@@ -207,6 +225,7 @@ app.onError((err, c) => {
 export default {
   fetch: app.fetch,
   scheduled: async (_event: ScheduledController, env: AppEnv['Bindings']) => {
+    if (env.GRANTS_ENABLED === 'true') await cleanupGrants(env);
     if (env.PREVIEWS_ENABLED === 'true') await cleanupPreviews(env);
   },
 };

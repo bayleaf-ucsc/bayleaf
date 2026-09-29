@@ -677,3 +677,13 @@ Visit `https://api.bayleaf.dev/` from a campus IP in a browser.
   They can be spot-checked by visiting `https://api.bayleaf.dev/` in a
   browser and signing in, but are not covered by this curl-based
   runbook.
+# Disposable inference grants
+
+`npm run test:grants` runs the grant/PKCE security harness against isolated
+workerd and D1, with synthetic identities and mocked providers. It requires no
+credentials and makes no live inference calls. `node scripts/harness-grants.mjs
+--serve` keeps that synthetic Worker on `http://localhost:8789`; visiting
+`/__harness-login` sets a synthetic session for browser tests. This test-only
+entrypoint is never part of the deployed Worker. Serve `examples/grants/` on a
+different loopback port and select the synthetic API origin to test the complete
+browser handoff. See [GRANTS.md](GRANTS.md) for rollout and verification status.
