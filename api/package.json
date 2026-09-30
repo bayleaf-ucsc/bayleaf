@@ -11,11 +11,8 @@
     "tail": "wrangler tail"
   },
   "overrides": {
-    "wrangler": {
-      "miniflare": {
-        "sharp": "^0.35.4"
-      }
-    }
+    "undici": "7.29.1",
+    "sharp": "$sharp"
   },
   "keywords": [
     "cloudflare-workers",

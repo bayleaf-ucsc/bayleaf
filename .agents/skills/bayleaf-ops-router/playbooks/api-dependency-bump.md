@@ -37,11 +37,19 @@ change that alters request handling in a way that could touch the ZOA posture
    do it) and regenerate the lockfile:
 
    ```bash
-   cd api && npm install <pkg>@<version>
-   ```
+    cd api && npm install <pkg>@<version>
+    ```
+
+   For a transitive dependency pinned by its parent, use an npm override for
+   the patched version rather than updating unrelated tooling. Check every
+   installed copy with `npm ls <pkg>` and run `npm audit`; regenerate the
+   lockfile and inspect it for unrelated changes. A nested override scoped to
+   Wrangler does not necessarily cover a directly installed Miniflare.
 
 4. Type check: `npx tsc --noEmit` in `api/`. Expected: no errors.
-5. Deploy: `npm run deploy`.
+5. Deploy only if requested: `npm run deploy`. For development-only patches,
+   local checks and `npx wrangler deploy --dry-run` can verify tooling without
+   touching production.
 6. Smoke test (see Verification).
 7. Record: commit `api/package.json` + `api/package-lock.json` as
    `chore: bump <pkg> to <version>` (or `fix:` if it closes a vulnerability,
@@ -65,13 +73,11 @@ lane, also run the relevant harness from `api/TESTING.md` before committing.
 
 ## Rollback
 
-```bash
-cd api && git checkout package.json package-lock.json && npm install && npm run deploy
-```
-
-(`npx wrangler rollback` also redeploys the previous upload if git state is
-already dirty.)
+For an authorized production rollback, `npx wrangler rollback` redeploys the
+previous upload. For local dependency edits, reverse only this run's changes
+and reinstall; never restore whole files that contain unrelated user work.
 
 ## Refinement log
 
 - 2026-08-25: drafted from issue #65 and api/AGENTS.md; never yet run.
+- 2026-09-30: local-only Undici patch in API and Probe used overrides because Miniflare pins 7.29.0. Fixed the API Sharp override's direct-Miniflare coverage; no deploy/commit requested. GitHub documents Security → Dependabot → gear → Refresh Dependabot alerts for stale deleted manifests.
