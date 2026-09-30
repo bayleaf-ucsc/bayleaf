@@ -12,7 +12,7 @@
       "description": "Coding agent tools (lathe, bash, read, write, edit, glob, grep, view, interpret, delegate, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.",
       "required_open_webui_version": "0.11.0",
       "requirements": "httpx, httpx-ws, pydantic-ai-slim[openai]~=2.5, cachetools",
-      "version": "0.30.5",
+      "version": "0.30.7",
       "licence": "MIT"
     },
     "has_user_valves": true
@@ -28,7 +28,7 @@
       "created_at": 1773097882
     }
   ],
-  "updated_at": 1790273466,
+  "updated_at": 1790800787,
   "created_at": 1773079252,
   "user": null,
   "write_access": true,
@@ -134,11 +134,11 @@
     },
     {
       "name": "expose",
-      "description": "Expose a sandbox service. Named targets manage startup and recovery;\nhttp:<port> requires an already-running service. ttyd is private-only.",
+      "description": "Expose a sandbox service. Named targets manage startup and recovery;\nhttp:<port> requires an already-running service. ttyd and code-server are private-only.",
       "parameters": {
         "properties": {
           "target": {
-            "description": "Choose by need: \"dufs\" for file transfer, \"site:/absolute/path\" for static files, \"ttyd\" for a lightweight shell, \"code-server\" for a full IDE, or \"http:<port>\" for an existing service (port 3000–9999).",
+            "description": "\"dufs\" or \"dufs:/absolute/path\" for file transfer, \"site:/absolute/path\" for static files, \"ttyd\" for a shell, \"code-server\" or \"code-server:/absolute/path\" for an IDE, or \"http:<port>\" for an existing service (port 3000–9999). Named directory roots must be within /home/daytona/workspace; bare names use the workspace. An IDE root is not filesystem confinement.",
             "type": "string"
           },
           "access": {

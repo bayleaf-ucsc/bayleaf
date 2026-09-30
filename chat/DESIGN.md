@@ -511,7 +511,7 @@ The most substantial toolkit on the deployment. Source:
 but **not bound to any model by default** — users enable it per-chat via the
 tool picker in the chat composer.
 
-**Current version: 0.30.5** (2026-09-24), byte-identical to the upstream
+**Current version: 0.30.7** (2026-09-30), byte-identical to the upstream
 checkout and the personal Chat instance. `expose` requires an explicit
 `private` or `public` policy and accepts
 an optional untrusted hostname tag, which BayLeaf ignores. Private is the
@@ -553,7 +553,7 @@ layers remain planned in issues
 | `interpret(code, timeout)` | Run Python in a persistent REPL session (variables and imports persist across calls) |
 | `delegate(task, context_files, max_steps, foreground_seconds)` | Delegate a multi-step task to an autonomous sub-agent with the same tools; long delegations auto-background like `bash` |
 | `onboard(path)` | Load project context (directory listing, AGENTS.md, skill catalog) for agentic workflows |
-| `expose(target, access, tag)` | Expose dufs, static files, ttyd, code-server, or an existing HTTP service; `access` is required (`private` or `public`) and `tag` is optional |
+| `expose(target, access, tag)` | Expose dufs, static files, ttyd, code-server, or an existing HTTP service; `access` is required (`private` or `public`) and `tag` is optional. Dufs and code-server accept `:/absolute/path` roots within the workspace; managed ttyd and code-server are private-only |
 | `handoff()` | Prepare a handoff document for continuing the work in a fresh conversation |
 | `destroy()` | Permanently destroy the sandbox VM (irreversible) |
 
@@ -582,7 +582,23 @@ server-managed application cookies. JavaScript-managed original cookie names
 are not supported. Browser caches can outlive the server-side grant. The
 current 1-GiB sandbox OOM-killed code-server during qualification; a disposable
 4-GiB test confirmed core IDE and terminal operation. This did not change
-BayLeaf's default sandbox size or its off-ramp policy.
+BayLeaf's default sandbox size at that time. On 2026-09-30, Adam approved
+2-GiB RAM for new Chat sandboxes after his expected workload hit the 1-GiB
+limit; existing sandboxes remain unchanged. The off-ramp policy still applies.
+
+**Project-rooted services (Lathe 0.30.7).** `dufs:/home/daytona/workspace/project`
+serves a selected directory; `code-server:/home/daytona/workspace/project`
+opens the IDE there. Bare names use the whole workspace. Named service roots
+must exist inside the workspace after symlink resolution. Each dufs/code-server
+instance uses a fixed port and refuses a mismatched existing root rather than
+replacing the running service. Managed dufs enables upload, delete, search,
+folder ZIP downloads, and file hashes without permitting symlinks outside its
+served root. Older running dufs processes using `--allow-all` must be stopped
+before re-exposure; do not stop users' services automatically. Code-server's
+opening folder is not filesystem confinement, and both managed code-server and
+ttyd require private access. Python static-site serving can still follow symlinks
+inside the served directory. These controls do not confine a model-controlled
+shell or an arbitrary `http:<port>` service. ✨
 
 **UserValves.** Users can configure `env_vars` (a JSON object of environment
 variables like `{"GITHUB_TOKEN":"ghp_..."}`) that are injected into every
@@ -606,6 +622,17 @@ shell can read and disclose those values; use narrowly scoped credentials.
 - `auto_create_sandbox` — Automatically create a sandbox when none exists for the user (default: `true`; disable for deployments where sandboxes are provisioned externally)
 - `sandbox_missing_message` — Custom message returned to the agent when no sandbox exists and auto-create is off (empty falls back to a generic message)
 - `sandbox_create_overrides`: JSON of extra Daytona create args. Cannot override `name`, `labels`, or `volumes`. Snapshot resources come from the snapshot; current Daytona rejects cpu/memory overrides with a snapshot (including the default). The disposable custom-shape test used `buildInfo`.
+
+**New-sandbox shape (2026-09-30).** The configured creation override is
+`{"cpu":1,"memory":2,"disk":3,"buildInfo":{"dockerfileContent":"FROM daytonaio/sandbox:0.9.0\n"}}`.
+This uses the same base image as `daytona-small` but requests 2 GiB rather than
+its fixed 1-GiB allocation. No test TTL is included in production. CPU, disk,
+idle stop/archive/deletion, and disabled persistent-volume settings are unchanged.
+This applies only at creation: existing sandboxes are not resized or recreated.
+The eight legacy 1-GiB sandboxes remain small. Adam will advise users in person
+about opting into a fresh 2-GiB sandbox: first export any files they need, then
+deliberately destroy and recreate their own environment. Destruction is permanent;
+there is no automatic migration or file preservation across recreation. ✨
 
 **Upgrade evidence (2026-09-17).** Full OWUI regression passed 7/7 scenarios:
 source/schema, bash, write/read, interpreter, view, delegate, and protected expose.
@@ -653,6 +680,24 @@ were preserved, and `/health` returned 200. Rollback snapshots are private
 under `~/.tokens/bayleaf-lathe-rollout-20260924`. A model-mediated BayLeaf
 playtest passed: Basic selected Code Sandbox, called Lathe `bash`, and returned
 the expected `lathe-0305-ok` output.
+
+**Upgrade evidence (2026-09-30).** Lathe 0.30.7 was promoted from the personal
+instance after Adam confirmed sufficient use; it matched upstream byte-for-byte.
+All 276 offline tests passed and upstream's isolated live monitor was green.
+BayLeaf's staging suite passed all six core scenarios on retry after an initial
+delegation timeout. Model-mediated preview attempts failed at tool selection or
+call budget, not an observed preview service failure. Direct upstream-tool calls
+against a disposable real sandbox verified the 1-CPU / 2-GiB / 3-GiB creation
+shape and Linux cgroup limit, project-rooted private/public static previews,
+anonymous private-access denial, and managed public IDE refusal. The initial
+direct private check omitted the trusted OWUI user ID and correctly failed
+closed; the corrected identity fixture passed. Test preview registrations were
+revoked and sandbox deletion verified. Production source, all valves, grants,
+and display name were read back after deployment; `/health` returned 200.
+The Code Sandbox skill was updated. Secret-bearing rollback snapshots and full
+before/after backups remain private under
+`~/.tokens/bayleaf-lathe-upgrade-20260930-132308`. No existing user sandbox was
+resized or destroyed. Human post-upgrade workload testing remains pending. ✨
 
 ### Restricted Course Tools
 

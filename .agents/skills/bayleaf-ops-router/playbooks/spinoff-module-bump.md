@@ -24,6 +24,14 @@ a bump is **the soaked personal instance**, not the git repo tag: pull the
 tool source from `chat.adamsmith.as` (it is the thing actually proven in
 use), and cross-check against the repo if they should agree.
 
+**Lathe is a read-only upstream dependency, not a BayLeaf fork.** Never modify
+Lathe source just for BayLeaf, including the vendored `chat/tools/lathe/tool.py`.
+When BayLeaf needs behavior that Lathe does not support, push Adam to formulate
+the requirement generally and implement it in the upstream Lathe project, then
+test it, soak it on the personal instance, and consume it here byte-for-byte.
+BayLeaf-specific policy belongs in supported admin valves, BayLeaf's own gateway
+and infrastructure, or separate user/agent guidance, not patches to Lathe.
+
 **Manually ported tools.** Everything else under `chat/tools/` (web_context,
 campus_directory, youtube, etc.) is ported by hand when improved. The pull
 diff between instances is the change record.
@@ -48,7 +56,8 @@ diff between instances is the change record.
 3. Deploy to BayLeaf:
    `uvx owui-cli tools deploy <source.py> <id>` — pass the existing id
    explicitly (deploy ID mismatch is the classic silent-duplicate bug).
-4. Set any new valves in the BayLeaf admin panel; note non-secret valve
+4. Preserve existing BayLeaf valves; never copy personal-instance credentials or
+   lifecycle defaults. Set any new valves in the BayLeaf admin panel; note non-secret valve
    defaults in `chat/DESIGN.md` if they're worth recording.
 5. **[HUMAN GATE]** Exercise the tool in prod through its model (Code Sandbox
    via Basic; Google Workspace via its consent flow).
@@ -63,13 +72,32 @@ diff between instances is the change record.
 
 ## Rollback
 
-```bash
-git checkout chat/tools/<id>/tool.py
-uvx owui-cli tools deploy chat/tools/<id>/tool.py <id>
-```
+Deploy the privately saved pre-upgrade source to the existing tool ID, then
+restore its saved valves if they changed. Do not use `git checkout` to discard
+the working copy: it may contain unrelated user work, and the committed source
+may not match the actual pre-upgrade deployment.
 
 ## Refinement log
 
+- 2026-09-30 (rollout): Promoted unchanged upstream 0.30.7 and set a supported
+  creation override for 1 CPU / 2 GiB / 3 GiB using `buildInfo` with the same
+  base image as `daytona-small`. Real allocation and cgroup checks passed.
+  Direct private/public site previews and public IDE refusal passed after fixing
+  a test fixture's missing trusted OWUI user ID. Cleanup, source/valve/grant/name
+  readbacks, and health passed. Existing sandboxes were left untouched.
+- 2026-09-30 (ownership): Adam made the upstream-only rule explicit: BayLeaf
+  consumes Lathe as a read-only follower. Generalize missing capabilities
+  upstream rather than creating BayLeaf-only source changes.
+- 2026-09-30 (qualification): Lathe 0.30.7 matched the personal deployment and
+  upstream, with unchanged valves/dependencies and 276 offline tests passing.
+  BayLeaf staging passed five checks, then delegation timed out before exposure.
+  The deployment harness nevertheless attempted preview revocation without a
+  registration. Run core dispatch and preview qualification separately when
+  diagnosing this failure; do not mistake that cleanup message for a leaked URL.
+  Core dispatch passed 6/6 on retry. Subsequent preview attempts failed at model
+  selection/budget, not an observed service error. Adam requested 2-GiB RAM for
+  future BayLeaf sandboxes only; existing environments must not be resized or
+  destroyed as part of this rollout.
 - 2026-09-24: Lathe 0.30.5 on the personal instance matched upstream `main`
   exactly but had only same-day soak; Adam explicitly waived the gate. The
   release list's `latest` entry was a demo-video artifact, so version was

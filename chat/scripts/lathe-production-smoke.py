@@ -66,7 +66,7 @@ async def main():
         values='\n'.join(tool_outputs(output))
         if not any(c.get('name')=='expose' for c in tool_calls(output)):
             raise RuntimeError('Production expose(ssh) was not invoked')
-        if 'target must be "dufs", "site:/absolute/path", "ttyd", "code-server", or "http:<port>"' not in values:
+        if 'Error: target must be' not in values or 'Got: "ssh"' not in values:
             raise RuntimeError('Production Lathe did not reject SSH exposure')
         if 'ssh.app.daytona.io' in values or 'SSH command' in values:
             raise RuntimeError('Production result contained SSH access material')
