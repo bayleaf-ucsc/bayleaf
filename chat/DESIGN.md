@@ -441,7 +441,7 @@ course-specific URL allowlist limits what that choice can read.
 
 **Fall 2026 Canvas submission Action.** `brace3-94741` binds
 `brace3_submit_action` via `meta.actionIds`. It is active and non-global; the
-legacy `brace_submit_action` remains inactive. The new Action accepts only
+legacy `brace_submit_action` was retired on 2026-09-30. The new Action accepts only
 assignment URLs in course 94741, requires HTML file-upload submissions,
 matches non-admin users to Canvas student enrollments by BayLeaf email, and
 asks for confirmation before uploading. It scans user messages on the selected
@@ -654,12 +654,17 @@ under `~/.tokens/bayleaf-lathe-rollout-20260924`. A model-mediated BayLeaf
 playtest passed: Basic selected Code Sandbox, called Lathe `bash`, and returned
 the expected `lathe-0305-ok` output.
 
-### Restricted Tools (Stealth Toolkits)
+### Restricted Course Tools
 
 | ID | Name | Access | Injected by | Description |
 |----|------|--------|-------------|-------------|
 | `brace3_canvas_toolkit` | Brace3 Canvas | `course:94741` group read grant | `brace3-94741` via `meta.toolIds` | Course-94741-only Canvas read access + date localization for Brace v3. Own `CANVAS_ACCESS_TOKEN` valve. |
-| `brace_toolkit` | Brace | No grants (stealth) | `brace_filter` | Canvas API, GitHub API, Google Drive used by Brace v2 (valve: multiple keys). |
+| `brace3_github_toolkit` | Brace3 GitHub | `course:94741` group read grant | `brace3-94741` via `meta.toolIds` | Public GitHub discovery, files, history and Actions/Pages evidence. |
+| `brace3_drive_toolkit` | Brace3 Drive | `course:94741` group read grant | `brace3-94741` via `meta.toolIds` | Shared Brace identity; Docs, Sheets, Slides and folder-scoped search. |
+
+Brace2's all-in-one toolkit, prompt/tool-injection filter and submission action
+were deleted from production and the current tree on 2026-09-30. Their source
+and non-secret metadata remain in Git; see [retirement records](archive/brace2-retirement.md).
 
 ### Brace3 Canvas tools
 
@@ -760,53 +765,17 @@ before returning live details; transparency is not permission to reveal
 models the caller cannot access. A Canvas-generated prompt may be absent from
 the static model record because the filter assembles it at request time.
 
-### 3a. Stealth Toolkit Pattern
+### 3a. Explicit Model Tool Bindings
 
-Several toolkits are not directly visible to users. Instead, a paired filter
-force-injects the toolkit into the request at runtime. This gives the admin full
-control over which models get which tools, without users being able to
-accidentally enable or disable them via the chat composer's tool picker.
+Help and Brace3 bind tools through `meta.toolIds`. Brace3's Canvas filter
+fetches the course system prompt, not tool bindings. On OWUI 0.11.4, model
+binding does not bypass `get_tools()`'s access check: non-admin users also need
+tool read grants, which can expose those tools in their other model pickers.
+The toolkits enforce their own resource/access boundaries at invocation time.
 
-**How it works:**
-
-1. **Create the toolkit** normally (`tools deploy`), but **do not grant any
-   access** (`access_grants: []`). With no grants, the toolkit is invisible in
-   the user-facing tool picker.
-
-2. **Create a paired filter** whose `inlet` method appends the toolkit ID to
-   `body["tool_ids"]`:
-
-   ```python
-   class Filter:
-       def inlet(self, body, __user__, __metadata__):
-           body.setdefault("tool_ids", []).append("my_toolkit")
-           return body
-   ```
-
-3. **Attach the filter to the model** (via `params.filter_ids` on the model
-   config). The filter runs before tool dispatch, so the toolkit is available
-   to the model even though the user never selected it.
-
-**Current instances:**
-
-| Filter | Toolkit | Model(s) |
-|--------|---------|----------|
-| `brace_filter` | `brace_toolkit` | `brace-*` |
-
-(`help_filter` was a former instance; it was retired in June 2026 because the
-Help model needs no filter-time setup. Brace3 still needs a filter for its
-Canvas-sourced system prompt, but no longer uses it for toolkit injection.
-Both models bind their toolkits via `toolIds`. Unlike Help's admin-only toolkit,
-Brace3 needs a course-group tool grant for non-admin users. On OWUI 0.11.4,
-model binding does not bypass `get_tools()`'s access check.)
-
-**When to use this pattern:**
-
-- The toolkit should always be available on a specific model, not user-selectable.
-- The toolkit exposes internal APIs (groups, models, access grants) that should
-  not be casually browsable from arbitrary models.
-- The filter needs to do additional setup (e.g. fetch a system prompt, derive
-  context from the model ID) alongside the toolkit injection.
+The former stealth pattern injected `body["tool_ids"]` from a filter. Help
+stopped using it in June 2026; the remaining Brace2 implementation was retired
+on 2026-09-30. Historical source is linked in the retirement records above.
 
 ### Google Workspace (GWS Toolkit)
 
@@ -899,7 +868,8 @@ These are **never** committed to this repo:
 - `gws_toolkit` — `google_client_id`, `google_client_secret`, `base_url`, `enabled_capabilities`
 - `web_context_toolkit` — `tavily_api_key`, `search_depth`, `include_answer`, `max_results`, `extract_depth`
 - `help_toolkit` — `INVITE_SIGNING_KEY` (optional; falls back to `WEBUI_SECRET_KEY` if empty)
-- `brace_toolkit` — `GITHUB_API_TOKEN`, `CANVAS_ACCESS_TOKEN`, `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON`
+- `brace3_github_toolkit` — `COURSE_GITHUB_CONFIG_JSON`
+- `brace3_drive_toolkit` — `GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON`
 - `brace3_canvas_system_prompt_filter` — `CANVAS_ACCESS_TOKEN` (fetches the course system prompt)
 - `brace3_canvas_toolkit` — `CANVAS_ACCESS_TOKEN` (independent tool-time Canvas access; currently duplicated from the filter valve)
 
@@ -919,9 +889,7 @@ pipeline. Each is in `functions/<id>/` with `function.py` and `meta.json`.
 | `rate_limit_filter` | filter | yes | **yes** | Per-user rate limiting (10/min, 50/hr, 100/3hr sliding window) |
 | `basic_prompt_filter` | filter | no | **yes** | Assembles per-request system-prompt augmentations for the Basic model (OAuth role + chat-storage context); attached via Basic's `filterIds`. See issue #44. |
 | `depth_limit_filter` | filter | yes | **yes** | Halves max response tokens with each turn |
-| `brace_submit_action` | action | no | no | Button to submit conversation HTML to Canvas assignment (Brace v2 only) |
 | `brace3_submit_action` | action | no | yes | Model-bound button to submit a structured Brace3 transcript to an HTML-upload assignment in course 94741. |
-| `brace_filter` | filter | no | no | Injects `brace_toolkit` and fetches system prompt from Canvas wiki page at hardcoded slug (Brace v2) |
 | `brace3_canvas_system_prompt_filter` | filter | no | yes | Fetches system prompt from Canvas page by title "Brace3 System Prompt" (Brace v3). Derives course ID from model ID (`brace3-NNN`). Raises on missing page. Valve: `CANVAS_ACCESS_TOKEN`. Toolkit bound separately on the model. |
 
 ### Rate Limit Filter
@@ -1269,7 +1237,8 @@ chat/
 │   │   ├── model.json
 │   │   └── profile.png
 ├── archive/
-│   └── gambit-system-prompt.md  # Preserved pre-agentic rapid-prototyping prompt
+│   ├── brace2-retirement.md    # Historical source links and retirement evidence
+│   └── gambit-system-prompt.md # Preserved pre-agentic rapid-prototyping prompt
 ├── analysis/
 │   └── clio-gist/       # Privacy-preserving aggregate Chat-use analysis pipeline
 ├── skills/                 # One dir per skill: skill.md + meta.json
@@ -1294,9 +1263,8 @@ chat/
 │   ├── gws_toolkit/
 │   │   ├── tool.py          # Google Workspace — per-user, per-chat OAuth2 (Drive, Gmail, Calendar, Sheets)
 │   │   └── meta.json
-│   ├── brace_toolkit/       # Brace v2 — Canvas + GitHub + Drive
-│   │   ├── tool.py
-│   │   └── meta.json
+│   ├── brace3_drive_toolkit/   # Shared Drive identity, folder-scoped search
+│   ├── brace3_github_toolkit/  # Public GitHub reads, course credentials
 │   ├── brace3_canvas_toolkit/  # Brace v3 — Canvas read-only, model-bound with own token valve
 │   │   ├── tool.py
 │   │   └── meta.json
@@ -1316,10 +1284,7 @@ chat/
     ├── basic_prompt_filter/ # Basic model prompt augmentations (active)
     │   ├── function.py
     │   └── meta.json
-    ├── brace_submit_action/ # Brace v2 only (inactive)
-    │   ├── function.py
-    │   └── meta.json
-    ├── brace_filter/        # Brace v2 — hardcoded slug, fallback on error (inactive)
+    ├── brace3_submit_action/ # Brace v3 structured Canvas transcript submission
     │   ├── function.py
     │   └── meta.json
     ├── brace3_canvas_system_prompt_filter/ # Brace v3 — Canvas-sourced prompt

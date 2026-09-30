@@ -101,6 +101,12 @@ the UI (recover it from git: `git show HEAD:chat/models/<id>/model.json`), or
 
 ## Refinement log
 
+- 2026-09-30: Retired unbound Brace2 toolkit/filter/action after comparing live
+  source to Git and saving a private source/metadata/valve snapshot. Use the
+  stored-model `/api/v1/models/export` inventory for binding checks: the CLI's
+  model list also includes discovered provider models that have no stored row.
+  Verified legacy absence and unchanged Brace3 metadata/valves/model bindings.
+
 - 2026-09-30: Drive v0.1.2 makes search's folder required in both the generated
   schema and runtime validation, removing global search while retaining explicit
   one-level traversal. Twenty-five tests and live source/schema readback passed;

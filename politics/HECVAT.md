@@ -2034,7 +2034,7 @@ See START HERE section.
 
 - **Transport-layer validation:** Cloudflare WAF applies managed rules including OWASP core patterns.
 - **Request-schema validation:** the API validates OpenAI-compatible chat request schemas before forwarding.
-- **Prompt-injection resistance:** tools that would take privileged actions (e.g. Google Workspace write operations via `gws_toolkit`, Canvas submissions via `brace_submit_action`) require explicit user consent or user-in-the-loop confirmation via OWUI's event-emitter modals, not model-alone decisions.
+- **Prompt-injection resistance:** tools that would take privileged actions (e.g. Google Workspace write operations via `gws_toolkit`, Canvas submissions via `brace3_submit_action`) require explicit user consent or user-in-the-loop confirmation via OWUI's event-emitter modals, not model-alone decisions. (The legacy Brace2 action was retired on 2026-09-30.) ✨
 - **Tool-exposure minimization:** the "stealth toolkit" pattern (see `../chat/DESIGN.md §3a`) restricts which tools any given model can call. Tools that expose internal state (groups, access grants) are never exposed on general-purpose models.
 - **Rate limiting:** the `rate_limit_filter` caps requests per user (10/min, 50/hr, 100/3hr) and applies globally.
 - **Not implemented:** automated DLP scanning of user prompts for sensitive content.
@@ -2099,7 +2099,7 @@ See START HERE section.
 
 **Answer:** Yes for consequential actions.
 
-**Additional Information:** Google Workspace actions (drafting emails, creating/editing calendar events, writing to Sheets) require per-chat OAuth consent via an in-chat modal and are scoped to the capabilities the user grants; capabilities are also capped by the operator's `enabled_capabilities` admin valve. Canvas write-back actions (the Brace v2 `brace_submit_action`) require an explicit user button press. Read-only tool calls (web search, web reader, read a Canvas page, campus directory, date conversion) do not require per-call confirmation but are bounded by the user's own permissions in the target system.
+**Additional Information:** Google Workspace actions (drafting emails, creating/editing calendar events, writing to Sheets) require per-chat OAuth consent via an in-chat modal and are scoped to the capabilities the user grants; capabilities are also capped by the operator's `enabled_capabilities` admin valve. Canvas write-back actions (`brace3_submit_action`, replacing the retired Brace2 action) require an explicit user button press and confirmation. Read-only tool calls do not require per-call confirmation. Authorization depends on the integration: Google Workspace uses the user's OAuth permissions, while Brace3 uses course-authorized tool invocation and operator-configured credentials, including a shared Brace Drive identity. ✨
 
 ---
 
