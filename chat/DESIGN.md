@@ -707,6 +707,26 @@ returns only its description and general requirements.
 
 ### Other Restricted Tools
 
+**Brace3 GitHub (2026-09-30).** `brace3_github_toolkit` v0.2.0 is explicitly
+bound to `brace3-94741`, alongside Canvas, with a course-group tool read grant.
+Its eleven named read-only tools discover public user/org repositories and
+inspect repository metadata, commits/files,
+comparisons, Actions runs/jobs/logs, and distinct Pages build/deployment evidence.
+The toolkit rereads the selected workspace model's `meta.bayleaf_course_id`
+and binding, verifies course membership and model read access, then chooses a
+PAT from the admin-only `COURSE_GITHUB_CONFIG_JSON` valve. Anonymous repository
+visibility checks independently enforce public-only access, even with a broad
+PAT. Credentials and signed log download URLs never enter tool results.
+Course 94741's PAT has a 90-day lifetime, approximately through 2026-12-29;
+replace it before later reuse. Source, schemas, grants, valves, and binding
+readbacks passed, as did 30 local tests and direct public API smoke tests.
+Repository metadata includes public GitHub-recorded fork parent/network root
+and generating-template summaries. Template origin can support an assignment's
+starter requirement; missing origin is inconclusive, not proof of noncompliance.
+Adam confirmed production playtesting works as expected; non-admin authorization
+and transcript export were not separately verified. See
+`tools/brace3_github_toolkit/README.md` for boundaries and remaining checks.
+
 | ID | Name | Access | Description |
 |----|------|--------|-------------|
 | `help_toolkit` | Help | No grants (model-bound via `toolIds` on `help`) | Group membership listing, model access listing, invite code acceptance/creation. Valve: `INVITE_SIGNING_KEY` (optional, falls back to `WEBUI_SECRET_KEY`). |

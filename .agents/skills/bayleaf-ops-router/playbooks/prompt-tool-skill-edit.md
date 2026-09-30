@@ -101,6 +101,19 @@ the UI (recover it from git: `git show HEAD:chat/models/<id>/model.json`), or
 
 ## Refinement log
 
+- 2026-09-30: Human playtesting motivated GitHub v0.2.0 account-repository
+  discovery and template/fork provenance. Verified real template links with
+  anonymous GitHub metadata and treated absent origin as inconclusive. Thirty
+  local tests passed; approved deployment readback matched eleven schemas and
+  source, with unchanged valves, grants and model configuration. Adam confirmed
+  production playtesting works as expected; non-admin and export checks remain separate.
+
+- 2026-09-30: Created and bound Brace3's public-only GitHub toolkit with a
+  course-scoped credential map. Anonymous visibility checks precede token use;
+  source/schema/valve/grant/model readbacks passed. Bare OWUI completion smoke
+  tests returned named tool calls without executing them: schema selection is
+  not an end-to-end playtest. Non-admin browser execution remains a human gate.
+
 - 2026-09-30: Deployed the Brace3 2.0.3 docstring follow-up after ten local checks.
   Compared live source with the prior deployment snapshot before writing; pulled
   source and schemas back and verified unchanged grants/valves. This updates
