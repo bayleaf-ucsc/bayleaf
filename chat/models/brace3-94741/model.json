@@ -51,7 +51,8 @@
     },
     "toolIds": [
       "brace3_canvas_toolkit",
-      "brace3_github_toolkit"
+      "brace3_github_toolkit",
+      "brace3_drive_toolkit"
     ],
     "bayleaf_course_id": "94741"
   },

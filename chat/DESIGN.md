@@ -707,6 +707,23 @@ returns only its description and general requirements.
 
 ### Other Restricted Tools
 
+**Brace3 Drive (2026-09-30).** `brace3_drive_toolkit` v0.1.2 is bound to
+`brace3-94741` with course-group tool read access. Seven `gdrive_*` tools read
+Docs, Sheets and Slides, browse/search folders, identify the sharing account,
+and explicitly refuse unsupported visual perception. One global admin valve,
+`GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON`, holds the shared Brace identity's key,
+copied from the legacy toolkit. Authorized courses share the same Drive library;
+course membership gates toolkit invocation, not file-level separation. UCSC-only
+sharing does not grant this service account access. Source, schemas, credential,
+grant and binding readbacks passed; 25 offline tests passed. Search requires a
+nonempty folder and covers direct children only, reducing bulk discovery without
+introducing course-level file isolation. A production folder
+search now returns two Docs after removing `orderBy` from full-text queries:
+Google requires relevance ordering and returns 403 for explicit sorting. Errors
+no longer assume every 403 is a sharing denial. Live successful
+document reads and human/non-admin playtesting remain pending. See
+`tools/brace3_drive_toolkit/README.md` for setup, limits and evidence. ✨
+
 **Brace3 GitHub (2026-09-30).** `brace3_github_toolkit` v0.2.0 is explicitly
 bound to `brace3-94741`, alongside Canvas, with a course-group tool read grant.
 Its eleven named read-only tools discover public user/org repositories and

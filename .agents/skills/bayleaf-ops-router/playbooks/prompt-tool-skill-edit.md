@@ -101,6 +101,23 @@ the UI (recover it from git: `git show HEAD:chat/models/<id>/model.json`), or
 
 ## Refinement log
 
+- 2026-09-30: Drive v0.1.2 makes search's folder required in both the generated
+  schema and runtime validation, removing global search while retaining explicit
+  one-level traversal. Twenty-five tests and live source/schema readback passed;
+  credential, grants and model configuration were preserved.
+
+- 2026-09-30: Drive playtesting exposed a non-permission 403: Google rejects
+  `orderBy` with `fullText` queries. Inspected the upstream error rather than
+  accepting the model's sharing explanation; fixed query construction/error
+  classification, verified the exact live search and deployed v0.1.1 with
+  unchanged schemas/valves/grants/model. Twenty-four offline tests passed.
+
+- 2026-09-30: Deployed Brace3 Drive with one shared service-account valve and
+  seven explicit schemas; copied the legacy key in memory and preserved existing
+  model bindings. `valves-set-field-file ... -` failed in this run; JSON stdin to
+  `valves-set` worked. Source/schema/valve/grant/binding readback passed; successful
+  fixture reads and human/non-admin playtesting remain separate pending checks.
+
 - 2026-09-30: Human playtesting motivated GitHub v0.2.0 account-repository
   discovery and template/fork provenance. Verified real template links with
   anonymous GitHub metadata and treated absent origin as inconclusive. Thirty
