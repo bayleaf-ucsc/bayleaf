@@ -9,7 +9,7 @@
       "title": "Brace3 Canvas Toolkit",
       "author": "Adam Smith",
       "description": "Course-scoped Canvas LMS access and date localization tools for Brace3. Its own Canvas token valve supplies API access.",
-      "version": "1.0.3"
+      "version": "2.0.3"
     },
     "has_user_valves": false
   },
@@ -30,8 +30,8 @@
   "write_access": true,
   "specs": [
     {
-      "name": "localize_iso_date",
-      "description": "Converts a UTC ISO date string (e.g. '2025-09-29T23:00:00Z') to a localized\ndatetime string (default timezone: America/Los_Angeles).\n\nAlways use this when presenting Canvas dates to students — Canvas returns all\ndates in GMT.",
+      "name": "canvas_localize_date",
+      "description": "Convert an ISO date to a named timezone (default: America/Los_Angeles).\nCanvas read tools already include localized dates in *_local fields.\nUse this for another timezone or a date without a localized counterpart.\nDo not mention specific dates unless asked. Never infer a student's extension\nfrom course-wide dates.",
       "parameters": {
         "properties": {
           "iso_date_str": {
@@ -49,22 +49,76 @@
       }
     },
     {
-      "name": "use_canvas_api",
-      "description": "Make a read-only, paginated request against the UCSC Canvas LMS using\nthe course instructor's credentials.\n\nAccess is limited to non-sensitive endpoints in course 94741.\nCanvas always returns dates in GMT — use localize_iso_date before\npresenting any date or time to a student.\n\nAllowed URL patterns and recommended jq field selectors:\n\nhttps://canvas.ucsc.edu/api/v1/courses/94741?include[]=syllabus_body  {syllabus_body}\nhttps://canvas.ucsc.edu/api/v1/courses/94741/assignments              .[] | {id, name, due_at}\nhttps://canvas.ucsc.edu/api/v1/courses/94741/assignments/ASSIGNMENT_ID {description, submission_types}\nhttps://canvas.ucsc.edu/api/v1/courses/94741/quizzes/QUIZ_ID          {title, description}\nhttps://canvas.ucsc.edu/api/v1/courses/94741/pages                    .[] | {title, url}\nhttps://canvas.ucsc.edu/api/v1/courses/94741/pages/PAGE_URL_OR_SLUG   {body}\n\nWhen listing assignments, always fetch id and name first to disambiguate\nbefore fetching details. Do not mention specific dates unless asked, and\nalways localize them when you do.\n\nIf an API request fails, do NOT guess or invent data. Report the failure\nand try a different approach if possible.",
+      "name": "canvas_list_assignments",
+      "description": "List published course-94741 assignments with IDs, names, links and dates.\nUse this to disambiguate assignment names before reading details; a supplied\nassignment URL already gives its ID. Descriptions and rubrics require\ncanvas_read_assignment. Dates are course-wide, not personal extensions;\nuse *_local when asked about dates. Never invent data after a failure.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "canvas_read_assignment",
+      "description": "Read a published assignment's full HTML description, submission types,\nallowed file extensions, attempts and rubric when present. For a course-94741\nassignment URL, use its final numeric ID directly. A quiz_id links to\ncanvas_read_quiz for the quiz description (not questions or answers).\nDates are course-wide; present *_local only when asked. Missing fields are\nnot evidence of no requirement. Never invent data after a failure.",
       "parameters": {
         "properties": {
-          "resource_url": {
-            "type": "string"
-          },
-          "jq_expr": {
-            "default": ".",
-            "type": "string"
+          "assignment_id": {
+            "type": "integer"
           }
         },
         "required": [
-          "resource_url"
+          "assignment_id"
         ],
         "type": "object"
+      }
+    },
+    {
+      "name": "canvas_list_pages",
+      "description": "List published, non-hidden course-94741 pages with titles, slugs (url),\npage IDs and links. Use canvas_read_page with the returned slug for content.\nUnpublished or student-hidden pages are excluded. Never invent missing data.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "canvas_read_page",
+      "description": "Read a published, non-hidden course-94741 page's full HTML body.\nSupply the url slug from canvas_list_pages or the last segment of a Canvas\npage URL, not the title or full URL. Never invent data after a failure.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_slug": {
+            "type": "string"
+          }
+        },
+        "required": ["page_slug"]
+      }
+    },
+    {
+      "name": "canvas_read_syllabus",
+      "description": "Read course 94741's full HTML syllabus, course name and timezone.\nFollow links for authoritative course policies and resources. An empty\nsyllabus is returned as empty; never guess its contents after a failure.\nIf the course's policy on AI assistance is not already in context, start\nwith the syllabus and follow relevant policy links. Absence of a stated\npolicy is not permission; do not invent one.\nWhen answering from the syllabus, usually cite it conspicuously using the\nreturned html_url: \"As written in [the course syllabus](URL), ...\".\nLink directly to the syllabus page, not merely the course homepage.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "canvas_list_quizzes",
+      "description": "List published course-94741 quizzes with IDs, titles, assignment IDs,\nlinks and course-wide dates. Use canvas_read_quiz for a description.\nThis does not read questions, answers or student attempts. Present *_local\ndates only when asked. Never invent data after a failure.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "canvas_read_quiz",
+      "description": "Read a published course-94741 quiz's full HTML description and general\nrequirements (time limit, allowed attempts, points and question count).\nUse a quiz_id from an assignment or canvas_list_quizzes, not an assignment\nID. No questions, answers, access codes or student attempts are returned.\nThis intentionally sanitized, depersonalized view provides student-facing\ninformation, not instructor-only grading data or a specific student's view.\nQuizzes often assess learning: be especially cautious with explanations\nthat could solve an assessed task. Elicit the student's reasoning and support\ntheir understanding without supplying answers or making claims for them.\nInstructors also use Canvas quizzes as multi-step activity containers,\nsurveys and generic forms. Judge the activity by its instructions, not its\nCanvas label: explain guidance and logistics, help students reflect, and\nleave survey responses and completion attestations to the student.\nPresent *_local dates only when asked; they are not personal extensions.\nNever invent data after a failure.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "quiz_id": {
+            "type": "integer"
+          }
+        },
+        "required": ["quiz_id"]
       }
     }
   ]

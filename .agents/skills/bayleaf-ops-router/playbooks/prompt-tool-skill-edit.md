@@ -101,6 +101,17 @@ the UI (recover it from git: `git show HEAD:chat/models/<id>/model.json`), or
 
 ## Refinement log
 
+- 2026-09-30: Deployed the Brace3 2.0.3 docstring follow-up after ten local checks.
+  Compared live source with the prior deployment snapshot before writing; pulled
+  source and schemas back and verified unchanged grants/valves. This updates
+  pedagogical and citation guidance only, not quiz content-item retrieval.
+- 2026-09-30: Brace3's jq-to-named-tools migration needed a matching instruction
+  change in the Canvas-hosted prompt; Adam made that change himself. Live Canvas
+  shapes exposed unpublished staff material and instructor-only quiz fields, so
+  student-view projections and publication checks were tested before deployment.
+  `tools show` omits source (use `tools pull` separately); generated no-argument
+  schemas omit `required` rather than returning an empty list. Source/schema
+  readback and preserved grants/valves passed; fresh-chat human playtest is pending.
 - 2026-09-28: Follow-up on the Basic Canvas-link edit: retyping the entire
   JSON-encoded prompt line to add one sentence was error-prone and unreadable
   in review. Agent-driven prompt edits should extract text, patch the text,

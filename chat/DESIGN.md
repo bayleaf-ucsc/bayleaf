@@ -661,6 +661,50 @@ the expected `lathe-0305-ok` output.
 | `brace3_canvas_toolkit` | Brace3 Canvas | `course:94741` group read grant | `brace3-94741` via `meta.toolIds` | Course-94741-only Canvas read access + date localization for Brace v3. Own `CANVAS_ACCESS_TOKEN` valve. |
 | `brace_toolkit` | Brace | No grants (stealth) | `brace_filter` | Canvas API, GitHub API, Google Drive used by Brace v2 (valve: multiple keys). |
 
+### Brace3 Canvas tools
+
+Version **2.0.3** replaces `use_canvas_api(resource_url, jq_expr)` with eight
+named tools so course activity is legible in tool calls and submitted transcripts:
+
+- `canvas_list_assignments`, `canvas_read_assignment(assignment_id)`
+- `canvas_list_pages`, `canvas_read_page(page_slug)`
+- `canvas_list_quizzes`, `canvas_read_quiz(quiz_id)`
+- `canvas_read_syllabus`, `canvas_localize_date(iso_date_str, timezone_str)`
+
+Lists return named arrays (`assignments`, `pages`, `quizzes`) of identifying
+metadata; individual reads return objects with full HTML content. Assignment
+details preserve submission types, allowed extensions, attempts and rubrics when
+present. Quiz details expose descriptions and general requirements, not questions,
+answers, access codes or attempts. Explicit field projections exclude instructor
+administration fields, page editor identities and student-specific records.
+Course-wide UTC dates retain their original fields and gain `*_local` counterparts
+with Los Angeles UTC offsets, including daylight-saving changes. They do not
+represent individual extensions.
+
+The view is depersonalized: published course-wide resources only, excluding
+student-hidden pages and resources explicitly restricted to overrides. Direct reads
+apply the same publication checks as lists. Unavailable reads say the resource
+might not exist or might be unpublished; they do not confirm hidden titles. This
+is not impersonation of a specific student or a determination of their individual
+availability, enrollment, accommodations or module prerequisites. Instructor
+credentials remain inside the fetcher, with course-scoped validation on initial
+and pagination URLs and redirects disabled.
+
+**2026-09-30 verification:** ten local tests passed, plus read-only calls against
+course 94741 (8 visible assignments, 7 quizzes, 1 page, syllabus and representative
+details). The unpublished staff page was excluded from lists and direct reads.
+Production source and eight generated schemas were read back after deployment;
+grants and credential valves were preserved. Adam updated the Canvas-hosted prompt
+himself to replace the old jq instruction. New chats fetch that updated prompt;
+existing chats can retain the per-session cached version. A fresh-chat human
+playtest remains pending.
+
+The 2.0.3 docstring follow-up is also deployed and readback-verified: quiz guidance
+distinguishes assessments from activity containers and surveys; syllabus guidance
+directs AI-policy discovery and conspicuous citations to the direct syllabus URL.
+Quiz question/content-item retrieval remains unimplemented; the quiz tool still
+returns only its description and general requirements.
+
 ### Other Restricted Tools
 
 | ID | Name | Access | Description |
