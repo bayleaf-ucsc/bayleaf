@@ -2,11 +2,13 @@
 title: Brace3 Drive Toolkit
 author: Adam Smith
 description: Course-authorized Google Docs, Sheets, Slides and folder reads.
-version: 0.1.2
-requirements: aiohttp, pydantic, PyJWT[crypto]
+version: 0.2.0
+requirements: aiohttp, pydantic, PyJWT[crypto], Pillow
 """
 
 import asyncio
+import base64
+import io
 import json
 import re
 import time
@@ -15,12 +17,15 @@ from urllib.parse import parse_qs, quote, urlparse
 import aiohttp
 import jwt
 from pydantic import BaseModel, Field
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 TOOL_ID = "brace3_drive_toolkit"
 DRIVE = "https://www.googleapis.com/drive/v3"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 MAX_BYTES = 8 * 1024 * 1024
+MAX_IMAGE_BYTES = 4 * 1024 * 1024
+MAX_IMAGE_PIXELS = 16000000
 MIME = "application/vnd.google-apps."
 
 
@@ -70,7 +75,7 @@ def _safe_link(url):
 def _image(object_id, obj):
     embedded = obj.get("inlineObjectProperties", obj.get("positionedObjectProperties", {})).get("embeddedObject", {})
     alt = " / ".join(str(embedded[key]) for key in ("title", "description") if embedded.get(key))
-    return f"[Image {object_id}" + (f": {alt}" if alt else "") + "; vision unsupported]"
+    return f"[Image {object_id}" + (f": {alt}" if alt else "") + "]"
 
 
 def _doc_blocks(blocks, tab):
@@ -187,8 +192,76 @@ def _slide_elements(elements):
                 alt = element.get("description") or element.get("title") or ""
                 if key == "wordArt":
                     alt = element[key].get("renderedText", alt)
-                out.append(f"[{label} {oid}: {alt}; vision unsupported]")
+                out.append(f"[{label} {oid}: {alt}]")
     return "\n".join(part for part in out if part)
+
+
+def _vision_supported(model, metadata):
+    selected = (metadata or {}).get("model") or model or {}
+    if not isinstance(selected, dict):
+        return False
+    architecture = selected.get("architecture") or {}
+    modalities = architecture.get("input_modalities")
+    if isinstance(modalities, list) and modalities:
+        return "image" in modalities
+    modality = architecture.get("modality", "")
+    if isinstance(modality, str) and "->" in modality:
+        return "image" in modality.split("->", 1)[0]
+    meta = (selected.get("info") or {}).get("meta") or selected.get("meta") or {}
+    return (meta.get("capabilities") or {}).get("vision") is True
+
+
+def _object_id(value):
+    # Docs IDs include dots; Slides IDs can include colon/hyphen/underscore.
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.:-]{0,255}", value):
+        raise ReadFailure("Supply an image or slide ID from a document/slides read.")
+    return value
+
+
+def _document_tabs(data):
+    def visit(entries):
+        for entry in entries:
+            yield entry.get("documentTab", {})
+            yield from visit(entry.get("childTabs", []))
+
+    return visit(data["tabs"]) if data.get("tabs") else iter([data])
+
+
+def _google_image_url(url):
+    # Only fresh URLs supplied by authenticated Google APIs reach this check.
+    # Neither sourceUri (author-controlled) nor arbitrary caller URLs are fetched.
+    try:
+        parsed = urlparse(url)
+        host = parsed.hostname or ""
+        return (parsed.scheme == "https" and host.endswith(".googleusercontent.com")
+                and not parsed.username and not parsed.password
+                and parsed.port in (None, 443) and not parsed.fragment)
+    except (TypeError, ValueError):
+        return False
+
+
+def _image_data_uri(raw):
+    if len(raw) > MAX_IMAGE_BYTES:
+        raise ReadFailure("Image exceeds the 4 MiB download limit.")
+    try:
+        with Image.open(io.BytesIO(raw), formats=["PNG", "JPEG", "GIF", "WEBP"]) as image:
+            if image.width * image.height > MAX_IMAGE_PIXELS:
+                raise ReadFailure("Image exceeds the 16-megapixel limit.")
+            # First frame only. Re-encoding removes metadata; resize bounds model
+            # image cost without introducing another inference/provider path.
+            image.seek(0)
+            image = ImageOps.exif_transpose(image)
+            image.thumbnail((1600, 1600))
+            image = image.convert("RGBA" if "A" in image.getbands() or "transparency" in image.info else "RGB")
+            image.info.clear()
+            output = io.BytesIO()
+            image.save(output, format="PNG")
+            content = output.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+        raise ReadFailure("Not a readable PNG, JPEG, GIF or WebP image.")
+    if len(content) > MAX_IMAGE_BYTES:
+        raise ReadFailure("Decoded image exceeds the 4 MiB delivery limit. Supply a smaller image.")
+    return "data:image/png;base64," + base64.b64encode(content).decode("ascii")
 
 
 async def _authorize(config_json, user, model, metadata):
@@ -279,19 +352,88 @@ class _Drive:
                                   status=response.status, sharing_identity=self.key["client_email"])
             return await self._json(response)
 
-    async def file(self, reference, resource_key, kind):
+    async def file(self, reference, resource_key, kind=None):
         fid, key = _reference(reference, resource_key)
         data = await self.get(f"{DRIVE}/files/{fid}", {"fields": "id,name,mimeType,modifiedTime,version", "supportsAllDrives": "true"}, fid, key)
-        if data.get("mimeType") != MIME + kind:
+        if kind and data.get("mimeType") != MIME + kind:
             raise ReadFailure(f"Expected a Google {kind}; use the matching gdrive reader. Office binaries and shortcuts are not converted.")
-        return fid, key, {"id": fid, "title": data.get("name", ""), "modified": data.get("modifiedTime"),
+        return fid, key, {"id": fid, "title": data.get("name", ""), "mime_type": data.get("mimeType"), "modified": data.get("modifiedTime"),
                           "version": data.get("version"), "source": f"https://drive.google.com/file/d/{fid}/view"}
+
+    async def image_bytes(self, url, file_id="", resource_key=""):
+        headers = {}
+        params = None
+        if file_id:
+            # Standalone Drive media only; never forward OAuth to image hosts.
+            url = f"{DRIVE}/files/{_identifier(file_id)}"
+            params = {"alt": "media", "supportsAllDrives": "true"}
+            headers["Authorization"] = f"Bearer {self.token}"
+            if resource_key:
+                headers["X-Goog-Drive-Resource-Keys"] = f"{file_id}/{_identifier(resource_key)}"
+        elif not _google_image_url(url):
+            raise ReadFailure("Google returned an unsupported image host.")
+        async with self.session.get(url, params=params, headers=headers, allow_redirects=False) as response:
+            if response.status != 200:
+                raise ReadFailure("Image download unavailable or redirected. Retry the view call to resolve fresh image access.", status=response.status)
+            body = bytearray()
+            async for chunk in response.content.iter_chunked(65536):
+                body.extend(chunk)
+                if len(body) > MAX_IMAGE_BYTES:
+                    raise ReadFailure("Image exceeds the 4 MiB download limit.")
+            return bytes(body)
+
+    async def view_image(self, args):
+        fid, key, info = await self.file(args["file"], args["resource_key"])
+        if args["version"] and args["version"] != info["version"]:
+            raise ReadFailure("File changed since the text read. Read it again to select a current image reference.")
+        kind, ref, url = info["mime_type"], args["image_ref"], ""
+        if kind in ("image/png", "image/jpeg", "image/gif", "image/webp"):
+            if ref:
+                raise ReadFailure("Omit image_ref for a standalone image file.")
+            raw = await self.image_bytes("", fid, key)
+        else:
+            if kind not in (MIME + "document", MIME + "presentation"):
+                raise ReadFailure("Vision supports Doc images, Slides and standalone PNG/JPEG/GIF/WebP files. Sheets rendering is unsupported.")
+            _object_id(ref)
+            if kind == MIME + "document":
+                data = await self.get(f"https://docs.googleapis.com/v1/documents/{fid}",
+                                      {"includeTabsContent": "true", "suggestionsViewMode": "PREVIEW_WITHOUT_SUGGESTIONS"}, fid, key)
+                matches = []
+                for tab in _document_tabs(data):
+                    for collection, prop in (("inlineObjects", "inlineObjectProperties"), ("positionedObjects", "positionedObjectProperties")):
+                        obj = tab.get(collection, {}).get(ref, {})
+                        uri = obj.get(prop, {}).get("embeddedObject", {}).get("imageProperties", {}).get("contentUri")
+                        if uri:
+                            matches.append(uri)
+                if len(matches) == 1:
+                    url = matches[0]
+            elif kind == MIME + "presentation":
+                root = f"https://slides.googleapis.com/v1/presentations/{fid}"
+                data = await self.get(root, None, fid, key)
+                slides = data.get("slides", [])
+                if any(slide.get("objectId") == ref for slide in slides):
+                    thumb = await self.get(root + "/pages/" + quote(ref, safe="") + "/thumbnail",
+                                           {"thumbnailProperties.thumbnailSize": "LARGE", "thumbnailProperties.mimeType": "PNG"}, fid, key)
+                    url = thumb.get("contentUrl", "")
+                else:
+                    def find(elements):
+                        for element in elements:
+                            if element.get("objectId") == ref:
+                                yield element.get("image", {}).get("contentUrl", "")
+                            yield from find(element.get("elementGroup", {}).get("children", []))
+                    matches = [uri for slide in slides for uri in find(slide.get("pageElements", [])) if uri]
+                    if len(matches) == 1:
+                        url = matches[0]
+            if not url:
+                raise ReadFailure("Image/slide reference is not available in this file. Read it again; for slide charts or shapes, view the whole slide ID.")
+            raw = await self.image_bytes(url)
+        return await asyncio.to_thread(_image_data_uri, raw)
 
     async def execute(self, action, args):
         if action == "identity":
             return {"sharing_identity": self.key["client_email"], "access": "Viewer shares or anyone-with-link; not UCSC-domain membership."}
         if action == "vision":
-            return {"failure": "Agent perception of visual content in Google Drive is currently unsupported. Text and alt text are readable; do not claim to have seen the image."}
+            return await self.view_image(args)
         if action in ("list", "search"):
             folder, key = _reference(args["folder"], args["resource_key"])
             q = ["trashed = false", f"'{folder}' in parents"]
@@ -325,7 +467,7 @@ class _Drive:
             data = await self.get(f"https://docs.googleapis.com/v1/documents/{fid}",
                                   {"includeTabsContent": "true", "suggestionsViewMode": "PREVIEW_WITHOUT_SUGGESTIONS"}, fid, key)
             return {**info, "format": "markdown", **_window(_document(data), args["offset"], args["limit"]),
-                    "note": "Text projection; layout and visual appearance are not perceived. Suggestions excluded."}
+                    "note": "Text projection; suggestions excluded. Use gdrive_view_image with an image ID to perceive its pixels."}
         if action == "sheet":
             root = f"https://sheets.googleapis.com/v4/spreadsheets/{fid}"
             if not args["cell_range"]:
@@ -355,7 +497,7 @@ class _Drive:
         return {**info, **_window("\n\n".join(out), args["offset"], args["limit"]),
                 "start_slide": start, "total_slides": len(slides),
                 "next_slide": start + count if start + count <= len(slides) else None,
-                "note": "Text/notes only; element order is not visual reading order. Masters/layouts not expanded."}
+                "note": "Text/notes only; element order is not visual reading order. Use gdrive_view_image with a slide ID for its rendered appearance."}
 
 
 def _cell_range(value):
@@ -385,6 +527,8 @@ class Tools:
     async def _run(self, action, args, user, model, metadata):
         try:
             key = await _authorize(self.valves.GOOGLE_DRIVE_SERVICE_ACCOUNT_KEY_JSON, user, model, metadata)
+            if action == "vision" and not _vision_supported(model, metadata):
+                raise ReadFailure("Selected model lacks confirmed image-input support. Switch to a vision-capable model; the image was not fetched.")
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=45)) as session:
                 return await _Drive(session, key).execute(action, args)
         except ReadFailure as exc:
@@ -419,6 +563,7 @@ class Tools:
         """Search indexed text across files directly inside a required folder ID/link; no recursion or global search. Follow next_page_token with the same query and folder."""
         return await self._run("search", locals(), __user__, __model__, __metadata__)
 
-    async def gdrive_view_image(self, file: str, image_ref: str = "", __user__: dict = None, __model__: dict = None, __metadata__: dict = None) -> dict:
-        """Request visual perception of a Drive file or document image reference; currently returns unsupported."""
+    async def gdrive_view_image(self, file: str, image_ref: str = "", version: str = "", resource_key: str = "", __user__: dict = None, __model__: dict = None, __metadata__: dict = None) -> str | dict:
+        """View pixels: give a Doc image ID or Slides slide/image ID from a text read; omit image_ref for a standalone image. File ID/link required. Vision model only; ≤4 MiB/16 MP, resized to 1600px, first frame. Sheets unsupported."""
+        # OWUI recognizes this unwrapped data URI as image input, not text.
         return await self._run("vision", locals(), __user__, __model__, __metadata__)

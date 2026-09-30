@@ -1,5 +1,7 @@
-"""uv run --with aiohttp --with pydantic --with 'PyJWT[crypto]' python -m unittest discover -s chat/tools/brace3_drive_toolkit"""
+"""uv run --with aiohttp --with pydantic --with 'PyJWT[crypto]' --with pillow python -m unittest discover -s chat/tools/brace3_drive_toolkit"""
 
+import base64
+import io
 import inspect
 import json
 import sys
@@ -8,6 +10,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 import tool
+from PIL import Image
 
 KEY = {"type": "service_account", "client_email": "brace@example.iam.gserviceaccount.com", "private_key": "private-secret"}
 CONFIG = json.dumps(KEY)
@@ -108,7 +111,7 @@ class AuthorizationTests(unittest.IsolatedAsyncioTestCase):
             await self.authorize(metadata={"model": "basic"})
         self.models.get_model_by_id.assert_awaited_once_with("basic")
 
-    async def test_all_tools_authorize_including_stub_and_identity(self):
+    async def test_all_tools_authorize_including_vision_and_identity(self):
         instance = tool.Tools()
         with patch.object(tool, "_authorize", AsyncMock(side_effect=tool.ReadFailure("denied"))) as auth:
             for name, method in inspect.getmembers(instance, inspect.ismethod):
@@ -297,9 +300,8 @@ class DriveTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(tool.ReadFailure):
             await drive.execute("list", dict(folder="abc", resource_key="", page_token="", page_size=30))
 
-    async def test_vision_stub_and_identity_need_no_network(self):
+    async def test_identity_needs_no_network(self):
         drive, session = self.client()
-        self.assertIn("currently unsupported", (await drive.execute("vision", {}))["failure"])
         self.assertEqual((await drive.execute("identity", {}))["sharing_identity"], KEY["client_email"])
         self.assertEqual(session.calls, [])
 
@@ -314,6 +316,137 @@ class DriveTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(claims["exp"] - claims["iat"], 3600)
         self.assertEqual(session.calls[0][0], tool.TOKEN_URL)
         self.assertEqual(drive.token, "new-secret")
+
+
+def png(width=16, height=8):
+    output = io.BytesIO()
+    Image.new("RGB", (width, height), (12, 34, 56)).save(output, format="PNG")
+    return output.getvalue()
+
+
+class VisionTests(unittest.IsolatedAsyncioTestCase):
+    def client(self, kind, *responses):
+        session = Session(Response({"name": "Fixture", "mimeType": kind, "version": "7"}), *responses)
+        drive = tool._Drive(session, KEY)
+        drive.token = "access-secret"
+        return drive, session
+
+    def args(self, image_ref="img.1", **kwargs):
+        return dict(file="abc", image_ref=image_ref, version="7", resource_key="rk", **kwargs)
+
+    async def test_doc_image_resolves_child_tab_and_never_fetches_source_uri(self):
+        obj = {"inlineObjectProperties": {"embeddedObject": {"imageProperties": {
+            "contentUri": "https://lh7-rt.googleusercontent.com/private-image",
+            "sourceUri": "https://evil.example/source"}}}}
+        doc = {"tabs": [{"childTabs": [{"documentTab": {"inlineObjects": {"img.1": obj}}}]}]}
+        drive, session = self.client(tool.MIME + "document", Response(doc), Response(raw=png()))
+        result = await drive.view_image(self.args())
+        self.assertTrue(result.startswith("data:image/png;base64,"))
+        self.assertNotIn("private-image", result)
+        self.assertEqual(session.calls[-1][1]["headers"], {})
+        self.assertNotIn("evil", repr(session.calls))
+        self.assertEqual(session.calls[1][1]["headers"]["X-Goog-Drive-Resource-Keys"], "abc/rk")
+
+    async def test_slide_thumbnail_is_resolved_from_current_slide_ids(self):
+        drive, session = self.client(tool.MIME + "presentation", Response({"slides": [{"objectId": "p"}]}),
+                                     Response({"contentUrl": "https://lh7-us.googleusercontent.com/thumbnail"}), Response(raw=png()))
+        result = await drive.view_image(self.args("p"))
+        self.assertTrue(result.startswith("data:image/"))
+        self.assertTrue(session.calls[2][0].endswith("/pages/p/thumbnail"))
+        self.assertEqual(session.calls[2][1]["params"]["thumbnailProperties.thumbnailSize"], "LARGE")
+        self.assertEqual(session.calls[-1][1]["headers"], {})
+
+    async def test_grouped_slide_image_and_positioned_doc_image(self):
+        url = "https://lh3.googleusercontent.com/image"
+        slide = {"slides": [{"objectId": "p", "pageElements": [{"elementGroup": {"children": [
+            {"objectId": "img.1", "image": {"contentUrl": url}}]}}]}]}
+        doc = {"positionedObjects": {"img.1": {"positionedObjectProperties": {
+            "embeddedObject": {"imageProperties": {"contentUri": url}}}}}}
+        for kind, data in [("presentation", slide), ("document", doc)]:
+            drive, _ = self.client(tool.MIME + kind, Response(data), Response(raw=png()))
+            self.assertTrue((await drive.view_image(self.args())).startswith("data:image/"))
+
+    async def test_standalone_media_has_auth_and_resource_key(self):
+        drive, session = self.client("image/png", Response(raw=png()))
+        result = await drive.view_image(self.args(""))
+        self.assertTrue(result.startswith("data:image/"))
+        request = session.calls[-1][1]
+        self.assertEqual(request["params"]["alt"], "media")
+        self.assertEqual(request["headers"]["Authorization"], "Bearer access-secret")
+        self.assertEqual(request["headers"]["X-Goog-Drive-Resource-Keys"], "abc/rk")
+
+    async def test_unknown_ref_wrong_type_and_revision_fail_before_image_fetch(self):
+        for kind, args, responses in [
+            (tool.MIME + "document", self.args(), [Response({"tabs": []})]),
+            (tool.MIME + "presentation", self.args("missing"), [Response({"slides": [{"objectId": "p"}]})]),
+            (tool.MIME + "spreadsheet", self.args(""), []),
+            ("image/svg+xml", self.args(""), []),
+            ("image/png", self.args(), []),
+            ("image/png", dict(self.args(""), version="6"), []),
+        ]:
+            drive, session = self.client(kind, *responses)
+            with self.assertRaises(tool.ReadFailure):
+                await drive.view_image(args)
+            self.assertEqual(len(session.calls), 1 + len(responses))
+
+    async def test_unsafe_image_hosts_and_redirects_are_not_followed(self):
+        session = Session()
+        drive = tool._Drive(session, KEY)
+        for url in ["http://lh3.googleusercontent.com/x", "https://evilgoogleusercontent.com/x",
+                    "https://lh3.googleusercontent.com.evil.example/x", "https://127.0.0.1/x",
+                    "https://user@lh3.googleusercontent.com/x", "https://lh3.googleusercontent.com:8443/x"]:
+            with self.assertRaises(tool.ReadFailure):
+                await drive.image_bytes(url)
+        self.assertEqual(session.calls, [])
+        drive.session = Session(Response({}, status=302))
+        with self.assertRaises(tool.ReadFailure):
+            await drive.image_bytes("https://lh3.googleusercontent.com/x")
+        self.assertEqual(len(drive.session.calls), 1)
+
+    async def test_streamed_image_download_bound(self):
+        drive = tool._Drive(Session(Response(raw=b"x" * (tool.MAX_IMAGE_BYTES + 1))), KEY)
+        with self.assertRaises(tool.ReadFailure):
+            await drive.image_bytes("https://lh3.googleusercontent.com/x")
+
+    async def test_vision_refusal_before_network_and_no_task_model_fallback(self):
+        instance = tool.Tools()
+        capable = {"id": "vision", "info": {"meta": {"capabilities": {"vision": True}}}}
+        for selected in [{}, {"id": "text", "architecture": {"input_modalities": ["text"]}}, "unknown"]:
+            with patch.object(tool, "_authorize", AsyncMock(return_value=KEY)), patch.object(tool.aiohttp, "ClientSession") as session:
+                result = await instance.gdrive_view_image("abc", __model__=capable,
+                                                          __metadata__={"model": selected or {"id": "unknown"}})
+                self.assertIn("lacks confirmed", result["failure"])
+                session.assert_not_called()
+        self.assertTrue(tool._vision_supported(capable, None))
+        self.assertTrue(tool._vision_supported({"architecture": {"modality": "text+image->text"}}, None))
+        self.assertFalse(tool._vision_supported({"architecture": {"input_modalities": ["text"]}, **capable}, None))
+
+    async def test_public_tool_returns_unwrapped_image_for_owui(self):
+        instance = tool.Tools()
+        uri = tool._image_data_uri(png())
+        capable = {"info": {"meta": {"capabilities": {"vision": True}}}}
+        with patch.object(tool, "_authorize", AsyncMock(return_value=KEY)), patch.object(tool._Drive, "execute", AsyncMock(return_value=uri)):
+            result = await instance.gdrive_view_image("abc", __model__=capable)
+        self.assertEqual(result, uri)
+
+    def test_decoding_resize_and_rejection(self):
+        result = tool._image_data_uri(png(2000, 1000))
+        raw = base64.b64decode(result.split(",", 1)[1])
+        with Image.open(io.BytesIO(raw)) as image:
+            self.assertEqual(image.size, (1600, 800))
+            self.assertEqual(image.format, "PNG")
+        for raw in [b"<svg></svg>", b"\x89PNG\r\n\x1a\ncorrupt", b"x" * (tool.MAX_IMAGE_BYTES + 1), png(4001, 4000)]:
+            with self.assertRaises(tool.ReadFailure):
+                tool._image_data_uri(raw)
+
+    def test_animation_first_frame_only(self):
+        output = io.BytesIO()
+        frames = [Image.new("RGB", (4, 4), color) for color in ("red", "blue")]
+        frames[0].save(output, format="GIF", save_all=True, append_images=frames[1:])
+        raw = base64.b64decode(tool._image_data_uri(output.getvalue()).split(",", 1)[1])
+        with Image.open(io.BytesIO(raw)) as image:
+            self.assertEqual(image.n_frames, 1)
+            self.assertEqual(image.getpixel((0, 0))[:3], (255, 0, 0))
 
 
 if __name__ == "__main__":

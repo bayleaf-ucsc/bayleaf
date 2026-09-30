@@ -3,7 +3,7 @@
   "name": "Brace3 Drive Toolkit",
   "meta": {
     "description": "Course-authorized Google Docs, Sheets, Slides and folder reads.",
-    "manifest": {"title": "Brace3 Drive Toolkit", "author": "Adam Smith", "version": "0.1.2"},
+    "manifest": {"title": "Brace3 Drive Toolkit", "author": "Adam Smith", "version": "0.2.0"},
     "has_user_valves": false
   },
   "access_grants": [
@@ -16,6 +16,6 @@
     {"name": "gdrive_read_sheet", "description": "Read Sheets ID/link: omit cell_range to list tabs; then use e.g. 'Sheet 1'!A1:Z50 (≤2000 cells). Returns displayed values, not visuals.", "parameters": {"properties": {"file": {"type": "string"}, "cell_range": {"default": "", "type": "string"}, "resource_key": {"default": "", "type": "string"}}, "required": ["file"], "type": "object"}},
     {"name": "gdrive_read_slides", "description": "Read Slides ID/link as text and speaker notes (1-based, ≤20 slides). Finish next_offset within the same slide range before next_slide; reuse version. No visual perception.", "parameters": {"properties": {"file": {"type": "string"}, "start_slide": {"default": 1, "type": "integer"}, "slide_count": {"default": 5, "type": "integer"}, "offset": {"default": 0, "type": "integer"}, "limit": {"default": 8000, "type": "integer"}, "version": {"default": "", "type": "string"}, "resource_key": {"default": "", "type": "string"}}, "required": ["file"], "type": "object"}},
     {"name": "gdrive_search", "description": "Search indexed text across files directly inside a required folder ID/link; no recursion or global search. Follow next_page_token with the same query and folder.", "parameters": {"properties": {"query": {"type": "string"}, "folder": {"type": "string"}, "page_token": {"default": "", "type": "string"}, "page_size": {"default": 30, "type": "integer"}, "resource_key": {"default": "", "type": "string"}}, "required": ["query", "folder"], "type": "object"}},
-    {"name": "gdrive_view_image", "description": "Request visual perception of a Drive file or document image reference; currently returns unsupported.", "parameters": {"properties": {"file": {"type": "string"}, "image_ref": {"default": "", "type": "string"}}, "required": ["file"], "type": "object"}}
+    {"name": "gdrive_view_image", "description": "View pixels: give a Doc image ID or Slides slide/image ID from a text read; omit image_ref for a standalone image. File ID/link required. Vision model only; ≤4 MiB/16 MP, resized to 1600px, first frame. Sheets unsupported.", "parameters": {"properties": {"file": {"type": "string"}, "image_ref": {"default": "", "type": "string"}, "version": {"default": "", "type": "string"}, "resource_key": {"default": "", "type": "string"}}, "required": ["file"], "type": "object"}}
   ]
 }

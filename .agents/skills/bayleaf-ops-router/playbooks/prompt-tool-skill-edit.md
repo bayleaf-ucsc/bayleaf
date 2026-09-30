@@ -101,6 +101,13 @@ the UI (recover it from git: `git show HEAD:chat/models/<id>/model.json`), or
 
 ## Refinement log
 
+- 2026-09-30: Deployed Drive v0.2.0 image viewing after live Google image/slide
+  retrieval and 36 offline tests. Source and all seven generated schemas matched;
+  valves, grants and model configuration were unchanged and health returned 200.
+  Adam subsequently confirmed the production vision playtest works. Independent
+  provider-payload inspection and exported-transcript image verification remain
+  distinct, unverified checks.
+
 - 2026-09-30: Retired unbound Brace2 toolkit/filter/action after comparing live
   source to Git and saving a private source/metadata/valve snapshot. Use the
   stored-model `/api/v1/models/export` inventory for binding checks: the CLI's

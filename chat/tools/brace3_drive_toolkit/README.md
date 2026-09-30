@@ -1,7 +1,8 @@
 # Brace3 Drive Toolkit
 
 Local implementation for [issue #79](https://github.com/bayleaf-ucsc/bayleaf/issues/79).
-Deployed as v0.1.2 and bound to `brace3-94741`, with course-group tool read access.
+Production is v0.2.0, bound to `brace3-94741` with course-group tool read access.
+Image viewing is deployed; Adam confirmed the production vision playtest works.
 
 ## Tool surface
 
@@ -13,7 +14,7 @@ Deployed as v0.1.2 and bound to `brace3-94741`, with course-group tool read acce
 | `gdrive_list_folder` | One page of direct children |
 | `gdrive_search` | Full-text search restricted to a required folder's direct children |
 | `gdrive_get_sharing_identity` | Course service-account email and sharing requirements |
-| `gdrive_view_image` | Explicit unsupported failure |
+| `gdrive_view_image` | Doc embedded image, rendered slide/slide image, or standalone Drive image |
 
 All readers accept file IDs or ordinary Google links. Links are parsed into IDs;
 the toolkit fetches only constructed Google API URLs. Link resource keys are
@@ -47,11 +48,46 @@ unaccepted suggestions; list glyphs are normalized, and merged-cell layout is no
 reconstructed. Slides element order is not spatial reading order; inherited
 master/layout content is not expanded. Sheets charts/images are not read.
 
-Vision is deliberately a stub in this version, per Adam's revised scope. OWUI's
-unprefixed `data:image/...` transport is established by Lathe, but implementing
-bounded image retrieval, stable document-object references and provider-level
-verification would enlarge this first pass. The stub says the agent cannot
-perceive visual content; it does not present alt text as visual observation.
+### Image viewing (v0.2.0)
+
+The existing seventh tool now implements pixel delivery:
+
+- For a Doc, supply `file` and an `image_ref` printed by the text reader. The
+  tool resolves that object in the current Docs response, including nested tabs
+  and positioned images. It fetches `contentUri`, never author-supplied
+  `sourceUri`. Image IDs are addressable without putting access URLs in text.
+- For Slides, supply a slide ID to render the whole slide through Google's
+  `getThumbnail` API (LARGE, up to 1600 pixels). This includes chart/shape layout
+  that the text projection cannot reconstruct. An embedded image ID also works,
+  including images in groups. Thumbnails count as expensive Google API reads.
+- For a standalone PNG/JPEG/GIF/WebP Drive file, omit `image_ref`. The tool reads
+  Drive media internally; no general-purpose binary download surface is exposed.
+- Optional `version` detects edits since a preceding text read. Resource keys
+  are accepted directly or extracted from the file link as with text reads.
+- The selected model must have confirmed image-input support, using provider
+  architecture metadata first, then the configured vision capability. Unknown
+  and text-only models fail before a Google request. Course authorization still
+  runs first, using the same global identity as text reads.
+- Fresh Google API image URLs must use HTTPS on a `*.googleusercontent.com`
+  host; they are fetched without OAuth headers and without redirects. Standalone
+  media uses only a constructed Drive URL, with its token and resource key.
+- Download and delivery each cap at 4 MiB; decoded images cap at 16 megapixels.
+  Pillow validates/decodes the image, applies EXIF orientation, scales it to fit
+  1600 × 1600 pixels, strips metadata and emits PNG. Animations use the first
+  frame. Sheets rendering, SVG, PDF and video perception remain unsupported.
+
+The success result is a bare `data:image/png;base64,...` string. OWUI v0.11.4's
+`process_tool_result` recognizes that form, replaces its textual result with a
+short success message and attaches the pixels as an image. Do not prepend a
+provenance string or wrap the URI in JSON. File/reference arguments preserve
+provenance in the visible tool call. No secondary vision model is called.
+
+The toolkit adds no persistent image cache. OWUI may store tool-result images
+with saved chats in its ordinary file storage, so image viewing adds actual
+image content to the chat's retention boundary. Temporary Google image access
+URLs are neither returned nor saved by the toolkit. Transcript rendering and
+provider-level multimodal receipt still need end-to-end verification before
+claiming end-to-end acceptance.
 
 ## Authorization and setup
 
@@ -107,7 +143,7 @@ shared or link-shared files through a service account.
 ## Verification
 
 ```sh
-uv run --with aiohttp --with pydantic --with 'PyJWT[crypto]' python -m unittest discover -s chat/tools/brace3_drive_toolkit
+uv run --with aiohttp --with pydantic --with 'PyJWT[crypto]' --with pillow python -m unittest discover -s chat/tools/brace3_drive_toolkit
 ```
 
 2026-09-30: 23 offline tests pass, covering course authorization, shared global
@@ -144,3 +180,24 @@ valves and model configuration. The corrected model-mediated retry is pending.
 Version 0.1.2 makes `folder` required in the search schema and rejects empty
 folder values before network access. Twenty-five offline tests pass. Live source
 and all seven schemas match; valves, grants and model configuration are unchanged.
+
+Version 0.2.0 passes 36 offline tests, including model-capability
+refusal, nested/positioned image resolution, slide thumbnails and grouped images,
+standalone media authentication/resource keys, unknown references, byte/pixel
+bounds, hostile-host/redirect rejection, decoding/resizing, first-frame handling
+and unwrapped tool output. Read-only live tests of the candidate returned PNG
+pixels for the images in both supplied lecture-note Docs (752 × 752 each) and
+the supplied Slides page (1600 × 900). Those Google URLs used
+`lh7-rt.googleusercontent.com` and `lh7-us.googleusercontent.com`, with no
+redirects or download authentication required. The actual Brace model discovery
+record passes the vision-capability gate. Standalone media is fixture-tested,
+not yet live-tested. These tests did not deploy the candidate or send its pixels
+through an OWUI model/tool round trip.
+
+Version 0.2.0 was subsequently deployed with Adam's approval on 2026-09-30.
+Live source and all seven schemas match the local files; the shared credential,
+tool grants and Brace3 model configuration are unchanged. Chat health returned
+HTTP 200. Adam subsequently confirmed that the production vision playtest works.
+Separate provider-payload inspection and exported-transcript image rendering
+remain unverified; neither deployment readback nor the human report establishes
+those.
