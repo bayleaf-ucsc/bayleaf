@@ -79,6 +79,12 @@ may not match the actual pre-upgrade deployment.
 
 ## Refinement log
 
+- 2026-09-30 (resize investigation): Public Daytona OpenAPI advertises
+  `POST /sandbox/{sandboxIdOrName}/resize`, but the hosted API returned HTTP 404
+  `Cannot POST /api/sandbox/.../resize` for a verified archived disposable
+  1-GiB sandbox. This is a missing deployed route, not an archived-state refusal;
+  do not claim hosted in-place resize is supported from documentation alone.
+  The test sandbox's deletion was verified; no user sandbox was modified.
 - 2026-09-30 (rollout): Promoted unchanged upstream 0.30.7 and set a supported
   creation override for 1 CPU / 2 GiB / 3 GiB using `buildInfo` with the same
   base image as `daytona-small`. Real allocation and cgroup checks passed.
