@@ -6,7 +6,13 @@
     "manifest": {"title": "Brace3 GitHub Toolkit", "author": "Adam Smith", "version": "0.2.0"},
     "has_user_valves": false
   },
-  "access_grants": [],
+  "access_grants": [
+    {
+      "principal_type": "group",
+      "principal_id": "106b8f25-21df-4d0a-af97-26d18eb5a5cf",
+      "permission": "read"
+    }
+  ],
   "specs": [
     {"name": "github_list_repositories", "description": "List public repositories owned by a GitHub user or organization, detected\nautomatically. Supply the account login, not a URL. Use a student-supplied\nusername or the course organization named in context; do not infer GitHub\nidentity from campus email. Names, descriptions, fork status and activity\ndates help disambiguate similar repos, but do not prove which is intended.\nSorted by last update; follow has_next_page with an explicit next page.\nLists public owned repos only, not private repos or all contributions.", "parameters": {"type": "object", "properties": {"owner": {"type": "string"}, "page": {"type": "integer", "default": 1}, "per_page": {"type": "integer", "default": 30}}, "required": ["owner"]}},
     {"name": "github_compare_refs", "description": "Compare two public repository revisions, resolving both to SHAs. Commits\nare paginated; changed files appear only on page 1 and GitHub caps them at 300.\nReuse base_sha/head_sha for later pages. Missing patches do not mean no changes.", "parameters": {"type": "object", "properties": {"repository": {"type": "string"}, "base": {"type": "string"}, "head": {"type": "string"}, "page": {"type": "integer", "default": 1}, "per_page": {"type": "integer", "default": 30}}, "required": ["repository", "base", "head"]}},
