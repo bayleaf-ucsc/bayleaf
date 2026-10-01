@@ -186,19 +186,32 @@
             </div>
         </details>
         <details name="faq">
-            <summary><h3>Which models can I access through BayLeaf?</h3></summary>
+            <summary><h3>Which exact models are being used in BayLeaf right now?</h3></summary>
+            <div class="faq__answer">
+                <!-- current-models:start -->
+                <p>
+                    The deployed site generates the current Basic model and standard API recommendation
+                    from BayLeaf’s configuration files, refreshed daily and when site changes are
+                    published. See the
+                    <a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/chat/models/basic/model.json">Basic configuration</a>
+                    and <a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/api/wrangler.jsonc">API configuration</a>
+                    for those selections.
+                </p>
+                <!-- current-models:end -->
+            </div>
+        </details>
+        <details name="faq">
+            <summary><h3>Which other models can I access through BayLeaf?</h3></summary>
             <div class="faq__answer">
                 <p>
                     The landscape of available models (e.g. for text, image, audio, and other
-                    modalities) is rapidly evolving, faster than we care to update this FAQ.
-                    Currently, the model powering the Basic agent on BayLeaf Chat is a medium-sized
-                    (sub-trillion-parameter) open-weight language model. The BayLeaf API can be
+                    modalities) is rapidly evolving. Beyond the selections above, the BayLeaf API can be
                     used to access almost <a href="https://openrouter.ai/models">any model
                     available through OpenRouter</a>, under the condition that it is an open-weight
                     model being served by a zero data retention (ZDR) provider. These conditions
                     are enforced programmatically, so the available model catalog can shift from
                     day to day without intervention or direct oversight from the BayLeaf operator.
-                    On the extreme side for privacy and                     autonomy, we can help you set up local
+                    On the extreme side for privacy and autonomy, we can help you set up local
                     inference on your personal devices.
                 </p>
             </div>

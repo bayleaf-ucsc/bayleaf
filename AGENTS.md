@@ -186,7 +186,7 @@ five entries from the public BayLeaf Blog RSS feed. The deployed site still has
 no runtime JavaScript. For the API (`api/`), see `api/AGENTS.md` for build and
 deploy commands.
 
-Three things in or deployed from `landing/` are generated rather than hand-written:
+Four things in or deployed from `landing/` are generated rather than hand-written:
 
 - `landing/images/og-card.png`, the Open Graph share card. Regenerate with
   `./landing/images/make-og-card.py` after changing the tagline or the palette.
@@ -199,6 +199,12 @@ Three things in or deployed from `landing/` are generated rather than hand-writt
   Pages artifact by `scripts/build_pages.py`; do not commit them to the source
   template. The scheduled and manually dispatchable Pages workflow refreshes
   them.
+- The exact-model FAQ answer in deployed `index.html`. The same builder reads
+  `chat/models/basic/model.json` (`base_model_id`) and `api/wrangler.jsonc`
+  (`RECOMMENDED_MODEL`). OpenRouter selections link to upstream model pages;
+  other identifiers link to the repository configuration. Keep the source
+  fallback and `current-models` markers, not generated model names. Pages
+  refreshes daily at 08:17 UTC, on pushes to `main`, and on manual dispatch.
 
 **Local preview of the source fallback:** Use the VS Code **Live Server**
 extension (right-click `landing/index.html` → *Open with Live Server*), which serves
