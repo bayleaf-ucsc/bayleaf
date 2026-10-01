@@ -1,0 +1,55 @@
+name: Clean up old workflow runs
+
+on:
+  schedule:
+    - cron: "43 9 1 * *" # Monthly on the 1st, at 09:43 UTC.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Preview deletions without deleting runs
+        type: boolean
+        default: true
+
+permissions:
+  actions: write
+
+concurrency:
+  group: cleanup-runs
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete completed runs older than 60 days
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry_run || false }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cutoff=$(date -u -d '60 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          snapshot=$(mktemp)
+          trap 'rm -f "$snapshot"' EXIT
+
+          # Finish pagination before deleting anything, including orphan runs.
+          gh api --paginate --slurp "repos/$REPOSITORY/actions/runs?per_page=100" |
+            jq -r --arg cutoff "$cutoff" '
+              .[].workflow_runs[] |
+              select(.status == "completed" and .created_at < $cutoff) |
+              .id
+            ' > "$snapshot"
+
+          count=$(wc -l < "$snapshot" | tr -d ' ')
+          printf 'Cutoff: %s; eligible runs: %s; dry run: %s\n' "$cutoff" "$count" "$DRY_RUN"
+          while IFS= read -r run_id; do
+            if [[ "$DRY_RUN" == "true" ]]; then
+              printf 'Would delete run %s\n' "$run_id"
+            else
+              gh api --method DELETE "repos/$REPOSITORY/actions/runs/$run_id"
+              printf 'Deleted run %s\n' "$run_id"
+            fi
+          done < "$snapshot"
+
+          printf 'Completed cleanup: %s eligible runs; dry run: %s\n' "$count" "$DRY_RUN" >> "$GITHUB_STEP_SUMMARY"
