@@ -1,6 +1,6 @@
 # University AI infrastructure landscape
 
-Last updated: 2026-09-22
+Last updated: 2026-10-02
 
 ## Intent
 
@@ -249,6 +249,179 @@ reported completion of voluntary training was 0.7% among students and 16% among
 faculty. Faculty organized against renewal during simultaneous budget cuts. CSU
 nevertheless renewed the agreement and says future work will emphasize measurable
 impact and long-term sustainability.
+
+#### Equitable AI Alliance, California, United States
+
+**Last verified:** 2026-10-02<br>
+**Status:** Active regional collaboration; grant announced November 2024<br>
+**Form:** Intersegmental partnership across SDSU, UC San Diego, and SDCCD
+
+**Scope and rationale.** The [California Education Learning Lab project record](https://calearninglab.org/project/equitable-ai-alliance-empowering-students-through-equitable-ai-education/)
+identifies San Diego State University, UC San Diego, and the San Diego Community
+College District as partners in AI needs assessment, literacy education, and access
+to internal AI tools. The [October 2, 2026 My Robot Teacher episode](https://calearninglab.org/myrobotteacher/ep-20/)
+and its [transcript](https://calearninglab.substack.com/p/my-robot-teacher-episode-20-transcript)
+explain the transfer-student rationale: access and training should not depend on
+whether students enter through a community college, CSU, or UC campus. These sources
+identify UC San Diego, not UC Santa Cruz, as the UC partner. No authoritative source
+reviewed establishes UCSC participation.
+
+**Funding and procurement.** Learning Lab lists a $1.5 million grant for the whole
+project. SDSU's [November 2024 announcement, republished by SDCCD](https://www.sdccd.edu/departments/communications/newscenter/articles/2024/equitable-ai-alliance.aspx)
+describes two further years of collaboration. SDSU's [alliance page](https://aaai.sdsu.edu/initiatives/equitable-ai-alliance)
+also proposes joint negotiation with AI vendors over pricing and accessible
+products. [April 2025 reporting by Abby Sourwine](https://insider.govtech.com/california/news/san-diego-area-colleges-band-together-on-ai)
+describes the collaboration and vendor negotiation, but the reviewed sources do not
+identify an executed alliance-wide license, price, or realized discount. The alliance
+is not the same arrangement as CSU's system-wide ChatGPT Edu contract.
+
+**Shared curriculum and pedagogy.** SDSU supplies the AAAI micro-credential foundation.
+In the episode, Michelle Fischthal describes local customization of policy and links;
+David Goldberg reports integration into SDSU's first-year seminar and says the course
+supports informed decisions not to use AI. Dan Suchy describes UCSD's version as
+launching in Fall 2026, rather than establishing a completed rollout. SDSU's
+[current course page](https://aaai.sdsu.edu/initiatives/micro-credential) lists CSU-wide
+student and employee enrollment and adaptations at UCSD, SDCCD, MiraCosta, and UCSF.
+Those additional course adapters are not thereby established as grant partners.
+The page estimates two to four hours; Goldberg estimates four or five hours for
+badging in the interview and describes a shorter audit option. Completion time
+therefore varies by source and version.
+
+**Needs assessment and faculty development.** SDSU's [survey page](https://aaai.sdsu.edu/initiatives/ai-survey)
+publishes the instrument and links a quantitative dashboard. It reports 7,811 student
+responses in Fall 2023, 12,166 student/employee responses in Fall 2024, and 16,396 in
+Fall 2025 at SDSU. These are SDSU counts, not alliance-wide totals. The instrument
+covers demographics, use, attitudes, training needs, and future expectations, with
+optional qualitative responses. In the episode, Fischthal describes SDCCD's
+faculty-led peer training, post-workshop surveys, and expanded ethics and sustainability
+content in response to student concerns. Participants describe cross-campus workshops,
+a virtual innovation hub, and weekly coordination. Reported survey trends are not
+causal evidence that the course improved learning or employment outcomes.
+
+**Shared computing.** In chapter 10 of the transcript, Suchy describes extending GPU
+access to community college courses through SDSC and CENIC AIR; Fischthal identifies
+SDCCD's existing National Research Platform node and faculty course use. SDCCD's
+[September 2024 account](https://www.sdccd.edu/departments/communications/newscenter/articles/2024/information-technology-services-supercomputing.aspx)
+already documents NRP participation and Miramar College teaching use before the
+alliance grant announcement. [CENIC](https://cenic.org/initiatives/cenic-air) describes
+CENIC AIR as the California portion of the member-contributed NRP/Nautilus computing
+infrastructure, with Kubernetes and JupyterLab access. This is shared execution
+capacity, distinct from the planned companion chatbots and from a general-purpose
+campus chat entitlement. Course computing access does not establish institutional
+model training without evidence of weight or adapter updates.
+
+**Governance, data practices, and gaps.** Learning Lab names Goldberg as PI, with
+Elisa Sobo, Suchy, and Fischthal as co-PIs. The episode is participant testimony
+published by the project's funder, which also funds the podcast, not an independent
+audit. Fischthal explicitly raises dependence on personal relationships and the
+difficulty of sustaining faculty support after the grant. Formal decision rights,
+renewal funding, cross-campus data agreements, survey retention and consent,
+computing quotas, permitted data classes, and deployment status of partner chatbots
+remain unknown. Neither shared curriculum nor shared GPUs establishes ZDR or ZOA.
+
+#### San Diego State University, United States
+
+**Last verified:** 2026-10-02<br>
+**Status:** AAAI courses active<br>
+**Form:** Campus-developed literacy curriculum with CSU-wide and public versions
+
+**Adoption and scope.** SDSU's [AAAI course page](https://aaai.sdsu.edu/initiatives/micro-credential)
+offers separate student and faculty/staff courses, explicitly voluntary employee
+participation, CSU-wide versions, and a public SDSU Global Campus version with an
+optional $25 badge. The public badge price does not establish a charge for campus
+versions. SDSU leads the [Equitable AI Alliance](#equitable-ai-alliance-california-united-states)
+and shares the course foundation with institutional adapters. This record covers
+that curriculum and collaboration, not a complete inventory of SDSU's AI services.
+
+**Participation and gaps.** As of August 2026, the page reports 9,387 SDSU student
+and employee participants with 4,818 badges; 1,072 Global Campus participants with
+167 badges; and 5,551 CSU-version participants with 3,028 badges. Its published
+total is 16,010 participants and 8,013 badges. This total covers the listed SDSU,
+Global Campus, and CSU versions, not all partner adaptations, and should not be added
+to SDCCD's later counts as a unique-person total. Curriculum development and
+maintenance costs, required third-party AI accounts, course-data retention, and
+independent learning outcomes are not disclosed on the course page.
+
+**Design and evaluation evidence.** Learning Lab's [CARLE project collection](https://carle.calearninglab.org/projects/29j7XoQECl3uMU7KSfmO)
+links the Spring 2026 article [Advancing Generative AI Literacy Through a Faculty-Focused Micro-Credential](https://jise.org/Volume37/n2/JISE2026v37n2pp306-322.pdf).
+The course-development team's case study describes a faculty-first Spring 2024
+launch, a read-view-do module structure, vocabulary quiz, ethics action plan,
+syllabus statement, tool-selection discussion, and annotated AI interaction transcript.
+It reports 374 starters, 145 posttest completers, and 135 matched pre/post records.
+Reported use and favorable perceptions increased; trust in AI accuracy and ethical
+concern did not change significantly. The study uses self-report at one institution,
+does not include non-completer feedback or a control group, and does not establish
+student learning gains. The public Global Campus version retains the described
+structure. CARLE's article record shows no selected license; public reading access
+does not establish permission to republish or adapt the underlying course package.
+
+#### San Diego Community College District, United States
+
+**Last verified:** 2026-10-02<br>
+**Status:** AAAI micro-credential active; launch announced June 1, 2026<br>
+**Form:** District-wide AI-literacy course and shared computing participation
+
+**Adoption and scope.** SDCCD offers a free, self-paced Academic Applications of
+Artificial Intelligence micro-credential through Canvas, with separate student and
+faculty/staff versions. Its [course page](https://www.sdccd.edu/departments/innovation/emerging-technologies/academic-applications-of-artificial-intelligence.aspx)
+offers self-enrollment to SDCCD students and employees, including currently enrolled
+Continuing Education students. The FAQ warns that Canvas activation and semester
+enrollment can delay access. This is a training offering, not evidence of a
+district-wide generative AI service license.
+
+**Rationale and pedagogy.** The [June 2026 launch announcement](https://www.sdccd.edu/departments/communications/newscenter/articles/2026/ai-microcredential.aspx)
+says the curriculum mirrors SDSU's AAAI course and covers AI basics, ethics,
+responsible use, and generative AI capabilities. SDCCD emphasizes critical judgment
+about when to use AI, not only tool proficiency. The course page describes five
+modules, an estimated two to four hours of work, and a digital badge and certification
+after completion of all activities. It attributes development to students, faculty,
+and staff. The reviewed sources do not establish mandatory participation or changes
+to instructors' course-level AI policies.
+
+**Funding and governance.** SDCCD's Division of Institutional Innovation and
+Effectiveness leads the district effort. The California Education Learning Lab's
+[project record](https://calearninglab.org/project/equitable-ai-alliance-empowering-students-through-equitable-ai-education/)
+lists a $1.5 million grant for the Equitable AI Alliance across SDSU, UC San Diego,
+and SDCCD, not $1.5 million for this course or district alone. It names SDSU's David
+Goldberg as principal investigator and SDCCD's Michelle Fischthal as a co-PI.
+District allocation, course development costs, and recurring costs are not disclosed.
+The [November 2024 announcement](https://www.sdccd.edu/departments/communications/newscenter/articles/2024/equitable-ai-alliance.aspx)
+describes two further years of collaboration on needs surveys, literacy education,
+and AI access, including plans to establish companion chatbots at SDSU and SDCCD
+using UC San Diego's TritonGPT as a reference. That announcement does not establish
+that an SDCCD chatbot subsequently launched.
+
+**Evaluation.** The course page reports 1,712 student participants and 331 student
+badges, plus 130 faculty/staff participants and 25 badges, as of September 17, 2026.
+The total is 1,842 participants and 356 badges. These are institution-reported counts,
+not a cohort completion rate or evidence of learning gains. The launch announcement
+reports positive feedback from more than 50 district beta testers without publishing
+the evaluation instrument or results.
+
+**Shared computing and collaboration.** SDCCD participates in the
+[Equitable AI Alliance](#equitable-ai-alliance-california-united-states), which also
+coordinates surveys and faculty development. Its [September 2024 computing account](https://www.sdccd.edu/departments/communications/newscenter/articles/2024/information-technology-services-supercomputing.aspx)
+documents NRP access and Danish Khan's Assembly Language and Python teaching at
+Miramar College. The district calls its regional computing initiative DISCOVER and
+names Riverside and Los Angeles community college districts and the CCC Chancellor's
+Office as partners. Those computing relationships are distinct from the three
+named alliance grant partners.
+
+**Related pilot.** SDCCD separately [announced participation in AI-Ready California](https://www.sdccd.edu/departments/communications/newscenter/articles/2026/ai-ready-california-microcredential.aspx)
+in July 2026. Its initial cohort of 500 spans SDCCD students and local unemployment
+insurance claimants in the RESEA program, with training through SDSU Global Campus.
+The announcement names the CCC and CSU systems, AWS, Instructure, and James Irvine
+Foundation support. This is distinct from the district's AAAI enrollment and badge
+counts; the 500 are not all SDCCD students.
+
+**Data practices and open questions.** The reviewed AAAI sources do not disclose
+required AI tools, whether activities require submitting content to a model provider,
+permitted data classes, provider training use, content retention, operator access,
+or negotiated data protections. Canvas enrollment, course submissions, badge requests,
+and alliance surveys need separate data-handling review; no ZDR or ZOA claim is
+established. Full assessment criteria, independent learning outcomes, governance
+review and appeal processes, and the status and architecture of any district
+chatbot remain unknown. Human AI literacy here is not an Agent Skills deployment.
 
 #### University of California system and Office of the President, United States
 
@@ -645,6 +818,11 @@ development, and UCSD licenses branded instances to other institutions. Contract
 values, operating cost, revenue, current active use, error rates, and educational
 outcomes are not public. The relationship between service-level review and
 Academic Senate, student, labor, and privacy governance remains unclear.
+
+**Regional collaboration.** The [Equitable AI Alliance record](#equitable-ai-alliance-california-united-states),
+verified October 2, 2026, covers UCSD's partnership with SDSU and SDCCD, shared
+literacy curriculum, and connections to SDSC and NRP/CENIC AIR course computing.
+This does not extend UCSD's local TritonGPT data protections to partner services.
 
 #### University of California, San Francisco, United States
 
@@ -2412,6 +2590,20 @@ The following records await primary-source research:
   challenges, which are less consistently announced than purchases.
 
 ## Update log
+
+### 2026-10-02
+
+- Added SDCCD's AAAI micro-credential, district eligibility, regional grant funding,
+  curriculum, and published participation and badge counts. Separated the training
+  offering from planned chatbots and the distinct AI-Ready California pilot; recorded
+  unresolved data-handling and evaluation questions.
+- Expanded the research to an Equitable AI Alliance record and SDSU curriculum record
+  using institutional sources, independent reporting, and My Robot Teacher episode 20.
+  Recorded local course adaptations, shared surveys and faculty development, existing
+  NRP/CENIC AIR computing access, informed non-use, and post-grant sustainability gaps.
+  Distinguished UC San Diego's documented partnership from unverified UCSC participation.
+- Added CARLE's link to the course-development team's 2026 design and evaluation
+  article, including its assignments, self-report limitations, and reuse-license gap.
 
 ### 2026-09-22
 
