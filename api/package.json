@@ -6,8 +6,12 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "pretest:previews": "python3 scripts/build-sandbox-skills.py",
+    "pretest:grants": "python3 scripts/build-sandbox-skills.py",
+    "pretest:sandbox-browser": "python3 scripts/build-sandbox-skills.py",
     "test:previews": "node scripts/harness-previews.mjs",
     "test:grants": "node scripts/harness-grants.mjs",
+    "test:sandbox-browser": "python3 scripts/test-browser-setup.py && python3 scripts/test-sandbox-skills.py && node scripts/harness-sandbox-browser.mjs",
     "tail": "wrangler tail"
   },
   "overrides": {

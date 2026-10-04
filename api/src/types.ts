@@ -4,6 +4,8 @@
 
 /** Cloudflare Worker bindings (env vars + secrets) */
 export interface Bindings {
+  BROWSER_SANDBOX_ENABLED?: string;
+  SANDBOX_BROWSER: DurableObjectNamespace;
   GRANTS_ENABLED?: string;
   GRANTS_MAX_SECONDS?: string;
   // Owner-authenticated HTTP preview POC. Fail closed unless explicitly enabled.

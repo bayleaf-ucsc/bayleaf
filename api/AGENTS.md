@@ -495,6 +495,31 @@ checkbox, so it is recorded rather than deleted.
 
 ## Routes
 
+### Browser sandbox lifecycle (issue #81)
+
+Deployed and enabled on 2026-10-03 (`BROWSER_SANDBOX_ENABLED=true`); see
+`SANDBOX-BROWSER.md` for the contract and rollout gates. The existing dashboard
+owns lifecycle controls. `src/sandboxBrowser.ts` exports an owner-scoped Durable
+Object, `routes/sandboxBrowser.ts` exposes session/ordinary-key operations, and
+`scripts/browser-setup.py` is the embedded versioned Linux installer. Migration
+0013 binds managed preview generations to the current owner's key fingerprint.
+No personalized hostname or second workspace is created.
+
+`sandbox-skills/` owns the skills narrowly for agents inside these sandboxes.
+The generic `scripts/build-sandbox-skills.py` bundles that directory during
+Wrangler builds; setup and each application launch restore bundled files into
+the managed XDG skill directory, preserving user-added skills. Add skills there,
+not as per-skill installer branches. `/usage` is personal-key, read-only budget
+inspection: no provisioning/healing, inference calls, or counter mutation. ✨
+
+GET status must never call Toolbox, start compute, refresh activity, or install
+anything. Setup alarms have a bounded deadline; owner-edited breadcrumbs are
+diagnostics, never authorization. The controller never stops the shared machine
+at browser expiry. Do not use the legacy `ensureSandbox` lookup-failure behavior
+as a creation decision. Python source imports require the `.py` text loader in
+both Wrangler and esbuild harnesses. `npm run test:sandbox-browser` runs the
+installer failure tests and synthetic workerd/D1/DO lifecycle checks. ✨
+
 ### Temporary inference tokens (issue #76)
 
 Enabled in production on 2026-09-29 with a one-hour maximum. Read `GRANTS.md`

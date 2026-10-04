@@ -24,6 +24,7 @@ interface Registration {
   expires_at: number;
   email: string;
   access: 'public' | 'private';
+  owner_key_hash?: string | null;
 }
 interface Flow {
   id: string;
@@ -117,7 +118,14 @@ async function decrypt(env: Bindings, r: Registration): Promise<string> {
 async function registration(env: Bindings, hostname: string): Promise<Registration | null> {
   const row = await env.DB.prepare('SELECT * FROM preview_registrations WHERE hostname=? AND expires_at>?')
     .bind(hostname, now()).first<Registration>();
-  return row && ['public', 'private'].includes(row.access) ? row : null;
+  if (!row || !['public', 'private'].includes(row.access)) return null;
+  if (row.deployment === '__browser') {
+    if (env.BROWSER_SANDBOX_ENABLED !== 'true' || row.access !== 'private' || !row.owner_key_hash) return null;
+    const owner = await env.DB.prepare('SELECT bayleaf_token FROM user_keys WHERE email=? AND revoked=0')
+      .bind(row.email).first<{ bayleaf_token: string }>();
+    if (!owner || await hash(owner.bayleaf_token) !== row.owner_key_hash) return null;
+  }
+  return row;
 }
 
 async function previewSession(request: Request, env: Bindings, r: Registration): Promise<number | null> {
@@ -207,7 +215,8 @@ interface PreviewInput {
 }
 
 /** Shared registration path: issuer authority differs, canonical ownership does not. */
-async function registerPreview(env: Bindings, policy: Deployment, input: PreviewInput, stableSlot?: string) {
+async function registerPreview(env: Bindings, policy: Deployment, input: PreviewInput, stableSlot?: string,
+  browser?: { expiresAt: number; ownerKeyHash: string }) {
   if (!configured(env)) return failure(503);
   const email = input.owner.email.toLowerCase();
   // The campus email namespace already supplies the public username. Preserve
@@ -218,12 +227,13 @@ async function registerPreview(env: Bindings, policy: Deployment, input: Preview
   if (email.split('@')[1] !== policy.email_domain || !upstreamAllowed(input.upstream_url, policy)) return failure();
   // Registration retention is independent of sandbox or upstream-token lifetime.
   // An unavailable upstream does not delete the mapping.
-  const expiry = now() + 24 * 3600;
+  const expiry = browser ? Math.min(browser.expiresAt, now() + 6 * 3600) : now() + 24 * 3600;
+  if (expiry <= now()) return failure(409);
   await env.DB.prepare('INSERT OR IGNORE INTO preview_owners (email,slug) VALUES (?,?)').bind(email, slug).run();
   const owner = await env.DB.prepare('SELECT email,slug FROM preview_owners WHERE email=?')
     .bind(email).first<{ email: string; slug: string }>();
   if (!owner || owner.slug !== slug) return failure(409);
-  if (policy.id !== '__api') {
+  if (!['__api', '__browser'].includes(policy.id)) {
     await env.DB.prepare('INSERT OR IGNORE INTO preview_identities (deployment,subject,email) VALUES (?,?,?)')
       .bind(policy.id, input.owner.subject, email).run();
     const identity = await env.DB.prepare('SELECT email FROM preview_identities WHERE deployment=? AND subject=?')
@@ -240,15 +250,15 @@ async function registerPreview(env: Bindings, policy: Deployment, input: Preview
   const slot = stableSlot ?? `lathe-${random()}`;
   const encrypted = await encrypt(env, new URL(input.upstream_url).origin, hostname);
   const result = await env.DB.prepare(`INSERT INTO preview_registrations
-    (hostname,email,deployment,slot,generation,upstream_encrypted,expires_at,access)
-    SELECT ?,?,?,?,?,?,?,? WHERE
+    (hostname,email,deployment,slot,generation,upstream_encrypted,expires_at,access,owner_key_hash)
+    SELECT ?,?,?,?,?,?,?,?,? WHERE
       (SELECT COUNT(*) FROM preview_registrations WHERE email=? AND expires_at>?) < 16
       OR EXISTS (SELECT 1 FROM preview_registrations WHERE email=? AND slot=? AND expires_at>?)
     ON CONFLICT(email,slot) DO UPDATE SET hostname=excluded.hostname, generation=excluded.generation,
       upstream_encrypted=excluded.upstream_encrypted, expires_at=excluded.expires_at,
-      deployment=excluded.deployment, access=excluded.access
+      deployment=excluded.deployment, access=excluded.access, owner_key_hash=excluded.owner_key_hash
     WHERE email=excluded.email
-    RETURNING hostname`).bind(hostname, email, policy.id, slot, random(), encrypted, expiry, input.access,
+    RETURNING hostname`).bind(hostname, email, policy.id, slot, random(), encrypted, expiry, input.access, browser?.ownerKeyHash ?? null,
       email, now(), email, slot, now()).first();
   if (!result) return failure(409);
   if (!await invalidateRetiredOrigins(env, email, slot)) return failure(503);
@@ -261,13 +271,20 @@ function apiPolicy(env: Bindings): Deployment {
     upstream_headers: { 'X-Daytona-Skip-Preview-Warning': 'true' } };
 }
 
-export async function registerUserPreview(env: Bindings, email: string, slot: string, url: string) {
+export async function registerUserPreview(env: Bindings, email: string, slot: string, url: string, access: 'private' | 'public' = 'private') {
   return registerPreview(env, apiPolicy(env), {
-    owner: { subject: email, email }, upstream_url: url, access: 'private',
+    owner: { subject: email, email }, upstream_url: url, access,
   }, slot);
 }
 
 export function previewsEnabled(env: Bindings): boolean { return configured(env); }
+
+export async function registerBrowserPreview(env: Bindings, email: string, url: string, expiresAt: number, ownerKeyHash: string) {
+  if (env.BROWSER_SANDBOX_ENABLED !== 'true') return failure(503);
+  return registerPreview(env, { ...apiPolicy(env), id: '__browser' }, {
+    owner: { subject: email, email }, upstream_url: url, access: 'private',
+  }, '__browser', { expiresAt, ownerKeyHash });
+}
 
 export async function revokeUserPreview(env: Bindings, email: string, slot: string): Promise<boolean> {
   await env.DB.prepare('DELETE FROM preview_registrations WHERE email=? AND slot=?')
@@ -339,7 +356,17 @@ export async function handlePreviewHost(c: Context<AppEnv>): Promise<Response> {
     const u = new URL(c.req.url);
     if (u.protocol !== 'https:' || u.port) return failure();
     const r = await registration(c.env, u.hostname);
-    if (!r) return failure(404);
+    if (!r) {
+      // A stable recovery destination even after transient registration cleanup.
+      // No sandbox contact, identity disclosure, or automatic wake.
+      if (c.req.header('Sec-Fetch-Mode') === 'navigate' && c.req.method === 'GET') {
+        const headers = secureHeaders();
+        headers.set('Content-Type', 'text/html; charset=utf-8');
+        const dashboard = new URL('/dashboard#sandbox', c.env.PREVIEWS_API_ORIGIN).href;
+        return new Response(`<!doctype html><html lang="en"><meta name="viewport" content="width=device-width"><title>Preview unavailable</title><h1>This preview is unavailable</h1><p>It may have expired or been revoked.</p><p><a href="${dashboard}">Return to your BayLeaf dashboard</a></p></html>`, { status: 404, headers });
+      }
+      return failure(404);
+    }
     const origin = c.req.header('Origin');
     const site = c.req.header('Sec-Fetch-Site');
     const navigation = c.req.method === 'GET' && c.req.header('Sec-Fetch-Mode') === 'navigate' &&
@@ -424,7 +451,7 @@ export async function handlePreviewHost(c: Context<AppEnv>): Promise<Response> {
 
 async function upstreamRequest(request: Request, env: Bindings, r: Registration) {
   const base = await decrypt(env, r);
-  const policy = ['__api', 'lathe'].includes(r.deployment) ? apiPolicy(env) : null;
+  const policy = ['__api', 'lathe', '__browser'].includes(r.deployment) ? apiPolicy(env) : null;
   if (!policy || !upstreamAllowed(base, policy)) return null;
   const incoming = new URL(request.url);
   const target = new URL(base);
@@ -439,6 +466,11 @@ async function upstreamRequest(request: Request, env: Bindings, r: Registration)
   }
   headers.set('X-Forwarded-Host', incoming.host);
   headers.set('X-Forwarded-Proto', 'https');
+  // Application-owned workspace selection, not gateway identity or authority.
+  if (r.deployment === '__browser') {
+    const directory = request.headers.get('X-Opencode-Directory');
+    if (directory && directory.length <= 4096) headers.set('X-Opencode-Directory', directory);
+  }
   const cookies = upstreamCookies(request.headers.get('Cookie') ?? '', r.generation, incoming.pathname);
   if (cookies) headers.set('Cookie', cookies);
   for (const [key, value] of Object.entries(policy.upstream_headers)) headers.set(key, value);

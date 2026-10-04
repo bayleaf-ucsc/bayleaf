@@ -74,6 +74,12 @@ does not start, wake, or launch a service. `DELETE /sandbox/expose/5000` revokes
 the caller's keyed port registration. Neither endpoint accepts
 Campus Pass, an installation credential, or a browser session as authority.
 
+Access defaults to **private** (owner login). Optional `"access":"public"`
+explicitly permits anonymous access. Port 3100 is reserved for the managed
+OpenChamber interface and cannot be exposed through this endpoint. Sandbox
+agents receive `expose-sandbox-ports-technique`, whose helper reads the owner key
+internally and defaults to private exposure without displaying credentials. ✨
+
 The keyed API obtains a 24-hour Daytona signed URL and keeps its registration
 for 24 hours. Re-exposing the same port replaces that keyed registration.
 

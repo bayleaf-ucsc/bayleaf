@@ -8,6 +8,17 @@
 
 import { z } from '@hono/zod-openapi';
 
+export const UsageResponseSchema = z.object({
+  observed_at: z.iso.datetime(),
+  budgets: z.array(z.object({
+    provider: z.string(), unit: z.enum(['usd', 'requests']),
+    status: z.enum(['available', 'unavailable', 'not_provisioned']),
+    period: z.string().nullable(), used: z.number().nullable(),
+    limit: z.number().nullable(), remaining: z.number().nullable(),
+    resets_at: z.iso.datetime().nullable(),
+  })),
+}).openapi('UsageResponse');
+
 // ── Shared ────────────────────────────────────────────────────────
 
 export const ApiErrorSchema = z.object({
@@ -295,7 +306,8 @@ export const PreviewLabelSchema = z.object({
 }).openapi('PreviewLabel');
 
 export const SandboxExposeRequestSchema = z.object({
-  port: z.number().int().min(3000).max(9999).openapi({ example: 5000 }),
+  port: z.number().int().min(3000).max(9999).refine(port => port !== 3100, 'Reserved browser port').openapi({ example: 5000 }),
+  access: z.enum(['private', 'public']).default('private'),
 }).strict().openapi('SandboxExposeRequest');
 
 export const SandboxExposeSlotSchema = z.object({
@@ -332,3 +344,16 @@ export const GrantModelsSchema = z.object({
   models: z.array(z.object({ id: z.string(), name: z.string() })),
   backends: z.array(z.object({ id: z.string(), label: z.string(), enabled: z.boolean(), available: z.boolean() })),
 }).openapi('GrantModels');
+// Browser lifecycle metadata only: no credentials, file contents, or setup logs.
+export const BrowserSandboxStatusSchema = z.object({
+  phase: z.enum(['idle', 'opening', 'ready', 'failed', 'expired', 'stopped', 'unavailable']),
+  machine: z.string().optional(),
+  progress: z.string().optional(),
+  operation: z.string().optional(),
+  deadline: z.number().int().optional(),
+  updated_at: z.number().int().optional(),
+  url: z.string().url().optional(),
+  error: z.string().optional(),
+}).openapi('BrowserSandboxStatus');
+
+export const BrowserSandboxErrorSchema = z.object({ error: z.string() }).openapi('BrowserSandboxError');

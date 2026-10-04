@@ -3,6 +3,8 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-01-31",
   "compatibility_flags": ["nodejs_compat"],
+  "rules": [{ "type": "Text", "globs": ["**/browser-setup.py"], "fallthrough": true }],
+  "build": { "command": "python3 scripts/build-sandbox-skills.py" },
   
   // Observability - disabled to avoid unnecessary data accumulation.
   // Re-enable temporarily for debugging if needed.
@@ -19,9 +21,15 @@
   "triggers": { "crons": ["0 * * * *"] },
 
   "durable_objects": {
-    "bindings": [{ "name": "PREVIEW_CONNECTIONS", "class_name": "PreviewConnections" }]
+    "bindings": [
+      { "name": "PREVIEW_CONNECTIONS", "class_name": "PreviewConnections" },
+      { "name": "SANDBOX_BROWSER", "class_name": "SandboxBrowser" }
+    ]
   },
-  "migrations": [{ "tag": "preview-connections-v1", "new_sqlite_classes": ["PreviewConnections"] }],
+  "migrations": [
+    { "tag": "preview-connections-v1", "new_sqlite_classes": ["PreviewConnections"] },
+    { "tag": "sandbox-browser-v1", "new_sqlite_classes": ["SandboxBrowser"] }
+  ],
 
   // D1 database for proxy key mappings
   // Create with: wrangler d1 create bayleaf-keys
@@ -53,6 +61,8 @@
   // Environment variables (set via wrangler secret or dashboard)
   // These are placeholders - actual values should be set as secrets
   "vars": {
+    // Owner-directed browser work; migration 0013 applied 2026-10-03.
+    "BROWSER_SANDBOX_ENABLED": "true",
     // Disposable inference grants, issue #76. Migration 0011 applied 2026-09-29.
     "GRANTS_ENABLED": "true",
     "GRANTS_MAX_SECONDS": "3600",

@@ -7,3 +7,4 @@ __pycache__/
 blog/
 training/
 .openchamber/
+api/.sandbox-skills.json

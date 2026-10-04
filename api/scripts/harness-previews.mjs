@@ -42,7 +42,7 @@ const bundled = await build({ absWorkingDir: root, stdin: { resolveDir: root, co
     finally { Date.now = realNow; }
   } };
 ` }, bundle: true,
-  write: false, format: 'esm', platform: 'browser', target: 'es2022' });
+  write: false, format: 'esm', platform: 'browser', target: 'es2022', loader: { '.py': 'text', '.md': 'text' } });
 let lastUpstream = null;
 let outboundCalls = 0;
 let sandboxState = 'started';
@@ -489,6 +489,15 @@ try {
       Authorization: 'Bearer sk-bayleaf-owner', 'Content-Type': 'application/json',
     }, body: '{"port":5000}' });
     assert.equal(stopped.status, 409); sandboxState = 'started';
+  });
+  await check('keyed exposure supports explicit public access but reserves the browser port', async () => {
+    const headers={Authorization:'Bearer sk-bayleaf-owner','Content-Type':'application/json'};
+    const exposed=await dispatch(api+'/sandbox/expose',{method:'POST',headers,body:JSON.stringify({port:5001,access:'public'})});
+    assert.equal(exposed.status,200);
+    assert.equal((await dispatch((await exposed.json()).url)).status,200);
+    const reserved=await dispatch(api+'/sandbox/expose',{method:'POST',headers,body:JSON.stringify({port:3100,access:'public'})});
+    assert.equal(reserved.status,400);
+    await dispatch(api+'/sandbox/expose/5001',{method:'DELETE',headers});
   });
   await check('revocation is scoped to the caller; registration replacement cannot revive old sessions', async () => {
     assert.equal((await dispatch(api + '/sandbox/expose/5000', { method: 'DELETE', headers: { Authorization: 'Bearer sk-bayleaf-other' } })).status, 204);

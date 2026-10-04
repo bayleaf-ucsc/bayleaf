@@ -57,9 +57,9 @@ export const sandboxRoutes = new OpenAPIHono<AppEnv>();
 // key; installation credentials, browser cookies, and Campus Pass cannot use it.
 const exposeRoute = createRoute({
   method: 'post', path: '/expose', operationId: 'sandboxExpose', tags: ['Sandbox'],
-  summary: 'Get an owner-authenticated URL for a running sandbox service',
+  summary: 'Get a private or explicitly public URL for a running sandbox service',
   description: 'Exposes an existing HTTP service without starting or waking the sandbox. ' +
-    'Returns a fresh owner-authenticated URL with a random nonce and no visible port. ' +
+    'Defaults to owner-authenticated private access; access: public explicitly allows anonymous access. Port 3100 is reserved. Returns a fresh URL with a random nonce and no visible port. ' +
     'The registration lasts 24 hours, independently of the service and upstream access URL. ' +
     'The Daytona access URL is also issued for 24 hours. Re-expose to renew access.',
   security: [{ Bearer: [] }],
@@ -82,10 +82,10 @@ sandboxRoutes.openapi(exposeRoute, async (c) => {
   try {
     const sandbox = await lookupSandboxInfo(auth.userEmail, c.env);
     if (sandbox?.state !== 'started') return c.json({ error: { message: 'Start your sandbox and HTTP service before exposing it.', code: 409 } }, 409);
-    const { port } = c.req.valid('json');
+    const { port, access } = c.req.valid('json');
     const upstream = await createSignedPreview(sandbox.id, port, c.env);
     if (!upstream) return c.json({ error: { message: 'Preview unavailable.', code: 502 } }, 502);
-    const result = await registerUserPreview(c.env, auth.userEmail, String(port), upstream.url);
+    const result = await registerUserPreview(c.env, auth.userEmail, String(port), upstream.url, access);
     return result instanceof Response ? result as any : c.json(result, 200);
   } catch {
     // This path handles an upstream bearer credential. No exception logging.

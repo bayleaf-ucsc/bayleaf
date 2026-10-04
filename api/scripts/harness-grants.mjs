@@ -36,7 +36,7 @@ const bundle = await build({ absWorkingDir: root, stdin: { resolveDir: root, con
     try { return await app.fetch(new Request(request, {headers}), effectiveEnv, ctx); }
     finally { Date.now = realNow; }
   }};
-` }, bundle: true, write: false, format: 'esm', platform: 'browser', target: 'es2022' });
+` }, bundle: true, write: false, format: 'esm', platform: 'browser', target: 'es2022', loader: { '.py': 'text', '.md': 'text' } });
 let upstreamCalls = 0;
 const bindings = { GRANTS_ENABLED: 'true', GRANTS_MAX_SECONDS: '3600', OIDC_CLIENT_SECRET: secret,
   BEDROCK_BEARER_TOKEN: 'synthetic-bedrock-key', GCP_PROJECT_ID: 'synthetic-project',

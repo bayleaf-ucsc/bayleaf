@@ -23,6 +23,9 @@ import { keyRoutes } from './routes/key';
 import { proxyRoutes } from './routes/proxy';
 import { sealedRoutes } from './routes/sealed';
 import { sandboxRoutes } from './routes/sandbox';
+import { sandboxBrowserRoutes } from './routes/sandboxBrowser';
+import { usageRoutes } from './routes/usage';
+export { SandboxBrowser } from './sandboxBrowser';
 import { webRoutes } from './routes/web';
 import { docsRoutes } from './routes/docs';
 import { llmsRoutes } from './routes/llms';
@@ -155,6 +158,8 @@ app.route('/sealed/.well-known', sealedWellKnownRoutes);
 // /v1, never inside it, so no path or middleware is shared with the plaintext
 // proxy. Gated by SEALED_ENABLED, which fails closed.
 app.route('/sealed', sealedRoutes);
+app.route('/sandbox/browser', sandboxBrowserRoutes);
+app.route('/usage', usageRoutes);
 app.route('/sandbox', sandboxRoutes);
 app.route('/web', webRoutes);
 app.route('/docs', docsRoutes);

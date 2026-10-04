@@ -42,6 +42,12 @@ ITS-operated or ITS-supported one.
 - **Sandbox files (Chat and API, opt-in):** if you use the Code Sandbox, files
   you create live inside a per-user Daytona VM. There is no persistent volume
   backing it: deleting the sandbox is final.
+- **Browser sandbox (OpenChamber, opt-in):** setup stores your personal BayLeaf
+  API key inside your sandbox so agents can use your existing allowance. Agent
+  conversations, configuration, and files persist there and are accessible to
+  programs running as you and to the platform operator. Browser-access deadlines
+  do not erase that history. Inference uses the standard ZDR provider path;
+  this does not make sandbox storage zero-retention or zero-operator-access. ✨
 - **Transient previews (Chat and API, experimental and opt-in):** opening a
   public or private sandbox URL sends application traffic through Cloudflare to
   Daytona. The gateway stores an encrypted temporary upstream access URL,
