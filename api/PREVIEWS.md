@@ -80,6 +80,19 @@ OpenChamber interface and cannot be exposed through this endpoint. Sandbox
 agents receive `expose-sandbox-ports-technique`, whose helper reads the owner key
 internally and defaults to private exposure without displaying credentials. ✨
 
+Public previews may be framed by their owner's active managed OpenChamber origin.
+The gateway permits public GET iframe navigation and emits an exact
+`frame-ancestors` allowlist containing only self and that current owner origin,
+after checking its registration/deadline/key binding. It removes `X-Frame-Options`
+only when granting this exception. Other sibling origins remain blocked by CSP;
+cross-origin fetches, mutations, private-preview access, and WebSocket rules are
+unchanged. Private previews still use their top-level owner-login flow.
+
+Verified in deployed Chromium on 2026-10-03 (Pacific): the reported public service
+rendered under the current owner OpenChamber origin and was blocked under an
+unrelated sibling origin. The test used synthetic parent documents at those
+origins and the real public service, isolating browser framing-policy enforcement.
+
 The keyed API obtains a 24-hour Daytona signed URL and keeps its registration
 for 24 hours. Re-exposing the same port replaces that keyed registration.
 

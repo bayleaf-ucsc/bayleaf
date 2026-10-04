@@ -349,6 +349,17 @@ export function consumePreviewReturnTo(c: Context<AppEnv>): string | null {
   return /^[a-f0-9]{64}$/.test(id) ? `/previews/authorize?flow=${id}` : null;
 }
 
+/** Public apps may be embedded by this owner's current managed browser only. */
+async function browserFrameOrigin(env: Bindings, r: Registration): Promise<string | null> {
+  if (r.access !== 'public' || env.BROWSER_SANDBOX_ENABLED !== 'true') return null;
+  const parent = await env.DB.prepare(`SELECT hostname FROM preview_registrations
+    WHERE email=? AND deployment='__browser' AND expires_at>? LIMIT 1`)
+    .bind(r.email, now()).first<{hostname:string}>();
+  if (!parent) return null;
+  const active = await registration(env, parent.hostname);
+  return active?.deployment === '__browser' && active.email === r.email ? `https://${active.hostname}` : null;
+}
+
 /** Host dispatch is before all API routes, wildcard CORS, and error logging. */
 export async function handlePreviewHost(c: Context<AppEnv>): Promise<Response> {
   try {
@@ -371,8 +382,12 @@ export async function handlePreviewHost(c: Context<AppEnv>): Promise<Response> {
     const site = c.req.header('Sec-Fetch-Site');
     const navigation = c.req.method === 'GET' && c.req.header('Sec-Fetch-Mode') === 'navigate' &&
       c.req.header('Sec-Fetch-Dest') === 'document';
+    // Public GET navigation does not confer authority. CSP below restricts the
+    // ancestor; no Referrer is required (our applications use no-referrer).
+    const publicFrame = r.access === 'public' && c.req.method === 'GET' &&
+      c.req.header('Sec-Fetch-Mode') === 'navigate' && c.req.header('Sec-Fetch-Dest') === 'iframe';
     if ((origin && origin !== u.origin) ||
-        (site && !['none', 'same-origin'].includes(site) && !navigation) ||
+        (site && !['none', 'same-origin'].includes(site) && !navigation && !publicFrame) ||
         (!['GET', 'HEAD'].includes(c.req.method) && origin !== u.origin)) return failure();
     const upgrade = c.req.header('Upgrade');
     if (upgrade && (upgrade.toLowerCase() !== 'websocket' || origin !== u.origin || c.req.method !== 'GET')) return failure();
@@ -486,6 +501,11 @@ async function forward(c: Context<AppEnv>, r: Registration): Promise<Response> {
     redirect: 'manual', signal: AbortSignal.timeout(Math.min(300_000, Math.max(1, (r.expires_at - now()) * 1000))),
   });
   const responseHeaders = secureHeaders();
+  const frameOrigin = await browserFrameOrigin(c.env, r);
+  if (frameOrigin) {
+    responseHeaders.delete('X-Frame-Options');
+    responseHeaders.set('Content-Security-Policy', `frame-ancestors 'self' ${frameOrigin}; worker-src 'self' blob:; object-src 'none'; base-uri 'self'`);
+  }
   // Root-scoped workers (including code-server's) are confined to this unique
   // origin. Scope is never broadened across an origin boundary by this header.
   const workerScope = upstream.headers.get('Service-Worker-Allowed');

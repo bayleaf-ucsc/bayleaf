@@ -44,6 +44,7 @@ const bundle = await build({ absWorkingDir: root, stdin: { resolveDir: root, con
     }
     const headers=new Headers(req.headers);
     if(headers.has('X-Test-Origin')) {headers.set('Origin',headers.get('X-Test-Origin'));headers.delete('X-Test-Origin');}
+    if(headers.has('X-Test-Mode')) {headers.set('Sec-Fetch-Mode',headers.get('X-Test-Mode'));headers.delete('X-Test-Mode');}
     return app.fetch(new Request(req,{headers}),headers.has('X-Test-Disabled')?{...env,BROWSER_SANDBOX_ENABLED:'false'}:env,ctx);
   }};
 ` }, bundle: true, write: false, format: 'esm', platform: 'browser', target: 'es2022', loader: { '.py': 'text', '.md': 'text' } });
@@ -83,7 +84,7 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
       }
       if (u.pathname.endsWith('/start')) { wakes++; state = 'started'; return Response.json({}); }
       if (u.pathname.endsWith('/signed-preview-url')) {
-        assert(Number(u.searchParams.get('expiresInSeconds')) <= 21600);
+        assert(Number(u.searchParams.get('expiresInSeconds')) <= 86400);
         previewCalls++; return Response.json({ url: 'https://3100-synthetic.preview.example.test/' });
       }
       return exists ? Response.json(machine()) : new Response('', { status: 404 });
@@ -194,6 +195,23 @@ try {
     assert.equal(other.phase,'idle');assert.equal(other.url,undefined);
     assert.equal((await req('/sandbox/browser/stop',{method:'POST',owner:false,headers})).status,200);
     assert.equal((await status()).url,ready.url);
+  });
+  await check('public iframe navigation permits only the active owner browser in CSP, without widening fetch or POST',async()=>{
+    const exposed=await worker.fetch(api+'/sandbox/expose',{method:'POST',headers:{Authorization:'Bearer sk-bayleaf-owner','Content-Type':'application/json'},body:JSON.stringify({port:8000,access:'public'})});
+    assert.equal(exposed.status,200);const url=(await exposed.json()).url;
+    const headers={'X-Test-Mode':'navigate','Sec-Fetch-Dest':'iframe','Sec-Fetch-Site':'same-site'};
+    const framed=await worker.fetch(url,{headers});assert.equal(framed.status,200);
+    assert.equal(framed.headers.get('X-Frame-Options'),null);
+    assert.equal(framed.headers.get('Content-Security-Policy').split(';')[0],"frame-ancestors 'self' "+new URL(ready.url).origin);
+    assert.equal((await worker.fetch(url,{headers:{'Sec-Fetch-Site':'same-site','X-Test-Mode':'cors'}})).status,403);
+    assert.equal((await worker.fetch(url,{method:'POST',headers})).status,403);
+    const hostname=new URL(ready.url).hostname;
+    await db.prepare('UPDATE preview_registrations SET expires_at=0 WHERE hostname=?').bind(hostname).run();
+    const retired=await worker.fetch(url,{headers});
+    assert.equal(retired.headers.get('Content-Security-Policy').split(';')[0],"frame-ancestors 'self'");
+    assert.equal(retired.headers.get('X-Frame-Options'),'SAMEORIGIN');
+    await db.prepare('UPDATE preview_registrations SET expires_at=? WHERE hostname=?').bind(ready.deadline,hostname).run();
+    await worker.fetch(api+'/sandbox/expose/8000',{method:'DELETE',headers:{Authorization:'Bearer sk-bayleaf-owner'}});
   });
   await check('deliberate continuation replaces origin and renews the work period',async()=>{
     await action('continue');const next=await finish();
