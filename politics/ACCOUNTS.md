@@ -39,7 +39,7 @@ two members has bus factor 2: enough to survive the handover.
 
 | Account | Login identity | Structure | Handover-ready? | Notes |
 |---|---|---|---|---|
-| **Cloudflare** (Workers for `api.bayleaf.dev`, D1, DNS, Registrar for `bayleaf.dev`) | `amsmith@ucsc.edu` | Personal (default account, renamed `bayleaf`) | Partial | Identity correct; needs a second member on the account. |
+| **Cloudflare** (Workers for `api.bayleaf.dev`, D1, DNS, Registrar for `bayleaf.dev`) | `amsmith@ucsc.edu` | Named account `BayLeaf` | Partial | Adam is the sole member by choice for now. No UCSC ITS collaborators have been added; a second administrator remains a future handover step. |
 | **OpenRouter** | `amsmith@ucsc.edu` | Personal | Partial | No native Org concept. Mitigations below. |
 | **Daytona** | `amsmith@ucsc.edu` | Personal | Partial | Teams feature exists; not yet used. |
 | **Google Cloud** (projects `bayleafchat` and `gws-cli-playground-ucsc`) | `amsmith@ucsc.edu` | GCP projects | Mostly | The project is the unit of sharing; each just needs a second IAM member at Owner. `bayleafchat` hosts Vertex AI inference (see §4); `gws-cli-playground-ucsc` hosts the OAuth client used by the `gws_toolkit`. |
@@ -123,10 +123,76 @@ A Cloudflare account holds the Workers, D1 database, and `bayleaf.dev` zone
 so no resource migration is needed; just a second Administrator when a UCSC
 IT counterpart exists.
 
-Account renamed to `bayleaf` (from the default `Adam Smith's Account`).
-Resources: Worker `bayleaf-api`, D1 `bayleaf-keys`
-(`e249d6a6-41cf-4ab7-93d6-b677ac95b524`), zone `bayleaf.dev` (registrar +
-DNS), custom domain `api.bayleaf.dev`.
+The existing account is named `BayLeaf` (from the default `Adam Smith's
+Account`), ID `1a49fb69291d42e23c4ed4dcffce5bbc`. It will remain the home
+of BayLeaf, including Brace and Bracken, so its production resources do not
+need to move. The sharing boundary is potential UCSC ITS stewardship, not
+whether a resource has "BayLeaf" in its name.
+
+**Production account separation, 2026-10-04.** Two additional accounts were
+created under the UCSC identity:
+
+- `Democlips`, ID `e727caaa72d3165beaebe896f2e7cb83`: the research project's
+  domain, gallery Worker and D1 database, scripts Pages project, and Stream
+  video library. This is a separate collaborator boundary from BayLeaf.
+- `Adam's Misc University Stuff`, ID `53f07be82ff2cb49a463d7ce32c26817`:
+  `designreasoning.org` and `peerpressure.dev`.
+
+**BayLeaf stays in place; misc DNS and Democlips production have moved.**
+BayLeaf's production services need no migration or deployment changes.
+Both misc zones are active in their destination account following nameserver
+changes at Squarespace to `itzel.ns.cloudflare.com` and
+`sean.ns.cloudflare.com`. Their source-zone entries in BayLeaf are marked
+`moved` and remain as migration residue, not active service dependencies.
+The existing DNS records and editable settings were copied and verified.
+`designreasoning.org` is an inactive historical site, not a service requiring
+restoration. The peerpressure apex and `www` retain their existing upstream
+redirect to `http://play.peerpressure.dev`. At Adam's request, the missing
+`play` DNS record was added as a DNS-only CNAME to `rndmcnlly.github.io`.
+GitHub Pages already configures that hostname for `rndmcnlly/peerpressure`,
+with HTTPS enforced. The authoritative CNAME and an HTTPS 200 response from
+GitHub's edge using the custom hostname were verified. The site demonstrates
+Phaser games on GitHub Pages and PeerJS use within those games.
+
+Democlips' registration and active DNS zone now belong to its own account.
+The gallery Worker uses its destination D1 database and Stream library, and
+`scripts.democlips.dev` serves the destination Pages project
+(`democlips-scripts-58f.pages.dev`). Both scripts assets match the local source.
+All 230 ready Stream videos were copied and playback-verified. The imported
+database preserved 159 users, 230 video records, and 10 stars, with 227 redirects
+keeping old shared clip URLs usable. Three existing gallery records reference
+errored source videos; they were preserved, not counted as transfer failures.
+A real Google sign-in and authenticated gallery checks passed after cutover.
+Existing sessions need a fresh sign-in because the session signing key changed.
+
+A new $5/month Stream Starter Bundle is active with approval. The gallery's
+account-owned token is limited to Stream Read/Write in Democlips; access against
+BayLeaf was rejected. The Democlips collaborator accepted Administrator access.
+BayLeaf has only Adam's membership, with no ITS collaborators for now.
+The former Democlips collaborator's BayLeaf membership was removed, and the old
+all-account Democlips Stream token was revoked and verified to reject access.
+
+**Approved source retirement, 2026-10-04.** Original Democlips D1 and Pages
+resources were deleted from BayLeaf. The old $5/month Stream subscription is
+canceled at period end (2026-10-11), with no renewal; the destination plan
+remains active. All 238 source Stream assets were deleted against the saved
+inventory; the destination's 230 migrated ready videos remain intact.
+A temporary source-zone Worker bridge forwards cached-DNS requests to the new
+gallery, without reading or writing a source database. Retain only that bridge
+through 2026-10-06 as a cached-DNS precaution, then delete the source Worker and
+moved Democlips zone and disable the destination `workers.dev` endpoint.
+Private SQL exports and the video-ID mapping remain outside the repositories.
+The bridge is not permission to share BayLeaf with Democlips collaborators. A second
+BayLeaf administrator for ITS handover remains a separate future step.
+
+Confirmed BayLeaf production resources include Workers `bayleaf-api` and
+`bayleaf-probe`, D1 `bayleaf-keys`
+(`e249d6a6-41cf-4ab7-93d6-b677ac95b524`), KV `CAMPUS_RPD` and
+`MODEL_STATUS`, and Durable Objects `PreviewConnections` and
+`SandboxBrowser`. The `bayleaf.dev` and `bayleaf-proxies.dev` zones are live
+dependencies. Keep `bayleaf.chat`, `brace.tools`, and `bracken.chat` in this
+account as well. `bayleaf-courses` and `CLAIM_CODES` remain in place pending
+a separate assessment of legacy state. ✨
 
 ### 4. Google Cloud → add a second Project Owner on each project
 
