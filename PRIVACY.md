@@ -4,7 +4,7 @@
 
 This is a plain-spoken summary of what BayLeaf collects, where it goes, and how
 long it lives. The canonical retention policies for each service are kept in the
-public repository and linked below. Last updated: September 2026.
+public repository and linked below. Last updated: October 2026.
 
 ## What BayLeaf is, for privacy purposes
 
@@ -18,13 +18,11 @@ Following a security review by the UC Santa Cruz Information Technology Services
 (ITS) office, the campus Chief Information Security Officer (CISO) and his team
 cleared BayLeaf, on technical security grounds, to handle data up to
 [**Protection Level 3 (P3)**](https://its.ucsc.edu/get-support/it-guides/data-and-it-resource-classification/data-protection-levels/)
-under UCSC's data classification policy. That is a *security* determination (how
-BayLeaf protects data), which is separate from *legal* authorization to process
-specific regulated records. Authorization to use BayLeaf with actual FERPA
-student education records is a distinct process, still underway with the
-Registrar, and is **not yet granted**. Until it is, do not paste real student
-education records (grades joined to names, rosters, accommodation letters); use
-de-identified or synthetic stand-ins instead. Never paste P4 data at all (e.g.
+under UCSC's data classification policy. That is a *security* determination, not
+blanket authorization for every use of regulated records. There is no separate
+platform-wide Registrar approval pending: restrictions apply to particular uses.
+Users are responsible for ensuring their use of student education records complies
+with FERPA and other applicable rules. Never paste P4 data at all (e.g.
 health information, payment card data, or personally identifiable information
 classified at P4). The review attests to BayLeaf's security posture, not to
 institutional adoption: BayLeaf remains a faculty-operated service, not an

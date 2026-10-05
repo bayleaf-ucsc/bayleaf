@@ -75,6 +75,11 @@ this is why step 3's approval gate precedes both publishing and notifying.
 
 ## Refinement log
 
+- 2026-10-05: Corrected the pending-Registrar-approval claim from Adam's account
+  of the consultation: ITS suitability for P3 data and users' responsibility for
+  permitted uses are distinct. Used the documentation-correction exception;
+  data handling did not change and nothing was published.
+
 - 2026-09-29: Drafted opt-in disposable-grant metadata retention alongside a
   disabled local implementation. No new processor or inference-content storage;
   existing data handling is unchanged until rollout. No publication or notices
