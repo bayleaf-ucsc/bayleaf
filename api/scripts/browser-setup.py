@@ -368,11 +368,13 @@ def clear_browser_port():
 def check_browser_port():
     # Match Node's listener semantics: closed connections in TIME_WAIT are not
     # live conflicts and must not block an immediate restart.
+    # The production app must bind all IPv4 interfaces for private Daytona
+    # transport. Loopback alone would miss conflicts on other interfaces.
+    # This probe only binds and immediately closes; it never accepts traffic.
     with socket.socket() as probe:
         probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             probe.bind(('0.0.0.0', PORT))
-            probe.listen(1)
         except OSError:
             raise Failure('port_in_use') from None
 

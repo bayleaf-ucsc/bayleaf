@@ -68,8 +68,14 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         if self.path == "/redirect":
+            # Exercise proxy-aware absolute redirects, not arbitrary header output.
+            host = self.headers.get("X-Forwarded-Host", self.headers.get("Host", ""))
+            if not host or "\r" in host or "\n" in host:
+                self.send_response(400)
+                self.end_headers()
+                return
             self.send_response(302)
-            self.send_header("Location", "https://" + self.headers.get("X-Forwarded-Host", self.headers["Host"]) + "/target")
+            self.send_header("Location", "https://" + host + "/target")
             self.end_headers()
             return
         if self.path == "/error":

@@ -68,6 +68,8 @@ async def main():
             raise RuntimeError('Production expose(ssh) was not invoked')
         if 'Error: target must be' not in values or 'Got: "ssh"' not in values:
             raise RuntimeError('Production Lathe did not reject SSH exposure')
+        # Leakage assertion on arbitrary tool output, not a URL trust check:
+        # reject this hostname anywhere, including prose or malformed URLs.
         if 'ssh.app.daytona.io' in values or 'SSH command' in values:
             raise RuntimeError('Production result contained SSH access material')
         print('PASS: production lathe refused SSH exposure without returning access material')

@@ -194,6 +194,12 @@ Daytona transport and BayLeaf owner authentication**. Its relay is off. Managed
 OpenCode uses OpenChamber's secured loopback connection. Public Daytona sandbox
 exposure is incompatible with this design and must be ruled out before rollout.
 
+The installer's port-availability probe binds all IPv4 interfaces to match the
+application, then immediately closes without listening or accepting traffic.
+A loopback-only probe could miss a conflict on a non-loopback interface. This
+intentional wildcard bind is distinct from the application's real listener,
+whose access depends on the private transport and owner-authenticated gateway.
+
 ## Verification and rollout
 
 ### Export before a manual migration

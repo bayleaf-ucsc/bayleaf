@@ -156,6 +156,14 @@ class InstallerTests(unittest.TestCase):
         with patch.object(m,'PORT',port):
             m.check_browser_port()
 
+    def test_port_probe_never_listens(self):
+        with patch.object(m.socket, 'socket') as socket:
+            probe = socket.return_value.__enter__.return_value
+            m.check_browser_port()
+        probe.bind.assert_called_once_with(('0.0.0.0', m.PORT))
+        probe.listen.assert_not_called()
+        probe.accept.assert_not_called()
+
     def test_breadcrumb_ready_does_not_prove_live_application(self):
         m.atomic('state/operation.json',{'phase':'ready','operation':'old'})
         m.atomic('state/runtime.json',{'release':m.RELEASE,'process':{'pid':123,'start':'100','boot':'old'}})
