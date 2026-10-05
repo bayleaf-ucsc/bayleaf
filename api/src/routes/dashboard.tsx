@@ -17,6 +17,7 @@ import { ALT_BACKENDS, isBackendEnabled } from '../constants';
 import { isSealedEnabled } from './sealed';
 import { maxGrantSeconds } from '../grants';
 import { browserEnabled } from '../sandboxBrowser';
+import { getTinfoilUsage } from '../tinfoil';
 
 export const dashboardRoutes = new OpenAPIHono<AppEnv>();
 
@@ -74,6 +75,18 @@ dashboardRoutes.get('/dashboard', async (c) => {
   // key if it has gone away. A null orKey here is not fatal: we render the
   // page without usage numbers rather than erroring out the whole dashboard.
   const row = await getActiveRow(session.email, c.env);
+  const now = new Date();
+  const today = now.toISOString().split('T')[0];
+  const dayStart = new Date(`${today}T00:00:00.000Z`);
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const sealedEnabled = isSealedEnabled(c.env);
+  // Start both metadata reads together. No key minting/healing or D1 writes.
+  const sealedBilling = row && sealedEnabled && row.tinfoil_key
+    ? Promise.all([
+        getTinfoilUsage(row.tinfoil_key, dayStart, now, c.env),
+        getTinfoilUsage(row.tinfoil_key, monthStart, now, c.env),
+      ])
+    : Promise.resolve([null, null] as const);
   const orKey: OpenRouterKey | null = row ? (await resolveOrKeyInfo(row, c.env))?.orKey ?? null : null;
 
   // Fetch sandbox status (non-blocking — don't fail the page if this errors).
@@ -107,7 +120,6 @@ dashboardRoutes.get('/dashboard', async (c) => {
   // stays in sync with the actual set of alternate backends. Only enabled
   // backends are surfaced; today's count falls back to 0 when the stored
   // date is stale (the next request resets the counter).
-  const today = new Date().toISOString().split('T')[0];
   const altBackendUsage: AltBackendUsage[] = row
     ? ALT_BACKENDS.filter((b) => isBackendEnabled(c.env, b.key)).map((b) => {
         const count = row[b.rpdDateField] === today ? row[b.rpdCountField] : 0;
@@ -115,5 +127,14 @@ dashboardRoutes.get('/dashboard', async (c) => {
       })
     : [];
 
-  return renderPage(c, <DashboardPage session={session} row={row} orKey={orKey} recommendedModel={c.env.RECOMMENDED_MODEL} sandboxInfo={sandboxInfo} browserEnabled={browserEnabled(c.env)} gwsEnabled={gwsEnabled} sealedEnabled={isSealedEnabled(c.env)} grantsEnabled={c.env.GRANTS_ENABLED === 'true'} grantMaxSeconds={maxGrantSeconds(c.env)} sealedRecommendedModel={c.env.SEALED_RECOMMENDED_MODEL} altBackendUsage={altBackendUsage} />);
+  const [sealedToday, sealedMonth] = await sealedBilling;
+  const sealedUsage = row && sealedEnabled ? {
+    count: row.sealed_rpd_date === today ? row.sealed_rpd_count : 0,
+    limit: parseLimit(c.env.SEALED_RPD_LIMIT),
+    hasProviderKey: !!row.tinfoil_key,
+    today: sealedToday,
+    month: sealedMonth,
+  } : undefined;
+
+  return renderPage(c, <DashboardPage session={session} row={row} orKey={orKey} recommendedModel={c.env.RECOMMENDED_MODEL} sandboxInfo={sandboxInfo} browserEnabled={browserEnabled(c.env)} gwsEnabled={gwsEnabled} sealedEnabled={sealedEnabled} sealedUsage={sealedUsage} grantsEnabled={c.env.GRANTS_ENABLED === 'true'} grantMaxSeconds={maxGrantSeconds(c.env)} sealedRecommendedModel={c.env.SEALED_RECOMMENDED_MODEL} altBackendUsage={altBackendUsage} />);
 });

@@ -5,6 +5,7 @@
 import type { FC } from 'hono/jsx';
 import type { Session, UserKeyRow, OpenRouterKey } from '../types';
 import type { SandboxInfo } from '../daytona';
+import type { TinfoilBillingUsage } from '../tinfoil';
 import { TemporaryInferenceTokens } from './grants';
 import { SandboxBrowserControls } from './sandboxBrowser';
 import {
@@ -157,7 +158,15 @@ const StandardLlmCard: FC<{ orKey: OpenRouterKey; recommendedModel: string; altB
   );
 };
 
-const SealedLlmCard: FC<{ recommendedModel: string }> = ({ recommendedModel }) => {
+export interface SealedUsage {
+  count: number;
+  limit: number;
+  hasProviderKey: boolean;
+  today: TinfoilBillingUsage | null;
+  month: TinfoilBillingUsage | null;
+}
+
+const SealedLlmCard: FC<{ recommendedModel: string; usage?: SealedUsage }> = ({ recommendedModel, usage }) => {
   return (
     <div class={cardStyle} style="background: #f2f7f8; border-color: #26616d;">
       <h2>Sealed LLM Inference</h2>
@@ -171,6 +180,47 @@ const SealedLlmCard: FC<{ recommendedModel: string }> = ({ recommendedModel }) =
         This protects message content, not metadata. BayLeaf still sees your identity, timing, byte
         sizes, request counts, and non-streaming token usage.
       </p>
+      {usage && <>
+        <div class={statsStyle}>
+          <div class={statStyle}>
+            <div class={statValueStyle}>{usage.count}</div>
+            <div class={statLabelStyle}>Today's Requests</div>
+          </div>
+          <div class={statStyle}>
+            <div class={statValueStyle}>{Math.max(0, usage.limit - usage.count)}</div>
+            <div class={statLabelStyle}>Requests Remaining Today</div>
+          </div>
+          <div class={statStyle}>
+            <div class={statValueStyle}>{usage.limit}</div>
+            <div class={statLabelStyle}>Daily Request Limit</div>
+          </div>
+        </div>
+        <p style="margin-top: 0.5rem; font-size: 0.85em; color: #555;">
+          Resets <span class="resetHint">at midnight UTC</span>. Sealed is limited by requests, not a dollar budget.
+        </p>
+        <h3 style="margin-top: 1.5rem; margin-bottom: 0.75rem; font-size: 1.1em; color: #444;">Tinfoil Usage</h3>
+        {usage.hasProviderKey ? <>
+          <div class={statsStyle}>
+            <div class={statStyle}>
+              <div class={statValueStyle}>{usage.today ? `$${usage.today.cost.toFixed(4)}` : 'Unavailable'}</div>
+              <div class={statLabelStyle}>Today's Spend</div>
+            </div>
+            <div class={statStyle}>
+              <div class={statValueStyle}>{usage.month ? `$${usage.month.cost.toFixed(4)}` : 'Unavailable'}</div>
+              <div class={statLabelStyle}>This Month's Spend</div>
+            </div>
+            <div class={statStyle}>
+              <div class={statValueStyle}>{usage.today ? (usage.today.prompt_tokens + usage.today.completion_tokens).toLocaleString('en-US') : 'Unavailable'}</div>
+              <div class={statLabelStyle}>Today's Tokens</div>
+            </div>
+          </div>
+          <p style="margin-top: 0.5rem; font-size: 0.85em; color: #555;">
+            Tinfoil-reported billing metadata for your current Sealed key, including streaming.
+            Calendar periods use UTC; recent usage may take a moment to appear. Reload to refresh.
+            {!usage.today || !usage.month ? ' Some billing usage is unavailable; your request allowance is still shown above.' : ''}
+          </p>
+        </> : <p>No Tinfoil key has been provisioned yet. Billing usage becomes available after your first Sealed request.</p>}
+      </>}
       <p style="margin-top: 1rem;">
         Sealed uses the same BayLeaf API key as the standard path, but requires an EHBP-compatible
         client such as the Tinfoil Python SDK. Generic OpenAI clients cannot use this endpoint safely.
@@ -648,11 +698,12 @@ export const DashboardPage: FC<{
   browserEnabled?: boolean;
   gwsEnabled?: boolean;
   sealedEnabled?: boolean;
+  sealedUsage?: SealedUsage;
   grantsEnabled?: boolean;
   grantMaxSeconds?: number;
   sealedRecommendedModel?: string;
   altBackendUsage?: AltBackendUsage[];
-}> = ({ session, row, orKey, recommendedModel, sandboxInfo, browserEnabled, gwsEnabled, sealedEnabled, grantsEnabled, grantMaxSeconds = 3600, sealedRecommendedModel, altBackendUsage }) => {
+}> = ({ session, row, orKey, recommendedModel, sandboxInfo, browserEnabled, gwsEnabled, sealedEnabled, sealedUsage, grantsEnabled, grantMaxSeconds = 3600, sealedRecommendedModel, altBackendUsage }) => {
   const greeting = session.name
     ? `Welcome, ${session.name} (${session.email})`
     : `Welcome, ${session.email}`;
@@ -668,7 +719,7 @@ export const DashboardPage: FC<{
 
       {hasKey && orKey && row && <StandardLlmCard orKey={orKey} recommendedModel={recommendedModel} altBackendUsage={altBackendUsage ?? []} />}
 
-      {hasKey && sealedEnabled && sealedRecommendedModel && <SealedLlmCard recommendedModel={sealedRecommendedModel} />}
+      {row && sealedEnabled && sealedRecommendedModel && <SealedLlmCard recommendedModel={sealedRecommendedModel} usage={sealedUsage} />}
 
       {row && <SandboxCard sandboxInfo={sandboxInfo ?? null} browserEnabled={browserEnabled} />}
 

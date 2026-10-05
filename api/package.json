@@ -11,6 +11,7 @@
     "pretest:sandbox-browser": "python3 scripts/build-sandbox-skills.py",
     "test:previews": "node scripts/harness-previews.mjs",
     "test:grants": "node scripts/harness-grants.mjs",
+    "test:sealed-dashboard": "node scripts/test-sealed-dashboard.mjs",
     "test:sandbox-browser": "python3 scripts/test-browser-setup.py && python3 scripts/test-sandbox-skills.py && node scripts/harness-sandbox-browser.mjs",
     "tail": "wrangler tail"
   },

@@ -14,7 +14,7 @@
  * 2. **The admin key is strictly more dangerous.** Because secrets are
  *    re-readable, a leaked `TINFOIL_ADMIN_KEY` exposes every user's inference
  *    credential; a leaked OpenRouter provisioning key does not. Keep this
- *    credential out of any path that does not need to mint, and prefer a
+ *    credential out of any path that does not need to mint or read billing, and prefer a
  *    separate Worker for billing reconciliation so the request path cannot
  *    enumerate keys.
  *
@@ -31,6 +31,51 @@
 
 import type { Bindings, TinfoilKeyCreated } from './types';
 import { TINFOIL_ADMIN_API } from './constants';
+import { z } from 'zod';
+
+const billingUsageSchema = z.object({
+  cost: z.number().finite().nonnegative(),
+  prompt_tokens: z.number().int().nonnegative(),
+  completion_tokens: z.number().int().nonnegative(),
+  requests: z.number().int().nonnegative(),
+});
+
+export type TinfoilBillingUsage = z.infer<typeof billingUsageSchema>;
+
+/** Read only this existing key's billing metadata, never enumerate or heal keys.
+ * Explicit UTC ranges keep the dashboard's calendar periods aligned with D1.
+ * No prompts/completions are requested, stored, or logged.
+ */
+export async function getTinfoilUsage(
+  key: string | null,
+  start: Date,
+  end: Date,
+  env: Bindings,
+): Promise<TinfoilBillingUsage | null> {
+  if (!key || !env.TINFOIL_ADMIN_KEY) return null;
+  try {
+    const query = new URLSearchParams({ start: start.toISOString(), end: end.toISOString() });
+    const response = await fetch(`${TINFOIL_ADMIN_API}/billing/usage/key?${query}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.TINFOIL_ADMIN_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ key }),
+      redirect: 'manual',
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      return null;
+    }
+    const parsed = billingUsageSchema.safeParse(await response.json());
+    return parsed.success ? parsed.data : null;
+  } catch {
+    // A provider failure is unknown usage, not zero. Never log billing bodies.
+    return null;
+  }
+}
 
 /**
  * Characters Tinfoil rejects in a key name.
@@ -134,8 +179,9 @@ export async function deleteTinfoilKey(key: string, env: Bindings): Promise<bool
  * There is deliberately no `getTinfoilKey(key)` liveness check to mirror
  * OpenRouter's `findKeyByHash`. Verified 2026-07-29: `GET /api/keys/{tk_...}`
  * answers 405, so the only ways to read one key's state are enumerating every
- * key via `GET /api/keys` or asking the billing endpoint. Both are reconciler
- * capabilities we specifically do not want reachable from the request path.
+ * key via `GET /api/keys` or asking the billing endpoint. The dashboard reads
+ * single-key billing metadata, but inference must not use it as a liveness
+ * check or enumerate keys.
  *
  * This is why the Sealed lane trusts the secret stored in D1 and treats an
  * upstream 401 as the signal to re-mint (see `healBackendKey` in

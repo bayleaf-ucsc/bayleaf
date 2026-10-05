@@ -386,6 +386,14 @@ POST     /sealed/v1/*          EHBP ciphertext relay. POST only.
 
 ### Cost accounting: reconciliation, not request counting
 
+The dashboard now reads the existing user's key with `POST /api/billing/usage/key`
+for explicit UTC day-to-date and calendar-month-to-date ranges. It displays
+spending and today's total tokens (including streaming) separately from the D1
+daily request allowance. These are read-only, uncached metadata lookups, not spend
+enforcement or a reconciler. No key is minted/healed for billing; unavailable
+readings are never shown as zero. `npm run test:sealed-dashboard` covers the
+provider helper and synthetic rendering; append `-- --serve` for a local preview. ✨
+
 Measured 2026-07-29. The relay's in-flight visibility is poor, but the
 out-of-band accounting is excellent, so **spend enforcement should be
 dollar-denominated, not request-count based**.
