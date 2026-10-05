@@ -1,6 +1,6 @@
 # Getting Started Guide
 
-This guide is intended for members of the campus community who are new to BayLeaf. You might be a Generative AI critic, a seasoned Claude user, or a refugee from Gemini. Regardless of your background, this guide will help you get started with BayLeaf Chat and the BayLeaf API.
+This guide is intended for members of the campus community who are new to BayLeaf. You might be a Generative AI critic, a seasoned Claude user, a refugee from Gemini, a custom claw operator, or a curious Muse/Dots user. Regardless of your background, this guide will help you get started with BayLeaf Chat and the BayLeaf API.
 
 BayLeaf is free to use for anyone with a UCSC identity. It covers almost every use case of mainstream chat and agent services while offering levels of control over the experience and user privacy that are not available from any other consumer or institution-facing platform.
 
@@ -292,3 +292,17 @@ surface with current commands.
 If you develop another direct integration that would be useful across the
 campus community, use the channels in [`SUPPORT.md`](SUPPORT.md) so its design
 and onboarding can be documented for others.
+
+## Cloud Agents
+
+This section of the guide helps people who might otherwise be reaching for persistent cloud agent apps like Meta’s Muse or OpenAI’s Dots. These services give your agent a computer in the cloud so it can keep working while your laptop is put away in your backpack.
+
+Compared to the desktop setup above, this is a step back in privacy: your conversations and working files now live on someone else’s computer. What you get in exchange is flexibility. You can check in from your phone, switch computers, or leave an agent working without keeping your own computer awake. We’re back to trading some privacy for capability.
+
+You can get a similar experience by running OpenChamber inside your BayLeaf sandbox. Visit the [API dashboard](https://api.bayleaf.dev/dashboard), choose **Set up sandbox**, and then **Open sandbox** when it is ready. First setup takes a few minutes. This is the same sandbox your agents access through the Code Sandbox toolkit in BayLeaf Chat, now with an interface you can use directly.
+
+There are a few differences from Muse and Dots. There are no cute characters, and instead of one never-ending conversation, you get the project-rooted threads described earlier. The advice about `AGENTS.md` files and skills still applies: you and your agents can accumulate working instructions, save useful context, and pick things up in fresh conversations. This lets you assemble your own constellation of *claw-like* agents, borrowing the nickname from systems like OpenClaw that combine tools, persistent context, and ongoing responsibilities.
+
+The biggest limitation is that your BayLeaf agents need their sleep. Browser work periods last up to six hours, with an option to deliberately extend them, and idle sleep may happen sooner. Files and conversation history survive sleep, but running tasks stop, and scheduled tasks cannot run while the sandbox is asleep. This is useful for leaving an agent working while you go to class, but it isn’t a 24-hour, always-on experience. As with the Code Sandbox described above, I can access the sandbox’s stored data, and you should export important work rather than rely on the sandbox as its only home.
+
+BayLeaf isn’t trying to clone every fashionable new product in the AI industry. I do want it to offer enough of the capabilities people actually use that leaving those commercial services feels realistic. If there’s something you like doing with one of them, [talk to me, Adam Smith](SUPPORT.md), about it. We might be able to support something similar by assembling interchangeable pieces of open-source software, and you might help us figure out what BayLeaf should offer next. ✨
