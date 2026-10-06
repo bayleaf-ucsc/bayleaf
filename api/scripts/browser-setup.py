@@ -5,6 +5,7 @@ The edge owns authorization and deadlines. These owner-editable breadcrumbs are
 diagnostics only. Credentials arrive as files, never argv or setup output.
 """
 import argparse
+import base64
 import contextlib
 import fcntl
 import hashlib
@@ -13,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import secrets
 import signal
 import socket
 import subprocess
@@ -22,8 +24,8 @@ import time
 import urllib.request
 
 SCHEMA = 1
-RELEASE = 'oc2.1.0-code2.0.22-v1'
-PACKAGES = ['@openchamber/web@2.1.0', '@opencode/cli@2.0.22']
+RELEASE = 'openchamber-managed-v1'
+PACKAGES = ['@openchamber/web@latest']
 PORT = 3100
 ROOT = Path.home() / '.local/share/bayleaf/browser'
 PHASES = {'checking', 'installing', 'configuring', 'starting', 'ready', 'failed', 'stopped'}
@@ -123,10 +125,18 @@ class Progress:
         self.done = threading.Event()
         self.thread = threading.Thread(target=self.pulse, daemon=True)
 
-    def update(self, phase, error=None):
+    def update(self, phase, error=None, step=None):
         assert phase in PHASES
         with self.mutex:
             self.record.update(phase=phase, updated_at=int(time.time()))
+            self.record['progress'] = step or phase
+            history = self.record.setdefault('timeline', [])
+            event = {'step': step or phase, 'at': int(time.time())}
+            if error:
+                event['error'] = error
+            if not history or history[-1]['step'] != event['step']:
+                history.append(event)
+            self.record['timeline'] = history[-32:]
             if error:
                 self.record['error'] = error
             atomic('state/operation.json', self.record)
@@ -158,14 +168,14 @@ def request(operation):
 
 def health():
     runtime = read('state/runtime.json', {})
-    if runtime.get('release') != RELEASE or not alive(runtime.get('process')):
+    if runtime.get('release') != RELEASE or not runtime.get('configured') or not alive(runtime.get('process')):
         return False
     try:
         # Ignore proxy environment variables for the loopback readiness check.
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         with opener.open(f'http://127.0.0.1:{PORT}/health', timeout=3) as response:
             data = json.loads(response.read(65536))
-        return data.get('openchamberVersion') == '2.1.0' and data.get('isOpenCodeReady') is True
+        return isinstance(data.get('openchamberVersion'), str) and data.get('isOpenCodeReady') is True
     except (OSError, ValueError):
         return False
 
@@ -173,8 +183,13 @@ def health():
 def inspect():
     operation = read('state/operation.json', {})
     runtime = read('state/runtime.json', {})
+    runtime_events = runtime.get('timeline', []) if runtime.get('operation') == operation.get('operation') else []
+    events = sorted(operation.get('timeline', []) + runtime_events,
+                    key=lambda e:(e['at'], e['step'] in ('ready', 'failed')))[-40:]
     return {'schema': SCHEMA, 'operation': operation.get('operation'),
         'phase': operation.get('phase', 'unchecked'), 'error': operation.get('error'),
+        'progress': events[-1]['step'] if events else operation.get('phase','unchecked'),
+        'timeline': events, 'started_at': operation.get('started_at'),
         'updated_at': operation.get('updated_at'), 'release': RELEASE,
         'installed': read('state/installation.json', {}).get('release') == RELEASE,
         'ready': health(), 'running': alive(runtime.get('process')), 'port': PORT}
@@ -183,8 +198,8 @@ def inspect():
 def install(progress):
     release = ROOT / 'releases' / RELEASE
     manifest = read('state/installation.json', {})
-    bins = release / 'node_modules/.bin'
-    if manifest.get('release') == RELEASE and all((bins / x).is_file() for x in ['openchamber', 'opencode']):
+    bins = release / 'bin'
+    if manifest.get('release') == RELEASE and (bins / 'openchamber').is_file():
         return release
     if not shutil.which('node') or not shutil.which('npm'):
         raise Failure('node_22_required')
@@ -199,16 +214,15 @@ def install(progress):
     limit = Path('/sys/fs/cgroup/memory.max')
     if limit.exists() and limit.read_text().strip() != 'max' and int(limit.read_text()) < 2*1024**3:
         raise Failure('requires_2_gib')
-    progress.update('installing')
+    progress.update('installing', step='installing_openchamber')
     stage = ROOT / 'releases' / (RELEASE + '.staging')
     # Only this installer-owned staging directory is disposable.
     if stage.exists():
         shutil.rmtree(stage)
     stage.mkdir(parents=True, mode=0o700)
     try:
-        command(['npm', 'install', '--prefix', str(stage), '--no-audit', '--no-fund', *PACKAGES], timeout=900)
-        for executable in ['openchamber', 'opencode']:
-            command([str(stage / 'node_modules/.bin' / executable), '--version'])
+        command(['npm', 'install', '--global', '--prefix', str(stage), '--no-audit', '--no-fund', *PACKAGES], timeout=900)
+        command([str(stage / 'bin/openchamber'), '--version'])
     except Failure:
         raise Failure('installation_failed') from None
     # Preserve a damaged prior release for inspection rather than deleting it.
@@ -224,36 +238,7 @@ def install(progress):
     return release
 
 
-def restore_skills():
-    """Restore only bundled files; never remove user-added skill directories."""
-    bundle = read('skills.bundle.json')
-    if not bundle or not isinstance(bundle.get('files'), dict):
-        raise Failure('skill_bundle_missing')
-    base = ROOT / 'config/opencode/skills'
-    if any(p.is_symlink() for p in (ROOT / 'config', ROOT / 'config/opencode', base)):
-        raise Failure('skill_bundle_invalid')
-    base.mkdir(parents=True, exist_ok=True)
-    for relative, content in bundle['files'].items():
-        path = Path(relative)
-        if path.is_absolute() or '..' in path.parts or not isinstance(content, str):
-            raise Failure('skill_bundle_invalid')
-        target = base / path
-        # A modified bundled symlink must not redirect writes into user files.
-        cursor = base
-        for part in path.parts[:-1]:
-            cursor = cursor / part
-            if cursor.is_symlink():
-                cursor.unlink()
-            cursor.mkdir(exist_ok=True)
-        temp = target.with_name(target.name + '.bayleaf-next')
-        temp.unlink(missing_ok=True)
-        temp.write_text(content)
-        os.chmod(temp, 0o600)
-        os.replace(temp, target)
-
-
 def configure():
-    restore_skills()
     incoming = ROOT / 'credentials/incoming'
     credential = ROOT / 'credentials/owner-key'
     if incoming.exists():
@@ -264,14 +249,11 @@ def configure():
     key = credential.read_text().strip()
     if not key.startswith('sk-bayleaf-') or key.startswith('sk-bayleaf-grant-'):
         raise Failure('credential_invalid')
-    req = urllib.request.Request('https://api.bayleaf.dev/.well-known/opencode/config',
-        headers={'Authorization': 'Bearer '+key, 'User-Agent': 'BayLeaf-Browser-Setup/1'})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as response:
-            config = json.loads(response.read(1024*1024))['config']
-    except Exception:
-        raise Failure('provider_configuration_unavailable') from None
-    config['update'] = 'disable'
+    config = read('config/opencode/opencode.json', {})
+    config.setdefault('websearch', {'provider':'bayleaf'})
+    plugins = config.setdefault('plugins', [])
+    if '-opencode.tool.webfetch' not in plugins:
+        plugins.append('-opencode.tool.webfetch')
     atomic('config/opencode/opencode.json', config)
     # Fresh Daytona snapshots need not contain the shared working directory.
     # The exec API creates it too, but browser-first setup must be independent.
@@ -312,18 +294,106 @@ def configure():
     return hashlib.sha256(key.encode()).hexdigest()
 
 
-def environment():
+def environment(backend_port=None):
     env = dict(os.environ)
+    # Never inherit an external-server attachment from unrelated sandbox work.
+    for key in ['OPENCODE_HOST', 'OPENCODE_SKIP_START', 'OPENCHAMBER_SKIP_OPENCODE_START',
+                'OPENCODE_BINARY', 'OPENCODE_PATH', 'OPENCHAMBER_OPENCODE_PATH', 'OPENCHAMBER_OPENCODE_BIN',
+                'OPENCHAMBER_RUNTIME']:
+        env.pop(key, None)
     for key, folder in [('XDG_CONFIG_HOME','config'), ('XDG_DATA_HOME','data'),
                         ('XDG_CACHE_HOME','cache'), ('XDG_STATE_HOME','state')]:
         env[key] = str(ROOT / folder)
-    bins = ROOT / 'releases' / RELEASE / 'node_modules/.bin'
+    prefix = ROOT / 'releases' / RELEASE
+    bins = prefix / 'bin'
     env.update(OPENCHAMBER_DATA_DIR=str(ROOT / 'openchamber'),
-        OPENCODE_BINARY=str(bins / 'opencode'), OPENCHAMBER_RELAY_HOST='off',
+        OPENCHAMBER_RELAY_HOST='off',
+        npm_config_prefix=str(prefix), OPENCHAMBER_PACKAGE_MANAGER='npm',
+        OPENCHAMBER_OPENCODE_HOSTNAME='127.0.0.1',
         OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN='true',
         BAYLEAF_API_KEY=(ROOT / 'credentials/owner-key').read_text().strip(),
-        PATH=str(bins)+':'+env.get('PATH',''))
+        PATH=str(bins)+':'+str(Path.home() / '.opencode/bin')+':'+env.get('PATH',''))
+    if backend_port:
+        password = secrets.token_urlsafe(32)
+        # Credentials stay in the child environment and a protected file, not
+        # argv, application logs, or content-free breadcrumbs.
+        atomic('credentials/opencode-password.json', password)
+        env.update(OPENCODE_PORT=str(backend_port), OPENCODE_PASSWORD=password,
+            OPENCODE_SERVER_PASSWORD=password, BAYLEAF_OPENCODE_URL=f'http://127.0.0.1:{backend_port}')
     return env
+
+
+def ensure_opencode(operation):
+    """Delegate first installation to OpenChamber's installer and destination."""
+    binary = Path.home() / '.opencode/bin/opencode'
+    if binary.is_file() and os.access(binary, os.X_OK):
+        return
+    request(operation)
+    installer = ROOT / 'releases' / RELEASE / 'lib/node_modules/@openchamber/web/server/lib/opencode/v2-install.js'
+    try:
+        # The web install API currently rejects a completely absent binary.
+        # Invoke the same upstream implementation without reproducing it here.
+        command(['node', '--input-type=module', '-e',
+            'const {installOpenCodeV2}=await import('+json.dumps(installer.as_uri())+'); await installOpenCodeV2();'],
+            env=environment(), timeout=420)
+        request(operation)
+    except Failure:
+        raise
+    except Exception:
+        raise Failure('opencode_installation_failed') from None
+
+
+def bootstrap(backend_port, operation, origin='https://api.bayleaf.dev/sandbox', report=lambda step: None):
+    """Register the V2 integration and credential. No secrets in argv/output."""
+    password = read('credentials/opencode-password.json')
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    authorization = 'Basic ' + base64.b64encode(('opencode:'+password).encode()).decode()
+    def api(path, body=None, method=None):
+        req = urllib.request.Request(f'http://127.0.0.1:{backend_port}'+path,
+            data=json.dumps(body).encode() if body is not None else None,
+            headers={'Authorization':authorization, 'Content-Type':'application/json'}, method=method)
+        with opener.open(req, timeout=5) as response:
+            data = response.read(4*1024*1024)
+            return json.loads(data) if data else None
+    try:
+        report('waiting_for_opencode')
+        for _ in range(90):
+            request(operation)
+            try:
+                api('/api/info')
+                break
+            except OSError:
+                time.sleep(1)
+        else:
+            raise Failure('provider_configuration_unavailable')
+        report('connecting_bayleaf')
+        key = (ROOT / 'credentials/owner-key').read_text().strip()
+        entries = api('/api/credential')['data']
+        matching = [entry for entry in entries if entry['integrationID'] == origin and
+            entry.get('value', {}).get('type') == 'key' and entry['value']['key'] == key]
+        if matching:
+            if not matching[-1].get('active'):
+                api('/api/credential/'+matching[-1]['id']+'/activate', {}, 'POST')
+        else:
+            api('/api/credential', {'integrationID':origin, 'label':'BayLeaf managed sandbox',
+                'value':{'type':'key','key':key}, 'activate':True})
+        api('/api/experimental/integration/wellknown', {'url':origin})
+        for entry in entries:
+            if entry['integrationID'] == origin and entry.get('label') == 'BayLeaf managed sandbox' and entry not in matching:
+                api('/api/credential/'+entry['id'], method='DELETE')
+        report('loading_tools')
+        for _ in range(90):
+            request(operation)
+            plugins = api('/api/plugin')['data']
+            if any(p['id'] == 'bayleaf.sandbox' and p.get('state', {}).get('status') == 'active' for p in plugins):
+                break
+            time.sleep(1)
+        else:
+            raise Failure('provider_configuration_unavailable')
+    except Failure:
+        raise
+    except Exception:
+        raise Failure('provider_configuration_unavailable') from None
 
 
 def clear_browser_port():
@@ -382,23 +452,37 @@ def check_browser_port():
 def supervise(operation):
     with lock('runtime.lock', wait=10):
         lease = request(operation)
-        restore_skills()
         check_browser_port()
-        executable = ROOT / 'releases' / RELEASE / 'node_modules/.bin/openchamber'
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0))
+            backend_port = probe.getsockname()[1]
+        executable = ROOT / 'releases' / RELEASE / 'bin/openchamber'
         child = subprocess.Popen([str(executable), 'serve', '--foreground', '--host', '0.0.0.0',
-            '--port', str(PORT)], env=environment(), cwd=Path.home() / 'workspace',
+            '--port', str(PORT)], env=environment(backend_port), cwd=Path.home() / 'workspace',
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             start_new_session=True)
         marker = identity(child.pid)
-        atomic('state/runtime.json', {'process': marker, 'release': RELEASE,
-            'credential_hash': lease['credential_hash'], 'operation': operation})
+        runtime = {'process': marker, 'release': RELEASE, 'configured': False,
+            'credential_hash': lease['credential_hash'], 'operation': operation}
+        atomic('state/runtime.json', runtime)
+        def report(step):
+            runtime.setdefault('timeline', []).append({'step':step, 'at':int(time.time())})
+            runtime['timeline'] = runtime['timeline'][-16:]
+            atomic('state/runtime.json', runtime)
         try:
+            bootstrap(backend_port, operation, report=report)
+            runtime['configured'] = True
+            report('checking_readiness')
             while child.poll() is None:
                 lease = read('state/lease.json', {})
                 cancelled = read('state/cancelled.json', {}).get('operation') == lease.get('operation')
                 if cancelled or not isinstance(lease.get('deadline'), int) or time.time() >= lease['deadline']:
                     break
                 time.sleep(2)
+        except Exception as error:
+            runtime['error'] = str(error) if isinstance(error, Failure) else 'setup_failed'
+            atomic('state/runtime.json', runtime)
+            raise
         finally:
             terminate(marker)
             child.wait(timeout=15)
@@ -415,6 +499,8 @@ def setup(operation):
             request(operation)  # A slow install may outlive its work period.
             progress.update('configuring')
             fingerprint = configure()
+            progress.update('configuring', step='installing_opencode')
+            ensure_opencode(operation)
             request(operation)
             req['credential_hash'] = fingerprint
             atomic('request.json', req)
@@ -422,7 +508,7 @@ def setup(operation):
             if req.get('restart') or runtime.get('credential_hash') != fingerprint or runtime.get('release') != RELEASE:
                 terminate(runtime.get('process'))
             atomic('state/lease.json', {'deadline': req['deadline'], 'operation': operation})
-            progress.update('starting')
+            progress.update('starting', step='starting_openchamber')
             # A slow health response is not proof of process death. Retry joins
             # a living runtime; only an explicit restart or config change kills it.
             if not alive(read('state/runtime.json', {}).get('process')):
@@ -431,9 +517,12 @@ def setup(operation):
                 subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--root', str(ROOT),
                     'supervise', '--operation', operation], stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-            for _ in range(90):
+            for _ in range(210):
                 if health():
                     break
+                runtime = read('state/runtime.json', {})
+                if runtime.get('operation') == operation and runtime.get('error'):
+                    raise Failure(runtime['error'])
                 request(operation)
                 time.sleep(1)
             else:

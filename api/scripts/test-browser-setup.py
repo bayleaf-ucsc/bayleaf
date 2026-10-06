@@ -14,6 +14,15 @@ spec.loader.exec_module(m)
 
 
 class InstallerTests(unittest.TestCase):
+    def test_readiness_accepts_new_openchamber_versions_but_requires_ready_backend(self):
+        with patch.object(m,'read',return_value={'release':m.RELEASE,'configured':True,'process':{}}), \
+             patch.object(m,'alive',return_value=True):
+            for ready in [True,False]:
+                response=Mock();response.__enter__=Mock(return_value=response);response.__exit__=Mock(return_value=False)
+                response.read.return_value=json.dumps({'openchamberVersion':'2.1.1','isOpenCodeReady':ready}).encode()
+                with patch.object(m.urllib.request,'build_opener',return_value=Mock(open=Mock(return_value=response))):
+                    self.assertEqual(m.health(),ready)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -22,16 +31,6 @@ class InstallerTests(unittest.TestCase):
         self.root_patch.start()
         self.addCleanup(self.root_patch.stop)
         self.progress = m.Progress('test')
-        m.atomic('skills.bundle.json', {'version':'test', 'files':{}})
-
-    def test_bundled_skills_regrow_without_removing_personal_skills(self):
-        m.atomic('skills.bundle.json', {'files':{'example/SKILL.md':'canonical skill'}})
-        m.restore_skills()
-        installed=self.root/'config/opencode/skills/example/SKILL.md'
-        installed.unlink();m.restore_skills();self.assertEqual(installed.read_text(),'canonical skill')
-        installed.write_text('modified');m.restore_skills();self.assertEqual(installed.read_text(),'canonical skill')
-        personal=installed.parent.parent/'personal';personal.mkdir();(personal/'SKILL.md').write_text('keep')
-        m.restore_skills();self.assertEqual((personal/'SKILL.md').read_text(),'keep')
 
     def test_atomic_breadcrumb_permissions_and_readers(self):
         m.atomic('state/operation.json', {'phase': 'installing'})
@@ -39,6 +38,22 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(m.read('state/operation.json'), {'phase': 'ready'})
         self.assertEqual((self.root/'state/operation.json').stat().st_mode & 0o777, 0o600)
         self.assertEqual(list(self.root.glob('state/*.tmp')), [])
+
+    def test_progress_preserves_fast_steps_and_inspect_merges_supervisor_steps(self):
+        self.progress.update('installing',step='installing_openchamber')
+        self.progress.update('configuring',step='installing_opencode')
+        m.atomic('state/runtime.json',{'operation':'test','timeline':[
+            {'step':'connecting_bayleaf','at':int(m.time.time())}]})
+        with patch.object(m,'health',return_value=False),patch.object(m,'alive',return_value=False):
+            result=m.inspect()
+        self.assertEqual([e['step'] for e in result['timeline']],
+            ['installing_openchamber','installing_opencode','connecting_bayleaf'])
+        self.assertEqual(result['progress'],'connecting_bayleaf')
+        self.assertIn('started_at',result)
+        m.atomic('state/runtime.json',{'operation':'old','timeline':[
+            {'step':'loading_tools','at':int(m.time.time())}]})
+        with patch.object(m,'health',return_value=False),patch.object(m,'alive',return_value=False):
+            self.assertNotIn('loading_tools',[e['step'] for e in m.inspect()['timeline']])
 
     def test_exclusive_setup_lock(self):
         with m.lock('setup.lock'):
@@ -69,9 +84,11 @@ class InstallerTests(unittest.TestCase):
         (self.root/'current').symlink_to(old)
         def npm(argv, **kwargs):
             if argv[0] == 'npm':
-                stage = Path(argv[argv.index('--prefix')+1])/'node_modules/.bin'
+                self.assertIn('--global',argv)
+                self.assertEqual(argv[-1],'@openchamber/web@latest')
+                stage = Path(argv[argv.index('--prefix')+1])/'bin'
                 stage.mkdir(parents=True)
-                for name in ['openchamber','opencode']:
+                for name in ['openchamber']:
                     (stage/name).write_text('synthetic binary')
         with patch.object(m.shutil,'which',return_value='/bin/synthetic'), \
              patch.object(m.subprocess,'check_output',return_value='v25.9.0'), \
@@ -93,18 +110,69 @@ class InstallerTests(unittest.TestCase):
         (self.root/'credentials').mkdir()
         (self.root/'credentials/incoming').write_text('sk-bayleaf-synthetic')
         m.atomic('openchamber/settings.json', {'projects':[{'path':'/my/work'}], 'custom':True})
-        remote = Mock()
-        remote.__enter__ = Mock(return_value=remote)
-        remote.__exit__ = Mock(return_value=False)
-        remote.read.return_value = json.dumps({'config':{'model':'bayleaf-remote/test'}}).encode()
-        with patch.object(m.urllib.request,'urlopen',return_value=remote), \
+        m.atomic('config/opencode/opencode.json', {'model':'personal/test',
+            'providers':{'personal':{'name':'Keep'}},
+            'shell':'/bin/custom'})
+        with patch.object(m.urllib.request,'urlopen',side_effect=AssertionError('snapshot downloaded')), \
              patch.object(m.Path,'home',return_value=self.root/'home'):
             m.configure()
         self.assertTrue((self.root/'home/workspace').is_dir())
         self.assertTrue(m.read('openchamber/settings.json')['custom'])
         self.assertEqual((self.root/'credentials/owner-key').stat().st_mode & 0o777,0o600)
         self.assertNotIn('sk-bayleaf', (self.root/'config/opencode/opencode.json').read_text())
-        self.assertEqual(m.read('config/opencode/opencode.json')['model'],'bayleaf-remote/test')
+        config=m.read('config/opencode/opencode.json')
+        self.assertEqual(config['model'],'personal/test')
+        self.assertEqual(config['providers'],{'personal':{'name':'Keep'}})
+        self.assertEqual(config['shell'],'/bin/custom')
+        self.assertIn('-opencode.tool.webfetch',config['plugins'])
+        self.assertNotIn('update',config)
+
+    def test_first_opencode_install_delegates_to_openchamber_and_reuses_binary(self):
+        home=self.root/'home'
+        with patch.object(m.Path,'home',return_value=home), patch.object(m,'request'), \
+             patch.object(m,'environment',return_value={}), patch.object(m,'command') as command:
+            m.ensure_opencode('test')
+            argv=command.call_args.args[0]
+            self.assertEqual(argv[:3],['node','--input-type=module','-e'])
+            self.assertIn('openchamber/web/server/lib/opencode/v2-install.js',argv[3])
+            self.assertIn('await installOpenCodeV2()',argv[3])
+            binary=home/'.opencode/bin/opencode'
+            binary.parent.mkdir(parents=True);binary.write_text('synthetic');binary.chmod(0o700)
+            command.reset_mock();m.ensure_opencode('test');command.assert_not_called()
+
+    def test_bootstrap_is_idempotent_and_keeps_credentials_out_of_requests_argv(self):
+        m.atomic('credentials/opencode-password.json','synthetic-password')
+        (self.root/'credentials/owner-key').write_text('sk-bayleaf-synthetic')
+        calls=[]
+        def response(req, **kwargs):
+            calls.append(req)
+            result={'data':[{'id':'managed','integrationID':'https://api.bayleaf.dev/sandbox',
+                'active':True,'value':{'type':'key','key':'sk-bayleaf-synthetic'}}]} if req.full_url.endswith('/api/credential') else {}
+            if req.full_url.endswith('/api/plugin'):
+                result={'data':[{'id':'bayleaf.sandbox','state':{'status':'active'}}]}
+            handle=Mock();handle.__enter__=Mock(return_value=handle);handle.__exit__=Mock(return_value=False)
+            handle.read.return_value=json.dumps(result).encode();return handle
+        with patch.object(m,'request'), patch.object(m.urllib.request,'build_opener',return_value=Mock(open=response)):
+            m.bootstrap(45678,'test')
+        self.assertEqual([req.get_method() for req in calls],['GET','GET','POST','GET'])
+        self.assertEqual(json.loads(calls[2].data),{'url':'https://api.bayleaf.dev/sandbox'})
+        self.assertTrue(all('sk-bayleaf' not in req.full_url for req in calls))
+
+    def test_managed_environment_cannot_attach_to_an_unrelated_backend(self):
+        (self.root/'credentials').mkdir()
+        (self.root/'credentials/owner-key').write_text('sk-bayleaf-synthetic')
+        with patch.dict(m.os.environ,{'OPENCODE_HOST':'https://unrelated.example',
+            'OPENCODE_SKIP_START':'true','OPENCHAMBER_SKIP_OPENCODE_START':'true',
+            'OPENCODE_BINARY':'/unrelated/opencode'}):
+            env=m.environment(45678)
+        self.assertNotIn('OPENCODE_HOST',env)
+        self.assertNotIn('OPENCODE_SKIP_START',env)
+        self.assertNotIn('OPENCODE_BINARY',env)
+        self.assertEqual(env['npm_config_prefix'],str(self.root/'releases'/m.RELEASE))
+        self.assertEqual(env['BAYLEAF_OPENCODE_URL'],'http://127.0.0.1:45678')
+        self.assertEqual(env['OPENCHAMBER_OPENCODE_HOSTNAME'],'127.0.0.1')
+        self.assertEqual(env['OPENCODE_PORT'],'45678')
+        self.assertEqual((self.root/'credentials/opencode-password.json').stat().st_mode & 0o777,0o600)
 
     def test_pid_reuse_never_signals_an_unrelated_process(self):
         original = {'pid':123,'start':'100','boot':'old'}
@@ -136,7 +204,7 @@ class InstallerTests(unittest.TestCase):
         m.atomic('state/runtime.json', {'process':{'pid':123}, 'release':m.RELEASE, 'credential_hash':'same'})
         req={'operation':'test', 'deadline':int(m.time.time())+300}
         with patch.object(m, 'request', return_value=req), patch.object(m, 'Progress'), \
-             patch.object(m, 'install'), patch.object(m, 'configure', return_value='same'), \
+             patch.object(m, 'install'), patch.object(m, 'ensure_opencode'), patch.object(m, 'configure', return_value='same'), \
              patch.object(m, 'alive', return_value=True), patch.object(m, 'health', side_effect=[False,False,True]), \
              patch.object(m.time, 'sleep'), patch.object(m, 'terminate') as stop, \
              patch.object(m, 'clear_browser_port') as reclaim, patch.object(m.subprocess, 'Popen') as spawn:

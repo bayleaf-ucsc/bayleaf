@@ -513,11 +513,13 @@ Object, `routes/sandboxBrowser.ts` exposes session/ordinary-key operations, and
 0013 binds managed preview generations to the current owner's key fingerprint.
 No personalized hostname or second workspace is created.
 
-`sandbox-skills/` owns the skills narrowly for agents inside these sandboxes.
-The generic `scripts/build-sandbox-skills.py` bundles that directory during
-Wrangler builds; setup and each application launch restore bundled files into
-the managed XDG skill directory, preserving user-added skills. Add skills there,
-not as per-skill installer branches. `/usage` is personal-key, read-only budget
+`sandbox-plugin/` is a Git submodule of `bayleaf-ucsc/opencode-sandbox` and owns
+the plugin and its canonical `skills/`. `scripts/build-sandbox-plugin.py` derives
+the remote-config Git pin from its clean checkout. Push plugin changes before
+deploying the Worker; the main repo's submodule update can remain uncommitted
+during production evaluation. Skills register directly from the installed V2
+package. See `sandbox-plugin/README.md`.
+`/usage` is personal-key, read-only budget
 inspection: no provisioning/healing, inference calls, or counter mutation. ✨
 
 GET status must never call Toolbox, start compute, refresh activity, or install
@@ -611,6 +613,8 @@ rollout record in `chat/DESIGN.md` and `PREVIEWS.md`. ✨
 /sealed/v1/*            POST: EHBP ciphertext relay. POST only, no plaintext fallback
 /.well-known/opencode                 GET: OpenCode discovery for standard BayLeaf
 /.well-known/opencode/config          GET: Authenticated standard OpenCode config
+/sandbox/.well-known/opencode         GET: Sandbox V2 discovery
+/sandbox/.well-known/opencode/config  GET: Owner-key sandbox V2 config
 /sealed/.well-known/opencode          GET: OpenCode discovery for opt-in BayLeaf Sealed
 /sealed/.well-known/opencode/config   GET: Authenticated Sealed OpenCode config
 /recommended-model      Current recommended model slug + display name (JSON, unauthenticated)

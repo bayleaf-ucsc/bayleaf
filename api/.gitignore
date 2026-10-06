@@ -27,3 +27,6 @@ npm-debug.log*
 
 # Operator reports (may contain user emails)
 reports/
+
+# Generated package assets and release archives
+.sandbox-plugin-ref.json

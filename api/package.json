@@ -6,13 +6,14 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "pretest:previews": "python3 scripts/build-sandbox-skills.py",
-    "pretest:grants": "python3 scripts/build-sandbox-skills.py",
-    "pretest:sandbox-browser": "python3 scripts/build-sandbox-skills.py",
+    "pretest:previews": "python3 scripts/build-sandbox-plugin.py",
+    "pretest:grants": "python3 scripts/build-sandbox-plugin.py",
+    "pretest:sandbox-browser": "python3 scripts/build-sandbox-plugin.py",
     "test:previews": "python3 scripts/test-preview-fixture.py && node scripts/harness-previews.mjs",
     "test:grants": "node scripts/harness-grants.mjs",
     "test:sealed-dashboard": "node scripts/test-sealed-dashboard.mjs",
-    "test:sandbox-browser": "python3 scripts/test-browser-setup.py && python3 scripts/test-sandbox-skills.py && node scripts/harness-sandbox-browser.mjs",
+    "test:sandbox-browser": "python3 scripts/test-browser-setup.py && node scripts/harness-sandbox-browser.mjs",
+    "test:sandbox-plugin": "npm --prefix sandbox-plugin test",
     "tail": "wrangler tail"
   },
   "overrides": {

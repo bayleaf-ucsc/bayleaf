@@ -66,12 +66,15 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
     PREVIEWS_UPSTREAM_SUFFIXES: '.preview.example.test', ALLOWED_EMAIL_DOMAIN: 'example.test',
     OIDC_CLIENT_SECRET: secret, DAYTONA_API_URL: 'https://daytona.example.test/api',
     SEALED_ENABLED:'true',SEALED_RPD_LIMIT:'500',
+    RECOMMENDED_MODEL:'synthetic/model',OPENCODE_CURATED_MODELS:'synthetic/model',
     DAYTONA_PROXY_URL: 'https://toolbox.example.test', DAYTONA_API_KEY: 'synthetic-daytona-key',
     DAYTONA_DEPLOYMENT_LABEL: 'synthetic-chat', DAYTONA_AUTO_DELETE_MINUTES: '129600',
   },
   outboundService: async req => {
     const u = new URL(req.url);
-    if (u.hostname==='openrouter.ai') return Response.json({data:{limit:5,limit_remaining:3.75,limit_reset:'daily',usage:30,usage_daily:1.25}});
+    if (u.hostname==='openrouter.ai') return Response.json({data:u.pathname.endsWith('/models')?
+      [{id:'synthetic/model',name:'Synthetic model',pricing:{prompt:'0.000001',completion:'0.000002'}}]:
+      {limit:5,limit_remaining:3.75,limit_reset:'daily',usage:30,usage_daily:1.25}});
     if (u.hostname === 'daytona.example.test') {
       if (u.pathname === '/api/sandbox' && req.method === 'GET') {
         if (lookupFails) return new Response('outage', { status: 503 });
@@ -104,6 +107,9 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
       if (command.endsWith('setup.py inspect')) return Response.json({ exitCode: 0, result: JSON.stringify({
         schema: 1, operation: interrupted ? 'stale' : incomingOperation.operation,
         updated_at: Math.floor(Date.now()/1000), phase: 'ready', ready: true, port: 3100,
+        timeline:[{step:'loading_tools',at:Math.floor(Date.now()/1000)},
+          {step:'credential-leak',at:Math.floor(Date.now()/1000),error:'secret'},
+          {step:'connecting_bayleaf',at:9999999999999}],
       }) });
       return Response.json({ exitCode: 0, result: '' });
     }
@@ -146,6 +152,28 @@ try {
   }
   for(const [owner,token] of [[email,'sk-bayleaf-owner'],['other@example.test','sk-bayleaf-other']])
     await db.prepare('INSERT INTO user_keys(email,bayleaf_token) VALUES (?,?)').bind(owner,token).run();
+
+  await check('sandbox remote config is native V2, owner-key gated, and separate from desktop config',async()=>{
+    const path='/sandbox/.well-known/opencode';
+    const discovery=await (await req(path,{owner:false})).json();
+    assert.equal(discovery.remote_config.url,api+path+'/config');
+    for(const token of ['', 'campus', 'invalid'])
+      assert.equal((await req(path+'/config',{owner:false,headers:{Authorization:'Bearer '+token}})).status,401);
+    assert.ok([401,403,503].includes((await req(path+'/config',{owner:false,
+      headers:{Authorization:'Bearer sk-bayleaf-grant-synthetic'}})).status));
+    const response=await req(path+'/config',{owner:false,headers:{Authorization:'Bearer sk-bayleaf-owner'}});
+    assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'no-store');
+    const {config}=await response.json();
+    assert.equal(config.model,'bayleaf-remote/synthetic/model');
+    assert.equal(config.providers['bayleaf-remote'].package,'@opencode/ai/providers/openai-compatible');
+    assert.equal(config.providers['bayleaf-remote'].models['synthetic/model'].cost.cache.read,0);
+    assert.ok(config.plugins.includes('-opencode.tool.webfetch'));
+    assert.ok(config.plugins.some(p=>/^github:bayleaf-ucsc\/opencode-sandbox#[0-9a-f]{40}$/.test(p)));
+    assert.equal(config.websearch.provider,'bayleaf');assert.equal(config.provider,undefined);
+    const desktop=await (await req('/.well-known/opencode/config',{owner:false,headers:{Authorization:'Bearer sk-bayleaf-owner'}})).json();
+    assert.ok(desktop.config.provider['bayleaf-remote']);assert.equal(desktop.config.plugins,undefined);
+    assert.equal(creates+wakes+executions,0);
+  });
 
   await check('anonymous, CSRF, Campus Pass, bad keys and disabled feature fail closed',async()=>{
     assert.equal((await req('/sandbox/browser/start',{method:'POST',owner:false})).status,401);
@@ -238,6 +266,13 @@ try {
     interrupted=true;await action('restart');const next=await finish();
     assert.equal(next.phase,'failed');assert.equal(next.error,'setup_interrupted');
     interrupted=false;await action('start');ready=await finish();assert.equal(ready.phase,'ready');
+    const status=await (await req('/sandbox/browser/status')).json();
+    assert.equal(status.previous_failure.error,'setup_interrupted');
+    assert.ok(status.previous_failure.elapsed>=0);
+    assert.ok(status.timeline.some(e=>e.step==='loading_tools'));
+    assert.ok(status.timeline.some(e=>e.step==='registering_preview'));
+    assert.ok(!JSON.stringify(status).includes('credential-leak'));
+    assert.ok(status.timeline.every(e=>e.at<=Math.floor(Date.now()/1000)));
   });
   await check('expiry revokes access without Toolbox polling or stopping shared compute',async()=>{
     const before=executions;

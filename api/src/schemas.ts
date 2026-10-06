@@ -352,6 +352,10 @@ export const BrowserSandboxStatusSchema = z.object({
   operation: z.string().optional(),
   deadline: z.number().int().optional(),
   updated_at: z.number().int().optional(),
+  started_at: z.number().int().optional(),
+  heartbeat_at: z.number().int().optional(),
+  timeline: z.array(z.object({step:z.string(),at:z.number().int(),error:z.string().optional()})).max(40).optional(),
+  previous_failure: z.object({at:z.number().int(),error:z.string(),progress:z.string(),elapsed:z.number().nonnegative()}).optional(),
   url: z.string().url().optional(),
   error: z.string().optional(),
 }).openapi('BrowserSandboxStatus');

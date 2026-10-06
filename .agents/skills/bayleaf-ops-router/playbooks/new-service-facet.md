@@ -54,6 +54,12 @@ traffic without changing the Worker.
 
 ## Refinement log
 
+- 2026-10-05 (sandbox plugin): Used a separate BayLeaf Git repository and a
+  submodule-derived full commit pin instead of npm publication. Push the plugin
+  before Worker deployment; the main repo stays uncommitted during evaluation.
+  Verified Git installation in isolated V2; hosted browser verification requires
+  the owner's authenticated dashboard session.
+
 - 2026-09-29 (standard-backend grants): Separated BayLeaf token authority from
   OpenRouter-specific eligibility. Full catalog discovery preserves prefixes,
   and synthetic enabled-backend tests cover Vertex/Bedrock routing, disabled

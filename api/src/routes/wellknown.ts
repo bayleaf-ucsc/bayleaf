@@ -41,9 +41,11 @@ import { getModelInfo } from '../openrouter';
 import type { ModelCost } from '../openrouter';
 import { altBackendForModel, isBackendEnabled, parseModelList } from '../constants';
 import { fetchSealedModels, isSealedEnabled } from './sealed';
+import sandboxPlugin from '../../.sandbox-plugin-ref.json';
 
 export const wellKnownRoutes = new Hono<AppEnv>();
 export const sealedWellKnownRoutes = new Hono<AppEnv>();
+export const sandboxWellKnownRoutes = new Hono<AppEnv>();
 
 // ── Configuration ────────────────────────────────────────────────
 
@@ -76,7 +78,7 @@ const SEALED_PLUGIN = 'opencode-tinfoil@0.3.0';
 /** Name of the env var the wellknown token is bound to inside OpenCode. */
 const TOKEN_ENV_NAME = 'BAYLEAF_API_KEY';
 
-type OpenCodeMode = 'standard' | 'sealed';
+type OpenCodeMode = 'standard' | 'sealed' | 'sandbox';
 
 // ── GET /.well-known/opencode ────────────────────────────────────
 
@@ -96,11 +98,11 @@ type OpenCodeMode = 'standard' | 'sealed';
  */
 function discoveryDocument(requestUrl: string, mode: OpenCodeMode) {
   const apiBase = absoluteBaseUrl(requestUrl);
-  const loginUrl = mode === 'sealed' ? `${apiBase}/sealed` : apiBase;
+  const loginUrl = mode === 'standard' ? apiBase : `${apiBase}/${mode}`;
 
   return {
     auth: {
-      command: buildCurlAuthCommand(apiBase, mode),
+      command: buildCurlAuthCommand(apiBase, mode === 'sandbox' ? 'standard' : mode),
       env: TOKEN_ENV_NAME,
     },
     remote_config: {
@@ -115,6 +117,8 @@ function discoveryDocument(requestUrl: string, mode: OpenCodeMode) {
 wellKnownRoutes.get('/opencode', (c) => {
   return c.json(discoveryDocument(c.req.url, 'standard'));
 });
+
+sandboxWellKnownRoutes.get('/opencode', (c) => c.json(discoveryDocument(c.req.url, 'sandbox')));
 
 sealedWellKnownRoutes.get('/opencode', (c) => {
   if (!isSealedEnabled(c.env)) {
@@ -217,6 +221,23 @@ wellKnownRoutes.get('/opencode/config', async (c) => {
   const authError = await authenticateRemoteConfig(c);
   if (authError) return authError;
 
+  return c.json({ config: await standardConfig(c, false) });
+});
+
+sandboxWellKnownRoutes.get('/opencode/config', async (c) => {
+  const key = c.req.header('Authorization')?.replace(/^Bearer\s+/i, '').trim();
+  if (!key?.startsWith('sk-bayleaf-') || key.startsWith('sk-bayleaf-grant-')) {
+    return c.json({ error: 'A personal owner key is required.' }, 401);
+  }
+  const authError = await authenticateRemoteConfig(c);
+  if (authError) return authError;
+  c.header('Cache-Control', 'no-store');
+  return c.json({ config: await standardConfig(c, true) });
+});
+
+/** One model inventory, two config renderings: preserve desktop compatibility. */
+async function standardConfig(c: Context<AppEnv>, sandbox: boolean) {
+
   const baseUrl = absoluteBaseUrl(c.req.url);
 
   // Build the model list: recommended first, then the curated set without
@@ -270,8 +291,28 @@ wellKnownRoutes.get('/opencode/config', async (c) => {
   if (recommended && models[recommended]) {
     config.model = `${PROVIDER_ID}/${recommended}`;
   }
-  return c.json({ config });
-});
+  if (!sandbox) return config;
+  return {
+    $schema: 'https://opencode.ai/config.json',
+    ...(config.model ? { model: config.model } : {}),
+    providers: {
+      [PROVIDER_ID]: {
+        name: 'BayLeaf',
+        package: '@opencode/ai/providers/openai-compatible',
+        env: [TOKEN_ENV_NAME],
+        settings: { baseURL: `${baseUrl}/v1`, apiKey: `{env:${TOKEN_ENV_NAME}}` },
+        models: Object.fromEntries(Object.entries(models).map(([id, entry]) => [id, {
+          name: entry.name,
+          ...(entry.cost ? { cost: { input: entry.cost.input, output: entry.cost.output,
+            cache: { read: entry.cost.cacheRead, write: entry.cost.cacheWrite } } } : {}),
+        }])),
+      },
+    },
+    plugins: ['-opencode.tool.webfetch', sandboxPlugin.package],
+    websearch: { provider: 'bayleaf' },
+    experimental: { policies: [{ action: 'provider.use', resource: 'opencode', effect: 'deny' }] },
+  };
+}
 
 sealedWellKnownRoutes.get('/opencode/config', async (c) => {
   if (!isSealedEnabled(c.env)) {

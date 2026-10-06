@@ -1,0 +1,3 @@
+[submodule "api/sandbox-plugin"]
+	path = api/sandbox-plugin
+	url = https://github.com/bayleaf-ucsc/opencode-sandbox.git

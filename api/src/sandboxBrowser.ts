@@ -1,10 +1,10 @@
 /** Owner-scoped lifecycle coordinator. GET observes; only POST begins work.
  * Durable alarms resume bounded setup steps. No prompts, credentials, or logs
- * are stored in the Durable Object. See SANDBOX-BROWSER.md.
+ * are stored in the Durable Object. Only bounded step/timing metadata is kept.
+ * See SANDBOX-BROWSER.md.
  */
 import type { Bindings } from './types';
 import setupSource from '../scripts/browser-setup.py';
-import sandboxSkills from '../.sandbox-skills.json';
 import { getActiveRow } from './provision';
 import { DAYTONA_DEFAULT_API_URL, DAYTONA_DEFAULT_PROXY_URL } from './constants';
 import { registerBrowserPreview, revokeUserPreview, previewsEnabled } from './routes/previews';
@@ -19,6 +19,13 @@ export const keyHash = async (token: string) => Array.from(new Uint8Array(await 
 
 type Phase = 'opening' | 'ready' | 'failed' | 'expired' | 'stopped';
 type Step = 'discover' | 'wake' | 'prepare' | 'inspect' | 'register';
+interface ProgressEvent { step: string; at: number; error?: string }
+const INSTALL_STEPS = new Set(['checking','installing','configuring','starting','ready','failed',
+  'installing_openchamber','installing_opencode','starting_openchamber','waiting_for_opencode',
+  'connecting_bayleaf','loading_tools','checking_readiness']);
+const SETUP_ERRORS = new Set(['node_22_required','insufficient_disk','requires_2_gib','installation_failed',
+  'credential_missing','credential_invalid','provider_configuration_unavailable','port_in_use',
+  'application_not_ready','setup_failed','work_period_expired','opencode_installation_failed']);
 interface Operation {
   email: string;
   operation: string;
@@ -37,6 +44,10 @@ interface Operation {
   creationAttempted?: boolean;
   restart?: boolean;
   transientFailures?: number;
+  startedAt?: number;
+  timeline?: ProgressEvent[];
+  previousFailure?: { at: number; error: string; progress: string; elapsed: number };
+  heartbeatAt?: number;
 }
 interface Machine {
   id: string;
@@ -112,6 +123,13 @@ export class SandboxBrowser {
   }
   private async save(op: Operation) {
     op.updatedAt = now();
+    op.startedAt ??= op.updatedAt;
+    const timeline = op.timeline ??= [];
+    const step = ['failed','expired','stopped'].includes(op.phase) ? op.phase : op.progress;
+    if (timeline.at(-1)?.step !== step || timeline.at(-1)?.error !== op.error) {
+      timeline.push({ step, at: op.updatedAt, ...(op.error ? {error:op.error} : {}) });
+    }
+    op.timeline = timeline.slice(-40);
     await this.state.storage.put('operation', op);
   }
   private async retire(op: Operation, phase: Phase, error?: string) {
@@ -141,7 +159,8 @@ export class SandboxBrowser {
       error: !validKey ? 'credential_changed' : op?.error,
       deadline: op?.deadline, url: ready ? op.url : undefined,
       // Setup status freshness is explicit; GET never probes the application.
-      updated_at: op?.updatedAt });
+      updated_at: op?.updatedAt, started_at: op?.startedAt,
+      heartbeat_at: op?.heartbeatAt, timeline: op?.timeline ?? [], previous_failure: op?.previousFailure });
   }
 
   async fetch(req: Request): Promise<Response> {
@@ -182,7 +201,10 @@ export class SandboxBrowser {
           ? previous.deadline : now() + SECONDS;
         const op: Operation = { email, operation: crypto.randomUUID(), ownerKeyHash: hash,
           phase: 'opening', step: 'discover', progress: 'locating_sandbox', deadline,
-          setupDeadline: Math.min(now() + SETUP_SECONDS, deadline), updatedAt: now(), restart: u.pathname === '/restart' };
+          setupDeadline: Math.min(now() + SETUP_SECONDS, deadline), updatedAt: now(), startedAt: now(), restart: u.pathname === '/restart',
+          previousFailure: previous?.phase === 'failed' ? { at:previous.updatedAt,
+            error:previous.error ?? 'setup_failed', progress:previous.progress,
+            elapsed:Math.max(0,previous.updatedAt - (previous.startedAt ?? previous.updatedAt)) } : previous?.previousFailure };
         await this.save(op);
         await this.state.storage.setAlarm(Date.now() + 1);
         return response({ phase: op.phase, operation: op.operation }, 202);
@@ -253,11 +275,10 @@ export class SandboxBrowser {
             fail('sandbox_stopped_during_setup');
           } else if (op.step === 'prepare') {
             await execute(this.env, id, `bash -c 'umask 077; mkdir -p ${ROOT}/credentials; chmod 700 ${ROOT} ${ROOT}/credentials'`);
-            await upload(this.env, id, 'skills.bundle.next.json', JSON.stringify(sandboxSkills));
             await upload(this.env, id, 'setup.next.py', setupSource);
             await upload(this.env, id, 'request.next.json', JSON.stringify({ operation: op.operation, deadline: op.deadline, restart: op.restart }));
             await upload(this.env, id, 'credentials/incoming', row.bayleaf_token);
-            await execute(this.env, id, `bash -c 'chmod 600 ${ROOT}/credentials/incoming; mv ${ROOT}/setup.next.py ${ROOT}/setup.py; mv ${ROOT}/skills.bundle.next.json ${ROOT}/skills.bundle.json; mv ${ROOT}/request.next.json ${ROOT}/request.json'`);
+            await execute(this.env, id, `bash -c 'chmod 600 ${ROOT}/credentials/incoming; mv ${ROOT}/setup.next.py ${ROOT}/setup.py; mv ${ROOT}/request.next.json ${ROOT}/request.json'`);
             op.step = 'inspect'; op.progress = 'checking'; op.launches = 1;
             await this.save(op); // A crash here resumes via inspect, then relaunch.
             await execute(this.env, id, launch(op.operation));
@@ -272,14 +293,27 @@ export class SandboxBrowser {
               await execute(this.env, id, launch(op.operation));
             } else {
               if (!phases.includes(String(result.phase))) fail('invalid_setup_status');
-              op.progress = String(result.phase);
-              if (result.phase === 'failed') {
-                const allowed = ['node_22_required', 'insufficient_disk', 'requires_2_gib', 'installation_failed',
-                  'credential_missing', 'credential_invalid', 'provider_configuration_unavailable', 'port_in_use',
-                  'application_not_ready', 'setup_failed', 'work_period_expired'];
-                fail(allowed.includes(String(result.error)) ? String(result.error) : 'setup_failed');
+              op.heartbeatAt = Math.min(now(), Number(result.updated_at));
+              // Sandbox-owned metadata is diagnostic, never authorization. Only
+              // known step/error codes and bounded timestamps enter storage/UI.
+              if (Array.isArray(result.timeline)) {
+                const timeline = op.timeline ??= [];
+                for (const item of result.timeline.slice(-40)) {
+                  if (!item || typeof item !== 'object' || !INSTALL_STEPS.has(item.step) ||
+                      !Number.isInteger(item.at) || item.at < (op.startedAt ?? 0) || item.at > now()) continue;
+                  const event: ProgressEvent = {step:item.step, at:item.at};
+                  if (SETUP_ERRORS.has(item.error)) event.error = item.error;
+                  if (!timeline.some(e=>e.step===event.step && e.at===event.at)) timeline.push(event);
+                }
+                op.timeline = timeline.sort((a,b)=>a.at-b.at).slice(-40);
               }
-              if (result.phase === 'ready' && result.ready === true && result.port === 3100) op.step = 'register';
+              op.progress = INSTALL_STEPS.has(String(result.progress)) ? String(result.progress) : String(result.phase);
+              if (result.phase === 'failed') {
+                fail(SETUP_ERRORS.has(String(result.error)) ? String(result.error) : 'setup_failed');
+              }
+              if (result.phase === 'ready' && result.ready === true && result.port === 3100) {
+                op.step = 'register'; op.progress = 'registering_preview';
+              }
             }
           } else if (op.step === 'register') {
             const r = await platform(this.env, `/sandbox/${encodeURIComponent(id)}/ports/3100/signed-preview-url?expiresInSeconds=${Math.max(1, op.deadline - now())}`);
@@ -299,6 +333,7 @@ export class SandboxBrowser {
         if (error instanceof Problem && ['toolbox_unavailable', 'setup_transfer_failed'].includes(error.message)
             && (op.transientFailures ?? 0) < 5) {
           op.transientFailures = (op.transientFailures ?? 0) + 1;
+          op.progress = 'waiting_for_toolbox';
           await this.save(op);
           await this.state.storage.setAlarm(Date.now() + 10_000);
           return;

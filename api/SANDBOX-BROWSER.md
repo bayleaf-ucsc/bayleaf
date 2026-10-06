@@ -23,12 +23,44 @@ Ready browser → private nonce origin → existing preview Worker/connection DO
 There is one lifecycle Durable Object per canonical owner email, reused across
 operations and work periods. The existing gateway also has one connection DO
 per preview hostname. These are evictable coordinators, not permanently running
-VMs. Only a current operation's metadata is retained in lifecycle storage:
+VMs. A current operation's metadata and the latest failure summary are retained in lifecycle storage:
 owner email, credential fingerprint, sandbox ID, operation ID, phase/step,
 timestamps, deadline, content-free failure code, and the wrapped application URL.
 It contains no credential, request content, file content, or application logs.
 
+Setup status includes a bounded 40-event step timeline, start time, installer
+heartbeat, and the previous failed attempt's code/time/duration across retries.
+The dashboard polls every five seconds while opening and updates elapsed timers
+locally. Installer/supervisor breadcrumbs preserve fast intermediate steps;
+only allowlisted step/error codes and bounded timestamps enter the controller.
+
+Deployed 2026-10-05 as Worker `02c431f1-90d0-4d19-b7dd-d6d942677a17`
+(plugin `da32f3a`). Qualification: 16 installer tests, 17 synthetic lifecycle
+checks, TypeScript, browser preview of progress/failure, and live OpenAPI/status.
+The readiness check accepts current OpenChamber versions rather than requiring
+2.1.0. Adam verified fresh production setup and supplied the 26-second timeline
+used to calibrate the initial progress estimate.
+
 ## External contract
+
+Current production: Worker `2208920e-1fd0-46f9-b2cb-fa7eb4de5193`, plugin
+`6a393ed387d3d53e75a7a498f952c1e6b24bdd89`. Adam approved the production flow.
+The animated meter is visible only during active setup; completion or failure
+hides it, while the diagnostic timeline remains available.
+
+Animation follow-up: Worker `31be04a1-0c8d-482a-82fe-fada4060b754` advances
+estimated step progress with an exponential ease-out, capped at 97% of the
+unconfirmed step. CSS smooths updates and pulses the active segment; reduced
+motion disables both effects. All animation is local, with no extra polling.
+
+2026-10-05 follow-up: Worker `f034aaac-1cd7-49ed-8f46-7901cb7439c8`
+pins plugin `6a393ed` with the renamed `bayleaf-sandboxes` skill. The dashboard
+has five progress milestones using the observed 26-second fresh setup plus one
+second per step (41 seconds estimated). Estimates stop short of unconfirmed
+completion; overdue steps say so. The later setup-only display hides the meter
+when the workspace becomes ready.
+Plugin tests (13), installer tests (16), lifecycle checks (17), TypeScript, and
+the synthetic browser preview passed; live authenticated config selects the pin.
 
 All endpoints accept an ordinary personal BayLeaf key. Campus Pass and temporary
 inference tokens are excluded. The dashboard uses the existing browser session;
@@ -95,34 +127,44 @@ does not claim a daily budget or forcibly stop unrelated work.
 
 ## Versioned installer contract
 
+### V2 plugin integration
+
+The Worker uses `sandbox-plugin/` for web search, page extraction, and curated
+skills, with live sandbox-specific well-known config. Fresh setup installs
+current OpenChamber and delegates OpenCode installation to it. The plugin is the submodule
+`https://github.com/bayleaf-ucsc/opencode-sandbox`; the build derives its full
+Git pin from the clean checkout. Push plugin changes before deploying the
+Worker. The main repo's submodule update can remain uncommitted during evaluation.
+
+Worker version `660d3221-4feb-4d9c-bb99-998308c5a4cf` deploys plugin commit
+`da32f3a1f8051a33eaba56495e3b69e4ec1ebb03`, with usage and preview tools.
+The redundant in-sandbox status tool was removed. Public discovery was verified
+on the initial deployment.
+This Worker also deploys the upstream-owned first-install flow described below.
+Adam subsequently verified production onboarding by destroying and regrowing his sandbox.
+Real isolated V2 Git installation, tools, skills, permissions and reload pass;
+Adam rebuilt his sandbox and verified live search with the BayLeaf provider tag.
+The new management tools pass isolated V2 Git-installation and permission tests;
+their live production use remains to be verified. ✨
+
 ### Sandbox-specific agent skills
 
-`api/sandbox-skills/` is the source of truth for skills intended specifically for
-OpenCode/OpenChamber agents in BayLeaf sandboxes. Wrangler's build step runs
-`scripts/build-sandbox-skills.py`, creating a content-versioned JSON bundle from
-all Markdown/Python files in that directory. The generated `.sandbox-skills.json`
-is ignored by git. The controller transfers one bundle; it knows no skill names.
-Run that builder before a standalone typecheck on a fresh checkout.
+`api/sandbox-plugin/skills/` contains canonical environment guidance. OpenCode
+registers them directly from the installed Git package. Initialize the submodule
+with `git submodule update --init api/sandbox-plugin`, then run
+`python3 scripts/build-sandbox-plugin.py` from `api/` before a standalone typecheck.
+Running locations refresh the remote configuration every ten minutes. Local
+user skills remain separate; the installer does not copy package skills globally.
 
-Setup and every managed application launch restore its files to
-`~/.local/share/bayleaf/browser/config/opencode/skills/`, the managed XDG global
-skill directory. Deleted or edited bundled files regrow; user-added skill files
-and directories are preserved. Opening a browser tab onto an already-running
-application is not a new process launch and does not trigger restoration.
+The plugin exposes `bayleaf_usage`, `bayleaf_expose`, and `bayleaf_unexpose`
+directly. Usage is a passive read; preview changes
+request native permissions with distinct private/public resources. Credentials
+stay inside the plugin, outputs are filtered, and private access is the default.
+The single `bayleaf-sandboxes` skill explains persistence, connected
+services, budgets and preview workflow. No Python helper invocation is needed.
+`/usage` reports USD and request allowances separately; unknown limits remain null.
 
-- `expose-sandbox-ports-technique`: launch/bind a web server, obtain a private
-  preview by default, explicitly opt into public access, and revoke a port.
-- `bayleaf-sandbox-technique`: account usage, machine/work-period state, persistence,
-  and platform self-knowledge grounded in the live API and public BayLeaf sources.
-
-Both include helpers that read the owner key internally, suppress raw exception
-and provider-error output, and never take a key as a command argument. These keep
-credentials out of the intended tool-traffic path, not out of reach of arbitrary
-code running as the sandbox owner. `/usage` reports separate USD and request
-allowances without provisioning/healing keys or consuming inference. Disabled
-backends are omitted; unknown limits remain null.
-
-Deployed version `24a3b943-f7f7-4d32-a733-6846beba8790`: production restart reached
+Historical version `24a3b943-f7f7-4d32-a733-6846beba8790`: production restart reached
 ready, OpenChamber discovered both skills, deletion/restoration of a bundled
 skill passed, and the status helper retrieved live USD/Sealed allowances.
 A synthetic server exposed through the helper denied anonymous private requests,
@@ -144,7 +186,7 @@ Managed root: `/home/daytona/.local/share/bayleaf/browser`, mode 0700.
 setup.py                   transferred, versioned setup program
 request.json               operation ID, deadline, explicit restart intent
 setup.lock / runtime.lock  exclusive kernel file locks
-releases/<release>/        pinned npm tools and installation lockfile
+releases/<release>/        user-owned global npm prefix for OpenChamber
 current                    atomically switched release symlink
 credentials/owner-key      mode 0600; separate authenticated file transfer
 config/ data/ cache/       isolated XDG roots for the managed environment
@@ -165,9 +207,31 @@ staging is rebuilt; old releases and user files are preserved. Failed setup
 never destroys the shared sandbox. Process cleanup checks PID, Linux boot ID,
 process start ticks, and process-group leadership to avoid killing a reused PID.
 
-Application pins: OpenChamber 2.1.0 and OpenCode 2.0.22. The script retrieves the
-current authenticated BayLeaf remote configuration at setup/start and stores
-the returned compatibility-format config under its isolated XDG root. A changed
+First installation resolves `@openchamber/web@latest` into a private global npm
+prefix. The application environment's `npm_config_prefix` points there too, so
+OpenChamber's updater replaces the installation the launcher actually uses.
+The release label versions our installation layout, not upstream applications.
+Subsequent setup reuses the installation; it does not downgrade user updates.
+
+BayLeaf does not install an OpenCode npm package or set `OPENCODE_BINARY`.
+When `~/.opencode/bin/opencode` is absent, setup calls OpenChamber's own
+`installOpenCodeV2` implementation. In OpenChamber 2.1.1 the web install action
+rejects a completely missing binary, so the launcher imports that implementation
+directly. OpenChamber selects the current stable V2 version and installation
+path. This internal module path is a dependency to recheck when upstream changes.
+BayLeaf no longer writes `update: disable` into fresh OpenCode configuration.
+
+An isolated clean-HOME test with OpenChamber 2.1.1 installed OpenCode 2.0.24,
+verified discovery/readiness and npm update ownership, and confirmed repeat setup
+does not reinstall. Run `scripts/test-openchamber-onboarding.py --prefix <prefix>`
+against a global OpenChamber installation to repeat it. This does not establish a
+full self-update/restart: upstream's container updater leaves the server running,
+and its foreground update UI can report a service-manager restriction. A deliberate
+dashboard workspace restart uses updated files; no unattended restart is promised.
+
+The script registers the
+sandbox well-known connection and owner credential through authenticated V2 APIs.
+Local configuration contains installation policy, not a remote-config snapshot. A changed
 credential restarts the managed application so it cannot retain the old key in
 its environment. It does not provision backend keys or reset inference budgets.
 User OpenChamber settings survive repeated setup. First setup seeds the shared
@@ -275,6 +339,7 @@ the corrected installer is transferred on the next setup/restart operation.
 
 ```sh
 npx tsc --noEmit
+npm run test:sandbox-plugin
 npm run test:sandbox-browser
 npm run test:previews
 npm run test:grants

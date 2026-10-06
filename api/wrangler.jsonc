@@ -4,7 +4,7 @@
   "compatibility_date": "2025-01-31",
   "compatibility_flags": ["nodejs_compat"],
   "rules": [{ "type": "Text", "globs": ["**/browser-setup.py"], "fallthrough": true }],
-  "build": { "command": "python3 scripts/build-sandbox-skills.py" },
+  "build": { "command": "python3 scripts/build-sandbox-plugin.py" },
   
   // Observability - disabled to avoid unnecessary data accumulation.
   // Re-enable temporarily for debugging if needed.

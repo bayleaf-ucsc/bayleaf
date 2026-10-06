@@ -1,6 +1,6 @@
 ---
 name: bayleaf-ops-router
-description: Operations playbooks for the BayLeaf platform (Chat at chat.bayleaf.dev, API at api.bayleaf.dev). Use when the user mentions Dependabot or dependency bumps for the API, upgrading Open WebUI, changing the LLM behind Basic or Help, editing system prompts or tools in prod, accessibility evidence or VPAT recordings, privacy notice changes, bumping spin-off modules like Lathe, adding a new service facet, or running the prod-to-repo backup/reconcile procedure.
+description: Operations playbooks for BayLeaf Chat, API, and Sandbox. Use for maintaining the hosted Sandbox plugin, tools, skills, browser workspace or application pins; API dependency bumps; Open WebUI upgrades; model swaps; production prompts/tools; accessibility evidence; privacy notices; spin-off modules; new service facets; or prod-to-repo backup/reconcile.
 ---
 
 # BayLeaf Operations Playbooks
@@ -13,6 +13,7 @@ whole clump.
 
 | Situation | Playbook |
 |---|---|
+| Maintaining BayLeaf Sandbox, its hosted plugin/tools/skills, browser workspace, or application pins | `playbooks/maintain-sandbox.md` |
 | Dependabot issue on `api/`, dependency version bump | `playbooks/api-dependency-bump.md` |
 | New Open WebUI version for Chat | `playbooks/owui-version-bump.md` |
 | Changing the LLM behind Basic or Help, or the BayLeaf API recommended model | `playbooks/model-swap.md` |
