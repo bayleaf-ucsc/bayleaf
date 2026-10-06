@@ -177,12 +177,27 @@ resources were deleted from BayLeaf. The old $5/month Stream subscription is
 canceled at period end (2026-10-11), with no renewal; the destination plan
 remains active. All 238 source Stream assets were deleted against the saved
 inventory; the destination's 230 migrated ready videos remain intact.
-A temporary source-zone Worker bridge forwards cached-DNS requests to the new
-gallery, without reading or writing a source database. Retain only that bridge
-through 2026-10-06 as a cached-DNS precaution, then delete the source Worker and
-moved Democlips zone and disable the destination `workers.dev` endpoint.
+
+**Final Democlips retirement, 2026-10-06.** After more than 48 hours from
+October 4 at 21:47 UTC, the source `democlips-gallery` forwarding Worker and
+its moved `democlips.dev` zone were deleted only from BayLeaf. The destination
+Worker was deployed with `workers_dev:false` and `preview_urls:false`; the
+former destination `workers.dev` endpoint returns HTTP 404. Destination
+registration and active-zone ownership, parent DNS delegation to
+`elijah.ns.cloudflare.com` and `gina.ns.cloudflare.com`, and the deployed D1
+binding were verified. Post-deploy HTTPS checks passed for the gallery,
+OAuth redirect/callback configuration, signed-session access, old clip redirects,
+login enforcement, and hidden-clip visibility. These cleanup checks used
+short-lived signed operator test sessions, not another complete Google sign-in.
+Both scripts-site assets still match their source. Destination D1 counts remain
+159 users, 230 videos, 10 stars, and 227 redirects; all 230 destination Stream
+videos are ready. The source subscription still has `cancel_at_period_end:true`
+and ends October 11 at 00:00 UTC; no subscription or membership was changed.
+BayLeaf Workers, BayLeaf/Brace/Bracken zones, and moved misc-zone residue remain
+in place. ✨
+
 Private SQL exports and the video-ID mapping remain outside the repositories.
-The bridge is not permission to share BayLeaf with Democlips collaborators. A second
+The migration does not authorize sharing BayLeaf with Democlips collaborators. A second
 BayLeaf administrator for ITS handover remains a separate future step.
 
 Confirmed BayLeaf production resources include Workers `bayleaf-api` and
