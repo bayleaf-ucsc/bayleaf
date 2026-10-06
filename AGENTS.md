@@ -112,6 +112,7 @@ bayleaf/
 │   ├── index.html        # Comprehensive landing page (the only bayleaf.dev page)
 │   ├── style.css         # Stylesheet (carries a WCAG contrast invariant)
 │   └── images/           # og-card.png + the script that generates it
+├── sandbox/              # Public BayLeaf Sandboxes home → https://sandbox.bayleaf.dev
 ├── politics/             # Dependency audit, VPATs, position papers
 ├── scripts/              # GitHub Pages artifact builder
 ├── training/             # Work-in-progress React site for training users in effective GenAI usage

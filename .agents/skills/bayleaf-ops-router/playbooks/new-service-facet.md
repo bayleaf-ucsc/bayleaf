@@ -54,6 +54,12 @@ traffic without changing the Worker.
 
 ## Refinement log
 
+- 2026-10-05 (Sandboxes teaser): Created `sandbox/` as a separate Worker with
+  an explicit BayLeaf account and custom domain. Static public overview now,
+  shared API authentication/D1/lifecycle integration later. New custom-domain
+  requests briefly returned 1104 during propagation, then GET/HEAD and browser
+  rendering succeeded. No provider, inference, or data-storage changes needed.
+
 - 2026-10-05 (sandbox plugin): Used a separate BayLeaf Git repository and a
   submodule-derived full commit pin instead of npm publication. Push the plugin
   before Worker deployment; the main repo stays uncommitted during evaluation.

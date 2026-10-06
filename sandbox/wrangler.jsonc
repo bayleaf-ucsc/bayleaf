@@ -1,0 +1,10 @@
+{
+  "name": "bayleaf-sandboxes",
+  "account_id": "1a49fb69291d42e23c4ed4dcffce5bbc",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-05",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "sandbox.bayleaf.dev", "custom_domain": true }],
+  "observability": { "enabled": false }
+}
