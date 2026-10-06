@@ -66,7 +66,7 @@ class InstallerTests(unittest.TestCase):
     def test_expired_cancelled_and_wrong_operation_cannot_start(self):
         op = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
         m.atomic('request.json', {'operation': op, 'deadline': int(m.time.time())-1})
-        with self.assertRaisesRegex(m.Failure, 'work_period_expired'):
+        with self.assertRaisesRegex(m.Failure, 'setup_timeout'):
             m.request(op)
         m.atomic('request.json', {'operation': op, 'deadline': int(m.time.time())+300})
         self.assertEqual(m.request(op)['operation'], op)
@@ -75,6 +75,20 @@ class InstallerTests(unittest.TestCase):
         m.atomic('state/cancelled.json', {'operation': op})
         with self.assertRaisesRegex(m.Failure, 'operation_cancelled'):
             m.request(op)
+
+    def test_supervisor_does_not_read_a_link_lease_or_kill_on_expiry(self):
+        child = Mock()
+        req = {'credential_hash': 'synthetic', 'deadline': int(m.time.time()) + 300}
+        with patch.object(m, 'request', return_value=req), patch.object(m, 'check_browser_port'), \
+             patch.object(m, 'environment', return_value={}), patch.object(m, 'bootstrap'), \
+             patch.object(m, 'atomic'), patch.object(m, 'identity', return_value={'pid':123}), \
+             patch.object(m, 'read', side_effect=AssertionError('runtime consulted an expiry lease')), \
+             patch.object(m.subprocess, 'Popen', return_value=child), patch.object(m, 'terminate') as terminate:
+            child.wait.side_effect = lambda **kw: None
+            m.supervise('test')
+        child.wait.assert_any_call()  # Wait for actual process exit, without a link deadline.
+        self.assertEqual(child.wait.call_count, 2)
+        terminate.assert_called_once_with({'pid':123})  # Final cleanup after process exit.
 
     def test_failed_install_preserves_current_then_retry_is_idempotent(self):
         user = self.root/'unrelated-config.json'

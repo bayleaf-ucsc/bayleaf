@@ -514,6 +514,19 @@ checkbox, so it is recorded rather than deleted.
 
 ## Routes
 
+### Daily sandbox inactivity reaper
+
+`src/sandboxReaper.ts` owns the 90-day inactivity sweep at 08:17 UTC, distinct
+from hourly preview/grant cleanup. Deployed 2026-10-06 with
+`SANDBOX_REAPER_MODE=delete`; `dry-run` inspects without deletion. Read `RETENTION.md`
+before enabling it or performing initial overdue cleanup. Uses only Daytona
+control-plane metadata, exact deployment-label ownership, complete paginated
+discovery, fresh activity/state checks, and verified deletion before clearing
+cached IDs. Never wake compute or renew activity during cleanup.
+`npm run test:sandbox-reaper` is credential-free; production dry-run found six
+candidates among eight machines on 2026-10-06. Observability remains disabled;
+there is no new monitoring store or alert integration. ✨
+
 ### Browser sandbox lifecycle (issue #81)
 
 Deployed and enabled on 2026-10-03 (`BROWSER_SANDBOX_ENABLED=true`); see
@@ -540,6 +553,15 @@ at browser expiry. Do not use the legacy `ensureSandbox` lookup-failure behavior
 as a creation decision. Python source imports require the `.py` text loader in
 both Wrangler and esbuild harnesses. `npm run test:sandbox-browser` runs the
 installer failure tests and synthetic workerd/D1/DO lifecycle checks. ✨
+
+Deployed 2026-10-06: browser links last up to 24 hours without
+continue/stop actions or a work-session extension ritual. Link expiry does not
+kill local applications. Installer layout v2 replaces the prior expiry-killing
+supervisor on the next deliberate setup, not by waking users' machines. Shared
+`persistentSandboxParams` in `daytona.ts` gives both API creation paths medium
+resources, 60-minute idle stop, 1440-minute archive, and disabled Daytona
+auto-delete (daily reaper owns retention). Existing machines are not resized.
+Sleeping-link owner resume is deferred to issue #85. ✨
 
 ### Temporary inference tokens (issue #76)
 

@@ -101,6 +101,12 @@ the UI (recover it from git: `git show HEAD:chat/models/<id>/model.json`), or
 
 ## Refinement log
 
+- 2026-10-06: Valve-only Lathe provisioning change needed no source deployment.
+  Saved only the two non-secret overrides in `valves.public.json`, merged into
+  live valves through CLI stdin, and verified all other values unchanged. Full
+  valve backups contain credentials and must not enter the public repo. Missing-
+  sandbox message delivery in a real conversation remains a human playtest.
+
 - 2026-09-30: Deployed Drive v0.2.0 image viewing after live Google image/slide
   retrieval and 36 offline tests. Source and all seven generated schemas matched;
   valves, grants and model configuration were unchanged and health returned 200.

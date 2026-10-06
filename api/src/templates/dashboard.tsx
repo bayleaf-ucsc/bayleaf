@@ -335,8 +335,8 @@ const SandboxCard: FC<{ sandboxInfo: SandboxInfo | null; browserEnabled?: boolea
           <pre><code>{`curl https://api.bayleaf.dev/sandbox/files/home/daytona/workspace/hello.txt \\
   -H "Authorization: Bearer YOUR_API_KEY"`}</code></pre>
           <p style="margin-top: 0.75rem; font-size: 0.9em; color: #555;">
-            Sandboxes auto-stop after {sandboxInfo?.autoStopInterval ?? 15} min idle and auto-archive
-            after {sandboxInfo?.autoArchiveInterval ?? 60} min stopped.
+            Sandboxes auto-stop after {sandboxInfo?.autoStopInterval ?? 60} min idle and auto-archive
+            after {sandboxInfo?.autoArchiveInterval ?? 1440} min stopped.
             The first request after idle may take a few seconds while the sandbox restarts.
           </p>
         </div>

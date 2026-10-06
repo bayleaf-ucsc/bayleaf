@@ -14,7 +14,7 @@ async function handle(c: Context<AppEnv>) {
   if (!browserEnabled(c.env)) return c.json({ error: 'browser_disabled' }, 503);
   const path = c.req.path.replace(/^\/sandbox\/browser/, '') || '/status';
   if (!((c.req.method === 'GET' && path === '/status') ||
-        (c.req.method === 'POST' && ['/start', '/continue', '/restart', '/stop'].includes(path)))) {
+        (c.req.method === 'POST' && ['/start', '/restart'].includes(path)))) {
     return c.json({ error: 'not_found' }, 404);
   }
   let email: string;
@@ -38,7 +38,7 @@ async function handle(c: Context<AppEnv>) {
 }
 
 const responses = {
-  200: { description: 'Current browser work-period metadata', content: { 'application/json': { schema: BrowserSandboxStatusSchema } } },
+  200: { description: 'Current browser setup and link metadata', content: { 'application/json': { schema: BrowserSandboxStatusSchema } } },
   202: { description: 'Setup accepted; poll status without waking compute', content: { 'application/json': { schema: BrowserSandboxStatusSchema } } },
   401: { description: 'Owner authentication required', content: { 'application/json': { schema: BrowserSandboxErrorSchema } } },
   403: { description: 'Personal key or same-origin browser action required', content: { 'application/json': { schema: BrowserSandboxErrorSchema } } },
@@ -46,11 +46,11 @@ const responses = {
 };
 sandboxBrowserRoutes.openapi(createRoute({ method: 'get', path: '/status', tags: ['Sandbox'],
   operationId: 'browserSandboxStatus', security: [{ Bearer: [] }],
-  summary: 'Observe browser setup and work period without waking the sandbox', responses }), handle as any);
-for (const action of ['start', 'continue', 'restart', 'stop'] as const) {
+  summary: 'Observe browser setup and link expiry without waking the sandbox', responses }), handle as any);
+for (const action of ['start', 'restart'] as const) {
   sandboxBrowserRoutes.openapi(createRoute({ method: 'post', path: `/${action}`, tags: ['Sandbox'],
     operationId: `browserSandbox_${action}`, security: [{ Bearer: [] }],
-    summary: `${action}: owner-directed browser work`,
-    description: 'Ordinary owner key only (no Campus Pass or temporary inference token). Browser sessions additionally require an exact Origin and X-BayLeaf-Action: sandbox-browser. Start resumes or joins a work period; continue deliberately renews for six hours; restart retries the managed interface; stop revokes browser access and stops only its managed tools. Files and the shared sandbox are preserved.',
+    summary: `${action}: owner-directed browser setup`,
+    description: 'Ordinary owner key only (no Campus Pass or temporary inference token). Browser logins additionally require an exact Origin and X-BayLeaf-Action: sandbox-browser. Start sets up or resumes browser access, reusing an existing ready link. Restart repairs the managed interface. New private links last up to 24 hours; link expiry does not stop applications. Files and the shared sandbox are preserved.',
     responses }), handle as any);
 }

@@ -350,7 +350,7 @@ export const BrowserSandboxStatusSchema = z.object({
   machine: z.string().optional(),
   progress: z.string().optional(),
   operation: z.string().optional(),
-  deadline: z.number().int().optional(),
+  deadline: z.number().int().optional().describe('Private browser-link expiry, Unix seconds; not a compute deadline.'),
   updated_at: z.number().int().optional(),
   started_at: z.number().int().optional(),
   heartbeat_at: z.number().int().optional(),

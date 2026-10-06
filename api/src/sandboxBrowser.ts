@@ -7,10 +7,11 @@ import type { Bindings } from './types';
 import setupSource from '../scripts/browser-setup.py';
 import { getActiveRow } from './provision';
 import { DAYTONA_DEFAULT_API_URL, DAYTONA_DEFAULT_PROXY_URL } from './constants';
+import { persistentSandboxParams } from './daytona';
 import { registerBrowserPreview, revokeUserPreview, previewsEnabled } from './routes/previews';
 
 const ROOT = '/home/daytona/.local/share/bayleaf/browser';
-const SECONDS = 6 * 3600;
+const LINK_SECONDS = 24 * 3600;
 const SETUP_SECONDS = 20 * 60;
 const now = () => Math.floor(Date.now() / 1000);
 export const browserEnabled = (env: Bindings) => env.BROWSER_SANDBOX_ENABLED === 'true' && previewsEnabled(env);
@@ -25,7 +26,7 @@ const INSTALL_STEPS = new Set(['checking','installing','configuring','starting',
   'connecting_bayleaf','loading_tools','checking_readiness']);
 const SETUP_ERRORS = new Set(['node_22_required','insufficient_disk','requires_2_gib','installation_failed',
   'credential_missing','credential_invalid','provider_configuration_unavailable','port_in_use',
-  'application_not_ready','setup_failed','work_period_expired','opencode_installation_failed']);
+  'application_not_ready','setup_failed','setup_timeout','opencode_installation_failed']);
 interface Operation {
   email: string;
   operation: string;
@@ -170,24 +171,11 @@ export class SandboxBrowser {
       if (!email || !this.state.id.equals(this.env.SANDBOX_BROWSER.idFromName(email))) return response({ error: 'denied' }, 403);
       if (!browserEnabled(this.env)) return response({ error: 'browser_disabled' }, 503);
       if (req.method === 'GET' && u.pathname === '/status') return await this.view(email);
-      if (req.method !== 'POST' || !['/start', '/continue', '/restart', '/stop'].includes(u.pathname)) return response({ error: 'not_found' }, 404);
+      if (req.method !== 'POST' || !['/start', '/restart'].includes(u.pathname)) return response({ error: 'not_found' }, 404);
       return await this.exclusive(async () => {
         const row = await getActiveRow(email, this.env);
         if (!row) return response({ error: 'personal_key_required' }, 403);
         const previous = await this.state.storage.get<Operation>('operation');
-        if (u.pathname === '/stop') {
-          if (previous) {
-            await this.retire(previous, 'stopped');
-            // Explicit stop may contact Toolbox once. Expiry never does.
-            if (previous.sandboxId) {
-              const m = await machine(this.env, previous.sandboxId);
-              if (m?.state === 'started' && m.labels?.[this.env.DAYTONA_DEPLOYMENT_LABEL] === email) {
-                await execute(this.env, m.id, `python3 ${ROOT}/setup.py stop`);
-              }
-            }
-          }
-          return response({ phase: 'stopped' });
-        }
         // Repeated clicks during setup converge on one persisted operation.
         if (previous?.phase === 'opening' && previous.setupDeadline > now() && previous.deadline > now()) {
           return response({ phase: previous.phase, operation: previous.operation }, 202);
@@ -197,8 +185,8 @@ export class SandboxBrowser {
           const m = await machine(this.env, previous.sandboxId);
           if (m?.state === 'started' && m.labels?.[this.env.DAYTONA_DEPLOYMENT_LABEL] === email) return this.view(email);
         }
-        const deadline = u.pathname !== '/continue' && previous && previous.deadline > now()
-          ? previous.deadline : now() + SECONDS;
+        // Link lifetime is independent of compute and the bounded installer.
+        const deadline = now() + LINK_SECONDS;
         const op: Operation = { email, operation: crypto.randomUUID(), ownerKeyHash: hash,
           phase: 'opening', step: 'discover', progress: 'locating_sandbox', deadline,
           setupDeadline: Math.min(now() + SETUP_SECONDS, deadline), updatedAt: now(), startedAt: now(), restart: u.pathname === '/restart',
@@ -242,12 +230,7 @@ export class SandboxBrowser {
             op.progress = 'creating_sandbox'; await this.save(op);
             let created: Response;
             try {
-              created = await platform(this.env, '/sandbox', 'POST', {
-                snapshot: 'daytona-medium', public: false, name: `${this.env.DAYTONA_DEPLOYMENT_LABEL}/${op.email}`,
-                labels: { [this.env.DAYTONA_DEPLOYMENT_LABEL]: op.email },
-                autoStopInterval: 15, autoArchiveInterval: 60,
-                autoDeleteInterval: parseInt(this.env.DAYTONA_AUTO_DELETE_MINUTES, 10) || -1,
-              });
+              created = await platform(this.env, '/sandbox', 'POST', persistentSandboxParams(op.email, this.env));
             } catch { return await this.retire(op, 'failed', 'creation_uncertain'); }
             if (!created.ok) return await this.retire(op, 'failed', 'creation_failed');
             m = await created.json() as Machine;
@@ -276,7 +259,7 @@ export class SandboxBrowser {
           } else if (op.step === 'prepare') {
             await execute(this.env, id, `bash -c 'umask 077; mkdir -p ${ROOT}/credentials; chmod 700 ${ROOT} ${ROOT}/credentials'`);
             await upload(this.env, id, 'setup.next.py', setupSource);
-            await upload(this.env, id, 'request.next.json', JSON.stringify({ operation: op.operation, deadline: op.deadline, restart: op.restart }));
+            await upload(this.env, id, 'request.next.json', JSON.stringify({ operation: op.operation, deadline: op.setupDeadline, restart: op.restart }));
             await upload(this.env, id, 'credentials/incoming', row.bayleaf_token);
             await execute(this.env, id, `bash -c 'chmod 600 ${ROOT}/credentials/incoming; mv ${ROOT}/setup.next.py ${ROOT}/setup.py; mv ${ROOT}/request.next.json ${ROOT}/request.json'`);
             op.step = 'inspect'; op.progress = 'checking'; op.launches = 1;

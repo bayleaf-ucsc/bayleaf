@@ -21,7 +21,7 @@ Ready browser → private nonce origin → existing preview Worker/connection DO
 ```
 
 There is one lifecycle Durable Object per canonical owner email, reused across
-operations and work periods. The existing gateway also has one connection DO
+setup operations and expiring private links. The existing gateway also has one connection DO
 per preview hostname. These are evictable coordinators, not permanently running
 VMs. A current operation's metadata and the latest failure summary are retained in lifecycle storage:
 owner email, credential fingerprint, sandbox ID, operation ID, phase/step,
@@ -70,20 +70,18 @@ mutations additionally require exact same-origin `Origin` and
 | Endpoint | Effect |
 | --- | --- |
 | `GET /sandbox/browser/status` | Inspect controller metadata and passive control-plane status only |
-| `POST /sandbox/browser/start` | Join active setup/work or deliberately begin/resume it |
-| `POST /sandbox/browser/continue` | Deliberately renew for up to six hours; create a fresh application generation |
-| `POST /sandbox/browser/restart` | Retry setup and restart the managed browser interface within the current deadline |
-| `POST /sandbox/browser/stop` | Revoke browser access; stop only managed browser tools and setup tasks |
+| `POST /sandbox/browser/start` | Join active setup, reuse a ready link, or set up/resume browser access |
+| `POST /sandbox/browser/restart` | Repair setup and restart the managed browser interface |
 
 Start/restart returns 202 while opening. Concurrent requests converge on one
-operation. The dashboard polls while setup is opening, not throughout the work
-period. Even its status polls never call Toolbox. The deadline display counts
-down locally; refresh/focus checks only observe status.
+operation. The dashboard polls while setup is opening, not throughout ordinary
+use. Even its status polls never call Toolbox. There is no countdown, extension
+window, or end-session action. Refresh/focus checks only observe status.
 
-Opening an already-ready work period keeps the URL and deadline. Stopped or
+Opening already-ready browser access keeps the URL and link expiry. Stopped or
 archived machines need a deliberate start action. Sleep loses processes, so
 the managed application is relaunched and gets a fresh preview generation.
-No OpenChamber Desktop discovery or background reconnect can start or renew work.
+No OpenChamber Desktop discovery or background reconnect can start compute or renew links.
 
 The gateway caps the managed preview at the controller deadline and binds it
 to a hash of the current owner key. Rotation/revocation denies new gateway
@@ -97,12 +95,17 @@ this is not a promise to erase browser storage. Every replacement uses a nonce.
 
 ## State and durable orchestration
 
-Machine state, installation state, and work-period state are separate. The DO
+Machine state, installation state, and browser-link validity are separate. The DO
 persists steps: discover → wake → prepare → inspect → register. Before side
 effects it arms an alarm for retry/reconciliation. It does not keep the original
 HTTP request open for installation, or rely on `waitUntil` to finish a job.
 
-The operation has a 20-minute setup deadline inside its six-hour work period.
+The operation has a 20-minute setup deadline, separate from its private link's
+24-hour maximum lifetime. Link expiry is measured from setup initiation, so the
+usable lifetime is slightly shorter. Signed Daytona tokens persist across
+restart until expiry; the current resume flow still replaces the BayLeaf origin.
+The owner-authenticated sleeping-page/resume enhancement is deferred to
+[issue #85](https://github.com/bayleaf-ucsc/bayleaf/issues/85).
 Provider calls are individually bounded. Definitive failures produce a visible
 failure code and require an owner retry. An ambiguous create is not automatically
 repeated: discovery must find the prior result or report `creation_uncertain`.
@@ -110,17 +113,17 @@ Provider lookup failure never means “absent.” Creation still shares Daytona'
 label namespace with Lathe; cross-client creation races remain a qualification
 concern, not something an owner-scoped BayLeaf lock can solve alone.
 
-Setup status polling ends when ready. The next controller alarm is the work
-period deadline. At expiry the controller revokes the browser registration
+Setup status polling ends when ready. The next controller alarm is the link
+expiry. At expiry the controller revokes the browser registration
 without contacting Toolbox or stopping the shared sandbox. This avoids extending
 inactivity or interrupting independent Chat/API work.
 
-The sandbox supervisor also attempts to terminate its managed process group at
-the deadline. Owner-editable files can influence local processes but cannot
-authorize network access or extend the edge deadline. Background activity and
-new sockets cannot renew the controller's period.
+The local supervisor does not kill managed processes at link expiry. It waits
+for application exit; Daytona idle stop governs compute lifetime. Owner-editable
+files cannot authorize network access or extend the edge link expiry. Background
+activity and new sockets do not renew the link.
 
-**Compute cutoff qualification remains necessary:** browser-only expiry should
+**Compute cutoff qualification remains necessary:** loss of external activity should
 lead to idle sleep after the configured grace period; concurrent independent
 Chat/API work may legitimately keep the shared machine active. The implementation
 does not claim a daily budget or forcibly stop unrelated work.
@@ -184,7 +187,7 @@ Managed root: `/home/daytona/.local/share/bayleaf/browser`, mode 0700.
 
 ```text
 setup.py                   transferred, versioned setup program
-request.json               operation ID, deadline, explicit restart intent
+request.json               operation ID, bounded setup deadline, explicit restart intent
 setup.lock / runtime.lock  exclusive kernel file locks
 releases/<release>/        user-owned global npm prefix for OpenChamber
 current                    atomically switched release symlink
@@ -195,13 +198,13 @@ state/operation.json       atomic progress, timestamps, process identity
 state/installation.json    completed release manifest
 state/runtime.json         supervised process identity and credential fingerprint
 state/task.json            currently owned setup subprocess
-state/lease.json            local supervisor deadline
 state/cancelled.json        explicit cancellation marker
 state/setup.log             bounded, content-free phase/error events
 ```
 
 Operations: `inspect`, `setup --operation <uuid>`, `supervise --operation <uuid>`
-(internal), and `stop`. Repeated setup uses an exclusive lock, stages installation
+(internal), and `stop` (internal recovery only, not an API or dashboard action).
+Repeated setup uses an exclusive lock, stages installation
 separately, and switches current only after executable checks. Interrupted
 staging is rebuilt; old releases and user files are preserved. Failed setup
 never destroys the shared sandbox. Process cleanup checks PID, Linux boot ID,
@@ -266,9 +269,23 @@ whose access depends on the private transport and owner-authenticated gateway.
 
 ## Verification and rollout
 
+**2026-10-06, 24-hour-link simplification:** deployed Worker
+`09db2448-eb9f-4c72-98a7-6e4ac9834125`, pinned to published plugin
+`5e20fdfebb2ff7592eb176d552d21597200d9ea4`. Verified live OpenAPI has only
+status/start/restart browser routes, authenticated sandbox config has the new
+plugin pin, passive status works, and the daily reaper remains enabled. Installer,
+shared creation policy, synthetic lifecycle and gateway security tests passed;
+the simplified controls were exercised in a synthetic desktop/mobile browser.
+No existing user's machine was restarted or resized for qualification. Old
+six-hour links/runtimes transition on their next deliberate setup, not through
+an automatic migration. The first new live 24-hour setup/expiry cycle remains
+a separate production qualification. ✨
+
 ### Export before a manual migration
 
-End browser work first so the managed application closes its databases. Using
+For a consistent migration backup, stop the managed application through the
+sandbox shell first so it closes its databases (the installer's internal `stop`
+action is available for operator recovery). Link expiry does not close them. Using
 the existing sandbox exec/file API, archive the managed `openchamber/`, `data/`,
 and `config/` directories plus `/home/daytona/workspace`. Download the archive
 through the file API and confirm that it contains the wanted histories and files.
@@ -300,6 +317,7 @@ until the user has checked the restored files and histories.
 - All created qualification sandboxes were deleted and deletion was verified.
   User sandboxes and git history were unchanged during qualification.
 - The local supervisor terminated the managed application at a shortened deadline,
+  in the historical six-hour work-period implementation (removed by the 24-hour-link simplification),
   followed by provider idle sleep under an accelerated one-minute auto-stop grace.
   The final 132.6-second run included the updated workspace label and verified deletion.
 
@@ -315,7 +333,7 @@ Version: `ff5c3c1a-110a-4ed8-91e2-f85a65f803a4`.
 Live smoke checks: owner status returned HTTP 200 and idle lifecycle metadata;
 anonymous status and start returned 401; OpenAPI contains the lifecycle routes;
 the existing recommended-model endpoint remained healthy. Status inspection did
-not install tools or start a work period on the owner's running sandbox.
+not install tools or begin browser setup on the owner's running sandbox.
 
 Production follow-ups: version `6f29c17f-dcc1-41b9-9ad9-9f0de284aa6e`
 suppressed stale setup errors when the backing sandbox has been deleted.

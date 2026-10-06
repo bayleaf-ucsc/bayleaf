@@ -605,7 +605,8 @@ variables like `{"GITHUB_TOKEN":"ghp_..."}`) that are injected into every
 `bash` command. The field is masked in the settings UI, but the model-controlled
 shell can read and disclose those values; use narrowly scoped credentials.
 
-**Admin valves** (configured in OWUI admin panel, never committed):
+**Admin valves** (live OWUI configuration; credentials and full backups are never
+committed, selected non-secret overrides may be tracked):
 
 - `daytona_api_key` — Daytona API key
 - `daytona_api_url` — Control plane URL (default: `https://app.daytona.io/api`)
@@ -616,11 +617,20 @@ shell can read and disclose those values; use narrowly scoped credentials.
 - `deployment_label` — Label key for sandbox tagging (e.g. `chat.bayleaf.dev`)
 - `auto_stop_minutes` — Idle timeout (default: 15)
 - `auto_archive_minutes` — Archive delay after stop (default: 60)
-- `auto_delete_minutes` — Minutes after archive before permanent deletion (-1 = never)
+- `auto_delete_minutes` — Daytona stopped-state deletion interval (-1 = never); inactive while automatic creation is disabled
 - `persistent_volume` — Mount a persistent S3/FUSE volume at `/home/daytona/volume` (default: `true`; disable for deployments with limited data retention)
 - `foreground_timeout_seconds` — Seconds to wait for bash/delegate before auto-backgrounding (default: 30)
 - `auto_create_sandbox` — Automatically create a sandbox when none exists for the user (default: `true`; disable for deployments where sandboxes are provisioned externally)
 - `sandbox_missing_message` — Custom message returned to the agent when no sandbox exists and auto-create is off (empty falls back to a generic message)
+
+**Provisioning policy (2026-10-06).** Live Lathe has `auto_create_sandbox=false`.
+Missing-sandbox errors direct users to `https://api.bayleaf.dev/`, UCSC sign-in,
+and “Set up sandbox,” then back to Chat to retry. Existing sandboxes still
+resume normally. The two non-secret overrides are saved in
+`tools/lathe/valves.public.json`; this is a partial configuration, not a full
+valve backup. Merge it into existing valves, never replace credentials with it.
+Live readback verified these two changes and unchanged remaining valves. ✨
+
 - `sandbox_create_overrides`: JSON of extra Daytona create args. Cannot override `name`, `labels`, or `volumes`. Snapshot resources come from the snapshot; current Daytona rejects cpu/memory overrides with a snapshot (including the default). The disposable custom-shape test used `buildInfo`.
 
 **New-sandbox shape (2026-09-30).** The configured creation override is

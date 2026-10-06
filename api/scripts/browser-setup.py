@@ -24,7 +24,7 @@ import time
 import urllib.request
 
 SCHEMA = 1
-RELEASE = 'openchamber-managed-v1'
+RELEASE = 'openchamber-managed-v2'
 PACKAGES = ['@openchamber/web@latest']
 PORT = 3100
 ROOT = Path.home() / '.local/share/bayleaf/browser'
@@ -161,8 +161,8 @@ def request(operation):
     if read('state/cancelled.json', {}).get('operation') == operation:
         raise Failure('operation_cancelled')
     deadline = value.get('deadline')
-    if not isinstance(deadline, int) or not time.time() < deadline <= time.time() + 6*3600 + 60:
-        raise Failure('work_period_expired')
+    if not isinstance(deadline, int) or not time.time() < deadline <= time.time() + 20*60 + 60:
+        raise Failure('setup_timeout')
     return value
 
 
@@ -473,12 +473,9 @@ def supervise(operation):
             bootstrap(backend_port, operation, report=report)
             runtime['configured'] = True
             report('checking_readiness')
-            while child.poll() is None:
-                lease = read('state/lease.json', {})
-                cancelled = read('state/cancelled.json', {}).get('operation') == lease.get('operation')
-                if cancelled or not isinstance(lease.get('deadline'), int) or time.time() >= lease['deadline']:
-                    break
-                time.sleep(2)
+            # Browser-link expiry is enforced at the gateway, not by killing
+            # local applications. Daytona idle stop owns compute lifetime.
+            child.wait()
         except Exception as error:
             runtime['error'] = str(error) if isinstance(error, Failure) else 'setup_failed'
             atomic('state/runtime.json', runtime)
@@ -496,7 +493,7 @@ def setup(operation):
         progress.thread.start()
         try:
             install(progress)
-            request(operation)  # A slow install may outlive its work period.
+            request(operation)  # A slow install may outlive its setup deadline.
             progress.update('configuring')
             fingerprint = configure()
             progress.update('configuring', step='installing_opencode')
@@ -507,7 +504,6 @@ def setup(operation):
             runtime = read('state/runtime.json', {})
             if req.get('restart') or runtime.get('credential_hash') != fingerprint or runtime.get('release') != RELEASE:
                 terminate(runtime.get('process'))
-            atomic('state/lease.json', {'deadline': req['deadline'], 'operation': operation})
             progress.update('starting', step='starting_openchamber')
             # A slow health response is not proof of process death. Retry joins
             # a living runtime; only an explicit restart or config change kills it.
@@ -557,7 +553,6 @@ def main():
     else:
         atomic('state/cancelled.json', {'operation': read('request.json', {}).get('operation')})
         atomic('request.json', {'deadline': 0})
-        atomic('state/lease.json', {'deadline': 0})
         terminate(read('state/task.json', {}).get('process'))
         terminate(read('state/operation.json', {}).get('process'))
         terminate(read('state/runtime.json', {}).get('process'))

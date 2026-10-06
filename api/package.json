@@ -12,7 +12,8 @@
     "test:previews": "python3 scripts/test-preview-fixture.py && node scripts/harness-previews.mjs",
     "test:grants": "node scripts/harness-grants.mjs",
     "test:sealed-dashboard": "node scripts/test-sealed-dashboard.mjs",
-    "test:sandbox-browser": "python3 scripts/test-browser-setup.py && node scripts/harness-sandbox-browser.mjs",
+    "test:sandbox-reaper": "node scripts/test-sandbox-reaper.mjs",
+    "test:sandbox-browser": "python3 scripts/test-browser-setup.py && node scripts/test-sandbox-policy.mjs && node scripts/harness-sandbox-browser.mjs",
     "test:sandbox-plugin": "npm --prefix sandbox-plugin test",
     "tail": "wrangler tail"
   },

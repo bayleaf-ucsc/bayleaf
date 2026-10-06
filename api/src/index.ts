@@ -23,6 +23,7 @@ import { keyRoutes } from './routes/key';
 import { proxyRoutes } from './routes/proxy';
 import { sealedRoutes } from './routes/sealed';
 import { sandboxRoutes } from './routes/sandbox';
+import { reapInactiveSandboxes, SANDBOX_REAPER_CRON } from './sandboxReaper';
 import { sandboxBrowserRoutes } from './routes/sandboxBrowser';
 import { usageRoutes } from './routes/usage';
 export { SandboxBrowser } from './sandboxBrowser';
@@ -230,7 +231,13 @@ app.onError((err, c) => {
 
 export default {
   fetch: app.fetch,
-  scheduled: async (_event: ScheduledController, env: AppEnv['Bindings']) => {
+  scheduled: async (event: ScheduledController, env: AppEnv['Bindings']) => {
+    if (event.cron === SANDBOX_REAPER_CRON) {
+      const report = await reapInactiveSandboxes(env, event.scheduledTime);
+      console.info('Sandbox reaper', report); // Aggregate metadata only; observability stays disabled.
+      if (report.failed || report.pending) throw new Error('Sandbox reaper needs retry');
+      return;
+    }
     if (env.GRANTS_ENABLED === 'true') await cleanupGrants(env);
     if (env.PREVIEWS_ENABLED === 'true') await cleanupPreviews(env);
   },

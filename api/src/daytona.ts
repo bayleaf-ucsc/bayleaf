@@ -126,26 +126,17 @@ export async function findSandboxByLabel(
 
 /**
  * Create a persistent sandbox for a keyed user.
- * Auto-stops after 15 min idle, auto-archives after 60 min stopped,
- * auto-deletes after DAYTONA_AUTO_DELETE_MINUTES (default 90 days).
+ * Auto-stops after 1 hour idle, auto-archives after 24 hours stopped,
+ * Daytona auto-delete is disabled; the daily BayLeaf reaper owns inactivity retention.
  */
 export async function createPersistentSandbox(
   email: string,
   env: Bindings,
 ): Promise<SandboxInfo> {
-  const deployLabel = env.DAYTONA_DEPLOYMENT_LABEL;
-  const autoDelete = parseInt(env.DAYTONA_AUTO_DELETE_MINUTES, 10) || -1;
   const resp = await fetch(apiUrl(env, '/sandbox'), {
     method: 'POST',
     headers: authHeaders(env),
-    body: JSON.stringify({
-      language: 'python',
-      name: `${deployLabel}/${email}`,
-      labels: { [deployLabel]: email },
-      autoStopInterval: 15,
-      autoArchiveInterval: 60,
-      autoDeleteInterval: autoDelete,
-    }),
+    body: JSON.stringify(persistentSandboxParams(email, env)),
   });
 
   if (!resp.ok) {
@@ -154,6 +145,17 @@ export async function createPersistentSandbox(
   }
 
   return await resp.json() as SandboxInfo;
+}
+
+/** One creation policy for ordinary API execution and managed browser setup. */
+export function persistentSandboxParams(email: string, env: Bindings) {
+  return {
+    language: 'python', snapshot: 'daytona-medium', public: false,
+    name: `${env.DAYTONA_DEPLOYMENT_LABEL}/${email}`,
+    labels: { [env.DAYTONA_DEPLOYMENT_LABEL]: email },
+    autoStopInterval: 60, autoArchiveInterval: 1440,
+    autoDeleteInterval: parseInt(env.DAYTONA_AUTO_DELETE_MINUTES, 10) || -1,
+  };
 }
 
 /** Start a stopped or archived sandbox. */

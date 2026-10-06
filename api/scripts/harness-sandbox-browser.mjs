@@ -68,7 +68,7 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
     SEALED_ENABLED:'true',SEALED_RPD_LIMIT:'500',
     RECOMMENDED_MODEL:'synthetic/model',OPENCODE_CURATED_MODELS:'synthetic/model',
     DAYTONA_PROXY_URL: 'https://toolbox.example.test', DAYTONA_API_KEY: 'synthetic-daytona-key',
-    DAYTONA_DEPLOYMENT_LABEL: 'synthetic-chat', DAYTONA_AUTO_DELETE_MINUTES: '129600',
+    DAYTONA_DEPLOYMENT_LABEL: 'synthetic-chat', DAYTONA_AUTO_DELETE_MINUTES: '-1',
   },
   outboundService: async req => {
     const u = new URL(req.url);
@@ -83,6 +83,8 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
       if (u.pathname === '/api/sandbox' && req.method === 'POST') {
         const body = await req.json();
         assert.equal(body.snapshot, 'daytona-medium');assert.equal(body.public, false);
+        assert.equal(body.autoStopInterval,60);assert.equal(body.autoArchiveInterval,1440);
+        assert.equal(body.autoDeleteInterval,-1);
         creates++; exists = true; state = 'started'; return Response.json(machine());
       }
       if (u.pathname.endsWith('/start')) { wakes++; state = 'started'; return Response.json({}); }
@@ -96,7 +98,10 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
       if (toolboxFailures > 0) { toolboxFailures--; return new Response('not ready', {status:503}); }
       if (u.pathname.endsWith('/files/upload')) {
         const form = await req.formData(); const text = await form.get('file').text();
-        if (u.searchParams.get('path').endsWith('request.next.json')) incomingOperation = JSON.parse(text);
+        if (u.searchParams.get('path').endsWith('request.next.json')) {
+          incomingOperation = JSON.parse(text);
+          assert(incomingOperation.deadline<=Math.floor(Date.now()/1000)+20*60);
+        }
         if (u.searchParams.get('path').endsWith('credentials/incoming')) assert(text.startsWith('sk-bayleaf-'));
         return Response.json({});
       }
@@ -205,6 +210,8 @@ try {
     const results=await Promise.all(Array.from({length:8},async()=> (await action('start')).json()));
     assert.equal(new Set(results.map(x=>x.operation)).size,1);
     ready=await finish(); assert.equal(ready.phase,'ready');
+    assert(ready.deadline>Math.floor(Date.now()/1000)+23*3600);
+    assert(ready.deadline<=Math.floor(Date.now()/1000)+24*3600);
     assert.equal(wakes,1);assert.equal(launches,1);assert.equal(creates,0);
     assert.match(ready.url,/owner-private-[a-f0-9]{24}/);
   });
@@ -217,11 +224,14 @@ try {
     }
     assert.equal(executions,before);assert.equal(previewCalls,1);
   });
-  await check('another owner has independent lifecycle state and cannot stop this browser',async()=>{
+  await check('another owner has independent lifecycle state; session actions no longer exist',async()=>{
     const headers={Authorization:'Bearer sk-bayleaf-other'};
     const other=await (await req('/sandbox/browser/status',{owner:false,headers})).json();
     assert.equal(other.phase,'idle');assert.equal(other.url,undefined);
-    assert.equal((await req('/sandbox/browser/stop',{method:'POST',owner:false,headers})).status,200);
+    for (const name of ['stop','continue']) {
+      assert.equal((await req('/sandbox/browser/'+name,{method:'POST',owner:false,headers})).status,404);
+      assert.equal((await action(name)).status,404);
+    }
     assert.equal((await status()).url,ready.url);
   });
   await check('public iframe navigation permits only the active owner browser in CSP, without widening fetch or POST',async()=>{
@@ -241,17 +251,15 @@ try {
     await db.prepare('UPDATE preview_registrations SET expires_at=? WHERE hostname=?').bind(ready.deadline,hostname).run();
     await worker.fetch(api+'/sandbox/expose/8000',{method:'DELETE',headers:{Authorization:'Bearer sk-bayleaf-owner'}});
   });
-  await check('deliberate continuation replaces origin and renews the work period',async()=>{
-    await action('continue');const next=await finish();
-    assert.equal(next.phase,'ready');assert.notEqual(next.url,ready.url);
-    assert(next.deadline>=ready.deadline);ready=next;
-  });
   await check('managed gateway forwards project context and binds current owner key',async()=>{
     const row=await db.prepare('SELECT * FROM preview_registrations WHERE deployment=?').bind('__browser').first();
     assert(row.owner_key_hash);assert.equal(row.expires_at,ready.deadline);
     const origin=new URL(ready.url).origin;
     const session=jwt({aud:origin,generation:row.generation,exp:row.expires_at},previewSecret);
     const headers={Cookie:'__Host-bl-preview-session='+session,'X-Test-Origin':origin,'Sec-Fetch-Site':'same-origin','X-Opencode-Directory':'/home/daytona/workspace'};
+    assert.equal((await worker.fetch(ready.url,{headers:{'X-Test-Origin':origin,'Sec-Fetch-Site':'same-origin'}})).status,401);
+    const otherSession=jwt({aud:origin,generation:'wrong-generation',exp:row.expires_at},previewSecret);
+    assert.equal((await worker.fetch(ready.url,{headers:{...headers,Cookie:'__Host-bl-preview-session='+otherSession}})).status,401);
     assert.equal((await worker.fetch(ready.url,{headers})).status,200);
     assert.equal(lastForwarded['x-opencode-directory'],'/home/daytona/workspace');
     await db.prepare('UPDATE user_keys SET bayleaf_token=? WHERE email=?').bind('sk-bayleaf-rotated',email).run();
@@ -293,15 +301,14 @@ try {
   await check('Toolbox readiness lag retries across durable alarms',async()=>{
     toolboxFailures=2;await action('start');const op=await finish();
     assert.equal(op.phase,'ready');assert.equal(toolboxFailures,0);
-    await action('stop');
   });
-  await check('confirmed absence creates once; subsequent deliberate stop only stops managed tools',async()=>{
+  await check('confirmed absence creates once; browser links need no session end',async()=>{
     exists=false;
     const absent=await status();assert.equal(absent.phase,'idle');assert.equal(absent.machine,'absent');
     assert.equal(absent.error,undefined);assert.equal(absent.deadline,undefined);assert.equal(absent.url,undefined);
     await action('start');ready=await finish();assert.equal(ready.phase,'ready');assert.equal(creates,1);
-    assert.equal((await action('stop')).status,200);assert.equal(state,'started');
-    assert.equal((await status()).phase,'stopped');
+    assert.equal((await action('stop')).status,404);assert.equal(state,'started');
+    assert.equal((await status()).phase,'ready');
   });
   console.log(checks+' lifecycle checks passed (synthetic provider; no live deployment).');
 } finally {await mf.dispose();}

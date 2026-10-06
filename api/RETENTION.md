@@ -136,15 +136,52 @@ semantics, and rollout status.
 
 | User type | Sandbox lifecycle | Auto-delete |
 |---|---|---|
-| Keyed | Persistent: stop after 15 min idle, archive after 60 min stopped | **90 days** after archive (`DAYTONA_AUTO_DELETE_MINUTES = 129600`) |
+| Keyed | New creation policy: medium (2 vCPU, 4 GiB RAM, 8 GiB disk), stop after 1 hour idle, archive after 24 hours stopped | Daily deletion after **90 days without Daytona-recorded activity**, enabled 2026-10-06 |
 | Campus Pass | Ephemeral: created per-request, destroyed immediately after | Immediate |
 
 Sandbox content (filesystem, installed packages, user files) lives entirely on
 Daytona's infrastructure, labeled by email. BayLeaf stores only the sandbox ID
 in D1 as a cache (cleared on explicit deletion).
 
+The shared creation policy and 24-hour browser-link simplification were deployed
+on 2026-10-06 (Worker `09db2448-eb9f-4c72-98a7-6e4ac9834125`). Existing machines
+are not resized or retimed by these changes. Browser-link expiry revokes gateway access, not
+managed application processes, in the new installer. Prior runtimes keep their
+old supervisor until the next deliberate setup/restart installs the new layout.
+
 Users who need to preserve sandbox artifacts should copy them out before the
-90-day inactivity window closes. Any tool call resets the idle clock.
+90-day inactivity window closes. Daytona-recorded activity includes Toolbox calls,
+preview/SSH interactions, explicit keepalive, and lifecycle state changes. Status
+reads do not renew activity. This is not an exact last-human-interaction clock.
+
+The daily reaper (`src/sandboxReaper.ts`) is scheduled for 08:17 UTC, separately
+from hourly credential cleanup. `SANDBOX_REAPER_MODE=delete` is deployed;
+`dry-run` inspects without deleting, other values disable the sweep. It scans all inventory
+pages, restricts ownership to `DAYTONA_DEPLOYMENT_LABEL`, and re-fetches candidates
+before deleting only stopped/archived machines with unchanged ownership and
+activity at least 90 days old. Invalid/missing timestamps and active/transitional
+machines are skipped. Deletion is verified before clearing cached IDs by exact ID.
+Browser status already treats a missing machine as absent; preview leases expire
+within 24 hours, well before the inactivity cutoff. The reaper does not contact
+Toolbox or start machines to clean up inside them.
+
+Daytona offers no conditional deletion, so activity can race the final read and
+DELETE. The policy runs on the next successful daily sweep after the cutoff,
+normally within 24 hours, not precisely at the 90-day instant. Failures/pending
+deletions mark the scheduled invocation failed for operator inspection; there is
+no new metrics store or automatic alert delivery. Dry-run reports contain only
+aggregate counts, no names or content. Workers observability remains disabled.
+
+Daytona's `autoDeleteInterval` covers stopped, runner-assigned machines, not
+archived machines in the public server implementation examined on 2026-10-06.
+Existing BayLeaf machines now have it disabled; API creation defaults likewise
+use `-1`. Chat/Lathe now has automatic creation disabled and directs users to
+the API dashboard; its old creation-time lifecycle valves are inactive. The old claim of deletion 90 days after archive was not
+enforced. Adam approved scheduled deletion of the initial overdue inventory on
+2026-10-06; no immediate sweep was triggered. Worker version
+`564723be-75de-4dc3-adfa-e39bacc510cd` was deployed, with both cron expressions
+and deletion mode verified through Cloudflare's API. The first actual scheduled
+run and deletion outcome have not yet been verified. ✨
 
 ---
 

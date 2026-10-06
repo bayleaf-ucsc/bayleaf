@@ -67,17 +67,15 @@ export const SandboxBrowserControls: FC = () => <section class={controlsStyle} i
   <div class="browser-actions">
     <button type="button" class={btnStyle} id="browser-start" hidden>Set up sandbox</button>
     <a class={btnStyle} id="browser-open" hidden target="_blank" rel="noopener noreferrer">Open sandbox</a>
-    <span class="browser-note" id="browser-deadline"></span>
-    <button type="button" class="browser-secondary" id="browser-continue" hidden>Extend 6 hours</button>
   </div>
   <p id="browser-intro" class="browser-note" hidden>Opens OpenChamber with BayLeaf and your files. First setup takes a few minutes.</p>
   <details style="margin-top:1rem"><summary>Browser options &amp; help</summary>
     <div class="browser-actions" style="margin-top:0.75rem">
       <button type="button" class="browser-secondary" id="browser-restart" hidden>Restart interface</button>
-      <button type="button" class="browser-secondary" id="browser-stop" hidden>End browser work</button>
     </div>
-    <p class="browser-note">Browser access lasts six hours. You can extend it during the last hour.
-      Idle sleep may happen sooner. Files and history persist; running tasks stop when the sandbox sleeps.</p>
+    <p class="browser-note">Private browser links last up to 24 hours. If a link expires or your sandbox sleeps,
+      return here to resume it. Link expiry does not stop applications. Files and history persist;
+      running tasks stop when the sandbox sleeps.</p>
     <p class="browser-note">This is the same sandbox used by Chat and the API. Setup stores your BayLeaf key inside it,
       where programs you run can access it. Use Chat or the file API to export files and history.</p>
   </details>
@@ -93,7 +91,7 @@ export const SandboxBrowserControls: FC = () => <section class={controlsStyle} i
        connecting_bayleaf:'Connecting your BayLeaf account', loading_tools:'Loading BayLeaf tools and skills',
        checking_readiness:'Checking workspace readiness', registering_preview:'Creating private browser access',
        waiting_for_toolbox:'Waiting for the sandbox connection; retrying automatically',
-       failed:'Setup failed', expired:'Work period expired', stopped:'Browser work ended' };
+        failed:'Setup failed', expired:'Browser link expired', stopped:'Browser access unavailable' };
     const errors = { node_22_required:'Your sandbox’s software needs an update. Contact BayLeaf support.',
       insufficient_disk:'Your sandbox needs more free storage. Free up space or contact BayLeaf support.', requires_2_gib:'Your sandbox needs more memory. Contact BayLeaf support to upgrade it and keep your files.',
       public_sandbox:'Your sandbox’s privacy settings need attention. Contact BayLeaf support.',
@@ -105,7 +103,7 @@ export const SandboxBrowserControls: FC = () => <section class={controlsStyle} i
        application_not_ready:'The workspace did not pass its readiness check. Retry reuses installed applications.',
        opencode_installation_failed:'OpenChamber could not install OpenCode. Retry setup to try the download again.',
       personal_key_required:'Create your personal BayLeaf key first.', sandbox_missing:'The shared sandbox is missing. Resume to locate or create it.' };
-     let timer, deadline, snapshot, busy = false, ready = false, requestVersion = 0;
+      let timer, snapshot, busy = false, ready = false, requestVersion = 0;
      const duration = seconds => {
        seconds = Math.max(0,Math.floor(seconds));
        return seconds < 60 ? seconds + 's' : Math.floor(seconds/60) + 'm ' + seconds%60 + 's';
@@ -189,13 +187,12 @@ export const SandboxBrowserControls: FC = () => <section class={controlsStyle} i
      function render(s) {
        snapshot=s;
       clearTimeout(timer);
-      deadline = s.deadline > Math.floor(Date.now()/1000) ? s.deadline : null;
       ready = s.phase === 'ready' && !!s.url;
       const opening = s.phase === 'opening';
       el('status').textContent = s.error ? (errors[s.error] || 'Could not open your sandbox. Try again, or contact BayLeaf support.')
         : opening ? (labels[s.progress] || 'Preparing your sandbox') + '…'
         : ready ? 'Ready'
-        : s.phase === 'expired' ? 'Browser access ended. Your files are saved.'
+         : s.phase === 'expired' ? 'Browser link expired. Resume to get a new link. Your files are saved.'
         : s.machine === 'absent' ? 'Ready to set up.'
         : 'Your sandbox is ' + (s.machine || 'not open') + '.';
       el('start').hidden = ready || opening;
@@ -204,7 +201,6 @@ export const SandboxBrowserControls: FC = () => <section class={controlsStyle} i
       el('open').hidden = !ready;
       if (ready) el('open').href = s.url; else el('open').removeAttribute('href');
       el('restart').hidden = !ready;
-       el('stop').hidden = !(ready || opening);
        const previous=s.previous_failure;
        el('previous').hidden=!previous;
        el('previous').textContent=previous?'Previous attempt failed at '+clock(previous.at)+' after '+duration(previous.elapsed)
@@ -212,14 +208,6 @@ export const SandboxBrowserControls: FC = () => <section class={controlsStyle} i
         if(s.phase==='failed')el('progress').open=true;
        timing();
       if (opening) timer = setTimeout(refresh, 5000);
-      countdown();
-    }
-    function countdown() {
-      const remaining = deadline ? Math.max(0, deadline - Math.floor(Date.now()/1000)) : 0;
-      const minutes = Math.ceil(remaining/60);
-      el('deadline').textContent = ready && remaining ? (minutes >= 60 ? Math.floor(minutes/60) + 'h ' + minutes%60 + 'm' : minutes + 'm') + ' remaining' : '';
-      el('continue').hidden = !ready || !remaining || remaining > 3600;
-      if (deadline && remaining === 0) { deadline = null; refresh(); }
     }
     async function refresh() {
       const version = ++requestVersion;
@@ -229,7 +217,6 @@ export const SandboxBrowserControls: FC = () => <section class={controlsStyle} i
     }
     async function action(name) {
       if (busy) return;
-      if (name === 'stop' && !confirm('End browser work and stop its managed tasks? Shared sandbox files are preserved.')) return;
       busy = true;
       ++requestVersion;
       clearTimeout(timer);
@@ -241,10 +228,10 @@ export const SandboxBrowserControls: FC = () => <section class={controlsStyle} i
       } catch { el('status').textContent = 'Could not submit the action. Refresh status before retrying.'; }
       finally { busy=false; document.querySelectorAll('#sandbox button').forEach(b => b.disabled = false); }
     }
-    ['start','continue','restart','stop'].forEach(name => el(name).addEventListener('click', () => action(name)));
+    ['start','restart'].forEach(name => el(name).addEventListener('click', () => action(name)));
     el('refresh').addEventListener('click', refresh);
     window.addEventListener('focus', () => { if (!busy) refresh(); });
-     setInterval(countdown, 30000);
+     setInterval(() => { if (ready && snapshot?.deadline <= Math.floor(Date.now()/1000)) refresh(); }, 30000);
       setInterval(timing,1000);
       setInterval(()=>{if(snapshot?.phase==='opening')meter(snapshot,Date.now()/1000);},100);
     refresh();

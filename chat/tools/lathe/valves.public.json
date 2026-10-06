@@ -1,0 +1,4 @@
+{
+  "auto_create_sandbox": false,
+  "sandbox_missing_message": "No sandbox exists for your account. Visit https://api.bayleaf.dev/, sign in with your UCSC account, and click \"Set up sandbox.\" When setup finishes, return here and retry."
+}

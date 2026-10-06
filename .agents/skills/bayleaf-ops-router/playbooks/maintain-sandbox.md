@@ -82,6 +82,25 @@ explicit operation on the user-owned installation. Preserve user files and histo
 
 ## Evidence and refinement log
 
+- 2026-10-06 (24-hour links): Removed extension/end-session
+  API/UI controls and decoupled supervisor lifetime from link expiry; centralized
+  medium-size creation with 1-hour idle stop and 24-hour stopped archive. Installer,
+  lifecycle, rendering and gateway security tests passed. In-app browser initially
+  failed; after Adam requested a retry, synthetic Resume/Open controls worked on
+  desktop and mobile with no reported page errors. No Rodney or live sandbox
+  restart was used. Published skill update `5e20fdf`, deployed Worker
+  `09db2448-eb9f-4c72-98a7-6e4ac9834125`, and verified live routes/config pin,
+  passive status, cron settings, Lathe valves, and Sealed health. No existing
+  machine was restarted/resized. Sleeping-link resume is issue #85.
+
+- 2026-10-06 (retention): Built a parent-Worker daily inactivity reaper, tested
+  locally and read-only against production (six candidates, eight machines).
+  No plugin change: plugin publication steps did not apply. Subsequently deployed
+  Worker `564723be-75de-4dc3-adfa-e39bacc510cd` with deletion enabled by approval;
+  verified schedules/settings, without triggering an immediate sweep. Daytona
+  stopped-state auto-delete did not enforce archived retention; keep lifecycle
+  policy in `api/RETENTION.md`, and gate the initial overdue deletion separately.
+
 - 2026-10-05 (setup-only display): Worker `2208920e-1fd0-46f9-b2cb-fa7eb4de5193`
   limits the animated meter to active setup. Completion/failure hides the visual;
   diagnostic history remains available. TypeScript passed.

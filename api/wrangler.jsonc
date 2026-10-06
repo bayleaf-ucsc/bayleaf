@@ -17,8 +17,8 @@
     { "pattern": "*.bayleaf-proxies.dev/*", "zone_name": "bayleaf-proxies.dev" }
   ],
 
-  // Removes expired preview and inference-grant credentials/transactions.
-  "triggers": { "crons": ["0 * * * *"] },
+  // Hourly credentials cleanup; daily sandbox inactivity sweep at 08:17 UTC.
+  "triggers": { "crons": ["0 * * * *", "17 8 * * *"] },
 
   "durable_objects": {
     "bindings": [
@@ -247,7 +247,8 @@
     // mount Lathe may attach at /home/daytona/volume; only /home/daytona/workspace
     // is the shared filesystem surface.
     "DAYTONA_DEPLOYMENT_LABEL": "chat.bayleaf.dev",
-    "DAYTONA_AUTO_DELETE_MINUTES": "129600"
+    "DAYTONA_AUTO_DELETE_MINUTES": "-1",
+    "SANDBOX_REAPER_MODE": "delete"
   }
 
   // Secrets to configure via `wrangler secret put`:

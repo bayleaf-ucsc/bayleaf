@@ -522,7 +522,7 @@ const pokeRoute = createRoute({
   summary: 'Keep the sandbox alive',
   description:
     'Refreshes the sandbox\'s inactivity timer to prevent it from auto-stopping ' +
-    '(default: 15 minutes idle). If the sandbox is stopped or archived, it is ' +
+    '(new sandboxes: 1 hour idle). If the sandbox is stopped or archived, it is ' +
     'started first — so a poke both wakes a sleeping sandbox and keeps a running ' +
     'one awake. Cheaper than a no-op `exec`. Requires a BayLeaf API key (`sk-bayleaf-...`).',
   security: [{ Bearer: [] }],

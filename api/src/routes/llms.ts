@@ -868,7 +868,7 @@ File I/O (keyed users only):
 Lifecycle (keyed users only):
 
 - ${bt}GET /sandbox${bt} reports status without side effects (${bt}state: "none"${bt} if none exists).
-- ${bt}POST /sandbox/poke${bt} refreshes the inactivity timer (default auto-stop is 15 min idle) and wakes a stopped sandbox. Cheaper than a no-op exec.
+- ${bt}POST /sandbox/poke${bt} refreshes the inactivity timer (new sandboxes stop after 1 hour idle) and wakes a stopped sandbox. Cheaper than a no-op exec.
 - ${bt}DELETE /sandbox${bt} destroys the sandbox.
 
 Browser access (when enabled; ordinary personal keys only):
@@ -876,15 +876,15 @@ Browser access (when enabled; ordinary personal keys only):
 - ${bt}GET /usage${bt} reports personal inference allowances without provisioning keys or spending credits. USD and request-count budgets are separate; null means unknown. Disabled providers are omitted.
 - ${bt}POST /sandbox/expose${bt} accepts ${bt}{"port":8000,"access":"private"}${bt}. Private is the default and strongly recommended; public must be explicitly requested. Port 3100 is reserved. Bind the service to 0.0.0.0 first.
 
-- ${bt}GET /sandbox/browser/status${bt} observes setup and work-period state without waking compute.
+- ${bt}GET /sandbox/browser/status${bt} observes setup and browser-link state without waking compute.
 - ${bt}POST /sandbox/browser/start${bt} deliberately sets up or resumes OpenChamber on the same shared sandbox.
-- ${bt}POST /sandbox/browser/continue${bt} deliberately renews the six-hour work period.
-- ${bt}POST /sandbox/browser/restart${bt} retries the managed browser interface within its deadline.
-- ${bt}POST /sandbox/browser/stop${bt} ends browser access and managed tasks, preserving shared files.
+- ${bt}POST /sandbox/browser/restart${bt} repairs the managed browser interface.
 
 Poll status during setup, then open the returned private URL through the owner's
-browser login. Passive status, reconnects, and preview requests do not renew a
-work period. Dashboard controls live at ${bt}/dashboard#sandbox${bt}. A 503 may
+browser login. Private browser links last up to 24 hours; expiry revokes link
+access without stopping applications. If the sandbox sleeps or the link expires,
+return to ${bt}/dashboard#sandbox${bt} to resume. New sandboxes use daytona-medium,
+stop after 1 hour idle, and archive after 24 hours stopped. A 503 may
 mean the browser feature is disabled. Browser setup delegates the ordinary owner
 key into the sandbox and persists agent histories there; inference still uses
 BayLeaf's approved ZDR provider path. Stopping/archiving loses running processes.
