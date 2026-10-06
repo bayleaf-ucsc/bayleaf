@@ -386,6 +386,14 @@ POST     /sealed/v1/*          EHBP ciphertext relay. POST only.
 
 ### Cost accounting: reconciliation, not request counting
 
+**2026-10-05 decision for issue #82:** daily dollar enforcement is deferred as
+more than a small feature under Tinfoil's current lifetime-cap API. Read
+[`SEALED-SPEND-LIMITS.md`](SEALED-SPEND-LIMITS.md) before proposing it again:
+it records rollover, settlement, healing, and per-user-exception requirements,
+plus concrete conditions for revisiting. The reconciliation design below is
+historical investigation, not an implemented subsystem or an instruction to
+build it. ✨
+
 The dashboard now reads the existing user's key with `POST /api/billing/usage/key`
 for explicit UTC day-to-date and calendar-month-to-date ranges. It displays
 spending and today's total tokens (including streaming) separately from the D1
@@ -427,19 +435,22 @@ One call returns org-wide spend broken down **per key, then per model**, with
   same for a single key, if per-user granularity is ever needed on demand.
 
 **Tinfoil is the system of record for Sealed spend**, exactly as OpenRouter is
-for the proxy lane. D1 caches a recent *reading* for the fast path; it does not
-hold a second copy of the *limit*. That distinction keeps the "do not add a D1
-limit column" rule above intact.
+for the proxy lane. The historical proposal was to cache a recent *reading* in
+D1 for the fast path; that cache is not implemented. Tinfoil's lifetime cap is
+not a daily policy: a future BayLeaf-managed daily allowance would need its own
+authoritative policy and an explicit revision of the no-local-limit rule.
 
 **Do not also debit from the response header.** Two accounting paths that can
 disagree is the failure this file already warns about for spend limits. Use
 reconciliation as the accountant and treat the usage header as telemetry (it is
 the only place model popularity is observable without decrypting).
 
-**What a rate limit is still for.** Enforcement necessarily lags reconciliation,
-so a user can overspend by roughly (requests in flight x worst-case cost per
-request). A per-user concurrency cap plus a request rate limit exists to *bound
-that window* and to deter abuse. It is not the cost model.
+**What a rate limit is still for.** In a polling-based design, enforcement lags
+accounting. Exposure includes requests admitted during that lag and requests
+still in flight. Concurrency and rate guardrails could constrain this exposure
+and deter abuse; they are not implemented as a dollar controller, and a dollar
+bound also requires a defensible worst-case request cost. Request count is not
+the cost model.
 
 **Suggested split.** Put the reconciler in a **separate Worker** with its own
 `TINFOIL_ADMIN_KEY` binding, sharing D1. The inference Worker then holds only
@@ -478,13 +489,13 @@ checkbox, so it is recorded rather than deleted.
    Note this makes `TINFOIL_ADMIN_KEY` more dangerous than
    `OPENROUTER_PROVISIONING_KEY`: Tinfoil re-reveals secrets on read, so a leak
    of the admin key exposes every user's inference credential.
-2. **Dollar-denominated spend enforcement: STILL OPEN.** The reconciliation loop
-   described above, plus a per-user concurrency cap and request rate limit to
-   bound the reconciliation-lag overspend window. The RPD guardrail is a
-   *component* of this design, not an alternative to it: enforcement necessarily
-   lags reconciliation, so something must bound the in-flight window. The lane
-   was enabled with `SEALED_RPD_LIMIT` alone, so today exposure is bounded by
-   request count rather than by dollars. This is the largest outstanding gap.
+2. **Dollar-denominated spend enforcement: DEFERRED (2026-10-05).** See
+   `SEALED-SPEND-LIMITS.md` and issue #82. A daily controller would need durable
+   policy, accounting lineage, rollover/recovery coordination, and verified
+   provider semantics. The lane uses `SEALED_RPD_LIMIT` alone, so today exposure
+   is constrained by request count rather than by a dollar budget. A concurrency
+   cap would constrain in-flight request count, but would not itself establish a
+   dollar overshoot bound without a defensible maximum request cost.
 3. **`/sealed/policy`: DROPPED as a prerequisite.** The original plan was to
    publish the C1–C6 rubric plus a pinned enclave measurement allowlist. The
    reason it was dropped is that a BayLeaf-served trust policy is circular: the
