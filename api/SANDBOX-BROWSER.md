@@ -174,8 +174,14 @@ The plugin exposes `bayleaf_usage`, `bayleaf_expose`, and `bayleaf_unexpose`
 directly. Usage is a passive read; preview changes
 request native permissions with distinct private/public resources. Credentials
 stay inside the plugin, outputs are filtered, and private access is the default.
-The single `bayleaf-sandboxes` skill explains persistence, connected
-services, budgets and preview workflow. No Python helper invocation is needed.
+The `bayleaf-sandboxes` skill explains persistence, connected
+services, budgets and preview workflow. `bayleaf-scheduling` is discoverable
+before using OpenChamber's `schedule.*` tools: task definitions survive same-machine
+sleep/restart, but execution requires running compute, missed runs are not replayed,
+and sandbox deletion loses schedules. Near-term awake-workspace tasks are best effort,
+not durable unattended automation. This scheduler behavior is source-inspected in
+OpenChamber 2.1.1, not a live sleep/scheduling qualification.
+No Python helper invocation is needed.
 `/usage` reports USD and request allowances separately; unknown limits remain null.
 
 Historical version `24a3b943-f7f7-4d32-a733-6846beba8790`: production restart reached

@@ -24,7 +24,7 @@ config, and deployment. There is no npm publication workflow for the plugin.
 1. Inspect status in both repositories. Initialize a missing submodule with
    `git submodule update --init api/sandbox-plugin`; do not reset existing work.
 2. Tight authenticated operations belong in plugin tools with typed arguments.
-   Keep environment explanations in its one skill. API primitives remain available
+    Keep environment and scheduling-lifecycle explanations in its packaged skills. API primitives remain available
    to other clients; do not duplicate Python wrappers for agent discoverability.
 3. Keep owner credentials internal, routes fixed, redirects disabled, errors
    sanitized, output bounded, and metadata fields allowlisted. Status reads must
@@ -81,6 +81,15 @@ rebuild the derived pin and redeploy the Worker. Application rollback is a separ
 explicit operation on the user-owned installation. Preserve user files and histories.
 
 ## Evidence and refinement log
+
+- 2026-10-06 (scheduling skill): Background source inspection of published
+  OpenChamber 2.1.1 found filesystem-persisted definitions, in-process timers,
+  no wake mechanism and no startup catch-up. Added packaged scheduling guidance,
+  distinguishing retained state from asleep compute and eventual deletion.
+  Unit, lifecycle, TypeScript and real V2 published-Git discovery tests passed.
+  Published plugin `de3d90b`, deployed Worker `7eb2198e-1471-4685-b9ff-4e3655eb15c9`,
+  and verified the live authenticated configuration selects that exact pin.
+  No live schedules or sandbox lifecycle experiments were performed.
 
 - 2026-10-06 (continuous progress): Recalibrated from the owner's 26-second fresh
   timeline and replaced segment fills with one frame-interpolated bar. Added

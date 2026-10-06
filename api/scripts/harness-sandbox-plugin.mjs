@@ -159,6 +159,8 @@ m.bootstrap(${port},${JSON.stringify(operation)},${JSON.stringify(origin)})
   assert.equal(first.output.tools.filter(t=>t.id==='webfetch').length,1);
   const skillData=first.output.skills.data??first.output.skills;
   assert.ok(skillData.some(s=>s.id==='bayleaf-sandboxes'));
+  assert.ok(skillData.some(s=>s.id==='bayleaf-scheduling'&&s.description.includes('schedule.*')),
+    'scheduling guidance must be discoverable from the installed plugin');
   assert.equal(skillData.find(s=>s.id==='bayleaf-fixture').content,'Revision a');
   assert.ok(!first.output.tools.some(t=>t.id==='bayleaf_fixture_new'));
   console.log('PASS real V2 bootstrap and tool/skill registration');
