@@ -38,9 +38,13 @@ assert.ok(!html.includes('browser-continue') && !html.includes('browser-stop'));
 assert.ok(!html.includes('Extend 6 hours') && !html.includes('End browser work'));
 assert.ok(html.includes('links last up to 24 hours'));
 assert.ok(!html.includes('setInterval(countdown'));
-for (const script of html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)) {
-  new Function(script[1]); // Parse inline browser JS; interactive browser check is separate.
-}
+// This is our own SSR output, not untrusted HTML or an HTML sanitization step.
+// The component emits exactly one fixed script element. Parse its JS directly.
+const scriptStart = html.indexOf('<script>');
+const scriptEnd = html.indexOf('</script>', scriptStart);
+assert.ok(scriptStart >= 0 && scriptEnd > scriptStart);
+assert.equal(html.indexOf('<script>', scriptStart + 1), -1);
+new Function(html.slice(scriptStart + '<script>'.length, scriptEnd));
 console.log('Sandbox creation policy and browser rendering checks passed');
 if (process.argv.includes('--serve')) {
   createServer(async (req,res) => {
