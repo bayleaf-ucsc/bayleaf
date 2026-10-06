@@ -23,20 +23,19 @@ const controlsStyle = css`
   .browser-meter { margin:1.2rem 0; }
   .browser-milestones { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:0.5rem; }
   .browser-milestone { position:relative; padding-top:1.5rem; font-size:0.75rem; color:#555; }
-  .browser-milestone::before { content:''; position:absolute; top:0.4rem; left:0; right:0;
-    height:4px; border-radius:2px; background:#dcebe1; }
-  .browser-milestone::after { content:''; position:absolute; top:0.4rem; left:0;
-    width:var(--fill,0%); height:4px; border-radius:2px; background:#365a43;
-    transition:width 0.35s linear; }
+  .browser-track { height:6px; border-radius:3px; background:#dcebe1;
+    margin-top:0.75rem; overflow:hidden; }
+  .browser-fill { height:100%; background:#365a43; transform:scaleX(0);
+    transform-origin:left; }
   .browser-pip { position:absolute; top:0; left:0; width:16px; height:16px; border-radius:50%;
     border:2px solid #767676; background:#fafafa; box-sizing:border-box; z-index:1; }
   .browser-milestone[data-state=done] .browser-pip { background:#365a43; border-color:#365a43; }
   .browser-milestone[data-state=current] { color:#003c6c; font-weight:600; }
   .browser-milestone[data-state=current] .browser-pip { border-color:#006aad; box-shadow:0 0 0 3px #dcebe1; }
-  .browser-milestone[data-state=current]::after { animation:browser-working 2s ease-in-out infinite; }
+  .browser-track[data-waiting=true] .browser-fill { animation:browser-working 2s ease-in-out infinite; }
   @keyframes browser-working { 50% { opacity:0.55; } }
   @media (prefers-reduced-motion:reduce) {
-    .browser-milestone::after { transition:none; animation:none !important; }
+    .browser-fill { animation:none !important; }
   }
   .browser-milestone[data-state=failed] .browser-pip { border-color:#a01830; background:#f8d7da; }
   .browser-estimate { font-size:0.85rem; color:#555; margin:0.75rem 0 0; }
@@ -55,6 +54,7 @@ export const SandboxBrowserControls: FC = () => <section class={controlsStyle} i
   <div id="browser-meter" class="browser-meter" hidden>
     <div id="browser-meter-bar" role="progressbar" aria-label="Estimated sandbox setup progress" aria-valuemin="0" aria-valuemax="100">
       <div id="browser-milestones" class="browser-milestones" aria-hidden="true"></div>
+      <div id="browser-track" class="browser-track" aria-hidden="true"><div id="browser-fill" class="browser-fill"></div></div>
     </div>
     <p id="browser-estimate" class="browser-estimate"></p>
   </div>
@@ -109,14 +109,15 @@ export const SandboxBrowserControls: FC = () => <section class={controlsStyle} i
        return seconds < 60 ? seconds + 's' : Math.floor(seconds/60) + 'm ' + seconds%60 + 's';
      };
       const clock = at => new Date(at*1000).toLocaleTimeString();
-      // First observed clean setup, 2026-10-05: measured seconds + 1 per step.
+       // Fresh setup, 2026-10-06: 26 seconds, with one-second timestamp resolution.
+       // Zero-duration steps are evidence gates, not invented waiting budgets.
       // The penultimate 'ready' is application readiness, before private access.
       const plan = [
-        ['locating_sandbox',1],['creating_sandbox',2],['starting_sandbox',2],
-        ['preparing_setup',3],['checking',1],['installing_openchamber',13],
-        ['configuring',1],['installing_opencode',4],['starting_openchamber',2],
-        ['waiting_for_opencode',3],['connecting_bayleaf',1],['loading_tools',2],
-        ['checking_readiness',1],['ready',3],['registering_preview',2]
+         ['locating_sandbox',0],['creating_sandbox',0],['starting_sandbox',1],
+         ['preparing_setup',2],['checking',1],['installing_openchamber',13],
+         ['configuring',0],['installing_opencode',3],['starting_openchamber',0],
+         ['waiting_for_opencode',2],['connecting_bayleaf',1],['loading_tools',1],
+         ['checking_readiness',0],['ready',0],['registering_preview',2]
       ];
       const milestones = [['Sandbox',0,3],['Install',3,8],['Start',8,10],['Connect',10,13],['Open',13,15]];
       const total=plan.reduce((sum,step)=>sum+step[1],0);
@@ -125,48 +126,57 @@ export const SandboxBrowserControls: FC = () => <section class={controlsStyle} i
         const pip=document.createElement('span');pip.className='browser-pip';
         node.append(pip,document.createTextNode(name));el('milestones').append(node);return node;
       });
-      let meterOperation, meterFloor=0;
-      function meter(s,now) {
+       let meterOperation, meterFloor=0, displayed=0, frame, lastFrame;
+       const reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
+       function meter(s,now) {
         const visible=s.phase==='opening'&&!!s.started_at;
         el('meter').hidden=!visible;if(!visible)return;
-        if(meterOperation!==s.operation){meterOperation=s.operation;meterFloor=0;}
+         if(meterOperation!==s.operation){meterOperation=s.operation;meterFloor=0;displayed=0;lastFrame=undefined;}
         let index=0,at=s.started_at;
         for(const event of s.timeline||[]) {
           const candidate=plan.findIndex(step=>step[0]===event.step);
-          if(candidate>=index){index=candidate;at=event.at;}
+           if(candidate>index){index=candidate;at=event.at;}
+           else if(candidate===index){at=Math.min(at,event.at);}
         }
         const elapsed=Math.max(0,now-at), budget=plan[index][1];
         const complete=s.phase==='ready'&&!!s.url;
         const opening=s.phase==='opening';
         // Never let a time estimate claim that an unconfirmed step has finished.
-        // Exponential approach: brisk initially, then slower while awaiting evidence.
-        // At the expected duration we show ~80% of this step, never its completion.
-        const fraction=opening?0.97*(1-Math.exp(-elapsed/(budget*0.6))):0;
+         // Advance evenly through the estimate, then wait visibly for confirmation.
+         const fraction=opening&&budget>0?0.9*Math.min(1,elapsed/budget):0;
         const done=plan.slice(0,index).reduce((sum,step)=>sum+step[1],0);
         meterFloor=Math.max(meterFloor,done+budget*fraction);
-        const percent=complete?100:Math.min(99,Math.floor(100*meterFloor/total));
+         const target=Math.min(99,100*meterFloor/total);
+         const delta=lastFrame===undefined?0:Math.max(0,now-lastFrame);lastFrame=now;
+         displayed=reducedMotion.matches?target:displayed+(target-displayed)*(1-Math.exp(-delta/0.25));
+         el('fill').style.transform='scaleX('+(displayed/100)+')';
+         const percent=Math.floor(displayed);
         const late=opening&&(elapsed>=budget||s.progress==='waiting_for_toolbox');
         const remaining=Math.ceil(total-done-Math.min(elapsed,budget));
         const text=complete?'Workspace ready':s.phase==='failed'?'Setup paused at a failed step'
           :late?'Taking longer than estimated; waiting for confirmation'
           :'About '+duration(remaining)+' remaining';
-        el('estimate').textContent=complete?text:percent+'% estimated · '+text;
-        el('estimate').title='Initial estimate: 41 seconds, based on one fresh setup plus one second per step. Reused installations may skip steps.';
+         el('track').dataset.waiting=String(late);
+         const estimate=percent+'% estimated · '+text;
+         if(el('estimate').textContent!==estimate)el('estimate').textContent=estimate;
+         el('estimate').title='Approximate 26-second baseline from one fresh setup, not a guaranteed duration. Reused installations may skip steps.';
         el('meter-bar').setAttribute('aria-valuenow',String(percent));
         el('meter-bar').setAttribute('aria-valuetext',text);
         milestones.forEach(([,start,end],i)=>{
           const finished=complete||index>=end;
           const active=!finished&&index>=start;
-          const size=plan.slice(start,end).reduce((sum,step)=>sum+step[1],0);
-          const before=plan.slice(0,start).reduce((sum,step)=>sum+step[1],0);
-          pips[i].style.setProperty('--fill',(complete?100:Math.max(0,Math.min(100,100*(meterFloor-before)/size)))+'%');
-          pips[i].dataset.state=finished?'done':active?(s.phase==='failed'?'failed':'current'):'pending';
+           pips[i].dataset.state=finished?'done':active?(s.phase==='failed'?'failed':'current'):'pending';
         });
-      }
+       }
+       function animate() {
+         frame=undefined;
+         if(snapshot?.phase!=='opening'||!snapshot.started_at)return;
+         meter(snapshot,Date.now()/1000);
+         frame=requestAnimationFrame(animate);
+       }
       function timing() {
        const s=snapshot;if(!s)return;
         const now=Math.floor(Date.now()/1000);
-        meter(s,now);
        el('timing').hidden=!s.started_at;
        const last=(s.timeline||[]).at(-1);
        const end=s.phase==='opening'?now:(last?.at||s.updated_at||now);
@@ -206,7 +216,10 @@ export const SandboxBrowserControls: FC = () => <section class={controlsStyle} i
        el('previous').textContent=previous?'Previous attempt failed at '+clock(previous.at)+' after '+duration(previous.elapsed)
          +': '+(errors[previous.error]||'Setup could not complete')+' ['+previous.error+'].':'';
         if(s.phase==='failed')el('progress').open=true;
-       timing();
+        timing();
+       meter(s,Date.now()/1000);
+       if(opening&&s.started_at&&frame===undefined)frame=requestAnimationFrame(animate);
+       if(!opening&&frame!==undefined){cancelAnimationFrame(frame);frame=undefined;lastFrame=undefined;}
       if (opening) timer = setTimeout(refresh, 5000);
     }
     async function refresh() {
@@ -233,7 +246,6 @@ export const SandboxBrowserControls: FC = () => <section class={controlsStyle} i
     window.addEventListener('focus', () => { if (!busy) refresh(); });
      setInterval(() => { if (ready && snapshot?.deadline <= Math.floor(Date.now()/1000)) refresh(); }, 30000);
       setInterval(timing,1000);
-      setInterval(()=>{if(snapshot?.phase==='opening')meter(snapshot,Date.now()/1000);},100);
     refresh();
   })();` }} />
 </section>;

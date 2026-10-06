@@ -53,6 +53,17 @@ estimated step progress with an exponential ease-out, capped at 97% of the
 unconfirmed step. CSS smooths updates and pulses the active segment; reduced
 motion disables both effects. All animation is local, with no extra polling.
 
+2026-10-06 progress revision: one continuous time-weighted bar replaces the five
+equal-width segment fills, retaining milestone labels. The owner's fresh run
+calibrates a 26-second approximate baseline (13 seconds installing OpenChamber).
+One animation-frame loop interpolates progress; each unconfirmed step caps at
+90% of its budget, then pulses while waiting. Duplicate step events keep the
+earliest timestamp. Reduced motion disables interpolation/pulsing; the loop stops
+when setup exits. Status polling remains five seconds. Background tabs can suspend
+animation frames; estimates reconcile on the next status response or visible frame.
+Regression checks exercise timing, waiting, duplicate events and cleanup, not only
+script syntax. The synthetic preview replays the owner's supplied timeline.
+
 2026-10-05 follow-up: Worker `f034aaac-1cd7-49ed-8f46-7901cb7439c8`
 pins plugin `6a393ed` with the renamed `bayleaf-sandboxes` skill. The dashboard
 has five progress milestones using the observed 26-second fresh setup plus one
@@ -234,6 +245,11 @@ dashboard workspace restart uses updated files; no unattended restart is promise
 
 The script registers the
 sandbox well-known connection and owner credential through authenticated V2 APIs.
+Bootstrap explicitly targets `/home/daytona/workspace` and waits for its plugin
+activation. The browser can discover that location before the connection is added;
+checking only the server's default `/home/daytona` can report ready before the
+workspace's remote configuration converges. Qualification covers this ordering
+and plugin discovery in a subsequently opened project.
 Local configuration contains installation policy, not a remote-config snapshot. A changed
 credential restarts the managed application so it cannot retain the old key in
 its environment. It does not provision backend keys or reset inference budgets.

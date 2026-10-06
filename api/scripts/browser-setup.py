@@ -349,9 +349,12 @@ def bootstrap(backend_port, operation, origin='https://api.bayleaf.dev/sandbox',
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     authorization = 'Basic ' + base64.b64encode(('opencode:'+password).encode()).decode()
     def api(path, body=None, method=None):
+        # OpenChamber can open this location before discovery finishes. Connect
+        # and wait here: the server default becoming ready is not workspace readiness.
         req = urllib.request.Request(f'http://127.0.0.1:{backend_port}'+path,
             data=json.dumps(body).encode() if body is not None else None,
-            headers={'Authorization':authorization, 'Content-Type':'application/json'}, method=method)
+            headers={'Authorization':authorization, 'Content-Type':'application/json',
+                'X-Opencode-Directory':str(Path.home() / 'workspace')}, method=method)
         with opener.open(req, timeout=5) as response:
             data = response.read(4*1024*1024)
             return json.loads(data) if data else None

@@ -171,6 +171,8 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual([req.get_method() for req in calls],['GET','GET','POST','GET'])
         self.assertEqual(json.loads(calls[2].data),{'url':'https://api.bayleaf.dev/sandbox'})
         self.assertTrue(all('sk-bayleaf' not in req.full_url for req in calls))
+        self.assertTrue(all(req.get_header('X-opencode-directory') == str(m.Path.home() / 'workspace')
+            for req in calls), 'bootstrap must verify the browser project, not the server default')
 
     def test_managed_environment_cannot_attach_to_an_unrelated_backend(self):
         (self.root/'credentials').mkdir()

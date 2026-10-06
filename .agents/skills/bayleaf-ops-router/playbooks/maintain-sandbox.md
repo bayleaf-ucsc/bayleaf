@@ -82,6 +82,26 @@ explicit operation on the user-owned installation. Preserve user files and histo
 
 ## Evidence and refinement log
 
+- 2026-10-06 (continuous progress): Recalibrated from the owner's 26-second fresh
+  timeline and replaced segment fills with one frame-interpolated bar. Added
+  executable timing/reduced-motion/duplicate-event/cleanup tests and a synthetic
+  timeline replay. In-app browser inspection verified rendering and changing fill;
+  the background tab suspends frame animation, so it does not qualify foreground
+  perceived smoothness. No live sandbox restart required for dashboard changes.
+  Deployed Worker `fae7e795-a991-4a47-a828-6532b54d4b43`; plugin pin unchanged.
+
+- 2026-10-06 (plugin diagnosis): Live owner sandbox had the current plugin active
+  at `/home/daytona`, but no BayLeaf integration/plugin at the seeded
+  `/home/daytona/workspace` location. Installer bootstrap and readiness calls omit
+  the location header, masking this mismatch. Qualify discovery at the actual
+  browser project, not just the server's default directory. No repair/restart performed.
+  The workspace subsequently converged without intervention: this is a readiness
+  race, not permanent location-scoped installation. Setup now connects/verifies
+  the seeded workspace explicitly; real V2 regression covers a pre-opened workspace,
+  distinct default directory and a subsequently opened project.
+  Deployed Worker `f7cce391-040f-464b-8aa7-aa9d49fb2d87`; owner will exercise
+  Restart interface. Plugin pin unchanged; no managed runtime restart by the agent.
+
 - 2026-10-06 (24-hour links): Removed extension/end-session
   API/UI controls and decoupled supervisor lifetime from link expiry; centralized
   medium-size creation with 1-hour idle stop and 24-hour stopped archive. Installer,

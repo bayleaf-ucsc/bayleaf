@@ -13,7 +13,7 @@ const root = await mkdtemp(join(tempBase, 'bayleaf-plugin-'));
 const plugin = fileURLToPath(new URL('../sandbox-plugin/index.mjs', import.meta.url));
 const binary = process.env.OPENCODE_TEST_BINARY || 'opencode';
 const headers = { authorization:'Basic '+Buffer.from('opencode:synthetic-password').toString('base64'),
-  'content-type':'application/json' };
+  'content-type':'application/json', 'X-Opencode-Directory':join(root,'workspace') };
 let config, webCalls = 0, configCalls = 0, child;
 const archives = new Map();
 const packageName = '@bayleaf-ucsc/sandbox-fixture';
@@ -122,7 +122,7 @@ try {
     }
   }
   child=spawn(binary,['serve','--hostname','127.0.0.1','--port',String(port)],{
-    cwd:join(root,'workspace'),env:{...process.env,HOME:root,
+    cwd:root,env:{...process.env,HOME:root,
       XDG_CONFIG_HOME:join(root,'config'),XDG_DATA_HOME:join(root,'data'),
       XDG_CACHE_HOME:join(root,'cache'),XDG_STATE_HOME:join(root,'state'),
       npm_config_registry:origin,
@@ -135,7 +135,7 @@ try {
   await writeFile(join(root,'credentials/owner-key'),'sk-bayleaf-synthetic');
   await writeFile(join(root,'credentials/opencode-password.json'),JSON.stringify('synthetic-password'));
   const operation='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-  await writeFile(join(root,'request.json'),JSON.stringify({operation,deadline:Math.floor(Date.now()/1000)+3600}));
+  await writeFile(join(root,'request.json'),JSON.stringify({operation,deadline:Math.floor(Date.now()/1000)+1200}));
   const installer=fileURLToPath(new URL('./browser-setup.py',import.meta.url));
   const bootstrap=async()=>{
     const process=spawn('python3',['-c',`
@@ -144,11 +144,14 @@ from pathlib import Path
 spec=importlib.util.spec_from_file_location('installer',${JSON.stringify(installer)})
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 m.ROOT=Path(${JSON.stringify(root)})
+m.Path.home=lambda:Path(${JSON.stringify(root)})
 m.bootstrap(${port},${JSON.stringify(operation)},${JSON.stringify(origin)})
 `],{stdio:['ignore','pipe','pipe']});
     let output='';process.stderr.on('data',d=>output+=d);
     const [code]=await once(process,'exit');assert.equal(code,0,output);
   };
+  // OpenChamber can discover the workspace before bootstrap connects BayLeaf.
+  assert.ok(!(await api('/api/plugin')).data.some(p=>p.id==='bayleaf.sandbox'));
   await bootstrap();await bootstrap();
   assert.equal((await api('/api/credential')).data.length,1,'repeated bootstrap duplicated credentials');
   assert.ok((await api('/api/plugin')).data.some(p=>p.id==='bayleaf.sandbox'&&p.state.status==='active'));
@@ -159,6 +162,13 @@ m.bootstrap(${port},${JSON.stringify(operation)},${JSON.stringify(origin)})
   assert.equal(skillData.find(s=>s.id==='bayleaf-fixture').content,'Revision a');
   assert.ok(!first.output.tools.some(t=>t.id==='bayleaf_fixture_new'));
   console.log('PASS real V2 bootstrap and tool/skill registration');
+  const another=join(root,'another-project');await mkdir(another);
+  await wait(async()=>{
+    const plugins=await fetch(endpoint+'/api/plugin',{
+      headers:{...headers,'X-Opencode-Directory':another},signal:AbortSignal.timeout(30000)}).then(r=>r.json());
+    return plugins.data.some(p=>p.id==='bayleaf.sandbox'&&p.state.status==='active');
+  });
+  console.log('PASS distinct server default, pre-opened workspace and new-project registration');
   const search=await api('/api/websearch',{query:'synthetic query'});
   assert.ok(JSON.stringify(search).includes('Synthetic evidence'));
   console.log('PASS real V2 BayLeaf search provider');
