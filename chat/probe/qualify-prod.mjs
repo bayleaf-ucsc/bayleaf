@@ -4,6 +4,20 @@ import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import assert from 'node:assert/strict';
 import { cleanupSynthetic } from './index.mjs';
+import { qualifySealedAttestation, qualifySealedHTTP } from './qualify-sealed.mjs';
+
+// Independent Sealed qualification never signs into Chat or inspects saved chats.
+if (process.argv.includes('--sealed-only') || process.argv.includes('--sealed-attestation-only')) {
+  try {
+    await qualifySealedAttestation();
+    if (process.argv.includes('--sealed-only')) await qualifySealedHTTP();
+    console.log(JSON.stringify({ qualification: 'passed', layer: 'sealed', completed_utc: new Date().toISOString() }));
+  } catch {
+    console.log(JSON.stringify({ qualification: 'failed', layer: 'sealed' }));
+    process.exitCode = 1;
+  }
+  process.exit(process.exitCode ?? 0);
+}
 
 const origin = 'https://chat.bayleaf.dev';
 const target = 'https://probe.bayleaf.dev';

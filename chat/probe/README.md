@@ -3,7 +3,7 @@
 A small Cloudflare Worker that makes a synthetic opening conversation measurable
 by UptimeRobot Free. No UI, historical storage, or alerting machinery of its own.
 
-**Deployment state (2026-09-09 UTC): all four layers are deployed at
+**Historical deployment snapshot (2026-09-09 UTC): all four layers were deployed at
 `probe.bayleaf.dev`; the new `/api/recommended` layer is credentialed and
 production-qualified.** Adam created its UptimeRobot monitor manually at a
 15-minute interval before deployment, so its initial history may include setup
@@ -127,6 +127,79 @@ prompt or completion content; the fixed synthetic bytes are consumed in memory.
 Transport/protocol/HTTP failures use `api_transport`, `api_protocol`, and
 `api_http_<status>`; SSE codes are shared.
 
+## Sealed backend inference (deployed, qualified, and publicly monitored)
+
+`GET` and `HEAD /api/sealed` are backend-only end-to-end checks in this same
+Worker, using the existing dedicated `probe@bayleaf.dev` BayLeaf key. Each fetches
+a fresh bundle through BayLeaf and verifies hardware, Sigstore provenance against
+pinned `tinfoilsh/confidential-model-router`, runtime measurements, certificate
+SAN/domain/attestation-key consistency, and HPKE key binding with
+`@tinfoilsh/verifier@1.2.2`. This does not verify the enclave certificate's
+signature, validity period, or TLS peer; hardware-attested HPKE is the
+end-to-end confidentiality boundary. `ehbp@0.3.3`
+encrypts once and decrypts the reply. No verification bypass, plaintext fallback,
+success caching, inference retry, or content/key persistence exists.
+
+The fixed target is `https://api.bayleaf.dev/sealed/v1/chat/completions`, model
+`glm-5-3` (drift-tested against `SEALED_RECOMMENDED_MODEL`), prompt `What's BayLeaf?`,
+streaming, `max_tokens: 2048`, and `chat_template_kwargs.reasoning_effort: low`.
+Green requires HTTP 200, the ciphertext relay marker, a valid EHBP nonce,
+authenticated decryption, nonempty visible answer, `finish_reason: stop`, `[DONE]`,
+and EOF. Attestation and encrypted/decrypted streams are size-bounded; gzip report
+expansion is capped at 64 KiB before SDK verification, preserving signed material. Synthetic
+plaintext stays in memory and never enters logs, metrics, or responses.
+
+The existing 25-second HTTP deadline and shared SSE validator apply, with
+independent limiter key `sealed`. HEAD waits through fresh work and bounded cleanup.
+It covers BayLeaf keyed auth, provider credentials, relay, Tinfoil attestation and
+inference. It does not isolate direct Tinfoil health or test Campus Pass, other
+models, tools, browser integrations, or factual correctness.
+
+On 2026-10-07 local workerd GET/HEAD passed at 3.7/1.9 seconds. Production version
+`2e27f1f2-aeb7-4c19-b127-d4bbc5304f5e` was deployed with approval and qualified:
+anonymous GET/HEAD returned 401; authenticated GET/HEAD returned 200 at Worker
+totals of 22.184/2.066 seconds. The first authenticated GET timed out at 25 seconds
+after headers but before any reply bytes. These are single observations, not a
+baseline or evidence that the deadline is generous enough for reliable alerts.
+The catalog check passed; the existing plaintext inference check also had one
+deadline failure followed by a 200 at 2.451 seconds. Monitor/alert checks remain
+pending. Adam confirmed monitor setup on 2026-10-07; the public status page lists
+**BayLeaf Sealed: Attested encrypted inference**, with the overall page currently
+operational and Sealed availability shown as 96.542%. This confirms public
+inclusion and recorded history, not the cause of failures or alert delivery.
+Controlled failure/recovery notification verification remains pending.
+`node qualify-prod.mjs --sealed-attestation-only` verifies a live bundle
+and five mutations without inference. `--sealed-only` qualifies the deployed route
+using the existing probe password, without Chat sign-in. Against a separately
+started local Worker on port 8796, run `PROBE_PASSWORD=... node qualify.mjs
+--sealed-only`; the Worker must use the dedicated probe key, never a human key.
+
+After deployment, Adam adds an ordinary UptimeRobot HTTP(S) monitor at
+`https://probe.bayleaf.dev/api/sealed`, named **BayLeaf Sealed: Attested encrypted
+inference**, with HTTP Basic username `probe`, existing monitoring password,
+15-minute initial interval, 30-second timeout, and existing email alert contact.
+That adds about 96 Sealed requests/day before retries; the 500/day guardrail is
+not a dollar cap. Verify samples, public-page inclusion and failure/recovery alerts
+separately. `worker.mjs` exports only the runtime handler; test exports stay in
+`index.mjs`. Crypto dependency upgrades need deliberate review and requalification.
+
+On 2026-10-08 the unchanged Sealed implementation and model refresh were reviewed
+and redeployed: API version `09a80c12-fb90-4136-a008-649cc7cb6545`, probe version
+`17734ff7-9ea4-47f1-ac31-0bdff4d2bef3`. All 46 probe tests, API type checking,
+discovery/dashboard regressions, and both dry-run bundles passed. Live attestation
+and five mutation checks passed, and discovery advertised all five priced models
+with GLM 5.3 first. Encrypted ordinary and full tool-use canaries passed, but the
+ordinary response took 108.2 seconds. The first probe GET failed at its 25-second
+deadline awaiting the first reply byte; a subsequent GET/HEAD pair passed at
+3.179/3.087 seconds Worker totals; a second pair passed at 3.022/2.302 seconds.
+Catalog, plaintext API, Chat HTTP, and direct
+OpenRouter checks also passed. These observations qualify functionality, not
+latency reliability; the timeout remains in the record. No deadline was relaxed.
+Browser qualification and alert delivery were not tested. The documented browser
+JWT expiry has passed and needs separate renewal. A current dependency audit flags
+the existing local sharp/Wrangler toolchain (GHSA-wq5f-xc86-pv6w); the new verifier
+and EHBP dependencies have no audit findings. ✨
+
 ## Metrics v2
 
 All elapsed measurements use the Worker's monotonic `performance.now()`, not
@@ -241,7 +314,8 @@ deliberate rather than filled with misleading derived numbers.
 - Maximum received stream: 1 MiB; maximum individual SSE event: 64 Ki characters.
 - Cloudflare's rate-limit binding permits 6 authenticated checks/minute **per
   route per Cloudflare location**, not globally. Fixed independent keys are
-  `owui`, `browser`, `openrouter`, and `api` (up to 24 total/minute/location).
+  `owui`, `browser`, `openrouter`, `api`, `sealed`, and `catalog` (up to 36
+  total/minute/location).
   Chat's ordinary per-user limits and the API pseudo-user's provider-side spend
   cap remain enabled. No exemption from campus rate limits and no internal
   inference retry.

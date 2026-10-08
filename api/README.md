@@ -127,8 +127,25 @@ Then configure `OIDC_ISSUER` and related vars in `wrangler.jsonc`, and set `OIDC
 | `DAYTONA_DEPLOYMENT_LABEL` | Label prefix for sandbox tagging. Shared with chat.bayleaf.dev's Lathe so a user has one sandbox across both services (issue #14). | `chat.bayleaf.dev` |
 | `SEALED_ENABLED` | Master kill-switch for the Sealed lane. Must be exactly `"true"`; anything else 503s all of `/sealed/*`. | `true` |
 | `SEALED_RPD_LIMIT` | Per-user daily request guardrail for keyed Sealed traffic | `500` |
-| `SEALED_RECOMMENDED_MODEL` | Recommended Sealed model (bare Tinfoil ID) | `glm-5-3-flash` |
-| `SEALED_CURATED_MODELS` | Comma-separated companion Sealed models (bare Tinfoil IDs) | `glm-5-3,deepseek-v4-flash,gemma4-31b` |
+| `SEALED_RECOMMENDED_MODEL` | Recommended Sealed model (bare Tinfoil ID) | `glm-5-3` |
+| `SEALED_CURATED_MODELS` | Comma-separated companion Sealed models (bare Tinfoil IDs) | `deepseek-v4-1-flash,kimi-k3,gemma4-31b,gpt-oss-120b` |
+
+Sealed curation targets coding-agent use without treating every model as interchangeable:
+GLM 5.3 is the text-only recommendation; DeepSeek V4.1 Flash is the cheaper,
+vision-capable **experimental** alternative; Kimi K3 is a premium multimodal
+option; Gemma 4 31B offers economical vision; GPT-OSS 120B offers the cheapest
+text/reasoning option in this selection. GLM 5.3 Flash is deprecated upstream
+with a catalog deprecation date of 2026-10-09.
+
+OpenCode discovery intersects the explicit curated IDs with the live catalog,
+omits deprecated or non-chat entries, and includes available per-million-token
+pricing. It never silently substitutes another default if the recommendation
+disappears. This is discovery, not an inference allowlist: the relay cannot
+inspect encrypted model IDs. GLM 5.3 costs substantially more per token than
+Flash and does not accept images; the 500-request guardrail is **not a dollar cap**.
+For an encrypted ordinary-response and full tool-use canary, export
+`BAYLEAF_API_KEY` and run `uv run --script scripts/sealed/canary.py`;
+`SEALED_CANARY_MODEL` optionally selects another bare model ID.
 
 ### Secrets
 

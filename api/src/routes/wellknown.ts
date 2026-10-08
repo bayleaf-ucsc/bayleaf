@@ -370,6 +370,14 @@ interface OpenCodeModelEntry {
 interface SealedCatalogModel {
   id?: unknown;
   name?: unknown;
+  deprecated?: unknown;
+  type?: unknown;
+  endpoints?: unknown;
+  pricing?: {
+    inputTokenPricePer1M?: unknown;
+    outputTokenPricePer1M?: unknown;
+    cachedInputTokenPricePer1M?: unknown;
+  };
 }
 
 /** Build the configured Sealed model slice from BayLeaf's live public catalog. */
@@ -384,15 +392,43 @@ async function buildSealedModelEntries(
 
   const catalog = await fetchSealedModels(env) as SealedCatalogModel[] | null;
   if (!catalog) return {};
-  const names = new Map(
+  return curatedSealedEntries(catalog, order);
+}
+
+/** Curation is discovery, not enforcement: encrypted model IDs stay opaque. */
+export function curatedSealedEntries(
+  catalog: SealedCatalogModel[],
+  order: string[],
+): Record<string, OpenCodeModelEntry> {
+  const models = new Map(
     catalog
-      .filter((model): model is { id: string; name?: unknown } => typeof model.id === 'string')
-      .map((model) => [model.id, typeof model.name === 'string' ? model.name : model.id]),
+      .filter((model) => typeof model.id === 'string' && model.deprecated !== true
+        && model.type === 'chat' && Array.isArray(model.endpoints)
+        && model.endpoints.includes('/v1/chat/completions'))
+      .map((model) => [model.id as string, model]),
   );
 
-  return Object.fromEntries(
-    order.filter((id) => names.has(id)).map((id) => [id, { name: names.get(id)! }]),
-  );
+  const entries: Record<string, OpenCodeModelEntry> = {};
+  const price = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0;
+  for (const id of order) {
+    const model = models.get(id);
+    if (!model) continue;
+    const entry: OpenCodeModelEntry = { name: typeof model.name === 'string' ? model.name : id };
+    const pricing = model.pricing;
+    if (pricing && price(pricing.inputTokenPricePer1M) && price(pricing.outputTokenPricePer1M)) {
+      entry.cost = {
+        input: pricing.inputTokenPricePer1M,
+        output: pricing.outputTokenPricePer1M,
+        cacheRead: price(pricing.cachedInputTokenPricePer1M)
+          ? pricing.cachedInputTokenPricePer1M : pricing.inputTokenPricePer1M,
+        // No discounted cache-write rate is advertised by Tinfoil.
+        cacheWrite: pricing.inputTokenPricePer1M,
+      };
+    }
+    entries[id] = entry;
+  }
+  return entries;
 }
 
 /**

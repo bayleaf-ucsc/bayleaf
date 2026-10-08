@@ -4,6 +4,20 @@ import { readFile, writeFile, unlink } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { cleanupSynthetic, probeDetail, metrics } from './index.mjs';
+import { qualifySealedAttestation, qualifySealedHTTP } from './qualify-sealed.mjs';
+
+// Use with an independently started local Worker, avoiding unrelated Chat work.
+if (process.argv.includes('--sealed-only')) {
+  try {
+    await qualifySealedAttestation();
+    await qualifySealedHTTP('http://127.0.0.1:8796', process.env.PROBE_PASSWORD);
+    console.log(JSON.stringify({ qualification: 'passed', layer: 'sealed', worker_location: 'local' }));
+  } catch {
+    console.log(JSON.stringify({ qualification: 'failed', layer: 'sealed', worker_location: 'local' }));
+    process.exitCode = 1;
+  }
+  process.exit(process.exitCode ?? 0);
+}
 
 const origin = 'https://chat.bayleaf.dev';
 const devVars = new URL('.dev.vars', import.meta.url);

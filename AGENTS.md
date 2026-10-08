@@ -160,8 +160,11 @@ returns content-free diagnostics and creates no metrics store. Browser probes
 temporarily persist only marked synthetic chats and must verify their deletion.
 Detailed phase timings are available from authenticated probe responses, not
 assumed to be archived by UptimeRobot. Verify monitor configuration and alert
-delivery separately from endpoint health. These probes do not test CILogon or
-BayLeaf Sealed; the keyed API layer does not test Campus Pass or the API's
+delivery separately from endpoint health. The deployed probes do not test CILogon.
+A Sealed backend probe at `/api/sealed` is deployed and production-qualified
+(2026-10-07), with public monitoring confirmed and alert delivery unverified;
+see `chat/probe/README.md`.
+The keyed API layer does not test Campus Pass or the API's
 non-inference facets. The browser's worst-case execution currently exceeds
 UptimeRobot's maximum timeout; see the probe guide before enabling alerts.
 

@@ -1,7 +1,7 @@
 {
   "name": "bayleaf-probe",
   "account_id": "1a49fb69291d42e23c4ed4dcffce5bbc",
-  "main": "index.mjs",
+  "main": "worker.mjs",
   "compatibility_date": "2026-09-07",
   "compatibility_flags": ["nodejs_compat"],
   "browser": { "binding": "BROWSER", "remote": true },

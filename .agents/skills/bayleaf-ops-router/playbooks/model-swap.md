@@ -268,6 +268,25 @@ available whenever Tinfoil still serves the model.
 
 ## Refinement log
 
+- 2026-10-08: reviewed and redeployed the pending Sealed refresh before recording
+  it in Git. Discovery and encrypted ordinary/tool-use canaries passed; an ordinary
+  response took 108.2 seconds. Successful later probes do not erase this latency
+  observation or establish a reliable monitoring deadline.
+
+- 2026-10-07: deployed a Sealed refresh for GLM 5.3 Flash's catalog deprecation
+  date (2026-10-09). GLM 5.3 passed default-parameter encrypted
+  ordinary-response and full tool-result canaries plus an isolated V2 read-tool
+  run using opencode-tinfoil@0.3.0. Discovery previously used only names, ignoring
+  deprecation and pricing; added deprecated/non-chat exclusion and price metadata.
+  The probe's curated-list mirrors must move with Sealed too. TinfoilAI does not
+  accept OpenAI's max_retries constructor argument; the new canary omits it.
+  API version d2cd8a38-cddb-4789-b9ab-e97685e3f740 and probe version
+  00184ac7-48c2-4a4d-8835-9a62e58ded11 deployed with approval. Live discovery
+  confirmed recommendation-first ordering, five priced entries, and EHBP markers;
+  the catalog probe reported no missing/deprecated entries. Repeated encrypted
+  canaries and an isolated OpenCode run using the fetched production config passed.
+  Python urllib received edge 403s on metadata GETs; curl succeeded unchanged.
+
 - 2026-09-07: the new non-admin availability probe found Basic invocation failing
   despite a public preset grant and successful admin use. The running 0.11.3
   code requires a model-table row and read grant for the underlying model too;

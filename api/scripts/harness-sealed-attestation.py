@@ -152,7 +152,7 @@ if os.environ.get("SEALED_OPENCODE") == "1":
                         "transport": "ehbp",
                     },
                 },
-                "models": {"glm-5-3-flash": {"name": "GLM-5.3 Flash"}},
+                "models": {"glm-5-3": {"name": "GLM-5.3"}},
             },
         },
     }
@@ -162,7 +162,7 @@ if os.environ.get("SEALED_OPENCODE") == "1":
     canary = "TAMPERED-ATTESTATION-MUST-NOT-RUN"
     try:
         run = subprocess.run(
-            ["opencode", "run", "-m", "bayleaf-sealed/glm-5-3-flash", canary],
+            ["opencode", "run", "-m", "bayleaf-sealed/glm-5-3", canary],
             env=opencode_env,
             capture_output=True,
             text=True,

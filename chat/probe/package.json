@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.4.0",
+    "@tinfoilsh/verifier": "1.2.2",
+    "ehbp": "0.3.3",
     "sharp": "^0.35.4"
   },
   "overrides": {

@@ -1224,6 +1224,13 @@ UptimeRobot monitor manually at a 15-minute interval before deployment; initial
 green samples and alert delivery remain to be verified. See the probe playbook
 and README.
 
+A Sealed backend HTTP check at `/api/sealed` is deployed and production-qualified
+(2026-10-07), with UptimeRobot setup confirmed by Adam and public inclusion
+observed; alert delivery remains unverified. It uses the dedicated BayLeaf probe identity,
+verifies fresh Tinfoil attestation, encrypts a fixed GLM 5.3 request through the
+relay, then decrypts and validates the complete SSE answer. No Chat/browser
+dependency. See `probe/README.md` for boundaries and deployment/monitor gates. ✨
+
 API keys were enabled for this on 2026-09-07. Ordinary default permissions and
 existing group permissions remain unchanged; only the dedicated operational
 group received `features.api_keys`. An instance-wide API-key endpoint allowlist

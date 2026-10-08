@@ -1,18 +1,159 @@
 import puppeteer from '@cloudflare/puppeteer';
+import { Verifier } from '@tinfoilsh/verifier';
+import { Identity } from 'ehbp';
 
 const MAX_BYTES = 1024 * 1024;
 const MAX_EVENT_CHARS = 64 * 1024;
 export const DIRECT_MODEL = 'z-ai/glm-5.3-flash';
 export const API_MODEL = 'openrouter:z-ai/glm-5.3-flash';
+export const SEALED_MODEL = 'glm-5-3';
+const SEALED_BASE = 'https://api.bayleaf.dev/sealed';
+const SEALED_REPO = 'tinfoilsh/confidential-model-router';
+const MAX_REPORT_BYTES = 64 * 1024;
+
+/** Preflight gzip expansion before the SDK repeats decompression internally.
+ * Keep the original signed bundle unchanged; discard expanded bytes immediately.
+ */
+export async function validateSealedAttestationSize(bundle, signal) {
+  const body = bundle?.enclaveAttestationReport?.body;
+  if (typeof body !== 'string' || body.length > MAX_BYTES) throw new Error('report');
+  const compressed = Uint8Array.from(atob(body), char => char.charCodeAt(0));
+  const reader = new Response(compressed).body.pipeThrough(new DecompressionStream('gzip')).getReader();
+  let bytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await bounded(() => reader.read(), signal);
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > MAX_REPORT_BYTES) throw new Error('report_expansion');
+    }
+  } finally {
+    try { await bounded(() => reader.cancel(), AbortSignal.timeout(1000)); }
+    finally { reader.releaseLock(); }
+  }
+}
+
+/** One fresh verification and one EHBP request. No plaintext fallback or retries. */
+export async function probeSealed(apiKey, signal, {
+  fetcher = fetch, timing = metrics(),
+  verifier = new Verifier({ configRepo: SEALED_REPO }), identity = Identity,
+} = {}) {
+  let stage = 'attestation_fetch', response;
+  try {
+    const bundle = await timing.phase(stage, async () => {
+      response = await bounded(() => fetcher(`${SEALED_BASE}/attestation`, {
+        method: 'GET', redirect: 'manual', signal,
+      }), signal);
+      if (response.status !== 200) throw new Error('attestation');
+      // Untrusted attestation material is bounded before cryptographic parsing.
+      const reader = response.body.getReader();
+      const chunks = [];
+      let length = 0;
+      try {
+        while (true) {
+          const { done, value } = await bounded(() => reader.read(), signal);
+          if (done) break;
+          length += value.byteLength;
+          if (length > MAX_BYTES) throw new Error('limit');
+          chunks.push(value);
+        }
+      } finally {
+        try { await bounded(() => reader.cancel(), AbortSignal.timeout(1000)); }
+        finally { reader.releaseLock(); }
+      }
+      response = null;
+      const bytes = new Uint8Array(length);
+      let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+      return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+    });
+    stage = 'attestation_verify';
+    const attestation = await timing.phase(stage, async () => {
+      await validateSealedAttestationSize(bundle, signal);
+      return bounded(() => verifier.verifyBundle(bundle), signal);
+    });
+    const verified = verifier.getVerificationDocument();
+    if (verified?.securityVerified !== true || !/^[0-9a-f]{64}$/i.test(attestation.hpkePublicKey)) {
+      throw new Error('verification');
+    }
+    // The enclave destination is derived from verified material, never caller input.
+    const enclave = new URL(`https://${verified.enclaveHost}`);
+    if (enclave.hostname !== verified.enclaveHost || !enclave.hostname.endsWith('.tinfoil.sh')
+      || enclave.port || enclave.username || enclave.password || enclave.pathname !== '/') {
+      throw new Error('destination');
+    }
+    stage = 'request_encrypt';
+    const { server, encrypted } = await timing.phase(stage, () => bounded(async () => {
+      const server = await identity.fromPublicKeyHex(attestation.hpkePublicKey);
+      const encrypted = await server.encryptRequestWithContext(new Request(`${SEALED_BASE}/v1/chat/completions`, {
+        method: 'POST', redirect: 'manual', signal,
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json',
+          Accept: 'text/event-stream', 'X-Tinfoil-Enclave-Url': enclave.origin },
+        body: JSON.stringify({ model: SEALED_MODEL, messages: [{ role: 'user', content: "What's BayLeaf?" }],
+          stream: true, max_tokens: 2048, chat_template_kwargs: { reasoning_effort: 'low' } }),
+      }));
+      if (!encrypted.context || !/^[0-9a-f]{64}$/i.test(encrypted.request.headers.get('Ehbp-Encapsulated-Key') ?? '')) {
+        throw new Error('encryption');
+      }
+      return { server, encrypted };
+    }, signal));
+    stage = 'sealed_transport';
+    response = await timing.phase('response_headers', () => bounded(() => {
+      timing.mark('request_start');
+      return fetcher(encrypted.request);
+    }, signal));
+    timing.mark('response_headers');
+    stage = 'sealed_protocol';
+    timing.begin('header_validation');
+    if (response.status !== 200) {
+      const result = `sealed_http_${response.status}`;
+      timing.fail();
+      timing.end();
+      await timing.phase('stream_cleanup', () => bounded(() => response.body?.cancel(), AbortSignal.timeout(1000)));
+      response = null;
+      return result;
+    }
+    if (!/^[0-9a-f]{64}$/i.test(response.headers.get('Ehbp-Response-Nonce') ?? '')
+      || response.headers.get('X-BayLeaf-Sealed-Relay') !== 'ciphertext'
+      || response.headers.get('content-type')?.split(';')[0].trim() !== 'text/event-stream') {
+      throw new Error('protocol');
+    }
+    timing.end();
+    stage = 'response_decrypt';
+    // Bound ciphertext before the SDK buffers/decrypts length-prefixed frames.
+    let encryptedBytes = 0;
+    response = new Response(response.body.pipeThrough(new TransformStream({
+      transform(chunk, controller) {
+        encryptedBytes += chunk.byteLength;
+        if (encryptedBytes > MAX_BYTES) throw new Error('limit');
+        controller.enqueue(chunk);
+      },
+    })), { status: response.status, headers: response.headers });
+    const decrypted = await timing.phase(stage, () => bounded(
+      () => server.decryptResponseWithContext(response, encrypted.context), signal));
+    stage = 'sealed_stream';
+    // checkStream owns decrypted-stream cancellation, which propagates to ciphertext.
+    response = null;
+    return await checkStream(decrypted.body, { timing, signal }) ? 'ok' : 'sealed_stream_incomplete';
+  } catch {
+    timing.fail();
+    return `sealed_${stage.replace(/^sealed_/, '')}`;
+  } finally {
+    if (response?.body && !response.body.locked) {
+      try { await timing.phase('stream_cleanup', () => bounded(() => response.body.cancel(), AbortSignal.timeout(1000))); }
+      catch { /* Original failure remains authoritative. */ }
+    }
+  }
+}
 
 // Checked-in mirrors of the BayLeaf API's curated model lists (api/wrangler.jsonc).
 // index.test.mjs asserts parity with that file. Absence from a provider's live
 // /v1/models listing proves a curated entry no longer resolves; Tinfoil also
 // publishes deprecated:true ahead of removal, reported as metadata, not failure.
-export const CATALOG_BASE = { openrouter: 'z-ai/glm-5.3-flash', tinfoil: 'glm-5-3-flash' };
+export const CATALOG_BASE = { openrouter: 'z-ai/glm-5.3-flash', tinfoil: 'glm-5-3' };
 export const CURATED_LISTS = {
   openrouter: ['qwen/qwen3.8-27b', 'deepseek/deepseek-v4.1-flash'],
-  tinfoil: ['glm-5-3', 'deepseek-v4-1-flash', 'kimi-k3', 'gemma4-31b'],
+  tinfoil: ['deepseek-v4-1-flash', 'kimi-k3', 'gemma4-31b', 'gpt-oss-120b'],
 };
 export const CATALOG_URL = {
   openrouter: 'https://openrouter.ai/api/v1/models',
@@ -579,7 +720,7 @@ export default {
     const url = new URL(request.url);
     const layer = { '/chat/basic': 'owui', '/chat/basic/e2e': 'browser',
       '/openrouter/basic': 'openrouter', '/api/recommended': 'api',
-      '/models/curated': 'catalog' }[url.pathname];
+      '/models/curated': 'catalog', '/api/sealed': 'sealed' }[url.pathname];
     if (!layer || url.search) return respond(404, 'Not found');
     if (!['HEAD', 'GET'].includes(request.method)) {
       return respond(405, 'Method not allowed', { Allow: 'GET, HEAD' });
@@ -623,7 +764,7 @@ export default {
     }
     if ((layer === 'owui' && !env.OWUI_API_KEY) ||
         (layer === 'openrouter' && !env.OPENROUTER_API_KEY) ||
-        (layer === 'api' && !env.BAYLEAF_API_KEY) ||
+        ((layer === 'api' || layer === 'sealed') && !env.BAYLEAF_API_KEY) ||
         (layer === 'browser' && (!env.OWUI_E2E_TOKEN || !env.BROWSER))) {      timing.fail();
       return finish(503, 'not_configured');
     }
@@ -661,6 +802,13 @@ export default {
         const outcome = await probeCatalog(controller.signal, fetch, timing);
         const result = timedOut ? 'deadline' : request.signal.aborted ? 'client_aborted' : outcome.result;
         return finish(result === 'ok' ? 200 : 503, result, outcome);
+      }
+      if (layer === 'sealed') {
+        const running = probeSealed(env.BAYLEAF_API_KEY, controller.signal, { timing });
+        ctx?.waitUntil(running.catch(() => {}));
+        const outcome = await running;
+        const result = timedOut ? 'deadline' : request.signal.aborted ? 'client_aborted' : outcome;
+        return finish(result === 'ok' ? 200 : 503, result);
       }
       const running = probeDetail(layer === 'openrouter' ? env.OPENROUTER_API_KEY
         : layer === 'api' ? env.BAYLEAF_API_KEY : env.OWUI_API_KEY,

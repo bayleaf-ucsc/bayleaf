@@ -22,6 +22,7 @@ The BayLeaf API layer uses a distinct credential for that same pseudo-user.
 | `/chat/basic/e2e` | Remote Cloudflare browser loads Basic, submits through the UI, renders a completed answer, verifies its persisted record, closes the browser, and deletes the exact synthetic chat | Campus login: an ordinary session JWT is injected rather than exercising CILogon |
 | `/openrouter/basic` | Direct OpenRouter streaming inference on `z-ai/glm-5.3-flash`, explicitly restricted to ZDR providers, using the shared SSE validator | OWUI, its credentials, or Basic's system prompt and injected context |
 | `/api/recommended` | Keyed BayLeaf API auth and D1 resolution, per-user OpenRouter credential acquisition, open-weight enforcement, explicit ZDR routing, and complete SSE inference on the namespaced recommended model | Campus Pass, Sealed, sandbox/web routes, recommendation discovery, or factual correctness |
+| `/api/sealed` | Fresh hardware/source verification, keyed BayLeaf auth, EHBP relay, authenticated decryption, and complete SSE inference on the Sealed recommendation | Direct-provider isolation, Campus Pass, other models, tools, browser integrations, or factual correctness |
 | `/models/curated` | Both curated model lists (api/wrangler.jsonc `RECOMMENDED_MODEL` + `OPENCODE_CURATED_MODELS` on OpenRouter, `SEALED_RECOMMENDED_MODEL` + `SEALED_CURATED_MODELS` on Tinfoil) still resolve against each provider's live public `/v1/models` catalog | Provider deprecation notices before removal (reported 200 with `deprecated` in the JSON); inference health of listed models; other API models |
 
 Browser failure with HTTP success points toward the browser/session/persistence
@@ -39,6 +40,14 @@ as `deprecated: ["tinfoil:<id>"]`, while HTTP stays 200 — groom proactively on
 that signal; absence (503) means the slug no longer resolves at all.
 
 ## Measurement Snapshot (2026-09-08)
+
+Sealed was deployed and GET/HEAD-qualified on 2026-10-07 as version
+`2e27f1f2-aeb7-4c19-b127-d4bbc5304f5e`: Worker totals 22.184/2.066 seconds,
+anonymous requests denied. An initial GET timed out before first reply bytes at
+25 seconds. These observations do not establish a latency baseline or reliable
+alert threshold. Adam confirmed UptimeRobot setup on 2026-10-07; public inclusion
+and recorded history were observed. Failure causes and alert delivery remain
+unverified; see README. ✨
 
 Production qualification at 19:38-19:40 UTC, version
 `b30214e8-7ae7-4a33-916c-c7b006b1fbe5`. These are concrete examples of current
@@ -124,6 +133,11 @@ require verification.
   bounded budgets after cancellation. Never delete unmarked or unrelated chats.
 - Session injection skips campus login; do not claim CILogon coverage.
 - Fixed upstream, model, and prompt. No caller-supplied inference parameters.
+- Sealed uses pinned verifier/EHBP libraries, the dedicated `BAYLEAF_API_KEY`,
+  25-second HTTP deadline, and independent limiter key `sealed`. Never bypass
+  verification or downgrade/retry inference. No content/key persistence. Review
+  crypto upgrades and rerun mutation/inference checks. `worker.mjs` exports only
+  the default runtime handler; test helpers/constants stay in `index.mjs`.
 - HEAD must do the same work as GET and withhold headers until completion.
 - Never turn partial output, rate limiting, or a cached result into success.
 - No response contents, credentials, or raw errors in logs or metric responses.

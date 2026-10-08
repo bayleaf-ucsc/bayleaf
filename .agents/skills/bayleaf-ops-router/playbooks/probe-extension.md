@@ -118,6 +118,33 @@ files. Do not commit or push without explicit approval.
 
 ## Refinement Log
 
+- 2026-10-08: redeploy/review passed 46 tests and live mutation checks. The first
+  Sealed GET hit the unchanged 25-second first-byte deadline; the next GET/HEAD
+  passed. Record failures alongside passes, and separate the expired browser JWT
+  and existing local-toolchain audit findings from Sealed qualification.
+
+- 2026-10-07: Sealed backend route is deployed and qualified, monitoring pending. Use the
+  pinned verifier and EHBP primitives rather than high-level SDK retries/cache
+  persistence; reuse the SSE validator after decryption. Real attestation and five
+  mutation checks passed; dedicated-key workerd GET/HEAD passed after approved
+  first-use provisioning. Local secret backup lacked the probe BayLeaf key, so
+  read only the existing active probe row from D1 into subprocess memory.
+  A default-only `worker.mjs` entry fixes local workerd rejection of string
+  constants exported for tests. Independent `--sealed-only` qualification avoids
+  unrelated Chat sign-in/cleanup; document each state's separate approval gate.
+  GPT-6 Astra review found that SDK gzip expansion bypassed the wire-size limit;
+  preflight streaming expansion is now capped at 64 KiB without changing signed
+  material. Clarified certificate SAN/domain/key consistency (not TLS peer or
+  certificate-signature authentication) and preserved HTTP failed-phase diagnostics.
+  Astra re-review cleared the fixes (46 tests). Approved deployment version
+  2e27f1f2-aeb7-4c19-b127-d4bbc5304f5e passed anonymous denial and authenticated
+  GET/HEAD (22.184/2.066s Worker totals), after an initial 25s first-byte stall.
+  Do not infer alert reliability from a later pass; manual monitor setup remains
+  a human gate. Existing plaintext probe also stalled once then passed (2.451s).
+  Adam subsequently confirmed monitor setup; public status inclusion/history was
+  observed (Sealed 96.542%, page currently operational). Failure attribution and
+  controlled alert delivery remain unverified.
+
 - 2026-09-09: First run used `probe@bayleaf.dev` across services with distinct
   credentials and a `$1/day` API cap. Adam created the 15-minute UptimeRobot
   monitor before deployment, so setup failures can appear in its initial history.
