@@ -48,7 +48,7 @@ domain per [`landing/CNAME`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/l
   [§ 2](#2-out-of-scope-neighbors-and-platform-acrs)).
 - [`landing/style.css`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/landing/style.css):
   stylesheet covering layout, typography, the button-styled
-  link system (`.service-link` with `.primary-action` and `.secondary`
+  link system (`.service-link` with `.green` and `.secondary`
   modifiers), the responsive `.lecture-embed` video wrapper, the
   generated recent-post list, and `:focus-visible` indicators. A
   GitHub Actions build replaces a source fallback with five escaped
@@ -143,6 +143,15 @@ Chromium via [`uvx rodney`](https://github.com/simonw/rodney) v0.4.0
 [`Emulation.setDeviceMetricsOverride`](https://chromedevtools.github.io/devtools-protocol/tot/Emulation/#method-setDeviceMetricsOverride)
 for viewport control); the 2026-09-09 pass used OpenChamber's browser
 panel at mobile (390 x 844) and desktop (1440 x 900) viewports.
+
+**2026-10-09 service-row revision (local, not deployed).** Added Sandboxes
+between Chat and API; Chat and Sandboxes use green, API blue. The palette
+is unchanged: recomputed white-on-green contrast is 8.14:1 and
+white-on-blue is 7.61:1. Local browser snapshots and computed styles
+confirmed link order and colors at mobile and desktop sizes. Screenshot
+capture failed, so visual appearance, 320 px reflow, and keyboard focus
+still need verification for this revision. Earlier layout measurements
+below describe their dated revisions.
 
 **2026-09-16 post-migration pass.** Run against the deployed
 `landing/`-artifact site at [bayleaf.dev](https://bayleaf.dev) (its

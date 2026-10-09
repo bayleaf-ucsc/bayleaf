@@ -34,16 +34,15 @@ a { color: #2a5298; }
 /*
  * Button-styled link system.
  *
- *   .service-link                  : default blue primary (#2a5298, 7.61:1)
- *   .service-link.primary-action   : green for primary calls-to-action
- *                                    (#1e5a3a, 8.14:1); used for BayLeaf API on
- *                                    landing and the direct-email button on
- *                                    support.
- *   .service-link.secondary        : dark-gray, smaller supplementary nav
- *                                    (#555, 7.46:1); used for the landing's
- *                                    second-row Blog/Use Cases/Source/Support
- *                                    links, which are pages about the service
- *                                    rather than the two production services.
+ *   .service-link            : default blue (#2a5298, 7.61:1); used for BayLeaf
+ *                              API on the landing.
+ *   .service-link.green      : green (#1e5a3a, 8.14:1); used for BayLeaf Chat
+ *                              and BayLeaf Sandboxes on the landing.
+ *   .service-link.secondary  : dark-gray, smaller supplementary nav
+ *                              (#555, 7.46:1); used for the landing's
+ *                              second-row Blog/Use Cases/Source/Support
+ *                              links, which are pages about the service
+ *                              rather than the production services.
  */
 .service-link {
     display: inline-block;
@@ -55,8 +54,8 @@ a { color: #2a5298; }
     font-weight: 500;
 }
 .service-link:hover { background: #1e3a6e; }
-.service-link.primary-action { background: #1e5a3a; }
-.service-link.primary-action:hover { background: #164a2e; }
+.service-link.green { background: #1e5a3a; }
+.service-link.green:hover { background: #164a2e; }
 .service-link.secondary {
     background: #555;
     padding: 0.4rem 0.9rem;
