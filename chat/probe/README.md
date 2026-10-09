@@ -437,8 +437,8 @@ disabled observability, and restricted API credential were preserved.
 The two additional Worker secrets were installed via an internal stdin pipe:
 `OWUI_E2E_TOKEN` from ordinary sign-in and the existing approved inference-only
 `OPENROUTER_API_KEY`. No signing secret, admin JWT, provisioning key, or new key
-was used. The **deployed** session expires **2026-10-08 19:38:04 UTC**. Renew it
-before then for continued browser operation; automatic renewal is not installed.
+was used. The **original** session expired **2026-10-08 19:38:04 UTC** (replaced
+on 2026-10-09; see Credentials). Automatic renewal is not installed.
 The harness signs in separately for cleanup observation, so its own displayed
 expiry does not replace the deployed token's expiry.
 
@@ -575,6 +575,31 @@ restricted API key. Never give it an admin JWT, bootstrap password, or server
 JWT-signing secret. Ordinary sign-in currently defaults to a 30-day session;
 automatic renewal/rotation for ongoing browser monitoring is not implemented or
 scheduled. Manual renewal is available through `qualify-prod.mjs --install-secrets`.
+
+**Browser credential renewal (2026-10-09).** The deployed JWT now expires
+**2027-10-09 19:56:27 UTC**. Before renewal, the browser route returned 503 /
+`browser_identity` before browser launch, while Chat HTTP returned 200 / `ok`.
+The dedicated account was verified through ordinary sign-in, including its
+non-admin role, expected ID, and matching restricted API key. An ephemeral local
+PTY drove `doctl apps console f1a1e758-62e9-4e99-90cb-212cab12958d open-webui
+--context bayleaf`; inside Chat, Python signed an HS256 JWT with the existing
+`WEBUI_SECRET_KEY`, verified user ID, fresh `iat` and `jti`, and a 365-day `exp`.
+Shell history and echo were disabled before minting. Only the resulting JWT left
+the container, was verified against Chat's authenticated identity endpoint, and
+was piped to Wrangler to replace only `OWUI_E2E_TOKEN`. The signing key was never
+exported or installed in the Worker; no admin token, global session-lifetime
+change, restart, or code deployment was needed. No token was printed in session
+output or written to a local secret file.
+
+Production GET and HEAD then returned 200 / `ok` with Worker totals of
+34.595 / 21.478 seconds. Rendering and persistence passed, close and exact-chat
+cleanup were confirmed, and independent authenticated list checks found the
+account empty before and after the checks. These are single observations, not a
+latency baseline or confirmation of UptimeRobot's next sample. Renewal remains
+manual. The ordinary sign-in installer above would replace this token with a
+default-duration session; repeat container-side minting for another explicit
+long-lived renewal. Treat the token as a broader saved-chat credential than the
+restricted API key; longer validity extends its compromise window. ✨
 
 Local `worker.secrets.json` initially contains `OWUI_API_KEY` and `PROBE_PASSWORD`;
 it may additionally hold the authorized inference-only `OPENROUTER_API_KEY`.

@@ -104,9 +104,11 @@ require verification.
   for a 30-second monitor. Browser work has a 55-second deadline plus up to roughly
   21 seconds of close/cleanup. UptimeRobot's 60-second maximum cannot cover that
   worst case: treat browser monitoring as experimental until budgets are aligned.
-- The deployed browser JWT expires **2026-10-08 19:38:04 UTC**. Automatic renewal
-  is not installed. Follow `README.md` for explicit renewal; distinguish an expired
-  monitor credential from a campus-user outage.
+- The deployed browser JWT expires **2027-10-09 19:56:27 UTC**. It was minted
+  inside Chat on 2026-10-09 for the verified non-admin probe identity; only the
+  resulting token was installed in the Worker. Automatic renewal is not installed.
+  Follow `README.md` for explicit renewal; distinguish an expired monitor
+  credential from a campus-user outage. ✨
 - Production endpoint qualification is recorded; UptimeRobot collection, public
   status-page inclusion of each monitor, and alert delivery require separate
   verification. Do not infer those from a successful direct probe request.

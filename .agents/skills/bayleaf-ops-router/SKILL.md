@@ -1,6 +1,6 @@
 ---
 name: bayleaf-ops-router
-description: Operations playbooks for BayLeaf Chat, API, and Sandbox. Use for maintaining the hosted Sandbox plugin, tools, skills, browser workspace or application pins; API dependency bumps; Open WebUI upgrades; model swaps; production prompts/tools; accessibility evidence; privacy notices; spin-off modules; new service facets; or prod-to-repo backup/reconcile.
+description: Operations playbooks for BayLeaf Chat, API, and Sandbox. Use for maintaining the hosted Sandbox plugin, tools, skills, browser workspace or application pins; API dependency bumps; Open WebUI upgrades; model swaps; production prompts/tools; monitoring failures, probe extensions or browser-token renewal; accessibility evidence; privacy notices; spin-off modules; new service facets; or prod-to-repo backup/reconcile.
 ---
 
 # BayLeaf Operations Playbooks
@@ -21,7 +21,7 @@ whole clump.
 | Editing a system prompt, tool/function, or OWUI skill | `playbooks/prompt-tool-skill-edit.md` |
 | Privacy notice / subprocessor / retention change | `playbooks/privacy-notice-change.md` |
 | New service or API facet (new lane, subdomain, connection) | `playbooks/new-service-facet.md` |
-| New synthetic probe route, probe contract, or UptimeRobot monitor | `playbooks/probe-extension.md` |
+| Monitoring failure, browser-probe credential renewal, new synthetic route, probe contract, or UptimeRobot monitor | `playbooks/probe-extension.md` |
 | Accessibility evidence, keyboard-flow recording, or Chat VPAT update | `playbooks/accessibility-evidence.md` |
 | Bumping a spin-off module (Lathe, gws-toolkit, other toolkits) | `playbooks/spinoff-module-bump.md` |
 | Pulling prod state back into the repo (backup, drift reconcile) | `playbooks/backup-reconcile.md` |

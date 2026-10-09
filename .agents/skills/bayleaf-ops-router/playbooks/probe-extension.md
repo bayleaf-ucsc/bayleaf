@@ -1,18 +1,90 @@
 ---
 source-skill: bayleaf-ops-router
-description: Add or materially change a synthetic route in the unified BayLeaf monitoring Worker.
+description: Diagnose monitoring failures, renew browser-probe credentials, or extend the unified BayLeaf monitoring Worker.
 status: First production run completed; monitor sampling and alert verification remain human gates
-last-reviewed: 2026-09-09
+last-reviewed: 2026-10-09
 ---
 
-# Probe Extension
+# Probe Monitoring and Extension
 
 ## When to use
 
-Use for a new route or material contract change under `chat/probe/`, including
-new credentials, upstreams, models, deadlines, cleanup behavior, or UptimeRobot
-monitors. Read `chat/probe/AGENTS.md` and `README.md` first. A model-only update
-also invokes `model-swap.md`; update the pinned probe constant in that workflow.
+Use for monitoring incidents, browser-session renewal, or a new route or material
+contract change under `chat/probe/`, including new credentials, upstreams, models,
+deadlines, cleanup behavior, or UptimeRobot monitors. Read `chat/probe/AGENTS.md`
+and `README.md` first. For credential renewal, use the focused procedure below,
+not the route-extension/deployment checklist. A model-only update also invokes
+`model-swap.md`; update the pinned probe constant in that workflow.
+
+## Browser Monitor Diagnosis and Credential Renewal
+
+Validated on 2026-10-09. Current credential expiry and deployment evidence belong
+in `chat/probe/AGENTS.md` and `README.md` (Credentials), not a second expiry ledger
+here. Automatic renewal is not installed.
+
+1. Inspect authenticated GET diagnostics for `/chat/basic/e2e`, using the local
+   ignored `chat/probe/worker.secrets.json` monitoring password in memory. Compare
+   `/chat/basic`, which uses the same user but a separate restricted API key.
+   A 503 / `browser_identity` at `identity`, before browser launch, plus HTTP
+   200 / `ok` is a credential/identity lead, not a browser-rendering failure.
+   Check documented expiry; do not assume every identity failure is expiry or
+   claim a campus login outage. This browser route never exercises CILogon.
+2. **[HUMAN GATE]** Obtain approval to mint and install a replacement, including
+   its lifetime. A 365-day JWT was explicitly approved for the dedicated non-admin
+   probe user; it is not a general session policy. Its longer validity extends
+   the compromise window, and it can access that user's saved chats. Do not
+   change the global session lifetime or grants to make monitoring green.
+3. Read the dedicated identity/password from ignored `bootstrap.secrets.json`,
+   never print them. Ordinary `/api/v1/auths/signin` must return the expected
+   account ID and role `user`; `/api/v1/auths/api_key` under that fresh session
+   must match local `OWUI_API_KEY`. Stop on mismatch or failed sign-in. Existing
+   JWTs and the encrypted app-spec signing-key value cannot sign a new JWT.
+4. Open the running Chat container with:
+
+   ```sh
+   doctl apps console f1a1e758-62e9-4e99-90cb-212cab12958d open-webui --context bayleaf
+   ```
+
+   This is an interactive shell, not one-shot `exec`. An agent can drive it with
+   `pexpect` through `uv run --with pexpect`, with **no console logfile or raw
+   buffer/error output**. A human can use the equivalent DO dashboard console.
+   Disable remote shell history and echo before minting:
+   `unset HISTFILE; set +o history; stty -echo`.
+5. Inside Chat, use the installed Python/PyJWT and `os.environ['WEBUI_SECRET_KEY']`
+   to sign HS256 claims containing only the verified `id`, current integer `iat`,
+   a fresh UUID `jti`, and integer `exp = iat + 365 * 86400` for the approved
+   one-year renewal. This matches OWUI v0.11.4's token format; recheck upstream
+   `open_webui/utils/auth.py` if the version changes. Capture the resulting token
+   into private local process memory, then exit the console. **Never export the
+   signing key**, install it in the Worker, or put JWTs in session output, shell
+   arguments/history, repository files, or raw diagnostics. Do not import OWUI's
+   full application or run migrations merely to sign a token.
+6. Verify the minted JWT through `GET /api/v1/auths/`: expected ID, email, and
+   role `user`. Decode its claims locally only to check/record expiry. Do not
+   install an unverified token or substitute an admin credential.
+7. Follow `cloudflare-cf-tool` for account/auth selection. Confirm BayLeaf's
+   identity and the probe's pinned account; do a real authenticated read to
+   refresh `cf` OAuth before passing its bearer privately to Wrangler if needed.
+   From `chat/probe/`, pipe exactly `{"OWUI_E2E_TOKEN": "<minted token>"}` via
+   stdin to `wrangler secret bulk`. Do not type a real token in that example or
+   rewrite other secrets. This secret-only renewal requires no Chat restart,
+   source deployment, or global session-setting change.
+8. Independently verify the probe account's authenticated chat list is empty
+   before qualification; stop on unexpected records rather than deleting them.
+   Run focused production browser GET and HEAD. Both must return 200 / `ok`,
+   with rendering/persistence passed, close and exact-chat cleanup confirmed.
+   Independently confirm the account is empty afterward. On failure, preserve
+   the stage and investigate only marked synthetic records under README's cleanup
+   contract. Report times as observations, not a latency baseline.
+9. Record the expiry, method, and qualification in the canonical probe docs.
+   Confirm UptimeRobot's next successful sample separately: direct success does
+   not prove monitor recovery or alert delivery. Do not assume logout/password
+   changes revoke this JWT without checking the deployed revocation mechanism.
+
+**Installer gotcha:** `qualify-prod.mjs --install-secrets` uses ordinary sign-in,
+so it would replace the one-year browser token with a default-duration session
+and also rewrite the direct OpenRouter credential. For a browser-only long-lived
+renewal, use the focused container-side signing and single-secret upload above.
 
 ## Design Gates
 
@@ -117,6 +189,13 @@ accepted. Never commit secret, roster, SQL, `.dev.vars`, or `*.secrets.json`
 files. Do not commit or push without explicit approval.
 
 ## Refinement Log
+
+- 2026-10-09: Expired browser JWT caused 503 / `browser_identity` before launch
+  while Chat HTTP passed. CLI console via a private PTY enabled container-side
+  one-year signing without exporting the signing key or changing global expiry.
+  Single-secret upload and focused browser GET/HEAD passed (34.595/21.478s), with
+  independently empty account history. Added diagnosis/renewal routing and the
+  default-duration, two-secret installer gotcha; monitor recovery remains separate.
 
 - 2026-10-08: redeploy/review passed 46 tests and live mutation checks. The first
   Sealed GET hit the unchanged 25-second first-byte deadline; the next GET/HEAD
