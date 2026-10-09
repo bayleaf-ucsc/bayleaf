@@ -15,6 +15,8 @@ const binary = process.env.OPENCODE_TEST_BINARY || 'opencode';
 const headers = { authorization:'Basic '+Buffer.from('opencode:synthetic-password').toString('base64'),
   'content-type':'application/json', 'X-Opencode-Directory':join(root,'workspace') };
 let config, webCalls = 0, configCalls = 0, child;
+let exposeAck;
+const exposeCalls = [];
 const archives = new Map();
 const packageName = '@bayleaf-ucsc/sandbox-fixture';
 const fixture = createServer(async (req,res) => {
@@ -30,7 +32,14 @@ const fixture = createServer(async (req,res) => {
   if (path === '/usage') return res.end(JSON.stringify({observed_at:'fixture',budgets:[]}));
   if (path === '/sandbox') return res.end(JSON.stringify({state:'started'}));
   if (path === '/sandbox/browser/status') return res.end(JSON.stringify({phase:'ready'}));
-  if (path === '/sandbox/expose') return res.end(JSON.stringify({url:'https://fixture.bayleaf-proxies.dev/',expires_at:'2026-10-07T00:00:00Z'}));
+  if (path === '/sandbox/expose') {
+    assert.equal(req.method,'POST');
+    assert.equal(req.headers.authorization,'Bearer sk-bayleaf-synthetic');
+    let body='';for await(const chunk of req) body+=chunk;
+    exposeCalls.push({body:JSON.parse(body),headers:req.headers});
+    return res.end(JSON.stringify({url:'https://fixture.bayleaf-proxies.dev/',expires_at:'2026-10-07T00:00:00Z',
+      ...(exposeAck===undefined?{}:{upstream_headers_applied:exposeAck})}));
+  }
   if (path === '/sandbox/expose/8000') {res.statusCode=204;return res.end();}
   if (path === '/.well-known/opencode') return res.end(JSON.stringify({
     auth:{command:['false'],env:'BAYLEAF_API_KEY'},
@@ -86,9 +95,11 @@ try {
           description:'Synthetic update qualification',path:${JSON.stringify(join(root,'fixture-SKILL.md'))},content:'Revision ${revision}',autoinvoke:true}));
         ${revision==='b' ? `await ctx.tool.transform(editor=>editor.add({name:'bayleaf_fixture_new',description:'Synthetic new capability',input:{type:'object'},execute:async()=>({content:'revision b'})}));` : ''}
         await ctx.rpc.register({id:'bayleaf.fixture',events:{},methods:{
-          inspect:{input:{type:'object'},output:{}},fetch:{input:{type:'object'},output:{}}
+          inspect:{input:{type:'object'},output:{}},fetch:{input:{type:'object'},output:{}},
+          validateExpose:{input:(await ctx.tool.list()).find(t=>t.id==='bayleaf_expose').input,output:{}}
         }},{
-          inspect:async()=>JSON.parse(JSON.stringify({revision:${JSON.stringify(revision)},tools:(await ctx.tool.list()).map(t=>({id:t.id})),skills:await ctx.skill.list()})),
+          inspect:async()=>JSON.parse(JSON.stringify({revision:${JSON.stringify(revision)},tools:(await ctx.tool.list()).map(t=>({id:t.id,input:t.input})),skills:await ctx.skill.list()})),
+          validateExpose:async args=>args,
           fetch:async({sessionID,url,name='webfetch',args},{signal})=>{
             const tool=(await ctx.tool.list()).find(t=>t.id===name);
             try{return await tool.execute(args??{url},{sessionID,agent:'build',messageID:'msg_fixture',id:'call_fixture',signal,progress:async()=>{}});}
@@ -208,6 +219,59 @@ m.bootstrap(${port},${JSON.stringify(operation)},${JSON.stringify(origin)})
       assert.ok(output.content);assert.ok(!output.error);
     }
     console.log('PASS native usage and preview creation/revocation with real V2 permission approval');
+    const schema=first.output.tools.find(t=>t.id==='bayleaf_expose').input;
+    assert.equal(schema.properties.upstream_headers.type,'object');
+    assert.equal(schema.properties.upstream_headers.additionalProperties.type,'string');
+    const upstream_headers={Authorization:'Basic c3ludGhldGljOm9ubHk=','X-App-Key':'synthetic-app-key'};
+    for(const access of ['private','public']) {
+      const args={port:8000,access,upstream_headers};
+      assert.deepEqual((await rpc('validateExpose',args)).output,args);
+      for(const decision of ['once','reject']) {
+        const session=await create([{action:'bayleaf_expose',resource:'*',effect:'ask'}]);
+        const sessionID=session.id??session.data.id;
+        const count=exposeCalls.length;
+        exposeAck=true;
+        const pending=rpc('fetch',{sessionID,name:'bayleaf_expose',args});
+        const request=await wait(async()=>{const r=await api('/api/session/'+sessionID+'/permission');return r.data[0];});
+        assert.equal(request.action,'bayleaf_expose');
+        assert.deepEqual(request.resources,[`${access}:8000`]);
+        assert.deepEqual(request.save,[`${access}:8000`]);
+        assert.equal(exposeCalls.length,count,'preview sent before permission approval');
+        assert.ok(!JSON.stringify(request).includes(upstream_headers.Authorization));
+        await api(`/api/session/${sessionID}/permission/${request.id}/reply`,{decision});
+        const output=(await pending).output;
+        if(decision==='reject') {
+          assert.match(output.error,/denied/);assert.equal(exposeCalls.length,count);
+        } else {
+          assert.equal(exposeCalls.length,count+1);
+          assert.deepEqual(exposeCalls.at(-1).body,args);
+          assert.equal(exposeCalls.at(-1).headers['x-app-key'],undefined,'application headers belong in the JSON body');
+          assert.deepEqual(JSON.parse(output.content),{url:'https://fixture.bayleaf-proxies.dev/',
+            expires_at:'2026-10-07T00:00:00Z',access,upstream_headers_applied:true});
+          assert.ok(!output.content.includes(upstream_headers.Authorization));
+        }
+      }
+    }
+    await assert.rejects(()=>rpc('validateExpose',{port:8000,upstream_headers:{Authorization:123}}));
+    await assert.rejects(()=>rpc('validateExpose',{port:8000,upstream_headers:[]}));
+    console.log('PASS real V2 registered upstream_headers schema and private/public permission resources, approval/rejection, HTTP JSON body');
+    const session=await create([{action:'bayleaf_expose',resource:'private:8000',effect:'allow'}]);
+    const sessionID=session.id??session.data.id;
+    for(const ack of [undefined,false,'true',1,null,{},[]]) {
+      exposeAck=ack;
+      const count=exposeCalls.length;
+      const output=(await rpc('fetch',{sessionID,name:'bayleaf_expose',args:{port:8000,upstream_headers}})).output;
+      assert.equal(exposeCalls.length,count+1);
+      assert.equal(output.error,'Preview did not acknowledge upstream headers');
+      assert.equal(output.content,undefined,'unacknowledged preview URL must not escape');
+    }
+    exposeAck=undefined;
+    for(const args of [{port:8000},{port:8000,upstream_headers:{}}]) {
+      const output=(await rpc('fetch',{sessionID,name:'bayleaf_expose',args})).output;
+      assert.ok(output.content);assert.ok(!output.error);
+      assert.deepEqual(exposeCalls.at(-1).body,{port:8000,access:'private'});
+    }
+    console.log('PASS real V2 exact-boolean upstream header acknowledgement fails closed; omitted/empty headers remain compatible');
   }
   const callsBefore=configCalls;
   config={...config,plugins:['-opencode.tool.webfetch',...(process.env.OPENCODE_TEST_GIT_PLUGIN?[process.env.OPENCODE_TEST_GIT_PLUGIN]:[]),target('b')]};

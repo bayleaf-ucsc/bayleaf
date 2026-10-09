@@ -43,6 +43,18 @@ const bundled = await build({ absWorkingDir: root, stdin: { resolveDir: root, co
   globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : input);
     if (url.pathname === '/transport-failure') throw new Error('synthetic transport failure ' + url.origin);
+    // Real workerd sockets: enqueue server-first frames before the handshake
+    // returns, as Nanobot does. An echo-only fixture cannot catch greeting loss.
+    if (url.pathname === '/initial-greeting') {
+      const pair = new WebSocketPair();
+      pair[1].accept();
+      pair[1].addEventListener('message', event => pair[1].send(event.data));
+      pair[1].addEventListener('close', () => { try { pair[1].close(); } catch {} });
+      pair[1].send('ready');
+      pair[1].send(new Uint8Array([0, 127, 255]));
+      pair[1].send('greeting complete');
+      return new Response(null, { status: 101, webSocket: pair[0] });
+    }
     return realFetch(input, init);
   };
   export default { ...app, async fetch(request, env, ctx) {
@@ -65,6 +77,8 @@ const bundled = await build({ absWorkingDir: root, stdin: { resolveDir: root, co
 let lastUpstream = null;
 let outboundCalls = 0;
 let sandboxState = 'started';
+let handshakeRecheck = null;
+let rejectedUpstreamClose = null;
 const options = { workers: [{ name: 'preview-harness', modules: true, script: bundled.outputFiles[0].text,
   compatibilityDate: '2025-01-31', compatibilityFlags: ['nodejs_compat'],
   bindings, d1Databases: ['DB'],
@@ -115,7 +129,13 @@ const options = { workers: [{ name: 'preview-harness', modules: true, script: bu
       pair[1].accept();
       pair[1].addEventListener('message', event => pair[1].send(event.data));
       pair[1].addEventListener('close', () => { try { pair[1].close(); } catch {} });
-      return new WorkerResponse(null, { status: 101, webSocket: pair[0], headers: { 'Sec-WebSocket-Protocol': 'echo' } });
+      if (u.pathname === '/rejected-handshake') {
+        rejectedUpstreamClose = event(pair[1], 'close', 2000);
+        if (handshakeRecheck) await handshakeRecheck();
+      }
+      return new WorkerResponse(null, { status: 101, webSocket: pair[0], headers: {
+        'Sec-WebSocket-Protocol': u.searchParams.has('invalid-protocol') ? 'unoffered' : 'echo',
+      } });
     }
     if (u.pathname === '/cookie-path') return new Response('cookies', { headers: {
       'Set-Cookie': 'scoped=ok; Domain=.example.test; Path=/private; Max-Age=600',
@@ -262,6 +282,11 @@ try {
     for (const credential of ['', 'sk-bayleaf-owner', key + 'x', key.slice(0, -1)]) assert.equal((await register({}, credential)).status, 401);
     const malformed = await dispatch(api + '/previews/registrations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{' });
     assert.equal(malformed.status, 401);
+    const authenticatedMalformed = await dispatch(api + '/previews/registrations', { method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: '{"upstream_headers":{"secret-name":"secret-value"},' });
+    assert.equal(authenticatedMalformed.status, 400);
+    assert.doesNotMatch(await authenticatedMalformed.text(), /secret-name|secret-value/);
   });
   let url;
   await check('private registration returns only a wrapped URL and stores encrypted upstream', async () => {
@@ -319,7 +344,7 @@ try {
   await check('registration size and active-preview bounds ignore expired leases', async () => {
     const oversized = await dispatch(api + '/previews/registrations', { method: 'POST', headers: {
       Authorization: `Bearer ${key}`, 'Content-Type': 'application/json',
-    }, body: JSON.stringify({ ...input(), padding: 'x'.repeat(9000) }) });
+     }, body: JSON.stringify({ ...input(), padding: 'x'.repeat(65536) }) });
     assert.equal(oversized.status, 413);
     const owner = { subject: 'cap-user', email: 'cap@example.test' };
     for (let i = 0; i < 16; i++) assert.equal((await register({ owner, tag: `p${i}` })).status, 200);
@@ -347,6 +372,73 @@ try {
   });
   const owner = browser('owner@example.test');
   await check('owner completes two-host browser binding and gets host-only session', async () => { await login(owner, url); });
+  await check('upstream header validation is bounded, sanitized and independent of access', async () => {
+    const invalid = [null, [], 'secret-value', { 'secret-name': 123 },
+      { 'bad name': 'secret-value' }, { Good: 'secret-value\r\nHost: evil' }, { Good: 'é' },
+      { 'Good\n': 'secret-value' }, { Good: 'secret-value\n' }, { Good: 'secret-value\r' },
+      { Good: 'a'.repeat(4097) }, { ['a'.repeat(65)]: 'secret-value' }, { Good: 'one', good: 'two' },
+      Object.fromEntries(Array.from({ length: 17 }, (_, i) => ['H'+i, 'secret-value'])),
+      { A: 'a'.repeat(4096), B: 'b'.repeat(4096) }];
+    for (const name of ['Host','Cookie','Origin','Referer','Forwarded','X-Real-IP','True-Client-IP',
+      'Connection','Upgrade','Keep-Alive','TE','Trailer','Transfer-Encoding','Content-Length','Expect',
+      'HTTP2-Settings','Proxy-Authorization','Proxy-Authenticate','X-Forwarded-Foo','Sec-Foo','CF-Foo',
+      'Daytona-Foo','X-Daytona-Foo','X-Lathe-Foo']) invalid.push({ [name.toUpperCase()]: 'secret-value' });
+    for (const access of ['private', 'public']) {
+      for (const upstream_headers of invalid) {
+        const response = await register({ access, upstream_headers });
+        assert.equal(response.status, 400);
+        assert.doesNotMatch(await response.text(), /secret-name|secret-value/);
+      }
+      const empty = await (await register({ access, upstream_headers: {} })).json();
+      assert.equal(empty.upstream_headers_applied, undefined);
+      await revoke(empty.url);
+      // Inclusive total bound and value bound; escaped JSON can exceed 8 KiB.
+      const bounded = await register({ access, upstream_headers: { A: '"'.repeat(4096), B: '\\'.repeat(4094) } });
+      assert.equal(bounded.status, 200, await bounded.clone().text());
+      const result = await bounded.json();
+      assert.equal(result.upstream_headers_applied, true);
+      await revoke(result.url);
+    }
+  });
+  await check('configured HTTP/WS headers overwrite spoofing after owner/origin gates and remain encrypted', async () => {
+    for (const access of ['private', 'public']) {
+      const config = { 'X-Authenticated-Owner': 'configured-assertion-secret',
+        Authorization: 'Basic ' + Buffer.from('app-user:app-only-password').toString('base64'),
+        'X-Nanobot-Auth': 'fixed-app-password', Accept: 'application/configured' };
+      const response = await register({ access, upstream_headers: config });
+      const data = await response.json();
+      assert.equal(response.status, 200);
+      assert.deepEqual(Object.keys(data).sort(), ['expires_at','upstream_headers_applied','url']);
+      assert.equal(data.upstream_headers_applied, true);
+      const hostname = new URL(data.url).hostname;
+      const row = await db.prepare('SELECT * FROM preview_registrations WHERE hostname=?').bind(hostname).first();
+      for (const secret of [...Object.values(config), upstream, 'X-Authenticated-Owner']) {
+        assert.ok(!JSON.stringify(row).includes(secret), 'configuration and destination must not be metadata');
+        assert.ok(!JSON.stringify(data).includes(secret), 'reply must not contain configuration');
+      }
+      const before = outboundCalls;
+      if (access === 'private') {
+        assert.equal((await dispatch(data.url)).status, 401);
+        const other = browser('other@example.test');
+        let current = data.url;
+        for (let i = 0; i < 4; i++) current = await next(other, current);
+        assert.equal((await other.visit(current)).status, 403);
+      }
+      assert.equal((await owner.visit(data.url, { headers: { Origin: 'https://evil.test' } })).status, 403);
+      assert.equal(outboundCalls, before, 'denied requests must not reach app');
+      const client = access === 'private' ? owner : browser();
+      if (access === 'private') await login(client, data.url);
+      assert.equal((await client.visit(data.url, { headers: { 'x-authenticated-owner': 'spoof',
+        authorization: 'Bearer nbwt_browser', 'x-nanobot-auth': 'spoof', Accept: 'spoof',
+        Connection: 'X-Authenticated-Owner, Authorization' } })).status, 200);
+      for (const [name, value] of Object.entries(config)) assert.equal(lastUpstream.headers[name.toLowerCase()], value);
+      assert.equal(lastUpstream.headers.connection, undefined);
+      const socket = await connect(client, data.url);
+      for (const [name, value] of Object.entries(config)) assert.equal(lastUpstream.headers[name.toLowerCase()], value);
+      const closed = event(socket, 'close'); await revoke(data.url); await closed;
+      assert.equal((await client.visit(data.url)).status, 404);
+    }
+  });
   await check('browser authorization still works four hours later but not beyond the registration boundary', async () => {
     const token = owner.cookies.get(new URL(url).host).get('__Host-bl-preview-session');
     const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
@@ -546,6 +638,69 @@ try {
     assert.equal(attack.headers.get('Set-Cookie'), null);
     assert.equal(owner.cookies.get(new URL(url).host).get('__Host-bl-preview-session'), original);
   });
+  await check('server-first WebSocket greetings survive authorization recheck in order', async () => {
+    for (const access of ['public', 'private']) {
+      const data = await (await register({ access })).json();
+      const client = browser(access === 'private' ? 'owner@example.test' : undefined);
+      if (access === 'private') await login(client, data.url);
+      const response = await client.visit(data.url + 'initial-greeting', { headers: {
+        Upgrade: 'websocket', Origin: new URL(data.url).origin,
+        'Sec-Fetch-Mode': 'websocket', 'Sec-Fetch-Dest': 'empty',
+      } });
+      assert.equal(response.status, 101);
+      const socket = response.webSocket;
+      const received = [];
+      const greetings = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`${access}: initial greeting lost`)), 2000);
+        socket.addEventListener('message', event => {
+          received.push(typeof event.data === 'string' ? event.data : [...new Uint8Array(event.data)]);
+          if (received.length === 3) { clearTimeout(timer); resolve(); }
+        });
+      });
+      // Attach before accept on the test client too, so it cannot lose frames.
+      socket.accept();
+      try {
+        await greetings;
+        assert.deepEqual(received, ['ready', [0, 127, 255], 'greeting complete']);
+        const reply = event(socket, 'message');
+        socket.send('after greeting');
+        assert.equal((await reply).data, 'after greeting');
+        assert.deepEqual(received, ['ready', [0, 127, 255], 'greeting complete', 'after greeting']);
+      } finally {
+        socket.close();
+        await revoke(data.url);
+      }
+    }
+  });
+  await check('rejected post-upgrade handshakes close their upstream sockets', async () => {
+    for (const reason of ['generation', 'expiry', 'deleted', 'protocol']) {
+      const data = await (await register({ access: 'public' })).json();
+      const hostname = new URL(data.url).hostname;
+      handshakeRecheck = reason === 'protocol' ? null : async () => {
+        const sql = reason === 'generation'
+          ? "UPDATE preview_registrations SET generation='replaced' WHERE hostname=?"
+          : reason === 'expiry'
+            ? 'UPDATE preview_registrations SET expires_at=0 WHERE hostname=?'
+            : 'DELETE FROM preview_registrations WHERE hostname=?';
+        await db.prepare(sql).bind(hostname).run();
+      };
+      try {
+        const response = await browser().visit(data.url + 'rejected-handshake' +
+          (reason === 'protocol' ? '?invalid-protocol' : ''), { headers: {
+            Upgrade: 'websocket', Origin: new URL(data.url).origin,
+            'Sec-WebSocket-Protocol': 'echo', 'Sec-Fetch-Mode': 'websocket', 'Sec-Fetch-Dest': 'empty',
+          } });
+        assert.equal(response.status, reason === 'protocol' ? 502 : 403, reason);
+        assert.equal(response.webSocket, null);
+        assert.ok(rejectedUpstreamClose, 'fixture must receive the upstream upgrade');
+        assert.equal((await rejectedUpstreamClose).code, 1008, reason);
+      } finally {
+        handshakeRecheck = null;
+        rejectedUpstreamClose = null;
+        await revoke(data.url);
+      }
+    }
+  });
   await check('authenticated WebSockets relay text and binary, reconnect, and close on revocation', async () => {
     let socket = await connect(owner, url);
     let received = event(socket, 'message'); socket.send('hello');
@@ -657,6 +812,55 @@ try {
     const reserved=await dispatch(api+'/sandbox/expose',{method:'POST',headers,body:JSON.stringify({port:3100,access:'public'})});
     assert.equal(reserved.status,400);
     await dispatch(api+'/sandbox/expose/5001',{method:'DELETE',headers});
+  });
+  await check('keyed headers replace/remove atomically, close old sockets, expire and reject platform credentials', async () => {
+    const headers = { Authorization: 'Bearer sk-bayleaf-owner', 'Content-Type': 'application/json' };
+    const expose = body => dispatch(api + '/sandbox/expose', { method: 'POST', headers,
+      body: JSON.stringify({ port: 5002, access: 'public', ...body }) });
+    const config = { 'X-App-Assertion': 'keyed-application-secret' };
+    const first = await (await expose({ upstream_headers: config })).json();
+    assert.equal(first.upstream_headers_applied, true);
+    assert.equal((await dispatch(first.url)).status, 200);
+    assert.equal(lastUpstream.headers['x-app-assertion'], config['X-App-Assertion']);
+    const socket = await connect(browser(), first.url);
+    const closed = event(socket, 'close');
+    const second = await (await expose({ upstream_headers: { 'X-App-Assertion': 'replacement-secret' } })).json();
+    await closed;
+    assert.equal((await dispatch(first.url)).status, 404);
+    assert.equal((await dispatch(second.url)).status, 200);
+    assert.equal(lastUpstream.headers['x-app-assertion'], 'replacement-secret');
+    const third = await (await expose({})).json();
+    assert.equal(third.upstream_headers_applied, undefined);
+    assert.equal((await dispatch(second.url)).status, 404);
+    assert.equal((await dispatch(third.url)).status, 200);
+    assert.equal(lastUpstream.headers['x-app-assertion'], undefined);
+    for (const credential of ['sk-bayleaf-owner', key, bindings.DAYTONA_API_KEY,
+      new URL(upstream).hostname, 'synthetic-bearer', jwt({ exp: 1 }) + '=']) {
+      for (const value of [credential, 'Basic ' + Buffer.from('app:' + credential).toString('base64'),
+        ' Bearer ' + credential + ' ', ' Basic ' + Buffer.from('app:' + credential).toString('base64') + ' ']) {
+        const response = await expose({ upstream_headers: { 'X-App-Auth': value } });
+        assert.equal(response.status, 403);
+        assert.ok(!(await response.text()).includes(credential));
+        const installation = await register({ upstream_headers: { 'X-App-Auth': value } });
+        assert.equal(installation.status, 403);
+      }
+    }
+    assert.equal((await dispatch(third.url)).status, 200, 'rejected replacement preserves existing lease');
+    const invalid = await expose({ upstream_headers: { 'secret-name': 42 } });
+    assert.equal(invalid.status, 400);
+    assert.doesNotMatch(await invalid.text(), /secret-name/);
+    const malformed = await dispatch(api + '/sandbox/expose', { method: 'POST', headers,
+      body: '{"upstream_headers":{"secret-name":"secret-value"},' });
+    assert.equal(malformed.status, 400);
+    assert.doesNotMatch(await malformed.text(), /secret-name|secret-value/);
+    const anonymousMalformed = await dispatch(api + '/sandbox/expose', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: '{' });
+    assert.equal(anonymousMalformed.status, 401);
+    const oversized = await expose({ upstream_headers: { A: 'x'.repeat(65536) } });
+    assert.equal(oversized.status, 413);
+    const final = await (await expose({ upstream_headers: config })).json();
+    assert.equal((await dispatch(final.url, { headers: { 'X-Harness-Advance-Seconds': '86401' } })).status, 404);
+    await dispatch(api + '/sandbox/expose/5002', { method: 'DELETE', headers });
   });
   await check('revocation is scoped to the caller; registration replacement cannot revive old sessions', async () => {
     assert.equal((await dispatch(api + '/sandbox/expose/5000', { method: 'DELETE', headers: { Authorization: 'Bearer sk-bayleaf-other' } })).status, 204);

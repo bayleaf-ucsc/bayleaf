@@ -511,13 +511,53 @@ The most substantial toolkit on the deployment. Source:
 but **not bound to any model by default** — users enable it per-chat via the
 tool picker in the chat composer.
 
-**Current version: 0.30.7** (2026-09-30), byte-identical to the upstream
+**Current version: 0.31.0** (2026-10-08), byte-identical to the upstream
 checkout and the personal Chat instance. `expose` requires an explicit
 `private` or `public` policy and accepts
 an optional untrusted hostname tag, which BayLeaf ignores. Private is the
-default guidance and fails closed; public may fall back to Daytona's direct
+default guidance and fails closed; headerless public calls may fall back to Daytona's direct
 signed URL if wrapping fails. The installation credential is an admin valve
 backed by the API's `PREVIEWS_INSTALLATION_KEY` Worker Secret. ✨
+
+**Upgrade (2026-10-08):** the deployed and vendored source is upstream 0.31.0,
+commit `4cd5663`, byte-identical to the personal Chat deployment (SHA-256
+`816b84af2c2e24d6f6024d49f55a8ef9d1faf23057a425da4a77a7d746e8e29c`).
+All 347 upstream offline tests passed. After refreshing the expired admin token,
+BayLeaf source and complete generated schema were verified, all valves and tool
+grants/name were preserved, and the Code Sandbox skill content and grants/active
+state were read back. Health returned 200; no app restart was needed. Six isolated
+OWUI core checks passed (source/schema, bash, write/read, interpreter, view,
+delegate); the additional first-time-agent check failed because Basic skipped
+the overview manual. Private before/after backups are under
+`~/.tokens/bayleaf-lathe-upgrade-20261008`. Full reconciliation found only the
+Lathe source/schema and Code Sandbox skill changes. The new
+`expose(..., upstream_headers={...})` parameter configures fixed application
+headers independently of public/private policy. Nonempty headers require exact
+boolean `upstream_headers_applied: true` from BayLeaf's registration endpoint:
+missing acknowledgement fails closed with no direct fallback in either mode.
+API support was deployed separately in issue #86. Values remain in Chat tool arguments,
+and applications can reflect them. ✨
+
+Production Basic → loaded Lathe `expose` → BayLeaf API → Daytona qualification
+verified public HTTP injection of fixed Basic credentials and a custom header,
+including replacement of browser spoof values. Private header-bearing exposure
+returned a wrapped URL and denied unauthenticated requests with HTTP 401.
+The focused headerless regression passed: public HTTP 200 served the fixture
+with no injected Authorization or custom header, preserving gateway filtering.
+The fixture used a separately tracked `/tmp/lathe-smoke-*` directory and port
+8943 in the coordinated API test sandbox; existing applications were untouched.
+Two harness assumptions needed correction: private denial can be 401 rather than
+a redirect, and BayLeaf filters unconfigured custom browser headers. Each run
+revoked its exact leases, verified preview 404s, and removed only its fixture.
+All six previews from the three production-smoke runs were revoked and returned
+404. Final read-only cleanup verification found no `/tmp/lathe-smoke-*`
+directories and no listener on 8943. Sandbox
+`6dc25038-2a83-4061-a4a7-5ebbc845d14e` was preserved by coordination decision:
+work of unestablished provenance had appeared outside this fixture. The final
+read-only check no longer found `workspace/headercheck.py`; this session did not
+remove it or change port 8765. No claim of whole-sandbox teardown is made.
+The isolated suite cleaned up its separate staging toolkit and sandbox.
+Human workload playtesting remains separate.
 
 **What it does.** Gives any OWUI model a coding-agent tool surface — `lathe`,
 `bash`, `read`, `write`, `edit`, `glob`, `grep`, `view`, `interpret`, `delegate`,
@@ -553,7 +593,7 @@ layers remain planned in issues
 | `interpret(code, timeout)` | Run Python in a persistent REPL session (variables and imports persist across calls) |
 | `delegate(task, context_files, max_steps, foreground_seconds)` | Delegate a multi-step task to an autonomous sub-agent with the same tools; long delegations auto-background like `bash` |
 | `onboard(path)` | Load project context (directory listing, AGENTS.md, skill catalog) for agentic workflows |
-| `expose(target, access, tag)` | Expose dufs, static files, ttyd, code-server, or an existing HTTP service; `access` is required (`private` or `public`) and `tag` is optional. Dufs and code-server accept `:/absolute/path` roots within the workspace; managed ttyd and code-server are private-only |
+| `expose(target, access, tag, upstream_headers)` | Expose dufs, static files, ttyd, code-server, or an existing HTTP service; `access` is required (`private` or `public`), `tag` and fixed application `upstream_headers` are optional. Nonempty headers require acknowledged wrapper injection in either access mode. Dufs and code-server accept `:/absolute/path` roots within the workspace; managed ttyd and code-server are private-only |
 | `handoff()` | Prepare a handoff document for continuing the work in a fresh conversation |
 | `destroy()` | Permanently destroy the sandbox VM (irreversible) |
 
@@ -567,7 +607,7 @@ are lost on stop; reusable dufs/code-server installations live under `/tmp/lathe
 **Transient previews.** HTTP `expose` calls register with
 `https://api.bayleaf.dev/previews/registrations`. Private access requires the
 owner's API login, which is separate from Chat login, and never downgrades.
-Public access serves anyone with the URL; Lathe may return Daytona's direct
+Public access serves anyone with the URL; headerless calls may return Daytona's direct
 signed URL if public wrapping fails. BayLeaf-wrapped URLs use
 `https://{cruzid}-{access}-{nonce}.bayleaf-proxies.dev/`, with no visible port,
 application tag, or stable alias. CruzID makes ownership legible in group

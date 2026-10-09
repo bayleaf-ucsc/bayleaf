@@ -13,11 +13,11 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const source = await readFile(root + 'src/routes/previews.ts', 'utf8');
 console.log('STAGE bundling actual preview helpers (no workerd)');
 const bundle = await build({
-  stdin: { contents: source + '\nexport { platformCredential, validators, upstreamRequest };',
+  stdin: { contents: source + '\nexport { platformCredential, validators, upstreamRequest, encrypt, applicationHeadersAllowed };',
     resolveDir: root + 'src/routes', loader: 'ts' },
   bundle: true, write: false, format: 'esm', platform: 'browser', target: 'es2022',
 });
-const { platformCredential, validators, upstreamRequest } = await import(
+const { platformCredential, validators, upstreamRequest, encrypt, applicationHeadersAllowed } = await import(
   `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`
 );
 const env = {
@@ -77,6 +77,8 @@ for (const secret of [env.OIDC_CLIENT_SECRET, env.PREVIEWS_SECRET]) {
         // decoder. Expired tokens are signature-verified with expiry disabled.
         await verify(token, secret, { alg: 'HS256', exp: !expired });
         assert.equal(await platformCredential(token, request(), env, target), true);
+        assert.equal(await applicationHeadersAllowed({ Any: token }, env, target), false);
+        assert.equal(await applicationHeadersAllowed({ Authorization: 'Basic ' + btoa('app:' + token) }, env, target), false);
         const prepared = await upstreamRequest(request({
           Authorization: `Bearer ${token}`, 'X-Nanobot-Auth': token,
         }), env, registration);
@@ -95,6 +97,10 @@ for (const credential of ['sk-bayleaf-owner', 'sk-bayleaf-grant-test', 'sk-or-v1
   const prepared = await upstreamRequest(request({ Authorization: `Bearer ${credential}`, 'X-Nanobot-Auth': credential }), env, registration);
   assert.equal(prepared.headers.get('Authorization'), null);
   assert.equal(prepared.headers.get('X-Nanobot-Auth'), null);
+  assert.equal(await applicationHeadersAllowed({ Any: credential }, env, target), false);
+  assert.equal(await applicationHeadersAllowed({ Authorization: 'Basic ' + btoa('app:' + credential) }, env, target), false);
+  assert.equal(await applicationHeadersAllowed({ Authorization: ' Bearer ' + credential + ' ' }, env, target), false);
+  assert.equal(await applicationHeadersAllowed({ Authorization: ' Basic ' + btoa('app:' + credential) + ' ' }, env, target), false);
 }
 for (const token of ['nbwt_synthetic_application_token', signed('synthetic-app-only-signing-secret') + '=']) {
   const prepared = await upstreamRequest(request({ Authorization: `Bearer ${token}`, 'X-Nanobot-Auth': 'synthetic app password' }), env, registration);
@@ -116,6 +122,24 @@ for (const headers of [
   assert.equal(prepared.headers.get('X-Nanobot-Auth'), null);
 }
 console.log('PASS reserved secrets, malformed JWTs, app-token positive controls and credential origin restrictions');
+
+const config = { Authorization: 'Basic ' + btoa('app:app-only-password'), 'X-App-Assertion': 'configured-assertion' };
+const injected = { ...registration, upstream_encrypted: await encrypt(env, JSON.stringify({
+  version: 1, upstream_url: target.origin, upstream_headers: config,
+}), registration.hostname) };
+for (const headers of [{}, { Authorization: 'Bearer spoof', 'x-app-assertion': 'spoof', Connection: 'Authorization' },
+  { Upgrade: 'websocket', Origin: incoming.slice(0, -1) }]) {
+  const prepared = await upstreamRequest(request(headers), env, injected);
+  assert.equal(prepared.headers.get('Authorization'), config.Authorization);
+  assert.equal(prepared.headers.get('X-App-Assertion'), config['X-App-Assertion']);
+  assert.equal(prepared.headers.get('Connection'), null);
+}
+await assert.rejects(() => upstreamRequest(request(), env, { ...injected, hostname: 'wrong.example.test' }));
+await assert.rejects(() => upstreamRequest(request(), { ...env, PREVIEWS_SECRET: Buffer.alloc(32, 8).toString('base64') }, injected));
+assert.equal((await upstreamRequest(request(), { ...env, PREVIEWS_INSTALLATION_KEY: 'rotated-installation-key' }, injected))
+  .headers.get('Authorization'), config.Authorization);
+assert.equal((await upstreamRequest(request(), env, registration)).headers.get('X-App-Assertion'), null);
+console.log('PASS encrypted header configuration, case replacement, Basic auth, host binding, key rotation and legacy records');
 
 let etags = 0;
 for (const url of [target, new URL('https://synthetic-unprefixed-credential.preview.example.test/')]) {

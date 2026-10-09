@@ -91,6 +91,21 @@ explicit operation on the user-owned installation. Preserve user files and histo
 
 ## Evidence and refinement log
 
+- 2026-10-08 (issue #86, local implementation): header-bearing registration tests
+  run directly with `node api/scripts/harness-previews.mjs` while the plugin is
+  dirty; the npm pretest deliberately rejects an unpublished plugin checkout.
+  This tests the actual Worker with the existing generated config pin, not
+  publication or real Git loading of the edited plugin. Keep those qualifications
+  separate. Registration JSON bounds must account for escaped ASCII values.
+  Follow-up: published plugin `ba62f51` after review and local tests, verified real
+  V2 Git-package loading, deployed Worker `d150ca87-5fd8-4925-bb60-f35d1ee26022`,
+  and confirmed live OpenAPI and authenticated config pin. No parent commit/push.
+  Live Nanobot exposed initial WS greeting loss: accept upstream sockets only
+  after relay listeners exist, including across awaited authorization rechecks.
+  Regression reproduced the loss; 35 gateway checks passed after the fix, deployed
+  as Worker `b814079b-4391-4fc0-95eb-10009c7b6b18`. Three fresh live Nanobot connections
+  then received `ready` plus subsequent replies; disposable-resource cleanup verified.
+
 - 2026-10-08 (preview compatibility production): operator-approved Worker
   `5bc31933-6d94-4390-b15e-a9c66ab2b171` deployed after focused credential/ETag
   regressions and TypeScript checks. Existing private Nanobot login and live

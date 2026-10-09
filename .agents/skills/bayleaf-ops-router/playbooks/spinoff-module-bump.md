@@ -79,6 +79,25 @@ may not match the actual pre-upgrade deployment.
 
 ## Refinement log
 
+- 2026-10-08: Deployed upstream 0.31.0 after refreshing an expired admin token,
+  exact-matched against personal live source and commit 4cd5663. All 347 offline
+  tests and six isolated OWUI core checks passed; Basic skipped the overview in
+  the extra first-time-agent scenario. Source/schema, unchanged valves/grants,
+  skill readback and health passed. Full private before/after reconciliation
+  found only the expected Lathe/skill changes. Header-bearing calls require exact
+  boolean wrapper acknowledgement; API support was deployed separately.
+  Production fixture setup found no owner sandbox with automatic creation off;
+  coordinate provisioning with concurrent API tests rather than creating a
+  second owner-labeled sandbox. No fixture or preview was created by that attempt.
+  A coordinated existing test sandbox then passed actual production model-mediated
+  public injection/spoof replacement and private denial. Check 401 as well as
+  redirects for unauthenticated private requests; BayLeaf filters unconfigured
+  browser headers, so headerless regressions must not assume arbitrary passthrough.
+  Focused headerless regression passed; six exact leases across three runs were
+  revoked with 404 verification, and fixture directories/listener were absent.
+  Preserved the shared temporary sandbox because unrelated work had appeared;
+  owned-fixture cleanup does not establish permission for whole-sandbox deletion.
+
 - 2026-09-30 (resize investigation): Public Daytona OpenAPI advertises
   `POST /sandbox/{sandboxIdOrName}/resize`, but the hosted API returned HTTP 404
   `Cannot POST /api/sandbox/.../resize` for a verified archived disposable

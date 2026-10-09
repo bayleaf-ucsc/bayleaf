@@ -875,6 +875,7 @@ Browser access (when enabled; ordinary personal keys only):
 
 - ${bt}GET /usage${bt} reports personal inference allowances without provisioning keys or spending credits. USD and request-count budgets are separate; null means unknown. Disabled providers are omitted.
 - ${bt}POST /sandbox/expose${bt} accepts ${bt}{"port":8000,"access":"private"}${bt}. Private is the default and strongly recommended; public must be explicitly requested. Port 3100 is reserved. Bind the service to 0.0.0.0 first.
+- Optional ${bt}upstream_headers${bt} supplies fixed application headers in either access mode, including Authorization/Basic. Nonempty headers require exact ${bt}upstream_headers_applied: true${bt} in the response. Maximum 16 headers, 64-byte HTTP-token names, 4096-byte printable ASCII values and 8192 total bytes; routing/transport/browser-security/provider headers and platform credentials are rejected. Public visitors can exercise injected credentials. Values remain in tool history and may be reflected by the app; an assertion alone does not identify visitors or prevent direct-upstream spoofing.
 
 - ${bt}GET /sandbox/browser/status${bt} observes setup and browser-link state without waking compute.
 - ${bt}POST /sandbox/browser/start${bt} deliberately sets up or resumes OpenChamber on the same shared sandbox.

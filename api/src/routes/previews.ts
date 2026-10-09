@@ -7,7 +7,7 @@ import { decodeBase64Url } from 'hono/utils/encode';
 import { bodyLimit } from 'hono/body-limit';
 import type { AppEnv, Bindings } from '../types';
 import { getSession } from '../utils/session';
-import { PreviewRegistrationSchema, PreviewRegistrationResponseSchema, PreviewLabelSchema } from '../schemas';
+import { PreviewRegistrationSchema, PreviewRegistrationResponseSchema, PreviewLabelSchema, PreviewUpstreamHeadersSchema } from '../schemas';
 import { upstreamCookies, wrapApplicationCookies } from '../previewCookies';
 
 interface Deployment {
@@ -163,7 +163,9 @@ async function flow(env: Bindings, id: string): Promise<Flow | null> {
     .bind(id, now()).first<Flow>();
 }
 
-export const previewRoutes = new OpenAPIHono<AppEnv>();
+export const previewRoutes = new OpenAPIHono<AppEnv>({ defaultHook: (result) => {
+  if (!result.success) return failure(400); // Validation paths can contain secret header names.
+} });
 previewRoutes.onError(() => failure(503) as any); // Never log credential-bearing fetch errors.
 previewRoutes.use('*', async (c, next) => {
   for (const [key, value] of secureHeaders()) c.header(key, value);
@@ -180,7 +182,14 @@ previewRoutes.use('/registrations*', async (c, next) => {
   }
   await next();
 });
-previewRoutes.use('/registrations', bodyLimit({ maxSize: 8192, onError: () => failure(413) }));
+previewRoutes.use('/registrations', bodyLimit({ maxSize: 65536, onError: () => failure(413) }));
+previewRoutes.use('/registrations', async (c, next) => {
+  if (c.req.method === 'POST') {
+    try { await c.req.json(); }
+    catch { return failure(400); }
+  }
+  await next();
+});
 
 const registerRoute = createRoute({
   method: 'post', path: '/registrations', tags: ['Previews'],
@@ -193,7 +202,8 @@ const registerRoute = createRoute({
     403: { description: 'Deployment, owner, destination, or access policy rejected' },
     401: { description: 'Missing or invalid installation credential' },
     409: { description: 'Owner mapping conflict or active-preview limit reached' },
-    413: { description: 'Registration exceeds 8 KiB' },
+    400: { description: 'Invalid registration or upstream headers' },
+    413: { description: 'Registration exceeds 64 KiB' },
     503: { description: 'Preview service disabled or unavailable' },
   },
 });
@@ -213,6 +223,7 @@ interface PreviewInput {
   upstream_url: string;
   access: 'public' | 'private';
   tag?: string;
+  upstream_headers?: Record<string, string>;
 }
 
 /** Shared registration path: issuer authority differs, canonical ownership does not. */
@@ -226,6 +237,10 @@ async function registerPreview(env: Bindings, policy: Deployment, input: Preview
   if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(slug) ||
       slug.length + 1 + input.access.length + 1 + 24 > 63) return failure();
   if (email.split('@')[1] !== policy.email_domain || !upstreamAllowed(input.upstream_url, policy)) return failure();
+  const headers = input.upstream_headers ?? {};
+  if (!PreviewUpstreamHeadersSchema.safeParse(headers).success) return failure(400);
+  // Reject, never silently omit, platform credentials in configured app headers.
+  if (!await applicationHeadersAllowed(headers, env, new URL(input.upstream_url))) return failure();
   // Registration retention is independent of sandbox or upstream-token lifetime.
   // An unavailable upstream does not delete the mapping.
   const expiry = browser ? Math.min(browser.expiresAt, now() + 6 * 3600) : now() + 24 * 3600;
@@ -249,7 +264,12 @@ async function registerPreview(env: Bindings, policy: Deployment, input: Preview
   // Lathe v2 intentionally supplies no stable slot. Its previews are independent
   // leases; BayLeaf's keyed API keeps port-based replacement via stableSlot.
   const slot = stableSlot ?? `lathe-${random()}`;
-  const encrypted = await encrypt(env, new URL(input.upstream_url).origin, hostname);
+  const base = new URL(input.upstream_url).origin;
+  const hasHeaders = Object.keys(headers).length > 0;
+  // Keep legacy URL-only ciphertext readable. Header-bearing records bind the
+  // complete destination/configuration to this hostname with the existing AEAD.
+  const encrypted = await encrypt(env, hasHeaders
+    ? JSON.stringify({ version: 1, upstream_url: base, upstream_headers: headers }) : base, hostname);
   const result = await env.DB.prepare(`INSERT INTO preview_registrations
     (hostname,email,deployment,slot,generation,upstream_encrypted,expires_at,access,owner_key_hash)
     SELECT ?,?,?,?,?,?,?,?,? WHERE
@@ -263,7 +283,8 @@ async function registerPreview(env: Bindings, policy: Deployment, input: Preview
       email, now(), email, slot, now()).first();
   if (!result) return failure(409);
   if (!await invalidateRetiredOrigins(env, email, slot)) return failure(503);
-  return { url: `https://${hostname}/`, expires_at: new Date(expiry * 1000).toISOString() };
+  return { url: `https://${hostname}/`, expires_at: new Date(expiry * 1000).toISOString(),
+    ...(hasHeaders ? { upstream_headers_applied: true as const } : {}) };
 }
 
 function apiPolicy(env: Bindings): Deployment {
@@ -272,9 +293,10 @@ function apiPolicy(env: Bindings): Deployment {
     upstream_headers: { 'X-Daytona-Skip-Preview-Warning': 'true' } };
 }
 
-export async function registerUserPreview(env: Bindings, email: string, slot: string, url: string, access: 'private' | 'public' = 'private') {
+export async function registerUserPreview(env: Bindings, email: string, slot: string, url: string, access: 'private' | 'public' = 'private',
+  upstreamHeaders?: Record<string, string>) {
   return registerPreview(env, apiPolicy(env), {
-    owner: { subject: email, email }, upstream_url: url, access,
+    owner: { subject: email, email }, upstream_url: url, access, upstream_headers: upstreamHeaders,
   }, slot);
 }
 
@@ -476,7 +498,7 @@ function containsUpstreamCredential(value: string, target: URL): boolean {
  * header. Opaque installation/Daytona keys have no reliable namespace, so also
  * exclude configured secrets and the signed upstream hostname credential. */
 async function platformCredential(value: string, request: Request, env: Bindings, target: URL): Promise<boolean> {
-  const token = value.replace(/^Bearer\s+/i, '').trim();
+  const token = value.trim().replace(/^Bearer\s+/i, '').trim();
   if (/^(?:sk-|tk_|admin_|tvly-|dt_)|^campus$/i.test(token)) return true;
   if (containsUpstreamCredential(token, target)) return true;
   for (const [key, secret] of Object.entries(env)) {
@@ -509,12 +531,43 @@ async function platformCredential(value: string, request: Request, env: Bindings
   return false;
 }
 
+async function applicationHeadersAllowed(headers: Record<string, string>, env: Bindings, target: URL): Promise<boolean> {
+  const request = new Request('https://preview.invalid/');
+  for (const raw of Object.values(headers)) {
+    // Headers.set normalizes surrounding whitespace. Inspect the same value
+    // that the app will receive, including before recognizing auth schemes.
+    const value = raw.trim();
+    if (await platformCredential(value, request, env, target)) return false;
+    // Basic credentials are encoded, not encrypted. Check both fields and the
+    // complete decoded value so a platform key cannot be disguised as app auth.
+    if (/^Basic\s/i.test(value)) {
+      let decoded: string;
+      try { decoded = atob(value.replace(/^Basic\s+/i, '')); } catch { return false; }
+      for (const part of [decoded, ...decoded.split(':')]) {
+        if (await platformCredential(part, request, env, target)) return false;
+      }
+    }
+  }
+  return true;
+}
+
 async function upstreamRequest(request: Request, env: Bindings, r: Registration) {
-  const base = await decrypt(env, r);
+  const plaintext = await decrypt(env, r);
+  let base = plaintext;
+  let configuredHeaders: Record<string, string> = {};
+  if (plaintext.startsWith('{')) {
+    const record = JSON.parse(plaintext);
+    if (record.version !== 1 || typeof record.upstream_url !== 'string') return null;
+    const parsed = PreviewUpstreamHeadersSchema.safeParse(record.upstream_headers);
+    if (!parsed.success) return null;
+    base = record.upstream_url;
+    configuredHeaders = parsed.data;
+  }
   const policy = ['__api', 'lathe', '__browser'].includes(r.deployment) ? apiPolicy(env) : null;
   if (!policy || !upstreamAllowed(base, policy)) return null;
   const incoming = new URL(request.url);
   const target = new URL(base);
+  if (!await applicationHeadersAllowed(configuredHeaders, env, target)) return null;
   // Assign components, never resolve an untrusted path such as //evil.example.
   target.pathname = incoming.pathname;
   target.search = incoming.search;
@@ -545,6 +598,10 @@ async function upstreamRequest(request: Request, env: Bindings, r: Registration)
   }
   const cookies = upstreamCookies(request.headers.get('Cookie') ?? '', r.generation, incoming.pathname);
   if (cookies) headers.set('Cookie', cookies);
+  // Both HTTP and WS use this builder, after their ordinary owner/origin gate.
+  // Connection is never copied, so browser hop-by-hop nominations cannot remove
+  // injected headers. Headers.set replaces browser values case-insensitively.
+  for (const [key, value] of Object.entries(configuredHeaders)) headers.set(key, value);
   for (const [key, value] of Object.entries(policy.upstream_headers)) headers.set(key, value);
   return { target, headers, incoming };
 }
@@ -642,6 +699,8 @@ export class PreviewConnections {
   constructor(private state: DurableObjectState, private env: Bindings) {}
 
   async fetch(request: Request): Promise<Response> {
+    let pendingUpstream: WebSocket | undefined;
+    let pendingConnection: Connection | undefined;
     try {
       // Serialize connection establishment and invalidation, so replacement
       // cannot finish while an old-generation handshake is still being added.
@@ -681,20 +740,19 @@ export class PreviewConnections {
           await upstreamResponse.body?.cancel();
           return failure(502);
         }
-        upstream.accept();
+        pendingUpstream = upstream;
         const current = await registration(this.env, u.hostname);
         if (!current || current.generation !== r.generation) {
-          upstream.close(1008, 'Preview registration changed');
           return failure();
         }
         const protocol = upstreamResponse.headers.get('Sec-WebSocket-Protocol');
         if (protocol && (!offered?.split(',').map(p => p.trim()).includes(protocol) || protocol.includes(prepared.target.hostname))) {
-          upstream.close(1008, 'Invalid upstream protocol');
           return failure(502);
         }
         const pair = new WebSocketPair();
         pair[1].accept();
         const connection = { downstream: pair[1], upstream, generation: r.generation, expiresAt: Math.min(r.expires_at, sessionExpiry) };
+        pendingConnection = connection;
         this.sockets.add(connection);
         const relay = (destination: WebSocket, event: MessageEvent) => {
           if (!this.sockets.has(connection)) return;
@@ -709,14 +767,32 @@ export class PreviewConnections {
           socket.addEventListener('close', () => this.close(connection, 1000));
           socket.addEventListener('error', () => this.close(connection));
         }
+        // accept() starts delivering queued server-first frames. Keep the socket
+        // unaccepted across the authorization recheck, then attach every listener
+        // before accepting it; otherwise an immediate greeting can be discarded.
+        upstream.accept();
         await this.state.storage.put('hostname', u.hostname);
         await this.arm();
         const responseHeaders = new Headers();
         if (protocol) responseHeaders.set('Sec-WebSocket-Protocol', protocol);
         wrapApplicationCookies(upstreamResponse.headers, responseHeaders, r.generation, u.pathname, r.expires_at, prepared.target.hostname);
-        return new Response(null, { status: 101, webSocket: pair[0], headers: responseHeaders });
+        const response = new Response(null, { status: 101, webSocket: pair[0], headers: responseHeaders });
+        pendingUpstream = undefined;
+        pendingConnection = undefined;
+        return response;
       });
     } catch { return failure(502); }
+    finally {
+      // Rejected or failed handshakes still own an upstream socket. Workers
+      // requires acceptance before close, including failed registration rechecks.
+      if (pendingUpstream) {
+        try { pendingUpstream.accept(); } catch { /* May already be accepted. */ }
+        if (pendingConnection) this.close(pendingConnection);
+        else {
+          try { pendingUpstream.close(1008, 'Preview access ended'); } catch { /* Already closed. */ }
+        }
+      }
+    }
   }
 
   private close(connection: Connection, code = 1008): void {

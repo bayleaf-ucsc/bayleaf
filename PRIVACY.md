@@ -48,11 +48,15 @@ ITS-operated or ITS-supported one.
   this does not make sandbox storage zero-retention or zero-operator-access. ✨
 - **Transient previews (Chat and API, experimental and opt-in):** opening a
   public or private sandbox URL sends application traffic through Cloudflare to
-  Daytona. The gateway stores an encrypted temporary upstream access URL,
+  Daytona. The gateway stores an encrypted temporary upstream access URL and,
+  when configured, application headers,
   access policy, owner/internal-slot metadata,
   and short-lived login transactions, but does not store HTTP bodies. Owner-name
   reservations and installation identity mappings persist to prevent names being
-  reassigned. Browser application state can survive preview expiry. See the
+  reassigned. Configured application credentials may already appear in tool
+  arguments/history and may be reflected or stored by applications. Public
+  visitors can exercise credentials injected into public previews. Browser
+  application state can survive preview expiry. See the
   [preview retention schedule](api/RETENTION.md#transient-previews-bounded-poc). ✨
 - **Temporary inference access (API, opt-in when enabled):** approving an app
   gives it a temporary bearer token against your existing allowance. BayLeaf

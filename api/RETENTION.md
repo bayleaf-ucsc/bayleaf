@@ -191,13 +191,14 @@ run and deletion outcome have not yet been verified. ✨
 
 Preview traffic on `*.bayleaf-proxies.dev` passes through the API Worker to the
 sandbox application. The gateway does not store or log HTTP bodies. It stores
-the upstream access URL encrypted in D1 so it can forward requests; this
+the upstream access URL and optional configured application headers encrypted
+together in D1 so it can forward requests; this
 credential is decryptable by the gateway, not a zero-operator-access guarantee.
 The application and sandbox may retain their own files and state. ✨
 
 | State | Retention |
 |---|---|
-| Preview registration, access policy, encrypted upstream URL, owner email, internal slot, issuer, generation | Registration lasts 24 hours; hourly cleanup removes expired rows (normally within the following hour). Upstream unavailability does not remove the registration. |
+| Preview registration, access policy, encrypted upstream URL and configured headers, owner email, internal slot, issuer, generation | Registration lasts 24 hours; hourly cleanup removes expired rows (normally within the following hour). Upstream unavailability does not remove the registration. |
 | Browser-login transaction and cookie/code digests | Transaction expires within five minutes, issued code within 60 seconds; successful redemption deletes it; hourly cleanup removes expired leftovers |
 | Canonical owner email/hostname reservation and installation-subject mapping | Indefinite, to prevent hostname reassignment and subject rebinding |
 | Preview-host session cookie | Secure, HttpOnly, host-only; until registration expiry, at most 24 hours |
@@ -211,6 +212,13 @@ revocation invalidate gateway grants, but do not erase application local storage
 or stop scripts in already-open browser tabs. Each new registration has a fresh
 nonce origin. Service workers and browser caches may persist on retired origins,
 but those origins are not reused for the next application registration.
+
+The header-capable revision was deployed on 2026-10-08 Pacific (issue #86). Configured
+headers are excluded from registration responses and ordinary metadata. They are
+model-supplied tool arguments, so may already be retained in Chat or agent history;
+applications may reflect or store them. Public preview visitors can exercise
+injected application credentials. Replacement, revocation and expiry retire the
+encrypted configuration alongside its destination. ✨
 
 ### API login
 

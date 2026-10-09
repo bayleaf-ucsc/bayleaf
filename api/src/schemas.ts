@@ -282,6 +282,24 @@ export const HealthResponseSchema = z.object({
 
 // ── Transient previews ─────────────────────────────────────────────
 
+// Lathe #98 wire contract. ASCII bounds make character and byte counts equal.
+const RESERVED_PREVIEW_HEADERS = new Set(['host', 'cookie', 'origin', 'referer', 'forwarded',
+  'x-real-ip', 'true-client-ip', 'connection', 'upgrade', 'keep-alive', 'te', 'trailer',
+  'transfer-encoding', 'content-length', 'expect', 'http2-settings', 'proxy-authorization', 'proxy-authenticate']);
+export const PreviewUpstreamHeadersSchema = z.record(z.string(), z.string()).refine(headers => {
+  const entries = Object.entries(headers);
+  const names = entries.map(([name]) => name.toLowerCase());
+  return entries.length <= 16 && new Set(names).size === entries.length &&
+    entries.every(([name, value]) => name.length >= 1 && name.length <= 64 &&
+      !/[^!#$%&'*+.^_`|~0-9A-Za-z-]/.test(name) &&
+      !RESERVED_PREVIEW_HEADERS.has(name.toLowerCase()) &&
+      !/^(?:x-forwarded-|sec-|cf-|daytona-|x-daytona-|x-lathe-)/i.test(name) &&
+      value.length <= 4096 && !/[^\x20-\x7e]/.test(value)) &&
+    entries.reduce((size, [name, value]) => size + name.length + value.length, 0) <= 8192;
+}, 'Invalid upstream header configuration').openapi('PreviewUpstreamHeaders', {
+  description: 'Application headers, independent of access policy. Maximum 16 entries, 64-byte HTTP-token names, 4096-byte printable ASCII values, 8192 total name/value bytes. Case-insensitive duplicates and routing, transport, browser-security and provider-reserved headers are forbidden. Fixed Authorization, including Basic, is supported; platform credentials are rejected. Values overwrite browser headers on HTTP and WebSocket requests. Public visitors can exercise injected credentials.',
+});
+
 // Lathe's command-style v2 contract: access is a required policy, not a
 // negotiated result. The optional tag is an untrusted hint that BayLeaf ignores.
 export const PreviewRegistrationSchema = z.object({
@@ -291,6 +309,7 @@ export const PreviewRegistrationSchema = z.object({
   }).strict(),
   upstream_url: z.url().max(2048),
   access: z.enum(['public', 'private']),
+  upstream_headers: PreviewUpstreamHeadersSchema.optional(),
   tag: z.string().regex(/^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/).optional().openapi({
     description: 'Optional untrusted display hint. BayLeaf does not include it in hostnames.',
   }),
@@ -299,6 +318,9 @@ export const PreviewRegistrationSchema = z.object({
 export const PreviewRegistrationResponseSchema = z.object({
   url: z.url(),
   expires_at: z.iso.datetime(),
+  upstream_headers_applied: z.literal(true).optional().openapi({
+    description: 'Exact true acknowledgement, present only for nonempty upstream_headers.',
+  }),
 }).openapi('PreviewRegistrationResponse');
 
 export const PreviewLabelSchema = z.object({
@@ -308,6 +330,7 @@ export const PreviewLabelSchema = z.object({
 export const SandboxExposeRequestSchema = z.object({
   port: z.number().int().min(3000).max(9999).refine(port => port !== 3100, 'Reserved browser port').openapi({ example: 5000 }),
   access: z.enum(['private', 'public']).default('private'),
+  upstream_headers: PreviewUpstreamHeadersSchema.optional(),
 }).strict().openapi('SandboxExposeRequest');
 
 export const SandboxExposeSlotSchema = z.object({

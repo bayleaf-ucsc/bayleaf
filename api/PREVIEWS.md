@@ -1,9 +1,9 @@
 # Transient preview gateway: issues #71 and #72
 
 Status: public and owner-authenticated HTTP/WebSocket gateway deployed and
-enabled. BayLeaf Chat runs upstream Lathe 0.29.6 with its command-style preview
-contract. Both access policies passed isolated and production OWUI tests on
-2026-09-20. Evidence and limitations are below. ✨
+enabled. BayLeaf Chat runs upstream Lathe 0.31.0, including registration-scoped
+upstream headers. API/plugin rollout and live qualification are recorded below;
+Chat deployment evidence is in `chat/DESIGN.md`. ✨
 
 ## Contract
 
@@ -77,7 +77,7 @@ Campus Pass, an installation credential, or a browser session as authority.
 Access defaults to **private** (owner login). Optional `"access":"public"`
 explicitly permits anonymous access. Port 3100 is reserved for the managed
 OpenChamber interface and cannot be exposed through this endpoint. Sandbox
-agents receive `expose-sandbox-ports-technique`, whose helper reads the owner key
+agents use the canonical plugin's `bayleaf_expose` tool, which reads the owner key
 internally and defaults to private exposure without displaying credentials. ✨
 
 Public previews may be framed by their owner's active managed OpenChamber origin.
@@ -115,6 +115,113 @@ sandbox lifecycle operations. Missing/malformed secrets fail closed. Rotate by
 replacing the Worker Secret and updating the Lathe valve; old-key requests fail
 immediately on the new Worker version. Existing preview grants expire or can be
 revoked independently. Rotation is not a promise to terminate existing grants.
+
+### Registration-scoped upstream headers (issue #86, deployed 2026-10-08 Pacific) ✨
+
+Both registration endpoints accept optional `upstream_headers`, following
+[Lathe #98](https://github.com/rndmcnlly/lathe/issues/98) and Lathe 0.31.0:
+
+```json
+{"port":8765,"access":"private","upstream_headers":{"X-Authenticated-Owner":"true"}}
+```
+
+Headers are ordinary model-supplied proxy configuration, independent of public or
+private access. No additional approval, identity mapping, or owner preset is
+introduced. A nonempty dictionary receives the exact boolean
+`"upstream_headers_applied": true` alongside `url` and `expires_at`. Empty or absent
+dictionaries retain the existing response. Lathe and the managed `bayleaf_expose`
+tool fail closed if this acknowledgement is missing or not exactly true; they
+must not substitute a direct Daytona URL. The plugin keeps its existing
+access/port permission resource and excludes header values from that resource.
+
+The shared HTTP/WebSocket header builder applies configured values after the
+ordinary private-owner and origin gates, overwriting browser values
+case-insensitively. Client `Connection` nominations cannot remove these headers.
+Fixed `Authorization`, including Basic, is supported. Public visitors can exercise
+injected credentials, including on public navigation and permitted iframe loads.
+An assertion header has no intrinsic visitor-identity meaning. Unconfigured
+headers retain the existing allowlist behavior; there is no new assertion namespace.
+
+Validation matches Lathe: maximum 16 entries, 1–64-byte ASCII HTTP-token names,
+0–4096-byte printable ASCII values, and 8192 total name/value bytes. Case-insensitive
+duplicate names are rejected. Forbidden names (case-insensitive): `Host`, `Cookie`,
+`Origin`, `Referer`, `Forwarded`, `X-Real-IP`, `True-Client-IP`, `Connection`,
+`Upgrade`, `Keep-Alive`, `TE`, `Trailer`, `Transfer-Encoding`, `Content-Length`,
+`Expect`, `HTTP2-Settings`, `Proxy-Authorization`, `Proxy-Authenticate`. Forbidden
+prefixes: `X-Forwarded-`, `Sec-`, `CF-`, `Daytona-`, `X-Daytona-`, `X-Lathe-`.
+Registration validation errors omit names and values. Both endpoints bound JSON
+bodies to 64 KiB to accommodate JSON escapes at the inclusive 8192-byte header bound.
+
+BayLeaf additionally rejects recognized platform credentials in configured values,
+including decoder-equivalent API/preview JWT signatures and the signed upstream
+hostname/label/credential. Basic values are decoded and checked, including each
+colon-separated component. These conservative exclusions also apply at forwarding
+time and reject the request rather than silently dropping configured headers.
+They do not classify every possible credential encoding or unrelated third-party key.
+
+Header-bearing records store a versioned destination/header object inside the
+existing hostname-bound AES-GCM `upstream_encrypted` field. Headerless records keep
+their URL-only format; no D1 migration is needed. Responses and ordinary metadata
+contain neither the destination nor header names/values. Replacement removes the
+previous configuration, including when the new request omits headers; revocation,
+expiry and hourly cleanup cover the entire encrypted record. D1 backups retain
+deleted ciphertext under the existing backup policy. The gateway can decrypt these
+credentials: this is not ZOA storage. Model-supplied values already exist in tool
+arguments/history, and application response bodies may reflect them.
+
+`PREVIEWS_INSTALLATION_KEY` rotation does not change stored encryption. Replacing
+`PREVIEWS_SECRET` makes existing encrypted registrations and preview sessions
+unusable; there is no previous-key fallback or automatic re-encryption. Re-register
+after rotation. Active sockets retain the existing generation/expiry lifecycle;
+use explicit revocation or disable the gateway to terminate them, rather than
+assuming key rotation immediately closes every established connection.
+
+**Distribution and qualification:** the managed plugin and its canonical
+`bayleaf-sandboxes` skill are published as `ba62f515c5b1001b9562f2351286de004a1ce1b7`.
+Worker `d150ca87-5fd8-4925-bb60-f35d1ee26022` deploys the API revision and selects
+that exact pin, verified through authenticated production configuration. Live
+health and OpenAPI checks passed. Legacy expose wrappers remain retired; the
+operator-only `preview-ops.py` and `preview-apps.py` retain headerless compatibility.
+BayLeaf Chat has separately deployed exact upstream Lathe 0.31.0, preserving its
+existing valves and grants. The companion Code Sandbox skill readback matches.
+Six core isolated OWUI checks passed. Actual Basic → production Lathe exposure
+verified public Basic/custom-header injection and spoof replacement, private
+unauthenticated HTTP 401, and headerless public HTTP 200 with unconfigured headers
+filtered. Six smoke leases were revoked and independently returned 404; temporary
+fixture directories and the port-8943 listener were removed. The shared sandbox
+was preserved because concurrent unowned work had appeared. See `chat/DESIGN.md`.
+Live Nanobot 0.3.5 and dufs 0.46.0 qualification is recorded in
+[`PREVIEW-HEADERS-QUALIFICATION.md`](PREVIEW-HEADERS-QUALIFICATION.md). Injection,
+spoof replacement, anonymous private denial and revocation passed. Direct and
+wrapped traffic both arrived from loopback: a holder of a signed/provider preview
+capability could spoof Nanobot's assertion directly. Its trusted-peer setting does
+not establish passage through BayLeaf's owner gate. Nanobot's initial WS `ready`
+frame was lost through the gateway. The cause was accepting the upstream socket
+before installing relay listeners across an awaited authorization recheck. Worker
+`b814079b-4391-4fc0-95eb-10009c7b6b18` deploys the fix: listeners precede acceptance,
+and rejected or partially established handshakes close their upstream sockets.
+The regression failed before the fix and all 35 gateway checks passed afterward.
+Three fresh live Nanobot connections on the fixed Worker received the initial
+`ready` frame in 0.46–0.86 seconds and subsequent non-inference validation replies.
+The follow-up lease, disposable sandbox, D1 records and local credentials were
+removed with independent cleanup verification; see the qualification report.
+Checked successful bodies contained no tested upstream/credential strings; this
+is route-specific evidence, not general response sanitization. All six leases and
+the disposable sandbox were removed and independently verified absent.
+
+Local evidence: the Worker/D1 suite passed 33 grouped checks, including both
+registration endpoints, public/private HTTP and WebSocket injection, denied-owner
+and foreign-origin requests, encrypted configuration, case collisions, replacement,
+removal, expiry/revocation, bounds and sanitized failures. Focused source-helper
+tests cover 180 decoder-equivalent platform JWTs, Basic credential containment,
+hostname-bound ciphertext, encryption/installation-key rotation and legacy records.
+Independent review caught and verified fixes for leading-space auth-scheme
+normalization and malformed JSON handling; trailing CR/LF validation also has
+explicit regressions. Plugin unit tests passed 14/14. The isolated real V2 2.0.22
+runtime verifies registered header input types, unchanged access/port permissions,
+request bodies, exact acknowledgement failures, and headerless compatibility.
+The published Git package also passed the isolated V2 runtime harness. These
+checks use synthetic providers/identities and do not establish live app qualification.
 
 ## Authentication protocol
 
@@ -204,7 +311,9 @@ claim that header filtering sanitizes arbitrary application content.
   non-navigation requests with the exact preview Origin or `Sec-Fetch-Site:
   same-origin`. Existing origin checks still reject foreign/sibling Origins and
   unsafe requests without the exact Origin. Navigation/iframe exceptions never
-  transmit these credentials. Arbitrary auth headers and Basic auth stay stripped.
+  transmit these browser-supplied credentials. Browser-supplied arbitrary auth
+  headers and Basic auth stay stripped; registration-configured headers follow
+  the separate injection contract above.
 - Reserved `sk-` (including ordinary and temporary BayLeaf keys and OpenRouter),
   `tk_`, `admin_`, `tvly-`, `dt_`, and Campus Pass credentials stay stripped in
   both headers. So do configured key/secret/token binding values, the signed
@@ -251,7 +360,7 @@ Nanobot 0.3.5 login/chat flow, not arbitrary successful-body URL containment,
 all Apps, or the full project/file workflow. Renewing the preview hostname also
 requires updating Nanobot's explicit public WebSocket URL. No Git publication. ✨
 Apps requiring JSON error details, WWW-Authenticate challenges, error-set cookies,
-Basic auth, unusual validators, or original `document.cookie` names remain outside
+browser-supplied Basic auth, unusual validators, or original `document.cookie` names remain outside
 the contract. Successful application bodies are still streamed unchanged and must
 be separately qualified for upstream-URL containment. Production deployment and
 browser qualification require separate approval.
@@ -292,7 +401,7 @@ suite, not by the unchanged assertions in the 30 grouped end-to-end checks.
 - `PREVIEWS_API_ORIGIN`: canonical HTTPS API origin.
 - `PREVIEWS_DOMAIN`: isolated preview domain, never a Chat/API parent domain.
 - `PREVIEWS_SECRET`: independent 32-byte base64 secret for AES-GCM encryption
-  of stored upstream credentials and signing preview sessions.
+  of stored upstream credentials/configured application headers and signing preview sessions.
 - `PREVIEWS_INSTALLATION_KEY`: the single approved Lathe installation's secret
   bearer credential, distinct from all user API keys.
 - `PREVIEWS_UPSTREAM_SUFFIXES`: comma-separated upstream DNS suffix allowlist.
@@ -319,7 +428,8 @@ not application content. D1 backup retention still applies to deleted ciphertext
 and identity metadata. Runtime observability remains disabled.
 
 New active state is bounded to 16 previews per owner and 64 pending login flows per
-hostname. Registration bodies are limited to 8 KiB. Upstream HTTP operations
+hostname. Registration bodies are limited to 64 KiB (8 KiB before the header-capable
+revision). Upstream HTTP operations
 have a five-minute deadline, bounded further by registration expiry. Cloudflare's
 platform request/upload limits also apply. This is an initial resource bound,
 not per-owner traffic accounting or a guarantee against unauthenticated traffic

@@ -21,6 +21,7 @@
  */
 
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+import { bodyLimit } from 'hono/body-limit';
 import type { AppEnv, UserKeyRow } from '../types';
 import { resolveAuth } from '../utils/auth';
 import { getSession } from '../utils/session';
@@ -53,6 +54,24 @@ import {
 
 export const sandboxRoutes = new OpenAPIHono<AppEnv>();
 
+// Authenticate and bound credential-bearing expose bodies before validation.
+sandboxRoutes.use('/expose', async (c, next) => {
+  c.header('Cache-Control', 'no-store');
+  const auth = await resolveAuth(c);
+  if (auth instanceof Response) return auth;
+  if (auth.isCampusMode || !auth.userEmail) return c.body('Personal API key required.', 403);
+  await next();
+});
+sandboxRoutes.use('/expose', bodyLimit({ maxSize: 65536,
+  onError: c => c.body('Preview registration too large.', 413) }));
+sandboxRoutes.use('/expose', async (c, next) => {
+  // JSON parser errors may quote credential-bearing input. Consume/cache the
+  // bounded body here so malformed JSON never reaches the global error logger.
+  try { await c.req.json(); }
+  catch { return c.body('Invalid preview configuration.', 400); }
+  await next();
+});
+
 // Expose an already-running service. Ownership comes exclusively from the user
 // key; installation credentials, browser cookies, and Campus Pass cannot use it.
 const exposeRoute = createRoute({
@@ -67,6 +86,8 @@ const exposeRoute = createRoute({
   responses: {
     200: { description: 'Protected preview URL', content: { 'application/json': { schema: PreviewRegistrationResponseSchema } } },
     401: { description: 'Invalid or missing user API key' },
+    400: { description: 'Invalid preview configuration' },
+    413: { description: 'Registration exceeds 64 KiB' },
     403: { description: 'Personal user API key required' },
     409: { description: 'Sandbox not running or slot registration conflict' },
     502: { description: 'Preview unavailable' },
@@ -82,15 +103,17 @@ sandboxRoutes.openapi(exposeRoute, async (c) => {
   try {
     const sandbox = await lookupSandboxInfo(auth.userEmail, c.env);
     if (sandbox?.state !== 'started') return c.json({ error: { message: 'Start your sandbox and HTTP service before exposing it.', code: 409 } }, 409);
-    const { port, access } = c.req.valid('json');
+    const { port, access, upstream_headers } = c.req.valid('json');
     const upstream = await createSignedPreview(sandbox.id, port, c.env);
     if (!upstream) return c.json({ error: { message: 'Preview unavailable.', code: 502 } }, 502);
-    const result = await registerUserPreview(c.env, auth.userEmail, String(port), upstream.url, access);
+    const result = await registerUserPreview(c.env, auth.userEmail, String(port), upstream.url, access, upstream_headers);
     return result instanceof Response ? result as any : c.json(result, 200);
   } catch {
     // This path handles an upstream bearer credential. No exception logging.
     return c.json({ error: { message: 'Preview unavailable.', code: 502 } }, 502);
   }
+}, (result, c) => {
+  if (!result.success) return c.body('Invalid preview configuration.', 400);
 });
 
 sandboxRoutes.openapi(createRoute({

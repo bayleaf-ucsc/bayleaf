@@ -604,7 +604,12 @@ No new migration or production backend enablement is part of this change.
 facet. `POST /previews/registrations` and its DELETE counterpart accept only
 the single Lathe installation's `PREVIEWS_INSTALLATION_KEY` Worker Secret.
 Lathe registration requires `access: public | private`; the Worker enforces the
-requested policy and returns only `url` and `expires_at`. Lathe supplies no slot,
+requested policy and returns `url` and `expires_at`. The issue #86 revision
+also accepts optional registration-scoped `upstream_headers` in either access mode
+and acknowledges nonempty dictionaries with exact `upstream_headers_applied: true`.
+Destination and headers share the existing encrypted field; see `PREVIEWS.md`
+for validation, credential exclusions, rotation and rollout evidence (API/plugin
+deployed 2026-10-08; Chat upgrade and live app qualification recorded separately). Lathe supplies no slot,
 so each registration is an independent lease. `POST /sandbox/expose` and
 `DELETE /sandbox/expose/{slot}` accept only the caller's normal BayLeaf user key
 and retain port-based replacement. No model-provided owner is accepted.
@@ -623,7 +628,7 @@ There are no stable aliases or visible ports. Migration 0009 queues retired
 hostnames atomically for socket invalidation. See PREVIEWS.md for live dufs and
 code-server evidence, the 1-GiB code-server OOM, and the successful 4-GiB terminal
 test. Four-hour wall-clock soak and full browser-feature compatibility are not
-established. Production Chat runs upstream Lathe 0.29.6 with wrapping enabled;
+established. Production Chat runs upstream Lathe 0.31.0 with wrapping enabled;
 private and public isolated tests plus production-tool exposure smoke passed. See the
 rollout record in `chat/DESIGN.md` and `PREVIEWS.md`. ✨
 

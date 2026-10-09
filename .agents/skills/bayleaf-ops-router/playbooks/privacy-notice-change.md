@@ -75,6 +75,11 @@ this is why step 3's approval gate precedes both publishing and notifying.
 
 ## Refinement log
 
+- 2026-10-08: Drafted the opt-in configured-preview-header storage disclosure
+  for issue #86 alongside the local implementation. It extends the existing
+  encrypted preview credential record, not inference-content retention or the
+  processor list. Publication and any rollout communication remain operator decisions.
+
 - 2026-10-05: Corrected the pending-Registrar-approval claim from Adam's account
   of the consultation: ITS suitability for P3 data and users' responsibility for
   permitted uses are distinct. Used the documentation-correction exception;

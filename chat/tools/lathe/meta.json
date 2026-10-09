@@ -12,7 +12,7 @@
       "description": "Coding agent tools (lathe, bash, read, write, edit, glob, grep, view, interpret, delegate, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.",
       "required_open_webui_version": "0.11.0",
       "requirements": "httpx, httpx-ws, pydantic-ai-slim[openai]~=2.5, cachetools",
-      "version": "0.30.7",
+      "version": "0.31.0",
       "licence": "MIT"
     },
     "has_user_valves": true
@@ -149,6 +149,14 @@
             "default": "",
             "description": "Optional untrusted hostname hint, such as \"vscode\" or \"files\": lowercase letters, digits, and internal hyphens, max 32 characters. The deployment may ignore it. Hostname text never proves identity or purpose.",
             "type": "string"
+          },
+          "upstream_headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "description": "Optional fixed application headers for HTTP and WebSocket forwarding, independent of public/private access. Replaces browser values case-insensitively; supports Authorization. Requires a compatible wrapper, with no direct fallback. Max 16 headers, 64-byte names, printable ASCII values up to 4096 bytes, 8192 bytes total. Routing/transport headers are forbidden. Values remain in tool arguments; see lathe(manpage=\"services\") for trust boundaries.",
+            "type": "object"
           }
         },
         "required": [
