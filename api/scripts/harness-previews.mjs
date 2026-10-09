@@ -8,10 +8,20 @@ import { build } from 'esbuild';
 import { Miniflare, convertV4MiniflareOptions, WebSocketPair, Response as WorkerResponse } from 'miniflare';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+let lastStage = 'preparing harness';
+const stage = name => { lastStage = name; console.log(`STAGE ${name}`); };
+stage(lastStage);
+// Visible, bounded failure even if workerd startup or disposal stops responding.
+const deadline = setTimeout(() => {
+  console.error(`TIMEOUT after 90 seconds; last stage: ${lastStage}. Later stages/tests are not established.`);
+  process.exit(1);
+}, 90_000);
 const api = 'https://api.example.test';
 const key = 'synthetic_installation_key_00000000000000000000';
 const oidcSecret = 'synthetic_oidc_secret_000000000000000000000000';
 const upstream = 'https://5000-synthetic-bearer.preview.example.test';
+const appPassword = 'synthetic app password';
+const appToken = 'nbwt_synthetic_application_token_000000000000000';
 const bindings = {
   PREVIEWS_ENABLED: 'true', PREVIEWS_API_ORIGIN: api,
   PREVIEWS_DOMAIN: 'previews.example.test', PREVIEWS_SECRET: Buffer.alloc(32, 7).toString('base64'),
@@ -23,9 +33,18 @@ const bindings = {
 // Node rewrites Sec-Fetch-Mode; Miniflare rejects nonlocal Origin headers before
 // dispatch. Restore these simulated browser inputs in a TEST-ONLY entrypoint,
 // so it is the real gateway, not the harness transport, that must reject them.
+stage('bundling Worker');
 const bundled = await build({ absWorkingDir: root, stdin: { resolveDir: root, contents: `
   import app from './src/index.ts';
   export { PreviewConnections } from './src/index.ts';
+  // An outboundService exception is rendered as HTTP 500 by Miniflare, not a
+  // fetch rejection. Inject a transport rejection at the Worker fetch boundary.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : input);
+    if (url.pathname === '/transport-failure') throw new Error('synthetic transport failure ' + url.origin);
+    return realFetch(input, init);
+  };
   export default { ...app, async fetch(request, env, ctx) {
     const headers = new Headers(request.headers);
     const advance = Number(headers.get('X-Harness-Advance-Seconds') || 0) * 1000;
@@ -63,6 +82,34 @@ const options = { workers: [{ name: 'preview-harness', modules: true, script: bu
     }
     assert.equal(u.origin, upstream);
     lastUpstream = { url: u.href, method: request.method, headers: Object.fromEntries(request.headers), body: await request.text() };
+    if (u.pathname === '/webui/bootstrap') {
+      if (request.headers.get('X-Nanobot-Auth') === appPassword) return Response.json({ api_token: appToken });
+      return new Response(upstream, { status: 401, headers: {
+        'WWW-Authenticate': 'Bearer realm="' + upstream + '"', 'Location': upstream,
+        'Set-Cookie': 'debug=' + upstream, 'Content-Type': 'application/json', 'X-Debug': upstream,
+      } });
+    }
+    if (u.pathname === '/webui/api') return new Response('app API', {
+      status: request.headers.get('Authorization') === `Bearer ${appToken}` ? 200 : 403,
+    });
+    if (u.pathname === '/status') return new Response(upstream, {
+      status: Number(u.searchParams.get('code')), headers: {
+        'Retry-After': u.searchParams.get('retry') ?? '120', 'Location': upstream,
+        'ETag': '"' + new URL(upstream).hostname + '"', 'Last-Modified': upstream,
+        'WWW-Authenticate': 'Bearer realm="' + upstream + '"',
+        'Set-Cookie': 'debug=' + upstream, 'X-Debug': upstream,
+      },
+    });
+    if (u.pathname === '/conditional') return new Response(null, { status: 304, headers: {
+      ETag: u.searchParams.has('unsafe') ? '"' + new URL(upstream).hostname + '"' : 'W/"fixture-v1"',
+      'Last-Modified': 'Thu, 08 Oct 2026 00:00:00 GMT',
+      ...(u.searchParams.has('location') ? { Location: upstream } : {}),
+      'Set-Cookie': 'debug=' + upstream, 'X-Debug': upstream,
+    } });
+    if (u.pathname === '/validators') return new Response('validated content', { headers: {
+      ETag: u.searchParams.get('etag') ?? '"fixture-v1"',
+      'Last-Modified': u.searchParams.get('modified') ?? 'Thu, 08 Oct 2026 00:00:00 GMT',
+    } });
     if (request.headers.get('Upgrade') === 'websocket') {
       const pair = new WebSocketPair();
       pair[1].accept();
@@ -93,6 +140,7 @@ const options = { workers: [{ name: 'preview-harness', modules: true, script: bu
     } });
   },
 }] };
+stage('starting isolated workerd');
 const mf = new Miniflare(convertV4MiniflareOptions(options));
 const dispatch = async (url, init = {}) => {
   const headers = new Headers(init.headers);
@@ -159,7 +207,7 @@ async function login(client, url) {
   return response;
 }
 let checks = 0;
-async function check(name, fn) { await fn(); checks++; console.log(`PASS ${name}`); }
+async function check(name, fn) { stage(`check: ${name}`); await fn(); checks++; console.log(`PASS ${name}`); }
 function event(socket, name, timeout = 12000) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`WebSocket ${name} timeout`)), timeout);
@@ -176,8 +224,11 @@ async function connect(client, url) {
 }
 
 try {
+  stage('awaiting local D1 handle');
   const db = await mf.getD1Database('DB');
+  stage('local D1 handle obtained');
   for (const file of (await readdir(root + 'migrations')).filter(f => f.endsWith('.sql')).sort()) {
+    stage(`applying fixture migration ${file}`);
     if (file === '0008_preview_cruzid_names.sql') {
       await db.prepare('INSERT INTO preview_owners(email,slug) VALUES (?,?)')
         .bind('owner@example.test', 'owner-legacy-digest').run();
@@ -360,7 +411,7 @@ try {
   });
   await check('forwarding strips credentials and unsafe response headers; uploads stream', async () => {
     const response = await owner.visit(url, { method: 'POST', body: 'synthetic upload', headers: {
-      Origin: new URL(url).origin, Authorization: 'Bearer must-not-forward',
+      Origin: new URL(url).origin, Authorization: 'Bearer sk-bayleaf-owner',
       'X-Forwarded-Host': 'evil.test', 'X-Api-Key': 'must-not-forward',
     } });
     assert.equal(response.status, 200, await response.clone().text());
@@ -372,6 +423,114 @@ try {
     assert.match(response.headers.get('Set-Cookie'), /^__Host-bl-app-/);
     assert.equal(response.headers.get('Cache-Control'), 'no-store');
     assert.match(response.headers.get('Content-Security-Policy'), /worker-src 'self' blob:/);
+  });
+  await check('app authentication is independent of the private owner gate; login and bearer reach only the app', async () => {
+    const headers = { 'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty' };
+    const before = outboundCalls;
+    for (const credentials of [{}, { 'X-Nanobot-Auth': appPassword }, { Authorization: `Bearer ${appToken}` },
+      { Authorization: 'Bearer sk-bayleaf-owner' }, { Authorization: `Bearer ${key}` }]) {
+      assert.equal((await browser().visit(url + 'webui/bootstrap', { headers: { ...headers, ...credentials } })).status, 401);
+    }
+    assert.equal(outboundCalls, before, 'no app credentials can replace the owner cookie');
+    const bootstrap = await owner.visit(url + 'webui/bootstrap', { headers });
+    assert.equal(bootstrap.status, 401);
+    assert.equal(await bootstrap.text(), 'Preview application request failed.');
+    for (const name of ['WWW-Authenticate', 'Location', 'Set-Cookie', 'X-Debug']) assert.equal(bootstrap.headers.get(name), null);
+    const loggedIn = await owner.visit(url + 'webui/bootstrap', { headers: { ...headers, 'X-Nanobot-Auth': appPassword } });
+    assert.equal(loggedIn.status, 200);
+    assert.equal((await loggedIn.json()).api_token, appToken);
+    assert.equal(lastUpstream.headers['x-nanobot-auth'], appPassword);
+    const apiResponse = await owner.visit(url + 'webui/api', { headers: { ...headers, Authorization: `Bearer ${appToken}` } });
+    assert.equal(apiResponse.status, 200);
+    assert.equal(lastUpstream.headers.authorization, `Bearer ${appToken}`);
+    assert.doesNotMatch(lastUpstream.headers.cookie ?? '', /__Host-bl-preview|bayleaf_session/);
+    assert.equal((await owner.visit(url + 'webui/api', { headers })).status, 403);
+    const blocked = ['sk-bayleaf-owner', 'sk-bayleaf-grant-test', 'sk-or-v1-test', 'tk_test', 'admin_test', 'campus',
+      key, bindings.DAYTONA_API_KEY, oidcSecret, bindings.PREVIEWS_SECRET, new URL(upstream).hostname, 'synthetic-bearer',
+      jwt({ email: 'owner@example.test', exp: 1 }),
+      owner.cookies.get(new URL(url).host).get('__Host-bl-preview-session')];
+    for (const credential of blocked) {
+      await owner.visit(url + 'webui/api', { headers: { ...headers, Authorization: `Bearer ${credential}`, 'X-Nanobot-Auth': credential } });
+      assert.equal(lastUpstream.headers.authorization, undefined, 'reserved bearer excluded');
+      assert.equal(lastUpstream.headers['x-nanobot-auth'], undefined, 'reserved custom credential excluded');
+    }
+    for (const authorization of ['Basic dXNlcjpwYXNz', 'Bearer one, Bearer two', 'Bearer ' + 'a'.repeat(4096)]) {
+      await owner.visit(url, { headers: { ...headers, Authorization: authorization } });
+      assert.equal(lastUpstream.headers.authorization, undefined);
+    }
+    await owner.visit(url, { headers: { ...headers, Authorization: 'Bearer ' + jwt({ app: true }, 'synthetic-app-signing-secret') } });
+    assert.match(lastUpstream.headers.authorization, /^Bearer /, 'non-BayLeaf app JWT remains supported');
+  });
+  await check('cross-origin requests cannot transmit app credentials, including navigation exceptions', async () => {
+    const before = outboundCalls;
+    for (const origin of ['https://evil.test', 'https://sibling.previews.example.test', 'null']) {
+      for (const method of ['GET', 'POST']) {
+        const response = await owner.visit(url + 'webui/bootstrap', { method, headers: {
+          Origin: origin, 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Site': 'cross-site',
+          'X-Nanobot-Auth': appPassword, Authorization: `Bearer ${appToken}`,
+        } });
+        assert.equal(response.status, 403);
+      }
+    }
+    assert.equal(outboundCalls, before);
+    await owner.visit(url, { headers: { 'Sec-Fetch-Site': 'cross-site', 'X-Nanobot-Auth': appPassword, Authorization: `Bearer ${appToken}` } });
+    assert.equal(lastUpstream.headers.authorization, undefined);
+    assert.equal(lastUpstream.headers['x-nanobot-auth'], undefined);
+    const publicUrl = (await (await register({ access: 'public' })).json()).url;
+    await browser().visit(publicUrl, { headers: {
+      'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Dest': 'iframe',
+      'X-Nanobot-Auth': appPassword, Authorization: `Bearer ${appToken}`,
+    } });
+    assert.equal(lastUpstream.headers.authorization, undefined);
+    assert.equal(lastUpstream.headers['x-nanobot-auth'], undefined);
+    await revoke(publicUrl);
+  });
+  await check('HTTP app errors preserve status with fixed content; only validated retry metadata survives', async () => {
+    for (const code of [400, 401, 403, 404, 409, 422, 429, 500, 502, 503]) {
+      const response = await owner.visit(url + `status?code=${code}`);
+      assert.equal(response.status, code);
+      assert.equal(await response.text(), 'Preview application request failed.');
+      for (const name of ['Location', 'ETag', 'Last-Modified', 'WWW-Authenticate', 'Set-Cookie', 'X-Debug']) assert.equal(response.headers.get(name), null);
+      assert.equal(response.headers.get('Retry-After'), [429, 503].includes(code) ? '120' : null);
+      assert.equal(response.headers.get('Cache-Control'), 'no-store');
+      assert.ok(!JSON.stringify([...response.headers]).includes('synthetic-bearer'));
+    }
+    for (const retry of [upstream, 'tomorrow', '-1', '12345678901']) {
+      const response = await owner.visit(url + 'status?code=429&retry=' + encodeURIComponent(retry));
+      assert.equal(response.headers.get('Retry-After'), null);
+    }
+    const date = 'Thu, 08 Oct 2026 00:00:00 GMT';
+    assert.equal((await owner.visit(url + 'status?code=503&retry=' + encodeURIComponent(date))).headers.get('Retry-After'), date);
+    const head = await owner.visit(url + 'status?code=401', { method: 'HEAD' });
+    assert.equal(head.status, 401); assert.equal(await head.text(), '');
+    const transport = await owner.visit(url + 'transport-failure');
+    assert.equal(transport.status, 502); assert.ok(!(await transport.text()).includes('synthetic-bearer'));
+  });
+  await check('304 is bodyless, not a redirect; conditional validators remain bounded and uncached', async () => {
+    const response = await owner.visit(url + 'conditional', { headers: {
+      'If-None-Match': 'W/"fixture-v1"', 'If-Modified-Since': 'Thu, 08 Oct 2026 00:00:00 GMT',
+    } });
+    assert.equal(response.status, 304); assert.equal(await response.text(), '');
+    assert.equal(lastUpstream.headers['if-none-match'], 'W/"fixture-v1"');
+    assert.equal(lastUpstream.headers['if-modified-since'], 'Thu, 08 Oct 2026 00:00:00 GMT');
+    assert.equal(response.headers.get('ETag'), 'W/"fixture-v1"');
+    assert.equal(response.headers.get('Last-Modified'), 'Thu, 08 Oct 2026 00:00:00 GMT');
+    assert.equal(response.headers.get('Cache-Control'), 'no-store');
+    for (const name of ['Location', 'Set-Cookie', 'X-Debug', 'Content-Length']) assert.equal(response.headers.get(name), null);
+    assert.equal((await owner.visit(url + 'conditional?location')).headers.get('Location'), null);
+    assert.equal((await owner.visit(url + 'conditional?unsafe')).headers.get('ETag'), null);
+    assert.equal((await owner.visit(url + 'conditional', { method: 'HEAD' })).status, 304);
+    assert.equal((await owner.visit(url + 'conditional', { method: 'POST', headers: { Origin: new URL(url).origin } })).status, 502);
+    const success = await owner.visit(url + 'validators');
+    assert.equal(success.status, 200);
+    assert.equal(success.headers.get('ETag'), '"fixture-v1"');
+    assert.equal(success.headers.get('Last-Modified'), 'Thu, 08 Oct 2026 00:00:00 GMT');
+    assert.equal(success.headers.get('Cache-Control'), 'no-store');
+    for (const etag of ['"' + upstream + '"', '"' + new URL(upstream).hostname + '"', '"' + 'a'.repeat(257) + '"']) {
+      const invalid = await owner.visit(url + 'validators?etag=' + encodeURIComponent(etag) + '&modified=' + encodeURIComponent(upstream));
+      assert.equal(invalid.headers.get('ETag'), null);
+      assert.equal(invalid.headers.get('Last-Modified'), null);
+    }
   });
   await check('application cookies preserve paths, cannot cross hosts, and cannot overwrite gateway credentials', async () => {
     await owner.visit(url + 'cookie-path');
@@ -442,7 +601,7 @@ try {
     assert.equal(publicRedirect.headers.get('Location'), url + 'next?ok=1');
     for (const path of ['escape', 'error']) {
       const r = await owner.visit(url + path);
-      assert.equal(r.status, 502); assert.ok(!(await r.text()).includes('synthetic-bearer'));
+      assert.equal(r.status, path === 'error' ? 500 : 502); assert.ok(!(await r.text()).includes('synthetic-bearer'));
     }
     assert.equal((await owner.visit(url + '__preview/unknown')).status, 403);
     const before = outboundCalls;
@@ -542,4 +701,8 @@ try {
     assert.equal((await dispatch(api + '/health')).status, 200);
   });
   console.log(`${checks} security checks passed (synthetic workerd/D1; no live browser or Daytona qualification).`);
-} finally { await mf.dispose(); }
+} finally {
+  stage('disposing isolated workerd');
+  await mf.dispose();
+  clearTimeout(deadline);
+}

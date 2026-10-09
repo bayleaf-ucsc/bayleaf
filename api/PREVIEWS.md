@@ -186,13 +186,105 @@ Authenticated private requests require Fetch Metadata or an exact matching Origi
 legacy browsers that provide neither are denied. Request and response headers
 use allowlists. Redirects may only target the same upstream origin or the exact
 protected preview origin, are translated to the preview origin, and carry no
-upstream response body. Upstream errors become fixed gateway errors. No caching,
+upstream response body. Upstream HTTP errors keep their status with fixed sanitized
+content; transport failures remain gateway errors. No caching,
 upstream error logging, or request/response content storage is introduced.
 Application response bodies are streamed unchanged. An application that embeds
 its upstream hostname in its body can still disclose that hostname: the actual
 Daytona/application combination must pass an echo/absolute-URL containment test
 before screen-safe deployment. This is a qualification requirement, not a
 claim that header filtering sanitizes arbitrary application content.
+
+### HTTP application compatibility (locally tested, 2026-10-08) ✨
+
+- The mandatory private owner-cookie gate runs before forwarding. An application
+  password or bearer token cannot authenticate to BayLeaf or bypass that gate.
+- Only `Authorization: Bearer <token>` and `X-Nanobot-Auth` are newly allowed
+  application credentials, bounded to 4096 characters. They travel only on
+  non-navigation requests with the exact preview Origin or `Sec-Fetch-Site:
+  same-origin`. Existing origin checks still reject foreign/sibling Origins and
+  unsafe requests without the exact Origin. Navigation/iframe exceptions never
+  transmit these credentials. Arbitrary auth headers and Basic auth stay stripped.
+- Reserved `sk-` (including ordinary and temporary BayLeaf keys and OpenRouter),
+  `tk_`, `admin_`, `tvly-`, `dt_`, and Campus Pass credentials stay stripped in
+  both headers. So do configured key/secret/token binding values, the signed
+  upstream hostname, first DNS label and port-stripped credential label, incoming non-app
+  cookie values, and JWTs signed by BayLeaf's API/preview session secrets
+  (including expired tokens and decoder-equivalent signature spellings). Signature
+  recognition uses the same base64 decoder as Hono's session verifier, not a
+  canonical-token regex. Malformed JWT-like credentials are stripped. These
+  exclusions are conservative: app passwords
+  colliding with them are unsupported. Opaque credentials for unrelated external
+  systems cannot in general be classified; this is not a credential DLP system.
+  No identity lookup, provider-key acquisition, credential logging or storage is
+  added. Other request-header and cookie allowlists remain unchanged.
+- Completed HTTP 400–599 responses, including 500, keep their upstream status.
+  Their body is replaced with `Preview application request failed.` (no body for
+  HEAD); cookies, authentication challenges, redirects, debug headers and original
+  entity headers are dropped. Hosting errors cannot be distinguished from app
+  errors by status alone. Fetch rejection/timeout and invalid redirects remain
+  sanitized HTTP 502 gateway failures. WebSocket handshake errors still use 502.
+- HTTP 304 for GET/HEAD is bodyless and does not require or forward Location.
+  `If-None-Match` and `If-Modified-Since` reach the upstream. Successful responses
+  and 304 may carry a bounded quoted ETag (`A–Z`, `a–z`, digits, `.`, `_`, `-`,
+  optional `W/`, excluding the upstream hostname, first DNS label and port-stripped
+  credential, case-insensitively) and canonical HTTP Last-Modified
+  date. HTTP 429/503 may carry Retry-After as up to ten decimal digits or a
+  canonical HTTP date. Other free-form metadata is not forwarded. `no-store`
+  remains mandatory: validator support introduces no gateway or browser caching.
+
+The workerd harness synthesizes Nanobot-style bootstrap 401, password bootstrap
+via the custom header, and subsequent `nbwt_` bearer API calls. Token format was
+checked against [Nanobot v0.3.5 source](https://github.com/HKUDS/nanobot/blob/v0.3.5/nanobot/webui/gateway_tokens.py).
+This qualifies the gateway contract locally, **not a real Nanobot browser flow**.
+
+Production follow-up (2026-10-08 Pacific): deployed Worker
+`5bc31933-6d94-4390-b15e-a9c66ab2b171` by operator approval. The existing owner
+sandbox was poked; Nanobot was already running. Its login screen and password
+bootstrap worked through the private preview. Initial chat creation failed because
+Nanobot advertised a loopback WebSocket URL. Setting its supported
+`channels.websocket.publicWsUrl` to the private preview's `wss://` origin and
+restarting Nanobot resolved that deployment configuration issue. OpenChamber's
+browser then created a saved topic and received a BayLeaf-inferred response.
+An anonymous bootstrap fetch remained HTTP 401. This qualifies this basic
+Nanobot 0.3.5 login/chat flow, not arbitrary successful-body URL containment,
+all Apps, or the full project/file workflow. Renewing the preview hostname also
+requires updating Nanobot's explicit public WebSocket URL. No Git publication. ✨
+Apps requiring JSON error details, WWW-Authenticate challenges, error-set cookies,
+Basic auth, unusual validators, or original `document.cookie` names remain outside
+the contract. Successful application bodies are still streamed unchanged and must
+be separately qualified for upstream-URL containment. Production deployment and
+browser qualification require separate approval.
+
+#### Review-fix evidence (2026-10-08) ✨
+
+Astra's two findings were independently confirmed at helper level: decoder-valid
+API session JWT signature padding bypassed the original credential regex, and
+ETags could disclose the upstream first DNS label or port-stripped credential.
+Both checks now cover those equivalent representations without relaxing app
+credential permissions. Run `node scripts/test-preview-compatibility.mjs` from
+`api/` for fast, credential-free tests of the actual private source helpers and
+header builder (test-only exports are appended in memory, not added to production).
+The suite checks 180 Hono-verified session JWT spellings across both session secrets,
+expiry states, padded signed parts, signature padding, alphabet aliases, whitespace
+and unused pad bits, plus 30 hostname/label/credential ETag containment cases and
+positive controls. These are helper tests, not owner-gate or browser qualification.
+
+The independent end-to-end attempts did **not** complete: one was manually
+interrupted, and a second hit a 90-second timeout before any PASS. Its last marker
+preceded `await mf.getD1Database('DB')`; neither completed migrations nor executed
+end-to-end probes were established. The earlier 30 grouped checks/five fixture
+tests/TypeScript passes were implementation evidence, not an independent rerun.
+The durable full harness now reports startup, D1 acquisition, each migration and
+each check, with a 90-second deadline naming the last stage if it stalls.
+
+After these fixes, the implementation rerun completed D1 acquisition, all fixture
+migrations, all 30 grouped workerd checks and disposal within the deadline;
+`npm run test:previews` also passed its five Python fixture tests. The focused
+helper suite, `npx tsc --noEmit` and `git diff --check` passed. No startup stall was
+reproduced in this run; the earlier independent stall's cause remains unknown.
+The new decoder/partial-label regressions are established by the focused helper
+suite, not by the unchanged assertions in the 30 grouped end-to-end checks.
 
 ## Configuration and retention
 

@@ -3,6 +3,7 @@ import { OpenAPIHono, createRoute } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { sign, verify } from 'hono/jwt';
+import { decodeBase64Url } from 'hono/utils/encode';
 import { bodyLimit } from 'hono/body-limit';
 import type { AppEnv, Bindings } from '../types';
 import { getSession } from '../utils/session';
@@ -464,6 +465,50 @@ export async function handlePreviewHost(c: Context<AppEnv>): Promise<Response> {
   } catch { return failure(502); }
 }
 
+function containsUpstreamCredential(value: string, target: URL): boolean {
+  const label = target.hostname.split('.')[0];
+  const credential = label.replace(/^\d+-/, '');
+  const lower = value.toLowerCase();
+  return [target.hostname, label, credential].some(part => part && lower.includes(part));
+}
+
+/** Reserved credentials must not become app passwords/tokens, even in the custom
+ * header. Opaque installation/Daytona keys have no reliable namespace, so also
+ * exclude configured secrets and the signed upstream hostname credential. */
+async function platformCredential(value: string, request: Request, env: Bindings, target: URL): Promise<boolean> {
+  const token = value.replace(/^Bearer\s+/i, '').trim();
+  if (/^(?:sk-|tk_|admin_|tvly-|dt_)|^campus$/i.test(token)) return true;
+  if (containsUpstreamCredential(token, target)) return true;
+  for (const [key, secret] of Object.entries(env)) {
+    if (/(?:KEY|SECRET|TOKEN)$/.test(key) && typeof secret === 'string' && secret && token.includes(secret)) return true;
+  }
+  for (const part of (request.headers.get('Cookie') ?? '').split(';')) {
+    const eq = part.indexOf('=');
+    const name = part.slice(0, eq).trim();
+    const secret = part.slice(eq + 1).trim();
+    if (eq > 0 && !name.startsWith('__Host-bl-app-') && secret && token.includes(secret)) return true;
+  }
+  // BayLeaf browser JWTs have no reserved prefix. Recognize their signatures,
+  // including expired tokens, without treating any app JWT as gateway identity.
+  const parts = token.split('.');
+  if (parts.length === 3) {
+    const [header, payload, signature] = parts;
+    let bytes: Uint8Array;
+    try {
+      // Use the session verifier's decoder: padding, standard/base64url alphabet
+      // aliases and noncanonical pad bits must not create a forwarding bypass.
+      bytes = decodeBase64Url(signature);
+    } catch { return true; } // Malformed JWT-like credentials are stripped, not forwarded or logged.
+    for (const secret of [env.PREVIEWS_SECRET, env.OIDC_CLIENT_SECRET]) {
+      if (!secret) continue;
+      const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret),
+        { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+      if (await crypto.subtle.verify('HMAC', key, bytes, new TextEncoder().encode(`${header}.${payload}`))) return true;
+    }
+  }
+  return false;
+}
+
 async function upstreamRequest(request: Request, env: Bindings, r: Registration) {
   const base = await decrypt(env, r);
   const policy = ['__api', 'lathe', '__browser'].includes(r.deployment) ? apiPolicy(env) : null;
@@ -474,13 +519,25 @@ async function upstreamRequest(request: Request, env: Bindings, r: Registration)
   target.pathname = incoming.pathname;
   target.search = incoming.search;
   const headers = new Headers();
-  for (const key of ['Accept', 'Accept-Language', 'Content-Type', 'Range', 'If-Range',
+  for (const key of ['Accept', 'Accept-Language', 'Content-Type', 'Range', 'If-Range', 'If-None-Match', 'If-Modified-Since',
     'Origin', 'User-Agent', 'X-Requested-With', 'X-CSRF-Token', 'X-XSRF-Token', 'Service-Worker']) {
     const value = request.headers.get(key);
     if (value) headers.set(key, value);
   }
   headers.set('X-Forwarded-Host', incoming.host);
   headers.set('X-Forwarded-Proto', 'https');
+  // Never transmit app credentials on external top-level navigation or public
+  // iframe exceptions. Ordinary same-origin browser GET fetches omit Origin.
+  const appRequest = request.headers.get('Sec-Fetch-Mode') !== 'navigate' &&
+    (request.headers.get('Origin') === incoming.origin || request.headers.get('Sec-Fetch-Site') === 'same-origin');
+  if (appRequest) {
+    for (const key of ['Authorization', 'X-Nanobot-Auth']) {
+      const value = request.headers.get(key);
+      if (!value || value.length > 4096 || /[\x00-\x1f\x7f]/.test(value)) continue;
+      if (key === 'Authorization' && !/^Bearer [A-Za-z0-9._~+/-]+=*$/i.test(value)) continue;
+      if (!await platformCredential(value, request, env, target)) headers.set(key, value);
+    }
+  }
   // Application-owned workspace selection, not gateway identity or authority.
   if (r.deployment === '__browser') {
     const directory = request.headers.get('X-Opencode-Directory');
@@ -492,6 +549,20 @@ async function upstreamRequest(request: Request, env: Bindings, r: Registration)
   return { target, headers, incoming };
 }
 
+function httpDate(value: string | null): string | null {
+  if (!value || !/^[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(value)) return null;
+  return Number.isFinite(Date.parse(value)) && new Date(value).toUTCString() === value ? value : null;
+}
+
+function validators(upstream: Headers, outgoing: Headers, target: URL): void {
+  const etag = upstream.get('ETag');
+  // Deliberately bounded opaque validator syntax, not a free-form debug channel.
+  if (etag && /^(?:W\/)?"[A-Za-z0-9._-]{1,256}"$/.test(etag) &&
+      !containsUpstreamCredential(etag, target)) outgoing.set('ETag', etag);
+  const modified = httpDate(upstream.get('Last-Modified'));
+  if (modified) outgoing.set('Last-Modified', modified);
+}
+
 async function forward(c: Context<AppEnv>, r: Registration): Promise<Response> {
   const prepared = await upstreamRequest(c.req.raw, c.env, r);
   if (!prepared) return failure();
@@ -501,6 +572,24 @@ async function forward(c: Context<AppEnv>, r: Registration): Promise<Response> {
     redirect: 'manual', signal: AbortSignal.timeout(Math.min(300_000, Math.max(1, (r.expires_at - now()) * 1000))),
   });
   const responseHeaders = secureHeaders();
+  // A completed HTTP error is an app/hosting response, not a transport failure.
+  // Keep status semantics but discard content, cookies, challenges and debug URLs.
+  if (upstream.status >= 400 && upstream.status <= 599) {
+    await upstream.body?.cancel();
+    if ([429, 503].includes(upstream.status)) {
+      const retry = upstream.headers.get('Retry-After');
+      if (retry && (/^\d{1,10}$/.test(retry) || httpDate(retry))) responseHeaders.set('Retry-After', retry);
+    }
+    responseHeaders.set('Content-Type', 'text/plain; charset=utf-8');
+    return new Response(c.req.method === 'HEAD' ? null : 'Preview application request failed.',
+      { status: upstream.status, headers: responseHeaders });
+  }
+  if (upstream.status === 304) {
+    await upstream.body?.cancel();
+    if (!['GET', 'HEAD'].includes(c.req.method)) return failure(502);
+    validators(upstream.headers, responseHeaders, target);
+    return new Response(null, { status: 304, headers: responseHeaders });
+  }
   const frameOrigin = await browserFrameOrigin(c.env, r);
   if (frameOrigin) {
     responseHeaders.delete('X-Frame-Options');
@@ -529,6 +618,7 @@ async function forward(c: Context<AppEnv>, r: Registration): Promise<Response> {
     await upstream.body?.cancel();
     return failure(502);
   }
+  validators(upstream.headers, responseHeaders, target);
   for (const key of ['Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges', 'Content-Encoding', 'Content-Disposition']) {
     const value = upstream.headers.get(key);
     if (value && !value.includes(target.hostname)) responseHeaders.set(key, value);

@@ -29,7 +29,16 @@ config, and deployment. There is no npm publication workflow for the plugin.
 3. Keep owner credentials internal, routes fixed, redirects disabled, errors
    sanitized, output bounded, and metadata fields allowlisted. Status reads must
    not wake compute or renew work periods. Preview mutations must request native
-   V2 permissions; resources distinguish private/public access and port.
+    V2 permissions; resources distinguish private/public access and port.
+   For preview-gateway compatibility changes, read `api/PREVIEWS.md` and use
+   `npm --prefix api run test:previews` plus the API TypeScript check. Preserve
+   the private owner gate independently of app login, sanitize upstream error
+   content without erasing app HTTP statuses, and qualify real application/browser
+   behavior separately from synthetic gateway tests. No plugin publication is
+   needed for a parent-only gateway change.
+   Run `node api/scripts/test-preview-compatibility.mjs` for focused source-helper
+   regressions without workerd. Record stalled full-harness runs as incomplete,
+   with the last stage reached, never as completed migrations or executed probes.
 4. Test with `npm --prefix api/sandbox-plugin test`. Use the parent runtime harness
    against the pinned V2 binary for registration, API bootstrap and permission
    behavior. The internal plugin event stream has no HTTP connection-marker event:
@@ -81,6 +90,28 @@ rebuild the derived pin and redeploy the Worker. Application rollback is a separ
 explicit operation on the user-owned installation. Preserve user files and histories.
 
 ## Evidence and refinement log
+
+- 2026-10-08 (preview compatibility production): operator-approved Worker
+  `5bc31933-6d94-4390-b15e-a9c66ab2b171` deployed after focused credential/ETag
+  regressions and TypeScript checks. Existing private Nanobot login and live
+  BayLeaf chat passed in OpenChamber's browser; anonymous bootstrap remained 401.
+  Deployment also required Nanobot's explicit `publicWsUrl`: its default advertised
+  loopback behind this proxy. Preview renewal must update that URL. No plugin
+  change or Git publication; broader app/body containment remains unqualified.
+
+- 2026-10-08 (Astra review fixes, local only): JWT exclusion must use Hono's actual
+  signature decoder, covering padding/alphabet/pad-bit aliases, not a spelling
+  regex. Validator containment must cover hostname, first DNS label and stripped
+  signed credential. Added fast actual-source tests and bounded harness stage
+  diagnostics; focused suite, 30 grouped/five fixture checks, TypeScript and diff
+  checks passed in the implementation rerun. Independent stalled runs remain
+  incomplete evidence and their stall cause is unknown. No deploy.
+
+- 2026-10-08 (preview HTTP compatibility, local only): Parent gateway changes
+  needed no plugin update or publication. Synthetic app auth/status/304 tests
+  cover the compatibility boundary, not real Nanobot browser qualification.
+  Miniflare renders outbound mock exceptions as HTTP 500; transport-error tests
+  must inject a fetch rejection inside workerd to distinguish the two. No deploy.
 
 - 2026-10-06 (scheduling skill): Background source inspection of published
   OpenChamber 2.1.1 found filesystem-persisted definitions, in-process timers,
