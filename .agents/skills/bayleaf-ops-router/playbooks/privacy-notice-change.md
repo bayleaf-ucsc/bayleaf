@@ -75,6 +75,10 @@ this is why step 3's approval gate precedes both publishing and notifying.
 
 ## Refinement log
 
+- 2026-10-08 (Sandboxes dashboard, local): Drafted metadata-only login/session
+  retention and sign-in activity-refresh disclosures. No new processor or
+  inference-content storage; deployment and notice publication remain pending.
+
 - 2026-10-08: Drafted the opt-in configured-preview-header storage disclosure
   for issue #86 alongside the local implementation. It extends the existing
   encrypted preview credential record, not inference-content retention or the

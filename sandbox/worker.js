@@ -1,69 +1,119 @@
-const page = `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="BayLeaf Sandboxes: persistent workspaces for building, running, and previewing projects with an AI agent. A new home is coming soon.">
-  <meta name="theme-color" content="#1e5a3a">
-  <title>BayLeaf Sandboxes · A new home is coming soon</title>
-  <style>
-    * { box-sizing:border-box; }
-    body { margin:0; background:#f6f8f4; color:#24352b; font:1rem/1.65 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-    main { max-width:760px; margin:0 auto; padding:clamp(1.5rem,6vw,4rem) 1.5rem; }
-    a { color:#1e5a3a; text-underline-offset:0.2em; }
-    a:focus-visible { outline:3px solid #2a5298; outline-offset:5px; }
-    nav { display:flex; flex-wrap:wrap; gap:1.5rem; font-size:0.95rem; }
-    nav a:first-child { font-weight:700; margin-right:auto; }
-    .eyebrow { display:inline-block; margin:3.5rem 0 0; padding:0.3rem 0.8rem;
-      border:1px solid #a9b9aa; border-radius:2rem; font-size:0.85rem; color:#365a43; }
-    h1 { font-size:clamp(2.4rem,8vw,4rem); line-height:1.08; letter-spacing:-0.045em; margin:1.2rem 0; font-weight:700; }
-    .lede { font-size:clamp(1.1rem,3vw,1.35rem); max-width:36rem; }
-    .workspace { margin:2rem 0; padding:1.5rem; background:#fff; border:1px solid #c6d2c5; border-radius:14px; }
-    .steps { display:flex; gap:0.5rem; align-items:center; color:#365a43; font-size:0.85rem; }
-    .steps span { flex:1; border-top:3px solid #b7cebe; padding-top:0.5rem; }
-    h2 { font-size:1.2rem; margin:1.25rem 0 0.5rem; }
-    .workspace p { margin:0.5rem 0 0; }
-    .button { display:inline-block; background:#1e5a3a; color:#fff; padding:0.8rem 1.2rem;
-      border-radius:6px; text-decoration:none; font-weight:600; margin:0.5rem 0; }
-    .button:hover { background:#16432b; }
-    .note,footer { font-size:0.9rem; color:#48594e; }
-    footer { border-top:1px solid #c6d2c5; margin-top:2.5rem; padding-top:1rem; }
-  </style>
-</head>
-<body>
-  <main>
-    <nav aria-label="BayLeaf services"><a href="https://bayleaf.dev">BayLeaf</a><a href="https://chat.bayleaf.dev">Chat</a><a href="https://api.bayleaf.dev">API</a></nav>
-    <p class="eyebrow">A new home is coming soon</p>
-    <h1>BayLeaf Sandboxes</h1>
-    <p class="lede">A place to build, run, and try things out with an AI agent. Your files stay in your sandbox, ready for the next session.</p>
-    <div class="workspace">
-      <div class="steps" aria-hidden="true"><span>Build</span><span>Run</span><span>Preview</span><span>Return</span></div>
-      <h2>One workspace, connected to BayLeaf</h2>
-      <p>Work in your browser, use Chat’s sandbox tools, or connect through the API. They reach the same sandbox files and processes. Chat and your sandbox agent keep separate conversation histories.</p>
-      <p>This will be the home for friendly setup, workspace status, and ideas for what to make next.</p>
-    </div>
-    <h2>You can already try it</h2>
-    <p>BayLeaf Sandboxes is available to the UC Santa Cruz community through the API dashboard while this new home takes shape.</p>
-    <a class="button" href="https://api.bayleaf.dev/dashboard#sandbox">Open your sandbox</a>
-    <p class="note">Continues to BayLeaf API for UCSC sign-in and setup.</p>
-    <p class="note">Files and agent histories persist; running tasks stop when your sandbox sleeps. Deleting your sandbox deletes its files and histories. Inference uses zero-data-retention providers, but workspace storage is retained and is not inaccessible to operators. <a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md">Read the privacy notice</a>.</p>
-    <footer>Part of <a href="https://bayleaf.dev">BayLeaf</a>, a situated counterplatform for Generative AI at UC Santa Cruz. <a href="https://github.com/bayleaf-ucsc/bayleaf/issues/84">Follow the design</a>.</footer>
-  </main>
-</body>
-</html>`;
+import { renderSandboxPage } from './page';
 
-export default {
-  fetch(request) {
-    if (!['GET', 'HEAD'].includes(request.method)) {
-      return new Response('Method not allowed', { status:405, headers:{ Allow:'GET, HEAD' } });
-    }
-    if (new URL(request.url).pathname !== '/') return new Response('Not found', { status:404 });
-    return new Response(request.method === 'HEAD' ? null : page, { headers: {
-      'Content-Type':'text/html; charset=utf-8',
-      'Cache-Control':'public, max-age=300',
-      'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
-      'Referrer-Policy':'strict-origin-when-cross-origin',
-      'X-Content-Type-Options':'nosniff',
+const ORIGIN = 'https://sandbox.bayleaf.dev';
+const SESSION = '__Host-bayleaf-sandbox-session';
+const TRANSACTION = '__Host-bayleaf-sandbox-transaction';
+const AUTH_HEADERS = {
+  'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer',
+  'X-Content-Type-Options': 'nosniff',
+  'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+};
+const cookie = (name, value, age) => `${name}=${value}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${age}`;
+function cookies(request) {
+  return new Map((request.headers.get('Cookie') || '').split(';').map(part => {
+    const at = part.indexOf('=');
+    return at < 0 ? ['', ''] : [part.slice(0, at).trim(), part.slice(at + 1).trim()];
+  }));
+}
+function redirect(location, values = []) {
+  const headers = new Headers({ ...AUTH_HEADERS, Location: location });
+  for (const value of values) headers.append('Set-Cookie', value);
+  return new Response(null, { status: 303, headers });
+}
+function continueLogin(location, value) {
+  // End the same-origin form submission before navigating to the API broker.
+  // Chromium applies form-action to redirect chains, including the external IdP.
+  // A fresh document navigation preserves the narrow form-action policy.
+  const target = location.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;');
+  return new Response(`<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta http-equiv="refresh" content="0;url=${target}"><title>Continue sign-in · BayLeaf Sandboxes</title>
+    <p><a href="${target}">Continue to UCSC sign-in</a></p></html>`, { headers: {
+      ...AUTH_HEADERS, 'Content-Type': 'text/html; charset=utf-8', 'Set-Cookie': value,
     } });
-  }
+}
+function failure(status, error) {
+  return Response.json({ error }, { status, headers: AUTH_HEADERS });
+}
+function loginFailure(status = 400) {
+  return new Response(`<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Sign-in incomplete · BayLeaf Sandboxes</title><main><h1>Sign-in could not complete</h1>
+    <p>The sign-in may have expired, or your account may need attention. Please try again.</p>
+    <form method="post" action="/login"><button type="submit">Sign in with UCSC</button></form>
+    <p>If you revoked your BayLeaf key, restore access in the <a href="https://api.bayleaf.dev/dashboard">API dashboard</a> first.</p>
+    <p><a href="/">Return to BayLeaf Sandboxes</a></p></main></html>`,
+  { status, headers: { ...AUTH_HEADERS, 'Referrer-Policy': 'strict-origin', 'Content-Type': 'text/html; charset=utf-8' } });
+}
+const random = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('');
+const hash = async value => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))), b => b.toString(16).padStart(2, '0')).join('');
+
+/** Same-origin browser adapter; API-issued sessions stay in host-only cookies.
+ * The named binding has no public HTTP counterpart or caller-selected owner.
+ */
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    if (url.origin !== ORIGIN) return failure(400, 'invalid_host');
+    if (request.method === 'OPTIONS') return failure(405, 'method_not_allowed');
+    const jar = cookies(request);
+    const session = jar.get(SESSION) || '';
+    const api = env.MANAGEMENT;
+    try {
+      // GETs, including authenticated reloads, never wake compute. The initial
+      // sign-in POST is the owner's explicit action authorizing a one-shot wake.
+      if (url.pathname === '/' && ['GET', 'HEAD'].includes(request.method)) {
+        const current = session ? await api.readSession({ session }) : null;
+        const page = await renderSandboxPage(current?.user ?? null);
+        if (session && !current) page.headers.append('Set-Cookie', cookie(SESSION, '', 0));
+        return request.method === 'HEAD' ? new Response(null, page) : page;
+      }
+      if (url.pathname === '/login' && request.method === 'GET') return redirect('/');
+      if (url.pathname === '/login' && request.method === 'POST') {
+        if (request.headers.get('Origin') !== ORIGIN) return failure(403, 'invalid_origin');
+        const verifier = random();
+        const result = await api.beginLogin({ verifierHash: await hash(verifier) });
+        if (!result) return loginFailure(503);
+        return continueLogin(result.authorizeUrl, cookie(TRANSACTION, verifier, 600));
+      }
+      if (url.pathname === '/auth/prove' && request.method === 'GET') {
+        const verifier = jar.get(TRANSACTION);
+        if (!verifier) return loginFailure();
+        const result = await api.proveLogin({ flow: url.searchParams.get('flow'), verifier });
+        if (!result) return loginFailure();
+        return redirect(result.authorizeUrl);
+      }
+      if (url.pathname === '/auth/callback' && request.method === 'GET') {
+        const verifier = jar.get(TRANSACTION);
+        if (!verifier) return loginFailure();
+        const result = await api.exchangeLogin({ flow: url.searchParams.get('flow'), code: url.searchParams.get('code'), verifier });
+        if (!result) return loginFailure();
+        // Login is not held hostage by a provider outage. This never creates a
+        // machine, installs an app or launches a service. Failures are retryable
+        // through deliberate app setup, not an automatic loop on page refresh.
+        ctx.waitUntil(api.managed({ session: result.session, operation: 'wake-existing' }).catch(() => undefined));
+        return redirect('/', [cookie(TRANSACTION, '', 0), cookie(SESSION, result.session,
+          Math.max(0, Math.floor(result.expiresAt - Date.now() / 1000)))]);
+      }
+      if (url.pathname === '/logout' && request.method === 'POST') {
+        if (request.headers.get('Origin') !== ORIGIN) return failure(403, 'invalid_origin');
+        if (session && !await api.logout({ session })) return failure(503, 'logout_unavailable');
+        return redirect('/', [cookie(SESSION, '', 0), cookie(TRANSACTION, '', 0)]);
+      }
+      const service = url.pathname.match(/^\/services\/([a-z][a-z0-9-]{0,39})\/(status|start|restart)$/);
+      if (service) {
+        const [, name, operation] = service;
+        if (request.method !== (operation === 'status' ? 'GET' : 'POST')) return failure(405, 'method_not_allowed');
+        if (!session) return failure(401, 'login_required');
+        if (operation !== 'status' && (request.headers.get('Origin') !== ORIGIN ||
+            request.headers.get('X-BayLeaf-Action') !== 'managed-service')) return failure(403, 'invalid_origin');
+        const result = await api.managed({ session, service: name, operation });
+        // Preserve only the JSON contract, never upstream cookies or redirects.
+        return Response.json(result.body, { status: result.status, headers: AUTH_HEADERS });
+      }
+      return failure(404, 'not_found');
+    } catch {
+      // No provider payloads, session tokens, or authorization codes in logs.
+      return url.pathname.startsWith('/auth/') || url.pathname === '/login'
+        ? loginFailure(503) : failure(503, 'service_unavailable');
+    }
+  },
 };

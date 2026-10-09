@@ -147,7 +147,13 @@ export class SandboxBrowser {
     if (!row) return response({ phase: 'unavailable', error: 'personal_key_required' }, 403);
     const validKey = !op || await keyHash(row.bayleaf_token) === op.ownerKeyHash;
     // Control-plane GET only. No readiness probes, file reads, or last-activity writes.
-    const current = op?.sandboxId ? await machine(this.env, op.sandboxId) : await discover(this.env, email);
+    const recorded = op?.sandboxId ? await machine(this.env, op.sandboxId) : null;
+    const current = recorded ?? await discover(this.env, email);
+    // Chat/API may have replaced a deleted machine since the last managed setup.
+    // A confirmed 404 permits passive rediscovery, never inheritance of its app URL.
+    if (current && op?.sandboxId && current.id !== op.sandboxId && op.phase !== 'opening') {
+      return response({ phase: 'idle', machine: current.state, progress: 'unchecked' });
+    }
     // A destroyed shared machine cannot retain an actionable installation error.
     // Keep old operation metadata internally for reconciliation, not in the UI.
     if (!current && op?.phase !== 'opening') return response({ phase: 'idle', machine: 'absent', progress: 'unchecked' });
@@ -169,6 +175,34 @@ export class SandboxBrowser {
       const u = new URL(req.url);
       const email = req.headers.get('X-BayLeaf-Owner') ?? '';
       if (!email || !this.state.id.equals(this.env.SANDBOX_BROWSER.idFromName(email))) return response({ error: 'denied' }, 403);
+      // The management login may wake compute without enabling or installing an
+      // application. This path is private to the service binding, never routed
+      // by the public /sandbox/browser adapter.
+      if (req.method === 'POST' && u.pathname === '/wake-existing') {
+        return await this.exclusive(async () => {
+          if (!await getActiveRow(email, this.env)) return response({ error: 'personal_key_required' }, 403);
+          const current = await discover(this.env, email);
+          if (!current) return response({ state: 'absent' });
+          if (!current.id || current.public === true) return response({ error: 'sandbox_unavailable' }, 503);
+          const op = await this.state.storage.get<Operation>('operation');
+          // Active setup already owns wake/recovery and must not be interrupted.
+          if (op?.phase === 'opening' && op.setupDeadline > now()) return response({ state: 'opening' });
+          if (['stopped', 'archived'].includes(current.state)) {
+            // A control-plane wake does not restore application processes. Do
+            // not let an old ready record become apparently usable after wake.
+            if (op?.phase === 'ready') await this.retire(op, 'stopped');
+            const result = await platform(this.env, `/sandbox/${encodeURIComponent(current.id)}/start`, 'POST');
+            await result.body?.cancel();
+            return result.ok ? response({ state: 'starting' }) : response({ error: 'wake_unavailable' }, 503);
+          }
+          if (current.state === 'started') {
+            const result = await platform(this.env, `/sandbox/${encodeURIComponent(current.id)}/last-activity`, 'POST');
+            await result.body?.cancel();
+            return result.ok ? response({ state: 'started' }) : response({ error: 'wake_unavailable' }, 503);
+          }
+          return response({ state: 'transitioning' });
+        });
+      }
       if (!browserEnabled(this.env)) return response({ error: 'browser_disabled' }, 503);
       if (req.method === 'GET' && u.pathname === '/status') return await this.view(email);
       if (req.method !== 'POST' || !['/start', '/restart'].includes(u.pathname)) return response({ error: 'not_found' }, 404);

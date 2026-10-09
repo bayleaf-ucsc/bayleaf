@@ -157,8 +157,13 @@ research-and-education identity broker.
   The agent may still send selected service-derived context to BayLeaf for
   inference; see [`DIRECT-INTEGRATIONS.md`](DIRECT-INTEGRATIONS.md).
 - BayLeaf does not use cookies for tracking. Session cookies expire in 24
-  hours (API login and protected previews), or are managed by
-  Open WebUI (Chat).
+  hours (API login, Sandboxes, and protected previews), or are managed by
+  Open WebUI (Chat). Sandboxes sign-in stores short-lived login transactions
+  and session metadata (email, name, credential digests, and expiry), not
+  workspace content. Sessions expire after 24 hours; expired records are
+  cleaned up hourly. Signing out of Sandboxes revokes that session. Signing in
+  starts waking an existing sandbox and refreshes its recorded activity;
+  dashboard reloads and status checks do not. ✨
 
 ## Changes and questions
 

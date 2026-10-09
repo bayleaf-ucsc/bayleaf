@@ -6,11 +6,17 @@ The earlier amsmith-only spike is recorded in `SANDBOX-BROWSER-SPIKE.md`.
 
 ## Ownership and packet flow
 
-The existing API dashboard is the durable management surface. No personalized
-hostname is needed. A passive visit never creates or wakes a sandbox.
+The dedicated [BayLeaf Sandboxes dashboard](https://sandbox.bayleaf.dev) is the
+management surface for hosted applications. The API dashboard retains low-level
+machine status, keep-alive and deletion. No personalized hostname is needed.
+Passive visits never create or wake a sandbox; completed explicit Sandboxes
+sign-in starts one best-effort wake of existing compute, separate from app setup.
+See [`../sandbox/README.md`](../sandbox/README.md) for the authentication boundary
+and coordinated rollout. The dashboard move was deployed on 2026-10-08.
 
 ```text
-Browser → API dashboard → owner-scoped SandboxBrowser Durable Object
+Browser → Sandboxes dashboard → private API management binding
+                            → owner-scoped SandboxBrowser Durable Object
                             ├→ Daytona control plane: observe/create/start
                             └→ Toolbox: transfer setup, launch, inspect breadcrumbs
 
@@ -74,9 +80,12 @@ Plugin tests (13), installer tests (16), lifecycle checks (17), TypeScript, and
 the synthetic browser preview passed; live authenticated config selects the pin.
 
 All endpoints accept an ordinary personal BayLeaf key. Campus Pass and temporary
-inference tokens are excluded. The dashboard uses the existing browser session;
-mutations additionally require exact same-origin `Origin` and
-`X-BayLeaf-Action: sandbox-browser`. Ownership never comes from request JSON.
+inference tokens are excluded. The API endpoints retain their existing API browser
+session support; mutations require exact same-origin `Origin` and
+`X-BayLeaf-Action: sandbox-browser`. The Sandboxes dashboard uses its separate
+host-only session and `X-BayLeaf-Action: managed-service` on same-origin service
+POSTs. Its private binding resolves owner identity server-side and calls the same
+controller. Ownership never comes from request JSON.
 
 | Endpoint | Effect |
 | --- | --- |
@@ -90,7 +99,9 @@ use. Even its status polls never call Toolbox. There is no countdown, extension
 window, or end-session action. Refresh/focus checks only observe status.
 
 Opening already-ready browser access keeps the URL and link expiry. Stopped or
-archived machines need a deliberate start action. Sleep loses processes, so
+archived machines need a deliberate start action or a completed Sandboxes login
+to begin waking compute. Login wake retires stale ready-app metadata but does not
+restore applications. Sleep loses processes, so
 the managed application is relaunched and gets a fresh preview generation.
 No OpenChamber Desktop discovery or background reconnect can start compute or renew links.
 
@@ -100,7 +111,7 @@ requests; socket sweep/revocation follows the existing preview contract.
 Only managed browser previews forward `X-Opencode-Directory` for OpenChamber
 workspace selection. This header has no role in gateway authentication.
 
-Expired/unknown preview navigation offers a fixed link to the API dashboard.
+Expired/unknown preview navigation offers a fixed link to BayLeaf Sandboxes.
 Cached application/service-worker pages can still appear on an old origin;
 this is not a promise to erase browser storage. Every replacement uses a nonce.
 

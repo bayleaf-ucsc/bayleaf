@@ -16,7 +16,6 @@ import { renderPage } from '../templates/layout';
 import { ALT_BACKENDS, isBackendEnabled } from '../constants';
 import { isSealedEnabled } from './sealed';
 import { maxGrantSeconds } from '../grants';
-import { browserEnabled } from '../sandboxBrowser';
 import { getTinfoilUsage } from '../tinfoil';
 
 export const dashboardRoutes = new OpenAPIHono<AppEnv>();
@@ -136,5 +135,5 @@ dashboardRoutes.get('/dashboard', async (c) => {
     month: sealedMonth,
   } : undefined;
 
-  return renderPage(c, <DashboardPage session={session} row={row} orKey={orKey} recommendedModel={c.env.RECOMMENDED_MODEL} sandboxInfo={sandboxInfo} browserEnabled={browserEnabled(c.env)} gwsEnabled={gwsEnabled} sealedEnabled={sealedEnabled} sealedUsage={sealedUsage} grantsEnabled={c.env.GRANTS_ENABLED === 'true'} grantMaxSeconds={maxGrantSeconds(c.env)} sealedRecommendedModel={c.env.SEALED_RECOMMENDED_MODEL} altBackendUsage={altBackendUsage} />);
+  return renderPage(c, <DashboardPage session={session} row={row} orKey={orKey} recommendedModel={c.env.RECOMMENDED_MODEL} sandboxInfo={sandboxInfo} gwsEnabled={gwsEnabled} sealedEnabled={sealedEnabled} sealedUsage={sealedUsage} grantsEnabled={c.env.GRANTS_ENABLED === 'true'} grantMaxSeconds={maxGrantSeconds(c.env)} sealedRecommendedModel={c.env.SEALED_RECOMMENDED_MODEL} altBackendUsage={altBackendUsage} />);
 });

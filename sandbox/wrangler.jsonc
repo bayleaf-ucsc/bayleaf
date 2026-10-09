@@ -5,6 +5,7 @@
   "compatibility_date": "2026-10-05",
   "workers_dev": false,
   "preview_urls": false,
+  "services": [{ "binding": "MANAGEMENT", "service": "bayleaf-api", "entrypoint": "SandboxManagement" }],
   "routes": [{ "pattern": "sandbox.bayleaf.dev", "custom_domain": true }],
   "observability": { "enabled": false }
 }

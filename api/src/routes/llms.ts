@@ -884,7 +884,7 @@ Browser access (when enabled; ordinary personal keys only):
 Poll status during setup, then open the returned private URL through the owner's
 browser login. Private browser links last up to 24 hours; expiry revokes link
 access without stopping applications. If the sandbox sleeps or the link expires,
-return to ${bt}/dashboard#sandbox${bt} to resume. New sandboxes use daytona-medium,
+return to https://sandbox.bayleaf.dev to resume. New sandboxes use daytona-medium,
 stop after 1 hour idle, and archive after 24 hours stopped. A 503 may
 mean the browser feature is disabled. Browser setup delegates the ordinary owner
 key into the sandbox and persists agent histories there; inference still uses

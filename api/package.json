@@ -15,6 +15,7 @@
     "test:sealed-models": "node scripts/test-sealed-models.mjs",
     "test:sandbox-reaper": "node scripts/test-sandbox-reaper.mjs",
     "test:sandbox-browser": "python3 scripts/test-browser-setup.py && node scripts/test-sandbox-policy.mjs && node scripts/harness-sandbox-browser.mjs",
+    "test:service-sessions": "node scripts/harness-service-sessions.mjs && node ../sandbox/test-worker.mjs",
     "test:sandbox-plugin": "npm --prefix sandbox-plugin test",
     "tail": "wrangler tail"
   },

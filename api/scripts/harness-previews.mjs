@@ -73,7 +73,7 @@ const bundled = await build({ absWorkingDir: root, stdin: { resolveDir: root, co
     finally { Date.now = realNow; }
   } };
 ` }, bundle: true,
-  write: false, format: 'esm', platform: 'browser', target: 'es2022', loader: { '.py': 'text', '.md': 'text' } });
+  write: false, format: 'esm', platform: 'browser', target: 'es2022', external: ['cloudflare:workers'], loader: { '.py': 'text', '.md': 'text' } });
 let lastUpstream = null;
 let outboundCalls = 0;
 let sandboxState = 'started';

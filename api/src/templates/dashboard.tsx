@@ -7,7 +7,6 @@ import type { Session, UserKeyRow, OpenRouterKey } from '../types';
 import type { SandboxInfo } from '../daytona';
 import type { TinfoilBillingUsage } from '../tinfoil';
 import { TemporaryInferenceTokens } from './grants';
-import { SandboxBrowserControls } from './sandboxBrowser';
 import {
   BaseLayout,
   RecommendedModelHint,
@@ -259,7 +258,7 @@ print(response.choices[0].message.content)`}</code></pre>
   );
 };
 
-const SandboxCard: FC<{ sandboxInfo: SandboxInfo | null; browserEnabled?: boolean }> = ({ sandboxInfo, browserEnabled }) => {
+const SandboxCard: FC<{ sandboxInfo: SandboxInfo | null }> = ({ sandboxInfo }) => {
   const state = sandboxInfo?.state ?? null;
   const stateLabel = state
     ? state.charAt(0).toUpperCase() + state.slice(1)
@@ -271,12 +270,10 @@ const SandboxCard: FC<{ sandboxInfo: SandboxInfo | null; browserEnabled?: boolea
     : '#555';
 
   return (
-    <div class={cardStyle} id="sandboxCard">
+    <div class={cardStyle} id="sandbox">
       <h2>Your sandbox</h2>
       <p>Your files and coding workspace, shared with BayLeaf Chat.</p>
-      {browserEnabled && <SandboxBrowserControls />}
-      <details style="margin-top:1rem">
-      <summary style="cursor:pointer;color:#006aad">Machine details &amp; management</summary>
+      <p>Set up and open managed services in the <a href="https://sandbox.bayleaf.dev/">Sandboxes dashboard</a>.</p>
       <div class={statsStyle}>
         <div class={statStyle}>
           <div class={statValueStyle} style={`color: ${stateColor}`}>{stateLabel}</div>
@@ -317,7 +314,6 @@ const SandboxCard: FC<{ sandboxInfo: SandboxInfo | null; browserEnabled?: boolea
           A sandbox will be created automatically on your first <code>POST /sandbox/exec</code> request.
         </p>
       )}
-      </details>
       <details style="margin-top: 1rem;">
         <summary style="cursor: pointer; color: #006aad;">Use the sandbox API</summary>
         <div style="margin-top: 0.75rem;">
@@ -695,7 +691,6 @@ export const DashboardPage: FC<{
   orKey: OpenRouterKey | null;
   recommendedModel: string;
   sandboxInfo?: SandboxInfo | null;
-  browserEnabled?: boolean;
   gwsEnabled?: boolean;
   sealedEnabled?: boolean;
   sealedUsage?: SealedUsage;
@@ -703,7 +698,7 @@ export const DashboardPage: FC<{
   grantMaxSeconds?: number;
   sealedRecommendedModel?: string;
   altBackendUsage?: AltBackendUsage[];
-}> = ({ session, row, orKey, recommendedModel, sandboxInfo, browserEnabled, gwsEnabled, sealedEnabled, sealedUsage, grantsEnabled, grantMaxSeconds = 3600, sealedRecommendedModel, altBackendUsage }) => {
+}> = ({ session, row, orKey, recommendedModel, sandboxInfo, gwsEnabled, sealedEnabled, sealedUsage, grantsEnabled, grantMaxSeconds = 3600, sealedRecommendedModel, altBackendUsage }) => {
   const greeting = session.name
     ? `Welcome, ${session.name} (${session.email})`
     : `Welcome, ${session.email}`;
@@ -712,6 +707,7 @@ export const DashboardPage: FC<{
   return (
     <BaseLayout title="Dashboard">
       <p>{greeting} | <a href="/logout">Sign out</a></p>
+      <p><a href="https://sandbox.bayleaf.dev/">Sandboxes dashboard</a>: set up and open services in your shared workspace.</p>
 
       <KeyCard hasKey={hasKey} />
 
@@ -721,7 +717,7 @@ export const DashboardPage: FC<{
 
       {row && sealedEnabled && sealedRecommendedModel && <SealedLlmCard recommendedModel={sealedRecommendedModel} usage={sealedUsage} />}
 
-      {row && <SandboxCard sandboxInfo={sandboxInfo ?? null} browserEnabled={browserEnabled} />}
+      {row && <SandboxCard sandboxInfo={sandboxInfo ?? null} />}
 
       {hasKey && <WebCard />}
 

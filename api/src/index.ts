@@ -18,6 +18,9 @@ import type { AppEnv } from './types';
 import { renderErrorPage, renderPage } from './templates/layout';
 import { getModelInfo } from './openrouter';
 import { authRoutes } from './routes/auth';
+import { serviceLoginRoutes } from './routes/serviceLogin';
+import { cleanupServiceSessions } from './serviceSessions';
+export { SandboxManagement } from './serviceSessions';
 import { dashboardRoutes } from './routes/dashboard';
 import { keyRoutes } from './routes/key';
 import { proxyRoutes } from './routes/proxy';
@@ -75,7 +78,8 @@ const apiCors = cors({
   exposeHeaders: ['WWW-Authenticate'],
   maxAge: 86400,
 });
-app.use('*', (c, next) => c.req.path.startsWith('/previews/') ? next() : apiCors(c, next));
+app.use('*', (c, next) => c.req.path.startsWith('/previews/') ||
+  c.req.path === '/auth/service' || c.req.path.startsWith('/auth/service/') ? next() : apiCors(c, next));
 
 app.use('*', async (c, next) => {
   const token = c.req.header('Authorization')?.replace(/^Bearer\s+/i, '').trim();
@@ -167,6 +171,7 @@ app.route('/docs', docsRoutes);
 app.route('/.well-known', wellKnownRoutes);
 app.route('/sandbox/.well-known', sandboxWellKnownRoutes);
 app.route('/auth/claim', claimRoutes);
+app.route('/auth/service', serviceLoginRoutes);
 app.route('/grants', grantRoutes);
 app.route('/previews', previewRoutes);
 app.route('/', llmsRoutes);
@@ -232,6 +237,7 @@ app.onError((err, c) => {
 export default {
   fetch: app.fetch,
   scheduled: async (event: ScheduledController, env: AppEnv['Bindings']) => {
+    await cleanupServiceSessions(env);
     if (event.cron === SANDBOX_REAPER_CRON) {
       const report = await reapInactiveSandboxes(env, event.scheduledTime);
       console.info('Sandbox reaper', report); // Aggregate metadata only; observability stays disabled.

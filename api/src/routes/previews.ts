@@ -396,7 +396,7 @@ export async function handlePreviewHost(c: Context<AppEnv>): Promise<Response> {
       if (c.req.header('Sec-Fetch-Mode') === 'navigate' && c.req.method === 'GET') {
         const headers = secureHeaders();
         headers.set('Content-Type', 'text/html; charset=utf-8');
-        const dashboard = new URL('/dashboard#sandbox', c.env.PREVIEWS_API_ORIGIN).href;
+        const dashboard = 'https://sandbox.bayleaf.dev/';
         return new Response(`<!doctype html><html lang="en"><meta name="viewport" content="width=device-width"><title>Preview unavailable</title><h1>This preview is unavailable</h1><p>It may have expired or been revoked.</p><p><a href="${dashboard}">Return to your BayLeaf dashboard</a></p></html>`, { status: 404, headers });
       }
       return failure(404);

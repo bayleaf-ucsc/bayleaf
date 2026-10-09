@@ -229,6 +229,27 @@ encrypted configuration alongside its destination. ✨
 
 API login has no server-side session store. Logout deletes its cookie immediately.
 
+### Sandboxes dashboard login
+
+The separate `sandbox.bayleaf.dev` dashboard reuses API sign-in, with a narrowly
+scoped handoff rather than a shared-domain cookie. The API stores only login
+metadata in `service_login_flows` and `service_sessions`:
+
+| Data | Retention |
+|---|---|
+| Login transaction ID, verifier/broker/code digests, stage, and authorized email/name | Ten-minute transaction; an issued code expires within 60 seconds; successful exchange consumes the row |
+| Opaque session-token digest, email/name, owner-key fingerprint, expiry | 24 hours; logout deletes it; owner-key rotation or revocation invalidates it immediately |
+| Sandbox-host session cookie | Secure, HttpOnly, host-only, SameSite=Lax; 24 hours |
+| Sandbox transaction and API broker/return cookies | Secure, HttpOnly, host-only, SameSite=Lax; at most ten minutes |
+
+Expired database rows are removed by scheduled hourly cleanup. Session secrets
+are never stored in plaintext in D1. Signing out of Sandboxes revokes only its
+session, not the independent API or preview sessions. Successful sign-in may
+create the normal account identity record for a new user, without provisioning
+an inference-provider key. It also makes one best-effort wake/activity refresh
+of existing sandbox compute, counted by the existing sandbox inactivity policy.
+Reloads and status requests do not renew activity. ✨
+
 ---
 
 ## Web Search and Fetch
@@ -258,5 +279,6 @@ prompt or completion content.
 | Plaintext model-policy verdicts | Cloudflare `MODEL_STATUS` KV | 24 hours for positive and definite-negative; unknown is not stored |
 | Account records (D1) | Cloudflare D1 | Indefinite while active |
 | Sandbox content | Daytona | 90 days after last activity |
-| Session state | Client cookie | 24 hours |
+| API session state | Client cookie | 24 hours |
+| Sandboxes session metadata | Cloudflare D1 and host-only client cookie | 24 hours, then scheduled cleanup; explicit logout removes the session row |
 | Edge logs | Cloudflare | ~72 hours (platform default) |

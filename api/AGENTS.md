@@ -530,12 +530,22 @@ there is no new monitoring store or alert integration. ✨
 ### Browser sandbox lifecycle (issue #81)
 
 Deployed and enabled on 2026-10-03 (`BROWSER_SANDBOX_ENABLED=true`); see
-`SANDBOX-BROWSER.md` for the contract and rollout gates. The existing dashboard
-owns lifecycle controls. `src/sandboxBrowser.ts` exports an owner-scoped Durable
+`SANDBOX-BROWSER.md` for the contract and rollout gates. The dedicated `sandbox/`
+dashboard owns managed-service controls; the API dashboard retains low-level
+machine controls. `src/sandboxBrowser.ts` exports an owner-scoped Durable
 Object, `routes/sandboxBrowser.ts` exposes session/ordinary-key operations, and
 `scripts/browser-setup.py` is the embedded versioned Linux installer. Migration
 0013 binds managed preview generations to the current owner's key fingerprint.
 No personalized hostname or second workspace is created.
+
+The dashboard move was deployed on 2026-10-08 after coordinated migration and rollout.
+`SandboxManagement` (`src/serviceSessions.ts`) is a named private Worker RPC
+entrypoint for the Sandboxes frontend. Migration 0014 stores hashed, revocable
+24-hour sessions and short-lived two-host login transactions. The existing API
+OIDC authority remains canonical; never broaden cookies or mount the RPC as an
+unprotected HTTP route. Successful explicit login wakes/pokes existing compute
+through the controller's queue without creating a machine or installing apps.
+All GET/status reads stay passive. See `sandbox/README.md` and `RETENTION.md`.
 
 `sandbox-plugin/` is a Git submodule of `bayleaf-ucsc/opencode-sandbox` and owns
 the plugin and its canonical `skills/`. `scripts/build-sandbox-plugin.py` derives

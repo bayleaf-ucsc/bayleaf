@@ -91,6 +91,21 @@ explicit operation on the user-owned installation. Preserve user files and histo
 
 ## Evidence and refinement log
 
+- 2026-10-08 (dashboard deployment): Migration 0014 applied; API
+  `92c3b96b-aa76-4e82-a2b6-decb408c7f8b` and Sandboxes
+  `b6007714-d648-4cab-b44d-57c4c2f5e893` deployed with approval. Live sign-in
+  required strict-origin on form-bearing pages and a continuation document to
+  avoid Chromium form-action redirect-chain blocking. A stale controller ID
+  required passive rediscovery after confirmed 404. Live handoff/API controls
+  and updated regressions passed; application setup remains owner evaluation.
+
+- 2026-10-08 (dedicated managed-service dashboard, local): This parent-only move
+  required no plugin release. A named API binding and two-host login broker keep
+  host-only cookies and one lifecycle authority. Login wake must retire stale
+  ready-app state after sleep, without creating compute or installing apps.
+  Broker/adapter, installer/lifecycle, progress, preview and grant tests passed;
+  synthetic browser setup reached ready. Deployment and live CILogon remain pending.
+
 - 2026-10-08 (issue #86, local implementation): header-bearing registration tests
   run directly with `node api/scripts/harness-previews.mjs` while the plugin is
   dirty; the npm pretest deliberately rejects an unpublished plugin checkout.

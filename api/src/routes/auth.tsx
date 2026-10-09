@@ -18,6 +18,7 @@ import { ErrorPage, renderPage } from '../templates/layout';
 import { consumeClaimReturnTo } from './claim';
 import { consumePreviewReturnTo } from './previews';
 import { consumeGrantReturnTo } from './grants';
+import { consumeServiceReturnTo } from './serviceLogin';
 
 export const authRoutes = new OpenAPIHono<AppEnv>();
 
@@ -116,10 +117,11 @@ authRoutes.get('/callback', async (c) => {
     name: user.name,
     picture: user.picture,
   });
-  // Both return-to helpers construct constrained local paths. Preview resume
-  // additionally requires the original broker transaction cookie at authorize.
+  // Return-to helpers construct constrained local paths. Preview and service
+  // login additionally require the original broker cookie at authorize.
   const grantReturn = consumeGrantReturnTo(c);
-  const returnTo = grantReturn ?? consumePreviewReturnTo(c) ?? consumeClaimReturnTo(c);
+  const serviceReturn = consumeServiceReturnTo(c);
+  const returnTo = serviceReturn ?? grantReturn ?? consumePreviewReturnTo(c) ?? consumeClaimReturnTo(c);
   return c.redirect(returnTo ?? '/dashboard', 302);
 });
 

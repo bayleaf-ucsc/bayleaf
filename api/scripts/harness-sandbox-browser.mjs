@@ -40,19 +40,20 @@ const bundle = await build({ absWorkingDir: root, stdin: { resolveDir: root, con
     const u=new URL(req.url);
     if(u.pathname.startsWith('/__test/')) {
       const owner=req.headers.get('X-Test-Owner')||'owner@example.test';
-      return env.SANDBOX_BROWSER.get(env.SANDBOX_BROWSER.idFromName(owner)).fetch('https://controller/'+u.pathname.slice(8));
+      return env.SANDBOX_BROWSER.get(env.SANDBOX_BROWSER.idFromName(owner)).fetch('https://controller/'+u.pathname.slice(8),
+        {method:req.method,headers:{'X-BayLeaf-Owner':owner}});
     }
     const headers=new Headers(req.headers);
     if(headers.has('X-Test-Origin')) {headers.set('Origin',headers.get('X-Test-Origin'));headers.delete('X-Test-Origin');}
     if(headers.has('X-Test-Mode')) {headers.set('Sec-Fetch-Mode',headers.get('X-Test-Mode'));headers.delete('X-Test-Mode');}
     return app.fetch(new Request(req,{headers}),headers.has('X-Test-Disabled')?{...env,BROWSER_SANDBOX_ENABLED:'false'}:env,ctx);
   }};
-` }, bundle: true, write: false, format: 'esm', platform: 'browser', target: 'es2022', loader: { '.py': 'text', '.md': 'text' } });
+` }, bundle: true, write: false, format: 'esm', platform: 'browser', target: 'es2022', external: ['cloudflare:workers'], loader: { '.py': 'text', '.md': 'text' } });
 
 let state = 'archived', lookupFails = false, exists = true, interrupted = false, memory = 4, isPublic = false;
 let creates = 0, wakes = 0, executions = 0, launches = 0, previewCalls = 0;
-let incomingOperation, lastForwarded, toolboxFailures = 0;
-const machine = () => ({ id: 'synthetic-sandbox', state, memory, public: isPublic, labels: { 'synthetic-chat': email } });
+let incomingOperation, lastForwarded, toolboxFailures = 0, machineId = 'synthetic-sandbox';
+const machine = () => ({ id: machineId, state, memory, public: isPublic, labels: { 'synthetic-chat': email } });
 const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
   name: 'browser-harness', modules: true, script: bundle.outputFiles[0].text,
   compatibilityDate: '2025-01-31', compatibilityFlags: ['nodejs_compat'], d1Databases: ['DB'],
@@ -76,6 +77,7 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
       [{id:'synthetic/model',name:'Synthetic model',pricing:{prompt:'0.000001',completion:'0.000002'}}]:
       {limit:5,limit_remaining:3.75,limit_reset:'daily',usage:30,usage_daily:1.25}});
     if (u.hostname === 'daytona.example.test') {
+      if (machineId !== 'synthetic-sandbox' && u.pathname === '/api/sandbox/synthetic-sandbox') return new Response('',{status:404});
       if (u.pathname === '/api/sandbox' && req.method === 'GET') {
         if (lookupFails) return new Response('outage', { status: 503 });
         return Response.json({ items: exists ? [machine()] : [] });
@@ -309,6 +311,37 @@ try {
     await action('start');ready=await finish();assert.equal(ready.phase,'ready');assert.equal(creates,1);
     assert.equal((await action('stop')).status,404);assert.equal(state,'started');
     assert.equal((await status()).phase,'ready');
+  });
+  await check('login wake is private, never creates or installs, and invalidates stale app readiness',async()=>{
+    const before={creates,executions,launches,previewCalls,wakes};
+    assert.equal((await action('wake-existing')).status,404);
+    const wake=()=>req('/__test/wake-existing',{method:'POST'});
+    state='stopped';
+    assert.equal((await (await wake()).json()).state,'starting');
+    assert.equal(wakes,before.wakes+1);
+    assert.equal((await status()).phase,'stopped');
+    assert.equal((await status()).url,undefined,'control-plane wake cannot make a dead app look ready');
+    assert.deepEqual({creates,executions,launches,previewCalls},
+      {creates:before.creates,executions:before.executions,launches:before.launches,previewCalls:before.previewCalls});
+    assert.equal((await (await wake()).json()).state,'started');
+    exists=false;
+    assert.equal((await (await wake()).json()).state,'absent');
+    lookupFails=true;assert.equal((await wake()).status,503);lookupFails=false;
+    assert.equal(creates,before.creates);
+    exists=true;isPublic=true;assert.equal((await wake()).status,503);isPublic=false;
+    state='starting';assert.equal((await (await wake()).json()).state,'transitioning');
+    state='started';
+    await action('start');
+    assert.equal((await (await wake()).json()).state,'opening','wake joins ongoing setup without changing it');
+    ready=await finish();assert.equal(ready.phase,'ready');
+    assert.equal(launches,before.launches+1,'only deliberate setup restores the app');
+  });
+  await check('passive status rediscovers a machine replaced by Chat/API without inheriting application readiness',async()=>{
+    const before={creates,wakes,executions,previewCalls};
+    machineId='replacement-sandbox';
+    const result=await status();
+    assert.equal(result.machine,'started');assert.equal(result.phase,'idle');assert.equal(result.url,undefined);
+    assert.deepEqual({creates,wakes,executions,previewCalls},before);
   });
   console.log(checks+' lifecycle checks passed (synthetic provider; no live deployment).');
 } finally {await mf.dispose();}
