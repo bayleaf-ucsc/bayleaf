@@ -1,4 +1,5 @@
 import type { Bindings } from './types';
+import { revokeSandboxCredentials } from './sandboxCredentials';
 import { DAYTONA_DEFAULT_API_URL } from './constants';
 
 export const SANDBOX_REAPER_CRON = '17 8 * * *';
@@ -71,6 +72,7 @@ export async function reapInactiveSandboxes(env: Bindings, now = Date.now()) {
         report.skipped++; continue;
       }
       if (report.dryRun) continue;
+      await revokeSandboxCredentials(env, m.id);
       // Daytona offers no conditional DELETE: a residual read/delete race remains.
       const deleted = await call(path, 'DELETE');
       if (!deleted.ok && deleted.status !== 404) throw new Error('Deletion failed');

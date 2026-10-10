@@ -80,6 +80,20 @@ const controls = (service: typeof SERVICES[number]) => `
 
 /** Shared managed-app status and controls; activity styling follows data-phase. */
 const controlsScript = `(() => {
+  for (const button of document.querySelectorAll('[data-access-action]')) {
+    button.addEventListener('click', async () => {
+      const action = button.dataset.accessAction;
+      if (action === 'revoke' && !confirm('Revoke this sandbox’s API access and managed browser links? Your ordinary API key and files remain. Deliberate app setup can authorize access again.')) return;
+      button.disabled = true;
+      const status = document.getElementById('access-status');
+      try {
+        const r = await fetch('/access/' + action, {method:'POST', headers:{'X-BayLeaf-Action':'managed-service'}});
+        status.textContent = r.ok ? (action === 'revoke' ? 'Sandbox access revoked.' : 'Sandbox credential rotated. Requests may fail for up to 15 seconds while Daytona updates.') : 'Could not change sandbox access. Refresh and try again.';
+        if (r.ok && action === 'revoke') window.dispatchEvent(new Event('focus'));
+      } catch { status.textContent = 'Could not reach the service.'; }
+      finally { button.disabled = false; }
+    });
+  }
   const catalog = ${JSON.stringify(SERVICES).replaceAll('<', '\\u003c')};
   for (const root of document.querySelectorAll('[data-service]')) {
     const service = catalog.find(service => service.id === root.dataset.service);
@@ -205,6 +219,11 @@ ${session ? `<div class="account"><p>${escapeHtml(session.email)}</p><form metho
 <p class="lede">Your sandbox can run several managed apps, but it falls asleep once you disconnect from it. The same sandbox and files are also accessible from <a href="https://chat.bayleaf.dev">BayLeaf Chat</a>.</p>
 ${session ? '' : '<form method="post" action="/login"><button class="button" type="submit">Sign in with UCSC</button></form>'}
 <div class="services" aria-label="Managed apps">${cards}</div>
+${session ? `<section aria-labelledby="access-title"><h2 id="access-title">Sandbox API access</h2>
+<p>Your sandbox has its own credential, held by Daytona. Code uses a placeholder for access to api.bayleaf.dev and shares your existing allowances. Revoking your ordinary API key does not revoke this access.</p>
+<button type="button" class="secondary" data-access-action="rotate">Rotate sandbox credential</button>
+<button type="button" class="secondary" data-access-action="revoke">Revoke sandbox access</button>
+<p id="access-status" role="status" aria-live="polite"></p></section>` : ''}
 <details class="workspace-info"><summary>Your sandbox: files, privacy &amp; retention</summary>
 <p>Files and agent histories persist between sessions; running tasks can stop when the sandbox is idle. Chat and OpenChamber keep separate conversation histories.</p>
 <p>Sandboxes inactive for <strong>90 days are deleted</strong>, including their files and histories. Export anything you need to keep.</p>

@@ -1,7 +1,8 @@
 /** Fixed-client management RPC. This entrypoint has no public HTTP API. */
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import type { Bindings } from './types';
-import { ensureUserRow, getActiveRow } from './provision';
+import { ensureUserRow } from './provision';
+import { getAccountRow } from './sandboxCredentials';
 import { browserEnabled } from './sandboxBrowser';
 import { wakeExistingSandbox } from './sandboxWake';
 import { serviceDef } from './serviceDefs';
@@ -46,8 +47,8 @@ async function sessionIdentity(env: Bindings, session: unknown) {
   const row = await env.DB.prepare('SELECT email,name,owner_hash,expires_at FROM service_sessions WHERE session_hash=? AND expires_at>?')
     .bind(await serviceHash(session), serviceNow()).first<SessionRow>();
   if (!row) return null;
-  const owner = await getActiveRow(row.email, env);
-  if (!owner || await serviceHash(owner.bayleaf_token) !== row.owner_hash) return null;
+  const owner = await getAccountRow(row.email, env);
+  if (!owner || owner.account_generation !== row.owner_hash) return null;
   return { user: { email: row.email, name: row.name }, expiresAt: row.expires_at };
 }
 
@@ -87,17 +88,16 @@ export class SandboxManagement extends WorkerEntrypoint<Bindings> {
         .first<{ email: string; name: string }>();
       if (!flow) return null;
       // Only this successful, proved login may establish a first-time owner row.
-      // Never resurrect a revoked row, nor mint an upstream provider key.
-      let owner = await getActiveRow(flow.email, this.env);
+      // Ordinary-key revocation does not suspend the account or this login.
+      let owner = await getAccountRow(flow.email, this.env);
       if (!owner) {
-        if (await this.env.DB.prepare('SELECT email FROM user_keys WHERE email=?').bind(flow.email).first()) return null;
         owner = await ensureUserRow(flow.email, this.env);
       }
       if (!owner) return null;
       const session = serviceToken();
       const expiresAt = serviceNow() + SESSION_SECONDS;
       await this.env.DB.prepare('INSERT INTO service_sessions(session_hash,email,name,owner_hash,expires_at) VALUES (?,?,?,?,?)')
-        .bind(await serviceHash(session), flow.email, flow.name, await serviceHash(owner.bayleaf_token), expiresAt).run();
+        .bind(await serviceHash(session), flow.email, flow.name, owner.account_generation, expiresAt).run();
       return { session, user: { email: flow.email, name: flow.name }, expiresAt };
     } catch { return null; }
   }
@@ -117,8 +117,8 @@ export class SandboxManagement extends WorkerEntrypoint<Bindings> {
 
   async managed(input: unknown): Promise<{ status: number; body: unknown }> {
     if (!inputObject(input, ['session', 'operation', 'service']) || !validServiceToken(input.session) ||
-        !['status', 'start', 'restart', 'wake-existing'].includes(input.operation as string) ||
-        (input.operation === 'wake-existing' ? input.service !== undefined : !serviceDef(input.service))) {
+        !['status', 'start', 'restart', 'wake-existing', 'access/revoke', 'access/rotate'].includes(input.operation as string) ||
+        (['wake-existing','access/revoke','access/rotate'].includes(input.operation as string) ? input.service !== undefined : !serviceDef(input.service))) {
       return { status: 400, body: { error: 'invalid_operation' } };
     }
     try {
@@ -130,7 +130,7 @@ export class SandboxManagement extends WorkerEntrypoint<Bindings> {
       }
       if (!browserEnabled(this.env)) return { status: 503, body: { error: 'browser_disabled' } };
       const stub = this.env.SANDBOX_BROWSER.get(this.env.SANDBOX_BROWSER.idFromName(identity.user.email));
-       const response = await stub.fetch(`https://controller/${input.operation}?service=${input.service}`, {
+      const response = await stub.fetch(`https://controller/${input.operation}${input.service ? `?service=${input.service}` : ''}`, {
         method: input.operation === 'status' ? 'GET' : 'POST', headers: { 'X-BayLeaf-Owner': identity.user.email },
       });
       return { status: response.status, body: await response.json() };

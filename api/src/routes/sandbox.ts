@@ -144,7 +144,7 @@ async function resolveSandboxId(
   env: AppEnv['Bindings'],
 ): Promise<string> {
   const row = await env.DB.prepare(
-    'SELECT daytona_sandbox_id FROM user_keys WHERE email = ? AND revoked = 0',
+    'SELECT daytona_sandbox_id FROM user_keys WHERE email = ?',
   ).bind(email).first<Pick<UserKeyRow, 'daytona_sandbox_id'>>();
 
   const cachedId = row?.daytona_sandbox_id ?? null;
@@ -152,7 +152,7 @@ async function resolveSandboxId(
 
   if (result.changed) {
     await env.DB.prepare(
-      'UPDATE user_keys SET daytona_sandbox_id = ? WHERE email = ? AND revoked = 0',
+      'UPDATE user_keys SET daytona_sandbox_id = ? WHERE email = ?',
     ).bind(result.id, email).run();
   }
 
@@ -181,7 +181,7 @@ async function lookupSandboxInfo(
   env: AppEnv['Bindings'],
 ): Promise<SandboxInfo | null> {
   const row = await env.DB.prepare(
-    'SELECT daytona_sandbox_id FROM user_keys WHERE email = ? AND revoked = 0',
+    'SELECT daytona_sandbox_id FROM user_keys WHERE email = ?',
   ).bind(email).first<Pick<UserKeyRow, 'daytona_sandbox_id'>>();
 
   const cachedId = row?.daytona_sandbox_id ?? null;
@@ -199,7 +199,7 @@ async function lookupSandboxInfo(
   // Self-heal the cache when the label lookup found a different (or first) ID.
   if (sandbox && sandbox.id !== cachedId) {
     await env.DB.prepare(
-      'UPDATE user_keys SET daytona_sandbox_id = ? WHERE email = ? AND revoked = 0',
+      'UPDATE user_keys SET daytona_sandbox_id = ? WHERE email = ?',
     ).bind(sandbox.id, email).run();
   }
 
@@ -649,7 +649,7 @@ sandboxRoutes.openapi(deleteSandboxRoute, async (c) => {
 
   try {
     const row = await c.env.DB.prepare(
-      'SELECT daytona_sandbox_id FROM user_keys WHERE email = ? AND revoked = 0',
+      'SELECT daytona_sandbox_id FROM user_keys WHERE email = ?',
     ).bind(email).first<Pick<UserKeyRow, 'daytona_sandbox_id'>>();
 
     let sandboxId = row?.daytona_sandbox_id ?? null;

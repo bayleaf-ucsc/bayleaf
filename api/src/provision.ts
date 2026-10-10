@@ -54,6 +54,7 @@ import type { Bindings, OpenRouterKey, UserKeyRow } from './types';
 import { getKeyName, findKeyByHash, createKey, deleteKey } from './openrouter';
 import { createTinfoilKey, deleteTinfoilKey } from './tinfoil';
 import { generateBayleafToken } from './utils/token';
+import { callerAuthority } from './sandboxCredentials';
 
 /** Which upstream provider a credential belongs to. */
 export type BackendKind = 'openrouter' | 'tinfoil';
@@ -181,10 +182,10 @@ async function swapBackendKey(
 
   const result = await env.DB.prepare(
     `UPDATE user_keys SET ${assignments}
-       WHERE email = ? AND revoked = 0 AND ${predicate}`,
+       WHERE ${callerAuthority(row).sql} AND ${predicate}`,
   ).bind(
     ...Object.values(sets),
-    row.email,
+    ...callerAuthority(row).values,
     ...(expected === null ? [] : [expected]),
   ).run();
 
@@ -198,7 +199,10 @@ async function swapBackendKey(
   console.log(`Discarding redundant ${kind} key for ${row.email} (lost mint race or row revoked)`);
   await spec.destroy(minted.secret, minted.extra, env);
 
-  const fresh = await getActiveRow(row.email, env);
+  const authority = callerAuthority(row);
+  const stored = await env.DB.prepare(`SELECT * FROM user_keys WHERE ${authority.sql}`)
+    .bind(...authority.values).first<UserKeyRow>();
+  const fresh = stored ? { ...stored, sandbox_credential_id: row.sandbox_credential_id } : null;
   const winner = fresh?.[spec.secretColumn] ?? null;
   return fresh && winner ? { secret: winner, row: fresh } : null;
 }
@@ -274,8 +278,8 @@ export async function provisionToken(email: string, env: Bindings): Promise<User
     ).bind(bayleafToken, email).run();
   } else {
     await env.DB.prepare(
-      'INSERT INTO user_keys (email, bayleaf_token) VALUES (?, ?)',
-    ).bind(email, bayleafToken).run();
+      'INSERT INTO user_keys (email, bayleaf_token, account_generation) VALUES (?, ?, ?)',
+    ).bind(email, bayleafToken, crypto.randomUUID()).run();
   }
 
   // Re-read rather than synthesizing the row, so callers see the column

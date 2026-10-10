@@ -91,6 +91,12 @@ explicit operation on the user-owned installation. Preserve user files and histo
 
 ## Evidence and refinement log
 
+- 2026-10-09 (issue #90, local): Both client packages validated the ordinary-key
+  prefix and needed literal Daytona-placeholder support. Run shared asset builders
+  sequentially: concurrent npm pretests race on the generated Nanobot fixture.
+  Secret mounts use a REST array of single-entry maps, unlike SDK map examples.
+  Live custody/TLS/substitution qualification and package publication remain gates.
+
 - 2026-10-09 (ttyd, local only): old GitHub releases can have no API digest but
   publish SHA256SUMS; pin the exact binary checksum rather than relax verification.
   ttyd header auth only checks presence, while Basic auth checks both HTTP/WS.

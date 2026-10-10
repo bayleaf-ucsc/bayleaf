@@ -238,7 +238,7 @@ metadata in `service_login_flows` and `service_sessions`:
 | Data | Retention |
 |---|---|
 | Login transaction ID, verifier/broker/code digests, stage, and authorized email/name | Ten-minute transaction; an issued code expires within 60 seconds; successful exchange consumes the row |
-| Opaque session-token digest, email/name, owner-key fingerprint, expiry | 24 hours; logout deletes it; owner-key rotation or revocation invalidates it immediately |
+| Opaque session-token digest, email/name, account generation, expiry | 24 hours; logout deletes it; ordinary-key rotation/revocation does not invalidate it (issue #90 implementation, rollout pending) |
 | Sandbox-host session cookie | Secure, HttpOnly, host-only, SameSite=Lax; 24 hours |
 | Sandbox transaction and API broker/return cookies | Secure, HttpOnly, host-only, SameSite=Lax; at most ten minutes |
 
@@ -282,3 +282,19 @@ prompt or completion content.
 | API session state | Client cookie | 24 hours |
 | Sandboxes session metadata | Cloudflare D1 and host-only client cookie | 24 hours, then scheduled cleanup; explicit logout removes the session row |
 | Edge logs | Cloudflare | ~72 hours (platform default) |
+## Sandbox credentials (issue #90, rollout pending) ✨
+
+D1 stores a random credential ID, owner email, exact sandbox ID, SHA-256 bearer
+verifier, Daytona secret name/ID and placeholder, state and timestamps. It never
+stores the real sandbox bearer. Active metadata lasts until access is revoked or
+the sandbox is deleted/replaced. Pending setup expires after 20 minutes; revoked
+metadata is a cleanup outbox retained until Daytona secret deletion succeeds.
+Hourly bounded cleanup retries provider failures and reconciles externally deleted
+machines. D1 backup retention also covers deleted metadata. This adds no request
+content logging, content cache or enabled Workers observability.
+
+Daytona encrypts the bearer in its organization Secrets service and processes
+HTTPS headers for substitution. Its platform administrators hold credential custody;
+this is not zero-operator-access. Guest files contain only its opaque placeholder
+after managed-service migration. Existing ordinary-key copies and their backups
+require the migration and revocation steps in [SANDBOX-CREDENTIALS.md](SANDBOX-CREDENTIALS.md).

@@ -3,7 +3,7 @@ import type { Context } from 'hono';
 import type { AppEnv } from '../types';
 import { getSession } from '../utils/session';
 import { resolveAuth } from '../utils/auth';
-import { getActiveRow } from '../provision';
+import { getAccountRow } from '../sandboxCredentials';
 import { browserEnabled } from '../sandboxBrowser';
 import { BrowserSandboxStatusSchema, BrowserSandboxErrorSchema } from '../schemas';
 
@@ -31,7 +31,7 @@ async function handle(c: Context<AppEnv>) {
         c.req.header('X-BayLeaf-Action') !== 'sandbox-browser')) return c.json({ error: 'invalid_origin' }, 403);
     email = session.email;
   }
-  if (!await getActiveRow(email, c.env)) return c.json({ error: 'personal_key_required' }, 403);
+  if (!await getAccountRow(email, c.env)) return c.json({ error: 'account_required' }, 403);
   const stub = c.env.SANDBOX_BROWSER.get(c.env.SANDBOX_BROWSER.idFromName(email));
   // Neither caller bodies nor caller-supplied ownership headers cross this boundary.
   return stub.fetch(`https://controller${path}`, { method: c.req.method, headers: { 'X-BayLeaf-Owner': email } });

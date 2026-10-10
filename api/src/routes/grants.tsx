@@ -49,6 +49,8 @@ async function owner(c: Context<AppEnv>): Promise<UserKeyRow | Response> {
   if (c.req.header('Authorization')) {
     const auth = await resolveAuth(c);
     if (auth instanceof Response) return auth;
+    if (auth.userKeyRow?.revoked) return grantError(c, 'personal_account_required',
+      'Temporary inference tokens require a current ordinary API key. Sandbox access remains available.', 403);
     return auth.userKeyRow ?? grantError(c, 'personal_account_required', 'Use your personal BayLeaf key, not Campus Pass.', 403);
   }
   const session = await getSession(c);

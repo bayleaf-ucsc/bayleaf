@@ -97,8 +97,8 @@ async function enforceKeyedBackendRpd(c: Context<AppEnv>, auth: AuthResult, key:
   const count = backend.rpdCountField, date = backend.rpdDateField;
   const accepted = await c.env.DB.prepare(`UPDATE user_keys
     SET ${count} = CASE WHEN ${date} = ? THEN ${count} + 1 ELSE 1 END, ${date} = ?
-    WHERE bayleaf_token = ? AND revoked = 0 AND (${date} <> ? OR ${count} < ?)
-    RETURNING email`).bind(today, today, auth.userKeyRow.bayleaf_token, today, backend.rpdLimit).first();
+    WHERE ${callerAuthority(auth.userKeyRow).sql} AND (${date} <> ? OR ${count} < ?)
+    RETURNING email`).bind(today, today, ...callerAuthority(auth.userKeyRow).values, today, backend.rpdLimit).first();
   return accepted ? null : c.json({ error: {
     message: `${backend.label} daily budget exceeded (${backend.rpdLimit} requests). Resets at midnight UTC.`, code: 429,
   } }, 429);
@@ -700,3 +700,4 @@ async function handleProxy(c: Context<AppEnv>): Promise<Response> {
 // not a typed Hono response matching the route's declared schema.
 proxyRoutes.openapi(proxyGetRoute, async (c) => handleProxy(c) as any);
 proxyRoutes.openapi(proxyPostRoute, async (c) => handleProxy(c) as any);
+import { callerAuthority } from '../sandboxCredentials';

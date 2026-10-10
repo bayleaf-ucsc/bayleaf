@@ -1,5 +1,10 @@
 # Browser sandbox lifecycle
 
+**Pending issue #90 revision:** local code now uses independent, Daytona-held
+sandbox credentials and sandbox-bound managed links. See
+[`SANDBOX-CREDENTIALS.md`](SANDBOX-CREDENTIALS.md) for migration and qualification.
+Historical deployment records below describe ordinary-key delegation. ✨
+
 Issue [#81](https://github.com/bayleaf-ucsc/bayleaf/issues/81).
 **Deployed and enabled on 2026-10-03 with explicit owner approval.**
 The earlier amsmith-only spike is recorded in `SANDBOX-BROWSER-SPIKE.md`.

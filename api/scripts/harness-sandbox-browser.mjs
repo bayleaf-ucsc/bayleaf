@@ -86,6 +86,7 @@ let state = 'archived', lookupFails = false, exists = true, interrupted = false,
 let creates = 0, wakes = 0, executions = 0, launches = 0, previewCalls = 0;
 let incomingOperation, lastForwarded, toolboxFailures = 0, machineId = 'synthetic-sandbox', wrongService = false;
 const credentialsUploaded=[];
+const vault = new Map();
 let failCreate=false, creationRequests=0, rejectCreate=0;
 let nanobotAuth, jupyterAuth, ttydAuth, nanobotReady=true, nanobotWrongOrigin=false;
 const machine = () => ({ id: machineId, state, memory, public: isPublic, labels: { 'synthetic-chat': email } });
@@ -112,6 +113,18 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
       [{id:'synthetic/model',name:'Synthetic model',pricing:{prompt:'0.000001',completion:'0.000002'}}]:
       {limit:5,limit_remaining:3.75,limit_reset:'daily',usage:30,usage_daily:1.25}});
     if (u.hostname === 'daytona.example.test') {
+      if (u.pathname === '/api/secret' && req.method === 'POST') {
+        const body = await req.json();
+        assert.deepEqual(body.hosts, ['api.bayleaf.dev']);
+        assert.match(body.value, /^sk-bayleaf-sandbox-[a-f0-9]{64}$/);
+        const entry = {id:body.name,name:body.name,placeholder:'dtn_secret_'+body.name,hosts:body.hosts};
+        vault.set(entry.id, entry); return Response.json(entry, {status:201});
+      }
+      if (u.pathname.endsWith('/secrets') && req.method === 'PUT') {
+        const body = await req.json(); assert.equal(body.secrets.length,1);
+        assert(vault.has(body.secrets[0].BAYLEAF_API_KEY)); return Response.json(machine());
+      }
+      if (u.pathname.endsWith('/stop')) { state = 'stopped'; return Response.json({}); }
       if (machineId !== 'synthetic-sandbox' && u.pathname === '/api/sandbox/synthetic-sandbox') return new Response('',{status:404});
       if (u.pathname === '/api/sandbox' && req.method === 'GET') {
         if (lookupFails) return new Response('outage', { status: 503 });
@@ -143,7 +156,7 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
           assert(incomingOperation.deadline<=Math.floor(Date.now()/1000)+20*60);
         }
         if (u.searchParams.get('path').endsWith('credentials/incoming')) {
-          assert(text.startsWith('sk-bayleaf-')); credentialsUploaded.push(u.searchParams.get('path'));
+          assert(text.startsWith('dtn_secret_')); credentialsUploaded.push(u.searchParams.get('path'));
         }
         if (u.searchParams.get('path').endsWith('credentials/app-secret')) {
           assert.match(text,/^[a-f0-9]{64}$/);
@@ -327,7 +340,7 @@ try {
     await db.prepare('UPDATE preview_registrations SET expires_at=? WHERE hostname=?').bind(ready.deadline,hostname).run();
     await worker.fetch(api+'/sandbox/expose/8000',{method:'DELETE',headers:{Authorization:'Bearer sk-bayleaf-owner'}});
   });
-  await check('managed gateway forwards project context and binds current owner key',async()=>{
+  await check('managed gateway forwards project context and survives ordinary-key rotation',async()=>{
     const row=await db.prepare('SELECT * FROM preview_registrations WHERE deployment=?').bind('__browser').first();
     assert(row.owner_key_hash);assert.equal(row.expires_at,ready.deadline);
     const origin=new URL(ready.url).origin;
@@ -339,10 +352,17 @@ try {
     assert.equal((await worker.fetch(ready.url,{headers})).status,200);
     assert.equal(lastForwarded['x-opencode-directory'],'/home/daytona/workspace');
     await db.prepare('UPDATE user_keys SET bayleaf_token=? WHERE email=?').bind('sk-bayleaf-rotated',email).run();
-    assert.equal((await worker.fetch(ready.url,{headers})).status,404);
-    assert.equal((await status()).error,'credential_changed');
+    assert.equal((await worker.fetch(ready.url,{headers})).status,200);
+    assert.equal((await status()).phase,'ready');
   });
-  await check('explicit restart refreshes rotated credentials and gets a fresh origin',async()=>{
+  await check('independent sandbox revoke retires managed links and setup can reauthorize',async()=>{
+    assert.equal((await req('/__test/access/revoke',{method:'POST'})).status,200);
+    assert.equal((await worker.fetch(ready.url)).status,404);
+    assert.equal((await db.prepare("SELECT count(*) n FROM sandbox_credentials WHERE email=? AND state='active'").bind(email).first()).n,0);
+    assert.equal((await db.prepare('SELECT revoked FROM user_keys WHERE email=?').bind(email).first()).revoked,0);
+    state='archived';
+  });
+  await check('explicit restart reauthorizes sandbox access and gets a fresh origin',async()=>{
     await action('restart'); const next=await finish(); assert.equal(next.phase,'ready');
     assert.notEqual(next.url,ready.url); ready=next;
   });
@@ -418,6 +438,7 @@ try {
     assert.deepEqual({creates,wakes,executions,previewCalls},before);
   });
   await check('code-server dispatch, busy response, readiness identity and independent status',async()=>{
+    state='archived'; // The replacement must be stopped before its first secret attachment.
     await action('restart');ready=await finish();assert.equal(ready.phase,'ready');
     const endpoint='/__test/';
     const cs=path=>endpoint+path+'?service=code-server';
@@ -447,7 +468,7 @@ try {
     assert.equal(lastForwarded['x-opencode-directory'],undefined);
     const oldKey=(await db.prepare('SELECT bayleaf_token FROM user_keys WHERE email=?').bind(email).first()).bayleaf_token;
     await db.prepare('UPDATE user_keys SET bayleaf_token=? WHERE email=?').bind('sk-bayleaf-isolation-test',email).run();
-    assert.equal((await worker.fetch(editor.url,{headers})).status,404);
+    assert.equal((await worker.fetch(editor.url,{headers})).status,200);
     await db.prepare('UPDATE user_keys SET bayleaf_token=? WHERE email=?').bind(oldKey,email).run();
     await req(cs('restart'),{method:'POST'});
     await req('/__test/__expire');
@@ -531,7 +552,7 @@ try {
     assert.equal(incomingOperation.preview_url,op.url);
     await req(nb('__expire'));
   });
-  await check('Nanobot wrong bootstrap origin, key rotation and preview loss during finalization revoke without exposing ready',async()=>{
+  await check('Nanobot rejects wrong origin and lost previews, but survives ordinary-key rotation during finalization',async()=>{
     const nb=action=>'/__test/'+action+'?service=nanobot';
     const toFinalize=async()=>{await req(nb('start'),{method:'POST'});for(let i=0;i<12;i++){const op=await(await req(nb('__tick'))).json();if(op.step==='finalize')return op;}throw new Error('finalize missing');};
     await toFinalize();await req(nb('__tick'));nanobotWrongOrigin=true;
@@ -541,8 +562,9 @@ try {
     await toFinalize();
     const old=(await db.prepare('SELECT bayleaf_token FROM user_keys WHERE email=?').bind(email).first()).bayleaf_token;
     await db.prepare('UPDATE user_keys SET bayleaf_token=? WHERE email=?').bind('sk-bayleaf-rotated-during-finalize',email).run();
-    op=await(await req(nb('__tick'))).json();assert.equal(op.phase,'failed');assert.equal(op.url,undefined);
+    op=await(await req(nb('__tick'))).json();assert.notEqual(op.phase,'failed');
     await db.prepare('UPDATE user_keys SET bayleaf_token=? WHERE email=?').bind(old,email).run();
+    await req(nb('__expire'));
     await toFinalize();await db.prepare("DELETE FROM preview_registrations WHERE slot='__nanobot'").run();
     op=await(await req(nb('__tick'))).json();assert.equal(op.phase,'expired');assert.equal(op.url,undefined);
   });

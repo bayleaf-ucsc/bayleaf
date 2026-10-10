@@ -203,6 +203,9 @@ export interface GrantTransaction {
 /** Row from the user_keys D1 table */
 export interface UserKeyRow {
   email: string;
+  account_generation: string;
+  /** Request-only authority marker, never a user_keys column. */
+  sandbox_credential_id?: string;
   bayleaf_token: string;
   // Backend provider credentials are NULL until the user first touches that
   // backend (migration 0005). They are caches hanging off the bayleaf_token,

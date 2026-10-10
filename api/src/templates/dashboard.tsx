@@ -59,7 +59,8 @@ const KeyCard: FC<{ hasKey: boolean }> = ({ hasKey }) => {
           This key authenticates the inference and sandbox services below. A personal key is
           required for sandbox access, including on campus.
         </p>
-        <button type="button" class={btnDangerStyle} style="margin-top: 0.75rem;" onclick="revokeKey()">Revoke Key</button>
+        <button type="button" class={btnDangerStyle} style="margin-top: 0.75rem;" onclick="revokeKey()">Revoke this API key</button>
+        <p>Sandbox access is separate. Manage it in <a href="https://sandbox.bayleaf.dev/">BayLeaf Sandboxes</a>.</p>
       </div>
     );
   }
@@ -510,7 +511,7 @@ const DashboardScripts: FC<{ bayleafToken: string }> = ({ bayleafToken }) => (
       }
 
       async function revokeKey() {
-        if (!confirm('Revoke your API key? You can create a new one afterward.')) return;
+        if (!confirm('Revoke this API key and its temporary inference tokens? Sandbox access will keep working. You can create a new API key afterward.')) return;
         const res = await fetch('/key', { method: 'DELETE' });
         if (res.ok) {
           location.reload();

@@ -296,7 +296,7 @@ class InstallerTests(unittest.TestCase):
 
     def test_configuration_refresh_preserves_user_application_settings(self):
         (self.root/'credentials').mkdir()
-        (self.root/'credentials/incoming').write_text('sk-bayleaf-synthetic')
+        (self.root/'credentials/incoming').write_text('dtn_secret_synthetic')
         m.atomic('openchamber/settings.json', {'projects':[{'path':'/my/work'}], 'custom':True})
         m.atomic('config/opencode/opencode.json', {'model':'personal/test',
             'providers':{'personal':{'name':'Keep'}},

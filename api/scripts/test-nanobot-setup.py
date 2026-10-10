@@ -17,7 +17,7 @@ class NanobotTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         m.select_service('nanobot'); m.ROOT = self.root
         (self.root/'credentials').mkdir()
-        (self.root/'credentials/incoming').write_text('sk-bayleaf-synthetic-owner')
+        (self.root/'credentials/incoming').write_text('dtn_secret_synthetic_owner')
         (self.root/'credentials/app-secret').write_text('a'*64)
         m.atomic('assets.json', {'nanobot-mcp.mjs':'synthetic adapter','bayleaf-sandboxes.md':'synthetic guide',
             '_source':{'mode':'fixture','revision':None}})
@@ -53,7 +53,7 @@ class NanobotTests(unittest.TestCase):
         self.assertTrue(m.health_nanobot({'token':'synthetic','ws_url':config['channels']['websocket']['publicWsUrl']}))
         argv, env = m.start_nanobot(43210)
         self.assertNotIn('sk-bayleaf-synthetic-owner',' '.join(argv))
-        self.assertEqual(env['BAYLEAF_API_KEY'],'sk-bayleaf-synthetic-owner')
+        self.assertEqual(env['BAYLEAF_API_KEY'],'dtn_secret_synthetic_owner')
 
     def test_preserves_edited_managed_files_and_user_memory(self):
         m.configure_nanobot()
@@ -79,7 +79,7 @@ class NanobotTests(unittest.TestCase):
     def test_temporary_credential_and_invalid_preview_rejected(self):
         (self.root/'credentials/incoming').write_text('sk-bayleaf-grant-synthetic')
         with self.assertRaisesRegex(m.Failure,'credential_invalid'):m.configure_nanobot()
-        (self.root/'credentials/incoming').write_text('sk-bayleaf-synthetic-owner')
+        (self.root/'credentials/incoming').write_text('dtn_secret_synthetic_owner')
         m.atomic('request.json',{'preview_url':'https://user:secret@example.test/'})
         with self.assertRaisesRegex(m.Failure,'preview_configuration_invalid'):m.configure_nanobot()
 

@@ -579,9 +579,9 @@ sealedRoutes.post('/v1/*', async (c) => {
                 ELSE 1
               END,
               sealed_rpd_date = ?
-        WHERE bayleaf_token = ? AND revoked = 0
+        WHERE ${callerAuthority(auth.userKeyRow).sql}
           AND (sealed_rpd_date != ? OR sealed_rpd_count < ?)`,
-    ).bind(today, today, auth.userKeyRow.bayleaf_token, today, limit).run();
+    ).bind(today, today, ...callerAuthority(auth.userKeyRow).values, today, limit).run();
     if (result.meta.changes === 0) {
       return sealedError(
         `Sealed daily request limit reached (${limit} requests). Resets at midnight UTC.`,
@@ -766,3 +766,4 @@ sealedRoutes.get('/models', async (c) => {
   if (!data) return sealedError('Sealed catalog unavailable upstream.', 502);
   return c.json({ object: 'list', data });
 });
+import { callerAuthority } from '../sandboxCredentials';

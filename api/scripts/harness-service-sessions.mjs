@@ -132,14 +132,16 @@ try {
   }
   assert.equal((await rpc('managed',{session:login.session,operation:'wake-existing'})).body.path,'/wake-existing');
   await db.prepare('UPDATE user_keys SET revoked=1 WHERE email=?').bind(login.user.email).run();
-  assert.equal(await rpc('readSession',{session:login.session}),null);
-  assert.equal((await rpc('managed',{session:login.session,service:'openchamber',operation:'start'})).status,401);
+  assert.equal((await rpc('readSession',{session:login.session})).user.email,login.user.email);
+  assert.equal((await rpc('managed',{session:login.session,service:'openchamber',operation:'start'})).status,200);
   const revokedFlow = await start();
   const revokedCode = await issue(revokedFlow);
-  assert.equal(await rpc('exchangeLogin',{flow:revokedFlow.flow,code:revokedCode,verifier:revokedFlow.verifier}),null);
+  const independent = await rpc('exchangeLogin',{flow:revokedFlow.flow,code:revokedCode,verifier:revokedFlow.verifier});
+  assert.equal(independent.user.email,login.user.email);
+  await rpc('logout',{session:independent.session});
   assert.equal((await db.prepare('SELECT revoked FROM user_keys WHERE email=?').bind(login.user.email).first()).revoked,1,'login never reactivates revoked owner');
   await db.prepare('UPDATE user_keys SET revoked=0,bayleaf_token=? WHERE email=?').bind('sk-bayleaf-rotated',login.user.email).run();
-  assert.equal(await rpc('readSession',{session:login.session}),null,'rotation invalidates session');
+  assert.equal((await rpc('readSession',{session:login.session})).user.email,login.user.email,'rotation preserves session');
   assert.equal(await rpc('logout',{session:login.session}),true);
   assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM service_sessions').first()).n,0);
   const expired = await start();

@@ -17,6 +17,7 @@ let calls, cleared, inventory, details, verification, deletionStatus;
 const env = { SANDBOX_REAPER_MODE: 'delete', DAYTONA_API_URL: 'https://daytona.example.test/api',
   DAYTONA_API_KEY: 'synthetic', DAYTONA_DEPLOYMENT_LABEL: 'chat.bayleaf.dev',
   DB: { prepare(sql) {
+    if (sql.startsWith('UPDATE sandbox_credentials')) return {bind(){ return {async run(){}}; }};
     assert.equal(sql, 'UPDATE user_keys SET daytona_sandbox_id = NULL WHERE daytona_sandbox_id = ?');
     return { bind(id) { return { async run() { cleared.push(id); } }; } };
   } } };

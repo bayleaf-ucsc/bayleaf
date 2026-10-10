@@ -16,6 +16,7 @@
     "test:sandbox-reaper": "node scripts/test-sandbox-reaper.mjs",
     "test:sandbox-browser": "python3 scripts/test-browser-setup.py && node scripts/test-sandbox-policy.mjs && node scripts/harness-sandbox-browser.mjs",
     "test:service-sessions": "node scripts/harness-service-sessions.mjs && node ../sandbox/test-worker.mjs",
+    "test:sandbox-credentials": "node scripts/harness-sandbox-credentials.mjs",
     "test:sandbox-plugin": "npm --prefix sandbox-plugin test",
     "test:nanobot": "python3 scripts/build-nanobot-assets.py --fixture && npm --prefix nanobot-sandbox test && python3 scripts/test-nanobot-setup.py && python3 scripts/test-nanobot-assets.py",
     "test:jupyter": "python3 scripts/test-jupyter-setup.py",

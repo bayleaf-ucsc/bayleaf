@@ -682,7 +682,7 @@ def configure_nanobot():
     if not credential.exists():
         raise Failure('credential_missing')
     key = credential.read_text().strip()
-    if not key.startswith('sk-bayleaf-') or key.startswith('sk-bayleaf-grant-'):
+    if not re.fullmatch(r'dtn_secret_[A-Za-z0-9_-]+', key):
         raise Failure('credential_invalid')
     secret_path = ROOT / 'credentials/app-secret'
     secret_path.chmod(0o600)
@@ -790,7 +790,7 @@ def configure():
     if not credential.exists():
         raise Failure('credential_missing')
     key = credential.read_text().strip()
-    if not key.startswith('sk-bayleaf-') or key.startswith('sk-bayleaf-grant-'):
+    if not re.fullmatch(r'dtn_secret_[A-Za-z0-9_-]+', key):
         raise Failure('credential_invalid')
     config = read('config/opencode/opencode.json', {})
     config.setdefault('websearch', {'provider':'bayleaf'})

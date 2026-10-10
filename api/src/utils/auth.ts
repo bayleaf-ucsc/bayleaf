@@ -24,6 +24,7 @@ import type { AppEnv, UserKeyRow } from '../types';
 import { BAYLEAF_TOKEN_PREFIX } from '../constants';
 import { getAuthIP, isCampusPassEligible } from './ip';
 import { GRANT_PREFIX, guardGrant } from '../grants';
+import { SANDBOX_TOKEN_PREFIX, authenticateSandboxCredential } from '../sandboxCredentials';
 
 export interface AuthResult {
   isCampusMode: boolean;
@@ -72,6 +73,12 @@ export async function resolveAuth(
         code: 401,
       },
     }, 401);
+  }
+
+  if (providedKey.startsWith(SANDBOX_TOKEN_PREFIX)) {
+    const row = await authenticateSandboxCredential(c.env, providedKey);
+    if (!row) return c.json({ error: { message: 'Invalid or revoked sandbox access.', code: 401 } }, 401);
+    return { isCampusMode: false, userEmail: row.email, userKeyRow: row, clientIp };
   }
 
   // Bayleaf proxy token — resolve via D1

@@ -61,22 +61,8 @@ async function resolveDocsUser(c: import('hono').Context<AppEnv>): Promise<strin
   const session = await getSession(c);
   if (session) return session.email;
 
-  // Try Bearer token (agents)
-  const authHeader = c.req.header('Authorization');
-  const token = authHeader?.replace(/^Bearer\s+/i, '').trim();
-  if (token && token.startsWith(BAYLEAF_TOKEN_PREFIX)) {
-    const row = await c.env.DB.prepare(
-      'SELECT email FROM user_keys WHERE bayleaf_token = ? AND revoked = 0',
-    ).bind(token).first<UserKeyRow>();
-    if (row) return row.email;
-  }
-
-  // Campus Pass (on-campus IP, no credentials needed)
-  if (isCampusPassEligible(c.req.raw, c.env)) {
-    return 'campus';
-  }
-
-  return null;
+  const auth = await resolveAuth(c);
+  return auth instanceof Response ? null : auth.userEmail ?? (auth.isCampusMode ? 'campus' : null);
 }
 
 /** Check whether GWS distribution is configured (all three env vars present). */
@@ -122,3 +108,4 @@ docsRoutes.get('/gws-oauth-client.json', async (c) => {
   const oauthClient = buildOauthClientJson(c.env);
   return c.json(oauthClient, 200);
 });
+import { resolveAuth } from '../utils/auth';

@@ -40,8 +40,17 @@ ITS-operated or ITS-supported one.
 - **Sandbox files (Chat and API, opt-in):** if you use the Code Sandbox, files
   you create live inside a per-user Daytona VM. There is no persistent volume
   backing it: deleting the sandbox is final.
-- **Browser sandbox (OpenChamber, opt-in):** setup stores your personal BayLeaf
-  API key inside your sandbox so agents can use your existing allowance. Agent
+- **Browser sandbox (managed agents, opt-in):** the sandbox-credential revision
+  (issue #90, rollout pending) gives your machine a separate credential held in
+  Daytona's encrypted organization Secrets service. The sandbox holds an opaque
+  placeholder; Daytona substitutes the credential in HTTPS headers only for
+  `api.bayleaf.dev`. This grants the existing broad keyed API access and shares
+  your allowances. Daytona can access the credential and proxy-processed traffic;
+  Sealed request content retains its application-layer encryption and attestation.
+  Sandbox access has its own revocation control and survives revocation of your
+  ordinary API key. Deletion/revocation invalidates access immediately in BayLeaf;
+  owned Daytona secrets are deleted by retryable cleanup. Existing installations
+  retain managed ordinary-key copies until their services complete migration. Agent
   conversations, configuration, and files persist there and are accessible to
   programs running as you and to the platform operator. Browser-access deadlines
   do not erase that history. Inference uses the standard ZDR provider path;

@@ -20,6 +20,7 @@ import { getModelInfo } from './openrouter';
 import { authRoutes } from './routes/auth';
 import { serviceLoginRoutes } from './routes/serviceLogin';
 import { cleanupServiceSessions } from './serviceSessions';
+import { cleanupSandboxCredentials } from './sandboxCredentials';
 export { SandboxManagement } from './serviceSessions';
 import { dashboardRoutes } from './routes/dashboard';
 import { keyRoutes } from './routes/key';
@@ -238,6 +239,7 @@ export default {
   fetch: app.fetch,
   scheduled: async (event: ScheduledController, env: AppEnv['Bindings']) => {
     await cleanupServiceSessions(env);
+    await cleanupSandboxCredentials(env);
     if (event.cron === SANDBOX_REAPER_CRON) {
       const report = await reapInactiveSandboxes(env, event.scheduledTime);
       console.info('Sandbox reaper', report); // Aggregate metadata only; observability stays disabled.

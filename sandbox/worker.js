@@ -39,7 +39,6 @@ function loginFailure(status = 400) {
     <title>Sign-in incomplete · BayLeaf Sandboxes</title><main><h1>Sign-in could not complete</h1>
     <p>The sign-in may have expired, or your account may need attention. Please try again.</p>
     <form method="post" action="/login"><button type="submit">Sign in with UCSC</button></form>
-    <p>If you revoked your BayLeaf key, restore access in the <a href="https://api.bayleaf.dev/dashboard">API dashboard</a> first.</p>
     <p><a href="/">Return to BayLeaf Sandboxes</a></p></main></html>`,
   { status, headers: { ...AUTH_HEADERS, 'Referrer-Policy': 'strict-origin', 'Content-Type': 'text/html; charset=utf-8' } });
 }
@@ -97,6 +96,13 @@ export default {
         if (request.headers.get('Origin') !== ORIGIN) return failure(403, 'invalid_origin');
         if (session && !await api.logout({ session })) return failure(503, 'logout_unavailable');
         return redirect('/', [cookie(SESSION, '', 0), cookie(TRANSACTION, '', 0)]);
+      }
+      if (['/access/revoke', '/access/rotate'].includes(url.pathname)) {
+        if (request.method !== 'POST') return failure(405, 'method_not_allowed');
+        if (!session) return failure(401, 'login_required');
+        if (request.headers.get('Origin') !== ORIGIN || request.headers.get('X-BayLeaf-Action') !== 'managed-service') return failure(403, 'invalid_origin');
+        const result = await api.managed({ session, operation: url.pathname.slice(1) });
+        return Response.json(result.body, { status: result.status, headers: AUTH_HEADERS });
       }
       const service = url.pathname.match(/^\/services\/([a-z][a-z0-9-]{0,39})\/(status|start|restart)$/);
       if (service) {

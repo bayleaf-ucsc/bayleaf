@@ -123,9 +123,10 @@ async function registration(env: Bindings, hostname: string): Promise<Registrati
   if (!row || !['public', 'private'].includes(row.access)) return null;
   if (row.deployment === '__browser') {
     if (env.BROWSER_SANDBOX_ENABLED !== 'true' || !managedSlot(row.slot) || row.access !== 'private' || !row.owner_key_hash) return null;
-    const owner = await env.DB.prepare('SELECT bayleaf_token FROM user_keys WHERE email=? AND revoked=0')
-      .bind(row.email).first<{ bayleaf_token: string }>();
-    if (!owner || await hash(owner.bayleaf_token) !== row.owner_key_hash) return null;
+    const access = await env.DB.prepare(`SELECT sc.id FROM sandbox_credentials sc JOIN user_keys u ON u.email=sc.email
+      WHERE sc.id=? AND sc.email=? AND sc.state='active' AND sc.sandbox_id=u.daytona_sandbox_id`)
+      .bind(row.owner_key_hash, row.email).first();
+    if (!access) return null;
   }
   return row;
 }

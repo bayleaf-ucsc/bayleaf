@@ -529,6 +529,12 @@ there is no new monitoring store or alert integration. ✨
 
 ### Browser sandbox lifecycle (issue #81)
 
+**Issue #90 local revision (rollout pending):** read `SANDBOX-CREDENTIALS.md`.
+Migration 0015 separates sandbox verifier metadata and account-generation sessions
+from ordinary-key validity. `sandboxCredentials.ts` owns custody/lifecycle; provider
+mint/heal remains in `provision.ts`. Managed gateway `owner_key_hash` now contains
+the sandbox credential ID. Do not restore ordinary-key checks in these paths. ✨
+
 Deployed and enabled on 2026-10-03 (`BROWSER_SANDBOX_ENABLED=true`); see
 `SANDBOX-BROWSER.md` for the contract and rollout gates. The dedicated `sandbox/`
 dashboard owns managed-service controls; the API dashboard retains low-level

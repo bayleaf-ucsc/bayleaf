@@ -94,6 +94,7 @@ const roots=['openchamber','nanobot','code-server','jupyter','ttyd','dufs'].map(
   }
 }));
 const document={createElement:node,querySelectorAll(selector){
+  if(selector==='[data-access-action]')return [];
   assert.equal(selector,'[data-service]');return roots;
 }};
 // Capture inside each service's loop scope, replacing only the initial fetch.

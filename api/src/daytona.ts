@@ -12,6 +12,7 @@
  */
 
 import type { Bindings } from './types';
+import { revokeSandboxCredentials } from './sandboxCredentials';
 import { DAYTONA_DEFAULT_API_URL, DAYTONA_DEFAULT_PROXY_URL } from './constants';
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -173,6 +174,7 @@ export async function startSandbox(id: string, env: Bindings): Promise<void> {
 
 /** Delete a sandbox entirely. */
 export async function deleteSandbox(id: string, env: Bindings): Promise<void> {
+  await revokeSandboxCredentials(env, id);
   const resp = await fetch(apiUrl(env, `/sandbox/${id}`), {
     method: 'DELETE',
     headers: authHeaders(env),

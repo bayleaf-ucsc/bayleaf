@@ -7,7 +7,7 @@ import type { Bindings } from './types';
 import setupSource from '../scripts/browser-setup.py';
 import jupyterSource from '../scripts/jupyter-adapter.py';
 import nanobotAssets from '../.nanobot-assets.json';
-import { getActiveRow } from './provision';
+import { getAccountRow, activeSandboxCredential, ensureSandboxCredential, revokeSandboxCredentials, rotateSandboxCredential } from './sandboxCredentials';
 import { DAYTONA_DEFAULT_API_URL, DAYTONA_DEFAULT_PROXY_URL } from './constants';
 import { persistentSandboxParams } from './daytona';
 import { registerBrowserPreview, revokeUserPreview, previewsEnabled } from './routes/previews';
@@ -21,7 +21,7 @@ export const keyHash = async (token: string) => Array.from(new Uint8Array(await 
   b => b.toString(16).padStart(2, '0')).join('');
 
 type Phase = 'opening' | 'ready' | 'failed' | 'expired' | 'stopped';
-type Step = 'discover' | 'wake' | 'prepare' | 'inspect' | 'register' | 'finalize' | 'inspect_final';
+type Step = 'discover' | 'credentials' | 'wake' | 'prepare' | 'inspect' | 'register' | 'finalize' | 'inspect_final';
 interface ProgressEvent { step: string; at: number; error?: string }
 interface Operation {
   service?: ServiceId; // Missing on legacy OpenChamber operations.
@@ -182,9 +182,10 @@ export class SandboxBrowser {
   }
   private async view(email: string, service: ServiceId = 'openchamber') {
     const op = await this.state.storage.get<Operation>(operationKey(service));
-    const row = await getActiveRow(email, this.env);
+    const row = await getAccountRow(email, this.env);
     if (!row) return response({ phase: 'unavailable', error: 'personal_key_required' }, 403);
-    const validKey = !op || await keyHash(row.bayleaf_token) === op.ownerKeyHash;
+    const access = op?.sandboxId ? await activeSandboxCredential(this.env, email, op.sandboxId) : null;
+    const validKey = !op || op.step === 'discover' || op.step === 'credentials' || access?.id === op.ownerKeyHash;
     // Control-plane GET only. No readiness probes, file reads, or last-activity writes.
     const recorded = op?.sandboxId ? await machine(this.env, op.sandboxId) : null;
     const current = recorded ?? await discover(this.env, email);
@@ -222,7 +223,7 @@ export class SandboxBrowser {
       // by the public /sandbox/browser adapter.
       if (req.method === 'POST' && u.pathname === '/wake-existing') {
         return await this.exclusive(async () => {
-          if (!await getActiveRow(email, this.env)) return response({ error: 'personal_key_required' }, 403);
+          if (!await getAccountRow(email, this.env)) return response({ error: 'account_required' }, 403);
           const current = await discover(this.env, email);
           if (!current) return response({ state: 'absent' });
           if (!current.id || current.public === true) return response({ error: 'sandbox_unavailable' }, 503);
@@ -230,6 +231,9 @@ export class SandboxBrowser {
           // Active setup already owns wake/recovery and must not be interrupted.
           if (ops.some(op => op.phase === 'opening' && op.setupDeadline > now())) return response({ state: 'opening' });
           if (['stopped', 'archived'].includes(current.state)) {
+            // Mount before waking, so first attachment never needs to interrupt compute.
+            // Login alone does not authorize issuance: app setup does that.
+            if (!await activeSandboxCredential(this.env, email, current.id)) return response({ state: current.state });
             // A control-plane wake does not restore application processes. Do
             // not let an old ready record become apparently usable after wake.
             for (const op of ops) if (op.phase === 'ready') await this.retire(op, 'stopped');
@@ -246,13 +250,29 @@ export class SandboxBrowser {
           return response({ state: 'transitioning' });
         });
       }
+      if (req.method === 'POST' && ['/access/revoke', '/access/rotate'].includes(u.pathname)) {
+        return await this.exclusive(async () => {
+          const row = await getAccountRow(email, this.env);
+          if (!row) return response({ error: 'account_required' }, 403);
+          const sc = row.daytona_sandbox_id ? await activeSandboxCredential(this.env, email, row.daytona_sandbox_id) : null;
+          if (u.pathname === '/access/rotate') {
+            if (!sc) return response({ error: 'sandbox_access_unavailable' }, 409);
+            await rotateSandboxCredential(this.env, sc);
+          } else {
+            if (row.daytona_sandbox_id) await revokeSandboxCredentials(this.env, row.daytona_sandbox_id);
+            for (const op of await this.operations()) await this.retire(op, 'stopped', 'sandbox_access_revoked');
+            await this.arm();
+          }
+          return response({ success: true });
+        });
+      }
       if (!browserEnabled(this.env)) return response({ error: 'browser_disabled' }, 503);
       const def = serviceDef(u.searchParams.get('service') ?? 'openchamber');
       if (!def) return response({ error: 'invalid_operation' }, 400);
       if (req.method === 'GET' && u.pathname === '/status') return await this.view(email, def.id);
       if (req.method !== 'POST' || !['/start', '/restart'].includes(u.pathname)) return response({ error: 'not_found' }, 404);
       return await this.exclusive(async () => {
-        const row = await getActiveRow(email, this.env);
+        const row = await getAccountRow(email, this.env);
         if (!row) return response({ error: 'personal_key_required' }, 403);
         const previous = await this.state.storage.get<Operation>(operationKey(def.id));
         const other = (await this.operations()).find(op => (op.service ?? 'openchamber') !== def.id && op.phase === 'opening');
@@ -261,7 +281,8 @@ export class SandboxBrowser {
         if (previous?.phase === 'opening' && previous.setupDeadline > now() && previous.deadline > now()) {
           return response({ phase: previous.phase, operation: previous.operation }, 202);
         }
-        const hash = await keyHash(row.bayleaf_token);
+        const access = row.daytona_sandbox_id ? await activeSandboxCredential(this.env, email, row.daytona_sandbox_id) : null;
+        const hash = access?.id ?? row.account_generation;
         if (u.pathname === '/start' && previous?.phase === 'ready' && previous.deadline > now() && previous.ownerKeyHash === hash && previous.sandboxId && await this.linkDeadline(previous) > now()) {
           const m = await machine(this.env, previous.sandboxId);
           if (m?.state === 'started' && m.labels?.[this.env.DAYTONA_DEPLOYMENT_LABEL] === email) return this.view(email, def.id);
@@ -306,8 +327,10 @@ export class SandboxBrowser {
       // Persist retry intent before side effects, including after an eviction.
       await this.schedule(op, Date.now() + 15_000);
       try {
-        const row = await getActiveRow(op.email, this.env);
-        if (!browserEnabled(this.env) || !row || await keyHash(row.bayleaf_token) !== op.ownerKeyHash) {
+        const row = await getAccountRow(op.email, this.env);
+        const access = op.sandboxId ? await activeSandboxCredential(this.env, op.email, op.sandboxId) : null;
+        if (!browserEnabled(this.env) || !row ||
+            (!['discover', 'credentials'].includes(op.step) && access?.id !== op.ownerKeyHash)) {
           await this.retire(op, 'failed', 'credential_or_feature_unavailable'); return;
         }
         if (op.deadline <= now()) { await this.retire(op, 'expired'); return; }
@@ -356,15 +379,30 @@ export class SandboxBrowser {
               if (other.phase === 'ready') await this.retire(other, 'stopped');
             }
           }
-          op.sandboxId = m.id; op.step = 'wake'; op.progress = 'starting_sandbox';
-          await this.env.DB.prepare('UPDATE user_keys SET daytona_sandbox_id=? WHERE email=? AND revoked=0')
+          op.sandboxId = m.id; op.step = 'credentials'; op.progress = 'starting_sandbox';
+          await this.env.DB.prepare('UPDATE user_keys SET daytona_sandbox_id=? WHERE email=?')
             .bind(m.id, op.email).run();
         } else {
           const id = op.sandboxId!;
           const m = await machine(this.env, id);
           if (!m || m.labels?.[this.env.DAYTONA_DEPLOYMENT_LABEL] !== op.email) throw new Problem('sandbox_missing');
           if (m.public === true) fail('public_sandbox');
-          if (op.step === 'wake') {
+          if (op.step === 'credentials') {
+            if (op.creationAttempted && m.state === 'started' && !access) {
+              // Newly-created, empty machines need one stop/start for first mount.
+              const stopped = await platform(this.env, `/sandbox/${encodeURIComponent(id)}/stop`, 'POST');
+              if (!stopped.ok) fail('stop_failed');
+              await stopped.body?.cancel();
+            } else if (!['stopping','starting','creating','pending_build','pulling_snapshot'].includes(m.state)) {
+              const credential = await ensureSandboxCredential(this.env, op.email, id).catch(error => {
+                const code = error instanceof Error ? error.message : '';
+                return fail(['credential_migration_requires_stop','existing_secret_mounts','sandbox_credential_setup_failed'].includes(code)
+                  ? code : 'sandbox_access_unavailable');
+              });
+              op.ownerKeyHash = credential.id;
+              op.step = 'wake'; op.progress = 'starting_sandbox';
+            }
+          } else if (op.step === 'wake') {
             if (m.state === 'started') { op.step = 'prepare'; op.progress = 'preparing_setup'; }
             else if (['stopped', 'archived'].includes(m.state) && !op.wakeRequested) {
               op.wakeRequested = true; await this.save(op);
@@ -378,7 +416,10 @@ export class SandboxBrowser {
             await execute(this.env, id, `bash -c 'umask 077; mkdir -p ${ROOT}/credentials; chmod 700 ${ROOT} ${ROOT}/credentials'`);
             await upload(this.env, id, ROOT, 'setup.next.py', setupSource);
             await upload(this.env, id, ROOT, 'request.next.json', JSON.stringify({ operation: op.operation, deadline: op.setupDeadline, restart: op.restart }));
-            if (def.credential) await upload(this.env, id, ROOT, 'credentials/incoming', row.bayleaf_token);
+            if (def.credential) {
+              if (!access?.placeholder) fail('sandbox_access_unavailable');
+              await upload(this.env, id, ROOT, 'credentials/incoming', access!.placeholder!);
+            }
             if (['nanobot', 'jupyter', 'ttyd'].includes(def.id)) {
               await upload(this.env, id, ROOT, 'credentials/app-secret', await managedAppSecret(this.env, op));
             }
