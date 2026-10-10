@@ -16,7 +16,7 @@ const env = { DAYTONA_API_URL: 'https://daytona.example.test/api',
   DAYTONA_API_KEY: 'synthetic', DAYTONA_DEPLOYMENT_LABEL: 'synthetic-chat', DAYTONA_AUTO_DELETE_MINUTES: '-1' };
 for (const key of ['port','root','slot']) assert.equal(new Set(Object.values(SERVICE_DEFS).map(def=>def[key])).size,Object.keys(SERVICE_DEFS).length);
 assert.equal(SERVICE_DEFS.ttyd.port,8794);
-assert.equal(SERVICE_DEFS.ttyd.credential,false);
+assert.equal(SERVICE_DEFS.ttyd.credential,true);
 assert.ok(managedSlot('__ttyd'));
 const expected = { language: 'python', snapshot: 'daytona-medium', public: false,
   name: 'synthetic-chat/owner@example.test', labels: { 'synthetic-chat': 'owner@example.test' },

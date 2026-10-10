@@ -5,13 +5,13 @@ const COMMON_ERRORS = ['insufficient_disk', 'requires_2_gib', 'installation_fail
 export const SERVICE_DEFS = {
   ttyd: {
     id: 'ttyd', root: '/home/daytona/.local/share/bayleaf/ttyd', port: 8794,
-    slot: '__ttyd', credential: false, memoryGiB: 0,
+    slot: '__ttyd', credential: true, memoryGiB: 0,
     steps: [...COMMON_STEPS, 'installing_ttyd', 'starting_ttyd'],
     errors: [...COMMON_ERRORS, 'credential_missing', 'credential_invalid', 'release_verification_failed', 'unsupported_architecture'],
   },
   jupyter: {
     id: 'jupyter', root: '/home/daytona/.local/share/bayleaf/jupyter', port: 8793,
-    slot: '__jupyter', credential: false, memoryGiB: 0,
+    slot: '__jupyter', credential: true, memoryGiB: 0,
     steps: [...COMMON_STEPS, 'installing_jupyter', 'starting_jupyter'],
     errors: [...COMMON_ERRORS, 'credential_missing', 'credential_invalid', 'python_311_required', 'managed_file_changed'],
   },
@@ -32,13 +32,13 @@ export const SERVICE_DEFS = {
   },
   'code-server': {
     id: 'code-server', root: '/home/daytona/.local/share/bayleaf/code-server', port: 8791,
-    slot: '__code-server', credential: false, memoryGiB: 2,
+    slot: '__code-server', credential: true, memoryGiB: 2,
     steps: [...COMMON_STEPS, 'installing_code_server', 'starting_code_server'],
     errors: [...COMMON_ERRORS, 'release_verification_failed', 'unsupported_architecture'],
   },
   dufs: {
     id: 'dufs', root: '/home/daytona/.local/share/bayleaf/dufs', port: 8790,
-    slot: '__dufs', credential: false, memoryGiB: 0,
+    slot: '__dufs', credential: true, memoryGiB: 0,
     steps: [...COMMON_STEPS, 'installing_dufs', 'starting_dufs'],
     errors: [...COMMON_ERRORS, 'release_verification_failed', 'unsupported_architecture'],
   },

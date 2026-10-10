@@ -1,7 +1,7 @@
 """Jupyter functions for embedding before browser-setup.py in its global namespace.
 
 No top-level side effects. The shared installer supplies ROOT/RELEASE/PORT,
-atomic, read, lock, command, managed_text, Failure and non_inference_environment.
+atomic, read, lock, command, managed_text, Failure and service_environment.
 """
 
 JUPYTER_PACKAGES = ['jupyterlab==4.6.4', 'jupyter-server==2.21.1', 'ipykernel==7.4.0']
@@ -46,6 +46,7 @@ def install_jupyter(progress):
 
 
 def configure_jupyter():
+    accept_placeholder()
     secret_path = ROOT / 'credentials/app-secret'
     try:
         secret_path.chmod(0o600)
@@ -89,7 +90,7 @@ def configure_jupyter():
 
 
 def start_jupyter(backend_port):
-    env = {name:value for name,value in non_inference_environment().items()
+    env = {name:value for name,value in service_environment().items()
            if not name.startswith(('JUPYTER', 'IPYTHON'))}
     for name, directory in {'JUPYTER_CONFIG_DIR':'config', 'JUPYTER_DATA_DIR':'data',
                             'JUPYTER_RUNTIME_DIR':'runtime', 'IPYTHONDIR':'ipython',

@@ -315,6 +315,17 @@ const SandboxCard: FC<{ sandboxInfo: SandboxInfo | null }> = ({ sandboxInfo }) =
           A sandbox will be created automatically on your first <code>POST /sandbox/exec</code> request.
         </p>
       )}
+      <details id="sandboxAccess" style="margin-top: 1rem;">
+        <summary style="cursor: pointer; color: #006aad;">Sandbox API credential</summary>
+        <p style="margin-top: 0.75rem; color: #555; font-size: 0.9em;">
+          Managed apps in your sandbox use their own credential, held by Daytona, to reach BayLeaf. It shares your allowances. Revoking your API key above does not affect it. Revoking it here stops managed apps from reaching BayLeaf until you set them up again.
+        </p>
+        <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+          <button type="button" class={btnStyle} onclick="rotateSandboxAccess()">Rotate credential</button>
+          <button type="button" class={btnDangerStyle} onclick="revokeSandboxAccess()">Revoke sandbox access</button>
+        </div>
+        <p id="sandboxAccessStatus" role="status" aria-live="polite" style="margin-top: 0.5rem; font-size: 0.9em;"></p>
+      </details>
       <details style="margin-top: 1rem;">
         <summary style="cursor: pointer; color: #006aad;">Use the sandbox API</summary>
         <div style="margin-top: 0.75rem;">
@@ -528,6 +539,33 @@ const DashboardScripts: FC<{ bayleafToken: string }> = ({ bayleafToken }) => (
         } else {
           alert('Failed to delete sandbox');
         }
+      }
+
+      async function changeSandboxAccess(action, confirmText) {
+        if (confirmText && !confirm(confirmText)) return;
+        const status = document.getElementById('sandboxAccessStatus');
+        status.textContent = 'Working…';
+        try {
+          const res = await fetch('/sandbox/browser/access/' + action, {
+            method: 'POST',
+            headers: { 'X-BayLeaf-Action': 'sandbox-browser' },
+          });
+          status.textContent = res.ok
+            ? (action === 'revoke'
+              ? 'Sandbox access revoked. Set up managed apps again to restore it.'
+              : 'Credential rotated. Requests may fail for up to 15 seconds while Daytona updates.')
+            : 'Could not change sandbox access. Refresh and try again.';
+        } catch {
+          status.textContent = 'Could not reach BayLeaf.';
+        }
+      }
+
+      function rotateSandboxAccess() {
+        return changeSandboxAccess('rotate', null);
+      }
+
+      function revokeSandboxAccess() {
+        return changeSandboxAccess('revoke', 'Revoke sandbox API access? Managed apps will stop reaching BayLeaf until you set them up again. Your API key and files are not affected.');
       }
 
       async function pokeSandbox() {

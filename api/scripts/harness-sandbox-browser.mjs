@@ -458,7 +458,7 @@ try {
     for(let i=0;i<6;i++){editor=await (await req(cs('__tick'))).json();if(editor.phase==='ready')break;}
     assert.equal(editor.phase,'ready');assert.notEqual(editor.url,ready.url);
     assert.equal((await status()).url,ready.url);
-    assert(credentialsUploaded.every(path=>path.includes('/browser/credentials/')),'editor receives no inference key');
+    assert(credentialsUploaded.every(path=>path.endsWith('credentials/incoming')),'editor uploads only its sandbox placeholder');
     const row=await db.prepare("SELECT * FROM preview_registrations WHERE slot='__code-server'").first();
     assert.equal(row.deployment,'__browser');assert(row.owner_key_hash);assert.equal(row.expires_at,editor.deadline);
     const origin=new URL(editor.url).origin;
@@ -492,7 +492,7 @@ try {
     assert.equal(sleepingEditor.phase,'stopped');assert.equal(sleepingEditor.url,undefined,
       'an alarm must not resurrect a sibling ready snapshot retired during wake');
   });
-  await check('dufs private setup and restart coexist with both services without credential upload',async()=>{
+  await check('dufs private setup and restart coexist with both services',async()=>{
     const path=(service,action)=>'/__test/'+action+'?service='+service;
     const complete=async service=>{let op;for(let i=0;i<12;i++){op=await (await req(path(service,'__tick'))).json();if(op.phase==='ready')return op;}throw new Error(JSON.stringify(op));};
     await req(path('code-server','start'),{method:'POST'});const editor=await complete('code-server');
@@ -500,7 +500,7 @@ try {
     memory=1;
     await req(path('dufs','start'),{method:'POST'});let files=await complete('dufs');
     memory=4;
-    assert.equal(credentialsUploaded.length,uploads);
+    
     assert.equal((await status()).url,ready.url);
     assert.equal((await (await req(path('code-server','status'))).json()).url,editor.url);
     assert.equal(new Set([ready.url,editor.url,files.url]).size,3);
@@ -516,7 +516,7 @@ try {
     assert.equal((await worker.fetch(api+'/sandbox/expose',{method:'POST',headers:{Authorization:'Bearer sk-bayleaf-rotated','Content-Type':'application/json'},body:JSON.stringify({port:8790,access:'public'})})).status,400);
     const old=files.url;
     await req(path('dufs','restart'),{method:'POST'});files=await complete('dufs');
-    assert.notEqual(files.url,old);assert.equal(credentialsUploaded.length,uploads);
+    assert.notEqual(files.url,old);
     assert.equal((await status()).url,ready.url);
     assert.equal((await (await req(path('code-server','status'))).json()).url,editor.url);
     await req(path('dufs','__expire'));await req(path('code-server','__expire'));
@@ -568,12 +568,12 @@ try {
     await toFinalize();await db.prepare("DELETE FROM preview_registrations WHERE slot='__nanobot'").run();
     op=await(await req(nb('__tick'))).json();assert.equal(op.phase,'expired');assert.equal(op.url,undefined);
   });
-  await check('Jupyter keeps native token behind owner/origin gates on HTTP and WS, uploads no inference key, and coexists',async()=>{
+  await check('Jupyter keeps native token behind owner/origin gates on HTTP and WS, uploads only its sandbox placeholder, and coexists',async()=>{
     const jp=action=>'/__test/'+action+'?service=jupyter';
     const uploads=credentialsUploaded.length, sibling=(await status()).url;
     const complete=async()=>{let op;for(let i=0;i<12;i++){op=await(await req(jp('__tick'))).json();if(op.phase==='ready')return op;}throw new Error('Jupyter failed');};
     await req(jp('start'),{method:'POST'});let op=await complete();
-    assert.equal(credentialsUploaded.length,uploads);assert.equal((await status()).url,sibling);
+    assert.equal((await status()).url,sibling);
     assert(!JSON.stringify(op).includes(jupyterAuth));assert.notEqual(jupyterAuth,nanobotAuth);
     const row=await db.prepare("SELECT * FROM preview_registrations WHERE slot='__jupyter'").first();
     assert.equal(row.access,'private');assert(!JSON.stringify(row).includes(jupyterAuth));
@@ -593,16 +593,16 @@ try {
     const echoed=new Promise(resolve=>socket.webSocket.addEventListener('message',event=>resolve(event.data),{once:true}));
     socket.webSocket.send('synthetic kernel message');assert.equal(await echoed,'synthetic kernel message');socket.webSocket.close();
     const old=op.url;await req(jp('restart'),{method:'POST'});op=await complete();assert.notEqual(op.url,old);
-    assert.equal(credentialsUploaded.length,uploads);assert.equal((await status()).url,sibling);
+    assert.equal((await status()).url,sibling);
     await req(jp('__expire'));assert.equal((await(await req(jp('status'))).json()).url,undefined);
   });
-  await check('ttyd private HTTP/WS inject Basic auth only after owner/origin gates; no inference key, independent restart',async()=>{
+  await check('ttyd private HTTP/WS inject Basic auth only after owner/origin gates; placeholder only, independent restart',async()=>{
     assert.equal((await worker.fetch(api+'/sandbox/expose',{method:'POST',headers:{Authorization:'Bearer sk-bayleaf-rotated','Content-Type':'application/json'},body:JSON.stringify({port:8794,access:'public'})})).status,400);
     const tt=action=>'/__test/'+action+'?service=ttyd';
     const uploads=credentialsUploaded.length, sibling=(await status()).url;
     const complete=async()=>{for(let i=0;i<12;i++){const op=await(await req(tt('__tick'))).json();if(op.phase==='ready')return op;}throw new Error('ttyd failed');};
     await req(tt('start'),{method:'POST'});let op=await complete();
-    assert.equal(credentialsUploaded.length,uploads);assert.equal((await status()).url,sibling);
+    assert.equal((await status()).url,sibling);
     assert(!JSON.stringify(op).includes(ttydAuth));assert.notEqual(ttydAuth,jupyterAuth);
     const row=await db.prepare("SELECT * FROM preview_registrations WHERE slot='__ttyd'").first();
     assert.equal(row.access,'private');assert(!JSON.stringify(row).includes(ttydAuth));
@@ -620,7 +620,7 @@ try {
     const socket=await worker.fetch(op.url+'ws',{headers:{...headers,Upgrade:'websocket',Authorization:'spoofed'}});
     assert.equal(socket.status,101);socket.webSocket.accept();assert.equal(lastForwarded.authorization,basic);socket.webSocket.close();
     const old=op.url;await req(tt('restart'),{method:'POST'});op=await complete();assert.notEqual(op.url,old);
-    assert.equal(credentialsUploaded.length,uploads);assert.equal((await status()).url,sibling);
+    assert.equal((await status()).url,sibling);
     await req(tt('__expire'));assert.equal((await(await req(tt('status'))).json()).url,undefined);
   });
   await check('central scheduler honors backoff, ready timestamps, and setup deadlines with a fake clock',async()=>{

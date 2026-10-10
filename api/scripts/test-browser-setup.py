@@ -22,18 +22,20 @@ class InstallerTests(unittest.TestCase):
         m.ROOT = self.root
         self.addCleanup(m.select_service, 'openchamber')
 
-    def test_code_server_configuration_and_launch_need_no_key_or_node(self):
+    def test_code_server_receives_placeholder_but_not_inherited_keys(self):
         self.code_server()
+        (self.root/'credentials').mkdir()
+        (self.root/'credentials/incoming').write_text('dtn_secret_synthetic')
         with patch.object(m.Path, 'home', return_value=self.root/'home'), patch.dict(m.os.environ,
                 {'BAYLEAF_API_KEY':'sk-bayleaf-inherited','OPENROUTER_API_KEY':'inherited-provider-key'}):
             self.assertIsNone(m.adapter('configure'))
             argv, env = m.adapter('start', 12345)
         self.assertTrue((self.root/'home/workspace').is_dir())
-        self.assertFalse((self.root/'credentials').exists())
+        self.assertEqual((self.root/'credentials/owner-key').read_text(), 'dtn_secret_synthetic')
         self.assertIn('0.0.0.0:8791', argv)
         self.assertEqual(argv[argv.index('--auth')+1], 'none')
         self.assertNotIn('--disable-workspace-trust', argv)
-        self.assertNotIn('BAYLEAF_API_KEY', env)
+        self.assertEqual(env['BAYLEAF_API_KEY'], 'dtn_secret_synthetic')
         self.assertNotIn('OPENROUTER_API_KEY', env)
         with patch.object(m, 'ensure_opencode', side_effect=AssertionError('OpenCode requested')):
             m.adapter('prepare', 'test', self.progress)
@@ -48,6 +50,8 @@ class InstallerTests(unittest.TestCase):
 
     def test_code_server_quiet_defaults_seed_only_missing_settings(self):
         self.code_server()
+        (self.root/'credentials').mkdir(exist_ok=True)
+        (self.root/'credentials/incoming').write_text('dtn_secret_synthetic')
         with patch.object(m.Path, 'home', return_value=self.root/'home'):
             m.configure_code_server()
             settings = self.root/'user-data/User/settings.json'
@@ -158,6 +162,8 @@ class InstallerTests(unittest.TestCase):
         run.assert_called_once_with([str(self.root/'releases'/f'{m.RELEASE}.staging/unpack/dufs'),'--version'])
         with patch.object(m,'verified_archive',side_effect=AssertionError('downloaded twice')):
             self.assertEqual(m.adapter('install',self.progress),installed)
+        (self.root/'credentials').mkdir(exist_ok=True)
+        (self.root/'credentials/incoming').write_text('dtn_secret_synthetic')
         with patch.object(m.Path,'home',return_value=self.root/'home'),patch.dict(m.os.environ,
                 {'BAYLEAF_API_KEY':'sk-bayleaf-inherited','TINFOIL_API_KEY':'tk_inherited',
                  'DUFS_ALLOW_SYMLINK':'true','DUFS_ALLOW_ALL':'true','DUFS_SERVE_PATH':'/home'}):
@@ -167,9 +173,9 @@ class InstallerTests(unittest.TestCase):
         for flag in ['--allow-upload','--allow-delete','--allow-search','--allow-archive','--allow-hash']:
             self.assertIn(flag,argv)
         self.assertNotIn('--allow-all',argv);self.assertNotIn('--allow-symlink',argv)
-        self.assertNotIn('BAYLEAF_API_KEY',env);self.assertNotIn('TINFOIL_API_KEY',env)
+        self.assertEqual(env['BAYLEAF_API_KEY'],'dtn_secret_synthetic')
+        self.assertNotIn('TINFOIL_API_KEY',env)
         self.assertFalse(any(name.startswith('DUFS_') for name in env))
-        self.assertFalse((self.root/'credentials').exists())
         self.assertTrue(m.adapter('health',{'status':'OK'}))
         self.assertFalse(m.adapter('health',{'status':'alive'}))
         self.assertEqual(m.inspect()['port'],8790)

@@ -13,11 +13,16 @@ async function handle(c: Context<AppEnv>) {
   c.header('Cache-Control', 'no-store');
   if (!browserEnabled(c.env)) return c.json({ error: 'browser_disabled' }, 503);
   const path = c.req.path.replace(/^\/sandbox\/browser/, '') || '/status';
+  // Access changes are owner-browser actions: no bearer, Campus Pass, or sandbox credential.
+  const access = c.req.method === 'POST' && ['/access/revoke', '/access/rotate'].includes(path);
   if (!((c.req.method === 'GET' && path === '/status') ||
-        (c.req.method === 'POST' && ['/start', '/restart'].includes(path)))) {
+        (c.req.method === 'POST' && ['/start', '/restart'].includes(path)) || access)) {
     return c.json({ error: 'not_found' }, 404);
   }
   let email: string;
+  if (access && c.req.header('Authorization')) {
+    return c.json({ error: 'browser_session_required' }, 403);
+  }
   if (c.req.header('Authorization')) {
     const auth = await resolveAuth(c);
     if (auth instanceof Response) return auth;
@@ -47,6 +52,8 @@ const responses = {
 sandboxBrowserRoutes.openapi(createRoute({ method: 'get', path: '/status', tags: ['Sandbox'],
   operationId: 'browserSandboxStatus', security: [{ Bearer: [] }],
   summary: 'Observe browser setup and link expiry without waking the sandbox', responses }), handle as any);
+sandboxBrowserRoutes.post('/access/revoke', handle as any);
+sandboxBrowserRoutes.post('/access/rotate', handle as any);
 for (const action of ['start', 'restart'] as const) {
   sandboxBrowserRoutes.openapi(createRoute({ method: 'post', path: `/${action}`, tags: ['Sandbox'],
     operationId: `browserSandbox_${action}`, security: [{ Bearer: [] }],

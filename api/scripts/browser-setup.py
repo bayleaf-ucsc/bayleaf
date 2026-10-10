@@ -508,6 +508,7 @@ def ttyd_token():
 
 
 def configure_ttyd():
+    accept_placeholder()
     (Path.home() / 'workspace').mkdir(parents=True, exist_ok=True)
     return hashlib.sha256(ttyd_secret().encode()).hexdigest()
 
@@ -520,7 +521,7 @@ def start_ttyd(backend_port):
     # Credentials stay out of setup commands/logs, but ttyd requires local argv.
     return [str(ROOT/'releases'/RELEASE/'ttyd'), '--port', str(PORT),
         '--interface', '0.0.0.0', '--writable', '--credential', 'bayleaf:'+ttyd_secret(),
-        '--cwd', str(Path.home()/'workspace'), '--debug', '1', '/bin/bash'], non_inference_environment()
+        '--cwd', str(Path.home()/'workspace'), '--debug', '1', '/bin/bash'], service_environment()
 
 
 def health_ttyd(data):
@@ -561,6 +562,7 @@ def install_archive(progress, repo, asset_name, binary, directory, step, *, free
 
 
 def configure_code_server():
+    accept_placeholder()
     for folder in ('user-data', 'extensions'):
         (ROOT / folder).mkdir(parents=True, exist_ok=True, mode=0o700)
     # Quiet editor defaults, not policy: preserve existing user JSONC verbatim.
@@ -584,6 +586,7 @@ def configure_code_server():
 
 
 def configure_dufs():
+    accept_placeholder()
     (Path.home() / 'workspace').mkdir(parents=True, exist_ok=True)
     return None
 
@@ -730,7 +733,7 @@ def configure_nanobot():
 
 
 def start_nanobot(backend_port):
-    env = non_inference_environment()
+    env = service_environment()
     env = {name:value for name,value in env.items() if not name.startswith('NANOBOT_')}
     env.update(BAYLEAF_API_KEY=(ROOT/'credentials/owner-key').read_text().strip(),
         BAYLEAF_NANOBOT_AUTH=(ROOT/'credentials/app-secret').read_text().strip())
@@ -739,7 +742,7 @@ def start_nanobot(backend_port):
 
 
 def start_dufs(backend_port):
-    env = non_inference_environment()
+    env = service_environment()
     # DUFS_ALLOW_ALL / DUFS_ALLOW_SYMLINK inherited from a shell must not widen
     # the managed file root. CLI flags alone cannot negate every env setting.
     env = {name: value for name, value in env.items() if not name.startswith('DUFS_')}
@@ -761,14 +764,26 @@ def start_code_server(backend_port):
     executable = ROOT / 'releases' / RELEASE / 'bin/code-server'
     return [str(executable), '--config', str(ROOT / 'config.yaml'), '--bind-addr', f'0.0.0.0:{PORT}', '--auth', 'none',
         '--disable-telemetry', '--disable-update-check', '--user-data-dir', str(ROOT / 'user-data'),
-        '--extensions-dir', str(ROOT / 'extensions'), str(Path.home() / 'workspace')], non_inference_environment()
+        '--extensions-dir', str(ROOT / 'extensions'), str(Path.home() / 'workspace')], service_environment()
 
 
-def non_inference_environment():
+SANDBOX_PLACEHOLDER = re.compile(r'dtn_secret_[A-Za-z0-9_-]+')
+
+
+def service_environment():
+    # Placeholders are inert outside this sandbox, so every service may receive
+    # them. A real provider or BayLeaf key inherited from an earlier install is
+    # still dropped: only placeholders travel.
     env = dict(os.environ)
     for name in list(env):
-        if re.match(r'^(BAYLEAF|OPENROUTER|TINFOIL|OPENAI|ANTHROPIC)_.*(KEY|TOKEN|SECRET|PASSWORD|AUTH)$', name):
+        if re.match(r'^(BAYLEAF|OPENROUTER|TINFOIL|OPENAI|ANTHROPIC)_.*(KEY|TOKEN|SECRET|PASSWORD|AUTH)$', name) \
+                and not SANDBOX_PLACEHOLDER.fullmatch(env[name]):
             env.pop(name)
+    credential = ROOT / 'credentials/owner-key'
+    if credential.exists():
+        value = credential.read_text().strip()
+        if SANDBOX_PLACEHOLDER.fullmatch(value):
+            env['BAYLEAF_API_KEY'] = value
     return env
 
 
@@ -779,6 +794,18 @@ def start_openchamber(backend_port):
 
 def bootstrap_plain_service(backend_port, operation, report):
     pass
+
+
+def accept_placeholder():
+    incoming = ROOT / 'credentials/incoming'
+    credential = ROOT / 'credentials/owner-key'
+    if incoming.exists():
+        os.chmod(incoming, 0o600)
+        os.replace(incoming, credential)
+    if not credential.exists():
+        raise Failure('credential_missing')
+    if not SANDBOX_PLACEHOLDER.fullmatch(credential.read_text().strip()):
+        raise Failure('credential_invalid')
 
 
 def configure():
