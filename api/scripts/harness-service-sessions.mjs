@@ -18,7 +18,7 @@ const bundle = await build({ absWorkingDir: root, stdin: { resolveDir: root, con
   export { SandboxManagement } from './src/serviceSessions.ts';
   import { DurableObject } from 'cloudflare:workers';
   export class SyntheticController extends DurableObject {
-    async fetch(req) { return Response.json({owner:req.headers.get('X-BayLeaf-Owner'),path:new URL(req.url).pathname}); }
+    async fetch(req) { return Response.json({owner:req.headers.get('X-BayLeaf-Owner'),path:new URL(req.url).pathname,service:new URL(req.url).searchParams.get('service')}); }
   }
   export default {...app, async fetch(req,env,ctx) {
     if(new URL(req.url).pathname==='/__cleanup') {await cleanupServiceSessions(env);return new Response('ok');}
@@ -125,10 +125,10 @@ try {
   assert.deepEqual(await rpc('readSession',{session:login.session}),{user:login.user,expiresAt:login.expiresAt});
   assert.equal((await rpc('managed',{session:login.session,service:'arbitrary',operation:'start'})).status,400);
   assert.equal((await rpc('managed',{session:login.session,service:'openchamber',operation:'start',email:'victim@example.test'})).status,400);
-  for (const operation of ['status','start','restart']) {
-    const result = await rpc('managed',{session:login.session,service:'openchamber',operation});
+  for (const service of ['openchamber','code-server','dufs']) for (const operation of ['status','start','restart']) {
+    const result = await rpc('managed',{session:login.session,service,operation});
     assert.equal(result.status,200);
-    assert.deepEqual(result.body,{owner:login.user.email,path:'/'+operation});
+    assert.deepEqual(result.body,{owner:login.user.email,path:'/'+operation,service});
   }
   assert.equal((await rpc('managed',{session:login.session,operation:'wake-existing'})).body.path,'/wake-existing');
   await db.prepare('UPDATE user_keys SET revoked=1 WHERE email=?').bind(login.user.email).run();

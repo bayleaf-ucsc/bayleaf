@@ -91,6 +91,73 @@ explicit operation on the user-owned installation. Preserve user files and histo
 
 ## Evidence and refinement log
 
+- 2026-10-09 (ttyd, local only): old GitHub releases can have no API digest but
+  publish SHA256SUMS; pin the exact binary checksum rather than relax verification.
+  ttyd header auth only checks presence, while Basic auth checks both HTTP/WS.
+  Its native origin check ignores forwarded Host, so qualify the gateway origin
+  gate and direct credential behavior separately. Native macOS smoke passed;
+  Linux release execution and Daytona browser checks remain rollout work.
+- 2026-10-09 (ttyd rollout): `invalid_operation` persisted briefly after deployment
+  despite the correct active API bundle and production service binding. Verified
+  those through Cloudflare version modules before proceeding; status then converged
+  without edits/redeploy. Dashboard launch reached ready in 16 seconds, anonymous
+  HTTP/WS denied; browser command qualification needs Adam's fresh CruzID login.
+
+- 2026-10-09 (approved production rollout): published independent Nanobot
+  `v0.1.0`, strict embedded-source build, then API and five-card dashboard.
+  Linux discovery exposed Python urllib's default User-Agent receiving 403;
+  explicit `BayLeaf-managed-services` succeeded on the same authenticated
+  recommendation/catalog endpoints. Verify the actual installed discovery
+  function after rollout: substring checks were misleading because the client
+  name already appeared elsewhere, and a retry during propagation installed old
+  source. Nanobot reached ready and performed real inference plus read-only usage.
+  Fresh UCSC login remains necessary for interactive app checks in this browser.
+
+- 2026-10-09 (independent Nanobot package): Adam chose `nanobot-sandbox`, not
+  cross-harness imports. Staged ordinary source without Git initialization;
+  reverted only known Nanobot edits in the otherwise-clean OpenCode submodule.
+  The separate asset builder requires its own clean Git root, expected origin
+  and remotely advertised commit, while explicit fixture builds serve tests.
+  Short Nanobot guidance references platform contracts rather than parsing
+  OpenCode skill headings. Publication/init/submodule steps still need approval.
+
+- 2026-10-09 (Nanobot #87 source investigation): The register-after-ready flow
+  needs an optional post-registration configuration/readiness hook for apps with
+  explicit public WS origins. App authentication and MCP permission semantics
+  require decisions before presenting another service as equivalent. Findings
+  are in `api/NANOBOT-POC.md`; no runtime qualification or deployment in this pass.
+
+- 2026-10-09 (Nanobot local POC): A fixed post-registration finalization step
+  qualifies the actual bootstrap WS origin before surfacing ready. Named helper
+  exports reuse plugin transport without a core extraction. Real Nanobot/MCP
+  testing caught a symlinked executable-path mismatch missed by unit tests.
+  Code-server defaults separately seed only absent settings, preserving JSONC;
+  secondary-sidebar hiding does not imply primary-sidebar hiding. No deployment.
+
+- 2026-10-09 (Jupyter integration, local): Reused the service-owned app-secret
+  helper with a fixed Authorization mapping; no origin-finalization hook is needed
+  for relative WebSockets. Transfer the canonical adapter beside the installer
+  rather than duplicate it. Actual workerd tests passed HTTP/WS owner/origin gates,
+  encrypted app auth, no inference-key upload, renewal and coexistence. Native
+  token auth skips Jupyter XSRF/origin checks, so gateway checks remain mandatory.
+
+- 2026-10-09 (live editor readiness diagnosis): code-server v4.141.0 returns
+  HTTP 200 `expired` with `lastHeartbeat: 0` before browser activity; `/healthz`
+  intentionally does not refresh that heartbeat. Accept both documented activity
+  states behind the configured/live-process gates. dufs's health is unconditional
+  `OK`. Local regression added; deployment belongs to the parent session.
+
+- 2026-10-09 (review fixes and dufs, local only): Alarm tests must advance a fake
+  clock to the actual scheduler deadline, not force every record forward. The
+  third service needed archive asset/layout callbacks, not controller branches.
+  Provider create failure semantics support only narrow authorization rejection
+  classification; other failures retain owner-wide ambiguity protection.
+
+- 2026-10-09 (managed code-server, local only): Parent-only service adapters need
+  no plugin publication or new D1 column. An owner DO has one alarm: service
+  expiry/revocation scheduling must be centralized, and the existing managed
+  owner-key gate is deployment-based, not slot-based. Live qualification deferred.
+
 - 2026-10-08 (dashboard deployment): Migration 0014 applied; API
   `92c3b96b-aa76-4e82-a2b6-decb408c7f8b` and Sandboxes
   `b6007714-d648-4cab-b44d-57c4c2f5e893` deployed with approval. Live sign-in

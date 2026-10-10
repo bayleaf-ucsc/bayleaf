@@ -3,8 +3,8 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-01-31",
   "compatibility_flags": ["nodejs_compat"],
-  "rules": [{ "type": "Text", "globs": ["**/browser-setup.py"], "fallthrough": true }],
-  "build": { "command": "python3 scripts/build-sandbox-plugin.py" },
+  "rules": [{ "type": "Text", "globs": ["**/browser-setup.py", "**/jupyter-adapter.py"], "fallthrough": true }],
+  "build": { "command": "python3 scripts/build-sandbox-plugin.py && python3 scripts/build-nanobot-assets.py" },
   
   // Observability - disabled to avoid unnecessary data accumulation.
   // Re-enable temporarily for debugging if needed.

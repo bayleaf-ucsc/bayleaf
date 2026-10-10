@@ -76,7 +76,8 @@ Campus Pass, an installation credential, or a browser session as authority.
 
 Access defaults to **private** (owner login). Optional `"access":"public"`
 explicitly permits anonymous access. Port 3100 is reserved for the managed
-OpenChamber interface and cannot be exposed through this endpoint. Sandbox
+OpenChamber interface and cannot be exposed through this endpoint. The local
+managed code-server and dufs additions also reserve ports 8791 and 8790. Sandbox
 agents use the canonical plugin's `bayleaf_expose` tool, which reads the owner key
 internally and defaults to private exposure without displaying credentials. ✨
 
@@ -99,6 +100,24 @@ for 24 hours. Re-exposing the same port replaces that keyed registration.
 Both entry points use the same canonical email owner, but only the keyed API has
 a stable port slot. A future second installation must receive an explicit
 namespace/identity policy, not automatic authority based on matching email text.
+
+### Managed code-server and dufs: implementation pending live rollout
+
+code-server uses slot `__code-server` and dufs uses `__dufs` under the existing `__browser` deployment
+policy. Owner-key binding is deployment-based, not tied to the slot spelling;
+the gateway now also requires a known managed slot. Migration 0013 already
+provides the fingerprint column, so no schema change is needed. Public framing
+and `X-Opencode-Directory` remain exclusive to the legacy OpenChamber slot.
+The leftover six-hour managed-registration cap is corrected to 24 hours and the
+controller uses the returned expiry. Existing links are not extended in place.
+
+Post-deployment evidence belongs here: managed installation/version, editor and
+terminal round trip, simultaneous-service isolation, owner/non-owner access,
+key rotation, restart, expiry/relink, sleep/relaunch, service-worker/PWA behavior,
+and representative extension memory use. For dufs, verify workspace browsing,
+upload/edit/download and outside-root symlink denial. No live results for these managed
+adapters have been recorded. Prior ad hoc code-server qualification below does
+not qualify the new installer or full browser-feature compatibility.
 
 ### Installation authentication
 

@@ -3,6 +3,9 @@
 import importlib.util
 import json
 import os
+import io
+import tarfile
+import hashlib
 from pathlib import Path
 import tempfile
 import unittest
@@ -14,6 +17,176 @@ spec.loader.exec_module(m)
 
 
 class InstallerTests(unittest.TestCase):
+    def code_server(self):
+        m.select_service('code-server')
+        m.ROOT = self.root
+        self.addCleanup(m.select_service, 'openchamber')
+
+    def test_code_server_configuration_and_launch_need_no_key_or_node(self):
+        self.code_server()
+        with patch.object(m.Path, 'home', return_value=self.root/'home'), patch.dict(m.os.environ,
+                {'BAYLEAF_API_KEY':'sk-bayleaf-inherited','OPENROUTER_API_KEY':'inherited-provider-key'}):
+            self.assertIsNone(m.adapter('configure'))
+            argv, env = m.adapter('start', 12345)
+        self.assertTrue((self.root/'home/workspace').is_dir())
+        self.assertFalse((self.root/'credentials').exists())
+        self.assertIn('0.0.0.0:8791', argv)
+        self.assertEqual(argv[argv.index('--auth')+1], 'none')
+        self.assertNotIn('--disable-workspace-trust', argv)
+        self.assertNotIn('BAYLEAF_API_KEY', env)
+        self.assertNotIn('OPENROUTER_API_KEY', env)
+        with patch.object(m, 'ensure_opencode', side_effect=AssertionError('OpenCode requested')):
+            m.adapter('prepare', 'test', self.progress)
+        self.assertEqual(m.inspect()['service'], 'code-server')
+        self.assertEqual(m.inspect()['port'], 8791)
+
+    def test_code_server_health_is_not_openchamber_health(self):
+        self.code_server()
+        self.assertTrue(m.adapter('health', {'status':'alive'}))
+        for data in ({'status':'dead'}, {'openchamberVersion':'3.0','isOpenCodeReady':True}, []):
+            self.assertFalse(m.adapter('health', data))
+
+    def test_code_server_quiet_defaults_seed_only_missing_settings(self):
+        self.code_server()
+        with patch.object(m.Path, 'home', return_value=self.root/'home'):
+            m.configure_code_server()
+            settings = self.root/'user-data/User/settings.json'
+            self.assertEqual(json.loads(settings.read_text()), {'chat.disableAIFeatures':True,
+                'workbench.secondarySideBar.defaultVisibility':'hidden'})
+            original = b'// Human JSONC remains byte-for-byte\n{"chat.disableAIFeatures": false, "editor.fontSize": 17,}\n'
+            settings.write_bytes(original)
+            m.configure_code_server()
+            self.assertEqual(settings.read_bytes(), original)
+
+    def test_fresh_editor_readiness_does_not_require_browser_activity(self):
+        self.code_server()
+        runtime={'release':m.RELEASE,'configured':True,'process':{}}
+        response=Mock();response.__enter__=Mock(return_value=response);response.__exit__=Mock(return_value=False)
+        opener=Mock(open=Mock(return_value=response))
+        with patch.object(m,'read',return_value=runtime), patch.object(m,'alive',return_value=True) as alive, \
+             patch.object(m.urllib.request,'build_opener',return_value=opener):
+            # Exact production response before any browser has a private link.
+            for payload in ({'status':'expired','lastHeartbeat':0},
+                            {'status':'expired','lastHeartbeat':1},
+                            {'status':'alive','lastHeartbeat':1791586531000}):
+                response.read.return_value=json.dumps(payload).encode()
+                self.assertTrue(m.health())
+            opener.open.assert_called_with('http://127.0.0.1:8791/healthz',timeout=3)
+            for payload in ({'status':'unknown'}, {}, [], {'status':'OK'}):
+                response.read.return_value=json.dumps(payload).encode()
+                self.assertFalse(m.health())
+            response.read.return_value=b'{"status":"expired","lastHeartbeat":0}'
+            for field,value in [('configured',False),('release','old-layout')]:
+                original=runtime[field];runtime[field]=value;opener.open.reset_mock()
+                self.assertFalse(m.health());opener.open.assert_not_called()
+                runtime[field]=original
+            alive.return_value=False;opener.open.reset_mock()
+            self.assertFalse(m.health());opener.open.assert_not_called()
+            alive.return_value=True;opener.open.side_effect=OSError('connection refused')
+            self.assertFalse(m.health())
+
+    def test_code_server_atomic_install_retry_reuses_verified_binary(self):
+        self.code_server()
+        old=self.root/'releases/old';old.mkdir(parents=True)
+        (self.root/'current').symlink_to(old)
+        def unpack(repo, product, stage):
+            root=stage/'unpack';dest=root/'code-server-1.2.3-linux-amd64';(dest/'bin').mkdir(parents=True)
+            binary=dest/'bin/code-server';binary.write_text('synthetic');binary.chmod(0o700)
+            return root, {'tag':'v1.2.3','asset':'code-server-1.2.3-linux-amd64.tar.gz','sha256':'a'*64}
+        with patch.object(m, 'verified_archive', side_effect=m.Failure('release_verification_failed')):
+            with self.assertRaisesRegex(m.Failure, 'release_verification_failed'):
+                m.install_code_server(self.progress)
+        self.assertEqual((self.root/'current').resolve(), old)
+        with patch.object(m, 'verified_archive', side_effect=unpack), patch.object(m, 'command'):
+            release=m.install_code_server(self.progress)
+        self.assertEqual((self.root/'current').resolve(), release)
+        with patch.object(m, 'verified_archive', side_effect=AssertionError('reinstalled')):
+            self.assertEqual(m.install_code_server(self.progress), release)
+
+    def test_verified_archive_digest_and_path_confinement(self):
+        for case in ('valid', 'digest', 'traversal', 'symlink', 'chain', 'forward-chain', 'download-size', 'expanded-size', 'members', 'url', 'architecture'):
+            with self.subTest(case=case):
+                stage=self.root/case;stage.mkdir()
+                data=io.BytesIO()
+                with tarfile.open(fileobj=data, mode='w:gz') as tar:
+                    member=tarfile.TarInfo('../escape' if case=='traversal' else 'code-server-1.2.3-linux-amd64/bin/code-server')
+                    if case=='symlink':
+                        member.type=tarfile.SYMTYPE;member.linkname='/outside'
+                    else:
+                        member.size=2
+                    tar.addfile(member, None if case=='symlink' else io.BytesIO(b'ok'))
+                    if case in ('chain','forward-chain'):
+                        # Both links are lexically confined in an empty tree,
+                        # but the completed graph resolves b outside unpack.
+                        links=[('a','.'),('b','a/../escape')]
+                        for name,target in (reversed(links) if case=='forward-chain' else links):
+                            link=tarfile.TarInfo(name);link.type=tarfile.SYMTYPE;link.linkname=target;tar.addfile(link)
+                archive=data.getvalue()
+                url='https://github.com/coder/code-server/releases/download/v1.2.3/code-server-1.2.3-linux-amd64.tar.gz'
+                release={'tag_name':'v1.2.3','url':'https://api.github.com/repos/coder/code-server/releases/123',
+                    'assets':[{'name':'code-server-1.2.3-linux-amd64.tar.gz','browser_download_url':url if case!='url' else 'https://wrong.example',
+                        'digest':'sha256:'+('0'*64 if case=='digest' else hashlib.sha256(archive).hexdigest())}]}
+                with patch.object(m.platform,'system',return_value='Linux'), \
+                     patch.object(m.platform,'machine',return_value='arm64' if case=='architecture' else 'x86_64'), \
+                     patch.object(m,'MAX_ARCHIVE_BYTES',1 if case=='download-size' else 512*1024*1024), \
+                     patch.object(m,'MAX_UNPACKED_BYTES',1 if case=='expanded-size' else 2*1024**3), \
+                     patch.object(m,'MAX_ARCHIVE_MEMBERS',0 if case=='members' else 100000), \
+                     patch.object(m.urllib.request,'urlopen',side_effect=[io.BytesIO(json.dumps(release).encode()), io.BytesIO(archive)]):
+                    if case=='valid':
+                        dest,evidence=m.verified_archive('coder/code-server',m.code_server_asset,stage)
+                        self.assertEqual((dest/'code-server-1.2.3-linux-amd64/bin/code-server').read_text(),'ok')
+                        self.assertEqual(evidence['tag'],'v1.2.3')
+                    else:
+                        with self.assertRaises(m.Failure):
+                            m.verified_archive('coder/code-server',m.code_server_asset,stage)
+
+    def test_dufs_uses_common_verified_install_without_editor_resource_floor(self):
+        m.select_service('dufs');m.ROOT=self.root;self.addCleanup(m.select_service,'openchamber')
+        data=io.BytesIO()
+        with tarfile.open(fileobj=data,mode='w:gz') as tar:
+            member=tarfile.TarInfo('dufs');member.size=2;member.mode=0o755
+            tar.addfile(member,io.BytesIO(b'ok'))
+        archive=data.getvalue();name='dufs-v0.46.0-x86_64-unknown-linux-musl.tar.gz'
+        release={'tag_name':'v0.46.0','url':'https://api.github.com/repos/sigoden/dufs/releases/123',
+            'assets':[{'name':name,'browser_download_url':'https://github.com/sigoden/dufs/releases/download/v0.46.0/'+name,
+                'digest':'sha256:'+hashlib.sha256(archive).hexdigest()}]}
+        with patch.object(m.platform,'system',return_value='Linux'),patch.object(m.platform,'machine',return_value='x86_64'), \
+             patch.object(m.urllib.request,'urlopen',side_effect=[io.BytesIO(json.dumps(release).encode()),io.BytesIO(archive)]), \
+             patch.object(m.shutil,'disk_usage',return_value=Mock(free=256*1024**2)),patch.object(m,'command') as run:
+            installed=m.adapter('install',self.progress)
+        self.assertEqual((installed/'dufs').read_text(),'ok')
+        run.assert_called_once_with([str(self.root/'releases'/f'{m.RELEASE}.staging/unpack/dufs'),'--version'])
+        with patch.object(m,'verified_archive',side_effect=AssertionError('downloaded twice')):
+            self.assertEqual(m.adapter('install',self.progress),installed)
+        with patch.object(m.Path,'home',return_value=self.root/'home'),patch.dict(m.os.environ,
+                {'BAYLEAF_API_KEY':'sk-bayleaf-inherited','TINFOIL_API_KEY':'tk_inherited',
+                 'DUFS_ALLOW_SYMLINK':'true','DUFS_ALLOW_ALL':'true','DUFS_SERVE_PATH':'/home'}):
+            self.assertIsNone(m.adapter('configure'))
+            argv,env=m.adapter('start',None)
+        self.assertEqual(argv[1],str(self.root/'home/workspace'))
+        for flag in ['--allow-upload','--allow-delete','--allow-search','--allow-archive','--allow-hash']:
+            self.assertIn(flag,argv)
+        self.assertNotIn('--allow-all',argv);self.assertNotIn('--allow-symlink',argv)
+        self.assertNotIn('BAYLEAF_API_KEY',env);self.assertNotIn('TINFOIL_API_KEY',env)
+        self.assertFalse(any(name.startswith('DUFS_') for name in env))
+        self.assertFalse((self.root/'credentials').exists())
+        self.assertTrue(m.adapter('health',{'status':'OK'}))
+        self.assertFalse(m.adapter('health',{'status':'alive'}))
+        self.assertEqual(m.inspect()['port'],8790)
+
+    def test_collision_fails_without_signalling_unrelated_listener(self):
+        self.code_server()
+        m.atomic('state/runtime.json',{'release':m.RELEASE,'credential_hash':None})
+        with patch.object(m, 'request', return_value={}), patch.object(m,'Progress'), \
+             patch.object(m,'install_code_server'), patch.object(m,'configure_code_server',return_value=None), \
+             patch.object(m,'alive',return_value=False), \
+             patch.object(m,'check_browser_port',side_effect=m.Failure('port_in_use')), \
+             patch.object(m.os,'kill') as kill, patch.object(m.os,'killpg') as killpg, \
+             patch.object(m.subprocess,'Popen') as spawn:
+            with self.assertRaisesRegex(m.Failure, 'port_in_use'):
+                m.setup('test')
+        kill.assert_not_called();killpg.assert_not_called();spawn.assert_not_called()
+
     def test_readiness_accepts_new_openchamber_versions_but_requires_ready_backend(self):
         with patch.object(m,'read',return_value={'release':m.RELEASE,'configured':True,'process':{}}), \
              patch.object(m,'alive',return_value=True):
@@ -83,11 +256,12 @@ class InstallerTests(unittest.TestCase):
              patch.object(m, 'environment', return_value={}), patch.object(m, 'bootstrap'), \
              patch.object(m, 'atomic'), patch.object(m, 'identity', return_value={'pid':123}), \
              patch.object(m, 'read', side_effect=AssertionError('runtime consulted an expiry lease')), \
-             patch.object(m.subprocess, 'Popen', return_value=child), patch.object(m, 'terminate') as terminate:
+             patch.object(m.subprocess, 'Popen', return_value=child), patch.object(m, 'terminate') as terminate, \
+             patch.object(m, 'wait_for_exit') as wait:
             child.wait.side_effect = lambda **kw: None
             m.supervise('test')
-        child.wait.assert_any_call()  # Wait for actual process exit, without a link deadline.
-        self.assertEqual(child.wait.call_count, 2)
+        wait.assert_called_once_with(child)  # No link deadline; leader stays unreaped through cleanup.
+        child.wait.assert_called_once_with(timeout=15)
         terminate.assert_called_once_with({'pid':123})  # Final cleanup after process exit.
 
     def test_failed_install_preserves_current_then_retry_is_idempotent(self):
@@ -197,24 +371,25 @@ class InstallerTests(unittest.TestCase):
             m.terminate(original)
             kill.assert_not_called()
 
-    def test_reserved_port_recovery_signals_only_its_listener(self):
-        listener, unrelated = Mock(), Mock()
-        listener.name, unrelated.name = '123', '124'
-        for process in (listener, unrelated):
-            process.stat.return_value = Mock(st_uid=os.getuid())
-        listener.__truediv__ = Mock(return_value=Mock(iterdir=lambda: ['listener-fd']))
-        unrelated.__truediv__ = Mock(return_value=Mock(iterdir=lambda: ['other-fd']))
-        table = 'header\n0: 00000000:0C1C 00000000:0000 0A 0 0 0 0 0 777\n'
-        def path(name):
-            return Mock(iterdir=lambda: [listener, unrelated]) if name == '/proc' else Mock(read_text=lambda: table)
-        marker = {'pid':123, 'start':'100', 'boot':'same'}
-        with patch.object(m, 'Path', side_effect=path), \
-             patch.object(m, 'identity', side_effect=lambda pid: marker if pid == 123 else {'pid':pid}), \
-             patch.object(m.os, 'readlink', side_effect=lambda fd: 'socket:[777]' if fd == 'listener-fd' else 'socket:[888]'), \
-             patch.object(m, 'alive', side_effect=[True, False, False]), \
-             patch.object(m.os, 'kill') as kill:
-            m.clear_browser_port()
-        kill.assert_called_once_with(123, m.signal.SIGTERM)
+    def test_exited_leader_anchors_cleanup_of_live_group_descendant(self):
+        marker={'pid':123,'start':'100','boot':'same'}
+        calls=[]
+        with patch.object(m,'identity',return_value=marker), patch.object(m.os,'getpgid',return_value=123), \
+             patch.object(m,'group_running',side_effect=[True,False]), patch.object(m.time,'sleep'), \
+             patch.object(m.os,'killpg',side_effect=lambda pid,sig:calls.append((pid,sig))):
+            m.terminate(marker)
+        self.assertEqual(calls,[(123,m.signal.SIGTERM)])
+
+    def test_supervisor_reaps_only_after_group_cleanup(self):
+        calls=[]
+        child=Mock();child.wait.side_effect=lambda **kw:calls.append('reap')
+        with patch.object(m,'request',return_value={'credential_hash':'test'}),patch.object(m,'check_browser_port'), \
+             patch.object(m,'environment',return_value={}),patch.object(m,'bootstrap'),patch.object(m,'atomic'), \
+             patch.object(m,'identity',return_value={'pid':123}),patch.object(m.subprocess,'Popen',return_value=child), \
+             patch.object(m,'wait_for_exit',side_effect=lambda child:calls.append('exit-without-reaping')), \
+             patch.object(m,'terminate',side_effect=lambda marker:calls.append('cleanup-group')):
+            m.supervise('test')
+        self.assertEqual(calls,['exit-without-reaping','cleanup-group','reap'])
 
     def test_retry_waits_for_living_runtime_without_killing_it(self):
         m.atomic('state/runtime.json', {'process':{'pid':123}, 'release':m.RELEASE, 'credential_hash':'same'})
@@ -223,9 +398,9 @@ class InstallerTests(unittest.TestCase):
              patch.object(m, 'install'), patch.object(m, 'ensure_opencode'), patch.object(m, 'configure', return_value='same'), \
              patch.object(m, 'alive', return_value=True), patch.object(m, 'health', side_effect=[False,False,True]), \
              patch.object(m.time, 'sleep'), patch.object(m, 'terminate') as stop, \
-             patch.object(m, 'clear_browser_port') as reclaim, patch.object(m.subprocess, 'Popen') as spawn:
+             patch.object(m, 'check_browser_port') as check, patch.object(m.subprocess, 'Popen') as spawn:
             m.setup('test')
-        stop.assert_not_called();reclaim.assert_not_called();spawn.assert_not_called()
+        stop.assert_not_called();check.assert_not_called();spawn.assert_not_called()
 
     def test_restart_probe_accepts_time_wait_but_rejects_live_listener(self):
         with m.socket.socket() as server:

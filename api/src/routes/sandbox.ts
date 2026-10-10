@@ -78,7 +78,7 @@ const exposeRoute = createRoute({
   method: 'post', path: '/expose', operationId: 'sandboxExpose', tags: ['Sandbox'],
   summary: 'Get a private or explicitly public URL for a running sandbox service',
   description: 'Exposes an existing HTTP service without starting or waking the sandbox. ' +
-    'Defaults to owner-authenticated private access; access: public explicitly allows anonymous access. Port 3100 is reserved. Returns a fresh URL with a random nonce and no visible port. ' +
+    'Defaults to owner-authenticated private access; access: public explicitly allows anonymous access. Managed-service ports 3100, 8790 and 8791 are reserved. Returns a fresh URL with a random nonce and no visible port. ' +
     'The registration lasts 24 hours, independently of the service and upstream access URL. ' +
     'The Daytona access URL is also issued for 24 hours. Re-expose to renew access.',
   security: [{ Bearer: [] }],

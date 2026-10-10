@@ -1,3 +1,6 @@
 [submodule "api/sandbox-plugin"]
 	path = api/sandbox-plugin
 	url = https://github.com/bayleaf-ucsc/opencode-sandbox.git
+[submodule "api/nanobot-sandbox"]
+	path = api/nanobot-sandbox
+	url = https://github.com/bayleaf-ucsc/nanobot-sandbox.git

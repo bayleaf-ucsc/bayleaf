@@ -4,6 +4,7 @@ import type { Bindings } from './types';
 import { ensureUserRow, getActiveRow } from './provision';
 import { browserEnabled } from './sandboxBrowser';
 import { wakeExistingSandbox } from './sandboxWake';
+import { serviceDef } from './serviceDefs';
 
 export const SERVICE_ORIGIN = 'https://sandbox.bayleaf.dev';
 export const SERVICE_AUTHORIZE_PATH = '/auth/service/authorize';
@@ -117,7 +118,7 @@ export class SandboxManagement extends WorkerEntrypoint<Bindings> {
   async managed(input: unknown): Promise<{ status: number; body: unknown }> {
     if (!inputObject(input, ['session', 'operation', 'service']) || !validServiceToken(input.session) ||
         !['status', 'start', 'restart', 'wake-existing'].includes(input.operation as string) ||
-        (input.operation === 'wake-existing' ? input.service !== undefined : input.service !== 'openchamber')) {
+        (input.operation === 'wake-existing' ? input.service !== undefined : !serviceDef(input.service))) {
       return { status: 400, body: { error: 'invalid_operation' } };
     }
     try {
@@ -129,7 +130,7 @@ export class SandboxManagement extends WorkerEntrypoint<Bindings> {
       }
       if (!browserEnabled(this.env)) return { status: 503, body: { error: 'browser_disabled' } };
       const stub = this.env.SANDBOX_BROWSER.get(this.env.SANDBOX_BROWSER.idFromName(identity.user.email));
-      const response = await stub.fetch(`https://controller/${input.operation}`, {
+       const response = await stub.fetch(`https://controller/${input.operation}?service=${input.service}`, {
         method: input.operation === 'status' ? 'GET' : 'POST', headers: { 'X-BayLeaf-Owner': identity.user.email },
       });
       return { status: response.status, body: await response.json() };

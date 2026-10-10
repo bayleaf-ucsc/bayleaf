@@ -9,6 +9,7 @@ import type { AppEnv, Bindings } from '../types';
 import { getSession } from '../utils/session';
 import { PreviewRegistrationSchema, PreviewRegistrationResponseSchema, PreviewLabelSchema, PreviewUpstreamHeadersSchema } from '../schemas';
 import { upstreamCookies, wrapApplicationCookies } from '../previewCookies';
+import { managedSlot } from '../serviceDefs';
 
 interface Deployment {
   id: string;
@@ -121,7 +122,7 @@ async function registration(env: Bindings, hostname: string): Promise<Registrati
     .bind(hostname, now()).first<Registration>();
   if (!row || !['public', 'private'].includes(row.access)) return null;
   if (row.deployment === '__browser') {
-    if (env.BROWSER_SANDBOX_ENABLED !== 'true' || row.access !== 'private' || !row.owner_key_hash) return null;
+    if (env.BROWSER_SANDBOX_ENABLED !== 'true' || !managedSlot(row.slot) || row.access !== 'private' || !row.owner_key_hash) return null;
     const owner = await env.DB.prepare('SELECT bayleaf_token FROM user_keys WHERE email=? AND revoked=0')
       .bind(row.email).first<{ bayleaf_token: string }>();
     if (!owner || await hash(owner.bayleaf_token) !== row.owner_key_hash) return null;
@@ -243,7 +244,7 @@ async function registerPreview(env: Bindings, policy: Deployment, input: Preview
   if (!await applicationHeadersAllowed(headers, env, new URL(input.upstream_url))) return failure();
   // Registration retention is independent of sandbox or upstream-token lifetime.
   // An unavailable upstream does not delete the mapping.
-  const expiry = browser ? Math.min(browser.expiresAt, now() + 6 * 3600) : now() + 24 * 3600;
+  const expiry = browser ? Math.min(browser.expiresAt, now() + 24 * 3600) : now() + 24 * 3600;
   if (expiry <= now()) return failure(409);
   await env.DB.prepare('INSERT OR IGNORE INTO preview_owners (email,slug) VALUES (?,?)').bind(email, slug).run();
   const owner = await env.DB.prepare('SELECT email,slug FROM preview_owners WHERE email=?')
@@ -302,11 +303,16 @@ export async function registerUserPreview(env: Bindings, email: string, slot: st
 
 export function previewsEnabled(env: Bindings): boolean { return configured(env); }
 
-export async function registerBrowserPreview(env: Bindings, email: string, url: string, expiresAt: number, ownerKeyHash: string) {
-  if (env.BROWSER_SANDBOX_ENABLED !== 'true') return failure(503);
+export async function registerBrowserPreview(env: Bindings, email: string, url: string, expiresAt: number, ownerKeyHash: string, slot = '__browser', appSecret?: string) {
+  if (env.BROWSER_SANDBOX_ENABLED !== 'true' || !managedSlot(slot)) return failure(503);
+  const requiresAppSecret = ['__nanobot','__jupyter','__ttyd'].includes(slot);
+  if (requiresAppSecret !== (appSecret !== undefined) || (appSecret !== undefined && !/^[a-f0-9]{64}$/.test(appSecret))) return failure(400);
   return registerPreview(env, { ...apiPolicy(env), id: '__browser' }, {
     owner: { subject: email, email }, upstream_url: url, access: 'private',
-  }, '__browser', { expiresAt, ownerKeyHash });
+    ...(appSecret ? { upstream_headers: slot === '__jupyter'
+      ? { Authorization: `token ${appSecret}` } : slot === '__ttyd'
+      ? { Authorization: `Basic ${btoa('bayleaf:' + appSecret)}` } : { 'X-Nanobot-Auth': appSecret } } : {}),
+  }, slot, { expiresAt, ownerKeyHash });
 }
 
 export async function revokeUserPreview(env: Bindings, email: string, slot: string): Promise<boolean> {
@@ -376,7 +382,7 @@ export function consumePreviewReturnTo(c: Context<AppEnv>): string | null {
 async function browserFrameOrigin(env: Bindings, r: Registration): Promise<string | null> {
   if (r.access !== 'public' || env.BROWSER_SANDBOX_ENABLED !== 'true') return null;
   const parent = await env.DB.prepare(`SELECT hostname FROM preview_registrations
-    WHERE email=? AND deployment='__browser' AND expires_at>? LIMIT 1`)
+    WHERE email=? AND deployment='__browser' AND slot='__browser' AND expires_at>? LIMIT 1`)
     .bind(r.email, now()).first<{hostname:string}>();
   if (!parent) return null;
   const active = await registration(env, parent.hostname);
@@ -592,7 +598,7 @@ async function upstreamRequest(request: Request, env: Bindings, r: Registration)
     }
   }
   // Application-owned workspace selection, not gateway identity or authority.
-  if (r.deployment === '__browser') {
+  if (r.deployment === '__browser' && r.slot === '__browser') {
     const directory = request.headers.get('X-Opencode-Directory');
     if (directory && directory.length <= 4096) headers.set('X-Opencode-Directory', directory);
   }

@@ -2,7 +2,8 @@
 """BayLeaf browser environment, Linux/Python 3.10+. No third-party Python deps.
 
 The edge owns authorization and deadlines. These owner-editable breadcrumbs are
-diagnostics only. Credentials arrive as files, never argv or setup output.
+diagnostics only. Credentials arrive as files, never setup argv or output.
+ttyd's native Basic-auth option requires its app-only secret in child argv.
 """
 import argparse
 import base64
@@ -22,12 +23,61 @@ import sys
 import threading
 import time
 import urllib.request
+import platform
+import tarfile
+import gzip
 
 SCHEMA = 1
 RELEASE = 'openchamber-managed-v2'
 PACKAGES = ['@openchamber/web@latest']
 PORT = 3100
 ROOT = Path.home() / '.local/share/bayleaf/browser'
+SERVICE = 'openchamber'
+MAX_ARCHIVE_BYTES = 512*1024*1024
+MAX_UNPACKED_BYTES = 2*1024**3
+MAX_ARCHIVE_MEMBERS = 100000
+SERVICES = {
+    'ttyd': {'release': 'ttyd-1.7.7-managed-v1', 'port': 8794, 'directory': 'ttyd',
+        'install': 'install_ttyd', 'configure': 'configure_ttyd', 'prepare': 'prepare_plain_service',
+        'start': 'start_ttyd', 'bootstrap': 'bootstrap_plain_service', 'health': 'health_ttyd',
+        'health_path': '/token', 'starting': 'starting_ttyd'},
+    'jupyter': {'release': 'jupyterlab-4.6.4-managed-v1', 'port': 8793, 'directory': 'jupyter',
+        'install': 'install_jupyter', 'configure': 'configure_jupyter', 'prepare': 'prepare_plain_service',
+        'start': 'start_jupyter', 'bootstrap': 'bootstrap_plain_service', 'health': 'health_jupyter',
+        'health_path': '/api/status', 'starting': 'starting_jupyter'},
+    'nanobot': {'release': 'nanobot-0.3.5-managed-v1', 'port': 8792, 'directory': 'nanobot',
+        'install': 'install_nanobot', 'configure': 'configure_nanobot', 'prepare': 'prepare_plain_service',
+        'start': 'start_nanobot', 'bootstrap': 'bootstrap_plain_service', 'health': 'health_nanobot',
+        'health_path': '/webui/bootstrap', 'starting': 'starting_nanobot'},
+    'openchamber': {'release': RELEASE, 'port': PORT, 'directory': 'browser',
+        'install': 'install', 'configure': 'configure', 'prepare': 'prepare_openchamber',
+        'start': 'start_openchamber', 'bootstrap': 'bootstrap', 'health': 'health_openchamber',
+        'health_path': '/health', 'starting': 'starting_openchamber'},
+    'code-server': {'release': 'code-server-managed-v1', 'port': 8791, 'directory': 'code-server',
+        'install': 'install_code_server', 'configure': 'configure_code_server', 'prepare': 'prepare_plain_service',
+        'start': 'start_code_server', 'bootstrap': 'bootstrap_plain_service', 'health': 'health_code_server',
+        'health_path': '/healthz', 'starting': 'starting_code_server'},
+    'dufs': {'release': 'dufs-managed-v1', 'port': 8790, 'directory': 'dufs',
+        'install': 'install_dufs', 'configure': 'configure_dufs', 'prepare': 'prepare_plain_service',
+        'start': 'start_dufs', 'bootstrap': 'bootstrap_plain_service', 'health': 'health_dufs',
+        'health_path': '/__dufs__/health', 'starting': 'starting_dufs'},
+}
+
+
+def adapter(name, *args, **kwargs):
+    return globals()[SERVICES[SERVICE][name]](*args, **kwargs)
+
+
+def select_service(service):
+    global SERVICE, RELEASE, PORT, ROOT
+    SERVICE = service
+    definition = SERVICES[service]
+    RELEASE, PORT = definition['release'], definition['port']
+    ROOT = Path.home() / '.local/share/bayleaf' / definition['directory']
+    if service == 'jupyter' and 'install_jupyter' not in globals():
+        # Worker transfers this fixed, canonical adapter beside the installer.
+        # One source serves installation and isolated upstream qualification.
+        exec(compile(Path(__file__).with_name('jupyter-adapter.py').read_text(), 'jupyter-adapter.py', 'exec'), globals())
 PHASES = {'checking', 'installing', 'configuring', 'starting', 'ready', 'failed', 'stopped'}
 
 
@@ -69,11 +119,11 @@ def lock(name, wait=0):
         yield
 
 
-def identity(pid):
+def identity(pid, include_zombie=False):
     """PID alone is unsafe after sleep, reboot, or PID reuse."""
     try:
         stat = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()
-        if stat[0] == 'Z':
+        if stat[0] == 'Z' and not include_zombie:
             return None
         return {'pid': pid, 'start': stat[19],
                 'boot': Path('/proc/sys/kernel/random/boot_id').read_text().strip()}
@@ -86,34 +136,65 @@ def alive(process):
 
 
 def terminate(process):
-    if not alive(process):
+    if not isinstance(process, dict) or identity(process.get('pid', -1), include_zombie=True) != process:
         return
     pid = process['pid']
     # Only a verified session/process-group leader created by this script.
     if os.getpgid(pid) != pid:
         raise Failure('process_identity_mismatch')
-    os.killpg(pid, signal.SIGTERM)
-    for _ in range(50):
-        if not alive(process):
+    # The supervisor leaves its exited leader unreaped until group cleanup.
+    # That zombie pins the PID/PGID, so descendants remain provably ours even
+    # after their launcher exits. Never infer ownership from the listening port.
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        if identity(pid, include_zombie=True) != process:
             return
+        try:
+            os.killpg(pid, sig)
+        except ProcessLookupError:
+            return
+        for _ in range(50):
+            if not group_running(pid):
+                return
+            time.sleep(.1)
+    raise Failure('process_cleanup_failed')
+
+
+def group_running(pgid):
+    for path in Path('/proc').glob('[0-9]*/stat'):
+        try:
+            stat = path.read_text().rsplit(')', 1)[1].split()
+            if stat[0] != 'Z' and int(stat[2]) == pgid:
+                return True
+        except (OSError, ValueError, IndexError):
+            continue
+    return False
+
+
+def wait_for_exit(child, timeout=None):
+    """Linux wait without reaping: keep the verified group leader as an anchor."""
+    end = time.monotonic() + timeout if timeout is not None else None
+    while True:
+        result = os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOWAIT | (os.WNOHANG if end else 0))
+        if result is not None:
+            return result.si_status if result.si_code == os.CLD_EXITED else -result.si_status
+        if end is not None and time.monotonic() >= end:
+            raise subprocess.TimeoutExpired(child.args, timeout)
         time.sleep(.1)
-    if alive(process):
-        os.killpg(pid, signal.SIGKILL)
 
 
 def command(argv, timeout=30, env=None):
     process = subprocess.Popen(argv, env=env, stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-    marker = identity(process.pid)
+    marker = identity(process.pid, include_zombie=True)
     atomic('state/task.json', {'process': marker})
     try:
-        if process.wait(timeout=timeout) != 0:
+        if wait_for_exit(process, timeout=timeout) != 0:
             raise Failure('command_failed')
     except subprocess.TimeoutExpired:
-        terminate(marker)
-        process.wait(timeout=10)
         raise Failure('command_timeout') from None
     finally:
+        terminate(marker)
+        process.wait(timeout=10)
         atomic('state/task.json', {})
 
 
@@ -173,11 +254,39 @@ def health():
     try:
         # Ignore proxy environment variables for the loopback readiness check.
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        with opener.open(f'http://127.0.0.1:{PORT}/health', timeout=3) as response:
+        target = f'http://127.0.0.1:{PORT}' + SERVICES[SERVICE]['health_path']
+        if SERVICE == 'nanobot':
+            target = urllib.request.Request(target, headers={'X-Nanobot-Auth':(ROOT / 'credentials/app-secret').read_text().strip()})
+        if SERVICE == 'jupyter':
+            target = urllib.request.Request(target, headers={'Authorization':'token '+(ROOT / 'credentials/app-secret').read_text().strip()})
+        if SERVICE == 'ttyd':
+            target = urllib.request.Request(target, headers={'Authorization':'Basic '+ttyd_token()})
+        with opener.open(target, timeout=3) as response:
             data = json.loads(response.read(65536))
-        return isinstance(data.get('openchamberVersion'), str) and data.get('isOpenCodeReady') is True
+        return adapter('health', data)
     except (OSError, ValueError):
         return False
+
+
+def health_openchamber(data):
+    return isinstance(data, dict) and isinstance(data.get('openchamberVersion'), str) and data.get('isOpenCodeReady') is True
+
+
+def health_code_server(data):
+    # code-server /healthz reports browser activity, not server readiness.
+    # A fresh server has lastHeartbeat=0 and status=expired; health probes are
+    # deliberately excluded from heart.beat(). The runtime gates in health()
+    # still require our configured, identity-verified live process.
+    return isinstance(data, dict) and data.get('status') in ('alive', 'expired')
+
+
+def health_dufs(data):
+    return isinstance(data, dict) and data.get('status') == 'OK'
+
+
+def health_nanobot(data):
+    expected = read('request.json', {}).get('preview_url', 'https://pending.invalid/')
+    return isinstance(data, dict) and data.get('ws_url') == 'wss://' + expected.removeprefix('https://') and bool(data.get('token'))
 
 
 def inspect():
@@ -186,13 +295,14 @@ def inspect():
     runtime_events = runtime.get('timeline', []) if runtime.get('operation') == operation.get('operation') else []
     events = sorted(operation.get('timeline', []) + runtime_events,
                     key=lambda e:(e['at'], e['step'] in ('ready', 'failed')))[-40:]
-    return {'schema': SCHEMA, 'operation': operation.get('operation'),
+    return {'schema': SCHEMA, 'service': SERVICE, 'operation': operation.get('operation'),
         'phase': operation.get('phase', 'unchecked'), 'error': operation.get('error'),
         'progress': events[-1]['step'] if events else operation.get('phase','unchecked'),
         'timeline': events, 'started_at': operation.get('started_at'),
         'updated_at': operation.get('updated_at'), 'release': RELEASE,
         'installed': read('state/installation.json', {}).get('release') == RELEASE,
-        'ready': health(), 'running': alive(runtime.get('process')), 'port': PORT}
+        'ready': health(), 'running': alive(runtime.get('process')), 'port': PORT,
+        **({'preview_url': runtime.get('preview_url')} if SERVICE == 'nanobot' else {})}
 
 
 def install(progress):
@@ -236,6 +346,439 @@ def install(progress):
     atomic('state/installation.json', {'schema': SCHEMA, 'release': RELEASE,
         'packages': PACKAGES, 'completed_at': int(time.time())})
     return release
+
+
+class BoundedArchiveReader:
+    def __init__(self, stream):
+        self.stream, self.total = stream, 0
+
+    def read(self, size):
+        data = self.stream.read(min(size, MAX_UNPACKED_BYTES - self.total + 1))
+        self.total += len(data)
+        if self.total > MAX_UNPACKED_BYTES:
+            raise ValueError('expanded archive size')
+        return data
+
+
+def code_server_asset(tag):
+    return f'code-server-{tag[1:]}-linux-amd64.tar.gz'
+
+
+def dufs_asset(tag):
+    return f'dufs-{tag}-x86_64-unknown-linux-musl.tar.gz'
+
+
+def verified_archive(repo, asset_name, stage):
+    """Lathe's release/asset/digest contract, with checked extraction on Linux amd64."""
+    if platform.system() != 'Linux' or platform.machine() not in ('x86_64', 'amd64'):
+        raise Failure('unsupported_architecture')
+    try:
+        req = urllib.request.Request(f'https://api.github.com/repos/{repo}/releases/latest',
+            headers={'User-Agent': 'BayLeaf-managed-services'})
+        with urllib.request.urlopen(req, timeout=30) as response:
+            release = json.loads(response.read(4*1024*1024))
+        tag = release.get('tag_name', '')
+        if not re.fullmatch(r'v[A-Za-z0-9._-]+', tag) or not re.fullmatch(
+                rf'https://api\.github\.com/repos/{re.escape(repo)}/releases/[1-9][0-9]*', release.get('url', '')):
+            raise ValueError('release')
+        name = asset_name(tag)
+        assets = [asset for asset in release.get('assets', []) if asset.get('name') == name]
+        if len(assets) != 1:
+            raise ValueError('asset')
+        asset = assets[0]
+        url = f'https://github.com/{repo}/releases/download/{tag}/{name}'
+        digest = asset.get('digest', '')
+        if asset.get('browser_download_url') != url or not re.fullmatch(r'sha256:[0-9a-f]{64}', digest):
+            raise ValueError('digest')
+        archive = stage / 'archive.tar.gz'
+        actual = hashlib.sha256()
+        deadline = time.monotonic() + 600
+        size = 0
+        with urllib.request.urlopen(url, timeout=30) as response, archive.open('wb') as output:
+            while chunk := response.read(1024*1024):
+                size += len(chunk)
+                if size > MAX_ARCHIVE_BYTES or time.monotonic() > deadline:
+                    raise ValueError('download limit')
+                actual.update(chunk)
+                output.write(chunk)
+        if actual.hexdigest() != digest[7:]:
+            raise ValueError('checksum')
+        unpack = stage / 'unpack'
+        unpack.mkdir()
+        members = []
+        expanded = 0
+        with gzip.open(archive, 'rb') as compressed, tarfile.open(fileobj=BoundedArchiveReader(compressed), mode='r|') as tar:
+            for member in tar:
+                expanded += member.size
+                if expanded > MAX_UNPACKED_BYTES or len(members) >= MAX_ARCHIVE_MEMBERS:
+                    raise ValueError('archive size')
+                members.append(member)
+                member.mode &= 0o755
+                path = Path(member.name)
+                if path.is_absolute() or '..' in path.parts or not (member.isfile() or member.isdir() or member.issym()):
+                    raise ValueError('archive path')
+                if member.issym():
+                    target = Path(member.linkname)
+                    resolved = (unpack / path.parent / target).resolve()
+                    if target.is_absolute() or not resolved.is_relative_to(unpack.resolve()):
+                        raise ValueError('archive link')
+                if not (unpack / member.name).resolve().is_relative_to(unpack.resolve()):
+                    raise ValueError('archive destination')
+                destination = unpack / member.name
+                if member.isdir():
+                    destination.mkdir(parents=True, exist_ok=True, mode=0o700)
+                else:
+                    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                    if member.issym():
+                        destination.symlink_to(member.linkname)
+                    else:
+                        # Exclusive creation rejects duplicate files and writes
+                        # through symlinks. No version-dependent tarfile filters.
+                        with tar.extractfile(member) as source, destination.open('xb') as output:
+                            shutil.copyfileobj(source, output)
+                        destination.chmod(member.mode)
+        # Resolve the final graph too: forward symlink chains can change the
+        # meaning of a link validated before its target existed.
+        for member in members:
+            if not (unpack / member.name).resolve().is_relative_to(unpack.resolve()):
+                raise ValueError('archive link graph')
+        return unpack, {'tag': tag, 'asset': name, 'sha256': digest[7:]}
+    except Failure:
+        raise
+    except Exception:
+        raise Failure('release_verification_failed') from None
+
+
+def install_code_server(progress):
+    return install_archive(progress, 'coder/code-server', code_server_asset, 'bin/code-server',
+        lambda evidence: evidence['asset'].removesuffix('.tar.gz'), 'installing_code_server',
+        free_bytes=1536*1024**2, memory_bytes=2*1024**3)
+
+
+def install_dufs(progress):
+    return install_archive(progress, 'sigoden/dufs', dufs_asset, 'dufs',
+        lambda evidence: '.', 'installing_dufs')
+
+
+# 1.7.7 predates GitHub asset digests. Pin the publisher's SHA256SUMS instead:
+# https://github.com/tsl0922/ttyd/releases/download/1.7.7/SHA256SUMS
+TTYD_SHA256 = '8a217c968aba172e0dbf3f34447218dc015bc4d5e59bf51db2f2cd12b7be4f55'
+TTYD_URL = 'https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64'
+
+
+def verified_ttyd(repo, asset_name, stage):
+    """Direct static ELF asset, not a tar archive. Fail closed before execution."""
+    if platform.system() != 'Linux' or platform.machine() not in ('x86_64', 'amd64'):
+        raise Failure('unsupported_architecture')
+    try:
+        unpack = stage / 'unpack'
+        unpack.mkdir()
+        binary = unpack / 'ttyd'
+        req = urllib.request.Request(TTYD_URL, headers={'User-Agent':'BayLeaf-managed-services'})
+        with urllib.request.urlopen(req, timeout=30) as response:
+            content = response.read(2*1024*1024 + 1)
+        if len(content) > 2*1024*1024 or hashlib.sha256(content).hexdigest() != TTYD_SHA256:
+            raise ValueError('checksum')
+        binary.write_bytes(content)
+        binary.chmod(0o700)
+        return unpack, {'tag':'1.7.7', 'asset':'ttyd.x86_64', 'sha256':TTYD_SHA256}
+    except Exception:
+        raise Failure('release_verification_failed') from None
+
+
+def install_ttyd(progress):
+    return install_archive(progress, 'tsl0922/ttyd', None, 'ttyd', lambda evidence: '.',
+        'installing_ttyd', free_bytes=16*1024**2, download=verified_ttyd)
+
+
+def ttyd_secret():
+    path = ROOT / 'credentials/app-secret'
+    try:
+        path.chmod(0o600)
+        secret = path.read_text().strip()
+    except OSError:
+        raise Failure('credential_missing') from None
+    if not re.fullmatch('[a-f0-9]{64}', secret):
+        raise Failure('credential_invalid')
+    return secret
+
+
+def ttyd_token():
+    return base64.b64encode(('bayleaf:' + ttyd_secret()).encode()).decode()
+
+
+def configure_ttyd():
+    (Path.home() / 'workspace').mkdir(parents=True, exist_ok=True)
+    return hashlib.sha256(ttyd_secret().encode()).hexdigest()
+
+
+def start_ttyd(backend_port):
+    # -H accepts ANY nonempty header: use actual native credentials instead.
+    # -O compares Origin to Host, not X-Forwarded-Host: Daytona changes Host.
+    # The owner-private gateway checks HTTP/WS origins before injecting auth.
+    # /token intentionally gives the authenticated owner the WS AuthToken.
+    # Credentials stay out of setup commands/logs, but ttyd requires local argv.
+    return [str(ROOT/'releases'/RELEASE/'ttyd'), '--port', str(PORT),
+        '--interface', '0.0.0.0', '--writable', '--credential', 'bayleaf:'+ttyd_secret(),
+        '--cwd', str(Path.home()/'workspace'), '--debug', '1', '/bin/bash'], non_inference_environment()
+
+
+def health_ttyd(data):
+    return isinstance(data, dict) and data.get('token') == ttyd_token()
+
+
+def install_archive(progress, repo, asset_name, binary, directory, step, *, free_bytes=128*1024**2, memory_bytes=0, download=None):
+    release = ROOT / 'releases' / RELEASE
+    with lock('install.lock'):
+        if read('state/installation.json', {}).get('release') == RELEASE and os.access(release / binary, os.X_OK):
+            return release
+        if shutil.disk_usage(ROOT).free < free_bytes:
+            raise Failure('insufficient_disk')
+        limit = Path('/sys/fs/cgroup/memory.max')
+        if memory_bytes and limit.exists() and limit.read_text().strip() != 'max' and int(limit.read_text()) < memory_bytes:
+            raise Failure('requires_2_gib')
+        progress.update('installing', step=step)
+        stage = ROOT / 'releases' / (RELEASE + '.staging')
+        if stage.exists():
+            shutil.rmtree(stage)
+        stage.mkdir(parents=True, mode=0o700)
+        unpack, evidence = (download or verified_archive)(repo, asset_name, stage)
+        staged = unpack / directory(evidence)
+        if not os.access(staged / binary, os.X_OK):
+            raise Failure('installation_failed')
+        command([str(staged / binary), '--version'])
+        if release.exists():
+            release.rename(release.with_name(RELEASE + '.retired-' + str(time.time_ns())))
+        staged.rename(release)
+        link = ROOT / 'current.next'
+        link.unlink(missing_ok=True)
+        link.symlink_to(release)
+        os.replace(link, ROOT / 'current')
+        atomic('state/installation.json', {'schema': SCHEMA, 'release': RELEASE, **evidence,
+            'completed_at': int(time.time())})
+        shutil.rmtree(stage)
+        return release
+
+
+def configure_code_server():
+    for folder in ('user-data', 'extensions'):
+        (ROOT / folder).mkdir(parents=True, exist_ok=True, mode=0o700)
+    # Quiet editor defaults, not policy: preserve existing user JSONC verbatim.
+    # VS Code 1.141's primary sidebar visibility is workspace state, not a setting.
+    settings = ROOT / 'user-data/User/settings.json'
+    settings.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        with settings.open('x') as output:
+            json.dump({'chat.disableAIFeatures': True,
+                'workbench.secondarySideBar.defaultVisibility': 'hidden'}, output, indent=2)
+            output.write('\n')
+    except FileExistsError:
+        pass
+    (Path.home() / 'workspace').mkdir(parents=True, exist_ok=True)
+    config = ROOT / 'config.yaml'
+    if not config.exists():
+        config.write_text('{}\n')
+    # No inference credential is needed by the editor. The gateway binds its
+    # preview generation to the owner key without transferring that key here.
+    return None
+
+
+def configure_dufs():
+    (Path.home() / 'workspace').mkdir(parents=True, exist_ok=True)
+    return None
+
+
+def install_nanobot(progress):
+    release = ROOT / 'releases' / RELEASE
+    python = release / 'bin/python'
+    with lock('install.lock'):
+        if read('state/installation.json', {}).get('release') == RELEASE and python.is_file():
+            return release
+        if sys.version_info < (3, 11):
+            raise Failure('python_311_required')
+        if not shutil.which('node'):
+            raise Failure('node_22_required')
+        try:
+            version = subprocess.check_output(['node','--version'], text=True, timeout=10).strip()
+            if int(version.lstrip('v').split('.')[0]) < 22:
+                raise Failure('node_22_required')
+        except (ValueError, subprocess.SubprocessError):
+            raise Failure('node_22_required') from None
+        if shutil.disk_usage(ROOT).free < 1024**3:
+            raise Failure('insufficient_disk')
+        progress.update('installing', step='installing_nanobot')
+        stage = release.with_name(RELEASE + '.staging')
+        if stage.exists():
+            shutil.rmtree(stage)
+        stage.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        command([sys.executable, '-m', 'venv', str(stage)], timeout=120)
+        command([str(stage/'bin/python'), '-m', 'pip', 'install', '--disable-pip-version-check',
+                 'nanobot-ai==0.3.5'], timeout=900)
+        command([str(stage/'bin/python'), '-c', 'import nanobot; assert nanobot.__version__ == "0.3.5"'])
+        if release.exists():
+            release.rename(release.with_name(RELEASE + '.retired-' + str(time.time_ns())))
+        stage.rename(release)
+        # Invoke the venv Python module, not pip-generated absolute shebangs.
+        atomic('state/installation.json', {'schema':SCHEMA, 'release':RELEASE, 'version':'0.3.5'})
+        return release
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+def nanobot_discovery(key):
+    opener = urllib.request.build_opener(NoRedirect())
+    def get(path):
+        req = urllib.request.Request('https://api.bayleaf.dev'+path,
+            headers={'Authorization':'Bearer '+key, 'User-Agent':'BayLeaf-managed-services'})
+        with opener.open(req, timeout=30) as response:
+            body = response.read(4*1024*1024+1)
+            if len(body) > 4*1024*1024:
+                raise ValueError('size')
+            return json.loads(body)
+    try:
+        model = get('/recommended-model')['model']
+        catalog = get('/v1/models')['data']
+        row = next(row for row in catalog if row.get('id') == model)
+        if not isinstance(model, str) or len(model) > 256:
+            raise ValueError('model')
+        context = row.get('context_length')
+        if not isinstance(context, int) or context < 8192:
+            raise ValueError('context')
+        return model, context
+    except Exception:
+        raise Failure('provider_configuration_unavailable') from None
+
+
+def managed_text(name, content):
+    """Update generated files only if their previous managed hash still matches."""
+    path = ROOT / name
+    hashes = read('state/managed-files.json', {})
+    digest = hashlib.sha256(content.encode()).hexdigest()
+    if path.exists():
+        prior = hashlib.sha256(path.read_bytes()).hexdigest()
+        if prior == digest:
+            # Reconcile a crash after replacing the file but before its manifest.
+            if hashes.get(name) != digest:
+                hashes[name] = digest
+                atomic('state/managed-files.json', hashes)
+            return
+        if prior != hashes.get(name):
+            raise Failure('managed_file_changed')
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    temp = path.with_name(path.name + '.next')
+    temp.write_text(content); temp.chmod(0o600); os.replace(temp, path)
+    hashes[name] = digest
+    atomic('state/managed-files.json', hashes)
+
+
+def configure_nanobot():
+    incoming = ROOT / 'credentials/incoming'
+    credential = ROOT / 'credentials/owner-key'
+    if incoming.exists():
+        incoming.chmod(0o600); os.replace(incoming, credential)
+    if not credential.exists():
+        raise Failure('credential_missing')
+    key = credential.read_text().strip()
+    if not key.startswith('sk-bayleaf-') or key.startswith('sk-bayleaf-grant-'):
+        raise Failure('credential_invalid')
+    secret_path = ROOT / 'credentials/app-secret'
+    secret_path.chmod(0o600)
+    secret = secret_path.read_text().strip()
+    if not re.fullmatch('[a-f0-9]{64}', secret):
+        raise Failure('credential_invalid')
+    req = read('request.json', {})
+    preview = req.get('preview_url', 'https://pending.invalid/')
+    if not isinstance(preview, str) or not re.fullmatch(r'https://[a-z0-9.-]+/', preview):
+        raise Failure('preview_configuration_invalid')
+    assets = read('assets.json', {})
+    managed_text('adapter/nanobot-mcp.mjs', assets['nanobot-mcp.mjs'])
+    managed_text('workspace/skills/bayleaf-sandboxes/SKILL.md', assets['bayleaf-sandboxes.md'])
+    if '_source' in assets:
+        atomic('state/nanobot-package.json', assets['_source'])
+    model, context = nanobot_discovery(key)
+    try:
+        config_path = ROOT / 'config/config.json'
+        config = json.loads(config_path.read_text()) if config_path.exists() else {}
+        if not isinstance(config, dict):
+            raise ValueError('config')
+    except (ValueError, OSError):
+        raise Failure('managed_file_changed') from None
+    defaults = config.setdefault('agents', {}).setdefault('defaults', {})
+    defaults.update(workspace=str(ROOT/'workspace'), model=model, provider='custom', contextWindowTokens=context)
+    defaults.setdefault('dream', {'enabled':False})
+    defaults.setdefault('idleCompactAfterMinutes', 0)
+    defaults.setdefault('botIcon', '')
+    config.setdefault('gateway', {}).setdefault('heartbeat', {'enabled':False})
+    config['gateway'].update(host='127.0.0.1', restartMode='exit')
+    config.setdefault('providers', {})['custom'] = {'apiBase':'https://api.bayleaf.dev/v1', 'apiKey':'${BAYLEAF_API_KEY}'}
+    config.setdefault('channels', {})['websocket'] = {'enabled':True, 'host':'0.0.0.0', 'port':PORT,
+        'path':'/', 'publicWsUrl':'wss://'+preview.removeprefix('https://'),
+        'tokenIssueSecret':'${BAYLEAF_NANOBOT_AUTH}', 'websocketRequiresToken':True}
+    tools = config.setdefault('tools', {})
+    tools.setdefault('web', {})['enable'] = False
+    tools.setdefault('mcpServers', {})['bayleaf'] = {'command':shutil.which('node') or 'node',
+        'args':[str(ROOT/'adapter/nanobot-mcp.mjs')],
+        'enabledTools':['search','fetch','usage','expose','unexpose']}
+    atomic('config/config.json', config)
+    (Path.home() / 'workspace').mkdir(parents=True, exist_ok=True)
+    # Origin/credential/config changes restart only this managed process. User
+    # histories, skills, memory and schedules are neither replaced nor deleted.
+    return hashlib.sha256((key+secret+json.dumps(config, sort_keys=True)).encode()).hexdigest()
+
+
+def start_nanobot(backend_port):
+    env = non_inference_environment()
+    env = {name:value for name,value in env.items() if not name.startswith('NANOBOT_')}
+    env.update(BAYLEAF_API_KEY=(ROOT/'credentials/owner-key').read_text().strip(),
+        BAYLEAF_NANOBOT_AUTH=(ROOT/'credentials/app-secret').read_text().strip())
+    return [str(ROOT/'releases'/RELEASE/'bin/python'), '-m', 'nanobot', 'gateway', '--foreground',
+        '--config', str(ROOT/'config/config.json'), '--port', str(backend_port)], env
+
+
+def start_dufs(backend_port):
+    env = non_inference_environment()
+    # DUFS_ALLOW_ALL / DUFS_ALLOW_SYMLINK inherited from a shell must not widen
+    # the managed file root. CLI flags alone cannot negate every env setting.
+    env = {name: value for name, value in env.items() if not name.startswith('DUFS_')}
+    return [str(ROOT / 'releases' / RELEASE / 'dufs'), str(Path.home() / 'workspace'),
+        '--bind', '0.0.0.0', '--port', str(PORT), '--allow-upload', '--allow-delete',
+        '--allow-search', '--allow-archive', '--allow-hash'], env
+
+
+def prepare_plain_service(operation, progress):
+    pass
+
+
+def prepare_openchamber(operation, progress):
+    progress.update('configuring', step='installing_opencode')
+    ensure_opencode(operation)
+
+
+def start_code_server(backend_port):
+    executable = ROOT / 'releases' / RELEASE / 'bin/code-server'
+    return [str(executable), '--config', str(ROOT / 'config.yaml'), '--bind-addr', f'0.0.0.0:{PORT}', '--auth', 'none',
+        '--disable-telemetry', '--disable-update-check', '--user-data-dir', str(ROOT / 'user-data'),
+        '--extensions-dir', str(ROOT / 'extensions'), str(Path.home() / 'workspace')], non_inference_environment()
+
+
+def non_inference_environment():
+    env = dict(os.environ)
+    for name in list(env):
+        if re.match(r'^(BAYLEAF|OPENROUTER|TINFOIL|OPENAI|ANTHROPIC)_.*(KEY|TOKEN|SECRET|PASSWORD|AUTH)$', name):
+            env.pop(name)
+    return env
+
+
+def start_openchamber(backend_port):
+    executable = ROOT / 'releases' / RELEASE / 'bin/openchamber'
+    return [str(executable), 'serve', '--foreground', '--host', '0.0.0.0', '--port', str(PORT)], environment(backend_port)
+
+
+def bootstrap_plain_service(backend_port, operation, report):
+    pass
 
 
 def configure():
@@ -399,45 +942,6 @@ def bootstrap(backend_port, operation, origin='https://api.bayleaf.dev/sandbox',
         raise Failure('provider_configuration_unavailable') from None
 
 
-def clear_browser_port():
-    """Port 3100 is reserved for BayLeaf; reclaim only its listening processes."""
-    inodes = set()
-    for family in ('tcp', 'tcp6'):
-        for line in Path('/proc/net/' + family).read_text().splitlines()[1:]:
-            fields = line.split()
-            if fields[3] == '0A' and int(fields[1].rsplit(':', 1)[1], 16) == PORT:
-                inodes.add('socket:[' + fields[9] + ']')
-    victims = []
-    for directory in Path('/proc').iterdir():
-        if not directory.name.isdigit() or int(directory.name) in (1, os.getpid()):
-            continue
-        marker = identity(int(directory.name))
-        try:
-            if directory.stat().st_uid != os.getuid():
-                continue
-            for descriptor in (directory / 'fd').iterdir():
-                try:
-                    matches = os.readlink(descriptor) in inodes
-                except OSError:
-                    continue
-                if matches and marker:
-                    victims.append(marker)
-                    break
-        except (FileNotFoundError, PermissionError):
-            continue
-    for sig in (signal.SIGTERM, signal.SIGKILL):
-        for marker in victims:
-            if alive(marker):
-                try:
-                    os.kill(marker['pid'], sig)
-                except ProcessLookupError:
-                    pass
-        for _ in range(20):
-            if not any(alive(marker) for marker in victims):
-                return
-            time.sleep(.1)
-
-
 def check_browser_port():
     # Match Node's listener semantics: closed connections in TIME_WAIT are not
     # live conflicts and must not block an immediate restart.
@@ -459,26 +963,26 @@ def supervise(operation):
         with socket.socket() as probe:
             probe.bind(('127.0.0.1', 0))
             backend_port = probe.getsockname()[1]
-        executable = ROOT / 'releases' / RELEASE / 'bin/openchamber'
-        child = subprocess.Popen([str(executable), 'serve', '--foreground', '--host', '0.0.0.0',
-            '--port', str(PORT)], env=environment(backend_port), cwd=Path.home() / 'workspace',
+        argv, env = adapter('start', backend_port)
+        child = subprocess.Popen(argv, env=env, cwd=Path.home() / 'workspace',
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             start_new_session=True)
-        marker = identity(child.pid)
+        marker = identity(child.pid, include_zombie=True)
         runtime = {'process': marker, 'release': RELEASE, 'configured': False,
-            'credential_hash': lease['credential_hash'], 'operation': operation}
+            'credential_hash': lease['credential_hash'], 'operation': operation,
+            **({'preview_url':lease.get('preview_url')} if SERVICE == 'nanobot' else {})}
         atomic('state/runtime.json', runtime)
         def report(step):
             runtime.setdefault('timeline', []).append({'step':step, 'at':int(time.time())})
             runtime['timeline'] = runtime['timeline'][-16:]
             atomic('state/runtime.json', runtime)
         try:
-            bootstrap(backend_port, operation, report=report)
+            adapter('bootstrap', backend_port, operation, report=report)
             runtime['configured'] = True
             report('checking_readiness')
             # Browser-link expiry is enforced at the gateway, not by killing
             # local applications. Daytona idle stop owns compute lifetime.
-            child.wait()
+            wait_for_exit(child)
         except Exception as error:
             runtime['error'] = str(error) if isinstance(error, Failure) else 'setup_failed'
             atomic('state/runtime.json', runtime)
@@ -495,26 +999,24 @@ def setup(operation):
         progress.update('checking')
         progress.thread.start()
         try:
-            install(progress)
+            adapter('install', progress)
             request(operation)  # A slow install may outlive its setup deadline.
             progress.update('configuring')
-            fingerprint = configure()
-            progress.update('configuring', step='installing_opencode')
-            ensure_opencode(operation)
+            fingerprint = adapter('configure')
+            adapter('prepare', operation, progress)
             request(operation)
             req['credential_hash'] = fingerprint
             atomic('request.json', req)
             runtime = read('state/runtime.json', {})
             if req.get('restart') or runtime.get('credential_hash') != fingerprint or runtime.get('release') != RELEASE:
                 terminate(runtime.get('process'))
-            progress.update('starting', step='starting_openchamber')
+            progress.update('starting', step=SERVICES[SERVICE]['starting'])
             # A slow health response is not proof of process death. Retry joins
             # a living runtime; only an explicit restart or config change kills it.
             if not alive(read('state/runtime.json', {}).get('process')):
-                clear_browser_port()
                 check_browser_port()
                 subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--root', str(ROOT),
-                    'supervise', '--operation', operation], stdin=subprocess.DEVNULL,
+                    '--service', SERVICE, 'supervise', '--operation', operation], stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
             for _ in range(210):
                 if health():
@@ -539,11 +1041,13 @@ def setup(operation):
 def main():
     global ROOT
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--root', type=Path, default=ROOT)
+    parser.add_argument('--root', type=Path)
+    parser.add_argument('--service', choices=SERVICES, default='openchamber')
     parser.add_argument('action', choices=['inspect', 'setup', 'supervise', 'stop'])
     parser.add_argument('--operation', default='')
     args = parser.parse_args()
-    ROOT = args.root.resolve()
+    select_service(args.service)
+    ROOT = (args.root or ROOT).resolve()
     os.umask(0o077)
     ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(ROOT, 0o700)

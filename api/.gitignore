@@ -30,3 +30,5 @@ reports/
 
 # Generated package assets and release archives
 .sandbox-plugin-ref.json
+.nanobot-assets.json
+.nanobot-assets.json.next

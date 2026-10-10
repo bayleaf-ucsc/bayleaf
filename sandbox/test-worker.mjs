@@ -22,6 +22,8 @@ const management = {
   async managed(input) {
     calls.push(['managed', input]);
     if (input.operation === 'wake-existing' && failWake) throw Error('synthetic unavailable');
+    if (input.operation !== 'wake-existing' && !['openchamber', 'code-server', 'dufs', 'ttyd'].includes(input.service))
+      return { status: 400, body: { error: 'invalid_operation' } };
     return { status: 200, body: { phase: 'idle', machine: 'absent' } };
   },
 };
@@ -36,6 +38,11 @@ assert.equal(response.status, 200);
 assert.equal(response.headers.get('Referrer-Policy'), 'strict-origin', 'native sign-in forms need an Origin header');
 let html = await response.text();
 assert(html.includes('OpenChamber'));
+assert(html.includes('code-server'));
+assert(html.includes('Files (dufs)'));
+assert(html.includes('Shell (ttyd)'));
+assert(!html.includes('id="dufs-start"'));
+assert(!html.includes('id="code-server-start"'));
 assert(!html.includes('browser-restart'));
 assert.equal(calls.length, 0, 'anonymous overview does not contact management');
 assert.equal((await request('/', { method: 'HEAD' })).status, 200);
@@ -72,6 +79,17 @@ for (let i=0; i<3; i++) {
   assert.equal((await request('/services/openchamber/status', { cookie: sessionCookie })).status, 200);
 }
 assert.equal(mutations().length, 1, 'refresh and status never repeat login wake');
+assert(html.includes('id="code-server-start"'));
+const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(match=>match[1]);
+assert.equal(new Set(ids).size,ids.length,'service controls have unique ids');
+for (const service of ['code-server', 'dufs', 'ttyd', 'unknown']) {
+  const path='/services/'+service;
+  assert.equal((await request(path+'/status')).status,401);
+  assert.equal((await request(path+'/status',{cookie:sessionCookie})).status,service!=='unknown'?200:400);
+  assert.equal((await request(path+'/start',{method:'POST',cookie:sessionCookie})).status,403);
+  assert.equal((await request(path+'/start',{method:'POST',cookie:sessionCookie,
+    headers:{Origin:origin,'X-BayLeaf-Action':'managed-service'}})).status,service!=='unknown'?200:400);
+}
 assert.equal((await request('/services/openchamber/start', { method: 'POST' })).status, 401);
 assert.equal((await request('/services/openchamber/start', { method: 'POST', cookie: sessionCookie,
   headers: { Origin: 'https://chat.bayleaf.dev', 'X-BayLeaf-Action': 'managed-service' } })).status, 403);

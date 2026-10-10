@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "pretest:previews": "python3 scripts/build-sandbox-plugin.py",
-    "pretest:grants": "python3 scripts/build-sandbox-plugin.py",
-    "pretest:sandbox-browser": "python3 scripts/build-sandbox-plugin.py",
+    "pretest:previews": "python3 scripts/build-sandbox-plugin.py && python3 scripts/build-nanobot-assets.py --fixture",
+    "pretest:grants": "python3 scripts/build-sandbox-plugin.py && python3 scripts/build-nanobot-assets.py --fixture",
+    "pretest:sandbox-browser": "python3 scripts/build-sandbox-plugin.py && python3 scripts/build-nanobot-assets.py --fixture",
     "test:previews": "python3 scripts/test-preview-fixture.py && node scripts/harness-previews.mjs",
     "test:grants": "node scripts/harness-grants.mjs",
     "test:sealed-dashboard": "node scripts/test-sealed-dashboard.mjs",
@@ -17,6 +17,9 @@
     "test:sandbox-browser": "python3 scripts/test-browser-setup.py && node scripts/test-sandbox-policy.mjs && node scripts/harness-sandbox-browser.mjs",
     "test:service-sessions": "node scripts/harness-service-sessions.mjs && node ../sandbox/test-worker.mjs",
     "test:sandbox-plugin": "npm --prefix sandbox-plugin test",
+    "test:nanobot": "python3 scripts/build-nanobot-assets.py --fixture && npm --prefix nanobot-sandbox test && python3 scripts/test-nanobot-setup.py && python3 scripts/test-nanobot-assets.py",
+    "test:jupyter": "python3 scripts/test-jupyter-setup.py",
+    "test:ttyd": "python3 scripts/test-ttyd-setup.py",
     "tail": "wrangler tail"
   },
   "overrides": {

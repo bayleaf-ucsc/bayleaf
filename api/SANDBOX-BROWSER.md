@@ -152,6 +152,141 @@ does not claim a daily budget or forcibly stop unrelated work.
 
 ## Versioned installer contract
 
+### Managed services: local addition, not deployed
+
+The shared controller now supports code-server and dufs alongside OpenChamber. The editor's port
+is 8791, its state root is `~/.local/share/bayleaf/code-server`, and its private
+preview slot is `__code-server`. All managed slots retain deployment `__browser` for
+owner-key authorization, using the existing migration 0013 column. Only the
+legacy OpenChamber slot may frame public previews or forward `X-Opencode-Directory`.
+Public keyed exposure rejects all managed ports. No new migration is required.
+
+The installer defaults to OpenChamber; `--service code-server` selects named
+editor adapters. OpenChamber's state root and legacy `operation` DO key remain
+unchanged. The editor uses `operation/code-server`; dufs uses `operation/dufs`. Only OpenChamber receives
+the inference credential or runs Node/OpenCode prerequisites and BayLeaf bootstrap.
+OpenChamber and code-server have an explicit 2-GiB minimum, rather than a universal service floor.
+New sandboxes have the 4-GiB baseline; code-server previously OOM-killed on 1 GiB.
+Extensions and simultaneous apps can increase memory pressure, so this minimum
+does not promise capacity for a particular workload.
+
+code-server installation reuses Lathe's verified GitHub release semantics:
+canonical coder/code-server release ID, exact Linux amd64 asset URL and SHA-256
+digest, bounded download, path-checked extraction, file lock, staged executable
+check and atomic installation. Unsupported architectures fail explicitly. The
+layout release is versioned; a completed installation is reused rather than
+silently upgraded on every launch. Settings and extensions have service-local roots.
+Workspace trust keeps its upstream default. `--auth none` is intentional behind
+private Daytona transport and the owner-authenticated gateway. Telemetry and
+automatic update checks are disabled; no editor inference key is transferred.
+The Python adapter checks `/healthz` for `status: alive` and a living recorded
+runtime; the controller validates the uniform service/operation/port/ready result.
+Status GET never performs that health probe, so ready means the last setup passed.
+
+dufs uses port 8790, root `~/.local/share/bayleaf/dufs`, slot `__dufs`, and named
+install/start/readiness adapters (`/__dufs__/health`, `status: OK`). It serves only
+`~/workspace`: browsing, upload, download, text editing, deletion, search, archive
+download and hashes. Outside-root symlinks remain disabled. There is no editor
+memory floor; installation requires 128 MiB free disk. The same verified archive
+helper handles sigoden/dufs's flat musl archive using an asset-name callback and
+app-specific executable path. No controller or gateway dufs branch was needed.
+Non-inference children strip inherited platform/provider inference credentials;
+dufs also strips `DUFS_*` overrides. Shared workspace files are not an isolation
+boundary. Archive extraction bounds compressed/expanded bytes and entry count,
+checks the final symlink graph, and rejects writes through links. Supervisors
+hold an exited leader unreaped through identity-verified process-group cleanup.
+
+One setup opens at a time per owner; another service's request gets an explicit
+`409 service_busy` and must be retried. The single alarm centrally schedules setup,
+independent link deadlines, and pending invalidation retries. Only due records
+advance; setup deadlines take precedence over backoff. Retiring one
+service cannot cancel the other's alarm. An owner-wide creation-uncertainty marker
+survives cross-service attempts. Daytona's [SDK error contract](https://www.daytona.io/docs/typescript-sdk/errors/)
+identifies 401/403 as authentication/permission rejection: those clear creation
+intent and allow corrected retries. The current create OpenAPI documents no other
+failure contract, so 400, 5xx and transport loss remain ambiguous. Discovery clears
+the marker after finding a machine;
+if an ambiguous creation never appears, operator investigation is required before
+clearing it. Login or setup wake retires all stale ready records before restoring
+compute, since wake does not restore processes.
+
+The gateway's previously remaining six-hour cap is corrected to 24 hours. The
+controller adopts the registration's returned expiry, and old links retain their
+stored deadlines. Passive status also checks the stored preview deadline, so a
+historical shorter or revoked registration cannot masquerade as a ready link;
+deliberate start relinks it. code-server and dufs have no invented countdown baseline. Their UI shows
+steps and elapsed time; the measured OpenChamber meter remains optional.
+
+Deployment and live evidence remain pending. See `../sandbox/README.md` for API-first
+rollout and qualification gates, and `PREVIEWS.md` for proxy/browser evidence.
+
+### Shell (ttyd)
+
+Deployed 2026-10-09: API `9f3ffc16-b694-47b5-b54d-a6071e82424f`, then
+Sandboxes `a847518f-85c5-4e32-8a09-9f58a7b1cafb`. Live qualification found the
+correct Shell (ttyd) card in Adam's authenticated dashboard. Initial passive
+status reads returned `invalid_operation`. Operator inspection confirmed both
+versions active at 100%, the correct production management binding, ttyd in the
+downloaded API bundle, and the embedded installer identical to the checkout
+(SHA-256 `66d457cd564dd3fd9ab15ba1d96fbe407b72d461a9de99ac55c449c465a46e6d`).
+Status subsequently recognized ttyd as idle on the started machine, consistent
+with stale rollout execution rather than a missing registry/allowlist entry.
+No code fix or redeployment was needed. Adam's authenticated dashboard then
+launched ttyd alone; Linux installation and authenticated readiness completed in
+16 seconds on the existing started sandbox. OpenChamber, Nanobot, code-server
+and JupyterLab retained their available dashboard links; none was restarted.
+Anonymous management status, app `/token`, and WS upgrade each returned 401.
+Opening the owner-private app proceeded through CILogon to the CruzID Gold
+password form. Adam must complete that login before live browser `printf`/`pwd`
+and authenticated WebSocket qualification. Direct native-auth denial remains
+locally qualified, not separately probed against the production upstream.
+
+`ttyd` uses port 8794, root `~/.local/share/bayleaf/ttyd`, and private slot
+`__ttyd`. It reuses the shared supervisor and app-secret delivery, with no
+inference-key transfer, plugin publication, controller branch or migration.
+The verified-archive installer accepts a direct-binary downloader for this app:
+upstream [1.7.7](https://github.com/tsl0922/ttyd/releases/tag/1.7.7), Linux x86_64,
+1,362,040 bytes, SHA-256
+`8a217c968aba172e0dbf3f34447218dc015bc4d5e59bf51db2f2cd12b7be4f55`.
+This release has no GitHub API asset digest; the pin comes from its published
+`SHA256SUMS`. Downloads are bounded to 2 MiB and checked before execution.
+No runtime compiler, container or additional daemon is installed.
+
+The fixed launcher runs `/bin/bash` as the ordinary sandbox user, with explicit
+`--writable` and `--cwd /home/daytona/workspace`; URL arguments are disabled.
+Each WebSocket gets a new shell. Disconnect sends SIGHUP to the child; reconnect
+starts afresh. There is no tmux or promise that terminal sessions survive browser
+closure, app restart, or machine sleep. Detached jobs remain the user's concern.
+
+Native Basic authentication protects HTTP and WS. The private gateway injects
+`Authorization: Basic …` from its encrypted registration after owner/origin checks.
+ttyd's authenticated `/token` returns that app-only credential encoded for its
+WS handshake; it is intentionally visible to the owner, not a BayLeaf API key.
+The local ttyd process argv also contains this app credential; programs running
+as the same user already share the credential file and workspace. Logging is
+restricted to errors and the supervisor discards application stdout/stderr.
+
+Upstream [HTTP auth](https://github.com/tsl0922/ttyd/blob/1.7.7/src/http.c) and
+[WS auth/origins](https://github.com/tsl0922/ttyd/blob/1.7.7/src/protocol.c) were
+inspected: `--auth-header` trusts any nonempty header, so it is not used.
+`--check-origin` compares browser Origin to Host, ignoring X-Forwarded-Host;
+Daytona changes Host, so enabling it would reject legitimate proxy WebSockets.
+Its default remains off; the mandatory owner-private gateway enforces origins
+on HTTP and WS. Direct access without Basic auth is denied, but possession of
+the app credential authenticates directly without an origin restriction.
+
+Local evidence (2026-10-09): real release download checksum/ELF architecture,
+four adapter tests, 26 shared installer tests, 29 workerd lifecycle checks,
+dashboard/policy tests and TypeScript passed. `harness-ttyd-local.py` exercised
+real ttyd 1.7.7 in isolated HOME: HTTP, WS printf, cwd, normal-user identity,
+direct unauthenticated denial, owner/origin fixture gates and shell exit on
+disconnect. This ran a native macOS Homebrew build, not the Linux release binary;
+Linux installation/readiness subsequently passed in the rollout above; live
+authenticated browser terminal behavior remains blocked on fresh CruzID login.
+On an isolated Linux amd64 host, run `uv run scripts/harness-ttyd-local.py` to
+include the verified installer. Deploy API before Sandboxes, then explicitly
+launch only Shell (ttyd) and qualify owner/non-owner HTTP+WS and sibling apps.
+
 ### V2 plugin integration
 
 The Worker uses `sandbox-plugin/` for web search, page extraction, and curated
@@ -284,11 +419,11 @@ browser URLs, or setup stdout. Inference stays on BayLeaf's ZDR path; sandbox
 files, histories, configuration, and credentials deliberately persist and are
 not zero-operator-access data.
 
-Port 3100 is exclusively reserved for this managed installation. At the owner's
-request, setup reclaims it automatically: matching same-user listening processes
-receive TERM, then KILL if necessary, with process identity checked before each
-signal. Other ports and unrelated process groups are not targeted. An unrecoverable
-conflict remains `port_in_use` in diagnostic state, with plain-language UI copy.
+Port 3100 is reserved for OpenChamber; 8791 for code-server; 8790 for dufs. The local
+managed-service revision changes restart behavior for both: only the recorded
+runtime process group is terminated after PID/start-time/boot-ID verification.
+An unrelated listener is left alone and produces `port_in_use`. Earlier deployments
+reclaimed any same-user listener on 3100; that behavior is no longer used by setup.
 OpenChamber uses the supported unauthenticated-LAN override behind **private
 Daytona transport and BayLeaf owner authentication**. Its relay is off. Managed
 OpenCode uses OpenChamber's secured loopback connection. Public Daytona sandbox
@@ -431,3 +566,26 @@ with explicit rollout approval and review of the qualification boundaries above.
 Rollback: disable the feature and revoke managed `__browser` preview slots.
 Preserve user files and the shared machine. Installation removal and whole-sandbox
 reset require separate explicit choices and prior export of wanted data.
+## Nanobot POC (deployed for owner evaluation)
+
+See [NANOBOT-POC.md](NANOBOT-POC.md) for the fourth service's implementation,
+private application authentication, finalization/renewal contract, canonical MCP
+adapter, credential scope, tests and live gates. Its app secret never enters DO
+metadata or dashboard output; private preview registration uses the existing
+encrypted header envelope. No new migration or infrastructure secret.
+
+Nanobot's adapter/guide live in the independent `api/nanobot-sandbox` submodule,
+published as `bayleaf-ucsc/nanobot-sandbox` with explicit approval on 2026-10-09.
+The Worker embeds source at its own verified published
+SHA; it does not install this package from Git at sandbox runtime. Wrangler runs
+the OpenCode pin builder and the separate strict Nanobot asset builder. Explicit
+`--fixture` builds support isolated tests while publication is pending. See the
+Nanobot POC's approval-required init/submodule/release sequence. OpenCode's
+unchanged plugin does not need republishing for this work.
+
+Code-server's next deliberate setup seeds missing
+`user-data/User/settings.json` with `chat.disableAIFeatures: true` and
+`workbench.secondarySideBar.defaultVisibility: "hidden"`. Existing JSONC is
+preserved byte-for-byte. These are user-overridable defaults, not a policy or a
+primary-sidebar visibility change. Source/browser qualification covered
+code-server 4.141.0 / VS Code 1.141.0; no extension was installed for this change.
