@@ -511,15 +511,23 @@ The most substantial toolkit on the deployment. Source:
 but **not bound to any model by default** — users enable it per-chat via the
 tool picker in the chat composer.
 
-**Current version: 0.31.1** (2026-10-11), byte-identical to upstream
-commit `9642168`. `expose` requires an explicit
+**Current version: 0.31.2** (2026-10-11), byte-identical to upstream
+commit `74b42c2`. `expose` requires an explicit
 `private` or `public` policy and accepts
 an optional untrusted hostname tag, which BayLeaf ignores. Private is the
 default guidance and fails closed; headerless public calls may fall back to Daytona's direct
 signed URL if wrapping fails. The installation credential is an admin valve
 backed by the API's `PREVIEWS_INSTALLATION_KEY` Worker Secret. ✨
 
-**Upgrade (2026-10-11):** deployed unchanged upstream 0.31.1, commit `9642168`
+**Production reconciliation (2026-10-11):** pulled Adam's subsequent 0.31.2
+deployment back into the repository, byte-identical to upstream `74b42c2`.
+The first-call snapshot now includes discovered skill names, descriptions, and
+paths using the same catalog builder as explicit `onboard()`; full skill bodies
+still require `read(path)`. Dependencies and tool schema are unchanged. The full
+private pull is under `~/.tokens/bayleaf-prod-pull-20261011-120432`; unrelated
+Brace3 metadata-format differences were left untouched. ✨
+
+**Earlier upgrade (2026-10-11):** deployed unchanged upstream 0.31.1, commit `9642168`
 (SHA-256 `00d56dc8125891ba0d30b5c71cb1a7abdb5171c60b4208e2e6b512c385ab1567`).
 This adds agent-facing skill-discovery paths to onboarding and the workspace
 snapshot, with no mechanical, dependency, valve, or tool-signature changes.
