@@ -74,8 +74,8 @@ try {
   assert.equal(continuation.status, 400);
   assert.ok((await continuation.json()).error.message.includes('different browser'), 'Registry must not install public-query validation');
   const shell = await (await get('/docs')).text();
-  for (const href of ['/llms.txt', '/docs/openapi.json', '/dashboard']) assert.ok(shell.includes(`href="${href}"`));
-  assert.ok(shell.includes('<noscript>') && shell.includes('If it does not load'));
+  assert.ok(shell.includes('data-url="/docs/openapi.json"'));
+  assert.ok(!shell.includes('<header') && !shell.includes('docs-navigation'), 'Keep the original plain Scalar shell');
   assert.ok(shell.includes('lang="en"'));
   const legacy = await get('/docs/SKILL.md');
   assert.equal(legacy.status, 301); assert.equal(legacy.headers.get('Location'), '/llms.txt');

@@ -31,28 +31,8 @@ docsRoutes.get('/', (c) => {
   <title>BayLeaf API Reference</title>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    body { margin: 0; }
-    .docs-navigation { padding: 16px 24px; font: 16px/1.5 system-ui, sans-serif; color: #173c31; background: #f1f7f4; border-bottom: 1px solid #c7d8cf; }
-    .docs-navigation nav { display: flex; flex-wrap: wrap; gap: 8px 20px; }
-    .docs-navigation a { color: #164a70; text-decoration: underline; }
-    .docs-navigation p { margin: 8px 0 0; }
-  </style>
 </head>
 <body>
-  <header class="docs-navigation">
-    <nav aria-label="Documentation">
-      <strong>BayLeaf API reference</strong>
-      <a href="/llms.txt">Agent integration guide</a>
-      <a href="/docs/openapi.json">OpenAPI JSON</a>
-      <a href="/dashboard">Dashboard</a>
-      <a href="https://github.com/bayleaf-ucsc/bayleaf/tree/main/api">Source</a>
-      <a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/SUPPORT.md">Support</a>
-    </nav>
-    <p>The reference below renders the same code-generated contract as OpenAPI JSON.
-      If it does not load, the links above remain usable.</p>
-    <noscript><p>JavaScript is needed for the interactive viewer, not for the raw specification or agent guide.</p></noscript>
-  </header>
   <script id="api-reference" data-url="/docs/openapi.json"></script>
   <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
 </body>

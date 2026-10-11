@@ -2,6 +2,12 @@
 
 ## Documentation ownership qualification (2026-10-11)
 
+Follow-up deployed as `a54fdc61-c34d-4955-9125-bf59e2c3c364`: removed the added navigation header at Adam's request,
+restoring the original plain Scalar shell. Guide/source/support links remain in
+the generated overview. The docs test now guards against an added shell header;
+the fallback-link checks described below applied to the initial deployed revision.
+Live HTML confirms the original Scalar shell without an added header.
+
 Deployed and live-verified as version `d7c46d9c-9ca0-46fa-a85e-abd2aa2ba35a`.
 `npm run test:docs` uses real workerd with
 synthetic provider metadata to check code-generated grant field descriptions,
