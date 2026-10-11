@@ -79,6 +79,14 @@ may not match the actual pre-upgrade deployment.
 
 ## Refinement log
 
+- 2026-10-11: Promoted unchanged upstream 0.31.1 (skill-location text only) with
+  Adam's explicit hackathon waiver of personal-instance testing and soak. All
+  323 unit tests passed; source readback, unchanged valves/name/grants/schema,
+  health, and full private before/after reconciliation passed. The historical
+  rollout script's `promote` action rewrites preview valves unnecessarily for
+  this bump, so used its backup/reconcile helpers and a source-only deploy.
+  Human model-mediated playtesting remains separate.
+
 - 2026-10-08: Deployed upstream 0.31.0 after refreshing an expired admin token,
   exact-matched against personal live source and commit 4cd5663. All 347 offline
   tests and six isolated OWUI core checks passed; Basic skipped the overview in

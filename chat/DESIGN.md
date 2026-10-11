@@ -511,15 +511,28 @@ The most substantial toolkit on the deployment. Source:
 but **not bound to any model by default** — users enable it per-chat via the
 tool picker in the chat composer.
 
-**Current version: 0.31.0** (2026-10-08), byte-identical to the upstream
-checkout and the personal Chat instance. `expose` requires an explicit
+**Current version: 0.31.1** (2026-10-11), byte-identical to upstream
+commit `9642168`. `expose` requires an explicit
 `private` or `public` policy and accepts
 an optional untrusted hostname tag, which BayLeaf ignores. Private is the
 default guidance and fails closed; headerless public calls may fall back to Daytona's direct
 signed URL if wrapping fails. The installation credential is an admin valve
 backed by the API's `PREVIEWS_INSTALLATION_KEY` Worker Secret. ✨
 
-**Upgrade (2026-10-08):** the deployed and vendored source is upstream 0.31.0,
+**Upgrade (2026-10-11):** deployed unchanged upstream 0.31.1, commit `9642168`
+(SHA-256 `00d56dc8125891ba0d30b5c71cb1a7abdb5171c60b4208e2e6b512c385ab1567`).
+This adds agent-facing skill-discovery paths to onboarding and the workspace
+snapshot, with no mechanical, dependency, valve, or tool-signature changes.
+Adam explicitly waived personal-instance testing and long-term soak for the
+hackathon rollout. All 323 upstream unit tests passed. Production source readback
+matched upstream; valves, tool name, grants, and generated schema were unchanged.
+Health returned 200; no restart was needed. Full private before/after pulls
+found only the expected Lathe source/version changes, apart from rotating metadata.
+Rollback and reconciliation snapshots are under
+`~/.tokens/bayleaf-lathe-rollout-20261011`. Human model-mediated playtesting
+remains separate. ✨
+
+**Previous upgrade (2026-10-08):** the deployed and vendored source was upstream 0.31.0,
 commit `4cd5663`, byte-identical to the personal Chat deployment (SHA-256
 `816b84af2c2e24d6f6024d49f55a8ef9d1faf23057a425da4a77a7d746e8e29c`).
 All 347 upstream offline tests passed. After refreshing the expired admin token,

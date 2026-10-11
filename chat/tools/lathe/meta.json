@@ -12,7 +12,7 @@
       "description": "Coding agent tools (lathe, bash, read, write, edit, glob, grep, view, interpret, delegate, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.",
       "required_open_webui_version": "0.11.0",
       "requirements": "httpx, httpx-ws, pydantic-ai-slim[openai]~=2.5, cachetools",
-      "version": "0.31.0",
+      "version": "0.31.1",
       "licence": "MIT"
     },
     "has_user_valves": true
@@ -28,7 +28,7 @@
       "created_at": 1773097882
     }
   ],
-  "updated_at": 1790800787,
+  "updated_at": 1791744118,
   "created_at": 1773079252,
   "user": null,
   "write_access": true,
