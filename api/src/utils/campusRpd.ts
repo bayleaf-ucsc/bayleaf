@@ -98,7 +98,15 @@ export async function inspectCounter(
 ): Promise<CampusRpdStatus> {
   const date = todayUTC();
   const key = kvKey(ip, date);
-  const count = await readCount(kv, key);
+  // Inspection must distinguish an absent entry from corrupt stored metadata.
+  // Read text so even a stored JSON null is not confused with a missing key.
+  // Keep this strict read separate from the existing admission/write path.
+  const raw = await kv.get(key, 'text');
+  const value = raw === null ? { count: 0 } : JSON.parse(raw) as CounterValue | null;
+  if (!value || !Number.isInteger(value.count) || value.count < 0) {
+    throw new Error('Invalid Campus Pass counter metadata');
+  }
+  const count = value.count;
   return {
     count,
     limit,

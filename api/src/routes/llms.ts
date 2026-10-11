@@ -92,6 +92,7 @@ Choose the access you need:
 - [Connect a coding agent](#quick-start-connect-a-coding-agent): use your ordinary
   API key for model discovery, inference, and the other supported services.
 - [API keys and Campus Pass](#api-keys-and-campus-pass): account access and allowances.
+- [Build browser apps with Campus Pass](#build-browser-apps-with-campus-pass): static HTML/JS that uses keyless inference when the visitor is eligible.
 - [Temporary inference tokens](#temporary-inference-tokens): give a script or app
   one-model, expiring access, or let each visitor authorize their own allowance.
 - [Standard LLM inference](#standard-llm-inference): the full model catalog and
@@ -551,6 +552,87 @@ ${bt}data.bayleaf${bt}: OpenRouter spend, per-user request quotas for enabled al
 standard backends, and a Campus Pass counter when applicable. Read the backend
 blocks rather than treating OpenRouter dollars as a universal quota. Temporary
 tokens cannot inspect this endpoint; use the ordinary API key.
+
+### Build browser apps with Campus Pass
+
+Static HTML with JavaScript can use BayLeaf directly: no app backend, embedded
+secret, or visitor login is needed on an eligible campus network. The browser's
+outward-facing network address determines eligibility, not the page's hosting
+location. A VPN or proxy can change that address.
+
+Start with ${bt}GET https://api.bayleaf.dev/campus-pass${bt}, omitting cookies and
+Authorization. It returns a structured assessment even off-campus: campus network
+membership, remaining daily requests for the visitor's network bucket, and shared
+OpenRouter credit availability without dollar amounts. The check spends no
+inference request. The exact schema and reason codes are maintained in
+[the API reference](https://api.bayleaf.dev/docs#tag/Meta) and
+[OpenAPI](https://api.bayleaf.dev/docs/openapi.json), operation ${bt}inspectCampusPass${bt}.
+
+If you are an agent building a demo:
+
+- Keep the page useful without inference. On load, check availability and explain
+  why the interactive feature is unavailable or could not be checked.
+- ${bt}inference.status === "available"${bt} means no known blocker for standard
+  OpenRouter inference, not a guarantee or reservation. ${bt}unknown${bt} means a
+  check failed, not that the allowance is exhausted. Offer a manual retry.
+- The network quota is approximate and shared: IPv4 per address, IPv6 per /64.
+  Users behind the same NAT may share it. It resets at midnight UTC and includes
+  Campus Pass inference through Sealed too; this endpoint does not assess Sealed
+  readiness. Shared provider readings may be up to 15 seconds old.
+- Trigger inference only after an explicit user action, not automatically on page
+  load. Do not poll aggressively. Recheck after an inference failure or on demand.
+- Use ${bt}GET /recommended-model${bt} rather than hardcoding today's default.
+  Then POST ordinary OpenAI Chat Completions JSON to ${bt}/v1/chat/completions${bt},
+  without Authorization. Requests still pass the model eligibility and ZDR gates.
+  Some recommended models require reasoning tokens: leave token headroom and
+  handle an empty answer or ${bt}finish_reason: "length"${bt}, rather than assuming
+  a tiny completion cap will always produce visible text.
+- Wildcard CORS supports arbitrary page origins. A simple GET needs no preflight;
+  JSON POST does, and BayLeaf handles it. Use ${bt}credentials: "omit"${bt}, never
+  ${bt}mode: "no-cors"${bt}. Do not try to send or spoof client-IP headers.
+- Always handle the actual inference response: network errors, 401 (eligibility
+  changed), 429 (network allowance exhausted), and upstream budget/provider errors
+  remain possible after a successful check. Render generated text with
+  ${bt}textContent${bt}, not unsanitized ${bt}innerHTML${bt}.
+- For off-campus use, offer an optional visitor-authorized temporary inference
+  token as described below, rather than shipping your ordinary key in page source.
+  The app's own storage and privacy choices are separate from BayLeaf's ZDR path.
+
+Minimal JS building blocks (wire ${bt}generate${bt} to a user-operated button,
+disable it while pending, catch errors, and show output with ${bt}textContent${bt}):
+
+${fence}js
+const base = "https://api.bayleaf.dev";
+async function getJSON(path, options = {}) {
+  const response = await fetch(base + path, {
+    ...options, credentials: "omit", signal: AbortSignal.timeout(60000)
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error?.message ?? "BayLeaf request failed");
+  return body;
+}
+
+const availability = await getJSON("/campus-pass");
+// Enable your Generate button only when availability.inference.status is "available".
+// Otherwise show availability.inference.reasons and an optional Check again button.
+
+async function generate(prompt) {
+  const { model } = await getJSON("/recommended-model");
+  const result = await getJSON("/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model, messages: [{ role: "user", content: prompt }],
+      max_tokens: 4096, reasoning: { effort: "low" }
+    })
+  });
+  const answer = result.choices?.[0]?.message?.content;
+  if (typeof answer !== "string" || !answer.trim()) {
+    throw new Error("No visible answer returned. The model may need more token headroom.");
+  }
+  return answer;
+}
+${fence}
 
 ### Temporary inference tokens
 

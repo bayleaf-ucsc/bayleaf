@@ -54,6 +54,12 @@ traffic without changing the Worker.
 
 ## Refinement log
 
+- 2026-10-11 (Campus Pass availability): A public, passive metadata endpoint reused
+  existing auth/quota/provider boundaries, so no new provider, storage, or kill switch
+  was needed. Pre-deploy Astra review caught malformed-metadata false positives.
+  Browser qualification caught mandatory reasoning exhausting a tiny output cap;
+  integration examples now leave token headroom and handle empty answers explicitly.
+
 - 2026-10-05 (Sandboxes teaser): Created `sandbox/` as a separate Worker with
   an explicit BayLeaf account and custom domain. Static public overview now,
   shared API authentication/D1/lifecycle integration later. New custom-domain

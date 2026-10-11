@@ -514,6 +514,20 @@ checkbox, so it is recorded rather than deleted.
 
 ## Routes
 
+### Campus Pass browser availability
+
+`GET /campus-pass` (`routes/campusPass.ts`) is unauthenticated, read-only, and
+OpenAPI-documented. It separates trusted campus-network membership from service
+configuration and returns the caller's approximate per-network daily quota plus
+standard OpenRouter availability. Shared credit combines pool-key budget layers
+(`/key`) with account credit (`/credits`, existing management credential); only
+reduced status metadata is cached for 15 seconds per isolate. Never expose
+provider payloads, dollar amounts, credentials, or the caller's IP. Responses are
+`no-store`; provider/KV failures are unknown, not exhausted. No provisioning,
+healing, inference, or counter writes. The assessment does not cover Sealed or
+model-specific readiness. `npm run test:campus-pass` covers synthetic full-app
+HTTP behavior; `examples/campus-pass.html` exercises real cross-origin JS. ✨
+
 ### Daily sandbox inactivity reaper
 
 `src/sandboxReaper.ts` owns the 90-day inactivity sweep at 08:17 UTC, distinct
@@ -672,6 +686,7 @@ rollout record in `chat/DESIGN.md` and `PREVIEWS.md`. ✨
 /sealed/.well-known/opencode          GET: OpenCode discovery for opt-in BayLeaf Sealed
 /sealed/.well-known/opencode/config   GET: Authenticated Sealed OpenCode config
 /recommended-model      Current recommended model slug + display name (JSON, unauthenticated)
+/campus-pass            Read-only keyless standard inference availability for the caller
 /docs                   Interactive API docs (Scalar viewer, loads /docs/openapi.json)
 /docs/openapi.json      OpenAPI 3.1 spec (auto-generated from Zod schemas)
 /docs/SKILL.md          Agent skill file (public; personalized with email when authenticated)

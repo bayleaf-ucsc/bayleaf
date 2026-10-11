@@ -30,6 +30,7 @@ import { sandboxRoutes } from './routes/sandbox';
 import { reapInactiveSandboxes, SANDBOX_REAPER_CRON } from './sandboxReaper';
 import { sandboxBrowserRoutes } from './routes/sandboxBrowser';
 import { usageRoutes } from './routes/usage';
+import { campusPassRoutes } from './routes/campusPass';
 export { SandboxBrowser } from './sandboxBrowser';
 import { webRoutes } from './routes/web';
 import { docsRoutes } from './routes/docs';
@@ -157,6 +158,7 @@ app.openapi(healthRoute, (c) => {
 // ── Mount route groups ────────────────────────────────────────────
 
 app.route('/v1', proxyRoutes);
+app.route('/', campusPassRoutes);
 // OpenCode keys well-known configuration by login URL. Mount Sealed discovery
 // before the broader /sealed relay so users can opt into exactly one lane.
 app.route('/sealed/.well-known', sealedWellKnownRoutes);

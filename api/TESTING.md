@@ -16,6 +16,43 @@ final step destroys the sandbox.
 
 ---
 
+## Campus Pass availability
+
+```bash
+npm run test:campus-pass
+npx tsc --noEmit
+```
+
+Credential-free full-app HTTP tests use synthetic KV and mocked OpenRouter
+metadata in Node (the unrelated Worker RPC base is stubbed). They cover trusted
+IP eligibility, IPv6 bucketing, daily quota reads without writes, pool and account
+credit, unknown/error states, provider-cache expiry/coalescing, CORS preflight,
+generated OpenAPI, and the JS guidance in `llms.txt`. No inference is performed.
+
+After deployment, check `GET /campus-pass` from a real off-campus browser and a
+real campus browser. Do not forge client-IP headers as a substitute for the
+campus test. Confirm `Cache-Control: no-store`, wildcard CORS, no dollar amounts
+or IP disclosure, and the `inspectCampusPass` operation in `/docs/openapi.json`.
+Serve `api/examples/campus-pass.html` with an ordinary local static server to
+exercise cross-origin JS. Generating deliberately consumes allowance; initial
+page load and Check again do not. Provider readings are advisory, not proof of
+model health or a reservation of funds. ✨
+
+2026-10-11 qualification: Astra reviewed the complete uncommitted change and
+verified the malformed-provider/quota fixes before rollout. Live campus GET,
+no-store/CORS headers, JSON POST preflight, generated OpenAPI, agent guidance, and
+the card note passed. A real cross-origin browser demo reached keyless inference.
+The initial 256-token example returned no visible answer, and disabling reasoning
+was rejected by the current recommended model; the example now allows 4096 tokens
+with low reasoning effort and treats empty content as an explicit error. Off-campus states are covered by
+synthetic tests, not a separately qualified real off-campus connection. ✨
+
+Final deployed version: `a8ab833c-c077-403a-932b-acbfee3c84d0`. The adjusted
+cross-origin browser example displayed a real answer and refreshed its allowance;
+the full qualification used five network-quota slots (including unsuccessful
+inference attempts). Passive checks consumed none. Final live `llms.txt` guidance
+and campus availability passed after redeployment. ✨
+
 ## Local: transient preview harness
 
 ```bash

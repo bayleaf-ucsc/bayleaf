@@ -134,8 +134,13 @@ export function getClientIP(request: Request): string {
  */
 export function isCampusPassEligible(request: Request, env: Bindings): boolean {
   if (!env.CAMPUS_IP_RANGES || !env.CAMPUS_POOL_KEY) return false;
+  return campusNetworkStatus(request, env) === true;
+}
+
+/** Network membership independent of provider configuration; null means unknown. */
+export function campusNetworkStatus(request: Request, env: Bindings): boolean | null {
   const ip = getAuthIP(request, env);
-  if (ip === null) return false;
+  if (!ip || !env.CAMPUS_IP_RANGES) return null;
   return isOnCampus(ip, env.CAMPUS_IP_RANGES);
 }
 

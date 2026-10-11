@@ -77,6 +77,7 @@ export const LandingPage: FC<{
           </p>
         ) : null}
         <RecommendedModelHint model={recommendedModel} />
+        <p>Want your agent to build apps with Campus Pass? Have it read our <a href="/llms.txt"><code>llms.txt</code></a>.</p>
       </div>
     ) : (
       <div class={cardStyle} style="background: #f0f4ff; border-color: #4a7abf;">
@@ -85,6 +86,7 @@ export const LandingPage: FC<{
           When you're on the UCSC network, you can use the API instantly: no sign-in or
           API key required. Just connect to campus Wi-Fi and visit this page again.
         </p>
+        <p>Want your agent to build apps with Campus Pass? Have it read our <a href="/llms.txt"><code>llms.txt</code></a>.</p>
       </div>
     )}
   </BaseLayout>

@@ -9,6 +9,25 @@
 import { z } from '@hono/zod-openapi';
 import { SERVICE_DEFS } from './serviceDefs';
 
+export const CampusPassResponseSchema = z.object({
+  campus_network: z.boolean().nullable().describe('Whether the trusted client IP matches campus ranges. Null means the address or configuration is unavailable.'),
+  enabled: z.boolean().describe('Whether campus ranges and the standard inference pool credential are configured.'),
+  inference: z.object({
+    provider: z.literal('openrouter'),
+    status: z.enum(['available', 'unavailable', 'unknown']),
+    reasons: z.array(z.enum(['off_campus', 'network_unknown', 'disabled', 'quota_exhausted', 'quota_unknown',
+      'pool_key_unavailable', 'pool_budget_exhausted', 'shared_credit_exhausted', 'upstream_unknown'])),
+  }).describe('Advisory only: available means no known blocker, not a reservation or model-health guarantee. Does not describe Sealed.'),
+  quota: z.object({
+    remaining: z.number().int().nonnegative(), limit: z.number().int().positive(),
+    resets_at: z.iso.datetime(), scope: z.literal('network_address'), approximate: z.literal(true),
+  }).nullable().describe('Read-only daily inference counter, shared across Campus Pass lanes. IPv4 per address, IPv6 per /64. Null off-campus or when inspection fails. KV is eventually consistent.'),
+  shared_credit: z.object({
+    status: z.enum(['available', 'unavailable', 'unknown']),
+    checked_at: z.iso.datetime().nullable(),
+  }).describe('Combined pool-key and account-credit assessment. Provider metadata is cached for up to 15 seconds per Worker isolate; no dollar values are disclosed.'),
+}).openapi('CampusPassResponse');
+
 export const UsageResponseSchema = z.object({
   observed_at: z.iso.datetime(),
   budgets: z.array(z.object({

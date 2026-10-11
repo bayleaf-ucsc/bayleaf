@@ -13,6 +13,7 @@
     "test:grants": "node scripts/harness-grants.mjs",
     "test:sealed-dashboard": "node scripts/test-sealed-dashboard.mjs",
     "test:sealed-models": "node scripts/test-sealed-models.mjs",
+    "test:campus-pass": "node scripts/test-campus-pass.mjs",
     "test:sandbox-reaper": "node scripts/test-sandbox-reaper.mjs",
     "test:sandbox-browser": "python3 scripts/test-browser-setup.py && node scripts/test-sandbox-policy.mjs && node scripts/harness-sandbox-browser.mjs",
     "test:service-sessions": "node scripts/harness-service-sessions.mjs && node ../sandbox/test-worker.mjs",

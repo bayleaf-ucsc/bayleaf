@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Campus Pass: static JS example</title>
+<style>
+  body { max-width: 42rem; margin: 3rem auto; padding: 0 1rem; font: 1rem/1.5 system-ui, sans-serif; color: #183c30; background: #fafcfb; }
+  label, textarea { display: block; }
+  textarea { box-sizing: border-box; width: 100%; font: inherit; }
+  button { margin: .75rem .5rem .75rem 0; padding: .5rem .8rem; font: inherit; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>
+<h1>Campus Pass</h1>
+<p>A static page using keyless BayLeaf inference. No login or embedded API key.
+  Inference runs only when you click Generate. BayLeaf uses ZDR providers;
+  this example keeps input and output only in page memory.</p>
+<p id="status" role="status">Checking availability…</p>
+<noscript><p>This example needs JavaScript for its optional inference feature.
+  You can still read the <a href="https://api.bayleaf.dev/llms.txt">integration guide</a>.</p></noscript>
+<button id="check" type="button">Check again</button>
+<label for="prompt">Prompt</label>
+<textarea id="prompt" rows="3">Explain why browsers use CORS for cross-origin API calls in two sentences.</textarea>
+<button id="generate" type="button" disabled>Generate</button>
+<pre id="output" aria-live="polite"></pre>
+<details><summary>Availability details</summary><pre id="details"></pre></details>
+<p><a href="https://api.bayleaf.dev/llms.txt">Agent integration guide</a> ·
+  <a href="https://api.bayleaf.dev/docs">API reference</a></p>
+<script type="module">
+  const base = 'https://api.bayleaf.dev';
+  const status = document.querySelector('#status');
+  const check = document.querySelector('#check');
+  const generate = document.querySelector('#generate');
+  const output = document.querySelector('#output');
+  let available = false;
+  let pending = false;
+  const labels = {
+    off_campus: 'This browser is not on an eligible campus network.',
+    network_unknown: 'Campus network membership could not be determined.',
+    disabled: 'Campus Pass is not configured on this deployment.',
+    quota_exhausted: 'Your network address has used its daily inference allowance.',
+    quota_unknown: 'Your network allowance could not be checked.',
+    pool_key_unavailable: 'The shared inference credential is unavailable.',
+    pool_budget_exhausted: 'The shared inference budget is exhausted.',
+    shared_credit_exhausted: 'Shared inference credit is exhausted.',
+    upstream_unknown: 'Shared inference credit could not be checked.',
+  };
+  async function getJSON(path, options = {}) {
+    const response = await fetch(base + path, { ...options,
+      credentials: 'omit', signal: AbortSignal.timeout(60000) });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error?.message ?? `BayLeaf returned HTTP ${response.status}.`);
+    return body;
+  }
+  async function refresh() {
+    check.disabled = true;
+    generate.disabled = true;
+    available = false;
+    status.textContent = 'Checking availability…';
+    try {
+      const report = await getJSON('/campus-pass');
+      document.querySelector('#details').textContent = JSON.stringify(report, null, 2);
+      available = report.inference.status === 'available';
+      status.textContent = available
+        ? `Keyless inference is available: approximately ${report.quota.remaining} requests remain for your network address today.`
+        : report.inference.reasons.map(reason => labels[reason] ?? reason).join(' ');
+    } catch {
+      status.textContent = 'BayLeaf availability could not be checked. You can try again.';
+    } finally {
+      check.disabled = pending;
+      generate.disabled = pending || !available;
+    }
+  }
+  check.addEventListener('click', refresh);
+  generate.addEventListener('click', async () => {
+    if (pending || !available) return;
+    pending = true;
+    generate.disabled = check.disabled = true;
+    output.textContent = 'Generating…';
+    try {
+      const { model } = await getJSON('/recommended-model');
+      const result = await getJSON('/v1/chat/completions', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, max_tokens: 4096, reasoning: { effort: 'low' },
+          messages: [{ role: 'user', content: document.querySelector('#prompt').value }] }),
+      });
+      const answer = result.choices?.[0]?.message?.content;
+      if (typeof answer !== 'string' || !answer.trim()) {
+        throw new Error('No visible answer returned. The model may need more token headroom.');
+      }
+      output.textContent = answer;
+    } catch (error) {
+      output.textContent = error.message;
+    } finally {
+      pending = false;
+      await refresh();
+    }
+  });
+  await refresh();
+</script>
+</html>
