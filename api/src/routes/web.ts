@@ -38,7 +38,7 @@ const searchRoute = createRoute({
   description:
     'Search the web and return ranked results with snippets. ' +
     'Optionally includes an AI-generated summary answer.',
-  security: [{ Bearer: [] }],
+  security: [{ Bearer: [] }, {}] as Record<string, string[]>[],
   request: {
     body: {
       required: true,
@@ -114,7 +114,7 @@ const fetchRoute = createRoute({
     'Fetch one or more web pages and extract their content as clean markdown or plain text. ' +
     'Pass a single URL string for one page, or an array of URLs (up to 20) to fetch many in a single call. ' +
     'Useful for feeding web content to LLMs or other processing pipelines.',
-  security: [{ Bearer: [] }],
+  security: [{ Bearer: [] }, {}] as Record<string, string[]>[],
   request: {
     body: {
       required: true,

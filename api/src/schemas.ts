@@ -359,33 +359,62 @@ export const SandboxExposeSlotSchema = z.object({
 // Temporary inference grants: seconds are positive; administrator policy sets
 // the ceiling at runtime so clients receive the current maximum on rejection.
 export const GrantRequestSchema = z.object({
-  model: z.string().min(1).max(200),
-  expires_in: z.number().int().positive(),
+  model: z.string().min(1).max(200).describe('One eligible backend-qualified standard model from GET /grants/models. Bare OpenRouter slugs are accepted for compatibility; issuance returns the canonical qualified ID. Sealed is excluded.').openapi({ example: 'openrouter:qwen/qwen3.8-27b' }),
+  expires_in: z.number().int().positive().describe('Requested lifetime in seconds. The runtime administrator maximum is enforced by rejection, never clamping; invalid_lifetime reports the current maximum.').openapi({ example: 600 }),
 }).strict().openapi('GrantRequest');
 export const GrantTokenSchema = z.object({
-  grant_id: z.string(), name: z.string(), key: z.string(), access_token: z.string(),
-  token_type: z.literal('Bearer'), model: z.string(),
-  expires_at: z.number().int(), expires_in: z.number().int(), base_url: z.string(),
+  grant_id: z.string().describe('Grant identifier for management/revocation; called id in the list response.'),
+  name: z.string().describe('Public recognition name, not a credential. Bound into the signed token; names are unique among this owner\'s retained grants.'),
+  key: z.string().describe('Compatibility alias for access_token, identical secret value.'),
+  access_token: z.string().describe('Opaque bearer credential, shown only at issuance. Send in Authorization, never URLs or logs; keep out of public page source.'),
+  token_type: z.literal('Bearer'), model: z.string().describe('Canonical backend-qualified model. Use unchanged; the token permits only this model.'),
+  expires_at: z.number().int().describe('Absolute expiry, Unix seconds. Visitor-authorized lifetime starts at approval, not exchange.'),
+  expires_in: z.number().int().describe('Seconds remaining at issuance/exchange, not a new lifetime allocation.'),
+  base_url: z.string().describe('Standard inference base URL. Append /chat/completions (all enabled standard backends) or /responses (OpenRouter only).'),
 }).openapi('GrantToken');
-export const GrantErrorSchema = z.object({ error: z.object({ code: z.string(), message: z.string() }) }).openapi('GrantError');
+export const GrantErrorSchema = z.object({ error: z.object({
+  code: z.string().describe('Machine-readable reason, such as invalid_request, invalid_lifetime, invalid_grant, model_not_allowed, login_required, or grants_disabled.'),
+  message: z.string().describe('Human-readable explanation; do not parse this as a stable protocol field.'),
+}) }).openapi('GrantError');
 export const ClientDescriptorRequestSchema = z.object({
-  client_name: z.string().trim().min(1).max(80),
-  redirect_uri: z.string().min(1).max(2048),
+  client_name: z.string().trim().min(1).max(80).describe('App-supplied label shown at consent; not a verified app identity.'),
+  redirect_uri: z.string().min(1).max(2048).describe('Exact callback URI: HTTPS, or HTTP localhost/127.0.0.1/[::1]. No credentials or fragment. Preserve host, port, path and query unchanged through exchange.').openapi({ example: 'http://127.0.0.1:5173/callback' }),
 }).strict().openapi('ClientDescriptorRequest');
-export const ClientDescriptorSchema = z.object({ client_id: z.string(), expires_at: z.number().int() }).openapi('ClientDescriptor');
+export const ClientDescriptorSchema = z.object({
+  client_id: z.string().describe('Opaque signed descriptor for initiating authorization; not permanent registration or an inference credential. Valid for ten minutes.'),
+  expires_at: z.number().int().describe('Descriptor expiry, Unix seconds.'),
+}).openapi('ClientDescriptor');
 export const GrantExchangeSchema = z.object({
-  grant_type: z.literal('authorization_code'), code: z.string().min(1).max(128),
-  client_id: z.string().min(1).max(8192), redirect_uri: z.string().min(1).max(2048),
-  code_verifier: z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/),
+  grant_type: z.literal('authorization_code'), code: z.string().min(1).max(128).describe('Single-use callback code, valid for at most two minutes after approval and bounded by the original transaction deadline.'),
+  client_id: z.string().min(1).max(8192).describe('The identical descriptor used to initiate this browser authorization.'),
+  redirect_uri: z.string().min(1).max(2048).describe('The exact callback URI bound into the descriptor and authorization transaction.'),
+  code_verifier: z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/).describe('Original cryptographically random S256 PKCE verifier. SHA-256 then base64url without padding must match the authorization challenge.'),
 }).strict().openapi('GrantExchange');
+// Documentation-only query schema. The browser handler also accepts an internal
+// ?request= continuation; registering this must never install public validation.
+export const GrantAuthorizeQuerySchema = z.object({
+  client_id: z.string().describe('Signed descriptor returned by POST /grants/clients.'),
+  response_type: z.literal('code'), model: GrantRequestSchema.shape.model,
+  expires_in: z.string().describe('Requested positive integer lifetime in seconds, as a query string; the runtime ceiling still applies.'),
+  state: z.string().min(1).max(256).describe('Cryptographically random application state, retained by the initiating tab and verified on callback.'),
+  code_challenge: z.string().regex(/^[A-Za-z0-9_-]{43}$/).describe('Base64url SHA-256 of the verifier, without padding.'),
+  code_challenge_method: z.literal('S256'),
+}).openapi('GrantAuthorizeQuery');
 export const GrantListSchema = z.object({ grants: z.array(z.object({
-  id: z.string(), name: z.string().nullable(), model: z.string(), expires_at: z.number().int(), created_at: z.number().int(),
-  client_name: z.string().nullable(), redirect_uri: z.string().nullable(),
-})) }).openapi('GrantList');
+  id: z.string().describe('Same identifier as grant_id in the issuance response. Use to revoke this grant.'),
+  name: z.string().nullable().describe('Public recognition name; null for older unnamed grants.'),
+  model: z.string().describe('Permitted backend-qualified model.'),
+  expires_at: z.number().int().describe('Expiry, Unix seconds.'), created_at: z.number().int().describe('Creation time, Unix seconds.'),
+  client_name: z.string().nullable().describe('App-supplied consent label; null for direct issuance.'),
+  redirect_uri: z.string().nullable().describe('Bound callback URI; null for direct issuance.'),
+})) }).describe('Active grant metadata for the current owner. Credentials cannot be recovered through listing.').openapi('GrantList');
 
 export const GrantModelsSchema = z.object({
-  models: z.array(z.object({ id: z.string(), name: z.string() })),
-  backends: z.array(z.object({ id: z.string(), label: z.string(), enabled: z.boolean(), available: z.boolean() })),
+  models: z.array(z.object({ id: z.string().describe('Backend-qualified selectable model ID.'), name: z.string().describe('Display label.') })),
+  backends: z.array(z.object({ id: z.string(), label: z.string(),
+    enabled: z.boolean().describe('Administrator enabled this standard backend.'),
+    available: z.boolean().describe('Backend-specific catalog availability, not a model-health or inference guarantee. OpenRouter reports successful retrieval, Vertex has a static catalog when enabled, and Bedrock requires a nonempty retrieved catalog.'),
+  })),
 }).openapi('GrantModels');
 // Browser lifecycle metadata only: no credentials, file contents, or setup logs.
 export const BrowserSandboxStatusSchema = z.object({

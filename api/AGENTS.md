@@ -514,6 +514,20 @@ checkbox, so it is recorded rather than deleted.
 
 ## Routes
 
+### Documentation ownership
+
+`/llms.txt` owns broad agent orientation, access choices, client setup and workflows
+(including direct external GWS/Canvas integrations). It must meaningfully cover
+the HTTP API, but link to code-owned contracts rather than duplicate exhaustive
+field/endpoint tables. `/docs/openapi.json` owns exact HTTP contracts through route
+definitions and `schemas.ts`. `apiReference.ts` supplies the shared overview;
+the Grants protocol narrative lives beside its handlers. `/docs` renders that same
+spec through Scalar with ordinary navigation/fallback links, not a second prose
+contract. Derive deployment facts from bindings/helpers and share package pins.
+Repository guides own rationale, operational history and substantial examples.
+`npm run test:docs` checks schemas, security alternatives, reciprocal navigation,
+heading links and alternate deployment settings without live traffic. ✨
+
 ### Campus Pass browser availability
 
 `GET /campus-pass` (`routes/campusPass.ts`) is unauthenticated, read-only, and

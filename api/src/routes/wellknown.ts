@@ -39,7 +39,7 @@ import type { AppEnv } from '../types';
 import { resolveAuth } from '../utils/auth';
 import { getModelInfo } from '../openrouter';
 import type { ModelCost } from '../openrouter';
-import { altBackendForModel, isBackendEnabled, parseModelList } from '../constants';
+import { altBackendForModel, isBackendEnabled, parseModelList, SEALED_PLUGIN } from '../constants';
 import { fetchSealedModels, isSealedEnabled } from './sealed';
 import sandboxPlugin from '../../.sandbox-plugin-ref.json';
 
@@ -73,7 +73,6 @@ const SEALED_PROVIDER_ID = 'bayleaf-sealed-remote';
  * `~/.cache/opencode/packages/${SEALED_PLUGIN}` install. Rename it, retry once, and
  * restart OpenCode: failed plugin imports are cached for the process lifetime.
  */
-const SEALED_PLUGIN = 'opencode-tinfoil@0.3.0';
 
 /** Name of the env var the wellknown token is bound to inside OpenCode. */
 const TOKEN_ENV_NAME = 'BAYLEAF_API_KEY';

@@ -163,7 +163,7 @@ const responsesRoute = createRoute({
   summary: 'Responses API',
   description:
     'OpenAI Responses API endpoint. Caller-provided `instructions` are forwarded unchanged.',
-  security: [{ Bearer: [] }],
+  security: [{ Bearer: [] }, {}] as Record<string, string[]>[],
   request: {
     body: {
       required: true,
@@ -251,7 +251,7 @@ const chatCompletionsRoute = createRoute({
   description:
     'OpenAI-compatible chat completions endpoint. Supports streaming via `stream: true`. ' +
     'Caller-provided system and developer messages are forwarded unchanged.',
-  security: [{ Bearer: [] }],
+  security: [{ Bearer: [] }, {}] as Record<string, string[]>[],
   request: {
     body: {
       required: true,
@@ -389,7 +389,7 @@ const modelsRoute = createRoute({
   tags: ['LLM'],
   summary: 'List available models',
   description: 'Lists open-weight models: OpenRouter entries (prefixed with openrouter:) are filtered to those OpenRouter reports as having published Hugging Face weights, plus Vertex AI (vertex:) and Amazon Bedrock (bedrock:) models when those backends are enabled. OpenRouter inference additionally verifies that the reported Hugging Face repository resolves.',
-  security: [{ Bearer: [] }],
+  security: [{ Bearer: [] }, {}],
   responses: {
     200: { description: 'Model list' },
     401: { description: 'Missing or invalid API key' },
@@ -471,7 +471,7 @@ const authKeyRoute = createRoute({
     'traffic. For Campus Pass connections, `bayleaf.campus` reports the ' +
     'unified per-IP requests-per-day budget covering all providers (Vertex ' +
     'and OpenRouter alike).',
-  security: [{ Bearer: [] }],
+  security: [{ Bearer: [] }, {}],
   responses: {
     200: { description: 'Key info' },
     401: { description: 'Missing or invalid API key' },
@@ -606,7 +606,7 @@ const proxyGetRoute = createRoute({
     'Note: chat completions are routed by `model` prefix to OpenRouter or Vertex AI; ' +
     'this catch-all only covers OpenRouter-only paths (rarely needed once `/v1/models`, ' +
     '`/v1/auth/key`, `/v1/chat/completions`, and `/v1/responses` are accounted for).',
-  security: [{ Bearer: [] }],
+  security: [{ Bearer: [] }, {}],
   request: {
     params: z.object({
       path: z.string().openapi({ example: 'credits' }),
@@ -630,7 +630,7 @@ const proxyPostRoute = createRoute({
   description:
     'Catch-all POST proxy for any `/v1/*` path not handled by a more specific route above. ' +
     'Forwards to OpenRouter with your resolved credentials.',
-  security: [{ Bearer: [] }],
+  security: [{ Bearer: [] }, {}],
   request: {
     params: z.object({
       path: z.string(),

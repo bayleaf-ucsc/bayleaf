@@ -343,7 +343,12 @@ try {
     assert.equal(page.headers.get('X-Frame-Options'), 'DENY');
     const spec = await expect(await request('/docs/openapi.json'), 200);
     for (const path of ['/grants', '/grants/clients', '/grants/token', '/grants/{id}']) assert.ok(spec.paths[path], path);
-    const text = await (await request('/llms.txt')).text(); assert.match(text, /token_expired/); assert.match(text, /code_challenge_method=S256/);
+    const text = await (await request('/llms.txt')).text();
+    assert.ok(text.includes('docs#tag/grants') && text.includes('authorizeInferenceClient'), 'Agent guide points to the owned contract');
+    const workflow = spec.tags.find(tag => tag.name === 'Grants').description;
+    assert.ok(workflow.includes('token_expired'), 'Exact expiry contract belongs in the spec');
+    const challenge = spec.paths['/grants/authorize'].get.parameters.find(param => param.name === 'code_challenge_method');
+    assert.deepEqual(challenge.schema.enum, ['S256']);
   });
   await check('scheduled cleanup removes expired metadata and preserves active grants', async () => {
     const active = await mint();

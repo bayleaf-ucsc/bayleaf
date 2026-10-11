@@ -1,5 +1,27 @@
 # Agentic Manual Testing — BayLeaf API
 
+## Documentation ownership qualification (2026-10-11)
+
+Deployed and live-verified as version `d7c46d9c-9ca0-46fa-a85e-abd2aa2ba35a`.
+`npm run test:docs` uses real workerd with
+synthetic provider metadata to check code-generated grant field descriptions,
+management/campus authentication alternatives, registry-only browser authorization,
+reciprocal guide/spec/viewer navigation and alternate deployment facts. It also
+checks Markdown heading targets and durable HTML/no-JavaScript fallback links.
+`npm run test:grants`, `npx tsc --noEmit` and `git diff --check` pass. Astra reviewed
+the strategy and implementation; its final corrections clarify sandbox credential
+custody, backend-disabled errors and catalog availability semantics.
+
+The synthetic Scalar preview at `http://localhost:8806/docs` was inspected in the
+browser at desktop/mobile settings; `#tag/grants` resolves to its protocol narrative.
+Live OpenAPI and `llms.txt` checks confirm deployment facts, grant authorization,
+authentication alternatives and reciprocal links; the production Scalar viewer
+renders the updated overview and Grants anchor. No live inference, login, consent
+or provider spend was part of this documentation qualification.
+CDN-failure fallback is checked structurally, not
+through a simulated browser outage. Start the preview with
+`npm run test:docs -- --serve`.
+
 Runbook for agents performing manual smoke tests against the live
 BayLeaf API deployment. The user provides a `sk-bayleaf-*` API key;
 every test below uses `curl` against `https://api.bayleaf.dev`.

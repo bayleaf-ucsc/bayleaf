@@ -37,7 +37,9 @@ import { docsRoutes } from './routes/docs';
 import { llmsRoutes } from './routes/llms';
 import { sandboxWellKnownRoutes, sealedWellKnownRoutes, wellKnownRoutes } from './routes/wellknown';
 import { claimRoutes } from './routes/claim';
-import { grantRoutes } from './routes/grants';
+import { grantRoutes, GRANT_WORKFLOW } from './routes/grants';
+import { apiOverview } from './apiReference';
+import { SESSION_COOKIE } from './constants';
 import { GRANT_PREFIX, guardGrant, cleanupGrants } from './grants';
 import { previewRoutes, handlePreviewHost, cleanupPreviews } from './routes/previews';
 export { PreviewConnections } from './routes/previews';
@@ -68,10 +70,14 @@ app.openAPIRegistry.registerComponent('securitySchemes', 'Bearer', {
   type: 'http',
   scheme: 'bearer',
   description:
-    'BayLeaf API key (`sk-bayleaf-...`). Temporary inference tokens (`sk-bayleaf-grant-...`) permit only POST /v1/chat/completions and /v1/responses with their specified model. On supported routes, campus users may omit a key for Campus Pass access.',
+    'Ordinary BayLeaf API key (`sk-bayleaf-...`), or a controller-managed sandbox credential (`sk-bayleaf-sandbox-...`) bound to an owner and machine with separate custody and revocation. Both use the owner\'s allowances; sandbox credentials are not operator credentials. Temporary inference tokens (`sk-bayleaf-grant-...`) permit only POST /v1/chat/completions and /v1/responses with their specified model. On supported routes, campus users may omit a key for Campus Pass access. Consult operation-specific restrictions, especially grant management.',
 });
 
 // ── CORS middleware ───────────────────────────────────────────────
+app.openAPIRegistry.registerComponent('securitySchemes', 'BrowserSession', {
+  type: 'apiKey', in: 'cookie', name: SESSION_COOKIE,
+  description: 'BayLeaf browser session. For grant management only where explicitly listed. Cookie-authenticated writes must have the BayLeaf Origin; wildcard API CORS does not grant cross-origin cookie access.',
+});
 
 const apiCors = cors({
   origin: '*',
@@ -189,19 +195,7 @@ app.doc31('/docs/openapi.json', (c) => ({
   info: {
     title: 'BayLeaf API',
     version: '1.0.0',
-    description:
-      'BayLeaf API provides free LLM inference and sandboxed code execution for the UC Santa Cruz campus community. ' +
-      'Standard inference is an OpenAI-compatible proxy fronting zero-data-retention OpenRouter providers. ' +
-      'BayLeaf Sealed is a separate hardware-attested EHBP path where BayLeaf relays encrypted bodies without possessing the enclave-bound decryption key.\n\n' +
-      '**Authentication:** Include `Authorization: Bearer <key>` on all requests. ' +
-      'On supported routes, users on the UCSC campus network may omit the header (Campus Pass); sandbox routes require a personal key. ' +
-      'Off-campus, provision a free personal key at https://api.bayleaf.dev/.\n\n' +
-      '**Temporary inference tokens:** Direct issuance and visitor authorization produce the same one-model, expiring bearer token. ' +
-      'Use the Grants endpoints and [integration guide](https://github.com/bayleaf-ucsc/bayleaf/blob/main/api/GRANTS.md). ' +
-      'Browser apps use a stateless client descriptor plus authorization code and S256 PKCE, with explicit consent and no refresh token. ' +
-      'Expiry returns HTTP 401 with error.code=token_expired; wrong-model or out-of-scope requests return 403 insufficient_scope.\n\n' +
-      `**Recommended model:** \`${c.env.RECOMMENDED_MODEL}\`. ` +
-      'Fetch the latest recommendation from [/recommended-model](/recommended-model).',
+    description: apiOverview(c.env),
     contact: {
       name: 'Adam Smith',
       url: 'https://bayleaf.dev',
@@ -216,13 +210,14 @@ app.doc31('/docs/openapi.json', (c) => ({
     { url: 'https://api.bayleaf.dev', description: 'Production' },
   ],
   security: [{ Bearer: [] }],
+  externalDocs: { description: 'Agent onboarding and integration workflows (wider than the HTTP API)', url: 'https://api.bayleaf.dev/llms.txt' },
   tags: [
-    { name: 'LLM', description: 'OpenAI-compatible inference endpoints, routed by `model` prefix to OpenRouter (`openrouter:`) or Vertex AI (`vertex:`)' },
-    { name: 'Sealed', description: 'Hardware-attested confidential inference using client-verified EHBP encryption; requires a compatible Tinfoil SDK' },
+    { name: 'LLM', description: 'Standard OpenAI-compatible inference, discovery and allowance inspection. Use backend-qualified model IDs; enabled providers and model eligibility are discovered live. On campus-supported operations an empty security alternative means Campus Pass eligibility is still required. Temporary tokens permit only their specified model and inference paths.' },
+    { name: 'Sealed', description: 'Hardware-attested confidential inference using client-verified EHBP encryption; requires a compatible Tinfoil SDK. An empty security alternative on inference means eligible Campus Pass, not unconditional anonymous access. Temporary inference tokens are excluded.' },
     { name: 'Sandbox', description: 'Sandboxed Linux code execution and file I/O' },
-    { name: 'Web', description: 'Web search and page content fetching' },
+    { name: 'Web', description: 'Web search and page content fetching. An empty security alternative means eligible Campus Pass, not unconditional anonymous access. Temporary inference tokens are excluded.' },
     { name: 'Meta', description: 'API metadata and documentation' },
-    { name: 'Grants', description: 'Permissions behind one-model temporary inference tokens: direct issuance, revocation, and visitor-funded browser authorization. Requires GRANTS_ENABLED.' },
+    { name: 'Grants', description: GRANT_WORKFLOW },
   ],
 }));
 

@@ -356,7 +356,7 @@ sealedRoutes.openAPIRegistry.registerPath({
   summary: 'Relay an EHBP-encrypted inference request',
   description:
     'POST-only ciphertext relay for Tinfoil SDK requests. Use an EHBP-capable Tinfoil SDK rather than constructing this request manually. The SDK verifies hardware attestation, encrypts the complete OpenAI-compatible JSON body to the enclave, and decrypts the response. BayLeaf authenticates and rate-limits the caller, substitutes a server-held Tinfoil credential, and streams the bytes unchanged. BayLeaf never parses, buffers, clones, logs, or schema-validates the body. There is no plaintext fallback. The path may contain multiple segments, for example `chat/completions` or `responses`.',
-  security: [{ Bearer: [] }],
+  security: [{ Bearer: [] }, {}],
   request: {
     params: z.object({
       path: z.string().openapi({

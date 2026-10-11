@@ -10,7 +10,32 @@ import { standardModelId, eligibleStandardModel, standardModelCatalog } from '..
 import { BaseLayout, renderPage } from '../templates/layout';
 import { hash, issueGrant, maxGrantSeconds, nowSeconds, randomSecret, seal, unseal, validCallback, grantError } from '../grants';
 import { GrantRequestSchema, GrantTokenSchema, GrantErrorSchema, ClientDescriptorRequestSchema,
-  ClientDescriptorSchema, GrantExchangeSchema, GrantListSchema, GrantModelsSchema } from '../schemas';
+  ClientDescriptorSchema, GrantExchangeSchema, GrantListSchema, GrantModelsSchema, GrantAuthorizeQuerySchema, ApiErrorSchema } from '../schemas';
+
+/** Protocol narrative owned beside the handlers, rendered in the spec and Scalar. */
+export const GRANT_WORKFLOW = `Temporary inference tokens are one-model, expiring permissions against an owner's existing allowance. Issuing more tokens adds no credit. Sealed, discovery, tools, account management and renewal are excluded. Model fallbacks, routing overrides and provider plugins are unavailable. Tokens work wherever copied within their model/lifetime restriction; they are not origin-bound.
+
+### Direct issuance
+
+Use your ordinary BayLeaf key, or the signed-in dashboard. Get the selectable catalog from GET /grants/models, POST /grants with a model and lifetime, then use the returned access_token, model and base_url. List metadata or revoke by identifier; credentials are recoverable only at issuance. The public name is a recognition aid, not a secret. Legacy grants may be unnamed.
+
+### Visitor-funded browser authorization
+
+1. Retain random state and a cryptographically random PKCE verifier in the initiating tab. Compute the base64url SHA-256 challenge without padding.
+2. POST /grants/clients with an app label and exact callback URI. The signed descriptor creates no permanent app registry.
+3. Navigate the browser, not fetch(), to GET /grants/authorize with the documented query fields. BayLeaf handles sign-in and explicit consent. Mere login grants nothing.
+4. The exact callback receives code and state, or error=access_denied and state. Verify state before exchange and remove callback parameters from the address bar.
+5. POST JSON to /grants/token with the code, original verifier, descriptor and exact callback. The code can be consumed once. Lifetime starts at approval, not exchange. No client secret or refresh token is issued.
+
+Callback host, port, path and query must match exactly. HTTPS and HTTP loopback callbacks are supported; fragments and credentials are rejected. This is a BayLeaf-specific protocol, not a general OAuth server. Authorization transaction expiry and code expiry are independent bounds; start again if either expires.
+
+### Management and recovery
+
+Management accepts a personal account Bearer credential or a BayLeaf browser session. Cookie-authenticated writes must originate on BayLeaf itself. Cross-origin apps use the public descriptor/exchange flow, not cross-origin account cookies. Campus Pass cannot own grants; temporary tokens cannot inspect or manage grants.
+
+Inference with an expired token returns 401 token_expired; invalid/revoked tokens return 401 invalid_token. Both expose WWW-Authenticate through CORS. Wrong model or operation returns 403 insufficient_scope. A disabled grants feature returns 503; inference against a disabled backend also returns 503 and cannot be bypassed by an existing token. During issuance, authorization validation or exchange, an ineligible model or disabled backend instead returns 403 model_not_allowed. Do not parse message text: use error.code. After expiry or revocation, offer explicit authorization again, never silent renewal loops. Revocation prevents new requests, not running completions; rotating the owner's ordinary key invalidates its grants.
+
+Keep tokens out of URLs, logs, public page source and visible DOM. The app's handling/storage of user content is separate from BayLeaf's ZDR inference path. [Workflow orientation and client setup](/llms.txt#temporary-inference-tokens); [implementation rationale and browser example](https://github.com/bayleaf-ucsc/bayleaf/blob/main/api/GRANTS.md).`;
 
 export const grantRoutes = new OpenAPIHono<AppEnv>({ defaultHook: (result, c) => {
   if (!result.success) return grantError(c, 'invalid_request', 'Invalid request fields.', 400) as any;
@@ -21,10 +46,16 @@ const cookieOptions = (c: Context<AppEnv>) => ({ path: '/', httpOnly: true, same
   secure: new URL(c.req.url).protocol === 'https:', maxAge: 600 });
 const json = (schema: any) => ({ 'application/json': { schema } });
 const errors = {
-  400: { description: 'Invalid request or expired authorization transaction', content: json(GrantErrorSchema) },
-  401: { description: 'Authentication required', content: json(GrantErrorSchema) },
-  403: { description: 'Permission denied', content: json(GrantErrorSchema) },
-  503: { description: 'Feature disabled or unavailable', content: json(GrantErrorSchema) },
+  400: { description: 'Invalid fields/lifetime, expired descriptor/transaction, or code already used/mismatched. For invalid_lifetime, message includes the current administrator maximum.',
+    content: { 'application/json': { schema: GrantErrorSchema, examples: {
+      lifetime: { value: { error: { code: 'invalid_lifetime', message: 'expires_in must be a positive integer no greater than the configured maximum.' } } },
+      code: { value: { error: { code: 'invalid_grant', message: 'Code expired, was already used, or did not match PKCE and callback.' } } },
+    } } } },
+  401: { description: 'Authentication required. Account authentication may use numeric error.code; grant-flow errors use strings.', content: json(z.union([GrantErrorSchema, ApiErrorSchema])) },
+  403: { description: 'Personal account, same-origin browser write, or eligible model required.',
+    content: { 'application/json': { schema: GrantErrorSchema, example: { error: { code: 'model_not_allowed', message: 'Specify one eligible model from an enabled standard-inference backend.' } } } } },
+  503: { description: 'Feature disabled or unavailable.',
+    content: { 'application/json': { schema: GrantErrorSchema, example: { error: { code: 'grants_disabled', message: 'Temporary inference access is disabled.' } } } } },
 };
 
 grantRoutes.use('*', bodyLimit({ maxSize: 16 * 1024,
@@ -75,7 +106,7 @@ async function validateGrant(c: Context<AppEnv>, model: string, lifetime: number
 
 grantRoutes.openapi(createRoute({ method: 'post', path: '/', operationId: 'createTemporaryInferenceToken', tags: ['Grants'],
   summary: 'Create a temporary inference token', description: 'Use your existing allowance with exactly one plaintext model for a positive number of seconds. Excessive lifetimes fail with the current maximum. Tokens cannot mint or renew grants. The returned name is a public recognition aid, also bound into the signed token prefix.',
-  security: [{ Bearer: [] }], request: { body: { required: true, content: json(GrantRequestSchema) } },
+  security: [{ Bearer: [] }, { BrowserSession: [] }] as Record<string, string[]>[], request: { body: { required: true, content: json(GrantRequestSchema) } },
   responses: { 200: { description: 'Credential shown only at issuance', content: json(GrantTokenSchema) }, ...errors },
 }), async c => {
   const row = await owner(c); if (row instanceof Response) return row as any;
@@ -86,7 +117,7 @@ grantRoutes.openapi(createRoute({ method: 'post', path: '/', operationId: 'creat
 });
 
 grantRoutes.openapi(createRoute({ method: 'get', path: '/', operationId: 'listInferenceGrants', tags: ['Grants'],
-  summary: 'List your active inference grants', security: [{ Bearer: [] }],
+  summary: 'List your active inference grants', security: [{ Bearer: [] }, { BrowserSession: [] }],
   responses: { 200: { description: 'Active grants, never credentials', content: json(GrantListSchema) }, ...errors },
 }), async c => {
   const row = await owner(c); if (row instanceof Response) return row as any;
@@ -97,7 +128,7 @@ grantRoutes.openapi(createRoute({ method: 'get', path: '/', operationId: 'listIn
 });
 
 grantRoutes.openapi(createRoute({ method: 'get', path: '/models', operationId: 'listTemporaryInferenceModels', tags: ['Grants'],
-  summary: 'Full model catalog for temporary inference tokens', security: [{ Bearer: [] }],
+  summary: 'Full model catalog for temporary inference tokens', security: [{ Bearer: [] }, { BrowserSession: [] }],
   description: 'Backend-qualified models from every enabled standard-inference backend, plus backend availability. Disabled backends are identified but are not selectable. Issuance performs the backend eligibility check again. Sealed is separate.',
   responses: { 200: { description: 'Standard-inference catalog and backend status', content: json(GrantModelsSchema) }, ...errors },
 }), async c => {
@@ -109,7 +140,7 @@ grantRoutes.openapi(createRoute({ method: 'get', path: '/models', operationId: '
 });
 
 grantRoutes.openapi(createRoute({ method: 'delete', path: '/{id}', operationId: 'revokeInferenceGrant', tags: ['Grants'],
-  summary: 'Revoke one of your inference grants', security: [{ Bearer: [] }],
+  summary: 'Revoke one of your inference grants', security: [{ Bearer: [] }, { BrowserSession: [] }] as Record<string, string[]>[],
   request: { params: z.object({ id: z.string().uuid() }) },
   responses: { 200: { description: 'Revoked (idempotent)', content: json(z.object({ success: z.literal(true) })) }, ...errors },
 }), async c => {
@@ -129,6 +160,22 @@ grantRoutes.openapi(createRoute({ method: 'post', path: '/clients', operationId:
   const expires_at = nowSeconds() + 600;
   return c.json({ client_id: await seal(c.env, 'client', { ...body, exp: expires_at }), expires_at });
 });
+
+// Registry-only: describe public browser initiation without validating/replacing
+// the handler's cookie-bound internal ?request= continuation.
+grantRoutes.openAPIRegistry.registerPath(createRoute({
+  method: 'get', path: '/authorize', operationId: 'authorizeInferenceClient', tags: ['Grants'],
+  summary: 'Navigate a browser to authorize temporary inference access', security: [],
+  description: 'Browser navigation, not a JSON fetch. Use the descriptor/PKCE workflow in the Grants introduction. ' +
+    'Initial navigation redirects to a cookie-bound continuation, then login if needed, and an explicit HTML consent page. ' +
+    'The consent form is BayLeaf-owned, not an app API. After consent the exact callback receives code+state, or error=access_denied+state. ' +
+    'Verify state before JSON exchange. The internal request query parameter is not an integration entrypoint.',
+  request: { query: GrantAuthorizeQuerySchema },
+  responses: { 200: { description: 'HTML consent page after sign-in; never an inference token',
+    content: { 'text/html': { schema: z.string() } } },
+    303: { description: 'Cookie-bound continuation, login navigation, or consent callback; let the browser follow',
+      headers: z.object({ Location: z.string().describe('Navigation destination, not a JSON response.') }) }, ...errors },
+}));
 
 export function consumeGrantReturnTo(c: Context<AppEnv>): string | null {
   const id = getCookie(c, RETURN_COOKIE);
@@ -222,6 +269,7 @@ grantRoutes.post('/authorize', async c => {
 
 grantRoutes.openapi(createRoute({ method: 'post', path: '/token', operationId: 'exchangeInferenceCode', tags: ['Grants'],
   summary: 'Exchange a single-use authorization code using PKCE', security: [],
+  description: 'JSON exchange after explicit browser consent. Uses the original verifier, client descriptor and exact callback binding. Single use, no refresh token; lifetime started at approval. No ordinary API key is required in the app.',
   request: { body: { required: true, content: json(GrantExchangeSchema) } },
   responses: { 200: { description: 'Temporary inference token with a public memorable name', content: json(GrantTokenSchema) }, ...errors },
 }), async c => {

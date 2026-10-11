@@ -18,7 +18,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import type { AppEnv } from '../types';
 import { getModelInfo } from '../openrouter';
 import type { ModelCost, ModelCostRaw } from '../openrouter';
-import { parseModelList, ALT_BACKENDS, isBackendEnabled } from '../constants';
+import { parseModelList, ALT_BACKENDS, isBackendEnabled, SEALED_PLUGIN } from '../constants';
 
 export const llmsRoutes = new OpenAPIHono<AppEnv>();
 
@@ -71,7 +71,7 @@ function buildLlmsTxt(input: LlmsTxtInput): string {
   return `# BayLeaf API
 
 > BayLeaf API (https://api.bayleaf.dev) provides free LLM inference, sandboxed code
-> execution, web search, and Google Workspace / Canvas LMS access for the UC Santa Cruz
+> execution and web search for the UC Santa Cruz
 > campus community. It is an OpenAI-compatible proxy fronting OpenRouter (zero-data-retention
 > providers, prefixed ${bt}openrouter:${bt}), listing exclusively open-weight models.
 > A separate Sealed path provides hardware-attested, application-layer encrypted inference
@@ -80,10 +80,20 @@ function buildLlmsTxt(input: LlmsTxtInput): string {
 > UCSC campus network, supported routes also offer keyless Campus Pass access.
 > BayLeaf API retains no prompt or completion content; inference providers do not train on it.
 
+This guide also covers direct Google Workspace and Canvas CLI integrations. Those
+CLIs operate against Google and Canvas using the user's own authorization; they
+are not BayLeaf inference API endpoints.
+
 Read this when connecting a coding agent or building an app that uses BayLeaf.
 It is an integration reference, not context to reload on every inference request.
 
-The ${bt}/v1/*${bt} surface is best understood through the OpenAPI spec at
+**Documentation ownership:** this guide owns orientation, access choices, agent
+setup and integration workflows. The code-generated OpenAPI spec owns exact HTTP
+parameters, response fields, authentication alternatives and error contracts.
+The classical docs site renders that same spec, not a second contract. Start here
+to choose a workflow, then consult the linked operation/schema before implementing.
+
+The HTTP API is specified by
 https://api.bayleaf.dev/docs/openapi.json (or the interactive viewer at
 https://api.bayleaf.dev/docs).
 
@@ -98,6 +108,11 @@ Choose the access you need:
 - [Standard LLM inference](#standard-llm-inference): the full model catalog and
   backend-qualified model IDs, distinct from curated onboarding recommendations.
 ${sealedEnabled ? '- [Sealed LLM inference](#sealed-llm-inference): a separate encrypted path requiring\n  an attestation-capable client and an ordinary API key or Campus Pass.' : ''}
+- [Claim a key without pasting](#claim-a-key-without-pasting): browser-mediated account-key handoff.
+- [Sandboxed code execution](#sandboxed-code-execution): persistent Linux tools and browser workspaces.
+- [Web search and page fetch](#web-search-and-page-fetch): wire web tools into an agent.
+${gwsEnabled ? '- [Google Workspace CLI](#google-workspace-cli-gws): direct, user-authorized integration.' : ''}
+- [Canvas LMS](#canvas-lms): direct, user-authorized course integration.
 
 ---
 
@@ -109,7 +124,7 @@ If you are deciding which coding-agent interface to start with:
 - [**OpenCode**](https://opencode.ai/): the lower-level terminal interface and backend used by OpenChamber, with native one-command BayLeaf onboarding.
 - [**Goose**](https://github.com/block/goose): includes free inference credit on first launch; optional desktop app.
 - [**pi**](https://github.com/badlogic/pi-mono): minimal core, strong extension model; bring your own API key.
-- [Generic OpenAI-compatible client](#generic): any tool or custom script that accepts a base URL and API key.
+- [Generic OpenAI-compatible client](#generic-openai-compatible-client): any tool or custom script that accepts a base URL and API key.
 
 You only need to do one of these.
 
@@ -136,7 +151,7 @@ ${fence}bash
 opencode auth login https://api.bayleaf.dev/sealed
 ${fence}
 
-OpenCode starts the [claim-code device flow](#claim-flow): your terminal prints a short
+OpenCode starts the [claim-code device flow](#claim-a-key-without-pasting): your terminal prints a short
 URL and request code, you open the URL in a browser, sign in with UCSC credentials if you
 aren't already, check the compact request code, and click **Approve**. Your BayLeaf API key
 is delivered straight from the browser approval to OpenCode without ever appearing on
@@ -231,7 +246,7 @@ model picker.
 
 If you used Sealed, its downloaded plugin under OpenCode's npm cache is inert once the
 well-known entry is gone, so deleting it is optional. For a complete cleanup, remove
-${bt}~/.cache/opencode/packages/opencode-tinfoil@0.3.0${bt} and Tinfoil's prompt-cache
+${bt}~/.cache/opencode/packages/${SEALED_PLUGIN}${bt} and Tinfoil's prompt-cache
 namespace secret at ${bt}~/.tinfoil/user_cache_secret${bt}. If you also added a manual
 ${bt}opencode-tinfoil${bt} entry to ${bt}opencode.json${bt}, remove that entry separately.
 
@@ -293,7 +308,7 @@ loads a given npm plugin version only once:
 ${fence}json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-tinfoil@0.3.0"],
+  "plugin": ["${SEALED_PLUGIN}"],
   "provider": {
     "bayleaf-sealed": {
       "npm": "@ai-sdk/openai-compatible",
@@ -322,7 +337,7 @@ For a hand-authored V2 configuration, the equivalent is:
 
 ${fence}json
 {
-  "plugins": [{ "package": "opencode-tinfoil@0.3.0", "options": { "defaultProvider": false } }],
+  "plugins": [{ "package": "${SEALED_PLUGIN}", "options": { "defaultProvider": false } }],
   "providers": {
     "bayleaf-sealed": {
       "package": "opencode-tinfoil/provider",
@@ -345,7 +360,7 @@ V2 can also manage the transport plugin globally rather than loading it from
 BayLeaf's remote config or a project file:
 
 ${fence}bash
-opencode plugin add opencode-tinfoil@0.3.0
+opencode plugin add ${SEALED_PLUGIN}
 ${fence}
 
 Then omit the ${bt}plugins${bt} line from the V2 JSON above and keep the
@@ -436,7 +451,7 @@ ${fence}
 
 Run with ${bt}pi --model bayleaf/${model} "Help me refactor this code"${bt}.
 
-### Generic OpenAI-compatible client {#generic}
+### Generic OpenAI-compatible client
 
 Any client that accepts a base URL plus API key works:
 
@@ -446,7 +461,7 @@ Any client that accepts a base URL plus API key works:
 
 ---
 
-## Claim a key without pasting {#claim-flow}
+## Claim a key without pasting
 
 BayLeaf exposes a generic browser-mediated handshake at ${bt}/auth/claim/*${bt} that
 lets any agent or script acquire your existing API key without you having to copy
@@ -523,7 +538,7 @@ recognize what they're authorizing. Use a distinctive name for your tool.
 
 ---
 
-## API reference
+## HTTP API overview
 
 - **OpenAPI 3.1 spec (machine-readable):** https://api.bayleaf.dev/docs/openapi.json
 - **Interactive API reference:** https://api.bayleaf.dev/docs
@@ -565,7 +580,7 @@ Authorization. It returns a structured assessment even off-campus: campus networ
 membership, remaining daily requests for the visitor's network bucket, and shared
 OpenRouter credit availability without dollar amounts. The check spends no
 inference request. The exact schema and reason codes are maintained in
-[the API reference](https://api.bayleaf.dev/docs#tag/Meta) and
+[the API reference](https://api.bayleaf.dev/docs#tag/meta) and
 [OpenAPI](https://api.bayleaf.dev/docs/openapi.json), operation ${bt}inspectCampusPass${bt}.
 
 If you are an agent building a demo:
@@ -675,97 +690,32 @@ delivered to apps, can be listed and revoked but their credentials cannot be
 retrieved from the dashboard. Treat the token itself as opaque: applications do
 not need to parse its signed payload. Keep full credentials out of URLs and logs.
 
-#### Direct issuance and model discovery
+#### Build with temporary tokens
 
-Use your ordinary API key or the signed-in dashboard. Campus Pass cannot issue
-temporary tokens because it has no personal allowance owner.
+For creator-sponsored scripts, discover a selectable model, issue a token with your
+ordinary key or dashboard, and pass its opaque credential, returned model and base
+URL to the intended app. Choose the duration needed, not a dollar estimate. Campus
+Pass cannot own grants; temporary tokens cannot manage or renew themselves.
 
-| Endpoint | Purpose |
-|----------|---------|
-| ${bt}GET /grants/models${bt} | Full standard-inference catalog as ${bt}models${bt}, plus ${bt}backends${bt} with enabled/available status. Requires an ordinary key or BayLeaf browser session. |
-| ${bt}POST /grants${bt} | Issue a token with JSON ${bt}model${bt} and ${bt}expires_in${bt}. |
-| ${bt}GET /grants${bt} | List your active grants with public names and restrictions, never credentials. |
-| ${bt}DELETE /grants/{grant_id}${bt} | Revoke one of your tokens. |
+For visitor-funded apps, retain random state and a PKCE verifier in the initiating
+tab, obtain a signed client descriptor, and navigate the visitor to BayLeaf for
+explicit consent. Verify state on the callback before exchanging its single-use
+code. No ordinary key is handed to the app and no permanent app registration or
+refresh token is needed. This is a BayLeaf-specific flow, not a general OAuth server.
 
-For example, send this JSON to ${bt}POST /grants${bt}:
+Before implementing either workflow, read the **Grants** introduction and operations
+in [the classical reference](https://api.bayleaf.dev/docs#tag/grants), or fetch
+[OpenAPI JSON](https://api.bayleaf.dev/docs/openapi.json). Start with operation IDs
+${bt}createTemporaryInferenceToken${bt}, ${bt}describeInferenceClient${bt},
+${bt}authorizeInferenceClient${bt} and ${bt}exchangeInferenceCode${bt}. Their schemas
+own the exact fields, expiry units, callback constraints and error contracts.
 
-${fence}json
-{"model":"${model}","expires_in":3600}
-${fence}
-
-Lifetime must be a positive integer number of seconds. An excessive request fails
-with the current administrator maximum instead of silently shortening the grant.
-An agent should choose the required model and duration, not an estimated dollar budget.
-
-Issuance returns ${bt}access_token${bt} (also ${bt}key${bt}, a compatibility alias),
-${bt}token_type: Bearer${bt}, ${bt}name${bt}, ${bt}grant_id${bt}, ${bt}model${bt},
-${bt}base_url${bt}, ${bt}expires_at${bt} (Unix seconds), and ${bt}expires_in${bt}.
-Use the returned model ID unchanged, including its backend prefix. A bare OpenRouter
-slug is accepted for compatibility, but new integrations should preserve prefixes.
-Send ${bt}Authorization: Bearer <access_token>${bt} to the returned ${bt}base_url${bt}
-plus ${bt}/chat/completions${bt} (or ${bt}/responses${bt} for OpenRouter).
-Temporary tokens cannot call the management or catalog endpoints themselves.
-
-#### Let app visitors authorize their own access
-
-This is BayLeaf-specific stateless client onboarding around authorization code
-and S256 PKCE. It is not CIMD or a general OAuth server. The token exchange uses
-JSON; no client secret or refresh token is issued.
-
-1. Generate a cryptographically random PKCE verifier and random ${bt}state${bt}.
-   Retain them across navigation in the initiating tab (for example, in
-   ${bt}sessionStorage${bt}). The challenge is the
-   base64url-encoded SHA-256 digest of the verifier (without padding).
-2. ${bt}POST /grants/clients${bt} with JSON ${bt}client_name${bt} and
-   ${bt}redirect_uri${bt}. Save the returned ${bt}client_id${bt}: a signed descriptor
-   valid for ten minutes. This unauthenticated step creates no app-registration row.
-3. Navigate to ${bt}/grants/authorize${bt} with query parameters ${bt}client_id${bt},
-   ${bt}response_type=code${bt}, ${bt}model${bt}, ${bt}expires_in${bt}, ${bt}state${bt},
-   ${bt}code_challenge${bt}, and ${bt}code_challenge_method=S256${bt}.
-4. BayLeaf signs the visitor in if necessary and shows explicit consent naming the
-   destination, model, duration, and allowance owner. Mere login grants no inference.
-5. The exact callback receives ${bt}code${bt} and ${bt}state${bt}, or
-   ${bt}error=access_denied${bt} and ${bt}state${bt}. Verify state before proceeding
-   and remove callback parameters from the address bar.
-6. ${bt}POST /grants/token${bt} with JSON ${bt}grant_type=authorization_code${bt},
-   ${bt}code${bt}, the same ${bt}client_id${bt} and ${bt}redirect_uri${bt}, and
-   ${bt}code_verifier${bt}. The response is the same token object as direct issuance.
-
-These onboarding and exchange endpoints do not require the visitor's ordinary
-API key in the app. The authorization transaction lasts at most ten minutes;
-after approval, the code lasts at most two minutes and can be exchanged once.
-The grant lifetime starts at approval, not code exchange.
-
-Local callbacks may use HTTP ${bt}localhost${bt}, ${bt}127.0.0.1${bt}, or ${bt}[::1]${bt},
-for example ${bt}http://127.0.0.1:5173/${bt}. Preserve the exact host, port, and path:
-these hosts are different browser origins. Other callbacks require HTTPS. The
-browser follows the redirect, so no public hosting, certificate, or tunnel is
-needed for a local app. Callback fragments and credentials are rejected.
-
-The token is a bearer credential: its receiving app can use or copy it elsewhere,
-within the same model/lifetime restriction. It does not reveal the owner's ordinary
-API key. Apps have their own content-handling practices; BayLeaf's no-content-retention
-commitment does not describe what an app stores.
-
-#### Expiry, revocation, and cleanup
-
-- Expired token: HTTP ${bt}401${bt} with ${bt}error.code=token_expired${bt}.
-- Invalid or revoked token: HTTP ${bt}401${bt} with ${bt}error.code=invalid_token${bt}.
-- Both carry ${bt}WWW-Authenticate: Bearer error="invalid_token"${bt}, exposed through CORS.
-- Wrong model or out-of-scope operation: HTTP ${bt}403${bt} with ${bt}error.code=insufficient_scope${bt}.
-- Backend disabled: outstanding tokens cannot bypass the backend's disabled state.
-
-After a 401, offer **Authorize again** for a fresh, manually approved grant. Do not
-silently renew tokens or create automatic authorization redirect loops. Expiry and
-revocation prevent new requests, not already-running completions. Rotating the
-owner's ordinary API key also invalidates its outstanding temporary tokens.
-
-Expired grants and abandoned authorization transactions are swept hourly while
-the feature is enabled; enforcement does not wait for cleanup. Names are unique
-among each owner's retained grants, not globally or forever. Cleanup removes the
-name reservation too; no permanent app registry or naming history is kept.
-
-See the [integration guide and local browser example](https://github.com/bayleaf-ucsc/bayleaf/blob/main/api/GRANTS.md).
+Keep credentials out of public page source, URLs, logs and visible DOM. Apps may
+store or handle user content separately from BayLeaf's ZDR path. On expiry or
+revocation, offer explicit authorization again, never automatic renewal loops.
+The [repository guide and browser example](https://github.com/bayleaf-ucsc/bayleaf/blob/main/api/GRANTS.md)
+explain implementation rationale and provide a substantial example, not a second
+normative field catalog.
 
 ### Standard LLM inference
 
@@ -843,7 +793,7 @@ opencode auth login https://api.bayleaf.dev/sealed
 ${fence}
 
 Select a model such as
-${bt}bayleaf-sealed-remote/${sealedModel}${bt}; the exact-pinned ${bt}opencode-tinfoil@0.3.0${bt}
+${bt}bayleaf-sealed-remote/${sealedModel}${bt}; the exact-pinned ${bt}${SEALED_PLUGIN}${bt}
 plugin verifies attestation before its first inference and has no plaintext fallback.
 It reuses your BayLeaf credential, while BayLeaf substitutes the Tinfoil credential
 server-side.
@@ -968,8 +918,8 @@ browser login. Private browser links last up to 24 hours; expiry revokes link
 access without stopping applications. If the sandbox sleeps or the link expires,
 return to https://sandbox.bayleaf.dev to resume. New sandboxes use daytona-medium,
 stop after 1 hour idle, and archive after 24 hours stopped. A 503 may
-mean the browser feature is disabled. Browser setup delegates the ordinary owner
-key into the sandbox and persists agent histories there; inference still uses
+mean the browser feature is disabled. Browser setup delegates a dedicated sandbox
+credential into the sandbox and persists agent histories there; inference still uses
 BayLeaf's approved ZDR provider path. Stopping/archiving loses running processes.
 
 ### Web search and page fetch
@@ -992,7 +942,7 @@ ${gwsEnabled ? buildGwsSection(placeholderEmail, bt, fence) : ''}${buildCanvasSe
 
 ## Notes
 
-- All inference uses zero-data-retention (ZDR) providers. Conversations are never used for training. BayLeaf retains no copy of your prompts or completions and has no standing operator access to your request content in flight: only minimal request metadata (model, token counts, timestamps) is observable (see https://api.bayleaf.dev/RETENTION.md).
+- All inference uses zero-data-retention (ZDR) providers. Conversations are never used for training. BayLeaf retains no copy of your prompts or completions and has no standing operator access to your request content in flight: only minimal request metadata (model, token counts, timestamps) is observable (see https://github.com/bayleaf-ucsc/bayleaf/blob/main/api/RETENTION.md).
 - The ${bt}sk-bayleaf-...${bt} token is yours to manage. Both OpenCode configurations use the same token. Revoking it from https://api.bayleaf.dev/ invalidates it across all configured agents at once.
 - Increased limits are [available upon request](https://github.com/bayleaf-ucsc/bayleaf/blob/main/SUPPORT.md).
 - This service is operated by Adam Smith (Computational Media, UCSC). Source on GitHub: https://github.com/bayleaf-ucsc/bayleaf.
