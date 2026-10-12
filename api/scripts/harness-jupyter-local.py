@@ -63,7 +63,12 @@ async def qualify(home):
     else:
         (root/'releases'/setup.RELEASE).symlink_to(Path(sys.prefix))
     secret = secrets.token_hex(32)
-    (root/'credentials/app-secret').write_text(secret)
+    # Synthetic, short-lived app token in a private TemporaryDirectory, not a
+    # BayLeaf credential. Create owner-only even when the caller's umask is lax.
+    secret_path = root/'credentials/app-secret'
+    with os.fdopen(os.open(secret_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as handle:
+        handle.write(secret)
+    assert secret_path.stat().st_mode & 0o777 == 0o600
     setup.configure_jupyter()
     argv, env = setup.start_jupyter(None)
     argv += ['--ServerApp.ip=127.0.0.1']

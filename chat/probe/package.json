@@ -14,7 +14,7 @@
     "@cloudflare/puppeteer": "^1.4.0",
     "@tinfoilsh/verifier": "1.2.2",
     "ehbp": "0.3.3",
-    "sharp": "^0.35.4"
+    "sharp": "^0.35.5"
   },
   "overrides": {
     "undici": "7.29.1",
@@ -23,7 +23,7 @@
     },
     "wrangler": {
       "miniflare": {
-        "sharp": "^0.35.4"
+        "sharp": "^0.35.5"
       }
     }
   }

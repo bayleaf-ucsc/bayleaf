@@ -18,7 +18,8 @@ const bundle = await build({absWorkingDir:root,stdin:{resolveDir:root,contents:`
     if(path.startsWith('/__test/')) {
       try {
         const data=await req.json();
-        if(path==='/__test/setup')return Response.json(await sc.ensureSandboxCredential(env,data.email,data.id));
+        if(path==='/__test/setup')return Response.json(await sc.ensureSandboxCredential(
+          data.trailingSlashes === undefined ? env : {...env,DAYTONA_API_URL:env.DAYTONA_API_URL+'/'.repeat(data.trailingSlashes)},data.email,data.id));
         if(path==='/__test/revoke'){await sc.revokeSandboxCredentials(env,data.id);return Response.json(true);}
         if(path==='/__test/rotate'){await sc.rotateSandboxCredential(env,await sc.activeSandboxCredential(env,data.email,data.id));return Response.json(true);}
         if(path==='/__test/cleanup'){await sc.cleanupSandboxCredentials(env);return Response.json(true);}
@@ -115,7 +116,7 @@ try{
   const req=(path,key,body,headers={})=>worker.fetch('https://api.bayleaf.dev'+path,{method:body===undefined?'GET':'POST',headers:{...(key?{Authorization:'Bearer '+key}:{}),...(body===undefined?{}:{'Content-Type':'application/json'}),...headers},body:body===undefined?undefined:JSON.stringify(body)});
   const op=(action,body={})=>req('/__test/'+action,null,body);
   const ok=async r=>{assert.equal(r.status,200,await r.clone().text());return r.json();};
-  const setup=await ok(await op('setup',{email,id:'one'}));
+   const setup=await ok(await op('setup',{email,id:'one',trailingSlashes:10000}));
   let bearer=vault.get(setup.secret_id).value;
   assert.equal(minted,0,'issuance never mints provider keys');
   assert.equal((await ok(await op('setup',{email,id:'one'}))).id,setup.id,'idempotent setup');

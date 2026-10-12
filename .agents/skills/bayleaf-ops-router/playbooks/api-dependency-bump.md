@@ -81,3 +81,4 @@ and reinstall; never restore whole files that contain unrelated user work.
 
 - 2026-08-25: drafted from issue #65 and api/AGENTS.md; never yet run.
 - 2026-09-30: local-only Undici patch in API and Probe used overrides because Miniflare pins 7.29.0. Fixed the API Sharp override's direct-Miniflare coverage; no deploy/commit requested. GitHub documents Security → Dependabot → gear → Refresh Dependabot alerts for stale deleted manifests.
+- 2026-10-12: Sharp 0.35.5 patch applied to API and Probe, preserving override coverage. Audits, credential harness, Probe tests, type checking and dry-runs passed. With approval, deployed API `e8613439-08de-4092-9db4-37f6d5a800d2` and Probe `e9ec7528-6a96-4a56-81ae-023b6935c6d0`; API JSON endpoints, authenticated catalog/plaintext inference and anonymous denial passed. GitHub CodeQL dismissal comments must fit 280 characters.

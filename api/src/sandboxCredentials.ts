@@ -18,7 +18,10 @@ export interface SandboxCredential {
 interface Secret { id: string; name: string; placeholder: string; hosts: string[] }
 interface Machine { id: string; state: string; labels?: Record<string, string>; env?: Record<string, string> }
 async function call(env: Bindings, path: string, method = 'GET', body?: unknown) {
-  return fetch((env.DAYTONA_API_URL || DAYTONA_DEFAULT_API_URL).replace(/\/+$/, '') + path, {
+  const base = env.DAYTONA_API_URL || DAYTONA_DEFAULT_API_URL;
+  let end = base.length;
+  while (end > 0 && base[end - 1] === '/') end--;
+  return fetch(base.slice(0, end) + path, {
     method, headers: { Authorization: `Bearer ${env.DAYTONA_API_KEY}`, 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body), redirect: 'manual', signal: AbortSignal.timeout(15000),
   });
