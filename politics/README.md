@@ -1,6 +1,6 @@
 # Politics
 
-*Working argument, revised with Adam on September 14, 2026. ✨*
+*Working argument, revised with Adam on September 14, 2026.*
 
 BayLeaf is a **situated counterplatform for Generative AI at UC Santa Cruz**.
 Operating it makes alternative technical and institutional terms concrete,

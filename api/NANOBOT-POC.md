@@ -1,4 +1,4 @@
-# Managed Nanobot investigation ✨
+# Managed Nanobot investigation
 
 Issue [#87](https://github.com/bayleaf-ucsc/bayleaf/issues/87), 2026-10-09.
 This POC was deployed on 2026-10-09 for owner evaluation; it is not a

@@ -194,7 +194,7 @@ Both scripts-site assets still match their source. Destination D1 counts remain
 videos are ready. The source subscription still has `cancel_at_period_end:true`
 and ends October 11 at 00:00 UTC; no subscription or membership was changed.
 BayLeaf Workers, BayLeaf/Brace/Bracken zones, and moved misc-zone residue remain
-in place. ✨
+in place.
 
 Private SQL exports and the video-ID mapping remain outside the repositories.
 The migration does not authorize sharing BayLeaf with Democlips collaborators. A second
@@ -207,7 +207,7 @@ Confirmed BayLeaf production resources include Workers `bayleaf-api` and
 `SandboxBrowser`. The `bayleaf.dev` and `bayleaf-proxies.dev` zones are live
 dependencies. Keep `bayleaf.chat`, `brace.tools`, and `bracken.chat` in this
 account as well. `bayleaf-courses` and `CLAIM_CODES` remain in place pending
-a separate assessment of legacy state. ✨
+a separate assessment of legacy state.
 
 ### 4. Google Cloud → add a second Project Owner on each project
 

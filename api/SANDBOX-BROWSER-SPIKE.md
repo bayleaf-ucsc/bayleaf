@@ -1,7 +1,7 @@
 # Personal browser sandbox: issue #81 qualification spike
 
 2026-10-03. An amsmith-only experiment against the existing shared sandbox.
-Issue: <https://github.com/bayleaf-ucsc/bayleaf/issues/81>. ✨
+Issue: <https://github.com/bayleaf-ucsc/bayleaf/issues/81>.
 
 ## Result
 

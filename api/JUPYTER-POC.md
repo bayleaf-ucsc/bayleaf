@@ -1,6 +1,6 @@
 # Managed JupyterLab: isolated qualification
 
-2026-10-09. Deployed for owner evaluation. ✨
+2026-10-09. Deployed for owner evaluation.
 
 Production Linux installation reached ready. Authenticated `/lab` and
 `/api/status` succeeded; the native token was absent from Lab HTML, missing-token

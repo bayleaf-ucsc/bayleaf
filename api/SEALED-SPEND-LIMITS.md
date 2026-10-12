@@ -1,6 +1,6 @@
 # Sealed daily spend limits: defer pending better upstream support
 
-Decision date: 2026-10-05. Investigation for [issue #82](https://github.com/bayleaf-ucsc/bayleaf/issues/82). ✨
+Decision date: 2026-10-05. Investigation for [issue #82](https://github.com/bayleaf-ucsc/bayleaf/issues/82).
 
 ## Decision
 

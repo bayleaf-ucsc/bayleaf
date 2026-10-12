@@ -3,7 +3,7 @@
 **Pending issue #90 revision:** local code now uses independent, Daytona-held
 sandbox credentials and sandbox-bound managed links. See
 [`SANDBOX-CREDENTIALS.md`](SANDBOX-CREDENTIALS.md) for migration and qualification.
-Historical deployment records below describe ordinary-key delegation. ✨
+Historical deployment records below describe ordinary-key delegation.
 
 Issue [#81](https://github.com/bayleaf-ucsc/bayleaf/issues/81).
 **Deployed and enabled on 2026-10-03 with explicit owner approval.**
@@ -310,7 +310,7 @@ Adam subsequently verified production onboarding by destroying and regrowing his
 Real isolated V2 Git installation, tools, skills, permissions and reload pass;
 Adam rebuilt his sandbox and verified live search with the BayLeaf provider tag.
 The new management tools pass isolated V2 Git-installation and permission tests;
-their live production use remains to be verified. ✨
+their live production use remains to be verified.
 
 ### Sandbox-specific agent skills
 
@@ -452,7 +452,7 @@ the simplified controls were exercised in a synthetic desktop/mobile browser.
 No existing user's machine was restarted or resized for qualification. Old
 six-hour links/runtimes transition on their next deliberate setup, not through
 an automatic migration. The first new live 24-hour setup/expiry cycle remains
-a separate production qualification. ✨
+a separate production qualification.
 
 ### Export before a manual migration
 

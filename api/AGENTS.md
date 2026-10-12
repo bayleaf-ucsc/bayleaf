@@ -305,7 +305,7 @@ Tinfoil credentials have no provider-side lifetime token cap.
 The keyed limit was raised from 100 to 500 on 2026-09-29 after a representative
 GLM-5.3 agentic task used 91 requests and cost $1.88. At that observed average,
 500 requests would cost about $10.33, not the standard lane's $5 daily budget.
-This is deliberate agentic-task headroom, not dollar-denominated enforcement. ✨
+This is deliberate agentic-task headroom, not dollar-denominated enforcement.
 
 **Testing the lane requires keyed auth off-campus.** `scripts/harness-sealed.py`
 honours `SEALED_AUTH`, defaulting to `campus`. Campus Pass only resolves from a
@@ -392,7 +392,7 @@ more than a small feature under Tinfoil's current lifetime-cap API. Read
 it records rollover, settlement, healing, and per-user-exception requirements,
 plus concrete conditions for revisiting. The reconciliation design below is
 historical investigation, not an implemented subsystem or an instruction to
-build it. ✨
+build it.
 
 The dashboard now reads the existing user's key with `POST /api/billing/usage/key`
 for explicit UTC day-to-date and calendar-month-to-date ranges. It displays
@@ -400,7 +400,7 @@ spending and today's total tokens (including streaming) separately from the D1
 daily request allowance. These are read-only, uncached metadata lookups, not spend
 enforcement or a reconciler. No key is minted/healed for billing; unavailable
 readings are never shown as zero. `npm run test:sealed-dashboard` covers the
-provider helper and synthetic rendering; append `-- --serve` for a local preview. ✨
+provider helper and synthetic rendering; append `-- --serve` for a local preview.
 
 Measured 2026-07-29. The relay's in-flight visibility is poor, but the
 out-of-band accounting is excellent, so **spend enforcement should be
@@ -526,7 +526,7 @@ spec through the original plain Scalar shell, not a second prose
 contract. Derive deployment facts from bindings/helpers and share package pins.
 Repository guides own rationale, operational history and substantial examples.
 `npm run test:docs` checks schemas, security alternatives, reciprocal navigation,
-heading links and alternate deployment settings without live traffic. ✨
+heading links and alternate deployment settings without live traffic.
 
 ### Campus Pass browser availability
 
@@ -540,7 +540,7 @@ provider payloads, dollar amounts, credentials, or the caller's IP. Responses ar
 `no-store`; provider/KV failures are unknown, not exhausted. No provisioning,
 healing, inference, or counter writes. The assessment does not cover Sealed or
 model-specific readiness. `npm run test:campus-pass` covers synthetic full-app
-HTTP behavior; `examples/campus-pass.html` exercises real cross-origin JS. ✨
+HTTP behavior; `examples/campus-pass.html` exercises real cross-origin JS.
 
 ### Daily sandbox inactivity reaper
 
@@ -553,7 +553,7 @@ discovery, fresh activity/state checks, and verified deletion before clearing
 cached IDs. Never wake compute or renew activity during cleanup.
 `npm run test:sandbox-reaper` is credential-free; production dry-run found six
 candidates among eight machines on 2026-10-06. Observability remains disabled;
-there is no new monitoring store or alert integration. ✨
+there is no new monitoring store or alert integration.
 
 ### Browser sandbox lifecycle (issue #81)
 
@@ -561,7 +561,7 @@ there is no new monitoring store or alert integration. ✨
 Migration 0015 separates sandbox verifier metadata and account-generation sessions
 from ordinary-key validity. `sandboxCredentials.ts` owns custody/lifecycle; provider
 mint/heal remains in `provision.ts`. Managed gateway `owner_key_hash` now contains
-the sandbox credential ID. Do not restore ordinary-key checks in these paths. ✨
+the sandbox credential ID. Do not restore ordinary-key checks in these paths.
 
 Deployed and enabled on 2026-10-03 (`BROWSER_SANDBOX_ENABLED=true`); see
 `SANDBOX-BROWSER.md` for the contract and rollout gates. The dedicated `sandbox/`
@@ -588,7 +588,7 @@ deploying the Worker; the main repo's submodule update can remain uncommitted
 during production evaluation. Skills register directly from the installed V2
 package. See `sandbox-plugin/README.md`.
 `/usage` is personal-key, read-only budget
-inspection: no provisioning/healing, inference calls, or counter mutation. ✨
+inspection: no provisioning/healing, inference calls, or counter mutation.
 
 GET status must never call Toolbox, start compute, refresh activity, or install
 anything. Setup alarms have a bounded deadline; owner-edited breadcrumbs are
@@ -596,7 +596,7 @@ diagnostics, never authorization. The controller never stops the shared machine
 at browser expiry. Do not use the legacy `ensureSandbox` lookup-failure behavior
 as a creation decision. Python source imports require the `.py` text loader in
 both Wrangler and esbuild harnesses. `npm run test:sandbox-browser` runs the
-installer failure tests and synthetic workerd/D1/DO lifecycle checks. ✨
+installer failure tests and synthetic workerd/D1/DO lifecycle checks.
 
 Deployed 2026-10-06: browser links last up to 24 hours without
 continue/stop actions or a work-session extension ritual. Link expiry does not
@@ -605,7 +605,7 @@ supervisor on the next deliberate setup, not by waking users' machines. Shared
 `persistentSandboxParams` in `daytona.ts` gives both API creation paths medium
 resources, 60-minute idle stop, 1440-minute archive, and disabled Daytona
 auto-delete (daily reaper owns retention). Existing machines are not resized.
-Sleeping-link owner resume is deferred to issue #85. ✨
+Sleeping-link owner resume is deferred to issue #85.
 
 ### Temporary inference tokens (issue #76)
 
@@ -623,7 +623,7 @@ either plaintext inference handler forwards. Never resolve a disposable token
 as an unrestricted owner identity outside that gate. Both issuance paths reuse
 the owner's provider credential and allowance; issuance must not provision a
 provider key. Expiry is signed so `401 token_expired` survives row cleanup.
-Owner-key fingerprints prevent grant revival after normal-key rotation. ✨
+Owner-key fingerprints prevent grant revival after normal-key rotation.
 
 The named-token follow-up (migration `0012`, deployed 2026-09-29) adds a public
 memorable name unique among each owner's retained grants, with collision retry.
@@ -674,7 +674,7 @@ code-server evidence, the 1-GiB code-server OOM, and the successful 4-GiB termin
 test. Four-hour wall-clock soak and full browser-feature compatibility are not
 established. Production Chat runs upstream Lathe 0.31.0 with wrapping enabled;
 private and public isolated tests plus production-tool exposure smoke passed. See the
-rollout record in `chat/DESIGN.md` and `PREVIEWS.md`. ✨
+rollout record in `chat/DESIGN.md` and `PREVIEWS.md`.
 
 ```
 /                       Landing       /login         OIDC start      /callback   OIDC callback

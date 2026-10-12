@@ -1,7 +1,7 @@
 # Sandbox-specific API credentials
 
 Issue [#90](https://github.com/bayleaf-ucsc/bayleaf/issues/90). **Local implementation;
-not deployed or Daytona-qualified.** Migration `0015` is required. ✨
+not deployed or Daytona-qualified.** Migration `0015` is required.
 
 ## Authority and custody
 

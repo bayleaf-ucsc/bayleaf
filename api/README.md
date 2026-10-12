@@ -19,7 +19,7 @@ or owner-authenticated. The gateway adds
 keyed `POST /sandbox/expose` and installation-authenticated Lathe registration.
 The gateway supports HTTP, WebSockets, and server-managed application cookies;
 live dufs and code-server core-operation checks passed. BayLeaf Chat uses
-upstream Lathe 0.29.6 with private-by-default policy selection. ✨
+upstream Lathe 0.29.6 with private-by-default policy selection.
 
 ## Architecture
 

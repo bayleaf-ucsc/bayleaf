@@ -1,6 +1,6 @@
 # Position: Procure Inference, Preserve Agency
 
-*Working position, revised with Adam through discussion on September 14, 2026. ✨
+*Working position, revised with Adam through discussion on September 14, 2026.
 These are developing commitments, not a finished procurement specification.*
 
 ## The choice before the campus

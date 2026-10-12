@@ -107,7 +107,7 @@ so the stored value is inert).
 
 ---
 
-## Temporary inference tokens (enabled) ✨
+## Temporary inference tokens (enabled)
 
 This opt-in capability uses the existing plaintext inference path and adds no
 provider or content store. Apps receiving a token may handle or retain the
@@ -181,7 +181,7 @@ enforced. Adam approved scheduled deletion of the initial overdue inventory on
 2026-10-06; no immediate sweep was triggered. Worker version
 `564723be-75de-4dc3-adfa-e39bacc510cd` was deployed, with both cron expressions
 and deletion mode verified through Cloudflare's API. The first actual scheduled
-run and deletion outcome have not yet been verified. ✨
+run and deletion outcome have not yet been verified.
 
 ---
 
@@ -194,7 +194,7 @@ sandbox application. The gateway does not store or log HTTP bodies. It stores
 the upstream access URL and optional configured application headers encrypted
 together in D1 so it can forward requests; this
 credential is decryptable by the gateway, not a zero-operator-access guarantee.
-The application and sandbox may retain their own files and state. ✨
+The application and sandbox may retain their own files and state.
 
 | State | Retention |
 |---|---|
@@ -218,7 +218,7 @@ headers are excluded from registration responses and ordinary metadata. They are
 model-supplied tool arguments, so may already be retained in Chat or agent history;
 applications may reflect or store them. Public preview visitors can exercise
 injected application credentials. Replacement, revocation and expiry retire the
-encrypted configuration alongside its destination. ✨
+encrypted configuration alongside its destination.
 
 ### API login
 
@@ -248,7 +248,7 @@ session, not the independent API or preview sessions. Successful sign-in may
 create the normal account identity record for a new user, without provisioning
 an inference-provider key. It also makes one best-effort wake/activity refresh
 of existing sandbox compute, counted by the existing sandbox inactivity policy.
-Reloads and status requests do not renew activity. ✨
+Reloads and status requests do not renew activity.
 
 ---
 
@@ -282,7 +282,7 @@ prompt or completion content.
 | API session state | Client cookie | 24 hours |
 | Sandboxes session metadata | Cloudflare D1 and host-only client cookie | 24 hours, then scheduled cleanup; explicit logout removes the session row |
 | Edge logs | Cloudflare | ~72 hours (platform default) |
-## Sandbox credentials (issue #90, rollout pending) ✨
+## Sandbox credentials (issue #90, rollout pending)
 
 D1 stores a random credential ID, owner email, exact sandbox ID, SHA-256 bearer
 verifier, Daytona secret name/ID and placeholder, state and timestamps. It never

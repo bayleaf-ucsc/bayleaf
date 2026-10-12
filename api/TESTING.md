@@ -64,7 +64,7 @@ or IP disclosure, and the `inspectCampusPass` operation in `/docs/openapi.json`.
 Serve `api/examples/campus-pass.html` with an ordinary local static server to
 exercise cross-origin JS. Generating deliberately consumes allowance; initial
 page load and Check again do not. Provider readings are advisory, not proof of
-model health or a reservation of funds. ✨
+model health or a reservation of funds.
 
 2026-10-11 qualification: Astra reviewed the complete uncommitted change and
 verified the malformed-provider/quota fixes before rollout. Live campus GET,
@@ -73,13 +73,13 @@ the card note passed. A real cross-origin browser demo reached keyless inference
 The initial 256-token example returned no visible answer, and disabling reasoning
 was rejected by the current recommended model; the example now allows 4096 tokens
 with low reasoning effort and treats empty content as an explicit error. Off-campus states are covered by
-synthetic tests, not a separately qualified real off-campus connection. ✨
+synthetic tests, not a separately qualified real off-campus connection.
 
 Final deployed version: `a8ab833c-c077-403a-932b-acbfee3c84d0`. The adjusted
 cross-origin browser example displayed a real answer and refreshed its allowance;
 the full qualification used five network-quota slots (including unsuccessful
 inference attempts). Passive checks consumed none. Final live `llms.txt` guidance
-and campus availability passed after redeployment. ✨
+and campus availability passed after redeployment.
 
 ## Local: transient preview harness
 
@@ -94,7 +94,7 @@ Tests strict v2 registration, public and private enforcement, the two-host login
 handoff, copied-URL rejection, origin checks, forwarding, keyed exposure,
 expiry, revocation, and cleanup.
 See [PREVIEWS.md](PREVIEWS.md) for the separate real-browser and Daytona
-qualification gates. The harness does not prove those gates. ✨
+qualification gates. The harness does not prove those gates.
 
 ### Running the Sealed harness against a deployed instance
 

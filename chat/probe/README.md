@@ -198,7 +198,7 @@ latency reliability; the timeout remains in the record. No deadline was relaxed.
 Browser qualification and alert delivery were not tested. The documented browser
 JWT expiry has passed and needs separate renewal. A current dependency audit flags
 the existing local sharp/Wrangler toolchain (GHSA-wq5f-xc86-pv6w); the new verifier
-and EHBP dependencies have no audit findings. ✨
+and EHBP dependencies have no audit findings.
 
 ## Metrics v2
 
@@ -599,7 +599,7 @@ latency baseline or confirmation of UptimeRobot's next sample. Renewal remains
 manual. The ordinary sign-in installer above would replace this token with a
 default-duration session; repeat container-side minting for another explicit
 long-lived renewal. Treat the token as a broader saved-chat credential than the
-restricted API key; longer validity extends its compromise window. ✨
+restricted API key; longer validity extends its compromise window.
 
 Local `worker.secrets.json` initially contains `OWUI_API_KEY` and `PROBE_PASSWORD`;
 it may additionally hold the authorized inference-only `OPENROUTER_API_KEY`.

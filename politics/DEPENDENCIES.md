@@ -31,7 +31,7 @@ is better than a procurement contract with a 5-year renewal and no exit clause.
 
 ## Structural observations
 
-**The inference stack now has two layers of indirection.** ✨ The dependency table above
+**The inference stack now has two layers of indirection.** The dependency table above
 separates *gateway* (OpenRouter, Agent Router) from *provider* (DeepInfra,
 SDSC/NRP, etc.). These are different kinds of dependency with different political
 profiles and different exit paths. OpenRouter is a commercial gateway that multiplexes
@@ -91,7 +91,7 @@ language is less specific than Tinfoil's, and the available independent evidence
 gaps. A switch therefore requires explicit endpoint allowlisting, fresh evidence
 review, and the same downgrade and tamper tests rather than a base-URL change.
 
-**Google is no longer the identity layer.** ✨ As of March 2026, authentication flows
+**Google is no longer the identity layer.** As of March 2026, authentication flows
 through CILogon (InCommon Federation) rather than Google Workspace directly. Users
 authenticate against UCSC's institutional IdP. Google Workspace is still upstream of
 that IdP in practice, but the dependency is now mediated by InCommon, a federation

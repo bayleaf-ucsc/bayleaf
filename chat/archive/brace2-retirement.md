@@ -2,7 +2,7 @@
 
 Retired from production and the current source tree on 2026-09-30 at Adam's
 request. The old components were unbound; both functions were inactive and
-non-global. Their production source matched the preserved Git source. ✨
+non-global. Their production source matched the preserved Git source.
 
 | Retired component | Historical source | Replacement |
 |---|---|---|

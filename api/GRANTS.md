@@ -1,4 +1,4 @@
-# Temporary inference tokens ✨
+# Temporary inference tokens
 
 Implementation for [issue #76](https://github.com/bayleaf-ucsc/bayleaf/issues/76).
 Enabled in production on 2026-09-29 with a one-hour maximum lifetime.

@@ -47,7 +47,7 @@ anonymous requests denied. An initial GET timed out before first reply bytes at
 25 seconds. These observations do not establish a latency baseline or reliable
 alert threshold. Adam confirmed UptimeRobot setup on 2026-10-07; public inclusion
 and recorded history were observed. Failure causes and alert delivery remain
-unverified; see README. ✨
+unverified; see README.
 
 Production qualification at 19:38-19:40 UTC, version
 `b30214e8-7ae7-4a33-916c-c7b006b1fbe5`. These are concrete examples of current
@@ -108,7 +108,7 @@ require verification.
   inside Chat on 2026-10-09 for the verified non-admin probe identity; only the
   resulting token was installed in the Worker. Automatic renewal is not installed.
   Follow `README.md` for explicit renewal; distinguish an expired monitor
-  credential from a campus-user outage. ✨
+  credential from a campus-user outage.
 - Production endpoint qualification is recorded; UptimeRobot collection, public
   status-page inclusion of each monitor, and alert delivery require separate
   verification. Do not infer those from a successful direct probe request.

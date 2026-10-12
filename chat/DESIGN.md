@@ -44,7 +44,7 @@ default context points at the personal `Just Adam` team.
 via OWUI's S3 provider (§1, Object Storage). Before v0.12.0, the slim image
 omitted S3 support and refused to start with S3 storage configured. Upstream
 v0.12.0 adds S3 support to slim, but BayLeaf retains the standard image;
-switching image variants requires separate dependency and upload qualification. ✨
+switching image variants requires separate dependency and upload qualification.
 
 **Upgrade evidence (2026-10-12).** Promoted v0.12.0 after Adam confirmed personal
 service soak. Deployment `737f9787-eb3e-4d6c-b26d-3041322d1fd7` reached ACTIVE;
@@ -60,7 +60,7 @@ Snapshots and the previous deployment spec are under
 verified, with no laptop database access opened. Adam confirmed that the browser
 experience feels good after the upgrade; fresh CILogon sign-in was not separately
 verified. Reverting the
-image alone is not a verified rollback across the new migration revision. ✨
+image alone is not a verified rollback across the new migration revision.
 
 ### Domain & Ingress
 
@@ -347,7 +347,7 @@ is defined in `models/<id>/model.json`.
 | `basic` | Basic | `openrouter.z-ai/glm-5.3-flash` | Default model for all users. Campus-aware system prompt (`Basic v1.4`), builtin tools enabled, skills for Google Workspace, Canvas, web search, and code sandbox. Vision enabled (glm-5.3-flash is vision-capable); `reasoning_effort: low`. |
 | `help` | Help | `openrouter.z-ai/glm-5.3-flash` | BayLeaf help desk. Lists user groups and available models, inspects model configurations, processes invite codes. Binds `help_toolkit` and `web_context_toolkit` directly via the model's `toolIds`. System prompt (`Help v1.5`). `reasoning_effort: low`; vision on (glm-5.3-flash is vision-capable). |
 
-### Underlying Model Access (OWUI 0.11.3) ✨
+### Underlying Model Access (OWUI 0.11.3)
 
 Sharing a workspace preset is not sufficient: OWUI also requires non-admin
 callers to have read access to every underlying model in its `base_model_id`
@@ -533,7 +533,7 @@ commit `74b42c2`. `expose` requires an explicit
 an optional untrusted hostname tag, which BayLeaf ignores. Private is the
 default guidance and fails closed; headerless public calls may fall back to Daytona's direct
 signed URL if wrapping fails. The installation credential is an admin valve
-backed by the API's `PREVIEWS_INSTALLATION_KEY` Worker Secret. ✨
+backed by the API's `PREVIEWS_INSTALLATION_KEY` Worker Secret.
 
 **Production reconciliation (2026-10-11):** pulled Adam's subsequent 0.31.2
 deployment back into the repository, byte-identical to upstream `74b42c2`.
@@ -541,7 +541,7 @@ The first-call snapshot now includes discovered skill names, descriptions, and
 paths using the same catalog builder as explicit `onboard()`; full skill bodies
 still require `read(path)`. Dependencies and tool schema are unchanged. The full
 private pull is under `~/.tokens/bayleaf-prod-pull-20261011-120432`; unrelated
-Brace3 metadata-format differences were left untouched. ✨
+Brace3 metadata-format differences were left untouched.
 
 **Earlier upgrade (2026-10-11):** deployed unchanged upstream 0.31.1, commit `9642168`
 (SHA-256 `00d56dc8125891ba0d30b5c71cb1a7abdb5171c60b4208e2e6b512c385ab1567`).
@@ -554,7 +554,7 @@ Health returned 200; no restart was needed. Full private before/after pulls
 found only the expected Lathe source/version changes, apart from rotating metadata.
 Rollback and reconciliation snapshots are under
 `~/.tokens/bayleaf-lathe-rollout-20261011`. Human model-mediated playtesting
-remains separate. ✨
+remains separate.
 
 **Previous upgrade (2026-10-08):** the deployed and vendored source was upstream 0.31.0,
 commit `4cd5663`, byte-identical to the personal Chat deployment (SHA-256
@@ -573,7 +573,7 @@ headers independently of public/private policy. Nonempty headers require exact
 boolean `upstream_headers_applied: true` from BayLeaf's registration endpoint:
 missing acknowledgement fails closed with no direct fallback in either mode.
 API support was deployed separately in issue #86. Values remain in Chat tool arguments,
-and applications can reflect them. ✨
+and applications can reflect them.
 
 Production Basic → loaded Lathe `expose` → BayLeaf API → Daytona qualification
 verified public HTTP injection of fixed Basic credentials and a custom header,
@@ -675,7 +675,7 @@ before re-exposure; do not stop users' services automatically. Code-server's
 opening folder is not filesystem confinement, and both managed code-server and
 ttyd require private access. Python static-site serving can still follow symlinks
 inside the served directory. These controls do not confine a model-controlled
-shell or an arbitrary `http:<port>` service. ✨
+shell or an arbitrary `http:<port>` service.
 
 **UserValves.** Users can configure `env_vars` (a JSON object of environment
 variables like `{"GITHUB_TOKEN":"ghp_..."}`) that are injected into every
@@ -706,7 +706,7 @@ and “Set up sandbox,” then back to Chat to retry. Existing sandboxes still
 resume normally. The two non-secret overrides are saved in
 `tools/lathe/valves.public.json`; this is a partial configuration, not a full
 valve backup. Merge it into existing valves, never replace credentials with it.
-Live readback verified these two changes and unchanged remaining valves. ✨
+Live readback verified these two changes and unchanged remaining valves.
 
 - `sandbox_create_overrides`: JSON of extra Daytona create args. Cannot override `name`, `labels`, or `volumes`. Snapshot resources come from the snapshot; current Daytona rejects cpu/memory overrides with a snapshot (including the default). The disposable custom-shape test used `buildInfo`.
 
@@ -719,7 +719,7 @@ This applies only at creation: existing sandboxes are not resized or recreated.
 The eight legacy 1-GiB sandboxes remain small. Adam will advise users in person
 about opting into a fresh 2-GiB sandbox: first export any files they need, then
 deliberately destroy and recreate their own environment. Destruction is permanent;
-there is no automatic migration or file preservation across recreation. ✨
+there is no automatic migration or file preservation across recreation.
 
 **Upgrade evidence (2026-09-17).** Full OWUI regression passed 7/7 scenarios:
 source/schema, bash, write/read, interpreter, view, delegate, and protected expose.
@@ -784,7 +784,7 @@ and display name were read back after deployment; `/health` returned 200.
 The Code Sandbox skill was updated. Secret-bearing rollback snapshots and full
 before/after backups remain private under
 `~/.tokens/bayleaf-lathe-upgrade-20260930-132308`. No existing user sandbox was
-resized or destroyed. Human post-upgrade workload testing remains pending. ✨
+resized or destroyed. Human post-upgrade workload testing remains pending.
 
 ### Restricted Course Tools
 
@@ -859,7 +859,7 @@ search now returns two Docs after removing `orderBy` from full-text queries:
 Google requires relevance ordering and returns 403 for explicit sorting. Errors
 no longer assume every 403 is a sharing denial. Adam confirmed the production
 vision playtest works; dedicated non-admin verification remains pending. See
-`tools/brace3_drive_toolkit/README.md` for setup, limits and evidence. ✨
+`tools/brace3_drive_toolkit/README.md` for setup, limits and evidence.
 
 The v0.2.0 Drive deployment replaces the vision stub with bounded Doc-image,
 rendered-slide and standalone-image delivery. Live Google retrieval works for
@@ -1264,7 +1264,7 @@ Run `owui-cli` with no arguments for the full command listing.
 are JWTs that expire; refresh by copying a fresh token from
 `localStorage.getItem("token")` in the browser console.
 
-### Synthetic Availability Probe ✨
+### Synthetic Availability Probe
 
 `probe.bayleaf.dev/chat/basic` is a separate Cloudflare Worker for UptimeRobot
 Free, not a public service or metrics store. Source and operational instructions:
@@ -1306,7 +1306,7 @@ A Sealed backend HTTP check at `/api/sealed` is deployed and production-qualifie
 observed; alert delivery remains unverified. It uses the dedicated BayLeaf probe identity,
 verifies fresh Tinfoil attestation, encrypts a fixed GLM 5.3 request through the
 relay, then decrypts and validates the complete SSE answer. No Chat/browser
-dependency. See `probe/README.md` for boundaries and deployment/monitor gates. ✨
+dependency. See `probe/README.md` for boundaries and deployment/monitor gates.
 
 API keys were enabled for this on 2026-09-07. Ordinary default permissions and
 existing group permissions remain unchanged; only the dedicated operational

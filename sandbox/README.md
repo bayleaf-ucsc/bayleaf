@@ -73,7 +73,7 @@ visible outside disclosures. Adapter and executable rendering/state tests,
 TypeScript, and diff checks passed. Synthetic desktop launch reached ready and
 the public mobile layout was visually inspected. No real login, app installation,
 or production deployment was performed. `redesign-preview.html` remains the
-static design reference. ✨
+static design reference.
 
 ```sh
 node sandbox/test-worker.mjs
@@ -92,7 +92,7 @@ lifecycle checks, creation-policy/rendering tests, service-session/adapter check
 browser inspection exercised the two cards, mobile layout, and busy/retry message.
 Verified behavior includes independent expiry/restart, central alarm retention,
 sleep-wake sibling invalidation, ambiguous creation, no editor key upload, and
-passive reconciliation of legacy shorter preview deadlines. ✨
+passive reconciliation of legacy shorter preview deadlines.
 
 Review-fix/dufs qualification, 2026-10-09: 24 Python installer checks and 25
 workerd lifecycle checks passed, including fake-clock due-time scheduling,
@@ -100,7 +100,7 @@ workerd lifecycle checks passed, including fake-clock due-time scheduling,
 chains and size bounds, inherited-key stripping, dufs on a 1-GiB machine, private
 binding, three coexisting links and isolated restart. Session-binding, dashboard,
 35 preview-security/five fixture checks and TypeScript also passed. These remain
-synthetic tests; real Linux descendant cleanup and live app use need qualification. ✨
+synthetic tests; real Linux descendant cleanup and live app use need qualification.
 
 For a synthetic interactive preview (no real login or compute):
 `cd api && node scripts/preview-sandbox-status.mjs`, then open
@@ -109,7 +109,7 @@ For a synthetic interactive preview (no real login or compute):
 Local qualification, 2026-10-08: the actual two-Worker handoff, broker security,
 browser adapter, installer/lifecycle, progress animation, preview-security and
 temporary-token regressions passed, along with API TypeScript checks. Synthetic
-browser setup reached ready. Production compute setup remains for owner evaluation. ✨
+browser setup reached ready. Production compute setup remains for owner evaluation.
 
 ## Rollout
 
@@ -119,7 +119,7 @@ With approval, deployed Sandboxes Worker
 `7b79f11e-03e5-4598-8c40-ab7973e08813`. Live public browser inspection
 confirmed the new orientation, grouped directory, upstream links, and retention
 warning. No API/plugin deployment or sandbox restart was needed. Production
-authenticated app interaction remains owner evaluation. ✨
+authenticated app interaction remains owner evaluation.
 
 ### code-server and dufs additions: deployed 2026-10-09
 

@@ -1,7 +1,7 @@
 # Hosted OpenCode V2: BayLeaf tools and remote updates
 
 Investigation for [issue #83](https://github.com/bayleaf-ucsc/bayleaf/issues/83),
-2026-10-05. ✨ Investigation only: no deployment, package publication, credential
+2026-10-05. Investigation only: no deployment, package publication, credential
 changes, sandbox changes, or issue updates were performed.
 
 ## Recommendation

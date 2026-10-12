@@ -3,7 +3,7 @@
 Status: public and owner-authenticated HTTP/WebSocket gateway deployed and
 enabled. BayLeaf Chat runs upstream Lathe 0.31.0, including registration-scoped
 upstream headers. API/plugin rollout and live qualification are recorded below;
-Chat deployment evidence is in `chat/DESIGN.md`. ✨
+Chat deployment evidence is in `chat/DESIGN.md`.
 
 ## Contract
 
@@ -79,7 +79,7 @@ explicitly permits anonymous access. Port 3100 is reserved for the managed
 OpenChamber interface and cannot be exposed through this endpoint. The local
 managed code-server and dufs additions also reserve ports 8791 and 8790. Sandbox
 agents use the canonical plugin's `bayleaf_expose` tool, which reads the owner key
-internally and defaults to private exposure without displaying credentials. ✨
+internally and defaults to private exposure without displaying credentials.
 
 Public previews may be framed by their owner's active managed OpenChamber origin.
 The gateway permits public GET iframe navigation and emits an exact
@@ -135,7 +135,7 @@ replacing the Worker Secret and updating the Lathe valve; old-key requests fail
 immediately on the new Worker version. Existing preview grants expire or can be
 revoked independently. Rotation is not a promise to terminate existing grants.
 
-### Registration-scoped upstream headers (issue #86, deployed 2026-10-08 Pacific) ✨
+### Registration-scoped upstream headers (issue #86, deployed 2026-10-08 Pacific)
 
 Both registration endpoints accept optional `upstream_headers`, following
 [Lathe #98](https://github.com/rndmcnlly/lathe/issues/98) and Lathe 0.31.0:
@@ -321,7 +321,7 @@ Daytona/application combination must pass an echo/absolute-URL containment test
 before screen-safe deployment. This is a qualification requirement, not a
 claim that header filtering sanitizes arbitrary application content.
 
-### HTTP application compatibility (locally tested, 2026-10-08) ✨
+### HTTP application compatibility (locally tested, 2026-10-08)
 
 - The mandatory private owner-cookie gate runs before forwarding. An application
   password or bearer token cannot authenticate to BayLeaf or bypass that gate.
@@ -377,14 +377,14 @@ browser then created a saved topic and received a BayLeaf-inferred response.
 An anonymous bootstrap fetch remained HTTP 401. This qualifies this basic
 Nanobot 0.3.5 login/chat flow, not arbitrary successful-body URL containment,
 all Apps, or the full project/file workflow. Renewing the preview hostname also
-requires updating Nanobot's explicit public WebSocket URL. No Git publication. ✨
+requires updating Nanobot's explicit public WebSocket URL. No Git publication.
 Apps requiring JSON error details, WWW-Authenticate challenges, error-set cookies,
 browser-supplied Basic auth, unusual validators, or original `document.cookie` names remain outside
 the contract. Successful application bodies are still streamed unchanged and must
 be separately qualified for upstream-URL containment. Production deployment and
 browser qualification require separate approval.
 
-#### Review-fix evidence (2026-10-08) ✨
+#### Review-fix evidence (2026-10-08)
 
 Astra's two findings were independently confirmed at helper level: decoder-valid
 API session JWT signature padding bypassed the original credential regex, and

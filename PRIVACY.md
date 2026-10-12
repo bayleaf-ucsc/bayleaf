@@ -54,7 +54,7 @@ ITS-operated or ITS-supported one.
   conversations, configuration, and files persist there and are accessible to
   programs running as you and to the platform operator. Browser-access deadlines
   do not erase that history. Inference uses the standard ZDR provider path;
-  this does not make sandbox storage zero-retention or zero-operator-access. ✨
+  this does not make sandbox storage zero-retention or zero-operator-access.
 - **Transient previews (Chat and API, experimental and opt-in):** opening a
   public or private sandbox URL sends application traffic through Cloudflare to
   Daytona. The gateway stores an encrypted temporary upstream access URL and,
@@ -66,14 +66,14 @@ ITS-operated or ITS-supported one.
   arguments/history and may be reflected or stored by applications. Public
   visitors can exercise credentials injected into public previews. Browser
   application state can survive preview expiry. See the
-  [preview retention schedule](api/RETENTION.md#transient-previews-bounded-poc). ✨
+  [preview retention schedule](api/RETENTION.md#transient-previews-bounded-poc).
 - **Temporary inference access (API, opt-in when enabled):** approving an app
   gives it a temporary bearer token against your existing allowance. BayLeaf
   stores grant metadata (owner, token name, model, expiry, optional app name and callback)
   and short-lived authorization transactions, not a permanent app registration.
   Expired records are removed by hourly cleanup while the feature is enabled;
   D1 backup retention also applies. The receiving app may handle or retain what
-  you enter. See the [grant retention schedule](api/RETENTION.md#temporary-inference-tokens-enabled). ✨
+  you enter. See the [grant retention schedule](api/RETENTION.md#temporary-inference-tokens-enabled).
 - **Prompt and completion traffic (API and Chat):** not stored by BayLeaf.
   Ordinary requests are streamed through OpenRouter to LLM providers operating
   under [zero-data-retention](https://openrouter.ai/docs/guides/features/zdr),
@@ -172,7 +172,7 @@ research-and-education identity broker.
   workspace content. Sessions expire after 24 hours; expired records are
   cleaned up hourly. Signing out of Sandboxes revokes that session. Signing in
   starts waking an existing sandbox and refreshes its recorded activity;
-  dashboard reloads and status checks do not. ✨
+  dashboard reloads and status checks do not.
 
 ## Changes and questions
 

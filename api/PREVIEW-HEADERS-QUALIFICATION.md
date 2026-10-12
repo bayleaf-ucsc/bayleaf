@@ -1,6 +1,6 @@
 # Registration headers: live app/provider qualification
 
-2026-10-08, issue [#86](https://github.com/bayleaf-ucsc/bayleaf/issues/86). ✨
+2026-10-08, issue [#86](https://github.com/bayleaf-ucsc/bayleaf/issues/86).
 
 ## Result
 
@@ -153,7 +153,7 @@ its disposable-sandbox cleanup path attempts keyed owner-port revocation instead
 
 ## Narrow initial-frame fix retest
 
-2026-10-08, Worker `b814079b-4391-4fc0-95eb-10009c7b6b18`. ✨
+2026-10-08, Worker `b814079b-4391-4fc0-95eb-10009c7b6b18`.
 
 The implementation session reported a race: accepting the upstream socket before
 an awaited database check and listener installation could lose its first frames.
@@ -191,7 +191,7 @@ This is a rate-based estimate, not a reconciled provider bill.
 ## Keyed-path qualification preflight: blocked
 
 2026-10-08, targeting deployed Worker
-`b814079b-4391-4fc0-95eb-10009c7b6b18`. ✨
+`b814079b-4391-4fc0-95eb-10009c7b6b18`.
 
 A read-only `GET /sandbox` using the operator key from
 `~/.tokens/bayleaf-api` returned `state: "none"` and no sandbox ID. Consequently,
@@ -209,7 +209,7 @@ with explicit authorization for the required sandbox lifecycle action.
 ## Live keyed endpoint: passed; shared sandbox preserved
 
 2026-10-08, Worker `b814079b-4391-4fc0-95eb-10009c7b6b18`. This supersedes the
-keyed preflight blocker above. ✨
+keyed preflight blocker above.
 
 After explicit authorization to create a temporary keyed sandbox, another
 successful `GET /sandbox` confirmed `state: "none"` and no ID. A normal keyed
