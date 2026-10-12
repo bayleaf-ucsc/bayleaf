@@ -33,8 +33,8 @@ revert the image tag. Prod is the staging server; treat it accordingly.
 
 1. Follow steps 4-7 of "OWUI Version Upgrades" in `chat/AGENTS.md` verbatim:
    pull the live spec, edit the image `tag:`, deploy with `doctl apps update`,
-   monitor the deployment to ACTIVE with a perk-backed poll rather than a
-   fixed `sleep`, then `curl -sS -o /dev/null -w '%{http_code}'
+   monitor the deployment to ACTIVE with `doctl apps update --wait` (run as a
+   monitored background command), then `curl -sS -o /dev/null -w '%{http_code}'
    https://chat.bayleaf.dev/health` (expect `200`).
 2. If the spec carries the rung-3 `run_command` harness, grep deploy logs for
     the `[bayleaf] rung-3 harness alive` sentinel and confirm
@@ -69,12 +69,24 @@ revert the image tag. Prod is the staging server; treat it accordingly.
 
 ## Rollback
 
-Re-edit the image `tag:` in the spec back to the previous version and
-`doctl apps update` again. The repo backup from step 5 provides the model
+Before reverting the image, check migration compatibility. An older image may
+refuse to start against a database whose Alembic revision it does not recognize;
+additive schema changes alone do not establish rollback safety. If migrations
+ran, assess database restoration or a tested downgrade with Adam before acting.
+Restoration can lose writes since the recovery point. When database compatibility
+is established, re-edit the image `tag:` in the spec back to the previous version
+and `doctl apps update` again. The repo backup from step 5 provides the model
 configs to restore if step 4's changes misbehave: re-push with
 `owui-cli models update chat/models/<id>/model.json`.
 
 ## Refinement log
+
+- 2026-10-12: v0.12.0 reached ACTIVE using monitored `doctl --wait`; all six
+  migrations, startup harness, health/version and admin Basic/Help smokes passed.
+  Full private pulls differed only by version-history IDs, kept private rather
+  than adding instance-specific lineage to portable definitions. Verified today's
+  managed DB backup; corrected image-only rollback guidance for Alembic revisions.
+  Adam subsequently confirmed the browser experience feels good.
 
 - 2026-08-25: drafted from issue #65 and chat/AGENTS.md; never yet run as a
   playbook.

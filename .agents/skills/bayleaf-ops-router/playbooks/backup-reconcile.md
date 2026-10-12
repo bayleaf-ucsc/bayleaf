@@ -92,6 +92,12 @@ through the appropriate playbook, don't paper over it in the backup.
 
 ## Refinement log
 
+- 2026-10-12: Full private pre/post-v0.12.0 pulls found only migration-assigned
+  version-history IDs, with content, grants and images unchanged. Retained the
+  IDs in private snapshots, not portable repo definitions. Known pre-existing
+  Brace3 metadata differences were left outside the upgrade; the hidden base
+  model was separately verified active, hidden and wildcard-user readable.
+
 - 2026-10-11: Pulled all four public-backup resource types privately after Adam's
   Lathe 0.31.2 deployment; synced only its source/metadata and documentation.
   Live source matched upstream `74b42c2` exactly. Unrelated Brace3 metadata

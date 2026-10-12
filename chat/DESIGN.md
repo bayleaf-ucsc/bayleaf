@@ -40,11 +40,27 @@ default context points at the personal `Just Adam` team.
 | **HTTP port** | `8080` |
 
 **Image choice.** Use version-specific standard-image tags (currently
-`v0.11.4`), not rolling `main` or `slim`. BayLeaf stores uploads in DO Spaces
-via OWUI's S3 provider (§1, Object Storage); [OWUI's slim image](https://docs.openwebui.com/getting-started/quick-start/#what-slim-leaves-out)
-omits S3 support and refuses to start with S3 storage configured. Moving to a
-version-pinned `vX.Y.Z-slim` tag would require changing the storage architecture
-or maintaining a custom image, not just changing the tag.
+`v0.12.0`), not rolling `main` or `slim`. BayLeaf stores uploads in DO Spaces
+via OWUI's S3 provider (§1, Object Storage). Before v0.12.0, the slim image
+omitted S3 support and refused to start with S3 storage configured. Upstream
+v0.12.0 adds S3 support to slim, but BayLeaf retains the standard image;
+switching image variants requires separate dependency and upload qualification. ✨
+
+**Upgrade evidence (2026-10-12).** Promoted v0.12.0 after Adam confirmed personal
+service soak. Deployment `737f9787-eb3e-4d6c-b26d-3041322d1fd7` reached ACTIVE;
+all six Alembic migrations completed, the startup harness preceded server PID 1,
+health passed, and `/api/version` reported `0.12.0`. Authenticated admin Basic
+and Help inference returned the expected smoke-test response. Full private
+before/after pulls (9 tools, 6 functions, 8 skills, 4 workspace models) differed
+only by newly assigned version-history IDs; content, sources, images and grants
+were unchanged. The hidden base model remained active with wildcard-user read.
+Environment settings were unchanged and all names were documented here.
+Snapshots and the previous deployment spec are under
+`~/.tokens/bayleaf-owui-upgrade-20261012`; today's managed database backup was
+verified, with no laptop database access opened. Adam confirmed that the browser
+experience feels good after the upgrade; fresh CILogon sign-in was not separately
+verified. Reverting the
+image alone is not a verified rollback across the new migration revision. ✨
 
 ### Domain & Ingress
 
