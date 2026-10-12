@@ -65,6 +65,16 @@ workspace files and histories still persist under the existing sandbox policy.
 
 ## Local qualification
 
+Dashboard redesign, 2026-10-12 (local only): the public overview and signed-in
+directory now introduce the shared cloud computer before its apps. Grouped rows
+show upstream project URLs, familiar-first names, and compact Open controls.
+App guidance is separate from contextual setup/repair diagnostics; retention is
+visible outside disclosures. Adapter and executable rendering/state tests,
+TypeScript, and diff checks passed. Synthetic desktop launch reached ready and
+the public mobile layout was visually inspected. No real login, app installation,
+or production deployment was performed. `redesign-preview.html` remains the
+static design reference. ✨
+
 ```sh
 node sandbox/test-worker.mjs
 cd api
@@ -102,6 +112,14 @@ temporary-token regressions passed, along with API TypeScript checks. Synthetic
 browser setup reached ready. Production compute setup remains for owner evaluation. ✨
 
 ## Rollout
+
+### Dashboard redesign: deployed 2026-10-12
+
+With approval, deployed Sandboxes Worker
+`7b79f11e-03e5-4598-8c40-ab7973e08813`. Live public browser inspection
+confirmed the new orientation, grouped directory, upstream links, and retention
+warning. No API/plugin deployment or sandbox restart was needed. Production
+authenticated app interaction remains owner evaluation. ✨
 
 ### code-server and dufs additions: deployed 2026-10-09
 

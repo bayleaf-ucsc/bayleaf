@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="BayLeaf Sandboxes: a small cloud computer for trying things out, for the UC Santa Cruz community.">
+<meta name="theme-color" content="#1e5a3a"><title>BayLeaf Sandboxes · Your sandbox (design preview)</title>
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; background:#f6f8f4; color:#24352b; font:1rem/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  main { max-width:960px; margin:auto; padding:1.5rem; }
+  a,summary { color:#1e5a3a; text-underline-offset:0.2em; }
+  :focus-visible { outline:3px solid #2a5298; outline-offset:4px; }
+  .preview-banner { background:#fff4d6; border-bottom:1px solid #e3c770; color:#5a4410; font-size:0.85rem; padding:0.5rem 1.5rem; text-align:center; }
+  nav { display:flex; flex-wrap:wrap; align-items:center; gap:0.5rem 1rem; font-size:0.9rem; }
+  nav > a { margin-right:auto; font-weight:700; }
+  nav p { margin:0; overflow-wrap:anywhere; }
+  h1 { font-size:clamp(2rem,6vw,2.6rem); line-height:1.1; letter-spacing:-0.035em; margin:2rem 0 0.25rem; }
+  .tagline { font-size:1.25rem; font-weight:600; color:#365a43; margin:0 0 0.75rem; }
+  h2 { font-size:1.2rem; line-height:1.3; margin:0 0 0.4rem; }
+  h3 { font-size:0.8rem; text-transform:uppercase; letter-spacing:0.06em; color:#5b6f61; margin:1.5rem 0 0.25rem; }
+  p { margin:0 0 0.75rem; }
+  .lede { max-width:62ch; color:#3e5045; font-size:1.05rem; }
+  .muted { color:#48594e; }
+  .small { font-size:0.875rem; }
+  section { margin:2.25rem 0; }
+
+  button,.button { display:inline-flex; justify-content:center; align-items:center; gap:0.35rem; min-height:44px; padding:0.5rem 1rem; border:1px solid #1e5a3a; border-radius:6px; font:inherit; font-weight:600; cursor:pointer; background:#fff; color:#1e5a3a; text-decoration:none; white-space:nowrap; }
+  .button.primary { background:#1e5a3a; color:#fff; }
+  button:disabled { cursor:wait; opacity:0.65; }
+
+  /* Orientation */
+  .facts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; margin:1.5rem 0 0; }
+  .fact { background:#fff; border:1px solid #d3e2d7; border-radius:10px; padding:1rem 1.1rem; }
+  .fact h2 { font-size:1rem; }
+  .fact p { font-size:0.925rem; color:#48594e; margin:0; }
+
+  /* Sandbox status strip */
+  .machine { display:flex; flex-wrap:wrap; align-items:center; gap:0.5rem 1rem; background:#fff; border:1px solid #b7cebe; border-radius:10px; padding:0.85rem 1.1rem; margin:1.5rem 0 0; }
+  .machine p { margin:0; flex:1; min-width:16rem; font-size:0.925rem; }
+  .dot { display:inline-block; width:0.6rem; height:0.6rem; border-radius:50%; background:#2f8a55; margin-right:0.4rem; vertical-align:0.05em; }
+  .dot.asleep { background:#9aa79e; }
+
+  /* App directory */
+  .directory-head { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:0.25rem 1rem; }
+  .apps { list-style:none; margin:0; padding:0; background:#fff; border:1px solid #b7cebe; border-radius:10px; }
+  .app { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:0.25rem 1.25rem; align-items:start; padding:1rem 1.1rem; border-top:1px solid #e1ebe4; }
+  .app:first-child { border-top:0; }
+  .app-name { font-weight:700; font-size:1.05rem; margin:0; }
+  .app-name .project { font-weight:400; color:#5b6f61; }
+  .app-url { font-size:0.8rem; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; color:#48594e; overflow-wrap:anywhere; }
+  .app-url a { color:inherit; }
+  .app-purpose { margin:0.2rem 0 0; color:#3e5045; }
+  .app-side { display:flex; flex-direction:column; align-items:flex-end; gap:0.3rem; padding-top:0.1rem; }
+  .app-state { font-size:0.8rem; color:#48594e; }
+  .app-state.running { color:#256c43; font-weight:600; }
+  .app details { grid-column:1 / -1; font-size:0.9rem; margin:0.15rem 0 0; }
+  .app details summary { font-size:0.875rem; padding:0.2rem 0; }
+  .app details > div { border-left:3px solid #d3e2d7; padding:0.25rem 0 0.1rem 0.85rem; margin:0.35rem 0 0.25rem; max-width:70ch; }
+  .app details p { color:#48594e; }
+  .tag { display:inline-block; font-size:0.72rem; font-weight:600; letter-spacing:0.02em; color:#1e5a3a; background:#e5f0e8; border-radius:999px; padding:0.05rem 0.5rem; margin-left:0.35rem; vertical-align:0.15em; }
+
+  /* Inline progress and failure */
+  .progress { grid-column:1 / -1; display:flex; align-items:center; gap:0.6rem; font-size:0.875rem; color:#003c6c; margin-top:0.25rem; }
+  .bar { flex:1; max-width:22rem; height:6px; background:#dde7f0; border-radius:3px; overflow:hidden; }
+  .bar span { display:block; height:100%; width:42%; background:#2a5298; }
+  .spinner { width:0.9rem; height:0.9rem; border:2px solid #b7cebe; border-top-color:#003c6c; border-radius:50%; animation:spin 1.2s linear infinite; flex-shrink:0; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion:reduce) { .spinner { animation:none; } }
+  .problem { grid-column:1 / -1; background:#fdf1ef; border:1px solid #e7b9b0; border-radius:8px; padding:0.6rem 0.85rem; font-size:0.9rem; color:#6b231a; margin-top:0.35rem; }
+  .problem p { margin:0 0 0.4rem; }
+  .problem details { margin:0; }
+  .problem details summary { color:#8a2d20; }
+  .problem .actions { display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.5rem; }
+  .problem ol { margin:0.4rem 0 0; padding-left:1.2rem; font-size:0.85rem; }
+
+  /* Examples */
+  .examples { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }
+  .example { background:#fff; border:1px solid #d3e2d7; border-radius:10px; padding:1rem 1.1rem; }
+  .example h2 { font-size:1rem; }
+  .flow { list-style:none; display:flex; flex-wrap:wrap; align-items:center; gap:0.25rem; padding:0; margin:0 0 0.6rem; font-size:0.8rem; font-weight:600; }
+  .flow li { background:#e5f0e8; color:#1e5a3a; border-radius:999px; padding:0.1rem 0.55rem; }
+  .flow li + li::before { content:"→"; color:#7d9184; margin:0 0.35rem 0 -0.1rem; font-weight:400; }
+  .example p { font-size:0.925rem; color:#48594e; margin:0; }
+
+  .beyond { background:#eaf2ec; border-radius:10px; padding:1.1rem 1.25rem; }
+  .beyond p:last-child { margin:0; }
+
+  /* Storage and help */
+  .care { border-top:1px solid #b7cebe; padding-top:1.25rem; }
+  .care details { margin:0.5rem 0; }
+  .care details summary { padding:0.3rem 0; font-weight:600; }
+  .care details > div { padding:0.25rem 0 0.25rem 1rem; max-width:72ch; font-size:0.925rem; color:#48594e; }
+  .callout { background:#fff; border-left:4px solid #b5651d; padding:0.65rem 0.9rem; border-radius:0 8px 8px 0; font-size:0.925rem; margin:0.75rem 0; max-width:72ch; }
+
+  footer { display:flex; flex-wrap:wrap; justify-content:space-between; gap:0.5rem 1rem; margin-top:2rem; padding-top:1rem; border-top:1px solid #d3e2d7; font-size:0.8rem; color:#48594e; }
+
+  @media (max-width:760px) {
+    .facts,.examples { grid-template-columns:1fr; }
+    .app { grid-template-columns:1fr; }
+    .app-side { flex-direction:row-reverse; justify-content:flex-end; align-items:center; gap:0.75rem; }
+  }
+  @media (max-width:380px) { main { padding:1.25rem 1rem; } }
+</style></head><body>
+<div class="preview-banner" role="note">Design preview: static mockup with sample states. Buttons do nothing.</div>
+<main>
+<nav aria-label="BayLeaf home"><a href="https://bayleaf.dev">BayLeaf</a>
+  <p>sammy@ucsc.edu</p><button type="button">Sign out</button></nav>
+
+<header>
+  <h1>BayLeaf Sandboxes</h1>
+  <p class="tagline">A small computer in the cloud for trying things out</p>
+  <p class="lede">Your sandbox is a separate computer that runs only for you. Use it to try unfamiliar software, especially AI tools that work with your files, without installing anything on your own computer. You use its apps in your browser.</p>
+</header>
+
+<div class="facts">
+  <div class="fact"><h2>Kept separate</h2><p>Software in your sandbox can’t see your personal computer. It only works with files you upload or create there.</p></div>
+  <div class="fact"><h2>Shared files</h2><p>Every app below works in the same workspace folder. Upload a file once, then use it in any of them.</p></div>
+  <div class="fact"><h2>Sleeps when you’re done</h2><p>After you stop using it, your sandbox goes to sleep and keeps your saved files. When you return, waking it can take a few extra seconds.</p></div>
+</div>
+
+<div class="machine" role="status">
+  <p><span class="dot" aria-hidden="true"></span><strong>Your sandbox is awake.</strong> It will go to sleep about an hour after you close its apps.</p>
+  <a class="small" href="#care">Files, storage &amp; privacy</a>
+</div>
+
+<section aria-labelledby="apps-title">
+  <div class="directory-head">
+    <h2 id="apps-title">Apps you can open</h2>
+    <p class="small muted">Open as many or as few as you like. Each opens in a new tab.</p>
+  </div>
+  <p class="muted small">These are independent open-source projects that BayLeaf sets up for you. If you like one, you can often install it on your own computer later.</p>
+
+  <h3>AI agents</h3>
+  <p class="small muted">An AI agent can do more than answer questions in chat. It can read and write files, run software, and carry out multi-step tasks in your sandbox.</p>
+  <ul class="apps">
+    <li class="app">
+      <div>
+        <p class="app-name">OpenChamber</p>
+        <div class="app-url"><a href="https://openchamber.dev/">https://openchamber.dev/</a></div>
+        <p class="app-purpose">Build and work on projects with an agent that can plan, edit many files, and show you its changes as it goes.</p>
+      </div>
+      <div class="app-side"><a class="button primary" href="#" aria-label="Open OpenChamber (new tab)">Open</a><span class="app-state running">Running</span></div>
+      <details><summary>Using OpenChamber here</summary><div>
+        <p>Your agent uses AI models through BayLeaf and shares your BayLeaf usage allowance. Its conversations are saved in your sandbox, separately from BayLeaf Chat.</p>
+        <p>It runs in your sandbox only while you’re connected, so it can’t run scheduled tasks or reply to messaging apps while your sandbox is asleep.</p>
+        <p>Not sure how to do something? Ask the agent. It knows about your sandbox and can help you set up other software.</p>
+      </div></details>
+    </li>
+    <li class="app">
+      <div>
+        <p class="app-name">Nanobot</p>
+        <div class="app-url"><a href="https://github.com/HKUDS/nanobot">https://github.com/HKUDS/nanobot</a></div>
+        <p class="app-purpose">Talk with a lighter-weight agent in a simple chat window. It’s good for quick questions about your files and short tasks.</p>
+      </div>
+      <div class="app-side"><button type="button" disabled>Waking…</button><span class="app-state">Starting</span></div>
+      <div class="progress" role="status"><span class="spinner" aria-hidden="true"></span><div class="bar" aria-hidden="true"><span></span></div><span>Restoring your sandbox · 9s</span></div>
+      <details><summary>Using Nanobot here</summary><div>
+        <p>Nanobot keeps its own conversations and memory, separately from OpenChamber. It uses your shared BayLeaf allowance.</p>
+        <p>Background features like scheduled check-ins are turned off, because they couldn’t run while your sandbox is asleep.</p>
+      </div></details>
+    </li>
+  </ul>
+
+  <h3>Code &amp; data</h3>
+  <ul class="apps">
+    <li class="app">
+      <div>
+        <p class="app-name">VS Code <span class="project">(code-server)</span></p>
+        <div class="app-url"><a href="https://github.com/coder/code-server">https://github.com/coder/code-server</a></div>
+        <p class="app-purpose">Read, edit, and search code. Useful for understanding what an agent built and how it works.</p>
+      </div>
+      <div class="app-side"><a class="button" href="#" aria-label="Open VS Code (new tab)">Open</a><span class="app-state">Not started</span></div>
+      <details><summary>Using VS Code here</summary><div>
+        <p>This is the open-source editor behind VS Code, running in your browser. Extensions and settings you add stay in your sandbox.</p>
+      </div></details>
+    </li>
+    <li class="app">
+      <div>
+        <p class="app-name">JupyterLab</p>
+        <div class="app-url"><a href="https://jupyter.org/">https://jupyter.org/</a></div>
+        <p class="app-purpose">Combine Python code, charts, and notes in notebooks you can share with collaborators.</p>
+      </div>
+      <div class="app-side"><a class="button" href="#" aria-label="Open JupyterLab (new tab)">Open</a><span class="app-state">Not started</span></div>
+      <div class="problem" role="alert">
+        <p><strong>JupyterLab couldn’t start last time.</strong> Setup timed out. Trying again reuses anything already installed.</p>
+        <div class="actions"><button type="button">Try again</button></div>
+        <details><summary>Troubleshooting details</summary>
+          <ol>
+            <li>10:42:03 · Starting or restoring your sandbox · 6s</li>
+            <li>10:42:09 · Installing JupyterLab · 4m 0s</li>
+            <li>10:46:09 · Setup timed out [setup_timeout]</li>
+          </ol>
+          <p class="small" style="margin-top:0.5rem">Still stuck? <a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/SUPPORT.md">Get help</a> and include the code in brackets.</p>
+        </details>
+      </div>
+    </li>
+  </ul>
+
+  <h3>Basics</h3>
+  <ul class="apps">
+    <li class="app">
+      <div>
+        <p class="app-name">Files <span class="project">(dufs)</span></p>
+        <div class="app-url"><a href="https://github.com/sigoden/dufs">https://github.com/sigoden/dufs</a></div>
+        <p class="app-purpose">Upload files from your computer, browse your workspace, and download results.</p>
+      </div>
+      <div class="app-side"><a class="button" href="#" aria-label="Open Files (new tab)">Open</a><span class="app-state">Not started</span></div>
+    </li>
+    <li class="app">
+      <div>
+        <p class="app-name">Shell <span class="project">(ttyd)</span></p>
+        <div class="app-url"><a href="https://tsl0922.github.io/ttyd/">https://tsl0922.github.io/ttyd/</a></div>
+        <p class="app-purpose">Type commands directly into your sandbox computer, for when you know exactly what you want to run.</p>
+      </div>
+      <div class="app-side"><a class="button" href="#" aria-label="Open Shell (new tab)">Open</a><span class="app-state">Not started</span></div>
+      <details><summary>Using the shell here</summary><div>
+        <p>Each tab opens a fresh shell in your workspace folder. Files you save stay; the shell session itself ends when you close the tab.</p>
+      </div></details>
+    </li>
+  </ul>
+</section>
+
+<section aria-labelledby="ideas-title">
+  <h2 id="ideas-title">Things you could try</h2>
+  <p class="muted small">The apps are more useful together, because they share the same files.</p>
+  <div class="examples">
+    <div class="example">
+      <h2>Build something, then look inside</h2>
+      <ul class="flow" aria-label="Apps used"><li>OpenChamber</li><li>VS Code</li></ul>
+      <p>Ask an agent to build a small web app, then open the same project in VS Code to read how it works and make your own changes.</p>
+    </div>
+    <div class="example">
+      <h2>Explore data, then hand it off</h2>
+      <ul class="flow" aria-label="Apps used"><li>Files</li><li>Nanobot</li><li>JupyterLab</li></ul>
+      <p>Upload a dataset, ask Nanobot a few quick questions about it, then turn the analysis into a notebook for a collaborator.</p>
+    </div>
+  </div>
+</section>
+
+<section class="beyond" aria-labelledby="beyond-title">
+  <h2 id="beyond-title">Not limited to this list</h2>
+  <p>Your sandbox is a whole computer, so you can install other software too. The apps above are convenient starting points we’ve heard people ask for. Ask an agent in OpenChamber or Nanobot to help you set up something else.</p>
+  <p>If an app becomes part of your routine, consider installing it on your own computer. Each project’s site explains how.</p>
+</section>
+
+<section class="care" id="care" aria-labelledby="care-title">
+  <h2 id="care-title">Files, storage &amp; privacy</h2>
+  <p class="callout"><strong>Sandboxes unused for 90 days are deleted</strong>, along with their files and app histories. Download anything you want to keep.</p>
+  <details><summary>What happens when my sandbox sleeps?</summary><div>
+    <p>Saved files, settings, and app histories are kept. Running programs stop, including any task an agent was in the middle of. Unsaved work in an open app may be lost.</p>
+    <p>Opening any app wakes your sandbox. Signing in here also gives it a nudge, so it’s often ready by the time you choose an app.</p>
+  </div></details>
+  <details><summary>Who can see what’s in my sandbox?</summary><div>
+    <p>Your apps are private links that only work while you’re signed in. AI requests go to providers that don’t keep your prompts or responses.</p>
+    <p>Files and app histories in your sandbox are stored, and BayLeaf’s operators can technically access that storage. Read the <a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md">privacy notice</a> for details.</p>
+  </div></details>
+  <details><summary>Can I use my sandbox from BayLeaf Chat?</summary><div>
+    <p>Yes. <a href="https://chat.bayleaf.dev">BayLeaf Chat</a> can read and write the same sandbox files. Its conversations are separate from those in OpenChamber and Nanobot.</p>
+  </div></details>
+  <details><summary>Advanced controls</summary><div>
+    <p>The <a href="https://api.bayleaf.dev/dashboard#sandbox">API dashboard</a> has lower-level sandbox controls, including deleting your sandbox and managing your API key.</p>
+  </div></details>
+  <p class="small"><a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/SUPPORT.md">Get help with your sandbox</a></p>
+</section>
+
+<footer><span>Part of <a href="https://bayleaf.dev">BayLeaf</a> at UC Santa Cruz.</span><a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md">Privacy notice</a></footer>
+</main></body></html>

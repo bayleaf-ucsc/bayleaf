@@ -62,7 +62,7 @@ assert.ok(!html.includes('Extend 6 hours') && !html.includes('End browser work')
 assert.ok(!html.includes('links last up to 24 hours'));
 assert.ok(!html.includes('Signing in starts waking'));
 assert.ok(html.includes('90 days are deleted'));
-assert.ok(html.includes('same sandbox and files'));
+assert.ok(html.includes('same sandbox files'));
 assert.ok(!/<details[^>]*\sopen(?:\s|>)/.test(html),'diagnostics start collapsed');
 assert.ok(!html.includes('setInterval(countdown'));
 // This is our own SSR output, not untrusted HTML or an HTML sanitization step.
@@ -78,7 +78,7 @@ assert.ok(html.includes('data-endpoint="/services/ttyd"'));
 assert.ok(html.includes('Shell (ttyd)'));
 assert.ok(html.includes('repeat(2,minmax(0,1fr))'));
 new Function(script);
-assert.ok(html.includes('Your sandbox can run several managed apps, but it falls asleep once you disconnect from it.'));
+assert.ok(html.includes('A small computer in the cloud for trying things out'));
 assert.doesNotMatch(html,/browser-(?:meter|estimate|milestone|track|fill|pip)|progressbar|aria-valuenow|requestAnimationFrame|cancelAnimationFrame|"plan":|"milestones":|remaining|Allow a few minutes/);
 assert.equal((html.match(/class="service-activity" aria-hidden="true"/g)||[]).length,6);
 assert.match(html,/\.service-activity \{ display:none;/);
@@ -116,14 +116,18 @@ for(const [i,controls] of captures.entries()) {
   controls.render({phase:'opening',progress:'registering_preview'});
   assert.equal(root.dataset.phase,'opening');
   assert.equal(el('status').textContent,'Creating private browser access…');
-  assert.equal(el('start').hidden,true);assert.equal(el('open').hidden,true);
+   assert.equal(el('start').hidden,true);assert.equal(el('open').hidden,true);
+   assert.equal(el('troubleshoot').hidden,false);
+   assert.equal(el('repair-label').textContent,'Setup details');
   controls.render({phase:'failed',error:'installation_failed',timeline:[{step:'failed',at:100}]});
   assert.equal(root.dataset.phase,'failed','failure removes the CSS animation selector');
-  assert.equal(el('start').hidden,false);assert.equal(el('start').textContent,'Try again');
+   assert.equal(el('start').hidden,false);assert.equal(el('start').textContent,'Try again');
+   assert.equal(el('troubleshoot').hidden,false);
+   assert.equal(el('repair-label').textContent,'Troubleshooting & repair');
   assert.notEqual(el('progress').open,true,'failure must not force diagnostics open');
   controls.render({phase:'ready',url:'https://synthetic.example.test/',previous_failure:{at:100,elapsed:5,error:'installation_failed'}});
   assert.equal(root.dataset.phase,'ready','ready removes the CSS animation selector');
-  assert.equal(el('status').textContent,'','successful setup needs no status duplicating the Open button');
+   assert.equal(el('status').textContent,'Running','ready state is explicit without implying the whole sandbox state');
   assert.equal(el('open').hidden,false);assert.equal(el('restart').hidden,false);
   for(const unsafe of ['javascript:alert(1)','http://example.test','https://user:secret@example.test']) {
     controls.render({phase:'ready',url:unsafe});
@@ -133,7 +137,7 @@ for(const [i,controls] of captures.entries()) {
 }
 captures[0].render({phase:'failed',error:'installation_failed'});
 assert.ok(roots.slice(1).every(root=>root.dataset.phase==='opening'),'each service owns independent state');
-assert.ok(html.indexOf('<details><summary>App help')<html.indexOf('id="openchamber-previous"'),'previous failure stays inside help');
+assert.ok(html.indexOf('id="openchamber-troubleshoot"')<html.indexOf('id="openchamber-previous"'),'previous failure stays inside troubleshooting');
 await captures[1].action('start');
 assert.equal(roots[1].dataset.phase,'signed-out','session expiry stops activity');
 assert.equal(roots[1].querySelector('#nanobot-login').hidden,false);

@@ -41,6 +41,16 @@ assert(html.includes('OpenChamber'));
 assert(html.includes('code-server'));
 assert(html.includes('Files (dufs)'));
 assert(html.includes('Shell (ttyd)'));
+assert(html.includes('VS Code (code-server)'));
+assert(html.includes('A small computer in the cloud'));
+assert(html.includes('install it on your own computer'));
+assert(!html.includes('App help &amp; diagnostics'));
+assert(html.includes('class="callout"'), 'retention warning is outside disclosures');
+for (const url of ['https://openchamber.dev/', 'https://github.com/HKUDS/nanobot',
+  'https://github.com/coder/code-server', 'https://jupyter.org/',
+  'https://github.com/sigoden/dufs', 'https://tsl0922.github.io/ttyd/']) {
+  assert(html.includes('href="'+url+'">'+url+'</a>'), 'upstream URL is fully visible');
+}
 assert(!html.includes('id="dufs-start"'));
 assert(!html.includes('id="code-server-start"'));
 assert(!html.includes('browser-restart'));

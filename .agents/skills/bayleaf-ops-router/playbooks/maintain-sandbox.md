@@ -91,6 +91,13 @@ explicit operation on the user-owned installation. Preserve user files and histo
 
 ## Evidence and refinement log
 
+- 2026-10-12 (dashboard presentation, local): No plugin or backend change was
+  needed. Used adapter/rendering state tests and the synthetic browser dashboard,
+  not installer/lifecycle rollout. Omitted the prototype's invented shared-machine
+  status strip because app readiness is not a reliable machine-status contract.
+  Approved frontend-only deployment followed; live public rendering confirmed,
+  with signed-in evaluation left to Adam and no sandbox restart.
+
 - 2026-10-09 (issue #90, local): Both client packages validated the ordinary-key
   prefix and needed literal Daytona-placeholder support. Run shared asset builders
   sequentially: concurrent npm pretests race on the generated Nanobot fixture.

@@ -9,7 +9,7 @@ const styles = `
   * { box-sizing:border-box; }
   [hidden] { display:none !important; }
   body { margin:0; background:#f6f8f4; color:#24352b; font:1rem/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-  main { max-width:1120px; margin:auto; padding:1.5rem; }
+  main { max-width:960px; margin:auto; padding:1.5rem; }
   a,summary { color:#1e5a3a; text-underline-offset:0.2em; }
   :focus-visible { outline:3px solid #2a5298; outline-offset:4px; }
   nav,.actions,.account { display:flex; flex-wrap:wrap; align-items:center; gap:0.5rem 1rem; }
@@ -19,16 +19,11 @@ const styles = `
   .eyebrow { margin:0; color:#365a43; font-size:0.85rem; }
   h1 { font-size:clamp(2rem,6vw,2.8rem); line-height:1.1; letter-spacing:-0.04em; margin:2rem 0 0.75rem; }
   h2 { font-size:1.15rem; line-height:1.3; margin:0; }
-  .lede { max-width:65ch; margin:0 0 1.5rem; color:#48594e; }
-  .services { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:1rem; margin:1.5rem 0; }
-  .service { min-width:0; padding:1.25rem; background:#fff; border:1px solid #b7cebe; border-radius:10px; }
-  .description { color:#48594e; margin:0.75rem 0; min-height:4.5em; }
-  .service details { font-size:0.85rem; margin:0.75rem 0 0; }
+  .lede { max-width:65ch; margin:0 0 1.5rem; color:#48594e; font-size:1.05rem; }
+  .description { color:#48594e; margin:0.25rem 0 0; }
+  .service details { font-size:0.85rem; margin:0.2rem 0 0; }
   .service details .actions { margin-top:0.5rem; }
-  .service .actions > .button { width:100%; }
   .note-window { font-size:0.75rem; font-weight:400; margin-left:0.5rem; }
-  .workspace-info { border-top:1px solid #b7cebe; padding-top:0.5rem; font-size:0.9rem; }
-  .workspace-info p { max-width:80ch; }
   button,.button { display:inline-flex; justify-content:center; align-items:center; min-height:44px; padding:0.65rem 1rem; border:1px solid #1e5a3a; border-radius:6px; font:inherit; font-weight:600; cursor:pointer; }
   .button { background:#1e5a3a; color:#fff; text-decoration:none; }
   .button:hover { background:#16432b; }
@@ -37,7 +32,7 @@ const styles = `
   .note,footer,.browser-timing { color:#48594e; font-size:0.9rem; }
   details { margin:1rem 0; }
   summary { cursor:pointer; padding:0.5rem 0; }
-  .status-box { display:flex; align-items:center; gap:0.5rem; color:#365a43; font-size:0.85rem; margin:1rem 0 0.75rem; }
+  .status-box { display:flex; align-items:center; gap:0.5rem; color:#365a43; font-size:0.85rem; margin:0.25rem 0 0; }
   .service[data-phase=opening] .status-box { color:#003c6c; }
   .status-box p { flex:1; margin:0; }
   .status-box:has(p:empty) { display:none; }
@@ -49,8 +44,42 @@ const styles = `
   @keyframes service-working { to { transform:rotate(360deg); } }
   @media (prefers-reduced-motion:reduce) { .service[data-phase=opening] .service-activity { animation:none; } }
   footer { display:flex; flex-wrap:wrap; justify-content:space-between; gap:0.5rem 1rem; margin-top:1.5rem; font-size:0.8rem; }
-  @media (max-width:800px) { .services { grid-template-columns:1fr; } .description { min-height:0; } }
   @media (max-width:380px) { main { padding:1.25rem 1rem; } .status-box { flex-wrap:wrap; } }
+  .tagline { font-size:1.25rem; font-weight:600; color:#365a43; margin:0 0 0.75rem; }
+  .facts,.examples { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; margin:1.5rem 0; }
+  .fact,.example { background:#fff; border:1px solid #d3e2d7; border-radius:10px; padding:1rem 1.1rem; }
+  .fact h2,.example h3 { font-size:1rem; margin:0 0 0.4rem; }
+  .fact p,.example p { font-size:0.925rem; color:#48594e; margin:0; }
+  .directory { margin:2.25rem 0; }
+  .directory > p { color:#48594e; font-size:0.9rem; }
+  .group-title { font-size:0.8rem; text-transform:uppercase; letter-spacing:0.06em; color:#48594e; margin:1.5rem 0 0.25rem; }
+  .services { display:block; list-style:none; padding:0; background:#fff; border:1px solid #b7cebe; border-radius:10px; margin:0; }
+  .service { min-width:0; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:0.2rem 1.25rem; border-top:1px solid #e1ebe4; padding:1rem 1.1rem; }
+  .service:first-child { border-top:0; }
+  .service h4 { font-size:1.05rem; margin:0; }
+  .app-url { font:0.8rem/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap:anywhere; }
+  .app-url a { color:#48594e; }
+  .service > .actions { grid-column:2; grid-row:1; align-self:center; }
+  .service .actions > .button { width:auto; }
+  .service > .status-box,.service > details,.service > form,.service > noscript { grid-column:1 / -1; }
+  .service summary { padding:0.25rem 0; }
+  .service .button { background:#fff; color:#1e5a3a; }
+  .service .button:hover { background:#e5f0e8; }
+  .service[data-phase=failed] .status-box { color:#6b231a; background:#fdf1ef; padding:0.6rem 0.85rem; border-radius:6px; }
+  .examples { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .flow { font-size:0.8rem; font-weight:600; color:#1e5a3a; margin:0 0 0.6rem; }
+  .beyond { background:#eaf2ec; border-radius:10px; padding:1.1rem 1.25rem; margin:2rem 0; }
+  .beyond p:last-child { margin-bottom:0; }
+  .care { border-top:1px solid #b7cebe; padding-top:1.25rem; }
+  .care details { margin:0.5rem 0; }
+  .care summary { padding:0.3rem 0; font-weight:600; }
+  .care details p { max-width:72ch; font-size:0.925rem; color:#48594e; }
+  .callout { background:#fff; border-left:4px solid #b5651d; padding:0.65rem 0.9rem; font-size:0.925rem; }
+  @media (max-width:760px) {
+    .facts,.examples { grid-template-columns:1fr; }
+    .service { grid-template-columns:1fr; }
+    .service > .actions { grid-column:1; grid-row:auto; margin-top:0.5rem; }
+  }
 `;
 
 const controls = (service: typeof SERVICES[number]) => `
@@ -60,16 +89,19 @@ const controls = (service: typeof SERVICES[number]) => `
   </div>
   <form id="${service.id}-login" method="post" action="/login" hidden><button class="button" type="submit">Sign in again</button></form>
   <div class="actions">
-    <button type="button" class="button" id="${service.id}-start" aria-label="Launch ${escapeHtml(service.name)}" hidden>${escapeHtml(service.launch)}</button>
+    <button type="button" class="button" id="${service.id}-start" aria-label="Open ${escapeHtml(service.name)}" hidden>${escapeHtml(service.launch)}</button>
     <a class="button" id="${service.id}-open" aria-label="Open ${escapeHtml(service.name)} (new tab)" hidden target="_blank" rel="noopener noreferrer">Open <span class="note-window">(new tab)</span></a>
   </div>
-  <details><summary>App help &amp; diagnostics</summary>
+  <details class="app-help"><summary>Using ${escapeHtml(service.name)} here</summary>
     <p id="${service.id}-intro" class="note" hidden>${escapeHtml(service.intro)}</p>
-    <div class="actions">
-      <button type="button" class="secondary" id="${service.id}-restart" hidden>Set up / restart ${escapeHtml(service.name)}</button>
-    </div>
     <p class="note">${escapeHtml(service.help)}</p>
     ${service.notes.map(note => `<p class="note">${escapeHtml(note)}</p>`).join('')}
+  </details>
+  <details id="${service.id}-troubleshoot" class="troubleshoot" hidden><summary id="${service.id}-repair-label">Troubleshooting &amp; repair</summary>
+    <p class="note">Repair checks the installation and restarts this app, preserving saved files and histories. Save your work first: running tasks or connections in this app may be interrupted.</p>
+    <div class="actions">
+      <button type="button" class="secondary" id="${service.id}-restart" hidden>Restart ${escapeHtml(service.name)}</button>
+    </div>
     <p id="${service.id}-timing" class="browser-timing" hidden></p>
     <p id="${service.id}-previous" class="note" hidden></p>
     <details id="${service.id}-progress" hidden><summary>Setup activity</summary><ol id="${service.id}-timeline" class="browser-timeline"></ol></details>
@@ -122,10 +154,12 @@ const controlsScript = `(() => {
       const opening=s.phase==='opening';
       root.dataset.phase=s.phase;
        el('status').textContent=s.error ? (errors[s.error]||'Could not open '+service.name+'. Try again, or contact BayLeaf support.')
-         :opening?(labels[s.progress]||'Preparing '+service.name)+'…'
-         :'';
+          :opening?(labels[s.progress]||'Preparing '+service.name)+'…'
+          :ready?'Running':'';
       el('start').hidden=ready||opening;
        el('start').textContent=s.phase==='failed'?'Try again':service.launch;
+       el('troubleshoot').hidden=!(ready||opening||s.error||s.previous_failure||s.phase==='failed');
+       el('repair-label').textContent=s.error||s.previous_failure||s.phase==='failed'?'Troubleshooting & repair':opening?'Setup details':'Repair this app';
        el('start').setAttribute('aria-label',el('start').textContent+' '+service.name);
       el('intro').hidden=s.machine!=='absent';
       el('open').hidden=!ready;
@@ -141,7 +175,7 @@ const controlsScript = `(() => {
     function signedOut() {
       authExpired=true;ready=false;snapshot=undefined;clearTimeout(timer);
       root.dataset.phase='signed-out';
-      for(const id of ['start','restart','open','timing','progress','previous'])el(id).hidden=true;
+       for(const id of ['start','restart','open','timing','progress','previous','troubleshoot'])el(id).hidden=true;
       el('open').removeAttribute('href');el('login').hidden=false;
       el('status').textContent='Your session has expired. Sign in again to continue.';
     }
@@ -189,11 +223,15 @@ const controlsScript = `(() => {
 
 export function renderSandboxPage(session: { email: string; name?: string } | null): Response {
   const nonce = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(24))));
-  const cards = SERVICES.map(service => `<section class="service" id="${service.id}" aria-labelledby="${service.id}-title"${session ? ` data-service="${service.id}" data-endpoint="${service.endpoint}"` : ''}>
-    <h2 id="${service.id}-title">${escapeHtml(service.name)}</h2>
-     <p class="description">${escapeHtml(service.description)}</p>
-      ${session ? controls(service) : ''}
-  </section>`).join('');
+  const cards = ['AI agents', 'Code & data', 'Basics'].map(group => `<h3 class="group-title">${escapeHtml(group)}</h3>
+    ${group === 'AI agents' ? '<p class="note">An AI agent can do more than answer questions in chat. It can read and write files, run software, and carry out multi-step tasks in your sandbox.</p>' : ''}
+    <ul class="services">${SERVICES.filter(service => service.group === group).sort((a,b) => group === 'Basics' ? (a.id === 'dufs' ? -1 : b.id === 'dufs' ? 1 : 0) : 0).map(service => `<li class="service" id="${service.id}" aria-labelledby="${service.id}-title"${session ? ` data-service="${service.id}" data-endpoint="${service.endpoint}"` : ''}>
+    <div><h4 id="${service.id}-title">${escapeHtml(service.name)}</h4>
+    <div class="app-url"><a href="${escapeHtml(service.url)}">${escapeHtml(service.url)}</a></div>
+      <p class="description">${escapeHtml(service.description)}</p>
+    </div>
+       ${session ? controls(service) : ''}
+  </li>`).join('')}</ul>`).join('');
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="BayLeaf Sandboxes: managed apps and a shared workspace for the UC Santa Cruz community.">
@@ -202,15 +240,29 @@ export function renderSandboxPage(session: { email: string; name?: string } | nu
 <nav aria-label="BayLeaf home"><a href="https://bayleaf.dev">BayLeaf</a>
 ${session ? `<div class="account"><p>${escapeHtml(session.email)}</p><form method="post" action="/logout"><button class="secondary" type="submit">Sign out</button></form></div>` : '<p class="eyebrow">For the UC Santa Cruz community</p>'}</nav>
 <h1>BayLeaf Sandboxes</h1>
-<p class="lede">Your sandbox can run several managed apps, but it falls asleep once you disconnect from it. The same sandbox and files are also accessible from <a href="https://chat.bayleaf.dev">BayLeaf Chat</a>.</p>
+<p class="tagline">A small computer in the cloud for trying things out</p>
+<p class="lede">Your sandbox is a separate computer that runs for you. Use it to try unfamiliar software, especially AI tools that work with your files, without installing anything on your own computer. You use its apps in your browser.</p>
 ${session ? '' : '<form method="post" action="/login"><button class="button" type="submit">Sign in with UCSC</button></form>'}
-<div class="services" aria-label="Managed apps">${cards}</div>
-<details class="workspace-info"><summary>Your sandbox: files, privacy &amp; retention</summary>
-<p>Files and agent histories persist between sessions; running tasks can stop when the sandbox is idle. Chat and OpenChamber keep separate conversation histories.</p>
-<p>Sandboxes inactive for <strong>90 days are deleted</strong>, including their files and histories. Export anything you need to keep.</p>
-<p>AI inference uses zero-data-retention providers. Workspace files and history are stored, and operators can access that storage.</p>
-<p><a href="https://api.bayleaf.dev/dashboard#sandbox">Sandbox &amp; API controls</a>, including sandbox deletion.</p>
-</details>
+<div class="facts">
+<div class="fact"><h2>Kept separate</h2><p>Sandbox software runs separately from your personal computer. Upload files you want to work with there, rather than giving unfamiliar software access to your everyday files.</p></div>
+<div class="fact"><h2>Shared files</h2><p>Every app below works in the same workspace folder. Upload a file once, then use it in any of them.</p></div>
+<div class="fact"><h2>Sleeps when you’re done</h2><p>After you stop using it, your sandbox goes to sleep, releasing compute resources and keeping saved files. Waking it when you return can take a little longer.</p></div>
+</div>
+<section class="directory" aria-labelledby="apps-title"><h2 id="apps-title">Apps you can open</h2>
+<p>Open as many or as few as you like. Each opens in a new tab.</p>
+<p>These are independent open-source projects that BayLeaf sets up for you. If you like one, you can often install it on your own computer later.</p>
+${cards}</section>
+<section aria-labelledby="ideas-title"><h2 id="ideas-title">Things you could try</h2><p class="note">The apps are more useful together, because they share the same files.</p>
+<div class="examples"><div class="example"><h3>Build something, then look inside</h3><div class="flow">OpenChamber → VS Code</div><p>Ask an agent to build a small web app, then open the same project in VS Code to read how it works and make your own changes.</p></div>
+<div class="example"><h3>Explore data, then hand it off</h3><div class="flow">Files → Nanobot → JupyterLab</div><p>Upload a dataset, ask Nanobot a few quick questions about it, then turn the analysis into a notebook for a collaborator.</p></div></div></section>
+<section class="beyond" aria-labelledby="beyond-title"><h2 id="beyond-title">Not limited to this list</h2><p>Your sandbox is a whole computer, so you can install other software too. The apps above are convenient starting points we’ve heard people ask for. Ask an agent in OpenChamber or Nanobot to help you set up something else.</p><p>If an app becomes part of your routine, consider installing it on your own computer. Each project’s site explains how.</p></section>
+<section class="care" id="care" aria-labelledby="care-title"><h2 id="care-title">Files, storage &amp; privacy</h2>
+<p class="callout"><strong>Sandboxes unused for 90 days are deleted</strong>, along with their files and app histories. Download anything you want to keep.</p>
+<details><summary>What happens when my sandbox sleeps?</summary><p>Saved files, settings, and app histories are kept. Running programs stop, including unfinished agent tasks. Unsaved work in an app may be lost.</p><p>Sandboxes normally sleep after about an hour of inactivity. Background activity can delay sleep. Opening an app restores access; signing in here also tries to wake an existing sandbox. Simply viewing this page does not keep it awake.</p></details>
+<details><summary>Who can see what’s in my sandbox?</summary><p>Browser access to these apps is private to your account. Apps and agents inside the sandbox can access shared files, so isolation from your personal computer is not protection from software you run here.</p><p>AI inference uses zero-data-retention providers. Workspace files and app histories are stored, and operators can access that storage. See the <a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md">privacy notice</a>.</p></details>
+<details><summary>Can I use my sandbox from BayLeaf Chat?</summary><p>Yes. <a href="https://chat.bayleaf.dev">BayLeaf Chat</a> can work with the same sandbox files. Its conversations are separate from OpenChamber and Nanobot.</p></details>
+<details><summary>Advanced controls</summary><p><a href="https://api.bayleaf.dev/dashboard#sandbox">Sandbox &amp; API controls</a> include sandbox deletion and API key management.</p></details>
+<p class="note"><a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/SUPPORT.md">Get help with your sandbox</a></p></section>
 <footer><span>Part of <a href="https://bayleaf.dev">BayLeaf</a> at UC Santa Cruz.</span><a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md">Privacy notice</a></footer>
 </main>${session ? `<script nonce="${nonce}">${controlsScript}</script>` : ''}</body></html>`;
   return new Response(html, { headers: {
