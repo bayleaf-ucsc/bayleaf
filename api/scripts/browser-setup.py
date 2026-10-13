@@ -722,8 +722,19 @@ def configure_nanobot():
         'tokenIssueSecret':'${BAYLEAF_NANOBOT_AUTH}', 'websocketRequiresToken':True}
     tools = config.setdefault('tools', {})
     tools.setdefault('web', {})['enable'] = False
+    # MCP stdio children do not inherit the gateway's proxy/trust environment.
+    # Daytona substitutes the inert owner placeholder only through its TLS proxy.
+    # Pass network settings, never arbitrary environment variables or credentials.
+    network_env = {name:os.environ[name] for name in (
+        'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy',
+        'NODE_EXTRA_CA_CERTS',
+    ) if os.environ.get(name)}
+    proxy_args = ['--use-env-proxy'] if any(name in network_env for name in (
+        'HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy',
+    )) else []
     tools.setdefault('mcpServers', {})['bayleaf'] = {'command':shutil.which('node') or 'node',
-        'args':[str(ROOT/'adapter/nanobot-mcp.mjs')],
+        'args':[*proxy_args, str(ROOT/'adapter/nanobot-mcp.mjs')],
+        'env':network_env,
         'enabledTools':['search','fetch','usage','expose','unexpose']}
     atomic('config/config.json', config)
     (Path.home() / 'workspace').mkdir(parents=True, exist_ok=True)

@@ -91,6 +91,15 @@ explicit operation on the user-owned installation. Preserve user files and histo
 
 ## Evidence and refinement log
 
+- 2026-10-13 (Nanobot search, local fix): Parent installer only, no adapter
+  publication needed. MCP stdio drops proxy/CA variables; Node fetch also needs
+  explicit proxy activation. Verified real installed MCP usage/search in a
+  separate session without restarting the owner app, then added minimal-child
+  synthetic proxy and environment-allowlist regressions. Approved API deployment
+  `c79692c0-4993-47a4-949c-478388a9a732` verified in uploaded installer and active
+  deployment. Adam recreated his sandbox and confirmed the fresh managed Nanobot
+  app works as expected. No managed service restart performed by the agent.
+
 - 2026-10-12 (dashboard presentation, local): No plugin or backend change was
   needed. Used adapter/rendering state tests and the synthetic browser dashboard,
   not installer/lifecycle rollout. Omitted the prototype's invented shared-machine

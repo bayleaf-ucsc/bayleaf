@@ -69,6 +69,28 @@ hook, app-secret header, ordinary owner-key storage and private-only tools.
 
 ## Capability comparison
 
+### Nanobot MCP proxy repair, 2026-10-13
+
+Live diagnosis on the owner's sandbox found a normally sleeping gateway and
+matching gateway/adapter pipes, not a stale MCP pipe. The adapter's MCP child
+had no proxy/TLS environment. Direct Node fetch sent the inert Daytona placeholder
+to BayLeaf and received HTTP 401; Python through Daytona's proxy received 200.
+A separate real MCP session using the installed adapter, explicit proxy/trust
+environment and Node's `--use-env-proxy` successfully called usage and search.
+
+The managed installer now supplies only HTTP(S) proxy, bypass and Node CA settings
+to the BayLeaf MCP child, enabling `--use-env-proxy` when a proxy is present.
+This requires a Node runtime supporting that flag (the inspected sandbox runs
+25.9.0). It does not pass owner/app credentials or arbitrary Node options through
+MCP settings. Local tests cover environment allowlisting, refresh and an actual
+Node fetch through a synthetic proxy with an otherwise minimal child environment.
+The adapter package is unchanged. With approval, deployed API Worker
+`c79692c0-4993-47a4-949c-478388a9a732`; active deployment and uploaded installer
+proxy/CA settings verified, public recommendation endpoint HTTP 200. Nanobot,
+installer, synthetic lifecycle and TypeScript checks passed. Adam subsequently
+destroyed and recreated his sandbox, regrew the managed Nanobot app, and confirmed
+that MCP works as expected. No running user service was restarted by the agent.
+
 | Capability | Managed OpenChamber | Nanobot POC |
 | --- | --- | --- |
 | Standard inference/shared allowance | Yes | Live recommendation/catalog on setup |
