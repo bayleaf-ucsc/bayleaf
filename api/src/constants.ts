@@ -29,7 +29,7 @@ export async function discoverOIDC(issuer: string): Promise<OIDCEndpoints> {
 export const OPENROUTER_API = 'https://openrouter.ai/api/v1';
 
 /** Exact verifier/transport pin, shared by discovery and onboarding prose. */
-export const SEALED_PLUGIN = 'opencode-tinfoil@0.3.0';
+export const SEALED_PLUGIN = 'opencode-tinfoil@0.3.1';
 
 /**
  * Tinfoil admin/control plane, used only for per-user key lifecycle on the

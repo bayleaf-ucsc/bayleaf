@@ -122,10 +122,21 @@ SEALED_TAMPER_PORT=8801 SEALED_OPENCODE=1 \
 # Clean up: delete the row AND the per-user Tinfoil key the run minted.
 ```
 
-`SEALED_OPENCODE=1` additionally points the exact-pinned
-`opencode-tinfoil@0.3.0` plugin at a mutated bundle and asserts that an OpenCode
-run fails before inference. Omit it to run the SDK-level mutation suite without
-requiring OpenCode.
+`SEALED_OPENCODE=1` runs an additional OpenCode negative check using the plugin
+pin duplicated in `scripts/harness-sealed-attestation.py` (keep it synchronized
+with `SEALED_PLUGIN` in `src/constants.ts`). Its current nonzero-exit check cannot
+distinguish attestation rejection from unrelated startup or request failures;
+do not use it alone as evidence of attestation enforcement. Omit it to run the
+SDK-level mutation suite without requiring OpenCode.
+
+For OpenCode V2 canaries, use `opencode run --standalone` with temporary
+configuration and state so the CLI does not reuse a shared background server
+with a different environment. Provider enumeration, plugin loading, successful
+inference, and fail-closed behavior are separate checks. An OpenCode attestation
+test needs a genuine-bundle positive control through the same client setup,
+followed by an identifiable verification rejection for the mutated bundle.
+Model-not-found, credential, or plugin-load errors are inconclusive, not proof
+that attestation enforcement worked.
 
 `SEALED_AUTH` defaults to `campus`, which only resolves from a campus IP. Use a
 keyed token off-campus, and prefer it regardless: Campus Pass shares an env-held

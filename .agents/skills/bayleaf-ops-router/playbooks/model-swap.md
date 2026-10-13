@@ -268,6 +268,12 @@ available whenever Tinfoil still serves the model.
 
 ## Refinement log
 
+- 2026-10-12: updated the Sealed discovery/onboarding pin and attestation-harness
+  literal to `opencode-tinfoil@0.3.1`. OpenCode V2 canaries should use
+  `--standalone` to isolate the server as well as temporary configuration and
+  state: the default shared server is a confounder when testing CLI environment
+  overrides.
+
 - 2026-10-08: reviewed and redeployed the pending Sealed refresh before recording
   it in Git. Discovery and encrypted ordinary/tool-use canaries passed; an ordinary
   response took 108.2 seconds. Successful later probes do not erase this latency
