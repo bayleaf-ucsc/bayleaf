@@ -36,7 +36,11 @@ workflow turns out to be.
    (cf. `CAMPUS_RPD_LIMIT`, `SEALED_RPD_LIMIT`, spend-limits tooling).
 5. **[HUMAN GATE]** The user decides scope, naming, and whether it ships at
    all; new public surface is a strategic call, not an operational one.
-6. Record: the coordinated commit set, linked to the driving issue.
+6. **Agent capability exposure.** Run `bayleaf-powered-agent-capabilities.md`
+   before calling the facet complete: decide discovery and invocation across
+   hosted OpenChamber, Nanobot, Chat, desktop agents and `llms.txt`. Record
+   deliberate omissions/deferrals; updating HTTP docs alone is not exposure.
+7. Record: the coordinated commit set, linked to the driving issue.
 
 ## Verification
 

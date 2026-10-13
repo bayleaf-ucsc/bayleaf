@@ -516,6 +516,12 @@ checkbox, so it is recorded rather than deleted.
 
 ### Documentation ownership
 
+When adding, materially changing, enabling, or retiring an API capability, run
+`.agents/skills/bayleaf-ops-router/playbooks/bayleaf-powered-agent-capabilities.md`
+(relative to the repo root). It coordinates explicit exposure decisions across
+hosted OpenChamber, Nanobot, Chat, desktop agent skills and `llms.txt`; HTTP
+documentation alone does not make a capability discoverable to configured agents.
+
 `/llms.txt` owns broad agent orientation, access choices, client setup and workflows
 (including direct external GWS/Canvas integrations). It must meaningfully cover
 the HTTP API, but link to code-owned contracts rather than duplicate exhaustive
