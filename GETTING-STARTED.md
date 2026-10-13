@@ -46,6 +46,10 @@ That's it. BayLeaf trusts CILogon's assertion that I have a specific name, campu
 
 Once you are logged into the BayLeaf Chat site, you'll see a page that looks and works a lot like you might expect from ChatGPT. There's a sidebar on the left you can use to organize your previous chats, and you can compose a message to start a new conversation in the main panel.
 
+![BayLeaf Chat with past conversations in the left sidebar, an active conversation in the main panel, and the message box at the bottom.](docs-assets/owui-conversation.png)
+
+*A conversation in BayLeaf Chat. This example uses Brace, a course-specific agent, but the sidebar and message box work the same way with Basic.*
+
 By default, you'll be talking to the Basic agent. There are other agents, but they are usually available to people added to specific user groups. Don't worry about those for now.
 
 Try asking Basic, "What's BayLeaf?" Your browser may ask whether you want to allow BayLeaf Chat to access your location. You can accept or reject this as you see fit. Basic doesn't use your location for anything, but the interface proactively asks for this in case you later want to customize your setup to, for example, treat you differently when you are specifically on campus or traveling abroad.
@@ -132,14 +136,17 @@ If OpenCode isn't already installed, OpenChamber automatically installs it on fi
 When you launch OpenChamber, you'll be greeted with a user interface that looks a lot like the one from BayLeaf Chat. You've got a big chat window in the middle with a sidebar of your past conversations on the left.
 
 **Important:** Even though it might be tempting to start a new conversation right away, hold off on that. The oh-so-convenient initial state of OpenChamber sets you up with free access to a data-harvesting inference service. (At the time of writing, their default model is ominously named *Big Pickle*.) We'll have you hooked up with an excellent privacy setup with just one more step.
-<img src="GettingStartedPics/BigPickleX.png" alt="Open Chamber window with 'Big Pickle' default model Xed out">
+
+![OpenChamber's initial message box with the Big Pickle model crossed out to indicate that it should not be used.](docs-assets/openchamber-default-model.png)
 
 ### Configuring OpenChamber to use the BayLeaf API
 
 This is the only technical process required to use OpenChamber with the BayLeaf API, but it is easy to get lost in it.
 
-On the far-right menu bar, find the Terminal button with a little `>_` icon. 
-<img src="GettingStartedPics/TerminalCircle.png" alt="Open Chamber Terminal with associated button circled">
+On the far-right menu bar, find the Terminal button with a little `>_` icon.
+
+![OpenChamber's Terminal button highlighted in the far-right sidebar, with the terminal panel open.](docs-assets/openchamber-terminal-button.png)
+
 Click this to launch a terminal in the right sidebar. When the terminal panel opens, type (better yet, copy-paste) the following command:
 
 ```sh
@@ -152,14 +159,16 @@ After a moment, you'll see a message like this:
 Open this URL to approve access:
 https://api.bayleaf.dev/auth/claim?c=PMKX-21D3
 ```
-<img src="GettingStartedPics/URL-Access.png" alt="Open Chamber Terminal with Access URL circled">
+
+![OpenChamber's terminal after running the login command, with the URL to approve BayLeaf access highlighted.](docs-assets/openchamber-auth-claim-url.png)
 
 Copy-paste that link into your browser (or control/command-click it to open it directly). It will route you through the CILogon authentication process (just like in BayLeaf Chat), landing you on a page that says "Authorize OpenCode for BayLeaf," references the claim code you spotted in the terminal, and has some big Approve and Deny buttons. For this process, we want to Approve. A moment later, you'll see a new page with a message like "OpenCode for BayLeaf has been authorized. Return to your terminal, then restart OpenCode to access BayLeaf." (It says OpenCode instead of OpenChamber because OpenChamber is an OpenCode wrapper and we haven't yet built a graphical version of the onboarding flow originally designed for the command-line tools.)
 
 You can close that browser tab and return to OpenChamber now. Hopefully, after a moment, you'll see a message like "Logged into https://api.bayleaf.dev." If so, close and reopen OpenChamber for the change to take effect.
 
-After the restart, you'll be back at the OpenChamber main screen, but instead of seeing *Big Pickle* listed as your default model in the message composition box, you'll see something like *Z.ai: GLM-5.3-Flash*. When you mouse over this model name, you'll see a tooltip confirming *BayLeaf Remote* as the model's inference provider.
-<img src="GettingStartedPics/GLM5.3Flash.png" alt="Open Chamber Window with model and Bayleaf provider Circled">
+After the restart, you'll be back at the OpenChamber main screen, but instead of seeing *Big Pickle* listed as your default model in the message composition box, you'll see something like *Z.ai: GLM-5.3-Flash*. When you mouse over this model name, you'll see a tooltip confirming *BayLeaf* as the model's inference provider.
+
+![OpenChamber's selected GLM model and its tooltip, with the BayLeaf provider highlighted to confirm the connection.](docs-assets/openchamber-bayleaf-model.png)
 
 If you ever need to disconnect OpenChamber from the BayLeaf API (unlikely), you can use the command:
 
@@ -303,6 +312,10 @@ This section of the guide helps people who might otherwise be reaching for persi
 Compared to the desktop setup above, this is a step back in privacy: your conversations and working files now live on someone else’s computer. What you get in exchange is flexibility. You can check in from your phone, switch computers, or leave an agent working without keeping your own computer awake. We’re back to trading some privacy for capability.
 
 You can get a similar experience by running OpenChamber inside your BayLeaf sandbox. Visit [BayLeaf Sandboxes](https://sandbox.bayleaf.dev), sign in, and choose OpenChamber’s setup button. Open it when setup is ready. Signing in starts waking an existing sandbox; application setup is a separate action. First setup takes a few minutes. This is the same sandbox your agents access through the Code Sandbox toolkit in BayLeaf Chat, now with an interface you can use directly.
+
+![OpenChamber running in a browser with a light-green theme, showing an agent inspecting files in the sandbox workspace.](docs-assets/sandbox-openchamber.png)
+
+*OpenChamber running in a BayLeaf sandbox. We've configured a light-green theme to help you distinguish this cloud instance from OpenChamber running on your personal computer. Here, the agent is working with files in the sandbox, not on your laptop.*
 
 There are a few differences from Muse and Dots. There are no cute characters, and instead of one never-ending conversation, you get the project-rooted threads described earlier. The advice about `AGENTS.md` files and skills still applies: you and your agents can accumulate working instructions, save useful context, and pick things up in fresh conversations. This lets you assemble your own constellation of *claw-like* agents, borrowing the nickname from systems like OpenClaw that combine tools, persistent context, and ongoing responsibilities.
 
