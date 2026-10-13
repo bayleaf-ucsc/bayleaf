@@ -30,7 +30,8 @@ export async function fetchBedrockModels(env: Bindings): Promise<any[]> {
 }
 
 export async function eligibleStandardModel(id: string, env: Bindings): Promise<boolean> {
-  if (id.startsWith('openrouter:')) return await checkOpenWeightModel(id, env) === 'open';
+  if (id.startsWith('openrouter:')) return await checkOpenWeightModel(id, env) === 'open'
+    && await supportsOpenRouterModels([id], ['text', 'decisions']);
   const backend = ALT_BACKENDS.find(b => id.startsWith(b.prefix));
   if (!backend || !isBackendEnabled(env, backend.key)) return false;
   if (backend.key === 'vertex') return VERTEX_MODELS.some(m => m.id === id);
@@ -42,7 +43,7 @@ export async function standardModelCatalog(env: Bindings) {
   let openrouter: { id: string; name: string }[] = [];
   let openrouterAvailable = false;
   try {
-    const res = await fetch(`${OPENROUTER_API}/models`);
+    const res = await fetch(`${OPENROUTER_API}/models?output_modalities=text,decisions&zdr=true`);
     if (res.ok) {
       const data = await res.json() as { data?: any[] };
       if (Array.isArray(data.data)) {
@@ -62,4 +63,25 @@ export async function standardModelCatalog(env: Bindings) {
         available: isBackendEnabled(env, b.key) && (b.key === 'vertex' || (b.key === 'bedrock' && bedrock.length > 0)) })),
     ],
   };
+}
+
+/** Operation metadata is not part of grant authority. Unknown capability fails closed. */
+export async function supportsOpenRouterOperation(model: string, operation: 'text' | 'decisions'): Promise<boolean> {
+  return supportsOpenRouterModels([model], [operation]);
+}
+
+/** A bounded fallback list is checked against one capability snapshot. */
+export async function supportsOpenRouterModels(models: string[], operations: ('text' | 'decisions')[]): Promise<boolean> {
+  try {
+    const response = await fetch(`${OPENROUTER_API}/models?output_modalities=text,decisions&zdr=true`);
+    if (!response.ok) return false;
+    const payload = await response.json() as { data?: any[] };
+    if (!Array.isArray(payload.data)) return false;
+    return models.every(model => {
+      const slug = model.startsWith('openrouter:') ? model.slice(11) : model;
+      const entry = payload.data!.find(m => m.id === slug || m.canonical_slug === slug);
+      return Array.isArray(entry?.architecture?.output_modalities)
+        && operations.some(operation => entry.architecture.output_modalities.includes(operation));
+    });
+  } catch { return false; }
 }

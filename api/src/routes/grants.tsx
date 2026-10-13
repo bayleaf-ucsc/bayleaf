@@ -2,28 +2,28 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { bodyLimit } from 'hono/body-limit';
-import type { AppEnv, GrantTransaction, UserKeyRow } from '../types';
+import type { AppEnv, GrantTransaction, InferenceGrant, UserKeyRow } from '../types';
 import { getSession } from '../utils/session';
 import { resolveAuth } from '../utils/auth';
 import { ensureUserRow, getActiveRow } from '../provision';
-import { standardModelId, eligibleStandardModel, standardModelCatalog } from '../standardModels';
+import { eligibleStandardModel, standardModelCatalog } from '../standardModels';
 import { BaseLayout, renderPage } from '../templates/layout';
-import { hash, issueGrant, maxGrantSeconds, nowSeconds, randomSecret, seal, unseal, validCallback, grantError } from '../grants';
+import { hash, issueGrant, maxGrantSeconds, nowSeconds, randomSecret, seal, unseal, validCallback, grantError, grantModelIds, storedGrantModels } from '../grants';
 import { GrantRequestSchema, GrantTokenSchema, GrantErrorSchema, ClientDescriptorRequestSchema,
   ClientDescriptorSchema, GrantExchangeSchema, GrantListSchema, GrantModelsSchema, GrantAuthorizeQuerySchema, ApiErrorSchema } from '../schemas';
 
 /** Protocol narrative owned beside the handlers, rendered in the spec and Scalar. */
-export const GRANT_WORKFLOW = `Temporary inference tokens are one-model, expiring permissions against an owner's existing allowance. Issuing more tokens adds no credit. Sealed, discovery, tools, account management and renewal are excluded. Model fallbacks, routing overrides and provider plugins are unavailable. Tokens work wherever copied within their model/lifetime restriction; they are not origin-bound.
+export const GRANT_WORKFLOW = `Temporary inference tokens authorize 1–16 standard-inference models until expiry against an owner's existing allowance. Issuing more tokens adds no credit. POST /v1/chat/completions, /v1/responses (OpenRouter only), and /v1/decisions are permitted. Sealed, discovery, tools, account management and renewal are excluded. Model fallbacks, routing overrides and provider plugins are unavailable. Tokens work wherever copied within their model/lifetime restriction; they are not origin-bound.
 
 ### Direct issuance
 
-Use your ordinary BayLeaf key, or the signed-in dashboard. Get the selectable catalog from GET /grants/models, POST /grants with a model and lifetime, then use the returned access_token, model and base_url. List metadata or revoke by identifier; credentials are recoverable only at issuance. The public name is a recognition aid, not a secret. Legacy grants may be unnamed.
+Use your ordinary BayLeaf key, or the signed-in dashboard. Get the selectable catalog from GET /grants/models, POST /grants with models (a JSON array of 1–16 backend-qualified slugs, without inference type tags) and lifetime, then use the returned access_token, models and base_url. Legacy model singleton shorthand remains accepted, mutually exclusive with models; responses retain model as the first entry. List metadata or revoke by identifier; credentials are recoverable only at issuance. The public name is a recognition aid, not a secret. Legacy grants may be unnamed.
 
 ### Visitor-funded browser authorization
 
 1. Retain random state and a cryptographically random PKCE verifier in the initiating tab. Compute the base64url SHA-256 challenge without padding.
 2. POST /grants/clients with an app label and exact callback URI. The signed descriptor creates no permanent app registry.
-3. Navigate the browser, not fetch(), to GET /grants/authorize with the documented query fields. BayLeaf handles sign-in and explicit consent. Mere login grants nothing.
+3. Navigate the browser, not fetch(), to GET /grants/authorize with the documented query fields. Encode models as a JSON array query value, or use the legacy model singleton, never both. BayLeaf handles sign-in and explicit consent listing every model. Mere login grants nothing.
 4. The exact callback receives code and state, or error=access_denied and state. Verify state before exchange and remove callback parameters from the address bar.
 5. POST JSON to /grants/token with the code, original verifier, descriptor and exact callback. The code can be consumed once. Lifetime starts at approval, not exchange. No client secret or refresh token is issued.
 
@@ -53,7 +53,7 @@ const errors = {
     } } } },
   401: { description: 'Authentication required. Account authentication may use numeric error.code; grant-flow errors use strings.', content: json(z.union([GrantErrorSchema, ApiErrorSchema])) },
   403: { description: 'Personal account, same-origin browser write, or eligible model required.',
-    content: { 'application/json': { schema: GrantErrorSchema, example: { error: { code: 'model_not_allowed', message: 'Specify one eligible model from an enabled standard-inference backend.' } } } } },
+    content: { 'application/json': { schema: GrantErrorSchema, example: { error: { code: 'model_not_allowed', message: 'Specify eligible models from enabled standard-inference backends.' } } } } },
   503: { description: 'Feature disabled or unavailable.',
     content: { 'application/json': { schema: GrantErrorSchema, example: { error: { code: 'grants_disabled', message: 'Temporary inference access is disabled.' } } } } },
 };
@@ -94,25 +94,25 @@ async function owner(c: Context<AppEnv>): Promise<UserKeyRow | Response> {
   return row ?? grantError(c, 'account_unavailable', 'Create a token to activate your account first.', 403);
 }
 
-async function validateGrant(c: Context<AppEnv>, model: string, lifetime: number): Promise<Response | null> {
+async function validateGrant(c: Context<AppEnv>, models: string[] | null, lifetime: number): Promise<Response | null> {
   const max = maxGrantSeconds(c.env);
   if (!Number.isSafeInteger(lifetime) || lifetime < 1 || lifetime > max)
     return grantError(c, 'invalid_lifetime', `expires_in must be a positive integer no greater than ${max} seconds.`, 400);
-  const id = standardModelId(model);
-  if (!id || !await eligibleStandardModel(id, c.env))
-    return grantError(c, 'model_not_allowed', 'Specify one eligible model from an enabled standard-inference backend.', 403);
+  if (!models?.length || !(await Promise.all(models.map(id => eligibleStandardModel(id, c.env)))).every(Boolean))
+    return grantError(c, 'model_not_allowed', 'Specify eligible models from enabled standard-inference backends.', 403);
   return null;
 }
 
 grantRoutes.openapi(createRoute({ method: 'post', path: '/', operationId: 'createTemporaryInferenceToken', tags: ['Grants'],
-  summary: 'Create a temporary inference token', description: 'Use your existing allowance with exactly one plaintext model for a positive number of seconds. Excessive lifetimes fail with the current maximum. Tokens cannot mint or renew grants. The returned name is a public recognition aid, also bound into the signed token prefix.',
+  summary: 'Create a temporary inference token', description: 'Use your existing allowance with 1–16 plaintext models for a positive number of seconds. Supply backend-qualified models or legacy model singleton shorthand, never both. Every model is checked for eligibility. Excessive lifetimes fail with the current maximum. Tokens cannot mint or renew grants. The returned name is a public recognition aid, also bound into the signed token prefix.',
   security: [{ Bearer: [] }, { BrowserSession: [] }] as Record<string, string[]>[], request: { body: { required: true, content: json(GrantRequestSchema) } },
   responses: { 200: { description: 'Credential shown only at issuance', content: json(GrantTokenSchema) }, ...errors },
 }), async c => {
   const row = await owner(c); if (row instanceof Response) return row as any;
   const body = c.req.valid('json') as z.infer<typeof GrantRequestSchema>;
-  const rejection = await validateGrant(c, body.model, body.expires_in); if (rejection) return rejection as any;
-  const token = await issueGrant(c.env, row, new URL(c.req.url).origin, standardModelId(body.model)!, nowSeconds() + body.expires_in);
+   const models = body.models !== undefined ? grantModelIds(body.models) : grantModelIds(body.model, true);
+   const rejection = await validateGrant(c, models, body.expires_in); if (rejection) return rejection as any;
+   const token = await issueGrant(c.env, row, new URL(c.req.url).origin, models!, nowSeconds() + body.expires_in);
   return token ? c.json(token) : grantError(c, 'issuance_unavailable', 'Could not allocate a token name. Try again.', 503) as any;
 });
 
@@ -121,10 +121,13 @@ grantRoutes.openapi(createRoute({ method: 'get', path: '/', operationId: 'listIn
   responses: { 200: { description: 'Active grants, never credentials', content: json(GrantListSchema) }, ...errors },
 }), async c => {
   const row = await owner(c); if (row instanceof Response) return row as any;
-  const results = await c.env.DB.prepare(`SELECT id, name, model, expires_at, created_at, client_name, redirect_uri
+  const results = await c.env.DB.prepare(`SELECT id, name, models_json, expires_at, created_at, client_name, redirect_uri
     FROM inference_grants WHERE owner_email = ? AND owner_token_hash = ? AND expires_at > ? ORDER BY created_at DESC`)
-    .bind(row.email, await hash(row.bayleaf_token), nowSeconds()).all();
-  return c.json({ grants: results.results });
+    .bind(row.email, await hash(row.bayleaf_token), nowSeconds()).all<InferenceGrant>();
+  return c.json({ grants: results.results.map(({ models_json, ...grant }) => {
+    const models = storedGrantModels({ ...grant, models_json });
+    return { ...grant, models, model: models[0] };
+  }) });
 });
 
 grantRoutes.openapi(createRoute({ method: 'get', path: '/models', operationId: 'listTemporaryInferenceModels', tags: ['Grants'],
@@ -151,7 +154,7 @@ grantRoutes.openapi(createRoute({ method: 'delete', path: '/{id}', operationId: 
 
 grantRoutes.openapi(createRoute({ method: 'post', path: '/clients', operationId: 'describeInferenceClient', tags: ['Grants'],
   summary: 'Obtain an expiring client descriptor without registration', security: [],
-  description: 'No database row is created. Navigate the browser to /grants/authorize with client_id, response_type=code, model, expires_in, random state, code_challenge (base64url SHA-256 of a random verifier), and code_challenge_method=S256. After sign-in and explicit consent, the exact callback receives code and state, or error=access_denied and state. Validate state, then exchange via POST /grants/token. HTTPS callbacks and exact HTTP localhost/127.0.0.1/[::1] callbacks are supported.',
+  description: 'No database row is created. Navigate the browser to /grants/authorize with client_id, response_type=code, models (JSON array) or legacy model singleton, expires_in, random state, code_challenge (base64url SHA-256 of a random verifier), and code_challenge_method=S256. After sign-in and explicit consent, the exact callback receives code and state, or error=access_denied and state. Validate state, then exchange via POST /grants/token. HTTPS callbacks and exact HTTP localhost/127.0.0.1/[::1] callbacks are supported.',
   request: { body: { required: true, content: json(ClientDescriptorRequestSchema) } },
   responses: { 200: { description: 'Stateless signed descriptor, valid for ten minutes', content: json(ClientDescriptorSchema) }, ...errors },
 }), async c => {
@@ -200,13 +203,20 @@ grantRoutes.get('/authorize', async c => {
       || !validCallback(descriptor.redirect_uri) || q.response_type !== 'code' || q.code_challenge_method !== 'S256'
       || !/^[A-Za-z0-9_-]{43}$/.test(q.code_challenge ?? '') || !q.state || q.state.length > 256)
       return grantError(c, 'invalid_request', 'Invalid descriptor, state, or S256 PKCE authorization request.', 400);
-    const rejection = await validateGrant(c, q.model ?? '', Number(q.expires_in)); if (rejection) return rejection;
+    if ((q.model !== undefined) === (q.models !== undefined))
+      return grantError(c, 'invalid_request', 'Specify models or model, not both.', 400);
+    let models: string[] | null;
+    if (q.models !== undefined) {
+      try { models = grantModelIds(JSON.parse(q.models)); } catch { models = null; }
+      if (!models) return grantError(c, 'invalid_request', 'models must be a JSON array of 1–16 backend-qualified model slugs.', 400);
+    } else models = grantModelIds(q.model, true);
+    const rejection = await validateGrant(c, models, Number(q.expires_in)); if (rejection) return rejection;
     id = crypto.randomUUID();
     const proof = randomSecret();
     await c.env.DB.prepare(`INSERT INTO grant_transactions
-      (id, browser_hash, client_id, client_name, redirect_uri, model, lifetime, challenge, state, expires_at)
+      (id, browser_hash, client_id, client_name, redirect_uri, models_json, lifetime, challenge, state, expires_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, await hash(proof), q.client_id, descriptor.client_name,
-        descriptor.redirect_uri, standardModelId(q.model)!, Number(q.expires_in), q.code_challenge, q.state, nowSeconds() + 600).run();
+        descriptor.redirect_uri, JSON.stringify(models), Number(q.expires_in), q.code_challenge, q.state, nowSeconds() + 600).run();
     setCookie(c, FLOW_COOKIE, proof, cookieOptions(c));
     return c.redirect(`/grants/authorize?request=${id}`, 303);
   }
@@ -217,6 +227,7 @@ grantRoutes.get('/authorize', async c => {
     setCookie(c, RETURN_COOKIE, id, cookieOptions(c));
     return c.redirect('/login', 303);
   }
+  const rejection = await validateGrant(c, storedGrantModels(tx), tx.lifetime); if (rejection) return rejection;
   const approval = await seal(c.env, 'consent', { id, email: session.email, exp: tx.expires_at });
   return renderPage(c, <BaseLayout title="Authorize inference"><section class="grant-panel">
     <GrantStyles/>
@@ -225,7 +236,8 @@ grantRoutes.get('/authorize', async c => {
     <p><strong>{tx.client_name}</strong> (a name supplied by the app) requests inference access.</p>
     <p>Destination: <strong>{new URL(tx.redirect_uri).origin}</strong></p>
     <p>Exact callback: <code>{tx.redirect_uri}</code></p>
-    <p>Model: <strong>{tx.model}</strong>. Lifetime: <strong>{tx.lifetime} seconds</strong>.</p>
+    <p>Authorized models:</p><ul>{storedGrantModels(tx).map(model => <li><strong>{model}</strong></li>)}</ul>
+    <p>Lifetime: <strong>{tx.lifetime} seconds</strong>.</p>
     <p>This uses your existing allowance. The app receives a bearer token usable wherever it is copied, until expiry or revocation. BayLeaf retains no inference content; the app may handle or store what you enter.</p>
     <form method="post" action="/grants/authorize">
       <input type="hidden" name="request" value={id}/><input type="hidden" name="approval" value={approval}/>
@@ -252,7 +264,7 @@ grantRoutes.post('/authorize', async c => {
     if (!removed) return grantError(c, 'invalid_request', 'Already answered.', 400);
     callback.searchParams.set('error', 'access_denied');
   } else {
-    const rejection = await validateGrant(c, tx.model, tx.lifetime); if (rejection) return rejection;
+    const rejection = await validateGrant(c, storedGrantModels(tx), tx.lifetime); if (rejection) return rejection;
     const row = await ensureUserRow(session.email, c.env);
     if (!row) return grantError(c, 'account_unavailable', 'Could not prepare your account.', 503);
     const code = randomSecret();
@@ -282,10 +294,9 @@ grantRoutes.openapi(createRoute({ method: 'post', path: '/token', operationId: '
   const row = await getActiveRow(tx.owner_email, c.env);
   if (!row || await hash(row.bayleaf_token) !== tx.owner_token_hash)
     return grantError(c, 'invalid_grant', 'Account credential changed. Authorize again.', 400) as any;
-  const qualifiedModel = standardModelId(tx.model);
-  if (!qualifiedModel || !await eligibleStandardModel(qualifiedModel, c.env))
-    return grantError(c, 'model_not_allowed', 'The model is no longer eligible on an enabled standard-inference backend.', 403) as any;
-  const token = await issueGrant(c.env, row, new URL(c.req.url).origin, qualifiedModel, tx.grant_expires_at!, tx.client_name, tx.redirect_uri);
+  const models = storedGrantModels(tx);
+  const rejection = await validateGrant(c, models, tx.lifetime); if (rejection) return rejection as any;
+  const token = await issueGrant(c.env, row, new URL(c.req.url).origin, models, tx.grant_expires_at!, tx.client_name, tx.redirect_uri);
   return token ? c.json(token) : grantError(c, 'issuance_unavailable', 'Could not allocate a token name. Authorize again.', 503) as any;
 });
 

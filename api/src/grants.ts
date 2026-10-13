@@ -58,7 +58,27 @@ export function grantError(c: Context<AppEnv>, code: string, message: string, st
   return c.json({ error: { code, message } }, status);
 }
 
-export async function issueGrant(env: Bindings, row: UserKeyRow, apiOrigin: string, model: string, expiresAt: number,
+/** Canonical ordered model set. Arrays require backend prefixes; only legacy
+ * singleton shorthand accepts bare OpenRouter IDs. No inference type tags. */
+export function grantModelIds(value: unknown, legacy = false): string[] | null {
+  const values = legacy ? [value] : value;
+  if (!Array.isArray(values) || values.length < 1 || values.length > 16) return null;
+  const ids: string[] = [];
+  for (const entry of values) {
+    if (typeof entry !== 'string' || entry.length > 200) return null;
+    const id = standardModelId(entry);
+    if (!id || (!legacy && id !== entry)) return null;
+    if (!ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+/** Persisted authority is exclusively a qualified model set, failing closed. */
+export function storedGrantModels(row: { models_json: string }): string[] {
+  try { return grantModelIds(JSON.parse(row.models_json)) ?? []; } catch { return []; }
+}
+
+export async function issueGrant(env: Bindings, row: UserKeyRow, apiOrigin: string, models: string[], expiresAt: number,
   clientName: string | null = null, redirectUri: string | null = null) {
   const ownerHash = await hash(row.bayleaf_token);
   for (let attempt = 0; attempt < 8; attempt++) {
@@ -67,13 +87,13 @@ export async function issueGrant(env: Bindings, row: UserKeyRow, apiOrigin: stri
     // Database uniqueness makes this safe under concurrent issuance. Expired
     // rows awaiting cleanup also reserve their names, without a history table.
     const inserted = await env.DB.prepare(`INSERT INTO inference_grants
-      (id, name, owner_email, owner_token_hash, model, expires_at, created_at, client_name, redirect_uri)
+      (id, name, owner_email, owner_token_hash, models_json, expires_at, created_at, client_name, redirect_uri)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id`)
-      .bind(id, name, row.email, ownerHash, model, expiresAt, nowSeconds(), clientName, redirectUri).first();
+      .bind(id, name, row.email, ownerHash, JSON.stringify(models), expiresAt, nowSeconds(), clientName, redirectUri).first();
     if (!inserted) continue;
     const token = GRANT_PREFIX + name + '.' + await seal(env, 'access', { id, name, exp: expiresAt });
     return { grant_id: id, name, key: token, access_token: token, token_type: 'Bearer' as const,
-      model, expires_at: expiresAt, expires_in: Math.max(0, expiresAt - nowSeconds()),
+      models, model: models[0], expires_at: expiresAt, expires_in: Math.max(0, expiresAt - nowSeconds()),
       base_url: `${apiOrigin}/v1` };
   }
   return null;
@@ -109,8 +129,8 @@ export async function guardGrant(c: Context<AppEnv>, token: string): Promise<Res
     .bind(grant.owner_email).first<UserKeyRow>();
   if (!grant || grant.name !== name || grant.expires_at !== payload.exp || !owner || await hash(owner.bayleaf_token) !== grant.owner_token_hash)
     return grantError(c, 'invalid_token', 'Inference access was revoked. Authorize again.', 401);
-  if (c.req.method !== 'POST' || !['/v1/chat/completions', '/v1/responses'].includes(c.req.path))
-    return grantError(c, 'insufficient_scope', 'This token permits only plaintext inference with its specified model.', 403);
+  if (c.req.method !== 'POST' || !['/v1/chat/completions', '/v1/responses', '/v1/decisions'].includes(c.req.path))
+    return grantError(c, 'insufficient_scope', 'This token permits only plaintext inference with its specified models.', 403);
   c.set('inferenceGrant', grant);
   c.set('grantOwner', owner);
   return null;
@@ -121,16 +141,14 @@ export function enforceGrantModel(c: Context<AppEnv>, body: Record<string, unkno
   const grant = c.get('inferenceGrant');
   if (!grant) return null;
   const model = typeof body.model === 'string' ? standardModelId(body.model) : null;
-  // Older OpenRouter grants stored bare slugs. Canonicalize on read so they
-  // retain exactly their existing authority during the transition.
-  if (!model || model !== standardModelId(grant.model))
-    return grantError(c, 'insufficient_scope', `This token permits only ${grant.model}.`, 403);
+  if (!model || !storedGrantModels(grant).includes(model))
+    return grantError(c, 'insufficient_scope', 'This model is not authorized by the token.', 403);
   const backend = ALT_BACKENDS.find(b => model.startsWith(b.prefix));
   if (backend && !isBackendEnabled(c.env, backend.key))
     return grantError(c, 'backend_disabled', `${backend.label} is disabled.`, 503);
   if (backend && c.req.path === '/v1/responses')
     return grantError(c, 'insufficient_scope', 'This backend supports /v1/chat/completions, not /v1/responses.', 403);
-  // OpenRouter fallback/routing extensions must not override the single model.
+  // OpenRouter fallback/routing extensions must not override the chosen model.
   if (['models', 'route', 'plugins'].some(key => key in body))
     return grantError(c, 'insufficient_scope', 'Model fallbacks, routing overrides, and provider plugins are unavailable with temporary inference tokens.', 403);
   return null;

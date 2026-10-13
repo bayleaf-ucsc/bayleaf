@@ -615,6 +615,25 @@ Sleeping-link owner resume is deferred to issue #85.
 
 ### Temporary inference tokens (issue #76)
 
+**Model-set revision deployed 2026-10-13:** migration `0016`
+rebuilds grants and authorization transactions with required `models_json` and
+retires the singular `model` columns. A production read-only check found both
+tables empty on 2026-10-13; the migration requires that they remain empty.
+New issuance accepts 1–16 backend-qualified slugs without type tags; `model`
+request shorthand is separate from storage. Consent, exchange and inference check
+the entire model set. `/v1/decisions` joins the inference route allowlist.
+Production version `a923004f-c34b-4876-ab72-a433fe08f420` passed real Clef/Clef Flash,
+Gemma 4 token inference, wrong-slot/fallback policy denial and exact grant cleanup.
+Production dashboard create/revoke and explicit two-model consent with S256 PKCE
+exchange passed after human login; see `DECISIONS.md` for evidence and smoke scripts.
+Read `DECISIONS.md` and run `npm run test:decisions` as well as grant tests.
+Decision inference reuses backend enablement, credentials and allowances: no
+independent decision switch. The OpenRouter catalog query includes text and
+decision outputs; weight-verdict cache keys are v2. Request-time operation checks
+reject a slug in the wrong slot. Embedded media fields are schema-supported but
+nonempty media is rejected until OpenRouter transport is qualified, even if its
+catalog advertises input modalities. Hosted/desktop adapters are explicitly deferred.
+
 Enabled in production on 2026-09-29 with a one-hour maximum. Read `GRANTS.md`
 for the contract, rollout evidence, and browser example. Migration `0011`
 adds expiring grants and authorization transactions, never a durable app registry.

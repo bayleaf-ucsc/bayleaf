@@ -7,8 +7,46 @@ migration `0012` on 2026-09-29. The revised `llms.txt` distinguishes ordinary
 keys, temporary tokens, standard inference, and Sealed.
 
 The follow-up covering all standard-inference backends and the full model
-dropdown was deployed on 2026-09-29. No further migration is
-required. Backend enablement flags are unchanged.
+dropdown was deployed on 2026-09-29. Backend enablement flags are unchanged.
+
+**Multi-model revision deployed 2026-10-13:** migration `0016_grant_models.sql`
+rebuilds grants and authorization transactions with `models_json TEXT NOT NULL`
+as the only persisted model authority, dropping the singular `model` column. New tokens
+authorize 1–16 backend-qualified standard model slugs, without inference type
+tags. The legacy `model` request shorthand remains mutually exclusive with
+`models`; response `model` is the first entry of `models`, a protocol alias only.
+Read-only production inspection on 2026-10-13 found both tables empty. Migration
+requires both tables to contain zero rows at execution, including expired rows.
+A count assertion fails before either table is dropped if any row has appeared.
+Apply it atomically using the normal D1 migration runner, never statement-by-statement
+or by ignoring an assertion failure. There is no old-row fallback or backfill.
+Every model is checked at issuance, consent and exchange. Duplicate entries are
+collapsed in first-occurrence order; the 16-entry input bound applies before
+deduplication. Malformed persisted arrays fail closed.
+
+Exposure is API-only: generated HTTP contracts, the existing API dashboard and
+browser example expose this revision. Hosted OpenChamber, Nanobot, Chat and
+desktop adapters are intentionally unchanged under the approved API-only scope.
+This revision does not enable any backend or change model eligibility policy.
+
+Local verification (2026-10-13): the 24-check synthetic grant harness passes,
+including multi-model persistence, every-member inference, rejection of
+nonmembers/type tags/invalid arrays, consent and exchange backend rechecks,
+singleton HTTP shorthand, unnamed signed envelopes with model-set authority,
+Decisions inference/scope and disabled backend denial. The migration is tested
+against a row in each old table independently: failure preserves both schemas
+and all fixture data, rolls back its assertion table, and does not accept expired
+rows as empty. The empty-table migration verifies column retirement, NOT NULL,
+indexes and the owner foreign key. Documentation tests and TypeScript pass. These tests use mocked
+providers, not live CILogon, real spend, or an interactive browser.
+
+Production API qualification on 2026-10-13 passed multi-model issuance, real
+Clef Flash decision inference and Gemma 4 text inference with the same token,
+wrong-model/operation denial, revocation and exact test-grant cleanup. Production
+schema has no singular `model` column. After human sign-in, production dashboard
+create/revoke and explicit two-model consent with S256 PKCE exchange passed,
+including real decision/text inference and exact token cleanup. See
+[decision rollout evidence](DECISIONS.md).
 
 Verified locally with 18 grant/security checks, the 25 preview regression checks,
 TypeScript, and Chrome. Synthetic Vertex/Bedrock inference and final-slot races
@@ -26,7 +64,7 @@ API key and service sections. Creation is in a disclosure; each active token ent
 shows its name and expiry on one compact line, with Copy/Revoke alongside.
 Restrictions and app details live in the token-name tooltip and accessible label,
 so richer restrictions need not expand the list into additional rows.
-The creation form loads `/grants/models`, the full standard-inference catalog,
+The creation form allows multiple selections (1–16) and loads `/grants/models`, the full standard-inference catalog,
 grouped by backend with complete prefixes visible. The recommended model is the
 default when available. Disabled backends are identified but cannot be selected;
 catalog failures contribute no selectable models. This is not the curated
@@ -57,8 +95,9 @@ issuance, until reload or revocation. Tokens created through an app can be named
 and revoked on the dashboard, but their credentials cannot be retrieved there.
 This display is safe to screen-share with respect to temporary-token credentials;
 app names and destinations remain visible. Pasting a copied token can expose it.
-Earlier unnamed tokens retain their original validity and show “Earlier token”
-with a short grant ID; this change does not force existing clients to reauthorize.
+Unnamed signed envelopes are still supported for rows with model-set authority
+and show “Earlier token” with a short grant ID. No older persisted grants are
+carried over by migration `0016`: it requires both old tables to be empty.
 
 Local verification of this follow-up includes signed-name tampering/stripping,
 legacy-token compatibility, per-owner name uniqueness, concurrent issuance,
@@ -73,7 +112,7 @@ OpenChamber browser denied clipboard access; its error path displayed no secret.
   display name, valid for ten minutes. Stateless on BayLeaf. Not a developer identity.
 - **Authorization transaction:** a ten-minute browser-bound consent attempt;
   after approval the code lasts at most two minutes and is redeemable once.
-- **Grant:** one owner's permission to use exactly one backend-qualified standard-inference model
+- **Grant:** one owner's permission to use 1–16 backend-qualified standard-inference models
   until a deadline. One grant corresponds to one bearer token. No renewal.
 - **Token / temporary key:** a signed credential exercising that grant. It is
   transferable, not cryptographically bound to an app or browser origin.
@@ -83,7 +122,9 @@ OpenChamber browser denied clipboard access; its error path displayed no secret.
 
 Direct issuance and visitor authorization produce the same token type. Only
 `POST /v1/chat/completions` accepts tokens for all enabled standard backends;
-`POST /v1/responses` currently supports OpenRouter only. No model listing,
+`POST /v1/responses` currently supports OpenRouter only; `POST /v1/decisions`
+also accepts temporary tokens, with the request model required to belong to
+the authorized set. No model listing,
 Sealed, web tools, sandbox, account management, minting, or refresh capability.
 Fallback model lists, route overrides, and provider plugins are rejected.
 OpenRouter retains its published-weights check on inference. Backend-specific
@@ -91,10 +132,12 @@ enablement gates and existing provider policies continue to apply.
 
 ### Standard backend scope
 
-Grants store the fully qualified model ID (`openrouter:…`, `vertex:…`, or
-`bedrock:…`) and enforce it before routing. A bare OpenRouter slug is accepted
-for compatibility and normalized to `openrouter:`. Older grant rows with bare
-slugs remain valid. Matching text after different prefixes does not confer the
+Grants store fully qualified model IDs (`openrouter:…`, `vertex:…`, or
+`bedrock:…`) and enforce membership before routing. Array entries must be
+backend-qualified, with no decision-type prefix such as `choice:` or `noul:`.
+A bare OpenRouter slug is accepted only in the legacy singleton `model`
+shorthand and normalized to `openrouter:` before persistence. Stored arrays
+contain qualified IDs exclusively. Matching text after different prefixes does not confer the
 same authority.
 
 - OpenRouter: existing published-weights eligibility and per-owner provider key.
@@ -108,7 +151,7 @@ Both alternate-backend counters are updated atomically, shared by the ordinary
 API key and all its temporary tokens. Disabling a backend blocks outstanding
 tokens immediately. A code exchange also rechecks model eligibility. Sealed is
 excluded because BayLeaf cannot inspect its encrypted model field to enforce
-one-model authority. Production Vertex and Bedrock remain disabled.
+model-set authority. Production Vertex and Bedrock remain disabled.
 
 ## Direct use
 
@@ -124,11 +167,11 @@ POST /grants
 Authorization: Bearer <ordinary-personal-key>
 Content-Type: application/json
 
-{"model":"<backend-qualified model ID>","expires_in":3600}
+{"models":["<backend-qualified model ID>","<another backend-qualified model ID>"],"expires_in":3600}
 ```
 
 The result contains `grant_id`, `name`, `key` (also `access_token`), `token_type: Bearer`,
-`model`, `base_url`, `expires_at` (Unix seconds), and `expires_in`. Copy the token
+`models`, legacy `model` (the first entry), `base_url`, `expires_at` (Unix seconds), and `expires_in`. Copy the token
 into the inference client's API-key setting. Do not put it in URLs or logs.
 
 Use `GET /grants` to list your active grants and `DELETE /grants/{grant_id}` to
@@ -151,11 +194,12 @@ requests. No client secret or refresh token is issued.
 2. `POST /grants/clients` with JSON `client_name` and `redirect_uri`. Save the
    returned `client_id` (an expiring signed descriptor). This writes no database row.
 3. Navigate to `/grants/authorize` with query parameters:
-   `client_id`, `response_type=code`, `model`, `expires_in`, `state`,
+   `client_id`, `response_type=code`, `models` (a JSON array query value), `expires_in`, `state`,
    `code_challenge` (base64url SHA-256 of verifier), `code_challenge_method=S256`.
 4. BayLeaf signs the visitor in if needed and shows explicit consent naming the
-   account, destination origin, exact callback, model, and duration. App names are
-   visibly self-supplied. No remembered app-level consent.
+   account, destination origin, exact callback, every model, and duration. App names are
+   visibly self-supplied. No remembered app-level consent. The legacy `model`
+   singleton query parameter is accepted instead of `models`, never alongside it.
 5. BayLeaf redirects to the exact callback with `code` and `state`, or with
    `error=access_denied` and `state`. Check state before proceeding. Remove these
    parameters from the address bar. BayLeaf errors before consent stay on BayLeaf.
@@ -199,9 +243,10 @@ python3 -m http.server 5173 --bind 127.0.0.1 --directory api/examples/grants
 ```
 
 Open `http://127.0.0.1:5173/`. Choose the API origin (production by default),
-load the recommended model, and authorize. The example
+load the recommended model or enter up to 16 backend-qualified slugs, and authorize. The example
 implements state validation, PKCE, denial, masked/no-display token handling, and
-manual reauthorization after a 401. A page reload forgets the token.
+manual reauthorization after a 401. A selector lets each inference request use
+one authorized model. A page reload forgets the token.
 
 ### Expiry and errors
 
@@ -217,13 +262,16 @@ Expiry/revocation prevents new requests; it does not abort an in-flight completi
 
 ## Storage and operation
 
-`inference_grants` holds ID, owner email, owner-key fingerprint, model, timestamps,
+`inference_grants` holds ID, owner email, owner-key fingerprint, models, timestamps,
 and optional app name/callback. Tokens are signed using purpose-separated HMAC;
 the signature is the credential verifier, not a stored plaintext secret. Tokens
 cannot be used as login cookies, client descriptors, or consent proofs.
 
 `grant_transactions` holds browser-proof and code hashes, PKCE challenge, app
-metadata, state, and (after approval) owner-key fingerprint and grant deadline.
+metadata, authorized models, state, and (after approval) owner-key fingerprint and grant deadline.
+Both tables persist only `models_json TEXT NOT NULL`, with no singular model
+column. The optional HTTP `model` input shorthand and first-model response alias
+do not create a second source of stored authority.
 Neither table stores inference content. The existing hourly scheduler deletes
 expired transactions and grants when enabled, so expiry leaves at most an hour's
 cleanup lag. Revocation deletes a grant immediately. There is no extra per-grant
@@ -237,7 +285,10 @@ account-limit path. OpenRouter uses its existing per-owner provisioning/healing 
 ### Rollout and rollback
 
 1. Run `npm run test:grants`, `npm run test:previews`, and `npx tsc --noEmit`.
-2. Apply D1 migrations through `0012` before deploying the named-token revision.
+2. Apply D1 migrations through `0016` before deploying the multi-model revision.
+   Migration `0016` requires both grant tables to be completely empty and fails
+   before dropping tables otherwise. Do not delete rows to bypass this gate;
+   pause issuance, let existing work expire and clean up normally, then recheck.
    Initial enablement also requires `GRANTS_ENABLED=true`.
 3. Verify real campus login, direct dashboard issuance, and a local callback with
    a small real inference request. Local synthetic tests do not verify live OIDC.

@@ -11,6 +11,7 @@
     "pretest:sandbox-browser": "python3 scripts/build-sandbox-plugin.py && python3 scripts/build-nanobot-assets.py --fixture",
     "test:previews": "python3 scripts/test-preview-fixture.py && node scripts/harness-previews.mjs",
     "test:grants": "node scripts/harness-grants.mjs",
+    "test:decisions": "node scripts/test-decisions.mjs",
     "test:sealed-dashboard": "node scripts/test-sealed-dashboard.mjs",
     "test:sealed-models": "node scripts/test-sealed-models.mjs",
     "test:campus-pass": "node scripts/test-campus-pass.mjs",

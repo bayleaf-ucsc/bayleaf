@@ -9,6 +9,52 @@
 import { z } from '@hono/zod-openapi';
 import { SERVICE_DEFS } from './serviceDefs';
 
+const DecisionContextSchema = z.union([z.string(), z.record(z.string(), z.unknown()), z.array(z.unknown())]);
+const DecisionQuestionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('noul'), instructions: DecisionContextSchema,
+    criteria: z.object({ true: DecisionContextSchema, false: DecisionContextSchema }).strict().optional() }).strict(),
+  z.object({ type: z.literal('choice'), instructions: DecisionContextSchema,
+    criteria: z.record(z.string(), DecisionContextSchema.nullable()).refine(v => Object.keys(v).length >= 2 && Object.keys(v).length <= 255) }).strict(),
+  z.object({ type: z.literal('score'), instructions: DecisionContextSchema,
+    criteria: z.array(DecisionContextSchema).min(1).max(128) }).strict(),
+]);
+const EmbeddedDecisionMediaSchema = z.union([
+  z.string().regex(/^data:(image|audio|video)\/[a-zA-Z0-9.+-]+;base64,(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
+  z.object({ content_type: z.string().regex(/^(image|audio|video)\/[a-zA-Z0-9.+-]+$/),
+    base64: z.string().min(4).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/) }).strict(),
+]).openapi('EmbeddedDecisionMedia');
+export const DecisionRequestSchema = z.object({
+  model: z.string().min(1).max(256), state: DecisionContextSchema,
+  questions: z.record(z.string().regex(/^[A-Za-z0-9_.-]{1,100}$/), DecisionQuestionSchema)
+    .refine(v => Object.keys(v).length >= 1 && Object.keys(v).length <= 64),
+  provider: z.object({
+    data_collection: z.enum(['allow', 'deny']).nullable().optional(), zdr: z.boolean().nullable().optional(),
+    order: z.array(z.string()).optional(), only: z.array(z.string()).optional(), ignore: z.array(z.string()).optional(),
+    allow_fallbacks: z.boolean().optional(), require_parameters: z.boolean().optional(),
+    sort: z.enum(['price', 'throughput', 'latency']).optional(),
+    max_price: z.record(z.string(), z.string()).optional(),
+  }).strict().optional(),
+  images: z.array(EmbeddedDecisionMediaSchema).max(4).optional(),
+  audio: z.array(EmbeddedDecisionMediaSchema).max(4).optional(),
+  videos: z.array(EmbeddedDecisionMediaSchema).max(2).optional(),
+}).strict().openapi('DecisionRequest', {
+  description: 'Typed decision questions over text or structured JSON. Embedded media fields reserve the multimodal contract: requests containing media are currently rejected until the backend transport is verified. No remote URLs, tracing or broadcast fields.',
+});
+const DecisionProbabilitySchema = z.number().min(0).max(1);
+export const DecisionResponseSchema = z.object({
+  id: z.string().optional(), model: z.string(), provider: z.string().optional(),
+  answers: z.record(z.string(), z.discriminatedUnion('type', [
+    z.object({ type: z.literal('noul'), noul: DecisionProbabilitySchema }),
+    z.object({ type: z.literal('choice'), choice: z.string(),
+      probabilities: z.record(z.string(), DecisionProbabilitySchema).optional(), confidence: DecisionProbabilitySchema.optional() }),
+    z.object({ type: z.literal('score'), score: z.number(),
+      probabilities: z.record(z.string(), DecisionProbabilitySchema).optional(), confidence: DecisionProbabilitySchema.optional(),
+      legend: z.record(z.string(), DecisionContextSchema).optional() }),
+  ])),
+  usage: z.object({ input_tokens: z.number().int().nonnegative(), output_tokens: z.number().int().nonnegative(),
+    cost: z.number().nonnegative().optional() }),
+}).openapi('DecisionResponse');
+
 export const CampusPassResponseSchema = z.object({
   campus_network: z.boolean().nullable().describe('Whether the trusted client IP matches campus ranges. Null means the address or configuration is unavailable.'),
   enabled: z.boolean().describe('Whether campus ranges and the standard inference pool credential are configured.'),
@@ -358,19 +404,23 @@ export const SandboxExposeSlotSchema = z.object({
 }).openapi('SandboxExposeSlot');
 // Temporary inference grants: seconds are positive; administrator policy sets
 // the ceiling at runtime so clients receive the current maximum on rejection.
+const GrantModelSchema = z.string().min(1).max(200);
+const GrantModelsListSchema = z.array(GrantModelSchema).min(1).max(16).describe('Authorized backend-qualified standard model slugs, without inference type tags. Every model must be eligible. Sealed is excluded.');
 export const GrantRequestSchema = z.object({
-  model: z.string().min(1).max(200).describe('One eligible backend-qualified standard model from GET /grants/models. Bare OpenRouter slugs are accepted for compatibility; issuance returns the canonical qualified ID. Sealed is excluded.').openapi({ example: 'openrouter:qwen/qwen3.8-27b' }),
+  models: GrantModelsListSchema.optional(),
+  model: GrantModelSchema.optional().describe('Legacy singleton shorthand, mutually exclusive with models. Bare OpenRouter slugs remain accepted.').openapi({ example: 'openrouter:qwen/qwen3.8-27b' }),
   expires_in: z.number().int().positive().describe('Requested lifetime in seconds. The runtime administrator maximum is enforced by rejection, never clamping; invalid_lifetime reports the current maximum.').openapi({ example: 600 }),
-}).strict().openapi('GrantRequest');
+}).strict().refine(v => (v.model !== undefined) !== (v.models !== undefined), 'Specify models or model, not both.').openapi('GrantRequest');
 export const GrantTokenSchema = z.object({
   grant_id: z.string().describe('Grant identifier for management/revocation; called id in the list response.'),
   name: z.string().describe('Public recognition name, not a credential. Bound into the signed token; names are unique among this owner\'s retained grants.'),
   key: z.string().describe('Compatibility alias for access_token, identical secret value.'),
   access_token: z.string().describe('Opaque bearer credential, shown only at issuance. Send in Authorization, never URLs or logs; keep out of public page source.'),
-  token_type: z.literal('Bearer'), model: z.string().describe('Canonical backend-qualified model. Use unchanged; the token permits only this model.'),
+  token_type: z.literal('Bearer'), models: GrantModelsListSchema,
+  model: z.string().describe('Compatibility alias for the first authorized model.'),
   expires_at: z.number().int().describe('Absolute expiry, Unix seconds. Visitor-authorized lifetime starts at approval, not exchange.'),
   expires_in: z.number().int().describe('Seconds remaining at issuance/exchange, not a new lifetime allocation.'),
-  base_url: z.string().describe('Standard inference base URL. Append /chat/completions (all enabled standard backends) or /responses (OpenRouter only).'),
+   base_url: z.string().describe('Standard inference base URL. Append /chat/completions, /decisions, or /responses (OpenRouter only).'),
 }).openapi('GrantToken');
 export const GrantErrorSchema = z.object({ error: z.object({
   code: z.string().describe('Machine-readable reason, such as invalid_request, invalid_lifetime, invalid_grant, model_not_allowed, login_required, or grants_disabled.'),
@@ -394,16 +444,18 @@ export const GrantExchangeSchema = z.object({
 // ?request= continuation; registering this must never install public validation.
 export const GrantAuthorizeQuerySchema = z.object({
   client_id: z.string().describe('Signed descriptor returned by POST /grants/clients.'),
-  response_type: z.literal('code'), model: GrantRequestSchema.shape.model,
+  response_type: z.literal('code'), model: GrantModelSchema.optional().describe('Legacy singleton shorthand, mutually exclusive with models.'),
+  models: z.string().optional().describe('JSON array of 1–16 backend-qualified model slugs, mutually exclusive with model. Example: ["openrouter:qwen/qwen3.8-27b"].'),
   expires_in: z.string().describe('Requested positive integer lifetime in seconds, as a query string; the runtime ceiling still applies.'),
   state: z.string().min(1).max(256).describe('Cryptographically random application state, retained by the initiating tab and verified on callback.'),
   code_challenge: z.string().regex(/^[A-Za-z0-9_-]{43}$/).describe('Base64url SHA-256 of the verifier, without padding.'),
   code_challenge_method: z.literal('S256'),
-}).openapi('GrantAuthorizeQuery');
+}).refine(v => (v.model !== undefined) !== (v.models !== undefined), 'Specify models or model, not both.').openapi('GrantAuthorizeQuery');
 export const GrantListSchema = z.object({ grants: z.array(z.object({
   id: z.string().describe('Same identifier as grant_id in the issuance response. Use to revoke this grant.'),
   name: z.string().nullable().describe('Public recognition name; null for older unnamed grants.'),
-  model: z.string().describe('Permitted backend-qualified model.'),
+  models: GrantModelsListSchema,
+  model: z.string().describe('Compatibility alias for the first authorized model.'),
   expires_at: z.number().int().describe('Expiry, Unix seconds.'), created_at: z.number().int().describe('Creation time, Unix seconds.'),
   client_name: z.string().nullable().describe('App-supplied consent label; null for direct issuance.'),
   redirect_uri: z.string().nullable().describe('Bound callback URI; null for direct issuance.'),

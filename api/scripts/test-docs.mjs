@@ -58,7 +58,7 @@ try {
   for (const [path, method] of [['/grants', 'get'], ['/grants', 'post'], ['/grants/models', 'get'], ['/grants/{id}', 'delete']]) {
     assert.deepEqual(spec.paths[path][method].security, [{ Bearer: [] }, { BrowserSession: [] }]);
   }
-  for (const [path, method] of [['/v1/chat/completions', 'post'], ['/v1/responses', 'post'], ['/v1/models', 'get'], ['/web/search', 'post'], ['/web/fetch', 'post']]) {
+  for (const [path, method] of [['/v1/decisions', 'post'], ['/v1/chat/completions', 'post'], ['/v1/responses', 'post'], ['/v1/models', 'get'], ['/web/search', 'post'], ['/web/fetch', 'post']]) {
     assert.deepEqual(spec.paths[path][method].security, [{ Bearer: [] }, {}]);
   }
   assert.deepEqual(spec.paths['/usage'].get.security, [{ Bearer: [] }]);
@@ -66,7 +66,9 @@ try {
   const authorize = spec.paths['/grants/authorize'].get;
   assert.equal(authorize.operationId, 'authorizeInferenceClient');
   assert.deepEqual(authorize.security, []);
-  assert.deepEqual(authorize.parameters.map(p => p.name).sort(), ['client_id', 'response_type', 'model', 'expires_in', 'state', 'code_challenge', 'code_challenge_method'].sort());
+  assert.deepEqual(authorize.parameters.map(p => p.name).sort(), ['client_id', 'response_type', 'model', 'models', 'expires_in', 'state', 'code_challenge', 'code_challenge_method'].sort());
+  assert.equal(authorize.parameters.find(p => p.name === 'models').required, false);
+  assert.equal(authorize.parameters.find(p => p.name === 'model').required, false);
   assert.ok(authorize.responses['303'].headers.Location);
   assert.ok(authorize.responses['200'].content['text/html']);
   assert.equal(spec.paths['/grants/authorize'].post, undefined, 'Internal consent form stays private');

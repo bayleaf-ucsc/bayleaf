@@ -25,6 +25,7 @@ export { SandboxManagement } from './serviceSessions';
 import { dashboardRoutes } from './routes/dashboard';
 import { keyRoutes } from './routes/key';
 import { proxyRoutes } from './routes/proxy';
+import { decisionsRoutes } from './routes/decisions';
 import { sealedRoutes } from './routes/sealed';
 import { sandboxRoutes } from './routes/sandbox';
 import { reapInactiveSandboxes, SANDBOX_REAPER_CRON } from './sandboxReaper';
@@ -70,7 +71,7 @@ app.openAPIRegistry.registerComponent('securitySchemes', 'Bearer', {
   type: 'http',
   scheme: 'bearer',
   description:
-    'Ordinary BayLeaf API key (`sk-bayleaf-...`), or a controller-managed sandbox credential (`sk-bayleaf-sandbox-...`) bound to an owner and machine with separate custody and revocation. Both use the owner\'s allowances; sandbox credentials are not operator credentials. Temporary inference tokens (`sk-bayleaf-grant-...`) permit only POST /v1/chat/completions and /v1/responses with their specified model. On supported routes, campus users may omit a key for Campus Pass access. Consult operation-specific restrictions, especially grant management.',
+    'Ordinary BayLeaf API key (`sk-bayleaf-...`), or a controller-managed sandbox credential (`sk-bayleaf-sandbox-...`) bound to an owner and machine with separate custody and revocation. Both use the owner\'s allowances; sandbox credentials are not operator credentials. Temporary inference tokens (`sk-bayleaf-grant-...`) permit only POST /v1/chat/completions, /v1/responses and /v1/decisions with their specified models. On supported routes, campus users may omit a key for Campus Pass access. Consult operation-specific restrictions, especially grant management.',
 });
 
 // ── CORS middleware ───────────────────────────────────────────────
@@ -163,6 +164,8 @@ app.openapi(healthRoute, (c) => {
 
 // ── Mount route groups ────────────────────────────────────────────
 
+// Specific operation before the general OpenRouter passthrough.
+app.route('/v1', decisionsRoutes);
 app.route('/v1', proxyRoutes);
 app.route('/', campusPassRoutes);
 // OpenCode keys well-known configuration by login URL. Mount Sealed discovery
@@ -212,6 +215,7 @@ app.doc31('/docs/openapi.json', (c) => ({
   security: [{ Bearer: [] }],
   externalDocs: { description: 'Agent onboarding and integration workflows (wider than the HTTP API)', url: 'https://api.bayleaf.dev/llms.txt' },
   tags: [
+    { name: 'Decisions', description: 'Typed probabilistic standard inference, sharing backend policy, credentials and allowances with generative inference.' },
     { name: 'LLM', description: 'Standard OpenAI-compatible inference, discovery and allowance inspection. Use backend-qualified model IDs; enabled providers and model eligibility are discovered live. On campus-supported operations an empty security alternative means Campus Pass eligibility is still required. Temporary tokens permit only their specified model and inference paths.' },
     { name: 'Sealed', description: 'Hardware-attested confidential inference using client-verified EHBP encryption; requires a compatible Tinfoil SDK. An empty security alternative on inference means eligible Campus Pass, not unconditional anonymous access. Temporary inference tokens are excluded.' },
     { name: 'Sandbox', description: 'Sandboxed Linux code execution and file I/O' },

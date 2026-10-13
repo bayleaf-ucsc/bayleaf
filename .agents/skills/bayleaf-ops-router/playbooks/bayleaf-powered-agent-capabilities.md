@@ -153,6 +153,14 @@ API to keep a retired capability appearing functional.
 
 ## Refinement log
 
+- 2026-10-13 (decision inference rollout): Core HTTP, dashboard and visitor consent
+  qualified in production, including a shared text/decision token. Client adapters
+  remain deliberately deferred, and media transport qualification remains issue #98.
+
+- 2026-10-13 (decision inference, local): Adam approved API-first exposure, with
+  hosted/desktop adapters deferred in api/DECISIONS.md. Multimodal schema discovery
+  is not transport verification: media remains denied until an adapter is qualified.
+
 - 2026-10-13: Drafted from the #97 discussion and source inventory. Found that
   `llms.txt` is onboarding-oriented and `/docs/SKILL.md` is a legacy redirect;
   neither proves installed desktop capability discovery. No cross-surface

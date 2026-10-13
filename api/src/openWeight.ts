@@ -2,7 +2,8 @@ import { OPENROUTER_API } from './constants';
 import type { Bindings } from './types';
 
 const CACHE_TTL_SECONDS = 24 * 60 * 60;
-const CACHE_KEY_PREFIX = 'open-weight:v1:';
+// v2 invalidates text-only catalog negatives for decision models.
+const CACHE_KEY_PREFIX = 'open-weight:v2:';
 
 interface OpenRouterModelMetadata {
   id?: unknown;
@@ -58,7 +59,7 @@ export async function checkOpenWeightModel(
 
   let modelsResponse: Response;
   try {
-    modelsResponse = await fetch(`${OPENROUTER_API}/models`);
+    modelsResponse = await fetch(`${OPENROUTER_API}/models?output_modalities=text,decisions`);
   } catch {
     return 'unknown';
   }

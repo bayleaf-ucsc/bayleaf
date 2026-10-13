@@ -69,7 +69,7 @@ ITS-operated or ITS-supported one.
   [preview retention schedule](api/RETENTION.md#transient-previews-bounded-poc).
 - **Temporary inference access (API, opt-in when enabled):** approving an app
   gives it a temporary bearer token against your existing allowance. BayLeaf
-  stores grant metadata (owner, token name, model, expiry, optional app name and callback)
+   stores grant metadata (owner, token name, permitted models, expiry, optional app name and callback)
   and short-lived authorization transactions, not a permanent app registration.
   Expired records are removed by hourly cleanup while the feature is enabled;
   D1 backup retention also applies. The receiving app may handle or retain what
@@ -93,6 +93,13 @@ ITS-operated or ITS-supported one.
 - **Edge logs:** standard Cloudflare and DigitalOcean platform logs (IPs,
   status codes, timestamps) are kept by those vendors at their default
   retention (~72 hours for Cloudflare).
+
+**API decision inference:** typed decision
+requests send state, questions and criteria through OpenRouter under the same
+ZDR and published-weight eligibility policy. BayLeaf retains no request or answer
+content. Upstream model, usage and timing metadata remain observable. Embedded
+media requests are rejected until transport and ZDR are qualified; no media upload
+store is introduced. See [qualification and exposure scope](api/DECISIONS.md).
 
 ## How long things stick around
 

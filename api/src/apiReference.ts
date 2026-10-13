@@ -21,7 +21,7 @@ Use standard base URL https://api.bayleaf.dev/v1. Obtain the current recommended
 | Ordinary BayLeaf key | Personal account access; issue at [the dashboard](/dashboard). Send Authorization: Bearer with the key. |
 | Dedicated sandbox credential | Controller-managed access bound to one owner and machine, with separate rotation/revocation from the ordinary key. Shares the owner's allowances, not extra credit. No automatic expiry; kept in Daytona Secrets, not copied into guest files. See [custody and lifecycle](https://github.com/bayleaf-ucsc/bayleaf/blob/main/api/SANDBOX-CREDENTIALS.md). |
 | Campus Pass | Omit Authorization on campus-supported operations. [GET /campus-pass](/campus-pass) checks network, approximate quota and standard shared credit without spending a request. |
-| Temporary inference token | One-model, expiring standard inference using an owner's allowance. See the Grants workflow and exact schemas below. No tools, discovery or Sealed. |
+| Temporary inference token | Selected-model-set, expiring standard inference using an owner's allowance. See the Grants workflow and exact schemas below. No tools, discovery or Sealed. |
 | Browser session | BayLeaf's own dashboard/grant management; not a cross-origin app credential. Cookie-authenticated writes require the BayLeaf origin. |
 
 Public operations explicitly declare no authentication. An empty alternative on a campus-supported operation means keyless access is conditional on the trusted campus network, not that arbitrary off-campus requests are accepted. Sandbox and personal usage inspection require personal access.
@@ -29,6 +29,8 @@ Public operations explicitly declare no authentication. An empty alternative on 
 ## Inference and privacy boundaries
 
 Standard inference uses OpenAI-shaped JSON through zero-data-retention OpenRouter providers, restricted to verifiably open-weight models. Alternate standard backends: ${ALT_BACKENDS.map(b => `${b.label}: ${isBackendEnabled(env, b.key) ? 'enabled' : 'disabled'}`).join('; ')}.
+
+POST /v1/decisions evaluates named Choice, Noul and Score questions over text or structured JSON using the same backend allowance. Models are discovered with text and decision outputs together. A token authorizes model slugs, not modalities; using a model in the wrong operation is rejected. Embedded image/audio/video fields reserve the future multimodal contract, but nonempty media is rejected until the upstream transport is verified. No silent text fallback.
 
 Sealed is ${env.SEALED_ENABLED === 'true' ? 'enabled' : 'disabled'} on this deployment. It requires a client that verifies attestation and encrypts bodies with EHBP, not an ordinary plaintext OpenAI client. BayLeaf relays ciphertext without the enclave-bound decryption key. Both lanes expose request metadata; BayLeaf retains no inference content. See [retention boundaries](https://github.com/bayleaf-ucsc/bayleaf/blob/main/api/RETENTION.md).
 

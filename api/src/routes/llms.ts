@@ -104,7 +104,7 @@ Choose the access you need:
 - [API keys and Campus Pass](#api-keys-and-campus-pass): account access and allowances.
 - [Build browser apps with Campus Pass](#build-browser-apps-with-campus-pass): static HTML/JS that uses keyless inference when the visitor is eligible.
 - [Temporary inference tokens](#temporary-inference-tokens): give a script or app
-  one-model, expiring access, or let each visitor authorize their own allowance.
+  selected-model-set, expiring access, or let each visitor authorize their own allowance.
 - [Standard LLM inference](#standard-llm-inference): the full model catalog and
   backend-qualified model IDs, distinct from curated onboarding recommendations.
 ${sealedEnabled ? '- [Sealed LLM inference](#sealed-llm-inference): a separate encrypted path requiring\n  an attestation-capable client and an ordinary API key or Campus Pass.' : ''}
@@ -653,8 +653,8 @@ ${fence}
 
 Status: ${input.grantsEnabled ? 'enabled' : 'not enabled on this deployment'}.
 
-A temporary inference token represents one **grant**: permission to use a specific
-backend-qualified standard-inference model until an explicit deadline. BayLeaf
+A temporary inference token represents one **grant**: permission to use a selected
+set of backend-qualified standard-inference models until an explicit deadline. BayLeaf
 issues and validates it. It is not an upstream provider key. All tokens belonging
 to an owner share that owner's existing backend allowance with their ordinary API
 key. Creating more tokens does not create more credit or reset request quotas.
@@ -671,9 +671,14 @@ Tokens support ${bt}POST /v1/chat/completions${bt} for every enabled standard ba
 ${bt}POST /v1/responses${bt} currently supports OpenRouter only. Backend enablement
 and eligibility policies still apply; disabled backends cannot issue usable tokens.
 Sealed is separate: BayLeaf cannot inspect its encrypted model field to enforce
-one-model authority. Temporary tokens cannot list models, use web/sandbox tools,
+model-set authority. Temporary tokens cannot list models, use web/sandbox tools,
 manage accounts, or mint or renew tokens. Model fallbacks, routing overrides, and
 provider plugins are unavailable with these tokens.
+
+Tokens also support ${bt}POST /v1/decisions${bt} for eligible decision models. Select
+multiple slugs with ${bt}models${bt}; the legacy ${bt}model${bt} field remains singleton
+shorthand. Models are not type-tagged in grants: the requested operation is checked
+later against model capabilities. All selected models share the owner's allowances.
 
 #### Names and dashboard controls
 
@@ -716,6 +721,22 @@ revocation, offer explicit authorization again, never automatic renewal loops.
 The [repository guide and browser example](https://github.com/bayleaf-ucsc/bayleaf/blob/main/api/GRANTS.md)
 explain implementation rationale and provide a substantial example, not a second
 normative field catalog.
+
+### Typed decision inference
+
+For classification, yes/no probabilities, and ordered rubric scores, use
+${bt}POST /v1/decisions${bt}. Send a backend-qualified model, text or JSON ${bt}state${bt},
+and named Choice, Noul, or Score ${bt}questions${bt}. Noul is a probability, not a
+Boolean; choose thresholds using task-specific evaluation and allow abstention.
+Use ordinary keys, eligible Campus Pass, or temporary tokens permitting that model.
+No new provider account, credential, or budget is needed. OpenRouter published weights
+and ZDR remain required; no decision-specific enablement switch exists.
+
+Embedded ${bt}images${bt}, ${bt}audio${bt}, and ${bt}videos${bt} reserve the multimodal
+contract, but nonempty media is currently rejected because OpenRouter transport has
+not been verified. No remote media fetching or silent transcription/text fallback.
+Read [the generated contract](https://api.bayleaf.dev/docs#tag/decisions) and
+[qualification notes](https://github.com/bayleaf-ucsc/bayleaf/blob/main/api/DECISIONS.md).
 
 ### Standard LLM inference
 

@@ -58,6 +58,15 @@ traffic without changing the Worker.
 
 ## Refinement log
 
+- 2026-10-13 (decision inference rollout): Wrangler's BayLeaf-scoped OAuth could
+  read D1 when the cf profile could not. Rechecked empty tables, applied 0016 and
+  deployed; live HTTP/model-set checks passed. The caller was campus-eligible,
+  so the smoke test now assesses network eligibility instead of assuming off-campus.
+
+- 2026-10-13 (decision inference, local): A new inference operation shares existing
+  backend enablement and allowances; no independent operation switch. Expanded the
+  OpenRouter output-modality catalog and invalidated text-only negative verdicts.
+
 - 2026-10-11 (Campus Pass availability): A public, passive metadata endpoint reused
   existing auth/quota/provider boundaries, so no new provider, storage, or kill switch
   was needed. Pre-deploy Astra review caught malformed-metadata false positives.

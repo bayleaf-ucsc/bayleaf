@@ -18,14 +18,14 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }>
       #grant-list button { font-size: .85rem; padding: .35rem .5rem; margin: 0; }
     `}</style>
     <h2>Temporary inference tokens</h2>
-    <p>For scripts and apps using one standard-inference model. Each token draws
+    <p>For scripts and apps using up to 16 standard-inference models. Each token draws
       on your existing allowance and expires automatically. Its name is safe to
       share; its full credential is available only through Copy token.</p>
     <details>
       <summary>Create a token</summary>
       <form id="grant-form">
-        <label for="grant-model">Model</label>
-        <select id="grant-model" required disabled data-recommended={model}>
+        <label for="grant-model">Models (select 1–16)</label>
+        <select id="grant-model" multiple size={8} required disabled data-recommended={model} aria-describedby="grant-model-status">
           <option value="">Loading model catalog…</option>
         </select>
         <p id="grant-model-status" role="status"></p>
@@ -73,7 +73,7 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }>
     modelSelect.value = ids.includes(qualifiedRecommended) ? qualifiedRecommended : ids[0] || '';
     modelSelect.disabled = !ids.length; createButton.disabled = !ids.length;
     document.getElementById('grant-model-status').textContent = ids.length
-      ? 'All listed models from enabled standard-inference backends. Sealed is separate.' : 'No model catalog is available. Reload to retry.';
+      ? 'Select 1–16 models. Use Command or Control to select multiple entries. Sealed is separate.' : 'No model catalog is available. Reload to retry.';
   }
   async function refresh() {
     const { grants } = await request('/grants');
@@ -88,7 +88,7 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }>
       const item = document.createElement('li');
       const identity = document.createElement('span'); identity.className = 'grant-identity';
       const title = document.createElement('strong'); title.textContent = name; title.tabIndex = 0;
-      const details = 'Standard inference only. Model: ' + grant.model + '. ' +
+      const details = 'Standard inference only. Models: ' + (grant.models || [grant.model]).join(', ') + '. ' +
         (grant.redirect_uri ? (grant.client_name || 'App') + ' · ' + new URL(grant.redirect_uri).origin : 'Created directly.') +
         ' Expires ' + new Date(grant.expires_at * 1000).toLocaleString();
       title.title = details; title.setAttribute('aria-label', name + '. ' + details);
@@ -117,8 +117,10 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }>
   document.getElementById('grant-form').onsubmit = async event => {
     event.preventDefault(); const button = document.getElementById('create-grant'); button.disabled = true;
     try {
+      const models = Array.from(modelSelect.selectedOptions, option => option.value).filter(Boolean);
+      if (!models.length || models.length > 16) throw new Error('Select between 1 and 16 models.');
       const result = await request('/grants', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: document.getElementById('grant-model').value, expires_in: Number(document.getElementById('grant-seconds').value) }) });
+        body: JSON.stringify({ models, expires_in: Number(document.getElementById('grant-seconds').value) }) });
       credentials.set(result.grant_id, result.access_token);
       status.textContent = result.name + ': token created.'; await refresh();
     } catch (e) { status.textContent = e.message; }

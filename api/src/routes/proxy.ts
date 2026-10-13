@@ -20,7 +20,7 @@ import { getGCPAccessToken } from '../utils/gcp';
 import { checkAndIncrement, inspectCounter, parseLimit } from '../utils/campusRpd';
 import { checkOpenWeightModel, hasPublishedWeights, openRouterSlug } from '../openWeight';
 import { enforceGrantModel } from '../grants';
-import { fetchBedrockModels } from '../standardModels';
+import { fetchBedrockModels, supportsOpenRouterOperation, supportsOpenRouterModels } from '../standardModels';
 import {
   ChatCompletionRequestSchema,
   ChatCompletionResponseSchema,
@@ -50,7 +50,7 @@ proxyRoutes.get('/', (c) => c.body(null, 200));
  * billable LLM endpoints. Inspection routes (/models, /auth/key) and proxy
  * passthroughs are not gated.
  */
-async function enforceCampusRpd(
+export async function enforceCampusRpd(
   env: AppEnv['Bindings'],
   auth: AuthResult,
 ): Promise<Response | null> {
@@ -117,7 +117,7 @@ async function enforceKeyedBackendRpd(c: Context<AppEnv>, auth: AuthResult, key:
  * destroying the per-user attribution that spend accounting depends on, and it
  * would bill one user's traffic to the shared pool.
  */
-function upstreamCredentialUnavailable(c: Context<AppEnv>) {
+export function upstreamCredentialUnavailable(c: Context<AppEnv>) {
   return c.json({
     error: {
       message: 'Could not obtain an upstream credential for your account. This is a BayLeaf-side problem, not a problem with your key; please retry shortly.',
@@ -133,6 +133,23 @@ function openWeightForbidden(c: Context<AppEnv>, model: string) {
       code: 403,
     },
   }, 403);
+}
+
+/** Ordinary keys may request fallbacks, but every selectable slug obeys the same policy. */
+async function enforceTextFallbacks(c: Context<AppEnv>, body: Record<string, unknown>): Promise<Response | null> {
+  if (body.route !== undefined && body.route !== 'fallback')
+    return c.json({ error: { code: 400, message: 'Only explicit model fallback routing is supported.' } }, 400);
+  if (body.models === undefined) return null;
+  if (!Array.isArray(body.models) || body.models.length < 1 || body.models.length > 16
+    || body.models.some(m => typeof m !== 'string' || !m.includes('/') || /\s/.test(m)
+      || (m.includes(':') && !m.startsWith('openrouter:') && m.indexOf(':') < m.indexOf('/'))))
+    return c.json({ error: { code: 400, message: 'Specify 1–16 OpenRouter fallback model slugs.' } }, 400);
+  const models = (body.models as string[]).map(openRouterSlug);
+  for (const model of models) if (await checkOpenWeightModel(model, c.env) !== 'open') return openWeightForbidden(c, model);
+  if (!await supportsOpenRouterModels(models, ['text']))
+    return c.json({ error: { code: 400, message: 'Every fallback must have verified ZDR text-generation support.' } }, 400);
+  body.models = models;
+  return null;
 }
 
 /** Forward a modified JSON body to OpenRouter and return the response. */
@@ -223,6 +240,11 @@ proxyRoutes.openapi(responsesRoute, async (c) => {
     return openWeightForbidden(c, model) as any;
   }
   body.model = model;
+
+  const fallbackRejection = await enforceTextFallbacks(c, body);
+  if (fallbackRejection) return fallbackRejection as any;
+  if (!await supportsOpenRouterOperation(model, 'text'))
+    return c.json({ error: { message: 'This model does not have verified text-generation support.', code: 400 } }, 400) as any;
 
   injectUser(body, auth);
 
@@ -366,6 +388,10 @@ proxyRoutes.openapi(chatCompletionsRoute, async (c) => {
       return openWeightForbidden(c, model) as any;
     }
     body.model = model;
+    const fallbackRejection = await enforceTextFallbacks(c, body);
+    if (fallbackRejection) return fallbackRejection as any;
+    if (!await supportsOpenRouterOperation(model, 'text'))
+      return c.json({ error: { message: 'This model does not have verified text-generation support.', code: 400 } }, 400) as any;
     const cred = await resolveBackendCredential(auth, 'openrouter', c.env);
     if (!cred) return upstreamCredentialUnavailable(c) as any;
 
@@ -405,7 +431,7 @@ proxyRoutes.openapi(modelsRoute, async (c) => {
     if (!cred) return upstreamCredentialUnavailable(c) as any;
 
     const res = await sendWithHeal(cred, c.env, (secret) =>
-      fetch(`${OPENROUTER_API}/models`, { headers: { Authorization: `Bearer ${secret}` } }));
+      fetch(`${OPENROUTER_API}/models?output_modalities=text,decisions&zdr=true`, { headers: { Authorization: `Bearer ${secret}` } }));
     
     if (!res.ok) {
       return new Response(await res.text(), { status: res.status, headers: { 'Access-Control-Allow-Origin': '*' } }) as any;
@@ -660,6 +686,11 @@ async function handleProxy(c: Context<AppEnv>): Promise<Response> {
   const auth = await resolveAuth(c);
   if (auth instanceof Response) return auth;
 
+  // The System One alias must not bypass the typed decision policy/quota path.
+  if (path.replace(/\/+$/, '') === '/systemone') return c.json({ error: {
+    code: 400, message: 'Use /v1/decisions for typed inference.',
+  } }, 400);
+
   if (c.req.method === 'POST') {
     let body: Record<string, unknown>;
     try {
@@ -675,6 +706,10 @@ async function handleProxy(c: Context<AppEnv>): Promise<Response> {
     }
     body.model = model;
 
+    const fallbackRejection = await enforceTextFallbacks(c, body);
+    if (fallbackRejection) return fallbackRejection;
+    if (!await supportsOpenRouterOperation(model, 'text'))
+      return c.json({ error: { message: 'Use /v1/decisions for decision models.', code: 400 } }, 400);
     const cred = await resolveBackendCredential(auth, 'openrouter', c.env);
     if (!cred) return upstreamCredentialUnavailable(c);
     return sendWithHeal(cred, c.env, (secret) =>

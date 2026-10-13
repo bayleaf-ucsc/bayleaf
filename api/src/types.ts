@@ -176,7 +176,7 @@ export interface InferenceGrant {
   name: string | null;
   owner_email: string;
   owner_token_hash: string;
-  model: string;
+  models_json: string;
   expires_at: number;
   created_at: number;
   client_name: string | null;
@@ -189,7 +189,7 @@ export interface GrantTransaction {
   client_id: string;
   client_name: string;
   redirect_uri: string;
-  model: string;
+  models_json: string;
   lifetime: number;
   challenge: string;
   state: string;
