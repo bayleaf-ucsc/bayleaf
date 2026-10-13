@@ -132,14 +132,15 @@ If OpenCode isn't already installed, OpenChamber automatically installs it on fi
 When you launch OpenChamber, you'll be greeted with a user interface that looks a lot like the one from BayLeaf Chat. You've got a big chat window in the middle with a sidebar of your past conversations on the left.
 
 **Important:** Even though it might be tempting to start a new conversation right away, hold off on that. The oh-so-convenient initial state of OpenChamber sets you up with free access to a data-harvesting inference service. (At the time of writing, their default model is ominously named *Big Pickle*.) We'll have you hooked up with an excellent privacy setup with just one more step.
+<img src="GettingStartedPics/BigPickleX.png" alt="Open Chamber window with 'Big Pickle' default model Xed out">
 
 ### Configuring OpenChamber to use the BayLeaf API
 
-(Note to author: We really need screenshots here to point out where people need to click!)
-
 This is the only technical process required to use OpenChamber with the BayLeaf API, but it is easy to get lost in it.
 
-On the far-right menu bar, find the Terminal button with a little `>_` icon. Click this to launch a terminal in the right sidebar. When the terminal panel opens, type (better yet, copy-paste) the following command:
+On the far-right menu bar, find the Terminal button with a little `>_` icon. 
+<img src="GettingStartedPics/TerminalCircle.png" alt="Open Chamber Terminal with associated button circled">
+Click this to launch a terminal in the right sidebar. When the terminal panel opens, type (better yet, copy-paste) the following command:
 
 ```sh
 opencode auth login https://api.bayleaf.dev
@@ -151,12 +152,14 @@ After a moment, you'll see a message like this:
 Open this URL to approve access:
 https://api.bayleaf.dev/auth/claim?c=PMKX-21D3
 ```
+<img src="GettingStartedPics/URL-Access.png" alt="Open Chamber Terminal with Access URL circled">
 
 Copy-paste that link into your browser (or control/command-click it to open it directly). It will route you through the CILogon authentication process (just like in BayLeaf Chat), landing you on a page that says "Authorize OpenCode for BayLeaf," references the claim code you spotted in the terminal, and has some big Approve and Deny buttons. For this process, we want to Approve. A moment later, you'll see a new page with a message like "OpenCode for BayLeaf has been authorized. Return to your terminal, then restart OpenCode to access BayLeaf." (It says OpenCode instead of OpenChamber because OpenChamber is an OpenCode wrapper and we haven't yet built a graphical version of the onboarding flow originally designed for the command-line tools.)
 
 You can close that browser tab and return to OpenChamber now. Hopefully, after a moment, you'll see a message like "Logged into https://api.bayleaf.dev." If so, close and reopen OpenChamber for the change to take effect.
 
 After the restart, you'll be back at the OpenChamber main screen, but instead of seeing *Big Pickle* listed as your default model in the message composition box, you'll see something like *Z.ai: GLM-5.3-Flash*. When you mouse over this model name, you'll see a tooltip confirming *BayLeaf Remote* as the model's inference provider.
+<img src="GettingStartedPics/GLM5.3Flash.png" alt="Open Chamber Window with model and Bayleaf provider Circled">
 
 If you ever need to disconnect OpenChamber from the BayLeaf API (unlikely), you can use the command:
 
