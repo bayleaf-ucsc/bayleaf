@@ -527,13 +527,42 @@ The most substantial toolkit on the deployment. Source:
 but **not bound to any model by default** — users enable it per-chat via the
 tool picker in the chat composer.
 
-**Current version: 0.31.2** (2026-10-11), byte-identical to upstream
-commit `74b42c2`. `expose` requires an explicit
+**Current version: 0.32.0** (2026-10-12), byte-identical to upstream
+commit `b90abaf`. `expose` requires an explicit
 `private` or `public` policy and accepts
 an optional untrusted hostname tag, which BayLeaf ignores. Private is the
 default guidance and fails closed; headerless public calls may fall back to Daytona's direct
 signed URL if wrapping fails. The installation credential is an admin valve
 backed by the API's `PREVIEWS_INSTALLATION_KEY` Worker Secret.
+
+**Refactor upgrade (2026-10-12):** promoted the unchanged personally used 0.32.0
+build (SHA-256 `d7d26ad8151fa0a85e76fadc583585060a001863c4059c59f750f4ea907c45b3`).
+All 494 upstream offline tests and six isolated BayLeaf OWUI checks passed:
+complete source/schema, bash, write/read, interpreter, view, and delegate.
+The additional first-time-agent scenario timed out; that broader workflow is
+not qualified by this run. Production readback matched the personal source and
+complete schema; all valves, the Code Sandbox name, and grants were preserved.
+Health returned 200, with no restart. Full private before/after pulls found only
+the Lathe source/schema changes; the hidden Basic base model was checked separately.
+Snapshots are under `~/.tokens/bayleaf-lathe-refactor-20261012-193329`.
+Adam confirmed production playtesting works. A foreground diagnostic rerun
+exposed an upstream deployment-harness isolation bug: the suite used Adam's
+admin identity, and its Socket.IO collector accepted unrelated chats' events.
+An in-memory request-ID filter eliminated that false delegation failure; all
+six core checks passed again. The first-time scenario still timed out after
+240 seconds without a tool-status event, so its cause remains undiagnosed.
+Further live qualification should use a dedicated synthetic account, not Adam's
+admin session. The separate Docker monitor already uses a synthetic identity.
+Upstream repair and regression-test proposal:
+[Lathe #107](https://github.com/rndmcnlly/lathe/issues/107).
+
+No tools, parameter contracts, dependencies, valves, or preview protocol were
+added. Search now returns bounded concrete paths/hits, text previews are bounded,
+and completed bash logs/exit evidence are retained for 24 hours (or until sandbox
+stop/restart). Delegate references have an aggregate 50-KiB limit and fail rather
+than silently clip. Interpreter identity is separated from evictable chat notices;
+it remains local to one loaded toolkit instance, not durable across OWUI reloads
+or workers. Failure reporting and workspace readiness checks were hardened.
 
 **Production reconciliation (2026-10-11):** pulled Adam's subsequent 0.31.2
 deployment back into the repository, byte-identical to upstream `74b42c2`.

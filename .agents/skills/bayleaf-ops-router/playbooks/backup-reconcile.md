@@ -92,6 +92,11 @@ through the appropriate playbook, don't paper over it in the backup.
 
 ## Refinement log
 
+- 2026-10-12: Lathe 0.32.0 full private before/after pulls found only its
+  source/schema changes. Synced those artifacts only, verified the hidden Basic
+  base model separately, and kept migration version IDs private. No unrelated
+  resource definitions or user/group/chat data entered the public backup.
+
 - 2026-10-12: Full private pre/post-v0.12.0 pulls found only migration-assigned
   version-history IDs, with content, grants and images unchanged. Retained the
   IDs in private snapshots, not portable repo definitions. Known pre-existing

@@ -12,7 +12,7 @@
       "description": "Coding agent tools (lathe, bash, read, write, edit, glob, grep, view, interpret, delegate, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.",
       "required_open_webui_version": "0.11.0",
       "requirements": "httpx, httpx-ws, pydantic-ai-slim[openai]~=2.5, cachetools",
-      "version": "0.31.2",
+      "version": "0.32.0",
       "licence": "MIT"
     },
     "has_user_valves": true
@@ -28,14 +28,14 @@
       "created_at": 1773097882
     }
   ],
-  "updated_at": 1791745429,
+  "updated_at": 1791859200,
   "created_at": 1773079252,
   "user": null,
   "write_access": true,
   "specs": [
     {
       "name": "bash",
-      "description": "Execute a bash command in the sandbox. Non-interactive only.\nCommands that finish within the foreground window return output directly.\nLong-running commands auto-background and return a descriptor with log\nfile paths for monitoring.\n\nWhen creating git commits, add an Assisted-by: Lathe trailer to the\ncommit message to acknowledge AI assistance.",
+      "description": "Execute a bash command in the sandbox. Non-interactive only.\nCommands that finish within the foreground window return output directly.\nLong-running commands auto-background and return a descriptor with log\nfile paths for monitoring. Text previews are capped at 50 KiB. Full logs and\nexit status remain readable for 24 hours after completion, until a later\nbash call reaps expired evidence. Sandbox stop/restart clears these files.\n\nWhen creating git commits, add an Assisted-by: Lathe trailer to the\ncommit message to acknowledge AI assistance.",
       "parameters": {
         "properties": {
           "command": {
@@ -61,16 +61,16 @@
     },
     {
       "name": "delegate",
-      "description": "Delegate a multi-step task to an autonomous sub-agent with sandbox access.\nThe sub-agent runs the same model, has bash/read/write/edit/glob/grep tools,\nand returns a summary when done. Use for exploration, refactoring, debugging,\nor any multi-step work that doesn't need user interaction.\nLong-running delegations auto-background and return a descriptor with log/result\nfile paths for monitoring, exactly like bash() does for long commands.",
+      "description": "Run bounded autonomous work with the same model and shared sandbox.\nHas bash/read/write/edit/glob/grep, not user interaction or expose.\nReturns a summary or background sidecar paths; see lathe(manpage=\"delegate\").",
       "parameters": {
         "properties": {
           "task": {
-            "description": "What the sub-agent should accomplish. Be specific — it cannot ask clarifying questions. Include any context (error messages, prior findings, instructions) directly in the task description.",
+            "description": "Specific goal, constraints, and findings; the sub-agent cannot ask questions.",
             "type": "string"
           },
           "context_files": {
             "default": [],
-            "description": "Absolute sandbox file paths to inject into the sub-agent's prompt (e.g. AGENTS.md, SKILL.md, config files). Fetched at delegation time — the sub-agent sees their contents without spending steps reading them.",
+            "description": "Absolute sandbox reference files; missing or aggregate >50 KiB (including headings/separators) fails before inference, never silently clips.",
             "items": {
               "type": "string"
             },
@@ -78,12 +78,12 @@
           },
           "max_steps": {
             "default": 10,
-            "description": "Maximum inference calls the sub-agent may make (default: 10, max: 30). With max_steps=1, it receives the task and context_files but no tools, so it must answer directly from that supplied context. Use at least 2 for tasks requiring sandbox access or changes.",
+            "description": "Inference-call budget, 1–30 (default 10). At 1, no tools: supplied-context analysis only. Use >=2 for sandbox work.",
             "type": "integer"
           },
           "foreground_seconds": {
             "default": -1,
-            "description": "Seconds to wait before auto-backgrounding (default: 30, max: 300). Set 0 for immediate background (fire-and-forget). Omit or set -1 to use the default.",
+            "description": "Wait before auto-backgrounding, 0–300 seconds; 0 backgrounds immediately, -1 uses default 30.",
             "type": "integer"
           }
         },
@@ -168,7 +168,7 @@
     },
     {
       "name": "glob",
-      "description": "Search for files in the sandbox workspace by glob pattern.\nReturns a hierarchical listing of matches with absolute paths.\nDense directories are collapsed with match counts; narrow the\npattern or increase max_lines to expand them.",
+      "description": "Search for files in the sandbox workspace by glob pattern.\nReturns concrete absolute paths and an exact count of discovered files.\nScans the full scope, but retains at most max_lines paths. The header\nreports omissions; narrow the pattern to see other files. Truncated\nresults are a traversal-order sample, not a globally sorted prefix.",
       "parameters": {
         "properties": {
           "pattern": {
@@ -177,7 +177,7 @@
           },
           "max_lines": {
             "default": 100,
-            "description": "Max output lines (default: 100).",
+            "description": "Max concrete result lines, excluding the summary header (default: 100, clamped to 1–500).",
             "type": "integer"
           }
         },
@@ -189,7 +189,7 @@
     },
     {
       "name": "grep",
-      "description": "Search file contents in the sandbox workspace by regex.\nReturns matches grouped by file with line numbers. Dense\ndirectories and files are collapsed with match counts;\nnarrow the file scope or increase max_lines to expand them.",
+      "description": "Search file contents in the sandbox workspace by regex.\nReturns concrete absolute path:line: text hits and counts of matching\nlines and files. Scans the full scope, skipping binary/unreadable files,\nbut retains at most max_lines hits (text clipped to 200 characters).\nThe header reports omissions; narrow files or pattern to see other hits.\nTruncated results are a traversal-order sample, not a representative one.",
       "parameters": {
         "properties": {
           "pattern": {
@@ -203,7 +203,7 @@
           },
           "max_lines": {
             "default": 100,
-            "description": "Max output lines (default: 100).",
+            "description": "Max concrete result lines, excluding the summary header (default: 100, clamped to 1–500).",
             "type": "integer"
           }
         },
@@ -215,7 +215,7 @@
     },
     {
       "name": "handoff",
-      "description": "Prepare a handoff document for continuing this work in a new conversation. Call this when the user asks to compact, hand off, or save context for a fresh chat. After calling, write the handoff as your reply — do not make any more tool calls.",
+      "description": "Get formatting instructions for a user-approved handoff to a fresh chat. Write it as reply text, then end this response; later user requests may continue here.",
       "parameters": {
         "properties": {},
         "type": "object"
@@ -223,7 +223,7 @@
     },
     {
       "name": "interpret",
-      "description": "Run Python code in a persistent REPL session. Variables, imports, and\ndefinitions survive across calls within the same conversation.\nUse this for iterative data exploration, incremental computation, or\nany workflow where you need state to persist between executions.\nFor one-shot shell commands or non-Python work, prefer bash() instead.",
+      "description": "Run Python code in a persistent REPL session. Variables, imports, and\ndefinitions survive across calls within the same conversation.\nUse this for iterative data exploration, incremental computation, or\nany workflow where you need state to persist between executions.\nFor one-shot shell commands or non-Python work, prefer bash() instead.\nStream output is a 50 KiB preview; excess output is discarded explicitly.\nWrite large results to a sandbox file for full access via read() or expose().",
       "parameters": {
         "properties": {
           "code": {
@@ -244,12 +244,12 @@
     },
     {
       "name": "lathe",
-      "description": "Manual for the lathe toolkit. Call lathe(manpage=\"overview\") before your first tool use in a new conversation to learn the sandbox model, available workflows, and gotchas. Costs one tool call, saves many.",
+      "description": "Read operational orientation or a task-specific manual page.",
       "parameters": {
         "properties": {
           "manpage": {
             "default": "overview",
-            "description": "Which manual page to return. Use \"overview\" for big-picture orientation, \"version\" for the installed version.",
+            "description": "\"overview\" for safeguards and page index; \"interpret\", \"delegate\", \"background\", \"services\", \"egress\", \"handoff\" for details; \"version\" for installed version.",
             "type": "string"
           }
         },
@@ -258,11 +258,11 @@
     },
     {
       "name": "onboard",
-      "description": "Load project context (directory listing, AGENTS.md, skill catalog) at the start of a conversation.\nAlways returns a directory listing of the target path. Additionally\nsearches the project directory and ~/.agents/ for agent instructions and skills.\nUse read() on a skill's SKILL.md path to load its full instructions later.",
+      "description": "Load project listing, AGENTS.md, and skill catalog; also searches ~/.agents/.\nRead relevant SKILL.md files for full instructions. Skip repeat onboarding\nwhen the supplied context already covers this project.",
       "parameters": {
         "properties": {
           "path": {
-            "description": "Absolute path to the project root (e.g. /home/daytona/workspace/myproject).",
+            "description": "Absolute project root; \"\" selects /home/daytona/workspace.",
             "type": "string"
           }
         },
@@ -274,7 +274,7 @@
     },
     {
       "name": "read",
-      "description": "Read a file from the sandbox. Returns numbered lines.\nSupports Python-style negative indexing: start=-10 reads from\n10 lines before the end, stop=-3 stops 3 lines before the end.\nAll positive values are 1-indexed. stop is exclusive (half-open).\nstop=0 (default) means end of file.",
+      "description": "Read a file from the sandbox. Returns numbered lines, capped at 2000 lines\nand 50 KiB of text. A clipped preview is explicitly labeled; the original\nfile remains available via bash byte ranges or expose().\nSupports Python-style negative indexing: start=-10 reads from\n10 lines before the end, stop=-3 stops 3 lines before the end.\nAll positive values are 1-indexed. stop is exclusive (half-open).\nstop=0 (default) means end of file.",
       "parameters": {
         "properties": {
           "path": {

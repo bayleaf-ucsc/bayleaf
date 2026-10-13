@@ -43,6 +43,12 @@ diff between instances is the change record.
   contact.
 - `owui-cli` env for **both** instances:
   `~/.tokens/owui/chat-adamsmith-as` and `~/.tokens/owui/chat-bayleaf-dev`.
+- Model-mediated live qualification must use a dedicated synthetic account,
+  not Adam's ordinary admin identity. Admin credentials may deploy/inspect the
+  isolated toolkit, but a separate test identity must make completion requests.
+  Verify the event collector filters both chat and message IDs before recording
+  or accepting results. Isolated toolkit IDs and sandbox labels alone do not
+  isolate account-level Socket.IO traffic.
 
 ## Steps
 
@@ -78,6 +84,19 @@ the working copy: it may contain unrelated user work, and the committed source
 may not match the actual pre-upgrade deployment.
 
 ## Refinement log
+
+- 2026-10-12: Promoted personally used, byte-exact upstream 0.32.0 refactor with
+  494 offline tests and six isolated OWUI core checks passing; the extra first-time
+  workflow timed out. Source-only deploy preserved every valve/name/grant and
+  matched personal schema. Full private reconciliation found only Lathe changes.
+  Used a timestamped snapshot because today's default rollback directory already
+  existed; kept the historical snapshot intact. Adam subsequently confirmed prod
+  playtesting. Foreground diagnosis exposed unrelated-chat events entering the
+  upstream deployment collector under Adam's admin identity; an in-memory
+  request-ID filter restored the six core passes, but the first-time timeout
+  remained. Toolkit/sandbox isolation is not account isolation: use a dedicated
+  synthetic identity for further live qualification.
+  Upstream repair proposal: [Lathe #107](https://github.com/rndmcnlly/lathe/issues/107).
 
 - 2026-10-11: Promoted unchanged upstream 0.31.1 (skill-location text only) with
   Adam's explicit hackathon waiver of personal-instance testing and soak. All
