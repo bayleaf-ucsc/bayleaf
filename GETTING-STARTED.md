@@ -25,19 +25,19 @@ Many browser-based chat services (including BayLeaf Chat) offer Web Search and C
 
 In your browser, visit <https://chat.bayleaf.dev/>. If this is your first time visiting, you'll see a message like:
 
-> Sign in to BayLeaf (Open WebUI)
+> Sign in to BayLeaf (Open WebUI)\
 > 🔑 Continue with UCSC
 
 [Open WebUI](https://github.com/open-webui/open-webui) is the open-source software we run to operate our chat services. It doesn't provide inference services on its own. It's just, as the name suggests, a web-based user interface for accessing inference services that the BayLeaf platform obtains from other providers.
 
 When you click Continue, you'll be taken to a logon page for [CILogon](https://www.cilogon.org/). CILogon is a federated user authentication system that supports more than 5,000 identity providers, including many higher education institutions. We've customized the logon page to make it easy for you to use "University of California, Santa Cruz" as your identity provider. When you click Log On on the provider selection page, you'll be redirected through our campus-specific authentication system (Duo). Your password never goes to BayLeaf systems. Instead, BayLeaf only learns what the consent screen shows. Here's what it looks like for me:
 
-> `displayName`: Adam M Smith
-> `eduPersonPrincipalName`: amsmith@ucsc.edu
-> `eduPersonScopedAffiliation`: Faculty@ucsc.edu, Employee@ucsc.edu, Member@ucsc.edu
-> `givenName`: Adam
-> `mail`: amsmith@ucsc.edu
-> `nullAffiliation`: Faculty, Employee, Member
+> `displayName`: Adam M Smith\
+> `eduPersonPrincipalName`: amsmith@ucsc.edu\
+> `eduPersonScopedAffiliation`: Faculty@ucsc.edu, Employee@ucsc.edu, Member@ucsc.edu\
+> `givenName`: Adam\
+> `mail`: amsmith@ucsc.edu\
+> `nullAffiliation`: Faculty, Employee, Member\
 > `surname`: Smith
 
 That's it. BayLeaf trusts CILogon's assertion that I have a specific name, campus email address, and a few specific affiliations. Everyone at UCSC is a "Member," but "Faculty" and "Employee" tags depend on your employment status. There's a "Student" tag as well, but I don't personally have that one. If you want a conversational agent on BayLeaf Chat to know more about you than what's given here, you'll need to provide that information.
@@ -97,7 +97,7 @@ Like your other conversation data, the contents of your sandbox are accessible b
 
 Because UC Santa Cruz uses Google Workspace for email and other services, BayLeaf Chat offers an experimental integration toolkit. Once you turn on the Google Workspace toolkit, your agent will gain consent-gated access to Gmail, Calendar, Drive, Spreadsheets, and other Google Workspace services. You'll get a new permission prompt each time the agent wants to escalate access to another service capability. Our positive-consent features might feel tedious, but that's how we're trying to let you navigate the privacy–capability landscape yourself on a per-conversation basis. At the time of writing, our Google Workspace toolkit is configured for read-only access.
 
-Before you try to use this feature for any serious work, you should familiarize yourself with Simon Willison's [lethal trifecta for AI agents](https://simonw.substack.com/p/the-lethal-trifecta-for-ai-agents).
+Before you try to use this feature for any serious work, you should familiarize yourself with Simon Willison's [lethal trifecta for AI agents](https://simonw.substack.com/p/the-lethal-trifecta-for-ai-agents) (because you'll be right in the middle of it).
 
 ### Other Toolkits
 
@@ -175,6 +175,8 @@ If you ever need to disconnect OpenChamber from the BayLeaf API (unlikely), you 
 ```sh
 opencode auth logout https://api.bayleaf.dev
 ```
+
+It is now safe for you to forget all of the tedious stuff you just did with the terminal window. That was one-time setup that you'll likely never need to do again.
 
 ### Managing OpenChamber Projects
 
@@ -311,7 +313,7 @@ This section of the guide helps people who might otherwise be reaching for persi
 
 Compared to the desktop setup above, this is a step back in privacy: your conversations and working files now live on someone else’s computer. What you get in exchange is flexibility. You can check in from your phone, switch computers, or leave an agent working without keeping your own computer awake. We’re back to trading some privacy for capability.
 
-You can get a similar experience by running OpenChamber inside your BayLeaf sandbox. Visit [BayLeaf Sandboxes](https://sandbox.bayleaf.dev), sign in, and choose OpenChamber’s setup button. Open it when setup is ready. Signing in starts waking an existing sandbox; application setup is a separate action. First setup takes a few minutes. This is the same sandbox your agents access through the Code Sandbox toolkit in BayLeaf Chat, now with an interface you can use directly.
+You can get a similar experience by running OpenChamber inside your BayLeaf sandbox. Visit [BayLeaf Sandboxes](https://sandbox.bayleaf.dev), sign in, and choose OpenChamber’s setup button. Open it when setup is ready. Signing in starts waking an existing sandbox; application setup is a separate action. First setup takes a few extra seconds. This is the same sandbox your agents access through the Code Sandbox toolkit in BayLeaf Chat, now with an interface you can use directly.
 
 ![OpenChamber running in a browser with a light-green theme, showing an agent inspecting files in the sandbox workspace.](docs-assets/sandbox-openchamber.png)
 
