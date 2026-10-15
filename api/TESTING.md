@@ -122,12 +122,16 @@ SEALED_TAMPER_PORT=8801 SEALED_OPENCODE=1 \
 # Clean up: delete the row AND the per-user Tinfoil key the run minted.
 ```
 
-`SEALED_OPENCODE=1` runs an additional OpenCode negative check using the plugin
-pin duplicated in `scripts/harness-sealed-attestation.py` (keep it synchronized
-with `SEALED_PLUGIN` in `src/constants.ts`). Its current nonzero-exit check cannot
-distinguish attestation rejection from unrelated startup or request failures;
-do not use it alone as evidence of attestation enforcement. Omit it to run the
-SDK-level mutation suite without requiring OpenCode.
+`SEALED_OPENCODE=1` opts into live inference: an additional OpenCode genuine-bundle
+positive control followed by a mutated-bundle check through the same isolated
+standalone configuration. The plugin pin lives in `scripts/sealed_opencode_check.py`
+(keep it synchronized with `SEALED_PLUGIN` in `src/constants.ts`). The positive
+control requires `SEALED_AUTH` or eligible Campus Pass and consumes allowance.
+Only recognizable verifier refusal after successful genuine inference is PASS.
+Startup/plugin/auth/network failures and unknown diagnostics are INCONCLUSIVE,
+with exit 2, not PASS. Raw client output is not printed or persisted by the checker.
+Omit the option to run the SDK suite without OpenCode. Offline classification
+and same-configuration sequencing checks: `python3 -B scripts/test-sealed-opencode-check.py`.
 
 For OpenCode V2 canaries, use `opencode run --standalone` with temporary
 configuration and state so the CLI does not reuse a shared background server
@@ -185,15 +189,38 @@ both the local D1 row and the real OpenRouter key inventory. No prod involvement
 python3 -c "import os;e=dict(l.strip().split('=',1) for l in open('.env') if '=' in l);p=os.environ['TMPDIR']+'/or-override.env';open(p,'w').write('OPENROUTER_PROVISIONING_KEY='+e['OPENROUTER_MAINTENANCE_KEY']+'\n');os.chmod(p,0o600)"
 npx wrangler dev --port 8799 --local --env-file .dev.vars --env-file "$TMPDIR/or-override.env" &
 sleep 12
-node scripts/harness-provision.mjs
+node scripts/harness-provision.mjs --live
 ```
 
-It creates real OpenRouter keys for `*@example.invalid` addresses and deletes
-them on the way out. **It refuses to run if the OpenRouter admin key is
+Without `--live`, the harness exits before reading secrets or making requests.
+Offline exception-safety checks: `node --experimental-vm-modules scripts/test-provision-cleanup.mjs`.
+These execute the harness with synthetic HTTP, D1 and module boundaries, including
+failure after minting before inventory collection, deletion/lookup/listing failures,
+surviving resources and original-error preservation. They do not qualify live providers.
+
+The live harness creates real OpenRouter keys for unique per-run `*@example.invalid`
+addresses and cleans up in `finally`. Cleanup rediscovers exact run-owned names,
+including keys not yet recorded in D1, then verifies provider and D1 deletion.
+Cleanup failure is reported separately without replacing an original test exception.
+Failures emit bounded `HARNESS_DIAGNOSTIC` JSON records: phase, run ID, a fixed
+exception-class label, and, for harness-tagged failures only, literal operation
+and reason labels plus numeric HTTP status where available. Cleanup aggregates
+include their known safe causes, capped at 12 records plus a truncation marker
+per report. Unknown exceptions (including untrusted aggregates) are class-only;
+messages, stacks, response bodies, credentials, hashes and provider names are never
+included in these diagnostics. Cleanup evidence is additional to the original
+failure, whose object and failed exit outcome are preserved.
+Every provider deletion first requires a fresh provider lookup with an exact
+unique run-owned name and matching hash. D1 hashes and the harness inventory are
+only candidates: unowned or unverifiable candidates are not deleted and prevent a
+clean-cleanup report. Offline tests include poisoned-D1 and stale unowned inventory
+cases and verify that lookup failures issue no DELETE requests.
+**It refuses to run if the OpenRouter admin key is
 rejected**, because a 401 makes every upstream lookup return `null`, which
 turns both the assertions and the cleanup check into false greens — that
 failure mode leaked two real keys the first time this harness was written.
-If it ever aborts mid-run, sweep manually:
+Process termination (for example SIGKILL) cannot run `finally`. If interrupted or
+cleanup fails, inspect the printed run ID and sweep only its exact owned names:
 
 ```bash
 # list any survivors before deleting

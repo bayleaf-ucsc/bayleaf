@@ -17,6 +17,7 @@ export default { fetch(request, env, ctx) {
 ` }, bundle: true, write: false, format: 'esm', platform: 'browser', target: 'es2022' });
 let calls = 0, mode = 'valid', catalogMode = 'valid';
 const catalogQueries = [];
+const decisionRequests = [];
 const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{ name: 'decisions-test', modules: true,
   script: bundle.outputFiles[0].text, compatibilityDate: '2025-01-31',
   bindings: { CAMPUS_IP_RANGES: '127.0.0.0/8', DEV_LOOPBACK_AUTH: 'true', CAMPUS_POOL_KEY: 'synthetic',
@@ -44,6 +45,7 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{ name: 'decision
     assert.equal(req.headers.get('Authorization'), 'Bearer synthetic');
     assert.equal(req.headers.get('x-session-id'), null);
     const body = await req.json(); calls++;
+    decisionRequests.push(body);
     assert.equal(body.provider.zdr, true); assert.equal(body.provider.data_collection, 'deny');
     assert.equal(body.model, 'test/decision'); assert.equal(body.images, undefined);
     if (mode === 'budget') return Response.json({ error: { code: 403, message: 'Budget exhausted' } }, { status: 403 });
@@ -60,7 +62,7 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{ name: 'decision
 }] }));
 const input = { model: 'openrouter:test/decision', state: { message: 'synthetic example' },
   provider: { zdr: false, data_collection: 'allow' }, questions: {
-    yes: { type: 'noul', instructions: 'Yes?' },
+    yes: { type: 'noul', instructions: 'Yes?', criteria: { true: 'Supported', false: 'Unsupported' } },
     team: { type: 'choice', instructions: 'Team?', criteria: { a: 'A', b: 'B' } },
     severity: { type: 'score', instructions: 'Severity?', criteria: ['Low', 'High'] },
   } };
@@ -71,7 +73,16 @@ async function post(body, path = '/v1/decisions', headers = {}) {
 async function check(label, run) { await run(); console.log('PASS ' + label); }
 try {
   await check('typed answers and enforced privacy', async () => {
-    const res = await post(input); assert.equal(res.status, 200, await res.clone().text());
+    const res = await post(input, '/v1/decisions', { 'X-Session-ID': 'synthetic-session-must-not-leak' });
+    assert.equal(res.status, 200, await res.clone().text());
+    assert.equal(decisionRequests.length, 1);
+    // Literal caller contract, independent of the route's payload construction.
+    assert.deepEqual(decisionRequests[0].state, { message: 'synthetic example' });
+    assert.deepEqual(decisionRequests[0].questions, {
+      yes: { type: 'noul', instructions: 'Yes?', criteria: { true: 'Supported', false: 'Unsupported' } },
+      team: { type: 'choice', instructions: 'Team?', criteria: { a: 'A', b: 'B' } },
+      severity: { type: 'score', instructions: 'Severity?', criteria: ['Low', 'High'] },
+    });
     assert.equal(res.headers.get('Cache-Control'), 'no-store'); assert.equal((await res.json()).answers.yes.noul, .8);
     assert.ok(catalogQueries.some(query => new URLSearchParams(query).get('zdr') === 'true'));
   });

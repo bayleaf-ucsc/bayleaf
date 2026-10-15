@@ -4,16 +4,54 @@
  * Runs against `wrangler dev --local` on :8799 (local D1, real OpenRouter
  * secrets), minting a session JWT directly so we don't need a browser OIDC
  * round trip. Creates real OpenRouter keys for a .invalid test address and
- * deletes them at the end.
+ * deletes them in finally. Requires explicit --live; offline failure-path checks
+ * live in test-provision-cleanup.mjs and never read credentials or call providers.
  */
 import { readFileSync } from 'node:fs';
 import { sign } from 'hono/jwt';
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+
+// No credential reads or live calls without an explicit operator opt-in.
+if (!process.argv.includes('--live')) {
+  console.error('Live key lifecycle requires --live. Offline: node --experimental-vm-modules scripts/test-provision-cleanup.mjs');
+  process.exit(2);
+}
 
 const BASE = 'http://localhost:8799';
-const EMAIL = 'refactor-test@example.invalid';
-const EMAIL2 = 'refactor-test2@example.invalid';
+const runId = randomUUID();
+const EMAIL = `provision-${runId}-1@example.invalid`;
+const EMAIL2 = `provision-${runId}-2@example.invalid`;
 const OR = 'https://openrouter.ai/api/v1';
+
+// Provenance, not error.message/name/stack, determines what can be printed.
+// Only this harness creates these records, from literal operation/reason labels
+// and numeric HTTP status codes. Never include hashes, URLs or response bodies.
+const safeErrors = new WeakMap();
+const safeAggregates = new WeakMap();
+function safeError(operation, reason, status) {
+  const error = new Error('Harness operation failed');
+  safeErrors.set(error, { operation, reason,
+    ...(Number.isInteger(status) && status >= 100 && status <= 599 ? { status } : {}) });
+  return error;
+}
+function reportFailure(phase, error) {
+  const pending = [error];
+  let emitted = 0;
+  while (pending.length && emitted < 12) {
+    const current = pending.shift();
+    const causes = safeAggregates.get(current);
+    const evidence = safeErrors.get(current);
+    // Unknown/custom exception names may themselves contain secrets. Classify
+    // using fixed built-in labels; never traverse untrusted aggregate causes.
+    const errorClass = causes ? 'AggregateError' :
+      [TypeError, SyntaxError, RangeError, Error].find(type => current instanceof type)?.name ?? 'UnknownError';
+    console.error('HARNESS_DIAGNOSTIC ' + JSON.stringify({ phase, runId, errorClass, ...evidence }));
+    if (causes) pending.push(...causes.slice(0, 12));
+    emitted++;
+  }
+  if (pending.length) console.error('HARNESS_DIAGNOSTIC ' + JSON.stringify({ phase, runId, reason: 'diagnostics_truncated' }));
+}
 
 const parseEnv = (path) => Object.fromEntries(
   readFileSync(path, 'utf8').split('\n').filter((l) => l.includes('=') && !l.trim().startsWith('#'))
@@ -30,7 +68,7 @@ const ADMIN = parseEnv('.env').OPENROUTER_MAINTENANCE_KEY;
 
 let pass = 0, fail = 0;
 const check = (label, ok, detail = '') => {
-  console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${label}${detail ? ` — ${detail}` : ''}`);
+  console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${label}${detail ? `: ${detail}` : ''}`);
   ok ? pass++ : fail++;
 };
 
@@ -66,18 +104,34 @@ const d1 = (sql) => {
 
 const orGet = async (hash) => {
   const r = await fetch(`${OR}/keys/${hash}`, { headers: { Authorization: `Bearer ${ADMIN}` } });
-  return r.ok ? (await r.json()).data : null;
+  if (r.status === 404) return null;
+  if (!r.ok) throw safeError('provider.lookup', 'http_failure', r.status);
+  const data = (await r.json()).data;
+  if (!data || typeof data !== 'object') throw safeError('provider.lookup', 'invalid_response');
+  return data;
 };
-const orDelete = (hash) =>
-  fetch(`${OR}/keys/${hash}`, { method: 'DELETE', headers: { Authorization: `Bearer ${ADMIN}` } });
+const orDelete = async (hash) => {
+  // D1 and `created` contain candidates, never deletion authority. Recheck the
+  // provider's exact unique run-owned name immediately before EVERY delete,
+  // including lifecycle self-heal deletes outside cleanup. A failed lookup
+  // throws; inventory discovery or a cached hash cannot override that failure.
+  const key = await orGet(hash);
+  if (!key) return; // Provider confirmed it is already absent.
+  if (key.hash !== hash || ![EMAIL, EMAIL2].some(email => key.name === `BayLeaf API for ${email}`))
+    throw safeError('provider.delete', 'ownership_unverified');
+  const r = await fetch(`${OR}/keys/${hash}`, { method: 'DELETE', headers: { Authorization: `Bearer ${ADMIN}` } });
+  if (!r.ok && r.status !== 404) throw safeError('provider.delete', 'http_failure', r.status);
+};
 const orListByName = async (name) => {
   const found = [];
   for (let offset = 0; ; offset += 100) {
     const r = await fetch(`${OR}/keys?offset=${offset}&limit=100`, {
       headers: { Authorization: `Bearer ${ADMIN}` },
     });
-    if (!r.ok) throw new Error(`OpenRouter key listing failed: ${r.status} ${await r.text()}`);
-    const batch = (await r.json()).data ?? [];
+    if (!r.ok) throw safeError('provider.list', 'http_failure', r.status);
+    const batch = (await r.json()).data;
+    if (!Array.isArray(batch) || batch.some(key => typeof key.name !== 'string' || typeof key.hash !== 'string'))
+      throw safeError('provider.list', 'invalid_response');
     found.push(...batch.filter((key) => key.name === name));
     if (batch.length < 100) return found;
   }
@@ -91,18 +145,35 @@ async function preflight() {
   if (!r.ok) {
     console.error(`Admin key rejected by OpenRouter (${r.status}). Upstream assertions would be`);
     console.error('false greens and the cleanup would silently leak keys. Aborting.');
-    process.exit(2);
+    throw safeError('provider.preflight', 'http_failure', r.status);
   }
   console.log('Preflight: OpenRouter admin key accepted.');
 }
 
 async function main() {
   await preflight();
-  const c = await cookie();
-  for (const email of [EMAIL, EMAIL2]) {
-    for (const key of await orListByName(`BayLeaf API for ${email}`)) await orDelete(key.hash);
+  console.log(`Run ownership: ${runId}`);
+  let originalFailed = false;
+  try {
+    await exerciseLifecycle();
+  } catch (error) {
+    originalFailed = true;
+    throw error;
+  } finally {
+    try { await cleanup(); }
+    catch (error) {
+      // Do not replace the test failure with a cleanup failure, or print bodies.
+      console.error('FAIL cleanup: run-owned resources may remain; inspect this run ID.');
+      reportFailure('cleanup', error);
+      if (!originalFailed) throw error;
+    }
   }
-  d1(`DELETE FROM user_keys WHERE email IN ('${EMAIL}','${EMAIL2}')`);
+  console.log(`\n${fail === 0 ? 'ALL PASS' : 'FAILURES'}: ${pass} passed, ${fail} failed`);
+  process.exitCode = fail === 0 ? 0 : 1;
+}
+
+async function exerciseLifecycle() {
+  const c = await cookie();
 
   console.log('\n1. DELETE /key with no row → 404');
   check('404', (await call('DELETE', '/key', c)).status === 404);
@@ -249,7 +320,11 @@ async function main() {
   check('claim does not eagerly mint an OR key', db2?.or_key_hash === null);
 
   console.log('\n13. Eight concurrent first uses → one surviving OR key');
-  const firstUses = await Promise.all(Array.from({ length: 8 }, () => authKey(got2.key)));
+  // Drain every mint attempt before finally discovers keys, including on error.
+  const settled = await Promise.allSettled(Array.from({ length: 8 }, () => authKey(got2.key)));
+  const rejected = settled.find(result => result.status === 'rejected');
+  if (rejected) throw rejected.reason;
+  const firstUses = settled.map(result => result.value);
   check('all concurrent requests succeed', firstUses.every((response) => response.status === 200));
   db2 = d1(`SELECT * FROM user_keys WHERE email='${EMAIL2}'`)[0];
   if (db2?.or_key_hash) created.add(db2.or_key_hash);
@@ -258,16 +333,48 @@ async function main() {
   check('exactly one OR key survives the mint race', raceKeys.length === 1, `${raceKeys.length} found`);
   check('surviving key is the one stored in D1', raceKeys[0]?.hash === db2?.or_key_hash);
 
-  // ── cleanup ────────────────────────────────────────────────────
-  console.log('\nCleanup: deleting test OR keys + local D1 rows');
-  for (const h of created) await orDelete(h);
-  d1(`DELETE FROM user_keys WHERE email IN ('${EMAIL}','${EMAIL2}')`);
-  let leaked = 0;
-  for (const h of created) if (await orGet(h)) leaked++;
-  check('all test OR keys deleted upstream', leaked === 0, `${leaked} leaked`);
-
-  console.log(`\n${fail === 0 ? 'ALL PASS' : 'FAILURES'}: ${pass} passed, ${fail} failed`);
-  process.exit(fail === 0 ? 0 : 1);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+async function cleanup() {
+  console.log('\nCleanup: deleting this run’s OR keys + local D1 rows');
+  const errors = [];
+  const attempt = async action => { try { await action(); } catch (error) { errors.push(error); } };
+  // Discover by exact unique ownership even if minting succeeded but the client
+  // threw before reading the D1 row or recording a provider hash.
+  for (const email of [EMAIL, EMAIL2]) {
+    await attempt(async () => {
+      for (const key of await orListByName(`BayLeaf API for ${email}`)) created.add(key.hash);
+    });
+    await attempt(async () => {
+      const db = d1(`SELECT or_key_hash FROM user_keys WHERE email='${email}'`)[0];
+      if (db?.or_key_hash) created.add(db.or_key_hash);
+    });
+  }
+  for (const hash of created) await attempt(async () => {
+    await orDelete(hash);
+    if (await orGet(hash)) throw safeError('cleanup.provider', 'key_survived_deletion');
+  });
+  for (const email of [EMAIL, EMAIL2]) await attempt(async () => {
+    if ((await orListByName(`BayLeaf API for ${email}`)).length)
+      throw safeError('cleanup.provider', 'keys_remain_in_inventory');
+  });
+  await attempt(async () => {
+    d1(`DELETE FROM user_keys WHERE email IN ('${EMAIL}','${EMAIL2}')`);
+    if (d1(`SELECT email FROM user_keys WHERE email IN ('${EMAIL}','${EMAIL2}')`).length)
+      throw safeError('cleanup.d1', 'rows_survived_deletion');
+  });
+  if (errors.length) {
+    const error = new AggregateError(errors, 'Run cleanup failed');
+    safeAggregates.set(error, errors);
+    throw error;
+  }
+  check('run-owned keys and D1 rows verified absent', true);
+}
+
+export const completion = main().catch((error) => {
+  // Preserve the original error object for debuggers without logging responses,
+  // tokens or provider payloads in its message/stack.
+  process.exitCode = 1;
+  reportFailure('primary', error);
+  return error;
+});
