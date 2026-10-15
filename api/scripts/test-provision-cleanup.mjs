@@ -9,7 +9,15 @@ async function scenario(failure, cleanupFailure = '') {
   const rows = new Map(), logs = [], deleted = [], sqlCalls = [];
   let owner, runId, originalRaised = false;
   class OriginalFailure extends Error { name = 'OriginalFailure'; }
-  const abort = () => { originalRaised = true; throw new OriginalFailure('synthetic content must never be logged'); };
+  const secret = 'SECRET-SENTINEL-must-never-be-logged';
+  const originalFailure = new OriginalFailure(secret);
+  originalFailure.name = secret;
+  originalFailure.stack = secret;
+  const unknownCleanup = new AggregateError([new Error(secret)], secret);
+  unknownCleanup.name = secret;
+  unknownCleanup.operation = secret; // Untrusted lookalike diagnostic fields.
+  unknownCleanup.status = 599;
+  const abort = () => { originalRaised = true; throw originalFailure; };
   const process = { argv: ['node', 'harness', '--live'], exitCode: 0,
     exit() { throw new Error('Unexpected process.exit'); } };
   const context = createContext({ process, URL, Set, Map, console: {
@@ -19,17 +27,22 @@ async function scenario(failure, cleanupFailure = '') {
     if (url.hostname === 'openrouter.ai') {
       assert.equal(options.headers.Authorization, 'Bearer inert-admin');
       if (url.pathname.endsWith('/keys')) {
-        if (cleanupFailure === 'inventory' && originalRaised) return new Response(null, { status: 503 });
+        if (cleanupFailure === 'unknown' && originalRaised) throw unknownCleanup;
+        if (cleanupFailure === 'inventory' && originalRaised) return new Response(secret, { status: 503 });
         return Response.json({ data: [...keys.values()] });
       }
       const hash = url.pathname.split('/').at(-1);
       if (options.method === 'DELETE') {
         deleted.push(hash);
-        if (cleanupFailure === 'delete') return new Response(null, { status: 403 });
+        if (cleanupFailure === 'delete') return new Response(secret, { status: 403 });
         if (cleanupFailure !== 'survivor') keys.delete(hash);
         return Response.json({});
       }
-      if (cleanupFailure === 'lookup' && originalRaised) return new Response(null, { status: 401 });
+      if (['lookup', 'lookup-many'].includes(cleanupFailure) && originalRaised) return new Response(secret, { status: 401 });
+      if (failure === 'primary-lookup' && !originalRaised) {
+        originalRaised = true;
+        return new Response(secret, { status: 402 });
+      }
       return keys.has(hash) ? Response.json({ data: keys.get(hash) }) : new Response(null, { status: 404 });
     }
     assert.equal(url.origin, 'http://localhost:8799');
@@ -44,6 +57,8 @@ async function scenario(failure, cleanupFailure = '') {
       for (const hash of ['owned', 'unrecorded-race-loser']) keys.set(hash, {
         hash, name: `BayLeaf API for ${owner}`, limit: 5,
       });
+      if (cleanupFailure === 'lookup-many') for (let i = 0; i < 24; i++)
+        keys.set(`owned-${i}`, { hash: `owned-${i}`, name: `BayLeaf API for ${owner}` });
       if (failure === 'poisoned-d1' || failure === 'created-unowned') row.or_key_hash = 'unrelated';
       if (failure === 'before-inventory' || failure === 'poisoned-d1') abort();
       return Response.json({ data: { limit: 5, label: 'sk-or-elided...key', bayleaf: { openrouter: {} } } });
@@ -78,10 +93,32 @@ async function scenario(failure, cleanupFailure = '') {
       for (const [key, value] of entries) this.setExport(key, value);
     }, { context });
   });
-  await module.evaluate(); await module.namespace.completion;
+  await module.evaluate();
+  const finalFailure = await module.namespace.completion;
+  if (failure !== 'primary-lookup') assert.equal(finalFailure, originalFailure, 'Original failure object preserved');
   assert.equal(process.exitCode, 1);
-  assert.ok(logs.some(line => line.includes('Harness aborted (OriginalFailure)')), 'Original failure preserved');
-  assert.ok(!logs.join('\n').includes('synthetic content must never be logged'));
+  assert.ok(!logs.join('\n').includes(secret), 'No secret in unknown names/messages/stacks, causes, fields or provider bodies');
+  const diagnostics = logs.filter(line => line.startsWith('HARNESS_DIAGNOSTIC '))
+    .map(line => JSON.parse(line.slice('HARNESS_DIAGNOSTIC '.length)));
+  if (failure === 'primary-lookup') {
+    assert.ok(diagnostics.some(record => record.phase === 'primary' && record.operation === 'provider.lookup'
+      && record.status === 402 && record.reason === 'http_failure'), 'Top-level catch emits safe provider context');
+  } else assert.ok(diagnostics.some(record => record.phase === 'primary' && record.errorClass === 'UnknownError'));
+  for (const record of diagnostics) {
+    assert.equal(record.runId, runId);
+    assert.ok(Object.keys(record).every(key => ['phase', 'runId', 'errorClass', 'operation', 'reason', 'status'].includes(key)));
+  }
+  const expectedHttp = { lookup: ['provider.lookup', 401], 'lookup-many': ['provider.lookup', 401],
+    delete: ['provider.delete', 403], inventory: ['provider.list', 503] }[cleanupFailure];
+  if (expectedHttp) assert.ok(diagnostics.some(record => record.phase === 'cleanup'
+    && record.operation === expectedHttp[0] && record.status === expectedHttp[1] && record.reason === 'http_failure'),
+  'Cleanup emits the safe operation and HTTP status alongside the original failure');
+  if (cleanupFailure === 'unknown') assert.ok(diagnostics.some(record => record.phase === 'cleanup'
+    && record.errorClass === 'UnknownError' && !record.operation && !record.status), 'Unknown aggregates are class-only');
+  if (cleanupFailure === 'lookup-many') {
+    assert.ok(diagnostics.some(record => record.reason === 'diagnostics_truncated'));
+    assert.ok(diagnostics.filter(record => record.phase === 'cleanup').length <= 13);
+  }
   assert.ok(!deleted.includes('unrelated')); assert.ok(keys.has('unrelated'));
   assert.ok(sqlCalls.some(sql => sql.startsWith('DELETE') && sql.includes(runId)));
   if (!cleanupFailure && !['poisoned-d1', 'created-unowned'].includes(failure)) {
@@ -97,7 +134,7 @@ async function scenario(failure, cleanupFailure = '') {
     assert.equal(rows.size, 0);
     assert.ok(deleted.includes('owned'));
   }
-  if (cleanupFailure === 'lookup') assert.equal(deleted.length, 0, 'Failed provider lookup cannot authorize any deletion');
+  if (['lookup', 'lookup-many'].includes(cleanupFailure)) assert.equal(deleted.length, 0, 'Failed provider lookup cannot authorize any deletion');
   return owner;
 }
 const first = await scenario('before-inventory');
@@ -105,6 +142,7 @@ const second = await scenario('after-inventory');
 assert.notEqual(first, second, 'Each run has a unique ownership identity');
 await scenario('poisoned-d1');
 await scenario('created-unowned');
-for (const failure of ['inventory', 'delete', 'survivor', 'lookup', 'd1-survivor'])
+await scenario('primary-lookup');
+for (const failure of ['inventory', 'delete', 'survivor', 'lookup', 'd1-survivor', 'unknown', 'lookup-many'])
   await scenario('after-inventory', failure);
-console.log('PASS 9 synthetic exception/cleanup paths, unique ownership, no content logging');
+console.log('PASS 12 synthetic exception/cleanup paths, bounded safe diagnostics, original failure identity, no content logging');

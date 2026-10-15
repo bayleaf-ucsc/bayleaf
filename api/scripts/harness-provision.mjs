@@ -24,6 +24,35 @@ const EMAIL = `provision-${runId}-1@example.invalid`;
 const EMAIL2 = `provision-${runId}-2@example.invalid`;
 const OR = 'https://openrouter.ai/api/v1';
 
+// Provenance, not error.message/name/stack, determines what can be printed.
+// Only this harness creates these records, from literal operation/reason labels
+// and numeric HTTP status codes. Never include hashes, URLs or response bodies.
+const safeErrors = new WeakMap();
+const safeAggregates = new WeakMap();
+function safeError(operation, reason, status) {
+  const error = new Error('Harness operation failed');
+  safeErrors.set(error, { operation, reason,
+    ...(Number.isInteger(status) && status >= 100 && status <= 599 ? { status } : {}) });
+  return error;
+}
+function reportFailure(phase, error) {
+  const pending = [error];
+  let emitted = 0;
+  while (pending.length && emitted < 12) {
+    const current = pending.shift();
+    const causes = safeAggregates.get(current);
+    const evidence = safeErrors.get(current);
+    // Unknown/custom exception names may themselves contain secrets. Classify
+    // using fixed built-in labels; never traverse untrusted aggregate causes.
+    const errorClass = causes ? 'AggregateError' :
+      [TypeError, SyntaxError, RangeError, Error].find(type => current instanceof type)?.name ?? 'UnknownError';
+    console.error('HARNESS_DIAGNOSTIC ' + JSON.stringify({ phase, runId, errorClass, ...evidence }));
+    if (causes) pending.push(...causes.slice(0, 12));
+    emitted++;
+  }
+  if (pending.length) console.error('HARNESS_DIAGNOSTIC ' + JSON.stringify({ phase, runId, reason: 'diagnostics_truncated' }));
+}
+
 const parseEnv = (path) => Object.fromEntries(
   readFileSync(path, 'utf8').split('\n').filter((l) => l.includes('=') && !l.trim().startsWith('#'))
     .map((l) => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim().replace(/^"|"$/g, '')]),
@@ -76,9 +105,9 @@ const d1 = (sql) => {
 const orGet = async (hash) => {
   const r = await fetch(`${OR}/keys/${hash}`, { headers: { Authorization: `Bearer ${ADMIN}` } });
   if (r.status === 404) return null;
-  if (!r.ok) throw new Error(`OpenRouter key lookup failed (${r.status})`);
+  if (!r.ok) throw safeError('provider.lookup', 'http_failure', r.status);
   const data = (await r.json()).data;
-  if (!data || typeof data !== 'object') throw new Error('Invalid key lookup response');
+  if (!data || typeof data !== 'object') throw safeError('provider.lookup', 'invalid_response');
   return data;
 };
 const orDelete = async (hash) => {
@@ -89,9 +118,9 @@ const orDelete = async (hash) => {
   const key = await orGet(hash);
   if (!key) return; // Provider confirmed it is already absent.
   if (key.hash !== hash || ![EMAIL, EMAIL2].some(email => key.name === `BayLeaf API for ${email}`))
-    throw new Error('Refusing deletion: provider key is not owned by this run');
+    throw safeError('provider.delete', 'ownership_unverified');
   const r = await fetch(`${OR}/keys/${hash}`, { method: 'DELETE', headers: { Authorization: `Bearer ${ADMIN}` } });
-  if (!r.ok && r.status !== 404) throw new Error(`OpenRouter key deletion failed (${r.status})`);
+  if (!r.ok && r.status !== 404) throw safeError('provider.delete', 'http_failure', r.status);
 };
 const orListByName = async (name) => {
   const found = [];
@@ -99,10 +128,10 @@ const orListByName = async (name) => {
     const r = await fetch(`${OR}/keys?offset=${offset}&limit=100`, {
       headers: { Authorization: `Bearer ${ADMIN}` },
     });
-    if (!r.ok) throw new Error(`OpenRouter key listing failed (${r.status})`);
+    if (!r.ok) throw safeError('provider.list', 'http_failure', r.status);
     const batch = (await r.json()).data;
     if (!Array.isArray(batch) || batch.some(key => typeof key.name !== 'string' || typeof key.hash !== 'string'))
-      throw new Error('Invalid key inventory response');
+      throw safeError('provider.list', 'invalid_response');
     found.push(...batch.filter((key) => key.name === name));
     if (batch.length < 100) return found;
   }
@@ -116,7 +145,7 @@ async function preflight() {
   if (!r.ok) {
     console.error(`Admin key rejected by OpenRouter (${r.status}). Upstream assertions would be`);
     console.error('false greens and the cleanup would silently leak keys. Aborting.');
-    throw new Error('OpenRouter preflight failed');
+    throw safeError('provider.preflight', 'http_failure', r.status);
   }
   console.log('Preflight: OpenRouter admin key accepted.');
 }
@@ -135,6 +164,7 @@ async function main() {
     catch (error) {
       // Do not replace the test failure with a cleanup failure, or print bodies.
       console.error('FAIL cleanup: run-owned resources may remain; inspect this run ID.');
+      reportFailure('cleanup', error);
       if (!originalFailed) throw error;
     }
   }
@@ -322,18 +352,22 @@ async function cleanup() {
   }
   for (const hash of created) await attempt(async () => {
     await orDelete(hash);
-    if (await orGet(hash)) throw new Error('Run-owned key survived deletion');
+    if (await orGet(hash)) throw safeError('cleanup.provider', 'key_survived_deletion');
   });
   for (const email of [EMAIL, EMAIL2]) await attempt(async () => {
     if ((await orListByName(`BayLeaf API for ${email}`)).length)
-      throw new Error('Run-owned keys remain in inventory');
+      throw safeError('cleanup.provider', 'keys_remain_in_inventory');
   });
   await attempt(async () => {
     d1(`DELETE FROM user_keys WHERE email IN ('${EMAIL}','${EMAIL2}')`);
     if (d1(`SELECT email FROM user_keys WHERE email IN ('${EMAIL}','${EMAIL2}')`).length)
-      throw new Error('Run-owned D1 rows survived deletion');
+      throw safeError('cleanup.d1', 'rows_survived_deletion');
   });
-  if (errors.length) throw new AggregateError(errors, 'Run cleanup failed');
+  if (errors.length) {
+    const error = new AggregateError(errors, 'Run cleanup failed');
+    safeAggregates.set(error, errors);
+    throw error;
+  }
   check('run-owned keys and D1 rows verified absent', true);
 }
 
@@ -341,5 +375,6 @@ export const completion = main().catch((error) => {
   // Preserve the original error object for debuggers without logging responses,
   // tokens or provider payloads in its message/stack.
   process.exitCode = 1;
-  console.error(`Harness aborted (${error?.name ?? 'Error'}); no response content logged.`);
+  reportFailure('primary', error);
+  return error;
 });

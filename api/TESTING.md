@@ -202,6 +202,14 @@ The live harness creates real OpenRouter keys for unique per-run `*@example.inva
 addresses and cleans up in `finally`. Cleanup rediscovers exact run-owned names,
 including keys not yet recorded in D1, then verifies provider and D1 deletion.
 Cleanup failure is reported separately without replacing an original test exception.
+Failures emit bounded `HARNESS_DIAGNOSTIC` JSON records: phase, run ID, a fixed
+exception-class label, and, for harness-tagged failures only, literal operation
+and reason labels plus numeric HTTP status where available. Cleanup aggregates
+include their known safe causes, capped at 12 records plus a truncation marker
+per report. Unknown exceptions (including untrusted aggregates) are class-only;
+messages, stacks, response bodies, credentials, hashes and provider names are never
+included in these diagnostics. Cleanup evidence is additional to the original
+failure, whose object and failed exit outcome are preserved.
 Every provider deletion first requires a fresh provider lookup with an exact
 unique run-owned name and matching hash. D1 hashes and the harness inventory are
 only candidates: unowned or unverifiable candidates are not deleted and prevent a
