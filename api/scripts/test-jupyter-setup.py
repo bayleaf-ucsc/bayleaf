@@ -28,6 +28,8 @@ class JupyterAdapter(unittest.TestCase):
         setup.RELEASE = 'jupyterlab-4.6.4-managed-v1'
         setup.PORT = 8793
         (setup.ROOT/'credentials').mkdir(parents=True)
+        self.placeholder = 'dtn_secret_synthetic_jupyter'
+        (setup.ROOT/'credentials/incoming').write_text(self.placeholder)
         self.secret = setup.ROOT/'credentials/app-secret'
         self.secret.write_text('a'*64)
 
@@ -52,12 +54,23 @@ class JupyterAdapter(unittest.TestCase):
             setup.configure_jupyter()
         self.assertEqual(path.read_text(), original)
 
+    def test_missing_and_invalid_sandbox_placeholder_rejected(self):
+        incoming = setup.ROOT/'credentials/incoming'
+        incoming.unlink()
+        with self.assertRaisesRegex(setup.Failure, 'credential_missing'):
+            setup.configure_jupyter()
+        incoming.write_text('sk-bayleaf-synthetic-invalid')
+        with self.assertRaisesRegex(setup.Failure, 'credential_invalid'):
+            setup.configure_jupyter()
+
     def test_environment_and_module_launcher(self):
+        setup.configure_jupyter()
         argv, env = setup.start_jupyter(None)
         self.assertNotIn('JUPYTER_TOKEN', env)
         self.assertNotIn('OPENAI_API_KEY', env)
         self.assertNotIn('BAYLEAF_NANOBOT_AUTH', env)
-        self.assertNotIn('BAYLEAF_API_KEY', env)
+        self.assertEqual(env['BAYLEAF_API_KEY'], self.placeholder)
+        self.assertNotIn('do-not-pass', repr((argv,env)))
         self.assertEqual(env['JUPYTERLAB_SETTINGS_DIR'], str(setup.ROOT/'lab-settings'))
         self.assertEqual(argv[1:3], ['-m','jupyterlab'])
         self.assertNotIn('a'*64, repr((argv,env)))
