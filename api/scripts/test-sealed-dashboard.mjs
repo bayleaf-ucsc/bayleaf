@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { createServer } from 'node:http';
+import { dashboardDocument, displayedText, displayedStat, sealedUsageCard } from './fixtures/dashboard-dom.mjs';
 
 const bundle = await build({
   stdin: {
@@ -73,25 +74,53 @@ const render = async (sealedUsage = usage) => {
   app.get('/', c => renderPage(c, DashboardPage({ ...props, sealedUsage })));
   return (await app.request('http://localhost/')).text();
 };
-const sealedCard = html => html.split('<h2>Sealed LLM Inference</h2>')[1].split('<h2>')[0];
+const sealedCard = html => displayedText(sealedUsageCard(html));
+const assertStats = (html, expected) => {
+  const card = sealedUsageCard(html);
+  for (const [label, value] of Object.entries(expected)) assert.equal(displayedStat(card, label), value, label);
+};
 const html = await render();
 const card = sealedCard(html);
-for (const expected of ['91', '409', '500', '$1.8800', '$5.2500', '102,345', 'midnight UTC', 'not a dollar budget']) {
+const expectedStats = { "Today's Requests": '91', 'Requests Remaining Today': '409', 'Daily Request Limit': '500',
+  "Today's Spend": '$1.8800', "This Month's Spend": '$5.2500', "Today's Tokens": '102,345' };
+assertStats(html, expectedStats);
+for (const expected of ['midnight UTC', 'not a dollar budget']) {
   assert.ok(card.includes(expected), `Expected rendered Sealed usage: ${expected}`);
 }
 assert.ok(!card.includes('Dollars Remaining'));
 assert.ok(!html.includes('admin_synthetic') && !html.includes('tk_synthetic'));
 const partial = sealedCard(await render({ ...usage, today: null }));
 assert.ok(partial.includes('Unavailable') && partial.includes('$5.2500'));
+assertStats(await render({ ...usage, today: null }), { "Today's Spend": 'Unavailable', "Today's Tokens": 'Unavailable', "This Month's Spend": '$5.2500' });
 const unavailable = sealedCard(await render({ ...usage, today: null, month: null }));
 assert.ok(unavailable.includes('409') && unavailable.includes('billing usage is unavailable'));
 assert.ok(!unavailable.includes('$0.0000'));
+assertStats(await render({ ...usage, today: null, month: null }), { "Today's Spend": 'Unavailable', "This Month's Spend": 'Unavailable', "Today's Tokens": 'Unavailable', 'Requests Remaining Today': '409' });
 const unprovisioned = sealedCard(await render({ ...usage, hasProviderKey: false, today: null, month: null }));
 assert.ok(unprovisioned.includes('first Sealed request') && !unprovisioned.includes('$0.0000'));
-const exceeded = sealedCard(await render({ ...usage, count: 501 }));
-assert.ok(!exceeded.includes('>-1<'));
+assertStats(await render({ ...usage, count: 501 }), { "Today's Requests": '501', 'Requests Remaining Today': '0' });
 const zero = sealedCard(await render({ ...usage, today: { ...billing, cost: 0 } }));
 assert.ok(zero.includes('$0.0000'));
+assertStats(await render({ ...usage, today: { ...billing, cost: 0 } }), { "Today's Spend": '$0.0000' });
+// Harmless heading attributes, inline wrappers, metric tags and whitespace must
+// not change what a person reads. No production markup change is needed.
+const restyled = html.replace('<h2>Sealed LLM Inference</h2>', '<h2 class="reorganized"> Sealed <span>LLM Inference</span> </h2>')
+  .replace(/<div([^>]*)>(91|409|500|\$1\.8800|\$5\.2500|102,345)<\/div>/g, '<div$1><strong> $2 </strong></div>')
+  .replace("Today's Requests</div>", "<span>Today's Requests</span></div>");
+assertStats(restyled, expectedStats);
+for (const invalid of ['<button id="a" ID="b"></button>', '<div broken="x></div>', '<div><span></div>', '<div/>', '<div title="x" title="y"></div>',
+  '<script id="a" ID="b">ignored</script>', '<style nonce="a" NONCE="b">ignored</style>']) {
+  assert.throws(() => dashboardDocument(invalid), 'ambiguous/unsupported fixture markup is rejected');
+}
+const datasetControl = dashboardDocument('<div id="dataset-control" data-model-name="initial"></div>').getElementById('dataset-control');
+const liveDataset = datasetControl.dataset;
+assert.equal(liveDataset.modelName, 'initial');
+liveDataset.modelName = 'changed';
+assert.equal(datasetControl.getAttribute('data-model-name'), 'changed');
+datasetControl.setAttribute('data-model-name', 'reflected');
+assert.equal(liveDataset.modelName, 'reflected');
+delete liveDataset.modelName;
+assert.equal(datasetControl.getAttribute('data-model-name'), null);
 console.log('Sealed dashboard billing and rendering checks passed.');
 
 // Exercise the real dashboard handler with synthetic session/row lookups.
@@ -132,8 +161,7 @@ try {
   };
   const response = await dashboardRoutes.request('http://localhost/dashboard', {}, fixtureEnv);
   assert.equal(response.headers.get('Cache-Control'), 'no-store');
-  const routeCard = sealedCard(await response.text());
-  assert.ok(routeCard.includes('>0</div>'), 'Stale daily counter is displayed as zero');
+  assertStats(await response.text(), { "Today's Requests": '0', 'Requests Remaining Today': '500', 'Daily Request Limit': '500', "Today's Spend": '$1.8800' });
   assert.equal(starts.length, 2);
   const now = new Date();
   assert.ok(starts.includes(`${now.toISOString().slice(0, 10)}T00:00:00.000Z`));
@@ -144,7 +172,7 @@ try {
   assert.ok((await absentKey.text()).includes('first Sealed request'));
   assert.equal(starts.length, before);
   const disabled = await dashboardRoutes.request('http://localhost/dashboard', {}, { ...fixtureEnv, SEALED_ENABLED: 'false' });
-  assert.ok(!(await disabled.text()).includes('<h2>Sealed LLM Inference</h2>'));
+  assert.ok(!displayedText(dashboardDocument(await disabled.text())).includes('Sealed LLM Inference'));
   assert.equal(starts.length, before);
   globalThis.dashboardFixture.session = null;
   const anonymous = await dashboardRoutes.request('http://localhost/dashboard', {}, fixtureEnv);

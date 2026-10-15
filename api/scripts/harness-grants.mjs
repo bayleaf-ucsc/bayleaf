@@ -6,6 +6,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
+import { checkTemporaryTokenBrowser } from './fixtures/temporary-token-browser.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const api = 'http://localhost:8789';
@@ -485,14 +486,12 @@ try {
     await expect(await exchange(flow, value), 400, 'invalid_grant');
     await db.prepare("UPDATE user_keys SET bayleaf_token='sk-bayleaf-owner' WHERE email='owner@example.test'").run();
   });
-  await check('dashboard management, OpenAPI, and llms.txt expose the feature without exposing issued secrets', async () => {
+  await check('dashboard management and documentation SSR smoke checks', async () => {
     const redirect = await request('/grants/manage', { cookie: ownerCookie });
     assert.equal(redirect.status, 303); assert.equal(redirect.headers.get('Location'), '/dashboard#temporary-inference-tokens');
     const page = await request('/dashboard', { cookie: ownerCookie }); const html = await page.text();
     assert.equal(page.status, 200); assert.match(html, /Temporary inference tokens/); assert.match(html, /Copy token/);
-    const section = html.match(/<section id="temporary-inference-tokens"[\s\S]*?<\/section>/)[0];
-    assert.doesNotMatch(section, /type="password"|issued-key|\.value = result\.(key|access_token)/);
-    assert.match(section, /multiple/); assert.match(section, /selectedOptions/);
+    // SSR smoke checks establish presentation/headers, not runtime secrecy.
     assert.equal(page.headers.get('Cache-Control'), 'no-store');
     assert.equal(page.headers.get('X-Frame-Options'), 'DENY');
     const spec = await expect(await request('/docs/openapi.json'), 200);
@@ -503,6 +502,33 @@ try {
     assert.ok(workflow.includes('token_expired'), 'Exact expiry contract belongs in the spec');
     const challenge = spec.paths['/grants/authorize'].get.parameters.find(param => param.name === 'code_challenge_method');
     assert.deepEqual(challenge.schema.enum, ['S256']);
+  });
+  await check('temporary-token client creates, copies privately, and loses credential on reload', async () => {
+    const html = await (await request('/dashboard', { cookie: ownerCookie })).text();
+    const browserRequest = (path, init) => request(path, { ...init, cookie: ownerCookie, origin: api });
+    await checkTemporaryTokenBrowser(html, browserRequest);
+    if (process.argv.includes('--test-browser-fixture-mutations')) {
+      // Opt-in calibration only: normal coverage always runs the unmodified
+      // emitted script. Each broken artifact must fail at its observed contract.
+      const mutate = (before, after) => {
+        assert.ok(html.includes(before), 'calibration mutation still applies');
+        return html.replace(before, after);
+      };
+      await assert.rejects(checkTemporaryTokenBrowser(mutate("status.textContent = result.name + ': token created.'", 'status.textContent = result.access_token'), browserRequest), /credential absent from visible text/);
+      await assert.rejects(checkTemporaryTokenBrowser(mutate("status.textContent = result.name + ': token created.'", 'status.dataset.secret = result.access_token'), browserRequest), /credential absent from DOM/);
+      await assert.rejects(checkTemporaryTokenBrowser(mutate('writeText(credential)', 'writeText(grant.name)'), browserRequest), /clipboard receives the exact full credential/);
+      // Mutate only this card's opening tag, not another dashboard script.
+      const scriptTag = attributes => html.replace(/(<section\b[^>]*id="temporary-inference-tokens"[\s\S]*?)<script\b[^>]*>/, '$1<script ' + attributes + '>');
+      for (const attributes of ['type="application/json"', 'type="module"', 'src="/unexpected.js"', 'defer']) {
+        await assert.rejects(checkTemporaryTokenBrowser(scriptTag(attributes), browserRequest), /unsupported executable-script/);
+      }
+      await assert.rejects(checkTemporaryTokenBrowser(scriptTag('id="a" ID="b"'), browserRequest), /duplicate fixture attribute: id/);
+      const renamed = html.replace(/\bcredentials\b/g, 'transientSecrets').replace(/\brefresh\b/g, 'updateTokenList')
+        .replace('<h2>Temporary inference tokens</h2>', '<h2 class="restyled"><span>Temporary inference tokens</span></h2>');
+      await checkTemporaryTokenBrowser(renamed, browserRequest);
+      await checkTemporaryTokenBrowser(scriptTag('TYPE="text/javascript" class="restyled"'), browserRequest);
+      console.log('PASS browser fixture calibration: text/dataset leaks, wrong clipboard and unsupported/duplicate script attributes rejected; private renames, wrappers and inline classic-script metadata accepted');
+    }
   });
   await check('scheduled cleanup removes expired metadata and preserves active grants', async () => {
     const active = await mint();
