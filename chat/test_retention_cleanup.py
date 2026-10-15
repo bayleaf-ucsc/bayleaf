@@ -293,6 +293,72 @@ class RetentionTransactionTests(unittest.TestCase):
         self.assertIn("knowledge_bases=2", stdout)
         self.assertFalse(any(r.method == "DELETE" for r in requests))
 
+    def test_complete_multipage_file_inventory_preserves_later_reference_and_grace(self):
+        later_orphan = "44444444-4444-4444-8444-444444444444"
+        code, stdout, stderr, requests = self.run_cleanup({
+            CHAT_LIST: [CHAT],
+            "/api/v1/chats/synthetic-chat": {
+                "id": "synthetic-chat", "chat": {"file": REFERENCED},
+            },
+            "/api/v1/files/": {
+                "items": [{"id": ORPHAN, "created_at": NOW - 172800}], "total": 4,
+            },
+            ("/api/v1/files/", 2): {"items": [
+                {"id": REFERENCED, "created_at": NOW - 172800},
+                {"id": RECENT, "created_at": NOW - 86400},
+                {"id": later_orphan, "created_at": NOW - 172800},
+            ], "total": 4},
+        })
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("status=ok", stdout)
+        self.assertIn("files_total=4", stdout)
+        self.assertIn("files_referenced=1", stdout)
+        self.assertIn("files_in_grace=1", stdout)
+        self.assertIn("files_deleted=2", stdout)
+        self.assertEqual([r.url.path for r in requests if r.method == "DELETE"],
+                         [f"/api/v1/files/{ORPHAN}", f"/api/v1/files/{later_orphan}"])
+        file_reads = [r for r in requests if r.method == "GET" and r.url.path == "/api/v1/files/"]
+        self.assertEqual([r.url.params["page"] for r in file_reads], ["1", "2"])
+        self.assertTrue(all(r.url.params["content"] == "false" for r in file_reads))
+
+    def test_full_bare_user_and_chat_pages_transition_to_supported_envelopes(self):
+        # The reference owner is absent from the first user page, and its file
+        # reference is absent from the first chat page. Neither may be skipped.
+        first_users = [{"id": f"first-user-{i}", "group_ids": []} for i in range(30)]
+        first_chats = [{"id": f"first-chat-{i}", "updated_at": NOW} for i in range(30)]
+        for chat_key in ("chats", "items"):
+            with self.subTest(chat_envelope=chat_key):
+                code, stdout, stderr, requests = self.run_cleanup({
+                    "/api/v1/users/": first_users,
+                    ("/api/v1/users/", 2): {"users": [USER], "total": 31},
+                    **{f"/api/v1/chats/list/user/{user['id']}": [] for user in first_users},
+                    CHAT_LIST: first_chats,
+                    (CHAT_LIST, 2): {chat_key: [CHAT], "total": 31},
+                    **{f"/api/v1/chats/{chat['id']}": {"id": chat["id"], "chat": {}}
+                       for chat in first_chats},
+                    "/api/v1/chats/synthetic-chat": {
+                        "id": "synthetic-chat", "chat": {"file": REFERENCED},
+                    },
+                    "/api/v1/files/": {"items": [
+                        {"id": ORPHAN, "created_at": NOW - 172800},
+                        {"id": REFERENCED, "created_at": NOW - 172800},
+                        {"id": RECENT, "created_at": NOW - 86400},
+                    ], "total": 3},
+                })
+                self.assertEqual(code, 0, stderr)
+                self.assertIn("status=ok", stdout)
+                self.assertIn("users_total=31", stdout)
+                self.assertIn("chats_scanned=31", stdout)
+                self.assertIn("chats_scanned_for_refs=31", stdout)
+                self.assertIn("files_referenced=1", stdout)
+                self.assertIn("files_in_grace=1", stdout)
+                self.assertEqual([r.url.path for r in requests if r.method == "DELETE"],
+                                 [f"/api/v1/files/{ORPHAN}"])
+                self.assertEqual([r.url.params["page"] for r in requests
+                                  if r.url.path == "/api/v1/users/"], ["1", "2"])
+                self.assertEqual([r.url.params["page"] for r in requests
+                                  if r.url.path == CHAT_LIST], ["1", "2", "1", "2"])
+
     def test_invalid_file_inventory_cannot_bypass_grace(self):
         for payload in (
             {"items": [{"id": ORPHAN}], "total": 1},
