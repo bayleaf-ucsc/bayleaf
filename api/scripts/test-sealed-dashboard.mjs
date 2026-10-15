@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { createServer } from 'node:http';
+import { fileURLToPath } from 'node:url';
 
 const bundle = await build({
   stdin: {
@@ -81,19 +82,28 @@ assert.ok(!html.includes('admin_synthetic') && !html.includes('tk_synthetic'));
 console.log('PASS Sealed billing helper and SSR smoke checks (no browser executed)');
 
 // Exercise the real dashboard handler with synthetic session/row lookups.
-// Only these route dependencies are stubbed; billing and rendering are real.
+// Identity lookups are stubbed; billing and rendering are real. Observe the
+// public view boundary, then delegate unchanged: this checks server assembly,
+// not HTML structure, client execution, or the presentation of labeled metrics.
 const routeBundle = await build({
   stdin: { contents: "export { dashboardRoutes } from './src/routes/dashboard';", resolveDir: process.cwd() },
   bundle: true, write: false, format: 'esm', platform: 'browser',
   loader: { '.py': 'text' },
   jsx: 'automatic', jsxImportSource: 'hono/jsx',
   plugins: [{ name: 'synthetic-dashboard-identity', setup(build) {
-    build.onResolve({ filter: /(?:provision|utils\/session)$/ }, args => {
+    build.onResolve({ filter: /(?:provision|utils\/session|templates\/dashboard)$/ }, args => {
       if (!args.importer.endsWith('/routes/dashboard.tsx')) return;
       return { path: args.path, namespace: 'fixture' };
     });
     build.onLoad({ filter: /.*/, namespace: 'fixture' }, args => ({
-      contents: args.path.endsWith('session')
+      resolveDir: process.cwd(),
+      contents: args.path.endsWith('dashboard')
+        ? `import { DashboardPage as RealDashboardPage } from ${JSON.stringify(fileURLToPath(new URL('../src/templates/dashboard.tsx', import.meta.url)))};
+           export function DashboardPage(props) {
+             globalThis.dashboardFixture.renderedUsage = props.sealedUsage;
+             return RealDashboardPage(props);
+           }`
+        : args.path.endsWith('session')
         ? 'export async function getSession() { return globalThis.dashboardFixture.session; }'
         : `export async function getActiveRow() { return globalThis.dashboardFixture.row; }
            export async function resolveOrKeyInfo() { return null; }`,
@@ -120,10 +130,25 @@ try {
   assert.equal(response.headers.get('Cache-Control'), 'no-store');
   assert.equal(response.status, 200);
   assert.ok((await response.text()).includes('Sealed LLM Inference'));
+  const assertRouteUsage = count => {
+    const usage = globalThis.dashboardFixture.renderedUsage;
+    assert.equal(usage?.count, count, 'route supplies the expected daily count');
+    assert.equal(usage.limit, 500);
+    assert.equal(usage.hasProviderKey, true);
+    assert.deepEqual(usage.today, billing);
+    assert.deepEqual(usage.month, billing);
+  };
+  assertRouteUsage(0);
   assert.equal(starts.length, 2);
   const now = new Date();
   assert.ok(starts.includes(`${now.toISOString().slice(0, 10)}T00:00:00.000Z`));
   assert.ok(starts.includes(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()));
+  // A current-day row must retain its count, not unconditionally reset to zero.
+  globalThis.dashboardFixture.row.sealed_rpd_date = now.toISOString().slice(0, 10);
+  const current = await dashboardRoutes.request('http://localhost/dashboard', {}, fixtureEnv);
+  assert.equal(current.status, 200);
+  await current.text();
+  assertRouteUsage(91);
   globalThis.dashboardFixture.row.tinfoil_key = null;
   const before = starts.length;
   const absentKey = await dashboardRoutes.request('http://localhost/dashboard', {}, fixtureEnv);

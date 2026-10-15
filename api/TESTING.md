@@ -904,7 +904,12 @@ The request-count allowance and dollar spending must remain separately labeled;
 the note says this is not a dollar budget. These browser judgments deliberately
 do not run inside `test:sealed-dashboard`. That command retains provider-helper
 validation, billing method/body/auth/UTC ranges, failure handling, no billing for
-an absent key, disabled-lane/auth behavior and basic SSR smoke checks only.
+an absent key, disabled-lane/auth behavior and basic SSR smoke checks. Its
+test-only view-boundary observer delegates unchanged to the real DashboardPage
+and asserts that the actual route passes a stale count as 0 of 500 requests and
+a current-day count as 91 of 500, with billing intact. This checks the server's
+view-model assembly (including a missing `sealedUsage` prop), not rendered
+label/value relationships or browser behavior.
 
 ### Qualification record, 2026-10-14
 
