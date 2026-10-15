@@ -11,17 +11,16 @@ import { readFileSync } from 'node:fs';
 import { sign } from 'hono/jwt';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 
-// No credential reads or live calls without an explicit operator opt-in.
-if (!process.argv.includes('--live')) {
-  console.error('Live key lifecycle requires --live. Offline: node --experimental-vm-modules scripts/test-provision-cleanup.mjs');
-  process.exit(2);
-}
-
+// Explicit external boundaries keep the real lifecycle runnable offline without
+// replacing imports or globals. Each invocation owns its state and diagnostics.
+export async function runProvision({ fetch, d1, sessionSecret, admin: ADMIN, backendFlags, console = globalThis.console }) {
 const BASE = 'http://localhost:8799';
 const runId = randomUUID();
 const EMAIL = `provision-${runId}-1@example.invalid`;
 const EMAIL2 = `provision-${runId}-2@example.invalid`;
+const ownedNames = new Set([EMAIL, EMAIL2].map(email => `BayLeaf API for ${email}`));
 const OR = 'https://openrouter.ai/api/v1';
 
 // Provenance, not error.message/name/stack, determines what can be printed.
@@ -53,19 +52,6 @@ function reportFailure(phase, error) {
   if (pending.length) console.error('HARNESS_DIAGNOSTIC ' + JSON.stringify({ phase, runId, reason: 'diagnostics_truncated' }));
 }
 
-const parseEnv = (path) => Object.fromEntries(
-  readFileSync(path, 'utf8').split('\n').filter((l) => l.includes('=') && !l.trim().startsWith('#'))
-    .map((l) => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim().replace(/^"|"$/g, '')]),
-);
-// .dev.vars supplies OIDC_CLIENT_SECRET (for minting the session JWT). Its
-// OPENROUTER_PROVISIONING_KEY is stale, so OpenRouter admin calls here use the
-// working management key from .env — the same one scripts/spend-limits.mjs uses.
-// Getting this wrong makes every orGet() 401 -> null, which silently turns the
-// upstream assertions AND the cleanup check into false greens. Verify the key
-// works before trusting any of them.
-const env = parseEnv('.dev.vars');
-const ADMIN = parseEnv('.env').OPENROUTER_MAINTENANCE_KEY;
-
 let pass = 0, fail = 0;
 const check = (label, ok, detail = '') => {
   console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${label}${detail ? `: ${detail}` : ''}`);
@@ -75,7 +61,7 @@ const check = (label, ok, detail = '') => {
 const cookie = async () =>
   `bayleaf_session=${await sign(
     { email: EMAIL, name: 'Refactor Test', exp: Math.floor(Date.now() / 1000) + 3600 },
-    env.OIDC_CLIENT_SECRET,
+    sessionSecret,
   )}`;
 
 const call = async (method, path, c) => {
@@ -95,13 +81,6 @@ const authKey = async (token) => {
   return { status: res.status, json, text };
 };
 
-const d1 = (sql) => {
-  const out = execFileSync('npx',
-    ['wrangler', 'd1', 'execute', 'bayleaf-keys', '--local', '--json', '--command', sql],
-    { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] });
-  return JSON.parse(out)[0].results;
-};
-
 const orGet = async (hash) => {
   const r = await fetch(`${OR}/keys/${hash}`, { headers: { Authorization: `Bearer ${ADMIN}` } });
   if (r.status === 404) return null;
@@ -117,12 +96,12 @@ const orDelete = async (hash) => {
   // throws; inventory discovery or a cached hash cannot override that failure.
   const key = await orGet(hash);
   if (!key) return; // Provider confirmed it is already absent.
-  if (key.hash !== hash || ![EMAIL, EMAIL2].some(email => key.name === `BayLeaf API for ${email}`))
+  if (key.hash !== hash || !ownedNames.has(key.name))
     throw safeError('provider.delete', 'ownership_unverified');
   const r = await fetch(`${OR}/keys/${hash}`, { method: 'DELETE', headers: { Authorization: `Bearer ${ADMIN}` } });
   if (!r.ok && r.status !== 404) throw safeError('provider.delete', 'http_failure', r.status);
 };
-const orListByName = async (name) => {
+const orListOwned = async () => {
   const found = [];
   for (let offset = 0; ; offset += 100) {
     const r = await fetch(`${OR}/keys?offset=${offset}&limit=100`, {
@@ -132,7 +111,7 @@ const orListByName = async (name) => {
     const batch = (await r.json()).data;
     if (!Array.isArray(batch) || batch.some(key => typeof key.name !== 'string' || typeof key.hash !== 'string'))
       throw safeError('provider.list', 'invalid_response');
-    found.push(...batch.filter((key) => key.name === name));
+    found.push(...batch.filter((key) => ownedNames.has(key.name)));
     if (batch.length < 100) return found;
   }
 };
@@ -169,7 +148,7 @@ async function main() {
     }
   }
   console.log(`\n${fail === 0 ? 'ALL PASS' : 'FAILURES'}: ${pass} passed, ${fail} failed`);
-  process.exitCode = fail === 0 ? 0 : 1;
+  return fail === 0 ? 0 : 1;
 }
 
 async function exerciseLifecycle() {
@@ -206,12 +185,11 @@ async function exerciseLifecycle() {
   // backend that answers 503 makes an agent plan around a capability it lacks;
   // /v1/models and the routing block already gate on this, and this surface
   // used to not. Read the flags from wrangler.jsonc so the check tracks config.
-  const wrangler = JSON.parse(readFileSync('wrangler.jsonc', 'utf8').replace(/^\s*\/\/.*$/gm, ''));
   for (const [name, flag] of [['vertex', 'VERTEX_ENABLED'], ['bedrock', 'BEDROCK_ENABLED']]) {
-    const enabled = wrangler.vars[flag] === 'true';
+    const enabled = backendFlags[flag] === 'true';
     const present = !!r.json?.data?.bayleaf?.[name];
     check(`bayleaf.${name} present iff ${flag}=true`, present === enabled,
-      `${flag}=${wrangler.vars[flag]} present=${present}`);
+      `${flag}=${backendFlags[flag]} present=${present}`);
   }
   // OpenRouter echoes an *elided* label ("sk-or-v1-9fa...4a4") for the caller's
   // own key. That's safe by upstream design. What must never appear is a whole
@@ -303,7 +281,7 @@ async function exerciseLifecycle() {
   check('one-shot: second poll 404', poll3.status === 404);
 
   console.log('\n12. Claim flow for a user with NO row → provisions one');
-  const c2 = `bayleaf_session=${await sign({ email: EMAIL2, name: 'T2', exp: Math.floor(Date.now() / 1000) + 3600 }, env.OIDC_CLIENT_SECRET)}`;
+  const c2 = `bayleaf_session=${await sign({ email: EMAIL2, name: 'T2', exp: Math.floor(Date.now() / 1000) + 3600 }, sessionSecret)}`;
   const init2 = await (await fetch(`${BASE}/auth/claim/initiate`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client: 'HarnessTest2' }),
   })).json();
@@ -328,8 +306,9 @@ async function exerciseLifecycle() {
   check('all concurrent requests succeed', firstUses.every((response) => response.status === 200));
   db2 = d1(`SELECT * FROM user_keys WHERE email='${EMAIL2}'`)[0];
   if (db2?.or_key_hash) created.add(db2.or_key_hash);
-  const raceKeys = await orListByName(`BayLeaf API for ${EMAIL2}`);
-  for (const key of raceKeys) created.add(key.hash);
+  const ownedKeys = await orListOwned();
+  for (const key of ownedKeys) created.add(key.hash);
+  const raceKeys = ownedKeys.filter(key => key.name === `BayLeaf API for ${EMAIL2}`);
   check('exactly one OR key survives the mint race', raceKeys.length === 1, `${raceKeys.length} found`);
   check('surviving key is the one stored in D1', raceKeys[0]?.hash === db2?.or_key_hash);
 
@@ -341,10 +320,10 @@ async function cleanup() {
   const attempt = async action => { try { await action(); } catch (error) { errors.push(error); } };
   // Discover by exact unique ownership even if minting succeeded but the client
   // threw before reading the D1 row or recording a provider hash.
+  await attempt(async () => {
+    for (const key of await orListOwned()) created.add(key.hash);
+  });
   for (const email of [EMAIL, EMAIL2]) {
-    await attempt(async () => {
-      for (const key of await orListByName(`BayLeaf API for ${email}`)) created.add(key.hash);
-    });
     await attempt(async () => {
       const db = d1(`SELECT or_key_hash FROM user_keys WHERE email='${email}'`)[0];
       if (db?.or_key_hash) created.add(db.or_key_hash);
@@ -354,8 +333,8 @@ async function cleanup() {
     await orDelete(hash);
     if (await orGet(hash)) throw safeError('cleanup.provider', 'key_survived_deletion');
   });
-  for (const email of [EMAIL, EMAIL2]) await attempt(async () => {
-    if ((await orListByName(`BayLeaf API for ${email}`)).length)
+  await attempt(async () => {
+    if ((await orListOwned()).length)
       throw safeError('cleanup.provider', 'keys_remain_in_inventory');
   });
   await attempt(async () => {
@@ -371,10 +350,43 @@ async function cleanup() {
   check('run-owned keys and D1 rows verified absent', true);
 }
 
-export const completion = main().catch((error) => {
+try { return await main(); } catch (error) {
   // Preserve the original error object for debuggers without logging responses,
   // tokens or provider payloads in its message/stack.
-  process.exitCode = 1;
   reportFailure('primary', error);
-  return error;
-});
+  throw error;
+}
+}
+
+async function cli() {
+  // Guard before credential/config reads, D1 commands or HTTP requests.
+  if (!process.argv.includes('--live')) {
+    console.error('Live key lifecycle requires --live. Offline: node scripts/test-provision-cleanup.mjs');
+    return 2;
+  }
+  const parseEnv = path => Object.fromEntries(
+    readFileSync(path, 'utf8').split('\n').filter(l => l.includes('=') && !l.trim().startsWith('#'))
+      .map(l => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim().replace(/^"|"$/g, '')]),
+  );
+  try {
+    // .dev.vars has a stale provisioning key: use the maintenance key from
+    // .env, and require provider preflight before trusting lookup assertions.
+    return await runProvision({
+      fetch: globalThis.fetch,
+      sessionSecret: parseEnv('.dev.vars').OIDC_CLIENT_SECRET,
+      admin: parseEnv('.env').OPENROUTER_MAINTENANCE_KEY,
+      backendFlags: JSON.parse(readFileSync('wrangler.jsonc', 'utf8').replace(/^\s*\/\/.*$/gm, '')).vars,
+      d1: sql => JSON.parse(execFileSync('npx',
+        ['wrangler', 'd1', 'execute', 'bayleaf-keys', '--local', '--json', '--command', sql],
+        { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }))[0].results,
+    });
+  } catch {
+    // Runner failures already have provenance-safe diagnostics. Configuration
+    // errors can carry secrets too: never print arbitrary messages or stacks.
+    console.error('FAIL key lifecycle: configuration or run failed.');
+    return 1;
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
+  process.exitCode = await cli();
