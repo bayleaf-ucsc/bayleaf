@@ -184,9 +184,16 @@ async function concurrentMintFailure() {
   const original = new Error('inert concurrent failure');
   let tokenNumber = 0, claimNumber = 0, keyNumber = 0, started = 0, finished = 0, scans = 0;
   let firstEmail;
+  let releaseMints, cleanupBeforeDrain = false;
+  const mintGate = new Promise(resolve => { releaseMints = resolve; });
+  const lateMints = [];
   const d1 = sql => {
     const selected = [...rows.values()].filter(row => sql.includes(`'${row.email}'`));
-    if (sql.startsWith('DELETE')) { for (const row of selected) rows.delete(row.email); return []; }
+    if (sql.startsWith('DELETE')) {
+      if (started && finished !== 7) cleanupBeforeDrain = true;
+      for (const row of selected) rows.delete(row.email);
+      return [];
+    }
     return sql.includes('count(*)') ? [{ n: selected.length }] : selected;
   };
   const mint = row => {
@@ -205,6 +212,7 @@ async function concurrentMintFailure() {
     if (url.hostname === 'openrouter.ai') {
       if (url.pathname.endsWith('/keys')) {
         if (url.searchParams.get('limit') === '1') return Response.json({ data: [] });
+        if (finished !== 7) cleanupBeforeDrain = true;
         assert.equal(finished, 7, 'All successful late mints drain before cleanup discovery');
         scans++;
         return Response.json({ data: [...keys.values()] });
@@ -230,9 +238,12 @@ async function concurrentMintFailure() {
       if (row.email !== firstEmail) {
         const attempt = ++started;
         if (attempt === 1) throw original;
-        // Yield beyond the rejection so fail-fast Promise.all would leak keys.
-        await Promise.resolve(); await Promise.resolve();
-        mint(row); finished++;
+        // A later event-loop turn outlasts the entire rejection/cleanup microtask
+        // chain. An early-rejecting runner cannot race ahead to a false green.
+        if (attempt === 2) setImmediate(releaseMints);
+        const lateMint = mintGate.then(() => { mint(row); finished++; });
+        lateMints.push(lateMint);
+        await lateMint;
       } else if (!keys.has(row.or_key_hash)) mint(row);
       return Response.json({ data: { limit: 5, label: 'sk-or-elided...key', bayleaf: { openrouter: {} } } });
     }
@@ -260,9 +271,17 @@ async function concurrentMintFailure() {
     }
     assert.fail('Unexpected synthetic HTTP path');
   };
-  await assert.rejects(runProvision({ fetch, d1, sessionSecret: 'inert-session', admin: 'inert-admin', backendFlags: {},
-    console: { log: line => logs.push(line), error: line => logs.push(line) } }), error => error === original);
+  try {
+    await assert.rejects(runProvision({ fetch, d1, sessionSecret: 'inert-session', admin: 'inert-admin', backendFlags: {},
+      console: { log: line => logs.push(line), error: line => logs.push(line) } }), error => error === original);
+  } finally {
+    // Drain fixture work even when the runner rejects early or the identity
+    // assertion fails. Inventory assertions must inspect the final late-mint state.
+    const completed = await Promise.allSettled(lateMints);
+    assert.ok(completed.every(result => result.status === 'fulfilled'), 'Late synthetic mints complete successfully');
+  }
   assert.equal(started, 8); assert.equal(finished, 7);
+  assert.equal(cleanupBeforeDrain, false, 'Cleanup/discovery must not begin while synthetic mints are in flight');
   assert.equal(keys.size, 0); assert.equal(rows.size, 0);
   assert.equal(scans, 2, 'One discovery and one absence scan cover both owners');
   assert.ok(!logs.some(line => /^  FAIL/.test(line)), 'Lifecycle reaches concurrent stage without assertion failures');
