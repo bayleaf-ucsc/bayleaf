@@ -42,6 +42,7 @@ Environment:
 """
 
 import argparse
+from dataclasses import dataclass
 import json
 import math
 import os
@@ -51,7 +52,7 @@ import time
 import httpx
 
 
-def parse_args():
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="BayLeaf Chat retention cleanup. Deletes conversations "
         "inactive for longer than RETENTION_DAYS. Users in hold:* groups are exempt.",
@@ -88,76 +89,21 @@ examples:
         "--retention-days", type=int, default=None,
         help="Days of inactivity before deletion. Overrides RETENTION_DAYS env var.",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-args = parse_args()
-
-# --- Configuration ---
-
-OWUI_URL = os.environ.get("OWUI_URL", "").rstrip("/")
-OWUI_TOKEN = os.environ.get("OWUI_TOKEN", "")
-RETENTION_DAYS = args.retention_days or int(os.environ.get("RETENTION_DAYS", "90"))
-ORPHAN_GRACE_SECONDS = int(os.environ.get("ORPHAN_GRACE_SECONDS", str(86400)))
-
-# Sunrise date: the date the retention policy was announced. All chats are
-# treated as if their last activity was at least this date, giving existing
-# users a full RETENTION_DAYS window from announcement to back up their data.
-# Format: YYYY-MM-DD (UTC). If unset, no grace period (immediate enforcement).
-_sunrise_env = os.environ.get("RETENTION_SUNRISE", "")
-SUNRISE_TS: int | None = None
-if _sunrise_env:
-    try:
-        SUNRISE_TS = int(time.mktime(time.strptime(_sunrise_env, "%Y-%m-%d")))
-    except ValueError:
-        print(
-            f"FATAL: RETENTION_SUNRISE must be YYYY-MM-DD, got {_sunrise_env!r}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-# Mode resolution: --live requires DRY_RUN to not be "true".
-# If --live is passed but DRY_RUN=true is set, abort (conflicting intent).
-# Destructive action requires positive consent (--live) AND lack of negative
-# consent (DRY_RUN not explicitly "true").
-_dry_run_env = os.environ.get("DRY_RUN", "true").lower()
-if args.live and _dry_run_env == "true" and "DRY_RUN" in os.environ:
-    print(
-        "FATAL: --live conflicts with DRY_RUN=true in environment. "
-        "Unset DRY_RUN or set DRY_RUN=false to proceed.",
-        file=sys.stderr,
-    )
-    sys.exit(1)
-
-DRY_RUN = not args.live if args.live else _dry_run_env != "false"
+@dataclass(frozen=True)
+class Settings:
+    retention_days: int = 90
+    orphan_grace_seconds: int = 86400
+    sunrise_ts: int | None = None
+    dry_run: bool = True
 
 
 def fail(msg: str):
     """Print error and exit non-zero. DO alerts trigger on this."""
     print(f"FATAL: {msg}", file=sys.stderr)
     sys.exit(1)
-
-
-def log(msg: str):
-    """Non-sensitive structured log line."""
-    mode = "DRY_RUN" if DRY_RUN else "LIVE"
-    print(f"[{mode}] {msg}")
-
-
-# --- Preflight checks ---
-
-if not OWUI_URL:
-    fail("OWUI_URL is not set")
-if not OWUI_TOKEN:
-    fail("OWUI_TOKEN is not set")
-if RETENTION_DAYS < 1:
-    fail(f"RETENTION_DAYS must be >= 1, got {RETENTION_DAYS}")
-if ORPHAN_GRACE_SECONDS < 0:
-    fail(f"ORPHAN_GRACE_SECONDS must be >= 0, got {ORPHAN_GRACE_SECONDS}")
-
-CUTOFF = int(time.time()) - (RETENTION_DAYS * 86400)
-HEADERS = {"Authorization": f"Bearer {OWUI_TOKEN}"}
-client = httpx.Client(base_url=OWUI_URL, headers=HEADERS, timeout=30)
 
 
 # --- API helpers (fail hard on any error) ---
@@ -216,7 +162,7 @@ def require_timestamp(items: list[dict], field: str, label: str):
         fail(f"Invalid {label} timestamps")
 
 
-def check_health():
+def check_health(client: httpx.Client):
     """Verify OWUI is reachable and healthy before doing anything."""
     try:
         resp = client.get("/health")
@@ -229,7 +175,7 @@ def check_health():
         fail(f"Health check returned unhealthy: {data}")
 
 
-def get_all_users() -> list[dict]:
+def get_all_users(client: httpx.Client) -> list[dict]:
     """Paginate through all users.
 
     OWUI API quirk: page 1 (or no page param) returns a bare list;
@@ -259,7 +205,7 @@ def get_all_users() -> list[dict]:
     return users
 
 
-def get_all_groups() -> dict[str, str]:
+def get_all_groups(client: httpx.Client) -> dict[str, str]:
     """Get all groups, return {group_id: group_name} mapping."""
     try:
         resp = client.get("/api/v1/groups/")
@@ -282,7 +228,7 @@ def is_held(user: dict, group_map: dict[str, str]) -> bool:
     return False
 
 
-def get_user_chats(user_id: str) -> list[dict]:
+def get_user_chats(client: httpx.Client, user_id: str) -> list[dict]:
     """Get all chats for a user via admin endpoint. Paginated."""
     chats = []
     page = 1
@@ -309,7 +255,7 @@ def get_user_chats(user_id: str) -> list[dict]:
     return chats
 
 
-def delete_chat(chat_id: str) -> bool:
+def delete_chat(client: httpx.Client, chat_id: str) -> bool:
     """Delete a single chat. Returns True on success."""
     try:
         resp = client.delete(f"/api/v1/chats/{chat_id}")
@@ -323,7 +269,7 @@ def delete_chat(chat_id: str) -> bool:
 UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
-def get_all_files() -> list[dict]:
+def get_all_files(client: httpx.Client) -> list[dict]:
     """Paginate through all files via /api/v1/files/ ({items, total} envelope).
 
     Uses content=false to avoid shipping extracted text over the wire.
@@ -355,7 +301,7 @@ def get_all_files() -> list[dict]:
     return files
 
 
-def get_all_knowledge_bases() -> list[dict]:
+def get_all_knowledge_bases(client: httpx.Client) -> list[dict]:
     """Paginate through all knowledge bases via /api/v1/knowledge/."""
     kbs = []
     page = 1
@@ -388,7 +334,7 @@ def get_all_knowledge_bases() -> list[dict]:
     return kbs
 
 
-def get_kb_file_ids(kb_id: str) -> set[str]:
+def get_kb_file_ids(client: httpx.Client, kb_id: str) -> set[str]:
     """Return the set of file ids attached to a knowledge base."""
     try:
         resp = client.get(f"/api/v1/knowledge/{kb_id}/files")
@@ -405,7 +351,7 @@ def get_kb_file_ids(kb_id: str) -> set[str]:
     return {item["id"] for item in items}
 
 
-def get_full_chat(chat_id: str) -> dict:
+def get_full_chat(client: httpx.Client, chat_id: str) -> dict:
     """Fetch a single chat's full JSON; any failure leaves references unknown."""
     try:
         resp = client.get(f"/api/v1/chats/{chat_id}")
@@ -422,7 +368,7 @@ def get_full_chat(chat_id: str) -> dict:
     return data
 
 
-def delete_file(file_id: str) -> bool:
+def delete_file(client: httpx.Client, file_id: str) -> bool:
     """Delete a single file. Returns True on success."""
     try:
         resp = client.delete(f"/api/v1/files/{file_id}")
@@ -433,28 +379,39 @@ def delete_file(file_id: str) -> bool:
 
 # --- Main ---
 
-def main():
-    log(f"retention_days={RETENTION_DAYS}")
-    log(f"cutoff={time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(CUTOFF))}")
-    if SUNRISE_TS:
-        log(f"sunrise={time.strftime('%Y-%m-%d', time.gmtime(SUNRISE_TS))}")
+def run_cleanup(client: httpx.Client, settings: Settings, clock=time.time):
+    """Run both phases with an owned-by-caller client and an explicit clock."""
+    if settings.retention_days < 1:
+        fail(f"RETENTION_DAYS must be >= 1, got {settings.retention_days}")
+    if settings.orphan_grace_seconds < 0:
+        fail(f"ORPHAN_GRACE_SECONDS must be >= 0, got {settings.orphan_grace_seconds}")
+    cutoff = int(clock()) - settings.retention_days * 86400
+
+    def log(msg: str):
+        mode = "DRY_RUN" if settings.dry_run else "LIVE"
+        print(f"[{mode}] {msg}")
+
+    log(f"retention_days={settings.retention_days}")
+    log(f"cutoff={time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(cutoff))}")
+    if settings.sunrise_ts:
+        log(f"sunrise={time.strftime('%Y-%m-%d', time.gmtime(settings.sunrise_ts))}")
         grace_expires = time.strftime(
-            "%Y-%m-%d", time.gmtime(SUNRISE_TS + RETENTION_DAYS * 86400)
+            "%Y-%m-%d", time.gmtime(settings.sunrise_ts + settings.retention_days * 86400)
         )
         log(f"grace_expires={grace_expires}")
     else:
         log("sunrise=none (immediate enforcement)")
 
     # 0. Health check
-    check_health()
+    check_health(client)
     log("health=ok")
 
     # 1. Get all users
-    users = get_all_users()
+    users = get_all_users(client)
     log(f"users_total={len(users)}")
 
     # 2. Get group map and identify held users
-    group_map = get_all_groups()
+    group_map = get_all_groups(client)
     held_user_ids: set[str] = set()
     for user in users:
         if is_held(user, group_map):
@@ -473,24 +430,26 @@ def main():
         if uid in held_user_ids:
             continue
 
-        chats = get_user_chats(uid)
+        chats = get_user_chats(client, uid)
         for chat in chats:
             total_scanned += 1
             updated_at = chat["updated_at"]
 
             # Sunrise grace: treat activity as at least the sunrise date
-            effective_updated = max(updated_at, SUNRISE_TS) if SUNRISE_TS else updated_at
+            effective_updated = (
+                max(updated_at, settings.sunrise_ts) if settings.sunrise_ts else updated_at
+            )
 
-            if effective_updated >= CUTOFF:
+            if effective_updated >= cutoff:
                 continue  # still fresh (or protected by grace period)
 
             total_expired += 1
             chat_id = chat["id"]
 
-            if DRY_RUN:
+            if settings.dry_run:
                 users_impacted.add(uid)
             else:
-                if delete_chat(chat_id):
+                if delete_chat(client, chat_id):
                     total_deleted += 1
                     users_impacted.add(uid)
                 else:
@@ -509,7 +468,7 @@ def main():
     # 5. Phase A summary (non-sensitive aggregate only)
     log(f"chats_scanned={total_scanned}")
     log(f"chats_expired={total_expired}")
-    if DRY_RUN:
+    if settings.dry_run:
         log(f"chats_would_delete={total_expired}")
     else:
         log(f"chats_deleted={total_deleted}")
@@ -527,19 +486,19 @@ def main():
     # that table (typically abandoned draft attachments that the user never
     # sent) are classified as orphans and deleted. This is intentional: those
     # files are no longer reachable through the UI.
-    log(f"orphan_grace_seconds={ORPHAN_GRACE_SECONDS}")
+    log(f"orphan_grace_seconds={settings.orphan_grace_seconds}")
 
-    files = get_all_files()
+    files = get_all_files(client)
     log(f"files_total={len(files)}")
 
     referenced_ids: set[str] = set()
     file_id_set: set[str] = {f["id"] for f in files}
 
     # Reference source 1: knowledge bases
-    kbs = get_all_knowledge_bases()
+    kbs = get_all_knowledge_bases(client)
     log(f"knowledge_bases={len(kbs)}")
     for kb in kbs:
-        referenced_ids.update(get_kb_file_ids(kb["id"]))
+        referenced_ids.update(get_kb_file_ids(client, kb["id"]))
 
     # Reference source 2: every surviving chat's full JSON.
     # After Phase A, expired chats have been deleted; their attachments
@@ -549,10 +508,10 @@ def main():
         uid = user["id"]
         # Re-list: a user whose chats were all expired during Phase A might
         # return an empty list now, which is fine.
-        chats = get_user_chats(uid)
+        chats = get_user_chats(client, uid)
         for chat_summary in chats:
             chat_id = chat_summary["id"]
-            full = get_full_chat(chat_id)
+            full = get_full_chat(client, chat_id)
             chats_fetched += 1
             # Match file UUIDs against the known file-id set. This avoids
             # picking up unrelated UUIDs (model ids, message ids, etc.).
@@ -565,8 +524,7 @@ def main():
     log(f"files_referenced={len(referenced_ids)}")
 
     # Candidate orphans: unreferenced AND older than grace window
-    now = int(time.time())
-    grace_cutoff = now - ORPHAN_GRACE_SECONDS
+    grace_cutoff = int(clock()) - settings.orphan_grace_seconds
     orphans = [
         f
         for f in files
@@ -582,11 +540,11 @@ def main():
 
     orphan_deleted = 0
     orphan_errors = 0
-    if DRY_RUN:
+    if settings.dry_run:
         log(f"files_would_delete={len(orphans)}")
     else:
         for f in orphans:
-            if delete_file(f["id"]):
+            if delete_file(client, f["id"]):
                 orphan_deleted += 1
             else:
                 orphan_errors += 1
@@ -596,6 +554,38 @@ def main():
             fail(f"{orphan_errors} orphan file deletion(s) failed")
 
     log("status=ok")
+
+
+def main(argv=None):
+    """Resolve CLI intent and credentials before opening the HTTP client."""
+    args = parse_args(argv)
+    env = os.environ
+    dry_run_env = env.get("DRY_RUN", "true").lower()
+    if args.live and dry_run_env == "true" and "DRY_RUN" in env:
+        fail("--live conflicts with DRY_RUN=true in environment. "
+             "Unset DRY_RUN or set DRY_RUN=false to proceed.")
+
+    sunrise = env.get("RETENTION_SUNRISE", "")
+    sunrise_ts = None
+    if sunrise:
+        try:
+            sunrise_ts = int(time.mktime(time.strptime(sunrise, "%Y-%m-%d")))
+        except ValueError:
+            fail(f"RETENTION_SUNRISE must be YYYY-MM-DD, got {sunrise!r}")
+    settings = Settings(
+        retention_days=args.retention_days or int(env.get("RETENTION_DAYS", "90")),
+        orphan_grace_seconds=int(env.get("ORPHAN_GRACE_SECONDS", "86400")),
+        sunrise_ts=sunrise_ts,
+        dry_run=not args.live if args.live else dry_run_env != "false",
+    )
+    url = env.get("OWUI_URL", "").rstrip("/")
+    token = env.get("OWUI_TOKEN", "")
+    if not url:
+        fail("OWUI_URL is not set")
+    if not token:
+        fail("OWUI_TOKEN is not set")
+    with httpx.Client(base_url=url, headers={"Authorization": f"Bearer {token}"}, timeout=30) as client:
+        run_cleanup(client, settings)
 
 
 if __name__ == "__main__":

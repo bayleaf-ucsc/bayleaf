@@ -1,4 +1,4 @@
-"""Offline transaction tests: real CLI/main, synthetic HTTP responses only.
+"""Offline transaction tests: real runner, synthetic HTTP responses only.
 
 Run: uv run --offline --with httpx python -m unittest discover -s chat -p 'test_retention_cleanup.py' -v
 """
@@ -6,13 +6,14 @@ Run: uv run --offline --with httpx python -m unittest discover -s chat -p 'test_
 import contextlib
 import io
 import json
-import os
 from pathlib import Path
-import runpy
+import subprocess
+import sys
+import time
 import unittest
-from unittest.mock import patch
 
 import httpx
+import retention_cleanup as retention
 
 
 SCRIPT = Path(__file__).with_name("retention_cleanup.py")
@@ -27,8 +28,8 @@ KB = "/api/v1/knowledge/synthetic-kb/files"
 
 
 class RetentionTransactionTests(unittest.TestCase):
-    def run_cleanup(self, overrides=None, env=None):
-        """Only replace external HTTP, environment, argv and wall clock.
+    def run_cleanup(self, overrides=None, settings=None):
+        """Supply external HTTP, policy settings and wall clock directly.
 
         Route keys may include page and visit to model Phase B re-enumeration.
         Unexpected requests fail the test rather than falling through to network.
@@ -66,21 +67,12 @@ class RetentionTransactionTests(unittest.TestCase):
             return httpx.Response(200, content=json.dumps(payload), headers={"Content-Type": "application/json"})
 
         stdout, stderr = io.StringIO(), io.StringIO()
-        environment = {
-            "OWUI_URL": "https://retention.invalid", "OWUI_TOKEN": "synthetic-token",
-            "DRY_RUN": "false", "RETENTION_DAYS": "90", "ORPHAN_GRACE_SECONDS": "86400",
-        }
-        environment.update(env or {})
-        with httpx.Client(transport=httpx.MockTransport(respond), base_url=environment["OWUI_URL"]) as client:
+        with httpx.Client(transport=httpx.MockTransport(respond), base_url="https://retention.invalid") as client:
             with (
-                patch.dict(os.environ, environment, clear=True),
-                patch("sys.argv", [str(SCRIPT)]),
-                patch("time.time", return_value=NOW),
-                patch("httpx.Client", return_value=client),
                 contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr),
             ):
                 try:
-                    runpy.run_path(str(SCRIPT), run_name="__main__")
+                    retention.run_cleanup(client, settings or retention.Settings(dry_run=False), clock=lambda: NOW)
                     code = 0
                 except SystemExit as exc:
                     code = exc.code
@@ -382,12 +374,13 @@ class RetentionTransactionTests(unittest.TestCase):
         self.assertFalse(any(r.method == "DELETE" for r in requests))
 
     def test_sunrise_and_dry_run_are_preserved(self):
-        for env in ({"RETENTION_SUNRISE": "2027-01-01"}, {"DRY_RUN": "true"}):
-            with self.subTest(env=env):
+        sunrise = int(time.mktime(time.strptime("2027-01-01", "%Y-%m-%d")))
+        for settings in (retention.Settings(sunrise_ts=sunrise, dry_run=False), retention.Settings()):
+            with self.subTest(settings=settings):
                 code, stdout, stderr, requests = self.run_cleanup({
                     CHAT_LIST: [{**CHAT, "updated_at": 1}],
                     "/api/v1/chats/synthetic-chat": {"id": "synthetic-chat", "chat": {"file": ORPHAN}},
-                }, env=env)
+                }, settings=settings)
                 self.assertEqual(code, 0, stderr)
                 self.assertFalse(any(r.method == "DELETE" for r in requests))
 
@@ -402,6 +395,56 @@ class RetentionTransactionTests(unittest.TestCase):
         self.assertIn("files_deleted=1", stdout)
         for sentinel in (USER["id"], CHAT["id"], ORPHAN, "synthetic-token"):
             self.assertNotIn(sentinel, stdout + stderr)
+
+
+class RetentionCLITests(unittest.TestCase):
+    def cli(self, *args, env=None):
+        # A fresh process exercises the actual __main__ entrypoint. No endpoint
+        # is configured: every smoke case must stop before opening a client.
+        return subprocess.run(
+            [sys.executable, str(SCRIPT), *args], env=env or {},
+            capture_output=True, text=True, timeout=10,
+        )
+
+    def test_import_does_not_parse_args_read_environment_or_open_client(self):
+        result = subprocess.run(
+            [sys.executable, "-c", """
+import argparse, os, socket, sys, httpx
+from unittest.mock import patch
+sys.path.insert(0, sys.argv[1])
+with patch.object(argparse.ArgumentParser, 'parse_args', side_effect=AssertionError('argv')), \\
+     patch.object(type(os.environ), '__getitem__', side_effect=AssertionError('secret read')), \\
+     patch.object(type(os.environ), '__iter__', side_effect=AssertionError('environment')), \\
+     patch.object(httpx, 'Client', side_effect=AssertionError('client')), \\
+     patch.object(socket.socket, 'connect', side_effect=AssertionError('network')):
+    import retention_cleanup
+print('import-safe')
+""", str(SCRIPT.parent)],
+            capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "import-safe\n")
+
+    def test_help_needs_no_credentials(self):
+        result = self.cli("--help", env={"RETENTION_DAYS": "invalid"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--live", result.stdout)
+
+    def test_missing_credentials_fail_before_network(self):
+        for env, message in (({}, "OWUI_URL is not set"),
+                             ({"OWUI_URL": "https://retention.invalid"}, "OWUI_TOKEN is not set")):
+            with self.subTest(env=env):
+                result = self.cli(env=env)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(message, result.stderr)
+                self.assertEqual(result.stdout, "")
+
+    def test_entrypoint_live_conflict_cannot_be_bypassed(self):
+        for value in ("true", "TRUE"):
+            result = self.cli("--live", env={"DRY_RUN": value})
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("--live conflicts with DRY_RUN=true", result.stderr)
+            self.assertEqual(result.stdout, "")
 
 
 if __name__ == "__main__":
