@@ -256,9 +256,23 @@ async function checkDashboard(emittedScript) {
     assert.ok(el('open').getAttribute('rel').split(/\s+/).includes('noopener'));
     assert.ok(el('open').getAttribute('rel').split(/\s+/).includes('noreferrer'));
     await click('restart');
+    async function focusService() {
+      const before = calls.length; await focus();
+      const issued = calls.slice(before);
+      assertPassive(issued);
+      assert.ok(issued.some(call => call.url === root.dataset.endpoint+'/status'),
+        'focus requests target-service status');
+    }
     for (const unsafe of ['javascript:alert(1)','http://example.test','https://user:secret@example.test']) {
+      // Establish a visible safe link before each invalid response, rather than
+      // accepting a stale hidden link left by restart or a previous invalid URL.
+      states.set(service, {phase:'ready',url:'https://synthetic.example.test/'});
+      await focusService();
+      assert.equal(root.dataset.phase, 'ready');
+      assert.equal(el('open').hidden, false);
+      assert.equal(el('open').href, 'https://synthetic.example.test/');
       states.set(service, {phase:'ready',url:unsafe});
-      const before = calls.length; await focus(); assertPassive(calls.slice(before));
+      await focusService();
       assert.equal(el('open').hidden, true); assert.equal(el('open').getAttribute('href'), null);
     }
   }
@@ -284,16 +298,21 @@ async function checkDashboard(emittedScript) {
   assert.equal(roots[1].dataset.phase, 'signed-out', 'passive status also handles expiry');
 }
 await checkDashboard(script);
-// Guard against the original false positive: broken event wiring must fail the
-// same behavioral suite. Renaming private helpers must remain harmless.
-const hoverMutation = script.replaceAll("addEventListener('click'", "addEventListener('mouseenter'");
-assert.notEqual(hoverMutation, script, 'click mutation was applied');
-await assert.rejects(() => checkDashboard(hoverMutation), /click dispatches explicit action/);
-const renamed = script.replace(/\bsignedOut(?=\s*\()/g, 'private_signedOut');
-assert.notEqual(renamed, script, 'private helper rename was applied');
-await checkDashboard(renamed);
+// Source-specific calibration is opt-in: normal tests depend only on behavior,
+// not today's event-registration spelling or private helper names.
+if (process.argv.includes('--test-browser-fixture-mutations')) {
+  const hoverMutation = script.replaceAll("addEventListener('click'", "addEventListener('mouseenter'");
+  assert.notEqual(hoverMutation, script, 'click mutation was applied');
+  await assert.rejects(() => checkDashboard(hoverMutation), /click dispatches explicit action/);
+  const noFocusMutation = script.replaceAll("addEventListener('focus'", "addEventListener('blur'");
+  assert.notEqual(noFocusMutation, script, 'focus mutation was applied');
+  await assert.rejects(() => checkDashboard(noFocusMutation), /focus requests target-service status/);
+  const renamed = script.replace(/\bsignedOut(?=\s*\()/g, 'private_signedOut');
+  assert.notEqual(renamed, script, 'private helper rename was applied');
+  await checkDashboard(renamed);
+  console.log('PASS click-to-mouseenter and missing-focus mutations rejected; private helper rename accepted');
+}
 console.log('PASS unmodified script: passive startup, clicks/retry/restart, polling, independent states, safe links and expiry');
-console.log('PASS click-to-mouseenter mutation rejected; private helper renames accepted');
 console.log('Sandbox creation policy and browser rendering checks passed');
 if (process.argv.includes('--serve')) {
   const port=Number(process.env.SANDBOX_PREVIEW_PORT||8790);
