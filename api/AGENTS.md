@@ -57,8 +57,12 @@ halves.
 npm run dev      # Local dev
 npm run deploy   # Deploy
 npx tsc --noEmit # Type check
-node scripts/harness-provision.mjs   # Key lifecycle integration test (needs wrangler dev; see TESTING.md)
+node scripts/harness-provision.mjs --live # Key lifecycle integration test (needs wrangler dev; see TESTING.md)
 ```
+
+The provisioning harness requires `--live` before reading credentials or making
+requests; importing it does not run it. Offline cleanup/CLI-guard checks:
+`node scripts/test-provision-cleanup.mjs` (no credentials or live providers).
 
 **Heads-up on local dev:** `.dev.vars` carries a stale
 `OPENROUTER_PROVISIONING_KEY` (OpenRouter answers 401 "Invalid management

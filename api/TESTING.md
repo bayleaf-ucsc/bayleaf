@@ -192,15 +192,26 @@ sleep 12
 node scripts/harness-provision.mjs --live
 ```
 
-Without `--live`, the harness exits before reading secrets or making requests.
-Offline exception-safety checks: `node --experimental-vm-modules scripts/test-provision-cleanup.mjs`.
-These execute the harness with synthetic HTTP, D1 and module boundaries, including
-failure after minting before inventory collection, deletion/lookup/listing failures,
-surviving resources and original-error preservation. They do not qualify live providers.
+Without `--live`, the harness exits 2 before reading credentials/configuration or
+making requests. Importing it does not execute it. Offline exception-safety checks:
+`node scripts/test-provision-cleanup.mjs`. These normally import the actual runner
+with synthetic HTTP, D1 and credential inputs, without VM modules or import/global
+replacements. Permission-restricted child processes check the actual CLI guard and
+import silence, using `--experimental-permission` on Node 22.0–22.12 and
+`--permission` where supported. Both smoke checks retain credential/config-read
+and subprocess restrictions; network permissions additionally deny networking on
+Node versions that support them. Qualified with Node 26.11.1 only: the older-22
+compatibility path has not been executed, and no higher Node minimum is imposed.
+Tests cover the original 12 failure scenarios, complete multi-page discovery across
+both exact run-owned names, unrelated-resource preservation, and draining late
+concurrent mints before cleanup. They do not qualify live providers.
 
 The live harness creates real OpenRouter keys for unique per-run `*@example.invalid`
 addresses and cleans up in `finally`. Cleanup rediscovers exact run-owned names,
 including keys not yet recorded in D1, then verifies provider and D1 deletion.
+Each discovery or absence-verification phase scans the complete paginated provider
+inventory once for both exact run-owned names, not once per email. Every deletion
+still requires its own fresh provider hash-and-name ownership check.
 Cleanup failure is reported separately without replacing an original test exception.
 Failures emit bounded `HARNESS_DIAGNOSTIC` JSON records: phase, run ID, a fixed
 exception-class label, and, for harness-tagged failures only, literal operation
