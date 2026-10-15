@@ -15,9 +15,11 @@ class HTMLFacts(HTMLParser):
     def __init__(self, document):
         super().__init__()
         self.links = []
+        self.link_code = []
         self.tags = []
         self.text = []
         self._link = None
+        self._code = None
         self.feed(document)
         self.close()
 
@@ -26,8 +28,14 @@ class HTMLFacts(HTMLParser):
         if tag == "a":
             self._link = {"href": dict(attrs).get("href"), "text": ""}
             self.links.append(self._link)
+        elif tag == "code" and self._link is not None:
+            self._code = (len(self.links) - 1, [])
 
     def handle_endtag(self, tag):
+        if tag == "code" and self._code is not None:
+            index, text = self._code
+            self.link_code.append((index, "".join(text)))
+            self._code = None
         if tag == "a":
             self._link = None
 
@@ -35,6 +43,8 @@ class HTMLFacts(HTMLParser):
         self.text.append(data)
         if self._link is not None:
             self._link["text"] += data
+        if self._code is not None:
+            self._code[1].append(data)
 
 
 class CurrentModelsTests(unittest.TestCase):
@@ -46,7 +56,7 @@ class CurrentModelsTests(unittest.TestCase):
                     "href": "https://openrouter.ai/z-ai/glm-5.3-flash",
                     "text": "z-ai/glm-5.3-flash",
                 }])
-                self.assertIn("code", parsed.tags)
+                self.assertEqual(parsed.link_code, [(0, "z-ai/glm-5.3-flash")])
 
     def test_other_prefix_links_to_config_and_escapes_identifier(self):
         parsed = HTMLFacts(model_link('tinfoil:<model>&"', "openrouter:", "api/wrangler.jsonc"))
@@ -54,7 +64,7 @@ class CurrentModelsTests(unittest.TestCase):
             "href": "https://github.com/bayleaf-ucsc/bayleaf/blob/main/api/wrangler.jsonc",
             "text": 'tinfoil:<model>&"',
         }])
-        self.assertIn("code", parsed.tags)
+        self.assertEqual(parsed.link_code, [(0, 'tinfoil:<model>&"')])
         self.assertNotIn("model", parsed.tags, "identifier markup must be rendered as text")
 
     def test_openrouter_slug_is_url_encoded_and_displayed_as_text(self):
@@ -84,6 +94,7 @@ class CurrentModelsTests(unittest.TestCase):
                 {"href": "https://openrouter.ai/owner/chat", "text": "owner/chat"},
                 {"href": "https://openrouter.ai/owner/api", "text": "owner/api"},
             ])
+            self.assertRegex(" ".join(parsed.text), r"\b(?:refreshed|updated)\s+(?:daily|every day|once a day)\b")
             api.write_text('{"vars": {}}')
             with self.assertRaises(ValueError):
                 render_current_models(repo)
