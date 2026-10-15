@@ -516,6 +516,7 @@ try {
       };
       await assert.rejects(checkTemporaryTokenBrowser(mutate("status.textContent = result.name + ': token created.'", 'status.textContent = result.access_token'), browserRequest), /credential absent from visible text/);
       await assert.rejects(checkTemporaryTokenBrowser(mutate("status.textContent = result.name + ': token created.'", 'status.dataset.secret = result.access_token'), browserRequest), /credential absent from DOM/);
+      await assert.rejects(checkTemporaryTokenBrowser(mutate("status.textContent = result.name + ': token created.'", 'status.id = result.access_token'), browserRequest), /credential absent from DOM/);
       await assert.rejects(checkTemporaryTokenBrowser(mutate('writeText(credential)', 'writeText(grant.name)'), browserRequest), /clipboard receives the exact full credential/);
       // Mutate only this card's opening tag, not another dashboard script.
       const scriptTag = attributes => html.replace(/(<section\b[^>]*id="temporary-inference-tokens"[\s\S]*?)<script\b[^>]*>/, '$1<script ' + attributes + '>');
@@ -527,7 +528,7 @@ try {
         .replace('<h2>Temporary inference tokens</h2>', '<h2 class="restyled"><span>Temporary inference tokens</span></h2>');
       await checkTemporaryTokenBrowser(renamed, browserRequest);
       await checkTemporaryTokenBrowser(scriptTag('TYPE="text/javascript" class="restyled"'), browserRequest);
-      console.log('PASS browser fixture calibration: text/dataset leaks, wrong clipboard and unsupported/duplicate script attributes rejected; private renames, wrappers and inline classic-script metadata accepted');
+      console.log('PASS browser fixture calibration: text/dataset/id leaks, wrong clipboard and unsupported/duplicate script attributes rejected; private renames, wrappers and inline classic-script metadata accepted');
     }
   });
   await check('scheduled cleanup removes expired metadata and preserves active grants', async () => {

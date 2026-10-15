@@ -121,6 +121,16 @@ datasetControl.setAttribute('data-model-name', 'reflected');
 assert.equal(liveDataset.modelName, 'reflected');
 delete liveDataset.modelName;
 assert.equal(datasetControl.getAttribute('data-model-name'), null);
+const idDocument = dashboardDocument('<div id="initial-id"></div>');
+const idControl = idDocument.getElementById('initial-id');
+assert.equal(idControl.id, 'initial-id');
+idControl.id = 'changed-id';
+assert.equal(idControl.getAttribute('id'), 'changed-id');
+assert.equal(idDocument.getElementById('initial-id'), null);
+assert.equal(idDocument.getElementById('changed-id'), idControl);
+idControl.setAttribute('id', 'attribute-id');
+assert.equal(idControl.id, 'attribute-id');
+assert.equal(idDocument.getElementById('attribute-id'), idControl);
 console.log('Sealed dashboard billing and rendering checks passed.');
 
 // Exercise the real dashboard handler with synthetic session/row lookups.

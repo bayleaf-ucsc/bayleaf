@@ -64,7 +64,7 @@ export function dashboardDocument(html, track = promise => promise) {
     get() { return Object.hasOwn(this.attributes, property); },
     set(value) { if (value) this.setAttribute(property, ''); else delete this.attributes[property]; },
   });
-  for (const [property, attribute] of Object.entries({ title: 'title', className: 'class', type: 'type', label: 'label', dateTime: 'datetime', tabIndex: 'tabindex' })) Object.defineProperty(Element.prototype, property, {
+  for (const [property, attribute] of Object.entries({ id: 'id', title: 'title', className: 'class', type: 'type', label: 'label', dateTime: 'datetime', tabIndex: 'tabindex' })) Object.defineProperty(Element.prototype, property, {
     get() { return this.getAttribute(attribute) || ''; }, set(value) { this.setAttribute(attribute, value); },
   });
   for (const type of ['click', 'submit']) Object.defineProperty(Element.prototype, 'on' + type, {
