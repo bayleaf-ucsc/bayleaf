@@ -784,9 +784,191 @@ Visit `https://api.bayleaf.dev/` from a campus IP in a browser.
 
 `npm run test:grants` runs the grant/PKCE security harness against isolated
 workerd and D1, with synthetic identities and mocked providers. It requires no
-credentials and makes no live inference calls. `node scripts/harness-grants.mjs
---serve` keeps that synthetic Worker on `http://localhost:8789`; visiting
-`/__harness-login` sets a synthetic session for browser tests. This test-only
-entrypoint is never part of the deployed Worker. Serve `examples/grants/` on a
-different loopback port and select the synthetic API origin to test the complete
-browser handoff. See [GRANTS.md](GRANTS.md) for rollout and verification status.
+credentials and makes no live inference calls. It covers issuance, model sets,
+auth/scope, quotas, PKCE, revocation, cleanup and HTTP/SSR contracts. It does
+**not** execute the dashboard client or establish clipboard/DOM/storage secrecy.
+See [GRANTS.md](GRANTS.md) for rollout and verification status.
+
+## Real-browser qualification: synthetic backends, actual application UI
+
+UI qualification is an **agentic manual release check**, not an unattended
+browser regression suite. There is no replacement DOM, VM-executed client,
+source-mutation calibration, or browser-test framework. HTTP/SSR PASS output
+must never be reported as browser PASS. Record the browser/version, commands,
+scenarios, observations and any missing evidence for each qualification run.
+
+From `api/`, with dependencies and the pinned submodules initialized, start each
+server in its own terminal:
+
+```bash
+npm run pretest:grants
+node scripts/harness-grants.mjs --serve
+node scripts/test-sandbox-policy.mjs --serve
+node scripts/test-sealed-dashboard.mjs --serve
+```
+
+The first command generates local build inputs using fixture Nanobot assets,
+not production credentials. The three servers serve unmodified application
+templates and client scripts. Only external backends/identities are synthetic.
+`/__harness-login` exists only in the grant harness; `/__fixture/*` exists only
+in the loopback sandbox preview. Neither is a production test endpoint. Use
+one qualifying browser at a time, since the sandbox scenario is process-wide.
+Stop the servers with Ctrl-C when finished.
+
+Use a real browser's DevTools, OpenChamber browser tools, or Rodney:
+
+```bash
+uvx rodney --help
+uvx rodney start --local
+uvx rodney open http://localhost:8789/__harness-login
+```
+
+Keep the Rodney profile outside the repository, or exclude its `.rodney/`
+directory. No real CILogon, Daytona, Canvas or inference credentials are needed.
+Do not follow external links or press unrelated account/provider controls.
+
+### Sandboxes: passive reads, explicit actions, failure and expiry
+
+```bash
+curl -s -X POST http://127.0.0.1:8790/__fixture/passive
+uvx rodney open http://127.0.0.1:8790
+# Choose ready, failure or expired without changing the application's script:
+curl -s -X POST http://127.0.0.1:8790/__fixture/ready
+uvx rodney click '#openchamber-start'
+uvx rodney sleep 6
+```
+
+- On initial load all six service cards are idle. Network/preview stdout must
+  show six status GETs, no service POST. Bring the window out of and back into
+  focus: expect status GETs only. An explicitly dispatched Window focus event
+  in the real engine checks the listener, but is not native OS focus evidence.
+- A start click issues exactly one `POST /services/openchamber/start`, then
+  passive polling. Opening becomes ready after two fixture seconds, observed
+  on the next poll. Sibling cards stay idle. Inspect the live Open link:
+  HTTPS fixture URL, `_blank`, `noopener noreferrer`. Do not navigate to it.
+- Expand `#openchamber-troubleshoot` before clicking `#openchamber-restart`:
+  the real browser correctly keeps that button inaccessible when collapsed.
+  Expect one restart POST, passive polling and ready again.
+- Select `failure`, reload, click start and wait six seconds. Expect failed,
+  “Try again”, and collapsed diagnostics. Select `ready` and click Try again
+  to qualify retry. Only OpenChamber progresses; other services remain idle.
+- Select `expired` before clicking an available start/retry button to exercise
+  action-time 401, and reload under `expired` to exercise passive-read 401.
+  Inspect signed-out phase, visible sign-in control, hidden/disabled mutation
+  buttons and absent Open href. Further focus/polling must not refresh the
+  expired service. The other service cards must not be signed out with it.
+
+The preview tests client behavior, not the production controller's passive-read
+policy; automatic lifecycle/backend harnesses own that independent contract.
+
+### Temporary tokens: actual clipboard and native DOM/storage
+
+At `http://localhost:8789/__harness-login`, expand Create a token. Check the
+qualified model catalog, disabled backend options and recommended selection;
+create a token with the real form, then click its Copy token control.
+
+Capture the exact fixture `access_token` from the real `POST /grants` response
+using DevTools Network or a read-only CDP observer, not a monkeypatched fetch or
+clipboard. Read the actual browser clipboard with its normal permission and
+compare the full value byte-for-byte with that response. A “token copied” status
+alone does not prove exact clipboard contents. Do not print the credential in
+screenshots or commit network captures containing credentials.
+
+Inspect native `document.documentElement.outerHTML`, every input/textarea/select
+value, localStorage and sessionStorage for the exact credential. It must be
+absent, including attributes, hidden controls and live values. Reload: the
+recognition name remains, but Copy token is gone and storage remains clear.
+Revoke only tokens created during qualification; preserve the preexisting
+fixture inventory. The HTTP harness already tests owner-scoped revoke/cleanup.
+Serve `examples/grants/` on a separate loopback port to qualify browser consent
+handoff separately; dashboard qualification does not establish that flow.
+
+If clipboard permission/read access is unavailable, mark exact-copy qualification
+**incomplete**, even when the Copy button reports success. Never substitute a
+clipboard stub, DOM emulator or string inspection as proof.
+
+### Sealed: labels are part of the UI contract
+
+Open each URL in the real browser and inspect the Sealed card's rendered text
+and native metric containers, not just unrelated occurrences of numbers in HTML:
+
+| URL (`http://127.0.0.1:8791/`) | Expected labeled values |
+| --- | --- |
+| `?state=normal` | Today's Requests 91; Remaining 409; Limit 500; Today's Spend $1.8800; Month $5.2500; Tokens 102,345 |
+| `?state=unavailable` | Same request allowance; both spends and today's tokens Unavailable, not zero |
+| `?state=zero` | Today's Spend $0.0000 and Tokens 0; month still $5.2500; allowance unchanged |
+| `?state=exceeded` | Requests 501, Remaining 0, Limit 500; spend and tokens unchanged from normal |
+| `?state=unprovisioned` | First-request explanation, unavailable billing rather than fabricated zero |
+
+The request-count allowance and dollar spending must remain separately labeled;
+the note says this is not a dollar budget. These browser judgments deliberately
+do not run inside `test:sealed-dashboard`. That command retains provider-helper
+validation, billing method/body/auth/UTC ranges, failure handling, no billing for
+an absent key, disabled-lane/auth behavior and basic SSR smoke checks only.
+
+### Qualification record, 2026-10-14
+
+Rodney 0.4.0 drove its headless Chromium binary `chromium-1321438` (CDP
+`Browser.getVersion`: Chrome/128.0.6568.0; page UA reported Chrome/114.0.0.0).
+The commands above were exercised locally with synthetic identities/backends.
+Observed: six passive startup GETs, click-to-opening-to-ready, collapsed repair
+disclosure followed by restart-to-ready, failure/Try again-to-ready, both action-time and
+passive expiry, and no expired-service refresh after a dispatched Window focus
+event. Focus-handler GET count increased from six to twelve before expiry;
+native OS window focus was not established in this headless run.
+
+Token creation and real Copy button interaction reported success. A CDP network
+observer captured the issued fixture credential; native DOM markup, form values
+and local/session storage did not contain it. Reload removed Copy controls while
+retaining names; storage was empty. **Exact clipboard equality remains
+unqualified:** read permission stayed `prompt`, reads hung, and attempted CDP
+permission grants did not resolve the browser context. No clipboard stub was
+used. That initial run was not a full browser PASS. The three UI-created fixture tokens were
+revoked through the real controls; the preexisting fixture token remained. No
+live account was touched.
+
+Real rendered Sealed normal/unavailable/zero/exceeded/unprovisioned labels and values matched
+the table. Screenshots of token metadata, sandbox ready and Sealed normal were
+captured outside the repository. This run does not qualify live authentication,
+provider behavior, unsafe-link variants, mobile layout, reduced-motion rendering,
+native focus, exact clipboard equality or browser consent handoff. The focused
+headed-browser follow-up below resolves the exact-clipboard gap.
+
+#### Exact clipboard follow-up, 2026-10-14
+
+Launched normal headed Google Chrome **155.0.8059.40** with its own fresh profile
+and loopback debug port, not the user's existing tabs or logins:
+
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --remote-debugging-port=9237 \
+  --user-data-dir="$TMPDIR/opencode/clipboard-qualification-profile" \
+  --no-first-run --no-default-browser-check \
+  http://localhost:8789/__harness-login
+```
+
+A one-off CDP observer enabled `Network`, correlated the fresh `POST /grants`
+request with `Network.loadingFinished`, and captured its real response using
+`Network.getResponseBody`. Native mouse input (`Input.dispatchMouseEvent`)
+opened the disclosure, created one token and clicked that token's Copy control.
+Only after the real UI reported that token copied did the observer call native
+macOS `/usr/bin/pbpaste`, comparing the returned bytes in memory with the full
+response credential. **Exact byte equality passed.** Neither credential nor
+clipboard contents were printed; there was no earlier OS clipboard read in this
+follow-up, no clipboard stub, no `writeText` spy and no client patch. No browser
+read permission or `Browser.grantPermissions` was needed.
+
+The credential was also absent from native DOM markup, live form values and
+local/session storage. The fresh token was revoked using its real UI control;
+the exact grant inventory returned to its initial single token. An owned blank
+tab was brought forward, then the dashboard returned with `Page.bringToFront`:
+`document.hasFocus()` changed false then true. This establishes native target
+focus switching, not an additional sandbox-network focus qualification.
+
+The isolated browser/server were closed. A metadata-only screenshot, the
+one-off observer script and a content-free equality/inventory JSON record were
+saved under the approved temporary `opencode` directory, outside this worktree.
+The earlier headless clipboard limitation remains historical evidence, not an
+outstanding clipboard blocker. Live providers/authentication, unsafe-link
+variants, mobile/reduced-motion rendering and browser consent handoff remain
+outside this qualification.
