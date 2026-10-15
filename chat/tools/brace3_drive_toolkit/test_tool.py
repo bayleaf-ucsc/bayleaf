@@ -310,11 +310,11 @@ class DriveTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(tool.jwt, "encode", return_value="signed-assertion") as encode:
             await drive.authenticate()
         claims = encode.call_args.args[0]
-        self.assertEqual(claims["scope"], tool.SCOPE)
-        self.assertEqual(claims["aud"], tool.TOKEN_URL)
+        self.assertEqual(claims["scope"], "https://www.googleapis.com/auth/drive.readonly")
+        self.assertEqual(claims["aud"], "https://oauth2.googleapis.com/token")
         self.assertNotIn("sub", claims)
         self.assertEqual(claims["exp"] - claims["iat"], 3600)
-        self.assertEqual(session.calls[0][0], tool.TOKEN_URL)
+        self.assertEqual(session.calls[0][0], "https://oauth2.googleapis.com/token")
         self.assertEqual(drive.token, "new-secret")
 
 
