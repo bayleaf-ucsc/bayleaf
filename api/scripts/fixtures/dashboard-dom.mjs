@@ -92,6 +92,10 @@ export function dashboardDocument(html, track = promise => promise) {
     } else if (token.startsWith('<')) {
       const match = token.match(/^<([a-z][\w-]*)([\s\S]*?)\/?\s*>$/i); assert.ok(match, 'supported fixture tag');
       const [, tag, source] = match, attributes = parseAttributes(source);
+      // Execution contexts are deliberately restricted to ordinary document
+      // content. Template contents and scripting-dependent noscript parsing are
+      // unsupported, even when their script bodies were collected above.
+      assert.ok(!['template', 'noscript'].includes(tag.toLowerCase()), 'unsupported inert container: ' + tag.toLowerCase());
       assert.ok(!['script', 'style'].includes(tag.toLowerCase()), 'balanced raw-text element required');
       const element = new Element(tag, attributes); stack.at(-1).append(element);
       const isVoid = ['meta', 'link', 'input', 'br', 'hr', 'img', 'wbr'].includes(tag.toLowerCase());

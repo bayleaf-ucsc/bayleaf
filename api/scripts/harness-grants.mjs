@@ -524,11 +524,19 @@ try {
         await assert.rejects(checkTemporaryTokenBrowser(scriptTag(attributes), browserRequest), /unsupported executable-script/);
       }
       await assert.rejects(checkTemporaryTokenBrowser(scriptTag('id="a" ID="b"'), browserRequest), /duplicate fixture attribute: id/);
+      const wrapScript = tag => html.replace(/(<section\b[^>]*id="temporary-inference-tokens"[\s\S]*?)(<script\b[^>]*>[\s\S]*?<\/script>)/, '$1<' + tag + '>$2</' + tag + '>');
+      const wrapCard = tag => html.replace(/<section\b[^>]*id="temporary-inference-tokens"[^>]*>[\s\S]*?<\/section>/, card => '<' + tag + '>' + card + '</' + tag + '>');
+      for (const tag of ['template', 'noscript', 'TEMPLATE', 'NOSCRIPT']) {
+        await assert.rejects(checkTemporaryTokenBrowser(wrapScript(tag), browserRequest), /unsupported inert container/);
+        await assert.rejects(checkTemporaryTokenBrowser(wrapCard(tag), browserRequest), /unsupported inert container/);
+      }
+      await checkTemporaryTokenBrowser(wrapScript('div'), browserRequest);
+      await checkTemporaryTokenBrowser(wrapCard('div'), browserRequest);
       const renamed = html.replace(/\bcredentials\b/g, 'transientSecrets').replace(/\brefresh\b/g, 'updateTokenList')
         .replace('<h2>Temporary inference tokens</h2>', '<h2 class="restyled"><span>Temporary inference tokens</span></h2>');
       await checkTemporaryTokenBrowser(renamed, browserRequest);
       await checkTemporaryTokenBrowser(scriptTag('TYPE="text/javascript" class="restyled"'), browserRequest);
-      console.log('PASS browser fixture calibration: text/dataset/id leaks, wrong clipboard and unsupported/duplicate script attributes rejected; private renames, wrappers and inline classic-script metadata accepted');
+      console.log('PASS browser fixture calibration: text/dataset/id leaks, wrong clipboard, unsupported/duplicate script attributes and inert script/card wrappers rejected; normal execution, ordinary wrappers, private renames and inline classic-script metadata accepted');
     }
   });
   await check('scheduled cleanup removes expired metadata and preserves active grants', async () => {

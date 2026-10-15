@@ -5,6 +5,9 @@ import { dashboardDocument, displayedText } from './dashboard-dom.mjs';
 // The only substitutes are browser boundaries: DOM, storage, timers, clipboard
 // and HTTP. The emitted client is unmodified; no closure state is captured.
 export async function checkTemporaryTokenBrowser(html, request) {
+  // Validate ancestors outside the extracted card too: an inert wrapper around
+  // the entire card must not become an ordinary execution context by extraction.
+  dashboardDocument(html);
   const section = html.match(/<section\b[^>]*id="temporary-inference-tokens"[^>]*>[\s\S]*?<\/section>/)?.[0];
   assert.ok(section, 'temporary-token card exists');
   const storage = () => {
