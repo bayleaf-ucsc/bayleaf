@@ -197,8 +197,11 @@ names, emails, chat titles, or IDs.
   linearly with total chats (one `GET /chats/{id}` per surviving chat per
   run). At current scale (~500 chats) this completes in under two minutes.
 
-Offline transaction regressions exercise the real script/main against synthetic
-HTTP responses, with no live admin API or file storage access:
+Offline transaction regressions exercise the import-safe `run_cleanup` runner
+with an explicit HTTP client (`httpx.MockTransport`), settings, and clock.
+Fresh-process CLI smoke tests cover side-effect-free import, help, missing
+credentials, and the `--live`/`DRY_RUN=true` guard. No live admin API or file
+storage access is used:
 
 ```bash
 uv run --offline --with httpx python -m unittest discover -s chat -p 'test_retention_cleanup.py' -v
