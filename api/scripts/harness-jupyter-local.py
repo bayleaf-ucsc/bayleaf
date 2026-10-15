@@ -46,6 +46,7 @@ async def qualify(home):
     setup.RELEASE = 'jupyterlab-4.6.4-managed-v1'
     root = setup.ROOT
     (root/'credentials').mkdir(parents=True)
+    (root/'credentials/incoming').write_text('dtn_secret_synthetic_jupyter')
     (root/'releases').mkdir()
     if os.environ.get('JUPYTER_QUALIFY_INSTALL') == '1':
         # Exercise the real installer commands on macOS. The shared Linux /proc

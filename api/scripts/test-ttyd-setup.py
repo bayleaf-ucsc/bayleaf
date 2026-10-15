@@ -22,6 +22,8 @@ class Ttyd(unittest.TestCase):
         self.addCleanup(env.stop)
         s.select_service('ttyd')
         (s.ROOT/'credentials').mkdir(parents=True)
+        self.placeholder = 'dtn_secret_synthetic_ttyd'
+        (s.ROOT/'credentials/incoming').write_text(self.placeholder)
         (s.ROOT/'credentials/app-secret').write_text('a'*64)
 
     def test_launcher_and_auth(self):
@@ -33,12 +35,20 @@ class Ttyd(unittest.TestCase):
         self.assertNotIn('--url-arg', args)
         self.assertNotIn('--auth-header', args)
         self.assertNotIn('OPENAI_API_KEY', env)
-        self.assertNotIn('BAYLEAF_API_KEY', env)
+        self.assertEqual(env['BAYLEAF_API_KEY'], self.placeholder)
+        self.assertNotIn('forbidden', repr((args,env)))
         self.assertTrue(s.health_ttyd({'token':s.ttyd_token()}))
         self.assertFalse(s.health_ttyd({'token':'wrong'}))
         self.assertFalse(s.health_ttyd({}))
         (s.ROOT/'credentials/app-secret').write_text('bad; shell input')
         with self.assertRaisesRegex(s.Failure, 'credential_invalid'): s.start_ttyd(None)
+
+    def test_missing_and_invalid_sandbox_placeholder_rejected(self):
+        incoming = s.ROOT/'credentials/incoming'
+        incoming.unlink()
+        with self.assertRaisesRegex(s.Failure, 'credential_missing'): s.configure_ttyd()
+        incoming.write_text('sk-bayleaf-synthetic-invalid')
+        with self.assertRaisesRegex(s.Failure, 'credential_invalid'): s.configure_ttyd()
 
     def test_bad_download_never_executes(self):
         with patch.object(s.platform,'system',return_value='Linux'), patch.object(s.platform,'machine',return_value='x86_64'), \

@@ -168,6 +168,14 @@ names, emails, chat titles, or IDs.
 
 #### Phase B design notes
 
+- **Discovery must complete before file deletion**: unknown list envelopes,
+  malformed required IDs/timestamps, inconsistent pagination totals, repeated
+  entries, and truncated reference discovery abort the run, rather than being
+  treated as an empty reference set. A listed chat that cannot be fetched
+  (including HTTP 404) also aborts the sweep. Concurrent removal can therefore
+  defer cleanup until the next run. This is fail-closed enforcement, not a change
+  to the retention schedule. Phase A deletions already completed are not rolled
+  back if Phase B fails.
 - **Reference sources**: surviving chat JSON (`chat.chat` column, including
   embedded `{type: 'file', file: {id: ...}}` entries in each message) and
   knowledge-base file lists (`knowledge_file` equivalent, exposed via the
@@ -188,6 +196,17 @@ names, emails, chat titles, or IDs.
   database firewall exceptions. Trade-off: orphan detection cost scales
   linearly with total chats (one `GET /chats/{id}` per surviving chat per
   run). At current scale (~500 chats) this completes in under two minutes.
+
+Offline transaction regressions exercise the real script/main against synthetic
+HTTP responses, with no live admin API or file storage access:
+
+```bash
+uv run --offline --with httpx python -m unittest discover -s chat -p 'test_retention_cleanup.py' -v
+```
+
+The HTTP seam checks which DELETEs the job attempts, reference preservation,
+holds, and grace windows. It does not qualify a deployed OWUI version's response
+schemas, actual storage deletion, or concurrent writes during discovery.
 
 ### Configuration
 
