@@ -504,10 +504,22 @@ try {
     assert.deepEqual(challenge.schema.enum, ['S256']);
   });
   await check('temporary-token client creates, copies privately, and loses credential on reload', async () => {
+    const beforeBrowser = (await expect(await request('/grants', { cookie: ownerCookie }), 200)).grants.map(grant => grant.id).sort();
     const html = await (await request('/dashboard', { cookie: ownerCookie })).text();
     const browserRequest = (path, init) => request(path, { ...init, cookie: ownerCookie, origin: api });
     await checkTemporaryTokenBrowser(html, browserRequest);
     if (process.argv.includes('--test-browser-fixture-mutations')) {
+      // Fetch headers may arrive before the JSON body. A real response stream
+      // holds catalog bytes back to exercise readiness, not private client code.
+      await checkTemporaryTokenBrowser(html, async (path, init) => {
+        const response = await browserRequest(path, init);
+        if (path !== '/grants/models') return response;
+        const body = await response.text();
+        assert.ok(JSON.parse(body).models.length > 0, 'delayed catalog is nonempty');
+        return new Response(new ReadableStream({ start(controller) {
+          setTimeout(() => { controller.enqueue(new TextEncoder().encode(body)); controller.close(); }, 25);
+        } }), { status: response.status, headers: response.headers });
+      });
       // Opt-in calibration only: normal coverage always runs the unmodified
       // emitted script. Each broken artifact must fail at its observed contract.
       const mutate = (before, after) => {
@@ -538,6 +550,9 @@ try {
       await checkTemporaryTokenBrowser(scriptTag('TYPE="text/javascript" class="restyled"'), browserRequest);
       console.log('PASS browser fixture calibration: text/dataset/id leaks, wrong clipboard, unsupported/duplicate script attributes and inert script/card wrappers rejected; normal execution, ordinary wrappers, private renames and inline classic-script metadata accepted');
     }
+    const afterBrowser = (await expect(await request('/grants', { cookie: ownerCookie }), 200)).grants.map(grant => grant.id).sort();
+    assert.deepEqual(afterBrowser, beforeBrowser, 'all browser cases preserve unrelated owner grants');
+    console.log(`PASS browser fixture scoped cleanup: ${beforeBrowser.length} active grants before, ${afterBrowser.length} after all cases; each fixture verifies its own inventory too`);
   });
   await check('scheduled cleanup removes expired metadata and preserves active grants', async () => {
     const active = await mint();

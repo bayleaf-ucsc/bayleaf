@@ -20,6 +20,12 @@ export async function checkTemporaryTokenBrowser(html, request) {
   };
   const localStorage = storage(), sessionStorage = storage(), copied = [];
   let issued;
+  const listedIds = async () => {
+    const response = await request('/grants');
+    assert.equal(response.status, 200, 'fixture can verify owner grant inventory');
+    return (await response.json()).grants.map(grant => grant.id).sort();
+  };
+  const existingIds = await listedIds();
   async function load() {
     const pending = new Set(), errors = [];
     const track = promise => {
@@ -48,6 +54,10 @@ export async function checkTemporaryTokenBrowser(html, request) {
           assert.equal(response.status, 200, 'browser issuance succeeds');
           issued = await response.clone().json();
         }
+        // Response headers are not completion of browser work. Track the body
+        // read at the public fetch boundary as well, including streamed bodies.
+        const json = response.json.bind(response);
+        response.json = (...args) => track(json(...args));
         return response;
       })()),
     };
@@ -55,9 +65,10 @@ export async function checkTemporaryTokenBrowser(html, request) {
     runInNewContext(script, context, { timeout: 1000 });
     const settle = async () => {
       // Drain event/fetch continuations, without running the long expiry timer.
-      for (let turns = 0; ; turns++) {
-        assert.ok(turns < 1000, 'browser work settles');
-        await new Promise(resolve => setImmediate(resolve));
+      const deadline = Date.now() + 5000;
+      for (;;) {
+        assert.ok(Date.now() < deadline, 'browser work settles');
+        await new Promise(resolve => setTimeout(resolve, 1));
         if (!pending.size) break;
       }
       if (errors.length) throw errors[0];
@@ -78,20 +89,37 @@ export async function checkTemporaryTokenBrowser(html, request) {
     }
   };
   const buttons = document => document.descendants().filter(node => node.tagName === 'BUTTON');
-  const page = await load();
-  assert.equal(page.document.getElementById('create-grant').disabled, false, 'loaded catalog permits creation');
-  page.document.getElementById('grant-form').dispatchEvent(new Event('submit', { cancelable: true }));
-  await page.settle();
-  assertSecretAbsent(page.document);
-  const copy = buttons(page.document).filter(node => displayedText(node) === 'Copy token');
-  assert.equal(copy.length, 1, 'only newly created token has Copy');
-  assert.ok(displayedText(page.document).includes(issued.name), 'recognition name is displayed');
-  copy[0].click(); await page.settle();
-  assert.deepEqual(copied, [issued.access_token], 'clipboard receives the exact full credential');
-  assertSecretAbsent(page.document);
-  const reloaded = await load();
-  assertSecretAbsent(reloaded.document);
-  assert.ok(displayedText(reloaded.document).includes(issued.name), 'reload retains server recognition metadata');
-  assert.equal(buttons(reloaded.document).filter(node => displayedText(node) === 'Copy token').length, 0, 'fresh script cannot recover credential');
-  assert.deepEqual(copied, [issued.access_token], 'reload does not copy a credential');
+  let failure;
+  try {
+    const page = await load();
+    assert.equal(page.document.getElementById('create-grant').disabled, false, 'loaded catalog permits creation');
+    page.document.getElementById('grant-form').dispatchEvent(new Event('submit', { cancelable: true }));
+    await page.settle();
+    assertSecretAbsent(page.document);
+    const copy = buttons(page.document).filter(node => displayedText(node) === 'Copy token');
+    assert.equal(copy.length, 1, 'only newly created token has Copy');
+    assert.ok(displayedText(page.document).includes(issued.name), 'recognition name is displayed');
+    copy[0].click(); await page.settle();
+    assert.deepEqual(copied, [issued.access_token], 'clipboard receives the exact full credential');
+    assertSecretAbsent(page.document);
+    const reloaded = await load();
+    assertSecretAbsent(reloaded.document);
+    assert.ok(displayedText(reloaded.document).includes(issued.name), 'reload retains server recognition metadata');
+    assert.equal(buttons(reloaded.document).filter(node => displayedText(node) === 'Copy token').length, 0, 'fresh script cannot recover credential');
+    assert.deepEqual(copied, [issued.access_token], 'reload does not copy a credential');
+  } catch (error) {
+    failure = error;
+    throw error;
+  } finally {
+    try {
+      if (issued) {
+        const response = await request('/grants/' + encodeURIComponent(issued.grant_id), { method: 'DELETE' });
+        assert.equal(response.status, 200, 'fixture grant revocation succeeds');
+      }
+      assert.deepEqual(await listedIds(), existingIds, 'fixture leaves owner grant inventory unchanged, including after failed assertions');
+    } catch (cleanupError) {
+      if (failure) throw new AggregateError([failure, cleanupError], 'Browser fixture failed and scoped cleanup also failed', { cause: failure });
+      throw cleanupError;
+    }
+  }
 }
