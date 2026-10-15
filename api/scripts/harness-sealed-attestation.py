@@ -20,9 +20,9 @@ import http.server
 import json
 import os
 import ssl
-import subprocess
 import sys
 import threading
+from sealed_opencode_check import qualify
 
 _ca = os.environ["SEALED_CA"]
 import certifi
@@ -132,51 +132,18 @@ threading.Thread(target=httpd.serve_forever, daemon=True).start()
 EVIL = f"https://localhost:{PORT}"
 
 failures = []
+inconclusive = []
 
 # Optional integration check: prove the OpenCode plugin also propagates a
 # verifier failure instead of substituting ordinary fetch. The SDK checks below
 # remain the default so this harness does not require OpenCode unless requested.
 if os.environ.get("SEALED_OPENCODE") == "1":
-    served["bundle"] = mutate_digest(GENUINE)
-    plugin_config = {
-        "plugin": [["opencode-tinfoil@0.3.1", {"defaultProvider": False}]],
-        "provider": {
-            "bayleaf-sealed": {
-                "npm": "@ai-sdk/openai-compatible",
-                "name": "BayLeaf Sealed",
-                "options": {
-                    "apiKey": "not-sent-before-attestation",
-                    "baseURL": f"{BASE}/v1/",
-                    "tinfoil": {
-                        "attestationBundleURL": EVIL,
-                        "transport": "ehbp",
-                    },
-                },
-                "models": {"glm-5-3": {"name": "GLM-5.3"}},
-            },
-        },
-    }
-    opencode_env = os.environ.copy()
-    opencode_env["NODE_EXTRA_CA_CERTS"] = CERT
-    opencode_env["OPENCODE_CONFIG_CONTENT"] = json.dumps(plugin_config)
-    canary = "TAMPERED-ATTESTATION-MUST-NOT-RUN"
-    try:
-        run = subprocess.run(
-            ["opencode", "run", "-m", "bayleaf-sealed/glm-5-3", canary],
-            env=opencode_env,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        accepted = run.returncode == 0 or canary in run.stdout
-        print(f"  [{'FAIL' if accepted else 'PASS'}] OpenCode refuses mutated attestation")
-        if accepted:
-            failures.append("OpenCode mutated attestation")
-    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-        print(f"  [FAIL] OpenCode mutation check could not run ({type(exc).__name__})")
-        failures.append("OpenCode mutation check")
-    finally:
-        served["bundle"] = GENUINE
+    result = qualify(BASE, EVIL, CERT, served, GENUINE, mutate_digest)
+    print(f"  [{result}] OpenCode genuine inference then mutated-attestation refusal")
+    if result == "FAIL":
+        failures.append("OpenCode mutated attestation")
+    elif result == "INCONCLUSIVE":
+        inconclusive.append("OpenCode qualification")
 
 # Control: the rogue server serving the GENUINE bundle must still verify. This
 # proves the rejections below come from bundle contents, not from the fact that
@@ -220,5 +187,8 @@ print("\n=== summary ===")
 if failures:
     print(f"{len(failures)} failure(s): {failures}")
     sys.exit(1)
+if inconclusive:
+    print("SDK checks passed; OpenCode qualification INCONCLUSIVE")
+    sys.exit(2)
 print("all mutated attestation bundles were refused client-side")
 print("=> relaying the bundle does not make BayLeaf a trusted party")

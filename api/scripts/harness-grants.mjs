@@ -50,6 +50,7 @@ const bindings = { GRANTS_ENABLED: 'true', GRANTS_MAX_SECONDS: '3600', OIDC_CLIE
   OIDC_LOGIN_BUTTON_TEXT: 'Synthetic login', SPENDING_LIMIT_DOLLARS: '1', SPENDING_LIMIT_RESET: 'daily',
   OPENCODE_CURATED_MODELS: '', SEALED_CURATED_MODELS: '', SEALED_RECOMMENDED_MODEL: '',
 };
+const decisionRequests = [];
 const mf = new Miniflare(convertV4MiniflareOptions({ port: process.argv.includes('--serve') ? 8789 : 0, workers: [{ name: 'grants-harness',
   modules: true, script: bundle.outputFiles[0].text, compatibilityDate: '2025-01-31', compatibilityFlags: ['nodejs_compat'],
   bindings, d1Databases: ['DB'], kvNamespaces: ['MODEL_STATUS', 'CAMPUS_RPD'],
@@ -103,6 +104,7 @@ const mf = new Miniflare(convertV4MiniflareOptions({ port: process.argv.includes
       assert.equal(authorization, decisionAuthMode === 'heal' ? 'Bearer synthetic-healed-provider-key' : 'Bearer synthetic-existing-provider-key');
       if (decisionAuthMode === 'budget') return Response.json({ error: { code: 403, message: 'Budget exhausted' } }, { status: 403 });
       const body = await req.json(); assert.equal(body.model, 'test/decision');
+      decisionRequests.push(body);
       assert.equal(body.provider.zdr, true); assert.equal(body.provider.data_collection, 'deny');
       upstreamCalls++;
       return Response.json({ model: body.model, answers: { yes: { type: 'noul', noul: .9 } },
@@ -263,6 +265,8 @@ try {
     const input = { model: 'openrouter:test/decision', state: { message: 'Synthetic' },
       questions: { yes: { type: 'noul', instructions: 'Yes?' } } };
     await expect(await request('/v1/decisions', { key: token.key, json: input }), 200);
+    assert.deepEqual(decisionRequests.at(-1).state, { message: 'Synthetic' });
+    assert.deepEqual(decisionRequests.at(-1).questions, { yes: { type: 'noul', instructions: 'Yes?' } });
     await expect(await infer(token.key), 200);
     await expect(await request('/v1/decisions', { key: token.key, json: { ...input, model } }), 400);
     await expect(await infer(token.key, { model: 'test/decision' }), 400);
