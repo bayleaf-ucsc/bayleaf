@@ -43,6 +43,7 @@ Environment:
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -161,6 +162,60 @@ client = httpx.Client(base_url=OWUI_URL, headers=HEADERS, timeout=30)
 
 # --- API helpers (fail hard on any error) ---
 
+def response_items(data, keys: tuple[str, ...], label: str) -> list[dict]:
+    """Accept only known list envelopes, never interpret unknown data as empty."""
+    if isinstance(data, list):
+        items = data
+    elif isinstance(data, dict) and sum(key in data for key in keys) == 1:
+        items = data[next(key for key in keys if key in data)]
+    else:
+        fail(f"Unexpected {label} response shape")
+    if not isinstance(items, list) or any(
+        not isinstance(item, dict)
+        or not isinstance(item.get("id"), str)
+        or not item["id"].strip()
+        for item in items
+    ):
+        fail(f"Invalid {label} entries")
+    return items
+
+
+def page_finished(
+    data, records: list[dict], batch: list[dict], label: str,
+    page_size: int | None = None, expected_total: int | None = None,
+) -> bool:
+    """Require complete, non-repeating discovery before authorizing deletion.
+
+    Users/chats also support lists or envelopes without totals, with OWUI's
+    fixed 30-entry pages. Files/knowledge envelopes require an explicit total.
+    """
+    if len({item["id"] for item in records}) != len(records):
+        fail(f"Duplicate {label} entries during pagination")
+    if expected_total is not None and (
+        not isinstance(data, dict) or data.get("total") != expected_total
+    ):
+        fail(f"Changed {label} pagination total")
+    if isinstance(data, dict) and ("total" in data or page_size is None):
+        total = data.get("total")
+        if type(total) is not int or total < 0 or len(records) > total:
+            fail(f"Invalid {label} pagination total")
+        if len(records) == total:
+            return True
+        if not batch:
+            fail(f"Incomplete {label} enumeration")
+        return False
+    return len(batch) < page_size
+
+
+def require_timestamp(items: list[dict], field: str, label: str):
+    if any(
+        type(item.get(field)) not in (int, float)
+        or not math.isfinite(item[field])
+        for item in items
+    ):
+        fail(f"Invalid {label} timestamps")
+
+
 def check_health():
     """Verify OWUI is reachable and healthy before doing anything."""
     try:
@@ -182,26 +237,23 @@ def get_all_users() -> list[dict]:
     """
     users = []
     page = 1
+    expected_total = None
     while True:
         try:
             resp = client.get("/api/v1/users/", params={"page": page})
-        except httpx.RequestError as e:
-            fail(f"Network error fetching users page {page}: {e}")
+        except httpx.RequestError:
+            fail(f"Network error fetching users page {page}")
         if resp.status_code != 200:
             fail(f"Users endpoint returned HTTP {resp.status_code} on page {page}")
         data = resp.json()
-        if isinstance(data, list):
-            batch = data
-        elif isinstance(data, dict):
-            batch = data.get("users", [])
-        else:
-            fail(f"Unexpected users response type: {type(data).__name__}")
-        if not batch:
-            break
+        batch = response_items(data, ("users",), "users")
         users.extend(batch)
-        if len(batch) < 30:  # page size is fixed at 30
+        if page_finished(data, users, batch, "users", page_size=30, expected_total=expected_total):
             break
+        expected_total = data.get("total") if isinstance(data, dict) else None
         page += 1
+        if page > 500:
+            fail("Users pagination exceeded 500 pages; likely a bug")
     if not users:
         fail("Users list is empty (auth issue or misconfiguration?)")
     return users
@@ -234,23 +286,26 @@ def get_user_chats(user_id: str) -> list[dict]:
     """Get all chats for a user via admin endpoint. Paginated."""
     chats = []
     page = 1
+    expected_total = None
     while True:
         try:
             resp = client.get(
                 f"/api/v1/chats/list/user/{user_id}", params={"page": page}
             )
-        except httpx.RequestError as e:
-            fail(f"Network error fetching chats: {e}")
+        except httpx.RequestError:
+            fail("Network error fetching chats")
         if resp.status_code != 200:
             fail(f"Chat list endpoint returned HTTP {resp.status_code}")
         data = resp.json()
-        batch = data if isinstance(data, list) else data.get("chats", data.get("items", []))
-        if not batch:
-            break
+        batch = response_items(data, ("chats", "items"), "chat list")
+        require_timestamp(batch, "updated_at", "chat list")
         chats.extend(batch)
-        if len(batch) < 30:
+        if page_finished(data, chats, batch, "chat list", page_size=30, expected_total=expected_total):
             break
+        expected_total = data.get("total") if isinstance(data, dict) else None
         page += 1
+        if page > 500:
+            fail("Chat pagination exceeded 500 pages; likely a bug")
     return chats
 
 
@@ -275,24 +330,25 @@ def get_all_files() -> list[dict]:
     """
     files = []
     page = 1
+    expected_total = None
     while True:
         try:
             resp = client.get(
                 "/api/v1/files/", params={"page": page, "content": "false"}
             )
-        except httpx.RequestError as e:
-            fail(f"Network error fetching files page {page}: {e}")
+        except httpx.RequestError:
+            fail(f"Network error fetching files page {page}")
         if resp.status_code != 200:
             fail(f"Files endpoint returned HTTP {resp.status_code} on page {page}")
         data = resp.json()
         if not isinstance(data, dict) or "items" not in data:
             fail(f"Unexpected /api/v1/files/ response shape: {type(data).__name__}")
-        batch = data.get("items", [])
+        batch = response_items(data, ("items",), "files")
+        require_timestamp(batch, "created_at", "files")
         files.extend(batch)
-        if len(files) >= data.get("total", 0):
+        if page_finished(data, files, batch, "files", expected_total=expected_total):
             break
-        if not batch:
-            break
+        expected_total = data["total"]
         page += 1
         if page > 500:  # hard stop guard
             fail("Files pagination exceeded 500 pages; likely a bug")
@@ -303,25 +359,27 @@ def get_all_knowledge_bases() -> list[dict]:
     """Paginate through all knowledge bases via /api/v1/knowledge/."""
     kbs = []
     page = 1
+    expected_total = None
     while True:
         try:
             resp = client.get("/api/v1/knowledge/", params={"page": page})
-        except httpx.RequestError as e:
-            fail(f"Network error fetching knowledge page {page}: {e}")
+        except httpx.RequestError:
+            fail(f"Network error fetching knowledge page {page}")
         if resp.status_code != 200:
             fail(f"Knowledge endpoint returned HTTP {resp.status_code}")
         data = resp.json()
         # /api/v1/knowledge/ may return a list (small instances) or an envelope
         if isinstance(data, list):
-            kbs.extend(data)
+            if expected_total is not None:
+                fail("Changed knowledge pagination total")
+            kbs.extend(response_items(data, ("items",), "knowledge"))
             break
         if isinstance(data, dict) and "items" in data:
-            batch = data.get("items", [])
+            batch = response_items(data, ("items",), "knowledge")
             kbs.extend(batch)
-            if len(kbs) >= data.get("total", 0):
+            if page_finished(data, kbs, batch, "knowledge", expected_total=expected_total):
                 break
-            if not batch:
-                break
+            expected_total = data["total"]
             page += 1
             if page > 500:
                 fail("Knowledge pagination exceeded 500 pages; likely a bug")
@@ -334,26 +392,34 @@ def get_kb_file_ids(kb_id: str) -> set[str]:
     """Return the set of file ids attached to a knowledge base."""
     try:
         resp = client.get(f"/api/v1/knowledge/{kb_id}/files")
-    except httpx.RequestError as e:
-        fail(f"Network error fetching KB files for {kb_id[:8]}: {e}")
+    except httpx.RequestError:
+        fail("Network error fetching KB files")
     if resp.status_code != 200:
         fail(f"KB files endpoint returned HTTP {resp.status_code}")
     data = resp.json()
-    items = data.get("items", []) if isinstance(data, dict) else (data or [])
-    return {item["id"] for item in items if isinstance(item, dict) and item.get("id")}
+    items = response_items(data, ("items",), "KB files")
+    # This endpoint is fetched once, so a declared remaining page is incomplete.
+    if isinstance(data, dict) and "total" in data:
+        if not page_finished(data, items, items, "KB files"):
+            fail("Incomplete KB files enumeration")
+    return {item["id"] for item in items}
 
 
-def get_full_chat(chat_id: str) -> dict | None:
-    """Fetch a single chat's full JSON. Returns None on 404."""
+def get_full_chat(chat_id: str) -> dict:
+    """Fetch a single chat's full JSON; any failure leaves references unknown."""
     try:
         resp = client.get(f"/api/v1/chats/{chat_id}")
-    except httpx.RequestError as e:
-        fail(f"Network error fetching chat: {e}")
-    if resp.status_code == 404:
-        return None
+    except httpx.RequestError:
+        fail("Network error fetching chat")
     if resp.status_code != 200:
         fail(f"Chat detail endpoint returned HTTP {resp.status_code}")
-    return resp.json()
+    data = resp.json()
+    if (
+        not isinstance(data, dict) or data.get("id") != chat_id
+        or not isinstance(data.get("chat"), dict)
+    ):
+        fail("Invalid chat detail response shape")
+    return data
 
 
 def delete_file(file_id: str) -> bool:
@@ -410,7 +476,7 @@ def main():
         chats = get_user_chats(uid)
         for chat in chats:
             total_scanned += 1
-            updated_at = chat.get("updated_at", 0)
+            updated_at = chat["updated_at"]
 
             # Sunrise grace: treat activity as at least the sunrise date
             effective_updated = max(updated_at, SUNRISE_TS) if SUNRISE_TS else updated_at
@@ -467,16 +533,13 @@ def main():
     log(f"files_total={len(files)}")
 
     referenced_ids: set[str] = set()
-    file_id_set: set[str] = {f["id"] for f in files if f.get("id")}
+    file_id_set: set[str] = {f["id"] for f in files}
 
     # Reference source 1: knowledge bases
     kbs = get_all_knowledge_bases()
     log(f"knowledge_bases={len(kbs)}")
     for kb in kbs:
-        kb_id = kb.get("id")
-        if not kb_id:
-            continue
-        referenced_ids.update(get_kb_file_ids(kb_id))
+        referenced_ids.update(get_kb_file_ids(kb["id"]))
 
     # Reference source 2: every surviving chat's full JSON.
     # After Phase A, expired chats have been deleted; their attachments
@@ -488,12 +551,8 @@ def main():
         # return an empty list now, which is fine.
         chats = get_user_chats(uid)
         for chat_summary in chats:
-            chat_id = chat_summary.get("id")
-            if not chat_id:
-                continue
+            chat_id = chat_summary["id"]
             full = get_full_chat(chat_id)
-            if full is None:
-                continue
             chats_fetched += 1
             # Match file UUIDs against the known file-id set. This avoids
             # picking up unrelated UUIDs (model ids, message ids, etc.).
@@ -511,12 +570,12 @@ def main():
     orphans = [
         f
         for f in files
-        if f["id"] not in referenced_ids and f.get("created_at", 0) < grace_cutoff
+        if f["id"] not in referenced_ids and f["created_at"] < grace_cutoff
     ]
     files_in_grace = sum(
         1
         for f in files
-        if f["id"] not in referenced_ids and f.get("created_at", 0) >= grace_cutoff
+        if f["id"] not in referenced_ids and f["created_at"] >= grace_cutoff
     )
     log(f"files_in_grace={files_in_grace}")
     log(f"files_orphan={len(orphans)}")
