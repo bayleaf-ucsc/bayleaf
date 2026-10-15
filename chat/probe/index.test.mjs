@@ -752,17 +752,24 @@ test('stalled stream cancellation is bounded without losing the original failed 
 test('render predicate and serialized observer exclude reasoning and require completed-message control', async () => {
   // Execute the actual serialized predicate against a minimal DOM contract.
   const original = Object.fromEntries(['document', 'NodeFilter', 'getComputedStyle'].map(k => [k, globalThis[k]]));
-  let complete = false;
+  let complete = false, visible = true;
   let nodes = [];
-  const content = { getClientRects: () => [1] };
+  const content = { getClientRects: () => visible ? [1] : [] };
   const message = { querySelector: selector => selector === '#response-content-container' ? content : complete };
   content.closest = () => message;
+  const unrelatedContent = { getClientRects: () => [1] };
+  const unrelated = { querySelector: selector => selector === '#response-content-container' ? unrelatedContent : true };
+  unrelatedContent.closest = () => unrelated;
+  const unrelatedNodes = [{ textContent: 'Unrelated completed answer', parentElement: { closest: () => false } }];
+  let firstContent = content;
   globalThis.NodeFilter = { SHOW_TEXT: 4 };
   globalThis.getComputedStyle = () => ({ visibility: 'visible' });
   globalThis.document = {
-    getElementById: () => message, querySelector: () => content,
-    createTreeWalker: () => { let i = 0; return { currentNode: null,
-      nextNode() { this.currentNode = nodes[i++]; return !!this.currentNode; } }; },
+    getElementById: id => ({ 'message-same-persisted-message': message, 'message-unrelated': unrelated })[id] ?? null,
+    querySelector: selector => selector === '#response-content-container' ? firstContent : null,
+    createTreeWalker: root => { let i = 0; const texts = root === content ? nodes : unrelatedNodes;
+      return { currentNode: null,
+        nextNode() { this.currentNode = texts[i++]; return !!this.currentNode; } }; },
     createRange: () => ({ selectNodeContents() {}, getClientRects: () => [1] }),
   };
   try {
@@ -774,6 +781,24 @@ test('render predicate and serialized observer exclude reasoning and require com
     complete = true;
     assert.equal(renderedAnswer(true, 'same-persisted-message'), true);
     const { runInNewContext } = await import('node:vm');
+    // The first response is complete, but it is not the persisted message being
+    // verified. Exercise both direct and browser-serialized predicate callers.
+    firstContent = unrelatedContent;
+    const serialized = runInNewContext(`(${renderedAnswer.toString()})`, { document, NodeFilter, getComputedStyle });
+    for (const predicate of [renderedAnswer, serialized]) {
+      assert.equal(predicate(true), true);
+      assert.equal(predicate(true, 'unrelated'), true);
+      assert.equal(predicate(true, 'missing-message'), false);
+      complete = false;
+      assert.equal(predicate(false, 'same-persisted-message'), true);
+      assert.equal(predicate(true, 'same-persisted-message'), false);
+      complete = true;
+      visible = false;
+      assert.equal(predicate(true, 'same-persisted-message'), false);
+      visible = true;
+      assert.equal(predicate(true, 'same-persisted-message'), true);
+    }
+    firstContent = content;
     let notify, disconnected = false;
     const reported = [];
     runInNewContext(`(${renderedAnswer.toString()})(false, null, true)`, {

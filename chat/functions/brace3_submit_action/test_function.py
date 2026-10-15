@@ -1,8 +1,12 @@
 import importlib.util
+import sys
 import unittest
+from email.parser import BytesParser
 from html.parser import HTMLParser
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -74,13 +78,8 @@ class SubmitActionTests(unittest.TestCase):
             "other": {"role": "assistant", "content": "other branch", "parentId": "u"},
         }}}
         document = action.conversation_html(action.branch_to_message(history, "a"), "chat-1", 897740)
-        self.assertIn("class='event event--function-call tool' open", document)
-        self.assertIn("prompt: a &lt;question&gt;", document)
-        self.assertIn("class='event event--function-call-output tool-result' open", document)
-        self.assertIn("|-", document)
         self.assertIn("private &lt;answer&gt;", document)
         self.assertNotIn("exact tool time not recorded", document)
-        self.assertIn("<summary>Reasoning · <time datetime=", document)
         self.assertIn("think &lt;carefully&gt;", document)
         self.assertIn("done", document)
         self.assertNotIn("flattened answer", document)
@@ -121,6 +120,13 @@ class SubmitActionTests(unittest.TestCase):
         self.assertEqual((calls[0]["data-event-index"], calls[0]["data-call-id"], calls[0]["data-tool-name"]),
                          ("1", "call_1", "ask_user"))
         self.assertEqual(results[0]["data-call-id"], "call_1")
+        self.assertIn("open", calls[0])
+        self.assertIn("open", results[0])
+        reasoning = [attrs for tag, attrs in parsed.elements
+                     if tag == "details" and attrs.get("data-event-type") == "reasoning"]
+        self.assertEqual(len(reasoning), 1)
+        self.assertNotIn("open", reasoning[0])
+        self.assertIn(("time", {"datetime": "1970-01-01T00:01:42+00:00", "data-timestamp": "102"}), parsed.elements)
         self.assertNotIn("data-timestamp", calls[0])
         self.assertEqual(parsed.yaml_payloads, [{"prompt": "a <question>"}, "private <answer>"])
 
@@ -131,26 +137,28 @@ class SubmitActionTests(unittest.TestCase):
     def test_only_recorded_event_timestamps_are_shown(self):
         self.assertEqual(action.exact_event_time({}), "")
         self.assertEqual(action.exact_event_time({"started_at": 123}), " · 1970-01-01 00:02:03 UTC")
-        self.assertEqual(action.yaml_arguments('{"question":"One?","choices":["yes","no"]}'),
-                         "question: One?\nchoices:\n- 'yes'\n- 'no'")
+        self.assertEqual(yaml.safe_load(action.yaml_arguments('{"question":"One?","choices":["yes","no"]}')),
+                         {"question": "One?", "choices": ["yes", "no"]})
 
     def test_json_tool_result_becomes_yaml(self):
-        self.assertEqual(action.yaml_result([{"type": "text", "text": '{"ok":true,"items":[1,2]}'}]),
-                         "ok: true\nitems:\n- 1\n- 2")
+        self.assertEqual(yaml.safe_load(action.yaml_result([{"type": "text", "text": '{"ok":true,"items":[1,2]}'}])),
+                         {"ok": True, "items": [1, 2]})
 
     def test_tool_result_openness_uses_rendered_yaml_utf8_bytes(self):
         def result(size):
             return [{"type": "text", "text": "x" * size}]
 
-        # The YAML block scalar adds five bytes (|- plus indentation).
-        self.assertEqual(len(action.yaml_result(result(251)).encode("utf-8")), 256)
-        self.assertEqual(len(action.yaml_result(result(252)).encode("utf-8")), 257)
-        self.assertGreater(len(action.yaml_result([{"type": "text", "text": "é" * 127}]).encode("utf-8")), 256)
+        # Find the boundary in rendered YAML, without pinning a scalar spelling.
+        boundary = max(size for size in range(1, 257)
+                       if len(action.yaml_result(result(size)).encode("utf-8")) <= 256)
+        unicode_result = [{"type": "text", "text": "é" * 200}]
+        self.assertLess(len(action.yaml_result(unicode_result)), 256)
+        self.assertGreater(len(action.yaml_result(unicode_result).encode("utf-8")), 256)
 
         events = [
-            {"type": "function_call_output", "output": result(251)},
-            {"type": "function_call_output", "output": result(252)},
-            {"type": "function_call_output", "output": [{"type": "text", "text": "é" * 127}]},
+            {"type": "function_call_output", "output": result(boundary)},
+            {"type": "function_call_output", "output": result(boundary + 1)},
+            {"type": "function_call_output", "output": unicode_result},
         ]
         document = action.conversation_html([{"role": "assistant", "content": "", "output": events}])
 
@@ -174,6 +182,145 @@ class SubmitActionTests(unittest.TestCase):
         for url in ("https://other.example/api/v1/files/123", "https://canvas.ucsc.edu/api/v1/files/123/delete"):
             with self.subTest(url=url), self.assertRaises(RuntimeError):
                 action.canvas_file_id_from_location(url)
+
+
+class ActionTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.user = {"id": "owner", "email": "student@example.test", "role": "user"}
+        self.body = {"model": "brace3-94741", "chat_id": "saved-chat", "id": "selected",
+                     "student_id": 999, "email": "intruder@example.test", "messages": [
+                         {"role": "user", "content": "https://canvas.ucsc.edu/courses/94741/assignments/999"},
+                         {"role": "assistant", "content": "FLATTENED PAYLOAD"}]}
+        self.stored = {"history": {"messages": {
+            "prompt": {"id": "prompt", "role": "user", "parentId": None,
+                       "content": "https://canvas.ucsc.edu/courses/94741/assignments/12345"},
+            "selected": {"id": "selected", "role": "assistant", "parentId": "prompt",
+                         "content": "stored answer", "output": [
+                             {"type": "reasoning", "content": [{"type": "text", "text": "STORED REASONING"}]},
+                             {"type": "function_call_output", "call_id": "call-1",
+                              "output": [{"type": "text", "text": "STORED TOOL RESULT"}]}]},
+            "sibling": {"id": "sibling", "role": "assistant", "parentId": "prompt", "content": "OTHER BRANCH"},
+        }, "currentId": "sibling"}}
+        self.roster = [{"user": {"id": 42, "name": "Synthetic Student", "login_id": "STUDENT@example.test"}}]
+        self.lookups, self.gets = [], []
+
+        async def owned_chat(chat_id, user_id):
+            self.lookups.append((chat_id, user_id))
+            return SimpleNamespace(chat=self.stored) if (chat_id, user_id) == ("saved-chat", "owner") else None
+
+        self.chats = SimpleNamespace(get_chat_by_id_and_user_id=owned_chat)
+        self.instance = action.Action()
+        self.instance.valves.CANVAS_ACCESS_TOKEN = "synthetic-token"
+
+    async def invoke(self, confirmation=True):
+        test = self
+        self.writes, self.documents = [], []
+
+        class UploadBody:
+            def __init__(self):
+                self.chunks = []
+
+            async def write(self, chunk):
+                self.chunks.append(chunk)
+
+        class Response:
+            def __init__(self, payload, status=200, location=None, form=None):
+                self.payload, self.status, self.form = payload, status, form
+                self.headers = {"Location": location} if location else {}
+
+            async def __aenter__(self):
+                if self.form is not None:
+                    # Inspect the public multipart wire representation, not
+                    # FormData's private fields or the upload helper's arguments.
+                    multipart = self.form()
+                    body = UploadBody()
+                    await multipart.write(body)
+                    message = BytesParser().parsebytes(
+                        f"Content-Type: {multipart.content_type}\r\n\r\n".encode() + b"".join(body.chunks))
+                    test.documents.extend(part.get_payload(decode=True).decode("utf-8")
+                                          for part in message.walk() if part.get_filename())
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            def raise_for_status(self):
+                pass
+
+            async def json(self):
+                return self.payload
+
+        class Session:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            def get(self, url):
+                test.gets.append(url)
+                parsed = urlsplit(url)
+                if parsed.netloc != "canvas.ucsc.edu":
+                    raise AssertionError(f"Unexpected Canvas origin: {url}")
+                if parsed.path == "/api/v1/courses/94741/enrollments":
+                    return Response(test.roster)
+                if parsed.path == "/api/v1/courses/94741/assignments/12345":
+                    return Response({"course_id": 94741, "name": "Synthetic Assignment",
+                                     "submission_types": ["online_upload"], "allowed_extensions": ["html"]})
+                raise AssertionError(f"Unexpected Canvas read: {url}")
+
+            def post(self, url, data, **kwargs):
+                test.writes.append((url, data))
+                root = "https://canvas.ucsc.edu/api/v1/courses/94741/assignments/12345/submissions"
+                if url.startswith(root + "/") and url.endswith("/files"):
+                    return Response({"upload_url": "https://uploads.example/upload", "upload_params": {"key": "abc"}})
+                if url == "https://uploads.example/upload":
+                    return Response({}, status=201, location="https://canvas.ucsc.edu/api/v1/files/13196850", form=data)
+                if url == root:
+                    return Response({"user_id": int(data["submission[user_id]"])})
+                raise AssertionError(f"Unexpected Canvas write: {url}")
+
+        async def event_call(event):
+            self.assertEqual(event["type"], "confirmation", "Stored branch should select the assignment without input")
+            return confirmation
+
+        self.events = AsyncMock()
+        with patch.dict(sys.modules, {"open_webui.models.chats": SimpleNamespace(Chats=self.chats)}), \
+                patch.object(action.aiohttp, "ClientSession", return_value=Session()):
+            await self.instance.action(self.body, self.user, self.events, event_call)
+
+    async def test_rejected_confirmation_never_uploads(self):
+        for rejected in (False, None, "true", 1, {}):
+            with self.subTest(confirmation=rejected):
+                await self.invoke(rejected)
+                self.assertEqual(self.writes, [])
+                self.assertIn("assignments/12345", self.gets[-1])
+                event = self.events.await_args.args[0]
+                self.assertEqual(event["type"], "status")
+                self.assertTrue(event["data"]["done"])
+                self.assertFalse(any(call.args[0]["type"] == "notification" for call in self.events.await_args_list))
+
+    async def test_unmatched_enrollment_never_uploads(self):
+        self.roster = [{"user": {"id": 999, "name": "Payload Impostor", "login_id": "intruder@example.test"}}]
+        with self.assertRaisesRegex(ValueError, "does not match a student enrollment"):
+            await self.invoke()
+        self.assertEqual(self.writes, [])
+
+    async def test_upload_uses_owners_selected_stored_branch(self):
+        await self.invoke()
+        self.assertEqual(self.lookups, [("saved-chat", "owner")])
+        root = "https://canvas.ucsc.edu/api/v1/courses/94741/assignments/12345/submissions"
+        self.assertIn(root + "/42/files", [url for url, _ in self.writes])
+        submitted = next(data for url, data in self.writes if url == root)
+        self.assertEqual(submitted["submission[user_id]"], "42")
+        self.assertEqual(submitted["submission[file_ids][]"], "13196850")
+        self.assertEqual(submitted["submission[submission_type]"], "online_upload")
+        self.assertEqual(len(self.documents), 1)
+        document = self.documents[0]
+        for text in ("stored answer", "STORED REASONING", "STORED TOOL RESULT"):
+            self.assertIn(text, document)
+        for text in ("FLATTENED PAYLOAD", "OTHER BRANCH"):
+            self.assertNotIn(text, document)
 
 
 class UploadTests(unittest.IsolatedAsyncioTestCase):
