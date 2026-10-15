@@ -8,6 +8,25 @@ import { once } from 'node:events';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+function assertRequiredTools(tools) {
+  for (const id of ['webfetch','bayleaf_usage','bayleaf_expose','bayleaf_unexpose']) {
+    assert.equal(tools.filter(tool=>tool.id===id).length,1,`required runtime tool: ${id}`);
+  }
+}
+
+// Bounded offline check of the qualification gate, without starting OpenCode or
+// loading/installing a plugin. The actual runtime inventory crosses the same gate.
+if (process.argv.includes('--self-test-tools')) {
+  const tools = ['webfetch','bayleaf_usage','bayleaf_expose','bayleaf_unexpose'].map(id=>({id}));
+  assertRequiredTools(tools);
+  for (const {id} of tools) {
+    assert.throws(()=>assertRequiredTools(tools.filter(tool=>tool.id!==id)),
+      {code:'ERR_ASSERTION',message:new RegExp(`required runtime tool: ${id}`)});
+  }
+  console.log('PASS tool-inventory gate: complete set accepted; each missing required tool rejected');
+  process.exit(0);
+}
+
 const tempBase = process.env.OPENCODE_TEST_TMP || '/private/var/folders/qj/gyqbn5y57956rrqd_g6yfqwr0000gn/T/opencode';
 const root = await mkdtemp(join(tempBase, 'bayleaf-plugin-'));
 const plugin = fileURLToPath(new URL('../sandbox-plugin/index.mjs', import.meta.url));
@@ -167,7 +186,7 @@ m.bootstrap(${port},${JSON.stringify(operation)},${JSON.stringify(origin)})
   assert.equal((await api('/api/credential')).data.length,1,'repeated bootstrap duplicated credentials');
   assert.ok((await api('/api/plugin')).data.some(p=>p.id==='bayleaf.sandbox'&&p.state.status==='active'));
   const first=await wait(async()=>{const r=await rpc('inspect');return r.output.revision==='a'&&r;});
-  assert.equal(first.output.tools.filter(t=>t.id==='webfetch').length,1);
+  assertRequiredTools(first.output.tools);
   const skillData=first.output.skills.data??first.output.skills;
   assert.ok(skillData.some(s=>s.id==='bayleaf-sandboxes'));
   assert.ok(skillData.some(s=>s.id==='bayleaf-scheduling'&&s.description.includes('schedule.*')),
@@ -204,7 +223,7 @@ m.bootstrap(${port},${JSON.stringify(operation)},${JSON.stringify(origin)})
     else assert.match(result.output.error,/denied/);
   }
   console.log('PASS real V2 bootstrap, tool/skill registration, BayLeaf search, fetch allow/deny/ask/reject');
-  if(first.output.tools.some(t=>t.id==='bayleaf_usage')) {
+  { // Unconditional qualification; keep preview-session locals in their own scope.
     for(const name of ['bayleaf_usage']) {
       const r=await rpc('fetch',{sessionID:allowID,name,args:{}});
       assert.ok(r.output.content);assert.ok(!r.output.error);
@@ -284,6 +303,7 @@ m.bootstrap(${port},${JSON.stringify(operation)},${JSON.stringify(origin)})
   }
   assert.ok(configCalls>callsBefore);
   const updated=(await rpc('inspect')).output;
+  assertRequiredTools(updated.tools);
   assert.ok(updated.tools.some(t=>t.id==='bayleaf_fixture_new'));
   assert.equal((updated.skills.data??updated.skills).find(s=>s.id==='bayleaf-fixture').content,'Revision b');
   assert.equal((await rpc('fetch',{sessionID:allowID,url:'https://example.test/page'})).output.content,'# Synthetic page');

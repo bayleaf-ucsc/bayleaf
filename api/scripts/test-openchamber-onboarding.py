@@ -23,7 +23,7 @@ with tempfile.TemporaryDirectory(prefix='bayleaf-onboarding-',dir=base) as tempo
     home=Path(temporary);os.environ['HOME']=str(home)
     m.ROOT=home/'managed';(m.ROOT/'releases').mkdir(parents=True)
     (m.ROOT/'releases'/m.RELEASE).symlink_to(prefix)
-    (m.ROOT/'credentials').mkdir();(m.ROOT/'credentials/incoming').write_text('sk-bayleaf-synthetic')
+    (m.ROOT/'credentials').mkdir();(m.ROOT/'credentials/incoming').write_text('dtn_secret_synthetic_onboarding')
     operation='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
     m.atomic('request.json',{'operation':operation,'deadline':int(time.time())+900})
     m.configure()

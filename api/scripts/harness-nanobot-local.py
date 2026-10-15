@@ -26,7 +26,7 @@ import websockets
 assert nanobot.__version__ == '0.3.5'
 spec = importlib.util.spec_from_file_location('installer', Path(__file__).with_name('browser-setup.py'))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-KEY = 'sk-bayleaf-isolated-qualification-key'
+KEY = 'dtn_secret_isolated_qualification_key'
 AUTH = 'a'*64
 calls = []
 tool_seen = False

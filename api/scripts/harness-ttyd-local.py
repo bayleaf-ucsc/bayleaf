@@ -38,6 +38,7 @@ async def qualify(home):
     s.select_service('ttyd')
     s.PORT = port()
     (s.ROOT/'credentials').mkdir(parents=True)
+    (s.ROOT/'credentials/incoming').write_text('dtn_secret_synthetic_ttyd')
     (s.ROOT/'credentials/app-secret').write_text(secrets.token_hex(32))
     binary = os.environ.get('TTYD_BINARY')
     if binary:
