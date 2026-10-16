@@ -283,6 +283,7 @@ async function standardConfig(c: Context<AppEnv>, sandbox: boolean) {
   const config: Record<string, unknown> = {
     $schema: 'https://opencode.ai/config.json',
     disabled_providers: ['opencode'],
+    skills: [`${baseUrl}/docs/opencode/skills/`],
     provider: {
       [PROVIDER_ID]: providerEntry,
     },
@@ -332,6 +333,7 @@ sealedWellKnownRoutes.get('/opencode/config', async (c) => {
   const config: Record<string, unknown> = {
     $schema: 'https://opencode.ai/config.json',
     disabled_providers: ['opencode'],
+    skills: [`${baseUrl}/docs/opencode/skills/`],
     provider: {},
   };
 

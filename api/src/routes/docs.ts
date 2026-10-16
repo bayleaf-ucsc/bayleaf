@@ -42,12 +42,36 @@ docsRoutes.get('/', (c) => {
 
 // ── GET /SKILL.md — legacy redirect to /llms.txt ──────────────────
 //
-// SKILL.md was the wrong abstraction for BayLeaf: agents don't need to load
-// BayLeaf-specific instructions per-conversation, they only need to be configured
-// against the OpenAI-compatible /v1/* endpoints once. Onboarding and capability-
-// extension content now lives at /llms.txt (site-level discovery, one-time read).
+// Keep the legacy full-reference URL separate from the slim discovery skill.
+// Detailed onboarding and capability guidance remains owned by /llms.txt.
 
 docsRoutes.get('/SKILL.md', (c) => c.redirect('/llms.txt', 301));
+
+// Public OpenCode V2 skill catalog. Bump version whenever the skill changes.
+// Use a named markdown entry: a catalog-root SKILL.md gets the ID "SKILL" in V2.
+docsRoutes.get('/opencode/skills/index.json', (c) => c.json({
+  skills: [{ name: 'bayleaf-platform', version: '1', files: ['bayleaf-platform.md'] }],
+}));
+
+docsRoutes.get('/opencode/skills/bayleaf-platform/bayleaf-platform.md', (c) => c.text(`---
+name: bayleaf-platform
+description: Find BayLeaf platform setup and capabilities: Google Workspace, Canvas LMS, remote Sandbox, web tools, inference access, privacy, or switching providers and disconnecting BayLeaf. Use when these integrations could help or the user wants to change their setup, not for ordinary inference use.
+---
+
+# BayLeaf platform
+
+Fetch https://api.bayleaf.dev/llms.txt when a relevant integration or setup question arises.
+It covers user-authorized Google Workspace and Canvas LMS CLIs, your remote BayLeaf
+Sandbox (persistent Linux execution, files and browser workspaces), web search and
+page extraction, Campus Pass, temporary inference tokens for apps, Standard versus
+Sealed inference, privacy boundaries, and switching providers or disconnecting BayLeaf.
+
+This is a guide to possibilities, not a claim that tools are installed or access is
+authorized. Google and Canvas use separate user authorization; Sealed inference does
+not encrypt other services. Preserve existing providers and tools, ask before setup
+changes, and help users move away from BayLeaf when requested. Load the reference
+only as needed, not on every turn.
+`, 200, { 'Content-Type': 'text/markdown; charset=utf-8' }));
 
 // ── Auth helper for docs routes ───────────────────────────────────
 

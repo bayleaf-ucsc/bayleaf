@@ -153,6 +153,13 @@ API to keep a retired capability appearing functional.
 
 ## Refinement log
 
+- 2026-10-16 (desktop discovery, local): Standard and Sealed managed configs now
+  reference a public V2 HTTP catalog with a slim `bayleaf-platform` orientation
+  skill. No new tools, plugins, credentials or hosted behavior. Synthetic HTTP
+  tests cover both configs and public skill delivery; live client discovery,
+  behavioral offering and disconnect refresh remain unverified. HTTP catalogs
+  provide discovery without requiring an executable desktop plugin.
+
 - 2026-10-13 (decision inference rollout): Core HTTP, dashboard and visitor consent
   qualified in production, including a shared text/decision token. Client adapters
   remain deliberately deferred, and media transport qualification remains issue #98.

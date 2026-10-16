@@ -10,8 +10,8 @@
  * Loaded once during onboarding (or when an agent is being extended with
  * BayLeaf-specific tooling). Not designed to be consumed on every conversation
  * turn: a configured agent calling BayLeaf's OpenAI-compatible /v1/* endpoints
- * doesn't need any BayLeaf-specific context. SKILL.md (now redirected here)
- * was the wrong abstraction for that reason.
+ * doesn't need the full reference in context. The slim managed OpenCode skill
+ * advertises this reference on demand; legacy /docs/SKILL.md redirects here.
  */
 
 import { OpenAPIHono } from '@hono/zod-openapi';
@@ -191,6 +191,12 @@ updates the configurations; ${bt}bayleaf-sealed${bt} remains available for a tra
 hand-authored definition. The managed Sealed transport verifies enclave attestation and
 encrypts content on your machine before it traverses BayLeaf. The same Sealed login and
 provider ID work on OpenCode V1 (1.18.29+) and V2.
+
+On OpenCode V2, both managed desktop configurations also advertise a small
+${bt}bayleaf-platform${bt} skill through a public HTTP skill catalog. It points here
+when integrations, access, privacy or switching providers are relevant; it does not
+install those integrations or replace your existing tools. The catalog is served at
+https://api.bayleaf.dev/docs/opencode/skills/index.json.
 
 Each remote config also makes the OpenCode backend, and therefore OpenChamber,
 safe to use out of the box by setting two top-level defaults on your behalf:

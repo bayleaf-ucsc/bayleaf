@@ -21,8 +21,10 @@ const mf = new Miniflare(convertV4MiniflareOptions({
   workers: [{ name: 'docs-harness', modules: true, script: bundle.outputFiles[0].text,
     compatibilityDate: '2025-01-31', compatibilityFlags: ['nodejs_compat'],
     bindings: { RECOMMENDED_MODEL: 'test/model', GRANTS_ENABLED: 'true', GRANTS_MAX_SECONDS: '900',
-      SEALED_ENABLED: 'true', SEALED_RECOMMENDED_MODEL: 'test-sealed', SEALED_CURATED_MODELS: '',
-      BEDROCK_ENABLED: 'false', VERTEX_ENABLED: 'false',
+       SEALED_ENABLED: 'true', SEALED_RECOMMENDED_MODEL: 'test-sealed', SEALED_CURATED_MODELS: '',
+       TINFOIL_API_KEY: 'synthetic-tinfoil-key',
+       BEDROCK_ENABLED: 'false', VERTEX_ENABLED: 'false',
+       CAMPUS_IP_RANGES: '192.0.2.0/24', CAMPUS_POOL_KEY: 'synthetic-campus-key',
       GWS_CLIENT_ID: 'synthetic-client', GWS_CLIENT_SECRET: 'synthetic-secret', GWS_PROJECT_ID: 'synthetic-project' },
     durableObjects: { PREVIEW_CONNECTIONS: { className: 'PreviewConnections', useSQLite: true },
       SANDBOX_BROWSER: { className: 'SandboxBrowser', useSQLite: true } },
@@ -32,7 +34,10 @@ const mf = new Miniflare(convertV4MiniflareOptions({
         { id: 'test/model', name: 'Synthetic model', pricing: { prompt: '0', completion: '0' } },
         { id: 'test/alternate', name: 'Alternate model', pricing: { prompt: '0', completion: '0' } },
       ] });
-      throw new Error('Documentation must not invoke another provider or infer');
+       if (url.hostname === 'inference.tinfoil.sh' && url.pathname === '/v1/models') {
+         return Response.json({ data: [{ id: 'test-sealed', type: 'chat', endpoints: ['/v1/chat/completions'] }] });
+       }
+       throw new Error('Documentation must not invoke another provider or infer');
     },
   }],
 }));
@@ -80,7 +85,36 @@ try {
   assert.ok(!shell.includes('<header') && !shell.includes('docs-navigation'), 'Keep the original plain Scalar shell');
   assert.ok(shell.includes('lang="en"'));
   const legacy = await get('/docs/SKILL.md');
-  assert.equal(legacy.status, 301); assert.equal(legacy.headers.get('Location'), '/llms.txt');
+   assert.equal(legacy.status, 301); assert.equal(legacy.headers.get('Location'), '/llms.txt');
+   const catalogBase = '/docs/opencode/skills/';
+   const catalogResponse = await get(catalogBase + 'index.json');
+   assert.equal(catalogResponse.status, 200, 'Catalog is public');
+   const catalog = await catalogResponse.json();
+   assert.deepEqual(catalog.skills, [{ name: 'bayleaf-platform', version: '1', files: ['bayleaf-platform.md'] }]);
+   const skillResponse = await get(catalogBase + 'bayleaf-platform/bayleaf-platform.md');
+   assert.equal(skillResponse.status, 200, 'Skill is public');
+   assert.match(skillResponse.headers.get('content-type'), /text\/markdown/);
+   const skill = await skillResponse.text();
+   assert.match(skill, /^---\nname: bayleaf-platform\ndescription: .+\n---\n/);
+   assert.ok(skill.length < 1800, 'Keep discovery slim');
+   for (const phrase of ['https://api.bayleaf.dev/llms.txt', 'Google Workspace', 'Canvas LMS',
+     'Sandbox', 'switching providers', 'not a claim that tools are installed']) assert.ok(skill.includes(phrase));
+   for (const prefix of ['', '/sealed']) {
+     const response = await get(prefix + '/.well-known/opencode/config', { 'CF-Connecting-IP': '192.0.2.1' });
+     assert.equal(response.status, 200);
+     const { config } = await response.json();
+     assert.deepEqual(config.skills, ['http://localhost:8806' + catalogBase]);
+     assert.equal(config.websearch, undefined, 'Desktop skill must not replace search');
+     assert.equal(config.instructions, undefined, 'Do not inject the full reference');
+     assert.equal(config.plugins, undefined, 'No additional desktop plugin');
+     if (prefix === '/sealed') {
+       assert.equal(config.model, 'bayleaf-sealed-remote/test-sealed');
+       assert.equal(config.plugin.length, 1, 'Preserve only the existing Sealed transport');
+     } else {
+       assert.equal(config.model, 'bayleaf-remote/test/model');
+       assert.equal(config.plugin, undefined);
+     }
+   }
   const llms = await (await get('/llms.txt')).text();
   assert.ok(llms.includes('Documentation ownership') && llms.includes('## HTTP API overview'));
   assert.ok(llms.includes('not BayLeaf inference API endpoints'));
