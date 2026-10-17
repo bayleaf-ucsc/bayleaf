@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["httpx"]
+# dependencies = ["httpx==0.28.1"]
 # ///
 """
 BayLeaf Chat — Retention Cleanup Job
@@ -18,9 +18,10 @@ Two-phase cleanup per RETENTION.md:
 Communicates exclusively through the OWUI admin API (no direct DB access).
 
 Design principles:
-  - Fails hard (non-zero exit) on ANY inconsistency or API error.
+  - Fails hard on inconsistencies or permanent/exhausted API errors.
+    Transient reads retry up to three attempts; deletes never retry.
   - Logs are never sensitive: no user names, emails, chat titles, or IDs.
-    Only aggregate counts appear in stdout.
+    Only aggregate counts and content-free diagnostics appear in stdout.
   - DO App Platform captures stdout; configure "Failed job invocation" alert
     to get emailed on failures.
   - Phase B runs AFTER Phase A so that files attached to just-expired chats
@@ -62,9 +63,6 @@ environment variables:
   OWUI_URL              Base URL of the OWUI instance (required)
   OWUI_TOKEN            Admin bearer token (required)
   RETENTION_DAYS        Days of inactivity before deletion (default: 90)
-  RETENTION_SUNRISE     Policy announcement date, YYYY-MM-DD (optional).
-                        Existing chats are treated as active until at least this
-                        date, giving users a full RETENTION_DAYS grace period.
   ORPHAN_GRACE_SECONDS  Min age of an orphan file before deletion (default: 86400).
                         Protects in-flight uploads from temporary chats that have
                         not yet been sent or saved.
@@ -83,7 +81,7 @@ examples:
     )
     parser.add_argument(
         "--live", action="store_true",
-        help="Run in live mode (actually delete). Overrides DRY_RUN env var.",
+        help="Run in live mode (actually delete). Refuses explicit DRY_RUN=true.",
     )
     parser.add_argument(
         "--retention-days", type=int, default=None,
@@ -96,7 +94,6 @@ examples:
 class Settings:
     retention_days: int = 90
     orphan_grace_seconds: int = 86400
-    sunrise_ts: int | None = None
     dry_run: bool = True
 
 
@@ -106,7 +103,37 @@ def fail(msg: str):
     sys.exit(1)
 
 
-# --- API helpers (fail hard on any error) ---
+# --- API helpers (bounded read retries, fail closed) ---
+
+def request(client: httpx.Client, method: str, path: str, label: str, **kwargs):
+    """Retry transient reads only; diagnostics never include URLs or bodies."""
+    attempts = 3 if method == "GET" else 1
+    for attempt in range(1, attempts + 1):
+        try:
+            response = client.request(method, path, **kwargs)
+        except httpx.RequestError as exc:
+            reason = type(exc).__name__
+            retryable = isinstance(exc, (
+                httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError,
+            ))
+        else:
+            if response.status_code == 200:
+                return response
+            reason = f"HTTP {response.status_code}"
+            retryable = response.status_code in (408, 429, 500, 502, 503, 504)
+        if method != "GET" or not retryable or attempt == attempts:
+            fail(f"{label}: {reason}; attempt={attempt}/{attempts}")
+        print(f"retry operation={label} reason={reason} attempt={attempt}/{attempts}", flush=True)
+        time.sleep(attempt)
+
+
+def get_json(client: httpx.Client, path: str, label: str, **kwargs):
+    response = request(client, "GET", path, label, **kwargs)
+    try:
+        return response.json()
+    except (ValueError, UnicodeError):
+        fail(f"{label}: invalid JSON")
+
 
 def response_items(data, keys: tuple[str, ...], label: str) -> list[dict]:
     """Accept only known list envelopes, never interpret unknown data as empty."""
@@ -164,15 +191,9 @@ def require_timestamp(items: list[dict], field: str, label: str):
 
 def check_health(client: httpx.Client):
     """Verify OWUI is reachable and healthy before doing anything."""
-    try:
-        resp = client.get("/health")
-    except httpx.RequestError as e:
-        fail(f"Cannot reach OWUI: {e}")
-    if resp.status_code != 200:
-        fail(f"Health check returned HTTP {resp.status_code}")
-    data = resp.json()
-    if not data.get("status"):
-        fail(f"Health check returned unhealthy: {data}")
+    data = get_json(client, "/health", "health")
+    if not isinstance(data, dict) or data.get("status") is not True:
+        fail("Health check returned unhealthy or invalid response")
 
 
 def get_all_users(client: httpx.Client) -> list[dict]:
@@ -185,13 +206,7 @@ def get_all_users(client: httpx.Client) -> list[dict]:
     page = 1
     expected_total = None
     while True:
-        try:
-            resp = client.get("/api/v1/users/", params={"page": page})
-        except httpx.RequestError:
-            fail(f"Network error fetching users page {page}")
-        if resp.status_code != 200:
-            fail(f"Users endpoint returned HTTP {resp.status_code} on page {page}")
-        data = resp.json()
+        data = get_json(client, "/api/v1/users/", "users", params={"page": page})
         batch = response_items(data, ("users",), "users")
         users.extend(batch)
         if page_finished(data, users, batch, "users", page_size=30, expected_total=expected_total):
@@ -207,25 +222,25 @@ def get_all_users(client: httpx.Client) -> list[dict]:
 
 def get_all_groups(client: httpx.Client) -> dict[str, str]:
     """Get all groups, return {group_id: group_name} mapping."""
-    try:
-        resp = client.get("/api/v1/groups/")
-    except httpx.RequestError as e:
-        fail(f"Network error fetching groups: {e}")
-    if resp.status_code != 200:
-        fail(f"Groups endpoint returned HTTP {resp.status_code}")
-    groups = resp.json()
+    groups = get_json(client, "/api/v1/groups/", "groups")
     if not isinstance(groups, list):
         fail(f"Unexpected groups response type: {type(groups).__name__}")
+    groups = response_items(groups, (), "groups")
+    if any(not isinstance(g.get("name"), str) or not g["name"].strip() for g in groups):
+        fail("Invalid group names")
+    if len({g["id"] for g in groups}) != len(groups):
+        fail("Duplicate groups")
     return {g["id"]: g["name"] for g in groups}
 
 
 def is_held(user: dict, group_map: dict[str, str]) -> bool:
     """Check if any of the user's groups is a hold:* group."""
-    for gid in user.get("group_ids", []):
-        name = group_map.get(gid, "")
-        if name.startswith("hold:"):
-            return True
-    return False
+    group_ids = user.get("group_ids")
+    if not isinstance(group_ids, list) or any(
+        not isinstance(gid, str) or gid not in group_map for gid in group_ids
+    ):
+        fail("Missing or inconsistent user group membership")
+    return any(group_map[gid].startswith("hold:") for gid in group_ids)
 
 
 def get_user_chats(client: httpx.Client, user_id: str) -> list[dict]:
@@ -234,15 +249,10 @@ def get_user_chats(client: httpx.Client, user_id: str) -> list[dict]:
     page = 1
     expected_total = None
     while True:
-        try:
-            resp = client.get(
-                f"/api/v1/chats/list/user/{user_id}", params={"page": page}
-            )
-        except httpx.RequestError:
-            fail("Network error fetching chats")
-        if resp.status_code != 200:
-            fail(f"Chat list endpoint returned HTTP {resp.status_code}")
-        data = resp.json()
+        data = get_json(
+            client, f"/api/v1/chats/list/user/{user_id}", "chat_list",
+            params={"page": page},
+        )
         batch = response_items(data, ("chats", "items"), "chat list")
         require_timestamp(batch, "updated_at", "chat list")
         chats.extend(batch)
@@ -255,13 +265,9 @@ def get_user_chats(client: httpx.Client, user_id: str) -> list[dict]:
     return chats
 
 
-def delete_chat(client: httpx.Client, chat_id: str) -> bool:
-    """Delete a single chat. Returns True on success."""
-    try:
-        resp = client.delete(f"/api/v1/chats/{chat_id}")
-    except httpx.RequestError as e:
-        fail(f"Network error during delete: {e}")
-    return resp.status_code == 200
+def delete_chat(client: httpx.Client, chat_id: str):
+    """Delete a single chat; stop on failure without retrying."""
+    request(client, "DELETE", f"/api/v1/chats/{chat_id}", "chat_delete")
 
 
 # --- Orphan file sweep helpers ---
@@ -278,15 +284,9 @@ def get_all_files(client: httpx.Client) -> list[dict]:
     page = 1
     expected_total = None
     while True:
-        try:
-            resp = client.get(
-                "/api/v1/files/", params={"page": page, "content": "false"}
-            )
-        except httpx.RequestError:
-            fail(f"Network error fetching files page {page}")
-        if resp.status_code != 200:
-            fail(f"Files endpoint returned HTTP {resp.status_code} on page {page}")
-        data = resp.json()
+        data = get_json(
+            client, "/api/v1/files/", "files", params={"page": page, "content": "false"},
+        )
         if not isinstance(data, dict) or "items" not in data:
             fail(f"Unexpected /api/v1/files/ response shape: {type(data).__name__}")
         batch = response_items(data, ("items",), "files")
@@ -307,13 +307,7 @@ def get_all_knowledge_bases(client: httpx.Client) -> list[dict]:
     page = 1
     expected_total = None
     while True:
-        try:
-            resp = client.get("/api/v1/knowledge/", params={"page": page})
-        except httpx.RequestError:
-            fail(f"Network error fetching knowledge page {page}")
-        if resp.status_code != 200:
-            fail(f"Knowledge endpoint returned HTTP {resp.status_code}")
-        data = resp.json()
+        data = get_json(client, "/api/v1/knowledge/", "knowledge", params={"page": page})
         # /api/v1/knowledge/ may return a list (small instances) or an envelope
         if isinstance(data, list):
             if expected_total is not None:
@@ -336,13 +330,7 @@ def get_all_knowledge_bases(client: httpx.Client) -> list[dict]:
 
 def get_kb_file_ids(client: httpx.Client, kb_id: str) -> set[str]:
     """Return the set of file ids attached to a knowledge base."""
-    try:
-        resp = client.get(f"/api/v1/knowledge/{kb_id}/files")
-    except httpx.RequestError:
-        fail("Network error fetching KB files")
-    if resp.status_code != 200:
-        fail(f"KB files endpoint returned HTTP {resp.status_code}")
-    data = resp.json()
+    data = get_json(client, f"/api/v1/knowledge/{kb_id}/files", "knowledge_files")
     items = response_items(data, ("items",), "KB files")
     # This endpoint is fetched once, so a declared remaining page is incomplete.
     if isinstance(data, dict) and "total" in data:
@@ -353,13 +341,7 @@ def get_kb_file_ids(client: httpx.Client, kb_id: str) -> set[str]:
 
 def get_full_chat(client: httpx.Client, chat_id: str) -> dict:
     """Fetch a single chat's full JSON; any failure leaves references unknown."""
-    try:
-        resp = client.get(f"/api/v1/chats/{chat_id}")
-    except httpx.RequestError:
-        fail("Network error fetching chat")
-    if resp.status_code != 200:
-        fail(f"Chat detail endpoint returned HTTP {resp.status_code}")
-    data = resp.json()
+    data = get_json(client, f"/api/v1/chats/{chat_id}", "chat_detail")
     if (
         not isinstance(data, dict) or data.get("id") != chat_id
         or not isinstance(data.get("chat"), dict)
@@ -368,13 +350,9 @@ def get_full_chat(client: httpx.Client, chat_id: str) -> dict:
     return data
 
 
-def delete_file(client: httpx.Client, file_id: str) -> bool:
-    """Delete a single file. Returns True on success."""
-    try:
-        resp = client.delete(f"/api/v1/files/{file_id}")
-    except httpx.RequestError as e:
-        fail(f"Network error during file delete: {e}")
-    return resp.status_code == 200
+def delete_file(client: httpx.Client, file_id: str):
+    """Delete a single file; stop on failure without retrying."""
+    request(client, "DELETE", f"/api/v1/files/{file_id}", "file_delete")
 
 
 # --- Main ---
@@ -389,18 +367,10 @@ def run_cleanup(client: httpx.Client, settings: Settings, clock=time.time):
 
     def log(msg: str):
         mode = "DRY_RUN" if settings.dry_run else "LIVE"
-        print(f"[{mode}] {msg}")
+        print(f"[{mode}] {msg}", flush=True)
 
     log(f"retention_days={settings.retention_days}")
     log(f"cutoff={time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(cutoff))}")
-    if settings.sunrise_ts:
-        log(f"sunrise={time.strftime('%Y-%m-%d', time.gmtime(settings.sunrise_ts))}")
-        grace_expires = time.strftime(
-            "%Y-%m-%d", time.gmtime(settings.sunrise_ts + settings.retention_days * 86400)
-        )
-        log(f"grace_expires={grace_expires}")
-    else:
-        log("sunrise=none (immediate enforcement)")
 
     # 0. Health check
     check_health(client)
@@ -422,57 +392,34 @@ def run_cleanup(client: httpx.Client, settings: Settings, clock=time.time):
     total_scanned = 0
     total_expired = 0
     total_deleted = 0
-    total_errors = 0
     users_impacted: set[str] = set()
 
-    for user in users:
-        uid = user["id"]
-        if uid in held_user_ids:
-            continue
+    try:
+        for user in users:
+            uid = user["id"]
+            if uid in held_user_ids:
+                continue
 
-        chats = get_user_chats(client, uid)
-        for chat in chats:
-            total_scanned += 1
-            updated_at = chat["updated_at"]
+            chats = get_user_chats(client, uid)
+            for chat in chats:
+                total_scanned += 1
+                if chat["updated_at"] >= cutoff:
+                    continue
 
-            # Sunrise grace: treat activity as at least the sunrise date
-            effective_updated = (
-                max(updated_at, settings.sunrise_ts) if settings.sunrise_ts else updated_at
-            )
-
-            if effective_updated >= cutoff:
-                continue  # still fresh (or protected by grace period)
-
-            total_expired += 1
-            chat_id = chat["id"]
-
-            if settings.dry_run:
-                users_impacted.add(uid)
-            else:
-                if delete_chat(client, chat_id):
+                total_expired += 1
+                if not settings.dry_run:
+                    delete_chat(client, chat["id"])
                     total_deleted += 1
-                    users_impacted.add(uid)
-                else:
-                    total_errors += 1
-
-    # 4. Fail if any deletion errors occurred
-    if total_errors > 0:
-        # Log summary first so it's visible in DO logs before exit
+                users_impacted.add(uid)
+    finally:
+        # Preserve partial progress on failure, without claiming success.
         log(f"chats_scanned={total_scanned}")
         log(f"chats_expired={total_expired}")
-        log(f"chats_deleted={total_deleted}")
-        log(f"chats_errors={total_errors}")
+        if settings.dry_run:
+            log(f"chats_would_delete={total_expired}")
+        else:
+            log(f"chats_deleted={total_deleted}")
         log(f"users_impacted={len(users_impacted)}")
-        fail(f"{total_errors} deletion(s) failed")
-
-    # 5. Phase A summary (non-sensitive aggregate only)
-    log(f"chats_scanned={total_scanned}")
-    log(f"chats_expired={total_expired}")
-    if settings.dry_run:
-        log(f"chats_would_delete={total_expired}")
-    else:
-        log(f"chats_deleted={total_deleted}")
-    log(f"users_impacted={len(users_impacted)}")
 
     # --- Phase B: orphan file sweep ---
     #
@@ -490,6 +437,14 @@ def run_cleanup(client: httpx.Client, settings: Settings, clock=time.time):
 
     files = get_all_files(client)
     log(f"files_total={len(files)}")
+    # With no old files, references cannot affect this run's deletion decisions.
+    # Keep the candidate cutoff fixed rather than aging new files into eligibility
+    # while discovery is running.
+    grace_cutoff = int(clock()) - settings.orphan_grace_seconds
+    if not any(f["created_at"] < grace_cutoff for f in files):
+        log("file_sweep=skipped_no_eligible_files")
+        log("status=ok")
+        return
 
     referenced_ids: set[str] = set()
     file_id_set: set[str] = {f["id"] for f in files}
@@ -524,7 +479,6 @@ def run_cleanup(client: httpx.Client, settings: Settings, clock=time.time):
     log(f"files_referenced={len(referenced_ids)}")
 
     # Candidate orphans: unreferenced AND older than grace window
-    grace_cutoff = int(clock()) - settings.orphan_grace_seconds
     orphans = [
         f
         for f in files
@@ -539,19 +493,15 @@ def run_cleanup(client: httpx.Client, settings: Settings, clock=time.time):
     log(f"files_orphan={len(orphans)}")
 
     orphan_deleted = 0
-    orphan_errors = 0
     if settings.dry_run:
         log(f"files_would_delete={len(orphans)}")
     else:
-        for f in orphans:
-            if delete_file(client, f["id"]):
+        try:
+            for f in orphans:
+                delete_file(client, f["id"])
                 orphan_deleted += 1
-            else:
-                orphan_errors += 1
-        log(f"files_deleted={orphan_deleted}")
-        if orphan_errors > 0:
-            log(f"files_errors={orphan_errors}")
-            fail(f"{orphan_errors} orphan file deletion(s) failed")
+        finally:
+            log(f"files_deleted={orphan_deleted}")
 
     log("status=ok")
 
@@ -565,17 +515,12 @@ def main(argv=None):
         fail("--live conflicts with DRY_RUN=true in environment. "
              "Unset DRY_RUN or set DRY_RUN=false to proceed.")
 
-    sunrise = env.get("RETENTION_SUNRISE", "")
-    sunrise_ts = None
-    if sunrise:
-        try:
-            sunrise_ts = int(time.mktime(time.strptime(sunrise, "%Y-%m-%d")))
-        except ValueError:
-            fail(f"RETENTION_SUNRISE must be YYYY-MM-DD, got {sunrise!r}")
     settings = Settings(
-        retention_days=args.retention_days or int(env.get("RETENTION_DAYS", "90")),
+        retention_days=(
+            args.retention_days if args.retention_days is not None
+            else int(env.get("RETENTION_DAYS", "90"))
+        ),
         orphan_grace_seconds=int(env.get("ORPHAN_GRACE_SECONDS", "86400")),
-        sunrise_ts=sunrise_ts,
         dry_run=not args.live if args.live else dry_run_env != "false",
     )
     url = env.get("OWUI_URL", "").rstrip("/")

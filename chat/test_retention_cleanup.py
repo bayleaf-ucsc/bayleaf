@@ -9,8 +9,8 @@ import json
 from pathlib import Path
 import subprocess
 import sys
-import time
 import unittest
+from unittest.mock import patch
 
 import httpx
 import retention_cleanup as retention
@@ -52,7 +52,10 @@ class RetentionTransactionTests(unittest.TestCase):
             requests.append(request)
             path = request.url.path
             if request.method == "DELETE":
-                return httpx.Response(200, json=True)
+                payload = responses.get(("DELETE", path), httpx.Response(200, json=True))
+                if isinstance(payload, Exception):
+                    raise payload
+                return payload
             self.assertEqual(request.method, "GET")
             page = int(request.url.params.get("page", "1"))
             key = (path, page)
@@ -70,6 +73,7 @@ class RetentionTransactionTests(unittest.TestCase):
         with httpx.Client(transport=httpx.MockTransport(respond), base_url="https://retention.invalid") as client:
             with (
                 contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr),
+                patch.object(retention.time, "sleep"),
             ):
                 try:
                     retention.run_cleanup(client, settings or retention.Settings(dry_run=False), clock=lambda: NOW)
@@ -373,16 +377,116 @@ class RetentionTransactionTests(unittest.TestCase):
         self.assertIn("chats_scanned_for_refs=1", stdout)
         self.assertFalse(any(r.method == "DELETE" for r in requests))
 
-    def test_sunrise_and_dry_run_are_preserved(self):
-        sunrise = int(time.mktime(time.strptime("2027-01-01", "%Y-%m-%d")))
-        for settings in (retention.Settings(sunrise_ts=sunrise, dry_run=False), retention.Settings()):
-            with self.subTest(settings=settings):
-                code, stdout, stderr, requests = self.run_cleanup({
-                    CHAT_LIST: [{**CHAT, "updated_at": 1}],
-                    "/api/v1/chats/synthetic-chat": {"id": "synthetic-chat", "chat": {"file": ORPHAN}},
-                }, settings=settings)
-                self.assertEqual(code, 0, stderr)
+    def test_dry_run_never_deletes(self):
+        code, stdout, stderr, requests = self.run_cleanup({
+            CHAT_LIST: [{**CHAT, "updated_at": 1}],
+            "/api/v1/chats/synthetic-chat": {"id": "synthetic-chat", "chat": {}},
+        }, settings=retention.Settings())
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("chats_would_delete=1", stdout)
+        self.assertIn("files_would_delete=1", stdout)
+        self.assertFalse(any(r.method == "DELETE" for r in requests))
+
+    def test_invalid_hold_discovery_aborts_before_any_delete(self):
+        cases = [
+            {"/api/v1/users/": [{"id": USER["id"]}]},
+            {"/api/v1/users/": [{**USER, "group_ids": None}]},
+            {"/api/v1/users/": [{**USER, "group_ids": "hold"}]},
+            {"/api/v1/users/": [{**USER, "group_ids": [None]}]},
+            {"/api/v1/users/": [{**USER, "group_ids": ["unknown"]}]},
+            {"/api/v1/groups/": [{"id": "group"}]},
+            {"/api/v1/groups/": [{"id": "group", "name": ""}]},
+            {"/api/v1/groups/": [{"id": "group", "name": "hold:test"}] * 2},
+        ]
+        for overrides in cases:
+            with self.subTest(overrides=overrides):
+                _, _, requests = self.assert_aborts_without_file_deletes({
+                    CHAT_LIST: [{**CHAT, "updated_at": 1}], **overrides,
+                })
                 self.assertFalse(any(r.method == "DELETE" for r in requests))
+
+    def test_no_eligible_files_skips_all_reference_discovery(self):
+        for files in ([], [{"id": RECENT, "created_at": NOW - 86400}]):
+            with self.subTest(files=files):
+                code, stdout, stderr, requests = self.run_cleanup({
+                    "/api/v1/files/": {"items": files, "total": len(files)},
+                })
+                self.assertEqual(code, 0, stderr)
+                self.assertIn("file_sweep=skipped_no_eligible_files", stdout)
+                self.assertEqual(sum(r.url.path == CHAT_LIST for r in requests), 1)
+                self.assertFalse(any("knowledge" in r.url.path for r in requests))
+
+    def test_transient_read_retries_then_recovers(self):
+        for error in (httpx.ReadTimeout(f"secret {ORPHAN}"), httpx.Response(503), httpx.Response(429)):
+            with self.subTest(error=error):
+                code, stdout, stderr, requests = self.run_cleanup({
+                    ("/health", 1, 1): error,
+                })
+                self.assertEqual(code, 0, stderr)
+                self.assertEqual(sum(r.url.path == "/health" for r in requests), 2)
+                self.assertIn("retry operation=health", stdout)
+                self.assertNotIn(ORPHAN, stdout + stderr)
+
+    def test_persistent_read_failure_has_bounded_safe_diagnostics(self):
+        code, stdout, stderr, requests = self.run_cleanup({
+            "/health": httpx.ReadTimeout(f"secret {ORPHAN}"),
+        })
+        self.assertEqual(code, 1)
+        self.assertEqual(len(requests), 3)
+        self.assertIn("health: ReadTimeout; attempt=3/3", stderr)
+        self.assertNotIn(ORPHAN, stdout + stderr)
+
+    def test_invalid_json_and_permanent_http_errors_fail_without_retry(self):
+        for response in (httpx.Response(200, text=f"secret {ORPHAN}"), httpx.Response(401)):
+            with self.subTest(response=response):
+                code, stdout, stderr, requests = self.run_cleanup({"/health": response})
+                self.assertEqual(code, 1)
+                self.assertEqual(len(requests), 1)
+                self.assertNotIn(ORPHAN, stdout + stderr)
+
+    def test_deletes_are_never_retried(self):
+        for error in (httpx.ReadTimeout(f"secret {ORPHAN}"), httpx.Response(503)):
+            for path, delete in (("/api/v1/chats/synthetic-chat", retention.delete_chat),
+                                 (f"/api/v1/files/{ORPHAN}", retention.delete_file)):
+                with self.subTest(error=error, path=path):
+                    requests = []
+                    def respond(request):
+                        requests.append(request)
+                        if isinstance(error, Exception):
+                            raise error
+                        return error
+                    stderr = io.StringIO()
+                    with httpx.Client(transport=httpx.MockTransport(respond), base_url="https://retention.invalid") as client:
+                        with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit):
+                            delete(client, path.rsplit("/", 1)[1])
+                    self.assertEqual(len(requests), 1)
+                    self.assertNotIn(ORPHAN, stderr.getvalue())
+
+    def test_chat_delete_failure_stops_run_and_reports_partial_progress(self):
+        code, stdout, stderr, requests = self.run_cleanup({
+            CHAT_LIST: [{**CHAT, "updated_at": 1}, {"id": "second-chat", "updated_at": 1}],
+            ("DELETE", "/api/v1/chats/second-chat"): httpx.Response(503),
+        })
+        self.assertEqual(code, 1)
+        self.assertIn("chats_deleted=1", stdout)
+        self.assertNotIn("status=ok", stdout)
+        self.assertFalse(any(r.url.path == "/api/v1/files/" for r in requests))
+        self.assertIn("chat_delete: HTTP 503; attempt=1/1", stderr)
+
+    def test_file_delete_failure_stops_run_and_reports_partial_progress(self):
+        code, stdout, stderr, requests = self.run_cleanup({
+            "/api/v1/files/": {"items": [
+                {"id": ORPHAN, "created_at": 1},
+                {"id": REFERENCED, "created_at": 1},
+                {"id": RECENT, "created_at": 1},
+            ], "total": 3},
+            ("DELETE", f"/api/v1/files/{REFERENCED}"): httpx.ReadTimeout(f"secret {REFERENCED}"),
+        })
+        self.assertEqual(code, 1)
+        self.assertIn("files_deleted=1", stdout)
+        self.assertNotIn("status=ok", stdout)
+        self.assertNotIn(REFERENCED, stdout + stderr)
+        self.assertEqual(sum(r.method == "DELETE" for r in requests), 2)
 
     def test_phase_b_reenumerates_after_expired_chat_deletion(self):
         code, stdout, stderr, requests = self.run_cleanup({
@@ -429,6 +533,7 @@ print('import-safe')
         result = self.cli("--help", env={"RETENTION_DAYS": "invalid"})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--live", result.stdout)
+        self.assertNotIn("SUNRISE", result.stdout)
 
     def test_missing_credentials_fail_before_network(self):
         for env, message in (({}, "OWUI_URL is not set"),
@@ -445,6 +550,14 @@ print('import-safe')
             self.assertEqual(result.returncode, 1)
             self.assertIn("--live conflicts with DRY_RUN=true", result.stderr)
             self.assertEqual(result.stdout, "")
+
+    def test_zero_retention_override_is_rejected(self):
+        result = self.cli("--retention-days", "0", env={
+            "OWUI_URL": "https://retention.invalid", "OWUI_TOKEN": "synthetic-token",
+            "RETENTION_DAYS": "90",
+        })
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("RETENTION_DAYS must be >= 1", result.stderr)
 
 
 if __name__ == "__main__":

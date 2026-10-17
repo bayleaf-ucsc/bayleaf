@@ -72,10 +72,13 @@ doctl apps logs f1a1e758-62e9-4e99-90cb-212cab12958d retention-cleanup \
   --job-invocation <invocation-id>
 ```
 
-Each run prints aggregate-only counts (retention_days, cutoff, sunrise,
-grace_expires, users_total/held, chats_scanned/expired/deleted, status). No
-user identifiers. Until `grace_expires` passes, zero deletions is the correct
-outcome.
+Each run prints aggregate-only counts (retention_days, cutoff, users_total/held,
+chats_scanned/expired/deleted, status), plus content-free retry/error diagnostics.
+No user identifiers. The one-time sunrise grace period ended in July 2026;
+the script no longer reads `RETENTION_SUNRISE`. GETs retry transient failures
+up to three attempts; DELETEs never retry. Missing or inconsistent hold
+membership aborts before deletion. Dependencies are pinned in the Dockerfile
+and installed at build time, not on each invocation.
 
 ## OWUI Admin API
 

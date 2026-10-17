@@ -52,18 +52,11 @@ daily run), not zero. This absence of a cascade is the reason Phase B exists.
 
 ### 2a. Sunrise Grace Period
 
-The retention policy was announced on **April 28, 2026**. All existing
-conversations are treated as if their last activity occurred on at least that
-date, regardless of their actual `updated_at` timestamp. This guarantees every
-user a full 90-day window from the announcement date to export any data they
-wish to preserve.
-
-- **Grace period expires**: July 27, 2026
-- **Mechanism**: `RETENTION_SUNRISE` env var on the cleanup job. The effective
-  age of a chat is `max(updated_at, sunrise_date)`.
-- After the grace period expires, the sunrise date has no further effect (all
-  surviving chats will have been active within the last 90 days, or will be
-  deleted on their next scheduled run).
+The retention policy was announced on **April 28, 2026**. Existing
+conversations were treated as active on at least that date, giving every user
+a full 90-day window to export their data. This one-time grace period expired
+on **July 27, 2026**. The cleanup job no longer contains sunrise logic or reads
+`RETENTION_SUNRISE`; inactivity is measured directly from `updated_at`.
 
 Users were notified via email on April 28, 2026, with instructions to export
 via Settings > Data Controls > Export Chats.
@@ -139,16 +132,17 @@ Phase A: Conversation retention
    - User objects include group_ids inline
 3. GET /api/v1/groups/ → build {group_id: group_name} map
 4. Identify held users: any user whose group_ids include a hold:* group
+   - Missing membership, unknown group IDs, or malformed groups abort before deletion
 5. For each non-held user:
      GET /api/v1/chats/list/user/{user_id} (paginated)
      For each chat:
-       effective_updated = max(updated_at, SUNRISE_TS)
-       If effective_updated < cutoff:
+       If updated_at < cutoff:
          DELETE /api/v1/chats/{id}
 6. If any deletion fails → exit non-zero (triggers DO alert)
 
 Phase B: Orphan file sweep (runs after Phase A)
 7. GET /api/v1/files/ (paginated) → build file list with created_at
+   - If no files are older than the 24-hour grace window, finish without reference scanning
 8. GET /api/v1/knowledge/ → enumerate knowledge bases
      For each KB: GET /api/v1/knowledge/{id}/files → collect referenced file ids
 9. For each user, for each surviving chat:
@@ -158,13 +152,16 @@ Phase B: Orphan file sweep (runs after Phase A)
 12. DELETE /api/v1/files/{id} for each qualifying orphan
 13. If any deletion fails → exit non-zero
 
-14. Log aggregate summary (non-sensitive: counts only)
+14. Log aggregate summary (non-sensitive)
 ```
 
-The job fails hard (non-zero exit) on any API error, network failure, or
-deletion error. Logs contain only aggregate counts (chats scanned, deleted,
-users impacted, files scanned, files orphan, files deleted), never user
-names, emails, chat titles, or IDs.
+GET requests retry transient network errors and HTTP 408, 429, 500, 502, 503,
+and 504 responses, up to three attempts with one- and two-second backoffs.
+Permanent errors, malformed JSON, and exhausted retries abort the job. DELETE
+requests are never retried; any failure stops the run immediately. Earlier
+successful deletions are not rolled back. Logs contain aggregate counts and
+content-free operation labels, exception classes, HTTP status codes, and attempt
+counts, never raw exception messages, URLs, response bodies, names, titles, or IDs.
 
 #### Phase B design notes
 
@@ -186,6 +183,9 @@ names, emails, chat titles, or IDs.
   drags a file into a temporary chat that is never saved, OWUI creates a
   `file` row immediately but no chat record. Without the grace window, such
   files could be deleted during an active session.
+  The eligibility cutoff is fixed before reference discovery. This is not an
+  atomic snapshot: an older file can still acquire a new reference between its
+  chat's scan and file deletion. The grace window does not eliminate that race.
 - **Abandoned draft attachments**: files that the user attached to a
   compose/draft but never sent are classified as orphans. OWUI internally
   records these in a `chat_file` table for permission checks, but the table
@@ -218,7 +218,6 @@ schemas, actual storage deletion, or concurrent writes during discovery.
 | `OWUI_URL` | `https://chat.bayleaf.dev` | Target instance |
 | `OWUI_TOKEN` | (secret) | Long-lived admin JWT (10-year expiry, signed with `WEBUI_SECRET_KEY`) |
 | `RETENTION_DAYS` | `90` | Configurable; default matches this policy |
-| `RETENTION_SUNRISE` | `2026-04-28` | Grace period start date (see §2a below) |
 | `ORPHAN_GRACE_SECONDS` | `86400` | Min age of an orphan before deletion (24h default protects temporary-chat uploads) |
 | `DRY_RUN` | `false` | Set to `true` for dry-run mode; `--live` flag also available |
 
@@ -227,8 +226,13 @@ schemas, actual storage deletion, or concurrent writes during discovery.
 The job runs as a **DO App Platform Job** component (type: `SCHEDULED`,
 cron: `0 6 * * *`, timezone: `America/Los_Angeles`, i.e. daily at 6am Pacific).
 It builds from `chat/Dockerfile.retention` in the `bayleaf-ucsc/bayleaf` repo
-(`python:3.12-slim` + `uv`). The job component shares the app but authenticates
-to OWUI over HTTPS like any external client.
+(`python:3.12-slim`). The Dockerfile installs pinned HTTP dependencies at build
+time and runs Python directly, with no runtime package resolution or download.
+Refresh the pins using the `uv pip compile` command in the Dockerfile. The job
+component shares the app but authenticates to OWUI over HTTPS like any external
+client. The deployment's obsolete `RETENTION_SUNRISE` setting can be removed on
+the next deployment; the updated script ignores it. `DRY_RUN` remains supported,
+including the guard against `--live` with explicit `DRY_RUN=true`.
 
 Source: [`chat/retention_cleanup.py`](retention_cleanup.py)
 
@@ -246,10 +250,11 @@ updated in the job's secret env var.
 
 - The cleanup job logs to stdout; DO App Platform captures these as structured
   logs viewable via `doctl apps logs`.
-- Logs are **non-sensitive by design**: only aggregate counts appear (total
-  users, chats scanned, chats deleted, users impacted). No user names, emails,
-  chat titles, or identifiers are ever logged.
-- Each run logs: retention_days, cutoff timestamp, sunrise date, health status,
+- Logs are **non-sensitive by design**: aggregate counts and content-free
+  retry/error diagnostics only. No user names, emails, chat titles, or
+  identifiers are ever logged. Completed deletion counts are emitted even
+  when a phase fails partway through.
+- Each run logs: retention_days, cutoff timestamp, health status,
   user/chat counts, and final status.
 - A failed run (non-zero exit) triggers DO's built-in "Failed job invocation"
   alert, which emails the operator.

@@ -1,5 +1,6 @@
 FROM python:3.12-slim
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app
+# Refresh pins with: uv pip compile chat/retention_cleanup.py --python-version 3.12
+RUN pip install --no-cache-dir httpx==0.28.1 anyio==4.15.1 certifi==2026.7.22 h11==0.16.0 httpcore==1.0.9 idna==3.20 typing-extensions==4.16.0
 COPY chat/retention_cleanup.py chat/retention_cleanup.py
-CMD ["uv", "run", "chat/retention_cleanup.py", "--live"]
+CMD ["python", "-u", "chat/retention_cleanup.py", "--live"]
