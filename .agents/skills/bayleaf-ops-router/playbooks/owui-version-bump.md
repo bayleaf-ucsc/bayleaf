@@ -43,6 +43,11 @@ revert the image tag. Prod is the staging server; treat it accordingly.
    Basic and Help, with a known short response. This verifies OWUI's model
    routing without depending on browser automation. It does not exercise the
    browser UI, attached tools, uploads, or skill surfacing.
+   During incident recovery, an expired admin credential and unresponsive UI
+   must not deadlock an otherwise approved upgrade. Verify managed database
+   recovery coverage and preserve the current app spec first, then explicitly
+   defer fresh resource pulls and authenticated checks until access is restored.
+   Mark them pending rather than treating `/health` as equivalent acceptance.
 4. **Exercise Basic and Help manually** (the user does this; the agent cannot)
    when browser acceptance is required:
    a real conversation with each, tool calls where applicable (Code Sandbox on
@@ -80,6 +85,17 @@ configs to restore if step 4's changes misbehave: re-push with
 `owui-cli models update chat/models/<id>/model.json`.
 
 ## Refinement log
+
+- 2026-10-18: v0.12.3 incident recovery used verified managed backup and a
+  preserved spec when the expired admin JWT and unresponsive UI prevented fresh
+  resource pulls. Do not make recovery depend on the broken admin UI: defer
+  authenticated checks/pulls explicitly, then complete them after recovery.
+  The upstream reconnect fix stopped sustained CPU/auth-query amplification in
+  initial samples; no custom diagnostics or scaling was needed. Both migrations
+  completed; image-only rollback remains unqualified. After token renewal,
+  Basic/Help inference and all four private resource pulls passed. Unrelated
+  decorative skill-text drift was left for confirmation; browser sign-in passed,
+  while full browser/tool acceptance remains outstanding.
 
 - 2026-10-12: v0.12.0 reached ACTIVE using monitored `doctl --wait`; all six
   migrations, startup harness, health/version and admin Basic/Help smokes passed.

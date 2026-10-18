@@ -92,6 +92,14 @@ through the appropriate playbook, don't paper over it in the backup.
 
 ## Refinement log
 
+- 2026-10-18: Post-v0.12.3 recovery pull captured all four resource types after
+  token renewal; no fresh pre-upgrade API pull was possible during the outage.
+  Tool/function sources and normalized tool schemas matched the repo; model
+  differences were null voice defaults and known Brace3 metadata drift. Three
+  decorative additions in live Code Sandbox skill text were left untouched
+  pending confirmation. Hidden base-model activity, visibility and public read
+  grant were verified separately.
+
 - 2026-10-12: Lathe 0.32.0 full private before/after pulls found only its
   source/schema changes. Synced those artifacts only, verified the hidden Basic
   base model separately, and kept migration version IDs private. No unrelated

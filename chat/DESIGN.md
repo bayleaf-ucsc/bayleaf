@@ -40,11 +40,54 @@ default context points at the personal `Just Adam` team.
 | **HTTP port** | `8080` |
 
 **Image choice.** Use version-specific standard-image tags (currently
-`v0.12.0`), not rolling `main` or `slim`. BayLeaf stores uploads in DO Spaces
+`v0.12.3`), not rolling `main` or `slim`. BayLeaf stores uploads in DO Spaces
 via OWUI's S3 provider (§1, Object Storage). Before v0.12.0, the slim image
 omitted S3 support and refused to start with S3 storage configured. Upstream
 v0.12.0 adds S3 support to slim, but BayLeaf retains the standard image;
 switching image variants requires separate dependency and upload qualification.
+
+**Resolved incident and upgrade (2026-10-18).** Promoted v0.12.3 after Adam confirmed at
+least a day of issue-free personal-service use. Only the image tag changed;
+the startup harness and environment were preserved. This addresses the v0.12.0
+socket reconnect/authentication storm documented in upstream
+[issue #32338](https://github.com/open-webui/open-webui/issues/32338) and fixed
+by [PR #32341](https://github.com/open-webui/open-webui/pull/32341), released in
+v0.12.1. Before the upgrade, the main Python thread sustained 88–93% CPU,
+authentication-related queries dominated approximately 168 SQL calls/second,
+and application requests hit database-pool timeouts despite a healthy `/health`.
+A restart alone immediately reproduced the load. The database showed no
+long-running queries or blocked locks. Enabled `pg_stat_statements` in the
+application database without a restart; DO had already loaded its collector.
+Normalized query counters, not raw parameters or chat content, identified the
+authentication amplification.
+
+Both new migrations completed (`b8f2c6d91a04` → `c92da83b017f` →
+`0bd252b206fb`); the harness preceded server PID 1, health passed, and
+`/api/version` reported `0.12.3`. Initial 15-second samples fell to 1.3–1.9%
+CPU with one 26.3% interval, and 1.7–9.7 SQL calls/second. Startup logs showed
+no session errors or pool timeouts. Four subsequent 20-second samples measured
+19.8%, 9.1%, 2.0%, and 11.7% CPU, with 9.1 then approximately 2 SQL calls/second;
+all eight observed application database connections were idle. Adam confirmed
+normal-browser sign-in was working after recovery. Existing browser tabs must
+reload to receive the frontend fix. Today's managed database backup was verified. The expired
+admin JWT and unresponsive UI prevented a fresh pre-upgrade resource pull;
+recovery proceeded using the managed backup and preserved app spec rather than
+blocking on the failed service. After token renewal, authenticated Basic and Help
+inference returned the expected smoke-test response (1.0 and 7.9 seconds).
+Full private pulls captured 9 tools, 6 functions, 8 skills and 4 workspace
+models. Tool/function sources and tool schemas matched the repository after
+normalizing schema order. Model differences were new null voice defaults;
+known Brace3 metadata drift remained outside this upgrade. The live Code Sandbox
+skill had three added decorative characters, left untouched pending confirmation.
+The hidden base model remained active, hidden and wildcard-user readable.
+Adam accepted incident closure after recovery and authenticated inference
+verification. Full Basic/Help browser/tool/upload acceptance is a deferred
+follow-up, not a completed check. Monitoring and capacity design are separate
+post-incident work.
+The private specs are under the session's temporary
+`bayleaf-upgrade-20261018` directory. Image-only rollback is not qualified
+across the new migration revision. No diagnostic hook, pool increase, or
+additional worker was deployed.
 
 **Upgrade evidence (2026-10-12).** Promoted v0.12.0 after Adam confirmed personal
 service soak. Deployment `737f9787-eb3e-4d6c-b26d-3041322d1fd7` reached ACTIVE;
