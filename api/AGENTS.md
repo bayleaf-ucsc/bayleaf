@@ -196,6 +196,16 @@ domain; revisit if that ever changes.
 
 ## Code Style
 
+### Account activity
+
+Migration 0017 introduces independent `users(email, created_at, last_active_at)`
+with UTC epoch timestamps. `userActivity.ts` coalesces authenticated activity by
+UTC day, using joined activity in existing auth reads to avoid redundant writes.
+Browser login may establish a user without a key. Key revocation/reissuance must
+not reset account age or imply sandbox/user deletion. Historical last activity is
+NULL, never fabricated. No account reaper is enabled by this preparation.
+See `RETENTION.md` and `npm run test:user-activity`.
+
 **Naming**: Interfaces `PascalCase`, functions `camelCase`, top-level constants `SCREAMING_SNAKE`.
 
 **Patterns**:

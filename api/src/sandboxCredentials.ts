@@ -4,6 +4,7 @@
  */
 import type { Bindings, UserKeyRow } from './types';
 import { DAYTONA_DEFAULT_API_URL } from './constants';
+import { USER_ACTIVITY_COLUMNS } from './userActivity';
 
 export const SANDBOX_TOKEN_PREFIX = 'sk-bayleaf-sandbox-';
 const seconds = () => Math.floor(Date.now() / 1000);
@@ -27,7 +28,7 @@ async function call(env: Bindings, path: string, method = 'GET', body?: unknown)
   });
 }
 export async function getAccountRow(email: string, env: Bindings) {
-  return env.DB.prepare('SELECT * FROM user_keys WHERE email=?').bind(email).first<UserKeyRow>();
+  return env.DB.prepare(`SELECT ${USER_ACTIVITY_COLUMNS} FROM user_keys WHERE email=?`).bind(email).first<UserKeyRow>();
 }
 export async function activeSandboxCredential(env: Bindings, email: string, sandboxId: string) {
   return env.DB.prepare("SELECT * FROM sandbox_credentials WHERE email=? AND sandbox_id=? AND state='active'")

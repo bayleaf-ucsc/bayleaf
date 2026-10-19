@@ -25,6 +25,7 @@ import { BAYLEAF_TOKEN_PREFIX } from '../constants';
 import { getAuthIP, isCampusPassEligible } from './ip';
 import { GRANT_PREFIX, guardGrant } from '../grants';
 import { SANDBOX_TOKEN_PREFIX, authenticateSandboxCredential } from '../sandboxCredentials';
+import { recordUserActivity, USER_ACTIVITY_COLUMNS } from '../userActivity';
 
 export interface AuthResult {
   isCampusMode: boolean;
@@ -55,6 +56,7 @@ export async function resolveAuth(
       if (rejection) return rejection;
     }
     const row = c.get('grantOwner')!;
+    await recordUserActivity(row.email, c.env, row.user_last_active_at);
     return { isCampusMode: false, userEmail: row.email, userKeyRow: row, clientIp };
   }
 
@@ -78,13 +80,14 @@ export async function resolveAuth(
   if (providedKey.startsWith(SANDBOX_TOKEN_PREFIX)) {
     const row = await authenticateSandboxCredential(c.env, providedKey);
     if (!row) return c.json({ error: { message: 'Invalid or revoked sandbox access.', code: 401 } }, 401);
+    await recordUserActivity(row.email, c.env, row.user_last_active_at);
     return { isCampusMode: false, userEmail: row.email, userKeyRow: row, clientIp };
   }
 
   // Bayleaf proxy token — resolve via D1
   if (providedKey.startsWith(BAYLEAF_TOKEN_PREFIX)) {
     const row = await c.env.DB.prepare(
-      'SELECT * FROM user_keys WHERE bayleaf_token = ? AND revoked = 0',
+      `SELECT ${USER_ACTIVITY_COLUMNS} FROM user_keys WHERE bayleaf_token = ? AND revoked = 0`,
     ).bind(providedKey).first<UserKeyRow>();
 
     if (!row) {
@@ -96,6 +99,7 @@ export async function resolveAuth(
       }, 401);
     }
 
+    await recordUserActivity(row.email, c.env, row.user_last_active_at);
     // Note: no provider credential is read here. `or_key_secret` may legitimately
     // be NULL on a valid, active row — a user who has a token but has not yet
     // used an inference backend. Routes that need one call

@@ -55,6 +55,7 @@ import { getKeyName, findKeyByHash, createKey, deleteKey } from './openrouter';
 import { createTinfoilKey, deleteTinfoilKey } from './tinfoil';
 import { generateBayleafToken } from './utils/token';
 import { callerAuthority } from './sandboxCredentials';
+import { recordUserActivity } from './userActivity';
 
 /** Which upstream provider a credential belongs to. */
 export type BackendKind = 'openrouter' | 'tinfoil';
@@ -273,7 +274,7 @@ export async function provisionToken(email: string, env: Bindings): Promise<User
   if (revoked) {
     await env.DB.prepare(
       `UPDATE user_keys
-          SET bayleaf_token = ?, revoked = 0, created_at = datetime('now')
+          SET bayleaf_token = ?, revoked = 0
         WHERE email = ?`,
     ).bind(bayleafToken, email).run();
   } else {
@@ -282,6 +283,7 @@ export async function provisionToken(email: string, env: Bindings): Promise<User
     ).bind(email, bayleafToken, crypto.randomUUID()).run();
   }
 
+  await recordUserActivity(email, env);
   // Re-read rather than synthesizing the row, so callers see the column
   // defaults (sandbox id, per-backend RPD counters) exactly as D1 stored them.
   return getActiveRow(email, env);

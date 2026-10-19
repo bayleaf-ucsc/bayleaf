@@ -84,6 +84,38 @@ not of identity or metadata.
 
 ## D1 Database (`user_keys`)
 
+### User-level activity (migration 0017, rollout pending)
+
+The separate `users` table stores email, account `created_at`, and
+`last_active_at` as UTC epoch seconds. These belong to the person/account, not
+an API credential: revoking or reissuing an ordinary key neither deletes the
+user nor resets their account clock or deletes their sandbox. `user_keys`
+still holds credentials, allowances, and existing sandbox/session linkage;
+this is an incremental separation, not a migration of every ownership field.
+
+Successful identity checks refresh activity at most once per UTC day, including
+ordinary API keys, temporary inference tokens, sandbox credentials, API browser
+sessions and Sandboxes dashboard sessions. Subsequent quota, validation or
+provider failures do not undo authenticated activity. An open dashboard that
+polls with an authenticated session can keep the user active. This records one
+timestamp, not a request history; no paths, IPs, prompts or completions are stored.
+Freshly read authentication rows skip the write entirely. Concurrent stale reads
+are coalesced by a conditional SQL update; writes cannot move activity backwards.
+Metadata-write failures do not reject otherwise valid authentication.
+
+Campus Pass, invalid/revoked credentials, operator database reads, provider
+polling and scheduled cleanup do not refresh an identified user's activity.
+Successful browser login can establish a user record without issuing a key.
+
+Existing creation dates are copied from `user_keys`; prior key reissuance may
+already have reset those legacy dates. Historical last activity is unknown and
+is migrated as NULL, not as rollout-time activity. New accounts initialize both
+timestamps. A future retention mechanism must preserve unknown, invalid or future
+timestamps, following Chat's conservative eligibility rule. The intended clock is
+`max(created_at, last_active_at)` and 18 calendar months, but **no API account
+cleanup is implemented or enabled by this preparation**. D1 backup retention
+also applies. User and credential rows currently persist indefinitely.
+
 | Column | Sensitivity | Notes |
 |---|---|---|
 | `email` | PII | UCSC email, primary key |
@@ -101,9 +133,9 @@ not of identity or metadata.
 in D1 indefinitely (needed for reject-on-use behavior). No automatic purge of
 old revoked rows exists today.
 
-**Future:** Consider periodic scrubbing of `or_key_secret` from revoked rows
-after a grace period (the key is already deleted at OpenRouter on revocation,
-so the stored value is inert).
+Revocation disables the ordinary BayLeaf token only. Backend keys remain stored
+and may still be used through independently authorized sandbox access. Their
+retirement belongs to future user-level cleanup, not ordinary-key revocation.
 
 ---
 

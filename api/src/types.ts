@@ -217,6 +217,8 @@ export interface UserKeyRow {
   revoked: number;           // 0 = active, 1 = revoked
   created_at: string;
   daytona_sandbox_id: string | null;  // cached sandbox ID (null = not yet provisioned)
+  /** Joined from users for write coalescing; never a user_keys column. */
+  user_last_active_at?: number | null;
   vertex_rpd_count: number;
   vertex_rpd_date: string;
   bedrock_rpd_count: number;

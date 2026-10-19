@@ -75,6 +75,11 @@ this is why step 3's approval gate precedes both publishing and notifying.
 
 ## Refinement log
 
+- 2026-10-18 (API activity preparation): Added a separate user clock, daily-coalesced
+  authenticated activity and an explicit unknown historical-activity migration.
+  No account deletion in the prep revision; publication and deployment require
+  operator approval. Key revocation is not account retirement or sandbox deletion.
+
 - 2026-10-18: Drafted Chat's 18-calendar-month account-row retention, with no
   rollout grace period by operator decision. Read-only qualification found 11
   candidates without profile content or group memberships. Default OWUI user

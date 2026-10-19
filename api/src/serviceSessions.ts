@@ -6,6 +6,7 @@ import { getAccountRow } from './sandboxCredentials';
 import { browserEnabled } from './sandboxBrowser';
 import { wakeExistingSandbox } from './sandboxWake';
 import { serviceDef } from './serviceDefs';
+import { recordUserActivity } from './userActivity';
 
 export const SERVICE_ORIGIN = 'https://sandbox.bayleaf.dev';
 export const SERVICE_AUTHORIZE_PATH = '/auth/service/authorize';
@@ -49,6 +50,7 @@ async function sessionIdentity(env: Bindings, session: unknown) {
   if (!row) return null;
   const owner = await getAccountRow(row.email, env);
   if (!owner || owner.account_generation !== row.owner_hash) return null;
+  await recordUserActivity(owner.email, env, owner.user_last_active_at);
   return { user: { email: row.email, name: row.name }, expiresAt: row.expires_at };
 }
 
@@ -94,6 +96,7 @@ export class SandboxManagement extends WorkerEntrypoint<Bindings> {
         owner = await ensureUserRow(flow.email, this.env);
       }
       if (!owner) return null;
+      await recordUserActivity(owner.email, this.env, owner.user_last_active_at);
       const session = serviceToken();
       const expiresAt = serviceNow() + SESSION_SECONDS;
       await this.env.DB.prepare('INSERT INTO service_sessions(session_hash,email,name,owner_hash,expires_at) VALUES (?,?,?,?,?)')

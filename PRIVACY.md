@@ -118,7 +118,10 @@ version-controlled alongside the code that enforces them:
   sandboxes. Cleanup logs contain aggregate counts and content-free diagnostics,
   never identifiers.
 - [API retention policy](api/RETENTION.md): prompts and completions are **not
-  stored**. Account records (D1) persist while your key is active. Persistent
+  stored**. Account and credential records (D1) currently persist indefinitely,
+  including revoked keys. The pending user-activity preparation records account
+  creation and a last-authenticated-activity timestamp, coalesced once per UTC
+  day, independently of key validity; it does not enable account deletion. Persistent
   sandboxes auto-delete **90 days** after their last activity.
 
 ## Your controls

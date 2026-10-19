@@ -4,6 +4,7 @@ import type { Context } from 'hono';
 import type { AppEnv, Bindings, InferenceGrant, UserKeyRow } from './types';
 import { standardModelId } from './standardModels';
 import { ALT_BACKENDS, isBackendEnabled } from './constants';
+import { USER_ACTIVITY_COLUMNS } from './userActivity';
 
 export const GRANT_PREFIX = 'sk-bayleaf-grant-';
 export const nowSeconds = () => Math.floor(Date.now() / 1000);
@@ -125,7 +126,7 @@ export async function guardGrant(c: Context<AppEnv>, token: string): Promise<Res
   // Signed expiry remains distinguishable even after its database row is deleted.
   if (payload.exp <= nowSeconds()) return grantError(c, 'token_expired', 'Authorize again to continue.', 401);
   const grant = await c.env.DB.prepare('SELECT * FROM inference_grants WHERE id = ?').bind(payload.id).first<InferenceGrant>();
-  const owner = grant && await c.env.DB.prepare('SELECT * FROM user_keys WHERE email = ? AND revoked = 0')
+  const owner = grant && await c.env.DB.prepare(`SELECT ${USER_ACTIVITY_COLUMNS} FROM user_keys WHERE email = ? AND revoked = 0`)
     .bind(grant.owner_email).first<UserKeyRow>();
   if (!grant || grant.name !== name || grant.expires_at !== payload.exp || !owner || await hash(owner.bayleaf_token) !== grant.owner_token_hash)
     return grantError(c, 'invalid_token', 'Inference access was revoked. Authorize again.', 401);

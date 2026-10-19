@@ -132,7 +132,10 @@ try {
   }
   assert.equal((await rpc('managed',{session:login.session,operation:'wake-existing'})).body.path,'/wake-existing');
   await db.prepare('UPDATE user_keys SET revoked=1 WHERE email=?').bind(login.user.email).run();
+  await db.prepare('UPDATE users SET last_active_at=NULL WHERE email=?').bind(login.user.email).run();
   assert.equal((await rpc('readSession',{session:login.session})).user.email,login.user.email);
+  assert.ok((await db.prepare('SELECT last_active_at FROM users WHERE email=?').bind(login.user.email).first()).last_active_at > 0,
+    'independent dashboard session refreshes user activity after ordinary-key revocation');
   assert.equal((await rpc('managed',{session:login.session,service:'openchamber',operation:'start'})).status,200);
   const revokedFlow = await start();
   const revokedCode = await issue(revokedFlow);
