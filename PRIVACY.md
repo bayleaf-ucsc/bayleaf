@@ -107,9 +107,16 @@ BayLeaf publishes its full retention schedules in the public source repo,
 version-controlled alongside the code that enforces them:
 
 - [Chat retention policy](chat/RETENTION.md): conversations are auto-deleted
-  **90 days** after their last activity. Files attached to deleted
-  conversations go with them. A daily cleanup job enforces this; logs contain
-  only aggregate counts, never identifiers.
+  **90 days** after their last activity. Unreferenced uploads are swept daily
+  once at least **24 hours** old; deleting a conversation does not itself delete
+  its attachments. Chat account rows, including profiles and settings, are
+  scheduled for deletion after **18 calendar months** without activity, measured
+  from the later of account creation and last authenticated activity. Temporary
+  chats count as activity; a connected browser can also keep an account active.
+  Admin and held accounts are exempt from account deletion. This Chat-only rule
+  does not erase every associated resource or delete separate API accounts or
+  sandboxes. Cleanup logs contain aggregate counts and content-free diagnostics,
+  never identifiers.
 - [API retention policy](api/RETENTION.md): prompts and completions are **not
   stored**. Account records (D1) persist while your key is active. Persistent
   sandboxes auto-delete **90 days** after their last activity.
@@ -122,7 +129,7 @@ version-controlled alongside the code that enforces them:
 - **Export.** *Settings → Data Controls → Export Chats* in the Chat interface
   gives you a JSON dump of everything BayLeaf holds for you.
 - **Records hold.** If you are subject to a litigation hold, audit, or CPRA
-  request, your conversations are exempted from auto-deletion until the hold
+  request, your conversations and Chat account are exempted from auto-deletion until the hold
   is lifted (see [Chat retention policy §3](chat/RETENTION.md#3-records-hold)).
 - **Account closure.** Email [amsmith@ucsc.edu](mailto:amsmith@ucsc.edu) to
   request your account and all associated data be deleted.

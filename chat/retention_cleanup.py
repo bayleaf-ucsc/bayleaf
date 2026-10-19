@@ -5,7 +5,7 @@
 """
 BayLeaf Chat — Retention Cleanup Job
 
-Two-phase cleanup per RETENTION.md:
+Three-phase cleanup per RETENTION.md:
 
   Phase A: Delete conversations older than RETENTION_DAYS (default 90) with no
            recent activity. Users in any `hold:*` group are exempt.
@@ -14,6 +14,9 @@ Two-phase cleanup per RETENTION.md:
            chat or knowledge base, older than ORPHAN_GRACE_SECONDS (default
            86400 = 24h). The grace window protects in-flight uploads from
            temporary chats that have not yet been sent or saved.
+
+  Phase C: Delete non-admin, non-held accounts after 18 calendar months without
+           activity, measured from max(created_at, last_active_at).
 
 Communicates exclusively through the OWUI admin API (no direct DB access).
 
@@ -39,11 +42,14 @@ Environment:
     OWUI_TOKEN            Admin bearer token (required)
     RETENTION_DAYS        Days of inactivity before chat deletion (default: 90)
     ORPHAN_GRACE_SECONDS  Min age for orphan file deletion (default: 86400)
+    USER_RETENTION_MONTHS Calendar months of account inactivity (default: 18)
     DRY_RUN               "true" (default) or "false"
 """
 
 import argparse
+import calendar
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import json
 import math
 import os
@@ -56,7 +62,8 @@ import httpx
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="BayLeaf Chat retention cleanup. Deletes conversations "
-        "inactive for longer than RETENTION_DAYS. Users in hold:* groups are exempt.",
+        "inactive for longer than RETENTION_DAYS and accounts inactive for "
+        "USER_RETENTION_MONTHS. Users in hold:* groups are exempt; admin accounts are kept.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 environment variables:
@@ -66,6 +73,7 @@ environment variables:
   ORPHAN_GRACE_SECONDS  Min age of an orphan file before deletion (default: 86400).
                         Protects in-flight uploads from temporary chats that have
                         not yet been sent or saved.
+  USER_RETENTION_MONTHS Calendar months of account inactivity (default: 18)
   DRY_RUN               "true" (default) or "false"
 
 examples:
@@ -95,6 +103,7 @@ class Settings:
     retention_days: int = 90
     orphan_grace_seconds: int = 86400
     dry_run: bool = True
+    user_retention_months: int = 18
 
 
 def fail(msg: str):
@@ -206,7 +215,11 @@ def get_all_users(client: httpx.Client) -> list[dict]:
     page = 1
     expected_total = None
     while True:
-        data = get_json(client, "/api/v1/users/", "users", params={"page": page})
+        # Creation timestamps tie for bulk-provisioned users. Email is unique
+        # and avoids duplicate/missing entries across those page boundaries.
+        data = get_json(client, "/api/v1/users/", "users", params={
+            "page": page, "order_by": "email", "direction": "asc",
+        })
         batch = response_items(data, ("users",), "users")
         users.extend(batch)
         if page_finished(data, users, batch, "users", page_size=30, expected_total=expected_total):
@@ -355,15 +368,107 @@ def delete_file(client: httpx.Client, file_id: str):
     request(client, "DELETE", f"/api/v1/files/{file_id}", "file_delete")
 
 
+# --- Account retention ---
+
+def months_before(timestamp: float, months: int) -> float:
+    """Subtract UTC calendar months, clamping the day at month end."""
+    date = datetime.fromtimestamp(timestamp, timezone.utc)
+    year, month_zero = divmod(date.year * 12 + date.month - 1 - months, 12)
+    if year < 1:
+        fail("USER_RETENTION_MONTHS exceeds supported calendar range")
+    month = month_zero + 1
+    return date.replace(
+        year=year, month=month,
+        day=min(date.day, calendar.monthrange(year, month)[1]),
+    ).timestamp()
+
+
+def account_activity(user: dict, now: float) -> float | None:
+    """Unknown or future timestamps cannot authorize account deletion."""
+    values = [user.get("created_at"), user.get("last_active_at")]
+    if any(
+        type(value) not in (int, float) or not math.isfinite(value)
+        or value <= 0 or value > now
+        for value in values
+    ):
+        return None
+    return max(values)
+
+
+def delete_user(client: httpx.Client, user_id: str):
+    response = request(client, "DELETE", f"/api/v1/users/{user_id}", "user_delete")
+    try:
+        confirmed = response.json() is True
+    except (ValueError, UnicodeError):
+        confirmed = False
+    if not confirmed:
+        fail("user_delete: deletion not confirmed")
+
+
+def cleanup_accounts(client, settings, users, held_user_ids, now, log):
+    """Recheck identity, role, activity and live holds immediately before DELETE.
+
+    This narrows but cannot eliminate races: OWUI has no conditional account
+    deletion endpoint. Listing somebody as admin does not refresh their activity.
+    """
+    cutoff = months_before(now, settings.user_retention_months)
+    log(f"user_retention_months={settings.user_retention_months}")
+    log(f"user_cutoff={datetime.fromtimestamp(cutoff, timezone.utc).isoformat()}")
+    candidates = []
+    invalid = 0
+    for user in users:
+        activity = account_activity(user, now)
+        if activity is None:
+            invalid += 1
+            continue
+        if (user.get("role") in ("user", "pending")
+                and user["id"] not in held_user_ids and activity < cutoff):
+            candidates.append(user)
+    log(f"users_invalid_activity={invalid}")
+    log(f"users_expired={len(candidates)}")
+    deleted = eligible = skipped = 0
+    try:
+        for candidate in candidates:
+            fresh = get_json(client, f"/api/v1/users/{candidate['id']}", "user_recheck")
+            if not isinstance(fresh, dict) or fresh.get("id") != candidate["id"]:
+                fail("user_recheck: invalid identity")
+            groups = response_items(fresh.get("groups"), (), "user recheck groups")
+            if (len({g["id"] for g in groups}) != len(groups) or any(
+                not isinstance(g.get("name"), str) or not g["name"].strip()
+                for g in groups
+            )):
+                fail("user_recheck: invalid groups")
+            activity = account_activity(fresh, now)
+            if (activity is None or activity >= cutoff
+                    or fresh.get("role") not in ("user", "pending")
+                    or any(g["name"].startswith("hold:") for g in groups)):
+                skipped += 1
+                continue
+            eligible += 1
+            if not settings.dry_run:
+                delete_user(client, candidate["id"])
+                deleted += 1
+    finally:
+        log(f"users_recheck_skipped={skipped}")
+        if settings.dry_run:
+            log(f"users_would_delete={eligible}")
+        else:
+            log(f"users_deleted={deleted}")
+
+
 # --- Main ---
 
 def run_cleanup(client: httpx.Client, settings: Settings, clock=time.time):
-    """Run both phases with an owned-by-caller client and an explicit clock."""
+    """Run all phases with an owned-by-caller client and an explicit clock."""
     if settings.retention_days < 1:
         fail(f"RETENTION_DAYS must be >= 1, got {settings.retention_days}")
     if settings.orphan_grace_seconds < 0:
         fail(f"ORPHAN_GRACE_SECONDS must be >= 0, got {settings.orphan_grace_seconds}")
-    cutoff = int(clock()) - settings.retention_days * 86400
+    if type(settings.user_retention_months) is not int or settings.user_retention_months < 1:
+        fail("USER_RETENTION_MONTHS must be a positive integer")
+    now = clock()
+    months_before(now, settings.user_retention_months)
+    cutoff = int(now) - settings.retention_days * 86400
 
     def log(msg: str):
         mode = "DRY_RUN" if settings.dry_run else "LIVE"
@@ -443,6 +548,7 @@ def run_cleanup(client: httpx.Client, settings: Settings, clock=time.time):
     grace_cutoff = int(clock()) - settings.orphan_grace_seconds
     if not any(f["created_at"] < grace_cutoff for f in files):
         log("file_sweep=skipped_no_eligible_files")
+        cleanup_accounts(client, settings, users, held_user_ids, now, log)
         log("status=ok")
         return
 
@@ -503,6 +609,9 @@ def run_cleanup(client: httpx.Client, settings: Settings, clock=time.time):
         finally:
             log(f"files_deleted={orphan_deleted}")
 
+    # Account deletion comes last so Phase B never tries to fetch deleted users'
+    # chats. Attachments orphaned by account deletion are swept on the next run.
+    cleanup_accounts(client, settings, users, held_user_ids, now, log)
     log("status=ok")
 
 
@@ -522,6 +631,7 @@ def main(argv=None):
         ),
         orphan_grace_seconds=int(env.get("ORPHAN_GRACE_SECONDS", "86400")),
         dry_run=not args.live if args.live else dry_run_env != "false",
+        user_retention_months=int(env.get("USER_RETENTION_MONTHS", "18")),
     )
     url = env.get("OWUI_URL", "").rstrip("/")
     token = env.get("OWUI_TOKEN", "")

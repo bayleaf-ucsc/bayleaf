@@ -1,6 +1,6 @@
 # Data Retention Policy
 
-*BayLeaf Chat (`chat.bayleaf.dev`) — conversation data lifecycle.*
+*BayLeaf Chat (`chat.bayleaf.dev`) — conversation and account data lifecycle.*
 
 ---
 
@@ -8,7 +8,8 @@
 
 BayLeaf Chat is not a system of record. It is a working surface for generative
 AI interaction. Conversation data is retained only as long as it is reasonably
-useful to the user, then automatically deleted.
+useful to the user, then automatically deleted. Account rows, including stored
+profile information and settings, also have an inactivity-based lifetime.
 
 Users who need to preserve AI-generated outputs as business records are
 responsible for copying them to an appropriate system of record (Google Drive,
@@ -25,6 +26,7 @@ email, Canvas, etc.) before the retention window closes.
 | Uploaded files attached to conversations | Inherited from owning conversation | Deleting the conversation does **not** delete the file (see note below); the file becomes an orphan and is removed by the sweep described in the next row |
 | Orphan files (no live conversation or knowledge-base reference) | Deleted on next cleanup run after a **24-hour grace window** | `created_at` timestamp |
 | Temporary conversations | Ephemeral (OWUI handles) | Not persisted |
+| User accounts, including profile information and settings | **18 calendar months** without account activity | Later of `created_at` and `last_active_at`; admin and held accounts are exempt |
 
 **"Last activity"** means any event that updates the conversation's `updated_at`
 timestamp: a new message (user or assistant), an edit, a title change, or any
@@ -39,6 +41,48 @@ and are reclaimed by the Phase B sweep (§5) on a subsequent run, once the
 24-hour grace window has passed. Practical effect: an attachment outlives its
 conversation by up to roughly 48 hours (grace window plus the wait for the next
 daily run), not zero. This absence of a cascade is the reason Phase B exists.
+
+### Account activity and deletion
+
+The account clock is **`max(created_at, last_active_at)`**, not conversation
+count or the age of the newest saved chat. In OWUI v0.12.3, authenticated HTTP
+requests (including temporary-chat inference and API-key requests) and browser
+WebSocket heartbeats refresh `last_active_at`. A connected idle browser can
+therefore keep an account active. Reading an account through the admin API does
+not refresh that account's activity: it refreshes the calling admin's activity.
+Never-used placeholder accounts get their initial window from `created_at`.
+
+The daily job subtracts 18 calendar months from its start time in UTC, clamping
+the day to the target month's final day when necessary. Accounts strictly older
+than that cutoff qualify; accounts exactly at the cutoff remain. Both `user`
+and `pending` roles qualify. Admin accounts and accounts in a `hold:*` group are
+exempt. Missing, invalid, or future timestamps cannot authorize deletion;
+unknown roles are also preserved. There is no additional rollout grace period
+or automated advance-warning email.
+
+Just before deleting each candidate, the job re-reads its identity, role,
+timestamps, and current group memberships. New activity, admin promotion, or a
+new hold prevents deletion. This is not atomic: OWUI has no conditional-delete
+API, so a change between the final check and deletion remains a race.
+
+`DELETE /api/v1/users/{id}` in OWUI v0.12.3 removes the user row (including its
+profile and settings), its authentication record, group memberships, and its
+conversations. This is **not a promise to erase every associated object**:
+the upstream handler does not explicitly delete memories, notes, knowledge
+bases, owned workspace resources, or separate API-key rows. Orphan uploads are
+handled by Phase B, not a user-delete cascade. BayLeaf API identities, sandboxes,
+and other services are outside this Chat-only rule. Provider backups are not
+directly rewritten by this job.
+
+An eligible person can sign in again to create a fresh account, but old profile
+settings and manually assigned access are not restored automatically.
+
+**Initial enforcement (2026-10-18 Pacific):** a read-only inventory found 11
+eligible ordinary accounts without stored profile content, saved settings, or
+group memberships. With operator approval and no extra rollout grace period,
+the account phase deleted those 11 accounts. A complete post-run inventory
+confirmed their absence and a reduction from 595 to 584 accounts. No identifying
+details are recorded in this public policy.
 
 ### Regulatory basis
 
@@ -67,6 +111,7 @@ via Settings > Data Controls > Export Chats.
 
 Conversations belonging to users in a **`hold:*`** group (e.g. `hold:litigation-2026`,
 `hold:audit-q2`) are exempt from automatic deletion for the duration of the hold.
+Their accounts are also exempt from inactivity-based deletion.
 
 - Holds are placed by an admin adding the user to a `hold:`-prefixed group.
 - Holds are lifted by removing the user from the group.
@@ -155,6 +200,24 @@ Phase B: Orphan file sweep (runs after Phase A)
 14. Log aggregate summary (non-sensitive)
 ```
 
+Phase C runs after Phase B (including when no files need sweeping):
+
+1. From the complete user inventory, select non-admin, non-held accounts whose
+   valid `max(created_at, last_active_at)` is older than the 18-month cutoff.
+2. Re-read each candidate through `GET /api/v1/users/{id}`, including current
+   groups, and recheck eligibility. Malformed identity/group responses abort;
+   invalid timestamps or changed eligibility skip the account.
+3. `DELETE /api/v1/users/{id}` for each still-eligible account; require HTTP 200
+   and JSON `true`. Do not retry DELETEs. Stop on any failure and log completed
+   deletion counts even if the phase fails partway through.
+4. Log `status=ok` only after every phase finishes. Attachments orphaned by
+   account deletion are eligible for the next run's file sweep.
+
+User discovery explicitly orders by unique email ascending. Default creation-time
+ordering can repeat or omit users at page boundaries when bulk-provisioned
+accounts share a timestamp. Complete pagination and duplicate checks remain
+required; ordering does not provide an atomic snapshot during concurrent edits.
+
 GET requests retry transient network errors and HTTP 408, 429, 500, 502, 503,
 and 504 responses, up to three attempts with one- and two-second backoffs.
 Permanent errors, malformed JSON, and exhausted retries abort the job. DELETE
@@ -219,6 +282,7 @@ schemas, actual storage deletion, or concurrent writes during discovery.
 | `OWUI_TOKEN` | (secret) | Long-lived admin JWT (10-year expiry, signed with `WEBUI_SECRET_KEY`) |
 | `RETENTION_DAYS` | `90` | Configurable; default matches this policy |
 | `ORPHAN_GRACE_SECONDS` | `86400` | Min age of an orphan before deletion (24h default protects temporary-chat uploads) |
+| `USER_RETENTION_MONTHS` | `18` | Calendar months of account inactivity; positive integer |
 | `DRY_RUN` | `false` | Set to `true` for dry-run mode; `--live` flag also available |
 
 ### Deployment
@@ -255,7 +319,8 @@ updated in the job's secret env var.
   identifiers are ever logged. Completed deletion counts are emitted even
   when a phase fails partway through.
 - Each run logs: retention_days, cutoff timestamp, health status,
-  user/chat counts, and final status.
+  user/chat counts, account retention months and cutoff, expired accounts,
+  invalid activity timestamps, recheck skips, account deletions, and final status.
 - A failed run (non-zero exit) triggers DO's built-in "Failed job invocation"
   alert, which emails the operator.
 - The policy document itself (this file) is version-controlled in the public
@@ -266,13 +331,15 @@ updated in the job's secret env var.
 ## 7. Scope and Limitations
 
 - This policy covers **conversation data** (the `chat` table and associated
-  files). It does not cover:
-  - User accounts (retained indefinitely while active)
+  files) and **user account rows**, including profiles and settings. It does not
+  automatically delete all resources associated with a deleted account. It does
+  not cover:
   - Model configurations, tools, functions (operational, not user data)
   - Knowledge base content (admin-managed, separate lifecycle)
   - Memories (OWUI's persistent memory feature; out of scope for v1)
   - Code Sandbox data (see §7a below)
-- The 90-day retention applies uniformly to all users including admins.
+- The 90-day conversation retention applies uniformly to all users including
+  admins. Admin accounts are exempt only from the 18-month account rule.
 - Shared conversations: deletion removes the share link. Recipients who
   previously viewed a shared chat lose access.
 

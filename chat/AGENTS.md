@@ -74,6 +74,11 @@ doctl apps logs f1a1e758-62e9-4e99-90cb-212cab12958d retention-cleanup \
 
 Each run prints aggregate-only counts (retention_days, cutoff, users_total/held,
 chats_scanned/expired/deleted, status), plus content-free retry/error diagnostics.
+The script also implements an 18-calendar-month account phase:
+`max(created_at, last_active_at)`, admin/hold exemptions, fresh
+pre-delete checks, and aggregate account counts. User pagination explicitly
+sorts by unique email to avoid creation-timestamp ties. See `RETENTION.md` for
+initial enforcement, deletion scope, and `USER_RETENTION_MONTHS` (default 18).
 No user identifiers. The one-time sunrise grace period ended in July 2026;
 the script no longer reads `RETENTION_SUNRISE`. GETs retry transient failures
 up to three attempts; DELETEs never retry. Missing or inconsistent hold

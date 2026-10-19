@@ -4,6 +4,7 @@ Run: uv run --offline --with httpx python -m unittest discover -s chat -p 'test_
 """
 
 import contextlib
+from datetime import datetime, timezone
 import io
 import json
 from pathlib import Path
@@ -18,7 +19,8 @@ import retention_cleanup as retention
 
 SCRIPT = Path(__file__).with_name("retention_cleanup.py")
 NOW = 1_800_000_000
-USER = {"id": "synthetic-user", "group_ids": []}
+USER = {"id": "synthetic-user", "group_ids": [], "role": "user",
+        "created_at": NOW, "last_active_at": NOW}
 CHAT = {"id": "synthetic-chat", "updated_at": NOW}
 CHAT_LIST = "/api/v1/chats/list/user/synthetic-user"
 ORPHAN = "11111111-1111-4111-8111-111111111111"
@@ -92,6 +94,161 @@ class RetentionTransactionTests(unittest.TestCase):
         self.assertIn("FATAL:", stderr)
         self.assertNotIn("status=ok", stdout)
         return stdout, stderr, requests
+
+    def account_case(self, user_updates=None, fresh_updates=None, **kwargs):
+        old = retention.months_before(NOW, 18) - 1
+        user = {**USER, "created_at": old, "last_active_at": old, **(user_updates or {})}
+        fresh = {**user, "groups": [], **(fresh_updates or {})}
+        overrides = {
+            "/api/v1/users/": [user],
+            "/api/v1/users/synthetic-user": fresh,
+            "/api/v1/files/": {"items": [], "total": 0},
+            **kwargs.pop("overrides", {}),
+        }
+        return self.run_cleanup(overrides, **kwargs)
+
+    def test_calendar_month_cutoff_clamps_and_handles_leap_year(self):
+        for date, months, expected in (
+            ("2026-10-19", 18, "2025-04-19"),
+            ("2026-08-31", 18, "2025-02-28"),
+            ("2025-08-31", 18, "2024-02-29"),
+        ):
+            with self.subTest(date=date):
+                actual = retention.months_before(
+                    datetime.fromisoformat(date).replace(tzinfo=timezone.utc).timestamp(), months,
+                )
+                self.assertEqual(datetime.fromtimestamp(actual, timezone.utc).date().isoformat(), expected)
+
+    def test_inactive_account_without_any_chats_is_deleted(self):
+        code, stdout, stderr, requests = self.account_case()
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("users_deleted=1", stdout)
+        self.assertEqual([r.url.path for r in requests if r.method == "DELETE"],
+                         ["/api/v1/users/synthetic-user"])
+        self.assertLess(next(i for i, r in enumerate(requests) if r.url.path == "/api/v1/files/"),
+                        next(i for i, r in enumerate(requests) if r.method == "DELETE"))
+        self.assertTrue(all(r.url.params["order_by"] == "email" for r in requests
+                            if r.url.path == "/api/v1/users/"))
+        self.assertNotIn(USER["id"], stdout + stderr)
+
+    def test_accounts_run_after_full_file_sweep_too(self):
+        code, stdout, stderr, requests = self.account_case(overrides={
+            "/api/v1/files/": {"items": [{"id": ORPHAN, "created_at": 1}], "total": 1},
+        })
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual([r.url.path for r in requests if r.method == "DELETE"],
+                         [f"/api/v1/files/{ORPHAN}", "/api/v1/users/synthetic-user"])
+
+    def test_account_dry_run_rechecks_but_never_deletes(self):
+        code, stdout, stderr, requests = self.account_case(settings=retention.Settings())
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("users_would_delete=1", stdout)
+        self.assertTrue(any(r.url.path == "/api/v1/users/synthetic-user" for r in requests))
+        self.assertFalse(any(r.method == "DELETE" for r in requests))
+
+    def test_temporary_only_and_recently_created_users_are_kept(self):
+        for updates in ({"last_active_at": NOW}, {"created_at": NOW},
+                        {"last_active_at": retention.months_before(NOW, 18)}):
+            with self.subTest(updates=updates):
+                code, stdout, stderr, requests = self.account_case(updates)
+                self.assertEqual(code, 0, stderr)
+                self.assertIn("users_expired=0", stdout)
+                self.assertFalse(any(r.method == "DELETE" for r in requests))
+
+    def test_admin_unknown_role_and_held_accounts_are_kept(self):
+        cases = [({"role": "admin"}, {}), ({"role": "unknown"}, {}),
+                 ({"group_ids": ["hold"]}, {"/api/v1/groups/": [{"id": "hold", "name": "hold:test"}]})]
+        for updates, overrides in cases:
+            with self.subTest(updates=updates):
+                code, stdout, stderr, requests = self.account_case(updates, overrides=overrides)
+                self.assertEqual(code, 0, stderr)
+                self.assertIn("users_expired=0", stdout)
+                self.assertFalse(any(r.method == "DELETE" for r in requests))
+
+    def test_pending_account_is_eligible(self):
+        code, stdout, stderr, _ = self.account_case({"role": "pending"})
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("users_deleted=1", stdout)
+
+    def test_nonhold_memberships_and_profile_content_do_not_exempt_accounts(self):
+        group = {"id": "course", "name": "course:synthetic"}
+        code, stdout, stderr, _ = self.account_case(
+            {"group_ids": ["course"], "bio": "private profile text"},
+            {"groups": [group]},
+            overrides={"/api/v1/groups/": [group]},
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("users_deleted=1", stdout)
+        self.assertNotIn("private profile text", stdout + stderr)
+
+    def test_user_delete_failure_preserves_partial_counts_and_stops(self):
+        old = retention.months_before(NOW, 18) - 1
+        users = [{**USER, "id": name, "created_at": old, "last_active_at": old}
+                 for name in ("first", "second", "third")]
+        overrides = {
+            "/api/v1/users/": users,
+            **{f"/api/v1/chats/list/user/{u['id']}": [] for u in users},
+            **{f"/api/v1/users/{u['id']}": {**u, "groups": []} for u in users},
+            ("DELETE", "/api/v1/users/second"): httpx.Response(503),
+        }
+        code, stdout, stderr, requests = self.account_case(overrides=overrides)
+        self.assertEqual(code, 1)
+        self.assertIn("users_deleted=1", stdout)
+        self.assertNotIn("status=ok", stdout)
+        self.assertEqual([r.url.path for r in requests if r.method == "DELETE"],
+                         ["/api/v1/users/first", "/api/v1/users/second"])
+
+    def test_invalid_or_future_account_timestamps_cannot_authorize_deletion(self):
+        for field in ("created_at", "last_active_at"):
+            for value in (None, "old", True, 0, -1, float("nan"), float("inf"), NOW + 1):
+                with self.subTest(field=field, value=value):
+                    code, stdout, stderr, requests = self.account_case({field: value})
+                    self.assertEqual(code, 0, stderr)
+                    self.assertIn("users_invalid_activity=1", stdout)
+                    self.assertFalse(any(r.method == "DELETE" for r in requests))
+
+    def test_recheck_protects_activity_promotion_holds_and_invalid_timestamps(self):
+        for updates in (
+            {"last_active_at": NOW}, {"role": "admin"}, {"role": None},
+            {"last_active_at": None}, {"last_active_at": NOW + 1},
+            {"groups": [{"id": "new-hold", "name": "hold:new"}]},
+        ):
+            with self.subTest(updates=updates):
+                code, stdout, stderr, requests = self.account_case(fresh_updates=updates)
+                self.assertEqual(code, 0, stderr)
+                self.assertIn("users_recheck_skipped=1", stdout)
+                self.assertFalse(any(r.method == "DELETE" for r in requests))
+
+    def test_recheck_identity_or_group_errors_abort(self):
+        for updates in ({"id": "different"}, {"groups": None}, {"groups": [{}]},
+                        {"groups": [{"id": "g", "name": ""}]}):
+            with self.subTest(updates=updates):
+                code, stdout, stderr, requests = self.account_case(fresh_updates=updates)
+                self.assertEqual(code, 1)
+                self.assertNotIn("status=ok", stdout)
+                self.assertFalse(any(r.method == "DELETE" for r in requests))
+
+    def test_user_delete_requires_true_and_never_retries(self):
+        for response in (httpx.Response(200, json=False), httpx.Response(200, text="bad"),
+                         httpx.Response(503), httpx.ReadTimeout("sensitive")):
+            with self.subTest(response=response):
+                code, stdout, stderr, requests = self.account_case(overrides={
+                    ("DELETE", "/api/v1/users/synthetic-user"): response,
+                })
+                self.assertEqual(code, 1)
+                self.assertEqual(sum(r.method == "DELETE" for r in requests), 1)
+                self.assertIn("users_deleted=0", stdout)
+                self.assertNotIn("status=ok", stdout)
+                self.assertNotIn("sensitive", stdout + stderr)
+
+    def test_invalid_account_retention_setting_aborts_before_network(self):
+        for months in (0, -1, True, 1.5, 100000):
+            with self.subTest(months=months):
+                code, stdout, stderr, requests = self.run_cleanup(
+                    settings=retention.Settings(user_retention_months=months),
+                )
+                self.assertEqual(code, 1)
+                self.assertEqual(requests, [])
 
     def test_unknown_chat_envelope_cannot_authorize_orphan_deletion(self):
         # Phase A can succeed; the second list is the surviving-reference scan.

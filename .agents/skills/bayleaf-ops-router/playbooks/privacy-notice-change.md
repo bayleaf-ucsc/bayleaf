@@ -75,6 +75,16 @@ this is why step 3's approval gate precedes both publishing and notifying.
 
 ## Refinement log
 
+- 2026-10-18: Drafted Chat's 18-calendar-month account-row retention, with no
+  rollout grace period by operator decision. Read-only qualification found 11
+  candidates without profile content or group memberships. Default OWUI user
+  pagination repeated accounts at tied creation timestamps; explicit unique-email
+  sorting fixed discovery. All 53 offline tests passed. Approved one-shot
+  enforcement deleted exactly those 11 accounts; complete re-enumeration verified
+  595 → 584 users. The job builds from GitHub main, requiring approved publication
+  before the scheduled-job image can be rebuilt. User notices are not sent
+  automatically and remain subject to the notice-text approval gate.
+
 - 2026-10-08 (Sandboxes dashboard, local): Drafted metadata-only login/session
   retention and sign-in activity-refresh disclosures. No new processor or
   inference-content storage; deployment and notice publication remain pending.
