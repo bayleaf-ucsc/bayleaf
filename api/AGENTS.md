@@ -203,8 +203,20 @@ with UTC epoch timestamps. `userActivity.ts` coalesces authenticated activity by
 UTC day, using joined activity in existing auth reads to avoid redundant writes.
 Browser login may establish a user without a key. Key revocation/reissuance must
 not reset account age or imply sandbox/user deletion. Historical last activity is
-NULL, never fabricated. No account reaper is enabled by this preparation.
+NULL, never fabricated. Activity preparation and account retirement are separate.
 See `RETENTION.md` and `npm run test:user-activity`.
+
+Migration 0018 and `userRetention.ts` add a disabled-by-default
+18-calendar-month daily reaper. `USER_RETENTION_MODE=dry-run` is non-mutating;
+`delete` retires local accounts/keys atomically and retries captured provider
+revocations through an identity-free outbox. Holds/exemptions and resource
+dependencies are checked inside the D1 transaction. Read `RETENTION.md` before
+rollout. Test with `npm run test:user-retention`. Do not enable deletion without
+operator approval. Deployed 2026-10-18 Pacific first in dry-run mode, then enabled
+with explicit approval as `USER_RETENTION_MODE=delete`;
+SELECT-only production qualification found zero candidates among 122 accounts,
+none of which predated the 18-month cutoff. A scheduled invocation has not yet
+been verified. See the version and qualification snapshot in `RETENTION.md`.
 
 **Naming**: Interfaces `PascalCase`, functions `camelCase`, top-level constants `SCREAMING_SNAKE`.
 

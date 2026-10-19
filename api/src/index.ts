@@ -21,6 +21,7 @@ import { authRoutes } from './routes/auth';
 import { serviceLoginRoutes } from './routes/serviceLogin';
 import { cleanupServiceSessions } from './serviceSessions';
 import { cleanupSandboxCredentials } from './sandboxCredentials';
+import { cleanupInactiveUsers } from './userRetention';
 export { SandboxManagement } from './serviceSessions';
 import { dashboardRoutes } from './routes/dashboard';
 import { keyRoutes } from './routes/key';
@@ -245,6 +246,9 @@ export default {
       const report = await reapInactiveSandboxes(env, event.scheduledTime);
       console.info('Sandbox reaper', report); // Aggregate metadata only; observability stays disabled.
       if (report.failed || report.pending) throw new Error('Sandbox reaper needs retry');
+      const accounts = await cleanupInactiveUsers(env);
+      console.info('Account retention', accounts); // Aggregate metadata only.
+      if (accounts.providerPending) throw new Error('Account credential cleanup needs retry');
       return;
     }
     if (env.GRANTS_ENABLED === 'true') await cleanupGrants(env);

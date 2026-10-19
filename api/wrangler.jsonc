@@ -17,7 +17,7 @@
     { "pattern": "*.bayleaf-proxies.dev/*", "zone_name": "bayleaf-proxies.dev" }
   ],
 
-  // Hourly credentials cleanup; daily sandbox inactivity sweep at 08:17 UTC.
+  // Hourly credentials cleanup; daily sandbox and account retention at 08:17 UTC.
   "triggers": { "crons": ["0 * * * *", "17 8 * * *"] },
 
   "durable_objects": {
@@ -250,7 +250,8 @@
     // is the shared filesystem surface.
     "DAYTONA_DEPLOYMENT_LABEL": "chat.bayleaf.dev",
     "DAYTONA_AUTO_DELETE_MINUTES": "-1",
-    "SANDBOX_REAPER_MODE": "delete"
+    "SANDBOX_REAPER_MODE": "delete",
+    "USER_RETENTION_MODE": "delete"
   }
 
   // Secrets to configure via `wrangler secret put`:

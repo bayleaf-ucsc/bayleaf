@@ -118,11 +118,20 @@ version-controlled alongside the code that enforces them:
   sandboxes. Cleanup logs contain aggregate counts and content-free diagnostics,
   never identifiers.
 - [API retention policy](api/RETENTION.md): prompts and completions are **not
-  stored**. Account and credential records (D1) currently persist indefinitely,
-  including revoked keys. The pending user-activity preparation records account
-  creation and a last-authenticated-activity timestamp, coalesced once per UTC
-  day, independently of key validity; it does not enable account deletion. Persistent
-  sandboxes auto-delete **90 days** after their last activity.
+  stored**. Accounts and their keys are eligible for daily cleanup after **18
+  calendar months** without activity, measured from the later of account creation
+  and last authenticated activity. API requests and authenticated visits to the
+  API or Sandboxes dashboard refresh the user's activity, coalesced once per UTC
+  day. Anonymous Campus Pass use does not refresh an identified account. Revoking
+  an API key does not delete the user or sandbox, or reset the account clock.
+  Held and explicitly exempt accounts are preserved, as are accounts with unknown,
+  invalid or future timestamps. Cleanup waits for sandbox resources and other
+  access dependencies to clear; persistent sandboxes have their separate **90-day**
+  inactivity policy. Account retirement removes local account/key and associated
+  authorization/session records, with upstream key revocations retried if a provider
+  is unavailable. Permanent preview-name reservations remain to prevent origin
+  reassignment; provider billing history and backups are not erased by this job.
+  There is no extra rollout grace period or automated advance-warning email.
 
 ## Your controls
 
@@ -132,8 +141,9 @@ version-controlled alongside the code that enforces them:
 - **Export.** *Settings → Data Controls → Export Chats* in the Chat interface
   gives you a JSON dump of everything BayLeaf holds for you.
 - **Records hold.** If you are subject to a litigation hold, audit, or CPRA
-  request, your conversations and Chat account are exempted from auto-deletion until the hold
-  is lifted (see [Chat retention policy §3](chat/RETENTION.md#3-records-hold)).
+  request, contact the operator to place a hold on your conversations and accounts
+  until it is lifted (see [Chat retention policy §3](chat/RETENTION.md#3-records-hold)
+  and [API account retention](api/RETENTION.md#account-retirement-mechanism-migration-0018-enabled)).
 - **Account closure.** Email [amsmith@ucsc.edu](mailto:amsmith@ucsc.edu) to
   request your account and all associated data be deleted.
 

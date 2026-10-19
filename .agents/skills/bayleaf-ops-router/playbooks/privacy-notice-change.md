@@ -79,6 +79,17 @@ this is why step 3's approval gate precedes both publishing and notifying.
   authenticated activity and an explicit unknown historical-activity migration.
   No account deletion in the prep revision; publication and deployment require
   operator approval. Key revocation is not account retirement or sandbox deletion.
+  Prep commit 9979d9c was then explicitly approved, migrated and deployed; an
+  authenticated read-only production request changed the operator's activity from
+  unknown to a timestamp, with unchanged account creation and same-day coalescing.
+  With subsequent approval the cleanup follow-up was migrated/deployed in dry-run
+  mode. SELECT-only execution of the deployed eligibility module against production
+  found zero candidates among 122 accounts (none old enough); no account deletion
+  or provider revocation occurred. Atomic D1 retirement plus an upstream-key outbox
+  replaces Chat's non-atomic HTTP delete. Subsequent explicit approval enabled
+  live mode (deployed settings and health verified), commit and push, with an
+  explicit decision not to send user notices. Public policy now describes the
+  18-month rule, unknown timestamps, holds/exemptions and resource dependencies.
 
 - 2026-10-18: Drafted Chat's 18-calendar-month account-row retention, with no
   rollout grace period by operator decision. Read-only qualification found 11

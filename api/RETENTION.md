@@ -84,7 +84,7 @@ not of identity or metadata.
 
 ## D1 Database (`user_keys`)
 
-### User-level activity (migration 0017, rollout pending)
+### User-level activity (migration 0017, deployed 2026-10-18 Pacific)
 
 The separate `users` table stores email, account `created_at`, and
 `last_active_at` as UTC epoch seconds. These belong to the person/account, not
@@ -110,11 +110,11 @@ Successful browser login can establish a user record without issuing a key.
 Existing creation dates are copied from `user_keys`; prior key reissuance may
 already have reset those legacy dates. Historical last activity is unknown and
 is migrated as NULL, not as rollout-time activity. New accounts initialize both
-timestamps. A future retention mechanism must preserve unknown, invalid or future
-timestamps, following Chat's conservative eligibility rule. The intended clock is
-`max(created_at, last_active_at)` and 18 calendar months, but **no API account
-cleanup is implemented or enabled by this preparation**. D1 backup retention
-also applies. User and credential rows currently persist indefinitely.
+timestamps. Retention preserves unknown, invalid or future timestamps, following
+Chat's conservative eligibility rule. The clock is `max(created_at, last_active_at)`
+and 18 calendar months. Activity preparation initially enabled no deletion; the
+separate account retirement mechanism below is now enabled. D1 backup retention
+also applies.
 
 | Column | Sensitivity | Notes |
 |---|---|---|
@@ -129,13 +129,88 @@ also applies. User and credential rows currently persist indefinitely.
 | `tinfoil_key_name` | PII | Tinfoil billing-attribution name derived from the user's email |
 | `sealed_rpd_count`, `sealed_rpd_date` | Low | Sealed request guardrail state |
 
-**Retention:** Account rows persist while the key is active. Revoked keys remain
-in D1 indefinitely (needed for reject-on-use behavior). No automatic purge of
-old revoked rows exists today.
+**Retention:** User-level inactivity, not key revocation, governs retirement.
+Both active and revoked ordinary keys are removed when their owner qualifies
+under the 18-calendar-month account policy below. Unknown activity, holds,
+exemptions and resource dependencies can extend retention.
 
 Revocation disables the ordinary BayLeaf token only. Backend keys remain stored
 and may still be used through independently authorized sandbox access. Their
-retirement belongs to future user-level cleanup, not ordinary-key revocation.
+retirement belongs to user-level cleanup, not ordinary-key revocation.
+
+### Account retirement mechanism (migration 0018, enabled)
+
+`src/userRetention.ts` implements the same **18-calendar-month** account clock
+as Chat: subtract months from UTC run time, clamp to the target month's last
+day, and require `max(created_at, last_active_at)` strictly before that cutoff.
+Both timestamps must be positive integer epochs, known, and not in the future.
+Unknown legacy activity is preserved, not treated as inactivity or given a
+fabricated rollout-time value. Consequently, dormant legacy accounts without
+an observed activity timestamp cannot currently qualify.
+
+The API has no Chat admin roles or groups. Operator-managed `users.retention_exempt`
+and `users.retention_hold` are its equivalents; only exact zero in both permits
+retirement. Set a hold/exemption directly in D1 before enabling deletion when
+required. Ordinary-key `revoked` status is irrelevant to eligibility.
+
+The mechanism runs in the existing daily scheduler after the sandbox reaper:
+
+- `USER_RETENTION_MODE` unset or any value other than `dry-run`/`delete`: disabled,
+  with no database/provider access.
+- `dry-run`: discover at most 20 candidates, no writes or provider requests,
+  including no pending-outbox processing.
+- `delete`: atomically recheck creation/activity, current holds/exemptions and
+  resource dependencies before removing user and key rows. Associated grants,
+  authorization transactions, service sessions/login flows and approved claim
+  rows are removed in the same D1 transaction. The old ordinary token immediately
+  stops authenticating. Fresh activity or a new hold before that transaction
+  prevents retirement; D1 makes local recheck and deletion atomic, unlike Chat's
+  separate HTTP recheck/delete calls.
+
+Production uses `USER_RETENTION_MODE=delete`, explicitly approved after dry-run
+qualification. No extra rollout grace period or automated advance-warning email
+is added. At most 20 accounts and 20 provider-cleanup outbox rows are processed
+per successful daily invocation; backlog or failures may delay retirement.
+
+Retirement skips accounts with a cached sandbox ID, any sandbox credential
+(including pending provider cleanup), an unexpired Sandboxes session, or any
+preview registration. It never wakes or deletes compute. The independent 90-day
+sandbox reaper and hourly credential/preview cleanup must finish first. A
+missing OpenRouter management handle also blocks retirement when a secret exists.
+Permanent preview-name reservations and installation-subject mappings are not
+erased: their independent indefinite-retention rule prevents origin reassignment.
+Chat accounts and provider billing/history are outside this cleanup's scope.
+
+Provider revocation cannot join a D1 transaction. The same transaction therefore
+detaches old OpenRouter handles/Tinfoil keys into `user_retention_outbox`, which
+stores no owner email or ordinary BayLeaf token. Up to 20 outbox rows are retried
+per live daily invocation using bounded, no-redirect provider DELETEs. A 2xx
+other than 202 or a 404 acknowledges removal; failures retain only remaining
+provider credentials for retry. Confirmed credentials are scrubbed immediately,
+and empty outbox rows removed. A newly signed-in account at the same email gets
+fresh credentials; retries only address the captured old ones. Until confirmation,
+provider-side revocation is pending even though the local account is removed.
+No enumeration of provider keys or content is required. D1 backups may retain
+deleted metadata/credentials under the platform backup window.
+
+Reports are aggregate-only. Pending upstream revocations fail the scheduled
+invocation; there is no new observability store or alert integration. No rollout
+email will be sent for this change, by operator decision. Enabling live mode is
+not evidence of a completed scheduled run.
+Run `npm run test:user-retention` for synthetic D1/provider failure and race checks.
+
+Migration 0018 and dry-run Worker `d533ffae-0340-42bf-b5e3-693c69e4666d` were
+deployed 2026-10-18 Pacific. A SELECT-only execution of the same eligibility
+module against production D1 at 2026-10-19 05:10 UTC found **0 candidates among
+122 accounts**: no account creation predates the 18-month cutoff. Three accounts
+had observed activity and 119 still had unknown historical activity. No writes
+or provider revocations occurred during qualification. This directly qualifies
+the eligibility module and database, not a completed scheduled Worker invocation.
+
+With explicit operator approval, live mode was deployed as Worker
+`0922678e-ef4c-44ab-bb2e-ab901ba0c09d`. Cloudflare's deployed settings confirmed
+`USER_RETENTION_MODE=delete`, and the production health endpoint passed. The next
+daily invocation owns enforcement; no immediate destructive sweep was triggered.
 
 ---
 
@@ -309,7 +384,7 @@ prompt or completion content.
 | Prompts and completions | Not stored, not logged (ZDR passthrough, ZOA posture) | — |
 | Sealed-lane prompts and completions | Not stored, not logged, and not decryptable by BayLeaf (attested E2EE) | — |
 | Plaintext model-policy verdicts | Cloudflare `MODEL_STATUS` KV | 24 hours for positive and definite-negative; unknown is not stored |
-| Account records (D1) | Cloudflare D1 | Indefinite while active |
+| User identity/activity and credentials (D1) | Cloudflare D1 | Daily eligibility after 18 calendar months of user inactivity, subject to known timestamps, exemptions/holds and resource dependencies; provider revocations retried |
 | Sandbox content | Daytona | 90 days after last activity |
 | API session state | Client cookie | 24 hours |
 | Sandboxes session metadata | Cloudflare D1 and host-only client cookie | 24 hours, then scheduled cleanup; explicit logout removes the session row |

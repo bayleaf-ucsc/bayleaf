@@ -83,6 +83,7 @@ export interface Bindings {
   DAYTONA_DEPLOYMENT_LABEL: string; // Label prefix for sandbox tagging (e.g. chat.bayleaf.dev; shared with Lathe per issue #14)
   DAYTONA_AUTO_DELETE_MINUTES: string; // Daytona stopped-state deletion grace period; "-1" disables it
   SANDBOX_REAPER_MODE?: string; // "dry-run", "delete", or disabled; daily 90-day inactivity cleanup
+  USER_RETENTION_MODE?: string; // "dry-run", "delete", or disabled; 18-calendar-month account retention
 
   // Secrets (set via wrangler secret put)
   OPENROUTER_PROVISIONING_KEY: string;
