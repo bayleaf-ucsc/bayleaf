@@ -1,9 +1,15 @@
-# BayLeaf telemetry: approved rollout, local defaults disabled
+# BayLeaf telemetry: live production, local defaults disabled
 
 Read root `AGENTS.md` first. Issue [#112](https://github.com/bayleaf-ucsc/bayleaf/issues/112)
 tracks this work. On 2026-10-20 the operator explicitly approved deployment and
 live collection of all four classes with 90-day retention. Approval is not proof
 of deployment or activation; the local collector remains disabled by default.
+Production is live at `telemetry.bayleaf.dev` using `wrangler.production.jsonc`,
+with 90-day retention and both receiver switches enabled. Arrivals from all four
+public service roots, native metrics and probe summaries are verified. Deletion
+hooks are deployed; ordinary scheduled outcomes still need verification. The root
+serves public configuration status; observation reads remain private. Consult
+`qualification/rollout.md` rather than treating local defaults as production state.
 **Do not deploy, create D1, enable exporters/browser code, change production,
 commit or push without explicit approval.** No real credentials in fixtures.
 
@@ -17,7 +23,12 @@ errors. Do not log payloads, headers, exceptions or SQL diagnostics.
 
 Never collect prompts, completions, identities, stable pseudonyms, IP/UA, private
 URLs, query strings, filenames, commands, raw SQL, tokens or model strings.
-Browser observations are individually stored but have no client timestamp,
+Browser observations are individually stored but have no client timestamp.
+Their collector-derived network category stores no IP/hash/prefix. Only the
+trusted connecting address is transiently classified using the shared API campus
+ranges. Client wire schema remains 1; stored browser schema 2/policy 3 is defined
+in `src/browser-policy.js`. Existing rows become unknown without renewed expiry.
+Browser observations have no
 identifier or per-client dedup. Service run UUIDs identify job/probe runs and
 retries only, never accounts. Metrics are aggregate source windows, not a new
 individual HTTP request stream. Keep exact reset metadata, do not infer a reset

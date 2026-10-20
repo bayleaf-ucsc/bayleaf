@@ -85,6 +85,15 @@ require verification.
 
 ## Metrics and Monitoring
 
+- Existing probe executions also send bounded, authenticated summaries to the
+  separate `telemetry.bayleaf.dev` Worker/D1 collector, with `TELEMETRY_ENABLED=true`
+  and dedicated `TELEMETRY_PROBE_WRITE_TOKEN`. No extra inference is scheduled for
+  telemetry. Summaries have 90-day active retention; no response content, credentials
+  or user identities are exported. Delivery failure must not change probe outcomes.
+  UptimeRobot continues to own availability history, public status and alerts;
+  telemetry separately retains approved detailed summaries for private analysis.
+  See `../../telemetry/AGENTS.md` and `../../telemetry/qualification/rollout.md`.
+
 - Authenticated GET returns metrics-v2 JSON; HEAD returns the same measurement
   contract through headers. `Server-Timing` carries additive `p_<phase>` durations
   and total/accounted/unaccounted summaries. `X-BayLeaf-Probe-Events` carries

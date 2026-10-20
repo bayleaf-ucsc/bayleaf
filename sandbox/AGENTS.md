@@ -31,6 +31,14 @@ Run `node sandbox/test-worker.mjs` from the root for adapter checks. API broker
 and lifecycle tests are documented in `README.md`. Deployment requires the API
 migration and entrypoint first; do not deploy the home against the old API.
 
+Public-root browser arrivals are enabled with `BROWSER_ARRIVALS_ENABLED=true` and
+sent to the separate `telemetry.bayleaf.dev` collector. Authenticated dashboard
+pages are excluded. The client carries no credentials or visitor identifiers,
+has bounded failure behavior, and never wakes a sandbox. The collector assigns
+coarse network location without retaining IPs and applies 90-day active retention.
+The sandbox reaper's deletion reports originate in the API, not this frontend.
+See `../telemetry/AGENTS.md` and its rollout record before changing collection.
+
 Verify the public page at desktop/mobile sizes and its links after changes.
 The landing-page ACR does not cover this separate surface. Deploy first, commit
 only when requested, following the root AGENTS.md.

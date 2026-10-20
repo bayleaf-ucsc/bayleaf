@@ -113,7 +113,7 @@ bayleaf/
 │   ├── style.css         # Stylesheet (carries a WCAG contrast invariant)
 │   └── images/           # og-card.png + the script that generates it
 ├── sandbox/              # Public BayLeaf Sandboxes home → https://sandbox.bayleaf.dev
-├── telemetry/            # Private collector/D1; 90-day rollout in progress (#112)
+├── telemetry/            # Live first-party collector/D1; private data, public status (#112)
 ├── politics/             # Dependency audit, VPATs, position papers
 ├── scripts/              # GitHub Pages artifact builder
 ├── training/             # Work-in-progress React site for training users in effective GenAI usage
@@ -199,7 +199,7 @@ Five things in or deployed from `landing/` are generated rather than hand-writte
   Its source art is `chat/models/basic/profile.png`, the BayLeaf logo.
 - `landing/arrival.js`, the self-hosted optional browser arrival bundle. Regenerate
   with `node telemetry/browser/build.mjs`; `telemetry/browser/config.json` owns
-  its explicit activation state (currently false). Normal builds preserve that
+  its explicit activation state (currently true). Normal builds preserve that
   configured state. Do not hand-edit the bundle or enable collection implicitly.
 - The empirical claims in `politics/VPAT-pages.md`. Any change to
   `landing/index.html` or `landing/style.css` can invalidate a measured contrast
@@ -228,6 +228,22 @@ python3 -m http.server 8000 --directory /tmp/bayleaf-pages
 ---
 
 ## Security & Privacy
+
+### First-party telemetry
+
+`https://telemetry.bayleaf.dev` is the live Worker/D1 collector, separate from the
+API and probe Workers. Its root is a public configuration-status page, not a data
+dashboard. Reads require a dedicated operator capability; service writers have
+separate source-scoped credentials. Read `telemetry/AGENTS.md` before changing it.
+
+The approved slice comprises public arrivals on landing/API/Sandboxes and signed-out
+Chat root, five native OWUI aggregate metrics, existing synthetic probe summaries,
+and aggregate deletion-job reports. All have a 90-day active maximum; provider
+recovery history and derived-artifact expiry are documented in `PRIVACY.md`.
+Browser records contain no visitor identifiers or retained IPs: only a coarse
+campus/other/unknown network category is derived transiently at the collector.
+Deletion hooks are deployed; ordinary scheduled-report verification remains pending.
+See `telemetry/qualification/rollout.md` for evidence and remaining acceptance work.
 
 - **No secrets in the repo.** No API keys, tokens, passwords, or `.env` files.
 - Any code calling LLM APIs must use an approved ZDR path. Plaintext inference

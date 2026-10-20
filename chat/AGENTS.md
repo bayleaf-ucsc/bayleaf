@@ -52,6 +52,13 @@ new plaintext value — DO encrypts it on deploy.
 
 ## Retention Cleanup Job
 
+The job's bounded summary exporter is enabled with `TELEMETRY_ENABLED=true` and
+the dedicated `TELEMETRY_CHAT_RETENTION_WRITE_TOKEN`. It sends aggregate outcomes
+to the separate `telemetry.bayleaf.dev` collector, never chat content or identities.
+The integration is deployed; ordinary scheduled-report verification is still
+pending. See `../telemetry/qualification/rollout.md`; never trigger destructive
+cleanup merely to generate a telemetry sample.
+
 Scheduled job `retention-cleanup` (cron `0 6 * * *` America/Los_Angeles) runs
 `chat/retention_cleanup.py` against the OWUI admin API. See `RETENTION.md` for
 policy; source at `chat/retention_cleanup.py`, image at `chat/Dockerfile.retention`.

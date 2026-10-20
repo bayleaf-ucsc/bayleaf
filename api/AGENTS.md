@@ -51,6 +51,23 @@ timing, byte sizes, request counts, and (non-streaming) token usage. Say both
 halves.
 
 
+## First-party telemetry integration
+
+The separate `telemetry.bayleaf.dev` collector receives anonymous-root browser
+arrivals and aggregate scheduler reports from `src/telemetry.ts`. Production
+`BROWSER_ARRIVALS_ENABLED` and `TELEMETRY_ENABLED` are enabled. Private dashboard
+pages have no arrival client. Source write tokens are separate from collector read
+authority; delivery is bounded and must not block API or cleanup work. No inference
+content or per-request Sealed metadata is collected. Ordinary scheduled deletion
+report verification remains pending; see `../telemetry/qualification/rollout.md`.
+
+`src/utils/campus-networks.json` is the canonical range list shared with the
+collector's browser-only coarse network classifier. The API matcher supports
+`CAMPUS_IP_RANGES=@ucsc` and explicit CIDR lists; unknown aliases fail closed.
+The checked-in config uses the alias, while the current deployed API still uses
+the equivalent explicit list until its next deployment. No raw address is stored
+in telemetry. Read `../telemetry/AGENTS.md` before changing these contracts.
+
 ## Commands
 
 ```bash
