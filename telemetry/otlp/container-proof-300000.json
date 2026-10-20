@@ -1,0 +1,65 @@
+{
+  "status": "full_container_synthetic_pass",
+  "production_requests": 0,
+  "interval_ms": 300000,
+  "internal_network": true,
+  "published_ports": false,
+  "image": "sha256:8a9783e0cac60a437a69d496c85e1e9c66ffb8dc1f10f25e6e029eb3d87852b8",
+  "architecture": "arm64",
+  "postgres_image": "sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826",
+  "actual_container_source_drift_refused": true,
+  "health": true,
+  "version": {
+    "version": "0.12.3",
+    "deployment_id": ""
+  },
+  "synthetic_auth": true,
+  "json_inference": true,
+  "sse_inference": true,
+  "postgresql": {
+    "settings": {
+      "statement_timeout": "200ms",
+      "lock_timeout": "100ms",
+      "default_transaction_read_only": "on"
+    },
+    "pool_wait_ms": 105.24,
+    "statement_cancel_ms": 202.01,
+    "lock_cancel_ms": 103.08,
+    "unavailable_ms": 0.94,
+    "unavailable_backoff": true,
+    "failure_backoff": true,
+    "healthy_count_recovered": true,
+    "max_metrics_connections": 1
+  },
+  "native_export": {
+    "points": 15,
+    "names": [
+      "http.server.duration",
+      "http.server.requests",
+      "webui.users.active",
+      "webui.users.active.today",
+      "webui.users.total"
+    ],
+    "routes": [
+      "/_other",
+      "/api/version",
+      "/health",
+      "/api/chat/completions"
+    ],
+    "methods": [
+      "GET",
+      "OTHER",
+      "POST"
+    ]
+  },
+  "native_metrics_connections": 1,
+  "sentinel": true,
+  "traces_logs_disabled": true,
+  "pid1": "python3",
+  "resources": "0.95% 672.9MiB / 3GiB",
+  "owned_containers_removed": [
+    "bayleaf-otlp-q-e7410f993b-pg",
+    "bayleaf-otlp-q-e7410f993b-fixture",
+    "bayleaf-otlp-q-e7410f993b-app"
+  ]
+}

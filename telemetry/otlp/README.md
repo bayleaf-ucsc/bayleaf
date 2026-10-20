@@ -7,7 +7,9 @@ The separately reviewed **startup deployment artifact** is `Dockerfile` plus
 qualification, source export paging, exact environment, PG overhead controls and
 remaining real-container gates are in
 [`../qualification/otlp-rollout.md`](../qualification/otlp-rollout.md).
-It is not deployed or fully container-qualified.
+It is not deployed. Local standard-image arm64 OWUI/PostgreSQL tests and amd64
+emulated build/boot/inference checks pass; DO deployment verification, production
+overhead and collector/storage gates remain separate.
 
 ## Interfaces
 

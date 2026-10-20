@@ -150,6 +150,9 @@ per five minutes. Active-today remains the native UTC-midnight count. For broad
 safe exploratory data, these tradeoffs are preferable to a denser individual-use
 timeline, but the parent must accept them. The startup guard accepts exactly
 60000 or 300000, not arbitrary fast intervals or unbounded cadence settings.
+The parent selected 300000 and reports measured 90-day storage of approximately
+**1.12 GB** at the maximum 99-point density, from its separate collector/storage
+sizing work. That is not a measurement from this native-source container test.
 
 Reports must compare the same tuple/producer/exact start across increasing
 timestamps. Paging gives irregular intervals per series, not a complete per-minute
@@ -221,9 +224,10 @@ separate PostgreSQL psycopg2 engine from the application's parsed URL:
   preventing three repeated connection attempts in one collection. Failed gauges
   are absent, never stale cached values relabeled current or invented zeros.
 
-Healthy steady query count is 3/minute, or 0.05 SELECT/s. Three statements at the
-200-ms server limit occupy the one metrics connection for at most roughly 600 ms
-of server execution per minute. This is a bound on server work, **not** a universal
+Healthy steady query count is 3/export: 3/minute (0.05 SELECT/s) at 60000, or
+3/five minutes (0.01 SELECT/s) at 300000. Three statements at the 200-ms server
+limit occupy the one metrics connection for at most roughly 600 ms of server
+execution per export. This is a bound on server work, **not** a universal
 600-ms client wall-clock guarantee. DNS, multiple hosts, socket stalls, transaction
 cleanup and OS scheduling are not interrupted by OTel's reader deadline. libpq
 timeouts are not a hard end-to-end callback cancellation mechanism. The source
@@ -239,7 +243,7 @@ check cluster connection headroom (25 maximum) for the extra connection. During
 an approved bounded service soak, compare 5-minute exporter-off/on windows under
 similar load: CPU/RSS, app request p95, pool errors, PG connections and normalized
 SELECT deltas. Proposed acceptance: at most one added connection, approximately
-3 SELECTs/minute, callbacks ordinarily under 100 ms, no new pool/cancellation
+3 SELECTs per configured export cycle, callbacks ordinarily under 100 ms, no new pool/cancellation
 errors, no sustained >5 percentage-point CPU increase or >10% request-p95
 regression. Thresholds are practical gates, not measured production facts here.
 If rejected, keep HTTP metrics and disable/revise gauges in an explicitly reviewed
@@ -265,25 +269,158 @@ exec handoff, all-four-flags-off mode, pure-ASGI same-task behavior, headers/ear
 error timing, missing gauge behavior, DB backoff, partial-pair deferral and failed
 export cursor preservation. Existing decoder tests pass 13/13.
 
-`docker info` found the client but no running Docker daemon at
-`~/.docker/run/docker.sock`. No container test or Docker build was attempted.
-Before treating this as production-qualified:
+### Actual standard-image container follow-up
 
-1. Resolve immutable base/output image digests; build and boot the full standard
-   v0.12.3-derived container, not slim. Ensure real package-version checks pass.
-2. Use an isolated Docker network, synthetic PG17 data and a TLS loopback fixture
-   whose DNS alias is `telemetry.bayleaf.dev` with a test CA. Prevent external
-   egress, use only a fake bearer, and trust that test CA only in the fixture.
-   The strict active entrypoint has no test/prod endpoint escape hatch.
-3. Run full health/version and harmless authenticated synthetic Chat/SSE checks;
-   inspect actual wire through the real collector build and confirm D1 durability,
-   90-day active expiry and logging posture. Check source hashes after startup,
-   sentinel, PID handoff, source kill switch and startup drift refusal.
-4. Complete the PG failure/overhead gates above. Test real exporter timeout/retry
-   with paged data under slow TLS/HTTP responses and lost acknowledgements.
-5. Parent publishes approved disclosure before enabling collection and decides
-   retry headroom, budget/cost and freshness acceptance. No browser activation is
-   included in this source rollout.
+The initial Docker-daemon blocker was resolved when Docker Desktop finished
+starting. `docker info` reported server 29.8.2. The actual pinned standard OWUI
+image built successfully: all five installed source hashes and all six package
+versions matched without an exception or allowlist relaxation.
+
+Reproduction (no registry push, production request or control-plane operation):
+
+```sh
+docker buildx imagetools inspect ghcr.io/open-webui/open-webui:v0.12.3
+docker build -f telemetry/otlp/Dockerfile -t bayleaf-otlp-qualification:20261020 .
+docker pull postgres:17-bookworm
+python3 telemetry/otlp/qualify_container.py bayleaf-otlp-qualification:20261020 postgres:17-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826 300000
+```
+
+The PostgreSQL index is version 17.11-bookworm, with arm64 image manifest
+`sha256:a85953d6f830fd55a12929df3b7a4fa94dc96d652de62d2d714e0867ccb3670d`.
+`qualify_container.py` is a focused standard-library harness, not a deployment
+framework. It creates only unique owned containers and an `--internal` Docker
+network, without published ports. Requests execute inside the synthetic fixture
+container. PostgreSQL uses owned tmpfs storage. A fixture-local self-signed CA is
+trusted only through `OTEL_EXPORTER_OTLP_METRICS_CERTIFICATE`; native HTTP TLS
+verification stays enabled. Docker DNS maps `telemetry.bayleaf.dev` to that local
+fixture. External egress is unavailable, so the production-looking endpoint
+cannot accidentally become a production request. The app has only synthetic
+DB/auth/model credentials and a fake OpenAI-compatible model server.
+
+The first one-minute run passed full migrations into empty PostgreSQL, `/health`,
+`/api/version`=0.12.3, synthetic signup, authenticated model discovery, JSON
+inference and SSE inference through the actual OWUI route. Its actual periodic
+OTLP/HTTPS export passed the unchanged Node hook and included all five native
+metrics. PostgreSQL reported `200ms` statement timeout, `100ms` lock timeout and
+read-only transactions. Measured one-connection pool refusal was 103.95 ms,
+`pg_sleep(1)` cancellation 205.18 ms and conflicting-table-lock cancellation
+105.40 ms. A refused local DB port failed in 1.23 ms, then backoff prevented a
+second attempt. Count collection recovered after the test reset the backoff
+clock. Automatic clock expiry is covered separately by the synthetic unit check.
+An idle snapshot was 1.16% CPU and 686.4 MiB RSS (3-GiB test limit), not a production
+capacity or regression comparison. Evidence is `container-proof-60000.json`.
+
+The final artifact then passed the full run at **300000 ms**, including an actual
+five-minute wait for the native periodic reader, not manual collection or a
+shortened test interval. Its local output index digest is
+`sha256:8a9783e0cac60a437a69d496c85e1e9c66ffb8dc1f10f25e6e029eb3d87852b8`
+(arm64 image manifest
+`sha256:3e524ab33b3cc5845fea69ad0c4baeb04612fed585cd7c050bc6294a5a14b642`,
+config `sha256:43e7b39432e03ff58bc8e8d3e40d14299de4fdd7f872f540ae9fb3fe1cc05155`).
+This local image was not pushed. Evidence is `container-proof-300000.json`, also
+copied to `container-proof.json` for the latest result.
+
+That run again passed signup/model discovery, actual OWUI JSON and SSE inference,
+sentinel preservation, traces/logs-off configuration and startup refusal after
+source drift in a disposable no-network container. The native TLS export had
+15 points, all five metric names, four minimized route values and methods
+GET/POST/OTHER. A real `PROPFIND` request exercised the OTHER mapping; a private
+synthetic unmatched path and query did not survive into the protobuf. The real
+Node hook accepted the entire batch with empty resources and no extra dimensions.
+Exactly one `bayleaf-otlp` connection existed in `pg_stat_activity` after export.
+PG pool refusal, statement cancellation and lock cancellation measured 105.24,
+202.01 and 103.08 ms; an unavailable local DB port took 0.94 ms, then backed off.
+An idle snapshot was 0.95% CPU and 672.9 MiB RSS. These are functional and failure
+control observations, not a matched-load performance claim.
+
+The final safe protobuf is `container-fixture.pb`, SHA-256
+`0e70aba7a5bcbf42730c50228bfba0af6e22becfa2ba1555842d7f2288748d0f`.
+All final owned containers and their internal network were removed; independent
+`docker ps -a --filter name=bayleaf-otlp-q-` and the equivalent network listing
+returned no entries. Local images/build cache are retained for reproducibility;
+no existing containers or volumes were removed.
+
+The first harness attempt failed before health because this Docker internal
+network did not publish the requested host port. It was a test-harness fault,
+not a source mismatch: the startup sentinel and migrations had already begun.
+All three owned containers were removed. The harness was corrected to make all
+requests inside the isolated network, with no host port mapping. No source hash
+guard was relaxed to address the failure.
+
+### amd64 release-architecture boot check
+
+The remaining amd64 gate also **passes under local Docker Desktop emulation**.
+The standard image was built using the exact amd64 upstream manifest, not the
+arm64 image under a different label:
+
+```sh
+docker build --platform linux/amd64 --build-arg OWUI_IMAGE=ghcr.io/open-webui/open-webui:v0.12.3@sha256:ef11a68f38457d831e23168486858c25b9d9c4399094c9e72c0d4d8767ac09de -f telemetry/otlp/Dockerfile -t bayleaf-otlp-qualification:amd64-20261020 .
+python3 telemetry/otlp/qualify_container.py bayleaf-otlp-qualification:amd64-20261020 postgres:17-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826 300000 boot
+docker build --platform linux/amd64 -f telemetry/otlp/Dockerfile -t bayleaf-otlp-qualification:amd64-default-20261020 .
+```
+
+The first two commands produced and booted local output index
+`sha256:3891c15aeb94fff2a377291be2d076f97d612523e5ac2d006a42d08319073602`,
+with amd64 image manifest
+`sha256:b70d9a498f5e4de97b56925dce144a97a7e86452a15d1672e255abdc5e4c7ca0`
+and config
+`sha256:be05a54a7bb5d38a45fafc5cc6566fe7960f45ce3f553de4464f1a87b102f441`.
+The output index is local build metadata, distinct from the **upstream**
+multi-platform index `a537...` and its **upstream amd64** image manifest `ef11...`.
+No output image was pushed.
+
+Actual amd64 build-time and post-startup package-version/source checks passed,
+including idempotent source validation after app startup. The installed four
+patched/adaptor hashes exactly match the arm64/synthetic evidence. Deliberate
+source drift refused startup in a separate disposable no-network amd64 container.
+The full app completed migrations, health/version 0.12.3, synthetic signup/model
+discovery and actual JSON/SSE inference. PID 1 was explicitly checked as
+`/usr/local/bin/python3 -m uvicorn open_webui.main:app ... --workers 1 ...`.
+The amd64 psycopg2 metrics engine successfully connected to synthetic PG17 and
+reported the expected 200-ms/100-ms/read-only settings. No architecture-specific
+source drift, missing dependency, driver error or release blocker was found.
+Evidence: `container-proof-amd64-boot.json`. All three owned containers and their
+network were removed.
+
+The third command separately verified that the **unchanged Dockerfile default**,
+the immutable multi-platform `a537...` index, builds successfully for linux/amd64
+without a build-argument override. That local build produced output index
+`sha256:8730e9e7e5693119e12c9cfa2a7266333ed20559df0ce84d7901c64238c616c2`
+(amd64 image manifest
+`sha256:9e051fc3e8687189ff10c3e2e5204538ee87f97a57b0d519ed29cfb762e69465`).
+The default therefore supports DO's amd64 build; it does not accidentally pin an
+arm64-only base. Build context must remain repository root, Dockerfile path
+`telemetry/otlp/Dockerfile`, and the service startup override must be
+`python /opt/bayleaf-otlp/startup_patch.py`, not the old echo-and-start wrapper.
+No production settings were changed in this check.
+
+As requested, this was a focused boot/compatibility check: the five-minute native
+export was not repeated on amd64 because no difference was found. The actual
+five-minute wire and PG failure-control results remain the arm64 full-container
+evidence above. Emulated CPU/RSS is not a DO performance measurement.
+
+Remaining production gates, distinct from the completed local container checks:
+
+1. The local linux/amd64 build/boot compatibility gate is complete. The parent
+   still verifies the actual DO deployment's build identity and healthy startup
+   when switching to the repo Dockerfile. Do not substitute a slim image or drop
+   the mandatory startup guard. No actual source-release blocker remains from
+   this architecture check.
+2. Parent verifies actual collector build/D1 durability, 90-day active expiry,
+   purge capacity, read authority, logging posture and paid capacity. The local
+   source test uses a fake TLS sink and the real decoder/hook, not production D1.
+3. Retain the approved bounded production exporter-off/on overhead comparison and
+   connection-headroom gate above. An isolated functional test does not measure
+   campus traffic, DO network failures, every authentication mode or real model
+   provider behavior. Campus OIDC, uploads, tools and browser behavior were not
+   exercised. No browser injection is included.
+4. Slow TLS/HTTP and lost-ack retry behavior for the final paged artifact needs
+   targeted acceptance. Original pinned-exporter retry/deadline behavior has the
+   separate loopback proof, but that is not a full adversarial network soak.
+5. Parent publishes approved disclosure before enabling collection and accepts
+   cadence/freshness, cost and retry-headroom choices. Native rollout remains the
+   parent's decision. All owned qualification containers/networks are removed by
+   the harness even on failure; existing containers and volumes are untouched.
 
 Source kill switch: set **all four** `ENABLE_OTEL`, `ENABLE_OTEL_METRICS`,
 `ENABLE_OTEL_TRACES`, `ENABLE_OTEL_LOGS` to literal `false`. The same entrypoint

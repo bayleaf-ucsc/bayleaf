@@ -1,0 +1,39 @@
+{
+  "status": "full_container_boot_and_inference_pass",
+  "production_requests": 0,
+  "interval_ms": 300000,
+  "internal_network": true,
+  "published_ports": false,
+  "image": "sha256:3891c15aeb94fff2a377291be2d076f97d612523e5ac2d006a42d08319073602",
+  "architecture": "amd64",
+  "postgres_image": "sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826",
+  "mode": "boot",
+  "actual_container_source_drift_refused": true,
+  "health": true,
+  "version": {
+    "version": "0.12.3",
+    "deployment_id": ""
+  },
+  "synthetic_auth": true,
+  "json_inference": true,
+  "sse_inference": true,
+  "installed_sha256": {
+    "setup.py": "d5b80a500ef9ec85cca92ff61c351b5aedad34053c819005a3175da6bf0e0345",
+    "metrics.py": "7df6109fd1c41e51577ce6cc23f14d5963f2f8e6f27a299db5f75589ac827b88",
+    "bayleaf_runtime.py": "d4f8a25cf3dcad6d6a1e693a5ecc8b245e4710ea3742a2ee60a7e50b710e8170",
+    "bayleaf_source_policy.py": "dcce55d6d9fd4447fa134aa8080a38bfbe8d233eb1e5dce9c17b06645d424c70"
+  },
+  "metrics_pg_connection": {
+    "statement_timeout": "200ms",
+    "lock_timeout": "100ms",
+    "default_transaction_read_only": "on"
+  },
+  "sentinel": true,
+  "pid1_cmdline": "/usr/local/bin/python3 -m uvicorn open_webui.main:app --host 0.0.0.0 --port 8080 --forwarded-allow-ips * --workers 1 --ws-per-message-deflate true",
+  "resources": "1.23% 1.039GiB / 3GiB",
+  "owned_containers_removed": [
+    "bayleaf-otlp-q-b472969981-pg",
+    "bayleaf-otlp-q-b472969981-fixture",
+    "bayleaf-otlp-q-b472969981-app"
+  ]
+}

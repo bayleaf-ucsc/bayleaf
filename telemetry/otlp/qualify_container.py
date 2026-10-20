@@ -1,10 +1,9 @@
 """Full OWUI artifact qualification, isolated synthetic Docker network only.
 
-python3 telemetry/otlp/qualify_container.py <locally-built-image> <postgres-image> [60000|300000]
+python3 telemetry/otlp/qualify_container.py <locally-built-image> <postgres-image> [60000|300000] [full|boot]
 Uses only uniquely named owned containers. No production credentials or calls.
 """
 import json
-import os
 from pathlib import Path
 import shutil
 import ssl
@@ -13,7 +12,6 @@ import sys
 import tempfile
 import threading
 import time
-import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -71,13 +69,17 @@ def docker(*args, input=None, timeout=120):
     return subprocess.check_output(["docker", *args], input=input, timeout=timeout, stderr=subprocess.STDOUT if args[0] == "logs" else subprocess.PIPE).decode().strip()
 
 
-def qualify(image, pg_image, interval="300000"):
+def qualify(image, pg_image, interval="300000", mode="full"):
+    if mode not in ("full", "boot"):
+        raise ValueError("unsupported_qualification_mode")
     prefix = "bayleaf-otlp-q-" + uuid.uuid4().hex[:10]
     network, app, pg, fixture = [prefix + suffix for suffix in ("-net", "-app", "-pg", "-fixture")]
     names = []
     proof = dict(status="incomplete", production_requests=0, interval_ms=int(interval), internal_network=True, published_ports=False, image=docker("image", "inspect", image, "--format", "{{.Id}}"), architecture=docker("image", "inspect", image, "--format", "{{.Architecture}}"), postgres_image=docker("image", "inspect", pg_image, "--format", "{{.Id}}"))
+    proof["mode"] = mode
+    platform = "linux/" + proof["architecture"]
     drift_code = "from pathlib import Path; import os; p=Path('/app/backend/open_webui/utils/telemetry/metrics.py'); p.write_bytes(p.read_bytes()+b'\\n# synthetic drift\\n'); os.execvp('python',['python','/opt/bayleaf-otlp/startup_patch.py'])"
-    drift_command = ["docker", "run", "--rm", "--network", "none"]
+    drift_command = ["docker", "run", "--rm", "--platform", platform, "--network", "none"]
     for flag in ("ENABLE_OTEL", "ENABLE_OTEL_METRICS", "ENABLE_OTEL_TRACES", "ENABLE_OTEL_LOGS"):
         drift_command += ["-e", flag + "=false"]
     refused = subprocess.run([*drift_command, image, "python", "-c", drift_code], capture_output=True, timeout=30)
@@ -121,7 +123,7 @@ def qualify(image, pg_image, interval="300000"):
                 ENABLE_VERSION_UPDATE_CHECK="false", OFFLINE_MODE="true", HF_HUB_OFFLINE="1", RAG_EMBEDDING_ENGINE="openai",
                 DO_NOT_TRACK="true", SCARF_NO_ANALYTICS="true", ANONYMIZED_TELEMETRY="false", UVICORN_WORKERS="1",
             )
-            command = ["run", "-d", "--name", app, "--network", network, "--network-alias", "owui", "--memory", "3g", "--cpus", "2", "-v", str(temporary) + ":/fixture:ro"]
+            command = ["run", "-d", "--platform", platform, "--name", app, "--network", network, "--network-alias", "owui", "--memory", "3g", "--cpus", "2", "-v", str(temporary) + ":/fixture:ro"]
             for k, v in settings.items():
                 command.extend(["-e", k + "=" + v])
             docker(*command, image)
@@ -158,6 +160,19 @@ def qualify(image, pg_image, interval="300000"):
             streamed = request("/api/chat/completions", payload, token)
             assert b"local fixture okay" in streamed and b"[DONE]" in streamed
             proof.update(synthetic_auth=True, json_inference=True, sse_inference=True)
+            if mode == "boot":
+                check = "import sys,json,hashlib;from pathlib import Path;sys.path.insert(0,'/opt/bayleaf-otlp');from startup_patch import patch,validate_versions,validate_environment;validate_versions();validate_environment();patch(Path('/app/backend'));print(json.dumps({p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in Path('/app/backend/open_webui/utils/telemetry').glob('*.py') if p.name in ['metrics.py','setup.py','bayleaf_runtime.py','bayleaf_source_policy.py']}))"
+                proof["installed_sha256"] = json.loads(docker("exec", app, "python", "-c", check).splitlines()[-1])
+                db_check = "import os,json;from sqlalchemy import create_engine,text;from open_webui.utils.telemetry.bayleaf_runtime import bounded_engine;a=create_engine(os.environ['DATABASE_URL']);b=bounded_engine(a);c=b.connect();assert c.execute(text('SELECT 1')).scalar()==1;print(json.dumps({k:c.execute(text('SHOW '+k)).scalar() for k in ['statement_timeout','lock_timeout','default_transaction_read_only']}));c.close();b.dispose();a.dispose()"
+                proof["metrics_pg_connection"] = json.loads(docker("exec", app, "python", "-c", db_check).splitlines()[-1])
+                logs = docker("logs", app)
+                assert "[bayleaf] rung-3 harness alive" in logs and "metrics source minimization verified" in logs
+                proof["sentinel"] = True
+                proof["pid1_cmdline"] = docker("exec", app, "python", "-c", "print(open('/proc/1/cmdline','rb').read().replace(b'\\0',b' ').decode())")
+                assert "uvicorn open_webui.main:app" in proof["pid1_cmdline"]
+                proof["resources"] = docker("stats", "--no-stream", "--format", "{{.CPUPerc}} {{.MemUsage}}", app)
+                proof["status"] = "full_container_boot_and_inference_pass"
+                return
             try:
                 request("/LOCAL_ONLY_UNMATCHED?token=LOCAL_ONLY_QUERY", method="PROPFIND")
             except subprocess.CalledProcessError:
@@ -239,8 +254,11 @@ console.log(JSON.stringify({{points:e.points.length,names:[...new Set(e.points.m
                 docker("rm", "-f", name)
             docker("network", "rm", network)
             proof["owned_containers_removed"] = names
-            (HERE / "container-proof.json").write_text(json.dumps(proof, indent=2) + "\n")
-            (HERE / f"container-proof-{interval}.json").write_text(json.dumps(proof, indent=2) + "\n")
+            if mode == "full":
+                (HERE / "container-proof.json").write_text(json.dumps(proof, indent=2) + "\n")
+                (HERE / f"container-proof-{interval}.json").write_text(json.dumps(proof, indent=2) + "\n")
+            else:
+                (HERE / f"container-proof-{proof['architecture']}-boot.json").write_text(json.dumps(proof, indent=2) + "\n")
             print(json.dumps(proof, indent=2), flush=True)
 
 
