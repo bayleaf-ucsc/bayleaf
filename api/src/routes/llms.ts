@@ -134,7 +134,12 @@ You only need to do one of these.
 OpenCode's providers, models, and credentials. OpenCode supports a provider-discovery
 mechanism via ${bt}.well-known/opencode${bt}, so connecting BayLeaf needs zero edits
 to ${bt}opencode.json${bt}. Open OpenChamber's built-in terminal and choose one of the two
-configurations below. OpenChamber Desktop bundles the matching OpenCode command:
+configurations below. Use the current OpenChamber Desktop release: it bundles and updates
+the matching OpenCode backend, so no separate OpenCode installation or version check is
+needed. For the standalone OpenCode terminal interface, use OpenCode V2. Legacy OpenCode
+V1 is outside BayLeaf's supported managed setup; upgrade before troubleshooting.
+OpenChamber installations using a separately managed OpenCode backend are custom setups;
+use the custom-configuration guidance below rather than assuming the managed setup applies.
 
 **BayLeaf (recommended for most uses):** zero-data-retention inference with the widest
 compatibility and model choice.
@@ -156,9 +161,18 @@ URL and request code, you open the URL in a browser, sign in with UCSC credentia
 aren't already, check the compact request code, and click **Approve**. Your BayLeaf API key
 is delivered straight from the browser approval to OpenCode without ever appearing on
 screen or in your shell history. The approval page names the configuration you selected.
-Then restart OpenCode to access BayLeaf: either ${bt}BayLeaf${bt} or ${bt}BayLeaf Sealed${bt}
-will appear in OpenChamber's model picker. If you prefer the terminal interface, run ${bt}opencode${bt}
-and pick a BayLeaf model with ${bt}/models${bt}.
+The browser does not open automatically. While waiting for approval, the login polling
+endpoint returns HTTP 429 intentionally; this is not an inference allowance error. If the
+approval expires, run the login command again and open the new URL.
+After login succeeds, fully quit and reopen OpenChamber, rather than only closing its
+window: either ${bt}BayLeaf${bt} or ${bt}BayLeaf Sealed${bt} will appear in the model picker.
+If you prefer the terminal interface, restart ${bt}opencode${bt} and pick a BayLeaf model
+with ${bt}/models${bt}.
+
+Agents assisting with setup must use ${bt}opencode auth login${bt} to register the integration.
+The approval instructions are printed to stderr; make the approval URL visible to the person
+if your command runner captures it. Do not create or edit credential-store entries by hand:
+legacy ${bt}auth.json${bt} recipes do not establish the supported V2 integration.
 
 #### Set up learning, not only inference
 
@@ -189,8 +203,8 @@ ${bt}opencode-tinfoil${bt} transport and adds curated confidential-inference mod
 ${bt}bayleaf-sealed-remote${bt}. The ${bt}-remote${bt} suffixes mean BayLeaf supplies and
 updates the configurations; ${bt}bayleaf-sealed${bt} remains available for a transparent,
 hand-authored definition. The managed Sealed transport verifies enclave attestation and
-encrypts content on your machine before it traverses BayLeaf. The same Sealed login and
-provider ID work on OpenCode V1 (1.18.29+) and V2.
+encrypts content on your machine before it traverses BayLeaf. The supported managed setup
+is current OpenChamber Desktop with its bundled backend, or standalone OpenCode V2.
 
 On OpenCode V2, both managed desktop configurations also advertise a small
 ${bt}bayleaf-platform${bt} skill through a public HTTP skill catalog. It points here
@@ -227,8 +241,8 @@ ${fence}bash
 opencode auth logout https://api.bayleaf.dev
 ${fence}
 
-This removes the ${bt}https://api.bayleaf.dev${bt} well-known credential entry from
-${bt}~/.local/share/opencode/auth.json${bt}. OpenCode will stop contacting BayLeaf at
+This disconnects the ${bt}https://api.bayleaf.dev${bt} integration through OpenCode's own
+credential management. OpenCode will stop contacting BayLeaf at
 startup, and ${bt}bayleaf-remote${bt} and BayLeaf's remotely supplied defaults will
 disappear. For Sealed, use ${bt}opencode auth logout https://api.bayleaf.dev/sealed${bt}
 instead; that removes ${bt}bayleaf-sealed-remote${bt} and stops loading its plugin.

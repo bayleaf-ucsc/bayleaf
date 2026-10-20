@@ -8,11 +8,13 @@
  *   opencode auth login https://api.bayleaf.dev/sealed
  *
  * to register BayLeaf as a fully-configured provider, with no manual edits to
- * `opencode.json` and no key pasted into a config file. Verified against
- * anomalyco/opencode at commit dev (Mar 2026): the CLI fetches
+ * `opencode.json` and no key pasted into a config file. Supported clients are
+ * current OpenChamber Desktop with its bundled backend and standalone OpenCode
+ * V2. The CLI fetches
  * `/.well-known/opencode`, runs `auth.command` locally, captures the stdout
- * as the credential, and stores it as a `wellknown`-typed entry keyed by URL
- * in `~/.local/share/opencode/auth.json`. On every subsequent OpenCode
+ * as the credential, and registers the integration in OpenCode's own store.
+ * Use native auth commands, never hand-written legacy auth.json entries.
+ * On every subsequent OpenCode
  * startup, the stored token is bound to `auth.env` inside OpenCode's
  * substitution map, the `.well-known/opencode` doc is re-fetched, and any
  * `remote_config.url` is fetched (with templated headers like
@@ -66,9 +68,10 @@ const SEALED_PROVIDER_ID = 'bayleaf-sealed-remote';
 
 /**
  * Exact pin: verifier and encrypted-transport changes require deliberate review.
- * OpenCode V1 loads the plugin tuple directly; V2 normalizes that tuple to its
- * plugin format and the dual-version package upgrades marked models after
- * providers are registered. Keep this pin in sync with the Sealed guidance.
+ * V2 normalizes the plugin tuple to its plugin format, and the package upgrades
+ * marked models after providers are registered. Legacy compatibility in this
+ * wire shape/package is incidental, not a supported V1 setup. Keep this pin in
+ * sync with the Sealed guidance.
  * If models appear but requests lack Ehbp-Encapsulated-Key, check for an interrupted
  * `~/.cache/opencode/packages/${SEALED_PLUGIN}` install. Rename it, retry once, and
  * restart OpenCode: failed plugin imports are cached for the process lifetime.
