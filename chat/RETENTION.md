@@ -328,14 +328,14 @@ updated in the job's secret env var.
 
 ---
 
-### 6a. Private operational telemetry (approved, rollout pending)
+### 6a. Private operational telemetry (rolling out)
 
 On 2026-10-20 the operator approved deployment and live collection of four
 classes in a separate Cloudflare Worker/D1 collector: public-page arrivals,
 native OWUI aggregate metrics, aggregate deletion-job summaries and summaries of
 existing synthetic monitoring probes. Approval does not establish that the
-collector or sources are already live. Exact-diff publication approval remains
-required; see the [rollout record](../telemetry/README.md#retention-and-rollout-gates)
+collector or every source is live. Current source activation is recorded in the
+[rollout record](../telemetry/qualification/rollout.md)
 and [privacy notice](../PRIVACY.md).
 
 Public-page arrivals record only destination service, collector-assigned time

@@ -93,8 +93,8 @@ ITS-operated or ITS-supported one.
 - **Edge logs:** standard Cloudflare and DigitalOcean platform logs (IPs,
   status codes, timestamps) are kept by those vendors at their default
   retention (~72 hours for Cloudflare).
-- **First-party operational telemetry (approved, rollout pending):** BayLeaf
-  plans a private Cloudflare Worker/D1 collector for four classes of observations:
+- **First-party operational telemetry (rolling out):** BayLeaf
+  operates a private Cloudflare Worker/D1 collector for four approved classes of observations:
   public-page arrivals, native Open WebUI aggregate metrics, aggregate deletion-job
   summaries, and summaries of existing synthetic monitoring probes. Arrivals store
   only the destination service, collector-assigned time and referring hostname
@@ -152,7 +152,7 @@ version-controlled alongside the code that enforces them:
   is unavailable. Permanent preview-name reservations remain to prevent origin
   reassignment; provider billing history and backups are not erased by this job.
   There is no extra rollout grace period or automated advance-warning email.
-- **Operational telemetry (planned):** all four classes have a **90-day maximum
+- **Operational telemetry:** all four classes have a **90-day maximum
   live lifetime from observation**, not from receipt or download. Expired rows
   are excluded from private reads immediately; physical deletion runs in bounded
   minute-by-minute batches and can lag during backlog or outages. Cloudflare D1
@@ -208,7 +208,7 @@ research-and-education identity broker.
   WebUI application and its encrypted PostgreSQL database).
 - [Cloudflare](https://www.cloudflare.com/): hosts BayLeaf API (the Worker and
   its D1 edge database), including the protected preview gateway on
-  `bayleaf-proxies.dev`, and is the planned host of the private operational
+  `bayleaf-proxies.dev`, and hosts the private operational
   telemetry Worker/D1 collector described above.
 - [Daytona](https://www.daytona.io/): sandboxed Linux execution environments
   for the Code Sandbox feature (opt-in).

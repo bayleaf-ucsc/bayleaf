@@ -9,8 +9,8 @@
   "limits": { "cpu_ms": 50 },
   "routes": [{ "pattern": "telemetry.bayleaf.dev", "custom_domain": true }],
   "vars": {
-    "TELEMETRY_ENABLED": "false",
-    "BROWSER_ENABLED": "false",
+    "TELEMETRY_ENABLED": "true",
+    "BROWSER_ENABLED": "true",
     "RETENTION_DAYS": "90"
   },
   "d1_databases": [{
@@ -19,5 +19,10 @@
     "database_id": "e99fb918-ea7e-4599-ac7f-069166a0adbd",
     "migrations_dir": "migrations"
   }],
-  "triggers": { "crons": ["* * * * *"] }
+  "triggers": { "crons": ["* * * * *"] },
+  "ratelimits": [{
+    "name": "BROWSER_EDGE_LIMITER",
+    "namespace_id": "1002",
+    "simple": { "limit": 240, "period": 60 }
+  }]
 }

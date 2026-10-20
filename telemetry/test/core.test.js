@@ -36,6 +36,16 @@ function request(path, body, source = 'chat-retention', extra = {}) {
 }
 function count(db, table) { return db.sql.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n; }
 
+test('production browser edge cap rejects before database work with an identity-free key', async () => {
+  const worker = createWorker({ clock: () => NOW });
+  let key;
+  const env = { TELEMETRY_ENABLED: 'true', BROWSER_ENABLED: 'true',
+    BROWSER_EDGE_LIMITER: { limit: async input => { key = input.key; return { success: false }; } } };
+  const result = await worker.fetch(request('/v1/browser', browser(), '', { Origin: 'https://bayleaf.dev' }), env);
+  assert.equal(result.status, 429);
+  assert.equal(key, 'browser');
+});
+
 test('scheduled expiry continues after collection is switched off', async t => {
   const db = database();
   t.after(() => db.sql.close());

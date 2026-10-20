@@ -377,14 +377,14 @@ prompt or completion content.
 
 ---
 
-## Operational telemetry (approved, rollout pending)
+## Operational telemetry (rolling out)
 
 On 2026-10-20 the operator approved deployment and live collection of four
 classes in a separate private Cloudflare Worker/D1 collector: public-page
 arrivals, native OWUI aggregate metrics, aggregate deletion-job summaries and
 existing synthetic probe-run summaries. This approval is not a claim that the
-collector or any source is already live. Exact-diff approval is required before
-publishing these disclosures; see the [rollout record](../telemetry/README.md#retention-and-rollout-gates)
+collector or every source is live. Current source activation is recorded in the
+[rollout record](../telemetry/qualification/rollout.md)
 and [privacy notice](../PRIVACY.md).
 
 Public-page observations contain destination service, collector time and
@@ -437,7 +437,7 @@ platform-log or provider retention schedules.
 | API session state | Client cookie | 24 hours |
 | Sandboxes session metadata | Cloudflare D1 and host-only client cookie | 24 hours, then scheduled cleanup; explicit logout removes the session row |
 | Edge logs | Cloudflare | ~72 hours (platform default) |
-| Operational telemetry (approved, rollout pending) | Separate private Cloudflare Worker/D1 | 90-day live maximum from observation; bounded purge delay; paid-plan recovery up to 30 additional days after physical deletion; reports/exports share source expiry |
+| Operational telemetry (rolling out) | Separate private Cloudflare Worker/D1 | 90-day live maximum from observation; bounded purge delay; paid-plan recovery up to 30 additional days after physical deletion; reports/exports share source expiry |
 ## Sandbox credentials (issue #90, rollout pending)
 
 D1 stores a random credential ID, owner email, exact sandbox ID, SHA-256 bearer

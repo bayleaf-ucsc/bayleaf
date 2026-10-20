@@ -113,7 +113,7 @@ bayleaf/
 │   ├── style.css         # Stylesheet (carries a WCAG contrast invariant)
 │   └── images/           # og-card.png + the script that generates it
 ├── sandbox/              # Public BayLeaf Sandboxes home → https://sandbox.bayleaf.dev
-├── telemetry/            # Local collector/D1 proof; not deployed or enabled (#112)
+├── telemetry/            # Private collector/D1; 90-day rollout in progress (#112)
 ├── politics/             # Dependency audit, VPATs, position papers
 ├── scripts/              # GitHub Pages artifact builder
 ├── training/             # Work-in-progress React site for training users in effective GenAI usage

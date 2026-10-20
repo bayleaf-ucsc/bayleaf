@@ -99,6 +99,9 @@ export function createWorker({ otlp, clock = Date.now } = {}) {
         let source;
         if (klass === 'browser') {
           if (!cors.Vary) return response({ error: 'forbidden' }, 403);
+          // Shared edge-local cap before D1 work; no visitor/IP-derived key.
+          if (env.BROWSER_EDGE_LIMITER && !(await env.BROWSER_EDGE_LIMITER.limit({ key: 'browser' })).success)
+            return response({ error: 'rate_limited' }, 429, cors);
           source = 'browser';
         } else {
           const configured = credentials(env);

@@ -1,7 +1,10 @@
 # BayLeaf telemetry: local Worker / D1 proof of concept
 
 For [issue #112](https://github.com/bayleaf-ucsc/bayleaf/issues/112).
-**Not deployed, provisioned or enabled.** This is a bounded first-party
+**Rollout in progress, 2026-10-20.** The collector, API/probe hooks and public
+Sandboxes arrivals are deployed with 90-day retention. Native OWUI and Chat
+cleanup qualification/activation are tracked in [the rollout record](qualification/rollout.md).
+This is a bounded first-party
 warehouse, not a dashboard, public query service or general event/log collector.
 On 2026-10-20 the operator explicitly approved deployment and live collection of
 all four classes with **90-day** retention: browser arrivals, native OWUI aggregate

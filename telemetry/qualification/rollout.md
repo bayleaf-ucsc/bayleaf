@@ -50,11 +50,44 @@ Authentication, then try again. If someone else manages billing for this account
 they need to enable it instead." No successful paid-plan activation is established.
 The operator must resolve this account-authentication requirement before retry.
 
-## Remaining rollout work
+## Live state after plan activation
 
-Complete the approved plan upgrade, inspect shared usage, measure plausible
-90-day storage/write volume, publish approved disclosures, qualify native source
-artifact and source hooks, then deploy/enable and verify stored measurements,
-credential separation, expiry state and failure independence. Record actual
-versions and per-source enablement here. Chat browser arrivals currently lack a
+Workers plans now explicitly marks **Paid** as current. Deployment with the 50ms
+CPU limit succeeded. The first disabled deployment was
+`4263bd1e-1e37-40d0-bc8c-d4bbdcd3efef`; active collector version is
+`aa660674-fdf8-46d1-987f-572d893b21af`. Dedicated, distinct write capabilities for
+five sources and a separate read capability are installed. Anonymous and source
+write tokens return 401 on private reads; the operator read capability returns 200.
+Local credential material is mode 0600 in ignored `.dev.vars.*` files.
+
+Approved source/disclosure commit `94570a0` was published; the public privacy
+notice was fetched and its 90-day/Sealed boundaries verified before activation.
+
+Deployed source versions:
+
+- Probe: `c5251b4f-220f-467b-bf9b-61406cb40922`. Existing catalog probe invocation
+  returned 200/ok and its summary was read back from telemetry; no extra inference.
+- API: `acb8ad22-5d71-4d79-b2c1-a43e5e3c3afa`, browser arrivals and scheduled job
+  hooks enabled. Daily deletion summaries await ordinary schedule execution.
+- Sandboxes: `58096da8-7368-4d35-ab49-f1a81054f4b0`. Opening the anonymous public
+  home produced an arrival row with exactly 90-day expiry.
+- Chat cleanup: environment update deployed, but DO reused an older source commit.
+  A subsequent `apps update --update-sources --wait` is rebuilding the approved
+  GitHub source; completion/source revision still needs verification.
+
+Browser ingress has a 240/minute shared edge-local rate limit before D1 work,
+using the fixed key `browser`, plus the atomic global 120/minute storage budget.
+This bounds accepted rows, not all billable edge attempts. Python clients initially
+hit zone Browser Integrity Check 1010; the telemetry-host-only exception is recorded
+in [edge-ingress.md](edge-ingress.md), leaving other host protections unchanged.
+
+Native source storage measurement supports a 300000ms export interval for 90 days:
+approximately 1.12GB at 99 points/export. See [storage-sizing.md](storage-sizing.md).
+Full arm64 container/PG qualification passed; amd64 release boot is being checked.
+
+### Still to finish
+
+Complete native release-architecture qualification and activation, verify rebuilt
+Chat cleanup source and ordinary scheduled outcomes, publish landing activation,
+and record deployed measurements and expiry state. Chat browser arrivals currently lack a
 qualified public-only upstream frontend artifact and remain deferred.

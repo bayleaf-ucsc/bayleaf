@@ -10,6 +10,7 @@
   "observability": { "enabled": false },
   "routes": [{ "pattern": "probe.bayleaf.dev", "custom_domain": true }],
   "vars": {
+    "TELEMETRY_ENABLED": "true",
     "ENABLED": "true",
     "DEADLINE_MS": "25000",
     "BROWSER_DEADLINE_MS": "55000"
