@@ -58,6 +58,14 @@ traffic without changing the Worker.
 
 ## Refinement log
 
+- 2026-10-20 (telemetry local proof, #112): Split collector/D1, real OTLP
+  qualification and source adapters into parallel owned directories, then test
+  their shared wire contracts. Local implementation is a useful stopping point
+  before production exposure. D1 Time Travel extends recoverability beyond SQL
+  expiry; collection kill switches must not disable scheduled expiry. Billing
+  usage reads returned 403, so zone subscriptions were not treated as evidence
+  of Workers allowances or zero incremental cost.
+
 - 2026-10-13 (decision inference rollout): Wrangler's BayLeaf-scoped OAuth could
   read D1 when the cf profile could not. Rechecked empty tables, applied 0016 and
   deployed; live HTTP/model-set checks passed. The caller was campus-eligible,

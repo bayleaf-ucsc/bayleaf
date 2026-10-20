@@ -1,0 +1,16 @@
+{
+  "name": "bayleaf-telemetry-local",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js otlp/*.test.mjs adapters/*.test.mjs qualification/sources.test.mjs",
+    "test:python": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s adapters -p 'test_*.py'",
+    "dev": "wrangler dev --local",
+    "migrate:local": "wrangler d1 migrations apply TELEMETRY_DB --local"
+  },
+  "devDependencies": {
+    "wrangler": "4.123.0",
+    "miniflare": "5.20260811.1-alpha",
+    "esbuild": "0.28.1"
+  }
+}

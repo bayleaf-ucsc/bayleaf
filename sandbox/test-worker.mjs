@@ -27,9 +27,9 @@ const management = {
     return { status: 200, body: { phase: 'idle', machine: 'absent' } };
   },
 };
-async function request(path, { method = 'GET', cookie, headers = {}, host = origin } = {}) {
+async function request(path, { method = 'GET', cookie, headers = {}, host = origin, browserArrivalsEnabled } = {}) {
   return worker.fetch(new Request(host + path, { method, headers: { ...headers, ...(cookie ? { Cookie: cookie } : {}) } }),
-    { MANAGEMENT: management }, { waitUntil(promise) { background.push(promise); } });
+    { MANAGEMENT: management, BROWSER_ARRIVALS_ENABLED: browserArrivalsEnabled }, { waitUntil(promise) { background.push(promise); } });
 }
 const mutations = () => calls.filter(([name, input]) => name === 'managed' && input.operation !== 'status');
 
@@ -118,4 +118,19 @@ assert.match(response.headers.get('Set-Cookie'), /Max-Age=0/);
 assert.equal((await request('/', { host: 'https://attacker.example' })).status, 400);
 assert.equal((await request('/services/openchamber/status', { method: 'OPTIONS' })).status, 405);
 assert.equal(response.headers.get('Access-Control-Allow-Origin'), null);
+for (const flag of [undefined, 'false', 'TRUE', true]) {
+  assert(!(await (await request('/', { browserArrivalsEnabled: flag })).text()).includes('BayLeafArrival'));
+}
+response = await request('/', { browserArrivalsEnabled: 'true' });
+html = await response.text();
+assert(html.includes('BayLeafArrival.publicArrival("sandbox",true)'));
+assert(response.headers.get('Content-Security-Policy').includes('connect-src \'self\' https://telemetry.bayleaf.dev;'));
+assert.match(html, /<script nonce="[^"]+">/);
+authenticated = true;
+response = await request('/', { cookie: sessionCookie, browserArrivalsEnabled: 'true' });
+assert(!(await response.text()).includes('BayLeafArrival'));
+assert(!response.headers.get('Content-Security-Policy').includes('telemetry.bayleaf.dev'));
+for (const path of ['/login', '/auth/callback', '/dashboard', '/services/openchamber/status']) {
+  assert(!(await (await request(path, { browserArrivalsEnabled: 'true' })).text()).includes('BayLeafArrival'));
+}
 console.log('PASS sandbox overview, host-only login, CSRF, escaped identity, one-shot wake, passive reads, service dispatch and logout');

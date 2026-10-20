@@ -56,6 +56,7 @@ dashboardRoutes.get('/', async (c) => {
       recommendedModel={c.env.RECOMMENDED_MODEL}
       loginButtonText={c.env.OIDC_LOGIN_BUTTON_TEXT}
       campusUsage={campusUsage}
+      browserArrivalsEnabled={c.env.BROWSER_ARRIVALS_ENABLED === 'true'}
     />,
   );
 });

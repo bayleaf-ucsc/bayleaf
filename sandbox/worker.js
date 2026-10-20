@@ -61,7 +61,8 @@ export default {
       // sign-in POST is the owner's explicit action authorizing a one-shot wake.
       if (url.pathname === '/' && ['GET', 'HEAD'].includes(request.method)) {
         const current = session ? await api.readSession({ session }) : null;
-        const page = await renderSandboxPage(current?.user ?? null);
+        const page = await renderSandboxPage(current?.user ?? null,
+          { browserArrivalsEnabled: env.BROWSER_ARRIVALS_ENABLED === 'true' });
         if (session && !current) page.headers.append('Set-Cookie', cookie(SESSION, '', 0));
         return request.method === 'HEAD' ? new Response(null, page) : page;
       }

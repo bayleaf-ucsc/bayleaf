@@ -3,6 +3,7 @@
  */
 
 import type { FC } from 'hono/jsx';
+import { arrivalScript } from '../../../telemetry/browser/runtime';
 import {
   BaseLayout,
   RecommendedModelHint,
@@ -40,8 +41,10 @@ export const LandingPage: FC<{
   recommendedModel: string;
   loginButtonText: string;
   campusUsage?: CampusUsage;
-}> = ({ showCampusPass, recommendedModel, loginButtonText, campusUsage }) => (
+  browserArrivalsEnabled?: boolean;
+}> = ({ showCampusPass, recommendedModel, loginButtonText, campusUsage, browserArrivalsEnabled = false }) => (
   <BaseLayout title="Welcome">
+    {browserArrivalsEnabled === true ? <script dangerouslySetInnerHTML={{ __html: arrivalScript('api') }} /> : null}
     <div class={cardStyle}>
       <h2>API Access for UCSC</h2>
       <p>Free LLM inference for UC Santa Cruz students, faculty, and staff.</p>

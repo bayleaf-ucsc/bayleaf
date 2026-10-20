@@ -61,6 +61,7 @@
   // Environment variables (set via wrangler secret or dashboard)
   // These are placeholders - actual values should be set as secrets
   "vars": {
+    "BROWSER_ARRIVALS_ENABLED": "false",
     // Owner-directed browser work; migration 0013 applied 2026-10-03.
     "BROWSER_SANDBOX_ENABLED": "true",
     // Disposable inference grants, issue #76. Migration 0011 applied 2026-09-29.

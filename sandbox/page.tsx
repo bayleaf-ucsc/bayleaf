@@ -1,4 +1,5 @@
 import { SERVICES } from './services';
+import { arrivalScript } from '../telemetry/browser/runtime';
 
 // Standalone HTML keeps this Worker independent of the API dashboard's Hono layout.
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, character => ({
@@ -221,7 +222,9 @@ const controlsScript = `(() => {
   }
 })();`;
 
-export function renderSandboxPage(session: { email: string; name?: string } | null): Response {
+export function renderSandboxPage(session: { email: string; name?: string } | null,
+  { browserArrivalsEnabled = false }: { browserArrivalsEnabled?: boolean } = {}): Response {
+  const collectArrival = !session && browserArrivalsEnabled === true;
   const nonce = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(24))));
   const cards = ['AI agents', 'Code & data', 'Basics'].map(group => `<h3 class="group-title">${escapeHtml(group)}</h3>
     ${group === 'AI agents' ? '<p class="note">An AI agent can do more than answer questions in chat. It can read and write files, run software, and carry out multi-step tasks in your sandbox.</p>' : ''}
@@ -264,11 +267,11 @@ ${cards}</section>
 <details><summary>Advanced controls</summary><p><a href="https://api.bayleaf.dev/dashboard#sandbox">Sandbox &amp; API controls</a> include sandbox deletion and API key management.</p></details>
 <p class="note"><a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/SUPPORT.md">Get help with your sandbox</a></p></section>
 <footer><span>Part of <a href="https://bayleaf.dev">BayLeaf</a> at UC Santa Cruz.</span><a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md">Privacy notice</a></footer>
-</main>${session ? `<script nonce="${nonce}">${controlsScript}</script>` : ''}</body></html>`;
+</main>${session ? `<script nonce="${nonce}">${controlsScript}</script>` : ''}${collectArrival ? `<script nonce="${nonce}">${arrivalScript('sandbox')}</script>` : ''}</body></html>`;
   return new Response(html, { headers: {
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'private, no-store',
-    'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'`,
+    'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'${collectArrival ? ' https://telemetry.bayleaf.dev' : ''}; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'`,
     // no-referrer suppresses Origin on native form POSTs in browsers. Keep
     // only the origin, never the path, so login/logout pass exact-Origin CSRF.
     'Referrer-Policy': 'strict-origin',

@@ -1,0 +1,45 @@
+{
+  "unsafe_native_literal_path_observed": true,
+  "unsafe_native_method_observed": true,
+  "unsafe_native_resource_observed": true,
+  "template_identity_absent": true,
+  "query_absent": true,
+  "exporter": "opentelemetry-exporter-otlp-proto-http",
+  "sdk_version": "1.42.1",
+  "path": "/v1/metrics",
+  "content_type": "application/x-protobuf",
+  "compression": "identity",
+  "basic_auth_verified": true,
+  "safe_payload_bytes": 2444,
+  "safe_payload_sha256": "82d9c330b9cee8105100996dc2b0efcf523fc89f0b9bea1710d6a85e92353b00",
+  "safe_payload_has_no_fake_secrets": true,
+  "metric_names": [
+    "http.server.requests",
+    "http.server.duration",
+    "webui.users.total",
+    "webui.users.active",
+    "webui.users.active.today"
+  ],
+  "observed_temporalities": {
+    "http.server.requests": 2,
+    "http.server.duration": 2,
+    "webui.users.total": 0,
+    "webui.users.active": 0,
+    "webui.users.active.today": 0
+  },
+  "native_gauge_select_queries_per_collection": 3,
+  "native_source_minimum_window_ms": 10000,
+  "503_retry_identical_bytes": true,
+  "non_retried_statuses": [
+    400,
+    401,
+    413,
+    415,
+    429
+  ],
+  "failed_sink_timeout_seconds": 3,
+  "failed_sink_observed_seconds": 3.005,
+  "failed_sink_attempts": 3,
+  "loopback_sink_ran_js_normalizer_before_response": true,
+  "standard_env_bearer_header_override_verified": true
+}

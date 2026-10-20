@@ -1,0 +1,61 @@
+# BayLeaf telemetry: approved rollout, local defaults disabled
+
+Read root `AGENTS.md` first. Issue [#112](https://github.com/bayleaf-ucsc/bayleaf/issues/112)
+tracks this work. On 2026-10-20 the operator explicitly approved deployment and
+live collection of all four classes with 90-day retention. Approval is not proof
+of deployment or activation; the local collector remains disabled by default.
+**Do not deploy, create D1, enable exporters/browser code, change production,
+commit or push without explicit approval.** No real credentials in fixtures.
+
+`src/policies.js` is the versioned collection policy. `src/validate.js` rejects
+unknown fields recursively and reconstructs approved records; SQL only describes
+physical storage. New dimensions, jobs, counter names, metric names, result/phase
+vocabularies, timestamp resolutions and retention extensions require review.
+Keep schema and policy versions explicit. No arbitrary extension dictionaries,
+universal log envelope, raw payload archive, provider-response archive or raw
+errors. Do not log payloads, headers, exceptions or SQL diagnostics.
+
+Never collect prompts, completions, identities, stable pseudonyms, IP/UA, private
+URLs, query strings, filenames, commands, raw SQL, tokens or model strings.
+Browser observations are individually stored but have no client timestamp,
+identifier or per-client dedup. Service run UUIDs identify job/probe runs and
+retries only, never accounts. Metrics are aggregate source windows, not a new
+individual HTTP request stream. Keep exact reset metadata, do not infer a reset
+or turn missing data into zero. Do not sum duplicate global OWUI gauges.
+
+All runtime code is small ES modules using Web APIs. Tests use `node:test`, real
+SQLite, and workerd/D1 through Miniflare. Runtime has no package dependencies.
+`npm test` uses local dev dependencies or already installed `../api` tooling;
+it makes no provider calls. Production protocol qualification is a separate gate.
+The default Wrangler config has no real database ID, route or account binding;
+Workers observability and both collection switches are off.
+
+Retention defaults to **7 days as a conservative local placeholder**. Approved
+production retention is **90 days for all four classes**, configured before
+first database use; accepted configuration is integer 1–90. Policy version 2
+broadens the bound, not any existing database's durable ceiling.
+Per-class `retention_state` persists a decreasing
+TTL ceiling and increasing retired-observation cutoff, atomically with each
+admission/read/purge. Do not delete/reset these four content-free rows during
+purge. Configuration cannot raise a recorded ceiling or restore retired events;
+an increase requires an explicitly reviewed policy migration. Metric batch
+admission checks every point time as well as envelope/receipt time. Private
+bounded reads exclude expiry before purge. Purge is bounded,
+not a guarantee about Cloudflare backups, time travel, downloaded exports, or
+derived artifacts. D1 paid-plan Time Travel can retain deleted rows up to 30
+additional days after physical deletion, itself potentially delayed by purge
+backlog/outages. No automatic export/archive. Reports, exports and derived
+artifacts expire no later than their earliest included observation's expiry;
+copying/aggregation never resets retention. Restore must reapply durable policy
+and purge expired rows before reads/collection resume. Do not imply local TTL
+establishes full provider erasure. No per-request Sealed inference metadata:
+only existing synthetic Sealed probe summaries are in scope.
+
+Ownership during parallel development: core agent owns `src/`, `test/`, migrations,
+package/config, this guide and README; separate agents own `otlp/`, `adapters/`
+and their `qualification/` material. Coordinate contract changes explicitly.
+
+No public dashboard, SQL endpoint, agent capability exposure or source monkeypatch
+is authorized. Source activation is separate rollout work, not part of local
+policy editing. Privacy/retention drafts require exact-diff publication approval
+before commit/push; affected-user notice text/notification remains an operator gate.

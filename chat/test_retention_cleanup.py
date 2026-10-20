@@ -9,7 +9,9 @@ import io
 import json
 from pathlib import Path
 import subprocess
+import shutil
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -30,6 +32,83 @@ KB = "/api/v1/knowledge/synthetic-kb/files"
 
 
 class RetentionTransactionTests(unittest.TestCase):
+    def test_docker_copy_layout_can_import_adapter_outside_repository(self):
+        root = SCRIPT.parents[1]
+        dockerfile = SCRIPT.with_name("Dockerfile.retention").read_text()
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = Path(directory)
+            for relative in ("chat/retention_cleanup.py", "telemetry/adapters/chat_retention.py"):
+                self.assertIn(f"COPY {relative} {relative}", dockerfile)
+                target = artifact / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(root / relative, target)
+            result = subprocess.run(
+                [sys.executable, "-I", str(artifact / "chat/retention_cleanup.py"), "--help"],
+                cwd=artifact, capture_output=True, text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("BayLeaf Chat retention cleanup", result.stdout)
+
+    def test_telemetry_explicit_partial_counts_and_failure_isolation(self):
+        payloads = []
+
+        def submit(build, **config):
+            payloads.append((build(), config))
+            raise RuntimeError("collector unavailable")
+
+        old = NOW - 91 * 86400
+        with patch.object(retention, "submit_summary", side_effect=submit):
+            code, stdout, stderr, requests = self.run_cleanup({
+                CHAT_LIST: [{"id": "first-private-chat", "updated_at": old},
+                            {"id": "second-private-chat", "updated_at": old}],
+                ("DELETE", "/api/v1/chats/second-private-chat"): httpx.Response(403),
+            })
+        self.assertEqual(code, 1)
+        self.assertIn("chat_delete: HTTP 403", stderr)
+        self.assertNotIn("status=ok", stdout)
+        payload, config = payloads[0]
+        self.assertEqual(payload["outcome"], "partial")
+        self.assertEqual(payload["deleted"], 1)
+        self.assertEqual(payload["extensions"]["counts"]["chats_scanned"], 2)
+        self.assertEqual(payload["extensions"]["counts"]["chats_deleted"], 1)
+        self.assertNotIn("files_total", payload["extensions"]["counts"])
+        self.assertNotIn("users_deleted", payload["extensions"]["counts"])
+        for value in ["first-private-chat", "second-private-chat", USER["id"], "HTTP 403"]:
+            self.assertNotIn(value, json.dumps(payload))
+        self.assertEqual(config["endpoint"], "https://telemetry.bayleaf.dev/v1/deletions")
+        self.assertFalse(config["enabled"])
+
+    def test_telemetry_success_and_dedicated_environment(self):
+        payloads = []
+
+        def submit(build, **config):
+            payloads.append((build(), config))
+            return False
+
+        with (
+            patch.object(retention, "submit_summary", side_effect=submit),
+            patch.dict(retention.os.environ, {"TELEMETRY_ENABLED": "true",
+                "TELEMETRY_CHAT_RETENTION_WRITE_TOKEN": "synthetic-chat-write-token",
+                "OWUI_TOKEN": "private-admin-token"}),
+        ):
+            code, stdout, stderr, requests = self.run_cleanup()
+        self.assertEqual(code, 0)
+        self.assertIn("status=ok", stdout)
+        payload, config = payloads[0]
+        self.assertTrue(config["enabled"])
+        self.assertEqual(config["service_token"], "synthetic-chat-write-token")
+        self.assertEqual(payload["outcome"], "success")
+        self.assertEqual(payload["extensions"]["counts"]["files_deleted"], 1)
+        self.assertNotIn("private-admin-token", json.dumps((payload, config)))
+
+    def test_telemetry_preflight_failure_keeps_counts_unknown(self):
+        payloads = []
+        with patch.object(retention, "submit_summary", side_effect=lambda build, **kw: payloads.append(build())):
+            code, stdout, stderr, requests = self.run_cleanup({"/health": {"status": False}})
+        self.assertEqual(code, 1)
+        self.assertEqual(payloads[0]["outcome"], "failure")
+        self.assertEqual(payloads[0]["extensions"]["counts"], {})
+
     def run_cleanup(self, overrides=None, settings=None):
         """Supply external HTTP, policy settings and wall clock directly.
 

@@ -1,6 +1,8 @@
 import puppeteer from '@cloudflare/puppeteer';
 import { Verifier } from '@tinfoilsh/verifier';
 import { Identity } from 'ehbp';
+import { createServiceSender } from '../../telemetry/adapters/common.mjs';
+import { probeSummary } from '../../telemetry/adapters/probes.mjs';
 
 const MAX_BYTES = 1024 * 1024;
 const MAX_EVENT_CHARS = 64 * 1024;
@@ -705,6 +707,7 @@ export async function probeBrowser(sessionToken, browserBinding, signal, {
 
 export default {
   async fetch(request, env, ctx) {
+    const startedAt = new Date().toISOString();
     const timing = metrics();
     const respond = (status, text, extra = {}) => new Response(
       request.method === 'HEAD' ? null : `${text}\n`, {
@@ -751,9 +754,9 @@ export default {
       };
       if (report.cleanup) headers['X-BayLeaf-Probe-Cleanup'] = report.cleanup;
       if (report.close) headers['X-BayLeaf-Probe-Close'] = report.close;
-      return new Response(request.method === 'HEAD' ? null : JSON.stringify({
-        version: 2, layer, ...report, result, metrics: measurement,
-      }) + '\n', { status, headers });
+      const summary = { version: 2, layer, ...report, result, metrics: measurement };
+      queueProbeTelemetry(env, ctx, summary, startedAt);
+      return new Response(request.method === 'HEAD' ? null : JSON.stringify(summary) + '\n', { status, headers });
     };
     timing.begin('configuration');
     if (env.ENABLED !== 'true') { timing.fail(); return finish(503, 'disabled'); }
@@ -827,3 +830,22 @@ export default {
     }
   },
 };
+const telemetrySenders = new WeakMap();
+
+// Called only after the final timing snapshot. No new probe/inference work.
+function queueProbeTelemetry(env, ctx, report, startedAt) {
+  try {
+    if (env.TELEMETRY_ENABLED !== 'true' || !ctx?.waitUntil) return;
+    let sender = telemetrySenders.get(env);
+    if (!sender) {
+      sender = createServiceSender({ source: 'probe', enabled: true,
+        endpoint: 'https://telemetry.bayleaf.dev/v1/probes',
+        service_token: env.TELEMETRY_PROBE_WRITE_TOKEN });
+      telemetrySenders.set(env, sender);
+    }
+    const payload = probeSummary(report, { run_id: crypto.randomUUID(), started_at: startedAt,
+      ended_at: new Date().toISOString(),
+      outcome: report.result === 'ok' ? 'ok' : report.result === 'disabled' ? 'disabled' : 'failed' });
+    if (payload) ctx.waitUntil(sender(payload).catch(() => false));
+  } catch { /* Telemetry must not change probe results, headers or cleanup. */ }
+}

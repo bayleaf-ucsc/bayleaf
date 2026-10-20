@@ -1,0 +1,54 @@
+{
+  "status": "full_container_synthetic_pass",
+  "production_requests": 0,
+  "image": "sha256:4afdb1d4384a194576ea2c6af738f6b2a766cc823717c766153ae4c8f26429e9",
+  "architecture": "arm64",
+  "postgres_image": "sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826",
+  "health": true,
+  "version": {
+    "version": "0.12.3",
+    "deployment_id": ""
+  },
+  "synthetic_auth": true,
+  "json_inference": true,
+  "sse_inference": true,
+  "postgresql": {
+    "settings": {
+      "statement_timeout": "200ms",
+      "lock_timeout": "100ms",
+      "default_transaction_read_only": "on"
+    },
+    "pool_wait_ms": 103.95,
+    "statement_cancel_ms": 205.18,
+    "lock_cancel_ms": 105.4,
+    "unavailable_ms": 1.23,
+    "unavailable_backoff": true,
+    "failure_backoff": true,
+    "healthy_count_recovered": true,
+    "max_metrics_connections": 1
+  },
+  "native_export": {
+    "points": 13,
+    "names": [
+      "http.server.duration",
+      "http.server.requests",
+      "webui.users.active",
+      "webui.users.active.today",
+      "webui.users.total"
+    ],
+    "routes": [
+      "/_other",
+      "/api/version",
+      "/health",
+      "/api/chat/completions"
+    ]
+  },
+  "sentinel": true,
+  "pid1": "python3",
+  "resources": "1.16% 686.4MiB / 3GiB",
+  "owned_containers_removed": [
+    "bayleaf-otlp-q-b56f122e30-pg",
+    "bayleaf-otlp-q-b56f122e30-fixture",
+    "bayleaf-otlp-q-b56f122e30-app"
+  ]
+}

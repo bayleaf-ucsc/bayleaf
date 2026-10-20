@@ -1,0 +1,23 @@
+{
+  "name": "bayleaf-telemetry",
+  "account_id": "1a49fb69291d42e23c4ed4dcffce5bbc",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-08-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": false },
+  "limits": { "cpu_ms": 50 },
+  "routes": [{ "pattern": "telemetry.bayleaf.dev", "custom_domain": true }],
+  "vars": {
+    "TELEMETRY_ENABLED": "false",
+    "BROWSER_ENABLED": "false",
+    "RETENTION_DAYS": "90"
+  },
+  "d1_databases": [{
+    "binding": "TELEMETRY_DB",
+    "database_name": "bayleaf-telemetry",
+    "database_id": "e99fb918-ea7e-4599-ac7f-069166a0adbd",
+    "migrations_dir": "migrations"
+  }],
+  "triggers": { "crons": ["* * * * *"] }
+}

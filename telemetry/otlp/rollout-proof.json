@@ -1,0 +1,53 @@
+{
+  "status": "synthetic_artifact_pass_real_container_required",
+  "installed_sha256": {
+    "metrics.py": "7df6109fd1c41e51577ce6cc23f14d5963f2f8e6f27a299db5f75589ac827b88",
+    "bayleaf_source_policy.py": "dcce55d6d9fd4447fa134aa8080a38bfbe8d233eb1e5dce9c17b06645d424c70",
+    "setup.py": "d5b80a500ef9ec85cca92ff61c351b5aedad34053c819005a3175da6bf0e0345",
+    "instrumentors.py": "f26fd7f3f437a496b08a86fe1f28a770e3855c198240e47ddb6db7aef2e02d6b",
+    "bayleaf_runtime.py": "d4f8a25cf3dcad6d6a1e693a5ecc8b245e4710ea3742a2ee60a7e50b710e8170"
+  },
+  "startup_hash_drift_refused": true,
+  "adapter_drift_refused": true,
+  "idempotent": true,
+  "unsafe_environment_refused": true,
+  "prior_sentinel_preserved": true,
+  "explicit_all_four_flags_off_supported": true,
+  "mismatch_never_execs_unsanitized_start": true,
+  "success_execs_existing_bash_start": true,
+  "unsupported_dependency_version_refused": true,
+  "actual_pinned_package_versions_verified": true,
+  "real_psycopg2_engine_constructed_without_network": true,
+  "pure_asgi_same_task_headers_timing_error_paths": true,
+  "empty_resource_verified": true,
+  "traces_never_instrumented": true,
+  "unknown_route_method_minimized_before_aggregation": true,
+  "native_http_tuples": 120,
+  "tuples_per_page": 48,
+  "points_per_export": [
+    99,
+    99,
+    99
+  ],
+  "normalized_envelope_bytes": [
+    42415,
+    42496,
+    41734
+  ],
+  "all_tuples_seen_after_three_pages": 120,
+  "failed_export_preserves_cursor": true,
+  "failed_gauge_absent_not_zero": true,
+  "incomplete_first_series_pair_deferred_without_batch_loss": true,
+  "database_failure_backoff_checked": true,
+  "original_cumulative_counts_preserved": true,
+  "synthetic_selects_per_collection": 3,
+  "synthetic_collection_ms": [
+    7.392,
+    3.436,
+    2.966
+  ],
+  "exporter_timeout_seconds": 2,
+  "bearer_header_override_verified": true,
+  "production_requests": 0,
+  "postgresql_timeouts": "constructor_checked_not_live_qualified"
+}

@@ -93,6 +93,26 @@ ITS-operated or ITS-supported one.
 - **Edge logs:** standard Cloudflare and DigitalOcean platform logs (IPs,
   status codes, timestamps) are kept by those vendors at their default
   retention (~72 hours for Cloudflare).
+- **First-party operational telemetry (approved, rollout pending):** BayLeaf
+  plans a private Cloudflare Worker/D1 collector for four classes of observations:
+  public-page arrivals, native Open WebUI aggregate metrics, aggregate deletion-job
+  summaries, and summaries of existing synthetic monitoring probes. Arrivals store
+  only the destination service, collector-assigned time and referring hostname
+  (or unknown), never the referrer path/query/fragment. They count observations,
+  **not unique visitors**: no visitor IDs, tracking cookies, stable pseudonyms or
+  per-client deduplication. Native metrics contain aggregate HTTP counts/duration
+  histograms and user-count gauges with fixed method, sanitized route, status and
+  instance categories, not an individual request history. Deletion/probe summaries
+  retain run IDs/times, aggregate counts, outcomes, fixed result codes, durations,
+  phase/event timings and cleanup status where supplied, not raw logs or errors.
+  None of these classes stores prompts, completions, identities, IP addresses,
+  user agents, private URLs, credentials or arbitrary model strings. Sealed is
+  represented **only by synthetic probe summaries**, not user-request inference
+  metadata. Transport/platform processing can still see connection metadata;
+  the stored telemetry schema does not remove that visibility. The operator can
+  read this telemetry; it is not zero-operator-access. Approval to deploy and
+  collect was given on October 20, 2026, but does not establish that any source
+  is live. See the [rollout and retention record](telemetry/README.md#retention-and-rollout-gates).
 
 **API decision inference:** typed decision
 requests send state, questions and criteria through OpenRouter under the same
@@ -132,6 +152,21 @@ version-controlled alongside the code that enforces them:
   is unavailable. Permanent preview-name reservations remain to prevent origin
   reassignment; provider billing history and backups are not erased by this job.
   There is no extra rollout grace period or automated advance-warning email.
+- **Operational telemetry (planned):** all four classes have a **90-day maximum
+  live lifetime from observation**, not from receipt or download. Expired rows
+  are excluded from private reads immediately; physical deletion runs in bounded
+  minute-by-minute batches and can lag during backlog or outages. Cloudflare D1
+  paid-plan Time Travel can retain deleted rows for **up to 30 additional days
+  after physical deletion**, so recovery copies can outlive day 90 plus purge
+  delay. Restores must reapply retention and remove expired rows before use.
+  No automatic exports or long-term archive are created. Operator-created
+  reports, exports and derived artifacts must be deleted by their underlying
+  observations' expiry (the earliest expiry when several are included); copying
+  or aggregation does not restart the clock or justify indefinite retention.
+  Four content-free policy rows persist to prevent retention increases or
+  resurrection of retired observations. These telemetry rules do not change
+  the separate conversation, account, sandbox, provider-billing or platform-log
+  retention schedules.
 
 ## Your controls
 
@@ -173,7 +208,8 @@ research-and-education identity broker.
   WebUI application and its encrypted PostgreSQL database).
 - [Cloudflare](https://www.cloudflare.com/): hosts BayLeaf API (the Worker and
   its D1 edge database), including the protected preview gateway on
-  `bayleaf-proxies.dev`.
+  `bayleaf-proxies.dev`, and is the planned host of the private operational
+  telemetry Worker/D1 collector described above.
 - [Daytona](https://www.daytona.io/): sandboxed Linux execution environments
   for the Code Sandbox feature (opt-in).
 - [Tavily](https://tavily.com/): web search and page content extraction. No

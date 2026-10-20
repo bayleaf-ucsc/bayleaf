@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/open-webui/open-webui",
+  "tag": "v0.12.3",
+  "commit": "91ea4e3421d1d8069f13d4a463fcb5986d94ea60",
+  "files": {
+    "LICENSE": "5f1bd74c48bf13ab0f82e177ad9e637313b92533d20ead2593d49347a47fc232",
+    "env.py": "c44eb4ddc6fb0fe66ee36d6910c9e128d11e91ba4df61534075437c247f7c78a",
+    "instrumentors.py": "f26fd7f3f437a496b08a86fe1f28a770e3855c198240e47ddb6db7aef2e02d6b",
+    "metrics.py": "cf0119a00484bf1ecd234a306e3c00833240695465ae9261e621c1ef68e94037",
+    "pyproject.toml": "10e012adb1877e9b12d58e28c8aa942b2fe66fa10ed245950ba33d9ca5b8f5d5",
+    "requirements.txt": "d532d221dcd8beb0d36f7756259cc33515464c060775f5de3c8b197a5f55f098",
+    "setup.py": "6c8101c59f8b62857ba4f28002b1736c9c36f5e58e99426c285137bf69817b24"
+  }
+}

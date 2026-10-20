@@ -113,6 +113,7 @@ bayleaf/
 │   ├── style.css         # Stylesheet (carries a WCAG contrast invariant)
 │   └── images/           # og-card.png + the script that generates it
 ├── sandbox/              # Public BayLeaf Sandboxes home → https://sandbox.bayleaf.dev
+├── telemetry/            # Local collector/D1 proof; not deployed or enabled (#112)
 ├── politics/             # Dependency audit, VPATs, position papers
 ├── scripts/              # GitHub Pages artifact builder
 ├── training/             # Work-in-progress React site for training users in effective GenAI usage
@@ -187,14 +188,19 @@ The landing site source (`landing/`) is one hand-written static HTML page with a
 stylesheet. GitHub Actions runs `scripts/build_pages.py` to copy that source
 into a Pages artifact and replace the landing page's recent-posts fallback with
 five entries from the public BayLeaf Blog RSS feed. The deployed site still has
-no runtime JavaScript. For the API (`api/`), see `api/AGENTS.md` for build and
+no JavaScript dependency for page content or controls. An optional self-hosted
+arrival collector performs no DOM updates. For the API (`api/`), see `api/AGENTS.md` for build and
 deploy commands.
 
-Four things in or deployed from `landing/` are generated rather than hand-written:
+Five things in or deployed from `landing/` are generated rather than hand-written:
 
 - `landing/images/og-card.png`, the Open Graph share card. Regenerate with
   `./landing/images/make-og-card.py` after changing the tagline or the palette.
   Its source art is `chat/models/basic/profile.png`, the BayLeaf logo.
+- `landing/arrival.js`, the self-hosted optional browser arrival bundle. Regenerate
+  with `node telemetry/browser/build.mjs`; `telemetry/browser/config.json` owns
+  its explicit activation state (currently false). Normal builds preserve that
+  configured state. Do not hand-edit the bundle or enable collection implicitly.
 - The empirical claims in `politics/VPAT-pages.md`. Any change to
   `landing/index.html` or `landing/style.css` can invalidate a measured contrast
   ratio, a reflow result, or a structural claim. GitHub-served markdown files

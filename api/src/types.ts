@@ -4,6 +4,7 @@
 
 /** Cloudflare Worker bindings (env vars + secrets) */
 export interface Bindings {
+  BROWSER_ARRIVALS_ENABLED?: string;
   BROWSER_SANDBOX_ENABLED?: string;
   SANDBOX_BROWSER: DurableObjectNamespace;
   GRANTS_ENABLED?: string;

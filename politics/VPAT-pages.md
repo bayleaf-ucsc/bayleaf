@@ -37,7 +37,34 @@ rendered text and link bounds inspected. This was a limited content check, not a
 repeat of the earlier contrast, 320px reflow, zoom, keyboard, or assistive-technology
 tests. Earlier measurements below retain their original evaluation scope.
 
-**UI origin.** One static HTML file with one external stylesheet,
+**2026-10-20 optional arrival client, local source qualification only.**
+The local landing now loads self-hosted generated `landing/arrival.js`; collection
+is explicitly disabled in `telemetry/browser/config.json`. Its optional single
+arrival POST performs no DOM updates, creates no controls or status messages,
+and is not required for page content or controls. This supersedes the previous
+absolute no-runtime-JavaScript description, not the dates or scope of earlier
+measurements. It does not establish deployment or activation.
+
+Bounded current evidence: [`telemetry/browser/test-browser.py`](../telemetry/browser/test-browser.py)
+drives installed Google Chrome through Playwright at **1280 × 900 and 360 × 800**,
+using anonymous local-source fixtures with every HTTP request intercepted
+(including the third-party iframe and telemetry POST). Enabled and disabled
+variants have identical main-content visible text and bounding rectangles and
+no page exceptions. Actual POST bodies contain only the versioned destination
+and sanitized referring hostname; Cookie, Referer and Authorization are absent.
+History navigation adds no observations, and replay on a private path sends
+nothing. No real user, remote browser service, production request or retained
+recording is involved. Source inspection confirms no DOM/focus/status writes.
+
+This is a regression check for this nonvisual change, **not a new accessibility
+audit**: no fresh contrast, 320px reflow, zoom, text-spacing, keyboard-focus,
+accessibility-tree, media-player or screen-reader evaluation was performed.
+Geometry equality does not establish criterion-wide reflow or keyboard support.
+Historical findings and existing video-caption/audio-description gaps below
+retain their previous scope and status.
+
+**UI origin.** One static HTML file with one external stylesheet and an optional
+self-hosted arrival script,
 served via [GitHub Pages](https://pages.github.com/) with custom
 domain per [`landing/CNAME`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/landing/CNAME):
 
@@ -53,7 +80,11 @@ domain per [`landing/CNAME`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/l
   generated recent-post list, and `:focus-visible` indicators. A
   GitHub Actions build replaces a source fallback with five escaped
   entries from the BayLeaf Blog RSS feed before deploying an immutable
-  Pages artifact. The deployed page contains no runtime JavaScript.
+  Pages artifact. Page content and controls have no JavaScript dependency.
+- [`landing/arrival.js`](https://github.com/bayleaf-ucsc/bayleaf/blob/main/landing/arrival.js):
+  generated from the shared source-side telemetry adapter. The locally qualified
+  optional script performs no DOM updates or dynamic status messaging; collection
+  remains disabled pending separate rollout. See the dated bounded evidence above.
 
 **Why this scope.** The landing is a small HTML document with no
 framework, no runtime DOM manipulation, and no user input. One bounded
@@ -261,7 +292,10 @@ prompt. Support and use-cases pages add `.note` callout blocks (styled
 `<div>`, not a landmark); `privacy.html` uses one `.note` plus a plain
 `<ul>` for the subprocessor list.
 
-No page contains forms, JavaScript, or rendered `<img>` elements. The
+In the historical four-page audit, no page contained forms, JavaScript, or
+rendered `<img>` elements. The current landing still has no forms or rendered
+`<img>` elements; its optional arrival script has no DOM/control effects, as
+qualified narrowly in the 2026-10-20 note above. The
 landing contains one `<iframe>` media embed. All four pages reference
 a shared Open Graph share card at `images/og-card.png` via `<meta>`
 tags; that image is consumed by link-unfurling clients and is never
@@ -567,7 +601,7 @@ Level AA is the target set for [ADA Title II](https://www.ada.gov/resources/2024
 | 3.2.4 | [Consistent Identification](https://www.w3.org/WAI/WCAG21/Understanding/consistent-identification) | Supports | Pages: recurring components (the `.service-link` button system, the `.note` callout, the `.contact` footer block) are styled and labelled consistently across all four pages via the shared stylesheet; the same link text refers to the same destination everywhere. |
 | 3.3.3 | [Error Suggestion](https://www.w3.org/WAI/WCAG21/Understanding/error-suggestion) | N/A | No forms on any page. |
 | 3.3.4 | [Error Prevention (Legal, Financial, Data)](https://www.w3.org/WAI/WCAG21/Understanding/error-prevention-legal-financial-data) | N/A | Not applicable to this surface. |
-| 4.1.3 | [Status Messages](https://www.w3.org/WAI/WCAG21/Understanding/status-messages) | N/A | No dynamic status; no JavaScript on any page. |
+| 4.1.3 | [Status Messages](https://www.w3.org/WAI/WCAG21/Understanding/status-messages) | N/A | No dynamic status messages in the BayLeaf page. The optional self-hosted arrival client performs no DOM updates or status announcements; content and controls do not depend on it. Source inspection and the bounded 2026-10-20 local enabled/disabled comparison support only that nonvisual-change claim, not a fresh criterion-wide audit. |
 
 **Level AAA criteria** are not included in this table. VPAT 2.5 treats Level AAA as optional; conformance claims at AA do not include AAA. BayLeaf has not targeted AAA and does not claim it.
 

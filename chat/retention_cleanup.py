@@ -56,7 +56,16 @@ import os
 import re
 import sys
 import time
+import uuid
+from pathlib import Path
 import httpx
+
+# Direct script invocation sets sys.path to chat/, not the repository root.
+# Docker copies this same package path from its repository-root build context.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from telemetry.adapters.chat_retention import (
+    ChatRetentionCounts, RetentionPolicy, Run, chat_retention_summary, submit_summary,
+)
 
 
 def parse_args(argv=None):
@@ -405,7 +414,7 @@ def delete_user(client: httpx.Client, user_id: str):
         fail("user_delete: deletion not confirmed")
 
 
-def cleanup_accounts(client, settings, users, held_user_ids, now, log):
+def cleanup_accounts(client, settings, users, held_user_ids, now, log, counts):
     """Recheck identity, role, activity and live holds immediately before DELETE.
 
     This narrows but cannot eliminate races: OWUI has no conditional account
@@ -426,6 +435,8 @@ def cleanup_accounts(client, settings, users, held_user_ids, now, log):
             candidates.append(user)
     log(f"users_invalid_activity={invalid}")
     log(f"users_expired={len(candidates)}")
+    counts.users_invalid_activity = invalid
+    counts.users_expired = len(candidates)
     deleted = eligible = skipped = 0
     try:
         for candidate in candidates:
@@ -449,6 +460,11 @@ def cleanup_accounts(client, settings, users, held_user_ids, now, log):
                 delete_user(client, candidate["id"])
                 deleted += 1
     finally:
+        counts.users_recheck_skipped = skipped
+        if settings.dry_run:
+            counts.users_would_delete = eligible
+        else:
+            counts.users_deleted = deleted
         log(f"users_recheck_skipped={skipped}")
         if settings.dry_run:
             log(f"users_would_delete={eligible}")
@@ -459,6 +475,38 @@ def cleanup_accounts(client, settings, users, held_user_ids, now, log):
 # --- Main ---
 
 def run_cleanup(client: httpx.Client, settings: Settings, clock=time.time):
+    """Keep delivery outside the source transaction, including on SystemExit.
+
+    Only explicit accumulators cross this boundary. Logs are not a data source;
+    the OWUI client's credentials, users, chats and files never reach the sender.
+    """
+    counts = ChatRetentionCounts()
+    state = {}
+    started_at = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    outcome = "failed"
+    try:
+        result = _run_cleanup(client, settings, clock, counts, state)
+        outcome = "ok"
+        return result
+    finally:
+        try:
+            if outcome != "ok" and any((counts.chats_deleted, counts.files_deleted, counts.users_deleted)):
+                outcome = "partial"
+            ended_at = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+            run = Run(str(uuid.uuid4()), started_at, ended_at, outcome)
+            policy = RetentionPolicy(settings.retention_days, settings.orphan_grace_seconds,
+                                     settings.user_retention_months, state.get("file_sweep"))
+            submit_summary(
+                lambda: chat_retention_summary(counts, run, "dry-run" if settings.dry_run else "delete", policy),
+                enabled=os.environ.get("TELEMETRY_ENABLED") == "true",
+                endpoint="https://telemetry.bayleaf.dev/v1/deletions",
+                service_token=os.environ.get("TELEMETRY_CHAT_RETENTION_WRITE_TOKEN"),
+            )
+        except Exception:
+            pass  # Delivery failure must never mask the original cleanup outcome.
+
+
+def _run_cleanup(client: httpx.Client, settings: Settings, clock, counts, state):
     """Run all phases with an owned-by-caller client and an explicit clock."""
     if settings.retention_days < 1:
         fail(f"RETENTION_DAYS must be >= 1, got {settings.retention_days}")
@@ -483,6 +531,7 @@ def run_cleanup(client: httpx.Client, settings: Settings, clock=time.time):
 
     # 1. Get all users
     users = get_all_users(client)
+    counts.users_total = len(users)
     log(f"users_total={len(users)}")
 
     # 2. Get group map and identify held users
@@ -492,6 +541,7 @@ def run_cleanup(client: httpx.Client, settings: Settings, clock=time.time):
         if is_held(user, group_map):
             held_user_ids.add(user["id"])
     log(f"users_held={len(held_user_ids)}")
+    counts.users_held = len(held_user_ids)
 
     # 3. Enumerate chats and apply retention
     total_scanned = 0
@@ -518,6 +568,13 @@ def run_cleanup(client: httpx.Client, settings: Settings, clock=time.time):
                 users_impacted.add(uid)
     finally:
         # Preserve partial progress on failure, without claiming success.
+        counts.chats_scanned = total_scanned
+        counts.chats_expired = total_expired
+        counts.users_impacted = len(users_impacted)
+        if settings.dry_run:
+            counts.chats_would_delete = total_expired
+        else:
+            counts.chats_deleted = total_deleted
         log(f"chats_scanned={total_scanned}")
         log(f"chats_expired={total_expired}")
         if settings.dry_run:
@@ -541,14 +598,16 @@ def run_cleanup(client: httpx.Client, settings: Settings, clock=time.time):
     log(f"orphan_grace_seconds={settings.orphan_grace_seconds}")
 
     files = get_all_files(client)
+    counts.files_total = len(files)
     log(f"files_total={len(files)}")
     # With no old files, references cannot affect this run's deletion decisions.
     # Keep the candidate cutoff fixed rather than aging new files into eligibility
     # while discovery is running.
     grace_cutoff = int(clock()) - settings.orphan_grace_seconds
     if not any(f["created_at"] < grace_cutoff for f in files):
+        state["file_sweep"] = "skipped_no_eligible_files"
         log("file_sweep=skipped_no_eligible_files")
-        cleanup_accounts(client, settings, users, held_user_ids, now, log)
+        cleanup_accounts(client, settings, users, held_user_ids, now, log, counts)
         log("status=ok")
         return
 
@@ -557,6 +616,7 @@ def run_cleanup(client: httpx.Client, settings: Settings, clock=time.time):
 
     # Reference source 1: knowledge bases
     kbs = get_all_knowledge_bases(client)
+    counts.knowledge_bases = len(kbs)
     log(f"knowledge_bases={len(kbs)}")
     for kb in kbs:
         referenced_ids.update(get_kb_file_ids(client, kb["id"]))
@@ -565,6 +625,7 @@ def run_cleanup(client: httpx.Client, settings: Settings, clock=time.time):
     # After Phase A, expired chats have been deleted; their attachments
     # correctly no longer appear in anyone's chat list.
     chats_fetched = 0
+    counts.chats_scanned_for_refs = 0
     for user in users:
         uid = user["id"]
         # Re-list: a user whose chats were all expired during Phase A might
@@ -574,6 +635,7 @@ def run_cleanup(client: httpx.Client, settings: Settings, clock=time.time):
             chat_id = chat_summary["id"]
             full = get_full_chat(client, chat_id)
             chats_fetched += 1
+            counts.chats_scanned_for_refs = chats_fetched
             # Match file UUIDs against the known file-id set. This avoids
             # picking up unrelated UUIDs (model ids, message ids, etc.).
             haystack = json.dumps(full)
@@ -583,6 +645,7 @@ def run_cleanup(client: httpx.Client, settings: Settings, clock=time.time):
 
     log(f"chats_scanned_for_refs={chats_fetched}")
     log(f"files_referenced={len(referenced_ids)}")
+    counts.files_referenced = len(referenced_ids)
 
     # Candidate orphans: unreferenced AND older than grace window
     orphans = [
@@ -597,9 +660,12 @@ def run_cleanup(client: httpx.Client, settings: Settings, clock=time.time):
     )
     log(f"files_in_grace={files_in_grace}")
     log(f"files_orphan={len(orphans)}")
+    counts.files_in_grace = files_in_grace
+    counts.files_orphan = len(orphans)
 
     orphan_deleted = 0
     if settings.dry_run:
+        counts.files_would_delete = len(orphans)
         log(f"files_would_delete={len(orphans)}")
     else:
         try:
@@ -607,11 +673,12 @@ def run_cleanup(client: httpx.Client, settings: Settings, clock=time.time):
                 delete_file(client, f["id"])
                 orphan_deleted += 1
         finally:
+            counts.files_deleted = orphan_deleted
             log(f"files_deleted={orphan_deleted}")
 
     # Account deletion comes last so Phase B never tries to fetch deleted users'
     # chats. Attachments orphaned by account deletion are swept on the next run.
-    cleanup_accounts(client, settings, users, held_user_ids, now, log)
+    cleanup_accounts(client, settings, users, held_user_ids, now, log, counts)
     log("status=ok")
 
 

@@ -328,6 +328,52 @@ updated in the job's secret env var.
 
 ---
 
+### 6a. Private operational telemetry (approved, rollout pending)
+
+On 2026-10-20 the operator approved deployment and live collection of four
+classes in a separate Cloudflare Worker/D1 collector: public-page arrivals,
+native OWUI aggregate metrics, aggregate deletion-job summaries and summaries of
+existing synthetic monitoring probes. Approval does not establish that the
+collector or sources are already live. Exact-diff publication approval remains
+required; see the [rollout record](../telemetry/README.md#retention-and-rollout-gates)
+and [privacy notice](../PRIVACY.md).
+
+Public-page arrivals record only destination service, collector-assigned time
+and referring hostname (or unknown), not referrer paths/query strings. They are
+nonunique observations, not visitor counts: no visitor identifiers, tracking
+cookies, stable pseudonyms or per-client deduplication. Native OWUI metrics are
+aggregate HTTP counts/duration histograms and global user-count gauges, with
+fixed method, sanitized route, status and instance categories, not individual
+request records. Cleanup summaries preserve job/run IDs and times, fixed
+outcomes, durations, modes/configuration and approved aggregate counters. Probe
+summaries preserve synthetic run IDs/times, layer, fixed result codes, outcomes,
+durations, phase/event timings and cleanup status, not actual conversations or
+raw logs/errors. No prompts, completions, identities, IP/UA, private URLs,
+credentials or model strings enter this collector. Sealed coverage is only
+synthetic probe summaries, never per-request user inference metadata. The
+operator can read the telemetry; it is not zero-operator-access.
+
+The maximum live lifetime is **90 days from observation for every class**,
+including each metric point's own observation time. Receipt/retry does not
+restart it. Private reads exclude expired observations immediately. Physical
+purge runs each minute in bounded batches (at most 500 rows per table), so
+backlogs/outages can delay deletion. Cloudflare D1 paid-plan Time Travel may
+retain deleted rows for **up to 30 additional days after physical deletion**,
+on top of purge delay; this is not erasure at day 90. Before restored data can
+be read or collection resumed, effective retention ceilings/cutoffs must be
+reapplied and expired rows purged.
+
+No automatic exports or long-term archive are created. Reports, downloaded
+exports and derived artifacts must expire with their underlying observations
+(at the earliest included observation's expiry); copying or aggregation cannot
+restart retention or create indefinite copies. The operator must set and enforce
+artifact expiry because downloaded files cannot be revoked by the collector.
+Four content-free policy rows persist to prevent raising an established TTL
+ceiling or resurrecting retired observations. This separate telemetry schedule
+does not change conversation/account/file retention, DigitalOcean's existing
+platform-log lifecycle, or the inference-only ZDR boundary. Chat still stores
+history accessible to the administrator.
+
 ## 7. Scope and Limitations
 
 - This policy covers **conversation data** (the `chat` table and associated

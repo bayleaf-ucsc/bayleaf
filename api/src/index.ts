@@ -22,6 +22,7 @@ import { serviceLoginRoutes } from './routes/serviceLogin';
 import { cleanupServiceSessions } from './serviceSessions';
 import { cleanupSandboxCredentials } from './sandboxCredentials';
 import { cleanupInactiveUsers } from './userRetention';
+import { queueDeletionTelemetry, type TelemetryBindings } from './telemetry';
 export { SandboxManagement } from './serviceSessions';
 import { dashboardRoutes } from './routes/dashboard';
 import { keyRoutes } from './routes/key';
@@ -239,15 +240,19 @@ app.onError((err, c) => {
 
 export default {
   fetch: app.fetch,
-  scheduled: async (event: ScheduledController, env: AppEnv['Bindings']) => {
+  scheduled: async (event: ScheduledController, env: AppEnv['Bindings'] & TelemetryBindings, ctx?: ExecutionContext) => {
     await cleanupServiceSessions(env);
     await cleanupSandboxCredentials(env);
     if (event.cron === SANDBOX_REAPER_CRON) {
+      const sandboxStartedAt = new Date().toISOString();
       const report = await reapInactiveSandboxes(env, event.scheduledTime);
       console.info('Sandbox reaper', report); // Aggregate metadata only; observability stays disabled.
+      queueDeletionTelemetry(env, ctx, 'sandbox-reaper', report, sandboxStartedAt, env.SANDBOX_REAPER_MODE);
       if (report.failed || report.pending) throw new Error('Sandbox reaper needs retry');
+      const accountsStartedAt = new Date().toISOString();
       const accounts = await cleanupInactiveUsers(env);
       console.info('Account retention', accounts); // Aggregate metadata only.
+      queueDeletionTelemetry(env, ctx, 'api-retention', accounts, accountsStartedAt, env.USER_RETENTION_MODE);
       if (accounts.providerPending) throw new Error('Account credential cleanup needs retry');
       return;
     }

@@ -21,6 +21,7 @@
     "test:service-sessions": "node scripts/harness-service-sessions.mjs && node ../sandbox/test-worker.mjs",
     "test:user-activity": "node scripts/test-user-activity.mjs",
     "test:user-retention": "node scripts/test-user-retention.mjs",
+    "test:telemetry": "node scripts/test-telemetry.mjs",
     "test:sandbox-credentials": "node scripts/harness-sandbox-credentials.mjs",
     "test:sandbox-plugin": "npm --prefix sandbox-plugin test",
     "test:nanobot": "python3 scripts/build-nanobot-assets.py --fixture && npm --prefix nanobot-sandbox test && python3 scripts/test-nanobot-setup.py && python3 scripts/test-nanobot-assets.py",
