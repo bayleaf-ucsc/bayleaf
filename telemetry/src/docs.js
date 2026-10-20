@@ -18,7 +18,7 @@ export function documentation(request) {
   const headers = { 'Content-Type': json ? 'application/json; charset=utf-8' : 'text/html; charset=utf-8',
     'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
     'Content-Security-Policy': json ? "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
-      : "default-src 'none'; script-src https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.75.1/dist/browser/standalone.js; style-src 'unsafe-inline'; connect-src 'self'; img-src data:; font-src data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'" };
+      : `default-src 'none'; script-src ${SCALAR_URL}; style-src 'unsafe-inline'; connect-src 'self' ${SCALAR_URL}.map; img-src data:; font-src data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'` };
   if (!['GET', 'HEAD'].includes(request.method)) return new Response(null, { status: 405, headers: { ...headers, Allow: 'GET, HEAD' } });
   return new Response(request.method === 'HEAD' ? null : json ? JSON.stringify(openapi) : DOCS_HTML, { headers });
 }

@@ -78,6 +78,8 @@ test('Scalar uses canonical spec, a pinned external script, no interactive clien
   const csp = r.headers.get('Content-Security-Policy');
   assert.ok(csp.includes(`script-src ${SCALAR_URL}`));
   assert.ok(csp.includes("connect-src 'self'"));
+  assert.ok(csp.includes(`connect-src 'self' ${SCALAR_URL}.map;`));
+  assert.ok(!csp.includes('cloudflareinsights.com'));
   assert.ok(csp.includes("frame-ancestors 'none'"));
   assert.ok(!csp.includes("script-src 'unsafe-inline'"));
 });
