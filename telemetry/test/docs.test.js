@@ -6,38 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { openapi } from '../src/openapi.js';
 import { DOCS_HTML, SCALAR_URL } from '../src/docs.js';
 import { createWorker } from '../src/worker.js';
-import { validate } from '../src/validate.js';
-import { LIMITS, METRICS, SOURCE_JOBS, DELETION_COUNTS, SCHEMA_VERSION, POLICY_VERSION } from '../src/policies.js';
+import { LIMITS, METRICS, SCHEMA_VERSION, POLICY_VERSION } from '../src/policies.js';
 import { BROWSER_SCHEMA_VERSION, BROWSER_POLICY_VERSION } from '../src/browser-policy.js';
+import { TABLES } from '../src/store.js';
 
 const schemas = openapi.components.schemas;
-// Test-only evaluator for the small structural JSON Schema subset emitted here.
-// Not production validation or an OpenAPI conformance implementation. Cross-field
-// constraints are checked by validate(), not falsely modeled as JSON Schema.
-function matches(schema, value) {
-  if (schema.$ref) return matches(schemas[schema.$ref.split('/').at(-1)], value);
-  if ('const' in schema && schema.const !== value) return false;
-  if (schema.enum && !schema.enum.includes(value)) return false;
-  if (schema.pattern && typeof value === 'string' && !new RegExp(schema.pattern).test(value)) return false;
-  if (schema.oneOf && schema.oneOf.filter(s => matches(s, value)).length !== 1) return false;
-  if (schema.anyOf && !schema.anyOf.some(s => matches(s, value))) return false;
-  if (schema.type === 'null' && value !== null) return false;
-  if (schema.type === 'integer' && !Number.isSafeInteger(value)) return false;
-  if (schema.type === 'number' && (typeof value !== 'number' || !Number.isFinite(value))) return false;
-  if (['integer', 'number'].includes(schema.type) && (value < schema.minimum || value > schema.maximum)) return false;
-  if (schema.type === 'string' && (typeof value !== 'string' || (schema.pattern && !new RegExp(schema.pattern).test(value)) || value.length > schema.maxLength)) return false;
-  if (schema.type === 'boolean' && typeof value !== 'boolean') return false;
-  if (schema.type === 'array' && (!Array.isArray(value) || value.length < schema.minItems || value.length > schema.maxItems || !value.every(v => matches(schema.items, v)))) return false;
-  if (schema.type === 'object') {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-    if (schema.required?.some(k => !(k in value))) return false;
-    if (Object.keys(value).some(k => schema.properties?.[k] ? !matches(schema.properties[k], value[k]) : schema.additionalProperties === false)) return false;
-  }
-  return true;
-}
-const now = 1790000000000;
-const envelope = source => ({ schema_version: SCHEMA_VERSION, source, batch_id: '00000000-0000-4000-8000-000000000001', observed_at: now });
-const worker = createWorker({ clock: () => now });
+const worker = createWorker();
 
 test('public GET/HEAD docs bypass switches, credentials, clock and database, without reflecting requests', async () => {
   const unreachable = () => { throw new Error('public docs must not access private state'); };
@@ -64,109 +38,96 @@ test('public GET/HEAD docs bypass switches, credentials, clock and database, wit
   }
   assert.equal((await worker.fetch(new Request('https://telemetry.invalid/v1/read/browser?from=1&to=2&limit=1'), {})).status, 503);
   assert.equal((await worker.fetch(new Request('https://telemetry.invalid/v1/browser', { method: 'POST' }), {})).status, 503);
-  assert.equal((await worker.fetch(new Request('https://telemetry.invalid/openapi.json'), { TELEMETRY_ENABLED: 'true' })).status, 404, 'no obsolete root alias');
 });
 
-test('Scalar uses canonical spec, a pinned external script, no interactive client or telemetry, restrictive CSP', async () => {
+test('Scalar keeps canonical spec, disabled requests and telemetry, source-map CSP allowance and beacon block', async () => {
   assert.match(SCALAR_URL, /@scalar\/api-reference@\d+\.\d+\.\d+\/dist\/browser\/standalone\.js$/);
   assert.match(DOCS_HTML, /lang="en"/);
   assert.match(DOCS_HTML, /data-url="\/docs\/openapi.json"/);
   for (const setting of ['"hideClientButton":true', '"hideTestRequestButton":true', '"persistAuth":false', '"telemetry":false', '"withDefaultFonts":false']) assert.ok(DOCS_HTML.includes(setting));
   assert.match(DOCS_HTML, /no-referrer/);
-  assert.match(DOCS_HTML, /Do not enter credentials/);
+  assert.doesNotMatch(DOCS_HTML, /<p>|Do not enter credentials/);
   const r = await worker.fetch(new Request('https://telemetry.invalid/docs'), {});
   const csp = r.headers.get('Content-Security-Policy');
   assert.ok(csp.includes(`script-src ${SCALAR_URL}`));
-  assert.ok(csp.includes("connect-src 'self'"));
   assert.ok(csp.includes(`connect-src 'self' ${SCALAR_URL}.map;`));
   assert.ok(!csp.includes('cloudflareinsights.com'));
   assert.ok(csp.includes("frame-ancestors 'none'"));
   assert.ok(!csp.includes("script-src 'unsafe-inline'"));
 });
 
-test('all spec refs resolve; methods, auth classes and binary OTLP contract remain distinct', () => {
+test('spec contains exactly five named GET reads with only operator authorization', () => {
+  assert.deepEqual(Object.keys(openapi.paths).sort(), Object.keys(TABLES).map(k => `/v1/read/${k}`).sort());
+  assert.deepEqual(Object.keys(openapi.components.securitySchemes), ['OperatorBearer']);
+  assert.deepEqual(Object.values(openapi.paths).map(p => p.get.summary), ['Browser arrivals', 'Metrics', 'Probe runs', 'Deletion reports', 'Source status']);
+  for (const path of Object.values(openapi.paths)) {
+    assert.deepEqual(Object.keys(path), ['get']);
+    assert.deepEqual(path.get.security, [{ OperatorBearer: [] }]);
+  }
+  assert.equal(openapi.info.title, 'BayLeaf telemetry');
+  assert.ok(openapi.info.description.length < 180);
+  assert.doesNotMatch(JSON.stringify(openapi), /Bounded private|SourceBearer|BrowserPayload|MetricPoint|Ingestion|Public documentation/);
+});
+
+test('all schema refs resolve and every delivered schema is reachable from a read operation', () => {
+  const reached = new Set();
   const visit = x => {
     if (!x || typeof x !== 'object') return;
-    if (x.$ref) assert.ok(schemas[x.$ref.split('/').at(-1)], x.$ref);
+    if (x.$ref) {
+      const name = x.$ref.split('/').at(-1);
+      assert.ok(schemas[name], x.$ref);
+      if (!reached.has(name)) { reached.add(name); visit(schemas[name]); }
+    }
     Object.values(x).forEach(visit);
   };
-  visit(openapi);
-  const ids = Object.values(openapi.paths).flatMap(path => Object.values(path).map(operation => operation.operationId));
+  visit(openapi.paths);
+  assert.deepEqual([...reached].sort(), Object.keys(schemas).sort());
+  const ids = Object.values(openapi.paths).map(p => p.get.operationId);
   assert.equal(new Set(ids).size, ids.length);
-  for (const klass of ['browser', 'metrics', 'deletions', 'probes', 'status']) {
-    const get = openapi.paths[`/v1/read/${klass}`].get;
-    assert.deepEqual(get.security, [{ OperatorBearer: [] }]);
+});
+
+test('read parameters and errors retain exact limits without ingestion error codes', () => {
+  for (const { get } of Object.values(openapi.paths)) {
     assert.deepEqual(get.parameters.map(p => p.name), ['from', 'to', 'limit']);
+    assert.ok(get.parameters.every(p => p.required && p.in === 'query'));
+    assert.equal(get.parameters[0].schema.maximum, Number.MAX_SAFE_INTEGER);
+    assert.ok(get.parameters[0].description.includes(`${LIMITS.readWindowMs / 86_400_000} days`));
+    assert.ok(get.parameters[1].description.includes(`${LIMITS.futureMs / 1000} seconds`));
+    assert.equal(get.parameters[2].schema.minimum, 1);
     assert.equal(get.parameters[2].schema.maximum, LIMITS.readRows);
+    assert.deepEqual(Object.keys(get.responses), ['200', '400', '401', '503']);
+    assert.match(get.responses[200].description, /\[from, to\)/);
   }
-  assert.deepEqual(openapi.paths['/v1/browser'].post.security, []);
-  for (const klass of ['metrics', 'deletions', 'probes']) assert.deepEqual(openapi.paths[`/v1/${klass}`].post.security, [{ SourceBearer: [] }]);
-  const otlp = openapi.paths['/v1/otlp/metrics'].post;
-  assert.deepEqual(Object.keys(otlp.requestBody.content), ['application/x-protobuf']);
-  assert.equal(otlp.responses[200].content['application/x-protobuf'].schema.maxLength, 0);
-  assert.ok(!otlp.responses[429]);
-  assert.ok(otlp.responses[503]);
-  assert.equal(schemas.BrowserRowResponse.properties.schema_version.const, BROWSER_SCHEMA_VERSION);
-  assert.equal(schemas.BrowserRowResponse.properties.policy_version.const, BROWSER_POLICY_VERSION);
-  assert.equal(schemas.MetricRowResponse.properties.policy_version.const, POLICY_VERSION);
+  assert.deepEqual(schemas.Error.properties.error.enum, ['invalid_payload', 'unauthorized', 'disabled', 'configuration', 'unavailable']);
 });
 
-test('browser wire v1 remains exact; server enrichment is not accepted as client input', () => {
-  const valid = schemas.BrowserPayload.example;
-  assert.ok(matches(schemas.BrowserPayload, valid));
-  assert.equal(validate('browser', valid, {}, now).schema_version, SCHEMA_VERSION);
-  for (const extra of ['network_location', 'policy_version', 'observed_at', 'received_at', 'expires_at', 'visitor_id']) {
-    const payload = { ...valid, [extra]: 'unknown' };
-    assert.ok(!matches(schemas.BrowserPayload, payload));
-    assert.throws(() => validate('browser', payload, {}, now));
+test('response metadata preserves versions, expiry, no-cursor truncation and raw JSON/null representations', () => {
+  for (const name of ['BrowserRow', 'MetricRow', 'ProbeRow', 'DeletionRow', 'StatusRow']) {
+    const response = schemas[`${name}Response`].properties;
+    assert.equal(response.schema_version.const, name === 'BrowserRow' ? BROWSER_SCHEMA_VERSION : SCHEMA_VERSION);
+    assert.equal(response.policy_version.const, name === 'BrowserRow' ? BROWSER_POLICY_VERSION : POLICY_VERSION);
+    assert.equal(response.rows.maxItems, LIMITS.readRows);
+    assert.match(response.truncated.description, /not proof more rows exist/);
+    assert.match(response.truncated.description, /no cursor/);
+    assert.match(schemas[name].properties.expires_at.description, /epoch milliseconds/);
   }
+  assert.equal(schemas.MetricRow.properties.attributes_json.type, 'string');
+  assert.deepEqual(schemas.MetricRow.properties.value.anyOf[1], { type: 'null' });
+  assert.deepEqual(schemas.MetricRow.properties.monotonic.anyOf[0].enum, [0, 1]);
+  assert.match(schemas.StatusRow.description, /not live health/);
 });
 
-test('source-specific deletion schemas and runtime agree, including recursive counter rejection', () => {
-  for (const [source, jobs] of Object.entries(SOURCE_JOBS)) for (const job of jobs) {
-    const payload = { ...envelope(source), job, outcome: 'success', duration_ms: 10, deleted: 0,
-      extensions: { counts: Object.fromEntries(DELETION_COUNTS[source].map(k => [k, 0])) } };
-    assert.ok(matches(schemas.DeletionPayload, payload));
-    validate('deletions', payload, {}, now);
-    for (const changed of [{ ...payload, job: 'unreviewed-job' },
-      { ...payload, extensions: { counts: { raw_error: 1 } } }, { ...payload, source: 'owui' }]) {
-      assert.ok(!matches(schemas.DeletionPayload, changed));
-      assert.throws(() => validate('deletions', changed, {}, now));
-    }
-  }
+test('metric row reference keeps policy names and places interpretation next to measurements', () => {
+  assert.deepEqual(schemas.MetricRow.properties.name.enum, Object.keys(METRICS));
+  assert.deepEqual(schemas.MetricRow.properties.unit.enum, [...new Set(Object.values(METRICS).map(m => m.unit))]);
+  assert.match(schemas.MetricRow.description, /cumulative.*exact reset/);
+  assert.match(schemas.MetricRow.description, /global snapshots.*never sum/);
+  assert.match(schemas.MetricRow.description, /deduplicate exact points/);
+  assert.match(schemas.MetricRow.properties.bucket_counts_json.anyOf[0].description, /Disjoint.*overflow/);
+  assert.match(schemas.MetricRow.properties.time_unix_nano.anyOf[0].description, /Exact uint64/);
 });
 
-test('all policy metric names/kinds/units have strict schemas that agree with runtime', () => {
-  assert.equal(schemas.MetricPoint.oneOf.length, Object.keys(METRICS).length);
-  for (const [name, spec] of Object.entries(METRICS)) {
-    const p = { name, kind: spec.kind, unit: spec.unit, observed_at: now, attributes: {},
-      ...(spec.kind === 'gauge' ? { value: 1 } : { start_at: now - 10_000, temporality: 'cumulative',
-        ...(spec.kind === 'sum' ? { value: 1, monotonic: true } : { count: 1, bounds: [1], bucket_counts: [0, 1] }) }) };
-    const payload = { ...envelope('owui'), points: [p] };
-    assert.ok(matches(schemas.MetricsPayload, payload));
-    validate('metrics', payload, {}, now);
-    for (const point of [{ ...p, unit: 'invented' }, { ...p, attributes: { account: 'forbidden' } }, { ...p, raw: 'forbidden' }]) {
-      const bad = { ...payload, points: [point] };
-      assert.ok(!matches(schemas.MetricsPayload, bad));
-      assert.throws(() => validate('metrics', bad, {}, now));
-    }
-  }
-});
-
-test('probe schema vocabularies match runtime and cross-field rules remain explicitly documented', () => {
-  const p = { ...envelope('probe'), layer: 'sealed', outcome: 'success', duration_ms: 20,
-    phases_ms: { validation: 10 }, events_ms: { done: 20 }, extensions: { result: 'sealed_http_200' } };
-  assert.ok(matches(schemas.ProbePayload, p));
-  validate('probes', p, {}, now);
-  const bad = { ...p, extensions: { result: 'provider said private text' } };
-  assert.ok(!matches(schemas.ProbePayload, bad));
-  assert.throws(() => validate('probes', bad, {}, now));
-  assert.match(schemas.ProbePayload.description, /accounted.*phase sum/);
-  assert.match(openapi.info.description, /durable TTL ceiling/);
-  assert.match(openapi.info.description, /Never sum successive cumulative/);
-});
-
-test('raw read response columns track actual migrations, including JSON strings and SQL nulls', async () => {
+test('read response columns track actual migrations', async () => {
   const sql = await readFile(new URL('../migrations/0001_telemetry.sql', import.meta.url), 'utf8');
   const definitions = { browser_observations: 'BrowserRow', metric_points: 'MetricRow', deletion_runs: 'DeletionRow', probe_runs: 'ProbeRow', source_status: 'StatusRow' };
   for (const [table, name] of Object.entries(definitions)) {
@@ -176,10 +137,6 @@ test('raw read response columns track actual migrations, including JSON strings 
     assert.deepEqual(Object.keys(schemas[name].properties).sort(), columns.sort());
     assert.deepEqual(schemas[name].required.slice().sort(), columns.sort());
   }
-  assert.equal(schemas.MetricRow.properties.attributes_json.type, 'string');
-  assert.ok(matches(schemas.MetricRow.properties.value, null));
-  assert.ok(matches(schemas.MetricRow.properties.monotonic, 1));
-  assert.ok(!matches(schemas.MetricRow.properties.monotonic, true));
 });
 
 test('real workerd serves public docs without a database, credentials, activation or outbound calls', async t => {

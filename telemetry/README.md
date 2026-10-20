@@ -61,21 +61,17 @@ version 3, approved on 2026-10-20. Browser wire payloads remain version 1 and
 cannot supply a network category. Private browser reads advertise the new stored
 versions; each historical row keeps its original versions.
 
-## Write contract
+## Operator read reference
 
-### Public API reference, private observations
-
-GET/HEAD `/docs` renders the same OpenAPI 3.1 contract served at
+GET/HEAD `/docs` renders the operator-read OpenAPI 3.1 reference served at
 `/docs/openapi.json`, following the BayLeaf API route convention. Both remain
 public when ingestion is off, require no credentials or database access, and
 grant no access to observations. Root `/` stays the integration-status dashboard.
 There is no public SQL, telemetry query, agent tool or new llms.txt exposure.
 
-`src/openapi.js` derives enums, metric definitions and bounds from collection
-policy, and describes cross-field/retention checks beside structural schemas.
-The existing `validate.js` is still authoritative, not replaced with a second
-runtime schema library. Contract tests compare synthetic accepted/rejected
-payloads, source-specific counters, route authority and physical read columns.
+The reference lists only the five GET `/v1/read/*` operations, not ingestion or
+public pages. `src/openapi.js` derives read enums and limits from policy; tests
+check route scope, response metadata and physical read columns.
 Run `node --test test/docs.test.js` for the focused credential-free check;
 `npm test` includes it and real local workerd/D1 tests.
 
@@ -87,6 +83,8 @@ are disabled; CSP limits script and connection destinations. Do not enter real
 credentials into the viewer. `/docs/openapi.json` loads no external script.
 The public reference is documentation only, not a source-enable or publishing
 approval, and examples contain no real observations or credentials.
+
+## Write contract
 
 All ingestion is off unless `TELEMETRY_ENABLED="true"`.
 Browser additionally requires `BROWSER_ENABLED="true"`.

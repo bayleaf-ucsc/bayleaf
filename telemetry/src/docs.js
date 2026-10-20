@@ -5,11 +5,10 @@ import { openapi } from './openapi.js';
 export const SCALAR_URL = 'https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.75.1/dist/browser/standalone.js';
 export const DOCS_HTML = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BayLeaf telemetry API reference</title></head><body>
-<nav aria-label="Documentation links"><a href="/">Collector status</a> · <a href="/docs/openapi.json">Raw OpenAPI (no external script)</a></nav>
-<p>This reference loads a pinned Scalar renderer from jsDelivr. The CDN sees the script request, not telemetry records. Interactive requests are disabled. Do not enter credentials here.</p>
+<title>BayLeaf telemetry</title></head><body>
 <script id="api-reference" data-url="/docs/openapi.json" data-configuration='{"hideClientButton":true,"hideTestRequestButton":true,"hideSearch":false,"persistAuth":false,"telemetry":false,"withDefaultFonts":false,"proxyUrl":""}'></script>
 <script src="${SCALAR_URL}" referrerpolicy="no-referrer" crossorigin="anonymous"></script>
+<footer><a href="/">Collector status</a> · <a href="/docs/openapi.json">OpenAPI</a> · Scalar via jsDelivr; request testing off.</footer>
 </body></html>`;
 
 // Runs before ingestion switches. No env, credentials, query reflection or D1.
