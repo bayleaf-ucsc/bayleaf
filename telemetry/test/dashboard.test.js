@@ -4,17 +4,25 @@ import { dashboard, renderDashboard } from '../src/dashboard.js';
 
 const request = (method = 'GET') => new Request('https://telemetry.bayleaf.dev/', { method });
 const enabled = { TELEMETRY_ENABLED: 'true', BROWSER_ENABLED: 'true', RETENTION_DAYS: '90' };
+// One class section holds its gate, retention, and sources.
+const group = (html, kind) => html.match(new RegExp(`<section class="group" aria-labelledby="class-${kind}">[\\s\\S]*?</section>`))?.[0] ?? '';
+const meta = (html, kind) => group(html, kind).match(/<p class="meta">([\s\S]*?)<\/p>/)?.[1] ?? '';
 
-test('operator records distinguish enabled, verified, and pending integrations', async () => {
+test('operator records are dated, not live health, and distinguish enabled, verified, and pending sources', async () => {
   const response = dashboard(request(), enabled);
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /Operator record dated <strong>2026-10-20<\/strong>, not live health/);
-  assert.match(html, /Chat browser<\/th>\s*<td>Disabled \(recorded\)<\/td>\s*<td>Implementation in progress; qualification pending/);
-  assert.equal((html.match(/awaiting ordinary schedule confirmation/g) ?? []).length, 3);
-  assert.match(html, /Verified with a 5-minute export interval/);
-  assert.match(html, /cannot remotely inspect source switches/);
-  assert.equal((html.match(/<li>\w+: 90 days<\/li>/g) ?? []).length, 4);
+  assert.match(html, /<strong>2026-10-20<\/strong>/);
+  assert.match(html, /not live health/);
+  assert.match(html, /cannot see source-side switches/);
+  assert.match(group(html, 'browser'), /Chat<\/span>\s*<span class="detail"><strong>Not enabled\.<\/strong> In development; qualification pending/);
+  assert.equal((group(html, 'deletions').match(/regular schedule not yet confirmed/g) ?? []).length, 3);
+  assert.doesNotMatch(group(html, 'deletions'), /Not enabled/);
+  assert.match(group(html, 'metrics'), /Verified at a 5-minute export interval/);
+  for (const kind of ['browser', 'metrics', 'probes', 'deletions']) {
+    assert.match(meta(html, kind), /Receiver open/);
+    assert.match(meta(html, kind), /Kept 90 days/);
+  }
 });
 
 test('receiver switches fail closed independently of source records', async () => {
@@ -22,14 +30,19 @@ test('receiver switches fail closed independently of source records', async () =
     const response = dashboard(request(), env);
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.match(html, /Global ingestion: Disabled/);
-    assert.match(html, /Enabled \(recorded\)/);
-    assert.doesNotMatch(html, /Open by receiver switches/);
-    assert.match(html, /Blocked: global ingestion disabled/);
+    assert.match(html, /Ingestion is off\./);
+    assert.match(html, /kill switch is engaged/);
+    assert.doesNotMatch(html, /open receiver accepts/);
+    assert.doesNotMatch(html, /Receiver open/);
+    for (const kind of ['browser', 'metrics', 'probes', 'deletions']) assert.match(meta(html, kind), /Receiver closed/);
+    assert.match(group(html, 'browser'), /Landing page<\/span>\s*<span class="detail">Verified/);
   }
   const html = renderDashboard({ TELEMETRY_ENABLED: 'true', BROWSER_ENABLED: 'false' });
-  assert.match(html, /Browser admission: Blocked: browser ingestion disabled/);
-  assert.match(html, /Service admission: Open by receiver switches/);
+  assert.match(html, /Ingestion is on for services/);
+  assert.match(html, /does not show that any source is sending/);
+  assert.match(meta(html, 'browser'), /Receiver closed: browser switch off/);
+  for (const kind of ['metrics', 'probes', 'deletions']) assert.match(meta(html, kind), /Receiver open/);
+  assert.doesNotMatch(renderDashboard(enabled), /TELEMETRY_ENABLED|BROWSER_ENABLED/);
 });
 
 test('only approved public configuration is read; no database, credentials, or request data reflected', async () => {
@@ -51,17 +64,21 @@ test('operator text is escaped, never interpreted as HTML', () => {
     sources: [{ name: attack, enabled: false, kind: 'browser', verification: attack }] });
   assert.doesNotMatch(html, /<script>/);
   assert.equal((html.match(/&lt;script&gt;alert\(&quot;x&quot; &amp; &#39;y&#39;\)&lt;\/script&gt;/g) ?? []).length, 3);
+  assert.match(group(html, 'metrics'), /No sources recorded/);
 });
 
 test('retention reflects bounded configuration, overrides, and conservative defaults without unsafe reflection', () => {
-  assert.match(renderDashboard({}), /<li>browser: 7 days<\/li>/);
-  assert.match(renderDashboard({ ...enabled, BROWSER_RETENTION_DAYS: '30' }), /<li>browser: 30 days<\/li>/);
+  assert.match(meta(renderDashboard({}), 'browser'), /Kept 7 days/);
+  const override = renderDashboard({ ...enabled, BROWSER_RETENTION_DAYS: '30' });
+  assert.match(meta(override, 'browser'), /Kept 30 days/);
+  assert.match(meta(override, 'metrics'), /Kept 90 days/);
   for (const value of ['91', '0', '-1', '1.5', 'Infinity', '<script>secret</script>']) {
     const html = renderDashboard({ RETENTION_DAYS: value });
-    assert.equal((html.match(/Invalid configuration \(allowed: 1–90 days\)/g) ?? []).length, 4);
+    assert.equal((html.match(/Retention misconfigured \(must be 1–90 days\)/g) ?? []).length, 4);
     assert.doesNotMatch(html, /<script>|secret/);
   }
-  assert.match(renderDashboard(enabled), /previously lowered durable retention ceiling can be stricter/);
+  assert.match(renderDashboard(enabled), /lower limit set earlier stays in force/);
+  assert.match(renderDashboard(enabled), /provider backups/);
 });
 
 test('GET and empty HEAD share no-store and restrictive security headers', async () => {

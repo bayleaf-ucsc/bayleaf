@@ -1,14 +1,14 @@
 {
   "recordedOn": "2026-10-20",
   "sources": [
-    { "name": "Landing browser", "kind": "browser", "enabled": true, "verification": "Verified" },
-    { "name": "API browser", "kind": "browser", "enabled": true, "verification": "Verified" },
-    { "name": "Sandboxes browser", "kind": "browser", "enabled": true, "verification": "Verified" },
-    { "name": "Chat browser", "kind": "browser", "enabled": false, "verification": "Implementation in progress; qualification pending" },
-    { "name": "Native Open WebUI metrics", "kind": "metrics", "enabled": true, "verification": "Verified with a 5-minute export interval" },
-    { "name": "Synthetic probes", "kind": "probes", "enabled": true, "verification": "Verified" },
-    { "name": "API retention hooks", "kind": "deletions", "enabled": true, "verification": "Deployed; awaiting ordinary schedule confirmation" },
-    { "name": "Sandbox reaper hooks", "kind": "deletions", "enabled": true, "verification": "Deployed; awaiting ordinary schedule confirmation" },
-    { "name": "Chat retention hooks", "kind": "deletions", "enabled": true, "verification": "Deployed; awaiting ordinary schedule confirmation" }
+    { "name": "Landing page", "kind": "browser", "enabled": true, "verification": "Verified" },
+    { "name": "API", "kind": "browser", "enabled": true, "verification": "Verified" },
+    { "name": "Sandboxes", "kind": "browser", "enabled": true, "verification": "Verified" },
+    { "name": "Chat", "kind": "browser", "enabled": false, "verification": "In development; qualification pending" },
+    { "name": "Open WebUI native metrics", "kind": "metrics", "enabled": true, "verification": "Verified at a 5-minute export interval" },
+    { "name": "Monitoring probes", "kind": "probes", "enabled": true, "verification": "Verified" },
+    { "name": "API retention job", "kind": "deletions", "enabled": true, "verification": "Deployed; regular schedule not yet confirmed" },
+    { "name": "Sandbox reaper", "kind": "deletions", "enabled": true, "verification": "Deployed; regular schedule not yet confirmed" },
+    { "name": "Chat retention job", "kind": "deletions", "enabled": true, "verification": "Deployed; regular schedule not yet confirmed" }
   ]
 }
