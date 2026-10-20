@@ -70,7 +70,7 @@ ${summary}
 ${groups}
 </main><footer>
 <p>Retention is the configured maximum. A lower limit set earlier stays in force, and purge delays or provider backups can keep deleted data recoverable for longer.</p>
-<a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md">Privacy notice</a> · <a href="https://status.bayleaf.dev">Service availability</a></footer></body></html>`;
+<a href="/docs">API reference</a> · <a href="/docs/openapi.json">OpenAPI</a> · <a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md">Privacy notice</a> · <a href="https://status.bayleaf.dev">Service availability</a></footer></body></html>`;
 }
 
 // Route GET/HEAD / here BEFORE the ingestion kill switch. No database binding is needed.

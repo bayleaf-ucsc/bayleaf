@@ -5,6 +5,7 @@ import { OtlpError } from '../otlp/normalize.mjs';
 import { otlpHook } from '../otlp/worker-adapter.mjs';
 import { browserNetworkLocation, BROWSER_SCHEMA_VERSION, BROWSER_POLICY_VERSION } from './browser-policy.js';
 import { dashboard } from './dashboard.js';
+import { documentation } from './docs.js';
 
 const response = (data, status = 200, headers = {}) => Response.json(data, { status,
   headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers } });
@@ -66,6 +67,7 @@ export function createWorker({ otlp, clock = Date.now } = {}) {
   return {
     async fetch(request, env) {
       if (new URL(request.url).pathname === '/') return dashboard(request, env);
+      if (['/docs', '/docs/openapi.json'].includes(new URL(request.url).pathname)) return documentation(request);
       if (env.TELEMETRY_ENABLED !== 'true') return response({ error: 'disabled' }, 503);
       const now = clock();
       let actualOtlp = false;

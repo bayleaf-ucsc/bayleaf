@@ -63,6 +63,31 @@ versions; each historical row keeps its original versions.
 
 ## Write contract
 
+### Public API reference, private observations
+
+GET/HEAD `/docs` renders the same OpenAPI 3.1 contract served at
+`/docs/openapi.json`, following the BayLeaf API route convention. Both remain
+public when ingestion is off, require no credentials or database access, and
+grant no access to observations. Root `/` stays the integration-status dashboard.
+There is no public SQL, telemetry query, agent tool or new llms.txt exposure.
+
+`src/openapi.js` derives enums, metric definitions and bounds from collection
+policy, and describes cross-field/retention checks beside structural schemas.
+The existing `validate.js` is still authoritative, not replaced with a second
+runtime schema library. Contract tests compare synthetic accepted/rejected
+payloads, source-specific counters, route authority and physical read columns.
+Run `node --test test/docs.test.js` for the focused credential-free check;
+`npm test` includes it and real local workerd/D1 tests.
+
+The plain Scalar shell follows `api/src/routes/docs.ts`, but pins renderer
+1.75.1 rather than using a floating CDN version. Loading `/docs` fetches that
+script from jsDelivr, disclosing the script request to that CDN. Referrers,
+renderer telemetry, external fonts, auth persistence and interactive requests
+are disabled; CSP limits script and connection destinations. Do not enter real
+credentials into the viewer. `/docs/openapi.json` loads no external script.
+The public reference is documentation only, not a source-enable or publishing
+approval, and examples contain no real observations or credentials.
+
 All ingestion is off unless `TELEMETRY_ENABLED="true"`.
 Browser additionally requires `BROWSER_ENABLED="true"`.
 
@@ -195,7 +220,8 @@ Production needs platform/account abuse controls and actual allowance review.
 `GET /v1/read/{browser|metrics|deletions|probes|status}` requires the separate
 read bearer and explicit `from`, `to`, `limit` decimal integers. Time is
 `[from,to)`, maximum window seven days, maximum 500 rows, deterministic oldest
-first. Unknown/repeated parameters and future-ended windows are rejected.
+first. Unknown/repeated parameters and windows ending more than 60 seconds in
+the future are rejected.
 No arbitrary SQL, public aggregate endpoint, cookies, read CORS or shared cache.
 An authenticated read advances content-free retention policy state atomically
 with its query; it does not insert observations or manufacture source status.
