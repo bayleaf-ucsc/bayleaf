@@ -71,9 +71,13 @@ Deployed source versions:
   hooks enabled. Daily deletion summaries await ordinary schedule execution.
 - Sandboxes: `58096da8-7368-4d35-ab49-f1a81054f4b0`. Opening the anonymous public
   home produced an arrival row with exactly 90-day expiry.
-- Chat cleanup: environment update deployed, but DO reused an older source commit.
-  A subsequent `apps update --update-sources --wait` is rebuilding the approved
-  GitHub source; completion/source revision still needs verification.
+- Chat cleanup: deployment `28a67c9e-6403-40bf-a7bc-8a918e74b2e0` reached ACTIVE
+  with source `94570a08cdbf38fb1b743c142014681ecb24b649`; Chat health returned 200.
+  The initial environment-only update reused old source, corrected with
+  `apps update --update-sources --wait`. Ordinary scheduled outcomes remain pending.
+- Landing: Pages run `39485090776` succeeded for activation commit `2903006`.
+  Actual browser visits to landing, API and Sandboxes public roots each produced
+  a stored arrival, with exactly 90 days between observation and expiry.
 
 Browser ingress has a 240/minute shared edge-local rate limit before D1 work,
 using the fixed key `browser`, plus the atomic global 120/minute storage budget.
@@ -83,11 +87,34 @@ in [edge-ingress.md](edge-ingress.md), leaving other host protections unchanged.
 
 Native source storage measurement supports a 300000ms export interval for 90 days:
 approximately 1.12GB at 99 points/export. See [storage-sizing.md](storage-sizing.md).
-Full arm64 container/PG qualification passed; amd64 release boot is being checked.
+Full arm64 container/PG qualification and amd64 release boot passed. Evidence was
+published in `1d56584`. Native deployment
+`b36b8678-f928-4db2-81e1-a3ebcb35fc34` is ACTIVE from that source. The first build
+failed unpacking the upstream image (`unexpected EOF`); one unchanged-source retry
+succeeded. Runtime guards, public health and five-minute overhead gates passed;
+live collector readback verified all five metrics and exact 90-day expiry.
+See [native-production.md](native-production.md) for measurements and limitations.
 
 ### Still to finish
 
-Complete native release-architecture qualification and activation, verify rebuilt
-Chat cleanup source and ordinary scheduled outcomes, publish landing activation,
-and record deployed measurements and expiry state. Chat browser arrivals currently lack a
-qualified public-only upstream frontend artifact and remain deferred.
+Verify ordinary scheduled deletion outcomes and complete the queued Chat browser
+arrival integration. Native activation and landing publication are verified above.
+
+### Queued for today: signed-out Chat arrivals
+
+Adam requested this addition on 2026-10-20, following research into the existing
+v0.12.3 static loader hook. Implement after the native custom-image rollout is
+resolved, reusing that image rather than starting a separate frontend fork.
+See [the hook research](owui-public-landing-research.md).
+
+- Add a small first-party loader integration with resolved signed-out session
+  gating; global hook availability alone does not establish anonymous-only scope.
+- Qualify HTTP to HTTPS and root to `/auth` redirects, SPA transitions, signed-in
+  visits and login completion, avoiding duplicate events for one arrival.
+- Preserve the approved identity-free browser schema: no visitor IDs, account
+  linkage, private URLs, query strings or chat content. Count arrivals, not people.
+- Verify static-asset startup copying, collector destination/origin policy,
+  disclosure coverage, bounded failure behavior and an independent kill switch.
+- Enable only after real-browser privacy checks and live stored-event verification.
+
+This is queued work, not an implemented or active source.

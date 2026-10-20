@@ -55,7 +55,11 @@ Ownership during parallel development: core agent owns `src/`, `test/`, migratio
 package/config, this guide and README; separate agents own `otlp/`, `adapters/`
 and their `qualification/` material. Coordinate contract changes explicitly.
 
-No public dashboard, SQL endpoint, agent capability exposure or source monkeypatch
-is authorized. Source activation is separate rollout work, not part of local
+The operator approved a minimal public integration-status dashboard on 2026-10-20:
+root GET/HEAD may show recorded source enablement/verification and current receiver
+switches, including while ingestion is disabled. It must expose no telemetry
+records, identities, secrets or activity counts and perform no database reads.
+No public SQL endpoint or agent capability exposure is authorized.
+Source activation is separate rollout work, not part of local
 policy editing. Privacy/retention drafts require exact-diff publication approval
 before commit/push; affected-user notice text/notification remains an operator gate.

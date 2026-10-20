@@ -33,7 +33,7 @@ test('workerd / real D1: concurrent retries, conflicts, bounded reads, physical 
   }));
   t.after(() => mf.dispose());
   const db = await mf.getD1Database('TELEMETRY_DB');
-  for (const file of ['0001_telemetry.sql', '0002_retention_state.sql']) {
+  for (const file of ['0001_telemetry.sql', '0002_retention_state.sql', '0003_browser_network.sql']) {
     const migration = (await readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')).replace(/^\s*--.*$/gm, '');
     for (const stmt of migration.split(';').map(x => x.trim()).filter(Boolean)) await db.prepare(stmt).run();
   }

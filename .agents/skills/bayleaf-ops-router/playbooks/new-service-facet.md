@@ -58,6 +58,12 @@ traffic without changing the Worker.
 
 ## Refinement log
 
+- 2026-10-20 (telemetry activation, #112): DO spec updates reuse source unless
+  `--update-sources` is requested; verify the deployed component commit. Python
+  ingress needed a telemetry-host-only Browser Integrity Check exception. Native
+  source minimization required a pinned rung-4 artifact and cumulative export
+  paging; full-container checks caught concerns that decoder fixtures could not.
+
 - 2026-10-20 (telemetry local proof, #112): Split collector/D1, real OTLP
   qualification and source adapters into parallel owned directories, then test
   their shared wire contracts. Local implementation is a useful stopping point

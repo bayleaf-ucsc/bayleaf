@@ -52,10 +52,14 @@ IP literals (including URL-recognized short/octal/hex/trailing-dot forms), URLs,
 paths, query/fragment and local hostname suffixes are rejected.
 Unknown referrer is `null`, not a claim of direct arrival.
 
-`src/policies.js` owns policy version 2, schema version 1, names/dimensions,
+`src/policies.js` owns service policy version 2, wire schema version 1, names/dimensions,
 allowlists and safety bounds. Policy is deliberately **not baked into SQL**:
 reviewed scope can change without rebuilding storage. Unknown fields and
 arbitrary string dimensions fail closed. There is no raw request archive.
+`src/browser-policy.js` separately owns stored browser schema version 2 / policy
+version 3, approved on 2026-10-20. Browser wire payloads remain version 1 and
+cannot supply a network category. Private browser reads advertise the new stored
+versions; each historical row keeps its original versions.
 
 ## Write contract
 
@@ -86,6 +90,19 @@ Browser JSON is exactly:
 Destinations `landing`, `sandbox`, `chat`, `api` correspond respectively to
 `https://bayleaf.dev`, `https://sandbox.bayleaf.dev`, `https://chat.bayleaf.dev`,
 `https://api.bayleaf.dev`. Observation time is assigned by the collector.
+After client validation, only browser arrivals gain `network_location`:
+`campus-network|other-network|unknown`. The collector transiently classifies only
+Cloudflare's `CF-Connecting-IP` against the same canonical ranges and matcher as
+API Campus Pass (`api/src/utils/campus-networks.json`, `ipRanges.js`). Missing or
+invalid addresses are unknown; caller JSON, `X-Forwarded-For`, `Forwarded` and
+development loopback overrides are never trusted. No IP, hash, prefix, forwarded
+headers or stable identifier reaches telemetry storage or application logs.
+The signal is **network location, not campus affiliation**: VPN egress can appear
+on campus, visitors may use campus networks, and campus members can be off campus.
+Metrics, deletions and probes are not classified. Migration
+`0003_browser_network.sql` gives existing browser rows `unknown` without
+backfilling addresses or changing expiry. Apply it before deploying this collector
+revision. See [qualification and rollout requirements](qualification/network-classification.md).
 No caller ID, cookie, client timestamp, IP, UA, pathname, query or fragment is
 stored. Origin is a browser gate, **not authentication or bot protection**.
 Server ingress cannot prove whether a forged observation describes a public
@@ -282,3 +299,8 @@ distinguish approval from activation and live expiry from purge/recovery/artifac
 lifetimes. This scoped run makes only local policy/tests/disclosure changes;
 publication and notices remain separate gates. This scoped log avoids editing
 shared playbooks during parallel ownership of the issue.
+The network-location extension likewise has explicit implementation approval,
+but this local change does not publish the privacy notice or run production
+migrations/deployments. Its disclosure is limited to transient address processing
+and the stored coarse browser-only category; affected-user notices remain an
+operator decision.

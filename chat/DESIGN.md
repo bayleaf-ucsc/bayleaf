@@ -35,7 +35,7 @@ default context points at the personal `Just Adam` team.
 | **App ID** | `f1a1e758-62e9-4e99-90cb-212cab12958d` |
 | **Default ingress** | `bayleaf-chat-owui-app-6uicw.ondigitalocean.app` |
 | **Region** | `sfo` |
-| **Image** | `ghcr.io/open-webui/open-webui` (version pinned in app spec) |
+| **Build** | Repo-root context, `telemetry/otlp/Dockerfile`; GitHub push auto-deploy disabled |
 | **Instance** | `apps-s-1vcpu-2gb` (1 instance) |
 | **HTTP port** | `8080` |
 
@@ -45,6 +45,62 @@ via OWUI's S3 provider (§1, Object Storage). Before v0.12.0, the slim image
 omitted S3 support and refused to start with S3 storage configured. Upstream
 v0.12.0 adds S3 support to slim, but BayLeaf retains the standard image;
 switching image variants requires separate dependency and upload qualification.
+
+**Native aggregate telemetry (2026-10-20).** The live rung-4 build adds the
+qualified source minimization to the unchanged v0.12.3 standard image, pinned by
+immutable upstream index
+`sha256:a537bbe1e6b428820f52ed4a029d7fff97062e24d5cf32c365fba36fd0542def`.
+The service command is `python /opt/bayleaf-otlp/startup_patch.py`, not the former
+echo-and-start wrapper. Exact source/package guards run at build and startup;
+the entrypoint retains the historical rung-3 sentinel and exec handoff to
+uvicorn PID 1. Never bypass these guards or enable unpatched native metrics.
+
+Deployment `b36b8678-f928-4db2-81e1-a3ebcb35fc34` is ACTIVE from published source
+`1d56584c4d2b8576413ad615e625addab70e0f7e`. The first build failed unpacking the
+pinned upstream image (`unexpected EOF`); one unchanged-source retry succeeded.
+One instance, one worker, the original size/pool and retention job were preserved.
+Repository-push auto-deploy remains **disabled**, so documentation publication
+does not restart Chat. This is not an OWUI upgrade or schema migration.
+
+Only aggregate native metrics are enabled: `ENABLE_OTEL=true`,
+`ENABLE_OTEL_METRICS=true`, traces/logs false, five-minute export
+(`OTEL_METRICS_EXPORT_INTERVAL_MILLIS=300000`) to
+`https://telemetry.bayleaf.dev/v1/otlp/metrics`. A dedicated source-scoped
+write-only bearer capability is held in the DO SECRET
+`OTEL_EXPORTER_OTLP_METRICS_HEADERS`; no collector read capability enters Chat.
+The full mandatory environment, empty Basic/resource overrides, timeout units,
+hash/version update ritual and source behavior are in
+[`otlp-rollout.md`](../telemetry/qualification/otlp-rollout.md#exact-active-environment).
+Use that complete configuration for recovery, not just the enable flags here.
+Traces, logs, exemplars and automatic instrumentation remain off. HTTP
+route/method minimization occurs before aggregation; resource attributes are empty.
+Exports page complete cumulative HTTP tuples at **99 points maximum**, preserving
+reset metadata. Three native user-count gauges run in a background collection
+thread using one dedicated read-only PostgreSQL connection (200-ms statement,
+100-ms lock and pool-wait limits), not the application pool. No individual request
+stream, identity, prompt or completion is exported by this lane.
+
+The bounded five-minute on/off production gate passed: CPU changed −1.534
+percentage points; loopback health/version p95 changed +2.50%, with no HTTP errors
+or observed pool/cancellation errors; one metrics connection; warmed callback
+probes 7.934–11.427 ms. RSS peak on was approximately 1.64 GB (off approximately
+1.82 GB), not a long-term memory/capacity guarantee for this 2-GB instance. These
+sequential windows are not matched campus-user load or full user-request p95.
+Live private collector readback verified all five metric names, approved
+dimensions, the observed source batch bound and **90-day active expiry**. No
+gauge values were retained in qualification evidence. See
+[`native-production.md`](../telemetry/qualification/native-production.md).
+The 120-points/minute retry budget still has the documented lost-ack headroom
+limitation. Five-minute paging reduces freshness; the active-user gauge still
+counts the previous three minutes, not five-minute unique users. Collector
+freshness matters because dedicated exporter errors are suppressed.
+
+For source shutdown set all four OTel enable flags to literal `false`, retaining
+the guarded entrypoint. Full rollback restores the protected pre-change upstream
+image/spec and prior wrapper **with native export disabled**, preserving all
+unrelated settings. Never combine the unpatched image with enabled metrics.
+Collector admission off alone does not stop source export. Every OWUI version
+upgrade must regenerate and requalify the guarded artifact before activation.
 
 **Resolved incident and upgrade (2026-10-18).** Promoted v0.12.3 after Adam confirmed at
 least a day of issue-free personal-service use. Only the image tag changed;
@@ -1166,9 +1222,13 @@ restore. Role-scoped context for Basic now comes from
 
 To reconstruct BayLeaf Chat from this backup:
 
-1. **Create DO App Platform app** with a single service using the OWUI Docker
-   image at the version noted above. Attach a managed PG 17 database and
-   configure S3 storage via DO Spaces. Set all env vars from the table in §1.
+1. **Create DO App Platform app** with a single service using the qualified
+   repo-root `telemetry/otlp/Dockerfile` build and guarded startup command from §1,
+   with repository-push auto-deploy disabled. Attach a managed PG 17 database and
+   configure S3 storage via DO Spaces. Set all env vars from the table in §1 and
+   the complete linked telemetry environment. Do not enable telemetry until its
+   collector/capability/retention and connection-headroom gates are verified.
+   An upstream-image recovery must keep all four OTel enable flags false.
 
 2. **Configure OpenRouter** in the OWUI admin panel (Admin → Settings →
    Connections) with a ZDR-eligible OpenRouter API key.

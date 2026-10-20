@@ -97,8 +97,13 @@ ITS-operated or ITS-supported one.
   operates a private Cloudflare Worker/D1 collector for four approved classes of observations:
   public-page arrivals, native Open WebUI aggregate metrics, aggregate deletion-job
   summaries, and summaries of existing synthetic monitoring probes. Arrivals store
-  only the destination service, collector-assigned time and referring hostname
-  (or unknown), never the referrer path/query/fragment. They count observations,
+  only the destination service, collector-assigned time, referring hostname
+  (or unknown), and a coarse network location: campus-network, other-network or
+  unknown. The collector transiently compares Cloudflare's connecting IP with
+  the campus ranges, then stores only that category, never the IP, an IP hash or
+  prefix, or forwarded headers. This describes network location, **not campus
+  affiliation**: VPN use, visitors and off-campus access limit its interpretation.
+  Referrer paths/queries/fragments are never stored. They count observations,
   **not unique visitors**: no visitor IDs, tracking cookies, stable pseudonyms or
   per-client deduplication. Native metrics contain aggregate HTTP counts/duration
   histograms and user-count gauges with fixed method, sanitized route, status and

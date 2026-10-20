@@ -27,7 +27,8 @@ DigitalOcean App Platform, in the `BayLeaf / UCSC` team (slug `bayleaf-ucsc`).
 Managed via `doctl --context bayleaf`.
 
 - **App ID**: `f1a1e758-62e9-4e99-90cb-212cab12958d`
-- **Image**: `ghcr.io/open-webui/open-webui` (version pinned in app spec)
+- **Build**: repo-root context, `telemetry/otlp/Dockerfile`, immutable standard
+  `ghcr.io/open-webui/open-webui:v0.12.3` base; GitHub push auto-deploy disabled
 - **Current version**: `v0.12.3`
 - **Database**: Managed PostgreSQL 17 (`bayleaf-chat-db`, ID `ea8c7549-e761-44e1-a9c3-e45e478a5202`)
 - **Storage**: DO Spaces (`bayleaf-ucsc-storage`, bucket-scoped access key)
@@ -168,9 +169,14 @@ content changes; don't chase them.
    changes, auth endpoint changes.
 3. Consider `pg_dump` if DB migrations are involved (DO managed PG has
    built-in PITR, but an explicit backup is belt-and-suspenders).
-4. Pull the live spec:
+4. Native aggregate telemetry now uses a guarded custom image (rung 4). Before
+   changing OWUI version, regenerate and requalify its exact upstream hashes,
+   dependency pins and source adapter; see `../telemetry/qualification/otlp-rollout.md`.
+   Never substitute an unpatched upstream image with metrics enabled.
+   Pull the live spec:
    `doctl apps spec get f1a1e758-62e9-4e99-90cb-212cab12958d --context bayleaf > /tmp/bayleaf-chat-spec.yaml`
-5. Edit the image `tag:` in the spec to the target version.
+5. Update the qualified Dockerfile base/source release, preserving unrelated spec
+   settings, the guarded entrypoint and disabled repository-push auto-deploy.
 6. Deploy:
    `doctl apps update f1a1e758-62e9-4e99-90cb-212cab12958d --spec /tmp/bayleaf-chat-spec.yaml --context bayleaf`
 7. Wait for ACTIVE deployment phase, then verify health:
@@ -202,9 +208,9 @@ ahead without a reason.
 
    **Empirically verified shape** (May 14 2026): single-line
    `bash -lc '...'` with `;`-separated statements works. The image's
-   live spec currently carries a benign sentinel `run_command` so this
-   rung is permanently warm — see the `[bayleaf] rung-3 harness alive`
-   line in deploy/run logs on every restart.
+    former live spec carried a benign sentinel `run_command`. Since 2026-10-20
+    the rung-4 telemetry entrypoint preserves that same sentinel before guarded
+    startup; the sentinel alone no longer identifies a rung-3 deployment.
 
    ⚠️ **Multi-line YAML block scalars do NOT work.** A block like
    `run_command: |\n  echo X\n  exec bash start.sh` causes DO to flatten
@@ -223,14 +229,18 @@ ahead without a reason.
 5. **Fork OWUI**. Only justified for sustained patches upstream won't
    merge. Avoid.
 
-### Rung-3 harness (live; extend in place)
+### Current rung-4 entrypoint and historical rung-3 harness
 
-The live spec carries this harness in the `open-webui` service block.
-It does nothing except echo a sentinel and `exec bash start.sh`, so the
-container behaves identically to the no-`run_command` baseline. To use
-rung 3, **edit the quoted string** of the existing `run_command` to add
-your boot logic before the final `exec bash start.sh`. Keep it on one
-line; statements separated by `;` or `&&`:
+The live service now uses `python /opt/bayleaf-otlp/startup_patch.py`. It validates
+the pinned upstream/dependency bytes, applies the qualified metrics minimization,
+preserves the historical sentinel and execs `bash start.sh`. Do not replace it
+with the old wrapper while metrics are enabled. Native metrics export every five
+minutes, using a source-scoped write-only secret; traces/logs/instrumentation are
+off. See `DESIGN.md` §1 and `../telemetry/qualification/native-production.md` for
+live evidence and rollback. This is not additional conversation-content logging.
+
+The previous upstream-image deployment used this no-op rung-3 command (retained
+for rollback reference, not the current startup command):
 
 ```yaml
 run_command: bash -lc 'echo "[bayleaf] rung-3 harness alive (extend this run_command for boot logic; ends with exec bash start.sh)"; exec bash start.sh'

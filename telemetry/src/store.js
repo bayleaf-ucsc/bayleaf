@@ -1,5 +1,6 @@
 import { LIMITS, retentionMs } from './policies.js';
 import { canonical, Invalid } from './validate.js';
+import { NETWORK_LOCATIONS } from './browser-policy.js';
 
 export const TABLES = Object.freeze({ browser: 'browser_observations', metrics: 'metric_points',
   deletions: 'deletion_runs', probes: 'probe_runs', status: 'source_status' });
@@ -38,10 +39,12 @@ export async function ingest(db, klass, data, now, env = {}) {
   const admissible = `? > ${cutoff(klass)}`;
   const statements = [policy(db, klass, ttl, now)];
   if (klass === 'browser') {
+    const network = data.network_location ?? 'unknown';
+    if (!NETWORK_LOCATIONS.includes(network)) throw new Invalid();
     statements.push(bind(db, `INSERT INTO browser_observations
-      (schema_version,policy_version,observed_at,received_at,expires_at,destination,referring_hostname)
-      SELECT ?,?,?,?,${cappedExpiry(klass)},?,? WHERE ${admissible}`, [data.schema_version, data.policy_version, data.observed_at, now,
-      data.expires_at, data.observed_at, data.destination, data.referring_hostname, oldest]));
+      (schema_version,policy_version,observed_at,received_at,expires_at,destination,referring_hostname,network_location)
+      SELECT ?,?,?,?,${cappedExpiry(klass)},?,?,? WHERE ${admissible}`, [data.schema_version, data.policy_version, data.observed_at, now,
+      data.expires_at, data.observed_at, data.destination, data.referring_hostname, network, oldest]));
     const results = await db.batch(statements);
     if (!results[1].meta.changes) throw new Invalid();
     return { duplicate: false };

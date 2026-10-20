@@ -3,6 +3,8 @@ import { Invalid, validate, object } from './validate.js';
 import { ingest, takeBudget, readRows, purge, TABLES } from './store.js';
 import { OtlpError } from '../otlp/normalize.mjs';
 import { otlpHook } from '../otlp/worker-adapter.mjs';
+import { browserNetworkLocation, BROWSER_SCHEMA_VERSION, BROWSER_POLICY_VERSION } from './browser-policy.js';
+import { dashboard } from './dashboard.js';
 
 const response = (data, status = 200, headers = {}) => Response.json(data, { status,
   headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers } });
@@ -63,6 +65,7 @@ export async function boundedJson(request) {
 export function createWorker({ otlp, clock = Date.now } = {}) {
   return {
     async fetch(request, env) {
+      if (new URL(request.url).pathname === '/') return dashboard(request, env);
       if (env.TELEMETRY_ENABLED !== 'true') return response({ error: 'disabled' }, 503);
       const now = clock();
       let actualOtlp = false;
@@ -81,7 +84,8 @@ export function createWorker({ otlp, clock = Date.now } = {}) {
           if (![from, to, limit].every(Number.isSafeInteger) || from >= to || to > now + LIMITS.futureMs ||
               to - from > LIMITS.readWindowMs || limit < 1 || limit > LIMITS.readRows) throw new Invalid();
           const rows = await readRows(env.TELEMETRY_DB, klass, { from, to, limit }, now, env);
-          return response({ schema_version: SCHEMA_VERSION, policy_version: POLICY_VERSION,
+          return response({ schema_version: klass === 'browser' ? BROWSER_SCHEMA_VERSION : SCHEMA_VERSION,
+            policy_version: klass === 'browser' ? BROWSER_POLICY_VERSION : POLICY_VERSION,
             as_of: now, from, to, limit, truncated: rows.length === limit, rows });
         }
         const route = url.pathname.match(/^\/v1\/(browser|deletions|probes|metrics)$/);
@@ -113,6 +117,12 @@ export function createWorker({ otlp, clock = Date.now } = {}) {
         const payload = isOtlp ? await otlp(request, { source, now }) : await boundedJson(request);
         const data = validate(klass, payload, env, now);
         if (klass === 'browser' ? ORIGINS[origin] !== data.destination : data.source !== source) throw new Invalid();
+        // Enrich only after strict client validation: callers cannot supply this
+        // dimension, and service-origin requests never receive it.
+        if (klass === 'browser') Object.assign(data, {
+          schema_version: BROWSER_SCHEMA_VERSION, policy_version: BROWSER_POLICY_VERSION,
+          network_location: browserNetworkLocation(request),
+        });
         if (klass === 'metrics' && !await takeBudget(env.TELEMETRY_DB, source, klass, now, data.points.length))
           return response({ error: 'rate_limited' }, isOtlp ? 503 : 429);
         const result = await ingest(env.TELEMETRY_DB, klass, data, now, env);

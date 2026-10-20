@@ -237,7 +237,8 @@
     // Production ranges only — no loopback. Local dev sets DEV_LOOPBACK_AUTH=true
     // and overrides CAMPUS_IP_RANGES to include 127.0.0.1/32,::1/128 in .dev.vars
     // (see issue #52: getAuthIP trusts only CF-Connecting-IP and fails closed).
-    "CAMPUS_IP_RANGES": "128.114.0.0/16,169.233.0.0/16,192.35.220.0/24,192.35.223.0/24,2607:F5F0::/32",
+    // Canonical ranges: src/utils/campus-networks.json (also used by telemetry).
+    "CAMPUS_IP_RANGES": "@ucsc",
     // Per-IP daily request limit for Campus Pass on /chat/completions and /responses.
     // IPv4: per address. IPv6: per /64. Resets at midnight UTC. Provider-agnostic
     // (charges against the same counter for OpenRouter and Vertex traffic).
