@@ -239,6 +239,11 @@ minutes, using a source-scoped write-only secret; traces/logs/instrumentation ar
 off. See `DESIGN.md` §1 and `../telemetry/qualification/native-production.md` for
 live evidence and rollback. This is not additional conversation-content logging.
 
+The independent `BAYLEAF_CHAT_ARRIVALS_ENABLED=true` switch installs the guarded
+signed-out public-root arrival loader. See `../telemetry/qualification/chat-arrivals.md`
+for its narrow scope, live proof and switch-only rollback. Preserve native flags
+and secrets when disabling arrivals; never replace the guarded entrypoint.
+
 The previous upstream-image deployment used this no-op rung-3 command (retained
 for rollback reference, not the current startup command):
 

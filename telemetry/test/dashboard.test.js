@@ -15,7 +15,7 @@ test('operator records are dated, not live health, and distinguish enabled, veri
   assert.match(html, /<strong>2026-10-20<\/strong>/);
   assert.match(html, /not live health/);
   assert.match(html, /cannot see source-side switches/);
-  assert.match(group(html, 'browser'), /Chat<\/span>\s*<span class="detail"><strong>Not enabled\.<\/strong> In development; qualification pending/);
+  assert.match(group(html, 'browser'), /Chat<\/span>\s*<span class="detail">Verified for signed-out public-root arrivals/);
   assert.equal((group(html, 'deletions').match(/regular schedule not yet confirmed/g) ?? []).length, 3);
   assert.doesNotMatch(group(html, 'deletions'), /Not enabled/);
   assert.match(group(html, 'metrics'), /Verified at a 5-minute export interval/);
@@ -65,6 +65,7 @@ test('operator text is escaped, never interpreted as HTML', () => {
   assert.doesNotMatch(html, /<script>/);
   assert.equal((html.match(/&lt;script&gt;alert\(&quot;x&quot; &amp; &#39;y&#39;\)&lt;\/script&gt;/g) ?? []).length, 3);
   assert.match(group(html, 'metrics'), /No sources recorded/);
+  assert.match(group(html, 'browser'), /<strong>Not enabled\.<\/strong>/);
 });
 
 test('retention reflects bounded configuration, overrides, and conservative defaults without unsafe reflection', () => {

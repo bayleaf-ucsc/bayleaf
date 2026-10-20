@@ -97,24 +97,36 @@ See [native-production.md](native-production.md) for measurements and limitation
 
 ### Still to finish
 
-Verify ordinary scheduled deletion outcomes and complete the queued Chat browser
-arrival integration. Native activation and landing publication are verified above.
+Verify ordinary scheduled deletion outcomes. Native activation, landing publication
+and signed-out Chat browser arrivals are verified. Dashboard publication of the
+new Chat integration-registry status remains a separate parent-owned action.
 
-### Queued for today: signed-out Chat arrivals
+### Completed: signed-out Chat root arrivals
 
-Adam requested this addition on 2026-10-20, following research into the existing
-v0.12.3 static loader hook. Implement after the native custom-image rollout is
-resolved, reusing that image rather than starting a separate frontend fork.
-See [the hook research](owui-public-landing-research.md).
+After the native rollout, Adam approved the qualified v0.12.3 loader integration.
+Parent reviewed/published source `13a3a67b6642e49429ac22483121df9e389057ab`.
+Deployment `a5319b41-56ca-452d-a74e-bee904458baf` reached **ACTIVE** on its first
+attempt after explicit source refresh. Only the independent runtime switch
+`BAYLEAF_CHAT_ARRIVALS_ENABLED=true` changed. Native configuration/secrets,
+five-minute export, one worker/instance, disabled repository-push auto-deploy,
+scheduled job and all unrelated settings were preserved. The guarded custom
+image/entrypoint remains mandatory.
 
-- Add a small first-party loader integration with resolved signed-out session
-  gating; global hook availability alone does not establish anonymous-only scope.
-- Qualify HTTP to HTTPS and root to `/auth` redirects, SPA transitions, signed-in
-  visits and login completion, avoiding duplicate events for one arrival.
-- Preserve the approved identity-free browser schema: no visitor IDs, account
-  linkage, private URLs, query strings or chat content. Count arrivals, not people.
-- Verify static-asset startup copying, collector destination/origin policy,
-  disclosure coverage, bounded failure behavior and an independent kill switch.
-- Enable only after real-browser privacy checks and live stored-event verification.
+Post-startup audit verified actual source commit, native guards, pinned frontend
+hashes, identical source/runtime/public asset bytes, PID 1 and public health 200.
+A fresh anonymous Chromium context followed actual HTTP → HTTPS root → `/auth`,
+rendered the sign-in card and sent exactly one acknowledged arrival with the fixed
+identity-free payload and no Cookie/Authorization/Referer. DOM mutations caused no
+duplicate. Bounded private readback verified destination Chat, null referrer,
+browser schema 2/policy 3, approved coarse network classification and exact 90-day
+expiry. No visitor marker, account or existing user session was used. Signed-in
+non-collection is supported by the isolated local browser proof, not a new live
+authenticated test. Fresh post-activation native exports still contained all five
+metrics, within the 99-point batch bound and with unchanged 90-day expiry.
 
-This is queued work, not an implemented or active source.
+Chat/browser is now enabled and verified in `integrations.json`; parent owns the
+final dashboard publication. The new protected rollback snapshot preserves native
+metrics, unlike the older pre-native stock-image snapshot. Full evidence,
+semantics, local qualification and independent kill switch are recorded in
+[chat-arrivals.md](chat-arrivals.md). No inference, manual retention run, email,
+commit or push was performed by this deployment agent.

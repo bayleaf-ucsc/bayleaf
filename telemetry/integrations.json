@@ -4,7 +4,7 @@
     { "name": "Landing page", "kind": "browser", "enabled": true, "verification": "Verified" },
     { "name": "API", "kind": "browser", "enabled": true, "verification": "Verified" },
     { "name": "Sandboxes", "kind": "browser", "enabled": true, "verification": "Verified" },
-    { "name": "Chat", "kind": "browser", "enabled": false, "verification": "In development; qualification pending" },
+    { "name": "Chat", "kind": "browser", "enabled": true, "verification": "Verified for signed-out public-root arrivals" },
     { "name": "Open WebUI native metrics", "kind": "metrics", "enabled": true, "verification": "Verified at a 5-minute export interval" },
     { "name": "Monitoring probes", "kind": "probes", "enabled": true, "verification": "Verified" },
     { "name": "API retention job", "kind": "deletions", "enabled": true, "verification": "Deployed; regular schedule not yet confirmed" },

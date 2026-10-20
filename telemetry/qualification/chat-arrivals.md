@@ -1,8 +1,10 @@
 # Signed-out Chat root arrivals
 
-2026-10-20, issue #112. Implementation and local qualification only. No deployment,
-commit, push, production account access or production telemetry write by this work.
-Parent rollout owns activation and stored-event verification.
+2026-10-20, issue #112. **ACTIVE: signed-out Chat root arrivals deployed and live
+browser/collector verification passed.** Parent reviewed and published the runtime
+in `13a3a67`; the approved rollout changed only the independent arrivals switch
+and refreshed source. No commit/push, production account access, inference,
+manual retention execution or email was performed by the deployment agent.
 
 ## Exact semantics and privacy boundary
 
@@ -47,8 +49,10 @@ The sole payload is:
 Chat does not even read `document.referrer`. Transport reuses the existing
 audited browser adapter: credentials omitted, no Authorization, empty referrer,
 `no-referrer`, no-store, no redirect following. The collector's existing schema
-and exact Chat origin/destination allowlists already admit this payload. No
-policy/schema version bump or collector deployment is needed. New collector
+and exact Chat origin/destination allowlists admit this unchanged v1 client payload.
+The subsequently deployed coarse network classification stores browser records
+with schema **2**, policy **3**; no further collector change was needed for Chat
+activation. New collector
 tests explicitly exercise matching and mismatched origins and forbidden fields.
 The generic `publicArrival` helper intentionally still excludes Chat: it cannot
 infer authentication from a shared root shell.
@@ -181,9 +185,59 @@ most 1 second for module delivery and 1 second for its single transport attempt;
 a fresh document gets the disabled loader. There is no service worker,
 persistent registry, storage key or listener surviving the document.
 
-Before activation the parent must review the final diff, confirm the public
-privacy disclosure covers signed-out root arrivals with null referrer, complete
-review of the browser evidence above, and confirm the deployed source/build and explicit
-switch. After activation, verify public health, a synthetic signed-out root
-arrival with exact stored schema and 90-day expiry, and signed-in non-collection.
-Do not confuse local qualification or operator approval with live readback.
+Release gates are review/publication of the final diff and disclosure, review of
+the browser evidence above, actual build/source/switch verification and live
+anonymous browser/collector readback. Signed-in non-collection must be qualified
+without altering real user sessions. Local proof and live readback are distinct.
+
+## Completed production activation
+
+The operator approved deployment on 2026-10-20 after parent review/publication of
+`13a3a67b6642e49429ac22483121df9e389057ab`. Deployment
+`a5319b41-56ca-452d-a74e-bee904458baf` reached **ACTIVE** from exactly that commit
+on its first attempt, using `--update-sources`. The only app-spec change was
+`BAYLEAF_CHAT_ARRIVALS_ENABLED=true` at runtime. Structural comparison verified
+all native environment/secrets, five-minute interval, one-worker/one-instance
+size, repository-push auto-deploy disabled, scheduled job and unrelated settings
+preserved. No native kill switch or startup guard was bypassed.
+
+Read-only post-startup audit verified native source/dependency/environment guards,
+pinned frontend hashes, uvicorn PID 1, and identical source/runtime/publicly served
+loader and module bytes. Exact served hashes:
+
+- Loader: `e5583a87b82e67abc2f55e8eef7eddd61178fd19aab29eca6f3897211fd54504`.
+- `bayleaf-chat-4d9161865769d44e.mjs`:
+  `4d9161865769d44ecb7b9434e09ee44f742e07fb820e53806bce92e6db9d3ea8`.
+
+Public health returned HTTP 200. A new isolated anonymous headless Chromium
+context, with no existing credentials or session, navigated the real
+`http://chat.bayleaf.dev/`. Both HTTP and HTTPS root navigation were observed,
+followed by the real HTTPS `/auth` sign-in card. It requested the module once and
+sent **one** HTTPS POST with exactly the three-field payload above, with no Cookie,
+Authorization or Referer header. The collector acknowledged it. Repeated DOM
+changes produced no second event. The context was then closed; no account was
+created and no sign-in/inference attempted.
+
+A nontruncated private bounded read found a matching Chat arrival in that browser
+request window with exactly the stored field allowlist, null referrer, browser
+schema 2/policy 3, an approved coarse network-location value and expiry exactly
+90 days after observation. Only pass/fail flags were retained, not row values or
+identities. There is deliberately no per-visitor correlation marker; the live
+proof combines one acknowledged browser request with bounded stored readback.
+Signed-in/private-route/login non-collection remains the previously completed
+isolated local browser proof, not a newly claimed live authenticated test. No
+existing user session was read, modified or logged out.
+
+After this activation, private collector readback also verified fresh native
+exports containing all five names, observed batches within 99 points and unchanged
+90-day expiry. This was a continuity check, not another overhead experiment.
+
+The fresh pre-change protected spec and deployment evidence are under
+`/private/var/folders/qj/gyqbn5y57956rrqd_g6yfqwr0000gn/T/opencode/bayleaf-chat-arrivals-20261020/`.
+The directory is mode 0700 and specs/evidence are mode 0600. `rollback-spec.json`
+is distinct from the earlier native rollout snapshot and retains the healthy
+native custom-image configuration; do not substitute the old stock-image spec.
+Evidence includes `runtime-audit.json`, `browser-live-flags.json` and
+`native-continuity-flags.json`. No rollback was needed. The integration registry
+was marked Chat/browser enabled only after these checks; dashboard publication is
+a separate parent-owned action.

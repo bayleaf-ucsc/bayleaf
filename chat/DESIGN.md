@@ -55,8 +55,8 @@ echo-and-start wrapper. Exact source/package guards run at build and startup;
 the entrypoint retains the historical rung-3 sentinel and exec handoff to
 uvicorn PID 1. Never bypass these guards or enable unpatched native metrics.
 
-Deployment `b36b8678-f928-4db2-81e1-a3ebcb35fc34` is ACTIVE from published source
-`1d56584c4d2b8576413ad615e625addab70e0f7e`. The first build failed unpacking the
+Native qualification used deployment `b36b8678-f928-4db2-81e1-a3ebcb35fc34` from
+published source `1d56584c4d2b8576413ad615e625addab70e0f7e`. The first build failed unpacking the
 pinned upstream image (`unexpected EOF`); one unchanged-source retry succeeded.
 One instance, one worker, the original size/pool and retention job were preserved.
 Repository-push auto-deploy remains **disabled**, so documentation publication
@@ -101,6 +101,24 @@ image/spec and prior wrapper **with native export disabled**, preserving all
 unrelated settings. Never combine the unpatched image with enabled metrics.
 Collector admission off alone does not stop source export. Every OWUI version
 upgrade must regenerate and requalify the guarded artifact before activation.
+
+**Signed-out root arrivals (2026-10-20).** Current deployment
+`a5319b41-56ca-452d-a74e-bee904458baf` is ACTIVE from published source
+`13a3a67b6642e49429ac22483121df9e389057ab`, preserving the native configuration
+above. `BAYLEAF_CHAT_ARRIVALS_ENABLED=true` independently installs a guarded
+first-party static loader/module. One initial public-root document may send one
+identity-free arrival only after ordinary session resolution renders the sign-in
+card; existing token markers, direct auth entries and private deep links are
+excluded. The client sends only schema version, destination `chat` and null
+referrer, with no credentials/referrer. The collector stores schema 2/policy 3
+records with approved coarse network classification and 90-day expiry. Actual
+anonymous HTTP → HTTPS → auth browser delivery, stored readback, served asset
+hashes and native-export continuity passed; signed-in non-collection has isolated
+local browser proof, not a new live authenticated test. See
+[`chat-arrivals.md`](../telemetry/qualification/chat-arrivals.md). Set this one
+switch to `false` to disable arrivals without changing native metrics. Do not add
+`FRONTEND_BUILD_DIR` or `STATIC_DIR` overrides; the pinned asset installer refuses
+them. Recovery must preserve this explicit switch as well as the native settings.
 
 **Resolved incident and upgrade (2026-10-18).** Promoted v0.12.3 after Adam confirmed at
 least a day of issue-free personal-service use. Only the image tag changed;
