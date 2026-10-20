@@ -227,6 +227,23 @@ test('HTTP browser ingress requires approved origin, matching fixed destination,
   assert.equal(count(db, 'browser_observations'), 1);
 });
 
+test('Chat arrival admits only its existing fixed origin/destination and identity-free schema', async t => {
+  const db = database(); t.after(() => db.close());
+  const env = envFor(db), worker = createWorker({ clock: () => NOW });
+  const event = { schema_version: 1, destination: 'chat', referring_hostname: null };
+  const call = (body, origin) => worker.fetch(request('/v1/browser', body, 'none', { Origin: origin }), env);
+  assert.equal((await call(event, 'https://bayleaf.dev')).status, 400);
+  assert.equal((await call(event, 'http://chat.bayleaf.dev')).status, 403);
+  assert.equal((await call(event, 'https://private-preview.bayleaf.dev')).status, 403);
+  for (const field of ['visitorID', 'account', 'chat', 'url', 'query', 'referrer', 'token']) {
+    assert.equal((await call({ ...event, [field]: 'forbidden' }, 'https://chat.bayleaf.dev')).status, 400);
+  }
+  const response = await call(event, 'https://chat.bayleaf.dev');
+  assert.equal(response.status, 202);
+  assert.equal(response.headers.get('Access-Control-Allow-Origin'), 'https://chat.bayleaf.dev');
+  assert.equal(count(db, 'browser_observations'), 1);
+});
+
 test('collector and trusted adapter failures return content-free errors', async t => {
   const db = database(); t.after(() => db.close());
   const env = envFor(db);

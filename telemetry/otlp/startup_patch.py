@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 
 from source_policy import minimized_setup_source, minimized_source
+from browser_assets import install as install_browser_assets
 
 HERE = Path(__file__).resolve().parent
 
@@ -113,6 +114,7 @@ def main():
         validate_versions()
         validate_environment()
         patch(Path("/app/backend"))
+        install_browser_assets()
     except Exception:
         print("[bayleaf] OTLP startup refused: source/configuration check failed", file=sys.stderr, flush=True)
         return 1

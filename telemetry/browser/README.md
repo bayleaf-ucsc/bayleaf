@@ -1,11 +1,11 @@
 # Public browser arrival integration
 
-Local preparation for [#112](https://github.com/bayleaf-ucsc/bayleaf/issues/112).
-**No deployment, source activation, commit or push performed here.** All source
-defaults remain disabled. Operator approval covers live collection with 90-day
-retention, but does not make this code active. Collector deployment, 90-day policy
-configuration before first database use, affected-user notice and source rollout
-remain parent/operator responsibilities.
+Initial local preparation record for [#112](https://github.com/bayleaf-ucsc/bayleaf/issues/112),
+with the signed-out Chat addition qualified below. Current deployment/activation
+state is authoritative in [the rollout record](../qualification/rollout.md), not
+the historical disabled-source descriptions below. Chat's independent switch
+remains off by default; this addition performed no deployment, activation, commit
+or push. Source rollout and disclosure review remain parent/operator responsibilities.
 
 ## Source contract and boundaries
 
@@ -32,7 +32,7 @@ type. Standard browser network metadata (including Origin, UA and source IP) sti
 exists in transport: the collector/edge must discard it, not persist it. CORS
 preflight may occur. This is content-minimizing collection, not transport anonymity.
 
-One attempt with a 1-second abort deadline, no retries/queue/beacon fallback,
+The three initial static clients make one attempt with a 1-second abort deadline, no retries/queue/beacon fallback,
 no storage, no navigation/click/page lifecycle listeners and no response-body
 consumption. Failures do not alter the page or show messages. Exact production
 origin and root pathname checks are an additional backstop. They do not replace
@@ -68,22 +68,33 @@ server authentication gating. The pathname is inspected locally but never sent.
   `api/src/types.ts`, and added an explicit false deployment variable.
   Do not put the script in BaseLayout or API index/global middleware. No new API
   endpoint, dashboard integration or agent capability is introduced.
-- **Chat: deferred.** There is no approved public-only upstream frontend build
-  artifact in this repository. Do not inject via a global head/body setting,
-  proxy-wide HTML rewrite or a pathname-only heuristic. Obtain/pin an OWUI frontend
-  artifact with an initial-document hook that waits for authentication resolution,
-  permits only the intended public entry, and proves absence on conversations,
-  dashboards, shared/private chats, auth callbacks and client navigation. Then
-  bundle the same adapter locally and configure the source switch explicitly.
-  `entry.mjs` deliberately does not admit Chat. Chat service OTel work is separate.
+- **Chat: locally qualified, activation separate.** `chat-gate.js` uses the
+  actual pinned v0.12.3 loader seam in the existing guarded native image. Only an
+  initial public root with no token marker, followed by the resolved auth card,
+  can load `chat-client.mjs`. Direct auth, callbacks/logout, private deep links
+  and signed-in documents are excluded. A bounded DOM-presence observer ends
+  after one attempt, pagehide, session/private-route detection or 15 seconds.
+  `chat-entry.mjs` bundles the same adapter with a fixed null referrer and repeats
+  the sign-out check immediately before fetch. `entry.mjs` deliberately still
+  does not admit Chat: generic root/path gating cannot resolve authentication.
+  `node telemetry/browser/build-chat.mjs` reproducibly generates the separate
+  module without touching the other sources. Independent runtime switch:
+  `BAYLEAF_CHAT_ARRIVALS_ENABLED=true` (unset/exact false is off; malformed refuses
+  boot). Full semantics, pinned asset copying, 16 browser checks, privacy evidence,
+  deployment environment and native-preserving rollback:
+  [Chat arrivals qualification](../qualification/chat-arrivals.md).
 
 ## Tests (all synthetic, no production writes or collection)
 
 ```sh
 node --test telemetry/browser/browser.test.mjs
+node --test telemetry/browser/chat.test.mjs
 node sandbox/test-worker.mjs
 node api/scripts/test-browser-arrivals.mjs
 uv run --script telemetry/browser/test-browser.py
+# With the documented local synthetic Chat containers, never production:
+uv run --script telemetry/browser/test-chat-browser.py
+uv run --script telemetry/browser/test-chat-browser.py source-disabled
 ```
 
 The browser harness uses installed Google Chrome via Playwright. Every browser

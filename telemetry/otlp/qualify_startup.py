@@ -111,7 +111,7 @@ with mock_patch("startup_patch.version", return_value="unsupported"):
 with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
     with mock_patch.object(startup_patch, "validate_versions"), mock_patch.object(startup_patch, "validate_environment"), mock_patch.object(startup_patch, "patch", side_effect=ValueError("synthetic_mismatch")), mock_patch.object(startup_patch.os, "execvp") as execution:
         assert startup_patch.main() == 1 and not execution.called
-    with mock_patch.object(startup_patch, "validate_versions"), mock_patch.object(startup_patch, "validate_environment"), mock_patch.object(startup_patch, "patch"), mock_patch.object(startup_patch.os, "chdir"), mock_patch.object(startup_patch.os, "execvp") as execution:
+    with mock_patch.object(startup_patch, "validate_versions"), mock_patch.object(startup_patch, "validate_environment"), mock_patch.object(startup_patch, "patch"), mock_patch.object(startup_patch, "install_browser_assets"), mock_patch.object(startup_patch.os, "chdir"), mock_patch.object(startup_patch.os, "execvp") as execution:
         startup_patch.main()
         execution.assert_called_once_with("bash", ["bash", "start.sh"])
 
