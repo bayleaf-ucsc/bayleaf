@@ -1,0 +1,12 @@
+{
+  "started": "2026-10-21T16:32:37.518Z",
+  "worker": "bayleaf-inboxes-temp-resource-mvibyv7s",
+  "cpu_limit_ms": 30000,
+  "samples": [],
+  "tail": [],
+  "source_sha256": "7b28450a8f443483d03817d7acaf7c66eedf2b5f571acef4663d53372ba47855",
+  "verifier_sha256": "b0a175e05c24047b7ca57633662d9b8daf97dca883f9ff2f67afada2d81ee04b",
+  "error": "Qualification interrupted: subprocess status 1",
+  "deleted": true,
+  "finished": "2026-10-21T16:32:42.326Z"
+}
