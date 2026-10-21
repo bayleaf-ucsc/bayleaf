@@ -91,6 +91,11 @@ explicit operation on the user-owned installation. Preserve user files and histo
 
 ## Evidence and refinement log
 
+- 2026-10-20 (manual lifecycle smoke): One disposable machine exercised archive
+  and restore (`/start`), with per-ID 404 cleanup. Compare provider delivery
+  metadata without payloads against warehouse events: absent `sandbox.created`
+  emission must not be mistaken for receiver rejection or a complete creation census.
+
 - 2026-10-13 (Nanobot search, local fix): Parent installer only, no adapter
   publication needed. MCP stdio drops proxy/CA variables; Node fetch also needs
   explicit proxy activation. Verified real installed MCP usage/search in a

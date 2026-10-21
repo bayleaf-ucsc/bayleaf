@@ -162,3 +162,32 @@ Permanent credentials/control IDs are in ignored mode-0600 operator files,
 not this public record. No user email was sent. Automatic retry horizon,
 sustained cadence under load, creation-event completeness and real trace-discard
 delivery remain limitations, not claims established by activation.
+
+## Manual archive/restore exercise
+
+2026-10-21 01:55:06–01:56:13 UTC (2026-10-20 Pacific), within the 01:45 UTC
+lifecycle bucket. Exactly one private, synthetic-labelled sandbox from the
+existing snapshot completed create → stop → archive → restore/start → delete.
+Each mutation returned HTTP 200; passive reads confirmed stopped, archived and
+restored started states. Deletion was confirmed by exact per-ID GET **404**.
+No existing user machine, inference, execution or sandbox file operations.
+
+The initially empty observation window gained nine state notifications, each +1:
+`started → started` (no-op), `started → stopping → stopped`,
+`stopped → archiving → archived`, `archived → restoring → started`, and
+`started → destroying → destroyed`. Svix delivery metadata independently showed
+nine HTTP-202 successes. Warehouse reads were not truncated; buckets aligned to
+15 minutes with exact 90-day expiry. This bucket contains synthetic test traffic,
+not an identified population of people or distinct machines.
+
+There were **zero `sandbox.created` messages in provider metadata and zero in
+the warehouse** for this creation. No creation delivery rejection was observed.
+This narrows the limitation to provider emission for the tested creation path,
+not demonstrated collector loss; it does not establish behavior for every
+creation path. Archive/restore delivery is now live-qualified. No production
+configuration changes were needed for this exercise.
+
+The requested documentation follow-up redeployed the unchanged collector as
+`78de3df2-6892-4610-a3d5-9685474d561e`. Both receiver switches remained open,
+private reads retained both Daytona status classes and a recent organization
+export. All 94 JavaScript tests passed again.
