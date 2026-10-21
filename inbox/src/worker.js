@@ -9,6 +9,7 @@
 
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import PostalMime from 'postal-mime';
+import { diagnosticHeaders, publicDiagnosticPage } from '../../api/src/templates/diagnostics';
 
 // ---------------------------------------------------------------------------
 // Config and limits
@@ -339,11 +340,6 @@ const json = (body, status, headers = {}) =>
 const CORS = { 'Access-Control-Allow-Origin': '*' };
 const notFound = () => json({ error: 'not_found' }, 404);
 
-const APEX_TEXT = 'This domain hosts BayLeaf Inboxes, opaque addresses at which a BayLeaf owner can '
-  + 'receive email or HTTP requests while their own clients are off. Reception only stores bounded '
-  + 'data for the owner, read through BayLeaf API; it never replies, forwards or runs anything. '
-  + 'See https://bayleaf.dev for the service and its privacy notice.\n';
-
 function isTextual(contentType) {
   const t = (contentType || '').split(';')[0].trim().toLowerCase();
   return t.startsWith('text/') || t.includes('json') || t.includes('xml') || t === 'application/x-www-form-urlencoded';
@@ -479,10 +475,13 @@ async function handleFetch(request, env, ctx) {
   const host = new URL(request.url).hostname.toLowerCase();
   if (host === domain) {
     if (request.method === 'GET' || request.method === 'HEAD') {
-      const text = new URL(request.url).pathname === '/llms.txt'
-        ? 'BayLeaf Inboxes receives bounded email and webhook messages for later owner-authorized retrieval; see https://api.bayleaf.dev/llms.txt for access and details.\n'
-        : APEX_TEXT;
-      return new Response(request.method === 'HEAD' ? null : text, { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
+      const path = new URL(request.url).pathname;
+      if (path === '/llms.txt') return new Response(request.method === 'HEAD' ? null :
+        'BayLeaf Inboxes receives bounded email and webhook messages for later owner-authorized retrieval; see https://api.bayleaf.dev/llms.txt for access and details.\n',
+      { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
+      if (path !== '/') return notFound();
+      return new Response(request.method === 'HEAD' ? null : publicDiagnosticPage('inboxes', enabled(env),
+        env.BROWSER_ARRIVALS_ENABLED === 'true'), { headers: diagnosticHeaders(env.BROWSER_ARRIVALS_ENABLED === 'true') });
     }
     return notFound();
   }

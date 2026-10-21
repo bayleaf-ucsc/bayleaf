@@ -78,7 +78,7 @@ function render(data) {
     section('Source observations', status, table(['Source', 'Class', 'Last accepted', 'Age at read'], status.rows.map(row => [row.source, row.class, time(row.observed_at), `${n((data.to - row.observed_at) / 60000)} min`])) + '<p class="small">Latest accepted observation within the selected window, not a liveness check. Missing sources remain unknown. Browser arrivals do not create source-status rows.</p>');
   const tooltip = $('#arrival-breakdown');
   const networks = ['campus-network', 'other-network', 'unknown'];
-  const services = ['landing', 'chat', 'api', 'sandbox'];
+  const services = ['landing', 'chat', 'api', 'sandbox', 'proxies', 'inboxes'];
   const breakdowns = buckets.map(rows => group(rows, row => `${row.destination}/${row.network_location}`));
   // One scale for the whole timeline: a dark cell means the same count in every bucket.
   const cellMax = Math.max(1, ...breakdowns.flatMap(counts => Object.values(counts)));

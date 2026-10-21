@@ -48,10 +48,14 @@ ITS-operated or ITS-supported one.
   subjects, filenames, credentials or payloads. Reads require the separate
   operator capability. Retention is at most **90 days**, including local export
   buffers; retry and recovery limits mean these are operational observations, not
-  authoritative billing or guaranteed delivery counts. Public HTML arrival
-  instrumentation for future inbox/proxy diagnostic pages must follow the same
-  first-party, identifier-free browser policy; plaintext `/llms.txt` requests are
-  not browser arrivals.
+  authoritative billing or guaranteed delivery counts. Identifier-free browser
+  arrivals are enabled on the Proxies
+  apex (`/` and `/unavailable`) and Inboxes apex (`/`), using the same first-party
+  browser policy. Unavailable preview browser
+  navigations hand off to the generic apex page without forwarding their hostname,
+  path or query. Preview applications, inbox receipt URLs, authenticated diagnostics
+  and plaintext `/llms.txt` requests are excluded. Capability-host referrers are
+  discarded at source and rejected by the collector.
 - **Identity (Chat and API):** CruzID, email, and display name from CILogon at
   sign-in. The email is used to identify your account, route you to the right
   groups, and (for the API) tag upstream requests for per-user rate limiting.

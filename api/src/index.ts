@@ -46,6 +46,7 @@ import { SESSION_COOKIE } from './constants';
 import { GRANT_PREFIX, guardGrant, cleanupGrants } from './grants';
 import { previewRoutes, handlePreviewHost, cleanupPreviews } from './routes/previews';
 import { inboxRoutes } from './routes/inboxes';
+import { diagnosticRoutes } from './routes/diagnostics';
 export { PreviewConnections } from './routes/previews';
 import { RecommendedModelResponseSchema, HealthResponseSchema } from './schemas';
 
@@ -191,6 +192,7 @@ app.route('/grants', grantRoutes);
 app.route('/previews', previewRoutes);
 // BayLeaf Inboxes (issue #97): owner facade, 404 unless enabled.
 app.route('/inboxes', inboxRoutes);
+app.route('/diagnostics', diagnosticRoutes);
 app.route('/', llmsRoutes);
 app.route('/', authRoutes);
 app.route('/', keyRoutes);

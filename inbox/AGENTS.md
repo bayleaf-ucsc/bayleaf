@@ -15,6 +15,14 @@ forwards, runs inference or wakes an agent.
 
 ## Boundaries
 
+Deployed #113 web revision adds only an apex HTML explainer with a handoff to
+API-hosted owner diagnostics, not an owner HTTP API on this domain. Tenant
+receipt paths remain untouched. Apex browser arrivals are explicitly enabled under
+`BROWSER_ARRIVALS_ENABLED`, with real browser readback verified. See DESIGN.md and
+`../telemetry/qualification/diagnostics.md`; real UCSC owner login and receipt
+metadata rendering are verified. The separate private-preview navigation gap
+keeps #113 open; Inboxes is still an operator-only pilot.
+
 - **Public surfaces are reception only:** `email()` (Email Routing catch-all) and
   `fetch()` on the inbox domain. There is no owner HTTP API here.
 - **Owners reach it only through the API:** `api/src/routes/inboxes.ts` calls the

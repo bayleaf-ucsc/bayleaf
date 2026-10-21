@@ -518,7 +518,10 @@ describe('BayLeaf Inboxes contract', () => {
       assert.equal((await h.list(discoveryOwner, discoveryInbox.id)).messages[0].preview.path, '/llms.txt', 'Inbox paths stay sender-owned');
       const g = await h.http(`https://${DOMAIN}/`);
       assert.equal(g.status, 200);
-      assert.match(g.headers.get('content-type'), /^text\/plain/);
+      assert.match(g.headers.get('content-type'), /^text\/html/);
+      assert.match(g.text, /https:\/\/api\.bayleaf\.dev\/diagnostics\/inboxes/);
+      assert.doesNotMatch(g.text, /<script/); // New arrivals default off.
+      assert.equal((await h.http(`https://${DOMAIN}/unknown`)).status, 404);
       assert.ok(g.text.length > 0);
       assert.equal((await h.http(`https://${DOMAIN}/`, { method: 'HEAD' })).status, 200);
       assert.equal((await h.http(`https://${DOMAIN}/`, { method: 'POST', body: 'x' })).status, 404);

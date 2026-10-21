@@ -87,9 +87,9 @@ test('collector enriches browser rows only, rejects client dimensions and retain
   const read = () => worker.fetch(new Request(`https://telemetry.invalid/v1/read/browser?from=${NOW - 1}&to=${NOW + 1}&limit=50`,
     { headers: { Authorization: `Bearer ${READ}` } }), env);
   const result = await (await read()).json();
-  assert.equal(result.schema_version, 2); assert.equal(result.policy_version, 3);
+  assert.equal(result.schema_version, 2); assert.equal(result.policy_version, 4);
   assert.equal(result.rows.length, 6);
-  assert.ok(result.rows.every(row => row.schema_version === 2 && row.policy_version === 3));
+  assert.ok(result.rows.every(row => row.schema_version === 2 && row.policy_version === 4));
   assert.doesNotMatch(JSON.stringify(result), /128\.114|192\.0\.2|f5f0|forwarded/i);
   for (const table of ['metric_points', 'deletion_runs', 'probe_runs', 'source_status'])
     assert.ok(!db.sql.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === 'network_location'));

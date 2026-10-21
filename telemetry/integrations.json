@@ -5,6 +5,8 @@
     { "name": "API", "kind": "browser", "enabled": true, "verification": "Verified" },
     { "name": "Sandboxes", "kind": "browser", "enabled": true, "verification": "Verified" },
     { "name": "Chat", "kind": "browser", "enabled": true, "verification": "Verified for signed-out public-root arrivals" },
+    { "name": "Proxies diagnostic pages", "kind": "browser", "enabled": true, "verification": "Actual browser entry and expired-link recovery verified; apex / and /unavailable only, never preview application origins" },
+    { "name": "Inboxes entry page", "kind": "browser", "enabled": true, "verification": "Actual browser apex arrival verified; never receipt URLs or authenticated diagnostics" },
     { "name": "Open WebUI native metrics", "kind": "metrics", "enabled": true, "verification": "Verified at a 5-minute export interval" },
     { "name": "Inboxes aggregate metrics", "kind": "metrics", "enabled": true, "verification": "Live HTTP receipt/guard/lifecycle window verified; email and scheduled cleanup counters pending" },
     { "name": "Monitoring probes", "kind": "probes", "enabled": true, "verification": "Verified" },

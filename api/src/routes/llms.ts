@@ -926,6 +926,9 @@ receives mail; an http inbox captures requests to any path and query on its URL.
 Reception stores data only: it never activates an agent, replies or runs tools.
 Manage with an ordinary BayLeaf key or sandbox credential, not Campus Pass,
 temporary inference tokens or a browser session. No inference key is provisioned.
+For human inspection only, [receipt diagnostics](/diagnostics/inboxes) use the existing
+API browser sign-in and show counts and recent receipt times/sizes, not message content.
+This does not authorize browser-based creation, deletion or message retrieval.
 
 Addresses are not secrets. New http inboxes are open until the first bearer
 credential is created. That permanently closes reception: senders need

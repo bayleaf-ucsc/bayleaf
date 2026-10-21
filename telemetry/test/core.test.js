@@ -187,6 +187,24 @@ test('bounded identity-free rate budgets and window rollover', async t => {
   assert.equal(count(db, 'ingress_budgets'), 0);
 });
 
+test('diagnostic apex arrivals bind fixed origins and reject capability-host referrers', async t => {
+  const db = database(); t.after(() => db.close());
+  const env = envFor(db), worker = createWorker({ clock: () => NOW });
+  const call = (destination, origin, referring_hostname = null) => worker.fetch(new Request('https://telemetry.invalid/v1/browser', {
+    method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ schema_version: 1, destination, referring_hostname }),
+  }), env);
+  for (const kind of ['proxies', 'inboxes']) {
+    const origin = `https://bayleaf-${kind}.dev`;
+    assert.equal((await call(kind, origin)).status, 202);
+    assert.equal((await call(kind, 'https://api.bayleaf.dev')).status, 400);
+    assert.equal((await call(kind, 'https://tenant.bayleaf-proxies.dev')).status, 403);
+    for (const ref of ['owner-private-nonce.bayleaf-proxies.dev', 'abcdefghijklmnopqrstuvwxyz.bayleaf-inboxes.dev'])
+      assert.equal((await call(kind, origin, ref)).status, 400);
+  }
+  assert.equal(count(db, 'browser_observations'), 2);
+});
+
 test('HTTP kill switches, service-scoped auth, bounded reads and no public data', async t => {
   const db = database(); t.after(() => db.close());
   const env = envFor(db), worker = createWorker({ clock: () => NOW });

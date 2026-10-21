@@ -24,6 +24,7 @@
     "test:telemetry": "node scripts/test-telemetry.mjs",
     "test:inboxes": "node scripts/test-inboxes.mjs",
     "test:inboxes-e2e": "node scripts/test-inboxes-e2e.mjs",
+    "test:diagnostics": "node --test scripts/test-diagnostics.mjs && node scripts/test-inboxes-e2e.mjs",
     "test:sandbox-credentials": "node scripts/harness-sandbox-credentials.mjs",
     "test:sandbox-plugin": "npm --prefix sandbox-plugin test",
     "test:nanobot": "python3 scripts/build-nanobot-assets.py --fixture && npm --prefix nanobot-sandbox test && python3 scripts/test-nanobot-setup.py && python3 scripts/test-nanobot-assets.py",

@@ -205,6 +205,17 @@ async function next(client, url) {
   assert.equal(response.status, 302, `${url}: ${response.status} ${await response.clone().text()}`);
   return new URL(response.headers.get('Location'), url).href;
 }
+async function recovery(response) {
+  assert.equal(response.status, 302);
+  const target = `https://${bindings.PREVIEWS_DOMAIN}/unavailable`;
+  assert.equal(response.headers.get('Location'), target);
+  assert.equal(response.headers.get('Referrer-Policy'), 'no-referrer');
+  const page = await dispatch(target);
+  assert.equal(page.status, 404);
+  const html = await page.text();
+  assert.match(html, /This preview link is not available/);
+  assert.ok(!html.includes('<script'), 'recovery page stays uninstrumented by default');
+}
 const input = () => ({ owner: { subject: 'owui-owner', email: 'owner@example.test' },
   upstream_url: upstream + '/', access: 'private' });
 async function register(overrides = {}, credential = key) {
@@ -278,6 +289,11 @@ try {
     ['other@example.test', 'sk-bayleaf-other', 'other-sandbox'],
   ]) await db.prepare('INSERT INTO user_keys(email,bayleaf_token,daytona_sandbox_id) VALUES (?,?,?)').bind(email, token, sandbox).run();
 
+  await check('unknown browser URLs recover without forwarding tenant details; machine reads remain 404', async () => {
+    const unknown = `https://unknown.${bindings.PREVIEWS_DOMAIN}/secret?credential=canary`;
+    await recovery(await browser().visit(unknown));
+    assert.equal((await dispatch(unknown)).status, 404);
+  });
   await check('installation authentication rejects anonymous, user keys, bad and truncated keys before parsing', async () => {
     for (const credential of ['', 'sk-bayleaf-owner', key + 'x', key.slice(0, -1)]) assert.equal((await register({}, credential)).status, 401);
     const malformed = await dispatch(api + '/previews/registrations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{' });
@@ -436,7 +452,7 @@ try {
       const socket = await connect(client, data.url);
       for (const [name, value] of Object.entries(config)) assert.equal(lastUpstream.headers[name.toLowerCase()], value);
       const closed = event(socket, 'close'); await revoke(data.url); await closed;
-      assert.equal((await client.visit(data.url)).status, 404);
+      await recovery(await client.visit(data.url));
     }
   });
   await check('browser authorization still works four hours later but not beyond the registration boundary', async () => {
@@ -444,7 +460,7 @@ try {
     const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
     assert.ok(claims.exp - Date.now() / 1000 > 4 * 3600);
     assert.equal((await owner.visit(url, { headers: { 'X-Harness-Advance-Seconds': '14400' } })).status, 200);
-    assert.equal((await owner.visit(url, { headers: { 'X-Harness-Advance-Seconds': '86401' } })).status, 404);
+    await recovery(await owner.visit(url, { headers: { 'X-Harness-Advance-Seconds': '86401' } }));
   });
   await check('another authenticated user copying the exact URL cannot access the service', async () => {
     const other = browser('other@example.test');
@@ -715,7 +731,7 @@ try {
     const closed = event(socket, 'close');
     assert.equal((await revoke(url)).status, 204);
     assert.equal((await closed).code, 1008);
-    assert.equal((await owner.visit(url)).status, 404);
+    await recovery(await owner.visit(url));
     const oldToken = owner.cookies.get(new URL(url).host).get('__Host-bl-preview-session');
     const oldUrl = url;
     const replacement = await register();
@@ -795,7 +811,7 @@ try {
     }, body: '{"port":5000}' });
     assert.equal(renewed.status, 200);
     const renewedUrl = (await renewed.json()).url;
-    assert.equal((await owner.visit(url)).status, 404);
+    await recovery(await owner.visit(url));
     url = renewedUrl;
     await login(owner, url);
     sandboxState = 'stopped';
@@ -869,18 +885,18 @@ try {
     const closed = event(socket, 'close');
     assert.equal((await dispatch(api + '/sandbox/expose/5000', { method: 'DELETE', headers: { Authorization: 'Bearer sk-bayleaf-owner' } })).status, 204);
     assert.equal((await closed).code, 1008);
-    assert.equal((await owner.visit(url)).status, 404);
+    await recovery(await owner.visit(url));
     const replacement = await register();
     const fresh = (await replacement.json()).url;
     assert.notEqual(fresh, url);
-    assert.equal((await owner.visit(url)).status, 404);
+    await recovery(await owner.visit(url));
     url = fresh;
   });
   await check('expiry blocks sessions and scheduled cleanup removes credentials and transactions', async () => {
     await login(owner, url);
     await db.prepare('UPDATE preview_registrations SET expires_at=0').run();
     await db.prepare('UPDATE preview_flows SET expires_at=0').run();
-    assert.equal((await owner.visit(url)).status, 404);
+    await recovery(await owner.visit(url));
     // Exercise the production handler, not a duplicate cleanup implementation.
     const worker = await mf.getWorker();
     await worker.scheduled({ cron: '0 * * * *' });

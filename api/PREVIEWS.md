@@ -7,6 +7,37 @@ Chat deployment evidence is in `chat/DESIGN.md`.
 
 ## Contract
 
+### Diagnostic web revision (#113, deployed)
+
+The apex `/` explains public/private preview access and hands owners to
+`https://api.bayleaf.dev/diagnostics/proxies`. That owner-only, server-rendered
+snapshot reuses the API session: no second account system, domain-wide cookie,
+application fetch, provider call, inference-key provisioning or compute wake.
+It lists retained registration metadata, validates managed credential binding,
+and distinguishes registration validity from unchecked application reachability.
+Expired rows may remain until cleanup; revoked/deleted registrations are not a
+history ledger. Sandboxes and agents retain lifecycle/setup authority.
+
+Unknown, expired and revoked browser navigation uses an identical no-referrer
+302 to the apex `/unavailable`, which answers 404 with generic recovery guidance.
+The redirect forwards no hostname, path or query. Machine requests remain 404.
+Tenant application paths, including `/llms.txt`, remain untouched. Apex
+`/llms.txt` remains a plaintext handoff. Public GET/HEAD pages stay available
+when the gateway is disabled and disclose that state.
+
+`PREVIEW_BROWSER_ARRIVALS_ENABLED=true` independently gates the new apex arrival
+client. Only apex `/` and `/unavailable` may send fixed `proxies` observations;
+never tenant origins, private diagnostics or discovery text. The collector policy
+and exact public-page inventory shipped before activation. Live public/private
+gate, expired/revoked recovery and browser-arrival checks passed without touching
+existing applications. Real UCSC login and owner registration diagnostics are
+verified. A synthetic private-preview navigation still received gateway denial
+after handoff in the browser panel; its cause is unresolved, not assumed to be
+missing navigation metadata. The operator approved publishing the diagnostic-only
+release while leaving #113 open. See `../telemetry/qualification/diagnostics.md`.
+See `node api/scripts/test-inboxes-e2e.mjs --preview` for synthetic browser fixtures
+(run from `api/` as `node scripts/test-inboxes-e2e.mjs --preview`).
+
 **Current naming decision (2026-09-20):**
 `{cruzid}-{access}-{nonce}.bayleaf-proxies.dev`, with a fresh 96-bit random
 nonce on every registration, no visible port, and no stable redirect alias.

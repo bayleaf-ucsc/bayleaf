@@ -49,6 +49,8 @@ test('all public destinations send only approved schema and hostname, with crede
     ['landing', 'https://bayleaf.dev', active.landing],
     ['api', 'https://api.bayleaf.dev', arrivalScript('api')],
     ['sandbox', 'https://sandbox.bayleaf.dev', arrivalScript('sandbox')],
+    ['proxies', 'https://bayleaf-proxies.dev', arrivalScript('proxies')],
+    ['inboxes', 'https://bayleaf-inboxes.dev', arrivalScript('inboxes')],
   ]) {
     const { calls, timers } = await execute(code, { origin });
     assert.equal(calls.length, 1);
@@ -82,6 +84,18 @@ test('exact origin/root only: no private routes, chat, previews, or client navig
   assert(!generated.runtime.includes('sendBeacon'));
 });
 
+test('diagnostic inventory excludes tenant origins, llms and private routes', async () => {
+  for (const kind of ['proxies', 'inboxes']) {
+    const origin = `https://bayleaf-${kind}.dev`;
+    for (const path of ['/llms.txt', '/diagnostics/' + kind, '/login', '/__preview/start'])
+      assert.equal((await execute(arrivalScript(kind), { origin, path })).calls.length, 0);
+    for (const tenant of ['person-private-nonce.bayleaf-proxies.dev', 'abcdefghijklmnopqrstuvwxyz.bayleaf-inboxes.dev'])
+      assert.equal((await execute(arrivalScript(kind), { origin: 'https://' + tenant })).calls.length, 0);
+  }
+  assert.equal((await execute(arrivalScript('proxies'), { origin: 'https://bayleaf-proxies.dev', path: '/unavailable' })).calls.length, 1);
+  assert.equal((await execute(arrivalScript('inboxes'), { origin: 'https://bayleaf-inboxes.dev', path: '/unavailable' })).calls.length, 0);
+});
+
 test('failures are dropped without retry; hanging request aborts in bounded budget', async () => {
   for (const failure of [true, 'hang']) {
     const { calls, timers } = await execute(active.landing, { failure });
@@ -93,7 +107,8 @@ test('failures are dropped without retry; hanging request aborts in bounded budg
 
 test('private/IP/credentialed referrers are nulled by shared adapter in actual bundle', async () => {
   for (const referrer of ['https://127.0.0.1/private', 'https://user:password@example.org/private',
-    'https://owner-private-preview.bayleaf.dev/private', 'https://0123456789abcdef.example.org/private']) {
+    'https://owner-private-preview.bayleaf.dev/private', 'https://0123456789abcdef.example.org/private',
+    'https://owner-private-nonce.bayleaf-proxies.dev/secret', 'https://abcdefghijklmnopqrstuvwxyz.bayleaf-inboxes.dev/token']) {
     const { calls } = await execute(active.landing, { referrer });
     assert.equal(JSON.parse(calls[0].options.body).referring_hostname, null);
   }

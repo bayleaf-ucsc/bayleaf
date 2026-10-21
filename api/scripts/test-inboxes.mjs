@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** Inbox facade in real workerd/D1 against a STUB bayleaf-inboxes RPC. No network, no providers. */
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
@@ -89,6 +89,14 @@ try {
     headers: { Authorization: 'Bearer sk-bayleaf-owner' } });
   assert.equal(deniedPilot.status, 404, 'operator-only pilot denies other authenticated owners');
   const calls = async () => (await inbox.fetch('https://stub/')).json();
+  const data = [{ alg: 'HS256', typ: 'JWT' }, { email: 'owner@example.test', name: 'Synthetic', exp: Math.floor(Date.now()/1000)+3600 }]
+    .map(x => Buffer.from(JSON.stringify(x)).toString('base64url')).join('.');
+  const Cookie = 'bayleaf_session=' + data + '.' + createHmac('sha256', 'synthetic-signing').update(data).digest('base64url');
+  for (const target of [pilot, await mf.getWorker('api-off'), await mf.getWorker('api-unbound')]) {
+    assert.equal((await target.fetch('https://api.bayleaf.dev/diagnostics/inboxes', { headers: { Cookie } })).status, 404,
+      'browser diagnostics preserve pilot/disabled/unbound gates');
+  }
+  assert.deepEqual(await calls(), [], 'denied diagnostics never reach the receiver RPC');
   const req = (target, path, { key = 'sk-bayleaf-owner', method = 'GET', body, headers = {} } = {}) =>
     target.fetch('https://api.bayleaf.dev' + path, { method, body: typeof body === 'string' ? body : body && JSON.stringify(body),
       headers: { ...(key ? { Authorization: 'Bearer ' + key } : {}), ...(body ? { 'Content-Type': 'application/json' } : {}), ...headers } });

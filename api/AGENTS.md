@@ -712,6 +712,18 @@ No new migration or production backend enablement is part of this change.
 
 ### Transient preview gateway (issues #71 and #72)
 
+Deployed #113 web revision: `routes/diagnostics.ts` serves owner-only snapshots at
+`/diagnostics/proxies` and `/diagnostics/inboxes` on the API identity origin.
+Existing browser sign-in returns directly there, not through the main dashboard's
+provider-key healing. No new auth authority, inference credentials, application
+probe, compute wake, lifecycle control or anonymous private-page arrival script.
+Preserve Inboxes pilot/account-generation gates. Public apex explanations and
+generic preview recovery share `templates/diagnostics.ts`; new arrival switches
+are enabled with explicit approval. See `PREVIEWS.md`, `inbox/DESIGN.md`,
+`telemetry/browser/README.md` and `telemetry/qualification/diagnostics.md` for
+production evidence and the unresolved private-preview navigation check. Real UCSC
+owner login and both diagnostic views are verified; #113 remains open by decision.
+
 `PREVIEWS_ENABLED=true` for the bounded POC deployed 2026-09-17. See `PREVIEWS.md` before changing this
 facet. `POST /previews/registrations` and its DELETE counterpart accept only
 the single Lathe installation's `PREVIEWS_INSTALLATION_KEY` Worker Secret.

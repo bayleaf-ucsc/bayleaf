@@ -58,6 +58,16 @@ traffic without changing the Worker.
 
 ## Refinement log
 
+- 2026-10-20 (#113 rollout): Compare all staged API variables to live metadata;
+  source defaults intentionally differ from the operator-only Inboxes deployment.
+  Verify arrival records from real browser executions, not direct synthetic POSTs.
+  Start diagnostic return-cookie expiry with OAuth to handle old interstitials.
+
+- 2026-10-20 (#113 diagnostics, local): Keep passive owner views on the existing
+  API identity origin rather than cloning cross-domain sessions. Sandboxes login
+  has an explicit wake side effect, unsuitable for diagnostic login. Preview
+  recovery must shed tenant host/path/query before instrumented apex HTML.
+
 - 2026-10-20 (Daytona activation): OTLP base URLs append `/v1/{signal}`; qualify
   the path prefix, not only a root test receiver. Svix SDK 2.8.0 handles scoped
   portal-token routing and uses `event_types`; refresh Daytona endpoint presence

@@ -75,6 +75,16 @@ this is why step 3's approval gate precedes both publishing and notifying.
 
 ## Refinement log
 
+- 2026-10-20 (#113 activation): New apex sources were explicitly approved and
+  browser-readback verified under the existing fields/90-day retention. CSP blocks
+  Cloudflare's separately injected analytics beacon; do not allow it to silence
+  console errors. No existing retained content or provider roster changed.
+
+- 2026-10-20 (#113 diagnostic web, local): Two new apex arrival sources use the
+  existing policy/retention, with independent disabled switches. The draft names
+  exact HTML paths and exclusions; preview recovery drops tenant material before
+  telemetry. Publication and activation remain gated, not implied by local tests.
+
 - 2026-10-20 (Daytona telemetry, unpublished draft): Lifecycle event counts need
   not retain sandbox identities: atomic event receipts and 15-minute buckets suffice.
   Discarding OTLP logs/traces without reading bodies does not prevent the edge

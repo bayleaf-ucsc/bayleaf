@@ -104,14 +104,16 @@ authentication or worst-case MIME/SMTP reliability. The maintained mailauth PoC
 passes synthetic tests in Node but fails valid RSA DKIM on pinned workerd; see
 `research/README.md`. No sender restriction was silently substituted.
 
-### Deferred web experiences
+### Diagnostic web experiences (#113)
 
-`TODO.md` captures a minimal signed-out entry point and signed-in diagnostic
-postb.in-like inspector, not a full email client. Actual public HTML pages must
-use BayLeaf's first-party browser-arrival collector with explicit source policy;
-private dashboards and plaintext `/llms.txt` handoffs are not anonymous browser
-arrivals. Proxies web experience and Sandboxes handoffs are tracked separately in
-[issue #113](https://github.com/bayleaf-ucsc/bayleaf/issues/113).
+The minimal signed-out entry point and API-hosted owner receipt diagnostics are
+deployed, not a full email client. Actual public HTML arrivals are verified through
+the first-party collector; private dashboards, receipt URLs and plaintext
+`/llms.txt` are excluded. The operator pilot is unchanged. Real UCSC owner login
+and receipt metadata rendering are verified. #113 stays open for a separate
+private-preview navigation check. See [issue #113](https://github.com/bayleaf-ucsc/bayleaf/issues/113),
+`../api/DIAGNOSTICS.md` and `../telemetry/qualification/diagnostics.md` for exact
+scope, versions, evidence and remaining qualification.
 
 ### Aggregate service telemetry release
 
@@ -150,7 +152,7 @@ proof against prompt injection or a substitute for server authorization.
 | Hosted OpenChamber | Expose | List/search/read, download; native permission prompts for mutations and downloads | Separate plugin submodule, local tests; publication, pin and installed-client checks pending |
 | Hosted Nanobot | Expose, narrowed | List/search/read, quarantine downloads, create and archive; no deletion, destruction or credential tools | Separate adapter submodule and parent installer; local tests; publication and installed-client checks pending |
 | BayLeaf Chat | Defer | No new tool or inferred API authority | Revisit after hosted qualification: Chat identity has no user API credential, and copying mail into history is another storage boundary |
-| Human dashboard | Defer | HTTP API available; no new dashboard controls in this slice | Revisit after reception qualifies; credentials currently minted by owner scripts |
+| Human diagnostics | Expose metadata only (#113) | API browser session; counts, receipt times/sizes and reception mode, no content or lifecycle controls | Deployed; public arrivals and real owner login/rendering verified |
 
 Webhook credential minting is not an agent tool: the returned secret would enter
 model context. Owners can use the documented HTTP API without pasting credentials

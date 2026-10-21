@@ -19,6 +19,7 @@ import { consumeClaimReturnTo } from './claim';
 import { consumePreviewReturnTo } from './previews';
 import { consumeGrantReturnTo } from './grants';
 import { consumeServiceReturnTo } from './serviceLogin';
+import { consumeDiagnosticReturnTo, prepareDiagnosticLogin } from './diagnostics';
 
 export const authRoutes = new OpenAPIHono<AppEnv>();
 
@@ -26,6 +27,7 @@ export const authRoutes = new OpenAPIHono<AppEnv>();
  * GET /login - Start OIDC flow
  */
 authRoutes.get('/login', async (c) => {
+  prepareDiagnosticLogin(c);
   const url = new URL(c.req.url);
   const state = crypto.randomUUID();
 
@@ -121,7 +123,8 @@ authRoutes.get('/callback', async (c) => {
   // login additionally require the original broker cookie at authorize.
   const grantReturn = consumeGrantReturnTo(c);
   const serviceReturn = consumeServiceReturnTo(c);
-  const returnTo = serviceReturn ?? grantReturn ?? consumePreviewReturnTo(c) ?? consumeClaimReturnTo(c);
+  const diagnosticReturn = consumeDiagnosticReturnTo(c);
+  const returnTo = serviceReturn ?? grantReturn ?? consumePreviewReturnTo(c) ?? consumeClaimReturnTo(c) ?? diagnosticReturn;
   return c.redirect(returnTo ?? '/dashboard', 302);
 });
 

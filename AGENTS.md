@@ -244,8 +244,9 @@ API and probe Workers. Its root is a public configuration-status page, not a dat
 dashboard. Reads require a dedicated operator capability; service writers have
 separate source-scoped credentials. Read `telemetry/AGENTS.md` before changing it.
 
-The approved slice comprises public arrivals on landing/API/Sandboxes and signed-out
-Chat root, five native OWUI aggregate metrics, existing synthetic probe summaries,
+The approved slice comprises public arrivals on landing/API/Sandboxes, signed-out
+Chat root, Proxies apex entry/recovery and Inboxes apex entry (never tenant origins
+or authenticated diagnostics), five native OWUI aggregate metrics, existing synthetic probe summaries,
 and aggregate deletion-job reports. Fixed 15-minute Inboxes receipt/lifecycle/
 cleanup metrics are also approved, without addresses, inbox/account identifiers,
 paths, credentials or content. All have a 90-day active maximum; provider

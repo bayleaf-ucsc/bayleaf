@@ -1,6 +1,6 @@
 import { deliver } from './common.mjs';
 
-export const DESTINATIONS = Object.freeze(['landing', 'chat', 'api', 'sandbox']);
+export const DESTINATIONS = Object.freeze(['landing', 'chat', 'api', 'sandbox', 'proxies', 'inboxes']);
 const BAYLEAF_HOSTS = new Set(['bayleaf.dev', 'chat.bayleaf.dev', 'api.bayleaf.dev', 'sandbox.bayleaf.dev']);
 
 /** Only a hostname survives, never credentials, port, path, query or fragment. */
@@ -14,6 +14,7 @@ export function referrerHostname(referrer) {
     // opaque identifier labels are excluded at source, not hashed into linkage.
     if (host.length > 253 || !host.includes('.') || /^[\d.]+$/.test(host) || host.includes(':')
       || /(?:^|\.)(?:localhost|local|internal|test|invalid)$/.test(host)
+      || host.endsWith('.bayleaf-proxies.dev') || host.endsWith('.bayleaf-inboxes.dev')
       || (host.endsWith('.bayleaf.dev') && !BAYLEAF_HOSTS.has(host))) return null;
     const labels = host.split('.');
     if (labels.some(label => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)

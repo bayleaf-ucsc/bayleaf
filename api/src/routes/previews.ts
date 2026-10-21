@@ -10,6 +10,7 @@ import { getSession } from '../utils/session';
 import { PreviewRegistrationSchema, PreviewRegistrationResponseSchema, PreviewLabelSchema, PreviewUpstreamHeadersSchema } from '../schemas';
 import { upstreamCookies, wrapApplicationCookies } from '../previewCookies';
 import { managedSlot } from '../serviceDefs';
+import { diagnosticHeaders, publicDiagnosticPage } from '../templates/diagnostics';
 
 interface Deployment {
   id: string;
@@ -400,6 +401,15 @@ export async function handlePreviewHost(c: Context<AppEnv>): Promise<Response> {
         'This domain hosts the BayLeaf preview gateway for sandbox applications; see https://api.bayleaf.dev/llms.txt for access and details.\n',
       { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
     }
+    if (discovery.hostname === (c.env.PREVIEWS_DOMAIN || 'bayleaf-proxies.dev')) {
+      if (['GET', 'HEAD'].includes(c.req.method) && ['/', '/unavailable'].includes(discovery.pathname)) {
+        return new Response(c.req.method === 'HEAD' ? null : publicDiagnosticPage('proxies', configured(c.env),
+          c.env.PREVIEW_BROWSER_ARRIVALS_ENABLED === 'true', discovery.pathname === '/unavailable'),
+        { status: discovery.pathname === '/unavailable' ? 404 : 200,
+          headers: diagnosticHeaders(c.env.PREVIEW_BROWSER_ARRIVALS_ENABLED === 'true') });
+      }
+      return failure(404);
+    }
     if (!configured(c.env)) return failure(503);
     const u = new URL(c.req.url);
     if (u.protocol !== 'https:' || u.port) return failure();
@@ -408,10 +418,10 @@ export async function handlePreviewHost(c: Context<AppEnv>): Promise<Response> {
       // A stable recovery destination even after transient registration cleanup.
       // No sandbox contact, identity disclosure, or automatic wake.
       if (c.req.header('Sec-Fetch-Mode') === 'navigate' && c.req.method === 'GET') {
-        const headers = secureHeaders();
-        headers.set('Content-Type', 'text/html; charset=utf-8');
-        const dashboard = 'https://sandbox.bayleaf.dev/';
-        return new Response(`<!doctype html><html lang="en"><meta name="viewport" content="width=device-width"><title>Preview unavailable</title><h1>This preview is unavailable</h1><p>It may have expired or been revoked.</p><p><a href="${dashboard}">Return to your BayLeaf dashboard</a></p></html>`, { status: 404, headers });
+        // Move recovery to the apex before telemetry. Never send a capability
+        // hostname, path, query or owner identity to the collector, even as Origin.
+        return new Response(null, { status: 302, headers: new Headers([...secureHeaders(),
+          ['Location', `https://${c.env.PREVIEWS_DOMAIN}/unavailable`]]) });
       }
       return failure(404);
     }

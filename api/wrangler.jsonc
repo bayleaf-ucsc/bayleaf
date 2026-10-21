@@ -69,6 +69,8 @@
   // These are placeholders - actual values should be set as secrets
   "vars": {
     "BROWSER_ARRIVALS_ENABLED": "true",
+    // Approved first-party apex entry/recovery arrivals; never tenant origins.
+    "PREVIEW_BROWSER_ARRIVALS_ENABLED": "true",
     "TELEMETRY_ENABLED": "true",
     // Owner-directed browser work; migration 0013 applied 2026-10-03.
     "BROWSER_SANDBOX_ENABLED": "true",

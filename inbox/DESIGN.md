@@ -25,8 +25,8 @@ owner client ──► api.bayleaf.dev /inboxes/* ──► service binding RPC 
 - `inbox/` is a separate Worker, `bayleaf-inboxes`, with its **own** D1
   (`bayleaf-inboxes`) and R2 bucket (`bayleaf-inboxes`). It shares no storage with
   the inference API.
-- Its public surfaces are reception only: the `email()` handler and the
-  `fetch()` handler for `*.bayleaf-inboxes.dev`. It has no owner/read HTTP API.
+- Reception surfaces are the `email()` handler and the `fetch()` handler for
+  `*.bayleaf-inboxes.dev`. The apex has a public explanation; it has no owner/read HTTP API.
 - Owner operations are the `InboxManagement` `WorkerEntrypoint` RPC class, reachable
   only through the API Worker's service binding `INBOXES`.
 - **Owner identity is the API's `user_keys.account_generation`**, passed as the
@@ -52,6 +52,29 @@ owner client ──► api.bayleaf.dev /inboxes/* ──► service binding RPC 
   the wildcard certificate, never per-host certificates (Certificate Transparency).
 - Separate internal handles: inbox `ibx_` + nonce-format random, message `msg_` +
   random, credential `cred_` + random. Handles are useless without owner authority.
+
+## Diagnostic web revision (#113 and #97, deployed)
+
+The public apex explains the operator-only pilot and links to
+`https://api.bayleaf.dev/diagnostics/inboxes`. Owner diagnostics live on the API
+identity origin, reusing its host-only browser session and exact account generation.
+They preserve `INBOXES_ENABLED`, binding presence and `INBOXES_PILOT_OWNER` gates.
+Only existing read RPCs are used: at most ten inboxes and five recent unexpired
+receipts per inbox, including archived receipts. Counts can include pending or
+cleanup work. The rendered view excludes subjects, senders, headers, paths,
+credentials, bodies and attachments. Receipt addresses are text, not clickable
+delivery links. No new browser mutation or message-content API is introduced.
+Read-only inspection does not provision inference credentials or wake compute.
+
+The receiver's `BROWSER_ARRIVALS_ENABLED=true` independently gates apex `/`
+arrival instrumentation. Receipt hosts and all their paths remain reception-only:
+GET/HEAD still capture deliveries; unknown/destroyed URLs still answer identical
+JSON errors. Never instrument those URLs. `/llms.txt` is apex-only plaintext
+discovery, not a reserved receipt-host path. Deployment and collection activation
+were explicitly approved; actual browser readback passed. See
+`../telemetry/qualification/diagnostics.md` for versions, real owner-login evidence
+and the unresolved private-preview navigation check. The operator-only service
+pilot is unchanged.
 
 ## Inbox types
 
@@ -150,8 +173,9 @@ returns `{ error: 'disabled' }`.
 ## HTTP reception (`fetch`)
 
 Host handling (lowercased, port stripped):
-- Apex `INBOX_DOMAIN`: `GET`/`HEAD` → 200 `text/plain` one-paragraph explanation with
-  no data. Anything else → 404.
+- Apex `INBOX_DOMAIN`: `/` GET/HEAD serves a public HTML explanation, with a link
+  to API-hosted owner diagnostics. `/llms.txt` remains plaintext. Other paths or
+  methods return 404. These static pages remain available when reception is disabled.
 - `{label}.{INBOX_DOMAIN}` with a single label: inbox host. Deeper names, other hosts → 404.
 
 Inbox host, in order (cheap checks first):

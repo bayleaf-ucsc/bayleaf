@@ -7,10 +7,11 @@ export const DAY = 86_400_000;
 export const LIMITS = Object.freeze({ bodyBytes: 65_536, points: 100, readRows: 500,
   readWindowMs: 7 * DAY, futureMs: 60_000, browserPerMinute: 120,
   serviceBatchesPerMinute: 60, metricPointsPerMinute: 120, purgeRowsPerTable: 500 });
-export const DESTINATIONS = ['landing', 'sandbox', 'chat', 'api'];
+export const DESTINATIONS = ['landing', 'sandbox', 'chat', 'api', 'proxies', 'inboxes'];
 export const ORIGINS = {
   'https://bayleaf.dev': 'landing', 'https://sandbox.bayleaf.dev': 'sandbox',
   'https://chat.bayleaf.dev': 'chat', 'https://api.bayleaf.dev': 'api',
+  'https://bayleaf-proxies.dev': 'proxies', 'https://bayleaf-inboxes.dev': 'inboxes',
 };
 export const SOURCES = ['owui', 'chat-retention', 'api-retention', 'sandbox-reaper', 'probe', 'daytona', 'inboxes'];
 export const SOURCE_CLASSES = {

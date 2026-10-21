@@ -33,8 +33,13 @@ URLs, query strings, filenames, commands, raw SQL, tokens or model strings.
 Browser observations are individually stored but have no client timestamp.
 Their collector-derived network category stores no IP/hash/prefix. Only the
 trusted connecting address is transiently classified using the shared API campus
-ranges. Client wire schema remains 1; stored browser schema 2/policy 3 is defined
+ranges. Client wire schema remains 1; stored browser schema 2/policy 4 is defined
 in `src/browser-policy.js`. Existing rows become unknown without renewed expiry.
+Policy 4 adds explicitly approved Proxies apex entry/recovery and Inboxes apex
+entry arrivals. Both are deployed/enabled and actual-browser readback is verified;
+tenant application/receipt origins and authenticated diagnostics are excluded.
+See `qualification/diagnostics.md` for versions, verified owner login and the
+unresolved private-preview navigation check that keeps #113 open.
 Browser observations have no
 identifier or per-client dedup. Service run UUIDs identify job/probe runs and
 retries only, never accounts. Metrics are aggregate source windows, not a new

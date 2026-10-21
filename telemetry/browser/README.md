@@ -9,6 +9,31 @@ or push. Source rollout and disclosure review remain parent/operator responsibil
 
 ## Source contract and boundaries
 
+### Diagnostic pages (#113, deployed and enabled)
+
+Browser policy 4 adds fixed destinations `proxies` and `inboxes` without changing
+the wire schema or retention. Explicit inventory:
+
+| Origin | HTML paths | Switch, checked-in state |
+| --- | --- | --- |
+| `https://bayleaf-proxies.dev` | `/`, `/unavailable` | API `PREVIEW_BROWSER_ARRIVALS_ENABLED=true` |
+| `https://bayleaf-inboxes.dev` | `/` | Receiver `BROWSER_ARRIVALS_ENABLED=true` |
+
+No tenant origin is accepted by the collector. Preview recovery first redirects
+to the generic apex page with `no-referrer`, forwarding no tenant hostname, path
+or query. Both source sanitizer and collector reject individualized Proxies and
+Inboxes referrers, including short/non-hex labels. Exclude preview applications,
+receipt URLs, private/API diagnostic pages, auth routes and plaintext `/llms.txt`.
+No identifier, owner, credential, payload or new page-path dimension is added.
+Counts combine Proxies entry and recovery arrivals; they are not unique visitors.
+Shared landing/runtime/Chat bundles are regenerated, preserving existing activation.
+Collector policy shipped first, followed by uninstrumented pages, then explicitly
+approved activation. Real browser observations from both apexes and expired-link
+recovery have been read back with policy 4, exact 90-day expiry and null referrers.
+See [live evidence](../qualification/diagnostics.md). Existing Chat collection uses
+its separately deployed bundle and fixed-null referrer; this rollout does not
+redeploy Chat or broaden its collection.
+
 `entry.mjs` imports the existing `adapters/browser.mjs` and `common.mjs` policy,
 not a copied sanitizer/transport. `build.mjs` tree-shakes and bundles those modules
 into a generated TypeScript string for inline use and `landing/arrival.js` for

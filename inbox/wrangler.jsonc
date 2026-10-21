@@ -45,6 +45,8 @@
   // The numeric limits in DESIGN.md (RETENTION_SECONDS, MAX_*, DESTROY_QUIESCE_SECONDS)
   // fall back to code defaults in src/worker.js; set a var here only to override one.
   "vars": {
+    // Approved first-party apex arrivals; never receipt URLs or private pages.
+    "BROWSER_ARRIVALS_ENABLED": "true",
     // Dedicated inboxes source writer in collector WRITE_KEYS_JSON. Supply with
     // wrangler secret put INBOX_TELEMETRY_WRITE_SECRET; never reuse a read/API key.
     // Counting/export stay off until explicit enablement and live qualification.

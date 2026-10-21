@@ -67,12 +67,15 @@ IP literals (including URL-recognized short/octal/hex/trailing-dot forms), URLs,
 paths, query/fragment and local hostname suffixes are rejected.
 Unknown referrer is `null`, not a claim of direct arrival.
 
-`src/policies.js` owns service policy version 3, wire schema version 1, names/dimensions,
+`src/policies.js` owns service policy version 4, wire schema version 1, names/dimensions,
 allowlists and safety bounds. Policy is deliberately **not baked into SQL**:
 reviewed scope can change without rebuilding storage. Unknown fields and
 arbitrary string dimensions fail closed. There is no raw request archive.
 `src/browser-policy.js` separately owns stored browser schema version 2 / policy
-version 3, approved on 2026-10-20. Browser wire payloads remain version 1 and
+version 4, deployed with the diagnostic-page revision.
+The [source inventory](browser/README.md) records both enabled apex additions and
+links to their actual-browser qualification evidence.
+Browser wire payloads remain version 1 and
 cannot supply a network category. Private browser reads advertise the new stored
 versions; each historical row keeps its original versions.
 

@@ -136,6 +136,10 @@ push, deploy or publish without explicit approval.
 
 ## Refinement log
 
+- 2026-10-20 (#113): Include `proxies` and `inboxes` in the arrival heatmap's
+  explicit service list when enabling those sources. Aggregate bars were already
+  dynamic; a fixed tooltip list otherwise silently omits part of the timeline.
+
 - 2026-10-20: Initial workflow extracted from a running live-data prototype.
   UI hot reload and arrival heatmap were browser-checked; native gauge charts
   added without expanding collection. Preserve this lightweight iteration loop.

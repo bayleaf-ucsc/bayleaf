@@ -26,6 +26,8 @@ retain them past input expiry. No public sharing is implied by this prototype.
 
 Initial panels: arrivals, native gauge snapshots and HTTP measurements, synthetic
 probe outcomes/timings, deletion reports and latest accepted source observations.
+Arrival breakdowns include Proxies and Inboxes apex pages alongside the original
+four destinations; preview applications and receipt URLs are never counted here.
 HTTP totals/percentiles are deliberately not synthesized from overlapping
 cumulative windows. This first iteration exposes those measurements for inspection
 instead of inventing a traffic total. Missing reports are not zeros.

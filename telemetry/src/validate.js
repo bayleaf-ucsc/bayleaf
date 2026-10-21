@@ -42,6 +42,7 @@ export function hostname(x) {
   if (h.split('.').some(p => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(p) ||
       p.length > 48 || /^[0-9a-f]{16,}$/i.test(p) || /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(p)) ||
       /(^|\.)(localhost|local|internal|invalid|test)$/.test(h) ||
+      h.endsWith('.bayleaf-proxies.dev') || h.endsWith('.bayleaf-inboxes.dev') ||
       (h.endsWith('.bayleaf.dev') && !Object.hasOwn(ORIGINS, `https://${h}`))) fail();
   return h;
 }

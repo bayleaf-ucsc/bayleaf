@@ -27,23 +27,25 @@ limitations, not just source-level completion.
   accepted payloads lingering indefinitely; disclose provider/tombstone residuals
   rather than promising instantaneous total erasure. Existing inboxes must not
   silently acquire an idle-expiry policy.
-- [ ] **Minimal public web experience:** a tasteful signed-out explanation and
+- [x] **Minimal public web experience (#113):** a tasteful signed-out explanation and
   login entry point, analogous to existing BayLeaf API services. State availability,
   passive reception, limits and the stored-content/privacy boundary. No new
   marketing surface or elaborate application is needed.
   Wire actual HTML entry pages into BayLeaf's first-party browser-arrival telemetry
   (approved service inventory, privacy disclosure, no visitor ids or retained IPs);
   plaintext `/llms.txt` requests are not browser arrivals.
-- [ ] **Signed-in diagnostic dashboard:** approximate a lightweight postb.in, not
-  a full email inbox. List typed inboxes and usage; copy addresses/URLs; inspect
-  recent receipts, method/path/query, redacted headers, bounded text and attachment
-  metadata; download exact bytes; archive/delete/destroy. Manage expiring webhook
-  credentials with masked/copy-only one-time secrets. Keep it minimal: all users
-  have agents, so this is for diagnosis and recovery, not mail composition,
-  threading, contacts, forwarding or reactive workflows.
+- [x] **Signed-in metadata diagnostics (#113, real owner login verified):**
+  typed inboxes, usage, selectable non-clickable addresses and up to five recent
+  receipt times, sizes and expiries. Existing API login/account-generation ownership;
+  no bodies, subjects, sender fields, request paths, credentials or lifecycle controls.
   Follow the existing distinction between anonymous entry-page arrivals and
   authenticated private dashboards; do not emit user/session/message identifiers
   or turn authenticated activity into public browser-arrival telemetry.
+- [ ] **Broader owner inspector (deferred, outside #113):** the earlier postb.in-like
+  proposal included bounded content/header inspection, downloads, archive/deletion
+  and credential controls. None is authorized or implemented by the metadata-only
+  diagnostic slice. Revisit only if a concrete diagnosis/recovery need justifies
+  the extra browser authority; agent/API operations already exist.
 - [ ] **Campus rollout qualification:** account-retirement/recovery integration
   without resurrection; published privacy/retention disclosures and cleanup
   residuals; real SMTP failure/retry/duplicate behavior; adversarial/near-limit
