@@ -53,6 +53,19 @@ function metric(p, now, ttl, source) {
   const spec = METRICS[p.name];
   if (!spec || p.kind !== spec.kind || p.unit !== spec.unit) fail();
   if ((spec.source ?? 'owui') !== source) fail();
+  const inboxMetric = ['inbox.receipts', 'inbox.lifecycle', 'inbox.cleanup'].includes(p.name);
+  if ((source === 'inboxes') !== inboxMetric) fail();
+  if (inboxMetric) {
+    keys(p, ['name', 'kind', 'unit', 'observed_at', 'start_at', 'temporality', 'monotonic', 'value', 'attributes'],
+      ['name', 'kind', 'unit', 'observed_at', 'start_at', 'temporality', 'monotonic', 'value', 'attributes']);
+    keys(p.attributes, spec.attributes, spec.attributes);
+    if (p.start_at % 900000 !== 0 || p.observed_at !== p.start_at + 900000 || p.temporality !== 'delta') fail();
+    if (p.name !== 'inbox.cleanup') choice(p.attributes.transport, ['http', 'email']);
+    choice(p.attributes.outcome, p.name === 'inbox.receipts'
+      ? ['accepted', 'auth', 'rate', 'quota', 'size', 'unknown_address', 'failure']
+      : p.name === 'inbox.lifecycle' ? ['created', 'destroy_requested', 'destroyed']
+        : ['expired', 'stale', 'retried', 'destroyed_messages', 'reconciled', 'success', 'failure']);
+  }
   timestamp(p.observed_at, now, ttl);
   keys(p.attributes, spec.attributes);
   for (const [k, v] of Object.entries(p.attributes)) {
@@ -64,7 +77,9 @@ function metric(p, now, ttl, source) {
     if (k === 'sandbox_class') choice(v, CLASSES);
   }
   if (source === 'daytona') keys(p.attributes, spec.attributes, spec.attributes);
-  const base = { name: p.name, kind: p.kind, unit: p.unit, observed_at: p.observed_at, attributes: p.attributes,
+  const attributes = inboxMetric ? { ...(p.name === 'inbox.cleanup' ? {} : { transport: p.attributes.transport }),
+    outcome: p.attributes.outcome } : p.attributes;
+  const base = { name: p.name, kind: p.kind, unit: p.unit, observed_at: p.observed_at, attributes,
     ...('time_unix_nano' in p ? { time_unix_nano: nanos(p.time_unix_nano, p.observed_at) } : {}) };
   if (p.kind === 'gauge') {
     if (Object.keys(p).some(k => !['name', 'kind', 'unit', 'observed_at', 'attributes', 'value', 'time_unix_nano'].includes(k))) fail();
@@ -125,6 +140,8 @@ export function validate(klass, input, env, now = Date.now()) {
   if (klass === 'metrics') {
     if (!Array.isArray(input.points) || !input.points.length || input.points.length > LIMITS.points) fail();
     const points = input.points.map(p => metric(p, now, ttl, input.source));
+    if (input.source === 'inboxes' && (points.length > 27 || points.some(p => p.observed_at !== observed) ||
+        new Set(points.map(p => canonical([p.name, p.attributes]))).size !== points.length)) fail();
     // Envelope expiry cannot retire a point before its own observation window.
     if (points.some(p => p.observed_at > observed)) fail();
     return { ...base, points };

@@ -677,6 +677,10 @@ def managed_text(name, content):
     atomic('state/managed-files.json', hashes)
 
 
+# Narrowed on purpose: no delete, destroy or credential tools without native approval.
+INBOX_TOOLS = ['inboxes', 'inbox_create', 'inbox_messages', 'inbox_read', 'inbox_save', 'inbox_archive']
+
+
 def configure_nanobot():
     incoming = ROOT / 'credentials/incoming'
     credential = ROOT / 'credentials/owner-key'
@@ -699,6 +703,21 @@ def configure_nanobot():
     assets = read('assets.json', {})
     managed_text('adapter/nanobot-mcp.mjs', assets['nanobot-mcp.mjs'])
     managed_text('workspace/skills/bayleaf-sandboxes/SKILL.md', assets['bayleaf-sandboxes.md'])
+    # The API marks Inboxes enabled per upload; disabled capabilities are not advertised.
+    inboxes = assets.get('_inboxes') is True and 'bayleaf-inboxes.md' in assets
+    if inboxes:
+        managed_text('workspace/skills/bayleaf-inboxes/SKILL.md', assets['bayleaf-inboxes.md'])
+    else:
+        name = 'workspace/skills/bayleaf-inboxes/SKILL.md'
+        path = ROOT / name
+        hashes = read('state/managed-files.json', {})
+        if path.exists():
+            # Never discard a user-edited skill while disabling managed discovery.
+            if hashlib.sha256(path.read_bytes()).hexdigest() != hashes.get(name):
+                raise Failure('managed_file_changed')
+            path.unlink()
+            hashes.pop(name, None)
+            atomic('state/managed-files.json', hashes)
     if '_source' in assets:
         atomic('state/nanobot-package.json', assets['_source'])
     model, context = nanobot_discovery(key)
@@ -735,7 +754,7 @@ def configure_nanobot():
     tools.setdefault('mcpServers', {})['bayleaf'] = {'command':shutil.which('node') or 'node',
         'args':[*proxy_args, str(ROOT/'adapter/nanobot-mcp.mjs')],
         'env':network_env,
-        'enabledTools':['search','fetch','usage','expose','unexpose']}
+        'enabledTools':['search','fetch','usage','expose','unexpose', *(INBOX_TOOLS if inboxes else [])]}
     atomic('config/config.json', config)
     (Path.home() / 'workspace').mkdir(parents=True, exist_ok=True)
     # Origin/credential/config changes restart only this managed process. User
@@ -786,6 +805,8 @@ def service_environment():
     # them. A real provider or BayLeaf key inherited from an earlier install is
     # still dropped: only placeholders travel.
     env = dict(os.environ)
+    # Explicit server configuration, never an inherited ambient feature flag.
+    env['BAYLEAF_INBOXES_ENABLED'] = 'true' if read('request.json', {}).get('inboxes_enabled') is True else 'false'
     for name in list(env):
         if re.match(r'^(BAYLEAF|OPENROUTER|TINFOIL|OPENAI|ANTHROPIC)_.*(KEY|TOKEN|SECRET|PASSWORD|AUTH)$', name) \
                 and not SANDBOX_PLACEHOLDER.fullmatch(env[name]):
@@ -872,11 +893,12 @@ def configure():
             'projects': [{'id': 'bayleaf-workspace', 'path': workspace, 'label': 'workspace'}],
             'activeProjectId': 'bayleaf-workspace', 'themeId': 'bayleaf-light',
             'lightThemeId': 'bayleaf-light', 'themeVariant': 'light', 'useSystemTheme': False})
-    return hashlib.sha256(key.encode()).hexdigest()
+    inboxes = read('request.json', {}).get('inboxes_enabled') is True
+    return hashlib.sha256((key + ':inboxes=' + str(inboxes)).encode()).hexdigest()
 
 
 def environment(backend_port=None):
-    env = dict(os.environ)
+    env = service_environment()
     # Never inherit an external-server attachment from unrelated sandbox work.
     for key in ['OPENCODE_HOST', 'OPENCODE_SKIP_START', 'OPENCHAMBER_SKIP_OPENCODE_START',
                 'OPENCODE_BINARY', 'OPENCODE_PATH', 'OPENCHAMBER_OPENCODE_PATH', 'OPENCHAMBER_OPENCODE_BIN',

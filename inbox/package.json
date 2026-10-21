@@ -1,0 +1,19 @@
+{
+  "name": "bayleaf-inboxes",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy",
+    "test": "node --test test/*.test.mjs",
+    "migrate:local": "wrangler d1 migrations apply DB --local"
+  },
+  "dependencies": {
+    "postal-mime": "4.0.11"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1",
+    "miniflare": "5.20260811.1-alpha",
+    "wrangler": "4.123.0"
+  }
+}

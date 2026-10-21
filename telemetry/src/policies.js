@@ -1,7 +1,7 @@
 // Versioned collection policy, deliberately separate from physical storage.
 // Changing these allowlists is a privacy review, not merely a schema migration.
 import { DAYTONA_METRICS } from '../daytona/policy.js';
-export const POLICY_VERSION = 3;
+export const POLICY_VERSION = 4; // Daytona policy 3 plus inbox aggregate metrics.
 export const SCHEMA_VERSION = 1;
 export const DAY = 86_400_000;
 export const LIMITS = Object.freeze({ bodyBytes: 65_536, points: 100, readRows: 500,
@@ -12,11 +12,12 @@ export const ORIGINS = {
   'https://bayleaf.dev': 'landing', 'https://sandbox.bayleaf.dev': 'sandbox',
   'https://chat.bayleaf.dev': 'chat', 'https://api.bayleaf.dev': 'api',
 };
-export const SOURCES = ['owui', 'chat-retention', 'api-retention', 'sandbox-reaper', 'probe', 'daytona'];
+export const SOURCES = ['owui', 'chat-retention', 'api-retention', 'sandbox-reaper', 'probe', 'daytona', 'inboxes'];
 export const SOURCE_CLASSES = {
   owui: ['metrics'], 'chat-retention': ['deletions'],
   'api-retention': ['deletions'], 'sandbox-reaper': ['deletions'], probe: ['probes'],
   daytona: ['metrics', 'lifecycle'],
+  inboxes: ['metrics'],
 };
 export const JOBS = ['chat-retention', 'sandbox-reaper', 'preview-expiry', 'grant-expiry',
   'session-expiry', 'credential-cleanup', 'user-retention'];
@@ -59,6 +60,9 @@ export const ROUTES = ['/', '/health', '/api/chat/completions', '/api/v1/chats/'
   '/api/v1/auths/', '/ws/socket.io/', '/api/version', '/api/v1/chats/{id}', '/_other', 'unmatched', 'other'];
 export const METRICS = {
   ...DAYTONA_METRICS,
+  'inbox.receipts': { source: 'inboxes', kind: 'sum', unit: '1', attributes: ['transport', 'outcome'] },
+  'inbox.lifecycle': { source: 'inboxes', kind: 'sum', unit: '1', attributes: ['transport', 'outcome'] },
+  'inbox.cleanup': { source: 'inboxes', kind: 'sum', unit: '1', attributes: ['outcome'] },
   'http.server.requests': { kind: 'sum', unit: '1', attributes: ['method', 'route', 'status_code', 'instance'] },
   'http.server.duration': { kind: 'histogram', unit: 'ms', attributes: ['method', 'route', 'status_code', 'instance'] },
   'webui.users.total': { kind: 'gauge', unit: 'users', attributes: ['instance'] },

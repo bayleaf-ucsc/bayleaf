@@ -1,5 +1,11 @@
 # BayLeaf telemetry: live production, local defaults disabled
 
+Inboxes adds fixed 15-minute receipt/lifecycle/cleanup aggregates to the existing
+private metrics class under policy 4. Its dedicated writer cannot read telemetry.
+The receiver/exporter flags are enabled in production; real HTTP receipt, guard
+and lifecycle export is verified. Live email/cleanup counters remain pending.
+See `qualification/inboxes.md`; never add addresses, resource ids, paths or payloads.
+
 Read root `AGENTS.md` first. Issue [#112](https://github.com/bayleaf-ucsc/bayleaf/issues/112)
 tracks this work. On 2026-10-20 the operator explicitly approved deployment and
 live collection of five classes with 90-day retention, including the later Daytona

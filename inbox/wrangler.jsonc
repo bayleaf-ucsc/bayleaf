@@ -1,0 +1,55 @@
+// BayLeaf Inboxes: reception-only Worker for *.bayleaf-inboxes.dev (issue #97).
+// Contract: DESIGN.md. Webhook qualification deployment; Email Routing remains off.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bayleaf-inboxes",
+  "account_id": "1a49fb69291d42e23c4ed4dcffce5bbc",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-08-01",
+
+  // Reachable only through the routes below and the API's service binding.
+  "workers_dev": false,
+  "preview_urls": false,
+
+  // Disabled on purpose: request logs and traces could capture addresses,
+  // headers or bodies. The Worker never logs content; the platform should not either.
+  "observability": { "enabled": false },
+
+  // The wildcard route (wildcard certificate only, never per-host certificates,
+  // so nonces stay out of Certificate Transparency logs) plus the apex explainer.
+  "routes": [
+    { "pattern": "*.bayleaf-inboxes.dev/*", "zone_name": "bayleaf-inboxes.dev" },
+    { "pattern": "bayleaf-inboxes.dev/*", "zone_name": "bayleaf-inboxes.dev" }
+  ],
+
+  // Own storage, shared with nothing else.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "bayleaf-inboxes",
+      "database_id": "f23c3a91-2a81-4811-ae93-ff8343684f87",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "bayleaf-inboxes" }],
+
+  // Burst limits, keyed by inbox id. Rejections have their own bucket so failed
+  // authentication cannot spend a closed inbox's legitimate senders' budget.
+  "ratelimits": [
+    { "name": "ACCEPT_LIMIT", "namespace_id": "9701", "simple": { "limit": 60, "period": 60 } },
+    { "name": "REJECT_LIMIT", "namespace_id": "9702", "simple": { "limit": 30, "period": 60 } }
+  ],
+
+  "triggers": { "crons": ["*/15 * * * *"] },
+
+  // The numeric limits in DESIGN.md (RETENTION_SECONDS, MAX_*, DESTROY_QUIESCE_SECONDS)
+  // fall back to code defaults in src/worker.js; set a var here only to override one.
+  "vars": {
+    // Dedicated inboxes source writer in collector WRITE_KEYS_JSON. Supply with
+    // wrangler secret put INBOX_TELEMETRY_WRITE_SECRET; never reuse a read/API key.
+    // Counting/export stay off until explicit enablement and live qualification.
+    "INBOX_TELEMETRY_ENABLED": "true",
+    "INBOXES_ENABLED": "true",
+    "INBOX_DOMAIN": "bayleaf-inboxes.dev"
+  }
+}

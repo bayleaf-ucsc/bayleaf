@@ -393,6 +393,13 @@ async function browserFrameOrigin(env: Bindings, r: Registration): Promise<strin
 /** Host dispatch is before all API routes, wildcard CORS, and error logging. */
 export async function handlePreviewHost(c: Context<AppEnv>): Promise<Response> {
   try {
+    const discovery = new URL(c.req.url);
+    if (discovery.hostname === (c.env.PREVIEWS_DOMAIN || 'bayleaf-proxies.dev') &&
+        discovery.pathname === '/llms.txt' && ['GET', 'HEAD'].includes(c.req.method)) {
+      return new Response(c.req.method === 'HEAD' ? null :
+        'This domain hosts the BayLeaf preview gateway for sandbox applications; see https://api.bayleaf.dev/llms.txt for access and details.\n',
+      { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
+    }
     if (!configured(c.env)) return failure(503);
     const u = new URL(c.req.url);
     if (u.protocol !== 'https:' || u.port) return failure();

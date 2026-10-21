@@ -45,6 +45,7 @@ import { apiOverview } from './apiReference';
 import { SESSION_COOKIE } from './constants';
 import { GRANT_PREFIX, guardGrant, cleanupGrants } from './grants';
 import { previewRoutes, handlePreviewHost, cleanupPreviews } from './routes/previews';
+import { inboxRoutes } from './routes/inboxes';
 export { PreviewConnections } from './routes/previews';
 import { RecommendedModelResponseSchema, HealthResponseSchema } from './schemas';
 
@@ -84,7 +85,7 @@ app.openAPIRegistry.registerComponent('securitySchemes', 'BrowserSession', {
 
 const apiCors = cors({
   origin: '*',
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Authorization', 'Content-Type'],
   exposeHeaders: ['WWW-Authenticate'],
   maxAge: 86400,
@@ -188,6 +189,8 @@ app.route('/auth/claim', claimRoutes);
 app.route('/auth/service', serviceLoginRoutes);
 app.route('/grants', grantRoutes);
 app.route('/previews', previewRoutes);
+// BayLeaf Inboxes (issue #97): owner facade, 404 unless enabled.
+app.route('/inboxes', inboxRoutes);
 app.route('/', llmsRoutes);
 app.route('/', authRoutes);
 app.route('/', keyRoutes);
@@ -224,6 +227,8 @@ app.doc31('/docs/openapi.json', (c) => ({
     { name: 'Web', description: 'Web search and page content fetching. An empty security alternative means eligible Campus Pass, not unconditional anonymous access. Temporary inference tokens are excluded.' },
     { name: 'Meta', description: 'API metadata and documentation' },
     { name: 'Grants', description: GRANT_WORKFLOW },
+    { name: 'Inboxes', description: 'Owner-managed email and HTTP reception with bounded stored content, outside the inference ZDR boundary; requires an ordinary key or sandbox credential.' },
+    { name: 'Previews', description: 'Transient preview registration for the designated installation, with explicit public or private access policy.' },
   ],
 }));
 

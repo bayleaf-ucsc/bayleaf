@@ -23,6 +23,7 @@ Use standard base URL https://api.bayleaf.dev/v1. Obtain the current recommended
 | Campus Pass | Omit Authorization on campus-supported operations. [GET /campus-pass](/campus-pass) checks network, approximate quota and standard shared credit without spending a request. |
 | Temporary inference token | Selected-model-set, expiring standard inference using an owner's allowance. See the Grants workflow and exact schemas below. No tools, discovery or Sealed. |
 | Browser session | BayLeaf's own dashboard/grant management; not a cross-origin app credential. Cookie-authenticated writes require the BayLeaf origin. |
+| Inboxes | ${env.INBOXES_ENABLED === 'true' ? 'Enabled' : 'Disabled'} on this deployment. Owner operations accept ordinary keys and sandbox credentials only: not Campus Pass, temporary inference tokens or browser sessions. |
 
 Public operations explicitly declare no authentication. An empty alternative on a campus-supported operation means keyless access is conditional on the trusted campus network, not that arbitrary off-campus requests are accepted. Sandbox and personal usage inspection require personal access.
 
@@ -35,6 +36,8 @@ POST /v1/decisions evaluates named Choice, Noul and Score questions over text or
 Sealed is ${env.SEALED_ENABLED === 'true' ? 'enabled' : 'disabled'} on this deployment. It requires a client that verifies attestation and encrypts bodies with EHBP, not an ordinary plaintext OpenAI client. BayLeaf relays ciphertext without the enclave-bound decryption key. Both lanes expose request metadata; BayLeaf retains no inference content. See [retention boundaries](https://github.com/bayleaf-ucsc/bayleaf/blob/main/api/RETENTION.md).
 
 ## Allowances and recovery
+
+Inboxes are ${env.INBOXES_ENABLED === 'true' ? 'enabled' : 'disabled'}${env.INBOXES_PILOT_OWNER ? ' for operator-only qualification; other accounts receive 404. Email has no authenticated sender restriction' : ''}: email and HTTP reception stores sender-controlled content, unlike content-free inference. This is not zero data retention; the operator can technically read stored messages. Messages expire 90 days from receipt, regardless of reading or archiving. Addresses are not secrets. See the Inboxes operations for credentials, limits and asynchronous destruction.
 
 Budget units differ: dollars versus request counts. Use GET /usage or the dashboard for personal allowances, and GET /campus-pass for keyless standard readiness. Unknown metadata is not zero credit. Availability checks are advisory, never reservations or model-health guarantees.
 

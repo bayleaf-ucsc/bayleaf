@@ -153,6 +153,13 @@ API to keep a retired capability appearing functional.
 
 ## Refinement log
 
+- 2026-10-20 (Inboxes #97, local only): Approved HTTP/desktop/hosted exposure
+  matrix lives in `inbox/QUALIFICATION.md`; Chat and dashboard deferred. Add
+  negative-discovery checks to hosted installers as well as docs. Independent
+  contract tests passed while contract-level security flaws remained, so retain a
+  separate adversarial lifecycle/design review. Adapter source tests are not
+  installed-client or behavioral evidence; both submodule releases remain pending.
+
 - 2026-10-16 (desktop discovery, local): Standard and Sealed managed configs now
   reference a public V2 HTTP catalog with a slim `bayleaf-platform` orientation
   skill. No new tools, plugins, credentials or hosted behavior. Synthetic HTTP

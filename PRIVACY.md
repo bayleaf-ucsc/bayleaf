@@ -30,6 +30,28 @@ ITS-operated or ITS-supported one.
 
 ## What gets collected
 
+- **Inboxes (operator-only pilot, opt-in):** BayLeaf Inboxes on
+  `bayleaf-inboxes.dev` deliberately stores received email and webhook content in
+  a dedicated Cloudflare R2 bucket and bounded metadata/search text in a separate
+  D1 database. This is **not zero-data-retention storage or zero operator access**:
+  the administrator and provider can technically access stored content. Raw mail
+  includes provider/sender headers such as `Received`; HTTP paths, queries, bodies
+  and other headers can contain personal data or secrets. Selected authentication,
+  cookie and network headers are redacted/dropped for HTTP, not a general secret
+  scrubber. Write credentials are hashed, shown once and revocable; email sender
+  identity is not yet verified. Arrivals never trigger inference, forwarding,
+  replies or agent execution. Campus-wide access remains disabled pending rollout
+  qualification. See [the Inboxes contract](inbox/DESIGN.md).
+- **Inboxes operational telemetry:** fixed-window aggregate counts cover email and
+  webhook acceptance/rejection, inbox lifecycle and cleanup outcomes. Records
+  contain no inbox/account identifiers, addresses, sender IPs, headers, paths,
+  subjects, filenames, credentials or payloads. Reads require the separate
+  operator capability. Retention is at most **90 days**, including local export
+  buffers; retry and recovery limits mean these are operational observations, not
+  authoritative billing or guaranteed delivery counts. Public HTML arrival
+  instrumentation for future inbox/proxy diagnostic pages must follow the same
+  first-party, identifier-free browser policy; plaintext `/llms.txt` requests are
+  not browser arrivals.
 - **Identity (Chat and API):** CruzID, email, and display name from CILogon at
   sign-in. The email is used to identify your account, route you to the right
   groups, and (for the API) tag upstream requests for per-user rate limiting.
@@ -154,6 +176,17 @@ version-controlled alongside the code that enforces them:
   does not erase every associated resource or delete separate API accounts or
   sandboxes. Cleanup logs contain aggregate counts and content-free diagnostics,
   never identifiers.
+- **Inboxes:** accessible messages expire **90 days from receipt**, regardless of
+  reading or archiving. Early deletion removes exact payload bytes and indexed
+  content through retryable cleanup; inbox destruction stops reception/access
+  immediately but finalization waits at least 15 minutes and a scheduled sweep.
+  Backlog/outages can extend physical cleanup, which is not yet campus-qualified.
+  Opaque inbox identifiers and cleanup cursors remain **indefinitely** to reconcile
+  storage writes that finish late; these records contain no owner, address or
+  message content. D1 Paid recovery history may retain deleted database metadata
+  and indexed text for **30 days**. Senders and downloading clients have their own
+  copies. Account retirement/recovery integration remains a campus-rollout gate;
+  this is verified live-store cleanup, not literal erasure of every trace.
 - [API retention policy](api/RETENTION.md): prompts and completions are **not
   stored**. Accounts and their keys are eligible for daily cleanup after **18
   calendar months** without activity, measured from the later of account creation
@@ -227,7 +260,8 @@ research-and-education identity broker.
 - [Cloudflare](https://www.cloudflare.com/): hosts BayLeaf API (the Worker and
   its D1 edge database), including the protected preview gateway on
   `bayleaf-proxies.dev`, and hosts the private operational
-  telemetry Worker/D1 collector described above.
+  telemetry Worker/D1 collector described above, plus Inboxes Email Routing,
+  receiving Worker, private R2 payload storage and separate D1 metadata/search.
 - [Daytona](https://www.daytona.io/): sandboxed Linux execution environments
   for the Code Sandbox feature (opt-in).
 - [Tavily](https://tavily.com/): web search and page content extraction. No

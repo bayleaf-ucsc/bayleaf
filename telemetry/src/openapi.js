@@ -48,7 +48,7 @@ const schemas = {
     temporality: nullable(choice(['delta', 'cumulative'])),
     monotonic: field(nullable({ type: 'integer', enum: [0, 1] }), 'SQLite integer flag, not a JSON boolean; null when inapplicable.'),
     value: nullable(number()), count: nullable(integer()), sum: nullable(number()), min: nullable(number()), max: nullable(number()),
-    attributes_json: jsonString('Native HTTP: method, sanitized route, status_code, instance. Native user gauges: {}. Daytona organization gauges: reviewed region and sandbox_class; never sum snapshots across time or overlapping GPU regions.'),
+    attributes_json: jsonString('Native HTTP: method, sanitized route, status_code, instance. Native user gauges: {}. Daytona organization gauges: reviewed region and sandbox_class; never sum snapshots across time or overlapping GPU regions. Inbox delta counts use fixed transport/outcome enums in aligned 15-minute windows, never recipient dimensions.'),
     bounds_json: nullable(jsonString('Increasing histogram bounds.')),
     bucket_counts_json: nullable(jsonString('Disjoint histogram buckets, including overflow; counts sum to count.')),
   }), description: 'Derive deltas from cumulative counters/histograms using same-series exact reset timestamps; do not sum successive readings. Native user gauges are global snapshots: select one authoritative sample, never sum across workers or times. Export batches may overlap: deduplicate exact points before totals. HTTP duration is not completed-SSE latency; null statistics are unknown, not zero.' },

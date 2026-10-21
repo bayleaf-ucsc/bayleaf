@@ -14,6 +14,7 @@
 
   "routes": [
     { "pattern": "api.bayleaf.dev", "custom_domain": true },
+    { "pattern": "bayleaf-proxies.dev/*", "zone_name": "bayleaf-proxies.dev" },
     { "pattern": "*.bayleaf-proxies.dev/*", "zone_name": "bayleaf-proxies.dev" }
   ],
 
@@ -58,6 +59,12 @@
     }
   ],
 
+  // BayLeaf Inboxes owner RPC (issue #97, local proof of concept; see inbox/DESIGN.md).
+  // Deploy the bayleaf-inboxes Worker before any API deploy that includes this binding.
+  "services": [
+    { "binding": "INBOXES", "service": "bayleaf-inboxes", "entrypoint": "InboxManagement" }
+  ],
+
   // Environment variables (set via wrangler secret or dashboard)
   // These are placeholders - actual values should be set as secrets
   "vars": {
@@ -74,6 +81,9 @@
     "PREVIEWS_API_ORIGIN": "https://api.bayleaf.dev",
     "PREVIEWS_DOMAIN": "bayleaf-proxies.dev",
     "PREVIEWS_UPSTREAM_SUFFIXES": ".proxy.daytona.work,.daytonaproxy01.net",
+    // BayLeaf Inboxes facade, issue #97. Local proof of concept: /inboxes is 404
+    // unless exactly "true". Enablement gates are listed in inbox/DESIGN.md.
+    "INBOXES_ENABLED": "false",
     // GCP Vertex AI Configuration
     //
     // VERTEX_ENABLED is the master kill-switch for the Vertex backend. It must

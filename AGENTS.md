@@ -112,6 +112,7 @@ bayleaf/
 │   ├── index.html        # Comprehensive landing page (the only bayleaf.dev page)
 │   ├── style.css         # Stylesheet (carries a WCAG contrast invariant)
 │   └── images/           # og-card.png + the script that generates it
+├── inbox/                # BayLeaf Inboxes Worker (#97; operator-only webhook pilot)
 ├── sandbox/              # Public BayLeaf Sandboxes home → https://sandbox.bayleaf.dev
 ├── telemetry/            # Live first-party collector/D1; private data, public status (#112)
 ├── politics/             # Dependency audit, VPATs, position papers
@@ -138,6 +139,13 @@ adding any platform surface, consider whether GitHub-served markdown suffices.
 
 `api/` is a Cloudflare Worker deployed at `https://api.bayleaf.dev`.
 **Read `api/AGENTS.md` before working on API code or infrastructure.**
+
+`inbox/` is the separate `bayleaf-inboxes` Worker (issue #97): opaque email and
+webhook addresses on `bayleaf-inboxes.dev`, with its own D1 and R2, managed only
+through the API's `INBOXES` service binding. It intentionally stores received
+content, so it is outside the API's ZDR/ZOA posture. Deployed for operator-only
+email/webhook qualification; authenticated email senders and campus rollout remain pending.
+**Read `inbox/AGENTS.md` and `inbox/DESIGN.md` before working on it.**
 
 Place scripts and analysis machinery for a specific service inside that service's
 directory (for example, `api/scripts/` or `chat/analysis/`), not at the
@@ -238,7 +246,9 @@ separate source-scoped credentials. Read `telemetry/AGENTS.md` before changing i
 
 The approved slice comprises public arrivals on landing/API/Sandboxes and signed-out
 Chat root, five native OWUI aggregate metrics, existing synthetic probe summaries,
-and aggregate deletion-job reports. All have a 90-day active maximum; provider
+and aggregate deletion-job reports. Fixed 15-minute Inboxes receipt/lifecycle/
+cleanup metrics are also approved, without addresses, inbox/account identifiers,
+paths, credentials or content. All have a 90-day active maximum; provider
 recovery history and derived-artifact expiry are documented in `PRIVACY.md`.
 Browser records contain no visitor identifiers or retained IPs: only a coarse
 campus/other/unknown network category is derived transiently at the collector.

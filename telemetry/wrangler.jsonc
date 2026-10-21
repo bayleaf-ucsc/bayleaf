@@ -7,6 +7,7 @@
   "observability": { "enabled": false },
   "vars": {
     "TELEMETRY_ENABLED": "false",
+    "INBOXES_METRICS_ENABLED": "false",
     "BROWSER_ENABLED": "false",
     "DAYTONA_WEBHOOKS_ENABLED": "false",
     "DAYTONA_OTLP_ENABLED": "false",

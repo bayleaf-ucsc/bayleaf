@@ -11,7 +11,8 @@ import sys
 REPOSITORY = 'https://github.com/bayleaf-ucsc/nanobot-sandbox.git'
 ORIGINS = {REPOSITORY, REPOSITORY.removesuffix('.git'), 'git@github.com:bayleaf-ucsc/nanobot-sandbox.git'}
 FILES = {'nanobot-mcp.mjs':'nanobot-mcp.mjs',
-         'bayleaf-sandboxes.md':'skills/bayleaf-sandboxes/SKILL.md'}
+         'bayleaf-sandboxes.md':'skills/bayleaf-sandboxes/SKILL.md',
+         'bayleaf-inboxes.md':'skills/bayleaf-inboxes/SKILL.md'}
 
 
 class BuildError(Exception):

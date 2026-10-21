@@ -32,6 +32,13 @@ async function request(path, { method = 'GET', cookie, headers = {}, host = orig
     { MANAGEMENT: management, BROWSER_ARRIVALS_ENABLED: browserArrivalsEnabled }, { waitUntil(promise) { background.push(promise); } });
 }
 const mutations = () => calls.filter(([name, input]) => name === 'managed' && input.operation !== 'status');
+const discoveryCalls = calls.length;
+const discovery = await request('/llms.txt', { cookie: sessionCookie });
+assert.equal(discovery.status, 200);
+assert.match(discovery.headers.get('content-type'), /^text\/plain/);
+assert.match(await discovery.text(), /https:\/\/api\.bayleaf\.dev\/llms\.txt/);
+assert.equal(await (await request('/llms.txt', { method: 'HEAD' })).text(), '');
+assert.equal(calls.length, discoveryCalls, 'Discovery never authenticates or wakes compute');
 
 let response = await request('/');
 assert.equal(response.status, 200);

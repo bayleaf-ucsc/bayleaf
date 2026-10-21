@@ -6,6 +6,7 @@
     { "name": "Sandboxes", "kind": "browser", "enabled": true, "verification": "Verified" },
     { "name": "Chat", "kind": "browser", "enabled": true, "verification": "Verified for signed-out public-root arrivals" },
     { "name": "Open WebUI native metrics", "kind": "metrics", "enabled": true, "verification": "Verified at a 5-minute export interval" },
+    { "name": "Inboxes aggregate metrics", "kind": "metrics", "enabled": true, "verification": "Live HTTP receipt/guard/lifecycle window verified; email and scheduled cleanup counters pending" },
     { "name": "Monitoring probes", "kind": "probes", "enabled": true, "verification": "Verified" },
     { "name": "API retention job", "kind": "deletions", "enabled": true, "verification": "Deployed; regular schedule not yet confirmed" },
     { "name": "Sandbox reaper", "kind": "deletions", "enabled": true, "verification": "Deployed; regular schedule not yet confirmed" },

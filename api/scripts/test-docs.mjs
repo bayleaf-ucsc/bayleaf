@@ -11,7 +11,7 @@ const bundle = await build({ absWorkingDir: root, stdin: { resolveDir: root, con
   export { PreviewConnections, SandboxBrowser, SandboxManagement } from './src/index';
   export default { ...worker, fetch(request, env, ctx) {
     const alternate = request.headers.get('X-Test-Deployment') === 'alternate';
-    return worker.fetch(request, alternate ? { ...env, GRANTS_ENABLED: 'false', SEALED_ENABLED: 'false',
+    return worker.fetch(request, alternate ? { ...env, GRANTS_ENABLED: 'false', SEALED_ENABLED: 'false', INBOXES_ENABLED: 'false',
       BEDROCK_ENABLED: 'true', VERTEX_ENABLED: 'true', RECOMMENDED_MODEL: 'test/alternate' } : env, ctx);
   }};
 ` }, bundle: true, write: false, format: 'esm', platform: 'browser', target: 'es2022',
@@ -22,7 +22,7 @@ const mf = new Miniflare(convertV4MiniflareOptions({
     compatibilityDate: '2025-01-31', compatibilityFlags: ['nodejs_compat'],
     bindings: { RECOMMENDED_MODEL: 'test/model', GRANTS_ENABLED: 'true', GRANTS_MAX_SECONDS: '900',
        SEALED_ENABLED: 'true', SEALED_RECOMMENDED_MODEL: 'test-sealed', SEALED_CURATED_MODELS: '',
-       TINFOIL_API_KEY: 'synthetic-tinfoil-key',
+       TINFOIL_API_KEY: 'synthetic-tinfoil-key', INBOXES_ENABLED: 'true',
        BEDROCK_ENABLED: 'false', VERTEX_ENABLED: 'false',
        CAMPUS_IP_RANGES: '192.0.2.0/24', CAMPUS_POOL_KEY: 'synthetic-campus-key',
       GWS_CLIENT_ID: 'synthetic-client', GWS_CLIENT_SECRET: 'synthetic-secret', GWS_PROJECT_ID: 'synthetic-project' },
@@ -45,6 +45,8 @@ const get = (path, headers = {}) => mf.dispatchFetch(`http://localhost:8806${pat
 try {
   const spec = await (await get('/docs/openapi.json')).json();
   const schemas = spec.components.schemas;
+  assert.match(schemas.InboxCredentialRevoke.description, /Authentication remains required/);
+  assert.ok(!schemas.InboxCredentialRevoke.description.includes('becomes open again'));
   const grants = spec.tags.find(t => t.name === 'Grants').description;
   assert.ok(grants.includes('Verify state') && grants.includes('not origin-bound'));
   assert.equal(spec.externalDocs.url, 'https://api.bayleaf.dev/llms.txt');
@@ -67,7 +69,17 @@ try {
     assert.deepEqual(spec.paths[path][method].security, [{ Bearer: [] }, {}]);
   }
   assert.deepEqual(spec.paths['/usage'].get.security, [{ Bearer: [] }]);
-  assert.deepEqual(spec.paths['/sandbox/exec'].post.security, [{ Bearer: [] }]);
+   assert.deepEqual(spec.paths['/sandbox/exec'].post.security, [{ Bearer: [] }]);
+   const inboxOperations = Object.entries(spec.paths).filter(([path]) => path.startsWith('/inboxes'))
+     .flatMap(([, path]) => Object.values(path));
+   assert.equal(inboxOperations.length, 14);
+   for (const op of inboxOperations) {
+     assert.deepEqual(op.security, [{ Bearer: [] }], op.operationId);
+     assert.deepEqual(op.tags, ['Inboxes']);
+   }
+   assert.ok(spec.tags.some(tag => tag.name === 'Inboxes'));
+   assert.ok(spec.tags.some(tag => tag.name === 'Previews'));
+   assert.ok(spec.info.description.includes('Inboxes are enabled'));
   const authorize = spec.paths['/grants/authorize'].get;
   assert.equal(authorize.operationId, 'authorizeInferenceClient');
   assert.deepEqual(authorize.security, []);
@@ -90,13 +102,17 @@ try {
    const catalogResponse = await get(catalogBase + 'index.json');
    assert.equal(catalogResponse.status, 200, 'Catalog is public');
    const catalog = await catalogResponse.json();
-   assert.deepEqual(catalog.skills, [{ name: 'bayleaf-platform', version: '1', files: ['bayleaf-platform.md'] }]);
+   assert.deepEqual(catalog.skills, [{ name: 'bayleaf-platform', version: '3', files: ['bayleaf-platform.md'] }]);
    const skillResponse = await get(catalogBase + 'bayleaf-platform/bayleaf-platform.md');
    assert.equal(skillResponse.status, 200, 'Skill is public');
    assert.match(skillResponse.headers.get('content-type'), /text\/markdown/);
    const skill = await skillResponse.text();
    assert.match(skill, /^---\nname: bayleaf-platform\ndescription: .+\n---\n/);
    assert.ok(skill.length < 1800, 'Keep discovery slim');
+   assert.ok(skill.includes('inboxes for email or webhooks while your computer is off'));
+   assert.ok(skill.includes('Offer Inboxes') && skill.includes('revoking the last never reopens'));
+   const alternateSkill = await (await get(catalogBase + 'bayleaf-platform/bayleaf-platform.md', { 'X-Test-Deployment': 'alternate' })).text();
+   assert.ok(!/inbox/i.test(alternateSkill), 'Disabled inboxes must not be advertised by the desktop skill');
    for (const phrase of ['https://api.bayleaf.dev/llms.txt', 'Google Workspace', 'Canvas LMS',
      'Sandbox', 'switching providers', 'not a claim that tools are installed']) assert.ok(skill.includes(phrase));
    for (const prefix of ['', '/sealed']) {
@@ -119,9 +135,12 @@ try {
   assert.ok(llms.includes('Documentation ownership') && llms.includes('## HTTP API overview'));
   assert.ok(llms.includes('not BayLeaf inference API endpoints'));
   assert.ok(llms.includes('docs#tag/grants') && llms.includes('authorizeInferenceClient'));
-  assert.ok(!llms.includes('#### Direct issuance and model discovery'), 'No duplicate exhaustive grant contract');
+   assert.ok(!llms.includes('#### Direct issuance and model discovery'), 'No duplicate exhaustive grant contract');
+   assert.ok(llms.includes('### Inboxes: receive email and webhooks while you are away'));
+   assert.ok(llms.includes('last credential never reopens it'));
   const operations = new Set(Object.values(spec.paths).flatMap(path => Object.values(path).map(op => op.operationId)));
-  for (const id of ['createTemporaryInferenceToken', 'describeInferenceClient', 'authorizeInferenceClient', 'exchangeInferenceCode', 'inspectCampusPass']) {
+   for (const id of ['createTemporaryInferenceToken', 'describeInferenceClient', 'authorizeInferenceClient', 'exchangeInferenceCode', 'inspectCampusPass',
+     'createInbox', 'createInboxCredential', 'listInboxMessages', 'getInboxMessageText']) {
     assert.ok(llms.includes(id) && operations.has(id), `Guide must link an existing operation: ${id}`);
   }
   const guide = llms.replace(/```[\s\S]*?```/g, '');
@@ -129,12 +148,14 @@ try {
   for (const match of guide.matchAll(/\]\(#([^)]+)\)/g)) assert.ok(headings.has(match[1]), `Missing Markdown heading: ${match[1]}`);
   const alternate = await (await get('/docs/openapi.json', { 'X-Test-Deployment': 'alternate' })).json();
   assert.ok(alternate.info.description.includes('tokens are disabled'));
-  assert.ok(alternate.info.description.includes('Sealed is disabled'));
+   assert.ok(alternate.info.description.includes('Sealed is disabled'));
+   assert.ok(alternate.info.description.includes('Inboxes are disabled'));
   assert.ok(alternate.info.description.includes('Google Vertex AI: enabled'));
   const alternateLlms = await (await get('/llms.txt', { 'X-Test-Deployment': 'alternate' })).text();
   assert.ok(alternateLlms.includes('test/alternate'));
   assert.ok(alternateLlms.includes('Status: not enabled on this deployment'));
-  assert.ok(!alternateLlms.includes('### Sealed LLM inference'));
+   assert.ok(!alternateLlms.includes('### Sealed LLM inference'));
+   assert.ok(!/inboxes|createInbox|getInboxMessageText/.test(alternateLlms), 'Disabled inboxes have no guide section or TOC entry');
   console.log('PASS: workerd documentation ownership, grant contracts/navigation, security alternatives, links and deployment-aware prose');
   if (process.argv.includes('--serve')) {
     console.log(`Synthetic local docs preview: ${await mf.ready}/docs`);

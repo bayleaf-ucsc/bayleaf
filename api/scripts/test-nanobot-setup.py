@@ -62,6 +62,24 @@ class NanobotTests(unittest.TestCase):
         self.assertNotIn(self.owner_key,' '.join(argv))
         self.assertEqual(env['BAYLEAF_API_KEY'],self.owner_key)
 
+    def test_inbox_tools_and_skill_only_when_enabled(self):
+        m.configure_nanobot()
+        tools = m.read('config/config.json')['tools']['mcpServers']['bayleaf']['enabledTools']
+        self.assertFalse(set(m.INBOX_TOOLS) & set(tools))
+        self.assertFalse((self.root/'workspace/skills/bayleaf-inboxes/SKILL.md').exists())
+        assets = m.read('assets.json'); assets.update({'bayleaf-inboxes.md':'synthetic inbox guide', '_inboxes':True})
+        m.atomic('assets.json', assets)
+        m.configure_nanobot()
+        tools = m.read('config/config.json')['tools']['mcpServers']['bayleaf']['enabledTools']
+        self.assertEqual(tools[-len(m.INBOX_TOOLS):], m.INBOX_TOOLS)
+        self.assertFalse({'inbox_delete','inbox_destroy','inbox_credential'} & set(tools))
+        self.assertEqual((self.root/'workspace/skills/bayleaf-inboxes/SKILL.md').read_text(), 'synthetic inbox guide')
+        assets['_inboxes'] = False
+        m.atomic('assets.json', assets)
+        m.configure_nanobot()
+        self.assertFalse((self.root/'workspace/skills/bayleaf-inboxes/SKILL.md').exists())
+        self.assertFalse(set(m.INBOX_TOOLS) & set(m.read('config/config.json')['tools']['mcpServers']['bayleaf']['enabledTools']))
+
     def test_preserves_edited_managed_files_and_user_memory(self):
         m.configure_nanobot()
         memory = self.root/'workspace/MEMORY.md';memory.write_text('human notes')

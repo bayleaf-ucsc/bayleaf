@@ -333,6 +333,8 @@ export class SandboxBrowser {
             (!['discover', 'credentials'].includes(op.step) && access?.id !== op.ownerKeyHash)) {
           await this.retire(op, 'failed', 'credential_or_feature_unavailable'); return;
         }
+        const inboxesEnabled = this.env.INBOXES_ENABLED === 'true' && !!this.env.INBOXES &&
+          (!this.env.INBOXES_PILOT_OWNER || row.account_generation === this.env.INBOXES_PILOT_OWNER);
         if (op.deadline <= now()) { await this.retire(op, 'expired'); return; }
         if (['failed', 'stopped', 'expired'].includes(op.phase)) { await this.retire(op, op.phase, op.error); return; }
         if (op.phase === 'ready') return;
@@ -415,7 +417,8 @@ export class SandboxBrowser {
           } else if (op.step === 'prepare') {
             await execute(this.env, id, `bash -c 'umask 077; mkdir -p ${ROOT}/credentials; chmod 700 ${ROOT} ${ROOT}/credentials'`);
             await upload(this.env, id, ROOT, 'setup.next.py', setupSource);
-            await upload(this.env, id, ROOT, 'request.next.json', JSON.stringify({ operation: op.operation, deadline: op.setupDeadline, restart: op.restart }));
+            await upload(this.env, id, ROOT, 'request.next.json', JSON.stringify({ operation: op.operation, deadline: op.setupDeadline,
+              restart: op.restart, inboxes_enabled: inboxesEnabled }));
             if (def.credential) {
               if (!access?.placeholder) fail('sandbox_access_unavailable');
               await upload(this.env, id, ROOT, 'credentials/incoming', access!.placeholder!);
@@ -425,7 +428,8 @@ export class SandboxBrowser {
             }
             if (def.id === 'jupyter') await upload(this.env, id, ROOT, 'jupyter-adapter.py', jupyterSource);
             if (def.id === 'nanobot') {
-              await upload(this.env, id, ROOT, 'assets.json', JSON.stringify(nanobotAssets));
+              const inboxes = inboxesEnabled;
+              await upload(this.env, id, ROOT, 'assets.json', JSON.stringify({ ...nanobotAssets, _inboxes: inboxes }));
             }
             await execute(this.env, id, `bash -c '${def.credential ? `chmod 600 ${ROOT}/credentials/incoming; ` : ''}mv ${ROOT}/setup.next.py ${ROOT}/setup.py; mv ${ROOT}/request.next.json ${ROOT}/request.json'`);
             op.step = 'inspect'; op.progress = 'checking'; op.launches = 1;
@@ -433,7 +437,8 @@ export class SandboxBrowser {
             await execute(this.env, id, launch(op.operation, def));
           } else if (op.step === 'finalize') {
             await upload(this.env, id, ROOT, 'request.next.json', JSON.stringify({operation:op.operation,
-              deadline:op.setupDeadline, restart:false, preview_url:op.url}));
+              deadline:op.setupDeadline, restart:false, preview_url:op.url,
+              inboxes_enabled:inboxesEnabled}));
             await execute(this.env, id, `mv ${ROOT}/request.next.json ${ROOT}/request.json`);
             op.step = 'inspect_final'; op.progress = 'configuring_preview'; op.launches = 1;
             await this.save(op);

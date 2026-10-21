@@ -17,6 +17,10 @@ export interface Bindings {
   PREVIEWS_INSTALLATION_KEY?: string;
   PREVIEWS_UPSTREAM_SUFFIXES?: string;
   PREVIEW_CONNECTIONS: DurableObjectNamespace;
+  // BayLeaf Inboxes (issue #97) owner RPC. Proof of concept; fail closed unless "true".
+  INBOXES?: InboxManagement;
+  INBOXES_ENABLED?: string;
+  INBOXES_PILOT_OWNER?: string;
 
   // GCP / Vertex AI
   // Master kill-switch for the Vertex backend. When not exactly the string
@@ -171,6 +175,8 @@ export interface Variables {
   session: Session;
   inferenceGrant?: InferenceGrant;
   grantOwner?: UserKeyRow;
+  /** Inbox owner: the caller's account_generation, set by the inbox auth middleware. */
+  inboxOwner?: string;
 }
 
 export interface InferenceGrant {
@@ -267,6 +273,13 @@ export interface TinfoilKey {
  */
 export type TinfoilKeyCreated = TinfoilKey;
 
+
+/** `bayleaf-inboxes` InboxManagement RPC stub (inbox/DESIGN.md). Every method
+ * takes the owner's account_generation first and returns JSON or `{error}`;
+ * the body and attachment reads return a Response on success. */
+export type InboxManagement = Record<'createInbox' | 'listInboxes' | 'getInbox' | 'destroyInbox' | 'listMessages' |
+  'getMessage' | 'getMessageText' | 'getMessageBody' | 'getAttachment' | 'setArchived' | 'deleteMessage' | 'createCredential' |
+  'listCredentials' | 'revokeCredential', (owner: string, ...args: unknown[]) => Promise<unknown>>;
 
 /** Hono app environment type */
 export type AppEnv = {

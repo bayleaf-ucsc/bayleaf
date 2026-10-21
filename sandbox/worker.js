@@ -52,6 +52,11 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.origin !== ORIGIN) return failure(400, 'invalid_host');
+    if (url.pathname === '/llms.txt' && ['GET', 'HEAD'].includes(request.method)) {
+      return new Response(request.method === 'HEAD' ? null :
+        'BayLeaf Sandboxes provides user-managed remote workspaces for agents and development tools; see https://api.bayleaf.dev/llms.txt for access and details.\n',
+      { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
+    }
     if (request.method === 'OPTIONS') return failure(405, 'method_not_allowed');
     const jar = cookies(request);
     const session = jar.get(SESSION) || '';

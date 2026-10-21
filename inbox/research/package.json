@@ -1,0 +1,7 @@
+{
+  "name": "inbox-dkim-research",
+  "private": true,
+  "type": "module",
+  "dependencies": { "mailauth": "8.0.1" },
+  "scripts": { "test": "node poc.mjs" }
+}

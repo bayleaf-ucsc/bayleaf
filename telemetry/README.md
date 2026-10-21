@@ -16,6 +16,12 @@ is not evidence of deployment or source activation. No per-request Sealed
 inference metadata is authorized. `otlp/`, `adapters/` and `qualification/`
 document their separate source and protocol qualifications.
 
+Inboxes aggregate metrics are implemented locally but **disabled and pending live
+rollout**. The [exact source contract](qualification/inboxes.md) defines fixed
+15-minute delta windows, the dedicated writer capability, bounded local outbox,
+retention, required switches, and qualification gates. No reception content or
+recipient/account dimensions enter that contract.
+
 ## Local checks
 
 For the private, hot-reloading operator workbench, run `npm run dashboard` here

@@ -98,7 +98,7 @@ test('collector enriches browser rows only, rejects client dimensions and retain
   }, body: JSON.stringify({ schema_version: 1, source: 'chat-retention', batch_id: crypto.randomUUID(), observed_at: NOW,
     job: 'chat-retention', outcome: 'success', duration_ms: 1, deleted: 0, extensions: {} }) });
   assert.equal((await worker.fetch(deletion, env)).status, 202);
-  assert.equal(db.sql.prepare('SELECT policy_version FROM deletion_runs').get().policy_version, 3);
+  assert.equal(db.sql.prepare('SELECT policy_version FROM deletion_runs').get().policy_version, 4);
   now = NOW + 90 * DAY;
   // Bounded read cannot span 90 days; use storage for exact original-time read.
   const { readRows } = await import('../src/store.js');
