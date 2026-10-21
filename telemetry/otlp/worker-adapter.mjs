@@ -21,7 +21,7 @@ const canonical = x => Array.isArray(x) ? `[${x.map(canonical).join(',')}]` : x 
  * Not a random ID or identity hash. Digest contains ONLY already-minimized points.
  * Same semantic export, different wire ordering -> same ID, no receipt-time drift.
  */
-async function receiptId(semantic) {
+export async function receiptId(semantic) {
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical(semantic))));
   const id = digest.slice(0, 16); id[6] = (id[6] & 15) | 64; id[8] = (id[8] & 63) | 128;
   const s = Array.from(id, b => b.toString(16).padStart(2, '0')).join('');

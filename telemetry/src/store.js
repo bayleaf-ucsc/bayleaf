@@ -3,10 +3,10 @@ import { canonical, Invalid } from './validate.js';
 import { NETWORK_LOCATIONS } from './browser-policy.js';
 
 export const TABLES = Object.freeze({ browser: 'browser_observations', metrics: 'metric_points',
-  deletions: 'deletion_runs', probes: 'probe_runs', status: 'source_status' });
+  deletions: 'deletion_runs', probes: 'probe_runs', lifecycle: 'lifecycle_buckets', status: 'source_status' });
 const ALL_TABLES = [...Object.values(TABLES), 'receipts', 'ingress_budgets'];
 const bind = (db, sql, values) => db.prepare(sql).bind(...values);
-const CLASSES = ['browser', 'metrics', 'deletions', 'probes'];
+const CLASSES = ['browser', 'metrics', 'deletions', 'probes', 'lifecycle'];
 // Included in the same D1 transaction as admission, read or purge, never a
 // read/modify/write in JS. Stale concurrent configurations cannot raise a ceiling.
 function policy(db, klass, ttl, now) {
@@ -66,6 +66,17 @@ export async function ingest(db, klass, data, now, env = {}) {
   };
   const common = { schema_version: data.schema_version, policy_version: data.policy_version,
     source: data.source, batch_id: data.batch_id, observed_at: data.observed_at, received_at: now, expires_at };
+  if (klass === 'lifecycle') {
+    // Immediately follows receipt insertion in the same atomic transaction.
+    // changes()=1 admits exactly one increment, including concurrent retries.
+    statements.push(bind(db, `INSERT INTO lifecycle_buckets
+      (schema_version,policy_version,source,observed_at,expires_at,event,old_state,new_state,count)
+      SELECT ?,?,?,?,${cappedExpiry(klass)},?,?,?,1${guard} AND changes()=1
+      ON CONFLICT(source,observed_at,event,old_state,new_state) DO UPDATE SET
+      count=count+1,expires_at=MIN(expires_at,excluded.expires_at)`,
+    [data.schema_version, data.policy_version, data.source, data.observed_at,
+      expires_at, data.observed_at, data.event, data.old_state ?? '', data.new_state, ...guardArgs]));
+  }
   if (klass === 'metrics') data.points.forEach((p, i) => guardedInsert('metric_points', {
     ...common, point_index: i, observed_at: p.observed_at,
     // Older points cannot inherit the envelope's newer expiry.

@@ -56,10 +56,10 @@ test('Scalar keeps canonical spec, disabled requests and telemetry, source-map C
   assert.ok(!csp.includes("script-src 'unsafe-inline'"));
 });
 
-test('spec contains exactly five named GET reads with only operator authorization', () => {
+test('spec contains exactly the named GET reads with only operator authorization', () => {
   assert.deepEqual(Object.keys(openapi.paths).sort(), Object.keys(TABLES).map(k => `/v1/read/${k}`).sort());
   assert.deepEqual(Object.keys(openapi.components.securitySchemes), ['OperatorBearer']);
-  assert.deepEqual(Object.values(openapi.paths).map(p => p.get.summary), ['Browser arrivals', 'Metrics', 'Probe runs', 'Deletion reports', 'Source status']);
+  assert.deepEqual(Object.values(openapi.paths).map(p => p.get.summary), ['Browser arrivals', 'Metrics', 'Sandbox lifecycle counts', 'Probe runs', 'Deletion reports', 'Source status']);
   for (const path of Object.values(openapi.paths)) {
     assert.deepEqual(Object.keys(path), ['get']);
     assert.deepEqual(path.get.security, [{ OperatorBearer: [] }]);
@@ -102,7 +102,7 @@ test('read parameters and errors retain exact limits without ingestion error cod
 });
 
 test('response metadata preserves versions, expiry, no-cursor truncation and raw JSON/null representations', () => {
-  for (const name of ['BrowserRow', 'MetricRow', 'ProbeRow', 'DeletionRow', 'StatusRow']) {
+  for (const name of ['BrowserRow', 'MetricRow', 'ProbeRow', 'DeletionRow', 'StatusRow', 'LifecycleRow']) {
     const response = schemas[`${name}Response`].properties;
     assert.equal(response.schema_version.const, name === 'BrowserRow' ? BROWSER_SCHEMA_VERSION : SCHEMA_VERSION);
     assert.equal(response.policy_version.const, name === 'BrowserRow' ? BROWSER_POLICY_VERSION : POLICY_VERSION);
@@ -137,6 +137,9 @@ test('read response columns track actual migrations', async () => {
     assert.deepEqual(Object.keys(schemas[name].properties).sort(), columns.sort());
     assert.deepEqual(schemas[name].required.slice().sort(), columns.sort());
   }
+  const lifecycle = await readFile(new URL('../migrations/0004_daytona_lifecycle.sql', import.meta.url), 'utf8');
+  const columns = [...lifecycle.matchAll(/^\s+(\w+)\s+(?:INTEGER|REAL|TEXT)\b/gm)].map(m => m[1]);
+  assert.deepEqual(Object.keys(schemas.LifecycleRow.properties).sort(), columns.sort());
 });
 
 test('real workerd serves public docs without a database, credentials, activation or outbound calls', async t => {

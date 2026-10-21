@@ -11,6 +11,8 @@
   "vars": {
     "TELEMETRY_ENABLED": "true",
     "BROWSER_ENABLED": "true",
+    "DAYTONA_WEBHOOKS_ENABLED": "false",
+    "DAYTONA_OTLP_ENABLED": "false",
     "RETENTION_DAYS": "90"
   },
   "d1_databases": [{
@@ -21,6 +23,10 @@
   }],
   "triggers": { "crons": ["* * * * *"] },
   "ratelimits": [{
+    "name": "DAYTONA_EDGE_LIMITER",
+    "namespace_id": "1003",
+    "simple": { "limit": 120, "period": 60 }
+  }, {
     "name": "BROWSER_EDGE_LIMITER",
     "namespace_id": "1002",
     "simple": { "limit": 240, "period": 60 }

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { otlpHook } from '../otlp/worker-adapter.mjs';
 import { retentionScenarios } from './retention-scenarios.js';
+import { DAYTONA_ENV, signedWebhook, organizationWire } from './daytona-fixtures.js';
 
 // Reuse already installed repo tooling without fetching or installing anything.
 const local = createRequire(import.meta.url);
@@ -27,13 +28,13 @@ test('workerd / real D1: concurrent retries, conflicts, bounded reads, physical 
   const write = 'local-only-write-token-123456789';
   const mf = new Miniflare(convertV4MiniflareOptions({ modules: true,
     script: bundle.outputFiles[0].text, compatibilityDate: '2026-08-01',
-    d1Databases: ['TELEMETRY_DB'], bindings: { TELEMETRY_ENABLED: 'true', BROWSER_ENABLED: 'true',
-      READ_SECRET: read, WRITE_KEYS_JSON: JSON.stringify({ 'chat-retention': write, owui: `${write}-owui` }) },
+    d1Databases: ['TELEMETRY_DB'], bindings: { ...DAYTONA_ENV, TELEMETRY_ENABLED: 'true', BROWSER_ENABLED: 'true',
+      READ_SECRET: read, WRITE_KEYS_JSON: JSON.stringify({ 'chat-retention': write, owui: `${write}-owui`, daytona: `${write}-daytona` }) },
     outboundService: () => { throw new Error('No outbound calls permitted'); },
   }));
   t.after(() => mf.dispose());
   const db = await mf.getD1Database('TELEMETRY_DB');
-  for (const file of ['0001_telemetry.sql', '0002_retention_state.sql', '0003_browser_network.sql']) {
+  for (const file of ['0001_telemetry.sql', '0002_retention_state.sql', '0003_browser_network.sql', '0004_daytona_lifecycle.sql']) {
     const migration = (await readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')).replace(/^\s*--.*$/gm, '');
     for (const stmt of migration.split(';').map(x => x.trim()).filter(Boolean)) await db.prepare(stmt).run();
   }
@@ -74,6 +75,22 @@ test('workerd / real D1: concurrent retries, conflicts, bounded reads, physical 
   const malformed = await mf.dispatchFetch('https://telemetry.invalid/v1/otlp/metrics', {
     method: 'POST', headers: { Authorization: `Bearer ${write}-owui`, 'Content-Type': 'application/x-protobuf' }, body: new Uint8Array([255]) });
   assert.equal(malformed.status, 400, 'invalid native input must not trigger exporter retry');
+  const lifecycle = options => mf.dispatchFetch('https://telemetry.invalid/v1/daytona/webhooks',
+    signedWebhook({ ...options, timestamp: Math.floor(now / 1000) }));
+  const deliveries = await Promise.all(Array.from({ length: 8 }, () => lifecycle()));
+  assert.deepEqual(deliveries.map(r => r.status), Array(8).fill(202));
+  assert.equal((await db.prepare('SELECT count FROM lifecycle_buckets').first()).count, 1);
+  const competing = await Promise.all([lifecycle({ id: 'msg_competing' }),
+    lifecycle({ id: 'msg_competing', fields: { newState: 'archiving' } })]);
+  assert.deepEqual(competing.map(r => r.status).sort(), [202, 409]);
+  const total = (await db.prepare('SELECT SUM(count) n FROM lifecycle_buckets').first()).n;
+  assert.equal(total, 2, 'conflicting concurrent delivery must not increment both buckets');
+  const daytonaMetrics = () => mf.dispatchFetch('https://telemetry.invalid/v1/daytona/otlp/metrics', {
+    method: 'POST', headers: { Authorization: `Bearer ${write}-daytona`, 'Content-Type': 'application/x-protobuf' },
+    body: organizationWire() });
+  const metricRetries = await Promise.all(Array.from({ length: 4 }, daytonaMetrics));
+  assert.deepEqual(metricRetries.map(r => r.status), [200, 200, 200, 200]);
+  assert.equal((await db.prepare("SELECT COUNT(*) n FROM metric_points WHERE source='daytona'").first()).n, 1);
   await db.prepare('UPDATE deletion_runs SET expires_at=?').bind(now - 1).run();
   const expired = await mf.dispatchFetch(`https://telemetry.invalid/v1/read/deletions?from=${now - 1}&to=${now + 1}&limit=10`,
     { headers: { Authorization: `Bearer ${read}` } });

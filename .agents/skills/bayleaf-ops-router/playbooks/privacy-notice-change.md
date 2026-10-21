@@ -75,6 +75,11 @@ this is why step 3's approval gate precedes both publishing and notifying.
 
 ## Refinement log
 
+- 2026-10-20 (Daytona telemetry, unpublished draft): Lifecycle event counts need
+  not retain sandbox identities: atomic event receipts and 15-minute buckets suffice.
+  Discarding OTLP logs/traces without reading bodies does not prevent the edge
+  transport receiving them. Draft that boundary explicitly; activation remains gated.
+
 - 2026-10-18 (API activity preparation): Added a separate user clock, daily-coalesced
   authenticated activity and an explicit unknown historical-activity migration.
   No account deletion in the prep revision; publication and deployment require

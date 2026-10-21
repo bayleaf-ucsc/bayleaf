@@ -85,3 +85,19 @@ no third-party script. This authorization does not expose tools or change llms.t
 Source activation is separate rollout work, not part of local
 policy editing. Privacy/retention drafts require exact-diff publication approval
 before commit/push; affected-user notice text/notification remains an operator gate.
+
+## Prepared Daytona integration, not activated
+
+`daytona/README.md` records the approved policy and live qualification gates for
+webhooks and organization-only OTLP metrics. Both new switches default false,
+including in the production config. Do not infer activation from this local code.
+Service policy 3 adds source `daytona`, eight fractional capacity gauges and a
+fifth class, `lifecycle`: only 15-minute transition-count buckets, no resource
+identifiers. Migration `0004` must precede deployment. Five content-free retention
+rows now persist. The operator-read reference adds `/v1/read/lifecycle` without
+new public data access or agent exposure. The operator approved committing/pushing
+the reviewed privacy/code changes, then permanent activation, and explicitly
+waived affected-user notification. Qualification passed for state updates and
+organization gauges, not a complete creation census. Activation remains pending
+actual deployment/readback evidence; approval is not activation. Existing source
+activation evidence above is unchanged.

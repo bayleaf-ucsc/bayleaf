@@ -25,6 +25,7 @@ export async function retentionScenarios(db) {
   // A read, not a purge, observes shortening. Increasing before purge cannot undo it.
   assert.equal((await readRows(db, 'deletions', range, transition, short)).length, 0);
   assert.equal((await readRows(db, 'metrics', range, transition, short)).length, 0);
+  assert.equal((await readRows(db, 'lifecycle', range, transition, short)).length, 0);
   assert.equal((await readRows(db, 'deletions', range, transition, long)).length, 0);
   assert.equal((await readRows(db, 'metrics', range, transition, long)).length, 0);
   assert.equal((await readRows(db, 'status', range, transition, long)).length, 0);
@@ -63,6 +64,6 @@ export async function retentionScenarios(db) {
   await purge(db, transition + 2 * DAY, long);
   await assert.rejects(ingest(db, 'deletions', validate('deletions', fresh, long, transition), transition, long), Invalid);
   const states = (await db.prepare('SELECT * FROM retention_state ORDER BY class').all()).results;
-  assert.equal(states.length, 4, 'only four durable content-free rows survive purge');
+  assert.equal(states.length, 5, 'only five durable content-free rows survive purge');
   for (const state of states) assert.equal(state.ttl_ms, state.class === 'browser' ? Math.min(initialBrowser?.ttl_ms ?? 90 * DAY, 90 * DAY) : DAY);
 }

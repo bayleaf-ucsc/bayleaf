@@ -6,6 +6,7 @@ import { otlpHook } from '../otlp/worker-adapter.mjs';
 import { browserNetworkLocation, BROWSER_SCHEMA_VERSION, BROWSER_POLICY_VERSION } from './browser-policy.js';
 import { dashboard } from './dashboard.js';
 import { documentation } from './docs.js';
+import { daytonaReceiver } from '../daytona/receiver.js';
 
 const response = (data, status = 200, headers = {}) => Response.json(data, { status,
   headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers } });
@@ -73,6 +74,25 @@ export function createWorker({ otlp, clock = Date.now } = {}) {
       let actualOtlp = false;
       try {
         const url = new URL(request.url);
+        if (url.pathname.startsWith('/v1/daytona/')) return await daytonaReceiver(request, env, {
+          now,
+          authenticate: async () => {
+            const configured = credentials(env);
+            return !!configured && await writer(request, configured, 'metrics') === 'daytona';
+          },
+          submit: async (klass, payload, protobuf) => {
+            if (!await takeBudget(env.TELEMETRY_DB, 'daytona', klass, now))
+              return response({ error: 'rate_limited' }, protobuf ? 503 : 429);
+            const data = validate(klass, payload, env, now);
+            if (klass === 'metrics' && !await takeBudget(env.TELEMETRY_DB, 'daytona', klass, now, data.points.length))
+              return response({ error: 'rate_limited' }, 503);
+            const result = await ingest(env.TELEMETRY_DB, klass, data, now, env);
+            if (result.conflict) return response({ error: 'batch_conflict' }, 409);
+            return protobuf ? new Response(null, { status: 200, headers: {
+              'Content-Type': 'application/x-protobuf', 'Cache-Control': 'no-store' } })
+              : response({ accepted: true, duplicate: result.duplicate }, 202);
+          },
+        });
         if (url.search && !url.pathname.startsWith('/v1/read/')) return response({ error: 'invalid_request' }, 400);
         if (url.pathname.startsWith('/v1/read/') && request.method === 'GET') {
           if (!credentials(env)) return response({ error: 'configuration' }, 503);
@@ -114,6 +134,7 @@ export function createWorker({ otlp, clock = Date.now } = {}) {
           if (!configured) return response({ error: 'configuration' }, 503);
           source = await writer(request, configured, klass);
           if (!source) return response({ error: 'unauthorized' }, 401);
+          if (source === 'daytona' && env.DAYTONA_OTLP_ENABLED !== 'true') return response({ error: 'disabled' }, 503);
         }
         if (!await takeBudget(env.TELEMETRY_DB, source, klass, now)) return response({ error: 'rate_limited' }, isOtlp ? 503 : 429, cors);
         const payload = isOtlp ? await otlp(request, { source, now }) : await boundedJson(request);

@@ -94,9 +94,11 @@ ITS-operated or ITS-supported one.
   status codes, timestamps) are kept by those vendors at their default
   retention (~72 hours for Cloudflare).
 - **First-party operational telemetry (rolling out):** BayLeaf
-  operates a private Cloudflare Worker/D1 collector for four approved classes of observations:
+  operates a private Cloudflare Worker/D1 collector for five classes of observations:
   public-page arrivals, native Open WebUI aggregate metrics, aggregate deletion-job
-  summaries, and summaries of existing synthetic monitoring probes. Arrivals store
+  summaries, summaries of existing synthetic monitoring probes, and aggregated
+  sandbox lifecycle transitions. Metrics also include organization-level sandbox
+  resource usage and quota gauges. Arrivals store
   only the destination service, collector-assigned time, referring hostname
   (or unknown), and a coarse network location: campus-network, other-network or
   unknown. The collector transiently compares Cloudflare's connecting IP with
@@ -110,6 +112,16 @@ ITS-operated or ITS-supported one.
   instance categories, not an individual request history. Deletion/probe summaries
   retain run IDs/times, aggregate counts, outcomes, fixed result codes, durations,
   phase/event timings and cleanup status where supplied, not raw logs or errors.
+  Sandbox lifecycle observations count creation and state-change events in
+  15-minute UTC buckets, with old/new state categories. They count transitions,
+  **not distinct sandboxes or people**. Resource gauges retain only reviewed
+  region and sandbox-class categories, without sandbox or organization IDs.
+  Raw webhook payloads are verified transiently and discarded; keyed delivery
+  receipts identify event retries, not sandboxes. Daytona's shared OpenTelemetry
+  exporter can also send per-sandbox metrics, logs and traces to the collector's
+  transport. Per-sandbox metrics are filtered out; log/trace bodies are cancelled
+  without application-level reading or storage. This does not prevent Cloudflare
+  from transiently receiving those bodies, or alter Daytona's own retention.
   None of these classes stores prompts, completions, identities, IP addresses,
   user agents, private URLs, credentials or arbitrary model strings. Sealed is
   represented **only by synthetic probe summaries**, not user-request inference
@@ -157,7 +169,7 @@ version-controlled alongside the code that enforces them:
   is unavailable. Permanent preview-name reservations remain to prevent origin
   reassignment; provider billing history and backups are not erased by this job.
   There is no extra rollout grace period or automated advance-warning email.
-- **Operational telemetry:** all four classes have a **90-day maximum
+- **Operational telemetry:** all five classes have a **90-day maximum
   live lifetime from observation**, not from receipt or download. Expired rows
   are excluded from private reads immediately; physical deletion runs in bounded
   minute-by-minute batches and can lag during backlog or outages. Cloudflare D1
@@ -168,7 +180,8 @@ version-controlled alongside the code that enforces them:
   reports, exports and derived artifacts must be deleted by their underlying
   observations' expiry (the earliest expiry when several are included); copying
   or aggregation does not restart the clock or justify indefinite retention.
-  Four content-free policy rows persist to prevent retention increases or
+  Lifecycle expiry starts at the beginning of its 15-minute bucket, never later
+  than the event. Five content-free policy rows persist to prevent retention increases or
   resurrection of retired observations. These telemetry rules do not change
   the separate conversation, account, sandbox, provider-billing or platform-log
   retention schedules.

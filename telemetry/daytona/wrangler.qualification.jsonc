@@ -1,0 +1,14 @@
+{
+  "name": "bayleaf-daytona-qualification",
+  "account_id": "1a49fb69291d42e23c4ed4dcffce5bbc",
+  "main": "qualification-worker.js",
+  "compatibility_date": "2026-08-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": false },
+  "limits": { "cpu_ms": 50 },
+  "vars": { "QUALIFICATION_END_MS": "0" },
+  "durable_objects": { "bindings": [{ "name": "RESULTS", "class_name": "QualificationResults" }] },
+  "migrations": [{ "tag": "qualification-v1", "new_sqlite_classes": ["QualificationResults"] }],
+  "ratelimits": [{ "name": "QUALIFICATION_LIMITER", "namespace_id": "1004", "simple": { "limit": 60, "period": 60 } }]
+}

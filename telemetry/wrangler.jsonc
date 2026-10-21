@@ -8,6 +8,8 @@
   "vars": {
     "TELEMETRY_ENABLED": "false",
     "BROWSER_ENABLED": "false",
+    "DAYTONA_WEBHOOKS_ENABLED": "false",
+    "DAYTONA_OTLP_ENABLED": "false",
     "RETENTION_DAYS": "7"
   },
   "d1_databases": [{

@@ -19,7 +19,7 @@ const assert = (condition, code = 'invalid_otlp') => { if (!condition) fail(code
 
 // All wire integers stay BigInt until explicitly bounded. Output uses decimal
 // strings for nanoseconds, int64 values, counts and buckets, never lossy Number.
-class Reader {
+export class Reader {
   constructor(bytes, budget) { this.b = bytes; this.i = 0; this.budget = budget; }
   varint() {
     let n = 0n;
@@ -52,21 +52,21 @@ class Reader {
     return out;
   }
 }
-function schema(bytes, allowed, budget) {
+export function schema(bytes, allowed, budget) {
   const f = new Reader(bytes, budget).fields();
   for (const id of f.keys()) assert(allowed.includes(id), 'unsupported_field');
   return f;
 }
-function one(f, id, wire, required = false) {
+export function one(f, id, wire, required = false) {
   const a = f.get(id) ?? [];
   assert(a.length <= 1);
   if (!a.length) { assert(!required); return undefined; }
   assert(a[0].wire === wire); return a[0].v;
 }
-function many(f, id, wire) { const a = f.get(id) ?? []; assert(a.every(x => x.wire === wire)); return a.map(x => x.v); }
-function str(v) { assert(v && v.length <= 256, 'invalid_string'); try { return textDecoder.decode(v); } catch { fail(); } }
-function fixed(v) { if (!v) return 0n; return new DataView(v.buffer, v.byteOffset, 8).getBigUint64(0, true); }
-function double(v) { assert(v); const n = new DataView(v.buffer, v.byteOffset, 8).getFloat64(0, true); assert(Number.isFinite(n) && n >= 0, 'invalid_number'); return n; }
+export function many(f, id, wire) { const a = f.get(id) ?? []; assert(a.every(x => x.wire === wire)); return a.map(x => x.v); }
+export function str(v) { assert(v && v.length <= 256, 'invalid_string'); try { return textDecoder.decode(v); } catch { fail(); } }
+export function fixed(v) { if (!v) return 0n; return new DataView(v.buffer, v.byteOffset, 8).getBigUint64(0, true); }
+export function double(v) { assert(v); const n = new DataView(v.buffer, v.byteOffset, 8).getFloat64(0, true); assert(Number.isFinite(n) && n >= 0, 'invalid_number'); return n; }
 function packed(f, id, type) {
   const out = [];
   for (const x of f.get(id) ?? []) {
@@ -141,6 +141,13 @@ export async function normalizeOtlp(input, options = {}) {
   const routesArray = options.routes ?? DEFAULT_ROUTES;
   assert(Array.isArray(routesArray) && routesArray.length <= 128 && routesArray.every(x => typeof x === 'string' && x.length <= 128 && /^\/[A-Za-z0-9_/{.}\-]*$/.test(x)), 'invalid_policy');
   const routes = new Set(routesArray);
+  const bytes = await readOtlpBytes(input);
+  return normalizeNativeBytes(bytes, routes);
+}
+
+// Shared bounded transport and wire primitives, not a general collection policy.
+export async function readOtlpBytes(input, { maxBytes = LIMITS.bytes } = {}) {
+  assert(Number.isSafeInteger(maxBytes) && maxBytes > 0 && maxBytes <= LIMITS.bytes, 'invalid_policy');
   let bytes;
   if (input instanceof Request) {
     assert(input.method === 'POST', 'method_not_allowed');
@@ -148,7 +155,7 @@ export async function normalizeOtlp(input, options = {}) {
     const encoding = input.headers.get('content-encoding');
     if (encoding && encoding.toLowerCase() !== 'identity') fail('unsupported_encoding', 415);
     const length = input.headers.get('content-length');
-    if (length && (!/^\d+$/.test(length) || BigInt(length) > BigInt(LIMITS.bytes))) fail('payload_too_large', 413);
+    if (length && (!/^\d+$/.test(length) || BigInt(length) > BigInt(maxBytes))) fail('payload_too_large', 413);
     const reader = input.body?.getReader();
     const chunks = []; let size = 0;
     if (reader) {
@@ -159,7 +166,7 @@ export async function normalizeOtlp(input, options = {}) {
           const { done, value } = await Promise.race([reader.read(), deadline]);
           if (done) break;
           size += value.length;
-          if (size > LIMITS.bytes) fail('payload_too_large', 413);
+          if (size > maxBytes) fail('payload_too_large', 413);
           if (chunks.length >= LIMITS.chunks) fail('too_many_chunks', 413);
           chunks.push(value);
         }
@@ -174,8 +181,12 @@ export async function normalizeOtlp(input, options = {}) {
     bytes = new Uint8Array(size); let offset = 0;
     for (const c of chunks) { bytes.set(c, offset); offset += c.length; }
   } else bytes = input instanceof Uint8Array ? input : input instanceof ArrayBuffer ? new Uint8Array(input) : fail('invalid_input');
-  if (bytes.length > LIMITS.bytes) fail('payload_too_large', 413);
+  if (bytes.length > maxBytes) fail('payload_too_large', 413);
   assert(bytes.length > 0, 'empty_payload');
+  return bytes;
+}
+
+function normalizeNativeBytes(bytes, routes) {
   const budget = { fields: 0 }; const points = []; let metricCount = 0;
   const root = schema(bytes, [1], budget);
   for (const raw of many(root, 1, 2)) {

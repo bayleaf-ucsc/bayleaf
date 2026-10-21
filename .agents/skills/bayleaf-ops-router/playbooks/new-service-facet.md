@@ -58,6 +58,19 @@ traffic without changing the Worker.
 
 ## Refinement log
 
+- 2026-10-20 (Daytona qualified): Live CPU unit is `{cpu}`; state updates can
+  repeat unchanged states. Timers can keep an old qualification actor's code
+  resident during deploy: use fresh actor IDs and revision-bearing readback.
+
+- 2026-10-20 (Daytona live qualification, blocked): A valid sandbox API key does
+  not confer organization OTLP/webhook administration. Check current-key scopes
+  before provisioning a receiver; owner-dashboard authentication is a real gate.
+
+- 2026-10-20 (Daytona telemetry, local preparation): Provider-wide OTLP export
+  combines useful organization gauges with sandbox metrics/logs/traces. Storage
+  minimization is not source minimization: gate transient transport exposure
+  separately, and require real exporter/signature qualification before activation.
+
 - 2026-10-20 (telemetry activation, #112): DO spec updates reuse source unless
   `--update-sources` is requested; verify the deployed component commit. Python
   ingress needed a telemetry-host-only Browser Integrity Check exception. Native

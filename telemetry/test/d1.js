@@ -7,6 +7,7 @@ export function database() {
   sql.exec(readFileSync(new URL('../migrations/0001_telemetry.sql', import.meta.url), 'utf8'));
   sql.exec(readFileSync(new URL('../migrations/0002_retention_state.sql', import.meta.url), 'utf8'));
   sql.exec(readFileSync(new URL('../migrations/0003_browser_network.sql', import.meta.url), 'utf8'));
+  sql.exec(readFileSync(new URL('../migrations/0004_daytona_lifecycle.sql', import.meta.url), 'utf8'));
   const wrap = (query, args = []) => ({
     bind(...values) { return wrap(query, values); },
     async first() { return sql.prepare(query).get(...args) ?? null; },

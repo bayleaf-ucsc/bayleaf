@@ -1,5 +1,6 @@
 import { SCHEMA_VERSION, POLICY_VERSION, LIMITS, DESTINATIONS, SOURCES, SOURCE_CLASSES,
   SOURCE_JOBS, OUTCOMES, LAYERS, PHASES, EVENTS, METRICS, ROUTES, ORIGINS, DELETION_COUNTS, probeResult, retentionMs } from './policies.js';
+import { STATES, REGIONS, CLASSES, BUCKET_MS } from '../daytona/policy.js';
 
 export class Invalid extends Error {}
 const fail = () => { throw new Invalid('invalid_payload'); };
@@ -45,12 +46,13 @@ export function hostname(x) {
   return h;
 }
 
-function metric(p, now, ttl) {
+function metric(p, now, ttl, source) {
   keys(p, ['name', 'kind', 'unit', 'observed_at', 'start_at', 'temporality', 'monotonic',
     'value', 'count', 'sum', 'min', 'max', 'bounds', 'bucket_counts', 'attributes', 'time_unix_nano', 'start_time_unix_nano'],
   ['name', 'kind', 'unit', 'observed_at', 'attributes']);
   const spec = METRICS[p.name];
   if (!spec || p.kind !== spec.kind || p.unit !== spec.unit) fail();
+  if ((spec.source ?? 'owui') !== source) fail();
   timestamp(p.observed_at, now, ttl);
   keys(p.attributes, spec.attributes);
   for (const [k, v] of Object.entries(p.attributes)) {
@@ -58,12 +60,15 @@ function metric(p, now, ttl) {
     if (k === 'method') choice(v, ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'OTHER']);
     if (k === 'status_code') integer(v, 599), v < 100 && fail();
     if (k === 'instance') choice(v, ['worker-1', 'worker-2', 'worker-3', 'worker-4', 'single']);
+    if (k === 'region') choice(v, REGIONS);
+    if (k === 'sandbox_class') choice(v, CLASSES);
   }
+  if (source === 'daytona') keys(p.attributes, spec.attributes, spec.attributes);
   const base = { name: p.name, kind: p.kind, unit: p.unit, observed_at: p.observed_at, attributes: p.attributes,
     ...('time_unix_nano' in p ? { time_unix_nano: nanos(p.time_unix_nano, p.observed_at) } : {}) };
   if (p.kind === 'gauge') {
     if (Object.keys(p).some(k => !['name', 'kind', 'unit', 'observed_at', 'attributes', 'value', 'time_unix_nano'].includes(k))) fail();
-    return { ...base, value: integer(p.value) };
+    return { ...base, value: spec.fractional ? number(p.value) : integer(p.value) };
   }
   choice(p.temporality, ['delta', 'cumulative']);
   // A reset may predate warehouse retention. It is metadata, not an old event.
@@ -96,6 +101,7 @@ export function validate(klass, input, env, now = Date.now()) {
   const ttl = retentionMs(env, klass);
   const common = ['schema_version', 'source', 'batch_id', 'observed_at'];
   const fields = { browser: ['destination', 'referring_hostname'], metrics: ['points'],
+    lifecycle: ['event', 'old_state', 'new_state'],
     deletions: ['job', 'outcome', 'duration_ms', 'deleted', 'extensions'],
     probes: ['layer', 'outcome', 'duration_ms', 'phases_ms', 'events_ms', 'extensions'] };
   if (!fields[klass]) fail();
@@ -110,9 +116,15 @@ export function validate(klass, input, env, now = Date.now()) {
   choice(input.source, SOURCES);
   if (!SOURCE_CLASSES[input.source].includes(klass)) fail();
   Object.assign(base, { source: input.source, batch_id: uuid(input.batch_id) });
+  if (klass === 'lifecycle') {
+    if (observed % BUCKET_MS !== 0) fail();
+    choice(input.event, ['sandbox.created', 'sandbox.state.updated']);
+    if (input.event === 'sandbox.created' ? input.old_state !== null : !STATES.includes(input.old_state)) fail();
+    return { ...base, event: input.event, old_state: input.old_state, new_state: choice(input.new_state, STATES) };
+  }
   if (klass === 'metrics') {
     if (!Array.isArray(input.points) || !input.points.length || input.points.length > LIMITS.points) fail();
-    const points = input.points.map(p => metric(p, now, ttl));
+    const points = input.points.map(p => metric(p, now, ttl, input.source));
     // Envelope expiry cannot retire a point before its own observation window.
     if (points.some(p => p.observed_at > observed)) fail();
     return { ...base, points };

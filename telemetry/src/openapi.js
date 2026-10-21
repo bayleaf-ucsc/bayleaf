@@ -1,6 +1,7 @@
 // Operator read reference only. Admission policy and validation live elsewhere.
 import { LIMITS, SCHEMA_VERSION, POLICY_VERSION, DESTINATIONS, OUTCOMES, LAYERS, METRICS } from './policies.js';
 import { BROWSER_SCHEMA_VERSION, BROWSER_POLICY_VERSION, NETWORK_LOCATIONS } from './browser-policy.js';
+import { STATES } from '../daytona/policy.js';
 
 const integer = (maximum = 1e12) => ({ type: 'integer', minimum: 0, maximum });
 const number = () => ({ type: 'number', minimum: 0, maximum: 1e12 });
@@ -22,6 +23,11 @@ const serviceStored = { id: integer(), ...stored, source: { type: 'string' },
 const run = { outcome: choice(OUTCOMES), duration_ms: field(number(), 'Monotonic elapsed milliseconds.') };
 const jsonString = description => field({ type: 'string' }, `JSON-encoded string. ${description}`);
 const schemas = {
+  LifecycleRow: object({ id: integer(), schema_version: integer(), policy_version: integer(),
+    source: choice(['daytona']), observed_at: time('UTC 15-minute bucket start, not an exact event time.'),
+    expires_at: time('Expiry anchored to bucket start.'), event: choice(['sandbox.created', 'sandbox.state.updated']),
+    old_state: field(choice(['', ...STATES]), 'Empty for creation events.'), new_state: choice(STATES),
+    count: field(integer(), 'Deduplicated transition events, not distinct sandboxes or people. Missing buckets are not proven zero.') }),
   BrowserRow: object({ id: integer(), ...stored, destination: choice(DESTINATIONS),
     referring_hostname: field(nullable({ type: 'string' }), 'Hostname only; null means unknown, not necessarily direct traffic.'),
     network_location: field(choice(NETWORK_LOCATIONS), 'Collector-derived network category, not affiliation. Older rows may be unknown.'),
@@ -42,15 +48,16 @@ const schemas = {
     temporality: nullable(choice(['delta', 'cumulative'])),
     monotonic: field(nullable({ type: 'integer', enum: [0, 1] }), 'SQLite integer flag, not a JSON boolean; null when inapplicable.'),
     value: nullable(number()), count: nullable(integer()), sum: nullable(number()), min: nullable(number()), max: nullable(number()),
-    attributes_json: jsonString('Series dimensions: method, sanitized route, status_code, instance where applicable. Native user gauges use {}.'),
+    attributes_json: jsonString('Native HTTP: method, sanitized route, status_code, instance. Native user gauges: {}. Daytona organization gauges: reviewed region and sandbox_class; never sum snapshots across time or overlapping GPU regions.'),
     bounds_json: nullable(jsonString('Increasing histogram bounds.')),
     bucket_counts_json: nullable(jsonString('Disjoint histogram buckets, including overflow; counts sum to count.')),
   }), description: 'Derive deltas from cumulative counters/histograms using same-series exact reset timestamps; do not sum successive readings. Native user gauges are global snapshots: select one authoritative sample, never sum across workers or times. Export batches may overlap: deduplicate exact points before totals. HTTP duration is not completed-SSE latency; null statistics are unknown, not zero.' },
-  StatusRow: { ...object({ source: { type: 'string' }, class: choice(['metrics', 'deletions', 'probes']), ...stored }),
+  StatusRow: { ...object({ source: { type: 'string' }, class: choice(['metrics', 'deletions', 'probes', 'lifecycle']), ...stored }),
     description: 'Latest accepted service observation per source/class, not live health. Browser arrivals have no status row; retries do not refresh it.' },
   Error: object({ error: choice(['invalid_payload', 'unauthorized', 'disabled', 'configuration', 'unavailable']) }),
 };
 const rows = { browser: ['Browser arrivals', 'BrowserRow'], metrics: ['Metrics', 'MetricRow'],
+  lifecycle: ['Sandbox lifecycle counts', 'LifecycleRow'],
   probes: ['Probe runs', 'ProbeRow'], deletions: ['Deletion reports', 'DeletionRow'], status: ['Source status', 'StatusRow'] };
 const parameters = [
   { name: 'from', in: 'query', required: true, schema: integer(Number.MAX_SAFE_INTEGER),
