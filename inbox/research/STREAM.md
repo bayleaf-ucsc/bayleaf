@@ -1,5 +1,10 @@
 # Resumable arrival stream: transport and cost qualification
 
+Historical transport/cost rationale, retained for design decisions rather than
+current rollout status. SSE is now deployed; current measured evidence and gaps
+are in [../QUALIFICATION.md](../QUALIFICATION.md). Local-only statements below
+describe the original research phase.
+
 Issue [#97](https://github.com/bayleaf-ucsc/bayleaf/issues/97), "Extension: catch up,
 then follow a live inbox stream". Desk research against Cloudflare documentation
 fetched on 2026-10-21, plus local Miniflare behavior. Nothing deployed or measured

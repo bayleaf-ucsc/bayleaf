@@ -91,11 +91,35 @@ explicit operation on the user-owned installation. Preserve user files and histo
 
 ## Evidence and refinement log
 
+- 2026-10-21 (managed-client isolation preflight): Source-current setup includes
+  pending #90 custody and fixed production discovery origins. An isolated D1
+  controller alone cannot authenticate installed clients against production;
+  a scoped transport bridge is also needed. No VM launched and no managed gate
+  passed. See the credential/isolation boundary in `inbox/TODO.md`.
+
+- 2026-10-21 (approved hosted inbox release): Published `5458a7d` / `c652663`,
+  included Nanobot's parent tool allowlist, and deployed API `dfdd41d4` with exact
+  module/settings readback. Preserve old release tags: advancing main otherwise
+  breaks the strict builder's advertised-ref check for rollback. Managed-user
+  sessions remain a separate qualification gate; see `inbox/OPERATIONS.md`.
+
+- 2026-10-21 (hosted inbox follow-up): Candidate TTL/event adapters pass isolated
+  Linux V2/MCP tests before and after actual disposable-host stop/resume; exact
+  VM deletion confirmed. Nanobot delivery also needs the parent's enabledTools
+  allowlist change. Published live downloads pass after fixing the test layout;
+  candidate live creation hit the owner quota including destroying rows.
+
+- 2026-10-21 (hosted inbox qualification): Exact published adapters passed isolated
+  real V2 permission/MCP quarantine tests, not managed-client parity. A live trial's
+  workspace accidentally nested inside the managed root and was correctly denied;
+  use sibling managed/workspace roots. See `inbox/QUALIFICATION.md`.
+
 - 2026-10-21 (Inboxes discovery, local): Aligned hosted skill descriptions with
   the dedicated desktop skill and linked a shared focused workflow reference.
   Both adapter suites pass without regenerating dirty-submodule release assets;
   publication, clean pins and installed-client behavioral qualification remain
-  separate gates. See `inbox/qualification/discovery.md`.
+  separate gates. Current evidence and remaining work: `inbox/QUALIFICATION.md`
+  and `inbox/TODO.md`.
 
 - 2026-10-20 (issue #94 approved rollout): Reconciled onto current main without
   losing #113 diagnostics/arrival behavior. Added the missing Wrangler text-loader

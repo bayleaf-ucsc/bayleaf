@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Physical-cleanup throughput benchmark for BayLeaf Inboxes (#97).
-// Results and interpretation: qualification/cleanup-bench.md. Local only.
+// Results and interpretation: ../QUALIFICATION.md. Local only; --json requires an explicit output path.
 //
 // Runs the real scheduled() sweep in Miniflare's workerd against real local D1/R2
 // seeded with 1k-10k messages/objects. The sweep's env is wrapped in counting proxies,

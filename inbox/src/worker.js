@@ -834,7 +834,7 @@ async function sweep(env) {
   // work. At most five transitions, never BATCH * SWEEP_ROUNDS: each transition
   // includes a transaction and optional telemetry. Failures leave expiry denial in
   // force and retry next run. Combined cleanup/TTL/event/telemetry budget evidence
-  // lives in qualification/merged-cleanup.json; local counts are not CPU guarantees.
+  // lives in QUALIFICATION.md; local counts are not CPU guarantees.
   try {
     const lapsed = (await env.DB.prepare("SELECT id FROM inboxes WHERE state = 'active' AND expires_at <= ? ORDER BY expires_at, id LIMIT 5")
       .bind(now).all()).results;

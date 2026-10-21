@@ -233,11 +233,15 @@ The separate inbox database retains an opaque generation/timestamp fence
 indefinitely. These new records are linkable account metadata, distinct from
 owner-free object-cleanup prefixes. They preserve revocation even if an API-only
 restore reintroduces old identity rows. Inbox-only recovery must replay the API
-ledger **before** re-enabling receipt or owner reads. Restoring both ledgers to
-pre-retirement snapshots needs an independently preserved deletion ledger or
-invalidation of old generations/endpoints. Automatic no-resurrection recovery
-from two rolled-back databases is not implemented or claimed. See
-[`inbox/qualification/hardening.md`](../inbox/qualification/hardening.md).
+ledger and verify fences **before** re-enabling receipt or owner reads. If both
+ledgers roll back without complete independent deletion history, Inboxes must
+remain closed pending an operator recovery decision. Restoring sufficient history
+can preserve surviving access. Resetting old generations/endpoints requires
+explicit later operator authorization for that incident; it is a tested emergency
+option, not standing permission to discard access. Standard backups do not
+guarantee complete deletion history. No independent ledger infrastructure is being
+added, and automatic no-resurrection recovery from two rolled-back databases is
+not implemented or claimed. See [the recovery runbook](../inbox/OPERATIONS.md#recovery-remain-closed-until-reconciliation-is-verified).
 
 Migration 0018 and dry-run Worker `d533ffae-0340-42bf-b5e3-693c69e4666d` were
 deployed 2026-10-18 Pacific. A SELECT-only execution of the same eligibility

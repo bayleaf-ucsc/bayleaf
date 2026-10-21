@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Explicitly authorized, ephemeral Cloudflare qualification. See resource-staging.md.
+// Explicitly authorized, ephemeral Cloudflare qualification. See ../QUALIFICATION.md.
 import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { randomBytes, createHash, generateKeyPairSync } from 'node:crypto';

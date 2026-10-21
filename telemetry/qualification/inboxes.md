@@ -87,4 +87,4 @@ The coordinated receiver/API rollout preserved activation and retention settings
 Source outbox and collector D1 readback for the 09:00 UTC window both confirmed
 2 emitted HTTP pages and 1,064,448 bytes from the disposable live smoke. These are
 completed-generation aggregates, not delivery guarantees. Full version/migration
-and qualification evidence: `../../inbox/qualification/DEPLOYED-INTEGRATED.md`.
+and qualification evidence: `../../inbox/QUALIFICATION.md`.

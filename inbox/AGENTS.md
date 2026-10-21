@@ -5,10 +5,15 @@ concept, deployed for operator-only webhook qualification on 2026-10-20.**
 The receiving Worker is enabled; the API permits only the operator's account
 generation through `INBOXES_PILOT_OWNER`. Email Routing/MX are enabled for
 registered inboxes; email has no authenticated sender restriction.
-Local creation-only DKIM restrictions are implemented but creation is gated off:
-see `qualification/DKIM-INTEGRATION.md` for migration/build/rollout dependencies.
+Creation-only DKIM restrictions are deployed but creation is gated off:
+see `OPERATIONS.md` for migration/build/rollout dependencies.
 No campus rollout. See `QUALIFICATION.md` for deployed versions and pending gates.
 `DESIGN.md` is the contract; change it first, then code and tests.
+`OPERATIONS.md` owns deployment, recovery and troubleshooting; `QUALIFICATION.md`
+owns current evidence and reproducible commands; `TODO.md` lists unfinished work.
+Keep reusable qualification harnesses and dependency rationale, not chronological
+handoffs or one-off result JSON. Write generated evidence to explicit private paths
+outside the repository. `qualification/discovery-evals.json` is a reusable fixture.
 
 Opaque email addresses (`{nonce}@bayleaf-inboxes.dev`) and webhook URLs
 (`https://{nonce}.bayleaf-inboxes.dev/...`) that receive while every client is off.

@@ -153,6 +153,32 @@ API to keep a retired capability appearing functional.
 
 ## Refinement log
 
+- 2026-10-21 (managed-client isolation preflight): Temporary inference tokens
+  cannot authorize inbox reads; a synthetic owner also fails the production pilot
+  gate. Preserve the broad operator key locally and build an exact-inbox relay
+  before cloud qualification. Source allowlists do not prove gateway registration.
+
+- 2026-10-21 (quota discovery): Static defaults were insufficient for deployed
+  overrides. Add authenticated read-only discovery from the enforcement helper;
+  keep approximate, non-introspectable burst bindings out of exact numeric claims.
+  Receiver-first deployment supports coordinated API/adapter delivery.
+
+- 2026-10-21 (approved hosted release): TTL/finite events and discovery wording
+  published in both adapters, parent Nanobot allowlist deployed, exact production
+  pins/assets/settings read back. Script-only live SSE/export remain deliberate.
+  Production delivery does not establish existing-session or sleeping-client UX.
+
+- 2026-10-21 (candidate hosted completion): TTL inputs/readback and finite events
+  now have tested isolated adapter patches; live SSE is deliberately script/API,
+  not a long-running tool. Published live downloads and actual disposable Linux
+  stop/resume tests passed. Candidate live creation hit the ten-row owner quota;
+  Nanobot delivery additionally requires a parent enabledTools allowlist change.
+
+- 2026-10-21 (hosted inbox qualification): Published and current adapter executables
+  omit endpoint TTL inputs/readback and event tools. Export omission is deliberate.
+  A remote pin refresh cannot change an existing process's inbox feature-flag
+  environment; qualify that launch boundary separately from tool registration.
+
 - 2026-10-21 (integrated production rollout): Preserve live adapter pins in an
   isolated staging copy and run authentic build hooks: main's generated assets may
   be test fixtures. Fetched deployed modules and exact variable readback qualified
@@ -168,11 +194,11 @@ API to keep a retired capability appearing functional.
   and all three non-Chat skills link to a focused workflow guide. Version catalog
   entries for feature/pilot text changes too, not just source edits. Workerd checks
   delivery and negative discovery; fresh-client behavioral prompts and rollout
-  gates are recorded in `inbox/qualification/discovery.md`, not claimed as passed.
+  gates are recorded in `inbox/TODO.md`, not claimed as passed.
 
 - 2026-10-21 (Inboxes DKIM, isolated local worktree): Exposure is creation/readback
   through the owner HTTP API plus llms orientation, with adapter delivery deferred
-  in `inbox/qualification/DKIM-INTEGRATION.md`. Clean-worktree API tests needed
+  in `inbox/OPERATIONS.md`. Clean-worktree API tests needed
   explicit test-only fixtures for unrelated generated adapter assets; this does
   not qualify real adapter installation or justify fixture-based deployment.
 

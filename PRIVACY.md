@@ -214,9 +214,13 @@ version-controlled alongside the code that enforces them:
   cleanup after recovery. They contain no email, address or message content, but
   remain linkable account metadata. The cross-service retirement handoff is
   eventual; reception stops when the inbox fence acknowledges, not atomically with
-  API identity deletion. Recovery must stay disabled until fences are reconciled;
-  rolling back both databases needs a separately surviving deletion ledger or
-  invalidation of old generations. The mechanism is deployed in the operator pilot;
+  API identity deletion. Recovery must stay disabled until fences are reconciled
+  and verified. If both retirement ledgers roll back without complete independent
+  deletion history, Inboxes remains closed pending an operator recovery decision.
+  Sufficient restored history can preserve surviving access; a destructive reset
+  of old generations/endpoints requires explicit later operator authorization,
+  not an automatic reset. Standard backups do not guarantee that history.
+  The mechanism is deployed in the operator pilot;
   full live retirement/recovery qualification remains a campus-rollout gate.
 - [API retention policy](api/RETENTION.md): prompts and completions are **not
   stored**. Accounts and their keys are eligible for daily cleanup after **18

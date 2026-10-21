@@ -159,8 +159,9 @@ encoding. The service binding carries JSON pages, not a buffered SSE response.
 
 Atomic D1 leases enforce four subscribers per inbox, with fixed 300-second expiry.
 Connections end after at most 300 seconds, 1000 events or 512 KiB. Backpressure
-allows one bounded page and a two-second downstream-demand deadline; slow readers
-are disconnected. Disconnect releases its lease, with fixed expiry as fallback;
+allows one bounded page and a two-second server-observed demand deadline. Edge
+buffering can hide a non-consuming client; the 300-second lifetime still bounds
+it. Disconnect releases its lease, with fixed expiry as fallback;
 the sweep prunes at most 50 expired leases. `after=now` resolves once during lease
 acquisition to avoid a handshake gap. API-only test knobs can shorten these limits.
 
@@ -175,7 +176,7 @@ Private RPCs `acquireEventStream(owner,id,{after?})`,
 `readEventStream(owner,id,leaseId,{after?})` and
 `releaseEventStream(owner,id,leaseId)` remain service-binding-only. Leases contain
 only id, inbox id and expiry. See `research/STREAM.md` for cost analysis and
-`qualification/STREAM.md` for the bounded live recipe and remaining live gates.
+`QUALIFICATION.md` for the bounded live recipe and remaining live gates.
 
 ## Inbox types
 
@@ -374,7 +375,7 @@ HTTP `meta_json`:
 
 ## Email reception (`email(message, env, ctx)`)
 
-### Opt-in domain restrictions (local implementation, pilot rollout pending)
+### Opt-in domain restrictions (deployed, creation disabled)
 
 At creation only, an email inbox may set `email_auth: { domains: ["ucsc.edu"],
 selector_pins: { "ucsc.edu": ["chosen_selector"] } }`. Domains are exact ASCII
@@ -433,8 +434,9 @@ on a database containing restricted inboxes: old binaries lack enforcement.
 Build: pinned mailauth 8.0.1, guarded digest-name and selector patches generated
 before Wrangler/tests. `nodejs_compat` is required; verifier source is shared by
 research and production. No user-controlled DNS override or test fetch endpoint
-is present in production. Local qualification does not establish live SMTP
-semantics, real UCSC selectors, paid-tier startup CPU or worst-case concurrency.
+is present in production. Specimen and isolated live policy evidence is recorded
+in `QUALIFICATION.md`; full SMTP/storage semantics and worst-case concurrent
+memory remain unqualified.
 
 Exposure for this pilot: HTTP owner API/OpenAPI and llms orientation expose
 creation/readback; existing hosted and desktop adapters do not gain new mutation
@@ -556,8 +558,8 @@ shared transition):
   transition, oldest expiry first. Existing cleanup and reconciliation get their
   turn before this additional work; newly admitted destruction is cleaned on a
   later sweep. Admission errors stop this bounded phase and retry on a later run.
-  Access denial remains immediate. This pilot cap does not fix or establish a
-  total D1 budget for the pre-existing mixed-workload sweep.
+   Access denial remains immediate. The integrated bounded sweep and its measured
+   budget are described under resource hardening below and in `QUALIFICATION.md`.
 
 No content, address, nonce, or credential is ever logged. The sweep may log only counts.
 
@@ -567,7 +569,7 @@ Every method is `async method(owner: string, ...args)`. It validates every input
 (unknown keys rejected, types and lengths checked) and returns plain JSON objects.
 It **never throws to the caller**: errors are returned as `{ error: code }` with
 `code` ∈ `disabled | invalid | not_found | limit | conflict | unavailable`.
-The local hardening revision adds `resource_limit` for bounded MIME read failures.
+The deployed hardening revision adds `resource_limit` for bounded MIME read failures.
 `owner` must match `/^[A-Za-z0-9-]{16,128}$/`, else `invalid`. Every lookup is scoped
 `WHERE owner=?`. Another owner's handle is indistinguishable from a missing one
 (`not_found`).
@@ -719,7 +721,7 @@ Pinned legacy `insomnia-importers@3.6.0` preserved inline request text but impor
 an empty body for `_file`: manual exact-file attachment is necessary.
 `har-validator@5.1.5` accepts the profile without enforcing frozen timing rules,
 so acceptance is not conformance evidence. Current GUI interoperability remains
-unqualified. See `EXPORT-INTEGRATION.md` and `SELF-HOSTING.md`. Exposure is
+unqualified. See `QUALIFICATION.md` and `SELF-HOSTING.md`. Exposure is
 HTTP/scripts-only; dedicated hosted/desktop/Chat export adapters are deferred.
 
 ### Clarifications from implementation
@@ -779,9 +781,9 @@ plus-addressing; multipart parsing on read;
 import into a deployment; any sending. Self-hosting is a documented
 recipe, not a supported product.
 
-## Gates before enablement
+## Retirement, recovery and resource hardening
 
-### Local hardening revision (not deployed)
+### Deployed hardening contract
 
 Migration `0006_qualification_hardening.sql` adds durable retired-owner fences
 and cleanup rotation cursors. A trusted binding-only `retireOwner(owner)` RPC
@@ -801,12 +803,16 @@ can continue until the inbox transaction acknowledges. Pending work fails the
 scheduled report rather than claiming completed deletion. A newly created account
 gets a new generation; ordinary key rotation preserves the existing one.
 
-Recovery must stay offline until fences have been replayed. Restoring inbox D1
+Recovery must stay offline until fences have been replayed and verified. Restoring inbox D1
 requires replay of the surviving API ledger before enabling reception/reads;
 restoring API D1 alone does not remove surviving inbox fences. Restoring both
-databases from before a retirement requires an independently preserved ledger,
-or invalidation of pre-recovery generations/endpoints. Automatic safe recovery of
-both rolled-back ledgers is not claimed. This is an operator enablement gate.
+databases from before a retirement without complete independent deletion history
+must leave Inboxes closed pending an operator recovery decision. Sufficient history
+may be restored to preserve surviving access; invalidating pre-recovery generations
+and endpoints is a tested emergency option requiring explicit later operator
+authorization, never a preauthorized reset. Standard backups do not guarantee that
+history. Automatic safe recovery of both rolled-back ledgers is not claimed. This
+is an operator enablement gate; see [the recovery runbook](OPERATIONS.md#recovery-remain-closed-until-reconciliation-is-verified).
 
 Cleanup retains the existing 200-row per-stage bounds, but processes only five
 destroying inboxes per invocation (four 50-row rounds each), with durable
@@ -814,9 +820,8 @@ round-robin cursors for every row-removal stage and destruction. Counter updates
 and row deletion are set-based in one D1 transaction; reconciliation uses one
 bounded row lookup per prefix, never one statement per object. Together these
 caps form a whole-sweep budget with headroom for telemetry and at most five
-TTL transitions after existing cleanup. TTL work is not present on this branch;
-integration must preserve its five-transition cap and run the combined budget
-regression. Persist cursor progress before attempted cleanup so one failed object
+TTL transitions after existing cleanup. Preserve the five-transition cap and
+combined budget regression. Persist cursor progress before attempted cleanup so one failed object
 cannot pin later work indefinitely. R2 failures still leave deleting rows to retry.
 
 Before any email MIME parsing on ingress or owner read, a byte-only preflight
@@ -834,34 +839,19 @@ is rewritten. The line cap admits standard 76-column base64 near 25 MiB but reje
 the demonstrated line-heavy allocation bomb. It does not prove concurrency or
 total isolate memory safety for every near-limit message; that gate remains open.
 
+## Gates before enablement
+
+Current dated measurements and reproduction commands are in [QUALIFICATION.md](QUALIFICATION.md);
+only unfinished work belongs in [TODO.md](TODO.md).
+
 - Qualify real SMTP outcomes on the domain, including `setReject` permanence and
   thrown-exception behavior, Bcc, and envelope-vs-header mismatches.
 - Measure memory and CPU for near-25 MiB email with many parts.
-- Account retirement must destroy the owner's inboxes. The deployed 18-month
-  reaper does not yet call the inbox service; the local hardening revision above
-  adds the durable handoff and fences, with recovery/rollout qualification pending.
+- Account retirement uses the deployed durable handoff and fences above; live
+  recovery/drain qualification remains separate from passing local restore tests.
 - Privacy, retention and subprocessor disclosures (`PRIVACY.md`, `api/RETENTION.md`)
   updated before any user-content pilot. Inboxes intentionally store content, so this
   is a separate retention/access boundary from the content-free inference proxy:
   ZDR does not apply, and the operator can technically read stored mail.
 - D1 Time Travel keeps 30 days of database history (Paid). Verified live-store deletion
   is the promise; provider recovery history is a disclosed residual.
-
-### Qualification findings (2026-10-21, not a contract change)
-
-The [local MIME benchmark](qualification/mime-bench.md) exercises parsing on both
-receipt and read. Miniflare success is not production 128 MB memory qualification;
-line-heavy malformed boundaries exhaust a 128 MiB-old-space Node child. The
-[cleanup benchmark](qualification/cleanup-bench.md) measures 200 ordinary expiries
-per cron globally and a mixed invocation of 1,001 D1 calls. Per-stage/per-inbox
-bounds do not form a shared invocation budget, and prefix rotation grows with
-indefinitely retained cleanup records.
-
-The [retirement reproduction/proposal](qualification/retirement.md) confirms that
-current API retirement does not destroy inboxes. Normal reprovisioning uses a
-fresh generation, but an old-generation database restore has no fence. Durable
-API outbox capture, an inbox-side retirement fence and rollback-aware recovery
-are proposed, **not implemented**. These require a reviewed contract/migration
-revision before code changes. The [SMTP runbook](qualification/smtp-runbook.md)
-is likewise unexecuted; exception retry semantics are not promised by the docs
-reviewed. All corresponding enablement gates remain open.

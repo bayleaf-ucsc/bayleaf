@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Adversarial and near-limit MIME resource benchmark for BayLeaf Inboxes (#97).
-// Results and interpretation: qualification/mime-bench.md. Local only: no network,
+// Results and interpretation: ../QUALIFICATION.md. Local only: no network,
 // no deployment, synthetic messages only.
 //
 // Two tiers, because neither alone answers the production question:

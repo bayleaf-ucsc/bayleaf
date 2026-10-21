@@ -1,80 +1,62 @@
 # Remaining Inboxes work (#97)
 
-Implemented: isolated email/HTTP reception, owner-scoped API and generated docs,
-`llms.txt` discovery, quotas/rate limits, write-only expiring HTTP bearer credentials,
-search/archive/download/delete, retention and durable orphan reconciliation, and
-hosted adapter source. Operator-only live delivery and multimodal attachment
-retrieval have been exercised. See `QUALIFICATION.md` for evidence, versions and
-limitations, not just source-level completion.
+Current contract: [DESIGN.md](DESIGN.md). Evidence: [QUALIFICATION.md](QUALIFICATION.md).
+Operations/recovery: [OPERATIONS.md](OPERATIONS.md). Keep access operator-only and
+restricted-email creation disabled until the relevant gates are resolved and
+enablement is explicitly approved.
 
-- [x] **Runtime quota discovery rollout:** receiver default is now 100 inboxes per
-  owner, counting active plus destroying. Receiver `getLimits` is deployed; the
-  authenticated API `/inboxes/limits`, generated contract, focused guide and
-  diagnostic owner-capacity view are deployed with the coordinated API/adapter release.
-  See [quota evidence](qualification/quotas.md). Storage/message caps and sweep
-  work budgets are unchanged.
-
-- [ ] **Resumable arrival stream:** finite catch-up plus SSE/live following, stable
-  cursors/event IDs, gap-free transition, expired-cursor recovery, bounded replay
-  and slow readers, revocation/destruction termination. Delivery never activates
-  inference or an agent. Qualify connection costs and practical transport first.
-- [ ] **Authenticated email sender restrictions (local implementation complete,
-  rollout pending):** creation-only exact domain allowlists and optional selector
-  pins, locally verified RSA >=2048/Ed25519, hard 1 MiB restricted-mail cap. Guarded
-  mailauth patches pass positive/adversarial workerd and API isolation tests.
-  Existing inboxes remain unrestricted. Live SMTP retry/rejection, real campus
-  selectors and deployment propagation remain gates; see
-  `qualification/DKIM-INTEGRATION.md`. Domain authority includes delegated signers,
-  not proof of a mailbox holder, and does not prevent replay.
-- [x] **Disposable inbox lifetimes (local only, not deployed or live-qualified):**
-  opt-in `ttl_seconds` (60 s to 30 days) or `preset: "experiment"` (15 minutes) at
-  creation; `PATCH /inboxes/{id}` only shortens or sets. `expires_at` is separate
-  from 90-day message retention and never renewed by reads, arrivals, credential or
-  archive changes. Liveness is computed at check time (lookup, reservation, stored
-  mark, every owner operation), so expired endpoints refuse email/HTTP and owner
-  reads before any sweep; the sweep then uses the same destruction transition as
-  `destroyInbox`. Visible as `expires_at`, `state:"destroying"` and
-  `cleanup_not_before` in the API, OpenAPI, `llms.txt` and metadata diagnostics.
-  Pre-existing rows keep `NULL`. Deploy order: apply `0003_lifetimes.sql` remotely,
-  deploy this Worker, then the API (the PATCH route needs `updateInbox`). Still to
-  do live: real expiry of a synthetic pilot inbox, a sweep-driven finalization
-  observed in production, and the PRIVACY.md wording reviewed and published.
-- [x] **Minimal public web experience (#113):** a tasteful signed-out explanation and
-  login entry point, analogous to existing BayLeaf API services. State availability,
-  passive reception, limits and the stored-content/privacy boundary. No new
-  marketing surface or elaborate application is needed.
-  Wire actual HTML entry pages into BayLeaf's first-party browser-arrival telemetry
-  (approved service inventory, privacy disclosure, no visitor ids or retained IPs);
-  plaintext `/llms.txt` requests are not browser arrivals.
-- [x] **Signed-in metadata diagnostics (#113, real owner login verified):**
-  typed inboxes, usage, selectable non-clickable addresses and up to five recent
-  receipt times, sizes and expiries. Existing API login/account-generation ownership;
-  no bodies, subjects, sender fields, request paths, credentials or lifecycle controls.
-  Follow the existing distinction between anonymous entry-page arrivals and
-  authenticated private dashboards; do not emit user/session/message identifiers
-  or turn authenticated activity into public browser-arrival telemetry.
-- [ ] **Broader owner inspector (deferred, outside #113):** the earlier postb.in-like
-  proposal included bounded content/header inspection, downloads, archive/deletion
-  and credential controls. None is authorized or implemented by the metadata-only
-  diagnostic slice. Revisit only if a concrete diagnosis/recovery need justifies
-  the extra browser authority; agent/API operations already exist.
-- [ ] **Campus rollout qualification:** account-retirement/recovery integration
-  without resurrection; published privacy/retention disclosures and cleanup
-  residuals; real SMTP failure/retry/duplicate behavior; adversarial/near-limit
-  MIME resource benchmarks; bounded physical-cleanup throughput; fresh/existing/
-  sleeping hosted-client discovery, approval and Linux save-helper checks.
-  Do not remove the operator restriction until these are resolved or explicitly
-  accepted with honest scope.
-  Local 2026-10-21 progress: [MIME measurements](qualification/mime-bench.md),
-  [cleanup capacity/limit findings](qualification/cleanup-bench.md),
-  [confirmed retirement gap and proposed recovery protocol](qualification/retirement.md),
-  and an [unexecuted SMTP runbook](qualification/smtp-runbook.md). Resource and
-  retirement blockers remain; no rollout gate is silently waived.
-  Follow-up: [local hardening](qualification/hardening.md) implements a durable
-  retirement handoff/fence, fixes the demonstrated cleanup-budget overflow and
-  blocks the known MIME allocation fixture. Keep remaining memory, recovery,
-  combined SSE/TTL and live-SMTP qualification explicit before changing exposure.
-- [ ] **Offramps and optional extensions:** portable original-payload export with
-  a metadata manifest and modest self-hosting recipe; separately qualify optional
-  JWT sender grants (public JWK, strict audience/expiry/algorithm policy). These
-  are not requirements for passive bearer-guarded reception.
+- [ ] **SMTP boundary and full storage failures:** identify an authorized signed
+  sender with final Cloudflare MX DATA replies and queue logs; execute the bounded
+  [runbook](qualification/smtp-runbook.md) on an isolated full receiver/D1/R2.
+  Qualify permanent `setReject` (including 4.x text), envelope/Bcc, oversize,
+  DNS/storage throws, recovery/retries, post-commit acknowledgement ambiguity,
+  duplicates and cleanup. Gmail submission/provider activity cannot substitute.
+- [ ] **Restricted-email creation rollout:** after SMTP qualification, verify full
+  stored-policy/readback and oversize behavior, current receiver propagation and
+  discovery, then obtain explicit gate approval. Exact UCSC signature/pin and
+  isolated live wrong-pin/domain cases already passed; no need to repeat those
+  as unresolved research. Selector rotation and delegated-domain authority must
+  remain explicit. Adapter policy UI/mutation exposure is deferred.
+- [ ] **Unrestricted MIME memory/admission:** near-25 MiB CPU samples passed but
+  peak heap and concurrent same-isolate receipt/parsed-owner-read allocation are
+  unbounded by this evidence. Review byte-weighted admission/buffering across
+  storage awaits or a smaller service limit; qualify representative Unicode/QP
+  and adversarial read workloads. Existing 1 MiB restricted slice can proceed
+  through its own remaining gates. Do not infer four simultaneous parsers from
+  four clients or rewrite historical cleanup fixtures as 100-inbox load tests.
+- [ ] **Operational recovery execution:** qualify provider restore/drain and
+  complete inventory replay against the documented closed-service protocol;
+  implement a small private operator runner only if needed. Local recovery drill
+  passes. Both-ledger loss policy is decided: remain closed pending the incident's
+  operator choice, never automatically reset endpoints or add a new ledger service.
+- [ ] **Managed installed-client qualification:** actual OpenChamber browser
+  permissions, Nanobot gateway registration, ten-minute refresh, managed relink,
+  and receipt during confirmed host sleep followed by cursor reconciliation.
+  Production controller derives ownership from authenticated email, with no
+  test-machine override. Staging credential verifiers live in staging D1 and
+  are not production credentials; Daytona secrets/adapter discovery fix the
+  destination to `api.bayleaf.dev`. Temporary inference tokens cannot authorize
+  inboxes, and a sandbox credential is machine/account-bound, not single-inbox.
+  Build a bounded synthetic controller/transport fixture (exact-inbox GET relay,
+  owner/sender keys retained locally), or separately isolated deployed identity/
+  routing. Do not upload broad operator keys or target the real stopped workspace.
+  Source-only managed preflight created no resources and is not a runtime pass.
+- [ ] **Remaining live SSE boundaries:** separately revocable synthetic reader
+  authority for five-second propagation, runtime-update reconnect, true transport
+  backpressure and sustained auth/control-plane cost. Epoch/replay limits and
+  revocation pass locally; live full TTL, subscriber cap and ordinary resume passed.
+- [ ] **Discovery/AX:** finish the active published-adapter trial, then assess
+  natural receiving-intent and negative prompts across fresh/existing desktop
+  Standard/Sealed and hosted clients using `qualification/discovery-evals.json`.
+  Preserve permission denial and prompt-injection boundaries; package/runtime
+  checks are not behavioral parity. Chat remains deferred.
+- [ ] **Campus rollout decision:** review the remaining reliability/resource/
+  recovery gates, effective 100-inbox backlog capacity and indefinite-prefix
+  growth, current privacy/retention publication and aggregate telemetry coverage.
+  Local fences and six-resource physical cleanup do not prove all historical
+  trial finalizations, provider-history erasure or a global deletion deadline.
+- [ ] **Optional follow-ups:** current GUI export importers and live email export
+  parity; JWT sender grants (public JWK, strict audience/expiry/algorithms); broader
+  owner content inspector only if justified by a concrete need. Exact export and
+  [self-hosting recipe](SELF-HOSTING.md) already exist. Private-preview navigation
+  remains tracked by #113's separate diagnostics work.

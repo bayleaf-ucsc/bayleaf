@@ -5,10 +5,10 @@ workerd (`1.20260811.1`, compatibility date `2026-08-01`, `nodejs_compat`) once 
 digest-name translation and a narrow selector-grammar extension are applied at
 build time. The research policy passes a 54-case matrix and matches Node on a
 15-message public corpus (14 signed), with live DNS. Not every message is accepted:
-the corpus includes policy rejections. A later local integration wires this shared
-verifier into `src/worker.js` for creation-only opt-in restrictions, gated off by
-default. See `../qualification/DKIM-INTEGRATION.md`. No deploy, no mail sent,
-no user mail read in this worktree.
+the corpus includes policy rejections. The shared verifier is now deployed in
+`../src/worker.js` for creation-only opt-in restrictions, with creation disabled.
+See `../OPERATIONS.md` and `../QUALIFICATION.md` for current rollout/evidence.
+The original research used no user mail or production deployment.
 
 ```bash
 npm ci --ignore-scripts   # here and in ../ (esbuild, miniflare)
@@ -64,9 +64,10 @@ uses the same selector patch but not the crypto shim.
 Supply-chain cost includes mailauth and maintaining both patches: the deep import still bundles
 Joi, tldts, libmime, nodemailer's addressparser and ARC helpers. The shared production
 verifier bundle is 1,207,614 bytes minified, 422,888 gzip; the complete Worker
-dry-run is recorded in `../qualification/DKIM-INTEGRATION.md`. mailauth joins
+measurements are recorded in `../QUALIFICATION.md`. mailauth joins
 postal-mime as a pinned runtime dependency.
-Startup CPU on Cloudflare is unmeasured. Pin exact versions and rerun this suite on
+Startup and invocation measurements are distinct; neither bounds worst-case memory.
+Pin exact versions and rerun this suite on
 every bump; a refactor that moves the call trips the build guard.
 
 ## Synthetic matrix (`dkim.test.mjs`, 54/54 pass)
@@ -117,7 +118,7 @@ The narrow patch now permits its real Ed25519 signature without globally relaxin
 strict validation. A first harness version decoded 8bit mail as latin1 and
 re-encoded UTF-8, failing 6 bodies in both runtimes; the harness now passes bytes.
 
-## Trusted-result boundary (implemented locally, not deployed)
+## Trusted-result boundary (deployed, restricted creation disabled)
 
 `../src/dkim-verifier.mjs` `authenticate(raw, { resolver, allowedDomains, selectorPins })` returns
 `{ trusted: true, domain, selector, algo, from }` only when all of these hold:
