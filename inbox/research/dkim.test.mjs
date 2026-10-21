@@ -9,6 +9,7 @@ import { test, after, before } from 'node:test';
 import { Miniflare, convertV4MiniflareOptions } from '../node_modules/miniflare/dist/src/index.js';
 import { dkimSign } from 'mailauth/lib/dkim/sign';
 import { bundle } from './build.mjs';
+import { normalizeEmailAuth } from '../src/email-policy.mjs';
 
 const pem = { privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'der' } };
 const rsa = generateKeyPairSync('rsa', { modulusLength: 2048, ...pem });
@@ -19,6 +20,7 @@ const rsaRecord = (k, extra = '') => `v=DKIM1; k=rsa;${extra} p=${k.publicKey.to
 const split = s => [[s.slice(0, 200), s.slice(200)]];  // one RR, two strings
 const records = {
   's1._domainkey.ucsc.edu': split(rsaRecord(rsa)),
+  's1._domainkey.xn--bcher-kva.example': split(rsaRecord(rsa)),
   'ed._domainkey.ucsc.edu': [[`v=DKIM1; k=ed25519; p=${ed.publicKey.subarray(-32).toString('base64')}`]],
   'weak._domainkey.ucsc.edu': split(rsaRecord(rsaWeak)),
   'test._domainkey.ucsc.edu': split(rsaRecord(rsa, ' t=y;')),
@@ -52,11 +54,22 @@ const validEd = await sign(base(), [{ selector: 'ed', privateKey: ed.privateKey 
 const limited = await sign(base(), [{ maxBodyLength: 16 }]);
 const espSig = { signingDomain: 'esp.example', selector: 'esp', privateKey: rsaOther.privateKey };
 const past = new Date('2026-10-01T00:00:00Z');
+// Fresh signatures over the actual spellings, never edited d= values after signing.
+const mixedCase = await sign(base('author@UcSc.EdU'), [{ signingDomain: 'UCSC.EDU' }]);
+assert.match(mixedCase, /d=UCSC\.EDU;/);
+const idnaDomain = 'xn--bcher-kva.example';
+const unicodeFrom = await sign(base('author@bücher.example'), [{ signingDomain: idnaDomain }]);
 
 // [name, raw, expectedTrusted, extra request fields]
 const cases = [
   ['valid RSA-SHA256', valid, true],
   ['valid Ed25519-SHA256', validEd, true],
+  ['case-insensitive d=, From, allowlist and pin domain', mixedCase, true,
+    { allowedDomains: ['UcSc.EdU'], selectorPins: { 'UCSC.EDU': ['S1'] } }],
+  ['aligned ASCII IDNA A-labels', await sign(base(`author@${idnaDomain}`), [{ signingDomain: idnaDomain }]), true,
+    { allowedDomains: [idnaDomain] }],
+  ['Unicode From is not converted to an A-label by BayLeaf alignment', unicodeFrom, false,
+    { allowedDomains: [idnaDomain] }],
   ...await Promise.all(['campus_key', '_campus', 'campus_', 'key_1.rotate_2'].map(async selector =>
     [`underscore selector ${selector}`, await sign(base(), [{ selector }]), true])),
   ['selector pin matches', valid, true, { selectorPins: { 'ucsc.edu': ['s1'] } }],
@@ -146,8 +159,23 @@ for (const [name, raw, expected, extra] of cases) {
     assert.equal(node.trusted, expected, 'Node baseline');
     assert.equal(worker.trusted, expected, 'workerd');
     assert.deepEqual(summary(worker).sigs, summary(node).sigs, 'per-signature results match Node');
+    if (raw === unicodeFrom) {
+      // Distinguish unsupported alignment spelling from invalid cryptography or From syntax.
+      assert.equal(node.result.fromSyntax, 'valid');
+      assert.equal(node.result.results[0].status.result, 'pass');
+      assert.equal(worker.result.results[0].status.result, 'pass');
+      assert.equal(worker.reason, 'no-qualifying-signature');
+    }
   });
 }
+
+test('creation policy accepts ASCII A-labels and rejects Unicode or terminal dots', () => {
+  assert.deepEqual(normalizeEmailAuth({ domains: ['XN--BCHER-KVA.EXAMPLE'] }),
+    { domains: [idnaDomain], selector_pins: {} });
+  for (const domain of ['bücher.example', 'ucsc.edu.', `${idnaDomain}.`]) {
+    assert.throws(() => normalizeEmailAuth({ domains: [domain] }), /email_auth domain/);
+  }
+});
 
 test('tripwire: unshimmed mailauth still fails RSA on this workerd', async () => {
   const rsaVerdict = await inWorkerd(tripwire, valid);

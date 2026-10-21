@@ -137,6 +137,23 @@ DNS case-insensitive. A pin does not establish a human identity or pin key
 material, and requires an explicit rotation procedure. Exact alignment and the
 2048-bit RSA floor are approved policy, not open choices.
 
+Domain-spelling check (2026-10-21): freshly signed fixtures pass in both Node and
+workerd with mixed-case `d=`/From/allowlist/pins, and with matching ASCII IDNA
+A-labels (`xn--bcher-kva.example`). Policy input accepts ASCII names only and
+rejects Unicode names and terminal dots. [RFC 6376 §3.5](https://www.rfc-editor.org/rfc/rfc6376#section-3.5)
+requires A-labels for `d=` and defines `domain-name = sub-domain 1*("." sub-domain)`,
+which excludes a trailing dot; mailauth's strict grammar agrees. No permissive
+trailing-dot normalization is justified by that grammar.
+
+A freshly signed UTF-8 From domain (`bücher.example`) with matching A-label `d=`
+has valid From syntax and a passing cryptographic signature, but BayLeaf rejects
+it as `no-qualifying-signature`: alignment currently lowercases the extracted From
+domain without IDNA conversion. This is a measured internationalized-mail
+interoperability limitation, not a signature failure or an authorization bypass.
+For the supported contract, use the ASCII A-label in policy, `d=` and From domain.
+The regression matrix asserts both the valid signature and the policy rejection;
+it does not mutate an already-signed `d=` or copy library internals.
+
 Anything else is `trusted: false` with a reason code. The production-facing
 `verifyEmailDomain` wrapper fixes strict mode and the DoH resolver and returns
 only pass/domain/selector/algorithm (or failure/transience), never full signature
