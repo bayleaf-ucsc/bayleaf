@@ -153,6 +153,14 @@ API to keep a retired capability appearing functional.
 
 ## Refinement log
 
+- 2026-10-21 (desktop data boundary): Put the P3 ceiling and P4 exclusions
+  in both the platform shim's advertised description and body, not only the linked
+  reference. Qualify PII by UCSC classification; Sealed is not a P4 exception.
+  Bump all deployment variants and test disabled-feature prose without treating
+  a safety restriction as an availability advertisement. Docs tests passed; deployed
+  as `29a6fb1e-3ea8-46d6-bd9a-f3f2e623e249`, with live shim text and catalog
+  version `6-inboxes` verified. Existing-client refresh remains unverified.
+
 - 2026-10-21 (optional email domains): Initial-release enablement needs no client
   compatibility layer. Keep omitted/null as the intentional open-email default;
   distinguish verified domain authority from individual senders across discovery.

@@ -115,7 +115,7 @@ try {
    assert.equal(catalogResponse.status, 200, 'Catalog is public');
    const catalog = await catalogResponse.json();
     assert.deepEqual(catalog.skills, [
-      { name: 'bayleaf-platform', version: '5-inboxes', files: ['bayleaf-platform.md'] },
+      { name: 'bayleaf-platform', version: '6-inboxes', files: ['bayleaf-platform.md'] },
       { name: 'bayleaf-inboxes', version: '3', files: ['bayleaf-inboxes.md'] },
     ]);
    const skillResponse = await get(catalogBase + 'bayleaf-platform/bayleaf-platform.md');
@@ -123,11 +123,20 @@ try {
    assert.match(skillResponse.headers.get('content-type'), /text\/markdown/);
    const skill = await skillResponse.text();
    assert.match(skill, /^---\nname: bayleaf-platform\ndescription: .+\n---\n/);
-   assert.ok(skill.length < 1800, 'Keep discovery slim');
+   assert.ok(skill.length < 2500, 'Keep discovery slim, including the data-protection boundary');
+   assert.match(skill.match(/^description: (.+)$/m)[1], /P3 maximum; no P4 data/);
+   for (const phrase of ['never P4', 'CUI, CTI, CDI, PHI, P4-classified PII',
+     'including Inboxes and Sealed inference', 'not blanket authorization',
+     'FERPA', 'If classification is uncertain, ask before transferring data',
+     'https://its.ucsc.edu/get-support/it-guides/data-and-it-resource-classification/data-protection-levels/']) {
+     assert.ok(skill.includes(phrase), phrase);
+   }
    assert.ok(skill.includes('inboxes for email or webhooks while your computer is off'));
     assert.ok(skill.includes('load bayleaf-inboxes'));
    const alternateSkill = await (await get(catalogBase + 'bayleaf-platform/bayleaf-platform.md', { 'X-Test-Deployment': 'alternate' })).text();
-    assert.ok(!/inbox/i.test(alternateSkill), 'Disabled inboxes must not be advertised by the desktop skill');
+    assert.ok(!alternateSkill.includes('load bayleaf-inboxes') && !alternateSkill.includes('inboxes for email'),
+      'Disabled inboxes must not be advertised as available by the desktop skill');
+    assert.ok(alternateSkill.includes('never P4'), 'Data boundary also applies when inboxes are disabled');
     const inboxSkillPath = catalogBase + 'bayleaf-inboxes/bayleaf-inboxes.md';
     const inboxResponse = await get(inboxSkillPath);
     assert.equal(inboxResponse.status, 200);
@@ -163,13 +172,13 @@ try {
     }
     const pilotHeaders = { 'X-Test-Deployment': 'pilot' };
     const pilotCatalog = await (await get(catalogBase + 'index.json', pilotHeaders)).json();
-    assert.equal(pilotCatalog.skills.find(s => s.name === 'bayleaf-platform').version, '4-inboxes-pilot');
+    assert.equal(pilotCatalog.skills.find(s => s.name === 'bayleaf-platform').version, '6-inboxes-pilot');
     assert.equal(pilotCatalog.skills.find(s => s.name === 'bayleaf-inboxes').version, '1-pilot');
     assert.ok((await (await get(inboxSkillPath, pilotHeaders)).text()).includes('Operator-only pilot'));
     assert.ok((await (await get('/docs/inboxes.md', pilotHeaders)).text()).includes('Other accounts receive 404'));
     const disabledHeaders = { 'X-Test-Deployment': 'alternate' };
     const disabledCatalog = await (await get(catalogBase + 'index.json', disabledHeaders)).json();
-    assert.deepEqual(disabledCatalog.skills, [{ name: 'bayleaf-platform', version: '4', files: ['bayleaf-platform.md'] }]);
+    assert.deepEqual(disabledCatalog.skills, [{ name: 'bayleaf-platform', version: '6', files: ['bayleaf-platform.md'] }]);
     assert.equal((await get(inboxSkillPath, disabledHeaders)).status, 404, 'Stale skill URL must not claim disabled access');
     assert.ok((await (await get('/docs/inboxes.md', disabledHeaders)).text()).includes('Status: not enabled'));
    for (const phrase of ['https://api.bayleaf.dev/llms.txt', 'Google Workspace', 'Canvas LMS',

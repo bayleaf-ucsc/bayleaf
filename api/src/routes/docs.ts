@@ -52,7 +52,7 @@ docsRoutes.get('/SKILL.md', (c) => c.redirect('/llms.txt', 301));
 docsRoutes.get('/opencode/skills/index.json', (c) => c.json({
   skills: [
     { name: 'bayleaf-platform', version: c.env.INBOXES_ENABLED === 'true'
-      ? (c.env.INBOXES_PILOT_OWNER ? '4-inboxes-pilot' : '5-inboxes') : '4', files: ['bayleaf-platform.md'] },
+      ? (c.env.INBOXES_PILOT_OWNER ? '6-inboxes-pilot' : '6-inboxes') : '6', files: ['bayleaf-platform.md'] },
     ...(c.env.INBOXES_ENABLED === 'true' ? [{ name: 'bayleaf-inboxes',
       version: c.env.INBOXES_PILOT_OWNER ? '1-pilot' : '3', files: ['bayleaf-inboxes.md'] }] : []),
   ],
@@ -60,10 +60,17 @@ docsRoutes.get('/opencode/skills/index.json', (c) => c.json({
 
 docsRoutes.get('/opencode/skills/bayleaf-platform/bayleaf-platform.md', (c) => c.text(`---
 name: bayleaf-platform
-description: Find BayLeaf platform setup and capabilities: Google Workspace, Canvas LMS, remote Sandbox, web tools, inference access, privacy,${c.env.INBOXES_ENABLED === 'true' ? ' inboxes for email or webhooks while your computer is off,' : ''} or switching providers and disconnecting BayLeaf. Use when these integrations could help or the user wants to change their setup, not for ordinary inference use.
+description: Find BayLeaf platform setup and capabilities: Google Workspace, Canvas LMS, remote Sandbox, web tools, inference access, privacy,${c.env.INBOXES_ENABLED === 'true' ? ' inboxes for email or webhooks while your computer is off,' : ''} or switching providers and disconnecting BayLeaf. Use when these integrations could help or the user wants to change their setup, not for ordinary inference use. P3 maximum; no P4 data (CUI, CTI, CDI, PHI or P4-classified PII).
 ---
 
 # BayLeaf platform
+
+BayLeaf is security-cleared for data up to UCSC Protection Level 3 (P3), never P4.
+Do not send, upload or arrange receipt of CUI, CTI, CDI, PHI, P4-classified PII or
+other P4 data through any BayLeaf service, including Inboxes and Sealed inference.
+This is not blanket authorization for regulated uses; FERPA and other applicable
+rules still apply. If classification is uncertain, ask before transferring data.
+Classification: https://its.ucsc.edu/get-support/it-guides/data-and-it-resource-classification/data-protection-levels/
 
 Fetch https://api.bayleaf.dev/llms.txt when a relevant integration or setup question arises.
 It covers user-authorized Google Workspace and Canvas LMS CLIs, your remote BayLeaf
