@@ -9,10 +9,10 @@
       "title": "Lathe",
       "author": "Adam Smith",
       "author_url": "https://adamsmith.as",
-      "description": "Coding agent tools (lathe, bash, read, write, edit, glob, grep, view, interpret, delegate, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.",
-      "required_open_webui_version": "0.11.0",
-      "requirements": "httpx, httpx-ws, pydantic-ai-slim[openai]~=2.5, cachetools",
-      "version": "0.32.0",
+      "description": "Coding agent tools (lathe, bash, read, write, edit, glob, grep, view, interpret, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.",
+      "required_open_webui_version": "0.12.0",
+      "requirements": "httpx, pydantic>=2, cachetools, PyYAML",
+      "version": "1.1.0",
       "licence": "MIT"
     },
     "has_user_valves": true
@@ -35,7 +35,7 @@
   "specs": [
     {
       "name": "bash",
-      "description": "Execute a bash command in the sandbox. Non-interactive only.\nCommands that finish within the foreground window return output directly.\nLong-running commands auto-background and return a descriptor with log\nfile paths for monitoring. Text previews are capped at 50 KiB. Full logs and\nexit status remain readable for 24 hours after completion, until a later\nbash call reaps expired evidence. Sandbox stop/restart clears these files.\n\nWhen creating git commits, add an Assisted-by: Lathe trailer to the\ncommit message to acknowledge AI assistance.",
+      "description": "Execute a bash command in the sandbox. Non-interactive only.\nEach call uses a fresh non-login Bash shell; rc files are not sourced and\nshell state (such as exports and cd) does not persist between calls.\nRuns with set -e -o pipefail: an unhandled command or pipeline failure can\nabort the remaining script. Handle expected probe failures explicitly\n(for example, with if); use && for commands with dependent prerequisites.\nNonzero command exits return an exit status and captured output, distinct\nfrom errors launching or observing execution.\nCommands that finish within the foreground window return output directly.\nLong-running commands auto-background and return a descriptor with log\nfile paths for monitoring. Text previews are capped at 50 KiB. Full logs and\nexit status remain readable for 24 hours after completion, until a later\nbash call reaps expired evidence. Sandbox stop/restart clears these files.\n\nFor first-time application setup, read lathe(manpage=\"services\") before\ninstalling or launching; it routes to relevant skills and the configured\nhandbook. Inspection commands may come first.",
       "parameters": {
         "properties": {
           "command": {
@@ -60,42 +60,8 @@
       }
     },
     {
-      "name": "delegate",
-      "description": "Run bounded autonomous work with the same model and shared sandbox.\nHas bash/read/write/edit/glob/grep, not user interaction or expose.\nReturns a summary or background sidecar paths; see lathe(manpage=\"delegate\").",
-      "parameters": {
-        "properties": {
-          "task": {
-            "description": "Specific goal, constraints, and findings; the sub-agent cannot ask questions.",
-            "type": "string"
-          },
-          "context_files": {
-            "default": [],
-            "description": "Absolute sandbox reference files; missing or aggregate >50 KiB (including headings/separators) fails before inference, never silently clips.",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "max_steps": {
-            "default": 10,
-            "description": "Inference-call budget, 1–30 (default 10). At 1, no tools: supplied-context analysis only. Use >=2 for sandbox work.",
-            "type": "integer"
-          },
-          "foreground_seconds": {
-            "default": -1,
-            "description": "Wait before auto-backgrounding, 0–300 seconds; 0 backgrounds immediately, -1 uses default 30.",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "task"
-        ],
-        "type": "object"
-      }
-    },
-    {
       "name": "destroy",
-      "description": "Permanently destroy the sandbox VM. Irreversible.\nPrompts the user for confirmation before proceeding.\nIf a persistent volume is attached, its data is preserved and will reappear in the next sandbox.",
+      "description": "Permanently destroy the sandbox VM. Irreversible.\nPrompts the user for confirmation before proceeding.",
       "parameters": {
         "properties": {},
         "type": "object"
@@ -134,20 +100,20 @@
     },
     {
       "name": "expose",
-      "description": "Expose a sandbox service. Named targets manage startup and recovery;\nhttp:<port> requires an already-running service. ttyd and code-server are private-only.",
+      "description": "Expose an already-running HTTP/WebSocket service. Does not install or start applications.\nFor user file upload/download, interactive shells, browser VS Code IDEs,\nor static websites, first read lathe(manpage=\"services\") for lifecycle\nguidance and optional handbook references, then launch with bash.",
       "parameters": {
         "properties": {
           "target": {
-            "description": "\"dufs\" or \"dufs:/absolute/path\" for file transfer, \"site:/absolute/path\" for static files, \"ttyd\" for a shell, \"code-server\" or \"code-server:/absolute/path\" for an IDE, or \"http:<port>\" for an existing service (port 3000–9999). Named directory roots must be within /home/daytona/workspace; bare names use the workspace. An IDE root is not filesystem confinement.",
+            "description": "\"http:<port>\" for a service listening on port 1024–65535. Start it with bash first. See lathe(manpage=\"services\") for lifecycle and access safeguards.",
             "type": "string"
           },
           "access": {
-            "description": "Required policy: \"private\" authenticates the owner and fails closed; \"public\" allows anyone with the URL and may fall back to a direct bearer URL. Choose private unless the user explicitly requests public/world access.",
+            "description": "Required policy: \"private\" authenticates the owner and fails closed; \"public\" allows anyone with the URL and may fall back to a direct bearer URL. Choose private unless the user explicitly requests public/world access. Shells and IDEs should always be private.",
             "type": "string"
           },
           "tag": {
             "default": "",
-            "description": "Optional untrusted hostname hint, such as \"vscode\" or \"files\": lowercase letters, digits, and internal hyphens, max 32 characters. The deployment may ignore it. Hostname text never proves identity or purpose.",
+            "description": "Optional untrusted hostname hint: lowercase letters, digits, internal hyphens, max 32 characters. Hostname text never proves identity or purpose.",
             "type": "string"
           },
           "upstream_headers": {
@@ -155,7 +121,7 @@
               "type": "string"
             },
             "default": {},
-            "description": "Optional fixed application headers for HTTP and WebSocket forwarding, independent of public/private access. Replaces browser values case-insensitively; supports Authorization. Requires a compatible wrapper, with no direct fallback. Max 16 headers, 64-byte names, printable ASCII values up to 4096 bytes, 8192 bytes total. Routing/transport headers are forbidden. Values remain in tool arguments; see lathe(manpage=\"services\") for trust boundaries.",
+            "description": "Fixed application headers for HTTP/WebSocket forwarding, independent of access. Replaces browser values case-insensitively; supports Authorization. Requires a compatible wrapper, never direct fallback. Max 16 headers, 64-byte names, printable ASCII values up to 4096 bytes, 8192 bytes total. Routing/transport headers forbidden. Values remain in tool arguments; see services manual for trust boundaries.",
             "type": "object"
           }
         },
@@ -168,11 +134,11 @@
     },
     {
       "name": "glob",
-      "description": "Search for files in the sandbox workspace by glob pattern.\nReturns concrete absolute paths and an exact count of discovered files.\nScans the full scope, but retains at most max_lines paths. The header\nreports omissions; narrow the pattern to see other files. Truncated\nresults are a traversal-order sample, not a globally sorted prefix.",
+      "description": "Search for files in the sandbox workspace by glob pattern.\nThin ripgrep --files adapter: returns bounded absolute paths, not exhaustive\ncounts. Uses rg ignore/hidden-file rules and traversal order.",
       "parameters": {
         "properties": {
           "pattern": {
-            "description": "Comma-separated globs, !-prefix to exclude. Supports *, ?, character classes, and ** as a complete component for directory recursion; brace expansion is not supported. Examples: '**/*.py', 'src/**/*.ts,!**/node_modules/**'.",
+            "description": "One workspace-relative ripgrep glob, e.g. '**/*.py' or '*.{js,ts}'. No comma-separated pattern language. rg supports braces and ! exclusion. Use bash with rg for multiple globs, hidden/ignored files, or other roots.",
             "type": "string"
           },
           "max_lines": {
@@ -189,16 +155,16 @@
     },
     {
       "name": "grep",
-      "description": "Search file contents in the sandbox workspace by regex.\nReturns concrete absolute path:line: text hits and counts of matching\nlines and files. Scans the full scope, skipping binary/unreadable files,\nbut retains at most max_lines hits (text clipped to 200 characters).\nThe header reports omissions; narrow files or pattern to see other hits.\nTruncated results are a traversal-order sample, not a representative one.",
+      "description": "Search file contents in the sandbox workspace by regex.\nThin ripgrep adapter: returns bounded absolute path:line:text hits with\nrg regex, ignore and binary-file semantics. Stops at the result limit,\nwithout exhaustive counts. Long matches use rg's 200-column preview.",
       "parameters": {
         "properties": {
           "pattern": {
-            "description": "Regex to search for (e.g. 'import.*asyncio', 'TODO|FIXME').",
+            "description": "Ripgrep regex, e.g. 'import.*asyncio' or 'TODO|FIXME'. No Python lookaround/backreferences.",
             "type": "string"
           },
           "files": {
             "default": "**/*",
-            "description": "File scope as comma-separated globs (default: '**/*'). !-prefix to exclude. Supports *, ?, character classes, and ** as a complete component for directory recursion; brace expansion is not supported.",
+            "description": "One workspace-relative ripgrep glob (default: '**/*'); braces supported. Use bash with rg for multiple globs, hidden/ignored files, or other roots.",
             "type": "string"
           },
           "max_lines": {
@@ -214,16 +180,8 @@
       }
     },
     {
-      "name": "handoff",
-      "description": "Get formatting instructions for a user-approved handoff to a fresh chat. Write it as reply text, then end this response; later user requests may continue here.",
-      "parameters": {
-        "properties": {},
-        "type": "object"
-      }
-    },
-    {
       "name": "interpret",
-      "description": "Run Python code in a persistent REPL session. Variables, imports, and\ndefinitions survive across calls within the same conversation.\nUse this for iterative data exploration, incremental computation, or\nany workflow where you need state to persist between executions.\nFor one-shot shell commands or non-Python work, prefer bash() instead.\nStream output is a 50 KiB preview; excess output is discarded explicitly.\nWrite large results to a sandbox file for full access via read() or expose().",
+      "description": "Run Python code in a persistent REPL session. Variables, imports, and\ndefinitions survive across calls within the same conversation, across OWUI\nworkers and toolkit reloads. Use this for iterative data exploration and\nincremental computation. For one-shot scripts, prefer bash().\nOne execution per conversation at a time; overlapping calls return busy.\nExecution and its bounded result survive an OWUI worker exiting. Completed\nrun records remain in the sandbox for 24 hours, until a later submission.\nOutput is a 50 KiB preview; excess output is discarded explicitly.\nWrite large results to a sandbox file for read() or expose().",
       "parameters": {
         "properties": {
           "code": {
@@ -232,7 +190,7 @@
           },
           "timeout": {
             "default": 120,
-            "description": "Max execution time in seconds (default: 120). Use 0 for no limit.",
+            "description": "Max execution time in seconds (default: 120). Use 0 for no limit. A timeout discards Python memory; partial effects may remain.",
             "type": "integer"
           }
         },
@@ -249,7 +207,7 @@
         "properties": {
           "manpage": {
             "default": "overview",
-            "description": "\"overview\" for safeguards and page index; \"interpret\", \"delegate\", \"background\", \"services\", \"egress\", \"handoff\" for details; \"version\" for installed version.",
+            "description": "\"overview\" for safeguards and page index; \"interpret\", \"background\", \"services\", \"egress\" for details; \"version\" for installed version.",
             "type": "string"
           }
         },
@@ -258,7 +216,7 @@
     },
     {
       "name": "onboard",
-      "description": "Load project listing, AGENTS.md, and skill catalog; also searches ~/.agents/.\nRead relevant SKILL.md files for full instructions. Skip repeat onboarding\nwhen the supplied context already covers this project.",
+      "description": "Load project listing, AGENTS.md, and shared, Lathe-specific, and project skills.\nRead relevant SKILL.md files for full instructions. Skip repeat onboarding\nwhen the supplied context already covers this project.",
       "parameters": {
         "properties": {
           "path": {

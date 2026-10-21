@@ -644,13 +644,42 @@ The most substantial toolkit on the deployment. Source:
 but **not bound to any model by default** — users enable it per-chat via the
 tool picker in the chat composer.
 
-**Current version: 0.32.0** (2026-10-12), byte-identical to upstream
-commit `b90abaf`. `expose` requires an explicit
+**Current version: 1.1.0** (2026-10-21), byte-identical to upstream
+commit `17a10b136b409d6b6e31572f12f1146ddc78d8b7`. `expose` requires an explicit
 `private` or `public` policy and accepts
 an optional untrusted hostname tag, which BayLeaf ignores. Private is the
 default guidance and fails closed; headerless public calls may fall back to Daytona's direct
 signed URL if wrapping fails. The installation credential is an admin valve
 backed by the API's `PREVIEWS_INSTALLATION_KEY` Worker Secret.
+
+**Upgrade (2026-10-21):** promoted Adam's personally used upstream 1.1.0
+(SHA-256 `d5fea4351de5cb065a2d1696c729e0358d79740a878ed29a2dcb3a0d0eeb0937`).
+All 510 upstream offline tests passed. Production source and complete generated
+schema matched; supported existing valves, Code Sandbox name, and grants were
+preserved, and health passed without restart. New `onboarding_instructions` and
+`handbook_url` valves remain empty. Dependencies are now `httpx`, `pydantic>=2`,
+`cachetools`, and `PyYAML`; Lathe no longer requires Pydantic AI or httpx-ws.
+Rollback and full private before/after snapshots:
+`~/.tokens/bayleaf-lathe-rollout-20261021`.
+Full pre/post pulls found only Lathe source/schema changes before the companion
+Code Sandbox skill update. The skill's updated guidance was deployed and read
+back, preserving its existing live decorative suffixes outside the repo copy.
+
+Python sessions are now owned by a supervisor inside the sandbox, keyed by
+deployment, caller, conversation, and sandbox. Worker-local caches no longer
+select interpreter identity. Old Daytona interpreter variables are not migrated:
+users must rerun setup. Stop/restart or timeout loses Python memory, not saved
+workspace files. Session journals and bounded code/output records live under
+`/home/daytona/.local/share/lathe/python`; completed records expire on later
+submissions after at least 24 hours. Uncertain execution must not be blindly
+replayed. This does not establish live multi-worker OWUI qualification.
+
+`delegate`, `handoff`, built-in volume support, and managed application target
+shortcuts have been removed. `expose` now only publishes an already-running
+`http:<port>` service; optional applications are installed/launched with `bash`.
+Adam confirmed production playtesting works. Automated live model-mediated
+qualification was not run: the upstream deployment collector still lacks
+chat/message filtering and must not use Adam's admin identity.
 
 **Refactor upgrade (2026-10-12):** promoted the unchanged personally used 0.32.0
 build (SHA-256 `d7d26ad8151fa0a85e76fadc583585060a001863c4059c59f750f4ea907c45b3`).
@@ -743,8 +772,8 @@ The isolated suite cleaned up its separate staging toolkit and sandbox.
 Human workload playtesting remains separate.
 
 **What it does.** Gives any OWUI model a coding-agent tool surface — `lathe`,
-`bash`, `read`, `write`, `edit`, `glob`, `grep`, `view`, `interpret`, `delegate`,
-`onboard`, `expose`, `handoff`, `destroy` — executing against per-user sandbox VMs
+`bash`, `read`, `write`, `edit`, `glob`, `grep`, `view`, `interpret`,
+`onboard`, `expose`, `destroy` — executing against per-user sandbox VMs
 ([Daytona](https://www.daytona.io/)) with transparent lifecycle management. Each
 user gets a single persistent sandbox identified by email; the sandbox is
 created lazily on first tool call and survives across conversations.
@@ -774,18 +803,17 @@ layers remain planned in issues
 | `grep(pattern, files, max_lines)` | Search file contents in the workspace by regex |
 | `view(path)` | Load a PNG, JPEG, GIF, or WebP image into a vision-capable model's context (up to 4 MiB) |
 | `interpret(code, timeout)` | Run Python in a persistent REPL session (variables and imports persist across calls) |
-| `delegate(task, context_files, max_steps, foreground_seconds)` | Delegate a multi-step task to an autonomous sub-agent with the same tools; long delegations auto-background like `bash` |
 | `onboard(path)` | Load project context (directory listing, AGENTS.md, skill catalog) for agentic workflows |
-| `expose(target, access, tag, upstream_headers)` | Expose dufs, static files, ttyd, code-server, or an existing HTTP service; `access` is required (`private` or `public`), `tag` and fixed application `upstream_headers` are optional. Nonempty headers require acknowledged wrapper injection in either access mode. Dufs and code-server accept `:/absolute/path` roots within the workspace; managed ttyd and code-server are private-only |
-| `handoff()` | Prepare a handoff document for continuing the work in a fresh conversation |
+| `expose(target, access, tag, upstream_headers)` | Publish an already-running `http:<port>` service; `access` is required (`private` or `public`), `tag` and fixed application `upstream_headers` are optional. Nonempty headers require acknowledged wrapper injection in either access mode. Start applications with `bash`; keep terminals and IDEs private |
 | `destroy()` | Permanently destroy the sandbox VM (irreversible) |
 
 **Sandbox lifecycle.** Sandboxes idle-stop after 15 min, archive after 60 min
 past stop. The first tool call in a conversation transparently creates, starts,
-or unarchives the sandbox as needed. BayLeaf disables Lathe's optional persistent
-volume: the VM filesystem survives stop/archive, but deleting the sandbox is
-final. Ephemeral command/delegate sidecars now live under `/dev/shm/lathe` and
-are lost on stop; reusable dufs/code-server installations live under `/tmp/lathe`.
+or unarchives the sandbox as needed, but BayLeaf disables automatic creation
+(see provisioning policy below). Lathe no longer supports built-in persistent
+volumes: the VM filesystem survives stop/archive, but deleting the sandbox is
+final. Ephemeral command and interpreter runtime state lives under `/dev/shm/lathe`
+and is lost on stop; interpreter journals live separately in the VM filesystem.
 
 **Transient previews.** HTTP `expose` calls register with
 `https://api.bayleaf.dev/previews/registrations`. Private access requires the
@@ -809,7 +837,10 @@ BayLeaf's default sandbox size at that time. On 2026-09-30, Adam approved
 2-GiB RAM for new Chat sandboxes after his expected workload hit the 1-GiB
 limit; existing sandboxes remain unchanged. The off-ramp policy still applies.
 
-**Project-rooted services (Lathe 0.30.7).** `dufs:/home/daytona/workspace/project`
+**Historical project-rooted services (Lathe 0.30.7, removed in 1.0).** These
+managed target shortcuts no longer work in 1.1.0; install and launch services
+with `bash`, then publish `http:<port>`. The former behavior was:
+`dufs:/home/daytona/workspace/project`
 serves a selected directory; `code-server:/home/daytona/workspace/project`
 opens the IDE there. Bare names use the whole workspace. Named service roots
 must exist inside the workspace after symlink resolution. Each dufs/code-server
@@ -841,8 +872,9 @@ committed, selected non-secret overrides may be tracked):
 - `auto_stop_minutes` — Idle timeout (default: 15)
 - `auto_archive_minutes` — Archive delay after stop (default: 60)
 - `auto_delete_minutes` — Daytona stopped-state deletion interval (-1 = never); inactive while automatic creation is disabled
-- `persistent_volume` — Mount a persistent S3/FUSE volume at `/home/daytona/volume` (default: `true`; disable for deployments with limited data retention)
-- `foreground_timeout_seconds` — Seconds to wait for bash/delegate before auto-backgrounding (default: 30)
+- `onboarding_instructions`: optional agent-visible admin guidance (empty on BayLeaf; never put secrets here)
+- `handbook_url`: optional agent handbook reference (empty on BayLeaf; Lathe does not fetch it)
+- `foreground_timeout_seconds` — Seconds to wait for bash before auto-backgrounding (default: 30)
 - `auto_create_sandbox` — Automatically create a sandbox when none exists for the user (default: `true`; disable for deployments where sandboxes are provisioned externally)
 - `sandbox_missing_message` — Custom message returned to the agent when no sandbox exists and auto-create is off (empty falls back to a generic message)
 
@@ -1149,7 +1181,7 @@ Slides are scope-ready in the capability registry but have no handlers yet.
 Several tools require API keys configured as "valves" in the OWUI admin panel.
 These are **never** committed to this repo:
 
-- `lathe`: `daytona_api_key`, `daytona_api_url`, `daytona_proxy_url`, `deployment_label`, `auto_stop_minutes`, `auto_archive_minutes`, `auto_delete_minutes`, `persistent_volume`, `foreground_timeout_seconds`, `auto_create_sandbox`, `sandbox_missing_message`, `sandbox_create_overrides`, `preview_wrapper_url`, `preview_wrapper_key`, `preview_expiry_seconds`
+- `lathe`: `daytona_api_key`, `daytona_api_url`, `daytona_proxy_url`, `deployment_label`, `auto_stop_minutes`, `auto_archive_minutes`, `auto_delete_minutes`, `foreground_timeout_seconds`, `auto_create_sandbox`, `sandbox_missing_message`, `sandbox_create_overrides`, `preview_wrapper_url`, `preview_wrapper_key`, `preview_expiry_seconds`, `onboarding_instructions`, `handbook_url`
 - `gws_toolkit` — `google_client_id`, `google_client_secret`, `base_url`, `enabled_capabilities`
 - `web_context_toolkit` — `tavily_api_key`, `search_depth`, `include_answer`, `max_results`, `extract_depth`
 - `help_toolkit` — `INVITE_SIGNING_KEY` (optional; falls back to `WEBUI_SECRET_KEY` if empty)
@@ -1160,7 +1192,7 @@ These are **never** committed to this repo:
 
 **Non-secret, non-default valve values** (safe to record as recovery backup):
 
-- `lathe`: `deployment_label` = `chat.bayleaf.dev`, `auto_delete_minutes` = `129600` (90 days), `persistent_volume` = `false`
+- `lathe`: `deployment_label` = `chat.bayleaf.dev`, `auto_delete_minutes` = `129600` (90 days); built-in volume support removed in 1.0 (previously disabled here)
 
 ---
 

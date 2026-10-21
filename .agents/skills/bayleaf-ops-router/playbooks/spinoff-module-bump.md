@@ -85,6 +85,15 @@ may not match the actual pre-upgrade deployment.
 
 ## Refinement log
 
+- 2026-10-21: Promoted personally used, byte-exact upstream Lathe 1.1.0 with
+  510 offline tests passing. Source/schema, supported valves, name/grants and
+  health passed. Removed application shortcuts and interpreter migration required
+  updating the Code Sandbox skill and retention guidance. Preserved existing live
+  skill decorations without importing them into the repo. The upstream deployment
+  collector still lacks chat/message filtering; skipped admin-identity live tests,
+  Adam subsequently confirmed production playtesting works. Source-only deploy avoided the
+  historical rollout helper's unnecessary preview-valve rewrite.
+
 - 2026-10-20: GWS multi-worker work was upstream development, not a toolkit
   promotion. The isolated BayLeaf Docker lab mounts upstream source read-only;
   BayLeaf's vendored/live copies stay untouched. Redis state tests do not qualify

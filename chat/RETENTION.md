@@ -397,8 +397,8 @@ entirely within the Daytona-managed sandbox VM filesystem
 (`/home/daytona/workspace`): project files, cloned repos, build artifacts,
 installed packages.
 
-**No persistent volume.** The `persistent_volume` valve is set to `false` on
-this deployment. There is no S3/FUSE-backed storage that survives sandbox
+**No persistent volume.** Lathe 1.1.0 has no built-in volume support (the former
+`persistent_volume` valve was disabled here). There is no S3/FUSE-backed storage that survives sandbox
 destruction. When a sandbox is deleted, all user data within it is permanently
 removed.
 
@@ -412,9 +412,16 @@ removed.
 | **Deleted** | **90 days after archive (`auto_delete_minutes` = 129600)** | **Nothing: permanently removed** |
 
 Users who need to preserve sandbox artifacts long-term should copy them out
-via `expose(target="dufs")`, code-server, or a Git repository before the 90-day
+via a private file server started with `bash` and published with
+`expose(target="http:<port>", access="private")`, or a Git repository before the 90-day
 inactivity window closes. Any tool call resets the idle clock, so active users
 are never affected.
+
+Lathe 1.1.0 also writes Python session journals and bounded run records inside
+the sandbox, including code and output. Completed run records are retained for
+at least 24 hours, with expiry checked on later submissions; this is not an
+independent 24-hour deletion job. Sandbox deletion removes this data with the
+rest of the filesystem. Python memory itself is lost on stop/restart or timeout.
 
 This aligns with the 90-day retention window for conversation data (§2), giving
 users a consistent expectation: inactive data is cleaned up after one quarter

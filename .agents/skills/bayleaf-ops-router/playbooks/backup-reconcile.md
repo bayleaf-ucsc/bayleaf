@@ -92,6 +92,11 @@ through the appropriate playbook, don't paper over it in the backup.
 
 ## Refinement log
 
+- 2026-10-21: Full private pre/post Lathe 1.1.0 pulls found only its source/schema
+  changes before the companion skill update. Kept unrelated working-tree edits
+  untouched and retained pre-existing decorative live skill suffixes during the
+  surgical guidance update rather than silently discarding them.
+
 - 2026-10-18: Post-v0.12.3 recovery pull captured all four resource types after
   token renewal; no fresh pre-upgrade API pull was possible during the outage.
   Tool/function sources and normalized tool schemas matched the repo; model
