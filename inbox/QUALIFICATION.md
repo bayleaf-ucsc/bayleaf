@@ -10,10 +10,10 @@ domain restrictions. Remaining tests are accepted limitations, not access gates.
 
 | Component | Version / state |
 |---|---|
-| API | `50f2244e-53e4-4e5e-a8e0-e0a56e031bb6`, 100% traffic |
+| API | `5b6fe06c-0797-4f0e-a48e-6b3e97941b19`, 100% traffic |
 | Receiver | `bbdfbfc6-079b-4fa2-9a0f-74eea25c2f47`, 100% traffic; optional restricted creation enabled |
 | Collector export vocabulary | `ba47b369-67c7-4110-acbd-c5521898ab34` qualification release |
-| Published adapters | OpenCode `ebf705d43dfb6088329149619e5a68bf5eff3c28`; Nanobot `e1a7d014621f84ca0a0218c3d519bcd48d0f5f11`; parent `39bf426` |
+| Published adapters | OpenCode `5083f7130c02e9a780accf39e65f1520a95c7502`; Nanobot `751acb6af4bd5eb301fab9ff2885ea1854dc44cd` |
 | Migrations | Inboxes `0001`–`0007`, API through `0019` applied |
 
 Community release uses authentic published adapter builds. API/receiver settings,
@@ -26,6 +26,20 @@ For that release, downloaded receiver/API modules matched authentic normal build
 the only settings change was the receiver creation switch. Public workflow,
 llms/OpenAPI/apex and the authenticated published OpenCode pin were read back.
 No 100-inbox live load test occurred.
+Hosted creation-policy release: both tools now accept optional `email_auth` domains
+and same-signature selector pins; omitted/null email stays unrestricted, HTTP
+policy is rejected before network access. Immutable domain authority is not person
+identity. Readback preserves policy and effective restricted-byte ceiling. OpenCode
+32 tests and Nanobot suite passed, including approvals/quarantine regressions.
+Real isolated OpenCode v2.1.2 and MCP inventories verified the published tool schemas
+(11/9 inbox tools), seven native rejection/approval paths including restricted
+creation, and mode-0600 inert downloads. Published Nanobot live calls verified
+omitted/null/restricted creation and canonical list readback; limits reported
+creation enabled and 1 MiB. Three synthetic inbox destructions acknowledged; no
+SMTP/inference, physical-finalization claim or managed-user workspace mutation.
+All uploaded API modules match authentic builds; only adapter pin/assets changed
+from `50f2244e`. API/receiver settings and bindings are unchanged; receiver was not
+redeployed. Real managed-browser UI/gateway parity remains separate.
 Default owner capacity is 100, including destroying rows. Read effective
 `/inboxes/limits`; historical fixture sizes are not current quota promises.
 All four deployed API modules and the receiver module match normal published-source
@@ -41,7 +55,7 @@ trials establish their measured paths, not a new full trial on each release.
 
 | Capability | Evidence | Exact remaining boundary |
 |---|---|---|
-| Optional email policy creation | Live own-key create/readback for omitted, explicit null and restricted policy; uppercase domain/pin canonicalization; malformed domains/pins, HTTP policy and PATCH policy rejected; three exact synthetic smoke inboxes destroyed. Receiver 140 pass/2 optional skips; API integration 105 checks, docs and typecheck pass. Real local signed fixtures exercise verifier, reservation and D1/R2 storage; transient DNS SERVFAIL, oversize response, HTTP 503 and timeout throw without permanent rejection or storage | No second real owner's credential used: cross-owner denial is integrated local evidence. Full production SMTP/storage acceptance, oversize and retry matrix still pending. Hosted adapter optional creation parameter requires its separate package release; existing published adapter pins remain unchanged |
+| Optional email policy creation | Live own-key create/readback for omitted, explicit null and restricted policy; uppercase domain/pin canonicalization; malformed domains/pins, HTTP policy and PATCH policy rejected; exact synthetic smoke inboxes destroyed. Receiver 140 pass/2 optional skips; API integration 105 checks, docs and typecheck pass. Hosted published schemas, native approval paths and live Nanobot policy creation/readback now pass (above). Real local signed fixtures exercise verifier, reservation and D1/R2 storage; transient DNS SERVFAIL, oversize response, HTTP 503 and timeout throw without permanent rejection or storage | No second real owner's credential used: cross-owner denial is integrated local evidence. Full production SMTP/storage acceptance, oversize and retry matrix still pending. Managed UI/gateway parity and independent GLM enforcement review remain separate |
 | Community enablement | Local facade accepts the previously pilot-excluded synthetic owner with the empty restriction; ordinary key and sandbox credentials derive the same account generation; Campus Pass and genuine temporary tokens denied; 99 integrated checks and receiver owner-isolation/restricted-creation tests passed. Live configuration, public workflow/llms/OpenAPI/apex, authenticated plugin pin and no-store limits verified: max 100, retained 1, remaining 99 | No second actual community credential was available: nonoperator access is local evidence plus deployed config/module readback, not a second-account live trial. Receiver suite 140 passed/2 optional skips; docs, typecheck and four diagnostics tests passed |
 | HTTP reception and ownership | Live create/credential/receive/read/destroy; owner/sender role separation; malformed subpath JSON fix (initial AX 2026-10-20) | Formative synthetic AX, not general client parity |
 | Effective limits | Live no-store GET: max 100, retained 6, remaining 94 at readback; anonymous 401; native Nanobot limits tool passed | Snapshot, not reservation; local 99-row concurrent-create fixture admits exactly one 100th, retirement fences all 100 without R2 payloads |

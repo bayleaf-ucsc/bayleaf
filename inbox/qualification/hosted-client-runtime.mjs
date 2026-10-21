@@ -57,12 +57,14 @@ call:async({name,args,sessionID},{signal})=>{try{return await (await ctx.tool.li
   const start=async()=>{const c=spawn(process.env.OPENCODE_TEST_BINARY||'opencode',['serve','--hostname','127.0.0.1','--port',String(port)],{cwd:root,env,stdio:'ignore'});children.push(c);await wait(()=>api('/api/info'));await wait(()=>rpc('inspect'));return c;};
   let server=await start();
   const inventory=await rpc('inspect'), tools=inventory.tools.filter(t=>t.id.startsWith('bayleaf_inbox'));
-  assert.equal(tools.length,candidate?10:8);assert.ok((inventory.skills.data??inventory.skills).some(s=>s.id==='bayleaf-inboxes'));
+  assert.equal(tools.length,candidate?11:8);assert.ok((inventory.skills.data??inventory.skills).some(s=>s.id==='bayleaf-inboxes'));
+  if(candidate)assert.ok(tools.find(t=>t.id==='bayleaf_inbox_create').input.properties.email_auth.anyOf);
   assert.equal(!!tools.find(t=>t.id==='bayleaf_inbox_create').input.properties.ttl_seconds,!!candidate);
   console.log(`PASS ${candidate?'candidate':'published'} OpenCode runtime discovery: ${tools.length} inbox tools and skill; TTL input ${candidate?'present':'absent'}`);
   const session=await api('/api/session',{permissions:[{action:'*',resource:'*',effect:'ask'}]});const sessionID=session.id??session.data.id;
   const cases=[['bayleaf_inbox_create',{type:'http'}],['bayleaf_inbox_archive',{inbox_id:inbox,message_id:message,archived:true}],['bayleaf_inbox_delete_message',{inbox_id:inbox,message_id:message}],['bayleaf_inbox_destroy',{inbox_id:inbox}],['bayleaf_inbox_save',{inbox_id:inbox,message_id:message,attachment_index:0,path:'attachment.html'}]];
   if(candidate){cases[0][1].preset='experiment';cases.push(['bayleaf_inbox_lifetime',{inbox_id:inbox,ttl_seconds:60}]);const page=JSON.parse((await rpc('call',{sessionID,name:'bayleaf_inbox_events',args:{inbox_id:inbox,after:'now'}})).content);assert.deepEqual(page,{events:[],cursor:'synthetic_cursor',more:false});}
+  if(candidate)cases.push(['bayleaf_inbox_create',{type:'email',email_auth:{domains:['example.org'],selector_pins:{'example.org':['mail_2026']}}}]);
   for(const [name,args]of cases)for(const decision of ['reject','once']){
     const before=calls.filter(c=>c.method!=='GET'||c.path.includes('/attachments/')).length;
     const pending=rpc('call',{sessionID,name,args});
@@ -87,7 +89,8 @@ call:async({name,args,sessionID},{signal})=>{try{return await (await ctx.tool.li
   await writeFile(join(root,'redirect.mjs'),redirect);
   const launchNano=()=>{const c=spawn('node',['--import',join(root,'redirect.mjs'),join(root,'nano/adapter/nanobot-mcp.mjs')],{env:{...env,HOME:root},stdio:['pipe','pipe','ignore']});children.push(c);let buffer='',id=0;const pending=new Map();c.stdout.on('data',chunk=>{buffer+=chunk;while(buffer.includes('\n')){const end=buffer.indexOf('\n'),line=buffer.slice(0,end);buffer=buffer.slice(end+1);const r=JSON.parse(line);pending.get(r.id)?.(r.result);pending.delete(r.id);}});return {c,request:(method,params={})=>new Promise((resolve,reject)=>{const n=++id;const timer=setTimeout(()=>{pending.delete(n);reject(new Error('MCP timeout'));},10000);pending.set(n,r=>{clearTimeout(timer);resolve(r)});c.stdin.write(JSON.stringify({jsonrpc:'2.0',id:n,method,params})+'\n');})};};
   let nano=launchNano();await nano.request('initialize');const listed=(await nano.request('tools/list')).tools;
-  assert.equal(listed.filter(t=>t.name.startsWith('inbox')).length,candidate?8:6);
+  assert.equal(listed.filter(t=>t.name.startsWith('inbox')).length,candidate?9:6);
+  if(candidate)assert.ok(listed.find(t=>t.name==='inbox_create').inputSchema.properties.email_auth.anyOf);
   assert.equal(!!listed.find(t=>t.name==='inbox_create').inputSchema.properties.ttl_seconds,!!candidate);
   const call=(name,args)=>nano.request('tools/call',{name,arguments:args});
   assert.ok(!(await call('inbox_create',{type:'http',label:'synthetic'})).isError);
@@ -98,7 +101,7 @@ call:async({name,args,sessionID},{signal})=>{try{return await (await ctx.tool.li
   assert.deepEqual(await readFile(join(root,'workspace/inbox-downloads/attachment.html')),bytes);
   assert.equal((await stat(join(root,'workspace/inbox-downloads/attachment.html'))).mode&0o777,0o600);
   assert.ok((await call('inbox_save',{inbox_id:inbox,message_id:message,attachment:0,path:'attachment.html'})).isError);
-  console.log(`PASS ${candidate?'candidate':'published'} Nanobot MCP: ${candidate?8:6} inbox tools; create/archive without native approval; quarantined mode-0600 attachment, unsafe paths/overwrite denied`);
+   console.log(`PASS ${candidate?'candidate':'published'} Nanobot MCP: ${candidate?9:6} inbox tools; create/archive without native approval; quarantined mode-0600 attachment, unsafe paths/overwrite denied`);
   await stop(nano.c);nano=launchNano();await nano.request('initialize');assert.equal((await nano.request('tools/list')).tools.length,listed.length);
   assert.ok(!(await call('inbox_messages',{inbox_id:inbox})).isError);
   console.log('PASS MCP restart discovery/read (not managed Nanobot update or host wake)');
