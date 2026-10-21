@@ -1,8 +1,8 @@
 # Inboxes qualification
 
 Current evidence as of **2026-10-21**. Authenticated campus community access is
-authorized for HTTP and ordinary receive-only email. Restricted-email creation
-remains disabled. Remaining tests are accepted limitations, not access gates. Contract:
+authorized for HTTP and receive-only email, including optional creation-only DKIM
+domain restrictions. Remaining tests are accepted limitations, not access gates. Contract:
 [DESIGN.md](DESIGN.md). Deployment, provenance and recovery:
 [OPERATIONS.md](OPERATIONS.md). Remaining work: [TODO.md](TODO.md).
 
@@ -10,8 +10,8 @@ remains disabled. Remaining tests are accepted limitations, not access gates. Co
 
 | Component | Version / state |
 |---|---|
-| API | `353e3a3e-bca7-4116-9369-d86577f6632d`, 100% traffic |
-| Receiver | `c2d31aba-9041-472c-820a-76ed25141b68`, 100% traffic; apex wording only |
+| API | `50f2244e-53e4-4e5e-a8e0-e0a56e031bb6`, 100% traffic |
+| Receiver | `bbdfbfc6-079b-4fa2-9a0f-74eea25c2f47`, 100% traffic; optional restricted creation enabled |
 | Collector export vocabulary | `ba47b369-67c7-4110-acbd-c5521898ab34` qualification release |
 | Published adapters | OpenCode `ebf705d43dfb6088329149619e5a68bf5eff3c28`; Nanobot `e1a7d014621f84ca0a0218c3d519bcd48d0f5f11`; parent `39bf426` |
 | Migrations | Inboxes `0001`–`0007`, API through `0019` applied |
@@ -20,7 +20,11 @@ Community release uses authentic published adapter builds. API/receiver settings
 bindings, secret names and cron schedules matched pre-release snapshots exactly
 apart from the intentionally emptied API `INBOXES_PILOT_OWNER`. Source defaults
 now preserve `INBOXES_ENABLED=true` and the empty owner restriction. Telemetry,
-disabled observability and `EMAIL_AUTH_CREATION_ENABLED=false` are unchanged.
+disabled observability are unchanged. Optional creation was subsequently authorized
+and enabled with `EMAIL_AUTH_CREATION_ENABLED=true` in source and production.
+For that release, downloaded receiver/API modules matched authentic normal builds;
+the only settings change was the receiver creation switch. Public workflow,
+llms/OpenAPI/apex and the authenticated published OpenCode pin were read back.
 No 100-inbox live load test occurred.
 Default owner capacity is 100, including destroying rows. Read effective
 `/inboxes/limits`; historical fixture sizes are not current quota promises.
@@ -37,6 +41,7 @@ trials establish their measured paths, not a new full trial on each release.
 
 | Capability | Evidence | Exact remaining boundary |
 |---|---|---|
+| Optional email policy creation | Live own-key create/readback for omitted, explicit null and restricted policy; uppercase domain/pin canonicalization; malformed domains/pins, HTTP policy and PATCH policy rejected; three exact synthetic smoke inboxes destroyed. Receiver 140 pass/2 optional skips; API integration 105 checks, docs and typecheck pass. Real local signed fixtures exercise verifier, reservation and D1/R2 storage; transient DNS SERVFAIL, oversize response, HTTP 503 and timeout throw without permanent rejection or storage | No second real owner's credential used: cross-owner denial is integrated local evidence. Full production SMTP/storage acceptance, oversize and retry matrix still pending. Hosted adapter optional creation parameter requires its separate package release; existing published adapter pins remain unchanged |
 | Community enablement | Local facade accepts the previously pilot-excluded synthetic owner with the empty restriction; ordinary key and sandbox credentials derive the same account generation; Campus Pass and genuine temporary tokens denied; 99 integrated checks and receiver owner-isolation/restricted-creation tests passed. Live configuration, public workflow/llms/OpenAPI/apex, authenticated plugin pin and no-store limits verified: max 100, retained 1, remaining 99 | No second actual community credential was available: nonoperator access is local evidence plus deployed config/module readback, not a second-account live trial. Receiver suite 140 passed/2 optional skips; docs, typecheck and four diagnostics tests passed |
 | HTTP reception and ownership | Live create/credential/receive/read/destroy; owner/sender role separation; malformed subpath JSON fix (initial AX 2026-10-20) | Formative synthetic AX, not general client parity |
 | Effective limits | Live no-store GET: max 100, retained 6, remaining 94 at readback; anonymous 401; native Nanobot limits tool passed | Snapshot, not reservation; local 99-row concurrent-create fixture admits exactly one 100th, retirement fences all 100 without R2 payloads |

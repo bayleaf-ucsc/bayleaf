@@ -5,8 +5,8 @@ concept, opened to authenticated campus owners on 2026-10-21.**
 The receiver and API are enabled; `INBOXES_PILOT_OWNER` is explicitly empty.
 Ordinary API keys and sandbox credentials retain account-generation isolation.
 Email Routing/MX are enabled for
-registered inboxes; email has no authenticated sender restriction.
-Creation-only DKIM restrictions are deployed but creation is gated off:
+registered inboxes; email is unrestricted unless an optional policy is set at creation.
+Creation-only DKIM domain restrictions are enabled:
 see `OPERATIONS.md` for migration/build/rollout dependencies.
 See `QUALIFICATION.md` for deployed versions and remaining test limitations,
 accepted by the operator for this community release.

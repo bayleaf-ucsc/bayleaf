@@ -17,7 +17,7 @@ receipt addresses, raw mail or private resource manifests.
   Community access was authorized on 2026-10-21 with the remaining qualification
   limitations accepted. Do not reinstate an operator-owner value during staging.
 - Preserve receiver enablement, browser-arrival/telemetry activation, disabled
-  observability and `EMAIL_AUTH_CREATION_ENABLED=false`. Existing email inboxes
+  observability and `EMAIL_AUTH_CREATION_ENABLED=true`. Existing email inboxes
   are unrestricted; a disabled creation gate never bypasses a stored policy.
 - Default owner quota is 100, including active, expired-awaiting-cleanup and
   destroying rows. Authenticated `GET /inboxes/limits` is authoritative for

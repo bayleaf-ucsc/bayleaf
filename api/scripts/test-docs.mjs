@@ -116,7 +116,7 @@ try {
    const catalog = await catalogResponse.json();
     assert.deepEqual(catalog.skills, [
       { name: 'bayleaf-platform', version: '5-inboxes', files: ['bayleaf-platform.md'] },
-      { name: 'bayleaf-inboxes', version: '2', files: ['bayleaf-inboxes.md'] },
+      { name: 'bayleaf-inboxes', version: '3', files: ['bayleaf-inboxes.md'] },
     ]);
    const skillResponse = await get(catalogBase + 'bayleaf-platform/bayleaf-platform.md');
    assert.equal(skillResponse.status, 200, 'Skill is public');

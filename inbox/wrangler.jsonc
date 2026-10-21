@@ -1,5 +1,5 @@
 // BayLeaf Inboxes: reception-only Worker for *.bayleaf-inboxes.dev (issue #97).
-// Contract: DESIGN.md. Webhook qualification deployment; Email Routing remains off.
+// Contract: DESIGN.md. Email Routing and authenticated owner creation are enabled.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "bayleaf-inboxes",
@@ -47,8 +47,8 @@
   // The numeric limits in DESIGN.md (RETENTION_SECONDS, MAX_*, DESTROY_QUIESCE_SECONDS)
   // fall back to code defaults in src/worker.js; set a var here only to override one.
   "vars": {
-    // Enable only after verifier + migration are deployed and propagation is checked.
-    "EMAIL_AUTH_CREATION_ENABLED": "false",
+    // Optional immutable domain restrictions; omitted/null policies remain open.
+    "EMAIL_AUTH_CREATION_ENABLED": "true",
     // Approved first-party apex arrivals; never receipt URLs or private pages.
     "BROWSER_ARRIVALS_ENABLED": "true",
     // Dedicated inboxes source writer in collector WRITE_KEYS_JSON. Supply with

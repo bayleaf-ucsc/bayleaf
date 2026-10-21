@@ -145,7 +145,7 @@ webhook addresses on `bayleaf-inboxes.dev`, with its own D1 and R2, managed only
 through the API's `INBOXES` service binding. It intentionally stores received
 content, so it is outside the API's ZDR/ZOA posture. Deployed for operator-only
 email/webhook qualification, now available to authenticated campus owners;
-authenticated-email allowlist creation remains disabled.
+optional creation-only DKIM domain allowlists are enabled for new email inboxes.
 **Read `inbox/AGENTS.md` and `inbox/DESIGN.md` before working on it.**
 
 Place scripts and analysis machinery for a specific service inside that service's

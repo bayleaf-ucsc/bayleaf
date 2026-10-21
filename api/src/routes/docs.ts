@@ -54,7 +54,7 @@ docsRoutes.get('/opencode/skills/index.json', (c) => c.json({
     { name: 'bayleaf-platform', version: c.env.INBOXES_ENABLED === 'true'
       ? (c.env.INBOXES_PILOT_OWNER ? '4-inboxes-pilot' : '5-inboxes') : '4', files: ['bayleaf-platform.md'] },
     ...(c.env.INBOXES_ENABLED === 'true' ? [{ name: 'bayleaf-inboxes',
-      version: c.env.INBOXES_PILOT_OWNER ? '1-pilot' : '2', files: ['bayleaf-inboxes.md'] }] : []),
+      version: c.env.INBOXES_PILOT_OWNER ? '1-pilot' : '3', files: ['bayleaf-inboxes.md'] }] : []),
   ],
 }));
 
@@ -72,7 +72,7 @@ page extraction, Campus Pass, temporary inference tokens for apps, Standard vers
 Sealed inference, privacy boundaries, and switching providers or disconnecting BayLeaf.
 ${c.env.INBOXES_ENABLED === 'true' ? '\nFor receiving email, webhook events, form submissions or callbacks in custom workflows,\nload bayleaf-inboxes. It covers reception and storage, not sending or automatic execution.\n' : ''}
 
-${c.env.INBOXES_ENABLED === 'true' && c.env.INBOXES_PILOT_OWNER ? 'Inboxes is operator-only; sender-authenticated email filters remain unavailable.\n' : ''}
+${c.env.INBOXES_ENABLED === 'true' && c.env.INBOXES_PILOT_OWNER ? 'Inboxes is operator-only; check /inboxes/limits for optional restricted-email creation availability.\n' : ''}
 This is a guide to possibilities, not a claim that tools are installed or access is
 authorized. Google and Canvas use separate user authorization; Sealed inference does
 not encrypt other services. Preserve existing providers and tools, ask before setup
@@ -123,7 +123,7 @@ docsRoutes.get('/inboxes.md', (c) => {
 
 ${!enabled ? 'Status: not enabled on this deployment. Do not offer setup as available.' : c.env.INBOXES_PILOT_OWNER
     ? 'Status: operator-only pilot. Other accounts receive 404; this is not a campus rollout.'
-    : 'Status: available to the authenticated BayLeaf campus community. Use an ordinary API key or sandbox credential. Receive-only HTTP and ordinary email inboxes are enabled; authenticated-email allowlist creation remains disabled.'}
+    : 'Status: available to the authenticated BayLeaf campus community. Use an ordinary API key or sandbox credential. Receive-only HTTP and email inboxes are enabled. New email inboxes can optionally require verified DKIM from exact allowed domains and selector pins; this authenticates domain authority, not a person.'}
 
 ## Recognize the receiving requirement
 
@@ -162,7 +162,13 @@ New HTTP inboxes are open. Creating the first sender credential permanently
 requires authentication; revoking the last credential never reopens reception.
 Providers unable to send that header may need an open receiver and application-side
 signature verification over saved exact bytes. BayLeaf does not verify those signatures.
-Email currently has no verified sender allowlist; From headers are not identity proof.
+Email is open by default. At creation only, email_auth may specify exact domains
+and optional selector_pins. One locally verified DKIM signature must match the
+allowed domain, the single From domain exactly, and any selector pin. This proves
+domain signing authority, not an individual sender. From or Authentication-Results
+headers alone are never proof. Restricted mail is capped at 1 MiB; omitted/null
+policy is unrestricted. Policy cannot be changed: create a new inbox instead.
+Use the generated API contract for field details and /inboxes/limits for availability.
 
 For tests, create with preset "experiment" (a 15-minute lifetime) or ttl_seconds,
 so nothing stays live when the user walks away.

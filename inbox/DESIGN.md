@@ -6,7 +6,7 @@ HTTP and ordinary receive-only email inboxes are available to all authenticated
 BayLeaf owners, using ordinary API keys or sandbox credentials and the existing
 account-generation isolation. Campus Pass and temporary inference tokens cannot
 own inboxes. `INBOXES_ENABLED=true` and an empty `INBOXES_PILOT_OWNER` are the
-source defaults. Restricted-email creation stays disabled; no outgoing email.
+source defaults. Optional creation-only DKIM domain restrictions are enabled; no outgoing email.
 The operator-only trial began on 2026-10-20. Remaining qualification limitations
 are accepted for community access, not access-approval gates. See `QUALIFICATION.md`.
 
@@ -378,7 +378,7 @@ HTTP `meta_json`:
 
 ## Email reception (`email(message, env, ctx)`)
 
-### Opt-in domain restrictions (deployed, creation disabled)
+### Opt-in domain restrictions (enabled)
 
 At creation only, an email inbox may set `email_auth: { domains: ["ucsc.edu"],
 selector_pins: { "ucsc.edu": ["chosen_selector"] } }`. Domains are exact ASCII
@@ -391,7 +391,7 @@ Owner create/list/get responses explicitly report `email_auth` (null or policy)
 and `restricted_email_max_bytes: 1048576` for restricted email inboxes.
 Migration `0007_email_auth.sql` defaults existing policy to NULL and prevents
 policy updates with a database trigger; changing policy requires a new inbox.
-Creation additionally requires `EMAIL_AUTH_CREATION_ENABLED=true` (default false,
+Creation additionally requires `EMAIL_AUTH_CREATION_ENABLED=true` (source default true,
 404 through owner API when disabled). Deploy and verify the receiver first, wait
 for old versions to stop serving, then enable creation. Turning this gate off
 never bypasses policies already stored. Do not roll back to a pre-verifier build
@@ -441,11 +441,11 @@ is present in production. Specimen and isolated live policy evidence is recorded
 in `QUALIFICATION.md`; full SMTP/storage semantics and worst-case concurrent
 memory remain unqualified.
 
-Exposure for this pilot: HTTP owner API/OpenAPI and llms orientation expose
-creation/readback; existing hosted and desktop adapters do not gain new mutation
-authority or policy UI. Adapter option delivery/ordinary-user discovery remains
-deferred to the integration owner after pilot qualification. Chat remains omitted
-(no new owner credential path). Upstream issue drafts stay local.
+Exposure: HTTP owner API/OpenAPI, llms orientation and desktop HTTP guidance expose
+optional creation/readback. Hosted OpenCode and Nanobot currently omit the optional
+creation parameter; its package delivery is coordinated separately by the release
+owner. There is no policy mutation operation. Chat remains omitted (no new owner
+credential path). Enabling creation does not establish full SMTP/storage qualification.
 
 The following legacy sequence describes unrestricted reception; restricted
 reception adds the pre-reservation verification and tighter bounds above.
@@ -588,7 +588,7 @@ Inbox object:
 | Method | Args | Returns |
 |---|---|---|
 | `retireOwner` | – | `{retired:true}`; trusted service-binding-only, bypasses the exposure flag, idempotent durable generation fence |
-| `createInbox` | `{type, label?, ttl_seconds? \| preset?, email_auth?}` | inbox (`limit` past `MAX_INBOXES_PER_OWNER`); email policy is creation-only and gated off by default |
+| `createInbox` | `{type, label?, ttl_seconds? \| preset?, email_auth?}` | inbox (`limit` past `MAX_INBOXES_PER_OWNER`); optional email policy is creation-only |
 | `updateInbox` | `inboxId, {ttl_seconds \| preset}` | inbox; shortens or sets the lifetime only (`conflict` if later than the current `expires_at`; `not_found` if not live) |
 | `listInboxes` | – | `{ inboxes:[inbox], owner_usage:{bytes, limit_bytes} }` |
 | `getInbox` | `inboxId` | inbox |

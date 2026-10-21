@@ -309,6 +309,8 @@ describe('creation-only authenticated email restriction in real workerd/D1/R2', 
         const key = keys[u.searchParams.get('name').toLowerCase()];
         if (key === 'servfail') return Response.json({ Status: 2 });
         if (key === 'oversized') return new Response('x'.repeat(32769));
+        if (key === 'http-error') return new Response('unavailable', { status: 503 });
+        if (key === 'timeout') { await new Promise(resolve => setTimeout(resolve, 1700)); return Response.json({ Status: 2 }); }
         return Response.json(key ? { Status: 0, Answer: [{ type: 16, data: JSON.stringify(key) }] } : { Status: 3 });
       } });
   });
@@ -478,13 +480,15 @@ describe('creation-only authenticated email restriction in real workerd/D1/R2', 
     assert.equal(stored, null);
   });
 
-  it('treats DNS SERVFAIL and oversized responses as transient, never accepting', async () => {
-    for (const key of ['servfail', 'oversized']) {
+  it('treats DNS SERVFAIL, oversized responses, HTTP failure and timeout as transient, never accepting', async () => {
+    for (const key of ['servfail', 'oversized', 'http-error', 'timeout']) {
       keys[`${key}._domainkey.ucsc.edu`] = key;
       const ibx = await h.create(owner(), 'email', { email_auth: policy });
       const result = await h.emailDirect({ to: ibx.address, raw: await signed(raw, [{ selector: key }]) });
       assert.equal(result.threw, 'email authorization temporarily unavailable');
+      assert.equal(result.rejectReason, undefined);
       assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM messages WHERE inbox_id=?').bind(ibx.id).first()).n, 0);
+      assert.equal((await h.r2.list({ prefix: `m/${ibx.id}/` })).objects.length, 0);
     }
   });
 });

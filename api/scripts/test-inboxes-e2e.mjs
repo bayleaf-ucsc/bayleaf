@@ -84,6 +84,13 @@ try {
   ok(JSON.stringify(ownPolicy.email_auth) === JSON.stringify(emailPolicy), 'owner policy readback');
   await json(await call('sk-bayleaf-b', 'GET', `/inboxes/${restricted.id}`), 404, 'other owner cannot read policy');
   await json(await call('sk-bayleaf-a', 'POST', '/inboxes', { type: 'http', email_auth: emailPolicy }), 400, 'email policy on HTTP denied');
+  await json(await call('sk-bayleaf-a', 'PATCH', `/inboxes/${restricted.id}`, { email_auth: null }), 400, 'policy mutation denied');
+  for (const email_auth of [{ domains: ['person@ucsc.edu'] }, { domains: ['*.ucsc.edu'] },
+    { domains: ['ucsc.edu'], selector_pins: { 'ucsc.edu': ['bad..selector'] } }]) {
+    await json(await call('sk-bayleaf-a', 'POST', '/inboxes', { type: 'email', email_auth }), 400, 'malformed domain or pin rejected');
+  }
+  const openEmail = await json(await call('sk-bayleaf-a', 'POST', '/inboxes', { type: 'email', email_auth: null }), 201, 'explicit null policy');
+  ok(openEmail.email_auth === null && openEmail.restricted_email_max_bytes === undefined, 'null is explicitly unrestricted');
 
   // HTTP inbox: open reception, then read back through the API.
   const web = await json(await call('sk-bayleaf-a', 'POST', '/inboxes', { type: 'http', label: '<img src=x onerror=alert(1)>' }), 201, 'create http');
@@ -93,7 +100,7 @@ try {
   ok(got.status === 200 && (await got.json()).ok === true, 'open http reception');
   const used = await json(await call('sk-bayleaf-a', 'GET', '/inboxes/limits'), 200, 'own quota usage');
   const unused = await json(await call('sk-bayleaf-b', 'GET', '/inboxes/limits'), 200, 'other owner quota usage');
-  ok(used.owner.inboxes === 2 && used.owner.remaining_inboxes === 98 && used.owner.bytes === Buffer.byteLength(payload)
+  ok(used.owner.inboxes === 3 && used.owner.remaining_inboxes === 97 && used.owner.bytes === Buffer.byteLength(payload)
     && unused.owner.inboxes === 0 && unused.owner.bytes === 0, 'limits usage is owner scoped');
   const list = await json(await call('sk-bayleaf-a', 'GET', `/inboxes/${web.id}/messages`), 200, 'list');
   ok(list.messages.length === 1 && list.messages[0].preview.path === '/github/push', 'listed with path');

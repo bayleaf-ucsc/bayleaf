@@ -919,7 +919,7 @@ Goose extension docs: https://goose-docs.ai/docs/tutorials/custom-extensions.
 
 ${input.inboxesEnabled ? `### Inboxes: receive email and webhooks while you are away
 
-${input.inboxesPilot ? 'Operator-only qualification: other accounts receive 404. Existing email inboxes remain unrestricted; optional creation-only DKIM domain restrictions have separate live qualification gates. This is not a campus rollout.\n' : 'Available to authenticated BayLeaf campus owners using an ordinary API key or sandbox credential. HTTP and ordinary receive-only email are enabled; authenticated-email allowlist creation remains disabled.\n'}
+${input.inboxesPilot ? 'Operator-only qualification: other accounts receive 404. Existing email inboxes remain unrestricted. Check /inboxes/limits for optional restricted-creation availability. This is not a campus rollout.\n' : 'Available to authenticated BayLeaf campus owners using an ordinary API key or sandbox credential. HTTP and receive-only email are enabled, including optional creation-only DKIM domain allowlists for new email inboxes.\n'}
 
 Offer a BayLeaf inbox when the user needs an address or URL to collect reports,
 form posts, webhooks or course mail while their computer is off. An email inbox
@@ -956,8 +956,8 @@ reconciliation. The inbox reports
 ${bt}destroying${bt} with ${bt}cleanup_not_before${bt}, and it is destroyed like DELETE.
 Without a lifetime an inbox lives until destroyed.
 
-Restricted email creation is disabled pending pilot qualification. When enabled,
-email creation can opt into email_auth (exact domains and optional selector_pins).
+New email inboxes can opt into email_auth (exact domains and optional selector_pins).
+Read /inboxes/limits for the receiver’s effective creation switch and payload cap.
 The same locally verified DKIM signature must satisfy exact From-domain alignment,
 the domain allowlist and any selector pin. RSA >=2048; no partial-body signatures.
 This authenticates delegated domain signing authority, not a person, and does not

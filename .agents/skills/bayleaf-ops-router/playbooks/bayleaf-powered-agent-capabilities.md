@@ -153,6 +153,11 @@ API to keep a retired capability appearing functional.
 
 ## Refinement log
 
+- 2026-10-21 (optional email domains): Initial-release enablement needs no client
+  compatibility layer. Keep omitted/null as the intentional open-email default;
+  distinguish verified domain authority from individual senders across discovery.
+  Local signed storage tests and live policy readback do not establish SMTP retries.
+
 - 2026-10-21 (community enablement): Explicitly empty pilot-owner source/default
   config opens existing authenticated owner paths, including diagnostics and hosted
   setup. Retain auth/isolation tests and accepted qualification limitations without

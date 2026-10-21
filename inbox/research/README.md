@@ -2,7 +2,7 @@
 
 Local research for #97. Production now shares `../src/dkim-verifier.mjs` through
 the guarded `../scripts/build-dkim.mjs` build. The research fetch endpoint is not
-in the production bundle. Integration is deployed with restricted creation disabled;
+in the production bundle. Integration is deployed with optional restricted creation enabled;
 see `../OPERATIONS.md` for rollout gates and `../QUALIFICATION.md` for evidence.
 
 ## DKIM verification (see `DKIM.md`)

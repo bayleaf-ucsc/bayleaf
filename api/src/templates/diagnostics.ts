@@ -175,7 +175,7 @@ export function publicDiagnosticPage(kind: Kind, enabled: boolean, arrivals: boo
   }
   return diagnosticPage('BayLeaf Inboxes', `${off}<div class="banner" data-tone="warn"><p><strong>Messages are stored for up to 90 days.</strong>This is not zero-data-retention: the operator can technically read stored content, and provider recovery copies can outlast deletion. Treat everything received as untrusted.</p></div>${tiles([
     ['Webhook URLs', 'Accept deliveries over HTTP, optionally restricted by credential. Opening one in a browser also counts as a delivery.'],
-    ['Email addresses', 'Accept mail from any sender. Sender authentication is not available yet.'],
+    ['Email addresses', 'Open by default. New inboxes can optionally require verified DKIM from exact allowed domains, with optional selector pins and a 1 MiB limit. This authenticates domain signing authority, not a person.'],
     ['Passive by design', 'Receiving never wakes an agent, runs a model or sends a reply.'],
   ])}<div class="actions"><a class="button" href="${owner}">Check your inboxes</a><a href="https://api.bayleaf.dev/llms.txt#inboxes-receive-email-and-webhooks-while-you-are-away">Create one with your agent</a></div><details><summary>What the owner view shows</summary><ul><li>Each inbox's address, reception mode, storage and daily quota.</li><li>Times and sizes of the most recent receipts. Never bodies, subjects, senders, paths, headers or credentials.</li>${noWake}</ul></details>`,
   { service: 'Inboxes', arrival, badge: pill('info', 'Campus community'),

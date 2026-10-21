@@ -3,7 +3,7 @@
 Current contract: [DESIGN.md](DESIGN.md). Evidence: [QUALIFICATION.md](QUALIFICATION.md).
 Operations/recovery: [OPERATIONS.md](OPERATIONS.md). Authenticated community HTTP
 and ordinary email access was explicitly approved on 2026-10-21 with the following
-test limitations accepted. Restricted-email creation remains disabled.
+test limitations accepted. Optional restricted-email creation is enabled.
 
 - [ ] **SMTP boundary and full storage failures:** identify an authorized signed
   sender with final Cloudflare MX DATA replies and queue logs; execute the bounded
@@ -11,12 +11,12 @@ test limitations accepted. Restricted-email creation remains disabled.
   Qualify permanent `setReject` (including 4.x text), envelope/Bcc, oversize,
   DNS/storage throws, recovery/retries, post-commit acknowledgement ambiguity,
   duplicates and cleanup. Gmail submission/provider activity cannot substitute.
-- [ ] **Restricted-email creation rollout:** after SMTP qualification, verify full
-  stored-policy/readback and oversize behavior, current receiver propagation and
-  discovery, then obtain explicit gate approval. Exact UCSC signature/pin and
-  isolated live wrong-pin/domain cases already passed; no need to repeat those
-  as unresolved research. Selector rotation and delegated-domain authority must
-  remain explicit. Adapter policy UI/mutation exposure is deferred.
+- [ ] **Restricted-email full SMTP/storage qualification:** creation is authorized;
+  verify real signed delivery and rejection against the full production receiver,
+  including oversize and DNS/storage retry behavior. Exact UCSC signature/pin and
+  isolated live wrong-pin/domain cases already passed. Selector rotation and
+  delegated-domain authority remain explicit. Hosted adapter creation-option
+  delivery is coordinated separately; there is no policy mutation operation.
 - [ ] **Unrestricted MIME memory/admission:** near-25 MiB CPU samples passed but
   peak heap and concurrent same-isolate receipt/parsed-owner-read allocation are
   unbounded by this evidence. Review byte-weighted admission/buffering across

@@ -6,7 +6,7 @@ digest-name translation and a narrow selector-grammar extension are applied at
 build time. The research policy passes a 54-case matrix and matches Node on a
 15-message public corpus (14 signed), with live DNS. Not every message is accepted:
 the corpus includes policy rejections. The shared verifier is now deployed in
-`../src/worker.js` for creation-only opt-in restrictions, with creation disabled.
+`../src/worker.js` for enabled creation-only opt-in domain restrictions.
 See `../OPERATIONS.md` and `../QUALIFICATION.md` for current rollout/evidence.
 The original research used no user mail or production deployment.
 
@@ -118,7 +118,7 @@ The narrow patch now permits its real Ed25519 signature without globally relaxin
 strict validation. A first harness version decoded 8bit mail as latin1 and
 re-encoded UTF-8, failing 6 bodies in both runtimes; the harness now passes bytes.
 
-## Trusted-result boundary (deployed, restricted creation disabled)
+## Trusted-result boundary (deployed, optional restricted creation enabled)
 
 `../src/dkim-verifier.mjs` `authenticate(raw, { resolver, allowedDomains, selectorPins })` returns
 `{ trusted: true, domain, selector, algo, from }` only when all of these hold:
