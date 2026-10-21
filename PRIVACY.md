@@ -196,6 +196,11 @@ version-controlled alongside the code that enforces them:
   reading or archiving. Early deletion removes exact payload bytes and indexed
   content through retryable cleanup; inbox destruction stops reception/access
   immediately but finalization waits at least 15 minutes and a scheduled sweep.
+  An owner may give an inbox an explicit lifetime (one minute to 30 days); when it
+  ends, reception and access checks deny the expired inbox before cleanup, and the
+  same destruction path follows. Reads recheck after awaited work before releasing
+  content; bytes already released cannot be recalled. In-flight storage writes may
+  finish later and are removed through durable reconciliation.
   Backlog/outages can extend physical cleanup, which is not yet campus-qualified.
   Opaque inbox identifiers and cleanup cursors remain **indefinitely** to reconcile
   storage writes that finish late; these records contain no owner, address or
@@ -203,6 +208,16 @@ version-controlled alongside the code that enforces them:
   and indexed text for **30 days**. Senders and downloading clients have their own
   copies. Account retirement/recovery integration remains a campus-rollout gate;
   this is verified live-store cleanup, not literal erasure of every trace.
+  **Deployed retirement hardening:** separate API and inbox retirement records
+  retain opaque account generations and retirement/retry/acknowledgement timestamps
+  indefinitely to prevent revoked generations regaining inbox access and to replay
+  cleanup after recovery. They contain no email, address or message content, but
+  remain linkable account metadata. The cross-service retirement handoff is
+  eventual; reception stops when the inbox fence acknowledges, not atomically with
+  API identity deletion. Recovery must stay disabled until fences are reconciled;
+  rolling back both databases needs a separately surviving deletion ledger or
+  invalidation of old generations. The mechanism is deployed in the operator pilot;
+  full live retirement/recovery qualification remains a campus-rollout gate.
 - [API retention policy](api/RETENTION.md): prompts and completions are **not
   stored**. Accounts and their keys are eligible for daily cleanup after **18
   calendar months** without activity, measured from the later of account creation

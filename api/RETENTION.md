@@ -212,6 +212,33 @@ email will be sent for this change, by operator decision. Enabling live mode is
 not evidence of a completed scheduled run.
 Run `npm run test:user-retention` for synthetic D1/provider failure and race checks.
 
+### Inbox retirement hardening (deployed 2026-10-21 UTC)
+
+Migration `0019_inbox_retirement.sql` adds a separate permanent retirement ledger:
+opaque account generation, retirement time, inbox-fence acknowledgement time and
+last retry/check time. Generation capture joins the same eligibility-rechecking
+transaction as account deletion. The existing provider-key outbox is unchanged;
+provider confirmation does not delete this ledger. Malformed generations on key
+rows block retirement rather than losing the inbox cleanup target.
+
+Daily cleanup attempts at most 20 pending generation fences and replays at most
+20 acknowledged entries, regardless of user-facing Inboxes/pilot flags. A missing
+binding, RPC failure or lost acknowledgement retains retry state and marks the
+report pending/partial. Inbox fencing is **eventual across the service boundary**:
+reception can continue between API identity deletion and inbox acknowledgement.
+The acknowledgement means reception/read/creation authority is fenced and inbox
+destruction requested, not that payloads or provider history have vanished.
+
+The separate inbox database retains an opaque generation/timestamp fence
+indefinitely. These new records are linkable account metadata, distinct from
+owner-free object-cleanup prefixes. They preserve revocation even if an API-only
+restore reintroduces old identity rows. Inbox-only recovery must replay the API
+ledger **before** re-enabling receipt or owner reads. Restoring both ledgers to
+pre-retirement snapshots needs an independently preserved deletion ledger or
+invalidation of old generations/endpoints. Automatic no-resurrection recovery
+from two rolled-back databases is not implemented or claimed. See
+[`inbox/qualification/hardening.md`](../inbox/qualification/hardening.md).
+
 Migration 0018 and dry-run Worker `d533ffae-0340-42bf-b5e3-693c69e4666d` were
 deployed 2026-10-18 Pacific. A SELECT-only execution of the same eligibility
 module against production D1 at 2026-10-19 05:10 UTC found **0 candidates among

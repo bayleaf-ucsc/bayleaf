@@ -1,4 +1,5 @@
 .DS_Store
+inbox/.generated/
 .agentnb/
 .rodney/
 __pycache__/

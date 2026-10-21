@@ -11,22 +11,27 @@ limitations, not just source-level completion.
   cursors/event IDs, gap-free transition, expired-cursor recovery, bounded replay
   and slow readers, revocation/destruction termination. Delivery never activates
   inference or an agent. Qualify connection costs and practical transport first.
-- [ ] **Authenticated email sender restrictions:** qualify a maintained DKIM
-  verifier and trusted result boundary. The current mailauth PoC fails valid RSA
-  DKIM on pinned workerd (`Unknown digest: rsa-sha256`). Require positive and
-  adversarial real-runtime tests before exposing allowlists; a From-header match
-  or copied Authentication-Results is not authentication. Domain signatures rely
-  on the sending institution's mailbox policy and do not prevent replay.
-- [ ] **Disposable inbox lifetimes:** allow an explicit inbox expiry/TTL with a
-  simple 15-minute experiment preset, separate from 90-day message retention.
-  Expired endpoints must stop accepting and serving content immediately, even
-  before the cleanup sweep, then enter the same durable destruction/reconciliation
-  path as explicit deletion. Reads, arrivals and archive changes never renew the
-  lifetime. Make expiry and cleanup-pending status visible to agents and the future
-  diagnostic UI. Walking away should leave no live endpoint, credentials or
-  accepted payloads lingering indefinitely; disclose provider/tombstone residuals
-  rather than promising instantaneous total erasure. Existing inboxes must not
-  silently acquire an idle-expiry policy.
+- [ ] **Authenticated email sender restrictions (local implementation complete,
+  rollout pending):** creation-only exact domain allowlists and optional selector
+  pins, locally verified RSA >=2048/Ed25519, hard 1 MiB restricted-mail cap. Guarded
+  mailauth patches pass positive/adversarial workerd and API isolation tests.
+  Existing inboxes remain unrestricted. Live SMTP retry/rejection, real campus
+  selectors and deployment propagation remain gates; see
+  `qualification/DKIM-INTEGRATION.md`. Domain authority includes delegated signers,
+  not proof of a mailbox holder, and does not prevent replay.
+- [x] **Disposable inbox lifetimes (local only, not deployed or live-qualified):**
+  opt-in `ttl_seconds` (60 s to 30 days) or `preset: "experiment"` (15 minutes) at
+  creation; `PATCH /inboxes/{id}` only shortens or sets. `expires_at` is separate
+  from 90-day message retention and never renewed by reads, arrivals, credential or
+  archive changes. Liveness is computed at check time (lookup, reservation, stored
+  mark, every owner operation), so expired endpoints refuse email/HTTP and owner
+  reads before any sweep; the sweep then uses the same destruction transition as
+  `destroyInbox`. Visible as `expires_at`, `state:"destroying"` and
+  `cleanup_not_before` in the API, OpenAPI, `llms.txt` and metadata diagnostics.
+  Pre-existing rows keep `NULL`. Deploy order: apply `0003_lifetimes.sql` remotely,
+  deploy this Worker, then the API (the PATCH route needs `updateInbox`). Still to
+  do live: real expiry of a synthetic pilot inbox, a sweep-driven finalization
+  observed in production, and the PRIVACY.md wording reviewed and published.
 - [x] **Minimal public web experience (#113):** a tasteful signed-out explanation and
   login entry point, analogous to existing BayLeaf API services. State availability,
   passive reception, limits and the stored-content/privacy boundary. No new
@@ -53,6 +58,15 @@ limitations, not just source-level completion.
   sleeping hosted-client discovery, approval and Linux save-helper checks.
   Do not remove the operator restriction until these are resolved or explicitly
   accepted with honest scope.
+  Local 2026-10-21 progress: [MIME measurements](qualification/mime-bench.md),
+  [cleanup capacity/limit findings](qualification/cleanup-bench.md),
+  [confirmed retirement gap and proposed recovery protocol](qualification/retirement.md),
+  and an [unexecuted SMTP runbook](qualification/smtp-runbook.md). Resource and
+  retirement blockers remain; no rollout gate is silently waived.
+  Follow-up: [local hardening](qualification/hardening.md) implements a durable
+  retirement handoff/fence, fixes the demonstrated cleanup-budget overflow and
+  blocks the known MIME allocation fixture. Keep remaining memory, recovery,
+  combined SSE/TTL and live-SMTP qualification explicit before changing exposure.
 - [ ] **Offramps and optional extensions:** portable original-payload export with
   a metadata manifest and modest self-hosting recipe; separately qualify optional
   JWT sender grants (public JWK, strict audience/expiry/algorithm policy). These

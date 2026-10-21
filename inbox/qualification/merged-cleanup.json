@@ -1,0 +1,118 @@
+[
+  {
+    "name": "stuck-delete-fairness",
+    "note": "one permanently failing object must not pin all 1,000 deleting rows",
+    "seed_ms": 437,
+    "start": {
+      "messages": 1000,
+      "reserved_messages": 1000,
+      "reserved_bytes": 3000,
+      "inboxes": 1,
+      "destroying": 0,
+      "prefixes": 0,
+      "events": 0,
+      "leases": 1,
+      "lapsed": 0,
+      "objects": 1000
+    },
+    "end": {
+      "messages": 50,
+      "reserved_messages": 50,
+      "reserved_bytes": 150,
+      "inboxes": 1,
+      "destroying": 0,
+      "prefixes": 0,
+      "events": 0,
+      "leases": 0,
+      "lapsed": 0,
+      "objects": 50
+    },
+    "runs": 6,
+    "finished": false,
+    "first_run": {
+      "d1_calls": 36,
+      "d1_statements": 49,
+      "max_batch": 3,
+      "max_params": 50,
+      "r2_list": 0,
+      "r2_delete": 4,
+      "r2_keys_deleted": 200,
+      "r2_other": 0,
+      "inner_ms": 21,
+      "error": null,
+      "wall_ms": 22,
+      "removed_messages": 150,
+      "removed_objects": 150,
+      "finalized": 0
+    },
+    "peak": {
+      "d1_calls": 37,
+      "d1_statements": 52,
+      "max_batch": 3,
+      "max_params": 50,
+      "r2_ops": 4,
+      "wall_ms": 27,
+      "removed_messages": 200,
+      "removed_objects": 200
+    },
+    "errors": 0
+  },
+  {
+    "name": "integrated-ttl-events",
+    "note": "mixed backlog plus 12 lapsed inboxes x 250 receipts; all stored messages carry events and all inboxes have expired leases",
+    "seed_ms": 8717,
+    "start": {
+      "messages": 18900,
+      "reserved_messages": 18900,
+      "reserved_bytes": 56700,
+      "inboxes": 81,
+      "destroying": 60,
+      "prefixes": 1060,
+      "events": 18300,
+      "leases": 81,
+      "lapsed": 12,
+      "objects": 19000
+    },
+    "end": {
+      "messages": 0,
+      "reserved_messages": 0,
+      "reserved_bytes": 0,
+      "inboxes": 9,
+      "destroying": 0,
+      "prefixes": 1075,
+      "events": 0,
+      "leases": 0,
+      "lapsed": 0,
+      "objects": 0
+    },
+    "runs": 29,
+    "finished": true,
+    "first_run": {
+      "d1_calls": 285,
+      "d1_statements": 402,
+      "max_batch": 3,
+      "max_params": 51,
+      "r2_list": 50,
+      "r2_delete": 32,
+      "r2_keys_deleted": 1600,
+      "r2_other": 0,
+      "inner_ms": 275,
+      "error": null,
+      "wall_ms": 276,
+      "removed_messages": 1600,
+      "removed_objects": 1600,
+      "finalized": -5
+    },
+    "peak": {
+      "d1_calls": 285,
+      "d1_statements": 402,
+      "max_batch": 4,
+      "max_params": 51,
+      "r2_ops": 82,
+      "wall_ms": 291,
+      "removed_messages": 1600,
+      "removed_objects": 1600
+    },
+    "errors": 0
+  }
+]

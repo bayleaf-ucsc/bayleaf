@@ -58,6 +58,18 @@ traffic without changing the Worker.
 
 ## Refinement log
 
+- 2026-10-21 (Inboxes TTL + SSE release): Inspect the actual traffic version,
+  not historical qualification IDs. A newer source-default API deploy had disabled
+  the pilot. Preserve published production adapter pins when local submodule HEADs
+  are unpublished; compare built bundles and all live variables before deployment.
+  Migrate receiver storage first, receiver second, API last; confirm real SSE
+  self-post/resume/termination and zero residual smoke credentials without content logs.
+
+- 2026-10-21 (Inboxes TTL preparation, rollout held for SSE): Bound newly added
+  sweep admission separately from existing cleanup and test backlog progress with
+  telemetry enabled. Fresh expiry filtering must preserve SQL pagination progress.
+  No migration/deployment occurred before the scope changed to a combined release.
+
 - 2026-10-20 (#113 rollout): Compare all staged API variables to live metadata;
   source defaults intentionally differ from the operator-only Inboxes deployment.
   Verify arrival records from real browser executions, not direct synthetic POSTs.

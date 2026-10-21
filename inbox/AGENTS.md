@@ -5,6 +5,8 @@ concept, deployed for operator-only webhook qualification on 2026-10-20.**
 The receiving Worker is enabled; the API permits only the operator's account
 generation through `INBOXES_PILOT_OWNER`. Email Routing/MX are enabled for
 registered inboxes; email has no authenticated sender restriction.
+Local creation-only DKIM restrictions are implemented but creation is gated off:
+see `qualification/DKIM-INTEGRATION.md` for migration/build/rollout dependencies.
 No campus rollout. See `QUALIFICATION.md` for deployed versions and pending gates.
 `DESIGN.md` is the contract; change it first, then code and tests.
 
@@ -69,6 +71,14 @@ the Worker (used for mutation checks). The suite was written from `DESIGN.md` al
   again atomically after reading an upload, alongside quota reservation.
 - **One content store:** raw MIME or exact request bytes; attachments and text are
   derived on read.
+- **Portable export:** exact files and the manifest are canonical. The derived
+  `bayleaf-inbox-receipt-1` HAR-shaped profile is nonstandard, never a wire capture.
+  Preserve post-await TTL checks, bounded metadata/text, reader cancellation and
+  digest cleanup. Apply `0005` and collector export-counter support before rollout.
+- **Lifetimes are computed, then swept:** an inbox past `expires_at` is dead at every
+  check (lookup, reservation, stored mark, owner reads) before the sweep moves it
+  into the one destruction transition (`beginDestroy`). Never add a second cleanup
+  path, and never let use renew a lifetime. Apply migration `0003` before deploying.
 
 ## Before enablement (gates)
 

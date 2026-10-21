@@ -88,7 +88,7 @@ const apiCors = cors({
   origin: '*',
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Authorization', 'Content-Type'],
-  exposeHeaders: ['WWW-Authenticate'],
+  exposeHeaders: ['WWW-Authenticate', 'X-Inbox-Export-Next-Cursor'],
   maxAge: 86400,
 });
 app.use('*', (c, next) => c.req.path.startsWith('/previews/') ||
@@ -260,7 +260,7 @@ export default {
       const accounts = await cleanupInactiveUsers(env);
       console.info('Account retention', accounts); // Aggregate metadata only.
       queueDeletionTelemetry(env, ctx, 'api-retention', accounts, accountsStartedAt, env.USER_RETENTION_MODE);
-      if (accounts.providerPending) throw new Error('Account credential cleanup needs retry');
+      if (accounts.providerPending || accounts.pending) throw new Error('Account resource cleanup needs retry');
       return;
     }
     if (env.GRANTS_ENABLED === 'true') await cleanupGrants(env);

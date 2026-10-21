@@ -69,14 +69,15 @@ try {
   const originalInfo = console.info;
   console.info = () => {};
   try {
-    for (const scenario of ['success', 'sandbox-pending', 'account-pending', 'sandbox-throws', 'accounts-throws']) {
+    for (const scenario of ['success', 'sandbox-pending', 'account-pending', 'inbox-pending', 'sandbox-throws', 'accounts-throws']) {
       const order = [];
       const jobError = new Error('original job failure');
       globalThis.__telemetryJob = async name => {
         order.push(name);
         if (scenario === `${name}-throws`) throw jobError;
         if (name === 'sandbox') return { ...sandbox, pending: scenario === 'sandbox-pending' ? 1 : 0 };
-        if (name === 'accounts') return { ...accounts, providerPending: scenario === 'account-pending' ? 1 : 0 };
+        if (name === 'accounts') return { ...accounts, providerPending: scenario === 'account-pending' ? 1 : 0,
+          pending: scenario === 'inbox-pending' ? 1 : 0 };
       };
       const before = calls.length;
       const run = worker.scheduled({ cron: '17 8 * * *', scheduledTime: Date.now() }, {
@@ -85,7 +86,7 @@ try {
       if (scenario === 'success') await run;
       else if (scenario.endsWith('throws')) await assert.rejects(run, error => error === jobError);
       else await assert.rejects(run, scenario === 'sandbox-pending'
-        ? /Sandbox reaper needs retry/ : /Account credential cleanup needs retry/);
+        ? /Sandbox reaper needs retry/ : /Account resource cleanup needs retry/);
       await Promise.all(pending.splice(0));
       const stopAfterSandbox = ['sandbox-pending', 'sandbox-throws'].includes(scenario);
       assert.deepEqual(order, stopAfterSandbox ? ['sessions', 'credentials', 'sandbox']

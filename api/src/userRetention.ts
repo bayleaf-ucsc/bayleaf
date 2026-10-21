@@ -38,6 +38,9 @@ const ELIGIBLE = `u.retention_exempt = 0 AND u.retention_hold = 0
   AND NOT EXISTS (SELECT 1 FROM user_keys k WHERE k.email=u.email AND k.daytona_sandbox_id IS NOT NULL)
   AND NOT EXISTS (SELECT 1 FROM user_keys k WHERE k.email=u.email
     AND k.or_key_secret IS NOT NULL AND (k.or_key_hash IS NULL OR k.or_key_hash = ''))
+  AND NOT EXISTS (SELECT 1 FROM user_keys k WHERE k.email=u.email AND
+    (k.account_generation IS NULL OR length(k.account_generation) < 16 OR length(k.account_generation) > 128
+      OR k.account_generation GLOB '*[^A-Za-z0-9-]*'))
   AND NOT EXISTS (SELECT 1 FROM sandbox_credentials sc WHERE sc.email=u.email)
   AND NOT EXISTS (SELECT 1 FROM service_sessions s WHERE s.email=u.email AND s.expires_at > ?)
   AND NOT EXISTS (SELECT 1 FROM preview_registrations p WHERE p.email=u.email)`;
@@ -53,6 +56,11 @@ export async function retireInactiveUser(env: Bindings, user: RetentionUser, now
     SELECT ?, k.or_key_hash, k.tinfoil_key, ? FROM users u LEFT JOIN user_keys k ON k.email=u.email
     WHERE u.email = ? AND u.created_at = ? AND u.last_active_at = ? AND ${ELIGIBLE}`)
     .bind(id, now, user.email, user.created_at, user.last_active_at, now, now, cutoff, now)];
+  // Capture the exact old generation while it still exists, only if the atomic
+  // eligibility claim succeeded. This durable ledger never targets a later user
+  // at the same email and survives provider-key outbox completion.
+  statements.push(env.DB.prepare(`INSERT OR IGNORE INTO inbox_retirements(generation,retired_at)
+    SELECT account_generation,? FROM user_keys WHERE email=? AND ${exists}`).bind(now, user.email, id));
   for (const [table, column] of [
     ['inference_grants', 'owner_email'], ['grant_transactions', 'owner_email'],
     ['service_sessions', 'email'], ['service_login_flows', 'email'], ['claim_codes', 'approved_by'],
@@ -62,6 +70,30 @@ export async function retireInactiveUser(env: Bindings, user: RetentionUser, now
   }
   const results = await env.DB.batch(statements);
   return results[0].meta.changes === 1;
+}
+
+/** Eventual cross-service logical revocation. Replay acknowledged fences too,
+ * so inbox-only recovery can be reconciled offline from this separate ledger.
+ * Neither pilot/exposure flags nor provider deletion failures gate this work.
+ */
+export async function cleanupRetiredInboxes(env: Bindings, now: number): Promise<number> {
+  let replayFailures = 0;
+  for (const pending of [true, false]) {
+    const rows = (await env.DB.prepare(`SELECT generation FROM inbox_retirements
+      WHERE fenced_at IS ${pending ? '' : 'NOT '}NULL ORDER BY checked_at,generation LIMIT ?`)
+      .bind(BATCH_SIZE).all<{ generation: string }>()).results;
+    for (const row of rows) {
+      await env.DB.prepare('UPDATE inbox_retirements SET checked_at=? WHERE generation=?').bind(now, row.generation).run();
+      try {
+        const result = await env.INBOXES?.retireOwner(row.generation) as { retired?: boolean } | undefined;
+        if (result?.retired === true) await env.DB.prepare(`UPDATE inbox_retirements
+          SET fenced_at=COALESCE(fenced_at,?) WHERE generation=?`).bind(now, row.generation).run();
+        else if (!pending) replayFailures++;
+      } catch { if (!pending) replayFailures++; /* Retain ledger, never log identity or raw errors. */ }
+    }
+  }
+  return replayFailures + (await env.DB.prepare('SELECT COUNT(*) AS n FROM inbox_retirements WHERE fenced_at IS NULL')
+    .first<{ n: number }>())!.n;
 }
 
 async function removeProviderKey(url: string, credential: string | undefined): Promise<boolean> {
@@ -80,7 +112,7 @@ async function removeProviderKey(url: string, credential: string | undefined): P
 export async function cleanupInactiveUsers(env: Bindings, now = Math.floor(Date.now() / 1000)) {
   const mode = env.USER_RETENTION_MODE;
   const report = { mode: mode === 'delete' || mode === 'dry-run' ? mode : 'disabled',
-    candidates: 0, retired: 0, recheckSkipped: 0, providerPending: 0, outboxCompleted: 0 };
+    candidates: 0, retired: 0, recheckSkipped: 0, providerPending: 0, outboxCompleted: 0, pending: 0 };
   if (report.mode === 'disabled') return report;
   const cutoff = accountCutoff(now);
   const { results: candidates } = await env.DB.prepare(`SELECT u.email, u.created_at, u.last_active_at
@@ -93,6 +125,9 @@ export async function cleanupInactiveUsers(env: Bindings, now = Math.floor(Date.
     if (await retireInactiveUser(env, user, now, cutoff)) report.retired++;
     else report.recheckSkipped++;
   }
+  // Run before provider cleanup: an upstream credential outage must not delay
+  // inbox revocation. `pending` also marks aggregate deletion telemetry partial.
+  report.pending = await cleanupRetiredInboxes(env, now);
   const { results: pending } = await env.DB.prepare(`SELECT * FROM user_retention_outbox
     ORDER BY created_at, id LIMIT ?`).bind(BATCH_SIZE)
     .all<{ id: string; or_key_hash: string | null; tinfoil_key: string | null }>();

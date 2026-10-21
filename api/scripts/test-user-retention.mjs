@@ -103,6 +103,7 @@ try {
   assert.ok(await query('SELECT * FROM users WHERE email=?',rollback));
   assert.ok(await query('SELECT * FROM user_keys WHERE email=?',rollback));
   assert.equal((await query('SELECT count(*) AS n FROM user_retention_outbox')).n,0,'failed batch rolls back detach and deletes');
+  assert.equal((await query('SELECT count(*) AS n FROM inbox_retirements')).n,0,'failed batch rolls back generation capture too');
   await db.prepare('DROP TRIGGER fail_retirement').run();
   await db.prepare('UPDATE users SET retention_hold=1 WHERE email=?').bind(rollback).run();
   await db.prepare('INSERT INTO users(email,created_at,last_active_at) VALUES (?,?,?)')
@@ -111,6 +112,8 @@ try {
   report=await request({mode:'delete'});
   assert.equal(report.retired,2,'user with no ordinary key can also retire');
   assert.equal(report.providerPending,1,'provider failure keeps recoverable outbox');
+  assert.equal(report.pending,1,'unavailable inbox binding leaves a separate durable pending fence');
+  assert.equal((await query('SELECT generation FROM inbox_retirements')).generation,'generation-expired');
   assert.equal(await query('SELECT * FROM users WHERE email=?',expired),null);
   assert.equal(await query('SELECT * FROM user_keys WHERE email=?',expired),null);
   assert.equal(await query('SELECT * FROM inference_grants WHERE owner_email=?',expired),null);
@@ -126,12 +129,14 @@ try {
 
   // Returning identity gets a fresh account and fresh keys; old outbox cannot touch them.
   await seed('expired',now,now);
+  await db.prepare('UPDATE user_keys SET account_generation=? WHERE email=?').bind(crypto.randomUUID(),expired).run();
   await db.prepare('UPDATE user_keys SET or_key_hash=?,tinfoil_key=? WHERE email=?').bind('new-or','tk_new',expired).run();
   failTinfoil=false;
   report=await request({mode:'delete'});
   assert.equal(report.retired,0);
   assert.equal(report.providerPending,0);
   assert.equal(report.outboxCompleted,1);
+  assert.equal((await query('SELECT count(*) AS n FROM inbox_retirements')).n,1,'provider completion must not erase recovery ledger');
   assert.equal((await query('SELECT tinfoil_key FROM user_keys WHERE email=?',expired)).tinfoil_key,'tk_new');
   assert.ok(providerCalls.every(c=>!c.url.includes('tk_new')&&!c.url.includes('new-or')));
   assert.equal((await query('SELECT count(*) AS n FROM users')).n,15,'only eligible accounts removed, one recreated');

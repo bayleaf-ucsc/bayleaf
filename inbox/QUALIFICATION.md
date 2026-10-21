@@ -3,9 +3,67 @@
 Issue [#97](https://github.com/bayleaf-ucsc/bayleaf/issues/97). Operator-only webhook
 qualification deployed with Adam's approval on 2026-10-20. No campus rollout.
 Email Routing/MX are now enabled for registered inboxes. Email delivery is
-unrestricted by sender; authenticated allowlists remain unimplemented.
+unrestricted by sender in the deployed revision. Creation-only DKIM domain
+restrictions are deployed with creation disabled. Existing
+inboxes remain unrestricted. See `qualification/DKIM-INTEGRATION.md`.
 
 ## Deployed pilot
+
+### Integrated export, gated DKIM and hardening release (2026-10-21 UTC)
+
+See [production qualification](qualification/DEPLOYED-INTEGRATED.md): collector,
+Inboxes and API deployed in dependency order with migrations through Inboxes 0007
+and API 0019. Published adapter pins and the operator pilot are preserved. Live
+two-page export/hash/HAR/TTL and minimal SSE smoke passed; export aggregate delivery
+was verified in the collector. Restricted creation remains disabled. Physical
+finalization, SMTP and production MIME memory remain separately qualified limits.
+
+### TTL, finite events and SSE release (2026-10-21 UTC)
+
+With explicit authorization, applied only pending inbox D1 migrations
+`0003_lifetimes.sql` (3 commands, success), then `0004_events.sql` (10 commands,
+success), deployed the receiver, then the API:
+
+- `bayleaf-inboxes`: **`590c0e92-6d3b-4fe9-9666-33c6b6ab1374`**
+- `bayleaf-api`: **`d24cbfe9-afad-4b1f-a32a-c6b9bb5ce226`**
+
+Both versions were subsequently confirmed at 100% traffic. Receiver baseline was
+`d2e5315c-d881-4242-a061-e572cba5bffa`; API baseline was
+`55fb7e68-4993-44d5-babf-dced8fa11b77`, newer than the historical entries below.
+The latter had disabled Inboxes and omitted its pilot binding. Staging restored
+the authorized operator-only pilot (`INBOXES_ENABLED=true` plus the existing
+operator account generation), not campus access. Every other API plain-text
+variable matched that live baseline; receiver variables and telemetry activation
+were preserved. Observability remains disabled.
+
+Reviewed the fetched production bundles against the built candidates. Actual
+scope: TTL with review fixes, atomic minimal arrival events, finite catch-up,
+bounded authenticated SSE, TTL diagnostics, and the committed receiving-workflow
+discovery guide plus GLM's concrete streaming documentation corrections. No
+payload export, DKIM restrictions, other worktree features or unrelated runtime
+changes. Staging retained production's published plugin `eb40edabc1e7dd58a6e9be586115779402ccfd23`
+and Nanobot `16ee3c3ba44f6ae64d6847e64a79fa7949c18c2a`: local submodule HEADs were
+newer/unpublished and were not shipped. No commits or pushes.
+
+Integrated checks passed: 66 inbox tests, 18 real-HTTP SSE tests, 78 API E2E
+checks, facade tests, docs tests and TypeScript. Added final inbox liveness and
+message expiry checks to event reads when merging onto main's TTL implementation.
+TTL cleanup admission/pagination/credential-race fixes remain intact.
+
+Live smoke created one disposable 900-second preset HTTP inbox and sender
+credential, then observed three synthetic receipts: catch-up, same-open-connection
+self-post, and a disconnected arrival after resume. Explicit destruction ended
+the connected stream with `not_found`; exact-resource cleanup ran. Content-free
+D1 readback found zero remaining smoke message/credential rows, zero stream leases
+and zero stored messages missing arrival events. Physical inbox finalization is
+asynchronous and was not claimed. Public `/docs/inboxes.md`, `/llms.txt` and
+`/docs/openapi.json` returned HTTP 200 with TTL and actual SSE guidance.
+
+The full real 15-minute expiry/GLM AX trial is delegated separately; this smoke
+does not establish sustained production load or whole-sweep worst-case budget.
+See `qualification/STREAM.md` and `qualification/glm-discovery.md`. The source
+API config intentionally still defaults to disabled: future deployments must
+preserve the restricted pilot through staging rather than blindly deploy defaults.
 
 - Receiving Worker `bayleaf-inboxes`: `a6062055-474e-4a10-a2b6-af8eaff40c78`.
 - API Worker `bayleaf-api`: `a69d6729-d02d-484a-9f25-c033b797fb78`.
@@ -100,9 +158,11 @@ The user's empty diagnostic inbox was retained. No message content, address or
 attachment screenshot is included in this repository.
 
 This proves small real-message delivery, decoding and retrieval, not sender
-authentication or worst-case MIME/SMTP reliability. The maintained mailauth PoC
-passes synthetic tests in Node but fails valid RSA DKIM on pinned workerd; see
-`research/README.md`. No sender restriction was silently substituted.
+authentication or worst-case MIME/SMTP reliability. The earlier mailauth RSA
+compatibility failure is resolved by guarded build patches; local restricted
+reception now has positive/adversarial workerd tests. See `research/README.md`
+and `qualification/DKIM-INTEGRATION.md`. No sender restriction was silently
+substituted for existing inboxes.
 
 ### Diagnostic web experiences (#113)
 
@@ -161,11 +221,74 @@ forwarding, execution or acting on sender-written instructions.
 
 ## Local evidence
 
+### TTL review follow-up (2026-10-21, deployment held for SSE)
+
+No production migration or deployment was performed during this preparation.
+The subsequent user instruction holds TTL-only deployment until actual SSE is
+integrated and qualified. Production version reconciliation and migration preflight
+still need to run against the combined candidate.
+
+- Lifetime sweep admission now runs after existing cleanup/reconciliation and
+  admits at most five expired inboxes, oldest first, through `beginDestroy`.
+  Admission failure is contained; expired resources remain denied. Newly admitted
+  destruction receives cleanup on a later sweep. This is a bounded pilot fix for
+  the additional TTL workload, not a fix or worst-case qualification of the older
+  whole-sweep D1 budget issue.
+- Pagination advances from the unfiltered SQL page boundary, preserving traversal
+  when some or all rows expire during an awaited read. An empty page can carry a
+  non-null cursor.
+- Credential creation retains its final liveness check and best-effort deletes
+  its own newly minted credential when that check fails. Failed deletion still
+  leaves an unusable credential for the common destruction transition to remove.
+- Regression fixtures exercise an all-filtered page followed by a live tail,
+  post-commit credential expiry, and a 12-inbox expired backlog alongside existing
+  finalization and orphan reconciliation, including an injected admission failure.
+- Verification: 66 inbox tests and 67 real-Worker API end-to-end checks pass;
+  `git diff --check` passes. The telemetry-enabled backlog fixture's first sweep
+  used 32 D1 calls / 52 statements, finalized the pre-existing destroyed inbox,
+  reconciled its independent orphan and admitted exactly five expired inboxes.
+  This small synthetic workload is not a production load benchmark.
+
 - 2026-10-21 discovery revision: dedicated managed-desktop inbox skill, shared
   focused receiving-workflow guide, aligned hosted intent descriptions and
   deployment-aware catalog checks. See `qualification/discovery.md` and its
   pending fresh-client behavioral cases. Local only, not a rollout or proof of
   installed-client intent recognition.
+### Hardening follow-up (local, not deployed)
+
+The [hardening report](qualification/hardening.md) supersedes the initial gaps
+below for current local source. It records implemented retirement fences/outbox,
+bounded and fair set-based cleanup, and MIME preflight rejection on both receipt
+and parsed reads. Baseline benchmark reports are retained unchanged as historical
+evidence. Production memory/concurrency qualification, rollback of both retirement
+ledgers, combined SSE/TTL integration and real SMTP remain explicitly separate.
+
+### Campus-rollout resource and retirement qualification (2026-10-21, local only)
+
+No deployment, remote Wrangler operation or real delivery occurred in this slice.
+This was the pre-hardening baseline. Reproducible harnesses and reports:
+
+- [MIME resource benchmark](qualification/mime-bench.md): 28 cases in real
+  workerd, including near-25 MiB receipt and owner reads. Almost-matching boundary
+  lines trigger a 128 MiB-old-space Node OOM while Miniflare accepts them.
+  Miniflare does not enforce production isolate memory/CPU limits: the memory
+  gate is **not passed**.
+- [Cleanup throughput](qualification/cleanup-bench.md): 1k/10k expiry, destruction,
+  stale/deleting rows, and orphan/prefix backlogs. Ordinary expiry is 200/run
+  globally; mixed cleanup makes 1,001 D1 binding calls, exceeding the published
+  1,000 D1 budget even when batches count as one. No shared invocation budget
+  exists. Capacity/limits remain blockers.
+- [Retirement/recovery](qualification/retirement.md): real local API retirement
+  leaves inboxes active and sender credentials valid. A fresh generation cannot
+  inherit them, but restoring the old generation regains access. A precise
+  outbox/fence/recovery-ledger proposal is recorded, not implemented.
+- [SMTP operator runbook](qualification/smtp-runbook.md): fetched Cloudflare
+  documentation distinguishes permanent `setReject` from unspecified uncaught
+  inbound exception/retry behavior. Live tests are specified but **not run**.
+
+Keep the operator restriction. These findings advance evidence, not campus
+enablement. Hosted-client discovery/save-helper and policy gates are unchanged.
+
 - Independent contract tests run in Miniflare with actual D1/R2, email and cron
   events. Four mutation checks established that tests detect owner-filter removal,
   expired-message visibility, wildcard-search escaping and orphan-check removal.
@@ -178,6 +301,14 @@ forwarding, execution or acting on sender-written instructions.
   R2 writes could outlive deletion tracking, and HTML stripping was quadratic.
   Hardening landed with 47 passing Worker tests, including delayed-put and failed
   cleanup injection. API integration is rechecked separately.
+- Endpoint lifetimes (2026-10-21, local only): seven Miniflare contract tests cover
+  the preset and bounds, immediate email/HTTP refusal (including valid credentials),
+  owner reads failing at expiry, no renewal, shorten-only updates, the reservation
+  and stored-mark rechecks for in-flight uploads, sweep destruction through the
+  shared path and untouched lifetime-free/legacy rows. Eight mutation checks (each
+  liveness check, the sweep step, the expiry view, the quiescence anchor and the
+  shorten-only rule) each failed at least one test. The API end-to-end harness
+  covers preset, 409 on lengthening, expiry and the diagnostics label. Not deployed.
 
 Commands:
 

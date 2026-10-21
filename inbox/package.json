@@ -5,10 +5,12 @@
   "scripts": {
     "dev": "wrangler dev --local",
     "deploy": "wrangler deploy",
+    "pretest": "node scripts/build-dkim.mjs",
     "test": "node --test test/*.test.mjs",
     "migrate:local": "wrangler d1 migrations apply DB --local"
   },
   "dependencies": {
+    "mailauth": "8.0.1",
     "postal-mime": "4.0.11"
   },
   "devDependencies": {

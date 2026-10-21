@@ -6,6 +6,8 @@
   "account_id": "1a49fb69291d42e23c4ed4dcffce5bbc",
   "main": "src/worker.js",
   "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "build": { "command": "node scripts/build-dkim.mjs" },
 
   // Reachable only through the routes below and the API's service binding.
   "workers_dev": false,
@@ -45,6 +47,8 @@
   // The numeric limits in DESIGN.md (RETENTION_SECONDS, MAX_*, DESTROY_QUIESCE_SECONDS)
   // fall back to code defaults in src/worker.js; set a var here only to override one.
   "vars": {
+    // Enable only after verifier + migration are deployed and propagation is checked.
+    "EMAIL_AUTH_CREATION_ENABLED": "false",
     // Approved first-party apex arrivals; never receipt URLs or private pages.
     "BROWSER_ARRIVALS_ENABLED": "true",
     // Dedicated inboxes source writer in collector WRITE_KEYS_JSON. Supply with

@@ -23,6 +23,7 @@
     "test:user-retention": "node scripts/test-user-retention.mjs",
     "test:telemetry": "node scripts/test-telemetry.mjs",
     "test:inboxes": "node scripts/test-inboxes.mjs",
+    "test:inbox-stream": "node --test scripts/test-inbox-stream.mjs",
     "test:inboxes-e2e": "node scripts/test-inboxes-e2e.mjs",
     "test:diagnostics": "node --test scripts/test-diagnostics.mjs && node scripts/test-inboxes-e2e.mjs",
     "test:sandbox-credentials": "node scripts/harness-sandbox-credentials.mjs",

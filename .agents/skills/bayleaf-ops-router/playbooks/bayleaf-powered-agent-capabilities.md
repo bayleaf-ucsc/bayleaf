@@ -153,11 +153,28 @@ API to keep a retired capability appearing functional.
 
 ## Refinement log
 
+- 2026-10-21 (integrated production rollout): Preserve live adapter pins in an
+  isolated staging copy and run authentic build hooks: main's generated assets may
+  be test fixtures. Fetched deployed modules and exact variable readback qualified
+  the artifact; HTTP export/SSE smoke and collector readback remain separate from
+  installed-client discovery, SMTP and production memory gates.
+
+- 2026-10-21 (DKIM main integration): Creation remains explicitly disabled in
+  owner workflow prose and deployment config. Cross-feature tests need the
+  verifier build/node compatibility and trigger-aware migration splitting even
+  when they exercise only SSE or export; HTTP schema support is not enablement.
+
 - 2026-10-21 (Inboxes discovery, local): Desktop now has a dedicated catalog skill
   and all three non-Chat skills link to a focused workflow guide. Version catalog
   entries for feature/pilot text changes too, not just source edits. Workerd checks
   delivery and negative discovery; fresh-client behavioral prompts and rollout
   gates are recorded in `inbox/qualification/discovery.md`, not claimed as passed.
+
+- 2026-10-21 (Inboxes DKIM, isolated local worktree): Exposure is creation/readback
+  through the owner HTTP API plus llms orientation, with adapter delivery deferred
+  in `inbox/qualification/DKIM-INTEGRATION.md`. Clean-worktree API tests needed
+  explicit test-only fixtures for unrelated generated adapter assets; this does
+  not qualify real adapter installation or justify fixture-based deployment.
 
 - 2026-10-20 (Inboxes #97, local only): Approved HTTP/desktop/hosted exposure
   matrix lives in `inbox/QUALIFICATION.md`; Chat and dashboard deferred. Add

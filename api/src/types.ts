@@ -22,6 +22,9 @@ export interface Bindings {
   INBOXES?: InboxManagement;
   INBOXES_ENABLED?: string;
   INBOXES_PILOT_OWNER?: string;
+  INBOX_STREAM_SECONDS?: string;
+  INBOX_STREAM_POLL_MS?: string;
+  INBOX_STREAM_WRITE_MS?: string;
 
   // GCP / Vertex AI
   // Master kill-switch for the Vertex backend. When not exactly the string
@@ -278,9 +281,10 @@ export type TinfoilKeyCreated = TinfoilKey;
 /** `bayleaf-inboxes` InboxManagement RPC stub (inbox/DESIGN.md). Every method
  * takes the owner's account_generation first and returns JSON or `{error}`;
  * the body and attachment reads return a Response on success. */
-export type InboxManagement = Record<'createInbox' | 'listInboxes' | 'getInbox' | 'destroyInbox' | 'listMessages' |
+export type InboxManagement = Record<'createInbox' | 'listInboxes' | 'getInbox' | 'updateInbox' | 'destroyInbox' | 'listMessages' |
   'getMessage' | 'getMessageText' | 'getMessageBody' | 'getAttachment' | 'setArchived' | 'deleteMessage' | 'createCredential' |
-  'listCredentials' | 'revokeCredential', (owner: string, ...args: unknown[]) => Promise<unknown>>;
+  'listCredentials' | 'revokeCredential' | 'listEvents' | 'acquireEventStream' | 'readEventStream' | 'releaseEventStream' | 'exportInbox' | 'getMessageHar' | 'retireOwner',
+  (owner: string, ...args: unknown[]) => Promise<unknown>>;
 
 /** Hono app environment type */
 export type AppEnv = {

@@ -18,12 +18,14 @@
 //   JSON reply exposes the setReject reason. The scheduled sweep runs via getWorker().scheduled().
 // - Time travel is done by editing D1 rows directly.
 
-import { describe, it, before, after } from 'node:test';
+import { describe, it, before, after, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { randomBytes, createHash } from 'node:crypto';
+import { randomBytes, createHash, generateKeyPairSync } from 'node:crypto';
+import { dkimSign } from 'mailauth/lib/dkim/sign';
+import { exportTests } from './export-cases.mjs';
 
 const local = createRequire(import.meta.url);
 const { build } = local('esbuild');
@@ -115,6 +117,61 @@ function crudeHeaders(bytes) {
 export default {
   async fetch(req, env, ctx) {
     const u = new URL(req.url);
+    if (u.hostname === 'expiry-harness.invalid') {
+      const { method, args, point, latch } = await req.json();
+      let paused = false;
+      let dbCalls = 0, dbStatements = 0;
+      const gate = async name => {
+        if (!paused && name.includes(point)) {
+          paused = true;
+          await env.PUT_GATE.fetch('https://put-gate.invalid/' + latch);
+        }
+      };
+      const originals = new Map();
+      const statement = (raw, sql) => {
+        const wrapped = new Proxy(raw, { get(target, key) {
+          if (key === 'bind') return (...values) => statement(target.bind(...values), sql);
+          if (['first', 'all', 'run'].includes(key)) return async (...values) => {
+            dbCalls++; dbStatements++;
+            await gate(sql);
+            const result = await target[key](...values);
+            await gate('after:' + sql);
+            return result;
+          };
+          const value = target[key];
+          return typeof value === 'function' ? value.bind(target) : value;
+        } });
+        originals.set(wrapped, { raw, sql });
+        return wrapped;
+      };
+      const db = { prepare: sql => statement(env.DB.prepare(sql), sql), batch: async statements => {
+        const items = statements.map(s => originals.get(s));
+        dbCalls++; dbStatements += items.length;
+        if (point === 'fail-transition' && items.some(s => s.sql.includes('INSERT OR IGNORE INTO cleanup_prefixes')))
+          throw new Error('synthetic transition failure');
+        await gate(items.map(s => s.sql).join(' '));
+        const result = await env.DB.batch(items.map(s => s.raw));
+        await gate('after:' + items.map(s => s.sql).join(' '));
+        return result;
+      } };
+      const blobs = new Proxy(env.BLOBS, { get(target, key) {
+        if (key === 'get') return async (...values) => {
+          const object = await target.get(...values);
+          await gate('R2 read');
+          return object;
+        };
+        const value = target[key];
+        return typeof value === 'function' ? value.bind(target) : value;
+      } });
+      const wrapped = { ...env, DB: db, BLOBS: blobs };
+      if (method === 'sweep') {
+        await call('scheduled', {}, wrapped, ctx);
+        return Response.json({ dbCalls, dbStatements });
+      }
+      if (method === 'receive') return call('fetch', new Request(args[0], { method: 'POST', body: 'delayed' }), wrapped, ctx);
+      const result = await new mod.InboxManagement(ctx, wrapped)[method](...args);
+      return result instanceof Response ? result : Response.json(result);
+    }
     if (u.hostname === 'body-harness.invalid') {
       const { target, headers, statements } = await req.json();
       // Direct reader wrapper pauses the body at the precise post-preauth boundary.
@@ -184,28 +241,255 @@ const RPC = `export default { async fetch(req, env) {
   try { r = await env.INBOXES[method](...args); }
   catch (e) { return Response.json({ __thrown: String((e && e.message) || e) }, { status: 500 }); }
   if (r instanceof Response) {
+    if (new URL(req.url).searchParams.has('cancel')) {
+      const reader = r.body.getReader();
+      await reader.read();
+      await reader.cancel();
+      return Response.json({ cancelled: true });
+    }
     const headers = encodeURIComponent(JSON.stringify([...r.headers]));
-    const buf = await r.arrayBuffer();
-    return new Response(buf, { headers: { 'x-rpc-response': String(r.status), 'x-rpc-headers': headers } });
+    let buf, streamError = '';
+    try { buf = await r.arrayBuffer(); } catch { buf = new ArrayBuffer(0); streamError = '1'; }
+    return new Response(buf, { headers: { 'x-rpc-response': String(r.status), 'x-rpc-headers': headers, 'x-rpc-stream-error': streamError } });
   }
   return Response.json(r === undefined ? { __undefined: true } : r);
 } };`;
 
 const bundle = (await build({
   absWorkingDir: ROOT, stdin: { resolveDir: ROOT, contents: WRAPPER, sourcefile: 'test-wrapper.js' },
-  bundle: true, write: false, format: 'esm', platform: 'browser', external: ['cloudflare:workers'],
+  bundle: true, write: false, format: 'esm', platform: 'browser', external: ['cloudflare:workers', 'node:*'],
 })).outputFiles[0].text;
 
-const migration = (await Promise.all(['0001_inboxes.sql', '0002_telemetry.sql'].map(file =>
-  readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')))).join('\n')
-  .replace(/--.*$/gm, '').split(';').map(s => s.trim()).filter(Boolean);
+// Preserve file boundaries for pre-events backfill fixtures, discovering every migration.
+const migrations = await Promise.all((await readdir(new URL('../migrations/', import.meta.url)))
+  .filter(f => f.endsWith('.sql')).sort().map(async file => ({ file,
+    statements: (await readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8'))
+      .replace(/--.*$/gm, '').match(/\s*(?:CREATE TRIGGER[\s\S]*?END|[^;]+);/g).map(s => s.trim()),
+  })));
 
 // ---------------------------------------------------------------- harness
 
 const noNet = () => { throw new Error('No outbound network in tests'); };
 telemetryTests();
 
-async function harness({ vars = {}, ratelimits = { accept: 60, reject: 30 }, telemetrySend } = {}) {
+describe('creation-only authenticated email restriction in real workerd/D1/R2', () => {
+  const encoding = { privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'der' } };
+  const rsa = generateKeyPairSync('rsa', { modulusLength: 2048, ...encoding });
+  const ed = generateKeyPairSync('ed25519', encoding);
+  const weak = generateKeyPairSync('rsa', { modulusLength: 1024, ...encoding });
+  const policy = { domains: ['ucsc.edu'], selector_pins: {} };
+  const raw = 'From: Author <author@ucsc.edu>\r\nTo: ignored@example.net\r\nSubject: Signed fixture\r\n\r\nOriginal body.\r\n';
+  const keys = {
+    'campus_key._domainkey.ucsc.edu': `v=DKIM1; k=rsa; p=${rsa.publicKey.toString('base64')}`,
+    'campus_key._domainkey.other.example': `v=DKIM1; k=rsa; p=${rsa.publicKey.toString('base64')}`,
+    'ed._domainkey.ucsc.edu': `v=DKIM1; k=ed25519; p=${ed.publicKey.subarray(-32).toString('base64')}`,
+    'weak._domainkey.ucsc.edu': `v=DKIM1; k=rsa; p=${weak.publicKey.toString('base64')}`,
+    'revoked._domainkey.ucsc.edu': 'v=DKIM1; k=rsa; p='
+  };
+  const signed = async (text = raw, signatures = [{}]) => {
+    const s = await dkimSign(text, { signatureData: signatures.map(extra => ({
+      signingDomain: 'ucsc.edu', selector: 'campus_key', privateKey: rsa.privateKey, ...extra
+    })) });
+    assert.deepEqual(s.errors, []);
+    return s.signatures + text;
+  };
+  let h, valid, validEd, onDns;
+  before(async () => {
+    valid = await signed();
+    validEd = await signed(raw, [{ selector: 'ed', privateKey: ed.privateKey }]);
+    h = await harness({ vars: { MAX_INBOXES_PER_OWNER: '100', MAX_EMAIL_BYTES: '26214400',
+      MAX_INBOX_BYTES: '41943040', MAX_OWNER_BYTES: '104857600' }, ratelimits: { accept: 1000, reject: 1000 },
+      dnsSend: async req => {
+        const u = new URL(req.url);
+        assert.equal(u.origin, 'https://cloudflare-dns.com');
+        assert.equal(u.pathname, '/dns-query');
+        assert.equal(u.searchParams.get('type'), 'TXT');
+        assert.equal(req.headers.get('accept'), 'application/dns-json');
+        if (onDns) { const callback = onDns; onDns = null; await callback(); }
+        const key = keys[u.searchParams.get('name').toLowerCase()];
+        if (key === 'servfail') return Response.json({ Status: 2 });
+        if (key === 'oversized') return new Response('x'.repeat(32769));
+        return Response.json(key ? { Status: 0, Answer: [{ type: 16, data: JSON.stringify(key) }] } : { Status: 3 });
+      } });
+  });
+  after(async () => { await h?.mf.dispose(); });
+
+  it('normalizes and reports immutable policy only to its owner', async () => {
+    const a = owner(), b = owner();
+    const ibx = await h.create(a, 'email', { email_auth: { domains: ['UCSC.EDU'], selector_pins: { 'UCSC.EDU': ['Campus_Key'] } } });
+    const expected = { domains: ['ucsc.edu'], selector_pins: { 'ucsc.edu': ['campus_key'] } };
+    assert.deepEqual(ibx.email_auth, expected);
+    assert.equal(ibx.restricted_email_max_bytes, 1048576);
+    assert.deepEqual((await h.rpc('getInbox', a, ibx.id)).email_auth, expected);
+    assert.deepEqual((await h.rpc('listInboxes', a)).inboxes[0].email_auth, expected);
+    isErr(await h.rpc('getInbox', b, ibx.id), 'not_found');
+    assert.equal((await h.rpc('listInboxes', b)).inboxes.length, 0);
+    await assert.rejects(h.db.prepare('UPDATE inboxes SET email_auth_json=NULL WHERE id=?').bind(ibx.id).run(), /immutable/);
+    assert.deepEqual((await h.rpc('getInbox', a, ibx.id)).email_auth, expected);
+  });
+
+  it('rejects malformed policy and restrictions on HTTP without creating rows', async () => {
+    const a = owner();
+    for (const email_auth of [false, {}, { domains: [] }, { domains: ['*.ucsc.edu'] },
+      { domains: ['user@ucsc.edu'] }, { domains: ['ucsc.edu', 'UCSC.EDU'] },
+      { domains: ['ucsc.edu'], extra: true }, { domains: ['ucsc.edu'], selector_pins: { 'other.edu': ['s1'] } },
+      { domains: ['ucsc.edu'], selector_pins: { 'ucsc.edu': [] } },
+      { domains: ['ucsc.edu'], selector_pins: { 'ucsc.edu': ['bad..label'] } }]) {
+      isErr(await h.rpc('createInbox', a, { type: 'email', email_auth }), 'invalid');
+    }
+    isErr(await h.rpc('createInbox', a, { type: 'http', email_auth: policy }), 'invalid');
+    assert.equal((await h.rpc('listInboxes', a)).inboxes.length, 0);
+  });
+
+  it('preserves explicitly unrestricted reception, including omitted/null policy', async () => {
+    for (const extra of [{}, { email_auth: null }]) {
+      const ibx = await h.create(owner(), 'email', extra);
+      assert.equal(ibx.email_auth, null);
+      assert.equal(ibx.restricted_email_max_bytes, undefined);
+      assert.equal((await h.emailDirect({ to: ibx.address, raw })).rejectReason, undefined);
+      assert.equal((await h.db.prepare('SELECT email_auth_json FROM inboxes WHERE id=?').bind(ibx.id).first()).email_auth_json, null);
+    }
+  });
+
+  for (const gate of [undefined, 'false']) it(`creation gate ${gate ?? 'unset'} fails closed but never bypasses an existing policy`, async () => {
+    const gated = await harness({ vars: { EMAIL_AUTH_CREATION_ENABLED: gate } });
+    try {
+      const a = owner();
+      isErr(await gated.rpc('createInbox', a, { type: 'email', email_auth: policy }), 'disabled');
+      const open = await gated.create(a, 'email');
+      assert.equal(open.email_auth, null);
+      // Simulate a previously created restricted inbox while creation is off.
+      const local = b32(26), id = `ibx_${b32(26)}`;
+      await gated.db.prepare(`INSERT INTO inboxes(id,owner,type,nonce,state,created_at,email_auth_json)
+        VALUES(?,?,'email',?,'active',?,?)`).bind(id, a, local, now(), JSON.stringify(policy)).run();
+      const result = await gated.emailDirect({ to: `${local}@${DOMAIN}`, raw });
+      assert.equal(result.rejectReason, '5.7.1 DKIM domain authorization required');
+    } finally { await gated.mf.dispose(); }
+  });
+
+  it('failed DKIM does not consume ACCEPT_LIMIT; successful DKIM does', async () => {
+    const limited = await harness({ ratelimits: { accept: 1, reject: 10 }, dnsSend: async () =>
+      Response.json({ Status: 0, Answer: [{ type: 16, data: JSON.stringify(keys['campus_key._domainkey.ucsc.edu']) }] }) });
+    try {
+      const ibx = await limited.create(owner(), 'email', { email_auth: policy });
+      assert.match((await limited.emailDirect({ to: ibx.address, raw })).rejectReason, /5\.7\.1/);
+      assert.equal((await limited.emailDirect({ to: ibx.address, raw: valid })).rejectReason, undefined);
+      assert.match((await limited.emailDirect({ to: ibx.address, raw: valid })).rejectReason, /Rate limited/);
+      assert.equal((await limited.db.prepare('SELECT COUNT(*) n FROM messages WHERE inbox_id=?').bind(ibx.id).first()).n, 1);
+    } finally { await limited.mf.dispose(); }
+  });
+
+  for (const algorithm of ['RSA', 'Ed25519']) it(`accepts ${algorithm} and stores only local proof metadata`, async () => {
+    const ibx = await h.create(owner(), 'email', { email_auth: policy });
+    const result = await h.emailDirect({ to: ibx.address, raw: algorithm === 'RSA' ? valid : validEd });
+    assert.equal(result.threw, null);
+    assert.equal(result.rejectReason, undefined);
+    const stored = await h.db.prepare('SELECT meta_json FROM messages WHERE inbox_id=?').bind(ibx.id).first();
+    assert.deepEqual(JSON.parse(stored.meta_json).dkim_auth, { domain: 'ucsc.edu',
+      selector: algorithm === 'RSA' ? 'campus_key' : 'ed', algo: algorithm === 'RSA' ? 'rsa-sha256' : 'ed25519-sha256' });
+  });
+
+  const failures = {
+    'unsigned mail': () => raw,
+    'copied Authentication-Results': () => 'Authentication-Results: trusted.example; dkim=pass header.d=ucsc.edu\r\n' + raw,
+    'body tampered': () => valid.replace('Original body.', 'Changed body.'),
+    'signed header tampered': () => valid.replace('Subject: Signed fixture', 'Subject: Changed'),
+    'duplicate From': () => 'From: other@ucsc.edu\r\n' + valid,
+    'l= even when full-body': () => signed(raw, [{ maxBodyLength: 99999 }]),
+    'l= plus unsigned appended body': async () => (await signed(raw, [{ maxBodyLength: 4 }])) + 'Unsigned append\r\n',
+    'missing key': () => signed(raw, [{ selector: 'missing' }]),
+    'revoked key': () => signed(raw, [{ selector: 'revoked' }]),
+    '1024-bit RSA': () => signed(raw, [{ selector: 'weak', privateKey: weak.privateKey }]),
+    'unaligned signed domain': () => signed(raw, [{ signingDomain: 'other.example' }]),
+    'relaxed-only From subdomain': () => signed(raw.replace('author@ucsc.edu', 'author@sub.ucsc.edu')),
+    'five signatures': () => signed(raw, [{}, {}, {}, {}, {}]),
+    'wrong pin': () => valid,
+    'valid unpinned signature plus invalid pinned one': () => signed(raw, [
+      { selector: 'ed', privateKey: rsa.privateKey }, {}
+    ])
+  };
+  for (const [name, message] of Object.entries(failures)) it(`rejects ${name} before storing`, async () => {
+    const pins = name.includes('pin') ? { 'ucsc.edu': ['ed'] } : {};
+    const ibx = await h.create(owner(), 'email', { email_auth: { ...policy, selector_pins: pins } });
+    const result = await h.emailDirect({ to: ibx.address, raw: await message() });
+    assert.equal(result.rejectReason, '5.7.1 DKIM domain authorization required');
+    assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM messages WHERE inbox_id=?').bind(ibx.id).first()).n, 0);
+    assert.equal((await h.r2.list({ prefix: `m/${ibx.id}/` })).objects.length, 0);
+  });
+
+  it('accepts replay (not prevented) and a same-signature selector pin', async () => {
+    const ibx = await h.create(owner(), 'email', { email_auth: { ...policy, selector_pins: { 'ucsc.edu': ['campus_key'] } } });
+    for (let i = 0; i < 2; i++) assert.equal((await h.emailDirect({ to: ibx.address, raw: valid })).rejectReason, undefined);
+    assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM messages WHERE inbox_id=?').bind(ibx.id).first()).n, 2);
+  });
+
+  it('rechecks active state at reservation if destroyed during DKIM lookup', async () => {
+    const ibx = await h.create(owner(), 'email', { email_auth: policy });
+    onDns = () => h.db.prepare("UPDATE inboxes SET state='destroying', destroy_requested_at=? WHERE id=?")
+      .bind(now(), ibx.id).run();
+    const result = await h.emailDirect({ to: ibx.address, raw: valid });
+    assert.equal(result.rejectReason, '5.1.1 Address not found');
+    assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM messages WHERE inbox_id=?').bind(ibx.id).first()).n, 0);
+  });
+
+  it('bounds restricted size by both declared and actual bytes without affecting open mail', async () => {
+    const ibx = await h.create(owner(), 'email', { email_auth: policy });
+    for (const request of [{ raw: valid, rawSize: 1048577 }, { raw: raw + 'a'.repeat(1048576), rawSize: 1 }]) {
+      const result = await h.emailDirect({ to: ibx.address, ...request });
+      assert.match(result.rejectReason, /5\.3\.4 Restricted inbox.*1 MiB/);
+    }
+    const open = await h.create(owner(), 'email');
+    assert.equal((await h.emailDirect({ to: open.address, raw: raw + 'a'.repeat(1048576) })).rejectReason, undefined);
+  });
+
+  it('combines creation policy with TTL and denies expiry during DKIM lookup', async () => {
+    const a = owner();
+    const ibx = await h.create(a, 'email', { preset: 'experiment', email_auth: policy });
+    assert.ok(ibx.expires_at >= now() + 898 && ibx.expires_at <= now() + 900);
+    assert.deepEqual(ibx.email_auth, policy);
+    isErr(await h.rpc('updateInbox', a, ibx.id, { email_auth: null }), 'invalid');
+    onDns = () => h.db.prepare('UPDATE inboxes SET expires_at=? WHERE id=?').bind(now() - 1, ibx.id).run();
+    const result = await h.emailDirect({ to: ibx.address, raw: valid });
+    assert.equal(result.rejectReason, '5.1.1 Address not found');
+    assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM messages WHERE inbox_id=?').bind(ibx.id).first()).n, 0);
+    assert.equal((await h.r2.list({ prefix: `m/${ibx.id}/` })).objects.length, 0);
+  });
+
+  it('verifies a near-cap signed message before MIME parsing and storage', async () => {
+    const ibx = await h.create(owner(), 'email', { email_auth: policy });
+    const big = await signed(raw + 'x'.repeat(1048576 - 4096));
+    assert.ok(Buffer.byteLength(big) < 1048576 && Buffer.byteLength(big) > 1040000);
+    const started = performance.now();
+    const result = await h.emailDirect({ to: ibx.address, raw: big });
+    assert.equal(result.rejectReason, undefined);
+    assert.equal(result.threw, null);
+    console.log(JSON.stringify({ restrictedNearCapBytes: Buffer.byteLength(big), endpointWallMs: Math.round(performance.now() - started) }));
+  });
+
+  it('bounds MIME metadata work independently of a valid DKIM signature', async () => {
+    const ibx = await h.create(owner(), 'email', { email_auth: policy });
+    const multipart = raw.replace('\r\n\r\nOriginal body.\r\n',
+      '\r\nContent-Type: multipart/mixed; boundary="fixture"\r\n\r\n' +
+      ('--fixture\r\nContent-Type: text/plain\r\n\r\nx\r\n').repeat(300) + '--fixture--\r\n');
+    const result = await h.emailDirect({ to: ibx.address, raw: await signed(multipart) });
+    assert.equal(result.rejectReason, '5.3.4 MIME resource limit exceeded');
+    assert.equal(result.threw, null);
+    const stored = await h.db.prepare('SELECT meta_json FROM messages WHERE inbox_id=?').bind(ibx.id).first();
+    assert.equal(stored, null);
+  });
+
+  it('treats DNS SERVFAIL and oversized responses as transient, never accepting', async () => {
+    for (const key of ['servfail', 'oversized']) {
+      keys[`${key}._domainkey.ucsc.edu`] = key;
+      const ibx = await h.create(owner(), 'email', { email_auth: policy });
+      const result = await h.emailDirect({ to: ibx.address, raw: await signed(raw, [{ selector: key }]) });
+      assert.equal(result.threw, 'email authorization temporarily unavailable');
+      assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM messages WHERE inbox_id=?').bind(ibx.id).first()).n, 0);
+    }
+  });
+});
+
+async function harness({ vars = {}, ratelimits = { accept: 60, reject: 30 }, telemetrySend, dnsSend, beforeEvents } = {}) {
   const puts = new Map();
   const putLatch = id => {
     if (!puts.has(id)) {
@@ -216,10 +500,11 @@ async function harness({ vars = {}, ratelimits = { accept: 60, reject: 30 }, tel
     }
     return puts.get(id);
   };
-  const bindings = { INBOXES_ENABLED: 'true', INBOX_DOMAIN: DOMAIN, ...LIMITS, ...vars };
+  const bindings = { INBOXES_ENABLED: 'true', EMAIL_AUTH_CREATION_ENABLED: 'true', INBOX_DOMAIN: DOMAIN, ...LIMITS, ...vars };
   for (const k of Object.keys(bindings)) if (bindings[k] === undefined) delete bindings[k];
   const inbox = { name: 'inbox', modules: true, script: bundle, compatibilityDate: COMPAT,
-    d1Databases: ['DB'], r2Buckets: ['BLOBS'], bindings, outboundService: telemetrySend || noNet,
+    compatibilityFlags: ['nodejs_compat'],
+    d1Databases: ['DB'], r2Buckets: ['BLOBS'], bindings, outboundService: dnsSend || telemetrySend || noNet,
     serviceBindings: { PUT_GATE: async req => {
       const latch = putLatch(new URL(req.url).pathname.slice(1));
       latch.notify();
@@ -241,7 +526,10 @@ async function harness({ vars = {}, ratelimits = { accept: 60, reject: 30 }, tel
     ],
   }));
   const db = await mf.getD1Database('DB', 'inbox');
-  for (const stmt of migration) await db.prepare(stmt).run();
+  for (const { file, statements } of migrations) {
+    if (file === '0004_events.sql' && beforeEvents) await beforeEvents(db);
+    for (const stmt of statements) await db.prepare(stmt).run();
+  }
   const r2 = await mf.getR2Bucket('BLOBS', 'inbox');
   const inboxWorker = await mf.getWorker('inbox');
   const edge = await mf.getWorker('edge');
@@ -254,6 +542,7 @@ async function harness({ vars = {}, ratelimits = { accept: 60, reject: 30 }, tel
       if (r.headers.has('x-rpc-response')) {
         return { response: true, status: Number(r.headers.get('x-rpc-response')),
           headers: new Headers(JSON.parse(decodeURIComponent(r.headers.get('x-rpc-headers')))),
+          streamError: r.headers.get('x-rpc-stream-error') === '1',
           bytes: new Uint8Array(await r.arrayBuffer()) };
       }
       const j = await r.json();
@@ -292,6 +581,10 @@ async function harness({ vars = {}, ratelimits = { accept: 60, reject: 30 }, tel
       if (action === 'release') latch.release();
       else await latch.started;
     },
+    delayed(method, args, point, latch) {
+      return inboxWorker.fetch('https://expiry-harness.invalid/', { method: 'POST',
+        body: JSON.stringify({ method, args, point, latch }) });
+    },
     // Convenience wrappers.
     async create(owner, type, extra = {}) {
       const ibx = await h.rpc('createInbox', owner, { type, ...extra });
@@ -308,6 +601,206 @@ async function harness({ vars = {}, ratelimits = { accept: 60, reject: 30 }, tel
   };
   return h;
 }
+
+// ================================================================ arrival events
+
+const b64u = s => Buffer.from(s).toString('base64url');
+const unb64u = s => Buffer.from(s, 'base64url').toString();
+const EVENT_KEYS = ['created_at', 'cursor', 'event_id', 'message_id', 'type'];
+
+describe('arrival events: finite catch-up (DESIGN: Arrival events)', () => {
+  let h;
+  before(async () => { h = await harness(); });
+  after(async () => { await h?.mf.dispose(); });
+  const events = async (own, id, opts = {}) => { const r = await h.rpc('listEvents', own, id, opts); assertOk(r); return r; };
+
+  it('records one minimal event per stored receipt, ascending, resumable without gaps', async () => {
+    const own = owner(), ibx = await h.create(own, 'http');
+    for (const p of ['/a', '/b', '/c']) assert.equal((await postOpen(h, ibx, p, { body: 'secret-body' })).status, 200);
+    const all = await events(own, ibx.id);
+    assert.equal(all.more, false);
+    assert.deepEqual(all.events.map(e => e.event_id), ['evt_1', 'evt_2', 'evt_3']);
+    // Commit order, not listMessages' same-second id tiebreak.
+    const paths = [];
+    for (const e of all.events) paths.push((await h.rpc('getMessage', own, ibx.id, e.message_id)).preview.path);
+    assert.deepEqual(paths, ['/a', '/b', '/c']);
+    for (const e of all.events) {
+      assert.deepEqual(Object.keys(e).sort(), EVENT_KEYS, 'events are references, not content');
+      assert.equal(e.type, 'message.received');
+    }
+    assert.ok(!JSON.stringify(all).includes('secret-body') && !JSON.stringify(all).includes('/a'));
+    assert.equal(all.cursor, all.events[2].cursor, 'caught up: resume at the head');
+    const p1 = await events(own, ibx.id, { limit: 2 });
+    assert.equal(p1.more, true);
+    assert.equal(p1.cursor, p1.events[1].cursor);
+    const p2 = await events(own, ibx.id, { after: p1.cursor, limit: 2 });
+    assert.deepEqual([...p1.events, ...p2.events].map(e => e.event_id), ['evt_1', 'evt_2', 'evt_3']);
+    assert.equal(p2.more, false);
+    const idle = await events(own, ibx.id, { after: all.cursor });
+    assert.deepEqual(idle.events, []);
+    assert.equal(idle.cursor, all.cursor);
+    await postOpen(h, ibx, '/d');
+    const next = await events(own, ibx.id, { after: all.cursor });
+    assert.deepEqual(next.events.map(e => e.event_id), ['evt_4']);
+  });
+
+  it('orders by commit rather than reservation, with no gap past a delayed R2 put', { timeout: 15000 }, async () => {
+    const own = owner(), ibx = await h.create(own, 'http');
+    const start = await events(own, ibx.id, { after: 'now' });
+    const delayed = postOpen(h, ibx, '/slow', { body: 'slow', headers: { 'x-harness-delay-put': 'event-order' } });
+    await h.putControl('event-order', 'wait');
+    try {
+      assert.deepEqual((await events(own, ibx.id, { after: start.cursor })).events, [], 'pending writes have no arrival');
+      assert.equal((await postOpen(h, ibx, '/fast')).status, 200);
+      const fast = await events(own, ibx.id, { after: start.cursor });
+      assert.deepEqual(fast.events.map(e => e.event_id), ['evt_1']);
+      await h.putControl('event-order', 'release');
+      assert.equal((await delayed).status, 200);
+      const slow = await events(own, ibx.id, { after: fast.cursor });
+      assert.deepEqual(slow.events.map(e => e.event_id), ['evt_2']);
+      assert.equal((await h.rpc('getMessage', own, ibx.id, slow.events[0].message_id)).preview.path, '/slow');
+    } finally { await h.putControl('event-order', 'release'); await delayed; }
+  });
+
+  it('rolls back the stored transition and counter if the event insert fails', async () => {
+    const own = owner(), ibx = await h.create(own, 'http');
+    await h.db.prepare(`CREATE TRIGGER fail_event BEFORE INSERT ON events BEGIN
+      SELECT RAISE(ABORT, 'synthetic event failure'); END`).run();
+    try {
+      assert.equal((await postOpen(h, ibx, '/failed')).status, 503);
+      assert.equal((await h.row('inboxes', ibx.id)).event_seq, 0);
+      assert.deepEqual((await events(own, ibx.id)).events, []);
+      const rows = (await h.db.prepare('SELECT state FROM messages WHERE inbox_id=?').bind(ibx.id).all()).results;
+      assert.deepEqual(rows.map(r => r.state), ['pending'], 'no visible receipt without its event');
+    } finally { await h.db.prepare('DROP TRIGGER fail_event').run(); }
+    await h.db.prepare('UPDATE messages SET received_at=? WHERE inbox_id=?').bind(now() - 1000, ibx.id).run();
+    await h.sweep();
+    assert.deepEqual(await h.objects(`m/${ibx.id}/`), [], 'stale reservation cleanup also removes its R2 bytes');
+    assert.equal((await postOpen(h, ibx, '/retry')).status, 200);
+    assert.deepEqual((await events(own, ibx.id)).events.map(e => e.event_id), ['evt_1']);
+  });
+
+  it('advances past invisible events without sequence reuse when the inbox becomes empty', async () => {
+    const own = owner(), ibx = await h.create(own, 'http');
+    await postOpen(h, ibx, '/deleted');
+    const first = (await events(own, ibx.id)).events[0];
+    await h.rpc('deleteMessage', own, ibx.id, first.message_id);
+    const empty = await events(own, ibx.id);
+    assert.deepEqual(empty.events, []);
+    assert.equal(empty.cursor, first.cursor);
+    await postOpen(h, ibx, '/later');
+    assert.deepEqual((await events(own, ibx.id, { after: empty.cursor })).events.map(e => e.event_id), ['evt_2']);
+  });
+
+  it('bounds replay to 100 references and advances over an invisible trailing receipt', async () => {
+    const own = owner(), ibx = await h.create(own, 'http'), t = now();
+    await h.db.batch([
+      h.db.prepare(`WITH RECURSIVE n(x) AS (SELECT 0 UNION ALL SELECT x+1 FROM n WHERE x < 104)
+        INSERT INTO messages (id, inbox_id, state, received_at, expires_at, size, meta_json)
+        SELECT 'msg_' || 'aaaaaaaaaaaaaaaaaaaaaaaa' ||
+          substr('abcdefghijklmnopqrstuvwxyz234567', (x / 32) + 1, 1) ||
+          substr('abcdefghijklmnopqrstuvwxyz234567', (x % 32) + 1, 1),
+          ?, 'stored', ?, CASE WHEN x = 104 THEN ? ELSE ? END, 0, '{}' FROM n`)
+        .bind(ibx.id, t, t - 1, t + 3600),
+      h.db.prepare(`INSERT INTO events (inbox_id, seq, message_id, type, created_at)
+        SELECT inbox_id, ROW_NUMBER() OVER (ORDER BY id), id, 'message.received', ? FROM messages WHERE inbox_id = ?`)
+        .bind(t, ibx.id),
+      h.db.prepare('UPDATE inboxes SET event_seq = 105 WHERE id = ?').bind(ibx.id),
+    ]);
+    const a = await events(own, ibx.id);
+    assert.equal(a.events.length, 100);
+    assert.equal(a.more, true);
+    const b = await events(own, ibx.id, { after: a.cursor });
+    assert.equal(b.events.length, 4);
+    assert.equal(b.more, false);
+    assert.equal(unb64u(b.cursor).split(':')[2], '105', 'cursor crosses the expired tail without replaying it');
+    assert.equal(new Set([...a.events, ...b.events].map(e => e.event_id)).size, 104);
+  });
+
+  it('after:"now" starts at the head; email receipts produce the same events', async () => {
+    const own = owner(), ibx = await h.create(own, 'email');
+    assert.equal((await h.email({ to: ibx.address, raw: mail() })).outcome, 'ok');
+    const head = await events(own, ibx.id, { after: 'now' });
+    assert.deepEqual(head.events, []);
+    assert.equal(unb64u(head.cursor).split(':')[2], '1');
+    await h.email({ to: ibx.address, raw: mail({ subject: 'second' }) });
+    const later = await events(own, ibx.id, { after: head.cursor });
+    assert.equal(later.events.length, 1);
+    assert.equal(later.events[0].event_id, 'evt_2');
+  });
+
+  it('validates input; foreign, malformed and other-inbox cursors are invalid; other owners see not_found', async () => {
+    const own = owner(), a = await h.create(own, 'http'), b = await h.create(own, 'http');
+    await postOpen(h, a, '/');
+    const cursor = (await events(own, a.id)).cursor;
+    for (const opts of [{ limit: 0 }, { limit: 101 }, { limit: 1.5 }, { extra: 1 }, { after: 5 }, { after: 'nope' },
+      { after: b64u('0123456789abcdef:ibx_x:1') }, { after: cursor + 'x'.repeat(200) }])
+      isErr(await h.rpc('listEvents', own, a.id, opts), 'invalid');
+    isErr(await h.rpc('listEvents', own, b.id, { after: cursor }), 'invalid');
+    isErr(await h.rpc('listEvents', owner(), a.id, {}), 'not_found');
+  });
+
+  it('a foreign epoch or a position past the high-water mark is expired', async () => {
+    const own = owner(), ibx = await h.create(own, 'http');
+    await postOpen(h, ibx, '/');
+    const [epoch, id] = unb64u((await events(own, ibx.id)).cursor).split(':');
+    for (const forged of [b64u(`ffffffffffffffff:${id}:1`), b64u(`${epoch}:${id}:2`)]) {
+      isErr(await h.rpc('listEvents', own, ibx.id, { after: forged }), 'expired');
+    }
+    const head = (await events(own, ibx.id)).cursor;
+    await h.rpc('deleteMessage', own, ibx.id, (await events(own, ibx.id)).events[0].message_id);
+    assert.deepEqual((await events(own, ibx.id, { after: head })).events, []);
+  });
+
+  it('revalidates on read: deleted, expired, destroyed and retired content never resurfaces', async () => {
+    const own = owner(), ibx = await h.create(own, 'http');
+    for (let i = 0; i < 3; i++) await postOpen(h, ibx, `/${i}`);
+    const [e1, e2, e3] = (await events(own, ibx.id)).events;
+    await h.rpc('deleteMessage', own, ibx.id, e1.message_id);
+    assert.equal((await h.db.prepare('SELECT COUNT(*) AS n FROM events WHERE message_id = ?').bind(e1.message_id).first()).n, 0);
+    await h.db.prepare('UPDATE messages SET expires_at = ? WHERE id = ?').bind(now() - 1, e2.message_id).run();
+    await h.rpc('setArchived', own, ibx.id, e3.message_id, true);
+    assert.deepEqual((await events(own, ibx.id)).events.map(e => e.event_id), ['evt_3'], 'archive is a view; expiry hides before the sweep');
+    await h.sweep();
+    assert.equal((await h.db.prepare('SELECT COUNT(*) AS n FROM events WHERE message_id = ?').bind(e2.message_id).first()).n, 0);
+    await plant(h, ibx.id, { state: 'pending' });
+    assert.equal((await events(own, ibx.id)).events.length, 1);
+    await h.rpc('destroyInbox', own, ibx.id);
+    isErr(await h.rpc('listEvents', own, ibx.id, {}), 'not_found');
+    const expired = await h.create(own, 'http');
+    await postOpen(h, expired, '/ttl');
+    await h.db.prepare('UPDATE inboxes SET expires_at=? WHERE id=?').bind(now() - 1, expired.id).run();
+    isErr(await h.rpc('listEvents', own, expired.id, {}), 'not_found');
+    const retiredOwner = owner(), retired = await h.create(retiredOwner, 'http');
+    await postOpen(h, retired, '/retired');
+    await h.rpc('retireOwner', retiredOwner);
+    isErr(await h.rpc('listEvents', retiredOwner, retired.id, {}), 'not_found');
+  });
+});
+
+describe('arrival events: migration backfill', () => {
+  it('backfills stored messages per inbox in arrival order and sets each high-water mark', async () => {
+    const t = now(), meta = '{"type":"http","method":"POST","path":"/","query":"","headers":[],"content_type":null,"credential":null}';
+    const h = await harness({ beforeEvents: async db => {
+      const insert = (id, inbox, state, at) => db.prepare(`INSERT INTO messages (id, inbox_id, state, received_at, expires_at, size, meta_json)
+        VALUES (?, ?, ?, ?, ?, 1, ?)`).bind(id, inbox, state, at, t + 3600, meta).run();
+      for (const inbox of ['ibx_' + 'a'.repeat(26), 'ibx_' + 'b'.repeat(26)])
+        await db.prepare(`INSERT INTO inboxes (id, owner, type, nonce, state, created_at) VALUES (?, 'owner-backfill-0000', 'http', ?, 'active', ?)`)
+          .bind(inbox, inbox.slice(4), t).run();
+      await insert('msg_' + 'c'.repeat(26), 'ibx_' + 'a'.repeat(26), 'stored', t - 5);
+      await insert('msg_' + 'd'.repeat(26), 'ibx_' + 'a'.repeat(26), 'stored', t - 9);
+      await insert('msg_' + 'e'.repeat(26), 'ibx_' + 'a'.repeat(26), 'pending', t - 1);
+      await insert('msg_' + 'f'.repeat(26), 'ibx_' + 'b'.repeat(26), 'stored', t - 2);
+    } });
+    try {
+      const rows = (await h.db.prepare('SELECT inbox_id, seq, message_id FROM events ORDER BY inbox_id, seq').all()).results;
+      assert.deepEqual(rows.map(r => `${r.inbox_id.slice(4, 5)}${r.seq}${r.message_id.slice(4, 5)}`), ['a1d', 'a2c', 'b1f']);
+      const seqs = (await h.db.prepare('SELECT event_seq FROM inboxes ORDER BY id').all()).results.map(r => r.event_seq);
+      assert.deepEqual(seqs, [2, 1]);
+      assert.match((await h.db.prepare('SELECT epoch FROM event_feed').first()).epoch, /^[0-9a-f]{16}$/);
+    } finally { await h.mf.dispose(); }
+  });
+});
 
 // ---------------------------------------------------------------- helpers
 
@@ -953,7 +1446,7 @@ describe('BayLeaf Inboxes contract', () => {
       assert.ok(r.error === 'not_found' || r.error === 'invalid');
     });
 
-    it('stores unparseable mail with parse_error true and exact raw bytes', async () => {
+    it('rejects parser resource exhaustion and preserves accepted malformed raw bytes', async () => {
       const o = owner();
       const a = await h.create(o, 'email');
       let deep = 'Message-ID: <deep@example.org>\r\n';
@@ -963,16 +1456,12 @@ describe('BayLeaf Inboxes contract', () => {
       await assert.rejects(PostalMime.parse(deepBytes), 'fixture must make postal-mime throw');
       const r = await h.emailDirect({ to: a.address, raw: deepBytes });
       assert.equal(r.outcome, 'ok', r.threw);
-      assert.equal(r.rejectReason, undefined);
+      assert.equal(r.rejectReason, '5.3.4 MIME resource limit exceeded');
       const garbage = Uint8Array.from({ length: 512 }, (_, i) => (i * 37 + 11) & 255);
       assert.equal((await h.emailDirect({ to: a.address, raw: garbage })).rejectReason, undefined);
       const { messages } = await h.list(o, a.id);
-      assert.equal(messages.length, 2);
+      assert.equal(messages.length, 1);
       const bySize = Object.fromEntries(messages.map(m => [m.size, m]));
-      const dm = await h.rpc('getMessage', o, a.id, bySize[deepBytes.length].id);
-      assert.equal(dm.meta.parse_error, true);
-      assert.equal(dm.meta.type, 'email');
-      assert.deepEqual((await h.rpc('getMessageBody', o, a.id, bySize[deepBytes.length].id)).bytes, deepBytes);
       assert.deepEqual((await h.rpc('getMessageBody', o, a.id, bySize[512].id)).bytes, garbage);
     });
   });
@@ -1360,7 +1849,7 @@ function mailWithAttachment({ to }) {
 
 describe('readable text for agents (DESIGN: getMessageText)', () => {
   let h;
-  before(async () => { h = await harness({ vars: { MAX_TEXT_CHARS: '40' } }); });
+  before(async () => { h = await harness({ vars: { MAX_TEXT_CHARS: '40', MAX_EMAIL_BYTES: '70000' } }); });
   after(async () => { await h?.mf.dispose(); });
   const first = async (o, ibx) => (await h.list(o, ibx.id)).messages[0];
 
@@ -1461,5 +1950,405 @@ describe('durable delayed-write reconciliation', () => {
     for (let i = 0; i < 4; i++) await h.sweep();
     assert.deepEqual(await h.objects(`m/${paged}/`), [], 'R2 cursor survives bounded page traversal');
     assert.equal((await h.db.prepare('SELECT COUNT(*) AS n FROM cleanup_prefixes').first()).n, 56, 'empty prefixes are retained');
+  });
+});
+
+exportTests({ harness, owner, mail, postOpen, sha256, plant, isErr, now, b32 });
+
+describe('endpoint lifetimes (DESIGN: Endpoint lifetimes)', () => {
+  let h;
+  beforeEach(async () => { h = await harness(); });
+  afterEach(async () => { await h?.mf.dispose(); });
+  // Time travel: move an inbox's lifetime into the past without waiting.
+  const lapse = (id, ago = 1) => h.db.prepare('UPDATE inboxes SET expires_at=? WHERE id=?').bind(now() - ago, id).run();
+  const QUIESCE = Number(LIMITS.DESTROY_QUIESCE_SECONDS);
+
+  it('preserves pagination after the entire SQL page expires during a read', async () => {
+    const o = owner(), box = await h.create(o, 'http');
+    const deadline = now() + 2;
+    await plant(h, box.id, { received_at: now(), expires_at: deadline });
+    await plant(h, box.id, { received_at: now() - 1, expires_at: deadline });
+    const tail = await plant(h, box.id, { received_at: now() - 2 });
+    const latch = b32(16);
+    const pending = h.delayed('listMessages', [o, box.id, { limit: 2 }],
+      'after:SELECT id, inbox_id, received_at', latch);
+    await h.putControl(latch, 'wait');
+    try { await new Promise(resolve => setTimeout(resolve, Math.max(0, deadline * 1000 - Date.now()) + 100)); }
+    finally { await h.putControl(latch, 'release'); }
+    const page = await (await pending).json();
+    assert.deepEqual(page.messages, []);
+    assert.ok(page.next_cursor);
+    const next = await h.rpc('listMessages', o, box.id, { limit: 2, cursor: page.next_cursor });
+    assert.deepEqual(next.messages.map(m => m.id), [tail]);
+    assert.equal(next.next_cursor, null);
+  });
+
+  it('removes a minted credential when expiry wins the post-commit check', async () => {
+    const o = owner(), box = await h.create(o, 'http');
+    const latch = b32(16);
+    const pending = h.delayed('createCredential', [o, box.id, {}], 'after:INSERT INTO credentials', latch);
+    await h.putControl(latch, 'wait');
+    try { await lapse(box.id); } finally { await h.putControl(latch, 'release'); }
+    isErr(await (await pending).json(), 'not_found');
+    assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM credentials WHERE inbox_id=?').bind(box.id).first()).n, 0);
+    assert.equal((await h.row('inboxes', box.id)).auth_required, 1);
+  });
+
+  it('bounds expired backlog admission while existing destruction and reconciliation progress', async () => {
+    const local = await harness({ vars: { INBOX_TELEMETRY_ENABLED: 'true',
+      INBOX_TELEMETRY_WRITE_SECRET: 'synthetic-inboxes-writer-for-local-tests' } });
+    try {
+      const old = await local.create(owner(), 'http');
+      await local.rpc('destroyInbox', (await local.row('inboxes', old.id)).owner, old.id);
+      await local.db.prepare('UPDATE inboxes SET destroy_requested_at=? WHERE id=?').bind(now() - QUIESCE - 10, old.id).run();
+      const orphan = 'ibx_' + b32(16);
+      await local.db.prepare('INSERT INTO cleanup_prefixes(inbox_id,turn) VALUES (?,0)').bind(orphan).run();
+      await local.r2.put(`m/${orphan}/late`, 'synthetic');
+      for (let i = 0; i < 12; i++) {
+        const box = await local.create(owner(), 'http');
+        await local.db.prepare('UPDATE inboxes SET expires_at=? WHERE id=?').bind(now() - QUIESCE - 10, box.id).run();
+      }
+      const measured = await (await local.delayed('sweep', [], 'no-gate', '')).json();
+      assert.ok(measured.dbCalls < 100, JSON.stringify(measured));
+      assert.ok(measured.dbStatements < 150, JSON.stringify(measured));
+      console.log(JSON.stringify({ lifetime_backlog_sweep: measured }));
+      assert.equal(await local.row('inboxes', old.id), null);
+      assert.equal(await local.r2.get(`m/${orphan}/late`), null);
+      assert.equal((await local.db.prepare("SELECT COUNT(*) n FROM inboxes WHERE state='active'").first()).n, 7);
+      assert.equal((await local.db.prepare("SELECT COUNT(*) n FROM inboxes WHERE state='destroying'").first()).n, 5);
+      await local.sweep();
+      assert.equal((await local.db.prepare("SELECT COUNT(*) n FROM inboxes WHERE state='active'").first()).n, 2);
+      await local.r2.put(`m/${orphan}/late-again`, 'synthetic');
+      const failed = await local.delayed('sweep', [], 'fail-transition', '');
+      assert.equal(failed.status, 200, 'admission failure is contained');
+      assert.equal(await local.r2.get(`m/${orphan}/late-again`), null);
+      assert.equal((await local.db.prepare("SELECT COUNT(*) n FROM inboxes WHERE state='active'").first()).n, 2);
+    } finally { await local.mf.dispose(); }
+  });
+
+  it('uses execution-time expiry during delayed reservation, stored mark and credential insertion', { timeout: 30000 }, async () => {
+    await h.db.prepare('CREATE TABLE observed_stored_marks (inbox_id TEXT)').run();
+    await h.db.prepare(`CREATE TRIGGER observe_stored_mark AFTER UPDATE OF state ON messages
+      WHEN NEW.state = 'stored' BEGIN INSERT INTO observed_stored_marks VALUES (NEW.inbox_id); END`).run();
+    // D1 change counts include trigger writes. Each test has its own database,
+    // so this observer cannot affect later successful stored marks.
+    for (const point of ['INSERT INTO messages', "UPDATE messages SET state = 'stored'", 'INSERT INTO credentials']) {
+      const o = owner(), box = await h.create(o, 'http');
+      const deadline = now() + 2;
+      await h.db.prepare('UPDATE inboxes SET expires_at=? WHERE id=?').bind(deadline, box.id).run();
+      const latch = b32(16), credential = point === 'INSERT INTO credentials';
+      const pending = h.delayed(credential ? 'createCredential' : 'receive',
+        credential ? [o, box.id, {}] : [box.url], point, latch);
+      await h.putControl(latch, 'wait');
+      try {
+        await new Promise(resolve => setTimeout(resolve, Math.max(0, deadline * 1000 - Date.now()) + 100));
+      } finally { await h.putControl(latch, 'release'); }
+      const response = await pending;
+      if (credential) isErr(await response.json(), 'not_found');
+      else assert.equal(response.status, 404, point);
+      assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM observed_stored_marks WHERE inbox_id=?').bind(box.id).first()).n, 0,
+        'SQL must refuse the stored mark itself, not merely clean up after a late success');
+      if (point === 'INSERT INTO messages') assert.equal((await h.row('inboxes', box.id)).day_count, 0,
+        'expired SQL reservation must not spend quota');
+      assert.equal((await h.db.prepare("SELECT COUNT(*) n FROM messages WHERE inbox_id=? AND state='stored'").bind(box.id).first()).n, 0);
+      assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM credentials WHERE inbox_id=?').bind(box.id).first()).n, 0);
+    }
+  });
+
+  it('revalidates lists and R2-backed body, text and attachment reads after awaited work', { timeout: 30000 }, async () => {
+    const cases = [
+      ['listMessages', 'http', 'FROM messages', false],
+      ['listCredentials', 'http', 'FROM credentials', false],
+      ['getMessageBody', 'http', 'R2 read', true],
+      ['getMessageText', 'http', 'R2 read', true],
+      ['getMessageText', 'email', 'R2 read', true],
+      ['getAttachment', 'email', 'R2 read', true],
+    ];
+    for (const [method, type, point, messageArg] of cases) {
+      const o = owner(), box = await h.create(o, type);
+      if (type === 'email') await h.email({ to: box.address, raw: mailWithAttachment({ to: box.address }).raw });
+      else await postOpen(h, box, '/', { body: 'read me', headers: { 'Content-Type': 'text/plain' } });
+      const [msg] = (await h.list(o, box.id)).messages;
+      if (method === 'listCredentials') assertOk(await h.rpc('createCredential', o, box.id, {}));
+      const args = [o, box.id, ...(messageArg ? [msg.id] : []), ...(method === 'getAttachment' ? [0] : [])];
+      // Same delayed path must still succeed for a legacy, unlimited inbox.
+      for (const expire of [false, true]) {
+        const latch = b32(16);
+        const pending = h.delayed(method, args, point, latch);
+        await h.putControl(latch, 'wait');
+        try {
+          if (expire) await h.db.prepare('UPDATE inboxes SET expires_at=unixepoch() WHERE id=?').bind(box.id).run();
+        } finally { await h.putControl(latch, 'release'); }
+        const response = await pending;
+        if (expire) isErr(await response.json(), 'not_found');
+        else if (['getMessageBody', 'getAttachment'].includes(method)) assert.ok((await response.arrayBuffer()).byteLength > 0);
+        else assertOk(await response.json());
+      }
+    }
+  });
+
+  it('presets respect a deployment maximum below the preset lifetime', async () => {
+    const capped = await harness({ vars: { MAX_INBOX_TTL_SECONDS: '60' } });
+    try {
+      const o = owner();
+      isErr(await capped.rpc('createInbox', o, { type: 'http', preset: 'experiment' }), 'invalid');
+      const box = await capped.create(o, 'http');
+      isErr(await capped.rpc('updateInbox', o, box.id, { preset: 'experiment' }), 'invalid');
+      assertOk(await capped.rpc('updateInbox', o, box.id, { ttl_seconds: 60 }));
+    } finally { await capped.mf.dispose(); }
+  });
+
+  it('creates with the 15-minute experiment preset or a bounded ttl_seconds; default has none', async () => {
+    const o = owner();
+    const t0 = now();
+    const exp = await h.create(o, 'http', { preset: 'experiment' });
+    assert.ok(Math.abs(exp.expires_at - (exp.created_at + 900)) <= 1);
+    assert.ok(exp.created_at >= t0 - 1);
+    assert.equal(exp.state, 'active');
+    const ttl = await h.create(o, 'email', { ttl_seconds: 3600 });
+    assert.equal(ttl.expires_at, ttl.created_at + 3600);
+    const plain = await h.create(o, 'http');
+    assert.equal(plain.expires_at, null);
+    assert.equal((await h.row('inboxes', plain.id)).expires_at, null);
+    assert.deepEqual((await h.rpc('listInboxes', o)).inboxes.find(i => i.id === exp.id), exp);
+    const p = owner();
+    for (const bad of [{ ttl_seconds: 59 }, { ttl_seconds: 2592001 }, { ttl_seconds: 900.5 }, { ttl_seconds: '900' },
+      { preset: 'forever' }, { preset: 'constructor' }, { preset: 'experiment', ttl_seconds: 900 }, { ttl_seconds: null }])
+      isErr(await h.rpc('createInbox', p, { type: 'http', ...bad }), 'invalid');
+    assertOk(await h.rpc('createInbox', p, { type: 'http', ttl_seconds: 2592000 }));
+    assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM inboxes WHERE owner=?').bind(p).first()).n, 1);
+  });
+
+  it('refuses email and HTTP (including valid credentials) the moment the lifetime ends, before any sweep', async () => {
+    const o = owner();
+    const open = await h.create(o, 'http', { preset: 'experiment' });
+    const closed = await h.create(o, 'http', { preset: 'experiment' });
+    const mailbox = await h.create(o, 'email', { preset: 'experiment' });
+    const c = await h.rpc('createCredential', o, closed.id, { name: 'sender' });
+    assert.equal((await postOpen(h, open, '/', { body: 'before' })).status, 200);
+    assert.equal((await postOpen(h, closed, '/', { body: 'before', headers: { Authorization: `Bearer ${c.token}` } })).status, 200);
+    assert.equal((await h.email({ to: mailbox.address, raw: mail() })).rejectReason, undefined);
+    for (const ibx of [open, closed, mailbox]) await lapse(ibx.id);
+    const gone = await postOpen(h, open, '/', { body: 'after' });
+    assert.equal(gone.status, 404);
+    assert.deepEqual(JSON.parse(gone.text), NOT_FOUND);
+    assert.equal((await h.http(open.url, { method: 'GET' })).status, 404);
+    assert.equal((await postOpen(h, closed, '/', { body: 'after', headers: { Authorization: `Bearer ${c.token}` } })).status, 404);
+    // Refused at lookup, before authentication: never a 401 that confirms the endpoint.
+    assert.equal((await postOpen(h, closed, '/', { body: 'after' })).status, 404);
+    assert.equal((await postOpen(h, closed, '/', { body: 'after', headers: { Authorization: `Bearer sk-bayleaf-inbox-${'0'.repeat(64)}` } })).status, 404);
+    assert.equal((await h.email({ to: mailbox.address, raw: mail() })).rejectReason, '5.1.1 Address not found');
+    // Refused at the address lookup, before size or rate checks.
+    assert.equal((await h.emailDirect({ to: mailbox.address, raw: mail(), rawSize: 10 ** 9 })).rejectReason, '5.1.1 Address not found');
+    for (const ibx of [open, closed, mailbox]) assert.equal((await h.row('inboxes', ibx.id)).message_count, 1);
+  });
+
+  it('owner reads and writes stop at expiry; the inbox reports destroying with cleanup_not_before', async () => {
+    const o = owner();
+    const ibx = await h.create(o, 'http', { ttl_seconds: 600 });
+    const c = await h.rpc('createCredential', o, ibx.id, {});
+    assert.equal((await postOpen(h, ibx, '/', { body: 'kept', headers: { Authorization: `Bearer ${c.token}`, 'Content-Type': 'text/plain' } })).status, 200);
+    const [m] = (await h.list(o, ibx.id)).messages;
+    await lapse(ibx.id, 5);
+    const ended = (await h.row('inboxes', ibx.id)).expires_at;
+    isErr(await h.rpc('listMessages', o, ibx.id, {}), 'not_found');
+    isErr(await h.rpc('getMessage', o, ibx.id, m.id), 'not_found');
+    isErr(await h.rpc('getMessageText', o, ibx.id, m.id), 'not_found');
+    isErr(await h.rpc('getMessageBody', o, ibx.id, m.id), 'not_found');
+    isErr(await h.rpc('setArchived', o, ibx.id, m.id, true), 'not_found');
+    isErr(await h.rpc('deleteMessage', o, ibx.id, m.id), 'not_found');
+    isErr(await h.rpc('createCredential', o, ibx.id, {}), 'not_found');
+    isErr(await h.rpc('listCredentials', o, ibx.id), 'not_found');
+    isErr(await h.rpc('revokeCredential', o, ibx.id, c.credential.id), 'not_found');
+    isErr(await h.rpc('updateInbox', o, ibx.id, { ttl_seconds: 60 }), 'not_found');
+    const view = await h.rpc('getInbox', o, ibx.id);
+    assert.equal(view.state, 'destroying');
+    assert.equal(view.expires_at, ended);
+    assert.equal(view.cleanup_not_before, ended + QUIESCE);
+    assert.equal((await h.row('inboxes', ibx.id)).state, 'active', 'computed at read time, not yet transitioned');
+    // An owner's explicit destroy of an expired inbox joins the same path, anchored at expiry.
+    assertDestroy(await h.rpc('destroyInbox', o, ibx.id), ibx.id);
+    const row = await h.row('inboxes', ibx.id);
+    assert.equal(row.state, 'destroying');
+    assert.equal(row.destroy_requested_at, ended);
+    assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM credentials WHERE inbox_id=?').bind(ibx.id).first()).n, 0);
+  });
+
+  it('reads, arrivals, credentials and archive changes never renew; updateInbox only shortens or sets', async () => {
+    const o = owner();
+    const ibx = await h.create(o, 'http', { ttl_seconds: 3600 });
+    const set = ibx.expires_at;
+    const c = await h.rpc('createCredential', o, ibx.id, {});
+    for (let i = 0; i < 3; i++)
+      assert.equal((await postOpen(h, ibx, '/', { body: `n${i}`, headers: { Authorization: `Bearer ${c.token}`, 'Content-Type': 'text/plain' } })).status, 200);
+    const [m] = (await h.list(o, ibx.id)).messages;
+    assertOk(await h.rpc('getMessage', o, ibx.id, m.id));
+    assertOk(await h.rpc('getMessageText', o, ibx.id, m.id));
+    assertOk(await h.rpc('setArchived', o, ibx.id, m.id, true));
+    assertOk(await h.rpc('setArchived', o, ibx.id, m.id, false));
+    assertOk(await h.rpc('listCredentials', o, ibx.id));
+    assertOk(await h.rpc('revokeCredential', o, ibx.id, c.credential.id));
+    assertOk(await h.rpc('listInboxes', o));
+    assert.equal((await h.row('inboxes', ibx.id)).expires_at, set);
+    assert.equal((await h.rpc('getInbox', o, ibx.id)).expires_at, set);
+    // Lengthening is a conflict and changes nothing; shortening and presets work.
+    isErr(await h.rpc('updateInbox', o, ibx.id, { ttl_seconds: 7200 }), 'conflict');
+    assert.equal((await h.row('inboxes', ibx.id)).expires_at, set);
+    const shorter = await h.rpc('updateInbox', o, ibx.id, { preset: 'experiment' });
+    assertOk(shorter);
+    assert.ok(shorter.expires_at < set && Math.abs(shorter.expires_at - (now() + 900)) <= 1);
+    isErr(await h.rpc('updateInbox', o, ibx.id, { ttl_seconds: 1800 }), 'conflict');
+    for (const bad of [{}, { ttl_seconds: 10 }, { preset: 'experiment', ttl_seconds: 900 }, { label: 'x' }])
+      isErr(await h.rpc('updateInbox', o, ibx.id, bad), 'invalid');
+    // An explicit owner action may give an unlimited inbox a lifetime.
+    const plain = await h.create(o, 'email');
+    const given = await h.rpc('updateInbox', o, plain.id, { ttl_seconds: 120 });
+    assert.equal(given.expires_at > now(), true);
+    isErr(await h.rpc('updateInbox', owner(), plain.id, { ttl_seconds: 60 }), 'not_found');
+  });
+
+  it('rechecks the lifetime at reservation after a slow upload, and at the stored mark after a slow put', { timeout: 30000 }, async () => {
+    const o = owner();
+    const ibx = await h.create(o, 'http', { preset: 'experiment' });
+    const statements = [{ sql: 'UPDATE inboxes SET expires_at=? WHERE id=?', args: [now() - 1, ibx.id] }];
+    assert.equal(await h.slowBody(ibx, {}, statements), 404);
+    assert.equal((await h.row('inboxes', ibx.id)).message_count, 0);
+    assert.equal((await h.row('inboxes', ibx.id)).day_count, 0, 'refused at reservation: no quota spent');
+    assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM messages WHERE inbox_id=?').bind(ibx.id).first()).n, 0);
+    assert.deepEqual(await h.objects(`m/${ibx.id}/`), []);
+
+    // Reserved while live, then the lifetime ends during the R2 put.
+    const late = await h.create(o, 'http', { preset: 'experiment' });
+    const latch = b32(16);
+    const receiving = postOpen(h, late, '/', { body: 'in flight', headers: { 'x-harness-delay-put': latch } });
+    await h.putControl(latch, 'wait');
+    try { await lapse(late.id); } finally { await h.putControl(latch, 'release'); }
+    assert.equal((await receiving).status, 404);
+    assert.equal((await h.db.prepare("SELECT COUNT(*) n FROM messages WHERE inbox_id=? AND state='stored'").bind(late.id).first()).n, 0);
+    // The harness makes the receiver's own cleanup delete fail; the shared destroy
+    // path and prefix reconciliation remove the leftover object and row.
+    await lapse(late.id, QUIESCE + 10);
+    await h.sweep();
+    await h.sweep(); // Admission follows existing cleanup; process it next run.
+    assert.equal(await h.row('inboxes', late.id), null);
+    assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM messages WHERE inbox_id=?').bind(late.id).first()).n, 0);
+    assert.deepEqual(await h.objects(`m/${late.id}/`), []);
+  });
+
+  it('the sweep moves expired inboxes into the shared destruction path, then finalizes after quiescence', async () => {
+    const o = owner();
+    const ibx = await h.create(o, 'http', { preset: 'experiment' });
+    const c = await h.rpc('createCredential', o, ibx.id, {});
+    assert.equal((await postOpen(h, ibx, '/', { body: 'a', headers: { Authorization: `Bearer ${c.token}` } })).status, 200);
+    await plant(h, ibx.id);
+    await lapse(ibx.id, 10);
+    const ended = (await h.row('inboxes', ibx.id)).expires_at;
+    await h.sweep();
+    await h.sweep(); // Newly admitted destruction gets its bounded cleanup turn.
+    const row = await h.row('inboxes', ibx.id);
+    assert.equal(row.state, 'destroying');
+    assert.equal(row.destroy_requested_at, ended, 'quiescence is anchored at expiry');
+    assert.equal(row.message_count, 0);
+    assert.equal(row.bytes_stored, 0);
+    assert.deepEqual(await h.objects(`m/${ibx.id}/`), []);
+    assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM credentials WHERE inbox_id=?').bind(ibx.id).first()).n, 0);
+    assert.ok(await h.db.prepare('SELECT 1 FROM cleanup_prefixes WHERE inbox_id=?').bind(ibx.id).first(), 'durable cleanup record');
+    const view = await h.rpc('getInbox', o, ibx.id);
+    assert.equal(view.state, 'destroying');
+    assert.equal(view.cleanup_not_before, ended + QUIESCE);
+    // Quiescence passes (time travel), the next sweep finalizes exactly as for destroyInbox.
+    await h.db.prepare('UPDATE inboxes SET destroy_requested_at=? WHERE id=?').bind(now() - QUIESCE - 5, ibx.id).run();
+    await h.sweep();
+    isErr(await h.rpc('getInbox', o, ibx.id), 'not_found');
+    assert.ok(await h.db.prepare('SELECT 1 FROM cleanup_prefixes WHERE inbox_id=?').bind(ibx.id).first(), 'tombstone survives finalization');
+  });
+
+  it('inboxes without a lifetime, including rows from before the migration, are untouched by the sweep', async () => {
+    const o = owner();
+    const plain = await h.create(o, 'http');
+    const legacy = `ibx_${b32(26)}`, legacyNonce = b32(26);
+    // Shaped like a 0001-era insert: no expires_at column named at all.
+    await h.db.prepare(`INSERT INTO inboxes (id, owner, type, nonce, label, state, created_at)
+      VALUES (?, ?, 'http', ?, NULL, 'active', ?)`).bind(legacy, o, legacyNonce, now() - 400 * 86400).run();
+    await h.db.prepare('UPDATE inboxes SET created_at=? WHERE id=?').bind(now() - 400 * 86400, plain.id).run();
+    await h.sweep();
+    for (const id of [plain.id, legacy]) {
+      const view = await h.rpc('getInbox', o, id);
+      assert.equal(view.state, 'active');
+      assert.equal(view.expires_at, null);
+    }
+    assert.equal((await h.http(`https://${legacyNonce}.${DOMAIN}/hook`, { method: 'POST', body: 'still here' })).status, 200);
+    assert.equal((await postOpen(h, plain, '/', { body: 'still here' })).status, 200);
+    assert.equal((await h.list(o, legacy)).messages.length, 1);
+  });
+});
+
+describe('qualification resource guards and retirement fences', () => {
+  let h;
+  before(async () => { h = await harness({ vars: {
+    MAX_EMAIL_BYTES: '1048576', MAX_INBOX_BYTES: '4194304', MAX_OWNER_BYTES: '8388608',
+  } }); });
+  after(async () => { await h?.mf.dispose(); });
+
+  it('rejects excessive MIME lines before parsing on receipt and legacy text/attachment reads', async () => {
+    const o = owner(), box = await h.create(o, 'email');
+    const raw = Buffer.from('Content-Type: text/plain\r\n\r\n' + '\n'.repeat(350001));
+    const received = await h.emailDirect({ to: box.address, raw });
+    assert.equal(received.rejectReason, '5.3.4 MIME resource limit exceeded');
+    assert.equal((await h.row('inboxes', box.id)).message_count, 0);
+    const message = await plant(h, box.id, { size: raw.length });
+    await h.r2.put(`m/${box.id}/${message}`, raw);
+    await h.db.prepare('UPDATE messages SET meta_json=? WHERE id=?').bind(JSON.stringify({
+      type: 'email', parse_error: false, attachments: [{ index: 0 }],
+    }), message).run();
+    isErr(await h.rpc('getMessageText', o, box.id, message), 'resource_limit');
+    isErr(await h.rpc('getAttachment', o, box.id, message, 0), 'resource_limit');
+    assert.deepEqual((await h.rpc('getMessageBody', o, box.id, message)).bytes, new Uint8Array(raw));
+  });
+
+  it('durably fences reads, creation and reception, even if active rows are restored', async () => {
+    const o = owner(), box = await h.create(o, 'http');
+    const credential = await h.rpc('createCredential', o, box.id, {});
+    assert.deepEqual(await h.rpc('retireOwner', o), { retired: true });
+    assert.deepEqual(await h.rpc('retireOwner', o), { retired: true });
+    isErr(await h.rpc('getInbox', o, box.id), 'not_found');
+    isErr(await h.rpc('createInbox', o, { type: 'email' }), 'not_found');
+    assert.equal((await h.db.prepare('SELECT COUNT(*) AS n FROM credentials WHERE inbox_id=?').bind(box.id).first()).n, 0);
+    await h.db.prepare("UPDATE inboxes SET state='active',destroy_requested_at=NULL WHERE id=?").bind(box.id).run();
+    assert.equal((await h.http(box.url, { method: 'POST', body: 'late',
+      headers: { Authorization: `Bearer ${credential.token}` } })).status, 404);
+    isErr(await h.rpc('getInbox', o, box.id), 'not_found');
+    assert.ok((await h.create(owner(), 'email')).id, 'independent generation remains usable');
+  });
+
+  it('keeps encoded nested messages inert instead of bypassing raw-line guards recursively', async () => {
+    const o = owner(), box = await h.create(o, 'email');
+    const nested = Buffer.from('Content-Type: text/plain\r\n\r\n' + '\n'.repeat(350001));
+    const encoded = nested.toString('base64').match(/.{1,76}/g).join('\r\n');
+    const raw = Buffer.from('Content-Type: message/rfc822\r\nContent-Transfer-Encoding: base64\r\n\r\n' + encoded);
+    assert.equal((await h.emailDirect({ to: box.address, raw })).rejectReason, undefined);
+    const message = (await h.list(o, box.id)).messages[0];
+    assert.equal((await h.rpc('getMessageText', o, box.id, message.id)).source, 'none');
+    assert.deepEqual((await h.rpc('getAttachment', o, box.id, message.id, 0)).bytes, new Uint8Array(nested));
+    assert.deepEqual((await h.rpc('getMessageBody', o, box.id, message.id)).bytes, new Uint8Array(raw));
+  });
+
+  it('rechecks a fence atomically at reservation after a slow HTTP body', async () => {
+    const o = owner(), box = await h.create(o, 'http');
+    const status = await h.slowBody(box, [], [{
+      sql: 'INSERT INTO retired_owners(owner,retired_at) VALUES (?,?)', args: [o, now()],
+    }]);
+    assert.equal(status, 404);
+    assert.equal((await h.row('inboxes', box.id)).message_count, 0);
+  });
+
+  it('permits trusted retirement while user-facing reception/RPC is disabled', async () => {
+    const off = await harness({ vars: { INBOXES_ENABLED: 'false' } });
+    try {
+      const o = owner();
+      assert.deepEqual(await off.rpc('retireOwner', o), { retired: true });
+      assert.ok(await off.db.prepare('SELECT owner FROM retired_owners WHERE owner=?').bind(o).first());
+      isErr(await off.rpc('retireOwner', 'bad'), 'invalid');
+    } finally { await off.mf.dispose(); }
   });
 });

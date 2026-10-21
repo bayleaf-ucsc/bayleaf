@@ -164,6 +164,87 @@ Providers unable to send that header may need an open receiver and application-s
 signature verification over saved exact bytes. BayLeaf does not verify those signatures.
 Email currently has no verified sender allowlist; From headers are not identity proof.
 
+For tests, create with preset "experiment" (a 15-minute lifetime) or ttl_seconds,
+so nothing stays live when the user walks away.
+
+## Follow live arrivals when asked
+
+Create a temporary webhook with POST /inboxes and
+\`{"type":"http","preset":"experiment"}\`. The response's expires_at is the
+endpoint's deadline, not the sender credential's expiry.
+
+Use OpenAPI operations listInboxEvents for finite catch-up and streamInboxEvents
+for actual SSE at GET /inboxes/{id}/events/stream. Open the stream and wait for
+ready before self-posting, especially with after=now; omit after to replay earlier
+arrivals. Explicit after overrides Last-Event-ID.
+
+Frames have event:, JSON data:, and id: (resume cursor) lines, separated by a blank
+line. retry: 2000 suggests reconnect delay. message.received carries event_id,
+type, message_id, cursor and created_at; ready marks completed catch-up;
+checkpoint advances the cursor over omitted events. Save cursors and deduplicate
+after reconnect. end carries reason and an optional cursor: lifetime/replay_limit
+means reconnect; cursor_expired (or HTTP 410) means replay the finite feed without
+after; auth_revoked/not_found means stop. Inbox expiry produces not_found just
+like destruction, then 404. Network loss/unavailable needs bounded backoff.
+
+Four independent clocks: each stream lasts at most 300 seconds; the experiment
+inbox lasts 900 seconds; messages last at most 90 days; sender credentials have
+their own expiry. Use and reconnection renew none of these.
+
+The owner account bearer (sk-bayleaf-...) or sandbox credential belongs only on
+api.bayleaf.dev. The write-only sender token (sk-bayleaf-inbox-...) belongs only
+on the receiving URL, never on management/events/stream routes. On 401, check the
+credential's role and validity, not just its shared prefix. Never print a token.
+
+## Carry received data elsewhere
+
+OpenAPI exportInbox (GET /inboxes/{id}/export) streams one tar page of exact
+payload files and a SHA-256 metadata manifest. Read the response's
+X-Inbox-Export-Next-Cursor header or manifest next_cursor, then send that value
+as ?cursor= on the next request, never as a request header. Stop when absent;
+extract pages separately and retry the same cursor on interruption. These are
+not event/SSE cursors. Quiesce senders/in-flight receipts for a complete export.
+
+Example tar layout for a two-receipt HTTP page (IDs below are placeholders):
+
+\`\`\`text
+payloads/{first_id}.body
+payloads/{second_id}.body
+receipts.har
+manifests/{first_id}.json
+\`\`\`
+
+There is exactly one manifest per page, not per receipt. Discover the JSON member
+under manifests/: its name uses the first selected row's ID, even if that receipt
+is later omitted; an empty selection uses manifests/empty.json. Email pages use
+payloads/{message_id}.eml and have no receipts.har.
+
+Manifest schema (version 1): format is "bayleaf-inbox-export"; version is 1;
+exported_at is Unix seconds; inbox contains id, type, label, created_at (Unix
+seconds), and url for HTTP or address for email. order is "received_at_asc"
+(ties sort by ID). cursor is the supplied cursor or null. next_cursor equals
+X-Inbox-Export-Next-Cursor when present, otherwise null. har is "receipts.har"
+for HTTP, otherwise null. receipts is an array of objects with id, file (tar
+member path), received_at and expires_at (Unix seconds), archived (boolean),
+size (bytes), sha256 (lowercase hex SHA-256 of the exact payload member), and
+meta (stored transport-specific metadata, including redacted HTTP headers).
+omitted is an array of selected receipt IDs that became unavailable before their
+payload headers were emitted. Verify each receipts[].file against size and sha256;
+the digest covers payload bytes, not the HAR or manifest. An interrupted archive
+is not a completed page. Even a wholly omitted page can have a next_cursor.
+
+HTTP pages include receipts.har; getInboxMessageHar downloads one HTTP receipt.
+Both use nonstandard profile bayleaf-inbox-receipt-1, not conformant HAR 1.2 or a
+wire capture. Exact payloads and manifest are canonical. Unknown response status
+0 and timings -1 are not observations. Importers may ignore custom _file bodies:
+attach the exact referenced file manually. Current GUI compatibility is unqualified.
+Eligible decodable text within per-body/page budgets uses postData.text with
+_sha256; binary, unsupported-charset or over-budget bodies use postData._file
+with _sha256. Empty bodies have no postData. Exact payload members are always
+canonical, including when text is inlined.
+Export is HTTP/scripts-only, not a newly installed adapter tool. The export never
+extends retention; sender-written files remain untrusted after download.
+
 ## Storage and authority boundaries
 
 Inboxes intentionally store received content: not zero-data-retention (ZDR) or

@@ -76,6 +76,105 @@ were explicitly approved; actual browser readback passed. See
 and the unresolved private-preview navigation check. The operator-only service
 pilot is unchanged.
 
+## Endpoint lifetimes
+
+An inbox may carry an explicit endpoint lifetime, `expires_at` (UTC epoch seconds).
+It is separate from message retention: `RETENTION_SECONDS` bounds how long each
+received payload is kept, while `expires_at` bounds how long the address or URL
+exists at all. When the endpoint expires, everything it stored goes with it.
+
+- **Opt-in only.** `createInbox` accepts `ttl_seconds` (integer, 60 to
+  `MAX_INBOX_TTL_SECONDS`) or `preset: "experiment"` (exactly 900 s, 15 minutes),
+  never both. Without either, `expires_at` is `null`: the inbox lives until
+  destroyed. Rows created before migration `0003` have `NULL` and never acquire a
+  lifetime implicitly.
+- **Shorten, never lengthen.** `updateInbox(inboxId, {ttl_seconds | preset})` sets
+  `expires_at = now + ttl` only if that is no later than the current `expires_at`;
+  otherwise `conflict`. It may give a lifetime to an inbox that had none (an
+  explicit owner action). There is no removal or extension operation: create a new
+  inbox instead. Reads, arrivals, credential changes and archive changes never
+  touch `expires_at`.
+- **Expiry is enforced at database execution.** An inbox is *live* when
+  `state='active' AND (expires_at IS NULL OR expires_at > unixepoch())`, using
+  SQLite's execution-time clock in whole UTC seconds. Reception lookup, atomic
+  reservation, the stored-mark after the R2 put, and owner authorization predicates
+  use this clock, separately from recorded receipt timestamps. Content and credential
+  lists revalidate after their awaited queries; body, text and attachment reads
+  revalidate after awaited storage reads and parsing, before releasing results.
+  Checks deny expired resources before any sweep runs. This does not recall bytes
+  already released, stop an already-started remote R2 write, or guarantee response
+  delivery before the deadline. The transition below deletes credentials.
+- **Same destruction path.** The scheduled sweep moves expired active inboxes into
+  the destruction transition used by `destroyInbox` (one shared code path), with
+  `destroy_requested_at = expires_at`, then continues exactly as for explicit
+  deletion: bounded message removal, quiescence, R2 prefix check, finalization and
+  indefinite opaque prefix reconciliation. Quiescence counts from `expires_at`
+  because that is when receivers stopped seeing the inbox as live.
+- **Visible status.** Inbox views always include `expires_at` (`null` when none). An
+  inbox past `expires_at` reports `state:"destroying"` and `cleanup_not_before =
+  expires_at + DESTROY_QUIESCE_SECONDS` even before the sweep has run the
+  transition. Completion is observable as `not_found`, as for explicit destruction.
+- Walking away leaves an endpoint denied by subsequent access checks. Physical
+  removal follows asynchronously; backlog, outages and late writes can delay it.
+  The disclosed residuals of
+  explicit destruction still apply (opaque cleanup records, D1 Time Travel and
+  provider recovery history).
+
+## Arrival events and live SSE
+
+Migration `0004_events.sql` adds per-inbox `event_seq`, minimal `events`, a random
+database `event_feed.epoch`, and expiring `event_streams` leases. Existing stored
+messages are backfilled in receipt order. New sequence numbers are assigned in the
+same D1 transaction as the stored mark, so commit order, not reservation time,
+defines traversal. Failed transactions publish neither a stored receipt nor an
+event. Message removal deletes its event; inbox finalization removes residual
+events and leases. No event contains sender text, paths, addresses or credentials.
+
+`GET /inboxes/{id}/events` and private RPC `listEvents` return
+`{events:[{event_id,type:"message.received",message_id,cursor,created_at}],cursor,more}`.
+Optional `limit` is 1–100, default 100. Omit `after` to replay available arrivals;
+`after=now` starts at the current head. Cursors encode database epoch, inbox and
+sequence. Another inbox's cursor is invalid; foreign epoch or position beyond the
+current high-water mark requires resynchronization (HTTP 410). Deletion does not
+decrement the high-water mark. Events/head share one snapshot; final liveness and
+expiry checks precede release. Empty pages still advance cursors. References do not
+promise that a message will remain available when fetched.
+
+`GET /inboxes/{id}/events/stream` is actual authenticated SSE: catch up, emit
+`ready`, then follow on the same connection, without client polling. Explicit
+`after` overrides `Last-Event-ID`; otherwise replay from the beginning. Frames are
+`message.received`, `ready`, `checkpoint`, and terminal `end`, plus keepalive
+comments. Save complete event cursors at the client's processing boundary and
+deduplicate after reconnect. This is passive observation, never a work queue,
+inference trigger or unsolicited agent activation.
+
+The API reauthorizes the actual ordinary/sandbox credential and account generation,
+then reads a bounded RPC page every two seconds. The five-second fail-closed target
+uses a 4.5-second watchdog. Pilot/feature gates remain in force. Inbox expiry or
+destruction ends following; owner revocation, key rotation or generation change
+ends authorization. No bearer appears in a URL. Responses use no-store and identity
+encoding. The service binding carries JSON pages, not a buffered SSE response.
+
+Atomic D1 leases enforce four subscribers per inbox, with fixed 300-second expiry.
+Connections end after at most 300 seconds, 1000 events or 512 KiB. Backpressure
+allows one bounded page and a two-second downstream-demand deadline; slow readers
+are disconnected. Disconnect releases its lease, with fixed expiry as fallback;
+the sweep prunes at most 50 expired leases. `after=now` resolves once during lease
+acquisition to avoid a handshake gap. API-only test knobs can shorten these limits.
+
+HTTP 429 means subscriber cap, with Retry-After 5. HTTP 410 or terminal
+`cursor_expired` requires replay/resynchronization. Terminal `lifetime` and
+`replay_limit` permit reconnect; `auth_revoked` and `not_found` mean stop. Outages,
+abrupt closes and `unavailable` need bounded backoff/resume. Already delivered
+references cannot be recalled. Database restore and runtime replacement require
+client reconciliation; this is not an exactly-once guarantee.
+
+Private RPCs `acquireEventStream(owner,id,{after?})`,
+`readEventStream(owner,id,leaseId,{after?})` and
+`releaseEventStream(owner,id,leaseId)` remain service-binding-only. Leases contain
+only id, inbox id and expiry. See `research/STREAM.md` for cost analysis and
+`qualification/STREAM.md` for the bounded live recipe and remaining live gates.
+
 ## Inbox types
 
 An inbox has exactly one immutable `type`: `email` or `http`. Credentials exist
@@ -93,6 +192,7 @@ inboxes(
   state TEXT NOT NULL CHECK (state IN ('active','destroying')),
   created_at INTEGER NOT NULL,         -- UTC epoch seconds everywhere
   destroy_requested_at INTEGER,
+  expires_at INTEGER,                  -- explicit endpoint lifetime; NULL = none (0003)
   auth_required INTEGER NOT NULL DEFAULT 0, -- http: sticky once first credential is added
   bytes_stored INTEGER NOT NULL DEFAULT 0,  -- includes pending reservations
   message_count INTEGER NOT NULL DEFAULT 0, -- includes pending reservations
@@ -123,7 +223,7 @@ credentials(
 )
 ```
 
-Indexes: `inboxes(owner)`, `messages(inbox_id, state, received_at DESC, id DESC)`,
+Indexes: `inboxes(owner)`, `inboxes(state, expires_at)`, `messages(inbox_id, state, received_at DESC, id DESC)`,
 `messages(state, expires_at)`, `credentials(inbox_id)`.
 
 `cleanup_prefixes(inbox_id TEXT PRIMARY KEY, cursor TEXT, turn INTEGER)` stores
@@ -152,6 +252,11 @@ raw MIME on demand.
 | `MAX_DAILY_RECEIPTS` | 1000 | Accepted receipts per inbox per UTC day. |
 | `MAX_SEARCH_TEXT` | 32768 | Characters of indexed text per message. |
 | `DESTROY_QUIESCE_SECONDS` | 900 | See destruction below. |
+| `MAX_INBOX_TTL_SECONDS` | 2592000 | 30 days: longest explicit endpoint lifetime. |
+| `MAX_EXPORT_BYTES` | 104857600 | 100 MiB of payloads per export page, at least one receipt. |
+| `MAX_EXPORT_META_BYTES` | 4194304 | 4 MiB of stored metadata JSON per page, at least one receipt. |
+| `MAX_HAR_TEXT_BYTES` | 262144 | Per-body HAR text cap, 256 KiB. |
+| `MAX_HAR_PAGE_TEXT_BYTES` | 4194304 | Inlined HAR body bytes per page, 4 MiB. |
 
 Burst limits use the Workers Rate Limiting binding (approximate and counted per data
 center; the D1 quota is the real cap):
@@ -168,7 +273,8 @@ If a rate-limit binding is missing, reception fails closed with 503 (misconfigur
 
 `INBOXES_ENABLED` must be exactly `"true"`. Otherwise `fetch()` returns 503 on inbox
 hosts, `email()` calls `setReject("Inbox service unavailable")`, and every RPC
-returns `{ error: 'disabled' }`.
+returns `{ error: 'disabled' }`, except the trusted retirement/fencing RPC, which
+must remain available to revoke old ownership while exposure is off.
 
 ## HTTP reception (`fetch`)
 
@@ -184,8 +290,8 @@ Inbox host, in order (cheap checks first):
    `Access-Control-Allow-Headers`: echo the request's
    `Access-Control-Request-Headers` (bounded to 1024 chars) or `Authorization, Content-Type`,
    `Access-Control-Max-Age: 86400`. Returned for any host label without a lookup.
-2. Look up an **active `http`** inbox by nonce. Missing, `destroying`, or `email` type
-   → 404 `{"error":"not_found"}`.
+2. Look up a **live `http`** inbox by nonce (active and not past `expires_at`).
+   Missing, `destroying`, expired, or `email` type → 404 `{"error":"not_found"}`.
 3. An inbox starts **open**. Creating its first credential sets a persistent
    `auth_required` flag, making it **closed**. Revoking or expiring the last
    credential never reopens it: closed with no usable credentials denies all
@@ -244,9 +350,80 @@ HTTP `meta_json`:
 
 ## Email reception (`email(message, env, ctx)`)
 
+### Opt-in domain restrictions (local implementation, pilot rollout pending)
+
+At creation only, an email inbox may set `email_auth: { domains: ["ucsc.edu"],
+selector_pins: { "ucsc.edu": ["chosen_selector"] } }`. Domains are exact ASCII
+DNS hostnames, lowercased and unique (1–8); optional pins are nonempty unique
+selector lists (1–4 per allowlisted domain), DNS case-insensitive. Selectors allow
+underscore labels as an explicit interoperability extension. No wildcards,
+mailboxes, public-suffix matching or mutable policy endpoint. HTTP inboxes reject
+this field. Omitted/null means **unrestricted**, including every existing inbox.
+Owner create/list/get responses explicitly report `email_auth` (null or policy)
+and `restricted_email_max_bytes: 1048576` for restricted email inboxes.
+Migration `0007_email_auth.sql` defaults existing policy to NULL and prevents
+policy updates with a database trigger; changing policy requires a new inbox.
+Creation additionally requires `EMAIL_AUTH_CREATION_ENABLED=true` (default false,
+404 through owner API when disabled). Deploy and verify the receiver first, wait
+for old versions to stop serving, then enable creation. Turning this gate off
+never bypasses policies already stored. Do not roll back to a pre-verifier build
+while any restricted inbox remains active.
+
+For restricted inboxes, reception requires a locally verified DKIM signature with
+`d=` exactly equal to the single syntactically valid From mailbox's domain AND an
+allowlisted domain. RSA >=2048, rsa-sha256 or ed25519-sha256, strict validation,
+valid signature times, signed From, no `l=` (even full-body), no testing key. An
+optional selector pin must match that SAME passing signature, not a different one.
+Sender-supplied `Authentication-Results` is never trusted. This authenticates
+delegated domain signing authority, not a person or campus mailbox holder;
+provider provisioning/sender controls are unknown. Replay and unsigned-header
+modifications remain possible. Stored `dkim_auth` contains only the passing
+domain, selector and algorithm, separate from copied authentication headers.
+
+Hard restricted-message ceiling: min(MAX_EMAIL_BYTES, 1 MiB), enforced against
+both rawSize and streamed bytes before verification or MIME parsing. Larger mail
+gets readable `5.3.4 Restricted inbox supports DKIM mail up to 1 MiB` rejection,
+never unverified fallback. Unrestricted reception retains its configured 25 MiB
+ceiling. Verification caps: 32 KiB headers, 200 header lines, four DKIM signatures,
+four TXT lookups, 1.5 seconds per lookup, one TXT record (8 KiB), 32 KiB DoH
+response, and bounded total verification wait. DNS uses fixed HTTPS Cloudflare
+DoH with no redirects, never a URL supplied by mail. A dedicated pre-verification
+rate bucket spends REJECT_LIMIT (bounded expensive attempts); successful mail also
+spends ACCEPT_LIMIT. Thus invalid signatures cannot spend acceptance budget,
+but an attacker knowing the address can exhaust verification-attempt budget.
+Failures never reserve storage. DNS timeouts/temporary failures throw a fixed,
+content-free error instead of setReject; live SMTP retry behavior remains a gate.
+Other failed verification uses `5.7.1 DKIM domain authorization required`.
+Restricted MIME metadata parsing also bounds parts (256), depth (16), total
+headers (64 KiB) and forwarded addresses (256). Nested messages remain inert
+attachments (nesting depth zero). MIME resource-budget failures reject explicitly
+after DKIM verification, before storage; other parse failures retain verified raw
+bytes with parse_error. Retrieval still treats all content as untrusted.
+
+Creation-only policy removes the management race: reservation still atomically
+checks active inbox state and exact policy snapshot, in addition to quotas. Old
+receivers passing no verified snapshot cannot insert into restricted inboxes.
+Rollback must disable restricted creation/reception and not run an old receiver
+on a database containing restricted inboxes: old binaries lack enforcement.
+
+Build: pinned mailauth 8.0.1, guarded digest-name and selector patches generated
+before Wrangler/tests. `nodejs_compat` is required; verifier source is shared by
+research and production. No user-controlled DNS override or test fetch endpoint
+is present in production. Local qualification does not establish live SMTP
+semantics, real UCSC selectors, paid-tier startup CPU or worst-case concurrency.
+
+Exposure for this pilot: HTTP owner API/OpenAPI and llms orientation expose
+creation/readback; existing hosted and desktop adapters do not gain new mutation
+authority or policy UI. Adapter option delivery/ordinary-user discovery remains
+deferred to the integration owner after pilot qualification. Chat remains omitted
+(no new owner credential path). Upstream issue drafts stay local.
+
+The following legacy sequence describes unrestricted reception; restricted
+reception adds the pre-reservation verification and tighter bounds above.
+
 1. Recipient = `message.to` (the **envelope** recipient), lowercased. Domain must equal
-   `INBOX_DOMAIN` exactly, and the local part must match an active `email` inbox
-   nonce exactly (no plus-address stripping in v1). Otherwise
+   `INBOX_DOMAIN` exactly, and the local part must match a live `email` inbox
+   nonce exactly (active and not past `expires_at`) (no plus-address stripping in v1). Otherwise
    `setReject("5.1.1 Address not found")`. MIME `To`/`Cc` headers never route.
 2. `message.rawSize > MAX_EMAIL_BYTES` → `setReject("5.3.4 Message too large")`.
 3. `ACCEPT_LIMIT` exceeded → `setReject("4.7.0 Rate limited, try later")`. Note:
@@ -254,7 +431,9 @@ HTTP `meta_json`:
    text. Qualification on a disposable domain must confirm actual sender behavior.
 4. Read the raw bytes (`new Response(message.raw).arrayBuffer()`), bounded by
    `MAX_EMAIL_BYTES`. Parse with `postal-mime`. A parse failure still stores the raw
-   bytes, with `"parse_error": true` and minimal metadata.
+   bytes, with `"parse_error": true` and minimal metadata. Resource-limit failures
+   instead reject with `5.3.4 MIME resource limit exceeded` and store no receipt;
+   see the preflight and maintained-parser limits in the hardening revision below.
 5. Reserve and insert pending (same as HTTP). Over quota →
    `setReject("5.2.2 Mailbox full")`.
 6. Put R2, mark stored. On a storage failure, **throw** (do not call `setReject`), so
@@ -276,6 +455,9 @@ Email `meta_json`:
   entries (with `"attachments_truncated": true` beyond that).
 - `authentication_results` holds the verbatim `Authentication-Results` header values
   (RFC 8601) as Cloudflare adds them. BayLeaf records them and makes no policy from them.
+- Restricted accepted messages additionally store `dkim_auth: {domain, selector,
+  algo}` produced by BayLeaf's verifier, not copied from a header. This proves
+  domain authority over signed content, never that all headers or a person are trusted.
 - Header `From` is untrusted sender-controlled content, not an identity.
 - `search_text` = lowercased subject, from, to, plus the text body (or the HTML with tags
   stripped crudely), truncated to `MAX_SEARCH_TEXT`.
@@ -284,6 +466,7 @@ Email `meta_json`:
 
 One `DB.batch` (a single transaction):
 1. `INSERT INTO messages (...) SELECT ... FROM inboxes i WHERE i.id=? AND i.state='active'
+   AND (i.expires_at IS NULL OR i.expires_at > unixepoch())
    AND i.bytes_stored + :size <= MAX_INBOX_BYTES
    AND i.message_count + 1 <= MAX_INBOX_MESSAGES
    AND (i.day <> :today OR i.day_count < MAX_DAILY_RECEIPTS)
@@ -293,32 +476,37 @@ One `DB.batch` (a single transaction):
    day_count=CASE WHEN day=:today THEN day_count+1 ELSE 1 END, day=:today
    WHERE id=? AND EXISTS (SELECT 1 FROM messages WHERE id=:msg)`.
 
-If the insert changed zero rows, diagnose with a follow-up read. Inactive → 404 or
-reject. Daily → 429. Otherwise full → 507. Reservation counters are decremented
+If the insert changed zero rows, diagnose with a follow-up read. Inactive or expired
+→ 404 or reject. The lifetime is rechecked here, after a slow body or message has been
+read, exactly like authentication; marking the row `stored` after the R2 put checks
+liveness once more, and a receiver that loses either check removes its own row and
+object and answers as for an unknown address. Daily → 429. Otherwise full → 507. Reservation counters are decremented
 whenever a message row is removed (expiry, deletion, stale pending), in the same batch
 as the row deletion.
 
 ## Lifecycle and cleanup
 
 States: message `pending → stored → deleting → (row removed)`. Only `stored` rows with
-`expires_at > now` are visible to any read, search, or attachment download. **Reads
-hide expired content immediately, even before cleanup runs.**
+`expires_at > unixepoch()` are visible to any read, search, or attachment download.
+Reads revalidate after awaited work before releasing content; already released
+bytes cannot be recalled. Cleanup is not required for access denial.
 
 Removing a message (any cause): set `state='deleting'` (it is hidden at once), delete
 the R2 object (idempotent), then in one batch delete the row and decrement
 `bytes_stored` and `message_count`. If the R2 delete fails, the row stays `deleting`
 and the sweep retries.
 
-**Inbox destruction** (`destroyInbox`):
-1. Set `state='destroying'`, `destroy_requested_at=now`. From this moment reception
+**Inbox destruction** (`destroyInbox`, or the sweep for an expired lifetime; one
+shared transition):
+1. Set `state='destroying'`, `destroy_requested_at=min(now, expires_at)`. From this moment reception
    returns not-found, and the inbox and all its messages and credentials are invisible
    to reads, except `getInbox`/`listInboxes`, which report `state:"destroying"`.
    Credentials are deleted immediately in the same batch.
 2. Delete message objects and rows in bounded batches (inline, best effort, plus the sweep).
 3. **Finalize** only when (a) no message rows remain, (b) an R2 list of the prefix
    `m/{inbox_id}/` returns no objects (orphan reconciliation), and (c)
-   `now >= destroy_requested_at + DESTROY_QUIESCE_SECONDS`. That is longer than any
-   reception attempt, so no receiver that saw the inbox as active can still write.
+   `now >= destroy_requested_at + DESTROY_QUIESCE_SECONDS`. This is an earliest
+   finalization condition, not a bound on remote writes or a cleanup deadline.
    Receivers check elapsed time before their R2 put and abort if they have exceeded
    `DESTROY_QUIESCE_SECONDS / 3`. This check alone does not fence a delayed remote
    write: durable cleanup tracking must survive removal of message and inbox rows,
@@ -340,6 +528,12 @@ and the sweep retries.
   ones. Remove orphan objects but preserve ones with live pending/stored message
   rows. Never discard cleanup tracking just because a listing is empty: a remote
   put that was already in flight can finish later.
+- Finally admit at most five expired active inboxes into the shared destruction
+  transition, oldest expiry first. Existing cleanup and reconciliation get their
+  turn before this additional work; newly admitted destruction is cleaned on a
+  later sweep. Admission errors stop this bounded phase and retry on a later run.
+  Access denial remains immediate. This pilot cap does not fix or establish a
+  total D1 budget for the pre-existing mixed-workload sweep.
 
 No content, address, nonce, or credential is ever logged. The sweep may log only counts.
 
@@ -349,6 +543,7 @@ Every method is `async method(owner: string, ...args)`. It validates every input
 (unknown keys rejected, types and lengths checked) and returns plain JSON objects.
 It **never throws to the caller**: errors are returned as `{ error: code }` with
 `code` ∈ `disabled | invalid | not_found | limit | conflict | unavailable`.
+The local hardening revision adds `resource_limit` for bounded MIME read failures.
 `owner` must match `/^[A-Za-z0-9-]{16,128}$/`, else `invalid`. Every lookup is scoped
 `WHERE owner=?`. Another owner's handle is indistinguishable from a missing one
 (`not_found`).
@@ -357,13 +552,15 @@ Inbox object:
 ```json
 { "id":"ibx_…", "type":"email|http", "label":"…"|null, "state":"active|destroying",
   "address":"nonce@domain" /* email only */, "url":"https://nonce.domain/" /* http only */,
-  "created_at":0, "usage":{"bytes":0,"messages":0,"receipts_today":0},
+  "created_at":0, "expires_at":0|null, "usage":{"bytes":0,"messages":0,"receipts_today":0},
   "limits":{"bytes":…,"messages":…,"daily_receipts":…}, "closed": true|false /* http only */ }
 ```
 
 | Method | Args | Returns |
 |---|---|---|
-| `createInbox` | `{type, label?}` | inbox (`limit` past `MAX_INBOXES_PER_OWNER`) |
+| `retireOwner` | – | `{retired:true}`; trusted service-binding-only, bypasses the exposure flag, idempotent durable generation fence |
+| `createInbox` | `{type, label?, ttl_seconds? \| preset?, email_auth?}` | inbox (`limit` past `MAX_INBOXES_PER_OWNER`); email policy is creation-only and gated off by default |
+| `updateInbox` | `inboxId, {ttl_seconds \| preset}` | inbox; shortens or sets the lifetime only (`conflict` if later than the current `expires_at`; `not_found` if not live) |
 | `listInboxes` | – | `{ inboxes:[inbox], owner_usage:{bytes, limit_bytes} }` |
 | `getInbox` | `inboxId` | inbox |
 | `destroyInbox` | `inboxId` | `{ id, state:'destroying', cleanup_not_before }` (idempotent while destroying) |
@@ -383,6 +580,9 @@ Inbox object:
   inbox view), `true`, or `"all"`. `q`: 1–200 chars, case-insensitive substring match
   against `search_text` using `LIKE ? ESCAPE '\'` with `%`, `_` and `\` escaped. Search
   covers only the bounded indexed text.
+  The cursor advances over the fetched SQL page before fresh expiry filtering.
+  A page can therefore be short or empty with a non-null `next_cursor`; continue
+  until the cursor is null rather than treating an empty page as completion.
 - Message summary: `{ id, inbox_id, type, received_at, expires_at, archived, size,
   preview }`. Email `preview`: `{from, subject, attachments:n}`. HTTP `preview`:
   `{method, path, content_type, credential_name}`.
@@ -400,12 +600,103 @@ Inbox object:
   empty text; a `parse_error` message is `'none'`. HTTP: `'body'` (UTF-8 decode,
   replacement characters allowed) when the stored content type is textual by the
   `search_text` rule, else `'none'`. Nothing referenced by the content is fetched.
-- Reads never extend retention, mark anything read, or archive.
+- Reads never extend retention or an endpoint lifetime, mark anything read, or archive.
 - Destroy responses and destroying inbox views include `cleanup_not_before`, UTC
   epoch seconds for earliest finalization, not a deadline. Default quiescence is
   15 minutes; the next 15-minute scheduled sweep attempts finalization. Backlog or
   failures can take longer. A later GET returning 404 confirms live-resource
   removal, not destruction of provider history or opaque cleanup metadata.
+
+### Portable export (`exportInbox`)
+
+An owner-controlled way to carry exact payloads and stored metadata elsewhere,
+not a backup service or portable address. `GET /inboxes/{id}/export` and private
+`exportInbox(owner,id,{cursor?,limit?})` return one streamed POSIX ustar page:
+
+```text
+payloads/{message_id}.eml    exact raw MIME for email
+payloads/{message_id}.body   exact HTTP request body, possibly empty
+receipts.har                HTTP pages only, derived profile below
+manifests/{first_id}.json    page manifest, written last (empty.json for no rows)
+```
+
+There is exactly one manifest per page, not per receipt. Its filename uses the
+first selected row's ID, even if that receipt is subsequently omitted; discover
+the member under `manifests/` rather than assuming `manifest.json`.
+The canonical export is exact payload files plus the manifest. The manifest has
+`format:"bayleaf-inbox-export"`, `version:1`, `exported_at`, an inbox descriptor
+(id/type/label/address or URL/created_at), `order:"received_at_asc"`, `cursor`,
+`next_cursor`, `har` (filename or null), `receipts` and `omitted`. Each receipt has
+`id`, `file`, `received_at`, `expires_at`, `archived` (boolean), `size` (bytes),
+`sha256` (lowercase hex digest of the exact payload member) and stored `meta`.
+Timestamps are Unix seconds; `omitted` lists selected receipt IDs unavailable
+before their payload header was emitted. `cursor` is the supplied cursor or null;
+`next_cursor` equals the response cursor header, or null when that header is absent.
+Email
+attachments derive from the raw MIME; there is no separate attachment copy.
+Credentials/hashes are never exported. Sender-controlled metadata, including URLs,
+is untrusted; network headers remain dropped and authentication headers redacted.
+
+Order is `received_at ASC,id ASC`; optional limit is 1–100, default 50. Payload
+and metadata budgets are separate, with at least one receipt to guarantee
+progress. Cursor is base64url of `x:{received_at}:{id}`, distinct from message
+list and event cursors. Read the response `X-Inbox-Export-Next-Cursor` header or
+manifest `next_cursor`, then pass that value as **`?cursor=` in the next request**,
+never as a request header. Stop when absent/null. Extract pages into separate
+directories and verify hashes. Quiesce senders and in-flight receipts for complete
+exports: this is not a snapshot, and later commits behind a cursor can be missed.
+
+Only stored, unexpired owner-visible receipts are eligible, including archived
+ones. Each receipt is checked before R2 get, after R2 get and after copying.
+Loss before its payload header produces an omission; loss after output starts
+truncates the page because emitted bytes cannot be retracted. A change after the
+last receipt check may still appear in the page. The inbox is rechecked after
+listing and before derived files, including empty pages. Wholly omitted pages
+advance over scanned rows. Retry the same cursor on interruption. Use never
+renews retention or changes archive/read state.
+
+Pull-based streaming owns at most one R2 reader and hashes through native
+`crypto.DigestStream`. Reader ownership begins before the payload header.
+Cancellation interrupts reader reads, waits for an outstanding get to settle,
+aborts unfinished digests, observes their rejection and releases locks. Never
+cancel a locked stream directly. A recorded-size mismatch or mid-read failure
+truncates the archive rather than silently returning a partial entry. At most
+4 MiB stored metadata and 4 MiB HAR inline text are retained per normal page;
+JSON escaping/derived fields add bounded overhead. Standalone HAR buffers only
+eligible capped body text, not a whole arbitrary payload.
+
+### HAR rendering of HTTP receipts
+
+`GET /inboxes/{id}/messages/{mid}/har` and private
+`getMessageHar(owner,id,messageId)` return an inert single-entry JSON download.
+Email returns `unsupported` (HTTP 400) only after owner/visibility checks.
+Each HTTP export includes the same rendering in manifest order, with page text
+caps applied. The log uses `_profile:"bayleaf-inbox-receipt-1"` and
+`version:"1.2"`, but is explicitly **not conformant HAR 1.2** or a wire capture.
+
+Request method, reconstructed URL, normalized stored headers, parsed query pairs
+and exact body size come from storage. HTTP version and durations were never
+stored: `httpVersion:"unknown"`, total time and every timing field `-1` are
+BayLeaf placeholders. Response status 0 is unknown, not an HTTP success;
+response body is uncaptured, with `_observed:false` and `_captured:false`.
+`_expectedAcknowledgement` separately describes configured 200/JSON/CORS success
+(HEAD has no expected body), never proof that a sender received it. HAR 1.2's
+nonnegative send/wait/receive and additive total rules cannot honestly be met.
+
+Nonempty textual bodies are inlined only when strict UTF-8 decoding succeeds,
+any declared charset is UTF-8/US-ASCII, US-ASCII contains no non-ASCII bytes,
+and per-body/page caps permit. Other bodies use custom `_file` and `_sha256`;
+cap-limited text adds `_truncated:true`. Empty bodies have no postData. Custom
+fields identify receipt/archive/expiry, credential name, unknown timings,
+normalized/redacted/dropped headers and truncation. Exact files plus manifest
+remain canonical. Never invent durations or a request-body encoding for importers.
+
+Pinned legacy `insomnia-importers@3.6.0` preserved inline request text but imported
+an empty body for `_file`: manual exact-file attachment is necessary.
+`har-validator@5.1.5` accepts the profile without enforcing frozen timing rules,
+so acceptance is not conformance evidence. Current GUI interoperability remains
+unqualified. See `EXPORT-INTEGRATION.md` and `SELF-HOSTING.md`. Exposure is
+HTTP/scripts-only; dedicated hosted/desktop/Chat export adapters are deferred.
 
 ### Clarifications from implementation
 
@@ -442,24 +733,111 @@ write authority cannot read telemetry; local export is bounded and expires after
 The exact contract and qualification are in
 [`telemetry/qualification/inboxes.md`](../telemetry/qualification/inboxes.md).
 Telemetry failures never change reception results or disable ordinary expiry.
+Expiry-driven destruction is counted as `inbox.lifecycle` `destroy_requested` (and
+later `destroyed`), the same counters as owner requests, because both use one
+transition; the collector vocabulary has no separate expiry outcome.
+
+Export adds `inbox.export.pages` (unit `1`) and `inbox.export.bytes` (unit `By`)
+with only `transport:http|email` and `outcome:emitted`. Count fully generated tar
+pages and exact enqueued archive bytes including overhead, not client delivery.
+Repeated exports count again; cancelled/failed incomplete pages and standalone
+HAR/body reads do not count. Counts are independent best-effort writes, so they
+can fail separately or split windows. Existing switch, 15-minute windows, 24-hour
+local outbox and 90-day collector retention remain unchanged; no content or ids.
+Migration `0005_export_telemetry.sql` rebuilds the local counter table while
+preserving values/windows. Deploy collector vocabulary before receiver, API last.
 
 ## Not in this proof of concept
 
 JWT signers (the planned next slice: owner-registered public JWK, `aud` = inbox URL,
 `exp` required, EdDSA/ES256 only, RFC 7638 thumbprint as hint, per-signer revocation);
-live event streams; plus-addressing; multipart parsing on read; account-retirement
-integration; exports; any sending.
+plus-addressing; multipart parsing on read;
+import into a deployment; any sending. Self-hosting is a documented
+recipe, not a supported product.
 
 ## Gates before enablement
+
+### Local hardening revision (not deployed)
+
+Migration `0006_qualification_hardening.sql` adds durable retired-owner fences
+and cleanup rotation cursors. A trusted binding-only `retireOwner(owner)` RPC
+works even with reception disabled: one D1 transaction fences the generation,
+marks all its inboxes destroying, removes credentials and retains cleanup prefixes.
+It acknowledges logical revocation, not physical deletion. Every subsequent owner
+RPC, creation and receipt reservation denies a fenced generation. Already-started
+reads cannot recall bytes already obtained. Fences persist indefinitely and contain
+the opaque generation and timestamp, not email or content.
+
+API migration `0019_inbox_retirement.sql` captures the old generation in a separate
+durable retirement ledger in the same transaction as identity deletion. Daily
+cleanup retries up to 20 pending inbox fences and replays up to 20 acknowledged
+fences per invocation, independently of provider-key cleanup and user-facing
+feature/pilot flags. The cross-service handoff is eventual, not atomic: reception
+can continue until the inbox transaction acknowledges. Pending work fails the
+scheduled report rather than claiming completed deletion. A newly created account
+gets a new generation; ordinary key rotation preserves the existing one.
+
+Recovery must stay offline until fences have been replayed. Restoring inbox D1
+requires replay of the surviving API ledger before enabling reception/reads;
+restoring API D1 alone does not remove surviving inbox fences. Restoring both
+databases from before a retirement requires an independently preserved ledger,
+or invalidation of pre-recovery generations/endpoints. Automatic safe recovery of
+both rolled-back ledgers is not claimed. This is an operator enablement gate.
+
+Cleanup retains the existing 200-row per-stage bounds, but processes only five
+destroying inboxes per invocation (four 50-row rounds each), with durable
+round-robin cursors for every row-removal stage and destruction. Counter updates
+and row deletion are set-based in one D1 transaction; reconciliation uses one
+bounded row lookup per prefix, never one statement per object. Together these
+caps form a whole-sweep budget with headroom for telemetry and at most five
+TTL transitions after existing cleanup. TTL work is not present on this branch;
+integration must preserve its five-transition cap and run the combined budget
+regression. Persist cursor progress before attempted cleanup so one failed object
+cannot pin later work indefinitely. R2 failures still leave deleting rows to retry.
+
+Before any email MIME parsing on ingress or owner read, a byte-only preflight
+limits raw input to the configured email size and at most 350,000 LF bytes. This
+is a work-allocation guard, not a MIME parser. Postal-mime's maintained limits
+remain authoritative for nesting, header and part complexity. Set its supported
+`maxRfc822NestingDepth:0`: nested message/rfc822 content remains an inert attachment,
+not recursively flattened into text or parsed into inner attachments. This stops
+encoded nested messages bypassing the raw-line work guard. Its resource-limit
+exceptions reject new reception with `5.3.4 MIME resource limit exceeded`; other
+syntax errors still store exact raw bytes with `parse_error:true`. Owner text and
+attachment reads of resource-heavy legacy objects return `resource_limit` (API
+HTTP 413); exact raw downloads remain available and unchanged. No accepted payload
+is rewritten. The line cap admits standard 76-column base64 near 25 MiB but rejects
+the demonstrated line-heavy allocation bomb. It does not prove concurrency or
+total isolate memory safety for every near-limit message; that gate remains open.
 
 - Qualify real SMTP outcomes on the domain, including `setReject` permanence and
   thrown-exception behavior, Bcc, and envelope-vs-header mismatches.
 - Measure memory and CPU for near-25 MiB email with many parts.
-- Account retirement must destroy the owner's inboxes. The API's 18-month reaper does
-  not yet call the inbox service.
+- Account retirement must destroy the owner's inboxes. The deployed 18-month
+  reaper does not yet call the inbox service; the local hardening revision above
+  adds the durable handoff and fences, with recovery/rollout qualification pending.
 - Privacy, retention and subprocessor disclosures (`PRIVACY.md`, `api/RETENTION.md`)
   updated before any user-content pilot. Inboxes intentionally store content, so this
   is a separate retention/access boundary from the content-free inference proxy:
   ZDR does not apply, and the operator can technically read stored mail.
 - D1 Time Travel keeps 30 days of database history (Paid). Verified live-store deletion
   is the promise; provider recovery history is a disclosed residual.
+
+### Qualification findings (2026-10-21, not a contract change)
+
+The [local MIME benchmark](qualification/mime-bench.md) exercises parsing on both
+receipt and read. Miniflare success is not production 128 MB memory qualification;
+line-heavy malformed boundaries exhaust a 128 MiB-old-space Node child. The
+[cleanup benchmark](qualification/cleanup-bench.md) measures 200 ordinary expiries
+per cron globally and a mixed invocation of 1,001 D1 calls. Per-stage/per-inbox
+bounds do not form a shared invocation budget, and prefix rotation grows with
+indefinitely retained cleanup records.
+
+The [retirement reproduction/proposal](qualification/retirement.md) confirms that
+current API retirement does not destroy inboxes. Normal reprovisioning uses a
+fresh generation, but an old-generation database restore has no fence. Durable
+API outbox capture, an inbox-side retirement fence and rollback-aware recovery
+are proposed, **not implemented**. These require a reviewed contract/migration
+revision before code changes. The [SMTP runbook](qualification/smtp-runbook.md)
+is likewise unexecuted; exception retry semantics are not promised by the docs
+reviewed. All corresponding enablement gates remain open.

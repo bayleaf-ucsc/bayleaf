@@ -26,7 +26,9 @@ Cleanup measures scheduled sweep work only, not inline owner deletion/destructio
 cleanup. Message/object counts are confirmed removals; success/failure count sweep
 completion/exception, not proof every pending deletion is complete. Per-item retries
 that do not throw need not make the sweep fail. `destroyed` counts scheduled
-finalization, separately from message cleanup.
+finalization, separately from message cleanup. An ended endpoint lifetime enters the
+same destruction transition, so it counts as `destroy_requested` (then `destroyed`),
+indistinguishable from an owner request; a separate outcome would need a policy bump.
 
 Only these fixed dimensions, counts and coarse bounds enter telemetry. Never
 addresses, IDs, account pseudonyms, hostnames, paths, headers, subjects, bodies,
@@ -78,3 +80,11 @@ entered durable destruction; finalization cannot begin before 05:11:26 UTC.
 collection), scheduled cleanup outcomes/finalization, lost-ack retry injection and
 off-switch expiry. Local tests cover these cases; local tests are not live proof.
 Metrics remain operational counts, not SMTP acknowledgement or billing accounting.
+# Integrated export rollout (2026-10-21 UTC)
+
+Collector `ba47b369-67c7-4110-acbd-c5521898ab34` accepts the 31-series vocabulary.
+The coordinated receiver/API rollout preserved activation and retention settings.
+Source outbox and collector D1 readback for the 09:00 UTC window both confirmed
+2 emitted HTTP pages and 1,064,448 bytes from the disposable live smoke. These are
+completed-generation aggregates, not delivery guarantees. Full version/migration
+and qualification evidence: `../../inbox/qualification/DEPLOYED-INTEGRATED.md`.

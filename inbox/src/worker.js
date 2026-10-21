@@ -9,6 +9,8 @@
 
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import PostalMime from 'postal-mime';
+import { verifyEmailDomain } from '../.generated/dkim-verifier.mjs';
+import { normalizeEmailAuth, RESTRICTED_EMAIL_MAX_BYTES } from './email-policy.mjs';
 import { diagnosticHeaders, publicDiagnosticPage } from '../../api/src/templates/diagnostics';
 
 // ---------------------------------------------------------------------------
@@ -28,6 +30,11 @@ const DEFAULTS = {
   MAX_SEARCH_TEXT: 32768,
   MAX_TEXT_CHARS: 262144,
   DESTROY_QUIESCE_SECONDS: 900,
+  MAX_INBOX_TTL_SECONDS: 2592000,
+  MAX_EXPORT_BYTES: 104857600,
+  MAX_EXPORT_META_BYTES: 4194304,
+  MAX_HAR_TEXT_BYTES: 262144,
+  MAX_HAR_PAGE_TEXT_BYTES: 4194304,
 };
 
 // Positive integers from env, else the default. DESTROY_QUIESCE_SECONDS may also be 0
@@ -49,8 +56,15 @@ const inboxDomain = env => String(env?.INBOX_DOMAIN || 'bayleaf-inboxes.dev').to
 
 const BATCH = 50;          // ids per statement; D1 allows 100 bound parameters
 const SWEEP_ROUNDS = 4;    // batches per sweep step per run
+const DESTROY_PER_SWEEP = 5; // shared budget: never multiply four rounds by 50 inboxes
 const HEADERS_CAP = 16384; // characters of kept HTTP headers in meta_json
 const YEAR = 31536000;
+const MIN_TTL = 60;
+const PRESETS = { experiment: 900 }; // 15 minutes
+
+// Live: active and not past an explicit endpoint lifetime. Expiry is computed at
+// check time, so an expired endpoint stops before any sweep runs.
+const LIVE = (alias) => `${alias}state = 'active' AND (${alias}expires_at IS NULL OR ${alias}expires_at > unixepoch()) AND NOT EXISTS (SELECT 1 FROM retired_owners r WHERE r.owner = ${alias || 'inboxes.'}owner)`;
 
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 const utcDay = s => new Date(s * 1000).toISOString().slice(0, 10);
@@ -63,6 +77,8 @@ const TELEMETRY_OUTCOMES = {
   'inbox.receipts': ['accepted', 'auth', 'rate', 'quota', 'size', 'unknown_address', 'failure'],
   'inbox.lifecycle': ['created', 'destroy_requested', 'destroyed'],
   'inbox.cleanup': ['expired', 'stale', 'retried', 'destroyed_messages', 'reconciled', 'success', 'failure'],
+  'inbox.export.pages': ['emitted'],
+  'inbox.export.bytes': ['emitted'],
 };
 function telemetryEnabled(env) {
   return env.INBOX_TELEMETRY_ENABLED === 'true' &&
@@ -103,7 +119,7 @@ export async function exportTelemetry(env, send = fetch) {
     if (!rows.length) continue;
     const end = window.start_at + TELEMETRY_WINDOW;
     // Reconstruct the allowlisted wire record, never serialize an inbox/R2 row.
-    const points = rows.map(row => ({ name: row.name, kind: 'sum', unit: '1',
+    const points = rows.map(row => ({ name: row.name, kind: 'sum', unit: row.name === 'inbox.export.bytes' ? 'By' : '1',
       start_at: window.start_at, observed_at: end, temporality: 'delta', monotonic: true,
       value: row.value, attributes: { ...(row.transport ? { transport: row.transport } : {}), outcome: row.outcome } }));
     try {
@@ -195,7 +211,7 @@ async function readBounded(stream, max) {
 // Reserve quota and insert a pending row in one transaction. The INSERT ... SELECT
 // only produces a row when every quota holds, and the UPDATE only counts it when
 // that row exists, so concurrent receivers cannot overshoot.
-async function reserve(env, inboxId, { size, meta, searchText, credentialId = null }) {
+async function reserve(env, inboxId, { size, meta, searchText, credentialId = null, emailPolicyJson = null }) {
   const L = limits(env);
   const now = nowSeconds();
   const today = utcDay(now);
@@ -204,16 +220,17 @@ async function reserve(env, inboxId, { size, meta, searchText, credentialId = nu
     env.DB.prepare(
       `INSERT INTO messages (id, inbox_id, state, received_at, expires_at, archived, size, meta_json, search_text)
        SELECT ?1, i.id, 'pending', ?2, ?3, 0, ?4, ?5, ?6 FROM inboxes i
-        WHERE i.id = ?7 AND i.state = 'active'
+         WHERE i.id = ?7 AND ${LIVE('i.')}
+          AND (i.type <> 'email' OR i.email_auth_json IS ?14)
           AND (i.type <> 'http' OR i.auth_required = 0 OR EXISTS (
             SELECT 1 FROM credentials c WHERE c.id = ?13 AND c.inbox_id = i.id
-              AND (c.expires_at IS NULL OR c.expires_at > ?2)))
+              AND (c.expires_at IS NULL OR c.expires_at > unixepoch())))
          AND i.bytes_stored + ?4 <= ?8
          AND i.message_count + 1 <= ?9
          AND (i.day <> ?10 OR i.day_count < ?11)
          AND (SELECT COALESCE(SUM(bytes_stored), 0) FROM inboxes WHERE owner = i.owner) + ?4 <= ?12`
     ).bind(id, now, now + L.RETENTION_SECONDS, size, JSON.stringify(meta), searchText, inboxId,
-      L.MAX_INBOX_BYTES, L.MAX_INBOX_MESSAGES, today, L.MAX_DAILY_RECEIPTS, L.MAX_OWNER_BYTES, credentialId),
+      L.MAX_INBOX_BYTES, L.MAX_INBOX_MESSAGES, today, L.MAX_DAILY_RECEIPTS, L.MAX_OWNER_BYTES, credentialId, emailPolicyJson),
     env.DB.prepare(
       `UPDATE inboxes SET bytes_stored = bytes_stored + ?1, message_count = message_count + 1,
          day_count = CASE WHEN day = ?2 THEN day_count + 1 ELSE 1 END, day = ?2
@@ -221,11 +238,12 @@ async function reserve(env, inboxId, { size, meta, searchText, credentialId = nu
     ).bind(size, today, inboxId, id),
   ]);
   if (inserted.meta.changes === 1) return { ok: true, id };
-  const row = await env.DB.prepare(`SELECT state, type, auth_required, day, day_count,
+  const row = await env.DB.prepare(`SELECT state, expires_at, type, auth_required, day, day_count,
+    EXISTS (SELECT 1 FROM retired_owners WHERE owner=inboxes.owner) AS retired,
     EXISTS (SELECT 1 FROM credentials WHERE inbox_id = ?1 AND id = ?2
-      AND (expires_at IS NULL OR expires_at > ?3)) AS authorized
-    FROM inboxes WHERE id = ?1`).bind(inboxId, credentialId, nowSeconds()).first();
-  if (!row || row.state !== 'active') return { ok: false, reason: 'not_found' };
+      AND (expires_at IS NULL OR expires_at > unixepoch())) AS authorized
+    FROM inboxes WHERE id = ?1`).bind(inboxId, credentialId).first();
+  if (!row || row.retired || row.state !== 'active' || (row.expires_at !== null && row.expires_at <= nowSeconds())) return { ok: false, reason: 'not_found' };
   if (row.type === 'http' && row.auth_required && !row.authorized) return { ok: false, reason: 'unauthorized' };
   if (row.day === today && row.day_count >= L.MAX_DAILY_RECEIPTS) return { ok: false, reason: 'daily', retryAfter: untilMidnight(now) };
   return { ok: false, reason: 'full' };
@@ -248,11 +266,26 @@ async function commit(env, inboxId, messageId, bytes, startedMs) {
     await removeMessages(env, [messageId]).catch(() => {});
     return 'storage_failed';
   }
-  const done = await env.DB.prepare("UPDATE messages SET state = 'stored' WHERE id = ? AND state = 'pending'")
-    .bind(messageId).run();
-  if (done.meta.changes === 1) return 'stored';
-  // The pending row was removed meanwhile (the inbox is being destroyed). Take the
-  // object back so nothing outlives the row; the destroy sweep's R2 list is the backstop.
+  // Arrival order is transaction commit order, never reservation order.
+  const fresh = `EXISTS (SELECT 1 FROM messages WHERE id = ?1 AND state = 'stored')
+    AND NOT EXISTS (SELECT 1 FROM events WHERE message_id = ?1)`;
+  const [done] = await env.DB.batch([
+    env.DB.prepare(`UPDATE messages SET state = 'stored' WHERE id = ?1 AND state = 'pending'
+      AND EXISTS (SELECT 1 FROM inboxes i WHERE i.id = ?2 AND ${LIVE('i.')})`).bind(messageId, inboxId),
+    env.DB.prepare(`UPDATE inboxes SET event_seq = event_seq + 1 WHERE id = ?2 AND ${fresh}`).bind(messageId, inboxId),
+    env.DB.prepare(`INSERT INTO events (inbox_id, seq, message_id, type, created_at)
+      SELECT id, event_seq, ?1, 'message.received', ?3 FROM inboxes WHERE id = ?2 AND ${fresh}`)
+      .bind(messageId, inboxId, nowSeconds()),
+  ]);
+  if (done.meta.changes === 1) {
+    const live = await env.DB.prepare(`SELECT expires_at FROM inboxes WHERE id = ? AND ${LIVE('')}`)
+      .bind(inboxId).first();
+    if (live && (live.expires_at === null || live.expires_at > nowSeconds())) return 'stored';
+  }
+  // The inbox was destroyed or its lifetime ended meanwhile. Remove our own pending
+  // row (if still there) and object so nothing outlives the endpoint; the destroy
+  // sweep's R2 list and prefix reconciliation are the backstop.
+  await removeMessages(env, [messageId]).catch(() => {});
   await env.BLOBS.delete(key).catch(() => {});
   return 'not_found';
 }
@@ -277,18 +310,49 @@ async function removeMessages(env, ids) {
     } catch {
       continue;
     }
-    const statements = rows.flatMap(r => [
-      env.DB.prepare(
-        `UPDATE inboxes SET bytes_stored = bytes_stored - (SELECT size FROM messages WHERE id = ?1 AND state = 'deleting'),
-           message_count = message_count - 1
-         WHERE id = (SELECT inbox_id FROM messages WHERE id = ?1 AND state = 'deleting')`
-      ).bind(r.id),
-      env.DB.prepare("DELETE FROM messages WHERE id = ? AND state = 'deleting'").bind(r.id),
+    // Numbered placeholders are reused across the correlated subqueries: <=50
+    // bound parameters total, not 50 per appearance. The transaction rechecks
+    // deleting rows so overlapping cleanup cannot decrement counters twice.
+    const doneIds = rows.map(r => r.id);
+    const selected = doneIds.map((_, i) => `?${i + 1}`).join(',');
+    const where = `state = 'deleting' AND id IN (${selected})`;
+    const results = await env.DB.batch([
+      env.DB.prepare(`UPDATE inboxes SET
+        bytes_stored = bytes_stored - (SELECT COALESCE(SUM(size),0) FROM messages WHERE inbox_id=inboxes.id AND ${where}),
+        message_count = message_count - (SELECT COUNT(*) FROM messages WHERE inbox_id=inboxes.id AND ${where})
+        WHERE id IN (SELECT inbox_id FROM messages WHERE ${where})`).bind(...doneIds),
+      env.DB.prepare(`DELETE FROM messages WHERE ${where}`).bind(...doneIds),
+      env.DB.prepare(`DELETE FROM events WHERE message_id IN (${selected})`).bind(...doneIds),
     ]);
-    const results = await env.DB.batch(statements);
-    removed += results.filter((_, i) => i % 2 === 1).reduce((n, r) => n + r.meta.changes, 0);
+    removed += results[1].meta.changes;
   }
   return removed;
+}
+
+// The single destruction transition, for an owner's request or an ended lifetime.
+// From this batch on, reception sees not-found and credentials are gone. An owner
+// request is scoped to that owner; the sweep passes no owner and moves only inboxes
+// whose lifetime has ended. Quiescence counts from the earlier of now and expires_at,
+// because receivers stopped seeing an expired inbox as live at expires_at.
+async function beginDestroy(env, inboxId, now, owner = null) {
+  const scope = owner === null ? 'expires_at <= ?1' : 'owner = ?3';
+  const args = owner === null ? [now, inboxId] : [now, inboxId, owner];
+  const transitions = await env.DB.batch([
+    env.DB.prepare(`INSERT OR IGNORE INTO cleanup_prefixes (inbox_id, turn)
+      SELECT id, (SELECT COALESCE(MAX(turn), 0) + 1 FROM cleanup_prefixes)
+      FROM inboxes WHERE id = ?2 AND ${scope}`).bind(...args),
+    env.DB.prepare(`UPDATE inboxes SET state = 'destroying', destroy_requested_at = MIN(?1, COALESCE(expires_at, ?1))
+      WHERE id = ?2 AND state = 'active' AND ${scope}`).bind(...args),
+    env.DB.prepare(`DELETE FROM credentials WHERE inbox_id = ?2
+      AND EXISTS (SELECT 1 FROM inboxes WHERE id = ?2 AND state = 'destroying' AND ${scope})`).bind(...args),
+  ]);
+  const begun = transitions[1].meta.changes === 1;
+  if (begun) {
+    // Expiry-driven and requested destruction share one content-free counter.
+    const row = await env.DB.prepare('SELECT type FROM inboxes WHERE id = ?').bind(inboxId).first();
+    if (row) await countTelemetry(env, 'inbox.lifecycle', row.type, 'destroy_requested');
+  }
+  return begun;
 }
 
 // One bounded step of destroying an inbox: remove up to BATCH message rows.
@@ -321,8 +385,8 @@ async function tryFinalize(env, inboxId) {
       `DELETE FROM inboxes WHERE id = ?1 AND state = 'destroying' AND destroy_requested_at <= ?2
          AND NOT EXISTS (SELECT 1 FROM messages WHERE inbox_id = ?1)`
     ).bind(inboxId, now - quiesce),
-    env.DB.prepare('DELETE FROM credentials WHERE inbox_id = ? AND NOT EXISTS (SELECT 1 FROM inboxes WHERE id = ?)')
-      .bind(inboxId, inboxId),
+    ...['credentials', 'events', 'event_streams'].map(table => env.DB.prepare(
+      `DELETE FROM ${table} WHERE inbox_id = ? AND NOT EXISTS (SELECT 1 FROM inboxes WHERE id = ?)`).bind(inboxId, inboxId)),
   ]);
   if (gone.meta.changes === 1) await countTelemetry(env, 'inbox.lifecycle', row.type, 'destroyed');
   return gone.meta.changes === 1;
@@ -385,9 +449,11 @@ async function authenticate(env, inbox, request, ctx) {
   if (!match || !TOKEN.test(match[1])) return invalid();
   const now = nowSeconds();
   const cred = await env.DB.prepare(
-    'SELECT id, name, expires_at, last_used_at FROM credentials WHERE inbox_id = ? AND secret_hash = ?'
+    `SELECT id, name, expires_at, last_used_at FROM credentials WHERE inbox_id = ?1 AND secret_hash = ?2
+      AND (expires_at IS NULL OR expires_at > unixepoch())
+      AND EXISTS (SELECT 1 FROM inboxes WHERE id = ?1 AND ${LIVE('')})`
   ).bind(inbox.id, await sha256(match[1])).first();
-  if (!cred || (cred.expires_at !== null && cred.expires_at <= now)) return invalid();
+  if (!cred || (cred.expires_at !== null && cred.expires_at <= nowSeconds())) return invalid();
   // Coalesced: at most one write per credential per hour.
   if (cred.last_used_at === null || now - cred.last_used_at >= 3600) {
     const touch = env.DB.prepare('UPDATE credentials SET last_used_at = ?1 WHERE id = ?2 AND (last_used_at IS NULL OR last_used_at <= ?3)')
@@ -413,7 +479,7 @@ async function receiveHttp(request, env, ctx, label, report = () => {}) {
   if (!NONCE.test(label)) return notFound();
   const inbox = await env.DB.prepare(
     `SELECT id, auth_required
-     FROM inboxes i WHERE nonce = ? AND type = 'http' AND state = 'active'`
+     FROM inboxes i WHERE nonce = ? AND type = 'http' AND ${LIVE('i.')}`
   ).bind(label).first();
   if (!inbox) return notFound();
 
@@ -509,7 +575,31 @@ async function handleFetch(request, env, ctx) {
 // Email reception
 // ---------------------------------------------------------------------------
 
-const PARSE_OPTIONS = { attachmentEncoding: 'arraybuffer' };
+// Nested messages stay inert attachments: decoding an encoded nested message and
+// recursively parsing it would bypass the raw-line preflight below.
+const PARSE_OPTIONS = { attachmentEncoding: 'arraybuffer', maxRfc822NestingDepth: 0 };
+const RESTRICTED_PARSE_OPTIONS = { ...PARSE_OPTIONS, maxPartCount: 256, maxNestingDepth: 16,
+  maxHeadersSize: 65536, maxForwardedAddresses: 256 };
+const MAX_MIME_LINES = 350000;
+class MimeResourceLimit extends Error {}
+function mimePreflight(raw, max) {
+  const bytes = raw instanceof Uint8Array ? raw : new Uint8Array(raw);
+  if (bytes.byteLength > max) throw new MimeResourceLimit();
+  let lines = 0;
+  for (let i = 0; i < bytes.byteLength; i++) {
+    if (bytes[i] === 10 && ++lines > MAX_MIME_LINES) throw new MimeResourceLimit();
+  }
+}
+async function parseEmail(raw, max, restricted = false) {
+  mimePreflight(raw, max);
+  try { return await PostalMime.parse(raw, restricted ? RESTRICTED_PARSE_OPTIONS : PARSE_OPTIONS); }
+  catch (error) {
+    // These are the pinned maintained parser's own resource-limit errors, not
+    // arbitrary sender headers or an attempt to parse MIME ourselves.
+    if (/^Maximum (?:MIME |header |forwarded address )/.test(String(error?.message))) throw new MimeResourceLimit();
+    throw error;
+  }
+}
 
 function mailbox(a) {
   if (!a || typeof a.address !== 'string' || !a.address) return null;
@@ -614,20 +704,44 @@ async function handleEmail(message, env, report = () => {}) {
   const at = recipient.lastIndexOf('@');
   const local = recipient.slice(0, at), domain = recipient.slice(at + 1);
   const inbox = at > 0 && domain === inboxDomain(env) && NONCE.test(local)
-    ? await env.DB.prepare("SELECT id FROM inboxes WHERE nonce = ? AND type = 'email' AND state = 'active'").bind(local).first()
+    ? await env.DB.prepare(`SELECT id, email_auth_json FROM inboxes WHERE nonce = ? AND type = 'email' AND ${LIVE('')}`)
+      .bind(local).first()
     : null;
   const reject = (outcome, reason) => { report(outcome); return message.setReject(reason); };
   if (!inbox) return reject('unknown_address', '5.1.1 Address not found');
-  if (message.rawSize > L.MAX_EMAIL_BYTES) return reject('size', '5.3.4 Message too large');
-  if (await rateLimited(env.ACCEPT_LIMIT, inbox.id)) return reject('rate', '4.7.0 Rate limited, try later');
+  const restricted = inbox.email_auth_json !== null;
+  const cap = restricted ? Math.min(L.MAX_EMAIL_BYTES, RESTRICTED_EMAIL_MAX_BYTES) : L.MAX_EMAIL_BYTES;
+  const tooLarge = restricted ? '5.3.4 Restricted inbox supports DKIM mail up to 1 MiB' : '5.3.4 Message too large';
+  if (message.rawSize > cap) return reject('size', tooLarge);
+  if (restricted) {
+    if (await rateLimited(env.REJECT_LIMIT, `email-dkim:${inbox.id}`)) return reject('rate', '4.7.0 DKIM verification rate limited, try later');
+  } else if (await rateLimited(env.ACCEPT_LIMIT, inbox.id)) return reject('rate', '4.7.0 Rate limited, try later');
 
-  const raw = await readBounded(message.raw, L.MAX_EMAIL_BYTES);
-  if (raw === null) return reject('size', '5.3.4 Message too large');
+  const raw = await readBounded(message.raw, cap);
+  if (raw === null) return reject('size', tooLarge);
+  let dkimAuth = null;
+  if (restricted) {
+    const policy = normalizeEmailAuth(JSON.parse(inbox.email_auth_json));
+    // An invalid stored policy never silently reopens reception.
+    if (!policy) throw new Error('email authorization configuration unavailable');
+    const verdict = await verifyEmailDomain(raw, policy);
+    if (!verdict.trusted) {
+      if (verdict.temporary) throw new Error('email authorization temporarily unavailable');
+      return reject('auth', '5.7.1 DKIM domain authorization required');
+    }
+    dkimAuth = { domain: verdict.domain, selector: verdict.selector, algo: verdict.algo };
+    if (await rateLimited(env.ACCEPT_LIMIT, inbox.id)) return reject('rate', '4.7.0 Rate limited, try later');
+  }
   let parsed = null;
-  try { parsed = await PostalMime.parse(raw, PARSE_OPTIONS); } catch { parsed = null; }
+  try { parsed = await parseEmail(raw, L.MAX_EMAIL_BYTES, restricted); }
+  catch (error) {
+    if (error instanceof MimeResourceLimit) return reject('size', '5.3.4 MIME resource limit exceeded');
+    parsed = null;
+  }
   const meta = emailMeta(message, recipient, parsed);
+  if (dkimAuth) meta.dkim_auth = dkimAuth;
 
-  const reservation = await reserve(env, inbox.id, { size: raw.byteLength, meta,
+  const reservation = await reserve(env, inbox.id, { size: raw.byteLength, meta, emailPolicyJson: inbox.email_auth_json,
     searchText: emailSearch(meta, parsed, L.MAX_SEARCH_TEXT) });
   if (!reservation.ok) {
     return reservation.reason === 'not_found' ? reject('unknown_address', '5.1.1 Address not found') : reject('quota', '5.2.2 Mailbox full');
@@ -657,10 +771,12 @@ async function reconcilePrefixes(env) {
     try {
       const listing = await env.BLOBS.list({ prefix: `m/${row.inbox_id}/`, limit: BATCH,
         ...(cursor ? { cursor } : {}) });
-      const checks = listing.objects.length ? await env.DB.batch(listing.objects.map(o => env.DB.prepare(
-        `SELECT id FROM messages WHERE inbox_id = ? AND id = ? AND state IN ('pending','stored')`
-      ).bind(row.inbox_id, o.key.slice(`m/${row.inbox_id}/`.length)))) : [];
-      const orphans = listing.objects.filter((_, i) => !checks[i].results.length).map(o => o.key);
+      const ids = listing.objects.map(o => o.key.slice(`m/${row.inbox_id}/`.length));
+      const checks = ids.length ? (await env.DB.prepare(
+        `SELECT id FROM messages WHERE inbox_id = ? AND id IN (${marks(ids.length)}) AND state IN ('pending','stored')`
+      ).bind(row.inbox_id, ...ids).all()).results : [];
+      const live = new Set(checks.map(r => r.id));
+      const orphans = listing.objects.filter((_, i) => !live.has(ids[i])).map(o => o.key);
       if (orphans.length) { await env.BLOBS.delete(orphans); removed += orphans.length; }
       cursor = listing.truncated ? listing.cursor : null;
     } catch {
@@ -678,20 +794,32 @@ async function reconcilePrefixes(env) {
 async function sweep(env) {
   const now = nowSeconds();
   const quiesce = limits(env).DESTROY_QUIESCE_SECONDS;
-  const counts = { expired: 0, stale: 0, retried: 0, destroyed_messages: 0, finalized: 0 };
-  const ids = async (sql, ...args) => (await env.DB.prepare(sql).bind(...args, BATCH).all()).results.map(r => r.id);
-  const step = async (name, sql, ...args) => {
+  const counts = { expired: 0, stale: 0, retried: 0, lifetimes: 0, destroyed_messages: 0, finalized: 0 };
+  // Persist selection before I/O: failures yield their turn too. Every query and
+  // wraparound page is bounded. Names/conditions below are code-owned constants.
+  const ids = async (name, table, condition, args, count = BATCH) => {
+    const cursor = (await env.DB.prepare('SELECT cursor FROM cleanup_progress WHERE name=?').bind(name).first())?.cursor || '';
+    const page = (await env.DB.prepare(`SELECT id FROM ${table} WHERE ${condition} AND id > ? ORDER BY id LIMIT ?`)
+      .bind(...args, cursor, count).all()).results;
+    if (cursor && page.length < count) page.push(...(await env.DB.prepare(
+      `SELECT id FROM ${table} WHERE ${condition} AND id <= ? ORDER BY id LIMIT ?`)
+      .bind(...args, cursor, count - page.length).all()).results);
+    if (page.length) await env.DB.prepare(`INSERT INTO cleanup_progress(name,cursor) VALUES (?,?)
+      ON CONFLICT(name) DO UPDATE SET cursor=excluded.cursor`).bind(name, page.at(-1).id).run();
+    return page.map(r => r.id);
+  };
+  const step = async (name, condition, ...args) => {
     for (let round = 0; round < SWEEP_ROUNDS; round++) {
-      const batch = await ids(sql, ...args);
+      const batch = await ids(name, 'messages', condition, args);
       if (!batch.length) break;
       counts[name] += await removeMessages(env, batch);
       if (batch.length < BATCH) break;
     }
   };
-  await step('expired', "SELECT id FROM messages WHERE state = 'stored' AND expires_at <= ? LIMIT ?", now);
-  await step('stale', "SELECT id FROM messages WHERE state = 'pending' AND received_at < ? LIMIT ?", now - quiesce);
-  await step('retried', "SELECT id FROM messages WHERE state = 'deleting' LIMIT ?");
-  const destroying = await ids("SELECT id FROM inboxes WHERE state = 'destroying' ORDER BY destroy_requested_at LIMIT ?");
+  await step('expired', "state = 'stored' AND expires_at <= ?", now);
+  await step('stale', "state = 'pending' AND received_at < ?", now - quiesce);
+  await step('retried', "state = 'deleting'");
+  const destroying = await ids('destroying', 'inboxes', "state = 'destroying'", [], DESTROY_PER_SWEEP);
   for (const id of destroying) {
     for (let round = 0; round < SWEEP_ROUNDS; round++) {
       const n = await destroyStep(env, id);
@@ -701,6 +829,20 @@ async function sweep(env) {
     if (await tryFinalize(env, id)) counts.finalized++;
   }
   counts.reconciled = await reconcilePrefixes(env);
+  await env.DB.prepare('DELETE FROM event_streams WHERE id IN (SELECT id FROM event_streams WHERE expires_at <= unixepoch() LIMIT 50)').run();
+  // Reserve this run's cleanup/reconciliation work before admitting new destruction
+  // work. At most five transitions, never BATCH * SWEEP_ROUNDS: each transition
+  // includes a transaction and optional telemetry. Failures leave expiry denial in
+  // force and retry next run. Combined cleanup/TTL/event/telemetry budget evidence
+  // lives in qualification/merged-cleanup.json; local counts are not CPU guarantees.
+  try {
+    const lapsed = (await env.DB.prepare("SELECT id FROM inboxes WHERE state = 'active' AND expires_at <= ? ORDER BY expires_at, id LIMIT 5")
+      .bind(now).all()).results;
+    for (const { id } of lapsed) {
+      try { if (await beginDestroy(env, id, now)) counts.lifetimes++; }
+      catch { break; }
+    }
+  } catch { /* A failed admission query must not undo completed cleanup. */ }
   console.log(JSON.stringify({ sweep: counts })); // counts only, never content
   return counts;
 }
@@ -724,22 +866,44 @@ function handle(value, kind) {
   if (typeof value !== 'string' || !IDS[kind].test(value)) throw new Invalid();
   return value;
 }
+// Endpoint lifetime in seconds from {ttl_seconds} or {preset}, never both; null when
+// neither is given and none is required. Bounded by MAX_INBOX_TTL_SECONDS.
+function lifetime(env, o, { required }) {
+  const hasTtl = o.ttl_seconds !== undefined, hasPreset = o.preset !== undefined;
+  if (hasTtl && hasPreset) throw new Invalid();
+  if (hasPreset) {
+    if (typeof o.preset !== 'string' || !Object.hasOwn(PRESETS, o.preset)) throw new Invalid();
+    if (PRESETS[o.preset] > limits(env).MAX_INBOX_TTL_SECONDS) throw new Invalid();
+    return PRESETS[o.preset];
+  }
+  if (!hasTtl) { if (required) throw new Invalid(); return null; }
+  if (!Number.isSafeInteger(o.ttl_seconds) || o.ttl_seconds < MIN_TTL || o.ttl_seconds > limits(env).MAX_INBOX_TTL_SECONDS) throw new Invalid();
+  return o.ttl_seconds;
+}
 const printable = (s, max) => typeof s === 'string' && s.length > 0 && [...s].length <= max && !/[\p{C}]/u.test(s);
 
 function inboxView(env, row) {
   const L = limits(env);
-  const today = utcDay(nowSeconds());
-  const view = { id: row.id, type: row.type, label: row.label ?? null, state: row.state };
-  if (row.type === 'email') view.address = `${row.nonce}@${inboxDomain(env)}`;
+  const now = nowSeconds();
+  const today = utcDay(now);
+  // A lifetime that has ended reports destroying before the sweep's transition runs.
+  const lapsed = row.state === 'active' && row.expires_at !== null && row.expires_at <= now;
+  const view = { id: row.id, type: row.type, label: row.label ?? null, state: lapsed ? 'destroying' : row.state };
+  if (row.type === 'email') {
+    view.address = `${row.nonce}@${inboxDomain(env)}`;
+    view.email_auth = row.email_auth_json === null ? null : normalizeEmailAuth(JSON.parse(row.email_auth_json));
+    if (view.email_auth) view.restricted_email_max_bytes = Math.min(L.MAX_EMAIL_BYTES, RESTRICTED_EMAIL_MAX_BYTES);
+  }
   else view.url = `https://${row.nonce}.${inboxDomain(env)}/`;
   view.created_at = row.created_at;
+  view.expires_at = row.expires_at ?? null;
   view.usage = { bytes: row.bytes_stored, messages: row.message_count, receipts_today: row.day === today ? row.day_count : 0 };
   view.limits = { bytes: L.MAX_INBOX_BYTES, messages: L.MAX_INBOX_MESSAGES, daily_receipts: L.MAX_DAILY_RECEIPTS };
   if (row.type === 'http') view.closed = row.auth_required === 1;
-  if (row.state === 'destroying') view.cleanup_not_before = row.destroy_requested_at + L.DESTROY_QUIESCE_SECONDS;
+  if (view.state === 'destroying') view.cleanup_not_before = (lapsed ? row.expires_at : row.destroy_requested_at) + L.DESTROY_QUIESCE_SECONDS;
   return view;
 }
-const INBOX_COLUMNS = `i.id, i.type, i.nonce, i.label, i.state, i.created_at, i.destroy_requested_at, i.bytes_stored, i.message_count, i.day, i.day_count, i.auth_required`;
+const INBOX_COLUMNS = `i.id, i.type, i.nonce, i.label, i.state, i.created_at, i.expires_at, i.destroy_requested_at, i.bytes_stored, i.message_count, i.day, i.day_count, i.auth_required, i.email_auth_json`;
 
 function summary(row, type) {
   const meta = JSON.parse(row.meta_json);
@@ -752,27 +916,304 @@ function summary(row, type) {
 const credentialView = r => ({ id: r.id, kind: r.kind, name: r.name, hint: r.hint, created_at: r.created_at,
   expires_at: r.expires_at ?? null, last_used_at: r.last_used_at ?? null });
 
-// Only active inboxes of this owner are visible to message and credential operations.
-const activeInbox = (env, owner, inboxId) =>
-  env.DB.prepare("SELECT id, type FROM inboxes WHERE id = ? AND owner = ? AND state = 'active'").bind(inboxId, owner).first();
+// Only live inboxes of this owner are visible to message and credential operations.
+const activeInbox = async (env, owner, inboxId) => {
+  const row = await env.DB.prepare(`SELECT id, type, expires_at FROM inboxes WHERE id = ? AND owner = ? AND ${LIVE('')}`)
+    .bind(inboxId, owner).first();
+  return row && (row.expires_at === null || row.expires_at > nowSeconds()) ? row : null;
+};
 
-// A visible message: stored and unexpired, in an active inbox of this owner.
-const visibleMessage = (env, owner, inboxId, messageId) => env.DB.prepare(
-  `SELECT m.id, m.inbox_id, m.received_at, m.expires_at, m.archived, m.size, m.meta_json, i.type
+// A visible message: stored and unexpired, in a live inbox of this owner.
+const visibleMessage = async (env, owner, inboxId, messageId) => {
+  const row = await env.DB.prepare(
+  `SELECT m.id, m.inbox_id, m.received_at, m.expires_at, m.archived, m.size, m.meta_json, i.type,
+      i.expires_at AS inbox_expires_at
    FROM messages m JOIN inboxes i ON i.id = m.inbox_id
-   WHERE m.id = ? AND m.inbox_id = ? AND i.owner = ? AND i.state = 'active' AND m.state = 'stored' AND m.expires_at > ?`
-).bind(messageId, inboxId, owner, nowSeconds()).first();
+   WHERE m.id = ? AND m.inbox_id = ? AND i.owner = ? AND ${LIVE('i.')} AND m.state = 'stored' AND m.expires_at > unixepoch()`
+).bind(messageId, inboxId, owner).first();
+  const now = nowSeconds();
+  return row && row.expires_at > now && (row.inbox_expires_at === null || row.inbox_expires_at > now) ? row : null;
+};
+
+// Arrival events: minimal references in commit order, never content.
+const EVENT_PAGE = 100;
+const encodeCursor = (epoch, inboxId, seq) => b64url(`${epoch}:${inboxId}:${seq}`);
+function parseAfter(after, inboxId) {
+  if (after === undefined) return { seq: 0 };
+  if (after === 'now') return {};
+  const decoded = typeof after === 'string' && after.length <= 200 ? unb64url(after) : null;
+  const m = decoded && /^([0-9a-f]{16}):(ibx_[a-z2-7]{26}):(\d{1,15})$/.exec(decoded);
+  if (!m || m[2] !== inboxId) throw new Invalid();
+  return { epoch: m[1], seq: Number(m[3]) };
+}
+
+// One transactional snapshot prevents a commit between event and head reads from
+// being skipped. The final liveness check preserves the TTL read contract.
+async function readEvents(env, owner, inboxId, position, limit, lease = null) {
+  const [rows, feed, inbox] = await env.DB.batch([
+    env.DB.prepare(`SELECT e.seq, e.type, e.message_id, e.created_at, m.expires_at FROM events e
+      JOIN messages m ON m.id = e.message_id AND m.inbox_id = e.inbox_id
+      JOIN inboxes i ON i.id = e.inbox_id
+      WHERE e.inbox_id = ?1 AND e.seq > ?2 AND i.owner = ?4 AND ${LIVE('i.')}
+      AND m.state = 'stored' AND m.expires_at > unixepoch() ORDER BY e.seq LIMIT ?3`)
+      .bind(inboxId, position.seq ?? Number.MAX_SAFE_INTEGER, limit + 1, owner),
+    env.DB.prepare('SELECT epoch FROM event_feed WHERE id = 1'),
+    env.DB.prepare(`SELECT event_seq FROM inboxes i WHERE id = ?1 AND owner = ?2 AND ${LIVE('i.')}
+      AND (?3 IS NULL OR EXISTS (SELECT 1 FROM event_streams s WHERE s.id = ?3 AND s.inbox_id = i.id AND s.expires_at > unixepoch()))`)
+      .bind(inboxId, owner, lease),
+  ]);
+  const head = inbox.results[0], epoch = feed.results[0]?.epoch;
+  if (!head || !await activeInbox(env, owner, inboxId)) return fail('not_found');
+  if (!epoch) return fail('unavailable');
+  if (position.epoch !== undefined && (position.epoch !== epoch || position.seq > head.event_seq)) return fail('expired');
+  const page = rows.results.slice(0, limit), more = rows.results.length > limit;
+  const at = seq => encodeCursor(epoch, inboxId, seq);
+  return {
+    events: page.filter(r => r.expires_at > nowSeconds()).map(r => ({ event_id: `evt_${r.seq}`, type: r.type, message_id: r.message_id,
+      cursor: at(r.seq), created_at: r.created_at })),
+    cursor: at(more ? page[page.length - 1].seq : Math.max(position.seq ?? 0, head.event_seq)),
+    more,
+  };
+}
+
+// Portable export: one bounded page as a streamed POSIX ustar archive.
+const EXPORT_FORMAT = 'bayleaf-inbox-export';
+const EXPORT_LIVE = LIVE('i.');
+async function exportInboxRow(env, owner, inboxId) {
+  const row = await env.DB.prepare(`SELECT ${INBOX_COLUMNS}, i.expires_at AS inbox_expires_at
+    FROM inboxes i WHERE i.id = ? AND i.owner = ? AND ${EXPORT_LIVE}`).bind(inboxId, owner).first();
+  return row && (row.inbox_expires_at === null || row.inbox_expires_at > nowSeconds()) ? row : null;
+}
+async function exportMessageRow(env, owner, inboxId, messageId) {
+  const row = await env.DB.prepare(`SELECT m.id, m.inbox_id, m.received_at, m.expires_at,
+      m.archived, m.size, m.meta_json, i.type, i.nonce, i.expires_at AS inbox_expires_at
+    FROM messages m JOIN inboxes i ON i.id = m.inbox_id
+    WHERE m.id = ? AND m.inbox_id = ? AND i.owner = ? AND ${EXPORT_LIVE}
+      AND m.state = 'stored' AND m.expires_at > unixepoch()`).bind(messageId, inboxId, owner).first();
+  const now = nowSeconds();
+  return row && row.expires_at > now && (row.inbox_expires_at === null || row.inbox_expires_at > now) ? row : null;
+}
+async function releaseExportReader(reader) {
+  try { await reader.cancel(); } catch { /* preserve the original error */ }
+  reader.releaseLock();
+}
+const TAR_BLOCK = 512;
+const zeros = n => new Uint8Array(n);
+const tarPadding = size => zeros((TAR_BLOCK - (size % TAR_BLOCK)) % TAR_BLOCK);
+function tarHeader(name, size, mtime) {
+  const header = zeros(TAR_BLOCK);
+  const put = (text, offset) => header.set(new TextEncoder().encode(text), offset);
+  const octal = (n, width) => `${n.toString(8).padStart(width - 1, '0')}\0`;
+  put(name, 0);
+  put(octal(0o644, 8), 100);
+  put(octal(0, 8), 108);
+  put(octal(0, 8), 116);
+  put(octal(size, 12), 124);
+  put(octal(mtime, 12), 136);
+  put('        ', 148);
+  put('0', 156);
+  put('ustar\x0000', 257);
+  const sum = header.reduce((n, b) => n + b, 0);
+  put(`${sum.toString(8).padStart(6, '0')}\0 `, 148);
+  return header;
+}
+
+// HAR-shaped reconstruction, never a wire capture or conformant HAR transaction.
+const HAR_COMMENT = 'Reconstructed by BayLeaf Inboxes from stored metadata and the exact stored body; not a wire capture. Not conformant HAR 1.2: unknown total/send/wait/receive durations use -1. Status 0, httpVersion unknown and uncaptured content size 0 are BayLeaf placeholders, not standard unknown sentinels.';
+const HAR_DROPPED = ['cf-*', ...DROPPED];
+const HAR_REDACTED = new Set(['authorization', 'proxy-authorization', 'cookie']);
+const iso = s => new Date(s * 1000).toISOString();
+function harText(contentType, bytes) {
+  if (!bytes || !isTextual(contentType)) return null;
+  const charset = /;\s*charset\s*=\s*"?([^";\s]+)/i.exec(contentType)?.[1]?.toLowerCase();
+  if (charset && !['utf-8', 'utf8', 'us-ascii'].includes(charset)) return null;
+  if (charset === 'us-ascii' && bytes.some(b => b > 127)) return null;
+  try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { return null; }
+}
+function harEntry(env, row, meta, body) {
+  const headers = (meta.headers || []).map(([name, value]) => ({ name, value }));
+  const request = { method: meta.method,
+    url: `https://${row.nonce}.${inboxDomain(env)}${meta.path}${meta.query ? `?${meta.query}` : ''}`,
+    httpVersion: 'unknown', cookies: [], headers,
+    queryString: [...new URLSearchParams(meta.query || '')].map(([name, value]) => ({ name, value })),
+    headersSize: -1, bodySize: row.size };
+  if (row.size > 0) {
+    const mimeType = meta.content_type || '';
+    request.postData = typeof body.text === 'string' ? { mimeType, text: body.text, _sha256: body.sha256 }
+      : { mimeType, _file: `payloads/${row.id}.body`, _sha256: body.sha256, ...(body.truncated ? { _truncated: true } : {}) };
+  }
+  const head = meta.method === 'HEAD';
+  const expected = { status: 200, statusText: 'OK',
+    headers: [...(head ? [] : [{ name: 'content-type', value: 'application/json' }]), { name: 'access-control-allow-origin', value: '*' }],
+    content: head ? { size: 0, mimeType: '' } : { size: 11, mimeType: 'application/json', text: '{"ok":true}' },
+    bodySize: head ? 0 : 11, _observed: false };
+  const response = { status: 0, statusText: '', httpVersion: 'unknown', cookies: [], headers: [],
+    content: { size: 0, mimeType: '', _captured: false }, redirectURL: '', headersSize: -1, bodySize: -1,
+    _observed: false, comment: 'No response captured. Stored bytes do not prove a sender received an acknowledgement.' };
+  return { startedDateTime: iso(row.received_at), time: -1, request, response, cache: {},
+    timings: { blocked: -1, dns: -1, connect: -1, ssl: -1, send: -1, wait: -1, receive: -1 }, comment: HAR_COMMENT,
+    _expectedAcknowledgement: expected,
+    _receiptId: row.id, _archived: row.archived === 1, _expiresAt: iso(row.expires_at),
+    _credentialName: meta.credential?.name ?? null, _timingsUnknown: true, _headersNormalized: true,
+    _redacted: headers.filter(h => HAR_REDACTED.has(h.name)).map(h => h.name), _dropped: HAR_DROPPED,
+    ...(meta.headers_truncated ? { _headersTruncated: true } : {}) };
+}
+const harLog = entries => `{"log":{"version":"1.2","_profile":"bayleaf-inbox-receipt-1","creator":{"name":"BayLeaf Inboxes","version":"1"},"comment":${
+  JSON.stringify(HAR_COMMENT)},"entries":[${entries.join(',')}]}}`;
+
+async function* inspectBody(reader, size, keep, out) {
+  const digest = new crypto.DigestStream('SHA-256');
+  const hashed = digest.digest;
+  hashed.catch(() => {});
+  const hasher = digest.getWriter();
+  const kept = keep >= size ? new Uint8Array(size) : null;
+  let copied = 0, complete = false;
+  try {
+    while (true) {
+      const { value: chunk, done } = await reader.read();
+      if (done) break;
+      copied += chunk.byteLength;
+      if (copied > size) throw new Error('size mismatch');
+      await hasher.write(chunk.slice());
+      if (kept) kept.set(chunk, copied - chunk.byteLength);
+      yield chunk;
+    }
+    if (copied !== size) throw new Error('size mismatch');
+    await hasher.close();
+    out.sha256 = hex(await hashed);
+    if (kept) out.bytes = kept;
+    complete = true;
+  } finally {
+    if (!complete) { try { await hasher.abort(); } catch {} }
+    hasher.releaseLock();
+  }
+}
+
+// Pull-based: one R2 reader, bounded retained HAR text/metadata, manifest last.
+function exportStream(env, owner, inbox, rows, page) {
+  let cancelled = false, activeReader = null;
+  async function* parts() {
+    const receipts = [], omitted = [], har = [];
+    const L = limits(env);
+    let inlined = 0;
+    for (const listed of rows) {
+      const row = await exportMessageRow(env, owner, inbox.id, listed.id);
+      const object = row ? await env.BLOBS.get(objectKey(inbox.id, row.id)) : null;
+      if (!row || !object) { omitted.push(listed.id); continue; }
+      const reader = object.body.getReader();
+      activeReader = reader;
+      try {
+        if (cancelled) return;
+        if (!await exportMessageRow(env, owner, inbox.id, row.id)) { omitted.push(listed.id); continue; }
+        if (cancelled) return;
+        if (object.size !== row.size) throw new Error('size mismatch');
+        const file = `payloads/${row.id}.${inbox.type === 'email' ? 'eml' : 'body'}`;
+        yield tarHeader(file, row.size, row.received_at);
+        const meta = JSON.parse(row.meta_json);
+        const textual = inbox.type === 'http' && row.size > 0 && isTextual(meta.content_type);
+        const fits = textual && row.size <= L.MAX_HAR_TEXT_BYTES && inlined + row.size <= L.MAX_HAR_PAGE_TEXT_BYTES;
+        const body = {};
+        yield* inspectBody(reader, row.size, fits ? row.size : -1, body);
+        if (!await exportMessageRow(env, owner, inbox.id, row.id)) throw new Error('receipt expired');
+        yield tarPadding(row.size);
+        receipts.push({ id: row.id, file, received_at: row.received_at, expires_at: row.expires_at,
+          archived: row.archived === 1, size: row.size, sha256: body.sha256, meta });
+        if (inbox.type === 'http') {
+          const text = harText(meta.content_type, body.bytes);
+          if (text !== null) inlined += row.size;
+          har.push(JSON.stringify(harEntry(env, row, meta, { sha256: body.sha256, text, truncated: textual && !fits })));
+        }
+      } finally {
+        await releaseExportReader(reader);
+        activeReader = null;
+      }
+    }
+    if (!await exportInboxRow(env, owner, inbox.id)) throw new Error('inbox expired');
+    const harFile = inbox.type === 'http' ? 'receipts.har' : null;
+    if (harFile) {
+      const prefix = harLog([]).slice(0, -3), suffix = ']}}';
+      const encoder = new TextEncoder();
+      const size = encoder.encode(prefix).byteLength + encoder.encode(suffix).byteLength
+        + har.reduce((sum, entry) => sum + encoder.encode(entry).byteLength, 0) + Math.max(0, har.length - 1);
+      yield tarHeader(harFile, size, nowSeconds());
+      yield encoder.encode(prefix);
+      for (let i = 0; i < har.length; i++) {
+        if (i) yield encoder.encode(',');
+        yield encoder.encode(har[i]);
+        har[i] = '';
+      }
+      har.length = 0;
+      yield encoder.encode(suffix);
+      yield tarPadding(size);
+    }
+    const manifest = new TextEncoder().encode(JSON.stringify({ format: EXPORT_FORMAT, version: 1, exported_at: nowSeconds(),
+      inbox: page.inbox, order: 'received_at_asc', cursor: page.cursor, next_cursor: page.next_cursor, har: harFile,
+      receipts, omitted }, null, 2));
+    yield tarHeader(`manifests/${rows[0]?.id ?? 'empty'}.json`, manifest.byteLength, nowSeconds());
+    yield manifest;
+    yield tarPadding(manifest.byteLength);
+    yield zeros(TAR_BLOCK * 2);
+  }
+  const it = parts();
+  let emittedBytes = 0;
+  return new ReadableStream({
+    async pull(controller) {
+      try {
+        const { done, value } = await it.next();
+        if (cancelled) return;
+        if (done) {
+          await countTelemetry(env, 'inbox.export.pages', inbox.type, 'emitted');
+          await countTelemetry(env, 'inbox.export.bytes', inbox.type, 'emitted', emittedBytes);
+          controller.close();
+        } else {
+          emittedBytes += value.byteLength;
+          controller.enqueue(value);
+        }
+      } catch {
+        if (!cancelled) controller.error(new Error('export interrupted'));
+      }
+    },
+    async cancel() {
+      cancelled = true;
+      if (activeReader) { try { await activeReader.cancel(); } catch {} }
+      await it.return();
+    },
+  });
+}
 
 const rpc = {
+  async retireOwner(env, owner) {
+    await env.DB.batch([
+      env.DB.prepare('INSERT OR IGNORE INTO retired_owners(owner,retired_at) VALUES (?,?)').bind(owner, nowSeconds()),
+      env.DB.prepare(`INSERT OR IGNORE INTO cleanup_prefixes(inbox_id,turn)
+        SELECT id,(SELECT COALESCE(MAX(turn),0)+1 FROM cleanup_prefixes) FROM inboxes WHERE owner=?`).bind(owner),
+      env.DB.prepare(`UPDATE inboxes SET state='destroying',destroy_requested_at=?
+        WHERE owner=? AND state='active'`).bind(nowSeconds(), owner),
+      env.DB.prepare('DELETE FROM credentials WHERE inbox_id IN (SELECT id FROM inboxes WHERE owner=?)').bind(owner),
+      env.DB.prepare('DELETE FROM event_streams WHERE inbox_id IN (SELECT id FROM inboxes WHERE owner=?)').bind(owner),
+    ]);
+    return { retired: true };
+  },
+
   async createInbox(env, owner, opts) {
-    const o = options(opts, ['type', 'label'], { required: true });
+    const o = options(opts, ['type', 'label', 'ttl_seconds', 'preset', 'email_auth'], { required: true });
     if (o.type !== 'email' && o.type !== 'http') throw new Invalid();
     if (o.label !== undefined && o.label !== null && !printable(o.label, 64)) throw new Invalid();
-    const id = `ibx_${nonce()}`;
+    if (o.type !== 'email' && o.email_auth !== undefined) throw new Invalid();
+    let policy;
+    try { policy = normalizeEmailAuth(o.email_auth); } catch { throw new Invalid(); }
+    // Deploy verifier everywhere before permitting the first restricted inbox.
+    // This gate only controls creation: turning it off never bypasses an existing policy.
+    if (policy && env.EMAIL_AUTH_CREATION_ENABLED !== 'true') return fail('disabled');
+    const policyJson = policy === null ? null : JSON.stringify(policy);
+    const id = `ibx_${nonce()}`, now = nowSeconds();
+    const ttl = lifetime(env, o, { required: false });
     const done = await env.DB.prepare(
-      `INSERT INTO inboxes (id, owner, type, nonce, label, state, created_at)
-       SELECT ?1, ?2, ?3, ?4, ?5, 'active', ?6 WHERE (SELECT COUNT(*) FROM inboxes WHERE owner = ?2) < ?7`
-    ).bind(id, owner, o.type, nonce(), o.label ?? null, nowSeconds(), limits(env).MAX_INBOXES_PER_OWNER).run();
+      `INSERT INTO inboxes (id, owner, type, nonce, label, state, created_at, expires_at, email_auth_json)
+       SELECT ?1, ?2, ?3, ?4, ?5, 'active', ?6, ?8, ?9 WHERE (SELECT COUNT(*) FROM inboxes WHERE owner = ?2) < ?7
+         AND NOT EXISTS (SELECT 1 FROM retired_owners WHERE owner = ?2)`
+    ).bind(id, owner, o.type, nonce(), o.label ?? null, now, limits(env).MAX_INBOXES_PER_OWNER,
+      ttl === null ? null : now + ttl, policyJson).run();
     if (done.meta.changes !== 1) return fail('limit');
     await countTelemetry(env, 'inbox.lifecycle', o.type, 'created');
     return rpc.getInbox(env, owner, id);
@@ -791,21 +1232,25 @@ const rpc = {
     return row ? inboxView(env, row) : fail('not_found');
   },
 
+  // Shorten or set an endpoint lifetime; never lengthen it or remove it.
+  async updateInbox(env, owner, inboxId, opts) {
+    handle(inboxId, 'inbox');
+    const o = options(opts, ['ttl_seconds', 'preset'], { required: true });
+    const ttl = lifetime(env, o, { required: true });
+    const now = nowSeconds();
+    const done = await env.DB.prepare(
+      `UPDATE inboxes SET expires_at = ?1 WHERE id = ?2 AND owner = ?3 AND ${LIVE('')}
+         AND (expires_at IS NULL OR expires_at >= ?1)`
+    ).bind(now + ttl, inboxId, owner).run();
+    if (done.meta.changes !== 1) return (await activeInbox(env, owner, inboxId)) ? fail('conflict') : fail('not_found');
+    return rpc.getInbox(env, owner, inboxId);
+  },
+
   async destroyInbox(env, owner, inboxId) {
     handle(inboxId, 'inbox');
-    // From this batch on, reception sees not-found and credentials are gone.
-    const transitions = await env.DB.batch([
-      env.DB.prepare(`INSERT OR IGNORE INTO cleanup_prefixes (inbox_id, turn)
-        SELECT id, (SELECT COALESCE(MAX(turn), 0) + 1 FROM cleanup_prefixes)
-        FROM inboxes WHERE id = ? AND owner = ?`).bind(inboxId, owner),
-      env.DB.prepare("UPDATE inboxes SET state = 'destroying', destroy_requested_at = ? WHERE id = ? AND owner = ? AND state = 'active'")
-        .bind(nowSeconds(), inboxId, owner),
-      env.DB.prepare("DELETE FROM credentials WHERE inbox_id = ? AND EXISTS (SELECT 1 FROM inboxes WHERE id = ? AND owner = ? AND state = 'destroying')")
-        .bind(inboxId, inboxId, owner),
-    ]);
+    await beginDestroy(env, inboxId, nowSeconds(), owner);
     const row = await env.DB.prepare('SELECT type, state, destroy_requested_at FROM inboxes WHERE id = ? AND owner = ?').bind(inboxId, owner).first();
     if (!row) return fail('not_found');
-    if (transitions[1].meta.changes === 1) await countTelemetry(env, 'inbox.lifecycle', row.type, 'destroy_requested');
     try { await destroyStep(env, inboxId); } catch { /* best effort; the sweep continues */ }
     // Never claims completion: finalization happens in the sweep, observable as not_found.
     return { id: inboxId, state: 'destroying', cleanup_not_before: row.destroy_requested_at + limits(env).DESTROY_QUIESCE_SECONDS };
@@ -830,8 +1275,8 @@ const rpc = {
     if (!inbox) return fail('not_found');
 
     let sql = `SELECT id, inbox_id, received_at, expires_at, archived, size, meta_json FROM messages
-               WHERE inbox_id = ? AND state = 'stored' AND expires_at > ?`;
-    const args = [inboxId, nowSeconds()];
+               WHERE inbox_id = ? AND state = 'stored' AND expires_at > unixepoch()`;
+    const args = [inboxId];
     if (archived !== 'all') { sql += ' AND archived = ?'; args.push(archived ? 1 : 0); }
     if (o.q !== undefined) {
       sql += " AND search_text LIKE ? ESCAPE '\\'";
@@ -841,8 +1286,12 @@ const rpc = {
     sql += ' ORDER BY received_at DESC, id DESC LIMIT ?';
     args.push(limit + 1);
     const rows = (await env.DB.prepare(sql).bind(...args).all()).results;
-    const page = rows.slice(0, limit);
-    const last = page[page.length - 1];
+    if (!await activeInbox(env, owner, inboxId)) return fail('not_found');
+    // Traverse the SQL page even when fresh expiry removes every returned row.
+    // The lookahead remains on the next page; filtering must not terminate it.
+    const scanned = rows.slice(0, limit);
+    const page = scanned.filter(r => r.expires_at > nowSeconds());
+    const last = scanned[scanned.length - 1];
     return { messages: page.map(r => summary(r, inbox.type).message),
       next_cursor: rows.length > limit ? b64url(`${last.received_at}:${last.id}`) : null };
   },
@@ -862,6 +1311,7 @@ const rpc = {
     const object = await env.BLOBS.get(objectKey(inboxId, messageId));
     if (!object) return fail('unavailable');
     const bytes = await object.arrayBuffer();
+    if (!await visibleMessage(env, owner, inboxId, messageId)) return fail('not_found');
     const type = row.type === 'email' ? 'message/rfc822' : (JSON.parse(row.meta_json).content_type || 'application/octet-stream');
     return new Response(bytes, { headers: { 'Content-Type': type, 'Content-Length': String(bytes.byteLength) } });
   },
@@ -876,10 +1326,16 @@ const rpc = {
       text: text.slice(0, max), truncated: text.length > max });
     if (row.type === 'http' && !isTextual(meta.content_type)) return result('none', '');
     if (row.type === 'email' && meta.parse_error) return result('none', '');
+    if (row.type === 'email' && row.size > limits(env).MAX_EMAIL_BYTES) return fail('resource_limit');
     const object = await env.BLOBS.get(objectKey(inboxId, messageId));
     if (!object) return fail('unavailable');
-    if (row.type === 'http') return result('body', await object.text());
-    const parsed = await PostalMime.parse(await object.arrayBuffer(), PARSE_OPTIONS);
+    if (row.type === 'http') {
+      const text = await object.text();
+      if (!await visibleMessage(env, owner, inboxId, messageId)) return fail('not_found');
+      return result('body', text);
+    }
+    const parsed = await parseEmail(await object.arrayBuffer(), limits(env).MAX_EMAIL_BYTES);
+    if (!await visibleMessage(env, owner, inboxId, messageId)) return fail('not_found');
     if (parsed.text) return result('text', parsed.text);
     if (parsed.html) return { id: messageId, type: row.type, source: 'html', ...htmlToText(parsed.html, max) };
     return result('none', '');
@@ -892,11 +1348,13 @@ const rpc = {
     if (!row || row.type !== 'email') return fail('not_found');
     const listed = (JSON.parse(row.meta_json).attachments || [])[index];
     if (!listed) return fail('not_found');
+    if (row.size > limits(env).MAX_EMAIL_BYTES) return fail('resource_limit');
     const object = await env.BLOBS.get(objectKey(inboxId, messageId));
     if (!object) return fail('unavailable');
     // Attachments are extracted from the stored raw MIME on demand; there is no second store.
-    const parsed = await PostalMime.parse(await object.arrayBuffer(), PARSE_OPTIONS);
+    const parsed = await parseEmail(await object.arrayBuffer(), limits(env).MAX_EMAIL_BYTES);
     const part = parsed.attachments[index];
+    if (!await visibleMessage(env, owner, inboxId, messageId)) return fail('not_found');
     if (!part) return fail('not_found');
     const bytes = typeof part.content === 'string' ? new TextEncoder().encode(part.content) : new Uint8Array(part.content);
     const mime = /^[\w.+-]+\/[\w.+-]+$/.test(part.mimeType || '') ? part.mimeType.toLowerCase() : 'application/octet-stream';
@@ -909,9 +1367,9 @@ const rpc = {
     handle(inboxId, 'inbox'); handle(messageId, 'message');
     if (typeof archived !== 'boolean') throw new Invalid();
     const done = await env.DB.prepare(
-      `UPDATE messages SET archived = ?1 WHERE id = ?2 AND inbox_id = ?3 AND state = 'stored' AND expires_at > ?4
-         AND EXISTS (SELECT 1 FROM inboxes WHERE id = ?3 AND owner = ?5 AND state = 'active')`
-    ).bind(archived ? 1 : 0, messageId, inboxId, nowSeconds(), owner).run();
+      `UPDATE messages SET archived = ?1 WHERE id = ?2 AND inbox_id = ?3 AND state = 'stored' AND expires_at > unixepoch()
+         AND EXISTS (SELECT 1 FROM inboxes WHERE id = ?3 AND owner = ?4 AND ${LIVE('')})`
+    ).bind(archived ? 1 : 0, messageId, inboxId, owner).run();
     if (done.meta.changes !== 1) return fail('not_found');
     const row = await visibleMessage(env, owner, inboxId, messageId);
     return row ? summary(row, row.type).message : fail('not_found');
@@ -939,13 +1397,19 @@ const rpc = {
     const [done] = await env.DB.batch([env.DB.prepare(
       `INSERT INTO credentials (id, inbox_id, kind, name, hint, secret_hash, created_at, expires_at)
        SELECT ?1, ?2, 'bearer', ?3, ?4, ?5, ?6, ?7
-       WHERE EXISTS (SELECT 1 FROM inboxes WHERE id = ?2 AND owner = ?8 AND state = 'active' AND type = 'http')
+       WHERE EXISTS (SELECT 1 FROM inboxes WHERE id = ?2 AND owner = ?8 AND ${LIVE('')} AND type = 'http')
          AND (SELECT COUNT(*) FROM credentials WHERE inbox_id = ?2) < ?9`
     ).bind(row.id, inboxId, row.name, row.hint, await sha256(token), now, expires, owner, limits(env).MAX_CREDENTIALS_PER_INBOX),
     env.DB.prepare(`UPDATE inboxes SET auth_required = 1 WHERE id = ?1
       AND EXISTS (SELECT 1 FROM credentials WHERE id = ?2 AND inbox_id = ?1)`).bind(inboxId, row.id),
     ]);
     if (done.meta.changes !== 1) return (await activeInbox(env, owner, inboxId)) ? fail('limit') : fail('not_found');
+    if (!await activeInbox(env, owner, inboxId)) {
+      // Never leave an undisclosed minted credential after losing the final check.
+      // If deletion fails, expiry still denies use and the destruction sweep retries.
+      try { await env.DB.prepare('DELETE FROM credentials WHERE id = ? AND inbox_id = ?').bind(row.id, inboxId).run(); } catch {}
+      return fail('not_found');
+    }
     // The token is returned once and only its hash is stored.
     return { credential: credentialView(row), token, inbox_closed: true,
       notice: 'Senders now require a bearer credential. Revoking or expiring every credential does not reopen this inbox; create a replacement to restore delivery.' };
@@ -958,34 +1422,151 @@ const rpc = {
     const rows = (await env.DB.prepare(
       'SELECT id, kind, name, hint, created_at, expires_at, last_used_at FROM credentials WHERE inbox_id = ? ORDER BY created_at, id'
     ).bind(inboxId).all()).results;
+    if (!await activeInbox(env, owner, inboxId)) return fail('not_found');
     return { credentials: rows.map(credentialView) };
+  },
+
+  async getMessageHar(env, owner, inboxId, messageId) {
+    handle(inboxId, 'inbox'); handle(messageId, 'message');
+    const row = await exportMessageRow(env, owner, inboxId, messageId);
+    if (!row) return fail('not_found');
+    if (row.type !== 'http') return fail('unsupported');
+    const meta = JSON.parse(row.meta_json);
+    const object = await env.BLOBS.get(objectKey(inboxId, messageId));
+    if (!object) return fail('unavailable');
+    const reader = object.body.getReader();
+    try {
+      if (!await exportMessageRow(env, owner, inboxId, messageId)) return fail('not_found');
+      if (object.size !== row.size) return fail('unavailable');
+      const textual = row.size > 0 && isTextual(meta.content_type);
+      const fits = textual && row.size <= limits(env).MAX_HAR_TEXT_BYTES;
+      const body = {};
+      for await (const _ of inspectBody(reader, row.size, fits ? row.size : -1, body)) { /* bounded digest/copy */ }
+      const har = harLog([JSON.stringify(harEntry(env, row, meta,
+        { sha256: body.sha256, text: harText(meta.content_type, body.bytes), truncated: textual && !fits }))]);
+      if (!await exportMessageRow(env, owner, inboxId, messageId)) return fail('not_found');
+      return new Response(har, { headers: { 'Content-Type': 'application/json',
+        'Content-Disposition': `attachment; filename="${messageId}.har"` } });
+    } finally { await releaseExportReader(reader); }
+  },
+
+  async exportInbox(env, owner, inboxId, opts) {
+    handle(inboxId, 'inbox');
+    const o = options(opts, ['cursor', 'limit']);
+    const limit = o.limit === undefined ? 50 : o.limit;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Invalid();
+    let after = null;
+    if (o.cursor !== undefined && o.cursor !== null) {
+      const decoded = typeof o.cursor === 'string' && o.cursor.length <= 128 ? unb64url(o.cursor) : null;
+      const m = decoded && /^x:(\d{1,15}):(msg_[a-z2-7]{26})$/.exec(decoded);
+      if (!m) throw new Invalid();
+      after = { at: Number(m[1]), id: m[2] };
+    }
+    const row = await exportInboxRow(env, owner, inboxId);
+    if (!row) return fail('not_found');
+    let sql = `SELECT id, received_at, size, length(CAST(meta_json AS BLOB)) AS meta_size
+      FROM messages WHERE inbox_id = ? AND state = 'stored' AND expires_at > unixepoch()`;
+    const args = [inboxId];
+    if (after) { sql += ' AND (received_at > ? OR (received_at = ? AND id > ?))'; args.push(after.at, after.at, after.id); }
+    sql += ' ORDER BY received_at, id LIMIT ?';
+    args.push(limit + 1);
+    const listed = (await env.DB.prepare(sql).bind(...args).all()).results;
+    if (!await exportInboxRow(env, owner, inboxId)) return fail('not_found');
+    const budget = limits(env).MAX_EXPORT_BYTES, metaBudget = limits(env).MAX_EXPORT_META_BYTES;
+    const rows = [];
+    let bytes = 0, metaBytes = 0;
+    for (const r of listed.slice(0, limit)) {
+      if (rows.length && (bytes + r.size > budget || metaBytes + r.meta_size > metaBudget)) break;
+      rows.push(r); bytes += r.size; metaBytes += r.meta_size;
+    }
+    const last = rows[rows.length - 1];
+    const next = rows.length < listed.length ? b64url(`x:${last.received_at}:${last.id}`) : null;
+    const view = inboxView(env, row);
+    const inbox = { id: view.id, type: view.type, label: view.label,
+      ...(view.address ? { address: view.address } : { url: view.url }), created_at: view.created_at };
+    const headers = { 'Content-Type': 'application/x-tar',
+      'Content-Disposition': `attachment; filename="${inboxId}-export.tar"` };
+    if (next) headers['X-Inbox-Export-Next-Cursor'] = next;
+    return new Response(exportStream(env, owner, { id: inboxId, type: row.type }, rows,
+      { inbox, cursor: o.cursor ?? null, next_cursor: next }), { headers });
+  },
+
+  async listEvents(env, owner, inboxId, opts) {
+    handle(inboxId, 'inbox');
+    const o = options(opts, ['after', 'limit']);
+    const limit = o.limit === undefined ? EVENT_PAGE : o.limit;
+    if (!Number.isInteger(limit) || limit < 1 || limit > EVENT_PAGE) throw new Invalid();
+    return readEvents(env, owner, inboxId, parseAfter(o.after, inboxId), limit);
+  },
+
+  async acquireEventStream(env, owner, inboxId, opts) {
+    handle(inboxId, 'inbox');
+    const o = options(opts, ['after']);
+    const first = await readEvents(env, owner, inboxId, parseAfter(o.after, inboxId), 1);
+    if (first.error) return first;
+    const id = `stm_${nonce()}`;
+    const [, inserted, lease] = await env.DB.batch([
+      env.DB.prepare('DELETE FROM event_streams WHERE inbox_id = ? AND expires_at <= unixepoch()').bind(inboxId),
+      env.DB.prepare(`INSERT INTO event_streams(id, inbox_id, expires_at)
+        SELECT ?1, i.id, unixepoch() + 300 FROM inboxes i WHERE i.id = ?2 AND i.owner = ?3 AND ${LIVE('i.')}
+        AND (SELECT COUNT(*) FROM event_streams WHERE inbox_id = i.id AND expires_at > unixepoch()) < 4`)
+        .bind(id, inboxId, owner),
+      env.DB.prepare('SELECT expires_at FROM event_streams WHERE id = ?').bind(id),
+    ]);
+    if (inserted.meta.changes !== 1) {
+      const live = await activeInbox(env, owner, inboxId);
+      return fail(live ? 'busy' : 'not_found');
+    }
+    // Resolve now once: a commit during the handshake must remain visible.
+    return { lease_id: id, expires_at: lease.results[0].expires_at,
+      after: o.after === 'now' ? first.cursor : o.after ?? null };
+  },
+
+  async readEventStream(env, owner, inboxId, leaseId, opts) {
+    handle(inboxId, 'inbox');
+    if (typeof leaseId !== 'string' || !/^stm_[a-z2-7]{26}$/.test(leaseId)) throw new Invalid();
+    const o = options(opts, ['after']);
+    return readEvents(env, owner, inboxId, parseAfter(o.after, inboxId), EVENT_PAGE, leaseId);
+  },
+
+  async releaseEventStream(env, owner, inboxId, leaseId) {
+    handle(inboxId, 'inbox');
+    if (typeof leaseId !== 'string' || !/^stm_[a-z2-7]{26}$/.test(leaseId)) throw new Invalid();
+    await env.DB.prepare(`DELETE FROM event_streams WHERE id = ? AND inbox_id = ?
+      AND EXISTS (SELECT 1 FROM inboxes WHERE id = ? AND owner = ?)`)
+      .bind(leaseId, inboxId, inboxId, owner).run();
+    return { released: true };
   },
 
   async revokeCredential(env, owner, inboxId, credentialId) {
     handle(inboxId, 'inbox'); handle(credentialId, 'credential');
     const done = await env.DB.prepare(
-      `DELETE FROM credentials WHERE id = ? AND inbox_id = ?
-         AND EXISTS (SELECT 1 FROM inboxes WHERE id = ? AND owner = ? AND state = 'active' AND type = 'http')`
-    ).bind(credentialId, inboxId, inboxId, owner).run();
+      `DELETE FROM credentials WHERE id = ?1 AND inbox_id = ?2
+         AND EXISTS (SELECT 1 FROM inboxes WHERE id = ?2 AND owner = ?3 AND ${LIVE('')} AND type = 'http')`
+    ).bind(credentialId, inboxId, owner).run();
     return done.meta.changes === 1 ? { id: credentialId, revoked: true } : fail('not_found');
   },
 };
 
 // Every method: feature flag, owner shape, then the operation. Never throws to the caller.
 async function call(env, name, owner, args) {
-  if (!enabled(env)) return fail('disabled');
+  if (!enabled(env) && name !== 'retireOwner') return fail('disabled');
   if (typeof owner !== 'string' || !OWNER.test(owner)) return fail('invalid');
   try {
+    if (name !== 'retireOwner' && await env.DB.prepare('SELECT owner FROM retired_owners WHERE owner=?').bind(owner).first())
+      return fail('not_found');
     return await rpc[name](env, owner, ...args);
   } catch (e) {
-    return fail(e instanceof Invalid ? 'invalid' : 'unavailable');
+    return fail(e instanceof Invalid ? 'invalid' : e instanceof MimeResourceLimit ? 'resource_limit' : 'unavailable');
   }
 }
 
 export class InboxManagement extends WorkerEntrypoint {
+  retireOwner(owner) { return call(this.env, 'retireOwner', owner, []); }
   createInbox(owner, opts) { return call(this.env, 'createInbox', owner, [opts]); }
   listInboxes(owner) { return call(this.env, 'listInboxes', owner, []); }
   getInbox(owner, inboxId) { return call(this.env, 'getInbox', owner, [inboxId]); }
+  updateInbox(owner, inboxId, opts) { return call(this.env, 'updateInbox', owner, [inboxId, opts]); }
   destroyInbox(owner, inboxId) { return call(this.env, 'destroyInbox', owner, [inboxId]); }
   listMessages(owner, inboxId, opts) { return call(this.env, 'listMessages', owner, [inboxId, opts]); }
   getMessage(owner, inboxId, messageId) { return call(this.env, 'getMessage', owner, [inboxId, messageId]); }
@@ -997,6 +1578,12 @@ export class InboxManagement extends WorkerEntrypoint {
   createCredential(owner, inboxId, opts) { return call(this.env, 'createCredential', owner, [inboxId, opts]); }
   listCredentials(owner, inboxId) { return call(this.env, 'listCredentials', owner, [inboxId]); }
   revokeCredential(owner, inboxId, credentialId) { return call(this.env, 'revokeCredential', owner, [inboxId, credentialId]); }
+  listEvents(owner, inboxId, opts) { return call(this.env, 'listEvents', owner, [inboxId, opts]); }
+  acquireEventStream(owner, inboxId, opts) { return call(this.env, 'acquireEventStream', owner, [inboxId, opts]); }
+  readEventStream(owner, inboxId, leaseId, opts) { return call(this.env, 'readEventStream', owner, [inboxId, leaseId, opts]); }
+  releaseEventStream(owner, inboxId, leaseId) { return call(this.env, 'releaseEventStream', owner, [inboxId, leaseId]); }
+  exportInbox(owner, inboxId, opts) { return call(this.env, 'exportInbox', owner, [inboxId, opts]); }
+  getMessageHar(owner, inboxId, messageId) { return call(this.env, 'getMessageHar', owner, [inboxId, messageId]); }
 }
 
 export default {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { build } from 'esbuild';
 import { database } from '../../telemetry/test/d1.js';
 import { validate } from '../../telemetry/src/validate.js';
@@ -21,7 +21,7 @@ const WINDOW = 900000;
 const SECRET = 'synthetic-inboxes-writer-for-local-tests';
 function setup(t) {
   const db = database();
-  for (const file of ['0001_inboxes.sql', '0002_telemetry.sql'])
+  for (const file of readdirSync(new URL('../migrations/', import.meta.url)).filter(f => f.endsWith('.sql')).sort())
     db.sql.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), 'utf8'));
   t.after(() => db.close());
   return { DB: db, INBOXES_ENABLED: 'true', INBOX_TELEMETRY_ENABLED: 'true',
@@ -93,6 +93,42 @@ test('privacy allowlists reject identities/content, arbitrary dimensions, window
   assert.equal(counts(env).length, 1);
 });
 
+test('export counters use approved units and anonymous fixed dimensions end to end', async t => {
+  const env = setup(t);
+  await mod.countTelemetry(env, 'inbox.export.pages', 'http', 'emitted', 2);
+  await mod.countTelemetry(env, 'inbox.export.bytes', 'http', 'emitted', 16384);
+  await mod.countTelemetry(env, 'inbox.export.bytes', 'private-host', 'emitted', 1);
+  await mod.countTelemetry(env, 'inbox.export.pages', 'http', 'private-error', 1);
+  closeWindow(env.DB);
+  let payload;
+  await mod.exportTelemetry(env, async (_, init) => { payload = JSON.parse(init.body); return new Response(null, { status: 202 }); });
+  const data = validate('metrics', payload, {});
+  assert.deepEqual(data.points.map(p => [p.name, p.unit, p.value, p.attributes]), [
+    ['inbox.export.bytes', 'By', 16384, { transport: 'http', outcome: 'emitted' }],
+    ['inbox.export.pages', '1', 2, { transport: 'http', outcome: 'emitted' }],
+  ]);
+  for (const field of ['owner', 'id', 'address', 'path', 'content', 'headers']) {
+    const bad = structuredClone(payload); bad.points[0].attributes[field] = 'private-canary';
+    assert.throws(() => validate('metrics', bad, {}));
+  }
+  const wrongUnit = structuredClone(payload); wrongUnit.points[0].unit = '1';
+  assert.throws(() => validate('metrics', wrongUnit, {}));
+});
+
+test('export counter migration preserves pre-existing windows and counts', t => {
+  const db = database(); t.after(() => db.close());
+  for (const file of ['0001_inboxes.sql', '0002_telemetry.sql'])
+    db.sql.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), 'utf8'));
+  const start = Math.floor(Date.now() / WINDOW) * WINDOW;
+  db.sql.prepare('INSERT INTO telemetry_windows(start_at,batch_id,sealed) VALUES (?,?,1)').run(start, 'synthetic-migration-batch');
+  db.sql.prepare("INSERT INTO telemetry_counts VALUES (?,'inbox.receipts','http','accepted',7)").run(start);
+  db.sql.exec(readFileSync(new URL('../migrations/0005_export_telemetry.sql', import.meta.url), 'utf8'));
+  assert.equal(db.sql.prepare('SELECT value FROM telemetry_counts').get().value, 7);
+  assert.equal(db.sql.prepare('SELECT sealed FROM telemetry_windows').get().sealed, 1);
+  db.sql.prepare("INSERT INTO telemetry_counts VALUES (?,'inbox.export.bytes','http','emitted',4096)").run(start);
+  assert.equal(db.sql.prepare('SELECT COUNT(*) AS n FROM telemetry_counts').get().n, 2);
+});
+
 test('reception failures/rejections and lifecycle transitions count only fixed terminal outcomes', async t => {
   const env = setup(t);
   const rpc = new mod.InboxManagement({}, env);
@@ -114,6 +150,14 @@ test('reception failures/rejections and lifecycle transitions count only fixed t
   await rpc.destroyInbox(owner, http.id);
   await rpc.destroyInbox(owner, http.id);
   assert.equal(counts(env).find(r => r.outcome === 'destroy_requested').value, 1);
+  // An ended lifetime enters the same transition and counter, once, without identifiers.
+  env.DB.sql.prepare('UPDATE inboxes SET expires_at=? WHERE id=?').run(Math.floor(Date.now() / 1000) - 1, email.id);
+  // Never reach the real collector, even if a window closes mid-test.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(null, { status: 503 });
+  try { await mod.default.scheduled({}, env); await mod.default.scheduled({}, env); }
+  finally { globalThis.fetch = realFetch; }
+  assert.equal(counts(env).find(r => r.transport === 'email' && r.outcome === 'destroy_requested').value, 1);
   const serialized = JSON.stringify(counts(env));
   for (const forbidden of ['canary', owner, http.id, email.address]) assert.ok(!serialized.includes(forbidden));
   assert.equal(counts(env).filter(r => r.outcome === 'accepted').length, 2);

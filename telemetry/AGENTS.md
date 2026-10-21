@@ -5,6 +5,9 @@ private metrics class under policy 4. Its dedicated writer cannot read telemetry
 The receiver/exporter flags are enabled in production; real HTTP receipt, guard
 and lifecycle export is verified. Live email/cleanup counters remain pending.
 See `qualification/inboxes.md`; never add addresses, resource ids, paths or payloads.
+Export extends that matrix to 31 fixed series with `inbox.export.pages` (`1`) and
+`inbox.export.bytes` (`By`), only transport `http|email` and outcome `emitted`.
+These are best-effort completed-generation counters, not client-delivery evidence.
 
 Read root `AGENTS.md` first. Issue [#112](https://github.com/bayleaf-ucsc/bayleaf/issues/112)
 tracks this work. On 2026-10-20 the operator explicitly approved deployment and

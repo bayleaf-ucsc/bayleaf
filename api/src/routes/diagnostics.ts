@@ -99,7 +99,9 @@ for (const kind of kinds) diagnosticRoutes.get(`/${kind}`, async c => {
   const shown = listing.inboxes.slice(0, 10);
   const cards = await Promise.all(shown.map(async box => {
     const active = box.state === 'active';
-    let receipts = '<p class="small muted">Reception has stopped while deletion completes.</p>';
+    const ended = typeof box.expires_at === 'number' && box.expires_at <= now;
+    let receipts = `<p class="small muted">${ended ? 'Its lifetime ended, so reception' : 'Reception'} has stopped while deletion completes${
+      typeof box.cleanup_not_before === 'number' ? `, not before ${when(box.cleanup_not_before, now)}` : ''}.</p>`;
     if (active) {
       const result = await rpc.listMessages(account.account_generation, box.id, { limit: 5, archived: 'all' }) as {
         error?: string; messages?: { received_at: number; expires_at: number; size: number }[]; next_cursor?: string | null };
@@ -108,10 +110,11 @@ for (const kind of kinds) diagnosticRoutes.get(`/${kind}`, async c => {
           `<tr><td>${when(m.received_at, Math.max(m.received_at, now))}<small>${clock(m.received_at)}</small></td><td>${bytes(m.size)}</td><td>${when(m.expires_at, now)}</td></tr>`).join('')}</tbody></table>${result.next_cursor ? '<p class="hint">Older receipts are available through your agent.</p>' : ''}`
           : '<p class="small muted">Nothing received yet, or everything has expired.</p>';
     }
-    const reception = !active ? pill('off', 'Deleting') : box.type === 'email' ? pill('warn', 'Any sender')
+    const lifetime = typeof box.expires_at === 'number' ? `<p class="hint">${ended ? 'Lifetime ended' : 'Lifetime ends'} ${when(box.expires_at, now)}; reception stops then.</p>` : '';
+    const reception = !active ? pill('off', ended ? 'Expired, deleting' : 'Deleting') : box.type === 'email' ? pill('warn', 'Any sender')
       : box.closed ? pill('ok', 'Credential required') : pill('warn', 'Open to anyone');
     const name = box.label || (box.type === 'email' ? 'Email inbox' : 'Webhook inbox');
-    return `<section class="card" aria-label="${escape(name)}"><div class="card-head"><h2>${escape(name)}</h2><span class="pills">${pill('off', box.type === 'email' ? 'Email' : 'Webhook')}${reception}</span></div><code class="addr">${escape(box.address || box.url)}</code>${box.type === 'http' ? '<p class="hint">Shown as text, not a link: visiting a webhook URL creates a receipt.</p>' : ''}<div class="meters">${meter('Storage', bytes(box.usage.bytes), bytes(box.limits.bytes), box.usage.bytes / box.limits.bytes)}${meter('Today (UTC)', count(box.usage.receipts_today), count(box.limits.daily_receipts), box.usage.receipts_today / box.limits.daily_receipts)}</div><h3>Recent receipts</h3>${receipts}</section>`;
+    return `<section class="card" aria-label="${escape(name)}"><div class="card-head"><h2>${escape(name)}</h2><span class="pills">${pill('off', box.type === 'email' ? 'Email' : 'Webhook')}${reception}</span></div><code class="addr">${escape(box.address || box.url)}</code>${box.type === 'http' ? '<p class="hint">Shown as text, not a link: visiting a webhook URL creates a receipt.</p>' : ''}${lifetime}<div class="meters">${meter('Storage', bytes(box.usage.bytes), bytes(box.limits.bytes), box.usage.bytes / box.limits.bytes)}${meter('Today (UTC)', count(box.usage.receipts_today), count(box.limits.daily_receipts), box.usage.receipts_today / box.limits.daily_receipts)}</div><h3>Recent receipts</h3>${receipts}</section>`;
   }));
   const messages = shown.reduce((sum, box) => sum + (Number(box.usage.messages) || 0), 0);
    const summary = `<ul class="stats" aria-label="Summary"><li><b>${shown.length}</b> ${shown.length === 1 ? 'inbox' : 'inboxes'}</li><li><b>${count(messages)}</b> retained or pending ${messages === 1 ? 'message' : 'messages'}</li></ul>`;
@@ -123,6 +126,7 @@ for (const kind of kinds) diagnosticRoutes.get(`/${kind}`, async c => {
 
 interface Inbox {
   id: string; type: 'email' | 'http'; label: string | null; state: string; address?: string; url?: string; closed?: boolean;
+  expires_at?: number | null; cleanup_not_before?: number;
   usage: { bytes: number; messages: number; receipts_today: number };
   limits: { bytes: number; daily_receipts: number };
 }

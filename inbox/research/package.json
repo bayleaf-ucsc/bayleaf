@@ -3,5 +3,9 @@
   "private": true,
   "type": "module",
   "dependencies": { "mailauth": "8.0.1" },
-  "scripts": { "test": "node poc.mjs" }
+  "scripts": {
+    "test": "node --test dkim.test.mjs",
+    "probe": "node crypto-probe.mjs",
+    "real-world": "node real-world.mjs"
+  }
 }

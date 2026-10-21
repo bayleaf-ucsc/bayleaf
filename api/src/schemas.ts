@@ -504,20 +504,43 @@ export const InboxAttachmentParamsSchema = InboxMessageParamsSchema.extend({
 });
 export const InboxCredentialParamsSchema = InboxIdParamsSchema.extend({ cid: z.string().min(1).max(64).describe('Credential handle (cred_...).') });
 
+// Endpoint lifetime: opt-in, at most one of the two, never renewed by use.
+const InboxLifetimeFields = {
+  ttl_seconds: z.number().int().min(60).max(2592000).optional().describe('Optional endpoint lifetime in seconds, 60 to 30 days (deployment maximum). The address or URL and everything it stored are destroyed when it ends. Not the 90-day per-message retention. Omit, with preset, for no lifetime.'),
+  preset: z.enum(['experiment']).optional().describe('experiment: a 15-minute lifetime (900 seconds) for quick tests. Not combinable with ttl_seconds.'),
+};
+
+export const InboxEmailAuthSchema = z.object({
+  domains: z.array(z.string().min(3).max(253)).min(1).max(8)
+    .describe('Exact ASCII signing/From domains, no wildcard or mailbox. DKIM authenticates delegated domain authority, not a person. RSA >=2048; replay remains possible.'),
+  selector_pins: z.record(z.string(), z.array(z.string().min(1).max(253)).min(1).max(4)).optional()
+    .describe('Optional per-domain selectors. The SAME passing signature must satisfy the domain and pin. DNS case-insensitive; underscore selectors allowed. Plan selector rotation.'),
+}).strict().openapi('InboxEmailAuth');
+
 export const InboxCreateRequestSchema = z.object({
   type: InboxTypeSchema,
   label: z.string().max(64).optional().describe('Optional private label for your own recognition, at most 64 characters. Never shown to senders.'),
+  ...InboxLifetimeFields,
+
+  email_auth: InboxEmailAuthSchema.nullable().optional()
+    .describe('Email only, immutable at creation. Omit/null for unrestricted reception (existing inboxes unchanged). Restricted mail is capped at 1 MiB and must pass locally verified DKIM with exact domain alignment. Change policy by creating a new inbox.'),
 }).strict().openapi('InboxCreateRequest');
+
+export const InboxUpdateRequestSchema = z.object(InboxLifetimeFields).strict()
+  .openapi('InboxUpdateRequest', { description: 'Exactly one of ttl_seconds or preset. Sets expires_at to now plus the lifetime, only if that is no later than the current expires_at (409 otherwise). Gives an inbox without a lifetime one. There is no way to lengthen or remove a lifetime: create a new inbox instead.' });
 
 export const InboxSchema = z.object({
   id: z.string().describe('Inbox handle (ibx_...), useless without owner authority.'),
   type: InboxTypeSchema,
   label: z.string().nullable(),
-  state: z.enum(['active', 'destroying']).describe('destroying: no longer receives; completion is observable as 404.'),
+  state: z.enum(['active', 'destroying']).describe('destroying: no longer receives, because it was destroyed or its expires_at has passed; completion is observable as 404.'),
   cleanup_not_before: z.number().int().optional().describe('Destroying inboxes only: earliest finalization time (UTC epoch seconds), not a completion deadline. Default quiescence is 15 minutes, then the next 15-minute sweep attempts finalization; failures or backlog can take longer. Check GET /inboxes/{id} later: 404 means the live resource is gone, not erasure of provider history or opaque cleanup records.'),
   address: z.string().optional().describe('email inboxes only: nonce@domain. Not a secret: it passes through every mail relay.'),
+  email_auth: InboxEmailAuthSchema.nullable().optional().describe('Email only: null explicitly means unrestricted. Creation-only policy, visible only to owner API calls.'),
+  restricted_email_max_bytes: z.number().int().optional().describe('Restricted email only: effective raw MIME ceiling, at most 1048576 bytes. No unverified oversized fallback.'),
   url: z.string().optional().describe('http inboxes only: https://nonce.domain/. Not a secret: the hostname is visible in DNS and TLS. Any path and query below it reach this inbox.'),
   created_at: InboxStampSchema,
+  expires_at: InboxStampSchema.nullable().describe('Endpoint lifetime end (UTC epoch seconds), or null for none. Use never extends it. Reception and owner access checks deny expired inboxes (404), and state reports destroying before cleanup. Reads revalidate after awaited work before releasing content; already released bytes cannot be recalled.'),
   usage: z.object({ bytes: z.number().int(), messages: z.number().int(), receipts_today: z.number().int() })
     .describe('Includes in-flight receipts. receipts_today counts the current UTC day.'),
   limits: z.object({ bytes: z.number().int(), messages: z.number().int(), daily_receipts: z.number().int() })
@@ -541,6 +564,28 @@ export const InboxMessageListQuerySchema = z.object({
   q: z.string().max(200).optional().describe('Case-insensitive substring search, 1–200 characters, over bounded indexed text only (email subject, addresses and text body; http method, path, query, headers and textual body), at most 32768 characters per message.'),
   archived: z.enum(['true', 'false', 'all']).optional().describe('false (default) is the inbox view; true lists archived messages; all lists both.'),
 }).openapi('InboxMessageListQuery');
+
+export const InboxExportQuerySchema = z.object({
+  cursor: z.string().max(512).optional().describe('Opaque next_cursor from the previous export page (X-Inbox-Export-Next-Cursor or the manifest). List and event cursors are not accepted.'),
+  limit: z.string().regex(/^\d{1,4}$/).optional().describe('Receipts per page 1–100, default 50. A page also stops before its payloads exceed the deployment byte budget (default 100 MiB) or stored metadata JSON exceeds 4 MiB, always taking at least one receipt.'),
+}).openapi('InboxExportQuery');
+
+export const InboxEventListQuerySchema = z.object({
+  after: z.string().min(1).max(200).optional().describe('Opaque resume cursor; now starts at the current head; omit to replay available arrivals.'),
+  limit: z.string().regex(/^(?:[1-9]|[1-9][0-9]|100)$/).optional().describe('Page size, 1–100 (default 100).'),
+}).strict().openapi('InboxEventListQuery');
+
+export const InboxEventListSchema = z.object({
+  events: z.array(z.object({
+    event_id: z.string().describe('Stable within this inbox; deduplicate by inbox and event_id.'),
+    type: z.literal('message.received'), message_id: z.string(), cursor: z.string(),
+    created_at: InboxStampSchema.describe('When the receipt became stored.'),
+  })).max(100),
+  cursor: z.string().describe('Resume after this position, including for an empty page.'),
+  more: z.boolean(),
+}).openapi('InboxEventList');
+
+export const InboxEventStreamQuerySchema = InboxEventListQuerySchema.pick({ after: true }).strict().openapi('InboxEventStreamQuery');
 
 export const InboxMessageSummarySchema = z.object({
   id: z.string(), inbox_id: z.string(), type: InboxTypeSchema,

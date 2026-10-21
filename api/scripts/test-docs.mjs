@@ -77,12 +77,17 @@ try {
    assert.deepEqual(spec.paths['/sandbox/exec'].post.security, [{ Bearer: [] }]);
    const inboxOperations = Object.entries(spec.paths).filter(([path]) => path.startsWith('/inboxes'))
      .flatMap(([, path]) => Object.values(path));
-   assert.equal(inboxOperations.length, 14);
+   assert.equal(inboxOperations.length, 19);
+   assert.ok(spec.paths['/inboxes/{id}/events'].get.responses['410']);
+   assert.ok(spec.paths['/inboxes/{id}/events/stream'].get.responses['200'].content['text/event-stream']);
    for (const op of inboxOperations) {
      assert.deepEqual(op.security, [{ Bearer: [] }], op.operationId);
      assert.deepEqual(op.tags, ['Inboxes']);
    }
    assert.ok(spec.tags.some(tag => tag.name === 'Inboxes'));
+   const harDescription = spec.paths['/inboxes/{id}/messages/{mid}/har'].get.description;
+   assert.ok(harDescription.includes('bayleaf-inbox-receipt-1') && harDescription.includes('not conformant HAR 1.2'));
+   assert.ok(harDescription.includes('attach the exact file manually') && harDescription.includes('GUI interoperability is unqualified'));
    assert.ok(spec.tags.some(tag => tag.name === 'Previews'));
    assert.ok(spec.info.description.includes('Inboxes are enabled'));
   const authorize = spec.paths['/grants/authorize'].get;
@@ -148,7 +153,10 @@ try {
     for (const phrase of ['Status: enabled', 'external delivery is actually needed',
       'cannot answer custom webhook verification challenges', 'not zero-data-retention',
       'zero-operator-access', '90 days after receipt', 'revoking the last credential never reopens',
-      'do not bypass missing tools', 'never authority', 'docs#tag/inboxes', 'docs/openapi.json']) {
+      'do not bypass missing tools', 'never authority', 'docs#tag/inboxes', 'docs/openapi.json',
+      'exactly one manifest per page, not per receipt', 'manifests/{first_id}.json',
+      'manifests/empty.json', 'Manifest schema (version 1)', 'receipts[].file',
+      'next_cursor equals', 'otherwise null', 'postData.text', 'postData._file']) {
       assert.ok(workflow.includes(phrase), phrase);
     }
     const pilotHeaders = { 'X-Test-Deployment': 'pilot' };
@@ -187,10 +195,11 @@ try {
    assert.ok(!llms.includes('#### Direct issuance and model discovery'), 'No duplicate exhaustive grant contract');
    assert.ok(llms.includes('### Inboxes: receive email and webhooks while you are away'));
     assert.ok(llms.includes('last credential never reopens it'));
+   assert.ok(llms.includes('"preset":"experiment"') && llms.includes('can\nlater only shorten it'), 'Guide offers disposable lifetimes');
     assert.ok(llms.includes('https://api.bayleaf.dev/docs/inboxes.md'));
   const operations = new Set(Object.values(spec.paths).flatMap(path => Object.values(path).map(op => op.operationId)));
    for (const id of ['createTemporaryInferenceToken', 'describeInferenceClient', 'authorizeInferenceClient', 'exchangeInferenceCode', 'inspectCampusPass',
-     'createInbox', 'createInboxCredential', 'listInboxMessages', 'getInboxMessageText']) {
+     'createInbox', 'createInboxCredential', 'listInboxMessages', 'getInboxMessageText', 'listInboxEvents', 'streamInboxEvents', 'getInboxMessageHar', 'exportInbox']) {
     assert.ok(llms.includes(id) && operations.has(id), `Guide must link an existing operation: ${id}`);
   }
   const guide = llms.replace(/```[\s\S]*?```/g, '');

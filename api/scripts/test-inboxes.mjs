@@ -6,6 +6,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
+import { inboxTestAssets } from './inbox-test-assets.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const generation = 'a'.repeat(64), sandboxBearer = 'sk-bayleaf-sandbox-' + 'b'.repeat(64);
@@ -22,7 +23,7 @@ const bundle = await build({ absWorkingDir: root, stdin: { resolveDir: root, con
     return app.fetch(new Request(req, { headers }), env, ctx);
   }};
 ` }, bundle: true, write: false, format: 'esm', platform: 'browser', target: 'es2022',
-  external: ['cloudflare:workers'], loader: { '.py': 'text', '.md': 'text' } });
+  external: ['cloudflare:workers'], loader: { '.py': 'text', '.md': 'text' }, plugins: [inboxTestAssets] });
 
 // Stub inbox Worker: records every call; canned outcomes are selected by the inbox id.
 const stub = `import { WorkerEntrypoint } from 'cloudflare:workers';
@@ -37,12 +38,17 @@ const canned = (method, owner, args) => {
     'Content-Type': 'text/html', 'Content-Length': '25', 'Content-Disposition': 'inline', 'Set-Cookie': 'x=1' } });
   if (method === 'getAttachment') return new Response(new Uint8Array([1, 2, 3]), { headers: {
     'Content-Type': 'application/pdf', 'Content-Disposition': "attachment; filename*=UTF-8''a.pdf" } });
+  if (method === 'getMessageHar') return Response.json({ log: { version: '1.2', entries: [] } }, { headers: {
+    'Content-Disposition': 'attachment; filename="msg_1.har"' } });
+  if (method === 'exportInbox') return new Response('tar-bytes', { headers: { 'Content-Type': 'application/x-tar',
+    'Content-Disposition': 'attachment; filename="ibx_1-export.tar"', 'X-Inbox-Export-Next-Cursor': args[1].cursor === 'bad' ? 'a b' : 'eDox',
+    'X-Other': 'leak' } });
   if (method === 'createCredential') return { credential: { id: 'cred_x', kind: 'bearer' }, token: 'sk-bayleaf-inbox-' + '0'.repeat(64) };
   return { method, owner, args };
 };
 export class InboxManagement extends WorkerEntrypoint {}
-for (const m of ['createInbox','listInboxes','getInbox','destroyInbox','listMessages','getMessage','getMessageText','getMessageBody',
-  'getAttachment','setArchived','deleteMessage','createCredential','listCredentials','revokeCredential'])
+for (const m of ['createInbox','listInboxes','getInbox','updateInbox','destroyInbox','listMessages','getMessage','getMessageText','getMessageBody',
+  'getAttachment','setArchived','deleteMessage','createCredential','listCredentials','revokeCredential','exportInbox','getMessageHar'])
   InboxManagement.prototype[m] = async function (owner, ...args) { return canned(m, owner, args); };
 export default { fetch() { return Response.json(calls.splice(0)); } };`;
 
@@ -127,6 +133,16 @@ try {
     { method: 'createInbox', owner: generation, args: [{ type: 'http', label: 'hooks' }] });
   await json(await req(api, '/inboxes/ibx_1'), 200);
   assert.equal((await json(await req(api, '/inboxes/ibx_1', { method: 'DELETE' }), 202)).method, 'destroyInbox');
+  // Endpoint lifetimes: relayed verbatim; the RPC owns bounds and the shorten-only rule.
+  assert.deepEqual((await json(await req(api, '/inboxes', { method: 'POST', body: { type: 'email', preset: 'experiment' } }), 201)).args,
+    [{ type: 'email', preset: 'experiment' }]);
+  assert.deepEqual(await json(await req(api, '/inboxes/ibx_1', { method: 'PATCH', body: { ttl_seconds: 900 } }), 200),
+    { method: 'updateInbox', owner: generation, args: ['ibx_1', { ttl_seconds: 900 }] });
+  assert.equal((await json(await req(api, '/inboxes/ibx_err_conflict', { method: 'PATCH', body: { preset: 'experiment' } }), 409)).error.code, 409);
+  for (const body of [{ ttl_seconds: 59 }, { ttl_seconds: 2592001 }, { ttl_seconds: 1.5 }, { preset: 'forever' }, { label: 'x' }])
+    await json(await req(api, '/inboxes/ibx_1', { method: 'PATCH', body }), 400);
+  await json(await req(api, '/inboxes', { method: 'POST', body: { type: 'http', ttl_seconds: 30 } }), 400);
+  await json(await req(api, '/inboxes/ibx_1', { key: null, method: 'PATCH', body: { ttl_seconds: 900 } }), 401);
   assert.deepEqual((await json(await req(api, '/inboxes/ibx_1/messages?limit=20&archived=all&q=hi&cursor=abc&junk=1'), 200)).args,
     ['ibx_1', { cursor: 'abc', q: 'hi', limit: 20, archived: 'all' }]);
   assert.deepEqual((await json(await req(api, '/inboxes/ibx_1/messages'), 200)).args, ['ibx_1', {}]);
@@ -143,7 +159,7 @@ try {
   await json(await req(api, '/inboxes/ibx_1/credentials'), 200);
   await json(await req(api, '/inboxes/ibx_1/credentials/cred_1', { method: 'DELETE' }), 200);
   const seen = await calls();
-  assert.ok(seen.length === 16 && seen.every(call => call.owner === generation));
+  assert.ok(seen.length === 19 && seen.every(call => call.owner === generation));
   assert.deepEqual(seen.find(call => call.method === 'createCredential').args, ['ibx_1', {}]);
 
   // RPC error mapping, thrown RPC, and local validation (after auth, before the RPC).
@@ -190,6 +206,35 @@ try {
   await json(await req(api, '/inboxes/ibx_response'), 503);
   assert.equal((await calls()).length, 2);
 
+  const tar = await req(api, '/inboxes/ibx_1/export?limit=10&cursor=abc&junk=1', { headers: { 'X-Test-Origin': 'https://elsewhere.example' } });
+  assert.equal(tar.status, 200);
+  assert.equal(await tar.text(), 'tar-bytes');
+  for (const [name, value] of [['Content-Type', 'application/x-tar'], ['Content-Disposition', 'attachment; filename="ibx_1-export.tar"'],
+    ['Content-Security-Policy', 'sandbox'], ['X-Content-Type-Options', 'nosniff'], ['X-Inbox-Export-Next-Cursor', 'eDox']])
+    assert.equal(tar.headers.get(name), value, name);
+  assert.match(tar.headers.get('Access-Control-Expose-Headers'), /X-Inbox-Export-Next-Cursor/);
+  assert.equal(tar.headers.get('X-Other'), null);
+  assert.equal((await req(api, '/inboxes/ibx_1/export?cursor=bad')).headers.get('X-Inbox-Export-Next-Cursor'), null);
+  await json(await req(api, '/inboxes/ibx_1/export?limit=x'), 400);
+  await json(await req(api, '/inboxes/ibx_1/export', { key: null }), 401);
+  await json(await req(api, '/inboxes/ibx_err_not_found/export'), 404);
+  assert.deepEqual((await calls()).map(call => [call.method, call.args]), [['exportInbox', ['ibx_1', { cursor: 'abc', limit: 10 }]],
+    ['exportInbox', ['ibx_1', { cursor: 'bad' }]], ['exportInbox', ['ibx_err_not_found', {}]]]);
+  const har = await req(api, '/inboxes/ibx_1/messages/msg_1/har');
+  assert.equal(har.status, 200);
+  assert.equal((await har.json()).log.version, '1.2');
+  assert.equal(har.headers.get('Content-Type'), 'application/json');
+  assert.equal(har.headers.get('Content-Disposition'), 'attachment; filename="msg_1.har"');
+  assert.equal(har.headers.get('Content-Security-Policy'), 'sandbox');
+  assert.equal(har.headers.get('X-Content-Type-Options'), 'nosniff');
+  assert.equal(har.headers.get('Cache-Control'), 'no-store');
+  const unsupported = await json(await req(api, '/inboxes/ibx_err_unsupported/messages/msg_1/har'), 400);
+  assert.equal(unsupported.error.message, 'HAR is available only for HTTP receipts.');
+  await json(await req(api, '/inboxes/ibx_1/messages/msg_1/har', { key: null }), 401);
+  assert.deepEqual((await calls()).map(call => [call.method, call.args]), [
+    ['getMessageHar', ['ibx_1', 'msg_1']], ['getMessageHar', ['ibx_err_unsupported', 'msg_1']],
+  ]);
+
   // CORS preflight admits PATCH for bearer clients.
   const preflight = await api.fetch('https://api.bayleaf.dev/inboxes/ibx_1/messages/msg_1', { method: 'OPTIONS', headers: {
     'X-Test-Origin': 'https://elsewhere.example', 'Access-Control-Request-Method': 'PATCH', 'Access-Control-Request-Headers': 'authorization,content-type' } });
@@ -198,7 +243,7 @@ try {
   // Documented contract: every facade route is a Bearer-only Inboxes operation (security details in test-docs).
   const spec = await json(await req(api, '/docs/openapi.json', { key: null }), 200);
   const inboxOps = Object.entries(spec.paths).filter(([path]) => path.startsWith('/inboxes')).flatMap(([, ops]) => Object.values(ops));
-  assert.equal(inboxOps.length, 14);
+  assert.equal(inboxOps.length, 19);
   assert.ok(inboxOps.every(op => op.tags[0] === 'Inboxes' && op.operationId));
 
   // Inbox-only use never provisions or touches inference credentials.

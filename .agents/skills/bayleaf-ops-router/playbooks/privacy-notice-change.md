@@ -75,6 +75,11 @@ this is why step 3's approval gate precedes both publishing and notifying.
 
 ## Refinement log
 
+- 2026-10-21 (#97, isolated local hardening): Retirement needs linkable generation
+  fences in addition to owner-free cleanup handles. Draft disclosure distinguishes
+  eventual handoff from atomic identity deletion and requires offline replay before
+  recovery enablement. No publication, deployment, notice or real SMTP test occurred.
+
 - 2026-10-20 (issue #94 approved publication): Owner approved deployment, commit
   and push of the opt-in room disclosure. No new provider, inference retention or
   existing-document retention policy was introduced. No notification email was

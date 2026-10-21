@@ -64,6 +64,8 @@ export const METRICS = {
   'inbox.receipts': { source: 'inboxes', kind: 'sum', unit: '1', attributes: ['transport', 'outcome'] },
   'inbox.lifecycle': { source: 'inboxes', kind: 'sum', unit: '1', attributes: ['transport', 'outcome'] },
   'inbox.cleanup': { source: 'inboxes', kind: 'sum', unit: '1', attributes: ['outcome'] },
+  'inbox.export.pages': { source: 'inboxes', kind: 'sum', unit: '1', attributes: ['transport', 'outcome'] },
+  'inbox.export.bytes': { source: 'inboxes', kind: 'sum', unit: 'By', attributes: ['transport', 'outcome'] },
   'http.server.requests': { kind: 'sum', unit: '1', attributes: ['method', 'route', 'status_code', 'instance'] },
   'http.server.duration': { kind: 'histogram', unit: 'ms', attributes: ['method', 'route', 'status_code', 'instance'] },
   'webui.users.total': { kind: 'gauge', unit: 'users', attributes: ['instance'] },
