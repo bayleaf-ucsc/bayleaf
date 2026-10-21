@@ -1,0 +1,47 @@
+name: bayleaf-multiworker
+x-worker: &worker
+  build: .
+  volumes:
+    - ./lab.py:/lab/lab.py:ro
+    - ./probe.py:/lab/probe.py:ro
+    - ./gws_redis.py:/lab/gws_redis.py:ro
+    - ./probe_redis.py:/lab/probe_redis.py:ro
+    - ./probe_single.py:/lab/probe_single.py:ro
+    - ./test_state.py:/lab/test_state.py:ro
+    - ${GWS_SOURCE:-../tools/gws_toolkit/tool.py}:/lab/gws.py:ro
+    - ../tools/lathe/tool.py:/lab/lathe.py:ro
+  depends_on:
+    - valkey
+    - fixtures
+  environment:
+    REDIS_URL: redis://valkey:6379/0
+    GWS_MODE: ${GWS_MODE:-baseline}
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)"]
+    interval: 2s
+    timeout: 3s
+    retries: 20
+  networks: [lab]
+services:
+  valkey:
+    image: valkey/valkey:8.1.3-alpine
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    networks: [lab]
+  fixtures:
+    build: .
+    command: ["uvicorn", "fixtures:app", "--host", "0.0.0.0", "--port", "8080"]
+    volumes:
+      - ./fixtures.py:/lab/fixtures.py:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    networks: [lab]
+  worker-a:
+    <<: *worker
+  worker-b:
+    <<: *worker
+networks:
+  lab:
+    internal: true

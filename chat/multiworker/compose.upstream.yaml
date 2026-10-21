@@ -1,0 +1,12 @@
+# Overlay: direct upstream source, no AST transformation, plus its callback adapter.
+x-upstream: &upstream
+  environment:
+    GWS_MODE: ${UPSTREAM_GWS_MODE:-upstream}
+  volumes:
+    - ${GWS_PROJECT:-../../../gws-toolkit}/gws_toolkit.py:/lab/gws.py:ro
+    - ${GWS_PROJECT:-../../../gws-toolkit}/owui_worker.py:/lab/owui_worker.py:ro
+services:
+  worker-a:
+    <<: *upstream
+  worker-b:
+    <<: *upstream

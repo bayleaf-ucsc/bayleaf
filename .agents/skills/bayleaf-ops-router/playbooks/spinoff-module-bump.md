@@ -85,6 +85,13 @@ may not match the actual pre-upgrade deployment.
 
 ## Refinement log
 
+- 2026-10-20: GWS multi-worker work was upstream development, not a toolkit
+  promotion. The isolated BayLeaf Docker lab mounts upstream source read-only;
+  BayLeaf's vendored/live copies stay untouched. Redis state tests do not qualify
+  cold-worker callback routing: OWUI lazily loads toolkits, so the candidate adds
+  a separately tested ASGI callback adapter. Full OWUI/Google acceptance and the
+  personal-instance soak remain gates before any eventual bump.
+
 - 2026-10-12: Promoted personally used, byte-exact upstream 0.32.0 refactor with
   494 offline tests and six isolated OWUI core checks passing; the extra first-time
   workflow timed out. Source-only deploy preserved every valve/name/grant and
