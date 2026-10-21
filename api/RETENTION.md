@@ -13,7 +13,7 @@ so an operator with deploy rights could in principle ship a content-logging
 revision. We commit not to, and treat any such change as material.
 
 **Separate opt-in boundary:** Inboxes intentionally stores content, unlike the
-inference proxy. Its operator-only pilot has its own Worker, D1 and private R2.
+inference proxy. This opt-in campus service has its own Worker, D1 and private R2.
 Messages expire from accessible reads 90 days after receipt; read/archive does
 not extend this. Deletion uses durable retry and orphan reconciliation. Inbox
 destruction revokes reception/access immediately, with at least 15 minutes of
@@ -22,7 +22,7 @@ outages/backlogs. Opaque cleanup ids/cursors persist indefinitely without owner,
 address or payload; D1 Paid Time Travel can retain deleted metadata/indexed text
 for 30 days. Exact raw MIME/HTTP data may contain IPs and secrets despite selected
 HTTP header redaction. Operator/provider access remains possible. Account-retirement
-and recovery integration are not yet qualified for campus rollout. See
+and recovery integration retain test limitations accepted for community availability. See
 [`inbox/DESIGN.md`](../inbox/DESIGN.md) and [`inbox/QUALIFICATION.md`](../inbox/QUALIFICATION.md).
 
 ---

@@ -115,8 +115,8 @@ try {
    assert.equal(catalogResponse.status, 200, 'Catalog is public');
    const catalog = await catalogResponse.json();
     assert.deepEqual(catalog.skills, [
-      { name: 'bayleaf-platform', version: '4-inboxes', files: ['bayleaf-platform.md'] },
-      { name: 'bayleaf-inboxes', version: '1', files: ['bayleaf-inboxes.md'] },
+      { name: 'bayleaf-platform', version: '5-inboxes', files: ['bayleaf-platform.md'] },
+      { name: 'bayleaf-inboxes', version: '2', files: ['bayleaf-inboxes.md'] },
     ]);
    const skillResponse = await get(catalogBase + 'bayleaf-platform/bayleaf-platform.md');
    assert.equal(skillResponse.status, 200, 'Skill is public');
@@ -152,7 +152,7 @@ try {
     assert.equal(workflowResponse.status, 200);
     assert.match(workflowResponse.headers.get('content-type'), /text\/markdown/);
     const workflow = await workflowResponse.text();
-    for (const phrase of ['Status: enabled', 'external delivery is actually needed',
+    for (const phrase of ['Status: available to the authenticated BayLeaf campus community', 'external delivery is actually needed',
       'cannot answer custom webhook verification challenges', 'not zero-data-retention',
       'zero-operator-access', '90 days after receipt', 'revoking the last credential never reopens',
       'do not bypass missing tools', 'never authority', 'docs#tag/inboxes', 'docs/openapi.json',

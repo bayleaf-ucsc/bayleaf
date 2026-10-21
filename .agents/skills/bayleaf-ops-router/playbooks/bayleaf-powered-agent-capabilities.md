@@ -153,6 +153,11 @@ API to keep a retired capability appearing functional.
 
 ## Refinement log
 
+- 2026-10-21 (community enablement): Explicitly empty pilot-owner source/default
+  config opens existing authenticated owner paths, including diagnostics and hosted
+  setup. Retain auth/isolation tests and accepted qualification limitations without
+  inventing another approval gate. Staging must not silently reinstate the pilot.
+
 - 2026-10-21 (managed-client isolation preflight): Temporary inference tokens
   cannot authorize inbox reads; a synthetic owner also fails the production pilot
   gate. Preserve the broad operator key locally and build an exact-inbox relay

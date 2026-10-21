@@ -112,7 +112,7 @@ bayleaf/
 │   ├── index.html        # Comprehensive landing page (the only bayleaf.dev page)
 │   ├── style.css         # Stylesheet (carries a WCAG contrast invariant)
 │   └── images/           # og-card.png + the script that generates it
-├── inbox/                # BayLeaf Inboxes Worker (#97; operator-only webhook pilot)
+├── inbox/                # BayLeaf Inboxes Worker (#97; authenticated campus owners)
 ├── sandbox/              # Public BayLeaf Sandboxes home → https://sandbox.bayleaf.dev
 ├── telemetry/            # Live first-party collector/D1; private data, public status (#112)
 ├── politics/             # Dependency audit, VPATs, position papers
@@ -144,7 +144,8 @@ adding any platform surface, consider whether GitHub-served markdown suffices.
 webhook addresses on `bayleaf-inboxes.dev`, with its own D1 and R2, managed only
 through the API's `INBOXES` service binding. It intentionally stores received
 content, so it is outside the API's ZDR/ZOA posture. Deployed for operator-only
-email/webhook qualification; authenticated email senders and campus rollout remain pending.
+email/webhook qualification, now available to authenticated campus owners;
+authenticated-email allowlist creation remains disabled.
 **Read `inbox/AGENTS.md` and `inbox/DESIGN.md` before working on it.**
 
 Place scripts and analysis machinery for a specific service inside that service's

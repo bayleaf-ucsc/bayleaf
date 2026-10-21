@@ -1,10 +1,14 @@
 # BayLeaf Inboxes: design contract (proof of concept)
 
 Implementation of [issue #97](https://github.com/bayleaf-ucsc/bayleaf/issues/97).
-**Status: operator-only webhook qualification deployed on 2026-10-20.**
-API access is restricted to the operator's account generation. Email and webhook
-delivery have been exercised; email sender authentication and campus rollout are
-not enabled. See `QUALIFICATION.md` for evidence and remaining gates.
+**Status: authenticated campus community access authorized on 2026-10-21.**
+HTTP and ordinary receive-only email inboxes are available to all authenticated
+BayLeaf owners, using ordinary API keys or sandbox credentials and the existing
+account-generation isolation. Campus Pass and temporary inference tokens cannot
+own inboxes. `INBOXES_ENABLED=true` and an empty `INBOXES_PILOT_OWNER` are the
+source defaults. Restricted-email creation stays disabled; no outgoing email.
+The operator-only trial began on 2026-10-20. Remaining qualification limitations
+are accepted for community access, not access-approval gates. See `QUALIFICATION.md`.
 
 BayLeaf Inboxes give an owner opaque addresses that receive email or HTTP
 requests while every client, sandbox and agent is off. Reception stores bounded
@@ -55,7 +59,7 @@ owner client ──► api.bayleaf.dev /inboxes/* ──► service binding RPC 
 
 ## Diagnostic web revision (#113 and #97, deployed)
 
-The public apex explains the operator-only pilot and links to
+The public apex explains authenticated community availability and links to
 `https://api.bayleaf.dev/diagnostics/inboxes`. Owner diagnostics live on the API
 identity origin, reusing its host-only browser session and exact account generation.
 They preserve `INBOXES_ENABLED`, binding presence and `INBOXES_PILOT_OWNER` gates.
@@ -75,8 +79,7 @@ JSON errors. Never instrument those URLs. `/llms.txt` is apex-only plaintext
 discovery, not a reserved receipt-host path. Deployment and collection activation
 were explicitly approved; actual browser readback passed. See
 `../telemetry/qualification/diagnostics.md` for versions, real owner-login evidence
-and the unresolved private-preview navigation check. The operator-only service
-pilot is unchanged.
+and the separately tracked private-preview navigation check.
 
 ## Endpoint lifetimes
 
@@ -839,10 +842,12 @@ is rewritten. The line cap admits standard 76-column base64 near 25 MiB but reje
 the demonstrated line-heavy allocation bomb. It does not prove concurrency or
 total isolate memory safety for every near-limit message; that gate remains open.
 
-## Gates before enablement
+## Remaining qualification
 
 Current dated measurements and reproduction commands are in [QUALIFICATION.md](QUALIFICATION.md);
-only unfinished work belongs in [TODO.md](TODO.md).
+only unfinished work belongs in [TODO.md](TODO.md). Community HTTP and ordinary
+email access was explicitly authorized with these limitations on 2026-10-21.
+These are outstanding tests, not further community-access approval gates.
 
 - Qualify real SMTP outcomes on the domain, including `setReject` permanence and
   thrown-exception behavior, Bcc, and envelope-vs-header mismatches.

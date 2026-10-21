@@ -919,7 +919,7 @@ Goose extension docs: https://goose-docs.ai/docs/tutorials/custom-extensions.
 
 ${input.inboxesEnabled ? `### Inboxes: receive email and webhooks while you are away
 
-${input.inboxesPilot ? 'Operator-only qualification: other accounts receive 404. Existing email inboxes remain unrestricted; optional creation-only DKIM domain restrictions have separate live qualification gates. This is not a campus rollout.\n' : ''}
+${input.inboxesPilot ? 'Operator-only qualification: other accounts receive 404. Existing email inboxes remain unrestricted; optional creation-only DKIM domain restrictions have separate live qualification gates. This is not a campus rollout.\n' : 'Available to authenticated BayLeaf campus owners using an ordinary API key or sandbox credential. HTTP and ordinary receive-only email are enabled; authenticated-email allowlist creation remains disabled.\n'}
 
 Offer a BayLeaf inbox when the user needs an address or URL to collect reports,
 form posts, webhooks or course mail while their computer is off. An email inbox

@@ -3,7 +3,9 @@
 **Deployed, arrival collection enabled.** Scope agreed 2026-10-20: public entry and
 recovery pages plus passive owner-only metadata, no management application or
 message-content viewer. Deployment, telemetry activation, commit and push were
-explicitly approved. Inboxes remains operator-only. Real UCSC sign-in returned
+explicitly approved. Inboxes now serves authenticated campus owners (2026-10-21),
+with the pilot-owner setting empty and account-generation isolation retained.
+Real UCSC sign-in returned
 directly to diagnostics and both owner views were inspected with isolated fixtures.
 The operator approved publishing diagnostics only while leaving #113 open for an
 unresolved private-preview application navigation check; do not call that journey

@@ -1,13 +1,15 @@
 # BayLeaf Inboxes Worker
 
 Issue [#97](https://github.com/bayleaf-ucsc/bayleaf/issues/97). **Local proof of
-concept, deployed for operator-only webhook qualification on 2026-10-20.**
-The receiving Worker is enabled; the API permits only the operator's account
-generation through `INBOXES_PILOT_OWNER`. Email Routing/MX are enabled for
+concept, opened to authenticated campus owners on 2026-10-21.**
+The receiver and API are enabled; `INBOXES_PILOT_OWNER` is explicitly empty.
+Ordinary API keys and sandbox credentials retain account-generation isolation.
+Email Routing/MX are enabled for
 registered inboxes; email has no authenticated sender restriction.
 Creation-only DKIM restrictions are deployed but creation is gated off:
 see `OPERATIONS.md` for migration/build/rollout dependencies.
-No campus rollout. See `QUALIFICATION.md` for deployed versions and pending gates.
+See `QUALIFICATION.md` for deployed versions and remaining test limitations,
+accepted by the operator for this community release.
 `DESIGN.md` is the contract; change it first, then code and tests.
 `OPERATIONS.md` owns deployment, recovery and troubleshooting; `QUALIFICATION.md`
 owns current evidence and reproducible commands; `TODO.md` lists unfinished work.
@@ -28,7 +30,7 @@ receipt paths remain untouched. Apex browser arrivals are explicitly enabled und
 `BROWSER_ARRIVALS_ENABLED`, with real browser readback verified. See DESIGN.md and
 `../telemetry/qualification/diagnostics.md`; real UCSC owner login and receipt
 metadata rendering are verified. The separate private-preview navigation gap
-keeps #113 open; Inboxes is still an operator-only pilot.
+is tracked separately by #113.
 
 - **Public surfaces are reception only:** `email()` (Email Routing catch-all) and
   `fetch()` on the inbox domain. There is no owner HTTP API here.
@@ -85,9 +87,9 @@ the Worker (used for mutation checks). The suite was written from `DESIGN.md` al
   into the one destruction transition (`beginDestroy`). Never add a second cleanup
   path, and never let use renew a lifetime. Apply migration `0003` before deploying.
 
-## Before enablement (gates)
+## Remaining qualification and deployment dependencies
 
-See "Gates before enablement" in `DESIGN.md`: real SMTP qualification (including
+See "Remaining qualification" in `DESIGN.md`: real SMTP qualification (including
 `setReject` permanence and thrown-error behavior), large-message memory, account
 retirement integration, and `PRIVACY.md`/`api/RETENTION.md` disclosures. Deployment
 also needs D1/R2 creation, the real D1 id in `wrangler.jsonc`, the migration, Email

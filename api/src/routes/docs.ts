@@ -52,9 +52,9 @@ docsRoutes.get('/SKILL.md', (c) => c.redirect('/llms.txt', 301));
 docsRoutes.get('/opencode/skills/index.json', (c) => c.json({
   skills: [
     { name: 'bayleaf-platform', version: c.env.INBOXES_ENABLED === 'true'
-      ? (c.env.INBOXES_PILOT_OWNER ? '4-inboxes-pilot' : '4-inboxes') : '4', files: ['bayleaf-platform.md'] },
+      ? (c.env.INBOXES_PILOT_OWNER ? '4-inboxes-pilot' : '5-inboxes') : '4', files: ['bayleaf-platform.md'] },
     ...(c.env.INBOXES_ENABLED === 'true' ? [{ name: 'bayleaf-inboxes',
-      version: c.env.INBOXES_PILOT_OWNER ? '1-pilot' : '1', files: ['bayleaf-inboxes.md'] }] : []),
+      version: c.env.INBOXES_PILOT_OWNER ? '1-pilot' : '2', files: ['bayleaf-inboxes.md'] }] : []),
   ],
 }));
 
@@ -123,7 +123,7 @@ docsRoutes.get('/inboxes.md', (c) => {
 
 ${!enabled ? 'Status: not enabled on this deployment. Do not offer setup as available.' : c.env.INBOXES_PILOT_OWNER
     ? 'Status: operator-only pilot. Other accounts receive 404; this is not a campus rollout.'
-    : 'Status: enabled. Access still requires an authorized owner credential.'}
+    : 'Status: available to the authenticated BayLeaf campus community. Use an ordinary API key or sandbox credential. Receive-only HTTP and ordinary email inboxes are enabled; authenticated-email allowlist creation remains disabled.'}
 
 ## Recognize the receiving requirement
 

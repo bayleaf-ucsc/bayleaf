@@ -725,7 +725,8 @@ Deployed #113 web revision: `routes/diagnostics.ts` serves owner-only snapshots 
 Existing browser sign-in returns directly there, not through the main dashboard's
 provider-key healing. No new auth authority, inference credentials, application
 probe, compute wake, lifecycle control or anonymous private-page arrival script.
-Preserve Inboxes pilot/account-generation gates. Public apex explanations and
+Preserve Inboxes account-generation isolation; the pilot-owner setting is empty
+for authenticated community access (2026-10-21). Public apex explanations and
 generic preview recovery share `templates/diagnostics.ts`; new arrival switches
 are enabled with explicit approval. See `PREVIEWS.md`, `inbox/DESIGN.md`,
 `telemetry/browser/README.md` and `telemetry/qualification/diagnostics.md` for

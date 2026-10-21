@@ -1,6 +1,6 @@
 # Inboxes operations
 
-Operational reference for the operator-only pilot. [DESIGN.md](DESIGN.md) owns
+Operational reference for authenticated community access. [DESIGN.md](DESIGN.md) owns
 the contract and rationale; [QUALIFICATION.md](QUALIFICATION.md) owns dated
 evidence; [TODO.md](TODO.md) lists unfinished work. Deployment is separate from
 publication and campus enablement. Never publish credentials, account generations,
@@ -10,10 +10,12 @@ receipt addresses, raw mail or private resource manifests.
 
 - Receiver `bayleaf-inboxes` owns dedicated D1/R2, Email Routing catch-all and
   apex/wildcard DNS/TLS. Owner operations use only the API `INBOXES` binding.
-- Preserve live API `INBOXES_ENABLED=true` and `INBOXES_PILOT_OWNER` together.
-  Source API defaults deliberately disable Inboxes: an ordinary default deploy
-  disables the pilot. Use `api/scripts/stage-inboxes-deploy.py` and review the
+- Preserve API `INBOXES_ENABLED=true` and `INBOXES_PILOT_OWNER=""` together.
+  These are now the source defaults: ordinary deployment preserves community
+  access. Use `api/scripts/stage-inboxes-deploy.py` and review the
   staged configuration against live settings before any authorized deployment.
+  Community access was authorized on 2026-10-21 with the remaining qualification
+  limitations accepted. Do not reinstate an operator-owner value during staging.
 - Preserve receiver enablement, browser-arrival/telemetry activation, disabled
   observability and `EMAIL_AUTH_CREATION_ENABLED=false`. Existing email inboxes
   are unrestricted; a disabled creation gate never bypasses a stored policy.
@@ -72,7 +74,7 @@ both pre-retirement databases are reopened without reconciliation. No automatic
 rollback detector or enablement interlock exists.
 
 1. Before restoring rows, set `INBOXES_ENABLED=false` on both API and receiver;
-   keep pilot and restricted-creation settings. Verify owner denial (currently
+   keep community scope and restricted-creation settings. Verify owner denial (currently
    404), receiver HTTP 503 and email service-unavailable rejection. Stop identity/
    provisioning mutations during API recovery. A pilot mismatch is no receiver
    kill switch.
@@ -102,7 +104,7 @@ rollback detector or enablement interlock exists.
    coordinates can otherwise be reused. This does not replace owner fencing.
 7. Reopen only after complete inventory verification, synthetic access canaries,
    runtime drain and explicit operator approval. An interrupted reconciliation
-   stays closed and resumes idempotently. Preserve pilot scope and bounded cleanup.
+   stays closed and resumes idempotently. Preserve owner isolation and bounded cleanup.
 
 Routine `cleanupRetiredInboxes` is not a restore completion certificate: it visits
 bounded batches, `pending=0` excludes acknowledged entries still needing replay,

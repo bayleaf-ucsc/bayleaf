@@ -41,7 +41,7 @@ const mf = new Miniflare(convertV4MiniflareOptions({ unsafeTriggerHandlers: true
   { name: 'api', modules: true, script: apiScript, compatibilityDate: '2026-08-01', compatibilityFlags: ['nodejs_compat'],
     routes: ['api.example.test/*', 'bayleaf-proxies.dev/*'], d1Databases: ['DB'], kvNamespaces: ['MODEL_STATUS', 'CAMPUS_RPD'], outboundService: noNet,
     serviceBindings: { INBOXES: { name: 'bayleaf-inboxes', entrypoint: 'InboxManagement' } },
-     bindings: { INBOXES_ENABLED: 'true', CAMPUS_IP_RANGES: '192.0.2.0/24', PREVIEWS_ENABLED: 'true', GRANTS_ENABLED: 'false',
+     bindings: { INBOXES_ENABLED: 'true', INBOXES_PILOT_OWNER: '', CAMPUS_IP_RANGES: '192.0.2.0/24', PREVIEWS_ENABLED: 'true', GRANTS_ENABLED: 'false',
        PREVIEWS_API_ORIGIN: API, PREVIEWS_DOMAIN: 'bayleaf-proxies.dev', PREVIEWS_SECRET: Buffer.alloc(32).toString('base64'),
        OIDC_ISSUER: 'https://oidc.example.test', OIDC_CLIENT_ID: 'synthetic', OIDC_SCOPES: 'openid email', ALLOWED_EMAIL_DOMAIN: 'example.test',
       OIDC_CLIENT_SECRET: 'synthetic', OPENROUTER_PROVISIONING_KEY: 'synthetic', TINFOIL_ADMIN_KEY: 'synthetic' } },

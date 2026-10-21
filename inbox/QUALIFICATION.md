@@ -1,7 +1,8 @@
 # Inboxes qualification
 
-Current evidence as of **2026-10-21**. Operator-only pilot remains enabled;
-restricted-email creation remains disabled; no campus rollout. Contract:
+Current evidence as of **2026-10-21**. Authenticated campus community access is
+authorized for HTTP and ordinary receive-only email. Restricted-email creation
+remains disabled. Remaining tests are accepted limitations, not access gates. Contract:
 [DESIGN.md](DESIGN.md). Deployment, provenance and recovery:
 [OPERATIONS.md](OPERATIONS.md). Remaining work: [TODO.md](TODO.md).
 
@@ -9,17 +10,25 @@ restricted-email creation remains disabled; no campus rollout. Contract:
 
 | Component | Version / state |
 |---|---|
-| API | `dc01c6ea-35e1-4df9-a160-c39b5bb5f213`, 100% traffic |
-| Receiver | `1440f257-6d6f-4096-8f0c-a353a55c6354`, 100% traffic |
+| API | `353e3a3e-bca7-4116-9369-d86577f6632d`, 100% traffic |
+| Receiver | `c2d31aba-9041-472c-820a-76ed25141b68`, 100% traffic; apex wording only |
 | Collector export vocabulary | `ba47b369-67c7-4110-acbd-c5521898ab34` qualification release |
 | Published adapters | OpenCode `ebf705d43dfb6088329149619e5a68bf5eff3c28`; Nanobot `e1a7d014621f84ca0a0218c3d519bcd48d0f5f11`; parent `39bf426` |
 | Migrations | Inboxes `0001`–`0007`, API through `0019` applied |
 
-Latest API modules matched authentic published-source builds; API/receiver
-settings and bindings matched pre-release snapshots. Pilot, telemetry and
-disabled restricted creation were preserved. No 100-inbox live load test occurred.
+Community release uses authentic published adapter builds. API/receiver settings,
+bindings, secret names and cron schedules matched pre-release snapshots exactly
+apart from the intentionally emptied API `INBOXES_PILOT_OWNER`. Source defaults
+now preserve `INBOXES_ENABLED=true` and the empty owner restriction. Telemetry,
+disabled observability and `EMAIL_AUTH_CREATION_ENABLED=false` are unchanged.
+No 100-inbox live load test occurred.
 Default owner capacity is 100, including destroying rows. Read effective
 `/inboxes/limits`; historical fixture sizes are not current quota promises.
+All four deployed API modules and the receiver module match normal published-source
+builds after trailing-whitespace normalization. Hosted OpenCode/Nanobot and desktop
+skill/HTTP exposure are retained; desktop catalog versions advanced for community
+wording. Chat owner credential integration remains deferred. Privacy/storage,
+quotas, retention and account-generation ownership are unchanged.
 
 ## Capability and evidence matrix
 
@@ -28,6 +37,7 @@ trials establish their measured paths, not a new full trial on each release.
 
 | Capability | Evidence | Exact remaining boundary |
 |---|---|---|
+| Community enablement | Local facade accepts the previously pilot-excluded synthetic owner with the empty restriction; ordinary key and sandbox credentials derive the same account generation; Campus Pass and genuine temporary tokens denied; 99 integrated checks and receiver owner-isolation/restricted-creation tests passed. Live configuration, public workflow/llms/OpenAPI/apex, authenticated plugin pin and no-store limits verified: max 100, retained 1, remaining 99 | No second actual community credential was available: nonoperator access is local evidence plus deployed config/module readback, not a second-account live trial. Receiver suite 140 passed/2 optional skips; docs, typecheck and four diagnostics tests passed |
 | HTTP reception and ownership | Live create/credential/receive/read/destroy; owner/sender role separation; malformed subpath JSON fix (initial AX 2026-10-20) | Formative synthetic AX, not general client parity |
 | Effective limits | Live no-store GET: max 100, retained 6, remaining 94 at readback; anonymous 401; native Nanobot limits tool passed | Snapshot, not reservation; local 99-row concurrent-create fixture admits exactly one 100th, retirement fences all 100 without R2 payloads |
 | TTL + SSE | Full real 900-second preset trial on TTL/SSE release: three arrivals, catch-up/live/resume, stable IDs; expiry 404 **217 ms** after deadline; repeated lifetime reconnects | Not repeated full-duration on current release; runtime-update and sustained auth/control-plane load unqualified |

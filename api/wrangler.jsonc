@@ -84,9 +84,11 @@
     "PREVIEWS_API_ORIGIN": "https://api.bayleaf.dev",
     "PREVIEWS_DOMAIN": "bayleaf-proxies.dev",
     "PREVIEWS_UPSTREAM_SUFFIXES": ".proxy.daytona.work,.daytonaproxy01.net",
-    // BayLeaf Inboxes facade, issue #97. Local proof of concept: /inboxes is 404
-    // unless exactly "true". Enablement gates are listed in inbox/DESIGN.md.
-    "INBOXES_ENABLED": "false",
+    // BayLeaf Inboxes facade, issue #97. Community access enabled 2026-10-21.
+    // /inboxes is 404 unless exactly "true". Evidence: inbox/QUALIFICATION.md.
+    "INBOXES_ENABLED": "true",
+    // Community access: no operator-only account-generation restriction.
+    "INBOXES_PILOT_OWNER": "",
     // GCP Vertex AI Configuration
     //
     // VERTEX_ENABLED is the master kill-switch for the Vertex backend. It must

@@ -1,9 +1,9 @@
 # Remaining Inboxes work (#97)
 
 Current contract: [DESIGN.md](DESIGN.md). Evidence: [QUALIFICATION.md](QUALIFICATION.md).
-Operations/recovery: [OPERATIONS.md](OPERATIONS.md). Keep access operator-only and
-restricted-email creation disabled until the relevant gates are resolved and
-enablement is explicitly approved.
+Operations/recovery: [OPERATIONS.md](OPERATIONS.md). Authenticated community HTTP
+and ordinary email access was explicitly approved on 2026-10-21 with the following
+test limitations accepted. Restricted-email creation remains disabled.
 
 - [ ] **SMTP boundary and full storage failures:** identify an authorized signed
   sender with final Cloudflare MX DATA replies and queue logs; execute the bounded
@@ -52,8 +52,9 @@ enablement is explicitly approved.
   Preserve permission denial and prompt-injection boundaries; package/runtime
   checks are not behavioral parity. Independently verify deny-before-write without
   harness-side deletion masking the result. Chat remains deferred.
-- [ ] **Campus rollout decision:** review the remaining reliability/resource/
-  recovery gates, effective 100-inbox backlog capacity and indefinite-prefix
+- [x] **Campus rollout decision (2026-10-21):** community access authorized with
+  remaining reliability/resource/recovery limitations accepted. Continue testing
+  effective 100-inbox backlog capacity and indefinite-prefix
   growth, current privacy/retention publication and aggregate telemetry coverage.
   Local fences and six-resource physical cleanup do not prove all historical
   trial finalizations, provider-history erasure or a global deletion deadline.

@@ -30,7 +30,7 @@ ITS-operated or ITS-supported one.
 
 ## What gets collected
 
-- **Inboxes (operator-only pilot, opt-in):** BayLeaf Inboxes on
+- **Inboxes (authenticated campus community, opt-in):** BayLeaf Inboxes on
   `bayleaf-inboxes.dev` deliberately stores received email and webhook content in
   a dedicated Cloudflare R2 bucket and bounded metadata/search text in a separate
   D1 database. This is **not zero-data-retention storage or zero operator access**:
@@ -220,8 +220,9 @@ version-controlled alongside the code that enforces them:
   Sufficient restored history can preserve surviving access; a destructive reset
   of old generations/endpoints requires explicit later operator authorization,
   not an automatic reset. Standard backups do not guarantee that history.
-  The mechanism is deployed in the operator pilot;
-  full live retirement/recovery qualification remains a campus-rollout gate.
+  The mechanism is deployed for community inboxes;
+  full live retirement/recovery qualification remains unfinished and is an
+  explicitly accepted limitation of community availability.
 - [API retention policy](api/RETENTION.md): prompts and completions are **not
   stored**. Accounts and their keys are eligible for daily cleanup after **18
   calendar months** without activity, measured from the later of account creation

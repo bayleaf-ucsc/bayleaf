@@ -178,6 +178,6 @@ export function publicDiagnosticPage(kind: Kind, enabled: boolean, arrivals: boo
     ['Email addresses', 'Accept mail from any sender. Sender authentication is not available yet.'],
     ['Passive by design', 'Receiving never wakes an agent, runs a model or sends a reply.'],
   ])}<div class="actions"><a class="button" href="${owner}">Check your inboxes</a><a href="https://api.bayleaf.dev/llms.txt#inboxes-receive-email-and-webhooks-while-you-are-away">Create one with your agent</a></div><details><summary>What the owner view shows</summary><ul><li>Each inbox's address, reception mode, storage and daily quota.</li><li>Times and sizes of the most recent receipts. Never bodies, subjects, senders, paths, headers or credentials.</li>${noWake}</ul></details>`,
-  { service: 'Inboxes', arrival, badge: pill('info', 'Operator pilot'),
+  { service: 'Inboxes', arrival, badge: pill('info', 'Campus community'),
     lede: 'Email addresses and webhook URLs that collect messages while your clients, sandbox and agents are offline.' });
 }

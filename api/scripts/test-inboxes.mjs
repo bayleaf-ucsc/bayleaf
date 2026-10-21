@@ -57,7 +57,7 @@ const worker = (enabled, binding = true) => ({ name: !binding ? 'api-unbound' : 
   script: bundle.outputFiles[0].text, compatibilityDate: '2026-08-01', compatibilityFlags: ['nodejs_compat'],
   d1Databases: { DB: 'shared-db' }, kvNamespaces: ['MODEL_STATUS', 'CAMPUS_RPD'],
   ...(binding ? { serviceBindings: { INBOXES: { name: 'bayleaf-inboxes', entrypoint: 'InboxManagement' } } } : {}),
-  bindings: { INBOXES_ENABLED: enabled ? 'true' : 'false', CAMPUS_IP_RANGES: '192.0.2.0/24', CAMPUS_POOL_KEY: 'synthetic-pool',
+  bindings: { INBOXES_ENABLED: enabled ? 'true' : 'false', INBOXES_PILOT_OWNER: '', CAMPUS_IP_RANGES: '192.0.2.0/24', CAMPUS_POOL_KEY: 'synthetic-pool',
     GRANTS_ENABLED: 'true', GRANTS_MAX_SECONDS: '3600', OIDC_CLIENT_SECRET: 'synthetic-signing', PREVIEWS_ENABLED: 'false',
     DAYTONA_API_URL: 'https://daytona.example.test', DAYTONA_API_KEY: 'synthetic', DAYTONA_DEPLOYMENT_LABEL: 'synthetic',
     OPENROUTER_PROVISIONING_KEY: 'synthetic-admin', TINFOIL_ADMIN_KEY: 'synthetic-admin' },
@@ -94,6 +94,11 @@ try {
   const deniedPilot = await pilot.fetch('https://api.example.test/inboxes', {
     headers: { Authorization: 'Bearer sk-bayleaf-owner' } });
   assert.equal(deniedPilot.status, 404, 'operator-only pilot denies other authenticated owners');
+  const community = await api.fetch('https://api.example.test/inboxes', {
+    headers: { Authorization: 'Bearer sk-bayleaf-owner' } });
+  assert.equal(community.status, 200, 'cleared pilot setting admits the previously excluded synthetic owner');
+  assert.equal((await community.json()).owner, generation, 'community access still derives the account generation');
+  await inbox.fetch('https://stub/'); // Clear the successful call before the denial assertions.
   const calls = async () => (await inbox.fetch('https://stub/')).json();
   const data = [{ alg: 'HS256', typ: 'JWT' }, { email: 'owner@example.test', name: 'Synthetic', exp: Math.floor(Date.now()/1000)+3600 }]
     .map(x => Buffer.from(JSON.stringify(x)).toString('base64url')).join('.');
