@@ -56,7 +56,7 @@ Observability remains disabled. No existing application was restarted or probed.
   Exact fixture handles are kept only in private temporary cleanup ledgers, not
   committed here. Cleanup was independently checked as described below.
 
-## Owner qualification, remaining private-preview gap and cleanup
+## Initial owner qualification and cleanup
 
 - The operator completed real UCSC sign-in in the browser. It returned directly
   to `/diagnostics/proxies`, not the key-management dashboard. Fresh synthetic
@@ -70,7 +70,7 @@ Observability remains disabled. No existing application was restarted or probed.
   escaped labels, expiry wording and private CSP are covered in workerd tests.
   A real second-account browser journey has not been exercised. Do not fabricate
   a production session to replace that ordinary-user evidence.
-- **Unresolved:** opening the synthetic private preview in the browser panel,
+- **Initially unresolved, resolved by the follow-up below:** opening the synthetic private preview in the browser panel,
   including an explicit `/__preview/start` handoff, ended at the preview root with
   generic gateway denial rather than the expected sanitized upstream failure.
   The tenant authorization/forwarding path is unchanged by this release. A separate
@@ -92,3 +92,29 @@ Local checks: diagnostic presentation contracts, API/receiver E2E, facade/pilot
 checks, gateway security harness, receiver suite, collector/client/dashboard suites,
 TypeScript, generated docs and diff checks. No new management controls, message
 viewer, cookie domain, OAuth client, agent tools or inference provisioning path.
+
+## Private application and non-owner qualification (2026-10-20 Pacific)
+
+Authorized synthetic live fixtures resolved the private-navigation gap without
+deployment or authorization changes:
+
+- Real UCSC owner login reached a running private app; public access reached the
+  same app, while anonymous private access returned 401.
+- The real signed-in account was denied a synthetic other-owner registration:
+  no preview session cookie and no entry in its diagnostics snapshot. This is
+  owner/non-owner evidence, not a two-real-account trial.
+- Invalid Daytona destinations reproduced the apparent failure in both access
+  modes: CLI requests received upstream 401; browser-like requests received an
+  external provider-login redirect, correctly blocked as gateway 502. This is a
+  controlled reproduction, not a recovered trace of the retired original lease.
+  Default Python urllib also encountered Cloudflare 1010 before the gateway;
+  use an honest client User-Agent when distinguishing edge and application errors.
+- Expired/revoked fixtures recovered at `/unavailable` without leaking private
+  paths or queries. All six registrations and exact-host pending flows were
+  removed, along with the synthetic app process/file; existing apps were untouched.
+
+The preview harness passes 37 grouped checks, including the provider-login
+redirect regression in both access modes and subsequent valid-request recovery.
+Reproduce locally with `node api/scripts/harness-previews.mjs`. The live run also
+passed TypeScript, four presentation tests, 56 API/receiver checks and 38 read-only
+diagnostic checks. Local regression checks do not repeat browser/Daytona evidence.

@@ -7,9 +7,12 @@ explicitly approved. Inboxes now serves authenticated campus owners (2026-10-21)
 with the pilot-owner setting empty and account-generation isolation retained.
 Real UCSC sign-in returned
 directly to diagnostics and both owner views were inspected with isolated fixtures.
-The operator approved publishing diagnostics only while leaving #113 open for an
-unresolved private-preview application navigation check; do not call that journey
-qualified or attribute its cause to the browser without evidence.
+Follow-up qualification on 2026-10-20 Pacific reached a real synthetic application
+through the private owner handoff and exercised real signed-in non-owner denial
+against a separate synthetic registration. The earlier apparent handoff failure
+was reproduced in both access modes: an invalid Daytona destination redirects
+Chrome-like clients to external provider login, which the gateway blocks with 502.
+No authorization change or production redeployment was needed.
 See [production evidence](../telemetry/qualification/diagnostics.md).
 
 ## Architecture and limits
@@ -82,10 +85,16 @@ Rollout used collector policy 4 first, then API/receiver with new arrival switch
 false, then explicitly approved activation and actual-browser readback. Public,
 private-anonymous, expired/revoked recovery and no-content collection checks passed
 without disturbing live applications. Owner/non-owner isolation is covered by local
-workerd tests; real owner login and both metadata views passed. A private-preview
-application navigation received gateway denial after handoff in this browser panel,
-and a real second-account journey has not been exercised. Do not close those gaps by fabricating
-a production session or reading someone else's resources.
+workerd tests; real owner login and both metadata views passed. Follow-up live
+checks reached the synthetic app through private owner login and public access,
+denied anonymous private reads, and excluded a synthetic other-owner registration
+from the real owner's snapshot. The same real account was denied that other-owner
+preview without receiving a preview session. This tests an ordinary signed-in
+non-owner without requiring another person's resources or a fabricated session;
+it is not a claim that two real accounts were exercised. Expired and revoked
+fixtures recovered at the generic apex page. Exact fixture registrations/flows,
+the synthetic process and its file were cleaned up. External provider-login
+redirects remain blocked, with regression coverage in both access modes.
 No D1 migration, new binding or provider credential is required. Rollback is the
 previous Worker versions; disable new arrival switches independently. The private
 operator dashboard's service breakdown now includes both new destinations.

@@ -31,10 +31,13 @@ never tenant origins, private diagnostics or discovery text. The collector polic
 and exact public-page inventory shipped before activation. Live public/private
 gate, expired/revoked recovery and browser-arrival checks passed without touching
 existing applications. Real UCSC login and owner registration diagnostics are
-verified. A synthetic private-preview navigation still received gateway denial
-after handoff in the browser panel; its cause is unresolved, not assumed to be
-missing navigation metadata. The operator approved publishing the diagnostic-only
-release while leaving #113 open. See `../telemetry/qualification/diagnostics.md`.
+verified. Follow-up qualification reached a real synthetic app through the private
+owner handoff and public access, and denied the real signed-in account access to
+a synthetic other-owner preview. The earlier apparent private-navigation failure
+reproduces on public previews too: invalid Daytona destinations redirect
+Chrome-like clients to external provider login, which the gateway blocks with
+502. No authorization relaxation or redeployment was needed.
+See `../telemetry/qualification/diagnostics.md`.
 See `node api/scripts/test-inboxes-e2e.mjs --preview` for synthetic browser fixtures
 (run from `api/` as `node scripts/test-inboxes-e2e.mjs --preview`).
 

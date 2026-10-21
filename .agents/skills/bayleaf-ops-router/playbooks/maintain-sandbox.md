@@ -91,6 +91,11 @@ explicit operation on the user-owned installation. Preserve user files and histo
 
 ## Evidence and refinement log
 
+- 2026-10-21 (hosted email policy): Validate domain/pin inputs before native
+  approval/network, retain policy readback, and test null as well as omission.
+  Verify published schemas in real V2/MCP runtimes and live creation separately;
+  adapter-only releases need not redeploy the receiver.
+
 - 2026-10-21 (managed-client isolation preflight): Source-current setup includes
   pending #90 custody and fixed production discovery origins. An isolated D1
   controller alone cannot authenticate installed clients against production;
@@ -120,6 +125,12 @@ explicit operation on the user-owned installation. Preserve user files and histo
   publication, clean pins and installed-client behavioral qualification remain
   separate gates. Current evidence and remaining work: `inbox/QUALIFICATION.md`
   and `inbox/TODO.md`.
+
+- 2026-10-20 (#113): Invalid Daytona destinations can return CLI 401 but browser
+  307 to provider login, correctly blocked by the gateway as 502. Compare public
+  and private access against a running synthetic app before blaming owner auth.
+  A real account and synthetic other-owner fixture can test non-owner denial
+  without accessing another person's resources.
 
 - 2026-10-20 (issue #94 approved rollout): Reconciled onto current main without
   losing #113 diagnostics/arrival behavior. Added the missing Wrangler text-loader

@@ -41,8 +41,10 @@ in `src/browser-policy.js`. Existing rows become unknown without renewed expiry.
 Policy 4 adds explicitly approved Proxies apex entry/recovery and Inboxes apex
 entry arrivals. Both are deployed/enabled and actual-browser readback is verified;
 tenant application/receipt origins and authenticated diagnostics are excluded.
-See `qualification/diagnostics.md` for versions, verified owner login and the
-unresolved private-preview navigation check that keeps #113 open.
+See `qualification/diagnostics.md` for versions and completed owner/private-app
+and signed-in non-owner qualification against synthetic resources. The apparent
+private-navigation failure was an external provider-login redirect blocked in
+both access modes, not a reason to relax gateway authorization.
 Browser observations have no
 identifier or per-client dedup. Service run UUIDs identify job/probe runs and
 retries only, never accounts. Metrics are aggregate source windows, not a new

@@ -730,8 +730,11 @@ for authenticated community access (2026-10-21). Public apex explanations and
 generic preview recovery share `templates/diagnostics.ts`; new arrival switches
 are enabled with explicit approval. See `PREVIEWS.md`, `inbox/DESIGN.md`,
 `telemetry/browser/README.md` and `telemetry/qualification/diagnostics.md` for
-production evidence and the unresolved private-preview navigation check. Real UCSC
-owner login and both diagnostic views are verified; #113 remains open by decision.
+production evidence. Real UCSC owner login, both diagnostic views, private-app
+handoff and real signed-in non-owner denial against synthetic resources are
+verified. Invalid Daytona destinations can redirect browser user agents to
+external provider login; the gateway correctly blocks that with 502 in either
+access mode. Do not mistake the generic error text for proof of owner-gate denial.
 
 `PREVIEWS_ENABLED=true` for the bounded POC deployed 2026-09-17. See `PREVIEWS.md` before changing this
 facet. `POST /previews/registrations` and its DELETE counterpart accept only

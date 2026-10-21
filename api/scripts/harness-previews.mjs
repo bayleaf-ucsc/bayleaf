@@ -152,6 +152,12 @@ const options = { workers: [{ name: 'preview-harness', modules: true, script: bu
     if (u.pathname === '/public-redirect') return new Response(null, { status: 302,
       headers: { Location: 'https://' + request.headers.get('X-Forwarded-Host') + '/next?ok=1' } });
     if (u.pathname === '/escape') return new Response(null, { status: 302, headers: { Location: 'https://evil.example/' } });
+    // Invalid Daytona destinations can redirect browsers to provider login,
+    // while non-browser clients receive an ordinary upstream 401.
+    if (u.pathname === '/provider-auth') return request.headers.get('User-Agent')?.includes('Chrome/')
+      ? new Response(null, { status: 307, headers: {
+        Location: 'https://provider-login.example/authorize?return_to=' + encodeURIComponent(upstream),
+      } }) : new Response(upstream, { status: 401 });
     if (u.pathname === '/error') return new Response(upstream, { status: 500, headers: { 'X-Debug': upstream } });
     return new Response('synthetic service', { headers: {
       'Content-Type': 'text/plain', 'Set-Cookie': 'app-secret=yes; Domain=.example.test',
@@ -780,6 +786,23 @@ try {
       assert.equal((await owner.visit(url + path)).status, 404);
     }
     assert.equal(outboundCalls, before);
+  });
+  await check('provider browser-login redirects are upstream failures, independent of preview access mode', async () => {
+    const publicPreview = await (await register({ access: 'public' })).json();
+    try {
+      for (const [client, base] of [[owner, url], [browser(), publicPreview.url]]) {
+        const ordinary = await client.visit(base + 'provider-auth');
+        assert.equal(ordinary.status, 401);
+        assert.equal(await ordinary.text(), 'Preview application request failed.');
+        const redirected = await client.visit(base + 'provider-auth', { headers: { 'User-Agent': 'Chrome/142.0.0.0' } });
+        assert.equal(redirected.status, 502);
+        assert.equal(redirected.headers.get('Location'), null);
+        assert.equal(await redirected.text(), 'Preview unavailable or access denied.');
+        // An upstream failure neither revokes owner authorization nor breaks a
+        // valid application request on the same registration.
+        assert.equal((await client.visit(base)).status, 200);
+      }
+    } finally { await revoke(publicPreview.url); }
   });
   await check('keyed expose rejects installation credentials, cookies, and Campus Pass', async () => {
     const before = outboundCalls;
