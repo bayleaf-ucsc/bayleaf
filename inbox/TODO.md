@@ -45,11 +45,13 @@ enablement is explicitly approved.
   authority for five-second propagation, runtime-update reconnect, true transport
   backpressure and sustained auth/control-plane cost. Epoch/replay limits and
   revocation pass locally; live full TTL, subscriber cap and ordinary resume passed.
-- [ ] **Discovery/AX:** finish the active published-adapter trial, then assess
-  natural receiving-intent and negative prompts across fresh/existing desktop
+- [ ] **Discovery/AX:** the completed headless trial is recorded in
+  [QUALIFICATION.md](QUALIFICATION.md), not evidence of managed-client parity.
+  Assess natural receiving-intent and negative prompts across fresh/existing desktop
   Standard/Sealed and hosted clients using `qualification/discovery-evals.json`.
   Preserve permission denial and prompt-injection boundaries; package/runtime
-  checks are not behavioral parity. Chat remains deferred.
+  checks are not behavioral parity. Independently verify deny-before-write without
+  harness-side deletion masking the result. Chat remains deferred.
 - [ ] **Campus rollout decision:** review the remaining reliability/resource/
   recovery gates, effective 100-inbox backlog capacity and indefinite-prefix
   growth, current privacy/retention publication and aggregate telemetry coverage.
