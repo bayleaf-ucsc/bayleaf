@@ -75,6 +75,12 @@ this is why step 3's approval gate precedes both publishing and notifying.
 
 ## Refinement log
 
+- 2026-10-20 (issue #94 approved publication): Owner approved deployment, commit
+  and push of the opt-in room disclosure. No new provider, inference retention or
+  existing-document retention policy was introduced. No notification email was
+  sent; the upstream save-feedback limitation and waived soak remain explicit in
+  the service qualification record rather than being reported as passing tests.
+
 - 2026-10-20 (#113 activation): New apex sources were explicitly approved and
   browser-readback verified under the existing fields/90-day retention. CSP blocks
   Cloudflare's separately injected analytics beacon; do not allow it to silence
@@ -84,6 +90,12 @@ this is why step 3's approval gate precedes both publishing and notifying.
   existing policy/retention, with independent disabled switches. The draft names
   exact HTML paths and exclusions; preview recovery drops tenant material before
   telemetry. Publication and activation remain gated, not implied by local tests.
+
+- 2026-10-20 (issue #94, unpublished): Drafted fixed-folder collaborative-room
+  disclosure: public gateway plus app password, retained sidecars/documents,
+  collaborator copies, and suggested rather than enforced two-hour duration.
+  Existing sandbox providers are unchanged. Publication/rollout and any notice
+  decision remain gated; this adds no automatic notice-sending step.
 
 - 2026-10-20 (Daytona telemetry, unpublished draft): Lifecycle event counts need
   not retain sandbox identities: atomic event receipts and 15-minute buckets suffice.

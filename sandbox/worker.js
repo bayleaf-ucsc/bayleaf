@@ -103,7 +103,7 @@ export default {
         if (session && !await api.logout({ session })) return failure(503, 'logout_unavailable');
         return redirect('/', [cookie(SESSION, '', 0), cookie(TRANSACTION, '', 0)]);
       }
-      const service = url.pathname.match(/^\/services\/([a-z][a-z0-9-]{0,39})\/(status|start|restart)$/);
+      const service = url.pathname.match(/^\/services\/([a-z][a-z0-9-]{0,39})\/(status|start|restart|stop)$/);
       if (service) {
         const [, name, operation] = service;
         if (request.method !== (operation === 'status' ? 'GET' : 'POST')) return failure(405, 'method_not_allowed');

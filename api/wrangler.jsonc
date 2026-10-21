@@ -1,9 +1,10 @@
 {
   "name": "bayleaf-api",
+  "account_id": "1a49fb69291d42e23c4ed4dcffce5bbc",
   "main": "src/index.ts",
   "compatibility_date": "2025-01-31",
   "compatibility_flags": ["nodejs_compat"],
-  "rules": [{ "type": "Text", "globs": ["**/browser-setup.py", "**/jupyter-adapter.py"], "fallthrough": true }],
+  "rules": [{ "type": "Text", "globs": ["**/browser-setup.py", "**/jupyter-adapter.py", "**/collabmd-adapter.py"], "fallthrough": true }],
   "build": { "command": "python3 scripts/build-sandbox-plugin.py && python3 scripts/build-nanobot-assets.py" },
   
   // Observability - disabled to avoid unnecessary data accumulation.

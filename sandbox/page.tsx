@@ -63,6 +63,8 @@ const styles = `
   .service > .actions { grid-column:2; grid-row:1; align-self:center; }
   .service .actions > .button { width:auto; }
   .service > .status-box,.service > details,.service > form,.service > noscript { grid-column:1 / -1; }
+  .service > .sharing-boundary { grid-column:1 / -1; margin:0.4rem 0; font-size:0.9rem; color:#48594e; overflow-wrap:anywhere; }
+  .service[data-service=collabmd] > .actions { grid-column:1 / -1; grid-row:auto; }
   .service summary { padding:0.25rem 0; }
   .service .button { background:#fff; color:#1e5a3a; }
   .service .button:hover { background:#e5f0e8; }
@@ -89,9 +91,13 @@ const controls = (service: typeof SERVICES[number]) => `
     <p id="${service.id}-status" role="status" aria-live="polite">Checking status…</p>
   </div>
   <form id="${service.id}-login" method="post" action="/login" hidden><button class="button" type="submit">Sign in again</button></form>
+  ${service.id === 'collabmd' ? '<p class="sharing-boundary">During an active sharing session, anyone with the link and room password can edit documents in <code>~/workspace/public-collaborative-docs/</code>. End sharing stops access, not file retention.</p>' : ''}
   <div class="actions">
     <button type="button" class="button" id="${service.id}-start" aria-label="Open ${escapeHtml(service.name)}" hidden>${escapeHtml(service.launch)}</button>
     <a class="button" id="${service.id}-open" aria-label="Open ${escapeHtml(service.name)} (new tab)" hidden target="_blank" rel="noopener noreferrer">Open <span class="note-window">(new tab)</span></a>
+    <button type="button" class="secondary" id="${service.id}-copy-link" hidden>Copy link</button>
+    <button type="button" class="secondary" id="${service.id}-copy-password" hidden>Copy room password</button>
+    <button type="button" class="secondary" id="${service.id}-stop" hidden>${service.id === 'collabmd' ? 'End sharing' : 'Stop app'}</button>
   </div>
   <details class="app-help"><summary>Using ${escapeHtml(service.name)} here</summary>
     <p id="${service.id}-intro" class="note" hidden>${escapeHtml(service.intro)}</p>
@@ -156,8 +162,9 @@ const controlsScript = `(() => {
       root.dataset.phase=s.phase;
        el('status').textContent=s.error ? (errors[s.error]||'Could not open '+service.name+'. Try again, or contact BayLeaf support.')
           :opening?(labels[s.progress]||'Preparing '+service.name)+'…'
+          :s.phase==='stopped'?(s.access_revoked===false?'Revoking access; cleanup pending':s.cleanup_pending?'Access revoked; process cleanup pending':'Stopped. Saved files remain.')
           :ready?'Running':'';
-      el('start').hidden=ready||opening;
+      el('start').hidden=ready||opening||s.cleanup_pending||s.access_revoked===false;
        el('start').textContent=s.phase==='failed'?'Try again':service.launch;
        el('troubleshoot').hidden=!(ready||opening||s.error||s.previous_failure||s.phase==='failed');
        el('repair-label').textContent=s.error||s.previous_failure||s.phase==='failed'?'Troubleshooting & repair':opening?'Setup details':'Repair this app';
@@ -166,17 +173,21 @@ const controlsScript = `(() => {
       el('open').hidden=!ready;
       if(ready)el('open').href=url;else el('open').removeAttribute('href');
       el('restart').hidden=!ready;
+      const stoppable=!!s.operation&&['opening','ready','expired','failed'].includes(s.phase);
+      el('stop').hidden=!(stoppable||s.cleanup_pending||s.access_revoked===false);
+      el('copy-link').hidden=!(ready&&service.id==='collabmd');
+      el('copy-password').hidden=!(ready&&service.id==='collabmd'&&s.room_password);
       const previous=s.previous_failure;
       el('previous').hidden=!previous;
       el('previous').textContent=previous?'Previous attempt failed at '+clock(previous.at)+' after '+duration(previous.elapsed)
         +': '+(errors[previous.error]||'Setup could not complete')+' ['+previous.error+'].':'';
        timing();
-      if(opening)timer=setTimeout(refresh,5000);
+      if(opening||s.cleanup_pending||s.access_revoked===false)timer=setTimeout(refresh,5000);
     }
     function signedOut() {
       authExpired=true;ready=false;snapshot=undefined;clearTimeout(timer);
       root.dataset.phase='signed-out';
-       for(const id of ['start','restart','open','timing','progress','previous','troubleshoot'])el(id).hidden=true;
+       for(const id of ['start','restart','stop','copy-link','copy-password','open','timing','progress','previous','troubleshoot'])el(id).hidden=true;
       el('open').removeAttribute('href');el('login').hidden=false;
       el('status').textContent='Your session has expired. Sign in again to continue.';
     }
@@ -200,9 +211,9 @@ const controlsScript = `(() => {
     async function action(name) {
       if(busy||authExpired)return;
       busy=true;++requestVersion;clearTimeout(timer);
-      const actionButtons=['start','restart'].map(el);
+      const actionButtons=['start','restart','stop'].map(el);
       actionButtons.forEach(b=>b.disabled=true);
-       el('status').textContent='Requesting '+service.name+(name==='restart'?' restart…':' setup…');
+       el('status').textContent='Requesting '+service.name+(name==='stop'?' shutdown…':name==='restart'?' restart…':' setup…');
       try {
         const r=await fetch(endpoint+'/'+name,{method:'POST',headers:{'X-BayLeaf-Action':'managed-service'},credentials:'same-origin',redirect:'error'});
         if(r.status===401){signedOut();return;}
@@ -214,7 +225,14 @@ const controlsScript = `(() => {
       } catch {el('status').textContent='Could not submit the action. Refresh status before retrying.';}
       finally {busy=false;actionButtons.forEach(b=>b.disabled=authExpired);}
     }
-    ['start','restart'].forEach(name=>el(name).addEventListener('click',()=>action(name)));
+    ['start','restart','stop'].forEach(name=>el(name).addEventListener('click',()=>action(name)));
+    for(const [id,key] of [['copy-link','url'],['copy-password','room_password']]) {
+      el(id).addEventListener('click',async()=>{
+        if(!ready||!snapshot?.[key])return;
+        try {await navigator.clipboard.writeText(snapshot[key]);el('status').textContent=id==='copy-link'?'Link copied':'Room password copied';}
+        catch {el('status').textContent='Could not copy. Clipboard access is unavailable.';}
+      });
+    }
     window.addEventListener('focus',()=>{if(!busy)refresh();});
     setInterval(()=>{if(!busy&&ready&&snapshot?.deadline<=Math.floor(Date.now()/1000))refresh();},30000);
     setInterval(timing,1000);

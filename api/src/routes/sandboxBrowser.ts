@@ -16,7 +16,7 @@ async function handle(c: Context<AppEnv>) {
   // Access changes are owner-browser actions: no bearer, Campus Pass, or sandbox credential.
   const access = c.req.method === 'POST' && ['/access/revoke', '/access/rotate'].includes(path);
   if (!((c.req.method === 'GET' && path === '/status') ||
-        (c.req.method === 'POST' && ['/start', '/restart'].includes(path)) || access)) {
+        (c.req.method === 'POST' && ['/start', '/restart', '/stop'].includes(path)) || access)) {
     return c.json({ error: 'not_found' }, 404);
   }
   let email: string;
@@ -54,10 +54,10 @@ sandboxBrowserRoutes.openapi(createRoute({ method: 'get', path: '/status', tags:
   summary: 'Observe browser setup and link expiry without waking the sandbox', responses }), handle as any);
 sandboxBrowserRoutes.post('/access/revoke', handle as any);
 sandboxBrowserRoutes.post('/access/rotate', handle as any);
-for (const action of ['start', 'restart'] as const) {
+for (const action of ['start', 'restart', 'stop'] as const) {
   sandboxBrowserRoutes.openapi(createRoute({ method: 'post', path: `/${action}`, tags: ['Sandbox'],
     operationId: `browserSandbox_${action}`, security: [{ Bearer: [] }],
-    summary: `${action}: owner-directed browser setup`,
-    description: 'Ordinary owner key only (no Campus Pass or temporary inference token). Browser logins additionally require an exact Origin and X-BayLeaf-Action: sandbox-browser. Start sets up or resumes browser access, reusing an existing ready link. Restart repairs the managed interface. New private links last up to 24 hours; link expiry does not stop applications. Files and the shared sandbox are preserved.',
+    summary: `${action}: owner-directed browser lifecycle`,
+    description: 'Ordinary owner key only (no Campus Pass or temporary inference token). Browser logins additionally require an exact Origin and X-BayLeaf-Action: sandbox-browser. Start sets up or resumes browser access, reusing an existing ready link. Restart repairs the managed interface. Stop revokes access before attempting owned-process cleanup, never wakes compute, and reports pending cleanup separately. New private links last up to 24 hours; link expiry does not stop applications. Files and the shared sandbox are preserved.',
     responses }), handle as any);
 }

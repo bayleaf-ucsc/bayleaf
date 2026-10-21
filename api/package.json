@@ -30,6 +30,7 @@
     "test:nanobot": "python3 scripts/build-nanobot-assets.py --fixture && npm --prefix nanobot-sandbox test && python3 scripts/test-nanobot-setup.py && python3 scripts/test-nanobot-assets.py",
     "test:jupyter": "python3 scripts/test-jupyter-setup.py",
     "test:ttyd": "python3 scripts/test-ttyd-setup.py",
+    "test:collabmd": "python3 scripts/test-collabmd-setup.py",
     "tail": "wrangler tail"
   },
   "overrides": {

@@ -9,7 +9,7 @@ import type { AppEnv, Bindings } from '../types';
 import { getSession } from '../utils/session';
 import { PreviewRegistrationSchema, PreviewRegistrationResponseSchema, PreviewLabelSchema, PreviewUpstreamHeadersSchema } from '../schemas';
 import { upstreamCookies, wrapApplicationCookies } from '../previewCookies';
-import { managedSlot } from '../serviceDefs';
+import { managedSlot, managedAccess } from '../serviceDefs';
 import { diagnosticHeaders, publicDiagnosticPage } from '../templates/diagnostics';
 
 interface Deployment {
@@ -123,7 +123,7 @@ async function registration(env: Bindings, hostname: string): Promise<Registrati
     .bind(hostname, now()).first<Registration>();
   if (!row || !['public', 'private'].includes(row.access)) return null;
   if (row.deployment === '__browser') {
-    if (env.BROWSER_SANDBOX_ENABLED !== 'true' || !managedSlot(row.slot) || row.access !== 'private' || !row.owner_key_hash) return null;
+    if (env.BROWSER_SANDBOX_ENABLED !== 'true' || !managedSlot(row.slot) || row.access !== managedAccess(row.slot) || !row.owner_key_hash) return null;
     const access = await env.DB.prepare(`SELECT sc.id FROM sandbox_credentials sc JOIN user_keys u ON u.email=sc.email
       WHERE sc.id=? AND sc.email=? AND sc.state='active' AND sc.sandbox_id=u.daytona_sandbox_id`)
       .bind(row.owner_key_hash, row.email).first();
@@ -310,7 +310,7 @@ export async function registerBrowserPreview(env: Bindings, email: string, url: 
   const requiresAppSecret = ['__nanobot','__jupyter','__ttyd'].includes(slot);
   if (requiresAppSecret !== (appSecret !== undefined) || (appSecret !== undefined && !/^[a-f0-9]{64}$/.test(appSecret))) return failure(400);
   return registerPreview(env, { ...apiPolicy(env), id: '__browser' }, {
-    owner: { subject: email, email }, upstream_url: url, access: 'private',
+    owner: { subject: email, email }, upstream_url: url, access: managedAccess(slot),
     ...(appSecret ? { upstream_headers: slot === '__jupyter'
       ? { Authorization: `token ${appSecret}` } : slot === '__ttyd'
       ? { Authorization: `Basic ${btoa('bayleaf:' + appSecret)}` } : { 'X-Nanobot-Auth': appSecret } } : {}),

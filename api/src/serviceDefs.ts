@@ -3,6 +3,13 @@ const COMMON_STEPS = ['checking', 'installing', 'configuring', 'starting', 'read
 const COMMON_ERRORS = ['insufficient_disk', 'requires_2_gib', 'installation_failed', 'port_in_use',
   'application_not_ready', 'setup_failed', 'setup_timeout'];
 export const SERVICE_DEFS = {
+  collabmd: {
+    id: 'collabmd', root: '/home/daytona/.local/share/bayleaf/collabmd', port: 8795,
+    slot: '__collabmd', credential: false, memoryGiB: 0,
+    steps: [...COMMON_STEPS, 'installing_collabmd', 'starting_collabmd', 'configuring_preview'],
+    errors: [...COMMON_ERRORS, 'credential_missing', 'credential_invalid', 'release_verification_failed',
+      'unsupported_architecture', 'sharing_directory_invalid', 'preview_configuration_invalid'],
+  },
   ttyd: {
     id: 'ttyd', root: '/home/daytona/.local/share/bayleaf/ttyd', port: 8794,
     slot: '__ttyd', credential: true, memoryGiB: 0,
@@ -48,3 +55,5 @@ export type ServiceDef = typeof SERVICE_DEFS[ServiceId];
 export const serviceDef = (id: unknown): ServiceDef | undefined =>
   typeof id === 'string' && Object.hasOwn(SERVICE_DEFS, id) ? SERVICE_DEFS[id as ServiceId] : undefined;
 export const managedSlot = (slot: string) => Object.values(SERVICE_DEFS).some(def => def.slot === slot);
+/** Fixed policy, never a caller-selected public/private switch. */
+export const managedAccess = (slot: string) => slot === '__collabmd' ? 'public' : 'private';

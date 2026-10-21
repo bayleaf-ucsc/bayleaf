@@ -1,9 +1,16 @@
 # BayLeaf Sandboxes dashboard
 
+**Issue #94 deployed 2026-10-20 Pacific:** CollabMD rooms and owner-authorized Stop app / End
+sharing controls are available. CollabMD alone has a public
+gateway with its own room-password challenge. Two hours is guidance, not an
+automatic deadline. See [`api/COLLABMD.md`](../api/COLLABMD.md) for deployment and
+live evidence, process-cleanup limits, the dashboard-first agent-exposure decision,
+the accepted upstream save-feedback limitation and the skipped duration check.
+
 The public home explains the shared workspace and available managed services.
-Signed-in owners can set up, resume, open or repair OpenChamber, code-server and dufs.
-The code-server and dufs additions are implemented locally, pending deployment and live
-qualification. All use the same workspace and owner-authenticated private proxy.
+Signed-in owners can manage OpenChamber, Nanobot, CollabMD, code-server,
+JupyterLab, dufs and ttyd. They use the same sandbox files; all except CollabMD
+retain an owner-authenticated private gateway.
 
 ## Managed-service seams
 
@@ -43,9 +50,10 @@ archive download and hashes; outside-root symlinks stay disabled.
   login to both the initiating Sandboxes browser and the API browser. A short-lived
   single-use code is exchanged over the private binding; return destinations are
   fixed. Cookies never use a shared parent domain.
-- Applications run on the existing private preview origins, never on the
+- Applications run on isolated preview origins, never on the
   dashboard origin. The API dashboard retains key management, machine status,
-  keep-alive and destructive deletion.
+  keep-alive and destructive deletion. CollabMD alone has a public gateway with
+  its own room-password challenge; its management controls remain owner-only.
 
 Successful sign-in schedules one bounded best-effort wake of **existing** compute.
 If it is running, sign-in refreshes its activity timestamp. This counts as

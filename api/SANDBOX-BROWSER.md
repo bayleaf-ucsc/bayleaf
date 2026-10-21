@@ -1,5 +1,12 @@
 # Browser sandbox lifecycle
 
+**Issue #94 deployed 2026-10-20 Pacific:** managed services now have a serialized stop
+operation, separate access-revocation/process-cleanup status and no-wake cleanup.
+CollabMD adds a fixed-folder, password-protected public room. Existing services
+remain private; link expiry still does not stop apps. See [`COLLABMD.md`](COLLABMD.md)
+for deployment versions, qualification and per-app shutdown limits. The upstream
+save-feedback limitation is accepted; the two-hour soak was explicitly skipped.
+
 **Pending issue #90 revision:** local code now uses independent, Daytona-held
 sandbox credentials and sandbox-bound managed links. See
 [`SANDBOX-CREDENTIALS.md`](SANDBOX-CREDENTIALS.md) for migration and qualification.
@@ -100,8 +107,10 @@ controller. Ownership never comes from request JSON.
 
 Start/restart returns 202 while opening. Concurrent requests converge on one
 operation. The dashboard polls while setup is opening, not throughout ordinary
-use. Even its status polls never call Toolbox. There is no countdown, extension
-window, or end-session action. Refresh/focus checks only observe status.
+use. Even its status polls never call Toolbox. There is no countdown or extension
+ritual. Stop app explicitly revokes that app's access and attempts owned-process
+cleanup, preserving saved data and the shared machine. Refresh/focus checks only
+observe status.
 
 Opening already-ready browser access keeps the URL and link expiry. Stopped or
 archived machines need a deliberate start action or a completed Sandboxes login

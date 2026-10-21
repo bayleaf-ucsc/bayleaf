@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { build } from '../api/node_modules/esbuild/lib/main.js';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const bundle = await build({ absWorkingDir: root, entryPoints: ['sandbox/worker.js'],
@@ -22,7 +23,7 @@ const management = {
   async managed(input) {
     calls.push(['managed', input]);
     if (input.operation === 'wake-existing' && failWake) throw Error('synthetic unavailable');
-    if (input.operation !== 'wake-existing' && !['openchamber', 'code-server', 'dufs', 'ttyd'].includes(input.service))
+    if (input.operation !== 'wake-existing' && !['openchamber', 'code-server', 'dufs', 'ttyd', 'collabmd'].includes(input.service))
       return { status: 400, body: { error: 'invalid_operation' } };
     return { status: 200, body: { phase: 'idle', machine: 'absent' } };
   },
@@ -48,6 +49,7 @@ assert(html.includes('OpenChamber'));
 assert(html.includes('code-server'));
 assert(html.includes('Files (dufs)'));
 assert(html.includes('Shell (ttyd)'));
+assert(html.includes('Collaborative Editor (CollabMD)'));
 assert(html.includes('VS Code (code-server)'));
 assert(html.includes('A small computer in the cloud'));
 assert(html.includes('install it on your own computer'));
@@ -99,12 +101,15 @@ assert.equal(mutations().length, 1, 'refresh and status never repeat login wake'
 assert(html.includes('id="code-server-start"'));
 const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(match=>match[1]);
 assert.equal(new Set(ids).size,ids.length,'service controls have unique ids');
-for (const service of ['code-server', 'dufs', 'ttyd', 'unknown']) {
+for (const service of ['code-server', 'dufs', 'ttyd', 'collabmd', 'unknown']) {
   const path='/services/'+service;
   assert.equal((await request(path+'/status')).status,401);
   assert.equal((await request(path+'/status',{cookie:sessionCookie})).status,service!=='unknown'?200:400);
   assert.equal((await request(path+'/start',{method:'POST',cookie:sessionCookie})).status,403);
   assert.equal((await request(path+'/start',{method:'POST',cookie:sessionCookie,
+    headers:{Origin:origin,'X-BayLeaf-Action':'managed-service'}})).status,service!=='unknown'?200:400);
+  assert.equal((await request(path+'/stop',{method:'POST',cookie:sessionCookie})).status,403);
+  assert.equal((await request(path+'/stop',{method:'POST',cookie:sessionCookie,
     headers:{Origin:origin,'X-BayLeaf-Action':'managed-service'}})).status,service!=='unknown'?200:400);
 }
 assert.equal((await request('/services/openchamber/start', { method: 'POST' })).status, 401);
@@ -140,4 +145,28 @@ assert(!response.headers.get('Content-Security-Policy').includes('telemetry.bayl
 for (const path of ['/login', '/auth/callback', '/dashboard', '/services/openchamber/status']) {
   assert(!(await (await request(path, { browserArrivalsEnabled: 'true' })).text()).includes('BayLeafArrival'));
 }
-console.log('PASS sandbox overview, host-only login, CSRF, escaped identity, one-shot wake, passive reads, service dispatch and logout');
+// Execute the actual controls script with a tiny DOM, not a duplicated renderer.
+const signedInHtml=await(await request('/',{cookie:sessionCookie})).text();
+const controls=[...signedInHtml.matchAll(/<script nonce="[^"]+">([\s\S]*?)<\/script>/g)].at(-1)[1];
+for(const [snapshot,expected] of [
+  [{phase:'ready',machine:'stopped',operation:'synthetic'},true],
+  [{phase:'expired',machine:'started',operation:'synthetic'},true],
+  [{phase:'failed',machine:'started',operation:'synthetic'},true],
+  [{phase:'stopped',cleanup_pending:true,access_revoked:true},true],
+  [{phase:'stopped',cleanup_pending:false,access_revoked:true},false],
+  [{phase:'idle',machine:'started'},false],
+]) {
+  const elements=new Map();
+  const element=id=>{
+    if(!elements.has(id))elements.set(id,{hidden:true,textContent:'',setAttribute(){},removeAttribute(){},
+      addEventListener(){},replaceChildren(){}});
+    return elements.get(id);
+  };
+  const root={dataset:{service:'collabmd',endpoint:'/services/collabmd'},querySelector:element};
+  runInNewContext(controls,{URL,Date,document:{querySelectorAll:()=>[root],createElement:()=>({})},
+    window:{addEventListener(){}},setTimeout(){},clearTimeout(){},setInterval(){},
+    fetch:async()=>({ok:true,status:200,json:async()=>snapshot})});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(!element('#collabmd-stop').hidden,expected,'stop visibility for '+JSON.stringify(snapshot));
+}
+console.log('PASS sandbox overview, host-only login, CSRF, escaped identity, one-shot wake, passive reads, service dispatch, logout and no-wake stop controls');

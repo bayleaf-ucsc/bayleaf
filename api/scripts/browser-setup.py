@@ -37,6 +37,10 @@ MAX_ARCHIVE_BYTES = 512*1024*1024
 MAX_UNPACKED_BYTES = 2*1024**3
 MAX_ARCHIVE_MEMBERS = 100000
 SERVICES = {
+    'collabmd': {'release': 'collabmd-0.1.55-managed-v1', 'port': 8795, 'directory': 'collabmd',
+        'install': 'install_collabmd', 'configure': 'configure_collabmd', 'prepare': 'prepare_plain_service',
+        'start': 'start_collabmd', 'bootstrap': 'bootstrap_plain_service', 'health': 'health_collabmd',
+        'health_path': '/api/auth/status', 'starting': 'starting_collabmd'},
     'ttyd': {'release': 'ttyd-1.7.7-managed-v1', 'port': 8794, 'directory': 'ttyd',
         'install': 'install_ttyd', 'configure': 'configure_ttyd', 'prepare': 'prepare_plain_service',
         'start': 'start_ttyd', 'bootstrap': 'bootstrap_plain_service', 'health': 'health_ttyd',
@@ -68,16 +72,18 @@ def adapter(name, *args, **kwargs):
     return globals()[SERVICES[SERVICE][name]](*args, **kwargs)
 
 
-def select_service(service):
+def select_service(service, load_adapter=True):
     global SERVICE, RELEASE, PORT, ROOT
     SERVICE = service
     definition = SERVICES[service]
     RELEASE, PORT = definition['release'], definition['port']
     ROOT = Path.home() / '.local/share/bayleaf' / definition['directory']
-    if service == 'jupyter' and 'install_jupyter' not in globals():
+    if load_adapter and service == 'jupyter' and 'install_jupyter' not in globals():
         # Worker transfers this fixed, canonical adapter beside the installer.
         # One source serves installation and isolated upstream qualification.
         exec(compile(Path(__file__).with_name('jupyter-adapter.py').read_text(), 'jupyter-adapter.py', 'exec'), globals())
+    if load_adapter and service == 'collabmd' and 'install_collabmd' not in globals():
+        exec(compile(Path(__file__).with_name('collabmd-adapter.py').read_text(), 'collabmd-adapter.py', 'exec'), globals())
 PHASES = {'checking', 'installing', 'configuring', 'starting', 'ready', 'failed', 'stopped'}
 
 
@@ -183,10 +189,14 @@ def wait_for_exit(child, timeout=None):
 
 
 def command(argv, timeout=30, env=None):
-    process = subprocess.Popen(argv, env=env, stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-    marker = identity(process.pid, include_zombie=True)
-    atomic('state/task.json', {'process': marker})
+    with lock('lifecycle.lock', wait=10):
+        current = read('request.json', {}).get('operation')
+        if current and read('state/cancelled.json', {}).get('operation') == current:
+            raise Failure('operation_cancelled')
+        process = subprocess.Popen(argv, env=env, stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        marker = identity(process.pid, include_zombie=True)
+        atomic('state/task.json', {'process': marker})
     try:
         if wait_for_exit(process, timeout=timeout) != 0:
             raise Failure('command_failed')
@@ -302,7 +312,7 @@ def inspect():
         'updated_at': operation.get('updated_at'), 'release': RELEASE,
         'installed': read('state/installation.json', {}).get('release') == RELEASE,
         'ready': health(), 'running': alive(runtime.get('process')), 'port': PORT,
-        **({'preview_url': runtime.get('preview_url')} if SERVICE == 'nanobot' else {})}
+        **({'preview_url': runtime.get('preview_url')} if SERVICE in ('nanobot', 'collabmd') else {})}
 
 
 def install(progress):
@@ -368,6 +378,43 @@ def dufs_asset(tag):
     return f'dufs-{tag}-x86_64-unknown-linux-musl.tar.gz'
 
 
+def extract_checked_archive(archive, unpack):
+    """Shared bounded extraction with a final symlink-graph check."""
+    unpack.mkdir()
+    members, expanded = [], 0
+    with gzip.open(archive, 'rb') as compressed, tarfile.open(fileobj=BoundedArchiveReader(compressed), mode='r|') as tar:
+        for member in tar:
+            expanded += member.size
+            if expanded > MAX_UNPACKED_BYTES or len(members) >= MAX_ARCHIVE_MEMBERS:
+                raise ValueError('archive size')
+            members.append(member)
+            member.mode &= 0o755
+            path = Path(member.name)
+            if path.is_absolute() or '..' in path.parts or not (member.isfile() or member.isdir() or member.issym()):
+                raise ValueError('archive path')
+            if member.issym():
+                target = Path(member.linkname)
+                resolved = (unpack / path.parent / target).resolve()
+                if target.is_absolute() or not resolved.is_relative_to(unpack.resolve()):
+                    raise ValueError('archive link')
+            if not (unpack / member.name).resolve().is_relative_to(unpack.resolve()):
+                raise ValueError('archive destination')
+            destination = unpack / member.name
+            if member.isdir():
+                destination.mkdir(parents=True, exist_ok=True, mode=0o700)
+            else:
+                destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                if member.issym():
+                    destination.symlink_to(member.linkname)
+                else:
+                    with tar.extractfile(member) as source, destination.open('xb') as output:
+                        shutil.copyfileobj(source, output)
+                    destination.chmod(member.mode)
+    for member in members:
+        if not (unpack / member.name).resolve().is_relative_to(unpack.resolve()):
+            raise ValueError('archive link graph')
+
+
 def verified_archive(repo, asset_name, stage):
     """Lathe's release/asset/digest contract, with checked extraction on Linux amd64."""
     if platform.system() != 'Linux' or platform.machine() not in ('x86_64', 'amd64'):
@@ -404,44 +451,7 @@ def verified_archive(repo, asset_name, stage):
         if actual.hexdigest() != digest[7:]:
             raise ValueError('checksum')
         unpack = stage / 'unpack'
-        unpack.mkdir()
-        members = []
-        expanded = 0
-        with gzip.open(archive, 'rb') as compressed, tarfile.open(fileobj=BoundedArchiveReader(compressed), mode='r|') as tar:
-            for member in tar:
-                expanded += member.size
-                if expanded > MAX_UNPACKED_BYTES or len(members) >= MAX_ARCHIVE_MEMBERS:
-                    raise ValueError('archive size')
-                members.append(member)
-                member.mode &= 0o755
-                path = Path(member.name)
-                if path.is_absolute() or '..' in path.parts or not (member.isfile() or member.isdir() or member.issym()):
-                    raise ValueError('archive path')
-                if member.issym():
-                    target = Path(member.linkname)
-                    resolved = (unpack / path.parent / target).resolve()
-                    if target.is_absolute() or not resolved.is_relative_to(unpack.resolve()):
-                        raise ValueError('archive link')
-                if not (unpack / member.name).resolve().is_relative_to(unpack.resolve()):
-                    raise ValueError('archive destination')
-                destination = unpack / member.name
-                if member.isdir():
-                    destination.mkdir(parents=True, exist_ok=True, mode=0o700)
-                else:
-                    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-                    if member.issym():
-                        destination.symlink_to(member.linkname)
-                    else:
-                        # Exclusive creation rejects duplicate files and writes
-                        # through symlinks. No version-dependent tarfile filters.
-                        with tar.extractfile(member) as source, destination.open('xb') as output:
-                            shutil.copyfileobj(source, output)
-                        destination.chmod(member.mode)
-        # Resolve the final graph too: forward symlink chains can change the
-        # meaning of a link validated before its target existed.
-        for member in members:
-            if not (unpack / member.name).resolve().is_relative_to(unpack.resolve()):
-                raise ValueError('archive link graph')
+        extract_checked_archive(archive, unpack)
         return unpack, {'tag': tag, 'asset': name, 'sha256': digest[7:]}
     except Failure:
         raise
@@ -1018,20 +1028,24 @@ def check_browser_port():
 
 def supervise(operation):
     with lock('runtime.lock', wait=10):
-        lease = request(operation)
-        check_browser_port()
-        with socket.socket() as probe:
-            probe.bind(('127.0.0.1', 0))
-            backend_port = probe.getsockname()[1]
-        argv, env = adapter('start', backend_port)
-        child = subprocess.Popen(argv, env=env, cwd=Path.home() / 'workspace',
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            start_new_session=True)
-        marker = identity(child.pid, include_zombie=True)
-        runtime = {'process': marker, 'release': RELEASE, 'configured': False,
-            'credential_hash': lease['credential_hash'], 'operation': operation,
-            **({'preview_url':lease.get('preview_url')} if SERVICE == 'nanobot' else {})}
-        atomic('state/runtime.json', runtime)
+        # Stop and spawn share a short critical section, not the lifetime lock.
+        # Cancellation is checked inside it: a queued supervisor cannot resurrect
+        # a stopped generation between request validation and Popen.
+        with lock('lifecycle.lock', wait=10):
+            lease = request(operation)
+            check_browser_port()
+            with socket.socket() as probe:
+                probe.bind(('127.0.0.1', 0))
+                backend_port = probe.getsockname()[1]
+            argv, env = adapter('start', backend_port)
+            child = subprocess.Popen(argv, env=env, cwd=Path.home() / 'workspace',
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True)
+            marker = identity(child.pid, include_zombie=True)
+            runtime = {'process': marker, 'release': RELEASE, 'configured': False,
+                'credential_hash': lease['credential_hash'], 'operation': operation,
+                **({'preview_url':lease.get('preview_url')} if SERVICE in ('nanobot', 'collabmd') else {})}
+            atomic('state/runtime.json', runtime)
         def report(step):
             runtime.setdefault('timeline', []).append({'step':step, 'at':int(time.time())})
             runtime['timeline'] = runtime['timeline'][-16:]
@@ -1054,10 +1068,11 @@ def supervise(operation):
 
 def setup(operation):
     with lock('setup.lock'):
-        req = request(operation)
-        progress = Progress(operation)
-        progress.update('checking')
-        progress.thread.start()
+        with lock('lifecycle.lock', wait=10):
+            req = request(operation)
+            progress = Progress(operation)
+            progress.update('checking')
+            progress.thread.start()
         try:
             adapter('install', progress)
             request(operation)  # A slow install may outlive its setup deadline.
@@ -1098,6 +1113,24 @@ def setup(operation):
             progress.thread.join(timeout=6)
 
 
+def stop(operation):
+    with lock('lifecycle.lock', wait=2):
+        current = read('request.json', {}).get('operation')
+        # A new controller attempt can be stopped before it transfers a request.
+        # In that case the service still owns the prior local runtime. Retire
+        # that actual request too, rather than leaving cleanup stuck forever.
+        # The controller blocks new starts until this bounded stop completes.
+        atomic('state/cancelled.json', {'operation': current or operation})
+        atomic('request.json', {'operation': current or operation, 'deadline': 0})
+        for name in ('state/task.json', 'state/operation.json', 'state/runtime.json'):
+            terminate(read(name, {}).get('process'))
+    # A concurrent setup must release its lock before shutdown is complete.
+    # No arbitrary listening-port process is ever signalled.
+    with lock('setup.lock', wait=2), lock('runtime.lock', wait=2):
+        pass
+    return {'stopped': True, 'operation': operation}
+
+
 def main():
     global ROOT
     parser = argparse.ArgumentParser(description=__doc__)
@@ -1106,7 +1139,7 @@ def main():
     parser.add_argument('action', choices=['inspect', 'setup', 'supervise', 'stop'])
     parser.add_argument('--operation', default='')
     args = parser.parse_args()
-    select_service(args.service)
+    select_service(args.service, load_adapter=args.action != 'stop')
     ROOT = (args.root or ROOT).resolve()
     os.umask(0o077)
     ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -1118,11 +1151,7 @@ def main():
     elif args.action == 'supervise':
         supervise(args.operation)
     else:
-        atomic('state/cancelled.json', {'operation': read('request.json', {}).get('operation')})
-        atomic('request.json', {'deadline': 0})
-        terminate(read('state/task.json', {}).get('process'))
-        terminate(read('state/operation.json', {}).get('process'))
-        terminate(read('state/runtime.json', {}).get('process'))
+        print(json.dumps(stop(args.operation)))
 
 
 if __name__ == '__main__':

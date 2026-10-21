@@ -41,23 +41,26 @@ app.get('/public', () => renderSandboxPage(null));
 let scenario = 'passive', phase = 'idle', startedAt;
 app.post('/__fixture/:state', c => {
   const state = c.req.param('state');
-  if (!['passive','ready','failure','expired'].includes(state)) return c.json({error:'unknown_fixture'},400);
+  if (!['passive','ready','failure','expired','room'].includes(state)) return c.json({error:'unknown_fixture'},400);
   scenario = state; phase = 'idle'; startedAt = undefined;
   return c.json({scenario});
 });
 for (const service of Object.keys(SERVICE_DEFS)) {
   app.get('/services/'+service+'/status', c => {
-    if (service !== 'openchamber') return c.json({phase:'idle',machine:'started'});
+    if (service !== (scenario==='room'?'collabmd':'openchamber')) return c.json({phase:'idle',machine:'started'});
     if (scenario === 'expired') return c.json({error:'session_expired'},401);
     if (phase === 'opening' && Date.now()/1000-startedAt >= 2) phase = scenario === 'failure' ? 'failed' : 'ready';
     return c.json({phase,machine:'started',started_at:startedAt,
       ...(phase === 'opening' ? {progress:'registering_preview'} : {}),
-      ...(phase === 'failed' ? {error:'installation_failed',timeline:[{step:'failed',at:startedAt+2}]} : {}),
-      ...(phase === 'ready' ? {url:'https://synthetic-private.example.test/',deadline:startedAt+86400} : {})});
+       ...(phase === 'failed' ? {error:'installation_failed',timeline:[{step:'failed',at:startedAt+2}]} : {}),
+      ...(phase === 'stopped' ? {access_revoked:true,cleanup_pending:false} : {}),
+      ...(phase === 'ready' ? {url:'https://synthetic-private.example.test/',deadline:startedAt+86400,
+        ...(service==='collabmd'?{room_password:'synthetic-not-a-real-password'}:{})} : {})});
   });
-  for (const action of ['start','restart']) app.post('/services/'+service+'/'+action,c => {
+  for (const action of ['start','restart','stop']) app.post('/services/'+service+'/'+action,c => {
     if (scenario === 'expired') return c.json({error:'session_expired'},401);
-    if (service !== 'openchamber') return c.json({error:'service_busy'},409);
+    if (service !== (scenario==='room'?'collabmd':'openchamber')) return c.json({error:'service_busy'},409);
+    if (action==='stop') {phase='stopped';return c.json({phase,access_revoked:true,cleanup_pending:false});}
     phase = 'opening'; startedAt = Math.floor(Date.now()/1000); return c.json({phase});
   });
 }

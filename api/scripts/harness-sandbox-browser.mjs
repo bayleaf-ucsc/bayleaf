@@ -88,7 +88,7 @@ let incomingOperation, lastForwarded, toolboxFailures = 0, machineId = 'syntheti
 const credentialsUploaded=[];
 const vault = new Map();
 let failCreate=false, creationRequests=0, rejectCreate=0;
-let nanobotAuth, jupyterAuth, ttydAuth, nanobotReady=true, nanobotWrongOrigin=false;
+let nanobotAuth, jupyterAuth, ttydAuth, collabmdAuth, nanobotReady=true, nanobotWrongOrigin=false, stopFails=false, stops=0;
 const machine = () => ({ id: machineId, state, memory, public: isPublic, labels: { 'synthetic-chat': email } });
 const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
   name: 'browser-harness', modules: true, script: bundle.outputFiles[0].text,
@@ -160,7 +160,8 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
         }
         if (u.searchParams.get('path').endsWith('credentials/app-secret')) {
           assert.match(text,/^[a-f0-9]{64}$/);
-          if(u.searchParams.get('path').includes('/ttyd/'))ttydAuth=text;
+          if(u.searchParams.get('path').includes('/collabmd/'))collabmdAuth=text;
+          else if(u.searchParams.get('path').includes('/ttyd/'))ttydAuth=text;
           else if(u.searchParams.get('path').includes('/jupyter/'))jupyterAuth=text;else nanobotAuth=text;
         }
         return Response.json({});
@@ -172,6 +173,11 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
       if(jupyterAuth)assert(!command.includes(jupyterAuth),'Jupyter secret in command');
       if(ttydAuth)assert(!command.includes(ttydAuth),'ttyd secret in command');
       if (command.includes('subprocess.Popen')) launches++;
+      if (command.includes('/stop.py --service ')) {
+        stops++;
+        const operation=command.match(/--operation ([a-f0-9-]+)/)[1];
+        return Response.json({exitCode:stopFails?1:0,result:JSON.stringify({stopped:!stopFails,operation})});
+      }
       if (command.endsWith('setup.py inspect')) return Response.json({ exitCode: 0, result: JSON.stringify({
         schema: 1, operation: interrupted ? 'stale' : incomingOperation.operation,
         updated_at: Math.floor(Date.now()/1000), phase: 'ready', ready: true, port: 3100,
@@ -179,12 +185,12 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
           {step:'credential-leak',at:Math.floor(Date.now()/1000),error:'secret'},
           {step:'connecting_bayleaf',at:9999999999999}],
       }) });
-      const appService = ['code-server','dufs','nanobot','jupyter','ttyd'].find(id=>command.endsWith('--service '+id+' inspect'));
+      const appService = ['code-server','dufs','nanobot','jupyter','ttyd','collabmd'].find(id=>command.endsWith('--service '+id+' inspect'));
       if (appService) return Response.json({exitCode:0,result:JSON.stringify({
         schema:1,service:wrongService?'openchamber':appService,operation:incomingOperation.operation,
         updated_at:Math.floor(Date.now()/1000),phase:'ready',ready:appService==='nanobot'?nanobotReady:true,
-        port:appService==='dufs'?8790:appService==='nanobot'?8792:appService==='jupyter'?8793:appService==='ttyd'?8794:8791,
-        ...(appService==='nanobot'?{preview_url:nanobotWrongOrigin?'https://wrong.invalid/':incomingOperation.preview_url}:{}),
+        port:appService==='collabmd'?8795:appService==='dufs'?8790:appService==='nanobot'?8792:appService==='jupyter'?8793:appService==='ttyd'?8794:8791,
+        ...(['nanobot','collabmd'].includes(appService)?{preview_url:nanobotWrongOrigin?'https://wrong.invalid/':incomingOperation.preview_url}:{}),
         timeline:[{step:appService==='dufs'?'installing_dufs':'installing_code_server',at:Math.floor(Date.now()/1000)}],
       })});
       return Response.json({ exitCode: 0, result: '' });
@@ -305,11 +311,11 @@ try {
     }
     assert.equal(executions,before);assert.equal(previewCalls,1);
   });
-  await check('another owner has independent lifecycle state; session actions no longer exist',async()=>{
+  await check('another owner has independent lifecycle state; legacy continue action does not exist',async()=>{
     const headers={Authorization:'Bearer sk-bayleaf-other'};
     const other=await (await req('/sandbox/browser/status',{owner:false,headers})).json();
     assert.equal(other.phase,'idle');assert.equal(other.url,undefined);
-    for (const name of ['stop','continue']) {
+    for (const name of ['continue']) {
       assert.equal((await req('/sandbox/browser/'+name,{method:'POST',owner:false,headers})).status,404);
       assert.equal((await action(name)).status,404);
     }
@@ -403,7 +409,7 @@ try {
     const absent=await status();assert.equal(absent.phase,'idle');assert.equal(absent.machine,'absent');
     assert.equal(absent.error,undefined);assert.equal(absent.deadline,undefined);assert.equal(absent.url,undefined);
     await action('start');ready=await finish();assert.equal(ready.phase,'ready');assert.equal(creates,1);
-    assert.equal((await action('stop')).status,404);assert.equal(state,'started');
+    assert.equal(state,'started');
     assert.equal((await status()).phase,'ready');
   });
   await check('login wake is private, never creates or installs, and invalidates stale app readiness',async()=>{
@@ -622,6 +628,62 @@ try {
     const old=op.url;await req(tt('restart'),{method:'POST'});op=await complete();assert.notEqual(op.url,old);
     assert.equal((await status()).url,sibling);
     await req(tt('__expire'));assert.equal((await(await req(tt('status'))).json()).url,undefined);
+  });
+  await check('CollabMD public policy never injects room auth; owner stop closes sockets and preserves siblings',async()=>{
+    const cm=action=>'/__test/'+action+'?service=collabmd';
+    const complete=async()=>{for(let i=0;i<14;i++){const op=await(await req(cm('__tick'))).json();if(op.phase==='ready')return op;}throw new Error('CollabMD failed');};
+    const sibling=(await status()).url, uploads=credentialsUploaded.length;
+    assert.equal((await worker.fetch(api+'/sandbox/expose',{method:'POST',headers:{Authorization:'Bearer sk-bayleaf-rotated',
+      'Content-Type':'application/json'},body:JSON.stringify({port:8795,access:'public'})})).status,400);
+    await req(cm('start'),{method:'POST'});
+    let op=await complete();const old=op.url, password=collabmdAuth;
+    assert.equal(credentialsUploaded.length,uploads,'CollabMD must not receive sandbox/inference credentials');
+    assert(!JSON.stringify(op).includes(password),'no room password in DO metadata');
+    const view=await(await req(cm('status'))).json();assert.equal(view.room_password,password);
+    assert.equal(view.deadline-op.startedAt,86400,'two hours is guidance, not an automatic deadline');
+    const row=await db.prepare("SELECT * FROM preview_registrations WHERE slot='__collabmd'").first();
+    assert.equal(row.access,'public');assert(row.owner_key_hash);
+    assert.equal((await worker.fetch(op.url)).status,200,'gateway is public; application owns password challenge');
+    assert.equal(lastForwarded.authorization,undefined);assert.equal(lastForwarded['x-nanobot-auth'],undefined);
+    const origin=new URL(op.url).origin;
+    const socket=await worker.fetch(op.url+'ws',{headers:{Upgrade:'websocket','X-Test-Origin':origin}});
+    assert.equal(socket.status,101);socket.webSocket.accept();
+    const closed=new Promise(resolve=>socket.webSocket.addEventListener('close',resolve,{once:true}));
+    const stopped=await req(cm('stop'),{method:'POST'});assert.equal(stopped.status,200);
+    const result=await stopped.json();assert.equal(result.access_revoked,true);assert.equal(result.cleanup_pending,false);
+    await closed;
+    assert.equal((await worker.fetch(old)).status,404);assert.equal((await status()).url,sibling);
+    assert.equal((await(await req(cm('status'))).json()).room_password,undefined);
+    const before=stops;await req(cm('stop'),{method:'POST'});assert.equal(stops,before,'stop is idempotent');
+    await req(cm('start'),{method:'POST'});op=await complete();
+    assert.notEqual(op.url,old);assert.notEqual(collabmdAuth,password);
+    const credential=(await db.prepare("SELECT owner_key_hash FROM preview_registrations WHERE slot='__collabmd'").first()).owner_key_hash;
+    await db.prepare("UPDATE sandbox_credentials SET state='revoked' WHERE id=?").bind(credential).run();
+    assert.equal((await worker.fetch(op.url)).status,404,'public access still depends on active owner sandbox authority');
+    await db.prepare("UPDATE sandbox_credentials SET state='active' WHERE id=?").bind(credential).run();
+    // A public row cannot turn an existing private service public.
+    const siblingHost=new URL(sibling).hostname;
+    await db.prepare("UPDATE preview_registrations SET access='public' WHERE hostname=?").bind(siblingHost).run();
+    assert.equal((await worker.fetch(sibling)).status,404);
+    await db.prepare("UPDATE preview_registrations SET access='private' WHERE hostname=?").bind(siblingHost).run();
+    await req(cm('stop'),{method:'POST'});
+  });
+  await check('stop during setup cannot register later; partial cleanup retries and sleeping stop never wakes',async()=>{
+    const cm=action=>'/__test/'+action+'?service=collabmd';
+    await req(cm('start'),{method:'POST'});
+    for(let i=0;i<4;i++)await req(cm('__tick'));
+    stopFails=true;
+    const partial=await req(cm('stop'),{method:'POST'});assert.equal(partial.status,202);
+    const body=await partial.json();assert.equal(body.access_revoked,true);assert.equal(body.cleanup_pending,true);
+    assert.equal((await req(cm('start'),{method:'POST'})).status,409);
+    const probes=executions;await req(cm('status'));assert.equal(executions,probes,'status remains passive');
+    stopFails=false;
+    const finished=await(await req(cm('__tick'))).json();assert.equal(finished.phase,'stopped');assert.equal(finished.cleanupPending,false);
+    assert.equal((await db.prepare("SELECT count(*) n FROM preview_registrations WHERE slot='__collabmd'").first()).n,0);
+    await req(cm('start'),{method:'POST'});await req(cm('__tick'));
+    state='archived';const before={executions,wakes};
+    assert.equal((await req(cm('stop'),{method:'POST'})).status,200);
+    assert.deepEqual({executions,wakes},before);state='started';
   });
   await check('central scheduler honors backoff, ready timestamps, and setup deadlines with a fake clock',async()=>{
     const cs=path=>'/__test/'+path+'?service=code-server';

@@ -606,6 +606,14 @@ there is no new monitoring store or alert integration.
 
 ### Browser sandbox lifecycle (issue #81)
 
+**Issue #94 deployed 2026-10-20 Pacific:** CollabMD uses fixed port 8795 and
+`~/workspace/public-collaborative-docs/`, with a narrowly allowlisted public managed
+slot and its own password challenge, never injected guest authentication. All
+other managed apps remain private. Owner-authorized Stop app / End sharing revokes
+access before cleanup, does not wake sleeping compute and reports partial cleanup
+honestly. See `COLLABMD.md` for versions, real managed-room evidence, detached-job
+limits, the accepted upstream save-feedback limitation and the waived two-hour soak.
+
 **Issue #90 local revision (rollout pending):** read `SANDBOX-CREDENTIALS.md`.
 Migration 0015 separates sandbox verifier metadata and account-generation sessions
 from ordinary-key validity. `sandboxCredentials.ts` owns custody/lifecycle; provider

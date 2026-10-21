@@ -6,6 +6,7 @@
 import type { Bindings } from './types';
 import setupSource from '../scripts/browser-setup.py';
 import jupyterSource from '../scripts/jupyter-adapter.py';
+import collabmdSource from '../scripts/collabmd-adapter.py';
 import nanobotAssets from '../.nanobot-assets.json';
 import { getAccountRow, activeSandboxCredential, ensureSandboxCredential, revokeSandboxCredentials, rotateSandboxCredential } from './sandboxCredentials';
 import { DAYTONA_DEFAULT_API_URL, DAYTONA_DEFAULT_PROXY_URL } from './constants';
@@ -48,6 +49,8 @@ interface Operation {
   timeline?: ProgressEvent[];
   previousFailure?: { at: number; error: string; progress: string; elapsed: number };
   heartbeatAt?: number;
+  cleanupPending?: boolean;
+  cleanupError?: string;
 }
 interface Machine {
   id: string;
@@ -113,10 +116,11 @@ const launch = (operation: string, def: ServiceDef) => `python3 -c ${JSON.string
 const operationKey = (service: ServiceId = 'openchamber') => service === 'openchamber' ? 'operation' : `operation/${service}`;
 const dueAt = (op: Operation) => op.phase === 'ready' ? op.deadline * 1000 :
   op.phase === 'opening' ? Math.min(op.nextAt ?? 0, op.setupDeadline * 1000, op.deadline * 1000) :
-  !op.invalidated ? op.nextAt ?? 0 : Infinity;
+  !op.invalidated || op.cleanupPending ? op.nextAt ?? 0 : Infinity;
 
-// Reconstructible per-operation application credential, never DO metadata or a
-// management response. Apps may return their own WS token (ttyd /token).
+// Reconstructible per-operation application credential, never DO metadata.
+// Only CollabMD intentionally returns its shareable room password to the owner
+// management response. Other apps may expose their own WS token (ttyd /token).
 // Purpose-separated from preview encryption/session signing.
 async function managedAppSecret(env: Bindings, op: Operation): Promise<string> {
   const encoder = new TextEncoder();
@@ -180,6 +184,40 @@ export class SandboxBrowser {
       .first<{ expires_at: number }>();
     return Math.min(op.deadline, record?.expires_at ?? 0);
   }
+  private async stop(op: Operation) {
+    // Persist intent and revoke access before touching compute. A late installer
+    // breadcrumb cannot advance this operation back to register/ready.
+    if (op.phase !== 'stopped') {
+      op.cleanupPending = true;
+      await this.retire(op, 'stopped');
+    } else if (!op.invalidated) await this.retire(op, 'stopped');
+    if (!op.invalidated || !op.cleanupPending) return;
+    try {
+      const m = op.sandboxId ? await machine(this.env, op.sandboxId) : null;
+      if (m && m.labels?.[this.env.DAYTONA_DEPLOYMENT_LABEL] !== op.email) fail('ownership_mismatch');
+      if (!m || ['stopped', 'archived'].includes(m.state)) {
+        // Sleep has removed processes. Never wake merely to clean up an app.
+        op.cleanupPending = false;
+      } else if (m.state === 'started') {
+        const def = SERVICE_DEFS[op.service ?? 'openchamber'];
+        // Transfer the current stop implementation, including for older installs.
+        // Keep it separate from a setup.py that may still be executing.
+        await execute(this.env, m.id, `mkdir -p ${def.root}`);
+        await upload(this.env, m.id, def.root, 'stop.py', setupSource);
+        const text = await execute(this.env, m.id,
+          `python3 ${def.root}/stop.py --service ${def.id} stop --operation ${op.operation}`);
+        if (text.length > 1024) fail('invalid_stop_status');
+        const result = JSON.parse(text) as Record<string, unknown>;
+        if (result.stopped !== true || result.operation !== op.operation) fail('invalid_stop_status');
+        op.cleanupPending = false;
+      }
+      delete op.cleanupError;
+    } catch {
+      op.cleanupError = 'process_cleanup_pending';
+    }
+    op.nextAt = Date.now() + 30_000;
+    await this.save(op);
+  }
   private async view(email: string, service: ServiceId = 'openchamber') {
     const op = await this.state.storage.get<Operation>(operationKey(service));
     const row = await getAccountRow(email, this.env);
@@ -201,7 +239,7 @@ export class SandboxBrowser {
     // Reconcile historical six-hour registrations and externally revoked links
     // without contacting compute or extending a lease on a passive read.
     const deadline = op?.phase === 'ready' ? await this.linkDeadline(op) : op?.deadline;
-    const expired = deadline !== undefined && deadline <= now();
+     const expired = op && ['opening', 'ready'].includes(op.phase) && deadline !== undefined && deadline <= now();
     const ready = op?.phase === 'ready' && !expired && validKey && owned && current.state === 'started';
     return response({ phase: !op ? 'idle' : !validKey ? 'failed' : expired ? 'expired' : op.phase,
       machine: current ? owned ? current.state : 'unavailable' : 'absent',
@@ -210,7 +248,10 @@ export class SandboxBrowser {
       deadline, url: ready ? op.url : undefined,
       // Setup status freshness is explicit; GET never probes the application.
       updated_at: op?.updatedAt, started_at: op?.startedAt,
-      heartbeat_at: op?.heartbeatAt, timeline: op?.timeline ?? [], previous_failure: op?.previousFailure });
+      heartbeat_at: op?.heartbeatAt, timeline: op?.timeline ?? [], previous_failure: op?.previousFailure,
+      access_revoked: op?.phase === 'stopped' ? op.invalidated === true : undefined,
+      cleanup_pending: op?.cleanupPending, cleanup_error: op?.cleanupError,
+      room_password: ready && service === 'collabmd' ? await managedAppSecret(this.env, op!) : undefined });
   }
 
   async fetch(req: Request): Promise<Response> {
@@ -270,11 +311,25 @@ export class SandboxBrowser {
       const def = serviceDef(u.searchParams.get('service') ?? 'openchamber');
       if (!def) return response({ error: 'invalid_operation' }, 400);
       if (req.method === 'GET' && u.pathname === '/status') return await this.view(email, def.id);
-      if (req.method !== 'POST' || !['/start', '/restart'].includes(u.pathname)) return response({ error: 'not_found' }, 404);
+      if (req.method !== 'POST' || !['/start', '/restart', '/stop'].includes(u.pathname)) return response({ error: 'not_found' }, 404);
       return await this.exclusive(async () => {
         const row = await getAccountRow(email, this.env);
         if (!row) return response({ error: 'personal_key_required' }, 403);
         const previous = await this.state.storage.get<Operation>(operationKey(def.id));
+        if (u.pathname === '/stop') {
+          if (!previous) {
+            const revoked = await revokeUserPreview(this.env, email, def.slot);
+            return response({ phase: 'stopped', access_revoked: revoked, cleanup_pending: false }, revoked ? 200 : 503);
+          }
+          await this.stop(previous);
+          await this.arm();
+          return response({ phase: 'stopped', access_revoked: previous.invalidated === true,
+            cleanup_pending: previous.cleanupPending === true, cleanup_error: previous.cleanupError },
+            previous.invalidated && !previous.cleanupPending ? 200 : 202);
+        }
+        if (previous?.cleanupPending || (previous?.phase === 'stopped' && !previous.invalidated)) {
+          return response({ error: 'process_cleanup_pending' }, 409);
+        }
         const other = (await this.operations()).find(op => (op.service ?? 'openchamber') !== def.id && op.phase === 'opening');
         if (other) return response({ error: 'service_busy', service: other.service ?? 'openchamber' }, 409);
         // Repeated clicks during setup converge on one persisted operation.
@@ -327,6 +382,7 @@ export class SandboxBrowser {
       // Persist retry intent before side effects, including after an eviction.
       await this.schedule(op, Date.now() + 15_000);
       try {
+        if (op.phase === 'stopped' && op.cleanupPending) { await this.stop(op); return; }
         const row = await getAccountRow(op.email, this.env);
         const access = op.sandboxId ? await activeSandboxCredential(this.env, op.email, op.sandboxId) : null;
         if (!browserEnabled(this.env) || !row ||
@@ -423,10 +479,11 @@ export class SandboxBrowser {
               if (!access?.placeholder) fail('sandbox_access_unavailable');
               await upload(this.env, id, ROOT, 'credentials/incoming', access!.placeholder!);
             }
-            if (['nanobot', 'jupyter', 'ttyd'].includes(def.id)) {
+            if (['nanobot', 'jupyter', 'ttyd', 'collabmd'].includes(def.id)) {
               await upload(this.env, id, ROOT, 'credentials/app-secret', await managedAppSecret(this.env, op));
             }
             if (def.id === 'jupyter') await upload(this.env, id, ROOT, 'jupyter-adapter.py', jupyterSource);
+            if (def.id === 'collabmd') await upload(this.env, id, ROOT, 'collabmd-adapter.py', collabmdSource);
             if (def.id === 'nanobot') {
               const inboxes = inboxesEnabled;
               await upload(this.env, id, ROOT, 'assets.json', JSON.stringify({ ...nanobotAssets, _inboxes: inboxes }));
@@ -484,7 +541,7 @@ export class SandboxBrowser {
             // Reconcile the D1 commit / DO save crash window. Discover revoked
             // the previous slot before setup; only this serialized operation can
             // write a managed slot. Never rotate generations on an alarm retry.
-            const existing = def.id === 'nanobot' ? await this.env.DB.prepare(`SELECT hostname, expires_at FROM preview_registrations
+            const existing = ['nanobot', 'collabmd'].includes(def.id) ? await this.env.DB.prepare(`SELECT hostname, expires_at FROM preview_registrations
               WHERE email=? AND deployment='__browser' AND slot=? AND owner_key_hash=?`)
               .bind(op.email, def.slot, op.ownerKeyHash).first<{hostname:string;expires_at:number}>() : null;
             if (existing) {
@@ -500,7 +557,7 @@ export class SandboxBrowser {
             if (preview instanceof Response) fail('preview_unavailable');
             else {
               op.url = preview.url; op.deadline = Math.floor(Date.parse(preview.expires_at) / 1000);
-              if (def.id === 'nanobot') { op.step = 'finalize'; op.progress = 'configuring_preview'; }
+              if (['nanobot', 'collabmd'].includes(def.id)) { op.step = 'finalize'; op.progress = 'configuring_preview'; }
               else { op.phase = 'ready'; op.progress = 'ready'; }
             }
             }

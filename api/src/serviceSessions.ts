@@ -120,7 +120,7 @@ export class SandboxManagement extends WorkerEntrypoint<Bindings> {
 
   async managed(input: unknown): Promise<{ status: number; body: unknown }> {
     if (!inputObject(input, ['session', 'operation', 'service']) || !validServiceToken(input.session) ||
-        !['status', 'start', 'restart', 'wake-existing'].includes(input.operation as string) ||
+        !['status', 'start', 'restart', 'stop', 'wake-existing'].includes(input.operation as string) ||
         (input.operation === 'wake-existing' ? input.service !== undefined : !serviceDef(input.service))) {
       return { status: 400, body: { error: 'invalid_operation' } };
     }

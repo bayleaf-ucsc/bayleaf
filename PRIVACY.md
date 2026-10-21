@@ -93,6 +93,18 @@ ITS-operated or ITS-supported one.
   visitors can exercise credentials injected into public previews. Browser
   application state can survive preview expiry. See the
   [preview retention schedule](api/RETENTION.md#transient-previews-bounded-poc).
+- **Collaborative editor rooms (Sandboxes, opt-in):** starting
+  CollabMD sharing makes `~/workspace/public-collaborative-docs/` reachable through
+  a public gateway, protected by a temporary room password, without guest BayLeaf
+  accounts. Anyone admitted can read and edit that folder. The owner dashboard
+  can copy the password; BayLeaf does not inject it for public visitors. End
+  sharing revokes the link and attempts to stop the app, reporting pending process
+  cleanup separately. Documents, comments and collaboration sidecars remain in
+  the sandbox under its ordinary retention policy. Copies on collaborators'
+  devices cannot be recalled. Two hours is suggested, not an automatic shutdown;
+  links last up to 24 hours and sandbox sleep may interrupt editing. Markdown
+  can embed remote resources selected by collaborators. See the
+  [implementation and qualification boundaries](api/COLLABMD.md).
 - **Temporary inference access (API, opt-in when enabled):** approving an app
   gives it a temporary bearer token against your existing allowance. BayLeaf
    stores grant metadata (owner, token name, permitted models, expiry, optional app name and callback)

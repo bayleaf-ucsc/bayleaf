@@ -1029,12 +1029,19 @@ Lifecycle (keyed users only):
 Browser access (when enabled; ordinary personal keys only):
 
 - ${bt}GET /usage${bt} reports personal inference allowances without provisioning keys or spending credits. USD and request-count budgets are separate; null means unknown. Disabled providers are omitted.
-- ${bt}POST /sandbox/expose${bt} accepts ${bt}{"port":8000,"access":"private"}${bt}. Private is the default and strongly recommended; public must be explicitly requested. Managed-service ports 3100, 8790 and 8791 are reserved. Bind the service to 0.0.0.0 first.
+- ${bt}POST /sandbox/expose${bt} accepts ${bt}{"port":8000,"access":"private"}${bt}. Private is the default and strongly recommended; public must be explicitly requested. Managed-service ports 3100 and 8790–8795 are reserved. Bind the service to 0.0.0.0 first.
 - Optional ${bt}upstream_headers${bt} supplies fixed application headers in either access mode, including Authorization/Basic. Nonempty headers require exact ${bt}upstream_headers_applied: true${bt} in the response. Maximum 16 headers, 64-byte HTTP-token names, 4096-byte printable ASCII values and 8192 total bytes; routing/transport/browser-security/provider headers and platform credentials are rejected. Public visitors can exercise injected credentials. Values remain in tool history and may be reflected by the app; an assertion alone does not identify visitors or prevent direct-upstream spoofing.
 
 - ${bt}GET /sandbox/browser/status${bt} observes setup and browser-link state without waking compute.
 - ${bt}POST /sandbox/browser/start${bt} deliberately sets up or resumes OpenChamber on the same shared sandbox.
 - ${bt}POST /sandbox/browser/restart${bt} repairs the managed browser interface.
+- ${bt}POST /sandbox/browser/stop${bt} revokes OpenChamber access and attempts owned-process cleanup without waking compute. Saved files remain; detached jobs may continue. A response with ${bt}cleanup_pending: true${bt} is not a completed shutdown.
+
+CollabMD rooms are available from the owner Sandboxes dashboard. Sharing controls
+are owner-dashboard-first, not new agent lifecycle tools. Agents
+can read saved Markdown in ${bt}~/workspace/public-collaborative-docs/${bt}; pause
+human editing before external rewrites. A saved file can lag browser keystrokes.
+See https://github.com/bayleaf-ucsc/bayleaf/blob/main/api/COLLABMD.md for boundaries.
 
 Poll status during setup, then open the returned private URL through the owner's
 browser login. Private browser links last up to 24 hours; expiry revokes link

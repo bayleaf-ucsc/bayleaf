@@ -480,6 +480,9 @@ export const BrowserSandboxStatusSchema = z.object({
   heartbeat_at: z.number().int().optional(),
   timeline: z.array(z.object({step:z.string(),at:z.number().int(),error:z.string().optional()})).max(40).optional(),
   previous_failure: z.object({at:z.number().int(),error:z.string(),progress:z.string(),elapsed:z.number().nonnegative()}).optional(),
+  access_revoked: z.boolean().optional().describe('Stop has revoked the preview and completed active connection invalidation.'),
+  cleanup_pending: z.boolean().optional().describe('Owned-process cleanup is still pending; starting again is blocked.'),
+  cleanup_error: z.string().optional(),
   url: z.string().url().optional(),
   error: z.string().optional(),
 }).openapi('BrowserSandboxStatus');

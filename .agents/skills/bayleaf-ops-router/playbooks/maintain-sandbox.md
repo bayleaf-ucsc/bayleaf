@@ -91,6 +91,36 @@ explicit operation on the user-owned installation. Preserve user files and histo
 
 ## Evidence and refinement log
 
+- 2026-10-20 (issue #94 approved rollout): Reconciled onto current main without
+  losing #113 diagnostics/arrival behavior. Added the missing Wrangler text-loader
+  rule before deployment. Real dashboard-managed public-room co-editing and End
+  sharing passed; a final UI regression caught hidden shutdown controls when the
+  machine sleeps or the link expires. Corrected that visibility, then verified
+  fresh managed URL/password generation and End sharing without waking compute.
+  Versions and accepted/waived qualification boundaries are in `api/COLLABMD.md`.
+
+- 2026-10-20 (issue #94, operator scope decision): Adam accepted the upstream
+  save-feedback limitation without a BayLeaf fix, then cancelled the two-hour
+  soak rather than waiting. Preserve duration as intentionally unqualified, not
+  a pass or a new rollout blocker. The soak wrapper's finally path retires its
+  previews, closes its test browsers and stops owner compute on cancellation.
+
+- 2026-10-20 (issue #94, owner-authorized live qualification): Used Adam's
+  label-verified sandbox without destroying it, and existing installation-scoped
+  previews without deploying this dirty branch. Real two-profile co-editing,
+  cookies, revocation/restart, comments, symlinks and Linux process cleanup passed.
+  A readonly fixture revealed silent Markdown save failure, so the two-hour soak
+  was deferred. Restored permissions, verified final-save recovery, revoked both
+  previews, closed test browsers and stopped owner compute. Source/controller
+  synthetic evidence must remain distinct from real managed-slot rollout.
+
+- 2026-10-20 (issue #94, local): CollabMD password mode needed explicit-origin
+  compatibility for both HTTP writes and WebSocket authentication, not WS alone.
+  Tested real pinned npm runtime separately from synthetic gateway/controller
+  checks. Per-app stop needs local spawn/cancellation locking as well as the owner
+  queue, and must distinguish access retirement from process cleanup. Linux,
+  real-chain browsers and two-hour qualification remain rollout gates.
+
 - 2026-10-20 (manual lifecycle smoke): One disposable machine exercised archive
   and restore (`/start`), with per-ID 404 cleanup. Compare provider delivery
   metadata without payloads against warehouse events: absent `sandbox.created`

@@ -125,7 +125,7 @@ try {
   assert.deepEqual(await rpc('readSession',{session:login.session}),{user:login.user,expiresAt:login.expiresAt});
   assert.equal((await rpc('managed',{session:login.session,service:'arbitrary',operation:'start'})).status,400);
   assert.equal((await rpc('managed',{session:login.session,service:'openchamber',operation:'start',email:'victim@example.test'})).status,400);
-  for (const service of ['openchamber','code-server','dufs']) for (const operation of ['status','start','restart']) {
+  for (const service of ['openchamber','code-server','dufs','collabmd']) for (const operation of ['status','start','restart','stop']) {
     const result = await rpc('managed',{session:login.session,service,operation});
     assert.equal(result.status,200);
     assert.deepEqual(result.body,{owner:login.user.email,path:'/'+operation,service});
