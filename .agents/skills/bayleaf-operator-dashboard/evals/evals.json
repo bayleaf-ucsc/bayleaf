@@ -1,0 +1,23 @@
+{
+  "skill_name": "bayleaf-operator-dashboard",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Open the BayLeaf operator dashboard so we can iterate on it. Reuse it if it's already running.",
+      "expected_output": "Check the expected loopback dashboard, reuse or launch from telemetry with npm run dashboard, open the exact 127.0.0.1 URL and verify panels. Keep credentials out of outputs and make no production changes.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "The arrival spike tooltip is hard to use on my phone. Make it easier to inspect the service and network mix without dropping the counts or the Unknown column.",
+      "expected_output": "Inspect existing UI, make a targeted local interaction change retaining the fixed shade scale and count labels, verify tap and keyboard behavior and viewport bounds, and preserve expiry clearing and hot reload.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Can we chart Chat requests per minute from the telemetry we already have? Don't collect anything new or publish this yet.",
+      "expected_output": "Inspect counter/reset metadata and existing samples, derive only defensible same-series rates with deduplication and reset/coverage handling, preserve gaps and warnings, add synthetic tests, and make no collector deployment or collection changes.",
+      "files": []
+    }
+  ]
+}

@@ -13,6 +13,7 @@ whole clump.
 
 | Situation | Playbook |
 |---|---|
+| Launching or maintaining the local operator telemetry dashboard | `../bayleaf-operator-dashboard/SKILL.md` (dedicated skill) |
 | Maintaining BayLeaf Sandbox, its hosted plugin/tools/skills, browser workspace, or application pins | `playbooks/maintain-sandbox.md` |
 | Dependabot issue on `api/`, dependency version bump | `playbooks/api-dependency-bump.md` |
 | New Open WebUI version for Chat | `playbooks/owui-version-bump.md` |

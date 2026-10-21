@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test test/*.test.js otlp/*.test.mjs adapters/*.test.mjs qualification/sources.test.mjs",
+    "dashboard": "node --watch dashboard/server.mjs",
+    "test": "node --test test/*.test.js otlp/*.test.mjs adapters/*.test.mjs qualification/sources.test.mjs dashboard/*.test.mjs",
     "test:python": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s adapters -p 'test_*.py'",
     "dev": "wrangler dev --local",
     "migrate:local": "wrangler d1 migrations apply TELEMETRY_DB --local"

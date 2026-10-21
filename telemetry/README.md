@@ -15,6 +15,11 @@ document their separate source and protocol qualifications.
 
 ## Local checks
 
+For the private, hot-reloading operator workbench, run `npm run dashboard` here
+and open `http://127.0.0.1:4318`. See [dashboard/README.md](dashboard/README.md)
+for credential handling, read bounds and snapshot expiry. It uses existing private
+reads and does not deploy or change collection.
+
 Run `npm test` here with Node 22.13+ (`node:sqlite`). Tests use real in-memory
 SQLite and actual local workerd/D1, with synthetic data and outbound requests
 blocked. Dev-tool dependencies are pinned in `package.json`; tests can reuse the
