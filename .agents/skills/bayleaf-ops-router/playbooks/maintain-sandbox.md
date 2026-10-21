@@ -91,6 +91,12 @@ explicit operation on the user-owned installation. Preserve user files and histo
 
 ## Evidence and refinement log
 
+- 2026-10-21 (Inboxes discovery, local): Aligned hosted skill descriptions with
+  the dedicated desktop skill and linked a shared focused workflow reference.
+  Both adapter suites pass without regenerating dirty-submodule release assets;
+  publication, clean pins and installed-client behavioral qualification remain
+  separate gates. See `inbox/qualification/discovery.md`.
+
 - 2026-10-20 (issue #94 approved rollout): Reconciled onto current main without
   losing #113 diagnostics/arrival behavior. Added the missing Wrangler text-loader
   rule before deployment. Real dashboard-managed public-room co-editing and End

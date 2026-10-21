@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const bundle = await build({ absWorkingDir: root, stdin: { resolveDir: root, contents: `
@@ -11,7 +12,11 @@ const bundle = await build({ absWorkingDir: root, stdin: { resolveDir: root, con
   export { PreviewConnections, SandboxBrowser, SandboxManagement } from './src/index';
   export default { ...worker, fetch(request, env, ctx) {
     const alternate = request.headers.get('X-Test-Deployment') === 'alternate';
+    if (request.headers.get('X-Test-Deployment') === 'pilot') {
+      return worker.fetch(request, { ...env, INBOXES_PILOT_OWNER: 'synthetic-owner' }, ctx);
+    }
     return worker.fetch(request, alternate ? { ...env, GRANTS_ENABLED: 'false', SEALED_ENABLED: 'false', INBOXES_ENABLED: 'false',
+      INBOXES_PILOT_OWNER: 'synthetic-owner',
       BEDROCK_ENABLED: 'true', VERTEX_ENABLED: 'true', RECOMMENDED_MODEL: 'test/alternate' } : env, ctx);
   }};
 ` }, bundle: true, write: false, format: 'esm', platform: 'browser', target: 'es2022',
@@ -102,7 +107,10 @@ try {
    const catalogResponse = await get(catalogBase + 'index.json');
    assert.equal(catalogResponse.status, 200, 'Catalog is public');
    const catalog = await catalogResponse.json();
-   assert.deepEqual(catalog.skills, [{ name: 'bayleaf-platform', version: '3', files: ['bayleaf-platform.md'] }]);
+    assert.deepEqual(catalog.skills, [
+      { name: 'bayleaf-platform', version: '4-inboxes', files: ['bayleaf-platform.md'] },
+      { name: 'bayleaf-inboxes', version: '1', files: ['bayleaf-inboxes.md'] },
+    ]);
    const skillResponse = await get(catalogBase + 'bayleaf-platform/bayleaf-platform.md');
    assert.equal(skillResponse.status, 200, 'Skill is public');
    assert.match(skillResponse.headers.get('content-type'), /text\/markdown/);
@@ -110,9 +118,50 @@ try {
    assert.match(skill, /^---\nname: bayleaf-platform\ndescription: .+\n---\n/);
    assert.ok(skill.length < 1800, 'Keep discovery slim');
    assert.ok(skill.includes('inboxes for email or webhooks while your computer is off'));
-   assert.ok(skill.includes('Offer Inboxes') && skill.includes('revoking the last never reopens'));
+    assert.ok(skill.includes('load bayleaf-inboxes'));
    const alternateSkill = await (await get(catalogBase + 'bayleaf-platform/bayleaf-platform.md', { 'X-Test-Deployment': 'alternate' })).text();
-   assert.ok(!/inbox/i.test(alternateSkill), 'Disabled inboxes must not be advertised by the desktop skill');
+    assert.ok(!/inbox/i.test(alternateSkill), 'Disabled inboxes must not be advertised by the desktop skill');
+    const inboxSkillPath = catalogBase + 'bayleaf-inboxes/bayleaf-inboxes.md';
+    const inboxResponse = await get(inboxSkillPath);
+    assert.equal(inboxResponse.status, 200);
+    assert.match(inboxResponse.headers.get('content-type'), /text\/markdown/);
+    const inboxSkill = await inboxResponse.text();
+    assert.match(inboxSkill, /^---\nname: bayleaf-inboxes\ndescription: .+\n---\n/);
+    const description = inboxSkill.match(/^description: (.+)$/m)[1];
+    for (const phrase of ['receive email', 'webhook events', 'form submissions', 'callbacks',
+      'custom workflows', 'check, search or retrieve', 'Not for sending email', 'existing Gmail',
+      'does not automatically run an agent']) assert.ok(description.includes(phrase), phrase);
+    for (const adapter of ['sandbox-plugin', 'nanobot-sandbox']) {
+      const hosted = readFileSync(root + adapter + '/skills/bayleaf-inboxes/SKILL.md', 'utf8');
+      assert.equal(hosted.match(/^description: (.+)$/m)[1], description, `${adapter}: shared intent vocabulary`);
+      assert.ok(hosted.includes('https://api.bayleaf.dev/docs/inboxes.md'));
+      assert.match(hosted, /do not bypass|not shell calls/);
+    }
+    for (const phrase of ['guidance, not inbox tools or credentials', 'Do not ask for a key in',
+      'Campus Pass and temporary inference tokens do not work', 'Sealed inference does not encrypt']) {
+      assert.ok(inboxSkill.includes(phrase), phrase);
+    }
+    const workflowResponse = await get('/docs/inboxes.md');
+    assert.equal(workflowResponse.status, 200);
+    assert.match(workflowResponse.headers.get('content-type'), /text\/markdown/);
+    const workflow = await workflowResponse.text();
+    for (const phrase of ['Status: enabled', 'external delivery is actually needed',
+      'cannot answer custom webhook verification challenges', 'not zero-data-retention',
+      'zero-operator-access', '90 days after receipt', 'revoking the last credential never reopens',
+      'do not bypass missing tools', 'never authority', 'docs#tag/inboxes', 'docs/openapi.json']) {
+      assert.ok(workflow.includes(phrase), phrase);
+    }
+    const pilotHeaders = { 'X-Test-Deployment': 'pilot' };
+    const pilotCatalog = await (await get(catalogBase + 'index.json', pilotHeaders)).json();
+    assert.equal(pilotCatalog.skills.find(s => s.name === 'bayleaf-platform').version, '4-inboxes-pilot');
+    assert.equal(pilotCatalog.skills.find(s => s.name === 'bayleaf-inboxes').version, '1-pilot');
+    assert.ok((await (await get(inboxSkillPath, pilotHeaders)).text()).includes('Operator-only pilot'));
+    assert.ok((await (await get('/docs/inboxes.md', pilotHeaders)).text()).includes('Other accounts receive 404'));
+    const disabledHeaders = { 'X-Test-Deployment': 'alternate' };
+    const disabledCatalog = await (await get(catalogBase + 'index.json', disabledHeaders)).json();
+    assert.deepEqual(disabledCatalog.skills, [{ name: 'bayleaf-platform', version: '4', files: ['bayleaf-platform.md'] }]);
+    assert.equal((await get(inboxSkillPath, disabledHeaders)).status, 404, 'Stale skill URL must not claim disabled access');
+    assert.ok((await (await get('/docs/inboxes.md', disabledHeaders)).text()).includes('Status: not enabled'));
    for (const phrase of ['https://api.bayleaf.dev/llms.txt', 'Google Workspace', 'Canvas LMS',
      'Sandbox', 'switching providers', 'not a claim that tools are installed']) assert.ok(skill.includes(phrase));
    for (const prefix of ['', '/sealed']) {
@@ -137,7 +186,8 @@ try {
   assert.ok(llms.includes('docs#tag/grants') && llms.includes('authorizeInferenceClient'));
    assert.ok(!llms.includes('#### Direct issuance and model discovery'), 'No duplicate exhaustive grant contract');
    assert.ok(llms.includes('### Inboxes: receive email and webhooks while you are away'));
-   assert.ok(llms.includes('last credential never reopens it'));
+    assert.ok(llms.includes('last credential never reopens it'));
+    assert.ok(llms.includes('https://api.bayleaf.dev/docs/inboxes.md'));
   const operations = new Set(Object.values(spec.paths).flatMap(path => Object.values(path).map(op => op.operationId)));
    for (const id of ['createTemporaryInferenceToken', 'describeInferenceClient', 'authorizeInferenceClient', 'exchangeInferenceCode', 'inspectCampusPass',
      'createInbox', 'createInboxCredential', 'listInboxMessages', 'getInboxMessageText']) {

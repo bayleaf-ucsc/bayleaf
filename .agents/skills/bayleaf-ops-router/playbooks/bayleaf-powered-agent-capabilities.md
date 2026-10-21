@@ -153,6 +153,12 @@ API to keep a retired capability appearing functional.
 
 ## Refinement log
 
+- 2026-10-21 (Inboxes discovery, local): Desktop now has a dedicated catalog skill
+  and all three non-Chat skills link to a focused workflow guide. Version catalog
+  entries for feature/pilot text changes too, not just source edits. Workerd checks
+  delivery and negative discovery; fresh-client behavioral prompts and rollout
+  gates are recorded in `inbox/qualification/discovery.md`, not claimed as passed.
+
 - 2026-10-20 (Inboxes #97, local only): Approved HTTP/desktop/hosted exposure
   matrix lives in `inbox/QUALIFICATION.md`; Chat and dashboard deferred. Add
   negative-discovery checks to hosted installers as well as docs. Independent

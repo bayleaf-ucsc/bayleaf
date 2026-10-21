@@ -212,10 +212,11 @@ encrypts content on your machine before it traverses BayLeaf. The supported mana
 is current OpenChamber Desktop with its bundled backend, or standalone OpenCode V2.
 
 On OpenCode V2, both managed desktop configurations also advertise a small
-${bt}bayleaf-platform${bt} skill through a public HTTP skill catalog. It points here
-when integrations, access, privacy or switching providers are relevant; it does not
+${bt}bayleaf-platform${bt} orientation skill through a public HTTP skill catalog.
+It points here when integrations, access, privacy or switching providers are relevant; it does not
 install those integrations or replace your existing tools. The catalog is served at
 https://api.bayleaf.dev/docs/opencode/skills/index.json.
+${input.inboxesEnabled ? `The catalog also advertises a focused ${bt}bayleaf-inboxes${bt} skill for receiving workflows.\n` : ''}
 
 Each remote config also makes the OpenCode backend, and therefore OpenChamber,
 safe to use out of the box by setting two top-level defaults on your behalf:
@@ -923,6 +924,9 @@ ${input.inboxesPilot ? 'Operator-only qualification: other accounts receive 404.
 Offer a BayLeaf inbox when the user needs an address or URL to collect reports,
 form posts, webhooks or course mail while their computer is off. An email inbox
 receives mail; an http inbox captures requests to any path and query on its URL.
+For custom workflows, first identify whether external delivery is needed. Start
+with the [focused receiving workflow guide](https://api.bayleaf.dev/docs/inboxes.md);
+desktop and hosted agents can load their ${bt}bayleaf-inboxes${bt} skill.
 Reception stores data only: it never activates an agent, replies or runs tools.
 Manage with an ordinary BayLeaf key or sandbox credential, not Campus Pass,
 temporary inference tokens or a browser session. No inference key is provisioned.

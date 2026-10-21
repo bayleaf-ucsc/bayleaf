@@ -161,6 +161,11 @@ forwarding, execution or acting on sender-written instructions.
 
 ## Local evidence
 
+- 2026-10-21 discovery revision: dedicated managed-desktop inbox skill, shared
+  focused receiving-workflow guide, aligned hosted intent descriptions and
+  deployment-aware catalog checks. See `qualification/discovery.md` and its
+  pending fresh-client behavioral cases. Local only, not a rollout or proof of
+  installed-client intent recognition.
 - Independent contract tests run in Miniflare with actual D1/R2, email and cron
   events. Four mutation checks established that tests detect owner-filter removal,
   expired-message visibility, wildcard-search escaping and orphan-check removal.
