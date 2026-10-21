@@ -1,4 +1,4 @@
-"""One authorized synthetic UCSC self-mail. Native Gmail confirmation is retained.
+"""One authorized synthetic self-mail. Native Gmail confirmation is retained.
 
 Run only with --send-one after explicit send authorization. No SMTP semantics are
 inferred from Gmail API submission. Private evidence stays outside the repository.
@@ -34,12 +34,14 @@ def command(args, timeout=30):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--send-one', action='store_true', required=True)
+    parser.add_argument('--account', choices=['ucsc', 'as'], default='ucsc')
     parser.add_argument('--guard-ticket', help='Explicit approved Gmail ticket for this run')
     args = parser.parse_args()
-    gws = ['gws-ucsc'] + (['--guard-ticket', args.guard_ticket] if args.guard_ticket else [])
+    gws = ['gws-' + args.account] + (['--guard-ticket', args.guard_ticket] if args.guard_ticket else [])
     os.umask(0o077)
     sender = os.environ['BAYLEAF_QUALIFICATION_SENDER']
-    if not sender.endswith('@ucsc.edu') or any(c in sender for c in '\r\n'):
+    domain = {'ucsc': 'ucsc.edu', 'as': 'adamsmith.as'}[args.account]
+    if not sender.endswith('@' + domain) or any(c in sender for c in '\r\n'):
         raise RuntimeError('unexpected_sender')
     token = os.environ['BAYLEAF_QUALIFICATION_TOKEN']
     if not token.startswith('sk-bayleaf-'):

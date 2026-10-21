@@ -103,6 +103,28 @@ BayLeaf Inboxes remains receive-only. Gmail is solely the external test sender.
 Restricted creation remains disabled; the received message used an unrestricted
 temporary inbox and was independently verified afterward.
 
+## Personal-profile follow-up: delivery passes, alignment fails
+
+With separate explicit send authorization and a one-hour Gmail-only ticket for
+the personal profile, `--account as` selected `gws-as` and verified that profile's
+primary sender. Exactly one synthetic message was submitted and received in a
+new unrestricted temporary inbox; the raw message was 7,224 bytes. Destruction
+was acknowledged afterward, with physical finalization not yet verified.
+
+The signature passed cryptographically in both Node and workerd, but used
+`d=adamsmith-as.20251104.gappssmtp.com`, `s=20251104`, rather than the From domain
+`adamsmith.as`. The strict allowlist policy therefore returned
+`trusted: false`, `no-qualifying-signature`. An independent workerd run on the
+exact received bytes reproduced the valid signature and alignment rejection
+(129 ms local wall time). A selector pin cannot repair domain misalignment.
+
+This is expected policy behavior, not a failed mail receipt or broken RSA
+verification. It establishes how this specific personal-profile message was
+signed, not every possible mail path for that domain. Domain-aligned DKIM mail
+configuration would need separate investigation and authorization; neither the
+sender configuration nor the inbox policy was changed. Both approved tickets
+are left to expire normally, and no bearer is recorded in source or evidence.
+
 ## What Gmail cannot qualify
 
 Gmail API submission and BayLeaf receipt prove neither the final DATA response
