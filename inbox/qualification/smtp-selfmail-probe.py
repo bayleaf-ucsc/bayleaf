@@ -34,7 +34,9 @@ def command(args, timeout=30):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--send-one', action='store_true', required=True)
-    parser.parse_args()
+    parser.add_argument('--guard-ticket', help='Explicit approved Gmail ticket for this run')
+    args = parser.parse_args()
+    gws = ['gws-ucsc'] + (['--guard-ticket', args.guard_ticket] if args.guard_ticket else [])
     os.umask(0o077)
     sender = os.environ['BAYLEAF_QUALIFICATION_SENDER']
     if not sender.endswith('@ucsc.edu') or any(c in sender for c in '\r\n'):
@@ -42,7 +44,7 @@ def main():
     token = os.environ['BAYLEAF_QUALIFICATION_TOKEN']
     if not token.startswith('sk-bayleaf-'):
         raise RuntimeError('unexpected_token')
-    identity = command(['gws-ucsc', 'gmail', 'users', 'settings', 'sendAs', 'list',
+    identity = command(gws + ['gmail', 'users', 'settings', 'sendAs', 'list',
                         '--params', '{"userId":"me"}'])
     assert any(x.get('sendAsEmail') == sender and x.get('isPrimary')
                for x in identity.get('sendAs', [])), 'unexpected_sender'
@@ -76,7 +78,7 @@ def main():
                'Synthetic self-mail for issue 97. No personal or third-party content.\r\n')
         evidence['guarded_send_invoked'] = True
         (root / 'manifest.json').write_text(json.dumps(evidence))
-        sent = command(['gws-ucsc', 'gmail', 'users', 'messages', 'send',
+        sent = command(gws + ['gmail', 'users', 'messages', 'send',
                         '--params', '{"userId":"me"}', '--json',
                         json.dumps({'raw': base64.urlsafe_b64encode(raw.encode()).decode()})], 90)
         evidence['gmail_message_id'] = sent.get('id')

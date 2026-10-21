@@ -39,7 +39,7 @@ read-only check identified Cloudflare error 1010 on the default Python HTTP
 client. The probe now identifies itself as `BayLeafQualification/1.0` rather than
 using Python's default User-Agent. This changes no server rule or credential.
 
-## Final outcome: blocked before confirmed submission, invocation finished
+## Initial outcome: blocked before confirmed submission, invocation finished
 
 The third invocation created exactly one empty, unrestricted disposable email
 inbox. It reached the native Gmail confirmation and ended with `RuntimeError`
@@ -75,6 +75,34 @@ that an API timeout alone proves a message could never have been submitted.
   handle for a later one-shot scheduled-cleanup verification. The two earlier
   failed-create manifests contain no created resource.
 
+## Approved one-hour Gmail ticket: successful follow-up
+
+After explicit authorization for synthetic test mail, the operator approved a
+one-hour UCSC Gmail-only guard ticket. The probe explicitly attached it to each
+`gws-ucsc` call; no direct Gmail credential access or guard bypass was used.
+`--guard-ticket` is an optional probe argument, not a stored credential or
+automatic approval mechanism. The ticket remains scoped to this session and is
+left to expire normally.
+
+- Exactly one confirmed Gmail submission and one matching BayLeaf receipt after
+  the single ten-second readback. The received raw MIME was 7,325 bytes.
+- Live public DNS verification passed in both Node and pinned workerd:
+  `d=ucsc.edu`, `s=ucsc-google-2018`, `a=rsa-sha256`, strict policy.
+- A separate workerd check used the **exact received bytes**, without line-ending
+  conversion. The correct selector pin passed (126 ms); an intentionally wrong
+  selector pin failed with `no-qualifying-signature` (48 ms). These are local
+  verifier wall times, not production CPU measurements.
+- This qualifies this actual campus-signed specimen and same-signature selector
+  pin behavior. It does not establish every campus mail path uses this selector
+  or justify permanently pinning it without handling future key rotation.
+- Destruction of the newly created disposable inbox was acknowledged in `finally`.
+  Physical finalization of this follow-up resource remains unverified. Synthetic
+  raw evidence is private outside the repository; the Gmail Sent copy remains.
+
+BayLeaf Inboxes remains receive-only. Gmail is solely the external test sender.
+Restricted creation remains disabled; the received message used an unrestricted
+temporary inbox and was independently verified afterward.
+
 ## What Gmail cannot qualify
 
 Gmail API submission and BayLeaf receipt prove neither the final DATA response
@@ -86,8 +114,8 @@ post-commit acknowledgement ambiguity remain blocked by the lack of an identifie
 isolated route and controlled SMTP-boundary evidence. Production restricted
 creation remains disabled. No fault is injected into the shared receiver.
 
-Minimal next steps are to coordinate a fresh one-message attempt and approve its
-native **Allow Once** Gmail action while it is active, then identify an **existing** operator-controlled sender whose logs expose
+The successful follow-up closes basic delivery and actual campus-selector evidence.
+Next identify an **existing** operator-controlled sender whose logs expose
 Cloudflare's final SMTP responses and retry attempts. Without that sender or a
 separately approved isolated fault route, retain the SMTP gate as unqualified;
 do not provision new accounts/infrastructure or enable the global DKIM gate.
