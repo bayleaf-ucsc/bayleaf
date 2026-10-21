@@ -1,7 +1,7 @@
 # Daytona live qualification
 
 2026-10-20 Pacific (2026-10-21 UTC). **Real state-update deliveries and organization
-OTLP metrics qualified. Temporary resources cleaned up; production collection off.**
+OTLP metrics qualified. Both sources are now active: see permanent activation below.**
 
 Adam approved proceeding with live qualification after reviewing the OTLP
 transport caveat: per-sandbox telemetry can reach Cloudflare even though the
@@ -12,7 +12,9 @@ publishing the privacy notice, committing or pushing.
 
 - The existing development Daytona credential is valid. Its current-key endpoint
   returned HTTP 200 and permits sandbox/volume operations, secrets management
-  and limit reads. It has no organization/webhook administration permission.
+  and limit reads. Those printed permissions did not list webhook administration;
+  later scoped-portal access below demonstrates why that list alone was not a
+  complete capability assessment.
   No credential or user identity is copied into this record.
 - Complete sandbox inventory returned one organization, no next cursor, and all
   returned machines carried the existing BayLeaf deployment-label key. No owner,
@@ -109,3 +111,54 @@ delivery remain observation work. Continue the
 
 Provider-client evidence:
 <https://github.com/daytonaio/clients/blob/main/api-client/src/api/webhooks-api.ts>
+
+## Permanent activation: verified
+
+The operator approved commit/push and permanent collection, explicitly waiving
+affected-user notification. Implementation/privacy commit `dd21337` was pushed
+to `main`; public privacy bytes were fetched and matched before activation.
+
+- Applied only migration `0004_daytona_lifecycle.sql` to production D1. Disabled
+  collector deployment `5698040c-edb3-40f1-bb02-957a23a44aa0` preserved existing
+  readers/writers; all five old write tokens authenticated before merging the
+  new dedicated `daytona` writer. No old token or reader was rotated.
+- Installed a fresh receipt secret and endpoint signing secret. Provider source
+  configuration was prepared paused, then production flags enabled with 90-day
+  retention. The exporter appends `/v1/{signal}` to its base: added and tested
+  canonical `/v1/daytona/otlp/v1/{metrics|logs|traces}` paths alongside short
+  per-signal aliases. Corrected active deployment:
+  `39d6720a-5bfb-4e5b-9af2-f2f48cd3344d`.
+- Owner dashboard saved OTLP base `https://telemetry.bayleaf.dev/v1/daytona/otlp`
+  with one masked Authorization header. Actual private warehouse readback
+  contained all eight approved names, exact 90-day expiry and ongoing OWUI
+  exports. No per-sandbox metric identity dimensions were retained.
+- Browser menu activation stopped responding. Used Daytona's documented
+  `app-portal-access` API with the existing credential and official Svix Python
+  SDK **2.8.0** for scoped endpoint control, without permission changes. SDK
+  token routing worked where a direct request to the default Svix host returned
+  401; v2 endpoint models name the subscription field `event_types`.
+  Verified exact destination/subscriptions before patching only `disabled:false`,
+  read back enabled, then refreshed Daytona endpoint presence (HTTP 204).
+- Permanent webhook subscriptions are only sandbox creation and state updates.
+  Production readback verified real signed state notifications, including actual
+  stop transitions, 15-minute bucket alignment, positive counts, exact 90-day
+  expiry and no resource-identity columns. Creation completeness remains unverified.
+- A disposable production acceptance sandbox was deleted, with exact per-ID
+  GET confirming **404**. The first activation window includes synthetic test
+  notifications: exclude or annotate that window in human-usage interpretations.
+  No pre-existing user sandbox was operated on.
+- Live security checks: anonymous/wrong-source OTLP 401, authenticated invalid
+  payload 400, invalid webhook signature 400, existing operator reader 200.
+  Local suite passed **94 JavaScript tests and eight Python tests**. Public
+  integration records distinguish lifecycle and capacity receiver switches,
+  exposing configuration only, never observations or activity counts.
+- Final public integration-status deployment:
+  `866b0c53-c83a-4e2f-96fd-8758c8ec58f3`. Public configuration records were
+  fetched and verified. Fresh private reads confirmed both Daytona status classes,
+  all eight gauge names and lifecycle transitions with 90-day expiry, alongside
+  new policy-3 OWUI exports. Bounded reads were not truncated.
+
+Permanent credentials/control IDs are in ignored mode-0600 operator files,
+not this public record. No user email was sent. Automatic retry horizon,
+sustained cadence under load, creation-event completeness and real trace-discard
+delivery remain limitations, not claims established by activation.

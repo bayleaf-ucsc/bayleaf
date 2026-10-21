@@ -75,7 +75,7 @@ test('retention reflects bounded configuration, overrides, and conservative defa
   assert.match(meta(override, 'metrics'), /Kept 90 days/);
   for (const value of ['91', '0', '-1', '1.5', 'Infinity', '<script>secret</script>']) {
     const html = renderDashboard({ RETENTION_DAYS: value });
-    assert.equal((html.match(/Retention misconfigured \(must be 1–90 days\)/g) ?? []).length, 4);
+    assert.equal((html.match(/Retention misconfigured \(must be 1–90 days\)/g) ?? []).length, 5);
     assert.doesNotMatch(html, /<script>|secret/);
   }
   assert.match(renderDashboard(enabled), /lower limit set earlier stays in force/);
@@ -100,4 +100,15 @@ test('unsupported methods cannot become an ingestion endpoint', async () => {
   assert.equal(response.status, 405);
   assert.equal(response.headers.get('Allow'), 'GET, HEAD');
   assert.equal(await response.text(), '');
+});
+
+test('Daytona public configuration distinguishes both receiver switches without data reads', () => {
+  const closed = renderDashboard(enabled);
+  assert.match(meta(closed, 'lifecycle'), /Receiver closed: Daytona webhook switch off/);
+  assert.match(group(closed, 'metrics'), /Receiver closed: Daytona OTLP switch off/);
+  assert.match(meta(closed, 'lifecycle'), /Kept 90 days/);
+  const open = renderDashboard({ ...enabled, DAYTONA_WEBHOOKS_ENABLED: 'true', DAYTONA_OTLP_ENABLED: 'true' });
+  assert.match(meta(open, 'lifecycle'), /Receiver open/);
+  assert.doesNotMatch(open, /Daytona (?:webhook|OTLP) switch off/);
+  assert.doesNotMatch(open, /DAYTONA_WEBHOOKS_ENABLED|DAYTONA_OTLP_ENABLED/);
 });

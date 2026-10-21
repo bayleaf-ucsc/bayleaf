@@ -11,8 +11,8 @@
   "vars": {
     "TELEMETRY_ENABLED": "true",
     "BROWSER_ENABLED": "true",
-    "DAYTONA_WEBHOOKS_ENABLED": "false",
-    "DAYTONA_OTLP_ENABLED": "false",
+    "DAYTONA_WEBHOOKS_ENABLED": "true",
+    "DAYTONA_OTLP_ENABLED": "true",
     "RETENTION_DAYS": "90"
   },
   "d1_databases": [{

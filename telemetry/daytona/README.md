@@ -1,4 +1,4 @@
-# Daytona telemetry: qualified, permanent activation pending
+# Daytona telemetry: live lifecycle and organization metrics
 
 Prepared 2026-10-20 at Adam's request for both lifecycle webhooks and OTLP.
 Temporary qualification configuration/resources were restored or removed after testing.
@@ -7,8 +7,9 @@ Adam subsequently approved live qualification under the transport caveat below.
 Real state-update deliveries and organization metrics are qualified; temporary
 resources/configuration were cleaned up. See [`../qualification/daytona.md`](../qualification/daytona.md).
 The operator subsequently approved commit/push, privacy publication and permanent
-activation, and waived affected-user notification. No permanent source is active
-until deployment and private readback are recorded.
+activation, and waived affected-user notification. Both sources are enabled with
+real production readback and 90-day retention. See the qualification/activation
+record for evidence, limitations and rollback.
 
 ## Approved collection policy
 
@@ -77,6 +78,9 @@ regional overlap and source cadence require a real-export qualification.
   discarded before point decoding. Unknown metric names are discarded; invalid
   approved metric types, units, dimensions, exemplars or values fail closed.
   Empty eligible sets return success **without inserting zero samples or status**.
+- The exporter base URL appends `/v1/{signal}`. Beneath
+  `/v1/daytona/otlp`, both `/v1/{metrics|logs|traces}` and the short
+  `/{metrics|logs|traces}` explicit-endpoint aliases are accepted.
 - `/v1/daytona/otlp/logs` and `/traces`: authenticate, immediately cancel the
   body without buffering/decoding, and return an empty OTLP success response to
   avoid retries. These are discard endpoints, not a log/trace collection facility.

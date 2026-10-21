@@ -2,7 +2,8 @@
 
 Read root `AGENTS.md` first. Issue [#112](https://github.com/bayleaf-ucsc/bayleaf/issues/112)
 tracks this work. On 2026-10-20 the operator explicitly approved deployment and
-live collection of all four classes with 90-day retention. Approval is not proof
+live collection of five classes with 90-day retention, including the later Daytona
+approval below. Approval is not proof
 of deployment or activation; the local collector remains disabled by default.
 Production is live at `telemetry.bayleaf.dev` using `wrangler.production.jsonc`,
 with 90-day retention and both receiver switches enabled. Arrivals from all four
@@ -42,12 +43,12 @@ The default Wrangler config has no real database ID, route or account binding;
 Workers observability and both collection switches are off.
 
 Retention defaults to **7 days as a conservative local placeholder**. Approved
-production retention is **90 days for all four classes**, configured before
+production retention is **90 days for all five classes**, configured before
 first database use; accepted configuration is integer 1–90. Policy version 2
 broadens the bound, not any existing database's durable ceiling.
 Per-class `retention_state` persists a decreasing
 TTL ceiling and increasing retired-observation cutoff, atomically with each
-admission/read/purge. Do not delete/reset these four content-free rows during
+admission/read/purge. Do not delete/reset these five content-free rows during
 purge. Configuration cannot raise a recorded ceiling or restore retired events;
 an increase requires an explicitly reviewed policy migration. Metric batch
 admission checks every point time as well as envelope/receipt time. Private
@@ -75,7 +76,7 @@ The operator also authorized public GET/HEAD `/docs` (Scalar reference) and
 `/docs/openapi.json` on 2026-10-20. These document existing contracts, grant no
 data access, read no credentials/database and remain available with ingestion
 disabled. Keep the root status dashboard. The public reference covers only the
-five operator GET `/v1/read/*` routes, with concise field/parameter descriptions;
+six operator GET `/v1/read/*` routes, with concise field/parameter descriptions;
 do not reintroduce ingestion or public-page operations. `src/openapi.js` derives
 read vocabularies/limits. Update contract tests with storage/read changes.
 The minimal Scalar shell pins its external jsDelivr script, disables interactive
@@ -86,11 +87,12 @@ Source activation is separate rollout work, not part of local
 policy editing. Privacy/retention drafts require exact-diff publication approval
 before commit/push; affected-user notice text/notification remains an operator gate.
 
-## Prepared Daytona integration, not activated
+## Live Daytona integration
 
 `daytona/README.md` records the approved policy and live qualification gates for
-webhooks and organization-only OTLP metrics. Both new switches default false,
-including in the production config. Do not infer activation from this local code.
+webhooks and organization-only OTLP metrics. Both switches default false locally;
+production enables them with 90-day retention. Real private readback verified both
+sources after migration `0004`, without changing existing writer/read authority.
 Service policy 3 adds source `daytona`, eight fractional capacity gauges and a
 fifth class, `lifecycle`: only 15-minute transition-count buckets, no resource
 identifiers. Migration `0004` must precede deployment. Five content-free retention
@@ -98,6 +100,6 @@ rows now persist. The operator-read reference adds `/v1/read/lifecycle` without
 new public data access or agent exposure. The operator approved committing/pushing
 the reviewed privacy/code changes, then permanent activation, and explicitly
 waived affected-user notification. Qualification passed for state updates and
-organization gauges, not a complete creation census. Activation remains pending
-actual deployment/readback evidence; approval is not activation. Existing source
-activation evidence above is unchanged.
+organization gauges, not a complete creation census. Publication and permanent
+activation evidence are in `qualification/daytona.md`. Initial acceptance buckets
+include disposable synthetic traffic: do not interpret that as human usage.

@@ -9,6 +9,7 @@ const escape = value => String(value).replace(/[&<>"']/g, character => ({
 const CLASSES = [
   ['browser', 'Browser arrivals'], ['metrics', 'Service metrics'],
   ['probes', 'Synthetic probes'], ['deletions', 'Deletion reports'],
+  ['lifecycle', 'Sandbox lifecycle'],
 ];
 
 // Pure renderer; the optional record is a build-time/operator record, never request data.
@@ -18,6 +19,8 @@ export function renderDashboard(env = {}, record = integrations) {
   const browserEnabled = env.BROWSER_ENABLED === 'true';
   const gate = kind => !globalEnabled ? '<span class="closed">Receiver closed</span>'
     : kind === 'browser' && !browserEnabled ? '<span class="closed">Receiver closed: browser switch off</span>'
+      : kind === 'lifecycle' && env.DAYTONA_WEBHOOKS_ENABLED !== 'true'
+        ? '<span class="closed">Receiver closed: Daytona webhook switch off</span>'
       : '<span class="open">Receiver open</span>';
   const retention = kind => {
     try { return `Kept ${retentionMs(env, kind) / DAY} days`; }
@@ -26,7 +29,7 @@ export function renderDashboard(env = {}, record = integrations) {
   const groups = CLASSES.map(([kind, label]) => {
     const rows = record.sources.filter(source => source.kind === kind).map(source => `<li>
 <span class="name">${escape(source.name)}</span>
-<span class="detail">${source.enabled === true ? '' : '<strong>Not enabled.</strong> '}${escape(source.verification)}</span></li>`).join('');
+<span class="detail">${source.enabled === true ? '' : '<strong>Not enabled.</strong> '}${source.receiver === 'daytona-otlp' && env.DAYTONA_OTLP_ENABLED !== 'true' ? '<strong>Receiver closed: Daytona OTLP switch off.</strong> ' : ''}${escape(source.verification)}</span></li>`).join('');
     return `<section class="group" aria-labelledby="class-${kind}">
 <h3 id="class-${kind}">${label}</h3>
 <p class="meta">${gate(kind)} · ${retention(kind)}</p>

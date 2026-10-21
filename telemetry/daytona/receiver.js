@@ -160,7 +160,9 @@ export async function organizationEnvelope(request, env) {
 export async function daytonaReceiver(request, env, { now, authenticate, submit }) {
   const path = new URL(request.url).pathname;
   const webhook = path === '/v1/daytona/webhooks';
-  const otlp = path.match(/^\/v1\/daytona\/otlp\/(metrics|logs|traces)$/);
+  // OTLP base URLs append /v1/{signal}; keep the short signal routes as aliases
+  // for callers configured with explicit per-signal endpoint URLs.
+  const otlp = path.match(/^\/v1\/daytona\/otlp\/(?:v1\/)?(metrics|logs|traces)$/);
   if (!webhook && !otlp) return reply(404, 'not_found');
   if (new URL(request.url).search) return reply(400, 'invalid_request');
   if (request.method !== 'POST') return reply(405, 'method_not_allowed');

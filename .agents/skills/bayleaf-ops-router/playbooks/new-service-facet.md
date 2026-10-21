@@ -58,13 +58,19 @@ traffic without changing the Worker.
 
 ## Refinement log
 
+- 2026-10-20 (Daytona activation): OTLP base URLs append `/v1/{signal}`; qualify
+  the path prefix, not only a root test receiver. Svix SDK 2.8.0 handles scoped
+  portal-token routing and uses `event_types`; refresh Daytona endpoint presence
+  after direct endpoint updates. Browser menus can fail while ordinary forms work.
+
 - 2026-10-20 (Daytona qualified): Live CPU unit is `{cpu}`; state updates can
   repeat unchanged states. Timers can keep an old qualification actor's code
   resident during deploy: use fresh actor IDs and revision-bearing readback.
 
-- 2026-10-20 (Daytona live qualification, blocked): A valid sandbox API key does
-  not confer organization OTLP/webhook administration. Check current-key scopes
-  before provisioning a receiver; owner-dashboard authentication is a real gate.
+- 2026-10-20 (Daytona live qualification): Sandbox access did not prove OTLP
+  settings access (403). Webhook initialization 404 was not a permission verdict:
+  after owner initialization, the existing key could issue scoped portal access.
+  Verify actual operations rather than inferring the capability graph from scopes.
 
 - 2026-10-20 (Daytona telemetry, local preparation): Provider-wide OTLP export
   combines useful organization gauges with sandbox metrics/logs/traces. Storage

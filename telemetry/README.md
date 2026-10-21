@@ -1,4 +1,4 @@
-# BayLeaf telemetry: local Worker / D1 proof of concept
+# BayLeaf telemetry: bounded Worker / D1 collector
 
 For [issue #112](https://github.com/bayleaf-ucsc/bayleaf/issues/112).
 **Rollout in progress, 2026-10-20.** The collector, API/probe hooks and public
@@ -8,7 +8,10 @@ This is a bounded first-party
 warehouse, not a dashboard, public query service or general event/log collector.
 On 2026-10-20 the operator explicitly approved deployment and live collection of
 all four classes with **90-day** retention: browser arrivals, native OWUI aggregate
-metrics, deletion-job runs and existing synthetic probe-run summaries. Approval
+metrics, deletion-job runs and existing synthetic probe-run summaries. Daytona
+organization gauges and a fifth class, 15-minute sandbox lifecycle counts, were
+subsequently approved and activated: see [Daytona evidence](qualification/daytona.md).
+Approval
 is not evidence of deployment or source activation. No per-request Sealed
 inference metadata is authorized. `otlp/`, `adapters/` and `qualification/`
 document their separate source and protocol qualifications.
@@ -38,7 +41,8 @@ Do not replace the placeholder or run remote commands without approval.
 `src/worker.js` exports default Worker handlers and
 `createWorker({ otlp, clock } = {})`, allowing a trusted protocol decoder and
 deterministic test clock. The default uses `otlpHook` from
-`otlp/worker-adapter.mjs`; a factory without a hook has no OTLP route.
+`otlp/worker-adapter.mjs`; a factory without a hook has no native OWUI OTLP route.
+Daytona uses its separately gated [webhook and OTLP receiver](daytona/README.md).
 The hook signature is `otlp(request, { source, now })`: return the normalized
 metric envelope below. Authentication and budgets run before the decoder;
 core policy validation runs after it. `src/validate.js` exports
@@ -49,15 +53,15 @@ same retention configuration used for validation; storage also enforces durable
 policy independently of that caller-side validation.
 
 Physical tables: `browser_observations`, `metric_points`, `deletion_runs`,
-`probe_runs`, `source_status`, plus retry `receipts` and fixed minute
-`ingress_budgets`, and four content-free durable `retention_state` rows. Common typed columns carry schema/policy versions, observed,
+`probe_runs`, `lifecycle_buckets`, `source_status`, plus retry `receipts` and fixed minute
+`ingress_budgets`, and five content-free durable `retention_state` rows. Common typed columns carry schema/policy versions, observed,
 received and expiry times. Approved nested measurements are validated JSON,
 not arbitrary payload blobs. Browser referring hostnames are normalized lowercase;
 IP literals (including URL-recognized short/octal/hex/trailing-dot forms), URLs,
 paths, query/fragment and local hostname suffixes are rejected.
 Unknown referrer is `null`, not a claim of direct arrival.
 
-`src/policies.js` owns service policy version 2, wire schema version 1, names/dimensions,
+`src/policies.js` owns service policy version 3, wire schema version 1, names/dimensions,
 allowlists and safety bounds. Policy is deliberately **not baked into SQL**:
 reviewed scope can change without rebuilding storage. Unknown fields and
 arbitrary string dimensions fail closed. There is no raw request archive.
@@ -74,7 +78,7 @@ public when ingestion is off, require no credentials or database access, and
 grant no access to observations. Root `/` stays the integration-status dashboard.
 There is no public SQL, telemetry query, agent tool or new llms.txt exposure.
 
-The reference lists only the five GET `/v1/read/*` operations, not ingestion or
+The reference lists only the six GET `/v1/read/*` operations, not ingestion or
 public pages. `src/openapi.js` derives read enums and limits from policy; tests
 check route scope, response metadata and physical read columns.
 Run `node --test test/docs.test.js` for the focused credential-free check;
@@ -153,7 +157,7 @@ Service envelopes share:
 
 Times are UTC epoch milliseconds, durations milliseconds. Service outcomes are
 `success|partial|failure|skipped`. Sources are `owui`, `chat-retention`,
-`api-retention`, `sandbox-reaper`, `probe`, each restricted to its signal class
+`api-retention`, `sandbox-reaper`, `probe`, `daytona`, each restricted to its signal class
 and job allowlist. Explicit extension vocabularies include run start/end,
 job modes, per-source aggregate counters and retention configuration. See
 `src/policies.js` and adapters for exact allowed counters, jobs and probe codes.
@@ -170,8 +174,9 @@ preserved when supplied. Run bounds are independent of monotonic probe duration.
 Metrics envelopes have `points` (1–100). A point has metric `name`, `kind`,
 `unit`, `observed_at`, `attributes` and the following kind-specific fields:
 
-- Gauge: integer `value`. Native user gauges use unit `users`. These are global
-  database-derived readings, not per-worker increments or concurrent generators.
+- Gauge: integer `value` for native user counts, unit `users`: global database
+  readings, not per-worker increments or concurrent generators. Daytona capacity
+  gauges also allow finite fractional values with reviewed region/class dimensions.
 - Monotonic sum: integer `value`, `monotonic:true`, `temporality:delta|cumulative`,
   `start_at`. HTTP request count uses unit `1`.
 - Histogram: integer `count`, optional numeric `sum`, optional `min`/`max`,
@@ -220,7 +225,7 @@ Production needs platform/account abuse controls and actual allowance review.
 
 ## Private reads and investigation
 
-`GET /v1/read/{browser|metrics|deletions|probes|status}` requires the separate
+`GET /v1/read/{browser|metrics|deletions|probes|lifecycle|status}` requires the separate
 read bearer and explicit `from`, `to`, `limit` decimal integers. Time is
 `[from,to)`, maximum window seven days, maximum 500 rows, deterministic oldest
 first. Unknown/repeated parameters and windows ending more than 60 seconds in
@@ -247,10 +252,10 @@ telemetry delivery. No fresh status row is manufactured by retries.
 ## Retention and rollout gates
 
 `RETENTION_DAYS=7` remains a conservative **local placeholder**. Approved
-production retention is **90 days for each of the four classes**; production
+production retention is **90 days for each of the five classes**; production
 configuration must set this before first database use. Per-class overrides are
 `BROWSER_RETENTION_DAYS`, `METRICS_RETENTION_DAYS`, `DELETIONS_RETENTION_DAYS`,
-`PROBES_RETENTION_DAYS` (integer 1–90). Expiry is anchored to observed time,
+`PROBES_RETENTION_DAYS`, `LIFECYCLE_RETENTION_DAYS` (integer 1–90). Expiry is anchored to observed time,
 including the bounded 60-second source clock-skew allowance; receipt time does
 not re-anchor it. Metric points cannot inherit a newer envelope's expiry.
 An envelope cannot predate any contained point: early envelope expiry must not
@@ -279,10 +284,11 @@ Policy UPSERT plus operation execute in one D1 batch transaction, so concurrent
 old configurations cannot override a shortening. A read or ingestion of that
 class, status read, or scheduled purge observes configuration changes; an env
 change never presented to the database is not a recorded policy transition.
-The four class rows are the only intentionally nonexpiring policy metadata.
+The five class rows are the only intentionally nonexpiring policy metadata.
 For a disposable database created before migration 0002, start fresh or seed
 reviewed historical ceilings/cutoffs explicitly: absent erased history cannot
-be reconstructed by this migration. No production database exists for this PoC.
+be reconstructed by this migration. Production D1 is live: never reset it, its
+migration history, or its durable policy rows as though it were a disposable PoC.
 
 Scheduled purge runs each minute, deleting at most 500 rows per table per run,
 including expired receipts/status/budgets. This exceeds each table's configured

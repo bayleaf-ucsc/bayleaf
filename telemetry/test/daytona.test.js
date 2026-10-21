@@ -173,3 +173,12 @@ test('OTLP body-read deadlines are retryable and never reach storage', async () 
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { error: 'unavailable' });
 });
+
+test('OTLP base URL supports appended v1 signal paths without broadening routing', async t => {
+  const db = database(); t.after(() => db.close()); const env = envFor(db), app = worker();
+  assert.equal((await app.fetch(otlp(undefined, 'v1/metrics'), env)).status, 200);
+  assert.equal(db.sql.prepare('SELECT COUNT(*) n FROM metric_points').get().n, 1);
+  for (const signal of ['v1/logs', 'v1/traces'])
+    assert.equal((await app.fetch(otlp(Buffer.from('FAKE_PRIVATE'), signal), env)).status, 200);
+  assert.equal((await app.fetch(otlp(undefined, 'v1/v1/metrics'), env)).status, 404);
+});

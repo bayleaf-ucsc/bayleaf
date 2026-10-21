@@ -9,6 +9,8 @@
     { "name": "Monitoring probes", "kind": "probes", "enabled": true, "verification": "Verified" },
     { "name": "API retention job", "kind": "deletions", "enabled": true, "verification": "Deployed; regular schedule not yet confirmed" },
     { "name": "Sandbox reaper", "kind": "deletions", "enabled": true, "verification": "Deployed; regular schedule not yet confirmed" },
-    { "name": "Chat retention job", "kind": "deletions", "enabled": true, "verification": "Deployed; regular schedule not yet confirmed" }
+    { "name": "Chat retention job", "kind": "deletions", "enabled": true, "verification": "Deployed; regular schedule not yet confirmed" },
+    { "name": "Daytona organization metrics", "kind": "metrics", "receiver": "daytona-otlp", "enabled": true, "verification": "Verified in production: organization capacity gauges only" },
+    { "name": "Daytona sandbox lifecycle", "kind": "lifecycle", "enabled": true, "verification": "Verified in production: 15-minute state-update counts; creation completeness unverified" }
   ]
 }
