@@ -72,6 +72,11 @@ try {
   const json = async (res, status, what) => { ok(res.status === status, `${what}: ${res.status} != ${status}`); return res.json(); };
 
   const emailPolicy = { domains: ['ucsc.edu'], selector_pins: { 'ucsc.edu': ['campus_key'] } };
+  const effective = await json(await call('sk-bayleaf-a', 'GET', '/inboxes/limits'), 200, 'limits before first inbox');
+  ok(effective.owner.max_inboxes === 100 && effective.owner.remaining_inboxes === 100 && effective.owner.inboxes === 0,
+    'default 100 comes through real receiver binding before creation');
+  ok(effective.owner.max_bytes === 524288000 && effective.per_inbox.max_messages === 5000,
+    'storage/message caps are unchanged');
   const restricted = await json(await call('sk-bayleaf-a', 'POST', '/inboxes', { type: 'email', email_auth: emailPolicy }), 201, 'create restricted email');
   ok(JSON.stringify(restricted.email_auth) === JSON.stringify(emailPolicy) && restricted.restricted_email_max_bytes === 1048576,
     'API reports exact creation-only email policy and restricted cap');
@@ -86,6 +91,10 @@ try {
   const got = await mf.dispatchFetch(new URL('/github/push?x=1', web.url), { method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Content-Length': String(payload.length) }, body: payload });
   ok(got.status === 200 && (await got.json()).ok === true, 'open http reception');
+  const used = await json(await call('sk-bayleaf-a', 'GET', '/inboxes/limits'), 200, 'own quota usage');
+  const unused = await json(await call('sk-bayleaf-b', 'GET', '/inboxes/limits'), 200, 'other owner quota usage');
+  ok(used.owner.inboxes === 2 && used.owner.remaining_inboxes === 98 && used.owner.bytes === Buffer.byteLength(payload)
+    && unused.owner.inboxes === 0 && unused.owner.bytes === 0, 'limits usage is owner scoped');
   const list = await json(await call('sk-bayleaf-a', 'GET', `/inboxes/${web.id}/messages`), 200, 'list');
   ok(list.messages.length === 1 && list.messages[0].preview.path === '/github/push', 'listed with path');
   const mid = list.messages[0].id;

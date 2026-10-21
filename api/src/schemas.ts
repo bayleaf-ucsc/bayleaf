@@ -506,7 +506,7 @@ export const InboxCredentialParamsSchema = InboxIdParamsSchema.extend({ cid: z.s
 
 // Endpoint lifetime: opt-in, at most one of the two, never renewed by use.
 const InboxLifetimeFields = {
-  ttl_seconds: z.number().int().min(60).max(2592000).optional().describe('Optional endpoint lifetime in seconds, 60 to 30 days (deployment maximum). The address or URL and everything it stored are destroyed when it ends. Not the 90-day per-message retention. Omit, with preset, for no lifetime.'),
+  ttl_seconds: z.number().int().min(60).optional().describe('Optional endpoint lifetime in seconds, at least 60. The receiver enforces its effective maximum (default 30 days); read GET /inboxes/limits. The address or URL and everything it stored are destroyed when it ends. Separate from message retention. Omit both ttl_seconds and preset for no lifetime.'),
   preset: z.enum(['experiment']).optional().describe('experiment: a 15-minute lifetime (900 seconds) for quick tests. Not combinable with ttl_seconds.'),
 };
 
@@ -547,6 +547,26 @@ export const InboxSchema = z.object({
     .describe('Deployment limits for this inbox (defaults 200 MiB, 5000 messages, 1000 receipts per UTC day).'),
   closed: z.boolean().optional().describe('http inboxes only. Initially false (open): anyone with the URL can deliver. Creating the first credential permanently requires Authorization: Bearer with a valid token (RFC 6750). Revoking or expiring every credential never reopens reception; create a replacement credential to restore access.'),
 }).passthrough().openapi('Inbox');
+
+export const InboxLimitsSchema = z.object({
+  owner: z.object({
+    max_inboxes: z.number().int().nonnegative(), inboxes: z.number().int().nonnegative(),
+    remaining_inboxes: z.number().int().nonnegative(),
+    max_bytes: z.number().int().nonnegative(), bytes: z.number().int().nonnegative(),
+    remaining_bytes: z.number().int().nonnegative(), messages: z.number().int().nonnegative(),
+  }).describe('Only your usage: active plus destroying inboxes, including expired endpoints awaiting cleanup. Bytes/messages include pending reservations and cleanup backlog. Remaining capacity is a snapshot, not a reservation. No separate owner message-count cap.'),
+  per_inbox: z.object({ max_bytes: z.number().int().positive(), max_messages: z.number().int().positive(),
+    max_daily_receipts: z.number().int().positive().describe('Accepted receipts per UTC day.'),
+    max_credentials: z.number().int().positive() }),
+  payload: z.object({ http_max_bytes: z.number().int().positive(), email_max_bytes: z.number().int().positive(),
+    restricted_email_max_bytes: z.number().int().positive().describe('Raw MIME bytes, including headers and encoded attachments.'),
+    restricted_email_creation_enabled: z.boolean() }),
+  lifetime: z.object({ min_seconds: z.number().int().positive(), max_seconds: z.number().int().positive(),
+    presets_seconds: z.record(z.string(), z.number().int().positive()).describe('Only presets allowed by the effective maximum.'),
+    default_ttl_seconds: z.null().describe('Without explicit lifetime, the endpoint lives until destroyed.') }),
+  retention_seconds: z.number().int().positive().describe('Message lifetime from receipt; reads/archive do not renew it.'),
+  destroy_quiesce_seconds: z.number().int().nonnegative().describe('Earliest destruction finalization delay, not a cleanup deadline.'),
+}).openapi('InboxLimits', { description: 'Effective receiver enforcement settings, including deployed overrides. Byte/second units are explicit in names; other numeric fields count resources. D1 quotas are atomic. Additional burst-rate bindings are approximate per data center and cannot be numerically introspected here.' });
 
 export const InboxListSchema = z.object({
   inboxes: z.array(InboxSchema),

@@ -688,7 +688,9 @@ def managed_text(name, content):
 
 
 # Narrowed on purpose: no delete, destroy or credential tools without native approval.
-INBOX_TOOLS = ['inboxes', 'inbox_create', 'inbox_messages', 'inbox_read', 'inbox_save', 'inbox_archive']
+# Explicitly requested endpoint lifetimes can destroy content at expiry.
+INBOX_TOOLS = ['inboxes', 'inbox_create', 'inbox_messages', 'inbox_read', 'inbox_save', 'inbox_archive',
+               'inbox_lifetime', 'inbox_events', 'inbox_limits']
 
 
 def configure_nanobot():

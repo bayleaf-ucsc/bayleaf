@@ -146,7 +146,7 @@ its tools. Their permissions differ; do not bypass missing tools through shell
 commands or broader credentials. Desktop agents: use an authorized HTTP client or
 guide the user in their own terminal. No additional desktop plugin is required.
 
-1. Confirm availability and safe access, then list existing inboxes.
+1. Confirm availability and safe access, fetch GET /inboxes/limits, then list existing inboxes.
 2. Agree the sender, payload, email versus HTTP, and intended retention/use.
 3. Ask before creating an inbox or changing an existing one. For HTTP, decide
    whether the sender can supply a bearer header or needs an open receiver.
@@ -166,6 +166,33 @@ Email currently has no verified sender allowlist; From headers are not identity 
 
 For tests, create with preset "experiment" (a 15-minute lifetime) or ttl_seconds,
 so nothing stays live when the user walks away.
+
+## Check deployed limits before creating
+
+Use authenticated GET /inboxes/limits (OpenAPI operation getInboxLimits), even
+before your first inbox. It reads the receiver's effective configuration, including
+operator overrides, rather than repeating a documentation default. Use the same
+ordinary BayLeaf key or sandbox credential as other inbox reads. The response is
+uncached, owner-scoped, and provisions no inference credentials.
+
+owner reports max_inboxes, inboxes, remaining_inboxes, max_bytes, bytes,
+remaining_bytes and messages. Active plus destroying inboxes consume slots,
+including expired endpoints awaiting cleanup. Bytes/messages include pending
+reservations and cleanup backlog. No separate owner message-count cap exists.
+Remaining capacity is a snapshot, not reserved capacity.
+
+per_inbox reports byte, message, credential and daily receipt caps (UTC day).
+payload reports raw HTTP/email byte ceilings and the restricted-email ceiling
+and creation gate. lifetime reports minimum/maximum seconds, available presets
+and the null default (no endpoint lifetime). retention_seconds is the message
+lifetime; destroy_quiesce_seconds is an earliest cleanup bound, not a deadline.
+Field names identify bytes/seconds; other numeric values count resources.
+
+The product default is 100 inboxes per owner, with 500 MiB shared storage;
+deployment overrides may differ. Additional burst rates are approximate per
+data center, unlike atomic D1 quotas. Their bindings cannot be introspected by
+the receiver, so this endpoint does not invent numeric burst allowances. Respect
+429 and Retry-After. Existing inbox views report their own usage and limits.
 
 ## Follow live arrivals when asked
 

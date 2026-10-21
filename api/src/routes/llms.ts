@@ -930,6 +930,11 @@ desktop and hosted agents can load their ${bt}bayleaf-inboxes${bt} skill.
 Reception stores data only: it never activates an agent, replies or runs tools.
 Manage with an ordinary BayLeaf key or sandbox credential, not Campus Pass,
 temporary inference tokens or a browser session. No inference key is provisioned.
+Before creation, fetch authenticated GET /inboxes/limits (getInboxLimits), even
+with no existing inboxes. It reports effective deployed quotas and your remaining
+slots/storage, not static defaults. Active plus destroying inboxes count toward
+the default 100 slots; pending and cleanup storage count too. Capacity is a snapshot,
+not a reservation. The focused guide explains units, TTL and raw payload limits.
 For human inspection only, [receipt diagnostics](/diagnostics/inboxes) use the existing
 API browser sign-in and show counts and recent receipt times/sizes, not message content.
 This does not authorize browser-based creation, deletion or message retrieval.

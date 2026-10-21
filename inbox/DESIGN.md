@@ -59,12 +59,14 @@ The public apex explains the operator-only pilot and links to
 `https://api.bayleaf.dev/diagnostics/inboxes`. Owner diagnostics live on the API
 identity origin, reusing its host-only browser session and exact account generation.
 They preserve `INBOXES_ENABLED`, binding presence and `INBOXES_PILOT_OWNER` gates.
-Only existing read RPCs are used: at most ten inboxes and five recent unexpired
+Only read RPCs are used: at most ten inbox cards and five recent unexpired
 receipts per inbox, including archived receipts. Counts can include pending or
 cleanup work. The rendered view excludes subjects, senders, headers, paths,
 credentials, bodies and attachments. Receipt addresses are text, not clickable
 delivery links. No new browser mutation or message-content API is introduced.
 Read-only inspection does not provision inference credentials or wake compute.
+The quota-discovery revision adds effective owner-capacity meters from `getLimits`,
+covering all inboxes without increasing the ten-card/five-receipt view caps.
 
 The receiver's `BROWSER_ARRIVALS_ENABLED=true` independently gates apex `/`
 arrival instrumentation. Receipt hosts and all their paths remain reception-only:
@@ -242,7 +244,7 @@ raw MIME on demand.
 | Var | Default | Meaning |
 |---|---|---|
 | `RETENTION_SECONDS` | 7776000 | 90 days from receipt. Archive/read never extend it. |
-| `MAX_INBOXES_PER_OWNER` | 10 | Active plus destroying inboxes. |
+| `MAX_INBOXES_PER_OWNER` | 100 | Active plus destroying inboxes. |
 | `MAX_CREDENTIALS_PER_INBOX` | 20 | |
 | `MAX_HTTP_BODY_BYTES` | 10485760 | 10 MiB. |
 | `MAX_EMAIL_BYTES` | 26214400 | 25 MiB raw, the platform maximum. |
@@ -268,6 +270,28 @@ center; the D1 quota is the real cap):
   legitimate senders' budget.
 
 If a rate-limit binding is missing, reception fails closed with 503 (misconfiguration).
+
+### Runtime limits discovery
+
+Authenticated `GET /inboxes/limits` relays private `getLimits(owner)` before any
+inbox exists. It uses the same feature/pilot/owner gates as other reads, returns
+`Cache-Control: no-store`, and never provisions inference credentials. Values
+come from the receiver's enforcement `limits(env)`, including deployed overrides.
+`owner` reports `max_inboxes`, current `inboxes`, `remaining_inboxes`, `max_bytes`,
+current `bytes`, `remaining_bytes`, and current `messages`. Counts include active
+and destroying rows (including expired endpoints awaiting cleanup); bytes and
+messages include pending reservations and cleanup backlog. Remaining capacity is
+a snapshot, not a reservation. There is no separate owner message-count cap.
+`per_inbox` reports `max_bytes`, `max_messages`, `max_daily_receipts` (UTC day),
+and `max_credentials`. `payload` reports `http_max_bytes`, `email_max_bytes`,
+`restricted_email_max_bytes` and `restricted_email_creation_enabled`. `lifetime`
+reports `min_seconds`, `max_seconds`, `presets_seconds` and
+`default_ttl_seconds:null`; `retention_seconds` and `destroy_quiesce_seconds`
+describe message retention and earliest destruction finalization. Presets above
+the effective TTL maximum are omitted. Units are explicit in field names;
+unsuffixed usage/limit fields count resources. Approximate per-data-center burst
+rate bindings cannot be introspected by the Worker and are not presented as exact
+numeric quotas here. The response contains no identities, addresses or secrets.
 
 ## Feature flag
 

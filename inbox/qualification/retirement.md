@@ -127,7 +127,7 @@ from an inbox fence alone. Provider backups cannot be promised immediately erase
   restriction changes; no cross-owner effects and no identity/content logs.
 - Concurrent create, credential mint, receipt reservation and delayed R2 put
   spanning retirement: permanent fence wins, cleanup remains discoverable.
-- Maximum owner's ten inboxes enter destruction without doing unbounded physical
+- The then-maximum owner's ten inboxes enter destruction without doing unbounded physical
   work in the retirement RPC. Sweeps obey the global budget discussed in
   [cleanup qualification](cleanup-bench.md).
 - New account at the same email never inherits old content; ordinary key rotation

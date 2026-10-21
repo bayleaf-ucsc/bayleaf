@@ -936,6 +936,61 @@ describe('BayLeaf Inboxes contract', () => {
       await h.create(owner(), 'http');
     });
 
+    it('defaults to 100 including destroying inboxes, rejects 101, and retires the full owner', async () => {
+      const full = await harness({ vars: { MAX_INBOXES_PER_OWNER: undefined } });
+      try {
+        const o = owner();
+        const empty = await full.rpc('getLimits', o);
+        assert.equal(empty.owner.max_inboxes, 100);
+        assert.equal(empty.owner.remaining_inboxes, 100);
+        assert.equal(empty.owner.inboxes, 0);
+        // Real D1 rows, no receipt bodies or R2 uploads: exercise the actual atomic cap.
+        await full.db.batch(Array.from({ length: 99 }, (_, i) => full.db.prepare(
+          `INSERT INTO inboxes(id,owner,type,nonce,state,created_at,destroy_requested_at)
+           VALUES (?,?,'http',?,?,?,?)`
+        ).bind(`ibx_${b32(26)}`, o, b32(26), i === 0 ? 'destroying' : 'active', now(), i === 0 ? now() : null)));
+        const contenders = await Promise.all([
+          full.rpc('createInbox', o, { type: 'http' }),
+          full.rpc('createInbox', o, { type: 'email' }),
+        ]);
+        assert.equal(contenders.filter(r => r.id).length, 1);
+        assert.deepEqual(contenders.find(r => r.error), { error: 'limit' });
+        assert.equal((await full.rpc('listInboxes', o)).inboxes.length, 100);
+        assert.equal((await full.rpc('getLimits', o)).owner.remaining_inboxes, 0);
+        isErr(await full.rpc('createInbox', o, { type: 'http' }), 'limit');
+        await full.create(owner(), 'http');
+        assert.deepEqual(await full.rpc('retireOwner', o), { retired: true });
+        assert.equal((await full.db.prepare("SELECT COUNT(*) n FROM inboxes WHERE owner=? AND state='destroying'").bind(o).first()).n, 100);
+        assert.equal((await full.db.prepare('SELECT COUNT(*) n FROM cleanup_prefixes WHERE inbox_id IN (SELECT id FROM inboxes WHERE owner=?)').bind(o).first()).n, 100);
+        isErr(await full.rpc('createInbox', o, { type: 'http' }), 'not_found');
+      } finally { await full.mf.dispose(); }
+    });
+
+    it('discovers effective overrides and only the caller usage, including destruction reservations', async () => {
+      const o = owner(), other = owner();
+      const a = await h.create(o, 'http');
+      await h.create(other, 'email');
+      await h.db.prepare("UPDATE inboxes SET state='destroying',bytes_stored=123,message_count=2 WHERE id=?").bind(a.id).run();
+      const result = await h.rpc('getLimits', o);
+      assert.deepEqual(result.owner, { max_inboxes: 3, inboxes: 1, remaining_inboxes: 2,
+        max_bytes: 200000, bytes: 123, remaining_bytes: 199877, messages: 2 });
+      assert.deepEqual(result.per_inbox, { max_bytes: 65536, max_messages: 5000,
+        max_daily_receipts: 50, max_credentials: 3 });
+      assert.deepEqual(result.payload, { http_max_bytes: 1024, email_max_bytes: 65536,
+        restricted_email_max_bytes: 65536, restricted_email_creation_enabled: true });
+      assert.deepEqual(result.lifetime, { min_seconds: 60, max_seconds: 2592000,
+        presets_seconds: { experiment: 900 }, default_ttl_seconds: null });
+      assert.equal(result.retention_seconds, 7776000);
+      assert.equal(result.destroy_quiesce_seconds, 900);
+      assert.equal((await h.rpc('getLimits', other)).owner.bytes, 0);
+      const narrow = await harness({ vars: { MAX_INBOX_TTL_SECONDS: '60', EMAIL_AUTH_CREATION_ENABLED: 'false' } });
+      try {
+        const limits = await narrow.rpc('getLimits', owner());
+        assert.deepEqual(limits.lifetime.presets_seconds, {});
+        assert.equal(limits.payload.restricted_email_creation_enabled, false);
+      } finally { await narrow.mf.dispose(); }
+    });
+
     it('type is immutable: credential RPCs on an email inbox are not_found', async () => {
       const o = owner();
       const e = await h.create(o, 'email');

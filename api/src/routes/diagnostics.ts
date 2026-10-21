@@ -7,6 +7,7 @@ import { getSession } from '../utils/session';
 import { getAccountRow } from '../sandboxCredentials';
 import { diagnosticHeaders, diagnosticPage, diagnosticPath, escape, clock, when, bytes, count, pill, meter } from '../templates/diagnostics';
 import { managedSlot } from '../serviceDefs';
+import { InboxLimitsSchema } from '../schemas';
 
 const RETURN = '__Host-bl-diagnostic-return';
 const cookieOptions = { path: '/', secure: true, httpOnly: true, sameSite: 'Lax' as const };
@@ -97,6 +98,10 @@ for (const kind of kinds) diagnosticRoutes.get(`/${kind}`, async c => {
   const listing = await rpc.listInboxes(account.account_generation) as { error?: string; inboxes?: Inbox[] };
   if (!listing || listing.error || !Array.isArray(listing.inboxes)) return page(note('Inbox readings are unavailable.', 'Try again in a few minutes.'), 503);
   const shown = listing.inboxes.slice(0, 10);
+  const effective = InboxLimitsSchema.safeParse(await rpc.getLimits(account.account_generation).catch(() => null));
+  const capacity = effective.success
+    ? `<div class="meters">${meter('Inbox slots (including deleting)', count(effective.data.owner.inboxes), count(effective.data.owner.max_inboxes), effective.data.owner.inboxes / effective.data.owner.max_inboxes)}${meter('All inbox storage', bytes(effective.data.owner.bytes), bytes(effective.data.owner.max_bytes), effective.data.owner.bytes / effective.data.owner.max_bytes)}</div><p class="small muted">${count(effective.data.owner.remaining_inboxes)} slots available at this snapshot. Pending and cleanup storage count too.</p>`
+    : '<p class="small muted">Current owner limits could not be read.</p>';
   const cards = await Promise.all(shown.map(async box => {
     const active = box.state === 'active';
     const ended = typeof box.expires_at === 'number' && box.expires_at <= now;
@@ -118,8 +123,8 @@ for (const kind of kinds) diagnosticRoutes.get(`/${kind}`, async c => {
   }));
   const messages = shown.reduce((sum, box) => sum + (Number(box.usage.messages) || 0), 0);
    const summary = `<ul class="stats" aria-label="Summary"><li><b>${shown.length}</b> ${shown.length === 1 ? 'inbox' : 'inboxes'}</li><li><b>${count(messages)}</b> retained or pending ${messages === 1 ? 'message' : 'messages'}</li></ul>`;
-  const body = cards.length ? snapshot(summary) + cards.join('') + (listing.inboxes.length > shown.length ? '<p class="small muted">Showing the first ten inboxes. Your agent can list the rest.</p>' : '')
-    : note('No inboxes yet.', 'Ask your agent to create one through the BayLeaf API.');
+  const body = capacity + (cards.length ? snapshot(summary) + cards.join('') + (listing.inboxes.length > shown.length ? '<p class="small muted">Showing the first ten inboxes. Your agent can list the rest.</p>' : '')
+    : note('No inboxes yet.', 'Ask your agent to create one through the BayLeaf API.'));
   return page(body + `<details><summary>About this snapshot</summary><ul><li>Inboxes store content for up to 90 days. The operator can technically read it; this page never shows it.</li><li>Excluded here: message bodies, subjects, senders, headers, request paths and credentials.</li><li>Up to five recent receipts per inbox, archived ones included. Storage can include pending or cleanup work.</li><li>Credential-required inboxes are not checked for usable credentials.</li></ul></details><div class="actions small"><a href="/llms.txt#inboxes-receive-email-and-webhooks-while-you-are-away">Manage inboxes with your agent</a></div>`,
     200, 'Addresses, quotas and recent receipt times. Content stays with your agent.');
 });

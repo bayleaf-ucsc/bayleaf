@@ -77,7 +77,9 @@ try {
    assert.deepEqual(spec.paths['/sandbox/exec'].post.security, [{ Bearer: [] }]);
    const inboxOperations = Object.entries(spec.paths).filter(([path]) => path.startsWith('/inboxes'))
      .flatMap(([, path]) => Object.values(path));
-   assert.equal(inboxOperations.length, 19);
+   assert.equal(inboxOperations.length, 20);
+   assert.equal(spec.paths['/inboxes/limits'].get.operationId, 'getInboxLimits');
+   assert.ok(spec.components.schemas.InboxLimits.properties.owner);
    assert.ok(spec.paths['/inboxes/{id}/events'].get.responses['410']);
    assert.ok(spec.paths['/inboxes/{id}/events/stream'].get.responses['200'].content['text/event-stream']);
    for (const op of inboxOperations) {

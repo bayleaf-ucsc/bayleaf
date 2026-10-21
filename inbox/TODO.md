@@ -7,6 +7,13 @@ hosted adapter source. Operator-only live delivery and multimodal attachment
 retrieval have been exercised. See `QUALIFICATION.md` for evidence, versions and
 limitations, not just source-level completion.
 
+- [x] **Runtime quota discovery rollout:** receiver default is now 100 inboxes per
+  owner, counting active plus destroying. Receiver `getLimits` is deployed; the
+  authenticated API `/inboxes/limits`, generated contract, focused guide and
+  diagnostic owner-capacity view are deployed with the coordinated API/adapter release.
+  See [quota evidence](qualification/quotas.md). Storage/message caps and sweep
+  work budgets are unchanged.
+
 - [ ] **Resumable arrival stream:** finite catch-up plus SSE/live following, stable
   cursors/event IDs, gap-free transition, expired-cursor recovery, bounded replay
   and slow readers, revocation/destruction termination. Delivery never activates

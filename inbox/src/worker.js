@@ -19,7 +19,7 @@ import { diagnosticHeaders, publicDiagnosticPage } from '../../api/src/templates
 
 const DEFAULTS = {
   RETENTION_SECONDS: 7776000,
-  MAX_INBOXES_PER_OWNER: 10,
+  MAX_INBOXES_PER_OWNER: 100,
   MAX_CREDENTIALS_PER_INBOX: 20,
   MAX_HTTP_BODY_BYTES: 10485760,
   MAX_EMAIL_BYTES: 26214400,
@@ -1182,6 +1182,28 @@ function exportStream(env, owner, inbox, rows, page) {
 }
 
 const rpc = {
+  async getLimits(env, owner) {
+    const L = limits(env);
+    const usage = await env.DB.prepare(`SELECT COUNT(*) AS inboxes,
+      COALESCE(SUM(bytes_stored),0) AS bytes, COALESCE(SUM(message_count),0) AS messages
+      FROM inboxes WHERE owner=?`).bind(owner).first();
+    return {
+      owner: { max_inboxes: L.MAX_INBOXES_PER_OWNER, inboxes: usage.inboxes,
+        remaining_inboxes: Math.max(0, L.MAX_INBOXES_PER_OWNER - usage.inboxes),
+        max_bytes: L.MAX_OWNER_BYTES, bytes: usage.bytes,
+        remaining_bytes: Math.max(0, L.MAX_OWNER_BYTES - usage.bytes), messages: usage.messages },
+      per_inbox: { max_bytes: L.MAX_INBOX_BYTES, max_messages: L.MAX_INBOX_MESSAGES,
+        max_daily_receipts: L.MAX_DAILY_RECEIPTS, max_credentials: L.MAX_CREDENTIALS_PER_INBOX },
+      payload: { http_max_bytes: L.MAX_HTTP_BODY_BYTES, email_max_bytes: L.MAX_EMAIL_BYTES,
+        restricted_email_max_bytes: Math.min(L.MAX_EMAIL_BYTES, RESTRICTED_EMAIL_MAX_BYTES),
+        restricted_email_creation_enabled: env.EMAIL_AUTH_CREATION_ENABLED === 'true' },
+      lifetime: { min_seconds: MIN_TTL, max_seconds: L.MAX_INBOX_TTL_SECONDS,
+        presets_seconds: Object.fromEntries(Object.entries(PRESETS).filter(([, seconds]) => seconds <= L.MAX_INBOX_TTL_SECONDS)),
+        default_ttl_seconds: null },
+      retention_seconds: L.RETENTION_SECONDS, destroy_quiesce_seconds: L.DESTROY_QUIESCE_SECONDS,
+    };
+  },
+
   async retireOwner(env, owner) {
     await env.DB.batch([
       env.DB.prepare('INSERT OR IGNORE INTO retired_owners(owner,retired_at) VALUES (?,?)').bind(owner, nowSeconds()),
@@ -1562,6 +1584,7 @@ async function call(env, name, owner, args) {
 }
 
 export class InboxManagement extends WorkerEntrypoint {
+  getLimits(owner) { return call(this.env, 'getLimits', owner, []); }
   retireOwner(owner) { return call(this.env, 'retireOwner', owner, []); }
   createInbox(owner, opts) { return call(this.env, 'createInbox', owner, [opts]); }
   listInboxes(owner) { return call(this.env, 'listInboxes', owner, []); }

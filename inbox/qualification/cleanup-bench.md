@@ -59,7 +59,7 @@ these are deliberately truncated runs, **not completed cleanup**.
   Ten inboxes × 1k clear in five invocations once quiescence has elapsed. The
   explicit destroy RPC can remove another 50 inline; this benchmark starts from
   destroying state and does not claim to measure that RPC.
-- A maximum default owner can have **50,000 tiny messages** across ten inboxes.
+- At this historical default, an owner could have **50,000 tiny messages** across ten inboxes.
   Explicit destruction needs at most 25 successful row-cleanup invocations for
   each of those inboxes if selected every time (6.25 hours worst alignment), plus
   quiescence, orphan reconciliation, competing backlog and failures. Owner-wide

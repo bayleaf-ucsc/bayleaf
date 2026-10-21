@@ -281,7 +281,7 @@ export type TinfoilKeyCreated = TinfoilKey;
 /** `bayleaf-inboxes` InboxManagement RPC stub (inbox/DESIGN.md). Every method
  * takes the owner's account_generation first and returns JSON or `{error}`;
  * the body and attachment reads return a Response on success. */
-export type InboxManagement = Record<'createInbox' | 'listInboxes' | 'getInbox' | 'updateInbox' | 'destroyInbox' | 'listMessages' |
+export type InboxManagement = Record<'getLimits' | 'createInbox' | 'listInboxes' | 'getInbox' | 'updateInbox' | 'destroyInbox' | 'listMessages' |
   'getMessage' | 'getMessageText' | 'getMessageBody' | 'getAttachment' | 'setArchived' | 'deleteMessage' | 'createCredential' |
   'listCredentials' | 'revokeCredential' | 'listEvents' | 'acquireEventStream' | 'readEventStream' | 'releaseEventStream' | 'exportInbox' | 'getMessageHar' | 'retireOwner',
   (owner: string, ...args: unknown[]) => Promise<unknown>>;

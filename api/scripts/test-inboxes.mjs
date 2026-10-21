@@ -47,7 +47,7 @@ const canned = (method, owner, args) => {
   return { method, owner, args };
 };
 export class InboxManagement extends WorkerEntrypoint {}
-for (const m of ['createInbox','listInboxes','getInbox','updateInbox','destroyInbox','listMessages','getMessage','getMessageText','getMessageBody',
+for (const m of ['getLimits','createInbox','listInboxes','getInbox','updateInbox','destroyInbox','listMessages','getMessage','getMessageText','getMessageBody',
   'getAttachment','setArchived','deleteMessage','createCredential','listCredentials','revokeCredential','exportInbox','getMessageHar'])
   InboxManagement.prototype[m] = async function (owner, ...args) { return canned(m, owner, args); };
 export default { fetch() { return Response.json(calls.splice(0)); } };`;
@@ -127,6 +127,17 @@ try {
   assert.deepEqual(await calls(), []);
 
   // Ordinary key and sandbox credential both resolve to the account generation, unchanged JSON passthrough.
+  for (const target of [pilot, await mf.getWorker('api-off'), await mf.getWorker('api-unbound')])
+    await json(await req(target, '/inboxes/limits'), 404);
+  await json(await req(api, '/inboxes/limits', { key: null }), 401);
+  await json(await req(api, '/inboxes/limits', { key: 'campus', headers: { 'CF-Connecting-IP': '192.0.2.7' } }), 403);
+  await json(await req(api, '/inboxes/limits', { key: grant.access_token }), 403);
+  assert.deepEqual(await calls(), [], 'limits gates deny without calling receiver');
+  for (const key of ['sk-bayleaf-owner', sandboxBearer]) {
+    const res = await req(api, '/inboxes/limits', { key });
+    assert.equal(res.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(await json(res, 200), { method: 'getLimits', owner: generation, args: [] });
+  }
   for (const key of ['sk-bayleaf-owner', sandboxBearer])
     assert.deepEqual(await json(await req(api, '/inboxes', { key }), 200), { method: 'listInboxes', owner: generation, args: [] });
   assert.deepEqual(await json(await req(api, '/inboxes', { method: 'POST', body: { type: 'http', label: 'hooks' } }), 201),
@@ -139,7 +150,7 @@ try {
   assert.deepEqual(await json(await req(api, '/inboxes/ibx_1', { method: 'PATCH', body: { ttl_seconds: 900 } }), 200),
     { method: 'updateInbox', owner: generation, args: ['ibx_1', { ttl_seconds: 900 }] });
   assert.equal((await json(await req(api, '/inboxes/ibx_err_conflict', { method: 'PATCH', body: { preset: 'experiment' } }), 409)).error.code, 409);
-  for (const body of [{ ttl_seconds: 59 }, { ttl_seconds: 2592001 }, { ttl_seconds: 1.5 }, { preset: 'forever' }, { label: 'x' }])
+  for (const body of [{ ttl_seconds: 59 }, { ttl_seconds: 1.5 }, { preset: 'forever' }, { label: 'x' }])
     await json(await req(api, '/inboxes/ibx_1', { method: 'PATCH', body }), 400);
   await json(await req(api, '/inboxes', { method: 'POST', body: { type: 'http', ttl_seconds: 30 } }), 400);
   await json(await req(api, '/inboxes/ibx_1', { key: null, method: 'PATCH', body: { ttl_seconds: 900 } }), 401);
@@ -159,7 +170,7 @@ try {
   await json(await req(api, '/inboxes/ibx_1/credentials'), 200);
   await json(await req(api, '/inboxes/ibx_1/credentials/cred_1', { method: 'DELETE' }), 200);
   const seen = await calls();
-  assert.ok(seen.length === 19 && seen.every(call => call.owner === generation));
+  assert.ok(seen.length === 21 && seen.every(call => call.owner === generation));
   assert.deepEqual(seen.find(call => call.method === 'createCredential').args, ['ibx_1', {}]);
 
   // RPC error mapping, thrown RPC, and local validation (after auth, before the RPC).
@@ -243,7 +254,7 @@ try {
   // Documented contract: every facade route is a Bearer-only Inboxes operation (security details in test-docs).
   const spec = await json(await req(api, '/docs/openapi.json', { key: null }), 200);
   const inboxOps = Object.entries(spec.paths).filter(([path]) => path.startsWith('/inboxes')).flatMap(([, ops]) => Object.values(ops));
-  assert.equal(inboxOps.length, 19);
+  assert.equal(inboxOps.length, 20);
   assert.ok(inboxOps.every(op => op.tags[0] === 'Inboxes' && op.operationId));
 
   // Inbox-only use never provisions or touches inference credentials.
