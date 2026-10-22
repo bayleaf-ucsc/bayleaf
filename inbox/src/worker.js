@@ -1218,8 +1218,10 @@ const rpc = {
   },
 
   async createInbox(env, owner, opts) {
-    const o = options(opts, ['type', 'label', 'ttl_seconds', 'preset', 'email_auth'], { required: true });
+    const o = options(opts, ['type', 'access', 'label', 'ttl_seconds', 'preset', 'email_auth'], { required: true });
     if (o.type !== 'email' && o.type !== 'http') throw new Invalid();
+    // Webhook access is an explicit creation choice: closed from birth leaves no anonymous window.
+    if (o.type === 'http' ? o.access !== 'open' && o.access !== 'closed' : o.access !== undefined) throw new Invalid();
     if (o.label !== undefined && o.label !== null && !printable(o.label, 64)) throw new Invalid();
     if (o.type !== 'email' && o.email_auth !== undefined) throw new Invalid();
     let policy;
@@ -1231,11 +1233,11 @@ const rpc = {
     const id = `ibx_${nonce()}`, now = nowSeconds();
     const ttl = lifetime(env, o, { required: false });
     const done = await env.DB.prepare(
-      `INSERT INTO inboxes (id, owner, type, nonce, label, state, created_at, expires_at, email_auth_json)
-       SELECT ?1, ?2, ?3, ?4, ?5, 'active', ?6, ?8, ?9 WHERE (SELECT COUNT(*) FROM inboxes WHERE owner = ?2) < ?7
+      `INSERT INTO inboxes (id, owner, type, nonce, label, state, created_at, expires_at, email_auth_json, auth_required)
+       SELECT ?1, ?2, ?3, ?4, ?5, 'active', ?6, ?8, ?9, ?10 WHERE (SELECT COUNT(*) FROM inboxes WHERE owner = ?2) < ?7
          AND NOT EXISTS (SELECT 1 FROM retired_owners WHERE owner = ?2)`
     ).bind(id, owner, o.type, nonce(), o.label ?? null, now, limits(env).MAX_INBOXES_PER_OWNER,
-      ttl === null ? null : now + ttl, policyJson).run();
+      ttl === null ? null : now + ttl, policyJson, o.access === 'closed' ? 1 : 0).run();
     if (done.meta.changes !== 1) return fail('limit');
     await countTelemetry(env, 'inbox.lifecycle', o.type, 'created');
     return rpc.getInbox(env, owner, id);

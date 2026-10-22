@@ -73,7 +73,8 @@ the Worker (used for mutation checks). The suite was written from `DESIGN.md` al
 - **Late-write reconciliation:** quiescence and an empty R2 prefix are necessary
   but do not fence an already-started remote put. Durable opaque cleanup records
   must survive inbox/message deletion and reconcile objects that appear later.
-- **Sticky authentication:** creating a webhook credential closes reception.
+- **Sticky authentication:** webhook access is chosen at creation (`access`
+  `open`|`closed`, required, #116); creating a credential closes an open inbox.
   Revoking the last credential never reopens it. Authentication must be checked
   again atomically after reading an upload, alongside quota reservation.
 - **One content store:** raw MIME or exact request bytes; attachments and text are

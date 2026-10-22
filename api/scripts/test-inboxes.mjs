@@ -145,8 +145,8 @@ try {
   }
   for (const key of ['sk-bayleaf-owner', sandboxBearer])
     assert.deepEqual(await json(await req(api, '/inboxes', { key }), 200), { method: 'listInboxes', owner: generation, args: [] });
-  assert.deepEqual(await json(await req(api, '/inboxes', { method: 'POST', body: { type: 'http', label: 'hooks' } }), 201),
-    { method: 'createInbox', owner: generation, args: [{ type: 'http', label: 'hooks' }] });
+  assert.deepEqual(await json(await req(api, '/inboxes', { method: 'POST', body: { type: 'http', access: 'open', label: 'hooks' } }), 201),
+    { method: 'createInbox', owner: generation, args: [{ type: 'http', access: 'open', label: 'hooks' }] });
   await json(await req(api, '/inboxes/ibx_1'), 200);
   assert.equal((await json(await req(api, '/inboxes/ibx_1', { method: 'DELETE' }), 202)).method, 'destroyInbox');
   // Endpoint lifetimes: relayed verbatim; the RPC owns bounds and the shorten-only rule.
@@ -157,7 +157,7 @@ try {
   assert.equal((await json(await req(api, '/inboxes/ibx_err_conflict', { method: 'PATCH', body: { preset: 'experiment' } }), 409)).error.code, 409);
   for (const body of [{ ttl_seconds: 59 }, { ttl_seconds: 1.5 }, { preset: 'forever' }, { label: 'x' }])
     await json(await req(api, '/inboxes/ibx_1', { method: 'PATCH', body }), 400);
-  await json(await req(api, '/inboxes', { method: 'POST', body: { type: 'http', ttl_seconds: 30 } }), 400);
+  await json(await req(api, '/inboxes', { method: 'POST', body: { type: 'http', access: 'open', ttl_seconds: 30 } }), 400);
   await json(await req(api, '/inboxes/ibx_1', { key: null, method: 'PATCH', body: { ttl_seconds: 900 } }), 401);
   assert.deepEqual((await json(await req(api, '/inboxes/ibx_1/messages?limit=20&archived=all&q=hi&cursor=abc&junk=1'), 200)).args,
     ['ibx_1', { cursor: 'abc', q: 'hi', limit: 20, archived: 'all' }]);

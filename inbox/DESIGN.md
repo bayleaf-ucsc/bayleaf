@@ -52,7 +52,8 @@ owner client ──► api.bayleaf.dev /inboxes/* ──► service binding RPC 
   reassigned. With 128-bit random values no tombstone table is needed. An unknown or
   destroyed address behaves exactly like one that never existed.
 - **Addresses are not secrets.** Hostnames are visible in DNS and TLS SNI, and email
-  addresses pass through every relay. Credentials (HTTP only) are the gate. Use only
+  addresses pass through every relay. Credentials (HTTP only) are the gate, so a
+  private webhook is created `access: "closed"` rather than closed later. Use only
   the wildcard certificate, never per-host certificates (Certificate Transparency).
 - Separate internal handles: inbox `ibx_` + nonce-format random, message `msg_` +
   random, credential `cred_` + random. Handles are useless without owner authority.
@@ -199,7 +200,7 @@ inboxes(
   created_at INTEGER NOT NULL,         -- UTC epoch seconds everywhere
   destroy_requested_at INTEGER,
   expires_at INTEGER,                  -- explicit endpoint lifetime; NULL = none (0003)
-  auth_required INTEGER NOT NULL DEFAULT 0, -- http: sticky once first credential is added
+  auth_required INTEGER NOT NULL DEFAULT 0, -- http: set by access:"closed" or the first credential; sticky
   bytes_stored INTEGER NOT NULL DEFAULT 0,  -- includes pending reservations
   message_count INTEGER NOT NULL DEFAULT 0, -- includes pending reservations
   day TEXT NOT NULL DEFAULT '',        -- UTC YYYY-MM-DD of day_count
@@ -320,11 +321,16 @@ Inbox host, in order (cheap checks first):
    `Access-Control-Max-Age: 86400`. Returned for any host label without a lookup.
 2. Look up a **live `http`** inbox by nonce (active and not past `expires_at`).
    Missing, `destroying`, expired, or `email` type → 404 `{"error":"not_found"}`.
-3. An inbox starts **open**. Creating its first credential sets a persistent
-   `auth_required` flag, making it **closed**. Revoking or expiring the last
-   credential never reopens it: closed with no usable credentials denies all
-   arrivals until the owner creates a replacement. There is no reopen operation in
-   this slice. The request must carry
+3. Every `http` inbox declares its initial access at creation (#116):
+   `access: "open"` (anyone with the URL can deliver) or `access: "closed"`
+   (authentication is required from birth, so the URL can be handed out before any
+   sender is configured without an anonymous window). There is no default: the
+   choice is required for `http`, and invalid for `email`. `closed` sets the
+   persistent `auth_required` flag in the creating INSERT; an open inbox sets it,
+   becoming **closed**, when its first credential is created. Revoking or expiring the last credential never reopens it:
+   closed with no usable credentials denies all arrivals until the owner creates a
+   replacement. There is no reopen operation; for wider access, create a new open
+   inbox. On a closed inbox the request must carry
    `Authorization: Bearer <token>` (RFC 6750; scheme case-insensitive) whose SHA-256
    matches a credential on **this inbox** that has not expired.
    - Missing header → 401, `WWW-Authenticate: Bearer realm="bayleaf-inbox"`.
@@ -588,7 +594,7 @@ Inbox object:
 | Method | Args | Returns |
 |---|---|---|
 | `retireOwner` | – | `{retired:true}`; trusted service-binding-only, bypasses the exposure flag, idempotent durable generation fence |
-| `createInbox` | `{type, label?, ttl_seconds? \| preset?, email_auth?}` | inbox (`limit` past `MAX_INBOXES_PER_OWNER`); optional email policy is creation-only |
+| `createInbox` | `{type, access?, label?, ttl_seconds? \| preset?, email_auth?}` | inbox (`limit` past `MAX_INBOXES_PER_OWNER`); `access` (`open`\|`closed`) is required for http and invalid for email; optional email policy is creation-only |
 | `updateInbox` | `inboxId, {ttl_seconds \| preset}` | inbox; shortens or sets the lifetime only (`conflict` if later than the current `expires_at`; `not_found` if not live) |
 | `listInboxes` | – | `{ inboxes:[inbox], owner_usage:{bytes, limit_bytes} }` |
 | `getInbox` | `inboxId` | inbox |
@@ -600,7 +606,7 @@ Inbox object:
 | `getMessageText` | `inboxId, messageId` | `{ id, type, source, text, truncated }` JSON, below |
 | `setArchived` | `inboxId, messageId, archived:boolean` | message summary |
 | `deleteMessage` | `inboxId, messageId` | `{ id, deleted:true }` once the object is gone and the row removed; `{ id, state:'deleting' }` if the R2 delete failed (retried by the sweep) |
-| `createCredential` | `inboxId, {name?, expires_at?}` | `{ credential, token, inbox_closed:true, notice }` (http only; `token` is returned **once**; notice explains sticky authentication) |
+| `createCredential` | `inboxId, {name?, expires_at?}` | `{ credential, token, inbox_closed:true, notice }` (http only; `token` is returned **once**; closes an open inbox; notice explains sticky authentication) |
 | `listCredentials` | `inboxId` | `{ credentials:[credential] }` |
 | `revokeCredential` | `inboxId, credentialId` | `{ id, revoked:true }` (hard delete) |
 

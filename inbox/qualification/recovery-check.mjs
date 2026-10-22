@@ -74,8 +74,8 @@ try {
     for(const stmt of sql.match(/\s*(?:CREATE TRIGGER[\s\S]*?END|[^;]+);/g)||[]) await target.prepare(stmt.trim()).run();
   }
   await db.prepare('INSERT INTO user_keys(email,bayleaf_token,account_generation) VALUES (?,?,?)').bind('recovery@example.test',token,owner).run();
-  const box=await rpc('createInbox',owner,{type:'http'});
-  const orphan=randomUUID(), orphanBox=await rpc('createInbox',orphan,{type:'http'});
+  const box=await rpc('createInbox',owner,{type:'http',access:'open'});
+  const orphan=randomUUID(), orphanBox=await rpc('createInbox',orphan,{type:'http',access:'open'});
   assert.ok(orphanBox.id);
   assert.ok(box.id); assert.equal((await send(box)).status,200);
   const mid=(await rpc('listMessages',owner,box.id,{})).messages[0].id;
@@ -141,7 +141,7 @@ try {
   await enable(); await denied();
   assert.deepEqual(await rpc('getInbox',orphan,orphanBox.id),{error:'not_found'});
   assert.equal((await send(orphanBox)).status,404);
-  const newBox=await rpc('createInbox',fresh,{type:'http'}); assert.ok(newBox.id);
+  const newBox=await rpc('createInbox',fresh,{type:'http',access:'open'}); assert.ok(newBox.id);
   assert.equal((await send(newBox)).status,200);
   await blobs.delete(objectKey); await blobs.put(objectKey,raw);
   assert.ok(await blobs.head(objectKey)); await denied();

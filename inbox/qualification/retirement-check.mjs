@@ -64,7 +64,7 @@ try {
   await apiDB.prepare('INSERT INTO users(email,created_at,last_active_at) VALUES (?,?,?)').bind(email, old, old).run();
   await apiDB.prepare('INSERT INTO user_keys(email,bayleaf_token,account_generation) VALUES (?,?,?)')
     .bind(email, 'sk-bayleaf-synthetic-original', owner).run();
-  const box = await rpc('createInbox', owner, { type: 'http' });
+  const box = await rpc('createInbox', owner, { type: 'http', access: 'open' });
   const credential = await rpc('createCredential', owner, box.id, {});
   assert.ok(credential.token);
   // Exercise the real HTTP facade too, without importing unrelated adapters or
@@ -113,8 +113,8 @@ try {
   await apiDB.prepare('UPDATE user_keys SET account_generation=? WHERE email=?').bind(owner, email).run();
   const restored = (await apiDB.prepare('SELECT account_generation FROM user_keys WHERE email=?').bind(email).first()).account_generation;
   assert.deepEqual(await rpc('listMessages', restored, box.id, {}), { error: 'not_found' });
-  assert.deepEqual(await rpc('createInbox', owner, { type: 'http' }), { error: 'not_found' });
-  assert.ok((await rpc('createInbox', fresh, { type: 'http' })).id);
+  assert.deepEqual(await rpc('createInbox', owner, { type: 'http', access: 'open' }), { error: 'not_found' });
+  assert.ok((await rpc('createInbox', fresh, { type: 'http', access: 'open' })).id);
   // Simulate inbox-only rollback. Never enable a real recovered service before
   // replaying this separate API ledger. Acknowledged entries must be replayable.
   await inboxDB.prepare('DELETE FROM retired_owners WHERE owner=?').bind(owner).run();

@@ -131,7 +131,7 @@ try {
   for (let attempt = 1; !inboxA; attempt++) {
     const created = await ownerApi('/inboxes', { method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'http', ttl_seconds: 900, label: 'sse-edge-cases' }) });
+      body: JSON.stringify({ type: 'http', access: 'open', ttl_seconds: 900, label: 'sse-edge-cases' }) });
     assert.ok(created.status === 201 || created.status === 409, `inbox create returned ${created.status}`);
     if (created.status === 201) { inboxA = created.body; out('setup', { attempt, inboxExpiresAt: inboxA.expires_at }); }
     else {

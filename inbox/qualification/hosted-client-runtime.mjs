@@ -59,11 +59,12 @@ call:async({name,args,sessionID},{signal})=>{try{return await (await ctx.tool.li
   const inventory=await rpc('inspect'), tools=inventory.tools.filter(t=>t.id.startsWith('bayleaf_inbox'));
   assert.equal(tools.length,candidate?11:8);assert.ok((inventory.skills.data??inventory.skills).some(s=>s.id==='bayleaf-inboxes'));
   if(candidate)assert.ok(tools.find(t=>t.id==='bayleaf_inbox_create').input.properties.email_auth.anyOf);
+  if(candidate)assert.deepEqual(tools.find(t=>t.id==='bayleaf_inbox_create').input.properties.access.enum,['open','closed']);
   assert.equal(!!tools.find(t=>t.id==='bayleaf_inbox_create').input.properties.ttl_seconds,!!candidate);
   console.log(`PASS ${candidate?'candidate':'published'} OpenCode runtime discovery: ${tools.length} inbox tools and skill; TTL input ${candidate?'present':'absent'}`);
   const session=await api('/api/session',{permissions:[{action:'*',resource:'*',effect:'ask'}]});const sessionID=session.id??session.data.id;
   const cases=[['bayleaf_inbox_create',{type:'http'}],['bayleaf_inbox_archive',{inbox_id:inbox,message_id:message,archived:true}],['bayleaf_inbox_delete_message',{inbox_id:inbox,message_id:message}],['bayleaf_inbox_destroy',{inbox_id:inbox}],['bayleaf_inbox_save',{inbox_id:inbox,message_id:message,attachment_index:0,path:'attachment.html'}]];
-  if(candidate){cases[0][1].preset='experiment';cases.push(['bayleaf_inbox_lifetime',{inbox_id:inbox,ttl_seconds:60}]);const page=JSON.parse((await rpc('call',{sessionID,name:'bayleaf_inbox_events',args:{inbox_id:inbox,after:'now'}})).content);assert.deepEqual(page,{events:[],cursor:'synthetic_cursor',more:false});}
+  if(candidate){Object.assign(cases[0][1],{access:'closed',preset:'experiment'});cases.push(['bayleaf_inbox_lifetime',{inbox_id:inbox,ttl_seconds:60}]);const page=JSON.parse((await rpc('call',{sessionID,name:'bayleaf_inbox_events',args:{inbox_id:inbox,after:'now'}})).content);assert.deepEqual(page,{events:[],cursor:'synthetic_cursor',more:false});}
   if(candidate)cases.push(['bayleaf_inbox_create',{type:'email',email_auth:{domains:['example.org'],selector_pins:{'example.org':['mail_2026']}}}]);
   for(const [name,args]of cases)for(const decision of ['reject','once']){
     const before=calls.filter(c=>c.method!=='GET'||c.path.includes('/attachments/')).length;
@@ -91,9 +92,10 @@ call:async({name,args,sessionID},{signal})=>{try{return await (await ctx.tool.li
   let nano=launchNano();await nano.request('initialize');const listed=(await nano.request('tools/list')).tools;
   assert.equal(listed.filter(t=>t.name.startsWith('inbox')).length,candidate?9:6);
   if(candidate)assert.ok(listed.find(t=>t.name==='inbox_create').inputSchema.properties.email_auth.anyOf);
+  if(candidate)assert.deepEqual(listed.find(t=>t.name==='inbox_create').inputSchema.properties.access.enum,['open','closed']);
   assert.equal(!!listed.find(t=>t.name==='inbox_create').inputSchema.properties.ttl_seconds,!!candidate);
   const call=(name,args)=>nano.request('tools/call',{name,arguments:args});
-  assert.ok(!(await call('inbox_create',{type:'http',label:'synthetic'})).isError);
+  assert.ok(!(await call('inbox_create',{type:'http',...(candidate?{access:'closed'}:{}),label:'synthetic'})).isError);
   if(candidate){assert.ok(!(await call('inbox_lifetime',{inbox_id:inbox,ttl_seconds:60})).isError);const page=await call('inbox_events',{inbox_id:inbox,after:'now'});assert.deepEqual(JSON.parse(page.content[0].text),{events:[],cursor:'synthetic_cursor',more:false});}
   assert.ok(!(await call('inbox_archive',{inbox_id:inbox,message_id:message,archived:true})).isError);
   for(const path of ['../escape','AGENTS.md','.opencode/config.json'])assert.ok((await call('inbox_save',{inbox_id:inbox,message_id:message,attachment:0,path})).isError);

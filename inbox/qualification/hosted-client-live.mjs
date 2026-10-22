@@ -26,7 +26,7 @@ try{
   assert.equal(tools.filter(t=>t.name.startsWith('inbox')).length,candidate?9:6);
   const call=async(name,args)=>{const r=await rpc('tools/call',{name,arguments:args});assert.ok(!r.isError,`MCP ${name} failed: ${r.isError?r.content.map(c=>c.text).join(' '):''}`);return r.content.map(c=>c.text).join('\n');};
   if(candidate){const limits=JSON.parse(await call('inbox_limits',{}));assert.equal(limits.owner.max_inboxes,100);assert.ok(limits.owner.remaining_inboxes>0);console.log('PASS native MCP authoritative limits and available capacity');}
-  inbox=JSON.parse(await call('inbox_create',{type:'http',label:'Hosted-client bounded qualification',...(candidate?{ttl_seconds:120}:{})}));
+  inbox=JSON.parse(await call('inbox_create',{type:'http',label:'Hosted-client bounded qualification',...(candidate?{access:'closed',ttl_seconds:120}:{})}));
   assert.match(inbox.id,/^ibx_[a-z2-7]{26}$/);
   if(candidate)assert.ok(Number.isSafeInteger(inbox.expires_at));
   const timed=candidate?JSON.parse(await call('inbox_lifetime',{inbox_id:inbox.id,ttl_seconds:60})):await owner('/inboxes/'+inbox.id,'PATCH',{ttl_seconds:60});

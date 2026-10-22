@@ -118,7 +118,7 @@ of its own, outside the inbox domain. Set the token with
 
 ```bash
 curl -sS https://owner.example.org/createInbox -H "Authorization: Bearer $OWNER_TOKEN" \
-  -d '[{"type":"http"}]'
+  -d '[{"type":"http","access":"closed"}]'
 curl -sS https://owner.example.org/exportInbox -H "Authorization: Bearer $OWNER_TOKEN" \
   -d '["ibx_...", {}]' -D headers.txt -o page-1.tar
 ```

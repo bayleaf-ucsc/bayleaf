@@ -939,10 +939,14 @@ For human inspection only, [receipt diagnostics](/diagnostics/inboxes) use the e
 API browser sign-in and show counts and recent receipt times/sizes, not message content.
 This does not authorize browser-based creation, deletion or message retrieval.
 
-Addresses are not secrets. New http inboxes are open until the first bearer
-credential is created. That permanently closes reception: senders need
-Authorization: Bearer (RFC 6750) on the receiving URL. Revoking or expiring the
-last credential never reopens it; create a replacement to restore delivery.
+Addresses are not secrets. Every http inbox needs ${bt}"access"${bt} at creation.
+${bt}"closed"${bt} denies all delivery from the start, so you can hand out the URL
+before minting a sender credential with no anonymous window; use it for anything
+private. ${bt}"open"${bt} admits anyone with the URL, for throwaway endpoints or
+senders that can only be given a URL. Creating a credential on an open inbox
+permanently closes it. Closed reception needs Authorization: Bearer (RFC 6750)
+on the receiving URL. Revoking or expiring the last credential never reopens it;
+create a replacement to restore delivery.
 Tokens are shown once, stored hashed, with a last-4-character recognition hint.
 
 Prefer a lifetime for tests and one-off collections: ${bt}"preset":"experiment"${bt}
@@ -970,8 +974,8 @@ ${fence}bash
 # BAYLEAF_API_KEY is your owner credential, never the sender credential.
 curl -sS https://api.bayleaf.dev/inboxes \\
   -H "Authorization: Bearer $BAYLEAF_API_KEY" -H 'Content-Type: application/json' \\
-  -d '{"type":"http","label":"Reports","ttl_seconds":3600}'
-# For a quick test use '{"type":"http","preset":"experiment"}' (15 minutes).
+  -d '{"type":"http","access":"closed","label":"Reports","ttl_seconds":3600}'
+# For a quick public test use '{"type":"http","access":"open","preset":"experiment"}' (15 minutes).
 # Set INBOX_ID and INBOX_URL from the response. The credential's expiry is UTC epoch seconds,
 # for example $(date +%s) + 3600 for one hour. Omit it only for until-revoked access.
 # Requires curl and jq. Capture the response privately: never print/paste tokens.

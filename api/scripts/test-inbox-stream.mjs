@@ -106,7 +106,7 @@ async function setup() {
   const id = randomUUID(), u = { key: 'sk-bayleaf-' + id, generation: id, email: id + '@example.test', id };
   await db.prepare('INSERT INTO user_keys(email, bayleaf_token, account_generation, daytona_sandbox_id) VALUES (?,?,?,?)')
     .bind(u.email, u.key, u.generation, id).run();
-  const r = await call(u, '/inboxes', { method: 'POST', body: '{"type":"http"}' });
+  const r = await call(u, '/inboxes', { method: 'POST', body: '{"type":"http","access":"open"}' });
   assert.equal(r.status, 201, await r.clone().text());
   u.inbox = await r.json();
   return u;
@@ -291,7 +291,7 @@ test('retirement fences an already-open SSE and restored generation without wait
     assert.equal(await count(u), 0);
     for (const path of [`/inboxes/${u.inbox.id}/export`, `/inboxes/${u.inbox.id}/events`, `/inboxes/${u.inbox.id}/events/stream`])
       assert.equal((await call(u, path)).status, 404, path);
-    assert.equal((await call(u, '/inboxes', { method: 'POST', body: JSON.stringify({ type: 'http' }) })).status, 404);
+    assert.equal((await call(u, '/inboxes', { method: 'POST', body: JSON.stringify({ type: 'http', access: 'open' }) })).status, 404);
   } finally { s.abort(); }
 });
 

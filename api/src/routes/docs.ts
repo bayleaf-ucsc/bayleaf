@@ -165,9 +165,11 @@ guide the user in their own terminal. No additional desktop plugin is required.
 6. Ask before archive, deletion or destruction. Destruction is asynchronous:
    acceptance is not proof that physical cleanup has finished.
 
-New HTTP inboxes are open. Creating the first sender credential permanently
-requires authentication; revoking the last credential never reopens reception.
-Providers unable to send that header may need an open receiver and application-side
+Every HTTP inbox chooses access at creation. Prefer "closed" for anything private:
+it denies all delivery until you mint a sender credential, so there is no anonymous
+window. "open" admits anyone with the URL until the first sender credential
+permanently requires authentication; revoking the last credential never reopens
+reception. Providers unable to send that header may need an open receiver and application-side
 signature verification over saved exact bytes. BayLeaf does not verify those signatures.
 Email is open by default. At creation only, email_auth may specify exact domains
 and optional selector_pins. One locally verified DKIM signature must match the
@@ -210,7 +212,7 @@ the receiver, so this endpoint does not invent numeric burst allowances. Respect
 ## Follow live arrivals when asked
 
 Create a temporary webhook with POST /inboxes and
-\`{"type":"http","preset":"experiment"}\`. The response's expires_at is the
+\`{"type":"http","access":"open","preset":"experiment"}\`. The response's expires_at is the
 endpoint's deadline, not the sender credential's expiry.
 
 Use OpenAPI operations listInboxEvents for finite catch-up and streamInboxEvents

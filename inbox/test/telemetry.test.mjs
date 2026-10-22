@@ -133,7 +133,7 @@ test('reception failures/rejections and lifecycle transitions count only fixed t
   const env = setup(t);
   const rpc = new mod.InboxManagement({}, env);
   const owner = 'synthetic-owner-generation';
-  const http = await rpc.createInbox(owner, { type: 'http', label: 'private-label-canary' });
+  const http = await rpc.createInbox(owner, { type: 'http', access: 'open', label: 'private-label-canary' });
   const email = await rpc.createInbox(owner, { type: 'email' });
   assert.equal((await mod.default.fetch(new Request(http.url + 'private-path?secret=canary', {
     method: 'POST', body: 'private-content-canary', headers: { 'Content-Type': 'text/plain' } }), env)).status, 200);
@@ -164,7 +164,7 @@ test('reception failures/rejections and lifecycle transitions count only fixed t
   // Telemetry outage after successful content storage cannot change reception.
   env.DB.sql.exec('DROP TABLE telemetry_counts; DROP TABLE telemetry_windows;');
   assert.equal((await mod.default.fetch(new Request('https://unknown.bayleaf-inboxes.dev'), env)).status, 404);
-  const other = await rpc.createInbox(owner, { type: 'http' });
+  const other = await rpc.createInbox(owner, { type: 'http', access: 'open' });
   assert.equal((await mod.default.fetch(new Request(other.url), env)).status, 200);
 });
 

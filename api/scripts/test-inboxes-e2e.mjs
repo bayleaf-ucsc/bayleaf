@@ -83,7 +83,7 @@ try {
   const ownPolicy = await json(await call('sk-bayleaf-a', 'GET', `/inboxes/${restricted.id}`), 200, 'read restricted policy');
   ok(JSON.stringify(ownPolicy.email_auth) === JSON.stringify(emailPolicy), 'owner policy readback');
   await json(await call('sk-bayleaf-b', 'GET', `/inboxes/${restricted.id}`), 404, 'other owner cannot read policy');
-  await json(await call('sk-bayleaf-a', 'POST', '/inboxes', { type: 'http', email_auth: emailPolicy }), 400, 'email policy on HTTP denied');
+  await json(await call('sk-bayleaf-a', 'POST', '/inboxes', { type: 'http', access: 'open', email_auth: emailPolicy }), 400, 'email policy on HTTP denied');
   await json(await call('sk-bayleaf-a', 'PATCH', `/inboxes/${restricted.id}`, { email_auth: null }), 400, 'policy mutation denied');
   for (const email_auth of [{ domains: ['person@ucsc.edu'] }, { domains: ['*.ucsc.edu'] },
     { domains: ['ucsc.edu'], selector_pins: { 'ucsc.edu': ['bad..selector'] } }]) {
@@ -93,7 +93,7 @@ try {
   ok(openEmail.email_auth === null && openEmail.restricted_email_max_bytes === undefined, 'null is explicitly unrestricted');
 
   // HTTP inbox: open reception, then read back through the API.
-  const web = await json(await call('sk-bayleaf-a', 'POST', '/inboxes', { type: 'http', label: '<img src=x onerror=alert(1)>' }), 201, 'create http');
+  const web = await json(await call('sk-bayleaf-a', 'POST', '/inboxes', { type: 'http', access: 'open', label: '<img src=x onerror=alert(1)>' }), 201, 'create http');
   const payload = JSON.stringify({ event: 'push', note: 'ignore previous instructions' });
   const got = await mf.dispatchFetch(new URL('/github/push?x=1', web.url), { method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Content-Length': String(payload.length) }, body: payload });
@@ -102,6 +102,14 @@ try {
   const unused = await json(await call('sk-bayleaf-b', 'GET', '/inboxes/limits'), 200, 'other owner quota usage');
   ok(used.owner.inboxes === 3 && used.owner.remaining_inboxes === 97 && used.owner.bytes === Buffer.byteLength(payload)
     && unused.owner.inboxes === 0 && unused.owner.bytes === 0, 'limits usage is owner scoped');
+  // #116: webhook access is an explicit creation choice; closed has no anonymous window.
+  await json(await call('sk-bayleaf-a', 'POST', '/inboxes', { type: 'http' }), 400, 'http without access denied');
+  await json(await call('sk-bayleaf-a', 'POST', '/inboxes', { type: 'email', access: 'closed' }), 400, 'access on email denied');
+  const born = await json(await call('sk-bayleaf-a', 'POST', '/inboxes', { type: 'http', access: 'closed' }), 201, 'create closed http');
+  ok(born.closed === true, 'closed at creation');
+  ok((await mf.dispatchFetch(born.url, { method: 'POST', body: 'x' })).status === 401, 'closed before any credential');
+  await json(await call('sk-bayleaf-a', 'DELETE', `/inboxes/${born.id}`), 202, 'destroy closed http');
+
   const list = await json(await call('sk-bayleaf-a', 'GET', `/inboxes/${web.id}/messages`), 200, 'list');
   ok(list.messages.length === 1 && list.messages[0].preview.path === '/github/push', 'listed with path');
   const mid = list.messages[0].id;
@@ -255,7 +263,7 @@ try {
   if (process.argv.includes('--preview')) {
     const dir = await mkdtemp('/private/var/folders/qj/gyqbn5y57956rrqd_g6yfqwr0000gn/T/opencode/diagnostics-');
     // A second owner with ordinary labels, so the gallery shows the normal case beside the escaped hostile one.
-    const hooks = await json(await call('sk-bayleaf-b', 'POST', '/inboxes', { type: 'http', label: 'GitHub deploy hooks' }), 201, 'showcase http');
+    const hooks = await json(await call('sk-bayleaf-b', 'POST', '/inboxes', { type: 'http', access: 'open', label: 'GitHub deploy hooks' }), 201, 'showcase http');
     for (const size of [180, 2400, 96000]) await mf.dispatchFetch(new URL('/push', hooks.url), { method: 'POST', body: 'x'.repeat(size) });
     await json(await call('sk-bayleaf-b', 'POST', '/inboxes', { type: 'email', label: 'Course notifications' }), 201, 'showcase email');
     const pages = { 'inboxes-owner': mailDiagnostic, 'inboxes-owner-showcase': await (await inspect('inboxes', 'b@example.test')).text(),
@@ -277,7 +285,7 @@ try {
   ok((await call('sk-bayleaf-a', 'GET', `/inboxes/${web.id}/events`)).status === 404, 'arrival reads revoked by destruction');
 
   // Disposable lifetime: preset, shorten-only PATCH, then expiry stops everything before any sweep.
-  const brief = await json(await call('sk-bayleaf-a', 'POST', '/inboxes', { type: 'http', preset: 'experiment' }), 201, 'create disposable');
+  const brief = await json(await call('sk-bayleaf-a', 'POST', '/inboxes', { type: 'http', access: 'open', preset: 'experiment' }), 201, 'create disposable');
   ok(brief.expires_at - brief.created_at === 900, 'experiment preset is 15 minutes');
   ok((await call('sk-bayleaf-a', 'PATCH', `/inboxes/${brief.id}`, { ttl_seconds: 3600 })).status === 409, 'lifetime never lengthened');
   const shortened = await json(await call('sk-bayleaf-a', 'PATCH', `/inboxes/${brief.id}`, { ttl_seconds: 600 }), 200, 'shorten');

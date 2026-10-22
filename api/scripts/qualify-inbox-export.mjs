@@ -41,7 +41,7 @@ export async function qualify() {
   };
   let box;
   try {
-    box = await json('/inboxes', { method: 'POST', body: JSON.stringify({ type: 'http', ttl_seconds: 60, label: 'Disposable export qualification' }) });
+    box = await json('/inboxes', { method: 'POST', body: JSON.stringify({ type: 'http', access: 'open', ttl_seconds: 60, label: 'Disposable export qualification' }) });
     assert.ok(Number.isSafeInteger(box.expires_at));
     const sender = await json(`/inboxes/${box.id}/credentials`, { method: 'POST', body: JSON.stringify({ name: 'synthetic sender', expires_at: box.expires_at }) });
     const payloads = [Buffer.from('{"qualification":"synthetic export"}'), Buffer.alloc(1024 * 1024, 97)];

@@ -519,6 +519,8 @@ export const InboxEmailAuthSchema = z.object({
 
 export const InboxCreateRequestSchema = z.object({
   type: InboxTypeSchema,
+  access: z.enum(['open', 'closed']).optional()
+    .describe('Required for http, rejected for email; there is no default. closed: every delivery gets 401 until you create a sender credential, so the URL can be handed out first with no anonymous window. Use it for anything private. open: anyone with the URL can deliver, for throwaway endpoints or senders that cannot send Authorization: Bearer (many webhook providers only let you configure a URL). Creating a credential later still closes an open inbox; nothing reopens a closed one.'),
   label: z.string().max(64).optional().describe('Optional private label for your own recognition, at most 64 characters. Never shown to senders.'),
   ...InboxLifetimeFields,
 
@@ -545,7 +547,7 @@ export const InboxSchema = z.object({
     .describe('Includes in-flight receipts. receipts_today counts the current UTC day.'),
   limits: z.object({ bytes: z.number().int(), messages: z.number().int(), daily_receipts: z.number().int() })
     .describe('Deployment limits for this inbox (defaults 200 MiB, 5000 messages, 1000 receipts per UTC day).'),
-  closed: z.boolean().optional().describe('http inboxes only. Initially false (open): anyone with the URL can deliver. Creating the first credential permanently requires Authorization: Bearer with a valid token (RFC 6750). Revoking or expiring every credential never reopens reception; create a replacement credential to restore access.'),
+  closed: z.boolean().optional().describe('http inboxes only. Starts as chosen by access at creation; false (open) means anyone with the URL can deliver. Creation with access closed, or the first credential, permanently requires Authorization: Bearer with a valid token (RFC 6750). Revoking or expiring every credential never reopens reception; create a replacement credential to restore access.'),
 }).passthrough().openapi('Inbox');
 
 export const InboxLimitsSchema = z.object({
@@ -656,7 +658,7 @@ export const InboxCredentialSchema = z.object({
 }).openapi('InboxCredential');
 
 export const InboxCredentialCreatedSchema = z.object({
-  inbox_closed: z.literal(true).describe('Creating a sender credential closes reception. Only valid bearer credentials may deliver; revoking or expiring all credentials never reopens the inbox.'),
+  inbox_closed: z.literal(true).describe('Reception is closed: creating a sender credential closes an open inbox. Only valid bearer credentials may deliver; revoking or expiring all credentials never reopens the inbox.'),
   notice: z.string().describe('Reminder of the permanent switch to authenticated reception.'),
   credential: InboxCredentialSchema,
   token: z.string().describe('sk-bayleaf-inbox-... Shown exactly once; only its SHA-256 hash is stored. Give it to the sender for Authorization: Bearer. Lost tokens cannot be recovered: revoke and create another.'),

@@ -34,7 +34,7 @@ async function setup(t, source) {
     DB.sql.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), 'utf8'));
   const env = { DB, INBOXES_ENABLED: 'true', BLOBS: { get: source } };
   const rpc = new InboxManagement({}, env);
-  const inbox = await rpc.createInbox(owner, { type: 'http' });
+  const inbox = await rpc.createInbox(owner, { type: 'http', access: 'open' });
   DB.sql.prepare(`INSERT INTO messages(id,inbox_id,state,received_at,expires_at,archived,size,meta_json,search_text)
     VALUES(?,?,'stored',?,?,0,3,?,'')`).run(mid, inbox.id, now(), now() + 3600,
     JSON.stringify({ method: 'POST', path: '/', query: '', headers: [], content_type: 'text/plain' }));
@@ -107,7 +107,7 @@ test('retirement during R2 get fences an open export even after its inbox is res
   assert.equal(cancelled, 1);
   assert.equal(body.locked, false);
   assert.deepEqual(await h.rpc.getMessageHar(owner, h.inbox.id, mid), { error: 'not_found' });
-  assert.deepEqual(await h.rpc.createInbox(owner, { type: 'http' }), { error: 'not_found' });
+  assert.deepEqual(await h.rpc.createInbox(owner, { type: 'http', access: 'open' }), { error: 'not_found' });
 });
 
 test('expiry during body copy truncates export and denies standalone HAR', async t => {

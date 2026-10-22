@@ -55,7 +55,7 @@ export async function qualify() {
     } finally { clearTimeout(timer); abort.abort(); await r?.body?.cancel().catch(() => {}); }
   };
   try {
-    inbox = await request('/inboxes', { method: 'POST', body: JSON.stringify({ type: 'http', preset: 'experiment', label: 'Disposable SSE qualification' }) });
+    inbox = await request('/inboxes', { method: 'POST', body: JSON.stringify({ type: 'http', access: 'open', preset: 'experiment', label: 'Disposable SSE qualification' }) });
     assert.match(inbox.id, /^ibx_[a-z2-7]{26}$/);
     assert.match(inbox.url, /^https:\/\/[a-z2-7]{26}\.bayleaf-inboxes\.dev\/$/);
     assert.ok(Number.isSafeInteger(inbox.expires_at), 'TTL revision must be integrated before qualification');

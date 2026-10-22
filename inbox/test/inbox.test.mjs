@@ -339,7 +339,7 @@ describe('creation-only authenticated email restriction in real workerd/D1/R2', 
       { domains: ['ucsc.edu'], selector_pins: { 'ucsc.edu': ['bad..label'] } }]) {
       isErr(await h.rpc('createInbox', a, { type: 'email', email_auth }), 'invalid');
     }
-    isErr(await h.rpc('createInbox', a, { type: 'http', email_auth: policy }), 'invalid');
+    isErr(await h.rpc('createInbox', a, { type: 'http', access: 'open', email_auth: policy }), 'invalid');
     assert.equal((await h.rpc('listInboxes', a)).inboxes.length, 0);
   });
 
@@ -591,7 +591,8 @@ async function harness({ vars = {}, ratelimits = { accept: 60, reject: 30 }, tel
     },
     // Convenience wrappers.
     async create(owner, type, extra = {}) {
-      const ibx = await h.rpc('createInbox', owner, { type, ...extra });
+      // Existing cases exercise open webhooks; closed-at-creation cases pass access explicitly.
+      const ibx = await h.rpc('createInbox', owner, { type, ...(type === 'http' ? { access: 'open' } : {}), ...extra });
       assertOk(ibx);
       return ibx;
     },
@@ -865,7 +866,7 @@ describe('BayLeaf Inboxes contract', () => {
     it('rejects malformed owners on every kind of method with invalid', async () => {
       const bad = ['', 'short-owner', 'a'.repeat(129), 'has space 1234567890', 'under_score_1234567', 'ümlaut-owner-123456', 123, null];
       for (const o of bad) {
-        isErr(await h.rpc('createInbox', o, { type: 'http' }), 'invalid');
+        isErr(await h.rpc('createInbox', o, { type: 'http', access: 'open' }), 'invalid');
         isErr(await h.rpc('listInboxes', o), 'invalid');
         isErr(await h.rpc('getInbox', o, `ibx_${b32(26)}`), 'invalid');
       }
@@ -876,14 +877,19 @@ describe('BayLeaf Inboxes contract', () => {
 
     it('rejects unknown keys, wrong types and bad labels without throwing', async () => {
       const o = owner();
-      isErr(await h.rpc('createInbox', o, { type: 'http', extra: 1 }), 'invalid');
+      isErr(await h.rpc('createInbox', o, { type: 'http', access: 'open', extra: 1 }), 'invalid');
       isErr(await h.rpc('createInbox', o, { type: 'sms' }), 'invalid');
       isErr(await h.rpc('createInbox', o, {}), 'invalid');
       isErr(await h.rpc('createInbox', o, null), 'invalid');
       isErr(await h.rpc('createInbox', o), 'invalid');
       isErr(await h.rpc('createInbox', o, 'http'), 'invalid');
-      isErr(await h.rpc('createInbox', o, { type: 'http', label: 'x'.repeat(65) }), 'invalid');
-      isErr(await h.rpc('createInbox', o, { type: 'http', label: 7 }), 'invalid');
+      isErr(await h.rpc('createInbox', o, { type: 'http', access: 'open', label: 'x'.repeat(65) }), 'invalid');
+      isErr(await h.rpc('createInbox', o, { type: 'http', access: 'open', label: 7 }), 'invalid');
+      // #116: webhook access is a required explicit choice; email has no such field.
+      for (const access of [undefined, null, '', 'OPEN', 'private', true, 1])
+        isErr(await h.rpc('createInbox', o, { type: 'http', ...(access === undefined ? {} : { access }) }), 'invalid');
+      for (const access of ['open', 'closed', null])
+        isErr(await h.rpc('createInbox', o, { type: 'email', access }), 'invalid');
       const r = await h.rpc('getInbox', o, 42);
       assert.ok(r.error === 'invalid' || r.error === 'not_found', 'non-string handle is an error');
       const l = await h.rpc('listMessages', o, `ibx_${b32(26)}`, 'not-an-object');
@@ -933,7 +939,7 @@ describe('BayLeaf Inboxes contract', () => {
       const o = owner();
       const made = [];
       for (let i = 0; i < 3; i++) made.push(await h.create(o, i % 2 ? 'email' : 'http'));
-      isErr(await h.rpc('createInbox', o, { type: 'http' }), 'limit');
+      isErr(await h.rpc('createInbox', o, { type: 'http', access: 'open' }), 'limit');
       assertDestroy(await h.rpc('destroyInbox', o, made[0].id), made[0].id);
       isErr(await h.rpc('createInbox', o, { type: 'email' }), 'limit');
       // Another owner is unaffected.
@@ -954,19 +960,19 @@ describe('BayLeaf Inboxes contract', () => {
            VALUES (?,?,'http',?,?,?,?)`
         ).bind(`ibx_${b32(26)}`, o, b32(26), i === 0 ? 'destroying' : 'active', now(), i === 0 ? now() : null)));
         const contenders = await Promise.all([
-          full.rpc('createInbox', o, { type: 'http' }),
+          full.rpc('createInbox', o, { type: 'http', access: 'open' }),
           full.rpc('createInbox', o, { type: 'email' }),
         ]);
         assert.equal(contenders.filter(r => r.id).length, 1);
         assert.deepEqual(contenders.find(r => r.error), { error: 'limit' });
         assert.equal((await full.rpc('listInboxes', o)).inboxes.length, 100);
         assert.equal((await full.rpc('getLimits', o)).owner.remaining_inboxes, 0);
-        isErr(await full.rpc('createInbox', o, { type: 'http' }), 'limit');
+        isErr(await full.rpc('createInbox', o, { type: 'http', access: 'open' }), 'limit');
         await full.create(owner(), 'http');
         assert.deepEqual(await full.rpc('retireOwner', o), { retired: true });
         assert.equal((await full.db.prepare("SELECT COUNT(*) n FROM inboxes WHERE owner=? AND state='destroying'").bind(o).first()).n, 100);
         assert.equal((await full.db.prepare('SELECT COUNT(*) n FROM cleanup_prefixes WHERE inbox_id IN (SELECT id FROM inboxes WHERE owner=?)').bind(o).first()).n, 100);
-        isErr(await full.rpc('createInbox', o, { type: 'http' }), 'not_found');
+        isErr(await full.rpc('createInbox', o, { type: 'http', access: 'open' }), 'not_found');
       } finally { await full.mf.dispose(); }
     });
 
@@ -1289,6 +1295,25 @@ describe('BayLeaf Inboxes contract', () => {
       assertOk(d);
       assert.match(d.credential.name, /^token-[0-9a-f]{4}$/);
       assert.notEqual(d.token, c.token);
+    });
+
+    it('access:"closed" denies anonymous delivery from creation until a credential exists (#116)', async () => {
+      const o = owner();
+      const ibx = await h.create(o, 'http', { access: 'closed' });
+      assert.equal(ibx.closed, true);
+      assert.equal((await h.rpc('listInboxes', o)).inboxes[0].closed, true);
+      assert.deepEqual(await h.rpc('listCredentials', o, ibx.id), { credentials: [] });
+      for (const method of ['POST', 'GET', 'HEAD']) {
+        const r = await postOpen(h, ibx, '/hook', { method, ...(method === 'POST' ? { body: 'early' } : {}) });
+        assert.equal(r.status, 401, `${method} before any credential`);
+        assert.equal(r.headers.get('www-authenticate'), 'Bearer realm="bayleaf-inbox"');
+      }
+      assert.equal((await h.row('inboxes', ibx.id)).message_count, 0, 'the anonymous window never existed');
+      const c = await h.rpc('createCredential', o, ibx.id, { name: 'ci' });
+      assertOk(c);
+      assert.equal((await postOpen(h, ibx, '/hook', { body: 'x', headers: { Authorization: `Bearer ${c.token}` } })).status, 200);
+      assert.equal((await postOpen(h, ibx, '/hook', { body: 'x' })).status, 401);
+      assert.equal((await h.list(o, ibx.id)).messages[0].preview.credential_name, 'ci');
     });
 
     it('validates credential inputs and caps credentials per inbox', async () => {
@@ -1841,7 +1866,7 @@ describe('feature flag and fail-closed configuration (DESIGN: Feature flag, Limi
       const h = await harness({ vars: { INBOXES_ENABLED: value } });
       try {
         const o = owner();
-        assert.deepEqual(await h.rpc('createInbox', o, { type: 'http' }), { error: 'disabled' });
+        assert.deepEqual(await h.rpc('createInbox', o, { type: 'http', access: 'open' }), { error: 'disabled' });
         assert.deepEqual(await h.rpc('listInboxes', o), { error: 'disabled' });
         // Plant an inbox directly to show that even a real one is unreachable.
         const nonce = b32(26), mailNonce = b32(26);
@@ -2150,7 +2175,7 @@ describe('endpoint lifetimes (DESIGN: Endpoint lifetimes)', () => {
     const capped = await harness({ vars: { MAX_INBOX_TTL_SECONDS: '60' } });
     try {
       const o = owner();
-      isErr(await capped.rpc('createInbox', o, { type: 'http', preset: 'experiment' }), 'invalid');
+      isErr(await capped.rpc('createInbox', o, { type: 'http', access: 'open', preset: 'experiment' }), 'invalid');
       const box = await capped.create(o, 'http');
       isErr(await capped.rpc('updateInbox', o, box.id, { preset: 'experiment' }), 'invalid');
       assertOk(await capped.rpc('updateInbox', o, box.id, { ttl_seconds: 60 }));
@@ -2173,8 +2198,8 @@ describe('endpoint lifetimes (DESIGN: Endpoint lifetimes)', () => {
     const p = owner();
     for (const bad of [{ ttl_seconds: 59 }, { ttl_seconds: 2592001 }, { ttl_seconds: 900.5 }, { ttl_seconds: '900' },
       { preset: 'forever' }, { preset: 'constructor' }, { preset: 'experiment', ttl_seconds: 900 }, { ttl_seconds: null }])
-      isErr(await h.rpc('createInbox', p, { type: 'http', ...bad }), 'invalid');
-    assertOk(await h.rpc('createInbox', p, { type: 'http', ttl_seconds: 2592000 }));
+      isErr(await h.rpc('createInbox', p, { type: 'http', access: 'open', ...bad }), 'invalid');
+    assertOk(await h.rpc('createInbox', p, { type: 'http', access: 'open', ttl_seconds: 2592000 }));
     assert.equal((await h.db.prepare('SELECT COUNT(*) n FROM inboxes WHERE owner=?').bind(p).first()).n, 1);
   });
 
