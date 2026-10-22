@@ -12,7 +12,7 @@ gh issue view 111 --repo bayleaf-ucsc/bayleaf --json title,body,comments
 gh api repos/open-webui/open-webui/git/ref/tags/v0.12.3
 ```
 
-Read `chat/AGENTS.md` and `chat/DESIGN.md`. Tag resolves to commit `91ea4e3421d1d8069f13d4a463fcb5986d94ea60`. Reference files under `../otlp/upstream/` are exact downloads from `https://raw.githubusercontent.com/open-webui/open-webui/v0.12.3/`: `backend/open_webui/utils/telemetry/{metrics,setup,instrumentors}.py`, `backend/open_webui/env.py`, `backend/requirements.txt`, `pyproject.toml`, and `LICENSE`. `SOURCE.json` records hashes. They are reference material, not an OWUI installation.
+Read `chat/AGENTS.md` and `chat/DESIGN.md`. Tag resolves to commit `91ea4e3421d1d8069f13d4a463fcb5986d94ea60`. Reference files under `../../chat/image/upstream/` are exact downloads from `https://raw.githubusercontent.com/open-webui/open-webui/v0.12.3/`: `backend/open_webui/utils/telemetry/{metrics,setup,instrumentors}.py`, `backend/open_webui/env.py`, `backend/requirements.txt`, `pyproject.toml`, and `LICENSE`. `SOURCE.json` records hashes. They are reference material, not an OWUI installation.
 
 Exact local commands from repository root:
 

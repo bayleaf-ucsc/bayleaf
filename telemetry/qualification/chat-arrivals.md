@@ -137,7 +137,7 @@ Reproduce after the local synthetic container is ready on port 18880:
 
 ```bash
 node --test telemetry/browser/chat.test.mjs telemetry/browser/browser.test.mjs telemetry/adapters/adapters.test.mjs
-python3 -m unittest discover -s telemetry/otlp -p 'test_browser_assets.py'
+python3 -m unittest discover -s chat/image -p 'test_browser_assets.py'
 uv run --script telemetry/browser/test-chat-browser.py
 # Separate default-off container on loopback port 18881:
 uv run --script telemetry/browser/test-chat-browser.py source-disabled
@@ -157,7 +157,7 @@ destinations are blocked. No production account, collector or inference path.
 
 ## Exact activation environment and rollback
 
-Build the reviewed repo-root `telemetry/otlp/Dockerfile`, retaining its immutable
+Build the reviewed repo-root `chat/image/Dockerfile`, retaining its immutable
 upstream digest and all existing native environment/secrets and run command:
 
 ```text

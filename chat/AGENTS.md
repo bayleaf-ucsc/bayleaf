@@ -27,7 +27,7 @@ DigitalOcean App Platform, in the `BayLeaf / UCSC` team (slug `bayleaf-ucsc`).
 Managed via `doctl --context bayleaf`.
 
 - **App ID**: `f1a1e758-62e9-4e99-90cb-212cab12958d`
-- **Build**: repo-root context, `telemetry/otlp/Dockerfile`, immutable standard
+- **Build**: repo-root context, `chat/image/Dockerfile`, immutable standard
   `ghcr.io/open-webui/open-webui:v0.12.3` base; GitHub push auto-deploy disabled
 - **Current version**: `v0.12.3`
 - **Database**: Managed PostgreSQL 17 (`bayleaf-chat-db`, ID `ea8c7549-e761-44e1-a9c3-e45e478a5202`)

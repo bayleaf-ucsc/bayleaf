@@ -113,7 +113,7 @@ Use the project's palette rather than the agent harness's theme.
   carrying the upstream bearer.
 
 For OWUI source questions, read `chat/AGENTS.md`, relevant `chat/DESIGN.md`
-sections, and the pinned sources in `telemetry/otlp/upstream/`. For collection or
+sections, and the pinned sources in `chat/image/upstream/`. For collection or
 retention changes, consult the telemetry policies and operations privacy playbook.
 Do not treat a dashboard request as authorization to change/deploy the collector,
 enable exporters or publish data. Desired normalization rules discussed in chat

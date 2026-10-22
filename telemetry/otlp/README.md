@@ -2,14 +2,14 @@
 
 Local, synthetic qualification for [#112](https://github.com/bayleaf-ucsc/bayleaf/issues/112), carrying forward [#111](https://github.com/bayleaf-ucsc/bayleaf/issues/111). No production exporter, deployment, resource provisioning or credentials are needed. This is a narrow metrics receiver, not a general OTel Collector.
 
-The separately reviewed **startup deployment artifact** is `Dockerfile` plus
-`startup_patch.py`/`runtime.py`, reusing `source_policy.py`. Its synthetic artifact
-qualification, source export paging, exact environment, PG overhead controls and
-remaining real-container gates are in
+The OWUI side of this proof (source minimization, hash-locked startup patch and
+exporter runtime) ships inside BayLeaf Chat's production image, which lives in
+[`../../chat/image/`](../../chat/image/). This directory keeps the collector-side
+normalizer and adapter, plus the qualification harnesses that join the two
+(`qualify_startup.py`, `qualify_container.py`) and their recorded evidence. Artifact
+qualification, export paging, exact environment, PG overhead controls and
+real-container gates are in
 [`../qualification/otlp-rollout.md`](../qualification/otlp-rollout.md).
-It is not deployed. Local standard-image arm64 OWUI/PostgreSQL tests and amd64
-emulated build/boot/inference checks pass; DO deployment verification, production
-overhead and collector/storage gates remain separate.
 
 ## Interfaces
 

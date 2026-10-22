@@ -40,10 +40,13 @@ from sqlalchemy import Column, Integer, create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session
 from sqlalchemy.engine import make_url
 
+# The startup patch is the Chat image's entrypoint; it lives with the image in chat/image/.
+HERE = Path(__file__).resolve().parent
+IMAGE = HERE.parents[1] / "chat" / "image"
+sys.path.insert(0, str(IMAGE))
+
 from startup_patch import patch, validate_environment, validate_versions
 import startup_patch
-
-HERE = Path(__file__).resolve().parent
 captures = []
 validate_versions()
 
@@ -104,7 +107,7 @@ with mock_patch.dict(os.environ, settings, clear=True):
             rejects(validate_environment)
     with mock_patch.dict(os.environ, {k: "false" for k in ("ENABLE_OTEL", "ENABLE_OTEL_METRICS", "ENABLE_OTEL_TRACES", "ENABLE_OTEL_LOGS")}):
         validate_environment()
-    refused = subprocess.run([sys.executable, str(HERE / "startup_patch.py")], capture_output=True, env={"PATH": os.environ.get("PATH", "/usr/bin:/bin")})
+    refused = subprocess.run([sys.executable, str(IMAGE / "startup_patch.py")], capture_output=True, env={"PATH": os.environ.get("PATH", "/usr/bin:/bin")})
     assert refused.returncode == 1 and b"rung-3 harness alive" in refused.stdout
 with mock_patch("startup_patch.version", return_value="unsupported"):
     rejects(validate_versions)
@@ -124,9 +127,9 @@ with tempfile.TemporaryDirectory(prefix="bayleaf-otlp-rollout-", dir=temp_root) 
     destination = backend / "open_webui/utils/telemetry"
     destination.mkdir(parents=True)
     for name in ("metrics.py", "setup.py", "instrumentors.py"):
-        shutil.copyfile(HERE / "upstream" / name, destination / name)
-    shutil.copyfile(HERE / "upstream/env.py", backend / "open_webui/env.py")
-    shutil.copyfile(HERE / "upstream/requirements.txt", backend / "requirements.txt")
+        shutil.copyfile(IMAGE / "upstream" / name, destination / name)
+    shutil.copyfile(IMAGE / "upstream/env.py", backend / "open_webui/env.py")
+    shutil.copyfile(IMAGE / "upstream/requirements.txt", backend / "requirements.txt")
     patch(backend)
     installed = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in destination.glob("*.py")}
     patch(backend)

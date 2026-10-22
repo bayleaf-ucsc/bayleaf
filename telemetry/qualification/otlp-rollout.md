@@ -10,13 +10,13 @@ telemetry retention; this sender does not set or attest collector retention.
 ## Artifact and customization choice
 
 Build context is the repository root; Dockerfile is
-`telemetry/otlp/Dockerfile`. It adds only checked-in Python files and upstream
+`chat/image/Dockerfile`. It adds only checked-in Python files and upstream
 reference sources to the standard `ghcr.io/open-webui/open-webui:v0.12.3` image.
 No pip install, runtime fetch, instrumentation agent or upstream fork is added.
 The Dockerfile now defaults to the resolved immutable upstream index digest:
 
 ```sh
-docker build -f telemetry/otlp/Dockerfile -t bayleaf-otlp-qualification:20261020 .
+docker build -f chat/image/Dockerfile -t bayleaf-otlp-qualification:20261020 .
 ```
 
 Upstream index: `sha256:a537bbe1e6b428820f52ed4a029d7fff97062e24d5cf32c365fba36fd0542def`.
@@ -280,7 +280,7 @@ Reproduction (no registry push, production request or control-plane operation):
 
 ```sh
 docker buildx imagetools inspect ghcr.io/open-webui/open-webui:v0.12.3
-docker build -f telemetry/otlp/Dockerfile -t bayleaf-otlp-qualification:20261020 .
+docker build -f chat/image/Dockerfile -t bayleaf-otlp-qualification:20261020 .
 docker pull postgres:17-bookworm
 python3 telemetry/otlp/qualify_container.py bayleaf-otlp-qualification:20261020 postgres:17-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826 300000
 ```
@@ -354,9 +354,9 @@ The standard image was built using the exact amd64 upstream manifest, not the
 arm64 image under a different label:
 
 ```sh
-docker build --platform linux/amd64 --build-arg OWUI_IMAGE=ghcr.io/open-webui/open-webui:v0.12.3@sha256:ef11a68f38457d831e23168486858c25b9d9c4399094c9e72c0d4d8767ac09de -f telemetry/otlp/Dockerfile -t bayleaf-otlp-qualification:amd64-20261020 .
+docker build --platform linux/amd64 --build-arg OWUI_IMAGE=ghcr.io/open-webui/open-webui:v0.12.3@sha256:ef11a68f38457d831e23168486858c25b9d9c4399094c9e72c0d4d8767ac09de -f chat/image/Dockerfile -t bayleaf-otlp-qualification:amd64-20261020 .
 python3 telemetry/otlp/qualify_container.py bayleaf-otlp-qualification:amd64-20261020 postgres:17-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826 300000 boot
-docker build --platform linux/amd64 -f telemetry/otlp/Dockerfile -t bayleaf-otlp-qualification:amd64-default-20261020 .
+docker build --platform linux/amd64 -f chat/image/Dockerfile -t bayleaf-otlp-qualification:amd64-default-20261020 .
 ```
 
 The first two commands produced and booted local output index
@@ -390,7 +390,7 @@ without a build-argument override. That local build produced output index
 `sha256:9e051fc3e8687189ff10c3e2e5204538ee87f97a57b0d519ed29cfb762e69465`).
 The default therefore supports DO's amd64 build; it does not accidentally pin an
 arm64-only base. Build context must remain repository root, Dockerfile path
-`telemetry/otlp/Dockerfile`, and the service startup override must be
+`chat/image/Dockerfile`, and the service startup override must be
 `python /opt/bayleaf-otlp/startup_patch.py`, not the old echo-and-start wrapper.
 No production settings were changed in this check.
 

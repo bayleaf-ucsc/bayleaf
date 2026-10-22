@@ -11,7 +11,7 @@ retention run, forced cleanup or git-history operation was performed here.
 - OWUI remains **v0.12.3**, one instance, one worker, unchanged
   `apps-s-1vcpu-2gb` size. No database/schema upgrade or pool-size increase.
 - Change the Chat component from direct GHCR image deployment to the repo-root
-  `telemetry/otlp/Dockerfile`, with its immutable standard-image base pin and
+  `chat/image/Dockerfile`, with its immutable standard-image base pin and
   hash/version guards. Keep repository-push auto-deploy disabled: unrelated
   documentation pushes must not restart campus Chat.
 - Enable only the qualified native metrics lane, five-minute exports, dedicated

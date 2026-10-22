@@ -35,7 +35,7 @@ default context points at the personal `Just Adam` team.
 | **App ID** | `f1a1e758-62e9-4e99-90cb-212cab12958d` |
 | **Default ingress** | `bayleaf-chat-owui-app-6uicw.ondigitalocean.app` |
 | **Region** | `sfo` |
-| **Build** | Repo-root context, `telemetry/otlp/Dockerfile`; GitHub push auto-deploy disabled |
+| **Build** | Repo-root context, `chat/image/Dockerfile`; GitHub push auto-deploy disabled |
 | **Instance** | `apps-s-1vcpu-2gb` (1 instance) |
 | **HTTP port** | `8080` |
 
@@ -1273,7 +1273,7 @@ restore. Role-scoped context for Basic now comes from
 To reconstruct BayLeaf Chat from this backup:
 
 1. **Create DO App Platform app** with a single service using the qualified
-   repo-root `telemetry/otlp/Dockerfile` build and guarded startup command from §1,
+   repo-root `chat/image/Dockerfile` build and guarded startup command from §1,
    with repository-push auto-deploy disabled. Attach a managed PG 17 database and
    configure S3 storage via DO Spaces. Set all env vars from the table in §1 and
    the complete linked telemetry environment. Do not enable telemetry until its

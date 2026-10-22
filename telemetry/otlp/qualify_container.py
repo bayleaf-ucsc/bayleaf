@@ -1,6 +1,6 @@
 """Full OWUI artifact qualification, isolated synthetic Docker network only.
 
-python3 telemetry/otlp/qualify_container.py <locally-built-image> <postgres-image> [60000|300000] [full|boot]
+python3 telemetry/otlp/qualify_container.py <image built from chat/image/Dockerfile> <postgres-image> [60000|300000] [full|boot]
 Uses only uniquely named owned containers. No production credentials or calls.
 """
 import json

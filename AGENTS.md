@@ -103,6 +103,7 @@ bayleaf/
 │   └── package.json
 ├── chat/               # BayLeaf Chat — Open WebUI config & backup (has its own AGENTS.md)
 │   ├── DESIGN.md       # Full architecture, env vars, recovery procedure
+│   ├── image/          # Production image: pinned OWUI + guarded startup patch
 │   ├── models/         # Workspace model definitions (JSON + avatars)
 │   ├── tools/          # Custom toolkit source code
 │   ├── functions/      # Filter & action source code
