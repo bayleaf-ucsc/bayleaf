@@ -39,9 +39,19 @@ Managed via `doctl --context bayleaf`.
 doctl apps spec get f1a1e758-62e9-4e99-90cb-212cab12958d --context bayleaf              # View current spec
 doctl apps spec get f1a1e758-62e9-4e99-90cb-212cab12958d --context bayleaf > spec.yaml  # Save spec to file
 doctl apps spec validate spec.yaml --context bayleaf                                     # Validate (may reject EV[] values on existing apps; update still works)
-doctl apps update f1a1e758-62e9-4e99-90cb-212cab12958d --spec spec.yaml --context bayleaf  # Deploy changes
+doctl apps update f1a1e758-62e9-4e99-90cb-212cab12958d --spec spec.yaml --context bayleaf  # Deploy spec-only changes
+doctl apps update f1a1e758-62e9-4e99-90cb-212cab12958d --spec spec.yaml --update-sources --wait --context bayleaf  # Deploy spec + pushed main
 doctl apps logs f1a1e758-62e9-4e99-90cb-212cab12958d --context bayleaf                   # Tail logs
 ```
+
+**Source is pinned between deploys.** Chat builds `chat/image/Dockerfile` from
+GitHub `main`, with push auto-deploy disabled. Plain `doctl apps update`
+rebuilds the *previously deployed commit* with the new spec; it does not fetch
+`main`. Any change to `chat/image/` (or a spec change that references new repo
+paths) must be pushed first and deployed with `--update-sources` (or followed by
+`doctl apps create-deployment`). On 2026-10-22 a `dockerfile_path` change without
+it failed at build ("no such file") against the old commit; the prior deployment
+kept serving.
 
 ## Env Var Changes
 
@@ -182,10 +192,12 @@ content changes; don't chase them.
    Never substitute an unpatched upstream image with metrics enabled.
    Pull the live spec:
    `doctl apps spec get f1a1e758-62e9-4e99-90cb-212cab12958d --context bayleaf > /tmp/bayleaf-chat-spec.yaml`
-5. Update the qualified Dockerfile base/source release, preserving unrelated spec
+5. Update the qualified base/source release in `chat/image/` (Dockerfile digest,
+   `upstream/` files and `SOURCE.json` hashes), preserving unrelated spec
    settings, the guarded entrypoint and disabled repository-push auto-deploy.
-6. Deploy:
-   `doctl apps update f1a1e758-62e9-4e99-90cb-212cab12958d --spec /tmp/bayleaf-chat-spec.yaml --context bayleaf`
+   Commit and push to `main`: DigitalOcean builds from GitHub, not this checkout.
+6. Deploy, fetching the pushed source (without `--update-sources` the old commit rebuilds):
+   `doctl apps update f1a1e758-62e9-4e99-90cb-212cab12958d --spec /tmp/bayleaf-chat-spec.yaml --update-sources --wait --context bayleaf`
 7. Wait for ACTIVE deployment phase, then verify health:
    `curl -sS -o /dev/null -w '%{http_code}' https://chat.bayleaf.dev/health`
 8. Update the `Current version` line in this file.
@@ -265,9 +277,15 @@ under-documented ways. Either keep the `run_command` to a handful of
 short `;`-chained statements, or climb to rung 4 (custom Dockerfile)
 where you have a real shell script as a file.
 
-Verify after deploy: grep the deploy logs for the sentinel
-(`[bayleaf] rung-3 harness alive`), confirm OWUI's banner and `Started
-server process [1]` appear after it, and check `/health` returns 200.
+Verify after deploy: grep the deploy logs for
+`[bayleaf] v0.12.3 metrics source minimization verified` (printed only after
+the rung-4 guards pass), confirm OWUI's banner and `Started server process [1]`
+appear after it, and check `/health` returns 200. With the historical rung-3
+command above, grep for its sentinel instead. The rung-4 entrypoint still prints
+that sentinel first, as a legacy marker before any guard runs; its "extend this
+run_command" text is obsolete advice (boot logic belongs in
+`chat/image/startup_patch.py`, never the spec). Replace that string at the next
+image change, together with the qualification asserts in `../telemetry/otlp/`.
 
 ## Vertex Pipe
 

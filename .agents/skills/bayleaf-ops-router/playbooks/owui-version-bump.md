@@ -2,7 +2,7 @@
 source-skill: bayleaf-ops-router
 description: Upgrade the Open WebUI version powering BayLeaf Chat, exercising Basic and Help in prod, with the no-staging tension made explicit.
 status: rough
-last-reviewed: 2026-08-25
+last-reviewed: 2026-10-22
 ---
 
 # OWUI Version Bump
@@ -31,14 +31,22 @@ revert the image tag. Prod is the staging server; treat it accordingly.
 
 ## Steps
 
-1. Follow steps 4-7 of "OWUI Version Upgrades" in `chat/AGENTS.md` verbatim:
-   pull the live spec, edit the image `tag:`, deploy with `doctl apps update`,
-   monitor the deployment to ACTIVE with `doctl apps update --wait` (run as a
-   monitored background command), then `curl -sS -o /dev/null -w '%{http_code}'
-   https://chat.bayleaf.dev/health` (expect `200`).
-2. If the spec carries the rung-3 `run_command` harness, grep deploy logs for
-    the `[bayleaf] rung-3 harness alive` sentinel and confirm
-    `Started server process [1]` appears after it.
+1. Follow steps 4-7 of "OWUI Version Upgrades" in `chat/AGENTS.md` verbatim.
+   Since 2026-10-20 the version lives in the repo, not the spec: update
+   `chat/image/Dockerfile` (base digest) and requalify `chat/image/upstream/`
+   hashes and the startup patch (`../telemetry/qualification/otlp-rollout.md`),
+   build locally, then **commit and push to `main`**. Deploy with
+   `doctl apps update ... --update-sources --wait` (run as a monitored
+   background command); plain `doctl apps update` rebuilds the previously
+   deployed commit and silently ignores the push. Confirm the build log's
+   "Checking out commit" matches the pushed SHA, then `curl -sS -o /dev/null
+   -w '%{http_code}' https://chat.bayleaf.dev/health` (expect `200`).
+2. Grep deploy logs for `[bayleaf] v0.12.3 metrics source minimization verified`
+    (adjust the version), printed only after the entrypoint's version,
+    environment and source-hash guards pass, and confirm `Started server
+    process [1]` appears after it. The earlier `[bayleaf] rung-3 harness alive`
+    line is a legacy marker printed *before* the guards run, so it does not
+    prove the patch succeeded.
 3. Run an authenticated `curl` smoke test against `/api/chat/completions` for
    Basic and Help, with a known short response. This verifies OWUI's model
    routing without depending on browser automation. It does not exercise the
@@ -79,12 +87,21 @@ refuse to start against a database whose Alembic revision it does not recognize;
 additive schema changes alone do not establish rollback safety. If migrations
 ran, assess database restoration or a tested downgrade with Adam before acting.
 Restoration can lose writes since the recovery point. When database compatibility
-is established, re-edit the image `tag:` in the spec back to the previous version
-and `doctl apps update` again. The repo backup from step 5 provides the model
+is established, revert the `chat/image/` commit, push, and deploy with
+`--update-sources` (or roll back to the previous deployment in the DO console,
+which reuses its already-built image). The repo backup from step 5 provides the model
 configs to restore if step 4's changes misbehave: re-push with
 `owui-cli models update chat/models/<id>/model.json`.
 
 ## Refinement log
+
+- 2026-10-22: not a version bump, but it exposed stale steps. Moving the image
+  from `telemetry/otlp/` to `chat/image/` changed `dockerfile_path` via plain
+  `doctl apps update`; DO rebuilt the last deployed commit (2026-10-20), which
+  lacked the new path, and the build failed while the old deployment kept
+  serving. Steps 1 and Rollback still described editing the spec image `tag:`,
+  obsolete since the rung-4 custom image. Now: push, then `--update-sources`,
+  and check the checked-out SHA in the build log.
 
 - 2026-10-18: v0.12.3 incident recovery used verified managed backup and a
   preserved spec when the expired admin JWT and unresponsive UI prevented fresh
