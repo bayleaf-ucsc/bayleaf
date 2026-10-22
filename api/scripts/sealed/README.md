@@ -17,6 +17,11 @@ uv run --script api/scripts/sealed/proxy.py
 Campus Pass is supported on the UCSC network by setting `BAYLEAF_API_KEY=campus`.
 Choose another local port with `BAYLEAF_SEALED_PORT=3311`.
 
+The listener serves `POST /v1/chat/completions` and `POST /v1/decisions`.
+Decisions use Tinfoil's native schema (`input`, a `questions` list of
+`predicate`/`choice`/`score`), not the standard lane's `state`/`noul` shape;
+pick a `decision-*` model from the catalog.
+
 The proxy intentionally has no plaintext fallback. If attestation, the BayLeaf
 relay, or EHBP fails, the request fails. Do not point OpenCode at
 `https://api.bayleaf.dev/sealed/v1` directly: a generic OpenAI client cannot

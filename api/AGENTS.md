@@ -377,7 +377,7 @@ is a separate route and **must never become a mode flag on the plaintext proxy**
 GET      /sealed/health        Kill-switch state + upstream reachability
 GET|POST /sealed/attestation   Relay of the signed attestation bundle (BOTH verbs required)
 GET      /sealed/models        Tinfoil catalog with bare model IDs
-POST     /sealed/v1/*          EHBP ciphertext relay. POST only.
+POST     /sealed/v1/*          EHBP ciphertext relay. POST only. Includes decisions (DECISIONS.md).
 ```
 
 ### Invariants. Do not relax these without reading why they exist.
@@ -455,7 +455,9 @@ What the Worker sees at request time:
   Note `model=` is present *even though EHBP encrypted `model` in the request
   body*, so the relay learns which model ran without decrypting anything.
 - Streaming: nothing at all (see the trailer gotcha above).
-- Neither carries dollars, only tokens.
+- As measured 2026-07-29, neither carried dollars. Re-observed 2026-10-22: the
+  non-streaming header now also includes `cost_usd=` and cached/uncached prompt
+  token counts (see `DECISIONS.md`). Not yet relied on for enforcement.
 
 What is available out-of-band, and this is the useful part:
 

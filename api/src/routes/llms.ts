@@ -763,7 +763,15 @@ contract, but nonempty media is currently rejected because OpenRouter transport 
 not been verified. No remote media fetching or silent transcription/text fallback.
 Read [the generated contract](https://api.bayleaf.dev/docs#tag/decisions) and
 [qualification notes](https://github.com/bayleaf-ucsc/bayleaf/blob/main/api/DECISIONS.md).
-
+${sealedEnabled ? `
+For decisions over content BayLeaf should not be able to read, use Sealed instead:
+a Tinfoil SDK (Python ${bt}tinfoil>=0.15.0${bt}, JavaScript ${bt}tinfoil>=1.3.0${bt}) with
+${bt}client.decisions.create${bt} against https://api.bayleaf.dev/sealed and a
+${bt}decision-small${bt}, ${bt}decision-medium${bt} or ${bt}decision-large${bt} model. Sealed
+uses Tinfoil's native schema (${bt}input${bt}; a ${bt}questions${bt} list of
+${bt}predicate${bt}, ${bt}choice${bt} and ${bt}score${bt}), because BayLeaf cannot translate a
+body it cannot read. See [Sealed LLM inference](#sealed-llm-inference).
+` : ''}
 ### Standard LLM inference
 
 Chat completions:

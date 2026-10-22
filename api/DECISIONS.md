@@ -57,6 +57,25 @@ proof of OpenRouter compatibility. ZDR availability must be discovered, not pred
 No claims of installed adapter discovery or runtime parity. Sealed remains excluded
 from grants because its encrypted model field cannot be checked by BayLeaf.
 
+## Sealed decisions
+
+Tinfoil serves `decision-small`, `decision-medium` and `decision-large` (vllm-sr d3
+family, marked experimental) at `/v1/decisions`, so the existing path-generic relay
+`POST /sealed/v1/decisions` carries them as EHBP ciphertext with no relay code change.
+This is the confidential analogue of `/v1/decisions`, not a variant of it: clients use
+a Tinfoil SDK (Python `tinfoil>=0.15.0`, JavaScript `tinfoil>=1.3.0`) and Tinfoil's
+native schema (`input`; a `questions` list of `predicate`, `choice` with up to 26
+`choices`, and `score` with `levels`). BayLeaf does not translate the standard
+`state`/`noul` shape because the relay must never parse the body. Sealed limits,
+per-user Tinfoil keys and grant exclusion apply unchanged. The local proxy at
+`scripts/sealed/proxy.py` also serves `/v1/decisions`.
+
+2026-10-22 evidence: `scripts/smoke-sealed-decisions.py` with an ordinary key passed
+12/12 against production using synthetic content. All three models returned predicate,
+choice and score answers relayed as ciphertext; plaintext was rejected with 400. The
+relay saw only the usage header, which now includes `cost_usd` (323 prompt tokens:
+small $0.0000065, medium $0.0000194, large $0.000129). No calibration claim.
+
 ## Qualification and rollout
 
 Run decision, grant and documentation synthetic tests and TypeScript. Apply the

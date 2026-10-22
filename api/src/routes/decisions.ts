@@ -25,7 +25,7 @@ const error = { content: { 'application/json': { schema: ApiErrorSchema } } };
 decisionsRoutes.openapi(createRoute({
   method: 'post', path: '/decisions', operationId: 'createDecision', tags: ['Decisions'],
   summary: 'Evaluate typed decision questions',
-  description: 'Choice, Noul (probability of yes), and ordered Score inference. Uses existing backend credentials and allowances, including model-set temporary tokens and Campus Pass. OpenRouter published weights and ZDR are mandatory. Media is reserved but rejected until the upstream transport is verified; no silent media removal or text fallback. Other backends currently offer zero decision models.',
+  description: 'Choice, Noul (probability of yes), and ordered Score inference. Uses existing backend credentials and allowances, including model-set temporary tokens and Campus Pass. OpenRouter published weights and ZDR are mandatory. Media is reserved but rejected until the upstream transport is verified; no silent media removal or text fallback. Other standard backends currently offer zero decision models. For encrypted decisions, use POST /sealed/v1/decisions through a Tinfoil SDK instead; that lane uses Tinfoil\'s native schema.',
   security: [{ Bearer: [] }, {}] as Record<string, string[]>[],
   request: { body: { required: true, content: { 'application/json': { schema: DecisionRequestSchema } } } },
   responses: { 200: { description: 'Native typed answers and usage', content: { 'application/json': { schema: DecisionResponseSchema } } },

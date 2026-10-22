@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["tinfoil", "httpx"]
+# dependencies = ["tinfoil>=0.15.0", "httpx"]
 # ///
 """Local, fail-closed OpenAI-compatible transport for BayLeaf Sealed.
 
@@ -73,12 +73,17 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(404, {"error": {"message": "Not found"}})
 
     def do_POST(self) -> None:
-        if urlparse(self.path).path != "/v1/chat/completions":
-            self.send_json(404, {"error": {"message": "Only chat completions are supported"}})
+        path = urlparse(self.path).path
+        if path not in ("/v1/chat/completions", "/v1/decisions"):
+            self.send_json(404, {"error": {"message": "Only chat completions and decisions are supported"}})
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
             request = json.loads(self.rfile.read(length))
+            if path == "/v1/decisions":
+                # Tinfoil's native decision schema; no streaming.
+                self.send_json(200, client.decisions.create(**request).model_dump())
+                return
             response = client.chat.completions.create(**request)
             if request.get("stream"):
                 self.send_response(200)
