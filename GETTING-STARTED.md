@@ -131,7 +131,7 @@ With BayLeaf Chat, you often had to give up some privacy to get more capability.
 
 The [download page for OpenChamber](https://openchamber.dev/download/) offers installers for Windows, macOS, and Linux, split by processor architecture. This guide can't cover every combination, so I'll assume you can figure out how to install the desktop app and launch it for the first time.
 
-If OpenCode isn't already installed, OpenChamber automatically installs it on first launch before proceeding to the main display.
+Current OpenChamber desktop installers include OpenCode, so you do not need to install it separately.
 
 When you launch OpenChamber, you'll be greeted with a user interface that looks a lot like the one from BayLeaf Chat. You've got a big chat window in the middle with a sidebar of your past conversations on the left.
 
@@ -152,6 +152,8 @@ Click this to launch a terminal in the right sidebar. When the terminal panel op
 ```sh
 opencode auth login https://api.bayleaf.dev
 ```
+
+The same command works on Windows, macOS, and Linux (it uses the curl that ships with each). If a Windows terminal shows “Open this URL” without a URL and then reports failure, try `opencode auth login https://api.bayleaf.dev/windows` instead, which uses built-in Windows PowerShell. Unused approval requests expire after ten minutes.
 
 After a moment, you'll see a message like this:
 
@@ -175,6 +177,8 @@ If you ever need to disconnect OpenChamber from the BayLeaf API (unlikely), you 
 ```sh
 opencode auth logout https://api.bayleaf.dev
 ```
+
+(If you logged in with the `/windows` fallback URL, log out with that same URL.)
 
 It is now safe for you to forget all of the tedious stuff you just did with the terminal window. That was one-time setup that you'll likely never need to do again.
 

@@ -44,10 +44,13 @@ import type { ModelCost } from '../openrouter';
 import { altBackendForModel, isBackendEnabled, parseModelList, SEALED_PLUGIN } from '../constants';
 import { fetchSealedModels, isSealedEnabled } from './sealed';
 import sandboxPlugin from '../../.sandbox-plugin-ref.json';
+import { windowsClaimCommand } from '../windowsClaim';
 
 export const wellKnownRoutes = new Hono<AppEnv>();
 export const sealedWellKnownRoutes = new Hono<AppEnv>();
 export const sandboxWellKnownRoutes = new Hono<AppEnv>();
+// Mount at '/' before the broader Sealed relay. Config stays on canonical URLs.
+export const windowsWellKnownRoutes = new Hono<AppEnv>();
 
 // ── Configuration ────────────────────────────────────────────────
 
@@ -94,17 +97,19 @@ type OpenCodeMode = 'standard' | 'sealed' | 'sandbox';
  * (b) OpenCode's templated-header mechanism only works on `remote_config.url`.
  *
  * `auth.command` is a shell-free curl device flow (see routes/claim.tsx).
- * curl imports Windows' standard OS environment variable, defaulting to Unix,
- * so BayLeaf can send instructions to CON or /dev/stderr while reserving stdout
- * exclusively for the approved key that OpenCode captures.
+ * One argv for macOS, Linux and Windows. curl writes the claim URL header to
+ * stderr, including when launched by a background service without a console.
+ * Stdout remains exclusively the approved key that OpenCode captures. Requires
+ * curl >= 7.84.0 (%header{}). Explicit /windows aliases (built-in PowerShell
+ * 5.1) remain a fallback if a Windows curl cannot reuse the connection.
  */
-function discoveryDocument(requestUrl: string, mode: OpenCodeMode) {
+function discoveryDocument(requestUrl: string, mode: OpenCodeMode, windows = false) {
   const apiBase = absoluteBaseUrl(requestUrl);
   const loginUrl = mode === 'standard' ? apiBase : `${apiBase}/${mode}`;
 
   return {
     auth: {
-      command: buildCurlAuthCommand(apiBase, mode === 'sandbox' ? 'standard' : mode),
+      command: (windows ? windowsClaimCommand : buildCurlAuthCommand)(apiBase, mode === 'sandbox' ? 'standard' : mode),
       env: TOKEN_ENV_NAME,
     },
     remote_config: {
@@ -129,6 +134,18 @@ sealedWellKnownRoutes.get('/opencode', (c) => {
   return c.json(discoveryDocument(c.req.url, 'sealed'));
 });
 
+// Login URL is the stored identity; auth.env binds that identity's token before
+// remote_config.headers substitution. The config URL need not equal the login URL.
+for (const mode of ['standard', 'sealed', 'sandbox'] as const) {
+  const prefix = mode === 'standard' ? '' : `/${mode}`;
+  windowsWellKnownRoutes.get(`${prefix}/windows/.well-known/opencode`, (c) => {
+    if (mode === 'sealed' && !isSealedEnabled(c.env)) {
+      return c.json({ error: 'BayLeaf Sealed is currently unavailable.' }, 503);
+    }
+    return c.json(discoveryDocument(c.req.url, mode, true));
+  });
+}
+
 function buildCurlAuthCommand(apiBase: string, mode: OpenCodeMode): string[] {
   // File-form -b preserves response cookies across --next. This source is the
   // Windows NUL device and a protected, nonexistent absolute path on Unix, so
@@ -139,30 +156,31 @@ function buildCurlAuthCommand(apiBase: string, mode: OpenCodeMode): string[] {
     // Must be curl's first argument: ignore .curlrc so tracing/output settings
     // cannot persist the key or add bytes to the stdout OpenCode captures.
     '-q',
-    '-s',
+    '--fail-early',
+    // --show-error is global across --next and would log each pending 429,
+    // eventually scrolling the approval URL out of the user's terminal.
+    '-fs',
+    // One HTTP/1.1 keep-alive connection for all three transfers. macOS curl
+    // 8.7.1 misclassifies an empty HTTP/2 429 as transport error 56, bypassing
+    // --retry; HTTP/1.1 returns the intended retryable error 22.
+    '--http1.1',
     '-b',
     cookieEngine,
-    '--variable',
-    '%OS=unix',
-    '--expand-url',
-    `${apiBase}/auth/claim/curl/start/${mode}/{{OS:url}}`,
+    // The platform segment remains for older clients; this flow is platform-neutral.
+    `${apiBase}/auth/claim/curl/start/${mode}/unix`,
+    // Write-out only on a reused connection: stock Windows curl 8.8.0 fails
+    // write-out during a fresh HTTPS handshake (curl #13845). --fail-early turns
+    // a missing URL into a visible failure instead of a silent wait.
     '--next',
-    '-sf',
+    '-fs',
+    '--http1.1',
     '-b',
     cookieEngine,
-    '-o',
-    '/dev/stderr',
-    `${apiBase}/auth/claim/curl/instructions/unix`,
+    '--write-out',
+    '%{stderr}\\nOpen this URL to approve access:\\n%header{X-BayLeaf-Claim-URL}\\n\\n',
+    `${apiBase}/auth/claim/curl/url`,
+    // Reset write-out before polling: the approved credential belongs on stdout.
     '--next',
-    '-sf',
-    '-b',
-    cookieEngine,
-    '-o',
-    '\\\\.\\CON',
-    `${apiBase}/auth/claim/curl/instructions/windows`,
-    '--next',
-    // macOS curl 8.7.1 misclassifies an empty HTTP/2 429 as transport error 56,
-    // bypassing --retry. HTTP/1.1 returns the intended retryable error 22.
     '--http1.1',
     '-fs',
     '--retry',

@@ -358,6 +358,24 @@ claimRoutes.get('/curl/start/:mode/:platform', async (c) => {
     maxAge: CLAIM_TTL_SECONDS,
     secure: new URL(c.req.url).hostname !== 'localhost',
   });
+  // Only the public approval URL is displayable, never the device secret/key.
+  c.header('X-BayLeaf-Claim-URL', claim.claimUrl);
+  c.header('Cache-Control', 'no-store');
+  return c.body(null, 204);
+});
+
+// Repeats the pending claim's public approval URL without creating a claim. The
+// discovery command reads it on a second transfer that reuses start's verified
+// TLS connection: stock Windows curl 8.8.0 fails write-out during a fresh HTTPS
+// handshake (curl #13845, fixed in 8.9.0), but not on a reused connection.
+claimRoutes.get('/curl/url', async (c) => {
+  const deviceCode = (getCookie(c, CURL_DEVICE_COOKIE) ?? '').trim();
+  if (!isWellFormedDeviceCode(deviceCode)) return c.body(null, 404);
+  const record = await getClaimByDevice(c, deviceCode);
+  if (!record || record.status !== 'pending') return c.body(null, 404);
+  const baseUrl = absoluteBaseUrl(new URL(c.req.url));
+  c.header('X-BayLeaf-Claim-URL', `${baseUrl}/auth/claim?c=${encodeURIComponent(record.user_code)}`);
+  c.header('Cache-Control', 'no-store');
   return c.body(null, 204);
 });
 

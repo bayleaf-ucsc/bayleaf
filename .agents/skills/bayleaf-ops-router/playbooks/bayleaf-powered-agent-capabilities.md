@@ -153,6 +153,17 @@ API to keep a retired capability appearing functional.
 
 ## Refinement log
 
+- 2026-10-23 (native Windows qualification): HTTP fixtures missed curl 8.8.0's
+  HTTPS certificate-info/write-out failure. Explicit PowerShell discovery aliases
+  passed native generated-argv tests and the deployed desktop-to-campus-login
+  handoff. Ctrl+C did not terminate the service-owned helper; postapproval key/config
+  qualification remains separate. Never call URL display a completed login.
+
+- 2026-10-23 (OpenCode curl transport): Windows background-service launches need
+  process stderr, not `CON`. Test the advertised argv with stdout/stderr pipes;
+  retain legacy instruction routes while replacing discovery. Exposure is shared
+  Standard/Sealed/Sandbox onboarding only, with no adapter or authority change.
+
 - 2026-10-21 (desktop data boundary): Put the P3 ceiling and P4 exclusions
   in both the platform shim's advertised description and body, not only the linked
   reference. Qualify PII by UCSC classification; Sealed is not a P4 exception.

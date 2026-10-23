@@ -14,6 +14,7 @@
     "test:decisions": "node scripts/test-decisions.mjs",
     "test:sealed-dashboard": "node scripts/test-sealed-dashboard.mjs",
     "test:sealed-models": "node scripts/test-sealed-models.mjs",
+    "test:claim-curl": "node scripts/test-claim-curl.mjs",
     "test:campus-pass": "node scripts/test-campus-pass.mjs",
     "test:docs": "node scripts/test-docs.mjs",
     "test:sandbox-reaper": "node scripts/test-sandbox-reaper.mjs",

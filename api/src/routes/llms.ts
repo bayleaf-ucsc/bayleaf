@@ -282,9 +282,12 @@ ${bt}BAYLEAF_API_KEY${bt} available in your environment, then run the logout com
 Logging out removes OpenCode's stored copy of the BayLeaf key along with the remote-config
 registration; it does not revoke the key at BayLeaf.
 
-**Requirement:** ${bt}curl${bt} 8.3 or newer on the system path. Current Windows and
-macOS include it. Linux users with an older curl can follow the manual ${bt}opencode.json${bt}
-setup below.
+**Requirement:** ${bt}curl${bt} 7.84.0 or newer on the system path; current Windows,
+macOS and Linux include it. The same login URL works on every platform. If a Windows
+login shows the approval heading without a URL and fails, use the fallback alias
+${bt}https://api.bayleaf.dev/windows${bt} (or ${bt}/sealed/windows${bt}), which uses
+built-in Windows PowerShell 5.1; log out with whichever URL you logged in with.
+The manual ${bt}opencode.json${bt} setup below remains an alternative.
 
 #### Roll your own ${bt}bayleaf${bt} provider (optional)
 

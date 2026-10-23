@@ -988,3 +988,154 @@ The earlier headless clipboard limitation remains historical evidence, not an
 outstanding clipboard blocker. Live providers/authentication, unsafe-link
 variants, mobile/reduced-motion rendering and browser consent handoff remain
 outside this qualification.
+## OpenCode curl onboarding regression (2026-10-23)
+
+Deployed through `npm run deploy` as `267b6fe1-0285-4760-b55d-fc2e015869b8`.
+Live Standard and Sealed discovery/start checks passed: corrected command,
+empty 204, approval URL header, scoped cookie and `no-store`. Two unapproved
+smoke-test claims expire normally after ten minutes, with no keys provisioned.
+Rollback target: `fa26e040-2fca-4d70-a294-5fd768fc12c3` (restore that Worker
+version through Wrangler rollback if needed; no schema/config migration).
+
+Run `npm run test:claim-curl` from `api/` without credentials. It checks the
+Standard/Sealed start responses and legacy instruction routes, then runs the
+advertised Standard/Sealed/Sandbox curl commands against a local fixture with
+stdout/stderr pipes and a synthetic approved-credential sentinel. No login,
+provider key, inference request or production database is involved.
+
+The shell-free command requires **curl >= 7.84.0** for `%header{name}`
+([curl manual](https://curl.se/docs/manpage.html#-w)). The previous OS-variable
+flow required 8.3.0. Start remains an empty 204 with the same scoped HttpOnly
+device cookie; `X-BayLeaf-Claim-URL` adds only the existing user-facing approval
+URL. `--write-out` sends it to process stderr, not Windows `CON`, so a background
+OpenCode service can capture it. `--next` resets write-out before polling;
+stdout contains only the approved credential. Old platform instruction routes
+remain supported. The retained `/unix` start suffix is compatibility metadata,
+not OS detection. The first HTTP fixture missed a native Windows curl 8.8.0
+HTTPS failure: any write-out enables certificate-info parsing, which fails on
+unrecognized certificate OIDs ([curl #13845](https://github.com/curl/curl/issues/13845),
+fixed in 8.9.0). The deployed revision therefore failed Windows GUI onboarding.
+
+### Windows aliases: deployed and browser-qualified (2026-10-23)
+
+`windowsWellKnownRoutes` in `src/routes/wellknown.ts` exports full discovery paths:
+`/windows/.well-known/opencode`, `/sealed/windows/.well-known/opencode`, and
+`/sandbox/windows/.well-known/opencode`. `src/index.ts` mounts the router before
+the broader Sealed relay. Deployed Worker version:
+`7943f8a6-831e-41f5-a41c-f39226648257`. No migration or variable changes were needed.
+
+The advertised argv is `['powershell.exe', '-NoProfile', '-NonInteractive',
+'-Command', SCRIPT]`, built by `src/windowsClaim.ts`. It derives from the saved
+Windows PowerShell 5.1 HTTPS-qualified prototype, with a monotonic 600-second
+deadline, bounded credential reading, approval-URL validation, unchanged normal
+certificate validation, redirect refusal and memory-only `CookieContainer`.
+It prints only the public approval URL on stderr, accepts pending 429 at one-second
+intervals, and prints only a validated ordinary BayLeaf token on stdout. Denial,
+timeout and protocol/transport errors use fixed stderr messages, never server
+error bodies or exceptions. The bootstrap creates no additional child processes
+or disk files. Terminating it stops polling, but Ctrl+C in OpenChamber did not
+terminate the CLI or service-owned PowerShell process during qualification.
+Only those identity-checked test processes were stopped explicitly; normal
+services were preserved. Otherwise the helper and claim expire after ten minutes.
+No execution-policy bypass or remote code download.
+
+The alias retains `auth.env=BAYLEAF_API_KEY` and points `remote_config.url` at
+the existing authenticated Standard/Sealed/Sandbox config path. OpenCode saves
+the login URL as connection identity, binds the saved `auth.env` before remote
+header substitution, and need not fetch config at that same URL. Use the exact
+Windows login URL for logout too. Do not retain both canonical and alias
+connections for the same lane: their shared env binding can shadow credentials.
+Sandbox aliases retain owner-key requirements; Sealed aliases retain its gate.
+
+Tests assert those config pointers and the inline argv. On Windows the same test
+also invokes the generated argv with stdout/stderr pipes against a local HTTP
+fixture for pending/approval, denial, error, invalid credential and timeout.
+On macOS that execution is explicitly skipped. The exact generated argv passed
+native Windows PowerShell 5.1 tests: Standard/Sealed/Sandbox HTTPS start and pending,
+synthetic approval with credential-only stdout, denial, malformed/short/long
+credentials, pending timeout, and a stalled response body. Test deadlines were
+shortened; cancellation also tested the unchanged script with external termination.
+
+In OpenChamber 2.5.1 with bundled OpenCode 2.1.3, the integrated-terminal command
+`opencode auth login https://api.bayleaf.dev/windows` displayed a real claim URL.
+Following it reached CILogon with UCSC selected, then the empty CruzID Gold login
+form. No credentials, approval, real key handoff, or inference were exercised.
+Postapproval saved credentials, remote-config loading, restart/model selection,
+and reliable Ctrl+C cancellation remain unqualified.
+
+Separate isolated macOS tests displayed the approval URL with curl 8.7.1 and
+OpenCode 2.0.32 and 2.1.3, both standalone and shared-service modes. The original
+macOS user report remains unexplained; this is not a fresh desktop-app qualification.
+
+Exposure scope for this transport-only fix (no new authority or capability):
+
+| Surface | Decision |
+| --- | --- |
+| Desktop Standard/Sealed OpenCode/OpenChamber | Curl header transport and explicit Windows aliases deployed; Windows Standard browser handoff qualified, postapproval completion pending. |
+| Hosted OpenCode/Sandbox discovery | Shared Standard command corrected; no plugin or installer change. |
+| Hosted Nanobot | Not applicable: no OpenCode discovery command. |
+| Chat | Not applicable: no OpenCode discovery command. |
+| HTTP docs / llms.txt | Local getting-started guide splits Windows commands; publication requires a later approved push. Live llms.txt Windows guidance remains a follow-up. |
+
+Rollout needs no migration. A curl already polling will not acquire new
+instructions: cancel and retry login after propagation. Rolling back the Worker
+restores the old discovery command, including its Windows background-console
+limitation. Claim rows still expire after ten minutes; legacy routes/cookies
+remain compatible across versions.
+
+### Fresh macOS desktop qualification (2026-10-23)
+
+A fresh use.computer M4 VM running macOS 26.2 (25C56), arm64, installed the official
+notarized OpenChamber 2.5.1 ARM64 app without a Gatekeeper bypass. Its integrated
+terminal and backend resolved bundled OpenCode 2.1.3 and system curl 8.7.1.
+The exact macOS guide command displayed the approval URL; Safari reached CILogon
+with UCSC selected and then the empty CruzID Gold credential form. Control-C
+returned to the prompt and both test CLI and curl processes exited.
+
+This exposed terminal noise in the experimental revision: curl's global
+`--show-error` persisted across `--next`, printing expected pending HTTP 429s and
+eventually hiding the URL. Removing that flag was deployed as
+`9aa18a64-9655-4fcc-a5e9-01b782e67a83`. The regression fixture now requires two
+pending responses before approval while asserting exact URL-only stderr and
+credential-only stdout. A real Mac GUI retry kept the URL visible for twelve
+seconds without 429/error noise and cancelled cleanly. Screenshot:
+`use-computer-mac/11-clean-auth-wait.png` in the private qualification directory.
+
+No campus credentials, approval, key provisioning or inference were used. This
+qualifies fresh desktop browser handoff, not postapproval credential/config
+completion, and does not explain the original affected Mac user's environment.
+
+Follow-up version `e35caaff-9608-4fc4-9ffa-497f7954a21d` also publishes Windows
+alias guidance and the corrected curl requirement in live `/llms.txt`; the
+qualified authentication commands are unchanged from the quiet-polling revision.
+The GitHub-served getting-started guide still requires an approved commit/push.
+
+### Single OS-neutral login URL (2026-10-23)
+
+`opencode auth login https://api.bayleaf.dev` (and `/sealed`) now uses one curl
+argv on every platform: (1) `start` sets the device cookie and opens an HTTP/1.1
+keep-alive connection; (2) `GET /auth/claim/curl/url` repeats the pending claim's
+public approval URL as `X-BayLeaf-Claim-URL` (204, no new claim) and `--write-out
+%{stderr}` prints it; (3) `--next` resets write-out and polls with credential-only
+stdout. `--fail-early` makes a missing URL a visible failure, not a silent wait.
+
+Why the extra transfer: stock Windows curl 8.8.0 (Schannel) enables certificate
+info whenever write-out is present and fails with error 43 during a fresh HTTPS
+handshake ([curl #13845](https://github.com/curl/curl/issues/13845), fixed in 8.9.0).
+On a reused connection there is no handshake, so write-out succeeds. Verified on
+the Windows VM with shell-free redirected pipes: write-out on a fresh connection
+exits 43; after a successful first transfer, `-v` shows "Re-using existing
+connection" and the URL prints with exit 0 and empty stdout. A first transfer
+that fails under `-f` closes the connection, so the warm-up must be the 2xx start.
+
+Deployed as `6f48afc8-d1b7-4c50-b72a-cf57450f8447`. Live computer-use
+qualification with the unchanged canonical command in OpenChamber 2.5.1 /
+OpenCode 2.1.3: fresh Windows (curl 8.8.0, service-spawned curl confirmed) and
+fresh macOS 26.2 (curl 8.7.1) both displayed the URL with no error noise after
+ten seconds and reached CILogon with UCSC selected. macOS Ctrl+C stopped the
+attempt; on Windows, Ctrl+C left the service-owned CLI/curl running (OpenCode
+behavior, not BayLeaf's), so those PIDs were stopped explicitly. No credentials,
+approval, key handoff or inference. Postapproval completion remains unqualified.
+
+The `/windows` aliases (PowerShell 5.1) remain deployed as a documented fallback
+if connection reuse ever fails; the guide and `/llms.txt` lead with the single URL.
