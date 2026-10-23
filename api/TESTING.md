@@ -1137,5 +1137,7 @@ attempt; on Windows, Ctrl+C left the service-owned CLI/curl running (OpenCode
 behavior, not BayLeaf's), so those PIDs were stopped explicitly. No credentials,
 approval, key handoff or inference. Postapproval completion remains unqualified.
 
-The `/windows` aliases (PowerShell 5.1) remain deployed as a documented fallback
-if connection reuse ever fails; the guide and `/llms.txt` lead with the single URL.
+The interim `/windows` PowerShell aliases (described above) were then removed:
+`src/windowsClaim.ts`, its routes and tests are gone, and a Windows curl that
+cannot reuse the connection now fails visibly via `--fail-early`. If that ever
+happens, the PowerShell bootstrap is recoverable from git history (commit 7d1f494).

@@ -44,13 +44,10 @@ import type { ModelCost } from '../openrouter';
 import { altBackendForModel, isBackendEnabled, parseModelList, SEALED_PLUGIN } from '../constants';
 import { fetchSealedModels, isSealedEnabled } from './sealed';
 import sandboxPlugin from '../../.sandbox-plugin-ref.json';
-import { windowsClaimCommand } from '../windowsClaim';
 
 export const wellKnownRoutes = new Hono<AppEnv>();
 export const sealedWellKnownRoutes = new Hono<AppEnv>();
 export const sandboxWellKnownRoutes = new Hono<AppEnv>();
-// Mount at '/' before the broader Sealed relay. Config stays on canonical URLs.
-export const windowsWellKnownRoutes = new Hono<AppEnv>();
 
 // ── Configuration ────────────────────────────────────────────────
 
@@ -100,16 +97,15 @@ type OpenCodeMode = 'standard' | 'sealed' | 'sandbox';
  * One argv for macOS, Linux and Windows. curl writes the claim URL header to
  * stderr, including when launched by a background service without a console.
  * Stdout remains exclusively the approved key that OpenCode captures. Requires
- * curl >= 7.84.0 (%header{}). Explicit /windows aliases (built-in PowerShell
- * 5.1) remain a fallback if a Windows curl cannot reuse the connection.
+ * curl >= 7.84.0 (%header{}).
  */
-function discoveryDocument(requestUrl: string, mode: OpenCodeMode, windows = false) {
+function discoveryDocument(requestUrl: string, mode: OpenCodeMode) {
   const apiBase = absoluteBaseUrl(requestUrl);
   const loginUrl = mode === 'standard' ? apiBase : `${apiBase}/${mode}`;
 
   return {
     auth: {
-      command: (windows ? windowsClaimCommand : buildCurlAuthCommand)(apiBase, mode === 'sandbox' ? 'standard' : mode),
+      command: buildCurlAuthCommand(apiBase, mode === 'sandbox' ? 'standard' : mode),
       env: TOKEN_ENV_NAME,
     },
     remote_config: {
@@ -133,18 +129,6 @@ sealedWellKnownRoutes.get('/opencode', (c) => {
   }
   return c.json(discoveryDocument(c.req.url, 'sealed'));
 });
-
-// Login URL is the stored identity; auth.env binds that identity's token before
-// remote_config.headers substitution. The config URL need not equal the login URL.
-for (const mode of ['standard', 'sealed', 'sandbox'] as const) {
-  const prefix = mode === 'standard' ? '' : `/${mode}`;
-  windowsWellKnownRoutes.get(`${prefix}/windows/.well-known/opencode`, (c) => {
-    if (mode === 'sealed' && !isSealedEnabled(c.env)) {
-      return c.json({ error: 'BayLeaf Sealed is currently unavailable.' }, 503);
-    }
-    return c.json(discoveryDocument(c.req.url, mode, true));
-  });
-}
 
 function buildCurlAuthCommand(apiBase: string, mode: OpenCodeMode): string[] {
   // File-form -b preserves response cookies across --next. This source is the

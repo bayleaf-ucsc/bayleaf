@@ -283,10 +283,7 @@ Logging out removes OpenCode's stored copy of the BayLeaf key along with the rem
 registration; it does not revoke the key at BayLeaf.
 
 **Requirement:** ${bt}curl${bt} 7.84.0 or newer on the system path; current Windows,
-macOS and Linux include it. The same login URL works on every platform. If a Windows
-login shows the approval heading without a URL and fails, use the fallback alias
-${bt}https://api.bayleaf.dev/windows${bt} (or ${bt}/sealed/windows${bt}), which uses
-built-in Windows PowerShell 5.1; log out with whichever URL you logged in with.
+macOS and Linux include it. The same login URL works on every platform.
 The manual ${bt}opencode.json${bt} setup below remains an alternative.
 
 #### Roll your own ${bt}bayleaf${bt} provider (optional)

@@ -4,17 +4,16 @@ import { build } from 'esbuild';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { writeFile } from 'node:fs/promises';
 
 const bundle = await build({
   stdin: {
-    contents: "export { wellKnownRoutes, sealedWellKnownRoutes, sandboxWellKnownRoutes, windowsWellKnownRoutes } from './src/routes/wellknown'; export { claimRoutes } from './src/routes/claim';",
+    contents: "export { wellKnownRoutes, sealedWellKnownRoutes, sandboxWellKnownRoutes } from './src/routes/wellknown'; export { claimRoutes } from './src/routes/claim';",
     resolveDir: process.cwd(),
   },
   bundle: true, write: false, format: 'esm', platform: 'browser',
   jsx: 'automatic', jsxImportSource: 'hono/jsx', loader: { '.py': 'text' },
 });
-const { claimRoutes, wellKnownRoutes, sealedWellKnownRoutes, sandboxWellKnownRoutes, windowsWellKnownRoutes } = await import(
+const { claimRoutes, wellKnownRoutes, sealedWellKnownRoutes, sandboxWellKnownRoutes } = await import(
   `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`
 );
 
@@ -74,45 +73,6 @@ for (const mode of ['standard', 'sealed']) {
 }
 assert.equal((await claimRoutes.request('/curl/start/invalid/unix', {}, { DB })).status, 404);
 assert.equal((await sealedWellKnownRoutes.request('/opencode', {}, { SEALED_ENABLED: 'false' })).status, 503);
-assert.equal((await windowsWellKnownRoutes.request('/sealed/windows/.well-known/opencode', {}, { SEALED_ENABLED: 'false' })).status, 503);
-
-for (const mode of ['standard', 'sealed', 'sandbox']) {
-  const prefix = mode === 'standard' ? '' : `/${mode}`;
-  const response = await windowsWellKnownRoutes.request(`https://api.example${prefix}/windows/.well-known/opencode`, {}, { SEALED_ENABLED: 'true' });
-  assert.equal(response.status, 200);
-  const document = await response.json();
-  assert.equal(document.auth.env, 'BAYLEAF_API_KEY');
-  assert.deepEqual(document.auth.command.slice(0, 4), ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command']);
-  assert.equal(document.auth.command.length, 5);
-  const script = document.auth.command[4];
-  assert.ok(script.includes("$origin='https://api.example'"));
-  assert.ok(script.includes(`/start/${mode === 'sealed' ? 'sealed' : 'standard'}/Windows_NT`));
-  assert.ok(script.includes('$waitMilliseconds=600000'));
-  assert.ok(script.includes('System.Net.CookieContainer'));
-  assert.ok(script.includes('$request.AllowAutoRedirect=$false'));
-  assert.ok(script.includes('[Console]::Out.Write($credential)'));
-  assert.ok(!/ExecutionPolicy|ServerCertificateValidationCallback|SecurityProtocol|Invoke-Expression|Start-Process|curl\.exe|--write-out|Set-Content|Out-File/.test(script));
-  assert.deepEqual(document.remote_config, {
-    url: `https://api.example${prefix}/.well-known/opencode/config`,
-    headers: { Authorization: 'Bearer {env:BAYLEAF_API_KEY}' },
-  });
-  // The saved login URL can differ from config URL: auth.env supplies the token.
-  assert.equal(document.remote_config.headers.Authorization.replace('{env:BAYLEAF_API_KEY}', 'fixture-key'), 'Bearer fixture-key');
-}
-
-// Optional exact public argv artifact for main's native Windows HTTPS runner.
-const emitIndex = process.argv.indexOf('--emit-windows-commands');
-if (emitIndex !== -1) {
-  const path = process.argv[emitIndex + 1];
-  assert.ok(path, '--emit-windows-commands requires an output path');
-  const commands = {};
-  for (const mode of ['standard', 'sealed', 'sandbox']) {
-    const prefix = mode === 'standard' ? '' : `/${mode}`;
-    const doc = await (await windowsWellKnownRoutes.request(`https://api.bayleaf.dev${prefix}/windows/.well-known/opencode`, {}, { SEALED_ENABLED: 'true' })).json();
-    commands[mode] = doc.auth.command;
-  }
-  await writeFile(path, JSON.stringify(commands, null, 2) + '\n');
-}
 
 // Simulate the background-service launch with pipes, not an attached terminal.
 // The poll response is a fixture sentinel, not a real credential or inference call.
@@ -189,40 +149,8 @@ try {
     assert.equal(seen[1], '/auth/claim/curl/url');
     assert.ok(seen.slice(2).every((path) => path === '/auth/claim/curl/poll'));
   }
-  if (process.platform === 'win32') {
-    for (const mode of ['standard', 'sealed', 'sandbox']) {
-      const prefix = mode === 'standard' ? '' : `/${mode}`;
-      const { auth } = await (await windowsWellKnownRoutes.request(`${base}${prefix}/windows/.well-known/opencode`, {}, { SEALED_ENABLED: 'true' })).json();
-      for (scenario of ['approved', 'denied', 'error', 'invalid-key', 'bad-url', 'pending']) {
-        polls = 0;
-        const args = [...auth.command.slice(1)];
-        // Shorten the production deadline only in this timeout fixture.
-        if (scenario === 'pending') args[3] = args[3].replace('$waitMilliseconds=600000', '$waitMilliseconds=1200');
-        const child = spawn(auth.command[0], args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
-        let stdout = '', stderr = '';
-        child.stdout.on('data', (chunk) => { stdout += chunk; });
-        child.stderr.on('data', (chunk) => { stderr += chunk; });
-        const [code] = await once(child, 'close');
-        assert.equal(code, scenario === 'approved' ? 0 : 1, stderr);
-        assert.equal(stdout, scenario === 'approved' ? sentinel : '');
-        if (scenario === 'bad-url') {
-          assert.equal(polls, 0);
-          assert.ok(!stderr.includes('attacker.example'));
-        } else assert.ok(stderr.includes(approvalUrl));
-        assert.ok(!stderr.includes(expectedCookie.split('=')[1]));
-        assert.ok(!stderr.includes(sentinel));
-        assert.ok(!stderr.includes('private error sentinel'));
-        if (scenario === 'approved') assert.ok(polls >= 2);
-        if (scenario === 'denied') assert.ok(stderr.includes('Access denied.'));
-        if (scenario === 'pending') assert.ok(stderr.includes('Approval timed out.'));
-      }
-    }
-    console.log('PASS: generated Windows PowerShell argv, pending/approval/denial/error/invalid-key/timeout over local HTTP');
-  } else {
-    console.log('SKIP: native Windows PowerShell execution unavailable; HTTPS qualification of generated argv remains an integration gate');
-  }
 } finally {
   server.closeAllConnections();
   await new Promise((resolve) => server.close(resolve));
 }
-console.log('PASS: claim header/cookies/legacy routes, Windows argv/config contract, Standard/Sealed/Sandbox piped curl stdout/stderr separation');
+console.log('PASS: claim header/cookies/legacy routes, Standard/Sealed/Sandbox piped curl stdout/stderr separation');

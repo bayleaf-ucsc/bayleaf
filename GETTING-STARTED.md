@@ -153,7 +153,7 @@ Click this to launch a terminal in the right sidebar. When the terminal panel op
 opencode auth login https://api.bayleaf.dev
 ```
 
-The same command works on Windows, macOS, and Linux (it uses the curl that ships with each). If a Windows terminal shows “Open this URL” without a URL and then reports failure, try `opencode auth login https://api.bayleaf.dev/windows` instead, which uses built-in Windows PowerShell. Unused approval requests expire after ten minutes.
+The same command works on Windows, macOS, and Linux (it uses the curl that ships with each). Unused approval requests expire after ten minutes.
 
 After a moment, you'll see a message like this:
 
@@ -177,8 +177,6 @@ If you ever need to disconnect OpenChamber from the BayLeaf API (unlikely), you 
 ```sh
 opencode auth logout https://api.bayleaf.dev
 ```
-
-(If you logged in with the `/windows` fallback URL, log out with that same URL.)
 
 It is now safe for you to forget all of the tedious stuff you just did with the terminal window. That was one-time setup that you'll likely never need to do again.
 

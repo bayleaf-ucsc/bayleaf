@@ -38,7 +38,7 @@ export { SandboxBrowser } from './sandboxBrowser';
 import { webRoutes } from './routes/web';
 import { docsRoutes } from './routes/docs';
 import { llmsRoutes } from './routes/llms';
-import { sandboxWellKnownRoutes, sealedWellKnownRoutes, wellKnownRoutes, windowsWellKnownRoutes } from './routes/wellknown';
+import { sandboxWellKnownRoutes, sealedWellKnownRoutes, wellKnownRoutes } from './routes/wellknown';
 import { claimRoutes } from './routes/claim';
 import { grantRoutes, GRANT_WORKFLOW } from './routes/grants';
 import { apiOverview } from './apiReference';
@@ -174,7 +174,6 @@ app.route('/v1', proxyRoutes);
 app.route('/', campusPassRoutes);
 // OpenCode keys well-known configuration by login URL. Mount Sealed discovery
 // before the broader /sealed relay so users can opt into exactly one lane.
-app.route('/', windowsWellKnownRoutes);
 app.route('/sealed/.well-known', sealedWellKnownRoutes);
 // BayLeaf Sealed (issue #55): EHBP ciphertext relay. Mounted as a sibling of
 // /v1, never inside it, so no path or middleware is shared with the plaintext
