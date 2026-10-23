@@ -103,12 +103,18 @@ already serves real TLS, so the Tinfoil SDK's https requirement for the
 attestation bundle URL is satisfied with no cert generation and none of the two
 TLS traps.
 
-```bash
-# Seed a throwaway token (backend keys are minted on first use, so a
-# token-only row is a valid, complete row).
-npx wrangler d1 execute bayleaf-keys --remote --command \
-  "INSERT INTO user_keys (email, bayleaf_token) VALUES ('sealed-harness@ucsc.edu','sk-bayleaf-...');"
+Use the operator's own `sk-bayleaf-` key. The relay checks are
+identity-independent, and a run is about 15 requests against the keyed Sealed
+allowance. Do not seed a throwaway `user_keys` row: an unregistered synthetic
+account in the campus namespace is indistinguishable from a person in account
+counts and retention, and its cleanup (D1 row plus Tinfoil key) was never
+scripted. Do not borrow the probe Worker's `probe@bayleaf.dev` key either.
 
+An existing key exercises the stored per-user Tinfoil credential, not first-use
+minting or healing. Those remain covered by the local provisioning harness and
+by each real user's first Sealed request, not by this run.
+
+```bash
 SEALED_BASE=https://api.bayleaf.dev/sealed \
 SEALED_AUTH=sk-bayleaf-... \
   ./scripts/harness-sealed.py
@@ -118,8 +124,6 @@ SEALED_AUTH=sk-bayleaf-... \
 SEALED_CA=<dev-cert.pem> SEALED_BASE=https://api.bayleaf.dev/sealed \
 SEALED_TAMPER_PORT=8801 SEALED_OPENCODE=1 \
   ./scripts/harness-sealed-attestation.py
-
-# Clean up: delete the row AND the per-user Tinfoil key the run minted.
 ```
 
 `SEALED_OPENCODE=1` opts into live inference: an additional OpenCode genuine-bundle

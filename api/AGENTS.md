@@ -354,9 +354,11 @@ This is deliberate agentic-task headroom, not dollar-denominated enforcement.
 honours `SEALED_AUTH`, defaulting to `campus`. Campus Pass only resolves from a
 campus IP, so verifying a deployed instance from elsewhere needs a
 `sk-bayleaf-` token: `SEALED_BASE=https://api.bayleaf.dev/sealed
-SEALED_AUTH=sk-bayleaf-... ./scripts/harness-sealed.py`. Prefer keyed auth
-anyway, since Campus Pass shares an env-held pool key and therefore exercises
-*none* of the minting, compare-and-swap, or healing logic. Note that testing
+SEALED_AUTH=sk-bayleaf-... ./scripts/harness-sealed.py`. Use the operator's own
+key; do not seed a synthetic `user_keys` row or borrow the probe key. Prefer
+keyed auth anyway, since Campus Pass shares an env-held pool key and so skips
+the per-user credential path. An existing key still exercises only the stored
+credential, not first-use minting, compare-and-swap, or healing. Note that testing
 against prod also removes the local-HTTPS cert dance, because the Tinfoil SDK's
 https requirement is satisfied natively.
 
