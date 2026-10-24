@@ -17,6 +17,37 @@ NODE = shutil.which('node')
 
 
 class NanobotTests(unittest.TestCase):
+    def test_shared_mcp_partition_and_single_orientation_preserve_saves(self):
+        # Upgrade an actual legacy generated config, not just a fresh dictionary.
+        assets = m.read('assets.json')
+        assets.update({'_inboxes':True, 'bayleaf-inboxes.md':'legacy inbox skill'})
+        m.atomic('assets.json',assets)
+        m.configure_nanobot()
+        cli = json.loads((Path(__file__).parent.parent/'.sandbox-cli-assets.json').read_text())
+        m.atomic('cli-assets.json',cli)
+        executable = self.root/'home/.local/share/bayleaf/cli/bayleaf.mjs'
+        executable.parent.mkdir(parents=True)
+        executable.write_text('fixture')
+        with patch.object(m.shutil,'which',return_value='/node/bin/node'):
+            first = m.configure_nanobot()
+            self.assertEqual(first,m.configure_nanobot())
+        config = m.read('config/config.json')
+        servers = config['tools']['mcpServers']
+        self.assertEqual(servers['bayleaf']['enabledTools'], ['search','fetch','usage','inbox_save'])
+        self.assertEqual(servers['sandbox']['enabledTools'], [*cli['groups']['computer'],*cli['groups']['inboxes'],*cli['groups']['previews']])
+        self.assertFalse(set(servers['bayleaf']['enabledTools']) & set(servers['sandbox']['enabledTools']))
+        self.assertIn('--private-previews',servers['sandbox']['args'])
+        self.assertNotIn(self.owner_key,json.dumps(config))
+        skills = sorted(p.parent.name for p in (self.root/'workspace/skills').glob('*/SKILL.md'))
+        self.assertEqual(skills,['bayleaf-sandbox-orientation'])
+        self.assertIn('cannot wake', (self.root/'workspace/skills/bayleaf-sandbox-orientation/SKILL.md').read_text())
+        # Owner changes to the sole managed skill survive and visibly block refresh.
+        skill = self.root/'workspace/skills/bayleaf-sandbox-orientation/SKILL.md'
+        skill.write_text('owner notes')
+        with patch.object(m.shutil,'which',return_value='/node/bin/node'):
+            with self.assertRaisesRegex(m.Failure,'managed_file_changed'):m.configure_nanobot()
+        self.assertEqual(skill.read_text(),'owner notes')
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)

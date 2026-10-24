@@ -153,6 +153,30 @@ API to keep a retired capability appearing functional.
 
 ## Refinement log
 
+- 2026-10-24 (approved hosted shared-MCP delivery): Source, published plugin, actual
+  generated config, active MCP connection and installed Nanobot registry are
+  distinct evidence. Retained usage/shared limit reads pass, while inactive Desktop
+  correctly gates screenshots. Public orientation now distinguishes shipped hosted
+  setup from desktop/laptop inference onboarding and historical recipe skills.
+
+- 2026-10-24 (shared hosted MCP candidate): Discovery and invocation now move
+  together at deliberate setup, with duplicate native registrations/recipes
+  suppressed only for configured clients. Shared tools need explicit per-harness
+  prefixes, Nanobot private-only schema/dispatch, retained save/destruction tools
+  and an honest native-permission UX delta. Local candidate, not delivered parity.
+
+- 2026-10-24 (approved sandbox CLI trial): Installer deployment and owner-only
+  executable qualification need no adapter publication or UI migration. Existing
+  Terminal PATH, managed placeholder substitution, real stdio listing and one
+  already-active Desktop screenshot passed, not agent discovery/consent parity.
+  No OpenChamber/Nanobot process was available for direct PATH qualification.
+
+- 2026-10-24 (sandbox CLI/MCP, local): Reuse HTTP Zod validators for curated MCP
+  schemas and CLI validation rather than creating another field catalog. Native
+  images and SDK stdio tests qualify protocol behavior, not managed-agent delivery.
+  Exposure matrix and deferred duplicate-free migration/approval policy gates are
+  in `api/sandbox-cli/README.md`; no Chat, desktop or live adapter migration claimed.
+
 - 2026-10-24 (computer-use, API-only release): Exposure matrix and adapter owners
   recorded in `api/COMPUTER-USE.md`, with native image delivery and consent gates
   explicitly deferred. Read-only Toolbox status lacked generation identity, so

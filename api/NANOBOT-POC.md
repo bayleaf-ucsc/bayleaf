@@ -69,6 +69,22 @@ hook, app-secret header, ordinary owner-key storage and private-only tools.
 
 ## Capability comparison
 
+### Shared MCP wiring, shipped 2026-10-24
+
+The parent installer now partitions the old adapter down to search/fetch/usage
+and quarantined inbox-save, with shared computer/Inboxes/previews provided by
+`bayleaf mcp` as server `sandbox`. Exact enabledTools names come from the shared
+contract catalog; displayed tools use `mcp_sandbox_` prefixes. One shared
+orientation replaces the managed sandbox/Inboxes recipe skills and preserves
+scheduling/environment knowledge. Owner-edited files fail visibly, not overwritten.
+Public previews and injected headers remain unavailable: `--private-previews`
+enforces this in discovery and invocation. Nanobot still has no native approvals.
+No Nanobot package source/release change is needed. See
+[`sandbox-cli/README.md`](sandbox-cli/README.md) for publication, setup and live
+image/consent limits and owner-only live registry/read checks. Desktop was inactive
+during rollout, so no live screenshot/UI rendering pass is claimed. The older
+deployed behavior below remains historical evidence.
+
 ### Nanobot MCP proxy repair, 2026-10-13
 
 Live diagnosis on the owner's sandbox found a normally sleeping gateway and

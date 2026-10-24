@@ -935,7 +935,9 @@ form posts, webhooks or course mail while their computer is off. An email inbox
 receives mail; an http inbox captures requests to any path and query on its URL.
 For custom workflows, first identify whether external delivery is needed. Start
 with the [focused receiving workflow guide](https://api.bayleaf.dev/docs/inboxes.md);
-desktop and hosted agents can load their ${bt}bayleaf-inboxes${bt} skill.
+desktop agents can load their ${bt}bayleaf-inboxes${bt} skill. Refreshed hosted
+OpenChamber/Nanobot setups use their short sandbox orientation and shared Inboxes
+MCP tools; older hosted setups retain the earlier recipe skill until deliberate setup.
 Reception stores data only: it never activates an agent, replies or runs tools.
 Manage with an ordinary BayLeaf key or sandbox credential, not Campus Pass,
 temporary inference tokens or a browser session. No inference key is provisioned.
@@ -1175,8 +1177,20 @@ Power users can still use direct X11 themselves; that bypasses this API and any
 future floor control. API transit stores/logs no screenshots or typed content;
 the desktop filesystem, applications and agent histories may persist it separately.
 Even read-only Toolbox operations refresh Daytona activity. Accessibility and
-recordings are deliberately omitted. Native hosted/desktop adapters remain follow-up
-work: inference onboarding alone does not install computer-use tools.
+recordings are deliberately omitted.
+
+Deliberate hosted OpenChamber or Nanobot setup installs the sandbox-only ${bt}bayleaf${bt}
+CLI and shared stdio MCP for computer use, Inboxes (when enabled) and previews.
+Already-running or sleeping clients are not migrated merely by remote config refresh:
+use the owner-managed setup/repair action. OpenChamber exposes ${bt}sandbox_*${bt}
+tools with native MCP approvals for mutations, retaining search/fetch, usage and
+inbox save/delete tools. Nanobot exposes ${bt}mcp_sandbox_*${bt}, retaining
+search/fetch/usage/inbox-save; previews remain private-only without injected headers.
+Nanobot has no per-call approval UI. Its screenshots become local artifacts that
+${bt}read_file${bt} loads as image blocks, so delete unwanted screenshot artifacts.
+Both receive a short sandbox orientation; scheduling knowledge remains available.
+These tools still require an already-active Desktop. Desktop/laptop inference
+onboarding does not install this CLI or computer-use tools.
 
 ### Web search and page fetch
 

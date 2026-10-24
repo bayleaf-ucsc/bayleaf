@@ -91,6 +91,41 @@ explicit operation on the user-owned installation. Preserve user files and histo
 
 ## Evidence and refinement log
 
+- 2026-10-24 (final shared-MCP snapshot): Rebuilt strict published assets after
+  fixture-producing tests, deployed API `a9023bd4-cd9f-4794-98ee-1bd33eef3f90`
+  with checked exit 0, and smoke-tested only public roots/spec and unauthenticated
+  denial. Provider screenshot connection failure is recorded in the CLI README;
+  live screenshot/UI qualification was deliberately deferred, with no app restart.
+
+- 2026-10-24 (approved shared-MCP rollout): Published `1061c6e`, retaining a remote
+  rollback tag, then deployed strict real assets. Stale local personal keys did
+  not require impersonation: the existing managed placeholder authorized owner
+  browser repair; Nanobot used the supported installer with its existing preview.
+  Both ready, real registry/reads passed; inactive Desktop kept live images gated.
+  Nanobot appends retry guidance to MCP errors, and inbox reads use an untrusted
+  text envelope: qualification must not assume every tool result is bare JSON.
+
+- 2026-10-24 (shared MCP wiring, local): Parent managed setup partitions Nanobot
+  enabledTools without republishing its adapter; OpenCode needs a published plugin
+  registration/skill switch keyed to deliberate setup, not remote refresh alone.
+  Shared source/Node absolute paths and generated raw tool allowlists avoid PATH
+  and prefix mistakes. Native MCP prompts lose old per-port resource specificity;
+  retain save/delete extras until shared equivalents exist. No rollout performed.
+
+- 2026-10-24 (approved CLI-only rollout): API `45da40b7-f80f-46b8-a7ff-e62aa426e77d`
+  deployed with strict published assets; installed only Adam's running machine via
+  the hash-guarded helper, no app restart. Root-owned `/usr/local/bin` required a
+  guarded existing user-owned Node-bin fallback; real symlink launch exposed an
+  entrypoint bug missed by direct-file tests. Read-only CLI, stdio MCP and one
+  private/deleted screenshot passed. UI/tool migration remains pending.
+
+- 2026-10-24 (CLI/MCP, local): Parent-owned shared source can use an embedded asset
+  without editing independently published adapter submodules or relaxing their
+  provenance guards. CLI installation and harness tool migration are separate:
+  retain existing adapters until duplicate-free tools, native approvals and old
+  save capabilities have replacements. Normal PATH needs image-level write/Node
+  qualification, not just launcher PATH tests. See `api/sandbox-cli/README.md`.
+
 - 2026-10-24 (Desktop/computer-use release): Parent-only managed app, gateway and
   API work needs no adapter publication or migration. Rebuild published Nanobot
   assets after fixture-based tests. Embedded WebSockets can omit Sec-Fetch-Dest:

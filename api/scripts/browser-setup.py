@@ -693,6 +693,41 @@ INBOX_TOOLS = ['inboxes', 'inbox_create', 'inbox_messages', 'inbox_read', 'inbox
                'inbox_lifetime', 'inbox_events', 'inbox_limits']
 
 
+def remove_managed_text(name):
+    path = ROOT / name
+    hashes = read('state/managed-files.json', {})
+    if path.exists():
+        if hashlib.sha256(path.read_bytes()).hexdigest() != hashes.get(name):
+            raise Failure('managed_file_changed')
+        path.unlink()
+        hashes.pop(name, None)
+        atomic('state/managed-files.json', hashes)
+
+
+def managed_mcp_entry(servers, name, value):
+    # A reserved managed name is not permission to overwrite an owner's server.
+    prior = read('state/shared-mcp-server.json')
+    if name in servers and servers[name] != prior and servers[name] != value:
+        raise Failure('managed_file_changed')
+    servers[name] = value
+    atomic('state/shared-mcp-server.json', value)
+
+
+def shared_mcp_command(inboxes, private=False):
+    node = shutil.which('node')
+    executable = Path.home() / '.local/share/bayleaf/cli/bayleaf.mjs'
+    if not node or not executable.is_file():
+        raise Failure('cli_path_unavailable')
+    # Absolute Node and installed source avoid shebang/PATH differences in MCP
+    # children. Undici handles proxies explicitly; do not copy NODE_OPTIONS.
+    network = {name:os.environ[name] for name in (
+        'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy',
+        'NODE_EXTRA_CA_CERTS') if os.environ.get(name)}
+    groups = 'computer,inboxes,previews' if inboxes else 'computer,previews'
+    return [node, str(executable), 'mcp', '--groups', groups,
+        *(['--private-previews'] if private else [])], network
+
+
 def configure_nanobot():
     incoming = ROOT / 'credentials/incoming'
     credential = ROOT / 'credentials/owner-key'
@@ -714,10 +749,12 @@ def configure_nanobot():
         raise Failure('preview_configuration_invalid')
     assets = read('assets.json', {})
     managed_text('adapter/nanobot-mcp.mjs', assets['nanobot-mcp.mjs'])
-    managed_text('workspace/skills/bayleaf-sandboxes/SKILL.md', assets['bayleaf-sandboxes.md'])
+    shared = read('cli-assets.json') is not None
+    if not shared:
+        managed_text('workspace/skills/bayleaf-sandboxes/SKILL.md', assets['bayleaf-sandboxes.md'])
     # The API marks Inboxes enabled per upload; disabled capabilities are not advertised.
     inboxes = assets.get('_inboxes') is True and 'bayleaf-inboxes.md' in assets
-    if inboxes:
+    if inboxes and not shared:
         managed_text('workspace/skills/bayleaf-inboxes/SKILL.md', assets['bayleaf-inboxes.md'])
     else:
         name = 'workspace/skills/bayleaf-inboxes/SKILL.md'
@@ -766,7 +803,19 @@ def configure_nanobot():
     tools.setdefault('mcpServers', {})['bayleaf'] = {'command':shutil.which('node') or 'node',
         'args':[*proxy_args, str(ROOT/'adapter/nanobot-mcp.mjs')],
         'env':network_env,
-        'enabledTools':['search','fetch','usage','expose','unexpose', *(INBOX_TOOLS if inboxes else [])]}
+        'enabledTools':(['search','fetch','usage', *(['inbox_save'] if inboxes else [])] if shared else
+            ['search','fetch','usage','expose','unexpose', *(INBOX_TOOLS if inboxes else [])])}
+    if shared:
+        command, network = shared_mcp_command(inboxes, private=True)
+        groups = read('cli-assets.json').get('groups')
+        if not isinstance(groups, dict) or any(not isinstance(groups.get(g), list) for g in ('computer','inboxes','previews')):
+            raise Failure('cli_assets_invalid')
+        enabled = [*groups['computer'], *(groups['inboxes'] if inboxes else []), *groups['previews']]
+        managed_mcp_entry(tools['mcpServers'], 'sandbox', {'command':command[0], 'args':command[1:],
+            'env':network, 'enabledTools':enabled})
+        for name in ('bayleaf-sandboxes', 'bayleaf-inboxes'):
+            remove_managed_text(f'workspace/skills/{name}/SKILL.md')
+        managed_text('workspace/skills/bayleaf-sandbox-orientation/SKILL.md', read('cli-assets.json')['SKILL.md'])
     atomic('config/config.json', config)
     (Path.home() / 'workspace').mkdir(parents=True, exist_ok=True)
     # Origin/credential/config changes restart only this managed process. User
@@ -819,6 +868,7 @@ def service_environment():
     env = dict(os.environ)
     # Explicit server configuration, never an inherited ambient feature flag.
     env['BAYLEAF_INBOXES_ENABLED'] = 'true' if read('request.json', {}).get('inboxes_enabled') is True else 'false'
+    env['BAYLEAF_SHARED_MCP'] = 'true' if read('state/shared-mcp.json', {}).get('installed') is True else 'false'
     for name in list(env):
         if re.match(r'^(BAYLEAF|OPENROUTER|TINFOIL|OPENAI|ANTHROPIC)_.*(KEY|TOKEN|SECRET|PASSWORD|AUTH)$', name) \
                 and not SANDBOX_PLACEHOLDER.fullmatch(env[name]):
@@ -868,6 +918,21 @@ def configure():
     plugins = config.setdefault('plugins', [])
     if '-opencode.tool.webfetch' not in plugins:
         plugins.append('-opencode.tool.webfetch')
+    if read('cli-assets.json') is not None:
+        inboxes = read('request.json', {}).get('inboxes_enabled') is True
+        command, network = shared_mcp_command(inboxes)
+        managed_mcp_entry(config.setdefault('mcp', {}).setdefault('servers', {}), 'sandbox',
+            {'type':'local', 'command':command, 'environment':network, 'codemode':False})
+        managed_text('config/opencode/skills/bayleaf-sandbox-orientation/SKILL.md', read('cli-assets.json')['SKILL.md'])
+        # Native MCP permissions match normalized server_tool and resource '*'.
+        # Do not claim the legacy per-port/private-public resource UX survives.
+        permissions = config.setdefault('permissions', [])
+        if not read('state/shared-mcp.json', {}).get('permissions_seeded'):
+            permissions.append({'action':'sandbox_*', 'resource':'*', 'effect':'ask'})
+            for name in ('open_session','screenshot','screenshot_compressed','display_info','windows',
+                         'inboxes','inbox_limits','inbox_get','inbox_messages','inbox_metadata','inbox_read','inbox_events'):
+                permissions.append({'action':'sandbox_'+name, 'resource':'*', 'effect':'allow'})
+        atomic('state/shared-mcp.json', {'installed':True, 'permissions_seeded':True})
     atomic('config/opencode/opencode.json', config)
     # Fresh Daytona snapshots need not contain the shared working directory.
     # The exec API creates it too, but browser-first setup must be independent.
@@ -906,7 +971,7 @@ def configure():
             'activeProjectId': 'bayleaf-workspace', 'themeId': 'bayleaf-light',
             'lightThemeId': 'bayleaf-light', 'themeVariant': 'light', 'useSystemTheme': False})
     inboxes = read('request.json', {}).get('inboxes_enabled') is True
-    return hashlib.sha256((key + ':inboxes=' + str(inboxes)).encode()).hexdigest()
+    return hashlib.sha256((key + ':inboxes=' + str(inboxes) + json.dumps(config, sort_keys=True)).encode()).hexdigest()
 
 
 def environment(backend_port=None):
@@ -1068,6 +1133,56 @@ def supervise(operation):
             child.wait(timeout=15)
 
 
+def platform_cli_link():
+    primary = Path('/usr/local/bin/bayleaf')
+    if primary.exists() or primary.is_symlink() or os.access(primary.parent, os.W_OK):
+        return primary
+    # The Daytona image's root-owned /usr/local/bin is not writable. Its
+    # existing user-owned Node bin is already on normal application PATH.
+    node = shutil.which('node')
+    if node:
+        directory = Path(node).parent
+        st = directory.stat()
+        if st.st_uid == os.getuid() and not st.st_mode & 0o022 and os.access(directory, os.W_OK):
+            return directory / 'bayleaf'
+    raise Failure('cli_path_unavailable')
+
+
+def install_platform_cli():
+    """Install shared executable before deliberate managed client configuration."""
+    assets = read('cli-assets.json')
+    if assets is None:
+        return  # Older controller/test fixtures do not promise CLI installation.
+    source = assets.get('bayleaf.mjs', '')
+    if not source or hashlib.sha256(source.encode()).hexdigest() != assets.get('sha256'):
+        raise Failure('cli_assets_invalid')
+    link = platform_cli_link()
+    home = Path.home()
+    target = home / '.local/share/bayleaf/cli'
+    target.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with (target / 'install.lock').open('a') as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        dest = target / 'bayleaf.mjs'
+        manifest = target / 'managed-sha256'
+        if dest.exists() and (not manifest.exists() or hashlib.sha256(dest.read_bytes()).hexdigest() != manifest.read_text().strip()):
+            raise Failure('managed_file_changed')
+        temp = target / 'bayleaf.next.mjs'
+        temp.write_text(source); temp.chmod(0o700); os.replace(temp, dest)
+        manifest.write_text(assets['sha256']); manifest.chmod(0o600)
+        # Harness configuration registers this once, replacing managed recipes.
+        (target / 'SKILL.md').write_text(assets['SKILL.md'])
+        # /usr/local/bin is in normal terminal and managed application PATHs.
+        # No sudo or shell invocation: fail honestly if this image cannot write it.
+        if link.is_symlink() and link.readlink() == dest:
+            return
+        if link.exists() or link.is_symlink():
+            raise Failure('cli_path_conflict')
+        try:
+            link.symlink_to(dest)
+        except OSError:
+            raise Failure('cli_path_unavailable') from None
+
+
 def setup(operation):
     with lock('setup.lock'):
         with lock('lifecycle.lock', wait=10):
@@ -1079,6 +1194,7 @@ def setup(operation):
             adapter('install', progress)
             request(operation)  # A slow install may outlive its setup deadline.
             progress.update('configuring')
+            install_platform_cli()
             fingerprint = adapter('configure')
             adapter('prepare', operation, progress)
             request(operation)

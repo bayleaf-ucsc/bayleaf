@@ -32,3 +32,4 @@ reports/
 .sandbox-plugin-ref.json
 .nanobot-assets.json
 .nanobot-assets.json.next
+.sandbox-cli-assets.json

@@ -108,6 +108,12 @@ Before production enablement:
 
 ## Local evidence
 
+The shipped hosted shared-MCP wiring serializes only absolute Node/source paths,
+tool filters and allowlisted proxy/CA settings into client config. It discovers the
+existing managed credential files at runtime, retaining literal `dtn_secret_`
+substitution and no additional credential copies. It does not change #90 custody,
+credential scope, lifecycle or production enablement. See `sandbox-cli/README.md`.
+
 `npm run test:sandbox-credentials` uses actual workerd/D1 with synthetic providers
 for credential authentication, hash-only storage, host restriction in provisioning,
 shared accounting, provider mint/heal races, revocation, rotation, external deletion

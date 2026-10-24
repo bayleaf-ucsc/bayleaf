@@ -17,6 +17,63 @@ spec.loader.exec_module(m)
 
 
 class InstallerTests(unittest.TestCase):
+    def test_openchamber_shared_mcp_config_and_owner_conflict(self):
+        home = self.root/'home'
+        executable = home/'.local/share/bayleaf/cli/bayleaf.mjs'
+        executable.parent.mkdir(parents=True)
+        executable.write_text('fixture')
+        m.atomic('cli-assets.json', {'SKILL.md':'shared orientation'})
+        (self.root/'credentials').mkdir()
+        (self.root/'credentials/owner-key').write_text('dtn_secret_synthetic')
+        with patch.object(m.Path, 'home', return_value=home), patch.object(m.shutil, 'which', return_value='/node/bin/node'), patch.dict(m.os.environ,
+                {'HTTPS_PROXY':'http://proxy.test:8080','NODE_EXTRA_CA_CERTS':'/ca.pem','NODE_OPTIONS':'--inspect','UNRELATED_SECRET':'secret'}, clear=True):
+            first = m.configure()
+            config = m.read('config/opencode/opencode.json')
+            server = config['mcp']['servers']['sandbox']
+            self.assertEqual(server['command'], ['/node/bin/node',str(executable),'mcp','--groups','computer,previews'])
+            self.assertFalse(server['codemode'])
+            self.assertEqual(server['environment'], {'HTTPS_PROXY':'http://proxy.test:8080','NODE_EXTRA_CA_CERTS':'/ca.pem'})
+            self.assertEqual(first, m.configure())
+            self.assertEqual(m.service_environment()['BAYLEAF_SHARED_MCP'], 'true')
+            self.assertNotIn('dtn_secret', json.dumps(config))
+            self.assertIn({'action':'sandbox_*','resource':'*','effect':'ask'}, config['permissions'])
+            self.assertNotIn({'action':'sandbox_click','resource':'*','effect':'allow'}, config['permissions'])
+            config['mcp']['servers']['sandbox']['command'] = ['owner-command']
+            m.atomic('config/opencode/opencode.json', config)
+            with self.assertRaisesRegex(m.Failure,'managed_file_changed'):
+                m.configure()
+            self.assertEqual(m.read('config/opencode/opencode.json'), config)
+
+    def test_cli_path_falls_back_only_to_owned_safe_node_directory(self):
+        node_bin = self.root / 'node-bin'
+        node_bin.mkdir(mode=0o755)
+        with patch.object(m.os, 'access', side_effect=lambda p, mode: p == node_bin), patch.object(m.shutil, 'which', return_value=str(node_bin / 'node')):
+            self.assertEqual(m.platform_cli_link(), node_bin / 'bayleaf')
+            node_bin.chmod(0o777)
+            with self.assertRaisesRegex(m.Failure, 'cli_path_unavailable'):
+                m.platform_cli_link()
+
+    def test_shared_cli_installs_normal_path_without_changing_adapters(self):
+        home = self.root / 'home'
+        link = self.root / 'usr-local-bin/bayleaf'
+        link.parent.mkdir()
+        real_path = m.Path
+        def path(value):
+            return link if value == '/usr/local/bin/bayleaf' else real_path(value)
+        source = '#!/usr/bin/env node\n// synthetic CLI'
+        assets = {'bayleaf.mjs': source, 'sha256': hashlib.sha256(source.encode()).hexdigest(), 'SKILL.md': 'short orientation'}
+        m.atomic('cli-assets.json', assets)
+        with patch.object(m.Path, 'home', return_value=home), patch.object(m, 'Path', side_effect=path):
+            # Mock's .home must be explicit after replacing the Path constructor.
+            m.Path.home.return_value = home
+            m.install_platform_cli()
+            m.install_platform_cli()
+            self.assertEqual(link.read_text(), source)
+            self.assertEqual(link.stat().st_mode & 0o777, 0o700)
+            link.write_text('owner edit')
+            with self.assertRaisesRegex(m.Failure, 'managed_file_changed'):
+                m.install_platform_cli()
+
     def test_inboxes_feature_flag_comes_only_from_server_request(self):
         with patch.dict(m.os.environ, {'BAYLEAF_INBOXES_ENABLED': 'true'}):
             self.assertEqual(m.service_environment()['BAYLEAF_INBOXES_ENABLED'], 'false')

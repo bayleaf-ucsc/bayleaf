@@ -9,6 +9,7 @@ import jupyterSource from '../scripts/jupyter-adapter.py';
 import collabmdSource from '../scripts/collabmd-adapter.py';
 import desktopCleanupSource from '../scripts/desktop-cleanup.py';
 import nanobotAssets from '../.nanobot-assets.json';
+import sandboxCliAssets from '../.sandbox-cli-assets.json';
 import { getAccountRow, activeSandboxCredential, ensureSandboxCredential, revokeSandboxCredentials, rotateSandboxCredential } from './sandboxCredentials';
 import { DAYTONA_DEFAULT_API_URL, DAYTONA_DEFAULT_PROXY_URL } from './constants';
 import { persistentSandboxParams } from './daytona';
@@ -536,6 +537,9 @@ export class SandboxBrowser {
           } else if (op.step === 'prepare') {
             await execute(this.env, id, `bash -c 'umask 077; mkdir -p ${ROOT}/credentials; chmod 700 ${ROOT} ${ROOT}/credentials'`);
             await upload(this.env, id, ROOT, 'setup.next.py', setupSource);
+            // Parent-owned shared CLI; deliberate setup partitions independently
+            // published adapters without changing owner credential authority.
+            await upload(this.env, id, ROOT, 'cli-assets.json', JSON.stringify(sandboxCliAssets));
             await upload(this.env, id, ROOT, 'request.next.json', JSON.stringify({ operation: op.operation, deadline: op.setupDeadline,
               restart: op.restart, inboxes_enabled: inboxesEnabled }));
             if (def.credential) {

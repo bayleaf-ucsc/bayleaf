@@ -132,8 +132,16 @@ All are POST beneath `/sandbox/computer`:
 
 ## Capability exposure decision
 
-The request authorizes API/OpenAPI/llms orientation only and explicitly defers
-adapter work, including CLI/MCP adapters. This is an API-only release, not user-delivered parity.
+Approved follow-up (2026-10-24): [`sandbox-cli/README.md`](sandbox-cli/README.md)
+records shipped sandbox-only CLI/MCP wiring, Adam-only managed app refresh and
+the updated exposure matrix. OpenChamber uses a published duplicate-suppression
+plugin switch; Nanobot partitions its existing adapter through parent config.
+Live registry/read-only checks pass. Desktop was inactive during this release,
+so live screenshots/input and browser image rendering remain unqualified.
+
+The original API-only request authorized API/OpenAPI/llms orientation and deferred
+adapter work, including CLI/MCP adapters. The historical matrix below describes
+that earlier decision, superseded for hosted delivery by the follow-up above.
 Inventory checked locally: plugin and Nanobot READMEs, well-known configs,
 desktop skill distribution in llms.ts, and Chat tool architecture in DESIGN.md.
 
