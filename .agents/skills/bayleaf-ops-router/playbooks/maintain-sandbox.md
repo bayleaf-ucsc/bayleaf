@@ -91,6 +91,13 @@ explicit operation on the user-owned installation. Preserve user files and histo
 
 ## Evidence and refinement log
 
+- 2026-10-24 (local Sandboxes home simplification): Presentation-only changes
+  need no API/plugin rebuild. Removed the hero launch/embed UI and frame CSP
+  allowance, retaining separate-tab Desktop controls and the unused backend
+  embed capability. Adapter tests and local desktop/mobile checks passed;
+  no VM launch was needed for qualification. Subsequently deployed with Adam's
+  approval as `ba7930bf-2a1b-43f2-8b38-ea7a1e648481`; public readback passed.
+
 - 2026-10-24 (final shared-MCP snapshot): Rebuilt strict published assets after
   fixture-producing tests, deployed API `a9023bd4-cd9f-4794-98ee-1bd33eef3f90`
   with checked exit 0, and smoke-tested only public roots/spec and unauthenticated

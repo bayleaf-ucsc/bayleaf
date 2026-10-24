@@ -65,8 +65,8 @@ for (const url of ['https://openchamber.dev/', 'https://github.com/HKUDS/nanobot
 assert(!html.includes('id="dufs-start"'));
 assert(!html.includes('id="code-server-start"'));
 assert(!html.includes('browser-restart'));
-assert(html.includes('id="screen"') && /<form method="post" action="\/login"><button type="submit" class="screen-connect"><span>Sign in to connect/.test(html), 'signed-out screen is a sign-in button');
-assert.match(html, /id="screen-placeholder" aria-hidden="true"/);
+assert.match(html, /class="screen" aria-hidden="true"/);
+assert(!html.includes('screen-connect'), 'hero is decorative, not a sign-in or launch control');
 assert(!html.includes('<iframe') && !html.includes('id="screen-frame"') && !html.includes('id="screen-connect"'), 'signed-out screen never frames');
 assert(!response.headers.get('Content-Security-Policy').includes('frame-src'));
 assert.equal(calls.length, 0, 'anonymous overview does not contact management');
@@ -105,7 +105,9 @@ for (let i=0; i<3; i++) {
 }
 assert.equal(mutations().length, 1, 'refresh and status never repeat login wake');
 assert(html.includes('id="code-server-start"'));
-assert(html.includes('id="screen-connect"') && !html.includes('desktop-show'), 'live view lives in the hero, not the card');
+assert(!html.includes('screen-connect') && !html.includes('screen-frame') && !html.includes('<iframe'), 'signed-in hero remains static');
+assert(html.includes('Start with OpenChamber'));
+assert.match(html, /id="desktop-open"[^>]+target="_blank"/);
 const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(match=>match[1]);
 assert.equal(new Set(ids).size,ids.length,'service controls have unique ids');
 for (const service of ['code-server', 'dufs', 'ttyd', 'collabmd', 'unknown']) {
@@ -171,13 +173,13 @@ assert(!response.headers.get('Content-Security-Policy').includes('telemetry.bayl
 for (const path of ['/login', '/auth/callback', '/dashboard', '/services/openchamber/status']) {
   assert(!(await (await request(path, { browserArrivalsEnabled: 'true' })).text()).includes('BayLeafArrival'));
 }
-// The signed-in dashboard gains exactly frame-src for preview origins; nothing else loosens.
+// Neither page permits embedded desktops; default-src none also blocks frames.
 {
   const anonymous = (await request('/')).headers.get('Content-Security-Policy');
   const signedIn = (await request('/', { cookie: sessionCookie })).headers.get('Content-Security-Policy');
   const strip = csp => csp.replace(/'nonce-[^']+'/g, 'NONCE');
   assert(!anonymous.includes('frame-src'));
-  assert.equal(strip(signedIn), strip(anonymous).replace(" base-uri 'none'", " frame-src https://*.bayleaf-proxies.dev; base-uri 'none'"));
+  assert.equal(strip(signedIn), strip(anonymous));
   assert.match(signedIn, /frame-ancestors 'none'/);
 }
 // Execute the actual controls script with a tiny DOM, not a duplicated renderer.
@@ -204,7 +206,7 @@ for(const [snapshot,expected] of [
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(!element('#collabmd-stop').hidden,expected,'stop visibility for '+JSON.stringify(snapshot));
 }
-// Hero screen: one Desktop status drives card and hero; nothing frames until a click.
+// Execute Desktop controls to prove page loads stay passive and Start stays explicit.
 function desktopPage(initial) {
   const elements=new Map(), fetches=[], frames=[], timers=[];
   const page={snapshot:initial,elements,fetches,frames,timers};
@@ -230,85 +232,40 @@ const settle=()=>new Promise(resolve=>setImmediate(resolve));
 const embeds=page=>page.fetches.filter(([p])=>p.endsWith('/embed'));
 const desktopUrl='https://owner-private-000000000000000000000000.bayleaf-proxies.dev/vnc.html';
 {
-  // Ready after reload: one click on the screen connects; never auto-loaded.
+  // Ready after reload: status only, with the ordinary new-tab link available.
   const page=desktopPage({phase:'ready',machine:'started',operation:'synthetic',url:desktopUrl});
-  const el=page.element, connect=el('#screen-connect');
+  const el=page.element;
   await settle();
-  assert.equal(connect.hidden,false,'screen is clickable');
-  assert.equal(el('#screen-live').hidden,true);
-  assert.equal(embeds(page).length,0,'no embed code before click');
+  assert.deepEqual(page.fetches.map(([path])=>path),['/services/desktop/status']);
+  assert.equal(el('#desktop-open').hidden,false);
+  assert.equal(el('#desktop-open').href,desktopUrl);
+  assert.equal(embeds(page).length,0);
   assert.equal(page.frames.length,0);
-  await connect.listeners.click();
-  const [embedPath,embedInit]=page.fetches.at(-1);
-  assert.equal(embedPath,'/services/desktop/embed');
-  assert.equal(embedInit.method,'POST');
-  assert.equal(embedInit.headers['X-BayLeaf-Action'],'managed-service');
-  assert.equal(page.frames.length,1);
-  assert.match(page.frames[0].src,/^https:\/\/[^/]+\.bayleaf-proxies\.dev\/__preview\/embed\?code=/);
-  assert.equal(page.frames[0].title,'Desktop (live view)');
-  assert.equal(page.frames[0].referrerPolicy,'origin');
-  assert.equal(page.frames[0].attributes.sandbox,'allow-scripts allow-same-origin');
-  assert.equal(page.frames[0].attributes.allow,'fullscreen');
-  assert.equal(el('#screen-live').hidden,false);
-  assert.equal(el('#screen-placeholder').hidden,true);
-  assert.equal(connect.hidden,true);
-  assert.equal(el('#screen-hide').focused,1,'focus moves to the controls, not into the desktop');
-  assert.equal(el('#screen-popout').href,desktopUrl,'new-tab link is the ordinary Open link');
-  el('#screen-hide').listeners.click();
-  assert.equal(el('#screen-live').hidden,true);
-  assert.equal(el('#screen-placeholder').hidden,false);
-  assert.equal(el('#screen-frame').children.length,0,'Hide removes the frame and its connection');
-  assert.equal(connect.focused,1,'focus returns to the screen button');
-  await connect.listeners.click();
-  el('#screen-popout').listeners.click();
-  assert.equal(el('#screen-live').hidden,true,'Open in new tab closes the embed');
-  assert.equal(el('#screen-frame').children.length,0);
-  await connect.listeners.click();
   await el('#desktop-stop').listeners.click();
   await settle();
-  assert.equal(el('#screen-live').hidden,true,'Stop app closes the live view');
-  assert.equal(el('#screen-frame').children.length,0);
-  assert.equal(connect.hidden,false);
+  assert.equal(el('#desktop-open').hidden,true,'Stop app removes the new-tab link');
 }
 {
-  // Not running: the click runs the card's Start, then connects once ready.
+  // Not running: only the card's explicit Start requests setup.
   const page=desktopPage({phase:'idle',machine:'started'});
-  const el=page.element, connect=el('#screen-connect');
+  const el=page.element;
   await settle();
-  assert.equal(connect.hidden,false);
+  assert.deepEqual(page.fetches.map(([path])=>path),['/services/desktop/status']);
+  assert.equal(el('#desktop-start').hidden,false);
   assert.equal(embeds(page).length,0);
-  await connect.listeners.click();
+  await el('#desktop-start').listeners.click();
   const start=page.fetches.find(([p])=>p.endsWith('/start'));
   assert.equal(start[0],'/services/desktop/start');
   assert.equal(start[1].method,'POST');
   assert.equal(start[1].headers['X-BayLeaf-Action'],'managed-service');
   assert.equal(embeds(page).length,0,'no embed while starting');
-  assert.equal(connect.dataset.state,'busy','starting label stays visible');
-  assert.equal(el('#screen-cta').textContent,'Starting your desktop…');
   assert.equal(el('#desktop-status').textContent,'Starting the desktop…','card keeps the detailed status');
   page.snapshot={phase:'ready',machine:'started',operation:'synthetic',url:desktopUrl};
   page.timers.at(-1)();
   await settle(); await settle();
-  assert.equal(embeds(page).length,1,'ready after the click mints exactly one code');
-  assert.equal(page.frames.length,1);
-  assert.equal(el('#screen-live').hidden,false);
-  assert.equal(el('#screen-hide').focused,1);
-  el('#screen-hide').listeners.click();
-  assert.equal(connect.dataset.state,undefined);
-  page.timers.at(-1)?.();
-  await settle();
-  assert.equal(embeds(page).length,1,'automatic show happens once per click');
+  assert.equal(embeds(page).length,0,'Start never embeds a live screen');
+  assert.equal(page.frames.length,0);
+  assert.equal(el('#desktop-open').hidden,false);
+  assert.equal(el('#desktop-open').href,desktopUrl);
 }
-{
-  // The card's own Start never auto-shows the screen.
-  const page=desktopPage({phase:'idle',machine:'started'});
-  const el=page.element;
-  await settle();
-  await el('#desktop-start').listeners.click();
-  page.snapshot={phase:'ready',machine:'started',operation:'synthetic',url:desktopUrl};
-  page.timers.at(-1)();
-  await settle(); await settle();
-  assert.equal(embeds(page).length,0,'card Start leaves the screen off');
-  assert.equal(el('#screen-connect').hidden,false);
-}
-console.log('PASS sandbox overview, host-only login, CSRF, escaped identity, one-shot wake, passive reads, service dispatch, logout, no-wake stop controls and on-demand hero Desktop screen');
+console.log('PASS sandbox overview, host-only login, CSRF, escaped identity, one-shot wake, passive reads, service dispatch, logout, no-wake stop controls and static hero');

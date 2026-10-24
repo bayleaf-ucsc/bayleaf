@@ -1,5 +1,9 @@
 # BayLeaf Sandboxes dashboard
 
+**2026-10-24 hero simplification deployed:** Worker
+`ba7930bf-2a1b-43f2-8b38-ea7a1e648481`. Public-root readback confirmed the static
+illustration and OpenChamber-first guidance, with no hero connection controls.
+
 **Issue #94 deployed 2026-10-20 Pacific:** CollabMD rooms and owner-authorized Stop app / End
 sharing controls are available. CollabMD alone has a public
 gateway with its own room-password challenge. Two hours is guidance, not an
@@ -12,13 +16,13 @@ Signed-in owners can manage OpenChamber, Nanobot, CollabMD, code-server,
 JupyterLab, dufs and ttyd. They use the same sandbox files; all except CollabMD
 retain an owner-authenticated private gateway. A Desktop card (Daytona's noVNC,
 private, no VNC password; deployed 2026-10-24) is described in
-[`api/DESKTOP.md`](../api/DESKTOP.md). The page hero holds a small "screen" whose placeholder is
-itself a button: signed out it signs in; signed in, a click shows a ready Desktop
-or runs the card's Start action and shows it once ready. It frames a scaled live
-view through a one-time code exchanged for a partitioned,
-frame-only gateway session; the signed-in page CSP adds only `frame-src
-https://*.bayleaf-proxies.dev`. See
-[`api/DESKTOP.md`](../api/DESKTOP.md#embedded-live-view).
+[`api/DESKTOP.md`](../api/DESKTOP.md). The hero's small desktop illustration is
+decorative only, signed in or out: no login, launch control, or live connection.
+OpenChamber is the recommended starting point for text, file and command-based
+work. Desktop is an optional fallback for graphical tasks, launched deliberately
+from its card and opened in a separate tab. The page CSP permits no frames.
+The existing embed adapter/gateway capability remains available but is not used
+by this page.
 
 ## Managed-service seams
 
