@@ -269,6 +269,62 @@ export const SandboxPokeResponseSchema = z.object({
   }),
 }).openapi('SandboxPokeResponse');
 
+// ── Computer use ─────────────────────────────────────────────────
+// Computer-use handles travel in JSON, never URLs. All coordinates are native
+// display pixels, not scaled screenshot coordinates.
+const ComputerCoordinate = z.number().int().min(0).max(32767);
+const ComputerButton = z.enum(['left', 'right', 'middle']).default('left');
+const ComputerKey = z.string().min(1).max(64);
+export const ComputerSessionRequestSchema = z.object({}).strict().openapi('ComputerSessionRequest');
+export const ComputerSessionSchema = z.object({
+  session: z.string().min(1).max(4096).describe('Opaque signed observation handle, not authority. Send with your owner credential in JSON; discard on session_ended.'),
+}).strict().openapi('ComputerSession');
+export const ComputerSessionResponseSchema = ComputerSessionSchema.extend({
+  expires_at: z.number().int().describe('Unix seconds, at most 24 hours after opening. No compute or Desktop lifetime extension.'),
+}).openapi('ComputerSessionResponse');
+export const ComputerActionSchemas = {
+  'mouse/move': ComputerSessionSchema.extend({ x: ComputerCoordinate, y: ComputerCoordinate }).strict().openapi('ComputerMouseMove'),
+  'mouse/click': ComputerSessionSchema.extend({ x: ComputerCoordinate, y: ComputerCoordinate,
+    button: ComputerButton, double: z.boolean().default(false) }).strict().openapi('ComputerMouseClick'),
+  'mouse/drag': ComputerSessionSchema.extend({ startX: ComputerCoordinate, startY: ComputerCoordinate,
+    endX: ComputerCoordinate, endY: ComputerCoordinate, button: ComputerButton }).strict().openapi('ComputerMouseDrag'),
+  'mouse/scroll': ComputerSessionSchema.extend({ x: ComputerCoordinate, y: ComputerCoordinate,
+    direction: z.enum(['up', 'down']), amount: z.number().int().min(1).max(100).default(1)
+      .describe('Wheel ticks, not pixels.') }).strict().openapi('ComputerMouseScroll'),
+  'mouse/down': ComputerSessionSchema.extend({ x: ComputerCoordinate.optional(), y: ComputerCoordinate.optional(),
+    button: ComputerButton }).strict().refine(v => (v.x === undefined) === (v.y === undefined), 'Supply both coordinates or neither.').openapi('ComputerMouseDown'),
+  'mouse/up': ComputerSessionSchema.extend({ x: ComputerCoordinate.optional(), y: ComputerCoordinate.optional(),
+    button: ComputerButton }).strict().refine(v => (v.x === undefined) === (v.y === undefined), 'Supply both coordinates or neither.').openapi('ComputerMouseUp'),
+  'keyboard/type': ComputerSessionSchema.extend({ text: z.string().min(1).max(4096)
+    .regex(/^[^\x00-\x09\x0b\x0c\x0e-\x1f\x7f]*$/).describe('Unicode text. Newlines press Enter; tabs and other control characters are rejected.') }).strict().openapi('ComputerKeyboardType'),
+  'keyboard/press': ComputerSessionSchema.extend({ key: ComputerKey,
+    modifiers: z.array(z.enum(['ctrl', 'alt', 'shift', 'cmd'])).max(4).default([]) }).strict().openapi('ComputerKeyboardPress'),
+  'keyboard/hotkey': ComputerSessionSchema.extend({ keys: z.string().min(1).max(256).describe('Toolbox combination such as ctrl+shift+t.') }).strict().openapi('ComputerKeyboardHotkey'),
+  'keyboard/down': ComputerSessionSchema.extend({ key: ComputerKey }).strict().openapi('ComputerKeyboardDown'),
+  'keyboard/up': ComputerSessionSchema.extend({ key: ComputerKey }).strict().openapi('ComputerKeyboardUp'),
+};
+const ComputerRegionSchema = z.object({ x: ComputerCoordinate, y: ComputerCoordinate,
+  width: z.number().int().min(1).max(32768), height: z.number().int().min(1).max(32768) }).strict();
+export const ComputerScreenshotSchema = ComputerSessionSchema.extend({
+  region: ComputerRegionSchema.optional(), showCursor: z.boolean().default(false),
+}).strict().openapi('ComputerScreenshot');
+export const ComputerCompressedScreenshotSchema = ComputerScreenshotSchema.extend({
+  format: z.enum(['png', 'jpeg', 'webp']).default('jpeg'), quality: z.number().int().min(1).max(100).default(70),
+  scale: z.number().min(0.1).max(1).default(1).describe('Scale factor. Actions still use native display coordinates.'),
+}).strict().openapi('ComputerCompressedScreenshot');
+export const ComputerActionResponseSchema = z.object({ success: z.literal(true) }).openapi('ComputerActionResponse');
+export const ComputerDisplayResponseSchema = z.object({ displays: z.array(z.object({
+  x: z.number().int(), y: z.number().int(), width: z.number().int().positive(), height: z.number().int().positive(),
+})) }).openapi('ComputerDisplayResponse');
+export const ComputerWindowsResponseSchema = z.object({ windows: z.array(z.object({
+  id: z.union([z.string(), z.number()]), title: z.string(),
+  x: z.number().optional(), y: z.number().optional(), width: z.number().optional(), height: z.number().optional(),
+})) }).describe('Advisory only: the observed Toolbox returns zero geometry and process IDs, not X window IDs. Use screenshots for targeting.').openapi('ComputerWindowsResponse');
+export const ComputerScreenshotResponseSchema = z.union([
+  z.object({ screenshot: z.string() }).passthrough(),
+  z.object({ Screenshot: z.string() }).passthrough(),
+]).describe('Streamed Toolbox JSON with base64 image bytes. Accept screenshot or Screenshot; additional provider metadata is advisory. No API storage or caching.').openapi('ComputerScreenshotResponse');
+
 // ── Key management ───────────────────────────────────────────────
 //
 // POST|DELETE /key are dashboard plumbing (browser session-gated, called by the

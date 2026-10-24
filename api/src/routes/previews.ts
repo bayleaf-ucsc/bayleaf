@@ -9,7 +9,8 @@ import type { AppEnv, Bindings } from '../types';
 import { getSession } from '../utils/session';
 import { PreviewRegistrationSchema, PreviewRegistrationResponseSchema, PreviewLabelSchema, PreviewUpstreamHeadersSchema } from '../schemas';
 import { upstreamCookies, wrapApplicationCookies } from '../previewCookies';
-import { managedSlot, managedAccess } from '../serviceDefs';
+import { managedSlot, managedAccess, managedLanding } from '../serviceDefs';
+import { SERVICE_ORIGIN } from '../serviceSessions';
 import { diagnosticHeaders, publicDiagnosticPage } from '../templates/diagnostics';
 
 interface Deployment {
@@ -45,7 +46,15 @@ const TRANSACTION = '__Host-bl-preview-transaction';
 const BROKER = '__Host-bl-preview-broker';
 const SESSION = '__Host-bl-preview-session';
 const RETURN_TO = '__Host-bl-preview-return';
+// Desktop's embedded view only: a separate, Partitioned cookie that the browser
+// keys to the framing top-level site (sandbox.bayleaf.dev), never the new-tab session.
+const EMBED = '__Host-bl-preview-embed';
 const COOKIE_OPTIONS = { path: '/', secure: true, httpOnly: true, sameSite: 'Lax' as const };
+const EMBED_COOKIE_OPTIONS = { path: '/', secure: true, httpOnly: true, sameSite: 'None' as const, partitioned: true };
+// Embed codes reuse preview_flows ('issued' rows with this broker_hash marker),
+// so no migration widens its stage CHECK. Login hashes are 64 hex, never this.
+const EMBED_MARKER = 'desktop-embed';
+const EMBED_CODE_SECONDS = 60;
 const now = () => Math.floor(Date.now() / 1000);
 const random = () => hex(crypto.getRandomValues(new Uint8Array(32)));
 const hex = (bytes: Uint8Array) => Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
@@ -132,15 +141,38 @@ async function registration(env: Bindings, hostname: string): Promise<Registrati
   return row;
 }
 
-async function previewSession(request: Request, env: Bindings, r: Registration): Promise<number | null> {
-  const cookies = (request.headers.get('Cookie') ?? '').split(';').map(c => c.trim())
-    .filter(c => c.startsWith(`${SESSION}=`));
-  if (cookies.length !== 1) return null;
+/** The only registration a cross-site parent may frame: the owner's managed Desktop. */
+const desktopEmbeddable = (r: Registration) => r.deployment === '__browser' && r.slot === '__desktop' && r.access === 'private';
+
+function cookieValues(request: Request, name: string): string[] {
+  return (request.headers.get('Cookie') ?? '').split(';').map(c => c.trim())
+    .filter(c => c.startsWith(`${name}=`)).map(c => c.slice(name.length + 1));
+}
+async function sessionToken(token: string, request: Request, env: Bindings, r: Registration, embed: boolean): Promise<number | null> {
   try {
-    const payload = await verify(cookies[0].slice(SESSION.length + 1), env.PREVIEWS_SECRET!, 'HS256');
+    const payload = await verify(token, env.PREVIEWS_SECRET!, 'HS256');
+    // The embed claim is exact in both directions: neither token stands in for the other.
     return payload.aud === new URL(request.url).origin && payload.generation === r.generation &&
+      (payload.embed === true) === embed &&
       typeof payload.exp === 'number' && payload.exp <= r.expires_at ? payload.exp : null;
   } catch { return null; }
+}
+async function previewSession(request: Request, env: Bindings, r: Registration): Promise<{ exp: number; embed: boolean } | null> {
+  const top = cookieValues(request, SESSION);
+  if (top.length === 1) {
+    const exp = await sessionToken(top[0], request, env, r, false);
+    if (exp) return { exp, embed: false };
+  }
+  // A browser that ignored Partitioned could replay the embed cookie at top
+  // level. It never authorizes a top-level document, only the frame's own loads.
+  const dest = request.headers.get('Sec-Fetch-Dest');
+  // WebSocket handshakes may omit Fetch Metadata; they are never documents, and
+  // callers have already required an exact same-origin Origin for upgrades.
+  const socket = request.headers.get('Upgrade')?.toLowerCase() === 'websocket';
+  const embedded = cookieValues(request, EMBED);
+  if (!desktopEmbeddable(r) || embedded.length !== 1 || (!socket && (!dest || dest === 'document'))) return null;
+  const exp = await sessionToken(embedded[0], request, env, r, true);
+  return exp ? { exp, embed: true } : null;
 }
 
 async function syncConnections(env: Bindings, hostname: string): Promise<boolean> {
@@ -305,6 +337,31 @@ export async function registerUserPreview(env: Bindings, email: string, slot: st
 
 export function previewsEnabled(env: Bindings): boolean { return configured(env); }
 
+/** One-time, 60-second code for framing the owner's CURRENT Desktop registration
+ * in the Sandboxes dashboard. Only its hash is stored; the caller is the
+ * authenticated SandboxManagement RPC, never a caller-selected owner or slot. */
+export async function issueDesktopEmbed(env: Bindings, email: string): Promise<{ url: string; expires_at: string } | null> {
+  if (!configured(env) || env.BROWSER_SANDBOX_ENABLED !== 'true') return null;
+  const owner = email.toLowerCase();
+  const row = await env.DB.prepare(`SELECT hostname FROM preview_registrations
+    WHERE email=? AND deployment='__browser' AND slot='__desktop' AND expires_at>?`)
+    .bind(owner, now()).first<{ hostname: string }>();
+  // Re-read through the gateway's own validation: live credential, private policy.
+  const r = row ? await registration(env, row.hostname) : null;
+  if (!r || r.email !== owner || !desktopEmbeddable(r)) return null;
+  const code = random();
+  const expires = Math.min(now() + EMBED_CODE_SECONDS, r.expires_at);
+  const inserted = await env.DB.prepare(`INSERT INTO preview_flows
+    (id,hostname,generation,verifier_hash,broker_hash,stage,code_hash,expires_at)
+    SELECT ?,?,?,?,?,'issued',?,? WHERE
+    (SELECT COUNT(*) FROM preview_flows WHERE hostname=? AND expires_at>?) < 64 RETURNING id`)
+    // The verifier is discarded: the login callback can never consume this row.
+    .bind(random(), r.hostname, r.generation, await hash(random()), EMBED_MARKER, await hash(code), expires,
+      r.hostname, now()).first();
+  if (!inserted) return null;
+  return { url: `https://${r.hostname}${PREFIX}embed?code=${code}`, expires_at: new Date(expires * 1000).toISOString() };
+}
+
 export async function registerBrowserPreview(env: Bindings, email: string, url: string, expiresAt: number, ownerKeyHash: string, slot = '__browser', appSecret?: string) {
   if (env.BROWSER_SANDBOX_ENABLED !== 'true' || !managedSlot(slot)) return failure(503);
   const requiresAppSecret = ['__nanobot','__jupyter','__ttyd'].includes(slot);
@@ -429,12 +486,16 @@ export async function handlePreviewHost(c: Context<AppEnv>): Promise<Response> {
     const site = c.req.header('Sec-Fetch-Site');
     const navigation = c.req.method === 'GET' && c.req.header('Sec-Fetch-Mode') === 'navigate' &&
       c.req.header('Sec-Fetch-Dest') === 'document';
+    const frameNavigation = c.req.method === 'GET' && c.req.header('Sec-Fetch-Mode') === 'navigate' &&
+      c.req.header('Sec-Fetch-Dest') === 'iframe';
     // Public GET navigation does not confer authority. CSP below restricts the
     // ancestor; no Referrer is required (our applications use no-referrer).
-    const publicFrame = r.access === 'public' && c.req.method === 'GET' &&
-      c.req.header('Sec-Fetch-Mode') === 'navigate' && c.req.header('Sec-Fetch-Dest') === 'iframe';
+    const publicFrame = r.access === 'public' && frameNavigation;
+    // Desktop alone may be framed cross-site, and only with a one-time embed code
+    // or the partitioned embed session (both checked below). CSP names the parent.
+    const desktopFrame = desktopEmbeddable(r) && frameNavigation;
     if ((origin && origin !== u.origin) ||
-        (site && !['none', 'same-origin'].includes(site) && !navigation && !publicFrame) ||
+        (site && !['none', 'same-origin'].includes(site) && !navigation && !publicFrame && !desktopFrame) ||
         (!['GET', 'HEAD'].includes(c.req.method) && origin !== u.origin)) return failure();
     const upgrade = c.req.header('Upgrade');
     if (upgrade && (upgrade.toLowerCase() !== 'websocket' || origin !== u.origin || c.req.method !== 'GET')) return failure();
@@ -450,6 +511,9 @@ export async function handlePreviewHost(c: Context<AppEnv>): Promise<Response> {
       if (r.access === 'public') return failure(404);
       if (c.req.method !== 'GET' || upgrade || serviceWorker) return failure();
       for (const [key, value] of secureHeaders()) c.header(key, value);
+      if (u.pathname === `${PREFIX}embed`) return await redeemDesktopEmbed(c, r, u, desktopFrame);
+      // Login never runs inside a frame; framed parents get only the embed path.
+      if (desktopFrame) return failure();
       if (u.pathname === `${PREFIX}start`) {
         const id = random();
         const verifier = random();
@@ -489,17 +553,21 @@ export async function handlePreviewHost(c: Context<AppEnv>): Promise<Response> {
               /^[A-Za-z0-9_-]+$/.test(name)) deleteCookie(c, name, COOKIE_OPTIONS);
         }
         deleteCookie(c, TRANSACTION, COOKIE_OPTIONS);
-        return c.redirect('/', 302);
+        // Login never preserves the requested path. A managed app without an
+        // index page (Desktop's noVNC) lands on its fixed, registry-defined client.
+        return c.redirect(r.deployment === '__browser' ? managedLanding(r.slot) : '/', 302);
       }
       return failure(404);
     }
 
-    const authenticated = r.access === 'private' ? await previewSession(c.req.raw, c.env, r) : r.expires_at;
-    if (r.access === 'private' && !authenticated) {
+    const session = r.access === 'private' ? await previewSession(c.req.raw, c.env, r) : null;
+    if (r.access === 'private' && !session) {
       if (navigation && !upgrade) return new Response(null, { status: 302,
         headers: new Headers([...secureHeaders(), ['Location', `${PREFIX}start`]]) });
       return failure(401);
     }
+    // A cross-site Desktop frame needs the partitioned embed session itself.
+    if (desktopFrame && !session?.embed) return failure();
     // Modern browser Fetch Metadata or an exact Origin is required. A browser
     // omitting both cannot silently bypass sibling-origin request checks.
     if (r.access === 'private' && !site && origin !== u.origin) return failure();
@@ -644,6 +712,30 @@ function validators(upstream: Headers, outgoing: Headers, target: URL): void {
   if (modified) outgoing.set('Last-Modified', modified);
 }
 
+/** Redeem a one-time Desktop embed code inside the dashboard's frame. Sets
+ * only the partitioned embed session; the top-level session is never issued. */
+async function redeemDesktopEmbed(c: Context<AppEnv>, r: Registration, u: URL, desktopFrame: boolean): Promise<Response> {
+  if (!desktopFrame) return failure(desktopEmbeddable(r) ? 403 : 404);
+  // Defense in depth beside frame-ancestors: a present Referer names the dashboard.
+  const referrer = c.req.header('Referer');
+  if (referrer) {
+    try { if (new URL(referrer).origin !== SERVICE_ORIGIN) return failure(); }
+    catch { return failure(); }
+  }
+  const code = u.searchParams.get('code') ?? '';
+  if (!/^[a-f0-9]{64}$/.test(code)) return failure();
+  // DELETE RETURNING is the single-use boundary, including concurrent redemptions.
+  const consumed = await c.env.DB.prepare(`DELETE FROM preview_flows
+    WHERE hostname=? AND generation=? AND broker_hash=? AND stage='issued' AND code_hash=? AND expires_at>?
+    RETURNING id`).bind(r.hostname, r.generation, EMBED_MARKER, await hash(code), now()).first();
+  if (!consumed) return failure();
+  // Same generation binding and lifetime as the owner's new-tab session.
+  const exp = r.expires_at;
+  const token = await sign({ aud: u.origin, generation: r.generation, embed: true, exp }, c.env.PREVIEWS_SECRET!);
+  setCookie(c, EMBED, token, { ...EMBED_COOKIE_OPTIONS, maxAge: exp - now() });
+  return c.redirect(managedLanding(r.slot), 302);
+}
+
 async function forward(c: Context<AppEnv>, r: Registration): Promise<Response> {
   const prepared = await upstreamRequest(c.req.raw, c.env, r);
   if (!prepared) return failure();
@@ -653,6 +745,12 @@ async function forward(c: Context<AppEnv>, r: Registration): Promise<Response> {
     redirect: 'manual', signal: AbortSignal.timeout(Math.min(300_000, Math.max(1, (r.expires_at - now()) * 1000))),
   });
   const responseHeaders = secureHeaders();
+  if (desktopEmbeddable(r)) {
+    // X-Frame-Options cannot name a cross-origin parent, so CSP alone governs.
+    // Exactly one ancestor, the Sandboxes dashboard: the clickjacking defense.
+    responseHeaders.delete('X-Frame-Options');
+    responseHeaders.set('Content-Security-Policy', `frame-ancestors ${SERVICE_ORIGIN}; worker-src 'self' blob:; object-src 'none'; base-uri 'self'`);
+  }
   // A completed HTTP error is an app/hosting response, not a transport failure.
   // Keep status semantics but discard content, cookies, challenges and debug URLs.
   if (upstream.status >= 400 && upstream.status <= 599) {
@@ -740,7 +838,7 @@ export class PreviewConnections {
             request.headers.get('Upgrade')?.toLowerCase() !== 'websocket' ||
             request.headers.get('Origin') !== u.origin) return failure();
         const sessionExpiry = r.access === 'private'
-          ? await previewSession(request, this.env, r)
+          ? (await previewSession(request, this.env, r))?.exp
           : r.expires_at;
         if (!sessionExpiry) return failure();
         if (this.sockets.size >= 16) return failure(429);

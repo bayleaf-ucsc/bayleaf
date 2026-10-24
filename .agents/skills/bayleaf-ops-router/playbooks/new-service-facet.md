@@ -58,6 +58,13 @@ traffic without changing the Worker.
 
 ## Refinement log
 
+- 2026-10-24 (computer-use, local only): Existing owner auth and sandbox provider
+  carry screenshot/input transit without new storage or a new provider. Separate
+  API transit posture from persistent guest/agent history; activation remains an
+  explicit managed-app operation. No deployment or adapter exposure inferred.
+  Subsequent approved API/frontend rollout passed spec/auth smoke only;
+  functional live API qualification and all client adapters remain deferred.
+
 - 2026-10-21 (Inboxes TTL + SSE release): Inspect the actual traffic version,
   not historical qualification IDs. A newer source-default API deploy had disabled
   the pilot. Preserve published production adapter pins when local submodule HEADs

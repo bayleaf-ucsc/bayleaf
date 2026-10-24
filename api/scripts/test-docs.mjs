@@ -50,6 +50,21 @@ const get = (path, headers = {}) => mf.dispatchFetch(`http://localhost:8806${pat
 try {
   const spec = await (await get('/docs/openapi.json')).json();
   const schemas = spec.components.schemas;
+  const computerOperations = Object.entries(spec.paths).filter(([path]) => path.startsWith('/sandbox/computer/'));
+  assert.equal(computerOperations.length, 16);
+  for (const [path, operation] of computerOperations) {
+    assert.deepEqual(Object.keys(operation), ['post'], `${path}: handles must not enter URLs`);
+    assert.deepEqual(operation.post.security, [{ Bearer: [] }]);
+    assert.deepEqual(operation.post.tags, ['Sandbox']);
+    assert.ok(operation.post.requestBody.required);
+    for (const status of ['400', '401', '403', '409', '410', '423', '502']) assert.ok(operation.post.responses[status]);
+  }
+  assert.equal(spec.paths['/sandbox/computer/session'].post.operationId, 'openComputerSession');
+  assert.ok(spec.paths['/sandbox/computer/screenshot'].post.responses['200'].content['image/png']);
+  assert.ok(spec.paths['/sandbox/computer/screenshot/compressed'].post.responses['200'].content['application/json']);
+  assert.ok(schemas.ComputerScreenshotResponse.anyOf || schemas.ComputerScreenshotResponse.oneOf);
+  assert.ok(schemas.ComputerMouseMove.required.includes('session'));
+  assert.equal(schemas.ComputerMouseMove.additionalProperties, false);
   assert.match(schemas.InboxCredentialRevoke.description, /Authentication remains required/);
   assert.ok(!schemas.InboxCredentialRevoke.description.includes('becomes open again'));
   const grants = spec.tags.find(t => t.name === 'Grants').description;

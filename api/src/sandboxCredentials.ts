@@ -17,7 +17,7 @@ export interface SandboxCredential {
   created_at: number; updated_at: number;
 }
 interface Secret { id: string; name: string; placeholder: string; hosts: string[] }
-interface Machine { id: string; state: string; labels?: Record<string, string>; env?: Record<string, string> }
+interface Machine { id: string; state: string; toolboxProxyUrl?: string; labels?: Record<string, string>; env?: Record<string, string> }
 async function call(env: Bindings, path: string, method = 'GET', body?: unknown) {
   const base = env.DAYTONA_API_URL || DAYTONA_DEFAULT_API_URL;
   let end = base.length;
@@ -61,7 +61,7 @@ export async function authenticateSandboxCredential(env: Bindings, bearer: strin
     const m = await r.json() as Machine;
     if (m.id !== sc.sandbox_id || m.labels?.[env.DAYTONA_DEPLOYMENT_LABEL] !== sc.email ||
         ['destroyed', 'deleted'].includes(m.state)) return null;
-    return { ...owner, sandbox_credential_id: sc.id };
+    return { ...owner, sandbox_credential_id: sc.id, toolbox_proxy_url: m.toolboxProxyUrl };
   } catch { return null; }
 }
 

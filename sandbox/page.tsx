@@ -2,6 +2,9 @@ import { SERVICES } from './services';
 import { arrivalScript } from '../telemetry/browser/runtime';
 
 // Standalone HTML keeps this Worker independent of the API dashboard's Hono layout.
+// Signed-in pages may frame only preview-gateway origins (Desktop's live view).
+// The gateway, not this list, limits framing to the owner's own Desktop.
+const PREVIEW_FRAMES = 'https://*.bayleaf-proxies.dev';
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 }[character]!));
@@ -70,6 +73,33 @@ const styles = `
   .service .button:hover { background:#e5f0e8; }
   .service[data-phase=failed] .status-box { color:#6b231a; background:#fdf1ef; padding:0.6rem 0.85rem; border-radius:6px; }
   .examples { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .hero { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,420px); gap:1.5rem 2rem; align-items:center; margin-top:2rem; }
+  .hero h1 { margin-top:0; }
+  .hero .lede { margin-bottom:1rem; }
+  .screen { min-width:0; }
+  /* Xvfb runs at 1024x768; noVNC scales to fit, so a 4:3 box avoids letterboxing. */
+  .screen-display { position:relative; aspect-ratio:4/3; background:#1f2a24; border:8px solid #2f3b34; border-radius:10px; overflow:hidden; }
+  .screen-stand { width:28%; height:10px; margin:0 auto; background:#2f3b34; border-radius:0 0 6px 6px; }
+  .screen-placeholder { position:absolute; inset:0; background:linear-gradient(160deg,#2f5240,#1f2a24 75%); }
+  .screen-placeholder span { position:absolute; display:block; }
+  .screen-placeholder .icon { left:5%; width:7%; aspect-ratio:1; background:#9fbfaa; opacity:0.35; border-radius:3px; }
+  .screen-placeholder .icon:nth-child(1) { top:8%; }
+  .screen-placeholder .icon:nth-child(2) { top:20%; }
+  .screen-placeholder .icon:nth-child(3) { top:32%; }
+  .screen-placeholder .window { left:24%; top:16%; width:52%; height:48%; border:1px solid #6f8c7a; background:#ffffff14; border-radius:4px; }
+  .screen-placeholder .taskbar { left:0; right:0; bottom:0; height:7%; background:#111a15; }
+  .screen-frame { position:absolute; inset:0; }
+  .screen-frame iframe { display:block; width:100%; height:100%; border:0; }
+  /* The placeholder is the control: its label appears on hover or focus. */
+  .screen-connect { position:absolute; inset:0; width:100%; height:100%; min-height:0; padding:1rem; border:0; border-radius:0; background:transparent; }
+  .screen-connect:hover { background:#00000040; }
+  .screen-connect:focus-visible { outline-offset:-6px; outline-color:#fff; }
+  .screen-connect span { padding:0.6rem 1rem; border-radius:6px; background:#1e5a3a; color:#fff; font-weight:600; opacity:0; transition:opacity 0.15s; }
+  .screen-connect:hover span,.screen-connect:focus-visible span,.screen-connect[data-state] span { opacity:1; }
+  .screen-connect[data-state=busy] { cursor:progress; }
+  @media (hover:none) { .screen-connect span { opacity:1; } }
+  @media (prefers-reduced-motion:reduce) { .screen-connect span { transition:none; } }
+  .screen .actions { margin-top:0.75rem; }
   .flow { font-size:0.8rem; font-weight:600; color:#1e5a3a; margin:0 0 0.6rem; }
   .beyond { background:#eaf2ec; border-radius:10px; padding:1.1rem 1.25rem; margin:2rem 0; }
   .beyond p:last-child { margin-bottom:0; }
@@ -80,6 +110,8 @@ const styles = `
   .callout { background:#fff; border-left:4px solid #b5651d; padding:0.65rem 0.9rem; font-size:0.925rem; }
   @media (max-width:760px) {
     .facts,.examples { grid-template-columns:1fr; }
+    .hero { grid-template-columns:1fr; }
+    .screen { max-width:420px; }
     .service { grid-template-columns:1fr; }
     .service > .actions { grid-column:1; grid-row:auto; margin-top:0.5rem; }
   }
@@ -117,6 +149,19 @@ const controls = (service: typeof SERVICES[number]) => `
   <noscript><p>Enable JavaScript to check status and set up ${escapeHtml(service.name)}. <a href="https://api.bayleaf.dev/dashboard#sandbox">Low-level sandbox and API access</a> is also available.</p></noscript>
 `;
 
+/** Hero "screen": the placeholder is the button that connects (or signs in). */
+const screenWidget = (signedIn: boolean) => `<section class="screen" id="screen" aria-label="Your sandbox’s screen">
+  <div class="screen-display"><div class="screen-placeholder" id="screen-placeholder" aria-hidden="true"><span class="icon"></span><span class="icon"></span><span class="icon"></span><span class="window"></span><span class="taskbar"></span></div>
+  ${signedIn ? `<div class="screen-frame" id="screen-frame"></div>
+  <button type="button" class="screen-connect" id="screen-connect" hidden><span id="screen-cta">Connect to your desktop</span></button>`
+    : '<form method="post" action="/login"><button type="submit" class="screen-connect"><span>Sign in to connect to your desktop</span></button></form>'}</div>
+  <div class="screen-stand" aria-hidden="true"></div>
+  ${signedIn ? `<div class="actions" id="screen-live" hidden>
+    <a class="button" id="screen-popout" target="_blank" rel="noopener noreferrer">Open in new tab</a>
+    <button type="button" class="secondary" id="screen-hide">Hide</button>
+  </div>` : ''}
+</section>`;
+
 /** Shared managed-app status and controls; activity styling follows data-phase. */
 const controlsScript = `(() => {
   const catalog = ${JSON.stringify(SERVICES).replaceAll('<', '\\u003c')};
@@ -150,6 +195,87 @@ const controlsScript = `(() => {
         return li;
       }));
     }
+    function say(text){el('status').textContent=text;}
+    // Desktop only: the hero's live screen, framed on demand. Nothing loads until
+    // the owner clicks; the one-time code is minted then and never starts the app.
+    // A click on a stopped Desktop runs the card's Start, then shows it once ready.
+    const screen=service.id==='desktop'?(()=>{
+      const $=id=>document.getElementById('screen-'+id);
+      const connect=$('connect'),cta=$('cta'),live=$('live'),popout=$('popout'),hide=$('hide'),
+        box=$('frame'),placeholder=$('placeholder');
+      let pending=false,shownFor=null,autoShow=false;
+      const frameLink=value=>{
+        try { const u=new URL(value);
+          return u.protocol==='https:'&&u.hostname.endsWith('.bayleaf-proxies.dev')&&u.pathname==='/__preview/embed'&&!u.username&&!u.password?u.href:null; }
+        catch { return null; }
+      };
+      // Busy and error labels stay visible without hover; the card holds details.
+      function state(name,text){
+        if(name)connect.dataset.state=name;else delete connect.dataset.state;
+        cta.textContent=text||'Connect to your desktop';
+      }
+      function close(focus){
+        box.replaceChildren();live.hidden=true;placeholder.hidden=false;shownFor=null;
+        connect.hidden=authExpired;state();
+        if(focus&&!authExpired)connect.focus();
+      }
+      async function open(){
+        if(pending||!ready||authExpired||busy)return;
+        pending=true;state('busy','Connecting…');
+        const link=snapshot?.url;
+        try {
+          const r=await fetch(endpoint+'/embed',{method:'POST',headers:{'X-BayLeaf-Action':'managed-service'},credentials:'same-origin',redirect:'error'});
+          if(r.status===401){signedOut();return;}
+          const result=await r.json();
+          const target=r.ok?frameLink(result.url):null;
+          if(!target||!ready||snapshot?.url!==link){
+            say(errors[result.error]||'Could not show the desktop on this page. Use Open (new tab) instead.');
+            state('error','Could not connect. Try again');return;
+          }
+          const frame=document.createElement('iframe');
+          frame.title='Desktop (live view)';
+          frame.referrerPolicy='origin';
+          // Same-origin scripts for noVNC; no popups or top-level navigation of this page.
+          frame.setAttribute('sandbox','allow-scripts allow-same-origin');
+          frame.setAttribute('allow','fullscreen');
+          frame.src=target;
+          // Floor control would go here (not built; anyone may send input now):
+          // load noVNC view_only while an agent holds the floor, and show a
+          // "Take over" pill beside this frame that asks the owner's controller
+          // for the human floor. See checkComputerFloor in api/src/computerUse.ts.
+          box.replaceChildren(frame);placeholder.hidden=true;connect.hidden=true;live.hidden=false;shownFor=link;
+          // Focus the controls below, not the desktop, which captures keys.
+          hide.focus();
+        } catch {
+          say('Could not show the desktop on this page. Use Open (new tab) instead.');
+          state('error','Could not connect. Try again');
+        }
+        finally {pending=false;}
+      }
+      // Only a click arms the automatic show; page loads never do.
+      function maybeShow(){if(autoShow&&ready&&!busy&&!pending&&live.hidden){autoShow=false;open();}}
+      function failed(){autoShow=false;state('error','Could not start. See Desktop below');}
+      connect.addEventListener('click',async()=>{
+        if(pending||busy||authExpired||autoShow||!live.hidden)return;
+        if(ready)return open();
+        autoShow=true;state('busy','Starting your desktop…');
+        if(snapshot?.phase==='opening')return;
+        if(el('start').hidden)return failed();
+        await action('start');
+        if(autoShow&&!ready&&snapshot?.phase!=='opening')failed();
+        maybeShow();
+      });
+      hide.addEventListener('click',()=>close(true));
+      // The link itself opens the new tab; closing the frame ends its connection.
+      popout.addEventListener('click',()=>close(false));
+      return {sync(link,phase){
+        if(link)popout.href=link;else popout.removeAttribute('href');
+        if(!live.hidden&&link!==shownFor)close(false);
+        if(autoShow&&!link&&phase!=='opening')failed();
+        connect.hidden=authExpired||!live.hidden;
+        maybeShow();
+      }};
+    })():null;
     function safeLink(value) {
       try { const url=new URL(value);return url.protocol==='https:'&&!url.username&&!url.password?url.href:null; }
       catch { return null; }
@@ -160,10 +286,10 @@ const controlsScript = `(() => {
       ready=s.phase==='ready'&&!!url;
       const opening=s.phase==='opening';
       root.dataset.phase=s.phase;
-       el('status').textContent=s.error ? (errors[s.error]||'Could not open '+service.name+'. Try again, or contact BayLeaf support.')
+       say(s.error ? (errors[s.error]||'Could not open '+service.name+'. Try again, or contact BayLeaf support.')
           :opening?(labels[s.progress]||'Preparing '+service.name)+'…'
           :s.phase==='stopped'?(s.access_revoked===false?'Revoking access; cleanup pending':s.cleanup_pending?'Access revoked; process cleanup pending':'Stopped. Saved files remain.')
-          :ready?'Running':'';
+          :ready?'Running':'');
       el('start').hidden=ready||opening||s.cleanup_pending||s.access_revoked===false;
        el('start').textContent=s.phase==='failed'?'Try again':service.launch;
        el('troubleshoot').hidden=!(ready||opening||s.error||s.previous_failure||s.phase==='failed');
@@ -177,6 +303,7 @@ const controlsScript = `(() => {
       el('stop').hidden=!(stoppable||s.cleanup_pending||s.access_revoked===false);
       el('copy-link').hidden=!(ready&&service.id==='collabmd');
       el('copy-password').hidden=!(ready&&service.id==='collabmd'&&s.room_password);
+      screen?.sync(ready?url:null,s.phase);
       const previous=s.previous_failure;
       el('previous').hidden=!previous;
       el('previous').textContent=previous?'Previous attempt failed at '+clock(previous.at)+' after '+duration(previous.elapsed)
@@ -188,8 +315,8 @@ const controlsScript = `(() => {
       authExpired=true;ready=false;snapshot=undefined;clearTimeout(timer);
       root.dataset.phase='signed-out';
        for(const id of ['start','restart','stop','copy-link','copy-password','open','timing','progress','previous','troubleshoot'])el(id).hidden=true;
-      el('open').removeAttribute('href');el('login').hidden=false;
-      el('status').textContent='Your session has expired. Sign in again to continue.';
+      el('open').removeAttribute('href');el('login').hidden=false;screen?.sync(null);
+      say('Your session has expired. Sign in again to continue.');
     }
     async function refresh() {
       if(authExpired)return;
@@ -203,7 +330,7 @@ const controlsScript = `(() => {
         if(version===requestVersion)render(result);
       } catch {
         if(version===requestVersion){
-          el('status').textContent='Could not check status. Try refreshing.';
+          say('Could not check status. Try refreshing.');
           if(snapshot?.phase==='opening')timer=setTimeout(refresh,5000);
         }
       }
@@ -213,24 +340,24 @@ const controlsScript = `(() => {
       busy=true;++requestVersion;clearTimeout(timer);
       const actionButtons=['start','restart','stop'].map(el);
       actionButtons.forEach(b=>b.disabled=true);
-       el('status').textContent='Requesting '+service.name+(name==='stop'?' shutdown…':name==='restart'?' restart…':' setup…');
+       say('Requesting '+service.name+(name==='stop'?' shutdown…':name==='restart'?' restart…':' setup…'));
       try {
         const r=await fetch(endpoint+'/'+name,{method:'POST',headers:{'X-BayLeaf-Action':'managed-service'},credentials:'same-origin',redirect:'error'});
         if(r.status===401){signedOut();return;}
         const result=await r.json();
         if(!r.ok) {
           if(typeof result.phase==='string')render(result);
-          else el('status').textContent=errors[result.error]||'Could not submit the action. Refresh status before retrying.';
+          else say(errors[result.error]||'Could not submit the action. Refresh status before retrying.');
         } else await refresh();
-      } catch {el('status').textContent='Could not submit the action. Refresh status before retrying.';}
+      } catch {say('Could not submit the action. Refresh status before retrying.');}
       finally {busy=false;actionButtons.forEach(b=>b.disabled=authExpired);}
     }
     ['start','restart','stop'].forEach(name=>el(name).addEventListener('click',()=>action(name)));
     for(const [id,key] of [['copy-link','url'],['copy-password','room_password']]) {
       el(id).addEventListener('click',async()=>{
         if(!ready||!snapshot?.[key])return;
-        try {await navigator.clipboard.writeText(snapshot[key]);el('status').textContent=id==='copy-link'?'Link copied':'Room password copied';}
-        catch {el('status').textContent='Could not copy. Clipboard access is unavailable.';}
+        try {await navigator.clipboard.writeText(snapshot[key]);say(id==='copy-link'?'Link copied':'Room password copied');}
+        catch {say('Could not copy. Clipboard access is unavailable.');}
       });
     }
     window.addEventListener('focus',()=>{if(!busy)refresh();});
@@ -260,17 +387,19 @@ export function renderSandboxPage(session: { email: string; name?: string } | nu
 <style nonce="${nonce}">${styles}</style></head><body><main>
 <nav aria-label="BayLeaf home"><a href="https://bayleaf.dev">BayLeaf</a>
 ${session ? `<div class="account"><p>${escapeHtml(session.email)}</p><form method="post" action="/logout"><button class="secondary" type="submit">Sign out</button></form></div>` : '<p class="eyebrow">For the UC Santa Cruz community</p>'}</nav>
+<div class="hero"><div>
 <h1>BayLeaf Sandboxes</h1>
 <p class="tagline">A small computer in the cloud for trying things out</p>
 <p class="lede">Your sandbox is a separate computer that runs for you. Use it to try unfamiliar software, especially AI tools that work with your files, without installing anything on your own computer. You use its apps in your browser.</p>
 ${session ? '' : '<form method="post" action="/login"><button class="button" type="submit">Sign in with UCSC</button></form>'}
+</div>${screenWidget(!!session)}</div>
 <div class="facts">
 <div class="fact"><h2>Kept separate</h2><p>Sandbox software runs separately from your personal computer. Upload files you want to work with there, rather than giving unfamiliar software access to your everyday files.</p></div>
 <div class="fact"><h2>Shared files</h2><p>Every app below works in the same workspace folder. Upload a file once, then use it in any of them.</p></div>
 <div class="fact"><h2>Sleeps when you’re done</h2><p>After you stop using it, your sandbox goes to sleep, releasing compute resources and keeping saved files. Waking it when you return can take a little longer.</p></div>
 </div>
 <section class="directory" aria-labelledby="apps-title"><h2 id="apps-title">Apps you can open</h2>
-<p>Open as many or as few as you like. Each opens in a new tab.</p>
+<p>Open as many or as few as you like. Each opens in a new tab; Desktop can also appear on the screen at the top of this page.</p>
 <p>These are independent open-source projects that BayLeaf sets up for you. If you like one, you can often install it on your own computer later.</p>
 ${cards}</section>
 <section aria-labelledby="ideas-title"><h2 id="ideas-title">Things you could try</h2><p class="note">The apps are more useful together, because they share the same files.</p>
@@ -289,7 +418,7 @@ ${cards}</section>
   return new Response(html, { headers: {
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'private, no-store',
-    'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'${collectArrival ? ' https://telemetry.bayleaf.dev' : ''}; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'`,
+    'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'${collectArrival ? ' https://telemetry.bayleaf.dev' : ''};${session ? ` frame-src ${PREVIEW_FRAMES};` : ''} base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'`,
     // no-referrer suppresses Origin on native form POSTs in browsers. Keep
     // only the origin, never the path, so login/logout pass exact-Origin CSRF.
     'Referrer-Policy': 'strict-origin',

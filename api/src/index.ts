@@ -30,6 +30,7 @@ import { proxyRoutes } from './routes/proxy';
 import { decisionsRoutes } from './routes/decisions';
 import { sealedRoutes } from './routes/sealed';
 import { sandboxRoutes } from './routes/sandbox';
+import { computerRoutes } from './routes/computer';
 import { reapInactiveSandboxes, SANDBOX_REAPER_CRON } from './sandboxReaper';
 import { sandboxBrowserRoutes } from './routes/sandboxBrowser';
 import { usageRoutes } from './routes/usage';
@@ -180,6 +181,7 @@ app.route('/sealed/.well-known', sealedWellKnownRoutes);
 // proxy. Gated by SEALED_ENABLED, which fails closed.
 app.route('/sealed', sealedRoutes);
 app.route('/sandbox/browser', sandboxBrowserRoutes);
+app.route('/sandbox/computer', computerRoutes);
 app.route('/usage', usageRoutes);
 app.route('/sandbox', sandboxRoutes);
 app.route('/web', webRoutes);

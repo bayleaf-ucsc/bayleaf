@@ -128,6 +128,15 @@ rendered under the current owner OpenChamber origin and was blocked under an
 unrelated sibling origin. The test used synthetic parent documents at those
 origins and the real public service, isolating browser framing-policy enforcement.
 
+A second, narrower framing exception covers only the managed Desktop slot
+(`__browser` deployment, `__desktop`, private). Its responses omit
+`X-Frame-Options` and send `frame-ancestors https://sandbox.bayleaf.dev`: one
+exact origin, no `'self'`, no wildcard. That is the clickjacking defense for an
+interactive desktop. A cross-site Desktop iframe navigation is admitted only for
+`/__preview/embed` (one-time code) or with the partitioned embed session; login
+paths are never served in a frame. Every other slot keeps `SAMEORIGIN` and
+`frame-ancestors 'self'`. See [`DESKTOP.md`](DESKTOP.md#embedded-live-view).
+
 The keyed API obtains a 24-hour Daytona signed URL and keeps its registration
 for 24 hours. Re-exposing the same port replaces that keyed registration.
 

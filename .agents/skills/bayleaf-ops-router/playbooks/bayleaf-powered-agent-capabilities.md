@@ -153,6 +153,13 @@ API to keep a retired capability appearing functional.
 
 ## Refinement log
 
+- 2026-10-24 (computer-use, API-only release): Exposure matrix and adapter owners
+  recorded in `api/COMPUTER-USE.md`, with native image delivery and consent gates
+  explicitly deferred. Read-only Toolbox status lacked generation identity, so
+  the approved fixed `/proc` probe replaces PID-only checks without waking compute.
+  Approved deployment does not establish functional live API qualification;
+  CLI/MCP and other adapter delivery remain deferred, as does floor control.
+
 - 2026-10-23 (native Windows qualification): HTTP fixtures missed curl 8.8.0's
   HTTPS certificate-info/write-out failure. Explicit PowerShell discovery aliases
   passed native generated-argv tests and the deployed desktop-to-campus-login

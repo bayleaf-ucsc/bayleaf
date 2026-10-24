@@ -88,6 +88,7 @@ let incomingOperation, lastForwarded, toolboxFailures = 0, machineId = 'syntheti
 const credentialsUploaded=[];
 const vault = new Map();
 let failCreate=false, creationRequests=0, rejectCreate=0;
+let computerUse=[], desktopUp=false, desktopCasing='pascal', desktopStartFails=false, registeredAtDesktopStop;
 let nanobotAuth, jupyterAuth, ttydAuth, collabmdAuth, nanobotReady=true, nanobotWrongOrigin=false, stopFails=false, stops=0;
 const machine = () => ({ id: machineId, state, memory, public: isPublic, labels: { 'synthetic-chat': email } });
 const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
@@ -149,6 +150,15 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
     }
     if (u.hostname === 'toolbox.example.test') {
       if (toolboxFailures > 0) { toolboxFailures--; return new Response('not ready', {status:503}); }
+      const cu=u.pathname.match(/\/computeruse\/(start|stop|status)$/);
+      if (cu) {
+        computerUse.push(req.method+' '+cu[1]);
+        if (cu[1]==='status') return Response.json({status:desktopUp?'active':'partial'});
+        if (cu[1]==='stop') registeredAtDesktopStop=(await db.prepare("SELECT count(*) n FROM preview_registrations WHERE slot='__desktop'").first()).n;
+        desktopUp=cu[1]==='start'&&!desktopStartFails;
+        const record=running=>desktopCasing==='pascal'?{Running:running,Pid:running?42:null,AutoRestart:true,Priority:100}:{running,pid:null};
+        return Response.json({message:'synthetic',status:Object.fromEntries(['atspi','novnc','pulseaudio','x11vnc','xfce4','xvfb'].map(n=>[n,record(desktopUp)]))});
+      }
       if (u.pathname.endsWith('/files/upload')) {
         const form = await req.formData(); const text = await form.get('file').text();
         if (u.searchParams.get('path').endsWith('request.next.json')) {
@@ -178,6 +188,7 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
         const operation=command.match(/--operation ([a-f0-9-]+)/)[1];
         return Response.json({exitCode:stopFails?1:0,result:JSON.stringify({stopped:!stopFails,operation})});
       }
+      if (command.endsWith('/desktop/desktop-cleanup.py')) return Response.json({exitCode:0,result:JSON.stringify({stopped:true,reaped:3})});
       if (command.endsWith('setup.py inspect')) return Response.json({ exitCode: 0, result: JSON.stringify({
         schema: 1, operation: interrupted ? 'stale' : incomingOperation.operation,
         updated_at: Math.floor(Date.now()/1000), phase: 'ready', ready: true, port: 3100,
@@ -684,6 +695,47 @@ try {
     state='archived';const before={executions,wakes};
     assert.equal((await req(cm('stop'),{method:'POST'})).status,200);
     assert.deepEqual({executions,wakes},before);state='started';
+  });
+  await check('Desktop uses Daytona computer use, never installs or creates, lands on noVNC; stop revokes first and never wakes',async()=>{
+    const dt=action=>'/__test/'+action+'?service=desktop';
+    const complete=async()=>{let op;for(let i=0;i<12;i++){op=await(await req(dt('__tick'))).json();if(op.phase!=='opening')return op;}throw new Error(JSON.stringify(op));};
+    const sibling=(await status()).url, before={launches,creates,creationRequests,uploads:credentialsUploaded.length,stops};
+    computerUse=[];
+    await req(dt('start'),{method:'POST'});let op=await complete();
+    assert.equal(op.phase,'ready');assert.deepEqual(computerUse,['POST start','GET status']);
+    assert.deepEqual({launches,creates,creationRequests,uploads:credentialsUploaded.length,stops},before,'no installer, creation or credential upload');
+    assert.equal(new URL(op.url).pathname+new URL(op.url).search,'/vnc.html?autoconnect=true&resize=scale&reconnect=true&path=websockify');
+    const row=await db.prepare("SELECT * FROM preview_registrations WHERE slot='__desktop'").first();
+    assert.equal(row.access,'private');assert.equal(new URL(op.url).hostname,row.hostname);
+    const passive={executions,calls:computerUse.length,wakes};
+    const view=await(await req(dt('status'))).json();assert.equal(view.url,op.url);
+    assert.deepEqual({executions,calls:computerUse.length,wakes},passive,'status never calls Toolbox');
+    assert.equal((await worker.fetch(op.url)).status,401,'private: anonymous requests are denied');
+    assert.equal((await status()).url,sibling);
+    // Restart is a clean session: stop, reap, start. Lowercase records also parse.
+    desktopCasing='lower';computerUse=[];
+    await req(dt('restart'),{method:'POST'});op=await complete();
+    assert.equal(op.phase,'ready');assert.deepEqual(computerUse,['POST stop','POST start','GET status']);
+    assert.equal(registeredAtDesktopStop,0,'restart revoked the old link before stopping');
+    desktopCasing='pascal';computerUse=[];
+    const stopped=await req(dt('stop'),{method:'POST'});assert.equal(stopped.status,200);
+    const result=await stopped.json();
+    assert.equal(result.access_revoked,true);assert.equal(result.cleanup_pending,false);assert.equal(result.processes_reaped,3);
+    assert.equal(registeredAtDesktopStop,0,'access is revoked before compute is touched');
+    assert.deepEqual(computerUse,['POST stop']);assert.equal(desktopUp,false);
+    // A stack that never reports active fails boundedly.
+    desktopStartFails=true;await req(dt('start'),{method:'POST'});op=await complete();
+    assert.equal(op.error,'desktop_not_ready');assert.equal(computerUse.filter(c=>c==='POST start').length,3);
+    desktopStartFails=false;
+    // A sleeping machine is never woken to stop the desktop.
+    await req(dt('start'),{method:'POST'});op=await complete();assert.equal(op.phase,'ready');
+    state='stopped';const asleep={executions,wakes,calls:computerUse.length};
+    assert.equal((await req(dt('stop'),{method:'POST'})).status,200);
+    assert.deepEqual({executions,wakes,calls:computerUse.length},asleep);state='started';
+    // Desktop never creates a machine.
+    exists=false;const requests=creationRequests;
+    await req(dt('start'),{method:'POST'});op=await complete();
+    assert.equal(op.error,'sandbox_missing');assert.equal(creationRequests,requests);exists=true;
   });
   await check('central scheduler honors backoff, ready timestamps, and setup deadlines with a fake clock',async()=>{
     const cs=path=>'/__test/'+path+'?service=code-server';

@@ -1,5 +1,9 @@
 # Browser sandbox lifecycle
 
+**Desktop (deployed 2026-10-24):** a private `computeruse`-driver service that
+starts Daytona's own noVNC desktop through Toolbox instead of the installer and
+never creates a sandbox. See [`DESKTOP.md`](DESKTOP.md).
+
 **Issue #94 deployed 2026-10-20 Pacific:** managed services now have a serialized stop
 operation, separate access-revocation/process-cleanup status and no-wake cleanup.
 CollabMD adds a fixed-folder, password-protected public room. Existing services

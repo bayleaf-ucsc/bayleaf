@@ -103,14 +103,16 @@ export default {
         if (session && !await api.logout({ session })) return failure(503, 'logout_unavailable');
         return redirect('/', [cookie(SESSION, '', 0), cookie(TRANSACTION, '', 0)]);
       }
-      const service = url.pathname.match(/^\/services\/([a-z][a-z0-9-]{0,39})\/(status|start|restart|stop)$/);
+      const service = url.pathname.match(/^\/services\/([a-z][a-z0-9-]{0,39})\/(status|start|restart|stop|embed)$/);
       if (service) {
         const [, name, operation] = service;
         if (request.method !== (operation === 'status' ? 'GET' : 'POST')) return failure(405, 'method_not_allowed');
         if (!session) return failure(401, 'login_required');
         if (operation !== 'status' && (request.headers.get('Origin') !== ORIGIN ||
             request.headers.get('X-BayLeaf-Action') !== 'managed-service')) return failure(403, 'invalid_origin');
-        const result = await api.managed({ session, service: name, operation });
+        // Embed mints a one-time Desktop frame code; it never starts or wakes anything.
+        const result = operation !== 'embed' ? await api.managed({ session, service: name, operation })
+          : name === 'desktop' ? await api.desktopEmbed({ session }) : { status: 404, body: { error: 'not_found' } };
         // Preserve only the JSON contract, never upstream cookies or redirects.
         return Response.json(result.body, { status: result.status, headers: AUTH_HEADERS });
       }

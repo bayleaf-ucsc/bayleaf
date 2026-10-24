@@ -131,6 +131,31 @@ try {
     assert.deepEqual(result.body,{owner:login.user.email,path:'/'+operation,service});
   }
   assert.equal((await rpc('managed',{session:login.session,operation:'wake-existing'})).body.path,'/wake-existing');
+  // Desktop embed codes: authenticated owner, current private __desktop registration only.
+  assert.equal((await rpc('desktopEmbed',null)).status,400);
+  assert.equal((await rpc('desktopEmbed',{session:login.session,email:'victim@example.test'})).status,400,'no caller-selected owner');
+  assert.equal((await rpc('desktopEmbed',{session:random()})).status,401);
+  assert.equal((await rpc('desktopEmbed',{session:login.session})).status,409,'no Desktop registration');
+  await db.prepare("UPDATE user_keys SET daytona_sandbox_id='owner-sandbox' WHERE email=?").bind(login.user.email).run();
+  await db.prepare("INSERT OR IGNORE INTO preview_owners(email,slug) VALUES (?,'owner')").bind(login.user.email).run();
+  await db.prepare(`INSERT INTO sandbox_credentials(id,email,sandbox_id,token_hash,secret_name,state,created_at,updated_at)
+    VALUES ('rpc-credential',?,'owner-sandbox','h','s','active',0,0)`).bind(login.user.email).run();
+  const desktopRow = (slot,host) => db.prepare(`INSERT INTO preview_registrations
+    (hostname,email,deployment,slot,generation,upstream_encrypted,expires_at,access,owner_key_hash)
+    VALUES (?,?,'__browser',?,?,'x',?,'private','rpc-credential')`).bind(host,login.user.email,slot,random(),Math.floor(Date.now()/1000)+3600).run();
+  await desktopRow('__code-server','owner-private-000000000000000000000001.previews.example.test');
+  assert.equal((await rpc('desktopEmbed',{session:login.session})).status,409,'other managed slots never mint codes');
+  await desktopRow('__desktop','owner-private-000000000000000000000002.previews.example.test');
+  const minted = await rpc('desktopEmbed',{session:login.session});
+  assert.equal(minted.status,200);
+  assert.match(minted.body.url,/^https:\/\/owner-private-000000000000000000000002\.previews\.example\.test\/__preview\/embed\?code=[a-f0-9]{64}$/);
+  const embedRow = await db.prepare("SELECT * FROM preview_flows WHERE broker_hash='desktop-embed'").first();
+  assert.equal(embedRow.code_hash,hash(new URL(minted.body.url).searchParams.get('code')));
+  assert(!JSON.stringify(embedRow).includes(new URL(minted.body.url).searchParams.get('code')));
+  await db.prepare("UPDATE sandbox_credentials SET state='revoked' WHERE id='rpc-credential'").run();
+  assert.equal((await rpc('desktopEmbed',{session:login.session})).status,409,'retired sandbox credential mints nothing');
+  await db.batch([db.prepare('DELETE FROM preview_registrations'),db.prepare('DELETE FROM preview_flows'),
+    db.prepare("DELETE FROM sandbox_credentials WHERE id='rpc-credential'")]);
   await db.prepare('UPDATE user_keys SET revoked=1 WHERE email=?').bind(login.user.email).run();
   await db.prepare('UPDATE users SET last_active_at=NULL WHERE email=?').bind(login.user.email).run();
   assert.equal((await rpc('readSession',{session:login.session})).user.email,login.user.email);

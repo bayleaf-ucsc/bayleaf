@@ -10,7 +10,15 @@ the accepted upstream save-feedback limitation and the skipped duration check.
 The public home explains the shared workspace and available managed services.
 Signed-in owners can manage OpenChamber, Nanobot, CollabMD, code-server,
 JupyterLab, dufs and ttyd. They use the same sandbox files; all except CollabMD
-retain an owner-authenticated private gateway.
+retain an owner-authenticated private gateway. A Desktop card (Daytona's noVNC,
+private, no VNC password; deployed 2026-10-24) is described in
+[`api/DESKTOP.md`](../api/DESKTOP.md). The page hero holds a small "screen" whose placeholder is
+itself a button: signed out it signs in; signed in, a click shows a ready Desktop
+or runs the card's Start action and shows it once ready. It frames a scaled live
+view through a one-time code exchanged for a partitioned,
+frame-only gateway session; the signed-in page CSP adds only `frame-src
+https://*.bayleaf-proxies.dev`. See
+[`api/DESKTOP.md`](../api/DESKTOP.md#embedded-live-view).
 
 ## Managed-service seams
 

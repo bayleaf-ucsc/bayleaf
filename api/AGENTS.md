@@ -64,8 +64,7 @@ report verification remains pending; see `../telemetry/qualification/rollout.md`
 `src/utils/campus-networks.json` is the canonical range list shared with the
 collector's browser-only coarse network classifier. The API matcher supports
 `CAMPUS_IP_RANGES=@ucsc` and explicit CIDR lists; unknown aliases fail closed.
-The checked-in config uses the alias, while the current deployed API still uses
-the equivalent explicit list until its next deployment. No raw address is stored
+The checked-in and deployed config use the alias (deployed 2026-10-24). No raw address is stored
 in telemetry. Read `../telemetry/AGENTS.md` before changing these contracts.
 
 ## Commands
@@ -608,7 +607,27 @@ cached IDs. Never wake compute or renew activity during cleanup.
 candidates among eight machines on 2026-10-06. Observability remains disabled;
 there is no new monitoring store or alert integration.
 
+### Computer-use owner methods (v1, deployed 2026-10-24)
+
+`routes/computer.ts` mounts `/sandbox/computer/*`, with exact contracts in
+`schemas.ts`. Read `COMPUTER-USE.md` for design, exposure decisions and qualification.
+These methods never create/start/wake compute or start Desktop. `computerUse.ts`
+owns Toolbox forwarding, generation handles and the no-op floor-control seam.
+The sole non-`/computeruse/*` operation is a constant read-only `/process/execute`
+probe of boot ID, exact Xvfb :0 PID and process starttime, at session open and in
+parallel with each screenshot. Never interpolate caller input into that command.
+Screenshot bodies stream through without caching/logging; local error handlers
+must keep content-bearing exceptions away from the generic Worker logger.
+Run `npm run test:computer` and `npm run test:docs`. No adapter parity is claimed.
+
 ### Browser sandbox lifecycle (issue #81)
+
+**Desktop deployed 2026-10-24:** `SERVICE_DEFS.desktop` uses
+`driver: 'computeruse'`: Toolbox `/computeruse/start|status|stop` instead of the
+installer, never sandbox creation, a fixed private `__desktop` slot (x11vnc has
+no password) and a registry-fixed noVNC landing path that the gateway's login
+callback also uses. Stop revokes first, never wakes, then reaps leaked session
+daemons with `scripts/desktop-cleanup.py`. Read `DESKTOP.md` first.
 
 **Issue #94 deployed 2026-10-20 Pacific:** CollabMD uses fixed port 8795 and
 `~/workspace/public-collaborative-docs/`, with a narrowly allowlisted public managed

@@ -91,6 +91,12 @@ explicit operation on the user-owned installation. Preserve user files and histo
 
 ## Evidence and refinement log
 
+- 2026-10-24 (Desktop/computer-use release): Parent-only managed app, gateway and
+  API work needs no adapter publication or migration. Rebuild published Nanobot
+  assets after fixture-based tests. Embedded WebSockets can omit Sec-Fetch-Dest:
+  regress that handshake without default browser-helper headers, retaining exact
+  Origin checks. Human new-tab success does not qualify the embed or owner API.
+
 - 2026-10-21 (hosted email policy): Validate domain/pin inputs before native
   approval/network, retain policy readback, and test null as well as omission.
   Verify published schemas in real V2/MCP runtimes and live creation separately;

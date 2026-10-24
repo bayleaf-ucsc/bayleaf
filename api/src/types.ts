@@ -176,6 +176,7 @@ export interface OpenRouterKeyCreated extends OpenRouterKey {
 
 /** Hono context variables (set by middleware, read by handlers) */
 export interface Variables {
+  computerCaller?: UserKeyRow;
   session: Session;
   inferenceGrant?: InferenceGrant;
   grantOwner?: UserKeyRow;
@@ -218,6 +219,8 @@ export interface UserKeyRow {
   account_generation: string;
   /** Request-only authority marker, never a user_keys column. */
   sandbox_credential_id?: string;
+  /** Request-only trusted metadata from sandbox-credential ownership validation. */
+  toolbox_proxy_url?: string;
   bayleaf_token: string;
   // Backend provider credentials are NULL until the user first touches that
   // backend (migration 0005). They are caches hanging off the bayleaf_token,

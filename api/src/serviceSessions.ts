@@ -7,6 +7,7 @@ import { browserEnabled } from './sandboxBrowser';
 import { wakeExistingSandbox } from './sandboxWake';
 import { serviceDef } from './serviceDefs';
 import { recordUserActivity } from './userActivity';
+import { issueDesktopEmbed } from './routes/previews';
 
 export const SERVICE_ORIGIN = 'https://sandbox.bayleaf.dev';
 export const SERVICE_AUTHORIZE_PATH = '/auth/service/authorize';
@@ -137,6 +138,21 @@ export class SandboxManagement extends WorkerEntrypoint<Bindings> {
         method: input.operation === 'status' ? 'GET' : 'POST', headers: { 'X-BayLeaf-Owner': identity.user.email },
       });
       return { status: response.status, body: await response.json() };
+    } catch { return { status: 503, body: { error: 'service_unavailable' } }; }
+  }
+
+  /** One-time code that frames the session owner's current Desktop on the
+   * dashboard. Never starts, wakes or registers anything; ready Desktop only. */
+  async desktopEmbed(input: unknown): Promise<{ status: number; body: unknown }> {
+    if (!inputObject(input, ['session']) || !validServiceToken(input.session)) {
+      return { status: 400, body: { error: 'invalid_operation' } };
+    }
+    try {
+      const identity = await sessionIdentity(this.env, input.session);
+      if (!identity) return { status: 401, body: { error: 'login_required' } };
+      if (!browserEnabled(this.env)) return { status: 503, body: { error: 'browser_disabled' } };
+      const embed = await issueDesktopEmbed(this.env, identity.user.email);
+      return embed ? { status: 200, body: embed } : { status: 409, body: { error: 'desktop_not_ready' } };
     } catch { return { status: 503, body: { error: 'service_unavailable' } }; }
   }
 }

@@ -29,6 +29,7 @@ const bindings = {
   ALLOWED_EMAIL_DOMAIN: 'example.test', OIDC_CLIENT_SECRET: oidcSecret,
   DAYTONA_API_URL: 'https://daytona.example.test/api', DAYTONA_API_KEY: 'synthetic-daytona-key',
   DAYTONA_DEPLOYMENT_LABEL: 'synthetic-chat', CAMPUS_IP_RANGES: '192.0.2.0/24',
+  BROWSER_SANDBOX_ENABLED: 'true',
 };
 // Node rewrites Sec-Fetch-Mode; Miniflare rejects nonlocal Origin headers before
 // dispatch. Restore these simulated browser inputs in a TEST-ONLY entrypoint,
@@ -36,6 +37,7 @@ const bindings = {
 stage('bundling Worker');
 const bundled = await build({ absWorkingDir: root, stdin: { resolveDir: root, contents: `
   import app from './src/index.ts';
+  import { issueDesktopEmbed, revokeUserPreview } from './src/routes/previews.ts';
   export { PreviewConnections } from './src/index.ts';
   // An outboundService exception is rendered as HTTP 500 by Miniflare, not a
   // fetch rejection. Inject a transport rejection at the Worker fetch boundary.
@@ -69,6 +71,12 @@ const bundled = await build({ absWorkingDir: root, stdin: { resolveDir: root, co
     }
     const realNow = Date.now;
     if (advance) Date.now = () => realNow() + advance;
+    // TEST-ONLY stand-ins for the authenticated SandboxManagement RPC and Stop.
+    const harness = new URL(request.url);
+    if (harness.hostname === 'harness.invalid' && harness.pathname === '/desktop-embed')
+      return Response.json(await issueDesktopEmbed(env, harness.searchParams.get('email')));
+    if (harness.hostname === 'harness.invalid' && harness.pathname === '/desktop-revoke')
+      return Response.json(await revokeUserPreview(env, harness.searchParams.get('email'), '__desktop'));
     try { return await app.fetch(new Request(request, { headers }), env, ctx); }
     finally { Date.now = realNow; }
   } };
@@ -850,7 +858,131 @@ try {
     assert.equal((await dispatch((await exposed.json()).url)).status,200);
     const reserved=await dispatch(api+'/sandbox/expose',{method:'POST',headers,body:JSON.stringify({port:3100,access:'public'})});
     assert.equal(reserved.status,400);
+    const desktop=await dispatch(api+'/sandbox/expose',{method:'POST',headers,body:JSON.stringify({port:6080,access:'public'})});
+    assert.equal(desktop.status,400,'unauthenticated noVNC port is reserved from keyed exposure');
     await dispatch(api+'/sandbox/expose/5001',{method:'DELETE',headers});
+  });
+  await check('managed Desktop login lands on its fixed noVNC client, not a caller-chosen path', async () => {
+    const { url: desktop } = await (await register()).json();
+    const host = new URL(desktop).hostname;
+    await db.prepare(`INSERT INTO sandbox_credentials(id,email,sandbox_id,token_hash,secret_name,state,created_at,updated_at)
+      VALUES ('desktop-credential','owner@example.test','owner-sandbox','desktop-hash','desktop-secret','active',0,0)`).run();
+    await db.prepare(`UPDATE preview_registrations SET deployment='__browser', slot='__desktop', owner_key_hash='desktop-credential'
+      WHERE hostname=?`).bind(host).run();
+    const client = browser('owner@example.test');
+    let current = desktop + 'elsewhere?x=1';
+    for (let i = 0; i < 6; i++) current = await next(client, current);
+    assert.equal(current, new URL('/vnc.html?autoconnect=true&resize=scale&reconnect=true&path=websockify', desktop).href);
+    assert.equal((await client.visit(current)).status, 200);
+    await db.prepare('DELETE FROM preview_registrations WHERE hostname=?').bind(host).run();
+    await db.prepare("DELETE FROM sandbox_credentials WHERE id='desktop-credential'").run();
+  });
+  await check('Desktop embed: one-time owner/slot-bound code, partitioned frame session, one exact ancestor', async () => {
+    const { url: desktop } = await (await register()).json();
+    const host = new URL(desktop).hostname;
+    await db.prepare(`INSERT INTO sandbox_credentials(id,email,sandbox_id,token_hash,secret_name,state,created_at,updated_at)
+      VALUES ('embed-credential','owner@example.test','owner-sandbox','embed-hash','embed-secret','active',0,0)`).run();
+    await db.prepare(`UPDATE preview_registrations SET deployment='__browser', slot='__desktop', owner_key_hash='embed-credential'
+      WHERE hostname=?`).bind(host).run();
+    const mint = async (email = 'owner@example.test') =>
+      (await dispatch('https://harness.invalid/desktop-embed?email=' + encodeURIComponent(email))).json();
+    const landing = new URL('/vnc.html?autoconnect=true&resize=scale&reconnect=true&path=websockify', desktop).href;
+    const frame = { 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'iframe',
+      Referer: 'https://sandbox.bayleaf.dev/' };
+    assert.equal(await mint('other@example.test'), null, 'no Desktop registration, no code');
+    const issued = await mint('OWNER@example.test');
+    assert.match(issued.url, new RegExp('^https://' + host.replaceAll('.', '\\.') + '/__preview/embed\\?code=[a-f0-9]{64}$'));
+    const code = new URL(issued.url).searchParams.get('code');
+    const ttl = (Date.parse(issued.expires_at) - Date.now()) / 1000;
+    assert.ok(ttl > 50 && ttl <= 60, 'code lives at most 60 seconds');
+    const stored = await db.prepare("SELECT * FROM preview_flows WHERE broker_hash='desktop-embed'").all();
+    assert.equal(stored.results.length, 1);
+    assert.ok(!JSON.stringify(stored.results).includes(code), 'only the hash is stored');
+    // The partition: a fresh jar standing in for the frame under sandbox.bayleaf.dev.
+    const embedded = browser();
+    for (const headers of [{}, { 'Sec-Fetch-Site': 'same-origin' }, { ...frame, Referer: 'https://attacker.example/' },
+      { ...frame, 'Sec-Fetch-Dest': 'document' }]) {
+      const rejected = await embedded.visit(issued.url, { headers });
+      assert.ok([302, 403].includes(rejected.status) && rejected.headers.get('Location') !== landing);
+      assert.equal(rejected.headers.get('Set-Cookie'), null, 'top-level or foreign redemption sets nothing');
+    }
+    const races = await Promise.all([0, 1, 2].map(() => browser().visit(issued.url, { headers: frame })));
+    assert.equal(races.filter(r => r.status === 302).length, 1, 'concurrent redemptions: exactly one wins');
+    const winner = races.find(r => r.status === 302);
+    assert.equal(new URL(winner.headers.get('Location'), desktop).href, landing);
+    const cookies = winner.headers.getSetCookie();
+    assert.equal(cookies.length, 1);
+    assert.match(cookies[0], /^__Host-bl-preview-embed=/);
+    for (const attribute of [/; Partitioned/, /; SameSite=None/, /; Secure/, /; HttpOnly/, /; Path=\//]) assert.match(cookies[0], attribute);
+    assert.doesNotMatch(cookies[0], /Domain=/);
+    assert.ok(!cookies.some(c => c.startsWith('__Host-bl-preview-session=')), 'never the top-level session');
+    const replay = browser();
+    assert.equal((await replay.visit(issued.url, { headers: frame })).status, 403, 'single use');
+    const [name, value] = cookies[0].split(';')[0].split('=');
+    embedded.cookies.set(host, new Map([[name, value]]));
+    const framed = await embedded.visit(landing, { headers: frame });
+    assert.equal(framed.status, 200);
+    assert.equal(framed.headers.get('X-Frame-Options'), null);
+    assert.match(framed.headers.get('Content-Security-Policy'), /^frame-ancestors https:\/\/sandbox\.bayleaf\.dev;/);
+    const asset = await embedded.visit(new URL('/app/ui.js', desktop).href, { headers: {
+      'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'script', Origin: new URL(desktop).origin } });
+    assert.equal(asset.status, 200, 'the frame\'s own subresources use the embed session');
+    // A browser ignoring Partitioned must not turn the embed cookie into top-level access.
+    const topLevel = await embedded.visit(landing);
+    assert.equal(topLevel.status, 302);
+    assert.equal(topLevel.headers.get('Location'), '/__preview/start');
+    const socket = await connect(embedded, desktop);
+    const closed = event(socket, 'close');
+    // Chromium's embedded noVNC handshake may omit Sec-Fetch-Dest entirely.
+    const websocketHeaders = { Upgrade: 'websocket', Origin: new URL(desktop).origin,
+      'Sec-WebSocket-Protocol': 'echo', Cookie: `${name}=${value}` };
+    // Dispatch directly: browser.visit would supply a default document destination.
+    const noDest = await dispatch(desktop + 'socket', { headers: websocketHeaders });
+    assert.equal(noDest.status, 101, 'embed WebSocket needs exact Origin, not Sec-Fetch-Dest');
+    noDest.webSocket.accept();
+    noDest.webSocket.close(1000, 'regression complete');
+    assert.equal((await dispatch(desktop + 'socket', { headers: {
+      ...websocketHeaders, Origin: 'https://attacker.example' } })).status, 403,
+      'missing Fetch Metadata never bypasses the WebSocket Origin gate');
+    // The embed token is not a top-level session token, and vice versa.
+    const swapped = browser();
+    swapped.cookies.set(host, new Map([['__Host-bl-preview-session', value]]));
+    assert.equal((await swapped.visit(landing)).status, 302);
+    const ownerTop = browser('owner@example.test');
+    let hop = desktop;
+    for (let i = 0; i < 6; i++) hop = await next(ownerTop, hop);
+    assert.equal(hop, landing);
+    assert.equal((await ownerTop.visit(landing)).status, 200, 'the new-tab session is unchanged');
+    assert.equal((await ownerTop.visit(landing, { headers: frame })).status, 403, 'a frame needs the embed session itself');
+    // Expired codes, other slots and forged embed tokens for other slots fail closed.
+    const late = await mint();
+    await db.prepare("UPDATE preview_flows SET expires_at=0 WHERE broker_hash='desktop-embed'").run();
+    assert.equal((await browser().visit(late.url, { headers: frame })).status, 403, 'expired');
+    const other = await (await register()).json();
+    const otherHost = new URL(other.url).hostname;
+    const reused = await mint();
+    const crossSlot = new URL(reused.url); crossSlot.hostname = otherHost;
+    assert.equal((await browser().visit(crossSlot.href, { headers: frame })).status, 403, 'non-Desktop slots refuse codes');
+    const otherRow = await db.prepare('SELECT generation,expires_at FROM preview_registrations WHERE hostname=?').bind(otherHost).first();
+    const forged = browser();
+    forged.cookies.set(otherHost, new Map([['__Host-bl-preview-embed', jwt({ aud: 'https://' + otherHost,
+      generation: otherRow.generation, embed: true, exp: otherRow.expires_at }, bindings.PREVIEWS_SECRET)]]));
+    assert.equal((await forged.visit(other.url, { headers: frame })).status, 403);
+    assert.equal((await forged.visit(other.url + 'asset', { headers: { 'Sec-Fetch-Site': 'same-origin',
+      'Sec-Fetch-Mode': 'no-cors', 'Sec-Fetch-Dest': 'image' } })).status, 401, 'embed sessions exist only for Desktop');
+    const ordinary = await owner.visit(url);
+    assert.equal(ordinary.headers.get('X-Frame-Options'), 'SAMEORIGIN', 'other slots keep same-origin framing');
+    assert.match(ordinary.headers.get('Content-Security-Policy'), /^frame-ancestors 'self';/);
+    assert.equal((await owner.visit(url, { headers: frame })).status, 403, 'other private slots refuse cross-site frames');
+    await revoke(other.url);
+    // Stop revokes the registration: the embedded socket closes and the session dies with it.
+    assert.equal(await (await dispatch('https://harness.invalid/desktop-revoke?email=owner%40example.test')).json(), true);
+    assert.equal((await closed).code, 1008);
+    assert.notEqual((await embedded.visit(landing, { headers: frame })).status, 200);
+    assert.notEqual((await embedded.visit(new URL('/app/ui.js', desktop).href, { headers: {
+      'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'script' } })).status, 200);
+    assert.equal(await mint(), null, 'no code after Stop');
+    await db.prepare("DELETE FROM sandbox_credentials WHERE id='embed-credential'").run();
   });
   await check('keyed headers replace/remove atomically, close old sockets, expire and reject platform credentials', async () => {
     const headers = { Authorization: 'Bearer sk-bayleaf-owner', 'Content-Type': 'application/json' };

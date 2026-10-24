@@ -7,6 +7,7 @@ import type { Bindings } from './types';
 import setupSource from '../scripts/browser-setup.py';
 import jupyterSource from '../scripts/jupyter-adapter.py';
 import collabmdSource from '../scripts/collabmd-adapter.py';
+import desktopCleanupSource from '../scripts/desktop-cleanup.py';
 import nanobotAssets from '../.nanobot-assets.json';
 import { getAccountRow, activeSandboxCredential, ensureSandboxCredential, revokeSandboxCredentials, rotateSandboxCredential } from './sandboxCredentials';
 import { DAYTONA_DEFAULT_API_URL, DAYTONA_DEFAULT_PROXY_URL } from './constants';
@@ -51,6 +52,7 @@ interface Operation {
   heartbeatAt?: number;
   cleanupPending?: boolean;
   cleanupError?: string;
+  processesReaped?: number;
 }
 interface Machine {
   id: string;
@@ -109,6 +111,44 @@ async function upload(env: Bindings, id: string, root: string, name: string, con
   }).catch(() => fail('setup_transfer_failed'));
   if (!r.ok) fail('setup_transfer_failed');
   await r.body?.cancel();
+}
+// Daytona's own computer-use supervisor runs the Desktop stack. Bodies are
+// parsed in memory and never logged; they carry only process records.
+async function computerUse(env: Bindings, id: string, action: 'start' | 'stop' | 'status'): Promise<unknown> {
+  const r = await fetch(toolbox(env, id, `/computeruse/${action}`), {
+    method: action === 'status' ? 'GET' : 'POST', headers: { Authorization: `Bearer ${env.DAYTONA_API_KEY}` },
+    redirect: 'manual', signal: AbortSignal.timeout(15_000),
+  }).catch(() => fail('toolbox_unavailable'));
+  if (!r.ok) { await r.body?.cancel(); return fail('toolbox_unavailable'); }
+  const text = await r.text();
+  if (text.length > 8192) fail('invalid_desktop_status');
+  try { return JSON.parse(text); } catch { return fail('invalid_desktop_status'); }
+}
+const DESKTOP_PROCESSES = ['xvfb', 'xfce4', 'x11vnc', 'novnc'];
+/** GET status answers "active" or "partial". start/stop answer per-process
+ * records whose keys are PascalCase in practice (`Running`), despite the
+ * lowercase OpenAPI schema; accept either. Null means an unrecognized shape. */
+function desktopRunning(data: unknown): boolean[] | null {
+  const status = (data as { status?: unknown } | null)?.status;
+  if (!status || typeof status !== 'object') return null;
+  return DESKTOP_PROCESSES.map(name => {
+    const p = (status as Record<string, Record<string, unknown> | undefined>)[name];
+    return (p?.Running ?? p?.running) === true;
+  });
+}
+const desktopActive = (data: unknown) => (data as { status?: unknown } | null)?.status === 'active' ||
+  desktopRunning(data)?.every(Boolean) === true;
+/** Stop the stack, then reap the session daemons /computeruse/stop leaks. */
+async function stopDesktop(env: Bindings, id: string, def: ServiceDef): Promise<number> {
+  const running = desktopRunning(await computerUse(env, id, 'stop'));
+  if (!running || running.some(Boolean)) fail('invalid_stop_status');
+  await execute(env, id, `mkdir -p ${def.root}`);
+  await upload(env, id, def.root, 'desktop-cleanup.py', desktopCleanupSource);
+  const text = await execute(env, id, `python3 ${def.root}/desktop-cleanup.py`);
+  if (text.length > 1024) fail('invalid_stop_status');
+  const result = JSON.parse(text) as Record<string, unknown>;
+  if (result.stopped !== true || !Number.isInteger(result.reaped) || Number(result.reaped) < 0) fail('invalid_stop_status');
+  return Math.min(Number(result.reaped), 1000);
 }
 const launch = (operation: string, def: ServiceDef) => `python3 -c ${JSON.stringify(
   `import subprocess; subprocess.Popen(['python3','${def.root}/setup.py','--service','${def.id}','setup','--operation','${operation}'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)`
@@ -197,6 +237,9 @@ export class SandboxBrowser {
       if (m && m.labels?.[this.env.DAYTONA_DEPLOYMENT_LABEL] !== op.email) fail('ownership_mismatch');
       if (!m || ['stopped', 'archived'].includes(m.state)) {
         // Sleep has removed processes. Never wake merely to clean up an app.
+        op.cleanupPending = false;
+      } else if (m.state === 'started' && SERVICE_DEFS[op.service ?? 'openchamber'].driver === 'computeruse') {
+        op.processesReaped = await stopDesktop(this.env, m.id, SERVICE_DEFS[op.service!]);
         op.cleanupPending = false;
       } else if (m.state === 'started') {
         const def = SERVICE_DEFS[op.service ?? 'openchamber'];
@@ -324,7 +367,8 @@ export class SandboxBrowser {
           await this.stop(previous);
           await this.arm();
           return response({ phase: 'stopped', access_revoked: previous.invalidated === true,
-            cleanup_pending: previous.cleanupPending === true, cleanup_error: previous.cleanupError },
+            cleanup_pending: previous.cleanupPending === true, cleanup_error: previous.cleanupError,
+            processes_reaped: previous.processesReaped },
             previous.invalidated && !previous.cleanupPending ? 200 : 202);
         }
         if (previous?.cleanupPending || (previous?.phase === 'stopped' && !previous.invalidated)) {
@@ -401,6 +445,8 @@ export class SandboxBrowser {
           await revokeUserPreview(this.env, op.email, def.slot);
           let m = await discover(this.env, op.email);
           if (!m) {
+            // Desktop attaches to an existing machine only; it never creates one.
+            if (def.driver === 'computeruse') return await this.retire(op, 'failed', 'sandbox_missing');
             // Never automatically retry an ambiguous POST. A deliberate retry
             // re-discovers the label before another create attempt.
             if (op.creationAttempted) await this.state.storage.put('creationUncertain', true);
@@ -470,6 +516,23 @@ export class SandboxBrowser {
             } else if (m.state === 'error') fail('sandbox_error');
           } else if (m.state !== 'started') {
             fail('sandbox_stopped_during_setup');
+          } else if (def.driver === 'computeruse' && op.step === 'prepare') {
+            // Restart is a clean session: stop and reap, then start. Idempotent on replay.
+            if (op.restart) op.processesReaped = await stopDesktop(this.env, id, def);
+            op.step = 'inspect'; op.progress = 'starting_desktop'; op.launches = 1;
+            await this.save(op); // A crash here resumes via inspect, then restart.
+            if (desktopActive(await computerUse(this.env, id, 'start')) &&
+                desktopActive(await computerUse(this.env, id, 'status'))) {
+              op.step = 'register'; op.progress = 'registering_preview';
+            }
+          } else if (def.driver === 'computeruse' && op.step === 'inspect') {
+            if (desktopActive(await computerUse(this.env, id, 'status'))) {
+              op.step = 'register'; op.progress = 'registering_preview';
+            } else if ((op.launches ?? 0) >= 3) fail('desktop_not_ready');
+            else {
+              op.launches = (op.launches ?? 0) + 1; await this.save(op);
+              await computerUse(this.env, id, 'start');
+            }
           } else if (op.step === 'prepare') {
             await execute(this.env, id, `bash -c 'umask 077; mkdir -p ${ROOT}/credentials; chmod 700 ${ROOT} ${ROOT}/credentials'`);
             await upload(this.env, id, ROOT, 'setup.next.py', setupSource);
@@ -556,7 +619,9 @@ export class SandboxBrowser {
               ['nanobot','jupyter','ttyd'].includes(def.id) ? await managedAppSecret(this.env, op) : undefined);
             if (preview instanceof Response) fail('preview_unavailable');
             else {
-              op.url = preview.url; op.deadline = Math.floor(Date.parse(preview.expires_at) / 1000);
+              // The gateway's post-login redirect uses the same fixed landing path.
+              op.url = 'landing' in def ? new URL(def.landing, preview.url).href : preview.url;
+              op.deadline = Math.floor(Date.parse(preview.expires_at) / 1000);
               if (['nanobot', 'collabmd'].includes(def.id)) { op.step = 'finalize'; op.progress = 'configuring_preview'; }
               else { op.phase = 'ready'; op.progress = 'ready'; }
             }
