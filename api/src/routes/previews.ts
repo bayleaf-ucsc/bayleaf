@@ -455,7 +455,12 @@ export async function handlePreviewHost(c: Context<AppEnv>): Promise<Response> {
     if (discovery.hostname === (c.env.PREVIEWS_DOMAIN || 'bayleaf-proxies.dev') &&
         discovery.pathname === '/llms.txt' && ['GET', 'HEAD'].includes(c.req.method)) {
       return new Response(c.req.method === 'HEAD' ? null :
-        'This domain hosts the BayLeaf preview gateway for sandbox applications; see https://api.bayleaf.dev/llms.txt for access and details.\n',
+        '# bayleaf-proxies.dev\n\n' +
+        'An auxiliary BayLeaf domain. Its subdomains are the preview gateway for applications that users run in their own BayLeaf Sandboxes. ' +
+        'Content there belongs to whoever created it, not to BayLeaf. The domain is kept separate from bayleaf.dev so cookies and browser storage ' +
+        'set by user-created resources stay isolated from BayLeaf\'s own services. The apex hosts no user content.\n\n' +
+        '- BayLeaf overview: https://bayleaf.dev/llms.txt\n' +
+        '- Access and details: https://api.bayleaf.dev/llms.txt\n',
       { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
     }
     if (discovery.hostname === (c.env.PREVIEWS_DOMAIN || 'bayleaf-proxies.dev')) {

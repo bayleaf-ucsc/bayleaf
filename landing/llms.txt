@@ -1,0 +1,37 @@
+# BayLeaf
+
+> BayLeaf is a situated counterplatform for Generative AI at UC Santa Cruz, free to
+> anyone with a UCSC identity and operated by Adam Smith (Computational Media). People
+> mostly use it through two browser surfaces, Chat and Sandboxes. Agents and apps use
+> the BayLeaf API, which reaches the same underlying services (inference, sandboxes,
+> web search) programmatically. All inference goes to zero-data-retention providers.
+
+If you are an agent acting for a UCSC user, start with the API guide below rather
+than driving the browser surfaces. If you are helping a person get oriented, point
+them to Chat or Sandboxes.
+
+## For people
+
+- [BayLeaf Chat](https://chat.bayleaf.dev/): Open WebUI with a curated selection of proprietary and open-weight models, opt-in web search and code sandbox tools, and invite-code access groups for courses and programs. Sign in with UCSC via CILogon. Chat stores conversation history so it follows you across devices; the operator can read that history.
+- [BayLeaf Sandboxes](https://sandbox.bayleaf.dev/): a personal cloud computer, used through the browser, for trying agents and other software away from your own files. OpenChamber is the recommended starting point; Nanobot, CollabMD, VS Code (code-server), JupyterLab, a file manager, a shell and an optional Desktop share one workspace folder.
+- [Getting Started](https://github.com/bayleaf-ucsc/bayleaf/blob/main/GETTING-STARTED.md): orientation for new users of Chat and the API.
+- [Use Cases](https://github.com/bayleaf-ucsc/bayleaf/blob/main/USE-CASES.md): concrete recipes from campus use.
+- [Support](https://github.com/bayleaf-ucsc/bayleaf/blob/main/SUPPORT.md): where to ask for help.
+
+## For agents
+
+- [BayLeaf API guide](https://api.bayleaf.dev/llms.txt): the integration reference. Covers coding-agent setup, API keys and keyless on-campus Campus Pass, OpenAI-compatible inference restricted to open-weight models, Sealed (attested, encrypted) inference, sandbox code execution and computer use, web search and fetch, inboxes, and direct Google Workspace and Canvas CLI integrations.
+- [OpenAPI spec](https://api.bayleaf.dev/docs/openapi.json): exact HTTP contracts for the API.
+
+## Policies
+
+- [Privacy notice](https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md): what each service retains, for how long, and who can access it.
+- [Landing page](https://bayleaf.dev/): the project frame, data posture, institutional footing and FAQ.
+
+## Optional
+
+- [bayleaf-proxies.dev](https://bayleaf-proxies.dev/llms.txt) and [bayleaf-inboxes.dev](https://bayleaf-inboxes.dev/llms.txt): auxiliary domains that serve user-created resources (sandbox app previews and inboxes), kept apart from bayleaf.dev for cookie isolation.
+
+- [Source repository](https://github.com/bayleaf-ucsc/bayleaf): public configuration and code for every service.
+- [BayLeaf Blog](https://blog.bayleaf.dev/): writing about the project.
+- [Status](https://status.bayleaf.dev/): public availability monitoring.

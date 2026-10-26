@@ -543,7 +543,12 @@ async function handleFetch(request, env, ctx) {
     if (request.method === 'GET' || request.method === 'HEAD') {
       const path = new URL(request.url).pathname;
       if (path === '/llms.txt') return new Response(request.method === 'HEAD' ? null :
-        'BayLeaf Inboxes receives bounded email and webhook messages for later owner-authorized retrieval; see https://api.bayleaf.dev/llms.txt for access and details.\n',
+        '# bayleaf-inboxes.dev\n\n' +
+        'An auxiliary BayLeaf domain. Its subdomains and email addresses are BayLeaf Inboxes created by users, which receive bounded email and ' +
+        'webhook messages for later owner-authorized retrieval. The domain is kept separate from bayleaf.dev so cookies and browser storage ' +
+        'tied to user-created resources stay isolated from BayLeaf\'s own services. The apex hosts no user content.\n\n' +
+        '- BayLeaf overview: https://bayleaf.dev/llms.txt\n' +
+        '- Access and details: https://api.bayleaf.dev/llms.txt\n',
       { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
       if (path !== '/') return notFound();
       return new Response(request.method === 'HEAD' ? null : publicDiagnosticPage('inboxes', enabled(env),

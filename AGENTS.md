@@ -112,6 +112,7 @@ bayleaf/
 │   ├── CNAME
 │   ├── index.html        # Comprehensive landing page (the only bayleaf.dev page)
 │   ├── style.css         # Stylesheet (carries a WCAG contrast invariant)
+│   ├── llms.txt          # Agent-facing gloss of surfaces; defers to api.bayleaf.dev/llms.txt
 │   └── images/           # og-card.png + the script that generates it
 ├── inbox/                # BayLeaf Inboxes Worker (#97; authenticated campus owners)
 ├── sandbox/              # Public BayLeaf Sandboxes home → https://sandbox.bayleaf.dev
