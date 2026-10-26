@@ -250,9 +250,10 @@ this is not an exhaustive export/pagination protocol for dense same-ms points.
 `bucket` (60000, 300000, 900000, 3600000, 21600000 or 86400000 ms, UTC-epoch
 aligned) under the same auth and retention rules, with up to 2000 rows. Its window
 may span 90 days, since output is bounded by rows; each row carries the earliest
-expiry of its points (`min_expires_at`). Not yet deployed: production deployment
-awaits operator approval together with a `metric_points(name, observed_at)` index,
-without which every name scans the whole window. It returns one
+expiry of its points (`min_expires_at`). Deployed 2026-10-26 (version
+`c99ba407-e5d4-4183-9955-c01fb7ef252d`) after migration `0005` added the
+`metric_points(name, observed_at)` index; without it every name scans the whole
+window. It returns one
 derived row per bucket/source/attributes after collapsing exact duplicate points:
 sample count, first/last time, gauge min/max, the newest point's value, count,
 sum, reset start and histogram buckets, a same-millisecond `conflict` flag and

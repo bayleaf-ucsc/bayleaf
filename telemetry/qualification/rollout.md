@@ -130,3 +130,19 @@ metrics, unlike the older pre-native stock-image snapshot. Full evidence,
 semantics, local qualification and independent kill switch are recorded in
 [chat-arrivals.md](chat-arrivals.md). No inference, manual retention run, email,
 commit or push was performed by this deployment agent.
+
+## 2026-10-26: operator metric-bucket read
+
+With explicit operator approval, applied only migration
+`0005_metric_name_time.sql` (index `metric_points(name, observed_at)`; no new
+columns, collection or retention) to production D1, then deployed collector version
+`c99ba407-e5d4-4183-9955-c01fb7ef252d`. Before deploying, the only source change
+relative to the active version `ba47b369` was the read route itself: its vocabulary
+already matched (see [inboxes.md](inboxes.md)) and production vars were unchanged.
+Verification: unauthenticated `/v1/read/metric-buckets` returns 401; public root
+and `/docs/openapi.json` return 200 and document the route; `EXPLAIN QUERY PLAN`
+on production uses `COVERING INDEX metric_name_time`; the local operator dashboard
+read complete 7-day metrics in 20 bucket queries (3,980 rows, formerly a 33%
+sample of 40k raw rows) and 90 days in 18 queries, each view clearing within
+five minutes. owui and daytona metrics resumed within three minutes of deploy.
+No collection, exporter, retention or public data access changed.
