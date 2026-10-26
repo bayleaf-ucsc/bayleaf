@@ -87,7 +87,7 @@ public when ingestion is off, require no credentials or database access, and
 grant no access to observations. Root `/` stays the integration-status dashboard.
 There is no public SQL, telemetry query, agent tool or new llms.txt exposure.
 
-The reference lists only the six GET `/v1/read/*` operations, not ingestion or
+The reference lists only the seven GET `/v1/read/*` operations, not ingestion or
 public pages. `src/openapi.js` derives read enums and limits from policy; tests
 check route scope, response metadata and physical read columns.
 Run `node --test test/docs.test.js` for the focused credential-free check;
@@ -245,6 +245,19 @@ with its query; it does not insert observations or manufacture source status.
 Response includes `as_of`, schema/policy versions and conservative `truncated`
 (true when row limit is reached). Split time windows for fuller investigation;
 this is not an exhaustive export/pagination protocol for dense same-ms points.
+
+`GET /v1/read/metric-buckets` adds required `name` (exact policy metric) and
+`bucket` (60000, 300000, 900000, 3600000, 21600000 or 86400000 ms, UTC-epoch
+aligned) under the same auth and retention rules, with up to 2000 rows. Its window
+may span 90 days, since output is bounded by rows; each row carries the earliest
+expiry of its points (`min_expires_at`). Not yet deployed: production deployment
+awaits operator approval together with a `metric_points(name, observed_at)` index,
+without which every name scans the whole window. It returns one
+derived row per bucket/source/attributes after collapsing exact duplicate points:
+sample count, first/last time, gauge min/max, the newest point's value, count,
+sum, reset start and histogram buckets, a same-millisecond `conflict` flag and
+an all-delta `delta_sum`. It does not resolve conflicts, difference cumulative
+readings or fill missing buckets; those stay client-side.
 
 Aggregate at report time from preserved measurements. Do not sum cumulative
 counters/histograms across readings: use same-series start metadata to detect

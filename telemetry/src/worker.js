@@ -1,6 +1,6 @@
-import { LIMITS, ORIGINS, SOURCE_CLASSES, POLICY_VERSION, SCHEMA_VERSION } from './policies.js';
+import { LIMITS, ORIGINS, SOURCE_CLASSES, POLICY_VERSION, SCHEMA_VERSION, METRICS, METRIC_BUCKETS } from './policies.js';
 import { Invalid, validate, object } from './validate.js';
-import { ingest, takeBudget, readRows, purge, TABLES } from './store.js';
+import { ingest, takeBudget, readRows, readMetricBuckets, purge, TABLES } from './store.js';
 import { OtlpError } from '../otlp/normalize.mjs';
 import { otlpHook } from '../otlp/worker-adapter.mjs';
 import { browserNetworkLocation, BROWSER_SCHEMA_VERSION, BROWSER_POLICY_VERSION } from './browser-policy.js';
@@ -98,13 +98,22 @@ export function createWorker({ otlp, clock = Date.now } = {}) {
           if (!credentials(env)) return response({ error: 'configuration' }, 503);
           if (!await equal(bearer(request), env.READ_SECRET)) return response({ error: 'unauthorized' }, 401);
           const klass = url.pathname.slice('/v1/read/'.length);
-          if (!Object.hasOwn(TABLES, klass)) return response({ error: 'not_found' }, 404);
+          const buckets = klass === 'metric-buckets';
+          if (!buckets && !Object.hasOwn(TABLES, klass)) return response({ error: 'not_found' }, 404);
           const q = url.searchParams;
-          if ([...q.keys()].some(k => !['from', 'to', 'limit'].includes(k)) ||
-              ['from', 'to', 'limit'].some(k => q.getAll(k).length !== 1 || !/^\d+$/.test(q.get(k)))) throw new Invalid();
+          const keys = buckets ? ['from', 'to', 'name', 'bucket', 'limit'] : ['from', 'to', 'limit'];
+          if ([...q.keys()].some(k => !keys.includes(k)) || keys.some(k => q.getAll(k).length !== 1 ||
+              (k !== 'name' && !/^\d+$/.test(q.get(k))))) throw new Invalid();
           const [from, to, limit] = ['from', 'to', 'limit'].map(k => Number(q.get(k)));
           if (![from, to, limit].every(Number.isSafeInteger) || from >= to || to > now + LIMITS.futureMs ||
-              to - from > LIMITS.readWindowMs || limit < 1 || limit > LIMITS.readRows) throw new Invalid();
+              to - from > (buckets ? LIMITS.aggregateWindowMs : LIMITS.readWindowMs) || limit < 1 || limit > (buckets ? LIMITS.aggregateRows : LIMITS.readRows)) throw new Invalid();
+          if (buckets) {
+            const name = q.get('name'), bucket = Number(q.get('bucket'));
+            if (!Object.hasOwn(METRICS, name) || !METRIC_BUCKETS.includes(bucket)) throw new Invalid();
+            const rows = await readMetricBuckets(env.TELEMETRY_DB, { from, to, name, bucket, limit }, now, env);
+            return response({ schema_version: SCHEMA_VERSION, policy_version: POLICY_VERSION,
+              as_of: now, from, to, name, bucket, limit, truncated: rows.length === limit, rows });
+          }
           const rows = await readRows(env.TELEMETRY_DB, klass, { from, to, limit }, now, env);
           return response({ schema_version: klass === 'browser' ? BROWSER_SCHEMA_VERSION : SCHEMA_VERSION,
             policy_version: klass === 'browser' ? BROWSER_POLICY_VERSION : POLICY_VERSION,

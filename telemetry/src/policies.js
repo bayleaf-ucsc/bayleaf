@@ -4,9 +4,11 @@ import { DAYTONA_METRICS } from '../daytona/policy.js';
 export const POLICY_VERSION = 4; // Daytona policy 3 plus inbox aggregate metrics.
 export const SCHEMA_VERSION = 1;
 export const DAY = 86_400_000;
-export const LIMITS = Object.freeze({ bodyBytes: 65_536, points: 100, readRows: 500,
-  readWindowMs: 7 * DAY, futureMs: 60_000, browserPerMinute: 120,
+export const LIMITS = Object.freeze({ bodyBytes: 65_536, points: 100, readRows: 500, aggregateRows: 2000,
+  readWindowMs: 7 * DAY, aggregateWindowMs: 90 * DAY, futureMs: 60_000, browserPerMinute: 120,
   serviceBatchesPerMinute: 60, metricPointsPerMinute: 120, purgeRowsPerTable: 500 });
+// UTC-epoch-aligned read buckets; aggregation is derived at read time, never stored.
+export const METRIC_BUCKETS = [60_000, 300_000, 900_000, 3_600_000, 21_600_000, DAY];
 export const DESTINATIONS = ['landing', 'sandbox', 'chat', 'api', 'proxies', 'inboxes'];
 export const ORIGINS = {
   'https://bayleaf.dev': 'landing', 'https://sandbox.bayleaf.dev': 'sandbox',

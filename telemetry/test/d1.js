@@ -13,7 +13,7 @@ export function database() {
     async first() { return sql.prepare(query).get(...args) ?? null; },
     async all() { return { results: sql.prepare(query).all(...args) }; },
     async run() { return { meta: sql.prepare(query).run(...args) }; },
-    _run() { return /^\s*SELECT/i.test(query) ? { results: sql.prepare(query).all(...args) } : { meta: sql.prepare(query).run(...args) }; },
+    _run() { return /^\s*(SELECT|WITH)\b/i.test(query) ? { results: sql.prepare(query).all(...args) } : { meta: sql.prepare(query).run(...args) }; },
   });
   return {
     sql,

@@ -1,5 +1,5 @@
 // Operator read reference only. Admission policy and validation live elsewhere.
-import { LIMITS, SCHEMA_VERSION, POLICY_VERSION, DESTINATIONS, OUTCOMES, LAYERS, METRICS } from './policies.js';
+import { LIMITS, SCHEMA_VERSION, POLICY_VERSION, DESTINATIONS, OUTCOMES, LAYERS, METRICS, METRIC_BUCKETS } from './policies.js';
 import { BROWSER_SCHEMA_VERSION, BROWSER_POLICY_VERSION, NETWORK_LOCATIONS } from './browser-policy.js';
 import { STATES } from '../daytona/policy.js';
 
@@ -89,6 +89,37 @@ for (const [klass, [label, row]] of Object.entries(rows)) {
     },
   } };
 }
+const latest = description => `From the newest exact point in the bucket/series (ties: newest id). ${description}`;
+schemas.MetricBucketRow = { ...object({
+  bucket_start: time('UTC-epoch-aligned bucket start: observed_at minus observed_at modulo bucket.'),
+  source: { type: 'string' }, attributes_json: schemas.MetricRow.properties.attributes_json,
+  kind: schemas.MetricRow.properties.kind, unit: schemas.MetricRow.properties.unit,
+  temporality: schemas.MetricRow.properties.temporality,
+  samples: field(integer(), 'Distinct exact points after collapsing overlapping export duplicates; not a request count.'),
+  first_at: time('Oldest point.'), last_at: time('Newest point.'),
+  min_expires_at: time('Earliest expiry of any included point; discard this row and anything derived from it by then.'),
+  min_value: field(nullable(number()), 'Null for histograms.'), max_value: field(nullable(number()), 'Null for histograms.'),
+  last_value: nullable(number()), last_count: nullable(integer()), last_sum: nullable(number()),
+  last_start_at: field(nullable(integer(1e15)), latest('Detect cumulative resets by comparing it across buckets.')),
+  last_bucket_counts_json: nullable(jsonString(latest('Cumulative histogram buckets.'))),
+  last_bounds_json: nullable(jsonString('Increasing histogram bounds.')),
+  conflict: field({ type: 'integer', enum: [0, 1] }, '1 when distinct points share the newest millisecond with different value/count/sum; last_* is then arbitrary and should be treated as a gap.'),
+  delta_sum: field(nullable(number()), 'Sum of deduplicated values when every point is delta; null otherwise. Missing buckets are unknown, not zero.'),
+}), description: 'Server-side summary of MetricRow points, one row per bucket, source and attributes. Cumulative last_* values are not additive: derive deltas between buckets client-side using last_start_at for resets. Never sum gauges across series or buckets. Conflicts are flagged, not resolved.' };
+schemas.MetricBucketRowResponse = object({ ...schemas.MetricRowResponse.properties,
+  name: choice(Object.keys(METRICS)), bucket: { type: 'integer', enum: METRIC_BUCKETS },
+  limit: { type: 'integer', minimum: 1, maximum: LIMITS.aggregateRows },
+  truncated: field({ type: 'boolean' }, 'True when rows.length equals limit, not proof more rows exist. Later buckets are omitted; widen the bucket or narrow the window. No cursor.'),
+  rows: { type: 'array', items: ref('MetricBucketRow'), maxItems: LIMITS.aggregateRows } });
+paths['/v1/read/metric-buckets'] = { get: { ...paths['/v1/read/metrics'].get, operationId: 'read_metric_buckets',
+  summary: 'Metric buckets', description: 'Aligned per-series summaries of one metric, ordered by bucket_start, source, attributes_json.',
+  // Bounded by aggregateRows, so the window may span the whole retention maximum.
+  parameters: [{ ...parameters[0], description: parameters[0].description.replace(`${LIMITS.readWindowMs / 86_400_000} days`, `${LIMITS.aggregateWindowMs / 86_400_000} days`) }, parameters[1],
+    { name: 'name', in: 'query', required: true, schema: choice(Object.keys(METRICS)), description: 'Exact policy metric name.' },
+    { name: 'bucket', in: 'query', required: true, schema: { type: 'integer', enum: METRIC_BUCKETS }, description: 'Bucket width in milliseconds, aligned to the UTC epoch.' },
+    { ...parameters[2], schema: { type: 'integer', minimum: 1, maximum: LIMITS.aggregateRows } }],
+  responses: { ...paths['/v1/read/metrics'].get.responses,
+    200: { description: 'Summaries of points in [from, to), excluding expiry and retired observations. No-store.', content: content(ref('MetricBucketRowResponse')) } } } };
 export const openapi = {
   openapi: '3.1.0', info: { title: 'BayLeaf telemetry', version: '1',
     description: 'Use the operator read bearer, not a sk-bayleaf inference key or source write key. Supply from, to and limit for each query.' },

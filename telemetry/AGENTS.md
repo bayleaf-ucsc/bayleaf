@@ -92,7 +92,7 @@ The operator also authorized public GET/HEAD `/docs` (Scalar reference) and
 `/docs/openapi.json` on 2026-10-20. These document existing contracts, grant no
 data access, read no credentials/database and remain available with ingestion
 disabled. Keep the root status dashboard. The public reference covers only the
-six operator GET `/v1/read/*` routes, with concise field/parameter descriptions;
+seven operator GET `/v1/read/*` routes, with concise field/parameter descriptions;
 do not reintroduce ingestion or public-page operations. `src/openapi.js` derives
 read vocabularies/limits. Update contract tests with storage/read changes.
 The minimal Scalar shell pins its external jsDelivr script, disables interactive

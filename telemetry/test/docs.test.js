@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { openapi } from '../src/openapi.js';
 import { DOCS_HTML, SCALAR_URL } from '../src/docs.js';
 import { createWorker } from '../src/worker.js';
-import { LIMITS, METRICS, SCHEMA_VERSION, POLICY_VERSION } from '../src/policies.js';
+import { LIMITS, METRICS, METRIC_BUCKETS, SCHEMA_VERSION, POLICY_VERSION } from '../src/policies.js';
 import { BROWSER_SCHEMA_VERSION, BROWSER_POLICY_VERSION } from '../src/browser-policy.js';
 import { TABLES } from '../src/store.js';
 
@@ -57,9 +57,9 @@ test('Scalar keeps canonical spec, disabled requests and telemetry, source-map C
 });
 
 test('spec contains exactly the named GET reads with only operator authorization', () => {
-  assert.deepEqual(Object.keys(openapi.paths).sort(), Object.keys(TABLES).map(k => `/v1/read/${k}`).sort());
+  assert.deepEqual(Object.keys(openapi.paths).sort(), [...Object.keys(TABLES), 'metric-buckets'].map(k => `/v1/read/${k}`).sort());
   assert.deepEqual(Object.keys(openapi.components.securitySchemes), ['OperatorBearer']);
-  assert.deepEqual(Object.values(openapi.paths).map(p => p.get.summary), ['Browser arrivals', 'Metrics', 'Sandbox lifecycle counts', 'Probe runs', 'Deletion reports', 'Source status']);
+  assert.deepEqual(Object.values(openapi.paths).map(p => p.get.summary), ['Browser arrivals', 'Metrics', 'Sandbox lifecycle counts', 'Probe runs', 'Deletion reports', 'Source status', 'Metric buckets']);
   for (const path of Object.values(openapi.paths)) {
     assert.deepEqual(Object.keys(path), ['get']);
     assert.deepEqual(path.get.security, [{ OperatorBearer: [] }]);
@@ -87,17 +87,22 @@ test('all schema refs resolve and every delivered schema is reachable from a rea
 });
 
 test('read parameters and errors retain exact limits without ingestion error codes', () => {
-  for (const { get } of Object.values(openapi.paths)) {
-    assert.deepEqual(get.parameters.map(p => p.name), ['from', 'to', 'limit']);
+  for (const [path, { get }] of Object.entries(openapi.paths)) {
+    const buckets = path === '/v1/read/metric-buckets';
+    assert.deepEqual(get.parameters.map(p => p.name).filter(n => !['name', 'bucket'].includes(n)), ['from', 'to', 'limit']);
     assert.ok(get.parameters.every(p => p.required && p.in === 'query'));
     assert.equal(get.parameters[0].schema.maximum, Number.MAX_SAFE_INTEGER);
-    assert.ok(get.parameters[0].description.includes(`${LIMITS.readWindowMs / 86_400_000} days`));
+    assert.ok(get.parameters[0].description.includes(`${(buckets ? LIMITS.aggregateWindowMs : LIMITS.readWindowMs) / 86_400_000} days`));
     assert.ok(get.parameters[1].description.includes(`${LIMITS.futureMs / 1000} seconds`));
-    assert.equal(get.parameters[2].schema.minimum, 1);
-    assert.equal(get.parameters[2].schema.maximum, LIMITS.readRows);
+    assert.equal(get.parameters.at(-1).schema.minimum, 1);
+    assert.equal(get.parameters.at(-1).schema.maximum, buckets ? LIMITS.aggregateRows : LIMITS.readRows);
     assert.deepEqual(Object.keys(get.responses), ['200', '400', '401', '503']);
     assert.match(get.responses[200].description, /\[from, to\)/);
   }
+  const buckets = openapi.paths['/v1/read/metric-buckets'].get.parameters;
+  assert.deepEqual(buckets.map(p => p.name), ['from', 'to', 'name', 'bucket', 'limit']);
+  assert.deepEqual(buckets[2].schema.enum, Object.keys(METRICS));
+  assert.deepEqual(buckets[3].schema.enum, METRIC_BUCKETS);
   assert.deepEqual(schemas.Error.properties.error.enum, ['invalid_payload', 'unauthorized', 'disabled', 'configuration', 'unavailable']);
 });
 
@@ -111,6 +116,10 @@ test('response metadata preserves versions, expiry, no-cursor truncation and raw
     assert.match(response.truncated.description, /no cursor/);
     assert.match(schemas[name].properties.expires_at.description, /epoch milliseconds/);
   }
+  const buckets = schemas.MetricBucketRowResponse.properties;
+  assert.equal(buckets.rows.maxItems, LIMITS.aggregateRows);
+  assert.match(buckets.truncated.description, /not proof more rows exist.*No cursor/);
+  assert.match(schemas.MetricBucketRow.description, /not additive.*last_start_at.*not resolved/);
   assert.equal(schemas.MetricRow.properties.attributes_json.type, 'string');
   assert.deepEqual(schemas.MetricRow.properties.value.anyOf[1], { type: 'null' });
   assert.deepEqual(schemas.MetricRow.properties.monotonic.anyOf[0].enum, [0, 1]);

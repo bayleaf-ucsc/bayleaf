@@ -125,6 +125,35 @@ export async function readRows(db, klass, { from, to, limit }, now, env) {
   return (await db.batch(statements)).at(-1).results;
 }
 
+// Exact duplicate points (overlapping export batches) collapse before counting or
+// summing. Same-millisecond latest points that disagree are flagged, not resolved.
+export async function readMetricBuckets(db, { from, to, name, bucket, limit }, now, env) {
+  const latest = column => `MAX(CASE WHEN rank=1 THEN ${column} END)`;
+  return (await db.batch([policy(db, 'metrics', retentionMs(env, 'metrics'), now), bind(db, `
+    WITH points AS (
+      SELECT MAX(id) AS id, MIN(expires_at) AS expires_at, observed_at - (observed_at % ?) AS bucket_start, source, attributes_json,
+        kind, unit, temporality, observed_at, start_at, value, count, sum, bounds_json, bucket_counts_json
+      FROM metric_points
+      WHERE name=? AND observed_at>=? AND observed_at<? AND expires_at>? AND observed_at>${cutoff('metrics')}
+      GROUP BY source, attributes_json, kind, unit, temporality, observed_at, start_at, time_unix_nano,
+        start_time_unix_nano, monotonic, value, count, sum, min, max, bounds_json, bucket_counts_json
+    ), ranked AS (
+      SELECT *, ROW_NUMBER() OVER series AS rank, MAX(observed_at) OVER series AS newest FROM points
+      WINDOW series AS (PARTITION BY bucket_start, source, attributes_json ORDER BY observed_at DESC, id DESC
+        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+    )
+    SELECT bucket_start, source, attributes_json, ${latest('kind')} AS kind, ${latest('unit')} AS unit,
+      ${latest('temporality')} AS temporality, COUNT(*) AS samples,
+      MIN(observed_at) AS first_at, MAX(observed_at) AS last_at, MIN(expires_at) AS min_expires_at, MIN(value) AS min_value, MAX(value) AS max_value,
+      ${latest('value')} AS last_value, ${latest('count')} AS last_count, ${latest('sum')} AS last_sum,
+      ${latest('start_at')} AS last_start_at, ${latest('bucket_counts_json')} AS last_bucket_counts_json,
+      ${latest('bounds_json')} AS last_bounds_json,
+      COUNT(DISTINCT CASE WHEN observed_at=newest THEN quote(value)||','||quote(count)||','||quote(sum) END)>1 AS conflict,
+      CASE WHEN MIN(temporality IS 'delta') THEN SUM(value) END AS delta_sum
+    FROM ranked GROUP BY bucket_start, source, attributes_json
+    ORDER BY bucket_start, source, attributes_json LIMIT ?`, [bucket, name, from, to, now, limit])])).at(-1).results;
+}
+
 export async function purge(db, now, env) {
   const statements = CLASSES.map(k => policy(db, k, retentionMs(env, k), now));
   statements.push(...ALL_TABLES.map(table => {

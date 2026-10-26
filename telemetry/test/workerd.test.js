@@ -72,6 +72,17 @@ test('workerd / real D1: concurrent retries, conflicts, bounded reads, physical 
   assert.equal(points[0].start_time_unix_nano, expected.points[0].start_time_unix_nano);
   assert.equal(points.find(p => p.kind === 'gauge').attributes_json, '{}');
   assert.equal(points.find(p => p.kind === 'histogram').temporality, 'cumulative');
+  for (const kind of ['gauge', 'histogram']) {
+    const name = points.find(p => p.kind === kind).name;
+    const reply = await mf.dispatchFetch(`https://telemetry.invalid/v1/read/metric-buckets?from=${now - 3_600_000}&to=${now + 1}&name=${name}&bucket=3600000&limit=10`,
+      { headers: { Authorization: `Bearer ${read}` } });
+    assert.equal(reply.status, 200);
+    const { rows } = await reply.json();
+    const expectedSeries = new Set(points.filter(p => p.name === name).map(p => `${p.observed_at - p.observed_at % 3_600_000}${p.attributes_json}`));
+    assert.ok(expectedSeries.size > 0);
+    assert.equal(rows.length, expectedSeries.size, 'real D1 runs the windowed bucket query');
+    assert.ok(rows.every(r => r.conflict === 0 && r.kind === kind && r.samples >= 1));
+  }
   const malformed = await mf.dispatchFetch('https://telemetry.invalid/v1/otlp/metrics', {
     method: 'POST', headers: { Authorization: `Bearer ${write}-owui`, 'Content-Type': 'application/x-protobuf' }, body: new Uint8Array([255]) });
   assert.equal(malformed.status, 400, 'invalid native input must not trigger exporter retry');
