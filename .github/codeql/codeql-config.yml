@@ -1,0 +1,30 @@
+# Merged into code scanning default setup through the `github-codeql-config-file`
+# repository property (value: ./.github/codeql/codeql-config.yml).
+#
+# Scope: code that ships to a Worker, Chat, a sandbox or a browser, or otherwise
+# faces remote input. Excluded: operator-run test harnesses, fixtures, smoke,
+# qualification and research scripts that use synthetic data on loopback. Their
+# alerts were repeatedly false positives (weak test keys on purpose, negative
+# `<script` assertions, fixture servers), and dismissing them one at a time
+# taught nothing. Scripts the API embeds and runs on sandboxes (for example
+# api/scripts/browser-setup.py) do not match these patterns and stay in scope;
+# keep it that way when naming new files.
+#
+# False positives in shipped code are dismissed individually on GitHub with a
+# reason, never excluded here.
+name: BayLeaf CodeQL scope
+
+paths-ignore:
+  - "**/test/**"
+  - "**/*.test.*"
+  - "**/test-*"
+  - "**/test_*"
+  - "**/*fixture*"
+  - "**/*fixture*/**"
+  - "**/harness-*"
+  - "**/*smoke*"
+  - "**/qualify_*"
+  - "**/qualification/**"
+  - "**/research/**"
+  - "chat/multiworker/**"
+  - "api/sandbox-cli/test.ts"
