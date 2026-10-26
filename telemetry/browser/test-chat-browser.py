@@ -82,6 +82,7 @@ with tempfile.TemporaryDirectory(dir=scratch) as temporary, sync_playwright() as
         check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     proxy = ThreadingHTTPServer(('127.0.0.1', 0), LocalProxy)
     tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    tls.minimum_version = ssl.TLSVersion.TLSv1_2
     tls.load_cert_chain(certificate, key)
     proxy.socket = tls.wrap_socket(proxy.socket, server_side=True)
     threading.Thread(target=proxy.serve_forever, daemon=True).start()

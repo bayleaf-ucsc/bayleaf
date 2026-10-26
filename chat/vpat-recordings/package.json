@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "playwright": "^1.61.1",
-    "puppeteer-core": "^25.11.0",
+    "puppeteer-core": "^25.16.0",
     "rrweb-player": "^2.1.4"
   }
 }

@@ -60,6 +60,7 @@ def sink():
     threading.Thread(target=plain.serve_forever, daemon=True).start()
     tls = ThreadingHTTPServer(("0.0.0.0", 443), Handler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(root / "cert.pem", root / "key.pem")
     tls.socket = context.wrap_socket(tls.socket, server_side=True)
     tls.serve_forever()

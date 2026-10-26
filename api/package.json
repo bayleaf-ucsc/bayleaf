@@ -44,7 +44,7 @@
     "tail": "wrangler tail"
   },
   "overrides": {
-    "undici": "7.29.1",
+    "undici": "7.30.1",
     "sharp": "$sharp"
   },
   "keywords": [
@@ -64,8 +64,8 @@
   },
   "dependencies": {
     "@hono/zod-openapi": "^1.3.0",
-    "hono": "^4.13.7",
+    "hono": "^4.13.14",
     "sharp": "^0.35.5",
-    "zod": "^4.3.6"
+    "zod": "^4.6.7"
   }
 }
