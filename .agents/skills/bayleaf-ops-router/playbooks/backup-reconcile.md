@@ -24,6 +24,16 @@ drifted (the 2026-08-25 run found a week of accumulated drift in one pull).
   Never pull groups, users, chats, or course rosters into this repository.
   Model `access_grants` contain principal UUIDs, not group membership; treat
   roster-based membership as deliberately outside this backup.
+- For global admin edits, also save `owui-cli --json configs show` and
+  `owui-cli --json configs admin` to private, mode-restricted files outside the
+  repository. These exports can contain credentials. Record only explicitly
+  reviewed non-secret values in DESIGN.md; never copy the full exports into
+  the public backup. Without a prior private config snapshot, report current
+  values rather than claiming an exact before/after diff.
+- Resolve temporary export paths with `realpath` first. On macOS `/var` is a
+  symlink to `/private/var`; owui-cli rejects export directories containing
+  symlinks, including otherwise ordinary `$TMPDIR` paths. Check each command's
+  exit status before treating a snapshot as complete.
 
 ## Steps
 
@@ -91,6 +101,13 @@ the reconcile was wrong. If the reconcile reveals prod is *wrong*, fix prod
 through the appropriate playbook, don't paper over it in the backup.
 
 ## Refinement log
+
+- 2026-10-27: Full private pull (9 tools, 6 functions, 8 skills, 4 workspace
+  models plus the hidden base) found only previously known metadata/default
+  drift and decorative skill suffixes. Added private global config/admin reads
+  to capture automations, compaction and model defaults, absent from resource
+  backups. Initial `/var` exports were refused; canonical `/private/var` paths
+  succeeded. Recorded reviewed current settings without inventing a baseline.
 
 - 2026-10-21: Full private pre/post Lathe 1.1.0 pulls found only its source/schema
   changes before the companion skill update. Kept unrelated working-tree edits

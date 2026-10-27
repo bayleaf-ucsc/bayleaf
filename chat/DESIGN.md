@@ -313,6 +313,35 @@ OWUI is configured (via admin UI, not env vars) with an OpenRouter API
 connection that exposes all ZDR-eligible models. The OpenRouter API key is
 stored in OWUI's admin settings, not in the app spec.
 
+### Global Admin Settings Snapshot (2026-10-27)
+
+Read back from the live persistent config and admin API after operator edits.
+These are observed current values, not a before/after diff: earlier resource
+backups did not capture global admin settings. No production settings were
+changed during this backup.
+
+- Automations: `automations.enable=false`; default user permission
+  `user.permissions.features.automations=false`. This is OWUI user automation,
+  not the separate DigitalOcean retention-cleanup job.
+- Context compaction: `chat.context_compaction.enable=true`, token threshold
+  `80000`, token cap `80000`, retention percentage `40`. The compaction model
+  and prompt-template overrides are both empty strings.
+- Default chat model: `ui.default_models="basic"`; default pinned models: null.
+  Default and external task models are both `openrouter.z-ai/glm-5.3-flash`;
+  task-model params are `{}`.
+- Global default model params: `{"custom_params": {}}`.
+- Global default model capabilities: file context, vision, file upload, image
+  generation, code interpreter, citations, status updates, usage and builtin
+  tools enabled; web search, terminal and memory disabled. Default builtin-tool
+  overrides disable memory, notes, channels and chats.
+
+These global defaults are distinct from saved workspace-model definitions and
+do not establish which capabilities a particular model actually exposes. The
+full resource pull found no new prompt, parameter, capability or binding changes
+in Basic, Help, Basic Canary or Brace. The hidden shared base model was verified
+active, hidden and wildcard-user readable. Full config exports can contain
+credentials and stay private; only these reviewed settings belong in the repo.
+
 ### 1a. Group Management & Naming Convention
 
 BayLeaf uses OWUI's OAuth group sync to automatically assign users to groups
@@ -529,13 +558,24 @@ model as a sub-trillion-parameter open-weight campus assistant, encourages
 concise replies, warns about turn-depth limits, and suggests users start fresh
 conversations rather than extending long ones. It flags when an opening Canvas
 assignment link might mean the user intended a course-specific agent and directs
-them to their instructor for access instructions. Uses `function_calling: native`.
-Builtin tools enabled (time, memory, chats, notes, knowledge, channels). Skills
+them to their instructor for access instructions. Since 2026-10-27, inherits
+global model capabilities and builtin-tool defaults rather than storing its own
+overrides. Native function calling is OWUI v0.12.3's fallback, so Basic no longer
+stores `function_calling`. The global defaults disable memory, notes, channels
+and chats; other tools remain subject to service and permission gates. Skills
 bound: `google-workspace`, `bayleaf-for-students`, `bayleaf-for-faculty`,
 `bayleaf-for-employees`, `canvas-api`, `web-search`, `code-sandbox`,
 `offramp`. Vision enabled (glm-5.3-flash is vision-capable); file upload
 enabled. `reasoning_effort: low` (the flash model is always-on reasoning, so
 `low` is the responsiveness-prioritizing setting).
+
+The 2026-10-27 simplification preserved the avatar, prompt, reasoning effort,
+skills, `basic_prompt_filter`, suggestions, base model and public grant. Live
+stored-model and avatar readback passed; `/api/models` confirmed inherited
+global capabilities and builtin-tool defaults. A full private before/after
+resource backup found only Basic changed. OWUI serializes its omitted
+capabilities field as null, which still inherits defaults. Adam confirmed the
+live conversation playtest works on 2026-10-27.
 
 **Basic Canary** — Canary clone of `basic` (see Canary Models above): its
 system prompt can lag production between evaluations; skills, filters, and
@@ -1527,6 +1567,13 @@ Each `pull-all` command writes `<dir>/<id>/source + <dir>/<id>/meta.json`.
 Models pull-all filters to workspace models only (those with a
 `base_model_id`), discovers all models dynamically, and extracts base64
 data-URI profile images into separate files. Then `git diff chat/` to review.
+
+Global admin settings are not included in these four resource pulls. After
+admin-side changes, also capture `owui-cli --json configs show` and
+`owui-cli --json configs admin` in private, mode-restricted storage outside the
+repository. Full exports may contain credentials. Compare with an earlier
+private snapshot when available, and document only reviewed non-secret values
+here. See the backup-reconcile playbook for the public-backup boundary.
 
 ### Push (apply repo changes to live instance)
 

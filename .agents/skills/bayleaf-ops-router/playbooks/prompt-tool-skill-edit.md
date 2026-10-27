@@ -101,6 +101,13 @@ the UI (recover it from git: `git show HEAD:chat/models/<id>/model.json`), or
 
 ## Refinement log
 
+- 2026-10-27: Removed Basic's function-calling, capability and builtin-tool
+  overrides after verifying v0.12.3 native fallback and metadata inheritance.
+  Stored-model readback returns omitted capabilities as null; `/api/models`
+  verified effective inheritance. Avatar bytes and retained settings matched;
+  full private before/after resource pulls changed only Basic. Adam confirmed
+  the live conversation playtest works the same day.
+
 - 2026-10-06: Valve-only Lathe provisioning change needed no source deployment.
   Saved only the two non-secret overrides in `valves.public.json`, merged into
   live valves through CLI stdin, and verified all other values unchanged. Full
