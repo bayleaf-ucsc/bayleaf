@@ -15,6 +15,7 @@ whole clump.
 |---|---|
 | Launching or maintaining the local operator telemetry dashboard | `../bayleaf-operator-dashboard/SKILL.md` (dedicated skill) |
 | Maintaining BayLeaf Sandbox, its hosted plugin/tools/skills, browser workspace, or application pins | `playbooks/maintain-sandbox.md` |
+| Changing preview-gateway forwarding/responses, a new Lathe preview-wrapper contract revision, an app that works on localhost but not through a preview, or Daytona preview-proxy behaviour | `playbooks/qualify-preview-gateway.md` |
 | Dependabot issue on `api/`, dependency version bump | `playbooks/api-dependency-bump.md` |
 | New Open WebUI version for Chat | `playbooks/owui-version-bump.md` |
 | Changing the LLM behind Basic or Help, or the BayLeaf API recommended model | `playbooks/model-swap.md` |
