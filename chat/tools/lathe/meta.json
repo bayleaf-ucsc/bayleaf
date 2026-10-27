@@ -9,10 +9,10 @@
       "title": "Lathe",
       "author": "Adam Smith",
       "author_url": "https://adamsmith.as",
-      "description": "Coding agent tools (lathe, bash, read, write, edit, glob, grep, view, interpret, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.",
+      "description": "Coding agent tools (lathe, bash, read, write, edit, glob, grep, view, peek, poke, interpret, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.",
       "required_open_webui_version": "0.12.0",
       "requirements": "httpx, pydantic>=2, cachetools, PyYAML",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "licence": "MIT"
     },
     "has_user_valves": true
@@ -28,7 +28,7 @@
       "created_at": 1773097882
     }
   ],
-  "updated_at": 1791859200,
+  "updated_at": 1793133900,
   "created_at": 1773079252,
   "user": null,
   "write_access": true,
@@ -104,11 +104,11 @@
       "parameters": {
         "properties": {
           "target": {
-            "description": "\"http:<port>\" for a service listening on port 1024–65535. Start it with bash first. See lathe(manpage=\"services\") for lifecycle and access safeguards.",
+            "description": "\"http:<port>\" for an already-running HTTP service on port 1024–65535, or \"vnc\" for Daytona's built-in desktop (start with poke first). See the services/computer manuals for lifecycle and access safeguards.",
             "type": "string"
           },
           "access": {
-            "description": "Required policy: \"private\" authenticates the owner and fails closed; \"public\" allows anyone with the URL and may fall back to a direct bearer URL. Choose private unless the user explicitly requests public/world access. Shells and IDEs should always be private.",
+            "description": "Required policy: \"private\" authenticates the owner and fails closed; \"public\" allows anyone with the URL and may fall back to a direct bearer URL. Choose private unless the user explicitly approves public/world access. Shells, IDEs and VNC desktops should stay private: a public desktop grants control of logged-in accounts.",
             "type": "string"
           },
           "tag": {
@@ -121,8 +121,13 @@
               "type": "string"
             },
             "default": {},
-            "description": "Fixed application headers for HTTP/WebSocket forwarding, independent of access. Replaces browser values case-insensitively; supports Authorization. Requires a compatible wrapper, never direct fallback. Max 16 headers, 64-byte names, printable ASCII values up to 4096 bytes, 8192 bytes total. Routing/transport headers forbidden. Values remain in tool arguments; see services manual for trust boundaries.",
+            "description": "Fixed values injected into every HTTP request/WebSocket handshake, for credentials the browser cannot hold (e.g. Authorization for an app with no login). Not needed for forwarding: browser headers the app's own pages send already pass through; never inject a CSRF marker. Replaces browser values case-insensitively. Requires a compatible wrapper, never direct fallback. Max 16 headers, 64-byte names, printable ASCII values up to 4096 bytes, 8192 bytes total. Routing/transport headers forbidden. Values remain in tool arguments; see services manual for trust boundaries.",
             "type": "object"
+          },
+          "public_headers_acknowledged": {
+            "default": false,
+            "description": "Required true when access is \"public\" and upstream_headers is nonempty: every visitor then acts with the injected values. Set only after the user approves that.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -207,7 +212,7 @@
         "properties": {
           "manpage": {
             "default": "overview",
-            "description": "\"overview\" for safeguards and page index; \"interpret\", \"background\", \"services\", \"egress\" for details; \"version\" for installed version.",
+            "description": "\"overview\" for safeguards and page index; \"interpret\", \"background\", \"services\", \"computer\", \"egress\" for details; \"version\" for installed version.",
             "type": "string"
           }
         },
@@ -226,6 +231,50 @@
         },
         "required": [
           "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "peek",
+      "description": "Observe the shared Chromium browser (the user can watch it) and the sandbox desktop. Never starts or changes anything.\nBrowser first: page.text reads a tab's visible text, page.wait waits for text, a selector or a URL, page.list lists tabs.\nScreenshots return images; other commands return text. Read lathe(manpage=\"computer\") before first use.",
+      "parameters": {
+        "properties": {
+          "command": {
+            "description": "Browser, with args: page.list {}; page.wait {text?: str, selector?: str, url?: str, gone?: str, timeout?: int 1-30 = 10, tab?: str}, exactly one of text/selector/url/gone; page.text {tab?: str, selector?: str, maxChars?: int 100-200000 = 20000}. Desktop (args in lathe(manpage=\"computer\")): status, screenshot, screenshot.compressed, accessibility.tree, accessibility.find, display.info, mouse.position. Diagnostics: display.windows, process.status/logs/errors.",
+            "type": "string"
+          },
+          "args": {
+            "additionalProperties": true,
+            "default": {},
+            "description": "Command-specific JSON object. Strict types; unknown fields are rejected. Coordinates are native desktop pixels.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "poke",
+      "description": "Act in a real, shared Chromium browser (the user can watch it) or on the sandbox desktop.\nUse the browser when curl is not enough: JavaScript-rendered sites, bot challenges or 403s, logins, downloads needing browser cookies.\npage.open launches it (starting the desktop if down); then page.click, page.type, page.save (url: fetch bytes with browser cookies; no url: save the tab as pdf/html/mhtml), page.eval (awaits promises).\nRead lathe(manpage=\"computer\") before first use. Pause all input and screenshots during human login; resume only after the user says ready.\nAsk before first browser use unless requested, and before desktop input beyond it; once allowed, offer expose(target=\"vnc\", access=\"private\") as a live view.",
+      "parameters": {
+        "properties": {
+          "command": {
+            "description": "Browser, with args: page.open {url: URL, tab?: str, newTab?: bool}; page.click {text?: str, selector?: str, tab?: str}, exactly one of text/selector; page.type {selector: str, text: str, submit?: bool, tab?: str}; page.save {path: absolute path, format?: pdf|html|mhtml, url?: URL, tab?: str}, at most one of url/format; page.eval {js: str, tab?: str}. Desktop (args in lathe(manpage=\"computer\")): mouse.click/move/drag/scroll/down/up, keyboard.type/press/hotkey/down/up, accessibility.focus/invoke/set_value. Lifecycle: start, stop, process.restart.",
+            "type": "string"
+          },
+          "args": {
+            "additionalProperties": true,
+            "default": {},
+            "description": "Command-specific JSON object. Strict types; unknown fields are rejected. Never put passwords in tool arguments.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "command"
         ],
         "type": "object"
       }

@@ -85,6 +85,20 @@ may not match the actual pre-upgrade deployment.
 
 ## Refinement log
 
+- 2026-10-27: Promoted upstream `main` `aff382b` (frontmatter still says
+  1.2.0, but it includes post-tag #112 header passthrough and #113 browser page
+  verbs). Personal instance was byte-exact with it; same-day soak, accepted by
+  Adam ("lathe has stabilized"). 719 offline tests passed on the exact source.
+  No new valves or requirements; new model surface is `peek`/`poke` and
+  `expose(public_headers_acknowledged=)`. Source-only deploy: readback exact,
+  14 valves, name and grants unchanged, health 200. The `code-sandbox` skill
+  contradicted the new `expose` contract ("needs no separate approval flow"),
+  so it was updated in the same rollout (repo and live, preserving the live-only
+  ✨ decorations). Private rollback snapshot in
+  `~/.tokens/bayleaf-lathe-rollback-20261027/`. A frontmatter version that
+  lags the code means: identify builds by commit and source hash, not version.
+  Model-mediated prod playtest (step 5) pending with Adam.
+
 - 2026-10-21: Promoted personally used, byte-exact upstream Lathe 1.1.0 with
   510 offline tests passing. Source/schema, supported valves, name/grants and
   health passed. Removed application shortcuts and interpreter migration required
