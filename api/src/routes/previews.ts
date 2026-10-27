@@ -55,6 +55,21 @@ const EMBED_COOKIE_OPTIONS = { path: '/', secure: true, httpOnly: true, sameSite
 // so no migration widens its stage CHECK. Login hashes are 64 hex, never this.
 const EMBED_MARKER = 'desktop-embed';
 const EMBED_CODE_SECONDS = 60;
+// Request headers never taken from the browser (Lathe preview-wrapper contract
+// §5.2 step 3, plus mediated ambient headers): routing, identity, transport,
+// provider namespaces, browser-owned Sec-*, and Cookie (rebuilt separately) and
+// Referer (preview hostnames are capabilities). Accept-Encoding stays with the
+// edge, which negotiates and decodes content itself.
+const WRAPPER_CONTROLLED = new Set(['host', 'cookie', 'referer', 'forwarded', 'x-real-ip', 'true-client-ip',
+  'connection', 'upgrade', 'keep-alive', 'te', 'trailer', 'transfer-encoding', 'content-length', 'expect',
+  'http2-settings', 'proxy-authorization', 'proxy-authenticate', 'accept-encoding']);
+const WRAPPER_CONTROLLED_PREFIX = /^(?:x-forwarded-|sec-|cf-|daytona-|x-daytona-|x-lathe-)/;
+// Browser-owned headers forwarded on every request, including navigations.
+const BROWSER_BASICS = new Set(['accept', 'accept-language', 'content-type', 'range', 'if-range', 'if-none-match',
+  'if-modified-since', 'origin', 'user-agent', 'service-worker']);
+// App error bodies are diagnostics for the person or agent running the app.
+// Larger bodies, or any naming the upstream capability, are replaced.
+const ERROR_BODY_LIMIT = 64 * 1024;
 const now = () => Math.floor(Date.now() / 1000);
 const random = () => hex(crypto.getRandomValues(new Uint8Array(32)));
 const hex = (bytes: Uint8Array) => Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
@@ -669,30 +684,27 @@ async function upstreamRequest(request: Request, env: Bindings, r: Registration)
   target.pathname = incoming.pathname;
   target.search = incoming.search;
   const headers = new Headers();
-  for (const key of ['Accept', 'Accept-Language', 'Content-Type', 'Range', 'If-Range', 'If-None-Match', 'If-Modified-Since',
-    'Origin', 'User-Agent', 'X-Requested-With', 'X-CSRF-Token', 'X-XSRF-Token', 'Service-Worker']) {
-    const value = request.headers.get(key);
-    if (value) headers.set(key, value);
-  }
-  headers.set('X-Forwarded-Host', incoming.host);
-  headers.set('X-Forwarded-Proto', 'https');
   // Never transmit app credentials on external top-level navigation or public
   // iframe exceptions. Ordinary same-origin browser GET fetches omit Origin.
   const appRequest = request.headers.get('Sec-Fetch-Mode') !== 'navigate' &&
     (request.headers.get('Origin') === incoming.origin || request.headers.get('Sec-Fetch-Site') === 'same-origin');
-  if (appRequest) {
-    for (const key of ['Authorization', 'X-Nanobot-Auth']) {
-      const value = request.headers.get(key);
-      if (!value || value.length > 4096 || /[\x00-\x1f\x7f]/.test(value)) continue;
-      if (key === 'Authorization' && !/^Bearer [A-Za-z0-9._~+/-]+=*$/i.test(value)) continue;
-      if (!await platformCredential(value, request, env, target)) headers.set(key, value);
-    }
+  // Lathe preview-wrapper contract §5.2: forward every browser header except
+  // wrapper-controlled and Connection-nominated ones, never an allowlist of app
+  // header names. Script-set headers exist only on same-origin app requests,
+  // and carry nothing the app's own origin does not already know; navigations
+  // and framing exceptions get only the browser-owned basics.
+  const nominated = new Set((request.headers.get('Connection') ?? '').split(',')
+    .map(token => token.trim().toLowerCase()).filter(Boolean));
+  for (const [name, value] of request.headers) {
+    if (nominated.has(name) || WRAPPER_CONTROLLED.has(name) || WRAPPER_CONTROLLED_PREFIX.test(name)) continue;
+    if (BROWSER_BASICS.has(name)) { headers.set(name, value); continue; }
+    if (!appRequest || value.length > 4096) continue;
+    if (name === 'authorization' && !/^Bearer [A-Za-z0-9._~+/-]+=*$/i.test(value)) continue;
+    // Platform credentials are excluded under any header name, not just Authorization.
+    if (!await platformCredential(value, request, env, target)) headers.set(name, value);
   }
-  // Application-owned workspace selection, not gateway identity or authority.
-  if (r.deployment === '__browser' && r.slot === '__browser') {
-    const directory = request.headers.get('X-Opencode-Directory');
-    if (directory && directory.length <= 4096) headers.set('X-Opencode-Directory', directory);
-  }
+  headers.set('X-Forwarded-Host', incoming.host);
+  headers.set('X-Forwarded-Proto', 'https');
   const cookies = upstreamCookies(request.headers.get('Cookie') ?? '', r.generation, incoming.pathname);
   if (cookies) headers.set('Cookie', cookies);
   // Both HTTP and WS use this builder, after their ordinary owner/origin gate.
@@ -701,6 +713,25 @@ async function upstreamRequest(request: Request, env: Bindings, r: Registration)
   for (const [key, value] of Object.entries(configuredHeaders)) headers.set(key, value);
   for (const [key, value] of Object.entries(policy.upstream_headers)) headers.set(key, value);
   return { target, headers, incoming };
+}
+
+/** At most ERROR_BODY_LIMIT bytes of an upstream body, or null when larger. */
+async function boundedBody(response: Response): Promise<Uint8Array | null> {
+  if (!response.body) return new Uint8Array();
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > ERROR_BODY_LIMIT) { await reader.cancel(); return null; }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
+  return body;
 }
 
 function httpDate(value: string | null): string | null {
@@ -757,15 +788,24 @@ async function forward(c: Context<AppEnv>, r: Registration): Promise<Response> {
     responseHeaders.set('Content-Security-Policy', `frame-ancestors ${SERVICE_ORIGIN}; worker-src 'self' blob:; object-src 'none'; base-uri 'self'`);
   }
   // A completed HTTP error is an app/hosting response, not a transport failure.
-  // Keep status semantics but discard content, cookies, challenges and debug URLs.
+  // Keep status semantics; discard cookies, challenges and debug headers. The
+  // body is the app's own diagnostic unless it is large or names the upstream
+  // capability (provider error pages can), in which case it is replaced.
   if (upstream.status >= 400 && upstream.status <= 599) {
-    await upstream.body?.cancel();
     if ([429, 503].includes(upstream.status)) {
       const retry = upstream.headers.get('Retry-After');
       if (retry && (/^\d{1,10}$/.test(retry) || httpDate(retry))) responseHeaders.set('Retry-After', retry);
     }
+    const body = c.req.method === 'HEAD' ? (await upstream.body?.cancel(), null) : await boundedBody(upstream);
+    const type = upstream.headers.get('Content-Type');
+    if (body !== null && !containsUpstreamCredential(new TextDecoder().decode(body), target)) {
+      responseHeaders.set('Content-Type', type && /^[\w.+-]+\/[\w.+-]+(?:;\s*charset=[\w-]+)?$/i.test(type)
+        ? type : 'text/plain; charset=utf-8');
+      return new Response(body, { status: upstream.status, headers: responseHeaders });
+    }
     responseHeaders.set('Content-Type', 'text/plain; charset=utf-8');
-    return new Response(c.req.method === 'HEAD' ? null : 'Preview application request failed.',
+    return new Response(c.req.method === 'HEAD' ? null
+      : 'Preview application request failed. (The application\'s response body was replaced by the BayLeaf preview gateway.)',
       { status: upstream.status, headers: responseHeaders });
   }
   if (upstream.status === 304) {

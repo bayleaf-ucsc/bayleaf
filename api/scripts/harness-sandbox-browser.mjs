@@ -482,7 +482,8 @@ try {
     const session=jwt({aud:origin,generation:row.generation,exp:row.expires_at},previewSecret);
     const headers={Cookie:'__Host-bl-preview-session='+session,'X-Test-Origin':origin,'Sec-Fetch-Site':'same-origin','X-Opencode-Directory':'/ignored'};
     assert.equal((await worker.fetch(editor.url,{headers})).status,200);
-    assert.equal(lastForwarded['x-opencode-directory'],undefined);
+    // Same-origin app headers pass to every app (preview-wrapper contract §5.2), not per slot.
+    assert.equal(lastForwarded['x-opencode-directory'],'/ignored');
     const oldKey=(await db.prepare('SELECT bayleaf_token FROM user_keys WHERE email=?').bind(email).first()).bayleaf_token;
     await db.prepare('UPDATE user_keys SET bayleaf_token=? WHERE email=?').bind('sk-bayleaf-isolation-test',email).run();
     assert.equal((await worker.fetch(editor.url,{headers})).status,200);
@@ -529,7 +530,8 @@ try {
     const session=jwt({aud:origin,generation:row.generation,exp:row.expires_at},previewSecret);
     assert.equal((await worker.fetch(files.url,{headers:{'X-Test-Origin':origin}})).status,401);
     assert.equal((await worker.fetch(files.url,{headers:{Cookie:'__Host-bl-preview-session='+session,'X-Test-Origin':origin,'Sec-Fetch-Site':'same-origin','X-Opencode-Directory':'/ignored'}})).status,200);
-    assert.equal(lastForwarded['x-opencode-directory'],undefined);
+    // Same-origin app headers pass to every app (preview-wrapper contract §5.2), not per slot.
+    assert.equal(lastForwarded['x-opencode-directory'],'/ignored');
     assert.equal((await worker.fetch(api+'/sandbox/expose',{method:'POST',headers:{Authorization:'Bearer sk-bayleaf-rotated','Content-Type':'application/json'},body:JSON.stringify({port:8790,access:'public'})})).status,400);
     const old=files.url;
     await req(path('dufs','restart'),{method:'POST'});files=await complete('dufs');

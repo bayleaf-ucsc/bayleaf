@@ -22,6 +22,7 @@ const oidcSecret = 'synthetic_oidc_secret_000000000000000000000000';
 const upstream = 'https://5000-synthetic-bearer.preview.example.test';
 const appPassword = 'synthetic app password';
 const appToken = 'nbwt_synthetic_application_token_000000000000000';
+const REPLACED_ERROR = 'Preview application request failed. (The application\'s response body was replaced by the BayLeaf preview gateway.)';
 const bindings = {
   PREVIEWS_ENABLED: 'true', PREVIEWS_API_ORIGIN: api,
   PREVIEWS_DOMAIN: 'previews.example.test', PREVIEWS_SECRET: Buffer.alloc(32, 7).toString('base64'),
@@ -166,6 +167,9 @@ const options = { workers: [{ name: 'preview-harness', modules: true, script: bu
       ? new Response(null, { status: 307, headers: {
         Location: 'https://provider-login.example/authorize?return_to=' + encodeURIComponent(upstream),
       } }) : new Response(upstream, { status: 401 });
+    if (u.pathname === '/app-error') return new Response('{"error":"pocket: csrf header missing"}', {
+      status: 403, headers: { 'Content-Type': 'application/json', 'Set-Cookie': 'debug=1', 'X-Debug': upstream } });
+    if (u.pathname === '/large-error') return new Response('x'.repeat(64 * 1024 + 1), { status: 500 });
     if (u.pathname === '/error') return new Response(upstream, { status: 500, headers: { 'X-Debug': upstream } });
     return new Response('synthetic service', { headers: {
       'Content-Type': 'text/plain', 'Set-Cookie': 'app-secret=yes; Domain=.example.test',
@@ -534,11 +538,23 @@ try {
   await check('forwarding strips credentials and unsafe response headers; uploads stream', async () => {
     const response = await owner.visit(url, { method: 'POST', body: 'synthetic upload', headers: {
       Origin: new URL(url).origin, Authorization: 'Bearer sk-bayleaf-owner',
-      'X-Forwarded-Host': 'evil.test', 'X-Api-Key': 'must-not-forward',
+      'X-Forwarded-Host': 'evil.test', 'X-Api-Key': 'sk-bayleaf-owner', 'X-App-Token': `Bearer ${key}`,
+      // Contract §5.2: unknown app headers pass; wrapper-controlled ones never do. (The local
+      // client drops Connection itself, so nominated-header removal is not observable here.)
+      'X-Pocket': '1', 'X-Unanticipated-App-Header': 'v',
+      'CF-Connecting-IP': '203.0.113.9', 'X-Daytona-Preview-Token': 'forged', 'Daytona-Anything': 'x',
+      'X-Lathe-Anything': 'x', 'True-Client-IP': '203.0.113.9', 'X-Real-IP': '203.0.113.9',
+      Forwarded: 'for=203.0.113.9', 'Proxy-Authorization': 'Basic eA==', Referer: url + 'secret-path',
+      'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Accept-Encoding': 'br',
     } });
     assert.equal(response.status, 200, await response.clone().text());
     assert.equal(lastUpstream.body, 'synthetic upload');
-    for (const name of ['authorization', 'x-api-key']) assert.equal(lastUpstream.headers[name], undefined);
+    for (const name of ['authorization', 'x-api-key', 'x-app-token', 'cf-connecting-ip',
+      'x-daytona-preview-token', 'daytona-anything', 'x-lathe-anything', 'true-client-ip', 'x-real-ip', 'forwarded',
+      'proxy-authorization', 'referer', 'sec-fetch-site']) assert.equal(lastUpstream.headers[name], undefined, name);
+    assert.equal(lastUpstream.headers['x-pocket'], '1');
+    assert.equal(lastUpstream.headers['x-unanticipated-app-header'], 'v');
+    assert.notEqual(lastUpstream.headers['accept-encoding'], 'br');
     assert.equal(lastUpstream.headers.cookie, 'app-secret=yes');
     assert.equal(lastUpstream.headers['x-forwarded-host'], new URL(url).host);
     for (const name of ['Access-Control-Allow-Origin', 'Refresh', 'Link', 'X-Debug']) assert.equal(response.headers.get(name), null);
@@ -556,7 +572,7 @@ try {
     assert.equal(outboundCalls, before, 'no app credentials can replace the owner cookie');
     const bootstrap = await owner.visit(url + 'webui/bootstrap', { headers });
     assert.equal(bootstrap.status, 401);
-    assert.equal(await bootstrap.text(), 'Preview application request failed.');
+    assert.equal(await bootstrap.text(), REPLACED_ERROR);
     for (const name of ['WWW-Authenticate', 'Location', 'Set-Cookie', 'X-Debug']) assert.equal(bootstrap.headers.get(name), null);
     const loggedIn = await owner.visit(url + 'webui/bootstrap', { headers: { ...headers, 'X-Nanobot-Auth': appPassword } });
     assert.equal(loggedIn.status, 200);
@@ -607,16 +623,23 @@ try {
     assert.equal(lastUpstream.headers['x-nanobot-auth'], undefined);
     await revoke(publicUrl);
   });
-  await check('HTTP app errors preserve status with fixed content; only validated retry metadata survives', async () => {
+  await check('HTTP app errors preserve status; bodies pass unless large or naming the upstream; only validated retry metadata survives', async () => {
     for (const code of [400, 401, 403, 404, 409, 422, 429, 500, 502, 503]) {
       const response = await owner.visit(url + `status?code=${code}`);
       assert.equal(response.status, code);
-      assert.equal(await response.text(), 'Preview application request failed.');
+      assert.equal(await response.text(), REPLACED_ERROR);
       for (const name of ['Location', 'ETag', 'Last-Modified', 'WWW-Authenticate', 'Set-Cookie', 'X-Debug']) assert.equal(response.headers.get(name), null);
       assert.equal(response.headers.get('Retry-After'), [429, 503].includes(code) ? '120' : null);
       assert.equal(response.headers.get('Cache-Control'), 'no-store');
       assert.ok(!JSON.stringify([...response.headers]).includes('synthetic-bearer'));
     }
+    const appError = await owner.visit(url + 'app-error');
+    assert.equal(appError.status, 403);
+    assert.equal(await appError.text(), '{"error":"pocket: csrf header missing"}', 'app diagnostics pass through');
+    assert.equal(appError.headers.get('Content-Type'), 'application/json');
+    for (const name of ['Set-Cookie', 'X-Debug']) assert.equal(appError.headers.get(name), null);
+    const large = await owner.visit(url + 'large-error');
+    assert.equal(large.status, 500); assert.equal(await large.text(), REPLACED_ERROR);
     for (const retry of [upstream, 'tomorrow', '-1', '12345678901']) {
       const response = await owner.visit(url + 'status?code=429&retry=' + encodeURIComponent(retry));
       assert.equal(response.headers.get('Retry-After'), null);
@@ -801,7 +824,7 @@ try {
       for (const [client, base] of [[owner, url], [browser(), publicPreview.url]]) {
         const ordinary = await client.visit(base + 'provider-auth');
         assert.equal(ordinary.status, 401);
-        assert.equal(await ordinary.text(), 'Preview application request failed.');
+        assert.equal(await ordinary.text(), REPLACED_ERROR);
         const redirected = await client.visit(base + 'provider-auth', { headers: { 'User-Agent': 'Chrome/142.0.0.0' } });
         assert.equal(redirected.status, 502);
         assert.equal(redirected.headers.get('Location'), null);

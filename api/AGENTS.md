@@ -768,7 +768,10 @@ also accepts optional registration-scoped `upstream_headers` in either access mo
 and acknowledges nonempty dictionaries with exact `upstream_headers_applied: true`.
 Destination and headers share the existing encrypted field; see `PREVIEWS.md`
 for validation, credential exclusions, rotation and rollout evidence (API/plugin
-deployed 2026-10-08; Chat upgrade and live app qualification recorded separately). Lathe supplies no slot,
+deployed 2026-10-08; Chat upgrade and live app qualification recorded separately). Since 2026-10-27 (#118, Lathe
+preview-wrapper contract revision 2) the gateway forwards every non-reserved
+browser header on same-origin app requests instead of an allowlist, and passes
+small app error bodies unless they name the upstream; see PREVIEWS.md. Lathe supplies no slot,
 so each registration is an independent lease. `POST /sandbox/expose` and
 `DELETE /sandbox/expose/{slot}` accept only the caller's normal BayLeaf user key
 and retain port-based replacement. No model-provided owner is accepted.

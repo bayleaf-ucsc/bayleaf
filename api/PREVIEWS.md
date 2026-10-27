@@ -150,7 +150,9 @@ code-server uses slot `__code-server` and dufs uses `__dufs` under the existing 
 policy. Owner-key binding is deployment-based, not tied to the slot spelling;
 the gateway now also requires a known managed slot. Migration 0013 already
 provides the fingerprint column, so no schema change is needed. Public framing
-and `X-Opencode-Directory` remain exclusive to the legacy OpenChamber slot.
+remains exclusive to the legacy OpenChamber slot. `X-Opencode-Directory` was
+also slot-exclusive until the 2026-10-27 header-passthrough revision; it now
+reaches any app as an ordinary same-origin application header.
 The leftover six-hour managed-registration cap is corrected to 24 hours and the
 controller uses the returned expiry. Existing links are not extended in place.
 
@@ -202,7 +204,7 @@ case-insensitively. Client `Connection` nominations cannot remove these headers.
 Fixed `Authorization`, including Basic, is supported. Public visitors can exercise
 injected credentials, including on public navigation and permitted iframe loads.
 An assertion header has no intrinsic visitor-identity meaning. Unconfigured
-headers retain the existing allowlist behavior; there is no new assertion namespace.
+headers follow the passthrough rule below; there is no new assertion namespace.
 
 Validation matches Lathe: maximum 16 entries, 1–64-byte ASCII HTTP-token names,
 0–4096-byte printable ASCII values, and 8192 total name/value bytes. Case-insensitive
@@ -352,8 +354,8 @@ names through this transport. Applications depending on that behavior require
 separate compatibility work. Upstream attempts to set gateway cookies are dropped.
 
 Authenticated private requests require Fetch Metadata or an exact matching Origin;
-legacy browsers that provide neither are denied. Request and response headers
-use allowlists. Redirects may only target the same upstream origin or the exact
+legacy browsers that provide neither are denied. Request headers follow the
+passthrough rule below; response headers use an allowlist. Redirects may only target the same upstream origin or the exact
 protected preview origin, are translated to the preview origin, and carry no
 upstream response body. Upstream HTTP errors keep their status with fixed sanitized
 content; transport failures remain gateway errors. No caching,
@@ -364,7 +366,65 @@ Daytona/application combination must pass an echo/absolute-URL containment test
 before screen-safe deployment. This is a qualification requirement, not a
 claim that header filtering sanitizes arbitrary application content.
 
+### Request-header passthrough and app error bodies (2026-10-27, bayleaf#118)
+
+This revision implements the Lathe preview-wrapper contract
+(`preview-wrapper/CONTRACT.md` in rndmcnlly/lathe, revision 2, Lathe #111).
+The fixed request-header allowlist was replaced because every app with its own
+header (Pi Pocket's `X-Pocket` CSRF marker) needed an operator change.
+
+- **Never from the browser:** `Host`, `Cookie` (rebuilt from wrapped app
+  cookies), `Referer`, `Forwarded`, `X-Real-IP`, `True-Client-IP`, hop-by-hop and
+  framing headers, `Expect`, `HTTP2-Settings`, `Proxy-*`, `Accept-Encoding`
+  (the edge negotiates), and the prefixes `X-Forwarded-`, `Sec-`, `CF-`,
+  `Daytona-`, `X-Daytona-`, `X-Lathe-`. `Connection`-nominated headers are
+  also removed (Cloudflare likely consumes `Connection` first; the local harness
+  cannot observe it).
+- **On every request:** browser basics (`Accept`, `Accept-Language`,
+  `Content-Type`, range and conditional headers, `Origin`, `User-Agent`,
+  `Service-Worker`).
+- **On same-origin app requests only** (non-navigation, exact Origin or
+  `Sec-Fetch-Site: same-origin`): every other header up to 4096 characters.
+  The platform-credential screen below now applies under any header name, not
+  only `Authorization` and `X-Nanobot-Auth`. Browser `Authorization` still has
+  to be a single Bearer token.
+- Rationale: only script on the preview origin can set custom headers, and that
+  script is the app's, so the header carries nothing the app's origin does not
+  already know. Navigations and the public iframe exception carry no script-set
+  headers, so they get only the basics.
+- Registration-configured headers still apply last and win.
+- **Error bodies:** upstream 4xx/5xx bodies up to 64 KiB now pass through with
+  a validated `Content-Type`, unless the decoded body names the upstream
+  hostname, its first label, or the port-stripped credential label. Larger or
+  credential-bearing bodies are replaced with a message saying the gateway
+  replaced them. Cookies, challenges, redirects and debug headers are still
+  dropped.
+
+Live qualification (2026-10-27, Worker version `30d5e815-9621-48ad-906b-a5d9e73fede7`):
+`scripts/qualify-preview-passthrough.py` ran a disposable echo app in the
+operator's sandbox behind a **public** keyed exposure and passed all 25 cases:
+unknown app headers (including `X-Pocket`) and `Origin` reach the app on a
+same-origin POST; reserved, provider and platform-credential headers do not; a
+navigation carries no script-set headers; a small app 403 JSON body passes with
+its content type; large bodies and bodies naming the upstream are replaced;
+revocation stops forwarding. Private mode shares the same header builder and is
+covered by `npm run test:previews`, not by this live run.
+
+Two edge facts observed live:
+
+- Cloudflare's edge refuses (403, before the Worker) any client request carrying
+  `CF-Connecting-IP`.
+- **Daytona appends a second `X-Forwarded-Host` carrying the signed upstream
+  hostname**, after BayLeaf's public-host value. Applications therefore can
+  learn the capability hostname from request headers, and frameworks that read
+  the last value build absolute URLs with it. Error-body replacement catches
+  this on 4xx/5xx; successful bodies remain the existing documented exposure
+  (applications embedding the upstream hostname can disclose it).
+
 ### HTTP application compatibility (locally tested, 2026-10-08)
+
+The 2026-10-27 revision above supersedes this section's request-header and
+error-body rules; the rest stands.
 
 - The mandatory private owner-cookie gate runs before forwarding. An application
   password or bearer token cannot authenticate to BayLeaf or bypass that gate.
