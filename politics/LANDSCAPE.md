@@ -2302,7 +2302,7 @@ AI integration.
 
 #### Daytona
 
-**Last verified:** 2026-08-31<br>
+**Last verified:** 2026-10-27<br>
 **Role:** Remote code-execution and sandbox service<br>
 **Use in Lathe:** Per-user execution environment
 
@@ -2320,7 +2320,20 @@ loop; Lathe supplies the tools and Pydantic AI-backed delegation.
 The [public Daytona repository](https://github.com/daytonaio/daytona) states that it
 stopped receiving updates in June 2026 and that core development moved to a private
 codebase. The published repository remains available at its prior license and without
-support or warranty.
+support or warranty. Daytona's
+[2026-06-11 announcement](https://www.daytona.io/dotfiles/updates/daytona-is-going-closed-source)
+gives security as the sole reason: AI-assisted vulnerability discovery makes a public
+isolation layer an unacceptable risk. It commits to publishing its isolation model,
+guarantees, and incident responses, and moves SDKs and documentation to
+<https://github.com/daytona>. The last public tag is `v0.190.0`; hosted documentation
+had reached v0.226 by 2026-10-27.
+
+Consequence observed in BayLeaf's preview-gateway work (2026-10-27): source reading
+can no longer establish production behavior. A header audit of the archived proxy
+code yielded hypotheses; live probes then confirmed some (credentialed any-origin
+CORS by default, an appended `X-Forwarded-Host` carrying the signed capability
+hostname) and are the only current evidence. See BayLeaf's
+[preview qualification playbook](https://github.com/bayleaf-ucsc/bayleaf/blob/main/.agents/skills/bayleaf-ops-router/playbooks/qualify-preview-gateway.md).
 
 Track pricing, regions, container and VM isolation, persistence, recovery, network
 policy, secret handling, audit logs, data retention, security incidents, API changes,
@@ -2590,6 +2603,12 @@ The following records await primary-source research:
   challenges, which are less consistently announced than purchases.
 
 ## Update log
+
+### 2026-10-27
+
+- Daytona: added the closed-source announcement and its stated security rationale,
+  the archived `v0.190.0` tag versus hosted documentation version, and BayLeaf's
+  observed shift from source inspection to live probing of the preview proxy.
 
 ### 2026-10-02
 
