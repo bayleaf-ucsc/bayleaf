@@ -12,7 +12,7 @@
       "description": "Coding agent tools (lathe, bash, read, write, edit, glob, grep, view, peek, poke, interpret, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.",
       "required_open_webui_version": "0.12.0",
       "requirements": "httpx, pydantic>=2, cachetools, PyYAML",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "licence": "MIT"
     },
     "has_user_valves": true
@@ -28,7 +28,7 @@
       "created_at": 1773097882
     }
   ],
-  "updated_at": 1793133900,
+  "updated_at": 1793145139,
   "created_at": 1773079252,
   "user": null,
   "write_access": true,
@@ -301,6 +301,25 @@
         },
         "required": [
           "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "show",
+      "description": "Show images or interactive HTML inline to the human, without loading their contents into model context.\nUse for charts, illustrations, screenshots, and rich interactive reports.\nUse view(path) separately if you also need to inspect an image yourself.\nAccepts 1–4 files: PNG/JPEG/GIF/WebP (4 MiB each), or UTF-8 .html/.htm\ndocuments (8 MiB each). HTML must be self-contained: inline its scripts,\nstyles, libraries, data, fonts, and images (as data: URIs) using sandbox\nprograms first; Lathe does not resolve local references. HTML runs in an\nisolated frame: scripts and inline content work, but it has no network\naccess, cannot submit forms, open windows, or reach the user's session.\nNo server or public URL needed. Source files are not modified. A successful\ncall confirms delivery, not browser execution or rendering correctness.",
+      "parameters": {
+        "properties": {
+          "paths": {
+            "description": "List of absolute image or self-contained HTML paths, even for one file.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "paths"
         ],
         "type": "object"
       }

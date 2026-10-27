@@ -85,6 +85,16 @@ may not match the actual pre-upgrade deployment.
 
 ## Refinement log
 
+- 2026-10-27 (later): Promoted upstream `main` `d6bcee1` (Lathe 1.3.0: `show()`
+  plus contract revision 3, which changes only the reference wrapper). Deployed
+  to chat.adamsmith.as first; Adam playtested `show()` there (good UX/AX), then
+  BayLeaf the same day. No new valves or requirements; readback exact, valves,
+  name and grants unchanged, health 200 on both. The `code-sandbox` skill had no
+  display guidance to contradict, so it was left alone. Upstream's frontmatter
+  `description` tool list omits `show` (cosmetic). Rollback snapshots:
+  `~/.tokens/personal-lathe-rollback-20261027/`,
+  `~/.tokens/bayleaf-lathe-rollback-20261027b/`.
+
 - 2026-10-27: Promoted upstream `main` `aff382b` (frontmatter still says
   1.2.0, but it includes post-tag #112 header passthrough and #113 browser page
   verbs). Personal instance was byte-exact with it; same-day soak, accepted by
