@@ -546,12 +546,19 @@ try {
       'X-Lathe-Anything': 'x', 'True-Client-IP': '203.0.113.9', 'X-Real-IP': '203.0.113.9',
       Forwarded: 'for=203.0.113.9', 'Proxy-Authorization': 'Basic eA==', Referer: url + 'secret-path',
       'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Accept-Encoding': 'br',
+      'Sec-CH-UA': '"Synthetic";v="1"',
     } });
     assert.equal(response.status, 200, await response.clone().text());
     assert.equal(lastUpstream.body, 'synthetic upload');
     for (const name of ['authorization', 'x-api-key', 'x-app-token', 'cf-connecting-ip',
       'x-daytona-preview-token', 'daytona-anything', 'x-lathe-anything', 'true-client-ip', 'x-real-ip', 'forwarded',
-      'proxy-authorization', 'referer', 'sec-fetch-site']) assert.equal(lastUpstream.headers[name], undefined, name);
+      'proxy-authorization', 'referer', 'sec-ch-ua']) assert.equal(lastUpstream.headers[name], undefined, name);
+    // Fetch Metadata is forwarded so apps can run their own CSRF checks (Go CrossOriginProtection).
+    assert.equal(lastUpstream.headers['sec-fetch-site'], 'same-origin');
+    assert.equal(lastUpstream.headers['sec-fetch-mode'], 'cors');
+    // Provider headers: Daytona's credentialed any-origin CORS layer is disabled.
+    assert.equal(lastUpstream.headers['x-daytona-disable-cors'], 'true');
+    assert.equal(lastUpstream.headers['x-daytona-skip-preview-warning'], 'true');
     assert.equal(lastUpstream.headers['x-pocket'], '1');
     assert.equal(lastUpstream.headers['x-unanticipated-app-header'], 'v');
     assert.notEqual(lastUpstream.headers['accept-encoding'], 'br');

@@ -65,8 +65,12 @@ const WRAPPER_CONTROLLED = new Set(['host', 'cookie', 'referer', 'forwarded', 'x
   'http2-settings', 'proxy-authorization', 'proxy-authenticate', 'accept-encoding']);
 const WRAPPER_CONTROLLED_PREFIX = /^(?:x-forwarded-|sec-|cf-|daytona-|x-daytona-|x-lathe-)/;
 // Browser-owned headers forwarded on every request, including navigations.
+// Fetch Metadata is browser-set and truthful; apps use it for their own CSRF
+// defence (Go's http.CrossOriginProtection otherwise compares Origin with Host,
+// which Daytona rewrites to localhost, and rejects same-origin POSTs).
 const BROWSER_BASICS = new Set(['accept', 'accept-language', 'content-type', 'range', 'if-range', 'if-none-match',
-  'if-modified-since', 'origin', 'user-agent', 'service-worker']);
+  'if-modified-since', 'origin', 'user-agent', 'service-worker',
+  'sec-fetch-site', 'sec-fetch-mode', 'sec-fetch-dest', 'sec-fetch-user']);
 // App error bodies are diagnostics for the person or agent running the app.
 // Larger bodies, or any naming the upstream capability, are replaced.
 const ERROR_BODY_LIMIT = 64 * 1024;
@@ -340,7 +344,9 @@ async function registerPreview(env: Bindings, policy: Deployment, input: Preview
 function apiPolicy(env: Bindings): Deployment {
   return { id: '__api', email_domain: env.ALLOWED_EMAIL_DOMAIN,
     upstream_suffixes: (env.PREVIEWS_UPSTREAM_SUFFIXES ?? '').split(',').map(s => s.trim()),
-    upstream_headers: { 'X-Daytona-Skip-Preview-Warning': 'true' } };
+    // Daytona's default CORS layer echoes any Origin with credentials and answers
+    // preflights itself; disabling it leaves cross-origin policy to the app.
+    upstream_headers: { 'X-Daytona-Skip-Preview-Warning': 'true', 'X-Daytona-Disable-CORS': 'true' } };
 }
 
 export async function registerUserPreview(env: Bindings, email: string, slot: string, url: string, access: 'private' | 'public' = 'private',
@@ -696,8 +702,9 @@ async function upstreamRequest(request: Request, env: Bindings, r: Registration)
   const nominated = new Set((request.headers.get('Connection') ?? '').split(',')
     .map(token => token.trim().toLowerCase()).filter(Boolean));
   for (const [name, value] of request.headers) {
-    if (nominated.has(name) || WRAPPER_CONTROLLED.has(name) || WRAPPER_CONTROLLED_PREFIX.test(name)) continue;
+    if (nominated.has(name)) continue;
     if (BROWSER_BASICS.has(name)) { headers.set(name, value); continue; }
+    if (WRAPPER_CONTROLLED.has(name) || WRAPPER_CONTROLLED_PREFIX.test(name)) continue;
     if (!appRequest || value.length > 4096) continue;
     if (name === 'authorization' && !/^Bearer [A-Za-z0-9._~+/-]+=*$/i.test(value)) continue;
     // Platform credentials are excluded under any header name, not just Authorization.

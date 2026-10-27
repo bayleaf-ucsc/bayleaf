@@ -376,7 +376,8 @@ header (Pi Pocket's `X-Pocket` CSRF marker) needed an operator change.
 - **Never from the browser:** `Host`, `Cookie` (rebuilt from wrapped app
   cookies), `Referer`, `Forwarded`, `X-Real-IP`, `True-Client-IP`, hop-by-hop and
   framing headers, `Expect`, `HTTP2-Settings`, `Proxy-*`, `Accept-Encoding`
-  (the edge negotiates), and the prefixes `X-Forwarded-`, `Sec-`, `CF-`,
+  (the edge negotiates), and the prefixes `X-Forwarded-`, `Sec-` (except Fetch
+  Metadata, below), `CF-`,
   `Daytona-`, `X-Daytona-`, `X-Lathe-`. `Connection`-nominated headers are
   also removed (Cloudflare likely consumes `Connection` first; the local harness
   cannot observe it).
@@ -393,6 +394,14 @@ header (Pi Pocket's `X-Pocket` CSRF marker) needed an operator change.
   already know. Navigations and the public iframe exception carry no script-set
   headers, so they get only the basics.
 - Registration-configured headers still apply last and win.
+- **Fetch Metadata** (`Sec-Fetch-Site`, `-Mode`, `-Dest`, `-User`) is forwarded
+  as a browser basic on every request, including navigations (2026-10-27,
+  contract revision 3). Without it, Go 1.25+ `http.CrossOriginProtection`
+  compares `Origin` with `Host`, which Daytona rewrites to `localhost:<port>`,
+  and rejects the app's own same-origin POSTs. Other `Sec-*` headers stay dropped.
+- BayLeaf also sends `X-Daytona-Disable-CORS: true`: Daytona's default CORS
+  layer otherwise echoes any `Origin` with credentials and answers preflights
+  itself. BayLeaf drops `Access-Control-*` response headers regardless.
 - **Error bodies:** upstream 4xx/5xx bodies up to 64 KiB now pass through with
   a validated `Content-Type`, unless the decoded body names the upstream
   hostname, its first label, or the port-stripped credential label. Larger or

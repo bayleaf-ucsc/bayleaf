@@ -48,16 +48,61 @@ the workflow. Contract changes go to the Lathe repo first (its §0).
    E and navigation cases, then revokes and kills the app (also on failure).
    Expect `{"passed": 25, "failed": []}`. Private mode is not covered live
    (needs a browser login); rely on the harness for it.
-4. **Provider probes when needed.**
-   `uv run --script api/scripts/probe-daytona-forwarded-host.py` mints a
-   120-second signed URL directly from Daytona and reports which app-visible
-   headers carry the capability, with and without
-   `X-Daytona-Trust-Forwarded-Host`.
-5. **Real app check** for compatibility reports: ask Adam (or the reporter) to
+4. **Provider probes when needed.** Both mint a 120-second signed URL directly
+   from Daytona (no gateway) for a throwaway echo app:
+   - `api/scripts/probe-daytona-forwarded-host.py`: which app-visible headers
+     carry the capability, with and without `X-Daytona-Trust-Forwarded-Host`.
+   - `api/scripts/probe-daytona-proxy.py`: Daytona's default CORS layer, the
+     `X-Daytona-Disable-CORS` opt-out, and auth cookies on signed responses.
+5. **Fetch Metadata check.**
+   `uv run --script api/scripts/qualify-preview-fetch-metadata.py` cross-compiles
+   a Go app using `http.CrossOriginProtection` (needs local Go >= 1.25; the
+   sandbox cannot download Go) and expects 200 for same-origin `fetch` and form
+   POSTs. A 403 "Sec-Fetch-Site is missing, and Origin does not match Host"
+   means `Sec-Fetch-*` stopped being forwarded.
+6. **Real app check** for compatibility reports: ask Adam (or the reporter) to
    retry the app with no `upstream_headers`, then a deliberately failing request
    to confirm the app's own error body arrives.
-6. **Record.** Evidence and version ID in `api/PREVIEWS.md`; conformance
+7. **Record.** Evidence and version ID in `api/PREVIEWS.md`; conformance
    changes in the Lathe contract §12; a line in the log below.
+
+## Daytona references
+
+Daytona's production code is **closed source since 2026-06-11**
+([announcement](https://www.daytona.io/dotfiles/updates/daytona-is-going-closed-source),
+citing AI-assisted vulnerability discovery). The public repository
+<https://github.com/daytonaio/daytona> is archived and unmaintained; its last
+tag is `v0.190.0` (`01c502bb1f1f`), while hosted docs were at v0.226 by
+2026-10-27. SDKs and docs now live under <https://github.com/daytona>.
+
+Consequences for this playbook: archived source is a **hypothesis generator**
+(the 2026-10-27 audit found every behaviour below in `libs/common-go/pkg/proxy`
+and `apps/proxy`), and only the live probes are evidence about production.
+Re-probe after Daytona changelog entries touching previews.
+
+Authoritative documentation:
+- Preview URLs, signed vs standard tokens, reserved ports:
+  <https://www.daytona.io/docs/en/preview>
+- Custom preview proxy (appended `X-Forwarded-Host`,
+  `X-Daytona-Trust-Forwarded-Host`, other `X-Daytona-*` controls):
+  <https://www.daytona.io/docs/en/custom-preview-proxy>
+- Changelog: <https://www.daytona.io/changelog>
+
+Behaviours observed live on signed URLs (2026-10-27):
+- `Host` becomes `localhost:<port>`; a second `X-Forwarded-Host` with the
+  signed capability hostname is appended after the client's value.
+- `X-Daytona-Trust-Forwarded-Host` has no effect (signed URLs never pass its
+  preview-token gate).
+- Default CORS echoes any `Origin` with `Access-Control-Allow-Credentials:
+  true` and answers preflights itself (204, app never sees them).
+  `X-Daytona-Disable-CORS: true` turns that off, is stripped, and lets the app
+  handle CORS and preflights. BayLeaf sends it (and drops `Access-Control-*`
+  response headers regardless).
+- No `daytona-sandbox-auth-*` cookie is set on signed-URL responses.
+- From source only (unverified live): a valid Daytona Bearer in
+  `Authorization` is consumed by the proxy; a client `X-Daytona-Authorization`
+  shadows the runner credential (401); `?DAYTONA_SANDBOX_AUTH_KEY=` is an auth
+  query parameter; `X-Daytona-Skip-Last-Activity-Update: true` reaches the app.
 
 ## Known traps
 
@@ -87,3 +132,9 @@ the workflow. Contract changes go to the Lathe repo first (its §0).
   `30d5e815-9621-48ad-906b-a5d9e73fede7`; live script 25/25. Found Daytona's
   appended `X-Forwarded-Host` and the trust header's inertness on signed URLs.
   First run of this playbook (written from that session); expect deviations.
+- 2026-10-27 (open-question pass): Go 1.25+ `http.CrossOriginProtection`
+  rejected same-origin POSTs behind BayLeaf (no `Sec-Fetch-Site`, `Host` is
+  localhost). Forwarded `Sec-Fetch-*` as browser basics and added
+  `X-Daytona-Disable-CORS`; deployed `066869e8-0779-4673-9b25-55bd2c4fff02`;
+  Go check 200 and contract script 25/25. Daytona source audit used the
+  archived repo; see Daytona references.
