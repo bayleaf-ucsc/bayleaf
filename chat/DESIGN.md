@@ -40,19 +40,19 @@ default context points at the personal `Just Adam` team.
 | **HTTP port** | `8080` |
 
 **Image choice.** Use version-specific standard-image tags (currently
-`v0.12.3`), not rolling `main` or `slim`. BayLeaf stores uploads in DO Spaces
+`v0.12.4`), not rolling `main` or `slim`. BayLeaf stores uploads in DO Spaces
 via OWUI's S3 provider (§1, Object Storage). Before v0.12.0, the slim image
 omitted S3 support and refused to start with S3 storage configured. Upstream
 v0.12.0 adds S3 support to slim, but BayLeaf retains the standard image;
 switching image variants requires separate dependency and upload qualification.
 
 **Native aggregate telemetry (2026-10-20).** The live rung-4 build adds the
-qualified source minimization to the unchanged v0.12.3 standard image, pinned by
+qualified source minimization to the v0.12.4 standard image (upgraded 2026-10-27), pinned by
 immutable upstream index
-`sha256:a537bbe1e6b428820f52ed4a029d7fff97062e24d5cf32c365fba36fd0542def`.
+`sha256:a5b9e403d19154796850679c8c5d1295301cee954be8b84ddd62af92426558f7`.
 The service command is `python /opt/bayleaf-otlp/startup_patch.py`, not the former
 echo-and-start wrapper. Exact source/package guards run at build and startup;
-the entrypoint retains the historical rung-3 sentinel and exec handoff to
+the entrypoint prints guarded startup markers and retains the exec handoff to
 uvicorn PID 1. Never bypass these guards or enable unpatched native metrics.
 
 Native qualification used deployment `b36b8678-f928-4db2-81e1-a3ebcb35fc34` from
@@ -61,6 +61,19 @@ pinned upstream image (`unexpected EOF`); one unchanged-source retry succeeded.
 One instance, one worker, the original size/pool and retention job were preserved.
 Repository-push auto-deploy remains **disabled**, so documentation publication
 does not restart Chat. This is not an OWUI upgrade or schema migration.
+
+**OWUI v0.12.4 upgrade (2026-10-27):** deployment
+`c63a7deb-02c0-4261-880c-8a0eb8d0b2bd` reached ACTIVE from published source
+`09aeebff5d2ffef6fc835607472f3e9158be9df0`. Both architecture builds, full arm64
+PostgreSQL/TLS metrics export, amd64 boot/inference and all 16 real Chromium
+arrival cases passed. No migration source changes; guarded telemetry dependencies
+and minimized adapter bytes are unchanged. The image now uses Python 3.12 / Debian
+13. Guarded startup, PID 1, health/version and authenticated Basic/Help responses
+passed in production. The complete app spec and resource definitions stayed
+unchanged. New config defaults are an empty LDAP fallback domain, lazy skills off
+and empty UI visibility settings. Lathe 1.3.3 source/valves survived unchanged.
+See [`image/UPGRADE-0.12.4.md`](image/UPGRADE-0.12.4.md) for qualification and rollback;
+human browser/tool/upload acceptance remains with Adam.
 
 Only aggregate native metrics are enabled: `ENABLE_OTEL=true`,
 `ENABLE_OTEL_METRICS=true`, traces/logs false, five-minute export

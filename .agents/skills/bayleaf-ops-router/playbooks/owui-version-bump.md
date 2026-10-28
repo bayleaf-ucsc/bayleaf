@@ -103,6 +103,12 @@ configs to restore if step 4's changes misbehave: re-push with
   increased its listen queue to 128 and added synthetic-only failure diagnostics.
   Adam confirmed personal soak and authorized publishing the coordinated OWUI and
   already-deployed Lathe backup after qualification passes.
+  Both builds, full arm64 PG/TLS export, amd64 boot/inference and 16 Chromium
+  cases passed. Deployment `c63a7deb` reached ACTIVE from `09aeebf`; health/version,
+  guards/PID 1 and Basic/Help inference passed. App spec/resources unchanged;
+  only inactive new upstream config defaults appeared. `doctl --no-prefix` also
+  strips `[bayleaf]`, so match startup message bodies. Browser/tool/upload human
+  acceptance remains pending.
 
 - 2026-10-22: not a version bump, but it exposed stale steps. Moving the image
   from `telemetry/otlp/` to `chat/image/` changed `dockerfile_path` via plain

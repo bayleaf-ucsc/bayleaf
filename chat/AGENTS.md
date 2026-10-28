@@ -28,8 +28,8 @@ Managed via `doctl --context bayleaf`.
 
 - **App ID**: `f1a1e758-62e9-4e99-90cb-212cab12958d`
 - **Build**: repo-root context, `chat/image/Dockerfile`, immutable standard
-  `ghcr.io/open-webui/open-webui:v0.12.3` base; GitHub push auto-deploy disabled
-- **Current version**: `v0.12.3`
+  `ghcr.io/open-webui/open-webui:v0.12.4` base; GitHub push auto-deploy disabled
+- **Current version**: `v0.12.4`
 - **Database**: Managed PostgreSQL 17 (`bayleaf-chat-db`, ID `ea8c7549-e761-44e1-a9c3-e45e478a5202`)
 - **Storage**: DO Spaces (`bayleaf-ucsc-storage`, bucket-scoped access key)
 
@@ -252,7 +252,7 @@ ahead without a reason.
 
 The live service now uses `python /opt/bayleaf-otlp/startup_patch.py`. It validates
 the pinned upstream/dependency bytes, applies the qualified metrics minimization,
-preserves the historical sentinel and execs `bash start.sh`. Do not replace it
+prints guarded startup markers and execs `bash start.sh`. Do not replace it
 with the old wrapper while metrics are enabled. Native metrics export every five
 minutes, using a source-scoped write-only secret; traces/logs/instrumentation are
 off. See `DESIGN.md` §1 and `../telemetry/qualification/native-production.md` for
@@ -278,7 +278,7 @@ short `;`-chained statements, or climb to rung 4 (custom Dockerfile)
 where you have a real shell script as a file.
 
 Verify after deploy: grep the deploy logs for
-`[bayleaf] v0.12.3 metrics source minimization verified` (printed only after
+`[bayleaf] v0.12.4 metrics source minimization verified` (printed only after
 the rung-4 guards pass), confirm OWUI's banner and `Started server process [1]`
 appear after it, and check `/health` returns 200. With the historical rung-3
 command above, grep for its sentinel instead. The v0.12.4 image replaces that

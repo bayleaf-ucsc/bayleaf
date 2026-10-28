@@ -1,6 +1,6 @@
 # Open WebUI v0.12.4 qualification
 
-Prepared 2026-10-27. Production deployment pending. Adam confirmed personal-server
+Deployed 2026-10-27. Adam confirmed personal-server
 use satisfies the upgrade gate. This follows the separate live Lathe 1.3.3 bump.
 
 ## Release and compatibility review
@@ -70,8 +70,22 @@ Private production rollback/config/resource snapshots are under
   off and exactly one metrics connection was present. Pool wait was 101.17 ms,
   statement cancellation 202.05 ms and lock cancellation 100.49 ms. Unavailable-DB
   backoff and healthy recovery passed. All owned containers/networks were removed.
-- Production source deployment, startup/health/version, Basic/Help inference,
-  post-upgrade resource reconciliation and human browser/tool acceptance: pending.
+- Production deployment `c63a7deb-02c0-4261-880c-8a0eb8d0b2bd` reached ACTIVE,
+  building exact published source `09aeebff5d2ffef6fc835607472f3e9158be9df0`.
+  Guarded startup preceded uvicorn PID 1; health returned 200 and version 0.12.4.
+  Authenticated Basic and Help inference returned the expected short response.
+  `doctl --no-prefix` also strips the `[bayleaf]` marker, so log verification
+  matched message bodies, not an absent prefix.
+- Full private post-upgrade resources, including the hidden base model, match
+  the pre-upgrade snapshot. The entire app spec matches, including all environment
+  settings, size/count and scheduled job. Lathe source and all valves are unchanged.
+  Global config only acquired upstream defaults: empty `ldap.server.default_email_domain`,
+  false `skills.lazy_loading.enable` / `ENABLE_SKILL_LAZY_LOADING`, and empty
+  `ui.visibility`. No existing setting was changed.
+  The production-served arrival loader and content-addressed client also match
+  the qualified source bytes exactly.
+- Human browser/tool/upload acceptance and a fresh production metrics observation
+  remain separate from these automated checks.
 
 ## Rollback
 

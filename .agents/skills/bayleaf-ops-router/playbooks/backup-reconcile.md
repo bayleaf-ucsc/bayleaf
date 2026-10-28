@@ -102,6 +102,12 @@ through the appropriate playbook, don't paper over it in the backup.
 
 ## Refinement log
 
+- 2026-10-27 (OWUI v0.12.4): Full private pre/post resources, hidden base model
+  and app spec were unchanged. Global config/admin snapshots revealed only new
+  inactive upstream defaults (empty LDAP fallback domain/UI visibility and lazy
+  skills false). Kept known pre-existing metadata/decorative drift out of the
+  coordinated upgrade backup; Lathe 1.3.3 source/valves remained exact.
+
 - 2026-10-27 (Lathe 1.3.3): Full private pre/post pulls and a separate hidden-base
   read found only the expected Lathe source/schema delta. Synced generated Lathe
   artifacts only, retaining stable repo timestamps/grant IDs and leaving known
