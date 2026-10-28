@@ -8,5 +8,6 @@ __pycache__/
 blog/
 training/
 .openchamber/
+.opencode/
 .wrangler/
 api/.sandbox-skills.json
