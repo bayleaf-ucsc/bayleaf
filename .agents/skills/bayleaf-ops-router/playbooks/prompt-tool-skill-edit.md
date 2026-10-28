@@ -101,6 +101,11 @@ the UI (recover it from git: `git show HEAD:chat/models/<id>/model.json`), or
 
 ## Refinement log
 
+- 2026-10-27: Deactivated and un-globalized the depth-limit filter, preserving
+  source and valves. Private before/after snapshots confirmed no model bindings,
+  unchanged model exports and other function metadata. Basic's actual prompt had
+  no depth warning, despite stale DESIGN prose, so no prompt deployment was needed.
+
 - 2026-10-27: Removed Basic's function-calling, capability and builtin-tool
   overrides after verifying v0.12.3 native fallback and metadata inheritance.
   Stored-model readback returns omitted capabilities as null; `/api/models`

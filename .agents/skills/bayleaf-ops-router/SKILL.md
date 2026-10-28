@@ -1,6 +1,6 @@
 ---
 name: bayleaf-ops-router
-description: Operations playbooks for BayLeaf Chat, API, and Sandbox. Use for maintaining the hosted Sandbox plugin, tools, skills, browser workspace or application pins; coordinating BayLeaf-powered agent capabilities and API exposure across hosted OpenChamber, Nanobot, Chat, desktop skills and llms.txt; API dependency bumps; Open WebUI upgrades; model swaps; production prompts/tools; monitoring failures, probe extensions or browser-token renewal; accessibility evidence; privacy notices; spin-off modules; new service facets; or prod-to-repo backup/reconcile.
+description: Operations playbooks for BayLeaf Chat, API, and Sandbox. Use for maintaining the hosted Sandbox plugin, tools, skills, browser workspace or application pins; coordinating BayLeaf-powered agent capabilities and API exposure across hosted OpenChamber, Nanobot, Chat, desktop skills and llms.txt; API dependency bumps; Open WebUI upgrades; model swaps; production prompts/tools; Chat request-rate analytics and rate-limit tuning; monitoring failures, probe extensions or browser-token renewal; accessibility evidence; privacy notices; spin-off modules; new service facets; or prod-to-repo backup/reconcile.
 ---
 
 # BayLeaf Operations Playbooks
@@ -21,6 +21,7 @@ whole clump.
 | Changing the LLM behind Basic or Help, or the BayLeaf API recommended model | `playbooks/model-swap.md` |
 | Evaluating a candidate LLM (canary run, no production swap) | `playbooks/model-swap.md` |
 | Editing a system prompt, tool/function, or OWUI skill | `playbooks/prompt-tool-skill-edit.md` |
+| Measuring retained Chat request rates or evaluating submission-limit changes | `playbooks/chat-rate-analysis.md` |
 | Privacy notice / subprocessor / retention change | `playbooks/privacy-notice-change.md` |
 | New service or API facet (new lane, subdomain, connection) | `playbooks/new-service-facet.md` |
 | Adding, changing, enabling, retiring, or auditing API capability exposure and discovery across BayLeaf-powered agents | `playbooks/bayleaf-powered-agent-capabilities.md` |

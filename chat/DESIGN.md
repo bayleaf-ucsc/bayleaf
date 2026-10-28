@@ -569,8 +569,8 @@ Their configurations are preserved in `models/` for reference.
 
 **Basic** — The default landing model. System prompt (`Basic v1.4`) orients the
 model as a sub-trillion-parameter open-weight campus assistant, encourages
-concise replies, warns about turn-depth limits, and suggests users start fresh
-conversations rather than extending long ones. It flags when an opening Canvas
+concise replies, and suggests users start fresh conversations when changing
+topics. It flags when an opening Canvas
 assignment link might mean the user intended a course-specific agent and directs
 them to their instructor for access instructions. Since 2026-10-27, inherits
 global model capabilities and builtin-tool defaults rather than storing its own
@@ -1272,26 +1272,53 @@ pipeline. Each is in `functions/<id>/` with `function.py` and `meta.json`.
 
 | ID | Type | Global | Active | Description |
 |----|------|--------|--------|-------------|
-| `rate_limit_filter` | filter | yes | **yes** | Per-user rate limiting (10/min, 50/hr, 100/3hr sliding window) |
+| `rate_limit_filter` | filter | yes | **yes** | Per-user rate limiting (10/min, 100/hr, 1000/60hr sliding windows) |
 | `basic_prompt_filter` | filter | no | **yes** | Assembles per-request system-prompt augmentations for the Basic model (OAuth role + chat-storage context); attached via Basic's `filterIds`. See issue #44. |
-| `depth_limit_filter` | filter | yes | **yes** | Halves max response tokens with each turn |
+| `depth_limit_filter` | filter | no | no | Archived: divides max response tokens by user-turn count |
 | `brace3_submit_action` | action | no | yes | Model-bound button to submit a structured Brace3 transcript to an HTML-upload assignment in course 94741. |
 | `brace3_canvas_system_prompt_filter` | filter | no | yes | Fetches system prompt from Canvas page by title "Brace3 System Prompt" (Brace v3). Derives course ID from model ID (`brace3-NNN`). Raises on missing page. Valve: `CANVAS_ACCESS_TOKEN`. Toolkit bound separately on the model. |
 
 ### Rate Limit Filter
 
 The only globally active filter. Applies to all models and all users (including
-admins). Default thresholds:
+admins). Live valves verified 2026-10-27 (these override source defaults):
 
 - 10 requests per minute
-- 50 requests per hour
-- 100 requests per 3-hour sliding window
+- 100 requests per hour
+- 1000 requests per 60-hour sliding window (`sliding_window_minutes=3600`)
+
+`global_limit=true` pools each user's requests across models; it is not a shared
+campus-wide quota. `enabled_for_admins=true`, priority 0. The inlet checks all
+three rolling windows before recording an admitted request. Rejections raise a
+wait-time error and do not consume another request; downstream failures still
+count. This counts filter inlet invocations, not tokens or dollars.
+
+In v0.12.4, ordinary native tool-loop continuations run the separate `request`
+filter hook, not `inlet` (`utils/middleware.py`). This filter defines only
+`inlet`, so an initial chat request plus ten internal continuation completions
+normally consumes one quota unit, not eleven. Builtin code-interpreter
+continuations use the same `request` hook. A separately submitted HTTP request
+(for example a resume) can enter `inlet` again; this is not a strict count of
+human-authored messages. Verified by tracing the pinned upstream release, not
+by generating a production tool loop.
+
+Counters are in process-local memory, not shared or durable storage. Restarts
+reset them, multiple processes can enforce separate quotas, and check/record
+is not atomic. Treat this as a soft usage guard, not strict budget enforcement.
+
+Before tuning thresholds, use the read-only
+[request-rate analysis playbook](../.agents/skills/bayleaf-ops-router/playbooks/chat-rate-analysis.md)
+and `analysis/request_rates.py` to compare retained-message rate distributions
+against live valves. Saved messages are a submission proxy, not admission logs.
 
 ### Depth Limit Filter
 
-Currently **enabled**. When active, it divides an `initial_token_budget`
-(default 16384) by the number of user turns, making responses progressively
-shorter in long conversations.
+Disabled and removed from global execution on 2026-10-27 after enabling native
+context compaction (see global admin settings above). No saved workspace model
+binds it. Source and live valves are preserved for rollback; rate limiting is
+unchanged. When active, it divides an `initial_token_budget` (default 16384) by
+the number of user turns, making responses progressively shorter in long
+conversations. Compaction bounds input context, not total inference cost.
 
 ---
 

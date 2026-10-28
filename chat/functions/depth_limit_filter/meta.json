@@ -7,8 +7,8 @@
     "description": "soft-limits the depth of conversations",
     "manifest": {}
   },
-  "is_active": true,
-  "is_global": true,
-  "updated_at": 1778809975,
+  "is_active": false,
+  "is_global": false,
+  "updated_at": 1793169801,
   "created_at": 1758234335
 }
