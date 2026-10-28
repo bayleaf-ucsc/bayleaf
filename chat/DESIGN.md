@@ -73,7 +73,8 @@ passed in production. The complete app spec and resource definitions stayed
 unchanged. New config defaults are an empty LDAP fallback domain, lazy skills off
 and empty UI visibility settings. Lathe 1.3.3 source/valves survived unchanged.
 See [`image/UPGRADE-0.12.4.md`](image/UPGRADE-0.12.4.md) for qualification and rollback;
-human browser/tool/upload acceptance remains with Adam.
+Adam confirmed the production experience works after deployment; individual
+browser/tool/upload scenarios were not itemized.
 
 Only aggregate native metrics are enabled: `ENABLE_OTEL=true`,
 `ENABLE_OTEL_METRICS=true`, traces/logs false, five-minute export

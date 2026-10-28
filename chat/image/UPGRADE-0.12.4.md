@@ -84,8 +84,9 @@ Private production rollback/config/resource snapshots are under
   `ui.visibility`. No existing setting was changed.
   The production-served arrival loader and content-addressed client also match
   the qualified source bytes exactly.
-- Human browser/tool/upload acceptance and a fresh production metrics observation
-  remain separate from these automated checks.
+- Adam confirmed the production experience works after deployment. Individual
+  browser/tool/upload scenarios were not itemized. A fresh production metrics
+  observation remains separate from these checks.
 
 ## Rollback
 

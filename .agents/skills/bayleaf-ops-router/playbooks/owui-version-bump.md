@@ -109,6 +109,8 @@ configs to restore if step 4's changes misbehave: re-push with
   only inactive new upstream config defaults appeared. `doctl --no-prefix` also
   strips `[bayleaf]`, so match startup message bodies. Browser/tool/upload human
   acceptance remains pending.
+  Adam subsequently confirmed the production experience works; individual
+  browser/tool/upload scenarios were not itemized.
 
 - 2026-10-22: not a version bump, but it exposed stale steps. Moving the image
   from `telemetry/otlp/` to `chat/image/` changed `dockerfile_path` via plain
