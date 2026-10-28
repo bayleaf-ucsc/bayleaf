@@ -92,8 +92,22 @@ const apiCors = cors({
   exposeHeaders: ['WWW-Authenticate', 'X-Inbox-Export-Next-Cursor'],
   maxAge: 86400,
 });
-app.use('*', (c, next) => c.req.path.startsWith('/previews/') ||
-  c.req.path === '/auth/service' || c.req.path.startsWith('/auth/service/') ? next() : apiCors(c, next));
+// Browser Sealed clients (the Tinfoil JS SDK) send EHBP headers plus the OpenAI
+// SDK's x-stainless-* telemetry headers, and must read Ehbp-Response-Nonce to
+// decrypt the reply. Omitting allowHeaders reflects the preflight's request, which
+// is safe here: origin is '*' without credentials, and sealed.ts forwards only
+// an allowlist upstream regardless of what the browser was allowed to send.
+const sealedCors = cors({
+  origin: '*',
+  allowMethods: ['GET', 'POST', 'OPTIONS'],
+  exposeHeaders: ['Ehbp-Response-Nonce', 'X-Tinfoil-Usage-Metrics', 'WWW-Authenticate'],
+  maxAge: 86400,
+});
+app.use('*', (c, next) => {
+  const path = c.req.path;
+  if (path.startsWith('/previews/') || path === '/auth/service' || path.startsWith('/auth/service/')) return next();
+  return path.startsWith('/sealed/') ? sealedCors(c, next) : apiCors(c, next);
+});
 
 app.use('*', async (c, next) => {
   const token = c.req.header('Authorization')?.replace(/^Bearer\s+/i, '').trim();
