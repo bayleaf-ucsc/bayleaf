@@ -9,7 +9,7 @@ contract, qualification procedures, credential handling, and deployment state.
 
 ## Probe Layers
 
-All routes accept GET and HEAD, use the fixed prompt `What's BayLeaf?`, and
+All routes accept GET and HEAD; inference routes use the fixed prompt `What's BayLeaf?` and
 perform fresh work. HEAD withholds headers until the transaction finishes,
 including browser cleanup. HTTP 200 means the whole contract passed, not just
 that a server answered. The two OWUI layers use the same dedicated non-admin
@@ -24,12 +24,23 @@ The BayLeaf API layer uses a distinct credential for that same pseudo-user.
 | `/api/recommended` | Keyed BayLeaf API auth and D1 resolution, per-user OpenRouter credential acquisition, open-weight enforcement, explicit ZDR routing, and complete SSE inference on the namespaced recommended model | Campus Pass, Sealed, sandbox/web routes, recommendation discovery, or factual correctness |
 | `/api/sealed` | Fresh hardware/source verification, keyed BayLeaf auth, EHBP relay, authenticated decryption, and complete SSE inference on the Sealed recommendation | Direct-provider isolation, Campus Pass, other models, tools, browser integrations, or factual correctness |
 | `/models/curated` | Both curated model lists (api/wrangler.jsonc `RECOMMENDED_MODEL` + `OPENCODE_CURATED_MODELS` on OpenRouter, `SEALED_RECOMMENDED_MODEL` + `SEALED_CURATED_MODELS` on Tinfoil) still resolve against each provider's live public `/v1/models` catalog | Provider deprecation notices before removal (reported 200 with `deprecated` in the JSON); inference health of listed models; other API models |
+| `/api/sandbox` | Keyed BayLeaf auth, Daytona control-plane access and existence of the probe owner's sandbox, regardless of runtime health | Creation, wake/resume, Toolbox, file I/O, applications, campus login or other users' machines |
 
 Browser failure with HTTP success points toward the browser/session/persistence
 path; OWUI HTTP failure with direct success points toward the OWUI-specific path.
 These are diagnostic leads, not proofs: credentials, provider routing, context,
 output length, caches, and transient load differ. None checks factual correctness.
 `/api/recommended` checks the plaintext keyed API path, not BayLeaf Sealed.
+
+`/api/sandbox` reuses `BAYLEAF_API_KEY` for a fixed fresh `GET /sandbox`, including
+when the monitor calls HEAD. A nonempty ID/state is required; `none`, deletion
+and destruction (including in-progress) fail. Running, stopped, archived,
+transitional and error states otherwise pass. No wake, poke, retry or automatic
+recreation. The exact probe owner is exempt from the API's inactivity reaper.
+Deployed/qualified 2026-10-27 Pacific; UptimeRobot monitor `804453127` polls hourly
+with a 30-second timeout and appears on BayLeaf Status. Detailed summaries for
+this new layer are intentionally not exported to telemetry pending policy review.
+Alert delivery remains unverified. See README for qualification evidence.
 
 `/models/curated` is the credential-free exception: it fetches (never infers)
 the two public provider catalogs, so probe runs cost nothing beyond Worker

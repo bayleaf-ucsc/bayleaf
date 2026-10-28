@@ -1559,6 +1559,14 @@ verifies fresh Tinfoil attestation, encrypts a fixed GLM 5.3 request through the
 relay, then decrypts and validates the complete SSE answer. No Chat/browser
 dependency. See `probe/README.md` for boundaries and deployment/monitor gates.
 
+A passive `/api/sandbox` existence check was deployed and GET/HEAD-qualified on
+2026-10-27 Pacific. It reuses the dedicated BayLeaf API credential, never wakes
+compute or refreshes activity, and accepts any existing non-deleting sandbox
+regardless of runtime health. The exact probe owner is exempt from the API's
+90-day sandbox reaper. UptimeRobot monitor `804453127` uses hourly HEAD checks
+and a 30-second timeout; public BayLeaf Status inclusion was observed. No new
+telemetry export vocabulary; alert delivery remains unverified. See the probe README.
+
 API keys were enabled for this on 2026-09-07. Ordinary default permissions and
 existing group permissions remain unchanged; only the dedicated operational
 group received `features.api_keys`. An instance-wide API-key endpoint allowlist

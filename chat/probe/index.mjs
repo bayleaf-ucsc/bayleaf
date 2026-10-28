@@ -9,9 +9,60 @@ const MAX_EVENT_CHARS = 64 * 1024;
 export const DIRECT_MODEL = 'z-ai/glm-5.3-flash';
 export const API_MODEL = 'openrouter:z-ai/glm-5.3-flash';
 export const SEALED_MODEL = 'glm-5-3';
+export const SANDBOX_URL = 'https://api.bayleaf.dev/sandbox';
 const SEALED_BASE = 'https://api.bayleaf.dev/sealed';
 const SEALED_REPO = 'tinfoilsh/confidential-model-router';
 const MAX_REPORT_BYTES = 64 * 1024;
+
+/** Existence only. Never call Toolbox, wake, poke, create, or retry. */
+export async function probeSandbox(apiKey, signal, fetcher = fetch, timing = metrics()) {
+  signal ??= new AbortController().signal;
+  let response, reader;
+  try {
+    response = await timing.phase('response_headers', () => bounded(() => fetcher(SANDBOX_URL, {
+      method: 'GET', redirect: 'manual', cache: 'no-store', signal,
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+    }), signal));
+    if (response.status !== 200) { timing.fail(); return `sandbox_http_${response.status}`; }
+    return await timing.phase('validation', async () => {
+      if (response.headers.get('content-type')?.split(';')[0].trim() !== 'application/json' || !response.body) {
+        timing.fail(); return 'sandbox_protocol';
+      }
+      reader = response.body.getReader();
+      const chunks = [];
+      let length = 0;
+      while (true) {
+        const { done, value } = await bounded(() => reader.read(), signal);
+        if (done) break;
+        length += value.byteLength;
+        if (length > 16384) throw new Error('size');
+        chunks.push(value);
+      }
+      const bytes = new Uint8Array(length);
+      let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+      const body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+      if (!body || typeof body !== 'object' || Array.isArray(body)
+        || typeof body.state !== 'string' || !body.state.trim()) {
+        timing.fail(); return 'sandbox_protocol';
+      }
+      if (body.id === null || ['none', 'deleted', 'destroyed', 'deleting', 'destroying'].includes(body.state.toLowerCase())) {
+        timing.fail(); return 'sandbox_absent';
+      }
+      if (typeof body.id !== 'string' || !body.id.trim()) { timing.fail(); return 'sandbox_protocol'; }
+      return 'ok';
+    });
+  } catch {
+    timing.fail();
+    return response ? 'sandbox_protocol' : 'sandbox_transport';
+  } finally {
+    try {
+      await timing.phase('stream_cleanup', () => bounded(() => reader ? reader.cancel()
+        : response?.body?.cancel(), AbortSignal.timeout(1000)));
+    } catch { /* Preserve the content-free failure, never expose provider errors. */ }
+    finally { reader?.releaseLock(); }
+  }
+}
 
 /** Preflight gzip expansion before the SDK repeats decompression internally.
  * Keep the original signed bundle unchanged; discard expanded bytes immediately.
@@ -723,7 +774,7 @@ export default {
     const url = new URL(request.url);
     const layer = { '/chat/basic': 'owui', '/chat/basic/e2e': 'browser',
       '/openrouter/basic': 'openrouter', '/api/recommended': 'api',
-      '/models/curated': 'catalog', '/api/sealed': 'sealed' }[url.pathname];
+      '/models/curated': 'catalog', '/api/sealed': 'sealed', '/api/sandbox': 'sandbox' }[url.pathname];
     if (!layer || url.search) return respond(404, 'Not found');
     if (!['HEAD', 'GET'].includes(request.method)) {
       return respond(405, 'Method not allowed', { Allow: 'GET, HEAD' });
@@ -767,7 +818,7 @@ export default {
     }
     if ((layer === 'owui' && !env.OWUI_API_KEY) ||
         (layer === 'openrouter' && !env.OPENROUTER_API_KEY) ||
-        ((layer === 'api' || layer === 'sealed') && !env.BAYLEAF_API_KEY) ||
+        ((layer === 'api' || layer === 'sealed' || layer === 'sandbox') && !env.BAYLEAF_API_KEY) ||
         (layer === 'browser' && (!env.OWUI_E2E_TOKEN || !env.BROWSER))) {      timing.fail();
       return finish(503, 'not_configured');
     }
@@ -788,6 +839,11 @@ export default {
         () => env.LIMITER.limit({ key: layer }), controller.signal));
       controller.signal.throwIfAborted();
       if (!allowed) { timing.fail(); return finish(429, 'rate_limited'); }
+      if (layer === 'sandbox') {
+        const outcome = await probeSandbox(env.BAYLEAF_API_KEY, controller.signal, fetch, timing);
+        const result = timedOut ? 'deadline' : request.signal.aborted ? 'client_aborted' : outcome;
+        return finish(result === 'ok' ? 200 : 503, result);
+      }
       if (layer === 'browser') {
         const running = probeBrowser(env.OWUI_E2E_TOKEN, env.BROWSER, controller.signal, { timing });
         // Allow finally to finish after a caller disconnects. A hard runtime
@@ -835,6 +891,8 @@ const telemetrySenders = new WeakMap();
 // Called only after the final timing snapshot. No new probe/inference work.
 function queueProbeTelemetry(env, ctx, report, startedAt) {
   try {
+    // New passive layer is UptimeRobot-only until telemetry policy is reviewed.
+    if (report.layer === 'sandbox') return;
     if (env.TELEMETRY_ENABLED !== 'true' || !ctx?.waitUntil) return;
     let sender = telemetrySenders.get(env);
     if (!sender) {

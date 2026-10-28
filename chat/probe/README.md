@@ -78,6 +78,63 @@ fixed synthetic prompt and answer, retaining neither. It does not receive human
 conversations. Workers observability and preview URLs are disabled. Replies
 contain only status/measurement metadata with `Cache-Control: no-store`.
 
+## Passive sandbox existence
+
+`GET` and `HEAD /api/sandbox` perform the same fresh authenticated
+`GET https://api.bayleaf.dev/sandbox` with the existing `BAYLEAF_API_KEY`.
+Only the probe owner's nonempty ID and state are checked. `none`, deleted,
+destroyed, deleting and destroying fail; other nonempty states, including
+running, sleeping, transitional and error states, pass. This measures access
+and existence, not runtime health. Missing/malformed/oversized JSON, redirects,
+HTTP errors, transport errors and deadlines fail with content-free codes.
+Replies disclose no sandbox ID, owner, provider body or runtime state.
+
+There is no inference, Toolbox, wake, poke, file I/O, retry or automatic
+recreation. Independent rate-limit key `sandbox`, the shared 25-second deadline,
+HTTP Basic auth and metrics-v2 completed-work semantics apply. The new layer
+does not export telemetry until its vocabulary is separately reviewed.
+The API reaper exempts the exact deployment-label owner `probe@bayleaf.dev`,
+not arbitrary exemption labels. Auto-stop/archive remain unchanged. Retire the
+fixture deliberately when retiring this monitor; remove the exemption too.
+
+**Deployment and qualification, 2026-10-27 Pacific:** API version
+`07a68672-382c-4cff-9e3d-9f55f12794f2`; probe version
+`d3f2a712-6e43-4697-9e3e-5037203e31e3`. Provider inventory confirmed no existing
+fixture before one ordinary `true` execution provisioned it. Ownership and
+60-minute auto-stop, 1440-minute auto-archive and disabled auto-delete were
+independently verified. Anonymous GET/HEAD returned 401. Authenticated GET/HEAD
+passed with Worker totals 411/135 ms (single observations, not a baseline).
+Another GET/HEAD pair left provider `lastActivityAt` unchanged while the machine
+remained started. Sleeping/archived states have synthetic coverage, not a live
+stop/archive qualification; no lifecycle changes were made merely for monitoring.
+
+UptimeRobot monitor `804453127`, **BayLeaf Sandboxes: Passive Daytona access
+(sandbox exists)**, was cloned through Adam's authenticated dashboard from the
+existing API inference monitor, retaining its email contact but **not working
+authentication**. Reopening the saved monitor showed Auth type None; a later
+scheduled check returned 401. Adam then pasted the existing probe password and
+saved explicit Basic credentials; reopening confirmed Auth type Basic. Do not
+treat cloning as proof of credential transfer.
+URL: `https://probe.bayleaf.dev/api/sandbox`; HEAD; hourly interval;
+30-second timeout; default North America region. BayLeaf Status has auto-add
+enabled: public inclusion at <https://stats.uptimerobot.com/tJ1Qkm7L0R> was
+observed. The dashboard recorded a first 576 ms timing sample while its card
+said Preparing; the initially Operational public status was not evidence of a
+successful authenticated sample. UptimeRobot subsequently reported Down with
+401 Unauthorized. Direct authenticated GET/HEAD still pass. A brief monitor-only
+pause/resume requested a fresh check after credential installation; current state
+was Preparing, not verified recovery. Adam requested a check about one hour
+later, resetting only this monitor's setup history if it is then confirmed Up
+with a successful post-credential check; otherwise preserve history. The incident
+log records the failure email as sent successfully, not confirmed inbox delivery.
+Recovery notification delivery remains unverified.
+Preflight passed 53 probe tests, sandbox-reaper tests, API typecheck, qualifier
+syntax checks, Wrangler dry runs and `git diff --check`.
+
+Focused qualification without Chat sign-in or inference:
+`node qualify-prod.mjs --sandbox-only`. For an independently running local Worker
+on port 8796: `node qualify.mjs --sandbox-only` (uses local probe password).
+
 ## Direct OpenRouter
 
 `GET` and `HEAD /openrouter/basic` use the same Worker, password, kill switch,

@@ -153,6 +153,13 @@ a general API outage.
    The playbook does not automate UptimeRobot: new probes are rare, so API
    automation would add more credential and maintenance surface than it removes.
    Record URL, name, Basic username `probe`, interval, timeout, and alert contact.
+   When Adam explicitly requests dashboard integration and provides a logged-in
+   browser, the agent may use that UI. Prefer cloning an existing probe monitor
+   to retain non-secret settings, but explicitly configure and verify Basic
+   credentials: cloning may show Basic initially yet save Auth type None.
+   Never treat cloning as proof of password transfer. Check inherited
+   interval/timeout and public status auto-add separately; never assume cloning
+   preserves a historical documented cadence. Alert verification remains Adam's.
 9. Adam verifies initial samples, optional public status-page inclusion, and one
    controlled failure/recovery alert. A direct 200 does not pass this gate.
 
@@ -189,6 +196,18 @@ accepted. Never commit secret, roster, SQL, `.dev.vars`, or `*.secrets.json`
 files. Do not commit or push without explicit approval.
 
 ## Refinement Log
+
+- 2026-10-27: Deployed passive `/api/sandbox` and exact probe-owner reaper exemption;
+  fresh GET/HEAD passed and independent `lastActivityAt` remained unchanged.
+  Adam requested status integration and supplied an authenticated dashboard:
+  UI cloning retained email, but not working auth, and inherited a one-hour interval,
+  not the historical 15 minutes. Status auto-add included monitor `804453127`.
+  No new telemetry vocabulary. Initial timing (576 ms) and public Operational
+  status were misleading while the detail card said Preparing: the later check
+  failed 401 and saved Auth type was None. Adam pasted/saved the existing password;
+  reopened settings confirmed Basic. Check actual recovery in about an hour before
+  the authorized monitor-only setup-stat reset. Failure email is recorded sent
+  by UptimeRobot; actual inbox delivery and recovery alert remain unverified.
 
 - 2026-10-09: Expired browser JWT caused 503 / `browser_identity` before launch
   while Chat HTTP passed. CLI console via a private PTY enabled container-side

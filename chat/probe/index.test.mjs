@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import puppeteer from '@cloudflare/puppeteer';
 import worker, { checkStream, probe, probeDetail, probeBrowser, cleanupSynthetic, metrics,
-  DIRECT_MODEL, API_MODEL, renderedAnswer, probeCatalog, CATALOG_URL, CATALOG_BASE, CURATED_LISTS } from './index.mjs';
+  DIRECT_MODEL, API_MODEL, renderedAnswer, probeCatalog, CATALOG_URL, CATALOG_BASE, CURATED_LISTS,
+  probeSandbox, SANDBOX_URL } from './index.mjs';
 
 const frame = value => `data: ${JSON.stringify(value)}\n\n`;
 const choice = (delta, finish_reason = null) => ({ choices: [{ index: 0, delta, finish_reason }] });
@@ -105,6 +106,91 @@ const env = {
 };
 const request = (method = 'GET', path = '/chat/basic', auth = true) => new Request(`https://probe.example${path}`, {
   method, headers: auth ? { Authorization: `Basic ${btoa('probe:test-password')}` } : {},
+});
+
+test('sandbox existence uses only a fixed authenticated passive GET and accepts any existing runtime state', async () => {
+  for (const state of ['started', 'stopped', 'archived', 'starting', 'stopping', 'archiving', 'error', 'future_state']) {
+    let calls = 0;
+    assert.equal(await probeSandbox('synthetic-key', AbortSignal.timeout(1000), async (url, options) => {
+      calls++;
+      assert.equal(url, SANDBOX_URL);
+      assert.equal(url, 'https://api.bayleaf.dev/sandbox');
+      assert.equal(options.method, 'GET'); assert.equal(options.body, undefined);
+      assert.equal(options.redirect, 'manual'); assert.equal(options.cache, 'no-store');
+      assert.equal(options.headers.Authorization, 'Bearer synthetic-key');
+      return Response.json({ id: 'synthetic-id', state });
+    }), 'ok');
+    assert.equal(calls, 1);
+  }
+});
+
+test('sandbox absence, tombstones, malformed or oversized bodies, redirects and transport fail without leaking content', async () => {
+  for (const body of [{ id: null, state: 'none' }, ...['none', 'deleted', 'destroyed', 'deleting', 'destroying']
+    .map(state => ({ id: 'synthetic', state }))]) {
+    assert.equal(await probeSandbox('key', null, async () => Response.json(body)), 'sandbox_absent');
+  }
+  for (const body of [{}, [], null, { id: '', state: 'started' }, { id: 'id', state: '' }]) {
+    assert.equal(await probeSandbox('key', null, async () => Response.json(body)), 'sandbox_protocol');
+  }
+  for (const response of [new Response('private provider error'),
+    new Response('{bad', { headers: { 'Content-Type': 'application/json' } }),
+    Response.json({ id: 'id', state: 'started', extra: 'x'.repeat(16384) })]) {
+    assert.equal(await probeSandbox('key', null, async () => response), 'sandbox_protocol');
+  }
+  for (const status of [302, 401, 403, 429, 500]) {
+    assert.equal(await probeSandbox('key', null, async () => new Response('private', { status })), `sandbox_http_${status}`);
+  }
+  assert.equal(await probeSandbox('key', null, async () => { throw new Error('secret'); }), 'sandbox_transport');
+});
+
+test('sandbox route gates precede upstream work and has an independent limiter key', async t => {
+  const mocked = t.mock.method(globalThis, 'fetch', async () => Response.json({ id: 'id', state: 'error' }));
+  for (const [req, bindings, status] of [
+    [request('GET', '/api/sandbox', false), env, 401],
+    [request('POST', '/api/sandbox'), env, 405],
+    [request('GET', '/api/sandbox?other=1'), env, 404],
+    [request('GET', '/api/sandbox'), env, 503],
+    [request('GET', '/api/sandbox'), { ...env, BAYLEAF_API_KEY: 'key', ENABLED: 'false' }, 503],
+    [request('GET', '/api/sandbox'), { ...env, BAYLEAF_API_KEY: 'key', LIMITER: {
+      async limit({ key }) { assert.equal(key, 'sandbox'); return { success: false }; },
+    } }, 429],
+  ]) assert.equal((await worker.fetch(req, bindings)).status, status);
+  assert.equal(mocked.mock.callCount(), 0);
+});
+
+test('sandbox GET and HEAD wait for the fresh upstream body and return only metrics', async t => {
+  for (const method of ['GET', 'HEAD']) {
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    t.mock.method(globalThis, 'fetch', async () => new Response(new ReadableStream({ async start(c) {
+      await gate;
+      c.enqueue(new TextEncoder().encode(JSON.stringify({ id: 'private-id', state: 'started' })));
+      c.close();
+    } }), { headers: { 'Content-Type': 'application/json' } }));
+    let settled = false;
+    const pending = worker.fetch(request(method, '/api/sandbox'), { ...env, BAYLEAF_API_KEY: 'key' })
+      .then(response => { settled = true; return response; });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(settled, false); release();
+    const response = await pending;
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('x-bayleaf-probe-result'), 'ok');
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    const text = await response.text();
+    assert.equal(text.includes('private-id'), false);
+    if (method === 'HEAD') assert.equal(text, '');
+    else assert.equal(JSON.parse(text).layer, 'sandbox');
+    t.mock.restoreAll();
+  }
+});
+
+test('sandbox deadline bounds a stalled body', async t => {
+  t.mock.method(globalThis, 'fetch', async () => new Response(new ReadableStream({}), {
+    headers: { 'Content-Type': 'application/json' },
+  }));
+  const response = await worker.fetch(request('GET', '/api/sandbox'), { ...env, BAYLEAF_API_KEY: 'key' });
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.get('x-bayleaf-probe-result'), 'deadline');
 });
 
 test('routing, authentication, disabled state and rate limit fail closed', async () => {

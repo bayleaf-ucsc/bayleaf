@@ -5,6 +5,13 @@ import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { cleanupSynthetic, probeDetail, metrics } from './index.mjs';
 import { qualifySealedAttestation, qualifySealedHTTP } from './qualify-sealed.mjs';
+import { qualifySandboxHTTP } from './qualify-sandbox.mjs';
+
+if (process.argv.includes('--sandbox-only')) {
+  try { await qualifySandboxHTTP('http://127.0.0.1:8796', process.env.PROBE_PASSWORD); }
+  catch { console.log(JSON.stringify({ qualification: 'failed', layer: 'sandbox', worker_location: 'local' })); process.exitCode = 1; }
+  process.exit(process.exitCode ?? 0);
+}
 
 // Use with an independently started local Worker, avoiding unrelated Chat work.
 if (process.argv.includes('--sealed-only')) {

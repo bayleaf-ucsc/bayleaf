@@ -5,6 +5,13 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import assert from 'node:assert/strict';
 import { cleanupSynthetic } from './index.mjs';
 import { qualifySealedAttestation, qualifySealedHTTP } from './qualify-sealed.mjs';
+import { qualifySandboxHTTP } from './qualify-sandbox.mjs';
+
+if (process.argv.includes('--sandbox-only')) {
+  try { await qualifySandboxHTTP(); }
+  catch { console.log(JSON.stringify({ qualification: 'failed', layer: 'sandbox' })); process.exitCode = 1; }
+  process.exit(process.exitCode ?? 0);
+}
 
 // Independent Sealed qualification never signs into Chat or inspects saved chats.
 if (process.argv.includes('--sealed-only') || process.argv.includes('--sealed-attestation-only')) {

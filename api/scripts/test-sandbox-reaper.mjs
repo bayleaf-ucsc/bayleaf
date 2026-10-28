@@ -62,6 +62,31 @@ try {
   assert.equal(calls[1].search, '?cursor=1');
   assert.equal(calls.filter(c => c.method === 'GET' && c.path.endsWith('/archived')).length, 2);
 
+  // The synthetic owner survives indefinitely without touching compute/activity.
+  // Near-matches and unrelated labels must not exempt ordinary owners.
+  for (const mode of ['delete', 'dry-run']) {
+    setup([machine('probe', {
+      labels: { 'chat.bayleaf.dev': 'probe@bayleaf.dev' },
+      lastActivityAt: '2020-01-01T00:00:00Z',
+    }), machine('ordinary', { labels: {
+      'chat.bayleaf.dev': 'synthetic@ucsc.edu', 'retention-exempt': 'true',
+      'other-deployment': 'probe@bayleaf.dev',
+    } }), machine('near-match', { labels: { 'chat.bayleaf.dev': 'probe+test@bayleaf.dev' } })]);
+    report = await reapInactiveSandboxes({ ...env, SANDBOX_REAPER_MODE: mode }, now);
+    assert.equal(report.scanned, 3); assert.equal(report.skipped, 1);
+    assert.equal(report.candidates, 2);
+    assert.equal(calls.some(c => c.path.endsWith('/probe')), false);
+    assert.deepEqual(cleared, mode === 'delete' ? ['ordinary', 'near-match'] : []);
+    assert.deepEqual(mutations().map(c => c.path), mode === 'delete'
+      ? ['/api/sandbox/ordinary', '/api/sandbox/near-match'] : []);
+  }
+  // Recheck the exemption on the fresh pre-delete read too.
+  setup([machine('old')]);
+  details.set('old', machine('old', { labels: { 'chat.bayleaf.dev': 'probe@bayleaf.dev' } }));
+  report = await reapInactiveSandboxes(env, now);
+  assert.equal(report.skipped, 1); assert.equal(mutations().length, 0);
+  assert.equal(cleared.length, 0);
+
   setup([machine('old')]);
   report = await reapInactiveSandboxes({ ...env, SANDBOX_REAPER_MODE: 'dry-run' }, now);
   assert.equal(report.candidates, 1); assert.equal(mutations().length, 0); assert.equal(cleared.length, 0);

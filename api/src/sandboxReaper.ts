@@ -4,6 +4,10 @@ import { DAYTONA_DEFAULT_API_URL } from './constants';
 
 export const SANDBOX_REAPER_CRON = '17 8 * * *';
 const INACTIVITY_MS = 90 * 24 * 60 * 60 * 1000;
+// Operator-owned existence-probe fixture: passive status reads must not need
+// artificial activity to retain it. Only the configured deployment's exact owner
+// label qualifies; ordinary users cannot opt out with a separate exemption label.
+const PROBE_SANDBOX_OWNER = 'probe@bayleaf.dev';
 type Machine = {
   id: string;
   labels?: Record<string, string>;
@@ -30,6 +34,7 @@ export async function reapInactiveSandboxes(env: Bindings, now = Date.now()) {
     return typeof m.id === 'string' && !!m.id &&
       typeof m.labels?.[env.DAYTONA_DEPLOYMENT_LABEL] === 'string' &&
       !!m.labels[env.DAYTONA_DEPLOYMENT_LABEL] &&
+      m.labels[env.DAYTONA_DEPLOYMENT_LABEL] !== PROBE_SANDBOX_OWNER &&
       ['stopped', 'archived'].includes(m.state ?? '') && m.desiredState === m.state &&
       Number.isFinite(activity) && activity <= now - INACTIVITY_MS;
   };

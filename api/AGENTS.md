@@ -603,6 +603,10 @@ before enabling it or performing initial overdue cleanup. Uses only Daytona
 control-plane metadata, exact deployment-label ownership, complete paginated
 discovery, fresh activity/state checks, and verified deletion before clearing
 cached IDs. Never wake compute or renew activity during cleanup.
+Deployed 2026-10-27 Pacific (Worker `07a68672-382c-4cff-9e3d-9f55f12794f2`): the exact configured-deployment
+owner `probe@bayleaf.dev` is exempt from this sandbox inactivity sweep so an
+existence monitor can remain passive indefinitely. No general exemption label,
+keepalive, account-retention change, or automatic recreation is introduced.
 `npm run test:sandbox-reaper` is credential-free; production dry-run found six
 candidates among eight machines on 2026-10-06. Observability remains disabled;
 there is no new monitoring store or alert integration.

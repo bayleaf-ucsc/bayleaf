@@ -316,6 +316,28 @@ Browser status already treats a missing machine as absent; preview leases expire
 within 24 hours, well before the inactivity cutoff. The reaper does not contact
 Toolbox or start machines to clean up inside them.
 
+**Synthetic fixture exception (deployed 2026-10-27 Pacific):** the exact
+`probe@bayleaf.dev` owner under the configured deployment label is excluded from
+the sandbox inactivity sweep, at discovery and fresh pre-delete recheck. This
+operator-owned fixture may remain archived indefinitely until deliberately
+retired. Ordinary user retention is unchanged; no generic opt-out label is
+accepted. The exception does not disable auto-stop/archive, prevent explicit
+deletion, change provider auto-delete/TTL settings, or exempt the account from
+account retirement. No periodic file I/O, wake, or activity refresh is required.
+
+The deployed monitor reads keyed `GET /sandbox`, requires a nonempty sandbox ID
+and an existing (not `none` or deleted/destroyed) state, and accepts running,
+sleeping, transitional and error states (deletion-in-progress also fails). It
+measures control-plane access and existence, not compute usability. The fixture
+was provisioned with one `true` execution; production probe GET/HEAD passed and
+independent provider reads confirmed unchanged `lastActivityAt`. UptimeRobot
+monitor `804453127` is included on BayLeaf Status, with hourly HEAD polling and
+30-second timeout. Alert delivery remains unverified. API deployment:
+`07a68672-382c-4cff-9e3d-9f55f12794f2`. Daytona documents that non-Toolbox SDK requests do not reset the
+[inactivity timer](https://www.daytona.io/docs/en/sandboxes/#what-does-not-reset-the-timer),
+and archived container sandboxes are
+[not billed](https://www.daytona.io/docs/en/billing/#sandbox-billing).
+
 Daytona offers no conditional deletion, so activity can race the final read and
 DELETE. The policy runs on the next successful daily sweep after the cutoff,
 normally within 24 hours, not precisely at the 90-day instant. Failures/pending
