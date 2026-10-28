@@ -281,11 +281,10 @@ Verify after deploy: grep the deploy logs for
 `[bayleaf] v0.12.3 metrics source minimization verified` (printed only after
 the rung-4 guards pass), confirm OWUI's banner and `Started server process [1]`
 appear after it, and check `/health` returns 200. With the historical rung-3
-command above, grep for its sentinel instead. The rung-4 entrypoint still prints
-that sentinel first, as a legacy marker before any guard runs; its "extend this
-run_command" text is obsolete advice (boot logic belongs in
-`chat/image/startup_patch.py`, never the spec). Replace that string at the next
-image change, together with the qualification asserts in `../telemetry/otlp/`.
+command above, grep for its sentinel instead. The v0.12.4 image replaces that
+obsolete pre-guard marker with `[bayleaf] guarded Chat startup`. Boot logic belongs
+in `chat/image/startup_patch.py`, never the spec. Neither pre-guard marker alone
+proves successful minimization.
 
 ## Vertex Pipe
 

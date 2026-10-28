@@ -21,8 +21,12 @@ deliberate BayLeaf override in this Dockerfile). Triage them per OWUI upgrade.
 
 Local checks (qualification harnesses stay with the collector in `telemetry/otlp/`):
 
+Set `BAYLEAF_QUALIFICATION_OUTPUT` to an existing private temporary directory
+when requalifying a new release, so generated proofs do not overwrite historical
+evidence. See [v0.12.4 qualification](UPGRADE-0.12.4.md).
+
 ```bash
 python3 -m unittest discover -s chat/image -p 'test_browser_assets.py'
-uv run --python 3.11 --locked --script telemetry/otlp/qualify_startup.py
+uv run --python 3.12 --locked --script telemetry/otlp/qualify_startup.py
 docker build -f chat/image/Dockerfile -t bayleaf-chat:local .
 ```

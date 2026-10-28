@@ -4,6 +4,7 @@ python3 telemetry/otlp/qualify_container.py <image built from chat/image/Dockerf
 Uses only uniquely named owned containers. No production credentials or calls.
 """
 import json
+import os
 from pathlib import Path
 import shutil
 import ssl
@@ -16,6 +17,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = Path(__file__).resolve().parent
+OUTPUT = Path(os.environ.get("BAYLEAF_QUALIFICATION_OUTPUT", str(HERE)))
 
 
 def sink():
@@ -167,7 +169,7 @@ def qualify(image, pg_image, interval="300000", mode="full"):
                 db_check = "import os,json;from sqlalchemy import create_engine,text;from open_webui.utils.telemetry.bayleaf_runtime import bounded_engine;a=create_engine(os.environ['DATABASE_URL']);b=bounded_engine(a);c=b.connect();assert c.execute(text('SELECT 1')).scalar()==1;print(json.dumps({k:c.execute(text('SHOW '+k)).scalar() for k in ['statement_timeout','lock_timeout','default_transaction_read_only']}));c.close();b.dispose();a.dispose()"
                 proof["metrics_pg_connection"] = json.loads(docker("exec", app, "python", "-c", db_check).splitlines()[-1])
                 logs = docker("logs", app)
-                assert "[bayleaf] rung-3 harness alive" in logs and "metrics source minimization verified" in logs
+                assert "[bayleaf] guarded Chat startup" in logs and "metrics source minimization verified" in logs
                 proof["sentinel"] = True
                 proof["pid1_cmdline"] = docker("exec", app, "python", "-c", "print(open('/proc/1/cmdline','rb').read().replace(b'\\0',b' ').decode())")
                 assert "uvicorn open_webui.main:app" in proof["pid1_cmdline"]
@@ -236,9 +238,9 @@ console.log(JSON.stringify({{points:e.points.length,names:[...new Set(e.points.m
             assert "OTHER" in proof["native_export"]["methods"]
             proof["native_metrics_connections"] = int(docker("exec", pg, "psql", "-U", "postgres", "-d", "synthetic", "-Atc", "SELECT count(*) FROM pg_stat_activity WHERE application_name='bayleaf-otlp'"))
             assert proof["native_metrics_connections"] == 1
-            (HERE / "container-fixture.pb").write_bytes(wire)
+            (OUTPUT / "container-fixture.pb").write_bytes(wire)
             logs = docker("logs", app)
-            assert "[bayleaf] rung-3 harness alive" in logs and "metrics source minimization verified" in logs
+            assert "[bayleaf] guarded Chat startup" in logs and "metrics source minimization verified" in logs
             proof["sentinel"] = True
             proof["traces_logs_disabled"] = docker("exec", app, "python", "-c", "import os; assert os.environ['ENABLE_OTEL_TRACES']=='false' and os.environ['ENABLE_OTEL_LOGS']=='false'; print('true')") == "true"
             proof["pid1"] = docker("exec", app, "python", "-c", "print(open('/proc/1/comm').read().strip())")
@@ -256,10 +258,10 @@ console.log(JSON.stringify({{points:e.points.length,names:[...new Set(e.points.m
             docker("network", "rm", network)
             proof["owned_containers_removed"] = names
             if mode == "full":
-                (HERE / "container-proof.json").write_text(json.dumps(proof, indent=2) + "\n")
-                (HERE / f"container-proof-{interval}.json").write_text(json.dumps(proof, indent=2) + "\n")
+                (OUTPUT / "container-proof.json").write_text(json.dumps(proof, indent=2) + "\n")
+                (OUTPUT / f"container-proof-{interval}.json").write_text(json.dumps(proof, indent=2) + "\n")
             else:
-                (HERE / f"container-proof-{proof['architecture']}-boot.json").write_text(json.dumps(proof, indent=2) + "\n")
+                (OUTPUT / f"container-proof-{proof['architecture']}-boot.json").write_text(json.dumps(proof, indent=2) + "\n")
             print(json.dumps(proof, indent=2), flush=True)
 
 

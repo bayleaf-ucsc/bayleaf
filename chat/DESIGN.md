@@ -684,13 +684,28 @@ The most substantial toolkit on the deployment. Source:
 but **not bound to any model by default** — users enable it per-chat via the
 tool picker in the chat composer.
 
-**Current version: 1.1.0** (2026-10-21), byte-identical to upstream
-commit `17a10b136b409d6b6e31572f12f1146ddc78d8b7`. `expose` requires an explicit
+**Current version: 1.3.3** (2026-10-27), byte-identical to upstream
+commit `864e709` and Adam's personal deployment. `expose` requires an explicit
 `private` or `public` policy and accepts
 an optional untrusted hostname tag, which BayLeaf ignores. Private is the
 default guidance and fails closed; headerless public calls may fall back to Daytona's direct
 signed URL if wrapping fails. The installation credential is an admin valve
 backed by the API's `PREVIEWS_INSTALLATION_KEY` Worker Secret.
+
+**Hardening upgrade (2026-10-27):** promoted personally playtested 1.3.3 from
+BayLeaf's 1.3.0 (SHA-256
+`0fb5de39473418d2c8578a5f1f7660b1272466d5dc17e0d53138457a6787cdad`).
+All 837 offline tests passed. Browser clicks now refuse ambiguous or covered
+targets before sending input. Background completion notices are sandbox-owned,
+claimed by a later tool result in the originating chat, with duration measured
+from sandbox launch/completion records. Nothing wakes an idle chat.
+Requirements, valve definitions and tool signatures are unchanged. Exact live
+source readback, all 14 existing valves, Code Sandbox name/grants and health 200
+passed without restart. Full private pre/post resource reconciliation found only
+Lathe source/schema changes; the hidden Basic base model was checked separately.
+The existing Code Sandbox skill needed no change. Rollback source and valves,
+plus full private snapshots: `~/.tokens/bayleaf-lathe-133-20261027/`.
+Model-mediated BayLeaf playtesting remains with Adam.
 
 **Upgrade (2026-10-21):** promoted Adam's personally used upstream 1.1.0
 (SHA-256 `d5fea4351de5cb065a2d1696c729e0358d79740a878ed29a2dcb3a0d0eeb0937`).

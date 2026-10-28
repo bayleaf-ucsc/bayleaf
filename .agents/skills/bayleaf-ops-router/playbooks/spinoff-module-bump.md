@@ -85,6 +85,14 @@ may not match the actual pre-upgrade deployment.
 
 ## Refinement log
 
+- 2026-10-27 (1.3.3): Adam confirmed sufficient personal playtesting. Personal
+  source matched upstream `864e709`; 837 offline tests passed. Source-only
+  promotion from BayLeaf 1.3.0 preserved all 14 valves, name and grants; exact
+  readback and health 200 passed. Full private pre/post pulls, including the hidden
+  base model, found only Lathe source/schema changes. No dependency, valve,
+  signature, gateway or companion-skill migration needed. Rollback and snapshots:
+  `~/.tokens/bayleaf-lathe-133-20261027/`. BayLeaf human playtest pending.
+
 - 2026-10-27 (later): Promoted upstream `main` `d6bcee1` (Lathe 1.3.0: `show()`
   plus contract revision 3, which changes only the reference wrapper). Deployed
   to chat.adamsmith.as first; Adam playtested `show()` there (good UX/AX), then

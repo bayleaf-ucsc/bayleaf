@@ -25,6 +25,11 @@ from playwright.sync_api import sync_playwright
 LOCAL = 'http://127.0.0.1:18881' if sys.argv[1:] == ['source-disabled'] else 'http://127.0.0.1:18880'
 HOST = 'https://chat.bayleaf.dev'
 
+class QualificationServer(ThreadingHTTPServer):
+    # A cold OWUI page requests hundreds of assets concurrently. The stdlib
+    # backlog of five can reset TLS connections before a handler runs.
+    request_queue_size = 128
+
 class LocalProxy(BaseHTTPRequestHandler):
     arrivals = []
     mode = None
@@ -80,7 +85,7 @@ with tempfile.TemporaryDirectory(dir=scratch) as temporary, sync_playwright() as
     subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
         '-subj', '/CN=chat.bayleaf.dev', '-keyout', str(key), '-out', str(certificate)],
         check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    proxy = ThreadingHTTPServer(('127.0.0.1', 0), LocalProxy)
+    proxy = QualificationServer(('127.0.0.1', 0), LocalProxy)
     tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     tls.minimum_version = ssl.TLSVersion.TLSv1_2
     tls.load_cert_chain(certificate, key)
@@ -157,6 +162,10 @@ with tempfile.TemporaryDirectory(dir=scratch) as temporary, sync_playwright() as
 
         context.route('**/*', intercept)
         page = context.new_page()
+        errors = []
+        page.on('pageerror', lambda error: errors.append(str(error)))
+        page.on('console', lambda message: errors.append(message.text) if message.type == 'error' else None)
+        page.on('requestfailed', lambda request: errors.append(urlsplit(request.url).path + ': ' + str(request.failure)))
         page.set_default_timeout(15000)
         page.goto(url, wait_until='commit')
         if expected or name in ('source-disabled', 'delayed-client'):
@@ -165,6 +174,8 @@ with tempfile.TemporaryDirectory(dir=scratch) as temporary, sync_playwright() as
             except Exception:
                 print('FAIL resolved-card', name, urlsplit(page.url).path,
                       page.locator('#auth-page').count(), page.locator('#splash-screen').count(), flush=True)
+                print('Synthetic frontend errors:', errors, flush=True)
+                print('Synthetic page text:', page.locator('body').inner_text()[:1000], flush=True)
                 raise
             page.wait_for_timeout(500)
         else:

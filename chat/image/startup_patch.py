@@ -1,4 +1,4 @@
-"""Hash-locked v0.12.3 boot patch. Never start OWUI after a failed check."""
+"""Hash-locked v0.12.4 boot patch. Never start OWUI after a failed check."""
 import hashlib
 from importlib.metadata import version
 import json
@@ -109,7 +109,7 @@ def validate_environment():
 
 
 def main():
-    print("[bayleaf] rung-3 harness alive (extend this run_command for boot logic; ends with exec bash start.sh)", flush=True)
+    print("[bayleaf] guarded Chat startup (boot logic: chat/image/startup_patch.py)", flush=True)
     try:
         validate_versions()
         validate_environment()
@@ -118,7 +118,7 @@ def main():
     except Exception:
         print("[bayleaf] OTLP startup refused: source/configuration check failed", file=sys.stderr, flush=True)
         return 1
-    print("[bayleaf] v0.12.3 metrics source minimization verified", flush=True)
+    print("[bayleaf] v0.12.4 metrics source minimization verified", flush=True)
     os.chdir("/app/backend")
     os.execvp("bash", ["bash", "start.sh"])
 

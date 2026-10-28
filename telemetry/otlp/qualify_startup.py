@@ -42,6 +42,7 @@ from sqlalchemy.engine import make_url
 
 # The startup patch is the Chat image's entrypoint; it lives with the image in chat/image/.
 HERE = Path(__file__).resolve().parent
+OUTPUT = Path(os.environ.get("BAYLEAF_QUALIFICATION_OUTPUT", str(HERE)))
 IMAGE = HERE.parents[1] / "chat" / "image"
 sys.path.insert(0, str(IMAGE))
 
@@ -108,7 +109,7 @@ with mock_patch.dict(os.environ, settings, clear=True):
     with mock_patch.dict(os.environ, {k: "false" for k in ("ENABLE_OTEL", "ENABLE_OTEL_METRICS", "ENABLE_OTEL_TRACES", "ENABLE_OTEL_LOGS")}):
         validate_environment()
     refused = subprocess.run([sys.executable, str(IMAGE / "startup_patch.py")], capture_output=True, env={"PATH": os.environ.get("PATH", "/usr/bin:/bin")})
-    assert refused.returncode == 1 and b"rung-3 harness alive" in refused.stdout
+    assert refused.returncode == 1 and b"guarded Chat startup" in refused.stdout
 with mock_patch("startup_patch.version", return_value="unsupported"):
     rejects(validate_versions)
 with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -331,7 +332,7 @@ console.log(JSON.stringify({{points:checked.points.length,bytes:JSON.stringify(e
     proof = dict(
         status="synthetic_artifact_pass_real_container_required", installed_sha256=installed,
         startup_hash_drift_refused=True, adapter_drift_refused=True, idempotent=True,
-        unsafe_environment_refused=True, prior_sentinel_preserved=True,
+        unsafe_environment_refused=True, guarded_startup_sentinel=True,
         explicit_all_four_flags_off_supported=True,
         mismatch_never_execs_unsanitized_start=True, success_execs_existing_bash_start=True,
         unsupported_dependency_version_refused=True,
@@ -350,7 +351,7 @@ console.log(JSON.stringify({{points:checked.points.length,bytes:JSON.stringify(e
         bearer_header_override_verified=True, production_requests=0,
         postgresql_timeouts="constructor_checked_not_live_qualified",
     )
-    (HERE / "rollout-proof.json").write_text(json.dumps(proof, indent=2) + "\n")
+    (OUTPUT / "rollout-proof.json").write_text(json.dumps(proof, indent=2) + "\n")
     print(json.dumps(proof, indent=2))
     provider.shutdown(timeout_millis=3000)
     engine.dispose()

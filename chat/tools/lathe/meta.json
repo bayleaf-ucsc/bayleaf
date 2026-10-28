@@ -1,4 +1,5 @@
 {
+  "version_id": "dbad9ef5-9799-4fc4-ac0a-bc6ea2019a76",
   "id": "lathe",
   "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
   "name": "Code Sandbox",
@@ -9,10 +10,10 @@
       "title": "Lathe",
       "author": "Adam Smith",
       "author_url": "https://adamsmith.as",
-      "description": "Coding agent tools (lathe, bash, read, write, edit, glob, grep, view, peek, poke, interpret, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.",
+      "description": "Coding agent tools (lathe, bash, read, write, edit, glob, grep, view, show, peek, poke, interpret, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.",
       "required_open_webui_version": "0.12.0",
       "requirements": "httpx, pydantic>=2, cachetools, PyYAML",
-      "version": "1.3.0",
+      "version": "1.3.3",
       "licence": "MIT"
     },
     "has_user_valves": true
@@ -35,7 +36,7 @@
   "specs": [
     {
       "name": "bash",
-      "description": "Execute a bash command in the sandbox. Non-interactive only.\nEach call uses a fresh non-login Bash shell; rc files are not sourced and\nshell state (such as exports and cd) does not persist between calls.\nRuns with set -e -o pipefail: an unhandled command or pipeline failure can\nabort the remaining script. Handle expected probe failures explicitly\n(for example, with if); use && for commands with dependent prerequisites.\nNonzero command exits return an exit status and captured output, distinct\nfrom errors launching or observing execution.\nCommands that finish within the foreground window return output directly.\nLong-running commands auto-background and return a descriptor with log\nfile paths for monitoring. Text previews are capped at 50 KiB. Full logs and\nexit status remain readable for 24 hours after completion, until a later\nbash call reaps expired evidence. Sandbox stop/restart clears these files.\n\nFor first-time application setup, read lathe(manpage=\"services\") before\ninstalling or launching; it routes to relevant skills and the configured\nhandbook. Inspection commands may come first.",
+      "description": "Execute a bash command in the sandbox. Non-interactive only.\nEach call uses a fresh non-login Bash shell; rc files are not sourced and\nshell state (such as exports and cd) does not persist between calls.\nRuns with set -e -o pipefail: an unhandled command or pipeline failure can\nabort the remaining script. Handle expected probe failures explicitly\n(for example, with if or cmd || true); use && for commands with dependent prerequisites.\nNonzero command exits return an exit status and captured output, distinct\nfrom errors launching or observing execution.\nCommands that finish within the foreground window return output directly.\nLong-running commands auto-background and return a descriptor with log\nfile paths for monitoring. Text previews are capped at 50 KiB. Full logs and\nexit status remain readable for 24 hours after completion, until a later\nbash call reaps expired evidence. Sandbox stop/restart clears these files.\n\nFor first-time application setup, read lathe(manpage=\"services\") before\ninstalling or launching; it routes to relevant skills and the configured\nhandbook. Inspection commands may come first.",
       "parameters": {
         "properties": {
           "command": {

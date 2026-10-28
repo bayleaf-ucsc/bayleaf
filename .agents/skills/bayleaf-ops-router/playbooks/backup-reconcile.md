@@ -102,6 +102,11 @@ through the appropriate playbook, don't paper over it in the backup.
 
 ## Refinement log
 
+- 2026-10-27 (Lathe 1.3.3): Full private pre/post pulls and a separate hidden-base
+  read found only the expected Lathe source/schema delta. Synced generated Lathe
+  artifacts only, retaining stable repo timestamps/grant IDs and leaving known
+  Brace3 metadata/default drift and live skill decorations untouched.
+
 - 2026-10-27: Full private pull (9 tools, 6 functions, 8 skills, 4 workspace
   models plus the hidden base) found only previously known metadata/default
   drift and decorative skill suffixes. Added private global config/admin reads

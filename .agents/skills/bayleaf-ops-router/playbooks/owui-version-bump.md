@@ -41,12 +41,12 @@ revert the image tag. Prod is the staging server; treat it accordingly.
    deployed commit and silently ignores the push. Confirm the build log's
    "Checking out commit" matches the pushed SHA, then `curl -sS -o /dev/null
    -w '%{http_code}' https://chat.bayleaf.dev/health` (expect `200`).
-2. Grep deploy logs for `[bayleaf] v0.12.3 metrics source minimization verified`
+2. Grep deploy logs for `[bayleaf] v0.12.4 metrics source minimization verified`
     (adjust the version), printed only after the entrypoint's version,
     environment and source-hash guards pass, and confirm `Started server
-    process [1]` appears after it. The earlier `[bayleaf] rung-3 harness alive`
-    line is a legacy marker printed *before* the guards run, so it does not
-    prove the patch succeeded.
+    process [1]` appears after it. The earlier `[bayleaf] guarded Chat startup`
+    line (v0.12.4 onward) is printed *before* the guards run, so it does not prove
+    the patch succeeded. Older images used `[bayleaf] rung-3 harness alive`.
 3. Run an authenticated `curl` smoke test against `/api/chat/completions` for
    Basic and Help, with a known short response. This verifies OWUI's model
    routing without depending on browser automation. It does not exercise the
@@ -89,11 +89,20 @@ ran, assess database restoration or a tested downgrade with Adam before acting.
 Restoration can lose writes since the recovery point. When database compatibility
 is established, revert the `chat/image/` commit, push, and deploy with
 `--update-sources` (or roll back to the previous deployment in the DO console,
-which reuses its already-built image). The repo backup from step 5 provides the model
+    which reuses its already-built image). The repo backup from step 5 provides the model
 configs to restore if step 4's changes misbehave: re-push with
 `owui-cli models update chat/models/<id>/model.json`.
 
 ## Refinement log
+
+- 2026-10-27 (v0.12.4 preparation): Python 3.12 / Debian 13 image transition,
+  but no migration changes and unchanged telemetry dependencies/adapter sources.
+  Requalified actual frontend hashes as well as native source guards. Added an
+  output-directory override to preserve historical proofs. Cold Chromium runs
+  exposed TLS connection resets in the synthetic proxy's five-connection backlog;
+  increased its listen queue to 128 and added synthetic-only failure diagnostics.
+  Adam confirmed personal soak and authorized publishing the coordinated OWUI and
+  already-deployed Lathe backup after qualification passes.
 
 - 2026-10-22: not a version bump, but it exposed stale steps. Moving the image
   from `telemetry/otlp/` to `chat/image/` changed `dockerfile_path` via plain
