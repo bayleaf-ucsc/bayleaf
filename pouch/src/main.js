@@ -11,15 +11,18 @@ import { Vfs, DEFAULTS, normalize } from './vfs.js';
 import defaults from './defaults.js';
 import { createEditor, highlight } from './editor.js';
 import { renderMarkdown } from './markdown.js';
-import { createTools, systemPrompt, CWD } from './tools.js';
+import { createTools, systemPrompt, loadContext, CWD } from './tools.js';
 import { openAgent, Type } from './agent.js';
 import { createReview } from './review.js';
 import { collect, packTar, packZip, unpackTar, unpackZip } from './archive.js';
 import { $, el, icon } from './dom.js';
 import { createLayout } from './layout.js';
 import { createUsage, renderMeter, renderPanel, exhaustedText } from './usage.js';
-import { createSessions, sameId, titleOf, notesKey, convKey, revertKey, subagentsKey, interruptedKey } from './sessions.js';
+import { createSessions, sameId, titleOf, notesKey, convKey, revertKey, subagentsKey, interruptedKey, turnsKey } from './sessions.js';
+import { createComposer } from './composer.js';
 import { createEgress, egressOf, grantsFor, revoke, serviceName } from './egress.js';
+import { LOCAL, support as localSupport, stored as localStored, engine as localEngine, importFiles as localImport, remove as localRemove } from './local/engine.js';
+import { isLocal, HINTS } from './local/provider.js';
 
 const API = 'https://api.bayleaf.dev';
 const SEALED = API + '/sealed';
@@ -36,6 +39,7 @@ let verified = false;
 let agent = null;      // from openAgent, or null if it could not open
 let models = [];       // Sealed chat models with tool calling
 let view = null;       // last normalized view of the current session
+let composer = null;   // composer.js: tray, autocomplete, shield popover (set below)
 let unwatch = null;
 
 function status(text, cls = '') { $('status').textContent = text; $('status').className = cls; }
@@ -482,6 +486,7 @@ function entryActions(path, isDir, mountName) {
     ['Open in editor', () => openFile(path)],
     ARCHIVE.test(path) && !ro && ['Unpack here', () => unpackHere(path)],
     ARCHIVE.test(path) && ['List contents', () => listArchive(path)],
+    /\.m?js$/.test(path) && ['Run script', () => runScript(path)],
     ['Download', () => download(path)],
     !ARCHIVE.test(path) && ['Copy text', () => copyText(path)],
     ['Mention in chat', () => mention(path)],
@@ -634,6 +639,23 @@ if (window.showDirectoryPicker) $('welcome-mount').onclick = mountFolder; else $
 $('welcome-dismiss').onclick = () => { $('welcome').hidden = true; store.setSetting('welcomed', true); };
 $('erased-dismiss').onclick = () => { $('erased').hidden = true; };
 
+// ── Run script (D18, D19): the run tool without the model ────────────
+// Its changes are recorded under the current session's latest message, so
+// they get Diff and Undo like the agent's. Works offline.
+async function runScript(path) {
+  const tool = toolList.find((t) => t.name === 'run');
+  if (!tool) return alert('The run engine is not available.');
+  if (busy() || review.active) return alert('Wait for the current turn to finish, then run the script.');
+  const sid = sessions.current?.id;
+  if (sid != null) review.begin(sid, view?.items.filter((i) => i.type === 'user').length ?? 0);
+  let text;
+  status('Running ' + path);
+  // A script saved in /work sees all of /work, as the agent's run of it most likely did.
+  try { text = await tool.execute({ path, ...(path.startsWith(CWD + '/') ? { files: [CWD] } : {}) }); } catch (e) { text = e.message.replace(/^<harness>|<\/harness>$/g, '').trim(); }
+  finally { if (sid != null) await review.end().catch(() => {}); refreshChanges(); status(''); }
+  sheet('Ran ' + path.split('/').pop(), [], el('pre', { className: 'run-out', textContent: text }));
+}
+
 // ── Sealed client: verification and credential ───────────────────────
 function fact(label, value, cls = '') {
   $('facts').append(el('dt', { textContent: label }), el('dd', { textContent: value, className: cls }));
@@ -670,18 +692,66 @@ async function connect() {
     setBadge('ok', 'Sealed: enclave verified');
     status(key ? '' : 'Not signed in: using Campus Pass, which works only on the UCSC network.');
   } catch (e) {
-    // Fail closed: no plaintext fallback exists anywhere in this app.
-    setBadge('bad', 'Enclave not verified: nothing will be sent');
-    status('Could not verify the enclave, so nothing will be sent: ' + e.message, 'bad');
+    // Fail closed: no plaintext fallback exists anywhere in this app. An
+    // unreachable network is not a failed verification: say which it was.
+    if (!navigator.onLine || isNetworkError(e.message)) goOffline();
+    else {
+      setBadge('bad', 'Enclave not verified: nothing will be sent');
+      status('Could not verify the enclave, so nothing will be sent: ' + e.message, 'bad');
+    }
   }
   updateSend();
 }
+
+// ── Network (F1, F2) ────────────────────────────────────────────────
+// Offline means the model is unreachable; everything else in the page keeps
+// working. Detected from the browser's online/offline events and from requests
+// that fail like a dropped network; left after a cheap re-check of the relay.
+let offline = false;
+let recheck = null;
+const lostRuns = new Set(); // sessions whose turn the network cut off
+const OFFLINE = 'Offline: the model is unreachable. Files, the editor, review, archives and run keep working; sending comes back when the network does.';
+const LOCAL_OFFLINE = 'Offline: Sealed is unreachable. The Local lane keeps working; it needs no network.';
+function isNetworkError(msg) { return /failed to fetch|networkerror|network ?error|load failed|connection (error|lost)|ERR_INTERNET|ERR_NETWORK|fetch failed/i.test(msg ?? ''); }
+function goOffline() {
+  const was = offline;
+  offline = true; verified = false; client = null;
+  setBadge('offline', 'Offline: the model is unreachable');
+  status(localPicked() ? LOCAL_OFFLINE : OFFLINE, 'offline');
+  $('input').placeholder = localPicked() ? PLACEHOLDER : 'Offline: keep typing; Send comes back with the network';
+  // A turn waiting on a dead stream would otherwise hang until the socket times out.
+  for (const sid of sessions.running) { if (localRuns.has(sid)) continue; lostRuns.add(sid); agent?.abort(sid).catch(() => {}); }
+  if (!was) { clearInterval(recheck); recheck = setInterval(probe, 15_000); }
+  updateSend(); scheduleRender();
+}
+// Can the relay be reached at all? The model list is small and unauthenticated.
+async function probe() {
+  if (!navigator.onLine) return false;
+  try { await fetch(SEALED + '/models', { cache: 'no-store', signal: AbortSignal.timeout(8000) }); }
+  catch { return false; }
+  if (offline) backOnline();
+  return true;
+}
+async function backOnline() {
+  offline = false; clearInterval(recheck); recheck = null;
+  $('input').placeholder = PLACEHOLDER;
+  status('Back online: verifying the enclave again.');
+  if (!models.length) await loadModels();
+  await connect(); // re-verifies; sets badge, status and Send
+  usage.refresh();
+}
+addEventListener('offline', goOffline);
+addEventListener('online', () => { probe(); });
 // The shield in the top bar: its color is the verification state; it opens Trust.
 function setBadge(state, text) {
   const b = $('badge');
   b.className = 'icon ' + state;
   b.ariaLabel = text; b.title = text + '. Click for what BayLeaf can see.';
   b.querySelector('use').setAttribute('href', state === 'ok' ? '#i-shield-check' : state === 'bad' ? '#i-shield-alert' : '#i-shield');
+  // The composer's shield shows the same state; it opens the lane popover.
+  $('shield-btn').querySelector('use').setAttribute('href', b.querySelector('use').getAttribute('href'));
+  $('shield-btn').className = 'icon ' + state;
+  composer?.refreshShield();
 }
 $('badge').onclick = () => layout.toggle('trust');
 
@@ -699,13 +769,138 @@ async function loadModels() {
     status('Could not load the Sealed model list: ' + e.message, 'bad');
   }
   const saved = (await store.getSetting('model')) ?? 'glm-5-3';
-  $('model').replaceChildren(...models.map((m) => new Option(m.name + (m.multimodal ? ' · images' : ''), m.id, false, m.id === saved)));
+  // Local is never the default: without a Sealed list, a placeholder holds the place.
+  const none = !models.length && saved !== LOCAL_ID ? [Object.assign(new Option('Sealed: model list unavailable', '', true, true), { disabled: true })] : [];
+  $('model').replaceChildren(...none, ...models.map((m) => new Option(m.name + (m.multimodal ? ' · images' : ''), m.id, false, m.id === saved)), ...localOption(saved));
   agent?.setModels?.(models);
+  pickerLane();
 }
+let lastPick = null;
+$('model').onfocus = () => { lastPick = $('model').value; };
 $('model').onchange = async () => {
+  // Switching lanes is always this explicit choice; Pouch never switches by itself.
+  if (localPicked() && !(await ensureLocal())) { $('model').value = lastPick ?? models[0]?.id ?? ''; pickerLane(); return; }
   await store.setSetting('model', $('model').value);
-  status('Model selected for your next user turn. Running work is unchanged.');
+  if (!localPicked()) await store.setSetting('sealedModel', $('model').value);
+  pickerLane(); updateSend();
+  status(localPicked() ? 'Local selected for your next user turn: it runs on this device and sends nothing.' : 'Model selected for your next user turn. Running work is unchanged.');
 };
+
+// ── Local lane (src/local/): a model on this device, chosen explicitly ─
+// The picker offers it when this build carries it and WebGPU works; otherwise
+// it is listed disabled with the reason. Nothing is downloaded without asking.
+let localOk = { ok: false, reason: '' };
+const localRuns = new Set(); // sessions whose current turn runs on the Local lane
+const LOCAL_ID = LOCAL && 'local:' + LOCAL.id;
+const localPicked = () => isLocal($('model').value);
+const canSend = () => !!agent && (localPicked() || (verified && !offline));
+const mib = (n) => `${(n / 2 ** 20).toLocaleString(undefined, { maximumFractionDigits: 0 })} MB`;
+function localOption(saved) {
+  if (!LOCAL) return [];
+  const o = new Option(localOk.ok ? `Local: ${LOCAL.label} (on this device)` : `Local: ${LOCAL.label} (unavailable: ${localOk.reason})`, LOCAL_ID, false, localOk.ok && saved === LOCAL_ID);
+  o.disabled = !localOk.ok;
+  o.title = localOk.ok ? 'Runs in this browser on your GPU. Nothing is sent.' : localOk.reason;
+  return [o];
+}
+function pickerLane() {
+  const local = localPicked(), label = $('model').closest('.lane-model');
+  label.querySelector('use').setAttribute('href', local ? '#i-chip' : '#i-lock');
+  if (offline) $('input').placeholder = local ? PLACEHOLDER : 'Offline: keep typing; Send comes back with the network';
+  label.title = local ? 'Local lane: the model runs on this device; nothing is sent. The model applies when you next send.' : 'Sealed lane: requests are encrypted to the enclave. The model applies when you next send; running work keeps its model.';
+  composer?.refreshShield();
+}
+// Downloading is a choice (about 1.1 GB); progress shows in the status line and Settings.
+let localLoading = null;
+async function ensureLocal() {
+  if (!localOk.ok) { status(`Local is not available: ${localOk.reason}`, 'bad'); return false; }
+  if (localEngine.loaded()) return true;
+  const st = await localStored();
+  if (!st.complete) {
+    if (!navigator.onLine) { status('The Local model is not on this device yet, and you are offline. Settings can load a saved copy from a folder.', 'bad'); return false; }
+    if (!confirm(`Download the Local model (${LOCAL.label}, about ${mib(LOCAL.bytes - st.bytes)}) from pouch.bayleaf.dev into this browser? Each part is checked against this page's manifest. Afterwards Local works offline, and nothing you type is ever sent. Remove it any time in Settings.`)) return false;
+  }
+  return startLocal();
+}
+function startLocal() {
+  const box = $('local-settings');
+  box.dataset.state = 'loading';
+  localLoading ??= localEngine.start({ onProgress: localProgress, network: navigator.onLine })
+    .then(() => { box.dataset.state = 'ready'; status(`Local ${LOCAL.label} is ready on this device.`); return true; },
+      (e) => { box.dataset.state = 'error'; box.dataset.error = e.message; status('Local model: ' + e.message, 'bad'); return false; })
+    .finally(() => { localLoading = null; renderLocalSettings(); });
+  return localLoading;
+}
+let progressAt = 0;
+function localProgress(p) {
+  if (p.phase !== 'loading' && p.done < p.total && Date.now() - progressAt < 150) return; // a few updates a second
+  progressAt = Date.now();
+  const pct = p.total ? Math.floor((p.done / p.total) * 100) : 0;
+  const text = p.phase === 'loading' ? `Local: verified ${mib(p.total)}; starting the model on your GPU...`
+    : `Local: ${p.fetched || p.repaired ? 'downloading and checking' : 'checking'} ${mib(p.done)} of ${mib(p.total)} (${pct}%)${p.repaired ? `, ${p.repaired} damaged part${p.repaired > 1 ? 's' : ''} fetched again` : ''}`;
+  status(text);
+  const bar = $('local-progress');
+  if (bar) { bar.hidden = false; bar.max = p.total || 1; bar.value = p.done; }
+}
+// A reason to suggest Sealed (never a switch): shown under the composer for the session that ran.
+const hints = new Map(); // sid -> Set of kinds
+function showHint(kind) {
+  const sid = [...localRuns].at(-1);
+  if (sid == null) return;
+  (hints.get(sid) ?? hints.set(sid, new Set()).get(sid)).add(kind);
+  renderHint();
+}
+function clearHint(sid) { hints.delete(String(sid)); renderHint(); }
+function renderHint() {
+  const box = $('local-hint'), kinds = [...(hints.get(String(sessions.current?.id)) ?? [])];
+  box.hidden = !kinds.length;
+  if (!kinds.length) return;
+  $('local-hint-text').textContent = kinds.map((k) => HINTS[k]).join(' ') + ' Sealed (a larger model, encrypted to the enclave) may do better.';
+}
+$('local-hint-switch').onclick = async () => {
+  const to = (await store.getSetting('sealedModel')) ?? models[0]?.id;
+  if (!to || !models.some((m) => m.id === to)) return status('No Sealed model is available right now.', 'bad');
+  $('model').value = to; await store.setSetting('model', to); pickerLane(); updateSend();
+  clearHint(sessions.current?.id);
+  status(`Switched the picker to Sealed (${modelName(to)}) for your next message. Nothing was sent.`);
+};
+$('local-hint-dismiss').onclick = () => clearHint(sessions.current?.id);
+async function renderLocalSettings() {
+  const box = $('local-settings');
+  if (!box) return;
+  if (!LOCAL) { $('local-state').textContent = 'This build of Pouch does not include a local model.'; box.querySelectorAll('button').forEach((b) => { b.hidden = true; }); return; }
+  const st = await localStored();
+  $('local-state').textContent = !localOk.ok ? `Not available here: ${localOk.reason}`
+    : st.complete ? `${LOCAL.label} is kept in this browser (${mib(st.bytes)}${st.persistent ? '' : ', for this page load only'}). Local works offline.`
+    : st.bytes ? `${mib(st.bytes)} of ${mib(st.total)} downloaded.` : `Not downloaded (about ${mib(LOCAL.bytes)}).`;
+  $('local-download').hidden = !localOk.ok || st.complete;
+  $('local-remove').hidden = !st.bytes;
+  if (!localLoading) $('local-progress').hidden = true;
+}
+$('local-download').onclick = async () => { if (await ensureLocal()) renderLocalSettings(); };
+$('local-remove').onclick = async () => {
+  if (localRuns.size) return status('Stop the Local turn before removing the model.', 'bad');
+  if (!confirm('Remove the Local model from this browser? Conversations and files stay. Downloading it again takes about 1.1 GB.')) return;
+  await localRemove();
+  if (localPicked()) { $('model').value = (await store.getSetting('sealedModel')) ?? models[0]?.id ?? ''; await store.setSetting('model', $('model').value); pickerLane(); updateSend(); }
+  const est = await navigator.storage?.estimate?.().catch(() => null);
+  status(`Local model removed.${est ? ` This site now uses ${mib(est.usage)} of storage.` : ''}`);
+  renderLocalSettings();
+};
+for (const id of ['local-folder', 'local-files']) {
+  $(id + '-btn').onclick = () => $(id).click();
+  $(id).onchange = async () => {
+    const files = $(id).files;
+    if (!files?.length) return;
+    status('Checking the picked files against this page\'s manifest...');
+    try {
+      const r = await localImport(files);
+      $(id).value = '';
+      status(r.complete ? `Local model loaded from your files (${r.added} parts verified${r.bad ? `, ${r.bad} refused` : ''}).`
+        : `${r.added} parts verified${r.bad ? `, ${r.bad} refused (wrong bytes)` : ''}; ${mib(r.total - r.bytes)} still missing.`, r.bad ? 'bad' : '');
+    } catch (e) { status(e.message, 'bad'); }
+    renderLocalSettings();
+  };
+}
 
 // ── Device claim (RFC 8628 shape). One poll loop, its own controller. ─
 async function claim() {
@@ -768,7 +963,8 @@ async function eraseAll() {
   status('Erasing...');
   try { await agent?.close(); } catch {}
   agent = null;
-  await store.eraseEverything();
+  await localEngine.dispose().catch(() => {});
+  await store.eraseEverything(); // includes the Local model's Cache Storage
   location.hash = 'erased'; // the reloaded page says it worked (L1)
   location.reload();
 }
@@ -784,7 +980,7 @@ $('more').onclick = () => sheet('More', [
 // ── Sessions (sessions.js) ──────────────────────────────────────────
 const sessions = createSessions({
   agent: () => agent, view: () => view, connected: () => (agent && verified ? client : null),
-  model: () => $('model').value, setModel: (id) => { $('model').value = id; }, hasModel: (id) => models.some((m) => m.id === id),
+  model: () => $('model').value, setModel: (id) => { $('model').value = id; pickerLane(); }, hasModel: (id) => models.some((m) => m.id === id) || (localOk.ok && id === LOCAL_ID), isLocal,
   attach: () => attach(), status, sheet, layout, review, usage, quotaError, exhaustedText,
   agentError: () => agentError,
   runningChildren: (sid) => (kids.get(String(sid)) ?? []).filter((c) => c.status === 'running').length,
@@ -802,7 +998,7 @@ const sessions = createSessions({
 // The bayleaf command asks before every request; a run belongs to the
 // session it was sent from, even if you switch away meanwhile.
 const runSession = () => review.active?.session ?? (sessions.current ? String(sessions.current.id) : null);
-const egress = createEgress({ sessionTitle: async (sid) => titleOf(await sessions.find(sid)) });
+const egress = createEgress({ sessionTitle: async (sid) => titleOf(await sessions.find(sid)), onPending: () => composer?.renderTray(), onGrant: () => composer?.refreshShield() });
 // Running bash card id -> { commands, audiences }, until its output carries the marker.
 const liveEgress = new Map();
 function noteEgress(e) {
@@ -859,7 +1055,7 @@ let tick = 0;
 function onKids(sid, list) {
   kids.set(String(sid), list);
   sessions.render();
-  if (sameId(sid, sessions.current?.id)) { watchKids(); scheduleRender(); }
+  if (sameId(sid, sessions.current?.id)) { watchKids(); scheduleRender(); composer?.renderTray(); }
   if (layout.current() === 'usage') renderUsagePanel();
   // Elapsed times on running cards.
   const anyRunning = [...kids.values()].some((l) => l.some((c) => c.status === 'running'));
@@ -867,6 +1063,7 @@ function onKids(sid, list) {
   if (!anyRunning && tick) { clearInterval(tick); tick = 0; }
 }
 async function drive(sid, wait) {
+  const t0 = Date.now();
   sessions.running.add(String(sid)); sessions.render();
   const mine = !review.active;
   if (mine) review.begin(sid, null);
@@ -876,7 +1073,9 @@ async function drive(sid, wait) {
     if (mine) await review.end().catch(() => {});
     refreshChanges();
   }
+  const ms = Date.now() - t0;
   const v = await agent.snapshot(sid).catch(() => null);
+  await recordTurn(sid, v, ms);
   await sessions.afterTurn(sid, v, true);
 }
 const lowAllowance = () => {
@@ -965,6 +1164,8 @@ async function renderUsagePanel(list) {
     const u = (current && view?.usage) || s.usage || {};
     return { title: titleOf(s), input: u.input, output: u.output, cost: u.cost, current };
   }));
+  if (LOCAL) $('usage-body').querySelector('.quota')?.after(el('p', { className: 'local-usage muted', textContent:
+    `Local turns (${LOCAL.label}, on this device) use none of this allowance: they send no requests.` }));
   // Subagents spend the same allowance (D16).
   const live = [...kids.entries()].flatMap(([sid, l]) => l.filter((c) => c.status === 'running').map((c) => ({ sid, c })));
   if (live.length) {
@@ -989,8 +1190,9 @@ async function resumeRun() {
 let attachError = null; // why the current session could not open (held by another tab)
 let revertable = null; // { at, cut } while the current session's last revert can be undone
 async function attach() {
+  renderHint();
   const gen = ++attachGen;
-  unwatch?.(); unwatch = null; view = null; attachError = null; changeRuns = new Map(); dropKidWatches(); renderLog(); updateSend();
+  unwatch?.(); unwatch = null; view = null; attachError = null; changeRuns = new Map(); turnTimes = {}; dropKidWatches(); renderLog(); updateSend();
   const session = sessions.current;
   if (!session || !agent) return;
   await review.load(session.id);
@@ -1001,6 +1203,7 @@ async function attach() {
   if (gen !== attachGen) return;
   revertable = token ? { at: token.at, cut: token.cut } : null;
   interrupted = !!(await store.getSetting(interruptedKey(session.id)));
+  turnTimes = (await store.getSetting(turnsKey(session.id))) ?? {};
   if (gen !== attachGen) return;
   refreshChanges();
   // Another tab may hold this session's database (its Web Lock): say so.
@@ -1033,6 +1236,7 @@ function argSummary(name, args) {
   if (typeof args === 'string') return args.slice(0, 120);
   if (!args) return '';
   if (name === 'bash') return (args.command ?? '').split('\n')[0];
+  if (name === 'run' && args.code != null) return 'js: ' + (args.code.split('\n').find((l) => l.trim()) ?? '');
   return args.path ?? JSON.stringify(args).slice(0, 120);
 }
 function lines(text, prefix, cls) {
@@ -1044,6 +1248,11 @@ function toolDetail(it) {
   if (!a) { if (it.args) parts.push(el('pre', { textContent: String(it.args) })); }
   else if (it.name === 'bash') parts.push(el('pre', { className: 'cmd', textContent: '$ ' + (a.command ?? '') }));
   else if (it.name === 'write') parts.push(el('pre', { className: 'content', textContent: a.content ?? '' }));
+  else if (it.name === 'run') {
+    const { code, ...rest } = a;
+    if (code != null) parts.push(el('pre', { className: 'content', textContent: code }));
+    if (Object.keys(rest).length) parts.push(el('pre', { textContent: JSON.stringify(rest, null, 1) }));
+  }
   else if (it.name === 'edit') {
     const edits = a.edits?.length ? a.edits : [a];
     const pre = el('pre', { className: 'mini-diff' });
@@ -1231,6 +1440,7 @@ function renderLog() {
   const flush = (k) => { for (const run of blocks.get(k) ?? []) { const b = changesBlock(run); if (b) out.push(b); } blocks.delete(k); };
   let ordinal = -1;
   const nextCache = new Map();
+  finals = turnFinals(view);
   for (const it of view?.items ?? []) {
     if (it.type === 'user') {
       flush(ordinal); ordinal++;
@@ -1240,7 +1450,7 @@ function renderLog() {
       const kids = [];
       if (it.thinking) kids.push(reasoningCard(it, view.items.indexOf(it)));
       if (it.text) kids.push(replyBody(it.text, nextCache));
-      if (it.error) kids.push(el('div', { className: 'body bad', textContent: it.error }));
+      if (it.error) kids.push(el('div', { className: 'body bad', textContent: lostRuns.has(String(sessions.current?.id)) && it === view.items.findLast((i) => i.error) ? 'Connection lost: the network dropped during this turn. Nothing more was sent; send again when back online.' : it.error }));
       if (it.streaming) kids.push(el('span', { className: 'typing', role: 'img', ariaLabel: 'Pouch is replying', title: 'Replying' }, el('i'), el('i'), el('i')));
       out.push(message(it, 'Reply from Pouch', ...kids));
     } else if (it.type === 'tool') {
@@ -1278,14 +1488,43 @@ function renderLog() {
   localImages.sweep();
   if (fKey) log.querySelector(`.msg[data-key="${CSS.escape(fKey)}"]${fAct ? ` [data-act="${fAct}"]` : ''}`)?.focus({ preventScroll: true });
   if (atBottom) log.scrollTop = log.scrollHeight;
+  composer?.renderTray();
 }
 
 // ── Message toolbar (D11) and revert to here (D12) ──────────────────
 // Each settled message has a toolbar row under it: time, Copy, Revert to
 // here. Its space is always reserved; it shows on hover, on focus within
-// the message (messages are focusable), and after a tap (touch).
+// the message (messages are focusable), and after a tap (touch). A turn's
+// final reply gets the turn footer instead: model, duration and time always
+// visible, the actions (Copy, Revert to here, More) shown the same way.
 const shortTime = (t) => t ? new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'an earlier point';
 let shownKey = null; // the message whose toolbar a tap revealed
+let finals = new Map(); // final reply of a settled turn -> the item that started the turn
+let turnTimes = {}; // turn-start entry -> duration measured in this browser (ms)
+// A turn starts at a user message or a subagent report and ends at its last
+// reply with text. The turn still running has no final reply yet.
+function turnFinals(v) {
+  const out = new Map();
+  let start = null, last = null;
+  const close = () => { if (start && last) out.set(last, start); };
+  for (const it of v?.items ?? []) {
+    if (it.type === 'user' || it.type === 'report') { close(); start = it; last = null; }
+    else if (it.type === 'assistant' && !it.streaming && it.entry && (it.text || it.error)) last = it;
+  }
+  if (!v?.busy) close();
+  return out;
+}
+// Remember how long the turn just settled took, under its start entry.
+async function recordTurn(sid, v, ms) {
+  const start = v?.items.findLast((i) => i.type === 'user' || i.type === 'report');
+  if (!start?.entry) return;
+  const all = { ...((await store.getSetting(turnsKey(sid))) ?? {}), [start.entry]: ms };
+  const keys = Object.keys(all);
+  for (const k of keys.slice(0, Math.max(0, keys.length - 300))) delete all[k]; // bounded
+  await store.setSetting(turnsKey(sid), all);
+  if (sameId(sid, sessions.current?.id)) { turnTimes = all; scheduleRender(); }
+}
+const modelName = (id) => models.find((m) => m.id === id)?.name ?? (LOCAL && id === LOCAL_ID ? `Local: ${LOCAL.label}` : id);
 function message(it, label, ...kids) {
   // A step that only thought before calling tools gets no toolbar: it has
   // nothing to copy, and its reply's toolbar reverts to after its tools.
@@ -1302,13 +1541,24 @@ function message(it, label, ...kids) {
     for (const x of $('log').querySelectorAll('.msg.show')) x.classList.remove('show');
     if (shownKey) m.classList.add('show');
   };
-  const row = el('div', { className: 'msg-bar' });
-  if (it.at) row.append(el('time', { className: 'when', textContent: shortTime(it.at), title: new Date(it.at).toLocaleString(), dateTime: new Date(it.at).toISOString() }));
+  const start = finals.get(it);
+  const row = el('div', { className: 'msg-bar' + (start ? ' footer' : '') });
+  const when = it.at && el('time', { className: 'when', textContent: shortTime(it.at), title: new Date(it.at).toLocaleString(), dateTime: new Date(it.at).toISOString() });
+  const ms = start && turnTimes[start.entry];
+  if (start) {
+    const parts = [it.model && modelName(it.model), ms != null && fmtDur(ms), when].filter(Boolean);
+    const meta = el('span', { className: 'meta' });
+    parts.forEach((x, i) => meta.append(...(i ? [el('span', { className: 'sep', ariaHidden: 'true', textContent: '·' })] : []), x));
+    if (when) when.className = '';
+    meta.title = [it.model && `Model: ${it.model}`, ms != null ? `Turn took ${fmtDur(ms)}` : 'Turn duration not recorded', it.at && new Date(it.at).toLocaleString()].filter(Boolean).join('\n');
+    row.append(meta);
+  } else if (when) row.append(when);
+  const acts = start ? el('span', { className: 'acts' }) : row;
   const tool = (act, name, tip, fn, disabled = false) => {
     const b = el('button', { type: 'button', className: 'icon', ariaLabel: tip, title: tip, disabled }, icon(name));
     b.dataset.act = act;
     b.onclick = () => fn().catch((e) => alert(e.message));
-    row.append(b);
+    acts.append(b);
   };
   // The text as written: what the user typed, or the reply's markdown source.
   tool('copy', 'copy', it.type === 'user' ? 'Copy message' : 'Copy reply (markdown)', async () => {
@@ -1317,6 +1567,21 @@ function message(it, label, ...kids) {
   }, !it.text);
   const why = busy() ? ' (not while Pouch is working)' : agent?.isLegacy(sessions.current?.id) ? ' (not for sessions saved before per-session storage)' : '';
   tool('revert', 'undo', 'Revert to here' + why, () => revertTo(it), !!why);
+  if (start) {
+    tool('more', 'ellipsis', 'More', async () => {
+      const dl = el('dl', { className: 'reply-facts' });
+      const fact = (k, v) => dl.append(el('dt', { textContent: k }), el('dd', { textContent: v }));
+      fact('Model', it.model ?? 'unknown');
+      if (start.at) fact('Turn started', new Date(start.at).toLocaleString());
+      fact('Turn took', ms != null ? fmtDur(ms) : 'not recorded (measured only for turns run in this browser since this feature)');
+      if (it.at) fact('Reply began', new Date(it.at).toLocaleString());
+      sheet('This reply', [['Copy as plain text', async () => {
+        await navigator.clipboard.writeText(m.querySelector('.body')?.innerText ?? it.text ?? '');
+        status('Copied.');
+      }]], dl);
+    });
+    row.append(acts);
+  }
   m.append(row);
   return m;
 }
@@ -1389,23 +1654,68 @@ function noteUserEdit(path, what) {
   if (touched) noteForAgent(sessions.current?.id, `the user ${what} ${path} after you changed it (read it again before editing it)`);
 }
 
-// ── Composer ────────────────────────────────────────────────────────
+// ── Composer (composer.js) ──────────────────────────────────────────
 const busy = () => !!view?.busy;
+const PLACEHOLDER = 'Ask Pouch. @ for files, $ for skills, / for commands';
 const attachments = createAttachments({ vfs, composer: $('composer'), input: $('input'), picker: $('attachment-picker'), button: $('attach-file'), chips: $('attachment-chips'), warning: $('attachment-warning'), status });
-const submitting = new Set(); // per session: another session may still be used
+const submitting = new Set(); // per session: a send from Enter until its after-turn work (title, usage) is done
+// A message sent while Pouch works, or while it finishes the last turn, waits
+// here (one per session, shown in the tray) and goes when Pouch is ready.
+// Input is never dropped: it is queued, or refused with a visible reason.
+const queued = new Map(); // session id -> { text, attached, turnModel, at }
+let queueing = false;
+const curKey = () => String(sessions.current?.id ?? 'new');
 function updateSend() {
-  const b = busy(), label = b ? 'Stop' : 'Send';
+  const b = busy(), finishing = !b && submitting.has(curKey());
+  const label = b ? 'Stop' : finishing ? 'Queue' : 'Send';
   $('send-label').textContent = label;
-  $('send').title = label;
+  $('send').title = b ? 'Stop (Enter queues what you type)' : finishing ? 'Pouch is finishing the last turn. Queue this message; it sends when Pouch is ready.' : 'Send';
   $('send').classList.toggle('stop', b);
+  $('send').classList.toggle('queue', finishing);
   $('send').querySelector('use').setAttribute('href', b ? '#i-stop' : '#i-send');
-  $('send').disabled = !b && !(agent && verified);
+  $('send').disabled = !b && !canSend();
+  if (!b && offline && !localPicked()) $('send').title = OFFLINE;
+  $('composer').classList.toggle('offline', offline);
+  if (queued.size) queueMicrotask(pump);
 }
-
+// Send the current session's queued message once nothing is in the way.
+function pump() {
+  const key = curKey(), q = queued.get(key);
+  if (!q || busy() || submitting.has(key) || queueing || !(isLocal(q.turnModel) ? agent : agent && verified && !offline)) return;
+  queued.delete(key);
+  dispatch(key, () => q);
+}
+// One send with its bookkeeping. prepare() -> { text, attached, turnModel }.
+async function dispatch(key, prepare) {
+  submitting.add(key); updateSend(); composer.renderTray();
+  let q = null;
+  try { q = await prepare(); if (q) await send(q.text, q.attached, q.turnModel); }
+  catch (e) {
+    // The watched view can say idle a moment before pi-durable's run ends:
+    // then the message waits in the queue and goes on the next try.
+    if (q && /still running/.test(e.message) && !queued.has(key) && (q.tries = (q.tries ?? 0) + 1) <= 25) { queued.set(key, q); setTimeout(pump, 400); status('Queued: it sends when Pouch is ready.'); }
+    else {
+      status(e.message, 'bad');
+      if (q && !$('input').value.trim()) { $('input').value = q.text; autosize(); } // not sent: the text comes back
+    }
+  }
+  finally { submitting.delete(key); updateSend(); composer.renderTray(); }
+}
+function cancelQueued(key) {
+  const q = queued.get(key);
+  if (!q) return;
+  queued.delete(key);
+  if (!$('input').value.trim()) { $('input').value = q.text; autosize(); }
+  status(q.attached.files.length ? 'Queued message cancelled and put back; its attachments are still in your files.' : 'Queued message cancelled and put back in the box.');
+  composer.renderTray(); updateSend();
+}
+// agent.send's refusals before it admits input (agent.js).
+const NOT_ADMITTED = /^Not connected|still running/;
 // HTTP 429 or a quota message, from the relay or the model provider.
 function quotaError(msg) { return /\b429\b|quota|rate.?limit|too many requests|allowance/i.test(msg ?? ''); }
 
 async function send(text, attached = { files: [], images: [] }, turnModel = $('model').value) {
+  const t0 = Date.now();
   if (!sessions.current) await sessions.create();
   const s = sessions.current; // the run belongs to this session even if you switch away
   const sid = s.id;
@@ -1415,54 +1725,170 @@ async function send(text, attached = { files: [], images: [] }, turnModel = $('m
   if (interrupted && sameId(sid, sessions.current?.id)) interrupted = false;
   await store.setSetting(interruptedKey(sid), undefined);
   sessions.running.add(String(sid)); sessions.render();
+  lostRuns.delete(String(sid));
+  if (isLocal(turnModel)) { localRuns.add(String(sid)); clearHint(sid); }
   // A run: what its tools change is recorded under it, placed after this message.
   review.begin(sid, view?.items.filter((i) => i.type === 'user').length ?? 0);
   const notes = (await store.getSetting(notesKey(sid))) ?? [];
   const admitted = () => notes.length && store.setSetting(notesKey(sid), undefined);
-  let ok = false;
+  let ok = false, refused = null;
   try { await agent.send(sid, text, notes, attached, turnModel); admitted(); ok = true; }
   catch (e) {
-    if (!/^Not connected/.test(e.message)) admitted(); // otherwise never sent: keep the notes
+    // Refused before admission: nothing entered the transcript. The caller
+    // queues or restores the text (dispatch), so it is never lost.
+    if (NOT_ADMITTED.test(e.message)) refused = e;
+    else admitted();
     // The run's own error (an assistant item) may carry the HTTP status the summary lost.
     const detail = e.message + ' ' + (view?.items.findLast?.((i) => i.error)?.error ?? '');
     if (quotaError(detail)) status(exhaustedText(await usage.refresh()), 'bad');
-    else if (e.message !== 'Stopped.') status('Request failed: ' + e.message, 'bad');
+    else if (!isLocal(turnModel) && (lostRuns.has(String(sid)) || isNetworkError(detail))) {
+      lostRuns.add(String(sid));
+      if (!navigator.onLine || !(await probe())) goOffline();
+      else status('Connection lost during the turn; nothing more was sent. Send again to continue.', 'bad');
+    }
+    else if (!refused && e.message !== 'Stopped.') status('Request failed: ' + e.message, 'bad');
   }
-  finally { sessions.running.delete(String(sid)); await review.end().catch(() => {}); refreshChanges(); }
+  finally { sessions.running.delete(String(sid)); localRuns.delete(String(sid)); await review.end().catch(() => {}); refreshChanges(); }
+  if (refused) throw refused;
+  const ms = Date.now() - t0;
   const v = await agent.snapshot(sid).catch(() => null);
+  await recordTurn(sid, v, ms);
   await sessions.afterTurn(sid, v, ok, turnModel);
 }
 
 $('composer').onsubmit = async (e) => {
   e.preventDefault();
-  const submissionKey = String(sessions.current?.id ?? 'new');
-  if (busy() || submitting.has(submissionKey)) return; // only an explicit click on Stop aborts
-  const text = $('input').value.trim() || (attachments.files.length ? 'Please examine the attached files.' : '');
-  if (!text || !agent || !verified) return;
+  const raw = $('input').value;
+  if (composer.runCommand(raw)) { $('input').value = ''; autosize(); return; }
+  const key = curKey();
+  const text = raw.trim() || (attachments.files.length ? 'Please examine the attached files.' : '');
+  if (!text) return;
   const turnModel = $('model').value; // freeze before any asynchronous preparation
-  submitting.add(submissionKey);
-  try {
-    const attached = await attachments.prepare(models.find((m) => m.id === turnModel));
-    if (submissionKey !== String(sessions.current?.id ?? 'new')) throw new Error('Session changed while preparing attachments. Review this message and press Send again. Nothing was sent.');
+  if (isLocal(turnModel)) {
+    // The Local lane needs no network or enclave, only the model on this device.
+    if (!agent) return status(agentError ?? 'The agent is not available.', 'bad');
+    if (!(await ensureLocal())) return; // the text stays in the composer
+  } else {
+    if (offline) return status(OFFLINE, 'offline'); // the text stays in the composer
+    if (!agent || !verified) return status(agentError ?? 'Not ready yet: Pouch is still verifying the enclave. Your message stays here.', 'bad');
+  }
+  const prepare = async () => {
+    const attached = await attachments.prepare(models.find((m) => m.id === turnModel) ?? { id: turnModel, multimodal: false });
+    if (key !== curKey()) throw new Error('Session changed while preparing attachments. Review this message and press Send again. Nothing was sent.');
     $('input').value = ''; autosize(); attachments.clear(attached.files);
-    status('');
-    await send(text, attached, turnModel);
-  } catch (e) { status(e.message, 'bad'); }
-  finally { submitting.delete(submissionKey); }
+    return { text, attached, turnModel, at: Date.now() };
+  };
+  if (!busy() && !submitting.has(key)) { status(''); return dispatch(key, prepare); }
+  // Pouch is working or finishing up: queue, or say why not.
+  if (key === 'new') return status('Wait a moment: the session is still starting. Your message stays here.', 'bad');
+  if (queued.has(key) || queueing) return status('A message is already queued. It sends when Pouch is ready; cancel it in the tray to change it. This one stays here.', 'bad');
+  queueing = true;
+  try { queued.set(key, await prepare()); status('Queued: it sends when Pouch is ready.'); }
+  catch (err) { status(err.message, 'bad'); }
+  finally { queueing = false; composer.renderTray(); updateSend(); }
 };
 $('send').onclick = (e) => { if (busy()) { e.preventDefault(); agent.abort(sessions.current.id); } };
 // Enter sends with a keyboard; on touch screens Enter is a newline and Send sends.
 $('input').onkeydown = (e) => {
+  if (composer.onKeydown(e)) return;
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !matchMedia('(pointer: coarse)').matches) {
     e.preventDefault(); $('composer').requestSubmit();
   }
 };
 function autosize() { const i = $('input'); i.style.height = 'auto'; i.style.height = Math.min(i.scrollHeight + 2, innerHeight * 0.4) + 'px'; }
-$('input').oninput = autosize;
+$('input').addEventListener('input', autosize);
+$('composer-usage').onclick = () => layout.toggle('usage');
+// A queued message lives in this page only: ask before a reload or close drops it.
+addEventListener('beforeunload', (e) => { if (queued.size) e.preventDefault(); });
+
+// Slash commands: typed whole ("/rename Notes") or picked from the list.
+async function revertLast() {
+  if (busy()) return status('Stop Pouch before reverting.', 'bad');
+  const items = view?.items ?? [], u = items.findLastIndex((i) => i.type === 'user');
+  const target = u < 0 ? null : items.slice(0, u).findLast((i) => i.entry && !i.streaming && (i.type === 'user' || i.text || i.error));
+  if (!target) return status(u < 0 ? 'Nothing to revert yet.' : 'The last turn is the first one; nothing earlier to revert to. Use /new for a fresh session.', 'bad');
+  return revertTo(target);
+}
+const COMMANDS = [
+  { name: 'new', hint: 'Start a new session', run: () => sessions.create() },
+  { name: 'compact', hint: 'Summarize older turns (1 Sealed request)', run: async () => {
+    if (!sessions.current) return status('No session to compact yet.', 'bad');
+    status('Compacting...');
+    try { await agent.compact(sessions.current.id); status('Older turns summarized.'); } catch (e) { status(e.message, 'bad'); }
+  } },
+  { name: 'rename', hint: 'Rename this session (/rename New title)', run: async (arg) => {
+    if (!sessions.current) return status('No session to rename yet.', 'bad');
+    if (!arg) return $('title').click();
+    Object.assign(sessions.current, { title: arg.slice(0, 120), titleSource: 'user' });
+    await sessions.save(); sessions.render();
+    status('Renamed.');
+  } },
+  { name: 'revert', hint: 'Revert the last turn (asks first, can be undone)', run: revertLast },
+  { name: 'usage', hint: 'Show today\'s allowance and tokens', run: () => layout.open('usage') },
+  { name: 'files', hint: 'Show your files', run: () => layout.open('files') },
+  { name: 'erase', hint: 'Erase all Pouch data in this browser (asks first)', run: () => eraseAll() },
+  { name: 'help', hint: 'What you can type here', run: () => sheet('Typing in Pouch', [], el('div', {},
+    el('p', { textContent: '@ inserts a path from your files. $ asks Pouch to use a skill. / runs a command instead of sending; a / followed by anything else is sent as text.' }),
+    el('ul', {}, ...COMMANDS.map((c) => el('li', {}, el('code', { textContent: '/' + c.name }), ' ' + c.hint))),
+    el('p', { textContent: 'Enter sends (on touch screens, tap Send). Shift+Enter is a new line. While Pouch works, Enter queues your message; it goes when Pouch is ready.' }))) },
+];
+const runSeen = new Map(); // running `run` call id -> first seen (ms), for the tray's elapsed time
+const excerpt = (t, n = 90) => { const x = String(t ?? '').replace(/\s+/g, ' ').trim(); return x.length > n ? x.slice(0, n - 1) + '…' : x; };
+function activity() {
+  const sid = sessions.current?.id, key = curKey(), rows = [];
+  for (const c of kids.get(String(sid)) ?? []) if (c.status === 'running') {
+    rows.push({ key: 'sa:' + c.id, kind: 'subagent', text: `${c.name}: ${excerpt(c.task)}`, title: c.task, origin: 'subagent', since: c.resumed ?? c.started,
+      stop: () => agent.subagents.stop(sid, c.id) });
+  }
+  const live = new Set();
+  for (const t of view?.items ?? []) if (t.type === 'tool' && t.name === 'run' && t.status === 'running') {
+    live.add(t.id);
+    if (!runSeen.has(t.id)) runSeen.set(t.id, Date.now());
+    rows.push({ key: 'run:' + t.id, kind: 'run', text: 'run ' + (t.args?.path ?? excerpt(t.args?.code?.split('\n').find((l) => l.trim()) ?? '', 70)), title: t.args?.code ?? t.args?.path,
+      origin: 'run', since: runSeen.get(t.id), stop: () => { if (!agent.stopCall(t.id)) status('That run already finished.'); } });
+  }
+  for (const id of runSeen.keys()) if (!live.has(id)) runSeen.delete(id);
+  for (const p of egress.pending) {
+    rows.push({ key: 'eg:' + p.id, kind: 'approval', text: p.command, origin: p.agentName ? `${p.agentName}: waiting for you` : 'waiting for you', since: p.since, open: () => egress.focus() });
+  }
+  const q = queued.get(key);
+  if (q) rows.push({ key: 'queued', kind: 'queued', text: excerpt(q.text), title: q.text, origin: busy() ? 'queued' : 'queued: sends when ready', stopLabel: 'Cancel', stop: () => cancelQueued(key) });
+  return rows;
+}
+composer = createComposer({
+  vfs, input: $('input'),
+  roots: () => ['/work', '/pouch', '/tmp', ...[...vfs.mounts].filter(([, m]) => m.live).map(([n]) => '/mnt/' + n)],
+  skills: async () => (await loadContext(vfs)).skills,
+  commands: COMMANDS,
+  activity,
+  stopAll: async () => { for (const r of activity()) if (r.kind === 'subagent' || r.kind === 'run') await r.stop(); },
+  shield: async () => {
+    const sid = sessions.current?.id;
+    if (localPicked()) return {
+      lane: 'On this device: nothing sent',
+      detail: `${LOCAL.label} runs in this browser on your GPU. Prompts, files and replies stay here; no request leaves for any model. Tools run here, in the page. Switch to a Sealed model in the picker for larger tasks.`,
+      grants: (await grantsFor(sid)).map((service) => ({ label: serviceName(service), revoke: async () => {
+        await revoke(sid, service); status(`Pouch will ask again before ${serviceName(service)} in this session.`);
+      } })),
+      trust: () => layout.open('trust'),
+    };
+    return {
+      lane: verified ? 'Sealed: encrypted to the enclave' : offline ? 'Sealed: offline, nothing is sent' : 'Sealed: verifying the enclave',
+      detail: verified ? 'This session\'s model requests are encrypted in this page to an attested enclave; BayLeaf relays ciphertext. Tools run here, in the page.'
+        : 'Nothing is sent until the enclave verifies. There is no plaintext fallback.',
+      grants: (await grantsFor(sid)).map((service) => ({ label: serviceName(service), revoke: async () => {
+        await revoke(sid, service); status(`Pouch will ask again before ${serviceName(service)} in this session.`);
+      } })),
+      trust: () => layout.open('trust'),
+    };
+  },
+  onTray: () => { const log = $('log'); if (log.scrollHeight - log.scrollTop - log.clientHeight < 120) log.scrollTop = log.scrollHeight; },
+});
 
 // ── Boot ────────────────────────────────────────────────────────────
 // Files first, so the workspace is usable even if the network or the agent is not.
 let agentError = null;
+let toolList = []; // kept for Run script, which uses the run tool without the model
 (async () => {
   usage.subscribe((st) => { renderMeter(st); if (layout.current() === 'usage') renderUsagePanel(); });
   if (location.hash === '#erased') { history.replaceState(null, '', location.pathname + location.search); $('erased').hidden = false; }
@@ -1473,10 +1899,13 @@ let agentError = null;
   key = (await store.getSetting('key')) ?? null;
   renderAuth();
   usage.refresh();
+  localOk = await localSupport();
   await loadModels();
+  renderLocalSettings();
   try {
     agent = await openAgent({
-      tools: createTools(vfs, Type, {}, {
+      local: LOCAL && localOk.ok ? { info: LOCAL, engine: localEngine, onHint: showHint } : null,
+      tools: toolList = createTools(vfs, Type, {}, {
         // A subagent's change is its own run; the main agent's joins the turn.
         beforeChange: (p, op, caller) => { const c = childOf(caller); return review.beforeChange(p, op, c ? { session: c.sid, sub: c.id } : undefined); },
         ...egressHooks,

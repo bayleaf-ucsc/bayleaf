@@ -44,20 +44,26 @@ separate model or API service is stateless.
 | The page itself | the static host | everyone: it is the published, hash-checkable file |
 | Identity, claims, keys, spend metadata | BayLeaf API (`api.bayleaf.dev`) | the BayLeaf operator; no prompt or file content |
 | Prompts, file contents the agent reads, replies | in transit only, EHBP-encrypted to the Tinfoil enclave | the attested enclave; not BayLeaf |
+| Local lane turns (prompts, files, replies) | this browser only: generated on its GPU | nobody else; nothing is sent |
+| Local model files (optional, ~1.1 GB) | Cache Storage (`pouch-local-models`), until Remove local model or Erase all | the static host sees that this browser downloaded them |
 
-The CSP's `connect-src https://api.bayleaf.dev` means the page has exactly one network
-peer, so an auditor checks two things: the file's hash, and that its CSP is as stated.
+The CSP's `connect-src 'self' https://api.bayleaf.dev` means the page has one remote
+network peer plus its own static origin, which it uses only to download the optional
+Local model's hash-checked files. An auditor checks the file's hash and that its CSP is
+as stated.
 
 ## The coding agent
 
 | Piece | What | Source |
 |---|---|---|
 | Agent loop | [pi-durable](https://github.com/earendil-works/pi): durable conversations in IndexedDB, tool tasks, automatic compaction | `src/agent.js` |
-| Tools | `read`, `write`, `edit`, `bash`, all in the page | `src/tools.js` |
+| Tools | `read`, `write`, `edit`, `bash`, all in the page; `run` in a throwaway worker | `src/tools.js`, `src/run.js` |
+| Run | JavaScript in [QuickJS](https://github.com/justjake/quickjs-emscripten) (WebAssembly, MIT) in a `blob:` worker per call, over a copy of the files it names; writes come back as changes checked against the snapshot. Also on a `.js` file's menu (Run script), offline too | `src/run.js`, `src/run/` (from `experiments/quickjs`) |
 | Shell | [just-bash](https://github.com/vercel-labs/just-bash): bash and coreutils reimplemented in TypeScript, no processes, no network | `src/tools.js` |
 | Files | one tree stitched from several stores (below) | `src/vfs.js` |
 | Editor | CodeMirror 6 with JS/TS, Python, Markdown, HTML, CSS, JSON | `src/editor.js` |
 | UI | sessions sidebar, chat, one side panel at a time (Files, Editor, Usage, Trust, Settings) from an icon rail; drawer, full-screen sheets and a bottom bar on phones | `pouch.html`, `src/main.js`, `src/layout.js` |
+| Composer | one card: activity tray (running subagents and `run` calls, approvals waiting, a queued message; Stop, Stop all), `@` path / `$` skill / `/` command autocomplete, the shield popover (lane, egress grants), Usage count, model picker, Send / Queue / Stop; the turn footer (model, duration, time) is in `main.js` | `src/composer.js`, `src/main.js` |
 | Preferences / attachments | local display defaults; one ingest path for Attach, composer drop and image paste | `src/settings.js`, `src/attachments.js` |
 | Titles | a session is named after its first turn by one tool-less sealed completion; the sparkle beside the title field suggests another | `src/naming.js` |
 | Usage | today's Sealed allowance (`/usage` with a key, `/campus-pass` without), checked on load, sign-in and after each run, never polled; tokens per session | `src/usage.js` |
@@ -166,13 +172,89 @@ transparency log, and no tagged reproducible release has been made.
 
 ## What the page enforces
 
-- **One network peer.** `connect-src https://api.bayleaf.dev`. Attestation verification
-  succeeds under this policy because the relay's `/sealed/attestation` bundle carries
-  the whole trust root (verified 2026-10-27, tinfoil 1.3.0).
+- **One network peer, plus its own origin.** `connect-src 'self' https://api.bayleaf.dev`.
+  Attestation verification succeeds under this policy because the relay's
+  `/sealed/attestation` bundle carries the whole trust root (verified 2026-10-27,
+  tinfoil 1.3.0). `'self'` was added for the Local lane (below) and is used only to fetch
+  `models/<id>/` files, each checked against a manifest whose SHA-256 is built into the
+  page; the static host already serves the page, so it is not a new operator. It also
+  lets page script send data to that host, which before needed `api.bayleaf.dev`: the
+  same operator, but a different service with different logs (Cloudflare Workers Static
+  Assets keeps request metadata, not bodies; see DEPLOYMENT.md).
 - **Only its own scripts.** `script-src` lists two SHA-256 hashes, so an injection cannot run.
+  It also has `'wasm-unsafe-eval'` and `worker-src blob:`, for the `run` tool (D18).
+  The first compiles wasm, not JS strings: wasm can only call what its importer hands
+  it, so it adds no capability page script lacks. The second is the weaker point: page
+  script could start any string as a worker, bypassing the hashes, but only code that
+  already runs (hashed) can do that, the worker source is a constant inside the hashed
+  script, and a `blob:` worker inherits this CSP (one network peer, `eval` refused). The
+  guest lives inside the QuickJS heap with no `fetch`, storage or DOM; the worker also
+  drops those after loading the engine, and is terminated after each run (Stop, 5 s).
+  An escape would have to break QuickJS and the wasm sandbox. Assessment and tests:
+  `experiments/quickjs/README.md`.
 - **No HTML from models.** Replies render as `textContent`, so a reply cannot inject
   markup into the page that holds your key.
 - **Fail closed.** If attestation fails, Send stays disabled. No plaintext fallback exists.
+
+## Local lane: a model on this device
+
+Builds made with `node build.mjs --with-models` carry an optional third lane next to
+Sealed: **Local: LFM3 1.7B (on this device)**, the `onnx-community/LFM3-1.7B-ONNX` q4f16
+export at a pinned revision, run by Transformers.js 4.3.2 and ONNX Runtime Web on
+WebGPU. The picker shows it when WebGPU works and otherwise lists it disabled with the
+reason. Choosing it is the only way in: Pouch never switches lanes by itself, and the
+shield says "On this device: nothing sent".
+
+- **Files.** `models.lock.json` pins every file (URL, revision, size, SHA-256);
+  `node fetch-models.mjs` fetches them into `~/.cache/bayleaf-pouch/models` (never the
+  repo). The build cuts each file, and the ORT wasm, into parts of at most 20 MiB named
+  by their SHA-256 under `dist/models/<id>/`, bundles Transformers.js and the ORT WebGPU
+  build (with its embedded wasm glue) into one `worker.<hash>.js`, and writes
+  `manifest.<hash>.json`. The page embeds that manifest's SHA-256 and so trusts exactly
+  those bytes. Nothing comes from a CDN or Hugging Face at run time.
+- **Loading.** The first use asks, then downloads (bytes and percent in the status line
+  and Settings), checks every part with `crypto.subtle` and keeps it in Cache Storage. A
+  part that fails is fetched once more, then refused. Every later load checks every kept
+  part again (a damaged one is dropped and fetched again) and needs no network. The
+  worker starts from a verified `blob:` (CSP `worker-src blob:`), has no `fetch`, and gets
+  the files as blobs and the wasm as bytes. Settings can **Load from folder/files**: a
+  saved `models/<id>/` folder, or the original upstream files (cut at the manifest's part
+  boundaries and checked the same way), for offline or `file://` copies (where it is
+  kept for that page load only). **Remove local model** frees the storage; **Erase all**
+  removes it too.
+- **Recipe** (`experiments/lfm3-webgpu`, agent v2 "v8"). A short grounded system prompt
+  naming `/work`, one byte-exact example turn, four short tool schemas (read, write,
+  edit, bash: no `run`, no subagents, which would spend Sealed requests), greedy
+  decoding, at most 8 model steps per message and about 4k tokens of context: older
+  turns are dropped first, then the current turn's long tool results are shortened. The
+  model's native XML tool calls are parsed in the page. Stop interrupts generation.
+- **When to use Sealed.** Local suits inspecting a workspace and small, literal edits.
+  A visible hint (with a "Use Sealed next" button that only changes the picker) appears
+  when Local hits its step cap, an edit fails twice, a task touches more than 3 files,
+  or the conversation outgrows its context. Local sessions are not auto-named (that
+  would be a Sealed request) and use none of the Sealed allowance.
+- **Tool policy for every lane.** Native XML tool calls blur trailing newlines, so
+  `edit` makes newText end with a line break exactly when oldText does (an empty newText,
+  a deletion, is left alone), `write` saves a non-empty file ending with exactly one
+  newline, and a `bash` failure with no output says so ("no output, exit 1 (for grep this
+  means no matches...)"). Each is disclosed in the tool description and its result.
+
+## Offline
+
+When the network drops (the browser's offline event, or a request that fails like a
+dropped network followed by a failed re-check), the shield turns grey, the status line
+and the Send button's title say "Offline: the model is unreachable", Send is disabled,
+and a turn in flight ends at once with "Connection lost". Files, the editor, review,
+archives and `run` keep working. Pouch re-checks every 15 s and on the online event;
+when the relay answers it re-verifies the enclave, re-enables Send and refreshes usage,
+without a reload. The draft in the composer is kept throughout.
+
+A saved copy of `pouch.html` opened from disk (`file://`) starts offline and works, with
+one caveat: Chromium refuses OPFS to `file://` pages, so `/work` falls back to memory
+(tagged "memory only") and is lost on reload; IndexedDB (`/pouch`, sessions, settings)
+does persist. Sealed sending needs the network, because attestation fetches the
+enclave's bundle; the Local lane does not (load its files from a saved folder in Settings). A hosted copy that loads with no network would need a service
+worker; see JOURNEYS F3 for what that implies for the hash story.
 
 ## What it does not protect
 

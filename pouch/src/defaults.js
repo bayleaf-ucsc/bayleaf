@@ -28,7 +28,10 @@ html-to-markdown, and Pouch's own zip, unzip and tar (no -z compression).
 Shell builtins work: for, while, functions, pipes, redirection, $(...).
 
 Not available: network (curl), package managers, python, node, git, gzip,
-background jobs, real processes. You cannot run or test code here; say so.
+background jobs, real processes.
+The \`run\` tool (not bash) runs JavaScript in QuickJS over a copy of the files
+in \`files\`: console.log, args, stdin, exit(), fs.readFile/writeFile/readdir/
+exists/rm; no network, imports or timers. Prefer it to awk for CSV/JSON work.
 The \`bayleaf\` command reaches BayLeaf's web search/fetch and a remote sandbox
 VM where code can run, but it leaves the pouch: read the bayleaf-cli skill.
 Symlinks are not supported under /work or /mnt.

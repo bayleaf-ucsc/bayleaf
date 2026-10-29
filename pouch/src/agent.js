@@ -16,6 +16,7 @@ import { IndexedDbStorage } from '@earendil-works/pi-durable/storage/indexeddb';
 import { Type } from 'typebox';
 import { createSubagents, REPORT_KIND } from './subagents.js';
 import { attachmentContext } from './attachments.js';
+import { LOCAL_PROVIDER, isLocal, localApi, localModel } from './local/provider.js';
 
 export { Type, MemoryStorage, REPORT_KIND };
 
@@ -95,12 +96,21 @@ const cap = (text) => text.length <= TOOL_OUTPUT_CAP ? text
 // UI tool spec -> pi-durable tool. Streaming output goes to api.output (shown
 // live in pi.live); the returned string is what the model reads. `caller` is
 // the calling conversation, so hooks can tell a subagent from the main agent.
+// Running calls by id, so the composer tray can stop one call (a long `run`)
+// without aborting the whole turn: the tool fails with "Stopped." and the
+// model reads that and carries on.
+const callStops = new Map(); // call id -> AbortController
 function toTool(t) {
   return defineTool({
     name: t.name, label: t.label ?? t.name, description: t.description, parameters: t.parameters,
     execute: async (args, api, context) => {
-      const text = await t.execute(args, { signal: context.abortSignal, output: (s) => api.output(String(s)), caller: api.conversationId, callId: api.callId });
-      return { output: [{ type: 'text', text: cap(String(text ?? '')) }] };
+      const stop = new AbortController();
+      const signal = AbortSignal.any([context.abortSignal, stop.signal].filter(Boolean));
+      callStops.set(api.callId, stop);
+      try {
+        const text = await t.execute(args, { signal, output: (s) => api.output(String(s)), caller: api.conversationId, callId: api.callId });
+        return { output: [{ type: 'text', text: cap(String(text ?? '')) }] };
+      } finally { callStops.delete(api.callId); }
     },
   });
 }
@@ -128,7 +138,9 @@ const dbFor = (id) => `${DB_NAME}-${id}`;
 const newId = () => `p-${crypto.randomUUID()}`;
 const dbExists = async (name) => !indexedDB.databases || (await indexedDB.databases()).some((d) => d.name === name);
 
-const modelRef = (modelId) => ({ provider: PROVIDER, modelId });
+// Model ids starting "local:" are the Local lane (src/local/provider.js):
+// generated on this device, never sent. Every other id is Sealed.
+const modelRef = (modelId) => ({ provider: isLocal(modelId) ? LOCAL_PROVIDER : PROVIDER, modelId });
 
 // pointer: { get(id), set(id, convId) } keeps which conversation in a
 // session's database is current; a revert (D12) forks and moves it.
@@ -136,7 +148,8 @@ const modelRef = (modelId) => ({ provider: PROVIDER, modelId });
 // onReport(sid, submission, child), onSettle(sid, child), lowAllowance() }
 // (src/subagents.js); without reg there is no subagent tool.
 // onInterrupted(sids): sessions whose run a reload cut off (aborted, not resumed).
-export async function openAgent({ storage, tools = [], systemPrompt, getClient, models: initialModels = [], pointer, subagents: saDeps, onInterrupted }) {
+// local: { info: LOCAL_MODEL, engine, onHint } adds the Local lane's provider.
+export async function openAgent({ storage, tools = [], systemPrompt, getClient, models: initialModels = [], pointer, subagents: saDeps, onInterrupted, local }) {
   const models = createModels();
   let catalog = [];
   const api = withFetch(openAICompletionsApi(), sealedFetch(getClient));
@@ -148,6 +161,12 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
     }));
   }
   setModels(initialModels);
+  if (local?.info) {
+    models.setProvider(createProvider({
+      id: LOCAL_PROVIDER, name: 'Local (on this device)', baseUrl: 'local:', models: [localModel(local.info)], api: localApi(local.engine, { onHint: local.onHint }),
+      auth: { apiKey: { name: 'Local', resolve: async () => ({ auth: { apiKey: 'local' } }) } },
+    }));
+  }
 
   // Which session a conversation belongs to (its own, a revert's fork, or a
   // subagent's), filled as lanes open and conversations are made.
@@ -359,8 +378,9 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
     // reads them before the message; the transcript entry keeps only `text`.
     async send(id, text, notes = [], attachments = { files: [], images: [] }, modelId) {
       // Fail before admitting the input, so it is not queued behind a dead lane.
-      if (!(await getClient())) throw new Error('Not connected to BayLeaf Sealed: sign in (or use campus access) and wait for verification.');
+      // A Local turn needs no Sealed connection (and makes no request).
       const c = await conv(id);
+      if (!isLocal(modelId ?? (await c.agent(ctx))?.model?.modelId) && !(await getClient())) throw new Error('Not connected to BayLeaf Sealed: sign in (or use campus access) and wait for verification.');
       const state = await c.viewState(ctx), running = !!state.value.docs['pi.live']?.run;
       state.dispose();
       if (running) throw new Error('This conversation is still running. Wait or stop it before sending.');
@@ -377,6 +397,12 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
     },
     async abort(id) {
       await (await conv(id)).abort(ctx);
+    },
+    // Stop one running tool call; false if it already finished.
+    stopCall(callId) {
+      const c = callStops.get(callId);
+      c?.abort();
+      return !!c;
     },
     async compact(id) {
       const { harness } = await locate(id);
@@ -465,6 +491,7 @@ export function normalize(view) {
         const out = assistantItems(msg, false, tools);
         if (out[0]?.type === 'assistant') {
           mark(out[0], e, msg);
+          out[0].model = msg.model; // the turn footer names it
           for (const t of out) if (t.type === 'tool') owners.set(t.id, out[0]);
         }
         items.push(...out);

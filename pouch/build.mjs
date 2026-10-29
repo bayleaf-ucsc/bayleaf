@@ -6,7 +6,7 @@
 // and CodeMirror; package-lock.json is the supply-chain pin) into the one
 // inline script, stamps the CSP with the SHA-256 of each inline script so
 // nothing else can run, and prints the file's SHA-256 for a release.
-import { context } from 'esbuild';
+import { build, context } from 'esbuild';
 import { createHash } from 'node:crypto';
 import { execSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -35,16 +35,30 @@ function assemble(code) {
   html = html.replace('__SCRIPT_HASHES__', hashes.join(' ')).replaceAll('__BUILD_ID__', BUILD_ID);
   mkdirSync(OUT, { recursive: true });
   writeFileSync(`${OUT}/pouch.html`, html);
-  // The whole deployable artifact is these two files. sha256sum -c SHA256SUMS
-  // checks a downloaded or served copy against the build.
-  writeFileSync(`${OUT}/SHA256SUMS`, `${sha256(html, 'hex')}  pouch.html\n`);
+  // The whole deployable artifact is the files SHA256SUMS lists: pouch.html,
+  // plus dist/models/** with --with-models (deploy.mjs uploads exactly these).
+  // sha256sum -c SHA256SUMS checks a downloaded or served copy against the build.
+  const sums = [[sha256(html, 'hex'), 'pouch.html'], ...(models?.sums ?? [])];
+  writeFileSync(`${OUT}/SHA256SUMS`, sums.map(([h, p]) => `${h}  ${p}\n`).join(''));
   console.log(`${OUT}/pouch.html  ${(html.length / 1024).toFixed(0)} KiB  ${hashes.length} inline script(s)`);
   console.log(`sha256 ${sha256(html, 'hex')}  build ${BUILD_ID}`);
 }
 
+// The `run` tool's worker (QuickJS with its wasm inline) is bundled first and
+// becomes a string constant in the app, so the page keeps one inline script.
+// Rebuilt only at start: restart --watch after editing src/run/worker*.js.
+const WORKER_SRC = (await build({ entryPoints: ['src/run/worker-browser.js'], bundle: true, minify: true, write: false,
+  format: 'iife', platform: 'browser', target: 'es2022', legalComments: 'inline', logLevel: 'warning' })).outputFiles[0].text;
+
+// --with-models: the Local lane's model, runtime and manifest under
+// dist/models/ (build-models.mjs). The page embeds the manifest's hash; a
+// build without it has LOCAL_MODEL null and offers no Local lane.
+const models = process.argv.includes('--with-models') ? await (await import('./build-models.mjs')).buildModels(OUT) : null;
+
 const ctx = await context({
   entryPoints: ['src/main.js'],
   bundle: true, minify: !watch, write: false,
+  define: { WORKER_SRC: JSON.stringify(WORKER_SRC), LOCAL_MODEL: JSON.stringify(models?.local ?? null) },
   format: 'iife', platform: 'browser', target: 'es2022',
   // just-bash's browser build imports node:zlib for gzip/tar -z; those commands
   // fail at call time instead. Other Node-only paths are behind dynamic imports.

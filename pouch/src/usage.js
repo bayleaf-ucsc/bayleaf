@@ -67,16 +67,21 @@ export function exhaustedText(s) {
     : `Today's Sealed allowance for your key is used up.${when}`;
 }
 
-// The rail's Usage icon: a small bar and the number left.
+// The rail's Usage icon (a small bar and the number left) and the
+// composer's compact copy of it (the number).
 export function renderMeter(s) {
-  const b = $('rail-usage'), f = fraction(s);
-  b.classList.toggle('low', isLow(s));
-  b.classList.toggle('unknown', f == null);
-  b.style.setProperty('--fill', f == null ? '0%' : `${Math.round(f * 100)}%`);
-  $('usage-num').textContent = s.remaining == null ? '?' : String(s.remaining);
+  const f = fraction(s);
   const label = s.remaining == null ? 'Usage: remaining requests unknown'
     : `Usage: ${s.mode === 'campus' ? 'about ' : ''}${s.remaining} of ${s.limit} Sealed requests left today`;
-  b.ariaLabel = label; b.title = label;
+  for (const [id, num] of [['rail-usage', 'usage-num'], ['composer-usage', 'composer-usage-num']]) {
+    const b = $(id);
+    if (!b) continue;
+    b.classList.toggle('low', isLow(s));
+    b.classList.toggle('unknown', f == null);
+    b.style.setProperty('--fill', f == null ? '0%' : `${Math.round(f * 100)}%`);
+    $(num).textContent = s.remaining == null ? '?' : String(s.remaining);
+    b.ariaLabel = label; b.title = label;
+  }
 }
 
 const fmt = (n) => (n ?? 0).toLocaleString();

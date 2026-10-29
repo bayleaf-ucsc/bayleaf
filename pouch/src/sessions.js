@@ -21,6 +21,7 @@ export const convKey = (sid) => 'conversation:' + sid; // the current conversati
 export const interruptedKey = (sid) => 'interrupted:' + sid; // a reload cut off its run; Resume offered (main.js)
 export const subagentsKey = (sid) => 'subagents:' + sid; // the session's subagents and their state (subagents.js)
 export const revertKey = (sid) => 'revert:' + sid; // the last revert, while it can be undone, with file bytes (D12)
+export const turnsKey = (sid) => 'turnTimes:' + sid; // turn-start entry -> measured duration (ms), for the turn footer (main.js)
 
 function ago(t) {
   const m = Math.round((Date.now() - t) / 60_000);
@@ -142,6 +143,7 @@ export function createSessions(deps) {
     await store.setSetting(revertKey(id), undefined);
     await store.setSetting(subagentsKey(id), undefined);
     await store.setSetting(interruptedKey(id), undefined);
+    await store.setSetting(turnsKey(id), undefined);
     if (sameId(await store.getSetting('lastSession'), id)) await store.setSetting('lastSession', undefined);
     await dropLegacyIfDone();
     if (sameId(id, session?.id)) {
@@ -199,7 +201,10 @@ export function createSessions(deps) {
   async function afterTurn(sid, v, ok, turnModel) {
     await update(sid, { updated: Date.now(), ...(v?.usage ? { usage: v.usage } : {}) });
     render();
-    deps.usage.refresh();
+    if (!deps.isLocal?.(turnModel)) deps.usage.refresh(); // a Local turn used no allowance and asks no server
+    // A Local session is not named by Sealed behind the user's back: it keeps
+    // its first-message title (the sparkle stays an explicit choice).
+    if (deps.isLocal?.(turnModel)) return;
     const fresh = await find(sid);
     if (ok && fresh && !fresh.titleSource && v?.items.filter((i) => i.type === 'user').length === 1) {
       const t = await nameFrom(sid, false, true, turnModel);

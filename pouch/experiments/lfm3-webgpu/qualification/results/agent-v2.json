@@ -1,0 +1,2219 @@
+{
+ "schema": "lfm3-agent-v2",
+ "at": "2026-10-29T08:32:31.137Z",
+ "browser": "156.0.8078.73",
+ "headless": true,
+ "adapter": {
+  "vendor": "apple",
+  "architecture": "metal-3",
+  "description": ""
+ },
+ "model": "onnx-community/LFM3-1.7B-ONNX@ab9fec4c q4f16, Transformers.js 4.3.2, WebGPU worker",
+ "notes": {
+  "diagnosis_v1": "results/agent.json feature 1-2 ended final after 3 generations (~2.9 s), not 8 steps. XML calls, parser and template correct; failure is byte fidelity: blank line inserted in src/ui.js. Greedy => identical trials.",
+  "root_cause": "Trailing/blank-line newline fidelity inside native XML <parameter> values (template wraps each value with one \\n). Model is inconsistent: drops final newline (Fahrenheit\\n</parameter>), asymmetric oldText/newText endings, or blank separator line. Separately, rename fails from a /workspace path prior plus just-bash grep returning empty-stderr exit 1, and oldText/newText scope mismatch (one-line oldText, whole-function newText) duplicating code.",
+  "variants": {
+   "v0": "original prompt, greedy",
+   "v1": "sampled T=0.3 top_p=0.95",
+   "v2": "fidelity system wording",
+   "v3": "few-shot synthetic append+create turn (near-isomorphic to feature: teach-to-test risk)",
+   "v4": "pi-style multi-edit schema (edits/replaceAll)",
+   "v5": "fidelity+few-shot, 12 rounds",
+   "v6": "grounded: cwd /work named, informative empty-error",
+   "v7": "grounded+multi-edit",
+   "v8": "grounded+few-shot+newline-normalized tools",
+   "v9": "grounded+newline-normalized tools"
+  },
+  "normalizeNl": "Disclosed tool policy, not a model capability: edit newText inherits oldText trailing-newline status; write ensures one final newline.",
+  "sampling_cost": "Sampling ~2.2-2.5x slower per trial than greedy (CPU-side top_p over 125k vocab in Transformers.js).",
+  "lenient": "feature lenient = byte-exact ignoring blank lines"
+ },
+ "table": [
+  {
+   "variant": "v0_greedy",
+   "tree": "2/2 4.0s",
+   "edit": "2/2 1.5s",
+   "feature": "0/2 (lenient 2) 2.9s",
+   "rename": "0/2 4.8s",
+   "config": "2/2 3.2s",
+   "total": "6/10"
+  },
+  {
+   "variant": "v1_sampled",
+   "tree": "6/6 10.2s",
+   "edit": "6/6 3.2s",
+   "feature": "0/6 (lenient 3) 7.0s",
+   "rename": "0/6 8.9s",
+   "config": "6/6 8.1s",
+   "total": "18/30"
+  },
+  {
+   "variant": "v2_fidelity",
+   "tree": "2/2 6.3s",
+   "edit": "2/2 2.3s",
+   "feature": "0/2 (lenient 0) 4.6s",
+   "rename": "0/2 7.1s",
+   "config": "2/2 4.3s",
+   "total": "6/10"
+  },
+  {
+   "variant": "v2_fidelity_sampled",
+   "tree": "6/6 10.3s",
+   "edit": "6/6 3.4s",
+   "feature": "0/6 (lenient 4) 7.8s",
+   "rename": "0/6 11.4s",
+   "config": "6/6 7.2s",
+   "total": "18/30"
+  },
+  {
+   "variant": "v3_fewshot",
+   "tree": "2/2 4.2s",
+   "edit": "2/2 2.2s",
+   "feature": "0/2 (lenient 2) 3.9s",
+   "rename": "0/2 2.0s",
+   "config": "2/2 4.2s",
+   "total": "6/10"
+  },
+  {
+   "variant": "v3_fewshot_sampled",
+   "tree": "6/6 8.4s",
+   "edit": "6/6 3.4s",
+   "feature": "0/6 (lenient 6) 7.5s",
+   "rename": "0/6 3.4s",
+   "config": "6/6 7.0s",
+   "total": "18/30"
+  },
+  {
+   "variant": "v4_multiedit_fidelity",
+   "tree": "0/2 4.7s",
+   "edit": "2/2 1.9s",
+   "feature": "0/2 (lenient 0) 3.4s",
+   "rename": "0/2 5.4s",
+   "config": "2/2 3.3s",
+   "total": "4/10"
+  },
+  {
+   "variant": "v4_multiedit_fidelity_sampled",
+   "tree": "3/6 10.6s",
+   "edit": "6/6 3.6s",
+   "feature": "0/6 (lenient 4) 7.7s",
+   "rename": "0/6 8.5s",
+   "config": "6/6 6.8s",
+   "total": "15/30"
+  },
+  {
+   "variant": "v5_fidelity_fewshot_r12",
+   "tree": "2/2 3.4s",
+   "edit": "2/2 2.0s",
+   "feature": "0/2 (lenient 2) 3.7s",
+   "rename": "0/2 9.1s",
+   "config": "2/2 3.3s",
+   "total": "6/10"
+  },
+  {
+   "variant": "v5_fidelity_fewshot_r12_sampled",
+   "tree": "6/6 8.1s",
+   "edit": "6/6 3.6s",
+   "feature": "0/6 (lenient 6) 7.6s",
+   "rename": "0/6 14.2s",
+   "config": "6/6 6.8s",
+   "total": "18/30"
+  },
+  {
+   "variant": "v6_grounded",
+   "tree": "2/2 4.1s",
+   "edit": "2/2 1.6s",
+   "feature": "0/2 (lenient 0) 3.0s",
+   "rename": "0/2 8.1s",
+   "config": "2/2 3.0s",
+   "total": "6/10"
+  },
+  {
+   "variant": "v6_grounded_sampled",
+   "tree": "3/6 9.0s",
+   "edit": "6/6 3.3s",
+   "feature": "0/6 (lenient 1) 7.3s",
+   "rename": "3/6 15.0s",
+   "config": "6/6 6.8s",
+   "total": "18/30"
+  },
+  {
+   "variant": "v7_grounded_multiedit",
+   "tree": "2/2 4.6s",
+   "edit": "2/2 1.8s",
+   "feature": "0/2 (lenient 2) 3.3s",
+   "rename": "2/2 5.6s",
+   "config": "2/2 3.3s",
+   "total": "8/10"
+  },
+  {
+   "variant": "v7_grounded_multiedit_sampled",
+   "tree": "6/6 10.6s",
+   "edit": "6/6 3.5s",
+   "feature": "0/6 (lenient 2) 7.6s",
+   "rename": "5/6 12.5s",
+   "config": "6/6 7.0s",
+   "total": "23/30"
+  },
+  {
+   "variant": "v8_grounded_fewshot_nl",
+   "tree": "2/2 3.3s",
+   "edit": "2/2 2.0s",
+   "feature": "2/2 (lenient 2) 3.3s",
+   "rename": "2/2 4.4s",
+   "config": "2/2 3.3s",
+   "total": "10/10"
+  },
+  {
+   "variant": "v8_grounded_fewshot_nl_sampled",
+   "tree": "6/6 8.3s",
+   "edit": "6/6 3.4s",
+   "feature": "5/6 (lenient 6) 7.6s",
+   "rename": "6/6 8.7s",
+   "config": "6/6 6.9s",
+   "total": "29/30"
+  },
+  {
+   "variant": "v9_grounded_nl",
+   "tree": "2/2 5.5s",
+   "edit": "2/2 2.0s",
+   "feature": "0/2 (lenient 2) 3.8s",
+   "rename": "0/2 8.8s",
+   "config": "2/2 3.0s",
+   "total": "6/10"
+  },
+  {
+   "variant": "v9_grounded_nl_sampled",
+   "tree": "6/6 9.7s",
+   "edit": "6/6 3.1s",
+   "feature": "0/6 (lenient 6) 7.2s",
+   "rename": "0/6 15.3s",
+   "config": "6/6 6.6s",
+   "total": "18/30"
+  }
+ ],
+ "summary": {
+  "v0_greedy": {
+   "tree": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     3976,
+     3895
+    ],
+    "rounds": [
+     4,
+     4
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 3976
+   },
+   "edit": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     1458,
+     1471
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 1471
+   },
+   "feature": {
+    "pass": 0,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     2903,
+     2916
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 2916
+   },
+   "rename": {
+    "pass": 0,
+    "lenient": 0,
+    "n": 2,
+    "ms": [
+     4665,
+     4814
+    ],
+    "rounds": [
+     8,
+     8
+    ],
+    "statuses": {
+     "round_limit": 2
+    },
+    "median_ms": 4814
+   },
+   "config": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     3190,
+     3244
+    ],
+    "rounds": [
+     4,
+     4
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 3244
+   }
+  },
+  "v1_sampled": {
+   "tree": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     9555,
+     10397,
+     9871,
+     10237,
+     9266,
+     10369
+    ],
+    "rounds": [
+     4,
+     4,
+     4,
+     4,
+     4,
+     4
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 10237
+   },
+   "edit": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     3252,
+     3176,
+     3248,
+     3986,
+     3130,
+     3210
+    ],
+    "rounds": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 3248
+   },
+   "feature": {
+    "pass": 0,
+    "lenient": 3,
+    "n": 6,
+    "ms": [
+     6682,
+     6963,
+     6891,
+     6675,
+     6968,
+     7364
+    ],
+    "rounds": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 6963
+   },
+   "rename": {
+    "pass": 0,
+    "lenient": 0,
+    "n": 6,
+    "ms": [
+     11266,
+     8410,
+     8589,
+     9276,
+     8930,
+     8828
+    ],
+    "rounds": [
+     8,
+     8,
+     8,
+     8,
+     8,
+     8
+    ],
+    "statuses": {
+     "round_limit": 6
+    },
+    "median_ms": 8930
+   },
+   "config": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     8177,
+     9078,
+     7563,
+     7329,
+     6846,
+     8090
+    ],
+    "rounds": [
+     3,
+     4,
+     3,
+     4,
+     3,
+     4
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 8090
+   }
+  },
+  "v2_fidelity": {
+   "tree": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     6335,
+     5734
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 6335
+   },
+   "edit": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     2260,
+     2293
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 2293
+   },
+   "feature": {
+    "pass": 0,
+    "lenient": 0,
+    "n": 2,
+    "ms": [
+     4630,
+     4136
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 4630
+   },
+   "rename": {
+    "pass": 0,
+    "lenient": 0,
+    "n": 2,
+    "ms": [
+     7133,
+     6866
+    ],
+    "rounds": [
+     8,
+     8
+    ],
+    "statuses": {
+     "round_limit": 2
+    },
+    "median_ms": 7133
+   },
+   "config": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     4150,
+     4276
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 4276
+   }
+  },
+  "v2_fidelity_sampled": {
+   "tree": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     10260,
+     10711,
+     10090,
+     10343,
+     10633,
+     10278
+    ],
+    "rounds": [
+     3,
+     6,
+     3,
+     6,
+     6,
+     4
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 10343
+   },
+   "edit": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     3335,
+     3254,
+     3212,
+     3382,
+     3398,
+     3407
+    ],
+    "rounds": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 3382
+   },
+   "feature": {
+    "pass": 0,
+    "lenient": 4,
+    "n": 6,
+    "ms": [
+     7798,
+     7809,
+     7758,
+     6959,
+     6965,
+     7429
+    ],
+    "rounds": [
+     4,
+     4,
+     4,
+     3,
+     3,
+     4
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 7758
+   },
+   "rename": {
+    "pass": 0,
+    "lenient": 0,
+    "n": 6,
+    "ms": [
+     8472,
+     10884,
+     11388,
+     11728,
+     11853,
+     10341
+    ],
+    "rounds": [
+     8,
+     8,
+     8,
+     8,
+     8,
+     8
+    ],
+    "statuses": {
+     "round_limit": 6
+    },
+    "median_ms": 11388
+   },
+   "config": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     7482,
+     7734,
+     6419,
+     7191,
+     6488,
+     6805
+    ],
+    "rounds": [
+     3,
+     4,
+     3,
+     4,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 7191
+   }
+  },
+  "v3_fewshot": {
+   "tree": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     4180,
+     4119
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 4180
+   },
+   "edit": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     2130,
+     2175
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 2175
+   },
+   "feature": {
+    "pass": 0,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     3683,
+     3891
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 3891
+   },
+   "rename": {
+    "pass": 0,
+    "lenient": 0,
+    "n": 2,
+    "ms": [
+     1975,
+     2013
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 2013
+   },
+   "config": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     3594,
+     4213
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 4213
+   }
+  },
+  "v3_fewshot_sampled": {
+   "tree": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     9629,
+     7504,
+     7815,
+     9032,
+     8112,
+     8443
+    ],
+    "rounds": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 8443
+   },
+   "edit": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     3399,
+     3285,
+     3322,
+     3351,
+     3620,
+     3959
+    ],
+    "rounds": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 3399
+   },
+   "feature": {
+    "pass": 0,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     7513,
+     7381,
+     7504,
+     7903,
+     7623,
+     7250
+    ],
+    "rounds": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 7513
+   },
+   "rename": {
+    "pass": 0,
+    "lenient": 0,
+    "n": 6,
+    "ms": [
+     3349,
+     8644,
+     3156,
+     2303,
+     8975,
+     3407
+    ],
+    "rounds": [
+     3,
+     8,
+     3,
+     2,
+     8,
+     3
+    ],
+    "statuses": {
+     "final": 4,
+     "round_limit": 2
+    },
+    "median_ms": 3407
+   },
+   "config": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     7018,
+     7023,
+     6966,
+     6756,
+     6857,
+     6747
+    ],
+    "rounds": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 6966
+   }
+  },
+  "v4_multiedit_fidelity": {
+   "tree": {
+    "pass": 0,
+    "lenient": 0,
+    "n": 2,
+    "ms": [
+     4581,
+     4726
+    ],
+    "rounds": [
+     8,
+     8
+    ],
+    "statuses": {
+     "round_limit": 2
+    },
+    "median_ms": 4726
+   },
+   "edit": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     1927,
+     1950
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 1950
+   },
+   "feature": {
+    "pass": 0,
+    "lenient": 0,
+    "n": 2,
+    "ms": [
+     3424,
+     3409
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 3424
+   },
+   "rename": {
+    "pass": 0,
+    "lenient": 0,
+    "n": 2,
+    "ms": [
+     5255,
+     5369
+    ],
+    "rounds": [
+     8,
+     8
+    ],
+    "statuses": {
+     "round_limit": 2
+    },
+    "median_ms": 5369
+   },
+   "config": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     3344,
+     3349
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 3349
+   }
+  },
+  "v4_multiedit_fidelity_sampled": {
+   "tree": {
+    "pass": 3,
+    "lenient": 3,
+    "n": 6,
+    "ms": [
+     10564,
+     10682,
+     6613,
+     12768,
+     6806,
+     6534
+    ],
+    "rounds": [
+     4,
+     4,
+     8,
+     8,
+     8,
+     8
+    ],
+    "statuses": {
+     "final": 3,
+     "round_limit": 3
+    },
+    "median_ms": 10564
+   },
+   "edit": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     3427,
+     3593,
+     3689,
+     3485,
+     3501,
+     3629
+    ],
+    "rounds": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 3593
+   },
+   "feature": {
+    "pass": 0,
+    "lenient": 4,
+    "n": 6,
+    "ms": [
+     7670,
+     7267,
+     7266,
+     7192,
+     7815,
+     7759
+    ],
+    "rounds": [
+     3,
+     3,
+     3,
+     3,
+     4,
+     4
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 7670
+   },
+   "rename": {
+    "pass": 0,
+    "lenient": 0,
+    "n": 6,
+    "ms": [
+     8416,
+     8544,
+     10229,
+     8842,
+     8336,
+     8281
+    ],
+    "rounds": [
+     8,
+     8,
+     8,
+     8,
+     8,
+     8
+    ],
+    "statuses": {
+     "round_limit": 6
+    },
+    "median_ms": 8544
+   },
+   "config": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     6992,
+     7045,
+     6677,
+     6818,
+     6718,
+     6614
+    ],
+    "rounds": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 6818
+   }
+  },
+  "v5_fidelity_fewshot_r12": {
+   "tree": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     3430,
+     3386
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 3430
+   },
+   "edit": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     2016,
+     1976
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 2016
+   },
+   "feature": {
+    "pass": 0,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     3628,
+     3691
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 3691
+   },
+   "rename": {
+    "pass": 0,
+    "lenient": 0,
+    "n": 2,
+    "ms": [
+     9061,
+     8973
+    ],
+    "rounds": [
+     12,
+     12
+    ],
+    "statuses": {
+     "round_limit": 2
+    },
+    "median_ms": 9061
+   },
+   "config": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     3271,
+     3276
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 3276
+   }
+  },
+  "v5_fidelity_fewshot_r12_sampled": {
+   "tree": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     7205,
+     8146,
+     8458,
+     7260,
+     7272,
+     8281
+    ],
+    "rounds": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 8146
+   },
+   "edit": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     3690,
+     3364,
+     3637,
+     3257,
+     3652,
+     3541
+    ],
+    "rounds": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 3637
+   },
+   "feature": {
+    "pass": 0,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     7681,
+     7097,
+     7135,
+     7582,
+     6870,
+     7576
+    ],
+    "rounds": [
+     4,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 7576
+   },
+   "rename": {
+    "pass": 0,
+    "lenient": 0,
+    "n": 6,
+    "ms": [
+     13835,
+     2932,
+     3076,
+     14231,
+     18761,
+     20756
+    ],
+    "rounds": [
+     12,
+     3,
+     3,
+     12,
+     12,
+     12
+    ],
+    "statuses": {
+     "round_limit": 4,
+     "final": 2
+    },
+    "median_ms": 14231
+   },
+   "config": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     6774,
+     6626,
+     6877,
+     6748,
+     6827,
+     6825
+    ],
+    "rounds": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 6825
+   }
+  },
+  "v6_grounded": {
+   "tree": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     4105,
+     4141
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 4141
+   },
+   "edit": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     1601,
+     1607
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 1607
+   },
+   "feature": {
+    "pass": 0,
+    "lenient": 0,
+    "n": 2,
+    "ms": [
+     3008,
+     3004
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 3008
+   },
+   "rename": {
+    "pass": 0,
+    "lenient": 0,
+    "n": 2,
+    "ms": [
+     8132,
+     7992
+    ],
+    "rounds": [
+     8,
+     8
+    ],
+    "statuses": {
+     "round_limit": 2
+    },
+    "median_ms": 8132
+   },
+   "config": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     3013,
+     2959
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 3013
+   }
+  },
+  "v6_grounded_sampled": {
+   "tree": {
+    "pass": 3,
+    "lenient": 3,
+    "n": 6,
+    "ms": [
+     10136,
+     8217,
+     9534,
+     7721,
+     6143,
+     8971
+    ],
+    "rounds": [
+     3,
+     8,
+     3,
+     8,
+     8,
+     3
+    ],
+    "statuses": {
+     "final": 3,
+     "round_limit": 3
+    },
+    "median_ms": 8971
+   },
+   "edit": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     3277,
+     3275,
+     3340,
+     3266,
+     3439,
+     3245
+    ],
+    "rounds": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 3277
+   },
+   "feature": {
+    "pass": 0,
+    "lenient": 1,
+    "n": 6,
+    "ms": [
+     6811,
+     7367,
+     6941,
+     7170,
+     7325,
+     7387
+    ],
+    "rounds": [
+     3,
+     4,
+     3,
+     3,
+     4,
+     4
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 7325
+   },
+   "rename": {
+    "pass": 3,
+    "lenient": 3,
+    "n": 6,
+    "ms": [
+     10674,
+     15057,
+     16143,
+     7773,
+     15039,
+     7902
+    ],
+    "rounds": [
+     5,
+     8,
+     8,
+     3,
+     8,
+     3
+    ],
+    "statuses": {
+     "final": 3,
+     "round_limit": 3
+    },
+    "median_ms": 15039
+   },
+   "config": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     6882,
+     6726,
+     6790,
+     6678,
+     6757,
+     6909
+    ],
+    "rounds": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 6790
+   }
+  },
+  "v7_grounded_multiedit": {
+   "tree": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     4586,
+     4559
+    ],
+    "rounds": [
+     4,
+     4
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 4586
+   },
+   "edit": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     1833,
+     1831
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 1833
+   },
+   "feature": {
+    "pass": 0,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     3260,
+     3252
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 3260
+   },
+   "rename": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     5592,
+     5581
+    ],
+    "rounds": [
+     5,
+     5
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 5592
+   },
+   "config": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     3277,
+     3224
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 3277
+   }
+  },
+  "v7_grounded_multiedit_sampled": {
+   "tree": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     9919,
+     10631,
+     9471,
+     10139,
+     11352,
+     12780
+    ],
+    "rounds": [
+     4,
+     4,
+     3,
+     4,
+     4,
+     5
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 10631
+   },
+   "edit": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     3479,
+     3373,
+     3523,
+     3490,
+     3505,
+     3502
+    ],
+    "rounds": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 3502
+   },
+   "feature": {
+    "pass": 0,
+    "lenient": 2,
+    "n": 6,
+    "ms": [
+     7594,
+     7280,
+     7607,
+     7157,
+     7605,
+     7480
+    ],
+    "rounds": [
+     4,
+     3,
+     4,
+     3,
+     4,
+     4
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 7594
+   },
+   "rename": {
+    "pass": 5,
+    "lenient": 5,
+    "n": 6,
+    "ms": [
+     10817,
+     12481,
+     11013,
+     12697,
+     11857,
+     16932
+    ],
+    "rounds": [
+     5,
+     6,
+     7,
+     6,
+     5,
+     8
+    ],
+    "statuses": {
+     "final": 5,
+     "round_limit": 1
+    },
+    "median_ms": 12481
+   },
+   "config": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     6416,
+     7523,
+     6648,
+     6960,
+     6947,
+     7053
+    ],
+    "rounds": [
+     3,
+     4,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 6960
+   }
+  },
+  "v8_grounded_fewshot_nl": {
+   "tree": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     3263,
+     3252
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 3263
+   },
+   "edit": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     1998,
+     1961
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 1998
+   },
+   "feature": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     3297,
+     3305
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 3305
+   },
+   "rename": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     4417,
+     4322
+    ],
+    "rounds": [
+     4,
+     4
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 4417
+   },
+   "config": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     3238,
+     3287
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 3287
+   }
+  },
+  "v8_grounded_fewshot_nl_sampled": {
+   "tree": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     8271,
+     9189,
+     8194,
+     8208,
+     8932,
+     8257
+    ],
+    "rounds": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 8271
+   },
+   "edit": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     3631,
+     3399,
+     3126,
+     3386,
+     3634,
+     3273
+    ],
+    "rounds": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 3399
+   },
+   "feature": {
+    "pass": 5,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     7594,
+     7092,
+     7612,
+     6984,
+     7703,
+     6929
+    ],
+    "rounds": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 7594
+   },
+   "rename": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     8723,
+     9281,
+     9562,
+     8651,
+     8687,
+     8562
+    ],
+    "rounds": [
+     4,
+     4,
+     4,
+     4,
+     4,
+     4
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 8723
+   },
+   "config": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     6901,
+     6906,
+     7071,
+     6811,
+     6893,
+     6901
+    ],
+    "rounds": [
+     3,
+     3,
+     4,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 6901
+   }
+  },
+  "v9_grounded_nl": {
+   "tree": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     5474,
+     5435
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 5474
+   },
+   "edit": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     1928,
+     2028
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 2028
+   },
+   "feature": {
+    "pass": 0,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     3798,
+     3524
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 3798
+   },
+   "rename": {
+    "pass": 0,
+    "lenient": 0,
+    "n": 2,
+    "ms": [
+     8775,
+     7974
+    ],
+    "rounds": [
+     8,
+     8
+    ],
+    "statuses": {
+     "round_limit": 2
+    },
+    "median_ms": 8775
+   },
+   "config": {
+    "pass": 2,
+    "lenient": 2,
+    "n": 2,
+    "ms": [
+     2999,
+     3000
+    ],
+    "rounds": [
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 2
+    },
+    "median_ms": 3000
+   }
+  },
+  "v9_grounded_nl_sampled": {
+   "tree": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     10120,
+     10240,
+     9391,
+     8636,
+     9681,
+     9648
+    ],
+    "rounds": [
+     3,
+     4,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 9681
+   },
+   "edit": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     3127,
+     3124,
+     3124,
+     3139,
+     3076,
+     3120
+    ],
+    "rounds": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 3124
+   },
+   "feature": {
+    "pass": 0,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     7024,
+     7230,
+     6684,
+     7011,
+     7533,
+     7839
+    ],
+    "rounds": [
+     4,
+     4,
+     3,
+     3,
+     3,
+     4
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 7230
+   },
+   "rename": {
+    "pass": 0,
+    "lenient": 0,
+    "n": 6,
+    "ms": [
+     15685,
+     15298,
+     15067,
+     15044,
+     14783,
+     16126
+    ],
+    "rounds": [
+     8,
+     8,
+     8,
+     8,
+     8,
+     8
+    ],
+    "statuses": {
+     "round_limit": 6
+    },
+    "median_ms": 15298
+   },
+   "config": {
+    "pass": 6,
+    "lenient": 6,
+    "n": 6,
+    "ms": [
+     6594,
+     6660,
+     6619,
+     6804,
+     6556,
+     6589
+    ],
+    "rounds": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ],
+    "statuses": {
+     "final": 6
+    },
+    "median_ms": 6619
+   }
+  }
+ },
+ "perf": [
+  {
+   "label": "~1k",
+   "input_tokens": 960,
+   "output_tokens": 256,
+   "ttft_ms": 461,
+   "decode_ms": 2235,
+   "prefill_tok_s": 2082.3,
+   "decode_tok_s": 114.1,
+   "gpuInUseBytes": 3064627200,
+   "chromeRssKB": 3663280
+  },
+  {
+   "label": "~1k",
+   "input_tokens": 960,
+   "output_tokens": 256,
+   "ttft_ms": 417,
+   "decode_ms": 2236,
+   "prefill_tok_s": 2300.2,
+   "decode_tok_s": 114.1,
+   "gpuInUseBytes": 3032711168,
+   "chromeRssKB": 3803456
+  },
+  {
+   "label": "~1k",
+   "input_tokens": 960,
+   "output_tokens": 256,
+   "ttft_ms": 422,
+   "decode_ms": 2300,
+   "prefill_tok_s": 2276.9,
+   "decode_tok_s": 110.9,
+   "gpuInUseBytes": 3017900032,
+   "chromeRssKB": 3801488
+  },
+  {
+   "label": "~4k",
+   "input_tokens": 3780,
+   "output_tokens": 256,
+   "ttft_ms": 2268,
+   "decode_ms": 3904,
+   "prefill_tok_s": 1666.7,
+   "decode_tok_s": 65.3,
+   "gpuInUseBytes": 7306313728,
+   "chromeRssKB": 3784400
+  },
+  {
+   "label": "~4k",
+   "input_tokens": 3780,
+   "output_tokens": 256,
+   "ttft_ms": 2361,
+   "decode_ms": 3482,
+   "prefill_tok_s": 1601,
+   "decode_tok_s": 73.2,
+   "gpuInUseBytes": 7337771008,
+   "chromeRssKB": 3786576
+  },
+  {
+   "label": "~4k",
+   "input_tokens": 3780,
+   "output_tokens": 256,
+   "ttft_ms": 2410,
+   "decode_ms": 3524,
+   "prefill_tok_s": 1568.7,
+   "decode_tok_s": 72.4,
+   "gpuInUseBytes": 7336247296,
+   "chromeRssKB": 3787856
+  }
+ ],
+ "memory": {
+  "before": {
+   "gpuInUseBytes": 2257436672,
+   "chromeRssKB": 1141024
+  },
+  "afterLoad": {
+   "gpuInUseBytes": 3497885696,
+   "chromeRssKB": 3436832
+  },
+  "afterPerf": {
+   "gpuInUseBytes": 7335641088,
+   "chromeRssKB": 3787600
+  },
+  "caveat": "gpuInUseBytes is system-wide IOAccelerator unified memory (includes other apps); chromeRssKB sums processes of the fresh profile"
+ },
+ "loadMs": 1896.094999998808,
+ "externalRequests": [],
+ "trialFiles": [
+  "agent-v2-agent-a.json",
+  "agent-v2-agent-b.json",
+  "agent-v2-perf.json"
+ ]
+}

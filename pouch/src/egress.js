@@ -53,6 +53,10 @@ export function egressOf(output) {
 // deps: { sessionTitle(sid) -> Promise<string>, onGrant() }
 export function createEgress(deps = {}) {
   let queue = Promise.resolve();
+  // Requests waiting for an answer, oldest first, for the composer tray
+  // (deps.onPending). The first is the one whose sheet is open.
+  let pending = [], seq = 0;
+  const changed = () => deps.onPending?.(pending);
 
   function ask(req, sid, title, agentName) {
     return new Promise((resolve) => {
@@ -86,15 +90,20 @@ export function createEgress(deps = {}) {
   // agentName: the subagent asking, or none for the main agent. A session
   // grant covers the session's subagents too.
   function approve(req, sid, agentName) {
+    const row = { id: ++seq, sid: sid == null ? null : String(sid), command: req.command, agentName, since: Date.now() };
+    pending = [...pending, row]; changed();
     const turn = queue.then(async () => {
       if ((await grantsFor(sid)).includes(req.service)) return true;
       const v = await ask(req, sid, await deps.sessionTitle?.(sid) ?? 'this session', agentName);
       if (v === 'session' && sid != null) { await grant(sid, req.service); deps.onGrant?.(); }
       return v === 'once' || v === 'session';
-    });
+    }).finally(() => { pending = pending.filter((p) => p !== row); changed(); });
     queue = turn.catch(() => false);
     return turn.catch(() => false);
   }
 
-  return { approve };
+  // Bring the open sheet forward (a click on its tray row).
+  const focus = () => { const d = $('egress'); if (d.open) $('egress-deny').focus(); };
+
+  return { approve, focus, get pending() { return pending; } };
 }

@@ -1,0 +1,12 @@
+{
+  "name": "pouch-quickjs-experiment",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "node build.mjs", "test": "node --test test/" },
+  "dependencies": {
+    "quickjs-emscripten-core": "0.32.0",
+    "@jitl/quickjs-singlefile-browser-release-sync": "0.32.0",
+    "@jitl/quickjs-singlefile-mjs-release-sync": "0.32.0"
+  },
+  "devDependencies": { "esbuild": "0.28.2" }
+}

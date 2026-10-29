@@ -1,3 +1,8 @@
 node_modules/
 dist/
 .deploy/
+
+# Local lane weights: fetched into ~/.cache/bayleaf-pouch/models and built
+# into dist/models/ (both outside git). Never commit model files.
+*.onnx
+*.onnx_data

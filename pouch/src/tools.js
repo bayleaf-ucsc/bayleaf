@@ -1,4 +1,5 @@
-// The four tools every coding harness converges on: read, write, edit, bash.
+// The four tools every coding harness converges on: read, write, edit, bash,
+// plus `run` (src/run.js: JavaScript in a sandboxed QuickJS worker).
 // They run in this page against the Vfs; nothing here touches the network.
 // just-bash is a TypeScript reimplementation of bash and coreutils, so `bash`
 // is an interpreter over the same files, not a real process.
@@ -6,6 +7,7 @@ import { Bash, defineCommand, getCommandNames } from 'just-bash';
 import { normalize } from './vfs.js';
 import { archiveCommands } from './archive.js';
 import { bayleafCommands } from './bayleaf-cli.js';
+import { runTool } from './run.js';
 
 const MAX_LINES = 2000;
 const MAX_CHARS = 50_000;
@@ -40,6 +42,27 @@ function explain(e, p) {
 
 const lineOf = (text, index) => text.slice(0, index).split('\n').length;
 
+// Native XML tool calls wrap each value in newlines, and small models get the
+// trailing newline wrong: an append drops a file's last newline, or oldText
+// and newText end differently (experiments/lfm3-webgpu, agent v2). So, for
+// every lane and disclosed in the tool descriptions: newText ends with a line
+// break exactly when oldText does (the same \n or \r\n). An empty newText (a
+// deletion) is left alone. Returns the edit and whether it changed.
+export function matchNewline(e) {
+  if (typeof e.oldText !== 'string' || typeof e.newText !== 'string' || e.newText === '') return [e, false];
+  const end = e.oldText.match(/\r?\n$/)?.[0] ?? '';
+  const has = /\n$/.test(e.newText);
+  if (!!end === has) return [e, false];
+  return [{ ...e, newText: end ? e.newText + end : e.newText.replace(/(\r?\n)+$/, '') }, true];
+}
+// A written text file ends with exactly one line break (the file's own \n or \r\n).
+export function oneFinalNewline(content) {
+  if (typeof content !== 'string' || content === '' || content.includes('\0')) return [content, false];
+  const nl = /\r\n/.test(content) ? '\r\n' : '\n';
+  const fixed = content.replace(/(\r?\n)*$/, '') + nl;
+  return [fixed, fixed !== content];
+}
+
 // Every change any tool makes passes through here first, so the UI can list
 // changed files, show diffs and undo (story map R2, R3, R5). `before(path)`
 // receives the absolute path and the operation name before the first write;
@@ -66,6 +89,18 @@ function recording(fs, before) {
 // the host can tell a subagent from the main agent; calls may run at once.
 export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
   const abs = (p) => normalize(p.startsWith('/') ? p : CWD + '/' + p);
+  // One model message can carry several calls, and they run concurrently: two
+  // edits of one file would both read the original and the last write would
+  // win (seen in t17: a rename lost its import change). Edits and writes of
+  // the same path therefore take turns.
+  const turns = new Map(); // path -> tail of its queue
+  const oneAtATime = (p, fn) => {
+    const run = (turns.get(p) ?? Promise.resolve()).then(fn, fn);
+    const tail = run.catch(() => {});
+    turns.set(p, tail);
+    tail.then(() => { if (turns.get(p) === tail) turns.delete(p); });
+    return run;
+  };
   const fsFor = (caller) => recording(vfs.fs, async (p, op) => { await hooks.beforeChange?.(p, op, caller); });
   const fs = fsFor(undefined);
   // One interpreter per call, bound to its caller and its own list of what it
@@ -110,25 +145,27 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
 
   const write = {
     name: 'write', label: 'Write',
-    description: 'Create or overwrite a file with the given content. Parent folders are created as needed.',
+    description: 'Create or overwrite a file with the given content. Parent folders are created as needed. A non-empty file is saved ending with exactly one newline.',
     parameters: Type.Object({ path: Type.String(), content: Type.String() }),
-    async execute({ path, content }, { caller } = {}) {
+    execute({ path, content }, opts = {}) { return oneAtATime(abs(path), () => writeOne({ path, content }, opts)); },
+  };
+  async function writeOne({ path, content }, { caller } = {}) {
       const p = abs(path), fs = fsFor(caller);
+      const [text, fixed] = oneFinalNewline(content);
       try {
         await fs.mkdir(normalize(p + '/..'), { recursive: true });
-        await fs.writeFile(p, content);
+        await fs.writeFile(p, text);
       } catch (e) { throw explain(e, p); }
       vfs.changed();
-      return `Wrote ${content.split('\n').length} lines (${content.length} characters) to ${p}`;
-    },
-  };
+      return `Wrote ${text.split('\n').length} lines (${text.length} characters) to ${p}${fixed ? ' (saved ending with exactly one newline)' : ''}`;
+  }
 
   // One replacement, or several in order via `edits` (one call instead of one
   // per change, which small models otherwise burn their turn budget on).
   // All replacements are checked before anything is written.
   const edit = {
     name: 'edit', label: 'Edit',
-    description: 'Replace exact text in a file. Each oldText must match exactly once (including whitespace and indentation) unless replaceAll is true. Read the file first. For several changes in one file, pass `edits` (applied in order, all or nothing) instead of oldText/newText. The result shows the edited lines so you can check them.',
+    description: 'Replace exact text in a file. Each oldText must match exactly once (including whitespace and indentation) unless replaceAll is true. Read the file first. For several changes in one file, pass `edits` (applied in order, all or nothing) instead of oldText/newText. newText is made to end with a newline exactly when oldText does. The result shows the edited lines so you can check them.',
     parameters: Type.Object({
       path: Type.String(),
       oldText: Type.Optional(Type.String({ description: 'Exact text to find' })),
@@ -138,9 +175,12 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
         oldText: Type.String(), newText: Type.String(), replaceAll: Type.Optional(Type.Boolean()),
       }), { description: 'Several replacements, applied in order' })),
     }),
-    async execute({ path, oldText, newText, replaceAll = false, edits }, { caller } = {}) {
+    execute(args, opts = {}) { return oneAtATime(abs(args.path), () => editOne(args, opts)); },
+  };
+  async function editOne({ path, oldText, newText, replaceAll = false, edits }, { caller } = {}) {
       const p = abs(path), fs = fsFor(caller);
-      const list = edits?.length ? edits : [{ oldText, newText, replaceAll }];
+      let matched = 0;
+      const list = (edits?.length ? edits : [{ oldText, newText, replaceAll }]).map((e) => { const [x, c] = matchNewline(e); matched += c; return x; });
       let text = await fs.readFile(p).catch((e) => { throw explain(e, p); });
       const starts = [];
       for (const [n, e] of list.entries()) {
@@ -167,15 +207,15 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
         const from = Math.max(1, start - 1), to = Math.min(lines.length, start + len);
         return lines.slice(from - 1, to).map((l, i) => `${from + i}: ${l}`).join('\n');
       }).join('\n...\n');
-      return `Applied ${list.length} edit${list.length > 1 ? 's' : ''} to ${p}. Edited lines now read:\n${clip(shown)}`;
-    },
-  };
+      const note = matched ? ` (newText's final newline was matched to oldText's${list.length > 1 ? ` in ${matched}` : ''})` : '';
+      return `Applied ${list.length} edit${list.length > 1 ? 's' : ''} to ${p}${note}. Edited lines now read:\n${clip(shown)}`;
+  }
 
   const bashTool = {
     name: 'bash', label: 'Bash',
     description: `Run a bash script in a simulated shell (just-bash) over the same files, starting in ${CWD}. ` +
       'Has coreutils, grep, rg, sed, awk, find, jq, diff, sort, xargs, and zip/unzip/tar (no compression flags). ' +
-      `There is no network, no python, node, git or package manager, and no real processes. Each call starts fresh in ${CWD}; use \`cd dir && ...\` within one call. \`ls /bin\` lists every command. ` +
+      `There is no network, no python, node, git or package manager, and no real processes (for real parsing or computation use the run tool). Each call starts fresh in ${CWD}; use \`cd dir && ...\` within one call. \`ls /bin\` lists every command. ` +
       '`bayleaf --help` for BayLeaf web search/fetch, sandbox VM and inboxes (these leave the pouch and ask the user).',
     parameters: Type.Object({ command: Type.String({ description: 'Bash script to run' }) }),
     async execute({ command }, { signal, caller } = {}) {
@@ -188,13 +228,19 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
       // Library-facing messages, restated for the agent.
       out = out.replace(/command not available in browser environments\. Exclude '[^']+' from your commands or use the Node\.js bundle\./g, 'command not available in Pouch.');
       if (/EROFS/.test(out)) out += `\n[hint: that folder is mounted read-only; write under ${CWD} instead]`;
+      // A silent failure ("exit 1" and nothing else) reads as an error with no
+      // cause; small models then retry blindly (grep with no match is the usual one).
+      if (r.exitCode !== 0 && !out.trim()) {
+        throw new Error(`no output, exit ${r.exitCode}${/(^|[|;&(\s])(e?grep|rg)\s/.test(command) ? ` (for grep this means no matches; paths are relative to ${CWD})` : ''}${egress}`);
+      }
       out = (clip(out.trimEnd()) || '(no output)') + egress;
       if (r.exitCode !== 0) throw new Error(`${out}\n[exit code ${r.exitCode}]`);
       return out;
     },
   };
 
-  return [read, write, edit, bashTool];
+  const run = runTool({ vfs, Type, CWD, abs, fsFor, ...(hooks.makeWorker ? { makeWorker: hooks.makeWorker } : {}) });
+  return [read, write, edit, bashTool, run];
 }
 
 // ── Context: AGENTS.md files and skills ─────────────────────────────
@@ -239,11 +285,12 @@ export async function systemPrompt(vfs) {
   const mounts = [...vfs.mounts].filter(([, m]) => m.live)
     .map(([n, m]) => `/mnt/${n}${m.readOnly ? ' (read-only)' : ''}`);
   let s = `You are BayLeaf Pouch, a coding agent running entirely inside the user's web browser.
-You work on files through the read, write, edit and bash tools. Filesystem:
+You work on files through the read, write, edit, bash and run tools. Filesystem:
 - ${CWD}: the user's workspace (browser-private storage). Default working directory.
 - /pouch: shared instructions (AGENTS.md) and skills (skills/<name>/SKILL.md).
 - /tmp: scratch, lost on reload.
-${mounts.length ? '- Folders the user mounted from their device: ' + mounts.join(', ') + '\n' : ''}The bash tool is a simulated shell with coreutils-like commands plus zip/unzip/tar: no network, no installs, no python/node/git, so you cannot run or test code here; say so when it matters.
+${mounts.length ? '- Folders the user mounted from their device: ' + mounts.join(', ') + '\n' : ''}The bash tool is a simulated shell with coreutils-like commands plus zip/unzip/tar: no network, no installs, no python/node/git.
+The run tool executes JavaScript (QuickJS) over a copy of the files you name, with no network: use it instead of awk/sed/jq for anything that needs real parsing (quoted CSV, nested JSON) or arithmetic, and to test JavaScript; save reusable scripts in ${CWD} and run them by path. Its file writes come back as reviewable changes.
 The one exception is the \`bayleaf\` command (web search/fetch, a remote sandbox VM, inboxes): it leaves the pouch and asks the user each time; see the bayleaf-cli skill.
 The subagent tool runs a self-contained task (web research, exploring a codebase) in a background subagent while you keep talking with the user: use it when the user asks for background work or when such a task would take many steps. Each subagent step costs a request from the same daily allowance; its report arrives later as a message, so do not wait or poll for it.
 The user sees your file changes in the chat, can review a diff of each and undo it, and can download any file or folder (as .zip) from the file browser.

@@ -12,8 +12,9 @@ the same operator identifies bytes but is not independent evidence of their prov
 - No Worker script, SSR, functions, runtime bindings, middleware, analytics bundle,
   telemetry collector, conversation store or server-side application code.
   `run_worker_first: false`, observability disabled, workers.dev and preview URLs disabled.
-- Only `pouch.html`, `SHA256SUMS`, and static `_headers`/`_redirects` configuration
-  enter the allowlisted upload. `/` rewrites internally to `/pouch.html` (200).
+- Only `pouch.html`, `SHA256SUMS`, static `_headers`/`_redirects` configuration and,
+  for a `--with-models` build, the Local lane's `models/<id>/` files listed in
+  `SHA256SUMS` enter the allowlisted upload (see "Local lane artifact" below). `/` rewrites internally to `/pouch.html` (200).
   Unmatched paths return 404 rather than exposing source or SPA fallback.
 - The host may process/retain request metadata, including IP addresses, paths,
   timestamps and security events. No claim that static hosting proves API/model
@@ -22,7 +23,7 @@ the same operator identifies bytes but is not independent evidence of their prov
   BayLeaf API/Tinfoil encrypted path. The `bayleaf` tool's approved non-inference
   egress is a separate plaintext boundary, as described in the README.
 - CSP is the built page's exact hash-based script policy, with only
-  `connect-src https://api.bayleaf.dev`; the response additionally denies framing and
+  `connect-src 'self' https://api.bayleaf.dev` (`'self'` since the Local lane: model files); the response additionally denies framing and
   objects. `no-store, no-transform`, no-referrer, nosniff, HSTS, noindex and restrictive
   camera/microphone/geolocation policy are static response headers.
 - Cloudflare initially injected NEL network-error-reporting headers. Removing them
@@ -31,6 +32,48 @@ the same operator identifies bytes but is not independent evidence of their prov
   origin and clear any policy cached from initial qualification. No zone-wide
   settings were changed. No platform script injection was observed: served bytes
   match the local artifact exactly.
+
+## Local lane artifact (built and tested locally, not deployed)
+
+`node build.mjs --with-models` adds `dist/models/lfm3-1.7b-q4f16/`; the default build
+stays models-free and unchanged. Shape of the tested build (2026-10-29):
+
+| File | Count | Size |
+|---|---:|---|
+| `manifest.<sha16>.json` (every part's order, size, SHA-256; each whole file's size and SHA-256) | 1 | ~15 KB |
+| `worker.<sha16>.js` (Transformers.js 4.3.2 + ORT Web 1.31.0-dev WebGPU bundle) | 1 | ~0.56 MB |
+| `<sha256>.bin` parts (ORT wasm: 2; model, tokenizer, config: 59) | 61 | ≤ 20 MiB each |
+| total | 63 | 1,081 MB (1.056 GiB) |
+
+With `pouch.html`, `SHA256SUMS`, `_headers` and `_redirects` the upload is 67 files.
+Limits (Cloudflare Workers platform limits, Static Assets, checked 2026-10-29,
+<https://developers.cloudflare.com/workers/platform/limits/#static-assets>): 25 MiB per
+file, 20,000 files per version (Free) or 100,000 (Paid), 100 `_headers` rules. Parts are
+20 MiB for margin; the ORT wasm (26.9 MB) is over the per-file limit and is split too.
+`deploy.mjs` refuses any listed file over 25 MiB, any path outside the allowlist
+(`pouch.html`, `models/<id>/manifest.<hex16>.json`, `worker.<hex16>.js`,
+`<sha256>.bin`), any name that is not its content hash, any file whose bytes differ
+from `SHA256SUMS`, a manifest that `pouch.html` does not embed, and a manifest part
+that is missing or different.
+
+Headers: `Cache-Control` is set per path, never on `/*` (Cloudflare merges matching
+rules and comma-joins a repeated header): `/`, `/pouch.html`, `/SHA256SUMS` stay
+`no-store, no-transform`; `/models/*` is `public, max-age=31536000, immutable`
+(content-addressed names). The security headers and CSP stay on `/*`.
+
+Privacy: the static host (Cloudflare, the same operator and service that already serve
+the page) sees that a client downloaded the model files: request metadata such as IP
+address, paths and timestamps. No prompt, file or reply goes anywhere in the Local lane;
+there is no new operator, endpoint or Worker script. The page asks before downloading.
+Pouch fetches only from its own origin, never from Hugging Face or a CDN at run time.
+
+Deploy (needs approval; not run): `npm ci && node fetch-models.mjs && node build.mjs
+--with-models && node deploy.mjs --check && node deploy.mjs`. `--check` verifies and
+stages without publishing. The first upload sends about 1.1 GB; later deploys reuse
+unchanged parts by hash. After deploy, `deploy.mjs` checks every model file is served
+(HEAD, size), the manifest, worker and one part byte-exact, and the immutable cache policy.
+`.deploy/<sha256>/` snapshots keep `pouch.html` and the part list (`SHA256SUMS`), not the
+1 GB of parts: rebuild them from `models.lock.json` to roll back a models build.
 
 ## Current themed artifact: 2026-10-29 UTC
 
@@ -71,7 +114,8 @@ From `pouch/`, after concurrent source editing has stopped:
 
 ```bash
 npm ci
-node build.mjs
+node build.mjs                # or: node fetch-models.mjs && node build.mjs --with-models
+node deploy.mjs --check       # verify and stage only
 node deploy.mjs
 ```
 

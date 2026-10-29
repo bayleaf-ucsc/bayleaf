@@ -8,8 +8,10 @@
        origin-private file system), or in folders you explicitly hand it.
     2. Every inference body is encrypted in this page, by the vendored Tinfoil
        SDK, to a hardware-attested enclave key. BayLeaf relays ciphertext.
-    3. The Content-Security-Policy below lets this page talk to exactly one host,
-       api.bayleaf.dev, and run exactly the scripts whose hashes it names.
+       The optional Local lane sends no inference at all: its model runs here.
+    3. The Content-Security-Policy below lets this page talk to api.bayleaf.dev
+       and its own origin ('self': only to download the optional Local model's
+       hash-checked parts), and run exactly the scripts whose hashes it names.
     4. You run a copy whose SHA-256 you can compare with a public release, so the
        operator cannot quietly change the code after you check it.
 
@@ -23,7 +25,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src __SCRIPT_HASHES__; style-src 'unsafe-inline'; connect-src https://api.bayleaf.dev; img-src data: blob:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src __SCRIPT_HASHES__ 'wasm-unsafe-eval'; worker-src blob:; style-src 'unsafe-inline'; connect-src 'self' https://api.bayleaf.dev; img-src data: blob:; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="light dark">
 <script>
@@ -159,6 +161,8 @@
   #model { field-sizing: content; border-color: transparent; background: transparent; color: var(--muted); font-size: .85rem; max-width: 12rem; cursor: pointer; }
   #model:hover { background: var(--hover); color: var(--ink); }
   #badge.ok { color: var(--leaf); } #badge.pending { color: var(--warn); } #badge.pending svg { animation: pulse 1.4s ease-in-out infinite; } #badge.bad { color: var(--bad); }
+  #badge.offline { color: var(--muted); } #status.offline { color: var(--warn); } #composer.offline { border-style: dashed; }
+  pre.run-out { max-height: 50vh; overflow: auto; white-space: pre-wrap; font-size: .8rem; }
   #auth.on { color: var(--leaf); }
   #auth.on::after { content: ''; position: absolute; right: 6px; bottom: 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--leaf); box-shadow: 0 0 0 2px var(--surface); }
 
@@ -226,6 +230,13 @@
   .msg-bar button.icon { width: 1.9rem; height: 1.9rem; }
   .msg-bar button.icon .i { width: 1rem; height: 1rem; }
   .msg-bar button.icon:disabled { opacity: .4; cursor: not-allowed; }
+  /* Turn footer: under a turn's final reply, the meta line stays visible
+     (model, duration, time); its actions appear like any toolbar's. */
+  .msg-bar.footer { visibility: visible; gap: .1rem; }
+  .msg-bar.footer .meta { flex: 1; min-width: 0; padding: 0 .1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .msg-bar.footer .meta .sep { padding: 0 .3rem; }
+  .msg-bar.footer .acts { display: flex; visibility: hidden; }
+  .msg:hover .msg-bar.footer .acts, .msg:focus-within .msg-bar.footer .acts, .msg.show .msg-bar.footer .acts { visibility: visible; }
   .typing { display: inline-flex; gap: 3px; padding: .35rem 0; }
   .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: typing 1.2s infinite ease-in-out; }
   .typing i:nth-child(2) { animation-delay: .15s; } .typing i:nth-child(3) { animation-delay: .3s; }
@@ -328,13 +339,54 @@
   .card .actions { display: flex; gap: .4rem; flex-wrap: wrap; }
   button.link { border: 0; background: none; padding: 0; min-height: 0; color: var(--leaf); text-decoration: underline; }
   .notice { font-size: .8rem; color: var(--muted); text-align: center; margin: .5rem 0; }
-  form#composer { display: flex; flex-direction: column; gap: .4rem; width: min(48rem, calc(100% - 1.5rem)); margin: 0 auto; padding: .5rem; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 1px 3px var(--shadow); }
+  /* Composer: one elevated card holding the activity tray, the input, and a
+     row of verbs (left) and settings (right), after OpenChamber's. */
+  form#composer { position: relative; display: flex; flex-direction: column; width: min(48rem, calc(100% - 1.5rem)); margin: 0 auto; padding: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 1px 2px var(--shadow), 0 6px 18px -10px var(--shadow); }
   form#composer:focus-within { border-color: var(--leaf); }
-  form#composer textarea { width: 100%; resize: none; min-height: 2.1rem; max-height: 40vh; padding: .38rem .3rem; border: 0; outline: none; background: transparent; font-size: 16px; }
-  #composer-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: .3rem; width: 100%; min-width: 0; }
-  #composer-toolbar #model { flex: 1; min-width: 0; max-width: none; width: 8rem; min-height: 44px; }
-  #composer-toolbar button { width: 44px; height: 44px; min-height: 44px; }
-  #send { flex: none; display: grid; place-items: center; width: 44px; height: 44px; min-height: 44px; padding: 0; border-radius: 50%; }
+  form#composer textarea { width: 100%; resize: none; min-height: 2.6rem; max-height: 40vh; padding: .7rem .9rem .3rem; border: 0; outline: none; background: transparent; font-size: 16px; border-radius: 16px; }
+  #composer-toolbar { display: flex; align-items: center; gap: .15rem; width: 100%; min-width: 0; padding: .2rem .45rem .45rem; }
+  #composer-toolbar > button.icon { width: 2.75rem; height: 2.75rem; } /* 44px targets everywhere, as before */
+  #composer-usage { width: auto !important; padding: 0 .45rem; gap: .25rem; display: inline-flex; align-items: center; }
+  #composer-usage .num { font-size: .78rem; font-variant-numeric: tabular-nums; }
+  #composer-usage.low { color: var(--warn); }
+  .lane-model { margin-left: auto; display: flex; align-items: center; gap: .1rem; min-width: 0; padding-left: .35rem; color: var(--muted); }
+  .lane-model .i { width: 15px; height: 15px; }
+  #composer-toolbar #model { min-width: 0; max-width: 15rem; min-height: 2.75rem; }
+  #send { flex: none; display: grid; place-items: center; width: 2.75rem; height: 2.75rem; min-height: 0; padding: 0; margin-left: .2rem; border-radius: 50%; }
+  #send.queue { background: var(--surface); color: var(--leaf); border-color: var(--leaf); }
+  /* Activity tray: what is running or waiting, above the input. */
+  #tray { background: var(--bg); border-bottom: 1px solid var(--line); border-radius: 15px 15px 0 0; font-size: .85rem; color: var(--muted); }
+  .tray-head { display: flex; align-items: center; gap: .5rem; padding: .1rem .45rem .1rem .85rem; min-height: 2.5rem; }
+  #tray-count { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #tray.collapsed #tray-toggle svg { transform: rotate(180deg); }
+  #tray.collapsed #tray-list { display: none; }
+  #tray-list { list-style: none; margin: 0; padding: 0 .45rem .35rem .85rem; max-height: 11rem; overflow: auto; }
+  .tray-row { display: flex; align-items: center; gap: .55rem; min-height: 2.1rem; }
+  .tray-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: .8rem var(--mono); color: var(--ink); }
+  button.tray-text { border: 0; background: none; padding: 0; min-height: 0; text-align: left; border-radius: 0; }
+  button.tray-text:hover { background: none; text-decoration: underline; }
+  .tray-origin { flex: none; font-size: .78rem; }
+  .tray-row[data-kind="approval"] .tray-origin, .tray-row[data-kind="approval"] svg { color: var(--warn); }
+  #composer button, #ac .ac-opt { -webkit-tap-highlight-color: transparent; }
+  .tray-time { flex: none; min-width: 3.6rem; text-align: right; font-size: .78rem; font-variant-numeric: tabular-nums; }
+  .tray-time:empty { min-width: 0; }
+  button.tray-stop { flex: none; border: 0; background: transparent; color: var(--bad); padding: 0 .45rem; min-height: 2rem; }
+  button.tray-stop:hover:not(:disabled) { background: var(--bad-soft); }
+  /* Autocomplete (@ / $ /) and the shield popover float above the card. */
+  #ac, #shield-pop { position: absolute; z-index: 20; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 28px var(--shadow); }
+  #ac { left: 0; right: 0; bottom: calc(100% + 6px); max-height: min(18rem, 45dvh); overflow: auto; padding: .25rem; }
+  .ac-opt { display: flex; align-items: baseline; gap: .7rem; min-height: 2.25rem; padding: .45rem .6rem; border-radius: 8px; cursor: pointer; }
+  .ac-opt[aria-selected="true"] { background: var(--current); }
+  .ac-opt[aria-disabled="true"] { color: var(--muted); cursor: default; background: none; }
+  .ac-label { flex: none; max-width: 100%; overflow-wrap: anywhere; }
+  .ac-opt.mono .ac-label { font: .82rem var(--mono); }
+  .ac-detail { flex: 1; min-width: 0; color: var(--muted); font-size: .8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #shield-pop { left: .4rem; bottom: 3.4rem; width: min(22rem, calc(100% - .8rem)); padding: .7rem .85rem; font-size: .85rem; }
+  #shield-pop p { margin: 0 0 .4rem; }
+  #shield-pop h3 { font-size: .8rem; margin: .6rem 0 .25rem; color: var(--muted); font-weight: 600; }
+  .pop-lane { display: flex; align-items: center; gap: .4rem; color: var(--leaf); }
+  .pop-grants { list-style: none; margin: 0 0 .5rem; padding: 0; }
+  .pop-grants li { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 2.25rem; }
   #composer.drop { outline: 2px dashed var(--leaf); background: var(--leaf-soft); }
   #attachment-chips { display: flex; gap: .3rem; flex-wrap: wrap; max-height: 8rem; overflow: auto; }
   .attachment { display: inline-flex; align-items: center; gap: .3rem; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; font-size: .8rem; max-width: 100%; padding-left: .4rem; }
@@ -346,6 +398,10 @@
   .msg .attachment-refs { font-size: .8rem; color: var(--muted); max-width: 100%; overflow-wrap: anywhere; }
   .md img { display: block; max-width: 100%; max-height: 32rem; object-fit: contain; }
   #send.stop { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+  #local-hint { width: min(48rem, calc(100% - 1.5rem)); margin: .25rem auto 0; font-size: .82rem; padding: .4rem .6rem; border-radius: .5rem; background: var(--warn-soft); border: 1px solid var(--warn-line); }
+  #local-hint button { font-size: .8rem; margin-left: .25rem; }
+  #local-settings progress { width: 100%; }
+  .local-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
   #status { width: min(48rem, calc(100% - 1.5rem)); margin: .25rem auto .45rem; font-size: .8rem; color: var(--muted); min-height: 1rem; }
   .sealed { font-size: .72rem; color: var(--leaf); border: 1px solid var(--leaf); border-radius: 4px; padding: 0 .3rem; white-space: nowrap; }
 
@@ -369,6 +425,9 @@
   #trust dl { display: grid; grid-template-columns: max-content 1fr; gap: .2rem .8rem; margin: .5rem 0; font-size: .82rem; }
   #trust dd { margin: 0; overflow-wrap: anywhere; font-family: var(--mono); font-size: .75rem; }
   #trust dt { color: var(--muted); }
+  .reply-facts { display: grid; grid-template-columns: max-content 1fr; gap: .2rem .8rem; margin: 0; font-size: .85rem; }
+  .reply-facts dt { color: var(--muted); } .reply-facts dd { margin: 0; overflow-wrap: anywhere; }
+  #shield-btn.ok { color: var(--leaf); } #shield-btn.bad { color: var(--bad); } #shield-btn.pending svg { animation: pulse 1.4s ease-in-out infinite; }
 
   dialog { color: var(--ink); background: var(--surface); max-width: min(34rem, 94vw); border: 1px solid var(--line); border-radius: 12px; padding: 1rem; box-shadow: 0 10px 30px var(--shadow); }
   dialog::backdrop { background: var(--backdrop); }
@@ -411,7 +470,8 @@
     #side-close { display: inline-grid; }
     #panel-host { position: fixed; z-index: 30; left: 0; right: 0; top: 0; bottom: calc(3.25rem + 1px + env(safe-area-inset-bottom)); border-left: 0; }
     .handle, #new-top { display: none; }
-    #model { max-width: 6.5rem; }
+    #model { max-width: 9rem; }
+    #composer-toolbar #model { max-width: 9rem; }
     #egress { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; border-radius: 0; border-left: 0; border-right: 0; box-sizing: border-box; }
     #egress-detail { max-height: 40dvh; }
     @media (prefers-reduced-motion: reduce) { #sidebar { transition: none; } }
@@ -428,6 +488,13 @@
     .msg .body button.path { min-height: 1.6rem; }
     .row .tag { min-height: 1.6rem; }
     #send { width: 2.75rem; height: 2.75rem; }
+    #composer-toolbar > button.icon, #composer-toolbar #model { width: 2.75rem; height: 2.75rem; min-height: 2.75rem; }
+    #composer-toolbar #model { width: auto; }
+    #composer-usage { min-width: 2.75rem; }
+    #tray-toggle, button.tray-stop, button.tray-text { min-height: 2.75rem; min-width: 2.75rem; }
+    .tray-row { min-height: 2.75rem; }
+    .ac-opt { min-height: 2.75rem; align-items: center; }
+    .pop-grants li { min-height: 2.75rem; }
     .msg-bar { height: 2.75rem; }
     .msg-bar button.icon { width: 2.75rem; height: 2.75rem; }
     .msg { -webkit-tap-highlight-color: transparent; }
@@ -491,6 +558,14 @@
   <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/></symbol>
   <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <!-- More Lucide (ISC): composer tray, lane and footer. -->
+  <symbol id="i-plus-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></symbol>
+  <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+  <symbol id="i-chip" viewBox="0 0 24 24"><rect width="14" height="14" x="5" y="5" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="i-chevron-up" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></symbol>
 </svg>
 <div id="app" data-panel="">
   <aside id="sidebar" aria-label="Sessions">
@@ -527,15 +602,29 @@
     </div>
     <div id="log" aria-live="polite"></div>
     <form id="composer">
-      <textarea id="input" rows="1" placeholder="Ask Pouch to work on your files" aria-label="Message"></textarea>
+      <div id="ac" role="listbox" hidden></div>
+      <div id="shield-pop" role="dialog" aria-label="This session's lane and permissions" hidden></div>
+      <section id="tray" aria-label="Activity" hidden>
+        <div class="tray-head">
+          <svg class="i" aria-hidden="true"><use href="#i-terminal"/></svg>
+          <span id="tray-count" role="status"></span>
+          <button id="tray-toggle" class="icon" type="button" aria-expanded="true" aria-controls="tray-list" aria-label="Hide activity" title="Hide activity"><svg class="i"><use href="#i-chevron-up"/></svg></button>
+          <button id="tray-stop-all" class="tray-stop" type="button" hidden>Stop all</button>
+        </div>
+        <ul id="tray-list"></ul>
+      </section>
+      <textarea id="input" rows="1" placeholder="Ask Pouch. @ for files, $ for skills, / for commands" aria-label="Message"></textarea>
       <div id="attachment-chips" aria-label="Pending attachments"></div>
       <p id="attachment-warning" role="status" hidden></p>
       <div id="composer-toolbar">
-        <button id="attach-file" class="icon" type="button" aria-label="Attach files" title="Attach files (or drop here)"><svg class="i"><use href="#i-plus"/></svg></button>
-        <select id="model" aria-label="Model for next user turn" title="Applies when you next send. Running work keeps its model."></select>
+        <button id="attach-file" class="icon" type="button" aria-label="Attach files" title="Attach files (or drop here)"><svg class="i"><use href="#i-plus-circle"/></svg></button>
+        <button id="shield-btn" class="icon" type="button" aria-expanded="false" aria-controls="shield-pop" aria-label="Lane and permissions for this session" title="Lane and permissions for this session"><svg class="i"><use href="#i-shield"/></svg></button>
+        <button id="composer-usage" class="icon unknown" type="button" aria-label="Usage" title="Usage"><svg class="i"><use href="#i-usage"/></svg><span class="num" id="composer-usage-num">?</span></button>
+        <label class="lane-model" title="Sealed lane: requests are encrypted to the enclave. The model applies when you next send; running work keeps its model."><svg class="i" aria-hidden="true"><use href="#i-lock"/></svg><select id="model" aria-label="Model for next user turn"></select></label>
         <button id="send" class="primary" type="submit" disabled title="Send"><svg class="i"><use href="#i-send"/></svg><span class="vh" id="send-label">Send</span></button>
       </div>
     </form>
+    <div id="local-hint" role="status" hidden><span id="local-hint-text"></span> <button id="local-hint-switch" type="button">Use Sealed next</button> <button id="local-hint-dismiss" type="button" aria-label="Dismiss">Dismiss</button></div>
     <div id="status" role="status"></div>
   </section>
   <div id="panel-host">
@@ -596,7 +685,7 @@
         Each request shows exactly what goes and who can see it, and a denial sends nothing.</p>
         <dl id="facts"></dl>
         <h3>Check this page</h3>
-        <p>This page talks only to <code>api.bayleaf.dev</code>: its Content-Security-Policy (<code>connect-src</code>) says so, and the browser enforces it.</p>
+        <p>This page talks only to <code>api.bayleaf.dev</code>, and to its own origin to download the optional Local model: its Content-Security-Policy (<code>connect-src</code>) says so, and the browser enforces it. The Local model's files are checked against a manifest whose SHA-256 is built into this page; downloading them tells the host that this browser fetched the model, nothing more. Local turns send nothing.</p>
         <p>Build <code id="build-id">__BUILD_ID__</code>. A page cannot vouch for its own hash, so this one does not show it. Save the page, then compare its hash with <code>SHA256SUMS</code> from the release:
         <code>shasum -a 256 pouch.html</code></p>
         <p><a id="source-link" href="https://github.com/bayleaf-ucsc/bayleaf/tree/pouch/pouch" target="_blank" rel="noopener noreferrer">Source code and releases on GitHub</a></p>
@@ -613,6 +702,20 @@
         <label class="setting-check"><input id="tools-expanded" type="checkbox">Expand tool calls by default</label>
         <p class="muted">Display preferences only, saved in this browser. They do not enable reasoning or change model reasoning effort. Existing messages keep their own open/closed state while streaming. Erase all resets these preferences.</p>
         <h3>Model selection</h3><p>The model below your message applies to your next user turn. Running work, including subagents, keeps the model it started with.</p>
+        <h3>Local model</h3>
+        <div id="local-settings">
+          <p id="local-state" class="muted">Checking...</p>
+          <progress id="local-progress" hidden></progress>
+          <p class="local-actions">
+            <button id="local-download" type="button" hidden>Download</button>
+            <button id="local-folder-btn" type="button">Load from folder</button>
+            <button id="local-files-btn" type="button">Load from files</button>
+            <button id="local-remove" type="button" class="danger" hidden>Remove local model</button>
+          </p>
+          <input id="local-folder" type="file" webkitdirectory multiple hidden>
+          <input id="local-files" type="file" multiple hidden>
+          <p class="muted">Local runs a small model (about 1.1 GB, downloaded once and checked part by part) on this device's GPU. Nothing you type is sent. It suits looking around a workspace and small, literal edits; use Sealed for bigger work. A saved copy of the <code>models</code> folder (or the original model files) can be loaded without the network. Erase all removes it too.</p>
+        </div>
       </div>
     </section>
   </div>
