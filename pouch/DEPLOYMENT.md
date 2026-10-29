@@ -75,7 +75,23 @@ unchanged parts by hash. After deploy, `deploy.mjs` checks every model file is s
 `.deploy/<sha256>/` snapshots keep `pouch.html` and the part list (`SHA256SUMS`), not the
 1 GB of parts: rebuild them from `models.lock.json` to roll back a models build.
 
-## Current themed artifact: 2026-10-29 UTC
+## Current artifact: run, offline, composer, Local lane (2026-10-29)
+
+- Built from commit `7c6b546` (clean; label `7c6b546 2026-10-29`) with
+  `node fetch-models.mjs && node build.mjs --with-models`.
+- HTML SHA-256: `fe7aed307a9d8daeda15a23ba6332d41858114b9422a12d1e618cff61a450463` (4,695 KiB).
+- 65 files, 1,086 MiB; largest 20.0 MiB (Cloudflare Static Assets limit 25 MiB per file).
+  `models/lfm3-1.7b-q4f16/`: 61 content-hash-named parts, a hashed manifest and worker.
+- CSP delta from the previous artifact: `script-src` adds `'wasm-unsafe-eval'`,
+  `worker-src blob:`; `connect-src 'self' https://api.bayleaf.dev`.
+- Cloudflare version: `c452b7f2-369a-4836-aa00-f97c75965ab5`.
+- `deploy.mjs` verified `/`, `/pouch.html`, `/SHA256SUMS`, then reported one model
+  part differing: post-deploy propagation (the same URL served exact bytes on retry).
+  A full re-verification afterwards fetched all 65 files over HTTPS: 0 mismatches.
+- Privacy note: the static host can see that a client downloaded the local model;
+  local inference itself sends nothing.
+
+## Earlier themed artifact: 2026-10-29 UTC
 
 - Light/Dark/System theme deployed as static assets.
 - HTML SHA-256: `32d65e0e10db7163e09ea3bd4c13955cc1d251548fc057456bb94c405cdac153`.
