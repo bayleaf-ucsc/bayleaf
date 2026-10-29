@@ -1,0 +1,94 @@
+{
+  "model_revision": "ab9fec4c681a25bec3b48b0b97a62fc2660a2985",
+  "ort": "1.31.0-dev.20260914-8d85527a0",
+  "assets": [
+    {
+      "path": "assets/runtime/transformers.js",
+      "url": "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2/dist/transformers.js",
+      "host": "cdn.jsdelivr.net",
+      "download_final_host": "cdn.jsdelivr.net",
+      "bytes": 1352822,
+      "sha256": "f9e04d8c2f7839e32b0b6cf8f63ae1d0e13b06b453fddffdb9a1f595a4c733b1"
+    },
+    {
+      "path": "assets/runtime/ort-wasm-simd-threaded.asyncify.mjs",
+      "url": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.0-dev.20260914-8d85527a0/dist/ort-wasm-simd-threaded.asyncify.mjs",
+      "host": "cdn.jsdelivr.net",
+      "download_final_host": "cdn.jsdelivr.net",
+      "bytes": 53057,
+      "sha256": "0966b6105cd936744498aa60df7a22cbd47af3374dbc64a9ab561c08a71e3611"
+    },
+    {
+      "path": "assets/runtime/ort-wasm-simd-threaded.asyncify.wasm",
+      "url": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.0-dev.20260914-8d85527a0/dist/ort-wasm-simd-threaded.asyncify.wasm",
+      "host": "cdn.jsdelivr.net",
+      "download_final_host": "cdn.jsdelivr.net",
+      "bytes": 26861777,
+      "sha256": "49871f5a4409519797e127440868a6d1923339d9185907f301a5b2a1d90af082"
+    },
+    {
+      "path": "assets/model/config.json",
+      "url": "https://huggingface.co/onnx-community/LFM3-1.7B-ONNX/resolve/ab9fec4c681a25bec3b48b0b97a62fc2660a2985/config.json",
+      "host": "huggingface.co",
+      "download_final_host": "huggingface.co",
+      "bytes": 1549,
+      "sha256": "beb7c0a3e61147e15b50151728b8dc15b994c46a3cd524264b98b1485b1acf9c"
+    },
+    {
+      "path": "assets/model/generation_config.json",
+      "url": "https://huggingface.co/onnx-community/LFM3-1.7B-ONNX/resolve/ab9fec4c681a25bec3b48b0b97a62fc2660a2985/generation_config.json",
+      "host": "huggingface.co",
+      "download_final_host": "huggingface.co",
+      "bytes": 241,
+      "sha256": "422ed8749f8849f763ffe836a709a2c58e1adcf3d32dfa4da48b3959e87ecce9"
+    },
+    {
+      "path": "assets/model/tokenizer.json",
+      "url": "https://huggingface.co/onnx-community/LFM3-1.7B-ONNX/resolve/ab9fec4c681a25bec3b48b0b97a62fc2660a2985/tokenizer.json",
+      "host": "huggingface.co",
+      "download_final_host": "us.aws.cdn.hf.co",
+      "bytes": 17908635,
+      "sha256": "7e226e34bface23ccf6e495d157bf77186c1c30a7659880e1a8994db528c3701"
+    },
+    {
+      "path": "assets/model/tokenizer_config.json",
+      "url": "https://huggingface.co/onnx-community/LFM3-1.7B-ONNX/resolve/ab9fec4c681a25bec3b48b0b97a62fc2660a2985/tokenizer_config.json",
+      "host": "huggingface.co",
+      "download_final_host": "huggingface.co",
+      "bytes": 14262,
+      "sha256": "4e1748d03b2162c6cf5d53b13cd0cf01aae0c98d47a8b99bfb737d7fdc3d1d05"
+    },
+    {
+      "path": "assets/model/special_tokens_map.json",
+      "url": "https://huggingface.co/onnx-community/LFM3-1.7B-ONNX/resolve/ab9fec4c681a25bec3b48b0b97a62fc2660a2985/special_tokens_map.json",
+      "host": "huggingface.co",
+      "download_final_host": "huggingface.co",
+      "bytes": 92,
+      "sha256": "7946f864cbfb62a1b041bda937244210a1a87f4a6cab3a48b791131b2cd57f88"
+    },
+    {
+      "path": "assets/model/chat_template.jinja",
+      "url": "https://huggingface.co/onnx-community/LFM3-1.7B-ONNX/resolve/ab9fec4c681a25bec3b48b0b97a62fc2660a2985/chat_template.jinja",
+      "host": "huggingface.co",
+      "download_final_host": "huggingface.co",
+      "bytes": 12129,
+      "sha256": "f45005c50cd2a97329722bf3a2dee9f16c04cdf825a589b280fb7e99e6827818"
+    },
+    {
+      "path": "assets/model/onnx/model_q4f16.onnx",
+      "url": "https://huggingface.co/onnx-community/LFM3-1.7B-ONNX/resolve/ab9fec4c681a25bec3b48b0b97a62fc2660a2985/onnx/model_q4f16.onnx",
+      "host": "huggingface.co",
+      "download_final_host": "us.aws.cdn.hf.co",
+      "bytes": 296714,
+      "sha256": "ef4f1e8b5e1af2e1a64230c71a344954fa047db7f3d718437908030817a0ee73"
+    },
+    {
+      "path": "assets/model/onnx/model_q4f16.onnx_data",
+      "url": "https://huggingface.co/onnx-community/LFM3-1.7B-ONNX/resolve/ab9fec4c681a25bec3b48b0b97a62fc2660a2985/onnx/model_q4f16.onnx_data",
+      "host": "huggingface.co",
+      "download_final_host": "us.aws.cdn.hf.co",
+      "bytes": 1087789056,
+      "sha256": "7a83bb217011b85cdab7f0d42806f32b86dc4365201fd5a68bffa5b41f40cce7"
+    }
+  ]
+}

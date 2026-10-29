@@ -1,0 +1,50 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>LFM3 WebGPU generation</title>
+<style>body{font:16px system-ui;max-width:900px;margin:2rem auto}pre{white-space:pre-wrap}button{padding:.6rem}</style>
+<h1>LFM3 WebGPU generation</h1>
+<p>Transformers.js 4.3.2, onnx-community/LFM3-1.7B-ONNX, q4f16. Downloads approximately 1.1 GB once. No remote inference.</p>
+<button id="run">Load and generate</button>
+<pre id="status"></pre><pre id="result"></pre>
+<script type="module">
+import {pipeline, TextStreamer, env} from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2/dist/transformers.js';
+const status = document.querySelector('#status'), result = document.querySelector('#result');
+const evidence = {runtime:'@huggingface/transformers@4.3.2',model:'onnx-community/LFM3-1.7B-ONNX',dtype:'q4f16',device:'webgpu'};
+document.querySelector('#run').onclick = async () => {
+ document.querySelector('#run').disabled=true;
+ try {
+  const adapter = await navigator.gpu.requestAdapter();
+  if(!adapter) throw Error('No WebGPU adapter');
+  evidence.adapter={vendor:adapter.info.vendor,architecture:adapter.info.architecture,description:adapter.info.description};
+  evidence.userAgent=navigator.userAgent;
+  status.textContent=JSON.stringify(evidence,null,2);
+  const start=performance.now();
+  const generator=await pipeline('text-generation',evidence.model,{dtype:evidence.dtype,device:'webgpu',progress_callback:p=>{status.textContent=JSON.stringify(evidence,null,2)+'\n'+JSON.stringify(p);}});
+  evidence.load_ms=performance.now()-start;
+  const messages=[{role:'system',content:'You are a helpful assistant.'},{role:'user',content:'What is the capital of France? Answer in one sentence.'}];
+  evidence.messages=messages;
+  // Count actual WebGPU compute commands, not just a requested backend name.
+  let dispatches=0,submissions=0;
+  const dispatch=GPUComputePassEncoder.prototype.dispatchWorkgroups;
+  const indirect=GPUComputePassEncoder.prototype.dispatchWorkgroupsIndirect;
+  const submit=GPUQueue.prototype.submit;
+  GPUComputePassEncoder.prototype.dispatchWorkgroups=function(...args){dispatches++;return dispatch.apply(this,args)};
+  GPUComputePassEncoder.prototype.dispatchWorkgroupsIndirect=function(...args){dispatches++;return indirect.apply(this,args)};
+  GPUQueue.prototype.submit=function(...args){submissions++;return submit.apply(this,args)};
+  const begin=performance.now(); let tokens=0,first;
+  const output=await generator(messages,{max_new_tokens:48,do_sample:false,tokenizer_encode_kwargs:{enable_thinking:false},streamer:new TextStreamer(generator.tokenizer,{skip_prompt:true,skip_special_tokens:true,callback_function:text=>{result.textContent+=text},token_callback_function:()=>{tokens++;first??=performance.now()}})});
+  evidence.generation_ms=performance.now()-begin;
+  evidence.time_to_first_token_ms=first-begin;
+  evidence.streamed_token_count=tokens;
+  evidence.webgpu_compute_dispatches=dispatches;
+  evidence.webgpu_queue_submissions=submissions;
+  GPUComputePassEncoder.prototype.dispatchWorkgroups=dispatch;
+  GPUComputePassEncoder.prototype.dispatchWorkgroupsIndirect=indirect;
+  GPUQueue.prototype.submit=submit;
+  evidence.output=output;
+  result.textContent=JSON.stringify(evidence,null,2);
+  await generator.dispose();
+ }catch(e){evidence.error=String(e);result.textContent=JSON.stringify(evidence,null,2);}
+ window.evidence=evidence;
+};
+</script>

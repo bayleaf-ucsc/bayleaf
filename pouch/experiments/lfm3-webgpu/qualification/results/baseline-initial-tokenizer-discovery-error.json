@@ -1,0 +1,114 @@
+{
+  "phase": "baseline",
+  "at": "2026-10-29T07:05:00.039Z",
+  "browser": "156.0.8078.73",
+  "load": {
+    "load_ms": 3252.205000013113,
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+    "adapter": {
+      "vendor": "apple",
+      "architecture": "metal-3",
+      "description": ""
+    },
+    "features": [
+      "depth32float-stencil8",
+      "chromium-experimental-subgroup-matrix",
+      "rg11b10ufloat-renderable",
+      "texture-formats-tier1",
+      "bgra8unorm-storage",
+      "texture-compression-bc",
+      "dual-source-blending",
+      "core-features-and-limits",
+      "float32-filterable",
+      "indirect-first-instance",
+      "texture-compression-astc-sliced-3d",
+      "float32-blendable",
+      "atomic-vec2u-min-max",
+      "subgroup-size-control",
+      "texture-compression-unaligned",
+      "texture-compression-astc",
+      "texture-compression-etc2",
+      "depth-clip-control",
+      "texture-compression-bc-sliced-3d",
+      "shader-f16",
+      "timestamp-query",
+      "texture-formats-tier2",
+      "clip-distances",
+      "primitive-index",
+      "texture-component-swizzle",
+      "subgroups"
+    ],
+    "limits": {
+      "maxBufferSize": 4294967292,
+      "maxStorageBufferBindingSize": 4294967292
+    },
+    "ort": {
+      "common": "1.31.0-dev.20260911-2a43ec07e",
+      "web": "1.31.0-dev.20260914-8d85527a0"
+    },
+    "fetches": [
+      "http://127.0.0.1:8768/assets/runtime/ort-wasm-simd-threaded.asyncify.wasm"
+    ]
+  },
+  "fatal": "Error: page.evaluate: Error: TypeError: Cannot read properties of null (reading 'apply_chat_template')\nTypeError: Cannot read properties of null (reading 'apply_chat_template')\n    at generate (http://127.0.0.1:8768/worker.js:43:35)\n    at self.onmessage (http://127.0.0.1:8768/worker.js:74:44)\n    at generate (http://127.0.0.1:8768/worker.js:43:35)\n    at self.onmessage (http://127.0.0.1:8768/worker.js:74:44)\n    at worker.onmessage (http://127.0.0.1:8768/app.js:7:89)",
+  "network": [
+    {
+      "url": "http://127.0.0.1:8768/",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/app.js",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/worker.js",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/assets/runtime/transformers.js",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/tools.bundle.js",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/assets/model/config.json",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/assets/model/onnx/model_q4f16.onnx",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/assets/model/onnx/model_q4f16.onnx_data",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/assets/model/generation_config.json",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/assets/runtime/ort-wasm-simd-threaded.asyncify.mjs",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/assets/runtime/ort-wasm-simd-threaded.asyncify.wasm",
+      "method": "GET",
+      "serviceWorker": false
+    }
+  ],
+  "errors": [
+    "Failed to load resource: the server responded with a status of 404 (File not found)"
+  ]
+}

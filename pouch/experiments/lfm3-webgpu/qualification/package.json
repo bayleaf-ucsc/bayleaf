@@ -1,0 +1,1 @@
+{"private":true,"type":"module","dependencies":{"playwright-core":"1.58.2","just-bash":"3.6.0","esbuild":"0.28.2"}}

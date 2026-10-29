@@ -1,0 +1,46 @@
+{
+  "phase": "baseline",
+  "at": "2026-10-29T07:06:59.719Z",
+  "browser": "156.0.8078.73",
+  "fatal": "Error: page.evaluate: Error: TypeError: Cannot read properties of undefined (reading 'tokenizer_class')\nTypeError: Cannot read properties of undefined (reading 'tokenizer_class')\n    at AutoTokenizer.from_pretrained (http://127.0.0.1:8768/assets/runtime/transformers.js:17535:43)\n    at async self.onmessage (http://127.0.0.1:8768/worker.js:74:27)\n    at AutoTokenizer.from_pretrained (http://127.0.0.1:8768/assets/runtime/transformers.js:17535:43)\n    at async self.onmessage (http://127.0.0.1:8768/worker.js:74:27)\n    at worker.onmessage (http://127.0.0.1:8768/app.js:7:89)",
+  "network": [
+    {
+      "url": "http://127.0.0.1:8768/",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/app.js",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/worker.js",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/assets/runtime/transformers.js",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/tools.bundle.js",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/assets/runtime/ort-wasm-simd-threaded.asyncify.mjs",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/assets/runtime/ort-wasm-simd-threaded.asyncify.wasm",
+      "method": "GET",
+      "serviceWorker": false
+    }
+  ],
+  "errors": [
+    "Failed to load resource: the server responded with a status of 404 (File not found)"
+  ]
+}
