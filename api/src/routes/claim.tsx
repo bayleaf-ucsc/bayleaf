@@ -552,7 +552,6 @@ claimRoutes.post('/approve', async (c) => {
     <ResultPage
       kind="approved"
       client={record.client}
-      restartOpenCode={record.curl_platform !== undefined}
     />,
   );
 });
@@ -680,15 +679,12 @@ function ApprovalPage({ session, userCode, record, approveTok, denyTok }: Approv
 interface ResultPageProps {
   kind: 'approved' | 'denied';
   client: string;
-  restartOpenCode?: boolean;
 }
 
-function ResultPage({ kind, client, restartOpenCode = false }: ResultPageProps) {
+function ResultPage({ kind, client }: ResultPageProps) {
   const title = kind === 'approved' ? 'Approved' : 'Denied';
   const msg = kind === 'approved'
-    ? restartOpenCode
-      ? `${client} has been authorized. Return to your terminal, then restart OpenCode to access BayLeaf.`
-      : `${client} has been authorized. Return to your terminal to finish setup.`
+    ? `${client} has been authorized. You can safely close this tab.`
     : `Authorization for ${client} was denied. You can close this tab.`;
   return (
     <html lang="en">
