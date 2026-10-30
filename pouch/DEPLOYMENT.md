@@ -86,9 +86,11 @@ shipped `sw.js`, stages and snapshots them, and after deploy verifies their byte
 cache headers. README "Install and the offline copy" has the policy.
 
 - CSP delta: `worker-src blob:` becomes `worker-src 'self' blob:` (registering
-  `/sw.js`); `manifest-src 'self'` is added. Nothing else changes: `connect-src`,
-  `img-src` and the script hashes are as before (Chromium loads manifest icons
-  without `img-src 'self'`). `deploy.mjs` now requires both directives.
+  `/sw.js`); `manifest-src 'self'` is added; `img-src data: blob:` becomes
+  `img-src 'self' data: blob:` (the manifest and apple-touch icons). The first PWA
+  deploy omitted that last change on the claim that Chromium loads manifest icons
+  without it; real Chrome blocked them, while the Playwright installability check
+  had passed. `deploy.mjs` now requires all three directives.
 - `_headers`: `/sw.js` and `/manifest.webmanifest` are `no-cache, no-transform`
   (revalidated every time, so a release reaches them at once); `/icons/*`
   `public, max-age=86400`; the page and `SHA256SUMS` stay `no-store`.

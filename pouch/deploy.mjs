@@ -53,7 +53,7 @@ if (!html.includes(files.find((f) => f.path === 'sw.js').sha)) throw new Error('
 const text = html.toString('utf8');
 const csp = text.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)"/i)?.[1];
 if (!csp || !csp.includes("connect-src 'self' https://api.bayleaf.dev;") || /script-src[^;]*'unsafe-(inline|eval|hashes)'/.test(csp)
-  || !csp.includes("worker-src 'self' blob:;") || !csp.includes("manifest-src 'self';") || !csp.startsWith("default-src 'none';"))
+  || !csp.includes("worker-src 'self' blob:;") || !csp.includes("manifest-src 'self';") || !csp.includes("img-src 'self' data: blob:;") || !csp.startsWith("default-src 'none';"))
   throw new Error('Unexpected CSP'); // 'wasm-unsafe-eval' (QuickJS, ONNX Runtime) is expected; JS eval is not
 // worker-src 'self' is for /sw.js only; manifest-src 'self' for /manifest.webmanifest.
 const scripts = [...text.matchAll(/<script>([\s\S]*?)<\/script>/g)];
