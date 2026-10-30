@@ -50,6 +50,11 @@ const get = (path, headers = {}) => mf.dispatchFetch(`http://localhost:8806${pat
 try {
   const spec = await (await get('/docs/openapi.json')).json();
   const schemas = spec.components.schemas;
+  const chatDescription = spec.paths['/v1/chat/completions'].post.description;
+  for (const phrase of ['"provider": {"only": ["EXACT-PROVIDER-SLUG"], "allow_fallbacks": false}',
+    'on every request', 'non-ZDR', 'custom routing headers are not forwarded']) {
+    assert.ok(chatDescription.includes(phrase), `Chat Completions must document provider pinning: ${phrase}`);
+  }
   const computerOperations = Object.entries(spec.paths).filter(([path]) => path.startsWith('/sandbox/computer/'));
   assert.equal(computerOperations.length, 16);
   for (const [path, operation] of computerOperations) {
@@ -215,6 +220,8 @@ try {
      }
    }
   const llms = await (await get('/llms.txt')).text();
+  assert.ok(llms.includes('pin a known-working OpenRouter provider on every request'));
+  assert.ok(llms.includes('"provider": {"only": ["EXACT-PROVIDER-SLUG"], "allow_fallbacks": false}'));
   assert.ok(llms.includes('Documentation ownership') && llms.includes('## HTTP API overview'));
   assert.ok(llms.includes('not BayLeaf inference API endpoints'));
   assert.ok(llms.includes('docs#tag/grants') && llms.includes('authorizeInferenceClient'));

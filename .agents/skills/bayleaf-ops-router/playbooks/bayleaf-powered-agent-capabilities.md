@@ -153,6 +153,8 @@ API to keep a retired capability appearing functional.
 
 ## Refinement log
 
+- 2026-10-30 (provider pinning, documentation only): Existing JSON passthrough was live-qualified with the operator's BayLeaf key: pinned text and vision returned DeepInfra, while a nonexistent provider failed with 404 instead of falling back. Expose guidance in llms.txt and generated Chat Completions docs; hosted OpenChamber/Nanobot, Chat and desktop adapters are not changed because no new capability, credential or default is introduced. Local docs tests cover both surfaces; publication remains pending approval.
+
 - 2026-10-24 (approved hosted shared-MCP delivery): Source, published plugin, actual
   generated config, active MCP connection and installed Nanobot registry are
   distinct evidence. Retained usage/shared limit reads pass, while inactive Desktop

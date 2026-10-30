@@ -272,7 +272,12 @@ const chatCompletionsRoute = createRoute({
   summary: 'Chat Completions',
   description:
     'OpenAI-compatible chat completions endpoint. Supports streaming via `stream: true`. ' +
-    'Caller-provided system and developer messages are forwarded unchanged.',
+    'Caller-provided system and developer messages are forwarded unchanged. ' +
+    'OpenRouter provider-routing settings are forwarded in the JSON body: to pin a known-working ' +
+    'provider (for example, for consistent vision support), include `"provider": {"only": ["EXACT-PROVIDER-SLUG"], "allow_fallbacks": false}` ' +
+    'on every request. Copy the exact endpoint slug from the model\'s OpenRouter page; ' +
+    'unavailable or non-ZDR endpoints fail rather than switch providers. ' +
+    '`provider.order` alone is a preference, not a strict pin; custom routing headers are not forwarded.',
   security: [{ Bearer: [] }, {}] as Record<string, string[]>[],
   request: {
     body: {

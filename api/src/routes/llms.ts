@@ -795,6 +795,8 @@ parameters (${bt}temperature${bt}, ${bt}max_tokens${bt}, ${bt}tools${bt}, etc.).
 ordinary API key, Campus Pass where eligible, or a temporary token matching the
 model. Temporary tokens have the narrower permissions described above.
 
+For consistent vision support, pin a known-working OpenRouter provider on every request with ${bt}"provider": {"only": ["EXACT-PROVIDER-SLUG"], "allow_fallbacks": false}${bt} in the JSON body (copy the exact endpoint slug from the model's OpenRouter page); unavailable or non-ZDR endpoints fail rather than switch providers.
+
 Chat Completions routes by backend prefix. ${bt}POST /v1/responses${bt} is currently
 OpenRouter-only. Other supported ${bt}/v1/*${bt} passthroughs require an ordinary key
 or eligible Campus Pass; a temporary token cannot use them.
