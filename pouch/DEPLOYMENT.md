@@ -71,8 +71,10 @@ Pouch fetches only from its own origin, never from Hugging Face or a CDN at run 
 Deploy (needs approval; not run): `npm ci && node fetch-models.mjs && node build.mjs
 --with-models && node deploy.mjs --check && node deploy.mjs`. `--check` verifies and
 stages without publishing. The first upload sends about 1.1 GB; later deploys reuse
-unchanged parts by hash. After deploy, `deploy.mjs` checks every model file is served
-(HEAD, size), the manifest, worker and one part byte-exact, and the immutable cache policy.
+unchanged parts by hash. After deploy, `deploy.mjs` downloads every model file (about
+1 GB, four at a time) and checks its SHA-256 and the immutable cache policy. A cheaper
+size check is not possible: Cloudflare omits `Content-Length` on HEAD for cached assets
+and ignores `Range` on them.
 `.deploy/<sha256>/` snapshots keep `pouch.html` and the part list (`SHA256SUMS`), not the
 1 GB of parts: rebuild them from `models.lock.json` to roll back a models build.
 
@@ -109,9 +111,11 @@ cache headers. README "Install and the offline copy" has the policy.
   CSP delta: `worker-src 'self' blob:`, `manifest-src 'self'`.
 - Cloudflare version: `f20277af-fd25-4a2b-90bc-b854912b7c9e` (an earlier upload the
   same day, `c6585532-…`, carried a `+dirty` label and was replaced).
-- Both uploads hit the post-deploy propagation window: `deploy.mjs` saw the old `/`
-  once and a wrong model part once. It now retries byte mismatches (6 tries, 15 s
-  apart). A full HTTPS re-verification of all 72 URLs (including `/`) found 0
+- `deploy.mjs` failed after both uploads. The `/` failure was real propagation (the
+  edge briefly served the previous page), so byte mismatches are now retried (6 tries,
+  15 s apart). The model-part failures, here and on 2026-10-29, were not propagation
+  but a bug in the check: Cloudflare omits `Content-Length` on HEAD for cached parts,
+  so the size compared as 0. The check now downloads and hashes every model file. A full HTTPS re-verification of all 72 URLs (including `/`) found 0
   mismatches; the live manifest is served as `application/manifest+json`.
 - Untested on real Safari, iOS, Android and Firefox; Playwright WebKit fails the
   offline path (see JOURNEYS).

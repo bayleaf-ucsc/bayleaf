@@ -146,18 +146,20 @@ for (const path of ['/', '/pouch.html', '/SHA256SUMS']) {
   if (!response.headers.get('content-security-policy')?.startsWith(csp)) throw new Error(`CSP mismatch: ${path}`);
   console.log(`Verified HTTPS ${path}: 200, exact bytes, no cookies, NEL disabled`);
 }
-// Model files: the manifest and worker byte-exact, every part present with
-// its size (HEAD), one part byte-exact, all with immutable caching.
-for (const [i, f] of modelFiles.entries()) {
-  const full = !f.path.endsWith('.bin') || i === modelFiles.findIndex((x) => x.path.endsWith('.bin'));
+// Model files: every one downloaded and hashed (about 1 GB), with immutable
+// caching. A size check by HEAD is not possible: Cloudflare omits
+// Content-Length on HEAD for cached assets and ignores Range on them.
+const verifyModelFile = async (f) => {
   for (let attempt = 1; ; attempt++) {
-    const response = await fetch(`https://pouch.bayleaf.dev/${f.path}`, { method: full ? 'GET' : 'HEAD', signal: AbortSignal.timeout(60000), redirect: 'error' });
+    const response = await fetch(`https://pouch.bayleaf.dev/${f.path}`, { signal: AbortSignal.timeout(120000), redirect: 'error' });
     if (response.status !== 200 || response.headers.has('set-cookie') || response.headers.get('cache-control') !== 'public, max-age=31536000, immutable')
       throw new Error(`Unexpected response or cache policy: /${f.path}`);
-    if (full ? createHash('sha256').update(Buffer.from(await response.arrayBuffer())).digest('hex') === f.sha : Number(response.headers.get('content-length')) === f.size) break;
+    if (createHash('sha256').update(Buffer.from(await response.arrayBuffer())).digest('hex') === f.sha) return;
     await settle(`/${f.path}`, attempt);
   }
-}
+};
+const queue = [...modelFiles];
+await Promise.all(Array.from({ length: 4 }, async () => { while (queue.length) await verifyModelFile(queue.shift()); }));
 for (const f of shellFiles) {
   const response = await fetch(`https://pouch.bayleaf.dev/${f.path}`, { signal: AbortSignal.timeout(20000), redirect: 'error' });
   const body = Buffer.from(await response.arrayBuffer());
@@ -167,4 +169,4 @@ for (const f of shellFiles) {
   if (createHash('sha256').update(body).digest('hex') !== f.sha) throw new Error(`Served bytes differ: /${f.path}`);
 }
 console.log(`Verified ${shellFiles.length} app shell files: exact bytes, cache policy`);
-if (modelFiles.length) console.log(`Verified ${modelFiles.length} model files: present, immutable, manifest/worker/one part byte-exact`);
+if (modelFiles.length) console.log(`Verified ${modelFiles.length} model files: immutable and byte-exact`);
