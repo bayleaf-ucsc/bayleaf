@@ -50,6 +50,52 @@ export function createUsage({ getKey }) {
 }
 
 // A pasted line like BAYLEAF_API_KEY=sk-bayleaf-... still yields the key.
+// Today's request ledger: every Sealed request Pouch sends, counted as it
+// leaves and attributed to a session (turns, subagents, one-shots, titles,
+// compactions, and requests a Stop cut short but BayLeaf had received). The
+// transcript cannot say this: a revert folds turns away and a title is not
+// in it. `base` is the allowance seen before the day's first request, so the
+// panel can reconcile what it counted with what the allowance lost.
+// storage: { get(), set(v) }; dayOf(): the current allowance day (a string).
+export function createLedger(storage, dayOf) {
+  let led = null;
+  // dayOf() is null while the allowance is unknown: keep counting into the current day.
+  const fresh = () => ({ day: dayOf() ?? new Date().toDateString(), base: null, bySid: {}, kinds: {} });
+  async function load() {
+    led ??= (await storage.get().catch(() => null)) ?? fresh();
+    const d = dayOf();
+    if (d && led.day !== d) led = fresh();
+    return led;
+  }
+  let saving = Promise.resolve();
+  return {
+    // remaining: the allowance last seen, taken as the base on the day's first count.
+    async add(sid, kind = 'turn', remaining = null) {
+      const l = await load();
+      if (l.base == null && remaining != null && !Object.keys(l.bySid).length) l.base = remaining;
+      const k = String(sid ?? 'new');
+      l.bySid[k] = (l.bySid[k] ?? 0) + 1;
+      l.kinds[kind] = (l.kinds[kind] ?? 0) + 1;
+      saving = saving.then(() => storage.set(l)).catch(() => {});
+    },
+    // A first message counts under 'new' until its session exists.
+    async adopt(from, to) {
+      const l = await load(), a = String(from), b = String(to);
+      if (a === b || !l.bySid[a]) return;
+      l.bySid[b] = (l.bySid[b] ?? 0) + l.bySid[a]; delete l.bySid[a];
+      saving = saving.then(() => storage.set(l)).catch(() => {});
+    },
+    snapshot: async () => structuredClone(await load()),
+  };
+}
+// Counted vs the allowance: { counted, used, other } (used/other null when unknown).
+export function reconcile(led, remaining) {
+  const counted = Object.values(led?.bySid ?? {}).reduce((a, b) => a + b, 0);
+  if (led?.base == null || remaining == null) return { counted, used: null, other: null };
+  const used = led.base - remaining;
+  return { counted, used, other: Math.max(0, used - counted) };
+}
+
 export const extractKey = (text) => /sk-bayleaf-[A-Za-z0-9_-]+/.exec(String(text ?? ''))?.[0] ?? null;
 export const fraction = (s) => (s.remaining != null && s.limit ? Math.max(0, Math.min(1, s.remaining / s.limit)) : null);
 const isLow = (s) => { const f = fraction(s); return f != null && f < 0.1; };
@@ -91,7 +137,7 @@ export function renderMeter(s) {
 const fmt = (n) => (n ?? 0).toLocaleString();
 
 // rows: [{ title, input, output, cost, current }] for the token table.
-export function renderPanel(host, s, rows) {
+export function renderPanel(host, s, rows, totals = null) {
   const out = [];
   const f = fraction(s);
   const box = el('div', { className: 'quota' + (isLow(s) ? ' low' : '') });
@@ -120,20 +166,24 @@ export function renderPanel(host, s, rows) {
     const std = s.standard.unit === 'usd' && s.standard.remaining != null ? `$${s.standard.remaining.toFixed(2)} of $${s.standard.limit?.toFixed(2)} left` : 'separate budget';
     out.push(el('p', { className: 'std', textContent: `Standard lane (OpenRouter): ${std}. Not used by Pouch, which sends only sealed requests.` }));
   }
-  out.push(el('h3', { textContent: 'Tokens by session' }));
+  out.push(el('h3', { textContent: 'Today by session' }));
   const counted = rows.filter((r) => r.input || r.output || r.requests);
-  if (!counted.length) out.push(el('p', { className: 'muted', textContent: 'No tokens counted yet. Totals appear after a session\'s first turn.' }));
+  if (!counted.length) out.push(el('p', { className: 'muted', textContent: 'Nothing counted yet. Rows appear after a session\'s first turn.' }));
   else {
     const anyCost = counted.some((r) => r.cost > 0);
-    // Requests: what counts against the daily allowance, subagents included.
-    const head = el('tr', {}, el('th', { textContent: 'Session' }), el('th', { textContent: 'Requests' }), el('th', { textContent: 'In' }), el('th', { textContent: 'Out' }), ...(anyCost ? [el('th', { textContent: 'Cost' })] : []));
-    const body = counted.map((r) => el('tr', { className: r.current ? 'current' : '' },
-      el('td', { textContent: r.title, title: r.subagents ? `${r.title} (with ${r.subagents} subagent${r.subagents > 1 ? 's' : ''})` : r.title }),
-      el('td', { textContent: r.requests != null ? fmt(r.requests) : '' }), el('td', { textContent: fmt(r.input) }), el('td', { textContent: fmt(r.output) }),
-      ...(anyCost ? [el('td', { textContent: r.cost > 0 ? `$${r.cost.toFixed(4)}` : '' })] : [])));
+    // Requests: what counted against today's allowance, subagents and titles included.
+    const head = el('tr', {}, el('th', { textContent: 'Session' }), el('th', { textContent: 'Requests', title: 'Requests sent today, counted as they left: turns, subagents, titles, compactions and stopped requests' }), el('th', { textContent: 'In' }), el('th', { textContent: 'Out' }), ...(anyCost ? [el('th', { textContent: 'Cost' })] : []));
+    const row = (r, cls = '') => el('tr', { className: (r.current ? 'current ' : '') + cls },
+      el('td', { title: r.subagents ? `${r.title} (with ${r.subagents} subagent${r.subagents > 1 ? 's' : ''})` : r.title }, el('span', { className: 'clamp', textContent: r.title })),
+      el('td', { textContent: r.requests != null ? fmt(r.requests) : '' }), el('td', { textContent: r.input != null ? fmt(r.input) : '' }), el('td', { textContent: r.output != null ? fmt(r.output) : '' }),
+      ...(anyCost ? [el('td', { textContent: r.cost > 0 ? `$${r.cost.toFixed(4)}` : '' })] : []));
+    const body = counted.map((r) => row(r));
+    const { counted: n, used, other } = totals ?? {};
+    if (other) body.push(row({ title: 'Other (not sent by Pouch in this browser)', requests: other }, 'other'));
+    if (n != null) body.push(row({ title: used != null ? `Total (allowance down ${fmt(used)})` : 'Total', requests: n + (other ?? 0) }, 'total'));
     const cols = el('colgroup', {}, el('col'), ...Array.from({ length: anyCost ? 4 : 3 }, () => el('col', { className: 'n' })));
     out.push(el('table', { className: 'tokens' }, cols, el('thead', {}, head), el('tbody', {}, ...body)));
-    out.push(el('p', { className: 'muted', textContent: 'Rows include each session\'s subagents. Only requests count against the daily allowance; cost is an informational estimate.' }));
+    out.push(el('p', { className: 'muted', textContent: 'Requests are today\'s, counted as Pouch sent them, so reverted, stopped and deleted turns, subagents and automatic titles are all in. Tokens and cost are each session\'s running totals (an informational estimate). Other is what the allowance lost beyond that: this key on another device or tool, or under Campus Pass, other people on the same network.' }));
   }
   host.replaceChildren(...out);
 }

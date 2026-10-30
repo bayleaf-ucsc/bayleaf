@@ -132,6 +132,7 @@ try {
     // Erase resets both the existing theme and new display preferences.
     page.on('dialog',d=>d.accept());
     if(mobile){await page.click('#more');await page.getByRole('button',{name:'Erase all Pouch data in this browser',exact:true}).click();}else await page.click('#erase');
+    await page.click('#sheet-actions button >> text=Erase all'); // asked inline (Batch C: no native confirm)
     await page.waitForSelector('#erased:visible');
     assert.equal(await page.evaluate(()=>localStorage.getItem('pouch.display')),null);assert.equal(await page.evaluate(()=>localStorage.getItem('pouch.theme')),null);
     await page.goto(url+'/production');await page.waitForSelector('#tree .row',{state:'attached'});await page.reload();await page.waitForTimeout(200);

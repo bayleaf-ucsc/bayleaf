@@ -54,7 +54,11 @@ export const matches = (pattern, path) => (isGlob(pattern) ? globRe(pattern).tes
 
 // Files a pattern matches now, walking only below its base.
 export async function expand(fs, pattern, limit = MAX_FILES) {
-  if (!isGlob(pattern)) return (await fs.stat(pattern).then((s) => s.isFile, () => false)) ? [pattern] : [];
+  if (!isGlob(pattern)) {
+    const st = await fs.stat(pattern).catch(() => null);
+    // A plain path that became a folder after the watch was set: its files.
+    return st?.isFile ? [pattern] : st?.isDirectory ? expand(fs, pattern + '/**', limit) : [];
+  }
   const base = baseOf(pattern), deep = pattern.includes('**');
   const depth = pattern.split('/').length - base.split('/').length;
   const out = [];
@@ -201,7 +205,9 @@ export function createWatches(deps) {
   const ofSid = (sid) => [...byId.values()].filter((w) => String(w.sid) === String(sid));
   const persist = (sid) => deps.save(String(sid), ofSid(sid).map(({ id, sid: s, owner, ownerName, paths, by, once, note, created, wakes, held, files }) => ({ id, sid: s, owner, ownerName, paths, by, once, note, created, wakes, held: held.map(({ path, source, at }) => ({ path, source, at })), files })));
   const pats = (w) => w.paths;
-  const watching = (w, path) => pats(w).some((p) => matches(p, path));
+  // A plain path also covers what lands under it: a watch set on a folder
+  // before it existed (the user makes /work/data, then uploads into it).
+  const watching = (w, path) => pats(w).some((p) => matches(p, path) || (!isGlob(p) && within(path, p)));
 
   async function loadSid(sid) {
     if (loaded.has(String(sid))) return;

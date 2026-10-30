@@ -11,7 +11,7 @@ import { EditorView, basicSetup } from 'codemirror';
 import { EditorState, Compartment, Transaction, StateField, StateEffect } from '@codemirror/state';
 import { keymap, Decoration } from '@codemirror/view';
 import { indentWithTab } from '@codemirror/commands';
-import { unifiedMergeView } from '@codemirror/merge';
+import { unifiedMergeView, getChunks, acceptChunk, rejectChunk } from '@codemirror/merge';
 import { highlightCode, classHighlighter } from '@lezer/highlight';
 import { syntaxHighlighting } from '@codemirror/language';
 import { javascript, javascriptLanguage, jsxLanguage, typescriptLanguage, tsxLanguage } from '@codemirror/lang-javascript';
@@ -61,6 +61,8 @@ const theme = EditorView.theme({
   '&': { height: '100%', fontSize: '14px' },
   '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' },
   '.cm-chunkButtons button': { minHeight: '1.6rem', padding: '0 .5rem', fontSize: '12px' },
+  // Each hunk's controls in a bar above it, never over its text (critique 20).
+  '.cm-deletedChunk .cm-chunkButtons': { position: 'static', display: 'flex', gap: '.25rem', justifyContent: 'flex-end', padding: '2px 0', borderBottom: '1px solid color-mix(in srgb, currentColor 20%, transparent)', marginBottom: '2px' },
 });
 
 // Merge controls with words a screen reader can say; labels depend on the mode.
@@ -157,6 +159,11 @@ export function createEditor(parent, { onSave, onChange }) {
       view.dispatch({ effects: setFlash.of(Decoration.set(marks)) });
       setTimeout(() => view.dispatch({ effects: setFlash.of(Decoration.none) }), 1600);
       return r;
+    },
+    // Hunks not yet kept or taken, and settling all of them one way.
+    unresolved: () => (mode === 'merge' ? getChunks(view.state)?.chunks.length ?? 0 : 0),
+    settleAll(keepMine) {
+      for (let n = 100, c; n-- && (c = getChunks(view.state)?.chunks[0]);) (keepMine ? acceptChunk : rejectChunk)(view, c.fromB);
     },
     // Leave diff mode, keeping the document as it stands.
     endDiff() {

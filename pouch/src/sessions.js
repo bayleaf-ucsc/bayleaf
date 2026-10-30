@@ -152,7 +152,7 @@ export function createSessions(deps) {
   // legacy database goes too.
   async function remove(id, ask = true) {
     const legacy = deps.agent()?.isLegacy?.(id);
-    if (ask && !confirm(legacy ? 'Delete this session? It was saved before per-session storage: it is stopped and reset now, and its history is purged once no such session is left (or by Erase all).' : 'Delete this session? Its conversation is erased from this browser.')) return;
+    if (ask && !(await deps.ask(legacy ? 'Delete this session? It was saved before per-session storage: it is stopped and reset now, and its history is purged once no such session is left (or by Erase all).' : 'Delete this session? Its conversation is erased from this browser.', 'Delete', 'danger'))) return;
     try { await deps.agent()?.deleteSession(id); }
     catch (e) { return status('Could not delete: ' + e.message, 'bad'); }
     await store.del('sessions', id);
@@ -206,6 +206,7 @@ export function createSessions(deps) {
       const text = digest(v?.items, recent);
       if (!text) { if (!quiet) status('Nothing to name yet: send a message first.'); return null; }
       const s = await find(id);
+      deps.countRequest?.(id, 'title'); // one request from the allowance, outside the transcript
       const t = await suggestTitle(client, turnModel || s?.model || 'glm-5-3', text);
       if (!t && !quiet) status('No title came back; the old one stays.');
       return t;

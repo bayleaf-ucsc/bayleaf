@@ -546,6 +546,7 @@ function assistantItems(msg, streaming, tools) {
 export function normalize(view) {
   const items = [], tools = new Map(), owners = new Map(); // call id -> message item
   let steps = 0; // model responses: requests, for a subagent's card
+  let toolErrors = 0; // failed tool calls, also for the card
   let ended = false; // the last reply had no tool calls: no turn is open
   const mark = (it, e, msg) => Object.assign(it, { entry: e.id, at: msg?.timestamp, cut: e.id, cutAt: msg?.timestamp });
   for (const e of view.entries) {
@@ -575,6 +576,7 @@ export function normalize(view) {
       }
       case 'pi.tool-result': {
         const t = tools.get(msg?.toolCallId);
+        if (msg?.isError) toolErrors++;
         if (t) Object.assign(t, { output: textOf(msg.content), status: msg.isError ? 'error' : 'done', ...((msg.details ?? e.data?.details) != null ? { details: msg.details ?? e.data.details } : {}) });
         const owner = owners.get(msg?.toolCallId);
         if (owner) Object.assign(owner, { cut: e.id, cutAt: msg.timestamp ?? owner.cutAt });
@@ -602,7 +604,7 @@ export function normalize(view) {
   // requests: model responses (steps), for the Usage panel's Requests column.
   const usage = usageOf(view.docs['pi.usage']) ?? (steps ? { input: 0, output: 0, cost: 0 } : undefined);
   if (usage) usage.requests = steps;
-  return { busy: !!live.run, items, steps, usage };
+  return { busy: !!live.run, items, steps, toolErrors, usage };
 }
 
 function usageOf(doc) {

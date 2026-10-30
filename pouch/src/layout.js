@@ -36,6 +36,7 @@ export function createLayout({ onPanel } = {}) {
   const overlay = () => !narrow() && sideOpen() && !!panel && innerWidth - railW() - sideW() - panelW(panel) < OVERLAY_MIN;
   function apply() {
     app.classList.toggle('side-overlay', overlay());
+    $('backdrop').hidden = !(sideOpen() && (narrow() || overlay()));
     app.style.setProperty('--side-w', sideW() + 'px');
     app.style.setProperty('--panel-w', (panel ? panelW(panel) : 0) + 'px');
     const ph = $('panel-handle'), sh = $('side-handle');
@@ -47,10 +48,9 @@ export function createLayout({ onPanel } = {}) {
     app.classList.toggle('side-open', open);
     const f = $('flipper'), label = open ? 'Hide sessions' : 'Show sessions';
     f.setAttribute('aria-expanded', String(open)); f.ariaLabel = label; f.title = label;
-    $('backdrop').hidden = !(open && narrow());
     if (persist && !narrow()) { prefs.side = open; save(); }
-    if (open && narrow()) $('new').focus();
     apply();
+    if (open && (narrow() || overlay())) $('new').focus();
   }
 
   function open(name) {
@@ -104,15 +104,28 @@ export function createLayout({ onPanel } = {}) {
   });
 
   $('flipper').onclick = () => setSide(!sideOpen());
-  $('side-close').onclick = () => setSide(false, false);
-  $('backdrop').onclick = () => setSide(false, false);
+  // A floating sidebar (phone drawer or desktop overlay) closes back to the composer.
+  const dismiss = () => { setSide(false, false); $('input').focus(); };
+  $('side-close').onclick = dismiss;
+  $('backdrop').onclick = dismiss;
   $('rail').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-panel]');
     if (b) b.dataset.panel === 'chat' ? open(null) : toggle(b.dataset.panel);
   });
   for (const b of document.querySelectorAll('.panel-close')) b.addEventListener('click', () => open(null));
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && narrow() && sideOpen() && !document.querySelector('dialog[open]')) setSide(false, false);
+    if (e.key === 'Escape' && (narrow() || overlay()) && sideOpen() && !document.querySelector('dialog[open]')) { e.preventDefault(); dismiss(); }
+  });
+  // A keystroke is never lost to the sidebar: typing on a session row, the
+  // flipper or nothing in particular goes to the composer (the floating
+  // sidebar closes first). Text fields, dialogs and shortcuts keep their keys.
+  document.addEventListener('keydown', (e) => {
+    if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented || document.querySelector('dialog[open]')) return;
+    const t = document.activeElement;
+    if (t && (t.closest('input, textarea, select, [contenteditable], .cm-editor, #panel-host, #rail') || t === $('input'))) return;
+    if (!(t === document.body || !t || t.closest('#sidebar') || t === $('flipper'))) return;
+    if (sideOpen() && (narrow() || overlay())) setSide(false, false);
+    if (!$('input').disabled) $('input').focus(); // the key itself lands in the box
   });
   addEventListener('resize', apply);
   // Crossing the phone breakpoint: a drawer never stays open, the desktop frame comes back.
@@ -128,6 +141,7 @@ export function createLayout({ onPanel } = {}) {
   // An overlaid sidebar behaves like the phone drawer: a click into the chat
   // closes it for now (the remembered preference stays open).
   const overlaid = () => app.classList.contains('side-overlay');
+  // The scrim covers only the chat column, so panels stay usable beside it.
   $('chat').addEventListener('pointerdown', () => { if (overlaid()) setSide(false, false); });
   return { open, toggle, close: () => open(null), current: () => panel, narrow, overlaid, setSide, sideOpen };
 }

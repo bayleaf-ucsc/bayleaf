@@ -94,16 +94,19 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
   // the subagent's tools mount the far end.
   // Writes are attributed for file watches (src/ns/watch.js): the main
   // agent's tools as 'agent', its run calls as 'run', a subagent's as itself.
-  const views = new Map(); // caller -> { key, fs, close }
-  function viewFor(caller, source = 'agent') {
+  // A subagent reaches its namespace over 9P; `run` needs the namespace
+  // itself (it builds the run's narrower one from it), so nsFor hands that out.
+  const views = new Map(); // caller -> { key, fs, ns, close }
+  function viewOf(caller) {
     const specs = hooks.namespaceFor?.(caller);
-    if (!specs) return vfs.as ? vfs.as(source) : vfs.fs;
+    if (!specs) return null;
     const key = specs.join(',');
     const had = views.get(caller);
-    if (had?.key === key) return had.fs;
+    if (had?.key === key) return had;
     had?.close();
+    const ns = subset(vfs.as ? vfs.as(hooks.sourceOf?.(caller) ?? 'subagent') : vfs.fs, specs, { scratch: new InMemoryFs() });
     const { port1, port2 } = new MessageChannel();
-    const server = serve(port1, subset(vfs.as ? vfs.as(hooks.sourceOf?.(caller) ?? 'subagent') : vfs.fs, specs, { scratch: new InMemoryFs() }));
+    const server = serve(port1, ns);
     const client = new Client(port2);
     const ready = client.connect();
     const remote = new NinepFs(client);
@@ -113,9 +116,14 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
       if (typeof v !== 'function' || k === 'resolvePath' || k === 'getAllPaths') return typeof v === 'function' ? v.bind(t) : v;
       return async (...a) => { await ready; return v.apply(t, a); };
     } });
-    views.set(caller, { key, fs, close: () => { client.close(); server.close(); } });
-    return fs;
+    const view = { key, fs, ns, close: () => { client.close(); server.close(); } };
+    views.set(caller, view);
+    return view;
   }
+  function viewFor(caller, source = 'agent') {
+    return viewOf(caller)?.fs ?? (vfs.as ? vfs.as(source) : vfs.fs);
+  }
+  const nsFor = (caller, source) => viewOf(caller)?.ns ?? (vfs.as ? vfs.as(source) : vfs.fs);
   const writableFor = (caller) => {
     const specs = hooks.namespaceFor?.(caller);
     if (!specs) return [CWD, '/tmp'];
@@ -260,7 +268,7 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
     },
   };
 
-  const run = runTool({ vfs, Type, CWD, abs, fsFor: (caller) => fsFor(caller, 'run'), oneAtATime, ...(hooks.makeWorker ? { makeWorker: hooks.makeWorker } : {}) });
+  const run = runTool({ vfs, Type, CWD, abs, fsFor: (caller) => nsFor(caller, 'run'), oneAtATime, ...(hooks.makeWorker ? { makeWorker: hooks.makeWorker } : {}) });
   // closeView(caller): drop a finished subagent's 9P connection.
   return Object.assign([read, write, edit, bashTool, run], { closeView: (caller) => { views.get(caller)?.close(); views.delete(caller); } });
 }

@@ -281,7 +281,7 @@ try {
 
   // ── D12 revert is conversation-only: later messages fold into a dimmed other branch; files untouched ──
   const before = await page.evaluate(() => document.querySelector('.cm-content').textContent);
-  const firstUser = await page.$('#log .msg.user');
+  const firstUser = await page.$('#log .msg.assistant'); // Batch C: on a user message, Revert reverts to before it (D12)
   await firstUser.hover();
   await firstUser.$('[data-act="revert"], button[aria-label^="Revert"]').then((b) => b.click());
   await page.waitForSelector('#sheet[open]', T);

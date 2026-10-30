@@ -147,12 +147,13 @@ export function createSubagents(deps) {
   // made, and what the user told it (placed steering messages, in order).
   async function summary(sid, id) {
     const c = await childConv(sid, id);
-    let answer = '', requests = 0, cursor;
+    let answer = '', requests = 0, toolErrors = 0, cursor;
     const steers = [];
     do {
       const page = await c.entries(cursor ? {} : { order: 'ascending' }, 500, cursor, ctx);
       for (const e of page.items) {
         if (e.kind === STEER_KIND) steers.push(String(e.data?.text ?? ''));
+        if (e.kind === 'pi.tool-result' && e.model?.[0]?.isError) toolErrors++;
         if (e.kind !== 'pi.assistant') continue;
         requests++;
         const t = textOf(e.model?.[0]?.content);
@@ -168,7 +169,7 @@ export function createSubagents(deps) {
       for (const m of Object.values(st.value.docs['pi.usage']?.models ?? {})) { usage.input += m.input ?? 0; usage.output += m.output ?? 0; usage.cost += m.cost?.total ?? 0; }
       st.dispose();
     } catch { usage = undefined; }
-    return { answer, requests, steers, usage };
+    return { answer, requests, toolErrors, steers, usage };
   }
   // For the parent model: the user's words to the child, quoted.
   const steerNote = (steers) => steers?.length
@@ -186,7 +187,7 @@ export function createSubagents(deps) {
       if (closing) return; // the page is going away: the next open decides (resume())
       const status = !settled ? 'interrupted' : settled.status === 'done' ? 'finished' : settled.reason === 'aborted' ? 'stopped' : 'failed';
       const why = settled && settled.status !== 'done' ? (typeof settled.detail === 'string' ? settled.detail : settled.detail?.message ?? settled.reason ?? '') : '';
-      const { answer, requests, steers, usage } = await summary(sid, childId).catch(() => ({ answer: '', requests: 0, steers: [] }));
+      const { answer, requests, toolErrors, steers, usage } = await summary(sid, childId).catch(() => ({ answer: '', requests: 0, toolErrors: 0, steers: [] }));
       // Main joined on it: the join result carries this answer, so no report
       // is posted besides (no duplicates). Decided before the update below
       // releases the join.
@@ -195,7 +196,7 @@ export function createSubagents(deps) {
       let child;
       await update(sid, (l) => l.map((c) => {
         if (c.id !== childId || c.sub !== subId) return c;
-        child = { ...c, status, ended: Date.now(), requests, ...(usage ? { usage } : {}), seq: (c.seq ?? 0) + 1, ...(why ? { error: String(why).slice(0, 300) } : {}), ...(joined ? { reported: subId, joinedBy: MAIN } : {}) };
+        child = { ...c, status, ended: Date.now(), requests, toolErrors, ...(usage ? { usage } : {}), seq: (c.seq ?? 0) + 1, ...(why ? { error: String(why).slice(0, 300) } : {}), ...(joined ? { reported: subId, joinedBy: MAIN } : {}) };
         results.set(`${childId}:${child.seq}`, answer);
         return child;
       }));
@@ -231,6 +232,7 @@ export function createSubagents(deps) {
     const to = Object.keys(child.sent ?? {}).map((r) => label(l, r)).join(', ');
     const body = byMessage && child.sentIn !== child.sub ? `A message from ${label(l, child.wokenBy)} woke it, and it ended without sending anything; its reply stays in its transcript.`
       : byMessage ? `It delivered its work by message (to ${to || 'other sessions'}), so its output is not repeated here.`
+      : child.status !== 'finished' && answer?.trim() ? `Its last output before it ${{ failed: 'failed', interrupted: 'was interrupted' }[child.status] ?? 'was stopped'} (work in progress, not a report): ${answer.trim()}`
       : answer?.trim() || (child.status === 'finished' ? '(It gave no answer.)' : '(No answer yet.)');
     const content = `[Subagent report from Pouch, not typed by the user] Subagent "${child.name}" (${ref}) ${verb}${child.error && child.status === 'failed' ? ` (${child.error})` : ''}. Its task: ${child.task.slice(0, 300)}${steerNote(steers)}\n\n${body}` +
       (byMessage ? '' : child.status === 'finished' ? '\n\nUse this report to continue helping the user; mention briefly what it found.' : child.oneshot ? '' : '\n\nIts partial work, if any, may be under ' + scratchOf(child.ns) + '/. Tell the user only if it matters now.');

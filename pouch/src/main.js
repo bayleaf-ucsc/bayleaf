@@ -17,7 +17,7 @@ import { collect, packTar, packZip, unpackTar, unpackZip } from './archive.js';
 import { $, el, icon, seeded } from './dom.js';
 import { arm, armed, play, flipFrom, fold, snapshot } from './motion.js';
 import { createLayout } from './layout.js';
-import { createUsage, renderMeter, renderPanel, exhaustedText, extractKey } from './usage.js';
+import { createUsage, renderMeter, renderPanel, exhaustedText, extractKey, createLedger, reconcile } from './usage.js';
 import { createSessions, sameId, titleOf, notesKey, convKey, revertKey, subagentsKey, interruptedKey, turnsKey, watchesKey } from './sessions.js';
 import { createWatches, watchTool, baseOf, isGlob, MAX_WAKES } from './ns/watch.js';
 import { parseSpecs } from './ns/namespace.js';
@@ -53,6 +53,10 @@ function status(text, cls = '') { $('status').textContent = text; $('status').cl
 
 // ── Frame: sidebar, rail and panels (layout.js) ─────────────────────
 const usage = createUsage({ getKey: () => key });
+// Every Sealed request of the allowance day, by session (usage.js); the day is
+// the allowance's own (it ends at resetsAt).
+const ledger = createLedger({ get: () => store.getSetting('requestLedger'), set: (v) => store.setSetting('requestLedger', v) },
+  () => usage.state.resetsAt?.toISOString() ?? null);
 // Deferred: the layout restores a remembered panel while this module is still loading.
 const layout = createLayout({ onPanel: (p) => { if (p === 'usage') queueMicrotask(renderUsagePanel); if (p === 'trust') queueMicrotask(() => { renderCopy(); renderNamespaces(); }); } });
 
@@ -69,7 +73,7 @@ function sheet(title, actions, body) {
   }, { once: true });
   $('sheet-actions').replaceChildren(...actions.filter(Boolean).map(([label, fn, cls]) => {
     const b = el('button', { type: 'button', textContent: label, className: cls ?? '' });
-    b.onclick = async () => { $('sheet').close(); try { await fn(); } catch (e) { alert(e.message); } };
+    b.onclick = async () => { $('sheet').close(); try { await fn(); } catch (e) { fail(e.message); } };
     return b;
   }), el('button', { type: 'button', textContent: 'Cancel', onclick: () => $('sheet').close() }));
   $('sheet').showModal();
@@ -111,13 +115,14 @@ function setConflict(theirs) {
 }
 function setReviewBar(text) {
   $('review-bar').hidden = text == null;
+  $('review-mine').hidden = $('review-theirs').hidden = true;
   $('review-text').textContent = text ?? '';
 }
 
 async function openFile(path, line) {
   // Reopening the file you are editing only moves the cursor: no reload, no loss.
   if (path !== openPath || merging) {
-    if (dirty && !confirm(`Discard unsaved changes to ${openPath}?`)) return;
+    if (dirty && !(await ask(`Discard unsaved changes to ${openPath}?`, 'Discard', 'danger'))) return;
     const bytes = await vfs.fs.readFileBuffer(path);
     if (bytes.includes(0)) return sheet(path + ' looks binary', [
       ARCHIVE.test(path) && vfs.where(path) !== 'mount-ro' && ['Unpack here', () => unpackHere(path)],
@@ -136,18 +141,36 @@ async function openFile(path, line) {
 async function saveFile() {
   if (!openPath) return;
   try {
-    // Compare-and-swap: never overwrite a version you have not seen.
+    // In the conflict diff, Save is Done and then a write; with hunks left
+    // unsettled it writes nothing and says so (neither side is ever dropped).
+    if (merging && !settleDiff()) return;
+    // Compare-and-swap: never overwrite a version you have not seen. A newer
+    // one raises the conflict bar instead of saving.
     const disk = (await vfs.fs.exists(openPath)) ? await vfs.fs.readFile(openPath) : null;
     if (disk !== null && disk !== editor.baseline && disk !== editor.text()) {
       setConflict(disk);
-      if (!confirm('Pouch changed this file while you were editing. Overwrite its version with yours?')) return;
+      status('Not saved: Pouch changed this file meanwhile. Show diff, Keep mine or Take theirs, then Save.', 'bad');
+      return;
     }
-    if (merging) { merging = false; setReviewBar(null); editor.endDiff(); }
     await userFs.writeFile(openPath, editor.text()); editor.markSaved(); setConflict(null); vfs.changed();
-  } catch (e) { alert('Could not save: ' + e.message); }
+  } catch (e) { status('Could not save: ' + e.message, 'bad'); }
 }
-function closeFile() {
-  if (dirty && !confirm('Discard unsaved changes?')) return;
+// Leave the conflict diff once every hunk is kept or taken; until then the
+// bar counts what is left and offers to settle the rest one way.
+function settleDiff() {
+  const n = editor.unresolved();
+  if (n) {
+    setReviewBar(`${n} change${n === 1 ? '' : 's'} not settled yet: Keep mine or Take theirs on each (nothing is saved until all are).`);
+    $('review-mine').hidden = $('review-theirs').hidden = false;
+    editor.focus();
+    return false;
+  }
+  merging = false; setReviewBar(null);
+  editor.endDiff(); if (conflict != null) editor.setBaseline(conflict); setConflict(null);
+  return true;
+}
+async function closeFile() {
+  if (dirty && !(await ask(`Discard unsaved changes to ${openPath}?`, 'Discard', 'danger'))) return;
   openPath = null; dirty = false; merging = false;
   setReviewBar(null); setConflict(null);
   editor.load('', '');
@@ -159,12 +182,10 @@ $('save').onclick = saveFile;
 $('close-file').onclick = closeFile;
 $('to-files').onclick = () => layout.open('files');
 
-$('review-done').onclick = () => {
-  // Merged by hand: their version is now seen, the buffer is yours to save.
-  merging = false; setReviewBar(null);
-  editor.endDiff(); if (conflict != null) editor.setBaseline(conflict); setConflict(null);
-  editor.focus();
-};
+// Merged by hand: their version is now seen, the buffer is yours to save.
+$('review-done').onclick = () => { settleDiff(); editor.focus(); };
+$('review-mine').onclick = () => { editor.settleAll(true); settleDiff(); editor.focus(); };
+$('review-theirs').onclick = () => { editor.settleAll(false); settleDiff(); editor.focus(); };
 $('conflict-diff').onclick = () => {
   merging = true;
   editor.diff(openPath, conflict, editor.text());
@@ -305,7 +326,7 @@ async function addFiles(where, items, dirs, verb = 'Added') {
     const r = await writeBatch(where, items, dirs);
     if (r) { expanded.add(where); status(`${verb} ${r.written} file${r.written === 1 ? '' : 's'} in ${where}${r.skipped ? ` (${r.skipped} skipped)` : ''}.`); }
     return r;
-  } catch (e) { alert('Could not add files: ' + e.message); }
+  } catch (e) { fail('Could not add files: ' + e.message); }
   finally { vfs.changed(); }
 }
 const fileItem = (path, file) => ({ path, data: async () => new Uint8Array(await file.arrayBuffer()) });
@@ -332,7 +353,7 @@ async function dropInto(dir, dataTransfer) {
   try {
     if (entries.length) for (const e of entries) await walk(e, e.name);
     else for (const f of files) items.push(fileItem(normalize(dir + '/' + (f.webkitRelativePath || f.name)), f));
-  } catch (e) { return alert('Could not read the dropped files: ' + e.message); }
+  } catch (e) { return fail('Could not read the dropped files: ' + e.message); }
   await addFiles(dir, items, dirs);
 }
 
@@ -411,20 +432,20 @@ async function listArchive(path) {
 // ── Clipboard, for borrowed computers (O4, I5) ──
 async function copyText(path) {
   const bytes = await vfs.fs.readFileBuffer(path);
-  if (bytes.includes(0)) return alert(`${path} looks binary. Download it instead.`);
+  if (bytes.includes(0)) return fail(`${path} looks binary. Download it instead.`);
   try { await navigator.clipboard.writeText(new TextDecoder().decode(bytes)); status(`Copied the text of ${path}.`); }
-  catch (e) { alert(`This browser did not allow copying (${e.message}). Open the file, select all in the editor and copy from there.`); }
+  catch (e) { fail(`This browser did not allow copying (${e.message}). Open the file, select all in the editor and copy from there.`); }
 }
 async function newFromClipboard(dir) {
   let text;
   try { text = await navigator.clipboard.readText(); }
-  catch (e) { return alert(`This browser did not allow reading the clipboard (${e.message}). Make a new file and paste into the editor instead.`); }
-  if (!text) return alert('The clipboard holds no text.');
-  const name = prompt(`Name for the new file (${text.length} characters from the clipboard)`, 'pasted.txt')?.trim();
+  catch (e) { return fail(`This browser did not allow reading the clipboard (${e.message}). Make a new file and paste into the editor instead.`); }
+  if (!text) return fail('The clipboard holds no text.');
+  const name = (await askName('New file from clipboard', `Name for the new file (${text.length} characters from the clipboard)`, 'pasted.txt'))?.trim();
   if (!name) return;
   const path = normalize(dir + '/' + name);
   const r = await addFiles(dir, [{ path, data: async () => new TextEncoder().encode(text) }]);
-  if (r?.paths.length) openFile(r.paths[0]).catch((e) => alert(e.message));
+  if (r?.paths.length) openFile(r.paths[0]).catch((e) => fail(e.message));
 }
 
 // A name asked inline in the sheet (no native prompt); null when cancelled.
@@ -441,6 +462,17 @@ function askName(title, label, value = '', verb = 'Create') {
     input.focus();
   });
 }
+// A yes/no question in the sheet (never a native confirm, which blocks the
+// page and is easy to dismiss by reflex). Resolves true only on the verb.
+function ask(text, verb = 'OK', cls = 'primary', title = 'Are you sure?') {
+  return new Promise((resolve) => {
+    let done = false;
+    const onClose = () => { if ($('sheet').open) return; $('sheet').removeEventListener('close', onClose); if (!done) resolve(false); };
+    sheet(title, [[verb, () => { done = true; resolve(true); }, cls]], text);
+    $('sheet').addEventListener('close', onClose);
+  });
+}
+const fail = (m) => status(m, 'bad');
 async function newEntry(dir, kind) {
   const name = await askName(kind === 'dir' ? 'New folder' : 'New file', `${kind === 'dir' ? 'Folder' : 'File'} name in ${dir}`);
   if (!name) return;
@@ -454,12 +486,12 @@ async function newEntry(dir, kind) {
 }
 
 async function rename(path) {
-  const name = prompt('Rename to', path.split('/').pop());
+  const name = await askName('Rename', 'Rename to', path.split('/').pop(), 'Rename');
   if (!name || name.includes('/')) return;
   const dest = normalize(path + '/../' + name);
   if (dest === path) return;
   // mv is copy-then-delete, so renaming onto a name in use would destroy it (R1).
-  if (await vfs.fs.exists(dest)) return alert(`${name} already exists in ${normalize(path + '/..')}. Pick another name, or delete that one first.`);
+  if (await vfs.fs.exists(dest)) return fail(`${name} already exists in ${normalize(path + '/..')}. Pick another name, or delete that one first.`);
   await userFs.mv(path, dest);
   // The open file may be the renamed entry or inside a renamed folder.
   if (openPath === path || openPath?.startsWith(path + '/')) { openPath = dest + openPath.slice(path.length); $('editor-path').textContent = openPath; }
@@ -468,7 +500,7 @@ async function rename(path) {
 }
 
 async function remove(path, isDir) {
-  if (!confirm(`Delete ${path}${isDir ? ' and everything in it' : ''}?`)) return;
+  if (!(await ask(`Delete ${path}${isDir ? ' and everything in it' : ''}?`, 'Delete', 'danger'))) return;
   await userFs.rm(path, { recursive: true, force: true });
   vfs.changed();
 }
@@ -535,7 +567,7 @@ function row(depth, { path, name, isDir, tag, mountName, locked }) {
     r.append(t);
   }
   if (locked) {
-    r.onclick = () => vfs.reconnect(mountName, { ask: true }).catch((e) => alert(e.message));
+    r.onclick = () => vfs.reconnect(mountName, { ask: true }).catch((e) => fail(e.message));
     return r;
   }
   const more = el('button', { type: 'button', className: 'more', ariaLabel: 'Actions for ' + name, title: 'Actions', tabIndex: -1 }, icon('ellipsis'));
@@ -636,9 +668,9 @@ vfs.addEventListener('change', () => {
 });
 $('refresh').onclick = () => vfs.changed();
 // Everything in /work in one file: the "export before I leave" button (O3, L3).
-$('download-all').onclick = () => downloadDir('/work', 'zip', `pouch-work-${new Date().toISOString().slice(0, 10)}.zip`).catch((e) => alert(e.message));
+$('download-all').onclick = () => downloadDir('/work', 'zip', `pouch-work-${new Date().toISOString().slice(0, 10)}.zip`).catch((e) => fail(e.message));
 function mountFolder() {
-  if (!window.showDirectoryPicker) return alert($('mount').title);
+  if (!window.showDirectoryPicker) return fail($('mount').title);
   sheet('Mount a folder from this device', [
     ['Read and write', () => vfs.pick(false).then((p) => { expanded.add(p); vfs.changed(); })],
     ['Read only', () => vfs.pick(true).then((p) => { expanded.add(p); vfs.changed(); })],
@@ -658,8 +690,8 @@ $('erased-dismiss').onclick = () => { $('erased').hidden = true; };
 // Its writes are attributed to the current session's run (egress, watches). Works offline.
 async function runScript(path) {
   const tool = toolList.find((t) => t.name === 'run');
-  if (!tool) return alert('The run engine is not available.');
-  if (busy() || activeRun) return alert('Wait for the current turn to finish, then run the script.');
+  if (!tool) return fail('The run engine is not available.');
+  if (busy() || activeRun) return fail('Wait for the current turn to finish, then run the script.');
   const sid = sessions.current?.id;
   if (sid != null) activeRun = String(sid);
   let text;
@@ -840,7 +872,7 @@ async function ensureLocal() {
   const st = await localStored();
   if (!st.complete) {
     if (!navigator.onLine) { status('The Local model is not on this device yet, and you are offline. Settings can load a saved copy from a folder.', 'bad'); return false; }
-    if (!confirm(`Download the Local model (${LOCAL.label}, about ${mib(LOCAL.bytes - st.bytes)}) from pouch.bayleaf.dev into this browser? Each part is checked against this page's manifest. Afterwards Local works offline, and nothing you type is ever sent. Remove it any time in Settings.`)) return false;
+    if (!(await ask(`Download the Local model (${LOCAL.label}, about ${mib(LOCAL.bytes - st.bytes)}) from pouch.bayleaf.dev into this browser? Each part is checked against this page's manifest. Afterwards Local works offline, and nothing you type is ever sent. Remove it any time in Settings.`, 'Download', 'primary', 'Download the Local model?'))) return false;
   }
   return startLocal();
 }
@@ -902,7 +934,7 @@ async function renderLocalSettings() {
 $('local-download').onclick = async () => { if (await ensureLocal()) renderLocalSettings(); };
 $('local-remove').onclick = async () => {
   if (localRuns.size) return status('Stop the Local turn before removing the model.', 'bad');
-  if (!confirm('Remove the Local model from this browser? Conversations and files stay. Downloading it again takes about 1.1 GB.')) return;
+  if (!(await ask('Remove the Local model from this browser? Conversations and files stay. Downloading it again takes about 1.1 GB.', 'Remove', 'danger'))) return;
   await localRemove();
   if (localPicked()) { $('model').value = (await store.getSetting('sealedModel')) ?? models[0]?.id ?? ''; await store.setSetting('model', $('model').value); pickerLane(); updateSend(); }
   const est = await navigator.storage?.estimate?.().catch(() => null);
@@ -1005,13 +1037,13 @@ function keyForm() {
 }
 $('auth').onclick = async () => {
   if (!key) { sheet('Sign in to BayLeaf', [['Approve on a device where you are signed in (recommended)', claim]], keyForm()); return; }
-  if (!confirm('Remove your BayLeaf key from this browser? Files and conversations stay.')) return;
+  if (!(await ask('Remove your BayLeaf key from this browser? Files and conversations stay.', 'Remove key', 'danger'))) return;
   key = null; await store.setSetting('key', undefined); renderAuth(); usage.refresh(); connect();
 };
 
 // ── Erase everything ────────────────────────────────────────────────
 async function eraseAll() {
-  if (!confirm('Erase ALL Pouch data in this browser: files in /work, /pouch, conversations, your key and folder permissions? Folders you mounted from this device are not touched. This cannot be undone. (To keep /work, press Cancel, then Download all.)')) return;
+  if (!(await ask('Erase ALL Pouch data in this browser: files in /work, /pouch, conversations, your key and folder permissions? Folders you mounted from this device are not touched. This cannot be undone. (To keep /work, press Cancel, then Download all.)', 'Erase all', 'danger', 'Erase all?'))) return;
   status('Erasing...');
   try { await agent?.close(); } catch {}
   agent = null;
@@ -1094,7 +1126,7 @@ $('update-go').onclick = applyUpdate;
 $('update-later').onclick = () => { $('update').hidden = true; };
 $('copy-check').onclick = () => checkUpdate(true);
 $('copy-remove').onclick = async () => {
-  if (!confirm('Uninstall the offline copy? Pouch then loads from the network each time (and not without it). Files and conversations stay.')) return;
+  if (!(await ask('Uninstall the offline copy? Pouch then loads from the network each time (and not without it). Files and conversations stay.', 'Uninstall', 'danger'))) return;
   await shellCopy.uninstall();
   renderCopy('Offline copy removed. This tab keeps running; reloading loads the published build from the network.');
 };
@@ -1114,7 +1146,7 @@ const sessions = createSessions({
   forgetWatches: (id) => watches.removeSession(id),
   agent: () => agent, view: () => view, connected: () => (agent && verified ? client : null),
   model: () => $('model').value, setModel: (id) => { $('model').value = id; pickerLane(); }, hasModel: (id) => models.some((m) => m.id === id) || (localOk.ok && id === LOCAL_ID), isLocal,
-  attach: () => attach(), status, sheet, layout, usage, quotaError, exhaustedText,
+  attach: () => attach(), status, ask, sheet, countRequest: (id, kind) => ledger.add(id, kind, usage.state.remaining), layout, usage, quotaError, exhaustedText,
   agentError: () => agentError,
   runningChildren: (sid) => (kids.get(String(sid)) ?? []).filter((c) => c.status === 'running').length,
   // Nested rows (steer journey S1): running children of any session, and
@@ -1289,10 +1321,14 @@ async function openChild(sid, id) {
   if (!sameId(sid, sessions.current?.id)) return;
   focus = { sid: String(sid), id };
   if (layout.narrow() || layout.overlaid()) layout.setSide(false, false);
+  // Open at the top, task header in view (critique 76-78); the transcript
+  // fills in asynchronously, so stay there until the user scrolls.
+  focus.pinTop = true;
   renderLog(); updateSend(); sessions.render();
-  $('log').scrollTop = $('log').scrollHeight;
+  $('log').scrollTop = 0;
   $('input').focus();
 }
+for (const ev of ['wheel', 'touchstart', 'keydown', 'pointerdown']) $('log').addEventListener(ev, () => { if (focus) focus.pinTop = false; }, { passive: true });
 function closeChild() {
   if (!focus) return;
   const id = focus.id;
@@ -1371,7 +1407,7 @@ function childLog() {
   const acts = el('span', { className: 'sa-acts' }, more);
   if (c.status === 'running') {
     const stop = el('button', { type: 'button', className: 'danger', textContent: 'Stop', ariaLabel: `Stop subagent ${c.name}` });
-    stop.onclick = () => { stop.disabled = true; agent.subagents.stop(focus.sid, c.id).catch((e) => alert(e.message)); };
+    stop.onclick = () => { stop.disabled = true; agent.subagents.stop(focus.sid, c.id).catch((e) => fail(e.message)); };
     acts.append(stop);
   }
   const mounts = t ? vfs.tasks.mounts(t) : describeSpecs(vfs, c.ns?.length ? c.ns : defaultSubagentNs(vfs));
@@ -1386,7 +1422,7 @@ function childLog() {
       el('span', { className: 'sa-dot', ariaHidden: 'true' }),
       el('span', { className: 'sa-name', textContent: c.name }),
       el('span', { className: `sa-status ${c.status}`, textContent: st }),
-      el('span', { className: 'sa-meta', textContent: [fmtDur((c.status === 'running' ? Date.now() : c.ended ?? Date.now()) - (c.resumed ?? c.started)), `${v?.steps ?? c.requests ?? 0} req`].join(' · ') }),
+      el('span', { className: 'sa-meta', textContent: [fmtDur((c.status === 'running' ? Date.now() : c.ended ?? Date.now()) - (c.resumed ?? c.started)), `${v?.steps ?? c.requests ?? 0} req`, ...((v?.toolErrors ?? c.toolErrors) ? [`${v?.toolErrors ?? c.toolErrors} tool err`] : [])].join(' · ') }),
       acts),
     body), c.ref);
   more.onclick = () => { saDetails = !saDetails; head.classList.toggle('details', saDetails); more.ariaExpanded = String(saDetails); };
@@ -1394,10 +1430,13 @@ function childLog() {
   if (c.status !== 'running') {
     const b = el('button', { type: 'button', className: 'primary', textContent: `Back to ${parent}` });
     b.onclick = closeChild;
-    out.push(el('p', { className: 'notice sa-ended', role: 'status' }, `${c.name} has ${st === 'done' ? 'finished' : st}; its report went to ${parent}. `, b));
+    out.push(el('p', { className: 'notice sa-ended', role: 'status' }, st === 'done' || st === 'finished' ? `${c.name} has finished; its report went to ${parent}. ` : `${c.name} ${{ stopped: 'was stopped', failed: 'failed', interrupted: 'was interrupted' }[st] ?? 'ended'}; its last output went to ${parent}. `, b));
   }
   return out;
 }
+let lastHeight = null; // the transcript's height at the last render (the "New reply below" pill)
+$('below').onclick = () => { $('log').scrollTo({ top: $('log').scrollHeight, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); $('below').hidden = true; };
+$('log').addEventListener('scroll', () => { const l = $('log'); if (l.scrollHeight - l.scrollTop - l.clientHeight < 60) $('below').hidden = true; }, { passive: true });
 // The header folds to its bar once the transcript scrolls (critique 3).
 $('log').addEventListener('scroll', () => {
   const h = focus && $('log').querySelector('.sa-view-head');
@@ -1420,6 +1459,8 @@ function subagentCard(it, childId) {
   if (c) meta.push(fmtDur((c.status === 'running' ? Date.now() : c.ended ?? Date.now()) - (c.resumed ?? c.started)));
   const steps = v?.steps ?? c?.requests;
   if (steps != null) meta.push(`${steps} request${steps === 1 ? '' : 's'}`);
+  const fails = v?.toolErrors ?? c?.toolErrors;
+  if (fails) meta.push(`${fails} tool error${fails === 1 ? '' : 's'}`);
   const head = el('div', { className: 'sa-head' },
     el('span', { className: 'sa-dot', ariaHidden: 'true' }),
     el('span', { className: 'sa-name', textContent: name }),
@@ -1435,12 +1476,12 @@ function subagentCard(it, childId) {
   }
   if (c?.status === 'interrupted') {
     const res = el('button', { type: 'button', className: 'primary', textContent: 'Resume', ariaLabel: `Resume subagent ${name}` });
-    res.onclick = () => { res.disabled = true; agent.subagents.message(sessions.current.id, c.id, 'Continue your task where you left off: a page reload interrupted you.').catch((e) => alert(e.message)); };
+    res.onclick = () => { res.disabled = true; agent.subagents.message(sessions.current.id, c.id, 'Continue your task where you left off: a page reload interrupted you.').catch((e) => fail(e.message)); };
     acts.append(res);
   }
   if (c?.status === 'running') {
     const stop = el('button', { type: 'button', className: 'danger', textContent: 'Stop', ariaLabel: `Stop subagent ${name}` });
-    stop.onclick = () => { stop.disabled = true; agent.subagents.stop(sessions.current.id, c.id).catch((e) => alert(e.message)); };
+    stop.onclick = () => { stop.disabled = true; agent.subagents.stop(sessions.current.id, c.id).catch((e) => fail(e.message)); };
     acts.append(stop);
   }
   head.append(acts);
@@ -1473,16 +1514,21 @@ function subagentCard(it, childId) {
 // session, otherwise what was recorded when its last run settled.
 async function renderUsagePanel(list) {
   list ??= await sessions.all();
-  // Subagents' requests and tokens roll into their parent session's row.
+  const led = await ledger.snapshot();
+  // Subagents' tokens roll into their parent session's row; requests come
+  // from today's ledger (subagents and titles are counted under the session).
   const rows = await Promise.all(list.map(async (s) => {
     const current = sameId(s.id, sessions.current?.id);
     const u = (current && view?.usage) || s.usage || {};
     const subs = (await loadKids(s.id).catch(() => [])) ?? [];
-    const sum = (k) => subs.reduce((n, c) => n + (k === 'requests' ? c.requests ?? 0 : c.usage?.[k] ?? 0), 0);
+    const sum = (k) => subs.reduce((n, c) => n + (c.usage?.[k] ?? 0), 0);
     return { title: titleOf(s), input: (u.input ?? 0) + sum('input'), output: (u.output ?? 0) + sum('output'), cost: (u.cost ?? 0) + sum('cost'),
-      requests: u.requests != null || subs.length ? (u.requests ?? 0) + sum('requests') : null, subagents: subs.length, current };
+      requests: led.bySid[String(s.id)] ?? 0, subagents: subs.length, current };
   }));
-  renderPanel($('usage-body'), usage.state, rows);
+  const known = new Set(list.map((s) => String(s.id)));
+  const gone = Object.entries(led.bySid).filter(([k]) => !known.has(k)).reduce((n, [, v]) => n + v, 0);
+  if (gone) rows.push({ title: 'Deleted sessions', requests: gone, input: null, output: null });
+  renderPanel($('usage-body'), usage.state, rows, reconcile(led, usage.state.remaining));
   if (LOCAL) $('usage-body').querySelector('.quota')?.after(el('p', { className: 'local-usage muted', textContent:
     `Local turns (${LOCAL.label}, on this device) use none of this allowance: they send no requests.` }));
   // Subagents spend the same allowance (D16).
@@ -1512,7 +1558,7 @@ async function attach() {
   renderHint();
   const gen = ++attachGen;
   focus = null;
-  unwatch?.(); unwatch = null; view = null; attachError = null; turnTimes = {}; dropKidWatches(); renderLog(); updateSend();
+  unwatch?.(); unwatch = null; view = null; attachError = null; turnTimes = {}; lastHeight = null; $('below').hidden = true; dropKidWatches(); renderLog(); updateSend();
   const session = sessions.current;
   if (!session || !agent) return;
   await loadKids(session.id);
@@ -1632,7 +1678,7 @@ const mdCtx = {
   copy: (t) => navigator.clipboard.writeText(t),
   external: openExternal,
   image: (path, alt) => localImages.render(path, alt),
-  open: (t) => (t.kind === 'dir' ? revealDir(t.path) : openFile(t.path, t.line)).catch((e) => alert(e.message)),
+  open: (t) => (t.kind === 'dir' ? revealDir(t.path) : openFile(t.path, t.line)).catch((e) => fail(e.message)),
 };
 // Streaming re-renders the whole log each frame; only replies whose text or
 // link answers changed are re-parsed. Unused entries drop out each render.
@@ -1655,7 +1701,7 @@ function linkify(text) {
     if (!isFile(abs)) continue;
     out.push(text.slice(last, m.index));
     const b = el('button', { type: 'button', className: 'path', textContent: tok, title: 'Open ' + abs + (line ? ' at line ' + line : '') });
-    b.onclick = () => openFile(abs, line ? Number(line) : undefined).catch((e) => alert(e.message));
+    b.onclick = () => openFile(abs, line ? Number(line) : undefined).catch((e) => fail(e.message));
     out.push(b);
     last = m.index + tok.length;
   }
@@ -1711,9 +1757,12 @@ function quietGroup(items, nextCache) {
 const REPORT_VERB = { finished: 'finished', failed: 'failed', stopped: 'was stopped', interrupted: 'was interrupted' };
 function reportCard(it, nextCache) {
   const kids_ = [el('div', { className: 'sa-report-head' }, el('span', { className: `sa-status ${it.status}`, textContent: it.status }), ` Subagent ${it.name} ${REPORT_VERB[it.status] ?? it.status}`)];
+  // Not finished: its last words are work in progress, not a report (critique 49, 59).
+  const LAST = { stopped: 'Last output before stop', failed: 'Last output before it failed', interrupted: 'Last output before the reload' };
+  if (it.text && LAST[it.status]) kids_.push(el('p', { className: 'sa-last muted', textContent: LAST[it.status] + ':' }));
   if (it.text) kids_.push(replyBody(it.text, nextCache));
   else kids_.push(el('div', { className: 'body muted', textContent: quietText(it) }));
-  return seeded(message({ ...it, type: 'report', text: it.text }, `Report from subagent ${it.name}`, ...kids_), it.ref);
+  return seeded(message({ ...it, type: 'report', text: it.text }, LAST[it.status] ? `${LAST[it.status]} from subagent ${it.name}` : `Report from subagent ${it.name}`, ...kids_), it.ref);
 }
 
 function renderLog() {
@@ -1722,7 +1771,8 @@ function renderLog() {
   log.classList.toggle('child-view', !!focus);
   if (focus) {
     log.replaceChildren(...childLog());
-    if (atBottom) log.scrollTop = log.scrollHeight;
+    if (focus.pinTop) log.scrollTop = 0;
+    else if (atBottom) log.scrollTop = log.scrollHeight;
     playArrivals(log);
     updateSend();
     composer?.renderTray();
@@ -1778,7 +1828,8 @@ function renderLog() {
       out.push(message(it, 'Reply from Pouch', ...kids));
     } else if (it.type === 'tool') {
       const child = it.name === 'subagent' && it.args?.action === 'spawn' && it.status !== 'error' ? it.details?.child : null;
-      out.push(child != null ? subagentCard(it, child) : toolCard(it));
+      const early = child == null && it.name === 'subagent' && it.args?.action === 'spawn' && it.status === 'running' ? spawnedAs(it) : null;
+      out.push(child != null ? subagentCard(it, child) : early ? subagentCard(it, early.id) : startingSpawn(it) ? subagentCard(it, null) : toolCard(it));
     } else if (it.type === 'report') {
       out.push(reportCard(it, nextCache));
     } else if (it.type === 'compaction') {
@@ -1797,7 +1848,7 @@ function renderLog() {
   // "Reverted to <time>. Undo", where the conversation was cut.
   if (revertable && view) {
     const undo = el('button', { type: 'button', textContent: 'Undo', disabled: busy() });
-    undo.onclick = () => undoRevert(sessions.current?.id).catch((e) => alert(e.message));
+    undo.onclick = () => undoRevert(sessions.current?.id).catch((e) => fail(e.message));
     const note = el('p', { className: 'notice reverted', role: 'status' }, `Reverted to ${shortTime(revertable.at)}. Files stay as they are.`, undo);
     const n = revertable.branch.length;
     const other = n ? el('details', { className: 'other-branch' },
@@ -1815,6 +1866,9 @@ function renderLog() {
   localImages.sweep();
   if (fKey) log.querySelector(`.msg[data-key="${CSS.escape(fKey)}"]${fAct ? ` [data-act="${fAct}"]` : ''}`)?.focus({ preventScroll: true });
   if (atBottom) log.scrollTop = log.scrollHeight;
+  // Scrolled up while something new arrived below: say so (critique 19).
+  else if (log.scrollHeight > (lastHeight ?? 0) + 4 && lastHeight != null) $('below').hidden = false;
+  lastHeight = log.scrollHeight;
   playArrivals(log);
   composer?.renderTray();
 }
@@ -1885,7 +1939,7 @@ function message(it, label, ...kids) {
   const tool = (act, name, tip, fn, disabled = false) => {
     const b = el('button', { type: 'button', className: 'icon', ariaLabel: tip, title: tip, disabled }, icon(name));
     b.dataset.act = act;
-    b.onclick = () => fn().catch((e) => alert(e.message));
+    b.onclick = () => fn().catch((e) => fail(e.message));
     acts.append(b);
   };
   // The text as written: what the user typed, or the reply's markdown source.
@@ -1924,12 +1978,20 @@ async function revertTo(it) {
   const s = sessions.current;
   if (!s || busy() || !view) return;
   const sid = s.id;
-  const idx = view.items.indexOf(it);
+  // Your own message: revert to just before it, and its text comes back into
+  // the box to edit and send again (D12), never a message left without a reply.
+  if (it.type === 'user' && !it.steer && !it.watch && !it.from?.ref) {
+    const at = view.items.indexOf(it);
+    const before = view.items.slice(0, at).findLast((i) => i.entry && !i.streaming && (i.type === 'user' || i.text || i.error));
+    if (!before) return status('This is the first message, so there is nothing before it to revert to. Copy it into /new to start over.', 'bad');
+    return revertTo({ ...before, draft: it.text, draftAt: at });
+  }
+  const idx = view.items.findIndex((i) => i.cut === it.cut && i.entry === it.entry && i.type === it.type);
   const later = view.items.slice(idx + 1).filter((i) => i.type === 'user' || (i.type === 'assistant' && (i.text || i.error))).length;
   const body = el('div', { className: 'revert-body' }, el('p', {
-    textContent: `${later ? `${later} later message${later > 1 ? 's' : ''} fold${later > 1 ? '' : 's'} into another branch, and Pouch will not see ${later > 1 ? 'them' : 'it'} again.` : 'Nothing comes after this message.'} Files stay as they are. You can undo this.`,
+    textContent: `${it.draft != null ? 'Your message goes back into the box to edit and send again. ' : ''}${later ? `${later} later message${later > 1 ? 's' : ''} fold${later > 1 ? '' : 's'} into another branch, and Pouch will not see ${later > 1 ? 'them' : 'it'} again.` : 'Nothing comes after this message.'} Files stay as they are. You can undo this.`,
   }));
-  sheet('Revert to here?', [['Revert', async () => {
+  sheet(it.draft != null ? 'Revert to before this message?' : 'Revert to here?', [['Revert', async () => {
     if (busy()) return;
     const branch = branchOutline(view.items.slice(idx + 1));
     const r = await agent.revert(sid, it.cut);
@@ -1939,7 +2001,8 @@ async function revertTo(it) {
     for (const n of leaving) n.classList.add('leaving');
     if (leaving.length && !matchMedia('(prefers-reduced-motion: reduce)').matches) await new Promise((res) => setTimeout(res, 220));
     if (sameId(sid, sessions.current?.id)) await attach();
-    status(`Reverted to ${shortTime(it.at)}. Files were not changed.`);
+    status(`Reverted to ${shortTime(it.at)}. Files were not changed.${it.draft != null ? ' Your message is back in the box.' : ''}`);
+    if (it.draft != null) putBack(it.draft);
   }]], body);
 }
 
@@ -1952,7 +2015,7 @@ async function undoRevert(sid) {
   // Turns sent since the revert stay behind in the abandoned branch.
   const items = view?.items ?? [], cut = items.findIndex((i) => String(i.cut) === String(t.cut));
   const since = cut < 0 ? 0 : items.slice(cut + 1).filter((i) => i.type === 'user').length;
-  if (since && !confirm(`Undo the revert? The ${since} message${since > 1 ? 's' : ''} you sent since leave${since > 1 ? '' : 's'} the view, and the conversation from before the revert comes back.`)) return;
+  if (since && !(await ask(`Undo the revert? The ${since} message${since > 1 ? 's' : ''} you sent since leave${since > 1 ? '' : 's'} the view, and the conversation from before the revert comes back.`, 'Undo the revert'))) return;
   await agent.point(sid, t.from);
   await store.setSetting(revertKey(sid), undefined);
   await attach();
@@ -1994,10 +2057,13 @@ function waitingOn(sid = sessions.current?.id) {
   return [...new Set(agent.subagents.blocked(sid).flatMap((h) => h.ids))].map((ref) => l.find((c, i) => (c.ref ?? `s${i + 2}`) === ref)?.name ?? ref);
 }
 const hasDraft = () => !!$('input').value.trim() || (!focus && attachments.files.length > 0);
-function setSend(kind, title) {
-  $('send-label').textContent = { stop: 'Stop', queue: 'Queue', send: 'Send' }[kind];
+// The accessible name starts with the visible label (WCAG 2.5.3), so "Stop"
+// and "Stop all" name the same action here, in the tray and on a phone.
+function setSend(kind, title, label = { stop: 'Stop', queue: 'Queue', send: 'Send' }[kind], name = null) {
+  $('send-label').textContent = label;
   $('send').title = title;
-  $('send').ariaLabel = kind === 'stop' ? `${title}` : null;
+  $('send').ariaLabel = kind === 'stop' ? name ?? label : null;
+  if (kind === 'stop') $('send').setAttribute('aria-keyshortcuts', 'Escape'); else $('send').removeAttribute('aria-keyshortcuts');
   $('send').classList.toggle('stop', kind === 'stop');
   $('send').classList.toggle('queue', kind === 'queue');
   $('send').querySelector('use').setAttribute('href', kind === 'stop' ? '#i-stop' : '#i-send');
@@ -2031,9 +2097,10 @@ function updateSend() {
     const c = focusedChild(), live = c?.status === 'running';
     input.dataset.child = String(focus.id);
     input.disabled = !live;
-    input.placeholder = live ? `Steer ${c.name}: it reads this after its current step` : `${c?.name ?? 'This subagent'} has finished. Go back to ${parentName(sessions.current)} to continue.`;
-    if (live) setSend('stop', `Stop ${c.name}`);
-    else setSend('send', 'The subagent has finished');
+    const ended = { stopped: 'was stopped', failed: 'failed', interrupted: 'was interrupted' }[c?.status] ?? 'has finished';
+    input.placeholder = live ? `Steer ${c.name}: it reads this after its current step` : `${c?.name ?? 'This subagent'} ${ended}. Go back to ${parentName(sessions.current)} to continue.`;
+    if (live) setSend('stop', `Stop ${c.name} (Esc)`, 'Stop', `Stop ${c.name}`);
+    else setSend('send', `The subagent ${ended}`);
     $('send').disabled = !live;
     showSplit(live && hasDraft(), c?.name);
     return;
@@ -2044,7 +2111,9 @@ function updateSend() {
     input.placeholder = offline && !localPicked() ? 'Offline: keep typing; Send comes back with the network' : PLACEHOLDER;
   }
   const b = busy(), finishing = !b && submitting.has(curKey());
-  if (b) setSend('stop', 'Stop Pouch (Esc)');
+  // Stop here also stops this session's subagents: then it says Stop all, as the tray does.
+  const others = b && (kids.get(String(sessions.current?.id)) ?? []).some((c) => c.status === 'running');
+  if (b) setSend('stop', others ? 'Stop Pouch and its subagents (Esc)' : 'Stop Pouch (Esc)', others ? 'Stop all' : 'Stop');
   else if (finishing) setSend('queue', 'Pouch is starting the turn. Queue this message; it sends when Pouch is ready.');
   else setSend('send', 'Send');
   $('send').disabled = !b && !canSend();
@@ -2230,22 +2299,36 @@ function countRequest() {
   const act = activeSids(), cur = sessions.current?.id != null ? String(sessions.current.id) : 'new';
   const sid = act.includes(cur) || !act.length ? cur : act[0];
   spend.set(sid, (spend.get(sid) ?? 0) + 1);
+  ledger.add(sid, 'turn', usage.state.remaining);
   composer?.renderTray();
 }
 // A first message is dispatched as 'new' before its session exists.
 const turnSpend = () => spend.get(String(sessions.current?.id ?? 'new')) ?? spend.get('new') ?? null;
+// Keys of sessions whose Stop is still winding down (the abort not settled).
+const stopping = new Set();
 async function stopMain() {
   const sid = sessions.current?.id, key = curKey();
   if (sid == null) return;
-  const back = await withdrawSteers(key, sid, (s) => !s.child);
-  const q = queued.get(key);
-  if (back.length || q) {
-    queued.set(key, { attached: noFiles(), turnModel: $('model').value, at: Date.now(), ...q, text: [...back, q?.text].filter(Boolean).join('\n\n'), paused: true });
-    announce('Stopped. Your unsent message is paused: Send it or Cancel it in the activity tray.');
-  }
-  composer.renderTray();
-  // Stop in a session stops its subagents too (as Stop all does).
-  await Promise.allSettled([agent.abort(sid), agent?.subagents?.stopAll?.(sid)]);
+  stopping.add(key); updateSend();
+  try {
+    const back = await withdrawSteers(key, sid, (s) => !s.child);
+    const q = queued.get(key);
+    if (back.length || q) {
+      queued.set(key, { attached: noFiles(), turnModel: $('model').value, at: Date.now(), ...q, text: [...back, q?.text].filter(Boolean).join('\n\n'), paused: true });
+      announce('Stopped. Your unsent message is paused: Send it or Cancel it in the activity tray.');
+    }
+    composer.renderTray();
+    // Stop in a session stops its subagents too (as Stop all does).
+    await Promise.allSettled([agent.abort(sid), agent?.subagents?.stopAll?.(sid)]);
+    // A steer that slipped in while the run wound down (Enter right after
+    // Stop) has no step left to be read after: it becomes the next turn.
+    const late = await withdrawSteers(key, sid, (s) => !s.child);
+    if (late.length) {
+      const q2 = queued.get(key);
+      queued.set(key, { attached: noFiles(), turnModel: $('model').value, at: Date.now(), ...q2, text: [q2?.text, ...late].filter(Boolean).join('\n\n'), paused: q2?.paused ?? false });
+      announce(q2?.paused ? 'Pouch stopped before reading your message: it joined the paused message in the activity tray.' : 'Pouch stopped before reading your message, so it goes as the next turn.');
+    }
+  } finally { stopping.delete(key); composer.renderTray(); updateSend(); queueMicrotask(pump); }
 }
 // A paused or queued message goes now: as the next turn when idle, or into
 // the running turn (Steer now).
@@ -2269,7 +2352,7 @@ function quotaError(msg) { return /\b429\b|quota|rate.?limit|too many requests|a
 // chores (title, usage), so a queued message need not wait for them.
 async function send(text, attached = { files: [], images: [] }, turnModel = $('model').value, runEnded = () => {}) {
   const t0 = Date.now();
-  if (!sessions.current) await sessions.create();
+  if (!sessions.current) { await sessions.create(); ledger.adopt('new', sessions.current.id); }
   const s = sessions.current; // the run belongs to this session even if you switch away
   const sid = s.id;
   s.model = turnModel;
@@ -2290,6 +2373,9 @@ async function send(text, attached = { files: [], images: [] }, turnModel = $('m
     // Refused before admission: nothing entered the transcript. The caller
     // queues or restores the text (dispatch), so it is never lost.
     if (NOT_ADMITTED.test(e.message)) refused = e;
+    // Stopped before the message entered the transcript: it was never sent,
+    // so it comes back to the box (dispatch) rather than vanishing.
+    else if (e.message === 'Stopped.' && !(await agent.snapshot(sid).catch(() => null))?.items.some((i) => i.type === 'user' && i.text === text)) refused = new Error('Stopped before your message was sent; it is back in the box.');
     else admitted();
     // The run's own error (an assistant item) may carry the HTTP status the summary lost.
     const detail = e.message + ' ' + (view?.items.findLast?.((i) => i.error)?.error ?? '');
@@ -2342,6 +2428,9 @@ $('composer').onsubmit = async (e) => {
     await stopMain();
     return dispatch(key, prepare);
   }
+  // Stop is winding down: no step is left to read a steer, so the text
+  // waits in the queue and goes as the next turn once the run has ended.
+  if (stopping.has(key)) { announce('Pouch is stopping: your message goes as the next turn.'); return queueDraft(key, prepare); }
   // Steering carries text only; attachments go with a queued message.
   if (busy() && mode === 'steer' && !attachments.files.length) return steerMain(key, text);
   if (busy() && mode === 'steer') announce('Attachments go only with a new turn, so this message is queued for after this turn.');
@@ -2504,6 +2593,10 @@ const COMMANDS = [
     el('p', { textContent: 'Enter sends (on touch screens, tap Send). Shift+Enter is a new line. While Pouch works, Enter steers: Pouch reads your message after its current step. Alt+Enter (Option+Enter on a Mac) queues it for after the turn instead; Settings can swap the two. Esc stops; Alt+Up takes a queued message back to edit.' }))) },
 ];
 const capEvents = new Map(); // session id -> message-cap refusals shown in the tray
+// A spawn call still streaming or running, before its subagent exists.
+// Once a subagent of that name runs, it has its own card and row instead.
+const spawnedAs = (it) => (kids.get(String(sessions.current?.id)) ?? []).find((c) => c.name === it.args?.name && c.status === 'running' && (!it.at || c.started >= it.at - 1000));
+const startingSpawn = (it) => it.type === 'tool' && it.name === 'subagent' && it.status === 'running' && it.details?.child == null && (it.args?.action === 'spawn' || (it.args?.action == null && it.args?.task != null)) && !spawnedAs(it);
 const runSeen = new Map(); // running `run` call id -> first seen (ms), for the tray's elapsed time
 const excerpt = (t, n = 90) => { const x = String(t ?? '').replace(/\s+/g, ' ').trim(); return x.length > n ? x.slice(0, n - 1) + '…' : x; };
 function activity() {
@@ -2511,6 +2604,12 @@ function activity() {
   // Subagents main is blocked on (a foreground spawn, a wait): Background detaches (G12).
   const held = new Set(sid != null && agent?.subagents ? agent.subagents.blocked(sid).flatMap((h) => h.ids) : []);
   const l = kids.get(String(sid)) ?? [];
+  // A spawn the model is still writing (or starting): a row at once, so the
+  // seconds before the subagent exists are not a dead zone (critique 48).
+  if (!focus) for (const it of view?.items ?? []) if (startingSpawn(it)) {
+    const since = runSeen.get(it.id) ?? Date.now(); runSeen.set(it.id, since);
+    rows.push({ key: 'sa-start:' + it.id, kind: 'subagent', text: `${it.args?.name ?? 'subagent'}: starting`, title: it.args?.task ?? 'A subagent is starting', origin: 'starting', since });
+  }
   for (const c of l) if (c.status === 'running') {
     const t = vfs.tasks.byKeyOf('sa:' + c.id), ref = c.ref ?? `s${l.indexOf(c) + 2}`, waited = held.has(ref);
     rows.push({ key: 'sa:' + c.id, kind: 'subagent', seed: ref, text: `${c.name}: ${excerpt(c.task)}`, title: `Open ${c.name}: ` + c.task + (t ? `\n/task/${t.id} sees:\n${vfs.tasks.mounts(t).join('\n')}` : ''), origin: waited ? `main waits on ${ref}` : t ? `subagent ${ref}, /task/${t.id}` : `subagent ${ref}`, since: c.resumed ?? c.started,
@@ -2573,7 +2672,7 @@ function activity() {
   return rows;
 }
 composer = createComposer({
-  vfs, input: $('input'),
+  vfs, input: $('input'), fail,
   roots: () => ['/work', '/pouch', '/tmp', ...[...vfs.mounts].filter(([, m]) => m.live).map(([n]) => '/mnt/' + n)],
   skills: async () => (await loadContext(vfs)).skills,
   commands: COMMANDS,

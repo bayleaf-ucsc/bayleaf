@@ -247,6 +247,9 @@ export const scenes = [
       await page.waitForSelector('#log:not(.child-view) .subagent', T);
       await page.waitForFunction(() => /Manville/.test(document.getElementById('log').textContent), null, T);
       await page.locator('#log .subagent details.sa-log > summary').last().click();
+      // Transient states (the steer's arrival glow, hover under the pointer) settle first, so the shot is stable.
+      await page.mouse.move(1, 1);
+      await page.waitForFunction(() => !document.querySelector('.still-mark, .pulsed') && document.getAnimations().every((a) => a.playState !== 'running'), null, T);
       await shot('subagents-review', { wait: '.subagent details.sa-log[open] .sa-final' });
     },
   },
@@ -498,6 +501,7 @@ export const scenes = [
     ],
     async run({ page, shot }) {
       await page.click('#erase');
+      await page.click('#sheet-actions button >> text=Erase all'); // asked inline, not a native confirm
       await shot('leave-erased', { wait: '#erased:not([hidden])' });
     },
   },

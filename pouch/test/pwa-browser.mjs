@@ -201,6 +201,7 @@ if (!process.argv.includes('--webkit-only')) try {
   // Uninstall offline copy: unregistered, cache gone, stays off on reload; Keep restores.
   serve.dir = B;
   await page.click('#copy-remove');
+  await page.click('#sheet-actions button >> text=Uninstall'); // asked inline (Batch C: no native confirm)
   await page.waitForFunction(async () => !(await navigator.serviceWorker.getRegistrations()).length && !(await caches.keys()).some((k) => k.startsWith('pouch-shell-')));
   serve.log = [];
   const navOff = await page.reload(); await sleep(1500);
@@ -216,7 +217,7 @@ if (!process.argv.includes('--webkit-only')) try {
   serve.sums503 = true; serve.log = [];
   // The reloaded page registers sw.js again (a fresh start); what matters is
   // that the reload came from the network and no copy survived.
-  await Promise.all([page.waitForEvent('load', { timeout: 15000 }), page.click('#erase')]);
+  await Promise.all([page.waitForEvent('load', { timeout: 15000 }), page.click('#erase').then(() => page.click('#sheet-actions button >> text=Erase all'))]); // asked inline (Batch C)
   await sleep(1500);
   const afterErase = await page.evaluate(async () => ({ shell: (await caches.keys()).filter((k) => k.startsWith('pouch-shell-')), erased: !document.querySelector('#erased').hidden }));
   ok(!afterErase.shell.length && afterErase.erased && serve.log.includes('/'), 'Erase all: worker unregistered and copy cleared: ' + JSON.stringify(afterErase));

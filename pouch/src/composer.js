@@ -79,20 +79,20 @@ export function createComposer(deps) {
         // G12: main stops waiting on it; the subagent keeps running.
         const b = el('button', { type: 'button', className: 'tray-bg', textContent: 'Background', title: 'Main stops waiting; this subagent keeps running and reports later', ariaLabel: `Send ${r.text} to the background` });
         b.dataset.act = 'bg';
-        b.onclick = async () => { b.disabled = true; try { await r.background(); } catch (e) { alert(e.message); } };
+        b.onclick = async () => { b.disabled = true; try { await r.background(); } catch (e) { deps.fail(e.message); } };
         li.append(b);
       }
       // Pending input (D25): Edit, Steer now, Send, each a visible labeled button.
       for (const a of r.actions ?? []) {
         const b = el('button', { type: 'button', className: 'tray-bg', textContent: a.label, ariaLabel: a.ariaLabel ?? a.label, title: a.title ?? a.ariaLabel ?? a.label });
         b.dataset.act = a.act;
-        b.onclick = async () => { b.disabled = true; try { await a.run(); } catch (e) { alert(e.message); } };
+        b.onclick = async () => { b.disabled = true; try { await a.run(); } catch (e) { deps.fail(e.message); } };
         li.append(b);
       }
       if (r.stop) {
         const b = el('button', { type: 'button', className: 'tray-stop', textContent: r.stopLabel ?? 'Stop', ariaLabel: r.stopAria ?? `${r.stopLabel ?? 'Stop'} ${r.kind === 'queued' ? 'queued message' : r.text}` });
         b.dataset.act = 'stop';
-        b.onclick = async () => { b.disabled = true; try { await r.stop(); } catch (e) { alert(e.message); } };
+        b.onclick = async () => { b.disabled = true; try { await r.stop(); } catch (e) { deps.fail(e.message); } };
         li.append(b);
       }
       deps.onRow?.(li, r); // continuity: a fold or morph resumes over the rebuild
@@ -257,7 +257,7 @@ export function createComposer(deps) {
     const m = /^\/([\w-]+)(?:\s+([\s\S]*))?$/.exec(text.trim());
     const c = m && deps.commands.find((x) => x.name === m[1]);
     if (!c) return false;
-    Promise.resolve(c.run(m[2]?.trim() ?? '')).catch((e) => alert(e.message));
+    Promise.resolve(c.run(m[2]?.trim() ?? '')).catch((e) => deps.fail(e.message));
     return true;
   }
 

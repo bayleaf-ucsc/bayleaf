@@ -38,8 +38,8 @@ const kb = (n) => (n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`);
 
 // The mount a path belongs to in the agent's namespace: /work, /pouch,
 // /mnt/<name>, or the top folder of the in-memory root (/tmp, /home).
-function rootOf(vfs, p) {
-  const { point } = vfs.ns.layers(p);
+function rootOf(fs, p) {
+  const { point } = fs.layers(p);
   return point === '/' ? '/' + (p.split('/')[1] ?? '') : point;
 }
 
@@ -79,7 +79,7 @@ export function runTool({ vfs, Type, CWD, abs, fsFor, oneAtATime = (_p, fn) => f
       const bases = specs.map((f) => globBase(abs(f)));
       // The run's namespace: declared, or /work plus the mounts its files live in.
       const declared = ns?.length ? parseSpecs(ns).map((d) => d.path + (d.readOnly ? ':ro' : ''))
-        : [...new Set([CWD, ...bases.map((b) => rootOf(vfs, b))])].filter((p) => p !== '/');
+        : [...new Set([CWD, ...bases.map((b) => rootOf(fs, b))])].filter((p) => p !== '/');
       const paths = parseSpecs(declared).map((d) => d.path);
       for (const b of bases) if (!paths.some((d) => within(b, d))) throw new Error(`files: ${b} is outside this run's namespace (${paths.join(', ')}); add its folder to \`ns\`, or leave \`ns\` out`);
       const scratch = paths.some((d) => within(d, '/tmp')) ? null : new InMemoryFs();

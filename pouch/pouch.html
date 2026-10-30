@@ -450,10 +450,15 @@
   .quota.low .bar > span { background: var(--warn); } .quota.low .big { color: var(--warn); }
   .quota p { margin: .2rem 0 0; font-size: .85rem; }
   .std { color: var(--muted); font-size: .82rem; }
-  table.tokens { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: .82rem; }
-  table.tokens col.n { width: 4.2rem; }
-  table.tokens th, table.tokens td { text-align: right; padding: .25rem .3rem; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
-  table.tokens th:first-child, table.tokens td:first-child { text-align: left; max-width: 10rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  table.tokens { width: 100%; table-layout: auto; border-collapse: collapse; font-size: .82rem; }
+  table.tokens col.n { width: 3.6rem; }
+  table.tokens th, table.tokens td { text-align: right; padding: .25rem .3rem; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /* Titles stay readable: at least 7rem, wrapped to two lines, then clipped. */
+  table.tokens col:first-child { min-width: 7rem; }
+  table.tokens th:first-child, table.tokens td:first-child { text-align: left; min-width: 7rem; white-space: normal; overflow-wrap: anywhere; }
+  table.tokens .clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+  table.tokens tr.total td { font-weight: 600; border-top: 1px solid var(--line); }
+  table.tokens tr.other td { color: var(--muted); }
   table.tokens th { color: var(--muted); font-weight: 500; }
   table.tokens tr.current td { font-weight: 600; }
 
@@ -621,9 +626,13 @@
   }
 
   /* Subagent view header: one opaque bar, details on demand (critique 3). */
-  #log.child-view { padding-top: 0; }
+  /* Lines come to rest below the sticky header, never half under it. */
+  /* New content arrived below the viewport: a pill over the composer's top edge. */
+  #below { position: sticky; bottom: .4rem; z-index: 4; align-self: center; margin: -2.4rem auto .4rem; padding: .3rem .8rem; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--leaf); font-size: .82rem; box-shadow: 0 2px 8px var(--shadow); }
+  #log.child-view { padding-top: 0; scroll-padding-top: 3.6rem; }
   .sa-view-head { position: sticky; top: 0; z-index: 3; margin: 0 calc(-1 * max(.75rem, (100% - 48rem) / 2)) .6rem; border: 0; border-bottom: 1px solid var(--line); border-left: 3px solid var(--leaf); border-radius: 0; background: var(--surface); padding: .1rem .6rem; font-size: .85rem; }
   .sa-bar { display: flex; align-items: center; gap: .45rem; min-height: 2.5rem; flex-wrap: nowrap; min-width: 0; }
+  .sa-view-head { box-shadow: 0 6px 8px -6px var(--shadow); }
   @media (pointer: fine) { .sa-bar button { min-height: 2rem; padding-block: 0; } }
   .sa-bar .sa-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sa-bar .sa-meta { white-space: nowrap; }
@@ -641,6 +650,9 @@
   #app.side-open.side-overlay { grid-template-columns: 0 minmax(0, 1fr) var(--panel-w, 0) var(--rail-w); }
   #app.side-overlay #sidebar { position: fixed; z-index: 35; top: 0; bottom: 0; left: 0; width: var(--side-w, 260px); box-shadow: 0 0 24px var(--shadow); }
   #app.side-overlay #side-handle { display: none; }
+  /* The overlaid sidebar gets the drawer's scrim over the chat column, visual
+     only: a click there closes the sidebar and still lands (layout.js). */
+  #app.side-overlay #backdrop { position: fixed; inset: 0 calc(var(--panel-w, 0px) + var(--rail-w, 0px)) 0 0; z-index: 34; background: var(--backdrop); pointer-events: none; }
   /* Trust panel: verdicts first, hashes behind Details, mounts stacked (critique 10). */
   #trust .facts-more summary { cursor: pointer; font-family: inherit; font-size: .82rem; }
   #trust .facts-more dl { grid-template-columns: 1fr; gap: 0; }
@@ -733,6 +745,7 @@
       </div>
     </div>
     <div id="log" aria-live="polite"></div>
+    <button id="below" type="button" hidden>New reply below</button>
     <form id="composer">
       <div id="ac" role="listbox" hidden></div>
       <div id="shield-pop" role="dialog" aria-label="This session's lane and permissions" hidden></div>
@@ -791,6 +804,8 @@
       </div>
       <div class="bar notice-bar review" id="review-bar" role="status" hidden>
         <span id="review-text"></span>
+        <button id="review-mine" type="button" hidden>Keep mine for the rest</button>
+        <button id="review-theirs" type="button" hidden>Take theirs for the rest</button>
         <button id="review-done" type="button" class="primary">Done</button>
       </div>
       <div class="bar notice-bar conflict" id="conflict-bar" role="alert" hidden>
