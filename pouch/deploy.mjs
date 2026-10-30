@@ -138,13 +138,19 @@ for (const path of ['/', '/pouch.html', '/SHA256SUMS']) {
 }
 // Model files: the manifest and worker byte-exact, every part present with
 // its size (HEAD), one part byte-exact, all with immutable caching.
+// Right after a deploy the edge has twice served a model part with the wrong
+// bytes for under a minute, so a mismatch is retried before it fails the deploy.
 for (const [i, f] of modelFiles.entries()) {
   const full = !f.path.endsWith('.bin') || i === modelFiles.findIndex((x) => x.path.endsWith('.bin'));
-  const response = await fetch(`https://pouch.bayleaf.dev/${f.path}`, { method: full ? 'GET' : 'HEAD', signal: AbortSignal.timeout(60000), redirect: 'error' });
-  if (response.status !== 200 || response.headers.has('set-cookie') || response.headers.get('cache-control') !== 'public, max-age=31536000, immutable')
-    throw new Error(`Unexpected response or cache policy: /${f.path}`);
-  if (full ? createHash('sha256').update(Buffer.from(await response.arrayBuffer())).digest('hex') !== f.sha : Number(response.headers.get('content-length')) !== f.size)
-    throw new Error(`Served bytes differ: /${f.path}`);
+  for (let attempt = 1; ; attempt++) {
+    const response = await fetch(`https://pouch.bayleaf.dev/${f.path}`, { method: full ? 'GET' : 'HEAD', signal: AbortSignal.timeout(60000), redirect: 'error' });
+    if (response.status !== 200 || response.headers.has('set-cookie') || response.headers.get('cache-control') !== 'public, max-age=31536000, immutable')
+      throw new Error(`Unexpected response or cache policy: /${f.path}`);
+    if (full ? createHash('sha256').update(Buffer.from(await response.arrayBuffer())).digest('hex') === f.sha : Number(response.headers.get('content-length')) === f.size) break;
+    if (attempt === 6) throw new Error(`Served bytes differ after ${attempt} attempts: /${f.path}`);
+    console.log(`Served bytes differ: /${f.path}; retrying in 15 s (attempt ${attempt})`);
+    await new Promise((resolve) => setTimeout(resolve, 15000));
+  }
 }
 for (const f of shellFiles) {
   const response = await fetch(`https://pouch.bayleaf.dev/${f.path}`, { signal: AbortSignal.timeout(20000), redirect: 'error' });
