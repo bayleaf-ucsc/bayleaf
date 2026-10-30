@@ -102,7 +102,21 @@ cache headers. README "Install and the offline copy" has the policy.
   and refusal, pass-through, trust panel, uninstall, Erase all). To check after deploy:
   the Content-Type Cloudflare serves for `.webmanifest`, install on Android and iOS.
 
-## Current artifact: installable offline app (2026-10-30)
+## Current artifact: agent graphs, namespaces, send modes, watches (2026-10-30)
+
+- Built from commit `91b1b01` (clean; label `91b1b01 2026-10-30`) in a temporary clean
+  checkout with `node build.mjs --with-models`.
+- HTML SHA-256: `440ca991e0b7291322666f67270fc2cdb57489febf540da5ec8d539ac5ee0e77`.
+- 70 files staged, 1,086 MiB; 2 uploaded, 69 unchanged. No CSP change.
+- Cloudflare version: `6be12e2c-5965-41d6-a153-568d4934199a`. Previous: `17557e96-…`.
+- `deploy.mjs` passed first time: `/`, `/pouch.html`, `/SHA256SUMS`, 6 shell files and all
+  63 model files byte-exact. A headless Chromium load of the live site showed the service
+  worker active, no installability errors and no CSP violations (only the expected
+  "No available adapters" WebGPU warning in a GPU-less browser).
+- Contains a database upgrade (version 4) that deletes the old `changes` store, since
+  change review is removed.
+
+## Earlier artifact: installable offline app (2026-10-30)
 
 - Redeployed from `e2bda0f` (clean) as Cloudflare version
   `17557e96-c2ad-4316-90fb-5f362561b0e8`, HTML SHA-256
