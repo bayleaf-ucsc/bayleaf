@@ -4,7 +4,9 @@ Working state: worktree `~/Desktop/bayleaf-pouch`, branch `pouch`, checkpoint co
 `727983c` (local only, not pushed). Everything after that checkpoint is uncommitted:
 `run` tool, offline handling, composer card, Local lane with weights built into `dist/`.
 Read `README.md`, `JOURNEYS.md` (story map; the source of truth for scope) and
-`DEPLOYMENT.md` first. Tests still live in volatile `/tmp/pouch-qa/` (see step 3).
+`DEPLOYMENT.md` first. Journey test scripts and the AX/UX/joint/speech reports were moved out of `/tmp` into
+`test/journeys/` (uncommitted; scripts still use `/tmp/pouch-qa/...` profile dirs, and the
+reports quote transcripts, so scrub before committing).
 
 ## Decided, not yet built
 
@@ -26,7 +28,7 @@ Read `README.md`, `JOURNEYS.md` (story map; the source of truth for scope) and
      (serial on one GPU worker, only when model/runtime/prompt/tools change).
    - Record/replay: T2/T3 record model turns as cassettes keyed by prompt + tool-schema
      hash; T1 replays them; hash mismatch fails loudly.
-   - Move `/tmp/pouch-qa/*.mjs` into `pouch/test/journeys/` under Playwright Test:
+   - Convert `test/journeys/*.mjs` to Playwright Test:
      one server, per-worker browser contexts, local weights pre-seeded or served from
      disk (never downloaded per test), model loaded once per GPU worker.
    - Fail early: preflight (server, enclave, WebGPU, quota), per-step deadlines
@@ -52,6 +54,6 @@ Read `README.md`, `JOURNEYS.md` (story map; the source of truth for scope) and
 - Large-file steering: prompt the agent to use `run` rather than `read` on big data.
 - Known gaps: t10a not rerun after the Local lane; Firefox/Safari untested; storage
   persistence not requested for model cache; subagents not aborted on network loss.
-- Speech I/O: abandoned for now. Survey in `/tmp/cactus-survey/REPORT.md` (volatile):
+- Speech I/O: abandoned for now. Survey in `test/journeys/reports/speech-cactus-survey.md`:
   Whistle (17 MB, WASM CPU, closed engine source) or Moonshine (MIT) for STT; device
   voices for TTS; Kokoro/Kitten depend on GPL-3.0 eSpeak NG. No Google/Chrome-only paths.

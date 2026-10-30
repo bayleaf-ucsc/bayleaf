@@ -181,6 +181,10 @@ transparency log, and no tagged reproducible release has been made.
   lets page script send data to that host, which before needed `api.bayleaf.dev`: the
   same operator, but a different service with different logs (Cloudflare Workers Static
   Assets keeps request metadata, not bodies; see DEPLOYMENT.md).
+- **An offline copy that changes only when you say so.** `worker-src 'self' blob:` and
+  `manifest-src 'self'` exist for installing: `'self'` in `worker-src` lets the page
+  register `/sw.js`, the one script not covered by the hash list. See "Install and the
+  offline copy" below for what that worker may do and how to check it.
 - **Only its own scripts.** `script-src` lists two SHA-256 hashes, so an injection cannot run.
   It also has `'wasm-unsafe-eval'` and `worker-src blob:`, for the `run` tool (D18).
   The first compiles wasm, not JS strings: wasm can only call what its importer hands
@@ -249,12 +253,48 @@ archives and `run` keep working. Pouch re-checks every 15 s and on the online ev
 when the relay answers it re-verifies the enclave, re-enables Send and refreshes usage,
 without a reload. The draft in the composer is kept throughout.
 
+The hosted page also loads with no network, from its offline copy (below).
+
 A saved copy of `pouch.html` opened from disk (`file://`) starts offline and works, with
 one caveat: Chromium refuses OPFS to `file://` pages, so `/work` falls back to memory
 (tagged "memory only") and is lost on reload; IndexedDB (`/pouch`, sessions, settings)
 does persist. Sealed sending needs the network, because attestation fetches the
-enclave's bundle; the Local lane does not (load its files from a saved folder in Settings). A hosted copy that loads with no network would need a service
-worker; see JOURNEYS F3 for what that implies for the hash story.
+enclave's bundle; the Local lane does not (load its files from a saved folder in Settings).
+
+## Install and the offline copy
+
+Open `https://pouch.bayleaf.dev` and use the browser's Install (Chromium: the address
+bar, or "Install app" in the trust panel; Android: Add to Home screen; Safari: Share,
+Add to Dock or Add to Home Screen). Firefox desktop cannot install web apps; Pouch works
+the same in a tab. Installed or not, the hosted page keeps an offline copy of itself:
+
+- **Pinned, checked bytes.** On the first visit the page fetches `pouch.html`, the
+  manifest and icons with the cache bypassed, checks each against `/SHA256SUMS`, and
+  only then stores them in Cache Storage under `pouch-shell-<sha256 of pouch.html>`.
+  `/sw.js` serves exactly those files (`/`, `/pouch.html`, manifest, icons) from that
+  cache, online or not. It does not touch `api.bayleaf.dev`, `/models/**` (the Local
+  lane's own verified cache), `/SHA256SUMS`, itself, or any URL with a query.
+- **Explicit updates.** At start (when online) and on "Check for updates", the page
+  reads `/SHA256SUMS`. If the published HTML hash differs from the pinned one, a notice
+  names both. Nothing changes until you press Update, which fetches the new files,
+  checks them against the SHA256SUMS just fetched, and swaps the cache and reloads only
+  if all match; otherwise it says which file did not match and keeps the running copy.
+- **The trust panel says which build runs:** where it was loaded from, the pinned hash,
+  the published hash when last checked, whether the served `sw.js` matches the hash
+  built into this page, whether Pouch runs installed, and whether storage is persistent
+  (requested at start and on install, which also covers the Local model's cache).
+- **Uninstall offline copy** (trust panel) unregisters the worker, deletes the copy and
+  remembers the choice; **Erase all** also does both (the next visit starts fresh).
+
+**The unavoidable channel.** Browsers re-fetch `sw.js` on navigation and replace it,
+without asking, whenever its bytes change. That is why it is tiny, has no logic beyond
+serving the pinned cache, and is listed in SHA256SUMS with its hash built into the page:
+the page can show a mismatch, but a hostile `sw.js` controls what loads next time, so
+it could serve a different page that would not report itself. The pinned copy therefore
+protects against accidental or quiet *page* changes between releases, not against an
+operator who changes `sw.js` on purpose. The saved-file route (`file://`, check its hash
+yourself) remains the strongest guarantee. The hash shown is computed by this page's
+own code, so it is a convenience, not an independent proof.
 
 ## What it does not protect
 

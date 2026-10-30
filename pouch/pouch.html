@@ -25,9 +25,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src __SCRIPT_HASHES__ 'wasm-unsafe-eval'; worker-src blob:; style-src 'unsafe-inline'; connect-src 'self' https://api.bayleaf.dev; img-src data: blob:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src __SCRIPT_HASHES__ 'wasm-unsafe-eval'; worker-src 'self' blob:; manifest-src 'self'; style-src 'unsafe-inline'; connect-src 'self' https://api.bayleaf.dev; img-src data: blob:; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#2f6b3a">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="Pouch">
 <script>
 // Before paint; build.mjs hashes this script alongside the app.
 (() => {
@@ -590,6 +594,10 @@
       <p>All Pouch data in this browser was erased. Pouch recreates its empty databases as it starts, so the browser's storage tools will list them again, empty.</p>
       <div class="actions"><button id="erased-dismiss" type="button">Dismiss</button></div>
     </div>
+    <div id="update" class="card" role="status" hidden>
+      <p id="update-text"></p>
+      <div class="actions"><button id="update-go" type="button" class="primary">Update</button><button id="update-later" type="button">Later</button></div>
+    </div>
     <div id="welcome" class="card" hidden>
       <p><strong>Pouch is a coding agent for files kept in this browser; what it asks the AI is encrypted so that BayLeaf cannot read it.</strong></p>
       <p><b>work</b> is this browser, <b>pouch</b> holds shared instructions and skills, <b>tmp</b> is memory (gone on reload), and mounted folders are on your device. <button type="button" class="link" id="welcome-where">More about where files are kept</button></p>
@@ -686,8 +694,18 @@
         <dl id="facts"></dl>
         <h3>Check this page</h3>
         <p>This page talks only to <code>api.bayleaf.dev</code>, and to its own origin to download the optional Local model: its Content-Security-Policy (<code>connect-src</code>) says so, and the browser enforces it. The Local model's files are checked against a manifest whose SHA-256 is built into this page; downloading them tells the host that this browser fetched the model, nothing more. Local turns send nothing.</p>
-        <p>Build <code id="build-id">__BUILD_ID__</code>. A page cannot vouch for its own hash, so this one does not show it. Save the page, then compare its hash with <code>SHA256SUMS</code> from the release:
+        <p>Build <code id="build-id">__BUILD_ID__</code>. A page cannot vouch for its own hash: the one below is what this page's code checked when it kept the copy. Save the page, then compare its hash with <code>SHA256SUMS</code> from the release:
         <code>shasum -a 256 pouch.html</code></p>
+        <h3>This copy</h3>
+        <dl id="copy-facts"></dl>
+        <p id="copy-note" role="status"></p>
+        <p class="local-actions">
+          <button id="copy-check" type="button">Check for updates</button>
+          <button id="copy-install" type="button" hidden>Install app</button>
+          <button id="copy-keep" type="button" hidden>Keep an offline copy</button>
+          <button id="copy-remove" type="button" class="danger" hidden>Uninstall offline copy</button>
+        </p>
+        <p class="muted">The hosted page keeps an offline copy: its files are checked against <code>SHA256SUMS</code> before they are kept, it loads with no network, and it changes only when you press Update, which checks the new files the same way. One part updates without asking: browsers replace <code>sw.js</code>, the small script that serves the copy, whenever the server's bytes change. It only serves the kept files; the Service worker line says whether it is the one this build expects.</p>
         <p><a id="source-link" href="https://github.com/bayleaf-ucsc/bayleaf/tree/pouch/pouch" target="_blank" rel="noopener noreferrer">Source code and releases on GitHub</a></p>
       </div>
     </section>
@@ -701,6 +719,8 @@
         <label class="setting-check"><input id="reasoning-expanded" type="checkbox">Expand reasoning by default</label>
         <label class="setting-check"><input id="tools-expanded" type="checkbox">Expand tool calls by default</label>
         <p class="muted">Display preferences only, saved in this browser. They do not enable reasoning or change model reasoning effort. Existing messages keep their own open/closed state while streaming. Erase all resets these preferences.</p>
+        <h3>Offline copy and updates</h3>
+        <p>Pouch changes only when you press Update. <button type="button" class="link" id="settings-copy">See this copy and check for updates</button></p>
         <h3>Model selection</h3><p>The model below your message applies to your next user turn. Running work, including subagents, keeps the model it started with.</p>
         <h3>Local model</h3>
         <div id="local-settings">

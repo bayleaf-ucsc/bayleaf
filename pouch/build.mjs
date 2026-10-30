@@ -9,7 +9,7 @@
 import { build, context } from 'esbuild';
 import { createHash } from 'node:crypto';
 import { execSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 const sha256 = (s, enc) => createHash('sha256').update(s).digest(enc);
 const watch = process.argv.includes('--watch');
@@ -26,6 +26,12 @@ function buildId() {
 }
 const BUILD_ID = buildId();
 
+// The installable app shell around pouch.html, copied as is (icons/make-icons.py
+// regenerates the PNGs). sw.js does not depend on the page, so its hash can be
+// built into the page, which shows whether the served worker is this one.
+const STATIC = ['sw.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png'];
+const SW_SHA256 = sha256(readFileSync('sw.js'), 'hex');
+
 function assemble(code) {
   // An inline script ends at the first "</script", wherever it appears.
   const app = code.replaceAll('</script', '<\\/script');
@@ -35,10 +41,13 @@ function assemble(code) {
   html = html.replace('__SCRIPT_HASHES__', hashes.join(' ')).replaceAll('__BUILD_ID__', BUILD_ID);
   mkdirSync(OUT, { recursive: true });
   writeFileSync(`${OUT}/pouch.html`, html);
-  // The whole deployable artifact is the files SHA256SUMS lists: pouch.html,
-  // plus dist/models/** with --with-models (deploy.mjs uploads exactly these).
-  // sha256sum -c SHA256SUMS checks a downloaded or served copy against the build.
-  const sums = [[sha256(html, 'hex'), 'pouch.html'], ...(models?.sums ?? [])];
+  mkdirSync(`${OUT}/icons`, { recursive: true });
+  for (const f of STATIC) copyFileSync(f, `${OUT}/${f}`);
+  // The whole deployable artifact is the files SHA256SUMS lists: pouch.html
+  // (first), the app shell, plus dist/models/** with --with-models (deploy.mjs
+  // uploads exactly these). sha256sum -c SHA256SUMS checks a downloaded or
+  // served copy against the build; the offline copy checks itself against it.
+  const sums = [[sha256(html, 'hex'), 'pouch.html'], ...STATIC.map((f) => [sha256(readFileSync(f), 'hex'), f]), ...(models?.sums ?? [])];
   writeFileSync(`${OUT}/SHA256SUMS`, sums.map(([h, p]) => `${h}  ${p}\n`).join(''));
   console.log(`${OUT}/pouch.html  ${(html.length / 1024).toFixed(0)} KiB  ${hashes.length} inline script(s)`);
   console.log(`sha256 ${sha256(html, 'hex')}  build ${BUILD_ID}`);
@@ -58,7 +67,7 @@ const models = process.argv.includes('--with-models') ? await (await import('./b
 const ctx = await context({
   entryPoints: ['src/main.js'],
   bundle: true, minify: !watch, write: false,
-  define: { WORKER_SRC: JSON.stringify(WORKER_SRC), LOCAL_MODEL: JSON.stringify(models?.local ?? null) },
+  define: { WORKER_SRC: JSON.stringify(WORKER_SRC), LOCAL_MODEL: JSON.stringify(models?.local ?? null), SW_SHA256: JSON.stringify(SW_SHA256) },
   format: 'iife', platform: 'browser', target: 'es2022',
   // just-bash's browser build imports node:zlib for gzip/tar -z; those commands
   // fail at call time instead. Other Node-only paths are behind dynamic imports.

@@ -23,6 +23,7 @@ import { createComposer } from './composer.js';
 import { createEgress, egressOf, grantsFor, revoke, serviceName } from './egress.js';
 import { LOCAL, support as localSupport, stored as localStored, engine as localEngine, importFiles as localImport, remove as localRemove } from './local/engine.js';
 import { isLocal, HINTS } from './local/provider.js';
+import { createOffline, short } from './offline.js';
 
 const API = 'https://api.bayleaf.dev';
 const SEALED = API + '/sealed';
@@ -47,7 +48,7 @@ function status(text, cls = '') { $('status').textContent = text; $('status').cl
 // ── Frame: sidebar, rail and panels (layout.js) ─────────────────────
 const usage = createUsage({ getKey: () => key });
 // Deferred: the layout restores a remembered panel while this module is still loading.
-const layout = createLayout({ onPanel: (p) => { if (p === 'usage') queueMicrotask(renderUsagePanel); } });
+const layout = createLayout({ onPanel: (p) => { if (p === 'usage') queueMicrotask(renderUsagePanel); if (p === 'trust') queueMicrotask(() => renderCopy()); } });
 
 // ── Action sheet: one tap-friendly menu for every "..." button ──────
 // `body` (text or a node) explains the choice, above the buttons.
@@ -964,7 +965,8 @@ async function eraseAll() {
   try { await agent?.close(); } catch {}
   agent = null;
   await localEngine.dispose().catch(() => {});
-  await store.eraseEverything(); // includes the Local model's Cache Storage
+  await shellCopy.uninstall({ remember: false }).catch(() => {}); // the next visit keeps a fresh copy
+  await store.eraseEverything(); // includes the Local model's and the offline copy's Cache Storage
   location.hash = 'erased'; // the reloaded page says it worked (L1)
   location.reload();
 }
@@ -976,6 +978,70 @@ $('more').onclick = () => sheet('More', [
   ['Download all of /work as .zip', () => $('download-all').click()],
   ['Erase all Pouch data in this browser', eraseAll, 'danger'],
 ]);
+
+// ── Offline copy and updates (offline.js, sw.js) ──────────────────────
+// The hosted page keeps a hash-checked copy of itself; it changes only on Update.
+const SW_EXPECTED = typeof SW_SHA256 !== 'undefined' ? SW_SHA256 : null; // eslint-disable-line no-undef (build.mjs define)
+const shellCopy = createOffline({ swSha256: SW_EXPECTED });
+async function renderCopy(note, cls = '') {
+  const f = $('copy-facts');
+  const row = (label, value, c = '') => f.append(el('dt', { textContent: label }), el('dd', { textContent: value, className: c }));
+  const pinned = await shellCopy.pinned().catch(() => null);
+  const st = shellCopy.state;
+  f.replaceChildren();
+  row('Running from', location.protocol === 'file:' ? 'a file on this device' : shellCopy.servedOffline() ? 'the offline copy in this browser' : 'the network');
+  row('Offline copy', !shellCopy.supported ? 'not available here (no service worker)' : pinned ? 'sha256 ' + short(pinned) : shellCopy.enabled() ? 'not kept yet' : 'uninstalled', pinned ? 'ok' : '');
+  if (shellCopy.supported) {
+    row('Published', st.published ? `sha256 ${short(st.published)} (checked ${st.checkedAt.toLocaleTimeString()})` : st.error ? 'not checked: ' + st.error : 'not checked yet',
+      st.published && pinned ? (st.published === pinned ? 'ok' : 'pending') : '');
+    const m = await shellCopy.swMatches();
+    row('Service worker', m == null ? 'could not check sw.js' : m ? `sw.js matches this build (${short(SW_EXPECTED)})` : `sw.js differs from this build: expected ${short(SW_EXPECTED)}, served ${short(st.swScript)}`, m == null ? '' : m ? 'ok' : 'bad');
+  }
+  row('Installed', shellCopy.installed() ? 'yes: running as an app' : 'no: in a browser tab');
+  const persisted = await navigator.storage?.persisted?.().catch(() => null);
+  row('Storage', persisted ? 'persistent: the browser keeps it until you erase it' : 'best effort: the browser may clear it when space is low', persisted ? 'ok' : 'pending');
+  $('copy-check').hidden = !shellCopy.supported || !pinned;
+  $('copy-keep').hidden = !shellCopy.supported || !!pinned || shellCopy.enabled();
+  $('copy-remove').hidden = !pinned;
+  $('copy-install').hidden = !shellCopy.state.installPrompt || shellCopy.installed();
+  if (note !== undefined) { $('copy-note').textContent = note; $('copy-note').className = cls; }
+}
+async function checkUpdate(manual) {
+  const r = await shellCopy.check();
+  if (r.update) {
+    $('update-text').textContent = `Update available. This copy is sha256 ${short(r.pinned)}; the published build is sha256 ${short(r.published)}. Nothing changes until you press Update, which checks the new files against SHA256SUMS first.`;
+    $('update').hidden = false;
+  } else $('update').hidden = true;
+  if (manual) renderCopy(shellCopy.state.error ? 'Could not check: ' + shellCopy.state.error : r.update ? 'An update is available (see the notice above the chat).' : 'This copy is the published build.', shellCopy.state.error ? 'bad' : '');
+  else if (layout.current() === 'trust') renderCopy();
+}
+async function applyUpdate() {
+  const btn = $('update-go'); btn.disabled = true;
+  const was = await shellCopy.pinned();
+  try {
+    await shellCopy.update();
+    location.reload();
+  } catch (e) {
+    const msg = `Update refused: ${e.message}. Still running sha256 ${short(was)}; nothing was changed.`;
+    $('update-text').textContent = msg; $('update').classList.add('bad');
+    status(msg, 'bad'); renderCopy(msg, 'bad');
+  } finally { btn.disabled = false; }
+}
+$('update-go').onclick = applyUpdate;
+$('update-later').onclick = () => { $('update').hidden = true; };
+$('copy-check').onclick = () => checkUpdate(true);
+$('copy-remove').onclick = async () => {
+  if (!confirm('Uninstall the offline copy? Pouch then loads from the network each time (and not without it). Files and conversations stay.')) return;
+  await shellCopy.uninstall();
+  renderCopy('Offline copy removed. This tab keeps running; reloading loads the published build from the network.');
+};
+$('copy-keep').onclick = async () => {
+  try { await shellCopy.keep(); renderCopy('Offline copy kept.'); } catch (e) { renderCopy('Could not keep a copy: ' + e.message, 'bad'); }
+};
+$('copy-install').onclick = async () => { const p = shellCopy.state.installPrompt; shellCopy.state.installPrompt = null; await p?.prompt(); renderCopy(); };
+$('settings-copy').onclick = () => layout.open('trust');
+// An installed app: ask once more for persistent storage (files, sessions, the Local model).
+addEventListener('appinstalled', () => { navigator.storage.persist?.().catch(() => {}); renderCopy(); });
 
 // ── Sessions (sessions.js) ──────────────────────────────────────────
 const sessions = createSessions({
@@ -1893,6 +1959,9 @@ let toolList = []; // kept for Run script, which uses the run tool without the m
   usage.subscribe((st) => { renderMeter(st); if (layout.current() === 'usage') renderUsagePanel(); });
   if (location.hash === '#erased') { history.replaceState(null, '', location.pathname + location.search); $('erased').hidden = false; }
   navigator.storage.persist?.().catch(() => {});
+  // Not awaited: the offline copy must never hold up files or the agent.
+  shellCopy.start().then(() => shellCopy.supported && shellCopy.enabled() && navigator.onLine && checkUpdate(false))
+    .catch((e) => renderCopy('Offline copy: ' + e.message, 'bad'));
   try { await vfs.init(); } catch (e) { status('Storage problem: ' + e.message, 'bad'); }
   renderTree();
   $('welcome').hidden = !!(await store.getSetting('welcomed').catch(() => true));
