@@ -104,6 +104,14 @@ cache headers. README "Install and the offline copy" has the policy.
 
 ## Current artifact: installable offline app (2026-10-30)
 
+- Redeployed from `e2bda0f` (clean) as Cloudflare version
+  `17557e96-c2ad-4316-90fb-5f362561b0e8`, HTML SHA-256
+  `d932a669340ccd1ca008ac6b98d32596b359d9bef9ded25cdae6140a5f5e155b`, adding
+  `img-src 'self'` so Chrome loads the install icons. `deploy.mjs` passed with every
+  model file downloaded and hash-checked. Built in a temporary clean checkout because
+  the working tree held unrelated uncommitted work. The entries below describe the
+  first PWA upload.
+
 - Built from commit `a1df65d` (clean; label `a1df65d 2026-10-30`) with
   `node build.mjs --with-models`.
 - HTML SHA-256: `0e1ca58ca3725de5fe48db5b87477ae3d95e85df95bf0401743d1fc9eaae1b97`.
