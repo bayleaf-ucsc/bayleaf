@@ -25,6 +25,120 @@ and stamps the Content-Security-Policy with its hash. `node build.mjs --watch` r
 on changes to `src/`. Serve it from `localhost` or HTTPS: opened from disk, browsers give
 the page no origin-private file system, so `/work` falls back to memory.
 
+## Sending while Pouch works
+
+A message sent while the agent in view is working either **steers** or is **queued**:
+
+- *Steer* (the default): the message joins the running turn and the model reads it after
+  its current step (a pi-durable steer, placed after the current tool round). It shows as
+  "You, while it worked". If main is blocked on a foreground subagent or a `join`, steering
+  detaches it (G10). If the turn ended just as you sent it, it becomes the next turn and
+  Pouch says so.
+- *Queue*: the message waits until the whole turn ends, after every tool call and any
+  subagent it waits on, then starts the next turn as an ordinary message. It goes before
+  any subagent report or message that is waiting to wake main. There is one queued slot
+  per session; queueing again appends to it.
+
+Keys: **Enter** sends with the default, **Alt+Enter** (Option+Enter) with the other mode,
+**Shift+Enter** is a new line, **Esc** stops, **Alt+Up** takes the queued message back for
+editing. Settings, "While Pouch is working, Enter: Steer / Queue", swaps the default.
+On touch screens Enter is a new line: with a draft, the **Steer** or **Queue** button beside
+Stop sends, and its arrow opens "Steer now", "Queue for after this turn" and "Stop and send".
+The activity tray lists what is pending (Cancel, Edit, Steer now). **Stop never sends:**
+unread steers and the queued message become one paused item with Send and Cancel. A
+subagent's own view works the same way for that subagent.
+
+## Watching files
+
+An agent can ask to hear when files change instead of asking you to tell it when you
+are done (JOURNEYS G13-G17; `src/ns/watch.js`). The `watch` tool (its own small tool,
+not actions on `subagent`: watching is not about subagents, and main and subagents share
+one schema) has three actions: `watch({ paths, by, once, note })` returns an id (w1, w2,
+...), `unwatch(id)`, `list`. Subagent `list` rosters also name the scope's watches.
+
+- **paths**: files, folders (watched recursively) or globs (`*`, `?`, `**`, `[abc]`),
+  resolved in the caller's namespace: a subagent can only watch inside its own mounts, and
+  `/task` cannot be watched.
+- **by**: `"user"` (default), `"agent"` or `"any"`. Writes are attributed where they
+  enter the tree: every writer gets its own tagged view of the namespace (`vfs.as(source)`):
+  the editor's Save, uploads, drops, unpack, rename, delete, chat attachments and Undo are
+  `user`; the main agent's tools `agent`; `run` scripts `run`; a subagent's 9P view
+  `subagent <name> (sN)`; a seed layer stacked or removed `seed` (user). A user watch never
+  fires on agent or run writes. Writes through the raw namespace are not reported.
+- **once**: removed after its first event (waiting for files to arrive).
+- **note**: why the agent is watching; shown in the tray and repeated in each event.
+
+**Events** never carry content: `[from files] essay.md changed by you: lines 12-18 (+4 -2)`
+(line ranges in the new file and counts, from an LCS over the changed middle), or
+`created by you: 20 lines, 1.2 KB`, `deleted by you (was 3 lines, 120 B)`, followed by
+`[watch w1, your note: ...; unwatch w1 to stop]`. Several writes of one file in one batch
+merge into one line ("(3 writes)").
+
+**Delivery** uses the message paths of agent graphs. There is deliberately no settle or
+debounce parameter: the editor writes only on Save; events wait while you have a message
+queued (user first); a busy owner reads them at its next step (a steer; `steeringMode:
+'all'` puts several together); an idle owner is woken (one request, like a report) and
+anything arriving during that turn joins it. **Wake cap:** at most 3 wakes per watch
+between your messages; after that events are held, and the tray says "3 changes to
+essay.md, not delivered" with **Deliver** and **Stop watching**.
+
+**Visibility.** Every watch is a tray row ("Watching essay.md: offer to re-run the panel",
+or "Waiting for files in data" with Cancel for a once-glob), with its id, whose changes
+count and `/task/watch/<id>`. That folder has `paths`, `note` and `ctl`;
+`echo stop > /task/watch/w1/ctl` unwatches. A woken turn is labeled "Woken by watch w1:
+<note>"; an event read mid-turn "From watch w1".
+
+**Lifetime.** Watches belong to their session and persist (setting `watches:<sid>`, with a
+SHA-256 prefix and size per watched file, updated on every write, whoever made it). On
+reload they are re-armed, and a file whose hash changed while the tab was closed (a
+mounted folder edited on disk, another tab) fires once as "changed by outside Pouch (while
+it was closed)". Deleting the session or Erase all removes them.
+
+**Local lane:** no `watch` tool. Local keeps its four qualified tools and its verbatim
+grounded prompt (adding a tool would re-open that qualification for a 1.7B model). Watches
+made on Sealed still deliver if the session switches to Local, and a Local wake costs no
+request.
+
+## Continuity: color and motion
+
+Decided 2026-10-30: **color carries identity, motion carries continuity, and neither alone
+carries meaning.** Every colored or moving thing also says what it is in words; text in an
+agent's color meets 4.5:1 and dots and edges 3:1 against the real backgrounds in both
+themes; under `prefers-reduced-motion` each movement becomes a brief static highlight
+(`.still-mark`, about a second). Motion uses transform and opacity only.
+
+**Color math lives in CSS.** JS sets one number per element, the agent's spawn order
+(`style="--seed: 3"` for s3, `seeded()` in `src/dom.js`), and nothing else; main (s1) gets
+`.main-agent` and stays neutral. `pouch.html` turns the seed into a hue with the golden
+angle (`calc(var(--seed) * 137.508deg)`), `--agent: oklch(var(--agent-l) var(--agent-c)
+var(--hue))` and `--agent-tint` (12% via `color-mix()`, not relative color syntax, for
+cross-browser support). The theme sets only lightness and chroma (light 48% / 0.13, dark
+76% / 0.11; tuned on measurement: light text on the tint was 4.45:1 at 50%). A spawn
+number, not a hash, so s3 is the same color in every session and adjacent spawns differ
+most. `test/batchB-node.mjs` fails on any JS-computed color; `test/batchB-browser.mjs`
+measures contrast for seeds 1-12 in both themes (light text min 4.79:1, dark 5.88:1; dots
+5.26 / 6.54).
+
+| Moment (journey) | Treatment |
+|---|---|
+| Who talks to whom (G4-G6, G9) | One hue per agent on its sidebar dot and edge, card edge and name, tray row edge and icon, sender tags in any transcript ("from judge-evidence (s4)"), the to/from message list (each peer a dot and its count), the "reported to chair (s2)" part of join summaries, and the subagent view's bar. |
+| Steering delivered (D25-D27) | The tray's "Steering" row travels into its place in the transcript (FLIP, 200 ms) and its glow fades (1.2 s, on `::after`). Queued then "Steer now" keeps the row in place; only its label and edge change. The "Steering ..." status clears once delivered. |
+| Detach (G10, G12) | The foreground card, or the running spawn pill, folds into its tray row (a ghost, 240 ms); the row keeps the agent's hue and briefly highlights. |
+| Watch wake (G14, G17) | The changed file's tree row pulses once (watch accent edge); the woken turn's label ("Woken by watch w1: ...") uses the same `--watch` accent. |
+| Editor follows or conflicts (R4) | The lines that changed underneath you flash once in the editor, separate from the conflict bar. |
+| Revert to here (D12) | Messages after the point dim (200 ms) and fold into a collapsed "Other branch: N messages Pouch no longer sees"; the file tree does not move, because files are not touched. |
+| Build identity (I-stories, offline copy) | A swatch seeded from the first byte of the page's sha256 beside the hash in "This copy" and in the update notice: the same build always shows the same color, a new build a visibly different one. The hash stays the authority. |
+| Lanes | Fixed theme tokens, never agent hues: `--lane-sealed` (leaf) and `--lane-local` (blue) on the model picker's lane icon and the composer shield. |
+
+Every moment is keyed (`src/motion.js`): the log, tree and tray are rebuilt on every
+streamed token, so `arm(key)` starts a clock and each rebuild's `play()` resumes the
+animation where it was (a negative delay) until it has run its course. Recorded for review:
+`/tmp/pouch-qa/motion/steer-delivery.webm`, `detach-fold.webm`.
+
+Left out on purpose (no journey moment to tie them to): coloring tool pills by tool,
+animating session switches or panel opens, coloring the main agent, and per-file colors in
+the tree.
+
 ## Deployed as static HTML: where state lives
 
 The build step is the last place code runs before your browser. What deploys is
@@ -63,7 +177,7 @@ as stated.
 | Files | one tree stitched from several stores (below) | `src/vfs.js` |
 | Editor | CodeMirror 6 with JS/TS, Python, Markdown, HTML, CSS, JSON | `src/editor.js` |
 | UI | sessions sidebar, chat, one side panel at a time (Files, Editor, Usage, Trust, Settings) from an icon rail; drawer, full-screen sheets and a bottom bar on phones | `pouch.html`, `src/main.js`, `src/layout.js` |
-| Composer | one card: activity tray (running subagents and `run` calls, approvals waiting, a queued message; Stop, Stop all), `@` path / `$` skill / `/` command autocomplete, the shield popover (lane, egress grants), Usage count, model picker, Send / Queue / Stop; the turn footer (model, duration, time) is in `main.js` | `src/composer.js`, `src/main.js` |
+| Composer | one card: activity tray (running subagents and `run` calls, approvals waiting, steering not yet read and the queued or paused message; Stop, Stop all, Cancel, Edit, Steer now), `@` path / `$` skill / `/` command autocomplete, the shield popover (lane, egress grants), Usage count, model picker, Send / Stop with the Steer-or-Queue split button while Pouch works; the turn footer (model, duration, time) is in `main.js` | `src/composer.js`, `src/main.js` |
 | Preferences / attachments | local display defaults; one ingest path for Attach, composer drop and image paste | `src/settings.js`, `src/attachments.js` |
 | Titles | a session is named after its first turn by one tool-less sealed completion; the sparkle beside the title field suggests another | `src/naming.js` |
 | Usage | today's Sealed allowance (`/usage` with a key, `/campus-pass` without), checked on load, sign-in and after each run, never polled; tokens per session | `src/usage.js` |
@@ -117,7 +231,7 @@ self-contained task (web research through `bayleaf`, exploring `/work` or a moun
 to a background child while it keeps talking with you. A child is an ownerless pi-durable
 conversation in the session's own database (so deleting the session erases it, and the
 parent is never busy because of it), with the same tools but no `subagent` tool, at most
-three running per session, using the parent's model. A watcher in the page waits for the
+six running per session (a panel is a chair and four judges), using the parent's model. A watcher in the page waits for the
 child's submission and posts its report to the parent: a follow-up input when it finished
 or failed (the parent gets a turn to use it), a model-visible write that spends no request
 when you stopped it. Reports carry the request id `sa-report:<submission>`, so they post once.
@@ -127,6 +241,94 @@ opening a session aborts any run a reload cut off (parent or child), marks it in
 The child's card at the spawn point shows its status, time, requests, a live read-only
 transcript, Stop, Message and the files it changed (Diff, Undo); approvals it asks for say
 "Subagent <name> wants to ...". Its steps spend the same daily allowance.
+Expanding the card shows its transcript compactly (one line per tool call, the final
+answer set apart) and **Open** fills the chat pane with the child's own view, as do its
+tray row and its row nested under the session in the sidebar (state: working, waiting for
+an approval, done, stopped, failed, interrupted). The view is headed "subagent of
+<session>" with its task and mounts (what `/task/<id>/ns` lists) and renders the
+transcript live, like a session. Its composer **steers** the child: the text is a
+pi-durable `whenBusy: "steer"` input with a `pouch.steer` entry, placed after the current
+tool round and so read before the child's next model request; it never starts a new turn
+(the composer is disabled once the child is done, and says so). Steering messages are
+marked as yours in both views, and the parent's report (or a foreground spawn's tool
+result) quotes them, so the main agent knows you redirected it. The card's Message uses
+the same marked entry. Local lane: no subagents, so none of this.
+
+**Agent graphs** (`src/graph.js`, JOURNEYS G1-G12): the sessions of one *scope* (a
+top-level session, `s1`, and its children `s2`, `s3`, ... in spawn order) message each
+other by id, so subagents can form graphs: many-to-one collectors, pipelines,
+cross-checks. Spawning stays flat (only main spawns); graphs come from messages, and a
+message never crosses scopes (ids resolve only in the sender's own registry). Main's
+`subagent` tool has `spawn` (returns the id; `report: false` for a child that never posts
+reports, such as a chair idling until messaged; `mode: "oneshot"` for exactly one request
+with no tools and no Pouch prompt, the task plus `files` read in main's namespace and
+attached, at most 48,000 characters each, its reply its report or, with `to`, forwarded
+by the harness as a message from it; a one-shot takes no messages or steering), `list`,
+`message`, `join` (a quiet child whose reply was empty but who sent its work by message is
+reported as "sent its findings to <name> (<id>)" with a preview), `stop`;
+children get a trimmed `agents` tool (`list`, `message`, `join`; a pi-durable deferred tool
+that only their `modelTools` add, so main never sees it). A child cannot stop others or
+itself: it stops by finishing its reply. Each child's prompt names its own id and main's,
+plus a short gloss shared with main's prompt (ids, the common shapes, "messages arrive
+between your steps; do not poll", "join never wakes a thread: to get new work, message
+then join", "when your part is done send your result to whoever asked, then stop").
+- *Delivery* has one path: a `pouch.msg` entry in the recipient's conversation whose
+  model text is `[from <name> (<id>)] <text>`. A running session gets it as a steer (its
+  next step; pi-durable's `steeringMode: "all"`, so several arrive together and in
+  order), a finished child is woken (one more step from the allowance; refused at the
+  running cap; a child may wake only a *finished* peer, not a stopped one), an idle main
+  starts a turn as reports do. Every view labels the sender ("from chair (s2)"; "You"
+  for the user's steering); cards, the child view and the session list show per-edge
+  counts.
+- *Reports*: a child that sent any message in its run (or was woken by a peer) reports to
+  main only that it finished, without its output, as a quiet write: judges' raw findings
+  never enter main's context. Otherwise reports work as before.
+- *join* (subagent ids, timeout default 300 s, at most 1800) returns, per target, `state`
+  (`quiet` for a normal end, `stopped`, `failed`; `finished` is not emitted separately,
+  because a message can always wake a quiet child), `last` (its last message before
+  going quiet, at most 4000 characters), `blocked_ms`, and `fresh`, or `cached` with
+  `quiet_since` and `age_s`. A working target blocks the joiner until it is quiet (no
+  step running, nothing queued); an already quiet one returns at once, cached. Join never
+  wakes anyone. Each settle bumps the child's result number `seq`; a message records
+  the target's `seq`, and a later join by that sender waits for a larger one, so
+  message-then-join never returns the stale pre-message answer. All joiners of one
+  target are released in the same tick with the same text (cached per `seq`), each with
+  its own `blocked_ms`. Timeout returns `timed_out` with the state and last message so
+  far; the target keeps running. A join that would close a cycle of blocked sessions
+  (holds: joins and foreground spawns, followed transitively) is refused naming the
+  cycle. main cannot be joined (it answers by message). When main is joined on a child
+  as it settles, the join result is its report: no separate report, no extra turn.
+- *Caps*, per user turn (reset when you write to main): 40 messages in the scope, 8
+  between any two sessions in either direction. A refused message is a tool error for the
+  sender ("Not sent: s3 and s4 have exchanged 8 messages ...") and a "Message limit" row in
+  the tray with the reason, never a silent drop.
+- *User steering preempts blocking* (G10-G12): while main is blocked on a foreground spawn
+  or a `join`, steering from main's composer (Enter by default; the split menu says "Steering will
+  detach <name>") submits your text as a steer and releases the blocking call at once with "detached: <name> (<id>)
+  continues in the background; the user said: '...'". The tray row of a subagent main
+  waits on has **Background**, which does the same with "the user sent it to the
+  background". Detaching never stops anything: a foreground child turns background and
+  its report arrives later as an ordinary message. Steering a child that is blocked in
+  its own `join` releases that join the same way.
+- The bundled `panel` skill (`/pouch/skills/panel/`, seeded once into existing profiles
+  too: `seeded` now lists the default paths given) is the worked example, rewritten after
+  the play-test (41 requests for one review): four one-shot judges spawned in one step
+  with the draft attached (foreground, so they run in parallel and return together), then
+  one one-shot chair given their findings, then main shows the list; cross-examination is
+  optional (one more one-shot per disagreement). Measured 9 requests on the fake; its
+  frontmatter declares `requests: 9-12`, which the `$` completion shows. The peer-to-peer
+  chair flow stays in the graphs tests as the protocol's exercise.
+- Cost while it runs: the tray header counts this turn's Sealed requests ("Running 4 · 6
+  requests this turn"); the Usage panel rolls each session's subagents into its row and
+  has a Requests column. Stop all stops main as well as every subagent and run: requests
+  in flight are aborted (the EHBP transport forwards the abort signal to the browser's
+  fetch), and nothing new starts; one BayLeaf already received may still count.
+
+**Disclosures** follow one convention. Inline disclosures (folder twisties, tool cards,
+reasoning, a subagent card's transcript) use the native twisty: pointing right when closed,
+down when open, with the content appearing below. A panel attached to an edge (the
+activity tray above the input) instead shows where it goes when clicked: collapsed it
+points up (the tray opens upward), open it points down (it folds back down).
 
 Tool calls execute in the page, so files the agent reads reach the model only inside the
 sealed request. A mounted folder is a real folder: a read-write mount lets the agent change
@@ -143,11 +345,92 @@ folder; missing paths are muted. An `http(s)` link shows its host and asks befor
 because navigation is outside `connect-src` and the link address itself can carry data to
 that site. Other schemes are plain text.
 
+Subagent views and steering, with a gated fake model: `node test/subagent-browser.mjs`.
+Agent graphs: `node test/graphs-node.mjs` (routing, caps, join, cycles, detach) and
+`node test/graphs-browser.mjs` (G1-G12 in the page), both on the rule-based fake in
+`test/graph-fixture.js`; `test/graphs-sealed.mjs` is one live panel run (spends requests).
 Offline checks: `node test/{theme-node,composer-node,markdown-node,vfs-node,subagents-node,bayleaf-cli-node}.mjs`
 (run each file separately). Full-UI mocks and desktop/390px light/dark screenshots:
 `POUCH_OUT=/scratch/build node build.mjs`, then the same `POUCH_OUT` with
 `node test/composer-browser.mjs`. Set `PLAYWRIGHT_MODULE` to an installed Playwright ESM
 entry point if needed. Tests mock the Sealed provider and spend no inference quota.
+
+## Namespaces
+
+Pouch's filesystem is a Plan 9 namespace (`src/ns/`), in our own small code: no
+Wanix, no new binaries, no new dependencies. The idea came from a look at
+[Wanix](https://wanix.dev) (report in `test/journeys/reports/wanix.md`).
+
+**Bind and union.** `src/ns/namespace.js` is a per-task mount table over small
+file servers. A file server has path-based methods (stat, readFileBuffer,
+writeFile, mkdir, readdir, rm); OPFS `/work`, IndexedDB `/pouch`, picked
+folders `/mnt/*`, the in-memory root, a read-only seed archive, the synthetic
+`/task` tree, a 9P client, and a namespace itself all qualify. `mount` and
+`bind` take Plan 9's flags: replace, before, after. Lookup is first match; a
+directory lists the union of its members; a create lands in the first writable
+member; read-only mounts refuse writes with EROFS. Two departures, both for
+seed layers: unions are deep (like overlayfs, so `/work/src` merges every
+member's `src`), and writing a read-only member's file copies it up into the
+writable one. A plain mount with one member passes calls straight through, so
+the common path costs one table lookup.
+
+**Seed layers.** `/seed /work/starter.zip` (or "Layer under /work" on an
+archive) stacks `/work` over a read-only `.zip` or `.tar` (bind after): your
+files win, edits land in `/work`, and removing a seed file records a whiteout
+(kept in settings) that hides it, and for a folder everything below it.
+Recreating a whited-out folder starts it empty. We chose whiteouts over
+refusing deletes because a model that cannot `rm` a starter file loops on it.
+`/seed off`, or the button in What can BayLeaf see?, removes the layer and
+its whiteouts. The archive bytes are kept in IndexedDB, so the layer survives
+a reload.
+
+**9P at boundaries.** `src/ns/9p.js` is 9P2000 (codec, server, client) over a
+MessagePort, one transferred ArrayBuffer per message. We use plain 9P2000, not
+9P2000.L: our stores have names, sizes, a directory bit and a time, and
+9P2000's thirteen requests (walk, open, create, read, write, clunk, remove,
+stat, wstat) cover exactly that. .L would make us invent uid, gid and xattr
+values. Writes are close-to-open: a fid's writes commit at clunk through a
+hook, which takes Pouch's per-path write turn. There is no auth, because
+holding the port is the capability. Stop answers every request in flight with
+Rerror and refuses new ones; a client abort sends Tflush. 9P carries a
+namespace wherever it crosses a boundary:
+
+- `run`: the worker gets its namespace only as a 9P port. It reads its
+  snapshot through the port, and writes the guest's changes back through the
+  port. It stays snapshot-in / diff-out because the guest's fs API is
+  synchronous, and a synchronous call cannot wait on a reply without
+  SharedArrayBuffer (cross-origin isolation) or an asyncify QuickJS build
+  (another wasm binary).
+- Subagents: their tools mount a 9P client to a view the page serves.
+- Not on the hot path: the agent's own tools, just-bash, the file browser and
+  the editor call the namespace directly.
+
+The same server could export a namespace to another tab, a saved archive or the
+remote sandbox; see NEXT.md.
+
+**Capabilities are namespaces.** A task can only reach what is bound into its
+namespace, at the same paths as the agent's (so diffs and errors name the same
+files):
+
+- `run`: by default, `/work` plus the mounts its `files` live in, plus a
+  private scratch `/tmp`. `ns: ["/work/data:ro"]` narrows it, and a file
+  outside the declared mounts is refused before the worker starts.
+- Subagents: by default, `/work`, `/pouch` read-only, the mounted folders and a
+  private `/tmp`, but not `/task`; `ns` on spawn narrows this.
+- The trust panel lists the agent's mount table and each task's. A tray row's
+  tooltip shows its task's mounts.
+
+**Task files.** `/task/<id>/{status,log,ns,ctl}` lists running and recent `run`
+calls and subagents: `cat /task/3/status`, `cat /task/3/ns`, and
+`echo kill > /task/3/ctl`. Every lane sees `/task`; the Sealed system prompt
+names it in one line and the Local prompt does not mention it.
+
+**What namespaces do not enforce.** They do not cover the network. Leaving the
+pouch is still the page CSP (`connect-src`) plus per-session egress grants (`src/egress.js`);
+a namespace cannot widen or narrow that. Namespaces do not isolate the main agent from the
+user's files: they bound tasks, not the page. A worker's 9P port is a
+capability, but the worker itself is our code, so this is defense in depth
+behind QuickJS, not a new security boundary against a compromised page.
 
 ## Stance: no BayLeaf-controlled component holds plaintext
 
@@ -248,7 +531,7 @@ shield says "On this device: nothing sent".
 When the network drops (the browser's offline event, or a request that fails like a
 dropped network followed by a failed re-check), the shield turns grey, the status line
 and the Send button's title say "Offline: the model is unreachable", Send is disabled,
-and a turn in flight ends at once with "Connection lost". Files, the editor, review,
+and a turn in flight ends at once with "Connection lost". Files, the editor,
 archives and `run` keep working. Pouch re-checks every 15 s and on the online event;
 when the relay answers it re-verifies the enclave, re-enables Send and refreshes usage,
 without a reload. The draft in the composer is kept throughout.

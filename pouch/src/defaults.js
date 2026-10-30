@@ -92,6 +92,54 @@ through. Never send private file contents, secrets or personal data outside
 the pouch unless the user asked for that specific action. Say what you are
 about to send before you send it.
 `,
+  '/skills/panel/SKILL.md': `---
+name: panel
+description: Review a draft with a panel of one-shot subagents (four judges: argument, evidence, clarity, audience; then a chair who merges their findings). Read when the user asks for $panel or a panel or many-sided review of a document.
+requests: 9-12
+---
+
+# Panel review
+
+Every judge and the chair is a one-shot: mode "oneshot", exactly one
+request, no tools, the draft attached with files. Nobody messages anybody.
+
+1. In ONE step, spawn the four judges, each with mode "oneshot",
+   background false, files ["<draft path>"], name judge-<aspect>, and task
+   "Judge only the <aspect> of the attached draft: <question>. At most 5
+   short points, each quoting the draft. Say what is strong too."
+   - argument: is the thesis clear, and does the reasoning hold?
+   - evidence: is each claim supported, and are sources given?
+   - clarity: sentences, structure, jargon.
+   - audience: does it fit its readers and purpose?
+   Spawned in one step with background false, they run in parallel and their
+   replies come back together as the results of that step.
+2. Spawn the chair: mode "oneshot", background false, files ["<draft
+   path>"], name "chair", task "Chair a review panel of the attached draft.
+   Here are four judges' findings: <paste each judge's reply under its
+   name>. Where judges disagree, decide which holds and say why in one
+   line. Reply with one prioritized review: at most 5 numbered suggestions,
+   each naming the judges behind it."
+   For a quick review, skip the chair and merge the findings yourself
+   (2 requests fewer).
+3. Show the chair's review as a numbered list. Do not re-review the draft
+   yourself. When the user picks numbers ("apply 1 and 3"), edit the draft
+   for exactly those.
+
+Optional cross-examination, only when the user asks for it: before the
+chair, for each disagreement spawn one more one-shot (in a single step for
+all of them) with the draft attached and both judges' points, asking which
+holds; add its verdict to the chair's task. Each costs one request, plus one
+step of yours.
+
+Cost, measured: reading this skill, spawning the judges, spawning the chair
+and answering are 4 of your requests; the judges are 4 and the chair 1:
+about 9 in all, 12 with cross-examination. Tell the user the count if they
+ask what it cost.
+
+Scratch: one-shots write nothing. If you use full subagents instead, a draft
+mounted read-only (ns ["<draft path>:ro"]) leaves them /tmp for notes, not
+/work.
+`,
   '/skills/skill-authoring/SKILL.md': `---
 name: skill-authoring
 description: How to write a new Pouch skill. Read when the user asks to save a workflow, lesson or procedure for later sessions.

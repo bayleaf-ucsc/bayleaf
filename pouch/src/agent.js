@@ -14,7 +14,8 @@ import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completio
 import { createRegistry, defineExtension, defineTool, section, Harness, MemoryStorage } from '@earendil-works/pi-durable';
 import { IndexedDbStorage } from '@earendil-works/pi-durable/storage/indexeddb';
 import { Type } from 'typebox';
-import { createSubagents, REPORT_KIND } from './subagents.js';
+import { createSubagents, REPORT_KIND, STEER_KIND, MESSAGE_KIND } from './subagents.js';
+import { WATCH_KIND } from './ns/watch.js';
 import { attachmentContext } from './attachments.js';
 import { LOCAL_PROVIDER, isLocal, localApi, localModel } from './local/provider.js';
 
@@ -65,7 +66,7 @@ function toModel(m) {
 // once. TinfoilAI keeps its SecureClient and bearer token in fields that are
 // private in TypeScript only; tinfoil is exact-pinned, and we check the shape
 // so an SDK change fails loudly instead of silently.
-function sealedFetch(getClient) {
+function sealedFetch(getClient, onRequest) {
   return async (input, init = {}) => {
     const client = await getClient();
     if (!client) throw new Error('Not connected to BayLeaf Sealed: sign in (or use campus access) and wait for verification.');
@@ -79,6 +80,9 @@ function sealedFetch(getClient) {
     // one the TinfoilAI was built with (a BayLeaf key or 'campus').
     const headers = new Headers(init.headers);
     headers.set('authorization', `Bearer ${token}`);
+    // Counted as it leaves (one request from the allowance), for the tray's live spend.
+    if (init.signal?.aborted) throw new DOMException('Stopped before sending.', 'AbortError');
+    onRequest?.();
     return secure.fetch(input, { ...init, headers });
   };
 }
@@ -149,10 +153,10 @@ const modelRef = (modelId) => ({ provider: isLocal(modelId) ? LOCAL_PROVIDER : P
 // (src/subagents.js); without reg there is no subagent tool.
 // onInterrupted(sids): sessions whose run a reload cut off (aborted, not resumed).
 // local: { info: LOCAL_MODEL, engine, onHint } adds the Local lane's provider.
-export async function openAgent({ storage, tools = [], systemPrompt, getClient, models: initialModels = [], pointer, subagents: saDeps, onInterrupted, local }) {
+export async function openAgent({ storage, tools = [], systemPrompt, getClient, models: initialModels = [], pointer, subagents: saDeps, onInterrupted, local, onRequest }) {
   const models = createModels();
   let catalog = [];
-  const api = withFetch(openAICompletionsApi(), sealedFetch(getClient));
+  const api = withFetch(openAICompletionsApi(), sealedFetch(getClient, onRequest));
   function setModels(list) {
     catalog = list.map(toModel);
     models.setProvider(createProvider({
@@ -180,7 +184,7 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
   const registry = createRegistry();
   registry.install(defineExtension({
     name: 'pouch',
-    tools: [...tools.map(toTool), ...(subagents ? [subagents.tool] : [])],
+    tools: [...tools.map(toTool), ...(subagents ? [subagents.tool, subagents.peerTool] : [])],
     sections: systemPrompt ? [section('pouch', () => systemPrompt(), { tag: false })] : [],
   }));
 
@@ -190,6 +194,9 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
     settings: {
       retry: { maxRetries: 2 },
       afterFailedRun: 'withdraw', // a failed run should not leave later inputs stranded
+      // Every queued steer joins the next step (default: one per step), so
+      // messages from several sessions of a graph arrive together, in order.
+      steeringMode: 'all',
       compaction: {
         enabled: true,
         ...compactionFor(),
@@ -307,6 +314,19 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
     return dispose;
   }
   function own(sid, convId) { sidByConv.set(convId, String(sid)); }
+  // Poll a steer's submission until it leaves the inbox; see steer().
+  async function placement(id, sub, child) {
+    let rec;
+    for (;;) {
+      rec = await sub.status(ctx).catch(() => null);
+      if (!rec || rec.status !== 'queued') break;
+      await new Promise((r) => setTimeout(r, 120));
+    }
+    if (!rec?.entry) return null;
+    let v = null;
+    (await watch(id, (x) => { v = x; }, child))();
+    return { late: !v?.items.find((i) => i.entry === rec.entry)?.steer };
+  }
 
   async function point(id, convId) {
     for (const [d, sid] of watchers) if (sid === String(id)) d();
@@ -392,8 +412,31 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
       const input = { type: 'input', whenBusy: 'reject', content: attachments.images.length ? [{ type: 'text', text: content }, ...attachments.images] : content,
         ...(notes.length || attachments.files.length ? { entry: { kind: USER_KIND, data: { text, attachments: attachments.files } } } : {}) };
       const sub = await c.submit(input, ctx);
+      subagents?.newTurn(id); // the user spoke: the scope's message caps start over
       const settled = await sub.wait(ctx);
       if (settled.status !== 'done') throw new Error(describeUnanswered(settled));
+    },
+    // Steer (JOURNEYS D25): the user's text joins the running turn at its
+    // next step boundary. Resolves to { id, placed }: placed resolves once it
+    // left the inbox, to { late } (late: the turn had already ended, so it
+    // started the next one) or null (withdrawn). Pouch never sends a steer
+    // to an idle conversation itself; late covers the run ending in between.
+    async steer(id, text) {
+      const c = await conv(id);
+      const sub = await c.submit({ type: 'input', content: text, whenBusy: 'steer', entry: { kind: STEER_KIND, data: { text } } }, ctx);
+      return { id: sub.id, placed: placement(id, sub) };
+    },
+    // Take back a steer that has not been placed: 'aborted' (it was still
+    // queued), 'already_placed' or 'settled'.
+    async withdraw(id, subId) {
+      const { harness } = await locate(id);
+      const sub = await harness.submission(subId, ctx);
+      return sub ? sub.abort(ctx) : 'settled';
+    },
+    // Wait for a placed steer that started its own turn (its run's end).
+    async waitFor(id, subId) {
+      const { harness } = await locate(id);
+      await (await harness.submission(subId, ctx))?.wait(ctx);
     },
     async abort(id) {
       await (await conv(id)).abort(ctx);
@@ -420,14 +463,38 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
     subagents: subagents && {
       list: (sid) => subagents.list(sid),
       stop: (sid, child) => subagents.stop(sid, child),
-      message: (sid, child, text) => subagents.message(sid, child, `[Message from the user, typed in your card] ${text}`),
+      // Stop every running subagent of a session (Stop all): aborts their requests in flight.
+      stopAll: (sid) => subagents.stopAll(sid),
+      message: (sid, child, text) => subagents.message(sid, child, text, { user: true }),
+      // From the subagent's view: joins its running work, never restarts it.
+      steer: (sid, child, text) => subagents.steer(sid, child, text),
       watch: (sid, child, onView) => watch(sid, onView, child),
       resume: (sid) => subagents.resume(sid),
+      // Main's blocking calls (a foreground spawn, a wait): [{ kind, ids, since }].
+      blocked: (sid) => subagents.blocked(sid),
+      // G10/G12: return them at once; text (the user's message) joins main's
+      // next step as a steer. Resolves to false (nothing blocked), true, or
+      // with text, { id, placed } as steer() does.
+      detach: async (sid, text) => {
+        const sub = await subagents.detach(sid, text == null ? {} : { text, input: { type: 'input', content: text, entry: { kind: STEER_KIND, data: { text } } } });
+        return sub && typeof sub === 'object' ? { id: sub.id, placed: placement(sid, sub) } : sub;
+      },
+      // Steering a subagent; resolves to { note, id, placed }.
+      steerTracked: async (sid, child, text) => {
+        const out = {};
+        const note = await subagents.steer(sid, child, text, out);
+        return { note, id: out.sub.id, placed: placement(sid, out.sub, child) };
+      },
+      refOf: (l, c) => subagents.refOf(l, c),
+      // File watches (src/ns/watch.js): deliver an event; is that session running?
+      notify: (sid, ref, ev) => subagents.notify(sid, ref, ev),
+      busyOf: (sid, ref) => subagents.busyOf(sid, ref),
     },
-    // Who made a tool call: { sid, child } (child: the subagent id, or null).
+    // Who made a tool call: { sid, child, ns } (child: the subagent id, or null;
+    // ns: the mounts its spawn declared, if any).
     who(convId) {
       const o = subagents?.owner(convId);
-      return o ? { sid: o.sid, child: o.id } : { sid: sidByConv.has(convId) ? sidByConv.get(convId) : null, child: null };
+      return o ? { sid: o.sid, child: o.id, ns: o.ns } : { sid: sidByConv.has(convId) ? sidByConv.get(convId) : null, child: null };
     },
     // Open the lanes of these sessions, so their running children carry on.
     async open(ids) { for (const id of ids) if (!shared(id)) await lane(dbFor(id)).catch(() => {}); },
@@ -479,11 +546,20 @@ function assistantItems(msg, streaming, tools) {
 export function normalize(view) {
   const items = [], tools = new Map(), owners = new Map(); // call id -> message item
   let steps = 0; // model responses: requests, for a subagent's card
+  let ended = false; // the last reply had no tool calls: no turn is open
   const mark = (it, e, msg) => Object.assign(it, { entry: e.id, at: msg?.timestamp, cut: e.id, cutAt: msg?.timestamp });
   for (const e of view.entries) {
     const msg = e.model?.[0];
+    if (e.kind === 'pi.assistant' && msg) ended = msg.stopReason !== 'toolUse';
     switch (e.kind) {
       case 'pi.user': items.push(mark({ type: 'user', text: textOf(msg?.content) }, e, msg)); break;
+      // A steer placed after the turn ended (it raced the final reply) started
+      // the next turn: an ordinary message, not one "while it worked".
+      case STEER_KIND: items.push(mark({ type: 'user', ...(ended ? {} : { steer: true }), text: e.data?.text ?? textOf(msg?.content) }, e, msg)); break;
+      // From another session of the scope (G4): labeled with its sender.
+      case MESSAGE_KIND: items.push(mark({ type: 'user', from: { ref: e.data?.from, name: e.data?.name }, text: e.data?.text ?? textOf(msg?.content) }, e, msg)); break;
+      // A file-watch event (G14): labeled with the watch that sent it.
+      case WATCH_KIND: items.push(mark({ type: 'user', ...(ended || e.data?.mode !== 'steer' ? {} : { steer: true }), watch: e.data, text: (e.data?.lines ?? []).join('\n') || textOf(msg?.content) }, e, msg)); break;
       case USER_KIND: items.push(mark({ type: 'user', text: e.data?.text ?? textOf(msg?.content), attachments: e.data?.attachments ?? [] }, e, msg)); break;
       case 'pi.assistant': {
         if (!msg) break;
@@ -523,7 +599,10 @@ export function normalize(view) {
   if (!live.run) for (const t of tools.values()) if (t.status === 'running') t.status = 'error';
   // A running call's details (a spawned subagent's id) before its result lands.
   for (const slot of live.tools ?? []) { const t = tools.get(slot.callId); if (t && slot.details != null && t.details == null) t.details = slot.details; }
-  return { busy: !!live.run, items, steps, usage: usageOf(view.docs['pi.usage']) };
+  // requests: model responses (steps), for the Usage panel's Requests column.
+  const usage = usageOf(view.docs['pi.usage']) ?? (steps ? { input: 0, output: 0, cost: 0 } : undefined);
+  if (usage) usage.requests = steps;
+  return { busy: !!live.run, items, steps, usage };
 }
 
 function usageOf(doc) {

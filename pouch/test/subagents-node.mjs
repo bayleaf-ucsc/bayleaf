@@ -2,6 +2,7 @@
 // fake Sealed endpoint: no network, no real model requests.
 // Run: node test/subagents-node.mjs (section 5 needs fake-indexeddb at /tmp/pouch-scratch/fidb, as vfs-node.mjs)
 import { openAgent, MemoryStorage, Type } from '../src/agent.js';
+import { MAX_RUNNING } from '../src/subagents.js';
 
 const sleep = (ms, signal) => new Promise((r, j) => {
   const t = setTimeout(r, ms);
@@ -91,13 +92,13 @@ ok(reports.length === 1, 'resume() after settle does not post a second report');
 script.unshift(({ child, last, lastText }) => !child && last.role === 'user' && /four/.test(lastText) && call('subagent', { action: 'spawn', task: `slow job ${callN}`, name: `slow${callN}` }));
 script.unshift(({ child, last }) => !child && last.role === 'tool' && say('spawned'));
 script.unshift(({ child }) => child && (() => sleep(60_000, signal).then(() => say('late'))));
-for (let i = 0; i < 3; i++) await agent.send(sid, 'spawn four');
+for (let i = 0; i < MAX_RUNNING; i++) await agent.send(sid, 'spawn four');
 l = await agent.subagents.list(sid);
-ok(l.filter((c) => c.status === 'running').length === 3, '3 running');
+ok(l.filter((c) => c.status === 'running').length === MAX_RUNNING, `${MAX_RUNNING} running`);
 await agent.send(sid, 'spawn four');
 v = await agent.snapshot(sid);
 const refused = v.items.filter((i) => i.type === 'tool' && i.name === 'subagent').at(-1);
-ok(refused.status === 'error' && /3 subagents are already running/.test(refused.output), `4th spawn refused: ${refused.output.slice(0, 80)}`);
+ok(refused.status === 'error' && new RegExp(`${MAX_RUNNING} subagents are already running`).test(refused.output), `spawn past the cap refused: ${refused.output.slice(0, 80)}`);
 const first = l.find((c) => c.status === 'running');
 await agent.subagents.stop(sid, first.id);
 for (let i = 0; i < 40 && (await agent.subagents.list(sid)).find((c) => c.id === first.id).status === 'running'; i++) await sleep(50);
@@ -106,7 +107,7 @@ v = await agent.snapshot(sid);
 const stopRep = v.items.filter((i) => i.type === 'report').at(-1);
 ok(stopRep?.status === 'stopped' && stopRep.name === first.name, 'stopped child: quiet report entry in parent');
 ok(!v.busy, 'parent not busy after a stop report (no request spent)');
-ok(!(await agent.snapshot(sid)).busy, 'parent idle while 2 children still run');
+ok(!(await agent.snapshot(sid)).busy, `parent idle while ${MAX_RUNNING - 1} children still run`);
 
 // 4. Deleting is covered in the browser test; close everything.
 for (const c of await agent.subagents.list(sid)) if (c.status === 'running') await agent.subagents.stop(sid, c.id);

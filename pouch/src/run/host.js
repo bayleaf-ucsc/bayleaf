@@ -19,33 +19,50 @@ export async function snapshot(fs, paths, limits = DEFAULT_LIMITS) {
 const fail = (status, message, ms = 0) => ({ status, exitCode: CODES[status] ?? 1, message, stdout: '', stderr: '', truncated: false, changes: [], ms });
 
 // makeWorker() returns a Web-Worker-shaped object (postMessage, terminate,
-// onmessage, onerror). The hard deadline (timeMs + graceMs, counted from
-// "ready") backs up QuickJS's own interrupt check: a guest stuck inside one
-// long native call still ends. Cancellation is always terminate(): a busy
-// worker cannot read a cancel message, and without cross-origin isolation
-// there is no SharedArrayBuffer flag to poll.
-export function runInWorker(makeWorker, request, { signal, graceMs = 1000, loadMs = 10000 } = {}) {
+// onmessage, onerror). The hard deadline (timeMs + graceMs) backs up
+// QuickJS's own interrupt check: a guest stuck inside one long native call
+// still ends. It counts from "ready", or with a 9P namespace (ns, a
+// MessagePort the worker reads its files through) from "loaded", so reading
+// the snapshot does not eat the guest's time; writing back after "ran" has its
+// own deadline (applyMs). Cancellation is always terminate(): a busy worker
+// cannot read a cancel message, and without cross-origin isolation there is
+// no SharedArrayBuffer flag to poll. onStop() runs first, so the host can
+// flush the 9P server and refuse whatever the worker sends after.
+export function runInWorker(makeWorker, request, { signal, graceMs = 1000, loadMs = 10000, applyMs = 30000, ns, onPhase, onStop } = {}) {
   const limits = { ...DEFAULT_LIMITS, ...request.limits };
   return new Promise((resolve) => {
     const w = makeWorker();
     const t0 = performance.now();
+    const ms = () => Math.round(performance.now() - t0);
     let timer = setTimeout(() => end(fail('error', `engine did not load within ${loadMs} ms`)), loadMs);
-    const end = (r) => {
+    const end = (r, finished = false) => {
       clearTimeout(timer); signal?.removeEventListener('abort', onAbort);
+      if (!finished) onStop?.(r.status); // cut off: nothing it sends from now on may land
       w.terminate();
       resolve(r);
     };
-    const onAbort = () => end(fail('cancelled', 'cancelled by host', Math.round(performance.now() - t0)));
+    const deadline = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => end(fail('timeout', `exceeded ${limits.timeMs} ms (hard stop)`, ms())), limits.timeMs + graceMs);
+    };
+    const onAbort = () => end(fail('cancelled', 'cancelled by host', ms()));
     if (signal?.aborted) return onAbort();
     signal?.addEventListener('abort', onAbort);
     w.onerror = (e) => end(fail('error', `worker: ${e.message ?? e}`));
     w.onmessage = (e) => {
       const msg = e.data ?? e;
       if (msg.type === 'ready') {
+        if (ns) {
+          clearTimeout(timer);
+          timer = setTimeout(() => end(fail('error', `reading the files took over ${loadMs} ms`)), loadMs);
+          w.postMessage({ type: 'run', request, ns }, [ns]);
+        } else { deadline(); w.postMessage({ type: 'run', request }); }
+      } else if (msg.type === 'loaded') { onPhase?.('loaded', msg); deadline(); }
+      else if (msg.type === 'ran') {
+        onPhase?.('ran', msg);
         clearTimeout(timer);
-        timer = setTimeout(() => end(fail('timeout', `exceeded ${limits.timeMs} ms (hard stop)`, Math.round(performance.now() - t0))), limits.timeMs + graceMs);
-        w.postMessage({ type: 'run', request });
-      } else if (msg.type === 'result') end(msg.result);
+        timer = setTimeout(() => end(fail('error', `writing changes back took over ${applyMs} ms`, ms())), applyMs);
+      } else if (msg.type === 'result') end(msg.result, true);
     };
   });
 }

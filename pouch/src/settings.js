@@ -15,8 +15,19 @@ export function createSettings({ storage = localStorage, doc = document } = {}) 
       try { storage.setItem(SETTINGS_KEY, JSON.stringify(prefs)); } catch {}
     };
   }
+  // While Pouch works, Enter steers (default) or queues (JOURNEYS D25).
+  const mode = doc.getElementById('send-mode');
+  if (mode) {
+    mode.value = prefs.sendMode === 'queue' ? 'queue' : 'steer';
+    mode.onchange = () => {
+      prefs.sendMode = mode.value;
+      try { storage.setItem(SETTINGS_KEY, JSON.stringify(prefs)); } catch {}
+      doc.dispatchEvent(new Event('pouch-sendmode'));
+    };
+  }
   return {
     theme: createTheme(), get,
+    sendMode: () => (prefs.sendMode === 'queue' ? 'queue' : 'steer'),
     // Snapshot a default on first appearance. Explicit closes must be remembered too.
     bind(details, key, kind) {
       if (!states.has(key)) states.set(key, get(kind));

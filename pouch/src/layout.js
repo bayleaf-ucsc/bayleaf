@@ -10,7 +10,7 @@ import { $ } from './dom.js';
 const KEY = 'pouch.layout';
 const NARROW = matchMedia('(max-width: 860px)');
 const SIDE = { def: 260, min: 200, max: 480 };
-const PANEL_MIN = 240, CHAT_MIN = 360;
+const PANEL_MIN = 240, CHAT_MIN = 360, OVERLAY_MIN = 480;
 const DEFAULT_W = { files: 300, usage: 320, trust: 360, settings: 340, editor: () => Math.round(innerWidth * 0.5) };
 const clamp = (v, lo, hi) => Math.round(Math.min(hi, Math.max(lo, v)));
 
@@ -27,11 +27,15 @@ export function createLayout({ onPanel } = {}) {
   const sideW = () => clamp(prefs.sideW ?? SIDE.def, SIDE.min, SIDE.max);
   const railW = () => $('rail').getBoundingClientRect().width || 44;
   // A panel may grow until the chat would drop below CHAT_MIN.
-  const panelMax = () => Math.max(PANEL_MIN, innerWidth - railW() - (sideOpen() ? sideW() : 0) - CHAT_MIN);
+  const panelMax = () => Math.max(PANEL_MIN, innerWidth - railW() - CHAT_MIN);
   const defaultW = (p) => (typeof DEFAULT_W[p] === 'function' ? DEFAULT_W[p]() : DEFAULT_W[p]);
   const panelW = (p) => clamp(prefs.widths[p] ?? defaultW(p), PANEL_MIN, panelMax());
 
+  // Desktop with a panel open: when the chat would drop below OVERLAY_MIN,
+  // the sessions sidebar floats over the chat instead of taking a column.
+  const overlay = () => !narrow() && sideOpen() && !!panel && innerWidth - railW() - sideW() - panelW(panel) < OVERLAY_MIN;
   function apply() {
+    app.classList.toggle('side-overlay', overlay());
     app.style.setProperty('--side-w', sideW() + 'px');
     app.style.setProperty('--panel-w', (panel ? panelW(panel) : 0) + 'px');
     const ph = $('panel-handle'), sh = $('side-handle');
@@ -112,6 +116,7 @@ export function createLayout({ onPanel } = {}) {
   });
   addEventListener('resize', apply);
   // Crossing the phone breakpoint: a drawer never stays open, the desktop frame comes back.
+  addEventListener('resize', () => { if (!narrow()) apply(); }, { passive: true });
   NARROW.addEventListener('change', () => { setSide(!narrow() && !!prefs.side, false); open(narrow() ? null : panel); });
 
   // Boot: phones start on the chat; desktops restore the last panel (Files
@@ -120,5 +125,9 @@ export function createLayout({ onPanel } = {}) {
   setSide(!narrow() && !!prefs.side, false);
   open(narrow() ? null : prefs.panel === undefined || prefs.panel === 'editor' ? 'files' : prefs.panel);
 
-  return { open, toggle, close: () => open(null), current: () => panel, narrow, setSide, sideOpen };
+  // An overlaid sidebar behaves like the phone drawer: a click into the chat
+  // closes it for now (the remembered preference stays open).
+  const overlaid = () => app.classList.contains('side-overlay');
+  $('chat').addEventListener('pointerdown', () => { if (overlaid()) setSide(false, false); });
+  return { open, toggle, close: () => open(null), current: () => panel, narrow, overlaid, setSide, sideOpen };
 }

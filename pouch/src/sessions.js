@@ -6,7 +6,7 @@
 // titleSource is 'user' for a title someone typed (never overwritten),
 // 'auto' for a generated one, and absent for the first-message fallback.
 import * as store from './store.js';
-import { $, el, icon } from './dom.js';
+import { $, el, icon, seeded } from './dom.js';
 import { digest, suggestTitle, titleEditor } from './naming.js';
 
 const SPARK_TIP = 'Suggest a title from the conversation (uses 1 Sealed request from today\'s allowance)';
@@ -21,6 +21,7 @@ export const convKey = (sid) => 'conversation:' + sid; // the current conversati
 export const interruptedKey = (sid) => 'interrupted:' + sid; // a reload cut off its run; Resume offered (main.js)
 export const subagentsKey = (sid) => 'subagents:' + sid; // the session's subagents and their state (subagents.js)
 export const revertKey = (sid) => 'revert:' + sid; // the last revert, while it can be undone, with file bytes (D12)
+export const watchesKey = (sid) => 'watches:' + sid; // its file watches (src/ns/watch.js)
 export const turnsKey = (sid) => 'turnTimes:' + sid; // turn-start entry -> measured duration (ms), for the turn footer (main.js)
 
 function ago(t) {
@@ -34,10 +35,11 @@ function ago(t) {
 
 // deps: { agent(), view(), connected() -> verified client or null, model(),
 //   setModel(id), hasModel(id), attach(), status(text, cls), sheet, layout,
-//   review, usage, quotaError, exhaustedText, agentError(), onRender(list),
-//   grants(id) -> Promise<[{ service, label }]>, revoke(id, service) }
+//   usage, quotaError, exhaustedText, agentError(), onRender(list),
+//   grants(id) -> Promise<[{ service, label }]>, revoke(id, service),
+//   children(id) -> [{ id, name, task, state, open }], openChild(id, child) }
 export function createSessions(deps) {
-  const { layout, review, status } = deps;
+  const { layout, status } = deps;
   let session = null; // current { id, title, updated, model }
   const running = new Set(); // string ids with a send in flight: the sidebar's busy mark
 
@@ -89,6 +91,23 @@ export function createSessions(deps) {
     const trash = el('button', { type: 'button', className: 'icon danger s-trash', ariaLabel: 'Delete ' + titleOf(s), title: 'Delete now (Shift held: no confirm)', tabIndex: -1 }, icon('trash'));
     trash.onclick = () => remove(s.id, false);
     li.append(open, more, trash);
+    // Its subagents, nested, each with a live state; a click opens its view.
+    const children = deps.children?.(s.id) ?? [];
+    if (children.length) {
+      li.append(el('ul', { className: 's-children', ariaLabel: `Subagents of ${titleOf(s)}` }, ...children.map((c) => {
+        const b = el('button', { type: 'button', className: 's-child-open', title: `Subagent ${c.name}${c.ref ? ` (${c.ref})` : ''}: ${c.task}` },
+          el('span', { className: 'sa-dot', ariaHidden: 'true' }),
+          el('span', { className: 's-child-name', textContent: c.name }),
+          // Bus messages, not chat turns (critique): "4 msgs" says to/from whom on hover.
+          ...(c.msgs ? [el('span', { className: 's-child-msgs', textContent: `${c.msgs} msg${c.msgs > 1 ? 's' : ''}`, title: `Messages with other agents: ${c.edges || c.msgs}` })] : []),
+          el('span', { className: `s-child-state ${c.state}`, textContent: c.state }));
+        if (c.open) b.setAttribute('aria-current', 'true');
+        b.onclick = async () => { await deps.openChild(s.id, c.id); };
+        const row = seeded(el('li', { className: 's-child' }, b), c.ref);
+        row.dataset.child = c.id;
+        return row;
+      })));
+    }
     return li;
   }
 
@@ -128,7 +147,7 @@ export function createSessions(deps) {
   }
 
   // ── Delete (L2) ───────────────────────────────────────────────────
-  // Erases the transcript (its own database), its review records and notes.
+  // Erases the transcript (its own database), its notes and revert token.
   // A legacy session is stopped and reset; once none is left, the shared
   // legacy database goes too.
   async function remove(id, ask = true) {
@@ -136,7 +155,7 @@ export function createSessions(deps) {
     if (ask && !confirm(legacy ? 'Delete this session? It was saved before per-session storage: it is stopped and reset now, and its history is purged once no such session is left (or by Erase all).' : 'Delete this session? Its conversation is erased from this browser.')) return;
     try { await deps.agent()?.deleteSession(id); }
     catch (e) { return status('Could not delete: ' + e.message, 'bad'); }
-    await store.del('sessions', id); await review.forget(id);
+    await store.del('sessions', id);
     await store.setSetting(notesKey(id), undefined);
     await store.setSetting(grantsKey(id), undefined);
     await store.setSetting(convKey(id), undefined);
@@ -144,6 +163,7 @@ export function createSessions(deps) {
     await store.setSetting(subagentsKey(id), undefined);
     await store.setSetting(interruptedKey(id), undefined);
     await store.setSetting(turnsKey(id), undefined);
+    await store.setSetting(watchesKey(id), undefined); deps.forgetWatches?.(id);
     if (sameId(await store.getSetting('lastSession'), id)) await store.setSetting('lastSession', undefined);
     await dropLegacyIfDone();
     if (sameId(id, session?.id)) {

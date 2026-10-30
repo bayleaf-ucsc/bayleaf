@@ -4,7 +4,7 @@
 // The artifact is exactly the files SHA256SUMS lists: pouch.html, the app shell
 // (sw.js, manifest, icons), and with --with-models the Local lane's
 // dist/models/<id>/ (manifest, worker, parts).
-import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, copyFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, copyFileSync, rmSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir, tmpdir } from 'node:os';
@@ -71,6 +71,8 @@ for (const f of shellFiles) { mkdirSync(dirname(join(snapshot, f.path)), { recur
 // rebuild them with build.mjs --with-models from the pinned models.lock.json.
 // Stage only allowlisted public files, outside the checkout and its Wrangler caches.
 const staging = mkdtempSync(join(tmpdir(), 'pouch-static-'));
+// Each staging copy holds the whole artifact (about 1.1 GB with models): never leave one behind.
+process.on('exit', () => rmSync(staging, { recursive: true, force: true }));
 mkdirSync(join(staging, 'assets'));
 writeFileSync(join(staging, 'assets/pouch.html'), html);
 writeFileSync(join(staging, 'assets/SHA256SUMS'), manifest);
@@ -113,7 +115,7 @@ copyFileSync(join(staging, 'assets/_headers'), join(snapshot, '_headers'));
 copyFileSync(join(staging, 'assets/_redirects'), join(snapshot, '_redirects'));
 
 if (check) {
-  console.log(`Checked and staged ${files.length} files (${(files.reduce((n, f) => n + f.size, 0) / 2 ** 20).toFixed(0)} MiB, largest ${(Math.max(...files.map((f) => f.size)) / 2 ** 20).toFixed(1)} MiB) in ${staging}; not deployed (--check).`);
+  console.log(`Checked and staged ${files.length} files (${(files.reduce((n, f) => n + f.size, 0) / 2 ** 20).toFixed(0)} MiB, largest ${(Math.max(...files.map((f) => f.size)) / 2 ** 20).toFixed(1)} MiB); not deployed (--check), staging removed.`);
   process.exit(0);
 }
 // A real API read refreshes the approved BayLeaf cf OAuth login before private use.

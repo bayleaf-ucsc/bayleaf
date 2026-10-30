@@ -18,3 +18,14 @@ export function icon(name) {
   svg.append(use);
   return svg;
 }
+
+// Continuity (README "Continuity: color and motion"): an agent's color is
+// CSS's business. JS sets one number, its spawn order (s3 -> --seed: 3), and
+// pouch.html turns it into a hue. Main (s1) stays neutral; unknown refs get nothing.
+export const seedOf = (ref) => { const m = /^s(\d+)$/.exec(String(ref ?? '')); return m ? Number(m[1]) : null; };
+export function seeded(node, ref) {
+  const n = seedOf(ref);
+  if (n === 1) node.classList.add('main-agent');
+  else if (n != null) node.style.setProperty('--seed', String(n));
+  return node;
+}

@@ -3,11 +3,13 @@
 // and Pouch must stay one hash-checkable file, so the set is fixed here.
 //
 // Two modes share one view. Normal mode edits a file against a baseline (the
-// text last loaded or saved). Diff mode adds @codemirror/merge's unified view
-// on top of the same document, so reviewing a change needs no second editor.
+// text last loaded or saved). Merge mode adds @codemirror/merge's unified view
+// on top of the same document, to settle a conflict without a second editor.
+// flash(other) marks, once, the lines where the buffer and `other` differ
+// (continuity: the lines that just changed underneath you, README).
 import { EditorView, basicSetup } from 'codemirror';
-import { EditorState, Compartment, Transaction } from '@codemirror/state';
-import { keymap } from '@codemirror/view';
+import { EditorState, Compartment, Transaction, StateField, StateEffect } from '@codemirror/state';
+import { keymap, Decoration } from '@codemirror/view';
 import { indentWithTab } from '@codemirror/commands';
 import { unifiedMergeView } from '@codemirror/merge';
 import { highlightCode, classHighlighter } from '@lezer/highlight';
@@ -72,27 +74,45 @@ const controls = (labels) => (type, action) => {
   return b;
 };
 
+// Lines that differ between two texts, as a 1-based range in `a` (common
+// prefix and suffix trimmed), or null when they are equal.
+export function changedLines(a, b) {
+  if (a === b) return null;
+  const x = a.split('\n'), y = b.split('\n');
+  let i = 0; while (i < x.length && i < y.length && x[i] === y[i]) i++;
+  let j = 0; while (j < x.length - i && j < y.length - i && x[x.length - 1 - j] === y[y.length - 1 - j]) j++;
+  const from = Math.min(i + 1, x.length);
+  return { from, to: Math.max(from, x.length - j) };
+}
+const setFlash = StateEffect.define();
+const flashField = StateField.define({
+  create: () => Decoration.none,
+  update(deco, tr) {
+    for (const e of tr.effects) if (e.is(setFlash)) return e.value;
+    return deco.map(tr.changes);
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
 // onChange(dirty) fires when the buffer diverges from or returns to the baseline.
-// onRevert(text) fires when a reject button in a read-only review changes the text.
-export function createEditor(parent, { onSave, onChange, onRevert }) {
+export function createEditor(parent, { onSave, onChange }) {
   const lang = new Compartment(), merge = new Compartment(), ro = new Compartment(), label = new Compartment(), palette = new Compartment();
   const colorTheme = () => EditorView.theme({}, { dark: document.documentElement.dataset.theme === 'dark' });
   let saved = '';
-  let mode = 'normal'; // 'normal' | 'review' (read-only diff) | 'merge' (editable diff)
+  let mode = 'normal'; // 'normal' | 'merge' (editable diff)
   const quiet = Transaction.addToHistory.of(false);
   const view = new EditorView({
     parent,
     state: EditorState.create({
       doc: '',
       extensions: [
-        basicSetup, theme, palette.of(colorTheme()), syntaxHighlighting(classHighlighter), lang.of([]), merge.of([]), ro.of([]), EditorView.lineWrapping,
+        basicSetup, theme, flashField, palette.of(colorTheme()), syntaxHighlighting(classHighlighter), lang.of([]), merge.of([]), ro.of([]), EditorView.lineWrapping,
         label.of(EditorView.contentAttributes.of({ 'aria-label': 'File editor' })),
-        keymap.of([indentWithTab, { key: 'Mod-s', preventDefault: true, run: () => (mode !== 'review' && onSave(), true) }]),
+        keymap.of([indentWithTab, { key: 'Mod-s', preventDefault: true, run: () => (onSave(), true) }]),
         EditorView.updateListener.of((u) => {
           if (!u.docChanged) return;
           const text = view.state.doc.toString();
-          if (mode === 'review') { if (u.transactions.some((t) => t.isUserEvent('revert'))) onRevert?.(text); }
-          else onChange(text !== saved);
+          onChange(text !== saved);
         }),
       ],
     }),
@@ -118,18 +138,25 @@ export function createEditor(parent, { onSave, onChange, onRevert }) {
     markSaved() { saved = view.state.doc.toString(); onChange(false); },
     // Acknowledge a newer disk version without touching the buffer.
     setBaseline(text) { saved = text; onChange(view.state.doc.toString() !== saved); },
-    // Review: show `current` against `original`, read-only; reject reverts a
-    // chunk (reported through onRevert). editable: a merge of the buffer
-    // (kept as is) against another version, where reject takes theirs.
-    diff(path, original, current, { editable = false, buttons = true } = {}) {
-      mode = editable ? 'merge' : 'review';
-      const labels = editable ? { accept: 'Keep mine', reject: 'Take theirs' } : { accept: 'Keep', reject: 'Revert' };
-      const ext = unifiedMergeView({ original, mergeControls: buttons && controls(labels), collapseUnchanged: { margin: 3 } });
-      if (editable && current === view.state.doc.toString()) {
-        view.dispatch({ effects: [merge.reconfigure(ext), ro.reconfigure([])] });
-      } else {
-        setDoc(path, current, [merge.reconfigure(ext), ro.reconfigure(editable ? [] : [EditorState.readOnly.of(true)])]);
-      }
+    // Merge: the buffer (kept as is) against another version (`original`),
+    // where reject takes theirs.
+    diff(path, original, current) {
+      mode = 'merge';
+      const ext = unifiedMergeView({ original, mergeControls: controls({ accept: 'Keep mine', reject: 'Take theirs' }), collapseUnchanged: { margin: 3 } });
+      if (current === view.state.doc.toString()) view.dispatch({ effects: [merge.reconfigure(ext), ro.reconfigure([])] });
+      else setDoc(path, current, [merge.reconfigure(ext), ro.reconfigure([])]);
+    },
+    // Mark the lines where the buffer differs from `other`, once (CSS
+    // animation .cm-flash; a static highlight under reduced motion).
+    flash(other) {
+      const r = changedLines(view.state.doc.toString(), other);
+      if (!r) return null;
+      const doc = view.state.doc, line = Decoration.line({ class: 'cm-flash' });
+      const marks = [];
+      for (let n = r.from; n <= Math.min(r.to, doc.lines); n++) marks.push(line.range(doc.line(n).from));
+      view.dispatch({ effects: setFlash.of(Decoration.set(marks)) });
+      setTimeout(() => view.dispatch({ effects: setFlash.of(Decoration.none) }), 1600);
+      return r;
     },
     // Leave diff mode, keeping the document as it stands.
     endDiff() {

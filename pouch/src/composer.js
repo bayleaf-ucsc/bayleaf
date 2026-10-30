@@ -7,13 +7,13 @@
 // deps: {
 //   vfs, input,
 //   roots() -> top-level folders to index for @ (/work, /pouch, /tmp, mounts),
-//   skills() -> Promise<[{ name, description, path }]>,
+//   skills() -> Promise<[{ name, description, path, requests? }]>,
 //   commands: [{ name, hint, run(arg) }],
 //   activity() -> [{ key, kind, text, title?, origin, since?, stop?(), open?() }],
-//   stopAll(), shield() -> Promise<{ lane, detail, grants: [{ label, revoke() }], trust() }>,
+//   stopAll() (main too), turnSpend() -> requests this turn or null, mainBusy(), shield() -> Promise<{ lane, detail, grants: [{ label, revoke() }], trust() }>,
 //   onTray(), called after the tray changes height,
 // }
-import { $, el, icon } from './dom.js';
+import { $, el, icon, seeded } from './dom.js';
 
 const PATH_CAP = 3000; // entries indexed for @; a huge mounted folder stops here
 const SKIP = new Set(['node_modules', '.git']);
@@ -55,28 +55,47 @@ export function createComposer(deps) {
     const counts = {};
     for (const r of rows) counts[r.kind] = (counts[r.kind] ?? 0) + 1;
     const running = (counts.subagent ?? 0) + (counts.run ?? 0);
-    const parts = [running ? `Running: ${running}` : null, counts.approval ? `Waiting for you: ${counts.approval}` : null, counts.queued ? `Queued: ${counts.queued}` : null].filter(Boolean);
+    const n = deps.turnSpend?.();
+    const parts = [running ? `Running ${running}${n ? ` · ${n} request${n === 1 ? '' : 's'} this turn` : ''}` : null, counts.approval ? `Waiting for you: ${counts.approval}` : null, counts.steer ? `Steering: ${counts.steer}` : null, counts.queued ? `Queued: ${counts.queued}` : null, counts.cap ? `Message limit: ${counts.cap}` : null, counts.watch ? `Watching: ${counts.watch}` : null].filter(Boolean);
     $('tray-count').textContent = parts.join(' · ');
-    stopAll.hidden = rows.filter((r) => r.stop).length < 2;
+    // Main working counts too: Stop all stops main as well.
+    stopAll.hidden = rows.filter((r) => r.stop && (r.kind === 'subagent' || r.kind === 'run')).length + (deps.mainBusy?.() ? 1 : 0) < 2;
     // Rebuilding drops focus; give it back to the same row's button.
     const f = document.activeElement, fKey = list.contains(f) ? f.closest('[data-key]')?.dataset.key : null, fAct = fKey && f.dataset.act;
     list.replaceChildren(...rows.map((r) => {
       // data-kind, not a class: .subagent already styles the transcript's cards.
       const li = el('li', { className: 'tray-row' });
       li.dataset.key = r.key; li.dataset.kind = r.kind;
-      li.append(icon(r.kind === 'subagent' ? 'bot' : r.kind === 'run' ? 'terminal' : r.kind === 'approval' ? 'shield-alert' : 'clock'));
+      if (r.seed) seeded(li, r.seed); // the agent's color (continuity)
+      if (r.paused) li.classList.add('paused');
+      li.append(icon(r.kind === 'subagent' ? 'bot' : r.kind === 'run' ? 'terminal' : r.kind === 'approval' || r.kind === 'cap' ? 'shield-alert' : r.kind === 'steer' ? 'send' : r.kind === 'watch' ? 'eye' : 'clock'));
       const text = el(r.open ? 'button' : 'span', { className: 'tray-text', textContent: r.text, title: r.title ?? r.text });
       if (r.open) { text.type = 'button'; text.onclick = r.open; text.dataset.act = 'open'; }
       li.append(text, el('span', { className: 'tray-origin', textContent: r.origin }));
       const t = el('span', { className: 'tray-time' });
       if (r.since) { t.dataset.since = r.since; t.textContent = elapsed(Date.now() - r.since); }
       li.append(t);
+      if (r.background) {
+        // G12: main stops waiting on it; the subagent keeps running.
+        const b = el('button', { type: 'button', className: 'tray-bg', textContent: 'Background', title: 'Main stops waiting; this subagent keeps running and reports later', ariaLabel: `Send ${r.text} to the background` });
+        b.dataset.act = 'bg';
+        b.onclick = async () => { b.disabled = true; try { await r.background(); } catch (e) { alert(e.message); } };
+        li.append(b);
+      }
+      // Pending input (D25): Edit, Steer now, Send, each a visible labeled button.
+      for (const a of r.actions ?? []) {
+        const b = el('button', { type: 'button', className: 'tray-bg', textContent: a.label, ariaLabel: a.ariaLabel ?? a.label, title: a.title ?? a.ariaLabel ?? a.label });
+        b.dataset.act = a.act;
+        b.onclick = async () => { b.disabled = true; try { await a.run(); } catch (e) { alert(e.message); } };
+        li.append(b);
+      }
       if (r.stop) {
-        const b = el('button', { type: 'button', className: 'tray-stop', textContent: r.stopLabel ?? 'Stop', ariaLabel: `${r.stopLabel ?? 'Stop'} ${r.kind === 'queued' ? 'queued message' : r.text}` });
+        const b = el('button', { type: 'button', className: 'tray-stop', textContent: r.stopLabel ?? 'Stop', ariaLabel: r.stopAria ?? `${r.stopLabel ?? 'Stop'} ${r.kind === 'queued' ? 'queued message' : r.text}` });
         b.dataset.act = 'stop';
         b.onclick = async () => { b.disabled = true; try { await r.stop(); } catch (e) { alert(e.message); } };
         li.append(b);
       }
+      deps.onRow?.(li, r); // continuity: a fold or morph resumes over the rebuild
       return li;
     }));
     if (fKey) list.querySelector(`[data-key="${CSS.escape(fKey)}"] [data-act="${fAct}"]`)?.focus({ preventScroll: true });
@@ -90,6 +109,8 @@ export function createComposer(deps) {
     collapsed = v;
     tray.classList.toggle('collapsed', v);
     toggle.ariaExpanded = String(!v);
+    // Where the tray goes on a click: up to open, down to fold (README "Disclosures").
+    toggle.dataset.points = v ? 'up' : 'down';
     toggle.ariaLabel = v ? 'Show activity' : 'Hide activity';
     toggle.title = toggle.ariaLabel;
     renderTray();
@@ -145,7 +166,8 @@ export function createComposer(deps) {
     if (t.kind === 'command') items = rank(deps.commands, t.q, (c) => c.name).map((c) => ({ label: '/' + c.name, detail: c.hint, value: c }));
     else if (t.kind === 'skill') {
       const all = await indexSkills();
-      items = rank(all, t.q, (s) => s.name).map((s) => ({ label: s.name, detail: s.description, value: s }));
+      // requests: the skill's declared cost (frontmatter), shown before it is used.
+      items = rank(all, t.q, (s) => s.name).map((s) => ({ label: s.name, detail: s.description, value: s, ...(s.requests ? { cost: `about ${String(s.requests).replace(/-/g, '–')} requests` } : {}) }));
       if (!all.length) items = [{ label: 'No skills yet', detail: 'Skills live in /pouch/skills and /work/.agents/skills', disabled: true }];
     } else {
       if (!paths) open(t, [{ label: 'Indexing files...', disabled: true }]);
@@ -164,7 +186,7 @@ export function createComposer(deps) {
     ac.ariaLabel = KIND[t.kind];
     ac.replaceChildren(...items.map((it, i) => {
       const o = el('div', { id: 'ac-' + i, role: 'option', className: 'ac-opt' + (it.mono ? ' mono' : ''), ariaSelected: String(i === state.active), ariaDisabled: it.disabled ? 'true' : null },
-        el('span', { className: 'ac-label', textContent: it.label }), ...(it.detail ? [el('span', { className: 'ac-detail', textContent: it.detail })] : []));
+        el('span', { className: 'ac-label', textContent: it.label }), ...(it.detail ? [el('span', { className: 'ac-detail', textContent: it.detail })] : []), ...(it.cost ? [el('span', { className: 'ac-cost', textContent: it.cost })] : []));
       if (!it.disabled) {
         // pointerdown keeps focus (and the soft keyboard) in the input.
         o.onpointerdown = (e) => e.preventDefault();

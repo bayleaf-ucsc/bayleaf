@@ -214,7 +214,6 @@
   .notice-bar > span { flex: 1; min-width: 10rem; overflow-wrap: anywhere; }
   .notice-bar.review { background: var(--review); }
   .notice-bar.conflict { background: var(--warn-soft); color: var(--warn); }
-  .row .changed-dot { width: .5rem; height: .5rem; border-radius: 50%; background: var(--warn); flex: none; }
 
   /* Chat */
   /* Messages: yours are tinted bubbles on the right, replies are full-width text,
@@ -247,14 +246,13 @@
   @keyframes typing { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { .typing i { animation: none; opacity: .6; } }
   .notice.reverted { display: flex; justify-content: center; align-items: center; gap: .5rem; color: var(--ink); }
-  .revert-body .check { display: flex; gap: .4rem; align-items: center; margin: .6rem 0 .3rem; font-weight: 600; }
-  .revert-body .check input { width: 1.1rem; height: 1.1rem; margin: 0; }
-  .revert-files { margin: 0; padding-left: 1.6rem; font: .8rem var(--mono); max-height: 30vh; overflow: auto; overflow-wrap: anywhere; }
   .msg .thinking { color: var(--muted); font-size: .85rem; white-space: pre-wrap; border-left: 2px solid var(--line); padding-left: .5rem; margin: .2rem 0 .45rem; max-height: 8rem; overflow: auto; }
   details.tool { margin: .25rem 0; width: fit-content; max-width: 100%; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--muted); font-size: .78rem; }
   details.tool[open] { width: auto; border-radius: 10px; }
   details.tool summary { cursor: pointer; padding: .15rem .7rem; font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   details.tool pre { margin: 0; padding: .4rem .5rem; border-top: 1px solid var(--line); max-height: 18rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .78rem; }
+  details.tool.sa-joins summary { font-family: inherit; }
+  details.tool.sa-joins[open] { border-radius: 10px; width: 100%; padding: 0 .5rem .4rem; }
   details.tool.error summary { color: var(--bad); }
   details.tool pre.mini-diff .del { color: var(--bad); }
   details.tool pre.mini-diff .add { color: var(--leaf); }
@@ -321,22 +319,34 @@
   .sa-items .msg.user { align-items: flex-start; margin-top: .4rem; }
   .sa-items .msg.user .body { max-width: 100%; border-radius: 8px; font-size: .82rem; white-space: pre-wrap; }
   .sa-items .msg.assistant .body { font-size: .85rem; }
-  .subagent .changes { margin: .4rem 0 0; }
   .msg.report { border: 1px solid var(--line); border-left: 3px solid var(--leaf); border-radius: 8px; padding: .35rem .6rem .1rem; background: var(--surface); }
   .sa-report-head { font-weight: 600; font-size: .85rem; display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
   .sa-usage { margin: .4rem 0; font-size: .85rem; }
   .sa-input { width: 100%; box-sizing: border-box; font: inherit; }
+  .session { flex-wrap: wrap; }
+  .s-children { flex-basis: 100%; list-style: none; margin: 0 0 .2rem; padding: 0 0 0 1.1rem; }
+  .s-child-open { width: 100%; display: flex; align-items: center; gap: .45rem; border: 0; border-left: 2px solid var(--line); border-radius: 0 6px 6px 0; background: transparent; padding: .2rem .4rem .2rem .55rem; min-height: 2rem; text-align: left; font-size: .8rem; }
+  .s-child-open[aria-current="true"] { background: var(--leaf-soft); border-left-color: var(--leaf); }
+  .s-child-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+  .s-child-state { flex: none; font-size: .68rem; color: var(--muted); }
+  .s-child-state.working { color: var(--leaf); }
+  .s-child-state.waiting, .s-child-state.failed, .s-child-state.interrupted { color: var(--warn); }
+  .sa-who { display: block; font-size: .7rem; color: var(--muted); margin-bottom: .1rem; }
+  .msg.user.steer .body { border: 1px solid var(--leaf); }
+  .msg.user.steer .sa-who { color: var(--leaf); font-weight: 600; }
+  /* Agent graphs: who a message came from, and per-edge counts. */
+  .msg.user.from .body { border: 1px dashed var(--muted); }
+  .msg .sa-who.msg-from { font-weight: 600; }
+  .sa-edges { margin: .15rem 0 0; font-size: .74rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .s-child-msgs { flex: none; font-size: .66rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .sa-line { font-family: var(--mono); font-size: .75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: .05rem 0; }
+  .sa-line.error { color: var(--bad); }
+  .sa-final { margin-top: .35rem; padding: .35rem .5rem; border-radius: 6px; background: var(--leaf-soft); }
+  .sa-final .sa-who { color: var(--leaf); font-weight: 600; }
+  .sa-view-head { position: sticky; top: 0; z-index: 1; margin: 0 0 .6rem; border: 1px solid var(--line); border-left: 3px solid var(--leaf); border-radius: 8px; background: var(--surface); padding: .45rem .6rem; font-size: .85rem; }
+  .sa-mounts { margin: .2rem 0 0; font-size: .76rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; overflow-wrap: anywhere; }
+  .sa-mounts code { font-size: .74rem; }
   .s-kids { flex: none; font-size: .68rem; min-width: 1.1rem; text-align: center; color: var(--on-primary); background: var(--primary); border-radius: 999px; padding: 0 .3rem; }
-  .changes { margin: .3rem 0 .8rem; border: 1px solid var(--line); border-radius: 6px; font-size: .85rem; background: var(--surface); }
-  .changes .head { display: flex; gap: .4rem; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: .25rem .5rem; background: var(--bg); border-bottom: 1px solid var(--line); font-weight: 600; }
-  .changes .head button { font-weight: 400; }
-  .changes .change { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; padding: .2rem .5rem; }
-  .changes .change + .change { border-top: 1px solid var(--line); }
-  .changes .p { flex: 1; min-width: 8rem; font-family: var(--mono); font-size: .8rem; overflow-wrap: anywhere; }
-  .changes .st { font-size: .72rem; border-radius: 4px; padding: 0 .3rem; border: 1px solid currentColor; }
-  .changes .st.created { color: var(--leaf); } .changes .st.deleted { color: var(--bad); }
-  .changes .st.modified, .changes .st.moved { color: var(--warn); } .changes .st.undone { color: var(--muted); }
-  .changes .change button { min-height: 1.8rem; padding: 0 .5rem; }
   .card { margin: .75rem max(.75rem, calc((100% - 48rem) / 2)) 0; padding: .6rem .75rem; border: 1px solid var(--line); border-radius: 8px; background: var(--leaf-soft); font-size: .88rem; }
   .card[hidden] { display: none; }
   .card p { margin: 0 0 .4rem; }
@@ -358,24 +368,45 @@
   #composer-toolbar #model { min-width: 0; max-width: 15rem; min-height: 2.75rem; }
   #send { flex: none; display: grid; place-items: center; width: 2.75rem; height: 2.75rem; min-height: 0; padding: 0; margin-left: .2rem; border-radius: 50%; }
   #send.queue { background: var(--surface); color: var(--leaf); border-color: var(--leaf); }
+  /* While Pouch works and the draft is not empty: Steer or Queue, a split
+     button next to Stop (JOURNEYS D25). Both parts are 44px targets. */
+  .split { position: relative; flex: none; display: flex; margin-left: .2rem; }
+  .split > button { min-height: 2.75rem; height: 2.75rem; border: 1px solid var(--leaf); background: var(--surface); color: var(--leaf); }
+  #sendmode-main { display: flex; align-items: center; gap: .3rem; padding: 0 .7rem; border-radius: 1.4rem 0 0 1.4rem; font-weight: 600; }
+  #sendmode-more { width: 2.75rem; padding: 0; display: grid; place-items: center; border-left: 0; border-radius: 0 1.4rem 1.4rem 0; }
+  #sendmode-menu { position: absolute; right: 0; bottom: calc(100% + .35rem); z-index: 6; min-width: 16rem; max-width: calc(100vw - 1.5rem); display: grid; padding: .3rem; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 6px 24px rgb(0 0 0 / .18); }
+  #sendmode-menu button { display: grid; justify-items: start; gap: .1rem; min-height: 2.75rem; padding: .35rem .7rem; border: 0; background: none; text-align: left; border-radius: 8px; color: var(--ink); }
+  #sendmode-menu button:hover, #sendmode-menu button:focus-visible { background: var(--bg); }
+  #sendmode-menu button[aria-checked="true"] span::after { content: " (Enter)"; color: var(--muted); font-weight: 400; }
+  #sendmode-menu .sm-note { color: var(--warn); font-size: .78rem; }
+  #sendmode-menu .sm-link { color: var(--leaf); font-size: .85rem; }
+  .tray-row[data-kind="steer"] .tray-origin, .tray-row[data-kind="steer"] svg { color: var(--leaf); }
+  .tray-row[data-kind="queued"].paused .tray-origin { color: var(--warn); }
   /* Activity tray: what is running or waiting, above the input. */
   #tray { background: var(--bg); border-bottom: 1px solid var(--line); border-radius: 15px 15px 0 0; font-size: .85rem; color: var(--muted); }
   .tray-head { display: flex; align-items: center; gap: .5rem; padding: .1rem .45rem .1rem .85rem; min-height: 2.5rem; }
   #tray-count { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #tray.collapsed #tray-toggle svg { transform: rotate(180deg); }
+  /* Disclosure convention (README "Disclosures"): an edge panel's chevron points where the
+     panel goes when clicked. The tray sits above the input: collapsed points up (it opens
+     upward), open points down (it folds back down). Inline twisties stay right/down. */
+  #tray-toggle svg { transition: transform .12s; }
+  #tray:not(.collapsed) #tray-toggle svg { transform: rotate(180deg); }
   #tray.collapsed #tray-list { display: none; }
   #tray-list { list-style: none; margin: 0; padding: 0 .45rem .35rem .85rem; max-height: 11rem; overflow: auto; }
   .tray-row { display: flex; align-items: center; gap: .55rem; min-height: 2.1rem; }
   .tray-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: .8rem var(--mono); color: var(--ink); }
   button.tray-text { border: 0; background: none; padding: 0; min-height: 0; text-align: left; border-radius: 0; }
   button.tray-text:hover { background: none; text-decoration: underline; }
-  .tray-origin { flex: none; font-size: .78rem; }
+  .tray-origin { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .78rem; }
+  .tray-text { min-width: 4rem; }
   .tray-row[data-kind="approval"] .tray-origin, .tray-row[data-kind="approval"] svg { color: var(--warn); }
   #composer button, #ac .ac-opt { -webkit-tap-highlight-color: transparent; }
   .tray-time { flex: none; min-width: 3.6rem; text-align: right; font-size: .78rem; font-variant-numeric: tabular-nums; }
   .tray-time:empty { min-width: 0; }
   button.tray-stop { flex: none; border: 0; background: transparent; color: var(--bad); padding: 0 .45rem; min-height: 2rem; }
   button.tray-stop:hover:not(:disabled) { background: var(--bad-soft); }
+  button.tray-bg { flex: none; border: 0; background: transparent; color: var(--leaf); padding: 0 .45rem; min-height: 2rem; }
+  button.tray-bg:hover:not(:disabled) { text-decoration: underline; }
   /* Autocomplete (@ / $ /) and the shield popover float above the card. */
   #ac, #shield-pop { position: absolute; z-index: 20; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 28px var(--shadow); }
   #ac { left: 0; right: 0; bottom: calc(100% + 6px); max-height: min(18rem, 45dvh); overflow: auto; padding: .25rem; }
@@ -385,6 +416,7 @@
   .ac-label { flex: none; max-width: 100%; overflow-wrap: anywhere; }
   .ac-opt.mono .ac-label { font: .82rem var(--mono); }
   .ac-detail { flex: 1; min-width: 0; color: var(--muted); font-size: .8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ac-cost { flex: none; color: var(--muted); font-size: .75rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
   #shield-pop { left: .4rem; bottom: 3.4rem; width: min(22rem, calc(100% - .8rem)); padding: .7rem .85rem; font-size: .85rem; }
   #shield-pop p { margin: 0 0 .4rem; }
   #shield-pop h3 { font-size: .8rem; margin: .6rem 0 .25rem; color: var(--muted); font-weight: 600; }
@@ -439,6 +471,11 @@
   dialog menu button { text-align: left; min-height: 2.5rem; }
   dialog h2 { font-size: 1rem; margin: 0 0 .5rem; font-family: var(--mono); overflow-wrap: anywhere; }
   #sheet-body p { white-space: pre-wrap; font-size: .88rem; margin: 0 0 .5rem; }
+  .key-form { display: grid; gap: .35rem; margin: .25rem 0 .5rem; font-size: .88rem; }
+  .key-row { display: flex; gap: .4rem; }
+  .key-input { flex: 1; min-width: 0; font: .85rem var(--mono); padding: .45rem .55rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
+  #sheet-body p.key-why { margin: 0; min-height: 1.2em; color: var(--muted); }
+  #sheet-body p.key-why.bad { color: var(--bad); }
   #sheet-body pre { font-size: .75rem; max-height: 50vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 .5rem; }
   code { font-family: var(--mono); }
 
@@ -488,15 +525,16 @@
     .s-open { min-height: 2.75rem; }
     .row { min-height: 2.75rem; }
     .row .more, .row .more:hover { min-height: 2.75rem; min-width: 2.75rem; }
-    .changes .change button { min-height: 2.75rem; min-width: 2.75rem; }
     .msg .body button.path { min-height: 1.6rem; }
     .row .tag { min-height: 1.6rem; }
     #send { width: 2.75rem; height: 2.75rem; }
     #composer-toolbar > button.icon, #composer-toolbar #model { width: 2.75rem; height: 2.75rem; min-height: 2.75rem; }
     #composer-toolbar #model { width: auto; }
     #composer-usage { min-width: 2.75rem; }
-    #tray-toggle, button.tray-stop, button.tray-text { min-height: 2.75rem; min-width: 2.75rem; }
+    #tray-toggle, button.tray-stop, button.tray-bg, button.tray-text { min-height: 2.75rem; min-width: 2.75rem; }
     .tray-row { min-height: 2.75rem; }
+    .tray-row[data-kind="queued"], .tray-row[data-kind="steer"] { flex-wrap: wrap; column-gap: .35rem; }
+    #sendmode-main svg { display: none; }
     .ac-opt { min-height: 2.75rem; align-items: center; }
     .pop-grants li { min-height: 2.75rem; }
     .msg-bar { height: 2.75rem; }
@@ -529,6 +567,87 @@
     button.icon { min-width: 44px; }
     #editor .cm-chunkButtons button { min-height: 44px; }
   }
+  /* ── Continuity: color carries identity, motion carries continuity (README) ──
+     JS sets one number per agent (--seed: its spawn order, s3 -> 3) and
+     nothing else; the hue, tint and theme lightness live here. Labels always
+     say the same thing in words. Contrast is tested (test/batchB-browser.mjs):
+     text uses 4.5:1, dots and edges 3:1, first 12 seeds, both themes. */
+  :root { --agent-l: 48%; --agent-c: 0.13; --watch: #7a3e9d; --lane-sealed: var(--leaf); --lane-local: #2c5d8f; }
+  :root[data-theme="dark"] { --agent-l: 76%; --agent-c: 0.11; --watch: #d6b0ef; --lane-local: #9cc3ee; }
+  [style*="--seed"], .main-agent {
+    --hue: calc(var(--seed) * 137.508deg);
+    --agent: oklch(var(--agent-l) var(--agent-c) var(--hue));
+    --agent-tint: color-mix(in oklch, var(--agent) 12%, transparent);
+  }
+  .main-agent { --seed: 0; --agent-c: 0; }
+  .sa-dot { flex: none; display: inline-block; width: .55rem; height: .55rem; border-radius: 50%; background: var(--agent, var(--muted)); }
+  .subagent[style*="--seed"], .msg.report[style*="--seed"], .sa-view-head[style*="--seed"] { border-left-color: var(--agent); }
+  .sa-view-head[style*="--seed"] .sa-name, .subagent[style*="--seed"] > .sa-head .sa-name { color: var(--agent); }
+  .s-child[style*="--seed"] .s-child-open { border-left-color: var(--agent); }
+  .s-child[style*="--seed"] .s-child-open[aria-current="true"] { background: var(--agent-tint); }
+  .tray-row[style*="--seed"] { box-shadow: inset 3px 0 0 var(--agent); padding-left: .4rem; }
+  .tray-row[style*="--seed"] > svg { color: var(--agent); }
+  .msg-from[style*="--seed"], .sa-who.msg-from[style*="--seed"] { color: var(--agent); }
+  .sa-to[style*="--seed"] { color: var(--agent); font-weight: 600; }
+  .sa-to .sa-dot { margin-right: .25rem; vertical-align: middle; }
+  .sa-edges { display: flex; gap: .4rem; align-items: baseline; flex-wrap: wrap; }
+  .sa-edges ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .15rem .7rem; }
+  .sa-edge { display: inline-flex; align-items: center; gap: .3rem; }
+  .sa-edge .n { font-weight: 600; color: var(--ink); }
+  .sa-edges-k { color: var(--muted); }
+  .watch-from, .msg .sa-who.watch-from { color: var(--watch); }
+  .lane-model { color: var(--lane-sealed); } .lane-model.lane-local { color: var(--lane-local); }
+  #shield-btn.ok.lane-local { color: var(--lane-local); }
+  .build-swatch { display: inline-block; width: .8rem; height: .8rem; border-radius: 3px; margin-right: .35rem; vertical-align: -.1rem;
+    --agent: oklch(var(--agent-l) 0.15 var(--hue)); background: var(--agent); border: 1px solid var(--line); }
+  .swatches:empty { display: none; }
+  /* Motion: transform and opacity only, played by src/motion.js. */
+  .msg.arrived { position: relative; }
+  .msg.arrived::after { content: ''; position: absolute; inset: 0; border-radius: 10px; pointer-events: none; opacity: 0;
+    background: color-mix(in oklch, var(--agent, var(--leaf)) 16%, transparent); box-shadow: inset 0 0 0 2px var(--agent, var(--leaf)); }
+  .tree .row.pulsed, .row.pulsed { box-shadow: inset 3px 0 0 var(--watch); }
+  .tray-row.morphed { box-shadow: inset 3px 0 0 var(--leaf); }
+  .cm-flash { background: color-mix(in oklch, var(--warn) 22%, transparent); animation: cm-flash 1.5s ease-out forwards; }
+  @keyframes cm-flash { from { background: color-mix(in oklch, var(--warn) 30%, transparent); } to { background: transparent; } }
+  .leaving { opacity: .35; transition: opacity .2s ease; }
+  details.other-branch { margin: .3rem auto .8rem; max-width: 40rem; font-size: .8rem; color: var(--muted); border: 1px dashed var(--line); border-radius: 8px; padding: .3rem .6rem; opacity: .8; }
+  details.other-branch summary { cursor: pointer; }
+  details.other-branch p { margin: .3rem 0; overflow-wrap: anywhere; }
+  .still-mark { outline: 2px solid var(--agent, var(--leaf)); outline-offset: -2px; }
+  .msg.still-mark::after { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) {
+    .cm-flash { animation: none; background: color-mix(in oklch, var(--warn) 22%, transparent); }
+    .leaving { transition: none; }
+  }
+
+  /* Subagent view header: one opaque bar, details on demand (critique 3). */
+  #log.child-view { padding-top: 0; }
+  .sa-view-head { position: sticky; top: 0; z-index: 3; margin: 0 calc(-1 * max(.75rem, (100% - 48rem) / 2)) .6rem; border: 0; border-bottom: 1px solid var(--line); border-left: 3px solid var(--leaf); border-radius: 0; background: var(--surface); padding: .1rem .6rem; font-size: .85rem; }
+  .sa-bar { display: flex; align-items: center; gap: .45rem; min-height: 2.5rem; flex-wrap: nowrap; min-width: 0; }
+  @media (pointer: fine) { .sa-bar button { min-height: 2rem; padding-block: 0; } }
+  .sa-bar .sa-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sa-bar .sa-meta { white-space: nowrap; }
+  .sa-back { flex: none; max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .78rem; }
+  .sa-view-head.collapsed:not(.details) .sa-more { display: none; }
+  .sa-more { padding: .1rem 0 .3rem; }
+  .sa-more .sa-meta { margin: 0; }
+  /* Expanded inline transcript: its own tinted scroll box (critique 5). */
+  .sa-log[open] .sa-items { max-height: 22rem; overflow: auto; overscroll-behavior: contain; background: var(--agent-tint, var(--leaf-soft)); border-radius: 6px; padding: 0 .45rem .4rem; border-top: 0; }
+  .sa-fold { position: sticky; top: 0; z-index: 1; display: block; width: calc(100% + .9rem); margin: 0 -.45rem .2rem; border: 0; border-bottom: 1px solid var(--line); border-radius: 6px 6px 0 0; background: var(--surface); text-align: left; font-size: .76rem; padding: .3rem .5rem; color: var(--agent, var(--ink)); font-weight: 600; }
+  /* Composer: the placeholder never clips (critique 4). */
+  #input:placeholder-shown { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #input::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Desktop: the sidebar floats when the chat would be under 480px. */
+  #app.side-open.side-overlay { grid-template-columns: 0 minmax(0, 1fr) var(--panel-w, 0) var(--rail-w); }
+  #app.side-overlay #sidebar { position: fixed; z-index: 35; top: 0; bottom: 0; left: 0; width: var(--side-w, 260px); box-shadow: 0 0 24px var(--shadow); }
+  #app.side-overlay #side-handle { display: none; }
+  /* Trust panel: verdicts first, hashes behind Details, mounts stacked (critique 10). */
+  #trust .facts-more summary { cursor: pointer; font-family: inherit; font-size: .82rem; }
+  #trust .facts-more dl { grid-template-columns: 1fr; gap: 0; }
+  #trust .facts-more dt { margin-top: .3rem; }
+  #trust #ns-facts { display: block; }
+  #trust #ns-facts dt { margin-top: .5rem; overflow-wrap: anywhere; }
+  #trust #ns-facts dd pre { margin: .15rem 0 0 .8rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
@@ -567,6 +686,7 @@
   <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></symbol>
   <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-chip" viewBox="0 0 24 24"><rect width="14" height="14" x="5" y="5" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol>
   <symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
   <symbol id="i-chevron-up" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></symbol>
@@ -595,8 +715,12 @@
       <div class="actions"><button id="erased-dismiss" type="button">Dismiss</button></div>
     </div>
     <div id="update" class="card" role="status" hidden>
-      <p id="update-text"></p>
+      <p><span id="update-swatches" class="swatches"></span> <span id="update-text"></span></p>
       <div class="actions"><button id="update-go" type="button" class="primary">Update</button><button id="update-later" type="button">Later</button></div>
+    </div>
+    <div id="default-update" class="card" role="status" hidden>
+      <p id="default-update-text"></p>
+      <div class="actions"><button id="default-take" type="button" class="primary">Take the new one</button><button id="default-keep" type="button">Keep mine</button></div>
     </div>
     <div id="welcome" class="card" hidden>
       <p><strong>Pouch is a coding agent for files kept in this browser; what it asks the AI is encrypted so that BayLeaf cannot read it.</strong></p>
@@ -616,7 +740,7 @@
         <div class="tray-head">
           <svg class="i" aria-hidden="true"><use href="#i-terminal"/></svg>
           <span id="tray-count" role="status"></span>
-          <button id="tray-toggle" class="icon" type="button" aria-expanded="true" aria-controls="tray-list" aria-label="Hide activity" title="Hide activity"><svg class="i"><use href="#i-chevron-up"/></svg></button>
+          <button id="tray-toggle" class="icon" type="button" aria-expanded="true" aria-controls="tray-list" aria-label="Hide activity" title="Hide activity" data-points="down"><svg class="i"><use href="#i-chevron-up"/></svg></button>
           <button id="tray-stop-all" class="tray-stop" type="button" hidden>Stop all</button>
         </div>
         <ul id="tray-list"></ul>
@@ -629,11 +753,22 @@
         <button id="shield-btn" class="icon" type="button" aria-expanded="false" aria-controls="shield-pop" aria-label="Lane and permissions for this session" title="Lane and permissions for this session"><svg class="i"><use href="#i-shield"/></svg></button>
         <button id="composer-usage" class="icon unknown" type="button" aria-label="Usage" title="Usage"><svg class="i"><use href="#i-usage"/></svg><span class="num" id="composer-usage-num">?</span></button>
         <label class="lane-model" title="Sealed lane: requests are encrypted to the enclave. The model applies when you next send; running work keeps its model."><svg class="i" aria-hidden="true"><use href="#i-lock"/></svg><select id="model" aria-label="Model for next user turn"></select></label>
+        <div id="sendmode" class="split" hidden>
+          <button id="sendmode-main" type="button"><svg class="i" aria-hidden="true"><use href="#i-send"/></svg><span id="sendmode-label">Steer</span></button>
+          <button id="sendmode-more" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="sendmode-menu" aria-label="More ways to send" title="More ways to send"><svg class="i" aria-hidden="true"><use href="#i-chevron-up"/></svg></button>
+          <div id="sendmode-menu" role="menu" aria-label="Send while Pouch works" hidden>
+            <button type="button" role="menuitemradio" data-mode="steer" aria-checked="false"><span>Steer now: read after current step</span><small class="sm-note" id="sendmode-detach" hidden></small></button>
+            <button type="button" role="menuitemradio" data-mode="queue" aria-checked="false"><span>Queue for after this turn</span></button>
+            <button type="button" role="menuitem" data-mode="stopsend"><span>Stop and send</span></button>
+            <button type="button" role="menuitem" data-mode="settings" class="sm-link"><span>Change what Enter does</span></button>
+          </div>
+        </div>
         <button id="send" class="primary" type="submit" disabled title="Send"><svg class="i"><use href="#i-send"/></svg><span class="vh" id="send-label">Send</span></button>
       </div>
     </form>
     <div id="local-hint" role="status" hidden><span id="local-hint-text"></span> <button id="local-hint-switch" type="button">Use Sealed next</button> <button id="local-hint-dismiss" type="button" aria-label="Dismiss">Dismiss</button></div>
     <div id="status" role="status"></div>
+    <div id="send-live" class="vh" aria-live="polite"></div>
   </section>
   <div id="panel-host">
     <div class="handle" id="panel-handle" role="separator" aria-orientation="vertical" aria-label="Resize panel" title="Drag to resize; double-click to reset" tabindex="0"></div>
@@ -656,7 +791,6 @@
       </div>
       <div class="bar notice-bar review" id="review-bar" role="status" hidden>
         <span id="review-text"></span>
-        <button id="review-restore" type="button" hidden>Restore</button>
         <button id="review-done" type="button" class="primary">Done</button>
       </div>
       <div class="bar notice-bar conflict" id="conflict-bar" role="alert" hidden>
@@ -692,6 +826,10 @@
         Web search and fetch, the sandbox VM and inboxes are plaintext to BayLeaf (not logged, by policy) and some reach third parties.
         Each request shows exactly what goes and who can see it, and a denial sends nothing.</p>
         <dl id="facts"></dl>
+        <h3>What each task can see</h3>
+        <p>Every task works in a namespace: only the folders bound into it exist for it. The agent sees the tree below; each <code>run</code> call and subagent gets a narrower one, reached over the 9P file protocol, and the agent can read the same list at <code>/task/&lt;id&gt;/ns</code>. Namespaces limit files, not the network: leaving the pouch is still governed by this page's Content-Security-Policy and your per-session grants.</p>
+        <dl id="ns-facts"></dl>
+        <p id="seed-row" hidden><button id="seed-remove" type="button">Remove the seed layer</button></p>
         <h3>Check this page</h3>
         <p>This page talks only to <code>api.bayleaf.dev</code>, and to its own origin to download the optional Local model: its Content-Security-Policy (<code>connect-src</code>) says so, and the browser enforces it. The Local model's files are checked against a manifest whose SHA-256 is built into this page; downloading them tells the host that this browser fetched the model, nothing more. Local turns send nothing.</p>
         <p>Build <code id="build-id">__BUILD_ID__</code>. A page cannot vouch for its own hash: the one below is what this page's code checked when it kept the copy. Save the page, then compare its hash with <code>SHA256SUMS</code> from the release:
@@ -719,6 +857,11 @@
         <label class="setting-check"><input id="reasoning-expanded" type="checkbox">Expand reasoning by default</label>
         <label class="setting-check"><input id="tools-expanded" type="checkbox">Expand tool calls by default</label>
         <p class="muted">Display preferences only, saved in this browser. They do not enable reasoning or change model reasoning effort. Existing messages keep their own open/closed state while streaming. Erase all resets these preferences.</p>
+        <h3>Sending while Pouch works</h3>
+        <label class="theme-field" for="send-mode">While Pouch is working, Enter:
+          <select id="send-mode"><option value="steer">Steer</option><option value="queue">Queue</option></select>
+        </label>
+        <p class="muted">Steer: Pouch reads your message after its current step, in the same turn. Queue: it waits until the whole turn ends, then starts the next turn. Alt+Enter (Option+Enter on a Mac) does the other one for a single message; the arrow next to Stop offers both. Saved in this browser.</p>
         <h3>Offline copy and updates</h3>
         <p>Pouch changes only when you press Update. <button type="button" class="link" id="settings-copy">See this copy and check for updates</button></p>
         <h3>Model selection</h3><p>The model below your message applies to your next user turn. Running work, including subagents, keeps the model it started with.</p>

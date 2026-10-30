@@ -1,24 +1,21 @@
-// IndexedDB, no library. One database, five stores:
+// IndexedDB, no library. One database, four stores:
 //   sessions  agent conversations (id -> { id, title, updated, messages, ... })
 //   settings  small key/value pairs (key, model, cache secret)
 //   mounts    FileSystemDirectoryHandles from showDirectoryPicker (name -> handle)
 //   shared    the /pouch file tree, kept apart from OPFS and picked folders
 //             (path -> { kind: 'file'|'dir', data?: Uint8Array, mtime })
-//   changes   what each agent run changed, for review and undo (review.js)
-//             (seq -> { seq, run, session, path, op, ts, before, after? })
+// Version 4 deleted the `changes` store (change review, dropped 2026-10-29):
+// it held whole before-copies of files the agent changed.
 const DB = 'bayleaf-pouch';
 const STORES = ['sessions', 'settings', 'mounts', 'shared'];
-const MAX_CHANGES = 500;
 
 let dbp = null;
 function db() {
   dbp ??= new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 3);
+    const req = indexedDB.open(DB, 4);
     req.onupgradeneeded = () => {
       for (const s of STORES) if (!req.result.objectStoreNames.contains(s)) req.result.createObjectStore(s);
-      if (!req.result.objectStoreNames.contains('changes')) {
-        req.result.createObjectStore('changes', { keyPath: 'seq', autoIncrement: true }).createIndex('session', 'session');
-      }
+      if (req.result.objectStoreNames.contains('changes')) req.result.deleteObjectStore('changes');
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -41,22 +38,6 @@ export const put = (store, k, v) => tx(store, 'readwrite', (s) => (v === undefin
 export const del = (store, k) => tx(store, 'readwrite', (s) => s.delete(k));
 export const all = (store) => tx(store, 'readonly', (s) => s.getAll());
 export const keys = (store) => tx(store, 'readonly', (s) => s.getAllKeys());
-
-// Change records carry their own key (seq), assigned in insertion order.
-export const addChange = (rec) => tx('changes', 'readwrite', (s) => s.add(rec)); // resolves to seq
-export const putChange = (rec) => tx('changes', 'readwrite', (s) => s.put(rec));
-export const changesFor = (session) => tx('changes', 'readonly', (s) => s.index('session').getAll(String(session)));
-export const deleteChanges = (session) => tx('changes', 'readwrite', (s) => {
-  s.index('session').openKeyCursor(String(session)).onsuccess = (e) => { const c = e.target.result; if (c) { s.delete(c.primaryKey); c.continue(); } };
-});
-// Keep only the newest MAX_CHANGES records; they hold whole file copies.
-export const pruneChanges = () => tx('changes', 'readwrite', (s) => {
-  s.count().onsuccess = (e) => {
-    let extra = e.target.result - MAX_CHANGES;
-    if (extra <= 0) return;
-    s.openKeyCursor().onsuccess = (ev) => { const c = ev.target.result; if (c && extra-- > 0) { s.delete(c.primaryKey); c.continue(); } };
-  };
-});
 
 export const getSetting = (k) => get('settings', k);
 export const setSetting = (k, v) => put('settings', k, v);

@@ -5,78 +5,22 @@
 //   /pouch       IndexedDB: AGENTS.md and skills/, kept apart from your files
 //   /mnt/<name>  folders you picked with showDirectoryPicker (Chromium only)
 //
+// Since the Namespaces work (src/ns/), the tree is a Plan 9 mount table
+// rather than just-bash's MountableFs: each store above is a small file server
+// bound at its path, /work can be stacked over a read-only seed archive, and
+// /task is a synthetic tree of running tasks. Tasks (run, subagents) get
+// narrower namespaces cut from this one and reach them over 9P.
+//
 // One adapter, HandleFs, serves both OPFS and picked folders, because both are
-// FileSystemDirectoryHandles. just-bash's MountableFs stitches the trees together
-// and hands each mount paths relative to its mount point.
-import { InMemoryFs, MountableFs } from 'just-bash';
+// FileSystemDirectoryHandles.
+import { InMemoryFs } from 'just-bash';
 import * as store from './store.js';
+import { BaseFs, Namespace, fsError, normalize, parts, toBytes, encodingOf } from './ns/namespace.js';
+import { seedFrom } from './ns/seed.js';
+import { Tasks, TaskFs } from './ns/tasks.js';
+import { attribute } from './ns/watch.js';
 
-const enc = new TextEncoder();
-const dec = new TextDecoder();
-
-// just-bash expects Node-style errors ("ENOENT: ...") and sometimes reads .code.
-function fsError(code, op, path) {
-  const text = { ENOENT: 'no such file or directory', EEXIST: 'file already exists', ENOTDIR: 'not a directory',
-    EISDIR: 'illegal operation on a directory', EROFS: 'read-only file system', ENOTSUP: 'operation not supported',
-    ENOTEMPTY: 'directory not empty', EINVAL: 'invalid argument' }[code];
-  return Object.assign(new Error(`${code}: ${text}, ${op} '${path}'`), { code });
-}
-
-export function normalize(path) {
-  const out = [];
-  for (const part of path.split('/')) {
-    if (!part || part === '.') continue;
-    if (part === '..') out.pop(); else out.push(part);
-  }
-  return '/' + out.join('/');
-}
-const parts = (path) => normalize(path).split('/').filter(Boolean);
-const resolvePath = (base, path) => normalize(path.startsWith('/') ? path : base + '/' + path);
-const toBytes = (content, encoding) => typeof content !== 'string' ? content
-  : encoding === 'base64' ? Uint8Array.from(atob(content), (c) => c.charCodeAt(0)) : enc.encode(content);
-const encodingOf = (o) => (typeof o === 'string' ? o : o?.encoding);
-
-// Methods every adapter shares, written once in terms of the primitive ones.
-class BaseFs {
-  resolvePath(base, path) { return resolvePath(base, path); }
-  getAllPaths() { return []; } // only used for globbing in-memory trees
-  async readFile(path, options) {
-    const bytes = await this.readFileBuffer(path);
-    const e = encodingOf(options);
-    if (e === 'base64') return btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(''));
-    if (e === 'latin1' || e === 'binary') return Array.from(bytes, (b) => String.fromCharCode(b)).join('');
-    return dec.decode(bytes);
-  }
-  async appendFile(path, content, options) {
-    const old = (await this.exists(path)) ? await this.readFileBuffer(path) : new Uint8Array();
-    const add = toBytes(content, encodingOf(options));
-    const both = new Uint8Array(old.length + add.length); both.set(old); both.set(add, old.length);
-    await this.writeFile(path, both);
-  }
-  async exists(path) { try { await this.stat(path); return true; } catch { return false; } }
-  lstat(path) { return this.stat(path); }
-  async realpath(path) { await this.stat(path); return normalize(path); }
-  async readdirWithFileTypes(path) {
-    const names = await this.readdir(path);
-    return Promise.all(names.map(async (name) => {
-      const s = await this.stat(normalize(path + '/' + name));
-      return { name, isFile: s.isFile, isDirectory: s.isDirectory, isSymbolicLink: false };
-    }));
-  }
-  async cp(src, dest, options) {
-    const s = await this.stat(src);
-    if (s.isFile) return this.writeFile(dest, await this.readFileBuffer(src));
-    if (!options?.recursive) throw fsError('EISDIR', 'cp', src);
-    await this.mkdir(dest, { recursive: true });
-    for (const name of await this.readdir(src)) await this.cp(src + '/' + name, dest + '/' + name, options);
-  }
-  async mv(src, dest) { await this.cp(src, dest, { recursive: true }); await this.rm(src, { recursive: true }); }
-  async chmod() {}
-  async utimes() {}
-  async symlink(_t, p) { throw fsError('ENOTSUP', 'symlink', p); }
-  async link(_e, p) { throw fsError('ENOTSUP', 'link', p); }
-  async readlink(p) { throw fsError('EINVAL', 'readlink', p); }
-}
+export { normalize };
 
 // ── FileSystemDirectoryHandle adapter: OPFS and picked folders ─────
 export class HandleFs extends BaseFs {
@@ -222,28 +166,50 @@ export class IdbFs extends BaseFs {
 
 // ── The assembled tree ────────────────────────────────────────────
 export const DEFAULTS = {}; // filled by main.js: path under /pouch -> text, seeded once
+// FNV-1a, enough to tell versions of a default apart (not a security check).
+const textHash = (t) => { let h = 0x811c9dc5; for (let i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 0x01000193); return (h >>> 0).toString(16); };
+const SEEDED_BEFORE_LIST = ['/AGENTS.md', '/skills/pouch-environment/SKILL.md', '/skills/bayleaf-cli/SKILL.md', '/skills/skill-authoring/SKILL.md'];
 
 export class Vfs extends EventTarget {
   constructor() {
     super();
     this.mem = new InMemoryFs();
-    this.fs = new MountableFs({ base: this.mem });
+    this.ns = new Namespace();
+    this.fs = this.ns; // what just-bash, the tools and the UI call
     this.mounts = new Map(); // name -> { handle, readOnly, live: boolean }
+    this.tasks = new Tasks();
+    this.seedLayer = null; // { name, files } when /work is stacked over an archive
+    this.watches = null; // the watch registry (src/ns/watch.js), set by main.js
+    this.views = new Map();
+  }
+  // A view of the tree whose writes are reported to the watches with who made
+  // them: 'user' (editor, uploads, undo), 'agent', 'run', 'subagent <name> (sN)'.
+  // Writes through vfs.fs itself are not reported.
+  as(source) {
+    if (!this.views.has(source)) this.views.set(source, attribute(this.fs, source, {
+      wants: (p) => !!this.watches?.wants(p), wantsUnder: (p) => !!this.watches?.wantsUnder(p), observe: (e) => this.watches?.observe(e),
+    }));
+    return this.views.get(source);
   }
 
   async init() {
     for (const d of ['/tmp', '/mnt', '/home']) await this.mem.mkdir(d, { recursive: true });
+    this.ns.mount(this.mem, '/', { label: 'memory' });
     // OPFS. Absent in very old browsers and some embedded webviews: fall back to
     // memory and say so, rather than refuse to start.
     try {
       this.opfs = await navigator.storage.getDirectory();
-      this.fs.mount('/work', new HandleFs(this.opfs));
+      this.ns.mount(new HandleFs(this.opfs), '/work', { label: 'opfs' });
     } catch {
       this.opfsMissing = true;
       await this.mem.mkdir('/work', { recursive: true });
+      this.ns.mount(this.mem, '/work', { root: '/work', label: 'memory' });
     }
-    this.fs.mount('/pouch', new IdbFs());
+    this.ns.mount(new IdbFs(), '/pouch', { label: 'indexeddb' });
+    this.ns.mount(new TaskFs(this.tasks, () => this.watches), '/task', { label: 'tasks' });
     await this.seed();
+    const layer = await store.getSetting('seedLayer').catch(() => null);
+    if (layer) await this.stack(layer.name, layer.bytes, { save: false }).catch((e) => console.warn('Pouch seed layer:', e));
     for (const name of await store.keys('mounts')) {
       const { handle, readOnly } = await store.get('mounts', name);
       this.mounts.set(name, { handle, readOnly, live: false });
@@ -251,15 +217,67 @@ export class Vfs extends EventTarget {
     }
   }
 
-  // Seed /pouch with defaults once; afterwards it is the user's to edit.
+  // Stack /work over a read-only archive (bind -a): your files win, writes
+  // land in /work, removing a seed file leaves a whiteout (kept in settings).
+  async stack(name, bytes, { save = true } = {}) {
+    const seed = await seedFrom(name, bytes);
+    this.unstack({ save: false });
+    this.ns.mount(seed, '/work', { flag: 'after', readOnly: true, label: 'seed ' + name });
+    const wh = (await store.getSetting('seedWhiteouts').catch(() => null)) ?? [];
+    this.ns.whiteouts('/work', save ? [] : wh, (list) => store.setSetting('seedWhiteouts', list.length ? list : undefined));
+    this.seedLayer = { name, files: seed.size, fs: seed };
+    if (save) { await store.setSetting('seedLayer', { name, bytes }); await store.setSetting('seedWhiteouts', undefined); }
+    this.changed();
+    return seed.size;
+  }
+  async unstack({ save = true } = {}) {
+    if (this.seedLayer) this.ns.unmount('/work', this.seedLayer.fs);
+    this.ns.wh.delete('/work');
+    this.seedLayer = null;
+    if (save) { await store.setSetting('seedLayer', undefined); await store.setSetting('seedWhiteouts', undefined); }
+    this.changed();
+  }
+
+  // Seed /pouch with each default once; afterwards it is the user's to edit.
+  // 'seeded' lists the paths given so far, so a default added in a later
+  // release (the panel skill) arrives once too, and one the user deleted
+  // stays deleted. `true` is a profile from before the list: it had these.
+  // 'seededHash' remembers what was written: when a bundled default changes,
+  // a copy the user never edited is updated in place; an edited copy (or one
+  // from before the hashes) is offered (this.defaultUpdates, main.js asks).
   async seed() {
-    if (await store.getSetting('seeded')) return;
-    for (const [path, text] of Object.entries(DEFAULTS)) {
+    const was = await store.getSetting('seeded');
+    const had = new Set(Array.isArray(was) ? was : was ? SEEDED_BEFORE_LIST : []);
+    const hashes = (await store.getSetting('seededHash')) ?? {};
+    const todo = Object.keys(DEFAULTS).filter((p) => !had.has(p));
+    for (const path of todo) {
       const full = '/pouch' + path;
+      if (await this.fs.exists(full).catch(() => false)) continue;
       await this.fs.mkdir(normalize(full + '/..'), { recursive: true });
-      await this.fs.writeFile(full, text);
+      await this.fs.writeFile(full, DEFAULTS[path]);
+      hashes[path] = textHash(DEFAULTS[path]);
     }
-    await store.setSetting('seeded', true);
+    this.defaultUpdates = [];
+    for (const path of Object.keys(DEFAULTS).filter((p) => had.has(p))) {
+      const full = '/pouch' + path, want = textHash(DEFAULTS[path]);
+      if (hashes[path] === want) continue;
+      const disk = await this.fs.readFile(full).catch(() => null);
+      if (disk == null) continue; // deleted by the user: stays deleted
+      if (textHash(disk) === want) { hashes[path] = want; continue; }
+      if (hashes[path] && textHash(disk) === hashes[path]) { await this.fs.writeFile(full, DEFAULTS[path]); hashes[path] = want; continue; }
+      this.defaultUpdates.push(path);
+    }
+    await store.setSetting('seeded', [...had, ...todo]);
+    await store.setSetting('seededHash', hashes);
+  }
+  // The user chose for an offered default: take the bundled one, or keep theirs.
+  async resolveDefault(path, take) {
+    const hashes = (await store.getSetting('seededHash')) ?? {};
+    if (take) await this.fs.writeFile('/pouch' + path, DEFAULTS[path]);
+    hashes[path] = textHash(DEFAULTS[path]); // asked once per bundled version
+    await store.setSetting('seededHash', hashes);
+    this.defaultUpdates = (this.defaultUpdates ?? []).filter((p) => p !== path);
+    this.changed();
   }
 
   // ask=true must run inside a user gesture: browsers only prompt from one.
@@ -270,7 +288,7 @@ export class Vfs extends EventTarget {
     if (state !== 'granted' && ask) state = await m.handle.requestPermission(mode);
     if (state === 'granted' && !m.live) {
       await this.mem.mkdir('/mnt/' + name, { recursive: true });
-      this.fs.mount('/mnt/' + name, new HandleFs(m.handle, { readOnly: m.readOnly }));
+      this.ns.mount(new HandleFs(m.handle, { readOnly: m.readOnly }), '/mnt/' + name, { readOnly: m.readOnly, label: 'picked folder' });
       m.live = true;
       this.changed();
     }
@@ -289,7 +307,7 @@ export class Vfs extends EventTarget {
 
   async unmount(name) {
     const m = this.mounts.get(name);
-    if (m?.live) this.fs.unmount('/mnt/' + name);
+    if (m?.live) this.ns.unmount('/mnt/' + name);
     this.mounts.delete(name);
     await store.del('mounts', name);
     await this.mem.rm('/mnt/' + name, { recursive: true, force: true });
@@ -306,14 +324,17 @@ export class Vfs extends EventTarget {
     return 'memory';
   }
 
-  // MountableFs has no readdirWithFileTypes, so list with one stat per entry.
+  // Types come with the listing; sizes still need one stat per file.
   async list(path) {
-    const names = await this.fs.readdir(path);
-    return Promise.all(names.map(async (name) => {
-      const s = await this.fs.stat(normalize(path + '/' + name)).catch(() => null);
-      return { name, isDirectory: !!s?.isDirectory, size: s?.size ?? 0 };
+    const items = await this.fs.readdirWithFileTypes(path);
+    return Promise.all(items.map(async ({ name, isDirectory }) => {
+      const s = isDirectory ? null : await this.fs.stat(normalize(path + '/' + name)).catch(() => null);
+      return { name, isDirectory, size: s?.size ?? 0 };
     }));
   }
+
+  // The agent's mount table, one line per mount point, for the trust panel.
+  describe() { return this.ns.describe(); }
 
   changed() { this.dispatchEvent(new Event('change')); }
 }

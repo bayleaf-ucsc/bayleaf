@@ -3,11 +3,15 @@
 // They run in this page against the Vfs; nothing here touches the network.
 // just-bash is a TypeScript reimplementation of bash and coreutils, so `bash`
 // is an interpreter over the same files, not a real process.
-import { Bash, defineCommand, getCommandNames } from 'just-bash';
+import { GRAPH_GLOSS } from './subagents.js';
+import { Bash, InMemoryFs, defineCommand, getCommandNames } from 'just-bash';
 import { normalize } from './vfs.js';
+import { subset } from './ns/namespace.js';
+import { serve, Client, NinepFs } from './ns/9p.js';
 import { archiveCommands } from './archive.js';
 import { bayleafCommands } from './bayleaf-cli.js';
 import { runTool } from './run.js';
+import { WATCH_GLOSS } from './ns/watch.js';
 
 const MAX_LINES = 2000;
 const MAX_CHARS = 50_000;
@@ -27,14 +31,16 @@ function clip(text) {
 // Filesystem errors carry paths relative to their mount ("/NOTES.md" for
 // /mnt/site/NOTES.md), which a model then copies back and loops on. Restate
 // them with the path the agent used and a next step.
-function explain(e, p) {
+// writable: the places this caller may write (a subagent's namespace can make
+// /work read-only), named in the EROFS error so it picks one instead of looping.
+function explain(e, p, writable = [CWD, '/tmp']) {
   const code = e.code ?? e.message.match(/^(E[A-Z]+)/)?.[1];
   const dir = normalize(p + '/..');
   switch (code) {
     case 'ENOENT': return new Error(`${p} does not exist. List ${dir} with bash \`ls ${dir}\`, or search with \`find ${CWD} -name '<name>'\`.`);
     case 'EISDIR': return new Error(`${p} is a folder, not a file. List it with bash \`ls ${p}\`.`);
     case 'ENOTDIR': return new Error(`A part of ${p} is a file, not a folder.`);
-    case 'EROFS': return new Error(`${p} is in a read-only folder. Write your result under ${CWD} instead, e.g. ${CWD}/${p.split('/').pop()}.`);
+    case 'EROFS': return new Error(`${p} is read-only for you. You can write under ${writable.join(', ')}; for example ${writable[0]}/${p.split('/').pop()}.`);
     case 'ENOTSUP': return new Error(`This browser cannot write ${p}. Write under ${CWD} instead.`);
     default: return e;
   }
@@ -63,25 +69,6 @@ export function oneFinalNewline(content) {
   return [fixed, fixed !== content];
 }
 
-// Every change any tool makes passes through here first, so the UI can list
-// changed files, show diffs and undo (story map R2, R3, R5). `before(path)`
-// receives the absolute path and the operation name before the first write;
-// the host reads the old bytes itself. Paths are absolute because Bash always
-// resolves them. The op lets the host tell a move from a delete plus a create.
-function recording(fs, before) {
-  const wrap = (op, ...idx) => async (...a) => { for (const i of idx) await before(normalize(a[i]), op); return fs[op](...a); };
-  return new Proxy(fs, {
-    get(target, prop) {
-      if (prop === 'writeFile' || prop === 'appendFile' || prop === 'rm') return wrap(prop, 0);
-      if (prop === 'mv') return wrap('mv', 0, 1);
-      if (prop === 'cp') return wrap('cp', 1);
-      const v = target[prop];
-      return typeof v === 'function' ? v.bind(target) : v;
-    },
-  });
-}
-
-// hooks.beforeChange(path, op, caller) is optional; see recording() above.
 // The `bayleaf` command's hooks pass through (src/bayleaf-cli.js):
 // bayleafCredential(), approveEgress(request, caller) (absent: every send is
 // denied) and onEgress(event, caller). Each bash call also lists what it sent
@@ -101,7 +88,41 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
     tail.then(() => { if (turns.get(p) === tail) turns.delete(p); });
     return run;
   };
-  const fsFor = (caller) => recording(vfs.fs, async (p, op) => { await hooks.beforeChange?.(p, op, caller); });
+  // A subagent works in its own namespace (hooks.namespaceFor(caller) gives
+  // its mounts), reached over a 9P connection like any task across a
+  // boundary: the page serves a capability view cut from the agent's tree and
+  // the subagent's tools mount the far end.
+  // Writes are attributed for file watches (src/ns/watch.js): the main
+  // agent's tools as 'agent', its run calls as 'run', a subagent's as itself.
+  const views = new Map(); // caller -> { key, fs, close }
+  function viewFor(caller, source = 'agent') {
+    const specs = hooks.namespaceFor?.(caller);
+    if (!specs) return vfs.as ? vfs.as(source) : vfs.fs;
+    const key = specs.join(',');
+    const had = views.get(caller);
+    if (had?.key === key) return had.fs;
+    had?.close();
+    const { port1, port2 } = new MessageChannel();
+    const server = serve(port1, subset(vfs.as ? vfs.as(hooks.sourceOf?.(caller) ?? 'subagent') : vfs.fs, specs, { scratch: new InMemoryFs() }));
+    const client = new Client(port2);
+    const ready = client.connect();
+    const remote = new NinepFs(client);
+    // Calls wait for the 9P handshake; resolvePath and getAllPaths stay synchronous.
+    const fs = new Proxy(remote, { get(t, k) {
+      const v = t[k];
+      if (typeof v !== 'function' || k === 'resolvePath' || k === 'getAllPaths') return typeof v === 'function' ? v.bind(t) : v;
+      return async (...a) => { await ready; return v.apply(t, a); };
+    } });
+    views.set(caller, { key, fs, close: () => { client.close(); server.close(); } });
+    return fs;
+  }
+  const writableFor = (caller) => {
+    const specs = hooks.namespaceFor?.(caller);
+    if (!specs) return [CWD, '/tmp'];
+    const rw = specs.filter((x) => !/:ro$/.test(x)).map((x) => x.replace(/:rw$/, '')).filter((x) => !x.startsWith('/pouch'));
+    return [...rw, '/tmp'];
+  };
+  const fsFor = (caller, source) => viewFor(caller, source);
   const fs = fsFor(undefined);
   // One interpreter per call, bound to its caller and its own list of what it
   // sent (the main agent and subagents run bash concurrently); the filesystem
@@ -155,7 +176,7 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
       try {
         await fs.mkdir(normalize(p + '/..'), { recursive: true });
         await fs.writeFile(p, text);
-      } catch (e) { throw explain(e, p); }
+      } catch (e) { throw explain(e, p, writableFor(caller)); }
       vfs.changed();
       return `Wrote ${text.split('\n').length} lines (${text.length} characters) to ${p}${fixed ? ' (saved ending with exactly one newline)' : ''}`;
   }
@@ -199,7 +220,7 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
         starts.push([lineOf(text, text.indexOf(e.oldText)), e.newText.split('\n').length]);
         text = e.replaceAll ? text.split(e.oldText).join(e.newText) : text.replace(e.oldText, () => e.newText);
       }
-      try { await fs.writeFile(p, text); } catch (e) { throw explain(e, p); }
+      try { await fs.writeFile(p, text); } catch (e) { throw explain(e, p, writableFor(caller)); }
       vfs.changed();
       // Show each edited region with a line of context, numbered.
       const lines = text.split('\n');
@@ -227,7 +248,7 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
       let out = r.stdout + (r.stderr ? (r.stdout ? '\n' : '') + r.stderr : '');
       // Library-facing messages, restated for the agent.
       out = out.replace(/command not available in browser environments\. Exclude '[^']+' from your commands or use the Node\.js bundle\./g, 'command not available in Pouch.');
-      if (/EROFS/.test(out)) out += `\n[hint: that folder is mounted read-only; write under ${CWD} instead]`;
+      if (/EROFS/.test(out)) out += `\n[hint: that folder is read-only for you; you can write under ${writableFor(caller).join(', ')}]`;
       // A silent failure ("exit 1" and nothing else) reads as an error with no
       // cause; small models then retry blindly (grep with no match is the usual one).
       if (r.exitCode !== 0 && !out.trim()) {
@@ -239,8 +260,9 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
     },
   };
 
-  const run = runTool({ vfs, Type, CWD, abs, fsFor, ...(hooks.makeWorker ? { makeWorker: hooks.makeWorker } : {}) });
-  return [read, write, edit, bashTool, run];
+  const run = runTool({ vfs, Type, CWD, abs, fsFor: (caller) => fsFor(caller, 'run'), oneAtATime, ...(hooks.makeWorker ? { makeWorker: hooks.makeWorker } : {}) });
+  // closeView(caller): drop a finished subagent's 9P connection.
+  return Object.assign([read, write, edit, bashTool, run], { closeView: (caller) => { views.get(caller)?.close(); views.delete(caller); } });
 }
 
 // ── Context: AGENTS.md files and skills ─────────────────────────────
@@ -273,12 +295,21 @@ export async function loadContext(vfs) {
       const path = `${root}/${name}/SKILL.md`;
       try {
         const fm = frontmatter(await vfs.fs.readFile(path));
-        skills.push({ name: fm.name || name, description: fm.description || '', path });
+        skills.push({ name: fm.name || name, description: fm.description || '', path, ...(fm.requests ? { requests: fm.requests } : {}) });
       } catch {}
     }
   }
   return { agents, skills };
 }
+
+// What a subagent sees unless its spawn says otherwise: the workspace,
+// instructions and skills read-only, the folders the user mounted (as
+// mounted), and a private /tmp. Not /task: it cannot stop its siblings.
+export function defaultSubagentNs(vfs) {
+  return ['/work', '/pouch:ro', ...[...vfs.mounts].filter(([, m]) => m.live).map(([n, m]) => `/mnt/${n}${m.readOnly ? ':ro' : ''}`)];
+}
+// Mount lines for a list of specs, as /task/<id>/ns and the trust panel show them.
+export function describeSpecs(vfs, specs) { return subset(vfs.fs, specs, { scratch: new InMemoryFs() }).describe(); }
 
 export async function systemPrompt(vfs) {
   const { agents, skills } = await loadContext(vfs);
@@ -289,10 +320,13 @@ You work on files through the read, write, edit, bash and run tools. Filesystem:
 - ${CWD}: the user's workspace (browser-private storage). Default working directory.
 - /pouch: shared instructions (AGENTS.md) and skills (skills/<name>/SKILL.md).
 - /tmp: scratch, lost on reload.
-${mounts.length ? '- Folders the user mounted from their device: ' + mounts.join(', ') + '\n' : ''}The bash tool is a simulated shell with coreutils-like commands plus zip/unzip/tar: no network, no installs, no python/node/git.
+- /task: running and recent run calls and subagents as files: \`cat /task/<id>/status\`, \`cat /task/<id>/ns\` (what it can see), \`echo kill > /task/<id>/ctl\`.
+${vfs.seedLayer ? `- ${CWD} is stacked over the read-only seed archive ${vfs.seedLayer.name}: your files win, edits land in ${CWD}, removing a seed file hides it.\n` : ''}${mounts.length ? '- Folders the user mounted from their device: ' + mounts.join(', ') + '\n' : ''}The bash tool is a simulated shell with coreutils-like commands plus zip/unzip/tar: no network, no installs, no python/node/git.
 The run tool executes JavaScript (QuickJS) over a copy of the files you name, with no network: use it instead of awk/sed/jq for anything that needs real parsing (quoted CSV, nested JSON) or arithmetic, and to test JavaScript; save reusable scripts in ${CWD} and run them by path. Its file writes come back as reviewable changes.
 The one exception is the \`bayleaf\` command (web search/fetch, a remote sandbox VM, inboxes): it leaves the pouch and asks the user each time; see the bayleaf-cli skill.
-The subagent tool runs a self-contained task (web research, exploring a codebase) in a background subagent while you keep talking with the user: use it when the user asks for background work or when such a task would take many steps. Each subagent step costs a request from the same daily allowance; its report arrives later as a message, so do not wait or poll for it.
+The subagent tool runs a self-contained task (web research, exploring a codebase) in a background subagent while you keep talking with the user: use it when the user asks for background work or when such a task would take many steps. Each subagent step costs a request from the same daily allowance; its report arrives later as a message, so do not poll for it.
+${GRAPH_GLOSS} You are main (s1); only you spawn and stop subagents.
+${WATCH_GLOSS}
 The user sees your file changes in the chat, can review a diff of each and undo it, and can download any file or folder (as .zip) from the file browser.
 Keep changes minimal: prefer edit over rewriting files, and do not reformat or restyle existing code unless asked (conventions apply to code you write). Be concise. Say what you changed.
 Replies render as markdown. Refer to files as markdown links like [app.js](/work/app.js) or [app.js:12](/work/app.js:12): they open in the user's editor.`;

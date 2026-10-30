@@ -1,6 +1,6 @@
 // Build dist/pouch.html: one self-contained file you can save and open.
 //
-//   cd pouch && npm ci && node build.mjs [--watch]
+//   cd pouch && npm ci && node build.mjs [--watch] [--walkthrough]
 //
 // Bundles src/main.js (the app, the pinned Tinfoil SDK, just-bash, pi-durable
 // and CodeMirror; package-lock.json is the supply-chain pin) into the one
@@ -81,3 +81,10 @@ const ctx = await context({
 });
 if (watch) { await ctx.watch(); console.log('watching src/ and pouch.html (reload the page after each build)'); }
 else { await ctx.rebuild(); await ctx.dispose(); }
+
+// --walkthrough: then refresh WALKTHROUGH.md's screenshots and statuses
+// (walkthrough.mjs bundles its own copy of src/ with a scripted fake model).
+if (process.argv.includes('--walkthrough') && !watch) {
+  const { spawnSync } = await import('node:child_process');
+  process.exitCode = spawnSync(process.execPath, ['walkthrough.mjs'], { stdio: 'inherit' }).status ?? 1;
+}

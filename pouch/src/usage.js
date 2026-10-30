@@ -49,6 +49,8 @@ export function createUsage({ getKey }) {
   };
 }
 
+// A pasted line like BAYLEAF_API_KEY=sk-bayleaf-... still yields the key.
+export const extractKey = (text) => /sk-bayleaf-[A-Za-z0-9_-]+/.exec(String(text ?? ''))?.[0] ?? null;
 export const fraction = (s) => (s.remaining != null && s.limit ? Math.max(0, Math.min(1, s.remaining / s.limit)) : null);
 const isLow = (s) => { const f = fraction(s); return f != null && f < 0.1; };
 
@@ -71,15 +73,17 @@ export function exhaustedText(s) {
 // composer's compact copy of it (the number).
 export function renderMeter(s) {
   const f = fraction(s);
-  const label = s.remaining == null ? 'Usage: remaining requests unknown'
+  // Off campus without a key: nothing can be sent, so 0, not "?" (or 100).
+  const off = s.mode === 'campus' && s.offCampus;
+  const label = off ? 'Off campus: Campus Pass does not work on this network. Sign in to send.' : s.remaining == null ? 'Usage: remaining requests unknown'
     : `Usage: ${s.mode === 'campus' ? 'about ' : ''}${s.remaining} of ${s.limit} Sealed requests left today`;
   for (const [id, num] of [['rail-usage', 'usage-num'], ['composer-usage', 'composer-usage-num']]) {
     const b = $(id);
     if (!b) continue;
     b.classList.toggle('low', isLow(s));
-    b.classList.toggle('unknown', f == null);
+    b.classList.toggle('unknown', f == null && !off);
     b.style.setProperty('--fill', f == null ? '0%' : `${Math.round(f * 100)}%`);
-    $(num).textContent = s.remaining == null ? '?' : String(s.remaining);
+    $(num).textContent = off ? '0' : s.remaining == null ? '?' : String(s.remaining);
     b.ariaLabel = label; b.title = label;
   }
 }
@@ -117,16 +121,19 @@ export function renderPanel(host, s, rows) {
     out.push(el('p', { className: 'std', textContent: `Standard lane (OpenRouter): ${std}. Not used by Pouch, which sends only sealed requests.` }));
   }
   out.push(el('h3', { textContent: 'Tokens by session' }));
-  const counted = rows.filter((r) => r.input || r.output);
+  const counted = rows.filter((r) => r.input || r.output || r.requests);
   if (!counted.length) out.push(el('p', { className: 'muted', textContent: 'No tokens counted yet. Totals appear after a session\'s first turn.' }));
   else {
     const anyCost = counted.some((r) => r.cost > 0);
-    const head = el('tr', {}, el('th', { textContent: 'Session' }), el('th', { textContent: 'In' }), el('th', { textContent: 'Out' }), ...(anyCost ? [el('th', { textContent: 'Cost' })] : []));
+    // Requests: what counts against the daily allowance, subagents included.
+    const head = el('tr', {}, el('th', { textContent: 'Session' }), el('th', { textContent: 'Requests' }), el('th', { textContent: 'In' }), el('th', { textContent: 'Out' }), ...(anyCost ? [el('th', { textContent: 'Cost' })] : []));
     const body = counted.map((r) => el('tr', { className: r.current ? 'current' : '' },
-      el('td', { textContent: r.title, title: r.title }), el('td', { textContent: fmt(r.input) }), el('td', { textContent: fmt(r.output) }),
+      el('td', { textContent: r.title, title: r.subagents ? `${r.title} (with ${r.subagents} subagent${r.subagents > 1 ? 's' : ''})` : r.title }),
+      el('td', { textContent: r.requests != null ? fmt(r.requests) : '' }), el('td', { textContent: fmt(r.input) }), el('td', { textContent: fmt(r.output) }),
       ...(anyCost ? [el('td', { textContent: r.cost > 0 ? `$${r.cost.toFixed(4)}` : '' })] : [])));
-    const cols = el('colgroup', {}, el('col'), ...Array.from({ length: anyCost ? 3 : 2 }, () => el('col', { className: 'n' })));
+    const cols = el('colgroup', {}, el('col'), ...Array.from({ length: anyCost ? 4 : 3 }, () => el('col', { className: 'n' })));
     out.push(el('table', { className: 'tokens' }, cols, el('thead', {}, head), el('tbody', {}, ...body)));
+    out.push(el('p', { className: 'muted', textContent: 'Rows include each session\'s subagents. Only requests count against the daily allowance; cost is an informational estimate.' }));
   }
   host.replaceChildren(...out);
 }

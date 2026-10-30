@@ -83,7 +83,7 @@ export function createAttachments({ vfs, composer, input, picker, button, chips,
         const path = '/work/.attachments/' + crypto.randomUUID() + '-' + name;
         await vfs.fs.mkdir('/work/.attachments', { recursive: true });
         if (await vfs.fs.exists(path)) throw new Error('Attachment name collision. Try again.');
-        await vfs.fs.writeFile(path, bytes);
+        await (vfs.as?.('user') ?? vfs.fs).writeFile(path, bytes); // the user's own write (file watches)
         pending.push({ path, name, size: bytes.length, type: file.type || 'application/octet-stream', image: !!rasterMime(bytes) });
         vfs.changed?.(path);
         render();
