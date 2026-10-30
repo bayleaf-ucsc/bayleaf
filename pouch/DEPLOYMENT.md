@@ -98,7 +98,23 @@ cache headers. README "Install and the offline copy" has the policy.
   and refusal, pass-through, trust panel, uninstall, Erase all). To check after deploy:
   the Content-Type Cloudflare serves for `.webmanifest`, install on Android and iOS.
 
-## Current artifact: run, offline, composer, Local lane (2026-10-29)
+## Current artifact: installable offline app (2026-10-30)
+
+- Built from commit `a1df65d` (clean; label `a1df65d 2026-10-30`) with
+  `node build.mjs --with-models`.
+- HTML SHA-256: `0e1ca58ca3725de5fe48db5b87477ae3d95e85df95bf0401743d1fc9eaae1b97`.
+- 70 files staged, 1,086 MiB; adds `sw.js`, `manifest.webmanifest` and `icons/`.
+  CSP delta: `worker-src 'self' blob:`, `manifest-src 'self'`.
+- Cloudflare version: `f20277af-fd25-4a2b-90bc-b854912b7c9e` (an earlier upload the
+  same day, `c6585532-…`, carried a `+dirty` label and was replaced).
+- Both uploads hit the post-deploy propagation window: `deploy.mjs` saw the old `/`
+  once and a wrong model part once. It now retries byte mismatches (6 tries, 15 s
+  apart). A full HTTPS re-verification of all 72 URLs (including `/`) found 0
+  mismatches; the live manifest is served as `application/manifest+json`.
+- Untested on real Safari, iOS, Android and Firefox; Playwright WebKit fails the
+  offline path (see JOURNEYS).
+
+## Earlier artifact: run, offline, composer, Local lane (2026-10-29)
 
 - Built from commit `7c6b546` (clean; label `7c6b546 2026-10-29`) with
   `node fetch-models.mjs && node build.mjs --with-models`.

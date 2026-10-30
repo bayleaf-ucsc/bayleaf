@@ -125,21 +125,29 @@ env.CLOUDFLARE_API_TOKEN = auth.oauth_token;
 console.log(`Experimental static deployment: SHA256 ${hash}; ${files.length} files, ${(files.reduce((n, f) => n + f.size, 0) / 2 ** 20).toFixed(0)} MiB`);
 console.log(`Rollback artifact: ${snapshot}`);
 execFileSync('wrangler', ['deploy', '--config', join(staging, 'wrangler.json')], { cwd: staging, env, stdio: 'inherit' });
+// Right after a deploy the edge can serve the previous release, or a wrong model
+// part, for under a minute, so byte mismatches are retried before failing.
+const settle = async (label, attempt) => {
+  if (attempt === 6) throw new Error(`Served bytes differ after ${attempt} attempts: ${label}`);
+  console.log(`Served bytes differ: ${label}; retrying in 15 s (attempt ${attempt})`);
+  await new Promise((resolve) => setTimeout(resolve, 15000));
+};
 for (const path of ['/', '/pouch.html', '/SHA256SUMS']) {
-  const response = await fetch(`https://pouch.bayleaf.dev${path}`, { signal: AbortSignal.timeout(20000), redirect: 'error' });
-  const body = Buffer.from(await response.arrayBuffer());
-  if (response.status !== 200 || response.headers.has('set-cookie')) throw new Error(`Unexpected response: ${path}`);
-  if (response.headers.get('nel') !== '{"max_age":0}' || response.headers.get('cache-control') !== 'no-store, no-transform')
-    throw new Error(`Unexpected reporting/cache policy: ${path}`);
-  if (path === '/SHA256SUMS' ? body.toString() !== manifest : !body.equals(html))
-    throw new Error(`Served bytes differ: ${path}`);
+  let response;
+  for (let attempt = 1; ; attempt++) {
+    response = await fetch(`https://pouch.bayleaf.dev${path}`, { signal: AbortSignal.timeout(20000), redirect: 'error' });
+    const body = Buffer.from(await response.arrayBuffer());
+    if (response.status !== 200 || response.headers.has('set-cookie')) throw new Error(`Unexpected response: ${path}`);
+    if (response.headers.get('nel') !== '{"max_age":0}' || response.headers.get('cache-control') !== 'no-store, no-transform')
+      throw new Error(`Unexpected reporting/cache policy: ${path}`);
+    if (path === '/SHA256SUMS' ? body.toString() === manifest : body.equals(html)) break;
+    await settle(path, attempt);
+  }
   if (!response.headers.get('content-security-policy')?.startsWith(csp)) throw new Error(`CSP mismatch: ${path}`);
   console.log(`Verified HTTPS ${path}: 200, exact bytes, no cookies, NEL disabled`);
 }
 // Model files: the manifest and worker byte-exact, every part present with
 // its size (HEAD), one part byte-exact, all with immutable caching.
-// Right after a deploy the edge has twice served a model part with the wrong
-// bytes for under a minute, so a mismatch is retried before it fails the deploy.
 for (const [i, f] of modelFiles.entries()) {
   const full = !f.path.endsWith('.bin') || i === modelFiles.findIndex((x) => x.path.endsWith('.bin'));
   for (let attempt = 1; ; attempt++) {
@@ -147,9 +155,7 @@ for (const [i, f] of modelFiles.entries()) {
     if (response.status !== 200 || response.headers.has('set-cookie') || response.headers.get('cache-control') !== 'public, max-age=31536000, immutable')
       throw new Error(`Unexpected response or cache policy: /${f.path}`);
     if (full ? createHash('sha256').update(Buffer.from(await response.arrayBuffer())).digest('hex') === f.sha : Number(response.headers.get('content-length')) === f.size) break;
-    if (attempt === 6) throw new Error(`Served bytes differ after ${attempt} attempts: /${f.path}`);
-    console.log(`Served bytes differ: /${f.path}; retrying in 15 s (attempt ${attempt})`);
-    await new Promise((resolve) => setTimeout(resolve, 15000));
+    await settle(`/${f.path}`, attempt);
   }
 }
 for (const f of shellFiles) {
