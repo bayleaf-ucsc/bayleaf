@@ -20,9 +20,10 @@ export function icon(name) {
 }
 
 // Continuity (README "Continuity: color and motion"): an agent's color is
-// CSS's business. JS sets one number, its spawn order (s3 -> --seed: 3), and
-// pouch.html turns it into a hue. Main (s1) stays neutral; unknown refs get nothing.
-export const seedOf = (ref) => { const m = /^s(\d+)$/.exec(String(ref ?? '')); return m ? Number(m[1]) : null; };
+// CSS's business. JS sets one number, its spawn order (a3 -> --seed: 3), and
+// pouch.html turns it into a hue. Main (a1) stays neutral; unknown refs get nothing.
+// Older builds' s-handles (s3) read the same (graph.js asRef).
+export const seedOf = (ref) => { const m = /^[as](\d+)$/.exec(String(ref ?? '')); return m ? Number(m[1]) : null; };
 export function seeded(node, ref) {
   const n = seedOf(ref);
   if (n === 1) node.classList.add('main-agent');

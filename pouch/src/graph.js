@@ -1,25 +1,41 @@
-// Agent graphs (JOURNEYS G1-G12): the routing state of one scope, a
-// top-level session and its subagents, which message each other by short id
-// (main is s1, children s2, s3, ... in spawn order). Pure bookkeeping, no
-// pi-durable: subagents.js does the delivery and calls in here to
+// Agent graphs (JOURNEYS G1-G12): the routing state of one session, its
+// main agent and its subagents, which message each other by handle (main is
+// a1, subagents a2, a3, ... in spawn order; LANGUAGE.md "Handles"). Pure
+// bookkeeping, no pi-durable: subagents.js does the delivery and calls in here to
 //
-// - admit a message under the caps (per user turn: the whole scope, and each
-//   pair of sessions in either direction), so a graph cannot ping-pong away
+// - admit a message under the caps (per user turn: the whole session, and each
+//   pair of agents in either direction), so a graph cannot ping-pong away
 //   the allowance; a refusal is a sentence for the sender, never a drop;
 // - remember, per (sender, target), the target's result number when the
 //   sender last messaged it, so a `join` after a `message` waits for a result
 //   newer than that message and never returns the stale answer;
 // - hold blocking calls (a `join`, a foreground spawn): a join resolves when
 //   every target is ready (all joiners of one target in the same tick), a
-//   join that would close a cycle of blocked sessions is refused, and the
+//   join that would close a cycle of blocked agents is refused, and the
 //   user can detach main's holds (G10, G12): the call returns, the subagents
 //   keep running.
 //
 // Message content never passes through here: it is delivered as an entry in
 // the recipient's conversation (one path for every sender).
-export const MAIN = 's1';
-export const MAX_SCOPE_MESSAGES = 40; // per user turn, all sessions of the scope together
-export const MAX_PAIR_MESSAGES = 8;   // per user turn, between two sessions, both directions
+export const MAIN = 'a1';
+export const MAX_SCOPE_MESSAGES = 40; // per user turn, all agents of the session together
+export const MAX_PAIR_MESSAGES = 8;   // per user turn, between two agents, both directions
+
+// Handles. Builds before the realignment (2026-10-31) stored s1, s2, ...;
+// asRef reads either form (and an agent that copies an old tag from its
+// context), migrateRows upgrades a registry as it is read, so stored rows,
+// edge counts and wake marks become a-handles the next time they are written.
+export const asRef = (x) => { const s = String(x ?? ''); const m = /^s(\d+)$/i.exec(s.trim()); return m ? 'a' + m[1] : s; };
+export const refOf = (l, c) => asRef(c.ref ?? `a${l.indexOf(c) + 2}`);
+// A stored label ("main (s1)", "chair (s2)") with its handles upgraded.
+export const relabel = (t) => (typeof t === 'string' ? t.replace(/\(s(\d+)\)/g, '(a$1)') : t);
+const rekey = (o) => (o ? Object.fromEntries(Object.entries(o).map(([k, v]) => [asRef(k), v])) : o);
+export function migrateRows(l) {
+  if (!Array.isArray(l)) return l;
+  return l.map((c, i) => ({ ...c, ref: asRef(c.ref ?? `a${i + 2}`), ...(c.sent ? { sent: rekey(c.sent) } : {}), ...(c.got ? { got: rekey(c.got) } : {}),
+    ...(c.wokenBy ? { wokenBy: asRef(c.wokenBy) } : {}), ...(c.to ? { to: asRef(c.to) } : {}),
+    ...(c.lastSent?.to ? { lastSent: { ...c.lastSent, to: relabel(c.lastSent.to) } } : {}) }));
+}
 export const JOIN_DEFAULT_S = 300;
 export const JOIN_MAX_S = 1800;
 
@@ -45,7 +61,7 @@ export function createScope() {
     usage: () => ({ total, pairs: Object.fromEntries(pairs) }),
     // null when admitted (and counted), else why not, for the sender.
     admit(from, to) {
-      if (total >= MAX_SCOPE_MESSAGES) return `Not sent: this scope has sent ${MAX_SCOPE_MESSAGES} messages since the user last wrote to main, the limit. Finish with what you have; the user can let the graph continue by writing to main.`;
+      if (total >= MAX_SCOPE_MESSAGES) return `Not sent: the agents of this session have sent ${MAX_SCOPE_MESSAGES} messages since the user last wrote to main, the limit. Finish with what you have; the user can let the graph continue by writing to main.`;
       const k = [from, to].sort().join('|'), n = pairs.get(k) ?? 0;
       if (n >= MAX_PAIR_MESSAGES) return `Not sent: ${from} and ${to} have exchanged ${MAX_PAIR_MESSAGES} messages since the user last wrote to main, the limit for one pair. Stop the exchange and send your conclusion to whoever asked.`;
       pairs.set(k, n + 1);
@@ -62,7 +78,7 @@ export function createScope() {
     // The result number a join by `from` on `to` must exceed (-1: any).
     sentSeq: (from, to) => sent.get(`${from}>${to}`) ?? -1,
 
-    // The blocked sessions a join from `waiter` on `ids` would close a cycle
+    // The blocked agents a join from `waiter` on `ids` would close a cycle
     // with, as a path [waiter, ..., waiter], or null. Edges: every hold
     // (join or foreground spawn) from its waiter to each of its ids.
     cycle(waiter, ids) {
@@ -96,7 +112,7 @@ export function createScope() {
     },
     // What `waiter` is blocked on: { kind, ids, since } per call, [] if nothing.
     held: (waiter) => of(waiter).map((h) => ({ kind: h.kind, ids: h.ids, since: h.since })),
-    // Every session blocked on `id` (its joiners), for the views.
+    // Every agent blocked on `id` (its joiners), for the views.
     joinersOf: (id) => [...holds].filter((h) => h.ids.includes(id)).map((h) => h.waiter),
     // Re-evaluate joins (after a state change): every ready one resolves now,
     // so several joiners of one target are released together.

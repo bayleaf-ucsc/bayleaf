@@ -1,6 +1,6 @@
 // The composer card, after OpenChamber's: an activity tray above the input,
 // autocomplete for @ paths, $ skills and / commands in the input, and the
-// shield popover (this session's lane and egress grants). main.js owns
+// shield popover (this session's provider and egress grants). main.js owns
 // sending and run bookkeeping and supplies what is active; this module owns
 // how the card shows it. Nodes only, never HTML strings.
 //
@@ -10,7 +10,7 @@
 //   skills() -> Promise<[{ name, description, path, requests? }]>,
 //   commands: [{ name, hint, run(arg) }],
 //   activity() -> [{ key, kind, text, title?, origin, since?, stop?(), open?() }],
-//   stopAll() (main too), turnSpend() -> requests this turn or null, mainBusy(), shield() -> Promise<{ lane, detail, grants: [{ label, revoke() }], trust() }>,
+//   stopAll() (main too), turnSpend() -> requests this turn or null, mainBusy(), shield() -> Promise<{ provider, detail, grants: [{ label, revoke() }], trust() }>,
 //   onTray(), called after the tray changes height,
 // }
 import { $, el, icon, seeded } from './dom.js';
@@ -57,7 +57,7 @@ export function createComposer(deps) {
     for (const r of rows) counts[r.kind] = (counts[r.kind] ?? 0) + 1;
     const running = (counts.subagent ?? 0) + (counts.run ?? 0);
     const n = deps.turnSpend?.();
-    const parts = [running ? `Running ${running}${n ? ` · ${n} request${n === 1 ? '' : 's'} this turn` : ''}` : null, counts.approval ? `Waiting for you: ${counts.approval}` : null, counts.steer ? `Steering: ${counts.steer}` : null, counts.queued ? `Queued: ${counts.queued}` : null, counts.cap ? `Message limit: ${counts.cap}` : null, counts.watch ? `Watching: ${counts.watch}` : null].filter(Boolean);
+    const parts = [running ? `Running ${running}${n ? ` · ${n} request${n === 1 ? '' : 's'} this turn` : ''}` : null, counts.approval ? `Waiting for you: ${counts.approval}` : null, counts.steer ? `Steering: ${counts.steer}` : null, counts.followup ? `Follow-up: ${counts.followup}` : null, counts.cap ? `Message limit: ${counts.cap}` : null, counts.watch ? `Watching: ${counts.watch}` : null].filter(Boolean);
     $('tray-count').textContent = parts.join(' · ');
     // Main working counts too: Stop all stops main as well.
     stopAll.hidden = rows.filter((r) => r.stop && (r.kind === 'subagent' || r.kind === 'run')).length + (deps.mainBusy?.() ? 1 : 0) < 2;
@@ -91,7 +91,7 @@ export function createComposer(deps) {
         li.append(b);
       }
       if (r.stop) {
-        const b = el('button', { type: 'button', className: 'tray-stop', textContent: r.stopLabel ?? 'Stop', ariaLabel: r.stopAria ?? `${r.stopLabel ?? 'Stop'} ${r.kind === 'queued' ? 'queued message' : r.text}` });
+        const b = el('button', { type: 'button', className: 'tray-stop', textContent: r.stopLabel ?? 'Stop', ariaLabel: r.stopAria ?? `${r.stopLabel ?? 'Stop'} ${r.kind === 'followup' ? 'follow-up' : r.text}` });
         b.dataset.act = 'stop';
         b.onclick = async () => { b.disabled = true; try { await r.stop(); } catch (e) { deps.fail(e.message); } };
         li.append(b);
@@ -262,7 +262,7 @@ export function createComposer(deps) {
     return true;
   }
 
-  // ── Shield popover: lane and grants for this session ─────────────
+  // ── Shield popover: provider and grants for this session ─────────
   const shieldBtn = $('shield-btn'), pop = $('shield-pop');
   async function showShield() {
     const s = await deps.shield();
@@ -277,7 +277,7 @@ export function createComposer(deps) {
     const trust = el('button', { type: 'button', className: 'link', textContent: 'What can BayLeaf see?' });
     trust.onclick = () => { hideShield(); s.trust(); };
     pop.replaceChildren(
-      el('p', { className: 'pop-lane' }, icon('lock'), el('strong', { textContent: s.lane })),
+      el('p', { className: 'pop-provider' }, icon('lock'), el('strong', { textContent: s.provider })),
       el('p', { className: 'muted', textContent: s.detail }),
       el('h3', { textContent: 'Allowed for this session without asking' }), grants, trust);
     pop.hidden = false;

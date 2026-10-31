@@ -28,7 +28,7 @@ const fs = new InMemoryFs();
 await fs.mkdir('/work', { recursive: true });
 const seen = [];
 const w = createWatches({ fs, settleMs: 5, load: async () => [], save: () => {}, sessions: async () => [], scopeOf: () => null,
-  userQueued: () => false, userSending: () => false, busy: async () => false, ready: Promise.resolve(),
+  followUpHeld: () => false, userSending: () => false, busy: async () => false, ready: Promise.resolve(),
   deliver: async (sid, owner, m) => { seen.push(m.content); return {}; } });
 await w.add('1', 'main', 'main', { paths: ['/work/data'] });
 assert.ok(w.wants('/work/data/jan.csv'), 'a file under the not-yet-folder is wanted');

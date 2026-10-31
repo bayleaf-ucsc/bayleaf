@@ -1,4 +1,5 @@
-// The agent loop: pi-durable conversations over the BayLeaf Sealed lane.
+// The engine: pi-durable conversations, as Pouch extends them, over the
+// BayLeaf Sealed and Transformers.js providers. Profiles: src/profiles.js.
 //
 // Security boundary (do not loosen): every model request leaves this module
 // through the Tinfoil SecureClient's fetch, which EHBP-encrypts the body in the
@@ -16,11 +17,25 @@ import { IndexedDbStorage } from '@earendil-works/pi-durable/storage/indexeddb';
 import { Type } from 'typebox';
 import { createSubagents, REPORT_KIND, STEER_KIND, MESSAGE_KIND } from './subagents.js';
 import { WATCH_KIND } from './ns/watch.js';
+import { asRef, relabel } from './graph.js';
 import { attachmentContext } from './attachments.js';
 import { LOCAL_PROVIDER, isLocal, localApi, localModel } from './local/provider.js';
 
 export { Type, MemoryStorage, REPORT_KIND };
 
+// Anti-corruption layer: pi-durable's words, read in Pouch's (LANGUAGE.md).
+// pi-durable code, docs and errors keep their own terms; past this module
+// (and src/subagents.js, which also drives pi-durable) Pouch's apply.
+//   pi-durable                              Pouch
+//   conversation, its entries               Thread storage: one agent's record (a revert forks
+//                                           it; the session's pointer names the current fork)
+//   "session" (pi docs, SDK errors)         not a Pouch Session: one agent's persisted log
+//   one Harness over one database           one Session's storage: main's thread and its subagents'
+//   ownerless conversation                  a subagent's thread (src/subagents.js)
+//   submit(..., { whenBusy: 'steer' })      Steer: read after the current step
+//   input admitted while busy ("followUp")  Follow-up; Pouch holds its own in the page (src/main.js)
+//                                           and submits when the turn ends
+//   extension, modelTools, instructions     parts of a Profile (src/profiles.js)
 const PROVIDER = 'bayleaf-sealed';
 // Must match the TinfoilAI client's baseURL: the SDK's encrypting fetch refuses
 // any origin other than the one it attested for, which is a second guard.
@@ -142,8 +157,8 @@ const dbFor = (id) => `${DB_NAME}-${id}`;
 const newId = () => `p-${crypto.randomUUID()}`;
 const dbExists = async (name) => !indexedDB.databases || (await indexedDB.databases()).some((d) => d.name === name);
 
-// Model ids starting "local:" are the Local lane (src/local/provider.js):
-// generated on this device, never sent. Every other id is Sealed.
+// Model ids starting "local:" are the Transformers.js provider (src/local/provider.js,
+// profile transformersjs): generated in this browser, never sent. Every other id is BayLeaf Sealed.
 const modelRef = (modelId) => ({ provider: isLocal(modelId) ? LOCAL_PROVIDER : PROVIDER, modelId });
 
 // pointer: { get(id), set(id, convId) } keeps which conversation in a
@@ -152,7 +167,7 @@ const modelRef = (modelId) => ({ provider: isLocal(modelId) ? LOCAL_PROVIDER : P
 // onReport(sid, submission, child), onSettle(sid, child), lowAllowance() }
 // (src/subagents.js); without reg there is no subagent tool.
 // onInterrupted(sids): sessions whose run a reload cut off (aborted, not resumed).
-// local: { info: LOCAL_MODEL, engine, onHint } adds the Local lane's provider.
+// local: { info: LOCAL_MODEL, engine, onHint } adds the Transformers.js provider.
 export async function openAgent({ storage, tools = [], systemPrompt, getClient, models: initialModels = [], pointer, subagents: saDeps, onInterrupted, local, onRequest }) {
   const models = createModels();
   let catalog = [];
@@ -167,18 +182,18 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
   setModels(initialModels);
   if (local?.info) {
     models.setProvider(createProvider({
-      id: LOCAL_PROVIDER, name: 'Local (on this device)', baseUrl: 'local:', models: [localModel(local.info)], api: localApi(local.engine, { onHint: local.onHint }),
-      auth: { apiKey: { name: 'Local', resolve: async () => ({ auth: { apiKey: 'local' } }) } },
+      id: LOCAL_PROVIDER, name: 'Transformers.js (in this browser)', baseUrl: 'local:', models: [localModel(local.info)], api: localApi(local.engine, { onHint: local.onHint }),
+      auth: { apiKey: { name: 'Transformers.js', resolve: async () => ({ auth: { apiKey: 'local' } }) } },
     }));
   }
 
   // Which session a conversation belongs to (its own, a revert's fork, or a
-  // subagent's), filled as lanes open and conversations are made.
+  // subagent's), filled as databases open and conversations are made.
   const sidByConv = new Map();
-  const sidOf = (convId) => sidByConv.get(convId) ?? convId; // shared lanes: the id is the session
+  const sidOf = (convId) => sidByConv.get(convId) ?? convId; // shared databases: the id is the session
   const subagents = saDeps?.reg ? createSubagents({
     ...saDeps, ctx, sidOf, modelRef,
-    laneOf: (sid) => laneOf(sid), lane: (name) => lane(name), conv: (sid) => conv(sid),
+    dbOf: (sid) => dbOf(sid), openDb: (name) => openDb(name), conv: (sid) => conv(sid),
   }) : null;
 
   const registry = createRegistry();
@@ -195,7 +210,7 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
       retry: { maxRetries: 2 },
       afterFailedRun: 'withdraw', // a failed run should not leave later inputs stranded
       // Every queued steer joins the next step (default: one per step), so
-      // messages from several sessions of a graph arrive together, in order.
+      // messages from several agents of a graph arrive together, in order.
       steeringMode: 'all',
       compaction: {
         enabled: true,
@@ -208,12 +223,12 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
     },
   };
 
-  // A lane is one open Harness over one database (name -> Promise<lane>),
+  // One open Harness per database (name -> Promise<{ harness, ... }>),
   // opened on first use and kept until delete or close. An injected storage
-  // (tests) is one shared lane for every session, like the legacy database.
-  const lanes = new Map();
-  function lane(name) {
-    if (!lanes.has(name)) {
+  // (tests) is one shared database for every session, like the legacy one.
+  const dbs = new Map();
+  function openDb(name) {
+    if (!dbs.has(name)) {
       const p = (async () => {
         const release = storage ? () => {} : await acquireLock(name);
         try {
@@ -228,7 +243,7 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
               cursor = page.next;
             } while (cursor);
           }
-          // A reload must never spend Sealed requests by itself, so pending
+          // A reload must never spend BayLeaf Sealed requests by itself, so pending
           // work is not resumed (no harness.resume()): every conversation with
           // a live run or queued input is aborted, which runs abort handlers
           // only, and reported to onInterrupted; the user resumes with a click.
@@ -236,8 +251,8 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
           return { harness, release, storage: st, sid, interrupted };
         } catch (e) { release(); throw e; }
       })();
-      lanes.set(name, p);
-      p.catch(() => lanes.delete(name)); // let a later attempt retry (the other tab may close)
+      dbs.set(name, p);
+      p.catch(() => dbs.delete(name)); // let a later attempt retry (the other tab may close)
       // Children the last page left running are marked interrupted (or, if
       // they settled unreported, reported quietly); then parents are told.
       p.then(async (l) => {
@@ -246,7 +261,7 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
         if (parents.length) onInterrupted?.(parents.map((c) => sidOf(c)));
       }, () => {});
     }
-    return lanes.get(name);
+    return dbs.get(name);
   }
   async function quiesce(harness) {
     const ins = await harness.inspect(ctx);
@@ -254,23 +269,23 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
     for (const id of ids) await (await harness.conversation(id, ctx))?.abort(ctx).catch(() => {});
     return [...ids];
   }
-  async function closeLane(name) {
-    const p = lanes.get(name);
+  async function closeDb(name) {
+    const p = dbs.get(name);
     if (!p) return;
-    lanes.delete(name);
+    dbs.delete(name);
     const l = await p.catch(() => null);
     if (l) try { await l.harness.close(ctx); } finally { l.release(); }
   }
   const shared = (id) => storage || isLegacy(id);
-  const laneOf = (id) => shared(id) ? (storage ? 'memory' : DB_NAME) : dbFor(id);
+  const dbOf = (id) => shared(id) ? (storage ? 'memory' : DB_NAME) : dbFor(id);
 
-  // Pouch id -> pi-durable conversation id. Shared lanes use the conversation
+  // Pouch id -> pi-durable conversation id. Shared databases use the conversation
   // id itself. A session database holds its first conversation and the forks
   // that reverts made of it; the pointer says which one is current, and a
   // session never reverted has only the first.
   const convIds = new Map();
   async function locate(id) {
-    const { harness, storage: st } = await lane(laneOf(id));
+    const { harness, storage: st } = await openDb(dbOf(id));
     if (shared(id)) return { harness, convId: id };
     if (!convIds.has(id)) {
       let convId = await pointer?.get(id);
@@ -340,14 +355,14 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
     isLegacy: (id) => !storage && isLegacy(id),
     async createSession(modelId) {
       const id = storage ? null : newId();
-      const { harness } = await lane(storage ? 'memory' : dbFor(id));
+      const { harness } = await openDb(storage ? 'memory' : dbFor(id));
       const c = await harness.createConversation({ ownership: { kind: 'ownerless' }, agent: { model: modelRef(modelId) } }, ctx);
       if (storage) return c.id;
       convIds.set(id, c.id);
       own(id, c.id);
       return id;
     },
-    // Stop the work, then erase the session's database. A shared-lane
+    // Stop the work, then erase the session's database. A shared-database
     // (legacy) session can only be stopped and reset: its entries stay until
     // dropLegacy() or Erase all. Resolves to { erased }.
     async deleteSession(id) {
@@ -358,11 +373,11 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
         return { erased: false };
       }
       const name = dbFor(id);
-      if (!lanes.has(name) && !(await dbExists(name))) return { erased: true };
+      if (!dbs.has(name) && !(await dbExists(name))) return { erased: true };
       const c = await conv(id).catch((e) => { if (/another tab/.test(e.message)) throw e; return null; });
       if (c) await c.abort(ctx).catch(() => {});
       await subagents?.stopAll(id).catch(() => {});
-      await closeLane(name);
+      await closeDb(name);
       convIds.delete(id);
       await IndexedDbStorage.delete(name);
       return { erased: true };
@@ -370,9 +385,9 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
     // Drop the shared legacy database once the index holds none of its
     // sessions (what is left in it are transcripts of deleted ones).
     async dropLegacy() {
-      if (storage || !(lanes.has(DB_NAME) || await dbExists(DB_NAME))) return false;
+      if (storage || !(dbs.has(DB_NAME) || await dbExists(DB_NAME))) return false;
       for (const [d, sid] of watchers) if (isLegacy(sid)) d();
-      await closeLane(DB_NAME);
+      await closeDb(DB_NAME);
       let release;
       try { release = await acquireLock(DB_NAME); } catch { return false; } // in use in another tab
       try { await IndexedDbStorage.delete(DB_NAME); } finally { release(); }
@@ -397,8 +412,8 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
     // notes: what the user did since the last turn (undos, edits). The model
     // reads them before the message; the transcript entry keeps only `text`.
     async send(id, text, notes = [], attachments = { files: [], images: [] }, modelId) {
-      // Fail before admitting the input, so it is not queued behind a dead lane.
-      // A Local turn needs no Sealed connection (and makes no request).
+      // Fail before admitting the input, so it is not queued behind a dead database.
+      // A Transformers.js turn needs no BayLeaf Sealed connection (and makes no request).
       const c = await conv(id);
       if (!isLocal(modelId ?? (await c.agent(ctx))?.model?.modelId) && !(await getClient())) throw new Error('Not connected to BayLeaf Sealed: sign in (or use campus access) and wait for verification.');
       const state = await c.viewState(ctx), running = !!state.value.docs['pi.live']?.run;
@@ -496,8 +511,8 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
       const o = subagents?.owner(convId);
       return o ? { sid: o.sid, child: o.id, ns: o.ns } : { sid: sidByConv.has(convId) ? sidByConv.get(convId) : null, child: null };
     },
-    // Open the lanes of these sessions, so their running children carry on.
-    async open(ids) { for (const id of ids) if (!shared(id)) await lane(dbFor(id)).catch(() => {}); },
+    // Open the databases of these sessions, so their running children carry on.
+    async open(ids) { for (const id of ids) if (!shared(id)) await openDb(dbFor(id)).catch(() => {}); },
     // One normalized view, without staying subscribed (titles, token totals).
     async snapshot(id) {
       let v = null;
@@ -507,7 +522,7 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
     async close() {
       subagents?.close();
       for (const d of [...watchers.keys()]) d();
-      await Promise.all([...lanes.keys()].map(closeLane));
+      await Promise.all([...dbs.keys()].map(closeDb));
     },
   };
 }
@@ -558,7 +573,7 @@ export function normalize(view) {
       // the next turn: an ordinary message, not one "while it worked".
       case STEER_KIND: items.push(mark({ type: 'user', ...(ended ? {} : { steer: true }), text: e.data?.text ?? textOf(msg?.content) }, e, msg)); break;
       // From another session of the scope (G4): labeled with its sender.
-      case MESSAGE_KIND: items.push(mark({ type: 'user', from: { ref: e.data?.from, name: e.data?.name }, text: e.data?.text ?? textOf(msg?.content) }, e, msg)); break;
+      case MESSAGE_KIND: items.push(mark({ type: 'user', from: { ref: asRef(e.data?.from), name: e.data?.name }, text: e.data?.text ?? textOf(msg?.content) }, e, msg)); break;
       // A file-watch event (G14): labeled with the watch that sent it.
       case WATCH_KIND: items.push(mark({ type: 'user', ...(ended || e.data?.mode !== 'steer' ? {} : { steer: true }), watch: e.data, text: (e.data?.lines ?? []).join('\n') || textOf(msg?.content) }, e, msg)); break;
       case USER_KIND: items.push(mark({ type: 'user', text: e.data?.text ?? textOf(msg?.content), attachments: e.data?.attachments ?? [] }, e, msg)); break;
@@ -584,7 +599,7 @@ export function normalize(view) {
       }
       case 'pi.compaction': items.push({ type: 'compaction', summary: e.model?.map((m) => textOf(m.content)).join('\n') ?? '' }); break;
       case 'pi.reset': items.push({ type: 'notice', text: 'Context reset.' }); break;
-      case REPORT_KIND: items.push(mark({ type: 'report', ...e.data }, e, msg ?? { timestamp: e.createdAt })); break;
+      case REPORT_KIND: items.push(mark({ type: 'report', ...e.data, ...(e.data?.ref ? { ref: asRef(e.data.ref) } : {}), ...(e.data?.byMessage ? { byMessage: relabel(e.data.byMessage) } : {}), ...(e.data?.lastSent ? { lastSent: { ...e.data.lastSent, to: relabel(e.data.lastSent.to) } } : {}) }, e, msg ?? { timestamp: e.createdAt })); break;
     }
   }
   const live = view.docs['pi.live'] ?? {};

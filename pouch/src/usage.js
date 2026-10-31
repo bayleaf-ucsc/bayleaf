@@ -1,4 +1,4 @@
-// Today's Sealed allowance (story A6). Every model step Pouch takes is one
+// Today's BayLeaf Sealed allowance (story A6). Every model step Pouch takes is one
 // Sealed request against a daily budget: each tool round, each compaction
 // summary and each automatic title. With a key the budget is the key's own;
 // under Campus Pass it is one approximate bucket shared by everyone behind
@@ -135,7 +135,7 @@ export function exhaustedText(s) {
   const when = at ? ` It resets at ${at} (your time).` : ' It resets daily.';
   return s.mode === 'campus'
     ? `This network's shared Campus Pass allowance is used up for today.${when} Signing in gives you your own allowance.`
-    : `Today's Sealed allowance for your key is used up.${when}`;
+    : `Today's BayLeaf Sealed allowance for your key is used up.${when}`;
 }
 
 // The rail's Usage icon (a small bar and the number left) and the
@@ -147,7 +147,7 @@ export function renderMeter(s, led = null) {
   const off = s.mode === 'campus' && s.offCampus;
   const out = outsideText(led);
   const label = off ? 'Off campus: Campus Pass does not work on this network. Sign in to send.' : (s.remaining == null ? 'Allowance: remaining requests unknown'
-    : `Allowance: ${s.mode === 'campus' ? 'about ' : ''}${s.remaining} of ${s.limit} Sealed requests left today${s.mode === 'campus' ? ' (shared on this network)' : ' (for this key, wherever it is used)'}`)
+    : `Allowance: ${s.mode === 'campus' ? 'about ' : ''}${s.remaining} of ${s.limit} BayLeaf Sealed requests left today${s.mode === 'campus' ? ' (shared on this network)' : ' (for this key, wherever it is used)'}`)
     + (led ? `. This browser today: ${fmt(counted(led))} sent` : '') + (out ? `. Changed outside this browser: ${out}` : '');
   for (const [id, num] of [['rail-usage', 'usage-num'], ['composer-usage', 'composer-usage-num']]) {
     const b = $(id);
@@ -180,8 +180,8 @@ export function renderPanel(host, s, rows, led = null) {
       el('div', { className: 'big' }, `${s.mode === 'campus' ? 'about ' : ''}${s.remaining}`, el('small', { textContent: ` of ${s.limit} left today` })),
       bar,
       el('p', { textContent: s.mode === 'campus'
-        ? `About ${s.remaining} Sealed requests left on this network today, shared with everyone behind the same campus network address (Campus Pass).`
-        : 'Sealed requests left today for your personal key.' }),
+        ? `About ${s.remaining} BayLeaf Sealed requests left on this network today, shared with everyone behind the same campus network address (Campus Pass).`
+        : 'BayLeaf Sealed requests left today for your personal key.' }),
     );
     const at = resetText(s.resetsAt);
     if (at) box.append(el('p', { className: 'muted', textContent: `Resets at ${at} (your time).` }));
@@ -192,7 +192,7 @@ export function renderPanel(host, s, rows, led = null) {
   out.push(el('p', { textContent: 'Each model step uses one request: every tool round in a turn, every compaction summary, and every automatic title. A turn that reads two files and then replies takes three.' }));
   if (s.standard) {
     const std = s.standard.unit === 'usd' && s.standard.remaining != null ? `$${s.standard.remaining.toFixed(2)} of $${s.standard.limit?.toFixed(2)} left` : 'separate budget';
-    out.push(el('p', { className: 'std', textContent: `Standard lane (OpenRouter): ${std}. Not used by Pouch, which sends only sealed requests.` }));
+    out.push(el('p', { className: 'std', textContent: `BayLeaf API plaintext requests (OpenRouter): ${std}. Not used by Pouch, which sends only BayLeaf Sealed requests.` }));
   }
   out.push(el('h3', { textContent: 'Today by session' }));
   const shown = rows.filter((r) => r.input || r.output || r.requests);

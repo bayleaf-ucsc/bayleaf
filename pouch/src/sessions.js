@@ -9,7 +9,7 @@ import * as store from './store.js';
 import { $, el, icon, seeded } from './dom.js';
 import { digest, suggestTitle, titleEditor } from './naming.js';
 
-const SPARK_TIP = 'Suggest a title from the conversation (uses 1 Sealed request from today\'s allowance)';
+const SPARK_TIP = 'Suggest a title from the thread (uses 1 BayLeaf Sealed request from today\'s allowance)';
 const LEGACY_TIP = 'Saved before each session had its own storage. Deleting it stops and resets it; its history is purged once no such session is left, or by Erase all.';
 // pi-durable conversation ids are numbers, but data attributes are strings,
 // and IndexedDB keys 13 and "13" differ. Match on the string form.
@@ -91,11 +91,12 @@ export function createSessions(deps) {
     const trash = el('button', { type: 'button', className: 'icon danger s-trash', ariaLabel: 'Delete ' + titleOf(s), title: 'Delete now (Shift held: no confirm)', tabIndex: -1 }, icon('trash'));
     trash.onclick = () => remove(s.id, false);
     li.append(open, more, trash);
-    // Its subagents, nested, each with a live state; a click opens its view.
+    // Its agents (the subagents; main is the session row itself), nested,
+    // each with a live state; a click opens its thread.
     const children = deps.children?.(s.id) ?? [];
     if (children.length) {
-      li.append(el('ul', { className: 's-children', ariaLabel: `Subagents of ${titleOf(s)}` }, ...children.map((c) => {
-        const b = el('button', { type: 'button', className: 's-child-open', title: `Subagent ${c.name}${c.ref ? ` (${c.ref})` : ''}: ${c.task}` },
+      li.append(el('ul', { className: 's-children', ariaLabel: `Agents in ${titleOf(s)}` }, ...children.map((c) => {
+        const b = el('button', { type: 'button', className: 's-child-open', title: `Agent ${c.name}${c.ref ? ` (${c.ref})` : ''}, a subagent of main: ${c.task}` },
           el('span', { className: 'sa-dot', ariaHidden: 'true' }),
           el('span', { className: 's-child-name', textContent: c.name }),
           // Bus messages, not chat turns (critique): "4 msgs" says to/from whom on hover.
@@ -133,7 +134,7 @@ export function createSessions(deps) {
         await deps.revoke(s.id, g.service); status(`Pouch will ask again before ${g.label} in this session.`);
       }]),
       ['Rename', () => editTitle(s, li.querySelector('.s-open'))],
-      ['Suggest a title (1 Sealed request)', () => renameAuto(s.id)],
+      ['Suggest a title (1 BayLeaf Sealed request)', () => renameAuto(s.id)],
       ['Compact now (summarize older turns)', async () => {
         status('Compacting...');
         try { await deps.agent().compact(s.id); status('Older turns summarized.'); } catch (e) { status(e.message, 'bad'); }

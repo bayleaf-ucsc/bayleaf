@@ -87,52 +87,52 @@ try {
   await page.waitForFunction(() => window.fake.requests['judge-audience']?.length >= 1 && window.fake.requests['judge-evidence']?.length >= 1, null, T);
   const mainSys = await page.evaluate(() => window.fake.requests.main.at(-1).messages[0].content);
   assert.match(mainSys, /panel: Review a draft with a panel/, 'panel skill listed in main\'s prompt');
-  assert.match(mainSys, /message each other by id[\s\S]*You are main \(s1\)/, 'graph gloss in main\'s prompt');
-  await page.waitForFunction(() => window.fake.seen('main').includes('(id s6)'), null, T);
+  assert.match(mainSys, /message each other by handle[\s\S]*You are main \(a1\)/, 'graph gloss in main\'s prompt');
+  await page.waitForFunction(() => window.fake.seen('main').includes('(handle a6)'), null, T);
   const spawnOut = await seen('main');
-  assert.match(spawnOut, /Started subagent "chair" \(id s2\)/);
-  assert.match(spawnOut, /Started subagent "judge-audience" \(id s6\)/);
+  assert.match(spawnOut, /Started subagent "chair" \(handle a2\)/);
+  assert.match(spawnOut, /Started subagent "judge-audience" \(handle a6\)/);
   const chairSys = await page.evaluate(() => window.fake.requests.chair[0].messages[0].content);
-  assert.match(chairSys, /"chair" \(id s2\)[\s\S]*"main" \(id s1\)[\s\S]*do not poll/);
-  ok('G2/G3: chair spawned first (s2), four judges (s3-s6); ids in spawn results and child prompts');
+  assert.match(chairSys, /"chair" \(handle a2\)[\s\S]*"main" \(handle a1\)[\s\S]*do not poll/);
+  ok('G2/G3: chair spawned first (a2), four judges (a3-a6); ids in spawn results and child prompts');
 
   // G6: the session panel shows the tree and states; open judge-evidence and steer it.
   if ((await page.getAttribute('#flipper', 'aria-expanded')) !== 'true') await page.click('#flipper');
   await page.waitForFunction(() => document.querySelectorAll('#session-list .s-child').length === 5, null, T);
   await sideOpen(); await page.click('#session-list .s-child .s-child-open >> text=judge-evidence');
   await page.waitForSelector('#log.child-view .sa-view-head', T);
-  assert.match(await page.textContent('.sa-view-head .sa-more .sa-meta'), /^s4 · subagent of/);
+  assert.match(await page.textContent('.sa-view-head .sa-more .sa-meta'), /^a4 · subagent of/);
   await send('Be strict about sources.');
   await page.waitForFunction(() => document.getElementById('input').value === '', null, T);
   await page.evaluate(() => { window.fake.gates.ev = true; });
   await page.waitForFunction(() => window.fake.requests['judge-evidence']?.length >= 2, null, T);
   assert.match(await page.evaluate(() => JSON.stringify(window.fake.requests['judge-evidence'][1].messages.slice(-2))), /Message from the user[\s\S]*Be strict about sources/);
-  ok('G6: five nested rows with states; the user steered judge-evidence (s4) mid-graph; its next request carried it');
+  ok('G6: five nested rows with states; the user steered judge-evidence (a4) mid-graph; its next request carried it');
 
   // G4, G5, G7: fan-in, the peer exchange, one review to main.
   await page.waitForFunction(() => /The panel suggests/.test([...document.querySelectorAll('#log .msg.assistant .body')].at(-1)?.textContent ?? '') || document.querySelector('#log.child-view'), null, T);
   await page.click('#log .sa-back').catch(() => {});
   await page.waitForFunction(() => /The panel suggests/.test([...document.querySelectorAll('#log .msg.assistant .body')].map((b) => b.textContent).join('\n')), null, { timeout: 20000 });
   const chairSeen = await seen('chair');
-  for (const [i, j] of ['argument', 'evidence', 'clarity', 'audience'].entries()) assert.ok(chairSeen.includes(`[from judge-${j} (s${i + 3})] RAW-${j}`), 'fan-in from ' + j);
-  assert.match(chairSeen, /- s4 judge-evidence: (running|finished), parent s1/);
-  assert.ok((await seen('judge-evidence')).includes('[from judge-argument (s3)] RAW-argument-peer') && (await seen('judge-argument')).includes('[from judge-evidence (s4)] RAW-evidence-peer'));
+  for (const [i, j] of ['argument', 'evidence', 'clarity', 'audience'].entries()) assert.ok(chairSeen.includes(`[from judge-${j} (a${i + 3})] RAW-${j}`), 'fan-in from ' + j);
+  assert.match(chairSeen, /- a4 judge-evidence: (running|finished), parent a1/);
+  assert.ok((await seen('judge-evidence')).includes('[from judge-argument (a3)] RAW-argument-peer') && (await seen('judge-argument')).includes('[from judge-evidence (a4)] RAW-evidence-peer'));
   const mainSeen = await seen('main');
-  assert.match(mainSeen, /\[from chair \(s2\)\] Prioritized review/);
+  assert.match(mainSeen, /\[from chair \(a2\)\] Prioritized review/);
   assert.doesNotMatch(mainSeen, /RAW-/, 'no judge raw output in main\'s requests');
-  ok('G4/G5/G7: tagged fan-in, list, s3<->s4 peer exchange, one review in main; no RAW- text in any main request');
-  await page.waitForSelector('#log .msg.user.from .msg-from >> text=from chair (s2)', T);
-  ok('G7: the chair\'s message shows in main labeled "from chair (s2)"');
+  ok('G4/G5/G7: tagged fan-in, list, a3<->a4 peer exchange, one review in main; no RAW- text in any main request');
+  await page.waitForSelector('#log .msg.user.from .msg-from >> text=from chair (a2)', T);
+  ok('G7: the chair\'s message shows in main labeled "from chair (a2)"');
 
   // G9: the chair's transcript shows incoming messages by sender; cards show edge counts.
   await page.waitForFunction(() => [...document.querySelectorAll('#session-list .s-child-state')].every((s) => s.textContent !== 'working'), null, T);
   const chairCard = page.locator('.subagent[data-child]', { has: page.locator('.sa-name', { hasText: /^chair$/ }) });
-  assert.match((await chairCard.locator('.sa-edges li').allTextContents()).join(' · '), /from main \(s1\) 1 · from judge-argument \(s3\) 2 · from judge-evidence \(s4\) 2 · from judge-clarity \(s5\) 1 · from judge-audience \(s6\) 1 · to main \(s1\) 1 · to judge-argument \(s3\) 1 · to judge-evidence \(s4\) 1/);
+  assert.match((await chairCard.locator('.sa-edges li').allTextContents()).join(' · '), /from main \(a1\) 1 · from judge-argument \(a3\) 2 · from judge-evidence \(a4\) 2 · from judge-clarity \(a5\) 1 · from judge-audience \(a6\) 1 · to main \(a1\) 1 · to judge-argument \(a3\) 1 · to judge-evidence \(a4\) 1/);
   assert.ok(await page.$('#session-list .s-child .s-child-msgs'), 'message counts on sidebar rows');
   await sideOpen(); await page.click('#session-list .s-child .s-child-open >> text=chair');
   await page.waitForSelector('#log.child-view .msg.user.from', T);
   const labels = await page.$$eval('#log.child-view .msg.user.from .sa-who', (n) => n.map((x) => x.textContent));
-  for (const want of ['from main (s1)', 'from judge-argument (s3)', 'from judge-evidence (s4)', 'from judge-clarity (s5)', 'from judge-audience (s6)']) assert.ok(labels.includes(want), `chair transcript labels ${want}: ${labels}`);
+  for (const want of ['from main (a1)', 'from judge-argument (a3)', 'from judge-evidence (a4)', 'from judge-clarity (a5)', 'from judge-audience (a6)']) assert.ok(labels.includes(want), `chair transcript labels ${want}: ${labels}`);
   await page.setViewportSize({ width: 1500, height: 900 });
   await page.locator('#log .msg.user.from').nth(1).scrollIntoViewIfNeeded();
   await page.screenshot({ path: join(shots, 'graphs-1-chair-transcript.png') });
@@ -156,12 +156,12 @@ try {
   ok('G8: main applied 1 and 3 while the user typed; the conflict bar appeared');
   await page.click('#conflict-bar button >> text=/Keep mine|Take theirs/').catch(() => {});
 
-  // Caps: a scripted ping-pong between s3 and s4 is refused at the pair cap, visibly in the tray.
-  await rule({ who: 'main', when: '/ping/.test(c.since)', reply: [['subagent', { action: 'message', to: 's3', text: 'Ping-pong with s4 until refused.' }]] });
+  // Caps: a scripted ping-pong between a3 and a4 is refused at the pair cap, visibly in the tray.
+  await rule({ who: 'main', when: '/ping/.test(c.since)', reply: [['subagent', { action: 'message', to: 'a3', text: 'Ping-pong with a4 until refused.' }]] });
   await rule({ who: 'main', when: '/woke it|Sent to/.test(c.since)', reply: 'Started the exchange.' });
   for (let i = 0; i < 9; i++) {
-    await rule({ who: 'judge-argument', when: '!/Not sent/.test(c.since)', reply: [['agents', { action: 'message', to: 's4', text: 'ping ' + i }]] });
-    await rule({ who: 'judge-evidence', when: '!/Not sent/.test(c.since)', reply: [['agents', { action: 'message', to: 's3', text: 'pong ' + i }]] });
+    await rule({ who: 'judge-argument', when: '!/Not sent/.test(c.since)', reply: [['agents', { action: 'message', to: 'a4', text: 'ping ' + i }]] });
+    await rule({ who: 'judge-evidence', when: '!/Not sent/.test(c.since)', reply: [['agents', { action: 'message', to: 'a3', text: 'pong ' + i }]] });
   }
   await rule({ who: '*', when: '/Not sent/.test(c.since)', reply: 'Stopping: limit reached.' });
   await rule({ who: '*', when: '/Not sent/.test(c.since)', reply: 'Stopping: limit reached.' });
@@ -169,7 +169,7 @@ try {
   await page.waitForSelector('#tray:not([hidden]) .tray-row[data-kind="cap"]', T);
   assert.match(await page.textContent('#tray-count'), /Message limit: [12]/);
   assert.match(await page.getAttribute('.tray-row[data-kind="cap"] .tray-text', 'title'), /exchanged 8 messages/);
-  assert.match((await seen('judge-argument')) + (await seen('judge-evidence')), /Not sent: s[34] and s[34] have exchanged 8 messages/);
+  assert.match((await seen('judge-argument')) + (await seen('judge-evidence')), /Not sent: a[34] and a[34] have exchanged 8 messages/);
   await page.waitForTimeout(300);
   while (await page.$('.tray-row[data-kind="cap"] .tray-stop')) await page.click('.tray-row[data-kind="cap"] .tray-stop');
   await page.waitForFunction(() => !document.querySelector('.tray-row[data-kind="cap"]'), null, T);
@@ -179,15 +179,15 @@ try {
   // G10: main waits on a working subagent; the user writes; the wait returns at once.
   await idle();
   await rule({ who: 'main', when: '/slow job/.test(c.since)', reply: [['subagent', { action: 'spawn', name: 'slow', task: 'A slow job.' }]] });
-  await rule({ who: 'main', when: '/Started subagent "slow" \\(id s7\\)/.test(c.since)', reply: [['subagent', { action: 'join', ids: ['s7'] }]] });
+  await rule({ who: 'main', when: '/Started subagent "slow" \\(handle a7\\)/.test(c.since)', reply: [['subagent', { action: 'join', ids: ['a7'] }]] });
   await rule({ who: 'slow', gate: 'slow', reply: [['bash', { command: 'echo working' }]] });
   await rule({ who: 'slow', gate: 'slow2', reply: 'SLOW-DONE: the slow result.' });
-  await rule({ who: 'main', when: "/detached: slow \\(s7\\) continues in the background; the user said: 'what about lunch\\?'/.test(c.since) && /what about lunch/.test(c.since)", reply: [['subagent', { action: 'message', to: 's7', text: 'Also count the parking spaces.' }]] });
-  await rule({ who: 'main', when: '/Sent to slow \\(s7\\)/.test(c.since)', reply: 'Lunch: soup. slow keeps working; I asked it to count parking too.' });
+  await rule({ who: 'main', when: "/detached: slow \\(a7\\) continues in the background; the user said: 'what about lunch\\?'/.test(c.since) && /what about lunch/.test(c.since)", reply: [['subagent', { action: 'message', to: 'a7', text: 'Also count the parking spaces.' }]] });
+  await rule({ who: 'main', when: '/Sent to slow \\(a7\\)/.test(c.since)', reply: 'Lunch: soup. slow keeps working; I asked it to count parking too.' });
   await rule({ who: 'main', when: '/SLOW-DONE/.test(c.since)', reply: 'slow finished: the slow result.' });
   await send('slow job please');
   await page.waitForSelector('.tray-row[data-kind="subagent"] .tray-bg', T);
-  assert.match(await page.textContent('.tray-row[data-kind="subagent"] .tray-origin'), /main waits on s7/);
+  assert.match(await page.textContent('.tray-row[data-kind="subagent"] .tray-origin'), /main waits on a7/);
   assert.ok(await page.locator('.tray-row[data-kind="subagent"] .tray-bg').isVisible() && (await page.locator('.tray-row[data-kind="subagent"] .tray-bg').boundingBox()).x + 40 < 620, 'Background button inside the chat column');
   // D25: with a draft, the split button's Steer (Enter, the default) says it detaches.
   await page.fill('#input', 'what about lunch?');
@@ -199,25 +199,25 @@ try {
   const dt = Date.now() - t0;
   assert.match(await page.textContent('#log'), /what about lunch\?/);
   assert.equal(await page.textContent('#session-list .s-child .s-child-open:has-text("slow") .s-child-state'), 'working', 'detaching never stops it');
-  ok(`G10: user message during a join detached it (${dt} ms); main answered; slow (s7) still working`);
+  ok(`G10: user message during a join detached it (${dt} ms); main answered; slow (a7) still working`);
 
-  // G11: main's message shows in the sub's transcript as from main (s1); its report arrives later.
+  // G11: main's message shows in the sub's transcript as from main (a1); its report arrives later.
   await sideOpen(); await page.click('#session-list .s-child .s-child-open >> text=slow');
-  await page.waitForSelector('#log.child-view .msg.user.from .sa-who >> text=from main (s1)', { timeout: 15000 }).catch(async () => {
+  await page.waitForSelector('#log.child-view .msg.user.from .sa-who >> text=from main (a1)', { timeout: 15000 }).catch(async () => {
     await page.evaluate(() => { window.fake.gates.slow = true; });
-    await page.waitForSelector('#log.child-view .msg.user.from .sa-who >> text=from main (s1)', T);
+    await page.waitForSelector('#log.child-view .msg.user.from .sa-who >> text=from main (a1)', T);
   });
   await page.evaluate(() => { window.fake.gates.slow = true; window.fake.gates.slow2 = true; });
-  assert.match(JSON.stringify(await page.evaluate(() => window.fake.requests.slow.at(-1).messages.slice(-2))), /\[from main \(s1\)\] Also count the parking/);
+  assert.match(JSON.stringify(await page.evaluate(() => window.fake.requests.slow.at(-1).messages.slice(-2))), /\[from main \(a1\)\] Also count the parking/);
   await page.click('#log .sa-back');
   await page.waitForFunction(() => /slow finished/.test([...document.querySelectorAll('#log .msg.assistant .body')].at(-1)?.textContent ?? ''), null, T);
   assert.match(await seen('main'), /SLOW-DONE/);
-  ok('G11: main messaged slow (shown "from main (s1)" in its view, in its next request); its report arrived later and started a turn: nothing lost');
+  ok('G11: main messaged slow (shown "from main (a1)" in its view, in its next request); its report arrived later and started a turn: nothing lost');
 
   // G12: a foreground spawn; the tray's Background button detaches it.
   await idle();
   await rule({ who: 'main', when: '/fg job/.test(c.since)', reply: [['subagent', { action: 'spawn', name: 'fg', task: 'A foreground job.', background: false }]] });
-  await rule({ who: 'main', when: '/detached: fg \\(s8\\) continues in the background; the user sent it to the background/.test(c.since)', reply: 'OK, fg runs in the background.' });
+  await rule({ who: 'main', when: '/detached: fg \\(a8\\) continues in the background; the user sent it to the background/.test(c.since)', reply: 'OK, fg runs in the background.' });
   await rule({ who: 'fg', gate: 'fg', reply: 'FG-DONE.' });
   await rule({ who: 'main', when: '/FG-DONE/.test(c.since)', reply: 'fg reported.' });
   await send('fg job');
@@ -235,12 +235,12 @@ try {
   const before = await page.evaluate(() => document.querySelectorAll('#session-list .session').length);
   await page.fill('#input', '/new'); await page.press('#input', 'Escape'); await page.press('#input', 'Enter');
   await page.waitForFunction((n) => document.querySelectorAll('#session-list .session').length > n || !document.querySelector('#log .subagent'), before, T);
-  await rule({ who: 'main', when: '/other scope/.test(c.since)', reply: [['subagent', { action: 'message', to: 's2', text: 'hello' }]] });
-  await rule({ who: 'main', when: '/No session/.test(c.since)', reply: 'That id is not in this session.' });
-  await send('other scope: message s2');
+  await rule({ who: 'main', when: '/other scope/.test(c.since)', reply: [['subagent', { action: 'message', to: 'a2', text: 'hello' }]] });
+  await rule({ who: 'main', when: '/No agent/.test(c.since)', reply: 'That id is not in this session.' });
+  await send('other scope: message a2');
   await page.waitForFunction(() => /not in this session/.test([...document.querySelectorAll('#log .msg.assistant .body')].at(-1)?.textContent ?? ''), null, T);
-  assert.match(await seen('main'), /No session "s2" in this scope[\s\S]*Messages never leave this scope/);
-  ok('scope: from a new session, s2 is unknown; messaging it is refused with a clear error');
+  assert.match(await seen('main'), /No agent "a2" in this session[\s\S]*Messages never leave this session/);
+  ok('scope: from a new session, a2 is unknown; messaging it is refused with a clear error');
 
   const unmatched = await page.evaluate(() => window.fake.unmatched.filter((u) => u.who === 'main'));
   assert.deepEqual(unmatched, [], 'main made no unscripted requests');

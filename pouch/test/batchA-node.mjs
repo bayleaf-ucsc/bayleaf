@@ -67,33 +67,33 @@ const JUDGES = ['argument', 'evidence', 'clarity', 'audience'];
   const sid = await agent.createSession('m');
   fake.rule({ who: 'main', when: (c) => /route/.test(c.since), reply: [['subagent', { action: 'spawn', name: 'collector', task: 'Collect findings; reply when you have two.', report: false }]] });
   fake.rule({ who: 'collector', reply: 'Waiting.' });
-  fake.rule({ who: 'main', when: (c) => /Started subagent "collector" \(id s2\)/.test(c.since), reply: [
-    ['subagent', { action: 'spawn', mode: 'oneshot', name: 'j-a', task: 'Judge A.', files: ['essay.md'], to: 's2' }],
+  fake.rule({ who: 'main', when: (c) => /Started subagent "collector" \(handle a2\)/.test(c.since), reply: [
+    ['subagent', { action: 'spawn', mode: 'oneshot', name: 'j-a', task: 'Judge A.', files: ['essay.md'], to: 'a2' }],
     ['subagent', { action: 'spawn', mode: 'oneshot', name: 'j-b', task: 'Judge B.', files: ['/work/big.md'] }],
     ['subagent', { action: 'spawn', mode: 'oneshot', name: 'j-c', task: 'Judge C.', files: ['/work/nope.md'] }],
   ] });
   fake.rule({ who: 'j-a', reply: 'ROUTED-A: thesis is clear.' });
-  fake.rule({ who: 'collector', when: (c) => /\[from j-a \(s3\)\] ROUTED-A/.test(c.since), reply: 'Got A.' });
-  fake.rule({ who: 'main', when: (c) => /Started one-shot "j-a"/.test(c.since), reply: [['subagent', { action: 'message', to: 's3', text: 'one more thing' }]] });
+  fake.rule({ who: 'collector', when: (c) => /\[from j-a \(a3\)\] ROUTED-A/.test(c.since), reply: 'Got A.' });
+  fake.rule({ who: 'main', when: (c) => /Started one-shot "j-a"/.test(c.since), reply: [['subagent', { action: 'message', to: 'a3', text: 'one more thing' }]] });
   fake.rule({ who: 'main', when: (c) => /is a one-shot: it makes one request and takes no messages/.test(c.since), reply: 'ok.' });
   await agent.send(sid, 'route test');
   await settle(sid);
   const seen = fake.seen('main');
-  ok(/Started one-shot "j-a" \(id s3\)[^]*goes to collector \(s2\)/.test(seen), 'a routed one-shot says where its reply goes');
+  ok(/Started one-shot "j-a" \(handle a3\)[^]*goes to collector \(a2\)/.test(seen), 'a routed one-shot says where its reply goes');
   ok(/big\.md is 48,001 characters, over the 48,000 limit/.test(seen) && /nope\.md could not be read \(it does not exist\)/.test(seen), 'oversized and missing files fail with a clear error, no request spent');
   ok(!fake.requests['j-b'] && !fake.requests['j-c'], 'no request for a one-shot whose files failed');
-  ok(/\[from j-a \(s3\)\] ROUTED-A/.test(fake.seen('collector')), 'the harness forwarded the one-shot reply to s2, tagged as from it');
+  ok(/\[from j-a \(a3\)\] ROUTED-A/.test(fake.seen('collector')), 'the harness forwarded the one-shot reply to a2, tagged as from it');
   ok(!/ROUTED-A/.test(seen), 'a routed reply never entered main\'s context');
-  ok(/s3\) is a one-shot: it makes one request and takes no messages/.test(seen), 'messaging a one-shot is refused');
+  ok(/a3\) is a one-shot: it makes one request and takes no messages/.test(seen), 'messaging a one-shot is refused');
   ok((fake.requests['j-a'] ?? []).length === 1, 'the one-shot made exactly one request');
 
   // Fix 2: joining j-a (quiet, its reply went by message) names where it went.
-  fake.rule({ who: 'main', when: (c) => /join a/.test(c.since), reply: [['subagent', { action: 'join', ids: ['s3'] }]] });
+  fake.rule({ who: 'main', when: (c) => /join a/.test(c.since), reply: [['subagent', { action: 'join', ids: ['a3'] }]] });
   fake.rule({ who: 'main', when: (c) => /Joined:/.test(c.since), reply: 'joined.' });
   await agent.send(sid, 'join a');
   await settle(sid);
   const jr = fake.requests.main.at(-1).messages.at(-1).content;
-  ok(/j-a \(s3\) quiet, cached \d+s, sent its findings to collector \(s2\)/.test(JSON.stringify(jr)) && /"sent_preview":"ROUTED-A/.test(JSON.stringify(jr).replaceAll('\\"', '"')), 'join of a child that sent its findings by message names the recipient and a preview');
+  ok(/j-a \(a3\) quiet, cached \d+s, sent its findings to collector \(a2\)/.test(JSON.stringify(jr)) && /"sent_preview":"ROUTED-A/.test(JSON.stringify(jr).replaceAll('\\"', '"')), 'join of a child that sent its findings by message names the recipient and a preview');
 }
 
 // Fix 6: Stop aborts a request in flight, for main and for subagents.

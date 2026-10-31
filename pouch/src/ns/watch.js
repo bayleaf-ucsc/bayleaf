@@ -10,9 +10,9 @@
 //   namespace are not reported (seeding /pouch defaults at boot). A seed
 //   layer stacked or removed by the user is reported by a rescan ('seed').
 // - createWatches(deps): the registry. Each watch belongs to one session and
-//   one owner in it (main s1 or a subagent), persists, and turns matching
+//   one owner in it (main a1 or a subagent), persists, and turns matching
 //   writes into one-line events. Delivery batches by itself: events wait while
-//   the user has a message queued, join a busy owner's next step, and wake an
+//   the user has a follow-up waiting, join a busy owner's next step, and wake an
 //   idle one, at most MAX_WAKES times per watch between user messages; after
 //   that they are held for the tray. A short settle (SETTLE_MS of quiet)
 //   makes a burst one delivery: the journeys measured that without it a
@@ -21,6 +21,7 @@
 //
 // Events never carry file content: path, who, and a compact change summary.
 import { normalize, within } from './namespace.js';
+import { MAIN, asRef } from '../graph.js';
 
 export const MAX_WAKES = 3;
 // A burst of changes becomes one delivery once quiet this long (at most SETTLE_MAX_MS).
@@ -184,7 +185,7 @@ export function attribute(fs, source, sink) {
 //   load(sid) / save(sid, l) persistence per session
 //   sessions()               session ids that may have watches (boot)
 //   scopeOf(sid, owner)      mount specs an owner may see, or null for all
-//   userQueued(sid)          the user has a message held for main (queued, not sent)
+//   followUpHeld(sid)        the user has a follow-up held for main (not sent)
 //   userSending(sid)         the user's message is on its way in (Enter pressed,
 //                            not yet admitted): a wake waits for it, a steer need not
 //   busy(sid, owner)         that owner is in a model run
@@ -213,7 +214,7 @@ export function createWatches(deps) {
     if (loaded.has(String(sid))) return;
     loaded.add(String(sid));
     for (const w of (await deps.load(String(sid))) ?? []) {
-      byId.set(w.id, { ...w, held: w.held ?? [], files: w.files ?? {} });
+      byId.set(w.id, { ...w, owner: asRef(w.owner), held: w.held ?? [], files: w.files ?? {} }); // s-handles from older builds read as a-handles
       next = Math.max(next, Number(w.id.slice(1)) + 1);
     }
   }
@@ -311,8 +312,8 @@ export function createWatches(deps) {
     try {
       await deps.ready;
       for (;;) {
-        // User-first: a queued user message goes before any watch event.
-        while (deps.userQueued(sid)) await sleep(150);
+        // User-first: the user's follow-up goes before any watch event.
+        while (deps.followUpHeld(sid)) await sleep(150);
         // Let a burst settle (a multi-file drop, saves in quick succession):
         // deliver once nothing new arrived for SETTLE_MS, so it is one wake.
         for (let n = -1, t0 = Date.now(); (outbox.get(sid)?.length ?? 0) !== n && Date.now() - t0 < SETTLE_MAX_MS;) { n = outbox.get(sid)?.length ?? 0; await sleep(settleMs); }
@@ -334,7 +335,7 @@ export function createWatches(deps) {
     const k = `${sid}:${owner}`;
     let busy = waking.has(k) || await deps.busy(sid, owner);
     // The user's own message is being admitted: let it start its turn first.
-    while (!busy && owner === 's1' && deps.userSending?.(sid)) { await sleep(100); busy = await deps.busy(sid, owner); }
+    while (!busy && owner === MAIN && deps.userSending?.(sid)) { await sleep(100); busy = await deps.busy(sid, owner); }
     const send = [];
     for (const e of evs) {
       const w = byId.get(e.watch);
@@ -414,10 +415,10 @@ export function formatEvents(events, watches) {
 // A small tool of its own rather than actions on `subagent`: watching is not
 // about subagents, main and subagents share one schema, and the subagent
 // tool's description stays as long as it is. callerOf(caller) gives
-// { sid, owner, ownerName } (owner: "s1" for main, "s3" for a subagent).
+// { sid, owner, ownerName } (owner: "a1" for main, "a3" for a subagent).
 export const WATCH_GLOSS = 'The watch tool tells you when files change. Instead of asking the user to tell you when they are done editing or adding files, watch those files, say in one line that you are watching, and end your turn: the change arrives as a message. Unwatch when the user does not want follow-ups.';
 export function watchTool({ Type, watches, callerOf }) {
-  const line = (w) => `- ${w.id} ${w.paths.join(', ')}: changes by ${w.by === 'user' ? 'the user' : w.by === 'agent' ? 'agents and scripts' : 'anyone'}${w.once ? ', once' : ''}${w.note ? `; note: ${w.note}` : ''}${w.owner !== 's1' ? ` (owner ${w.ownerName} ${w.owner})` : ''}${w.held.length ? `; ${w.held.length} change(s) held in the user's tray` : ''}`;
+  const line = (w) => `- ${w.id} ${w.paths.join(', ')}: changes by ${w.by === 'user' ? 'the user' : w.by === 'agent' ? 'agents and scripts' : 'anyone'}${w.once ? ', once' : ''}${w.note ? `; note: ${w.note}` : ''}${w.owner !== MAIN ? ` (owner ${w.ownerName} ${w.owner})` : ''}${w.held.length ? `; ${w.held.length} change(s) held in the user's tray` : ''}`;
   return {
     name: 'watch', label: 'Watch',
     description: 'Get told when files change, instead of asking the user to tell you. action "watch" registers paths (files, folders, or globs like /work/data/*.csv; only what you can see) and returns a watch id. A change arrives as a message between your steps, or starts a turn if you are idle (one request), e.g. "[from files] essay.md changed by you: lines 12-18 (+4 -2)": never the content, read the file if you need it. ' +
@@ -433,12 +434,12 @@ export function watchTool({ Type, watches, callerOf }) {
     async execute(args, { caller } = {}) {
       const who = await callerOf(caller);
       if (args.action === 'list') {
-        const l = watches.list(who.sid).filter((w) => who.owner === 's1' || w.owner === who.owner);
+        const l = watches.list(who.sid).filter((w) => who.owner === MAIN || w.owner === who.owner);
         return l.length ? l.map(line).join('\n') : 'No watches.';
       }
       if (args.action === 'unwatch') {
         const w = watches.get(String(args.id ?? '').trim());
-        if (!w || String(w.sid) !== String(who.sid) || (who.owner !== 's1' && w.owner !== who.owner)) throw new Error(`No watch "${args.id}" of yours. ${watches.list(who.sid).length ? 'list shows them.' : 'There are none.'}`);
+        if (!w || String(w.sid) !== String(who.sid) || (who.owner !== MAIN && w.owner !== who.owner)) throw new Error(`No watch "${args.id}" of yours. ${watches.list(who.sid).length ? 'list shows them.' : 'There are none.'}`);
         watches.remove(w.id);
         return `Stopped watching ${w.paths.join(', ')} (${w.id}).`;
       }

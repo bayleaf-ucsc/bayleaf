@@ -130,7 +130,7 @@ try {
   }
   assert.deepEqual(hues.map((x) => x.seed), ['2', '3', '4', '5', '6'], 'seed = spawn order');
   assert.equal(new Set(hues.map((x) => x.card)).size, 5, 'five distinct colors');
-  ok(`G4-G6 identity: seeds = spawn order (s2-s6), five distinct hues, each the same on card edge, sidebar dot and tray row (${hues.map((x) => x.name + ' ' + x.card).join('; ')})`);
+  ok(`G4-G6 identity: seeds = spawn order (a2-a6), five distinct hues, each the same on card edge, sidebar dot and tray row (${hues.map((x) => x.name + ' ' + x.card).join('; ')})`);
 
   // Contrast: seeds 1-12, both themes; text 4.5:1 on bg, surface, side and the tint; dots 3:1.
   const contrast = async (theme) => page.evaluate((theme) => {
@@ -172,14 +172,14 @@ try {
 
   // Pills in words (critique 9) and the join summary in color.
   const pills = await page.$$eval('#log details.tool > summary .what', (n) => n.map((x) => x.textContent));
-  assert.ok(pills.some((p) => /^subagent: message -> chair \(s2\): "Judges: s3/.test(p)), 'message pill: ' + pills.join(' | '));
+  assert.ok(pills.some((p) => /^subagent: message -> chair \(a2\): "Judges: a3/.test(p)), 'message pill: ' + pills.join(' | '));
   assert.ok(!pills.some((p) => /\{"action"/.test(p)), 'no raw JSON pills');
-  // The chair's own compact transcript: join s3-s6.
+  // The chair's own compact transcript: join a3-a6.
   await page.click('#log .subagent[data-child] .sa-log > summary');
   await page.waitForSelector('#log .subagent .sa-items', T);
   const chairLines = await page.$$eval('#log .subagent .sa-items .sa-line', (n) => n.map((x) => x.textContent));
-  assert.ok(chairLines.some((l) => /agents: join s3-s6/.test(l)), 'join pill: ' + chairLines.join(' | '));
-  assert.ok(chairLines.some((l) => /agents: message -> main \(s1\): "Prioritized/.test(l)), 'message to main pill');
+  assert.ok(chairLines.some((l) => /agents: join a3-a6/.test(l)), 'join pill: ' + chairLines.join(' | '));
+  assert.ok(chairLines.some((l) => /agents: message -> main \(a1\): "Prioritized/.test(l)), 'message to main pill');
   ok(`agent pills read as words: "${pills.find((p) => /message ->/.test(p)).slice(0, 60)}...", "${chairLines.find((l) => /join/.test(l))}"`);
 
   // Expanded card: its own tinted scroll box with a sticky Collapse bar (critique 5).
@@ -200,7 +200,7 @@ try {
   await page.waitForSelector('#log.child-view .sa-view-head', T);
   const tags = await page.evaluate(() => [...document.querySelectorAll('#log .msg-from')].map((t) => ({ t: t.textContent, seed: t.style.getPropertyValue('--seed'), color: getComputedStyle(t).color })));
   const cardOf = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#session-list .s-child')].map((r) => [r.querySelector('.s-child-name').textContent, getComputedStyle(r.querySelector('.sa-dot')).backgroundColor])));
-  const ev = tags.find((x) => /judge-evidence \(s4\)/.test(x.t));
+  const ev = tags.find((x) => /judge-evidence \(a4\)/.test(x.t));
   assert.ok(ev && ev.seed === '4' && ev.color === cardOf['judge-evidence'], 'tag tinted like its agent: ' + JSON.stringify({ ev, cardOf }));
   await page.evaluate(() => { const l = document.getElementById('log'); l.scrollTop = 0; });
   await page.waitForTimeout(50);

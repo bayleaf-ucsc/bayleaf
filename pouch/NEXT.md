@@ -2,7 +2,7 @@
 
 Working state: worktree `~/Desktop/bayleaf-pouch`, branch `pouch`, checkpoint commit
 `727983c` (local only, not pushed). Everything after that checkpoint is uncommitted:
-`run` tool, offline handling, composer card, Local lane with weights built into `dist/`.
+`run` tool, offline handling, composer card, Transformers.js provider with weights built into `dist/`.
 Read `README.md`, `JOURNEYS.md` (story map; the source of truth for scope) and
 `DEPLOYMENT.md` first. Journey test scripts and the AX/UX/joint/speech reports were moved out of `/tmp` into
 `test/journeys/` (uncommitted; scripts still use `/tmp/pouch-qa/...` profile dirs, and the
@@ -26,7 +26,7 @@ Items 1 and 2 were built in Batch B (2026-10-30, uncommitted); see JOURNEYS (D12
 3. **Qualification rework** (journeys are getting slow with local inference):
    - Tiers: T0 node units (seconds, every change); T1 browser journeys on scripted or
      replayed model output (minutes, parallel, default gate, no quota, no GPU);
-     T2 live Sealed smoke (before deploy, <= 10 requests); T3 Local-model agent tasks
+     T2 live Sealed smoke (before deploy, <= 10 requests); T3 Transformers.js agent tasks
      (serial on one GPU worker, only when model/runtime/prompt/tools change).
    - Record/replay: T2/T3 record model turns as cassettes keyed by prompt + tool-schema
      hash; T1 replays them; hash mismatch fails loudly.
@@ -59,7 +59,7 @@ whiteouts, `/task` files, 9P2000 at the `run` and subagent boundaries. See READM
   `serve(port, seedFs)`.
 - Drop-change-review (item 1 above) would remove the recording proxy; the 9P
   commit hook still gives per-path serialization.
-- Local lane and /task: probe once with LFM3 before naming /task in its prompt.
+- Transformers.js and /task: probe once with LFM3 before naming /task in its prompt.
 - Bundled seed archives (course starter code) are the same `vfs.stack(name, bytes)`
   call; none ship today.
 
@@ -73,12 +73,12 @@ whiteouts, `/task` files, 9P2000 at the `run` and subagent boundaries. See READM
 - **Test key**: a separate key at `~/.tokens/bayleaf-api-test` so tests stop spending
   the personal Sealed allowance.
 
-## Queued (lower priority)
+## Later (lower priority)
 
 - A9: boot capability check for unusual devices (simulate by deleting APIs in
   `addInitScript`); Cast receiver display mode is a gap note only.
 - Large-file steering: prompt the agent to use `run` rather than `read` on big data.
-- Known gaps: t10a not rerun after the Local lane; Firefox/Safari untested; storage
+- Known gaps: t10a not rerun after the Transformers.js provider; Firefox/Safari untested; storage
   persistence not requested for model cache; subagents not aborted on network loss.
 - Speech I/O: abandoned for now. Survey in `test/journeys/reports/speech-cactus-survey.md`:
   Whistle (17 MB, WASM CPU, closed engine source) or Moonshine (MIT) for STT; device

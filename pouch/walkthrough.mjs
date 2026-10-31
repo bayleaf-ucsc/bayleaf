@@ -6,7 +6,7 @@
 // Scenes live in walkthrough/scenes.mjs: story IDs, a scripted fake model,
 // Playwright steps and named, cropped shots. The page is the real app bundled
 // with the scripted fake in test/graph-fixture.js in place of Tinfoil (and a
-// scripted stand-in for the Local lane's WebGPU engine): every network request
+// scripted stand-in for the Transformers.js provider's WebGPU engine): every network request
 // is answered locally or aborted, so no Sealed request is ever made.
 //
 // Determinism: fixed viewport, deviceScaleFactor 2, light theme, reduced

@@ -14,8 +14,8 @@ the same operator identifies bytes but is not independent evidence of their prov
   `run_worker_first: false`, observability disabled, workers.dev and preview URLs disabled.
 - Only `pouch.html`, `SHA256SUMS`, the app shell (`sw.js`, `manifest.webmanifest`,
   `icons/*.png`), static `_headers`/`_redirects` configuration and,
-  for a `--with-models` build, the Local lane's `models/<id>/` files listed in
-  `SHA256SUMS` enter the allowlisted upload (see "Local lane artifact" below). `/` rewrites internally to `/pouch.html` (200).
+  for a `--with-models` build, the Transformers.js provider's `models/<id>/` files listed in
+  `SHA256SUMS` enter the allowlisted upload (see "Transformers.js artifact" below). `/` rewrites internally to `/pouch.html` (200).
   Unmatched paths return 404 rather than exposing source or SPA fallback.
 - The host may process/retain request metadata, including IP addresses, paths,
   timestamps and security events. No claim that static hosting proves API/model
@@ -24,7 +24,7 @@ the same operator identifies bytes but is not independent evidence of their prov
   BayLeaf API/Tinfoil encrypted path. The `bayleaf` tool's approved non-inference
   egress is a separate plaintext boundary, as described in the README.
 - CSP is the built page's exact hash-based script policy, with only
-  `connect-src 'self' https://api.bayleaf.dev` (`'self'` since the Local lane: model files); the response additionally denies framing and
+  `connect-src 'self' https://api.bayleaf.dev` (`'self'` since the Transformers.js provider: model files); the response additionally denies framing and
   objects. `no-store, no-transform`, no-referrer, nosniff, HSTS, noindex and restrictive
   camera/microphone/geolocation policy are static response headers.
 - Cloudflare initially injected NEL network-error-reporting headers. Removing them
@@ -34,7 +34,7 @@ the same operator identifies bytes but is not independent evidence of their prov
   settings were changed. No platform script injection was observed: served bytes
   match the local artifact exactly.
 
-## Local lane artifact (built and tested locally, not deployed)
+## Transformers.js artifact (built and tested locally, not deployed; called the "Local lane" before 2026-10-31)
 
 `node build.mjs --with-models` adds `dist/models/lfm3-1.7b-q4f16/`; the default build
 stays models-free and unchanged. Shape of the tested build (2026-10-29):
@@ -64,7 +64,7 @@ rules and comma-joins a repeated header): `/`, `/pouch.html`, `/SHA256SUMS` stay
 
 Privacy: the static host (Cloudflare, the same operator and service that already serve
 the page) sees that a client downloaded the model files: request metadata such as IP
-address, paths and timestamps. No prompt, file or reply goes anywhere in the Local lane;
+address, paths and timestamps. No prompt, file or reply goes anywhere with Transformers.js;
 there is no new operator, endpoint or Worker script. The page asks before downloading.
 Pouch fetches only from its own origin, never from Hugging Face or a CDN at run time.
 

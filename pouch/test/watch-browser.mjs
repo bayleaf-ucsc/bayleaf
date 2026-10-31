@@ -101,7 +101,7 @@ try {
   assert.match(await page.evaluate(() => window.fake.requests.main.at(-1).messages[0].content), /The watch tool tells you when files change\. Instead of asking the user/);
   ok('the watch tool is offered to main; the prompt carries the watch gloss');
 
-  // ── G8 context: a panel review first (chair s2, judges s3-s6) ──
+  // ── G8 context: a panel review first (chair a2, judges a3-a6) ──
   await page.evaluate(() => window.panelRules(window.fake));
   await send('review this draft with the panel');
   await replyIs(/The panel suggests/);
@@ -147,22 +147,22 @@ try {
   await page.screenshot({ path: join(shots, 'watch-woken-turn.png') });
   ok(`G14: an editor save woke main with "${evLine}"; the turn is labeled "Woken by watch w1: offer to re-run the panel"`);
 
-  await rule({ who: 'main', when: '/whole panel/.test(c.since)', reply: [['subagent', { action: 'message', to: 's2', text: 'ROUND2: the user revised essay.md. Ask each judge (s3-s6) to re-judge, join them, then send me the new review.' }]] });
-  await rule({ who: 'main', when: '/Sent to chair \\(s2\\)|woke it/.test(c.since)', reply: [['subagent', { action: 'join', ids: ['s2'] }]] });
+  await rule({ who: 'main', when: '/whole panel/.test(c.since)', reply: [['subagent', { action: 'message', to: 'a2', text: 'ROUND2: the user revised essay.md. Ask each judge (a3-a6) to re-judge, join them, then send me the new review.' }]] });
+  await rule({ who: 'main', when: '/Sent to chair \\(a2\\)|woke it/.test(c.since)', reply: [['subagent', { action: 'join', ids: ['a2'] }]] });
   await rule({ who: 'main', when: '/Second review/.test(c.since)', reply: 'Second review: the new ending works; the 40% claim still needs a source.' });
   await page.evaluate(() => {
     const f = window.fake, J = ['argument', 'evidence', 'clarity', 'audience'];
-    f.rules.unshift({ who: 'chair', when: (c) => c.since.includes('[from main (s1)] ROUND2'), reply: J.map((j, i) => ['agents', { action: 'message', to: `s${i + 3}`, text: `ROUND2: re-judge the ${j} of the revised essay; just reply with your finding.` }]) });
-    f.rules.unshift({ who: 'chair', when: (c) => /woke it/.test(c.since) && c.all.includes('ROUND2'), reply: [['agents', { action: 'join', ids: ['s3', 's4', 's5', 's6'] }]] });
-    f.rules.unshift({ who: 'chair', when: (c) => /Joined:|quiet/.test(c.since) && c.all.includes('ROUND2'), reply: [['agents', { action: 'message', to: 's1', text: 'Second review: the new ending works; the 40% claim still needs a source.' }]] });
+    f.rules.unshift({ who: 'chair', when: (c) => c.since.includes('[from main (a1)] ROUND2'), reply: J.map((j, i) => ['agents', { action: 'message', to: `a${i + 3}`, text: `ROUND2: re-judge the ${j} of the revised essay; just reply with your finding.` }]) });
+    f.rules.unshift({ who: 'chair', when: (c) => /woke it/.test(c.since) && c.all.includes('ROUND2'), reply: [['agents', { action: 'join', ids: ['a3', 'a4', 'a5', 'a6'] }]] });
+    f.rules.unshift({ who: 'chair', when: (c) => /Joined:|quiet/.test(c.since) && c.all.includes('ROUND2'), reply: [['agents', { action: 'message', to: 'a1', text: 'Second review: the new ending works; the 40% claim still needs a source.' }]] });
     f.rules.unshift({ who: 'chair', when: (c) => /Sent to main/.test(c.since) && c.all.includes('ROUND2'), reply: 'Sent the second review.' });
-    for (const j of J) f.rules.unshift({ who: `judge-${j}`, when: (c) => c.since.includes('[from chair (s2)] ROUND2'), reply: `ROUND2-${j}: fine.` });
+    for (const j of J) f.rules.unshift({ who: `judge-${j}`, when: (c) => c.since.includes('[from chair (a2)] ROUND2'), reply: `ROUND2-${j}: fine.` });
   });
   await send('the whole panel please');
   await replyIs(/Second review: the new ending works/);
   await idle();
   const chairAll = (await reqs('chair')).at(-1);
-  assert.match(chairAll, /\[from main \(s1\)\] Judges: s3 argument[\s\S]*RAW-evidence/, 'the chair kept its first-round context');
+  assert.match(chairAll, /\[from main \(a1\)\] Judges: a3 argument[\s\S]*RAW-evidence/, 'the chair kept its first-round context');
   assert.match(chairAll, /ROUND2-evidence: fine/);
   assert.equal(await page.evaluate(() => document.querySelectorAll('#session-list .s-child').length), 5, 'no new subagents');
   ok('G14: the re-run reused the idle chair and judges by message + join (the chair kept its first-round context; still 5 subagents)');
@@ -194,7 +194,7 @@ try {
   await page.waitForFunction(() => window.fake.requests.main.at(-1).messages.at(-1).content.includes('second long task'), null, T);
   await page.fill('#input', 'QUEUED-MSG what about the title?');
   await page.press('#input', 'Alt+Enter');
-  await page.waitForSelector('.tray-row[data-kind="queued"]', T);
+  await page.waitForSelector('.tray-row[data-kind="followup"]', T);
   await editAndSave('\nEdit while a message is queued.');
   await page.waitForTimeout(300);
   await page.evaluate(() => { window.fake.gates.busy2 = true; });

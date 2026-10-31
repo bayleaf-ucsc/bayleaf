@@ -66,7 +66,9 @@ export function createEgress(deps = {}) {
       // A subagent's request says so: it runs unattended, so name who asks.
       $('egress-h').textContent = agentName ? `Subagent "${agentName}" wants to send this outside the pouch` : 'Send this outside the pouch?';
       $('egress-summary').textContent = req.summary ?? req.command;
-      $('egress-meta').textContent = `${req.command} · ${agentName ? `subagent ${agentName} · ` : ''}session: ${title}`;
+      // Outside its session's view an agent is named with the session title first
+      // (LANGUAGE.md "Handles"): "Essay review › judge-evidence".
+      $('egress-meta').textContent = `${req.command} · ${agentName ? `${title} › ${agentName} (subagent)` : `session: ${title}`}`;
       $('egress-detail').textContent = req.detail ?? '';
       $('egress-audiences').replaceChildren(...(req.audiences ?? []).map((a) => el('li', { textContent: a })));
       $('egress-session').textContent = `Allow ${serviceName(req.service)} for this session`;

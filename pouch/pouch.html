@@ -8,15 +8,17 @@
        origin-private file system), or in folders you explicitly hand it.
     2. Every inference body is encrypted in this page, by the vendored Tinfoil
        SDK, to a hardware-attested enclave key. BayLeaf relays ciphertext.
-       The optional Local lane sends no inference at all: its model runs here.
+       The optional Transformers.js provider sends no inference at all: its
+       model runs here, in this browser.
     3. The Content-Security-Policy below lets this page talk to api.bayleaf.dev
-       and its own origin ('self': only to download the optional Local model's
+       and its own origin ('self': only to download the optional Transformers.js model's
        hash-checked parts), and run exactly the scripts whose hashes it names.
     4. You run a copy whose SHA-256 you can compare with a public release, so the
        operator cannot quietly change the code after you check it.
 
   Point 4 is the one that matters most and the one software cannot enforce.
-  See README.md for the stance and its limits.
+  Trust roots: BayLeaf, your browser, and your own machine; every provider
+  sits under one of them. See README.md for the stance and its limits.
 
   Edit this file and src/, not dist/pouch.html: build.mjs bundles src/main.js
   where the APP marker sits and stamps the CSP script hashes.
@@ -366,12 +368,12 @@
   #composer-usage { width: auto !important; padding: 0 .45rem; gap: .25rem; display: inline-flex; align-items: center; }
   #composer-usage .num { font-size: .78rem; font-variant-numeric: tabular-nums; }
   #composer-usage.low { color: var(--warn); }
-  .lane-model { margin-left: auto; display: flex; align-items: center; gap: .1rem; min-width: 0; padding-left: .35rem; color: var(--muted); }
-  .lane-model .i { width: 15px; height: 15px; }
+  .provider-model { margin-left: auto; display: flex; align-items: center; gap: .1rem; min-width: 0; padding-left: .35rem; color: var(--muted); }
+  .provider-model .i { width: 15px; height: 15px; }
   #composer-toolbar #model { min-width: 0; max-width: 15rem; min-height: 2.75rem; }
   #send { flex: none; display: grid; place-items: center; width: 2.75rem; height: 2.75rem; min-height: 0; padding: 0; margin-left: .2rem; border-radius: 50%; }
-  #send.queue { background: var(--surface); color: var(--leaf); border-color: var(--leaf); }
-  /* While Pouch works and the draft is not empty: Steer or Queue, a split
+  #send.followup { background: var(--surface); color: var(--leaf); border-color: var(--leaf); }
+  /* While Pouch works and the draft is not empty: Steer or Follow-up, a split
      button next to Stop (JOURNEYS D25). Both parts are 44px targets. */
   .split { position: relative; flex: none; display: flex; margin-left: .2rem; }
   .split > button { min-height: 2.75rem; height: 2.75rem; border: 1px solid var(--leaf); background: var(--surface); color: var(--leaf); }
@@ -387,7 +389,7 @@
   #sendmode-menu .sm-note { color: var(--warn); font-size: .78rem; }
   #sendmode-menu .sm-link { color: var(--leaf); font-size: .85rem; }
   .tray-row[data-kind="steer"] .tray-origin, .tray-row[data-kind="steer"] svg { color: var(--leaf); }
-  .tray-row[data-kind="queued"].paused .tray-origin { color: var(--warn); }
+  .tray-row[data-kind="followup"].paused .tray-origin { color: var(--warn); }
   /* Activity tray: what is running or waiting, above the input. */
   #tray { background: var(--bg); border-bottom: 1px solid var(--line); border-radius: 15px 15px 0 0; font-size: .85rem; color: var(--muted); }
   .tray-head { display: flex; align-items: center; gap: .5rem; padding: .1rem .45rem .1rem .85rem; min-height: 2.5rem; }
@@ -426,7 +428,7 @@
   #shield-pop { left: .4rem; bottom: 3.4rem; width: min(22rem, calc(100% - .8rem)); padding: .7rem .85rem; font-size: .85rem; }
   #shield-pop p { margin: 0 0 .4rem; }
   #shield-pop h3 { font-size: .8rem; margin: .6rem 0 .25rem; color: var(--muted); font-weight: 600; }
-  .pop-lane { display: flex; align-items: center; gap: .4rem; color: var(--leaf); }
+  .pop-provider { display: flex; align-items: center; gap: .4rem; color: var(--leaf); }
   .pop-grants { list-style: none; margin: 0 0 .5rem; padding: 0; }
   .pop-grants li { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 2.25rem; }
   #composer.drop { outline: 2px dashed var(--leaf); background: var(--leaf-soft); }
@@ -546,7 +548,7 @@
     #composer-usage { min-width: 2.75rem; }
     #tray-toggle, button.tray-stop, button.tray-bg, button.tray-text { min-height: 2.75rem; min-width: 2.75rem; }
     .tray-row { min-height: 2.75rem; }
-    .tray-row[data-kind="queued"], .tray-row[data-kind="steer"] { flex-wrap: wrap; column-gap: .35rem; }
+    .tray-row[data-kind="followup"], .tray-row[data-kind="steer"] { flex-wrap: wrap; column-gap: .35rem; }
     #sendmode-main svg { display: none; }
     .ac-opt { min-height: 2.75rem; align-items: center; }
     .pop-grants li { min-height: 2.75rem; }
@@ -589,12 +591,12 @@
     #editor .cm-chunkButtons button { min-height: 44px; }
   }
   /* ── Continuity: color carries identity, motion carries continuity (README) ──
-     JS sets one number per agent (--seed: its spawn order, s3 -> 3) and
+     JS sets one number per agent (--seed: its spawn order, a3 -> 3) and
      nothing else; the hue, tint and theme lightness live here. Labels always
      say the same thing in words. Contrast is tested (test/batchB-browser.mjs):
      text uses 4.5:1, dots and edges 3:1, first 12 seeds, both themes. */
-  :root { --agent-l: 48%; --agent-c: 0.13; --watch: #7a3e9d; --lane-sealed: var(--leaf); --lane-local: #2c5d8f; }
-  :root[data-theme="dark"] { --agent-l: 76%; --agent-c: 0.11; --watch: #d6b0ef; --lane-local: #9cc3ee; }
+  :root { --agent-l: 48%; --agent-c: 0.13; --watch: #7a3e9d; --provider-sealed: var(--leaf); --provider-tjs: #2c5d8f; }
+  :root[data-theme="dark"] { --agent-l: 76%; --agent-c: 0.11; --watch: #d6b0ef; --provider-tjs: #9cc3ee; }
   [style*="--seed"], .main-agent {
     --hue: calc(var(--seed) * 137.508deg);
     --agent: oklch(var(--agent-l) var(--agent-c) var(--hue));
@@ -617,8 +619,8 @@
   .sa-edge .n { font-weight: 600; color: var(--ink); }
   .sa-edges-k { color: var(--muted); }
   .watch-from, .msg .sa-who.watch-from { color: var(--watch); }
-  .lane-model { color: var(--lane-sealed); } .lane-model.lane-local { color: var(--lane-local); }
-  #shield-btn.ok.lane-local { color: var(--lane-local); }
+  .provider-model { color: var(--provider-sealed); } .provider-model.provider-tjs { color: var(--provider-tjs); }
+  #shield-btn.ok.provider-tjs { color: var(--provider-tjs); }
   .build-swatch { display: inline-block; width: .8rem; height: .8rem; border-radius: 3px; margin-right: .35rem; vertical-align: -.1rem;
     --agent: oklch(var(--agent-l) 0.15 var(--hue)); background: var(--agent); border: 1px solid var(--line); }
   .swatches:empty { display: none; }
@@ -652,7 +654,7 @@
   @media (pointer: fine) { .sa-bar button { min-height: 2rem; padding-block: 0; } }
   .sa-bar .sa-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sa-bar .sa-meta { white-space: nowrap; }
-  /* Breadcrumbs: <session> > <subagent> (Batch D). The session crumb pops out. */
+  /* Breadcrumbs: <session> > <agent> (Batch D). The session crumb pops out. */
   .sa-crumbs { flex: 1 1 auto; min-width: 0; }
   .sa-crumbs ol { display: flex; align-items: center; gap: .3rem; list-style: none; margin: 0; padding: 0; min-width: 0; }
   .sa-crumbs li { display: flex; align-items: center; gap: .35rem; min-width: 0; }
@@ -731,7 +733,7 @@
   <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/></symbol>
   <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
-  <!-- More Lucide (ISC): composer tray, lane and footer. -->
+  <!-- More Lucide (ISC): composer tray, provider and footer. -->
   <symbol id="i-plus-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></symbol>
   <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></symbol>
   <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></symbol>
@@ -748,7 +750,7 @@
       <button id="side-close" class="icon" type="button" aria-label="Close sessions" title="Close sessions"><svg class="i"><use href="#i-x"/></svg></button>
     </div>
     <button id="new" type="button"><svg class="i"><use href="#i-new"/></svg>New session</button>
-    <ul id="session-list" aria-label="Sessions"></ul>
+    <ul id="session-list" aria-label="Sessions and their agents"></ul>
     <div class="handle" id="side-handle" role="separator" aria-orientation="vertical" aria-label="Resize sessions" title="Drag to resize; double-click to reset" tabindex="0"></div>
   </aside>
   <div id="backdrop" hidden></div>
@@ -786,7 +788,7 @@
     <button id="below" type="button" hidden>New reply below</button>
     <form id="composer">
       <div id="ac" role="listbox" hidden></div>
-      <div id="shield-pop" role="dialog" aria-label="This session's lane and permissions" hidden></div>
+      <div id="shield-pop" role="dialog" aria-label="This session's provider and permissions" hidden></div>
       <section id="tray" aria-label="Activity" hidden>
         <div class="tray-head">
           <svg class="i" aria-hidden="true"><use href="#i-terminal"/></svg>
@@ -801,15 +803,15 @@
       <p id="attachment-warning" role="status" hidden></p>
       <div id="composer-toolbar">
         <button id="attach-file" class="icon" type="button" aria-label="Attach files" title="Attach files (or drop here)"><svg class="i"><use href="#i-plus-circle"/></svg></button>
-        <button id="shield-btn" class="icon" type="button" aria-expanded="false" aria-controls="shield-pop" aria-label="Lane and permissions for this session" title="Lane and permissions for this session"><svg class="i"><use href="#i-shield"/></svg></button>
+        <button id="shield-btn" class="icon" type="button" aria-expanded="false" aria-controls="shield-pop" aria-label="Provider and permissions for this session" title="Provider and permissions for this session"><svg class="i"><use href="#i-shield"/></svg></button>
         <button id="composer-usage" class="icon unknown" type="button" aria-label="Usage" title="Usage"><svg class="i"><use href="#i-usage"/></svg><span class="num" id="composer-usage-num">?</span></button>
-        <label class="lane-model" title="Sealed lane: requests are encrypted to the enclave. The model applies when you next send; running work keeps its model."><svg class="i" aria-hidden="true"><use href="#i-lock"/></svg><select id="model" aria-label="Model for next user turn"></select></label>
+        <label class="provider-model" title="BayLeaf Sealed: requests are encrypted to the enclave. The model applies when you next send; running work keeps its model."><svg class="i" aria-hidden="true"><use href="#i-lock"/></svg><select id="model" aria-label="Model for next user turn"></select></label>
         <div id="sendmode" class="split" hidden>
           <button id="sendmode-main" type="button"><svg class="i" aria-hidden="true"><use href="#i-send"/></svg><span id="sendmode-label">Steer</span></button>
           <button id="sendmode-more" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="sendmode-menu" aria-label="More ways to send" title="More ways to send"><svg class="i" aria-hidden="true"><use href="#i-chevron-up"/></svg></button>
           <div id="sendmode-menu" role="menu" aria-label="Send while Pouch works" hidden>
             <button type="button" role="menuitem" data-mode="steer"><span>Steer now: read after current step<span class="sm-key"></span></span><small class="sm-note" id="sendmode-detach" hidden></small></button>
-            <button type="button" role="menuitem" data-mode="queue"><span>Queue for after this turn<span class="sm-key"></span></span></button>
+            <button type="button" role="menuitem" data-mode="followup"><span>Follow-up after this turn<span class="sm-key"></span></span></button>
             <button type="button" role="menuitem" data-mode="stopsend"><span>Stop and send<span class="sm-key"></span></span></button>
             <div role="separator" class="sm-sep"></div>
             <button type="button" role="menuitem" data-mode="settings" class="sm-link"><span><span id="sendmode-enter"></span> Change what Enter does</span></button>
@@ -818,7 +820,7 @@
         <button id="send" class="primary" type="submit" disabled title="Send"><svg class="i"><use href="#i-send"/></svg><span class="vh" id="send-label">Send</span></button>
       </div>
     </form>
-    <div id="local-hint" role="status" hidden><span id="local-hint-text"></span> <button id="local-hint-switch" type="button">Use Sealed next</button> <button id="local-hint-dismiss" type="button" aria-label="Dismiss">Dismiss</button></div>
+    <div id="local-hint" role="status" hidden><span id="local-hint-text"></span> <button id="local-hint-switch" type="button">Use BayLeaf Sealed next</button> <button id="local-hint-dismiss" type="button" aria-label="Dismiss">Dismiss</button></div>
     <div id="status" role="status"></div>
     <div id="send-live" class="vh" aria-live="polite"></div>
   </section>
@@ -887,7 +889,7 @@
         <dl id="ns-facts"></dl>
         <p id="seed-row" hidden><button id="seed-remove" type="button">Remove the seed layer</button></p>
         <h3>Check this page</h3>
-        <p>This page talks only to <code>api.bayleaf.dev</code>, and to its own origin to download the optional Local model: its Content-Security-Policy (<code>connect-src</code>) says so, and the browser enforces it. The Local model's files are checked against a manifest whose SHA-256 is built into this page; downloading them tells the host that this browser fetched the model, nothing more. Local turns send nothing.</p>
+        <p>This page talks only to <code>api.bayleaf.dev</code>, and to its own origin to download the optional Transformers.js model: its Content-Security-Policy (<code>connect-src</code>) says so, and the browser enforces it. That model's files are checked against a manifest whose SHA-256 is built into this page; downloading them tells the host that this browser fetched the model, nothing more. Transformers.js turns send nothing.</p>
         <p>Build <code id="build-id">__BUILD_ID__</code>. A page cannot vouch for its own hash: the one below is what this page's code checked when it kept the copy. Save the page, then compare its hash with <code>SHA256SUMS</code> from the release:
         <code>shasum -a 256 pouch.html</code></p>
         <h3>This copy</h3>
@@ -915,13 +917,13 @@
         <p class="muted">Display preferences only, saved in this browser. They do not enable reasoning or change model reasoning effort. Existing messages keep their own open/closed state while streaming. Erase all resets these preferences.</p>
         <h3>Sending while Pouch works</h3>
         <label class="theme-field" for="send-mode">While Pouch is working, Enter:
-          <select id="send-mode"><option value="steer">Steer</option><option value="queue">Queue</option></select>
+          <select id="send-mode"><option value="steer">Steer</option><option value="followup">Follow-up</option></select>
         </label>
-        <p class="muted">Steer: Pouch reads your message after its current step, in the same turn. Queue: it waits until the whole turn ends, then starts the next turn. Alt+Enter (Option+Enter on a Mac) does the other one for a single message; the arrow next to Stop offers both. Saved in this browser.</p>
+        <p class="muted">Steer: Pouch reads your message after its current step, in the same turn. Follow-up: it waits until the whole turn ends, then starts the next turn. Alt+Enter (Option+Enter on a Mac) does the other one for a single message; the arrow next to Stop offers both. Saved in this browser.</p>
         <h3>Offline copy and updates</h3>
         <p>Pouch changes only when you press Update. <button type="button" class="link" id="settings-copy">See this copy and check for updates</button></p>
         <h3>Model selection</h3><p>The model below your message applies to your next user turn. Running work, including subagents, keeps the model it started with.</p>
-        <h3>Local model</h3>
+        <h3>Transformers.js model</h3>
         <div id="local-settings">
           <p id="local-state" class="muted">Checking...</p>
           <progress id="local-progress" hidden></progress>
@@ -929,11 +931,11 @@
             <button id="local-download" type="button" hidden>Download</button>
             <button id="local-folder-btn" type="button">Load from folder</button>
             <button id="local-files-btn" type="button">Load from files</button>
-            <button id="local-remove" type="button" class="danger" hidden>Remove local model</button>
+            <button id="local-remove" type="button" class="danger" hidden>Remove the model</button>
           </p>
           <input id="local-folder" type="file" webkitdirectory multiple hidden>
           <input id="local-files" type="file" multiple hidden>
-          <p class="muted">Local runs a small model (about 1.1 GB, downloaded once and checked part by part) on this device's GPU. Nothing you type is sent. It suits looking around a workspace and small, literal edits; use Sealed for bigger work. A saved copy of the <code>models</code> folder (or the original model files) can be loaded without the network. Erase all removes it too.</p>
+          <p class="muted">Transformers.js runs a small model (about 1.1 GB, downloaded once and checked part by part) in this browser, on this device's GPU. Nothing you type is sent. It suits looking around a workspace and small, literal edits; use BayLeaf Sealed for bigger work. A saved copy of the <code>models</code> folder (or the original model files) can be loaded without the network. Erase all removes it too.</p>
         </div>
       </div>
     </section>

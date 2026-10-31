@@ -1,7 +1,7 @@
 # Pouch: ubiquitous language
 
 Status: adopted 2026-10-31 (Adam). Code, interface text, prompts and docs use these
-terms; "Current leaks" records what the realignment changed. *Open* marks questions
+terms; "Realigned (2026-10-31)" records what the realignment changed. *Open* marks questions
 still unresolved; the decisions log records how terms were chosen.
 
 ## The shape
@@ -49,8 +49,8 @@ loopback HTTP is allowed from an HTTPS page; the local server must allow the
 limits, message queues and persistence. A harness is an **engine** plus a **profile**.
 - *Engine*: pi-durable, extended by Pouch (routing, join, detach, caps, per-path
   write serialization).
-- *Profile*: the prompt, tool set, limits and namespace defaults. Four exist today,
-  unnamed in code:
+- *Profile*: the prompt, tool set, limits and namespace defaults. Four exist, named in
+  `src/profiles.js` (main, subagent, oneshot, transformersjs):
 
   | Profile | Tools | Loop | Limits |
   |---|---|---|---|
@@ -106,15 +106,47 @@ a1), replacing s1, s2. Handles mean nothing outside their session: wherever an a
 appears outside its own session view, it is prefixed with the session title
 ("Essay review › judge-evidence").
 
-## Current leaks (to realign later, not now)
+## Realigned (2026-10-31)
 
-| Today | Proposed |
-|---|---|
-| pi-durable "session" (one agent's persisted log) shown as a Pouch session; subagents listed as sessions | Thread storage; sidebar lists Sessions with Agents nested |
-| handles s1, s2 | a1, a2 |
-| "lane", "Sealed lane", "Local lane" | Provider: BayLeaf Sealed, Transformers.js |
-| "Queue", "Queued · after this turn" | "Follow-up", "Follow-up · after this turn" |
-| profiles implicit in agent.js, subagents.js, local/ | named profiles on one engine |
+| Was | Now | Where |
+|---|---|---|
+| handles s1, s2, ... | a1 (main), a2, ...; tags `[from judge-evidence (a3)]` | `src/graph.js` (`MAIN`, `asRef`, `refOf`, `migrateRows`), prompts, tools, views |
+| "lane", "Sealed lane", "Local lane", "Local: ..." | Provider: **BayLeaf Sealed**, **Transformers.js**; picker groups by provider | interface, harness notes, docs; CSS `--provider-sealed`, `--provider-tjs` |
+| "Queue", "Queued · after this turn" | **Follow-up**, "Follow-up · after this turn"; send mode value `followup` | split button, menu, setting, tray, announcements |
+| "sessions of this scope" (agent-facing) | "agents of this session", "by handle" | `agents`/`subagent` tool text, `GRAPH_GLOSS`, errors |
+| profiles implicit in agent.js, subagents.js, local/ | `src/profiles.js`: `PROFILES`, `profileOf()`, the transformersjs recipe (moved byte for byte; values checked identical) | subagents.js and local/provider.js read it |
+| pi-durable "conversation"/"session" read as a Pouch session | anti-corruption table at the top of `src/agent.js` (conversation = Thread storage, whenBusy steer = Steer, held input = Follow-up) | `src/agent.js` |
+| sidebar "Subagents of ..." | "Agents in ...", each "Agent scout (a2), a subagent of main" | `src/sessions.js` |
+| a subagent's approval sheet "subagent x · session: T" | "T › x (subagent)" | `src/egress.js` |
+| internal `lane()`, `laneOf`, `queued`, `childQueue`, `userQueued` | `openDb()`, `dbOf`, `followUps`, `childFollowUps`, `followUpHeld` | code |
+
+Upgrade: stored data is read in both forms, never rewritten in bulk. Registry rows go
+through `migrateRows` on every read (handles, edge-count keys, wake marks, labels) and
+are stored in the new form on the next write; watch owners, stored peer messages and
+report labels are mapped as they load; the saved send mode "queue" is rewritten to
+"followup" at startup. Tools accept old handles (an agent copying `s3` from an old
+transcript reaches a3). No IndexedDB version bump was needed. `test/upgrade-browser.mjs`
+makes a profile with the old build and reads it with the new one; `test/ul-node.mjs`
+greps the built page for the retired terms.
+
+Deliberately left:
+- Old transcripts keep their text: the model context of an existing thread still holds
+  `[from x (s2)]` tags and the old prompts; only labels the page draws are mapped.
+  Rewriting stored model content would change what the agent saw.
+- The qualified Transformers.js prompt, few-shot turn and tool descriptions are
+  unchanged (moved, not edited), so the T3 qualification stands. Its harness notes
+  (step cap, refused tool, shortened context) now say "Transformers.js"; they are not
+  part of the qualified recipe text.
+- Internal identifiers that name the code module, not the term: `src/local/`,
+  `isLocal`, `LOCAL_*`, model ids `local:...`, provider id `pouch-local`, the Cache
+  Storage name `pouch-local-models` and the setting key `sealedModel`. Renaming them
+  breaks stored model ids and caches for no reader's benefit.
+- Storage keys (`conversation:<sid>`, database names) and pi-durable's own words inside
+  `src/agent.js` and `src/subagents.js`, behind the anti-corruption table.
+- `graph.js` keeps `createScope`/`MAX_SCOPE_MESSAGES` as code names for one session's
+  routing state.
+- DEPLOYMENT.md's dated records and the API's own "plaintext lane" (an api.bayleaf.dev
+  term) keep their wording.
 
 ## Open questions
 

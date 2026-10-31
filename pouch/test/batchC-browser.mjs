@@ -116,7 +116,7 @@ await section('subrun', async (h, page) => {
   await h.rule({ who: 'main', when: '/Wrote|Successfully|bytes/i.test(c.since)', reply: 'ok.' });
   await h.send('setup'); await h.settled();
   await h.rule({ who: 'main', when: '/sum it/.test(c.since)', reply: [['subagent', { action: 'spawn', name: 'totals', task: 'Sum amounts.' }]] });
-  await h.rule({ who: 'main', when: '/Started subagent/.test(c.since)', reply: [['subagent', { action: 'join', ids: ['s2'] }]] });
+  await h.rule({ who: 'main', when: '/Started subagent/.test(c.since)', reply: [['subagent', { action: 'join', ids: ['a2'] }]] });
   await h.rule({ who: 'main', when: '/TOTAL/.test(c.since)', reply: 'Done.' });
   await h.rule({ who: 'totals', reply: [['read', { path: '/work/nope.txt' }], ['run', { code: 'const t = fs.readFile("data/m.csv"); print("inline", t.split("\\n").length);' }]] });
   await h.rule({ who: 'totals', when: '/inline/.test(c.since)', reply: [['write', { path: '/work/.subagents/t.js', content: 'const rows = fs.readFile("/work/data/m.csv").trim().split("\\n").slice(1); let s = 0; for (const r of rows) s += Number(r.split(",")[1]); fs.writeFile("/work/data/totals.txt", String(s)); print("sum", s);' }]] });
@@ -304,7 +304,7 @@ for (const [name, how, secs] of [['steerbash', 'enter', 4], ['steerbashnow', 'st
     await page.fill('#input', 'Q1: after this, reply with only OK.'); await page.press('#input', 'Alt+Enter');
     await page.click('.tray-row button[data-act="promote"]');
     await h.send('Q2', 'Alt+Enter');
-    await page.click('.tray-row[data-kind="queued"] .tray-stop');
+    await page.click('.tray-row[data-kind="followup"] .tray-stop');
   }
   await page.waitForFunction(() => document.getElementById('send-label').textContent === 'Send', null, { timeout: (secs + 15) * 1000 });
   await h.settled();
@@ -394,7 +394,7 @@ await section('design', async (h, page) => {
   await h.rule({ who: 'main', when: '/helper/.test(c.since)', reply: [['subagent', { action: 'spawn', name: 'helper', task: 'Help with a long task.' }]] });
   await h.rule({ who: 'main', when: '/Started subagent/.test(c.since)', reply: 'Started.' });
   await h.rule({ who: 'helper', reply: 'Partial thought about the task.' });
-  await h.rule({ who: 'main', when: '/Partial thought/.test(c.since)', reply: [['subagent', { action: 'message', to: 's2', text: 'Keep going.' }]] });
+  await h.rule({ who: 'main', when: '/Partial thought/.test(c.since)', reply: [['subagent', { action: 'message', to: 'a2', text: 'Keep going.' }]] });
   await h.rule({ who: 'main', when: '/Sent|sent|delivered/i.test(c.since)', reply: 'Asked it to continue.' });
   await h.rule({ who: 'helper', gate: 'never', reply: 'never' });
   await h.rule({ who: '*', sticky: true, when: '!/Partial/.test(c.since)', reply: 'ok' });
@@ -414,7 +414,7 @@ await section('design', async (h, page) => {
   await page.waitForTimeout(600);
   assert.equal(await page.evaluate(() => document.getElementById('log').scrollTop), 0, 'opens at the top');
   assert.match(await page.getAttribute('#input', 'placeholder'), /helper was stopped\./);
-  assert.match(await page.textContent('#log'), /helper was stopped; its last output is in the parent thread/);
+  assert.match(await page.textContent('#log'), /helper was stopped; its last output is in main's thread/);
   await page.click('.sa-back');
   await h.settled();
   // Desktop overlay sidebar: scrim, Esc back to the composer, typing never lost.

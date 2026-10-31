@@ -1,4 +1,4 @@
-// The Local lane's files and worker: fetch, verify, keep, load, generate.
+// The Transformers.js provider's files and worker: fetch, verify, keep, load, generate.
 //
 // Trust: the build embeds the SHA-256 of one manifest (LOCAL_MODEL, from
 // build-models.mjs). The manifest lists every part of every file with its
@@ -90,13 +90,13 @@ export async function stored() {
 export async function obtain({ onProgress = () => {}, signal, network = true } = {}) {
   const st = await store();
   const m = await manifest(st, { network });
-  if (!m) throw new Error('The Local model is not on this device. Download it, or load a saved copy from a folder.');
+  if (!m) throw new Error('The Transformers.js model is not in this browser. Download it, or load a saved copy from a folder.');
   const parts = partsOf(m), blobs = new Map();
   const p = { done: 0, total: parts.reduce((n, x) => n + x.bytes, 0), fetched: 0, repaired: 0 };
   let next = 0;
-  // The first refusal (or the caller's Stop) stops every lane: nothing more is downloaded.
+  // The first refusal (or the caller's Stop) stops every stream: nothing more is downloaded.
   const halt = new AbortController(), sig = signal ? AbortSignal.any([signal, halt.signal]) : halt.signal;
-  async function lane() {
+  async function stream() {
     while (next < parts.length) {
       const part = parts[next++];
       if (sig.aborted) throw new DOMException('Stopped.', 'AbortError');
@@ -112,7 +112,7 @@ export async function obtain({ onProgress = () => {}, signal, network = true } =
       blobs.set(part.path, blob);
     }
   }
-  await Promise.all(Array.from({ length: PARALLEL }, () => lane().catch((e) => { halt.abort(); throw e; })));
+  await Promise.all(Array.from({ length: PARALLEL }, () => stream().catch((e) => { halt.abort(); throw e; })));
   const files = Object.fromEntries(m.files.map((f) => [f.name, new Blob(f.parts.map((x) => blobs.get(x.path)))]));
   return { manifest: m, worker: blobs.get(m.worker.path), files, progress: p, persistent: st.persistent };
 }
@@ -185,7 +185,7 @@ export const engine = {
         pending.delete(data.id);
         data.error ? p.reject(new Error(data.error)) : p.resolve(data.result);
       };
-      worker.onerror = (e) => { for (const p of pending.values()) p.reject(new Error(e.message || 'The Local model worker failed.')); pending.clear(); };
+      worker.onerror = (e) => { for (const p of pending.values()) p.reject(new Error(e.message || 'The Transformers.js model worker failed.')); pending.clear(); };
       const wasm = got.manifest.files.find((f) => f.role === 'wasm');
       const files = Object.fromEntries(Object.entries(got.files).filter(([n]) => n !== wasm.name));
       return await call('load', { files, wasm: got.files[wasm.name] });

@@ -1,5 +1,5 @@
 // Stand-in for src/local/engine.js in walkthrough builds only (aliased at
-// bundle time, like the fake Tinfoil). The Local lane's real provider
+// bundle time, like the fake Tinfoil). The Transformers.js provider's real code
 // (src/local/provider.js) still parses the text and runs the tools; only the
 // WebGPU model is replaced by window.localScript, a queue of raw model
 // outputs in LFM's XML tool-call format. Nothing is downloaded.

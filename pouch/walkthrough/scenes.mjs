@@ -345,14 +345,14 @@ export const scenes = [
     id: 'sendmode', stories: ['D25', 'D26', 'D27'],
     shots: [
       { id: 'sendmode-menu', target: ['#sendmode-menu', '#composer'], stories: ['D26', 'D25'],
-        alt: 'While Pouch works: the round Stop button, a split Steer button and its menu: Steer now, Queue for after this turn, Stop and send.',
-        caption: 'While Pouch works, Enter steers (read after the current step), Alt+Enter queues for after the turn; the menu offers both and Stop and send.' },
+        alt: 'While Pouch works: the round Stop button, a split Steer button and its menu: Steer now, Follow-up after this turn, Stop and send.',
+        caption: 'While Pouch works, Enter steers (read after the current step), Alt+Enter sends a follow-up for after the turn; the menu offers both and Stop and send.' },
       { id: 'sendmode-tray', target: '#composer', stories: ['D27', 'D21.2'],
-        alt: 'The tray with two pending inputs: "Steering, after current step" with Cancel, and "Queued, after this turn" with Edit, Steer now and Cancel.',
+        alt: 'The tray with two pending inputs: "Steering, after current step" with Cancel, and "Follow-up, after this turn" with Edit, Steer now and Cancel.',
         caption: 'Pending input waits in the tray, where it can be cancelled, edited or promoted.' },
       { id: 'sendmode-paused', target: '#composer', stories: ['D29'],
         alt: 'After Stop: one tray row "Paused after Stop" holding both messages, with Send and Cancel.',
-        caption: 'Stop never sends: unread steering and the queued message become one paused item.' },
+        caption: 'Stop never sends: unread steering and the follow-up become one paused item.' },
     ],
     async run({ page, rule, send, shot, T }) {
       await rule({ who: 'main', when: '/tidy/.test(c.since)', gate: 'a', reply: [['bash', { command: 'ls /work' }]] });
@@ -367,7 +367,7 @@ export const scenes = [
       await page.waitForSelector('.tray-row[data-kind="steer"]', T);
       await page.fill('#input', 'then summarize what changed');
       await page.press('#input', 'Alt+Enter');
-      await page.waitForSelector('.tray-row[data-kind="queued"]', T);
+      await page.waitForSelector('.tray-row[data-kind="followup"]', T);
       await shot('sendmode-tray');
       await page.click('#send');
       await shot('sendmode-paused', { wait: '.tray-row.paused' });
@@ -431,8 +431,8 @@ export const scenes = [
     id: 'local', stories: ['F4'], reenactment: true,
     shots: [
       { id: 'local-turn', target: [['last:#log .msg.user', 'last:#log .msg.assistant'], '#composer'], stack: true, stories: ['F4'],
-        alt: 'A turn on the Local lane: the picker reads "Local: LFM3 1.7B (on this device)", a Read tool pill and a short answer.',
-        caption: 'The Local lane answers and runs tools on this device with nothing sent; switching lanes is always explicit.' },
+        alt: 'A turn on Transformers.js: the picker reads "LFM3 1.7B (in this browser)" under Transformers.js, a Read tool pill and a short answer.',
+        caption: 'Transformers.js answers and runs tools in this browser with nothing sent; switching providers is always explicit.' },
     ],
     async run(ctx) {
       const { page, shot, send, idle } = ctx;

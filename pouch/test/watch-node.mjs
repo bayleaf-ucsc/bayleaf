@@ -64,9 +64,9 @@ function tree() {
     ['/work/essay.md', 'user', 'raw\n', null],
   ]);
   // A capability view cut from an attributed view still reports its writes.
-  const sub = subset(attribute(ns, 'subagent judge (s3)', sink), ['/work/data']);
+  const sub = subset(attribute(ns, 'subagent judge (a3)', sink), ['/work/data']);
   await sub.writeFile('/work/data/b.csv', 'z\n');
-  assert.equal(seen.at(-1).source, 'subagent judge (s3)');
+  assert.equal(seen.at(-1).source, 'subagent judge (a3)');
   ok('attribution: each view tags its writes; raw writes and unwatched paths are not reported; rm/mv of folders; subset views');
 }
 
@@ -79,8 +79,8 @@ function harness({ files = {} } = {}) {
   let release;
   const deps = {
     fs: ns, load: async (sid) => saved.get(sid), save: (sid, l) => saved.set(sid, structuredClone(l)), sessions: async () => [...saved.keys()],
-    scopeOf: (_sid, owner) => (owner === 's1' ? null : state.scope),
-    userQueued: () => state.queued, busy: async () => state.busy,
+    scopeOf: (_sid, owner) => (owner === 'a1' ? null : state.scope),
+    followUpHeld: () => state.queued, busy: async () => state.busy,
     deliver: async (sid, owner, ev) => { log.push({ sid, owner, ...ev, at: Date.now(), queuedThen: state.queued }); if (ev.mode === 'wake') { state.busy = true; return { done: new Promise((r) => { release = () => { state.busy = false; r(); }; }) }; } return {}; },
     ready: Promise.resolve(), onChange: () => {},
   };
@@ -91,7 +91,7 @@ function harness({ files = {} } = {}) {
 {
   const h = harness({ files: { '/work/essay.md': 'one\ntwo\n' } });
   await h.init();
-  const w = await h.reg.add('1', 's1', 'main', { paths: ['essay.md'], note: 'offer to re-run the panel' });
+  const w = await h.reg.add('1', 'a1', 'main', { paths: ['essay.md'], note: 'offer to re-run the panel' });
   assert.equal(w.by, 'user'); assert.deepEqual(w.paths, ['/work/essay.md']);
   await h.agentFs.writeFile('/work/essay.md', 'one\ntwo\nagent\n');
   await h.run.writeFile('/work/essay.md', 'one\ntwo\nrun\n');
@@ -147,7 +147,7 @@ function harness({ files = {} } = {}) {
   // once + glob: the first file wakes; the rest of a multi-file drop joins the woken turn.
   const h = harness();
   await h.ns.mkdir('/work/data', { recursive: true });
-  const w = await h.reg.add('1', 's1', 'main', { paths: ['/work/data/*.csv'], once: true, note: 'clean the CSVs' });
+  const w = await h.reg.add('1', 'a1', 'main', { paths: ['/work/data/*.csv'], once: true, note: 'clean the CSVs' });
   for (const n of ['a', 'b', 'c']) await h.user.writeFile(`/work/data/${n}.csv`, 'h\n1\n');
   await until(() => h.log.length >= 1); await sleep(50);
   const files = (h.log.map((d) => d.content).join('\n').match(/\[from files\]/g) ?? []).length;
@@ -167,28 +167,28 @@ function harness({ files = {} } = {}) {
   const h = harness({ files: { '/work/essay.md': 'x\n', '/pouch/AGENTS.md': 'y\n' } });
   await h.init();
   h.state.scope = ['/work/essay.md'];
-  await assert.rejects(h.reg.add('1', 's3', 'judge', { paths: ['/pouch/AGENTS.md'] }), /outside what you can see/);
-  await assert.rejects(h.reg.add('1', 's3', 'judge', { paths: ['/work/*.md'] }), /outside what you can see/);
-  const w = await h.reg.add('1', 's3', 'judge', { paths: ['/work/essay.md'], by: 'any' });
-  await assert.rejects(h.reg.add('1', 's1', 'main', { paths: ['/task/1/status'] }), /task cannot be watched/);
+  await assert.rejects(h.reg.add('1', 'a3', 'judge', { paths: ['/pouch/AGENTS.md'] }), /outside what you can see/);
+  await assert.rejects(h.reg.add('1', 'a3', 'judge', { paths: ['/work/*.md'] }), /outside what you can see/);
+  const w = await h.reg.add('1', 'a3', 'judge', { paths: ['/work/essay.md'], by: 'any' });
+  await assert.rejects(h.reg.add('1', 'a1', 'main', { paths: ['/task/1/status'] }), /task cannot be watched/);
   await h.agentFs.writeFile('/work/essay.md', 'z\n');
   await until(() => h.log.length === 1);
-  assert.equal(h.log[0].owner, 's3');
+  assert.equal(h.log[0].owner, 'a3');
   assert.match(h.log[0].content, /changed by Pouch/);
   ok('scope: a subagent watches only inside its mounts; by any fires on agent writes; events go to the owner');
 
   // The tool, and /task/watch.
-  const tool = watchTool({ Type: { Object: (x) => x, Optional: (x) => x, Union: (x) => x, Literal: (x) => x, Array: (x) => x, String: (x) => x, Boolean: (x) => x }, watches: h.reg, callerOf: async (c) => (c === 'child' ? { sid: '1', owner: 's3', ownerName: 'judge' } : { sid: '1', owner: 's1', ownerName: 'main' }) });
+  const tool = watchTool({ Type: { Object: (x) => x, Optional: (x) => x, Union: (x) => x, Literal: (x) => x, Array: (x) => x, String: (x) => x, Boolean: (x) => x }, watches: h.reg, callerOf: async (c) => (c === 'child' ? { sid: '1', owner: 'a3', ownerName: 'judge' } : { sid: '1', owner: 'a1', ownerName: 'main' }) });
   const said = await tool.execute({ action: 'watch', paths: ['/work/essay.md'], note: 'offer to re-run the panel' });
   assert.match(said, /^Watching \/work\/essay\.md as w2 .*Tell the user in one line/);
-  assert.match(await tool.execute({ action: 'list' }), /w1 .*owner judge s3[\s\S]*w2 \/work\/essay\.md: changes by the user; note: offer to re-run the panel/);
+  assert.match(await tool.execute({ action: 'list' }), /w1 .*owner judge a3[\s\S]*w2 \/work\/essay\.md: changes by the user; note: offer to re-run the panel/);
   assert.doesNotMatch(await tool.execute({ action: 'list' }, { caller: 'child' }), /w2/);
   await assert.rejects(tool.execute({ action: 'unwatch', id: 'w2' }, { caller: 'child' }), /No watch "w2" of yours/);
   const tfs = new TaskFs(new Tasks(), () => h.reg);
   assert.deepEqual(await tfs.readdir('/'), ['watch']);
   assert.deepEqual(await tfs.readdir('/watch'), ['w1', 'w2']);
   assert.equal(await tfs.readFile('/watch/w2/paths'), '/work/essay.md\n');
-  assert.match(await tfs.readFile('/watch/w2/note'), /offer to re-run the panel\nby user; owner main \(s1\)/);
+  assert.match(await tfs.readFile('/watch/w2/note'), /offer to re-run the panel\nby user; owner main \(a1\)/);
   await assert.rejects(tfs.writeFile('/watch/w2/ctl', 'kill'), /accepts one command: stop/);
   await tfs.writeFile('/watch/w2/ctl', 'stop\n');
   assert.equal(h.reg.get('w2'), undefined);
@@ -200,8 +200,8 @@ function harness({ files = {} } = {}) {
   // Reload: watches come back from storage; a file changed while closed fires once.
   const h = harness({ files: { '/work/essay.md': 'one\n', '/work/data/a.csv': 'x\n' } });
   await h.init();
-  await h.reg.add('1', 's1', 'main', { paths: ['/work/essay.md'] });
-  await h.reg.add('1', 's1', 'main', { paths: ['/work/data/*.csv'], by: 'agent' });
+  await h.reg.add('1', 'a1', 'main', { paths: ['/work/essay.md'] });
+  await h.reg.add('1', 'a1', 'main', { paths: ['/work/data/*.csv'], by: 'agent' });
   await h.agentFs.writeFile('/work/essay.md', 'agent\n'); // known: hash follows, no event
   await sleep(30);
   await h.ns.writeFile('/work/data/b.csv', 'new\n'); // while "closed" (raw write)

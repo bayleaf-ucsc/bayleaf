@@ -98,7 +98,7 @@ try {
     await h.type('steer A');
     assert.equal(await page.isEnabled('#sendmode-main'), true, 'sends once the draft is not empty');
     assert.equal(await page.textContent('#sendmode-label'), 'Steer');
-    assert.match(await page.getAttribute('#sendmode-main', 'aria-label'), /Steer: .*\(Enter\)\. Alt\+Enter to queue instead/);
+    assert.match(await page.getAttribute('#sendmode-main', 'aria-label'), /Steer: .*\(Enter\)\. Alt\+Enter to send a follow-up instead/);
     await page.press('#input', 'Enter');
     await page.waitForSelector('.tray-row[data-kind="steer"]', T);
     let rows = await h.rows();
@@ -125,11 +125,11 @@ try {
     await h.type('task two'); await page.press('#input', 'Enter');
     await h.waitReq(b + 1);
     await h.type('queue B'); await page.press('#input', 'Alt+Enter');
-    await page.waitForSelector('.tray-row[data-kind="queued"]', T);
+    await page.waitForSelector('.tray-row[data-kind="followup"]', T);
     rows = await h.rows();
-    assert.match(rows.find((r) => r.kind === 'queued').origin, /^Queued · after this turn/);
-    assert.deepEqual(rows.find((r) => r.kind === 'queued').acts, ['Edit', 'Steer now', 'Cancel']);
-    await page.waitForFunction(() => /Queued for after this turn/.test(document.getElementById('send-live').textContent), null, T);
+    assert.match(rows.find((r) => r.kind === 'followup').origin, /^Follow-up · after this turn/);
+    assert.deepEqual(rows.find((r) => r.kind === 'followup').acts, ['Edit', 'Steer now', 'Cancel']);
+    await page.waitForFunction(() => /Follow-up: it goes after this turn/.test(document.getElementById('send-live').textContent), null, T);
     assert.equal(await page.inputValue('#input'), '', 'Alt+Enter inserted nothing');
     await h.gate('s2a'); await h.waitReq(b + 2);
     await h.gate('s2b'); await h.waitReq(b + 3);
@@ -144,18 +144,18 @@ try {
 
     // 3. The setting flips both keys; Stop pauses both kinds without sending; paused Send sends.
     const settings = () => page.click('#rail [data-panel="settings"]');
-    await settings(); await page.selectOption('#send-mode', 'queue'); await page.locator('#settings .panel-close').click();
+    await settings(); await page.selectOption('#send-mode', 'followup'); await page.locator('#settings .panel-close').click();
     b = await h.nReq();
     await h.rule({ who: 'main', when: `c.n === ${b + 1}`, gate: 'never', reply: [W(4)] });
     await h.type('task three'); await page.press('#input', 'Enter');
     await h.waitReq(b + 1);
     await h.type('x-queued');
-    assert.equal(await page.textContent('#sendmode-label'), 'Queue');
+    assert.equal(await page.textContent('#sendmode-label'), 'Follow-up');
     await page.press('#input', 'Enter');
     await h.type('x-steered'); await page.press('#input', 'Alt+Enter');
     await page.waitForSelector('.tray-row[data-kind="steer"]', T);
     rows = await h.rows();
-    assert.ok(rows.some((r) => r.kind === 'queued' && /x-queued/.test(r.text)) && rows.some((r) => r.kind === 'steer' && /x-steered/.test(r.text)), 'setting queue: Enter queued, Alt+Enter steered');
+    assert.ok(rows.some((r) => r.kind === 'followup' && /x-queued/.test(r.text)) && rows.some((r) => r.kind === 'steer' && /x-steered/.test(r.text)), 'setting queue: Enter queued, Alt+Enter steered');
     await page.click('#send'); // Stop
     await page.waitForFunction(() => document.getElementById('send-label').textContent === 'Send', null, T);
     await page.waitForSelector('.tray-row.paused', T);
@@ -190,13 +190,13 @@ try {
     assert.equal(await page.getAttribute('#sendmode-menu [data-mode="steer"]', 'role'), 'menuitem');
     assert.equal((await page.textContent('#sendmode-menu [data-mode="steer"] .sm-key')).trim(), '(Enter)');
     await page.screenshot({ path: join(shots, 'sendmode-1-split-menu.png') });
-    await page.click('#sendmode-menu [data-mode="queue"]');
-    await page.waitForSelector('.tray-row[data-kind="queued"]', T);
+    await page.click('#sendmode-menu [data-mode="followup"]');
+    await page.waitForSelector('.tray-row[data-kind="followup"]', T);
     await h.type('menu-s');
     await page.focus('#sendmode-more'); await page.keyboard.press('Enter');
     await page.waitForSelector('#sendmode-menu:not([hidden])', T);
     await page.keyboard.press('ArrowDown');
-    assert.equal(await page.evaluate(() => document.activeElement.dataset.mode), 'queue');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.mode), 'followup');
     await page.keyboard.press('ArrowUp');
     assert.equal(await page.evaluate(() => document.activeElement.dataset.mode), 'steer');
     await page.keyboard.press('Escape');
@@ -206,24 +206,24 @@ try {
     await page.waitForSelector('.tray-row[data-kind="steer"]', T);
     await h.type('');
     await page.screenshot({ path: join(shots, 'sendmode-2-tray-queued-steering.png') });
-    await page.click('.tray-row[data-kind="queued"] button[data-act="edit"]');
-    assert.equal(await page.inputValue('#input'), 'menu-q'); assert.equal((await h.rows()).filter((r) => r.kind === 'queued').length, 0);
+    await page.click('.tray-row[data-kind="followup"] button[data-act="edit"]');
+    assert.equal(await page.inputValue('#input'), 'menu-q'); assert.equal((await h.rows()).filter((r) => r.kind === 'followup').length, 0);
     await page.press('#input', 'Alt+Enter');
-    await page.waitForSelector('.tray-row[data-kind="queued"]', T);
+    await page.waitForSelector('.tray-row[data-kind="followup"]', T);
     await page.focus('#input'); await page.press('#input', 'Alt+ArrowUp');
-    assert.equal(await page.inputValue('#input'), 'menu-q', 'Alt+Up took it back'); assert.equal(await page.$('.tray-row[data-kind="queued"]'), null);
+    assert.equal(await page.inputValue('#input'), 'menu-q', 'Alt+Up took it back'); assert.equal(await page.$('.tray-row[data-kind="followup"]'), null);
     await page.press('#input', 'Alt+Enter');
-    await page.waitForSelector('.tray-row[data-kind="queued"]', T);
-    await page.click('.tray-row[data-kind="queued"] button[data-act="promote"]');
-    await page.waitForFunction(() => !document.querySelector('.tray-row[data-kind="queued"]') && document.querySelectorAll('.tray-row[data-kind="steer"]').length === 2, null, T);
+    await page.waitForSelector('.tray-row[data-kind="followup"]', T);
+    await page.click('.tray-row[data-kind="followup"] button[data-act="promote"]');
+    await page.waitForFunction(() => !document.querySelector('.tray-row[data-kind="followup"]') && document.querySelectorAll('.tray-row[data-kind="steer"]').length === 2, null, T);
     await h.type('zzz'); await page.press('#input', 'Alt+Enter');
-    await page.waitForSelector('.tray-row[data-kind="queued"]', T);
-    await page.click('.tray-row[data-kind="queued"] button[data-act="stop"]');
+    await page.waitForSelector('.tray-row[data-kind="followup"]', T);
+    await page.click('.tray-row[data-kind="followup"] button[data-act="stop"]');
     assert.equal(await page.inputValue('#input'), 'zzz', 'Cancel put it back');
     await h.type('a1'); await page.press('#input', 'Alt+Enter');
     await h.type('a2'); await page.press('#input', 'Alt+Enter');
-    await page.waitForFunction(() => /Added to the queued message/.test(document.getElementById('send-live').textContent), null, T);
-    assert.equal((await h.rows()).filter((r) => r.kind === 'queued').length, 1, 'one queued slot; the second was appended');
+    await page.waitForFunction(() => /Added to the follow-up/.test(document.getElementById('send-live').textContent), null, T);
+    assert.equal((await h.rows()).filter((r) => r.kind === 'followup').length, 1, 'one queued slot; the second was appended');
     await h.gate('s4a'); await h.waitReq(b + 2);
     assert.match((await h.req(b + 1)).last, /menu-s[\s\S]*menu-q/, 'both steers in the next step');
     await h.gate('s4b'); await h.waitReq(b + 3);
@@ -241,8 +241,8 @@ try {
     await h.type('judge it'); await page.press('#input', 'Enter');
     await page.waitForSelector('.tray-row[data-kind="subagent"] .tray-bg', T);
     await h.type('q-wait'); await page.press('#input', 'Alt+Enter');
-    await page.waitForSelector('.tray-row[data-kind="queued"]', T);
-    assert.match((await h.rows()).find((r) => r.kind === 'queued').origin, /\(main is waiting on judge-evidence\)/);
+    await page.waitForSelector('.tray-row[data-kind="followup"]', T);
+    assert.match((await h.rows()).find((r) => r.kind === 'followup').origin, /\(main is waiting on judge-evidence\)/);
     await sleep(500);
     assert.equal(await h.nReq(), b + 1, 'queue did not detach'); assert.ok(await page.$('.tray-row[data-kind="subagent"] .tray-bg'), 'main still waits');
     await h.type('s-detach');
@@ -331,8 +331,8 @@ try {
     await page.waitForSelector('.tray-row[data-kind="steer"]', T);
     assert.match((await h.rows()).find((r) => r.kind === 'steer').origin, /Steering scout · after current step/);
     await h.type('queued for scout'); await page.press('#input', 'Alt+Enter');
-    await page.waitForSelector('.tray-row[data-kind="queued"]', T);
-    assert.match((await h.rows()).find((r) => r.kind === 'queued').origin, /Queued for scout · after its turn/);
+    await page.waitForSelector('.tray-row[data-kind="followup"]', T);
+    assert.match((await h.rows()).find((r) => r.kind === 'followup').origin, /Follow-up for scout · after its turn/);
     await h.gate('c1'); await h.waitReq(2, 'scout');
     assert.match((await h.req(1, 'scout')).last, /steer scout/); assert.doesNotMatch((await h.req(1, 'scout')).all, /queued for scout/);
     await h.gate('c2'); await h.waitReq(3, 'scout');
@@ -353,16 +353,16 @@ try {
     await ph.rule({ who: 'main', when: `c.n === ${b + 2}`, reply: 'Phone done.' });
     await p.fill('#input', 'phone task'); await p.click('#send');
     await ph.waitReq(b + 1);
-    await p.fill('#input', 'phone queued'); await p.click('#sendmode-more'); await p.click('#sendmode-menu [data-mode="queue"]');
-    await p.waitForSelector('.tray-row[data-kind="queued"]', T);
+    await p.fill('#input', 'phone queued'); await p.click('#sendmode-more'); await p.click('#sendmode-menu [data-mode="followup"]');
+    await p.waitForSelector('.tray-row[data-kind="followup"]', T);
     await p.fill('#input', 'phone steer');
     const box = async (sel) => (await p.locator(sel).first().boundingBox());
     const small = [];
-    for (const sel of ['#send', '#sendmode-main', '#sendmode-more', '.tray-row[data-kind="queued"] button[data-act="edit"]', '.tray-row[data-kind="queued"] button[data-act="promote"]', '.tray-row[data-kind="queued"] button[data-act="stop"]']) {
+    for (const sel of ['#send', '#sendmode-main', '#sendmode-more', '.tray-row[data-kind="followup"] button[data-act="edit"]', '.tray-row[data-kind="followup"] button[data-act="promote"]', '.tray-row[data-kind="followup"] button[data-act="stop"]']) {
       const r = await box(sel); if (!r || r.width < 44 || r.height < 44) small.push(`${sel} ${r?.width}x${r?.height}`);
     }
     await p.click('#sendmode-more');
-    for (const m of ['steer', 'queue', 'stopsend', 'settings']) { const r = await box(`#sendmode-menu [data-mode="${m}"]`); if (!r || r.height < 44) small.push(`menu ${m} ${r?.height}`); if (r && r.x + r.width > 390) small.push(`menu ${m} off-screen`); }
+    for (const m of ['steer', 'followup', 'stopsend', 'settings']) { const r = await box(`#sendmode-menu [data-mode="${m}"]`); if (!r || r.height < 44) small.push(`menu ${m} ${r?.height}`); if (r && r.x + r.width > 390) small.push(`menu ${m} off-screen`); }
     const tb = await box('#composer-toolbar'); if (tb.x + tb.width > 391) small.push('toolbar overflows');
     await p.screenshot({ path: join(shots, 'sendmode-phone.png') });
     assert.deepEqual(small, []);
@@ -389,9 +389,9 @@ try {
       await kp.fill('#input', 'line1'); await kp.press('#input', 'Shift+Enter'); await kp.keyboard.type('line2');
       const shift = await kp.inputValue('#input');
       await kp.press('#input', 'Alt+Enter');
-      await kp.waitForSelector('.tray-row[data-kind="queued"]', T);
+      await kp.waitForSelector('.tray-row[data-kind="followup"]', T);
       const after = await kp.inputValue('#input');
-      const title = await kp.getAttribute('.tray-row[data-kind="queued"] .tray-text', 'title');
+      const title = await kp.getAttribute('.tray-row[data-kind="followup"] .tray-text', 'title');
       await kp.click('#send'); // Stop; the queued text pauses
       keyRes.push(`${name}: Shift+Enter ${JSON.stringify(shift)}, Alt+Enter left ${JSON.stringify(after)}, queued ${JSON.stringify(title)}`);
       assert.equal(shift, 'line1\nline2'); assert.equal(after, ''); assert.equal(title, 'line1\nline2');

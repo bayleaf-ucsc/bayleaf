@@ -135,9 +135,9 @@ try {
   await idle();
   await page.waitForTimeout(500);
   const joinOut = await page.evaluate(() => JSON.stringify(window.fake.requests.main.at(-1).messages.at(-1).content));
-  assert.match(joinOut, /w-a \(s\d+\) quiet, (fresh|cached \d+s), sent its findings to collector \(s\d+\)/, 'join result names the recipient: ' + joinOut.slice(0, 300));
+  assert.match(joinOut, /w-a \(a\d+\) quiet, (fresh|cached \d+s), sent its findings to collector \(a\d+\)/, 'join result names the recipient: ' + joinOut.slice(0, 300));
   const groups = await page.$$eval('#log details.sa-joins > summary', (n) => n.map((x) => x.textContent));
-  assert.ok(groups.some((g) => /^Joined 3 subagents: 3 reported to collector \(s\d+\)$/.test(g)), 'one summary line: ' + JSON.stringify(groups));
+  assert.ok(groups.some((g) => /^Joined 3 subagents: 3 reported to collector \(a\d+\)$/.test(g)), 'one summary line: ' + JSON.stringify(groups));
   assert.doesNotMatch(await page.textContent('#log'), /No report\./);
   // The play-test shape: no join; each one's quiet report arrives on its own.
   await settled();
@@ -151,7 +151,7 @@ try {
   await page.waitForFunction(() => [...document.querySelectorAll('#log details.sa-joins > summary')].some((x) => /^3 subagents finished: 3 reported to collector/.test(x.textContent)), null, T);
   assert.doesNotMatch(await page.textContent('#log'), /No report\./);
   await page.locator('#log details.sa-joins').last().evaluate((d) => { d.open = true; });
-  assert.match(await page.locator('#log details.sa-joins').last().textContent(), /Sent its findings to collector \(s\d+\): "FINDING [abc] again\."/);
+  assert.match(await page.locator('#log details.sa-joins').last().textContent(), /Sent its findings to collector \(a\d+\): "FINDING [abc] again\."/);
   await page.locator('#log details.sa-joins').last().scrollIntoViewIfNeeded();
   await page.screenshot({ path: join(shots, 'batchA-3-joins.png') });
   ok(`quiet reports and the join collapse into "${groups.at(-1)}"; separate quiet reports into "3 subagents finished: 3 reported to collector"; inner cards say where findings went, with a preview`);

@@ -16,11 +16,11 @@
 //   lost, is a model-visible write (no request spent; seen at the next turn).
 // - Which children a session has, and their state, is a small registry kept in
 //   Pouch settings (reg.get/set), deleted with the session.
-// - Agent graphs (G1-G12): the sessions of one scope (main, s1, and its
-//   children s2, s3, ...) message each other by id. Spawning stays flat (only
+// - Agent graphs (G1-G12): the agents of one session (main, a1, and its
+//   subagents a2, a3, ...) message each other by handle. Spawning stays flat (only
 //   main spawns); graphs come from messages. Every message is one entry in the
 //   recipient's conversation, tagged with its sender: it joins a running
-//   session's next step (a steer), wakes a finished child, or starts a turn of
+//   agent's next step (a steer), wakes a finished child, or starts a turn of
 //   an idle main, the way reports do. Caps, arrivals and blocking calls are
 //   src/graph.js. Children get the trimmed `agents` tool (list, message, join).
 // - join (not a mailbox wait): block until targets go quiet and return each
@@ -28,7 +28,9 @@
 //   result number `seq`, so a join after a message waits for a newer result.
 import { defineTool } from '@earendil-works/pi-durable';
 import { Type } from 'typebox';
-import { createScope, MAIN, JOIN_DEFAULT_S, JOIN_MAX_S, MAX_SCOPE_MESSAGES, MAX_PAIR_MESSAGES } from './graph.js';
+import { PROFILES, GRAPH_GLOSS, SUBAGENT_DIR, scratchOf } from './profiles.js';
+export { GRAPH_GLOSS, SUBAGENT_DIR, scratchOf };
+import { createScope, MAIN, JOIN_DEFAULT_S, JOIN_MAX_S, MAX_SCOPE_MESSAGES, MAX_PAIR_MESSAGES, asRef, refOf, migrateRows } from './graph.js';
 export { MAIN, MAX_SCOPE_MESSAGES, MAX_PAIR_MESSAGES };
 
 export const REPORT_KIND = 'pouch.subagent';
@@ -37,7 +39,7 @@ export const REPORT_KIND = 'pouch.subagent';
 // the user's, and the report quotes it so the parent knows it was steered.
 export const STEER_KIND = 'pouch.steer';
 const fromUser = (text) => `[Message from the user, who is watching your work; not from the main agent] ${text}`;
-// A message from another session of the scope: the model sees the tag and
+// A message from another agent of the session: the model sees the tag and
 // the text; data { from, name, to, text } lets every view label the sender.
 export const MESSAGE_KIND = 'pouch.msg';
 // A file-watch event (src/ns/watch.js): data { watches: [{ id, note }], lines, mode }.
@@ -45,43 +47,17 @@ export { WATCH_KIND } from './ns/watch.js';
 export const tagOf = (name, ref) => `[from ${name} (${ref})]`;
 // Five is the panel (a chair and four judges); one spare for a helper.
 export const MAX_RUNNING = 6;
-export const SUBAGENT_DIR = '/work/.subagents';
 const ctx0 = undefined;
 
 const slug = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24);
 const textOf = (content) => typeof content === 'string' ? content
   : (content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join('');
 
-// The harness gloss on messaging, shared by main's prompt and every child's.
-export const GRAPH_GLOSS = `Sessions in this scope message each other by id: main is ${MAIN}, subagents are s2, s3 and so on. Common shapes: many-to-one (several send findings to one collector), pipeline (each passes its result to the next), cross-check (two answer each other). Messages arrive between your steps, tagged [from <name> (<id>)]; do not poll. join blocks until subagents go quiet and returns their last messages; it never wakes one, so to get new work, message it and then join it. When your part is done, send your result to whoever asked, then stop.`;
-
-// Where a subagent keeps notes: /work/.subagents when it may write /work,
-// else its private /tmp (a spawn that narrowed /work to read-only files).
-export function scratchOf(ns) {
-  if (!ns?.length) return SUBAGENT_DIR;
-  const rw = ns.filter((s) => !/:ro$/.test(s)).map((s) => s.replace(/:rw$/, '').replace(/\/+$/, ''));
-  return rw.some((p) => (SUBAGENT_DIR + '/').startsWith(p + '/')) ? SUBAGENT_DIR : '/tmp';
-}
-
-function instructions(name, ref, task, ns) {
-  const dir = scratchOf(ns);
-  const where = dir === '/tmp' ? `/tmp (your private scratch, lost on reload; /work is read-only for you, so never write there), for example /tmp/${name}.md` : `${dir}/, for example ${dir}/${name}.md`;
-  return `You are a subagent named "${name}" (id ${ref}), started by the main BayLeaf Pouch agent, "main" (id ${MAIN}), to work on one task while it keeps talking to the user. Work only on this task:
-<task>
-${task}
-</task>
-You cannot start subagents yourself (ignore any guidance about them above). ${GRAPH_GLOSS} Use the agents tool for that (actions list, message, join). Nobody else will answer questions: make reasonable assumptions and say what they were. Write any long output (notes, lists, drafts) to a file under ${where}. If your task says to send your result to a session, send it there with the agents tool and then end with one short line; otherwise finish with a concise report (at most about 200 words) that states what you found or did and lists the paths of files you wrote: main reads only that report. To stop, simply finish your reply.`;
-}
-
-// A one-shot subagent: one model request, no tools, no Pouch prompt. It sees
-// the task and the files main attached; its reply is its report (or goes to
-// `to`, forwarded by the harness, since it cannot message anyone itself).
-function oneshotInstructions(name, ref, toLabel) {
-  return `You are "${name}" (id ${ref}), a one-shot helper started by the BayLeaf Pouch agent. You have no tools and exactly one reply: answer the task below from the text you are given, concisely and concretely, quoting the text where it helps. Nobody will answer questions: make reasonable assumptions and say what they were. Your reply goes to ${toLabel}.`;
-}
+// The prompts (GRAPH_GLOSS, the subagent and one-shot instructions) live
+// with their profiles in src/profiles.js.
 export const MAX_FILE_CHARS = 48_000, MAX_FILES_CHARS = 120_000;
 
-// deps: { ctx, laneOf(sid), lane(name), conv(sid), modelRef(id), normalizeView(view, entries),
+// deps: { ctx, dbOf(sid), openDb(name), conv(sid), modelRef(id), normalizeView(view, entries),
 //         reg: { get(sid), set(sid, list) }, onChange(sid, list), onReport(sid, submission, child),
 //         onSettle(sid, child), lowAllowance() -> string|null, sidOf(convId) }
 export function createSubagents(deps) {
@@ -100,7 +76,7 @@ export function createSubagents(deps) {
   function update(sid, fn) {
     const prev = locks.get(String(sid)) ?? Promise.resolve();
     const next = prev.then(async () => {
-      const list = (await deps.reg.get(String(sid))) ?? [];
+      const list = migrateRows((await deps.reg.get(String(sid))) ?? []);
       const out = (await fn(list)) ?? list;
       await deps.reg.set(String(sid), out.length ? out : undefined);
       for (const c of out) owners.set(c.id, { sid, id: c.id, ns: c.ns });
@@ -112,31 +88,31 @@ export function createSubagents(deps) {
     locks.set(String(sid), next.catch(() => {}));
     return next;
   }
-  const list = async (sid) => (await deps.reg.get(String(sid))) ?? [];
+  // Rows read through migrateRows: a registry written before a-handles reads as a1, a2, ...
+  const list = async (sid) => migrateRows((await deps.reg.get(String(sid))) ?? []);
   const running = (l) => l.filter((c) => c.status === 'running');
   // A submission the page can await without a pi-durable context (drive()).
   const waitable = (sub) => ({ id: sub.id, wait: () => sub.wait(ctx) });
-  // Short ids: s2, s3, ... in spawn order (rows made before graphs have none).
-  const refOf = (l, c) => c.ref ?? `s${l.indexOf(c) + 2}`;
-  const find = (l, ref) => l.find((c) => c.id === ref || c.name === ref || refOf(l, c) === ref || c.name === slug(ref));
+  // Handles: a2, a3, ... in spawn order (graph.js refOf; rows made before graphs have none).
+  const find = (l, ref) => l.find((c) => c.id === ref || c.name === ref || refOf(l, c) === asRef(ref) || c.name === slug(ref));
   const label = (l, ref) => { if (ref === MAIN) return `main (${MAIN})`; const c = l.find((x) => refOf(l, x) === ref); return c ? `${c.name} (${ref})` : ref; };
-  // Whether a session of the scope is in a model run right now.
+  // Whether an agent of the session is in a model run right now.
   async function busy(conv) {
     const state = await conv.viewState(ctx), b = !!state.value.docs['pi.live']?.run;
     state.dispose();
     return b;
   }
 
-  // The user's queued message starts main's next turn before any wake that
+  // The user's follow-up starts main's next turn before any wake that
   // comes from an agent (a report, a message to an idle main): such a wake
-  // waits while main works or the page holds a queued message for it, so it
-  // follows the user's turn. deps.userQueued(sid) says whether one is held.
-  // idleOnly: wait only for the queued message (a busy main takes it as a steer).
+  // waits while main works or the page holds a follow-up for it, so it
+  // follows the user's turn. deps.followUpHeld(sid) says whether one is held.
+  // idleOnly: wait only for the follow-up (a busy main takes it as a steer).
   async function userFirst(sid, parent, idleOnly = false) {
-    if (!deps.userQueued) return;
-    while (!closing && (deps.userQueued(sid) || (!idleOnly && await busy(parent)))) await new Promise((r) => setTimeout(r, 150));
+    if (!deps.followUpHeld) return;
+    while (!closing && (deps.followUpHeld(sid) || (!idleOnly && await busy(parent)))) await new Promise((r) => setTimeout(r, 150));
   }
-  async function harnessOf(sid) { return (await deps.lane(deps.laneOf(sid))).harness; }
+  async function harnessOf(sid) { return (await deps.openDb(deps.dbOf(sid))).harness; }
   async function childConv(sid, id) {
     const c = await (await harnessOf(sid)).conversation(id, ctx);
     if (!c) throw new Error('That subagent no longer exists.');
@@ -225,13 +201,13 @@ export function createSubagents(deps) {
   }
 
   // force quiet: after a reload, so a report never starts a parent run by itself.
-  // byMessage: it sent its work to other sessions; say so, without its words.
+  // byMessage: it sent its work to other agents; say so, without its words.
   async function report(sid, child, answer, forceQuiet = false, steers = [], byMessage = false) {
     const verb = { finished: 'finished', failed: 'failed', stopped: 'was stopped by the user', interrupted: 'was interrupted by a page reload (the user can resume it from its card)' }[child.status];
     const l = await list(sid), ref = child.ref ?? refOf(l, find(l, child.id) ?? child);
     const to = Object.keys(child.sent ?? {}).map((r) => label(l, r)).join(', ');
     const body = byMessage && child.sentIn !== child.sub ? `A message from ${label(l, child.wokenBy)} woke it, and it ended without sending anything; its reply stays in its transcript.`
-      : byMessage ? `It delivered its work by message (to ${to || 'other sessions'}), so its output is not repeated here.`
+      : byMessage ? `It delivered its work by message (to ${to || 'other agents'}), so its output is not repeated here.`
       : child.status !== 'finished' && answer?.trim() ? `Its last output before it ${{ failed: 'failed', interrupted: 'was interrupted' }[child.status] ?? 'was stopped'} (work in progress, not a report): ${answer.trim()}`
       : answer?.trim() || (child.status === 'finished' ? '(It gave no answer.)' : '(No answer yet.)');
     const content = `[Subagent report from Pouch, not typed by the user] Subagent "${child.name}" (${ref}) ${verb}${child.error && child.status === 'failed' ? ` (${child.error})` : ''}. Its task: ${child.task.slice(0, 300)}${steerNote(steers)}\n\n${body}` +
@@ -291,12 +267,13 @@ export function createSubagents(deps) {
     const l = await list(sid);
     let toRef = null;
     if (oneshot && to != null && String(to).trim()) {
+      to = asRef(to);
       toRef = to === MAIN || to === 'main' ? MAIN : refOf(l, find(l, String(to)) ?? {});
-      if (toRef !== MAIN && !find(l, String(to))) throw new Error(`to: no session "${to}" in this scope. Known: ${[`main (${MAIN})`, ...l.map((c) => label(l, refOf(l, c)))].join(', ')}.`);
+      if (toRef !== MAIN && !find(l, String(to))) throw new Error(`to: no agent "${to}" in this session. Known: ${[`main (${MAIN})`, ...l.map((c) => label(l, refOf(l, c)))].join(', ')}.`);
     }
     const attached = oneshot ? await attach(files) : '';
     if (running(l).length >= MAX_RUNNING) throw new Error(`${MAX_RUNNING} subagents are already running in this session, the limit. Wait for a report, or stop one (action "stop"), then spawn again. Running: ${running(l).map((c) => c.name).join(', ')}.`);
-    // Ids and names are reserved before the next await: parallel spawns in
+    // Handles and names are reserved before the next await: parallel spawns in
     // one tool round must not take the same ones.
     const k = String(sid), taken = reserved.get(k) ?? { n: 0, names: new Set() };
     reserved.set(k, taken);
@@ -304,14 +281,14 @@ export function createSubagents(deps) {
     while (l.some((c) => c.name === n) || taken.names.has(n)) n = `${base}-${i++}`;
     taken.n = Math.max(l.length + 2, taken.n + 1);
     taken.names.add(n);
-    const ref = `s${taken.n}`;
+    const ref = `a${taken.n}`;
     const harness = await harnessOf(sid);
     const toLabel = toRef ? `${label(l, toRef)}, forwarded by Pouch` : background ? 'main, as your report' : 'main, which is waiting for it';
     const child = await harness.createConversation({
       ownership: { kind: 'ownerless' },
-      // A one-shot selects no extensions: no Pouch prompt, no tools, one request.
-      agent: oneshot ? { model: parentModel, extensions: [], modelTools: [], instructions: oneshotInstructions(n, ref, toLabel) }
-        : { model: parentModel, modelTools: { remove: [tool], add: [peerTool] }, instructions: instructions(n, ref, task, ns) },
+      // The profile (src/profiles.js) says what the agent runs with: a one-shot
+      // selects no extensions (no Pouch prompt, no tools, one request).
+      agent: PROFILES[oneshot ? 'oneshot' : 'subagent'].agent({ model: parentModel, name: n, ref, task, ns, toLabel, tool, peerTool }),
     }, ctx);
     // Known as a subagent (and its namespace) before its first tool call can run.
     owners.set(child.id, { sid, id: child.id, ns: ns?.length ? ns : undefined });
@@ -322,11 +299,11 @@ export function createSubagents(deps) {
     const low = deps.lowAllowance?.();
     if (background && oneshot) {
       track(sid, child.id, sub.id);
-      return { child: entry, text: `Started one-shot "${n}" (id ${ref}): one request, no tools${files?.length ? `, with ${files.length} attached file${files.length > 1 ? 's' : ''}` : ''}. Its reply ${toRef ? `goes to ${label(l, toRef)} as a message from it` : 'arrives later as its report'}; do not poll. Join it with "join" when you have nothing else to do.${low ? ` Warning: ${low}` : ''}` };
+      return { child: entry, text: `Started one-shot "${n}" (handle ${ref}): one request, no tools${files?.length ? `, with ${files.length} attached file${files.length > 1 ? 's' : ''}` : ''}. Its reply ${toRef ? `goes to ${label(l, toRef)} as a message from it` : 'arrives later as its report'}; do not poll. Join it with "join" when you have nothing else to do.${low ? ` Warning: ${low}` : ''}` };
     }
     if (background) {
       track(sid, child.id, sub.id);
-      return { child: entry, text: `Started subagent "${n}" (id ${ref}) in the background. Its report will arrive later as a message; keep helping the user meanwhile and do not poll for it. (List sessions with action "list", message it by id with "message", block until it goes quiet with "join" only when you have nothing else to do, end it with "stop".)${low ? ` Warning: ${low}` : ''}` };
+      return { child: entry, text: `Started subagent "${n}" (handle ${ref}) in the background. Its report will arrive later as a message; keep helping the user meanwhile and do not poll for it. (List agents with action "list", message it by handle with "message", block until it goes quiet with "join" only when you have nothing else to do, end it with "stop".)${low ? ` Warning: ${low}` : ''}` };
     }
     const abort = () => child.abort(ctx).catch(() => {});
     signal?.addEventListener('abort', abort, { once: true });
@@ -368,8 +345,8 @@ export function createSubagents(deps) {
     return sub ?? true;
   }
 
-  // A file-watch event (src/ns/watch.js) for main or a subagent of the scope.
-  // 'steer' joins a busy session's next step; 'wake' starts a turn of an idle
+  // A file-watch event (src/ns/watch.js) for main or a subagent of the session.
+  // 'steer' joins a busy agent's next step; 'wake' starts a turn of an idle
   // one, like a report (user-first holds; the page drives main's turn). Not
   // counted against the message caps: watches have their own wake cap.
   // Resolves to { done } for a wake (its run's end), {} otherwise.
@@ -398,7 +375,7 @@ export function createSubagents(deps) {
     return !!target && target.status === 'running' && busy(await childConv(sid, target.id));
   }
 
-  // Who is a caller: main (s1) or one of the scope's children.
+  // Who is a caller: main (a1) or one of the session's subagents.
   async function senderOf(sid, convId) {
     const o = owners.get(convId);
     if (!o) return { ref: MAIN, name: 'main', child: null };
@@ -409,15 +386,16 @@ export function createSubagents(deps) {
     return { ref: refOf(l, c), name: c.name, child: c };
   }
 
-  // One message from a session of the scope to another (G4, G5, G11).
+  // One message from an agent of the session to another (G4, G5, G11).
   async function send(sid, from, to, text) {
     if (!text?.trim()) throw new Error('text is empty.');
-    if (to == null || !String(to).trim()) throw new Error('to is empty: give the id of a session in this scope (action "list" shows them).');
+    if (to == null || !String(to).trim()) throw new Error('to is empty: give the handle of an agent in this session (action "list" shows them).');
+    to = asRef(to);
     const l = await list(sid);
     const target = to === MAIN || to === 'main' ? null : find(l, String(to));
-    if (to !== MAIN && to !== 'main' && !target) throw new Error(`No session "${to}" in this scope (main ${MAIN} and its subagents). Known: ${[`main (${MAIN})`, ...l.map((c) => label(l, refOf(l, c)))].join(', ')}. Messages never leave this scope.`);
+    if (to !== MAIN && to !== 'main' && !target) throw new Error(`No agent "${to}" in this session (main ${MAIN} and its subagents). Known: ${[`main (${MAIN})`, ...l.map((c) => label(l, refOf(l, c)))].join(', ')}. Messages never leave this session.`);
     const toRef = target ? refOf(l, target) : MAIN;
-    if (toRef === from.ref) throw new Error('That is you: message another session.');
+    if (toRef === from.ref) throw new Error('That is you: message another agent.');
     if (target?.oneshot) throw new Error(`${label(l, toRef)} is a one-shot: it makes one request and takes no messages. Spawn another one-shot with the question (and what it needs attached).`);
     if (target && target.status !== 'running' && from.child && target.status !== 'finished') throw new Error(`${label(l, toRef)} ${target.status === 'stopped' ? 'was stopped by the user' : `is ${target.status}`}; only main or the user can restart it.`);
     const refused = scope(sid).admit(from.ref, toRef);
@@ -460,18 +438,18 @@ export function createSubagents(deps) {
   // its age. Never wakes anyone. Several joiners of one target are released
   // in the same tick (graph.js check) with the same text (results cache).
   async function join(sid, from, ids, timeout, signal) {
-    const want = (Array.isArray(ids) ? ids : [ids]).filter((x) => x != null && String(x).trim()).map(String);
-    if (!want.length) throw new Error('ids is empty: give the subagent ids to join (action "list" shows them).');
+    const want = (Array.isArray(ids) ? ids : [ids]).filter((x) => x != null && String(x).trim()).map(asRef);
+    if (!want.length) throw new Error('ids is empty: give the subagent handles to join (action "list" shows them).');
     const l = await list(sid), refs = [];
     for (const w of want) {
       if (w === MAIN || w === 'main') throw new Error(`main (${MAIN}) cannot be joined: it answers by message. Join subagents only.`);
       const c = find(l, w);
-      if (!c) throw new Error(`No session "${w}" in this scope. Known: ${[`main (${MAIN})`, ...l.map((x) => label(l, refOf(l, x)))].join(', ')}.`);
+      if (!c) throw new Error(`No agent "${w}" in this session. Known: ${[`main (${MAIN})`, ...l.map((x) => label(l, refOf(l, x)))].join(', ')}.`);
       refs.push(refOf(l, c));
     }
     if (refs.includes(from.ref)) throw new Error('You cannot join yourself.');
     const loop = scope(sid).cycle(from.ref, refs);
-    if (loop) throw new Error(`Refused: joining would close a cycle of blocked sessions (${loop.map((r) => label(l, r)).join(' -> ')}). One of you must answer by message instead.`);
+    if (loop) throw new Error(`Refused: joining would close a cycle of blocked agents (${loop.map((r) => label(l, r)).join(' -> ')}). One of you must answer by message instead.`);
     const secs = Math.min(Math.max(Number(timeout) || JOIN_DEFAULT_S, 1), JOIN_MAX_S);
     const rowOf = (ref) => { const x = last.get(String(sid)) ?? l; return x.find((y) => refOf(x, y) === ref); };
     const ready = (ref) => { const c = rowOf(ref); return !c || (c.status !== 'running' && (c.seq ?? 0) > scope(sid).sentSeq(from.ref, ref)); };
@@ -509,7 +487,7 @@ export function createSubagents(deps) {
     return `${head} Messages they sent you are separate entries tagged [from <name> (<id>)].\n${JSON.stringify(out)}`;
   }
 
-  // The scope, for `list` (G5): id, name, state, parent, task, message counts.
+  // The session's agents, for `list` (G5): handle, name, state, parent, task, message counts.
   async function roster(sid, from) {
     const l = await list(sid);
     const inOf = (ref) => l.reduce((n, c) => n + (c.sent?.[ref] ?? 0), 0);
@@ -560,7 +538,7 @@ export function createSubagents(deps) {
     if (!text?.trim()) throw new Error('text is empty.');
     if (c.oneshot) throw new Error(`"${c.name}" is a one-shot: it makes one request and cannot be steered; nothing was sent.`);
     const conv = await childConv(sid, c.id);
-    if (c.status !== 'running' || !(await busy(conv))) throw new Error(`"${c.name}" has finished; nothing was sent. Its report went to the main conversation.`);
+    if (c.status !== 'running' || !(await busy(conv))) throw new Error(`"${c.name}" has finished; nothing was sent. Its report went to main's thread.`);
     if (out) out.sub = await conv.submit({ type: 'input', content: fromUser(text), entry: { kind: STEER_KIND, data: { text } }, whenBusy: 'steer' }, ctx);
     else await conv.submit({ type: 'input', content: fromUser(text), entry: { kind: STEER_KIND, data: { text } }, whenBusy: 'steer' }, ctx);
     scope(sid).release(refOf(l, c), { type: 'detached', note: `Interrupted: the user wrote to you (their message follows). Join again afterwards if you still need to.` });
@@ -587,11 +565,11 @@ export function createSubagents(deps) {
     return `${c.name} (${refOf(l, c)}): ${c.status}, ${requests} requests so far.\nTask: ${c.task}\nLatest output:\n${answer.slice(-1500) || '(nothing yet)'}`;
   }
 
-  const ID = Type.Optional(Type.String({ description: 'message: the recipient id, e.g. "s3" (or "s1" for main)' }));
-  const JOIN_IDS = Type.Optional(Type.Array(Type.String(), { description: 'join: subagent ids; returns when each is quiet, with its last message' }));
+  const ID = Type.Optional(Type.String({ description: 'message: the recipient handle, e.g. "a3" (or "a1" for main)' }));
+  const JOIN_IDS = Type.Optional(Type.Array(Type.String(), { description: 'join: subagent handles; returns when each is quiet, with its last message' }));
   const TIMEOUT = Type.Optional(Type.Number({ description: `join: give up after this many seconds (default ${JOIN_DEFAULT_S}, at most ${JOIN_MAX_S}); the targets keep running` }));
   const TEXT = Type.Optional(Type.String({ description: 'message: what to tell it' }));
-  const CAPS = `At most ${MAX_SCOPE_MESSAGES} messages per user turn in this scope and ${MAX_PAIR_MESSAGES} between any two sessions.`;
+  const CAPS = `At most ${MAX_SCOPE_MESSAGES} messages per user turn in this session and ${MAX_PAIR_MESSAGES} between any two agents.`;
 
   async function act(args, api, context, from, sid) {
     if (args.action === 'list') return roster(sid, from);
@@ -603,7 +581,7 @@ export function createSubagents(deps) {
   const tool = defineTool({
     name: 'subagent', label: 'Subagent',
     description: 'Run self-contained tasks in subagents (separate Pouch agents with read/write/edit/bash and the bayleaf CLI, but no subagents of their own) while you keep talking to the user, and connect them by messages. ' +
-      `action "spawn" starts one and returns its id (background by default: returns at once; its report arrives later as a message). "list" shows the sessions of this scope (you are main, ${MAIN}). "message" sends text to one id (to: "s3"). "join" blocks until the given subagents are quiet and returns each one's last message (fresh, or cached with its age if it was already quiet; it never wakes one: message, then join). "stop" ends one. At most ${MAX_RUNNING} run at once. ${CAPS} Each of their steps costs one request from the daily allowance; mode "oneshot" costs exactly one. Several spawns with background false in one step run in parallel and return together.`,
+      `action "spawn" starts one and returns its handle (background by default: returns at once; its report arrives later as a message). "list" shows the agents of this session (you are main, ${MAIN}). "message" sends text to one handle (to: "a3"). "join" blocks until the given subagents are quiet and returns each one's last message (fresh, or cached with its age if it was already quiet; it never wakes one: message, then join). "stop" ends one. At most ${MAX_RUNNING} run at once. ${CAPS} Each of their steps costs one request from the daily allowance; mode "oneshot" costs exactly one. Several spawns with background false in one step run in parallel and return together.`,
     parameters: Type.Object({
       action: Type.Union([Type.Literal('spawn'), Type.Literal('list'), Type.Literal('message'), Type.Literal('join'), Type.Literal('stop'), Type.Literal('status')]),
       task: Type.Optional(Type.String({ description: 'spawn: the complete, self-contained task (the subagent sees nothing else of this conversation)' })),
@@ -613,8 +591,8 @@ export function createSubagents(deps) {
       ns: Type.Optional(Type.Array(Type.String(), { description: 'spawn: folders it may reach, each "path" or "path:ro" (default: /work, /pouch:ro and mounted folders; always a private /tmp)' })),
       mode: Type.Optional(Type.Union([Type.Literal('agent'), Type.Literal('oneshot')], { description: 'spawn: "oneshot" makes exactly one request with no tools: it answers the task from the files you attach, and its reply is its report (cheapest; for judging or summarizing given text). Default "agent": a full subagent with tools' })),
       files: Type.Optional(Type.Array(Type.String(), { description: `spawn oneshot: file paths whose contents are attached to the task (at most ${MAX_FILE_CHARS.toLocaleString('en-US')} characters each)` })),
-      to: Type.Optional(Type.String({ description: 'message: the recipient id, e.g. "s3" (or "s1" for main). spawn oneshot: send its reply to this id as a message from it, instead of a report' })),
-      id: Type.Optional(Type.String({ description: 'stop/status: the subagent id or name' })),
+      to: Type.Optional(Type.String({ description: 'message: the recipient handle, e.g. "a3" (or "a1" for main). spawn oneshot: send its reply to this handle as a message from it, instead of a report' })),
+      id: Type.Optional(Type.String({ description: 'stop/status: the subagent handle or name' })),
       ids: JOIN_IDS, timeout: TIMEOUT, text: TEXT,
     }),
     execute: async (args, api, context) => {
@@ -636,7 +614,7 @@ export function createSubagents(deps) {
   // The subagents' trimmed tool (deferred: offered only where modelTools adds it).
   const peerTool = defineTool({
     name: 'agents', label: 'Agents', deferred: true,
-    description: `Talk to the other sessions of your scope by id: main is ${MAIN}, subagents are s2, s3, ... "list" shows them (id, name, state, task). "message" sends text to one id (to: "s2"); it arrives between their steps, tagged with your name and id. "join" blocks until the given subagents are quiet and returns each one's last message (cached if already quiet; it never wakes one: message, then join); use it only when you have nothing else to do. You cannot spawn or stop sessions; to stop, finish your reply. ${CAPS}`,
+    description: `Talk to the other agents of your session by handle: main is ${MAIN}, subagents are a2, a3, ... "list" shows them (handle, name, state, task). "message" sends text to one handle (to: "a2"); it arrives between their steps, tagged with your name and handle. "join" blocks until the given subagents are quiet and returns each one's last message (cached if already quiet; it never wakes one: message, then join); use it only when you have nothing else to do. You cannot spawn or stop agents; to stop, finish your reply. ${CAPS}`,
     parameters: Type.Object({
       action: Type.Union([Type.Literal('list'), Type.Literal('message'), Type.Literal('join')]),
       to: ID, ids: JOIN_IDS, timeout: TIMEOUT, text: TEXT,
@@ -658,7 +636,7 @@ export function createSubagents(deps) {
     blocked: (sid, ref = MAIN) => scope(sid).held(ref),
     // The user wrote to main: the message caps start over (graph.js).
     newTurn: (sid) => scope(sid).newTurn(),
-    refOf: (l, c) => refOf(l, c),
+    refOf: (l, c) => refOf(l, c), asRef,
     // The child behind a conversation id, if it is one: { sid, id }.
     owner: (convId) => owners.get(convId) ?? null,
     async stopAll(sid) {

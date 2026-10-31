@@ -18,6 +18,7 @@ import { $, el, icon, seeded } from './dom.js';
 import { arm, armed, play, flipFrom, fold, snapshot, reduced } from './motion.js';
 import { createLayout } from './layout.js';
 import { createUsage, renderMeter, renderPanel, exhaustedText, extractKey, createLedger } from './usage.js';
+import { MAIN, refOf, asRef } from './graph.js';
 import { createSessions, sameId, titleOf, notesKey, convKey, revertKey, subagentsKey, interruptedKey, turnsKey, watchesKey } from './sessions.js';
 import { createWatches, watchTool, baseOf, isGlob, MAX_WAKES } from './ns/watch.js';
 import { parseSpecs } from './ns/namespace.js';
@@ -775,7 +776,7 @@ async function connect() {
     fact('Credential', key ? 'personal key (stored in this browser)' : 'Campus Pass (no account; campus network only)');
     if (!ok) throw new Error('attestation did not verify');
     client = c; verified = true;
-    setBadge('ok', 'Sealed: enclave verified');
+    setBadge('ok', 'BayLeaf Sealed: enclave verified');
     status(key ? '' : campusLine(usage.state));
   } catch (e) {
     // Fail closed: no plaintext fallback exists anywhere in this app. An
@@ -797,7 +798,7 @@ let offline = false;
 let recheck = null;
 const lostRuns = new Set(); // sessions whose turn the network cut off
 const OFFLINE = 'Offline: the model is unreachable. Files, the editor, archives and run keep working; sending comes back when the network does.';
-const LOCAL_OFFLINE = 'Offline: Sealed is unreachable. The Local lane keeps working; it needs no network.';
+const LOCAL_OFFLINE = 'Offline: BayLeaf Sealed is unreachable. Transformers.js keeps working; it needs no network.';
 function isNetworkError(msg) { return /failed to fetch|networkerror|network ?error|load failed|connection (error|lost)|ERR_INTERNET|ERR_NETWORK|fetch failed/i.test(msg ?? ''); }
 function goOffline() {
   const was = offline;
@@ -834,7 +835,7 @@ function setBadge(state, text) {
   b.className = 'icon ' + state;
   b.ariaLabel = text; b.title = text + '. Click for what BayLeaf can see.';
   b.querySelector('use').setAttribute('href', state === 'ok' ? '#i-shield-check' : state === 'bad' ? '#i-shield-alert' : '#i-shield');
-  // The composer's shield shows the same state; it opens the lane popover.
+  // The composer's shield shows the same state; it opens the provider popover.
   $('shield-btn').querySelector('use').setAttribute('href', b.querySelector('use').getAttribute('href'));
   $('shield-btn').className = 'icon ' + state;
   composer?.refreshShield();
@@ -852,61 +853,63 @@ async function loadModels() {
       .map((m) => ({ id: m.id, name: m.name ?? m.id, contextWindow: m.context_window ?? 131072, reasoning: !!m.reasoning, multimodal: m.multimodal === true,
         cost: m.pricing && { input: m.pricing.inputTokenPricePer1M ?? 0, output: m.pricing.outputTokenPricePer1M ?? 0, cacheRead: 0 } }));
   } catch (e) {
-    status('Could not load the Sealed model list: ' + e.message, 'bad');
+    status('Could not load the BayLeaf Sealed model list: ' + e.message, 'bad');
   }
   const saved = (await store.getSetting('model')) ?? 'glm-5-3';
-  // Local is never the default: without a Sealed list, a placeholder holds the place.
-  const none = !models.length && saved !== LOCAL_ID ? [Object.assign(new Option('Sealed: model list unavailable', '', true, true), { disabled: true })] : [];
-  $('model').replaceChildren(...none, ...models.map((m) => new Option(m.name + (m.multimodal ? ' · images' : ''), m.id, false, m.id === saved)), ...localOption(saved));
+  // Transformers.js is never the default: without a BayLeaf Sealed list, a placeholder holds the place.
+  // The picker groups models by provider (LANGUAGE.md), each named specifically.
+  const none = !models.length && saved !== LOCAL_ID ? [Object.assign(new Option('Model list unavailable', '', true, true), { disabled: true })] : [];
+  const group = (label, opts) => (opts.length ? [el('optgroup', { label }, ...opts)] : []);
+  $('model').replaceChildren(...group('BayLeaf Sealed', [...none, ...models.map((m) => new Option(m.name + (m.multimodal ? ' · images' : ''), m.id, false, m.id === saved))]), ...group('Transformers.js', localOption(saved)));
   agent?.setModels?.(models);
-  pickerLane();
+  pickerProvider();
 }
 let lastPick = null;
 $('model').onfocus = () => { lastPick = $('model').value; };
 $('model').onchange = async () => {
-  // Switching lanes is always this explicit choice; Pouch never switches by itself.
-  if (localPicked() && !(await ensureLocal())) { $('model').value = lastPick ?? models[0]?.id ?? ''; pickerLane(); return; }
+  // Switching providers is always this explicit choice; Pouch never switches by itself.
+  if (localPicked() && !(await ensureLocal())) { $('model').value = lastPick ?? models[0]?.id ?? ''; pickerProvider(); return; }
   await store.setSetting('model', $('model').value);
   if (!localPicked()) await store.setSetting('sealedModel', $('model').value);
-  pickerLane(); updateSend();
-  status(localPicked() ? 'Local selected for your next user turn: it runs on this device and sends nothing.' : 'Model selected for your next user turn. Running work is unchanged.');
+  pickerProvider(); updateSend();
+  status(localPicked() ? 'Transformers.js selected for your next user turn: the model runs in this browser and nothing is sent.' : 'Model selected for your next user turn. Running work is unchanged.');
 };
 
-// ── Local lane (src/local/): a model on this device, chosen explicitly ─
+// ── Transformers.js provider (src/local/): a model in this browser, chosen explicitly
 // The picker offers it when this build carries it and WebGPU works; otherwise
 // it is listed disabled with the reason. Nothing is downloaded without asking.
 let localOk = { ok: false, reason: '' };
-const localRuns = new Set(); // sessions whose current turn runs on the Local lane
+const localRuns = new Set(); // sessions whose current turn runs on Transformers.js
 const LOCAL_ID = LOCAL && 'local:' + LOCAL.id;
 const localPicked = () => isLocal($('model').value);
 const canSend = () => !!agent && (localPicked() || (verified && !offline));
 const mib = (n) => `${(n / 2 ** 20).toLocaleString(undefined, { maximumFractionDigits: 0 })} MB`;
 function localOption(saved) {
   if (!LOCAL) return [];
-  const o = new Option(localOk.ok ? `Local: ${LOCAL.label} (on this device)` : `Local: ${LOCAL.label} (unavailable: ${localOk.reason})`, LOCAL_ID, false, localOk.ok && saved === LOCAL_ID);
+  const o = new Option(localOk.ok ? `${LOCAL.label} (in this browser)` : `${LOCAL.label} (unavailable: ${localOk.reason})`, LOCAL_ID, false, localOk.ok && saved === LOCAL_ID);
   o.disabled = !localOk.ok;
   o.title = localOk.ok ? 'Runs in this browser on your GPU. Nothing is sent.' : localOk.reason;
   return [o];
 }
-function pickerLane() {
-  const local = localPicked(), label = $('model').closest('.lane-model');
+function pickerProvider() {
+  const local = localPicked(), label = $('model').closest('.provider-model');
   label.querySelector('use').setAttribute('href', local ? '#i-chip' : '#i-lock');
-  // Lanes keep fixed theme colors (continuity): Sealed and Local never share one.
-  label.classList.toggle('lane-local', local);
-  $('shield-btn')?.classList.toggle('lane-local', local);
+  // Providers keep fixed theme colors (continuity): BayLeaf Sealed and Transformers.js never share one.
+  label.classList.toggle('provider-tjs', local);
+  $('shield-btn')?.classList.toggle('provider-tjs', local);
   if (offline) $('input').placeholder = local ? PLACEHOLDER : 'Offline: keep typing; Send comes back with the network';
-  label.title = local ? 'Local lane: the model runs on this device; nothing is sent. The model applies when you next send.' : 'Sealed lane: requests are encrypted to the enclave. The model applies when you next send; running work keeps its model.';
+  label.title = local ? 'Transformers.js: the model runs in this browser; nothing is sent. The model applies when you next send.' : 'BayLeaf Sealed: requests are encrypted to the enclave. The model applies when you next send; running work keeps its model.';
   composer?.refreshShield();
 }
 // Downloading is a choice (about 1.1 GB); progress shows in the status line and Settings.
 let localLoading = null;
 async function ensureLocal() {
-  if (!localOk.ok) { status(`Local is not available: ${localOk.reason}`, 'bad'); return false; }
+  if (!localOk.ok) { status(`Transformers.js is not available: ${localOk.reason}`, 'bad'); return false; }
   if (localEngine.loaded()) return true;
   const st = await localStored();
   if (!st.complete) {
-    if (!navigator.onLine) { status('The Local model is not on this device yet, and you are offline. Settings can load a saved copy from a folder.', 'bad'); return false; }
-    if (!(await ask(`Download the Local model (${LOCAL.label}, about ${mib(LOCAL.bytes - st.bytes)}) from pouch.bayleaf.dev into this browser? Each part is checked against this page's manifest. Afterwards Local works offline, and nothing you type is ever sent. Remove it any time in Settings.`, 'Download', 'primary', 'Download the Local model?'))) return false;
+    if (!navigator.onLine) { status('The Transformers.js model is not in this browser yet, and you are offline. Settings can load a saved copy from a folder.', 'bad'); return false; }
+    if (!(await ask(`Download the Transformers.js model (${LOCAL.label}, about ${mib(LOCAL.bytes - st.bytes)}) from pouch.bayleaf.dev into this browser? Each part is checked against this page's manifest. Afterwards it works offline, and nothing you type is ever sent. Remove it any time in Settings.`, 'Download', 'primary', 'Download the Transformers.js model?'))) return false;
   }
   return startLocal();
 }
@@ -914,8 +917,8 @@ function startLocal() {
   const box = $('local-settings');
   box.dataset.state = 'loading';
   localLoading ??= localEngine.start({ onProgress: localProgress, network: navigator.onLine })
-    .then(() => { box.dataset.state = 'ready'; status(`Local ${LOCAL.label} is ready on this device.`); return true; },
-      (e) => { box.dataset.state = 'error'; box.dataset.error = e.message; status('Local model: ' + e.message, 'bad'); return false; })
+    .then(() => { box.dataset.state = 'ready'; status(`${LOCAL.label} is ready in this browser (Transformers.js).`); return true; },
+      (e) => { box.dataset.state = 'error'; box.dataset.error = e.message; status('Transformers.js model: ' + e.message, 'bad'); return false; })
     .finally(() => { localLoading = null; renderLocalSettings(); });
   return localLoading;
 }
@@ -924,8 +927,8 @@ function localProgress(p) {
   if (p.phase !== 'loading' && p.done < p.total && Date.now() - progressAt < 150) return; // a few updates a second
   progressAt = Date.now();
   const pct = p.total ? Math.floor((p.done / p.total) * 100) : 0;
-  const text = p.phase === 'loading' ? `Local: verified ${mib(p.total)}; starting the model on your GPU...`
-    : `Local: ${p.fetched || p.repaired ? 'downloading and checking' : 'checking'} ${mib(p.done)} of ${mib(p.total)} (${pct}%)${p.repaired ? `, ${p.repaired} damaged part${p.repaired > 1 ? 's' : ''} fetched again` : ''}`;
+  const text = p.phase === 'loading' ? `Transformers.js: verified ${mib(p.total)}; starting the model on your GPU...`
+    : `Transformers.js: ${p.fetched || p.repaired ? 'downloading and checking' : 'checking'} ${mib(p.done)} of ${mib(p.total)} (${pct}%)${p.repaired ? `, ${p.repaired} damaged part${p.repaired > 1 ? 's' : ''} fetched again` : ''}`;
   status(text);
   const bar = $('local-progress');
   if (bar) { bar.hidden = false; bar.max = p.total || 1; bar.value = p.done; }
@@ -943,23 +946,23 @@ function renderHint() {
   const box = $('local-hint'), kinds = [...(hints.get(String(sessions.current?.id)) ?? [])];
   box.hidden = !kinds.length;
   if (!kinds.length) return;
-  $('local-hint-text').textContent = kinds.map((k) => HINTS[k]).join(' ') + ' Sealed (a larger model, encrypted to the enclave) may do better.';
+  $('local-hint-text').textContent = kinds.map((k) => HINTS[k]).join(' ') + ' BayLeaf Sealed (a larger model, encrypted to the enclave) may do better.';
 }
 $('local-hint-switch').onclick = async () => {
   const to = (await store.getSetting('sealedModel')) ?? models[0]?.id;
-  if (!to || !models.some((m) => m.id === to)) return status('No Sealed model is available right now.', 'bad');
-  $('model').value = to; await store.setSetting('model', to); pickerLane(); updateSend();
+  if (!to || !models.some((m) => m.id === to)) return status('No BayLeaf Sealed model is available right now.', 'bad');
+  $('model').value = to; await store.setSetting('model', to); pickerProvider(); updateSend();
   clearHint(sessions.current?.id);
-  status(`Switched the picker to Sealed (${modelName(to)}) for your next message. Nothing was sent.`);
+  status(`Switched the picker to BayLeaf Sealed (${modelName(to)}) for your next message. Nothing was sent.`);
 };
 $('local-hint-dismiss').onclick = () => clearHint(sessions.current?.id);
 async function renderLocalSettings() {
   const box = $('local-settings');
   if (!box) return;
-  if (!LOCAL) { $('local-state').textContent = 'This build of Pouch does not include a local model.'; box.querySelectorAll('button').forEach((b) => { b.hidden = true; }); return; }
+  if (!LOCAL) { $('local-state').textContent = 'This build of Pouch does not include the Transformers.js model.'; box.querySelectorAll('button').forEach((b) => { b.hidden = true; }); return; }
   const st = await localStored();
   $('local-state').textContent = !localOk.ok ? `Not available here: ${localOk.reason}`
-    : st.complete ? `${LOCAL.label} is kept in this browser (${mib(st.bytes)}${st.persistent ? '' : ', for this page load only'}). Local works offline.`
+    : st.complete ? `${LOCAL.label} is kept in this browser (${mib(st.bytes)}${st.persistent ? '' : ', for this page load only'}). It works offline.`
     : st.bytes ? `${mib(st.bytes)} of ${mib(st.total)} downloaded.` : `Not downloaded (about ${mib(LOCAL.bytes)}).`;
   $('local-download').hidden = !localOk.ok || st.complete;
   $('local-remove').hidden = !st.bytes;
@@ -967,12 +970,12 @@ async function renderLocalSettings() {
 }
 $('local-download').onclick = async () => { if (await ensureLocal()) renderLocalSettings(); };
 $('local-remove').onclick = async () => {
-  if (localRuns.size) return status('Stop the Local turn before removing the model.', 'bad');
-  if (!(await ask('Remove the Local model from this browser? Conversations and files stay. Downloading it again takes about 1.1 GB.', 'Remove', 'danger'))) return;
+  if (localRuns.size) return status('Stop the Transformers.js turn before removing the model.', 'bad');
+  if (!(await ask('Remove the Transformers.js model from this browser? Sessions and files stay. Downloading it again takes about 1.1 GB.', 'Remove', 'danger'))) return;
   await localRemove();
-  if (localPicked()) { $('model').value = (await store.getSetting('sealedModel')) ?? models[0]?.id ?? ''; await store.setSetting('model', $('model').value); pickerLane(); updateSend(); }
+  if (localPicked()) { $('model').value = (await store.getSetting('sealedModel')) ?? models[0]?.id ?? ''; await store.setSetting('model', $('model').value); pickerProvider(); updateSend(); }
   const est = await navigator.storage?.estimate?.().catch(() => null);
-  status(`Local model removed.${est ? ` This site now uses ${mib(est.usage)} of storage.` : ''}`);
+  status(`Transformers.js model removed.${est ? ` This site now uses ${mib(est.usage)} of storage.` : ''}`);
   renderLocalSettings();
 };
 for (const id of ['local-folder', 'local-files']) {
@@ -984,7 +987,7 @@ for (const id of ['local-folder', 'local-files']) {
     try {
       const r = await localImport(files);
       $(id).value = '';
-      status(r.complete ? `Local model loaded from your files (${r.added} parts verified${r.bad ? `, ${r.bad} refused` : ''}).`
+      status(r.complete ? `Transformers.js model loaded from your files (${r.added} parts verified${r.bad ? `, ${r.bad} refused` : ''}).`
         : `${r.added} parts verified${r.bad ? `, ${r.bad} refused (wrong bytes)` : ''}; ${mib(r.total - r.bytes)} still missing.`, r.bad ? 'bad' : '');
     } catch (e) { status(e.message, 'bad'); }
     renderLocalSettings();
@@ -1073,13 +1076,13 @@ function keyForm() {
 }
 $('auth').onclick = async () => {
   if (!key) { sheet('Sign in to BayLeaf', [['Approve on a device where you are signed in (recommended)', claim]], keyForm()); return; }
-  if (!(await ask('Remove your BayLeaf key from this browser? Files and conversations stay.', 'Remove key', 'danger'))) return;
+  if (!(await ask('Remove your BayLeaf key from this browser? Files and sessions stay.', 'Remove key', 'danger'))) return;
   key = null; await store.setSetting('key', undefined); renderAuth(); usage.refresh(); connect();
 };
 
 // ── Erase everything ────────────────────────────────────────────────
 async function eraseAll() {
-  if (!(await ask('Erase ALL Pouch data in this browser: files in /work, /pouch, conversations, your key and folder permissions? Folders you mounted from this device are not touched. This cannot be undone. (To keep /work, press Cancel, then Download all.)', 'Erase all', 'danger', 'Erase all?'))) return;
+  if (!(await ask('Erase ALL Pouch data in this browser: files in /work, /pouch, sessions, your key and folder permissions? Folders you mounted from this device are not touched. This cannot be undone. (To keep /work, press Cancel, then Download all.)', 'Erase all', 'danger', 'Erase all?'))) return;
   status('Erasing...');
   try { await agent?.close(); } catch {}
   agent = null;
@@ -1162,7 +1165,7 @@ $('update-go').onclick = applyUpdate;
 $('update-later').onclick = () => { $('update').hidden = true; };
 $('copy-check').onclick = () => checkUpdate(true);
 $('copy-remove').onclick = async () => {
-  if (!(await ask('Uninstall the offline copy? Pouch then loads from the network each time (and not without it). Files and conversations stay.', 'Uninstall', 'danger'))) return;
+  if (!(await ask('Uninstall the offline copy? Pouch then loads from the network each time (and not without it). Files and sessions stay.', 'Uninstall', 'danger'))) return;
   await shellCopy.uninstall();
   renderCopy('Offline copy removed. This tab keeps running; reloading loads the published build from the network.');
 };
@@ -1181,7 +1184,7 @@ let focus = null; // { sid, id }
 const sessions = createSessions({
   forgetWatches: (id) => watches.removeSession(id),
   agent: () => agent, view: () => view, connected: () => (agent && verified ? client : null),
-  model: () => $('model').value, setModel: (id) => { $('model').value = id; pickerLane(); }, hasModel: (id) => models.some((m) => m.id === id) || (localOk.ok && id === LOCAL_ID), isLocal,
+  model: () => $('model').value, setModel: (id) => { $('model').value = id; pickerProvider(); }, hasModel: (id) => models.some((m) => m.id === id) || (localOk.ok && id === LOCAL_ID), isLocal,
   attach: () => attach(), status, ask, sheet, countRequest: (id, kind) => ledger.add(id, kind).then(meter), layout, usage, quotaError, exhaustedText,
   agentError: () => agentError,
   runningChildren: (sid) => (kids.get(String(sid)) ?? []).filter((c) => c.status === 'running').length,
@@ -1267,7 +1270,7 @@ let tick = 0;
 const TASK_STATE = { running: 'running', finished: 'done', failed: 'failed', stopped: 'stopped', interrupted: 'interrupted' };
 function onKids(sid, list) {
   kids.set(String(sid), list);
-  if (childQueue.size) flushChildQueue(sid, list);
+  if (childFollowUps.size) flushChildFollowUps(sid, list);
   for (const c of list) vfs.tasks.upsert('sa:' + c.id, { kind: 'subagent', label: c.name, status: TASK_STATE[c.status] ?? c.status,
     ns: describeSpecs(vfs, c.ns?.length ? c.ns : defaultSubagentNs(vfs)), kill: () => agent.subagents.stop(sid, c.id) });
   sessions.render();
@@ -1302,7 +1305,7 @@ const lowAllowance = () => {
 // Agent graphs (G9): message counts per edge, from the registry rows.
 const sum = (o) => Object.values(o ?? {}).reduce((a, b) => a + b, 0);
 const msgCount = (c) => sum(c.got) + sum(c.sent);
-const refName = (l, ref) => { if (ref === 's1') return 'main (s1)'; const c = l.find((x, i) => (x.ref ?? `s${i + 2}`) === ref); return c ? `${c.name} (${ref})` : ref; };
+const refName = (l, ref) => { ref = asRef(ref); if (ref === MAIN) return `main (${MAIN})`; const c = l.find((x) => refOf(l, x) === ref); return c ? `${c.name} (${ref})` : ref; };
 const byRef = (o) => Object.entries(o ?? {}).sort(([a], [b]) => Number(a.slice(1)) - Number(b.slice(1)));
 const edgeText = (l, c) => [...byRef(c.got).map(([r, n]) => `from ${refName(l, r)} ${n}`), ...byRef(c.sent).map(([r, n]) => `to ${refName(l, r)} ${n}`)].join(', ');
 // A small to/from list, each peer in its own color (continuity: G9).
@@ -1313,10 +1316,11 @@ function edgeLine(l, c) {
   return el('div', { className: 'sa-edges', ariaLabel: 'Messages' }, el('span', { className: 'sa-edges-k', textContent: 'Messages' }),
     el('ul', {}, ...got, ...sent));
 }
-// Who a ref is, for pills: "chair (s2)", "main (s1)".
+// Who a handle is, for pills: "chair (a2)", "main (a1)".
 const whoRef = (ref) => refName(kids.get(String(sessions.current?.id)) ?? [], String(ref));
 const refRange = (ids) => {
-  const n = ids.map((x) => /^s(\d+)$/.exec(x)?.[1]).map(Number);
+  ids = ids.map(asRef);
+  const n = ids.map((x) => /^a(\d+)$/.exec(x)?.[1]).map(Number);
   if (ids.length > 2 && n.every((x, i) => x && (i === 0 || x === n[i - 1] + 1))) return `${ids[0]}-${ids.at(-1)}`;
   return ids.join(', ');
 };
@@ -1525,7 +1529,7 @@ function childLog() {
     // Ended: one compact bar in place of the composer (critique 7).
     const b = el('button', { type: 'button', textContent: 'Back', ariaLabel: `Back to ${title}`, title: `Back to ${title} (Esc)` });
     b.onclick = () => closeChild();
-    out.push(el('p', { className: 'notice sa-ended', role: 'status' }, el('span', { textContent: st === 'finished' ? `${c.name} finished; its report is in the parent thread.` : `${c.name} ${{ stopped: 'was stopped', failed: 'failed', interrupted: 'was interrupted' }[st] ?? 'ended'}; its last output is in the parent thread.` }), b));
+    out.push(el('p', { className: 'notice sa-ended', role: 'status' }, el('span', { textContent: st === 'finished' ? `${c.name} finished; its report is in main's thread.` : `${c.name} ${{ stopped: 'was stopped', failed: 'failed', interrupted: 'was interrupted' }[st] ?? 'ended'}; its last output is in main's thread.` }), b));
   }
   return out;
 }
@@ -1627,7 +1631,7 @@ async function renderUsagePanel(list) {
   if (gone) rows.push({ title: 'Deleted sessions', requests: gone, input: null, output: null });
   renderPanel($('usage-body'), usage.state, rows, led);
   if (LOCAL) $('usage-body').querySelector('.quota')?.after(el('p', { className: 'local-usage muted', textContent:
-    `Local turns (${LOCAL.label}, on this device) use none of this allowance: they send no requests.` }));
+    `Transformers.js turns (${LOCAL.label}, in this browser) use none of this allowance: they send no requests.` }));
   // Subagents spend the same allowance (D16).
   const live = [...kids.entries()].flatMap(([sid, l]) => l.filter((c) => c.status === 'running').map((c) => ({ sid, c })));
   if (live.length) {
@@ -1832,14 +1836,14 @@ function quietText(it) {
   return 'Finished without a report.';
 }
 // Consecutive quiet reports and main's joins (G7): one summary line, the
-// cards inside. "Joined 4 subagents: 3 reported to chair (s2), 1 quiet".
+// cards inside. "Joined 4 subagents: 3 reported to chair (a2), 1 quiet".
 function quietGroup(items, nextCache) {
   const who = new Map(); // ref -> where it sent its work, or ''
   const rows = kids.get(String(sessions.current?.id)) ?? [];
   for (const it of items) {
     if (it.type === 'report') who.set(it.ref ?? it.name, it.byMessage || who.get(it.ref ?? it.name) || '');
     else for (const id of [].concat(it.args?.ids ?? it.args?.id ?? [])) {
-      const c = rows.find((x) => x.ref === String(id) || x.name === String(id));
+      const c = rows.find((x) => x.ref === asRef(id) || x.name === String(id));
       const ref = c?.ref ?? String(id);
       if (!who.get(ref)) who.set(ref, c?.lastSent && c.sentIn === c.sub ? c.lastSent.to : '');
     }
@@ -1849,7 +1853,7 @@ function quietGroup(items, nextCache) {
   const quiet = [...who.values()].filter((v) => !v).length;
   const joins = items.some((i) => i.type === 'tool');
   const head = `${joins ? `Joined ${who.size} subagent${who.size === 1 ? '' : 's'}` : `${who.size} subagent${who.size === 1 ? '' : 's'} finished`}: `;
-  const parts = [...[...to].map(([k, n]) => seeded(el('span', { className: 'sa-to' }, el('span', { className: 'sa-dot', ariaHidden: 'true' }), `${n} reported to ${k}`), /\((s\d+)\)/.exec(k)?.[1])), ...(quiet ? [el('span', { textContent: `${quiet} quiet` })] : [])];
+  const parts = [...[...to].map(([k, n]) => seeded(el('span', { className: 'sa-to' }, el('span', { className: 'sa-dot', ariaHidden: 'true' }), `${n} reported to ${k}`), /\(([as]\d+)\)/.exec(k)?.[1])), ...(quiet ? [el('span', { textContent: `${quiet} quiet` })] : [])];
   const what = el('span', { className: 'what' }, head);
   parts.forEach((p, i) => what.append(...(i ? [', '] : []), p));
   const d = el('details', { className: 'tool sa-joins' }, el('summary', {}, what));
@@ -2025,7 +2029,7 @@ async function recordTurn(sid, v, ms) {
   await store.setSetting(turnsKey(sid), all);
   if (sameId(sid, sessions.current?.id)) { turnTimes = all; scheduleRender(); }
 }
-const modelName = (id) => models.find((m) => m.id === id)?.name ?? (LOCAL && id === LOCAL_ID ? `Local: ${LOCAL.label}` : id);
+const modelName = (id) => models.find((m) => m.id === id)?.name ?? (LOCAL && id === LOCAL_ID ? `${LOCAL.label} (Transformers.js)` : id);
 function message(it, label, ...kids) {
   // A step that only thought before calling tools gets no toolbar: it has
   // nothing to copy, and its reply's toolbar reverts to after its tools.
@@ -2134,7 +2138,7 @@ async function undoRevert(sid) {
   // Turns sent since the revert stay behind in the abandoned branch.
   const items = view?.items ?? [], cut = items.findIndex((i) => String(i.cut) === String(t.cut));
   const since = cut < 0 ? 0 : items.slice(cut + 1).filter((i) => i.type === 'user').length;
-  if (since && !(await ask(`Undo the revert? The ${since} message${since > 1 ? 's' : ''} you sent since leave${since > 1 ? '' : 's'} the view, and the conversation from before the revert comes back.`, 'Undo the revert'))) return;
+  if (since && !(await ask(`Undo the revert? The ${since} message${since > 1 ? 's' : ''} you sent since leave${since > 1 ? '' : 's'} the view, and the branch from before the revert comes back.`, 'Undo the revert'))) return;
   await agent.point(sid, t.from);
   await store.setSetting(revertKey(sid), undefined);
   await attach();
@@ -2146,20 +2150,22 @@ const busy = () => !!view?.busy;
 const PLACEHOLDER = 'Ask Pouch. @ for files, $ for skills, / for commands';
 const attachments = createAttachments({ vfs, composer: $('composer'), input: $('input'), picker: $('attachment-picker'), button: $('attach-file'), chips: $('attachment-chips'), warning: $('attachment-warning'), status });
 const submitting = new Set(); // per session: a send from Enter until its model turn ends (after-turn chores run on)
-// While Pouch works (JOURNEYS D25), a message steers or is queued. A steer
-// joins the running turn at its next step boundary: a pi-durable steer,
-// tracked here so Stop can take it back. A queued message is held here (one
-// slot per session) and starts the next turn once the model's turn ends,
-// before any wake from an agent (subagents.js userFirst). Input is never
-// dropped: it is steered, queued, paused after Stop, or refused with a reason.
-const queued = new Map(); // session key -> { text, attached, turnModel, at, paused? }
+// While Pouch works (JOURNEYS D25), a message is a Steer or a Follow-up
+// (LANGUAGE.md). A steer joins the running turn at its next step boundary: a
+// pi-durable steer, tracked here so Stop can take it back. A follow-up is held
+// here (one slot per session; queuing is the strategy, not the name) and starts
+// the next turn once the model's turn ends, before any wake from an agent
+// (subagents.js userFirst). Input is never dropped: it is steered, held as a
+// follow-up, paused after Stop, or refused with a reason.
+const followUps = new Map(); // session key -> { text, attached, turnModel, at, paused? }
 const steers = new Map(); // session key -> [{ id, text, at, detach?, child?, name? }] (child: a subagent's)
-const childQueue = new Map(); // child id -> { sid, text, name, at, paused? }
-let queueing = false;
+const childFollowUps = new Map(); // child id -> { sid, text, name, at, paused? }
+let holdingFollowUp = false;
 const curKey = () => String(sessions.current?.id ?? 'new');
 const noFiles = () => ({ files: [], images: [] });
-const otherMode = (m) => (m === 'steer' ? 'queue' : 'steer');
-const MODE_LABEL = { steer: 'Steer', queue: 'Queue' };
+const otherMode = (m) => (m === 'steer' ? 'followup' : 'steer');
+const MODE_LABEL = { steer: 'Steer', followup: 'Follow-up' };
+const MODE_VERB = { steer: 'steer', followup: 'send a follow-up' };
 // Changes to pending input go to a polite live region; shown too when `seen`.
 let liveTimer = 0;
 function announce(text, seen = true) {
@@ -2173,21 +2179,21 @@ function announce(text, seen = true) {
 function waitingOn(sid = sessions.current?.id) {
   if (sid == null || !agent?.subagents) return [];
   const l = kids.get(String(sid)) ?? [];
-  return [...new Set(agent.subagents.blocked(sid).flatMap((h) => h.ids))].map((ref) => l.find((c, i) => (c.ref ?? `s${i + 2}`) === ref)?.name ?? ref);
+  return [...new Set(agent.subagents.blocked(sid).flatMap((h) => h.ids))].map((ref) => l.find((c) => refOf(l, c) === ref)?.name ?? ref);
 }
 const hasDraft = () => !!$('input').value.trim() || (!focus && attachments.files.length > 0);
 // The accessible name starts with the visible label (WCAG 2.5.3), so "Stop"
 // and "Stop all" name the same action here, in the tray and on a phone.
-function setSend(kind, title, label = { stop: 'Stop', queue: 'Queue', send: 'Send' }[kind], name = null) {
+function setSend(kind, title, label = { stop: 'Stop', followup: 'Follow-up', send: 'Send' }[kind], name = null) {
   $('send-label').textContent = label;
   $('send').title = title;
   $('send').ariaLabel = kind === 'stop' ? name ?? label : null;
   if (kind === 'stop' && !focus) $('send').setAttribute('aria-keyshortcuts', 'Escape'); else $('send').removeAttribute('aria-keyshortcuts');
   $('send').classList.toggle('stop', kind === 'stop');
-  $('send').classList.toggle('queue', kind === 'queue');
+  $('send').classList.toggle('followup', kind === 'followup');
   $('send').querySelector('use').setAttribute('href', kind === 'stop' ? '#i-stop' : '#i-send');
 }
-// The split button (Steer or Queue, and a menu) beside Stop: shown while the
+// The split button (Steer or Follow-up, and a menu) beside Stop: shown while the
 // agent in view works and the draft is not empty.
 function showSplit(on, who) {
   const box = $('sendmode'), m = settings.sendMode(), other = otherMode(m);
@@ -2195,8 +2201,8 @@ function showSplit(on, who) {
   if (!on) return closeSendMenu();
   const blocked = !focus ? waitingOn() : [];
   $('sendmode-label').textContent = MODE_LABEL[m];
-  const what = m === 'steer' ? `Steer: send into ${who}'s current turn, read after its current step (Enter)` : `Queue: send after ${who}'s turn ends (Enter)`;
-  $('sendmode-main').ariaLabel = `${what}. Alt+Enter to ${other} instead.` + (m === 'steer' && blocked.length ? ` Steering will detach ${blocked.join(', ')}.` : '');
+  const what = m === 'steer' ? `Steer: send into ${who}'s current turn, read after its current step (Enter)` : `Follow-up: send after ${who}'s turn ends (Enter)`;
+  $('sendmode-main').ariaLabel = `${what}. Alt+Enter to ${MODE_VERB[other]} instead.` + (m === 'steer' && blocked.length ? ` Steering will detach ${blocked.join(', ')}.` : '');
   $('sendmode-main').title = $('sendmode-main').ariaLabel;
   // One-shot sends are plain menu items (critique 4): the key that does the
   // same is said in text; the setting is its own item below a separator.
@@ -2209,7 +2215,7 @@ function showSplit(on, who) {
     b.title = b.firstElementChild.textContent + (keys ? ` (${keys})` : '');
     if (b.dataset.mode !== 'settings') b.ariaDisabled = String(!draft);
   }
-  $('sendmode-enter').textContent = `Enter now ${m === 'steer' ? 'steers' : 'queues'}.`;
+  $('sendmode-enter').textContent = `Enter now ${m === 'steer' ? 'steers' : 'sends a follow-up'}.`;
   const note = $('sendmode-detach');
   note.hidden = !blocked.length;
   note.textContent = blocked.length ? `Steering will detach ${blocked.join(', ')}` : '';
@@ -2218,7 +2224,7 @@ function showSplit(on, who) {
 function updateSend() {
   const input = $('input');
   if (focus) {
-    // The subagent's view: steer or queue while it works; once it is done
+    // The subagent's view: steer or follow up while it works; once it is done
     // the composer says so and sends nothing (it never starts a new turn).
     const c = focusedChild(), live = c?.status === 'running';
     input.dataset.child = String(focus.id);
@@ -2240,20 +2246,20 @@ function updateSend() {
   // Stop here also stops this session's subagents: then it says Stop all, as the tray does.
   const others = b && (kids.get(String(sessions.current?.id)) ?? []).some((c) => c.status === 'running');
   if (b) setSend('stop', others ? 'Stop Pouch and its subagents (Esc)' : 'Stop Pouch (Esc)', others ? 'Stop all' : 'Stop');
-  else if (finishing) setSend('queue', 'Pouch is starting the turn. Queue this message; it sends when Pouch is ready.');
+  else if (finishing) setSend('followup', 'Pouch is starting the turn. Send this as a follow-up; it goes when Pouch is ready.');
   else setSend('send', 'Send');
   $('send').disabled = !b && !canSend();
   if (!b && offline && !localPicked()) $('send').title = OFFLINE;
   $('composer').classList.toggle('offline', offline);
   showSplit(b, 'Pouch');
-  if (queued.size) queueMicrotask(pump);
+  if (followUps.size) queueMicrotask(pump);
 }
-// Send the current session's queued message once the model's turn is over.
+// Send the current session's follow-up once the model's turn is over.
 function pump() {
-  const key = curKey(), q = queued.get(key);
-  if (!q || q.paused || busy() || submitting.has(key) || queueing || !(isLocal(q.turnModel) ? agent : agent && verified && !offline)) return;
-  queued.delete(key);
-  announce('Queued message sent: it starts the next turn.', false);
+  const key = curKey(), q = followUps.get(key);
+  if (!q || q.paused || busy() || submitting.has(key) || holdingFollowUp || !(isLocal(q.turnModel) ? agent : agent && verified && !offline)) return;
+  followUps.delete(key);
+  announce('Follow-up sent: it starts the next turn.', false);
   dispatch(key, () => q);
 }
 // One send with its bookkeeping. prepare() -> { text, attached, turnModel }.
@@ -2265,8 +2271,8 @@ async function dispatch(key, prepare) {
   try { q = await prepare(); if (q) await send(q.text, q.attached, q.turnModel, runEnded); }
   catch (e) {
     // The watched view can say idle a moment before pi-durable's run ends:
-    // then the message waits in the queue and goes on the next try.
-    if (q && /still running/.test(e.message) && !queued.has(key) && (q.tries = (q.tries ?? 0) + 1) <= 25) { queued.set(key, q); setTimeout(pump, 400); }
+    // then the follow-up waits and goes on the next try.
+    if (q && /still running/.test(e.message) && !followUps.has(key) && (q.tries = (q.tries ?? 0) + 1) <= 25) { followUps.set(key, q); setTimeout(pump, 400); }
     else {
       status(e.message, 'bad');
       if (q && !$('input').value.trim()) { $('input').value = q.text; autosize(); } // not sent: the text comes back
@@ -2281,30 +2287,30 @@ function putBack(text) {
   autosize(); updateSend();
   $('input').focus();
 }
-function cancelQueued(key, how = 'cancelled') {
-  const q = queued.get(key);
+function cancelFollowUp(key, how = 'cancelled') {
+  const q = followUps.get(key);
   if (!q) return;
-  queued.delete(key);
+  followUps.delete(key);
   putBack(q.text);
-  announce(how === 'edit' ? 'Queued message back in the box for editing.' : q.attached.files.length ? 'Queued message cancelled and put back; its attachments are still in your files.' : 'Queued message cancelled and put back in the box.');
+  announce(how === 'edit' ? 'Follow-up back in the box for editing.' : q.attached.files.length ? 'Follow-up cancelled and put back; its attachments are still in your files.' : 'Follow-up cancelled and put back in the box.');
   composer.renderTray(); updateSend();
 }
-// Queue the draft, or add it to the one queued message (said so).
-async function queueDraft(key, prepare) {
+// Hold the draft as the follow-up, or add it to the one follow-up (said so).
+async function holdFollowUp(key, prepare) {
   if (key === 'new') return status('Wait a moment: the session is still starting. Your message stays here.', 'bad');
-  if (queueing) return status('Still queueing the last message. This one stays here.', 'bad');
-  queueing = true;
+  if (holdingFollowUp) return status('Still holding the last follow-up. This one stays here.', 'bad');
+  holdingFollowUp = true;
   try {
-    const q = await prepare(), had = queued.get(key);
+    const q = await prepare(), had = followUps.get(key);
     if (had) {
-      queued.set(key, { ...had, text: `${had.text}\n\n${q.text}`, attached: { files: [...had.attached.files, ...q.attached.files], images: [...had.attached.images, ...q.attached.images] } });
-      announce(had.paused ? 'Added to the paused message.' : 'Added to the queued message: both go together after this turn.');
+      followUps.set(key, { ...had, text: `${had.text}\n\n${q.text}`, attached: { files: [...had.attached.files, ...q.attached.files], images: [...had.attached.images, ...q.attached.images] } });
+      announce(had.paused ? 'Added to the paused message.' : 'Added to the follow-up: both go together after this turn.');
     } else {
-      queued.set(key, q);
-      announce('Queued for after this turn.');
+      followUps.set(key, q);
+      announce('Follow-up: it goes after this turn.');
     }
   } catch (err) { status(err.message, 'bad'); }
-  finally { queueing = false; composer.renderTray(); updateSend(); }
+  finally { holdingFollowUp = false; composer.renderTray(); updateSend(); }
 }
 // Steer main: the text joins its running turn after the current step. If main
 // is blocked on a subagent (a foreground spawn, a join), steering detaches it
@@ -2349,12 +2355,12 @@ function track(key, sid, s, placed, promoted = false) {
   }, () => {});
 }
 // A steer that raced the run's end and was never placed (nor withdrawn):
-// it becomes the queued message and goes as the next turn, never lost.
+// it becomes the follow-up and goes as the next turn, never lost.
 function unplaced(key, s) {
   if (s.child) { putBack(s.text); return status(`${s.name} ended before it read your message; it is back in the box.`, 'bad'); }
-  const q = queued.get(key);
-  queued.set(key, { attached: noFiles(), turnModel: $('model').value, at: Date.now(), ...q, text: [q?.text, s.text].filter(Boolean).join('\n\n'), paused: false });
-  announce('Pouch had just finished, so your message is queued and goes as the next turn.');
+  const q = followUps.get(key);
+  followUps.set(key, { attached: noFiles(), turnModel: $('model').value, at: Date.now(), ...q, text: [q?.text, s.text].filter(Boolean).join('\n\n'), paused: false });
+  announce('Pouch had just finished, so your message is a follow-up and goes as the next turn.');
   composer.renderTray(); updateSend(); queueMicrotask(pump);
 }
 // Steering messages travelling from the tray into the transcript: id -> { text, first }.
@@ -2379,7 +2385,7 @@ function heldCards(sid) {
   const l = kids.get(String(sid)) ?? [];
   // Its card, or while a foreground spawn is still running, its spawn pill.
   const pill = (c) => [...$('log').querySelectorAll('details.tool')].findLast((d) => new RegExp(`spawn (one-shot )?${c.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(d.querySelector('.what')?.textContent ?? ''));
-  return l.filter((c, i) => refs.has(c.ref ?? `s${i + 2}`)).map((c) => ({ id: c.id, card: snapshot($('log').querySelector(`.subagent[data-child="${CSS.escape(String(c.id))}"]`) ?? pill(c)) }));
+  return l.filter((c) => refs.has(refOf(l, c))).map((c) => ({ id: c.id, card: snapshot($('log').querySelector(`.subagent[data-child="${CSS.escape(String(c.id))}"]`) ?? pill(c)) }));
 }
 function foldIntoTray(held) {
   composer.renderTray();
@@ -2409,7 +2415,7 @@ async function withdrawSteers(key, sid, which = () => true) {
   return back;
 }
 // Stop (button, Esc, Stop and send): never sends anything by itself. Steers
-// not yet read and the queued message become one paused item: Send or Cancel.
+// not yet read and the follow-up become one paused item: Send or Cancel.
 // Sealed requests sent since the user's last message (all sessions of the page:
 // one at a time is the norm), for the tray header.
 // Per session: sid -> requests since its user's last message. A request is
@@ -2438,9 +2444,9 @@ async function stopMain() {
   stopping.add(key); updateSend();
   try {
     const back = await withdrawSteers(key, sid, (s) => !s.child);
-    const q = queued.get(key);
+    const q = followUps.get(key);
     if (back.length || q) {
-      queued.set(key, { attached: noFiles(), turnModel: $('model').value, at: Date.now(), ...q, text: [...back, q?.text].filter(Boolean).join('\n\n'), paused: true });
+      followUps.set(key, { attached: noFiles(), turnModel: $('model').value, at: Date.now(), ...q, text: [...back, q?.text].filter(Boolean).join('\n\n'), paused: true });
       announce('Stopped. Your unsent message is paused: Send it or Cancel it in the activity tray.');
     }
     composer.renderTray();
@@ -2450,21 +2456,21 @@ async function stopMain() {
     // Stop) has no step left to be read after: it becomes the next turn.
     const late = await withdrawSteers(key, sid, (s) => !s.child);
     if (late.length) {
-      const q2 = queued.get(key);
-      queued.set(key, { attached: noFiles(), turnModel: $('model').value, at: Date.now(), ...q2, text: [q2?.text, ...late].filter(Boolean).join('\n\n'), paused: q2?.paused ?? false });
+      const q2 = followUps.get(key);
+      followUps.set(key, { attached: noFiles(), turnModel: $('model').value, at: Date.now(), ...q2, text: [q2?.text, ...late].filter(Boolean).join('\n\n'), paused: q2?.paused ?? false });
       announce(q2?.paused ? 'Pouch stopped before reading your message: it joined the paused message in the activity tray.' : 'Pouch stopped before reading your message, so it goes as the next turn.');
     }
   } finally { stopping.delete(key); composer.renderTray(); updateSend(); queueMicrotask(pump); }
 }
-// A paused or queued message goes now: as the next turn when idle, or into
+// A paused message or follow-up goes now: as the next turn when idle, or into
 // the running turn (Steer now).
 async function sendNow(key, steer) {
-  const q = queued.get(key);
+  const q = followUps.get(key);
   if (!q) return;
-  if (!busy() && !submitting.has(key)) { queued.delete(key); return dispatch(key, () => q); }
-  if (!steer) { queued.set(key, { ...q, paused: false }); announce('Queued for after this turn.'); return composer.renderTray(); }
-  if (q.attached.files.length || q.attached.images.length) return status('This queued message has attachments, which go only with a new turn; it stays queued.', 'bad');
-  queued.delete(key);
+  if (!busy() && !submitting.has(key)) { followUps.delete(key); return dispatch(key, () => q); }
+  if (!steer) { followUps.set(key, { ...q, paused: false }); announce('Follow-up: it goes after this turn.'); return composer.renderTray(); }
+  if (q.attached.files.length || q.attached.images.length) return status('This follow-up has attachments, which go only with a new turn; it stays a follow-up.', 'bad');
+  followUps.delete(key);
   const keep = $('input').value;
   await steerMain(key, q.text, true);
   if (keep && !$('input').value) { $('input').value = keep; autosize(); }
@@ -2475,7 +2481,7 @@ const NOT_ADMITTED = /^Not connected|still running/;
 function quotaError(msg) { return /\b429\b|quota|rate.?limit|too many requests|allowance/i.test(msg ?? ''); }
 
 // runEnded: called once the model's turn is over, before the after-turn
-// chores (title, usage), so a queued message need not wait for them.
+// chores (title, usage), so a follow-up need not wait for them.
 async function send(text, attached = { files: [], images: [] }, turnModel = $('model').value, runEnded = () => {}) {
   follow.pin();
   const t0 = Date.now();
@@ -2499,7 +2505,7 @@ async function send(text, attached = { files: [], images: [] }, turnModel = $('m
   try { await agent.send(sid, text, notes, attached, turnModel); admitted(); ok = true; }
   catch (e) {
     // Refused before admission: nothing entered the transcript. The caller
-    // queues or restores the text (dispatch), so it is never lost.
+    // holds it as a follow-up or restores the text (dispatch), so it is never lost.
     if (NOT_ADMITTED.test(e.message)) refused = e;
     // Stopped before the message entered the transcript: it was never sent,
     // so it comes back to the box (dispatch) rather than vanishing.
@@ -2524,7 +2530,7 @@ async function send(text, attached = { files: [], images: [] }, turnModel = $('m
 }
 
 // mode: 'default' (Enter, the setting), 'other' (Alt+Enter), or one of
-// 'steer', 'queue', 'stopsend' (the split button and its menu).
+// 'steer', 'followup', 'stopsend' (the split button and its menu).
 let nextMode = 'default';
 $('composer').onsubmit = async (e) => {
   e.preventDefault();
@@ -2538,7 +2544,7 @@ $('composer').onsubmit = async (e) => {
   if (!text) return;
   const turnModel = $('model').value; // freeze before any asynchronous preparation
   if (isLocal(turnModel)) {
-    // The Local lane needs no network or enclave, only the model on this device.
+    // Transformers.js needs no network or enclave, only the model in this browser.
     if (!agent) return status(agentError ?? 'The agent is not available.', 'bad');
     if (!(await ensureLocal())) return; // the text stays in the composer
   } else {
@@ -2557,12 +2563,12 @@ $('composer').onsubmit = async (e) => {
     return dispatch(key, prepare);
   }
   // Stop is winding down: no step is left to read a steer, so the text
-  // waits in the queue and goes as the next turn once the run has ended.
-  if (stopping.has(key)) { announce('Pouch is stopping: your message goes as the next turn.'); return queueDraft(key, prepare); }
-  // Steering carries text only; attachments go with a queued message.
+  // waits as a follow-up and goes as the next turn once the run has ended.
+  if (stopping.has(key)) { announce('Pouch is stopping: your message goes as the next turn.'); return holdFollowUp(key, prepare); }
+  // Steering carries text only; attachments go with a follow-up.
   if (busy() && mode === 'steer' && !attachments.files.length) return steerMain(key, text);
-  if (busy() && mode === 'steer') announce('Attachments go only with a new turn, so this message is queued for after this turn.');
-  return queueDraft(key, prepare);
+  if (busy() && mode === 'steer') announce('Attachments go only with a new turn, so this message is a follow-up for after this turn.');
+  return holdFollowUp(key, prepare);
 };
 function blockedNow() { const sid = sessions.current?.id; return sid != null && !!agent?.subagents?.blocked(sid).length; }
 // While the agent in view works, the round button is Stop.
@@ -2575,16 +2581,16 @@ $('send').onclick = (e) => {
   if (busy()) { e.preventDefault(); stopMain(); }
 };
 // The subagent's view: steer joins its run at its next step boundary (S3);
-// queue waits for its turn to end, then messages it (it starts again).
+// follow-up waits for its turn to end, then messages it (it starts again).
 async function toChild(text, mode) {
   const c = focusedChild();
   if (!text || !c) return;
   const sid = focus.sid, key = String(sid);
-  if (mode === 'queue') {
-    const had = childQueue.get(c.id);
-    childQueue.set(c.id, { sid, name: c.name, at: Date.now(), ...had, text: had ? `${had.text}\n\n${text}` : text, paused: false });
+  if (mode === 'followup') {
+    const had = childFollowUps.get(c.id);
+    childFollowUps.set(c.id, { sid, name: c.name, at: Date.now(), ...had, text: had ? `${had.text}\n\n${text}` : text, paused: false });
     $('input').value = ''; autosize();
-    announce(had ? `Added to the message queued for ${c.name}.` : `Queued for ${c.name}: it goes when its turn ends.`);
+    announce(had ? `Added to the follow-up for ${c.name}.` : `Follow-up for ${c.name}: it goes when its turn ends.`);
     composer.renderTray(); updateSend();
     return;
   }
@@ -2598,28 +2604,28 @@ async function toChild(text, mode) {
 async function stopChild(c) {
   const sid = focus?.sid ?? sessions.current?.id, key = String(sid);
   const back = await withdrawSteers(key, sid, (s) => s.child === c.id);
-  const q = childQueue.get(c.id);
+  const q = childFollowUps.get(c.id);
   if (back.length || q) {
-    childQueue.set(c.id, { sid, name: c.name, at: Date.now(), ...q, text: [...back, q?.text].filter(Boolean).join('\n\n'), paused: true });
+    childFollowUps.set(c.id, { sid, name: c.name, at: Date.now(), ...q, text: [...back, q?.text].filter(Boolean).join('\n\n'), paused: true });
     announce(`Stopped ${c.name}. Your unsent message to it is paused in the activity tray.`);
   }
   composer.renderTray();
   await agent.subagents.stop(sid, c.id);
 }
-// A subagent's queued message goes once its turn ends (it finished): the
+// A subagent's follow-up goes once its turn ends (it finished): the
 // message wakes it, like Message on its card. Stopped or failed: paused.
-function flushChildQueue(sid, list) {
-  for (const [id, q] of childQueue) {
+function flushChildFollowUps(sid, list) {
+  for (const [id, q] of childFollowUps) {
     if (q.paused || String(q.sid) !== String(sid)) continue;
     const c = list.find((x) => x.id === id);
     if (c?.status === 'running') continue;
-    if (c?.status !== 'finished') { childQueue.set(id, { ...q, paused: true }); announce(`${q.name} ${c?.status ?? 'is gone'}; your queued message to it is paused.`); continue; }
-    childQueue.delete(id);
-    agent.subagents.message(sid, id, q.text).then(() => announce(`Queued message sent to ${q.name}; it works on it now.`, false), (e) => { childQueue.set(id, { ...q, paused: true }); status(e.message, 'bad'); });
+    if (c?.status !== 'finished') { childFollowUps.set(id, { ...q, paused: true }); announce(`${q.name} ${c?.status ?? 'is gone'}; your follow-up to it is paused.`); continue; }
+    childFollowUps.delete(id);
+    agent.subagents.message(sid, id, q.text).then(() => announce(`Follow-up sent to ${q.name}; it works on it now.`, false), (e) => { childFollowUps.set(id, { ...q, paused: true }); status(e.message, 'bad'); });
   }
 }
 // Keys (D25): Enter sends with the default mode, Alt/Option+Enter with the
-// other, Shift+Enter is a new line, Esc stops, Alt+Up takes the queued
+// other, Shift+Enter is a new line, Esc stops, Alt+Up takes the follow-up
 // message back. Ctrl+Alt is AltGr (a character), never Alt. On touch
 // screens Enter is a new line and the buttons send.
 const altOnly = (e) => e.altKey && !e.ctrlKey && !e.metaKey;
@@ -2634,8 +2640,8 @@ $('input').onkeydown = (e) => {
   }
   if (e.key === 'ArrowUp' && altOnly(e)) {
     const key = curKey();
-    if (!focus && queued.has(key)) { e.preventDefault(); cancelQueued(key, 'edit'); }
-    else if (focus && childQueue.has(focus.id)) { e.preventDefault(); const q = childQueue.get(focus.id); childQueue.delete(focus.id); putBack(q.text); composer.renderTray(); }
+    if (!focus && followUps.has(key)) { e.preventDefault(); cancelFollowUp(key, 'edit'); }
+    else if (focus && childFollowUps.has(focus.id)) { e.preventDefault(); const q = childFollowUps.get(focus.id); childFollowUps.delete(focus.id); putBack(q.text); composer.renderTray(); }
     return;
   }
   if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !matchMedia('(pointer: coarse)').matches) {
@@ -2683,8 +2689,8 @@ document.addEventListener('pouch-sendmode', () => updateSend());
 function autosize() { const i = $('input'); i.style.height = 'auto'; i.style.height = Math.min(i.scrollHeight + 2, innerHeight * 0.4) + 'px'; }
 $('input').addEventListener('input', autosize);
 $('composer-usage').onclick = () => layout.toggle('usage');
-// Queued and paused messages live in this page only: ask before a reload or close drops them.
-addEventListener('beforeunload', (e) => { if (queued.size || childQueue.size || steers.size) e.preventDefault(); });
+// Follow-ups and paused messages live in this page only: ask before a reload or close drops them.
+addEventListener('beforeunload', (e) => { if (followUps.size || childFollowUps.size || steers.size) e.preventDefault(); });
 
 // Slash commands: typed whole ("/rename Notes") or picked from the list.
 async function revertLast() {
@@ -2701,7 +2707,7 @@ const COMMANDS = [
     if (!arg) return status(vfs.seedLayer ? `/work is stacked over ${vfs.seedLayer.name}. /seed off removes it.` : 'Give an archive: /seed /work/starter.zip', vfs.seedLayer ? '' : 'bad');
     await stackSeed(normalize(arg.startsWith('/') ? arg : CWD + '/' + arg));
   } },
-  { name: 'compact', hint: 'Summarize older turns (1 Sealed request)', run: async () => {
+  { name: 'compact', hint: 'Summarize older turns (1 BayLeaf Sealed request)', run: async () => {
     if (!sessions.current) return status('No session to compact yet.', 'bad');
     status('Compacting...');
     try { await agent.compact(sessions.current.id); status('Older turns summarized.'); } catch (e) { status(e.message, 'bad'); }
@@ -2720,7 +2726,7 @@ const COMMANDS = [
   { name: 'help', hint: 'What you can type here', run: () => sheet('Typing in Pouch', [], el('div', {},
     el('p', { textContent: '@ inserts a path from your files. $ asks Pouch to use a skill. / runs a command instead of sending; a / followed by anything else is sent as text.' }),
     el('ul', {}, ...COMMANDS.map((c) => el('li', {}, el('code', { textContent: '/' + c.name }), ' ' + c.hint))),
-    el('p', { textContent: 'Enter sends (on touch screens, tap Send). Shift+Enter is a new line. While Pouch works, Enter steers: Pouch reads your message after its current step. Alt+Enter (Option+Enter on a Mac) queues it for after the turn instead; Settings can swap the two. Esc stops; Alt+Up takes a queued message back to edit.' }))) },
+    el('p', { textContent: 'Enter sends (on touch screens, tap Send). Shift+Enter is a new line. While Pouch works, Enter steers: Pouch reads your message after its current step. Alt+Enter (Option+Enter on a Mac) sends it as a follow-up, after the turn, instead; Settings can swap the two. Esc stops; Alt+Up takes a follow-up back to edit.' }))) },
 ];
 const capEvents = new Map(); // session id -> message-cap refusals shown in the tray
 // A spawn call still streaming or running, before its subagent exists.
@@ -2741,7 +2747,7 @@ function activity() {
     rows.push({ key: 'sa-start:' + it.id, kind: 'subagent', text: `${it.args?.name ?? 'subagent'}: starting`, title: it.args?.task ?? 'A subagent is starting', origin: 'starting', since });
   }
   for (const c of l) if (c.status === 'running') {
-    const t = vfs.tasks.byKeyOf('sa:' + c.id), ref = c.ref ?? `s${l.indexOf(c) + 2}`, waited = held.has(ref);
+    const t = vfs.tasks.byKeyOf('sa:' + c.id), ref = refOf(l, c), waited = held.has(ref);
     rows.push({ key: 'sa:' + c.id, kind: 'subagent', seed: ref, text: `${c.name}: ${excerpt(c.task)}`, title: `Open ${c.name}: ` + c.task + (t ? `\n/task/${t.id} sees:\n${vfs.tasks.mounts(t).join('\n')}` : ''), origin: waited ? `main waits on ${ref}` : t ? `subagent ${ref}, /task/${t.id}` : `subagent ${ref}`, since: c.resumed ?? c.started,
       open: (e) => openChild(sid, c.id, e?.currentTarget), stop: () => agent.subagents.stop(sid, c.id),
       ...(waited ? { background: async () => { const held = heldCards(sid); await agent.subagents.detach(sid); foldIntoTray(held); status(`${c.name} continues in the background; main stopped waiting.`); } } : {}) });
@@ -2764,7 +2770,7 @@ function activity() {
   for (const p of egress.pending) {
     rows.push({ key: 'eg:' + p.id, kind: 'approval', text: p.command, origin: p.agentName ? `${p.agentName}: waiting for you` : 'waiting for you', since: p.since, open: () => egress.focus() });
   }
-  // Pending input (D25): steers not yet read, the queued or paused message.
+  // Pending input (D25): steers not yet read, the follow-up or paused message.
   for (const st of steers.get(key) ?? []) {
     rows.push({ key: 'steer:' + st.id, kind: 'steer', seed: st.child ? (kids.get(String(sid)) ?? []).find((c) => c.id === st.child)?.ref : undefined, text: excerpt(st.text), title: st.text,
       origin: (st.child ? `Steering ${st.name}` : 'Steering') + ' · after current step' + (st.detach ? ` · detaches ${st.detach}` : ''), since: st.at,
@@ -2776,28 +2782,28 @@ function activity() {
         composer.renderTray();
       } });
   }
-  const q = queued.get(key);
+  const q = followUps.get(key);
   if (q) {
     const on = waitingOn(sid);
-    rows.push({ key: 'queued', kind: 'queued', paused: q.paused, text: excerpt(q.text), title: q.text,
-      origin: q.paused ? 'Paused after Stop' : busy() ? 'Queued · after this turn' + (on.length ? ` (main is waiting on ${on.join(', ')})` : '') : 'Queued · sends when ready',
+    rows.push({ key: 'followup', kind: 'followup', paused: q.paused, text: excerpt(q.text), title: q.text,
+      origin: q.paused ? 'Paused after Stop' : busy() ? 'Follow-up · after this turn' + (on.length ? ` (main is waiting on ${on.join(', ')})` : '') : 'Follow-up · sends when ready',
       actions: q.paused ? [{ label: 'Send', act: 'send', ariaLabel: 'Send paused message', run: () => sendNow(key, false) }]
-        : [{ label: 'Edit', act: 'edit', ariaLabel: 'Edit queued message (Alt+Up)', run: () => cancelQueued(key, 'edit') },
-          ...(busy() ? [{ label: 'Steer now', act: 'promote', ariaLabel: 'Steer now: send the queued message into the current turn' + (on.length ? `; detaches ${on.join(', ')}` : ''), run: () => sendNow(key, true) }] : [])],
-      stopLabel: 'Cancel', stopAria: q.paused ? 'Cancel paused message' : 'Cancel queued message', stop: () => cancelQueued(key) });
+        : [{ label: 'Edit', act: 'edit', ariaLabel: 'Edit follow-up (Alt+Up)', run: () => cancelFollowUp(key, 'edit') },
+          ...(busy() ? [{ label: 'Steer now', act: 'promote', ariaLabel: 'Steer now: send the follow-up into the current turn' + (on.length ? `; detaches ${on.join(', ')}` : ''), run: () => sendNow(key, true) }] : [])],
+      stopLabel: 'Cancel', stopAria: q.paused ? 'Cancel paused message' : 'Cancel follow-up', stop: () => cancelFollowUp(key) });
   }
   if (sid != null) rows.push(...watchRows(sid));
-  for (const [id, cq] of childQueue) if (sameId(cq.sid, sid)) {
+  for (const [id, cq] of childFollowUps) if (sameId(cq.sid, sid)) {
     const c = (kids.get(String(sid)) ?? []).find((x) => x.id === id);
-    rows.push({ key: 'cq:' + id, kind: 'queued', paused: cq.paused, text: excerpt(cq.text), title: cq.text,
-      origin: cq.paused ? `Paused for ${cq.name}` : `Queued for ${cq.name} · after its turn`,
-      actions: cq.paused ? [{ label: 'Send', act: 'send', ariaLabel: `Send paused message to ${cq.name}`, run: async () => { childQueue.delete(id); composer.renderTray(); await agent.subagents.message(sid, id, cq.text); announce(`Sent to ${cq.name}.`); } }]
+    rows.push({ key: 'cq:' + id, kind: 'followup', paused: cq.paused, text: excerpt(cq.text), title: cq.text,
+      origin: cq.paused ? `Paused for ${cq.name}` : `Follow-up for ${cq.name} · after its turn`,
+      actions: cq.paused ? [{ label: 'Send', act: 'send', ariaLabel: `Send paused message to ${cq.name}`, run: async () => { childFollowUps.delete(id); composer.renderTray(); await agent.subagents.message(sid, id, cq.text); announce(`Sent to ${cq.name}.`); } }]
         : c?.status === 'running' ? [{ label: 'Steer now', act: 'promote', ariaLabel: `Steer now: send to ${cq.name} after its current step`, run: async () => {
-          childQueue.delete(id);
+          childFollowUps.delete(id);
           const s = await agent.subagents.steerTracked(sid, id, cq.text);
           track(key, sid, { id: s.id, text: cq.text, at: Date.now(), child: id, name: cq.name }, s.placed);
         } }] : [],
-      stopLabel: 'Cancel', stopAria: `Cancel message queued for ${cq.name}`, stop: () => { childQueue.delete(id); putBack(cq.text); announce('Queued message cancelled and put back in the box.'); composer.renderTray(); } });
+      stopLabel: 'Cancel', stopAria: `Cancel follow-up for ${cq.name}`, stop: () => { childFollowUps.delete(id); putBack(cq.text); announce('Follow-up cancelled and put back in the box.'); composer.renderTray(); } });
   }
   return rows;
 }
@@ -2821,15 +2827,15 @@ composer = createComposer({
   shield: async () => {
     const sid = sessions.current?.id;
     if (localPicked()) return {
-      lane: 'On this device: nothing sent',
-      detail: `${LOCAL.label} runs in this browser on your GPU. Prompts, files and replies stay here; no request leaves for any model. Tools run here, in the page. Switch to a Sealed model in the picker for larger tasks.`,
+      provider: 'Transformers.js: in this browser, nothing sent',
+      detail: `${LOCAL.label} runs in this browser on your GPU. Prompts, files and replies stay here; no request leaves for any model. Tools run here, in the page. Switch to a BayLeaf Sealed model in the picker for larger tasks.`,
       grants: (await grantsFor(sid)).map((service) => ({ label: serviceName(service), revoke: async () => {
         await revoke(sid, service); status(`Pouch will ask again before ${serviceName(service)} in this session.`);
       } })),
       trust: () => layout.open('trust'),
     };
     return {
-      lane: verified ? 'Sealed: encrypted to the enclave' : offline ? 'Sealed: offline, nothing is sent' : 'Sealed: verifying the enclave',
+      provider: verified ? 'BayLeaf Sealed: encrypted to the enclave' : offline ? 'BayLeaf Sealed: offline, nothing is sent' : 'BayLeaf Sealed: verifying the enclave',
       detail: verified ? 'This session\'s model requests are encrypted in this page to an attested enclave; BayLeaf relays ciphertext. Tools run here, in the page.'
         : 'Nothing is sent until the enclave verifies. There is no plaintext fallback.',
       grants: (await grantsFor(sid)).map((service) => ({ label: serviceName(service), revoke: async () => {
@@ -2848,7 +2854,7 @@ composer = createComposer({
 // (agent.subagents.notify); the tray shows every watch with Stop watching.
 let agentReady;
 const agentStarted = new Promise((r) => { agentReady = r; });
-const refOfChild = (sid, id) => { const l = kids.get(String(sid)) ?? [], c = l.find((x) => x.id === id); return c ? { ref: c.ref ?? `s${l.indexOf(c) + 2}`, name: c.name, c } : null; };
+const refOfChild = (sid, id) => { const l = kids.get(String(sid)) ?? [], c = l.find((x) => x.id === id); return c ? { ref: refOf(l, c), name: c.name, c } : null; };
 const watches = vfs.watches = createWatches({
   fs: vfs.fs,
   load: (sid) => store.getSetting(watchesKey(sid)),
@@ -2856,11 +2862,11 @@ const watches = vfs.watches = createWatches({
   sessions: async () => (await sessions.all()).map((x) => x.id),
   // A subagent watches only inside its own mounts; main sees the whole tree.
   scopeOf: (sid, owner) => {
-    if (owner === 's1') return null;
-    const l = kids.get(String(sid)) ?? [], c = l.find((x, i) => (x.ref ?? `s${i + 2}`) === owner);
+    if (asRef(owner) === MAIN) return null;
+    const l = kids.get(String(sid)) ?? [], c = l.find((x) => refOf(l, x) === asRef(owner));
     return parseSpecs(c?.ns?.length ? c.ns : defaultSubagentNs(vfs)).map((x) => x.path);
   },
-  userQueued: (sid) => { const q = queued.get(String(sid)); return !!q && !q.paused; },
+  followUpHeld: (sid) => { const q = followUps.get(String(sid)); return !!q && !q.paused; },
   userSending: (sid) => submitting.has(String(sid)),
   busy: (sid, owner) => agent?.subagents?.busyOf(sid, owner) ?? false,
   deliver: (sid, owner, { paths = [], ...ev }) => {
@@ -2879,7 +2885,7 @@ async function watchCaller(caller) {
     if (!r) throw new Error('This subagent is not registered yet; try again.');
     return { sid, owner: r.ref, ownerName: r.name };
   }
-  return { sid, owner: 's1', ownerName: 'main' };
+  return { sid, owner: MAIN, ownerName: 'main' };
 }
 const watchByText = (w) => (w.by === 'user' ? 'by you' : w.by === 'agent' ? 'by agents' : 'by anyone');
 const shortPath = (p) => (p.startsWith('/work/') ? p.slice(6) : p);
@@ -2887,7 +2893,7 @@ function watchRows(sid) {
   const rows = [];
   for (const w of watches.list(sid)) {
     const what = w.paths.map(shortPath).join(', ');
-    const origin = `${w.id} · changes ${watchByText(w)}${w.owner !== 's1' ? ` · for ${w.ownerName} (${w.owner})` : ''} · /task/watch/${w.id}`;
+    const origin = `${w.id} · changes ${watchByText(w)}${w.owner !== MAIN ? ` · for ${w.ownerName} (${w.owner})` : ''} · /task/watch/${w.id}`;
     const title = `${w.note ? w.note + '\n' : ''}${w.paths.join('\n')}\n${w.once ? 'Removed after its first event.' : `Wakes the agent at most ${MAX_WAKES} times between your messages.`}`;
     const stop = () => { watches.remove(w.id); announce(`Stopped watching ${what}.`); };
     if (w.held.length) {
@@ -2910,8 +2916,8 @@ function watchRows(sid) {
 // Files first, so the workspace is usable even if the network or the agent is not.
 let agentError = null;
 let toolList = []; // kept for Run script, which uses the run tool without the model
-// The watch tool joins the page's tools (Sealed lane, main and subagents; the
-// Local lane keeps its four qualified tools).
+// The watch tool joins the page's tools (BayLeaf Sealed, main and subagents;
+// the transformersjs profile keeps its four qualified tools).
 const withWatch = (list) => { list.push(watchTool({ Type, watches, callerOf: watchCaller })); return list; };
 (async () => {
   usage.subscribe(async (st) => { await ledger.observe(st.remaining); meter(); if (layout.current() === 'usage') renderUsagePanel(); if (!key && verified && /^Not signed in/.test($('status').textContent)) status(campusLine(st)); });
@@ -2956,8 +2962,8 @@ const withWatch = (list) => { list.push(watchTool({ Type, watches, callerOf: wat
         onCap: (sid, e) => { const list = capEvents.get(String(sid)) ?? []; list.push(e); capEvents.set(String(sid), list.slice(-3)); if (sameId(sid, sessions.current?.id)) composer?.renderTray(); },
         onBlocked: (sid) => { if (sameId(sid, sessions.current?.id)) { composer?.renderTray(); updateSend(); } },
         onReport: (sid, sub) => drive(sid, () => sub.wait()),
-        // The user's queued message goes before agent wakes (D25).
-        userQueued: (sid) => { const q = queued.get(String(sid)); return (!!q && !q.paused) || submitting.has(String(sid)); },
+        // The user's follow-up goes before agent wakes (D25).
+        followUpHeld: (sid) => { const q = followUps.get(String(sid)); return (!!q && !q.paused) || submitting.has(String(sid)); },
         onSettle: async (sid, c) => { toolList.closeView?.(c.id); usage.refresh(); },
         lowAllowance,
         // A one-shot's attached files, read in main's namespace (paths relative to /work).
@@ -2966,7 +2972,7 @@ const withWatch = (list) => { list.push(watchTool({ Type, watches, callerOf: wat
           const text = await vfs.fs.readFile(path).catch((e) => { throw new Error(`files: ${path} could not be read (${/ENOENT/.test(e.code ?? e.message) ? 'it does not exist' : e.message}).`); });
           return { path, text };
         },
-        watchLines: (sid, ref) => { const l = watches.list(sid).filter((w) => ref === 's1' || w.owner === ref); return l.length ? 'Watches: ' + l.map((w) => `${w.id} ${w.paths.join(', ')}${w.note ? ` (${w.note})` : ''}`).join('; ') : ''; },
+        watchLines: (sid, ref) => { const l = watches.list(sid).filter((w) => ref === MAIN || w.owner === ref); return l.length ? 'Watches: ' + l.map((w) => `${w.id} ${w.paths.join(', ')}${w.note ? ` (${w.note})` : ''}`).join('; ') : ''; },
       },
     });
   } catch (e) {

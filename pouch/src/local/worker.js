@@ -1,4 +1,4 @@
-// The Local lane's model worker: LFM3 1.7B (q4f16) on WebGPU through
+// The Transformers.js provider's model worker: LFM3 1.7B (q4f16) on WebGPU through
 // Transformers.js and ONNX Runtime Web, both from npm (exact-pinned in
 // package-lock.json) and bundled into this one script by build.mjs
 // --with-models. The page fetches that script, checks its SHA-256 against the
@@ -11,7 +11,7 @@
 import { pipeline, PreTrainedTokenizer, TextStreamer, InterruptableStoppingCriteria, env } from '@huggingface/transformers';
 
 const refused = [];
-self.fetch = async (input) => { refused.push(String(input?.url ?? input)); throw new TypeError('The Local model has no network access.'); };
+self.fetch = async (input) => { refused.push(String(input?.url ?? input)); throw new TypeError('The Transformers.js model has no network access.'); };
 
 let generator = null;
 let stopping = null;
@@ -70,7 +70,7 @@ function fit(head, history, tools, budget) {
   for (let i = lastUser() + 1; tokens > budget && i < rest.length; i++) {
     const m = rest[i];
     if (m.role !== 'tool' || m.content.length <= 600) continue;
-    rest[i] = { ...m, content: m.content.slice(0, 600) + '\n[shortened: the Local lane keeps about 4k tokens of context]' };
+    rest[i] = { ...m, content: m.content.slice(0, 600) + '\n[shortened: Transformers.js keeps about 4k tokens of context]' };
     trimmed++;
     prompt = render([...head, ...rest], tools); tokens = count(prompt);
   }
@@ -78,7 +78,7 @@ function fit(head, history, tools, budget) {
 }
 
 async function generate(id, { head, history, tools, budget = 4096, maxNew = 512 }) {
-  if (!generator) throw new Error('The Local model is not loaded.');
+  if (!generator) throw new Error('The Transformers.js model is not loaded.');
   const { prompt, tokens, trimmed, over } = fit(head, history, tools, budget);
   if (over) return { over: true, input_tokens: tokens, trimmed };
   stopping = new InterruptableStoppingCriteria();

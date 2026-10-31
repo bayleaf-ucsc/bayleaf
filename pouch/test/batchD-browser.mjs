@@ -201,7 +201,7 @@ await section('scroll-anchor', async (h, page) => {
 
 await section('scroll-nested', async (h, page) => {
   await h.rule({ who: 'main', when: '/helper/.test(c.since)', reply: [['subagent', { action: 'spawn', name: 'helper', task: 'Help.' }]] });
-  await h.rule({ who: 'main', when: '/Started subagent/.test(c.since)', reply: [['subagent', { action: 'join', ids: ['s2'] }]] });
+  await h.rule({ who: 'main', when: '/Started subagent/.test(c.since)', reply: [['subagent', { action: 'join', ids: ['a2'] }]] });
   await h.rule({ who: 'helper', reply: [['bash', { command: 'echo a' }]] });
   await h.rule({ who: 'helper', when: '/a/.test(c.since)', reply: para(30, 'report') });
   await h.rule({ who: 'main', when: '/report/.test(c.since)', reply: para(20) });

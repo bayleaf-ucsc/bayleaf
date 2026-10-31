@@ -1,4 +1,4 @@
-// The Local lane as a pi-ai provider: generation runs in this browser on the
+// The Transformers.js provider as a pi-ai provider: generation runs in this browser on the
 // WebGPU worker (src/local/worker.js via engine.js); nothing is sent anywhere.
 //
 // It applies the recipe qualified in experiments/lfm3-webgpu (agent v2, "v8"):
@@ -7,43 +7,16 @@
 // about 4k tokens of context (older turns are dropped first). The model writes
 // native XML tool calls; parseToolCalls() turns them into pi tool calls. The
 // newline normalization the recipe needs lives in the tools themselves
-// (src/tools.js), for every lane.
+// (src/tools.js), for every provider.
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai/utils/event-stream';
+// The qualified recipe (prompt, few-shot turn, tools, limits) is the
+// transformersjs profile in src/profiles.js, moved there byte for byte.
+import { TJS } from '../profiles.js';
+export const { STEP_CAP, BUDGET, MAX_NEW, SYSTEM, TOOLS, FEWSHOT } = TJS;
+export { isLocal } from '../profiles.js';
 
 export const LOCAL_PROVIDER = 'pouch-local';
 export const LOCAL_API = 'pouch-local';
-export const STEP_CAP = 8;
-export const BUDGET = 4096; // prompt tokens; past ~4k decode halves and memory roughly quadruples
-export const MAX_NEW = 512;
-export const isLocal = (modelId) => String(modelId ?? '').startsWith('local:');
-
-// The qualified "grounded" system prompt, verbatim.
-export const SYSTEM = 'You are a concise coding assistant inside a browser. Use read, write, edit and bash tools for real file operations in /work. Never claim an edit without using a tool. Read files before editing. Tool errors are feedback: inspect and retry. No network, real processes, code execution or package installs. Finish with a concise summary.' +
-  ' Make exactly the requested change and nothing more: never add blank lines, reformat, reorder or tidy surrounding text. To append a line to a file, use edit with oldText set to the current last line and newText set to that same line plus a newline plus the new line (no blank line in between) unless asked otherwise.' +
-  ' The workspace root and current directory is /work (there is no /workspace). Use relative paths like src/a.js.';
-
-const obj = (properties) => ({ type: 'object', properties, required: Object.keys(properties) }), str = { type: 'string' };
-// Pouch's own read/write/edit/bash accept these argument subsets. No run, no
-// subagent (it would spend Sealed requests): a call to anything else is refused.
-export const TOOLS = [
-  { type: 'function', function: { name: 'read', description: 'Read a UTF-8 text file. Paths relative to /work.', parameters: obj({ path: str }) } },
-  { type: 'function', function: { name: 'write', description: 'Create or overwrite a file with exact content. Parents created.', parameters: obj({ path: str, content: str }) } },
-  { type: 'function', function: { name: 'edit', description: 'Replace exact oldText with newText. oldText must occur exactly once. Read first; include neighboring lines if ambiguous.', parameters: obj({ path: str, oldText: str, newText: str }) } },
-  { type: 'function', function: { name: 'bash', description: 'Simulated bash over /work only. ls, find, cat, grep, sed, printf. No network, node, python, or processes.', parameters: obj({ command: str }) } },
-];
-
-// One synthetic prior turn: a byte-exact append, a create, in Pouch's own tool output format.
-export const FEWSHOT = [
-  { role: 'user', content: 'Append the exact line b = 2 to the end of x.txt and create y.txt containing exactly ok followed by a newline. Read first; change nothing else.' },
-  { role: 'assistant', content: '', tool_calls: [{ type: 'function', function: { name: 'read', arguments: { path: 'x.txt' } } }] },
-  { role: 'tool', content: 'a = 1\n' },
-  { role: 'assistant', content: '', tool_calls: [
-    { type: 'function', function: { name: 'edit', arguments: { path: 'x.txt', oldText: 'a = 1\n', newText: 'a = 1\nb = 2\n' } } },
-    { type: 'function', function: { name: 'write', arguments: { path: 'y.txt', content: 'ok\n' } } }] },
-  { role: 'tool', content: 'Applied 1 edit to /work/x.txt. Edited lines now read:\n1: a = 1\n2: b = 2\n3: ' },
-  { role: 'tool', content: 'Wrote 2 lines (3 characters) to /work/y.txt' },
-  { role: 'assistant', content: 'Appended b = 2 to x.txt and created y.txt.' },
-];
 
 // The chat template renders non-string values with tojson, so a declared
 // non-string parameter is parsed back; one that does not parse stays a string.
@@ -66,10 +39,10 @@ export function parseToolCalls(text, tools = TOOLS) {
 const clean = (t) => t.replace(/<\|[^|>\s]*\|>/g, '').trim();
 
 const textOf = (c) => typeof c === 'string' ? c
-  : c.map((p) => p.type === 'text' ? p.text : '[image omitted: the Local model reads text only]').join('\n');
+  : c.map((p) => p.type === 'text' ? p.text : '[image omitted: the Transformers.js model reads text only]').join('\n');
 
 // pi transcript -> chat-template messages. Pouch's own system prompt is
-// replaced by SYSTEM (the Local model's context is too small for it).
+// replaced by SYSTEM (the Transformers.js model's context is too small for it).
 export function toLocalMessages(messages) {
   const out = [];
   for (const m of messages) {
@@ -96,17 +69,17 @@ export function turnState(messages) {
 }
 
 export const HINTS = {
-  'step-cap': `Local stopped at its ${STEP_CAP}-step cap for this message.`,
-  'edit-failed': 'Local failed the same kind of edit twice.',
-  'many-files': 'This task touches more than 3 files, which is past what Local does reliably.',
-  context: 'This conversation is longer than Local\'s ~4k-token context; older turns were left out.',
+  'step-cap': `Transformers.js stopped at its ${STEP_CAP}-step cap for this message.`,
+  'edit-failed': 'The Transformers.js model failed the same kind of edit twice.',
+  'many-files': 'This task touches more than 3 files, which is past what the Transformers.js model does reliably.',
+  context: 'This thread is longer than the Transformers.js model\'s ~4k-token context; older turns were left out.',
 };
 
 const zero = () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } });
 let callN = 0;
 
 // engine: { generate(req, { onDelta, signal }) } (src/local/engine.js).
-// onHint(kind): a reason to suggest Sealed; the page shows it, never switches.
+// onHint(kind): a reason to suggest BayLeaf Sealed; the page shows it, never switches.
 export function localApi(engine, { onHint } = {}) {
   function stream(model, context, options = {}) {
     const s = createAssistantMessageEventStream();
@@ -121,7 +94,7 @@ export function localApi(engine, { onHint } = {}) {
       const withTools = context.messages.some((m) => m.role === 'system' && m.toolsAdded?.length);
       if (withTools && st.steps >= STEP_CAP) {
         onHint?.('step-cap');
-        const text = `[Local lane: stopped after ${STEP_CAP} steps, its cap for one message. Send "continue" to go on, or switch to Sealed for longer work.]`;
+        const text = `[Transformers.js: stopped after ${STEP_CAP} steps, its cap for one message. Send "continue" to go on, or switch to BayLeaf Sealed for longer work.]`;
         msg.content.push({ type: 'text', text });
         s.push({ type: 'text_start', contentIndex: 0, partial: msg });
         s.push({ type: 'text_end', contentIndex: 0, content: text, partial: msg });
@@ -146,7 +119,7 @@ export function localApi(engine, { onHint } = {}) {
           history: toLocalMessages(context.messages), tools: withTools ? TOOLS : [], budget: BUDGET, maxNew: MAX_NEW }, { onDelta, signal: options.signal });
       } catch (e) { return fail(options.signal?.aborted ? 'aborted' : 'error', String(e?.message ?? e)); }
       if (r.trimmed) onHint?.('context');
-      if (r.over) { onHint?.('context'); return fail('error', `This message alone is longer than the Local lane's ${BUDGET}-token context (${r.input_tokens} tokens). Shorten it, or switch to Sealed.`); }
+      if (r.over) { onHint?.('context'); return fail('error', `This message alone is longer than the Transformers.js model's ${BUDGET}-token context (${r.input_tokens} tokens). Shorten it, or switch to BayLeaf Sealed.`); }
       msg.usage = { ...zero(), input: r.input_tokens, output: r.output_tokens, totalTokens: r.input_tokens + r.output_tokens };
       if (r.interrupted || options.signal?.aborted) return fail('aborted', 'Stopped.');
       const { text, calls, malformed } = parseToolCalls(r.text, TOOLS);
@@ -155,7 +128,7 @@ export function localApi(engine, { onHint } = {}) {
       const known = new Set(TOOLS.map((t) => t.function.name));
       const bad = calls.filter((c) => !known.has(c.name));
       if (malformed || bad.length) {
-        const note = malformed ? '[Local lane: the model wrote an incomplete tool call; nothing ran.]' : `[Local lane: the model asked for ${bad.map((c) => c.name).join(', ')}, which Local cannot use; nothing ran.]`;
+        const note = malformed ? '[Transformers.js: the model wrote an incomplete tool call; nothing ran.]' : `[Transformers.js: the model asked for ${bad.map((c) => c.name).join(', ')}, which it cannot use here; nothing ran.]`;
         if (!block) { block = { type: 'text', text: '' }; msg.content.push(block); s.push({ type: 'text_start', contentIndex: 0, partial: msg }); }
         block.text = (block.text ? block.text + '\n\n' : '') + note;
         s.push({ type: 'text_end', contentIndex: 0, content: block.text, partial: msg });
@@ -181,7 +154,7 @@ export function localApi(engine, { onHint } = {}) {
 // trims to BUDGET itself, so pi-durable never asks the 1.7B model to compact.
 export function localModel(local) {
   return {
-    id: 'local:' + local.id, name: `Local: ${local.label} (on this device)`, api: LOCAL_API, provider: LOCAL_PROVIDER, baseUrl: 'local:',
+    id: 'local:' + local.id, name: `${local.label} (Transformers.js, in this browser)`, api: LOCAL_API, provider: LOCAL_PROVIDER, baseUrl: 'local:',
     reasoning: false, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 131_072, maxTokens: MAX_NEW,
   };

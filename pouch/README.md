@@ -1,8 +1,13 @@
 # BayLeaf Pouch (proof of concept)
 
 Issue [#120](https://github.com/bayleaf-ucsc/bayleaf/issues/120). A single HTML file:
-a coding agent that works on files in your browser, thinks through the API's Sealed
-lane, and keeps conversations and files only on your device.
+a coding agent that works on files in your browser, thinks through BayLeaf Sealed
+(or, optionally, Transformers.js in the page), and keeps sessions and files only on your device.
+
+**Trust roots:** BayLeaf (the operator), your browser, and your own machine. Every
+provider Pouch talks to sits under one of them (BayLeaf Sealed under BayLeaf,
+Transformers.js under the browser; a future Localhost provider under your machine), and
+Pouch puts BayLeaf in a privileged position on purpose. Terms: [LANGUAGE.md](LANGUAGE.md).
 
 **Experimental live preview:** <https://pouch.bayleaf.dev/>. This is an explicitly
 authorized uncommitted proof of concept, not a tagged, reproducible public release.
@@ -27,24 +32,24 @@ the page no origin-private file system, so `/work` falls back to memory.
 
 ## Sending while Pouch works
 
-A message sent while the agent in view is working either **steers** or is **queued**:
+A message sent while the agent in view is working is either a **Steer** or a **Follow-up**:
 
 - *Steer* (the default): the message joins the running turn and the model reads it after
   its current step (a pi-durable steer, placed after the current tool round). It shows as
   "You, while it worked". If main is blocked on a foreground subagent or a `join`, steering
   detaches it (G10). If the turn ended just as you sent it, it becomes the next turn and
   Pouch says so.
-- *Queue*: the message waits until the whole turn ends, after every tool call and any
+- *Follow-up*: the message waits until the whole turn ends, after every tool call and any
   subagent it waits on, then starts the next turn as an ordinary message. It goes before
-  any subagent report or message that is waiting to wake main. There is one queued slot
-  per session; queueing again appends to it.
+  any subagent report or message that is waiting to wake main. There is one follow-up slot
+  per session (Pouch queues it; queuing is the strategy, not the name); another follow-up appends to it.
 
 Keys: **Enter** sends with the default, **Alt+Enter** (Option+Enter) with the other mode,
 **Shift+Enter** is a new line, **Esc** stops (in a subagent's view it returns to the parent;
-Stop there is the button), **Alt+Up** takes the queued message back for
-editing. Settings, "While Pouch is working, Enter: Steer / Queue", swaps the default.
-On touch screens Enter is a new line. For the whole running turn the **Steer** or **Queue**
-button sits beside Stop (it sends once there is a draft), and its arrow opens "Steer now", "Queue for after this turn" and "Stop and send".
+Stop there is the button), **Alt+Up** takes the follow-up back for
+editing. Settings, "While Pouch is working, Enter: Steer / Follow-up", swaps the default.
+On touch screens Enter is a new line. For the whole running turn the **Steer** or **Follow-up**
+button sits beside Stop (it sends once there is a draft), and its arrow opens "Steer now", "Follow-up after this turn" and "Stop and send".
 The activity tray lists what is pending (Cancel, Edit, Steer now). **Stop never sends:**
 unread steers and the queued message become one paused item with Send and Cancel. A
 subagent's own view works the same way for that subagent.
@@ -131,7 +136,7 @@ An agent can ask to hear when files change instead of asking you to tell it when
 are done (JOURNEYS G13-G17; `src/ns/watch.js`). The `watch` tool (its own small tool,
 not actions on `subagent`: watching is not about subagents, and main and subagents share
 one schema) has three actions: `watch({ paths, by, once, note })` returns an id (w1, w2,
-...), `unwatch(id)`, `list`. Subagent `list` rosters also name the scope's watches.
+...), `unwatch(id)`, `list`. Subagent `list` rosters also name the session's watches.
 
 - **paths**: files, folders (watched recursively) or globs (`*`, `?`, `**`, `[abc]`),
   resolved in the caller's namespace: a subagent can only watch inside its own mounts, and
@@ -171,9 +176,9 @@ reload they are re-armed, and a file whose hash changed while the tab was closed
 mounted folder edited on disk, another tab) fires once as "changed by outside Pouch (while
 it was closed)". Deleting the session or Erase all removes them.
 
-**Local lane:** no `watch` tool. Local keeps its four qualified tools and its verbatim
+**Transformers.js:** no `watch` tool. Its profile (`transformersjs`, `src/profiles.js`) keeps its four qualified tools and its verbatim
 grounded prompt (adding a tool would re-open that qualification for a 1.7B model). Watches
-made on Sealed still deliver if the session switches to Local, and a Local wake costs no
+made on BayLeaf Sealed still deliver if the session switches to Transformers.js, and a Transformers.js wake costs no
 request.
 
 ## Continuity: color and motion
@@ -185,27 +190,27 @@ themes; under `prefers-reduced-motion` each movement becomes a brief static high
 (`.still-mark`, about a second). Motion uses transform and opacity only.
 
 **Color math lives in CSS.** JS sets one number per element, the agent's spawn order
-(`style="--seed: 3"` for s3, `seeded()` in `src/dom.js`), and nothing else; main (s1) gets
+(`style="--seed: 3"` for a3, `seeded()` in `src/dom.js`), and nothing else; main (a1) gets
 `.main-agent` and stays neutral. `pouch.html` turns the seed into a hue with the golden
 angle (`calc(var(--seed) * 137.508deg)`), `--agent: oklch(var(--agent-l) var(--agent-c)
 var(--hue))` and `--agent-tint` (12% via `color-mix()`, not relative color syntax, for
 cross-browser support). The theme sets only lightness and chroma (light 48% / 0.13, dark
 76% / 0.11; tuned on measurement: light text on the tint was 4.45:1 at 50%). A spawn
-number, not a hash, so s3 is the same color in every session and adjacent spawns differ
+number, not a hash, so a3 is the same color in every session and adjacent spawns differ
 most. `test/batchB-node.mjs` fails on any JS-computed color; `test/batchB-browser.mjs`
 measures contrast for seeds 1-12 in both themes (light text min 4.79:1, dark 5.88:1; dots
 5.26 / 6.54).
 
 | Moment (journey) | Treatment |
 |---|---|
-| Who talks to whom (G4-G6, G9) | One hue per agent on its sidebar dot and edge, card edge and name, tray row edge and icon, sender tags in any transcript ("from judge-evidence (s4)"), the to/from message list (each peer a dot and its count), the "reported to chair (s2)" part of join summaries, and the subagent view's bar. |
-| Steering delivered (D25-D27) | The tray's "Steering" row travels into its place in the transcript (FLIP, 200 ms) and its glow fades (1.2 s, on `::after`). Queued then "Steer now" keeps the row in place; only its label and edge change. The "Steering ..." status clears once delivered. |
+| Who talks to whom (G4-G6, G9) | One hue per agent on its sidebar dot and edge, card edge and name, tray row edge and icon, sender tags in any transcript ("from judge-evidence (a4)"), the to/from message list (each peer a dot and its count), the "reported to chair (s2)" part of join summaries, and the subagent view's bar. |
+| Steering delivered (D25-D27) | The tray's "Steering" row travels into its place in the transcript (FLIP, 200 ms) and its glow fades (1.2 s, on `::after`). A follow-up then "Steer now" keeps the row in place; only its label and edge change. The "Steering ..." status clears once delivered. |
 | Detach (G10, G12) | The foreground card, or the running spawn pill, folds into its tray row (a ghost, 240 ms); the row keeps the agent's hue and briefly highlights. |
 | Watch wake (G14, G17) | The changed file's tree row pulses once (watch accent edge); the woken turn's label ("Woken by watch w1: ...") uses the same `--watch` accent. |
 | Editor follows or conflicts (R4) | The lines that changed underneath you flash once in the editor, separate from the conflict bar. |
 | Revert to here (D12) | Messages after the point dim (200 ms) and fold into a collapsed "Other branch: N messages Pouch no longer sees"; the file tree does not move, because files are not touched. |
 | Build identity (I-stories, offline copy) | A swatch seeded from the first byte of the page's sha256 beside the hash in "This copy" and in the update notice: the same build always shows the same color, a new build a visibly different one. The hash stays the authority. |
-| Lanes | Fixed theme tokens, never agent hues: `--lane-sealed` (leaf) and `--lane-local` (blue) on the model picker's lane icon and the composer shield. |
+| Providers | Fixed theme tokens, never agent hues: `--provider-sealed` (leaf, BayLeaf Sealed) and `--provider-tjs` (blue, Transformers.js) on the model picker's provider icon and the composer shield. |
 
 Every moment is keyed (`src/motion.js`): the log, tree and tray are rebuilt on every
 streamed token, so `arm(key)` starts a clock and each rebuild's `play()` resumes the
@@ -235,12 +240,12 @@ separate model or API service is stateless.
 | The page itself | the static host | everyone: it is the published, hash-checkable file |
 | Identity, claims, keys, spend metadata | BayLeaf API (`api.bayleaf.dev`) | the BayLeaf operator; no prompt or file content |
 | Prompts, file contents the agent reads, replies | in transit only, EHBP-encrypted to the Tinfoil enclave | the attested enclave; not BayLeaf |
-| Local lane turns (prompts, files, replies) | this browser only: generated on its GPU | nobody else; nothing is sent |
-| Local model files (optional, ~1.1 GB) | Cache Storage (`pouch-local-models`), until Remove local model or Erase all | the static host sees that this browser downloaded them |
+| Transformers.js turns (prompts, files, replies) | this browser only: generated on its GPU | nobody else; nothing is sent |
+| Transformers.js model files (optional, ~1.1 GB) | Cache Storage (`pouch-local-models`), until Remove the model or Erase all | the static host sees that this browser downloaded them |
 
 The CSP's `connect-src 'self' https://api.bayleaf.dev` means the page has one remote
 network peer plus its own static origin, which it uses only to download the optional
-Local model's hash-checked files. An auditor checks the file's hash and that its CSP is
+Transformers.js model's hash-checked files. An auditor checks the file's hash and that its CSP is
 as stated.
 
 ## The coding agent
@@ -254,7 +259,7 @@ as stated.
 | Files | one tree stitched from several stores (below) | `src/vfs.js` |
 | Editor | CodeMirror 6 with JS/TS, Python, Markdown, HTML, CSS, JSON | `src/editor.js` |
 | UI | sessions sidebar, chat, one side panel at a time (Files, Editor, Usage, Trust, Settings) from an icon rail; drawer, full-screen sheets and a bottom bar on phones | `pouch.html`, `src/main.js`, `src/layout.js` |
-| Composer | one card: activity tray (running subagents and `run` calls, approvals waiting, steering not yet read and the queued or paused message; Stop, Stop all, Cancel, Edit, Steer now), `@` path / `$` skill / `/` command autocomplete, the shield popover (lane, egress grants), Usage count, model picker, Send / Stop with the Steer-or-Queue split button while Pouch works; the turn footer (model, duration, time) is in `main.js` | `src/composer.js`, `src/main.js` |
+| Composer | one card: activity tray (running subagents and `run` calls, approvals waiting, steering not yet read and the follow-up or paused message; Stop, Stop all, Cancel, Edit, Steer now), `@` path / `$` skill / `/` command autocomplete, the shield popover (lane, egress grants), Usage count, model picker, Send / Stop with the Steer-or-Queue split button while Pouch works; the turn footer (model, duration, time) is in `main.js` | `src/composer.js`, `src/main.js` |
 | Preferences / attachments | local display defaults; one ingest path for Attach, composer drop and image paste | `src/settings.js`, `src/attachments.js` |
 | Titles | a session is named after its first turn by one tool-less sealed completion; the sparkle beside the title field suggests another | `src/naming.js` |
 | Usage | today's Sealed allowance (`/usage` with a key, `/campus-pass` without), checked on load, sign-in and after each run, never polled; tokens per session | `src/usage.js` |
@@ -340,11 +345,11 @@ tool round and so read before the child's next model request; it never starts a 
 (the composer is disabled once the child is done, and says so). Steering messages are
 marked as yours in both views, and the parent's report (or a foreground spawn's tool
 result) quotes them, so the main agent knows you redirected it. The card's Message uses
-the same marked entry. Local lane: no subagents, so none of this.
+the same marked entry. Transformers.js: no subagents, so none of this.
 
-**Agent graphs** (`src/graph.js`, JOURNEYS G1-G12): the sessions of one *scope* (a
-top-level session, `s1`, and its children `s2`, `s3`, ... in spawn order) message each
-other by id, so subagents can form graphs: many-to-one collectors, pipelines,
+**Agent graphs** (`src/graph.js`, JOURNEYS G1-G12): the agents of one session (its
+main agent, `a1`, and its subagents `a2`, `a3`, ... in spawn order) message each
+other by handle, so subagents can form graphs: many-to-one collectors, pipelines,
 cross-checks. Spawning stays flat (only main spawns); graphs come from messages, and a
 message never crosses scopes (ids resolve only in the sender's own registry). Main's
 `subagent` tool has `spawn` (returns the id; `report: false` for a child that never posts
@@ -361,11 +366,11 @@ plus a short gloss shared with main's prompt (ids, the common shapes, "messages 
 between your steps; do not poll", "join never wakes a thread: to get new work, message
 then join", "when your part is done send your result to whoever asked, then stop").
 - *Delivery* has one path: a `pouch.msg` entry in the recipient's conversation whose
-  model text is `[from <name> (<id>)] <text>`. A running session gets it as a steer (its
+  model text is `[from <name> (<handle>)] <text>`. A running agent gets it as a steer (its
   next step; pi-durable's `steeringMode: "all"`, so several arrive together and in
   order), a finished child is woken (one more step from the allowance; refused at the
   running cap; a child may wake only a *finished* peer, not a stopped one), an idle main
-  starts a turn as reports do. Every view labels the sender ("from chair (s2)"; "You"
+  starts a turn as reports do. Every view labels the sender ("from chair (a2)"; "You"
   for the user's steering); cards, the child view and the session list show per-edge
   counts.
 - *Reports*: a child that sent any message in its run (or was woken by a peer) reports to
@@ -386,9 +391,9 @@ then join", "when your part is done send your result to whoever asked, then stop
   (holds: joins and foreground spawns, followed transitively) is refused naming the
   cycle. main cannot be joined (it answers by message). When main is joined on a child
   as it settles, the join result is its report: no separate report, no extra turn.
-- *Caps*, per user turn (reset when you write to main): 40 messages in the scope, 8
-  between any two sessions in either direction. A refused message is a tool error for the
-  sender ("Not sent: s3 and s4 have exchanged 8 messages ...") and a "Message limit" row in
+- *Caps*, per user turn (reset when you write to main): 40 messages in the session, 8
+  between any two agents in either direction. A refused message is a tool error for the
+  sender ("Not sent: a3 and a4 have exchanged 8 messages ...") and a "Message limit" row in
   the tray with the reason, never a silent drop.
 - *User steering preempts blocking* (G10-G12): while main is blocked on a foreground spawn
   or a `join`, steering from main's composer (Enter by default; the split menu says "Steering will
@@ -510,8 +515,8 @@ files):
 
 **Task files.** `/task/<id>/{status,log,ns,ctl}` lists running and recent `run`
 calls and subagents: `cat /task/3/status`, `cat /task/3/ns`, and
-`echo kill > /task/3/ctl`. Every lane sees `/task`; the Sealed system prompt
-names it in one line and the Local prompt does not mention it.
+`echo kill > /task/3/ctl`. Every profile sees `/task`; main's and the subagents' prompts
+name it in one line and the transformersjs prompt does not mention it.
 
 **What namespaces do not enforce.** They do not cover the network. Leaving the
 pouch is still the page CSP (`connect-src`) plus per-session egress grants (`src/egress.js`);
@@ -546,7 +551,7 @@ transparency log, and no tagged reproducible release has been made.
 - **One network peer, plus its own origin.** `connect-src 'self' https://api.bayleaf.dev`.
   Attestation verification succeeds under this policy because the relay's
   `/sealed/attestation` bundle carries the whole trust root (verified 2026-10-27,
-  tinfoil 1.3.0). `'self'` was added for the Local lane (below) and is used only to fetch
+  tinfoil 1.3.0). `'self'` was added for the Transformers.js provider (below) and is used only to fetch
   `models/<id>/` files, each checked against a manifest whose SHA-256 is built into the
   page; the static host already serves the page, so it is not a new operator. It also
   lets page script send data to that host, which before needed `api.bayleaf.dev`: the
@@ -571,14 +576,14 @@ transparency log, and no tagged reproducible release has been made.
   markup into the page that holds your key.
 - **Fail closed.** If attestation fails, Send stays disabled. No plaintext fallback exists.
 
-## Local lane: a model on this device
+## Transformers.js: a model in this browser
 
-Builds made with `node build.mjs --with-models` carry an optional third lane next to
-Sealed: **Local: LFM3 1.7B (on this device)**, the `onnx-community/LFM3-1.7B-ONNX` q4f16
+Builds made with `node build.mjs --with-models` carry an optional second provider next to
+BayLeaf Sealed: **LFM3 1.7B (in this browser)** under Transformers.js in the picker, the `onnx-community/LFM3-1.7B-ONNX` q4f16
 export at a pinned revision, run by Transformers.js 4.3.2 and ONNX Runtime Web on
 WebGPU. The picker shows it when WebGPU works and otherwise lists it disabled with the
-reason. Choosing it is the only way in: Pouch never switches lanes by itself, and the
-shield says "On this device: nothing sent".
+reason. Choosing it is the only way in: Pouch never switches providers by itself, and the
+shield says "Transformers.js: in this browser, nothing sent".
 
 - **Files.** `models.lock.json` pins every file (URL, revision, size, SHA-256);
   `node fetch-models.mjs` fetches them into `~/.cache/bayleaf-pouch/models` (never the
@@ -595,20 +600,20 @@ shield says "On this device: nothing sent".
   the files as blobs and the wasm as bytes. Settings can **Load from folder/files**: a
   saved `models/<id>/` folder, or the original upstream files (cut at the manifest's part
   boundaries and checked the same way), for offline or `file://` copies (where it is
-  kept for that page load only). **Remove local model** frees the storage; **Erase all**
+  kept for that page load only). **Remove the model** frees the storage; **Erase all**
   removes it too.
-- **Recipe** (`experiments/lfm3-webgpu`, agent v2 "v8"). A short grounded system prompt
+- **Recipe** (`experiments/lfm3-webgpu`, agent v2 "v8"; the `transformersjs` profile in `src/profiles.js`, moved there byte for byte). A short grounded system prompt
   naming `/work`, one byte-exact example turn, four short tool schemas (read, write,
-  edit, bash: no `run`, no subagents, which would spend Sealed requests), greedy
+  edit, bash: no `run`, no subagents, which would spend BayLeaf Sealed requests), greedy
   decoding, at most 8 model steps per message and about 4k tokens of context: older
   turns are dropped first, then the current turn's long tool results are shortened. The
   model's native XML tool calls are parsed in the page. Stop interrupts generation.
-- **When to use Sealed.** Local suits inspecting a workspace and small, literal edits.
-  A visible hint (with a "Use Sealed next" button that only changes the picker) appears
-  when Local hits its step cap, an edit fails twice, a task touches more than 3 files,
-  or the conversation outgrows its context. Local sessions are not auto-named (that
-  would be a Sealed request) and use none of the Sealed allowance.
-- **Tool policy for every lane.** Native XML tool calls blur trailing newlines, so
+- **When to use BayLeaf Sealed.** Transformers.js suits inspecting a workspace and small, literal edits.
+  A visible hint (with a "Use BayLeaf Sealed next" button that only changes the picker) appears
+  when it hits its step cap, an edit fails twice, a task touches more than 3 files,
+  or the thread outgrows its context. Its sessions are not auto-named (that
+  would be a BayLeaf Sealed request) and use none of the BayLeaf Sealed allowance.
+- **Tool policy for every provider.** Native XML tool calls blur trailing newlines, so
   `edit` makes newText end with a line break exactly when oldText does (an empty newText,
   a deletion, is left alone), `write` saves a non-empty file ending with exactly one
   newline, and a `bash` failure with no output says so ("no output, exit 1 (for grep this
@@ -630,7 +635,7 @@ A saved copy of `pouch.html` opened from disk (`file://`) starts offline and wor
 one caveat: Chromium refuses OPFS to `file://` pages, so `/work` falls back to memory
 (tagged "memory only") and is lost on reload; IndexedDB (`/pouch`, sessions, settings)
 does persist. Sealed sending needs the network, because attestation fetches the
-enclave's bundle; the Local lane does not (load its files from a saved folder in Settings).
+enclave's bundle; Transformers.js does not (load its files from a saved folder in Settings).
 
 ## Install and the offline copy
 
@@ -643,8 +648,8 @@ the same in a tab. Installed or not, the hosted page keeps an offline copy of it
   manifest and icons with the cache bypassed, checks each against `/SHA256SUMS`, and
   only then stores them in Cache Storage under `pouch-shell-<sha256 of pouch.html>`.
   `/sw.js` serves exactly those files (`/`, `/pouch.html`, manifest, icons) from that
-  cache, online or not. It does not touch `api.bayleaf.dev`, `/models/**` (the Local
-  lane's own verified cache), `/SHA256SUMS`, itself, or any URL with a query.
+  cache, online or not. It does not touch `api.bayleaf.dev`, `/models/**` (the Transformers.js
+  provider's own verified cache), `/SHA256SUMS`, itself, or any URL with a query.
 - **Explicit updates.** At start (when online) and on "Check for updates", the page
   reads `/SHA256SUMS`. If the published HTML hash differs from the pinned one, a notice
   names both. Nothing changes until you press Update, which fetches the new files,
@@ -653,7 +658,7 @@ the same in a tab. Installed or not, the hosted page keeps an offline copy of it
 - **The trust panel says which build runs:** where it was loaded from, the pinned hash,
   the published hash when last checked, whether the served `sw.js` matches the hash
   built into this page, whether Pouch runs installed, and whether storage is persistent
-  (requested at start and on install, which also covers the Local model's cache).
+  (requested at start and on install, which also covers the Transformers.js model's cache).
 - **Uninstall offline copy** (trust panel) unregisters the worker, deletes the copy and
   remembers the choice; **Erase all** also does both (the next visit starts fresh).
 

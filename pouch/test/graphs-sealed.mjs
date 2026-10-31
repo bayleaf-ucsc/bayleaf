@@ -59,7 +59,7 @@ const read = { name: 'read', label: 'Read', description: 'Read a file by absolut
   execute: async ({ path }) => { if (!(path in files)) throw new Error(`ENOENT: ${path}`); return files[path]; } };
 const prompt = `You are BayLeaf Pouch, a coding agent running inside the user's web browser. You work on files with the read tool (read-only in this run).
 The subagent tool runs a self-contained task in a background subagent while you keep talking with the user. Each subagent step costs a request from the same daily allowance; its report arrives later as a message, so do not poll for it.
-${GRAPH_GLOSS} You are main (s1); only you spawn and stop subagents.
+${GRAPH_GLOSS} You are main (a1); only you spawn and stop subagents.
 Be concise.
 
 <skills>
@@ -91,7 +91,7 @@ const outline = (items) => items.map((x) => {
 }).filter(Boolean).join('\n');
 const l = await agent.subagents.list(sid);
 const mv = await agent.snapshot(sid);
-console.log(`\n== main (s1)\n${outline(mv.items)}`);
+console.log(`\n== main (a1)\n${outline(mv.items)}`);
 for (const c of l) {
   let v; const d = await agent.subagents.watch(sid, c.id, (x) => { v = x; }); d();
   console.log(`\n== ${c.name} (${c.ref}) ${c.status} sent ${JSON.stringify(c.sent ?? {})} got ${JSON.stringify(c.got ?? {})}\n${outline(v?.items ?? [])}`);

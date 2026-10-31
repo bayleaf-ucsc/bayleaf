@@ -19,11 +19,11 @@ JOURNEYS.md fails the run, and so does a declared shot that this page does not p
 
 Two things the pictures hide. First, the clock is fixed at 9:41 AM and elapsed times
 are frozen (4s, 12s), so reruns are pixel-identical. Second, flows that depend on how
-a real model behaves (agent graphs, watching files, the Local lane, the analyst
+a real model behaves (agent graphs, watching files, Transformers.js, the analyst
 script) are **scripted reenactments**: the fake model follows the outline of a
 recorded real run from the AX notes in JOURNEYS.md, and their captions say so.
 Statuses read: **ok** built and tested, **built, untested**, **gap** missing,
-**built** for a lane that is tested only by hand.
+**built** for a flow that is tested only by hand.
 
 ## 1. Arriving: Lab and Auditor
 
@@ -134,7 +134,7 @@ file well is still untested.
 <sub><b>D22</b> ok · <b>I6</b> built, untested. @ lists paths in /work, /pouch, /tmp and mounted folders; $ lists skills; / lists commands.</sub>
 <!-- /wt -->
 
-The composer is one card. The shield in it states this session's lane (Sealed:
+The composer is one card. The shield in it states this session's provider (BayLeaf Sealed:
 encrypted to the enclave) and any egress grants, each of which can be revoked.
 
 <!-- wt:shot composer-shield -->
@@ -296,14 +296,14 @@ Alt+Enter queues it for after the turn. The split button offers both, plus Stop 
 send. In Firefox this is unverified.
 
 <!-- wt:shot sendmode-menu -->
-<img src="walkthrough/images/sendmode-menu.png" alt="While Pouch works: the round Stop button, a split Steer button and its menu: Steer now, Queue for after this turn, Stop and send." width="792"><br>
-<sub><b>D26</b> ok · <b>D25</b> ok. While Pouch works, Enter steers (read after the current step), Alt+Enter queues for after the turn; the menu offers both and Stop and send.</sub>
+<img src="walkthrough/images/sendmode-menu.png" alt="While Pouch works: the round Stop button, a split Steer button and its menu: Steer now, Follow-up after this turn, Stop and send." width="792"><br>
+<sub><b>D26</b> ok · <b>D25</b> ok. While Pouch works, Enter steers (read after the current step), Alt+Enter sends a follow-up for after the turn; the menu offers both and Stop and send.</sub>
 <!-- /wt -->
 
 Pending input waits in the tray, where you can cancel it, edit it or promote it.
 
 <!-- wt:shot sendmode-tray -->
-<img src="walkthrough/images/sendmode-tray.png" alt="The tray with two pending inputs: &quot;Steering, after current step&quot; with Cancel, and &quot;Queued, after this turn&quot; with Edit, Steer now and Cancel." width="792"><br>
+<img src="walkthrough/images/sendmode-tray.png" alt="The tray with two pending inputs: &quot;Steering, after current step&quot; with Cancel, and &quot;Follow-up, after this turn&quot; with Edit, Steer now and Cancel." width="792"><br>
 <sub><b>D27</b> ok · <b>D21.2</b> ok. Pending input waits in the tray, where it can be cancelled, edited or promoted.</sub>
 <!-- /wt -->
 
@@ -311,7 +311,7 @@ Stop never sends. Unread steering and the queued message become one paused item.
 
 <!-- wt:shot sendmode-paused -->
 <img src="walkthrough/images/sendmode-paused.png" alt="After Stop: one tray row &quot;Paused after Stop&quot; holding both messages, with Send and Cancel." width="792"><br>
-<sub><b>D29</b> ok. Stop never sends: unread steering and the queued message become one paused item.</sub>
+<sub><b>D29</b> ok. Stop never sends: unread steering and the follow-up become one paused item.</sub>
 <!-- /wt -->
 
 ## 9. Watching files: Desk and Analyst
@@ -343,7 +343,7 @@ folders edited on disk are not noticed until a reload.
 <sub><b>G16</b> ok. Files not here yet: main waits for them instead of polling, and the tray says what it is waiting for. <i>Scripted reenactment with a fake model.</i></sub>
 <!-- /wt -->
 
-## 10. Offline, install, and the Local lane: Commuter
+## 10. Offline, install, and Transformers.js: Commuter
 
 <!-- wt:status F1 F2 F3 F4 F5 --><b>F1</b> ok · <b>F2</b> ok · <b>F3</b> ok · <b>F4</b> built · <b>F5</b> ok in Chromium, gap elsewhere<!-- /wt -->
 
@@ -356,15 +356,15 @@ Your draft stays.
 <sub><b>F1</b> ok. When the network drops, files, editor and run keep working; the composer says plainly that the model is unreachable.</sub>
 <!-- /wt -->
 
-The Local lane runs a small model on this device and sends nothing. Here the WebGPU
+Transformers.js runs a small model in this browser and sends nothing. Here the WebGPU
 model is replaced by a scripted stand-in, `walkthrough/fake-local.js`, so this is a
 reenactment. The real provider still parses its tool calls and runs the tools.
-Switching lanes is always explicit. The offline copy and installing (F3, F5) need a
+Switching providers is always explicit. The offline copy and installing (F3, F5) need a
 served service worker and are not illustrated yet.
 
 <!-- wt:shot local-turn -->
-<img src="walkthrough/images/local-turn.png" alt="A turn on the Local lane: the picker reads &quot;Local: LFM3 1.7B (on this device)&quot;, a Read tool pill and a short answer." width="792"><br>
-<sub><b>F4</b> built. The Local lane answers and runs tools on this device with nothing sent; switching lanes is always explicit. <i>Scripted reenactment with a fake model.</i></sub>
+<img src="walkthrough/images/local-turn.png" alt="A turn on Transformers.js: the picker reads &quot;LFM3 1.7B (in this browser)&quot; under Transformers.js, a Read tool pill and a short answer." width="792"><br>
+<sub><b>F4</b> built. Transformers.js answers and runs tools in this browser with nothing sent; switching providers is always explicit. <i>Scripted reenactment with a fake model.</i></sub>
 <!-- /wt -->
 
 ## 11. On a phone
