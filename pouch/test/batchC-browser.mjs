@@ -377,15 +377,15 @@ await section('usage', async (h, page) => {
   }));
   const num = (x) => Number(String(x).replace(/,/g, '')) || 0;
   const sessionRows = t.rows.filter((r) => !/total|other/.test(r.cls));
-  const total = t.rows.find((r) => /total/.test(r.cls)), other = t.rows.find((r) => /other/.test(r.cls));
-  const delta = t.sent + t.titles + 3;
-  assert.ok(total, 'a total row: ' + JSON.stringify(t.rows));
+  const total = t.rows.find((r) => /total/.test(r.cls));
+  // Batch D: the allowance is outside state; no Other row, a plain outside note instead.
+  assert.ok(total && /This browser today/.test(total.cells[0]), 'a this-browser total row: ' + JSON.stringify(t.rows));
+  assert.ok(!t.rows.some((r) => /other/.test(r.cls)), 'no Other row');
   assert.equal(sessionRows.reduce((a, r) => a + num(r.cells[1]), 0), t.sent + t.titles, 'session rows count every request Pouch sent: ' + JSON.stringify(t));
-  assert.equal(num(other?.cells[1]), 3, 'other = what the allowance lost beyond that');
-  assert.equal(num(total.cells[1]), delta, 'total = allowance delta');
-  assert.match(total.cells[0], new RegExp(`allowance down ${delta}\\b`));
+  assert.equal(num(total.cells[1]), t.sent + t.titles, 'total = what this browser sent');
+  assert.match(await page.textContent('#usage-body .quota .outside'), /Changed outside this browser: down 3\b/);
   for (const r of sessionRows) assert.ok(r.w >= 100 && !/^\w\.$/.test(r.cells[0].trim()), 'title readable: ' + JSON.stringify(r));
-  ok(`bug 5: Usage counts all ${t.sent + t.titles} requests Pouch sent (${t.sent} model incl. a stopped one and a stopped subagent's, ${t.titles} title) plus Other 3, total ${delta} = allowance delta; titles at least ${Math.min(...sessionRows.map((r) => Math.round(r.w)))} px`);
+  ok(`bug 5: Usage counts all ${t.sent + t.titles} requests Pouch sent (${t.sent} model incl. a stopped one and a stopped subagent's, ${t.titles} title); the 3 from elsewhere read "changed outside this browser: down 3"; titles at least ${Math.min(...sessionRows.map((r) => Math.round(r.w)))} px`);
 });
 
 // ── Design: stopped-subagent wording, child view at top, overlay sidebar, D12, new-reply pill ──
@@ -414,7 +414,7 @@ await section('design', async (h, page) => {
   await page.waitForTimeout(600);
   assert.equal(await page.evaluate(() => document.getElementById('log').scrollTop), 0, 'opens at the top');
   assert.match(await page.getAttribute('#input', 'placeholder'), /helper was stopped\./);
-  assert.match(await page.textContent('#log'), /helper was stopped; its last output went to/);
+  assert.match(await page.textContent('#log'), /helper was stopped; its last output is in the parent thread/);
   await page.click('.sa-back');
   await h.settled();
   // Desktop overlay sidebar: scrim, Esc back to the composer, typing never lost.

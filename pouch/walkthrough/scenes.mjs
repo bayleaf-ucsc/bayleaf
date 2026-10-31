@@ -221,8 +221,11 @@ export const scenes = [
         alt: 'The session sidebar with scout nested under the current session, marked working.',
         caption: 'Running children nest under their session with a live state.' },
       { id: 'subagents-view', target: ['#log .sa-view-head', 'last:#log .msg.user.steer'], grow: 40, stories: ['S2', 'S3'],
-        alt: 'The subagent view: header "subagent of" the session with task, state, /task id and mounts; below, the user steering message labeled "You, while it worked".',
+        alt: 'The subagent view: breadcrumbs from the session title to scout, state, task, /task id and mounts; below, the user steering message labeled "You, while it worked".',
         caption: 'Open a subagent to read its live transcript and steer it; the message reaches its next step.' },
+      { id: 'subagents-frame', target: '#chat', maxHeight: 900, stories: ['S2'],
+        alt: 'The whole chat column inside scout: an inset ring and the composer border in scout\'s hue, breadcrumbs "session title > scout" at the top.',
+        caption: 'Inside a subagent the column wears its color, composer included, and the breadcrumbs (or Esc, or Back) pop out.' },
       { id: 'subagents-review', target: 'last:#log .subagent', stories: ['S4', 'S5', 'D16'],
         alt: 'The finished scout card expanded: a compact transcript, one line per tool call, the steering message marked, the final answer set apart.',
         caption: 'Back in the parent, the card shows the compact transcript and counts the steering; the report tells the parent model you steered.' },
@@ -241,6 +244,7 @@ export const scenes = [
       await open('s1'); // its next request carries the steer
       await page.waitForSelector('#log.child-view .msg.user.steer', T);
       await shot('subagents-view');
+      await shot('subagents-frame');
       await open('s2');
       await page.waitForSelector('#log .sa-ended', T);
       await page.click('#log .sa-ended button');

@@ -15,9 +15,9 @@ import { createTools, systemPrompt, loadContext, CWD, defaultSubagentNs, describ
 import { openAgent, Type } from './agent.js';
 import { collect, packTar, packZip, unpackTar, unpackZip } from './archive.js';
 import { $, el, icon, seeded } from './dom.js';
-import { arm, armed, play, flipFrom, fold, snapshot } from './motion.js';
+import { arm, armed, play, flipFrom, fold, snapshot, reduced } from './motion.js';
 import { createLayout } from './layout.js';
-import { createUsage, renderMeter, renderPanel, exhaustedText, extractKey, createLedger, reconcile } from './usage.js';
+import { createUsage, renderMeter, renderPanel, exhaustedText, extractKey, createLedger } from './usage.js';
 import { createSessions, sameId, titleOf, notesKey, convKey, revertKey, subagentsKey, interruptedKey, turnsKey, watchesKey } from './sessions.js';
 import { createWatches, watchTool, baseOf, isGlob, MAX_WAKES } from './ns/watch.js';
 import { parseSpecs } from './ns/namespace.js';
@@ -26,6 +26,8 @@ import { createEgress, egressOf, grantsFor, revoke, serviceName } from './egress
 import { LOCAL, support as localSupport, stored as localStored, engine as localEngine, importFiles as localImport, remove as localRemove } from './local/engine.js';
 import { isLocal, HINTS } from './local/provider.js';
 import { createOffline, short } from './offline.js';
+import { createFollow } from './follow.js';
+import { dismissible, guardDialog } from './dismiss.js';
 
 const API = 'https://api.bayleaf.dev';
 const SEALED = API + '/sealed';
@@ -57,6 +59,10 @@ const usage = createUsage({ getKey: () => key });
 // the allowance's own (it ends at resetsAt).
 const ledger = createLedger({ get: () => store.getSetting('requestLedger'), set: (v) => store.setSetting('requestLedger', v) },
   () => usage.state.resetsAt?.toISOString() ?? null);
+// The allowance badge, its tooltip split into this browser's count and the allowance.
+const meter = async () => renderMeter(usage.state, await ledger.snapshot().catch(() => null));
+// Follow new content only while following (src/follow.js, README "Scrolling").
+const follow = createFollow($('log'));
 // Deferred: the layout restores a remembered panel while this module is still loading.
 const layout = createLayout({ onPanel: (p) => { if (p === 'usage') queueMicrotask(renderUsagePanel); if (p === 'trust') queueMicrotask(() => { renderCopy(); renderNamespaces(); }); } });
 
@@ -76,8 +82,27 @@ function sheet(title, actions, body) {
     b.onclick = async () => { $('sheet').close(); try { await fn(); } catch (e) { fail(e.message); } };
     return b;
   }), el('button', { type: 'button', textContent: 'Cancel', onclick: () => $('sheet').close() }));
+  // A field typed into and then dismissed comes back as it was (src/dismiss.js).
+  const kept = sheetDrafts.get(title);
+  sheetDrafts.delete(title);
+  if (kept) [...$('sheet-body').querySelectorAll('input, textarea')].forEach((f, i) => { if (kept[i] != null) f.value = kept[i]; });
+  $('sheet').querySelector(':scope > .keep-note')?.remove();
   $('sheet').showModal();
 }
+const sheetDrafts = new Map(); // sheet title -> the values of its fields when it was dismissed
+// Every dialog, popover, menu and drawer dismisses by one rule (src/dismiss.js).
+guardDialog($('sheet')); guardDialog($('claim')); guardDialog($('egress'));
+dismissible({ layer: 3, isOpen: () => $('sheet').open, inside: () => [$('sheet')],
+  keep: () => $('sheet').dataset.busy ?? null,
+  close: () => {
+    const v = [...$('sheet-body').querySelectorAll('input, textarea')].map((f) => f.value);
+    if (v.some((x) => x.trim())) sheetDrafts.set($('sheet-title').textContent, v);
+    $('sheet').close();
+  } });
+// Waiting for approval in another tab: dismissing is Cancel (start again any time).
+dismissible({ layer: 3, isOpen: () => $('claim').open, inside: () => [$('claim')], close: () => $('claim-cancel').click() });
+// A request waiting to leave: dismissing answers Deny, the answer that sends nothing.
+dismissible({ layer: 3, isOpen: () => $('egress').open, inside: () => [$('egress')], close: () => $('egress-deny').click() });
 
 // ── Editor ──────────────────────────────────────────────────────────
 // The editor keeps a baseline: the text it last loaded or saved. When the
@@ -111,7 +136,15 @@ function markEditor() {
 function setConflict(theirs) {
   conflict = theirs;
   $('conflict-bar').hidden = theirs == null;
+  $('conflict-diff').hidden = merging; // the diff is already open (critique 3)
+  if (theirs == null) editorStatus(null);
   markEditor();
+}
+// Save and conflict feedback, in the editor pane rather than under the chat
+// composer, and cleared once the conflict is settled (critique 2).
+function editorStatus(text, kind = '') {
+  const n = $('editor-status');
+  n.hidden = !text; n.textContent = text ?? ''; n.className = kind;
 }
 function setReviewBar(text) {
   $('review-bar').hidden = text == null;
@@ -149,11 +182,12 @@ async function saveFile() {
     const disk = (await vfs.fs.exists(openPath)) ? await vfs.fs.readFile(openPath) : null;
     if (disk !== null && disk !== editor.baseline && disk !== editor.text()) {
       setConflict(disk);
-      status('Not saved: Pouch changed this file meanwhile. Show diff, Keep mine or Take theirs, then Save.', 'bad');
+      editorStatus('Not saved: Pouch changed this file meanwhile. Show diff, Keep mine or Take theirs, then Save.', 'bad');
       return;
     }
     await userFs.writeFile(openPath, editor.text()); editor.markSaved(); setConflict(null); vfs.changed();
-  } catch (e) { status('Could not save: ' + e.message, 'bad'); }
+    editorStatus(null);
+  } catch (e) { editorStatus('Could not save: ' + e.message, 'bad'); }
 }
 // Leave the conflict diff once every hunk is kept or taken; until then the
 // bar counts what is left and offers to settle the rest one way.
@@ -165,7 +199,7 @@ function settleDiff() {
     editor.focus();
     return false;
   }
-  merging = false; setReviewBar(null);
+  merging = false; setReviewBar(null); $('conflict-diff').hidden = false;
   editor.endDiff(); if (conflict != null) editor.setBaseline(conflict); setConflict(null);
   return true;
 }
@@ -187,9 +221,9 @@ $('review-done').onclick = () => { settleDiff(); editor.focus(); };
 $('review-mine').onclick = () => { editor.settleAll(true); settleDiff(); editor.focus(); };
 $('review-theirs').onclick = () => { editor.settleAll(false); settleDiff(); editor.focus(); };
 $('conflict-diff').onclick = () => {
-  merging = true;
+  merging = true; $('conflict-diff').hidden = true;
   editor.diff(openPath, conflict, editor.text());
-  setReviewBar('Struck lines are Pouch\'s version, the rest is yours. Keep or take each change, then Done (or Save).');
+  setReviewBar('Each change shows Pouch\'s version struck through, then your version. Keep mine or Take theirs on each, then Done (or Save).');
   editor.focus();
 };
 $('conflict-mine').onclick = () => { editor.setBaseline(conflict); setConflict(null); editor.focus(); };
@@ -524,7 +558,7 @@ function entryActions(path, isDir, mountName) {
     ['Upload files here', () => uploadTo(path)],
     canPickFolder && ['Upload a folder here', () => uploadTo(path, true)],
     navigator.clipboard && ['New file from clipboard', () => newFromClipboard(path)],
-    ['Download as .zip', () => downloadDir(path, 'zip'), 'primary'],
+    ['Download as .zip', () => downloadDir(path, 'zip')], // neutral: no action here is the default (critique 8)
     ['Download as .tar', () => downloadDir(path, 'tar')],
     ['Mention in chat', () => mention(path)],
     !mountName && !isRoot && ['Rename', () => rename(path)],
@@ -1029,7 +1063,9 @@ function keyForm() {
     const k = extractKey(input.value);
     if (!k) { why.textContent = input.value.trim() ? 'That does not contain an sk-bayleaf- key: it starts with sk-bayleaf- followed by letters, digits, - or _.' : 'Paste your key first.'; why.className = 'key-why bad'; input.focus(); return; }
     save.disabled = true; why.className = 'key-why'; why.textContent = 'Checking the key with BayLeaf...';
-    const ok = await checkKey(k);
+    // A check in flight keeps the sheet open (src/dismiss.js): it would sign in after it closed.
+    $('sheet').dataset.busy = 'Checking the key with BayLeaf: this closes by itself once it answers.';
+    const ok = await checkKey(k).finally(() => delete $('sheet').dataset.busy);
     if (ok !== true) { why.textContent = ok; why.className = 'key-why bad'; save.disabled = false; input.focus(); return; }
     $('sheet').close(); await useKey(k);
   };
@@ -1146,7 +1182,7 @@ const sessions = createSessions({
   forgetWatches: (id) => watches.removeSession(id),
   agent: () => agent, view: () => view, connected: () => (agent && verified ? client : null),
   model: () => $('model').value, setModel: (id) => { $('model').value = id; pickerLane(); }, hasModel: (id) => models.some((m) => m.id === id) || (localOk.ok && id === LOCAL_ID), isLocal,
-  attach: () => attach(), status, ask, sheet, countRequest: (id, kind) => ledger.add(id, kind, usage.state.remaining), layout, usage, quotaError, exhaustedText,
+  attach: () => attach(), status, ask, sheet, countRequest: (id, kind) => ledger.add(id, kind).then(meter), layout, usage, quotaError, exhaustedText,
   agentError: () => agentError,
   runningChildren: (sid) => (kids.get(String(sid)) ?? []).filter((c) => c.status === 'running').length,
   // Nested rows (steer journey S1): running children of any session, and
@@ -1156,7 +1192,7 @@ const sessions = createSessions({
     return l.filter((c) => c.status === 'running' || cur).slice(-5).reverse()
       .map((c) => ({ id: c.id, ref: c.ref, name: c.name, task: c.task, state: childState(sid, c), msgs: msgCount(c), edges: edgeText(l, c), open: sameId(focus?.sid, sid) && focus?.id === c.id }));
   },
-  openChild: (sid, id) => openChild(sid, id),
+  openChild: (sid, id, from) => openChild(sid, id, from),
   onRender: (list) => { if (layout.current() === 'usage') renderUsagePanel(list); },
   grants: async (id) => (await grantsFor(id)).map((service) => ({ service, label: serviceName(service) })),
   revoke,
@@ -1310,32 +1346,84 @@ function messageChild(c) {
   setTimeout(() => box.focus(), 0);
 }
 // What a child is doing, in the words the session list and its view use:
-// working, waiting (an approval of its is open), done, stopped, failed, interrupted.
+// working, waiting (an approval of its is open), finished, stopped, failed, interrupted.
 function childState(sid, c) {
   if (c.status === 'running') return egress.pending.some((p) => sameId(p.sid, sid) && p.agentName === c.name) ? 'waiting' : 'working';
-  return { finished: 'done' }[c.status] ?? c.status;
+  return c.status;
+}
+// The composer's text belongs to the view it was typed in: main's draft waits
+// while a subagent is open, and that subagent's waits for its next opening.
+const drafts = new Map();
+function swapDraft(from, to) {
+  const i = $('input');
+  drafts.set(from, i.value);
+  i.value = drafts.get(to) ?? '';
+  drafts.delete(to);
+  i.dispatchEvent(new Event('input', { bubbles: true }));
+}
+// Opening and leaving a subagent view (README "Subagent views"): the view zooms
+// out of what was clicked (its card, tray row or sidebar row) and folds back
+// into its card; under reduced motion the frame flashes instead.
+function zoomIn(rect) {
+  const log = $('log');
+  if (reduced() || !rect?.width) { flash($('chat')); return; }
+  const r = log.getBoundingClientRect();
+  log.style.transformOrigin = '0 0';
+  const a = log.animate([{ transform: `translate(${rect.left - r.left}px, ${rect.top - r.top}px) scale(${rect.width / r.width}, ${rect.height / r.height})`, opacity: 0.3 }, { transform: 'none', opacity: 1 }], { duration: 200, easing: 'ease-out' });
+  a.id = 'child-open';
+  a.finished.catch(() => {}).finally(() => { log.style.transformOrigin = ''; });
+}
+function flash(node) {
+  if (!node) return;
+  node.classList.add('still-mark');
+  setTimeout(() => node.classList.remove('still-mark'), 900);
 }
 // Open a subagent's own view (S2): select its parent session first if needed.
-async function openChild(sid, id) {
+// from: what was clicked, the motion's origin (default: its card in the log).
+async function openChild(sid, id, from = null) {
+  const card = () => $('log').querySelector(`.subagent[data-child="${CSS.escape(String(id))}"]`);
+  const origin = (from?.isConnected && from.getClientRects().length ? from : null) ?? card();
+  const rect = origin?.getBoundingClientRect();
   if (!sameId(sid, sessions.current?.id)) await sessions.select(sid);
   if (!sameId(sid, sessions.current?.id)) return;
-  focus = { sid: String(sid), id };
+  const prev = focus;
+  if (prev?.id === id) return;
+  swapDraft(prev ? 'child:' + prev.id : 'main', 'child:' + id);
+  // Reached from another subagent's view (a peer): the crumbs say so.
+  focus = { sid: String(sid), id, from: prev ? (kids.get(prev.sid) ?? []).find((c) => c.id === prev.id)?.name ?? null : null };
+  // Back pops out (one history entry per stay in subagent views).
+  if (!prev) history.pushState({ pouchChild: id }, ''); else history.replaceState({ pouchChild: id }, '');
   if (layout.narrow() || layout.overlaid()) layout.setSide(false, false);
   // Open at the top, task header in view (critique 76-78); the transcript
   // fills in asynchronously, so stay there until the user scrolls.
   focus.pinTop = true;
   renderLog(); updateSend(); sessions.render();
   $('log').scrollTop = 0;
+  zoomIn(rect);
   $('input').focus();
 }
 for (const ev of ['wheel', 'touchstart', 'keydown', 'pointerdown']) $('log').addEventListener(ev, () => { if (focus) focus.pinTop = false; }, { passive: true });
-function closeChild() {
+// fromHistory: Back already took the entry off.
+function closeChild(fromHistory = false) {
   if (!focus) return;
-  const id = focus.id;
+  const id = focus.id, snap = reduced() ? null : snapshot($('log'));
+  swapDraft('child:' + id, 'main');
   focus = null;
   renderLog(); updateSend(); sessions.render();
-  $('log').querySelector(`.subagent[data-child="${CSS.escape(String(id))}"]`)?.scrollIntoView({ block: 'center' });
+  const card = $('log').querySelector(`.subagent[data-child="${CSS.escape(String(id))}"]`);
+  card?.scrollIntoView({ block: 'center' });
+  if (reduced()) flash(card ?? $('chat'));
+  else { const a = fold(snap, card, 200); if (a) a.id = 'child-close'; }
+  if (!fromHistory && history.state?.pouchChild != null) history.back();
 }
+addEventListener('popstate', () => { if (focus && history.state?.pouchChild == null) closeChild(true); });
+// Esc pops out of a subagent view once nothing nearer took it (a popover,
+// the completion list, a sheet: they call preventDefault). Drafts are kept.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || e.defaultPrevented || !focus || document.querySelector('dialog[open]')) return;
+  e.preventDefault();
+  closeChild();
+});
 const focusedChild = () => focus && (kids.get(focus.sid) ?? []).find((c) => c.id === focus.id);
 
 // A child's transcript, for its card (compact: one line per tool call, the
@@ -1401,8 +1489,14 @@ function childLog() {
   // One bar (critique 3): back, name in its color, state, elapsed, requests,
   // Details, Stop. Task, messages and namespace fold under Details once the
   // transcript scrolls; at the top they show.
-  const back = el('button', { type: 'button', className: 'sa-back', textContent: `\u2190 ${parent}`, ariaLabel: `Back to ${parent}`, title: `Back to ${parent}` });
-  back.onclick = closeChild;
+  // Breadcrumbs (Batch D): <this session> > <subagent>; the first pops out.
+  const title = titleOf(sessions.current).replace(/[.\s]+$/, '');
+  const back = el('button', { type: 'button', className: 'link sa-back', textContent: title, title: `Back to ${title} (Esc)` });
+  back.onclick = () => closeChild();
+  const crumbs = el('nav', { className: 'sa-crumbs', ariaLabel: 'Where you are' }, el('ol', {},
+    el('li', {}, back),
+    el('li', {}, el('span', { className: 'sa-dot', ariaHidden: 'true' }), el('span', { className: 'sa-name', ariaCurrent: 'page', textContent: c.name }),
+      ...(focus.from ? [el('span', { className: 'sa-from muted', textContent: ` opened from ${focus.from}` })] : []))));
   const more = el('button', { type: 'button', className: 'sa-more-btn', textContent: 'Details', ariaExpanded: String(saDetails) });
   const acts = el('span', { className: 'sa-acts' }, more);
   if (c.status === 'running') {
@@ -1418,25 +1512,26 @@ function childLog() {
     el('p', { className: 'sa-mounts', title: 'What this subagent can reach (its namespace)' }, 'Sees: ', ...mounts.map((m) => el('code', { textContent: m }))));
   more.setAttribute('aria-controls', 'sa-more');
   const head = seeded(el('section', { className: 'sa-view-head' + (saDetails ? ' details' : '') + ($('log').scrollTop > 24 ? ' collapsed' : ''), ariaLabel: `Subagent ${c.name} of ${parent}` },
-    el('div', { className: 'sa-bar' }, back,
-      el('span', { className: 'sa-dot', ariaHidden: 'true' }),
-      el('span', { className: 'sa-name', textContent: c.name }),
+    el('div', { className: 'sa-bar' }, crumbs,
       el('span', { className: `sa-status ${c.status}`, textContent: st }),
-      el('span', { className: 'sa-meta', textContent: [fmtDur((c.status === 'running' ? Date.now() : c.ended ?? Date.now()) - (c.resumed ?? c.started)), `${v?.steps ?? c.requests ?? 0} req`, ...((v?.toolErrors ?? c.toolErrors) ? [`${v?.toolErrors ?? c.toolErrors} tool err`] : [])].join(' · ') }),
+      el('span', { className: 'sa-meta sa-stats', textContent: [fmtDur((c.status === 'running' ? Date.now() : c.ended ?? Date.now()) - (c.resumed ?? c.started)), `${v?.steps ?? c.requests ?? 0} req`, ...((v?.toolErrors ?? c.toolErrors) ? [`${v?.toolErrors ?? c.toolErrors} tool err`] : [])].join(' · ') }),
       acts),
     body), c.ref);
   more.onclick = () => { saDetails = !saDetails; head.classList.toggle('details', saDetails); more.ariaExpanded = String(saDetails); };
+  // On a phone the stats ride under Details, so the name keeps the bar (critique 7).
+  body.prepend(el('p', { className: 'sa-stats-more muted', textContent: head.querySelector('.sa-stats').textContent }));
   const out = [head, ...childItems(v, c.name, c.id, false)];
   if (c.status !== 'running') {
-    const b = el('button', { type: 'button', className: 'primary', textContent: `Back to ${parent}` });
-    b.onclick = closeChild;
-    out.push(el('p', { className: 'notice sa-ended', role: 'status' }, st === 'done' || st === 'finished' ? `${c.name} has finished; its report went to ${parent}. ` : `${c.name} ${{ stopped: 'was stopped', failed: 'failed', interrupted: 'was interrupted' }[st] ?? 'ended'}; its last output went to ${parent}. `, b));
+    // Ended: one compact bar in place of the composer (critique 7).
+    const b = el('button', { type: 'button', textContent: 'Back', ariaLabel: `Back to ${title}`, title: `Back to ${title} (Esc)` });
+    b.onclick = () => closeChild();
+    out.push(el('p', { className: 'notice sa-ended', role: 'status' }, el('span', { textContent: st === 'finished' ? `${c.name} finished; its report is in the parent thread.` : `${c.name} ${{ stopped: 'was stopped', failed: 'failed', interrupted: 'was interrupted' }[st] ?? 'ended'}; its last output is in the parent thread.` }), b));
   }
   return out;
 }
 let lastHeight = null; // the transcript's height at the last render (the "New reply below" pill)
-$('below').onclick = () => { $('log').scrollTo({ top: $('log').scrollHeight, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); $('below').hidden = true; };
-$('log').addEventListener('scroll', () => { const l = $('log'); if (l.scrollHeight - l.scrollTop - l.clientHeight < 60) $('below').hidden = true; }, { passive: true });
+$('below').onclick = () => { follow.pin(!matchMedia('(prefers-reduced-motion: reduce)').matches); $('below').hidden = true; };
+$('log').addEventListener('scroll', () => { if (follow.following) $('below').hidden = true; }, { passive: true });
 // The header folds to its bar once the transcript scrolls (critique 3).
 $('log').addEventListener('scroll', () => {
   const h = focus && $('log').querySelector('.sa-view-head');
@@ -1469,7 +1564,7 @@ function subagentCard(it, childId) {
   const acts = el('span', { className: 'sa-acts' });
   if (c) {
     const open = el('button', { type: 'button', textContent: 'Open', ariaLabel: `Open subagent ${name}` });
-    open.onclick = () => openChild(sessions.current.id, c.id);
+    open.onclick = () => openChild(sessions.current.id, c.id, box);
     const msg = el('button', { type: 'button', textContent: 'Message', ariaLabel: `Message subagent ${name}` });
     msg.onclick = () => messageChild(c);
     acts.append(open, ...(c.oneshot ? [] : [msg])); // a one-shot takes no messages
@@ -1502,7 +1597,9 @@ function subagentCard(it, childId) {
     if (d.querySelector('.sa-items')) return;
     const fold = el('button', { type: 'button', className: 'sa-fold', textContent: `Collapse ${name}`, ariaLabel: `Collapse the transcript of ${name}` });
     fold.onclick = () => { d.open = false; box.scrollIntoView({ block: 'nearest' }); };
-    d.append(el('div', { className: 'sa-items', tabIndex: 0, role: 'region', ariaLabel: `Transcript of ${name}` }, fold, ...childItems(childViews.get(childId), name, childId, true)));
+    const items = el('div', { className: 'sa-items', tabIndex: 0, role: 'region', ariaLabel: `Transcript of ${name}` }, fold, ...childItems(childViews.get(childId), name, childId, true));
+    items.dataset.sk = key; // keeps its place across re-renders (src/follow.js)
+    d.append(items);
   };
   if (d.open) fill();
   d.ontoggle = () => { if (d.open) { openTools.add(key); fill(); } else openTools.delete(key); };
@@ -1528,7 +1625,7 @@ async function renderUsagePanel(list) {
   const known = new Set(list.map((s) => String(s.id)));
   const gone = Object.entries(led.bySid).filter(([k]) => !known.has(k)).reduce((n, [, v]) => n + v, 0);
   if (gone) rows.push({ title: 'Deleted sessions', requests: gone, input: null, output: null });
-  renderPanel($('usage-body'), usage.state, rows, reconcile(led, usage.state.remaining));
+  renderPanel($('usage-body'), usage.state, rows, led);
   if (LOCAL) $('usage-body').querySelector('.quota')?.after(el('p', { className: 'local-usage muted', textContent:
     `Local turns (${LOCAL.label}, on this device) use none of this allowance: they send no requests.` }));
   // Subagents spend the same allowance (D16).
@@ -1557,8 +1654,9 @@ let revertable = null; // { at, cut } while the current session's last revert ca
 async function attach() {
   renderHint();
   const gen = ++attachGen;
+  if (focus) swapDraft('child:' + focus.id, 'main');
   focus = null;
-  unwatch?.(); unwatch = null; view = null; attachError = null; turnTimes = {}; lastHeight = null; $('below').hidden = true; dropKidWatches(); renderLog(); updateSend();
+  unwatch?.(); unwatch = null; view = null; attachError = null; turnTimes = {}; lastHeight = null; $('below').hidden = true; follow.pin(); dropKidWatches(); renderLog(); updateSend();
   const session = sessions.current;
   if (!session || !agent) return;
   await loadKids(session.id);
@@ -1584,7 +1682,12 @@ async function attach() {
 // inject script into the page that holds your key.
 const openTools = new Set();
 function reasoningCard(it, key) {
-  const d = el('details', { className: 'reasoning' }, el('summary', { textContent: it.streaming ? 'Reasoning (in progress)' : 'Reasoning' }), el('div', { className: 'thinking', textContent: it.thinking }));
+  // Streaming: a capped box showing the newest lines, overflow hidden (no
+  // inner scroller, so nothing traps a wheel or a finger); done: full height.
+  const words = it.streaming ? 0 : it.thinking.trim().split(/\s+/).length;
+  const d = el('details', { className: 'reasoning' + (it.streaming ? ' live' : '') }, el('summary', { textContent: it.streaming ? 'Reasoning (in progress)' : `Reasoning, ${words.toLocaleString()} word${words === 1 ? '' : 's'}` }),
+    el('div', { className: 'thinking', textContent: it.thinking }));
+  if (it.streaming) d.lastChild.dataset.sk = 'live:' + key;
   return settings.bind(d, `reasoning:${sessions.current?.id}:${key}`, 'reasoning');
 }
 let renderQueued = false;
@@ -1765,14 +1868,30 @@ function reportCard(it, nextCache) {
   return seeded(message({ ...it, type: 'report', text: it.text }, LAST[it.status] ? `${LAST[it.status]} from subagent ${it.name}` : `Report from subagent ${it.name}`, ...kids_), it.ref);
 }
 
+// "Pouch is editing..." in the editor header while a write or edit to the open
+// file is being sent or carried out, by main or a subagent (critique 10).
+function markEditing() {
+  const at = (p) => (typeof p === 'string' && p ? normalize(p.startsWith('/') ? p : '/work/' + p) : null);
+  const views = [view, ...childViews.values()].filter(Boolean);
+  const on = !!openPath && views.some((v) => v.items.some((it) => it.type === 'tool' && it.status === 'running' && (it.name === 'write' || it.name === 'edit') && at(it.args?.path) === openPath));
+  $('editor-busy').hidden = !on;
+}
 function renderLog() {
   const log = $('log');
-  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
+  markEditing();
+  // Before building: cached reply nodes move out of the live log while the
+  // new one is built, and a layout read then would clamp its scroll to 0.
+  const mark = follow.mark();
   log.classList.toggle('child-view', !!focus);
+  // The frame (Batch D): the chat column, composer included, in the agent's hue.
+  const fc = focus && focusedChild(), chat = $('chat');
+  chat.classList.toggle('in-child', !!focus);
+  chat.classList.toggle('child-ended', !!fc && fc.status !== 'running');
+  if (fc?.ref) seeded(chat, fc.ref); else chat.style.removeProperty('--seed');
   if (focus) {
-    log.replaceChildren(...childLog());
-    if (focus.pinTop) log.scrollTop = 0;
-    else if (atBottom) log.scrollTop = log.scrollHeight;
+    log.replaceChildren(...childLog()); follow.restore(mark);
+    if (focus.pinTop) follow.top();
+    else follow.stick();
     playArrivals(log);
     updateSend();
     composer?.renderTray();
@@ -1862,12 +1981,12 @@ function renderLog() {
   // Rebuilding the log drops focus; give it back to the same message or button.
   const f = document.activeElement, fKey = log.contains(f) ? f.closest('.msg')?.dataset.key : null;
   const fAct = fKey && f.dataset.act;
-  log.replaceChildren(...out);
+  log.replaceChildren(...out); follow.restore(mark);
   localImages.sweep();
   if (fKey) log.querySelector(`.msg[data-key="${CSS.escape(fKey)}"]${fAct ? ` [data-act="${fAct}"]` : ''}`)?.focus({ preventScroll: true });
-  if (atBottom) log.scrollTop = log.scrollHeight;
+  follow.stick();
   // Scrolled up while something new arrived below: say so (critique 19).
-  else if (log.scrollHeight > (lastHeight ?? 0) + 4 && lastHeight != null) $('below').hidden = false;
+  if (!follow.following && log.scrollHeight > (lastHeight ?? 0) + 4 && lastHeight != null) $('below').hidden = false;
   lastHeight = log.scrollHeight;
   playArrivals(log);
   composer?.renderTray();
@@ -2063,7 +2182,7 @@ function setSend(kind, title, label = { stop: 'Stop', queue: 'Queue', send: 'Sen
   $('send-label').textContent = label;
   $('send').title = title;
   $('send').ariaLabel = kind === 'stop' ? name ?? label : null;
-  if (kind === 'stop') $('send').setAttribute('aria-keyshortcuts', 'Escape'); else $('send').removeAttribute('aria-keyshortcuts');
+  if (kind === 'stop' && !focus) $('send').setAttribute('aria-keyshortcuts', 'Escape'); else $('send').removeAttribute('aria-keyshortcuts');
   $('send').classList.toggle('stop', kind === 'stop');
   $('send').classList.toggle('queue', kind === 'queue');
   $('send').querySelector('use').setAttribute('href', kind === 'stop' ? '#i-stop' : '#i-send');
@@ -2079,11 +2198,18 @@ function showSplit(on, who) {
   const what = m === 'steer' ? `Steer: send into ${who}'s current turn, read after its current step (Enter)` : `Queue: send after ${who}'s turn ends (Enter)`;
   $('sendmode-main').ariaLabel = `${what}. Alt+Enter to ${other} instead.` + (m === 'steer' && blocked.length ? ` Steering will detach ${blocked.join(', ')}.` : '');
   $('sendmode-main').title = $('sendmode-main').ariaLabel;
+  // One-shot sends are plain menu items (critique 4): the key that does the
+  // same is said in text; the setting is its own item below a separator.
+  const draft = hasDraft();
+  $('sendmode-main').disabled = !draft;
   for (const b of $('sendmode-menu').querySelectorAll('[data-mode]')) {
-    if (b.role === 'menuitemradio') b.ariaChecked = String(b.dataset.mode === m);
     const keys = b.dataset.mode === m ? 'Enter' : b.dataset.mode === other ? 'Alt+Enter' : null;
-    b.title = keys ? `${b.textContent} (${keys})` : b.textContent;
+    const k = b.querySelector('.sm-key');
+    if (k) k.textContent = keys ? ` (${keys})` : '';
+    b.title = b.firstElementChild.textContent + (keys ? ` (${keys})` : '');
+    if (b.dataset.mode !== 'settings') b.ariaDisabled = String(!draft);
   }
+  $('sendmode-enter').textContent = `Enter now ${m === 'steer' ? 'steers' : 'queues'}.`;
   const note = $('sendmode-detach');
   note.hidden = !blocked.length;
   note.textContent = blocked.length ? `Steering will detach ${blocked.join(', ')}` : '';
@@ -2099,10 +2225,10 @@ function updateSend() {
     input.disabled = !live;
     const ended = { stopped: 'was stopped', failed: 'failed', interrupted: 'was interrupted' }[c?.status] ?? 'has finished';
     input.placeholder = live ? `Steer ${c.name}: it reads this after its current step` : `${c?.name ?? 'This subagent'} ${ended}. Go back to ${parentName(sessions.current)} to continue.`;
-    if (live) setSend('stop', `Stop ${c.name} (Esc)`, 'Stop', `Stop ${c.name}`);
+    if (live) setSend('stop', `Stop ${c.name}`, 'Stop', `Stop ${c.name}`);
     else setSend('send', `The subagent ${ended}`);
     $('send').disabled = !live;
-    showSplit(live && hasDraft(), c?.name);
+    showSplit(live, c?.name);
     return;
   }
   if (input.dataset.child) {
@@ -2119,7 +2245,7 @@ function updateSend() {
   $('send').disabled = !b && !canSend();
   if (!b && offline && !localPicked()) $('send').title = OFFLINE;
   $('composer').classList.toggle('offline', offline);
-  showSplit(b && hasDraft(), 'Pouch');
+  showSplit(b, 'Pouch');
   if (queued.size) queueMicrotask(pump);
 }
 // Send the current session's queued message once the model's turn is over.
@@ -2244,7 +2370,7 @@ function playArrivals(log) {
     m.dataset.arrival = String(id);
     a.kf ??= flipFrom(a.first)(m); // measured once, on the first node it lands in
     play(m, 'arrive:' + id, a.kf, 200);
-    play(m, 'glow:' + id, [{ opacity: 1 }, { opacity: 0 }], 1200, { pseudo: '::after' });
+    // No glow box: it drew a second border around the bubble mid-move (critique 9).
   }
 }
 // Detach (G10, G12): the foreground card folds into its tray row, keeping its hue.
@@ -2299,7 +2425,7 @@ function countRequest() {
   const act = activeSids(), cur = sessions.current?.id != null ? String(sessions.current.id) : 'new';
   const sid = act.includes(cur) || !act.length ? cur : act[0];
   spend.set(sid, (spend.get(sid) ?? 0) + 1);
-  ledger.add(sid, 'turn', usage.state.remaining);
+  ledger.add(sid, 'turn').then(meter);
   composer?.renderTray();
 }
 // A first message is dispatched as 'new' before its session exists.
@@ -2351,12 +2477,14 @@ function quotaError(msg) { return /\b429\b|quota|rate.?limit|too many requests|a
 // runEnded: called once the model's turn is over, before the after-turn
 // chores (title, usage), so a queued message need not wait for them.
 async function send(text, attached = { files: [], images: [] }, turnModel = $('model').value, runEnded = () => {}) {
+  follow.pin();
   const t0 = Date.now();
   if (!sessions.current) { await sessions.create(); ledger.adopt('new', sessions.current.id); }
   const s = sessions.current; // the run belongs to this session even if you switch away
   const sid = s.id;
   s.model = turnModel;
-  if (!s.title) { s.title = text.slice(0, 60); }
+  // Until a real title comes: the prompt's start, cut at a word, without trailing / . , : (critique 6).
+  if (!s.title) { const t = text.replace(/\s+/g, ' ').trim(); s.title = (t.length > 60 ? t.slice(0, 60).replace(/\s+\S*$/, '') || t.slice(0, 60) : t).replace(/[\s/.,:;-]+$/, ''); }
   s.updated = Date.now(); await sessions.save();
   if (interrupted && sameId(sid, sessions.current?.id)) interrupted = false;
   await store.setSetting(interruptedKey(sid), undefined);
@@ -2499,9 +2627,9 @@ $('input').onkeydown = (e) => {
   if (e.isComposing || e.keyCode === 229) return; // an IME is composing: its Enter is not ours
   if (composer.onKeydown(e)) return;
   if (e.key === 'Escape' && $('sendmode-menu').hidden) {
-    const c = focus && focusedChild();
-    if (c?.status === 'running') { e.preventDefault(); stopChild(c); }
-    else if (!focus && busy()) { e.preventDefault(); stopMain(); }
+    // In a subagent view Esc returns to the parent (the document handler);
+    // its Stop is a button. In main, Esc stops the run.
+    if (!focus && busy()) { e.preventDefault(); stopMain(); }
     return;
   }
   if (e.key === 'ArrowUp' && altOnly(e)) {
@@ -2516,7 +2644,8 @@ $('input').onkeydown = (e) => {
     $('composer').requestSubmit();
   }
 };
-$('input').addEventListener('input', () => { const on = !$('sendmode').hidden; if (on !== hasDraft()) updateSend(); });
+// The split stays for the whole running turn (critique 5); its send actions wait for a draft.
+$('input').addEventListener('input', () => { if ($('sendmode-main').disabled === hasDraft()) updateSend(); });
 // The split button: its main part sends with the default mode; the chevron
 // opens a menu (arrow keys move, Esc closes and returns focus).
 function closeSendMenu(refocus) {
@@ -2528,13 +2657,15 @@ function closeSendMenu(refocus) {
 function openSendMenu() {
   const menu = $('sendmode-menu');
   menu.hidden = false; $('sendmode-more').ariaExpanded = 'true';
-  (menu.querySelector('[aria-checked="true"]') ?? menu.querySelector('button')).focus();
+  // Focus what Enter would do (or, with no draft yet, the setting).
+  const enter = menu.querySelector(`[data-mode="${settings.sendMode()}"]`);
+  (enter?.ariaDisabled === 'true' ? menu.querySelector('[data-mode="settings"]') : enter ?? menu.querySelector('button')).focus();
 }
 $('sendmode-main').onclick = () => { nextMode = 'default'; $('composer').requestSubmit(); };
 $('sendmode-more').onclick = () => ($('sendmode-menu').hidden ? openSendMenu() : closeSendMenu(true));
 $('sendmode-menu').onclick = (e) => {
   const b = e.target.closest('[data-mode]');
-  if (!b) return;
+  if (!b || b.ariaDisabled === 'true') return;
   closeSendMenu();
   if (b.dataset.mode === 'settings') return layout.open('settings');
   nextMode = b.dataset.mode;
@@ -2543,12 +2674,11 @@ $('sendmode-menu').onclick = (e) => {
 };
 $('sendmode-menu').onkeydown = (e) => {
   const items = [...$('sendmode-menu').querySelectorAll('button:not([hidden])')], i = items.indexOf(document.activeElement);
-  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeSendMenu(true); }
-  else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus(); }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus(); }
   else if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); items.at(e.key === 'Home' ? 0 : -1).focus(); }
   else if (e.key === 'Tab') closeSendMenu();
 };
-document.addEventListener('pointerdown', (e) => { if (!$('sendmode').contains(e.target)) closeSendMenu(); });
+dismissible({ isOpen: () => !$('sendmode-menu').hidden, inside: () => [$('sendmode')], close: (how) => closeSendMenu(how === 'esc') });
 document.addEventListener('pouch-sendmode', () => updateSend());
 function autosize() { const i = $('input'); i.style.height = 'auto'; i.style.height = Math.min(i.scrollHeight + 2, innerHeight * 0.4) + 'px'; }
 $('input').addEventListener('input', autosize);
@@ -2613,7 +2743,7 @@ function activity() {
   for (const c of l) if (c.status === 'running') {
     const t = vfs.tasks.byKeyOf('sa:' + c.id), ref = c.ref ?? `s${l.indexOf(c) + 2}`, waited = held.has(ref);
     rows.push({ key: 'sa:' + c.id, kind: 'subagent', seed: ref, text: `${c.name}: ${excerpt(c.task)}`, title: `Open ${c.name}: ` + c.task + (t ? `\n/task/${t.id} sees:\n${vfs.tasks.mounts(t).join('\n')}` : ''), origin: waited ? `main waits on ${ref}` : t ? `subagent ${ref}, /task/${t.id}` : `subagent ${ref}`, since: c.resumed ?? c.started,
-      open: () => openChild(sid, c.id), stop: () => agent.subagents.stop(sid, c.id),
+      open: (e) => openChild(sid, c.id, e?.currentTarget), stop: () => agent.subagents.stop(sid, c.id),
       ...(waited ? { background: async () => { const held = heldCards(sid); await agent.subagents.detach(sid); foldIntoTray(held); status(`${c.name} continues in the background; main stopped waiting.`); } } : {}) });
   }
   // A message refused at a cap (graph.js): visible until dismissed.
@@ -2709,7 +2839,7 @@ composer = createComposer({
     };
   },
   onRow: trayRowMotion,
-  onTray: () => { const log = $('log'); if (log.scrollHeight - log.scrollTop - log.clientHeight < 120) log.scrollTop = log.scrollHeight; },
+  onTray: () => follow.stick(),
 });
 
 // ── File watches (JOURNEYS G13-G17, src/ns/watch.js) ────────────────
@@ -2784,7 +2914,7 @@ let toolList = []; // kept for Run script, which uses the run tool without the m
 // Local lane keeps its four qualified tools).
 const withWatch = (list) => { list.push(watchTool({ Type, watches, callerOf: watchCaller })); return list; };
 (async () => {
-  usage.subscribe((st) => { renderMeter(st); if (layout.current() === 'usage') renderUsagePanel(); if (!key && verified && /^Not signed in/.test($('status').textContent)) status(campusLine(st)); });
+  usage.subscribe(async (st) => { await ledger.observe(st.remaining); meter(); if (layout.current() === 'usage') renderUsagePanel(); if (!key && verified && /^Not signed in/.test($('status').textContent)) status(campusLine(st)); });
   if (location.hash === '#erased') { history.replaceState(null, '', location.pathname + location.search); $('erased').hidden = false; }
   navigator.storage.persist?.().catch(() => {});
   // Not awaited: the offline copy must never hold up files or the agent.

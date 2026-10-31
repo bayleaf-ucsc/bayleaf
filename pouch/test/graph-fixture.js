@@ -53,6 +53,20 @@ export function createFake() {
       reply = typeof r.reply === 'function' ? r.reply(ctx) : r.reply;
     }
     done = true;
+    // { reasoning?, content?, then?: [[tool, args]], size?, ms? }: streamed in
+    // `size`-character pieces every `ms` (scrolling tests); then tool calls.
+    if (reply && !Array.isArray(reply) && typeof reply === 'object') {
+      const { reasoning = '', content = '', then = null, size = 24, ms = 15 } = reply;
+      const pieces = (s, f) => Array.from({ length: Math.ceil(s.length / size) }, (_, i) => chunk({ [f]: s.slice(i * size, (i + 1) * size) }));
+      const all = [chunk({ role: 'assistant', content: '' }), ...pieces(reasoning, 'reasoning_content'), ...pieces(content, 'content'),
+        // Tool calls stream their arguments in pieces too (a pending write names its path early).
+        ...(then ? [...then.flatMap(([name, args], index) => { const j = JSON.stringify(args); return [chunk({ tool_calls: [{ index, id: `call_${++callN}`, type: 'function', function: { name, arguments: '' } }] }),
+          ...Array.from({ length: Math.ceil(j.length / size) }, (_, i) => chunk({ tool_calls: [{ index, function: { arguments: j.slice(i * size, (i + 1) * size) } }] }))]; }), chunk({}, 'tool_calls')] : [chunk({}, 'stop')])];
+      return new Response(new ReadableStream({ async start(c) {
+        for (const d of all) { if (init.signal?.aborted) break; c.enqueue(enc.encode('data: ' + JSON.stringify(d) + '\n\n')); await sleep(ms); }
+        c.enqueue(enc.encode('data: [DONE]\n\n')); c.close();
+      } }), { headers: { 'content-type': 'text/event-stream' } });
+    }
     if (typeof reply === 'string') return sse([chunk({ role: 'assistant', content: '' }), chunk({ content: reply }), chunk({}, 'stop')]);
     return sse([chunk({ role: 'assistant', tool_calls: reply.map(([name, args], index) => ({ index, id: `call_${++callN}`, type: 'function', function: { name, arguments: JSON.stringify(args) } })) }), chunk({}, 'tool_calls')]);
   }

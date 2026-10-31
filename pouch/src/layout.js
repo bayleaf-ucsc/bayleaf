@@ -6,6 +6,7 @@
 // Preferences live in localStorage, not IndexedDB: they must be readable
 // synchronously at boot or the frame would jump. Erase all clears them too.
 import { $ } from './dom.js';
+import { dismissible } from './dismiss.js';
 
 const KEY = 'pouch.layout';
 const NARROW = matchMedia('(max-width: 860px)');
@@ -113,9 +114,9 @@ export function createLayout({ onPanel } = {}) {
     if (b) b.dataset.panel === 'chat' ? open(null) : toggle(b.dataset.panel);
   });
   for (const b of document.querySelectorAll('.panel-close')) b.addEventListener('click', () => open(null));
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && (narrow() || overlay()) && sideOpen() && !document.querySelector('dialog[open]')) { e.preventDefault(); dismiss(); }
-  });
+  // A floating sidebar is a drawer: outside or Esc closes it (src/dismiss.js).
+  dismissible({ layer: 1, isOpen: () => (narrow() || overlay()) && sideOpen(), inside: () => [$('sidebar'), $('flipper')],
+    close: (how) => (how === 'esc' ? dismiss() : setSide(false, false)) });
   // A keystroke is never lost to the sidebar: typing on a session row, the
   // flipper or nothing in particular goes to the composer (the floating
   // sidebar closes first). Text fields, dialogs and shortcuts keep their keys.
@@ -138,10 +139,8 @@ export function createLayout({ onPanel } = {}) {
   setSide(!narrow() && !!prefs.side, false);
   open(narrow() ? null : prefs.panel === undefined || prefs.panel === 'editor' ? 'files' : prefs.panel);
 
-  // An overlaid sidebar behaves like the phone drawer: a click into the chat
+  // An overlaid sidebar behaves like the phone drawer: a press outside it
   // closes it for now (the remembered preference stays open).
   const overlaid = () => app.classList.contains('side-overlay');
-  // The scrim covers only the chat column, so panels stay usable beside it.
-  $('chat').addEventListener('pointerdown', () => { if (overlaid()) setSide(false, false); });
   return { open, toggle, close: () => open(null), current: () => panel, narrow, overlaid, setSide, sideOpen };
 }

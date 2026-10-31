@@ -218,7 +218,7 @@ try {
   });
   assert.ok(head.collapsed && head.h <= 48 && head.hidden === 'none', JSON.stringify(head));
   assert.ok(Math.abs(head.gap) <= 1 && head.bleed.length === 0, 'bleed: ' + JSON.stringify(head));
-  assert.match(head.bar, /chair.*done.*req.*Details/);
+  assert.match(head.bar, /chair.*finished.*req.*Details/); // Batch D: one word, finished
   assert.ok(!/Use the panel skill|review this draft/.test(head.bar), 'parent named by title, not its first message');
   await page.click('.sa-view-head .sa-more-btn');
   assert.notEqual(await page.$eval('.sa-view-head .sa-more', (e) => getComputedStyle(e).display), 'none');
@@ -311,8 +311,9 @@ try {
   await page.waitForTimeout(400);
   await h.gate('g1');
   await page.waitForFunction(() => window.__anims.some((a) => /^arrive:/.test(a.id ?? '')), null, T);
-  const arrive = (await h.anims('^arrive:'))[0], glow = (await h.anims('^glow:'))[0];
-  assert.match(arrive.kf, /translate\(/); assert.equal(glow.pseudo, '::after');
+  const arrive = (await h.anims('^arrive:'))[0];
+  // Batch D (critique 9): no glow box, only the move.
+  assert.match(arrive.kf, /translate\(/); assert.equal((await h.anims('^glow:')).length, 0);
   await page.waitForTimeout(1400);
   const landed = await page.evaluate(() => {
     const m = [...document.querySelectorAll('#log .msg')].findLast((n) => /STEER-FLIP/.test(n.textContent));
@@ -322,7 +323,7 @@ try {
   assert.ok(landed.inLog && landed.label === 'You, while it worked' && landed.transform === 'none' && landed.running === 0 && landed.tray === 0, JSON.stringify(landed));
   assert.ok(!/^Steering/.test(landed.status), 'Steering status cleared: ' + landed.status);
   await h.settled();
-  ok(`steer delivery: FLIP ${arrive.kf.slice(0, 70)}..., 200 ms, glow on ::after; landed as "${landed.label}" with no transform; tray empty; "Steering..." status cleared`);
+  ok(`steer delivery: FLIP ${arrive.kf.slice(0, 70)}..., 200 ms, no glow box; landed as "${landed.label}" with no transform; tray empty; "Steering..." status cleared`);
 
   const clip = async (name) => { // close the recording context, keep its video, reopen
     const v = page.video(); await h.context.close();

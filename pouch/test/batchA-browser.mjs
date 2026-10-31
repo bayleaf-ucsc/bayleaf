@@ -110,7 +110,7 @@ try {
   await page.click('#rail-usage');
   await page.waitForSelector('#usage-body table.tokens', T);
   const heads = await page.$$eval('#usage-body table.tokens th', (n) => n.map((x) => x.textContent));
-  assert.deepEqual(heads.slice(0, 4), ['Session', 'Requests', 'In', 'Out']);
+  assert.deepEqual(heads.slice(0, 2), ['Session', 'Requests']); // Batch D: tokens ride under the session name
   const row = await page.$$eval('#usage-body table.tokens tr.current td', (n) => n.map((x) => x.textContent));
   assert.ok(Number(row[1]) >= 11, 'the current session counts its subagents\' requests (setup 2 + panel 9): ' + row.join(' | '));
   await page.screenshot({ path: join(shots, 'batchA-2-usage.png') });

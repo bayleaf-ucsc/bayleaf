@@ -92,9 +92,11 @@ try {
     await h.type('task one'); await page.press('#input', 'Enter');
     await h.waitReq(b + 1);
     assert.equal(await page.textContent('#send-label'), 'Stop');
-    assert.equal(await page.isHidden('#sendmode'), true, 'no split button with an empty draft');
+    // Batch D (critique 5): the split shows for the whole turn; it sends once there is a draft.
+    assert.equal(await page.isVisible('#sendmode'), true, 'split button during the turn');
+    assert.equal(await page.isDisabled('#sendmode-main'), true, 'nothing to send yet');
     await h.type('steer A');
-    assert.equal(await page.isVisible('#sendmode'), true, 'split button once the draft is not empty');
+    assert.equal(await page.isEnabled('#sendmode-main'), true, 'sends once the draft is not empty');
     assert.equal(await page.textContent('#sendmode-label'), 'Steer');
     assert.match(await page.getAttribute('#sendmode-main', 'aria-label'), /Steer: .*\(Enter\)\. Alt\+Enter to queue instead/);
     await page.press('#input', 'Enter');
@@ -184,7 +186,9 @@ try {
     await page.click('#sendmode-more');
     assert.equal(await page.getAttribute('#sendmode-more', 'aria-expanded'), 'true');
     assert.equal(await page.evaluate(() => document.activeElement.dataset.mode), 'steer', 'focus on the checked item');
-    assert.equal(await page.getAttribute('#sendmode-menu [data-mode="steer"]', 'aria-checked'), 'true');
+    // Batch D (critique 4): one-shot sends are plain menu items; the Enter default is said in text.
+    assert.equal(await page.getAttribute('#sendmode-menu [data-mode="steer"]', 'role'), 'menuitem');
+    assert.equal((await page.textContent('#sendmode-menu [data-mode="steer"] .sm-key')).trim(), '(Enter)');
     await page.screenshot({ path: join(shots, 'sendmode-1-split-menu.png') });
     await page.click('#sendmode-menu [data-mode="queue"]');
     await page.waitForSelector('.tray-row[data-kind="queued"]', T);

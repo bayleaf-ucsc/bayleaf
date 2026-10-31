@@ -73,12 +73,7 @@ export function createEgress(deps = {}) {
       $('egress-deny').onclick = () => choose(false);
       $('egress-once').onclick = () => choose('once');
       $('egress-session').onclick = () => choose('session');
-      // The backdrop is the dialog box itself, outside its content rectangle.
-      d.onclick = (e) => {
-        if (e.target !== d) return;
-        const r = d.getBoundingClientRect();
-        if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) choose(false);
-      };
+      // A press on the backdrop or Esc answers Deny (src/dismiss.js, registered in main.js).
       d.addEventListener('close', () => resolve(answer), { once: true }); // Esc lands here too: false
       d.showModal();
       d.scrollTop = 0; $('egress-detail').scrollTop = 0;

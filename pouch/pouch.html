@@ -188,7 +188,8 @@
   #editor-pane.empty #editor, #editor-pane:not(.empty) #editor-empty, #editor-pane.empty #save, #editor-pane.empty #close-file { display: none; }
 
   /* Chat column: content stays at a readable measure, centered. */
-  #log { flex: 1; overflow: auto; padding: 1rem max(.75rem, calc((100% - 48rem) / 2)) .5rem; }
+  /* Pouch anchors the thread itself (src/follow.js); the browser's own scroll anchoring differs between engines. */
+  #log { flex: 1; overflow: auto; overflow-anchor: none; padding: 1rem max(.75rem, calc((100% - 48rem) / 2)) .5rem; }
 
   /* File tree */
   #tree { flex: 1; overflow: auto; padding: .25rem 0 3rem; font-size: .9rem; -webkit-user-select: none; user-select: none; }
@@ -246,7 +247,9 @@
   @keyframes typing { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { .typing i { animation: none; opacity: .6; } }
   .notice.reverted { display: flex; justify-content: center; align-items: center; gap: .5rem; color: var(--ink); }
-  .msg .thinking { color: var(--muted); font-size: .85rem; white-space: pre-wrap; border-left: 2px solid var(--line); padding-left: .5rem; margin: .2rem 0 .45rem; max-height: 8rem; overflow: auto; }
+  .msg .thinking { color: var(--muted); font-size: .85rem; white-space: pre-wrap; border-left: 2px solid var(--line); padding-left: .5rem; margin: .2rem 0 .45rem; }
+  /* Streaming reasoning: the newest lines in a capped box with no scroll box of its own (README "Scrolling"). */
+  details.reasoning.live .thinking { max-height: 8rem; overflow: hidden; -webkit-mask-image: linear-gradient(transparent, #000 1.5rem); mask-image: linear-gradient(transparent, #000 1.5rem); }
   details.tool { margin: .25rem 0; width: fit-content; max-width: 100%; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--muted); font-size: .78rem; }
   details.tool[open] { width: auto; border-radius: 10px; }
   details.tool summary { cursor: pointer; padding: .15rem .7rem; font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -377,7 +380,10 @@
   #sendmode-menu { position: absolute; right: 0; bottom: calc(100% + .35rem); z-index: 6; min-width: 16rem; max-width: calc(100vw - 1.5rem); display: grid; padding: .3rem; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 6px 24px rgb(0 0 0 / .18); }
   #sendmode-menu button { display: grid; justify-items: start; gap: .1rem; min-height: 2.75rem; padding: .35rem .7rem; border: 0; background: none; text-align: left; border-radius: 8px; color: var(--ink); }
   #sendmode-menu button:hover, #sendmode-menu button:focus-visible { background: var(--bg); }
-  #sendmode-menu button[aria-checked="true"] span::after { content: " (Enter)"; color: var(--muted); font-weight: 400; }
+  #sendmode-menu .sm-key { color: var(--muted); font-weight: 400; }
+  #sendmode-menu .sm-sep { height: 1px; margin: .25rem .4rem; background: var(--line); }
+  #sendmode-menu button[aria-disabled="true"] { opacity: .55; }
+  #sendmode-main:disabled { opacity: .55; }
   #sendmode-menu .sm-note { color: var(--warn); font-size: .78rem; }
   #sendmode-menu .sm-link { color: var(--leaf); font-size: .85rem; }
   .tray-row[data-kind="steer"] .tray-origin, .tray-row[data-kind="steer"] svg { color: var(--leaf); }
@@ -458,7 +464,9 @@
   table.tokens th:first-child, table.tokens td:first-child { text-align: left; min-width: 7rem; white-space: normal; overflow-wrap: anywhere; }
   table.tokens .clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
   table.tokens tr.total td { font-weight: 600; border-top: 1px solid var(--line); }
-  table.tokens tr.other td { color: var(--muted); }
+  table.tokens .toks { display: block; font-size: .74rem; font-weight: 400; }
+  table.tokens col.n { width: 4.6rem; }
+  .quota .outside { font-size: .82rem; color: var(--ink); }
   table.tokens th { color: var(--muted); font-weight: 500; }
   table.tokens tr.current td { font-weight: 600; }
 
@@ -558,6 +566,14 @@
   #editor .cm-selectionMatch, #editor .cm-matchingBracket { background: var(--current); outline: 1px solid var(--leaf); }
   #editor .cm-inlineChangedLine, #editor .cm-changedLine { background: var(--added); }
   #editor .cm-deletedChunk { background: var(--deleted); }
+  /* Each hunk says whose lines are whose (critique 3): Pouch's struck through above, yours below. */
+  #editor .cm-deletedChunk .cm-deletedLine { text-decoration: line-through; text-decoration-color: color-mix(in srgb, currentColor 55%, transparent); }
+  #editor .cm-deletedChunk::before, #editor .cm-deletedChunk::after { display: block; width: fit-content; margin: 2px 0; padding: 0 .4rem; border-radius: 999px; font-size: .7rem; font-weight: 600; line-height: 1.5; font-family: system-ui, sans-serif; }
+  #editor .cm-deletedChunk::before { content: "Pouch's version"; background: var(--surface); color: var(--bad); border: 1px solid currentColor; }
+  #editor .cm-deletedChunk::after { content: "Your version below"; background: var(--surface); color: var(--leaf); border: 1px solid currentColor; }
+  #editor-status { margin: 0; padding: .35rem .75rem; font-size: .85rem; border-bottom: 1px solid var(--line); }
+  #editor-status.bad { color: var(--bad); }
+  #editor-busy { font-size: .75rem; color: var(--leaf); white-space: nowrap; }
   #editor .cm-changedText { background: var(--added-mark); }
   #editor .cm-deletedText { background: var(--deleted-mark); }
   #editor .cm-deletedLineGutter { background: var(--bad); }
@@ -636,12 +652,34 @@
   @media (pointer: fine) { .sa-bar button { min-height: 2rem; padding-block: 0; } }
   .sa-bar .sa-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sa-bar .sa-meta { white-space: nowrap; }
-  .sa-back { flex: none; max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .78rem; }
+  /* Breadcrumbs: <session> > <subagent> (Batch D). The session crumb pops out. */
+  .sa-crumbs { flex: 1 1 auto; min-width: 0; }
+  .sa-crumbs ol { display: flex; align-items: center; gap: .3rem; list-style: none; margin: 0; padding: 0; min-width: 0; }
+  .sa-crumbs li { display: flex; align-items: center; gap: .35rem; min-width: 0; }
+  /* The session crumb gives way first (it shrinks 100 times faster), so the subagent's name stays whole. */
+  .sa-crumbs li:first-child { flex: 0 100 auto; min-width: 2.5rem; }
+  .sa-crumbs li + li::before { content: "\203A"; color: var(--muted); }
+  .sa-crumbs li + li { flex: 0 1 auto; font-weight: 600; }
+  .sa-from { white-space: nowrap; font-size: .76rem; font-weight: 400; }
+  .sa-back { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; }
+  .sa-stats-more { display: none; margin: 0; font-size: .78rem; }
+  @media (max-width: 600px) { .sa-bar .sa-stats { display: none; } .sa-stats-more { display: block; } .sa-from { display: none; } }
+  /* The frame (Batch D): inside a subagent, the chat column and its composer
+     wear the agent's hue, so the view never passes for the parent, even scrolled. */
+  #chat { position: relative; }
+  #chat.in-child::after { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6; box-shadow: inset 0 0 0 3px var(--agent, var(--leaf)); }
+  #chat.in-child #log { background: linear-gradient(var(--agent-tint, transparent), var(--agent-tint, transparent)) left / 6px 100% no-repeat; }
+  #chat.in-child form#composer { border-color: var(--agent, var(--leaf)); border-width: 2px; }
+  #chat.in-child.child-ended form#composer { display: none; }
+  #log .sa-ended { position: sticky; bottom: 0; z-index: 3; display: flex; align-items: center; gap: .5rem; text-align: left; margin: .5rem 0 0; padding: .35rem .6rem; background: var(--surface); border: 1px solid var(--agent, var(--line)); border-radius: 10px; font-size: .85rem; }
+  #log .sa-ended span { flex: 1; min-width: 0; }
+  #log .sa-ended button { flex: none; min-height: 2.5rem; }
+  .fold-ghost { background: var(--bg); border-radius: 10px; box-shadow: 0 0 0 3px var(--agent, var(--line)); }
   .sa-view-head.collapsed:not(.details) .sa-more { display: none; }
   .sa-more { padding: .1rem 0 .3rem; }
   .sa-more .sa-meta { margin: 0; }
   /* Expanded inline transcript: its own tinted scroll box (critique 5). */
-  .sa-log[open] .sa-items { max-height: 22rem; overflow: auto; overscroll-behavior: contain; background: var(--agent-tint, var(--leaf-soft)); border-radius: 6px; padding: 0 .45rem .4rem; border-top: 0; }
+  .sa-log[open] .sa-items { max-height: 22rem; overflow: auto; background: var(--agent-tint, var(--leaf-soft)); border-radius: 6px; padding: 0 .45rem .4rem; border-top: 0; }
   .sa-fold { position: sticky; top: 0; z-index: 1; display: block; width: calc(100% + .9rem); margin: 0 -.45rem .2rem; border: 0; border-bottom: 1px solid var(--line); border-radius: 6px 6px 0 0; background: var(--surface); text-align: left; font-size: .76rem; padding: .3rem .5rem; color: var(--agent, var(--ink)); font-weight: 600; }
   /* Composer: the placeholder never clips (critique 4). */
   #input:placeholder-shown { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -770,10 +808,11 @@
           <button id="sendmode-main" type="button"><svg class="i" aria-hidden="true"><use href="#i-send"/></svg><span id="sendmode-label">Steer</span></button>
           <button id="sendmode-more" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="sendmode-menu" aria-label="More ways to send" title="More ways to send"><svg class="i" aria-hidden="true"><use href="#i-chevron-up"/></svg></button>
           <div id="sendmode-menu" role="menu" aria-label="Send while Pouch works" hidden>
-            <button type="button" role="menuitemradio" data-mode="steer" aria-checked="false"><span>Steer now: read after current step</span><small class="sm-note" id="sendmode-detach" hidden></small></button>
-            <button type="button" role="menuitemradio" data-mode="queue" aria-checked="false"><span>Queue for after this turn</span></button>
-            <button type="button" role="menuitem" data-mode="stopsend"><span>Stop and send</span></button>
-            <button type="button" role="menuitem" data-mode="settings" class="sm-link"><span>Change what Enter does</span></button>
+            <button type="button" role="menuitem" data-mode="steer"><span>Steer now: read after current step<span class="sm-key"></span></span><small class="sm-note" id="sendmode-detach" hidden></small></button>
+            <button type="button" role="menuitem" data-mode="queue"><span>Queue for after this turn<span class="sm-key"></span></span></button>
+            <button type="button" role="menuitem" data-mode="stopsend"><span>Stop and send<span class="sm-key"></span></span></button>
+            <div role="separator" class="sm-sep"></div>
+            <button type="button" role="menuitem" data-mode="settings" class="sm-link"><span><span id="sendmode-enter"></span> Change what Enter does</span></button>
           </div>
         </div>
         <button id="send" class="primary" type="submit" disabled title="Send"><svg class="i"><use href="#i-send"/></svg><span class="vh" id="send-label">Send</span></button>
@@ -799,6 +838,7 @@
       <div class="bar">
         <button id="to-files" class="icon" type="button" aria-label="Back to files" title="Back to files"><svg class="i"><use href="#i-back"/></svg></button>
         <span class="title path" id="editor-path">No file open</span>
+        <span id="editor-busy" role="status" hidden>Pouch is editing...</span>
         <button id="save" class="icon" type="button" disabled aria-label="Save" title="Save (Ctrl+S)"><svg class="i"><use href="#i-save"/></svg></button>
         <button id="close-file" class="icon" type="button" aria-label="Close file" title="Close file"><svg class="i"><use href="#i-x"/></svg></button>
       </div>
@@ -814,6 +854,7 @@
         <button id="conflict-mine" type="button">Keep mine</button>
         <button id="conflict-theirs" type="button">Take theirs</button>
       </div>
+      <p id="editor-status" role="status" hidden></p>
       <p id="editor-empty">No file open. Pick one in Files, or open a path from a reply.</p>
       <div id="editor"></div>
     </section>

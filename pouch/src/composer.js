@@ -14,6 +14,7 @@
 //   onTray(), called after the tray changes height,
 // }
 import { $, el, icon, seeded } from './dom.js';
+import { dismissible } from './dismiss.js';
 
 const PATH_CAP = 3000; // entries indexed for @; a huge mounted folder stops here
 const SKIP = new Set(['node_modules', '.git']);
@@ -289,8 +290,9 @@ export function createComposer(deps) {
     if (refocus) shieldBtn.focus();
   }
   shieldBtn.onclick = () => (pop.hidden ? showShield().then(() => pop.querySelector('button')?.focus()) : hideShield());
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !pop.hidden && (pop.contains(document.activeElement) || document.activeElement === shieldBtn || document.activeElement === document.body)) { e.stopPropagation(); hideShield(true); } });
-  document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !pop.contains(e.target) && !shieldBtn.contains(e.target)) hideShield(); });
+  // Outside or Esc closes the popover and the completion list (src/dismiss.js); the typed text stays.
+  dismissible({ isOpen: () => !pop.hidden, inside: () => [pop, shieldBtn], close: (how) => hideShield(how === 'esc' && pop.contains(document.activeElement)) });
+  dismissible({ isOpen: () => !ac.hidden, inside: () => [ac, input], close: () => close() });
 
   return { renderTray, onKeydown, runCommand, close, hideShield, refreshShield: () => { if (!pop.hidden) showShield(); } };
 }

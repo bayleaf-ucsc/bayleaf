@@ -102,7 +102,7 @@ export function createSessions(deps) {
           ...(c.msgs ? [el('span', { className: 's-child-msgs', textContent: `${c.msgs} msg${c.msgs > 1 ? 's' : ''}`, title: `Messages with other agents: ${c.edges || c.msgs}` })] : []),
           el('span', { className: `s-child-state ${c.state}`, textContent: c.state }));
         if (c.open) b.setAttribute('aria-current', 'true');
-        b.onclick = async () => { await deps.openChild(s.id, c.id); };
+        b.onclick = async () => { await deps.openChild(s.id, c.id, b); };
         const row = seeded(el('li', { className: 's-child' }, b), c.ref);
         row.dataset.child = c.id;
         return row;
@@ -227,7 +227,10 @@ export function createSessions(deps) {
     // its first-message title (the sparkle stays an explicit choice).
     if (deps.isLocal?.(turnModel)) return;
     const fresh = await find(sid);
-    if (ok && fresh && !fresh.titleSource && v?.items.filter((i) => i.type === 'user').length === 1) {
+    // Once per session, after its first turn that ends well, however many
+    // messages that turn took (a steer or a detach adds one: critique 6).
+    if (ok && fresh && !fresh.titleSource && !fresh.titleTried && v?.items.some((i) => i.type === 'user')) {
+      await update(sid, { titleTried: true });
       const t = await nameFrom(sid, false, true, turnModel);
       const now = await find(sid);
       if (t && now && !now.titleSource) { await update(sid, { title: t, titleSource: 'auto' }); render(); }

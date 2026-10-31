@@ -54,13 +54,19 @@ export function createUsage({ getKey }) {
 // leaves and attributed to a session (turns, subagents, one-shots, titles,
 // compactions, and requests a Stop cut short but BayLeaf had received). The
 // transcript cannot say this: a revert folds turns away and a title is not
-// in it. `base` is the allowance seen before the day's first request, so the
-// panel can reconcile what it counted with what the allowance lost.
+// in it.
+//
+// The allowance itself is outside state: the same key works in other tools
+// and on other devices, a top-up or a daily reset raises it, so it can move
+// either way under Pouch. The ledger never reconciles the two into an
+// "Other" figure. It only notes, between two checks of the allowance, how
+// far it moved beyond what this browser sent then (outside: { down, up, at }).
 // storage: { get(), set(v) }; dayOf(): the current allowance day (a string).
 export function createLedger(storage, dayOf) {
   let led = null;
   // dayOf() is null while the allowance is unknown: keep counting into the current day.
-  const fresh = () => ({ day: dayOf() ?? new Date().toDateString(), base: null, bySid: {}, kinds: {} });
+  const fresh = () => ({ day: dayOf() ?? new Date().toDateString(), bySid: {}, kinds: {}, seen: null, outside: { down: 0, up: 0, at: null }, carry: 0 });
+  const total = (l) => Object.values(l.bySid).reduce((a, b) => a + b, 0);
   async function load() {
     led ??= (await storage.get().catch(() => null)) ?? fresh();
     const d = dayOf();
@@ -69,10 +75,8 @@ export function createLedger(storage, dayOf) {
   }
   let saving = Promise.resolve();
   return {
-    // remaining: the allowance last seen, taken as the base on the day's first count.
-    async add(sid, kind = 'turn', remaining = null) {
+    async add(sid, kind = 'turn') {
       const l = await load();
-      if (l.base == null && remaining != null && !Object.keys(l.bySid).length) l.base = remaining;
       const k = String(sid ?? 'new');
       l.bySid[k] = (l.bySid[k] ?? 0) + 1;
       l.kinds[kind] = (l.kinds[kind] ?? 0) + 1;
@@ -85,15 +89,34 @@ export function createLedger(storage, dayOf) {
       l.bySid[b] = (l.bySid[b] ?? 0) + l.bySid[a]; delete l.bySid[a];
       saving = saving.then(() => storage.set(l)).catch(() => {});
     },
+    // A fresh allowance figure. The move since the last one, less what this
+    // browser sent in between, happened outside it. A request still in flight
+    // can be counted before BayLeaf books it, so a rise no larger than what
+    // was sent in between is carried to the next check, not reported.
+    async observe(remaining, at = Date.now()) {
+      if (remaining == null) return;
+      const l = await load();
+      l.outside ??= { down: 0, up: 0, at: null }; l.carry ??= 0;
+      const n = total(l);
+      if (l.seen) {
+        const sent = n - l.seen.counted;
+        const d = l.seen.remaining - remaining - sent + l.carry;
+        l.carry = 0;
+        if (d < 0 && -d <= sent) l.carry = d;
+        else if (d) { l.outside[d > 0 ? 'down' : 'up'] += Math.abs(d); l.outside.at = at; }
+      }
+      l.seen = { remaining, counted: n, at };
+      saving = saving.then(() => storage.set(l)).catch(() => {});
+    },
     snapshot: async () => structuredClone(await load()),
   };
 }
-// Counted vs the allowance: { counted, used, other } (used/other null when unknown).
-export function reconcile(led, remaining) {
-  const counted = Object.values(led?.bySid ?? {}).reduce((a, b) => a + b, 0);
-  if (led?.base == null || remaining == null) return { counted, used: null, other: null };
-  const used = led.base - remaining;
-  return { counted, used, other: Math.max(0, used - counted) };
+export const counted = (led) => Object.values(led?.bySid ?? {}).reduce((a, b) => a + b, 0);
+// "down 3 and up 120", or null when nothing moved outside this browser.
+export function outsideText(led) {
+  const o = led?.outside;
+  const parts = [o?.down && `down ${fmt(o.down)}`, o?.up && `up ${fmt(o.up)}`].filter(Boolean);
+  return parts.length ? parts.join(' and ') : null;
 }
 
 export const extractKey = (text) => /sk-bayleaf-[A-Za-z0-9_-]+/.exec(String(text ?? ''))?.[0] ?? null;
@@ -117,12 +140,15 @@ export function exhaustedText(s) {
 
 // The rail's Usage icon (a small bar and the number left) and the
 // composer's compact copy of it (the number).
-export function renderMeter(s) {
+// led: today's ledger, for the tooltip's "this browser today" line.
+export function renderMeter(s, led = null) {
   const f = fraction(s);
   // Off campus without a key: nothing can be sent, so 0, not "?" (or 100).
   const off = s.mode === 'campus' && s.offCampus;
-  const label = off ? 'Off campus: Campus Pass does not work on this network. Sign in to send.' : s.remaining == null ? 'Usage: remaining requests unknown'
-    : `Usage: ${s.mode === 'campus' ? 'about ' : ''}${s.remaining} of ${s.limit} Sealed requests left today`;
+  const out = outsideText(led);
+  const label = off ? 'Off campus: Campus Pass does not work on this network. Sign in to send.' : (s.remaining == null ? 'Allowance: remaining requests unknown'
+    : `Allowance: ${s.mode === 'campus' ? 'about ' : ''}${s.remaining} of ${s.limit} Sealed requests left today${s.mode === 'campus' ? ' (shared on this network)' : ' (for this key, wherever it is used)'}`)
+    + (led ? `. This browser today: ${fmt(counted(led))} sent` : '') + (out ? `. Changed outside this browser: ${out}` : '');
   for (const [id, num] of [['rail-usage', 'usage-num'], ['composer-usage', 'composer-usage-num']]) {
     const b = $(id);
     if (!b) continue;
@@ -136,8 +162,8 @@ export function renderMeter(s) {
 
 const fmt = (n) => (n ?? 0).toLocaleString();
 
-// rows: [{ title, input, output, cost, current }] for the token table.
-export function renderPanel(host, s, rows, totals = null) {
+// rows: [{ title, input, output, cost, current }] for the token table; led: today's ledger.
+export function renderPanel(host, s, rows, led = null) {
   const out = [];
   const f = fraction(s);
   const box = el('div', { className: 'quota' + (isLow(s) ? ' low' : '') });
@@ -159,6 +185,8 @@ export function renderPanel(host, s, rows, totals = null) {
     );
     const at = resetText(s.resetsAt);
     if (at) box.append(el('p', { className: 'muted', textContent: `Resets at ${at} (your time).` }));
+    const out = outsideText(led);
+    if (out) box.append(el('p', { className: 'outside', textContent: `Changed outside this browser: ${out} since ${new Date(led.outside.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} or earlier today. ${s.mode === 'campus' ? 'Others on this network share it' : 'This key is also used elsewhere, or the allowance was reset or raised'}; the number above is the allowance as BayLeaf reports it.` }));
   }
   out.push(box);
   out.push(el('p', { textContent: 'Each model step uses one request: every tool round in a turn, every compaction summary, and every automatic title. A turn that reads two files and then replies takes three.' }));
@@ -167,23 +195,22 @@ export function renderPanel(host, s, rows, totals = null) {
     out.push(el('p', { className: 'std', textContent: `Standard lane (OpenRouter): ${std}. Not used by Pouch, which sends only sealed requests.` }));
   }
   out.push(el('h3', { textContent: 'Today by session' }));
-  const counted = rows.filter((r) => r.input || r.output || r.requests);
-  if (!counted.length) out.push(el('p', { className: 'muted', textContent: 'Nothing counted yet. Rows appear after a session\'s first turn.' }));
+  const shown = rows.filter((r) => r.input || r.output || r.requests);
+  if (!shown.length) out.push(el('p', { className: 'muted', textContent: 'Nothing counted yet. Rows appear after a session\'s first turn.' }));
   else {
-    const anyCost = counted.some((r) => r.cost > 0);
-    // Requests: what counted against today's allowance, subagents and titles included.
-    const head = el('tr', {}, el('th', { textContent: 'Session' }), el('th', { textContent: 'Requests', title: 'Requests sent today, counted as they left: turns, subagents, titles, compactions and stopped requests' }), el('th', { textContent: 'In' }), el('th', { textContent: 'Out' }), ...(anyCost ? [el('th', { textContent: 'Cost' })] : []));
+    const anyCost = shown.some((r) => r.cost > 0);
+    // Three columns fit the 320 px drawer: tokens ride under the session name.
+    const head = el('tr', {}, el('th', { textContent: 'Session' }), el('th', { textContent: 'Requests', title: 'Requests sent today, counted as they left: turns, subagents, titles, compactions and stopped requests' }), ...(anyCost ? [el('th', { textContent: 'Cost' })] : []));
+    const toks = (r) => r.input || r.output ? [el('span', { className: 'toks muted', textContent: `${fmt(r.input)} in, ${fmt(r.output)} out` })] : [];
     const row = (r, cls = '') => el('tr', { className: (r.current ? 'current ' : '') + cls },
-      el('td', { title: r.subagents ? `${r.title} (with ${r.subagents} subagent${r.subagents > 1 ? 's' : ''})` : r.title }, el('span', { className: 'clamp', textContent: r.title })),
-      el('td', { textContent: r.requests != null ? fmt(r.requests) : '' }), el('td', { textContent: r.input != null ? fmt(r.input) : '' }), el('td', { textContent: r.output != null ? fmt(r.output) : '' }),
+      el('td', { title: r.subagents ? `${r.title} (with ${r.subagents} subagent${r.subagents > 1 ? 's' : ''})` : r.title }, el('span', { className: 'clamp', textContent: r.title }), ...toks(r)),
+      el('td', { textContent: r.requests != null ? fmt(r.requests) : '' }),
       ...(anyCost ? [el('td', { textContent: r.cost > 0 ? `$${r.cost.toFixed(4)}` : '' })] : []));
-    const body = counted.map((r) => row(r));
-    const { counted: n, used, other } = totals ?? {};
-    if (other) body.push(row({ title: 'Other (not sent by Pouch in this browser)', requests: other }, 'other'));
-    if (n != null) body.push(row({ title: used != null ? `Total (allowance down ${fmt(used)})` : 'Total', requests: n + (other ?? 0) }, 'total'));
-    const cols = el('colgroup', {}, el('col'), ...Array.from({ length: anyCost ? 4 : 3 }, () => el('col', { className: 'n' })));
-    out.push(el('table', { className: 'tokens' }, cols, el('thead', {}, head), el('tbody', {}, ...body)));
-    out.push(el('p', { className: 'muted', textContent: 'Requests are today\'s, counted as Pouch sent them, so reverted, stopped and deleted turns, subagents and automatic titles are all in. Tokens and cost are each session\'s running totals (an informational estimate). Other is what the allowance lost beyond that: this key on another device or tool, or under Campus Pass, other people on the same network.' }));
+    const body = shown.map((r) => row(r));
+    if (led) body.push(row({ title: 'This browser today', requests: counted(led) }, 'total'));
+    const cols = el('colgroup', {}, el('col'), ...Array.from({ length: anyCost ? 2 : 1 }, () => el('col', { className: 'n' })));
+    out.push(el('div', { className: 'tokens-wrap' }, el('table', { className: 'tokens' + (anyCost ? ' cost' : '') }, cols, el('thead', {}, head), el('tbody', {}, ...body))));
+    out.push(el('p', { className: 'muted', textContent: 'Requests are today\'s, counted as Pouch sent them, so reverted, stopped and deleted turns, subagents and automatic titles are all in. Tokens and cost are each session\'s running totals (an informational estimate). The allowance above is BayLeaf\'s own figure and can move for reasons outside this browser, so the two are not expected to add up.' }));
   }
   host.replaceChildren(...out);
 }

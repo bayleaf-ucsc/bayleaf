@@ -171,12 +171,12 @@ try {
   await page.waitForFunction(() => document.getElementById('input').disabled, null, T);
   assert.match(await page.getAttribute('#input', 'placeholder'), /scout has finished/);
   assert.ok(await page.isDisabled('#send'));
-  assert.match(await page.textContent('#log .sa-ended'), /finished[\s\S]*Back to/);
+  assert.match(await page.textContent('#log .sa-ended'), /finished[\s\S]*Back/);
   await page.waitForFunction(() => window.requests.length >= 3, null, T);
   const report = userTexts(await page.evaluate(() => window.requests[2]));
   assert.match(report, /The user steered this subagent[\s\S]*"Please also check README\.md"/);
-  await page.waitForFunction(() => document.querySelector('#session-list .s-child-state')?.textContent === 'done', null, T);
-  ok('after finish: composer disabled with a reason, report quotes the steering, sidebar says done');
+  await page.waitForFunction(() => document.querySelector('#session-list .s-child-state')?.textContent === 'finished', null, T); // Batch D: one word
+  ok('after finish: composer disabled with a reason, report quotes the steering, sidebar says finished');
 
   // 8. Back in the parent: the card shows the compact transcript and the final answer.
   await page.click('#log .sa-ended button');

@@ -40,13 +40,90 @@ A message sent while the agent in view is working either **steers** or is **queu
   per session; queueing again appends to it.
 
 Keys: **Enter** sends with the default, **Alt+Enter** (Option+Enter) with the other mode,
-**Shift+Enter** is a new line, **Esc** stops, **Alt+Up** takes the queued message back for
+**Shift+Enter** is a new line, **Esc** stops (in a subagent's view it returns to the parent;
+Stop there is the button), **Alt+Up** takes the queued message back for
 editing. Settings, "While Pouch is working, Enter: Steer / Queue", swaps the default.
-On touch screens Enter is a new line: with a draft, the **Steer** or **Queue** button beside
-Stop sends, and its arrow opens "Steer now", "Queue for after this turn" and "Stop and send".
+On touch screens Enter is a new line. For the whole running turn the **Steer** or **Queue**
+button sits beside Stop (it sends once there is a draft), and its arrow opens "Steer now", "Queue for after this turn" and "Stop and send".
 The activity tray lists what is pending (Cancel, Edit, Steer now). **Stop never sends:**
 unread steers and the queued message become one paused item with Send and Cancel. A
 subagent's own view works the same way for that subagent.
+
+## Scrolling
+
+Decided 2026-10-31 (Batch D, `src/follow.js`). The play-test reports of "sticky scrolling"
+going wrong had three causes: a re-render moved cached reply nodes out of the live log while
+building the next one, and a layout read at that moment clamped the thread to the top; the
+streaming reasoning box was rebuilt on every token with its own scrollbar, so it showed
+its oldest lines and trapped the wheel; and anything within 60 px of the end was pulled
+back down. The rules now:
+
+- **Follow only while following.** The thread follows new content while following is on:
+  at the start, after you send, when you scroll to the end yourself, or after "New reply
+  below". Any scroll that moves up (wheel, finger, scrollbar, keys) turns it off at once,
+  and nothing pulls you back down. The rule reads scroll events, not input events, so every
+  way of scrolling counts the same.
+- **Reasoning streams in a capped box with no scrollbar**: about eight lines, the newest
+  at the bottom, fading at the top. Its overflow is hidden, not scrollable, so a wheel or
+  finger over it scrolls the thread. Once done it is full height when open (no inner
+  scroller at all) and its summary says how long it is ("Reasoning, 412 words").
+- **Opening or closing a disclosure keeps its summary where it was on screen** (reasoning,
+  tool output, a subagent transcript). If that leaves the end out of view, following stops,
+  as if you had scrolled, and the pill says when something new arrives.
+- **Inner scroll boxes** (an expanded inline subagent transcript) keep their place across
+  re-renders, follow when at their end, and hand the wheel to the thread at their end
+  (no `overscroll-behavior: contain`).
+- The browser's own scroll anchoring is off on the thread (`overflow-anchor: none`): Pouch
+  anchors itself, so Chromium and WebKit behave alike.
+
+Tested with a streaming fake (long replies, long reasoning, an expanding transcript) on
+desktop and at 390 px with touch, in Chromium and WebKit (`test/batchD-browser.mjs`).
+
+## Subagent views
+
+Decided 2026-10-31 (Batch D): inside a subagent you should always know you are inside
+something you can pop out of.
+
+- **Breadcrumbs** at the top: "<session title> › <subagent>". The session crumb is a button
+  that pops out; it gives way first when space is short, so the subagent's name stays whole.
+  Spawning is flat, so there is no deeper path; a subagent opened from another's view says
+  "opened from <name>".
+- **A frame in the agent's hue** (its `--seed`, CSS only): the whole chat column wears an
+  inset ring and a tinted left edge, and the composer's border takes the same color, so
+  the view never passes for the parent, even scrolled. A finished subagent's view replaces
+  the disabled composer with one compact bar ("<name> finished; its report is in the parent
+  thread." and Back). Status words are the same everywhere: working, waiting, finished,
+  stopped, failed, interrupted. On a phone the elapsed time and request count move under
+  Details.
+- **Motion**: opening zooms the view out of what you clicked (its card, tray row or sidebar
+  row) in 200 ms; leaving folds it back into its card. Transform and opacity only; under
+  reduced motion both are instant with a brief highlight.
+- **Esc pops out** when nothing nearer takes it (a popover, a sheet, the completion list),
+  and so do browser **Back** (one history entry per stay) and the session crumb. Drafts
+  belong to the view they were typed in: main's waits while a subagent is open, and the
+  subagent's comes back when you reopen it.
+
+## Dismissing
+
+Decided 2026-10-31 (Batch D, `src/dismiss.js`): one rule for every floating thing. A press
+outside the topmost one, or Esc, closes it when that is safe: nothing typed is lost and no
+decision is left hanging.
+
+| Surface | Outside / Esc |
+|---|---|
+| Shield popover, split send menu, @ / $ / / completion | close; the composer's text stays |
+| Action sheets (file, folder, revert, confirmations) | close, which is Cancel |
+| Sheets with a field (sign-in key, message to a subagent, names) | close and keep what was typed for the next opening |
+| Sign-in sheet while the key is being checked | stays open and says why (it closes itself on the answer) |
+| Waiting for sign-in approval | close, which is Cancel (start again any time) |
+| A request waiting to leave the pouch | close, which is Deny: the answer that sends nothing |
+| Sessions drawer (phone) and overlaid sidebar (desktop) | close |
+| Model picker | the browser's own select |
+
+Docked panels (Files, Editor, Usage, Settings, What BayLeaf can see) are not popovers: they
+sit beside the chat and are used together with it, so a press outside never closes them;
+on a phone they are whole screens with no outside. Esc is taken by the topmost surface
+first, so it never also stops a run or leaves a subagent view.
 
 ## Watching files
 
@@ -224,7 +301,18 @@ Every model step is one Sealed request from a daily allowance: each tool round, 
 compaction summary and each automatic or suggested title. The Usage panel shows what is
 left (with a key, your own; under Campus Pass, an approximate bucket shared by everyone
 behind the same campus network address) and when it resets; a send refused for quota
-says so, with the reset time. A title you type is never replaced automatically.
+says so, with the reset time. A title you type is never replaced automatically; an
+automatic one is asked for once, after the session's first turn that ends well, even if a
+steer or a detach made that turn several messages.
+
+**The allowance is outside state.** The same key works in other tools and on other
+devices, and a top-up or a daily reset raises it, so it can move either way under Pouch.
+Pouch never reconciles it with its own count (no "Other" row, nothing negative, no
+warnings). The Usage table counts what this browser sent today, by session, and the
+allowance box shows BayLeaf's own figure; when the allowance moved between two checks by
+more or less than this browser sent then, the box says plainly "Changed outside this
+browser: down N and up M". A request counted as it left but not yet booked is carried to
+the next check, not reported. The badge's tooltip splits the same two figures.
 
 **Subagents** (`src/subagents.js`): the `subagent` tool lets the main agent hand a
 self-contained task (web research through `bayleaf`, exploring `/work` or a mounted folder)

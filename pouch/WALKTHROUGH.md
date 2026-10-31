@@ -213,8 +213,16 @@ message steers it: the subagent reads it at its next step, labeled "You, while i
 worked".
 
 <!-- wt:shot subagents-view -->
-<img src="walkthrough/images/subagents-view.png" alt="The subagent view: header &quot;subagent of&quot; the session with task, state, /task id and mounts; below, the user steering message labeled &quot;You, while it worked&quot;." width="700"><br>
+<img src="walkthrough/images/subagents-view.png" alt="The subagent view: breadcrumbs from the session title to scout, state, task, /task id and mounts; below, the user steering message labeled &quot;You, while it worked&quot;." width="700"><br>
 <sub><b>S2</b> ok · <b>S3</b> ok. Open a subagent to read its live transcript and steer it; the message reaches its next step.</sub>
+<!-- /wt -->
+
+You can tell at a glance that you are inside: the column is framed in the subagent's color
+and the breadcrumbs say where you are and how to get back.
+
+<!-- wt:shot subagents-frame -->
+<img src="walkthrough/images/subagents-frame.png" alt="The whole chat column inside scout: an inset ring and the composer border in scout's hue, breadcrumbs &quot;session title > scout&quot; at the top." width="700"><br>
+<sub><b>S2</b> ok. Inside a subagent the column wears its color, composer included, and the breadcrumbs (or Esc, or Back) pop out.</sub>
 <!-- /wt -->
 
 Back in the parent, the finished card shows a compact transcript with the steering
