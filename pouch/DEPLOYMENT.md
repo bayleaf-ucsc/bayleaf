@@ -102,7 +102,20 @@ cache headers. README "Install and the offline copy" has the policy.
   and refusal, pass-through, trust panel, uninstall, Erase all). To check after deploy:
   the Content-Type Cloudflare serves for `.webmanifest`, install on Android and iOS.
 
-## Current artifact: agent graphs, namespaces, send modes, watches (2026-10-30)
+## Current artifact: real-use bug fixes (2026-10-30)
+
+- Built from commit `c41c8b2` (clean; label `c41c8b2 2026-10-30`) in a temporary clean
+  checkout with `node build.mjs --with-models`.
+- HTML SHA-256: `e28f6cc9f144e6a5ded2e9a430d1b3e55674a26dffa9d71bbdbb1cb2ef940bed`.
+- 70 files staged; 2 uploaded, 69 unchanged. No CSP change.
+- Cloudflare version: `74c3c358-aa0b-42fe-a393-54455fd71d40`. Previous: `6be12e2c-…`.
+- `deploy.mjs` passed first time (page, sums, 6 shell files, all 63 model files
+  byte-exact). Headless Chromium on the live site: service worker active, no
+  installability errors, no CSP violations, no native dialogs.
+- Fixes two data-loss bugs live in `91b1b01`: the conflict diff's native confirm()
+  could discard the agent's edit, and Enter during a stop could lose the draft.
+
+## Earlier artifact: agent graphs, namespaces, send modes, watches (2026-10-30)
 
 - Built from commit `91b1b01` (clean; label `91b1b01 2026-10-30`) in a temporary clean
   checkout with `node build.mjs --with-models`.
