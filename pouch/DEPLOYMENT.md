@@ -102,7 +102,22 @@ cache headers. README "Install and the offline copy" has the policy.
   and refusal, pass-through, trust panel, uninstall, Erase all). To check after deploy:
   the Content-Type Cloudflare serves for `.webmanifest`, install on Android and iOS.
 
-## Current artifact: real-use bug fixes (2026-10-30)
+## Current artifact: ubiquitous language realignment (2026-10-31)
+
+- Built from commit `2237d6c` (clean; label `2237d6c 2026-10-31`) in a temporary clean
+  checkout with `node build.mjs --with-models`. Includes Batch D (`a6c5aea`: scrolling,
+  subagent framing, dismissal, polish) and the adopted language (`ec88ab0`).
+- HTML SHA-256: `b07c94e5c6667295a5f79c931a3d0cb7e14ddbbe218702c644ba59738e81abf2`.
+- 70 files staged; 4 uploaded (page, sums, model manifest and worker), 67 unchanged.
+  No CSP change.
+- Cloudflare version: `bda3612f-8108-4056-8c00-353664e5c6a4`. Previous: `74c3c358-…`.
+- `deploy.mjs` passed first time (page, sums, 6 shell files, all 63 model files
+  byte-exact). Headless Chromium on the live site: service worker active, no
+  installability errors, no CSP violations, no native dialogs.
+- Existing profiles migrate on read (s-handles to a-handles, "queue" send mode to
+  "followup"); no IndexedDB version bump.
+
+## Earlier artifact: real-use bug fixes (2026-10-30)
 
 - Built from commit `c41c8b2` (clean; label `c41c8b2 2026-10-30`) in a temporary clean
   checkout with `node build.mjs --with-models`.
