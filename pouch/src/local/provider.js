@@ -116,7 +116,9 @@ export function localApi(engine, { onHint } = {}) {
       let r;
       try {
         r = await engine.generate({ head: withTools ? [{ role: 'system', content: SYSTEM }, ...FEWSHOT] : [{ role: 'system', content: 'You are a concise assistant.' }],
-          history: toLocalMessages(context.messages), tools: withTools ? TOOLS : [], budget: BUDGET, maxNew: MAX_NEW }, { onDelta, signal: options.signal });
+          history: toLocalMessages(context.messages), tools: withTools ? TOOLS : [], budget: BUDGET,
+          // A plain request (a title) may ask for fewer new tokens; the tool recipe keeps MAX_NEW.
+          maxNew: withTools ? MAX_NEW : Math.min(MAX_NEW, options.maxTokens ?? MAX_NEW) }, { onDelta, signal: options.signal });
       } catch (e) { return fail(options.signal?.aborted ? 'aborted' : 'error', String(e?.message ?? e)); }
       if (r.trimmed) onHint?.('context');
       if (r.over) { onHint?.('context'); return fail('error', `This message alone is longer than the Transformers.js model's ${BUDGET}-token context (${r.input_tokens} tokens). Shorten it, or switch to BayLeaf Sealed.`); }

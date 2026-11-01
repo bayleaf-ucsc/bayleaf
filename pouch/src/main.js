@@ -19,6 +19,7 @@ import { arm, armed, play, flipFrom, fold, snapshot, reduced } from './motion.js
 import { createLayout } from './layout.js';
 import { createUsage, renderMeter, renderPanel, exhaustedText, extractKey, createLedger } from './usage.js';
 import { MAIN, refOf, asRef } from './graph.js';
+import { createTerminal } from './terminal.js';
 import { createSessions, sameId, titleOf, notesKey, convKey, revertKey, subagentsKey, interruptedKey, turnsKey, watchesKey } from './sessions.js';
 import { createWatches, watchTool, baseOf, isGlob, MAX_WAKES } from './ns/watch.js';
 import { parseSpecs } from './ns/namespace.js';
@@ -66,7 +67,7 @@ const meter = async () => renderMeter(usage.state, await ledger.snapshot().catch
 // Follow new content only while following (src/follow.js, README "Scrolling").
 const follow = createFollow($('log'));
 // Deferred: the layout restores a remembered panel while this module is still loading.
-const layout = createLayout({ onPanel: (p) => { if (p === 'usage') queueMicrotask(renderUsagePanel); if (p === 'trust') queueMicrotask(() => { renderCopy(); renderNamespaces(); }); } });
+const layout = createLayout({ onPanel: (p) => { if (p === 'usage') queueMicrotask(renderUsagePanel); if (p === 'trust') queueMicrotask(() => { renderCopy(); renderNamespaces(); }); if (p === 'terminal' && !matchMedia('(pointer: coarse)').matches) queueMicrotask(() => $('term-input').focus()); } });
 
 // ── Action sheet: one tap-friendly menu for every "..." button ──────
 // `body` (text or a node) explains the choice, above the buttons.
@@ -1340,6 +1341,18 @@ const egressHooks = {
   },
   onEgress: (e, caller) => { if (!childOf(caller)) noteEgress(e); },
 };
+
+// ── Terminal (terminal.js) ──────────────────────────────────────────
+// The user's shell over the same namespace; `bayleaf` asks every use. Ctrl+`
+// opens it (or focuses it); opening it never sends anything.
+const terminal = createTerminal({ vfs, onChange: () => renderTree(),
+  hooks: { bayleafCredential: () => key, approveEgress: (req) => egress.approve(req, null, undefined, 'you, in the terminal') } });
+document.addEventListener('keydown', (e) => {
+  if (e.key !== '`' || !e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]')) return;
+  e.preventDefault();
+  if (layout.current() === 'terminal' && document.activeElement === $('term-input')) layout.close();
+  else { layout.open('terminal'); terminal.focus(); }
+});
 
 // ── Subagents (subagents.js, D15/D16) ───────────────────────────────
 // kids: session id -> its registry rows, as last changed. A report starts a
@@ -2813,14 +2826,18 @@ const COMMANDS = [
     if (!arg) return status(vfs.seedLayer ? `/work is stacked over ${vfs.seedLayer.name}. /seed off removes it.` : 'Give an archive: /seed /work/starter.zip', vfs.seedLayer ? '' : 'bad');
     await stackSeed(normalize(arg.startsWith('/') ? arg : CWD + '/' + arg));
   } },
-  { name: 'compact', hint: 'Summarize older turns (1 BayLeaf Sealed request)', run: async () => {
+  // Hints that name a cost are getters: worded for the current session's provider.
+  { name: 'compact', get hint() { return `Summarize older turns (${sessions.costOf()})`; }, run: async () => {
     if (!sessions.current) return status('No session to compact yet.', 'bad');
-    status('Compacting...');
-    try { await agent.compact(sessions.current.id); status('Older turns summarized.'); } catch (e) { status(e.message, 'bad'); }
+    await sessions.compact(sessions.current.id);
   } },
-  { name: 'rename', hint: 'Rename this session (/rename New title)', run: async (arg) => {
+  { name: 'rename', get hint() { return `Rename this session: /rename Title, or /rename alone to let the model suggest one (${sessions.costOf()})`; }, run: async (arg) => {
     if (!sessions.current) return status('No session to rename yet.', 'bad');
-    if (!arg) return $('title').click();
+    if (!arg) {
+      status(`Suggesting a title (${sessions.costOf()})...`);
+      if (await sessions.renameAuto(sessions.current.id)) status('Renamed: ' + titleOf(sessions.current));
+      return;
+    }
     Object.assign(sessions.current, { title: arg.slice(0, 120), titleSource: 'user' });
     await sessions.save(); sessions.render();
     status('Renamed.');

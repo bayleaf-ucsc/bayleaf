@@ -146,7 +146,8 @@ try {
     if (transport === 'responses') await page.waitForFunction(() => /Waiting for your server: it may be loading dummy-coder/.test(document.getElementById('status').textContent), null, T);
     await idle(page);
     await page.waitForFunction((t) => document.body.textContent.includes('Result seen: Wrote'), transport, T);
-    const gen = genLog();
+    // Turns only: since Batch E the first turn's automatic title also runs on the server (a tool-less request; test/batchE-browser.mjs checks it).
+    const gen = genLog().filter((g) => g.tools?.length);
     assert.equal(gen.length, 2, JSON.stringify(gen.map((g) => g.path)));
     assert.ok(gen.every((g) => g.path === `/v1/${transport === 'responses' ? 'responses' : 'chat/completions'}` && g.auth === 'good' && g.origin === url));
     assert.ok(!gen[0].tools.includes('subagent') && !gen[0].tools.includes('agents') && gen[0].tools.includes('write'), gen[0].tools.join());
@@ -171,7 +172,8 @@ try {
   await page.waitForFunction(() => /\d/.test(document.getElementById('usage').textContent), null, T).catch(() => {});
   const usageText = await page.textContent('#usage');
   const row = await page.$$eval('#usage tr', (rs) => rs.map((r) => [...r.cells].map((c) => c.textContent.trim())));
-  const mine = row.find((r) => /Create the file/.test(r[0] ?? ''));
+  // The session row carries its automatic title, which since Batch E the dummy wrote ("Summary: ...").
+  const mine = row.find((r) => r[0] && r[0] !== 'Session' && !/This browser today/.test(r[0]));
   assert.ok(mine, JSON.stringify(row));
   console.log('  usage row:', JSON.stringify(row[0]), JSON.stringify(mine));
   assert.match(usageText, /Today by session/);

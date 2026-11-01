@@ -188,7 +188,7 @@ export function renderPanel(host, s, rows, led = null) {
     if (out) box.append(el('p', { className: 'outside', textContent: `Changed outside this browser: ${out} since ${new Date(led.outside.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} or earlier today. ${s.mode === 'campus' ? 'Others on this network share it' : 'This key is also used elsewhere, or the allowance was reset or raised'}; the number above is the allowance as BayLeaf reports it.` }));
   }
   out.push(box);
-  out.push(el('p', { textContent: 'Each model step uses one request: every tool round in a turn, every compaction summary, and every automatic title. A turn that reads two files and then replies takes three.' }));
+  out.push(el('p', { textContent: 'Each model step uses one request: every tool round in a turn, every compaction summary, and every automatic title of a BayLeaf Sealed session. A turn that reads two files and then replies takes three.' }));
   out.push(el('h3', { textContent: 'Today by session' }));
   const shown = rows.filter((r) => r.input || r.output || r.requests);
   if (!shown.length) out.push(el('p', { className: 'muted', textContent: 'Nothing counted yet. Rows appear after a session\'s first turn.' }));

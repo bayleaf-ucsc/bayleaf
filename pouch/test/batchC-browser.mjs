@@ -23,6 +23,8 @@ const video = process.env.POUCH_VIDEO;
 const stub = `
 import { createFake, panelRules } from './test/graph-fixture.js';
 window.fake = createFake(); window.panelRules = panelRules;
+// Since Batch E titles go through the fake fetch (src/naming.js): answer them as the old stub did, and count them.
+window.fake.rule({ who: '*', sticky: true, when: (c) => !c.tools.length && /^Write a 2-5 word title/.test(c.all), reply: () => (window.__titles = (window.__titles ?? 0) + 1, 'Merging Monthly Spending CSVs With A Long Title') });
 export class TinfoilAI {
   constructor() { this.openAIOptions = { apiKey: 'fake' };
     this.chat = { completions: { create: async () => (window.__titles = (window.__titles ?? 0) + 1, { choices: [{ message: { content: 'Merging Monthly Spending CSVs With A Long Title' } }] }) } };
@@ -345,7 +347,7 @@ await section('usage', async (h, page) => {
   // The campus allowance drops by every request the fake answered (including
   // ones a Stop cut short), every title, and 3 from elsewhere on the network.
   await h.context.route('https://api.bayleaf.dev/campus-pass', async (r) => {
-    const n = await page.evaluate(() => Object.values(window.fake?.requests ?? {}).reduce((a, l) => a + l.length, 0) + (window.__titles ?? 0)).catch(() => 0);
+    const n = await page.evaluate(() => Object.values(window.fake?.requests ?? {}).reduce((a, l) => a + l.length, 0)).catch(() => 0);
     r.fulfill({ json: { campus_network: true, enabled: true, quota: { remaining: 400 - n - (n ? 3 : 0), limit: 500, approximate: true } } });
   });
   await page.evaluate(() => document.getElementById('usage-refresh').click());
@@ -381,11 +383,11 @@ await section('usage', async (h, page) => {
   // Batch D: the allowance is outside state; no Other row, a plain outside note instead.
   assert.ok(total && /This browser today/.test(total.cells[0]), 'a this-browser total row: ' + JSON.stringify(t.rows));
   assert.ok(!t.rows.some((r) => /other/.test(r.cls)), 'no Other row');
-  assert.equal(sessionRows.reduce((a, r) => a + num(r.cells[1]), 0), t.sent + t.titles, 'session rows count every request Pouch sent: ' + JSON.stringify(t));
-  assert.equal(num(total.cells[1]), t.sent + t.titles, 'total = what this browser sent');
+  assert.equal(sessionRows.reduce((a, r) => a + num(r.cells[1]), 0), t.sent, 'session rows count every request Pouch sent: ' + JSON.stringify(t));
+  assert.equal(num(total.cells[1]), t.sent, 'total = what this browser sent');
   assert.match(await page.textContent('#usage-body .quota .outside'), /Changed outside this browser: down 3\b/);
   for (const r of sessionRows) assert.ok(r.w >= 100 && !/^\w\.$/.test(r.cells[0].trim()), 'title readable: ' + JSON.stringify(r));
-  ok(`bug 5: Usage counts all ${t.sent + t.titles} requests Pouch sent (${t.sent} model incl. a stopped one and a stopped subagent's, ${t.titles} title); the 3 from elsewhere read "changed outside this browser: down 3"; titles at least ${Math.min(...sessionRows.map((r) => Math.round(r.w)))} px`);
+  ok(`bug 5: Usage counts all ${t.sent} requests Pouch sent (model incl. a stopped one and a stopped subagent's, ${t.titles} title, counted once); the 3 from elsewhere read "changed outside this browser: down 3"; titles at least ${Math.min(...sessionRows.map((r) => Math.round(r.w)))} px`);
 });
 
 // ── Design: stopped-subagent wording, child view at top, overlay sidebar, D12, new-reply pill ──

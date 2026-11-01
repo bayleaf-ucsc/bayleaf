@@ -180,6 +180,7 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
   const models = createModels();
   let catalog = [];
   const api = withFetch(openAICompletionsApi(), sealedFetch(getClient, onRequest));
+  const quietSealed = withFetch(openAICompletionsApi(), sealedFetch(getClient)); // complete(): same encryption, counted by its caller
   function setModels(list) {
     catalog = list.map(toModel);
     models.setProvider(createProvider({
@@ -429,7 +430,7 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
     async setModel(id, modelId) {
       await (await conv(id)).configure({ model: modelRef(modelId) }, ctx);
     },
-    // notes: what the user did since the last turn (undos, edits). The model
+    // notes: what the user did since the last turn (e.g. files they edited). The model
     // reads them before the message; the transcript entry keeps only `text`.
     async send(id, text, notes = [], attachments = { files: [], images: [] }, modelId) {
       // Fail before admitting the input, so it is not queued behind a dead database.
@@ -483,6 +484,22 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
       const c = callStops.get(callId);
       c?.abort();
       return !!c;
+    },
+    // One tool-less completion on modelId's own provider (session titles,
+    // naming.js): BayLeaf Sealed through the encrypting fetch, Localhost through
+    // its guarded fetch, Transformers.js in the page's worker. Never another
+    // provider: an unknown or unconfigured model fails, nothing is sent elsewhere.
+    // A Sealed call is not reported to onRequest; the caller counts it (as a title).
+    async complete(modelId, prompt, { maxTokens = 400, signal } = {}) {
+      const ref = modelRef(modelId);
+      const model = models.getModel(ref.provider, modelId);
+      if (!model) throw new Error(`${modelId} is not available in this browser now; nothing was sent.`);
+      const context = { messages: [{ role: 'user', content: prompt, timestamp: Date.now() }] };
+      const r = ref.provider === PROVIDER
+        ? await quietSealed.streamSimple(model, context, { maxTokens, signal, apiKey: 'sealed' }).result()
+        : await models.completeSimple(model, context, { maxTokens, signal });
+      if (r.stopReason === 'error' || r.stopReason === 'aborted') throw new Error(r.errorMessage || 'The model returned an error.');
+      return r.content.filter((c) => c.type === 'text').map((c) => c.text).join('');
     },
     async compact(id) {
       const { harness } = await locate(id);

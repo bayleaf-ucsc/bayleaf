@@ -25,7 +25,10 @@ export class TinfoilAI {
   constructor(){ this.openAIOptions={apiKey:'offline'};
     this.chat={completions:{create:async b=>{window.titles.push(b);return {choices:[{message:{content:'Offline title'}}]};}}};
     this.secureClient={fetch:async (url,init)=>{
-      const b=JSON.parse(init.body);window.requests.push(b);
+      const b=JSON.parse(init.body);
+      // Titles go through the encrypting fetch since Batch E (src/naming.js).
+      if(!(b.tools||[]).length && /Write a 2-5 word title/.test(JSON.stringify(b.messages))){window.titles.push(b);return sse([chunk({role:'assistant',content:'Offline title'}),chunk({},'stop')]);}
+      window.requests.push(b);
       if(window.requests.length===1){while(!window.gate)await wait(10);
         const all=JSON.stringify(b.messages);const path=all.match(/\\/work\\/\\.attachments\\/[a-z0-9-]+-notes\\.txt/)?.[0]||'/work/AGENTS.md';
         return sse([chunk({role:'assistant',tool_calls:[{index:0,id:'offline_read',type:'function',function:{name:'read',arguments:JSON.stringify({path})}}]}),chunk({},'tool_calls')]);}

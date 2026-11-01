@@ -412,6 +412,34 @@ export const scenes = [
     },
   },
   {
+    id: 'terminal', stories: ['TM1', 'TM2', 'TM3'],
+    shots: [
+      { id: 'terminal-panel', target: '#terminal-pane', maxHeight: 520, stories: ['TM1', 'TM2', 'TM3', 'TM4'],
+        alt: 'The Terminal panel: commands typed by the user over /work (a folder listing, a file written and read back), a /task listing showing each command as a terminal task, and a sleep stopped with Ctrl+C, "killed through /task/<id>/ctl", exit 130.',
+        caption: 'The terminal is the agents\' shell for humans: the same files and commands, each command a /task entry; Ctrl+C writes kill to its ctl file.' },
+    ],
+    async run({ page, shot }) {
+      const term = async (cmd) => {
+        const n = await page.$$eval('#term-log .term-block', (l) => l.length);
+        await page.fill('#term-input', cmd); await page.press('#term-input', 'Enter');
+        await page.waitForFunction((n) => { const b = document.querySelectorAll('#term-log .term-block'); return b.length > n && !b[b.length - 1].querySelector('.term-live'); }, n, { timeout: 15000 });
+      };
+      await page.click('#input'); await page.keyboard.press('Control+Backquote');
+      await page.waitForSelector('#term-input', { state: 'visible', timeout: 15000 });
+      await page.$eval('#term-log', (l) => l.replaceChildren());
+      await term('echo "walk the wharf at low tide" > /work/notes.txt && cat /work/notes.txt');
+      await term('ls /work | head -5');
+      await page.fill('#term-input', 'sleep 30'); await page.press('#term-input', 'Enter');
+      await page.waitForSelector('#term-log .term-live', { timeout: 15000 });
+      await page.press('#term-input', 'Control+c');
+      await page.waitForFunction(() => !document.querySelector('#term-log .term-live'), null, { timeout: 5000 });
+      await term('for d in /task/*; do cat $d/status 2>/dev/null; done | tail -4 | sed -E "s/ [0-9.]+s / /"');
+      await page.fill('#term-input', '');
+      await shot('terminal-panel');
+      await page.click('#terminal-pane .panel-close');
+    },
+  },
+  {
     id: 'offline', stories: ['F1'],
     shots: [
       { id: 'offline-composer', target: ['#composer', '#status'], stories: ['F1'],

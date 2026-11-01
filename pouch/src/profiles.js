@@ -20,6 +20,11 @@ import { MAIN } from './graph.js';
 
 export const SUBAGENT_DIR = '/work/.subagents';
 
+// Pouch's ubiquitous language (LANGUAGE.md), told briefly to every agent that
+// gets main's prompt (main, subagents, localhost), so replies use the words the
+// interface uses. Not the transformersjs profile: its prompt is qualified verbatim.
+export const UL_GLOSS = `Pouch's terms, which the user also sees (use them): you are an agent, a model run by Pouch's harness on a provider, acting for the user. A session groups its agents; each agent's turns form a thread the user reads. Files live in the workspace (/work), shared by every session; your namespace is the part of it you can see. While you work, the user may steer you (read after your current step) or send a follow-up (read after your turn ends). Agents act: your edits change the user's files immediately and there is no undo, so make them deliberately and say plainly what you changed.`;
+
 // The harness gloss on messaging, shared by main's prompt and every child's.
 export const GRAPH_GLOSS = `The agents of this session message each other by handle: main is ${MAIN}, subagents are a2, a3 and so on. Common shapes: many-to-one (several send findings to one collector), pipeline (each passes its result to the next), cross-check (two answer each other). Messages arrive between your steps, tagged [from <name> (<handle>)]; do not poll. join blocks until subagents go quiet and returns their last messages; it never wakes one, so to get new work, message it and then join it. When your part is done, send your result to whoever asked, then stop.`;
 

@@ -12,7 +12,7 @@ const KEY = 'pouch.layout';
 const NARROW = matchMedia('(max-width: 860px)');
 const SIDE = { def: 260, min: 200, max: 480 };
 const PANEL_MIN = 240, CHAT_MIN = 360, OVERLAY_MIN = 480;
-const DEFAULT_W = { files: 300, usage: 320, trust: 360, settings: 340, editor: () => Math.round(innerWidth * 0.5) };
+const DEFAULT_W = { files: 300, terminal: 420, usage: 320, trust: 360, settings: 340, editor: () => Math.round(innerWidth * 0.5) };
 const clamp = (v, lo, hi) => Math.round(Math.min(hi, Math.max(lo, v)));
 
 export function createLayout({ onPanel } = {}) {

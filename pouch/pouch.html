@@ -108,10 +108,23 @@
   #app.side-open #sidebar { display: flex; }
   #chat { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--surface); }
   #panel-host { grid-column: 3; grid-row: 1; display: none; position: relative; min-width: 0; min-height: 0; border-left: 1px solid var(--line); background: var(--surface); }
-  #app:is([data-panel="files"], [data-panel="editor"], [data-panel="usage"], [data-panel="trust"], [data-panel="settings"]) #panel-host { display: block; }
+  #app:is([data-panel="files"], [data-panel="editor"], [data-panel="terminal"], [data-panel="usage"], [data-panel="trust"], [data-panel="settings"]) #panel-host { display: block; }
   .panel { display: none; flex-direction: column; height: 100%; min-height: 0; min-width: 0; }
   #app[data-panel="files"] #files, #app[data-panel="editor"] #editor-pane, #app[data-panel="usage"] #usage, #app[data-panel="trust"] #trust { display: flex; }
   #app[data-panel="settings"] #settings { display: flex; }
+  #app[data-panel="terminal"] #terminal-pane { display: flex; }
+  /* Terminal (src/terminal.js): a plain log and a labeled input, no emulator. */
+  #term-log { flex: 1; min-height: 0; overflow: auto; padding: .5rem .75rem; font: .8rem/1.45 var(--mono); }
+  #term-log pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; }
+  .term-cmd { color: var(--leaf); margin-top: .35rem; white-space: pre-wrap; word-break: break-word; }
+  .term-ps { opacity: .75; }
+  .term-err { color: var(--bad); }
+  .term-exit { font-size: .72rem; opacity: .6; }
+  .term-live { font-size: .72rem; }
+  #term-form { display: flex; align-items: center; gap: .4rem; padding: .4rem .6rem calc(.4rem + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); font: .8rem var(--mono); }
+  #term-prompt { color: var(--leaf); white-space: nowrap; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
+  #term-input { flex: 1; min-width: 0; min-height: 44px; font: 16px var(--mono); background: transparent; color: inherit; border: 0; outline: none; }
+  #term-form:focus-within { box-shadow: inset 0 2px 0 var(--leaf); }
   .setting-check { display: flex; align-items: center; gap: .6rem; min-height: 44px; }
   .setting-check input { width: 1.2rem; height: 1.2rem; }
   .panel > .bar { display: flex; gap: .2rem; align-items: center; flex-wrap: wrap; padding: .35rem .4rem .35rem .75rem; min-height: var(--bar-h); border-bottom: 1px solid var(--line); }
@@ -864,6 +877,21 @@
       <p id="editor-empty">No file open. Pick one in Files, or open a path from a reply.</p>
       <div id="editor"></div>
     </section>
+    <section class="panel" id="terminal-pane" aria-label="Terminal">
+      <div class="bar">
+        <span class="title">Terminal</span>
+        <button id="term-stop" class="icon" type="button" aria-label="Interrupt (Ctrl+C)" title="Interrupt the running command (Ctrl+C): writes kill to its /task ctl"><svg class="i"><use href="#i-stop"/></svg></button>
+        <button id="term-copy" class="icon" type="button" aria-label="Copy last output" title="Copy the last command's output"><svg class="i"><use href="#i-copy"/></svg></button>
+        <button id="term-clear" class="icon" type="button" aria-label="Clear" title="Clear (Ctrl+L)"><svg class="i"><use href="#i-trash"/></svg></button>
+        <button class="icon panel-close" type="button" aria-label="Close panel" title="Close panel"><svg class="i"><use href="#i-x"/></svg></button>
+      </div>
+      <div id="term-log" role="log" aria-label="Terminal output" aria-live="polite" tabindex="0"></div>
+      <form id="term-form">
+        <label id="term-prompt" for="term-input">~ $</label>
+        <input id="term-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" aria-describedby="term-help" placeholder="ls /work">
+        <span id="term-help" hidden>Commands run in this page over your files. Up and Down recall history, Tab completes paths, Ctrl+C interrupts, Ctrl+L clears. Only bayleaf leaves the page, and it asks first.</span>
+      </form>
+    </section>
     <section class="panel" id="usage" aria-label="Usage">
       <div class="bar">
         <span class="title">Usage</span>
@@ -966,6 +994,7 @@
     <button class="icon mobile-only" type="button" data-panel="chat" aria-label="Chat" title="Chat"><svg class="i"><use href="#i-chat"/></svg><span class="lbl">Chat</span></button>
     <button class="icon" type="button" data-panel="files" aria-label="Files" title="Files"><svg class="i"><use href="#i-files"/></svg><span class="lbl">Files</span></button>
     <button class="icon" type="button" data-panel="editor" aria-label="Editor" title="Editor"><svg class="i"><use href="#i-editor"/></svg><span class="lbl">Editor</span></button>
+    <button class="icon" type="button" data-panel="terminal" aria-label="Terminal" title="Terminal (Ctrl+`)"><svg class="i"><use href="#i-terminal"/></svg><span class="lbl">Terminal</span></button>
     <button class="icon unknown" id="rail-usage" type="button" data-panel="usage" aria-label="Usage" title="Usage"><svg class="i"><use href="#i-usage"/></svg><span class="meter"><span></span></span><span class="num" id="usage-num">?</span></button>
     <button class="icon desktop-only" type="button" data-panel="trust" aria-label="What can BayLeaf see?" title="What can BayLeaf see?"><svg class="i"><use href="#i-shield"/></svg></button>
     <button class="icon desktop-only" type="button" data-panel="settings" aria-label="Settings" title="Settings"><svg class="i"><use href="#i-settings"/></svg></button>

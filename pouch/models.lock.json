@@ -7,7 +7,7 @@
       "repo": "onnx-community/LFM3-1.7B-ONNX",
       "revision": "ab9fec4c681a25bec3b48b0b97a62fc2660a2985",
       "dtype": "q4f16",
-      "license": "see the upstream model card",
+      "license": "LFM Open License v1.0 (commercial use only below USD 10M annual revenue). Accepted 2026-11-01 by Adam on a non-commercial reading: BayLeaf is a free, gift-funded campus service; see MODELS.md",
       "files": [
         {
           "name": "config.json",

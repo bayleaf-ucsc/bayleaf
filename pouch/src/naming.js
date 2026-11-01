@@ -1,9 +1,23 @@
-// Session titles (story D8). One tool-less, non-streaming completion through
-// the verified Sealed client, so the digest is encrypted to the attested
-// enclave like every other prompt. There is no plaintext path: without a
-// verified client there is no title. Each call is one Sealed request from
-// the daily allowance.
+// Session titles (story D8). One tool-less completion on the session's own
+// provider and model (agent.complete), so the digest goes exactly where the
+// session's turns already go: BayLeaf Sealed encrypts it to the attested
+// enclave (one request from the daily allowance); Localhost sends it to the
+// user's loopback server; Transformers.js generates it in this page. There is
+// no fallback: if the session's provider is unavailable, there is no title,
+// and no other provider is asked. costNote() words what a call costs and
+// where it runs, for every label, tooltip and hint that says so (compaction too).
 import { el, icon } from './dom.js';
+import { isLocal, isLocalhost } from './profiles.js';
+
+export const providerOf = (modelId) => isLocal(modelId) ? 'Transformers.js' : isLocalhost(modelId) ? 'Localhost' : 'BayLeaf Sealed';
+export function costNote(modelId) {
+  if (isLocal(modelId)) return 'runs in this browser (Transformers.js), no allowance';
+  if (isLocalhost(modelId)) return 'runs on your machine (Localhost), no allowance';
+  return '1 request from today\'s BayLeaf Sealed allowance';
+}
+// New tokens per title: a reasoning model may think first (Sealed, Localhost);
+// the in-browser model answers directly and must stay short.
+const titleTokens = (modelId) => isLocal(modelId) ? 24 : 400;
 
 const CAP = 2000; // characters of conversation sent for naming
 
@@ -32,17 +46,13 @@ export function digest(items, recent = false) {
   return [`User (first message): ${clip(turns[0].user, 400)}`, ...tail.map((t) => turnText(t, 350))].join('\n\n').slice(0, CAP);
 }
 
-// A reasoning model may think before it answers; 40 tokens was not enough
-// for glm-5-3 to finish thinking, so the cap leaves room (one request either way).
-export async function suggestTitle(client, model, text) {
-  if (!client || !text) return null;
-  const doc = await client.getVerificationDocument();
-  if (!doc?.securityVerified) return null;
-  const r = await client.chat.completions.create({
-    model, max_tokens: 400, stream: false,
-    messages: [{ role: 'user', content: 'Write a 2-5 word title for the conversation below, in its language. Output the title alone: no quotes, no explanation, no trailing period.\n\n<conversation>\n' + text + '\n</conversation>' }],
-  });
-  return cleanTitle(r.choices?.[0]?.message?.content ?? '');
+// complete(modelId, prompt, { maxTokens }) -> text: agent.complete, which
+// routes by the model id's provider. 40 tokens was not enough for glm-5-3 to
+// finish thinking, so Sealed and Localhost leave room (one request either way).
+export async function suggestTitle(complete, model, text) {
+  if (!complete || !text) return null;
+  const raw = await complete(model, 'Write a 2-5 word title for the conversation below, in its language. Output the title alone: no quotes, no explanation, no trailing period.\n\n<conversation>\n' + text + '\n</conversation>', { maxTokens: titleTokens(model) });
+  return cleanTitle(raw ?? '');
 }
 
 // The last non-empty line (a model that thinks aloud ends with the answer),

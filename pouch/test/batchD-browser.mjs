@@ -20,6 +20,8 @@ const BROWSER = process.env.BROWSER || 'chromium';
 const stub = `
 import { createFake, panelRules } from './test/graph-fixture.js';
 window.fake = createFake(); window.panelRules = panelRules;
+// Since Batch E titles go through the fake fetch (src/naming.js): answer them as the old stub did, and count them.
+window.fake.rule({ who: '*', sticky: true, when: (c) => !c.tools.length && /^Write a 2-5 word title/.test(c.all), reply: () => (window.__titles = (window.__titles ?? 0) + 1, 'Merging Monthly Spending CSVs With A Long Title') });
 export class TinfoilAI {
   constructor() { this.openAIOptions = { apiKey: 'fake' };
     this.chat = { completions: { create: async () => (window.__titles = (window.__titles ?? 0) + 1, { choices: [{ message: { content: 'Merging Monthly Spending CSVs With A Long Title' } }] }) } };

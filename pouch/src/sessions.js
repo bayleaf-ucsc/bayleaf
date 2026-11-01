@@ -7,9 +7,9 @@
 // 'auto' for a generated one, and absent for the first-message fallback.
 import * as store from './store.js';
 import { $, el, icon, seeded } from './dom.js';
-import { digest, suggestTitle, titleEditor } from './naming.js';
+import { digest, suggestTitle, titleEditor, costNote, providerOf } from './naming.js';
 
-const SPARK_TIP = 'Suggest a title from the thread (uses 1 BayLeaf Sealed request from today\'s allowance)';
+const sparkTip = (model) => `Suggest a title from the thread (${costNote(model)})`;
 const LEGACY_TIP = 'Saved before each session had its own storage. Deleting it stops and resets it; its history is purged once no such session is left, or by Erase all.';
 // pi-durable conversation ids are numbers, but data attributes are strings,
 // and IndexedDB keys 13 and "13" differ. Match on the string form.
@@ -20,7 +20,7 @@ export const grantsKey = (sid) => 'egressGrants:' + sid; // "Allow for this sess
 export const convKey = (sid) => 'conversation:' + sid; // the current conversation in its database (agent.js, D12)
 export const interruptedKey = (sid) => 'interrupted:' + sid; // a reload cut off its run; Resume offered (main.js)
 export const subagentsKey = (sid) => 'subagents:' + sid; // the session's subagents and their state (subagents.js)
-export const revertKey = (sid) => 'revert:' + sid; // the last revert, while it can be undone, with file bytes (D12)
+export const revertKey = (sid) => 'revert:' + sid; // the last revert, while it can be undone; conversation only, never file bytes (D12)
 export const watchesKey = (sid) => 'watches:' + sid; // its file watches (src/ns/watch.js)
 export const turnsKey = (sid) => 'turnTimes:' + sid; // turn-start entry -> measured duration (ms), for the turn footer (main.js)
 
@@ -134,17 +134,40 @@ export function createSessions(deps) {
         await deps.revoke(s.id, g.service); status(`Pouch will ask again before ${g.label} in this session.`);
       }]),
       ['Rename', () => editTitle(s, li.querySelector('.s-open'))],
-      ['Suggest a title (1 BayLeaf Sealed request)', () => renameAuto(s.id)],
-      ['Compact now (summarize older turns)', async () => {
-        status('Compacting...');
-        try { await deps.agent().compact(s.id); status('Older turns summarized.'); } catch (e) { status(e.message, 'bad'); }
-      }],
+      [`Suggest a title (${costNote(modelOf(s))})`, () => renameAuto(s.id)],
+      [`Compact now (summarize older turns; ${costNote(modelOf(s))})`, () => compact(s.id)],
       ['Delete session', () => remove(s.id), 'danger'],
     ]);
   }
   async function renameAuto(id) {
     const t = await nameFrom(id, true);
     if (t) { await update(id, { title: t, titleSource: 'auto' }); render(); }
+    return t;
+  }
+
+  // The session's provider and model: its last turn's, else the picker's.
+  // Titles and compaction run there and nowhere else.
+  const modelOf = (s) => s?.model || deps.model() || 'glm-5-3';
+  // Why the session's provider cannot take a request now, or null.
+  function unavailable(model) {
+    if (!deps.agent()) return deps.agentError?.() ?? 'The agent is not available.';
+    const p = providerOf(model);
+    if (p === 'BayLeaf Sealed') return deps.connected() ? null : 'This session runs on BayLeaf Sealed, which is not connected: sign in, or use Campus Pass on campus, and wait for the enclave check. No other provider was asked.';
+    if (deps.hasModel(model)) return null;
+    return p === 'Localhost'
+      ? `This session runs on Localhost (${model.slice('localhost:'.length)}), which is not set up in this browser now: test the connection in Settings > Providers > Localhost. No other provider was asked.`
+      : 'This session runs on Transformers.js, which is not available in this browser now. No other provider was asked.';
+  }
+
+  // Compaction (the menu and /compact): pi-durable summarizes on the
+  // conversation's own model, so it stays on the session's provider.
+  async function compact(id) {
+    const s = await find(id);
+    const why = unavailable(modelOf(s));
+    if (why) return status(why, 'bad');
+    status(`Compacting (${costNote(modelOf(s))})...`);
+    try { await deps.agent().compact(id); status('Older turns summarized.'); } catch (e) { status(e.message, 'bad'); }
+    finally { if (providerOf(modelOf(s)) === 'BayLeaf Sealed') deps.usage.refresh(); }
   }
 
   // ── Delete (L2) ───────────────────────────────────────────────────
@@ -186,7 +209,7 @@ export function createSessions(deps) {
   function editTitle(s, host) {
     titleEditor(host, {
       value: s.title ?? '',
-      tip: SPARK_TIP,
+      tip: sparkTip(modelOf(s)),
       suggest: () => nameFrom(s.id, true),
       save: (t, source) => update(s.id, t ? { title: t, titleSource: source } : { title: '', titleSource: undefined }),
       done: () => render(),
@@ -194,39 +217,41 @@ export function createSessions(deps) {
   }
   $('title').onclick = () => { if (session) editTitle(session, $('title')); };
 
-  // A title suggestion from the conversation, through the verified Sealed
-  // client only (naming.js). quiet: after a first turn, skip without a word.
+  // A title suggestion from the conversation, on the session's own provider
+  // and model (naming.js); never another. quiet: after a first turn, skip
+  // without a word.
   async function nameFrom(id, recent, quiet = false, turnModel) {
-    const client = deps.connected();
-    if (!deps.agent() || !client) {
-      if (!quiet) status('Titles are suggested by the sealed model: sign in, or use Campus Pass on campus, and wait for the enclave check.', 'bad');
-      return null;
-    }
+    const s = await find(id);
+    const model = turnModel || modelOf(s);
+    const sealed = providerOf(model) === 'BayLeaf Sealed';
+    const why = unavailable(model);
+    if (why) { if (!quiet) status(why, 'bad'); return null; }
     try {
       const v = sameId(id, session?.id) && deps.view() ? deps.view() : await deps.agent().snapshot(id);
       const text = digest(v?.items, recent);
       if (!text) { if (!quiet) status('Nothing to name yet: send a message first.'); return null; }
-      const s = await find(id);
-      deps.countRequest?.(id, 'title'); // one request from the allowance, outside the transcript
-      const t = await suggestTitle(client, turnModel || s?.model || 'glm-5-3', text);
+      if (sealed) deps.countRequest?.(id, 'title'); // one request from the allowance, outside the transcript
+      const t = await suggestTitle((...a) => deps.agent().complete(...a), model, text);
       if (!t && !quiet) status('No title came back; the old one stays.');
       return t;
     } catch (e) {
-      if (!quiet) status(deps.quotaError(e.message) ? deps.exhaustedText(await deps.usage.refresh()) : 'Could not suggest a title: ' + e.message, 'bad');
+      if (!quiet) status(sealed && deps.quotaError(e.message) ? deps.exhaustedText(await deps.usage.refresh()) : `Could not suggest a title (${providerOf(model)}): ` + e.message, 'bad');
       return null;
-    } finally { deps.usage.refresh(); }
+    } finally { if (sealed) deps.usage.refresh(); }
   }
 
   // After a send settles: record time and usage, and name the session after
-  // its first turn unless someone already typed a title (D8). One sealed
-  // request; silent when not connected.
+  // its first turn unless someone already typed a title (D8), on the turn's
+  // own provider: one Sealed request from the allowance, or a short local
+  // generation on Localhost or Transformers.js (no allowance, nothing sent to
+  // BayLeaf). Silent when the provider is unavailable. A Transformers.js title
+  // runs in the model's worker (the page stays responsive), at most 24 new
+  // tokens from a digest well inside its 4k budget; a message sent meanwhile
+  // waits for it in the engine's one-at-a-time queue.
   async function afterTurn(sid, v, ok, turnModel) {
     await update(sid, { updated: Date.now(), ...(v?.usage ? { usage: v.usage } : {}) });
     render();
     if (!deps.isLocal?.(turnModel)) deps.usage.refresh(); // a Transformers.js or Localhost turn used no allowance and asks BayLeaf nothing
-    // Such a session is not named by Sealed behind the user's back: it keeps
-    // its first-message title (the sparkle stays an explicit choice).
-    if (deps.isLocal?.(turnModel)) return;
     const fresh = await find(sid);
     // Once per session, after its first turn that ends well, however many
     // messages that turn took (a steer or a detach adds one: critique 6).
@@ -279,5 +304,6 @@ export function createSessions(deps) {
   return {
     get current() { return session; },
     running, all, find, save, update, render, create, select, remove, afterTurn, boot,
+    compact, renameAuto, costOf: (s) => costNote(modelOf(s ?? session)),
   };
 }

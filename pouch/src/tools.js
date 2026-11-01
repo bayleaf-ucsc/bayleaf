@@ -4,6 +4,7 @@
 // just-bash is a TypeScript reimplementation of bash and coreutils, so `bash`
 // is an interpreter over the same files, not a real process.
 import { GRAPH_GLOSS } from './subagents.js';
+import { UL_GLOSS } from './profiles.js';
 import { Bash, InMemoryFs, defineCommand, getCommandNames } from 'just-bash';
 import { normalize } from './vfs.js';
 import { subset } from './ns/namespace.js';
@@ -74,20 +75,44 @@ export function oneFinalNewline(content) {
 // denied) and onEgress(event, caller). Each bash call also lists what it sent
 // in its result. `caller` is the calling conversation (agent.js toTool), so
 // the host can tell a subagent from the main agent; calls may run at once.
+// One model message can carry several calls, and they run concurrently: two
+// edits of one file would both read the original and the last write would
+// win (seen in t17: a rename lost its import change). Edits and writes of
+// the same path therefore take turns, page-wide: the agents' tools, `run`
+// write-backs and the terminal (src/terminal.js) share this one queue.
+const turns = new Map(); // path -> tail of its queue
+export const oneAtATime = (p, fn) => {
+  const run = (turns.get(p) ?? Promise.resolve()).then(fn, fn);
+  const tail = run.catch(() => {});
+  turns.set(p, tail);
+  tail.then(() => { if (turns.get(p) === tail) turns.delete(p); });
+  return run;
+};
+// A filesystem whose writes take their path's turn (a move or copy waits on its target).
+export function serialized(fs) {
+  return new Proxy(fs, {
+    get(target, prop) {
+      if (prop === 'writeFile' || prop === 'appendFile' || prop === 'rm') return (p, ...a) => oneAtATime(normalize(p), () => target[prop](p, ...a));
+      if (prop === 'mv' || prop === 'cp') return (s, d, ...a) => oneAtATime(normalize(d), () => target[prop](s, d, ...a));
+      const v = target[prop];
+      return typeof v === 'function' ? v.bind(target) : v;
+    },
+  });
+}
+// The human's shell (src/terminal.js): the same just-bash, commands and
+// `bayleaf` CLI the agents get, over whatever fs the caller passes.
+export function shellFor(fs, hooks = {}) {
+  return new Bash({
+    fs, cwd: CWD,
+    env: { HOME: CWD, USER: 'user', PATH: '/usr/bin:/bin' },
+    commands: COMMANDS,
+    customCommands: [...archiveCommands(defineCommand), ...bayleafCommands(defineCommand, hooks)],
+    executionLimits: { maxCommandCount: 100_000, maxLoopIterations: 100_000 },
+  });
+}
+
 export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
   const abs = (p) => normalize(p.startsWith('/') ? p : CWD + '/' + p);
-  // One model message can carry several calls, and they run concurrently: two
-  // edits of one file would both read the original and the last write would
-  // win (seen in t17: a rename lost its import change). Edits and writes of
-  // the same path therefore take turns.
-  const turns = new Map(); // path -> tail of its queue
-  const oneAtATime = (p, fn) => {
-    const run = (turns.get(p) ?? Promise.resolve()).then(fn, fn);
-    const tail = run.catch(() => {});
-    turns.set(p, tail);
-    tail.then(() => { if (turns.get(p) === tail) turns.delete(p); });
-    return run;
-  };
   // A subagent works in its own namespace (hooks.namespaceFor(caller) gives
   // its mounts), reached over a 9P connection like any task across a
   // boundary: the page serves a capability view cut from the agent's tree and
@@ -330,12 +355,13 @@ You work on files through the read, write, edit, bash and run tools. Filesystem:
 - /tmp: scratch, lost on reload.
 - /task: running and recent run calls and subagents as files: \`cat /task/<id>/status\`, \`cat /task/<id>/ns\` (what it can see), \`echo kill > /task/<id>/ctl\`.
 ${vfs.seedLayer ? `- ${CWD} is stacked over the read-only seed archive ${vfs.seedLayer.name}: your files win, edits land in ${CWD}, removing a seed file hides it.\n` : ''}${mounts.length ? '- Folders the user mounted from their device: ' + mounts.join(', ') + '\n' : ''}The bash tool is a simulated shell with coreutils-like commands plus zip/unzip/tar: no network, no installs, no python/node/git.
-The run tool executes JavaScript (QuickJS) over a copy of the files you name, with no network: use it instead of awk/sed/jq for anything that needs real parsing (quoted CSV, nested JSON) or arithmetic, and to test JavaScript; save reusable scripts in ${CWD} and run them by path. Its file writes come back as reviewable changes.
+The run tool executes JavaScript (QuickJS) over a copy of the files you name, with no network: use it instead of awk/sed/jq for anything that needs real parsing (quoted CSV, nested JSON) or arithmetic, and to test JavaScript; save reusable scripts in ${CWD} and run them by path. Its file writes are applied to the workspace when it finishes.
 The one exception is the \`bayleaf\` command (web search/fetch, a remote sandbox VM, inboxes): it leaves the pouch and asks the user each time; see the bayleaf-cli skill.
 The subagent tool runs a self-contained task (web research, exploring a codebase) in a background subagent while you keep talking with the user: use it when the user asks for background work or when such a task would take many steps. Each subagent step costs a request from the same daily allowance; its report arrives later as a message, so do not poll for it.
 ${GRAPH_GLOSS} You are main (a1); only you spawn and stop subagents.
 ${WATCH_GLOSS}
-The user sees your file changes in the chat, can review a diff of each and undo it, and can download any file or folder (as .zip) from the file browser.
+${UL_GLOSS}
+The user can open any file in the editor and download any file or folder (as .zip) from the file browser.
 Keep changes minimal: prefer edit over rewriting files, and do not reformat or restyle existing code unless asked (conventions apply to code you write). Be concise. Say what you changed.
 Replies render as markdown. Refer to files as markdown links like [app.js](/work/app.js) or [app.js:12](/work/app.js:12): they open in the user's editor.`;
   for (const a of agents) s += `\n\n<instructions source="${a.path}">\n${a.text.trim()}\n</instructions>`;

@@ -18,7 +18,7 @@
 //
 // Consistency is close-to-open: a fid opened for writing collects its writes
 // and the server commits the whole file at clunk, through the commit hook
-// (Pouch serializes writes per path and records them for Diff and Undo there).
+// (Pouch serializes writes per path and attributes them to their writer there).
 
 import { BaseFs, codeOf, join, normalize } from './namespace.js';
 

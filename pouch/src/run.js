@@ -8,8 +8,8 @@
 // a 9P connection (src/ns/9p.js) over a MessagePort. It reads its snapshot
 // through that connection and writes the guest's changes back through it
 // (src/run/over9p.js says why it is still snapshot-in / diff-out). Every
-// write lands through the same recording fs as every other tool, one path at
-// a time, so it shows under the turn (Diff, Undo). Stop or `echo kill >
+// write lands through the same serialized fs as every other tool, one path at
+// a time, attributed to `run` (for watches). Stop or `echo kill >
 // /task/<id>/ctl` flushes the 9P server first, so nothing lands after it.
 // The engine is behind runInWorker's message protocol, so another runtime
 // (Pyodide) could sit behind the same tool later.

@@ -58,20 +58,21 @@ export function createEgress(deps = {}) {
   let pending = [], seq = 0;
   const changed = () => deps.onPending?.(pending);
 
-  function ask(req, sid, title, agentName) {
+  function ask(req, sid, title, agentName, asker) {
     return new Promise((resolve) => {
       const d = $('egress');
       let answer = false;
       const choose = (v) => { answer = v; d.close(); };
       // A subagent's request says so: it runs unattended, so name who asks.
-      $('egress-h').textContent = agentName ? `Subagent "${agentName}" wants to send this outside the pouch` : 'Send this outside the pouch?';
+      $('egress-h').textContent = asker ? 'Send this outside the pouch from the terminal?' : agentName ? `Subagent "${agentName}" wants to send this outside the pouch` : 'Send this outside the pouch?';
       $('egress-summary').textContent = req.summary ?? req.command;
       // Outside its session's view an agent is named with the session title first
       // (LANGUAGE.md "Handles"): "Essay review › judge-evidence".
-      $('egress-meta').textContent = `${req.command} · ${agentName ? `${title} › ${agentName} (subagent)` : `session: ${title}`}`;
+      $('egress-meta').textContent = `${req.command} · ${asker ?? (agentName ? `${title} › ${agentName} (subagent)` : `session: ${title}`)}`;
       $('egress-detail').textContent = req.detail ?? '';
       $('egress-audiences').replaceChildren(...(req.audiences ?? []).map((a) => el('li', { textContent: a })));
       $('egress-session').textContent = `Allow ${serviceName(req.service)} for this session`;
+      $('egress-session').hidden = sid == null; // the terminal belongs to no session: every use asks
       $('egress-deny').onclick = () => choose(false);
       $('egress-once').onclick = () => choose('once');
       $('egress-session').onclick = () => choose('session');
@@ -85,13 +86,14 @@ export function createEgress(deps = {}) {
 
   // The hook bayleaf-cli.js awaits. Resolves true only on an explicit allow.
   // agentName: the subagent asking, or none for the main agent. A session
-  // grant covers the session's subagents too.
-  function approve(req, sid, agentName) {
-    const row = { id: ++seq, sid: sid == null ? null : String(sid), command: req.command, agentName, since: Date.now() };
+  // grant covers the session's subagents too. asker: who else asks, named on
+  // the sheet instead of a session (the terminal: sid null, so no grant applies).
+  function approve(req, sid, agentName, asker) {
+    const row = { id: ++seq, sid: sid == null ? null : String(sid), command: req.command, agentName: agentName ?? asker, since: Date.now() };
     pending = [...pending, row]; changed();
     const turn = queue.then(async () => {
       if ((await grantsFor(sid)).includes(req.service)) return true;
-      const v = await ask(req, sid, await deps.sessionTitle?.(sid) ?? 'this session', agentName);
+      const v = await ask(req, sid, await deps.sessionTitle?.(sid) ?? 'this session', agentName, asker);
       if (v === 'session' && sid != null) { await grant(sid, req.service); deps.onGrant?.(); }
       return v === 'once' || v === 'session';
     }).finally(() => { pending = pending.filter((p) => p !== row); changed(); });

@@ -263,7 +263,7 @@ that its CSP is as stated.
 | UI | sessions sidebar, chat, one side panel at a time (Files, Editor, Usage, Trust, Settings) from an icon rail; drawer, full-screen sheets and a bottom bar on phones | `pouch.html`, `src/main.js`, `src/layout.js` |
 | Composer | one card: activity tray (running subagents and `run` calls, approvals waiting, steering not yet read and the follow-up or paused message; Stop, Stop all, Cancel, Edit, Steer now), `@` path / `$` skill / `/` command autocomplete, the shield popover (lane, egress grants), Usage count, model picker, Send / Stop with the Steer-or-Queue split button while Pouch works; the turn footer (model, duration, time) is in `main.js` | `src/composer.js`, `src/main.js` |
 | Preferences / attachments | local display defaults; one ingest path for Attach, composer drop and image paste | `src/settings.js`, `src/attachments.js` |
-| Titles | a session is named after its first turn by one tool-less sealed completion; the sparkle beside the title field suggests another | `src/naming.js` |
+| Titles | a session is named after its first turn by one tool-less completion on the session's own provider and model; the sparkle beside the title field, the session menu and `/rename` alone suggest another; never a different provider | `src/naming.js` |
 | Usage | today's Sealed allowance (`/usage` with a key, `/campus-pass` without), checked on load, sign-in and after each run, never polled; tokens per session | `src/usage.js` |
 
 The filesystem the agent, the file browser and the editor share:
@@ -304,8 +304,11 @@ re-encoded in the browser to at most 2000px and 4 MB (first frame for animations
 marked **images** are derived from `/sealed/models`'s `multimodal` metadata. Text-only models
 refuse pending raster images before inference; other formats, including SVG, stay files only.
 
-Every model step is one Sealed request from a daily allowance: each tool round, each
-compaction summary and each automatic or suggested title. The Usage panel shows what is
+Every model step of a BayLeaf Sealed session is one Sealed request from a daily allowance:
+each tool round, each compaction summary and each automatic or suggested title. Titles
+and compaction run on the session's own provider, so on Localhost or Transformers.js they
+cost no allowance and send BayLeaf nothing; every label that states a cost is worded from
+the session's provider (`costNote()` in `src/naming.js`). The Usage panel shows what is
 left (with a key, your own; under Campus Pass, an approximate bucket shared by everyone
 behind the same campus network address) and when it resets; a send refused for quota
 says so, with the reset time. A title you type is never replaced automatically; an
@@ -449,6 +452,38 @@ Offline checks: `node test/{theme-node,composer-node,markdown-node,vfs-node,suba
 `POUCH_OUT=/scratch/build node build.mjs`, then the same `POUCH_OUT` with
 `node test/composer-browser.mjs`. Set `PLAYWRIGHT_MODULE` to an installed Playwright ESM
 entry point if needed. Tests mock the Sealed provider and spend no inference quota.
+
+## Terminal: the same shell, for humans
+
+A Terminal panel (rail icon, or Ctrl+` from anywhere; Ctrl+` again from its input closes
+it) gives the user just-bash over the namespace the main agent sees: /work, /pouch, /tmp,
+/task and mounts (`src/terminal.js`). It is deliberately not a terminal emulator: a
+`role="log"` output region and one labeled text input, no new dependency, usable at
+390 px (16 px input, so phones do not zoom).
+
+- **Same commands, same rules.** `shellFor()` in `src/tools.js` builds the same just-bash
+  with the same command list, archive commands and `bayleaf` CLI the agents get. Writes go
+  through `vfs.as('user')`, so a watch reports them as "by you", exactly like an editor
+  save, and through the page-wide per-path write queue (`oneAtATime`, now module-level and
+  shared by the agents' write/edit tools, `run` write-backs and the terminal).
+- **Tasks.** Each command is a /task entry, kind `terminal` (`cat /task/<id>/status`).
+  **Ctrl+C writes `kill` to `/task/<id>/ctl`**, the same control file an agent writes;
+  it does not call the abort directly. This is the first instance of the control-plane
+  seam: from the terminal, `echo kill > /task/<n>/ctl` stops an agent's `run` or a
+  subagent the same way. Killed commands show `exit 130`.
+- **Line editing.** The browser's own input editing, copy and paste; Up/Down history
+  (persisted in localStorage as `pouch.terminal.history`, capped at 200, cleared by Erase
+  all with the rest of localStorage); Tab completes paths; `clear` or Ctrl+L clears;
+  `history`; cwd and exported variables persist between commands. Output is capped at
+  2,000 lines or 200,000 characters per command with a note; non-zero exit codes appear
+  small under the output. just-bash 3.6 returns output when a command ends, so output is
+  per command, not streamed; a live line shows the elapsed time and the /task id.
+- **Security.** The terminal runs nothing outside the page except `bayleaf`, which asks on
+  the same approval sheet as an agent ("Send this outside the pouch from the terminal?",
+  "you, in the terminal") on every use: the terminal belongs to no session, so no "Allow
+  for this session" grant applies and that button is hidden. There is no other network
+  access, no real process and no eval of JavaScript; `run` is an agent tool, not a shell
+  command. Opening the terminal never sends a request.
 
 ## Namespaces
 
@@ -623,8 +658,10 @@ shield says "Transformers.js: in this browser, nothing sent".
 - **When to use BayLeaf Sealed.** Transformers.js suits inspecting a workspace and small, literal edits.
   A visible hint (with a "Use BayLeaf Sealed next" button that only changes the picker) appears
   when it hits its step cap, an edit fails twice, a task touches more than 3 files,
-  or the thread outgrows its context. Its sessions are not auto-named (that
-  would be a BayLeaf Sealed request) and use none of the BayLeaf Sealed allowance.
+  or the thread outgrows its context. Its sessions are auto-named after the first turn
+  by the same model in its worker (at most 24 new tokens from a digest well inside the 4k
+  budget, so the page stays responsive; a message sent meanwhile waits its turn in the
+  engine's queue) and use none of the BayLeaf Sealed allowance.
 - **Tool policy for every provider.** Native XML tool calls blur trailing newlines, so
   `edit` makes newText end with a line break exactly when oldText does (an empty newText,
   a deletion, is left alone), `write` saves a non-empty file ending with exactly one
@@ -659,8 +696,8 @@ example to their own Tinfoil account; Pouch itself integrates no third party). S
 - **Profile `localhost`**: main's prompt and page tools without `subagent` and `agents`
   (one local server runs a few requests at a time and a second model may not fit in
   memory, so a Localhost agent works alone; a note in the prompt says so), and a 24-step
-  cap per message. No allowance is used and BayLeaf is not asked for anything, not even a
-  session title. Usage counts tokens when the server reports them.
+  cap per message. No allowance is used and BayLeaf is not asked for anything: titles (automatic
+  after the first turn, or suggested) and compaction run on the same Localhost model. Usage counts tokens when the server reports them.
 - **Interface**: a Localhost group in the picker (laptop icon, its own color), a shield
   saying "your machine runs the model" and what is sent; "Waiting for your server: it may
   be loading the model" after 4 s without a token; specific errors (unreachable, CORS,

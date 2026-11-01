@@ -343,6 +343,18 @@ folders edited on disk are not noticed until a reload.
 <sub><b>G16</b> ok. Files not here yet: main waits for them instead of polling, and the tray says what it is waiting for. <i>Scripted reenactment with a fake model.</i></sub>
 <!-- /wt -->
 
+### The terminal: doing what agents do
+
+Ctrl+` (or the Terminal icon) opens a plain shell over the same namespace the main agent
+sees. Writes count as yours for watches, each command is a /task entry, and Ctrl+C
+writes `kill` to that entry's ctl file rather than calling into the page. Only `bayleaf`
+leaves the page, and it asks every time.
+
+<!-- wt:shot terminal-panel -->
+<img src="walkthrough/images/terminal-panel.png" alt="The Terminal panel: commands typed by the user over /work (a folder listing, a file written and read back), a /task listing showing each command as a terminal task, and a sleep stopped with Ctrl+C, &quot;killed through /task/<id>/ctl&quot;, exit 130." width="443"><br>
+<sub><b>TM1</b> ok · <b>TM2</b> ok · <b>TM3</b> ok · <b>TM4</b> ok. The terminal is the agents' shell for humans: the same files and commands, each command a /task entry; Ctrl+C writes kill to its ctl file.</sub>
+<!-- /wt -->
+
 ## 10. Offline, install, and Transformers.js: Commuter
 
 <!-- wt:status F1 F2 F3 F4 F5 --><b>F1</b> ok · <b>F2</b> ok · <b>F3</b> ok · <b>F4</b> built · <b>F5</b> ok in Chromium, gap elsewhere<!-- /wt -->
@@ -411,13 +423,13 @@ says so.
 ## Coverage
 
 <!-- wt:coverage -->
-66 of 116 stories in [JOURNEYS.md](JOURNEYS.md) are illustrated. JOURNEYS.md reuses D20, D21, G14, D19 for different stories; a second use is written with .2 here (D20.2).
+70 of 124 stories in [JOURNEYS.md](JOURNEYS.md) are illustrated. JOURNEYS.md reuses D20, D21, G14, D19 for different stories; a second use is written with .2 here (D20.2).
 
 **Not yet illustrated**
 
 - 1. Arrive: A3 (untested), A4 (ok)
 - 3. Bring files in: I1 (ok), I2 (ok), I3 (untested), I4 (ok), I5 (ok), I7 (untested), I9 (ok), I10 (ok)
-- 4. Direct the agent: D4 (ok), D5 (untested), D6 (untested), D7 (ok), D24 (ok), D28 (ok), D30 (ok), D14 (untested), D16a (ok)
+- 4. Direct the agent: D4 (ok), D5 (untested), D6 (untested), D7 (ok), D8b ((Batch E, 2026-11-01)), D24 (ok), D28 (ok), D30 (ok), D14 (untested), D16a (ok)
 - Agent graphs: G10 (ok), G11 (ok), G12 (ok), Caps (ok)
 - Watching files: G15 (ok), G17 (ok), Mechanics (ok)
 - 5. Review: R2 (dropped by decision 2026-10-29), R3 (dropped by decision 2026-10-29), R5 (dropped by decision 2026-10-29), R6 (untested), R8 (ok)
@@ -425,6 +437,7 @@ says so.
 - 7. Leave: L2 (ok), L4 (untested)
 - 8. Work offline: F2 (ok), F3 (ok), F5 (ok in Chromium, gap elsewhere)
 - 9. Localhost provider (slice, 2026-10-31; Desk persona with a model server, e.g. oMLX): LH2 (ok), LH6 (ok), LH7 (ok), LH8 (ok), LH9 (ok), LH10 (ok), LH11 (gap), LH12 (ok)
+- 10. Terminal (Batch E, 2026-11-01; Desk and Lab personas): TM5 (ok), TM6 (ok), TM7 (ok)
 <!-- /wt -->
 
 **Gaps found while building this walkthrough.** The trust panel's mount tables used to

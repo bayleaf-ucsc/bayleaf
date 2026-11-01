@@ -38,6 +38,8 @@ export class TinfoilAI {
     this.chat = { completions: { create: async () => ({ choices: [{ message: { content: 'Fake title' } }] }) } };
     this.secureClient = { fetch: async (url, init) => {
       const b = JSON.parse(init.body);
+      // Titles go through this fetch since Batch E (src/naming.js); they are not turns.
+      if (!b.tools?.length && /Write a 2-5 word title/.test(JSON.stringify(b.messages))) return sse([chunk({ role: 'assistant', content: 'Fake title' }), chunk({}, 'stop')]);
       const child = JSON.stringify(b.messages[0] ?? '').includes('You are a subagent named');
       (child ? window.childRequests : window.requests).push(b);
       const step = (child ? window.childScript : window.script).shift() ?? { text: 'done' };

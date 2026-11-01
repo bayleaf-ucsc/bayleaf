@@ -81,9 +81,10 @@ async function fixturePage() {
   const stub = `
 import { createFake, panelRules } from './test/graph-fixture.js';
 window.fake = createFake(); window.panelRules = panelRules;
+// Title requests go through the same fake fetch as turns (src/naming.js).
+window.fake.rule({ who: '*', sticky: true, when: (c) => !c.tools.length && /^Write a 2-5 word title/.test(c.all), reply: () => window.fakeTitle ?? 'Walkthrough session' });
 export class TinfoilAI {
   constructor() { this.openAIOptions = { apiKey: 'fake' };
-    this.chat = { completions: { create: async () => ({ choices: [{ message: { content: window.fakeTitle ?? 'Walkthrough session' } }] }) } };
     this.secureClient = { fetch: (u, i) => window.fake.fetch(u, i) };
   }
   async ready() {} async getVerificationDocument() { return { securityVerified: true, enclaveHost: 'enclave.example', codeFingerprint: 'walkthrough' }; }
@@ -233,12 +234,24 @@ async function shot(page, sc, id, opts = {}) {
   await page.waitForTimeout(150);
   const boxes = await page.evaluate(({ groups, pad, grow, maxHeight, highlight }) => {
     // Freeze elapsed times and turn durations so a rerun is pixel-identical.
-    for (const el of document.querySelectorAll('.tray-time')) if (el.textContent) el.textContent = '12s';
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    for (let n; (n = walker.nextNode());) {
-      if (!n.parentElement?.closest('.sa-meta, .turn-meta, .msg-meta, .sa-view-head, .s-child, .tray-row, .msg-bar')) continue;
-      n.textContent = n.textContent.replace(/\b(\d+m \d{2}s|\d+s)\b/g, '4s');
-    }
+    // A running subagent's head re-renders every second (its live duration), so
+    // the freeze stays on, through a MutationObserver, until the screenshots are
+    // taken (the old one-shot freeze let subagents-view flicker by 14x18 px).
+    const freeze = () => {
+      for (const el of document.querySelectorAll('.tray-time')) if (el.textContent && el.textContent !== '12s') el.textContent = '12s';
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let n; (n = walker.nextNode());) {
+        if (!n.parentElement?.closest('.sa-meta, .turn-meta, .msg-meta, .sa-view-head, .s-child, .tray-row, .msg-bar')) continue;
+        const t = n.textContent.replace(/\b(\d+m \d{2}s|\d+s)\b/g, '4s');
+        if (t !== n.textContent) n.textContent = t;
+      }
+    };
+    freeze();
+    window.__wtFreeze?.disconnect();
+    // At most one pass per frame and 40 in all, so it can never ping-pong with a render.
+    let queued = false, passes = 0;
+    window.__wtFreeze = new MutationObserver(() => { if (queued || passes++ > 40) return; queued = true; requestAnimationFrame(() => { queued = false; freeze(); }); });
+    window.__wtFreeze.observe(document.body, { subtree: true, childList: true, characterData: true });
     document.querySelectorAll('[data-wt-highlight]').forEach((e) => { e.style.outline = ''; e.removeAttribute('data-wt-highlight'); });
     if (highlight) for (const e of document.querySelectorAll(highlight)) { e.dataset.wtHighlight = ''; e.style.outline = '3px solid #e8a33d'; e.style.outlineOffset = '2px'; }
     const box = (rects) => {
@@ -258,6 +271,7 @@ async function shot(page, sc, id, opts = {}) {
     if (clip.height <= 0 || clip.width <= 0) throw new Error(`shot ${id}: empty crop ${JSON.stringify(clip)} (target off screen?)`);
     imgs.push(decode(await page.screenshot({ clip, animations: 'disabled', caret: 'hide', scale: 'device' })));
   }
+  await page.evaluate(() => { window.__wtFreeze?.disconnect(); window.__wtFreeze = null; });
   if (process.env.WT_TEXT?.split(',').includes(id)) console.log(id, JSON.stringify(boxes));
   fresh.set(id, { img: shrink(imgs.length > 1 ? stackImages(imgs) : imgs[0], 2 / density), text: boxes.text, sc, decl });
 }
