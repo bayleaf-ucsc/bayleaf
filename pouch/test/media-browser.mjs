@@ -9,8 +9,16 @@
 //   colors.webm  3 s, 64x48 VP8 at 10 fps: red, then green, then blue (1 s each); Opus 440 Hz
 //   vp9.webm     2 s, 64x48 VP9: red, then blue
 //   tone.wav     0.5 s, 8 kHz s16 sine
-//   clip.mp4     1 s H.264 (not decodable here: the documented gap)
-// Run: node test/media-browser.mjs
+//   clip.mp4     1 s H.264
+// and for the WebCodecs path (Homebrew ffmpeg 8.0, -fflags +bitexact, -map_metadata -1):
+//   scene.mp4    2 s, 64x48 H.264 at 10 fps (keyframe every 1 s): red, then blue; AAC 440 Hz mono 44.1 kHz
+//   scene.mov    the same streams in QuickTime (ftyp qt), display rotation 90 (a phone held upright)
+//   tone.m4a     0.5 s AAC 44.1 kHz;  tone.mp3  0.5 s MP3 44.1 kHz, no ID3
+//   tone24.wav   0.25 s, 16 kHz stereo, 24-bit PCM
+//   halves.mov   0.3 s, 64x48 H.264: top half red, bottom blue; rotation -90 (Homebrew ffmpeg turns it clockwise: blue left, red right)
+//   hevc.mp4     0.5 s, 64x48 HEVC (hvc1), green: decodes only where the browser has HEVC
+// Run: node test/media-browser.mjs   (MEDIA_CHANNEL=chrome: installed Chrome, where HEVC decodes;
+// MEDIA_ONLY="cmd;;cmd": just run those commands on the fixtures and print the results)
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -72,7 +80,7 @@ const origin = `http://127.0.0.1:${server.address().port}`;
 let pass = 0;
 const ok = (name) => { pass++; console.log('ok', name); };
 const near = (rgba, want, name) => assert.ok(rgba.slice(0, 3).every((v, i) => Math.abs(v - want[i]) < 40), `${name}: got ${rgba}, want about ${want}`);
-const browser = await pw.chromium.launch();
+const browser = await pw.chromium.launch(process.env.MEDIA_CHANNEL ? { channel: process.env.MEDIA_CHANNEL } : {});
 try {
   const page = await browser.newPage();
   const requests = [], errors = [];
@@ -83,8 +91,9 @@ try {
   const put = (p, bytes) => page.evaluate(([p, b]) => window.pouch.put(p, b), [p, Buffer.from(bytes).toString('base64')]);
   const sh = (cmd) => page.evaluate((c) => window.pouch.sh(c), cmd);
   const px = (p, x = 32, y = 24) => page.evaluate(([p, x, y]) => window.pouch.pixel(p, x, y), [p, x, y]);
-  for (const f of ['colors.webm', 'vp9.webm', 'tone.wav', 'clip.mp4']) await put('/work/' + f, fixture(f));
+  for (const f of ['colors.webm', 'vp9.webm', 'tone.wav', 'clip.mp4', 'scene.mp4', 'scene.mov', 'tone.m4a', 'tone.mp3', 'tone24.wav', 'hevc.mp4', 'halves.mov']) await put('/work/' + f, fixture(f));
 
+  if (process.env.MEDIA_ONLY) { for (const c of process.env.MEDIA_ONLY.split(';;')) console.log(c, await Promise.race([sh(c), new Promise((r) => setTimeout(() => r('TIMEOUT'), 15000))])); console.log(errors); process.exit(0); }
   // Argument errors and missing files are answered before the runtime loads.
   let r = await sh('ffprobe nope.webm');
   assert.equal(r.code, 1); assert.match(r.err, /\/work\/nope\.webm: No such file or directory/);
@@ -153,16 +162,103 @@ try {
   assert.equal(r.code, 0, r.err); assert.match(r.out, /vp9,32/);
   r = await sh('ffmpeg -i tone.wav tone.flac && ffmpeg -i tone.wav -c:a libopus tone.opus');
   assert.equal(r.code, 0, r.err);
-  // The gaps: no resampling (Opus to WAV), no MP4/H.264. FFmpeg's error, then Pouch's hint.
+  // Opus to WAV needs resampling the CLI build lacks: retried on the conversion path, written.
   r = await sh('ffmpeg -i colors.webm -vn audio.wav');
-  assert.equal(r.code, 1); assert.match(r.err, /nothing was written to \/work\/audio\.wav/); assert.match(r.err, /hint: this build reads and writes/);
-  r = await sh('ffprobe -v error -show_format clip.mp4');
-  assert.equal(r.code, 1); assert.match(r.err, /\/work\/clip\.mp4: Invalid data found/); assert.match(r.err, /not MP4\/MOV\/M4A, H\.264, AAC or MP3/);
-  r = await sh('ffmpeg -i clip.mp4 x.png');
-  assert.equal(r.code, 1); assert.match(r.err, /clip\.mp4/);
+  assert.equal(r.code, 0, r.err); assert.match(r.out, /wrote \/work\/audio\.wav \([\d,]+ bytes, 48000 Hz, (mono|stereo)\)/);
   r = await sh('ffmpeg -decoders');
   assert.equal(r.code, 0, r.err); assert.match(r.out, /libvpx-vp9/); assert.doesNotMatch(r.out, /\bh264\b/);
-  ok('audio copy to Opus, trim, VP9 transcode, WAV to FLAC/Opus; the gaps say so');
+  ok('audio copy to Opus, trim, VP9 transcode, WAV to FLAC/Opus, Opus to WAV');
+
+  // The WebCodecs path: MOV/MP4/M4A/MP3, decoded by the browser.
+  const caps = await page.evaluate(async () => ({ hevc: (await VideoDecoder.isConfigSupported({ codec: 'hvc1.1.6.L30.90', codedWidth: 64, codedHeight: 48 })).supported }));
+  r = await sh('ffprobe -v error -show_format -show_streams -of json scene.mov');
+  assert.equal(r.code, 0, r.err);
+  let pj = JSON.parse(r.out);
+  assert.equal(pj.format.filename, '/work/scene.mov'); assert.equal(pj.format.format_name, 'mov,mp4,m4a,3gp,3g2,mj2');
+  assert.ok(Math.abs(Number(pj.format.duration) - 2) < 0.1, pj.format.duration);
+  assert.deepEqual(pj.streams.map((s) => [s.codec_type, s.codec_name]), [['video', 'h264'], ['audio', 'aac']]);
+  assert.equal(pj.streams[0].width, 64); assert.equal(pj.streams[0].height, 48); assert.equal(pj.streams[0].avg_frame_rate, '10/1');
+  assert.equal(pj.streams[0].side_data_list[0].rotation, 90); assert.equal(pj.streams[1].sample_rate, '44100'); assert.equal(pj.streams[1].channels, 1);
+  assert.equal(r.err, '');
+  r = await sh('ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 scene.mp4');
+  assert.equal(r.code, 0, r.err); assert.match(r.out, /^2\.0\d+\n$/);
+  r = await sh('ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height -of csv=p=0 scene.mp4');
+  assert.equal(r.out, 'h264,64,48\n');
+  r = await sh('ffprobe clip.mp4');
+  assert.equal(r.code, 0, r.err); assert.match(r.err, /Input #0, mov,mp4.*from '\/work\/clip\.mp4'/); assert.match(r.err, /Stream #0:0: Video: h264 \(High\), 64x48/);
+  r = await sh('ffprobe -v error -show_format -show_streams -of json tone.mp3');
+  assert.equal(r.code, 0, r.err); pj = JSON.parse(r.out);
+  assert.equal(pj.streams[0].codec_name, 'mp3'); assert.equal(pj.streams[0].sample_rate, '44100'); assert.ok(Math.abs(Number(pj.format.duration) - 0.5) < 0.1);
+  r = await sh('ffprobe -v error -show_streams -of json hevc.mp4');
+  assert.equal(r.code, 0, r.err); assert.equal(JSON.parse(r.out).streams[0].codec_name, 'hevc');
+  if (!caps.hevc) assert.match(r.err, /note: stream 0 \(hevc\): this browser's VideoDecoder cannot decode hvc1\./);
+  ok('ffprobe on MOV, MP4 and MP3: JSON, -show_entries, csv, the summary, rotation, an HEVC note where it cannot decode');
+
+  r = await sh('ffmpeg -i scene.mp4 -vf fps=1,scale=32:-1 sc/f-%03d.png');
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.out, /^wrote \/work\/sc\/f-001\.png \(t=0s, 32x24\)\nwrote \/work\/sc\/f-002\.png \(t=1s, 32x24\)\n$/);
+  near((await px('/work/sc/f-001.png', 16, 12)).rgba, [255, 0, 0], 'H.264 frame 1 red'); near((await px('/work/sc/f-002.png', 16, 12)).rgba, [0, 0, 255], 'H.264 frame 2 blue');
+  r = await sh('ffmpeg -ss 1.5 -i scene.mp4 -frames:v 1 sc/at15.png');
+  assert.equal(r.code, 0, r.err); assert.match(r.out, /\(t=1\.5s, 64x48\)/); near((await px('/work/sc/at15.png')).rgba, [0, 0, 255], '-ss 1.5 blue');
+  r = await sh('ffmpeg -ss 0.5 -i scene.mov -frames:v 1 -q:v 3 sc/mov.jpg');
+  assert.equal(r.code, 0, r.err); p = await px('/work/sc/mov.jpg', 24, 32);
+  assert.deepEqual([p.w, p.h], [48, 64], 'the display rotation is applied'); near(p.rgba, [255, 0, 0], 'MOV frame red');
+  r = await sh('ffmpeg -i halves.mov -frames:v 1 sc/halves.png');
+  assert.equal(r.code, 0, r.err); p = await px('/work/sc/halves.png', 4, 32);
+  assert.deepEqual([p.w, p.h], [48, 64]); near(p.rgba, [0, 0, 255], 'rotation -90 turns clockwise: blue on the left'); near((await px('/work/sc/halves.png', 40, 32)).rgba, [255, 0, 0], 'red on the right');
+  r = await sh('ffmpeg -i scene.mov -vf fps=1/10,crop=iw/2:ih/2 sc/one-%02d.png');
+  assert.equal(r.code, 0, r.err); assert.match(r.out, /one-01\.png \(t=0s, 24x32\)\n$/, 'shorter than one slot: one frame');
+  r = await sh('ffmpeg -i scene.mp4 -vf hflip sc/x.png');
+  assert.equal(r.code, 1); assert.match(r.err, /the video filters are fps, scale, crop and null/);
+  r = await sh('ffmpeg -i tone.mp3 sc/x.png');
+  assert.equal(r.code, 1); assert.match(r.err, /has no video stream/);
+  r = await sh('ffmpeg -i hevc.mp4 -frames:v 1 sc/hevc.png');
+  if (caps.hevc) { assert.equal(r.code, 0, r.err); near((await px('/work/sc/hevc.png')).rgba, [0, 128, 0], 'HEVC green'); }
+  else { assert.equal(r.code, 1); assert.match(r.err, /cannot decode hvc1.*HEVC decodes in Chrome and Edge with hardware support, and in Safari/); }
+  ok(`frames from H.264 MP4 and MOV (rotated): fps, scale, crop, -ss, JPEG; filter and codec errors; HEVC ${caps.hevc ? 'decoded' : 'refused clearly'}`);
+
+  const probe1 = async (f) => (await sh(`ffprobe -v error -show_entries stream=codec_name,sample_rate,channels -of csv=p=0 ${f}`)).out.trim();
+  r = await sh('ffmpeg -i scene.mov -vn au/scene.wav');
+  assert.equal(r.code, 0, r.err); assert.match(r.out, /wrote \/work\/au\/scene\.wav \([\d,]+ bytes, 44100 Hz, mono\)/);
+  assert.equal(await probe1('au/scene.wav'), 'pcm_s16le,44100,1');
+  r = await sh('ffmpeg -ss 0.5 -t 1 -i scene.mp4 -vn -ar 16000 au/cut.flac');
+  assert.equal(r.code, 0, r.err); assert.equal(await probe1('au/cut.flac'), 'flac,16000,1');
+  r = await sh('ffprobe -v error -show_entries format=duration -of csv=p=0 au/cut.flac');
+  assert.ok(Math.abs(Number(r.out) - 1) < 0.05, `trimmed to 1 s: ${r.out}`);
+  r = await sh('ffmpeg -i tone.m4a -b:a 24k au/tone.opus');
+  assert.equal(r.code, 0, r.err); assert.equal(await probe1('au/tone.opus'), 'opus,48000,1');
+  r = await sh('ffmpeg -i tone.mp3 -ac 2 au/mp3.wav');
+  assert.equal(r.code, 0, r.err); assert.equal(await probe1('au/mp3.wav'), 'pcm_s16le,44100,2');
+  r = await sh('ffmpeg -i scene.mp4 au/video.mp4');
+  assert.equal(r.code, 1); assert.match(r.err, /writing \.mp4 from MOV\/MP4 is not available here.*re-export the video on your own computer/);
+  r = await sh('ffmpeg -i scene.mp4 au/v.webm');
+  assert.equal(r.code, 1); assert.match(r.err, /For audio only, add -vn/);
+  r = await sh('ffmpeg -i tone.m4a -c:a copy au/copy.m4a');
+  assert.equal(r.code, 1); assert.match(r.err, /not available here/);
+  ok('audio from MOV, MP4, M4A and MP3 to WAV, FLAC and Opus: -ss/-t, -ar, -ac, -b:a; video out says what instead');
+
+  // Conversions the CLI build cannot do (no aresample) go to the conversion path.
+  r = await sh('ffmpeg -i tone24.wav -c:a pcm_s16le au/t16.wav');
+  assert.equal(r.code, 0, r.err); assert.equal(await probe1('au/t16.wav'), 'pcm_s16le,16000,2');
+  r = await sh('ffmpeg -i tone24.wav -ar 8000 -ac 1 au/t8.wav');
+  assert.equal(r.code, 0, r.err); assert.equal(await probe1('au/t8.wav'), 'pcm_s16le,8000,1');
+  r = await sh('ffmpeg -i tone24.wav au/t24.flac');
+  assert.equal(r.code, 0, r.err);
+  r = await sh('ffprobe -v error -show_entries stream=sample_fmt,bits_per_raw_sample -of csv=p=0 au/t24.flac');
+  assert.match(r.out, /^s32,24\n$/, 'FLAC keeps 24 bits');
+  r = await sh('ffmpeg -ss 9999 -i tone.m4a au/past.flac');
+  assert.equal(r.code, 1); assert.match(r.err, /no audio at or after/, 'FLAC past the end is an error, not an empty file');
+  r = await sh('ffmpeg -i au/t24.flac -ar 8000 au/t24-8k.flac');
+  assert.equal(r.code, 0, r.err);
+  r = await sh('ffprobe -v error -show_entries stream=sample_fmt,sample_rate -of csv=p=0 au/t24-8k.flac');
+  assert.match(r.out, /^s32,8000\n$/, 'a 24-bit FLAC source stays deep through a conversion');
+  r = await sh('ffmpeg -i tone24.wav -af loudnorm au/ln.wav');
+  assert.equal(r.code, 0, r.err); assert.equal(await probe1('au/ln.wav'), 'pcm_s16le,16000,2');
+  r = await sh('ffmpeg -i tone.m4a -af dynaudnorm,volume=0.5 -c:a pcm_s24le au/dn.wav');
+  assert.equal(r.code, 0, r.err); assert.equal(await probe1('au/dn.wav'), 'pcm_s24le,44100,1');
+  r = await sh('ffmpeg -i tone.m4a -af chorus au/bad.wav');
+  assert.equal(r.code, 1); assert.match(r.err, /audio filters here: acompressor, .*loudnorm, pan, volume/);
+  ok('24-bit WAV to 16-bit, sample rate and channel conversion, 24-bit FLAC, loudnorm and dynaudnorm; an unknown filter lists the real ones');
 
   // AG6: Stop through the task's ctl (tasks.kill is what `echo stop > /task/N/ctl` calls), mid-ffmpeg.
   const job = await page.evaluate(async () => {
@@ -190,7 +286,8 @@ try {
   assert.ok(own.length && own.every((u) => u.startsWith(origin + '/runtime/libav/')), `only runtime parts: ${own.join(', ')}`);
   assert.ok(!own.some((u) => u.includes('libav-source')), 'the source is never fetched by the page');
   assert.deepEqual(await page.evaluate(() => window.violations), [], 'no CSP violations');
-  assert.deepEqual(errors.filter((e) => !/Warning/i.test(e)), [], 'no page errors');
+  // Installed Chrome (MEDIA_CHANNEL) also asks for /favicon.ico, outside page.on('request').
+  assert.deepEqual(errors.filter((e) => !/Warning/i.test(e) && !(process.env.MEDIA_CHANNEL && /^Failed to load resource: .*404/.test(e))), [], 'no page errors');
   ok(`network: ${own.length} same-origin runtime fetches, nothing else, no CSP violation`);
 
   // After one use the runtime is kept in this browser; a reload reads it with /runtime unreachable.

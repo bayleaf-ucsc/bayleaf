@@ -24,13 +24,23 @@ import { execFileSync } from 'node:child_process';
 import { bundleWorker, writeRuntime } from './build-runtime.mjs';
 
 const PKG = 'node_modules/@libav.js/variant-webm-vp9-cli/';
+// The WebCodecs path's build (src/media/worker.js header): webcodecs-avf is API
+// only (no ffmpeg or ffprobe programs) with the MOV demuxer, swresample, the
+// audio and video filters, and the FLAC and Opus encoders; it decodes no H.264,
+// HEVC, AAC or MP3 itself (the browser does). Same FFmpeg 9.0, opus 1.6.1,
+// libav.js and emfiberthreads sources as webm-vp9-cli, so SOURCES covers both.
+const AVF = 'node_modules/@libav.js/variant-webcodecs-avf/';
 // The pin: package.json says 6.10.9 exactly; the lockfile carries npm's
 // integrity; these catch a tree that differs anyway (and equal the release zip's dist/).
 export const LIBAV = { version: '6.10.9', release: '6.10.9.0', variant: 'webm-vp9-cli', sha256: {
   'dist/libav-6.10.9.0-webm-vp9-cli.mjs': 'f6e25016b3a2ce688fe83ebf11e2c53e5129905331b32bfcf3c0a16ca6b3febb',
   'dist/libav-6.10.9.0-webm-vp9-cli.wasm.mjs': 'ef22fe85ed64a3a8d8417c51914d405a5b2d023bc6b0737c72ae032b8e815bd6',
   'dist/libav-6.10.9.0-webm-vp9-cli.wasm.wasm': '96c3e65dca8ea56fd5de99ebf3c380d1b4fe446e4c5c78f1f269569e1574951c',
-} };
+}, avf: { variant: 'webcodecs-avf', sha256: {
+  'dist/libav-6.10.9.0-webcodecs-avf.mjs': '93e172fc9ead23f0dfce6cfa361e1e07466887c7e1af0680d3b3a6d1a5e536f0',
+  'dist/libav-6.10.9.0-webcodecs-avf.wasm.mjs': '9a377e18d19ba5041eed38728237e0479c788cd67ebef25c992a0e5038df0291',
+  'dist/libav-6.10.9.0-webcodecs-avf.wasm.wasm': 'ff9a841032499ce87c0f019f602a2f5f30a4f9dcb74c7de4c087024d4706b730',
+} } };
 
 // What webm-vp9-cli is built from (its deps.mk: ffmpeg, libvpx, libopus;
 // emfiberthreads is linked by every libav.js build). [file, url, sha256, licenses in it]
@@ -67,13 +77,14 @@ const CACHE = 'node_modules/.cache/pouch-libav-source/';
 // Emscripten's Node branches import node:module and require node:fs, path, url
 // and crypto, which a browser bundle cannot resolve; they never run in a
 // worker (ENVIRONMENT_IS_NODE is false), so they become a throw and (void 0).
-const REWRITES = { 'dist/libav-6.10.9.0-webm-vp9-cli.wasm.mjs': [
+const NODE_AND_BOOTSTRAP = [
   [/const\{createRequire\}=await import\("node:module"\);var require=createRequire\(import\.meta\.url\)/g, 'throw new Error("libav.js: Node is not supported here")', 1],
   [/require\("node:(crypto|fs|path|url)"\)/g, '(void 0)', 4],
   // libav.js's own worker bootstrap: in a worker whose URL is the module's
   // (our blob), it would replace src/media/worker.js's onmessage with its protocol.
   [/self\.location\.href === import\.meta\.url &&/g, 'false &&', 1],
-] };
+];
+const REWRITES = { 'dist/libav-6.10.9.0-webm-vp9-cli.wasm.mjs': NODE_AND_BOOTSTRAP, 'dist/libav-6.10.9.0-webcodecs-avf.wasm.mjs': NODE_AND_BOOTSTRAP };
 
 const sha = (b) => createHash('sha256').update(b).digest('hex');
 
@@ -96,6 +107,9 @@ export async function buildLibav(out) {
   const v = JSON.parse(readFileSync(PKG + 'package.json', 'utf8')).version;
   if (v !== LIBAV.version) throw new Error(`@libav.js/variant-${LIBAV.variant} ${v} in node_modules; build-libav.mjs pins ${LIBAV.version}`);
   for (const [f, h] of Object.entries(LIBAV.sha256)) if (sha(readFileSync(PKG + f)) !== h) throw new Error(`${PKG}${f} differs from its pinned SHA-256`);
+  const va = JSON.parse(readFileSync(AVF + 'package.json', 'utf8')).version;
+  if (va !== LIBAV.version) throw new Error(`@libav.js/variant-${LIBAV.avf.variant} ${va} in node_modules; build-libav.mjs pins ${LIBAV.version}`);
+  for (const [f, h] of Object.entries(LIBAV.avf.sha256)) if (sha(readFileSync(AVF + f)) !== h) throw new Error(`${AVF}${f} differs from its pinned SHA-256`);
   const all = [...SOURCES, ...UNLINKED];
   const sources = await Promise.all(all.map(source));
   const src = writeRuntime(out, 'libav-source', all.map(([name], i) => ({ name, role: 'source', bytes: sources[i] })));
@@ -112,12 +126,18 @@ BSD-style. Pouch ships libav.wasm unmodified (SHA-256 ${LIBAV.sha256[`dist/libav
 and in worker.js its wrapper, unmodified, and its Emscripten factory, modified
 only to disable code paths: the factory's Node.js imports become a throw or
 (void 0), and libav.js's own worker bootstrap is turned off (REWRITES in
-Pouch's build-libav.mjs: three rules, six replacements).
+Pouch's build-libav.mjs: three rules, six replacements per factory). MOV, MP4
+and MP3 files go through a second build of the same sources, variant
+${LIBAV.avf.variant} (libavformat, libavcodec, libavfilter, libswresample,
+libswscale, libopus; no ffmpeg or ffprobe programs): libav-avf.wasm,
+unmodified (SHA-256 ${LIBAV.avf.sha256[`dist/libav-${LIBAV.release}-${LIBAV.avf.variant}.wasm.wasm`]}),
+its wrapper and factory also in worker.js, the factory under the same rules.
+H.264, HEVC, AAC and MP3 are decoded by the browser's WebCodecs, not by these builds.
 
 Corresponding source, from this same site: runtime/libav-source/${src.pin.manifest}
 lists each tarball below with its SHA-256 and the part file(s) that hold it, in
 order (concatenate them). To rebuild: unpack libav.js, put the other tarballs in
-its sources/ folder, and run \`make build-${LIBAV.variant}\` with Emscripten (see its README).
+its sources/ folder, and run \`make build-${LIBAV.variant} build-${LIBAV.avf.variant}\` with Emscripten (see its README).
 ${SOURCES.map(([f, url, h]) => `  ${f}  sha256 ${h}\n    (also at ${url})`).join('\n')}
 
 Included for completeness, not linked into this variant (the rest of the
@@ -130,6 +150,7 @@ ${licenses.join('\n')}`);
   const runtime = writeRuntime(out, 'libav', [
     { name: 'worker.js', role: 'worker', bytes: worker },
     { name: 'libav.wasm', role: 'wasm', bytes: readFileSync(PKG + `dist/libav-${LIBAV.release}-${LIBAV.variant}.wasm.wasm`) },
+    { name: 'libav-avf.wasm', role: 'wasm', bytes: readFileSync(AVF + `dist/libav-${LIBAV.release}-${LIBAV.avf.variant}.wasm.wasm`) },
     { name: 'NOTICE.txt', role: 'license', bytes: notice },
   ]);
   return { sums: [...runtime.sums, ...src.sums], pin: runtime.pin, source: src.pin };

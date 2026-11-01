@@ -6,6 +6,8 @@
 // removed, so it is not sent), then a Sealed model marked images is asked what
 // happens in the video. It must run ffprobe/ffmpeg (the real libav runtime,
 // built into a scratch dir) and look at the frames. Prints an outline only.
+// FORMAT=mov: the same scenes as an H.264/AAC QuickTime .mov (ftyp qt), the
+// phone-video case on the WebCodecs path.
 // Needs the look tool (PR #128, branch pouch-look): run it on a merge of both.
 //   set -a; source ~/.tokens/bayleaf-api; set +a; node test/media-sealed.mjs
 import assert from 'node:assert/strict';
@@ -79,9 +81,12 @@ try {
       return c.toDataURL('image/png').split(',')[1];
     }));
     frames.forEach((b, i) => writeFileSync(join(scratch, `s${i}.png`), Buffer.from(b, 'base64')));
+    const mov = process.env.FORMAT === 'mov', name = mov ? 'scenes.mov' : 'scenes.webm';
     execFileSync('ffmpeg', ['-v', 'error', '-y', '-loop', '1', '-t', '2', '-r', '10', '-i', join(scratch, 's0.png'), '-loop', '1', '-t', '2', '-r', '10', '-i', join(scratch, 's1.png'),
-      '-filter_complex', '[0][1]concat=n=2:v=1:a=0,format=yuv420p[v]', '-map', '[v]', '-c:v', 'libvpx-vp9', '-b:v', '300k', join(scratch, 'scenes.webm')]);
-    await page.locator('#attachment-picker').setInputFiles({ name: 'scenes.webm', mimeType: 'video/webm', buffer: readFileSync(join(scratch, 'scenes.webm')) });
+      ...(mov ? ['-f', 'lavfi', '-i', 'sine=f=440:d=4'] : []),
+      '-filter_complex', '[0][1]concat=n=2:v=1:a=0,format=yuv420p[v]', '-map', '[v]',
+      ...(mov ? ['-map', '2:a', '-c:v', 'libx264', '-c:a', 'aac', '-f', 'mov'] : ['-c:v', 'libvpx-vp9', '-b:v', '300k']), join(scratch, name)]);
+    await page.locator('#attachment-picker').setInputFiles({ name, mimeType: mov ? 'video/quicktime' : 'video/webm', buffer: readFileSync(join(scratch, name)) });
     const chip = page.locator('.attachment').first();
     await chip.waitFor({ timeout: 10000 });
     const file = await chip.getAttribute('title');

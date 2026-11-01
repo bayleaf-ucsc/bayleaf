@@ -197,43 +197,64 @@ one with \`echo stop > /task/<id>/ctl\`.
 `,
   '/skills/media/SKILL.md': `---
 name: media
-description: Inspect audio and video files, pull out still frames to look at, extract audio, trim and convert, with ffprobe and ffmpeg in the bash tool. Read before working with any audio or video file.
+description: Inspect audio and video files (phone MOV/MP4 videos, voice memos, WebM, MP3), pull out still frames to look at, extract audio, trim and convert, with ffprobe and ffmpeg in the bash tool. Read before working with any audio or video file.
 ---
 
 # Audio and video in Pouch
 
 FFmpeg 9 (libav.js) runs inside this browser: \`ffprobe\` and \`ffmpeg\` with
 their usual flags, over copies of the files. Nothing leaves the pouch. The
-first command downloads the media runtime (about 4 MiB, from Pouch's own
+first command downloads the media runtime (about 8 MiB, from Pouch's own
 site) and keeps it for offline use. Each command is a /task job; stop a long
 one with \`echo stop > /task/<id>/ctl\`.
 
-What this build handles: WebM/Matroska, Ogg, WAV and FLAC files; VP8 and VP9
-video; Opus, FLAC and PCM audio. Not MP4/MOV/M4A, H.264, AAC or MP3 (phone
-videos and voice memos are often these): ffprobe says "Invalid data found",
-and Pouch adds a hint. Tell the user plainly; do not guess at the content.
+## What works
+
+- WebM/Matroska, Ogg, WAV, FLAC: VP8/VP9 video, Opus/FLAC/PCM audio. Probe,
+  frames, audio, trims (\`-c copy\`) and VP8/VP9 re-encoding.
+- MOV, MP4, M4A, MP3 (phone videos, voice memos): the browser decodes H.264,
+  AAC and MP3; HEVC (H.265, newer iPhones) only where this browser can
+  (ffprobe adds a "note:" line when it cannot). Probe, frames to images
+  (\`-vf\` takes fps, scale, crop; the phone's rotation is applied), and audio
+  to WAV, FLAC or Opus. Not available: writing MP4/MOV/M4A/MP3/AAC, or any
+  video out of a MOV/MP4 (re-encoding, \`-c copy\` cuts).
+- Audio conversions (\`-ar\`, \`-ac\`, \`-sample_fmt\`, \`-c:a pcm_s16le\`,
+  \`-c:a pcm_s24le\`) and audio filters with \`-af\` (acompressor, adeclick,
+  adeclip, aecho, afade, agate, alimiter, amix, apad, aresample, atempo,
+  atrim, bandpass, bandreject, dynaudnorm, equalizer, loudnorm, pan, volume)
+  work for WAV, FLAC and Opus outputs. Other filters are refused with this
+  list. Image files (PNG, JPEG) are not inputs here.
+
+When something is not available, say so plainly and offer what is. Never
+suggest uploading the person's media to a website, online converter or other
+third-party service: their files may be private. Suggest a local re-export
+instead: QuickTime Player's File > Export As (choose "Greater Compatibility"
+for H.264 instead of HEVC), Chrome's or the system screen recorder (WebM),
+the phone's own export settings ("Most Compatible" on iPhone), or ffmpeg
+installed on their own computer. Do not guess at content you could not decode.
 
 ## Recipe
 
 1. Probe first, always: \`ffprobe -v error -show_format -show_streams -of json
-   clip.webm\`. Note the duration, the streams, the size. Plan from it.
+   clip.mov\`. Note the duration, the streams, any rotation, and any "note:"
+   line on stderr. Plan from it.
 2. To see what happens in a video, sample frames on a budget: at most 8
    frames per look. Pick the rate from the duration D seconds: \`fps=8/D\`
    (for a 120 s clip, \`fps=1/15\`), and scale down:
-   \`ffmpeg -i clip.webm -vf fps=1/15,scale=640:-1 frames/f-%03d.png\`.
+   \`ffmpeg -i clip.mov -vf fps=1/15,scale=640:-1 frames/f-%03d.png\`.
    Each "wrote" line gives the frame's time in the source (t=30s); keep it
    with the frame so answers can say when things happen.
-   A single moment: \`ffmpeg -ss 75 -i clip.webm -frames:v 1 at75.png\`.
+   A single moment: \`ffmpeg -ss 75 -i clip.mov -frames:v 1 at75.png\`.
 3. If a look tool is available, look at the frames (a few at a time) and
    describe them in time order, citing times. If none is, or the model
    cannot see images, say you can list frames but not see them.
    Zoom in on an interval with -ss and -t rather than a higher overall rate.
-4. Audio out: \`ffmpeg -i talk.webm -vn -c:a copy talk.opus\` (copy keeps the
-   Opus as it is; small and fast). WAV can become FLAC or Opus
-   (\`ffmpeg -i a.wav a.flac\`).
-5. Trim: \`ffmpeg -ss 30 -t 20 -i in.webm -c copy cut.webm\` (copy cuts at
-   keyframes; re-encode with \`-c:v libvpx-vp9 -b:v 1M\` for exact cuts).
-   Shrink: \`ffmpeg -i in.webm -vf scale=640:-1 -c:v libvpx-vp9 -b:v 500k -c:a copy small.webm\`.
+4. Audio out: \`ffmpeg -i talk.mov -vn talk.wav\` (or .flac, .opus; add
+   \`-ar 16000 -ac 1\` for speech tools). From WebM, \`-c:a copy talk.opus\`
+   keeps the Opus as it is (small and fast).
+5. Trim WebM: \`ffmpeg -ss 30 -t 20 -i in.webm -c copy cut.webm\` (copy cuts
+   at keyframes; re-encode with \`-c:v libvpx-vp9 -b:v 1M\` for exact cuts).
+   Trim audio from anything: \`ffmpeg -ss 30 -t 20 -i in.mov -vn cut.wav\`.
 6. For a report, embed a frame as a data URL (\`base64 -w0 frames/f-002.png\`).
 
 ## Caps and pitfalls
@@ -241,13 +262,12 @@ and Pouch adds a hint. Tell the user plainly; do not guess at the content.
 - Inputs at most 256 MiB per call and 3 hours each; outputs at most 256 MiB;
   at most 100 images per call, 3840x2160 pixels each. Over a cap is refused
   with the cap's name.
-- No resampling here: Opus cannot become WAV or FLAC (nothing is written,
-  and ffmpeg says so). Keep Opus, or ask the user for a WAV.
-- Video encoding is slow in a browser (single thread): minutes per minute
-  of HD VP9. Scale down first, run it as a job, tell the user.
-- Images take -ss, -t, -to, -vf (fps, scale, crop), -r, -frames:v, -q:v;
-  other options are refused there. Use -y to overwrite.
-- \`ffmpeg -decoders\`, \`-encoders\`, \`-filters\` list what is built in.
+- Video encoding (WebM only) is slow in a browser (single thread): minutes
+  per minute of HD VP9. Scale down first, run it as a job, tell the user.
+- Images take -ss, -t, -to, -vf, -r, -frames:v, -q:v; other options are
+  refused there. Use -y to overwrite.
+- \`ffmpeg -decoders\`, \`-encoders\`, \`-filters\` list the WebM build; H.264,
+  AAC and MP3 do not appear there because the browser decodes them.
 `,
   '/skills/skill-authoring/SKILL.md': `---
 name: skill-authoring

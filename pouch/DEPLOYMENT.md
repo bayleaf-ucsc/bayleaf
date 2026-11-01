@@ -106,19 +106,26 @@ fetched the pdf runtime; no PDF content leaves the page.
 ## libav.js runtime (built and tested locally, not deployed; 2026-11-01)
 
 Pouch's second heavy-tool runtime: `build-libav.mjs` builds `runtime/libav/` from
-`@libav.js/variant-webm-vp9-cli` 6.10.9 (exact pin in `package.json`; npm integrity in the
-lockfile; the build also checks the SHA-256 of the wrapper, factory and wasm, which equal
-the libav.js 6.10.9.0 release zip's `dist/`). The page embeds its manifest's SHA-256
+`@libav.js/variant-webm-vp9-cli` and `@libav.js/variant-webcodecs-avf` 6.10.9 (exact pins in
+`package.json`; npm integrity in the lockfile; the build also checks the SHA-256 of each
+wrapper, factory and wasm; the webm-vp9-cli ones equal the libav.js 6.10.9.0 release zip's
+`dist/`, the webcodecs-avf ones are npm's, not yet compared with the zip). The page embeds its manifest's SHA-256
 (define `POUCH_LIBAV_RUNTIME`) and fetches it only when `ffprobe` or `ffmpeg` first runs.
 
 | File | Count | Size |
 |---|---:|---|
 | `runtime/libav/manifest.<sha16>.json` | 1 | ~1 KB |
-| `worker.js` part: src/media/worker.js with libav.js's wrapper and Emscripten factory | 1 | 214 KB |
+| `worker.js` part: src/media/worker.js (and src/media/wc.js) with both variants' wrappers and Emscripten factories | 1 | 450 KB |
 | `libav.wasm` part: the released `libav-6.10.9.0-webm-vp9-cli.wasm.wasm`, unmodified | 1 | 3.9 MiB |
-| `NOTICE.txt` part: what is shipped, where the source is, and the LGPL-2.1, FFmpeg, libav.js, libvpx (license and patent grant), Opus and emfiberthreads licenses, verbatim | 1 | 38 KB |
+| `libav-avf.wasm` part: the released `libav-6.10.9.0-webcodecs-avf.wasm.wasm`, unmodified (the WebCodecs path: MOV demuxer, swresample, audio filters, FLAC and Opus encoders) | 1 | 3.4 MiB |
+| `NOTICE.txt` part: what is shipped, where the source is, and the LGPL-2.1, FFmpeg, libav.js, libvpx (license and patent grant), Opus and emfiberthreads licenses, verbatim | 1 | 39 KB |
 
-Total 4.2 MiB in 4 files. Why `webm-vp9-cli` and not `default-cli` (2.2 MiB wasm):
+Total 7.8 MiB in 5 files (largest 3.9 MiB, under the 25 MiB per-file limit). Both wasm
+files are fetched together on the first media command. `webcodecs-avf` is built from the
+same FFmpeg 9.0, opus 1.6.1, libav.js and emfiberthreads tarballs already in
+`runtime/libav-source/` (it has no libvpx), so the corresponding source did not grow.
+H.264, HEVC, AAC and MP3 are decoded by the browser's WebCodecs, so Pouch ships no
+decoder for them. Why `webm-vp9-cli` and not `default-cli` (2.2 MiB wasm):
 `default-cli` has no video decoder at all, so it cannot extract a frame; `webm-vp9-cli`
 adds VP8, VP9, swscale and the video filters for 1.8 MiB more. Not threaded (no
 SharedArrayBuffer, so no COOP/COEP). CSP delta: none; the worker is a `blob:` module
