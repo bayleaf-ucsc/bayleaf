@@ -212,7 +212,7 @@ await t('friendlyError: the runtime storage-buffer error reads like the up-front
   assert.equal(friendlyError(raw), "This browser's WebGPU allows 9 storage buffers per shader; LFM3 needs 10. Use Chrome or Edge, or a BayLeaf Sealed model.");
   assert.equal(friendlyError('other failure'), 'other failure');
 });
-await t('models get refuses up front when the browser cannot run the model: no sheet, nothing fetched', async () => {
+await t('models get refuses up front when the browser cannot run the model: no sheet, nothing fetched; a cached copy is not reported as ready', async () => {
   const { m, served } = fakeModel(), log = [];
   const store = createModelStore([m], { gateway: 'https://gw/hf', fetchImpl: gateway(served, { log }), chunk: C });
   let asks = 0;
@@ -222,6 +222,10 @@ await t('models get refuses up front when the browser cannot run the model: no s
   assert.equal(r.exitCode, 1);
   assert.match(r.stderr, /Tiny cannot run in this browser, so it was not downloaded \(nothing was fetched\)\. This browser's WebGPU allows 9 storage buffers per shader; LFM3 needs 10/);
   assert.equal(asks, 0); assert.equal(log.length, 0);
+  await store.download(m.id);
+  const cached = await sh(svc, ['get', 'tiny-q4']);
+  assert.equal(cached.exitCode, 1);
+  assert.match(cached.stderr, /Tiny is downloaded, but cannot run in this browser\. This browser's WebGPU allows 9/);
 });
 
 // ── The engine job service ──

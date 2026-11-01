@@ -71,9 +71,10 @@ export function createModelService({ store, tasks, approve, onChange = () => {},
   async function get(name, who, { signal } = {}) {
     const m = resolve(name);
     const st = await store.status(m.id);
+    const can = await supports(m.id);
+    if (st.complete && !can.ok) throw Object.assign(new Error(`${m.label} is downloaded, but cannot run in this browser. ${can.reason}`), { code: 'ENOTSUP' });
     if (st.complete) return { already: true, status: st };
     if (downloads.get(m.id)?.status === 'running') return { task: downloads.get(m.id), promise: downloads.get(m.id).promise, joined: true };
-    const can = await supports(m.id);
     if (!can.ok) throw Object.assign(new Error(`${m.label} cannot run in this browser, so it was not downloaded (nothing was fetched). ${can.reason}`), { code: 'ENOTSUP' });
     let allowed = false;
     try { allowed = approve ? await approve(await request(m, 'get', who), who) === true : false; } catch { allowed = false; }
