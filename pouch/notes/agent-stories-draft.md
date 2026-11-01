@@ -81,7 +81,7 @@ changed before they run.)
   trust a summary instead of a diff. (D1, R4; matters more since R2/R3/R5 were dropped)
   Features: read, edit (single-match rule), write.
   Eval: reuse CORE + HELD_OUT from `tasks.mjs` (edit, feature, rename, config, jsonlist, yaml,
-  delete-line, replace-all). Grader: byte-exact end state. Budget 8 each. Det.
+  delete-line, replace-all). Grader: end state compared semantically (the reused `config` and `jsonlist` graders parse JSON first), so formatting-only differences pass. Budget 8 each. Det.
   Tiers: all; replace-all and yaml separate S from M. Coverage: `tasks.mjs`, LH12 on oMLX.
 
 - **AG14** As an agent, I want tool errors that tell me the next move, so that I recover in one
@@ -252,7 +252,7 @@ model for the whole set:
 
 | # | Story | Grader | Why it is core |
 |---|---|---|---|
-| 1 | AG13 exact edits (CORE+HELD_OUT) | det., byte-exact | continuity with every LFM3/oMLX number so far |
+| 1 | AG13 exact edits (CORE+HELD_OUT) | det., semantic end state | continuity with every LFM3/oMLX number so far |
 | 2 | AG14 error recovery | det., end state + no repeated failure | first place an error-string or prompt change shows |
 | 3 | AG10 orientation under a call cap | det. + regex | S vs M; cost discipline |
 | 4 | AG29 big file, small context | det. | separates the in-browser tier from oMLX |

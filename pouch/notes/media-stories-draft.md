@@ -73,15 +73,15 @@ Three layers, read top to bottom:
 | Capability | What it is | Exists? | Stories |
 |---|---|---|---|
 | C1 pdf.js runtime | lazy same-origin worker, ~5 MiB, scripting off | no (plumbing from batch H) | PD1-6, AG3-4 |
-| C2 libav.js runtime | `default-cli` variant, ~2.6 MiB, LGPL source shipped | no (plumbing from batch H) | AV1-6, AG1-2, AG6 |
+| C2 libav.js runtime | `default-cli` (audio only), ~2.6 MiB, LGPL source shipped; video stories (AV3-5, AG1) need a `webm-cli` or `webm-vp9-cli` build, MP3 input needs `obsolete`, AAC/M4A needs WebCodecs or `decodeAudioData` | no (plumbing from batch H) | AV1-2, AV6, AG2, AG6 with `default-cli`; AV3-5, AG1 with a video variant |
 | C3 shell commands | `pdftotext`, `pdftoppm`, `pdfinfo`, `ffmpeg`, `ffprobe` in just-bash over the VFS | no | all |
-| C4 image perception | a tool result that carries image blocks (see Q1) | **no**: images reach a model only as user attachments | AG1, AG4, AG7-8 |
+| C4 image perception | a tool result that carries image blocks (see Q1); needs `toTool` (src/agent.js) to pass image blocks through instead of text only, the transcript to show them, and the model input to carry them | **no**: images reach a model only as user attachments | AG1, AG4, AG7-8 |
 | C5 model ability | an image-capable model (Sealed models marked "images") | yes for some Sealed models; LFM3 no | AG1, AG4, AG8 |
 | C6 jobs and `/task` | progress, Stop through ctl, memory guard | yes (batch H, F) | AG6, AV3-4, AV6 |
 | C7 previews | PDF canvas preview, transcoded video preview, `open` routing | partial (G; `open` in progress) | PD3, AV4 |
 | C8 skills | `media` and `pdf` skills: recipes, frame budgets, scan detection, pitfalls | no | AG1-9 |
 | C9 offline copy | runtimes in the service worker's offline list | mechanism yes | PD5 |
-| C10 containment test | hostile-PDF and hostile-media cases in the exfil style | no | PD6 |
+| C10 containment test | hostile-PDF cases in the exfil style (hostile media waits for an AV story) | no | PD6 |
 
 The constellation for the user's example (AG1, AV5) is C2 + C3 (`ffmpeg -ss T -frames:v 1`)
 + C4 + C5 + C6 + C8, and optionally C9/HR for the contact sheet. C4 is the load-bearing gap: it is
@@ -89,10 +89,10 @@ shared by AG1, AG4 and AG8, and it does not depend on either runtime. A user can
 a PNG in `/work` that no agent can see unless the user attaches it.
 
 ## Proposed build order (to discuss)
-1. C4 image perception plus AG8's refusal on text-only models (small, unblocks both runtimes).
+1. C4 image perception plus AG8's refusal on text-only models (unblocks both runtimes; the `toTool` image-block bridge, transcript and model input are the bulk of it).
 2. C1 pdf.js with C3 `pdftotext`/`pdfinfo`/`pdftoppm` and the `pdf` skill (cheapest runtime).
 3. C2 libav.js with `ffprobe`/`ffmpeg`, `/task` integration and the `media` skill; AG1 end to end.
-4. C7 previews and C10 containment tests for both.
+4. C7 previews for both, and C10 containment tests for PDFs (media once an AV hostile-input story exists).
 
 ## Open questions
 - Q1 (decided 2026-11-01, Adam): a separate `look <paths>` tool, not image blocks from
