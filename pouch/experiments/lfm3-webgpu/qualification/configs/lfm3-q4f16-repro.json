@@ -1,0 +1,29 @@
+{
+ "id": "lfm3-q4f16-repro",
+ "comment": "Reproduces quant.json's q4f16 row (and agent-v2's v0/v8 rows on the first five tasks): 'original' = v0 text on the raw experiment tools, 'recipe' = v8 text on the v8 tools; 384 new tokens, 8 steps, 8192-token total cap as in run-quant.mjs.",
+ "model": {
+  "lockId": "lfm3-1.7b-q4f16"
+ },
+ "setups": {
+  "original": {
+   "recipe": "none",
+   "toolLayer": "v8-raw"
+  },
+  "recipe": {
+   "recipe": "v8",
+   "toolLayer": "v8"
+  }
+ },
+ "tasks": "core",
+ "heldOut": [],
+ "trials": {
+  "greedy": 1,
+  "sampled": 7,
+  "temperature": 0.3,
+  "top_p": 0.95
+ },
+ "stepCap": 8,
+ "maxNew": 384,
+ "budget": 7808,
+ "timeoutMs": 120000
+}

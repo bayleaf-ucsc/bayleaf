@@ -1,0 +1,25 @@
+{
+ "id": "lfm3-q4f16",
+ "comment": "Standard matrix for the model Pouch ships: baseline (generic prompt, no few-shot) vs the shipped transformersjs recipe, both on Pouch's tool layer; core plus held-out tasks. Limits come from the profile (TJS).",
+ "model": {
+  "lockId": "lfm3-1.7b-q4f16"
+ },
+ "setups": {
+  "baseline": {
+   "recipe": "none",
+   "toolLayer": "pouch"
+  },
+  "recipe": {
+   "recipe": "profiles",
+   "toolLayer": "pouch"
+  }
+ },
+ "tasks": "core",
+ "heldOut": "all",
+ "trials": {
+  "greedy": 1,
+  "sampled": 7,
+  "temperature": 0.3,
+  "top_p": 0.95
+ }
+}

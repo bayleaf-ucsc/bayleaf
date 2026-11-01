@@ -5,3 +5,9 @@ profile/
 # Raw multi-MB trial traces stay local; agent-v2.json is the committed summary.
 results/*-agent-a.json
 results/*-agent-b.json
+# Quantization experiment: weights live outside the repo; raw traces stay local.
+assets-quant
+results/quant-*-agent.json
+# qualify.mjs: per-trial traces and smoke runs stay local; results/<config>-<phase>.json is committed.
+results/traces/
+results/smoke-*.json

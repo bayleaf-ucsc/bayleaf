@@ -99,8 +99,8 @@ not use of the native llama.cpp Metal backend.
 ## Capability boundary (agent v2, October 29, 2026)
 
 Evidence: `qualification/results/agent-v2.json` (summary table, perf) with full traces in
-`agent-v2-agent-{a,b}.json` and `agent-v2-perf.json`. Harness: `qualification/run2.mjs`,
-headless Chrome 156 in a fresh `/tmp` profile, Apple `metal-3`, loopback only (zero external
+`agent-v2-agent-{a,b}.json` and `agent-v2-perf.json`. Harness: `qualification/run2.mjs`
+(now replaced by `qualify.mjs`; see "Qualification harness" below), headless Chrome 156 in a fresh `/tmp` profile, Apple `metal-3`, loopback only (zero external
 requests). Five synthetic tasks, byte-exact grading (config is graded by executing `show(10)`).
 
 **Root causes of the v1 `feature` failure.** It was not a step-budget loop: both trials
@@ -160,3 +160,165 @@ and store them in OPFS. Either way, `script-src 'self' 'wasm-unsafe-eval'` must 
 `.mjs/.wasm` with Pouch, since the runtime cannot come from a CDN. (3) Note: the tool layer
 in this experiment duplicates Pouch's tools. Adopt newline normalization and informative
 empty errors in Pouch's own `edit`/`write`/`bash`, not in the provider.
+
+## Quantization (October 31, 2026)
+
+Evidence: `qualification/results/quant.json` (summary), per-variant `quant-<dtype>-perf.json`
+(committed) and `quant-<dtype>-agent.json` (gitignored traces, about 0.7 MB each). Harness:
+`qualification/run-quant.mjs` with `worker-quant.js`/`quant.html` (copies of the v2 worker
+and page that take a `dtype`), `download-quant.py` (pinned revision, sha256 checked against
+HF LFS metadata) and `summarize-quant.py`. Those scripts were never committed and are now
+replaced by `qualify.mjs` with `configs/lfm3-<dtype>-repro.json` (see "Qualification harness"). Same machine, Chrome 156 headless, fresh `/tmp`
+profile per run, zero external requests. Weights lived in `~/.cache/bayleaf-pouch/quant-exp/`
+during the run and were deleted afterwards.
+
+Protocol: run2's five tasks plus `jsonlist` (three keys in one JSON edit, one a list append)
+and `yaml` (insert a step at exact indentation, byte-exact). Each task ran greedy x1, then
+T=0.3/top_p=0.95 with seeds 1–7. Transformers.js's own sampler RNG (`random.seed`) is seeded,
+so a given seed replays identically across variants up to numerical drift. "Original" is agent-v2's v0
+setup; "recipe" is v8. No early stopping: every cell got 8 trials.
+
+| Variant (file, bytes) | recipe, five | recipe, all 7 | original, five | original, all 7 | failure classes (recipe / original) |
+|---|---:|---:|---:|---:|---|
+| **q4f16** (`model_q4f16`, 1,088,085,770) | **40/40** | **56/56** | 24/40 | 33/56 | – / 15 cap, 8 wrong |
+| q4 (`model_q4`, 1,297,549,403) | 40/40 | 56/56 | 24/40 | 35/56 | – / 13 cap, 8 wrong |
+| q8 (`model_quantized`, 2,175,882,841) | 32/40 | 48/56 | 24/40 | 40/56 | 8 wrong / 8 cap, 8 wrong |
+
+No variant had a single tool-call parse failure, and none timed out. Original-setup failures:
+`feature` always fails as wrong-but-well-formed (blank line), `rename` always hits the step cap
+(`/workspace` prior), and `yaml` hits the cap in 7/5/0 trials for q4f16/q4/q8 (the model
+strips the indentation from `oldText`, then retries the identical edit). q8 under the recipe
+fails `feature` 8/8: in 6 it inserts the blank separator line anyway, and in 2 it emits literal `\n`
+escapes. Higher-precision weights followed the few-shot byte pattern *less* faithfully. This
+is one task and one prompt, so read it as the recipe's sensitivity to small logit shifts,
+not as q8 being generally worse. q8 is the most robust variant *without* the recipe (it fixes
+`yaml`).
+
+| Variant | decode tok/s ~1k / ~4k | TTFT ~1k / ~4k | load (fresh profile / reload) | GPU Δ load / peak | Chrome RSS peak | median trial (recipe) |
+|---|---:|---:|---:|---:|---:|---:|
+| q4f16 | **112** / **73** | **0.42** / **2.4 s** | 1.5 / 2.7 s | +1.2 / +1.3 GB | 4.7 GB | 6.0 s |
+| q4 | 98 / 65 | 0.58 / 3.3 s | 1.6 / 3.9 s | +2.0 / +1.7 GB | 4.6 GB | 6.2 s |
+| q8 | 81 / 58 | 0.53 / 3.0 s | 2.5 / 8.4 s | +2.4 / +2.4 GB | 7.0 GB | 7.7 s |
+
+Not run: **fp16** (3,558,502,927 bytes in two shards). It is over the ~3.5 GB bound, and
+Transformers.js's Cache Storage keeps a second copy of the weights inside the browser profile
+(2.2 GB measured for q8), so fp16 needed about 7.1 GB against 7.5 GB free. No `int8`/`uint8`
+files exist at this revision. Transformers.js maps dtype `q8` to `model_quantized`, whose
+graph uses the same `MatMulNBits`/`GatherBlockQuantized` ops as q4f16 (8-bit blocks, fp32
+activations and fp32 KV cache), so q8 runs on the GPU with no CPU fallback. **Native MLX
+comparison (oMLX) was skipped**: LiquidAI's MLX 4-bit (991 MB) and 8-bit (1.86 GB) builds
+declare `model_type: lfm3`, oMLX 0.7.2 bundles mlx-lm 0.31.4.dev without an lfm3 module, and
+the model card says mlx-lm support is in progress. Nothing was downloaded for that part.
+
+**Recommendation: keep q4f16, and offer no user choice yet.** Decision rule: switch only if
+another variant gains at least +4/40 on the five recipe tasks with no regression on
+`jsonlist`/`yaml`, at no more than 1.25× q4f16's TTFT and memory. No variant could gain:
+q4f16 is already at ceiling (40/40, 56/56). It is also the smallest download, the fastest
+(15–40% faster decode) and the lightest in memory. q4 adds 19% more bytes and fp32
+activations and buys nothing. q8 doubles the download, costs about 1.5× the RSS, and *loses*
+`feature` under the recipe. A "higher-precision" toggle would cost users more and would not
+buy accuracy on these tasks.
+
+Caveats: the ceiling hides small differences. Seven synthetic tasks, eight trials each, one
+prompt recipe and one machine; the trials are not independent samples of the task space.
+The recipe's few-shot example resembles `feature`. The system-wide IOAccelerator counter is noisy:
+the baseline was ~9 GB this time against 2.3 GB on October 29, and these 4k peaks (+1.3 GB for
+q4f16) disagree with v2's +5.1 GB. Trust the relative ordering and Chrome RSS more than the
+absolute GPU deltas. "Load" uses loopback assets with a warm OS page cache. It is not a
+network download, and the reload after `dispose()` was oddly slower than the first load for
+every variant.
+
+## Qualification harness (October 31, 2026)
+
+One config-driven runner replaces `run2.mjs` (agent-v2) and the uncommitted quant scripts.
+The workflow around it, from license intake to shipping, is the ops playbook
+`.agents/skills/bayleaf-ops-router/playbooks/qualify-in-browser-model.md`.
+
+| File | Concern |
+|---|---|
+| `qualification/qualify.mjs` | verify model and runtime sha256s, serve loopback with a strict CSP, drive headless Chrome, write `results/<id>-<phase>.json` (schema `pouch-qualify-v1`) and gitignored `results/traces/` |
+| `qualification/qualify-worker.js`, `qualify-page.js`, `qualify.html` | the agent loop, native XML parser and tool layer in a module worker; the page only bridges |
+| `qualification/tasks.mjs` | the seven core tasks (verbatim from run2/run-quant) and held-out tasks (`delete-line`, `replace-all`) |
+| `qualification/recipes.mjs` | recipe sources (`profiles` = `src/profiles.js` TJS, what ships; `v8`, `none` frozen from agent-v2; or a JSON path) and tool layers (`pouch` mirrors `src/tools.js`; `v8`; `v8-raw`) |
+| `qualification/summarize.mjs` | pass/n tables (five, core, held-out), failure classes, perf; `--against` replays a legacy trace file trial by trial |
+| `qualification/configs/` | `lfm3-q4f16.json` (standard matrix: baseline vs shipped recipe), `lfm3-{q4f16,q4,q8}-repro.json` (quant reproduction) |
+
+The runtime is Pouch's own `node_modules` copy, checked against `models.lock.json`. The model is
+the `fetch-models.mjs` cache (`lockId`) or a pinned file list. Failure classes: parse, cap (step
+cap), wrong (well-formed but wrong bytes), timeout, load, other (token/call/context limits).
+
+**Reproduction.** `node qualify.mjs configs/lfm3-q4f16-repro.json --tasks feature,yaml --trials 0,1`
+then `node summarize.mjs results/<out>.json --against results/quant-q4f16-agent.json`: 8/8 trials
+match the quant run on class and round count (original: feature wrong x2, yaml cap x2; recipe:
+4/4 pass), 0 external requests. A full `lfm3-<dtype>-repro.json` run reproduces a quant.json row.
+agent-v2's v0 and v8 rows are the `five` column of the same configs. Its exact trials are not
+replayable, because v2's sampled trials were unseeded (n=2 greedy + 6 unseeded; now 1 + 7 seeded).
+Its other 16 ablations can be rebuilt as recipe JSON files, and `run2.mjs` remains in git history.
+`run.mjs` (with `worker.js`, `app.js`, `index.html`, `sw.js`, `server.py`, `download.py`) is kept
+for milestone 1's baseline, offline Service Worker and multi-turn resource phases, which
+`qualify.mjs` does not cover.
+
+**Shipped recipe, first look.** `recipe: "profiles"` differs from v8 only in the few-shot
+tool-result wording: Pouch's "Edited lines now read" format. So it had never been qualified
+verbatim against Pouch-worded tools. A 4-task x 2-trial smoke (`configs/lfm3-q4f16.json`, tasks
+feature, yaml, delete-line, replace-all; trials 0–1) passed 8/8 with the recipe. The baseline
+passed 2/8: delete-line left a blank line in both trials. The full standard matrix follows below.
+
+## Shipped recipe qualification (2026-11-01)
+
+The first full standard matrix on the recipe Pouch actually ships: the `transformersjs` text
+imported verbatim from `src/profiles.js` (working tree, recipe sha256 prefix `3f58dd31`), against
+agent-v2's v8 text, in one headless Chrome session. Config `qualification/configs/lfm3-q4f16-requal.json`,
+results `qualification/results/lfm3-q4f16-requal-agent.json` (traces gitignored). Model: the
+`fetch-models.mjs` cache of `lfm3-1.7b-q4f16` (`onnx-community/LFM3-1.7B-ONNX@ab9fec4c`), every
+file sha256-verified, nothing fetched. Chrome 156.0.8078.74, `metal-3`, runtime 4.3.2 /
+ORT 1.31.0-dev (lock). 9 tasks x 4 setups x (greedy 1 + T 0.3/top_p 0.95 seeds 1–7) = 288 trials,
+about 30 min. External requests: 0.
+
+Setups run sequentially (the harness loops setup, then task, then trial; it does not interleave):
+`shipped` (profiles text, Pouch tool layer), `v8-pouch` (v8 text, Pouch tool layer: isolates the
+text), `v8-v8` (v8 text, v8 tool layer: the original 39/40, 56/56 reference), `baseline` (no
+recipe, Pouch tool layer).
+
+| setup | tree | edit | feature | rename | config | jsonlist | yaml | delete-line | replace-all | five | core | held-out |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| shipped | 8/8 | 8/8 | 6/8 | 8/8 | 8/8 | 8/8 | 8/8 | 8/8 | 8/8 | 38/40 | 54/56 | 16/16 |
+| v8-pouch | 8/8 | 8/8 | 6/8 | 8/8 | 8/8 | 8/8 | 8/8 | 8/8 | 8/8 | 38/40 | 54/56 | 16/16 |
+| v8-v8 | 8/8 | 8/8 | 8/8 | 8/8 | 8/8 | 8/8 | 8/8 | 8/8 | 8/8 | 40/40 | 56/56 | 16/16 |
+| baseline | 8/8 | 8/8 | 0/8 | 0/8 | 8/8 | 7/8 | 1/8 | 0/8 | 8/8 | 24/40 | 32/56 | 8/16 |
+
+Failure classes: shipped and v8-pouch 2 `wrong` each (all `feature`), zero `parse`, `cap`,
+`timeout`; v8-v8 none; baseline 16 `cap` (rename 8, yaml 7, jsonlist 1) and 16 `wrong` (feature 8,
+delete-line 8). Median trial 5.1–5.4 s with the recipe, 6.7 s baseline.
+
+**The text is not what differs.** `profiles` and `v8` share the system prompt and tool schemas
+byte for byte; the few-shot differs only in two tool results:
+
+```
+- Applied 1 edit to /work/x.txt\na = 1\nb = 2\n
++ Applied 1 edit to /work/x.txt. Edited lines now read:\n1: a = 1\n2: b = 2\n3: 
+- Wrote 3 characters to /work/y.txt
++ Wrote 2 lines (3 characters) to /work/y.txt
+```
+
+Swapping that text changed nothing (shipped = v8-pouch, cell for cell). The two lost `feature`
+trials follow the tool layer, whose only difference is the result wording (`format`; both normalize
+newlines and explain empty matches). The failures are byte fidelity: three trials left a blank
+line between `label` and the appended `unit` export in `src/ui.js`, one (shipped, seed 3) never
+appended the export. The failing seeds differ between setups (shipped 2, 3; v8-pouch 5, 6), so
+this is sampled noise at n = 8 around a weak spot, not a systematic regression; and `feature` is
+the core task the few-shot most resembles (playbook step 5), so its 8/8 was partly teaching to
+the test.
+
+**Verdict: the shipped recipe qualifies.** Playbook step 4's bar holds: core 54/56 (≥ 52), no task
+below 6/8, held-out 16/16 (the v8 reference is 16/16), zero `parse` and `timeout`. Against v8's
+reference it is −2 on `five` (38 vs 40), inside step 6's +4/40 decision threshold, with no
+`jsonlist`, `yaml` or held-out regression. Keep the shipped text: v8's few-shot would misdescribe
+what Pouch's tools actually return, for no measured gain. Do not adopt the v8 tool result
+wording in `src/tools.js` on this evidence either; if `feature` matters, test a blank-line-aware
+result format as a candidate (step 5), with held-out guarded.
+
+Caveats: another agent ran fake-model browser tests on the same machine during this run, so
+timings are indicative only (no perf phase was run). n = 8 per cell cannot resolve a 2/8
+difference. The profiles text was the working tree, not a commit; record `3f58dd31…` (full hash in
+the results file) and rerun if `TJS` changes before it is committed.
