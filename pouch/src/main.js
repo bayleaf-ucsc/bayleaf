@@ -2562,6 +2562,9 @@ function revertFirst(it, at) {
     try { gone = await sessions.remove(sid, false, { stay: true }); }
     finally { deleting.delete(String(sid)); updateSend(); }
     if (!gone) return;
+    // A follow-up held for this session (paused by Stop) comes back too: the blank session has another key.
+    const held = followUps.get(String(sid));
+    if (held) { followUps.delete(String(sid)); composer.renderTray(); putBack(held.text); }
     status(`${sessions.current ? 'Deleted that session' : 'Reverted to an empty session'}. Files were not changed. Your message is back in the box.`);
     putBack(it.text);
   }, 'danger']], body);
