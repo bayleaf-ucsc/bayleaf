@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { InMemoryFs } from 'just-bash';
 import { Type } from 'typebox';
-import { parseArgs, planOpen, AGENT_REFUSAL, SHOW_HELP } from '../src/open-cli.js';
+import { parseArgs, planOpen, AGENT_REFUSAL, SHOW_HELP, shownLines } from '../src/open-cli.js';
 import { shellFor, createTools, clip } from '../src/tools.js';
 globalThis.navigator ??= {};
 const { binaryOutput } = await import('../src/terminal.js');
@@ -194,4 +194,12 @@ ok('agents: `show` opens or offers through the page (path, mode, label, caller),
 }
 ok('clip keeps shown: lines whole across the cap, inside a fixed budget');
 
-console.log(`\n${passed}/10 passed`);
+// Transcript cards parse only the two whole `shown:` shapes; a mode label inside a file name stays in the path.
+assert.deepEqual(shownLines('x\nshown: opened /work/report (Preview).html (Preview, Static)\nshown: offered /work/a (Raw).js (Raw); not opened (user busy: typing just now), the transcript has an Open button for them\n'), [
+  { how: 'opened', path: '/work/report (Preview).html', label: 'Preview, Static' },
+  { how: 'offered', path: '/work/a (Raw).js', label: 'Raw', reason: 'typing just now' },
+]);
+assert.deepEqual(shownLines('shown: offered /work/a.md (Preview)\nshown: opened /work/a.md (Preview); not opened (user busy: x), the transcript has an Open button for them\nshown: opened /work/a.md (Preview) and more'), []);
+ok('shownLines: whole shapes only, labels inside file names kept');
+
+console.log(`\n${passed}/11 passed`);
