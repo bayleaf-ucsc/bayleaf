@@ -1124,9 +1124,9 @@ own code, so it is a convenience, not an independent proof.
   leave it. Tinfoil's tool-like catalog entries stay hidden until their data paths are
   reviewed.
 
-## Tool runtimes and engine jobs (plumbing; no tools yet)
+## Tool runtimes and engine jobs
 
-For the coming media and data tools (OCR, ASR, DuckDB, libav):
+For heavy tools (pdf.js now; OCR, ASR, DuckDB, libav later):
 
 - **Convention** (`build-runtime.mjs`): each heavy tool runs in its own same-origin
   worker; its files ship as content-hash parts under `runtime/<group>/` listed in
@@ -1140,6 +1140,39 @@ For the coming media and data tools (OCR, ASR, DuckDB, libav):
   only that job, a memory guard (unloads idle engines, then refuses with a reason), and
   capability scoping: a job gets its caller's namespace view, never the global tree.
   Tested with a sleep-and-hash engine (`test/batchH-node.mjs`).
+
+### The first tool: pdf.js (`pdfinfo`, `pdftotext`, `pdftoppm`)
+
+`src/pdf.js` adds three commands to the terminal and the agents' bash, with poppler's
+names and flags so a model's prior knowledge works:
+
+- `pdfinfo [-upw PW] FILE`: pages, metadata, page size, PDF version, encryption,
+  whether it carries JavaScript (never run), and which pages have no text layer.
+- `pdftotext [-f N] [-l N] [-layout] [-nopgbrk] [-nomarkers] [-upw PW] FILE [OUT|-]`:
+  each page starts with `[page N]` and ends with a form feed; a page without text says
+  so and names the `pdftoppm` call that renders it.
+- `pdftoppm [-f N] [-l N] [-r DPI] [-png|-jpeg] [-singlefile] [-x -y -W -H] [-upw PW] FILE PREFIX`:
+  pages to PNG (or JPEG) in the VFS, `PREFIX-N.png` zero-padded like poppler, rendered on
+  an OffscreenCanvas in the worker; `-x -y -W -H` crop a region.
+
+Caps are named constants in `src/pdf.js` and errors cite them: `MAX_PDF_BYTES` 256 MiB,
+`TEXT_MAX_PAGES` 2000 per call, `INFO_SCAN_PAGES` 500, `RENDER_MAX_PAGES` 50 per call,
+`MIN_DPI`-`MAX_DPI` 18-600 (default 150), `MAX_PIXELS` 25 million per page. A range over a
+cap is refused, not cut. Exit codes follow poppler: 1 for a file error, 3 for an encrypted
+PDF without its password, 99 for bad arguments; 130 when stopped.
+
+Each command is an engine job (`/task`, Stop through ctl); one worker serves the terminal
+and every agent. A non-PDF is refused before the runtime loads. The runtime
+(`build-pdf.mjs`, `src/pdf/worker.js`; sizes and licenses in DEPLOYMENT.md) runs pdf.js's
+worker code in the same thread, reads cmaps, fonts and decoder wasm from a verified
+`data.pack` instead of fetching them, and then removes `fetch` and `XMLHttpRequest` from
+its worker. pdf.js's scripting sandbox is not shipped, so PDF JavaScript cannot run. The
+page's CSP did not change. The bundled `pdf` skill gives agents the recipe (check the text
+layer, extract with page markers and cite, render scans and look at them when a look tool
+is available, crop figures for reports) and the caps. Tests: `node test/pdf-node.mjs`
+(parsing, caps, errors, jobs, build pins) and `node test/pdf-browser.mjs` (the real
+runtime under the production CSP on fixture PDFs, an encrypted one, a hostile one with
+JavaScript and a link, Stop, offline reuse, and the network log).
 
 ## The `bayleaf` command: the one way out
 

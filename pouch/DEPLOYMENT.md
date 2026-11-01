@@ -79,6 +79,30 @@ from pouch.bayleaf.dev keep it: the page reassembles the old parts, checks them 
 the lock and moves them (README "Transformers.js"). The old `models/` parts on the host
 stop being uploaded; a release without them makes those URLs 404.
 
+## pdf.js runtime (built and tested locally, not deployed; 2026-11-01)
+
+Pouch's first heavy-tool runtime: `build-pdf.mjs` builds `runtime/pdf/` from
+`pdfjs-dist` 6.4.299 (exact pin in `package.json`; npm integrity in the lockfile; the
+build also checks the SHA-256 of `pdf.mjs` and `pdf.worker.mjs`). The page embeds its
+manifest's SHA-256 (define `POUCH_PDF_RUNTIME`) and fetches it only when a pdf command
+first runs.
+
+| File | Count | Size |
+|---|---:|---|
+| `runtime/pdf/manifest.<sha16>.json` | 1 | ~1 KB |
+| `worker.js` part: pdf.js library and worker code in one module worker (fetch helpers rewritten to read `data.pack`) | 1 | 1.6 MiB |
+| `data.pack` part: 168 cmaps, 14 standard fonts, `openjpeg.wasm`, `jbig2.wasm`, `qcms_bg.wasm`, the CMYK ICC profile | 1 | 2.3 MiB |
+| `NOTICE.txt` part: pdf.js Apache-2.0 and the OpenJPEG (BSD-2), JBIG2 and Foxit (PDFium BSD), qcms (MIT), Liberation fonts, Adobe cmaps and ICC profile licenses, verbatim | 1 | 61 KB |
+
+Total 3.9 MiB in 4 files, well under the 25 MiB part limit; `deploy.mjs` needed no
+change (its allowlist already covers `runtime/<group>/`). Not shipped: pdf.js's
+scripting sandbox (`quickjs-eval.wasm`, `pdf.sandbox.mjs`), the `*_nowasm_fallback.js`
+decoders, `legacy/` and the `web/` viewer. CSP delta: none; the worker is a `blob:` module
+worker (`worker-src 'self' blob:`), wasm runs under the existing `'wasm-unsafe-eval'`,
+and pdf.js makes no request of its own (checked with no CSP violation in
+`test/pdf-browser.mjs`, Chromium only). Privacy: Cloudflare sees that this browser
+fetched the pdf runtime; no PDF content leaves the page.
+
 ## Installable app shell (built and tested locally, not deployed; 2026-10-30)
 
 `build.mjs` now also emits `sw.js`, `manifest.webmanifest` and `icons/*.png`

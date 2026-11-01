@@ -37,7 +37,8 @@ const files = listed.map(([sha, path]) => {
   if (/\/manifest\./.test(path) && !path.includes(`.${sha.slice(0, 16)}.`)) throw new Error(`Name is not its hash: ${path}`);
   return { path, sha, size: bytes.length };
 });
-// The page must embed each runtime manifest it ships with (build-models.mjs define LOCAL_MODEL).
+// The page must embed each runtime manifest it ships with (defines LOCAL_MODEL from
+// build-models.mjs, POUCH_PDF_RUNTIME from build-pdf.mjs).
 for (const f of files.filter((x) => x.path.includes('/manifest.'))) {
   if (!html.includes(f.sha)) throw new Error(`pouch.html does not trust ${f.path}`);
   const m = JSON.parse(readFileSync(join(source, f.path), 'utf8'));
@@ -81,7 +82,8 @@ writeFileSync(join(snapshot, 'pouch.html'), html);
 writeFileSync(join(snapshot, 'SHA256SUMS'), manifest);
 for (const f of shellFiles) { mkdirSync(dirname(join(snapshot, f.path)), { recursive: true }); copyFileSync(join(source, f.path), join(snapshot, f.path)); }
 // Runtime parts are content-addressed: the snapshot keeps their list (SHA256SUMS);
-// rebuild them with build.mjs from the pinned npm packages (models.lock.json runtime).
+// rebuild them with build.mjs from the pinned npm packages (models.lock.json runtime,
+// build-pdf.mjs PDFJS).
 // Stage only allowlisted public files, outside the checkout and its Wrangler caches.
 const staging = mkdtempSync(join(tmpdir(), 'pouch-static-'));
 // Each staging copy holds the whole artifact (about 40 MiB): never leave one behind.
