@@ -243,6 +243,13 @@ Cloudflare can still process and retain hosting request metadata (such as IP add
 URL, timing and security events). Static delivery does not itself prove that the
 separate model or API service is stateless.
 
+"Static" is an auditability claim about what runs on the server (nothing), not a
+constraint on the build. Build-time machinery is welcome, and can be as heavy as it
+needs to be, when it hardens the page, enforces seams between modules, or supports
+maintenance and evolution (bundling, type checking, a TypeScript source tree, asset
+pinning, invariant checks), provided the output stays a static, hash-checkable
+artifact (Adam, 2026-11-01).
+
 | State | Lives in | Who can read it |
 |---|---|---|
 | Session list, settings, your key | IndexedDB (`bayleaf-pouch`) in your browser | you, and anything running in your browser profile |
