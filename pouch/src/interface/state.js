@@ -44,8 +44,10 @@ export function createStateRegion(app) {
   const meter = async () => renderMeter(usage.state, await ledger.snapshot().catch(() => null));
   // Follow new content only while following (src/follow.js, README "Scrolling").
   const follow = createFollow($('log'));
-  // Deferred: the layout restores a remembered panel while this module is still loading.
-  const layout = createLayout({ onPanel: (p) => { if (p === 'usage') queueMicrotask(app.meters.renderUsagePanel); if (p === 'trust') queueMicrotask(() => { app.install.renderCopy(); app.tree.renderNamespaces(); }); if (p === 'terminal' && !matchMedia('(pointer: coarse)').matches) queueMicrotask(() => $('term-input').focus()); } });
+  // Deferred: the layout restores a remembered panel while the Interface's regions
+  // are still being created (src/main.js), so app.meters and the rest exist only later
+  // (test/boot-browser.mjs).
+  const layout = createLayout({ onPanel: (p) => { if (p === 'usage') queueMicrotask(() => app.meters.renderUsagePanel()); if (p === 'trust') queueMicrotask(() => { app.install.renderCopy(); app.tree.renderNamespaces(); }); if (p === 'terminal' && !matchMedia('(pointer: coarse)').matches) queueMicrotask(() => $('term-input').focus()); } });
 
   // ── Action sheet: one tap-friendly menu for every "..." button ──────
   // `body` (text or a node) explains the choice, above the buttons.

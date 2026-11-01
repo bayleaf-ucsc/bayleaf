@@ -56,7 +56,7 @@ await test('html: an HTML sink outside viewer.html fails', () => {
   fails(withFile('src/markdown.js', "new DOMParser().parseFromString('<p>', 'text/html');"), 'html', 'src/markdown.js', /parseFromString/);
   fails(withFile('pouch.html', (t) => t.replace('</body>', "<script>document.body.insertAdjacentHTML('beforeend', location.hash);</script></body>")), 'html', 'pouch.html', /insertAdjacentHTML/);
   // However the tag is written.
-  fails(withFile('pouch.html', (t) => t.replace('</body>', '<SCRIPT type="module">fetch("https://example.com")</SCRIPT ></body>')), 'egress', 'pouch.html', /uses fetch/);
+  fails(withFile('pouch.html', (t) => t.replace('</body>', '<SCRIPT type="module">fetch("https://example.com")</SCRIPT foo></body>')), 'egress', 'pouch.html', /uses fetch/);
 });
 
 await test('sealed: only src/sealed.js imports tinfoil or reaches into its client', () => {

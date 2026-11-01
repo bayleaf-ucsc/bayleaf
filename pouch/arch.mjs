@@ -23,8 +23,9 @@
 // It covers first-party code (src/, sw.js, the pages' inline scripts); bundled
 // packages are checked by what imports them (checkMetafile) and by the CSP.
 import ts from 'typescript';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { assertNoCdn } from './build-runtime.mjs';
 
 // ── Egress: who may use the network ─────────────────────────────────
@@ -107,7 +108,7 @@ function sources(files) {
     if (path.endsWith('.html')) {
       let k = 0;
       // Any case and any attributes: a script the scan missed would be a way around it.
-      for (const m of text.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi)) {
+      for (const m of text.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\b[^>]*>/gi)) {
         if (m[1].trim() === '/*APP*/') continue;
         const line = text.slice(0, m.index).split('\n').length - 1;
         out.push({ path, name: `${path}#script${k++}.js`, text: '\n'.repeat(line) + m[1] });
@@ -280,7 +281,7 @@ export function assertArchitecture(errors) {
   if (errors.length) throw new Error(`Pouch architecture check failed (arch.mjs):\n  ${errors.join('\n  ')}`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   const errors = checkArchitecture(loadTree());
   if (errors.length) { console.error(errors.join('\n')); process.exit(1); }
   console.log('arch: trust, layer, seam and size rules hold');
