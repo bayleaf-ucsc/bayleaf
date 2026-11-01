@@ -181,3 +181,9 @@ export function agentShowCommands(defineCommand, { show } = {}) {
     return ok(`shown: offered ${path} (${plan.label}); not opened (user busy: ${r?.reason ?? 'unknown'}), the transcript has an Open button for them\n`);
   })];
 }
+
+// The parser for those lines, kept beside the producer. Only the two whole shapes
+// match, so a file named "a (Preview).html" keeps its path and a stray line makes no card.
+const SHOWN = /^shown: (?:opened (.+) \((Raw|Preview|Preview, Static|Files)\)|offered (.+) \((Raw|Preview|Preview, Static|Files)\); not opened \(user busy: ([^)]*)\), the transcript has an Open button for them)$/gm;
+export const shownLines = (output) => (typeof output === 'string' ? [...output.matchAll(SHOWN)] : [])
+  .map(([, op, ol, fp, fl, reason]) => (op ? { how: 'opened', path: op, label: ol } : { how: 'offered', path: fp, label: fl, reason }));

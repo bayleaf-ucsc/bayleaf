@@ -13,6 +13,7 @@ import { createEditor, highlight } from './editor.js';
 import { renderMarkdown } from './markdown.js';
 import { createPreview, previewOf, rememberedMode, rememberMode, MEDIA_MAX } from './preview.js';
 import { createTools, systemPrompt, loadContext, CWD, defaultSubagentNs, describeSpecs } from './tools.js';
+import { shownLines } from './open-cli.js';
 import { openAgent, Type, compactionFor } from './agent.js';
 import { describe as describeContext, autoCompactAt, contextFor } from './context.js';
 import { collect, packTar, packZip, unpackTar, unpackZip } from './archive.js';
@@ -289,9 +290,6 @@ async function show({ path, dir, mode }, caller) {
   return { opened: true };
 }
 // A bash result's `shown:` lines, read back so the card survives reload.
-// The label is the one that ends the line or precedes "; not opened", so a file named "a (Preview).html" keeps its path.
-const SHOWN = /^shown: (opened|offered) (.+) \((Raw|Preview|Preview, Static|Files)\)(?:$|; not opened \(user busy: ([^)]*)\))/gm;
-const shownLines = (output) => (typeof output === 'string' ? [...output.matchAll(SHOWN)] : []).map(([, how, path, label, reason]) => ({ how, path, label, reason }));
 function shownCard({ how, path, label, reason }) {
   const b = el('button', { type: 'button', textContent: 'Open', title: `Open ${path} (${label})` });
   b.onclick = () => (label === 'Files' ? revealDir(path) : openFile(path, undefined, { mode: label === 'Raw' ? 'raw' : 'preview' })).catch((e) => fail(e.message));
