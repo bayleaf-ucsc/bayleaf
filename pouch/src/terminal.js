@@ -17,7 +17,7 @@
 // per command (a live elapsed time shows meanwhile); it is not streamed.
 import { $, el } from './dom.js';
 import { normalize } from './vfs.js';
-import { shellFor, serialized, CWD } from './tools.js';
+import { shellFor, serialized, execScript, CWD } from './tools.js';
 
 const HISTORY_KEY = 'pouch.terminal.history';
 const HISTORY_CAP = 200;
@@ -93,7 +93,7 @@ export function createTerminal({ vfs, fs: userFs, hooks = {}, onChange }) {
     input.setAttribute('aria-busy', 'true');
     scroll();
     let r;
-    try { r = await shell.exec(line, { cwd, ...(env ? { env, replaceEnv: true } : {}), signal: ac.signal }); }
+    try { r = await execScript(shell, line, { cwd, ...(env ? { env, replaceEnv: true } : {}), signal: ac.signal }); }
     catch (e) { r = { stdout: '', stderr: String(e?.message ?? e) + '\n', exitCode: 1 }; }
     finally { clearInterval(timer); live.remove(); running = null; input.removeAttribute('aria-busy'); }
     if (!killed && r.env) { env = r.env; cwd = normalize(r.env.PWD || cwd); setPrompt(); }

@@ -7,7 +7,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { InMemoryFs, Bash } from 'just-bash';
 import { Namespace, over, codeOf } from '../src/ns/namespace.js';
-import { createControl, parseIn, parseCtl, why } from '../src/ns/control.js';
+import { createControl, createChanges, changesText, usageText, parseIn, parseCtl, why } from '../src/ns/control.js';
+import { execScript, tagWrites, noting, commandsOf } from '../src/tools.js';
 import { Tasks, TaskFs } from '../src/ns/tasks.js';
 import { serve, Client, OREAD } from '../src/ns/9p.js';
 
@@ -65,7 +66,10 @@ function fakePage() {
     current: () => 1,
     agents: (sid) => agents[sid] ?? [],
     last: (sid, ref) => (ref === 'a2' ? 'Found 3 sources.' : ''),
+    usage: (sid) => ({ allowance: { mode: 'key', remaining: 412, limit: 500, resetsAt: new Date('2026-11-02T08:00:00Z') }, turn: 3, today: Number(sid) * 10 }),
+    changes: (sid) => changes.list(sid),
   });
+  const changes = createChanges();
   control.drive({
     stop: async (sid, ref, o, { by }) => { calls.push(['stop', sid, ref, o, by]); return { ok: true }; },
     detach: async (sid, ref, { by }) => { calls.push(['detach', sid, ref, by]); },
@@ -80,9 +84,9 @@ function fakePage() {
   base.mount(new TaskFs(tasks, () => watches), '/task');
   const term = over(base, [['/session', control.view({ by: 'user' }), { label: 'control (you)' }]]);
   const main = over(base, [['/session', control.view({ by: 'agent', sid: 1 }), { label: 'control (a1)' }]]);
-  // just-bash 3.6 throws a redirection's write error out of exec; the terminal and the bash tool print it.
-  const sh = (fs) => async (cmd) => { try { return await new Bash({ fs, cwd: '/' }).exec(cmd); } catch (e) { return { exitCode: 1, stdout: '', stderr: e.message }; } };
-  return { control, calls, task, term, main, base, terminal: sh(term), agent: sh(main) };
+  // As the terminal and the bash tool run a script: a failed redirection write reported, not thrown (CP6).
+  const sh = (fs) => (cmd) => execScript(new Bash({ fs: tagWrites(fs), cwd: '/' }), cmd, { cwd: '/' });
+  return { control, calls, task, term, main, base, changes, terminal: sh(term), agent: sh(main) };
 }
 const fill = (p, page) => p.replace('{sid}', '1').replace('{ref}', 'a2').replace('{task}', String(page.task.id)).replace('{watch}', 'w1');
 const shq = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
@@ -213,6 +217,69 @@ await test('direct harness calls appear only inside the harness side (driver)', 
 await test('the terminal stops with a ctl write too', async () => {
   const t = readFileSync(new URL('../src/terminal.js', import.meta.url), 'utf8');
   assert.match(t, /writeFile\(`\/task\/\$\{[^}]+\}\/ctl`, 'kill'\)/);
+});
+
+await test('usage: the agent reads its own allowance and request counts, read-only, no other session (AG35)', async () => {
+  const page = fakePage();
+  const r = await page.agent('cat /session/current/usage');
+  assert.equal(r.exitCode, 0, r.stderr);
+  assert.match(r.stdout, /^allowance: 412 of 500 requests left today \(the user's key, also spent by their other tools and devices\)\n/);
+  assert.match(r.stdout, /\nresets: 2026-11-02T08:00:00\.000Z\n/);
+  assert.match(r.stdout, /\nrequests-this-turn: 3\nrequests-today-this-session: 10\n/);
+  assert.notEqual((await page.agent('cat /session/2/usage')).exitCode, 0, 'another session is invisible');
+  const w = await page.agent('echo 9999 > /session/current/usage; echo next');
+  assert.notEqual(w.exitCode, 0); assert.match(w.stderr, /EROFS/);
+  assert.equal((await page.terminal('cat /session/2/usage')).stdout.split('\n').at(-3), 'requests-today-this-session: 20', 'the user sees every session');
+  assert.match(usageText({ allowance: { remaining: null } }), /^allowance: unknown \(.*unknown is not zero\)\nrequests-this-turn: unknown\n/);
+  assert.match(usageText({ allowance: { mode: 'campus', remaining: 40, limit: 200 } }), /^allowance: about 40 of 200 .*shared with everyone on this network/);
+  assert.match(usageText({ allowance: { mode: 'campus', offCampus: true } }), /^allowance: none \(off campus/);
+});
+
+await test('changes: net paths changed this turn, subagents marked, actions left out (AG22)', async () => {
+  const c = createChanges();
+  c.note(1, 'created', '/work/new.md', 'a1'); c.note(1, 'modified', '/work/new.md', 'a1');
+  c.note(1, 'created', '/tmp/scratch', 'a1'); c.note(1, 'deleted', '/tmp/scratch', 'a1');
+  c.note(1, 'modified', '/work/b.js', 'a2'); c.note(1, 'modified', '/work/b.js', 'a1');
+  c.note(1, 'deleted', '/work/old.txt', 'a1'); c.note(1, 'created', '/work/old.txt', 'a1');
+  c.note(1, 'modified', '/work/my file.txt', 'a3'); c.note(1, 'deleted', '/work/my file.txt', 'a3');
+  c.note(1, 'modified', '/session/1/ctl', 'a1'); c.note(1, 'modified', '/task/3/ctl', 'a1');
+  c.note(2, 'created', '/work/elsewhere', 'a1');
+  assert.equal(changesText(c.list(1)), 'modified a1,a2 /work/b.js\ndeleted a3 /work/my file.txt\ncreated a1 /work/new.md\nmodified a1 /work/old.txt\n');
+  c.begin(1); assert.equal(changesText(c.list(1)), '', 'a new turn starts empty');
+  assert.equal(c.list(2).length, 1, 'sessions are separate');
+  // The tools' fs reports what a script changes (src/tools.js noting).
+  const fs = new InMemoryFs();
+  await fs.mkdir('/work', { recursive: true });
+  for (const f of ['keep', 'gone', 'from']) await fs.writeFile('/work/' + f, 'x');
+  const seen = createChanges();
+  const r = await new Bash({ fs: noting(fs, (op, p) => seen.note(1, op, p, 'a1')), cwd: '/work' }).exec('echo a > keep; echo b > made; rm gone; mv from to; mkdir dir; cp keep dir/copy; cat keep > /dev/null');
+  assert.equal(r.exitCode, 0, r.stderr);
+  assert.equal(changesText(seen.list(1)), 'created a1 /work/dir\ncreated a1 /work/dir/copy\ndeleted a1 /work/from\ndeleted a1 /work/gone\nmodified a1 /work/keep\ncreated a1 /work/made\ncreated a1 /work/to\n');
+  // Read through the control plane, the agent's own session only.
+  const page = fakePage();
+  page.changes.note(1, 'created', '/work/report.md', 'a1'); page.changes.note(1, 'modified', '/work/notes.md', 'a2');
+  assert.equal((await page.agent('cat /session/current/changes')).stdout, 'modified a2 /work/notes.md\ncreated a1 /work/report.md\n');
+  assert.deepEqual((await page.agent('ls /session/current')).stdout.split('\n').filter(Boolean), ['agents', 'changes', 'ctl', 'status', 'title', 'usage']);
+});
+
+await test('CP6: a failed control write reports itself and names what did not run (AG33)', async () => {
+  const page = fakePage();
+  // The story: stop a2 and a9 (no such agent), then list the agents.
+  let r = await page.agent('echo stop > /session/current/agents/a2/ctl\necho stop > /session/current/agents/a9/ctl\nls /session/current/agents');
+  assert.equal(r.exitCode, 1);
+  assert.match(r.stderr, /^bash: \/session\/current\/agents\/a9\/ctl: ENOENT/);
+  assert.match(r.stderr, /the 1 command before it ran but its output is lost; 1 later command did not run: `ls \/session\/current\/agents`/);
+  assert.deepEqual(page.calls.map((c) => c.slice(0, 3)), [['stop', '1', 'a2']], 'the earlier write still happened');
+  // A refused in and a rejected ctl line, each with its reason.
+  r = await page.agent('printf hi > /session/current/agents/a2/in; cat /session/current/status; echo done');
+  assert.match(r.stderr, /in: EPERM: agents message each other/);
+  assert.match(r.stderr, /2 later commands did not run: `cat \/session\/current\/status`, `echo done`/);
+  r = await page.terminal("echo explode > /session/1/ctl && echo ok; echo 'a; b'");
+  assert.match(r.stderr, /ctl accepts: stop, detach/);
+  assert.match(r.stderr, /including the rest of its line; 1 later command did not run: `echo 'a; b'`/);
+  // Failures that are not writes still throw; ordinary scripts are untouched.
+  assert.equal((await page.agent('cat /session/current/status; echo after')).stdout, 'working agents=2 running=1\nafter\n');
+  assert.deepEqual(commandsOf("a; b 'c;d'\n# x; y\nfor i in 1; do e; done"), ['a', "b 'c;d'", 'for i in 1', 'do e', 'done']);
 });
 
 console.log(`\n${passed} passed (${CONTROLS.length} controls through files, ${DIRECT.length} direct by design)`);

@@ -123,13 +123,93 @@ export function serialized(fs) {
     },
   });
 }
+// A filesystem that reports each successful change to onChange(op, path)
+// ('created' | 'modified' | 'deleted'), for /session/<sid>/changes. One stat
+// before a write tells created from modified; paths only, never content.
+export function noting(fs, onChange) {
+  const was = (p) => fs.stat(p).then(() => true, () => false);
+  const write = (prop) => async (p, ...a) => { const had = await was(p); const r = await fs[prop](p, ...a); onChange(had ? 'modified' : 'created', normalize(p)); return r; };
+  return new Proxy(fs, {
+    get(target, prop) {
+      if (prop === 'writeFile' || prop === 'appendFile') return write(prop);
+      if (prop === 'rm') return async (p, ...a) => { const r = await target.rm(p, ...a); onChange('deleted', normalize(p)); return r; };
+      if (prop === 'mkdir') return async (p, ...a) => { const had = await was(p); const r = await target.mkdir(p, ...a); if (!had) onChange('created', normalize(p)); return r; };
+      if (prop === 'cp') return async (s, d, ...a) => { const had = await was(d); const r = await target.cp(s, d, ...a); onChange(had ? 'modified' : 'created', normalize(d)); return r; };
+      if (prop === 'mv') return async (s, d, ...a) => { const had = await was(d); const r = await target.mv(s, d, ...a); onChange('deleted', normalize(s)); onChange(had ? 'modified' : 'created', normalize(d)); return r; };
+      const v = target[prop];
+      return typeof v === 'function' ? v.bind(target) : v;
+    },
+  });
+}
+
+// CP6 (story AG33). just-bash 3.6 lets a failed redirection write (`echo stop
+// > /session/1/agents/a9/ctl` for an agent that does not exist, a refused
+// `in`, a ctl line it rejects) escape exec() as a plain error: the script
+// stops at that command, what it printed before is dropped, and nothing says
+// the rest did not run. Real bash prints the error, sets status 1 and goes on.
+// Its own error classes, which it does catch, are not exported, so Pouch
+// cannot throw one; instead the shell's fs tags a failed write with its path
+// (tagWrites) and execScript turns the escape into a result that names the
+// failure and every top-level command that did not run, so a small model
+// reruns them instead of reporting work that never happened. Upstream draft
+// in the PR that added this; drop both once just-bash reports the write.
+const WRITES = new Set(['writeFile', 'appendFile']);
+export function tagWrites(fs) {
+  return new Proxy(fs, {
+    get(target, prop) {
+      const v = target[prop];
+      if (WRITES.has(prop)) return (p, ...a) => v.call(target, p, ...a).catch((e) => { if (e && typeof e === 'object') e.pouchWrite ??= normalize(p); throw e; });
+      return typeof v === 'function' ? v.bind(target) : v;
+    },
+  });
+}
+const reason = (e) => String(e?.message ?? e).replace(/, (write|open) '[^']*'$/, '');
+export async function execScript(bash, script, opts = {}) {
+  try { return await bash.exec(script, opts); }
+  catch (e) {
+    if (!e?.pouchWrite || opts.signal?.aborted) throw e;
+    return { stdout: '', stderr: stoppedAt(script, e.pouchWrite, reason(e), opts.cwd ?? CWD), exitCode: 1 };
+  }
+}
+// A script's commands, split at unquoted ";" and line breaks (a loop body
+// splits too; this only counts and quotes what did not run). The browser
+// build of just-bash exports no parser.
+export function commandsOf(script) {
+  const out = [];
+  let cur = '', q = null;
+  for (let i = 0; i < script.length; i++) {
+    const ch = script[i];
+    if (q) { cur += ch; if (ch === '\\' && q !== "'") cur += script[++i] ?? ''; else if (ch === q) q = null; continue; }
+    if (ch === '#' && !cur.trim()) { while (i < script.length && script[i] !== '\n') i++; continue; }
+    if (ch === "'" || ch === '"' || ch === '`') { q = ch; cur += ch; continue; }
+    if (ch === '\\') { cur += ch + (script[++i] ?? ''); continue; }
+    if (ch === ';' || ch === '\n') { if (script[i + 1] === ';') cur += script[++i] + ch; else { if (cur.trim()) out.push(cur.trim()); cur = ''; } continue; }
+    cur += ch;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+// "bash: <path>: <why>" and a note naming what did not run. The failed
+// command is the first one that names the path (or its tail).
+export function stoppedAt(script, path, why, cwd = CWD) {
+  const cmds = commandsOf(script);
+  const rel = path.startsWith(cwd + '/') ? path.slice(cwd.length + 1) : null;
+  const names = [path, rel, path.split('/').slice(-2).join('/')].filter(Boolean);
+  const k = cmds.findIndex((c) => names.some((x) => c.includes(x)));
+  const later = k < 0 ? [] : cmds.slice(k + 1);
+  const list = later.slice(0, 5).map((c) => '`' + (c.length > 80 ? c.slice(0, 79) + '…' : c) + '`').join(', ') + (later.length > 5 ? `, and ${later.length - 5} more` : '');
+  const before = k > 0 ? `the ${k} command${k > 1 ? 's' : ''} before it ran but ${k > 1 ? 'their' : 'its'} output is lost` : k < 0 ? 'output printed before it is lost' : '';
+  const after = k < 0 ? 'commands after it did not run' : later.length ? `${later.length} later command${later.length > 1 ? 's' : ''} did not run: ${list}` : '';
+  return `bash: ${path}: ${why}\n[Pouch: the script stopped at this failed write, including the rest of its line${[before, after].filter(Boolean).map((x) => '; ' + x).join('')}. Rerun what you still need.]\n`;
+}
+
 // The human's shell (src/terminal.js): the same just-bash, commands and
 // `bayleaf` CLI the agents get, over whatever fs the caller passes, plus
 // `open` (src/open-cli.js; hooks.openFile shows a file in the editor pane,
 // hooks.revealDir a folder in Files).
 export function shellFor(fs, hooks = {}) {
   return new Bash({
-    fs, cwd: CWD,
+    fs: tagWrites(fs), cwd: CWD,
     env: { HOME: CWD, USER: 'user', PATH: '/usr/bin:/bin' },
     commands: COMMANDS,
     customCommands: [...archiveCommands(defineCommand), ...bayleafCommands(defineCommand, hooks), ...modelsCommands(defineCommand, hooks.models, { by: 'user', via: 'terminal' }), ...openCommands(defineCommand, { openFile: hooks.openFile, revealDir: hooks.revealDir })],
@@ -226,14 +306,19 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
     const base = vfs.as ? vfs.as(source) : vfs.fs;
     return viewOf(caller)?.fs ?? (caller != null && hooks.mainView ? hooks.mainView(caller, base) : base);
   }
-  const nsFor = (caller, source) => viewOf(caller)?.ns ?? (vfs.as ? vfs.as(source) : vfs.fs);
+  // hooks.onChange(caller, op, path): each change a caller makes, for
+  // /session/<sid>/changes. Watch attribution (vfs.as) names the kind of
+  // writer but not its session, and sees only watched paths, so the tools
+  // report here, where the caller is known.
+  const noted = (caller, fs) => (hooks.onChange && caller != null ? noting(fs, (op, p) => hooks.onChange(caller, op, p)) : fs);
+  const nsFor = (caller, source) => noted(caller, viewOf(caller)?.ns ?? (vfs.as ? vfs.as(source) : vfs.fs));
   const writableFor = (caller) => {
     const specs = hooks.namespaceFor?.(caller);
     if (!specs) return [CWD, '/tmp'];
     const rw = specs.filter((x) => !/:ro$/.test(x)).map((x) => x.replace(/:rw$/, '')).filter((x) => !x.startsWith('/pouch'));
     return [...rw, '/tmp'];
   };
-  const fsFor = (caller, source) => viewFor(caller, source);
+  const fsFor = (caller, source) => noted(caller, viewFor(caller, source));
   const fs = fsFor(undefined);
   // One interpreter per call, bound to its caller and its own list of what it
   // sent (the main agent and subagents run bash concurrently); the filesystem
@@ -245,7 +330,7 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
       onEgress: (e) => { sent.push(e); hooks.onEgress?.(e, caller); },
     });
     return new Bash({
-      fs: fsFor(caller), cwd: CWD,
+      fs: tagWrites(fsFor(caller)), cwd: CWD,
       env: { HOME: CWD, USER: 'pouch', PATH: '/usr/bin:/bin' },
       commands: COMMANDS,
       // `models` (src/models-cli.js): hooks.models is the shared service; whoOf names the asker.
@@ -356,7 +441,7 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
     parameters: Type.Object({ command: Type.String({ description: 'Bash script to run' }) }),
     async execute({ command }, { signal, caller } = {}) {
       const sent = [];
-      const r = await bashFor(caller, sent).exec(command, { cwd: CWD, signal });
+      const r = await execScript(bashFor(caller, sent), command, { cwd: CWD, signal });
       vfs.changed();
       // Marker the model and the UI both see: this call sent data outside the pouch.
       const egress = sent.length ? `\n[this call sent data outside the pouch: ${[...new Set(sent.map((e) => e.command.replace(/^bayleaf /, '')))].join(', ')}]` : '';
@@ -458,7 +543,7 @@ You work on files through the read, write, edit, bash, run and look tools. Files
 - /pouch: shared instructions (AGENTS.md) and skills (skills/<name>/SKILL.md).
 - /tmp: scratch, lost on reload.
 - /task: this session's running and recent run calls and subagents as files: \`cat /task/<id>/status\`, \`cat /task/<id>/ns\` (what it can see), \`echo kill > /task/<id>/ctl\`.
-- /session/current: your session's agents as files: \`cat /session/current/status\`, \`cat /session/current/agents/a2/status\`, \`echo stop > /session/current/agents/a2/ctl\` (message agents with the agents tool, not files).
+- /session/current: your session's agents as files: \`cat /session/current/status\`, \`cat /session/current/agents/a2/status\`, \`echo stop > /session/current/agents/a2/ctl\` (message agents with the agents tool, not files). \`cat /session/current/usage\` shows your remaining allowance and requests this turn; \`cat /session/current/changes\` lists the paths you and your subagents changed since the user's message (check your summary against it).
 ${vfs.seedLayer ? `- ${CWD} is stacked over the read-only seed archive ${vfs.seedLayer.name}: your files win, edits land in ${CWD}, removing a seed file hides it.\n` : ''}${mounts.length ? '- Folders the user mounted from their device: ' + mounts.join(', ') + '\n' : ''}The bash tool is a simulated shell with coreutils-like commands plus zip/unzip/tar: no network, no installs, no python/node/git.
 The run tool executes JavaScript (QuickJS) over a copy of the files you name, with no network: use it instead of awk/sed/jq for anything that needs real parsing (quoted CSV, nested JSON) or arithmetic, and to test JavaScript; save reusable scripts in ${CWD} and run them by path. Its file writes are applied to the workspace when it finishes.
 The one exception is the \`bayleaf\` command (web search/fetch, a remote sandbox VM, inboxes): it leaves the pouch and asks the user each time; see the bayleaf-cli skill.

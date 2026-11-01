@@ -26,7 +26,7 @@ import { createTerminal } from './terminal.js';
 import { createSessions, sameId, titleOf, notesKey, convKey, revertKey, subagentsKey, interruptedKey, turnsKey, watchesKey } from './sessions.js';
 import { createWatches, watchTool, baseOf, isGlob, MAX_WAKES } from './ns/watch.js';
 import { parseSpecs, over } from './ns/namespace.js';
-import { createControl, why } from './ns/control.js';
+import { createControl, createChanges, why } from './ns/control.js';
 import { TaskFs } from './ns/tasks.js';
 import { createComposer } from './composer.js';
 import { createEgress, egressOf, grantsFor, revoke, serviceName } from './egress.js';
@@ -1543,6 +1543,7 @@ async function agentRows(sid) {
     ...l.map((c) => ({ ref: refOf(l, c), name: c.name, kind: 'subagent', state: c.status, since: c.resumed ?? c.started, ended: c.status === 'running' ? undefined : c.ended, task: c.task,
       ns: describeSpecs(vfs, c.ns?.length ? c.ns : defaultSubagentNs(vfs)) }))];
 }
+const changes = createChanges(); // what the agents changed this turn, per session
 const control = createControl({
   sessions: async () => (await sessions.all()).map((x) => ({ id: x.id, title: titleOf(x) })),
   current: () => sessions.current?.id ?? null,
@@ -1552,6 +1553,9 @@ const control = createControl({
     const l = kids.get(String(sid)) ?? [], c = l.find((x) => refOf(l, x) === ref);
     return c && agent?.subagents ? (await agent.subagents.summary(sid, c.id).catch(() => null))?.answer ?? '' : '';
   },
+  // /session/<sid>/usage: the allowance, this turn's requests (spend) and today's (the ledger).
+  usage: async (sid) => ({ allowance: usage.state, turn: spend.get(String(sid)) ?? 0, today: (await ledger.snapshot().catch(() => null))?.bySid?.[String(sid)] ?? 0 }),
+  changes: (sid) => changes.list(sid),
 });
 // The user's namespace: the shared tree plus /session with the user's authority.
 const userNs = over(vfs.fs, [['/session', control.view({ by: 'user' }), { label: 'control (you)' }]]);
@@ -2699,6 +2703,7 @@ function pump() {
 // One send with its bookkeeping. prepare() -> { text, attached, turnModel }.
 async function dispatch(key, prepare) {
   spend.delete('new'); spend.set(String(key), 0); // this session's "requests this turn" starts over
+  changes.begin(key); // and so does /session/<sid>/changes
   submitting.add(key); updateSend(); composer.renderTray();
   let q = null, k = key;
   const runEnded = () => { submitting.delete(k); updateSend(); composer.renderTray(); };
@@ -3494,6 +3499,8 @@ const withWatch = (list) => { list.push(watchTool({ Type, watches, callerOf: wat
         // Main's tools see its own session's control files at /session (src/ns/control.js).
         sessionOf: (caller) => (caller == null ? null : agent?.who(caller)?.sid ?? null),
         mainView: (caller, base) => { const w = caller == null ? null : agent?.who(caller); return w && w.child == null && w.sid != null ? mainNamespace(w.sid, base) : base; },
+        // Every change an agent makes, for /session/<sid>/changes (subagents marked by their ref).
+        onChange: (caller, op, path) => { const w = agent?.who(caller); if (w?.sid != null) changes.note(w.sid, op, path, w.child != null ? refOfChild(w.sid, w.child)?.ref ?? 'subagent' : MAIN); },
         ...egressHooks,
         models: modelService, modelsWho,
         show,

@@ -209,7 +209,9 @@ Everything that acts is a file; the Interface is one client among several (READM
 - CP3 ok: an agent reads its session: main's bash `cat /session/current/status` reads `working agents=4 running=1`; `ls /session` lists only its own session; it can stop its own subagent through ctl (the authority `/task/<id>/ctl` already gave) and gets EPERM writing `in` (agents message each other with the agents tool, which applies the caps).
 - CP4 ok: the Interface and the terminal agree: the tray's Stop on a subagent is a write to its ctl, so `cat /session/events` shows `a2 ctl stop by you` and `a2 state stopped`, and the file statuses and tray rows are drawn from one cache. Events never carry message text (only sizes).
 - CP5 ok: New, then Enter at once: the message starts the new session, never the previous one (Batch E bug).
-- CP6 gap: just-bash 3.6 throws a failed redirection out of the whole script, so in one bash call an EPERM or EINVAL on a control file skips the commands after it (true of /task ctl before Batch F too).
+- CP6 ok (was a gap): just-bash 3.6 throws a failed redirection out of the whole script, so in one bash call an EPERM or EINVAL on a control file skipped the commands after it. Pouch now reports `bash: <path>: <error>`, exit 1, and names each command that did not run (`echo stop > .../a9/ctl; ls .../agents` says "1 later command did not run: `ls ...`"); output printed before it is still lost, and the rest of the script still does not run (upstream).
+- CP7 ok: an agent reads its own budget: `cat /session/current/usage` gives the allowance left (whose it is, or `unknown`), requests this turn and today in this session; read-only, its own session only (AG35). Context fill waits for #124.
+- CP8 ok: an agent checks its own summary: `cat /session/current/changes` lists `created|modified|deleted <refs> <path>` for every path it and its subagents changed since the user's message, net and content-free (AG22).
 (`test/batchF-browser.mjs`; parity inventory in `test/controlplane-node.mjs`)
 
 ### 12. HTML reports and previews (Batch G, 2026-11-01; Desk and Lab personas, and agents)

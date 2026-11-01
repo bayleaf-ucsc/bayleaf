@@ -6,6 +6,8 @@
 //   /session/<sid>/title                read
 //   /session/<sid>/status               read: "<state> agents=<n> running=<k>"
 //   /session/<sid>/ctl                  write: stop (everything in the session), detach
+//   /session/<sid>/usage                read: allowance and request counts (usageText)
+//   /session/<sid>/changes              read: paths the agents changed this turn (changesText)
 //   /session/<sid>/agents/a<n>/status   read: "<state> <seconds> <kind> <name>[: task]"
 //   /session/<sid>/agents/a<n>/ctl      write: stop (alias kill); a1 also "stop all"; detach
 //   /session/<sid>/agents/a<n>/in       write: a message (see parseIn)
@@ -37,7 +39,7 @@ const enc = new TextEncoder();
 const dec = new TextDecoder();
 const KEEP_EVENTS = 200, SHOW_EVENTS = 50;
 const AGENT_FILES = ['ctl', 'in', 'last', 'ns', 'status'];
-const SESSION_FILES = ['agents', 'ctl', 'status', 'title'];
+const SESSION_FILES = ['agents', 'changes', 'ctl', 'status', 'title', 'usage'];
 const WRITABLE = new Set(['ctl', 'in']);
 export const MODES = ['steer', 'followup', 'message'];
 const LAST_CHARS = 4000;
@@ -78,6 +80,8 @@ export const why = (e) => String(e?.message ?? e).replace(/^E[A-Z]+: /, '').repl
 //   current()           the session id open in the Interface, or null
 //   agents(sid)         [{ ref, name, kind: 'main'|'subagent', state, since?, ended?, task?, ns? }]
 //   last(sid, ref)      that agent's latest answer
+//   usage(sid)          { allowance: usage.js state, turn, today } (counts only)
+//   changes(sid)        [{ op, path, by: [ref] }] (createChanges().list)
 export function createControl(deps) {
   const log = []; // { seq, line }
   let seq = 0, driver = null;
@@ -145,6 +149,55 @@ export function sessionStatus(list) {
   return `${main?.state ?? 'idle'} agents=${list.length} running=${running}\n`;
 }
 
+// /session/<sid>/usage: what an agent needs to plan its reading and
+// delegation the way a person plans /compact (story AG35). Counts only. The
+// allowance is BayLeaf's figure and lives outside Pouch: the same key is
+// spent by other tools and devices, and a reset or top-up raises it, so it
+// can move between two reads for reasons this session did not cause.
+// TODO(#124): add "context: <used> of <window> tokens" from src/context.js once it is on main.
+export function usageText({ allowance: a = {}, turn = null, today = null } = {}) {
+  const n = (v) => (v == null ? 'unknown' : String(v));
+  const line = a.mode === 'campus' && a.offCampus ? 'none (off campus without a key: Campus Pass does not apply; the user must sign in)'
+    : a.remaining == null ? 'unknown (not checked yet, or the check failed; unknown is not zero)'
+    : a.mode === 'campus' ? `about ${a.remaining} of ${a.limit} requests left today (Campus Pass, shared with everyone on this network)`
+    : `${a.remaining} of ${a.limit} requests left today (the user's key, also spent by their other tools and devices)`;
+  return `allowance: ${line}\n` + (a.resetsAt ? `resets: ${new Date(a.resetsAt).toISOString()}\n` : '')
+    + `requests-this-turn: ${n(turn)}\nrequests-today-this-session: ${n(today)}\n`
+    + 'Each model step is one request: every tool round, subagent step, compaction and title.\n';
+}
+
+// /session/<sid>/changes: the paths the agents changed since the user's last
+// message, so the main agent can check its own summary (story AG22). Paths
+// only, never content, folded to the net change: created then edited is
+// created, created then deleted is nothing, deleted then written is modified.
+// The tools report each write (src/tools.js noting); /session, /task and /dev
+// writes are actions, not file changes, and are left out.
+const NOT_FILES = /^\/(session|task|dev)(\/|$)/;
+export function createChanges() {
+  const bySid = new Map(); // sid -> Map(path -> { op, by: Set })
+  return {
+    begin(sid) { bySid.set(String(sid), new Map()); },
+    // op: 'created' | 'modified' | 'deleted'; by: an agent ref ('a1', 'a2').
+    note(sid, op, path, by) {
+      if (sid == null || NOT_FILES.test(path)) return;
+      const k = String(sid);
+      if (!bySid.has(k)) bySid.set(k, new Map());
+      const m = bySid.get(k), had = m.get(path);
+      if (!had) { m.set(path, { op, by: new Set([by]) }); return; }
+      had.by.add(by);
+      if (had.op === 'created' && op === 'deleted') m.delete(path);
+      else if (had.op === 'deleted' && op !== 'deleted') had.op = 'modified';
+      else if (had.op !== 'created') had.op = op;
+    },
+    list(sid) {
+      return [...(bySid.get(String(sid)) ?? new Map())].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([path, c]) => ({ op: c.op, path, by: [...c.by].sort() }));
+    },
+    forget(sid) { bySid.delete(String(sid)); },
+  };
+}
+// One line per path: "<op> <refs> <path>", the path last (it may contain spaces).
+export const changesText = (list = []) => list.map((c) => `${c.op} ${c.by.join(',')} ${c.path}\n`).join('');
+
 // The /session tree as one writer sees it.
 export class SessionFs extends BaseFs {
   // by: 'user' | 'agent'; sid: an agent's own session (its only one);
@@ -189,6 +242,8 @@ export class SessionFs extends BaseFs {
     }
     if (n.file === 'title') return `${(await this.d.sessions()).find((s) => String(s.id) === n.sid)?.title || 'Untitled'}\n`;
     if (n.file === 'status') return sessionStatus(await this.d.agents(n.sid));
+    if (n.file === 'usage') return usageText((await this.d.usage?.(n.sid)) ?? {});
+    if (n.file === 'changes') return changesText((await this.d.changes?.(n.sid)) ?? []);
     return '';
   }
   async stat(path) {
