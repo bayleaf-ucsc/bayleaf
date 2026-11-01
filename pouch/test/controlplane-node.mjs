@@ -260,6 +260,11 @@ await test('changes: net paths changed this turn, subagents marked, actions left
   const r2 = await new Bash({ fs: noting(fs, (op, p) => seen.note(1, op, p, 'a1')), cwd: '/work' }).exec('rm -f missing.txt; echo c > dir/new; rm -r dir');
   assert.equal(r2.exitCode, 0, r2.stderr);
   assert.equal(changesText(seen.list(1)), 'deleted a1 /work/dir\n');
+  // A folder moved to a new path keeps what was made in it, under the new path.
+  seen.begin(1);
+  const r3 = await new Bash({ fs: noting(fs, (op, p) => seen.note(1, op, p, 'a1')), cwd: '/work' }).exec('mkdir d; echo r > d/report; mv d final');
+  assert.equal(r3.exitCode, 0, r3.stderr);
+  assert.equal(changesText(seen.list(1)), 'created a1 /work/final\ncreated a1 /work/final/report\n');
   // Read through the control plane, the agent's own session only.
   const page = fakePage();
   page.changes.note(1, 'created', '/work/report.md', 'a1'); page.changes.note(1, 'modified', '/work/notes.md', 'a2');
@@ -287,6 +292,10 @@ await test('CP6: a failed control write reports itself and names what did not ru
   assert.match(stoppedAt('cat /session/current/agents/a2/ctl; echo item >> /work/log; echo explode > /session/current/agents/a2/ctl; echo x', '/session/current/agents/a2/ctl', 'EINVAL'), /the 2 commands before it ran but their output is lost; 1 later command did not run: `echo x`/);
   assert.match(stoppedAt('cat notes.md; echo hi > d; echo after', '/work/d', 'EIO'), /the 1 command before it ran.*1 later command did not run: `echo after`/);
   assert.match(stoppedAt('echo a > /work/x; echo b > /work/x; echo c', '/work/x', 'EIO'), /output printed before it is lost; commands after it did not run/);
+  // A literal write with the same tail is not the failed variable write; a loop is ambiguous.
+  assert.match(stoppedAt('echo a > /work/a9/ctl; echo stop > $d/a9/ctl; echo z', '/session/current/agents/a9/ctl', 'EINVAL'), /the 1 command before it ran.*1 later command did not run: `echo z`/);
+  assert.match(stoppedAt('echo a > /work/a9/ctl; echo z', '/session/current/agents/a9/ctl', 'EINVAL'), /output printed before it is lost; commands after it did not run/);
+  assert.match(stoppedAt('for c in stop explode; do echo $c > /session/current/agents/a2/ctl; echo item >> /work/log; done', '/session/current/agents/a2/ctl', 'EINVAL'), /output printed before it is lost; commands after it did not run/);
   // Failures that are not writes still throw; ordinary scripts are untouched.
   assert.equal((await page.agent('cat /session/current/status; echo after')).stdout, 'working agents=2 running=1\nafter\n');
   assert.deepEqual(commandsOf("a; b 'c;d'\n# x; y\nfor i in 1; do e; done"), ['a', "b 'c;d'", 'for i in 1', 'do e', 'done']);

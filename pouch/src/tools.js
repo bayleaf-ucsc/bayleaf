@@ -126,6 +126,18 @@ export function serialized(fs) {
 // A filesystem that reports each successful change to onChange(op, path)
 // ('created' | 'modified' | 'deleted'), for /session/<sid>/changes. One stat
 // before a write tells created from modified; paths only, never content.
+// The paths under a directory, depth first, at most MOVED_MAX ([] for a file).
+const MOVED_MAX = 1000;
+async function under(fs, dir, out = []) {
+  let items;
+  try { if (!(await fs.stat(dir)).isDirectory) return out; items = await fs.readdir(dir); } catch { return out; }
+  for (const name of items) {
+    if (out.length >= MOVED_MAX) break;
+    out.push(dir + '/' + name);
+    await under(fs, dir + '/' + name, out);
+  }
+  return out;
+}
 export function noting(fs, onChange) {
   const was = (p) => fs.stat(p).then(() => true, () => false);
   const write = (prop) => async (p, ...a) => { const had = await was(p); const r = await fs[prop](p, ...a); onChange(had ? 'modified' : 'created', normalize(p)); return r; };
@@ -136,7 +148,14 @@ export function noting(fs, onChange) {
       if (prop === 'rm') return async (p, ...a) => { const had = await was(p); const r = await target.rm(p, ...a); if (had) onChange('deleted', normalize(p)); return r; };
       if (prop === 'mkdir') return async (p, ...a) => { const had = await was(p); const r = await target.mkdir(p, ...a); if (!had) onChange('created', normalize(p)); return r; };
       if (prop === 'cp') return async (s, d, ...a) => { const had = await was(d); const r = await target.cp(s, d, ...a); onChange(had ? 'modified' : 'created', normalize(d)); return r; };
-      if (prop === 'mv') return async (s, d, ...a) => { const had = await was(d); const r = await target.mv(s, d, ...a); onChange('deleted', normalize(s)); onChange(had ? 'modified' : 'created', normalize(d)); return r; };
+      if (prop === 'mv') return async (s, d, ...a) => {
+        const had = await was(d); const r = await target.mv(s, d, ...a);
+        onChange('deleted', normalize(s)); onChange(had ? 'modified' : 'created', normalize(d));
+        // A folder renamed to a new path: everything under it is new there too (the
+        // ledger folds what was noted under the old path away with its deletion).
+        if (!had) for (const p of await under(target, normalize(d))) onChange('created', p);
+        return r;
+      };
       const v = target[prop];
       return typeof v === 'function' ? v.bind(target) : v;
     },
@@ -202,9 +221,13 @@ export function stoppedAt(script, path, why, cwd = CWD) {
   const tail = path.split('/').slice(-2).join('/');
   const name = [path, rel].filter(Boolean).map(esc).join('|');
   const end = `(?=$|[\\s'"<>;|&)])`;
-  const writes = new RegExp(`(>>?|\\btee(\\s+-a)?)\\s*['"]?(?:${name}|\\S*/${esc(tail)})${end}`);
+  // The tail alone only matches a target built from a variable ($dir/a9/ctl), so a
+  // literal write to another path ending the same way is not taken for it.
+  const writes = new RegExp(`(>>?|\\btee(\\s+-a)?)\\s*['"]?(?:${name}|[^\\s$]*\\$\\S*/${esc(tail)})${end}`);
   const hits = cmds.flatMap((c, i) => (writes.test(c) ? [i] : []));
-  const k = hits.length === 1 ? hits[0] : -1;
+  // In a loop the failing pass is unknown, so which commands ran is too.
+  const loop = cmds.some((c) => /(?:^|(?:\bthen|\bdo|\belse|&&|\|\|)\s+)(?:for|while|until)\s/.test(c));
+  const k = hits.length === 1 && !loop ? hits[0] : -1;
   const later = k < 0 ? [] : cmds.slice(k + 1);
   const list = later.slice(0, 5).map((c) => '`' + (c.length > 80 ? c.slice(0, 79) + '…' : c) + '`').join(', ') + (later.length > 5 ? `, and ${later.length - 5} more` : '');
   const before = k > 0 ? `the ${k} command${k > 1 ? 's' : ''} before it ran but ${k > 1 ? 'their' : 'its'} output is lost` : k < 0 ? 'output printed before it is lost' : '';
