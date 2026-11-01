@@ -14,10 +14,10 @@
 // - libav.wasm: the variant's wasm, byte for byte as released.
 // - NOTICE.txt: licenses, and where the source is.
 // runtime/libav-source/ (never fetched by the page; LGPL-2.1 section 6):
-//   the release's sources/ for this variant, from pinned upstream URLs whose
-//   bytes equal the libav.js 6.10.9.0 release zip's sources/ (checked
-//   2026-11-01), except libav.js itself: GitHub's archive of the same tag
-//   (the zip holds `git archive HEAD | xz`, the same tree).
+//   the release's whole sources/ (this variant's, then the unlinked rest), from
+//   pinned upstream URLs whose bytes equal the libav.js 6.10.9.0 release zip's
+//   sources/ (checked 2026-11-01), except libav.js itself: GitHub's archive of
+//   the same tag (the zip holds `git archive HEAD | xz`, the same tree).
 import { readFileSync, existsSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -46,6 +46,21 @@ export const SOURCES = [
   ['emfiberthreads-1.3.tar.gz', 'https://github.com/Yahweasel/emfiberthreads/archive/refs/tags/v1.3.tar.gz',
     '0fe933d7742de3b3213608e0fb087a1ae0d060604d5835f7c9cdfcee0fc8cbcb', ['emfiberthreads-1.3/LICENSE.md']],
 ];
+// The rest of the release's sources/: libraries other variants link and this
+// one does not (its deps.mk), hosted anyway so the source set is the release's
+// whole. Byte-identical to the zip's sources/ (checked 2026-11-01). [file, url, sha256]
+export const UNLINKED = [
+  ['libvorbis-1.3.7.tar.xz', 'https://downloads.xiph.org/releases/vorbis/libvorbis-1.3.7.tar.xz',
+    'b33cc4934322bcbf6efcbacf49e3ca01aadbea4114ec9589d1b1e9d20f72954b'],
+  ['libogg-1.3.6.tar.xz', 'https://downloads.xiph.org/releases/ogg/libogg-1.3.6.tar.xz',
+    '5c8253428e181840cd20d41f3ca16557a9cc04bad4a3d04cce84808677fa1061'],
+  ['lame-3.100.tar.gz', 'https://sourceforge.net/projects/lame/files/lame/3.100/lame-3.100.tar.gz',
+    'ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e'],
+  ['libaom-03087864.tar.gz', 'https://gitlab.com/webmproject/libaom/-/archive/03087864/libaom-03087864.tar.gz',
+    '364cc54d1879a0a84b9b78ff5e1f5f04d0a3833e83edc38a10f80c67dc0e0ad3'],
+  ['zlib-1.3.2.tar.gz', 'https://www.zlib.net/fossils/zlib-1.3.2.tar.gz',
+    'bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16'],
+];
 // Fetched once into the gitignored node_modules cache, then checked on every build.
 const CACHE = 'node_modules/.cache/pouch-libav-source/';
 
@@ -67,13 +82,13 @@ async function source([file, url, hash]) {
   if (!existsSync(p)) {
     mkdirSync(CACHE, { recursive: true });
     console.log(`fetching ${url} (libav.js corresponding source, once)`);
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`${url}: HTTP ${res.status}; the libav runtime cannot ship without its source (LGPL-2.1)`);
-    writeFileSync(p + '.part', Buffer.from(await res.arrayBuffer()));
+    // curl, not fetch: GitLab's archive endpoint answers Node's fetch with 406 (checked 2026-11-01).
+    try { execFileSync('curl', ['-fsSL', '--retry', '2', '-o', p + '.part', url], { stdio: ['ignore', 'ignore', 'pipe'] }); }
+    catch (e) { throw new Error(`${url}: ${String(e.stderr ?? e.message).trim()}; the libav runtime cannot ship without its source (LGPL-2.1)`); }
     renameSync(p + '.part', p);
   }
   const bytes = readFileSync(p);
-  if (sha(bytes) !== hash) throw new Error(`${p} differs from its pinned SHA-256; delete it to fetch again, or update build-libav.mjs SOURCES after checking`);
+  if (sha(bytes) !== hash) throw new Error(`${p} differs from its pinned SHA-256; delete it to fetch again, or update build-libav.mjs SOURCES/UNLINKED after checking`);
   return bytes;
 }
 
@@ -81,8 +96,9 @@ export async function buildLibav(out) {
   const v = JSON.parse(readFileSync(PKG + 'package.json', 'utf8')).version;
   if (v !== LIBAV.version) throw new Error(`@libav.js/variant-${LIBAV.variant} ${v} in node_modules; build-libav.mjs pins ${LIBAV.version}`);
   for (const [f, h] of Object.entries(LIBAV.sha256)) if (sha(readFileSync(PKG + f)) !== h) throw new Error(`${PKG}${f} differs from its pinned SHA-256`);
-  const sources = await Promise.all(SOURCES.map(source));
-  const src = writeRuntime(out, 'libav-source', SOURCES.map(([name], i) => ({ name, role: 'source', bytes: sources[i] })));
+  const all = [...SOURCES, ...UNLINKED];
+  const sources = await Promise.all(all.map(source));
+  const src = writeRuntime(out, 'libav-source', all.map(([name], i) => ({ name, role: 'source', bytes: sources[i] })));
 
   const worker = await bundleWorker('src/media/worker.js', [], { sources: REWRITES });
   const licenses = SOURCES.flatMap(([file, , , lic]) => lic.map((l) => `==> ${l} (in ${file}) <==\n${execFileSync('tar', ['-xOf', CACHE + file, l], { encoding: 'utf8', maxBuffer: 2 ** 22 }).trim()}\n`));
@@ -93,7 +109,10 @@ libvpx 1.16.0 and libopus 1.6.1, compiled to WebAssembly by libav.js's author.
 The libraries are under the GNU Lesser General Public License, version 2.1
 (text below); libav.js's own wrapper is 0BSD-style; libvpx and libopus are
 BSD-style. Pouch ships libav.wasm unmodified (SHA-256 ${LIBAV.sha256[`dist/libav-${LIBAV.release}-${LIBAV.variant}.wasm.wasm`]}),
-and its wrapper bundled, unmodified, into worker.js.
+and in worker.js its wrapper, unmodified, and its Emscripten factory, modified
+only to disable code paths: the factory's Node.js imports become a throw or
+(void 0), and libav.js's own worker bootstrap is turned off (REWRITES in
+Pouch's build-libav.mjs: three rules, six replacements).
 
 Corresponding source, from this same site: runtime/libav-source/${src.pin.manifest}
 lists each tarball below with its SHA-256 and the part file(s) that hold it, in
@@ -101,7 +120,11 @@ order (concatenate them). To rebuild: unpack libav.js, put the other tarballs in
 its sources/ folder, and run \`make build-${LIBAV.variant}\` with Emscripten (see its README).
 ${SOURCES.map(([f, url, h]) => `  ${f}  sha256 ${h}\n    (also at ${url})`).join('\n')}
 
-Each license follows, under its path in those tarballs.
+Included for completeness, not linked into this variant (the rest of the
+release's sources/, for libav.js's other variants):
+${UNLINKED.map(([f, url, h]) => `  ${f}  sha256 ${h}\n    (also at ${url})`).join('\n')}
+
+Each license of the linked code follows, under its path in those tarballs.
 
 ${licenses.join('\n')}`);
   const runtime = writeRuntime(out, 'libav', [

@@ -1252,8 +1252,8 @@ next job starts a new one; a stopped job writes nothing. Exit codes: 1 for error
 stopped.
 
 The runtime (`build-libav.mjs`, `src/media/worker.js`) bundles libav.js's wrapper and
-Emscripten factory into one module worker (four build-time rewrites, each matched an exact
-number of times: Emscripten's Node branches and libav.js's own worker bootstrap), compiles
+Emscripten factory into one module worker (three build-time rewrite rules, six replacements,
+each matched an exact number of times: Emscripten's Node branches and libav.js's own worker bootstrap), compiles
 the released wasm once from verified bytes, then removes `fetch` and `XMLHttpRequest` from
 the worker. Each job gets a fresh libav instance, so no job sees another's files. Non-threaded:
 no COOP/COEP, and the page's CSP did not change. The bundled `media` skill gives agents the

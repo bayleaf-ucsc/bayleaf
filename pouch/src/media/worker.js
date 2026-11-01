@@ -63,7 +63,8 @@ const actions = {
     try {
       await withInputs(m, inputs, maxSeconds);
       check(id);
-      const rc = await m[program](...args);
+      if (program !== 'ffmpeg' && program !== 'ffprobe') throw fail(`unknown program ${program}`, 'EPROTO');
+      const rc = await (program === 'ffmpeg' ? m.ffmpeg(...args) : m.ffprobe(...args));
       const files = [];
       let total = 0;
       for (const name of outputs) {
@@ -162,8 +163,10 @@ self.onmessage = async ({ data: msg }) => {
         try { Object.defineProperty(globalThis, k, { value: undefined, configurable: false, writable: false }); } catch { globalThis[k] = undefined; }
       }
       result = { version: libav.VER, config: libav.CONFIG };
-    } else {
+    } else if (action === 'run' || action === 'frames') {
       result = await actions[action](msg, id, (line) => postMessage({ id, note: line }));
+    } else {
+      throw fail(`unknown action ${action}`, 'EPROTO');
     }
     const transfer = [...(result?.files ?? []), ...(result?.images ?? [])].flatMap((f) => (f.bytes ? [f.bytes.buffer] : []));
     postMessage({ id, result }, transfer);

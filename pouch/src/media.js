@@ -226,7 +226,9 @@ export function mediaEngine({ assets = LIBAV_RUNTIME && partAssets(LIBAV_RUNTIME
         };
         w.onerror = (e) => { for (const p of pending.values()) p.reject(new Error(e.message || 'the media worker failed (out of memory?)')); pending.clear(); worker = null; };
         worker = w;
-        await call('load', { wasm: await got.files['libav.wasm'].arrayBuffer() });
+        // A failed load (say, compile out of memory) must not leave a worker that fails every job.
+        try { await call('load', { wasm: await got.files['libav.wasm'].arrayBuffer() }); }
+        catch (e) { w.terminate(); if (worker === w) worker = null; throw e; }
       }
       function call(action, data, { note, signal } = {}) {
         return new Promise((resolve, reject) => {
@@ -360,9 +362,11 @@ export function mediaCommands(defineCommand, service, whoOf = () => ({ name: 'te
         maxImages: MAX_IMAGES, maxPixels: MAX_FRAME_PIXELS, maxBytes: MAX_OUTPUT_BYTES, type: plan.type, quality: plan.quality, maxSeconds: MAX_INPUT_SECONDS }, `ffmpeg ${read.files[0].path.split('/').pop()} (frames)`);
       if (j.error) return j.error;
       const base = outPaths[0], lines = [];
+      const targets = j.r.images.map((_, i) => (plan.pattern ? frameName(base, plan.start + i) : base));
+      // All numbered targets are checked first, so a refusal writes no frame at all.
+      if (!overwrite) for (const p of targets) if (await ctx.fs.exists(p)) return fail('ffmpeg', `File '${p}' already exists. Exiting (use -y to overwrite).`);
       for (const [i, im] of j.r.images.entries()) {
-        const p = plan.pattern ? frameName(base, plan.start + i) : base;
-        if (!overwrite && await ctx.fs.exists(p)) return fail('ffmpeg', `File '${p}' already exists. Exiting (use -y to overwrite).`);
+        const p = targets[i];
         await mkdirFor(ctx.fs, p);
         await ctx.fs.writeFile(p, im.bytes);
         lines.push(`wrote ${p} (t=${+im.t.toFixed(3)}s, ${im.width}x${im.height})`);

@@ -13,7 +13,7 @@ import { parseProbe, parseFfmpeg, parseTime, imagePlan, frameName, tidy, createM
   MAX_INPUT_BYTES, MAX_IMAGES, MAX_STDERR_LINES, MAX_OUTPUT_BYTES } from '../src/media.js';
 import { Tasks } from '../src/ns/tasks.js';
 import { shellFor } from '../src/tools.js';
-import { buildLibav, LIBAV, SOURCES } from '../build-libav.mjs';
+import { buildLibav, LIBAV, SOURCES, UNLINKED } from '../build-libav.mjs';
 import { assertNoCdn } from '../build-runtime.mjs';
 
 let pass = 0;
@@ -195,7 +195,8 @@ await t('build: pinned libav.js variant, no CDN, source shipped alongside', asyn
     const notice = read(pin, 'NOTICE.txt')[1].toString();
     for (const k of ['GNU LESSER GENERAL PUBLIC LICENSE', 'Version 2.1', 'libvpx', 'Opus', 'Yahweasel', source.manifest]) assert.ok(notice.includes(k), k);
     const [sm] = read(source);
-    assert.deepEqual(sm.files.map((f) => [f.name, f.sha256]), SOURCES.map(([f, , h]) => [f, h]));
+    assert.deepEqual(sm.files.map((f) => [f.name, f.sha256]), [...SOURCES, ...UNLINKED].map(([f, , h]) => [f, h]));
+    assert.ok(notice.includes('not linked') && UNLINKED.every(([f]) => notice.includes(f)), 'NOTICE names the unlinked sources');
     assert.ok(sm.files.every((f) => f.parts.every((p) => p.bytes <= 20 * 2 ** 20)), 'every part under the static-asset limit');
     assert.ok(sums.some(([, p]) => p === `${source.dir}${source.manifest}`), 'the source is in SHA256SUMS, so deploy.mjs uploads it');
   } finally { rmSync(out, { recursive: true, force: true }); }

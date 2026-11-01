@@ -126,12 +126,13 @@ worker and wasm runs under the existing `'wasm-unsafe-eval'` (checked with no CS
 in `test/media-browser.mjs`, Chromium only). Privacy: Cloudflare sees that this browser
 fetched the media runtime; no media content leaves the page.
 
-**LGPL-2.1 corresponding source (decision, for Adam to confirm).** libav.js's README says
+**LGPL-2.1 corresponding source (decided by Adam, 2026-11-01).** libav.js's README says
 anyone distributing it must provide the sources; its release zip carries them in
 `sources/`. Pouch hosts them from the same site as the binary (LGPL-2.1 section 6(d):
 equivalent access from the same place), as a second group the page names but never
-fetches: `runtime/libav-source/`, 33.4 MiB in 6 files (largest part 11.5 MiB, so no file
-needed splitting), listed in SHA256SUMS so `deploy.mjs` uploads it:
+fetches: `runtime/libav-source/`, 43.9 MiB in 11 files (largest part 11.5 MiB, so no file
+needed splitting), listed in SHA256SUMS so `deploy.mjs` uploads it. It is the release's
+whole `sources/`: the five tarballs this variant links, then the five it does not.
 
 | Tarball | Size | Source |
 |---|---:|---|
@@ -140,20 +141,22 @@ needed splitting), listed in SHA256SUMS so `deploy.mjs` uploads it:
 | `opus-1.6.1.tar.gz` | 10.0 MiB | downloads.xiph.org |
 | `libvpx-1.16.0.tar.gz` | 5.4 MiB | GitHub archive of tag v1.16.0 |
 | `emfiberthreads-1.3.tar.gz` | 8 KB | GitHub archive of tag v1.3 |
+| `libvorbis-1.3.7.tar.xz` (not linked) | 1.1 MiB | downloads.xiph.org |
+| `libogg-1.3.6.tar.xz` (not linked) | 430 KB | downloads.xiph.org |
+| `lame-3.100.tar.gz` (not linked) | 1.5 MiB | sourceforge.net |
+| `libaom-03087864.tar.gz` (not linked) | 6.1 MiB | GitLab archive of webmproject/libaom at 03087864 |
+| `zlib-1.3.2.tar.gz` (not linked) | 1.4 MiB | zlib.net fossils |
 
-Four are byte-identical to the release zip's `sources/` (SHA-256 checked 2026-11-01); the
-fifth is GitHub's archive of the libav.js tag, the same tree as the zip's `libav.js.tar.xz`
-(`git archive HEAD | xz`) in a different compression. `build-libav.mjs` downloads them once
-into `node_modules/.cache/pouch-libav-source/` (so the first build needs the network) and
-checks each pinned SHA-256 on every build. `NOTICE.txt` and `ffmpeg -h` name the source
-manifest; the manifest lists each tarball's parts in order. Uncertain, for Adam: (1)
-whether the libav.js tag archive (not the release's own `.tar.xz`) is acceptable as its
-corresponding source, (2) whether the libvorbis, libogg, lame, libaom and zlib tarballs in
-the release's `sources/`, which this variant does not link (its `deps.mk`), should ship
-anyway for simplicity (about 11 MiB more), and (3) a written offer is not made, because the
-source sits next to the binary. The wasm is unmodified and the wrapper is bundled
-unmodified apart from the four rewrites, which disable code paths and are visible in
-`build-libav.mjs`.
+Nine are byte-identical to the release zip's `sources/` (SHA-256 checked 2026-11-01); the
+tenth is GitHub's archive of the libav.js tag, the same tree as the zip's `libav.js.tar.xz`
+(`git archive HEAD | xz`) in a different compression (accepted by Adam). `build-libav.mjs`
+downloads them once into `node_modules/.cache/pouch-libav-source/` (so the first build needs
+the network) and checks each pinned SHA-256 on every build. `NOTICE.txt` and `ffmpeg -h`
+name the source manifest; the manifest lists each tarball's parts in order, and `NOTICE.txt`
+lists the five unlinked ones as included for completeness, not linked. No written offer is
+made, because the source sits next to the binary. The wasm is unmodified; the wrapper is
+bundled unmodified, and the Emscripten factory with three rewrite rules (six replacements)
+that disable code paths, visible in `build-libav.mjs`.
 
 ## Installable app shell (built and tested locally, not deployed; 2026-10-30)
 

@@ -87,7 +87,7 @@ for (const f of shellFiles) { mkdirSync(dirname(join(snapshot, f.path)), { recur
 // build-pdf.mjs PDFJS, build-libav.mjs LIBAV and SOURCES).
 // Stage only allowlisted public files, outside the checkout and its Wrangler caches.
 const staging = mkdtempSync(join(tmpdir(), 'pouch-static-'));
-// Each staging copy holds the whole artifact (about 40 MiB): never leave one behind.
+// Each staging copy holds the whole artifact (over 80 MiB with the libav source): never leave one behind.
 process.on('exit', () => rmSync(staging, { recursive: true, force: true }));
 mkdirSync(join(staging, 'assets'));
 writeFileSync(join(staging, 'assets/pouch.html'), html);
