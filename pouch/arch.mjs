@@ -98,6 +98,12 @@ export const BUDGET = { default: 700, 'src/main.js': 60 };
 
 // ─────────────────────────────────────────────────────────────────────
 const inside = (path, prefixes) => prefixes.some((p) => (p.endsWith('/') ? path.startsWith(p) : path === p));
+// First-party source extensions esbuild can bundle as code (its resolveExtensions
+// and loaders, plus explicit .mjs/.cjs imports): every one is scanned, and
+// checkMetafile fails a bundled first-party file the scan did not see.
+export const SOURCE_EXTS = ['.js', '.mjs', '.cjs', '.jsx', '.ts', '.mts', '.cts', '.tsx'];
+const isSource = (path) => SOURCE_EXTS.some((e) => path.endsWith(e));
+const scriptKind = (name) => (/\.[mc]?ts$/.test(name) ? ts.ScriptKind.TS : /\.tsx$/.test(name) ? ts.ScriptKind.TSX : /\.jsx$/.test(name) ? ts.ScriptKind.JSX : ts.ScriptKind.JS);
 const fmt = (rule, path, line, what, why) => `[${rule}] ${path}${line ? ':' + line : ''}: ${what}. ${why}.`;
 
 // files: Map of path relative to pouch/ -> source text. .html files
@@ -113,7 +119,7 @@ function sources(files) {
         const line = text.slice(0, m.index).split('\n').length - 1;
         out.push({ path, name: `${path}#script${k++}.js`, text: '\n'.repeat(line) + m[1] });
       }
-    } else if (path.endsWith('.js') || path.endsWith('.mjs')) out.push({ path, name: path, text });
+    } else if (isSource(path)) out.push({ path, name: path, text });
   }
   return out;
 }
@@ -121,7 +127,7 @@ function sources(files) {
 function parse(list) {
   const byName = new Map(list.map((s) => [s.name, s]));
   const host = {
-    getSourceFile: (n) => (byName.has(n) ? ts.createSourceFile(n, byName.get(n).text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.JS) : undefined),
+    getSourceFile: (n) => (byName.has(n) ? ts.createSourceFile(n, byName.get(n).text, ts.ScriptTarget.ES2022, true, scriptKind(n)) : undefined),
     fileExists: (n) => byName.has(n), readFile: (n) => byName.get(n)?.text, writeFile() {},
     getDefaultLibFileName: () => 'lib.d.ts', getCurrentDirectory: () => '/', getCanonicalFileName: (n) => n,
     useCaseSensitiveFileNames: () => true, getNewLine: () => '\n', resolveModuleNames: (ns) => ns.map(() => undefined),
@@ -131,12 +137,48 @@ function parse(list) {
   return { program, checker: program.getTypeChecker() };
 }
 
+// A property name as written: fetch, 'fetch', `fetch`, ['fetch'] (else undefined).
+const keyText = (k) => {
+  if (!k) return undefined;
+  if (ts.isIdentifier(k) || ts.isStringLiteralLike(k) || ts.isNumericLiteral(k)) return k.text;
+  if (ts.isComputedPropertyName(k) && ts.isStringLiteralLike(k.expression)) return k.expression.text;
+};
+// Calls that read or write a property named by a string: Reflect.get(globalThis, 'fetch').
+const REFLECTIVE = ['Reflect.get', 'Reflect.set', 'Reflect.getOwnPropertyDescriptor', 'Reflect.defineProperty',
+  'Object.getOwnPropertyDescriptor', 'Object.defineProperty'];
+// An object literal that is the target of a destructuring assignment
+// (({ fetch: f } = globalThis)): its keys read properties rather than set them.
+const assignedTo = (obj) => {
+  let c = obj;
+  for (;;) {
+    const p = c.parent;
+    if (p && (ts.isPropertyAssignment(p) || ts.isSpreadAssignment(p) || ts.isSpreadElement(p) || ts.isArrayLiteralExpression(p) || ts.isObjectLiteralExpression(p) || ts.isParenthesizedExpression(p))) c = p;
+    else return !!p && (ts.isBinaryExpression(p) && p.left === c && p.operatorToken.kind === ts.SyntaxKind.EqualsToken
+      || (ts.isForOfStatement(p) || ts.isForInStatement(p)) && p.initializer === c);
+  }
+};
+
 // Every network use, HTML sink, Sealed touch and import in one source.
+//
+// This guards against routine edits (a convenient fetch, an innerHTML that
+// slipped in), not against code written to evade it: a property name built at
+// run time (globalThis[name]) or eval-like tricks get past any static scan.
+// Review and the CSP (connect-src, no unsafe-eval) remain the backstop. The
+// ordinary forms are closed: globals, members (window.fetch, x['fetch']),
+// destructuring (const { fetch: f } = globalThis, nested or assigned),
+// object keys in any spelling (innerHTML, 'innerHTML', ['innerHTML']) and
+// the reflective calls in REFLECTIVE.
 function scan(sf, checker) {
   const found = [];
   const at = (n) => sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
   const isGlobal = (id) => !checker.getSymbolAtLocation(id);
   const imports = [];
+  // A property of this name is read (or, for a key, set) at node n.
+  const property = (name, n, { network = true } = {}) => {
+    if (network && NETWORK_APIS.includes(name)) found.push({ kind: 'network', api: name, line: at(n) });
+    if (HTML_SINKS.includes(name)) found.push({ kind: 'html', api: name, line: at(n) });
+    if (SEALED_TOUCH.includes(name)) found.push({ kind: 'sealed', api: name, line: at(n) });
+  };
   const visit = (n) => {
     if (ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) {
       if (n.moduleSpecifier && ts.isStringLiteral(n.moduleSpecifier)) imports.push({ spec: n.moduleSpecifier.text, line: at(n) });
@@ -144,24 +186,40 @@ function scan(sf, checker) {
       const a = n.arguments[0];
       if (a && ts.isStringLiteralLike(a)) imports.push({ spec: a.text, line: at(n) });
       if (!(a && ts.isStringLiteralLike(a) && a.text.startsWith('.'))) found.push({ kind: 'network', api: 'import()', line: at(n) });
+    } else if (ts.isCallExpression(n) && REFLECTIVE.includes(n.expression.getText(sf).replace(/^(globalThis|self|window)\./, ''))) {
+      const a = n.arguments[1];
+      if (a && ts.isStringLiteralLike(a)) property(a.text, n);
+    } else if (ts.isBindingElement(n) && ts.isObjectBindingPattern(n.parent)) {
+      // const { fetch: request } = globalThis, { navigator: { sendBeacon } } = self:
+      // destructuring reads the property, whatever the binding is called.
+      property(keyText(n.propertyName ?? n.name), n);
+    } else if ((ts.isPropertyAssignment(n) || ts.isShorthandPropertyAssignment(n) || ts.isMethodDeclaration(n)
+      || ts.isGetAccessorDeclaration(n) || ts.isSetAccessorDeclaration(n)) && ts.isObjectLiteralExpression(n.parent)) {
+      // A key sets a property (el('div', { innerHTML })): an HTML or Sealed
+      // touch. It is a network use only when it reads one (a destructuring
+      // target) or hands over the global ({ fetch } with no local fetch);
+      // { fetch: guardedFetch } passes a module's own function.
+      const name = keyText(n.name);
+      const passesGlobal = ts.isShorthandPropertyAssignment(n) && !checker.getShorthandAssignmentValueSymbol(n);
+      property(name, n, { network: assignedTo(n.parent) || passesGlobal });
     } else if (ts.isIdentifier(n)) {
       const p = n.parent, name = n.text;
       const member = p && ts.isPropertyAccessExpression(p) && p.name === n;
-      const key = p && (ts.isPropertyAssignment(p) || ts.isMethodDeclaration(p) || ts.isShorthandPropertyAssignment(p)) && p.name === n
-        && ts.isObjectLiteralExpression(p.parent);
-      const declared = p && (ts.isVariableDeclaration(p) || ts.isParameter(p) || ts.isFunctionDeclaration(p) || ts.isBindingElement(p)
-        || ts.isImportSpecifier(p) || ts.isPropertyDeclaration(p)) && p.name === n;
+      // Names handled above as keys and bindings, or declared here (a local fetch).
+      const named = p && (ts.isPropertyAssignment(p) || ts.isMethodDeclaration(p) || ts.isShorthandPropertyAssignment(p)
+        || ts.isGetAccessorDeclaration(p) || ts.isSetAccessorDeclaration(p) || ts.isBindingElement(p)
+        || ts.isVariableDeclaration(p) || ts.isParameter(p) || ts.isFunctionDeclaration(p) || ts.isImportSpecifier(p)
+        || ts.isPropertyDeclaration(p)) && (p.name === n || p.propertyName === n);
       // Overwriting one (self.fetch = refuse) removes it; the new value is scanned on its own.
       const replaced = member && ts.isBinaryExpression(p.parent) && p.parent.left === p && p.parent.operatorToken.kind === ts.SyntaxKind.EqualsToken;
-      if (NETWORK_APIS.includes(name) && !declared && !key && !replaced && (member || isGlobal(n))) found.push({ kind: 'network', api: name, line: at(n) });
-      if (HTML_SINKS.includes(name) && (member || (key && !ts.isShorthandPropertyAssignment(p)))) found.push({ kind: 'html', api: name, line: at(n) });
+      if (NETWORK_APIS.includes(name) && !named && !replaced && (member || isGlobal(n))) found.push({ kind: 'network', api: name, line: at(n) });
+      if (HTML_SINKS.includes(name) && member) found.push({ kind: 'html', api: name, line: at(n) });
       if (member && (name === 'write' || name === 'writeln') && p.expression.getText(sf) === 'document') found.push({ kind: 'html', api: 'document.' + name, line: at(n) });
-      if (SEALED_TOUCH.includes(name) && (member || key)) found.push({ kind: 'sealed', api: name, line: at(n) });
+      if (SEALED_TOUCH.includes(name) && member) found.push({ kind: 'sealed', api: name, line: at(n) });
     } else if (ts.isElementAccessExpression(n) && ts.isStringLiteralLike(n.argumentExpression)) {
-      const name = n.argumentExpression.text; // x['innerHTML'], self['fetch']
-      if (NETWORK_APIS.includes(name)) found.push({ kind: 'network', api: name, line: at(n) });
-      if (HTML_SINKS.includes(name)) found.push({ kind: 'html', api: name, line: at(n) });
-      if (SEALED_TOUCH.includes(name)) found.push({ kind: 'sealed', api: name, line: at(n) });
+      // x['innerHTML'], self['fetch']; overwriting one removes it, as above.
+      const replaced = ts.isBinaryExpression(n.parent) && n.parent.left === n && n.parent.operatorToken.kind === ts.SyntaxKind.EqualsToken;
+      property(n.argumentExpression.text, n, { network: !replaced });
     }
     ts.forEachChild(n, visit);
   };
@@ -230,7 +288,7 @@ export function checkArchitecture(files) {
   }
   // Size budgets.
   for (const [path, text] of files) {
-    if (!path.startsWith('src/') || !path.endsWith('.js')) continue;
+    if (!path.startsWith('src/') || !isSource(path)) continue;
     const n = text.split('\n').length - (text.endsWith('\n') ? 1 : 0), max = BUDGET[path] ?? BUDGET.default;
     if (n > max) errors.push(fmt('size', path, 0, `has ${n} lines, over its budget of ${max}`, 'Split it along a seam (README "Architecture"); a module this size is where unrelated changes collide'));
   }
@@ -238,9 +296,16 @@ export function checkArchitecture(files) {
 }
 
 // esbuild's metafile: which modules really import the Tinfoil SDK into the
-// bundle (catches a re-export the source scan cannot follow).
-export function checkMetafile(metafile) {
+// bundle (catches a re-export the source scan cannot follow), and that every
+// first-party file in the bundle is one the scan read (scanned: loadTree's
+// paths), so no file reaches the bundle unchecked.
+export function checkMetafile(metafile, scanned = new Set(loadTree().keys())) {
   const errors = [];
+  for (const path of Object.keys(metafile.inputs)) {
+    // <define:NAME>: a JSON constant build.mjs injects (data, not code).
+    if (/(^|\/)node_modules\//.test(path) || /^<define:\w+>$/.test(path) || scanned.has(path)) continue;
+    errors.push(fmt('egress', path, 0, 'is bundled but was not scanned by arch.mjs', 'Every first-party file in the bundle must pass the trust checks: keep sources under src/ with an extension in SOURCE_EXTS'));
+  }
   for (const [path, input] of Object.entries(metafile.inputs)) {
     for (const im of input.imports ?? []) {
       if (/node_modules\/tinfoil\//.test(im.path) && !path.includes('node_modules/tinfoil/') && !SEALED[path.replace(/^.*?\bsrc\//, 'src/')]) {
@@ -262,14 +327,14 @@ export function checkNoCdn(html, name) {
   try { assertNoCdn(html, name); return []; } catch (e) { return [`[cdn] ${e.message}. Everything Pouch runs is in its own artifact, hash-listed in SHA256SUMS.`]; }
 }
 
-// The real tree: src/**, sw.js and the two pages.
+// The real tree: src/** (every SOURCE_EXTS file), sw.js and the two pages.
 export function loadTree(root = import.meta.dirname) {
   const files = new Map();
   const walk = (dir) => {
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       const p = join(dir, e.name);
       if (e.isDirectory()) walk(p);
-      else if (e.name.endsWith('.js')) files.set(relative(root, p), readFileSync(p, 'utf8'));
+      else if (isSource(e.name)) files.set(relative(root, p), readFileSync(p, 'utf8'));
     }
   };
   walk(join(root, 'src'));

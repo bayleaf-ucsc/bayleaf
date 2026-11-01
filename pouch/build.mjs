@@ -64,8 +64,11 @@ function assemble(code) {
 // The `run` tool's worker (QuickJS with its wasm inline) is bundled first and
 // becomes a string constant in the app, so the page keeps one inline script.
 // Rebuilt only at start: restart --watch after editing src/run/worker*.js.
-const WORKER_SRC = (await build({ entryPoints: ['src/run/worker-browser.js'], bundle: true, minify: true, write: false,
-  format: 'iife', platform: 'browser', target: 'es2022', legalComments: 'inline', logLevel: 'warning' })).outputFiles[0].text;
+// Its metafile is checked like the app's: every first-party input was scanned.
+const worker = await build({ entryPoints: ['src/run/worker-browser.js'], bundle: true, minify: true, write: false, metafile: true,
+  format: 'iife', platform: 'browser', target: 'es2022', legalComments: 'inline', logLevel: 'warning' });
+assertArchitecture(checkMetafile(worker.metafile));
+const WORKER_SRC = worker.outputFiles[0].text;
 
 // The Transformers.js provider: its runtime under dist/runtime/transformers/
 // and the model's pins (build-models.mjs; weights come from the BayLeaf HF
