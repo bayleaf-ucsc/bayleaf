@@ -1,0 +1,16 @@
+# Batch A progress
+- baseline copy at /tmp/pouch-qa/batchA-baseline
+- baseline: all node + 7 browser suites PASS (watch 71s)
+- findings: Stop all never stopped main (main resumed after join released -> 41st req); EHBP forwards signal
+- fix1/2/4/6 harness: done, test/batchA-node.mjs passes (fake panel = 8 req)
+- fix1 UI one-shot label, fix2 quietText+quietGroup, fix4 writableFor, fix5 skill requests + ac-cost + tray spend, fix6 stopAll main: edited, untested in browser
+- all 7 fixes built; test/batchA-node.mjs + test/batchA-browser.mjs (9) pass; fake panel=9 req incl. skill read
+- critic wrong on '100': api says campus_network true from this machine; status line now state-aware, off-campus meter 0
+- pre-existing race: send in gap after Send idle -> stranded steer (seen in batchA-browser before settle helper)
+- next: regressions, walkthrough, real Sealed run, build --with-models
+- regressions: all node PASS; composer/subagent/graphs/sendmode browser PASS (sweep continuing)
+- starting real sealed run (test/batchA-sealed.mjs, CAP 20, port 8763)
+- REAL sealed: 10 POST (9 session + 1 title), 86s, success render, 5 numbered, cards 1 req each
+- full sweep green (12 node, 8 browser)
+- build --with-models done; pwa 17/17; walkthrough ok (9 images changed)
+- DONE
