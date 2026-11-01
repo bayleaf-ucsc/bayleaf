@@ -217,12 +217,15 @@ function setReviewBar(text) {
 
 // link: opened from a reply, where an HTML report opens in Preview; a line
 // number always opens Raw. Otherwise each kind opens in its last mode.
-async function openFile(path, line, { link = false } = {}) {
+// mode, interactive: the terminal's `open` (src/open-cli.js) names both, and
+// remembers neither. Returns false when the user kept unsaved changes.
+async function openFile(path, line, { link = false, mode = null, interactive = false } = {}) {
   const p = previewOf(path);
-  const want = line ? 'raw' : link && p?.kind === 'html' ? 'preview' : null;
+  const want = mode ?? (line ? 'raw' : link && p?.kind === 'html' ? 'preview' : null);
+  const wantScripts = !!mode && p?.kind === 'html' && interactive;
   // Reopening the file you are editing only moves the cursor: no reload, no loss.
   if (path !== openPath || merging) {
-    if (dirty && !(await ask(`Discard unsaved changes to ${openPath}?`, 'Discard', 'danger'))) return;
+    if (dirty && !(await ask(`Discard unsaved changes to ${openPath}?`, 'Discard', 'danger'))) return false;
     if (p && !p.raw) { // image, audio, video: a preview only
       await vfs.fs.stat(path);
       openPath = path; merging = false; viewOnly = true; scripts = false;
@@ -230,7 +233,7 @@ async function openFile(path, line, { link = false } = {}) {
       editor.load(path, '');
       setView('preview');
       showEditor(path);
-      return;
+      return true;
     }
     const bytes = await vfs.fs.readFileBuffer(path);
     if (bytes.includes(0)) return sheet(path + ' looks binary', [
@@ -239,14 +242,18 @@ async function openFile(path, line, { link = false } = {}) {
       ARCHIVE.test(path) && ['Layer under /work (read-only seed)', () => stackSeed(path)],
       ['Download', () => download(path)],
     ]);
-    openPath = path; merging = false; viewOnly = false; scripts = false;
+    openPath = path; merging = false; viewOnly = false; scripts = wantScripts;
     setReviewBar(null); setConflict(null);
     editor.load(path, new TextDecoder().decode(bytes));
     setView(want ?? (p ? rememberedMode(p.kind) : 'raw'));
-  } else if (want && want !== fileView) setView(want);
+  } else if (want && (want !== fileView || (mode && wantScripts !== scripts))) {
+    if (mode) scripts = wantScripts;
+    setView(want);
+  }
   showEditor(path);
   if (line) editor.gotoLine(line);
   if (fileView === 'raw') editor.focus();
+  return true;
 }
 async function saveFile() {
   if (!openPath || viewOnly) return;
@@ -1538,7 +1545,8 @@ function mainNamespace(sid, base) {
 // The user's shell over the same namespace; `bayleaf` asks every use. Ctrl+`
 // opens it (or focuses it); opening it never sends anything.
 const terminal = createTerminal({ vfs, fs: over(vfs.as('user'), [['/session', control.view({ by: 'user', label: 'terminal' }), { label: 'control (you)' }]]), onChange: () => renderTree(),
-  hooks: { bayleafCredential: () => key, approveEgress: (req) => egress.approve(req, null, undefined, 'you, in the terminal'), models: modelService } });
+  hooks: { bayleafCredential: () => key, approveEgress: (req) => egress.approve(req, null, undefined, 'you, in the terminal'), models: modelService,
+    openFile: ({ path, mode, interactive }) => openFile(path, undefined, { mode, interactive }), revealDir } });
 document.addEventListener('keydown', (e) => {
   if (e.key !== '`' || !e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]')) return;
   e.preventDefault();

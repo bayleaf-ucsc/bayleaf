@@ -494,6 +494,38 @@ it) gives the user just-bash over the namespace the main agent sees: /work, /pou
   2,000 lines or 200,000 characters per command with a note; non-zero exit codes appear
   small under the output. just-bash 3.6 returns output when a command ends, so output is
   per command, not streamed; a live line shows the elapsed time and the /task id.
+- **`cat` and `open`.** `cat` is just-bash's own; when its output on screen would be binary
+  (a NUL in the first 8,000 characters) the terminal prints `[binary output: N bytes not
+  shown ...]` instead, while a pipe (`cat x.png | od -c | head`) still gets the bytes.
+  `open <path>` (`src/open-cli.js`) shows a file in the editor pane in the mode its type
+  suggests, or a folder in Files, expanded and in view. The editor or Files then replaces
+  the terminal (one panel at a time; Ctrl+` returns, and the terminal line says what opened).
+
+  | Type | `open <path>` | Also |
+  |---|---|---|
+  | Markdown (`.md`) | Preview | `--raw` |
+  | HTML (`.html`, `.htm`) | Preview, **Static** (no script runs) | `--raw`, `--interactive` |
+  | SVG | Preview (an `<img>` from a blob) | `--raw` |
+  | images, audio, video | Preview (no Raw view, no Save) | |
+  | other text and code | Raw, in the editor (focused) | |
+  | folder | Files at that folder | no flags |
+  | binary with no preview | refused, with `file`/`od`/`unzip -l` hints | |
+
+  Flags: `--raw`, `--preview`, `--static` and `--interactive` (the last two HTML only, and
+  imply `--preview`); one path and at most one mode; `--` ends options; `open --help`.
+  Exit codes: 0 opened, 1 error (missing, wrong flag for the type, binary, or you kept
+  unsaved changes when it asked to discard them), 2 usage. Interactive is never a default:
+  scripts run only when you type `--interactive`, and a plain `open` of an Interactive
+  report goes back to Static. `open` neither reads nor changes the mode the editor remembers
+  per kind for clicks (`pouch.view`): a command does what its arguments say, the same every
+  time (that is why Markdown opens in Preview here while a click opens it in its remembered
+  mode, Raw at first).
+  **Agents get a refusing `open`.** In the agents' bash it exits 1 with "only the person
+  using Pouch opens files in their editor ... link it in your reply", because an agent's
+  `open` would take over the user's pane mid-task (and, with `--interactive`, run a report's
+  scripts without a person choosing to). A link in a reply already leaves the choice, and
+  the timing, to the person; the refusal says so in one line, so a small model does not
+  loop on `command not found`.
 - **Security.** The terminal runs nothing outside the page except `bayleaf`, which asks on
   the same approval sheet as an agent ("Send this outside the pouch from the terminal?",
   "you, in the terminal") on every use: the terminal belongs to no session, so no "Allow
@@ -834,7 +866,8 @@ Ogg, MOV) open as a preview only, with no Save (there is no text to save over th
 - SVG is drawn as an `<img>` from a `blob:` URL, never inlined: no script in it runs and
   nothing it references loads. Audio and video play from `blob:` URLs (`media-src blob:`).
 - Each kind remembers its last mode (`pouch.view` in localStorage; Markdown starts Raw,
-  HTML and SVG Preview). A preview shows the saved file; with unsaved edits it says so. It
+  HTML and SVG Preview). The terminal's `open` (see "Terminal") picks by type instead and
+  leaves this alone. A preview shows the saved file; with unsaved edits it says so. It
   follows changes on disk (an agent rewriting a report) when the bytes change.
 - Caps: reports up to 5 MB, media up to 50 MB (read whole into memory); past that, a
   message and Raw or Download.

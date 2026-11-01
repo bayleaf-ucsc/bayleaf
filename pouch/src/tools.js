@@ -12,6 +12,7 @@ import { serve, Client, NinepFs } from './ns/9p.js';
 import { archiveCommands } from './archive.js';
 import { bayleafCommands } from './bayleaf-cli.js';
 import { modelsCommands } from './models-cli.js';
+import { openCommands, agentOpenCommands } from './open-cli.js';
 import { runTool } from './run.js';
 import { WATCH_GLOSS } from './ns/watch.js';
 
@@ -101,13 +102,15 @@ export function serialized(fs) {
   });
 }
 // The human's shell (src/terminal.js): the same just-bash, commands and
-// `bayleaf` CLI the agents get, over whatever fs the caller passes.
+// `bayleaf` CLI the agents get, over whatever fs the caller passes, plus
+// `open` (src/open-cli.js; hooks.openFile shows a file in the editor pane,
+// hooks.revealDir a folder in Files).
 export function shellFor(fs, hooks = {}) {
   return new Bash({
     fs, cwd: CWD,
     env: { HOME: CWD, USER: 'user', PATH: '/usr/bin:/bin' },
     commands: COMMANDS,
-    customCommands: [...archiveCommands(defineCommand), ...bayleafCommands(defineCommand, hooks), ...modelsCommands(defineCommand, hooks.models, { by: 'user', via: 'terminal' })],
+    customCommands: [...archiveCommands(defineCommand), ...bayleafCommands(defineCommand, hooks), ...modelsCommands(defineCommand, hooks.models, { by: 'user', via: 'terminal' }), ...openCommands(defineCommand, { openFile: hooks.openFile, revealDir: hooks.revealDir })],
     executionLimits: { maxCommandCount: 100_000, maxLoopIterations: 100_000 },
   });
 }
@@ -175,7 +178,8 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
       env: { HOME: CWD, USER: 'pouch', PATH: '/usr/bin:/bin' },
       commands: COMMANDS,
       // `models` (src/models-cli.js): hooks.models is the shared service; whoOf names the asker.
-      customCommands: [...archiveCommands(defineCommand), ...cli, ...modelsCommands(defineCommand, hooks.models, () => hooks.modelsWho?.(caller) ?? { by: 'agent', caller })],
+      // `open` refuses for agents and says to link the file (src/open-cli.js).
+      customCommands: [...archiveCommands(defineCommand), ...cli, ...modelsCommands(defineCommand, hooks.models, () => hooks.modelsWho?.(caller) ?? { by: 'agent', caller }), ...agentOpenCommands(defineCommand)],
       executionLimits: { maxCommandCount: 100_000, maxLoopIterations: 100_000 },
       ...bashOptions,
     });
