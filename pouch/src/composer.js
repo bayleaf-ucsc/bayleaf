@@ -168,7 +168,8 @@ export function createComposer(deps) {
     else if (t.kind === 'skill') {
       const all = await indexSkills();
       // requests: the skill's declared cost (frontmatter), shown before it is used.
-      items = rank(all, t.q, (s) => s.name).map((s) => ({ label: s.name, detail: s.description, value: s, ...(s.requests ? { cost: `about ${String(s.requests).replace(/-/g, '–')} requests` } : {}) }));
+      // Unlisted skills stay pickable (the person chooses deliberately), marked so.
+      items = rank(all, t.q, (s) => s.name).map((s) => ({ label: s.name, detail: (s.unlisted ? 'Unlisted. ' : '') + s.description, value: s, ...(s.requests ? { cost: `about ${String(s.requests).replace(/-/g, '–')} requests` } : {}) }));
       if (!all.length) items = [{ label: 'No skills yet', detail: 'Skills live in /pouch/skills and /work/.agents/skills', disabled: true }];
     } else {
       if (!paths) open(t, [{ label: 'Indexing files...', disabled: true }]);
@@ -227,7 +228,7 @@ export function createComposer(deps) {
     if (kind === 'command') {
       if (run) { input.value = ''; input.dispatchEvent(new Event('input')); runCommand('/' + it.value.name); }
       else replace(start, end, '/' + it.value.name + ' ');
-    } else if (kind === 'skill') replace(start, end, `Use the ${it.value.name} skill. `);
+    } else if (kind === 'skill') replace(start, end, it.value.unlisted ? `Use the ${it.value.name} skill (${it.value.path}). ` : `Use the ${it.value.name} skill. `);
     else replace(start, end, it.value + (it.value.endsWith('/') ? '' : ' '));
     input.focus();
   }

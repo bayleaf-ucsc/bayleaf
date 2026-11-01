@@ -162,7 +162,10 @@ SKILL.md starts with YAML frontmatter:
     ---
 
 The description is all that appears in the system prompt, so make it say when
-the skill applies. Keep the body short and concrete: steps, commands, pitfalls.
+the skill applies. Add \`listed: false\` to the frontmatter to make a skill
+unlisted: left out of that list (say, a helper another skill names by path) but
+still loaded when named. Keep the body short and concrete: steps, commands,
+pitfalls.
 New skills appear in the next request automatically.
 `,
 };
