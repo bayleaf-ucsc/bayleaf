@@ -161,9 +161,11 @@ export async function lookAt(paths, fs, prepare, signal) {
     let bytes;
     try {
       const size = (await fs.stat(p)).size; // a mounted folder's file can be huge: refuse before reading it
+      signal?.throwIfAborted();
       if (size > FILE_CAP) { lines.push(tooBig(size)); continue; }
       bytes = await fs.readFileBuffer(p);
-    } catch (e) { lines.push(`${p}: not sent. ${explain(e, p).message}`); continue; }
+      signal?.throwIfAborted();
+    } catch (e) { if (signal?.aborted) throw e; lines.push(`${p}: not sent. ${explain(e, p).message}`); continue; }
     if (bytes.length > FILE_CAP) { lines.push(tooBig(bytes.length)); continue; }
     const mime = rasterMime(bytes);
     if (!mime) {

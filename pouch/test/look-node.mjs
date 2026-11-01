@@ -71,7 +71,16 @@ const ac = new AbortController(); ac.abort();
 const preparedAt = prepared.length;
 await assert.rejects(lookAt(['chart.png', 'photo.jpg'], fs, prepare, ac.signal), (e) => e.name === 'AbortError');
 assert.equal(prepared.length, preparedAt, "stopped before preparing anything");
-ok('a file over the cap is refused from its size, unread; SVG behind comments is still named; Stop skips the rest');
+// Stop during a stat or a read: the call ends there, without reading or preparing next.
+for (const during of ['stat', 'readFileBuffer']) {
+  const mid = new AbortController();
+  const reads = [];
+  const slow = { ...fs, stat: (p) => { if (during === 'stat') mid.abort(); return fs.stat(p); }, readFileBuffer: (p) => { reads.push(p); if (during === 'readFileBuffer') mid.abort(); return fs.readFileBuffer(p); } };
+  await assert.rejects(lookAt(['chart.png', 'photo.jpg'], slow, prepare, mid.signal), (e) => e.name === 'AbortError', during);
+  assert.equal(reads.length, during === 'stat' ? 0 : 1, during);
+  assert.equal(prepared.length, preparedAt, `nothing prepared after Stop in ${during}`);
+}
+ok('a file over the cap is refused from its size, unread; SVG behind comments is still named; Stop skips the rest, also mid-stat or mid-read');
 
 // ── the tool through createTools: the text-only refusal comes before any read
 const vfs = { fs, changed() {}, mounts: new Map() };
