@@ -196,14 +196,15 @@ cache headers. README "Install and the offline copy" has the policy.
 
 ## Current artifact
 
-- `d1ab1c6` (label `d1ab1c6 2026-11-01`), built from clean `main` with `npm ci` and
-  `node build.mjs`, deployed with `node deploy.mjs`.
-- HTML SHA-256: `dd3b16d726bc986310b96e794129331a47f010742ab8dd9454b141885594a1ee`.
-- Cloudflare version: `bbe4d34b-660a-443b-9343-5ee0dc50d819`.
+- `5c58759` (label `5c58759 2026-11-01`), built from clean `main` with `npm install` and
+  `node build.mjs` (which now runs the build-time trust checks, `arch.mjs`), deployed with
+  `node deploy.mjs`.
+- HTML SHA-256: `8fc06553b133bdbaee5a831921fbc0aebf7aa3dfd729a12a092345bd6d22f68c`.
+- Cloudflare version: `6caa07b9-ec8f-438c-83fd-562119ad599d`.
 - `deploy.mjs` verified the page, `SHA256SUMS`, 7 shell files and 24 runtime parts
   (pdf.js, libav.js with its webcodecs-avf build and the hosted LGPL sources, the
   Transformers.js runtime), byte-exact and immutable.
-- Later `main` commits (the trust-boundary split of `src/main.js`, #144) are not deployed.
+- Includes the trust-boundary split of `src/main.js` (#144).
 - Playtested on Mac Chrome; on a Pixel 10 Pro, in-browser LFM3 froze the device and is
   now refused on phones and tablets. Not verified: Firefox and Safari end to end.
 
