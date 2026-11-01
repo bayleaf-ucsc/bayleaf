@@ -147,12 +147,17 @@ export function noting(fs, onChange) {
       // rm -f of a path that was never there changes nothing.
       if (prop === 'rm') return async (p, ...a) => { const had = await was(p); const r = await target.rm(p, ...a); if (had) onChange('deleted', normalize(p)); return r; };
       if (prop === 'mkdir') return async (p, ...a) => { const had = await was(p); const r = await target.mkdir(p, ...a); if (!had) onChange('created', normalize(p)); return r; };
-      if (prop === 'cp') return async (s, d, ...a) => { const had = await was(d); const r = await target.cp(s, d, ...a); onChange(had ? 'modified' : 'created', normalize(d)); return r; };
+      if (prop === 'cp') return async (s, d, ...a) => {
+        const had = await was(d); const r = await target.cp(s, d, ...a);
+        onChange(had ? 'modified' : 'created', normalize(d));
+        if (!had) for (const p of await under(target, normalize(d))) onChange('created', p); // cp -r to a new path
+        return r;
+      };
       if (prop === 'mv') return async (s, d, ...a) => {
         const had = await was(d); const r = await target.mv(s, d, ...a);
         onChange('deleted', normalize(s)); onChange(had ? 'modified' : 'created', normalize(d));
-        // A folder renamed to a new path: everything under it is new there too (the
-        // ledger folds what was noted under the old path away with its deletion).
+        // A folder moved or copied to a new path: everything under it is new there
+        // too (for mv, the ledger folds what was noted under the old path away).
         if (!had) for (const p of await under(target, normalize(d))) onChange('created', p);
         return r;
       };

@@ -260,11 +260,11 @@ await test('changes: net paths changed this turn, subagents marked, actions left
   const r2 = await new Bash({ fs: noting(fs, (op, p) => seen.note(1, op, p, 'a1')), cwd: '/work' }).exec('rm -f missing.txt; echo c > dir/new; rm -r dir');
   assert.equal(r2.exitCode, 0, r2.stderr);
   assert.equal(changesText(seen.list(1)), 'deleted a1 /work/dir\n');
-  // A folder moved to a new path keeps what was made in it, under the new path.
+  // A folder moved or copied to a new path lists what is in it, under the new path.
   seen.begin(1);
-  const r3 = await new Bash({ fs: noting(fs, (op, p) => seen.note(1, op, p, 'a1')), cwd: '/work' }).exec('mkdir d; echo r > d/report; mv d final');
+  const r3 = await new Bash({ fs: noting(fs, (op, p) => seen.note(1, op, p, 'a1')), cwd: '/work' }).exec('mkdir d; echo r > d/report; mv d final; cp -r final copy');
   assert.equal(r3.exitCode, 0, r3.stderr);
-  assert.equal(changesText(seen.list(1)), 'created a1 /work/final\ncreated a1 /work/final/report\n');
+  assert.equal(changesText(seen.list(1)), 'created a1 /work/copy\ncreated a1 /work/copy/report\ncreated a1 /work/final\ncreated a1 /work/final/report\n');
   // Read through the control plane, the agent's own session only.
   const page = fakePage();
   page.changes.note(1, 'created', '/work/report.md', 'a1'); page.changes.note(1, 'modified', '/work/notes.md', 'a2');
