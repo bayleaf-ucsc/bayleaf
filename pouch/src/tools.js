@@ -28,7 +28,10 @@ export const COMMANDS = getCommandNames().filter((c) => !MISSING.has(c));
 
 function clip(text) {
   if (text.length <= MAX_CHARS) return text;
-  return text.slice(0, MAX_CHARS) + `\n[truncated: ${text.length - MAX_CHARS} more characters]`;
+  // `show` lines past the cap are kept, inside it, so their cards survive (main.js shownLines).
+  const shown = (text.slice(MAX_CHARS).match(/^shown: .*$/gm) ?? []).map((l) => l.slice(0, 1000)).join('\n');
+  const head = text.slice(0, MAX_CHARS - shown.length - 1);
+  return head + (shown ? '\n' + shown : '') + `\n[truncated: ${text.length - head.length} more characters]`;
 }
 
 // Filesystem errors carry paths relative to their mount ("/NOTES.md" for

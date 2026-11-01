@@ -42,7 +42,7 @@ ok(`content type -> mode table (${table.length} rows): Markdown and HTML Preview
 for (const [path, flag, re] of [
   ['/work/a.md', '--interactive', /--interactive is for HTML reports; a.md is a Markdown file/],
   ['/work/p.png', '--static', /--static is for HTML reports/],
-  ['/work/p.png', '--raw', /no Raw view/],
+  ['/work/p.png', '--raw', /is an image file with no Raw view/],
   ['/work/x.js', '--preview', /x.js has no preview/],
 ]) assert.match(planOpen(path, flag).error, re, `${path} ${flag}`);
 assert.match(planOpen('/work/a.zip', null, { binary: true }).error, /looks binary and has no preview.*unzip -l a.zip/);
@@ -72,7 +72,7 @@ await fs.writeFile('/work/blob.bin', new Uint8Array([1, 0, 2, 0]));
 const calls = [];
 let keep = false;
 const sh = shellFor(fs, {
-  openFile: async (req) => { calls.push(['file', req]); return !keep; },
+  openFile: async (req) => { calls.push(['file', req]); return keep === 'binary' ? 'binary' : !keep; },
   revealDir: async (path) => { calls.push(['dir', path]); },
 });
 const run = (cmd, cwd = '/work') => sh.exec(cmd, { cwd });
@@ -117,7 +117,11 @@ assert.equal(r.exitCode, 0); assert.match(r.stdout, /HTML \(\.html, \.htm\)\s+Pr
 keep = true;
 r = await run('open x.js');
 assert.equal(r.exitCode, 1); assert.match(r.stderr, /kept your unsaved changes; \/work\/x.js was not opened/);
-ok(`errors: ${cases.length} misuse cases with exit 1 or 2 and no page call; --help documents the table; kept unsaved changes is exit 1`);
+keep = 'binary';
+r = await run('open x.js');
+assert.equal(r.exitCode, 1); assert.equal(r.stdout, ''); assert.match(r.stderr, /\/work\/x.js was not opened \(binary\)/);
+keep = false;
+ok(`errors: ${cases.length} misuse cases with exit 1 or 2 and no page call; --help documents the table; kept unsaved changes or a refused binary is exit 1`);
 
 // 7. cat: a just-bash builtin already; the terminal hides binary output on screen only.
 r = await run('cat docs/a.md');

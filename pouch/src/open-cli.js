@@ -78,7 +78,7 @@ export function planOpen(path, flag, { binary = false } = {}) {
   const name = path.split('/').pop();
   if (kind === 'binary') return { error: `${path} looks binary and has no preview. Try \`file ${name}\`, \`od -c ${name} | head\`, \`unzip -l ${name}\`, or Download it from Files.` };
   if ((flag === '--static' || flag === '--interactive') && kind !== 'html') return { error: `${flag} is for HTML reports; ${name} is ${article(kind)}. Use --raw or --preview.` };
-  if (flag === '--raw' && p && !p.raw) return { error: `${name} is ${article(kind)} file with no Raw view (it is not text). \`open ${name}\` previews it.` };
+  if (flag === '--raw' && p && !p.raw) return { error: `${name} is ${article(kind)} with no Raw view (it is not text). \`open ${name}\` previews it.` };
   if (flag === '--preview' && !p) return { error: `${name} has no preview (Preview covers Markdown, HTML, SVG, images, audio and video). \`open ${name}\` shows it Raw.` };
   const mode = flag === '--raw' ? 'raw' : flag || p ? 'preview' : 'raw';
   const interactive = kind === 'html' && flag === '--interactive';
@@ -87,8 +87,9 @@ export function planOpen(path, flag, { binary = false } = {}) {
 }
 const article = (kind) => ({ markdown: 'a Markdown', svg: 'an SVG', image: 'an image', audio: 'an audio', video: 'a video', text: 'a text' }[kind] ?? 'a ' + kind) + ' file';
 
-// The terminal's command. openFile({ path, mode, interactive }) -> Promise<boolean>:
-// false when the person kept unsaved changes to the file already open.
+// The terminal's command. openFile({ path, mode, interactive }) -> Promise<true | false | reason>:
+// false when the person kept unsaved changes to the file already open, a
+// reason ('binary') when it was not opened for another.
 // revealDir(path): show the folder in Files.
 export function openCommands(defineCommand, { openFile, revealDir } = {}) {
   if (!openFile) return [];
@@ -116,6 +117,7 @@ export function openCommands(defineCommand, { openFile, revealDir } = {}) {
     try { opened = await openFile({ path, mode: plan.mode, interactive: plan.interactive }); }
     catch (e) { return fail(`${path}: ${e?.message ?? e}`); }
     if (opened === false) return fail(`kept your unsaved changes; ${path} was not opened.`);
+    if (opened !== true && opened !== undefined) return fail(`${path} was not opened (${opened}).`);
     return ok(`opened ${path} (${plan.label})\n`);
   })];
 }

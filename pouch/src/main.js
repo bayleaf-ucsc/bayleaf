@@ -218,8 +218,9 @@ function setReviewBar(text) {
 // link: opened from a reply, where an HTML report opens in Preview; a line
 // number always opens Raw. Otherwise each kind opens in its last mode.
 // mode, interactive: the terminal's `open` (src/open-cli.js) names both, and
-// remembers neither. Returns false when the user kept unsaved changes.
-async function openFile(path, line, { link = false, mode = null, interactive = false } = {}) {
+// remembers neither. Returns true when opened, false when the user kept
+// unsaved changes, or a reason it was not: 'binary', or recheck()'s (show).
+async function openFile(path, line, { link = false, mode = null, interactive = false, recheck = null } = {}) {
   const p = previewOf(path);
   const want = mode ?? (line ? 'raw' : link && p?.kind === 'html' ? 'preview' : null);
   const wantScripts = !!mode && p?.kind === 'html' && interactive;
@@ -228,6 +229,7 @@ async function openFile(path, line, { link = false, mode = null, interactive = f
     if (dirty && !(await ask(`Discard unsaved changes to ${openPath}?`, 'Discard', 'danger'))) return false;
     if (p && !p.raw) { // image, audio, video: a preview only
       await vfs.fs.stat(path);
+      const why = recheck?.(); if (why) return why;
       openPath = path; merging = false; viewOnly = true; scripts = false;
       setReviewBar(null); setConflict(null);
       editor.load(path, '');
@@ -236,12 +238,17 @@ async function openFile(path, line, { link = false, mode = null, interactive = f
       return true;
     }
     const bytes = await vfs.fs.readFileBuffer(path);
-    if (bytes.includes(0)) return sheet(path + ' looks binary', [
-      ARCHIVE.test(path) && vfs.where(path) !== 'mount-ro' && ['Unpack here', () => unpackHere(path)],
-      ARCHIVE.test(path) && ['List contents', () => listArchive(path)],
-      ARCHIVE.test(path) && ['Layer under /work (read-only seed)', () => stackSeed(path)],
-      ['Download', () => download(path)],
-    ]);
+    // The person's edits or activity during the read win over show (src/open-cli.js).
+    const why = recheck?.(); if (why) return why;
+    if (bytes.includes(0)) {
+      sheet(path + ' looks binary', [
+        ARCHIVE.test(path) && vfs.where(path) !== 'mount-ro' && ['Unpack here', () => unpackHere(path)],
+        ARCHIVE.test(path) && ['List contents', () => listArchive(path)],
+        ARCHIVE.test(path) && ['Layer under /work (read-only seed)', () => stackSeed(path)],
+        ['Download', () => download(path)],
+      ]);
+      return 'binary';
+    }
     openPath = path; merging = false; viewOnly = false; scripts = wantScripts;
     setReviewBar(null); setConflict(null);
     editor.load(path, new TextDecoder().decode(bytes));
@@ -274,7 +281,11 @@ async function show({ path, dir, mode }, caller) {
   const reason = showBusy(caller);
   if (reason) return { opened: false, reason };
   if (dir) await revealDir(path);
-  else if (!(await openFile(path, undefined, { mode }))) return { opened: false, reason: 'unsaved edits' };
+  else {
+    const r = await openFile(path, undefined, { mode, recheck: () => showBusy(caller) });
+    if (r === 'binary') throw new Error('looks binary; not opened (the person was offered Download)');
+    if (r !== true) return { opened: false, reason: r || 'unsaved edits' };
+  }
   return { opened: true };
 }
 // A bash result's `shown:` lines, read back so the card survives reload.

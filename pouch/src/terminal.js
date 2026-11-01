@@ -97,8 +97,8 @@ export function createTerminal({ vfs, fs: userFs, hooks = {}, onChange }) {
     catch (e) { r = { stdout: '', stderr: String(e?.message ?? e) + '\n', exitCode: 1 }; }
     finally { clearInterval(timer); live.remove(); running = null; input.removeAttribute('aria-busy'); }
     if (!killed && r.env) { env = r.env; cwd = normalize(r.env.PWD || cwd); setPrompt(); }
-    const bin = binaryOutput(r.stdout);
-    const out = bin ? { text: '', note: bin } : capOutput(r.stdout), err = capOutput(killed ? '' : r.stderr);
+    const screen = (t) => { const bin = binaryOutput(t); return bin ? { text: '', note: bin } : capOutput(t); };
+    const out = screen(r.stdout), err = screen(killed ? '' : r.stderr);
     print(b, out.text); print(b, err.text, 'term-err');
     for (const n of [out.note, err.note]) if (n) print(b, n, 'term-note muted');
     const code = killed ? 130 : r.exitCode;

@@ -90,7 +90,6 @@ const b64 = (s) => Buffer.from(s).toString('base64');
 const viewerFrame = (page) => page.frames().find((f) => f.url().endsWith('/viewer.html'));
 const reportFrame = (page) => page.frames().find((f) => f.parentFrame() === viewerFrame(page) && f.url() === 'about:srcdoc');
 const pressed = (page, sel) => page.$eval(`${sel} [aria-pressed="true"]`, (b) => b.textContent);
-const openFromTree = async (page, path) => { if (!(await page.isVisible('#tree'))) await page.click('#rail [data-panel="files"]'); await page.click(`#tree .row[data-path="${path}"]`); await page.waitForFunction((p) => document.getElementById('editor-path').textContent === p, path, T); };
 
 
 const REPORT = '<!doctype html><h1>Sales</h1><p id="js">scripts did not run</p><script>document.getElementById("js").textContent = "scripts ran";</script>';
@@ -149,7 +148,7 @@ try {
   assert.match(out, /\(Raw\)/);
   await page.waitForFunction(() => !document.getElementById('editor').hidden && /Sales/.test(document.querySelector('#editor .cm-content').textContent), null, T);
   assert.equal(await pressed(page, '#view-mode'), 'Raw');
-  out = await term(page, 'open /work/app.js');
+  await term(page, 'open /work/app.js');
   await editorPath(page, '/work/app.js');
   assert.equal(await page.isHidden('#view-mode'), true, 'code has no Raw | Preview');
   assert.match(await page.textContent('#editor .cm-content'), /export const x = 1;/);
@@ -212,9 +211,12 @@ try {
   out = await term(page, 'cat /work/pic.png');
   assert.match(out, /\[binary output: \d+ bytes not shown/);
   assert.doesNotMatch(out, /IHDR/);
+  out = await term(page, 'cat /work/pic.png >&2');
+  assert.match(out, /\[binary output: \d+ bytes not shown/);
+  assert.doesNotMatch(out, /IHDR/);
   out = await term(page, 'cat /work/pic.png | od -c | head -1');
   assert.match(out, /211\s+P\s+N\s+G/);
-  ok('cat on a binary file shows a note, not bytes; piping keeps the bytes');
+  ok('cat on a binary file shows a note, not bytes (stdout or stderr); piping keeps the bytes');
 
   // 9. The agent's open is refused and opens nothing; the agent is pointed to show.
   await rule(page, { who: 'main', when: '/show me the report/.test(c.since)', reply: [['bash', { command: 'open --interactive /work/report.html' }]] });
@@ -271,7 +273,7 @@ try {
   ok('agent show when the person is idle: opens at once in Preview, Static; the transcript records "Shown"');
 
   // 13. The person typed a moment ago: offered.
-  n0 = await agentShows(page, 'show /work/app.js', 'show the code', { gate: 'typed' });
+  await agentShows(page, 'show /work/app.js', 'show the code', { gate: 'typed' });
   await page.waitForFunction(() => window.fake.requests.main?.length && document.getElementById('send-label')?.textContent !== 'Send', null, T);
   await page.click('#input'); await page.keyboard.type('hm');
   await gate(page, 'typed');
