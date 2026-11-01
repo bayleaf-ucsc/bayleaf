@@ -2555,8 +2555,13 @@ function revertFirst(it, at) {
   sheet('Revert to before this message?', [['Revert', async () => {
     if (busy()) return;
     // Not deleted (another tab holds it): the status says why. Deleted: the message
-    // comes back even if another session was opened meanwhile.
-    if (!(await sessions.remove(sid, false, { stay: true }))) return;
+    // comes back even if another session was opened meanwhile. Until it settles, a
+    // send to this session is refused (it would start a turn the delete then erases).
+    deleting.add(String(sid)); updateSend();
+    let gone;
+    try { gone = await sessions.remove(sid, false, { stay: true }); }
+    finally { deleting.delete(String(sid)); updateSend(); }
+    if (!gone) return;
     status(`${sessions.current ? 'Deleted that session' : 'Reverted to an empty session'}. Files were not changed. Your message is back in the box.`);
     putBack(it.text);
   }, 'danger']], body);
@@ -2583,6 +2588,7 @@ const busy = () => !!view?.busy;
 const PLACEHOLDER = 'Ask Pouch. @ for files, $ for skills, / for commands';
 const attachments = createAttachments({ vfs, composer: $('composer'), input: $('input'), picker: $('attachment-picker'), button: $('attach-file'), chips: $('attachment-chips'), warning: $('attachment-warning'), status });
 const submitting = new Set(); // per session: a send from Enter until its model turn ends (after-turn chores run on)
+const deleting = new Set(); // sessions a first-message revert is deleting: sends to them wait for it to settle
 // While Pouch works (JOURNEYS D25), a message is a Steer or a Follow-up
 // (LANGUAGE.md). A steer joins the running turn at its next step boundary: a
 // pi-durable steer, tracked here so Stop can take it back. A follow-up is held
@@ -2718,7 +2724,7 @@ function updateSend() {
 // Send the current session's follow-up once the model's turn is over.
 function pump() {
   const key = curKey(), q = followUps.get(key);
-  if (!q || q.paused || busy() || submitting.has(key) || holdingFollowUp || !(offSealed(q.turnModel) ? agent : agent && verified && !offline)) return;
+  if (!q || q.paused || busy() || submitting.has(key) || deleting.has(key) || holdingFollowUp || !(offSealed(q.turnModel) ? agent : agent && verified && !offline)) return;
   followUps.delete(key);
   announce('Follow-up sent: it starts the next turn.', false);
   dispatch(key, () => q);
@@ -3124,6 +3130,7 @@ $('composer').onsubmit = async (e) => {
   const key = curKey();
   const text = raw.trim() || (attachments.files.length ? 'Please examine the attached files.' : '');
   if (!text) return;
+  if (deleting.has(key)) return status('This session is being deleted. Your message stays here.', 'bad');
   const turnModel = $('model').value; // freeze before any asynchronous preparation
   if (isLocalhost(turnModel)) {
     // Localhost needs your server, not the internet or the enclave.

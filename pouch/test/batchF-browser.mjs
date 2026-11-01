@@ -6,7 +6,9 @@
 // did not run), reads its changes and usage files, and New then Enter right away
 // sends into the new session, not the previous one. New opens a blank
 // session (nothing stored until the first send), and reverting a session's
-// first message empties it into one, text back in the box.
+// first message empties it into one, text back in the box. New while a first
+// send is still attaching makes a separate session, and a send while a revert
+// deletes the session is refused.
 // Run: node test/batchF-browser.mjs
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
@@ -214,6 +216,69 @@ try {
   assert.equal(await stored(), before.stored);
   assert.equal(await rows(), before.rows);
   ok('revert of the first message, then leave: nothing stays behind');
+
+  // Gates for 9 and 10: hold the IndexedDB transaction that reads a revert key
+  // (attach, right after a first send's session is made) or deletes a session
+  // row (a revert's cleanup) until released, so the races can be hit on purpose.
+  await page.evaluate(() => {
+    const done = Object.getOwnPropertyDescriptor(IDBTransaction.prototype, 'oncomplete');
+    const hold = (proto, method, match) => {
+      const real = proto[method];
+      proto[method] = function (k) {
+        const req = real.call(this, k);
+        const gate = window.gates?.[method];
+        if (gate && match(this, k)) {
+          const t = this.transaction;
+          window.held[method] = (window.held[method] ?? 0) + 1;
+          Object.defineProperty(t, 'oncomplete', { configurable: true, get: () => done.get.call(t), set: (fn) => done.set.call(t, (e) => gate.then(() => fn(e))) });
+        }
+        return req;
+      };
+    };
+    window.gates = {}; window.held = {};
+    hold(IDBObjectStore.prototype, 'get', (s, k) => s.name === 'settings' && typeof k === 'string' && k.startsWith('revert:'));
+    hold(IDBObjectStore.prototype, 'delete', (s) => s.name === 'sessions');
+    window.gate = (m) => { let open; window.gates[m] = new Promise((r) => { open = r; }); window.held[m] = 0; window.release = () => { delete window.gates[m]; open(); }; };
+  });
+
+  // 9. New while a first send's session is still attaching: the next send makes its own session.
+  await page.$eval('#new', (b) => b.click()); await page.fill('#input', '');
+  await rule(page, { who: 'main', when: '/alpha message/.test(c.since)', reply: 'Alpha reply.' });
+  await rule(page, { who: 'main', when: '/beta message/.test(c.since)', reply: 'Beta reply.' });
+  const made0 = await stored();
+  await page.evaluate(() => window.gate('get'));
+  await send(page, 'alpha message');
+  await page.waitForFunction(() => window.held.get > 0, null, T); // made, claimed, now attaching
+  await page.$eval('#new', (b) => b.click());
+  await send(page, 'beta message');
+  await sleep(300);
+  await page.evaluate(() => window.release());
+  await page.waitForFunction(() => ['alpha', 'beta'].every((w) => (window.fake.requests.main ?? []).some((b) => JSON.stringify(b.messages).includes(w + ' message'))), null, T);
+  const both = await page.evaluate(() => window.fake.requests.main.some((b) => { const m = JSON.stringify(b.messages); return m.includes('alpha message') && m.includes('beta message'); }));
+  assert.equal(both, false, 'alpha and beta went to separate sessions');
+  assert.equal(await stored(), made0 + 2, 'two sends from two blank views made two sessions');
+  await idle(page);
+  console.log('DBG', JSON.stringify(await page.evaluate(() => ({ held: window.held, reqs: window.fake.requests.main.slice(-4).map((b) => b.messages.filter((m) => m.role === 'user').map((m) => JSON.stringify(m.content).slice(0, 40))) }))), await page.textContent('#status'));
+  ok('New while the first send is still attaching: the next send makes a separate session (1a)');
+
+  // 10. A send while a first-message revert is deleting the session is refused, and the text stays.
+  await page.waitForFunction(() => /Beta reply\./.test(document.getElementById('log').textContent), null, T);
+  await page.locator('#log .msg.user', { hasText: 'beta message' }).hover();
+  await page.locator('#log .msg.user', { hasText: 'beta message' }).locator('button[aria-label^="Revert to here"]').click();
+  await page.evaluate(() => window.gate('delete'));
+  await page.click('#sheet-actions button.danger');
+  await page.waitForFunction(() => window.held.delete > 0, null, T);
+  const sentBefore = await page.evaluate(() => window.fake.requests.main.length);
+  await send(page, 'during the delete');
+  await page.waitForFunction(() => /being deleted/.test(document.getElementById('status').textContent), null, T);
+  assert.equal(await page.inputValue('#input'), 'during the delete', 'the text stays in the box');
+  await page.evaluate(() => window.release());
+  await page.waitForFunction(() => document.getElementById('input').value.startsWith('beta message'), null, T);
+  assert.match(await page.inputValue('#input'), /^beta message\n\nduring the delete$/);
+  await sleep(300);
+  assert.equal(await page.evaluate(() => window.fake.requests.main.slice(-3).some((b) => JSON.stringify(b.messages).includes('during the delete'))), false, 'nothing was sent');
+  assert.ok(await page.evaluate((n) => window.fake.requests.main.length === n, sentBefore));
+  ok('a send during a first-message revert is refused with a status line; both texts end up in the box (2a)');
 
   await page.screenshot({ path: join(shots, 'batchF-tray-terminal.png') });
   assert.deepEqual(errors, []);

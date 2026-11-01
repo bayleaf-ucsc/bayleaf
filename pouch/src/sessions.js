@@ -288,19 +288,20 @@ export function createSessions(deps) {
   }
 
   // The first send from a blank session: make the session, and resolve to it. A
-  // second send before it exists waits for this same creation. New or a
-  // selection meanwhile wins the view; the send still goes to the made session.
-  let creating = null;
+  // second send from the same blank view waits for this same creation; after New
+  // (nav moved on) a send makes its own, so New always means a separate session.
+  // New or a selection meanwhile wins the view; the send still goes to the made session.
+  let creating = null; // { gen, promise }
   // onMade(made): called once the session exists, before it is current, so the
   // send can claim it first (a second Enter then waits instead of racing it).
   function create(onMade = () => {}) {
     const agent = deps.agent();
     if (!agent) return Promise.resolve(status(deps.agentError() ?? 'The agent is not available.', 'bad'));
-    if (creating) return creating;
+    if (creating?.gen === nav) return creating.promise;
     const prev = session;
     if (session) { session = null; deps.attach(); }
     const gen = nav;
-    creating = (async () => {
+    const promise = (async () => {
       const model = deps.model() || 'glm-5-3';
       let id;
       try { id = await agent.createSession(model); }
@@ -314,8 +315,9 @@ export function createSessions(deps) {
       await deps.attach();
       await render();
       return made;
-    })().finally(() => { creating = null; });
-    return creating;
+    })().finally(() => { if (creating?.promise === promise) creating = null; });
+    creating = { gen, promise };
+    return promise;
   }
 
   async function select(id) {
