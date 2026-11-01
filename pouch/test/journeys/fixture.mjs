@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 // Pouch with a scripted fake Sealed client (no model requests): the page's
 // window.script is a queue of steps; each model request takes one:
 //   { tool: 'run', args: {...} } -> a tool call;  { text } -> a final reply.
@@ -7,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 const { build } = await import('esbuild');
-const root = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
+const root = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '');
 const stub = `
 const wait = ms => new Promise(r => setTimeout(r,ms));
 window.requests=[]; window.script=window.script||[]; window.netDown=false;

@@ -1,9 +1,10 @@
+import { fileURLToPath } from 'node:url';
 // Unit tests for pouch/src/markdown.js with a fake DOM (linkedom).
 import { parseHTML } from 'linkedom';
 const { document, window } = parseHTML('<!doctype html><html><body></body></html>');
 globalThis.document = document; globalThis.window = window;
 for (const k of ['navigator', 'MutationObserver', 'requestAnimationFrame']) globalThis[k] ??= window[k] ?? (() => {});
-const P = new URL('../../src/', import.meta.url).pathname;
+const P = fileURLToPath(new URL('../../src/', import.meta.url));
 const { renderMarkdown, parseTarget } = await import(P + 'markdown.js');
 let highlight = null;
 try { ({ highlight } = await import(P + 'editor.js')); } catch (e) { console.log('editor.js not importable in Node:', e.message.split('\n')[0]); }
