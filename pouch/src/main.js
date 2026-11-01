@@ -13,7 +13,8 @@ import { createEditor, highlight } from './editor.js';
 import { renderMarkdown } from './markdown.js';
 import { createPreview, previewOf, rememberedMode, rememberMode, MEDIA_MAX } from './preview.js';
 import { createTools, systemPrompt, loadContext, CWD, defaultSubagentNs, describeSpecs } from './tools.js';
-import { openAgent, Type } from './agent.js';
+import { openAgent, Type, compactionFor } from './agent.js';
+import { describe as describeContext, autoCompactAt } from './context.js';
 import { collect, packTar, packZip, unpackTar, unpackZip } from './archive.js';
 import { $, el, icon, seeded } from './dom.js';
 import { arm, armed, play, flipFrom, fold, snapshot, reduced } from './motion.js';
@@ -30,7 +31,7 @@ import { createComposer } from './composer.js';
 import { createEgress, egressOf, grantsFor, revoke, serviceName } from './egress.js';
 import { LOCAL, support as localSupport, stored as localStored, engine as localEngine, importFiles as localImport, remove as localRemove, models as modelStore } from './local/engine.js';
 import { createModelService } from './models-cli.js';
-import { isLocal, HINTS } from './local/provider.js';
+import { isLocal, HINTS, BUDGET } from './local/provider.js';
 import { isLocalhost, testConnection, parseLocalhostUrl, explainMessage, DEFAULT_URL, TRANSPORTS } from './localhost.js';
 import { createOffline, short } from './offline.js';
 import { createFollow } from './follow.js';
@@ -934,7 +935,7 @@ async function loadModels() {
     models = data
       .filter((m) => m.tool_calling && m.endpoints?.includes('/v1/chat/completions'))
       .filter((m) => !/safeguard|websearch|doc-upload|pii-filter/i.test(m.id))
-      .map((m) => ({ id: m.id, name: m.name ?? m.id, contextWindow: m.context_window ?? 131072, reasoning: !!m.reasoning, multimodal: m.multimodal === true,
+      .map((m) => ({ id: m.id, name: m.name ?? m.id, contextWindow: m.context_window ?? 131072, windowReported: m.context_window != null, reasoning: !!m.reasoning, multimodal: m.multimodal === true,
         cost: m.pricing && { input: m.pricing.inputTokenPricePer1M ?? 0, output: m.pricing.outputTokenPricePer1M ?? 0, cacheRead: 0 } }));
   } catch (e) {
     status('Could not load the BayLeaf Sealed model list: ' + e.message, 'bad');
@@ -1934,6 +1935,19 @@ async function renderUsagePanel(list) {
   const gone = Object.entries(led.bySid).filter(([k]) => !known.has(k)).reduce((n, [, v]) => n + v, 0);
   if (gone) rows.push({ title: 'Deleted sessions', requests: gone, input: null, output: null });
   renderPanel($('usage-body'), usage.state, rows, led);
+  // This session's context (the composer's meter, spelled out), above the allowance.
+  const now = contextNow();
+  if (now) {
+    const s = sessions.current;
+    const box = el('section', { className: 'ctx-now', ariaLabel: 'This session\'s context' },
+      el('h3', { textContent: 'This session\'s context' }),
+      el('div', { className: 'big' }, now.d.count, el('small', { textContent: now.d.of ? ` of ${now.d.of} tokens` : ' tokens' })),
+      el('p', { textContent: now.d.label }),
+      el('p', { className: 'muted', textContent: 'Counted in this browser from the stored conversation: the newest reply\'s own usage, as its server reported it, plus an estimate (about 3.5 characters a token) for anything since. Nothing is sent to count it.' }),
+      el('button', { type: 'button', className: 'ctx-compact', textContent: `Compact now (${sessions.costOf(s)})`, onclick: async () => { await sessions.compact(s.id); if (layout.current() === 'usage') renderUsagePanel(); } }));
+    box.dataset.level = now.d.level;
+    $('usage-body').prepend(box);
+  }
   if (LOCAL) $('usage-body').querySelector('.quota')?.after(el('p', { className: 'local-usage muted', textContent:
     `Transformers.js turns (${LOCAL.label}, in this browser) use none of this allowance: they send no requests.` }));
   // Subagents spend the same allowance (D16).
@@ -2525,7 +2539,35 @@ function showSplit(on, who) {
   note.textContent = blocked.length ? `Steering will detach ${blocked.join(', ')}` : '';
   $('sendmode-menu').querySelector('[data-mode="stopsend"]').hidden = !!focus;
 }
+// The context meter (src/context.js): about how many tokens main's next request
+// would carry, against the window of the model in the picker (where it goes).
+// From the stored transcript only: computing it sends nothing. Hidden in a
+// subagent's view and before the session holds anything.
+function contextNow() {
+  const id = $('model').value, c = !focus && view?.context;
+  if (!c?.tokens) return null;
+  const sealed = models.find((m) => m.id === id), host = isLocalhost(id) ? lh?.models?.find((m) => 'localhost:' + m.id === id) : null;
+  const known = isLocal(id) ? null : host ? host.contextWindow ?? null : sealed?.windowReported ? sealed.contextWindow : null;
+  // Where pi-durable compacts uses the window pi-ai was given, defaults included (src/agent.js, src/localhost.js).
+  const used = isLocal(id) ? null : host ? host.contextWindow ?? 32_768 : sealed?.contextWindow ?? null;
+  return { ctx: c, d: describeContext(c, { window: known, budget: isLocal(id) ? BUDGET : null, auto: used && autoCompactAt(used, compactionFor(used)) }) };
+}
+function renderCtx() {
+  const b = $('composer-ctx');
+  if (!b) return;
+  const now = contextNow();
+  b.hidden = !now;
+  if (!now) return;
+  const { d, ctx } = now;
+  b.dataset.level = d.level;
+  b.style.setProperty('--fill', d.fill == null ? '0%' : `${Math.round(d.fill * 100)}%`);
+  $('composer-ctx-num').textContent = d.count;
+  $('composer-ctx-of').textContent = d.of ? ` / ${d.of}` : '';
+  $('composer-ctx-trim').hidden = !ctx.trimmed;
+  b.ariaLabel = d.label + ' Opens Usage.'; b.title = d.label;
+}
 function updateSend() {
+  renderCtx();
   const input = $('input');
   if (focus) {
     // The subagent's view: steer or follow up while it works; once it is done
@@ -3083,6 +3125,7 @@ document.addEventListener('pouch-sendmode', () => updateSend());
 function autosize() { const i = $('input'); i.style.height = 'auto'; i.style.height = Math.min(i.scrollHeight + 2, innerHeight * 0.4) + 'px'; }
 $('input').addEventListener('input', autosize);
 $('composer-usage').onclick = () => layout.toggle('usage');
+$('composer-ctx').onclick = () => layout.toggle('usage');
 // Follow-ups and paused messages live in this page only: ask before a reload or close drops them.
 addEventListener('beforeunload', (e) => { if (followUps.size || childFollowUps.size || steers.size) e.preventDefault(); });
 

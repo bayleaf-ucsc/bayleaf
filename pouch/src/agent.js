@@ -22,6 +22,7 @@ import { createSubagents, REPORT_KIND, STEER_KIND, MESSAGE_KIND } from './subage
 import { WATCH_KIND } from './ns/watch.js';
 import { asRef, relabel } from './graph.js';
 import { attachmentContext } from './attachments.js';
+import { contextOf } from './context.js';
 import { LOCAL_PROVIDER, isLocal, localApi, localModel } from './local/provider.js';
 import { LOCALHOST_PROVIDER, isLocalhost, localhostApi, localhostModel } from './localhost.js';
 
@@ -53,7 +54,7 @@ const ctx = BACKGROUND_CONTEXT; // waits here are ours to cancel through abort()
 // 1M tokens every turn (cost, latency, and long-context quality all suffer),
 // so we compact as if the window were at most 256k.
 const EFFECTIVE_WINDOW = 262_144;
-function compactionFor(contextWindow = 131_072) {
+export function compactionFor(contextWindow = 131_072) {
   const budget = Math.min(contextWindow, EFFECTIVE_WINDOW);
   // pi-durable caps a summary at 0.8 * reserveTokens, and reasoning models spend
   // part of that thinking; keep at least 16k reserved (half of a small window).
@@ -342,7 +343,8 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
       cursor = page.next;
     } while (cursor);
     const view = await c.viewState(ctx);
-    const push = (value) => { value.entries.forEach(add); onView(normalize({ ...value, entries: history })); };
+    // context: sized from the active entries only (src/context.js), not the whole history.
+    const push = (value) => { value.entries.forEach(add); onView({ ...normalize({ ...value, entries: history }), context: contextOf(value.entries) }); };
     push(view.value);
     const unsubscribe = view.subscribe(push);
     const dispose = () => { watchers.delete(dispose); unsubscribe?.(); view.dispose(); };

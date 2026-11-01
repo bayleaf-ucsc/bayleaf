@@ -315,6 +315,22 @@ says so, with the reset time. A title you type is never replaced automatically; 
 automatic one is asked for once, after the session's first turn that ends well, even if a
 steer or a detach made that turn several messages.
 
+**How much context a session holds.** Next to the allowance count, the composer shows about
+how many tokens the session's next request would carry, against the window of the model in
+the picker: `12.5k / 128k`, with a thin bar of the window under it (`src/context.js`). The
+count is the newest reply's own usage as its server reported it (prompt, cached prompt and
+reply; exact for that request, system prompt and tool schemas included), plus an estimate
+at 3.5 characters a token for anything stored since (tool results, a message, a compaction
+summary). A `~` marks a count with an estimated part; with no reported usage at all (a new
+session, a Localhost server that reports none) it is all estimate. It is computed in the page
+from the stored conversation, so it sends nothing and needs no tokenizer; a draft is not
+counted until it is sent. The window shows only when known (`context_window` from
+`/sealed/models`, the Localhost server's reported length); otherwise only the count. Near the
+point where Pouch compacts by itself (for a 128k window, about 98k) the meter turns the
+warning color and its label says so; selecting it opens Usage, which spells out the same
+figures, how they were counted, and a Compact now button with its cost. A phone keeps the
+count and the bar and drops the window. The meter is main's: a subagent's view hides it.
+
 **The allowance is outside state.** The same key works in other tools and on other
 devices, and a top-up or a daily reset raises it, so it can move either way under Pouch.
 Pouch never reconciles it with its own count (no "Other" row, nothing negative, no
@@ -881,6 +897,12 @@ shield says "Transformers.js: in this browser, nothing sent". (`node build.mjs -
   decoding, at most 8 model steps per message and about 4k tokens of context: older
   turns are dropped first, then the current turn's long tool results are shortened. The
   model's native XML tool calls are parsed in the page. Stop interrupts generation.
+  The context meter shows this against the 4,096-token budget (`3.9k / 4k`); its count is
+  what the model actually saw (the worker's own tokenizer count of the fitted prompt). When
+  a request left something out, the reply is stored with how much (`contextTrimmed`), and
+  the meter reads "trimmed" in the warning color: the model is no longer seeing the whole
+  conversation. It also warns when the next message would have to leave turns out. pi-durable
+  is told a 131,072-token window on purpose, so it never compacts this model by itself; `/compact` does.
 - **When to use BayLeaf Sealed.** Transformers.js suits inspecting a workspace and small, literal edits.
   A visible hint (with a "Use BayLeaf Sealed next" button that only changes the picker) appears
   when it hits its step cap, an edit fails twice, a task touches more than 3 files,
