@@ -24,8 +24,9 @@ read, write and edit.
 Available (run \`ls /bin\` for the full list): cat, ls, find, tree, grep, rg,
 sed, awk, head, tail, sort, uniq, wc, cut, paste, join, column, tr, diff, jq,
 base64, sha256sum, file, seq, date, xargs, tee, mkdir, mv, cp, rm, touch,
-html-to-markdown, Pouch's own zip, unzip and tar (no -z compression), and
-pdfinfo, pdftotext and pdftoppm for PDFs (the pdf skill).
+html-to-markdown, Pouch's own zip, unzip and tar (no -z compression),
+pdfinfo, pdftotext and pdftoppm for PDFs (the pdf skill), and ffprobe and
+ffmpeg for audio and video (the media skill).
 Shell builtins work: for, while, functions, pipes, redirection, $(...).
 
 Not available: network (curl), package managers, python, node, git, gzip,
@@ -193,6 +194,60 @@ one with \`echo stop > /task/<id>/ctl\`.
   Try -layout, or check a page render when the order looks wrong.
 - Text from many pages is long: send it to a file and read the parts you
   need instead of printing everything.
+`,
+  '/skills/media/SKILL.md': `---
+name: media
+description: Inspect audio and video files, pull out still frames to look at, extract audio, trim and convert, with ffprobe and ffmpeg in the bash tool. Read before working with any audio or video file.
+---
+
+# Audio and video in Pouch
+
+FFmpeg 9 (libav.js) runs inside this browser: \`ffprobe\` and \`ffmpeg\` with
+their usual flags, over copies of the files. Nothing leaves the pouch. The
+first command downloads the media runtime (about 4 MiB, from Pouch's own
+site) and keeps it for offline use. Each command is a /task job; stop a long
+one with \`echo stop > /task/<id>/ctl\`.
+
+What this build handles: WebM/Matroska, Ogg, WAV and FLAC files; VP8 and VP9
+video; Opus, FLAC and PCM audio. Not MP4/MOV/M4A, H.264, AAC or MP3 (phone
+videos and voice memos are often these): ffprobe says "Invalid data found",
+and Pouch adds a hint. Tell the user plainly; do not guess at the content.
+
+## Recipe
+
+1. Probe first, always: \`ffprobe -v error -show_format -show_streams -of json
+   clip.webm\`. Note the duration, the streams, the size. Plan from it.
+2. To see what happens in a video, sample frames on a budget: at most 8
+   frames per look. Pick the rate from the duration D seconds: \`fps=8/D\`
+   (for a 120 s clip, \`fps=1/15\`), and scale down:
+   \`ffmpeg -i clip.webm -vf fps=1/15,scale=640:-1 frames/f-%03d.png\`.
+   Each "wrote" line gives the frame's time in the source (t=30s); keep it
+   with the frame so answers can say when things happen.
+   A single moment: \`ffmpeg -ss 75 -i clip.webm -frames:v 1 at75.png\`.
+3. If a look tool is available, look at the frames (a few at a time) and
+   describe them in time order, citing times. If none is, or the model
+   cannot see images, say you can list frames but not see them.
+   Zoom in on an interval with -ss and -t rather than a higher overall rate.
+4. Audio out: \`ffmpeg -i talk.webm -vn -c:a copy talk.opus\` (copy keeps the
+   Opus as it is; small and fast). WAV can become FLAC or Opus
+   (\`ffmpeg -i a.wav a.flac\`).
+5. Trim: \`ffmpeg -ss 30 -t 20 -i in.webm -c copy cut.webm\` (copy cuts at
+   keyframes; re-encode with \`-c:v libvpx-vp9 -b:v 1M\` for exact cuts).
+   Shrink: \`ffmpeg -i in.webm -vf scale=640:-1 -c:v libvpx-vp9 -b:v 500k -c:a copy small.webm\`.
+6. For a report, embed a frame as a data URL (\`base64 -w0 frames/f-002.png\`).
+
+## Caps and pitfalls
+
+- Inputs at most 256 MiB per call and 3 hours each; outputs at most 256 MiB;
+  at most 100 images per call, 3840x2160 pixels each. Over a cap is refused
+  with the cap's name.
+- No resampling here: Opus cannot become WAV or FLAC (nothing is written,
+  and ffmpeg says so). Keep Opus, or ask the user for a WAV.
+- Video encoding is slow in a browser (single thread): minutes per minute
+  of HD VP9. Scale down first, run it as a job, tell the user.
+- Images take -ss, -t, -to, -vf (fps, scale, crop), -r, -frames:v, -q:v;
+  other options are refused there. Use -y to overwrite.
+- \`ffmpeg -decoders\`, \`-encoders\`, \`-filters\` list what is built in.
 `,
   '/skills/skill-authoring/SKILL.md': `---
 name: skill-authoring

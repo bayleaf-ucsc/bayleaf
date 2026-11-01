@@ -40,7 +40,7 @@ export function binaryOutput(text) {
 }
 const commonPrefix = (xs) => xs.reduce((a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; return a.slice(0, i); });
 
-// deps: { vfs, fs? (the user's namespace, with /session), hooks: { bayleafCredential, approveEgress(req), models? (src/models-cli.js service), pdf? (src/pdf.js service),
+// deps: { vfs, fs? (the user's namespace, with /session), hooks: { bayleafCredential, approveEgress(req), models? (src/models-cli.js service), pdf? (src/pdf.js service), media? (src/media.js service),
 //         openFile?({ path, mode, interactive }) -> Promise<boolean>, revealDir?(path) (the `open` command, src/open-cli.js) }, onChange() }
 export function createTerminal({ vfs, fs: userFs, hooks = {}, onChange }) {
   const fs = serialized(userFs ?? vfs.as('user'));
@@ -49,6 +49,7 @@ export function createTerminal({ vfs, fs: userFs, hooks = {}, onChange }) {
     approveEgress: hooks.approveEgress && ((req) => hooks.approveEgress(req)),
     models: hooks.models,
     pdf: hooks.pdf,
+    media: hooks.media,
     openFile: hooks.openFile,
     revealDir: hooks.revealDir,
   });

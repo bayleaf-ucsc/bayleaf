@@ -103,6 +103,61 @@ and pdf.js makes no request of its own (checked with no CSP violation in
 `test/pdf-browser.mjs`, Chromium only). Privacy: Cloudflare sees that this browser
 fetched the pdf runtime; no PDF content leaves the page.
 
+## libav.js runtime (built and tested locally, not deployed; 2026-11-01)
+
+Pouch's second heavy-tool runtime: `build-libav.mjs` builds `runtime/libav/` from
+`@libav.js/variant-webm-vp9-cli` 6.10.9 (exact pin in `package.json`; npm integrity in the
+lockfile; the build also checks the SHA-256 of the wrapper, factory and wasm, which equal
+the libav.js 6.10.9.0 release zip's `dist/`). The page embeds its manifest's SHA-256
+(define `POUCH_LIBAV_RUNTIME`) and fetches it only when `ffprobe` or `ffmpeg` first runs.
+
+| File | Count | Size |
+|---|---:|---|
+| `runtime/libav/manifest.<sha16>.json` | 1 | ~1 KB |
+| `worker.js` part: src/media/worker.js with libav.js's wrapper and Emscripten factory | 1 | 214 KB |
+| `libav.wasm` part: the released `libav-6.10.9.0-webm-vp9-cli.wasm.wasm`, unmodified | 1 | 3.9 MiB |
+| `NOTICE.txt` part: what is shipped, where the source is, and the LGPL-2.1, FFmpeg, libav.js, libvpx (license and patent grant), Opus and emfiberthreads licenses, verbatim | 1 | 38 KB |
+
+Total 4.2 MiB in 4 files. Why `webm-vp9-cli` and not `default-cli` (2.2 MiB wasm):
+`default-cli` has no video decoder at all, so it cannot extract a frame; `webm-vp9-cli`
+adds VP8, VP9, swscale and the video filters for 1.8 MiB more. Not threaded (no
+SharedArrayBuffer, so no COOP/COEP). CSP delta: none; the worker is a `blob:` module
+worker and wasm runs under the existing `'wasm-unsafe-eval'` (checked with no CSP violation
+in `test/media-browser.mjs`, Chromium only). Privacy: Cloudflare sees that this browser
+fetched the media runtime; no media content leaves the page.
+
+**LGPL-2.1 corresponding source (decided by Adam, 2026-11-01).** libav.js's README says
+anyone distributing it must provide the sources; its release zip carries them in
+`sources/`. Pouch hosts them from the same site as the binary (LGPL-2.1 section 6(d):
+equivalent access from the same place), as a second group the page names but never
+fetches: `runtime/libav-source/`, 43.9 MiB in 11 files (largest part 11.5 MiB, so no file
+needed splitting), listed in SHA256SUMS so `deploy.mjs` uploads it. It is the release's
+whole `sources/`: the five tarballs this variant links, then the five it does not.
+
+| Tarball | Size | Source |
+|---|---:|---|
+| `libav.js-6.10.9.0.tar.gz` | 6.5 MiB | GitHub archive of tag v6.10.9.0 (build scripts, configs, patches) |
+| `ffmpeg-9.0.tar.xz` | 11.5 MiB | ffmpeg.org |
+| `opus-1.6.1.tar.gz` | 10.0 MiB | downloads.xiph.org |
+| `libvpx-1.16.0.tar.gz` | 5.4 MiB | GitHub archive of tag v1.16.0 |
+| `emfiberthreads-1.3.tar.gz` | 8 KB | GitHub archive of tag v1.3 |
+| `libvorbis-1.3.7.tar.xz` (not linked) | 1.1 MiB | downloads.xiph.org |
+| `libogg-1.3.6.tar.xz` (not linked) | 430 KB | downloads.xiph.org |
+| `lame-3.100.tar.gz` (not linked) | 1.5 MiB | sourceforge.net |
+| `libaom-03087864.tar.gz` (not linked) | 6.1 MiB | GitLab archive of webmproject/libaom at 03087864 |
+| `zlib-1.3.2.tar.gz` (not linked) | 1.4 MiB | zlib.net fossils |
+
+Nine are byte-identical to the release zip's `sources/` (SHA-256 checked 2026-11-01); the
+tenth is GitHub's archive of the libav.js tag, the same tree as the zip's `libav.js.tar.xz`
+(`git archive HEAD | xz`) in a different compression (accepted by Adam). `build-libav.mjs`
+downloads them once into `node_modules/.cache/pouch-libav-source/` (so the first build needs
+the network) and checks each pinned SHA-256 on every build. `NOTICE.txt` and `ffmpeg -h`
+name the source manifest; the manifest lists each tarball's parts in order, and `NOTICE.txt`
+lists the five unlinked ones as included for completeness, not linked. No written offer is
+made, because the source sits next to the binary. The wasm is unmodified; the wrapper is
+bundled unmodified, and the Emscripten factory with three rewrite rules (six replacements)
+that disable code paths, visible in `build-libav.mjs`.
+
 ## Installable app shell (built and tested locally, not deployed; 2026-10-30)
 
 `build.mjs` now also emits `sw.js`, `manifest.webmanifest` and `icons/*.png`

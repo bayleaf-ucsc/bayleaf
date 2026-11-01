@@ -21,6 +21,7 @@
     "@jitl/quickjs-singlefile-browser-release-sync": "0.32.0",
     "@jitl/quickjs-singlefile-mjs-release-sync": "0.32.0",
     "@lezer/highlight": "1.2.5",
+    "@libav.js/variant-webm-vp9-cli": "6.10.9",
     "codemirror": "^6.0.2",
     "esbuild": "0.28.2",
     "just-bash": "3.6.0",

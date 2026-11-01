@@ -237,6 +237,20 @@ Story IDs from the media stories draft (PD1-PD6, AG3-AG5, AG9). pdf.js runs in i
 - PD6 ok (Chromium): a PDF with document-open JavaScript, a named JavaScript action and a link reaches no host and runs nothing; pdf.js's scripting sandbox is not shipped, the worker has no fetch or XHR, and the page's CSP needed no change (no violation). Malformed streams, Firefox and Safari not tested.
 - AG3 ok, AG4 ok (render half; seeing depends on look), AG5 ok: poppler's names and flags; unsupported ones (`-scale-to`, `-tiff`, `-rx`) say what to use instead; caps refuse with the cap's name; encrypted PDFs exit 3 and ask for `-upw` (`test/pdf-node.mjs`).
 
+### 14. Audio and video (libav.js runtime, 2026-11-01; Lab, Desk, Analyst and Phone personas, and agents)
+Story IDs from the media stories draft (AV1-AV6, AG1, AG2, AG5-AG7, AG9). libav.js (FFmpeg 9, variant `webm-vp9-cli`) runs in its own worker from verified same-origin parts, behind `ffprobe` and `ffmpeg` (README "The second tool: libav.js").
+- AV1 ok (data), ? (plain language): `ffprobe -v error -show_format -show_streams -of json` gives duration, streams, codecs and size for WebM, Ogg, WAV and FLAC; the plain-language summary is the model's job. MP4/MOV/M4A are not readable here (gap below).
+- AV2 partial: `ffmpeg -i talk.webm -vn -c:a copy talk.opus` works (checked in `test/media-browser.mjs`); WAV becomes FLAC or Opus. Opus to WAV fails (no swresample in this variant) and says so; M4A/AAC input is the WebCodecs gap.
+- AV3 partial: trims (`-ss -t -c copy`), scaling and VP8/VP9 transcodes work for WebM; MOV input is the gap. Video encoding is single-threaded and slow.
+- AV4 gap: no transcoded preview in the file browser yet (the runtime can produce the WebM).
+- AV5 ok (one run, 2026-11-01): kimi-k3 on BayLeaf Sealed (4 requests; a fifth, likely the title, was refused by the test's cap) probed a 4 s VP9 WebM, extracted frames, looked at them in one look call and answered "from 0s to about 1.5s a red background displays the word "ONE" ..., then it cuts at about t=2s to a blue background showing "TWO"": both scenes, in order, with times (`test/media-sealed.mjs`, run on a local merge with the look branch, PR #128).
+- AV6 partial: caps refuse up front with their names (`MAX_INPUT_BYTES` before the runtime loads, `MAX_INPUT_SECONDS` from the container); memory is guarded by the jobs estimate, not measured on a phone.
+- AG1 ok (frames half, and with look in the AV5 run), AG2 ok, AG5 ok: FFmpeg's own names, flags and messages, with libav's internal file names mapped back to the caller's paths.
+- AG6 ok: each run is a `/task` job; Stop mid-ffmpeg ends it within a second (the worker is ended), writes nothing, and the next job runs (`test/media-browser.mjs`).
+- AG7 ? : the media skill budgets at most 8 frames per look, rate from the duration; the AV5 run followed it, but cost is not yet shown to the agent.
+- AG9 ? : a skill recipe (`base64 -w0` a frame into a report), not run end to end.
+- Gap (all AV on phone media): MP4/MOV/M4A, H.264, HEVC, AAC and MP3 do not decode in any published libav.js variant; the fallback is WebCodecs, not built.
+
 ## Release slices
 
 1. **Walking skeleton (now):** A1–A4, T1–T2, I1, D1–D4, D7, R1, O1–O2, L1.

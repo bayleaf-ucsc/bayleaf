@@ -24,6 +24,7 @@ import { createUsage, renderMeter, labelComposer, renderPanel, exhaustedText, ex
 import { MAIN, refOf, asRef } from './graph.js';
 import { createTerminal } from './terminal.js';
 import { createPdfService } from './pdf.js';
+import { createMediaService } from './media.js';
 import { createSessions, sameId, titleOf, notesKey, convKey, revertKey, subagentsKey, interruptedKey, turnsKey, watchesKey } from './sessions.js';
 import { createWatches, watchTool, baseOf, isGlob, MAX_WAKES } from './ns/watch.js';
 import { parseSpecs, over } from './ns/namespace.js';
@@ -1525,6 +1526,8 @@ const modelService = createModelService({ store: modelStore, tasks: vfs.tasks, a
   onChange: () => { const t = LOCAL && modelService.downloads.get(LOCAL.id); if (t?.status === 'running' && t.progress) localProgress({ ...t.progress, downloading: true }); renderLocalSettingsSoon(); } });
 // pdfinfo, pdftotext, pdftoppm (src/pdf.js): one pdf.js worker for the terminal and every agent, its runs /task jobs.
 const pdfService = createPdfService({ tasks: vfs.tasks });
+// ffprobe, ffmpeg (src/media.js): one libav.js worker, the same way.
+const mediaService = createMediaService({ tasks: vfs.tasks });
 let settingsTimer = null;
 const renderLocalSettingsSoon = () => { if (!settingsTimer) settingsTimer = setTimeout(() => { settingsTimer = null; renderLocalSettings(); }, 250); };
 
@@ -1599,7 +1602,7 @@ function mainNamespace(sid, base) {
 // The user's shell over the same namespace; `bayleaf` asks every use. Ctrl+`
 // opens it (or focuses it); opening it never sends anything.
 const terminal = createTerminal({ vfs, fs: over(vfs.as('user'), [['/session', control.view({ by: 'user', label: 'terminal' }), { label: 'control (you)' }]]), onChange: () => renderTree(),
-  hooks: { bayleafCredential: () => key, approveEgress: (req) => egress.approve(req, null, undefined, 'you, in the terminal'), models: modelService, pdf: pdfService,
+  hooks: { bayleafCredential: () => key, approveEgress: (req) => egress.approve(req, null, undefined, 'you, in the terminal'), models: modelService, pdf: pdfService, media: mediaService,
     openFile: ({ path, mode, interactive }) => openFile(path, undefined, { mode, interactive }), revealDir } });
 document.addEventListener('keydown', (e) => {
   if (e.key !== '`' || !e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]')) return;
@@ -3538,7 +3541,7 @@ const withWatch = (list) => { list.push(watchTool({ Type, watches, callerOf: wat
         // Every change an agent makes, for /session/<sid>/changes (subagents marked by their ref).
         onChange: (caller, op, path) => { const w = agent?.who(caller); if (w?.sid != null) changes.note(w.sid, op, path, w.child != null ? refOfChild(w.sid, w.child)?.ref ?? 'subagent' : MAIN); },
         ...egressHooks,
-        models: modelService, modelsWho, pdf: pdfService,
+        models: modelService, modelsWho, pdf: pdfService, media: mediaService,
         show,
       })),
       systemPrompt: () => systemPrompt(vfs),

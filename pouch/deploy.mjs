@@ -38,7 +38,8 @@ const files = listed.map(([sha, path]) => {
   return { path, sha, size: bytes.length };
 });
 // The page must embed each runtime manifest it ships with (defines LOCAL_MODEL from
-// build-models.mjs, POUCH_PDF_RUNTIME from build-pdf.mjs).
+// build-models.mjs, POUCH_PDF_RUNTIME from build-pdf.mjs, POUCH_LIBAV_RUNTIME and
+// POUCH_LIBAV_SOURCE from build-libav.mjs).
 for (const f of files.filter((x) => x.path.includes('/manifest.'))) {
   if (!html.includes(f.sha)) throw new Error(`pouch.html does not trust ${f.path}`);
   const m = JSON.parse(readFileSync(join(source, f.path), 'utf8'));
@@ -83,10 +84,10 @@ writeFileSync(join(snapshot, 'SHA256SUMS'), manifest);
 for (const f of shellFiles) { mkdirSync(dirname(join(snapshot, f.path)), { recursive: true }); copyFileSync(join(source, f.path), join(snapshot, f.path)); }
 // Runtime parts are content-addressed: the snapshot keeps their list (SHA256SUMS);
 // rebuild them with build.mjs from the pinned npm packages (models.lock.json runtime,
-// build-pdf.mjs PDFJS).
+// build-pdf.mjs PDFJS, build-libav.mjs LIBAV and SOURCES).
 // Stage only allowlisted public files, outside the checkout and its Wrangler caches.
 const staging = mkdtempSync(join(tmpdir(), 'pouch-static-'));
-// Each staging copy holds the whole artifact (about 40 MiB): never leave one behind.
+// Each staging copy holds the whole artifact (over 80 MiB with the libav source): never leave one behind.
 process.on('exit', () => rmSync(staging, { recursive: true, force: true }));
 mkdirSync(join(staging, 'assets'));
 writeFileSync(join(staging, 'assets/pouch.html'), html);

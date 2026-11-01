@@ -15,6 +15,7 @@ import { bayleafCommands } from './bayleaf-cli.js';
 import { modelsCommands } from './models-cli.js';
 import { openCommands, agentOpenCommands, agentShowCommands } from './open-cli.js';
 import { pdfCommands } from './pdf.js';
+import { mediaCommands } from './media.js';
 import { runTool } from './run.js';
 import { WATCH_GLOSS } from './ns/watch.js';
 import { FILE_CAP, rasterMime, prepareImageSized } from './attachments.js';
@@ -280,7 +281,7 @@ export function shellFor(fs, hooks = {}) {
     fs: tagWrites(fs), cwd: CWD,
     env: { HOME: CWD, USER: 'user', PATH: '/usr/bin:/bin' },
     commands: COMMANDS,
-    customCommands: [...archiveCommands(defineCommand), ...bayleafCommands(defineCommand, hooks), ...modelsCommands(defineCommand, hooks.models, { by: 'user', via: 'terminal' }), ...pdfCommands(defineCommand, hooks.pdf, { name: 'terminal' }), ...openCommands(defineCommand, { openFile: hooks.openFile, revealDir: hooks.revealDir })],
+    customCommands: [...archiveCommands(defineCommand), ...bayleafCommands(defineCommand, hooks), ...modelsCommands(defineCommand, hooks.models, { by: 'user', via: 'terminal' }), ...pdfCommands(defineCommand, hooks.pdf, { name: 'terminal' }), ...mediaCommands(defineCommand, hooks.media, { name: 'terminal' }), ...openCommands(defineCommand, { openFile: hooks.openFile, revealDir: hooks.revealDir })],
     executionLimits: { maxCommandCount: 100_000, maxLoopIterations: 100_000 },
   });
 }
@@ -420,7 +421,9 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
       customCommands: [...archiveCommands(defineCommand), ...cli, ...modelsCommands(defineCommand, hooks.models, () => hooks.modelsWho?.(caller) ?? { by: 'agent', caller }), ...agentOpenCommands(defineCommand),
         ...agentShowCommands(defineCommand, { show: hooks.show && ((req) => hooks.show(req, caller)) }),
         // pdfinfo, pdftotext, pdftoppm (src/pdf.js): hooks.pdf is the shared engine; jobs are labelled with the caller.
-        ...pdfCommands(defineCommand, hooks.pdf, () => hooks.modelsWho?.(caller) ?? { name: 'agent' })],
+        ...pdfCommands(defineCommand, hooks.pdf, () => hooks.modelsWho?.(caller) ?? { name: 'agent' }),
+        // ffprobe, ffmpeg (src/media.js): hooks.media is the shared libav engine.
+        ...mediaCommands(defineCommand, hooks.media, () => hooks.modelsWho?.(caller) ?? { name: 'agent' })],
       executionLimits: { maxCommandCount: 100_000, maxLoopIterations: 100_000 },
       ...bashOptions,
     });
@@ -518,7 +521,7 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
   const bashTool = {
     name: 'bash', label: 'Bash',
     description: `Run a bash script in a simulated shell (just-bash) over the same files, starting in ${CWD}. ` +
-      'Has coreutils, grep, rg, sed, awk, find, jq, diff, sort, xargs, zip/unzip/tar (no compression flags), and pdfinfo/pdftotext/pdftoppm for PDFs (see the pdf skill). ' +
+      'Has coreutils, grep, rg, sed, awk, find, jq, diff, sort, xargs, zip/unzip/tar (no compression flags), pdfinfo/pdftotext/pdftoppm for PDFs (see the pdf skill), and ffprobe/ffmpeg for audio and video (see the media skill). ' +
       `There is no network, no python, node, git or package manager, and no real processes (for real parsing or computation use the run tool). Each call starts fresh in ${CWD}; use \`cd dir && ...\` within one call. \`ls /bin\` lists every command. ` +
       '`bayleaf --help` for BayLeaf web search/fetch, sandbox VM and inboxes (these leave the pouch and ask the user).',
     parameters: Type.Object({ command: Type.String({ description: 'Bash script to run' }) }),
