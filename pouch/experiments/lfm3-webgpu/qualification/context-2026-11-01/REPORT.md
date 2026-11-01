@@ -11,10 +11,11 @@ can be shown? Pouch caps prompts at `BUDGET = 4096` (`pouch/src/profiles.js:61`)
   tokens: TTFT 24.7 s; 24,576: 32.9 s). One-shot prefill, which Pouch uses today, never gets there
   because it fails first (next item). Without a progress indicator the comfortable range is
   **16K and below** (TTFT 17.7 s).
-- **Hard ceiling, one-shot (measured, cause identified):** a single forward pass works up to
-  **11,585 tokens**, and fails at **11,586 and above** with `SafeInt ... Integer overflow`.
-  ORT-Web's non-flash GroupQueryAttention materializes an **fp16 attention-score tensor of
-  16 heads x S x T**, and 16 x 11,586² x 2 B is just past 2³² B. Separately, a prompt of
+- **Hard ceiling, one-shot (boundary measured, cause inferred):** a single forward pass works
+  up to **11,585 tokens**, and fails at **11,586 and above** with `SafeInt ... Integer overflow`.
+  The boundary matches an **fp16 attention-score tensor of 16 heads x S x T** in ORT-Web's
+  non-flash GroupQueryAttention to the token (16 x 11,586² x 2 B is just past 2³² B), but the
+  ORT kernel was not traced. Separately, a prompt of
   **exactly 8,192 tokens** silently returns **non-finite logits**, with no exception.
 - **Hard ceiling, chunked (measured):** chunked prefill (512-token chunks carrying
   `past_key_values`) works to **131,072 tokens end to end**, with 3/3 needles. A synthetic tail
