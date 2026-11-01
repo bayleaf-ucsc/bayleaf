@@ -142,8 +142,11 @@ Cache Storage took 1.9 s.
 summaries, single-file targeted edits, small multi-file edits where intent is stated
 literally, and JSON config edits. Use the v8 recipe: name the cwd, make tool errors
 informative, include a one-turn byte-exact example, normalize newlines in the tools, and decode
-greedily (cheaper, and no less accurate here). Cap steps at 8 and context near 4k. Past
-4k, decode halves and memory roughly quadruples. Show a "try Sealed" suggestion when
+greedily (cheaper, and no less accurate here). Cap steps at 8 and context near 4k. (The
+claim that decode halves and memory quadruples past 4k was not measured here; the
+2026-11-01 long-context qualification, `qualification/context-2026-11-01/REPORT.md`, measured
+decode roughly halving per doubling beyond 8K, a one-shot prefill wall at 11,585 tokens, and
+recommends chunked prefill with a 16,384 budget.) Show a "try Sealed" suggestion when
 Local reaches the step cap, repeats a failing edit twice, the task spans more than about 3 files
 or asks for open-ended refactoring/design, or context would exceed ~4k. Have Local re-read
 files after edits and show diffs. Small models make plausible-but-wrong bytes.

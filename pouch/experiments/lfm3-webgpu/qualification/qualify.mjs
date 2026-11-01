@@ -140,7 +140,7 @@ const server = await serve(port);
 profile = await mkdtemp(join(tmpdir(), 'pouch-qualify-'));
 const context = await chromium.launchPersistentContext(profile, { executablePath: config.chrome ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: !flag('headed'),
   args: ['--no-first-run', '--no-default-browser-check', '--enable-unsafe-webgpu', '--enable-features=WebGPU'], viewport: { width: 1000, height: 700 } });
-const page = await context.newPage(); page.setDefaultTimeout(900000);
+const page = await context.newPage(); page.setDefaultTimeout(+(arg('timeout-s', '900')) * 1000);
 context.on('request', (r) => network.push(r.url())); page.on('pageerror', (e) => errors.push(String(e))); page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 const call = (action, args = {}) => page.evaluate(({ action, args }) => window.call(action, args), { action, args });
 const open = async () => { await page.goto(`http://127.0.0.1:${port}/`); await page.waitForFunction(() => window.ready); };
@@ -178,7 +178,50 @@ try {
       }
     }
   }
-  if ((phase === 'perf' || phase === 'all') && result.load) {
+  const lengths = arg('lengths')?.split(',').map(Number) ?? config.lengths;
+  if ((phase === 'perf' || phase === 'all') && result.load && lengths) {
+    // Long-context sweep: exact prompt lengths, per mode ('oneshot' or 'chunk:<n>'), a fresh
+    // page and model load per length so ORT's buffer pool starts empty. A mode stops
+    // escalating at its first failure or capped prefill. A watchdog samples memory every 2 s
+    // and kills the browser above --abort-gb (Chrome RSS or system GPU counter growth).
+    // 'tail:<n>' runs the worker's synthetic tail probe instead: one n-token chunk ending at N
+    // ('tailgpu:<n>' allocates its zero cache on the GPU).
+    const modes = (arg('modes') ?? 'oneshot').split(','), abortKB = +(arg('abort-gb', '40')) * 1e6, capMs = +(arg('cap-s', '600')) * 1000;
+    const repeats = (n) => +(arg('repeats', '0')) || (n <= 8192 ? 3 : 1);
+    const ctx = result.perf = { context: {}, lengths, modes, gpuCounterNoisy: true, abortGB: abortKB / 1e6, capS: capMs / 1000 };
+    let aborted = null;
+    page.on('console', (m) => { if (m.text().startsWith('[progress]')) process.stdout.write('\r' + m.text().slice(0, 120) + '   '); });
+    for (const mode of modes) {
+      const chunk = mode === 'oneshot' ? 0 : +mode.split(':')[1], rows = ctx.context[mode] = [], isTail = mode.startsWith('tail');
+      for (const N of lengths) {
+        await call('dispose').catch(() => {}); await page.reload(); await page.waitForFunction(() => window.ready); await load();
+        let stop = false;
+        for (let r = 0; r < repeats(N) && !stop && !aborted; r++) {
+          const base = mem(), peak = { ...base }, consoleStart = errors.length;
+          const watch = setInterval(() => {
+            const m = mem(); peak.chromeRssKB = Math.max(peak.chromeRssKB ?? 0, m.chromeRssKB ?? 0); peak.gpuInUseBytes = Math.max(peak.gpuInUseBytes ?? 0, m.gpuInUseBytes ?? 0);
+            if (!aborted && (m.chromeRssKB > abortKB || m.gpuInUseBytes - base.gpuInUseBytes > abortKB * 1e3)) { aborted = `memory watchdog: rss ${(m.chromeRssKB / 1e6).toFixed(1)} GB, gpu +${((m.gpuInUseBytes - base.gpuInUseBytes) / 1e9).toFixed(1)} GB`; context.close().catch(() => {}); }
+          }, 2000);
+          const at = new Date().toISOString(); let row;
+          // page.evaluate has no timeout of its own: a hung one-shot pass kills the browser.
+          let timer; const hang = new Promise((_, no) => { timer = setTimeout(() => { aborted = `call timeout: ${arg('timeout-s', '900')} s`; context.close().catch(() => {}); no(Error(aborted)); }, +(arg('timeout-s', '900')) * 1000); });
+          try { row = await Promise.race([isTail ? call('tail', { past: N - chunk, chunk, gpu: mode.startsWith('tailgpu') }) : call('context', { length: N, chunk, capMs, label: `${mode} ${N} #${r}` }), hang]); }
+          catch (e) { row = { length: N, mode, error: aborted ?? String(e).slice(0, 1500) }; }
+          finally { clearInterval(watch); clearTimeout(timer); }
+          const after = aborted ? {} : mem();
+          Object.assign(row, { repeat: r, at, chromeRssPeakGB: +((peak.chromeRssKB ?? 0) / 1e6).toFixed(2), chromeRssBaseGB: +((base.chromeRssKB ?? 0) / 1e6).toFixed(2),
+            gpuDeltaPeakGB: base.gpuInUseBytes ? +((peak.gpuInUseBytes - base.gpuInUseBytes) / 1e9).toFixed(2) : null, gpuDeltaAfterGB: after.gpuInUseBytes ? +((after.gpuInUseBytes - base.gpuInUseBytes) / 1e9).toFixed(2) : null,
+            console: errors.slice(consoleStart, consoleStart + 10).map((x) => x.slice(0, 400)) });
+          rows.push(row); save();
+          const { greedyIds, firstTop5, prefillChunksMs, ...brief } = row; process.stdout.write('\n'); console.log(JSON.stringify(brief));
+          if (row.error && !flag('keep-going')) stop = true;
+        }
+        if (stop || aborted) break;
+      }
+      if (aborted) break;
+    }
+    ctx.aborted = aborted;
+  } else if ((phase === 'perf' || phase === 'all') && result.load) {
     // Cold = first load in this fresh profile (loopback bytes, warm OS page cache: not a
     // network download). Warm = page reload, then load again from Cache Storage.
     const perf = result.perf = { coldLoadMs: Math.round(result.load.load_ms), gpuCounterNoisy: true };

@@ -4,7 +4,7 @@
 // this file changes only when the agent loop or the tool semantics change.
 // Generation options mirror pouch/src/local/worker.js (enable_thinking false, native
 // tokens kept in the stream, greedy unless the trial samples).
-import { pipeline, PreTrainedTokenizer, TextStreamer, env, InterruptableStoppingCriteria, random } from '/runtime/transformers.js';
+import { pipeline, PreTrainedTokenizer, TextStreamer, env, InterruptableStoppingCriteria, random, Tensor } from '/runtime/transformers.js';
 import { Bash, InMemoryFs } from './tools.bundle.js';
 
 env.allowRemoteModels = false; env.allowLocalModels = true; env.localModelPath = new URL('/m/', location.href).href;
@@ -110,6 +110,148 @@ async function generate(messages, { maxNew = 384, budget = 8192, withTools = fal
   return { text: out[0].generated_text, input_tokens: inputTokens, output_tokens: tokens, generation_ms: performance.now() - start, ttft_ms: first === null ? null : first - start, decode_ms: first === null ? null : last - first };
 }
 
+// ── Long-context sweep (perf phase with --lengths). Drives model.forward directly so
+// prefill runs either one-shot (one pass over the whole document, as generator() does) or in
+// chunks that carry past_key_values forward, which also yields progress events. Each prompt
+// holds three needles (10/50/90% depth); each question forks the document's KV cache.
+const gpuErrors = [];
+if (self.GPUAdapter) {
+  const requestDevice = GPUAdapter.prototype.requestDevice;
+  GPUAdapter.prototype.requestDevice = async function (...a) {
+    const d = await requestDevice.apply(this, a);
+    d.addEventListener('uncapturederror', (e) => gpuErrors.push(String(e.error?.message ?? e.error).slice(0, 600)));
+    d.lost.then((i) => gpuErrors.push(`device lost (${i.reason}): ${i.message}`.slice(0, 600)));
+    self.gpuDevice = d; self.gpuLimits = { maxBufferSize: d.limits.maxBufferSize, maxStorageBufferBindingSize: d.limits.maxStorageBufferBindingSize };
+    return d;
+  };
+}
+// Varied filler: seeded field notes from small word lists (about 16 tokens a sentence).
+const FILL = {
+  who: ['the survey team', 'a volunteer botanist', 'the harbor pilot', 'two students', 'the night watch', 'an elderly beekeeper', 'the ferry crew', 'a cartographer', 'the mill foreman', 'our cook', 'the archivist', 'a visiting geologist', 'the lamplighter', 'the youngest sailor', 'a quiet engineer', 'the orchard keeper'],
+  did: ['counted', 'sketched', 'repaired', 'measured', 'catalogued', 'photographed', 'weighed', 'relocated', 'cleaned', 'labelled', 'inspected', 'traded away', 'collected', 'painted', 'tested', 'sorted'],
+  what: ['the copper pipes', 'a crate of lemons', 'seventeen fence posts', 'the tide tables', 'a broken compass', 'the rain gauges', 'several clay pots', 'the old ledgers', 'a nest of swallows', 'the signal flags', 'the brass hinges', 'a bundle of reeds', 'the cider barrels', 'the weather vane', 'a box of candles', 'the fishing nets'],
+  where: ['near the north pier', 'behind the granary', 'along the ridge trail', 'inside the boathouse', 'at the market square', 'by the dry creek', 'under the cedar grove', 'beside the lighthouse', 'on the upper terrace', 'past the salt flats', 'in the east meadow', 'at the stone bridge'],
+  when: ['before dawn', 'after the storm', 'during the noon break', 'at dusk', 'on a windy morning', 'while it drizzled', 'late in the evening', 'just after breakfast'],
+  unit: ['kilograms', 'meters', 'liters', 'paces', 'bundles', 'centimeters'],
+};
+const NEEDLES = [{ gate: 'north', phrase: 'amber-falcon-4821', depth: 0.1 }, { gate: 'east', phrase: 'cobalt-meadow-7360', depth: 0.5 }, { gate: 'west', phrase: 'saffron-quill-2957', depth: 0.9 }];
+function* fieldNotes(seed) {
+  let s = seed >>> 0; const r = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 2 ** 32, p = (a) => a[Math.floor(r() * a.length)];
+  for (let n = 0; ; n++) {
+    if (n % 14 === 0) yield `\n\n## Field note ${n / 14 + 1}\n`;
+    const w = p(FILL.who), extra = r() < 0.35 ? `, a total of ${Math.floor(r() * 900 + 100)} ${p(FILL.unit)}` : '';
+    yield `${n % 14 ? ' ' : ''}${w[0].toUpperCase() + w.slice(1)} ${p(FILL.did)} ${p(FILL.what)} ${p(FILL.where)} ${p(FILL.when)}${extra}.`;
+  }
+}
+const question = (gate) => `\n\nQuestion: According to the field notes above, what is the passphrase for the ${gate} gate? Answer with the passphrase only.`;
+// Exact-length prompt as token ids: template prefix, document (needles spliced in at
+// sentence boundaries), question + template suffix. Pieces are encoded separately (each
+// starts at a space or newline, so this matches joint encoding up to rare boundary merges).
+function buildPrompt(N, seed = 7) {
+  const tok = generator.tokenizer, enc = (t) => tok.encode(t, { add_special_tokens: false });
+  const tpl = tok.apply_chat_template([{ role: 'user', content: '\u0001SPLIT\u0001' }], { tokenize: false, add_generation_prompt: true, enable_thinking: false });
+  const [pre, post] = tpl.split('\u0001SPLIT\u0001');
+  const preIds = enc(pre), suffixes = NEEDLES.map((n) => [...enc(question(n.gate)), ...enc(post)]);
+  const docLen = N - preIds.length - suffixes[0].length, doc = [], at = [];
+  const gen = fieldNotes(seed); let k = 0;
+  while (doc.length < docLen) {
+    if (k < NEEDLES.length && doc.length >= NEEDLES[k].depth * docLen) { at.push(preIds.length + doc.length); doc.push(...enc(` The passphrase for the ${NEEDLES[k].gate} gate is ${NEEDLES[k].phrase}.`)); k++; continue; }
+    doc.push(...enc(gen.next().value));
+  }
+  if (k < NEEDLES.length) throw Error('document too short for all needles');
+  doc.length = docLen;
+  return { prefix: [...preIds, ...doc], suffixes, needleTokenAt: at, docLen };
+}
+const I64 = (ids) => BigInt64Array.from(ids, (x) => BigInt(x));
+const disposeAll = (c) => Promise.all(Object.values(c ?? {}).map((t) => t.location === 'gpu-buffer' ? t.dispose() : null));
+// One forward pass over ids on top of cache (a plain {past name: tensor} object, or null),
+// returning argmax/top logits and the new cache. The caller disposes what it no longer needs.
+async function step(ids, cache, total, wantTop = false) {
+  const out = await generator.model.forward({ input_ids: new Tensor('int64', I64(ids), [1, ids.length]), attention_mask: new Tensor('int64', new BigInt64Array(total).fill(1n), [1, total]), past_key_values: cache, num_logits_to_keep: new Tensor('int64', [1n], []) });
+  const next = {}; for (const [k, v] of Object.entries(out)) if (k.startsWith('present')) next[k.replace('present_conv', 'past_conv').replace('present', 'past_key_values')] = v;
+  const l = out.logits.to('float32').data; let best = 0, finite = true;
+  for (let i = 0; i < l.length; i++) { if (!Number.isFinite(l[i])) finite = false; if (l[i] > l[best]) best = i; }
+  const top = wantTop && [...l.keys()].sort((a, b) => l[b] - l[a]).slice(0, 5).map((i) => [i, +l[i].toFixed(3)]);
+  return { cache: next, token: best, finite, top };
+}
+const progress = (p) => postMessage({ progress: p });
+const EOS = 124900;
+async function context({ length: N, chunk = 0, decodeTokens = 96, answerTokens = 24, capMs = 600000, label = '' }) {
+  gpuErrors.length = 0;
+  const t0 = performance.now(), P = buildPrompt(N), tokenizeMs = performance.now() - t0;
+  const size = chunk > 0 ? chunk : P.prefix.length, chunks = [];
+  const row = { length: N, mode: chunk > 0 ? `chunk-${chunk}` : 'oneshot', docTokens: P.prefix.length, needleTokenAt: P.needleTokenAt, tokenizeMs: Math.round(tokenizeMs) };
+  let doc = null;
+  try {
+    const start = performance.now();
+    for (let i = 0; i < P.prefix.length; i += size) {
+      const ids = P.prefix.slice(i, i + size), c0 = performance.now();
+      const s = await step(ids, doc, i + ids.length);
+      await disposeAll(doc); doc = s.cache;
+      if (!s.finite) throw Error(`non-finite logits after chunk ending at ${i + ids.length}`);
+      chunks.push(Math.round(performance.now() - c0));
+      progress({ label, done: i + ids.length, of: N, ms: Math.round(performance.now() - start) });
+      if (performance.now() - start > capMs && i + size < P.prefix.length) { row.error = `prefill cap: ${capMs / 1000} s exceeded after ${i + ids.length}/${P.prefix.length} tokens`; break; }
+    }
+    row.prefillChunksMs = chunks;
+    row.chunkMsSummary = { n: chunks.length, first: chunks[0], last: chunks.at(-1), max: Math.max(...chunks) };
+    const shape = (n) => doc[`past_key_values.${n}.key`]?.dims;
+    row.kvShapes = { 'full (layer 2)': shape(2), 'sliding (layer 4)': shape(4) };
+    if (row.error) { row.prefillPartialMs = Math.round(performance.now() - start); return row; }
+    row.needles = [];
+    for (const [q, n] of NEEDLES.entries()) {
+      const s0 = performance.now(), suf = P.suffixes[q];
+      let total = P.prefix.length + suf.length, s = await step(suf, doc, total, q === 0);
+      if (q === 0) { row.ttftMs = Math.round(s0 - start + performance.now() - s0); row.prefillMs = Math.round(s0 - start); }
+      const ids = [s.token], first = q === 0 ? s.top : undefined; let fork = s.cache, tFirst = performance.now();
+      const want = q === 0 ? decodeTokens : answerTokens;
+      while (ids.length < want && (q === 0 || ids.at(-1) !== EOS)) {
+        const d = await step([ids.at(-1)], fork, ++total); await disposeAll(fork); fork = d.cache;
+        if (!d.finite) throw Error(`non-finite logits while decoding at ${total}`);
+        ids.push(d.token);
+      }
+      const tLast = performance.now(); await disposeAll(fork);
+      const answer = generator.tokenizer.decode(ids.slice(0, (ids.indexOf(EOS) + 1 || ids.length + 1) - 1), { skip_special_tokens: true }).trim();
+      row.needles.push({ gate: n.gate, depth: n.depth, pass: answer.toLowerCase().includes(n.phrase), answer: answer.slice(0, 80) });
+      if (q === 0) { row.decodeTokens = ids.length; row.decodeTokS = +((ids.length - 1) / ((tLast - tFirst) / 1000)).toFixed(1); row.firstTop5 = first; row.greedyIds = ids; }
+    }
+    row.prefillTokS = +(P.prefix.length / (row.prefillMs / 1000)).toFixed(1);
+  } catch (e) { row.error = String(e).slice(0, 1500); }
+  finally { await disposeAll(doc); row.gpuErrors = gpuErrors.slice(0, 10); row.gpuLimits = self.gpuLimits; }
+  return row;
+}
+
+// Synthetic tail probe: one chunk of real tokens on top of a zero-filled cache of length past
+// (one shared zero buffer per shape), then a few decode steps. Content is meaningless; it tests
+// kernel size limits, per-chunk time, decode speed and memory at the far end of the context
+// without the full prefill. Prefix-free, so it says nothing about quality.
+// gpu: allocate the zero cache as GPU buffers (WebGPU zero-initializes them) instead of CPU
+// arrays, which ORT stages through the 4 GiB wasm32 heap (fails near 256K: 'null function').
+async function tail({ past, chunk = 512, decodeTokens = 16, gpu = false }) {
+  gpuErrors.length = 0;
+  const row = { mode: `tail-${chunk}${gpu ? '-gpu' : ''}`, past, chunk }, sess = generator.model.sessions.model, cache = {}, zeros = new Map(), owned = [];
+  const OrtTensor = new Tensor('float32', new Float32Array(1), [1]).ort_tensor.constructor;
+  for (const m of sess.inputMetadata) {
+    if (!m.name.startsWith('past_')) continue;
+    const dims = m.shape.map((d) => d === 'batch_size' ? 1 : d === 'past_sequence_length' ? past : d), n = dims.reduce((a, b) => a * b, 1);
+    if (!gpu) { if (!zeros.has(n)) zeros.set(n, new Uint16Array(n)); cache[m.name] = new Tensor(m.type, zeros.get(n), dims); continue; }
+    const buf = self.gpuDevice.createBuffer({ size: Math.ceil(n * 2 / 16) * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST }); owned.push(buf);
+    cache[m.name] = new Tensor(OrtTensor.fromGpuBuffer(buf, { dataType: m.type, dims }));
+  }
+  const P = buildPrompt(4096);
+  let c = cache, total = past;
+  try {
+    const t0 = performance.now(); const s = await step(P.prefix.slice(0, chunk), c, total += chunk); row.chunkMs = Math.round(performance.now() - t0); c = s.cache;
+    row.finite = s.finite;
+    const ids = [s.token], t1 = performance.now();
+    while (ids.length < decodeTokens) { const d = await step([ids.at(-1)], c, ++total); await disposeAll(c); c = d.cache; if (!d.finite) row.finite = false; ids.push(d.token); }
+    row.decodeTokS = +((ids.length - 1) / ((performance.now() - t1) / 1000)).toFixed(1);
+    row.kvShapes = { 'full (layer 2)': c['past_key_values.2.key']?.dims, 'sliding (layer 4)': c['past_key_values.4.key']?.dims };
+  } catch (e) { row.error = String(e).slice(0, 1500); }
+  finally { if (c !== cache) await disposeAll(c); for (const b of owned) b.destroy(); row.gpuErrors = gpuErrors.slice(0, 10); }
+  return row;
+}
+
 async function snapshot() { const out = {}; async function walk(p) { for (const n of await fs.readdir(p)) { const q = p + '/' + n; if ((await fs.stat(q)).isDirectory) await walk(q); else out[q] = await fs.readFile(q); } } await walk(CWD); return out; }
 
 // One trial: a fresh /work, the recipe's system prompt and few-shot turns, one user prompt.
@@ -143,6 +285,8 @@ self.onmessage = async ({ data }) => {
       result = { load_ms: performance.now() - start, userAgent: navigator.userAgent, adapter: { vendor: adapter.info.vendor, architecture: adapter.info.architecture }, shaderF16: adapter.features.has('shader-f16'), ort: env.backends.onnx.versions };
     } else if (action === 'agent') result = await agent(data);
     else if (action === 'generate') { toolSet = []; result = await generate(data.messages, data.options); }
+    else if (action === 'context') result = await context(data);
+    else if (action === 'tail') result = await tail(data);
     else if (action === 'dispose') { await generator?.dispose(); generator = null; result = 'disposed'; }
     else throw Error('Unknown action');
     postMessage({ id, result });
