@@ -6,11 +6,11 @@ a coding agent that works on files in your browser, thinks through BayLeaf Seale
 
 **Trust roots:** BayLeaf (the operator), your browser, and your own machine. Every
 provider Pouch talks to sits under one of them (BayLeaf Sealed under BayLeaf,
-Transformers.js under the browser; a future Localhost provider under your machine), and
+Transformers.js under the browser, Localhost under your machine), and
 Pouch puts BayLeaf in a privileged position on purpose. Terms: [LANGUAGE.md](LANGUAGE.md).
 
-**Experimental live preview:** <https://pouch.bayleaf.dev/>. This is an explicitly
-authorized uncommitted proof of concept, not a tagged, reproducible public release.
+**Experimental live preview:** <https://pouch.bayleaf.dev/>. This is an experimental
+deployment built from `main`, not a tagged, reproducible public release (issue #138).
 See [deployment status, checksum, verification and rollback](DEPLOYMENT.md).
 
 The name comes from the diplomatic pouch, which a host state carries but may not open
@@ -57,7 +57,7 @@ subagent's own view works the same way for that subagent.
 
 ## Scrolling
 
-Decided 2026-10-31 (Batch D, `src/follow.js`). The play-test reports of "sticky scrolling"
+In `src/follow.js`. The play-test reports of "sticky scrolling"
 going wrong had three causes: a re-render moved cached reply nodes out of the live log while
 building the next one, and a layout read at that moment clamped the thread to the top; the
 streaming reasoning box was rebuilt on every token with its own scrollbar, so it showed
@@ -87,7 +87,7 @@ desktop and at 390 px with touch, in Chromium and WebKit (`test/batchD-browser.m
 
 ## Subagent views
 
-Decided 2026-10-31 (Batch D): inside a subagent you should always know you are inside
+Inside a subagent you should always know you are inside
 something you can pop out of.
 
 - **Breadcrumbs** at the top: "<session title> › <subagent>". The session crumb is a button
@@ -111,7 +111,7 @@ something you can pop out of.
 
 ## Dismissing
 
-Decided 2026-10-31 (Batch D, `src/dismiss.js`): one rule for every floating thing. A press
+One rule (`src/dismiss.js`) for every floating thing. A press
 outside the topmost one, or Esc, closes it when that is safe: nothing typed is lost and no
 decision is left hanging.
 
@@ -184,7 +184,7 @@ request.
 
 ## Continuity: color and motion
 
-Decided 2026-10-30: **color carries identity, motion carries continuity, and neither alone
+**Color carries identity, motion carries continuity, and neither alone
 carries meaning.** Every colored or moving thing also says what it is in words; text in an
 agent's color meets 4.5:1 and dots and edges 3:1 against the real backgrounds in both
 themes; under `prefers-reduced-motion` each movement becomes a brief static highlight
@@ -262,7 +262,7 @@ artifact (Adam, 2026-11-01).
 | Identity, claims, keys, spend metadata | BayLeaf API (`api.bayleaf.dev`) | the BayLeaf operator; no prompt or file content |
 | Prompts, file contents the agent reads, replies | in transit only, EHBP-encrypted to the Tinfoil enclave | the attested enclave; not BayLeaf |
 | Transformers.js turns (prompts, files, replies) | this browser only: generated on its GPU | nobody else; nothing is sent |
-| Transformers.js model files (optional, ~1.1 GB) | Cache Storage (`pouch-local-models`), until Remove the model or Erase all | the static host sees that this browser downloaded them |
+| Transformers.js model files (optional, ~1.1 GB) | Cache Storage (`pouch-models`; earlier builds' `pouch-local-models` is migrated and deleted), until Remove the model or Erase all | the BayLeaf HF gateway sees which files and byte ranges this browser fetched |
 | Localhost address, optional API key, model list | IndexedDB `settings.localhost`, until Remove key, Remove Localhost or Erase all; never synced | only your server, which receives the key with each request |
 
 The CSP's `connect-src 'self' https://api.bayleaf.dev http://localhost:* http://127.0.0.1:*`
@@ -335,7 +335,7 @@ starting with egress.
 | Files | one tree stitched from several stores (below) | `src/vfs.js` |
 | Editor | CodeMirror 6 with JS/TS, Python, Markdown, HTML, CSS, JSON | `src/editor.js` |
 | UI | sessions sidebar, chat, one side panel at a time (Files, Editor, Usage, Trust, Settings) from an icon rail; drawer, full-screen sheets and a bottom bar on phones | `pouch.html`, `src/main.js` and `src/interface/` ("Architecture"), `src/layout.js` |
-| Composer | one card: activity tray (running subagents and `run` calls, approvals waiting, steering not yet read and the follow-up or paused message; Stop, Stop all, Cancel, Edit, Steer now), `@` path / `$` skill / `/` command autocomplete, the shield popover (lane, egress grants), Usage count, model picker, Send / Stop with the Steer-or-Queue split button while Pouch works; the turn footer (model, duration, time) is in `main.js` | `src/composer.js`, `src/main.js` |
+| Composer | one card: activity tray (running subagents and `run` calls, approvals waiting, steering not yet read and the follow-up or paused message; Stop, Stop all, Cancel, Edit, Steer now), `@` path / `$` skill / `/` command autocomplete, the shield popover (provider, egress grants), Usage count, model picker, Send / Stop with the Steer-or-Follow-up split button while Pouch works; the turn footer (model, duration, time) is in `main.js` | `src/composer.js`, `src/main.js` |
 | Preferences / attachments | local display defaults; one ingest path for Attach, composer drop and image paste | `src/settings.js`, `src/attachments.js` |
 | Titles | a session is named after its first turn by one tool-less completion on the session's own provider and model; the sparkle beside the title field, the session menu and `/rename` alone suggest another; never a different provider | `src/naming.js` |
 | Usage | today's Sealed allowance (`/usage` with a key, `/campus-pass` without), checked on load, sign-in and after each run, never polled; tokens per session | `src/usage.js` |
@@ -801,8 +801,8 @@ agent and how long the text was.
 handed a view:
 - The Interface and the terminal: every session, ctl and in writable.
 - The main agent: only its own session, at `/session/<sid>` and `/session/current`, and
-  only its own session's tasks under `/task` (its runs, subagents and watches; Batch G: it
-  could kill another session's subagents, and the user's terminal commands, before). ctl is
+  only its own session's tasks under `/task` (its runs, subagents and watches, so it
+  cannot kill another session's subagents or the user's terminal commands). ctl is
   writable (the same authority `echo kill > /task/<id>/ctl` gives it over its own tasks); in is refused
   with EPERM, because agents message each other with the agents tool, which enforces the
   session's message caps and tags who wrote. Making in writable for agents would duplicate
@@ -833,8 +833,7 @@ controls, 3 direct by design). For each control it writes the file from a just-b
 and from the main agent's view and checks the harness was asked to do the same thing; then it
 checks statically that the Interface handler writes the control file (`ctl(...)`) and that
 no direct harness call (`agent.abort`, `subagents.stop`, `stopCall`, `detach`, `steer`,
-`watches.remove`, ...) appears in the Interface (`src/main.js`, `src/interface/`) outside the harness-side block. It failed on
-all 21 handlers before Batch F. `test/batchF-browser.mjs` drives the same paths in a page.
+`watches.remove`, ...) appears in the Interface (`src/main.js`, `src/interface/`) outside the harness-side block. `test/batchF-browser.mjs` drives the same paths in a page.
 
 ## Stance: no BayLeaf-controlled component holds plaintext
 
@@ -862,14 +861,14 @@ transparency log, and no tagged reproducible release has been made.
 - **One network peer, plus its own origin.** `connect-src 'self' https://api.bayleaf.dev`.
   Attestation verification succeeds under this policy because the relay's
   `/sealed/attestation` bundle carries the whole trust root (verified 2026-10-27,
-  tinfoil 1.3.0). `'self'` was added for the Transformers.js provider (below) and is used only to fetch
+  tinfoil 1.3.0). `'self'` serves the Transformers.js provider (below) and is used only to fetch
   `runtime/<group>/` parts, each checked against a manifest whose SHA-256 is built into the
   page (the weights come from `api.bayleaf.dev/hf`, checked against `models.lock.json`); the static host already serves the page, so it is not a new operator. It also
-  lets page script send data to that host, which before needed `api.bayleaf.dev`: the
+  lets page script send data to that host besides `api.bayleaf.dev`: the
   same operator, but a different service with different logs (Cloudflare Workers Static
   Assets keeps request metadata, not bodies; see DEPLOYMENT.md).
 - **Loopback for Localhost, nothing else on your network.** `http://localhost:*` and
-  `http://127.0.0.1:*` were added for the Localhost provider (below): a permanent,
+  `http://127.0.0.1:*` serve the Localhost provider (below): a permanent,
   build-wide exception, since a CSP is fixed per build, not per user. It does not reach
   LAN addresses, other hosts or `0.0.0.0`. `http://[::1]:*` is not in it: CSP host
   sources cannot name IPv6 literals (Chromium 156 ignores it as an invalid source), so an
@@ -1025,12 +1024,10 @@ export at a pinned revision, run by Transformers.js 4.3.2 and ONNX Runtime Web o
 WebGPU. It is for computers only. The picker shows it when the device and the WebGPU adapter meet its
 requirements and otherwise lists it disabled with the reason; `models get` and Settings then refuse
 before the approval sheet, so nothing is downloaded. Phones and tablets are refused first
-(`deviceSupport` in `src/local/engine.js`): on a Pixel 10 Pro (2026-11-01, Chrome Android, WebGPU
-hardware accelerated) the adapter passed every check below and the 1.1 GB download worked, but the
-first request (a one-shot prefill of about 4K tokens: system prompt plus tools) froze the whole
-phone for about 60 s with Android's "System UI isn't responding" dialog, twice, and left GPU
-glitches behind. The reply did arrive; the cause is scheduling, not memory: one long GPU
-submission starves the system compositor on a mobile GPU. Signals, any of which refuses:
+(`deviceSupport` in `src/local/engine.js`): on a Pixel 10 Pro the adapter passes every check
+below, but the first request's one-shot prefill froze the whole phone for about a minute ("System
+UI isn't responding"). The cause is scheduling, not memory: one long GPU submission starves the
+system compositor on a mobile GPU. Signals, any of which refuses:
 `navigator.userAgentData.mobile`, a user-agent string naming Android, iPhone, iPad or Mobile,
 iPadOS's desktop-style "Macintosh" string with touch points, and `navigator.deviceMemory` below 8
 (Chrome caps it at 8, so it can refuse but never qualify). A coarse pointer alone is not a signal,
@@ -1039,10 +1036,9 @@ so touch laptops are not refused. On such a device a model already downloaded st
 refuses with the reason before any GPU work, rather than quietly sending to Sealed. GPU
 requirements (`gpuSupport` in `src/local/engine.js`, read from
 `navigator.gpu.requestAdapter()`, no device and no download): an adapter, the `shader-f16`
-feature (q4f16), and `maxStorageBuffersPerShaderStage` of at least 10. The last comes from
-Firefox on an M3 Max (2026-11-01), whose adapter reports 9: ORT-Web failed mid-turn with "Too
-many storage buffers in shader. Current: 10, Max is 9" (the kernel is not yet identified), while
-Chrome on the same machine reports more and works. Pouch does not create the device (ONNX
+feature (q4f16), and `maxStorageBuffersPerShaderStage` of at least 10. The last because
+Firefox on an M3 Max reports 9 and ORT-Web then fails mid-turn with "Too many storage buffers in
+shader. Current: 10, Max is 9" (kernel not identified); Chrome on the same machine reports more. Pouch does not create the device (ONNX
 Runtime Web's WebGPU EP calls `requestDevice` itself), so if a device still gets less than the
 adapter reported, that runtime error is shown as the same plain reason. Choosing it is the only way in: Pouch never switches providers by itself, and the
 shield says "Transformers.js: in this browser, nothing sent". (`node build.mjs --no-models` omits it.)
@@ -1405,25 +1401,21 @@ Sandbox `exec`, `poke` and every `files` command create or wake the VM (the API'
 `node test/bayleaf-cli-node.mjs [--live]`, or as the agent with
 `node test/ax-cli.mjs [--allow-egress] [--key-env NAME | --no-key] call ...`.
 
-## PoC findings
+## Implementation notes
 
-- Browser Sealed was blocked by CORS. `api/src/index.ts` now gives `/sealed/*` its own
+- Browser Sealed needs CORS: `api/src/index.ts` gives `/sealed/*` its own
   policy that reflects requested headers (EHBP plus the OpenAI SDK's `x-stainless-*`) and
   exposes `Ehbp-Response-Nonce`. That is safe because the origin is `*` without credentials
   and `sealed.ts` forwards only an allowlist upstream.
 - The bundled SDK is about 640 KiB minified. Its verifier has a Node-only gzip fallback
   that is excluded from the build.
-- Claim polling is one-shot: the server deletes the claim as it returns the key. Earlier
-  prototypes saw "expired" after approval, consistent with two overlapping poll loops or a
-  controller shared with streaming. Pouch runs one loop with its own `AbortController`.
+- Claim polling is one-shot: the server deletes the claim as it returns the key, so two
+  overlapping poll loops (or a controller shared with streaming) see "expired" after
+  approval. Pouch runs one loop with its own `AbortController`.
 
 ## Open questions
 
-- Where transparent releases will live (GitHub release asset, or hosting at a tagged commit), and
-  how to make "check the hash" a ritual people actually perform. On mobile, opening a file
-  from disk is awkward.
-- The experimental preview is hosted at `pouch.bayleaf.dev` on Cloudflare Static Assets;
-  publicly logged, tagged release delivery remains unresolved.
-- Storage mode chosen at sign-in: borrowed computer (memory only, Leave wipes it) versus
-  my device (IndexedDB and OPFS).
+- Where transparent releases will live and how to make "check the hash" a ritual people
+  actually perform (issue #138). On mobile, opening a file from disk is awkward.
+- Storage mode chosen at sign-in: borrowed computer versus my device (issue #139).
 - In-page agent tools over OPFS and `showDirectoryPicker`, with write confirmation.
