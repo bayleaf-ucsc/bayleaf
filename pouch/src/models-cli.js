@@ -43,8 +43,8 @@ byte ranges of which public file. Exit codes: 0 ok, 1 error or denied, 2 usage.
 `;
 
 // deps: { store (src/models.js), tasks (src/ns/tasks.js Tasks), approve(req, who) -> Promise<boolean>,
-//         onChange?() }. who: { by: 'user', via } or { by: 'agent', caller, sid, name }.
-export function createModelService({ store, tasks, approve, onChange = () => {} }) {
+//         onChange?(), supports?(id) -> { ok, reason } (can this browser run it; checked before the sheet) }. who: { by: 'user', via } or { by: 'agent', caller, sid, name }.
+export function createModelService({ store, tasks, approve, onChange = () => {}, supports = () => ({ ok: true }) }) {
   const downloads = new Map(); // id -> task
   const resolve = (name) => {
     const ids = store.models.map((m) => m.id);
@@ -71,8 +71,11 @@ export function createModelService({ store, tasks, approve, onChange = () => {} 
   async function get(name, who, { signal } = {}) {
     const m = resolve(name);
     const st = await store.status(m.id);
+    const can = await supports(m.id);
+    if (st.complete && !can.ok) throw Object.assign(new Error(`${m.label} is downloaded, but cannot run in this browser. ${can.reason}`), { code: 'ENOTSUP' });
     if (st.complete) return { already: true, status: st };
     if (downloads.get(m.id)?.status === 'running') return { task: downloads.get(m.id), promise: downloads.get(m.id).promise, joined: true };
+    if (!can.ok) throw Object.assign(new Error(`${m.label} cannot run in this browser, so it was not downloaded (nothing was fetched). ${can.reason}`), { code: 'ENOTSUP' });
     let allowed = false;
     try { allowed = approve ? await approve(await request(m, 'get', who), who) === true : false; } catch { allowed = false; }
     if (!allowed) throw Object.assign(new Error(`denied by the user: ${m.label} was not downloaded (nothing was fetched).`), { code: 'EDENIED' });

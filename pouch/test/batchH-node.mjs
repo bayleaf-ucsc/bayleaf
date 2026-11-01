@@ -8,6 +8,7 @@ import { Sha256, sha256hex } from '../src/sha256.js';
 import { openStore, fillFile, rangeSource, blobSource, verifiedFile, fileState, partAssets } from '../src/assets.js';
 import { createModelStore } from '../src/models.js';
 import { createModelService, modelsCommands } from '../src/models-cli.js';
+import { gpuSupport, deviceSupport, DEVICE_REASON, friendlyError, MIN_STORAGE_BUFFERS } from '../src/local/engine.js';
 import { createJobs, sleepAndHash } from '../src/jobs.js';
 import { Tasks, TaskFs } from '../src/ns/tasks.js';
 import { CDN, assertNoCdn } from '../build-runtime.mjs';
@@ -191,6 +192,61 @@ await t('models: a tampered gateway file fails the download task naming the file
   const svc = createModelService({ store, tasks: new Tasks(), approve: async () => true });
   const r = await sh(svc, ['get', 'tiny-q4', '--wait']);
   assert.equal(r.exitCode, 1); assert.match(r.stderr, /onnx\/model\.onnx_data: SHA-256 differs from the pin/);
+});
+
+// ── WebGPU capability, before anything is offered or downloaded ──
+const adapter = ({ f16 = true, buffers = MIN_STORAGE_BUFFERS } = {}) => ({ requestAdapter: async () => ({ features: new Set(f16 ? ['shader-f16'] : []), limits: { maxStorageBuffersPerShaderStage: buffers } }) });
+await t('gpuSupport: storage-buffer limit 9 vs 10, missing shader-f16, no adapter, no navigator.gpu', async () => {
+  assert.deepEqual(await gpuSupport(adapter({ buffers: 10 })), { ok: true });
+  assert.deepEqual(await gpuSupport(adapter({ buffers: 16 })), { ok: true });
+  const low = await gpuSupport(adapter({ buffers: 9 }));
+  assert.equal(low.ok, false);
+  assert.equal(low.reason, "This browser's WebGPU allows 9 storage buffers per shader; LFM3 needs 10. Use Chrome or Edge, or a BayLeaf Sealed model.");
+  assert.match((await gpuSupport(adapter({ f16: false }))).reason, /lacks shader-f16.*Use Chrome or Edge, or a BayLeaf Sealed model/);
+  assert.match((await gpuSupport({ requestAdapter: async () => null })).reason, /no usable graphics adapter/);
+  assert.match((await gpuSupport({ requestAdapter: async () => { throw new Error('boom'); } })).reason, /WebGPU failed: boom/);
+  assert.match((await gpuSupport(undefined)).reason, /WebGPU is not available/);
+});
+const UA = {
+  pixel: 'Mozilla/5.0 (Linux; Android 16; Pixel 10 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36',
+  tabletAndroid: 'Mozilla/5.0 (Linux; Android 16; Pixel Tablet) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+  ipad: 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+  ipadDesktop: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15',
+  win: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+};
+await t('deviceSupport: phones and tablets refused before any GPU check; a touch laptop is not', () => {
+  const no = { ok: false, reason: DEVICE_REASON };
+  assert.deepEqual(deviceSupport({ userAgentData: { mobile: true }, userAgent: UA.win }), no); // UA-CH wins over a desktop-looking UA string
+  assert.deepEqual(deviceSupport({ userAgent: UA.pixel }), no);
+  assert.deepEqual(deviceSupport({ userAgent: UA.tabletAndroid, userAgentData: { mobile: false } }), no);
+  assert.deepEqual(deviceSupport({ userAgent: UA.ipad }), no);
+  assert.deepEqual(deviceSupport({ userAgent: UA.ipadDesktop, maxTouchPoints: 5 }), no); // iPadOS "Request Desktop Website"
+  assert.deepEqual(deviceSupport({ userAgent: UA.ipadDesktop, maxTouchPoints: 0 }), { ok: true }); // a Mac
+  assert.deepEqual(deviceSupport({ userAgent: UA.win, userAgentData: { mobile: false }, maxTouchPoints: 10, deviceMemory: 8 }), { ok: true }); // touch laptop
+  const low = deviceSupport({ userAgent: UA.win, userAgentData: { mobile: false }, deviceMemory: 4 });
+  assert.equal(low.ok, false); assert.match(low.reason, /at least 8 GB of memory; this device reports 4 GB/);
+  assert.deepEqual(deviceSupport({}), { ok: true });
+  assert.equal(DEVICE_REASON, 'In-browser models are turned off on phones and tablets: on a Pixel test the first request froze the whole phone for about a minute. Use a BayLeaf Sealed model here.');
+});
+await t('friendlyError: the runtime storage-buffer error reads like the up-front check', () => {
+  const raw = '[WebGPU] Kernel "MatMulNBits" failed. Error: shader_helper.cc:308 ValidateVariable numbers_storage_buffers_ <= limits_.maxStorageBuffersPerShaderStage was false. Too many storage buffers in shader. Current: 10, Max is 9';
+  assert.equal(friendlyError(raw), "This browser's WebGPU allows 9 storage buffers per shader; LFM3 needs 10. Use Chrome or Edge, or a BayLeaf Sealed model.");
+  assert.equal(friendlyError('other failure'), 'other failure');
+});
+await t('models get refuses up front when the browser cannot run the model: no sheet, nothing fetched; a cached copy is not reported as ready', async () => {
+  const { m, served } = fakeModel(), log = [];
+  const store = createModelStore([m], { gateway: 'https://gw/hf', fetchImpl: gateway(served, { log }), chunk: C });
+  let asks = 0;
+  const reason = (await gpuSupport(adapter({ buffers: 9 }))).reason;
+  const svc = createModelService({ store, tasks: new Tasks(), approve: async () => { asks++; return true; }, supports: (id) => (id === m.id ? { ok: false, reason } : { ok: true }) });
+  const r = await sh(svc, ['get', 'tiny-q4']);
+  assert.equal(r.exitCode, 1);
+  assert.match(r.stderr, /Tiny cannot run in this browser, so it was not downloaded \(nothing was fetched\)\. This browser's WebGPU allows 9 storage buffers per shader; LFM3 needs 10/);
+  assert.equal(asks, 0); assert.equal(log.length, 0);
+  await store.download(m.id);
+  const cached = await sh(svc, ['get', 'tiny-q4']);
+  assert.equal(cached.exitCode, 1);
+  assert.match(cached.stderr, /Tiny is downloaded, but cannot run in this browser\. This browser's WebGPU allows 9/);
 });
 
 // ── The engine job service ──

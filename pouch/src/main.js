@@ -1020,9 +1020,12 @@ const LOCAL_ID = LOCAL && 'local:' + LOCAL.id;
 const localPicked = () => isLocal($('model').value);
 const canSend = () => !!agent && (offSealedPicked() || (verified && !offline));
 const mib = (n) => `${(n / 2 ** 20).toLocaleString(undefined, { maximumFractionDigits: 0 })} MB`;
+// A saved choice of Transformers.js stays selected even when unavailable (a phone,
+// a weak adapter): Send then refuses with the reason (ensureLocal) instead of
+// quietly sending the message to Sealed.
 function localOption(saved) {
   if (!LOCAL) return [];
-  const o = new Option(localOk.ok ? `${LOCAL.label} (in this browser)` : `${LOCAL.label} (unavailable: ${localOk.reason})`, LOCAL_ID, false, localOk.ok && saved === LOCAL_ID);
+  const o = new Option(localOk.ok ? `${LOCAL.label} (in this browser)` : `${LOCAL.label} (unavailable: ${localOk.reason})`, LOCAL_ID, false, saved === LOCAL_ID);
   o.disabled = !localOk.ok;
   o.title = localOk.ok ? 'Runs in this browser on your GPU. Nothing is sent.' : localOk.reason;
   return [o];
@@ -1111,7 +1114,7 @@ async function renderLocalSettings() {
   if (!box) return;
   if (!LOCAL) { $('local-state').textContent = 'This build of Pouch does not include the Transformers.js model.'; box.querySelectorAll('button').forEach((b) => { b.hidden = true; }); return; }
   const st = await localStored();
-  $('local-state').textContent = !localOk.ok ? `Not available here: ${localOk.reason}`
+  $('local-state').textContent = !localOk.ok ? `Not available here: ${localOk.reason}${st.bytes ? ` A downloaded copy (${mib(st.bytes)}) is kept in this browser; Remove frees the space.` : ''}`
     : st.complete ? `${LOCAL.label} is kept in this browser (${mib(st.bytes)}${st.persistent ? '' : ', for this page load only'}). It works offline.`
     : st.bytes ? `${mib(st.bytes)} of ${mib(st.total)} downloaded.` : `Not downloaded (about ${mib(LOCAL.bytes)}).`;
   const dl = modelService.downloads.get(LOCAL.id);
@@ -1517,6 +1520,7 @@ function approveModel(req, who) {
   return run;
 }
 const modelService = createModelService({ store: modelStore, tasks: vfs.tasks, approve: approveModel,
+  supports: (id) => (LOCAL && id === LOCAL.id ? localOk : { ok: true }),
   onChange: () => { const t = LOCAL && modelService.downloads.get(LOCAL.id); if (t?.status === 'running' && t.progress) localProgress({ ...t.progress, downloading: true }); renderLocalSettingsSoon(); } });
 let settingsTimer = null;
 const renderLocalSettingsSoon = () => { if (!settingsTimer) settingsTimer = setTimeout(() => { settingsTimer = null; renderLocalSettings(); }, 250); };

@@ -3,7 +3,9 @@
 // the `models` command's consent (deny and approve, terminal and agent),
 // download as a /task with Stop through ctl and resume after reload, tamper
 // detection, migration from the old pouch.bayleaf.dev part cache, offline
-// re-verification, removal, and Settings sharing the same download.
+// re-verification, removal, and Settings sharing the same download, the
+// WebGPU capability check (a stubbed adapter: headless Chromium's lacks shader-f16),
+// and the phone and tablet refusal (an emulated Pixel user agent).
 // Run: node test/batchH-browser.mjs
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
@@ -91,9 +93,19 @@ async function gateway(route) {
   if (gw.corrupt?.(name, from)) { body = Buffer.from(body); body[0] ^= 0xff; }
   return route.fulfill({ status: r ? 206 : 200, headers: { ...cors, 'content-type': 'application/octet-stream', ...(r ? { 'content-range': `bytes ${from}-${to - 1}/${b.length}` } : {}) }, body });
 }
-async function open(name) {
+// gpu: the adapter navigator.gpu reports (the fake worker never touches it).
+// mobile: report a Pixel through navigator.userAgentData and navigator.userAgent.
+async function open(name, { gpu = { f16: true, buffers: 10 }, mobile = false } = {}) {
   const context = await pw.chromium.launchPersistentContext(join(scratch, name), { headless: true, viewport: { width: 1280, height: 800 }, args: ['--enable-unsafe-webgpu'] });
   contexts.push(context);
+  await context.addInitScript(({ f16, buffers }) => {
+    const adapter = { features: new Set(f16 ? ['shader-f16'] : []), limits: { maxStorageBuffersPerShaderStage: buffers }, info: { vendor: 'fake' } };
+    Object.defineProperty(Navigator.prototype, 'gpu', { configurable: true, get: () => ({ requestAdapter: async () => adapter }) });
+  }, gpu);
+  if (mobile) await context.addInitScript(() => {
+    Object.defineProperty(Navigator.prototype, 'userAgentData', { configurable: true, get: () => ({ mobile: true, platform: 'Android', brands: [] }) });
+    Object.defineProperty(Navigator.prototype, 'userAgent', { configurable: true, get: () => 'Mozilla/5.0 (Linux; Android 16; Pixel 10 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36' });
+  });
   await context.route(/^https?:\/\/(?!127\.0\.0\.1[:/]|localhost[:/])/, (r) => {
     const u = new URL(r.request().url());
     if (u.hostname === 'api.bayleaf.dev' && u.pathname.startsWith('/hf/')) return gateway(r);
@@ -176,9 +188,8 @@ try {
   // 3. Settings shares the store: Download hidden when complete; Remove frees.
   await page.click('#rail [data-panel="settings"]').catch(() => {});
   const settingsText = await page.$eval('#local-state', (e) => e.textContent).catch(() => '');
-  const gpu = await page.evaluate(async () => !!(await navigator.gpu?.requestAdapter?.().catch(() => null)));
-  if (gpu) assert.match(settingsText, /kept in this browser/);
-  ok(`Settings reads the same store (${gpu ? 'WebGPU adapter present' : 'no WebGPU adapter in headless: state line shows the reason'})`);
+  assert.match(settingsText, /kept in this browser/);
+  ok('Settings reads the same store');
 
   // 4. Agent request vs user approval (the fake Sealed model drives main).
   await rule(page, { who: 'title', reply: 'Models', sticky: true });
@@ -252,6 +263,55 @@ try {
   await page.waitForFunction(() => /Fake 1M is ready in this browser/.test(document.getElementById('status')?.textContent), null, T);
   assert.match(await page.$eval('#local-state', (e) => e.textContent), /kept in this browser/);
   ok('Settings Download asks on the same sheet, runs as a /task, Stop writes its ctl, Resume continues, the verified runtime and weights load');
+  await context.close();
+
+  // 5. An adapter below the storage-buffer limit (Firefox on an M3 Max reported 9):
+  // the option is unavailable with the reason; models get and Settings start nothing.
+  ({ context, page } = await open('e', { gpu: { f16: true, buffers: 9 } }));
+  const why = "This browser's WebGPU allows 9 storage buffers per shader; LFM3 needs 10. Use Chrome or Edge, or a BayLeaf Sealed model.";
+  const opt = await page.$eval('#model option[value^="local:"]', (o) => ({ disabled: o.disabled, text: o.textContent, title: o.title }));
+  assert.equal(opt.disabled, true); assert.equal(opt.title, why); assert.ok(opt.text.includes(`(unavailable: ${why})`), opt.text);
+  gw.log.length = 0;
+  const sheets = sheet.last;
+  const refused = await term(page, 'models get fake-q4');
+  assert.ok(refused.includes(`Fake 1M cannot run in this browser, so it was not downloaded (nothing was fetched). ${why}`), refused);
+  assert.equal(sheet.last, sheets, 'no approval sheet'); assert.equal(gw.log.length, 0);
+  await page.click('button[data-panel="settings"]');
+  assert.equal(await page.$eval('#local-state', (e) => e.textContent), `Not available here: ${why}`);
+  assert.equal(await page.$eval('#local-download', (e) => e.hidden), true);
+  ok('low storage-buffer limit: the option is disabled with the reason; models get refuses before the sheet; Settings offers no Download');
+  await context.close();
+
+  // 6. A phone with the weights already kept and Transformers.js still chosen
+  // (downloaded on a desktop profile, reopened as a Pixel): nothing runs, Remove still frees.
+  ({ context, page } = await open('m'));
+  assert.match(await term(page, 'models get fake-q4 --wait', { answer: 'Download' }), /downloaded and verified fake-q4/);
+  const localId = await page.$eval('#model option[value^="local:"]', (o) => o.value);
+  await page.selectOption('#model', localId);
+  await page.waitForFunction(() => /^Transformers\.js selected/.test(document.getElementById('status')?.textContent), null, T);
+  await context.close();
+  ({ context, page } = await open('m', { mobile: true }));
+  const phone = 'In-browser models are turned off on phones and tablets: on a Pixel test the first request froze the whole phone for about a minute. Use a BayLeaf Sealed model here.';
+  const popt = await page.$eval('#model option[value^="local:"]', (o) => ({ disabled: o.disabled, text: o.textContent, title: o.title, value: o.parentElement.closest('select').value === o.value }));
+  assert.equal(popt.disabled, true); assert.equal(popt.title, phone); assert.ok(popt.text.includes(`(unavailable: ${phone})`), popt.text);
+  assert.equal(popt.value, true, 'the saved choice stays visible, not silently switched to Sealed');
+  const psheets = sheet.last;
+  gw.log.length = 0;
+  const pget = await term(page, 'models get fake-q4');
+  assert.ok(pget.includes(`Fake 1M is downloaded, but cannot run in this browser. ${phone}`), pget);
+  assert.equal(sheet.last, psheets, 'no approval sheet'); assert.equal(gw.log.length, 0);
+  await page.fill('#input', 'hello from a phone'); await page.press('#input', 'Enter');
+  await page.waitForFunction((r) => document.getElementById('status')?.textContent === `Transformers.js is not available: ${r}`, phone, T);
+  assert.equal(await page.inputValue('#input'), 'hello from a phone');
+  assert.equal(await page.$eval('#log', (e) => e.textContent.includes('hello from a phone')), false, 'no turn started');
+  await page.click('button[data-panel="settings"]');
+  assert.match(await page.$eval('#local-state', (e) => e.textContent), /^Not available here: In-browser models are turned off on phones and tablets.*A downloaded copy \(\d+ MB\) is kept in this browser; Remove frees the space\.$/);
+  assert.equal(await page.$eval('#local-download', (e) => e.hidden), true);
+  assert.equal(await page.$eval('#local-remove', (e) => e.hidden), false);
+  await page.click('#local-remove'); await sheet(page, 'Remove');
+  await page.waitForFunction(() => /Transformers\.js model removed/.test(document.getElementById('status')?.textContent), null, T);
+  assert.match(await term(page, 'models status fake-q4'), /not downloaded/);
+  ok('phone: the option is disabled with the reason; models get refuses before the sheet; Send refuses before any inference; Settings offers Remove, not Download');
   await context.close();
 
   assert.deepEqual(errors, []);

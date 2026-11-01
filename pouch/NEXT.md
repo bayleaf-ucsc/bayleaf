@@ -90,7 +90,15 @@ service worker must serve the headers too.
 ## Later (lower priority)
 
 - A9: boot capability check for unusual devices (simulate by deleting APIs in
-  `addInitScript`); Cast receiver display mode is a gap note only.
+  `addInitScript`); Cast receiver display mode is a gap note only. Partly done: the
+  Transformers.js provider checks the WebGPU adapter (shader-f16, at least 10 storage
+  buffers per shader) before it is offered or downloaded (`gpuSupport`, batchH tests).
+  Still open: other APIs (OPFS, Cache Storage, workers) and real Firefox/Safari runs.
+- Phones and tablets for Transformers.js: refused outright since 2026-11-01 (`deviceSupport`;
+  a Pixel 10 Pro froze for about a minute on the first ~4K-token one-shot prefill). Revisit
+  after chunked prefill, which splits the prompt's GPU work into short submissions the
+  compositor can interleave; a tiny timed probe (a short prefill, measured) could then
+  qualify individual devices instead of refusing by class.
 - Large-file steering: prompt the agent to use `run` rather than `read` on big data.
 - Known gaps: t10a not rerun after the Transformers.js provider; Firefox/Safari untested; storage
   persistence not requested for model cache; subagents not aborted on network loss.

@@ -17,12 +17,63 @@ export const LOCAL = typeof LOCAL_MODEL !== 'undefined' ? LOCAL_MODEL : null; //
 export const models = createModelStore(LOCAL ? [LOCAL] : []);
 const runtime = LOCAL && partAssets(LOCAL.runtime);
 
+// What LFM3 (q4f16) needs from the WebGPU adapter, checked before the picker
+// offers it or anything is downloaded. Pouch does not create the device: ONNX
+// Runtime Web's WebGPU EP calls requestDevice itself, so this reads the adapter.
+// MIN_STORAGE_BUFFERS: Firefox on an M3 Max (2026-11-01, ORT-Web 1.31.0-dev via
+// Transformers.js 4.3.2) failed mid-turn in OrtRun with "Too many storage buffers
+// in shader. Current: 10, Max is 9"; Chrome on the same machine reports more and
+// works. The kernel that needs 10 is not yet identified.
+export const MIN_STORAGE_BUFFERS = 10;
+const ELSEWHERE = 'Use Chrome or Edge, or a BayLeaf Sealed model.';
+const buffersReason = (have, need = MIN_STORAGE_BUFFERS) => `This browser's WebGPU allows ${have} storage buffers per shader; LFM3 needs ${need}. ${ELSEWHERE}`;
+
+// gpu: navigator.gpu or a stand-in. Asks for an adapter only: no device, no download.
+export async function gpuSupport(gpu) {
+  if (!gpu) return { ok: false, reason: 'WebGPU is not available in this browser (a recent Chrome or Edge on a computer has it).' };
+  let adapter;
+  try { adapter = await gpu.requestAdapter(); }
+  catch (e) { return { ok: false, reason: 'WebGPU failed: ' + e.message }; }
+  if (!adapter) return { ok: false, reason: 'WebGPU found no usable graphics adapter on this device.' };
+  if (!adapter.features?.has?.('shader-f16')) return { ok: false, reason: `This browser's WebGPU lacks shader-f16, which LFM3 (q4f16) needs. ${ELSEWHERE}` };
+  const buffers = adapter.limits?.maxStorageBuffersPerShaderStage ?? 0;
+  if (buffers < MIN_STORAGE_BUFFERS) return { ok: false, reason: buffersReason(buffers) };
+  return { ok: true };
+}
+
+// Phones and tablets are refused before any GPU check. Evidence: a Pixel 10 Pro
+// (2026-11-01, Chrome Android, WebGPU hardware accelerated) passed gpuSupport and
+// downloaded the weights, but the first request (a one-shot prefill of about 4K
+// tokens) froze the whole phone for about 60 s with "System UI isn't
+// responding", twice, and left GPU glitches behind. A long single GPU submission
+// starves the OS compositor on a mobile GPU: scheduling, not memory. Signals, in order:
+// - UA_CH_MOBILE: navigator.userAgentData.mobile (Chromium's own answer);
+// - UA_MOBILE: the user-agent string names Android, iPhone, iPad or Mobile;
+// - IPADOS_DESKTOP_UA: iPadOS Safari claims "Macintosh" but has touch points
+//   (no Mac has a touchscreen);
+// - LOW_MEMORY: navigator.deviceMemory below 8 (Chrome caps it at 8, so it can
+//   only refuse, never qualify).
+// A coarse pointer alone is not used: touch laptops would be refused.
+export const DEVICE_REASON = 'In-browser models are turned off on phones and tablets: on a Pixel test the first request froze the whole phone for about a minute. Use a BayLeaf Sealed model here.';
+const UA_MOBILE = /Android|iPhone|iPad|iPod|Mobile/;
+export function deviceSupport({ userAgentData, userAgent = '', maxTouchPoints = 0, deviceMemory } = {}) {
+  if (userAgentData?.mobile === true || UA_MOBILE.test(userAgent) || (/Macintosh/.test(userAgent) && maxTouchPoints > 1)) return { ok: false, reason: DEVICE_REASON };
+  if (typeof deviceMemory === 'number' && deviceMemory < 8) return { ok: false, reason: `In-browser models need a computer with at least 8 GB of memory; this device reports ${deviceMemory} GB. Use a BayLeaf Sealed model here.` };
+  return { ok: true };
+}
+
 export async function support() {
   if (!LOCAL) return { ok: false, reason: 'This build of Pouch does not include the local model.' };
-  if (!globalThis.navigator?.gpu) return { ok: false, reason: 'WebGPU is not available in this browser (a recent Chrome or Edge on a computer has it).' };
-  try { if (!(await navigator.gpu.requestAdapter())) return { ok: false, reason: 'WebGPU found no usable graphics adapter on this device.' }; }
-  catch (e) { return { ok: false, reason: 'WebGPU failed: ' + e.message }; }
-  return { ok: true };
+  const nav = globalThis.navigator ?? {};
+  const device = deviceSupport(nav);
+  return device.ok ? gpuSupport(nav.gpu) : device;
+}
+
+// The same limit, met at run time (an adapter that reported more than the device
+// got): the friendly reason instead of ORT's raw message.
+export function friendlyError(message) {
+  const m = /Too many storage buffers in shader\. Current: (\d+), Max is (\d+)/.exec(String(message));
+  return m ? buffersReason(Number(m[2]), Number(m[1])) : message;
 }
 
 // { bytes, total, complete, persistent, downloading }: the weights (the runtime is small
@@ -83,9 +134,9 @@ export const engine = {
         if (!p) return;
         if (data.delta !== undefined) return p.onDelta?.(data.delta);
         pending.delete(data.id);
-        data.error ? p.reject(new Error(data.error)) : p.resolve(data.result);
+        data.error ? p.reject(new Error(friendlyError(data.error))) : p.resolve(data.result);
       };
-      worker.onerror = (e) => { for (const p of pending.values()) p.reject(new Error(e.message || 'The Transformers.js model worker failed.')); pending.clear(); };
+      worker.onerror = (e) => { for (const p of pending.values()) p.reject(new Error(friendlyError(e.message) || 'The Transformers.js model worker failed.')); pending.clear(); };
       const wasm = got.runtime.manifest.files.find((f) => f.role === 'wasm');
       return await call('load', { files: got.files, wasm: got.runtime.files[wasm.name] });
     })();
