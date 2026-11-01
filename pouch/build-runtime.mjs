@@ -28,15 +28,33 @@ export function assertNoCdn(text, name) {
   if (hits.length) throw new Error(`${name} defaults to a third-party host: ${[...new Set(hits)].join(', ')}`);
 }
 
-// Bundle a worker entry; rewrites: [[RegExp, replacement, expectedCount]].
-export async function bundleWorker(entry, rewrites = []) {
-  let text = (await build({ entryPoints: [entry], bundle: true, minify: true, write: false,
-    format: 'esm', platform: 'browser', target: 'es2022', legalComments: 'inline', logLevel: 'warning' })).outputFiles[0].text;
+function rewrite(text, rewrites, name) {
   for (const [re, to, count] of rewrites) {
     const n = [...text.matchAll(re)].length;
-    if (n !== count) throw new Error(`${entry}: rewrite ${re} matched ${n} times, expected ${count} (did a dependency change?)`);
+    if (n !== count) throw new Error(`${name}: rewrite ${re} matched ${n} times, expected ${count} (did a dependency change?)`);
     text = text.replace(re, to);
   }
+  return text;
+}
+
+// Bundle a worker entry; rewrites: [[RegExp, replacement, expectedCount]] on
+// the minified bundle. sources: { 'path/suffix.mjs': rewrites } on a module's
+// source before bundling (for code that minification would rename).
+export async function bundleWorker(entry, rewrites = [], { sources = {} } = {}) {
+  const hit = new Set();
+  const plugins = Object.keys(sources).length ? [{ name: 'source-rewrites', setup(b) {
+    b.onLoad({ filter: /\.m?js$/ }, async ({ path }) => {
+      const key = Object.keys(sources).find((k) => path.replaceAll('\\', '/').endsWith(k));
+      if (!key) return undefined;
+      hit.add(key);
+      const { readFile } = await import('node:fs/promises');
+      return { contents: rewrite(await readFile(path, 'utf8'), sources[key], key), loader: 'js' };
+    });
+  } }] : [];
+  let text = (await build({ entryPoints: [entry], bundle: true, minify: true, write: false, plugins,
+    format: 'esm', platform: 'browser', target: 'es2022', legalComments: 'inline', logLevel: 'warning' })).outputFiles[0].text;
+  for (const k of Object.keys(sources)) if (!hit.has(k)) throw new Error(`${entry}: ${k} was never bundled, so its rewrites did not apply`);
+  text = rewrite(text, rewrites, entry);
   assertNoCdn(text, entry);
   return Buffer.from(text);
 }

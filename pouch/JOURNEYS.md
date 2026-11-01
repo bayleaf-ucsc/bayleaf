@@ -224,6 +224,16 @@ Reports come from the user's data; the viewer must render them with no way out (
 - HR8 ok (real BayLeaf Sealed, GLM-5.3, 2026-11-01, 5 requests sent, a 6th aborted at the cap): asked for a small self-contained report summarizing `/work/sales.csv`, main read the CSV, wrote `/work/sales-report.html` (1.7 KB: inline CSS, a table and CSS bars, no script, no remote URL) and linked it; the link opened Preview, Static, rendered correctly (`test/batchG-sealed.mjs`). The test's CSV lost its newlines (a harness quoting bug, since fixed); main noticed and parsed it anyway.
 - HR9 gap: HTML Preview does not work offline (Chromium does not serve a sandboxed frame from the offline copy; Preview says so and Raw works). Links inside a report go nowhere (navigation is blocked by design); a "copy link" affordance could come later. Not tested in Firefox.
 
+### 13. PDFs (pdf.js runtime, 2026-11-01; Lab, Desk, Analyst, Auditor and Commuter personas, and agents)
+Story IDs from the media stories draft (PD1-PD6, AG3-AG5, AG9). pdf.js runs in its own worker from verified same-origin parts, behind `pdfinfo`, `pdftotext` and `pdftoppm` (README "Tool runtimes and engine jobs").
+- PD1 ? (commands ok, no model run yet): `pdftotext` gives text in reading order with "[page N]" markers, so answers can cite pages; `-layout` keeps columns for tables; the pdf skill says to cite from the markers (`test/pdf-browser.mjs`). Not yet tried with a real model on a real paper.
+- PD2 ? : `pdfinfo` names pages with no text layer and `pdftotext` marks them; `pdftoppm` renders them to PNG (pixels checked). Seeing them needs the look tool (PR "pouch-look") and an image-capable model; OCR is later.
+- PD3 gap: no PDF preview in the file browser or `open` yet (a canvas preview can reuse this runtime).
+- PD4 ? : `pdftoppm -x -y -W -H -singlefile` crops a page region to PNG; embedding it as a data URL in a report (AG9) is a skill recipe, not yet run end to end.
+- PD5 ok: after one use the runtime is kept in this browser; a reload with `/runtime/` unreachable still runs the commands.
+- PD6 ok (Chromium): a PDF with document-open JavaScript, a named JavaScript action and a link reaches no host and runs nothing; pdf.js's scripting sandbox is not shipped, the worker has no fetch or XHR, and the page's CSP needed no change (no violation). Malformed streams, Firefox and Safari not tested.
+- AG3 ok, AG4 ok (render half; seeing depends on look), AG5 ok: poppler's names and flags; unsupported ones (`-scale-to`, `-tiff`, `-rx`) say what to use instead; caps refuse with the cap's name; encrypted PDFs exit 3 and ask for `-upw` (`test/pdf-node.mjs`).
+
 ## Release slices
 
 1. **Walking skeleton (now):** A1–A4, T1–T2, I1, D1–D4, D7, R1, O1–O2, L1.

@@ -23,6 +23,7 @@ import { createLayout } from './layout.js';
 import { createUsage, renderMeter, labelComposer, renderPanel, exhaustedText, extractKey, createLedger } from './usage.js';
 import { MAIN, refOf, asRef } from './graph.js';
 import { createTerminal } from './terminal.js';
+import { createPdfService } from './pdf.js';
 import { createSessions, sameId, titleOf, notesKey, convKey, revertKey, subagentsKey, interruptedKey, turnsKey, watchesKey } from './sessions.js';
 import { createWatches, watchTool, baseOf, isGlob, MAX_WAKES } from './ns/watch.js';
 import { parseSpecs, over } from './ns/namespace.js';
@@ -1522,6 +1523,8 @@ function approveModel(req, who) {
 const modelService = createModelService({ store: modelStore, tasks: vfs.tasks, approve: approveModel,
   supports: (id) => (LOCAL && id === LOCAL.id ? localOk : { ok: true }),
   onChange: () => { const t = LOCAL && modelService.downloads.get(LOCAL.id); if (t?.status === 'running' && t.progress) localProgress({ ...t.progress, downloading: true }); renderLocalSettingsSoon(); } });
+// pdfinfo, pdftotext, pdftoppm (src/pdf.js): one pdf.js worker for the terminal and every agent, its runs /task jobs.
+const pdfService = createPdfService({ tasks: vfs.tasks });
 let settingsTimer = null;
 const renderLocalSettingsSoon = () => { if (!settingsTimer) settingsTimer = setTimeout(() => { settingsTimer = null; renderLocalSettings(); }, 250); };
 
@@ -1592,7 +1595,7 @@ function mainNamespace(sid, base) {
 // The user's shell over the same namespace; `bayleaf` asks every use. Ctrl+`
 // opens it (or focuses it); opening it never sends anything.
 const terminal = createTerminal({ vfs, fs: over(vfs.as('user'), [['/session', control.view({ by: 'user', label: 'terminal' }), { label: 'control (you)' }]]), onChange: () => renderTree(),
-  hooks: { bayleafCredential: () => key, approveEgress: (req) => egress.approve(req, null, undefined, 'you, in the terminal'), models: modelService,
+  hooks: { bayleafCredential: () => key, approveEgress: (req) => egress.approve(req, null, undefined, 'you, in the terminal'), models: modelService, pdf: pdfService,
     openFile: ({ path, mode, interactive }) => openFile(path, undefined, { mode, interactive }), revealDir } });
 document.addEventListener('keydown', (e) => {
   if (e.key !== '`' || !e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]')) return;
@@ -3495,7 +3498,7 @@ const withWatch = (list) => { list.push(watchTool({ Type, watches, callerOf: wat
         sessionOf: (caller) => (caller == null ? null : agent?.who(caller)?.sid ?? null),
         mainView: (caller, base) => { const w = caller == null ? null : agent?.who(caller); return w && w.child == null && w.sid != null ? mainNamespace(w.sid, base) : base; },
         ...egressHooks,
-        models: modelService, modelsWho,
+        models: modelService, modelsWho, pdf: pdfService,
         show,
       })),
       systemPrompt: () => systemPrompt(vfs),

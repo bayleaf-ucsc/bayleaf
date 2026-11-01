@@ -48,7 +48,7 @@ function assemble(code) {
   // (first), the app shell, plus dist/runtime/** (deploy.mjs uploads exactly
   // these). Model weights are not in it: they come from the BayLeaf HF gateway. sha256sum -c SHA256SUMS checks a downloaded or
   // served copy against the build; the offline copy checks itself against it.
-  const sums = [[sha256(html, 'hex'), 'pouch.html'], ...STATIC.map((f) => [sha256(readFileSync(f), 'hex'), f]), ...(models?.sums ?? [])];
+  const sums = [[sha256(html, 'hex'), 'pouch.html'], ...STATIC.map((f) => [sha256(readFileSync(f), 'hex'), f]), ...(models?.sums ?? []), ...pdf.sums];
   writeFileSync(`${OUT}/SHA256SUMS`, sums.map(([h, p]) => `${h}  ${p}\n`).join(''));
   console.log(`${OUT}/pouch.html  ${(html.length / 1024).toFixed(0)} KiB  ${hashes.length} inline script(s)`);
   console.log(`sha256 ${sha256(html, 'hex')}  build ${BUILD_ID}`);
@@ -67,10 +67,14 @@ const WORKER_SRC = (await build({ entryPoints: ['src/run/worker-browser.js'], bu
 // once put 1.1 GB of weights in dist/, is accepted and does nothing more.)
 const models = process.argv.includes('--no-models') ? null : await (await import('./build-models.mjs')).buildModels(OUT);
 
+// The pdf.js runtime (build-pdf.mjs) under dist/runtime/pdf/: the page embeds
+// its manifest's SHA-256 and fetches it only when a pdf command first runs.
+const pdf = await (await import('./build-pdf.mjs')).buildPdf(OUT);
+
 const ctx = await context({
   entryPoints: ['src/main.js'],
   bundle: true, minify: !watch, write: false,
-  define: { WORKER_SRC: JSON.stringify(WORKER_SRC), LOCAL_MODEL: JSON.stringify(models?.local ?? null), SW_SHA256: JSON.stringify(SW_SHA256) },
+  define: { WORKER_SRC: JSON.stringify(WORKER_SRC), LOCAL_MODEL: JSON.stringify(models?.local ?? null), SW_SHA256: JSON.stringify(SW_SHA256), POUCH_PDF_RUNTIME: JSON.stringify(pdf.pin) },
   format: 'iife', platform: 'browser', target: 'es2022',
   // just-bash's browser build imports node:zlib for gzip/tar -z; those commands
   // fail at call time instead. Other Node-only paths are behind dynamic imports.

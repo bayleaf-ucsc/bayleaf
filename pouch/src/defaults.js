@@ -24,7 +24,8 @@ read, write and edit.
 Available (run \`ls /bin\` for the full list): cat, ls, find, tree, grep, rg,
 sed, awk, head, tail, sort, uniq, wc, cut, paste, join, column, tr, diff, jq,
 base64, sha256sum, file, seq, date, xargs, tee, mkdir, mv, cp, rm, touch,
-html-to-markdown, and Pouch's own zip, unzip and tar (no -z compression).
+html-to-markdown, Pouch's own zip, unzip and tar (no -z compression), and
+pdfinfo, pdftotext and pdftoppm for PDFs (the pdf skill).
 Shell builtins work: for, while, functions, pipes, redirection, $(...).
 
 Not available: network (curl), package managers, python, node, git, gzip,
@@ -143,6 +144,55 @@ ask what it cost.
 Scratch: one-shots write nothing. If you use full subagents instead, a draft
 mounted read-only (ns ["<draft path>:ro"]) leaves them /tmp for notes, not
 /work.
+`,
+  '/skills/pdf/SKILL.md': `---
+name: pdf
+description: Read, quote and cite PDFs, and see scanned pages or figures, with pdfinfo, pdftotext and pdftoppm in the bash tool. Read before working with any .pdf file.
+---
+
+# PDFs in Pouch
+
+Poppler's command names, run by pdf.js inside this browser. Nothing leaves
+the pouch, and a PDF's JavaScript never runs (pdfinfo only reports it).
+The first command downloads the pdf runtime (about 4 MiB, from Pouch's own
+site) and keeps it for offline use. Each command is a /task job; stop a long
+one with \`echo stop > /task/<id>/ctl\`.
+
+## Recipe
+
+1. \`pdfinfo paper.pdf\`: pages, title, encryption, and the "Text layer:" line.
+   "every page" means pdftotext will work; "none" or "missing on pages ..."
+   means those pages are scans or pictures.
+2. Text with page markers: \`pdftotext paper.pdf - | head -200\`, or write it
+   to a file and grep it: \`pdftotext paper.pdf && grep -n deadline paper.txt\`.
+   Each page starts with "[page N]"; cite pages from those markers ("p. 4"),
+   never from guesses. \`-f N -l M\` limits pages, \`-layout\` keeps table
+   columns roughly aligned (better for pulling out tables as CSV).
+3. Pages without text: render them, \`pdftoppm -f 3 -l 3 -r 150 -png paper.pdf
+   /tmp/p\` writes /tmp/p-3.png (the number is zero-padded to the page count,
+   as poppler does: p-03.png in a 40-page PDF). If a look tool is available,
+   look at the PNG to read it; if it is not, or the model cannot see images,
+   tell the user the page is a scan you cannot read rather than guessing.
+4. A figure for a report: render the page, then crop with \`-x X -y Y -W W -H
+   H\` (pixels from the top left at the chosen -r) and \`-singlefile\` to name
+   it PREFIX.png; embed it in HTML as a data URL (\`base64 -w0 fig.png\`).
+
+## Caps and pitfalls
+
+- pdftotext: at most 2000 pages per call; pdfinfo checks the text layer of
+  the first 500 pages; pdftoppm: at most 50 pages per call, 18-600 DPI
+  (default 150), 25 million pixels per page (letter at 600 DPI is over:
+  use 300). Ranges over a cap are refused; go in batches with -f and -l.
+  Without -l a long PDF stops at the cap and the output ends with a line
+  like [stopped at page 50 of 312: pass -f 51 -l 100 for more].
+- Files over 256 MiB are refused. Encrypted PDFs need \`-upw PASSWORD\`
+  (exit 3 without it); ask the user, do not guess.
+- Not supported: PPM/TIFF output, -scale-to, -rx/-ry, -bbox, writing or
+  merging PDFs. The error names what to use instead.
+- Reading order comes from the PDF itself; two-column papers can interleave.
+  Try -layout, or check a page render when the order looks wrong.
+- Text from many pages is long: send it to a file and read the parts you
+  need instead of printing everything.
 `,
   '/skills/skill-authoring/SKILL.md': `---
 name: skill-authoring
