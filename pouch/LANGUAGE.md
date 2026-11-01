@@ -104,6 +104,18 @@ What an agent can see is what it can touch; namespaces do not govern the network
 **Interface.** How a person perceives and acts on sessions, threads, agents and the
 workspace: the Pouch page. *Open:* name the agent-facing counterpart (tools and /task
 files, through which agents perceive the same things): "Surface", "Tools", or nothing.
+In code, the Interface is `src/main.js` composing its **regions** (`src/interface/*.js`,
+README "Architecture"); a region reaches another only through its interface on `app`.
+
+**Egress module.** A module allowed to use the network, each for one stated reason (Sealed
+ciphertext, the BayLeaf API account plane, the `bayleaf` command, Localhost, hash-checked
+weights and runtimes, the offline copy). The build fails if any other module uses a network
+API (`arch.mjs`). Distinct from egress *consent* (`src/egress.js`): which requests the
+`bayleaf` command may make, as a person granted them.
+
+**Core.** The modules that work without a page: files, namespaces, storage, providers and
+sandboxed runtimes (`CORE` in `arch.mjs`). The core never imports the Interface; it is what
+the trusted core of #143 would replace, one boundary at a time.
 
 **Show.** The agent's act of putting a file or folder in front of the person (bash
 `show <path>`, `src/open-cli.js`). Its counterpart is **Open**, the person's act (the
@@ -202,3 +214,4 @@ Deliberately left:
 - 2026-10-31: at most one Workspace; starts at zero; Erase all returns to zero.
 - 2026-11-01: Control plane adopted (Adam): the file tree is the authority for everything that acts; the Interface is one client among several.
 - 2026-11-01: Show adopted (Adam): the agent shows, the person opens; show opens unless the person is busy, else offers (provisional).
+- 2026-11-01: Egress module, Core and Interface regions proposed with #142 (trust boundaries checked at build time); not yet adopted.

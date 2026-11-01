@@ -165,7 +165,7 @@ export class IdbFs extends BaseFs {
 }
 
 // ── The assembled tree ────────────────────────────────────────────
-export const DEFAULTS = {}; // filled by main.js: path under /pouch -> text, seeded once
+export const DEFAULTS = {}; // filled by src/interface/state.js: path under /pouch -> text, seeded once
 // FNV-1a, enough to tell versions of a default apart (not a security check).
 const textHash = (t) => { let h = 0x811c9dc5; for (let i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 0x01000193); return (h >>> 0).toString(16); };
 const SEEDED_BEFORE_LIST = ['/AGENTS.md', '/skills/pouch-environment/SKILL.md', '/skills/bayleaf-cli/SKILL.md', '/skills/skill-authoring/SKILL.md'];
@@ -179,7 +179,7 @@ export class Vfs extends EventTarget {
     this.mounts = new Map(); // name -> { handle, readOnly, live: boolean }
     this.tasks = new Tasks();
     this.seedLayer = null; // { name, files } when /work is stacked over an archive
-    this.watches = null; // the watch registry (src/ns/watch.js), set by main.js
+    this.watches = null; // the watch registry (src/ns/watch.js), set by src/interface/boot.js
     this.views = new Map();
   }
   // A view of the tree whose writes are reported to the watches with who made
@@ -244,7 +244,7 @@ export class Vfs extends EventTarget {
   // stays deleted. `true` is a profile from before the list: it had these.
   // 'seededHash' remembers what was written: when a bundled default changes,
   // a copy the user never edited is updated in place; an edited copy (or one
-  // from before the hashes) is offered (this.defaultUpdates, main.js asks).
+  // from before the hashes) is offered (this.defaultUpdates, src/interface/tree.js asks).
   async seed() {
     const was = await store.getSetting('seeded');
     const had = new Set(Array.isArray(was) ? was : was ? SEEDED_BEFORE_LIST : []);

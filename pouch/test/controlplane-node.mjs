@@ -4,7 +4,7 @@
 // that file operation rather than calling the harness directly.
 // Run: node test/controlplane-node.mjs
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { InMemoryFs, Bash } from 'just-bash';
 import { Namespace, over, codeOf } from '../src/ns/namespace.js';
 import { createControl, createChanges, changesText, usageText, parseIn, parseCtl, why } from '../src/ns/control.js';
@@ -19,25 +19,26 @@ async function test(name, fn) { await fn(); passed++; console.log('ok', name); }
 // op: the file write that performs it ({sid} 1, {ref} a2, {task} a /task id,
 // {watch} w1). agent: what the main agent may do with the same file
 // ('ok', or the error code it gets by design). anchor: where its handler is
-// in src/main.js (the handler is the next `lines` lines, or a helper it calls).
+// in the UI shell, src/main.js and src/interface/*.js (the handler is the next
+// `lines` lines, or a helper it calls).
 // via: helpers the handler calls, each of which must itself write a control file.
 export const CONTROLS = [
   { id: 'card-stop', what: 'Subagent card: Stop', op: ['/session/{sid}/agents/{ref}/ctl', 'stop'], expect: ['stop', '1', 'a2', { all: false }], agent: 'ok', anchor: 'ariaLabel: `Stop subagent ${name}` });', lines: 2 },
   { id: 'view-stop', what: 'Subagent view: Stop', op: ['/session/{sid}/agents/{ref}/ctl', 'stop'], expect: ['stop', '1', 'a2', { all: false }], agent: 'ok', anchor: 'ariaLabel: `Stop subagent ${c.name}` });', lines: 2 },
   { id: 'card-message', what: 'Subagent card: Message (sheet Send)', op: ['/session/{sid}/agents/{ref}/in', 'message\nlook at b.txt'], expect: ['send', '1', 'a2', 'message', 'look at b.txt'], agent: 'EPERM', anchor: 'function messageChild(c) {', lines: 8 },
   { id: 'card-resume', what: 'Subagent card: Resume', op: ['/session/{sid}/agents/{ref}/in', 'message Continue your task'], expect: ['send', '1', 'a2', 'message', 'Continue your task'], agent: 'EPERM', anchor: 'ariaLabel: `Resume subagent ${name}` });', lines: 2 },
-  { id: 'tray-sa-stop', what: 'Tray subagent row: Stop', op: ['/session/{sid}/agents/{ref}/ctl', 'stop'], expect: ['stop', '1', 'a2', { all: false }], agent: 'ok', anchor: 'open: (e) => openChild(sid, c.id, e?.currentTarget),', lines: 1 },
+  { id: 'tray-sa-stop', what: 'Tray subagent row: Stop', op: ['/session/{sid}/agents/{ref}/ctl', 'stop'], expect: ['stop', '1', 'a2', { all: false }], agent: 'ok', anchor: 'open: (e) => app.subagents.openChild(sid, c.id, e?.currentTarget),', lines: 1 },
   { id: 'tray-background', what: 'Tray subagent row: Background', op: ['/session/{sid}/agents/{ref}/ctl', 'detach'], expect: ['detach', '1', 'a2'], agent: 'ok', anchor: '...(waited ? { background:', lines: 1 },
   { id: 'tray-run-stop', what: 'Tray run row: Stop', op: ['/task/{task}/ctl', 'kill'], expect: ['kill'], agent: 'ok', anchor: "origin: task ? `run, /task/${task.id}` : 'run'", lines: 1 },
   { id: 'stop-all', what: 'Tray: Stop all', op: ['/session/{sid}/ctl', 'stop'], expect: ['stop', '1', 'a1', { all: true }], agent: 'ok', anchor: 'stopAll: async () => {', lines: 4 },
   { id: 'composer-stop', what: 'Composer: Stop (main)', op: ['/session/{sid}/agents/a1/ctl', 'stop all'], expect: ['stop', '1', 'a1', { all: true }], agent: 'ok', anchor: "$('send').onclick = (e) => {", lines: 7, via: ['stopMain', 'stopChild'] },
   { id: 'esc-stop', what: 'Composer: Esc (main)', op: ['/session/{sid}/agents/a1/ctl', 'stop all'], expect: ['stop', '1', 'a1', { all: true }], agent: 'ok', anchor: "if (e.key === 'Escape' && $('sendmode-menu').hidden) {", lines: 4, via: ['stopMain'] },
-  { id: 'stopsend', what: 'Send menu: Stop and send', op: ['/session/{sid}/agents/a1/ctl', 'stop all'], expect: ['stop', '1', 'a1', { all: true }], agent: 'ok', anchor: "if (busy() && mode === 'stopsend') {", lines: 3, via: ['stopMain'] },
-  { id: 'steer-main', what: 'Composer: Steer (main)', op: ['/session/{sid}/agents/a1/in', 'steer\nuse tabs'], expect: ['send', '1', 'a1', 'steer', 'use tabs'], agent: 'EPERM', anchor: "if (busy() && mode === 'steer' && !attachments.files.length)", lines: 1, via: ['steerMain'] },
-  { id: 'followup-main', what: 'Composer: Follow-up (main, text only)', op: ['/session/{sid}/agents/a1/in', 'followup\nthen tests'], expect: ['send', '1', 'a1', 'followup', 'then tests'], agent: 'EPERM', anchor: "if (busy() && mode === 'steer') announce(", lines: 2, via: ['followUpMain'] },
-  { id: 'steer-now-main', what: 'Tray follow-up: Steer now (main)', op: ['/session/{sid}/agents/a1/in', 'steer then tests'], expect: ['send', '1', 'a1', 'steer', 'then tests'], agent: 'EPERM', anchor: "run: () => sendNow(key, true) }", lines: 1, via: ['sendNow', 'steerMain'] },
-  { id: 'steer-child', what: 'Subagent view composer: Steer', op: ['/session/{sid}/agents/{ref}/in', 'steer\nskip tests'], expect: ['send', '1', 'a2', 'steer', 'skip tests'], agent: 'EPERM', anchor: 'if (focus) return toChild(raw.trim(), mode);', lines: 1, via: ['toChild'] },
-  { id: 'followup-child', what: 'Subagent view composer: Follow-up', op: ['/session/{sid}/agents/{ref}/in', 'followup\nthen report'], expect: ['send', '1', 'a2', 'followup', 'then report'], agent: 'EPERM', anchor: 'if (focus) return toChild(raw.trim(), mode);', lines: 1, via: ['toChild'] },
+  { id: 'stopsend', what: 'Send menu: Stop and send', op: ['/session/{sid}/agents/a1/ctl', 'stop all'], expect: ['stop', '1', 'a1', { all: true }], agent: 'ok', anchor: "if (app.queues.busy() && mode === 'stopsend') {", lines: 3, via: ['stopMain'] },
+  { id: 'steer-main', what: 'Composer: Steer (main)', op: ['/session/{sid}/agents/a1/in', 'steer\nuse tabs'], expect: ['send', '1', 'a1', 'steer', 'use tabs'], agent: 'EPERM', anchor: "if (app.queues.busy() && mode === 'steer' && !app.queues.attachments.files.length)", lines: 1, via: ['steerMain'] },
+  { id: 'followup-main', what: 'Composer: Follow-up (main, text only)', op: ['/session/{sid}/agents/a1/in', 'followup\nthen tests'], expect: ['send', '1', 'a1', 'followup', 'then tests'], agent: 'EPERM', anchor: "if (app.queues.busy() && mode === 'steer') app.queues.announce(", lines: 2, via: ['followUpMain'] },
+  { id: 'steer-now-main', what: 'Tray follow-up: Steer now (main)', op: ['/session/{sid}/agents/a1/in', 'steer then tests'], expect: ['send', '1', 'a1', 'steer', 'then tests'], agent: 'EPERM', anchor: "run: () => app.send.sendNow(key, true) }", lines: 1, via: ['sendNow', 'steerMain'] },
+  { id: 'steer-child', what: 'Subagent view composer: Steer', op: ['/session/{sid}/agents/{ref}/in', 'steer\nskip tests'], expect: ['send', '1', 'a2', 'steer', 'skip tests'], agent: 'EPERM', anchor: 'if (app.sessionList.focus) return toChild(raw.trim(), mode);', lines: 1, via: ['toChild'] },
+  { id: 'followup-child', what: 'Subagent view composer: Follow-up', op: ['/session/{sid}/agents/{ref}/in', 'followup\nthen report'], expect: ['send', '1', 'a2', 'followup', 'then report'], agent: 'EPERM', anchor: 'if (app.sessionList.focus) return toChild(raw.trim(), mode);', lines: 1, via: ['toChild'] },
   { id: 'child-stop-composer', what: 'Subagent view composer: Stop', op: ['/session/{sid}/agents/{ref}/ctl', 'stop'], expect: ['stop', '1', 'a2', { all: false }], agent: 'ok', anchor: "$('send').onclick = (e) => {", lines: 7, via: ['stopChild'] },
   { id: 'child-paused-send', what: 'Tray paused message to a subagent: Send', op: ['/session/{sid}/agents/{ref}/in', 'message\nretry'], expect: ['send', '1', 'a2', 'message', 'retry'], agent: 'EPERM', anchor: 'ariaLabel: `Send paused message to ${cq.name}`', lines: 1 },
   { id: 'child-steer-now', what: 'Tray follow-up to a subagent: Steer now', op: ['/session/{sid}/agents/{ref}/in', 'steer\nretry'], expect: ['send', '1', 'a2', 'steer', 'retry'], agent: 'EPERM', anchor: 'ariaLabel: `Steer now: send to ${cq.name} after its current step`', lines: 4 },
@@ -182,12 +183,16 @@ await test('events: a blocking read in JS and over 9P (flush interrupts it)', as
 });
 
 // ── Static: the Interface's handlers write control files ────────────
-const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+// The Interface's sources, one string: its region factories indent their bodies.
+const interfaceDir = new URL('../src/interface/', import.meta.url);
+const main = [readFileSync(new URL('../src/main.js', import.meta.url), 'utf8'),
+  ...readdirSync(interfaceDir).filter((f) => f.endsWith('.js')).sort().map((f) => readFileSync(new URL(f, interfaceDir), 'utf8'))].join('\n');
 const lines = main.split('\n');
 const bodyOf = (name) => {
-  const i = lines.findIndex((l) => new RegExp(`^(async )?function ${name}\\(`).test(l));
+  const i = lines.findIndex((l) => new RegExp(`^\\s*(async )?function ${name}\\(`).test(l));
   assert.ok(i >= 0, `helper ${name} exists`);
-  const j = lines.findIndex((l, k) => k > i && l === '}');
+  const indent = lines[i].match(/^\s*/)[0];
+  const j = lines.findIndex((l, k) => k > i && l === indent + '}');
   return lines.slice(i, j + 1).join('\n');
 };
 const DRIVER_START = '// ── Control plane: the harness side', DRIVER_END = '// ── End of the harness side';

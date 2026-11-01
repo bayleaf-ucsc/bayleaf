@@ -76,7 +76,7 @@ export function createEgress(deps = {}) {
       $('egress-deny').onclick = () => choose(false);
       $('egress-once').onclick = () => choose('once');
       $('egress-session').onclick = () => choose('session');
-      // A press on the backdrop or Esc answers Deny (src/dismiss.js, registered in main.js).
+      // A press on the backdrop or Esc answers Deny (src/dismiss.js, registered in src/interface/state.js).
       d.addEventListener('close', () => resolve(answer), { once: true }); // Esc lands here too: false
       d.showModal();
       d.scrollTop = 0; $('egress-detail').scrollTop = 0;
