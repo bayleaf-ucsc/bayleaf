@@ -123,6 +123,8 @@ export function localApi(engine, { onHint } = {}) {
       if (r.trimmed) onHint?.('context');
       if (r.over) { onHint?.('context'); return fail('error', `This message alone is longer than the Transformers.js model's ${BUDGET}-token context (${r.input_tokens} tokens). Shorten it, or switch to BayLeaf Sealed.`); }
       msg.usage = { ...zero(), input: r.input_tokens, output: r.output_tokens, totalTokens: r.input_tokens + r.output_tokens };
+      // Stored with the reply, so the context meter (src/context.js) can say the model did not see everything.
+      if (r.trimmed) msg.contextTrimmed = r.trimmed;
       if (r.interrupted || options.signal?.aborted) return fail('aborted', 'Stopped.');
       const { text, calls, malformed } = parseToolCalls(r.text, TOOLS);
       if (block) block.text = text; else if (text) { block = { type: 'text', text }; msg.content.push(block); s.push({ type: 'text_start', contentIndex: 0, partial: msg }); }

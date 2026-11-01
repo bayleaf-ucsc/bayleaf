@@ -59,12 +59,14 @@ export function createFake() {
     // { reasoning?, content?, then?: [[tool, args]], size?, ms? }: streamed in
     // `size`-character pieces every `ms` (scrolling tests); then tool calls.
     if (reply && !Array.isArray(reply) && typeof reply === 'object') {
-      const { reasoning = '', content = '', then = null, size = 24, ms = 15 } = reply;
+      // usage: { prompt_tokens, completion_tokens } sent as a last chunk, as a server reports it (context meter tests).
+      const { reasoning = '', content = '', then = null, size = 24, ms = 15, usage = null } = reply;
       const pieces = (s, f) => Array.from({ length: Math.ceil(s.length / size) }, (_, i) => chunk({ [f]: s.slice(i * size, (i + 1) * size) }));
       const all = [chunk({ role: 'assistant', content: '' }), ...pieces(reasoning, 'reasoning_content'), ...pieces(content, 'content'),
         // Tool calls stream their arguments in pieces too (a pending write names its path early).
         ...(then ? [...then.flatMap(([name, args], index) => { const j = JSON.stringify(args); return [chunk({ tool_calls: [{ index, id: `call_${++callN}`, type: 'function', function: { name, arguments: '' } }] }),
-          ...Array.from({ length: Math.ceil(j.length / size) }, (_, i) => chunk({ tool_calls: [{ index, function: { arguments: j.slice(i * size, (i + 1) * size) } }] }))]; }), chunk({}, 'tool_calls')] : [chunk({}, 'stop')])];
+          ...Array.from({ length: Math.ceil(j.length / size) }, (_, i) => chunk({ tool_calls: [{ index, function: { arguments: j.slice(i * size, (i + 1) * size) } }] }))]; }), chunk({}, 'tool_calls')] : [chunk({}, 'stop')]),
+        ...(usage ? [{ id: 'fake', object: 'chat.completion.chunk', created: 0, model: 'fake', choices: [], usage }] : [])];
       return new Response(new ReadableStream({ async start(c) {
         for (const d of all) { if (init.signal?.aborted) break; c.enqueue(enc.encode('data: ' + JSON.stringify(d) + '\n\n')); await sleep(ms); }
         c.enqueue(enc.encode('data: [DONE]\n\n')); c.close();

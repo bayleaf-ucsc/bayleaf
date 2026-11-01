@@ -71,7 +71,9 @@ limits, message queues and persistence. A harness is an **engine** plus a **prof
 skills, the surviving turns of its thread's current branch, tool results, steers,
 follow-ups, peer messages. Context is not the Thread: the system prompt is never shown,
 compaction shrinks context while the thread keeps everything, and a revert changes
-context without erasing the thread's history.
+context without erasing the thread's history. The interface shows its size as the **context
+meter** (about how many tokens the next request carries; `src/context.js`); on Transformers.js,
+**trimmed** means the provider left part of the context out to fit its budget.
 
 **Agent.** A Model via a Provider, run by a Harness with its Context, acting inside a
 Session. Agents act: they write, edit, delete and run things in the Workspace, and

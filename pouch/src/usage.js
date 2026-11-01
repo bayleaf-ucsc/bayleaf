@@ -148,15 +148,26 @@ export function renderMeter(s, led = null) {
   const label = off ? 'Off campus: Campus Pass does not work on this network. Sign in to send.' : (s.remaining == null ? 'Allowance: remaining requests unknown'
     : `Allowance: ${s.mode === 'campus' ? 'about ' : ''}${s.remaining} of ${s.limit} BayLeaf Sealed requests left today${s.mode === 'campus' ? ' (shared on this network)' : ' (for this key, wherever it is used)'}`)
     + (led ? `. This browser today: ${fmt(counted(led))} sent` : '') + (out ? `. Changed outside this browser: ${out}` : '');
-  for (const [id, num] of [['rail-usage', 'usage-num'], ['composer-usage', 'composer-usage-num']]) {
-    const b = $(id);
-    if (!b) continue;
-    b.classList.toggle('low', isLow(s));
-    b.classList.toggle('unknown', f == null && !off);
-    b.style.setProperty('--fill', f == null ? '0%' : `${Math.round(f * 100)}%`);
+  // The composer's state sits on its allowance reading (the button also holds the context one).
+  for (const [id, part, num] of [['rail-usage', 'rail-usage', 'usage-num'], ['composer-usage', 'composer-allow', 'composer-usage-num']]) {
+    const b = $(id), r = $(part);
+    if (!b || !r) continue;
+    r.classList.toggle('low', isLow(s));
+    r.classList.toggle('unknown', f == null && !off);
+    r.style.setProperty('--fill', f == null ? '0%' : `${Math.round(f * 100)}%`);
     $(num).textContent = off ? '0' : s.remaining == null ? '?' : String(s.remaining);
-    b.ariaLabel = label; b.title = label;
+    if (id === 'composer-usage') { b.dataset.allow = label; labelComposer(); } else { b.ariaLabel = label; b.title = label; }
   }
+}
+
+// The composer's one Usage button names both readings: the allowance (above) and
+// the context, which main.js renderCtx leaves in data-ctx (absent when hidden).
+export function labelComposer() {
+  const b = $('composer-usage');
+  if (!b) return;
+  const allow = b.dataset.allow ?? 'Allowance: remaining requests unknown', ctx = b.dataset.ctx;
+  b.title = `${allow}.${ctx ? ' ' + ctx : ''}`;
+  b.ariaLabel = `Usage. ${b.title} Opens Usage.`;
 }
 
 const fmt = (n) => (n ?? 0).toLocaleString();
