@@ -45,7 +45,7 @@ export function createSessions(deps) {
 
   const all = async () => (await store.all('sessions')).sort((a, b) => b.updated - a.updated);
   const find = async (id) => sameId(id, session?.id) ? session : (await all()).find((x) => sameId(x.id, id));
-  const save = () => session && store.put('sessions', session.id, session);
+  const save = (s = session) => s && store.put('sessions', s.id, s);
 
   // Patch a stored session; the current one is patched in memory too.
   async function update(id, patch) {
@@ -177,9 +177,9 @@ export function createSessions(deps) {
   // place instead of the next session (a revert of the first message, D12).
   async function remove(id, ask = true, { stay = false } = {}) {
     const legacy = deps.agent()?.isLegacy?.(id);
-    if (ask && !(await deps.ask(legacy ? 'Delete this session? It was saved before per-session storage: it is stopped and reset now, and its history is purged once no such session is left (or by Erase all).' : 'Delete this session? Its conversation is erased from this browser.', 'Delete', 'danger'))) return;
+    if (ask && !(await deps.ask(legacy ? 'Delete this session? It was saved before per-session storage: it is stopped and reset now, and its history is purged once no such session is left (or by Erase all).' : 'Delete this session? Its conversation is erased from this browser.', 'Delete', 'danger'))) return false;
     try { await deps.agent()?.deleteSession(id); }
-    catch (e) { return status('Could not delete: ' + e.message, 'bad'); }
+    catch (e) { status('Could not delete: ' + e.message, 'bad'); return false; }
     await store.del('sessions', id);
     await store.setSetting(notesKey(id), undefined);
     await store.setSetting(grantsKey(id), undefined);
@@ -194,9 +194,10 @@ export function createSessions(deps) {
     if (sameId(id, session?.id)) {
       session = null; await deps.attach();
       const rest = await all();
-      if (rest.length && !stay) return select(rest[0].id);
+      if (rest.length && !stay) { await select(rest[0].id); return true; }
     }
     render();
+    return true;
   }
   async function dropLegacyIfDone() {
     const agent = deps.agent();
@@ -270,14 +271,19 @@ export function createSessions(deps) {
   // nothing. It takes effect at the click, so New then Enter sends into the
   // new session, never the previous one (Batch F). A reload in a blank session
   // lands in the last saved one: the blank one lived in this page only.
+  // nav: bumped by each navigation (New, a selection), so one still in flight
+  // when another starts does not land afterwards.
+  let nav = 0;
   function blank() {
+    nav++;
     if (session) { session = null; deps.attach(); render(); }
     if (layout.narrow()) layout.setSide(false, false);
     $('input').focus();
   }
 
-  // The first send from a blank session: make the session. A second send before it
-  // exists waits for this same creation (send() calls create() again).
+  // The first send from a blank session: make the session, and resolve to it. A
+  // second send before it exists waits for this same creation. New or a
+  // selection meanwhile wins the view; the send still goes to the made session.
   let creating = null;
   function create() {
     const agent = deps.agent();
@@ -285,23 +291,28 @@ export function createSessions(deps) {
     if (creating) return creating;
     const prev = session;
     if (session) { session = null; deps.attach(); }
+    const gen = nav;
     creating = (async () => {
       const model = deps.model() || 'glm-5-3';
       let id;
       try { id = await agent.createSession(model); }
-      catch (e) { if (!session) { session = prev; await deps.attach(); await render(); } throw e; }
-      session = { id, title: '', updated: Date.now(), model };
-      await save();
+      catch (e) { if (!session && gen === nav) { session = prev; await deps.attach(); await render(); } throw e; }
+      const made = { id, title: '', updated: Date.now(), model };
+      await save(made);
+      if (gen !== nav) { await render(); return made; }
+      session = made;
       store.setSetting('lastSession', id);
       await deps.attach();
       await render();
+      return made;
     })().finally(() => { creating = null; });
     return creating;
   }
 
   async function select(id) {
+    const gen = ++nav;
     const found = (await store.all('sessions')).find((s) => sameId(s.id, id));
-    if (!found) return;
+    if (!found || gen !== nav) return;
     session = found;
     store.setSetting('lastSession', session.id);
     if (session.model && deps.hasModel(session.model)) deps.setModel(session.model);

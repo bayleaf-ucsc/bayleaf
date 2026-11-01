@@ -2554,9 +2554,10 @@ function revertFirst(it, at) {
   }));
   sheet('Revert to before this message?', [['Revert', async () => {
     if (busy()) return;
-    await sessions.remove(sid, false, { stay: true });
-    if (sessions.current) return; // the delete failed (another tab holds it): the status says why
-    status('Reverted to an empty session. Files were not changed. Your message is back in the box.');
+    // Not deleted (another tab holds it): the status says why. Deleted: the message
+    // comes back even if another session was opened meanwhile.
+    if (!(await sessions.remove(sid, false, { stay: true }))) return;
+    status(`${sessions.current ? 'Deleted that session' : 'Reverted to an empty session'}. Files were not changed. Your message is back in the box.`);
     putBack(it.text);
   }, 'danger']], body);
 }
@@ -3061,13 +3062,17 @@ async function send(text, attached = { files: [], images: [] }, turnModel = $('m
   follow.pin();
   lastTouch = 0; // sending hands the turn over: the keys that sent it do not make the person busy
   const t0 = Date.now();
-  if (!sessions.current) { await sessions.create(); ledger.adopt('new', sessions.current.id); adopted(sessions.current.id); }
-  const s = sessions.current; // the run belongs to this session even if you switch away
+  let s = sessions.current; // the run belongs to this session even if you switch away
+  if (!s) {
+    s = await sessions.create();
+    if (!s) throw new Error(agentError ?? 'The agent is not available.');
+    ledger.adopt('new', s.id); adopted(s.id);
+  }
   const sid = s.id;
   s.model = turnModel;
   // Until a real title comes: the prompt's start, cut at a word, without trailing / . , : (critique 6).
   if (!s.title) { const t = text.replace(/\s+/g, ' ').trim(); s.title = (t.length > 60 ? t.slice(0, 60).replace(/\s+\S*$/, '') || t.slice(0, 60) : t).replace(/[\s/.,:;-]+$/, ''); }
-  s.updated = Date.now(); await sessions.save();
+  s.updated = Date.now(); await sessions.save(s);
   if (interrupted && sameId(sid, sessions.current?.id)) interrupted = false;
   await store.setSetting(interruptedKey(sid), undefined);
   sessions.running.add(String(sid)); sessions.render();
