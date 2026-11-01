@@ -1,0 +1,233 @@
+{
+ "schema": "pouch-qualify-v1",
+ "at": "2026-11-01T16:17:53.201Z",
+ "config": {
+  "path": "experiments/lfm3-webgpu/qualification/configs/lfm3-q4f16.json",
+  "id": "lfm3-q4f16",
+  "comment": "Standard matrix for the model Pouch ships: baseline (generic prompt, no few-shot) vs the shipped transformersjs recipe, both on Pouch's tool layer; core plus held-out tasks. Limits come from the profile (TJS).",
+  "model": {
+   "lockId": "lfm3-1.7b-q4f16"
+  },
+  "setups": {
+   "baseline": {
+    "recipe": "none",
+    "toolLayer": "pouch"
+   },
+   "recipe": {
+    "recipe": "profiles",
+    "toolLayer": "pouch"
+   }
+  },
+  "tasks": "core",
+  "heldOut": "all",
+  "trials": {
+   "greedy": 1,
+   "sampled": 7,
+   "temperature": 0.3,
+   "top_p": 0.95
+  }
+ },
+ "model": {
+  "repo": "onnx-community/LFM3-1.7B-ONNX",
+  "revision": "ab9fec4c681a25bec3b48b0b97a62fc2660a2985",
+  "dtype": "q4f16",
+  "download_bytes": 1106022678,
+  "files": [
+   {
+    "name": "config.json",
+    "bytes": 1549,
+    "sha256": "beb7c0a3e61147e15b50151728b8dc15b994c46a3cd524264b98b1485b1acf9c"
+   },
+   {
+    "name": "generation_config.json",
+    "bytes": 241,
+    "sha256": "422ed8749f8849f763ffe836a709a2c58e1adcf3d32dfa4da48b3959e87ecce9"
+   },
+   {
+    "name": "tokenizer.json",
+    "bytes": 17908635,
+    "sha256": "7e226e34bface23ccf6e495d157bf77186c1c30a7659880e1a8994db528c3701"
+   },
+   {
+    "name": "tokenizer_config.json",
+    "bytes": 14262,
+    "sha256": "4e1748d03b2162c6cf5d53b13cd0cf01aae0c98d47a8b99bfb737d7fdc3d1d05"
+   },
+   {
+    "name": "special_tokens_map.json",
+    "bytes": 92,
+    "sha256": "7946f864cbfb62a1b041bda937244210a1a87f4a6cab3a48b791131b2cd57f88"
+   },
+   {
+    "name": "chat_template.jinja",
+    "bytes": 12129,
+    "sha256": "f45005c50cd2a97329722bf3a2dee9f16c04cdf825a589b280fb7e99e6827818"
+   },
+   {
+    "name": "onnx/model_q4f16.onnx",
+    "bytes": 296714,
+    "sha256": "ef4f1e8b5e1af2e1a64230c71a344954fa047db7f3d718437908030817a0ee73"
+   },
+   {
+    "name": "onnx/model_q4f16.onnx_data",
+    "bytes": 1087789056,
+    "sha256": "7a83bb217011b85cdab7f0d42806f32b86dc4365201fd5a68bffa5b41f40cce7"
+   }
+  ]
+ },
+ "phase": "perf",
+ "runtime": {
+  "transformers": "4.3.2",
+  "ort": "1.31.0-dev.20260914-8d85527a0",
+  "sha256": {
+   "transformers.js": "f9e04d8c2f7839e32b0b6cf8f63ae1d0e13b06b453fddffdb9a1f595a4c733b1",
+   "ort-wasm-simd-threaded.asyncify.mjs": "0966b6105cd936744498aa60df7a22cbd47af3374dbc64a9ab561c08a71e3611",
+   "ort-wasm-simd-threaded.asyncify.wasm": "49871f5a4409519797e127440868a6d1923339d9185907f301a5b2a1d90af082"
+  },
+  "matchesLock": true
+ },
+ "browser": "156.0.8078.74",
+ "memBefore": {
+  "gpuInUseBytes": 6291914752,
+  "chromeRssKB": 1124384
+ },
+ "load": {
+  "load_ms": 2096.889999985695,
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+  "adapter": {
+   "vendor": "apple",
+   "architecture": "metal-3"
+  },
+  "shaderF16": true,
+  "ort": {
+   "common": "1.31.0-dev.20260911-2a43ec07e",
+   "web": "1.31.0-dev.20260914-8d85527a0"
+  }
+ },
+ "memAfterLoad": {
+  "gpuInUseBytes": 7467204608,
+  "chromeRssKB": 3878672
+ },
+ "perf": {
+  "context": {
+   "tail:512": [
+    {
+     "mode": "tail-512",
+     "past": 130560,
+     "chunk": 512,
+     "chunkMs": 5776,
+     "finite": true,
+     "decodeTokS": 4.9,
+     "kvShapes": {
+      "full (layer 2)": [
+       1,
+       4,
+       131087,
+       128
+      ],
+      "sliding (layer 4)": [
+       1,
+       4,
+       131087,
+       128
+      ]
+     },
+     "gpuErrors": [],
+     "repeat": 0,
+     "at": "2026-11-01T16:17:59.258Z",
+     "chromeRssPeakGB": 9.39,
+     "chromeRssBaseGB": 4.49,
+     "gpuDeltaPeakGB": 10.78,
+     "gpuDeltaAfterGB": 7.58,
+     "console": []
+    },
+    {
+     "mode": "tail-512",
+     "past": 261632,
+     "chunk": 512,
+     "error": "RuntimeError: null function",
+     "gpuErrors": [],
+     "repeat": 0,
+     "at": "2026-11-01T16:18:09.403Z",
+     "chromeRssPeakGB": 4.37,
+     "chromeRssBaseGB": 4.37,
+     "gpuDeltaPeakGB": 0,
+     "gpuDeltaAfterGB": -0.27,
+     "console": [
+      "An error occurred during model execution: \"RuntimeError: null function\".",
+      "Inputs given to model: {input_ids: Object, attention_mask: Object, num_logits_to_keep: Object, past_conv.0: Object, past_conv.1: Object}"
+     ]
+    }
+   ],
+   "tail:256": [
+    {
+     "mode": "tail-256",
+     "past": 130816,
+     "chunk": 256,
+     "chunkMs": 4095,
+     "finite": true,
+     "decodeTokS": 4.9,
+     "kvShapes": {
+      "full (layer 2)": [
+       1,
+       4,
+       131087,
+       128
+      ],
+      "sliding (layer 4)": [
+       1,
+       4,
+       131087,
+       128
+      ]
+     },
+     "gpuErrors": [],
+     "repeat": 0,
+     "at": "2026-11-01T16:18:10.911Z",
+     "chromeRssPeakGB": 9.39,
+     "chromeRssBaseGB": 4.51,
+     "gpuDeltaPeakGB": 7.76,
+     "gpuDeltaAfterGB": 6.91,
+     "console": []
+    },
+    {
+     "mode": "tail-256",
+     "past": 261888,
+     "chunk": 256,
+     "error": "RuntimeError: null function",
+     "gpuErrors": [],
+     "repeat": 0,
+     "at": "2026-11-01T16:18:19.315Z",
+     "chromeRssPeakGB": 4.47,
+     "chromeRssBaseGB": 4.47,
+     "gpuDeltaPeakGB": 0,
+     "gpuDeltaAfterGB": -0.27,
+     "console": [
+      "An error occurred during model execution: \"RuntimeError: null function\".",
+      "Inputs given to model: {input_ids: Object, attention_mask: Object, num_logits_to_keep: Object, past_conv.0: Object, past_conv.1: Object}"
+     ]
+    }
+   ]
+  },
+  "lengths": [
+   131072,
+   262144
+  ],
+  "modes": [
+   "tail:512",
+   "tail:256"
+  ],
+  "gpuCounterNoisy": true,
+  "abortGB": 40,
+  "capS": 600,
+  "aborted": null
+ },
+ "externalRequests": [],
+ "consoleErrors": [
+  "Failed to load resource: the server responded with a status of 404 (Not Found)",
+  "An error occurred during model execution: \"RuntimeError: null function\".",
+  "Inputs given to model: {input_ids: Object, attention_mask: Object, num_logits_to_keep: Object, past_conv.0: Object, past_conv.1: Object}",
+  "An error occurred during model execution: \"RuntimeError: null function\".",
+  "Inputs given to model: {input_ids: Object, attention_mask: Object, num_logits_to_keep: Object, past_conv.0: Object, past_conv.1: Object}"
+ ]
+}

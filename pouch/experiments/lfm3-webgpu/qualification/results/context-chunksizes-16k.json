@@ -1,0 +1,1020 @@
+{
+ "schema": "pouch-qualify-v1",
+ "at": "2026-11-01T15:52:34.979Z",
+ "config": {
+  "path": "experiments/lfm3-webgpu/qualification/configs/lfm3-q4f16.json",
+  "id": "lfm3-q4f16",
+  "comment": "Standard matrix for the model Pouch ships: baseline (generic prompt, no few-shot) vs the shipped transformersjs recipe, both on Pouch's tool layer; core plus held-out tasks. Limits come from the profile (TJS).",
+  "model": {
+   "lockId": "lfm3-1.7b-q4f16"
+  },
+  "setups": {
+   "baseline": {
+    "recipe": "none",
+    "toolLayer": "pouch"
+   },
+   "recipe": {
+    "recipe": "profiles",
+    "toolLayer": "pouch"
+   }
+  },
+  "tasks": "core",
+  "heldOut": "all",
+  "trials": {
+   "greedy": 1,
+   "sampled": 7,
+   "temperature": 0.3,
+   "top_p": 0.95
+  }
+ },
+ "model": {
+  "repo": "onnx-community/LFM3-1.7B-ONNX",
+  "revision": "ab9fec4c681a25bec3b48b0b97a62fc2660a2985",
+  "dtype": "q4f16",
+  "download_bytes": 1106022678,
+  "files": [
+   {
+    "name": "config.json",
+    "bytes": 1549,
+    "sha256": "beb7c0a3e61147e15b50151728b8dc15b994c46a3cd524264b98b1485b1acf9c"
+   },
+   {
+    "name": "generation_config.json",
+    "bytes": 241,
+    "sha256": "422ed8749f8849f763ffe836a709a2c58e1adcf3d32dfa4da48b3959e87ecce9"
+   },
+   {
+    "name": "tokenizer.json",
+    "bytes": 17908635,
+    "sha256": "7e226e34bface23ccf6e495d157bf77186c1c30a7659880e1a8994db528c3701"
+   },
+   {
+    "name": "tokenizer_config.json",
+    "bytes": 14262,
+    "sha256": "4e1748d03b2162c6cf5d53b13cd0cf01aae0c98d47a8b99bfb737d7fdc3d1d05"
+   },
+   {
+    "name": "special_tokens_map.json",
+    "bytes": 92,
+    "sha256": "7946f864cbfb62a1b041bda937244210a1a87f4a6cab3a48b791131b2cd57f88"
+   },
+   {
+    "name": "chat_template.jinja",
+    "bytes": 12129,
+    "sha256": "f45005c50cd2a97329722bf3a2dee9f16c04cdf825a589b280fb7e99e6827818"
+   },
+   {
+    "name": "onnx/model_q4f16.onnx",
+    "bytes": 296714,
+    "sha256": "ef4f1e8b5e1af2e1a64230c71a344954fa047db7f3d718437908030817a0ee73"
+   },
+   {
+    "name": "onnx/model_q4f16.onnx_data",
+    "bytes": 1087789056,
+    "sha256": "7a83bb217011b85cdab7f0d42806f32b86dc4365201fd5a68bffa5b41f40cce7"
+   }
+  ]
+ },
+ "phase": "perf",
+ "runtime": {
+  "transformers": "4.3.2",
+  "ort": "1.31.0-dev.20260914-8d85527a0",
+  "sha256": {
+   "transformers.js": "f9e04d8c2f7839e32b0b6cf8f63ae1d0e13b06b453fddffdb9a1f595a4c733b1",
+   "ort-wasm-simd-threaded.asyncify.mjs": "0966b6105cd936744498aa60df7a22cbd47af3374dbc64a9ab561c08a71e3611",
+   "ort-wasm-simd-threaded.asyncify.wasm": "49871f5a4409519797e127440868a6d1923339d9185907f301a5b2a1d90af082"
+  },
+  "matchesLock": true
+ },
+ "browser": "156.0.8078.74",
+ "memBefore": {
+  "gpuInUseBytes": 5996494848,
+  "chromeRssKB": 1130784
+ },
+ "load": {
+  "load_ms": 2281.435000002384,
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+  "adapter": {
+   "vendor": "apple",
+   "architecture": "metal-3"
+  },
+  "shaderF16": true,
+  "ort": {
+   "common": "1.31.0-dev.20260911-2a43ec07e",
+   "web": "1.31.0-dev.20260914-8d85527a0"
+  }
+ },
+ "memAfterLoad": {
+  "gpuInUseBytes": 7240761344,
+  "chromeRssKB": 4270944
+ },
+ "perf": {
+  "context": {
+   "chunk:256": [
+    {
+     "length": 16384,
+     "mode": "chunk-256",
+     "docTokens": 16350,
+     "needleTokenAt": [
+      1642,
+      8187,
+      14719
+     ],
+     "tokenizeMs": 32,
+     "prefillChunksMs": [
+      161,
+      124,
+      128,
+      134,
+      140,
+      146,
+      153,
+      159,
+      165,
+      172,
+      178,
+      184,
+      191,
+      198,
+      203,
+      209,
+      217,
+      224,
+      231,
+      235,
+      241,
+      253,
+      259,
+      262,
+      267,
+      273,
+      283,
+      288,
+      293,
+      300,
+      307,
+      313,
+      321,
+      328,
+      333,
+      339,
+      347,
+      357,
+      361,
+      367,
+      371,
+      380,
+      387,
+      390,
+      397,
+      406,
+      408,
+      416,
+      422,
+      428,
+      437,
+      441,
+      448,
+      456,
+      465,
+      474,
+      477,
+      479,
+      487,
+      492,
+      498,
+      504,
+      513,
+      486
+     ],
+     "chunkMsSummary": {
+      "n": 64,
+      "first": 161,
+      "last": 486,
+      "max": 513
+     },
+     "kvShapes": {
+      "full (layer 2)": [
+       1,
+       4,
+       16350,
+       128
+      ],
+      "sliding (layer 4)": [
+       1,
+       4,
+       16350,
+       128
+      ]
+     },
+     "needles": [
+      {
+       "gate": "north",
+       "depth": 0.1,
+       "pass": true,
+       "answer": "amber-falcon-4821"
+      },
+      {
+       "gate": "east",
+       "depth": 0.5,
+       "pass": true,
+       "answer": "cobalt-meadow-7360"
+      },
+      {
+       "gate": "west",
+       "depth": 0.9,
+       "pass": true,
+       "answer": "saffron-quill-2957"
+      }
+     ],
+     "ttftMs": 20652,
+     "prefillMs": 20311,
+     "decodeTokens": 96,
+     "decodeTokS": 32.2,
+     "firstTop5": [
+      [
+       11412,
+       23.125
+      ],
+      [
+       330,
+       18.328
+      ],
+      [
+       6369,
+       16.188
+      ],
+      [
+       1277,
+       14.328
+      ],
+      [
+       782,
+       13.844
+      ]
+     ],
+     "greedyIds": [
+      11412,
+      1825,
+      285,
+      635,
+      21,
+      32838,
+      25,
+      124900,
+      124895,
+      124901,
+      2083,
+      1094,
+      310,
+      1500,
+      278,
+      1729,
+      92838,
+      374,
+      278,
+      5549,
+      16145,
+      22,
+      440,
+      4695,
+      20589,
+      34,
+      496,
+      8966,
+      310,
+      278,
+      2352,
+      8287,
+      3036,
+      20,
+      1119,
+      355,
+      278,
+      1729,
+      92838,
+      374,
+      278,
+      5549,
+      16145,
+      39,
+      41774,
+      415,
+      278,
+      1729,
+      92838,
+      1049,
+      2426,
+      8,
+      2083,
+      1094,
+      310,
+      5009,
+      278,
+      2352,
+      8287,
+      374,
+      496,
+      9358,
+      92838,
+      374,
+      278,
+      5549,
+      16145,
+      10,
+      432,
+      2955,
+      22,
+      358,
+      17827,
+      6544,
+      296,
+      278,
+      2803,
+      912,
+      452,
+      267,
+      2216,
+      34,
+      496,
+      597,
+      1729,
+      92838,
+      374,
+      278,
+      5549,
+      16145,
+      355,
+      782,
+      505,
+      1825,
+      285,
+      635
+     ],
+     "prefillTokS": 805,
+     "gpuErrors": [],
+     "gpuLimits": {
+      "maxBufferSize": 4294967292,
+      "maxStorageBufferBindingSize": 4294967292
+     },
+     "repeat": 0,
+     "at": "2026-11-01T15:52:41.305Z",
+     "chromeRssPeakGB": 4.65,
+     "chromeRssBaseGB": 4.52,
+     "gpuDeltaPeakGB": 1.68,
+     "gpuDeltaAfterGB": 1.64,
+     "console": []
+    }
+   ],
+   "chunk:512": [
+    {
+     "length": 16384,
+     "mode": "chunk-512",
+     "docTokens": 16350,
+     "needleTokenAt": [
+      1642,
+      8187,
+      14719
+     ],
+     "tokenizeMs": 27,
+     "prefillChunksMs": [
+      260,
+      234,
+      252,
+      270,
+      288,
+      307,
+      326,
+      343,
+      362,
+      384,
+      400,
+      417,
+      436,
+      460,
+      479,
+      495,
+      508,
+      527,
+      549,
+      567,
+      588,
+      604,
+      625,
+      640,
+      662,
+      683,
+      705,
+      726,
+      743,
+      764,
+      785,
+      768
+     ],
+     "chunkMsSummary": {
+      "n": 32,
+      "first": 260,
+      "last": 768,
+      "max": 785
+     },
+     "kvShapes": {
+      "full (layer 2)": [
+       1,
+       4,
+       16350,
+       128
+      ],
+      "sliding (layer 4)": [
+       1,
+       4,
+       16350,
+       128
+      ]
+     },
+     "needles": [
+      {
+       "gate": "north",
+       "depth": 0.1,
+       "pass": true,
+       "answer": "amber-falcon-4821"
+      },
+      {
+       "gate": "east",
+       "depth": 0.5,
+       "pass": true,
+       "answer": "cobalt-meadow-7360"
+      },
+      {
+       "gate": "west",
+       "depth": 0.9,
+       "pass": true,
+       "answer": "saffron-quill-2957"
+      }
+     ],
+     "ttftMs": 16495,
+     "prefillMs": 16159,
+     "decodeTokens": 96,
+     "decodeTokS": 32.8,
+     "firstTop5": [
+      [
+       11412,
+       23.188
+      ],
+      [
+       330,
+       18.344
+      ],
+      [
+       6369,
+       16.219
+      ],
+      [
+       1277,
+       14.328
+      ],
+      [
+       782,
+       13.922
+      ]
+     ],
+     "greedyIds": [
+      11412,
+      1825,
+      285,
+      635,
+      21,
+      32838,
+      25,
+      124900,
+      124895,
+      124901,
+      2083,
+      1094,
+      310,
+      1500,
+      278,
+      1729,
+      92838,
+      374,
+      278,
+      5549,
+      16145,
+      22,
+      440,
+      4695,
+      20589,
+      34,
+      496,
+      8966,
+      310,
+      278,
+      2352,
+      8287,
+      3036,
+      20,
+      1119,
+      355,
+      278,
+      1729,
+      92838,
+      374,
+      278,
+      5549,
+      16145,
+      39,
+      41774,
+      415,
+      278,
+      1729,
+      92838,
+      1049,
+      2426,
+      8,
+      2083,
+      1094,
+      310,
+      5009,
+      278,
+      2352,
+      8287,
+      374,
+      496,
+      9358,
+      92838,
+      374,
+      278,
+      5549,
+      16145,
+      10,
+      432,
+      2955,
+      22,
+      358,
+      17827,
+      6544,
+      296,
+      278,
+      2803,
+      912,
+      452,
+      267,
+      2216,
+      34,
+      496,
+      597,
+      1729,
+      92838,
+      374,
+      278,
+      5549,
+      16145,
+      355,
+      782,
+      505,
+      1825,
+      285,
+      635
+     ],
+     "prefillTokS": 1011.8,
+     "gpuErrors": [],
+     "gpuLimits": {
+      "maxBufferSize": 4294967292,
+      "maxStorageBufferBindingSize": 4294967292
+     },
+     "repeat": 0,
+     "at": "2026-11-01T15:53:07.304Z",
+     "chromeRssPeakGB": 4.68,
+     "chromeRssBaseGB": 4.66,
+     "gpuDeltaPeakGB": 0.96,
+     "gpuDeltaAfterGB": -2.24,
+     "console": []
+    }
+   ],
+   "chunk:1024": [
+    {
+     "length": 16384,
+     "mode": "chunk-1024",
+     "docTokens": 16350,
+     "needleTokenAt": [
+      1642,
+      8187,
+      14719
+     ],
+     "tokenizeMs": 28,
+     "prefillChunksMs": [
+      491,
+      542,
+      621,
+      697,
+      771,
+      844,
+      1064,
+      1065,
+      1079,
+      1154,
+      1230,
+      1430,
+      1555,
+      1646,
+      1698,
+      1802
+     ],
+     "chunkMsSummary": {
+      "n": 16,
+      "first": 491,
+      "last": 1802,
+      "max": 1802
+     },
+     "kvShapes": {
+      "full (layer 2)": [
+       1,
+       4,
+       16350,
+       128
+      ],
+      "sliding (layer 4)": [
+       1,
+       4,
+       16350,
+       128
+      ]
+     },
+     "needles": [
+      {
+       "gate": "north",
+       "depth": 0.1,
+       "pass": true,
+       "answer": "amber-falcon-4821"
+      },
+      {
+       "gate": "east",
+       "depth": 0.5,
+       "pass": true,
+       "answer": "cobalt-meadow-7360"
+      },
+      {
+       "gate": "west",
+       "depth": 0.9,
+       "pass": true,
+       "answer": "saffron-quill-2957"
+      }
+     ],
+     "ttftMs": 18113,
+     "prefillMs": 17690,
+     "decodeTokens": 96,
+     "decodeTokS": 31.1,
+     "firstTop5": [
+      [
+       11412,
+       23.313
+      ],
+      [
+       330,
+       18.641
+      ],
+      [
+       6369,
+       16.391
+      ],
+      [
+       1277,
+       14.523
+      ],
+      [
+       782,
+       14.25
+      ]
+     ],
+     "greedyIds": [
+      11412,
+      1825,
+      285,
+      635,
+      21,
+      32838,
+      25,
+      124900,
+      124895,
+      124901,
+      2083,
+      1094,
+      310,
+      1500,
+      278,
+      1729,
+      92838,
+      374,
+      278,
+      5549,
+      16145,
+      22,
+      440,
+      4695,
+      20589,
+      34,
+      496,
+      8966,
+      310,
+      278,
+      2352,
+      8287,
+      3036,
+      20,
+      1119,
+      355,
+      278,
+      1729,
+      92838,
+      374,
+      278,
+      5549,
+      16145,
+      39,
+      41774,
+      415,
+      278,
+      1729,
+      92838,
+      1049,
+      2426,
+      8,
+      2083,
+      1094,
+      310,
+      5009,
+      278,
+      2352,
+      8287,
+      374,
+      496,
+      9358,
+      92838,
+      374,
+      278,
+      5549,
+      16145,
+      10,
+      432,
+      2955,
+      22,
+      358,
+      17827,
+      6544,
+      296,
+      278,
+      2803,
+      912,
+      452,
+      267,
+      2216,
+      34,
+      496,
+      597,
+      1729,
+      92838,
+      374,
+      278,
+      5549,
+      16145,
+      355,
+      782,
+      505,
+      1825,
+      285,
+      635
+     ],
+     "prefillTokS": 924.3,
+     "gpuErrors": [],
+     "gpuLimits": {
+      "maxBufferSize": 4294967292,
+      "maxStorageBufferBindingSize": 4294967292
+     },
+     "repeat": 0,
+     "at": "2026-11-01T15:53:29.063Z",
+     "chromeRssPeakGB": 4.43,
+     "chromeRssBaseGB": 4.41,
+     "gpuDeltaPeakGB": 5.6,
+     "gpuDeltaAfterGB": 5.57,
+     "console": []
+    }
+   ],
+   "chunk:2048": [
+    {
+     "length": 16384,
+     "mode": "chunk-2048",
+     "docTokens": 16350,
+     "needleTokenAt": [
+      1642,
+      8187,
+      14719
+     ],
+     "tokenizeMs": 29,
+     "prefillChunksMs": [
+      1094,
+      1435,
+      1781,
+      1949,
+      2212,
+      2672,
+      2889,
+      3168
+     ],
+     "chunkMsSummary": {
+      "n": 8,
+      "first": 1094,
+      "last": 3168,
+      "max": 3168
+     },
+     "kvShapes": {
+      "full (layer 2)": [
+       1,
+       4,
+       16350,
+       128
+      ],
+      "sliding (layer 4)": [
+       1,
+       4,
+       16350,
+       128
+      ]
+     },
+     "needles": [
+      {
+       "gate": "north",
+       "depth": 0.1,
+       "pass": true,
+       "answer": "amber-falcon-4821"
+      },
+      {
+       "gate": "east",
+       "depth": 0.5,
+       "pass": true,
+       "answer": "cobalt-meadow-7360"
+      },
+      {
+       "gate": "west",
+       "depth": 0.9,
+       "pass": true,
+       "answer": "saffron-quill-2957"
+      }
+     ],
+     "ttftMs": 17539,
+     "prefillMs": 17199,
+     "decodeTokens": 96,
+     "decodeTokS": 30.5,
+     "firstTop5": [
+      [
+       11412,
+       23.313
+      ],
+      [
+       330,
+       18.484
+      ],
+      [
+       6369,
+       16.172
+      ],
+      [
+       1277,
+       14.43
+      ],
+      [
+       782,
+       14.07
+      ]
+     ],
+     "greedyIds": [
+      11412,
+      1825,
+      285,
+      635,
+      21,
+      32838,
+      25,
+      124900,
+      124895,
+      124901,
+      2083,
+      1094,
+      310,
+      1500,
+      278,
+      1729,
+      92838,
+      374,
+      278,
+      5549,
+      16145,
+      22,
+      440,
+      4695,
+      20589,
+      34,
+      496,
+      8966,
+      310,
+      278,
+      2352,
+      8287,
+      3036,
+      20,
+      1119,
+      355,
+      278,
+      1729,
+      92838,
+      374,
+      278,
+      5549,
+      16145,
+      39,
+      41774,
+      415,
+      278,
+      1729,
+      92838,
+      1049,
+      2426,
+      8,
+      2083,
+      1094,
+      310,
+      5009,
+      278,
+      2352,
+      8287,
+      374,
+      496,
+      9358,
+      92838,
+      374,
+      278,
+      5549,
+      16145,
+      10,
+      432,
+      2955,
+      22,
+      358,
+      17827,
+      6544,
+      296,
+      278,
+      2803,
+      912,
+      452,
+      267,
+      2216,
+      34,
+      496,
+      597,
+      1729,
+      92838,
+      374,
+      278,
+      5549,
+      16145,
+      355,
+      782,
+      505,
+      1825,
+      285,
+      635
+     ],
+     "prefillTokS": 950.6,
+     "gpuErrors": [],
+     "gpuLimits": {
+      "maxBufferSize": 4294967292,
+      "maxStorageBufferBindingSize": 4294967292
+     },
+     "repeat": 0,
+     "at": "2026-11-01T15:53:52.607Z",
+     "chromeRssPeakGB": 4.69,
+     "chromeRssBaseGB": 4.67,
+     "gpuDeltaPeakGB": 3.43,
+     "gpuDeltaAfterGB": 1.69,
+     "console": []
+    }
+   ]
+  },
+  "lengths": [
+   16384
+  ],
+  "modes": [
+   "chunk:256",
+   "chunk:512",
+   "chunk:1024",
+   "chunk:2048"
+  ],
+  "gpuCounterNoisy": true,
+  "abortGB": 40,
+  "capS": 600,
+  "aborted": null
+ },
+ "externalRequests": [],
+ "consoleErrors": [
+  "Failed to load resource: the server responded with a status of 404 (Not Found)"
+ ]
+}
