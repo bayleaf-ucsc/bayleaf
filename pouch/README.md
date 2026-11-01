@@ -1166,7 +1166,7 @@ own code, so it is a convenience, not an independent proof.
 
 ## Tool runtimes and engine jobs
 
-For heavy tools (pdf.js now; OCR, ASR, DuckDB, libav later):
+For heavy tools (pdf.js and libav.js now; OCR, ASR, DuckDB later):
 
 - **Convention** (`build-runtime.mjs`): each heavy tool runs in its own same-origin
   worker; its files ship as content-hash parts under `runtime/<group>/` listed in
@@ -1215,6 +1215,55 @@ is available, crop figures for reports) and the caps. Tests: `node test/pdf-node
 (parsing, caps, errors, jobs, build pins) and `node test/pdf-browser.mjs` (the real
 runtime under the production CSP on fixture PDFs, an encrypted one, a hostile one with
 JavaScript and a link, Stop, offline reuse, and the network log).
+
+### The second tool: libav.js (`ffprobe`, `ffmpeg`)
+
+`src/media.js` adds FFmpeg's own two programs to the terminal and the agents' bash
+(libav.js 6.10.9.0, FFmpeg 9, variant `webm-vp9-cli`), with FFmpeg's flags and messages:
+
+- `ffprobe [OPTIONS] FILE`: argv passes through; `-v error -show_format -show_streams -of
+  json` is the overview (story AG2). `-o` is refused (redirect instead).
+- `ffmpeg [OPTIONS] -i IN ... OUT`: argv passes through to libav's ffmpeg over copies of the
+  inputs; outputs are written back to the paths named. libav never sees a Pouch path: files
+  are `in0.webm`, `out0.opus` inside a fresh instance's memory, and messages map the names
+  back. Progress lines are dropped and long logs keep their first and last lines.
+- Images (`.png`, `.jpg`, `.webp`; `%03d` numbers them) are Pouch's own path, because no
+  libav.js variant has an image encoder: frames are demuxed and decoded through libav's API,
+  filtered by the user's `-vf` (fps, scale, crop, trim) to RGBA, and encoded by
+  OffscreenCanvas in the worker. `-ss` seeks, `-t`/`-to` bound, `-r` and `-frames:v` work;
+  each "wrote" line gives the frame's time in the source (story AG1).
+
+What decodes: WebM/Matroska, Ogg, WAV and FLAC containers; VP8 and VP9 video; Opus, FLAC
+and PCM audio (`ffmpeg -decoders`). Encoders: VP8, VP9, Opus, FLAC, PCM. Not in any
+published libav.js variant: MP4/MOV demuxing, H.264, HEVC, AAC (the author does not publish
+patent-encumbered codecs), and MP3 (only in `obsolete`). This variant also has no
+swresample, so Opus cannot become WAV or FLAC. These fail with FFmpeg's error plus a hint
+naming the gap; an "empty output with exit 0" from libav.js counts as a failure. The
+planned fallback for MP4/H.264/AAC is WebCodecs (decode in the browser, frames or PCM into
+libav), not built here.
+
+Caps are named constants in `src/media.js`: `MAX_INPUT_BYTES` 256 MiB per call (checked
+before the runtime loads), `MAX_INPUT_SECONDS` 3 h per input, `MAX_OUTPUT_BYTES` 256 MiB
+(over it nothing is written), `MAX_IMAGES` 100 per call, `MAX_FRAME_PIXELS` 3840x2160,
+`MAX_STDOUT_BYTES` 1 MiB, `MAX_STDERR_LINES` 60. Each run is an engine job (`/task`, Stop
+through ctl) with an `ENGINE_MEMORY` estimate of 1 GiB for the jobs memory guard. FFmpeg
+runs to completion inside wasm, so Stop ends the worker after `STOP_GRACE_MS` (1 s) and the
+next job starts a new one; a stopped job writes nothing. Exit codes: 1 for errors, 130 when
+stopped.
+
+The runtime (`build-libav.mjs`, `src/media/worker.js`) bundles libav.js's wrapper and
+Emscripten factory into one module worker (four build-time rewrites, each matched an exact
+number of times: Emscripten's Node branches and libav.js's own worker bootstrap), compiles
+the released wasm once from verified bytes, then removes `fetch` and `XMLHttpRequest` from
+the worker. Each job gets a fresh libav instance, so no job sees another's files. Non-threaded:
+no COOP/COEP, and the page's CSP did not change. The bundled `media` skill gives agents the
+recipe (probe first; at most 8 frames per look, rate picked from the duration; look at them
+if a look tool is available; audio copy; trims) and the pitfalls. Tests: `node
+test/media-node.mjs` (parsing, time syntax, image plans, caps, errors, jobs and Stop with a
+fake engine, build pins and source) and `node test/media-browser.mjs` (the real runtime
+under the production CSP on tiny committed fixtures in `test/fixtures/media/`: ffprobe JSON,
+frame colors and times from VP8 and VP9, JPEG, audio copy, trim, VP9 transcode, the gaps'
+messages, Stop mid-ffmpeg, offline reuse, and the network log).
 
 ## The `bayleaf` command: the one way out
 
