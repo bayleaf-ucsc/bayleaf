@@ -102,7 +102,24 @@ cache headers. README "Install and the offline copy" has the policy.
   and refusal, pass-through, trust panel, uninstall, Erase all). To check after deploy:
   the Content-Type Cloudflare serves for `.webmanifest`, install on Android and iOS.
 
-## Current artifact: ubiquitous language realignment (2026-10-31)
+## Current artifact: Localhost provider (2026-11-01)
+
+- Built from commit `93798dc` (clean; label `93798dc 2026-11-01`) in a temporary clean
+  checkout with `node build.mjs --with-models`.
+- HTML SHA-256: `c404ceca98c4e882dda471df7932ff066fbd4df7e982aec56c02a62200f0ebc1`.
+- 70 files staged; 2 uploaded, 69 unchanged.
+- CSP delta: `connect-src 'self' https://api.bayleaf.dev http://localhost:* http://127.0.0.1:*`
+  (the user's own machine as a trust root; `[::1]` is not a valid CSP source in Chromium).
+- Cloudflare version: `194f6ac7-75b2-4b95-9228-60579d300f65`. Previous: `bda3612f-…`.
+- `deploy.mjs` passed first time (page, sums, 6 shell files, all 63 model files
+  byte-exact). Headless Chromium on the live site: service worker active, no
+  installability errors, no native dialogs.
+- Local Network Access from the public origin, checked against a real oMLX on
+  127.0.0.1:12348: without the permission Chromium blocks the request ("Permission was
+  denied"); with `local-network-access` granted it reaches the server (401 without a
+  key, as expected). Real Chrome shows a permission prompt at that point.
+
+## Earlier artifact: ubiquitous language realignment (2026-10-31)
 
 - Built from commit `2237d6c` (clean; label `2237d6c 2026-10-31`) in a temporary clean
   checkout with `node build.mjs --with-models`. Includes Batch D (`a6c5aea`: scrolling,
