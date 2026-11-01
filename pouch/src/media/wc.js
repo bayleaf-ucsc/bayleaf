@@ -95,6 +95,7 @@ export function readWav(b) {
   }
   if (!fmt || !data) throw new Error('WAV without fmt or data');
   const { code, channels, sampleRate, bits } = fmt, float = code === 3, bps = bits / 8;
+  if (!channels || !sampleRate) throw new Error('WAV with zero channels or sample rate');
   if (!(code === 1 || (float && (bits === 32 || bits === 64))) || ![8, 16, 24, 32, 64].includes(bits)) throw new Error(`WAV format ${code} with ${bits}-bit samples is not supported here`);
   const n = Math.floor(data.length / (bps * channels)), out = Array.from({ length: channels }, () => new Float32Array(n));
   const ddv = new DataView(data.buffer, data.byteOffset, data.byteLength);
@@ -125,9 +126,10 @@ export function wavBytes(codec, samples) {
 }
 
 // ── -vf on this path: fps, scale, crop (and null), drawn with a canvas ──
-// Arithmetic over numbers, iw, ih (and in_w, in_h), + - * / and parentheses.
+// Arithmetic over numbers, iw, ih (and in_w, in_h; crop's x and y also ow, oh,
+// out_w, out_h), + - * / and parentheses.
 function expr(s, vars) {
-  const t = String(s).replace(/\s+/g, '').match(/\d+(?:\.\d+)?|in_w|in_h|iw|ih|[-+*/()]/g);
+  const t = String(s).replace(/\s+/g, '').match(/\d+(?:\.\d+)?|in_w|in_h|out_w|out_h|iw|ih|ow|oh|[-+*/()]/g);
   if (!t || t.join('') !== String(s).replace(/\s+/g, '')) return NaN;
   let i = 0;
   const atom = () => { const x = t[i++]; if (x === '(') { const v = sum(); i++; return v; } if (x === '-') return -atom(); return x in vars ? vars[x] : Number(x); };
@@ -153,8 +155,9 @@ export function vfPlan(filters) {
     if (name === 'null' || name === 'format' || name === 'setsar') continue;
     if (name === 'fps') {
       const v = opts(body, ['fps']).fps ?? '', m = /^(\d+(?:\.\d+)?)(?:\/(\d+(?:\.\d+)?))?$/.exec(v);
-      if (!m || !(+m[1] > 0)) return { error: `fps=${v}: a rate such as 1, 0.5 or 1/10` };
-      rate = +m[1] / (m[2] ? +m[2] : 1); continue;
+      rate = m ? +m[1] / (m[2] ? +m[2] : 1) : NaN;
+      if (!(rate > 0 && rate <= 1000)) return { error: `fps=${v}: a rate such as 1, 0.5 or 1/10 (at most 1000)` };
+      continue;
     }
     if (name === 'scale') { const o = opts(body, ['w', 'h']); ops.push({ scale: [o.w ?? o.width ?? 'iw', o.h ?? o.height ?? 'ih'] }); continue; }
     if (name === 'crop') { const o = opts(body, ['w', 'h', 'x', 'y']); ops.push({ crop: [o.w ?? o.out_w ?? 'iw', o.h ?? o.out_h ?? 'ih', o.x, o.y] }); continue; }
@@ -179,18 +182,21 @@ export function geometry(ops, iw, ih) {
     const cx = op.crop[2] != null ? expr(op.crop[2], { ...vars, ow: cw, oh: ch, out_w: cw, out_h: ch }) : (w - cw) / 2;
     const cy = op.crop[3] != null ? expr(op.crop[3], { ...vars, ow: cw, oh: ch, out_w: cw, out_h: ch }) : (h - ch) / 2;
     if (![cx, cy].every(Number.isFinite)) return { error: `crop=${op.crop.join(':')}: x and y are numbers or iw/ih arithmetic` };
-    const kx = sw / w, ky = sh / h;
-    sx += Math.max(0, cx) * kx; sy += Math.max(0, cy) * ky; sw = Math.min(cw, w) * kx; sh = Math.min(ch, h) * ky; w = Math.min(Math.round(cw), w); h = Math.min(Math.round(ch), h);
+    // As ffmpeg's crop: the rect is clipped to the picture, then x and y keep it inside.
+    const kx = sw / w, ky = sh / h, ow = Math.min(cw, w), oh = Math.min(ch, h);
+    sx += Math.min(Math.max(0, cx), w - ow) * kx; sy += Math.min(Math.max(0, cy), h - oh) * ky; sw = ow * kx; sh = oh * ky; w = Math.min(Math.round(cw), w); h = Math.min(Math.round(ch), h);
   }
   return { sx, sy, sw, sh, w, h };
 }
 // ffmpeg's fps filter (round=near), streaming: feed frame times in order; it says
 // which earlier frame fills each output slot. Slot n is at start + n/rate and takes
-// the last frame whose time rounds to n or before (ties go later).
-export function fpsPicker(rate) {
+// the last frame whose time rounds to n or before (ties go later). It emits at
+// most cap slots in all (the caller's frame or image limit), so a long gap or a
+// high rate cannot grow one emit list without bound.
+export function fpsPicker(rate, cap = Infinity) {
   let start = null, next = 0, held = null, emitted = 0;
   const slotOf = (t) => Math.floor((t - start) * rate + 0.5 + 1e-9);
-  const fill = (upto, emit) => { while (held && next < upto) { emit.push([held, start + next / rate]); next++; emitted++; } };
+  const fill = (upto, emit) => { while (held && next < upto && emitted < cap) { emit.push([held, start + next / rate]); next++; emitted++; } };
   return {
     // Frame at time t arrives: -> { emit: [[frame, slotTime]...], release } where
     // release is the frame it replaces (close it after drawing the emits).
@@ -206,7 +212,7 @@ export function fpsPicker(rate) {
     // before it are filled; a stream shorter than one slot still yields one frame.
     end(endT) {
       const emit = [];
-      if (held) { fill(Math.max(slotOf(endT), emitted ? 0 : next + 1), emit); }
+      if (held) { fill(Math.max(Number.isFinite(endT) ? slotOf(endT) : 0, emitted ? 0 : next + 1), emit); }
       const release = held; held = null;
       return { emit, release };
     },

@@ -181,7 +181,7 @@ const wcActions = {
       let bytes = 0, failure = null, last = -Infinity, step = 0, geo = null, canvas = null, ctx = null;
       dec = new VideoDecoder({ output: (f) => { live.add(f); decoded.push(f); }, error: (e) => { failure = e; } });
       dec.configure(vs.config);
-      const picker = plan.rate ? fpsPicker(plan.rate) : null;
+      const picker = plan.rate ? fpsPicker(plan.rate, Math.min(want, maxImages + 1)) : null; // one past MAX_IMAGES, so draw refuses
       const release = (f) => { if (f && live.has(f)) { f.close(); live.delete(f); } };
       async function draw(f, time) {
         if (images.length >= want) return;
@@ -208,7 +208,7 @@ const wcActions = {
         while (decoded.length) {
           const f = decoded.shift(), time = f.timestamp / 1e6;
           if (time + 1e-6 < ss || time >= end || images.length >= want) { release(f); continue; }
-          if (time > last) { step = time - last; last = time; }
+          if (time > last) { if (last > -Infinity) step = time - last; last = time; }
           if (!picker) { await draw(f, time); release(f); continue; }
           const r = picker.push(f, time);
           for (const [g, at] of r.emit) await draw(g, at);
@@ -220,7 +220,7 @@ const wcActions = {
         for (const p of packets[vi] ?? []) {
           const pts = m.i64tof64(p.pts, p.ptshi), dts = m.i64tof64(p.dts, p.dtshi);
           dec.decode(new EncodedVideoChunk({ type: p.flags & 1 ? 'key' : 'delta', timestamp: Math.round((pts !== m.AV_NOPTS_VALUE ? pts : dts) * tb * 1e6), data: p.data }));
-          while (dec.decodeQueueSize > 8 && !failure) await new Promise((r) => setTimeout(r, 1));
+          while (dec.decodeQueueSize > 8 && !failure) { check(id); await new Promise((r) => setTimeout(r, 1)); }
           if (failure) throw fail(`${input.label}: the browser's decoder failed (${failure.message})`, 'ECODEC');
           await drain();
           if (images.length >= want) return true;
@@ -252,7 +252,7 @@ const wcActions = {
       const inRate = src.rate, inCh = src.channels, outRate = rate || (out.codec === 'libopus' ? (([48000, 24000, 16000, 12000, 8000].includes(inRate)) ? inRate : 48000) : inRate);
       const outCh = channels || (out.codec === 'libopus' ? Math.min(inCh, 2) : inCh);
       // 2. The encoder (FLAC, Opus) and muxer, or the WAV writer.
-      const sampleFmt = out.sampleFmt ?? (/^pcm_(s24|s32|f32|f64)/.test(src.codec) ? 's32' : 's16'); // FLAC keeps a deeper source's depth, as ffmpeg does
+      const sampleFmt = out.sampleFmt ?? (src.deep || /^pcm_(s24|s32|f32|f64)/.test(src.codec) ? 's32' : 's16'); // FLAC keeps a deeper source's depth, as ffmpeg does
       const fmtId = { u8: 0, s16: 1, s32: 2, flt: 3 }[sampleFmt];
       let enc = null, oc = null, pb = null, frameSize = 0;
       if (out.format !== 'wav') {
@@ -271,7 +271,8 @@ const wcActions = {
       const put = (b) => { total += b.length; if (total > maxOutputBytes) throw fail(`the output is over ${maxOutputBytes / 2 ** 20} MiB (MAX_OUTPUT_BYTES); nothing was written. Trim (-ss/-t), or use FLAC or Opus`, 'ECAP'); chunks.push(b); };
       async function feed(frames, fin) {
         const got = await m.ff_filter_multi(srcCtx, sinkCtx, fr, frames, { fin }).catch((e) => { throw fail(`the audio filters failed: ${err.slice(-2).join(' ') || e.message}`, 'EFILTER'); });
-        if (out.format === 'wav') { for (const g of got) { const b = wavBytes(out.codec, g.data); written += g.nb_samples; put(b); } return; }
+        for (const g of got) written += g.nb_samples;
+        if (out.format === 'wav') { for (const g of got) put(wavBytes(out.codec, g.data)); return; }
         for (const g of got) { g.pts = outPts; g.ptshi = 0; outPts += g.nb_samples; }
         const pkts = await m.ff_encode_multi(enc.c, enc.frame, enc.pkt, got, fin);
         if (pkts.length) await m.ff_write_multi(oc, enc.pkt, pkts);
@@ -301,7 +302,7 @@ const wcActions = {
         bytes = await m.readFile(out.name);
         if (bytes.length > maxOutputBytes) throw fail(`the output is over ${maxOutputBytes / 2 ** 20} MiB (MAX_OUTPUT_BYTES); nothing was written`, 'ECAP');
       }
-      if (!bytes?.length || pos === 0) throw fail(`${input.label}: no audio${ss > 0 ? ` at or after ${fmtTime(ss)}` : ''}`, 'ENOAUDIO');
+      if (!bytes?.length || !written) throw fail(`${input.label}: no audio${ss > 0 ? ` at or after ${fmtTime(ss)}` : ''}`, 'ENOAUDIO');
       return { files: [{ name: out.name, bytes }], rate: outRate, channels: outCh, source: { codec: src.codec, rate: inRate, channels: inCh } };
     } finally {
       try { adec?.close(); } catch { /* closed */ }
@@ -353,15 +354,16 @@ async function audioSource(m, input, kind, err, id, maxSeconds, keep) {
     const sup = await audioSupport(config);
     if (!sup.supported) throw fail(`${input.label}: ${sup.why}`, 'ECODEC');
     const ready = [];
-    let failure = null, done = false;
+    let failure = null, done = false, got = null;
     const dec = new AudioDecoder({ output: (a) => {
+      got ??= { rate: a.sampleRate, channels: a.numberOfChannels };
       const n = a.numberOfFrames, data = [];
       for (let c = 0; c < a.numberOfChannels; c++) { const d = new Float32Array(n); a.copyTo(d, { planeIndex: c, format: 'f32-planar' }); data.push(d); }
       a.close(); ready.push(data);
     }, error: (e) => { failure = e; } });
     keep(dec); dec.configure(config);
     const it = chunks();
-    return { rate: config.sampleRate, channels: config.numberOfChannels, codec: config.codec, async pull() {
+    async function pull() {
       for (;;) {
         if (failure) throw fail(`${input.label}: the browser's audio decoder failed (${failure.message})`, 'ECODEC');
         if (ready.length) { const b = ready.splice(0); return b; }
@@ -369,9 +371,15 @@ async function audioSource(m, input, kind, err, id, maxSeconds, keep) {
         const { value, done: end } = await it.next();
         if (end) { done = true; await dec.flush().catch((e) => { failure ??= e; }); continue; }
         for (const c of value) dec.decode(c);
-        while (dec.decodeQueueSize > 16 && !failure) await new Promise((r) => setTimeout(r, 1));
+        while (dec.decodeQueueSize > 16 && !failure) { check(id); await new Promise((r) => setTimeout(r, 1)); }
         await tick();
       }
+    }
+    // The first decoded batch says the real rate and channels (HE-AAC's SBR doubles the container's rate).
+    let first = await pull();
+    return { rate: got?.rate ?? config.sampleRate, channels: got?.channels ?? config.numberOfChannels, codec: config.codec, async pull() {
+      if (first) { const b = first; first = null; return b; }
+      return pull();
     } };
   };
   if (kind === 'mp3') {
@@ -424,12 +432,20 @@ async function audioSource(m, input, kind, err, id, maxSeconds, keep) {
     return Array.from({ length: ch }, (_, c) => { const d = new Float32Array(n); for (let s = 0; s < n; s++) d[s] = ((planar ? f.data[c][s] : f.data[s * ch + c]) - off) / k; return d; });
   };
   let done = false;
-  return { rate: par.sample_rate, channels: par.channels || 1, codec: name, async pull() {
-    if (done) return null;
+  const decode = async () => {
     const { value, done: end } = await it.next();
     const frames = await m.ff_decode_multi(c, dpkt, dframe, value ?? [], { fin: !!end, ignoreErrors: true });
     if (end) done = true;
-    return frames.map(toFloat);
+    return frames;
+  };
+  // The first decoded frames say the source's depth: the decoder gives s32 for 24-bit FLAC, which a FLAC output keeps.
+  let first = [];
+  while (!done && !first.length) first = await decode();
+  const deep = first.length > 0 && (first[0].format === 2 || first[0].format === 7); // AV_SAMPLE_FMT_S32, S32P
+  return { rate: par.sample_rate, channels: par.channels || 1, codec: name, deep, async pull() {
+    if (first.length) { const f = first; first = []; return f.map(toFloat); }
+    if (done) return null;
+    return (await decode()).map(toFloat);
   } };
 }
 

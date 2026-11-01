@@ -241,6 +241,8 @@ await t('WAV: 24-bit read as float, written as s16 and s24', () => {
   assert.equal(new DataView(h.buffer).getUint16(34, true), 24); assert.equal(new DataView(h.buffer).getUint32(28, true), 16000 * 6);
   assert.deepEqual([...wavBytes('pcm_s24le', Int32Array.from([0x12345600, -256]))], [0x56, 0x34, 0x12, 0xff, 0xff, 0xff]);
   assert.throws(() => readWav(fx('tone.mp3')), /not a RIFF WAVE/);
+  const zero = fx('tone24.wav').slice(); zero[22] = 0; zero[23] = 0; // fmt channels = 0
+  assert.throws(() => readWav(zero), /zero channels/);
 });
 
 await t('-vf on the WebCodecs path: fps, scale, crop; fps frame choice as ffmpeg makes it', () => {
@@ -257,6 +259,13 @@ await t('-vf on the WebCodecs path: fps, scale, crop; fps frame choice as ffmpeg
   assert.deepEqual(got, [[4, 0], [14, 1], [24, 2]]);
   const one = fpsPicker(0.1); for (let i = 0; i < 20; i++) one.push(i, i / 10);
   assert.deepEqual(one.end(2).emit, [[19, 0]], 'shorter than a slot: still one frame');
+  assert.match(vfPlan(['fps=1/0']).error, /a rate such as/); assert.match(vfPlan(['fps=1000000000']).error, /at most 1000/);
+  const capped = fpsPicker(1000, 3); capped.push('a', 0);
+  assert.equal(capped.push('b', 3600).emit.length, 3, 'a long gap emits no more than the cap');
+  const single = fpsPicker(1); single.push('only', 5);
+  assert.deepEqual(single.end(Infinity).emit, [['only', 5]], 'one frame and no end: one image, no endless fill');
+  assert.deepEqual(geometry(vfPlan(['crop=32:24:(iw-ow)/2:(ih-out_h)/2']).ops, 64, 48), { sx: 16, sy: 12, sw: 32, sh: 24, w: 32, h: 24 }, 'crop x and y take ow, oh, out_w, out_h');
+  assert.deepEqual(geometry(vfPlan(['crop=32:24:48:0']).ops, 64, 48), { sx: 32, sy: 0, sw: 32, sh: 24, w: 32, h: 24 }, 'x keeps the crop inside, as ffmpeg');
 });
 
 const PROBE = { kind: 'mp4', notes: ['stream 0 (hevc): no decoder'], format: { nb_streams: 2, format_name: 'mov,mp4,m4a,3gp,3g2,mj2', format_long_name: 'QuickTime / MOV', start_time: 0, duration: 2, size: 1000, bit_rate: 4000, probe_score: 100, tags: { major_brand: 'qt' } },
@@ -274,6 +283,9 @@ await t('ffprobe writers for the WebCodecs path: json, default, csv, compact, fl
   assert.equal(writeProbe(PROBE, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=codec_name:stream_side_data=rotation', '-of', 'csv=p=0'], 'a').stdout, 'h264,90\n');
   assert.equal(writeProbe(PROBE, ['-v', 'error', '-show_entries', 'stream=codec_name', '-of', 'default'], 'a').stdout, '[STREAM]\ncodec_name=h264\n[/STREAM]\n[STREAM]\ncodec_name=aac\n[/STREAM]\n');
   assert.match(writeProbe(PROBE, ['-v', 'error', '-show_streams', '-of', 'compact'], 'a').stdout, /^stream\|index=0\|codec_name=h264/);
+  assert.equal(writeProbe(PROBE, ['-v', 'error', '-show_entries', 'format=format_name', '-of', 'csv=p=0'], 'a').stdout, '"mov,mp4,m4a,3gp,3g2,mj2"\n', 'csv quotes a cell with commas');
+  assert.equal(writeProbe(PROBE, ['-v', 'error', '-show_entries', 'format=filename', '-of', 'csv=p=0'], '/w/a "q",b.mov').stdout, '"/w/a ""q"",b.mov"\n');
+  assert.equal(writeProbe(PROBE, ['-v', 'error', '-show_entries', 'format=filename', '-of', 'compact=p=0:nk=1'], 'a|b').stdout, 'a\\|b\n');
   assert.match(writeProbe(PROBE, ['-v', 'error', '-show_format', '-of', 'flat'], 'a').stdout, /^format\.filename="a"\nformat\.nb_streams=2\n/);
   assert.match(writeProbe(PROBE, ['-of', 'xml', '-show_format'], 'a').error, /json, default, csv, compact or flat/);
   w = writeProbe(PROBE, [], '/w/a.mov');
@@ -295,6 +307,12 @@ await t('audio plan: WAV/FLAC/Opus out, codecs and formats, trims, refusals with
   assert.match(plan(['-i', 'a.mov', '-vf', 'scale=1:1', 'b.wav']).error, /-vf is not supported on this path/);
   assert.match(plan(['-i', 'a', '-i', 'b', 'c.wav']).error, /one input and one output/);
   assert.match(plan(['-i', 'a.mov', '-map', '0:v', 'c.wav']).error, /first audio stream/);
+  assert.match(plan(['-i', 'a.mov', '-map', '0:a:1', 'c.wav']).error, /first audio stream/, 'a second track is refused, not swapped for the first');
+  assert.equal(plan(['-i', 'a.mov', '-map', '0:a:0', 'c.wav']).error, undefined);
+  assert.match(plan(['-i', 'memo.m4a', '-f', 'flac', 'out.wav']).error, /picks the format from the name/);
+  assert.equal(plan(['-i', 'memo.m4a', '-f', 'ogg', 'out.opus']).error, undefined);
+  assert.equal(plan(['-f', 'mp4', '-i', 'memo.m4a', 'out.wav']).error, undefined, 'an input -f is not the output format');
+  assert.match(plan(['-i', 'a.mov', '-compression_level', '8', 'b.flac']).error, /-compression_level is not supported/);
 });
 
 await t('routing with a fake engine: MOV to wc.*, WebM to the CLI, a missing aresample retried on the conversion path', async () => {

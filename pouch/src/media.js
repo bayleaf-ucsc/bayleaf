@@ -275,7 +275,10 @@ export function writeProbe(probe, args, filename) {
         const pre = name === 'stream' ? `streams.stream.${sections.slice(0, n).filter(([x]) => x === 'stream').length}.` : 'format.';
         for (const [k, v] of [...pairs, ...extra]) lines.push(`${pre}${k.replace(/:/g, '_')}=${typeof v === 'number' && !PROBE_STRINGS.has(k) ? v : JSON.stringify(val(k, v))}`);
       } else {
-        const sep = writer === 'csv' ? ',' : '|', cells = [...pairs, ...extra].map(([k, v]) => (writer === 'csv' || nokey ? val(k, v) : `${k}=${val(k, v)}`));
+        // Cells escaped as ffprobe's writers do: csv quotes a cell holding a comma, quote or newline; compact backslash-escapes.
+        const sep = writer === 'csv' ? ',' : '|';
+        const esc = (s) => (writer === 'csv' ? (/[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s) : s.replace(/[\\|\n\r]/g, (c) => ({ '\n': '\\n', '\r': '\\r' })[c] ?? `\\${c}`));
+        const cells = [...pairs, ...extra].map(([k, v]) => esc(String(writer === 'csv' || nokey ? val(k, v) : `${k}=${val(k, v)}`)));
         lines.push((p0 ? cells : [name, ...cells]).join(sep));
       }
     });
@@ -296,7 +299,9 @@ const eval2 = (r) => { const [a, b] = String(r).split('/').map(Number); return b
 // The WebCodecs path's audio plan: one input, one WAV/FLAC/Opus output, the options it takes.
 const AUDIO_OUT = { wav: 'wav', flac: 'flac', opus: 'ogg', ogg: 'ogg', oga: 'ogg', webm: 'webm', weba: 'webm', mka: 'webm' };
 const AUDIO_OPTS = new Set(['ss', 't', 'to', 'vn', 'sn', 'dn', 'y', 'n', 'af', 'filter', 'ar', 'ac', 'sample_fmt', 'c', 'codec', 'acodec', 'b', 'ab', 'map', 'f', 'v', 'loglevel',
-  'hide_banner', 'nostdin', 'nostats', 'stats', 'map_metadata', 'compression_level', 'vbr', 'application']);
+  'hide_banner', 'nostdin', 'nostats', 'stats', 'map_metadata']);
+// -f names that agree with the output's extension (any other -f is refused, not ignored).
+const AUDIO_F = { wav: 'wav', flac: 'flac', ogg: 'ogg', opus: 'ogg', webm: 'webm', matroska: 'webm' };
 export const isAudioOutput = (p) => !!AUDIO_OUT[ext(p)];
 // Safe to retry on the conversion path (which writes audio only): the output cannot carry video, or -vn says so.
 const audioOnly = (a) => a.outputs.length === 1 && (/^(wav|flac|opus|oga|weba|mka)$/.test(ext(a.outputs[0].path)) || (isAudioOutput(a.outputs[0].path) && a.flags.has('vn')));
@@ -306,7 +311,8 @@ export function audioPlan(parsed) {
   const path = outputs[0].path, x = ext(path), format = AUDIO_OUT[x];
   if (!format) return { error: /^(mp4|m4a|mov|aac|mp3|m4v|3gp|mkv|avi)$/.test(x) ? `.${x}: ${NO_VIDEO_OUT.replace(/^writing video/, `writing .${x}`)}` : `.${x}: audio is written as .wav, .flac, .opus (or .ogg, .webm)` };
   let ss = 0, t = null, to = null, filters = null, rate = null, channels = null, codec = null, sampleFmt = null, bitRate = null, vn = false;
-  for (const [base, v, name] of [...inputs[0].opts, ...outputs[0].opts]) {
+  for (const o of [...inputs[0].opts, ...outputs[0].opts]) {
+    const [base, v, name] = o;
     if (!AUDIO_OPTS.has(base)) return { error: `-${name ?? base} is not supported on this path (it takes -ss, -t, -to, -vn, -af, -ar, -ac, -sample_fmt, -c:a, -b:a)` };
     if (v === undefined) { if (base === 'vn') vn = true; continue; }
     if (base === 'ss') { ss = parseTime(v); if (!(ss >= 0)) return { error: `-ss ${v}: not a time (seconds, or HH:MM:SS.ms)` }; }
@@ -323,7 +329,8 @@ export function audioPlan(parsed) {
       codec = v;
     }
     if (base === 'b' || base === 'ab') { if (/^b:v/.test(name)) continue; const m = /^(\d+(?:\.\d+)?)(k|m)?$/i.exec(v); if (!m) return { error: `-${name} ${v}: a bitrate such as 64k` }; bitRate = Math.round(+m[1] * ({ k: 1e3, m: 1e6 }[m[2]?.toLowerCase()] ?? 1)); }
-    if (base === 'map' && !/^-?0(:a(:\d+)?)?$|^a$/.test(v)) return { error: `-map ${v}: this path takes the first audio stream (-map 0:a)` };
+    if (base === 'map' && !/^0(:a(:0)?)?$/.test(v)) return { error: `-map ${v}: this path takes the first audio stream (-map 0:a)` };
+    if (base === 'f' && !inputs[0].opts.includes(o) && AUDIO_F[v] !== format) return { error: `-f ${v}: this path picks the format from the name (.${x} is ${format}); drop -f or rename the output` };
   }
   void vn;
   if (to != null) { if (to <= ss) return { error: `-to ${to} is not after -ss ${ss}` }; t = t ?? to - ss; }

@@ -246,6 +246,12 @@ try {
   assert.equal(r.code, 0, r.err);
   r = await sh('ffprobe -v error -show_entries stream=sample_fmt,bits_per_raw_sample -of csv=p=0 au/t24.flac');
   assert.match(r.out, /^s32,24\n$/, 'FLAC keeps 24 bits');
+  r = await sh('ffmpeg -ss 9999 -i tone.m4a au/past.flac');
+  assert.equal(r.code, 1); assert.match(r.err, /no audio at or after/, 'FLAC past the end is an error, not an empty file');
+  r = await sh('ffmpeg -i au/t24.flac -ar 8000 au/t24-8k.flac');
+  assert.equal(r.code, 0, r.err);
+  r = await sh('ffprobe -v error -show_entries stream=sample_fmt,sample_rate -of csv=p=0 au/t24-8k.flac');
+  assert.match(r.out, /^s32,8000\n$/, 'a 24-bit FLAC source stays deep through a conversion');
   r = await sh('ffmpeg -i tone24.wav -af loudnorm au/ln.wav');
   assert.equal(r.code, 0, r.err); assert.equal(await probe1('au/ln.wav'), 'pcm_s16le,16000,2');
   r = await sh('ffmpeg -i tone.m4a -af dynaudnorm,volume=0.5 -c:a pcm_s24le au/dn.wav');
