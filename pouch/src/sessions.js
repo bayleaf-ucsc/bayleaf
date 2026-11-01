@@ -180,6 +180,19 @@ export function createSessions(deps) {
     if (ask && !(await deps.ask(legacy ? 'Delete this session? It was saved before per-session storage: it is stopped and reset now, and its history is purged once no such session is left (or by Erase all).' : 'Delete this session? Its conversation is erased from this browser.', 'Delete', 'danger'))) return false;
     try { await deps.agent()?.deleteSession(id); }
     catch (e) { status('Could not delete: ' + e.message, 'bad'); return false; }
+    // The conversation is gone now, so this returns true even if a cleanup step fails
+    // (a first-message revert then still puts the message back).
+    try { await clearRecords(id); }
+    catch (e) { status('Deleted, but could not clear its saved settings: ' + e.message, 'bad'); }
+    if (sameId(id, session?.id)) {
+      session = null; await deps.attach();
+      const rest = await all();
+      if (rest.length && !stay) { await select(rest[0].id); return true; }
+    }
+    render();
+    return true;
+  }
+  async function clearRecords(id) {
     await store.del('sessions', id);
     await store.setSetting(notesKey(id), undefined);
     await store.setSetting(grantsKey(id), undefined);
@@ -191,13 +204,6 @@ export function createSessions(deps) {
     await store.setSetting(watchesKey(id), undefined); deps.forgetWatches?.(id);
     if (sameId(await store.getSetting('lastSession'), id)) await store.setSetting('lastSession', undefined);
     await dropLegacyIfDone();
-    if (sameId(id, session?.id)) {
-      session = null; await deps.attach();
-      const rest = await all();
-      if (rest.length && !stay) { await select(rest[0].id); return true; }
-    }
-    render();
-    return true;
   }
   async function dropLegacyIfDone() {
     const agent = deps.agent();
@@ -285,7 +291,9 @@ export function createSessions(deps) {
   // second send before it exists waits for this same creation. New or a
   // selection meanwhile wins the view; the send still goes to the made session.
   let creating = null;
-  function create() {
+  // onMade(made): called once the session exists, before it is current, so the
+  // send can claim it first (a second Enter then waits instead of racing it).
+  function create(onMade = () => {}) {
     const agent = deps.agent();
     if (!agent) return Promise.resolve(status(deps.agentError() ?? 'The agent is not available.', 'bad'));
     if (creating) return creating;
@@ -299,6 +307,7 @@ export function createSessions(deps) {
       catch (e) { if (!session && gen === nav) { session = prev; await deps.attach(); await render(); } throw e; }
       const made = { id, title: '', updated: Date.now(), model };
       await save(made);
+      onMade(made);
       if (gen !== nav) { await render(); return made; }
       session = made;
       store.setSetting('lastSession', id);

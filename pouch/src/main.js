@@ -3064,9 +3064,8 @@ async function send(text, attached = { files: [], images: [] }, turnModel = $('m
   const t0 = Date.now();
   let s = sessions.current; // the run belongs to this session even if you switch away
   if (!s) {
-    s = await sessions.create();
+    s = await sessions.create((made) => { ledger.adopt('new', made.id); adopted(made.id); });
     if (!s) throw new Error(agentError ?? 'The agent is not available.');
-    ledger.adopt('new', s.id); adopted(s.id);
   }
   const sid = s.id;
   s.model = turnModel;
