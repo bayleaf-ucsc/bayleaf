@@ -72,6 +72,27 @@ function explain(e, p, writable = [CWD, '/tmp']) {
   }
 }
 
+// A name the model typed that is missing, while a lookalike exists: macOS puts
+// U+202F NARROW NO-BREAK SPACE before "PM" in screenshot names, and models
+// retype it as a plain space. Folding Unicode spaces (NFKC, then any run of
+// whitespace) and case finds the real file; the hint spells it in ASCII, as
+// a $'...' word, so the next attempt cannot lose the character again.
+const fold = (s) => s.normalize('NFKC').replace(/\s+/g, ' ').toLowerCase();
+const dollarQuote = (s) => "$'" + s.replace(/[\\']/g, '\\$&').replace(/[^\x20-\x7e]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')) + "'";
+export async function nearMiss(fs, p) {
+  const dir = normalize(p + '/..'), name = p.split('/').pop();
+  if (!name) return null;
+  const twins = (await fs.readdir(dir).catch(() => [])).filter((n) => n !== name && fold(n) === fold(name));
+  if (!twins.length) return null;
+  const odd = (n) => [...new Set([...n].filter((c) => c > '\x7e'))].map((c) => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0'));
+  return `[hint: ${p} does not exist, but ${twins.map((n) => `${n} does (Unicode ${odd(n).join(', ') || 'case'}; type it as ${dollarQuote(normalize(dir + '/' + n))} or use a glob)`).join('; ')}]`;
+}
+async function explainNear(fs, e, p, writable) {
+  const out = explain(e, p, writable);
+  const hint = out !== e && /ENOENT/.test(e.code ?? e.message) ? await nearMiss(fs, p) : null;
+  return hint ? new Error(out.message + ' ' + hint) : out;
+}
+
 const lineOf = (text, index) => text.slice(0, index).split('\n').length;
 
 // Native XML tool calls wrap each value in newlines, and small models get the
@@ -106,7 +127,10 @@ export function oneFinalNewline(content) {
 // the same path therefore take turns, page-wide: the agents' tools, `run`
 // write-backs and the terminal (src/terminal.js) share this one queue.
 const turns = new Map(); // path -> tail of its queue
+// Keys are NFC, so the two spellings of "café" (which name one file, see
+// spell in src/ns/namespace.js) share a queue.
 export const oneAtATime = (p, fn) => {
+  p = String(p).normalize('NFC');
   const run = (turns.get(p) ?? Promise.resolve()).then(fn, fn);
   const tail = run.catch(() => {});
   turns.set(p, tail);
@@ -367,14 +391,27 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
   // One interpreter per call, bound to its caller and its own list of what it
   // sent (the main agent and subagents run bash concurrently); the filesystem
   // underneath is shared and persistent.
-  function bashFor(caller, sent) {
+  // misses collects the absolute paths lookups did not find (at most 8), for
+  // the near-match hint after a "No such file or directory".
+  function bashFor(caller, sent, misses = new Set()) {
     const cli = bayleafCommands(defineCommand, {
       bayleafCredential: () => hooks.bayleafCredential?.() ?? null,
       approveEgress: hooks.approveEgress && ((req) => hooks.approveEgress(req, caller)),
       onEgress: (e) => { sent.push(e); hooks.onEgress?.(e, caller); },
     });
+    const looks = ['stat', 'lstat', 'readFile', 'readFileBuffer', 'readdir', 'readdirWithFileTypes'];
+    const watched = new Proxy(fsFor(caller), { get(t, k) {
+      const v = t[k];
+      if (typeof v !== 'function' || !looks.includes(k)) return typeof v === 'function' ? v.bind(t) : v;
+      return async (p, ...a) => {
+        try { return await v.call(t, p, ...a); } catch (e) {
+          if (/ENOENT/.test(e?.code ?? e?.message) && misses.size < 8) misses.add(normalize(p));
+          throw e;
+        }
+      };
+    } });
     return new Bash({
-      fs: tagWrites(fsFor(caller)), cwd: CWD,
+      fs: tagWrites(watched), cwd: CWD,
       env: { HOME: CWD, USER: 'pouch', PATH: '/usr/bin:/bin' },
       commands: COMMANDS,
       // `models` (src/models-cli.js): hooks.models is the shared service; whoOf names the asker.
@@ -399,7 +436,7 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
     }),
     async execute({ path, offset = 1, limit = MAX_LINES }) {
       const p = abs(path);
-      const bytes = await fs.readFileBuffer(p).catch((e) => { throw explain(e, p); });
+      const bytes = await fs.readFileBuffer(p).catch(async (e) => { throw await explainNear(fs, e, p); });
       if (bytes.subarray(0, 8000).includes(0)) return `${p} is a binary file (${bytes.length} bytes); it cannot be shown as text. Use bash \`file ${p}\` or \`od -c ${p} | head\`.`;
       const lines = new TextDecoder().decode(bytes).split('\n');
       if (offset > lines.length) return `${p} has only ${lines.length} lines; offset ${offset} is past the end.`;
@@ -448,7 +485,7 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
       const p = abs(path), fs = fsFor(caller);
       let matched = 0;
       const list = (edits?.length ? edits : [{ oldText, newText, replaceAll }]).map((e) => { const [x, c] = matchNewline(e); matched += c; return x; });
-      let text = await fs.readFile(p).catch((e) => { throw explain(e, p); });
+      let text = await fs.readFile(p).catch(async (e) => { throw await explainNear(fs, e, p); });
       const starts = [];
       for (const [n, e] of list.entries()) {
         const which = list.length > 1 ? ` (edit ${n + 1} of ${list.length}; nothing was written)` : '';
@@ -486,14 +523,18 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
       '`bayleaf --help` for BayLeaf web search/fetch, sandbox VM and inboxes (these leave the pouch and ask the user).',
     parameters: Type.Object({ command: Type.String({ description: 'Bash script to run' }) }),
     async execute({ command }, { signal, caller } = {}) {
-      const sent = [];
-      const r = await execScript(bashFor(caller, sent), command, { cwd: CWD, signal });
+      const sent = [], misses = new Set();
+      const r = await execScript(bashFor(caller, sent, misses), command, { cwd: CWD, signal });
       vfs.changed();
       // Marker the model and the UI both see: this call sent data outside the pouch.
       const egress = sent.length ? `\n[this call sent data outside the pouch: ${[...new Set(sent.map((e) => e.command.replace(/^bayleaf /, '')))].join(', ')}]` : '';
       let out = r.stdout + (r.stderr ? (r.stdout ? '\n' : '') + r.stderr : '');
       // Library-facing messages, restated for the agent.
       out = out.replace(/command not available in browser environments\. Exclude '[^']+' from your commands or use the Node\.js bundle\./g, 'command not available in Pouch.');
+      if (misses.size && /No such file or directory|ENOENT/.test(out)) {
+        const hints = (await Promise.all([...misses].map((p) => nearMiss(fsFor(caller), p)))).filter(Boolean);
+        if (hints.length) out += '\n' + [...new Set(hints)].join('\n');
+      }
       if (/EROFS/.test(out)) out += `\n[hint: that folder is read-only for you; you can write under ${writableFor(caller).join(', ')}]`;
       // A silent failure ("exit 1" and nothing else) reads as an error with no
       // cause; small models then retry blindly (grep with no match is the usual one).
