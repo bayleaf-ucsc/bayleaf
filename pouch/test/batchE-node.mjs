@@ -8,8 +8,8 @@
 // Run: node test/batchE-node.mjs
 import assert from 'node:assert/strict';
 import { startDummy } from './dummy-openai.mjs';
-const { openAgent, MemoryStorage } = await import('../src/agent.js');
-const { suggestTitle, costNote, providerOf } = await import('../src/naming.js');
+const { openAgent, MemoryStorage } = await import('../src/agent.ts');
+const { suggestTitle, costNote, providerOf } = await import('../src/naming.ts');
 
 let passed = 0;
 const ok = (name) => { passed++; console.log('ok', name); };
@@ -94,14 +94,14 @@ try {
 
 // The terminal's pieces that need no page.
 globalThis.localStorage ??= { getItem: () => null, setItem() {} };
-const { capOutput } = await import('../src/terminal.js').catch(() => ({}));
+const { capOutput } = await import('../src/terminal.ts').catch(() => ({}));
 if (capOutput) {
   const big = capOutput(Array.from({ length: 2500 }, (_, i) => 'line ' + i).join('\n'));
   assert.equal(big.text.split('\n').length, 2000); assert.match(big.note, /500 more lines not shown/);
   assert.equal(capOutput('short').note, '');
   ok('terminal output cap: 2000 lines with a note');
 }
-const { oneAtATime, serialized } = await import('../src/tools.js');
+const { oneAtATime, serialized } = await import('../src/tools.ts');
 const order = [];
 let release; const gate = new Promise((r) => { release = r; });
 const first = oneAtATime('/work/a.txt', async () => { await gate; order.push('agent edit'); });

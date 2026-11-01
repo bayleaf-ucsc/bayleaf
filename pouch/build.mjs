@@ -2,7 +2,7 @@
 //
 //   cd pouch && npm ci && node build.mjs [--watch] [--walkthrough]
 //
-// Bundles src/main.js (the app, the pinned Tinfoil SDK, just-bash, pi-durable
+// Bundles src/main.ts (the app, the pinned Tinfoil SDK, just-bash, pi-durable
 // and CodeMirror; package-lock.json is the supply-chain pin) into the one
 // inline script, stamps the CSP with the SHA-256 of each inline script so
 // nothing else can run, and prints the file's SHA-256 for a release.
@@ -65,7 +65,7 @@ function assemble(code) {
 // becomes a string constant in the app, so the page keeps one inline script.
 // Rebuilt only at start: restart --watch after editing src/run/worker*.js.
 // Its metafile is checked like the app's: every first-party input was scanned.
-const worker = await build({ entryPoints: ['src/run/worker-browser.js'], bundle: true, minify: true, write: false, metafile: true,
+const worker = await build({ entryPoints: ['src/run/worker-browser.ts'], bundle: true, minify: true, write: false, metafile: true,
   format: 'iife', platform: 'browser', target: 'es2022', legalComments: 'inline', logLevel: 'warning' });
 assertArchitecture(checkMetafile(worker.metafile));
 const WORKER_SRC = worker.outputFiles[0].text;
@@ -86,7 +86,7 @@ const pdf = await (await import('./build-pdf.mjs')).buildPdf(OUT);
 const libav = await (await import('./build-libav.mjs')).buildLibav(OUT);
 
 const ctx = await context({
-  entryPoints: ['src/main.js'],
+  entryPoints: ['src/main.ts'],
   bundle: true, minify: !watch, write: false, metafile: true,
   define: { WORKER_SRC: JSON.stringify(WORKER_SRC), LOCAL_MODEL: JSON.stringify(models?.local ?? null), SW_SHA256: JSON.stringify(SW_SHA256), POUCH_PDF_RUNTIME: JSON.stringify(pdf.pin),
     POUCH_LIBAV_RUNTIME: JSON.stringify(libav.pin), POUCH_LIBAV_SOURCE: JSON.stringify(libav.source) },
@@ -95,7 +95,7 @@ const ctx = await context({
   // fail at call time instead. Other Node-only paths are behind dynamic imports.
   // decode-named-character-reference's browser build decodes entities via
   // innerHTML; the table-based build keeps reply text out of the HTML parser.
-  alias: { 'node:zlib': './src/shims/zlib.js', zlib: './src/shims/zlib.js',
+  alias: { 'node:zlib': './src/shims/zlib.ts', zlib: './src/shims/zlib.ts',
     'decode-named-character-reference': './node_modules/decode-named-character-reference/index.js' },
   legalComments: 'inline',
   logLevel: 'warning',

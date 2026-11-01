@@ -37,10 +37,10 @@ export class TinfoilAI {
 }
 `;
 export async function fixtureHtml() {
-  const worker = (await build({ entryPoints: [root + '/src/run/worker-browser.js'], bundle: true, minify: true, write: false, format: 'iife', platform: 'browser', target: 'es2022', logLevel: 'warning' })).outputFiles[0].text;
-  const bundled = await build({ entryPoints: [root + '/src/main.js'], bundle: true, write: false, format: 'iife', platform: 'browser', target: 'es2022', logLevel: 'warning',
+  const worker = (await build({ entryPoints: [root + '/src/run/worker-browser.ts'], bundle: true, minify: true, write: false, format: 'iife', platform: 'browser', target: 'es2022', logLevel: 'warning' })).outputFiles[0].text;
+  const bundled = await build({ entryPoints: [root + '/src/main.ts'], bundle: true, write: false, format: 'iife', platform: 'browser', target: 'es2022', logLevel: 'warning',
     define: { WORKER_SRC: JSON.stringify(worker) },
-    alias: { 'node:zlib': root + '/src/shims/zlib.js', zlib: root + '/src/shims/zlib.js', 'decode-named-character-reference': root + '/node_modules/decode-named-character-reference/index.js' },
+    alias: { 'node:zlib': root + '/src/shims/zlib.ts', zlib: root + '/src/shims/zlib.ts', 'decode-named-character-reference': root + '/node_modules/decode-named-character-reference/index.js' },
     plugins: [{ name: 'fake-tinfoil', setup(b) { b.onResolve({ filter: /^tinfoil$/ }, () => ({ path: 'fake', namespace: 'fixture' })); b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: stub, loader: 'js' })); } }] });
   let html = readFileSync(root + '/pouch.html', 'utf8').replace('<script>/*APP*/</script>', () => '<script>' + bundled.outputFiles[0].text.replaceAll('</script', '<\\/script') + '</script>');
   const hashes = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(([, s]) => `'sha256-${createHash('sha256').update(s).digest('base64')}'`);

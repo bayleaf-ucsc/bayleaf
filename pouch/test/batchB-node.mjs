@@ -34,7 +34,7 @@ for (const f of files) {
 const allowed = hits.filter((h) => !/var\(--/.test(h));
 assert.deepEqual(allowed, [], 'inline color computation in src:\n' + allowed.join('\n'));
 const seeds = files.flatMap((f) => [...readFileSync(f, 'utf8').matchAll(/setProperty\('--seed'/g)].map(() => f.slice(root.length + 1)));
-assert.ok(seeds.includes('src/dom.js'), 'dom.js seeded() sets --seed');
+assert.ok(seeds.includes('src/dom.ts'), 'dom.js seeded() sets --seed');
 ok(`no JS-computed colors in ${files.length} source files; --seed set only in ${[...new Set(seeds)].join(', ')}`);
 
 // ── 2. Change review is gone ──
@@ -57,7 +57,7 @@ await new Promise((res, rej) => {
   r.onsuccess = () => { const t = r.result.transaction('changes', 'readwrite'); t.objectStore('changes').add({ session: '1', path: '/work/a', before: { kind: 'file', data: new Uint8Array(4) } }); t.oncomplete = () => { r.result.close(); res(); }; };
   r.onerror = () => rej(r.error);
 });
-const store = await import('../src/store.js');
+const store = await import('../src/store.ts');
 await store.setSetting('probe', 1);
 const names = await new Promise((res) => { const r = indexedDB.open('bayleaf-pouch'); r.onsuccess = () => { const n = [...r.result.objectStoreNames]; r.result.close(); res(n); }; });
 assert.ok(!names.includes('changes'), 'changes store remains: ' + names);
@@ -65,8 +65,8 @@ assert.equal(await store.getSetting('probe'), 1);
 ok(`upgrade to v4 deleted the changes store and its before-copies; stores now ${names.join(', ')}`);
 
 // ── 4. Reseed bundled defaults ──
-const { Vfs, DEFAULTS } = await import('../src/vfs.js');
-const defaults = (await import('../src/defaults.js')).default;
+const { Vfs, DEFAULTS } = await import('../src/vfs.ts');
+const defaults = (await import('../src/defaults.ts')).default;
 globalThis.navigator ??= {};
 Object.assign(DEFAULTS, defaults);
 const PANEL = '/skills/panel/SKILL.md';

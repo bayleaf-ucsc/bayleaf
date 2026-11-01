@@ -22,7 +22,7 @@
   Trust roots: BayLeaf, your browser, and your own machine; every provider
   sits under one of them. See README.md for the stance and its limits.
 
-  Edit this file and src/, not dist/pouch.html: build.mjs bundles src/main.js
+  Edit this file and src/, not dist/pouch.html: build.mjs bundles src/main.ts
   where the APP marker sits and stamps the CSP script hashes.
 -->
 <html lang="en">
@@ -113,7 +113,7 @@
   #app[data-panel="files"] #files, #app[data-panel="editor"] #editor-pane, #app[data-panel="usage"] #usage, #app[data-panel="trust"] #trust { display: flex; }
   #app[data-panel="settings"] #settings { display: flex; }
   #app[data-panel="terminal"] #terminal-pane { display: flex; }
-  /* Terminal (src/terminal.js): a plain log and a labeled input, no emulator. */
+  /* Terminal (src/terminal.ts): a plain log and a labeled input, no emulator. */
   #term-log { flex: 1; min-height: 0; overflow: auto; padding: .5rem .75rem; font: .8rem/1.45 var(--mono); }
   #term-log pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; }
   .term-cmd { color: var(--leaf); margin-top: .35rem; white-space: pre-wrap; word-break: break-word; }
@@ -222,7 +222,7 @@
   .preview-notice { padding: 1.25rem 1rem; color: var(--muted); }
 
   /* Chat column: content stays at a readable measure, centered. */
-  /* Pouch anchors the thread itself (src/follow.js); the browser's own scroll anchoring differs between engines. */
+  /* Pouch anchors the thread itself (src/follow.ts); the browser's own scroll anchoring differs between engines. */
   #log { flex: 1; overflow: auto; overflow-anchor: none; padding: 1rem max(.75rem, calc((100% - 48rem) / 2)) .5rem; }
 
   /* File tree */
@@ -300,7 +300,7 @@
   details.tool pre.mini-diff .add { color: var(--leaf); }
   details.tool pre.mini-diff .sep, details.tool pre.cmd { color: var(--muted); }
   .msg .body button.path { font: inherit; font-family: var(--mono); font-size: .9em; min-height: 0; padding: 0 .2rem; border: 0; border-bottom: 1px dotted var(--leaf); border-radius: 0; background: var(--leaf-soft); color: var(--leaf); overflow-wrap: anywhere; text-align: left; }
-  /* Replies are markdown rendered to DOM (src/markdown.js); user text stays pre-wrap. */
+  /* Replies are markdown rendered to DOM (src/markdown.ts); user text stays pre-wrap. */
   .msg .body.md { white-space: normal; line-height: 1.55; min-width: 0; }
   .md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
   .md p, .md ul, .md ol, .md blockquote, .md .code, .md .table, .md hr { margin: .45rem 0; }
@@ -402,9 +402,9 @@
   form#composer textarea { width: 100%; resize: none; min-height: 2.6rem; max-height: 40vh; padding: .7rem .9rem .3rem; border: 0; outline: none; background: transparent; font-size: 16px; border-radius: 16px; }
   #composer-toolbar { display: flex; align-items: center; gap: .15rem; width: 100%; min-width: 0; padding: .2rem .45rem .45rem; }
   #composer-toolbar > button.icon { width: 2.75rem; height: 2.75rem; } /* 44px targets everywhere, as before */
-  /* One Usage button, two readings: the allowance left (src/usage.js renderMeter)
+  /* One Usage button, two readings: the allowance left (src/usage.ts renderMeter)
      and, once the session holds something, about how many tokens the next request
-     carries (src/context.js, main.js renderCtx). Each reading has its own thin bar
+     carries (src/context.ts, main.js renderCtx). Each reading has its own thin bar
      along its foot and its own warn state; the words (title, aria-label, Usage
      panel) say which, never the color alone. */
   #composer-usage { width: auto !important; padding: 0 .45rem; gap: .3rem; display: inline-flex; align-items: center; }
@@ -681,7 +681,7 @@
   .build-swatch { display: inline-block; width: .8rem; height: .8rem; border-radius: 3px; margin-right: .35rem; vertical-align: -.1rem;
     --agent: oklch(var(--agent-l) 0.15 var(--hue)); background: var(--agent); border: 1px solid var(--line); }
   .swatches:empty { display: none; }
-  /* Motion: transform and opacity only, played by src/motion.js. */
+  /* Motion: transform and opacity only, played by src/motion.ts. */
   .msg.arrived { position: relative; }
   .msg.arrived::after { content: ''; position: absolute; inset: 0; border-radius: 10px; pointer-events: none; opacity: 0;
     background: color-mix(in oklch, var(--agent, var(--leaf)) 16%, transparent); box-shadow: inset 0 0 0 2px var(--agent, var(--leaf)); }

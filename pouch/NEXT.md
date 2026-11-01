@@ -18,8 +18,8 @@ qualification rework below replaces them.
 
 The trust boundaries are build checks (`arch.mjs`, README "Architecture"). Convert to
 TypeScript, boundaries first:
-- Type the trust boundaries: `src/sealed.js` (client handle, `sealedFetch`),
-  `src/bayleaf-api.js`, the egress modules in `NETWORK`, and `src/egress.js` consent.
+- Type the trust boundaries: `src/sealed.ts` (client handle, `sealedFetch`),
+  `src/bayleaf-api.ts`, the egress modules in `NETWORK`, and `src/egress.ts` consent.
 - Give each region's returned object an interface (`EditingRegion`, ...) and `app` a type
   composed of them; the getters and setters show which state crosses regions, a list to
   shrink (`state.js` cells such as `agent`, `client`, `view` written from several regions).
@@ -57,7 +57,7 @@ See README "Namespaces"; stories I10, D19-D21.
   at `/mnt/sandbox`. Needs: a WebSocket transport (one 9P message per frame; the codec
   already frames with size[4]), Tauth or a per-session token in `aname` (the port is no
   longer the capability), an egress grant per mount (it leaves the pouch, so CSP plus
-  `src/egress.js` decide, not the namespace), reconnect with fid re-walks, and
+  `src/egress.ts` decide, not the namespace), reconnect with fid re-walks, and
   latency-aware reads (bigger msize, read-ahead).
 - **Other tabs**: a BroadcastChannel cannot transfer ports; a SharedWorker or
   `navigator.locks` handshake handing out a MessagePort would.

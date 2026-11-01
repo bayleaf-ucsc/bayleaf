@@ -28,7 +28,7 @@ export function createFake() {
   async function fetch(_url, init) {
     const body = JSON.parse(init.body);
     const sys = textOf(body.messages.find((m) => m.role === 'system')?.content);
-    // A session title (src/naming.js: one tool-less prompt through the same encrypting
+    // A session title (src/naming.ts: one tool-less prompt through the same encrypting
     // fetch since Batch E) is booked as 'title', not as a turn of main.
     const titling = !body.tools?.length && /^Write a 2-5 word title/.test(textOf(body.messages.find((m) => m.role === 'user')?.content));
     const who = titling ? 'title' : /You are a subagent named "([^"]+)"/.exec(sys)?.[1] ?? /You are "([^"]+)" \(handle a\d+\), a one-shot/.exec(sys)?.[1] ?? 'main';

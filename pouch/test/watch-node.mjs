@@ -1,12 +1,12 @@
-// File watches (src/ns/watch.js) without a browser: globs, change summaries,
+// File watches (src/ns/watch.ts) without a browser: globs, change summaries,
 // write attribution through tagged views, and the delivery policy (busy
 // batching, idle wakes, wake cap and held events, once, user-first, scope,
 // rescan after a reload). Run: node test/watch-node.mjs
 import assert from 'node:assert/strict';
 import { InMemoryFs } from 'just-bash';
-import { Namespace, subset } from '../src/ns/namespace.js';
-import { Tasks, TaskFs } from '../src/ns/tasks.js';
-import { attribute, createWatches, globRe, baseOf, summarize, expand, formatEvents, watchTool, MAX_WAKES } from '../src/ns/watch.js';
+import { Namespace, subset } from '../src/ns/namespace.ts';
+import { Tasks, TaskFs } from '../src/ns/tasks.ts';
+import { attribute, createWatches, globRe, baseOf, summarize, expand, formatEvents, watchTool, MAX_WAKES } from '../src/ns/watch.ts';
 
 let passed = 0;
 const ok = (name) => { passed++; console.log('ok', name); };

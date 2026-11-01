@@ -1,6 +1,6 @@
 // Minimal DOM deliberately has no HTML parser. All markdown must use nodes/text.
 import assert from 'node:assert/strict';
-import { renderMarkdown, parseTarget } from '../src/markdown.js';
+import { renderMarkdown, parseTarget } from '../src/markdown.ts';
 class Node {
   constructor(tag, text = '') { this.tag = tag; this.children = []; this.text = text; this.style = {}; this.events = {}; }
   append(...kids) { this.children.push(...kids); }

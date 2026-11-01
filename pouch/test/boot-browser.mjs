@@ -1,5 +1,5 @@
 // Boot with each side panel remembered: the layout restores it while the
-// Interface's regions are still being created (src/main.js), so a region that
+// Interface's regions are still being created (src/main.ts), so a region that
 // reads another too early crashes the page here (#142).
 //
 //   node build.mjs && node test/boot-browser.mjs

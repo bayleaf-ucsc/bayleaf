@@ -4,13 +4,13 @@
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
-import { Sha256, sha256hex } from '../src/sha256.js';
-import { openStore, fillFile, rangeSource, blobSource, verifiedFile, fileState, partAssets } from '../src/assets.js';
-import { createModelStore } from '../src/models.js';
-import { createModelService, modelsCommands } from '../src/models-cli.js';
-import { gpuSupport, deviceSupport, DEVICE_REASON, friendlyError, MIN_STORAGE_BUFFERS } from '../src/local/engine.js';
-import { createJobs, sleepAndHash } from '../src/jobs.js';
-import { Tasks, TaskFs } from '../src/ns/tasks.js';
+import { Sha256, sha256hex } from '../src/sha256.ts';
+import { openStore, fillFile, rangeSource, blobSource, verifiedFile, fileState, partAssets } from '../src/assets.ts';
+import { createModelStore } from '../src/models.ts';
+import { createModelService, modelsCommands } from '../src/models-cli.ts';
+import { gpuSupport, deviceSupport, DEVICE_REASON, friendlyError, MIN_STORAGE_BUFFERS } from '../src/local/engine.ts';
+import { createJobs, sleepAndHash } from '../src/jobs.ts';
+import { Tasks, TaskFs } from '../src/ns/tasks.ts';
 import { CDN, assertNoCdn } from '../build-runtime.mjs';
 
 let n = 0;

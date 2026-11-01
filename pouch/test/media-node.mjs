@@ -1,8 +1,8 @@
-// The media commands without a browser (src/media.js): argument parsing,
+// The media commands without a browser (src/media.ts): argument parsing,
 // time syntax, the image path's plan, log tidying, caps, error messages, the
 // commands in the terminal's shell and the agents' bash, jobs with a fake
 // engine, and the build's pins, source and containment (build-libav.mjs);
-// the WebCodecs path's pure parts (src/media/wc.js): sniffing, codec strings,
+// the WebCodecs path's pure parts (src/media/wc.ts): sniffing, codec strings,
 // MP3 frames, WAV in and out, the -vf subset and fps choice, ffprobe's
 // writers, the audio plan, and the routing with a fake engine.
 // The real runtime: test/media-browser.mjs.
@@ -13,10 +13,10 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { InMemoryFs } from 'just-bash';
 import { parseProbe, parseFfmpeg, parseTime, imagePlan, frameName, tidy, createMediaService, mediaCommands, HELP,
-  MAX_INPUT_BYTES, MAX_IMAGES, MAX_STDERR_LINES, MAX_OUTPUT_BYTES, writeProbe, audioPlan } from '../src/media.js';
-import { sniff, codecString, mp3Frames, readWav, wavHeader, wavBytes, rotationOf, vfPlan, geometry, fpsPicker } from '../src/media/wc.js';
-import { Tasks } from '../src/ns/tasks.js';
-import { shellFor } from '../src/tools.js';
+  MAX_INPUT_BYTES, MAX_IMAGES, MAX_STDERR_LINES, MAX_OUTPUT_BYTES, writeProbe, audioPlan } from '../src/media.ts';
+import { sniff, codecString, mp3Frames, readWav, wavHeader, wavBytes, rotationOf, vfPlan, geometry, fpsPicker } from '../src/media/wc.ts';
+import { Tasks } from '../src/ns/tasks.ts';
+import { shellFor } from '../src/tools.ts';
 import { buildLibav, LIBAV, SOURCES, UNLINKED } from '../build-libav.mjs';
 import { assertNoCdn } from '../build-runtime.mjs';
 
@@ -181,7 +181,7 @@ await t('no service and no runtime: clear errors', async () => {
 });
 
 await t('agents get the same commands (createTools bash)', () => {
-  const src = readFileSync(resolve(import.meta.dirname, '../src/tools.js'), 'utf8');
+  const src = readFileSync(resolve(import.meta.dirname, '../src/tools.ts'), 'utf8');
   assert.equal((src.match(/\.\.\.mediaCommands\(defineCommand, hooks\.media/g) ?? []).length, 2, 'terminal shellFor and agent bashFor');
 });
 

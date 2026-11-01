@@ -11,7 +11,7 @@
 // that counts as a leak too (the static host's logs). The host page holds
 // stand-ins for Pouch's state (localStorage, a cookie, IndexedDB, a global).
 //
-// Configurations: the viewer in Static and Interactive mode (src/viewer.js,
+// Configurations: the viewer in Static and Interactive mode (src/viewer.ts,
 // bundled), and two naive viewers for a sanity check that the suite sees
 // leaks: a sandboxed srcdoc frame (allow-scripts) and an unsandboxed one, both
 // in a page without a CSP. Each channel is tagged /c/<config>/<channel>.
@@ -34,7 +34,7 @@ const DIST = resolve(process.env.POUCH_OUT || join(root, 'dist'));
 const pouchHtml = readFileSync(join(DIST, 'pouch.html'), 'utf8');
 const pouchCsp = pouchHtml.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)[1];
 const HEADERS = headersFile(pouchCsp, viewerCsp(DIST));
-const viewerJs = (await build({ entryPoints: [join(root, 'src/viewer.js')], bundle: true, write: false, format: 'iife', globalName: 'PouchViewer' })).outputFiles[0].text;
+const viewerJs = (await build({ entryPoints: [join(root, 'src/viewer.ts')], bundle: true, write: false, format: 'iife', globalName: 'PouchViewer' })).outputFiles[0].text;
 
 // ── Recorder ─────────────────────────────────────────────────────────
 const hits = []; // { via, tag }

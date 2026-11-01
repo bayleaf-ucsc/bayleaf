@@ -78,7 +78,7 @@ await page.waitForSelector('#badge.ok', { timeout: 60_000 });
 if (await page.isVisible('#welcome')) await page.click('#welcome button:has-text("Got it")').catch(() => {});
 await writeProj(page, {
   'proj/README.md': `# Ledger\nA tiny bookkeeping service. Internal codename ${ZA}.\n`,
-  'proj/src/main.js': "import { route } from './api.js';\nimport { open } from './db.js';\nconst db = open('ledger.sqlite');\nexport function start() { return route(db); }\n",
+  'proj/src/main.ts': "import { route } from './api.js';\nimport { open } from './db.js';\nconst db = open('ledger.sqlite');\nexport function start() { return route(db); }\n",
   'proj/src/api.js': "export function route(db) {\n  return { get: (id) => db.find(id), post: (row) => db.insert(row) };\n}\n",
   'proj/src/db.js': "export function open(path) {\n  const rows = new Map();\n  return { find: (id) => rows.get(id), insert: (r) => rows.set(r.id, r) };\n}\n",
 });

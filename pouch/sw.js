@@ -2,7 +2,7 @@
 //
 // Browsers re-fetch this file and replace it whenever its bytes change, without
 // asking, so it is kept tiny and does nothing but serve. Pinning, checking for
-// updates and verifying hashes happen in the page (src/offline.js), inside the
+// updates and verifying hashes happen in the page (src/offline.ts), inside the
 // script whose hash the CSP names. This file is listed in SHA256SUMS, and the
 // page shows whether the served copy matches the hash it was built with.
 //

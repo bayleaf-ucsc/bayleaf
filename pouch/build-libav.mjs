@@ -9,7 +9,7 @@
 // the media skill and README "Media" for what that rules out.
 //
 // runtime/libav/ (the page fetches it on the first media command):
-// - worker.js: src/media/worker.js bundled with libav.js's wrapper and its
+// - worker.js: src/media/worker.ts bundled with libav.js's wrapper and its
 //   Emscripten factory (direct mode: libav runs in this one worker).
 // - libav.wasm: the variant's wasm, byte for byte as released.
 // - NOTICE.txt: licenses, and where the source is.
@@ -24,7 +24,7 @@ import { execFileSync } from 'node:child_process';
 import { bundleWorker, writeRuntime } from './build-runtime.mjs';
 
 const PKG = 'node_modules/@libav.js/variant-webm-vp9-cli/';
-// The WebCodecs path's build (src/media/worker.js header): webcodecs-avf is API
+// The WebCodecs path's build (src/media/worker.ts header): webcodecs-avf is API
 // only (no ffmpeg or ffprobe programs) with the MOV demuxer, swresample, the
 // audio and video filters, and the FLAC and Opus encoders; it decodes no H.264,
 // HEVC, AAC or MP3 itself (the browser does). Same FFmpeg 9.0, opus 1.6.1,
@@ -81,7 +81,7 @@ const NODE_AND_BOOTSTRAP = [
   [/const\{createRequire\}=await import\("node:module"\);var require=createRequire\(import\.meta\.url\)/g, 'throw new Error("libav.js: Node is not supported here")', 1],
   [/require\("node:(crypto|fs|path|url)"\)/g, '(void 0)', 4],
   // libav.js's own worker bootstrap: in a worker whose URL is the module's
-  // (our blob), it would replace src/media/worker.js's onmessage with its protocol.
+  // (our blob), it would replace src/media/worker.ts's onmessage with its protocol.
   [/self\.location\.href === import\.meta\.url &&/g, 'false &&', 1],
 ];
 const REWRITES = { 'dist/libav-6.10.9.0-webm-vp9-cli.wasm.mjs': NODE_AND_BOOTSTRAP, 'dist/libav-6.10.9.0-webcodecs-avf.wasm.mjs': NODE_AND_BOOTSTRAP };
@@ -114,7 +114,7 @@ export async function buildLibav(out) {
   const sources = await Promise.all(all.map(source));
   const src = writeRuntime(out, 'libav-source', all.map(([name], i) => ({ name, role: 'source', bytes: sources[i] })));
 
-  const worker = await bundleWorker('src/media/worker.js', [], { sources: REWRITES });
+  const worker = await bundleWorker('src/media/worker.ts', [], { sources: REWRITES });
   const licenses = SOURCES.flatMap(([file, , , lic]) => lic.map((l) => `==> ${l} (in ${file}) <==\n${execFileSync('tar', ['-xOf', CACHE + file, l], { encoding: 'utf8', maxBuffer: 2 ** 22 }).trim()}\n`));
   const notice = Buffer.from(`BayLeaf Pouch's media runtime: libav.js ${LIBAV.release}, variant ${LIBAV.variant}
 (https://github.com/Yahweasel/libav.js): FFmpeg 9.0 (libavformat, libavcodec,

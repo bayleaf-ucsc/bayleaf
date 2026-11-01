@@ -11,7 +11,7 @@
 // Trust rules (they fail the build):
 //   egress    only the modules in NETWORK may use network APIs
 //   html      only viewer.html turns a string into HTML (agent-written reports)
-//   sealed    only src/sealed.js touches the encrypting client (the Tinfoil SDK)
+//   sealed    only src/sealed.ts touches the encrypting client (the Tinfoil SDK)
 //   cdn       no third-party CDN in the page (assertNoCdn, build-runtime.mjs)
 // Structure rules:
 //   layers    the core never imports UI; nothing imports the Interface but main.js
@@ -34,18 +34,18 @@ import { assertNoCdn } from './build-runtime.mjs';
 const NETWORK_APIS = ['fetch', 'XMLHttpRequest', 'WebSocket', 'WebTransport', 'EventSource', 'RTCPeerConnection',
   'sendBeacon', 'importScripts', 'Worker', 'SharedWorker', 'import()'];
 export const NETWORK = {
-  'src/bayleaf-api.js': { apis: ['fetch'], why: 'the account plane: device claim, a key\'s allowance, Campus Pass, the Sealed model list (metadata only, never content)' },
-  'src/sealed.js': { apis: ['fetch'], why: 'the encrypting fetch: EHBP ciphertext to the attested enclave' },
-  'src/bayleaf-cli.js': { apis: ['fetch'], why: 'the agent\'s `bayleaf` command to api.bayleaf.dev, each request approved through egress.js' },
-  'src/localhost.js': { apis: ['fetch'], why: 'the Localhost provider: a model server on this computer, behind guardedFetch\'s origin check' },
-  'src/models.js': { apis: ['fetch'], why: 'model weights from the BayLeaf HF gateway, hash-checked against models.lock.json' },
-  'src/assets.js': { apis: ['fetch'], why: 'pinned runtimes and weights by range, hash-checked against the build\'s pins' },
-  'src/offline.js': { apis: ['fetch'], why: 'the offline copy: SHA256SUMS and the app shell from this origin' },
+  'src/bayleaf-api.ts': { apis: ['fetch'], why: 'the account plane: device claim, a key\'s allowance, Campus Pass, the Sealed model list (metadata only, never content)' },
+  'src/sealed.ts': { apis: ['fetch'], why: 'the encrypting fetch: EHBP ciphertext to the attested enclave' },
+  'src/bayleaf-cli.ts': { apis: ['fetch'], why: 'the agent\'s `bayleaf` command to api.bayleaf.dev, each request approved through egress.js' },
+  'src/localhost.ts': { apis: ['fetch'], why: 'the Localhost provider: a model server on this computer, behind guardedFetch\'s origin check' },
+  'src/models.ts': { apis: ['fetch'], why: 'model weights from the BayLeaf HF gateway, hash-checked against models.lock.json' },
+  'src/assets.ts': { apis: ['fetch'], why: 'pinned runtimes and weights by range, hash-checked against the build\'s pins' },
+  'src/offline.ts': { apis: ['fetch'], why: 'the offline copy: SHA256SUMS and the app shell from this origin' },
   'sw.js': { apis: ['fetch'], why: 'the service worker: serves the offline copy, else passes the request to this origin' },
-  'src/run.js': { apis: ['Worker'], why: 'starts the bundled QuickJS worker from a blob: URL; the worker drops its network APIs' },
-  'src/pdf.js': { apis: ['Worker'], why: 'starts the hash-checked pdf.js worker from a blob: URL; the worker drops its network APIs' },
-  'src/media.js': { apis: ['Worker'], why: 'starts the hash-checked libav.js worker from a blob: URL; the worker drops its network APIs' },
-  'src/local/engine.js': { apis: ['Worker'], why: 'starts the hash-checked Transformers.js worker from a blob: URL' },
+  'src/run.ts': { apis: ['Worker'], why: 'starts the bundled QuickJS worker from a blob: URL; the worker drops its network APIs' },
+  'src/pdf.ts': { apis: ['Worker'], why: 'starts the hash-checked pdf.js worker from a blob: URL; the worker drops its network APIs' },
+  'src/media.ts': { apis: ['Worker'], why: 'starts the hash-checked libav.js worker from a blob: URL; the worker drops its network APIs' },
+  'src/local/engine.ts': { apis: ['Worker'], why: 'starts the hash-checked Transformers.js worker from a blob: URL' },
 };
 const WHY_EGRESS = 'Plaintext must leave Pouch only through modules whose every request is known: '
   + 'add the module to NETWORK in arch.mjs with its reason, or route the request through one that is there';
@@ -64,7 +64,7 @@ const WHY_HTML = 'Agent-written HTML could carry script or exfiltrate through th
 
 // ── Sealed: who may touch the encrypting client ─────────────────────
 export const SEALED = {
-  'src/sealed.js': { why: 'the Sealed provider: builds the Tinfoil client and its encrypting fetch' },
+  'src/sealed.ts': { why: 'the Sealed provider: builds the Tinfoil client and its encrypting fetch' },
 };
 const SEALED_TOUCH = ['secureClient', 'openAIOptions'];
 const WHY_SEALED = 'The encrypting client holds the credential and decides what is encrypted to whom; '
@@ -73,12 +73,12 @@ const WHY_SEALED = 'The encrypting client holds the credential and decides what 
 // ── Layers ──────────────────────────────────────────────────────────
 // The core: files, namespaces, storage, providers and sandboxed runtimes. It
 // works without a page, so it imports only itself (and packages).
-export const CORE = ['src/vfs.js', 'src/store.js', 'src/archive.js', 'src/graph.js', 'src/ns/', 'src/run.js', 'src/run/',
-  'src/local/', 'src/localhost.js', 'src/sealed.js', 'src/bayleaf-api.js', 'src/profiles.js', 'src/models.js',
-  'src/assets.js', 'src/sha256.js', 'src/pdf/', 'src/media/', 'src/shims/'];
+export const CORE = ['src/vfs.ts', 'src/store.ts', 'src/archive.ts', 'src/graph.ts', 'src/ns/', 'src/run.ts', 'src/run/',
+  'src/local/', 'src/localhost.ts', 'src/sealed.ts', 'src/bayleaf-api.ts', 'src/profiles.ts', 'src/models.ts',
+  'src/assets.ts', 'src/sha256.ts', 'src/pdf/', 'src/media/', 'src/shims/'];
 // The Interface (LANGUAGE.md): the page's wiring, composed by main.js from
 // src/interface/ regions.
-const INTERFACE = ['src/main.js', 'src/interface/'];
+const INTERFACE = ['src/main.ts', 'src/interface/'];
 const WHY_LAYERS = 'The core must stay testable and portable without a page (and replaceable by the trusted core of #143); '
   + 'UI depends on the core, never the reverse';
 
@@ -86,15 +86,15 @@ const WHY_LAYERS = 'The core must stay testable and portable without a page (and
 // A region's other modules are its implementation: outside code imports
 // only the entries. src/interface/ regions reach each other through `app`.
 export const REGIONS = {
-  'src/interface/': { entries: [], importers: ['src/main.js'], why: 'Interface regions are composed only by main.js and reach each other through app.<region>' },
-  'src/run/': { entries: ['src/run.js'], why: 'run.js is the run tool\'s one door: the worker and its 9P bridge are its implementation' },
-  'src/pdf/': { entries: ['src/pdf.js'], why: 'pdf.js owns the pdf.js worker and its pin' },
-  'src/media/': { entries: ['src/media.js'], why: 'media.js owns the libav.js worker and its pins' },
-  'src/local/': { entries: ['src/local/engine.js', 'src/local/provider.js'], why: 'the engine (weights, worker) and the provider adapter are the Transformers.js doors; the worker is private' },
+  'src/interface/': { entries: [], importers: ['src/main.ts'], why: 'Interface regions are composed only by main.js and reach each other through app.<region>' },
+  'src/run/': { entries: ['src/run.ts'], why: 'run.js is the run tool\'s one door: the worker and its 9P bridge are its implementation' },
+  'src/pdf/': { entries: ['src/pdf.ts'], why: 'pdf.js owns the pdf.js worker and its pin' },
+  'src/media/': { entries: ['src/media.ts'], why: 'media.js owns the libav.js worker and its pins' },
+  'src/local/': { entries: ['src/local/engine.ts', 'src/local/provider.ts'], why: 'the engine (weights, worker) and the provider adapter are the Transformers.js doors; the worker is private' },
 };
 
 // ── Size budgets (lines) ────────────────────────────────────────────
-export const BUDGET = { default: 700, 'src/main.js': 60 };
+export const BUDGET = { default: 700, 'src/main.ts': 60 };
 
 // ─────────────────────────────────────────────────────────────────────
 const inside = (path, prefixes) => prefixes.some((p) => (p.endsWith('/') ? path.startsWith(p) : path === p));

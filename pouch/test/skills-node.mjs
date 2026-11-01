@@ -3,7 +3,7 @@
 // quoted "false" and malformed frontmatter stay listed and never break discovery.
 // Run: node test/skills-node.mjs
 import assert from 'node:assert/strict';
-import { loadContext, systemPrompt } from '../src/tools.js';
+import { loadContext, systemPrompt } from '../src/tools.ts';
 
 const files = {
   '/pouch/skills/plain/SKILL.md': '---\nname: plain\ndescription: Listed by default.\n---\nbody',
@@ -48,6 +48,6 @@ for (const n of ['hidden', 'proj-hidden']) {
 }
 
 // The bundled skill-authoring skill documents the key.
-const defaults = (await import('../src/defaults.js')).default;
+const defaults = (await import('../src/defaults.ts')).default;
 assert.match(defaults['/skills/skill-authoring/SKILL.md'], /`listed: false`/);
 console.log(`ok skills: ${skills.length} discovered across both roots, 4 unlisted (one CRLF) kept out of the prompt, junk/quoted/malformed stay listed`);

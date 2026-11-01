@@ -81,7 +81,7 @@ async function fixturePage() {
   const stub = `
 import { createFake, panelRules } from './test/graph-fixture.js';
 window.fake = createFake(); window.panelRules = panelRules;
-// Title requests go through the same fake fetch as turns (src/naming.js).
+// Title requests go through the same fake fetch as turns (src/naming.ts).
 window.fake.rule({ who: '*', sticky: true, when: (c) => !c.tools.length && /^Write a 2-5 word title/.test(c.all), reply: () => window.fakeTitle ?? 'Walkthrough session' });
 export class TinfoilAI {
   constructor() { this.openAIOptions = { apiKey: 'fake' };
@@ -89,14 +89,14 @@ export class TinfoilAI {
   }
   async ready() {} async getVerificationDocument() { return { securityVerified: true, enclaveHost: 'enclave.example', codeFingerprint: 'walkthrough' }; }
 }`;
-  const worker = (await build({ entryPoints: [join(root, 'src/run/worker-browser.js')], bundle: true, minify: true, write: false, format: 'iife' })).outputFiles[0].text;
-  const bundled = await build({ entryPoints: [join(root, 'src/main.js')], bundle: true, write: false, format: 'iife', minify: true,
+  const worker = (await build({ entryPoints: [join(root, 'src/run/worker-browser.ts')], bundle: true, minify: true, write: false, format: 'iife' })).outputFiles[0].text;
+  const bundled = await build({ entryPoints: [join(root, 'src/main.ts')], bundle: true, write: false, format: 'iife', minify: true,
     define: { WORKER_SRC: JSON.stringify(worker), LOCAL_MODEL: 'null', SW_SHA256: '"walkthrough"' },
-    alias: { 'node:zlib': join(root, 'src/shims/zlib.js'), zlib: join(root, 'src/shims/zlib.js'), 'decode-named-character-reference': join(root, 'node_modules/decode-named-character-reference/index.js') },
+    alias: { 'node:zlib': join(root, 'src/shims/zlib.ts'), zlib: join(root, 'src/shims/zlib.ts'), 'decode-named-character-reference': join(root, 'node_modules/decode-named-character-reference/index.js') },
     plugins: [{ name: 'walkthrough-fakes', setup(b) {
       b.onResolve({ filter: /^tinfoil$/ }, () => ({ path: 'fake', namespace: 'fixture' }));
       b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: stub, loader: 'js', resolveDir: root }));
-      b.onResolve({ filter: /local\/engine\.js$/ }, () => ({ path: join(root, 'walkthrough/fake-local.js') }));
+      b.onResolve({ filter: /local\/engine\.ts$/ }, () => ({ path: join(root, 'walkthrough/fake-local.js') }));
     } }] });
   let html = readFileSync(join(root, 'pouch.html'), 'utf8').replace('<script>/*APP*/</script>', () => '<script>' + bundled.outputFiles[0].text.replaceAll('</script', '<\\/script') + '</script>');
   html = html.replace('__SCRIPT_HASHES__', [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(([, s]) => `'sha256-${createHash('sha256').update(s).digest('base64')}'`).join(' '))
@@ -226,7 +226,7 @@ async function shot(page, sc, id, opts = {}) {
   const loc = (t) => (t.startsWith('last:') ? page.locator(t.slice(5)).last() : page.locator(t).first());
   // "last:sel" picks the last match (the latest turn), else the first.
   for (const t of targets) await loc(t).waitFor({ state: 'visible', timeout: 15000 });
-  // Continuity highlights (src/motion.js) last about a second: shoot after them, so a run's images do not depend on timing.
+  // Continuity highlights (src/motion.ts) last about a second: shoot after them, so a run's images do not depend on timing.
   await page.waitForFunction(() => !document.querySelector('.still-mark, .pulsed, .morphed, .cm-flash, .leaving') && !document.getAnimations().some((a) => a.playState === 'running' && a.id), null, { timeout: 5000 }).catch(() => {});
   if (opts.hover) await page.hover(opts.hover); else await page.mouse.move(300, 1); // no stray hover state
   // A transcript target is scrolled to the top of the log, so the composer does not cover it.

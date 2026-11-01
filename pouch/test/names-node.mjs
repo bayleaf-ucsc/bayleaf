@@ -6,8 +6,8 @@
 import assert from 'node:assert/strict';
 import { InMemoryFs } from 'just-bash';
 import { Type } from 'typebox';
-import { Namespace } from '../src/ns/namespace.js';
-import { createTools } from '../src/tools.js';
+import { Namespace } from '../src/ns/namespace.ts';
+import { createTools } from '../src/tools.ts';
 
 let passed = 0;
 async function test(name, fn) { await fn(); passed++; console.log('ok', name); }

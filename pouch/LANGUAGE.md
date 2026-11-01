@@ -34,7 +34,7 @@ position; that is expected and stated.
 |---|---|---|---|
 | BayLeaf | **BayLeaf Sealed** | built | Tinfoil enclaves via api.bayleaf.dev; BayLeaf relays ciphertext it cannot read |
 | The browser | **Transformers.js** | built | Transformers.js 4.3.2 on ONNX Runtime Web (WebGPU backend), in the page (LFM3) |
-| The user's machine | **Localhost** | built | an OpenAI-compatible server on loopback: oMLX, Ollama, LM Studio, or a proxy the user runs and verifies themselves (e.g. to their own Tinfoil account). `src/localhost.js` |
+| The user's machine | **Localhost** | built | an OpenAI-compatible server on loopback: oMLX, Ollama, LM Studio, or a proxy the user runs and verifies themselves (e.g. to their own Tinfoil account). `src/localhost.ts` |
 
 Excluded by policy: any non-localhost endpoint other than BayLeaf. Pouch does not
 integrate third-party services directly (not even personal Tinfoil accounts); users
@@ -54,7 +54,7 @@ limits, message queues and persistence. A harness is an **engine** plus a **prof
 - *Engine*: pi-durable, extended by Pouch (routing, join, detach, caps, per-path
   write serialization).
 - *Profile*: the prompt, tool set, limits and namespace defaults. Five exist, named in
-  `src/profiles.js` (main, subagent, oneshot, transformersjs, localhost):
+  `src/profiles.ts` (main, subagent, oneshot, transformersjs, localhost):
 
   | Profile | Tools | Loop | Limits |
   |---|---|---|---|
@@ -73,7 +73,7 @@ skills, the surviving turns of its thread's current branch, tool results, steers
 follow-ups, peer messages. Context is not the Thread: the system prompt is never shown,
 compaction shrinks context while the thread keeps everything, and a revert changes
 context without erasing the thread's history. The interface shows its size as the **context
-meter** (about how many tokens the next request carries; `src/context.js`); on Transformers.js,
+meter** (about how many tokens the next request carries; `src/context.ts`); on Transformers.js,
 **trimmed** means the provider left part of the context out to fit its budget.
 
 **Agent.** A Model via a Provider, run by a Harness with its Context, acting inside a
@@ -105,13 +105,13 @@ What an agent can see is what it can touch; namespaces do not govern the network
 **Interface.** How a person perceives and acts on sessions, threads, agents and the
 workspace: the Pouch page. *Open:* name the agent-facing counterpart (tools and /task
 files, through which agents perceive the same things): "Surface", "Tools", or nothing.
-In code, the Interface is `src/main.js` composing its **regions** (`src/interface/*.js`,
+In code, the Interface is `src/main.ts` composing its **regions** (`src/interface/*.js`,
 README "Architecture"); a region reaches another only through its interface on `app`.
 
 **Egress module.** A module allowed to use the network, each for one stated reason (Sealed
 ciphertext, the BayLeaf API account plane, the `bayleaf` command, Localhost, hash-checked
 weights and runtimes, the offline copy). The build fails if any other module uses a network
-API (`arch.mjs`). Distinct from egress *consent* (`src/egress.js`): which requests the
+API (`arch.mjs`). Distinct from egress *consent* (`src/egress.ts`): which requests the
 `bayleaf` command may make, as a person granted them.
 
 **Core.** The modules that work without a page: files, namespaces, storage, providers and
@@ -119,7 +119,7 @@ sandboxed runtimes (`CORE` in `arch.mjs`). The core never imports the Interface;
 the trusted core of #143 would replace, one boundary at a time.
 
 **Show.** The agent's act of putting a file or folder in front of the person (bash
-`show <path>`, `src/open-cli.js`). Its counterpart is **Open**, the person's act (the
+`show <path>`, `src/open-cli.ts`). Its counterpart is **Open**, the person's act (the
 terminal's `open`, a link, a click in Files): different verbs because they carry different
 authority. The politeness rule: show opens it at once only when that would not get in the
 person's way; with unsaved edits, a dialog open, a touch of the page in the last few seconds
@@ -130,7 +130,7 @@ scripts run only by a person's choice. *For now:* the rule is provisional, pendi
 **Control plane.** The files through which anything that acts is controlled:
 `/session/<sid>/agents/a<n>/{status,ctl,in,last,ns}`, `/session/<sid>/{usage,changes}` (what an
 agent reads about itself: its allowance and requests, and what it changed this turn), `/session/events`, and `/task` for runs,
-terminal commands and watches (README "Control plane", `src/ns/control.js`). The Interface is
+terminal commands and watches (README "Control plane", `src/ns/control.ts`). The Interface is
 one client of it, the terminal another, the main agent a third; what a write does is the same
 whoever wrote it. Who may write what is the Namespace they were handed (the main agent sees
 only its own session and may not write `in`; subagents see none of it). Not the Thread: the
@@ -156,14 +156,14 @@ appears outside its own session view, it is prefixed with the session title
 
 | Was | Now | Where |
 |---|---|---|
-| handles s1, s2, ... | a1 (main), a2, ...; tags `[from judge-evidence (a3)]` | `src/graph.js` (`MAIN`, `asRef`, `refOf`, `migrateRows`), prompts, tools, views |
+| handles s1, s2, ... | a1 (main), a2, ...; tags `[from judge-evidence (a3)]` | `src/graph.ts` (`MAIN`, `asRef`, `refOf`, `migrateRows`), prompts, tools, views |
 | "lane", "Sealed lane", "Local lane", "Local: ..." | Provider: **BayLeaf Sealed**, **Transformers.js**; picker groups by provider | interface, harness notes, docs; CSS `--provider-sealed`, `--provider-tjs` |
 | "Queue", "Queued · after this turn" | **Follow-up**, "Follow-up · after this turn"; send mode value `followup` | split button, menu, setting, tray, announcements |
 | "sessions of this scope" (agent-facing) | "agents of this session", "by handle" | `agents`/`subagent` tool text, `GRAPH_GLOSS`, errors |
-| profiles implicit in agent.js, subagents.js, local/ | `src/profiles.js`: `PROFILES`, `profileOf()`, the transformersjs recipe (moved byte for byte; values checked identical) | subagents.js and local/provider.js read it |
-| pi-durable "conversation"/"session" read as a Pouch session | anti-corruption table at the top of `src/agent.js` (conversation = Thread storage, whenBusy steer = Steer, held input = Follow-up) | `src/agent.js` |
-| sidebar "Subagents of ..." | "Agents in ...", each "Agent scout (a2), a subagent of main" | `src/sessions.js` |
-| a subagent's approval sheet "subagent x · session: T" | "T › x (subagent)" | `src/egress.js` |
+| profiles implicit in agent.js, subagents.js, local/ | `src/profiles.ts`: `PROFILES`, `profileOf()`, the transformersjs recipe (moved byte for byte; values checked identical) | subagents.js and local/provider.js read it |
+| pi-durable "conversation"/"session" read as a Pouch session | anti-corruption table at the top of `src/agent.ts` (conversation = Thread storage, whenBusy steer = Steer, held input = Follow-up) | `src/agent.ts` |
+| sidebar "Subagents of ..." | "Agents in ...", each "Agent scout (a2), a subagent of main" | `src/sessions.ts` |
+| a subagent's approval sheet "subagent x · session: T" | "T › x (subagent)" | `src/egress.ts` |
 | internal `lane()`, `laneOf`, `queued`, `childQueue`, `userQueued` | `openDb()`, `dbOf`, `followUps`, `childFollowUps`, `followUpHeld` | code |
 
 Upgrade: stored data is read in both forms, never rewritten in bulk. Registry rows go
@@ -188,7 +188,7 @@ Deliberately left:
   Storage name `pouch-local-models` and the setting key `sealedModel`. Renaming them
   breaks stored model ids and caches for no reader's benefit.
 - Storage keys (`conversation:<sid>`, database names) and pi-durable's own words inside
-  `src/agent.js` and `src/subagents.js`, behind the anti-corruption table.
+  `src/agent.ts` and `src/subagents.ts`, behind the anti-corruption table.
 - `graph.js` keeps `createScope`/`MAX_SCOPE_MESSAGES` as code names for one session's
   routing state.
 - The API's own "plaintext lane" (an api.bayleaf.dev term) keeps its wording.

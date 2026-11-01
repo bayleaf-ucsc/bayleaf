@@ -4,8 +4,8 @@
 // scratch notes in /tmp when /work is read-only, and Stop aborting a request
 // in flight. No network, no real model requests.
 // Run: node test/batchA-node.mjs
-import { openAgent, MemoryStorage } from '../src/agent.js';
-import { scratchOf, SUBAGENT_DIR, MAX_FILE_CHARS } from '../src/subagents.js';
+import { openAgent, MemoryStorage } from '../src/agent.ts';
+import { scratchOf, SUBAGENT_DIR, MAX_FILE_CHARS } from '../src/subagents.ts';
 import { createFake } from './graph-fixture.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

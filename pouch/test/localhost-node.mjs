@@ -6,9 +6,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { parseLocalhostUrl, explainMessage, guardedFetch, testConnection, localhostModel, applyProfile, LOCALHOST_PROVIDER } from '../src/localhost.js';
-import { profileOf, LOCALHOST_STEP_CAP } from '../src/profiles.js';
-import { openAgent, MemoryStorage, Type, needsSealed } from '../src/agent.js';
+import { parseLocalhostUrl, explainMessage, guardedFetch, testConnection, localhostModel, applyProfile, LOCALHOST_PROVIDER } from '../src/localhost.ts';
+import { profileOf, LOCALHOST_STEP_CAP } from '../src/profiles.ts';
+import { openAgent, MemoryStorage, Type, needsSealed } from '../src/agent.ts';
 import { startDummy } from './dummy-openai.mjs';
 
 let pass = 0;

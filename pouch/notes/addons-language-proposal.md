@@ -1,9 +1,9 @@
 # Add-ons: a language proposal (draft, 2026-11-01)
 
 Status: proposal, not adopted. Written against the main checkout's uncommitted state
-(LANGUAGE.md, README "Transformers.js" and "Tool runtimes and engine jobs", `src/models.js`,
-`src/models-cli.js`, `src/jobs.js`, `src/assets.js`, `build-runtime.mjs`, `src/defaults.js`,
-`src/main.js`, `pouch.html`). Disciplines in play: domain-driven design (ubiquitous language),
+(LANGUAGE.md, README "Transformers.js" and "Tool runtimes and engine jobs", `src/models.ts`,
+`src/models-cli.ts`, `src/jobs.ts`, `src/assets.ts`, `build-runtime.mjs`, `src/defaults.ts`,
+`src/main.ts`, `pouch.html`). Disciplines in play: domain-driven design (ubiquitous language),
 interaction design (consent, recoverability), and agent experience (words a 1.7B model must
 read and act on without guessing).
 
@@ -18,8 +18,8 @@ read and act on without guessing).
 | libav.js source offer, 33 MiB | group `libav-source`, `LIBAV_SOURCE` | origin only, never fetched by the page | ffmpeg -L text | "source: /runtime/libav-source/manifest..." |
 | Transformers.js runtime, 26 MiB | `LOCAL.runtime` pin, group `transformers` | `pouch-runtime` | progress "checking the runtime"; Settings "a saved `runtime` folder" | none |
 | LFM3 weights, 1.09 GB | `models.lock.json`, `createModelStore`, `createModelService`, `LOCAL`, lock entry, "pin", catalog, release | Cache `pouch-models` (old: `pouch-local-models`) | Settings heading "Transformers.js model"; Download, Resume download, Stop download, Remove the model, Load from folder, Load from files; sheet "Download LFM3 1.7B?" | `models list/status/get/remove/verify`; states "downloaded", "partial", "not downloaded", "not in this build (no pin)" |
-| Offline copy of the page | `src/offline.js`, `pouch-shell-<sha>` | Cache | Install app, Keep an offline copy, Uninstall offline copy, Update | none |
-| Bundled skills | `SEED` in `src/defaults.js` | files under `/pouch/skills/` | file browser | skill text, `skill-authoring` |
+| Offline copy of the page | `src/offline.ts`, `pouch-shell-<sha>` | Cache | Install app, Keep an offline copy, Uninstall offline copy, Update | none |
+| Bundled skills | `SEED` in `src/defaults.ts` | files under `/pouch/skills/` | file browser | skill text, `skill-authoring` |
 
 ### Inconsistencies
 
@@ -28,7 +28,7 @@ Same thing, different names:
   checking" (Transformers.js progress), "obtain" (`partAssets.obtain`), "get" (`models get`),
   "ensure" (`ensureLocal`). States: "downloaded", "kept", "complete", "verified", "stored".
 - The 1.1 GB LFM3 thing is "the Transformers.js model" (Settings), "LFM3 1.7B" (sheet), the id
-  `lfm3-1.7b-q4f16` (command), "the local model" (`src/local/engine.js` refusal), "In-browser
+  `lfm3-1.7b-q4f16` (command), "the local model" (`src/local/engine.ts` refusal), "In-browser
   models" (device refusal). LANGUAGE.md retired "Local" and rejected "in-browser" (2026-10-31),
   but lowercase "the local model" slips past ul-node's case-sensitive pattern.
 - The Transformers.js add-on is really two downloads (26 MiB runtime from Pouch's origin, 1.09 GB
@@ -36,7 +36,7 @@ Same thing, different names:
   start. Settings' Remove deletes both (`engine.js remove`), `models remove` only the weights.
 
 One name, different things:
-- **engine**: the Harness's engine (pi-durable, LANGUAGE.md) and `src/jobs.js` "engines" (pdf,
+- **engine**: the Harness's engine (pi-durable, LANGUAGE.md) and `src/jobs.ts` "engines" (pdf,
   media workers) and `localEngine` (the Transformers.js worker). Three meanings, one adopted.
 - **Download**: files leaving /work for the user's disk (Download, Download all, Download as
   .zip) and bytes arriving into Pouch (Download the model). Opposite directions, same verb.
@@ -118,7 +118,7 @@ How the other terms relate:
 - **Tool/command ↔ add-on.** `pdftotext` *needs* pdf.js. Commands name their add-on in
   `--help` and errors.
 - **Engine.** Keep for the Harness only (adopted). The pdf/media/Transformers.js workers are
-  **workers**; `src/jobs.js` runs **jobs** on them.
+  **workers**; `src/jobs.ts` runs **jobs** on them.
 - **Skills are not add-ons.** A skill is Context: plain files in `/pouch/skills` the agent reads
   and the person may edit or delete, governed by the Namespace. An add-on is opaque, verified,
   immutable, outside the Workspace, gated by device. A skills pack is a **seed layer** (already
@@ -140,7 +140,7 @@ ul-node additions (banned in the built page, with reasons):
   own help line.
 
 Code renames (optional; cost noted):
-- `src/jobs.js` `engines`/`define`/"Engine jobs" → `workers`/"jobs" (cheap: one module, one test).
+- `src/jobs.ts` `engines`/`define`/"Engine jobs" → `workers`/"jobs" (cheap: one module, one test).
 - `pdfEngine`/`mediaEngine`/`localEngine` → `pdfWorker`/... (cheap, mechanical).
 - `createModelStore`/`createModelService` → one `createAddons` registry with a weights backend
   (medium: the real framework work, below).
@@ -191,9 +191,9 @@ Agent-facing behavior:
 
 Mapping existing pieces: `models.lock.json` and the runtime manifests are the two `files`
 backends (gateway per-file pins; origin content-hash parts); `SHA256SUMS` stays the
-deploy-level list and gains nothing; `src/assets.js` is unchanged; every install is a `/task`
+deploy-level list and gains nothing; `src/assets.ts` is unchanged; every install is a `/task`
 entry with `kind: 'install'` (today `'download'`), stoppable by ctl, tray and Settings; jobs
-(`src/jobs.js`) call `addons.ensure(id)` before starting a worker, which installs quietly or
+(`src/jobs.ts`) call `addons.ensure(id)` before starting a worker, which installs quietly or
 fails with the asked-tier string. `deploy.mjs`'s catalog check stays.
 
 ## 5. Open questions for Adam

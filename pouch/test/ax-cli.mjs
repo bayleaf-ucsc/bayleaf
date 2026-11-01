@@ -17,8 +17,8 @@ import { InMemoryFs, MountableFs, ReadWriteFs, OverlayFs } from 'just-bash';
 import { Type } from 'typebox';
 import { mkdirSync, existsSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import defaults from '../src/defaults.js';
-import { createTools, systemPrompt } from '../src/tools.js';
+import defaults from '../src/defaults.ts';
+import { createTools, systemPrompt } from '../src/tools.ts';
 
 const args = process.argv.slice(2);
 const opt = (name) => { const i = args.indexOf(name); return i < 0 ? undefined : args.splice(i, 2)[1]; };

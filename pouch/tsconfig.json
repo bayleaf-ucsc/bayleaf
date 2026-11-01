@@ -1,0 +1,21 @@
+{
+  // The page: everything under src/ but the four worker entry points
+  // (tsconfig.worker.json). esbuild strips the types; node runs the .ts
+  // sources directly in tests, so only erasable syntax is allowed.
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": [],
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "strict": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/run/worker.ts", "src/run/worker-browser.ts", "src/pdf/worker.ts", "src/media/worker.ts", "src/local/worker.ts"]
+}

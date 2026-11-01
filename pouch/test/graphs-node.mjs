@@ -2,8 +2,8 @@
 // scripted fake in test/graph-fixture.js: no network, no real model requests.
 // The browser journey is test/graphs-browser.mjs; this one is for routing.
 // Run: node test/graphs-node.mjs
-import { openAgent, MemoryStorage } from '../src/agent.js';
-import { createScope, MAX_PAIR_MESSAGES, MAX_SCOPE_MESSAGES } from '../src/graph.js';
+import { openAgent, MemoryStorage } from '../src/agent.ts';
+import { createScope, MAX_PAIR_MESSAGES, MAX_SCOPE_MESSAGES } from '../src/graph.ts';
 import { createFake, panelRules } from './graph-fixture.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

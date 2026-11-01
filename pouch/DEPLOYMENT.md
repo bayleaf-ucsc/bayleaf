@@ -39,7 +39,7 @@ independent evidence of their provenance.
 Weights are not in the artifact (issue #121). The page downloads the LFM3 files from
 `https://api.bayleaf.dev/hf/onnx-community/LFM3-1.7B-ONNX/resolve/<commit>/<path>` in
 32 MiB byte ranges and checks each whole file against `models.lock.json` (pinned into the
-page by the build); `src/models.js`, README "Transformers.js". `node build.mjs` always
+page by the build); `src/models.ts`, README "Transformers.js". `node build.mjs` always
 builds the runtime (`--no-models` omits the provider; `--with-models` is accepted and
 does nothing more) and needs no model files. Shape of the build:
 
@@ -110,7 +110,7 @@ wrapper, factory and wasm; the webm-vp9-cli ones equal the libav.js 6.10.9.0 rel
 | File | Count | Size |
 |---|---:|---|
 | `runtime/libav/manifest.<sha16>.json` | 1 | ~1 KB |
-| `worker.js` part: src/media/worker.js (and src/media/wc.js) with both variants' wrappers and Emscripten factories | 1 | 450 KB |
+| `worker.js` part: src/media/worker.ts (and src/media/wc.ts) with both variants' wrappers and Emscripten factories | 1 | 450 KB |
 | `libav.wasm` part: the released `libav-6.10.9.0-webm-vp9-cli.wasm.wasm`, unmodified | 1 | 3.9 MiB |
 | `libav-avf.wasm` part: the released `libav-6.10.9.0-webcodecs-avf.wasm.wasm`, unmodified (the WebCodecs path: MOV demuxer, swresample, audio filters, FLAC and Opus encoders) | 1 | 3.4 MiB |
 | `NOTICE.txt` part: what is shipped, where the source is, and the LGPL-2.1, FFmpeg, libav.js, libvpx (license and patent grant), Opus and emfiberthreads licenses, verbatim | 1 | 39 KB |
@@ -204,7 +204,7 @@ cache headers. README "Install and the offline copy" has the policy.
 - `deploy.mjs` verified the page, `SHA256SUMS`, 7 shell files and 24 runtime parts
   (pdf.js, libav.js with its webcodecs-avf build and the hosted LGPL sources, the
   Transformers.js runtime), byte-exact and immutable.
-- Includes the trust-boundary split of `src/main.js` (#144).
+- Includes the trust-boundary split of `src/main.ts` (#144).
 - Playtested on Mac Chrome; on a Pixel 10 Pro, in-browser LFM3 froze the device and is
   now refused on phones and tablets. Not verified: Firefox and Safari end to end.
 

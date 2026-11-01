@@ -27,19 +27,19 @@ await test('the real tree passes every rule', () => {
 });
 
 await test('egress: a network API outside the egress modules fails, naming the boundary', () => {
-  const msg = fails(withFile('src/interface/tree.js', "fetch('https://example.com/?' + document.title);"), 'egress', 'src/interface/tree.js', /uses fetch/);
+  const msg = fails(withFile('src/interface/tree.ts', "fetch('https://example.com/?' + document.title);"), 'egress', 'src/interface/tree.ts', /uses fetch/);
   assert.match(msg, /Plaintext must leave Pouch only through modules/);
-  fails(withFile('src/vfs.js', 'navigator.sendBeacon("/x", "y");'), 'egress', 'src/vfs.js', /sendBeacon/);
-  fails(withFile('src/editor.js', 'const ws = new WebSocket("wss://example.com");'), 'egress', 'src/editor.js', /WebSocket/);
-  fails(withFile('src/markdown.js', 'const m = await import(location.hash.slice(1));'), 'egress', 'src/markdown.js', /import\(\)/);
-  fails(withFile('src/tools.js', "const w = new Worker('https://example.com/w.js');"), 'egress', 'src/tools.js', /Worker/);
-  fails(withFile('src/agent.js', "globalThis['fetch']('https://example.com');"), 'egress', 'src/agent.js', /fetch/);
+  fails(withFile('src/vfs.ts', 'navigator.sendBeacon("/x", "y");'), 'egress', 'src/vfs.ts', /sendBeacon/);
+  fails(withFile('src/editor.ts', 'const ws = new WebSocket("wss://example.com");'), 'egress', 'src/editor.ts', /WebSocket/);
+  fails(withFile('src/markdown.ts', 'const m = await import(location.hash.slice(1));'), 'egress', 'src/markdown.ts', /import\(\)/);
+  fails(withFile('src/tools.ts', "const w = new Worker('https://example.com/w.js');"), 'egress', 'src/tools.ts', /Worker/);
+  fails(withFile('src/agent.ts', "globalThis['fetch']('https://example.com');"), 'egress', 'src/agent.ts', /fetch/);
   // An allowed module may use only the APIs it is allowed.
-  fails(withFile('src/models.js', 'new EventSource("/x");'), 'egress', 'src/models.js', /EventSource/);
+  fails(withFile('src/models.ts', 'new EventSource("/x");'), 'egress', 'src/models.ts', /EventSource/);
   // A local named fetch is not the network; overwriting the global removes it.
-  assert.deepEqual(checkArchitecture(withFile('src/graph.js', 'export const viaFetch = (fetch) => fetch("/x"); self.fetch = () => { throw new Error("no network"); };')), []);
+  assert.deepEqual(checkArchitecture(withFile('src/graph.ts', 'export const viaFetch = (fetch) => fetch("/x"); self.fetch = () => { throw new Error("no network"); };')), []);
   // Comments and strings are not code.
-  assert.deepEqual(checkArchitecture(withFile('src/graph.js', '// fetch(url)\nexport const note = "new WebSocket(url)";')), []);
+  assert.deepEqual(checkArchitecture(withFile('src/graph.ts', '// fetch(url)\nexport const note = "new WebSocket(url)";')), []);
 });
 
 await test('egress: destructuring, literal keys and reflection do not get around it', () => {
@@ -56,9 +56,9 @@ await test('egress: destructuring, literal keys and reflection do not get around
     'globalThis[`fetch`]("/x");',
     'run({ fetch });',
   ];
-  for (const code of evasions) fails(withFile('src/agent.js', code), 'egress', 'src/agent.js', /uses (fetch|sendBeacon|WebSocket)/);
+  for (const code of evasions) fails(withFile('src/agent.ts', code), 'egress', 'src/agent.ts', /uses (fetch|sendBeacon|WebSocket)/);
   // Passing a module's own function under the name is not the network.
-  assert.deepEqual(checkArchitecture(withFile('src/graph.js', 'const own = () => 1; export const opts = { fetch: own };')), []);
+  assert.deepEqual(checkArchitecture(withFile('src/graph.ts', 'const own = () => 1; export const opts = { fetch: own };')), []);
 });
 
 await test('egress: a bundled first-party file the scan never read fails (.mjs, .ts)', () => {
@@ -66,42 +66,42 @@ await test('egress: a bundled first-party file the scan never read fails (.mjs, 
   fails(withFile('src/leak.mjs', evil), 'egress', 'src/leak.mjs', /uses fetch/);
   fails(withFile('src/leak.ts', 'const u: string = "https://example.com"; ' + evil), 'egress', 'src/leak.ts', /uses fetch/);
   assert.match(checkMetafile({ inputs: { 'src/unscanned.mjs': { imports: [] } } })[0], /^\[egress\] src\/unscanned.mjs: is bundled but was not scanned/);
-  assert.deepEqual(checkMetafile({ inputs: { 'src/main.js': { imports: [] }, 'node_modules/x/index.js': { imports: [] }, '<define:LOCAL_MODEL>': { imports: [] } } }), []);
+  assert.deepEqual(checkMetafile({ inputs: { 'src/main.ts': { imports: [] }, 'node_modules/x/index.js': { imports: [] }, '<define:LOCAL_MODEL>': { imports: [] } } }), []);
 });
 
 await test('egress: an allowance nobody uses fails, so the list stays exact', () => {
-  assert.ok(NETWORK['src/offline.js']);
-  fails(withFile('src/offline.js', (t) => t.replaceAll('fetch(', 'Promise.reject(')), 'egress', 'src/offline.js', /no longer uses it/);
+  assert.ok(NETWORK['src/offline.ts']);
+  fails(withFile('src/offline.ts', (t) => t.replaceAll('fetch(', 'Promise.reject(')), 'egress', 'src/offline.ts', /no longer uses it/);
 });
 
 await test('html: an HTML sink outside viewer.html fails', () => {
-  const msg = fails(withFile('src/preview.js', 'export const put = (node, s) => { node.innerHTML = s; };'), 'html', 'src/preview.js', /innerHTML/);
+  const msg = fails(withFile('src/preview.ts', 'export const put = (node, s) => { node.innerHTML = s; };'), 'html', 'src/preview.ts', /innerHTML/);
   assert.match(msg, /only viewer.html/);
-  fails(withFile('src/interface/transcript.js', "const card = el('div', { innerHTML: '<b>x</b>' });"), 'html', 'src/interface/transcript.js', /innerHTML/);
+  fails(withFile('src/interface/transcript.ts', "const card = el('div', { innerHTML: '<b>x</b>' });"), 'html', 'src/interface/transcript.ts', /innerHTML/);
   // A key in any spelling, and a destructured or reflective one.
-  fails(withFile('src/interface/transcript.js', "const report = location.hash; el('div', { 'innerHTML': report });"), 'html', 'src/interface/transcript.js', /innerHTML/);
-  fails(withFile('src/interface/transcript.js', "el('div', { ['outerHTML']: location.hash });"), 'html', 'src/interface/transcript.js', /outerHTML/);
-  fails(withFile('src/interface/transcript.js', 'const innerHTML = location.hash; el("div", { innerHTML });'), 'html', 'src/interface/transcript.js', /innerHTML/);
-  fails(withFile('src/dom.js', "Reflect.set(document.body, 'innerHTML', location.hash);"), 'html', 'src/dom.js', /innerHTML/);
-  fails(withFile('src/dom.js', "const { insertAdjacentHTML: put } = document.body; put.call(document.body, 'beforeend', location.hash);"), 'html', 'src/dom.js', /insertAdjacentHTML/);
-  fails(withFile('src/viewer.js', "const f = document.createElement('iframe'); f.srcdoc = '<p>';"), 'html', 'src/viewer.js', /srcdoc/);
-  fails(withFile('src/dom.js', "document.write('<p>');"), 'html', 'src/dom.js', /document.write/);
-  fails(withFile('src/markdown.js', "new DOMParser().parseFromString('<p>', 'text/html');"), 'html', 'src/markdown.js', /parseFromString/);
+  fails(withFile('src/interface/transcript.ts', "const report = location.hash; el('div', { 'innerHTML': report });"), 'html', 'src/interface/transcript.ts', /innerHTML/);
+  fails(withFile('src/interface/transcript.ts', "el('div', { ['outerHTML']: location.hash });"), 'html', 'src/interface/transcript.ts', /outerHTML/);
+  fails(withFile('src/interface/transcript.ts', 'const innerHTML = location.hash; el("div", { innerHTML });'), 'html', 'src/interface/transcript.ts', /innerHTML/);
+  fails(withFile('src/dom.ts', "Reflect.set(document.body, 'innerHTML', location.hash);"), 'html', 'src/dom.ts', /innerHTML/);
+  fails(withFile('src/dom.ts', "const { insertAdjacentHTML: put } = document.body; put.call(document.body, 'beforeend', location.hash);"), 'html', 'src/dom.ts', /insertAdjacentHTML/);
+  fails(withFile('src/viewer.ts', "const f = document.createElement('iframe'); f.srcdoc = '<p>';"), 'html', 'src/viewer.ts', /srcdoc/);
+  fails(withFile('src/dom.ts', "document.write('<p>');"), 'html', 'src/dom.ts', /document.write/);
+  fails(withFile('src/markdown.ts', "new DOMParser().parseFromString('<p>', 'text/html');"), 'html', 'src/markdown.ts', /parseFromString/);
   fails(withFile('pouch.html', (t) => t.replace('</body>', "<script>document.body.insertAdjacentHTML('beforeend', location.hash);</script></body>")), 'html', 'pouch.html', /insertAdjacentHTML/);
   // However the tag is written.
   fails(withFile('pouch.html', (t) => t.replace('</body>', '<SCRIPT type="module">fetch("https://example.com")</SCRIPT foo></body>')), 'egress', 'pouch.html', /uses fetch/);
 });
 
-await test('sealed: only src/sealed.js imports tinfoil or reaches into its client', () => {
-  const msg = fails(withFile('src/agent.js', "import { TinfoilAI } from 'tinfoil';"), 'sealed', 'src/agent.js', /imports tinfoil/);
+await test('sealed: only src/sealed.ts imports tinfoil or reaches into its client', () => {
+  const msg = fails(withFile('src/agent.ts', "import { TinfoilAI } from 'tinfoil';"), 'sealed', 'src/agent.ts', /imports tinfoil/);
   assert.match(msg, /attestation and origin checks/);
-  fails(withFile('src/interface/connection.js', 'const leak = (c) => c.secureClient.fetch;'), 'sealed', 'src/interface/connection.js', /secureClient/);
-  fails(withFile('src/naming.js', 'const k = (c) => c.openAIOptions.apiKey;'), 'sealed', 'src/naming.js', /openAIOptions/);
-  fails(withFile('src/naming.js', "const k = ({ 'secureClient': s }) => s.fetch;"), 'sealed', 'src/naming.js', /secureClient/);
+  fails(withFile('src/interface/connection.ts', 'const leak = (c) => c.secureClient.fetch;'), 'sealed', 'src/interface/connection.ts', /secureClient/);
+  fails(withFile('src/naming.ts', 'const k = (c) => c.openAIOptions.apiKey;'), 'sealed', 'src/naming.ts', /openAIOptions/);
+  fails(withFile('src/naming.ts', "const k = ({ 'secureClient': s }) => s.fetch;"), 'sealed', 'src/naming.ts', /secureClient/);
   // The metafile: what really imports the SDK into the bundle.
   const meta = (from) => ({ inputs: { [from]: { imports: [{ path: 'node_modules/tinfoil/dist/index.browser.js' }] }, 'node_modules/tinfoil/dist/index.browser.js': { imports: [{ path: 'node_modules/tinfoil/dist/secure.js' }] } } });
-  assert.deepEqual(checkMetafile(meta('src/sealed.js')), []);
-  assert.match(checkMetafile(meta('src/interface/connection.js'))[0], /^\[sealed\] src\/interface\/connection.js/);
+  assert.deepEqual(checkMetafile(meta('src/sealed.ts')), []);
+  assert.match(checkMetafile(meta('src/interface/connection.ts'))[0], /^\[sealed\] src\/interface\/connection.ts/);
 });
 
 await test('cdn: a third-party CDN in the page fails; a URL only compared against does not', () => {
@@ -110,31 +110,31 @@ await test('cdn: a third-party CDN in the page fails; a URL only compared agains
 });
 
 await test('layers: the core imports no UI, and only main.js imports the Interface', () => {
-  const msg = fails(withFile('src/vfs.js', "import { $ } from './dom.js';"), 'layers', 'src/vfs.js', /is core but imports src\/dom.js/);
+  const msg = fails(withFile('src/vfs.ts', "import { $ } from './dom.ts';"), 'layers', 'src/vfs.ts', /is core but imports src\/dom.ts/);
   assert.match(msg, /UI depends on the core, never the reverse/);
-  fails(withFile('src/ns/watch.js', "import { createUsage } from '../usage.js';"), 'layers', 'src/ns/watch.js', /imports src\/usage.js/);
-  fails(withFile('src/tools.js', "import { createTreeRegion } from './interface/tree.js';"), 'layers', 'src/tools.js', /imports the Interface/);
+  fails(withFile('src/ns/watch.ts', "import { createUsage } from '../usage.ts';"), 'layers', 'src/ns/watch.ts', /imports src\/usage.ts/);
+  fails(withFile('src/tools.ts', "import { createTreeRegion } from './interface/tree.ts';"), 'layers', 'src/tools.ts', /imports the Interface/);
 });
 
 await test('seams: a region is imported only through its entry modules', () => {
-  const msg = fails(withFile('src/tools.js', "import { RunHost } from './run/host.js';"), 'seams', 'src/tools.js', /inside src\/run\//);
-  assert.match(msg, /Import src\/run.js instead/);
-  fails(withFile('src/agent.js', "import './local/worker.js';"), 'seams', 'src/agent.js', /inside src\/local\//);
+  const msg = fails(withFile('src/tools.ts', "import { RunHost } from './run/host.ts';"), 'seams', 'src/tools.ts', /inside src\/run\//);
+  assert.match(msg, /Import src\/run.ts instead/);
+  fails(withFile('src/agent.ts', "import './local/worker.ts';"), 'seams', 'src/agent.ts', /inside src\/local\//);
   // Interface regions reach each other through app, never by import.
-  fails(withFile('src/interface/tree.js', "import { createEditingRegion } from './editing.js';"), 'seams', 'src/interface/tree.js', /inside src\/interface\//);
+  fails(withFile('src/interface/tree.ts', "import { createEditingRegion } from './editing.ts';"), 'seams', 'src/interface/tree.ts', /inside src\/interface\//);
 });
 
 await test('size: a module over its budget fails; main.js stays thin', () => {
-  fails(withFile('src/graph.js', (t) => t + '\n'.repeat(800)), 'size', 'src/graph.js', /over its budget of 700/);
-  fails(withFile('src/main.js', (t) => t + '// x\n'.repeat(60)), 'size', 'src/main.js', /over its budget of 60/);
+  fails(withFile('src/graph.ts', (t) => t + '\n'.repeat(800)), 'size', 'src/graph.ts', /over its budget of 700/);
+  fails(withFile('src/main.ts', (t) => t + '// x\n'.repeat(60)), 'size', 'src/main.ts', /over its budget of 60/);
 });
 
 await test('the pre-split main.js (2974dda) fails egress, sealed and size', () => {
   let old;
-  try { old = execSync('git show 2974dda:pouch/src/main.js', { cwd: import.meta.dirname, stdio: ['ignore', 'pipe', 'ignore'] }).toString(); }
+  try { old = execSync('git show 2974dda:pouch/src/main.ts', { cwd: import.meta.dirname, stdio: ['ignore', 'pipe', 'ignore'] }).toString(); }
   catch { console.log('  (skipped: commit 2974dda not in this clone)'); return; }
-  const errors = checkArchitecture(withFile('src/main.js', () => old));
-  for (const rule of ['egress', 'sealed', 'size']) assert.ok(errors.some((e) => e.startsWith(`[${rule}] src/main.js`)), rule);
+  const errors = checkArchitecture(withFile('src/main.ts', () => old));
+  for (const rule of ['egress', 'sealed', 'size']) assert.ok(errors.some((e) => e.startsWith(`[${rule}] src/main.ts`)), rule);
 });
 
 console.log(`${passed} passed`);

@@ -1,7 +1,7 @@
 // The real libav.js runtime in a real page, under Pouch's production CSP and
 // headers: built by build-libav.mjs into a scratch dir, fetched as verified
 // parts on first use, driven through the shell's ffprobe and ffmpeg
-// (src/media.js) over an in-memory filesystem. Checks ffprobe JSON, frames as
+// (src/media.ts) over an in-memory filesystem. Checks ffprobe JSON, frames as
 // PNG/JPEG with the expected colors and times, audio extraction, conversions,
 // the codec gap's message, Stop through /task ctl, that the only requests are
 // this origin's runtime parts (never libav-source), and no CSP violation.
@@ -38,9 +38,9 @@ const fixture = (f) => readFileSync(join(root, 'test/fixtures/media', f));
 
 const entry = `
 import { InMemoryFs } from 'just-bash';
-import { shellFor } from './src/tools.js';
-import { createMediaService } from './src/media.js';
-import { Tasks } from './src/ns/tasks.js';
+import { shellFor } from './src/tools.ts';
+import { createMediaService } from './src/media.ts';
+import { Tasks } from './src/ns/tasks.ts';
 const fs = new InMemoryFs();
 const tasks = new Tasks();
 const media = createMediaService({ tasks });
@@ -59,10 +59,10 @@ window.pouch = {
   bytes: async (p) => [...(await fs.readFileBuffer(p)).subarray(0, 4)],
   size: async (p) => (await fs.stat(p)).size,
 };`;
-const worker = (await build({ entryPoints: [join(root, 'src/run/worker-browser.js')], bundle: true, minify: true, write: false, format: 'iife' })).outputFiles[0].text;
+const worker = (await build({ entryPoints: [join(root, 'src/run/worker-browser.ts')], bundle: true, minify: true, write: false, format: 'iife' })).outputFiles[0].text;
 const app = (await build({ stdin: { contents: entry, resolveDir: root, loader: 'js' }, bundle: true, write: false, format: 'iife', minify: true,
   define: { WORKER_SRC: JSON.stringify(worker), POUCH_LIBAV_RUNTIME: JSON.stringify(pin), POUCH_LIBAV_SOURCE: JSON.stringify(source) },
-  alias: { 'node:zlib': join(root, 'src/shims/zlib.js'), zlib: join(root, 'src/shims/zlib.js') }, logLevel: 'error' })).outputFiles[0].text;
+  alias: { 'node:zlib': join(root, 'src/shims/zlib.ts'), zlib: join(root, 'src/shims/zlib.ts') }, logLevel: 'error' })).outputFiles[0].text;
 const script = app.replaceAll('</script', '<\\/script');
 const csp = readFileSync(join(root, 'pouch.html'), 'utf8').match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)[1]
   .replace('__SCRIPT_HASHES__', `'sha256-${createHash('sha256').update(script).digest('base64')}'`);

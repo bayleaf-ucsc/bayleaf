@@ -4,7 +4,7 @@
 // The Interface and the terminal still see every task.
 //   node test/taskscope-node.mjs
 import assert from 'node:assert/strict';
-import { Tasks, TaskFs } from '../src/ns/tasks.js';
+import { Tasks, TaskFs } from '../src/ns/tasks.ts';
 
 const tasks = new Tasks();
 const killed = [];

@@ -25,7 +25,7 @@ python3 -m http.server 8742 --directory dist   # or save the file and open it fr
 ```
 
 Edit `pouch.html` (markup, styles, CSP) and `src/`. `build.mjs` first checks the trust
-boundaries and module structure (`arch.mjs`, "Architecture" below), then bundles `src/main.js`
+boundaries and module structure (`arch.mjs`, "Architecture" below), then bundles `src/main.ts`
 with its dependencies, pinned by `package-lock.json`, into the page's one inline script
 and stamps the Content-Security-Policy with its hash. `node build.mjs --watch` rebuilds
 on changes to `src/`. Serve it from `localhost` or HTTPS: opened from disk, browsers give
@@ -57,7 +57,7 @@ subagent's own view works the same way for that subagent.
 
 ## Scrolling
 
-In `src/follow.js`. The play-test reports of "sticky scrolling"
+In `src/follow.ts`. The play-test reports of "sticky scrolling"
 going wrong had three causes: a re-render moved cached reply nodes out of the live log while
 building the next one, and a layout read at that moment clamped the thread to the top; the
 streaming reasoning box was rebuilt on every token with its own scrollbar, so it showed
@@ -111,7 +111,7 @@ something you can pop out of.
 
 ## Dismissing
 
-One rule (`src/dismiss.js`) for every floating thing. A press
+One rule (`src/dismiss.ts`) for every floating thing. A press
 outside the topmost one, or Esc, closes it when that is safe: nothing typed is lost and no
 decision is left hanging.
 
@@ -134,7 +134,7 @@ first, so it never also stops a run or leaves a subagent view.
 ## Watching files
 
 An agent can ask to hear when files change instead of asking you to tell it when you
-are done (JOURNEYS G13-G17; `src/ns/watch.js`). The `watch` tool (its own small tool,
+are done (JOURNEYS G13-G17; `src/ns/watch.ts`). The `watch` tool (its own small tool,
 not actions on `subagent`: watching is not about subagents, and main and subagents share
 one schema) has three actions: `watch({ paths, by, once, note })` returns an id (w1, w2,
 ...), `unwatch(id)`, `list`. Subagent `list` rosters also name the session's watches.
@@ -177,7 +177,7 @@ reload they are re-armed, and a file whose hash changed while the tab was closed
 mounted folder edited on disk, another tab) fires once as "changed by outside Pouch (while
 it was closed)". Deleting the session or Erase all removes them.
 
-**Transformers.js:** no `watch` tool. Its profile (`transformersjs`, `src/profiles.js`) keeps its four qualified tools and its verbatim
+**Transformers.js:** no `watch` tool. Its profile (`transformersjs`, `src/profiles.ts`) keeps its four qualified tools and its verbatim
 grounded prompt (adding a tool would re-open that qualification for a 1.7B model). Watches
 made on BayLeaf Sealed still deliver if the session switches to Transformers.js, and a Transformers.js wake costs no
 request.
@@ -191,7 +191,7 @@ themes; under `prefers-reduced-motion` each movement becomes a brief static high
 (`.still-mark`, about a second). Motion uses transform and opacity only.
 
 **Color math lives in CSS.** JS sets one number per element, the agent's spawn order
-(`style="--seed: 3"` for a3, `seeded()` in `src/dom.js`), and nothing else; main (a1) gets
+(`style="--seed: 3"` for a3, `seeded()` in `src/dom.ts`), and nothing else; main (a1) gets
 `.main-agent` and stays neutral. `pouch.html` turns the seed into a hue with the golden
 angle (`calc(var(--seed) * 137.508deg)`), `--agent: oklch(var(--agent-l) var(--agent-c)
 var(--hue))` and `--agent-tint` (12% via `color-mix()`, not relative color syntax, for
@@ -213,7 +213,7 @@ measures contrast for seeds 1-12 in both themes (light text min 4.79:1, dark 5.8
 | Build identity (I-stories, offline copy) | A swatch seeded from the first byte of the page's sha256 beside the hash in "This copy" and in the update notice: the same build always shows the same color, a new build a visibly different one. The hash stays the authority. |
 | Providers | Fixed theme tokens, never agent hues: `--provider-sealed` (leaf, BayLeaf Sealed), `--provider-tjs` (blue, Transformers.js) and `--provider-localhost` (amber, Localhost) on the model picker's provider icon and the composer shield. |
 
-Every moment is keyed (`src/motion.js`): the log, tree and tray are rebuilt on every
+Every moment is keyed (`src/motion.ts`): the log, tree and tray are rebuilt on every
 streamed token, so `arm(key)` starts a clock and each rebuild's `play()` resumes the
 animation where it was (a negative delay) until it has run its course. Recorded for review:
 `/tmp/pouch-qa/motion/steer-delivery.webm`, `detach-fold.webm`.
@@ -281,13 +281,13 @@ deliberate violation of each rule failing and the real tree passing.
 
 | Rule | What the build checks | Allowed |
 |---|---|---|
-| egress | network APIs (`fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `WebTransport`, `RTCPeerConnection`, `sendBeacon`, `importScripts`, `Worker`, `import()` of a non-bundled path) appear only in egress modules, each allowed only its own APIs | `src/sealed.js` (EHBP ciphertext to the attested enclave), `src/bayleaf-api.js` (account plane: claim, allowance, Campus Pass, Sealed model list; metadata only), `src/bayleaf-cli.js` (the agent's `bayleaf` command, approved through `egress.js`), `src/localhost.js` (Localhost provider), `src/models.js` and `src/assets.js` (hash-checked weights and runtimes), `src/offline.js` and `sw.js` (the offline copy, this origin); `Worker` only in `src/run.js`, `src/pdf.js`, `src/media.js` and `src/local/engine.js` (bundled, hash-checked code from `blob:` URLs) |
+| egress | network APIs (`fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `WebTransport`, `RTCPeerConnection`, `sendBeacon`, `importScripts`, `Worker`, `import()` of a non-bundled path) appear only in egress modules, each allowed only its own APIs | `src/sealed.ts` (EHBP ciphertext to the attested enclave), `src/bayleaf-api.ts` (account plane: claim, allowance, Campus Pass, Sealed model list; metadata only), `src/bayleaf-cli.ts` (the agent's `bayleaf` command, approved through `egress.js`), `src/localhost.ts` (Localhost provider), `src/models.ts` and `src/assets.ts` (hash-checked weights and runtimes), `src/offline.ts` and `sw.js` (the offline copy, this origin); `Worker` only in `src/run.ts`, `src/pdf.ts`, `src/media.ts` and `src/local/engine.ts` (bundled, hash-checked code from `blob:` URLs) |
 | html | no first-party code turns a string into HTML (`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `srcdoc`, `document.write`, `DOMParser`, ...), as a property or an `el()` prop | `viewer.html` only ("HTML reports") |
-| sealed | only `src/sealed.js` imports `tinfoil` or reaches into the client (`secureClient`, `openAIOptions`); checked in the sources and in esbuild's metafile | `src/sealed.js` |
+| sealed | only `src/sealed.ts` imports `tinfoil` or reaches into the client (`secureClient`, `openAIOptions`); checked in the sources and in esbuild's metafile | `src/sealed.ts` |
 | cdn | no third-party CDN URL in the assembled page (`assertNoCdn`, as for runtimes) | URLs only compared against, never fetched (the Sigstore issuer the Tinfoil SDK checks) |
-| layers | the core (files, namespaces, storage, providers, sandboxed runtimes: `CORE` in `arch.mjs`) imports only the core; only `src/main.js` imports the Interface | |
-| seams | a region is imported from outside only through its entry modules: `src/run.js`, `src/pdf.js`, `src/media.js`, `src/local/engine.js` and `src/local/provider.js`; Interface regions never import each other | |
-| size | each module stays within 700 lines; `src/main.js` within 60 | |
+| layers | the core (files, namespaces, storage, providers, sandboxed runtimes: `CORE` in `arch.mjs`) imports only the core; only `src/main.ts` imports the Interface | |
+| seams | a region is imported from outside only through its entry modules: `src/run.ts`, `src/pdf.ts`, `src/media.ts`, `src/local/engine.ts` and `src/local/provider.ts`; Interface regions never import each other | |
+| size | each module stays within 700 lines; `src/main.ts` within 60 | |
 
 An allowance no module uses any more is also an error, so the lists in `arch.mjs` stay an
 exact inventory of where Pouch can reach out. The scan parses code (TypeScript's parser, no
@@ -295,7 +295,7 @@ type checking), so comments and strings do not count and a local named `fetch` i
 network. It covers first-party code; bundled packages are held by what may import them and
 by the page's CSP, which remains the enforcement in the browser.
 
-**The Interface.** `src/main.js` only composes the Interface (LANGUAGE.md) from regions in `src/interface/`, in the
+**The Interface.** `src/main.ts` only composes the Interface (LANGUAGE.md) from regions in `src/interface/`, in the
 order their wiring runs. Each region is a factory, `createXRegion(app)`, returning its
 interface; a region reaches another only as `app.<region>.<name>`, resolved when called, and
 state another region writes is a getter and setter on its owner's interface.
@@ -328,17 +328,17 @@ starting with egress.
 
 | Piece | What | Source |
 |---|---|---|
-| Agent loop | [pi-durable](https://github.com/earendil-works/pi): durable conversations in IndexedDB, tool tasks, automatic compaction | `src/agent.js` |
-| Tools | `read`, `write`, `edit`, `bash`, `look`, all in the page; `run` in a throwaway worker | `src/tools.js`, `src/run.js` |
-| Run | JavaScript in [QuickJS](https://github.com/justjake/quickjs-emscripten) (WebAssembly, MIT) in a `blob:` worker per call, over a copy of the files it names; writes come back as changes checked against the snapshot. Also on a `.js` file's menu (Run script), offline too | `src/run.js`, `src/run/` (from `experiments/quickjs`) |
-| Shell | [just-bash](https://github.com/vercel-labs/just-bash): bash and coreutils reimplemented in TypeScript, no processes, no network | `src/tools.js` |
-| Files | one tree stitched from several stores (below) | `src/vfs.js` |
-| Editor | CodeMirror 6 with JS/TS, Python, Markdown, HTML, CSS, JSON | `src/editor.js` |
-| UI | sessions sidebar, chat, one side panel at a time (Files, Editor, Usage, Trust, Settings) from an icon rail; drawer, full-screen sheets and a bottom bar on phones | `pouch.html`, `src/main.js` and `src/interface/` ("Architecture"), `src/layout.js` |
-| Composer | one card: activity tray (running subagents and `run` calls, approvals waiting, steering not yet read and the follow-up or paused message; Stop, Stop all, Cancel, Edit, Steer now), `@` path / `$` skill / `/` command autocomplete, the shield popover (provider, egress grants), Usage count, model picker, Send / Stop with the Steer-or-Follow-up split button while Pouch works; the turn footer (model, duration, time) is in `main.js` | `src/composer.js`, `src/main.js` |
-| Preferences / attachments | local display defaults; one ingest path for Attach, composer drop and image paste | `src/settings.js`, `src/attachments.js` |
-| Titles | a session is named after its first turn by one tool-less completion on the session's own provider and model; the sparkle beside the title field, the session menu and `/rename` alone suggest another; never a different provider | `src/naming.js` |
-| Usage | today's Sealed allowance (`/usage` with a key, `/campus-pass` without), checked on load, sign-in and after each run, never polled; tokens per session | `src/usage.js` |
+| Agent loop | [pi-durable](https://github.com/earendil-works/pi): durable conversations in IndexedDB, tool tasks, automatic compaction | `src/agent.ts` |
+| Tools | `read`, `write`, `edit`, `bash`, `look`, all in the page; `run` in a throwaway worker | `src/tools.ts`, `src/run.ts` |
+| Run | JavaScript in [QuickJS](https://github.com/justjake/quickjs-emscripten) (WebAssembly, MIT) in a `blob:` worker per call, over a copy of the files it names; writes come back as changes checked against the snapshot. Also on a `.js` file's menu (Run script), offline too | `src/run.ts`, `src/run/` (from `experiments/quickjs`) |
+| Shell | [just-bash](https://github.com/vercel-labs/just-bash): bash and coreutils reimplemented in TypeScript, no processes, no network | `src/tools.ts` |
+| Files | one tree stitched from several stores (below) | `src/vfs.ts` |
+| Editor | CodeMirror 6 with JS/TS, Python, Markdown, HTML, CSS, JSON | `src/editor.ts` |
+| UI | sessions sidebar, chat, one side panel at a time (Files, Editor, Usage, Trust, Settings) from an icon rail; drawer, full-screen sheets and a bottom bar on phones | `pouch.html`, `src/main.ts` and `src/interface/` ("Architecture"), `src/layout.ts` |
+| Composer | one card: activity tray (running subagents and `run` calls, approvals waiting, steering not yet read and the follow-up or paused message; Stop, Stop all, Cancel, Edit, Steer now), `@` path / `$` skill / `/` command autocomplete, the shield popover (provider, egress grants), Usage count, model picker, Send / Stop with the Steer-or-Follow-up split button while Pouch works; the turn footer (model, duration, time) is in `main.js` | `src/composer.ts`, `src/main.ts` |
+| Preferences / attachments | local display defaults; one ingest path for Attach, composer drop and image paste | `src/settings.ts`, `src/attachments.ts` |
+| Titles | a session is named after its first turn by one tool-less completion on the session's own provider and model; the sparkle beside the title field, the session menu and `/rename` alone suggest another; never a different provider | `src/naming.ts` |
+| Usage | today's Sealed allowance (`/usage` with a key, `/campus-pass` without), checked on load, sign-in and after each run, never polled; tokens per session | `src/usage.ts` |
 
 The filesystem the agent, the file browser and the editor share:
 
@@ -414,7 +414,7 @@ Every model step of a BayLeaf Sealed session is one Sealed request from a daily 
 each tool round, each compaction summary and each automatic or suggested title. Titles
 and compaction run on the session's own provider, so on Localhost or Transformers.js they
 cost no allowance and send BayLeaf nothing; every label that states a cost is worded from
-the session's provider (`costNote()` in `src/naming.js`). The Usage panel shows what is
+the session's provider (`costNote()` in `src/naming.ts`). The Usage panel shows what is
 left (with a key, your own; under Campus Pass, an approximate bucket shared by everyone
 behind the same campus network address) and when it resets; a send refused for quota
 says so, with the reset time. A title you type is never replaced automatically; an
@@ -423,7 +423,7 @@ steer or a detach made that turn several messages.
 
 **How much context a session holds.** Next to the allowance count, the composer shows about
 how many tokens the session's next request would carry, against the window of the model in
-the picker: `12.5k / 128k`, with a thin bar of the window under it (`src/context.js`). The
+the picker: `12.5k / 128k`, with a thin bar of the window under it (`src/context.ts`). The
 count is the newest reply's own usage as its server reported it (prompt, cached prompt and
 reply; exact for that request, system prompt and tool schemas included), plus an estimate
 at 3.5 characters a token for anything stored since (tool results, a message, a compaction
@@ -446,7 +446,7 @@ more or less than this browser sent then, the box says plainly "Changed outside 
 browser: down N and up M". A request counted as it left but not yet booked is carried to
 the next check, not reported. The badge's tooltip splits the same two figures.
 
-**Subagents** (`src/subagents.js`): the `subagent` tool lets the main agent hand a
+**Subagents** (`src/subagents.ts`): the `subagent` tool lets the main agent hand a
 self-contained task (web research through `bayleaf`, exploring `/work` or a mounted folder)
 to a background child while it keeps talking with you. A child is an ownerless pi-durable
 conversation in the session's own database (so deleting the session erases it, and the
@@ -474,7 +474,7 @@ marked as yours in both views, and the parent's report (or a foreground spawn's 
 result) quotes them, so the main agent knows you redirected it. The card's Message uses
 the same marked entry. Transformers.js: no subagents, so none of this.
 
-**Agent graphs** (`src/graph.js`, JOURNEYS G1-G12): the agents of one session (its
+**Agent graphs** (`src/graph.ts`, JOURNEYS G1-G12): the agents of one session (its
 main agent, `a1`, and its subagents `a2`, `a3`, ... in spawn order) message each
 other by handle, so subagents can form graphs: many-to-one collectors, pipelines,
 cross-checks. Spawning stays flat (only main spawns); graphs come from messages, and a
@@ -554,7 +554,7 @@ Tool calls execute in the page, so files the agent reads reach the model only in
 sealed request. A mounted folder is a real folder: a read-write mount lets the agent change
 or delete files on your disk, so mount read-only unless you want that.
 
-Replies render as markdown, but never through the HTML parser: `src/markdown.js` parses
+Replies render as markdown, but never through the HTML parser: `src/markdown.ts` parses
 with micromark (GFM) and builds every element with `createElement` and `textContent`, so raw
 HTML in a reply shows as text. Local `/work/` PNG/JPEG/GIF/WebP images render from
 magic-checked bytes using revocable blob URLs; SVG never renders. External images remain
@@ -579,11 +579,11 @@ entry point if needed. Tests mock the Sealed provider and spend no inference quo
 
 A Terminal panel (rail icon, or Ctrl+` from anywhere; Ctrl+` again from its input closes
 it) gives the user just-bash over the namespace the main agent sees: /work, /pouch, /tmp,
-/task, /session (every session) and mounts (`src/terminal.js`). It is deliberately not a terminal emulator: a
+/task, /session (every session) and mounts (`src/terminal.ts`). It is deliberately not a terminal emulator: a
 `role="log"` output region and one labeled text input, no new dependency, usable at
 390 px (16 px input, so phones do not zoom).
 
-- **Same commands, same rules.** `shellFor()` in `src/tools.js` builds the same just-bash
+- **Same commands, same rules.** `shellFor()` in `src/tools.ts` builds the same just-bash
   with the same command list, archive commands and `bayleaf` CLI the agents get. Writes go
   through `vfs.as('user')`, so a watch reports them as "by you", exactly like an editor
   save, and through the page-wide per-path write queue (`oneAtATime`, now module-level and
@@ -603,7 +603,7 @@ it) gives the user just-bash over the namespace the main agent sees: /work, /pou
 - **`cat` and `open`.** `cat` is just-bash's own; when its output on screen would be binary
   (a NUL in the first 8,000 characters) the terminal prints `[binary output: N bytes not
   shown ...]` instead, while a pipe (`cat x.png | od -c | head`) still gets the bytes.
-  `open <path>` (`src/open-cli.js`) shows a file in the editor pane in the mode its type
+  `open <path>` (`src/open-cli.ts`) shows a file in the editor pane in the mode its type
   suggests, or a folder in Files, expanded and in view. The editor or Files then replaces
   the terminal (one panel at a time; Ctrl+` returns, and the terminal line says what opened).
 
@@ -632,7 +632,7 @@ it) gives the user just-bash over the namespace the main agent sees: /work, /pou
   to). `show <path> [--raw | --preview | --static]` takes the same paths and type defaults
   (a folder shows Files) and never `--interactive`. It opens at once unless that would get
   in the person's way: unsaved edits in the editor, a dialog open, a key, pointer or wheel
-  touch of the page in the last 4 s (`SHOW_QUIET_MS` in `src/interface/editing.js`; sending a message
+  touch of the page in the last 4 s (`SHOW_QUIET_MS` in `src/interface/editing.ts`; sending a message
   does not count), or a subagent asking. Then it is offered instead: a card in that agent's
   transcript ("Pouch wants to show you ...") with an Open button. Either way the transcript
   records it (an opened show is a one-line "Shown" card), and the agent reads one line:
@@ -653,7 +653,7 @@ Pouch's filesystem is a Plan 9 namespace (`src/ns/`), in our own small code: no
 Wanix, no new binaries, no new dependencies. The idea came from a look at
 [Wanix](https://wanix.dev) (report in `test/journeys/reports/wanix.md`).
 
-**Bind and union.** `src/ns/namespace.js` is a per-task mount table over small
+**Bind and union.** `src/ns/namespace.ts` is a per-task mount table over small
 file servers. A file server has path-based methods (stat, readFileBuffer,
 writeFile, mkdir, readdir, rm); OPFS `/work`, IndexedDB `/pouch`, picked
 folders `/mnt/*`, the in-memory root, a read-only seed archive, the synthetic
@@ -676,7 +676,7 @@ refusing deletes because a model that cannot `rm` a starter file loops on it.
 its whiteouts. The archive bytes are kept in IndexedDB, so the layer survives
 a reload.
 
-**9P at boundaries.** `src/ns/9p.js` is 9P2000 (codec, server, client) over a
+**9P at boundaries.** `src/ns/9p.ts` is 9P2000 (codec, server, client) over a
 MessagePort, one transferred ArrayBuffer per message. We use plain 9P2000, not
 9P2000.L: our stores have names, sizes, a directory bit and a time, and
 9P2000's thirteen requests (walk, open, create, read, write, clunk, remove,
@@ -718,7 +718,7 @@ calls and subagents: `cat /task/3/status`, `cat /task/3/ns`, and
 name it in one line and the transformersjs prompt does not mention it.
 
 **What namespaces do not enforce.** They do not cover the network. Leaving the
-pouch is still the page CSP (`connect-src`) plus per-session egress grants (`src/egress.js`);
+pouch is still the page CSP (`connect-src`) plus per-session egress grants (`src/egress.ts`);
 a namespace cannot widen or narrow that. Namespaces do not isolate the main agent from the
 user's files: they bound tasks, not the page. A worker's 9P port is a
 capability, but the worker itself is our code, so this is defense in depth
@@ -726,11 +726,11 @@ behind QuickJS, not a new security boundary against a compromised page.
 
 ## Control plane: everything that acts is a file
 
-The file tree is the control plane (`src/ns/control.js`); the Interface is one client among
+The file tree is the control plane (`src/ns/control.ts`); the Interface is one client among
 several, as rio's `/dev/wsys` and acme's `/mnt/acme` are in Plan 9. Every Interface control
 that acts writes a file; the terminal writes the same files with `echo`, and the main agent
 writes ctl files from bash. What a write does (the harness side) is one Interface region,
-`src/interface/harness.js`, marked "Control plane: the harness side", so the tray, the terminal and an
+`src/interface/harness.ts`, marked "Control plane: the harness side", so the tray, the terminal and an
 agent always get the same behavior: a steer typed in the terminal appears in the tray, and a
 Stop clicked in the tray is in the events log.
 
@@ -771,19 +771,19 @@ check its own work without asking the person. `usage` (story AG35) is `key: valu
 lives outside Pouch (the same key is spent by other tools and devices, and a reset or top-up
 raises it), so the file says whose it is, and an unknown allowance reads `unknown`, never 0.
 The counts come from the same ledger as the Usage panel. Context fill joins it once
-`src/context.js` is on main (#124). `changes` (story AG22) lists the paths the agents changed
+`src/context.ts` is on main (#124). `changes` (story AG22) lists the paths the agents changed
 since the user's last message, one line each, `created|modified|deleted <refs> <path>`, sorted
 by path, refs like `a1` or `a1,a2` so a subagent's writes are marked. It is folded to the net
 change (created then deleted is no line) and leaves out writes to /session, /task and /dev,
 which are actions, not file changes. Paths only, never content: the tools report each change
-where the caller is known (`noting` in `src/tools.js`), because watch attribution (`vfs.as`)
+where the caller is known (`noting` in `src/tools.ts`), because watch attribution (`vfs.as`)
 names the kind of writer but not its session, and sees only watched paths.
 
 **A failed write in a script (CP6).** just-bash 3.6 lets a failed redirection write escape the
 whole script: `echo stop > /session/current/agents/a9/ctl; ls /session/current/agents` used
 to drop everything, the output before it included, with no word about the `ls`. Its own error
 classes, which it does catch, are not exported, so Pouch cannot make it continue. Instead the
-shell's filesystem tags a failed write with its path and `execScript` (`src/tools.js`, used by
+shell's filesystem tags a failed write with its path and `execScript` (`src/tools.ts`, used by
 the bash tool and the terminal) turns the escape into exit 1 with `bash: <path>: <error>` and a
 note naming the commands that did not run ("1 later command did not run: `ls ...`. Rerun what
 you still need."). The commands before it did run; their output is lost. Remove the shim once
@@ -791,7 +791,7 @@ just-bash reports a redirection write error the way bash does (status 1, script 
 
 **Events.** `cat /session/events` prints the last 50 lines. Over 9P, an open fid of
 `events` reads like acme's event file: each read blocks until something new happens, and
-Tflush ends a blocked read (`openStream` in `src/ns/namespace.js` and `src/ns/9p.js`). The
+Tflush ends a blocked read (`openStream` in `src/ns/namespace.ts` and `src/ns/9p.ts`). The
 Interface runs the same blocking-read loop (`control.tail()`), no callbacks: from it, it
 re-draws the tray and sidebar and says writes from the terminal or main out loud ("From the
 terminal: stop reader (a3)"). Events never carry message text, only who did what to which
@@ -833,7 +833,7 @@ controls, 3 direct by design). For each control it writes the file from a just-b
 and from the main agent's view and checks the harness was asked to do the same thing; then it
 checks statically that the Interface handler writes the control file (`ctl(...)`) and that
 no direct harness call (`agent.abort`, `subagents.stop`, `stopCall`, `detach`, `steer`,
-`watches.remove`, ...) appears in the Interface (`src/main.js`, `src/interface/`) outside the harness-side block. `test/batchF-browser.mjs` drives the same paths in a page.
+`watches.remove`, ...) appears in the Interface (`src/main.ts`, `src/interface/`) outside the harness-side block. `test/batchF-browser.mjs` drives the same paths in a page.
 
 ## Stance: no BayLeaf-controlled component holds plaintext
 
@@ -997,7 +997,7 @@ anywhere, which is also a usability cost).
 `.md`, `.html`/`.htm` and `.svg` files get **Raw | Preview** in the editor header; images
 (PNG, JPEG, GIF, WebP), audio (MP3, WAV, Ogg, Opus, M4A, AAC, FLAC) and video (MP4, WebM,
 Ogg, MOV) open as a preview only, with no Save (there is no text to save over them).
-`src/preview.js` holds the table; PDFs and databases are later rows there.
+`src/preview.ts` holds the table; PDFs and databases are later rows there.
 
 - Markdown previews with Pouch's own renderer (DOM nodes, no HTML): only local raster
   images under `/work` are drawn; a remote image is a link you must confirm.
@@ -1024,7 +1024,7 @@ export at a pinned revision, run by Transformers.js 4.3.2 and ONNX Runtime Web o
 WebGPU. It is for computers only. The picker shows it when the device and the WebGPU adapter meet its
 requirements and otherwise lists it disabled with the reason; `models get` and Settings then refuse
 before the approval sheet, so nothing is downloaded. Phones and tablets are refused first
-(`deviceSupport` in `src/local/engine.js`): on a Pixel 10 Pro the adapter passes every check
+(`deviceSupport` in `src/local/engine.ts`): on a Pixel 10 Pro the adapter passes every check
 below, but the first request's one-shot prefill froze the whole phone for about a minute ("System
 UI isn't responding"). The cause is scheduling, not memory: one long GPU submission starves the
 system compositor on a mobile GPU. Signals, any of which refuses:
@@ -1034,7 +1034,7 @@ iPadOS's desktop-style "Macintosh" string with touch points, and `navigator.devi
 so touch laptops are not refused. On such a device a model already downloaded stays removable
 (Settings shows Remove, never Download); a saved choice of Transformers.js stays selected but Send
 refuses with the reason before any GPU work, rather than quietly sending to Sealed. GPU
-requirements (`gpuSupport` in `src/local/engine.js`, read from
+requirements (`gpuSupport` in `src/local/engine.ts`, read from
 `navigator.gpu.requestAdapter()`, no device and no download): an adapter, the `shader-f16`
 feature (q4f16), and `maxStorageBuffersPerShaderStage` of at least 10. The last because
 Firefox on an M3 Max reports 9 and ORT-Web then fails mid-turn with "Too many storage buffers in
@@ -1043,19 +1043,19 @@ Runtime Web's WebGPU EP calls `requestDevice` itself), so if a device still gets
 adapter reported, that runtime error is shown as the same plain reason. Choosing it is the only way in: Pouch never switches providers by itself, and the
 shield says "Transformers.js: in this browser, nothing sent". (`node build.mjs --no-models` omits it.)
 
-- **Weights, from the BayLeaf HF gateway** (`src/models.js`, issue #121). `models.lock.json`
+- **Weights, from the BayLeaf HF gateway** (`src/models.ts`, issue #121). `models.lock.json`
   pins every file (size, SHA-256, revision); the build puts those pins in the page. The
   page fetches each file from `https://api.bayleaf.dev/hf/<repo>/resolve/<commit>/<path>`
   (BayLeaf's mirror: Hugging Face sees no request) in 32 MiB byte ranges, four in flight,
   each retried on failure, and hashes the file **incrementally** in order
-  (`src/sha256.js`, a 60-line SHA-256 whose state survives a reload, tested against NIST
+  (`src/sha256.ts`, a 60-line SHA-256 whose state survives a reload, tested against NIST
   vectors and `crypto.subtle`), so the 1.09 GB weights are never in memory at once. Each
   chunk is kept in Cache Storage as it is hashed, with the hash state after it: Stop (or
   a closed tab) keeps the verified prefix, and the next download continues there. A
   file whose whole hash differs from the lock is refused by name and dropped. The
   gateway's catalog (license, distribution, qualification) is shown, never trusted for
   bytes; `deploy.mjs` checks it agrees with the lock.
-- **Runtime, from Pouch's origin** (`build-runtime.mjs`, `src/assets.js` `partAssets`).
+- **Runtime, from Pouch's origin** (`build-runtime.mjs`, `src/assets.ts` `partAssets`).
   The Transformers.js + ORT worker bundle and the ORT wasm, cut into content-hash parts of
   at most 20 MiB under `dist/runtime/transformers/` with a manifest whose SHA-256 the page
   embeds. The bundle's library defaults that name a CDN or the Hub are rewritten at build
@@ -1067,7 +1067,7 @@ shield says "Transformers.js: in this browser, nothing sent". (`node build.mjs -
   and the wasm as bytes. Measured with the real model (M3 Max, Chrome, 2026-11-01):
   putting 1.09 GB into the store took 6 s with the browser 0.4 GiB above idle; loading
   peaked at 3.0 GiB in one process (ORT holds the weights as one buffer, as before).
-- **Consent: the `models` command** (`src/models-cli.js`). `models list | status | get |
+- **Consent: the `models` command** (`src/models-cli.ts`). `models list | status | get |
   remove | verify`, for agents and the terminal; Settings' Download, Stop and Remove call
   the same code. `get` always opens an approval sheet naming size, storage, license and
   attribution, and origin; anyone may ask, only the user's click approves. The download is
@@ -1082,7 +1082,7 @@ shield says "Transformers.js: in this browser, nothing sent". (`node build.mjs -
   hashed against the lock the same way, plus a saved `runtime/transformers/` folder, for
   offline or `file://` copies (kept for that page load only there). **Remove the model**
   frees the storage; **Erase all** removes it too.
-- **Recipe** (`experiments/lfm3-webgpu`, agent v2 "v8"; the `transformersjs` profile in `src/profiles.js`, moved there byte for byte). A short grounded system prompt
+- **Recipe** (`experiments/lfm3-webgpu`, agent v2 "v8"; the `transformersjs` profile in `src/profiles.ts`, moved there byte for byte). A short grounded system prompt
   naming `/work`, one byte-exact example turn, four short tool schemas (read, write,
   edit, bash: no `run`, no subagents, which would spend BayLeaf Sealed requests), greedy
   decoding, at most 8 model steps per message and about 4k tokens of context: older
@@ -1112,7 +1112,7 @@ shield says "Transformers.js: in this browser, nothing sent". (`node build.mjs -
 Settings > Providers > Localhost connects Pouch to an OpenAI-compatible server on
 loopback that the user runs: oMLX, Ollama, LM Studio, llama.cpp's server, or a proxy (for
 example to their own Tinfoil account; Pouch itself integrates no third party). Source:
-`src/localhost.js` (pure, node-tested), profile `localhost` in `src/profiles.js`.
+`src/localhost.ts` (pure, node-tested), profile `localhost` in `src/profiles.ts`.
 
 - **Address**: `http://localhost` or `http://127.0.0.1`, any port; a bare origin gets
   `/v1`. Everything else is refused in code (lookalikes such as `127.0.0.1.evil.com`,
@@ -1235,10 +1235,10 @@ For heavy tools (pdf.js and libav.js now; OCR, ASR, DuckDB later):
   worker; its files ship as content-hash parts under `runtime/<group>/` listed in
   `SHA256SUMS`; any model it needs comes from the gateway, pinned in the build. No asset
   may default to a CDN or the Hub (`assertNoCdn`, at build and in tests).
-- **Reassembler** (`src/assets.js`): `partAssets(pin)` for runtime files over 25 MiB;
+- **Reassembler** (`src/assets.ts`): `partAssets(pin)` for runtime files over 25 MiB;
   `fillFile` / `rangeSource` / `verifiedFile` for large gateway files. One rule: nothing
   is used unless its SHA-256 matches a hash the page was built with.
-- **Engine jobs** (`src/jobs.js`): one instance per engine shared by every agent, a queue
+- **Engine jobs** (`src/jobs.ts`): one instance per engine shared by every agent, a queue
   (serial by default, `concurrency` per engine), each job a `/task` entry whose ctl stops
   only that job, a memory guard (unloads idle engines, then refuses with a reason), and
   capability scoping: a job gets its caller's namespace view, never the global tree.
@@ -1246,7 +1246,7 @@ For heavy tools (pdf.js and libav.js now; OCR, ASR, DuckDB later):
 
 ### The first tool: pdf.js (`pdfinfo`, `pdftotext`, `pdftoppm`)
 
-`src/pdf.js` adds three commands to the terminal and the agents' bash, with poppler's
+`src/pdf.ts` adds three commands to the terminal and the agents' bash, with poppler's
 names and flags so a model's prior knowledge works:
 
 - `pdfinfo [-upw PW] FILE`: pages, metadata, page size, PDF version, encryption,
@@ -1258,7 +1258,7 @@ names and flags so a model's prior knowledge works:
   pages to PNG (or JPEG) in the VFS, `PREFIX-N.png` zero-padded like poppler, rendered on
   an OffscreenCanvas in the worker; `-x -y -W -H` crop a region.
 
-Caps are named constants in `src/pdf.js` and errors cite them: `MAX_PDF_BYTES` 256 MiB,
+Caps are named constants in `src/pdf.ts` and errors cite them: `MAX_PDF_BYTES` 256 MiB,
 `TEXT_MAX_PAGES` 2000 per call, `INFO_SCAN_PAGES` 500, `RENDER_MAX_PAGES` 50 per call,
 `MIN_DPI`-`MAX_DPI` 18-600 (default 150), `MAX_PIXELS` 25 million per page. A range over a
 cap is refused, not cut. Without `-l`, `pdftotext` and `pdftoppm` stop at their cap with
@@ -1268,7 +1268,7 @@ PDF without its password, 99 for bad arguments; 130 when stopped.
 
 Each command is an engine job (`/task`, Stop through ctl); one worker serves the terminal
 and every agent. A non-PDF is refused before the runtime loads. The runtime
-(`build-pdf.mjs`, `src/pdf/worker.js`; sizes and licenses in DEPLOYMENT.md) runs pdf.js's
+(`build-pdf.mjs`, `src/pdf/worker.ts`; sizes and licenses in DEPLOYMENT.md) runs pdf.js's
 worker code in the same thread, reads cmaps, fonts and decoder wasm from a verified
 `data.pack` instead of fetching them, and then removes `fetch` and `XMLHttpRequest` from
 its worker. pdf.js's scripting sandbox is not shipped, so PDF JavaScript cannot run. The
@@ -1281,7 +1281,7 @@ JavaScript and a link, Stop, offline reuse, and the network log).
 
 ### The second tool: libav.js (`ffprobe`, `ffmpeg`)
 
-`src/media.js` adds FFmpeg's own two programs to the terminal and the agents' bash
+`src/media.ts` adds FFmpeg's own two programs to the terminal and the agents' bash
 (libav.js 6.10.9.0, FFmpeg 9, variant `webm-vp9-cli`), with FFmpeg's flags and messages:
 
 - `ffprobe [OPTIONS] FILE`: argv passes through; `-v error -show_format -show_streams -of
@@ -1303,7 +1303,7 @@ patent-encumbered codecs), and MP3 is only in `obsolete`; an "empty output with 
 from libav.js counts as a failure.
 
 **The WebCodecs path** (phone videos and voice memos). MOV, MP4, M4A and MP3 inputs are
-recognized by their first bytes (`src/media/wc.js` `sniff`) and handled without libav's
+recognized by their first bytes (`src/media/wc.ts` `sniff`) and handled without libav's
 programs. A second, API-only build, `webcodecs-avf` (same release, 3.4 MiB wasm: the MOV
 demuxer, swresample, the audio and video filters, the FLAC and Opus encoders, no
 decoders for those codecs), demuxes; the browser's `VideoDecoder` and `AudioDecoder`
@@ -1346,7 +1346,7 @@ new license family (LGPL FFmpeg from the sources already shipped) and no CSP cha
   the lower-level calls. A custom libav.js build (MP3 demuxer, PCM encoders, an MP4 muxer
   for `-c copy` cuts) is a later option.
 
-Caps are named constants in `src/media.js`: `MAX_INPUT_BYTES` 256 MiB per call (checked
+Caps are named constants in `src/media.ts`: `MAX_INPUT_BYTES` 256 MiB per call (checked
 before the runtime loads), `MAX_INPUT_SECONDS` 3 h per input, `MAX_OUTPUT_BYTES` 256 MiB
 (over it nothing is written), `MAX_IMAGES` 100 per call, `MAX_FRAME_PIXELS` 3840x2160,
 `MAX_STDOUT_BYTES` 1 MiB, `MAX_STDERR_LINES` 60. Each run is an engine job (`/task`, Stop
@@ -1355,7 +1355,7 @@ runs to completion inside wasm, so Stop ends the worker after `STOP_GRACE_MS` (1
 next job starts a new one; a stopped job writes nothing. Exit codes: 1 for errors, 130 when
 stopped.
 
-The runtime (`build-libav.mjs`, `src/media/worker.js`) bundles libav.js's wrapper and
+The runtime (`build-libav.mjs`, `src/media/worker.ts`) bundles libav.js's wrapper and
 Emscripten factory into one module worker (three build-time rewrite rules, six replacements,
 each matched an exact number of times: Emscripten's Node branches and libav.js's own worker bootstrap), compiles
 the released wasm once from verified bytes, then removes `fetch` and `XMLHttpRequest` from
@@ -1374,7 +1374,7 @@ messages, Stop mid-ffmpeg, offline reuse, and the network log).
 
 ## The `bayleaf` command: the one way out
 
-`src/bayleaf-cli.js` adds a `bayleaf` command to the shell for BayLeaf's non-inference
+`src/bayleaf-cli.ts` adds a `bayleaf` command to the shell for BayLeaf's non-inference
 services: `web search|fetch`, `sandbox status|exec|poke|files ls/get/put|preview
 expose/unexpose`, `inbox list|limits|show|messages|read|create|destroy`, and `status`.
 `bayleaf --help` (and `--help` at every level) is the documentation; it is rendered from the
@@ -1389,7 +1389,7 @@ The privacy boundary is enforced in the command itself, not left to the model:
 - Each request that goes out prints `[left the pouch: <audiences>]` to stderr and calls
   `hooks.onEgress({ command, service, summary, audiences, method, path, status, ok })`.
 - The bash tool ends its result with `[this call sent data outside the pouch: ...]`.
-- In the page, `src/egress.js` implements the hooks: an approval sheet (Deny, Allow once,
+- In the page, `src/egress.ts` implements the hooks: an approval sheet (Deny, Allow once,
   Allow for this session) and per-session grants kept in settings as
   `egressGrants:<session>`, revocable from the session menu and deleted with the session.
   Tool cards that sent something show a "left the pouch" badge, rebuilt from the marker.

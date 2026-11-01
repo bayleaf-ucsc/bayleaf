@@ -2,7 +2,7 @@
 // wrapped to prove nothing is sent), and live read-only calls when approved.
 // Run: set -a; source ~/.tokens/bayleaf-api; set +a; node test/bayleaf-cli-node.mjs [--live]
 import { Bash, defineCommand, InMemoryFs } from 'just-bash';
-import { bayleafCommands } from '../src/bayleaf-cli.js';
+import { bayleafCommands } from '../src/bayleaf-cli.ts';
 
 const calls = [];
 const realFetch = globalThis.fetch;

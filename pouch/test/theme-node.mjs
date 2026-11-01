@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createTheme, THEME_KEY } from '../src/theme.js';
+import { createTheme, THEME_KEY } from '../src/theme.ts';
 const root = new EventTarget(); root.dataset = {};
 const media = new EventTarget(); media.matches = true;
 const control = new EventTarget();

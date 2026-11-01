@@ -6,11 +6,11 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { InMemoryFs, Bash } from 'just-bash';
-import { Namespace, over, codeOf } from '../src/ns/namespace.js';
-import { createControl, createChanges, changesText, usageText, parseIn, parseCtl, why } from '../src/ns/control.js';
-import { execScript, tagWrites, noting, commandsOf, stoppedAt } from '../src/tools.js';
-import { Tasks, TaskFs } from '../src/ns/tasks.js';
-import { serve, Client, OREAD } from '../src/ns/9p.js';
+import { Namespace, over, codeOf } from '../src/ns/namespace.ts';
+import { createControl, createChanges, changesText, usageText, parseIn, parseCtl, why } from '../src/ns/control.ts';
+import { execScript, tagWrites, noting, commandsOf, stoppedAt } from '../src/tools.ts';
+import { Tasks, TaskFs } from '../src/ns/tasks.ts';
+import { serve, Client, OREAD } from '../src/ns/9p.ts';
 
 let passed = 0;
 async function test(name, fn) { await fn(); passed++; console.log('ok', name); }
@@ -19,7 +19,7 @@ async function test(name, fn) { await fn(); passed++; console.log('ok', name); }
 // op: the file write that performs it ({sid} 1, {ref} a2, {task} a /task id,
 // {watch} w1). agent: what the main agent may do with the same file
 // ('ok', or the error code it gets by design). anchor: where its handler is
-// in the UI shell, src/main.js and src/interface/*.js (the handler is the next
+// in the UI shell, src/main.ts and src/interface/*.js (the handler is the next
 // `lines` lines, or a helper it calls).
 // via: helpers the handler calls, each of which must itself write a control file.
 export const CONTROLS = [
@@ -185,7 +185,7 @@ await test('events: a blocking read in JS and over 9P (flush interrupts it)', as
 // ── Static: the Interface's handlers write control files ────────────
 // The Interface's sources, one string: its region factories indent their bodies.
 const interfaceDir = new URL('../src/interface/', import.meta.url);
-const main = [readFileSync(new URL('../src/main.js', import.meta.url), 'utf8'),
+const main = [readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8'),
   ...readdirSync(interfaceDir).filter((f) => f.endsWith('.js')).sort().map((f) => readFileSync(new URL(f, interfaceDir), 'utf8'))].join('\n');
 const lines = main.split('\n');
 const bodyOf = (name) => {
@@ -220,7 +220,7 @@ await test('direct harness calls appear only inside the harness side (driver)', 
 });
 
 await test('the terminal stops with a ctl write too', async () => {
-  const t = readFileSync(new URL('../src/terminal.js', import.meta.url), 'utf8');
+  const t = readFileSync(new URL('../src/terminal.ts', import.meta.url), 'utf8');
   assert.match(t, /writeFile\(`\/task\/\$\{[^}]+\}\/ctl`, 'kill'\)/);
 });
 
@@ -252,7 +252,7 @@ await test('changes: net paths changed this turn, subagents marked, actions left
   assert.equal(changesText(c.list(1)), 'modified a1,a2 /work/b.js\ndeleted a3 /work/my file.txt\ncreated a1 /work/new.md\nmodified a1 /work/old.txt\n');
   c.begin(1); assert.equal(changesText(c.list(1)), '', 'a new turn starts empty');
   assert.equal(c.list(2).length, 1, 'sessions are separate');
-  // The tools' fs reports what a script changes (src/tools.js noting).
+  // The tools' fs reports what a script changes (src/tools.ts noting).
   const fs = new InMemoryFs();
   await fs.mkdir('/work', { recursive: true });
   for (const f of ['keep', 'gone', 'from']) await fs.writeFile('/work/' + f, 'x');

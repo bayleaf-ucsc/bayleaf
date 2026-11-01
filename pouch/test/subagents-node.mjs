@@ -1,8 +1,8 @@
-// Node check of background subagents (src/subagents.js) against a scripted
+// Node check of background subagents (src/subagents.ts) against a scripted
 // fake Sealed endpoint: no network, no real model requests.
 // Run: node test/subagents-node.mjs (section 5 needs fake-indexeddb at /tmp/pouch-scratch/fidb, as vfs-node.mjs)
-import { openAgent, MemoryStorage, Type } from '../src/agent.js';
-import { MAX_RUNNING } from '../src/subagents.js';
+import { openAgent, MemoryStorage, Type } from '../src/agent.ts';
+import { MAX_RUNNING } from '../src/subagents.ts';
 
 const sleep = (ms, signal) => new Promise((r, j) => {
   const t = setTimeout(r, ms);

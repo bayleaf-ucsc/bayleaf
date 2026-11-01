@@ -4,8 +4,8 @@
 // Run: node test/9p-node.mjs
 import assert from 'node:assert/strict';
 import { InMemoryFs, Bash } from 'just-bash';
-import { Namespace, codeOf } from '../src/ns/namespace.js';
-import { encode, decode, packStats, unpackStats, serve, Client, NinepFs, DMDIR, QTDIR, NOTAG } from '../src/ns/9p.js';
+import { Namespace, codeOf } from '../src/ns/namespace.ts';
+import { encode, decode, packStats, unpackStats, serve, Client, NinepFs, DMDIR, QTDIR, NOTAG } from '../src/ns/9p.ts';
 
 let passed = 0;
 async function test(name, fn) { await fn(); passed++; console.log('ok', name); }

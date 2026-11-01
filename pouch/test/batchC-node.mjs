@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { InMemoryFs } from 'just-bash';
-import { createWatches, expand } from '../src/ns/watch.js';
+import { createWatches, expand } from '../src/ns/watch.ts';
 
 const root = resolve(import.meta.dirname, '..');
 let passed = 0;

@@ -75,7 +75,7 @@ Three layers, read top to bottom:
 | C1 pdf.js runtime | lazy same-origin worker, ~5 MiB, scripting off | no (plumbing from batch H) | PD1-6, AG3-4 |
 | C2 libav.js runtime | `default-cli` (audio only), ~2.6 MiB, LGPL source shipped; video stories (AV3-5, AG1) need a `webm-cli` or `webm-vp9-cli` build, MP3 input needs `obsolete`, AAC/M4A needs WebCodecs or `decodeAudioData` | no (plumbing from batch H) | AV1-2, AV6, AG2, AG6 with `default-cli`; AV3-5, AG1 with a video variant |
 | C3 shell commands | `pdftotext`, `pdftoppm`, `pdfinfo`, `ffmpeg`, `ffprobe` in just-bash over the VFS | no | all |
-| C4 image perception | a tool result that carries image blocks (see Q1); needs `toTool` (src/agent.js) to pass image blocks through instead of text only, the transcript to show them, and the model input to carry them | **no**: images reach a model only as user attachments | AG1, AG4, AG7-8 |
+| C4 image perception | a tool result that carries image blocks (see Q1); needs `toTool` (src/agent.ts) to pass image blocks through instead of text only, the transcript to show them, and the model input to carry them | **no**: images reach a model only as user attachments | AG1, AG4, AG7-8 |
 | C5 model ability | an image-capable model (Sealed models marked "images") | yes for some Sealed models; LFM3 no | AG1, AG4, AG8 |
 | C6 jobs and `/task` | progress, Stop through ctl, memory guard | yes (batch H, F) | AG6, AV3-4, AV6 |
 | C7 previews | PDF canvas preview, transcoded video preview, `open` routing | partial (G; `open` in progress) | PD3, AV4 |
