@@ -339,7 +339,7 @@ const AGENTS_FILES = ['/pouch/AGENTS.md', '/work/AGENTS.md'];
 const SKILL_ROOTS = ['/pouch/skills', '/work/.agents/skills'];
 
 function frontmatter(text) {
-  const m = text.match(/^---\n([\s\S]*?)\n---/);
+  const m = text.replace(/\r\n?/g, '\n').match(/^---\n([\s\S]*?)\n---/);
   const out = {};
   for (const line of m?.[1].split('\n') ?? []) {
     const kv = line.match(/^(\w[\w-]*):\s*(.*)$/);
