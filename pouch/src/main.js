@@ -1518,6 +1518,7 @@ function approveModel(req, who) {
   return run;
 }
 const modelService = createModelService({ store: modelStore, tasks: vfs.tasks, approve: approveModel,
+  supports: (id) => (LOCAL && id === LOCAL.id ? localOk : { ok: true }),
   onChange: () => { const t = LOCAL && modelService.downloads.get(LOCAL.id); if (t?.status === 'running' && t.progress) localProgress({ ...t.progress, downloading: true }); renderLocalSettingsSoon(); } });
 let settingsTimer = null;
 const renderLocalSettingsSoon = () => { if (!settingsTimer) settingsTimer = setTimeout(() => { settingsTimer = null; renderLocalSettings(); }, 250); };

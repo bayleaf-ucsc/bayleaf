@@ -8,6 +8,7 @@ import { Sha256, sha256hex } from '../src/sha256.js';
 import { openStore, fillFile, rangeSource, blobSource, verifiedFile, fileState, partAssets } from '../src/assets.js';
 import { createModelStore } from '../src/models.js';
 import { createModelService, modelsCommands } from '../src/models-cli.js';
+import { gpuSupport, friendlyError, MIN_STORAGE_BUFFERS } from '../src/local/engine.js';
 import { createJobs, sleepAndHash } from '../src/jobs.js';
 import { Tasks, TaskFs } from '../src/ns/tasks.js';
 import { CDN, assertNoCdn } from '../build-runtime.mjs';
@@ -191,6 +192,36 @@ await t('models: a tampered gateway file fails the download task naming the file
   const svc = createModelService({ store, tasks: new Tasks(), approve: async () => true });
   const r = await sh(svc, ['get', 'tiny-q4', '--wait']);
   assert.equal(r.exitCode, 1); assert.match(r.stderr, /onnx\/model\.onnx_data: SHA-256 differs from the pin/);
+});
+
+// ── WebGPU capability, before anything is offered or downloaded ──
+const adapter = ({ f16 = true, buffers = MIN_STORAGE_BUFFERS } = {}) => ({ requestAdapter: async () => ({ features: new Set(f16 ? ['shader-f16'] : []), limits: { maxStorageBuffersPerShaderStage: buffers } }) });
+await t('gpuSupport: storage-buffer limit 9 vs 10, missing shader-f16, no adapter, no navigator.gpu', async () => {
+  assert.deepEqual(await gpuSupport(adapter({ buffers: 10 })), { ok: true });
+  assert.deepEqual(await gpuSupport(adapter({ buffers: 16 })), { ok: true });
+  const low = await gpuSupport(adapter({ buffers: 9 }));
+  assert.equal(low.ok, false);
+  assert.equal(low.reason, "This browser's WebGPU allows 9 storage buffers per shader; LFM3 needs 10. Use Chrome or Edge, or a BayLeaf Sealed model.");
+  assert.match((await gpuSupport(adapter({ f16: false }))).reason, /lacks shader-f16.*Use Chrome or Edge, or a BayLeaf Sealed model/);
+  assert.match((await gpuSupport({ requestAdapter: async () => null })).reason, /no usable graphics adapter/);
+  assert.match((await gpuSupport({ requestAdapter: async () => { throw new Error('boom'); } })).reason, /WebGPU failed: boom/);
+  assert.match((await gpuSupport(undefined)).reason, /WebGPU is not available/);
+});
+await t('friendlyError: the runtime storage-buffer error reads like the up-front check', () => {
+  const raw = '[WebGPU] Kernel "MatMulNBits" failed. Error: shader_helper.cc:308 ValidateVariable numbers_storage_buffers_ <= limits_.maxStorageBuffersPerShaderStage was false. Too many storage buffers in shader. Current: 10, Max is 9';
+  assert.equal(friendlyError(raw), "This browser's WebGPU allows 9 storage buffers per shader; LFM3 needs 10. Use Chrome or Edge, or a BayLeaf Sealed model.");
+  assert.equal(friendlyError('other failure'), 'other failure');
+});
+await t('models get refuses up front when the browser cannot run the model: no sheet, nothing fetched', async () => {
+  const { m, served } = fakeModel(), log = [];
+  const store = createModelStore([m], { gateway: 'https://gw/hf', fetchImpl: gateway(served, { log }), chunk: C });
+  let asks = 0;
+  const reason = (await gpuSupport(adapter({ buffers: 9 }))).reason;
+  const svc = createModelService({ store, tasks: new Tasks(), approve: async () => { asks++; return true; }, supports: (id) => (id === m.id ? { ok: false, reason } : { ok: true }) });
+  const r = await sh(svc, ['get', 'tiny-q4']);
+  assert.equal(r.exitCode, 1);
+  assert.match(r.stderr, /Tiny cannot run in this browser, so it was not downloaded \(nothing was fetched\)\. This browser's WebGPU allows 9 storage buffers per shader; LFM3 needs 10/);
+  assert.equal(asks, 0); assert.equal(log.length, 0);
 });
 
 // ── The engine job service ──

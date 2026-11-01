@@ -17,12 +17,40 @@ export const LOCAL = typeof LOCAL_MODEL !== 'undefined' ? LOCAL_MODEL : null; //
 export const models = createModelStore(LOCAL ? [LOCAL] : []);
 const runtime = LOCAL && partAssets(LOCAL.runtime);
 
+// What LFM3 (q4f16) needs from the WebGPU adapter, checked before the picker
+// offers it or anything is downloaded. Pouch does not create the device: ONNX
+// Runtime Web's WebGPU EP calls requestDevice itself, so this reads the adapter.
+// MIN_STORAGE_BUFFERS: Firefox on an M3 Max (2026-11-01, ORT-Web 1.31.0-dev via
+// Transformers.js 4.3.2) failed mid-turn in OrtRun with "Too many storage buffers
+// in shader. Current: 10, Max is 9"; Chrome on the same machine reports more and
+// works. The kernel that needs 10 is not yet identified.
+export const MIN_STORAGE_BUFFERS = 10;
+const ELSEWHERE = 'Use Chrome or Edge, or a BayLeaf Sealed model.';
+const buffersReason = (have, need = MIN_STORAGE_BUFFERS) => `This browser's WebGPU allows ${have} storage buffers per shader; LFM3 needs ${need}. ${ELSEWHERE}`;
+
+// gpu: navigator.gpu or a stand-in. Asks for an adapter only: no device, no download.
+export async function gpuSupport(gpu) {
+  if (!gpu) return { ok: false, reason: 'WebGPU is not available in this browser (a recent Chrome or Edge on a computer has it).' };
+  let adapter;
+  try { adapter = await gpu.requestAdapter(); }
+  catch (e) { return { ok: false, reason: 'WebGPU failed: ' + e.message }; }
+  if (!adapter) return { ok: false, reason: 'WebGPU found no usable graphics adapter on this device.' };
+  if (!adapter.features?.has?.('shader-f16')) return { ok: false, reason: `This browser's WebGPU lacks shader-f16, which LFM3 (q4f16) needs. ${ELSEWHERE}` };
+  const buffers = adapter.limits?.maxStorageBuffersPerShaderStage ?? 0;
+  if (buffers < MIN_STORAGE_BUFFERS) return { ok: false, reason: buffersReason(buffers) };
+  return { ok: true };
+}
+
 export async function support() {
   if (!LOCAL) return { ok: false, reason: 'This build of Pouch does not include the local model.' };
-  if (!globalThis.navigator?.gpu) return { ok: false, reason: 'WebGPU is not available in this browser (a recent Chrome or Edge on a computer has it).' };
-  try { if (!(await navigator.gpu.requestAdapter())) return { ok: false, reason: 'WebGPU found no usable graphics adapter on this device.' }; }
-  catch (e) { return { ok: false, reason: 'WebGPU failed: ' + e.message }; }
-  return { ok: true };
+  return gpuSupport(globalThis.navigator?.gpu);
+}
+
+// The same limit, met at run time (an adapter that reported more than the device
+// got): the friendly reason instead of ORT's raw message.
+export function friendlyError(message) {
+  const m = /Too many storage buffers in shader\. Current: (\d+), Max is (\d+)/.exec(String(message));
+  return m ? buffersReason(Number(m[2]), Number(m[1])) : message;
 }
 
 // { bytes, total, complete, persistent, downloading }: the weights (the runtime is small
@@ -83,9 +111,9 @@ export const engine = {
         if (!p) return;
         if (data.delta !== undefined) return p.onDelta?.(data.delta);
         pending.delete(data.id);
-        data.error ? p.reject(new Error(data.error)) : p.resolve(data.result);
+        data.error ? p.reject(new Error(friendlyError(data.error))) : p.resolve(data.result);
       };
-      worker.onerror = (e) => { for (const p of pending.values()) p.reject(new Error(e.message || 'The Transformers.js model worker failed.')); pending.clear(); };
+      worker.onerror = (e) => { for (const p of pending.values()) p.reject(new Error(friendlyError(e.message) || 'The Transformers.js model worker failed.')); pending.clear(); };
       const wasm = got.runtime.manifest.files.find((f) => f.role === 'wasm');
       return await call('load', { files: got.files, wasm: got.runtime.files[wasm.name] });
     })();

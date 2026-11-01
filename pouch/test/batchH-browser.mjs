@@ -3,7 +3,8 @@
 // the `models` command's consent (deny and approve, terminal and agent),
 // download as a /task with Stop through ctl and resume after reload, tamper
 // detection, migration from the old pouch.bayleaf.dev part cache, offline
-// re-verification, removal, and Settings sharing the same download.
+// re-verification, removal, and Settings sharing the same download, and the
+// WebGPU capability check (a stubbed adapter: headless Chromium's lacks shader-f16).
 // Run: node test/batchH-browser.mjs
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
@@ -91,9 +92,14 @@ async function gateway(route) {
   if (gw.corrupt?.(name, from)) { body = Buffer.from(body); body[0] ^= 0xff; }
   return route.fulfill({ status: r ? 206 : 200, headers: { ...cors, 'content-type': 'application/octet-stream', ...(r ? { 'content-range': `bytes ${from}-${to - 1}/${b.length}` } : {}) }, body });
 }
-async function open(name) {
+// gpu: the adapter navigator.gpu reports (the fake worker never touches it).
+async function open(name, { gpu = { f16: true, buffers: 10 } } = {}) {
   const context = await pw.chromium.launchPersistentContext(join(scratch, name), { headless: true, viewport: { width: 1280, height: 800 }, args: ['--enable-unsafe-webgpu'] });
   contexts.push(context);
+  await context.addInitScript(({ f16, buffers }) => {
+    const adapter = { features: new Set(f16 ? ['shader-f16'] : []), limits: { maxStorageBuffersPerShaderStage: buffers }, info: { vendor: 'fake' } };
+    Object.defineProperty(Navigator.prototype, 'gpu', { configurable: true, get: () => ({ requestAdapter: async () => adapter }) });
+  }, gpu);
   await context.route(/^https?:\/\/(?!127\.0\.0\.1[:/]|localhost[:/])/, (r) => {
     const u = new URL(r.request().url());
     if (u.hostname === 'api.bayleaf.dev' && u.pathname.startsWith('/hf/')) return gateway(r);
@@ -176,9 +182,8 @@ try {
   // 3. Settings shares the store: Download hidden when complete; Remove frees.
   await page.click('#rail [data-panel="settings"]').catch(() => {});
   const settingsText = await page.$eval('#local-state', (e) => e.textContent).catch(() => '');
-  const gpu = await page.evaluate(async () => !!(await navigator.gpu?.requestAdapter?.().catch(() => null)));
-  if (gpu) assert.match(settingsText, /kept in this browser/);
-  ok(`Settings reads the same store (${gpu ? 'WebGPU adapter present' : 'no WebGPU adapter in headless: state line shows the reason'})`);
+  assert.match(settingsText, /kept in this browser/);
+  ok('Settings reads the same store');
 
   // 4. Agent request vs user approval (the fake Sealed model drives main).
   await rule(page, { who: 'title', reply: 'Models', sticky: true });
@@ -252,6 +257,23 @@ try {
   await page.waitForFunction(() => /Fake 1M is ready in this browser/.test(document.getElementById('status')?.textContent), null, T);
   assert.match(await page.$eval('#local-state', (e) => e.textContent), /kept in this browser/);
   ok('Settings Download asks on the same sheet, runs as a /task, Stop writes its ctl, Resume continues, the verified runtime and weights load');
+  await context.close();
+
+  // 5. An adapter below the storage-buffer limit (Firefox on an M3 Max reported 9):
+  // the option is unavailable with the reason; models get and Settings start nothing.
+  ({ context, page } = await open('e', { gpu: { f16: true, buffers: 9 } }));
+  const why = "This browser's WebGPU allows 9 storage buffers per shader; LFM3 needs 10. Use Chrome or Edge, or a BayLeaf Sealed model.";
+  const opt = await page.$eval('#model option[value^="local:"]', (o) => ({ disabled: o.disabled, text: o.textContent, title: o.title }));
+  assert.equal(opt.disabled, true); assert.equal(opt.title, why); assert.ok(opt.text.includes(`(unavailable: ${why})`), opt.text);
+  gw.log.length = 0;
+  const sheets = sheet.last;
+  const refused = await term(page, 'models get fake-q4');
+  assert.ok(refused.includes(`Fake 1M cannot run in this browser, so it was not downloaded (nothing was fetched). ${why}`), refused);
+  assert.equal(sheet.last, sheets, 'no approval sheet'); assert.equal(gw.log.length, 0);
+  await page.click('button[data-panel="settings"]');
+  assert.equal(await page.$eval('#local-state', (e) => e.textContent), `Not available here: ${why}`);
+  assert.equal(await page.$eval('#local-download', (e) => e.hidden), true);
+  ok('low storage-buffer limit: the option is disabled with the reason; models get refuses before the sheet; Settings offers no Download');
   await context.close();
 
   assert.deepEqual(errors, []);
