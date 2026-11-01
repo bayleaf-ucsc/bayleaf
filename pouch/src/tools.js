@@ -149,7 +149,7 @@ export function noting(fs, onChange) {
       if (prop === 'rm') return async (p, ...a) => {
         const had = await was(p), inside = had ? await under(target, normalize(p)) : [];
         const r = await target.rm(p, ...a);
-        if (had) { for (const q of inside) onChange('deleted', q); onChange('deleted', normalize(p)); }
+        if (had) { for (const q of inside.reverse()) onChange('deleted', q); onChange('deleted', normalize(p)); } // deepest first
         return r;
       };
       if (prop === 'mkdir') return async (p, ...a) => { const had = await was(p); const r = await target.mkdir(p, ...a); if (!had) onChange('created', normalize(p)); return r; };

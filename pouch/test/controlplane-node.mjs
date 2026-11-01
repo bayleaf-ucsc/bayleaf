@@ -272,6 +272,11 @@ await test('changes: net paths changed this turn, subagents marked, actions left
   const r4 = await new Bash({ fs: noting(fs, (op, p) => seen.note(1, op, p, 'a1')), cwd: '/work' }).exec('rm -r dest; cp -r final dest');
   assert.equal(r4.exitCode, 0, r4.stderr);
   assert.equal(changesText(seen.list(1)), 'modified a1 /work/dest\nmodified a1 /work/dest/report\n');
+  // A folder made this turn, with a file in it, then removed with its parent: nothing left.
+  seen.begin(1);
+  const r5 = await new Bash({ fs: noting(fs, (op, p) => seen.note(1, op, p, 'a1')), cwd: '/work' }).exec('mkdir -p dest/new; echo f > dest/new/file; rm -r dest');
+  assert.equal(r5.exitCode, 0, r5.stderr);
+  assert.equal(changesText(seen.list(1)), 'deleted a1 /work/dest\ndeleted a1 /work/dest/report\n');
   // Read through the control plane, the agent's own session only.
   const page = fakePage();
   page.changes.note(1, 'created', '/work/report.md', 'a1'); page.changes.note(1, 'modified', '/work/notes.md', 'a2');
