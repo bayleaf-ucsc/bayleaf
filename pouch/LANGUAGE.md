@@ -1,8 +1,9 @@
 # Pouch: ubiquitous language
 
-Status: adopted 2026-10-31 (Adam). Code, interface text, prompts and docs use these
-terms; "Realigned (2026-10-31)" records what the realignment changed. *Open* marks questions
-still unresolved; the decisions log records how terms were chosen.
+Status: adopted (Adam). Code, interface text, prompts and docs use these terms;
+"Retired terms" lists the words they replaced, which `test/ul-node.mjs` keeps out of the
+built page. *Open* marks questions still unresolved; the decisions log records the
+decisions that still hold (git history keeps the rest).
 
 ## The shape
 
@@ -33,7 +34,7 @@ position; that is expected and stated.
 |---|---|---|---|
 | BayLeaf | **BayLeaf Sealed** | built | Tinfoil enclaves via api.bayleaf.dev; BayLeaf relays ciphertext it cannot read |
 | The browser | **Transformers.js** | built | Transformers.js 4.3.2 on ONNX Runtime Web (WebGPU backend), in the page (LFM3) |
-| The user's machine | **Localhost** | built (2026-10-31; not deployed) | an OpenAI-compatible server on loopback: oMLX, Ollama, LM Studio, or a proxy the user runs and verifies themselves (e.g. to their own Tinfoil account). `src/localhost.js` |
+| The user's machine | **Localhost** | built | an OpenAI-compatible server on loopback: oMLX, Ollama, LM Studio, or a proxy the user runs and verifies themselves (e.g. to their own Tinfoil account). `src/localhost.js` |
 
 Excluded by policy: any non-localhost endpoint other than BayLeaf. Pouch does not
 integrate third-party services directly (not even personal Tinfoil accounts); users
@@ -151,7 +152,7 @@ a1), replacing s1, s2. Handles mean nothing outside their session: wherever an a
 appears outside its own session view, it is prefixed with the session title
 ("Essay review › judge-evidence").
 
-## Realigned (2026-10-31)
+## Retired terms
 
 | Was | Now | Where |
 |---|---|---|
@@ -190,8 +191,7 @@ Deliberately left:
   `src/agent.js` and `src/subagents.js`, behind the anti-corruption table.
 - `graph.js` keeps `createScope`/`MAX_SCOPE_MESSAGES` as code names for one session's
   routing state.
-- DEPLOYMENT.md's dated records and the API's own "plaintext lane" (an api.bayleaf.dev
-  term) keep their wording.
+- The API's own "plaintext lane" (an api.bayleaf.dev term) keeps its wording.
 
 ## Open questions
 

@@ -59,7 +59,7 @@ honestly show its own hash, so it shows a build id and a recipe (T3, revised).
 
 ## 2. A first real edit: Desk
 
-<!-- wt:status D1 D2 D11 D23 R1 R2 R3 R4 R5 R7 A7 --><b>D1</b> ok · <b>D2</b> ok · <b>D11</b> ok · <b>D23</b> ok · <b>R1</b> ok · <b>R2</b> dropped by decision 2026-10-29 · <b>R3</b> dropped by decision 2026-10-29 · <b>R4</b> ok · <b>R5</b> dropped by decision 2026-10-29 · <b>R7</b> ok · <b>A7</b> ok<!-- /wt -->
+<!-- wt:status D1 D2 D11 D23 R1 R2 R3 R4 R5 R7 A7 --><b>D1</b> ok · <b>D2</b> ok · <b>D11</b> ok · <b>D23</b> ok · <b>R1</b> ok · <b>R2</b> dropped by decision · <b>R3</b> dropped by decision · <b>R4</b> ok · <b>R5</b> dropped by decision · <b>R7</b> ok · <b>A7</b> ok<!-- /wt -->
 
 A TA asks for a fix in plain language. The agent reads, then edits, and the reply is
 markdown with a highlighted code block. The turn footer shows the model, the duration
@@ -71,8 +71,7 @@ and the time.
 <!-- /wt -->
 
 Change review ("Changed N files", the diff view, per-file and per-turn undo) was dropped
-by decision on 2026-10-29 as visual clutter and removed on 2026-10-30, so R2, R3 and R5
-read dropped above. What stays is R4: when the agent changes the file open in the
+by decision as visual clutter, so R2, R3 and R5 read dropped above. What stays is R4: when the agent changes the file open in the
 editor, the changed lines flash once, and unsaved edits raise the conflict bar.
 
 
@@ -105,7 +104,7 @@ sessions from the sidebar.
 <!-- /wt -->
 
 Revert to here forks the conversation just after a message, so the model never sees
-the later turns, and you can undo the revert. It is conversation-only (2026-10-30):
+the later turns, and you can undo the revert. It is conversation-only:
 files stay as they are, and the later messages fold into a dimmed "other branch".
 
 <!-- wt:shot sessions-revert -->
@@ -238,10 +237,9 @@ sent in the instant the run ends would start a new turn (S3).
 
 <!-- wt:status G1 G2 G3 G4 G5 G6 G7 G8 G9 G10 G11 G12 Caps --><b>G1</b> ok · <b>G2</b> ok · <b>G3</b> ok · <b>G4</b> ok · <b>G5</b> ok · <b>G6</b> ok · <b>G7</b> ok · <b>G8</b> ok · <b>G9</b> ok · <b>G10</b> ok · <b>G11</b> ok · <b>G12</b> ok · <b>Caps</b> ok<!-- /wt -->
 
-With the draft open, `$pan` offers the bundled panel skill. Since Batch A it is one-shot:
+With the draft open, `$pan` offers the bundled panel skill. It is one-shot:
 four judges in one round, each a single request with the draft attached and no tools,
-then a one-shot chair that merges their findings (about 9 requests, down from 41 in the
-play-test). Each agent wears its own color in the tray, the sidebar and its card.
+then a one-shot chair that merges their findings (about 9 requests in all, main's four included). Each agent wears its own color in the tray, the sidebar and its card.
 
 <!-- wt:shot graph-skill -->
 <img src="walkthrough/images/graph-skill.png" alt="With essay.md open, &quot;$pan&quot; in the composer offers the bundled panel skill." width="596"><br>
@@ -445,19 +443,15 @@ says so.
 
 - 1. Arrive: A3 (untested), A4 (ok)
 - 3. Bring files in: I1 (ok), I2 (ok), I3 (untested), I4 (ok), I5 (ok), I7 (untested), I9 (ok), I10 (ok)
-- 4. Direct the agent: D4 (ok), D5 (untested), D6 (untested), D7 (ok), D8b ((Batch E, 2026-11-01)), D24 (ok), D28 (ok), D30 (ok), D14 (untested), D16a (ok)
+- 4. Direct the agent: D4 (ok), D5 (untested), D6 (untested), D7 (ok), D8b (ok), D24 (ok), D28 (ok), D30 (ok), D14 (untested), D16a (ok)
 - Agent graphs: G10 (ok), G11 (ok), G12 (ok), Caps (ok)
 - Watching files: G15 (ok), G17 (ok), Mechanics (ok)
-- 5. Review: R2 (dropped by decision 2026-10-29), R3 (dropped by decision 2026-10-29), R5 (dropped by decision 2026-10-29), R6 (untested), R8 (ok)
+- 5. Review: R2 (dropped by decision), R3 (dropped by decision), R5 (dropped by decision), R6 (untested), R8 (ok)
 - 6. Take files out: O1 (ok), O2 (ok), O3 (ok), O4 (ok), O5 (untested), O6 (gap)
 - 7. Leave: L2 (ok), L4 (untested)
 - 8. Work offline: F2 (ok), F3 (ok), F5 (ok in Chromium, gap elsewhere)
-- 9. Localhost provider (slice, 2026-10-31; Desk persona with a model server, e.g. oMLX): LH2 (ok), LH6 (ok), LH7 (ok), LH8 (ok), LH9 (ok), LH10 (ok), LH11 (gap), LH12 (ok)
-- 10. Terminal (Batch E, 2026-11-01; Desk and Lab personas): TM5 (ok), TM6 (ok), TM7 (ok)
-- 11. Control plane (Batch F, 2026-11-01; Desk and Lab personas, and agents): CP1 (ok), CP2 (ok), CP3 (ok), CP4 (ok), CP5 (ok), CP6 (gap)
-- 12. HTML reports and previews (Batch G, 2026-11-01; Desk and Lab personas, and agents): HR3 (ok), HR5 (ok), HR6 (ok), HR7 (ok), HR8 (ok), HR9 (gap)
+- 9. Localhost provider (slice, Desk persona with a model server, e.g. oMLX): LH2 (ok), LH6 (ok), LH7 (ok), LH8 (ok), LH9 (ok), LH10 (ok), LH11 (gap), LH12 (ok)
+- 10. Terminal (Desk and Lab personas): TM5 (ok), TM6 (ok), TM7 (ok)
+- 11. Control plane (Desk and Lab personas, and agents): CP1 (ok), CP2 (ok), CP3 (ok), CP4 (ok), CP5 (ok), CP6 (ok)
+- 12. HTML reports and previews (Desk and Lab personas, and agents): HR3 (ok), HR5 (ok), HR6 (ok), HR7 (ok), HR8 (ok), HR9 (gap)
 <!-- /wt -->
-
-**Gaps found while building this walkthrough.** The trust panel's mount tables used to
-size their label column to the longest task label and push the mounts off the edge;
-fixed in Batch B (stacked blocks), so the `ns-trust` shot no longer widens the panel.

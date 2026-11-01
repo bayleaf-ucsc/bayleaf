@@ -1,8 +1,0 @@
-- 12:11 start watch work
-- 12:19 core watch.js + wiring built; node tests pass
-- 12:23 watch-node 13/13; first watch-browser run
-- 12:28 watch-browser all pass (first green)
-- 12:31 regressions started
-- 12:33 regressions green except ns (fixed); starting the one Sealed run
-- 12:34 real Sealed run: model watched, woke, merged; 14 requests total over 2 runs
-- 12:35 done: build --with-models ok, all node tests pass, temp profiles removed

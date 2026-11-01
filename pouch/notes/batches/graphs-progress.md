@@ -1,7 +1,0 @@
-- 11:27 start graphs slice
-- 11:38 graph.js + subagents.js routing; graphs-node passing; steeringMode all
-- 11:40 UI wired (tags, edges, tray Background, caps, detach), panel skill; node tests pass
-- 11:43 graphs-browser 13/13
-- 11:45 starting ONE real Sealed run (glm-5-3, cap 32)
-- 11:46 README + JOURNEYS slice drafted; waiting on sealed run + build --with-models
-- 11:52 join amendment done; node+browser green; build --with-models
