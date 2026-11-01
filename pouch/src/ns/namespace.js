@@ -320,6 +320,20 @@ export class Namespace extends BaseFs {
     for (const m of have) if (!m.e.readOnly) await m.e.fs.rm(m.p, { recursive: true, force: true });
     if (lower.length) { w.paths.add(rel); w.save([...w.paths]); }
   }
+  // The stored spelling of `path` (or of its folders, for a new name) when it differs only in Unicode
+  // normalization ("café" typed precomposed, NFC, stored decomposed, NFD, as
+  // macOS and old zips write it), else null. Canonically equivalent names are
+  // the same name to a person, so a miss on one finds the other.
+  async spell(path) {
+    const p = normalize(path);
+    if (p === '/' || ascii(p)) return null;
+    const parent = normalize(p + '/..'), name = p.split('/').pop();
+    const dir = (await this.spell(parent)) ?? parent;
+    const names = await this.readdir(dir).catch(() => []);
+    // A new name keeps its own spelling, under its folder's stored one.
+    const found = (names.includes(name) ? name : names.find((n) => n.normalize('NFC') === name.normalize('NFC'))) ?? name;
+    return dir !== parent || found !== name ? join(dir, found) : null;
+  }
 
   // ── Description, for the trust panel, the tray and /task/<id>/ns ─────
   // One line per mount point: "/work  rw opfs, ro seed:starter.zip".
@@ -328,6 +342,42 @@ export class Namespace extends BaseFs {
       .map(([p, l]) => `${p}  ${l.map((e) => `${e.readOnly ? 'ro' : 'rw'} ${e.label || e.fs.constructor?.name || 'fs'}`).join(', ')}`);
   }
 }
+
+// Every lookup that misses on a non-ASCII path tries the stored spelling
+// (spell, above) once. A change resolves first, so a write, mkdir or rm (even
+// rm -f, which does not fail on a miss) lands on the existing file or folder,
+// not a lookalike.
+const ascii = (s) => !/[^\x00-\x7f]/.test(s);
+const exactly = Namespace.prototype.stat; // without the fallback
+const stored = async (ns, path) =>
+  ascii(String(path)) || (await exactly.call(ns, path).catch(() => null)) ? path : ((await ns.spell(path)) ?? path);
+for (const op of ['stat', 'readFileBuffer', 'readdirWithFileTypes']) {
+  const f = Namespace.prototype[op];
+  Namespace.prototype[op] = async function (path, ...a) {
+    try { return await f.call(this, path, ...a); } catch (e) {
+      const alt = missing(e) && !ascii(String(path)) ? await this.spell(path) : null;
+      if (!alt) throw e;
+      return f.call(this, alt, ...a).catch((e2) => { throw missing(e2) ? e : e2; });
+    }
+  };
+}
+for (const op of ['writeFile', 'mkdir', 'rm']) {
+  const f = Namespace.prototype[op];
+  Namespace.prototype[op] = async function (path, ...a) { return f.call(this, await stored(this, path), ...a); };
+}
+// A rename that changes only the normalization ("café" NFD to NFC) resolves
+// both ends to the same stored file, so copy-then-remove would delete it; it
+// goes through a temporary name instead.
+const mv = Namespace.prototype.mv;
+Namespace.prototype.mv = async function (src, dest) {
+  if (normalize(src) === normalize(dest)) { await this.stat(src); return; } // onto itself: nothing to do
+  const from = normalize(await stored(this, src));
+  if (from !== normalize(await stored(this, dest))) return mv.call(this, src, dest);
+  if (from === normalize(dest)) return; // already spelled that way
+  const tmp = join(from + '/..', '.pouch-mv-' + crypto.randomUUID());
+  await mv.call(this, from, tmp);
+  await mv.call(this, tmp, dest);
+};
 
 // A capability view: a new namespace holding only the named subtrees of
 // `parent`, each at the same path (so recorded changes, diffs and conflict

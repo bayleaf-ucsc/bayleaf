@@ -82,7 +82,10 @@ export function createAttachments({ vfs, composer, input, picker, button, chips,
         if (file.size > FILE_CAP) throw new Error(`${file.name}: maximum attachment size is 20 MB.`);
         if (pending.length >= 8) throw new Error('Attach at most 8 files per message.');
         const bytes = new Uint8Array(await file.arrayBuffer());
-        const name = (file.name || 'attachment').replace(/[\x00-\x1f/\\]/g, '_').slice(0, 160);
+        // The copy's name is ours to choose: NFC, and plain spaces for the
+        // Unicode ones (macOS writes U+202F before "PM" in screenshot names),
+        // so the path the agent is given survives being retyped.
+        const name = (file.name || 'attachment').normalize('NFC').replace(/[^\S\n\r\t]/g, ' ').replace(/[\x00-\x1f/\\]/g, '_').slice(0, 160);
         const path = '/work/.attachments/' + crypto.randomUUID() + '-' + name;
         await vfs.fs.mkdir('/work/.attachments', { recursive: true });
         if (await vfs.fs.exists(path)) throw new Error('Attachment name collision. Try again.');

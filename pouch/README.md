@@ -316,6 +316,12 @@ choice applies at the next user submission, not to running tool rounds or existi
 Attach, dropping files onto the composer, and pasting images save unchanged originals under
 unique `/work/.attachments/` paths, even without authentication. Remove a chip to detach it
 (the local file remains). Nothing sends until Send. Limits: eight files, 20 MB each.
+An attachment's copy is named in NFC with plain spaces for Unicode ones (macOS puts
+U+202F before "PM" in screenshot names), so the path survives a model retyping it. Elsewhere
+names stay as stored: a lookup that misses on a name differing only in Unicode
+normalization (NFC "café" for a stored NFD one) finds the stored file, and a "No such
+file" from bash, read or edit names any lookalike (same name modulo Unicode spaces and
+case) with an ASCII `$'... ...'` spelling to retype.
 The transcript retains file references without putting raw bytes into the visible bubble.
 PNG/JPEG/GIF/WebP attachments also become pi-ai image blocks inside the same sealed request,
 re-encoded in the browser to at most 2000px and 4 MB (first frame for animations). Models
