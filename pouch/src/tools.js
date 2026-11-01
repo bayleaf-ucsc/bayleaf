@@ -332,16 +332,20 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
 // ── Context: AGENTS.md files and skills ─────────────────────────────
 // Instructions load from the shared /pouch tree and from the workspace; skills
 // are advertised by name and description only, and the model reads SKILL.md
-// with the read tool when one applies (progressive disclosure).
+// with the read tool when one applies (progressive disclosure). A skill whose
+// frontmatter says `listed: false` is unlisted: left out of the prompt's list
+// but still loadable by name or path (another skill or the user names it).
 const AGENTS_FILES = ['/pouch/AGENTS.md', '/work/AGENTS.md'];
 const SKILL_ROOTS = ['/pouch/skills', '/work/.agents/skills'];
 
 function frontmatter(text) {
-  const m = text.match(/^---\n([\s\S]*?)\n---/);
+  const m = text.replace(/\r\n?/g, '\n').match(/^---\n([\s\S]*?)\n---/);
   const out = {};
   for (const line of m?.[1].split('\n') ?? []) {
     const kv = line.match(/^(\w[\w-]*):\s*(.*)$/);
     if (kv) out[kv[1]] = kv[2].replace(/^["']|["']$/g, '');
+    // Only a YAML boolean false unlists; "false" (quoted), absent or junk stays listed.
+    if (kv?.[1] === 'listed') out.listed = !/^(false|False|FALSE)$/.test(kv[2].replace(/\s+#.*$/, '').trim());
   }
   return out;
 }
@@ -359,7 +363,7 @@ export async function loadContext(vfs) {
       const path = `${root}/${name}/SKILL.md`;
       try {
         const fm = frontmatter(await vfs.fs.readFile(path));
-        skills.push({ name: fm.name || name, description: fm.description || '', path, ...(fm.requests ? { requests: fm.requests } : {}) });
+        skills.push({ name: fm.name || name, description: fm.description || '', path, ...(fm.requests ? { requests: fm.requests } : {}), ...(fm.listed === false ? { unlisted: true } : {}) });
       } catch {}
     }
   }
@@ -400,8 +404,8 @@ Keep changes minimal: prefer edit over rewriting files, and do not reformat or r
 Replies render as markdown. Refer to files as markdown links like [app.js](/work/app.js) or [app.js:12](/work/app.js:12): they open in the user's editor.`;
   for (const a of agents) s += `\n\n<instructions source="${a.path}">\n${a.text.trim()}\n</instructions>`;
   if (skills.length) {
-    s += '\n\n<skills>\nRead a skill\'s SKILL.md before acting on a task it covers.\n';
-    for (const k of skills) s += `- ${k.name}: ${k.description} (${k.path})\n`;
+    s += '\n\n<skills>\nRead a skill\'s SKILL.md before acting on a task it covers. Skills not listed here can still be named: read /pouch/skills/<name>/SKILL.md or /work/.agents/skills/<name>/SKILL.md.\n';
+    for (const k of skills) if (!k.unlisted) s += `- ${k.name}: ${k.description} (${k.path})\n`;
     s += '</skills>';
   }
   return s;

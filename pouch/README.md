@@ -278,6 +278,11 @@ The filesystem the agent, the file browser and the editor share:
 Instructions come from `/pouch/AGENTS.md` and `/work/AGENTS.md`. Skills in
 `/pouch/skills/<name>/SKILL.md` and `/work/.agents/skills/<name>/SKILL.md` are listed by
 name and description in the system prompt, and the model reads one when it applies.
+A skill whose frontmatter says `listed: false` is *unlisted*: it is left out of that list
+but still loads when named (by another skill, by path, or by the person). Only a YAML
+boolean false unlists; anything else, including a quoted `"false"`, stays listed. The `$`
+picker still offers unlisted skills, marked "Unlisted", because the person is choosing
+deliberately, and inserts the skill's path so the agent can find it.
 
 The file browser and the editor work without signing in. Drag files or folders onto a
 folder to add them; on phones, every row's `...` menu offers upload (files or a folder),
