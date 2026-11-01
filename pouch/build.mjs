@@ -10,6 +10,7 @@ import { build, context } from 'esbuild';
 import { createHash } from 'node:crypto';
 import { execSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { assertArchitecture, checkArchitecture, checkMetafile, checkNoCdn, loadTree } from './arch.mjs';
 
 const sha256 = (s, enc) => createHash('sha256').update(s).digest(enc);
 const watch = process.argv.includes('--watch');
@@ -33,6 +34,10 @@ const BUILD_ID = buildId();
 const STATIC = ['sw.js', 'viewer.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png'];
 const SW_SHA256 = sha256(readFileSync('sw.js'), 'hex');
 
+// The trust boundaries and module structure (arch.mjs, README "Architecture"):
+// checked on the sources before anything is built, and on the bundle below.
+assertArchitecture(checkArchitecture(loadTree()));
+
 function assemble(code) {
   // An inline script ends at the first "</script", wherever it appears.
   const app = code.replaceAll('</script', '<\\/script');
@@ -40,6 +45,8 @@ function assemble(code) {
   const hashes = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
     .map(([, body]) => `'sha256-${sha256(body, 'base64')}'`);
   html = html.replace('__SCRIPT_HASHES__', hashes.join(' ')).replaceAll('__BUILD_ID__', BUILD_ID);
+  const cdn = checkNoCdn(html, 'pouch.html');
+  if (cdn.length) { console.error(cdn.join('\n')); process.exitCode = 1; return; }
   mkdirSync(OUT, { recursive: true });
   writeFileSync(`${OUT}/pouch.html`, html);
   mkdirSync(`${OUT}/icons`, { recursive: true });
@@ -77,7 +84,7 @@ const libav = await (await import('./build-libav.mjs')).buildLibav(OUT);
 
 const ctx = await context({
   entryPoints: ['src/main.js'],
-  bundle: true, minify: !watch, write: false,
+  bundle: true, minify: !watch, write: false, metafile: true,
   define: { WORKER_SRC: JSON.stringify(WORKER_SRC), LOCAL_MODEL: JSON.stringify(models?.local ?? null), SW_SHA256: JSON.stringify(SW_SHA256), POUCH_PDF_RUNTIME: JSON.stringify(pdf.pin),
     POUCH_LIBAV_RUNTIME: JSON.stringify(libav.pin), POUCH_LIBAV_SOURCE: JSON.stringify(libav.source) },
   format: 'iife', platform: 'browser', target: 'es2022',
@@ -89,7 +96,13 @@ const ctx = await context({
     'decode-named-character-reference': './node_modules/decode-named-character-reference/index.js' },
   legalComments: 'inline',
   logLevel: 'warning',
-  plugins: [{ name: 'assemble', setup(b) { b.onEnd((r) => { if (!r.errors.length) assemble(r.outputFiles[0].text); }); } }],
+  plugins: [{ name: 'assemble', setup(b) { b.onEnd((r) => {
+    if (r.errors.length) return;
+    // Watching, the sources may have changed since the first check.
+    const errors = [...(watch ? checkArchitecture(loadTree()) : []), ...checkMetafile(r.metafile)];
+    if (errors.length) { console.error(`Pouch architecture check failed (arch.mjs):\n  ${errors.join('\n  ')}`); process.exitCode = 1; return; }
+    assemble(r.outputFiles[0].text);
+  }); } }],
 });
 if (watch) { await ctx.watch(); console.log('watching src/ and pouch.html (reload the page after each build)'); }
 else { await ctx.rebuild(); await ctx.dispose(); }

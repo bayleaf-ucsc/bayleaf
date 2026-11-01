@@ -8,8 +8,8 @@
 //
 // Unknown is never zero: a failed check leaves remaining null, shown as "?".
 import { $, el } from './dom.js';
+import { campusPass, usageOf } from './bayleaf-api.js';
 
-const API = 'https://api.bayleaf.dev';
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const budget = (b) => ({ remaining: num(b?.remaining), limit: num(b?.limit), used: num(b?.used), resetsAt: b?.resets_at ? new Date(b.resets_at) : null });
 
@@ -22,13 +22,13 @@ export function createUsage({ getKey }) {
     let next;
     try {
       if (key) {
-        const r = await fetch(API + '/usage', { headers: { Authorization: 'Bearer ' + key } });
+        const r = await usageOf(key);
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const j = await r.json();
         const sealed = j.budgets?.find((b) => b.provider === 'sealed');
         next = { mode: 'key', ...budget(sealed) };
       } else {
-        const r = await fetch(API + '/campus-pass');
+        const r = await campusPass();
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const j = await r.json();
         next = j.campus_network && j.enabled !== false
@@ -161,7 +161,7 @@ export function renderMeter(s, led = null) {
 }
 
 // The composer's one Usage button names both readings: the allowance (above) and
-// the context, which main.js renderCtx leaves in data-ctx (absent when hidden).
+// the context, which src/interface/queues.js renderCtx leaves in data-ctx (absent when hidden).
 export function labelComposer() {
   const b = $('composer-usage');
   if (!b) return;

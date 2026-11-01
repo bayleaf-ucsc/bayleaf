@@ -1,6 +1,6 @@
 // The composer card, after OpenChamber's: an activity tray above the input,
 // autocomplete for @ paths, $ skills and / commands in the input, and the
-// shield popover (this session's provider and egress grants). main.js owns
+// shield popover (this session's provider and egress grants). the Interface (src/interface/queues.js, send.js) owns
 // sending and run bookkeeping and supplies what is active; this module owns
 // how the card shows it. Nodes only, never HTML strings.
 //
@@ -232,7 +232,7 @@ export function createComposer(deps) {
     else replace(start, end, it.value + (it.value.endsWith('/') ? '' : ' '));
     input.focus();
   }
-  // main.js calls this first from the input's keydown; true means handled.
+  // The Interface (src/interface/send.js) calls this first from the input's keydown; true means handled.
   function onKeydown(e) {
     if (!state || ac.hidden) return false;
     const n = state.items.length, step = (d) => {

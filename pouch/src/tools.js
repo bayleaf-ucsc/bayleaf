@@ -34,7 +34,7 @@ const SHOWN_BUDGET = 10_000;
 export function clip(text) {
   if (text.length <= MAX_CHARS) return text;
   // `show` lines the cap would cut are kept, whole and inside it, so their cards
-  // survive (main.js shownLines); together at most SHOWN_BUDGET characters.
+  // survive (shownLines, read by src/interface/transcript.js); together at most SHOWN_BUDGET characters.
   const from = text.lastIndexOf('\n', MAX_CHARS - SHOWN_BUDGET) + 1;
   const kept = [];
   let size = 0;
@@ -417,7 +417,7 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
       commands: COMMANDS,
       // `models` (src/models-cli.js): hooks.models is the shared service; whoOf names the asker.
       // `open` refuses for agents and points to `show`; hooks.show(req, caller)
-      // opens or offers it (src/open-cli.js, main.js show).
+      // opens or offers it (src/open-cli.js, src/interface/editing.js show).
       customCommands: [...archiveCommands(defineCommand), ...cli, ...modelsCommands(defineCommand, hooks.models, () => hooks.modelsWho?.(caller) ?? { by: 'agent', caller }), ...agentOpenCommands(defineCommand),
         ...agentShowCommands(defineCommand, { show: hooks.show && ((req) => hooks.show(req, caller)) }),
         // pdfinfo, pdftotext, pdftoppm (src/pdf.js): hooks.pdf is the shared engine; jobs are labelled with the caller.

@@ -1,5 +1,5 @@
 // Sessions: the sidebar list, create/select/rename/delete, titles and naming
-// (D3, D8, L2). Owns which session is current; main.js reads it through
+// (D3, D8, L2). Owns which session is current; the Interface (src/interface/) reads it through
 // `current` and supplies the transcript (attach) and the agent.
 //
 // A session record: { id, title, titleSource?, updated, model, usage? }.
@@ -15,14 +15,14 @@ const LEGACY_TIP = 'Saved before each session had its own storage. Deleting it s
 // and IndexedDB keys 13 and "13" differ. Match on the string form.
 export const sameId = (a, b) => a != null && b != null && String(a) === String(b);
 export const titleOf = (s) => s?.title || 'New session';
-export const notesKey = (sid) => 'agentNotes:' + sid; // per-session notes for the agent (main.js)
+export const notesKey = (sid) => 'agentNotes:' + sid; // per-session notes for the agent (src/interface/send.js)
 export const grantsKey = (sid) => 'egressGrants:' + sid; // "Allow for this session" services (egress.js)
 export const convKey = (sid) => 'conversation:' + sid; // the current conversation in its database (agent.js, D12)
-export const interruptedKey = (sid) => 'interrupted:' + sid; // a reload cut off its run; Resume offered (main.js)
+export const interruptedKey = (sid) => 'interrupted:' + sid; // a reload cut off its run; Resume offered (src/interface/transcript.js)
 export const subagentsKey = (sid) => 'subagents:' + sid; // the session's subagents and their state (subagents.js)
 export const revertKey = (sid) => 'revert:' + sid; // the last revert, while it can be undone; conversation only, never file bytes (D12)
 export const watchesKey = (sid) => 'watches:' + sid; // its file watches (src/ns/watch.js)
-export const turnsKey = (sid) => 'turnTimes:' + sid; // turn-start entry -> measured duration (ms), for the turn footer (main.js)
+export const turnsKey = (sid) => 'turnTimes:' + sid; // turn-start entry -> measured duration (ms), for the turn footer (src/interface/transcript.js)
 
 function ago(t) {
   const m = Math.round((Date.now() - t) / 60_000);

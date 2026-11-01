@@ -1,7 +1,7 @@
 // The `open` command: show a file in the editor pane, in the mode its content
 // type suggests, or a folder in Files (README "Terminal"). The terminal's
-// `open` asks the page (hooks.openFile and hooks.revealDir, src/main.js
-// openFile and revealDir); an agent's `open`
+// `open` asks the page (hooks.openFile and hooks.revealDir: openFile in
+// src/interface/editing.js, revealDir in src/interface/transcript.js); an agent's `open`
 // refuses and points to `show` (below), so only a person decides what
 // takes over their editor and whether a report's scripts run.
 //
@@ -131,9 +131,9 @@ export function agentOpenCommands(defineCommand) {
 // An agent's `show` (LANGUAGE.md "Show"): the same paths, defaults and checks
 // as `open`, but the page decides whether to open it now or offer it in the
 // transcript, so an agent never takes over a busy person's pane.
-// show({ path, dir, mode, label }) -> { opened, reason? } (src/main.js show).
+// show({ path, dir, mode, label }) -> { opened, reason? } (src/interface/editing.js show).
 // Both outcomes exit 0, since either way the person has it; the one line says which.
-// A transcript card is drawn from that line (main.js shownLines), so keep its shape:
+// A transcript card is drawn from that line (src/interface/transcript.js shownLines), so keep its shape:
 //   shown: opened <path> (<label>)
 //   shown: offered <path> (<label>); not opened (user busy: <reason>), ...
 export const SHOW_HELP = `show: put a file or folder in front of the person using Pouch

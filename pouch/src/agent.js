@@ -25,6 +25,7 @@ import { attachmentContext } from './attachments.js';
 import { contextOf } from './context.js';
 import { LOCAL_PROVIDER, isLocal, localApi, localModel } from './local/provider.js';
 import { LOCALHOST_PROVIDER, isLocalhost, localhostApi, localhostModel } from './localhost.js';
+import { BASE_URL, sealedFetch } from './sealed.js';
 
 export { Type, MemoryStorage, REPORT_KIND };
 
@@ -38,13 +39,10 @@ export { Type, MemoryStorage, REPORT_KIND };
 //   one Harness over one database           one Session's storage: main's thread and its subagents'
 //   ownerless conversation                  a subagent's thread (src/subagents.js)
 //   submit(..., { whenBusy: 'steer' })      Steer: read after the current step
-//   input admitted while busy ("followUp")  Follow-up; Pouch holds its own in the page (src/main.js)
+//   input admitted while busy ("followUp")  Follow-up; Pouch holds its own in the page (src/interface/queues.js)
 //                                           and submits when the turn ends
 //   extension, modelTools, instructions     parts of a Profile (src/profiles.js)
 const PROVIDER = 'bayleaf-sealed';
-// Must match the TinfoilAI client's baseURL: the SDK's encrypting fetch refuses
-// any origin other than the one it attested for, which is a second guard.
-const BASE_URL = 'https://api.bayleaf.dev/sealed/v1/';
 const DB_NAME = 'bayleaf-pouch-agent';
 const USER_KIND = 'pouch.user'; // a user message whose model view carries Pouch's notes
 const TOOL_OUTPUT_CAP = 50_000; // chars sent to the model per tool result
@@ -79,31 +77,6 @@ function toModel(m) {
     cost: { input: m.cost?.input ?? 0, output: m.cost?.output ?? 0, cacheRead: m.cost?.cacheRead ?? 0, cacheWrite: 0 },
     contextWindow: ctxWindow, maxTokens: Math.min(32_768, Math.floor(ctxWindow / 4)),
     compat: { supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false },
-  };
-}
-
-// The encrypting fetch, resolved per request so sign-in/out takes effect at
-// once. TinfoilAI keeps its SecureClient and bearer token in fields that are
-// private in TypeScript only; tinfoil is exact-pinned, and we check the shape
-// so an SDK change fails loudly instead of silently.
-function sealedFetch(getClient, onRequest) {
-  return async (input, init = {}) => {
-    const client = await getClient();
-    if (!client) throw new Error('Not connected to BayLeaf Sealed: sign in (or use campus access) and wait for verification.');
-    const doc = await client.getVerificationDocument();
-    if (!doc?.securityVerified) throw new Error('Enclave attestation is not verified; refusing to send.');
-    const secure = client.secureClient, token = client.openAIOptions?.apiKey;
-    if (typeof secure?.fetch !== 'function' || typeof token !== 'string') throw new Error('Unexpected Tinfoil SDK shape; refusing to send.');
-    const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
-    if (url.origin !== new URL(BASE_URL).origin) throw new Error(`Refusing to send to ${url.origin}`);
-    // pi-ai's own OpenAI client carries a placeholder key; the real bearer is the
-    // one the TinfoilAI was built with (a BayLeaf key or 'campus').
-    const headers = new Headers(init.headers);
-    headers.set('authorization', `Bearer ${token}`);
-    // Counted as it leaves (one request from the allowance), for the tray's live spend.
-    if (init.signal?.aborted) throw new DOMException('Stopped before sending.', 'AbortError');
-    onRequest?.();
-    return secure.fetch(input, { ...init, headers });
   };
 }
 
