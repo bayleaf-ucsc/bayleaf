@@ -163,7 +163,7 @@ try {
   assert.doesNotMatch(body, /events\\n\d/, 'its own session only');
   ok('main agent: reads /session/current/status, writes its subagent\'s ctl (stopped), gets EPERM writing in (CP6: the skipped command named), reads changes and usage');
 
-  // 6. New is a draft: spamming it stores nothing; the first send makes one session.
+  // 6. New opens a blank session: spamming it stores nothing; the first send makes one session.
   const stored = () => page.evaluate(() => new Promise((res, rej) => { const r = indexedDB.open('bayleaf-pouch'); r.onerror = rej; r.onsuccess = () => { const q = r.result.transaction('sessions').objectStore('sessions').count(); q.onsuccess = () => { res(q.result); r.result.close(); }; }; }));
   const rows = () => page.$$eval('#session-list li.session', (l) => l.length);
   const before = { stored: await stored(), rows: await rows() };
@@ -194,7 +194,7 @@ try {
   assert.equal(await page.$(`#session-list li.session[data-id="${draftId}"]`), null, 'and from the sidebar');
   assert.equal(await page.$('#log .msg'), null, 'the transcript is empty');
   assert.equal(await page.textContent('#title'), 'New session');
-  await page.$eval('#new', (b) => b.click()); // New in the draft keeps it, and the text
+  await page.$eval('#new', (b) => b.click()); // New in the blank session keeps it, and the text
   assert.equal(await page.inputValue('#input'), 'Badly worded first message');
   await rule(page, { who: 'main', when: '/Better worded/.test(c.since)', reply: 'Better reply.' });
   await rule(page, { who: 'title', reply: 'Renamed again', sticky: false });
@@ -203,7 +203,7 @@ try {
   const fresh = await page.evaluate(() => JSON.stringify(window.fake.requests.main.at(-1).messages));
   assert.doesNotMatch(fresh, /Badly worded|later one/, 'nothing of the reverted session reached the model');
   assert.equal(await stored(), before.stored + 1);
-  ok('New is a draft: five clicks store nothing; first send makes one session; reverting its first message empties it, text back, no row left, named again');
+  ok('New is a blank session: five clicks store nothing; first send makes one session; reverting its first message empties it, text back, no row left, named again');
 
   // 8. Revert the first message, then leave: no empty session lingers.
   await page.locator('#log .msg.user', { hasText: 'Better worded' }).hover();
