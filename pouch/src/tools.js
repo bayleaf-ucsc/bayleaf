@@ -145,7 +145,13 @@ export function noting(fs, onChange) {
     get(target, prop) {
       if (prop === 'writeFile' || prop === 'appendFile') return write(prop);
       // rm -f of a path that was never there changes nothing.
-      if (prop === 'rm') return async (p, ...a) => { const had = await was(p); const r = await target.rm(p, ...a); if (had) onChange('deleted', normalize(p)); return r; };
+      // A folder's contents count as deleted too, so recreating them reads as modified.
+      if (prop === 'rm') return async (p, ...a) => {
+        const had = await was(p), inside = had ? await under(target, normalize(p)) : [];
+        const r = await target.rm(p, ...a);
+        if (had) { for (const q of inside) onChange('deleted', q); onChange('deleted', normalize(p)); }
+        return r;
+      };
       if (prop === 'mkdir') return async (p, ...a) => { const had = await was(p); const r = await target.mkdir(p, ...a); if (!had) onChange('created', normalize(p)); return r; };
       if (prop === 'cp') return async (s, d, ...a) => {
         const had = await was(d); const r = await target.cp(s, d, ...a);

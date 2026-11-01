@@ -255,16 +255,23 @@ await test('changes: net paths changed this turn, subagents marked, actions left
   const r = await new Bash({ fs: noting(fs, (op, p) => seen.note(1, op, p, 'a1')), cwd: '/work' }).exec('echo a > keep; echo b > made; rm gone; mv from to; mkdir dir; cp keep dir/copy; cat keep > /dev/null');
   assert.equal(r.exitCode, 0, r.stderr);
   assert.equal(changesText(seen.list(1)), 'created a1 /work/dir\ncreated a1 /work/dir/copy\ndeleted a1 /work/from\ndeleted a1 /work/gone\nmodified a1 /work/keep\ncreated a1 /work/made\ncreated a1 /work/to\n');
-  // rm -f of nothing notes nothing; a directory removed takes its noted children along.
+  // rm -f of nothing notes nothing; a directory removed takes its children along
+  // (a file made this turn is gone without a trace; one from before reads deleted).
   seen.begin(1);
   const r2 = await new Bash({ fs: noting(fs, (op, p) => seen.note(1, op, p, 'a1')), cwd: '/work' }).exec('rm -f missing.txt; echo c > dir/new; rm -r dir');
   assert.equal(r2.exitCode, 0, r2.stderr);
-  assert.equal(changesText(seen.list(1)), 'deleted a1 /work/dir\n');
+  assert.equal(changesText(seen.list(1)), 'deleted a1 /work/dir\ndeleted a1 /work/dir/copy\n');
   // A folder moved or copied to a new path lists what is in it, under the new path.
   seen.begin(1);
   const r3 = await new Bash({ fs: noting(fs, (op, p) => seen.note(1, op, p, 'a1')), cwd: '/work' }).exec('mkdir d; echo r > d/report; mv d final; cp -r final copy');
   assert.equal(r3.exitCode, 0, r3.stderr);
   assert.equal(changesText(seen.list(1)), 'created a1 /work/copy\ncreated a1 /work/copy/report\ncreated a1 /work/final\ncreated a1 /work/final/report\n');
+  // A folder removed and recreated: what was there before reads as modified, not created.
+  await fs.mkdir('/work/dest'); await fs.writeFile('/work/dest/report', 'old');
+  seen.begin(1);
+  const r4 = await new Bash({ fs: noting(fs, (op, p) => seen.note(1, op, p, 'a1')), cwd: '/work' }).exec('rm -r dest; cp -r final dest');
+  assert.equal(r4.exitCode, 0, r4.stderr);
+  assert.equal(changesText(seen.list(1)), 'modified a1 /work/dest\nmodified a1 /work/dest/report\n');
   // Read through the control plane, the agent's own session only.
   const page = fakePage();
   page.changes.note(1, 'created', '/work/report.md', 'a1'); page.changes.note(1, 'modified', '/work/notes.md', 'a2');
