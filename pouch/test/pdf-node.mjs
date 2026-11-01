@@ -41,6 +41,7 @@ await t('parseArgs: poppler flags, values, positional counts', () => {
 await t('pageRange: caps refuse instead of cutting', () => {
   assert.deepEqual(pageRange({}, RENDER_MAX_PAGES, 'pdftoppm'), { first: 1, last: null });
   assert.deepEqual(pageRange({ f: 3, singlefile: true }, RENDER_MAX_PAGES, 'pdftoppm'), { first: 3, last: 3 });
+  assert.deepEqual(pageRange({ f: 1, l: 3, singlefile: true }, RENDER_MAX_PAGES, 'pdftoppm'), { first: 1, last: 1 }, '-singlefile wins over -l');
   assert.match(pageRange({ f: 1, l: RENDER_MAX_PAGES + 1 }, RENDER_MAX_PAGES, 'pdftoppm').error, /at most 50 per call/);
   assert.equal(pageRange({ f: 1, l: TEXT_MAX_PAGES }, TEXT_MAX_PAGES, 'pdftotext').error, undefined);
 });
@@ -48,6 +49,7 @@ await t('pageRange: caps refuse instead of cutting', () => {
 await t('formatInfo and formatText', () => {
   const info = formatInfo({ pages: 4, info: { Title: 'T', PDFFormatVersion: '1.7', EncryptFilterName: 'Standard', CreationDate: 'D:20260102030405Z' }, javascript: true, size: [595.28, 841.89], rotate: 0, noText: [2, 3], scanned: 4 });
   assert.match(info, /^Title:\s+T$/m); assert.match(info, /^Encrypted:\s+yes \(Standard; opened without a password\)$/m);
+  assert.match(formatInfo({ pages: 1, info: { EncryptFilterName: 'Standard' }, size: [612, 792], rotate: 0, noText: [], scanned: 0 }, { password: true }), /^Encrypted:\s+yes \(Standard; opened with the password given\)$/m);
   assert.match(info, /^Page size:\s+595.28 x 841.89 pts \(A4\)$/m); assert.match(info, /^JavaScript:\s+yes \(never run/m);
   assert.match(info, /^Text layer:\s+missing on pages 2-3; render those with pdftoppm$/m); assert.match(info, /^CreationDate:\s+2026-01-02 03:04:05$/m);
   assert.match(formatInfo({ pages: 900, info: {}, size: [612, 792], rotate: 0, noText: Array.from({ length: 500 }, (_, i) => i + 1), scanned: 500 }), /^Text layer:\s+none \(checked pages 1-500 of 900\): a scan/m);

@@ -30,6 +30,7 @@ export const DEFAULT_DPI = 150;             // poppler's default
 export const MIN_DPI = 18;
 export const MAX_DPI = 600;
 export const MAX_PIXELS = 25_000_000;       // per rendered page (width x height), before any crop
+export const RENDER_MAX_BYTES = 256 * 2 ** 20; // encoded images per pdftoppm call, together
 export const ENGINE_MEMORY = 0.25 * 2 ** 30; // the jobs memory guard's estimate for the worker
 const STOP_GRACE_MS = 3000;                 // after Stop, how long a page may take before the worker is ended
 
@@ -111,7 +112,7 @@ export function parseArgs(cmd, args) {
 // Pages first..last for a call, within its cap; null `last` means "to the end"
 // (the worker clamps to the page count). A range over the cap is refused, not cut.
 export function pageRange(opts, cap, cmd) {
-  const first = opts.f ?? 1, last = opts.l ?? (opts.singlefile ? first : null);
+  const first = opts.f ?? 1, last = opts.singlefile ? first : opts.l ?? null; // -singlefile: the first page only, as poppler
   if (last != null && last - first + 1 > cap) return { error: `pages ${first}-${last} are ${last - first + 1} pages; ${cmd} takes at most ${cap} per call. Use -f and -l to go in batches.` };
   return { first, last };
 }
@@ -137,12 +138,13 @@ const pdfDate = (d) => typeof d === 'string' && /^D:(\d{4})(\d{2})?(\d{2})?(\d{2
   ? d.replace(/^D:(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?.*$/, (_, y, m = '01', dd = '01', h = '00', mi = '00', s = '00') => `${y}-${m}-${dd} ${h}:${mi}:${s}`) : d;
 const ranges = (ns) => ns.reduce((out, n) => { const r = out.at(-1); r && r[1] === n - 1 ? (r[1] = n) : out.push([n, n]); return out; }, []).map(([a, b]) => (a === b ? `${a}` : `${a}-${b}`)).join(', ');
 
-export function formatInfo(r) {
+// password: one was given (-upw or -opw), so the opening may have used it.
+export function formatInfo(r, { password = false } = {}) {
   const lines = [], i = r.info ?? {};
   for (const k of ['Title', 'Subject', 'Keywords', 'Author', 'Creator', 'Producer']) if (i[k]) lines.push(pad(k, 16) + String(i[k]));
   for (const k of ['CreationDate', 'ModDate']) if (i[k]) lines.push(pad(k, 16) + pdfDate(i[k]));
   lines.push(pad('Pages', 16) + r.pages);
-  lines.push(pad('Encrypted', 16) + (i.EncryptFilterName ? `yes (${i.EncryptFilterName}; opened without a password)` : 'no'));
+  lines.push(pad('Encrypted', 16) + (i.EncryptFilterName ? `yes (${i.EncryptFilterName}; ${password ? 'opened with the password given' : 'opened without a password'})` : 'no'));
   const [w, h] = r.size, paper = paperOf(r.size);
   lines.push(pad('Page size', 16) + `${+w.toFixed(2)} x ${+h.toFixed(2)} pts${paper ? ` (${paper})` : ''}`);
   lines.push(pad('Page rot', 16) + r.rotate);
@@ -181,9 +183,10 @@ export function pdfEngine({ assets = PDF_RUNTIME && partAssets(PDF_RUNTIME), spa
       if (!assets) throw codeError('this build of Pouch has no pdf runtime (built with it left out)', 'ENOSYS');
       let worker = null, seq = 0;
       const pending = new Map();
-      async function start(note) {
+      async function start(note, signal) {
         note?.('loading the pdf runtime');
-        const got = await assets.obtain({ network: globalThis.navigator?.onLine !== false });
+        const got = await assets.obtain({ network: globalThis.navigator?.onLine !== false, signal });
+        if (signal?.aborted) throw stopped();
         onLoad?.(got);
         const w = spawn(got.files);
         w.onmessage = ({ data }) => {
@@ -212,7 +215,8 @@ export function pdfEngine({ assets = PDF_RUNTIME && partAssets(PDF_RUNTIME), spa
       }
       return {
         async run({ action, data, ...opts }, { signal, note }) {
-          if (!worker) await start(note);
+          // Stop also ends a first-run download (assets.obtain takes the signal).
+          if (!worker) await start(note, signal).catch((e) => { throw signal.aborted ? stopped() : e; });
           if (signal.aborted) throw stopped();
           return call(action, { data: data.slice(), ...opts }, { note, signal });
         },
@@ -265,7 +269,7 @@ export function pdfCommands(defineCommand, service, whoOf = () => ({ name: 'term
     const a = parse('pdfinfo', args);
     if (a.done) return a.done;
     const j = await job('pdfinfo', ctx, a.files[0], { action: 'info', password: a.opts.upw ?? a.opts.opw, scan: INFO_SCAN_PAGES });
-    return j.error ?? ok(formatInfo(j.r));
+    return j.error ?? ok(formatInfo(j.r, { password: a.opts.upw != null || a.opts.opw != null }));
   });
 
   const pdftotext = defineCommand('pdftotext', async (args, ctx) => {
@@ -291,7 +295,7 @@ export function pdfCommands(defineCommand, service, whoOf = () => ({ name: 'term
     if (range.error) return fail('pdftoppm', range.error, 99);
     const dpi = a.opts.r ?? DEFAULT_DPI, jpeg = !!a.opts.jpeg;
     const crop = ['x', 'y', 'W', 'H'].some((k) => a.opts[k] !== undefined) ? { x: a.opts.x ?? 0, y: a.opts.y ?? 0, W: a.opts.W, H: a.opts.H } : null;
-    const j = await job('pdftoppm', ctx, a.files[0], { action: 'render', first: range.first, last: range.last ?? range.first + RENDER_MAX_PAGES - 1, dpi, maxPixels: MAX_PIXELS, type: jpeg ? 'image/jpeg' : 'image/png', crop, password: a.opts.upw ?? a.opts.opw });
+    const j = await job('pdftoppm', ctx, a.files[0], { action: 'render', first: range.first, last: range.last ?? range.first + RENDER_MAX_PAGES - 1, dpi, maxPixels: MAX_PIXELS, maxBytes: RENDER_MAX_BYTES, type: jpeg ? 'image/jpeg' : 'image/png', crop, password: a.opts.upw ?? a.opts.opw });
     if (j.error) return j.error;
     const ext = jpeg ? 'jpg' : 'png', prefix = abs(ctx.cwd, a.files[1]), digits = String(j.r.numPages).length;
     const lines = [];

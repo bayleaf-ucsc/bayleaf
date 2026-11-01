@@ -130,9 +130,10 @@ const actions = {
     } finally { await doc.loadingTask.destroy(); }
   },
   // Pixel caps are checked by the page before asking; maxPixels is checked again here per page.
-  async render({ data, password, first, last, dpi, maxPixels, type, crop }, id, note) {
+  async render({ data, password, first, last, dpi, maxPixels, maxBytes = Infinity, type, crop }, id, note) {
     const doc = await open(data, password);
     try {
+      let total = 0;
       const out = [], hi = Math.min(last ?? doc.numPages, doc.numPages);
       if (first > doc.numPages) throw Object.assign(new Error(`first page ${first} is past the last page (${doc.numPages})`), { code: 'ERANGE' });
       for (let n = first; n <= hi; n++) {
@@ -151,6 +152,8 @@ const actions = {
           img = new OffscreenCanvas(cw, ch); img.getContext('2d').drawImage(canvas, x, y, cw, ch, 0, 0, cw, ch);
         }
         const blob = await img.convertToBlob({ type, quality: 0.9 });
+        total += blob.size;
+        if (total > maxBytes) throw Object.assign(new Error(`pages ${first}-${n} come to over ${Math.round(maxBytes / 2 ** 20)} MB of images together; render fewer pages per call (-f, -l) or lower -r`), { code: 'ECAP' });
         out.push({ n, width: img.width, height: img.height, bytes: new Uint8Array(await blob.arrayBuffer()) });
         page.cleanup();
         note(`rendered page ${n} of ${hi}`);
