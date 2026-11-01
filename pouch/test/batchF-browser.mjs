@@ -2,7 +2,8 @@
 // control plane. The Interface's Stop writes a ctl file (the events file
 // says so), the terminal stops a background subagent and steers main by
 // writing files while the tray follows, the main agent reads /session and
-// writes its subagent's ctl (in is refused), and New then Enter right away
+// writes its subagent's ctl (in is refused, and the failed write names what
+// did not run), reads its changes and usage files, and New then Enter right away
 // sends into the new session, not the previous one.
 // Run: node test/batchF-browser.mjs
 import assert from 'node:assert/strict';
@@ -147,16 +148,18 @@ try {
   // 5. The main agent reads /session and writes its subagent's ctl; in is refused.
   await rule(page, { who: 'main', when: '/third survey/.test(c.since)', reply: [['subagent', { action: 'spawn', name: 'mapper', task: 'Map the folders.' }]] });
   await rule(page, { who: 'mapper', gate: 'never3', reply: 'done' });
-  await rule(page, { who: 'main', when: '/Started subagent "mapper"/.test(c.since)', reply: [['bash', { command: 'cat /session/current/status; ls /session; echo stop > /session/current/agents/a4/ctl; cat /session/current/agents/a4/status' }], ['bash', { command: 'echo hi > /session/current/agents/a4/in' }]] });
+  await rule(page, { who: 'main', when: '/Started subagent "mapper"/.test(c.since)', reply: [['bash', { command: 'cat /session/current/status; ls /session; echo stop > /session/current/agents/a4/ctl; cat /session/current/agents/a4/status' }], ['bash', { command: 'echo hi > /session/current/agents/a4/in; echo unreached' }], ['bash', { command: 'echo note > /work/f6.md; cat /session/current/changes /session/current/usage' }]] });
   await rule(page, { who: 'main', when: '/stopped/.test(c.since)', reply: 'Stopped mapper.' });
   await send(page, 'Start a third survey and then stop it');
   await idle(page);
-  const body = await page.evaluate(() => JSON.stringify(window.fake.requests.main.at(-1).messages.slice(-3)));
+  const body = await page.evaluate(() => JSON.stringify(window.fake.requests.main.at(-1).messages.slice(-5)));
   assert.match(body, /working agents=4 running=1/);
-  assert.match(body, /EPERM: agents message each other with the agents tool.*write '\/session\/current\/agents\/a4\/in'/);
+  assert.match(body, /bash: \/session\/current\/agents\/a4\/in: EPERM: agents message each other with the agents tool/);
+  assert.match(body, /1 later command did not run: `echo unreached`/, 'CP6: the skipped command is named');
+  assert.match(body, /created a1 \/work\/f6\.md\\nallowance: .*requests-this-turn: \d+\\nrequests-today-this-session: \d+/, 'changes and usage files');
   assert.match(body, /stopped [\d.]+s subagent mapper/);
   assert.doesNotMatch(body, /events\\n\d/, 'its own session only');
-  ok('main agent: reads /session/current/status, writes its subagent\'s ctl (stopped), and gets EPERM writing in');
+  ok('main agent: reads /session/current/status, writes its subagent\'s ctl (stopped), gets EPERM writing in (CP6: the skipped command named), reads changes and usage');
 
   await page.screenshot({ path: join(shots, 'batchF-tray-terminal.png') });
   assert.deepEqual(errors, []);

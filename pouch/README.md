@@ -659,6 +659,8 @@ Stop clicked in the tray is in the events log.
 /session/current                    the session open in the Interface (an agent: its own)
 /session/<sid>/title, status        status: "<main state> agents=<n> running=<k>"
 /session/<sid>/ctl                  stop (main and all its subagents), detach
+/session/<sid>/usage                read: allowance left, requests this turn and today (counts only)
+/session/<sid>/changes              read: "<op> <refs> <path>" per path the agents changed this turn
 /session/<sid>/agents/a<n>/status   "<state> <seconds> <kind> <name>[: task]"
 /session/<sid>/agents/a<n>/ctl      stop (or kill); a1 also "stop all"; detach
 /session/<sid>/agents/a<n>/in       a message: steer | followup | message
@@ -681,6 +683,31 @@ no `from` header: who wrote is the view the writer was handed, so nobody can cla
 someone else. A write returns once it took effect (a stopped subagent's status reads
 `stopped` next); same-page writers also get the harness's receipt back (a steer's id, which
 the tray follows), while a 9P writer gets the usual byte count.
+
+**Reading itself: usage and changes.** Two read-only files let the main agent plan and
+check its own work without asking the person. `usage` (story AG35) is `key: value` lines:
+`allowance: 412 of 500 requests left today (...)`, `resets:` (ISO time, when known),
+`requests-this-turn:` and `requests-today-this-session:`. The allowance is BayLeaf's figure and
+lives outside Pouch (the same key is spent by other tools and devices, and a reset or top-up
+raises it), so the file says whose it is, and an unknown allowance reads `unknown`, never 0.
+The counts come from the same ledger as the Usage panel. Context fill joins it once
+`src/context.js` is on main (#124). `changes` (story AG22) lists the paths the agents changed
+since the user's last message, one line each, `created|modified|deleted <refs> <path>`, sorted
+by path, refs like `a1` or `a1,a2` so a subagent's writes are marked. It is folded to the net
+change (created then deleted is no line) and leaves out writes to /session, /task and /dev,
+which are actions, not file changes. Paths only, never content: the tools report each change
+where the caller is known (`noting` in `src/tools.js`), because watch attribution (`vfs.as`)
+names the kind of writer but not its session, and sees only watched paths.
+
+**A failed write in a script (CP6).** just-bash 3.6 lets a failed redirection write escape the
+whole script: `echo stop > /session/current/agents/a9/ctl; ls /session/current/agents` used
+to drop everything, the output before it included, with no word about the `ls`. Its own error
+classes, which it does catch, are not exported, so Pouch cannot make it continue. Instead the
+shell's filesystem tags a failed write with its path and `execScript` (`src/tools.js`, used by
+the bash tool and the terminal) turns the escape into exit 1 with `bash: <path>: <error>` and a
+note naming the commands that did not run ("1 later command did not run: `ls ...`. Rerun what
+you still need."). The commands before it did run; their output is lost. Remove the shim once
+just-bash reports a redirection write error the way bash does (status 1, script continues).
 
 **Events.** `cat /session/events` prints the last 50 lines. Over 9P, an open fid of
 `events` reads like acme's event file: each read blocks until something new happens, and

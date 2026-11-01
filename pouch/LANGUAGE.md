@@ -110,7 +110,8 @@ button in the transcript. Either way the Thread records the showing. Never Inter
 scripts run only by a person's choice. *For now:* the rule is provisional, pending experience.
 
 **Control plane.** The files through which anything that acts is controlled:
-`/session/<sid>/agents/a<n>/{status,ctl,in,last,ns}`, `/session/events`, and `/task` for runs,
+`/session/<sid>/agents/a<n>/{status,ctl,in,last,ns}`, `/session/<sid>/{usage,changes}` (what an
+agent reads about itself: its allowance and requests, and what it changed this turn), `/session/events`, and `/task` for runs,
 terminal commands and watches (README "Control plane", `src/ns/control.js`). The Interface is
 one client of it, the terminal another, the main agent a third; what a write does is the same
 whoever wrote it. Who may write what is the Namespace they were handed (the main agent sees
