@@ -31,15 +31,25 @@ export function capOutput(text) {
   if (t.length > OUT_CHARS) { note = `[output capped: ${t.length - OUT_CHARS} more characters not shown]`; t = t.slice(0, OUT_CHARS); }
   return { text: t, note };
 }
+// Binary bytes on screen are noise (and control characters in a log region);
+// pipes still get them (`cat x.png | od -c | head`). Display only.
+export function binaryOutput(text) {
+  const t = String(text ?? '');
+  if (!t.slice(0, 8000).includes('\0')) return null;
+  return `[binary output: ${t.length} bytes not shown. Try \`od -c FILE | head\`, \`file FILE\`, or \`open FILE\` for images, audio and video]`;
+}
 const commonPrefix = (xs) => xs.reduce((a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; return a.slice(0, i); });
 
-// deps: { vfs, fs? (the user's namespace, with /session), hooks: { bayleafCredential, approveEgress(req), models? (src/models-cli.js service) }, onChange() }
+// deps: { vfs, fs? (the user's namespace, with /session), hooks: { bayleafCredential, approveEgress(req), models? (src/models-cli.js service),
+//         openFile?({ path, mode, interactive }) -> Promise<boolean>, revealDir?(path) (the `open` command, src/open-cli.js) }, onChange() }
 export function createTerminal({ vfs, fs: userFs, hooks = {}, onChange }) {
   const fs = serialized(userFs ?? vfs.as('user'));
   const shell = shellFor(fs, {
     bayleafCredential: () => hooks.bayleafCredential?.() ?? null,
     approveEgress: hooks.approveEgress && ((req) => hooks.approveEgress(req)),
     models: hooks.models,
+    openFile: hooks.openFile,
+    revealDir: hooks.revealDir,
   });
   let cwd = CWD, env = null, running = null; // running: { task, settle }
   let history = [];
@@ -87,7 +97,8 @@ export function createTerminal({ vfs, fs: userFs, hooks = {}, onChange }) {
     catch (e) { r = { stdout: '', stderr: String(e?.message ?? e) + '\n', exitCode: 1 }; }
     finally { clearInterval(timer); live.remove(); running = null; input.removeAttribute('aria-busy'); }
     if (!killed && r.env) { env = r.env; cwd = normalize(r.env.PWD || cwd); setPrompt(); }
-    const out = capOutput(r.stdout), err = capOutput(killed ? '' : r.stderr);
+    const screen = (t) => { const bin = binaryOutput(t); return bin ? { text: '', note: bin } : capOutput(t); };
+    const out = screen(r.stdout), err = screen(killed ? '' : r.stderr);
     print(b, out.text); print(b, err.text, 'term-err');
     for (const n of [out.note, err.note]) if (n) print(b, n, 'term-note muted');
     const code = killed ? 130 : r.exitCode;

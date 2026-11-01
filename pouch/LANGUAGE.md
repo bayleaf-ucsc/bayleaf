@@ -100,6 +100,15 @@ What an agent can see is what it can touch; namespaces do not govern the network
 workspace: the Pouch page. *Open:* name the agent-facing counterpart (tools and /task
 files, through which agents perceive the same things): "Surface", "Tools", or nothing.
 
+**Show.** The agent's act of putting a file or folder in front of the person (bash
+`show <path>`, `src/open-cli.js`). Its counterpart is **Open**, the person's act (the
+terminal's `open`, a link, a click in Files): different verbs because they carry different
+authority. The politeness rule: show opens it at once only when that would not get in the
+person's way; with unsaved edits, a dialog open, a touch of the page in the last few seconds
+(`SHOW_QUIET_MS`, 4 s), or a subagent asking, it is *offered* instead, as a card with an Open
+button in the transcript. Either way the Thread records the showing. Never Interactive:
+scripts run only by a person's choice. *For now:* the rule is provisional, pending experience.
+
 **Control plane.** The files through which anything that acts is controlled:
 `/session/<sid>/agents/a<n>/{status,ctl,in,last,ns}`, `/session/events`, and `/task` for runs,
 terminal commands and watches (README "Control plane", `src/ns/control.js`). The Interface is
@@ -186,3 +195,4 @@ Deliberately left:
 - 2026-10-31: one Thread per Agent; agents act and the interface must convey it.
 - 2026-10-31: at most one Workspace; starts at zero; Erase all returns to zero.
 - 2026-11-01: Control plane adopted (Adam): the file tree is the authority for everything that acts; the Interface is one client among several.
+- 2026-11-01: Show adopted (Adam): the agent shows, the person opens; show opens unless the person is busy, else offers (provisional).

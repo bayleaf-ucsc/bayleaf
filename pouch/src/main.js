@@ -217,36 +217,87 @@ function setReviewBar(text) {
 
 // link: opened from a reply, where an HTML report opens in Preview; a line
 // number always opens Raw. Otherwise each kind opens in its last mode.
-async function openFile(path, line, { link = false } = {}) {
+// mode, interactive: the terminal's `open` (src/open-cli.js) names both, and
+// remembers neither. Returns true when opened, false when the user kept
+// unsaved changes, or a reason it was not: 'binary', or recheck()'s (show).
+async function openFile(path, line, { link = false, mode = null, interactive = false, recheck = null } = {}) {
   const p = previewOf(path);
-  const want = line ? 'raw' : link && p?.kind === 'html' ? 'preview' : null;
+  const want = mode ?? (line ? 'raw' : link && p?.kind === 'html' ? 'preview' : null);
+  const wantScripts = !!mode && p?.kind === 'html' && interactive;
   // Reopening the file you are editing only moves the cursor: no reload, no loss.
   if (path !== openPath || merging) {
-    if (dirty && !(await ask(`Discard unsaved changes to ${openPath}?`, 'Discard', 'danger'))) return;
+    if (dirty && !(await ask(`Discard unsaved changes to ${openPath}?`, 'Discard', 'danger'))) return false;
     if (p && !p.raw) { // image, audio, video: a preview only
       await vfs.fs.stat(path);
+      const why = recheck?.(); if (why) return why;
       openPath = path; merging = false; viewOnly = true; scripts = false;
       setReviewBar(null); setConflict(null);
       editor.load(path, '');
       setView('preview');
       showEditor(path);
-      return;
+      return true;
     }
     const bytes = await vfs.fs.readFileBuffer(path);
-    if (bytes.includes(0)) return sheet(path + ' looks binary', [
-      ARCHIVE.test(path) && vfs.where(path) !== 'mount-ro' && ['Unpack here', () => unpackHere(path)],
-      ARCHIVE.test(path) && ['List contents', () => listArchive(path)],
-      ARCHIVE.test(path) && ['Layer under /work (read-only seed)', () => stackSeed(path)],
-      ['Download', () => download(path)],
-    ]);
-    openPath = path; merging = false; viewOnly = false; scripts = false;
+    // The person's edits or activity during the read win over show (src/open-cli.js).
+    const why = recheck?.(); if (why) return why;
+    if (bytes.includes(0)) {
+      sheet(path + ' looks binary', [
+        ARCHIVE.test(path) && vfs.where(path) !== 'mount-ro' && ['Unpack here', () => unpackHere(path)],
+        ARCHIVE.test(path) && ['List contents', () => listArchive(path)],
+        ARCHIVE.test(path) && ['Layer under /work (read-only seed)', () => stackSeed(path)],
+        ['Download', () => download(path)],
+      ]);
+      return 'binary';
+    }
+    openPath = path; merging = false; viewOnly = false; scripts = wantScripts;
     setReviewBar(null); setConflict(null);
     editor.load(path, new TextDecoder().decode(bytes));
     setView(want ?? (p ? rememberedMode(p.kind) : 'raw'));
-  } else if (want && want !== fileView) setView(want);
+  } else if (want && (want !== fileView || (mode && wantScripts !== scripts))) {
+    if (mode) scripts = wantScripts;
+    setView(want);
+  }
   showEditor(path);
   if (line) editor.gotoLine(line);
   if (fileView === 'raw') editor.focus();
+  return true;
+}
+
+// Show (LANGUAGE.md): an agent puts a file or folder in front of the person
+// (bash `show`, src/open-cli.js). For now it opens at once only when that
+// would not get in their way; otherwise the transcript offers it (shownCard).
+// Provisional, pending experience with it.
+const SHOW_QUIET_MS = 4000; // a touch of the page this recent means the person is busy
+let lastTouch = 0;
+for (const ev of ['keydown', 'pointerdown', 'wheel']) document.addEventListener(ev, () => { lastTouch = performance.now(); }, { capture: true, passive: true });
+function showBusy(caller) {
+  if (caller != null && agent?.who(caller)?.child != null) return 'a subagent asked';
+  if (dirty) return 'unsaved edits';
+  if (document.querySelector('dialog[open]')) return 'a dialog is open';
+  if (performance.now() - lastTouch < SHOW_QUIET_MS) return 'typing or pointing just now';
+  return null;
+}
+async function show({ path, dir, mode }, caller) {
+  const reason = showBusy(caller);
+  if (reason) return { opened: false, reason };
+  if (dir) await revealDir(path);
+  else {
+    const r = await openFile(path, undefined, { mode, recheck: () => showBusy(caller) });
+    if (r === 'binary') throw new Error('looks binary; not opened (the person was offered Download)');
+    if (r !== true) return { opened: false, reason: r || 'unsaved edits' };
+  }
+  return { opened: true };
+}
+// A bash result's `shown:` lines, read back so the card survives reload.
+const SHOWN = /^shown: (opened|offered) (.+?) \((Raw|Preview|Preview, Static|Files)\)(?:; not opened \(user busy: ([^)]*)\))?/gm;
+const shownLines = (output) => (typeof output === 'string' ? [...output.matchAll(SHOWN)] : []).map(([, how, path, label, reason]) => ({ how, path, label, reason }));
+function shownCard({ how, path, label, reason }) {
+  const b = el('button', { type: 'button', textContent: 'Open', title: `Open ${path} (${label})` });
+  b.onclick = () => (label === 'Files' ? revealDir(path) : openFile(path, undefined, { mode: label === 'Raw' ? 'raw' : 'preview' })).catch((e) => fail(e.message));
+  const what = how === 'opened' ? `Shown: ${path} (${label})` : `Pouch wants to show you ${path} (${label}); not opened while you were busy (${reason})`;
+  const card = el('p', { className: 'notice reverted shown', role: 'status' }, what, b);
+  card.dataset.shown = how;
+  return card;
 }
 async function saveFile() {
   if (!openPath || viewOnly) return;
@@ -1538,7 +1589,8 @@ function mainNamespace(sid, base) {
 // The user's shell over the same namespace; `bayleaf` asks every use. Ctrl+`
 // opens it (or focuses it); opening it never sends anything.
 const terminal = createTerminal({ vfs, fs: over(vfs.as('user'), [['/session', control.view({ by: 'user', label: 'terminal' }), { label: 'control (you)' }]]), onChange: () => renderTree(),
-  hooks: { bayleafCredential: () => key, approveEgress: (req) => egress.approve(req, null, undefined, 'you, in the terminal'), models: modelService } });
+  hooks: { bayleafCredential: () => key, approveEgress: (req) => egress.approve(req, null, undefined, 'you, in the terminal'), models: modelService,
+    openFile: ({ path, mode, interactive }) => openFile(path, undefined, { mode, interactive }), revealDir } });
 document.addEventListener('keydown', (e) => {
   if (e.key !== '`' || !e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]')) return;
   e.preventDefault();
@@ -1771,6 +1823,7 @@ function childItems(v, name, childId, compact) {
         `${x.status === 'running' ? '... ' : x.status === 'error' ? '! ' : ''}${x.name}: ${argSummary(x.name, x.args)}`) : toolCard(x, 'sa:');
       if (compact && spawn && x.status !== 'error') { line.dataset.spawn = spawn.mode ?? 'agent'; line.dataset.names = JSON.stringify([spawn.name ?? 'subagent']); }
       out.push(line);
+      if (x.name === 'bash') out.push(...shownLines(x.output).map(shownCard));
     } else if (x.type === 'notice') out.push(el('p', { className: 'notice', textContent: x.text }));
   }
   if (final) out.push(el('div', { className: 'sa-final', role: 'article', ariaLabel: `Final answer from ${name}` }, el('span', { className: 'sa-who', textContent: 'Final answer' }), replyBody(final.text, nextCache)));
@@ -2271,6 +2324,7 @@ function renderLog() {
       const child = it.name === 'subagent' && it.args?.action === 'spawn' && it.status !== 'error' ? it.details?.child : null;
       const early = child == null && it.name === 'subagent' && it.args?.action === 'spawn' && it.status === 'running' ? spawnedAs(it) : null;
       out.push(child != null ? subagentCard(it, child) : early ? subagentCard(it, early.id) : startingSpawn(it) ? subagentCard(it, null) : toolCard(it));
+      if (it.name === 'bash') out.push(...shownLines(it.output).map(shownCard));
     } else if (it.type === 'report') {
       out.push(reportCard(it, nextCache));
     } else if (it.type === 'compaction') {
@@ -2944,6 +2998,7 @@ function quotaError(msg) { return /\b429\b|quota|rate.?limit|too many requests|a
 // chores (title, usage), so a follow-up need not wait for them.
 async function send(text, attached = { files: [], images: [] }, turnModel = $('model').value, runEnded = () => {}, adopted = () => {}) {
   follow.pin();
+  lastTouch = 0; // sending hands the turn over: the keys that sent it do not make the person busy
   const t0 = Date.now();
   if (!sessions.current) { await sessions.create(); ledger.adopt('new', sessions.current.id); adopted(sessions.current.id); }
   const s = sessions.current; // the run belongs to this session even if you switch away
@@ -3407,6 +3462,7 @@ const withWatch = (list) => { list.push(watchTool({ Type, watches, callerOf: wat
         mainView: (caller, base) => { const w = caller == null ? null : agent?.who(caller); return w && w.child == null && w.sid != null ? mainNamespace(w.sid, base) : base; },
         ...egressHooks,
         models: modelService, modelsWho,
+        show,
       })),
       systemPrompt: () => systemPrompt(vfs),
       getClient: async () => (verified ? client : null),
