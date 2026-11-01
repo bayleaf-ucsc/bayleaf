@@ -1,0 +1,16 @@
+tree 1 true final 4373
+tree 2 true final 4384
+tree 3 true final 4606
+edit 1 true final 1529
+edit 2 true final 1531
+edit 3 true final 1527
+feature 1 false final 3019
+feature 2 false final 2935
+feature 3 false final 2973
+missing 1 true final 2234
+missing 2 true final 2199
+missing 3 true final 2212
+ambiguous 1 true final 1645
+ambiguous 2 true final 1636
+ambiguous 3 true final 1647
+{"phase":"agent","load_ms":1439.6100000143051,"trials":[{"task":"tree","pass":true,"status":"final"},{"task":"tree","pass":true,"status":"final"},{"task":"tree","pass":true,"status":"final"},{"task":"edit","pass":true,"status":"final"},{"task":"edit","pass":true,"status":"final"},{"task":"edit","pass":true,"status":"final"},{"task":"feature","pass":false,"status":"final"},{"task":"feature","pass":false,"status":"final"},{"task":"feature","pass":false,"status":"final"},{"task":"missing","pass":true,"status":"final"},{"task":"missing","pass":true,"status":"final"},{"task":"missing","pass":true,"status":"final"},{"task":"ambiguous","pass":true,"status":"final"},{"task":"ambiguous","pass":true,"status":"final"},{"task":"ambiguous","pass":true,"status":"final"}]}
