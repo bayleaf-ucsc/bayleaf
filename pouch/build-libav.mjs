@@ -18,7 +18,7 @@
 //   pinned upstream URLs whose bytes equal the libav.js 6.10.9.0 release zip's
 //   sources/ (checked 2026-11-01), except libav.js itself: GitHub's archive of
 //   the same tag (the zip holds `git archive HEAD | xz`, the same tree).
-import { readFileSync, existsSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, renameSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { bundleWorker, writeRuntime } from './build-runtime.mjs';
