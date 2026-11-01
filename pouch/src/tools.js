@@ -1,5 +1,6 @@
 // The four tools every coding harness converges on: read, write, edit, bash,
-// plus `run` (src/run.js: JavaScript in a sandboxed QuickJS worker).
+// plus `run` (src/run.js: JavaScript in a sandboxed QuickJS worker) and `look`
+// (image files sent to an image-capable model).
 // They run in this page against the Vfs; nothing here touches the network.
 // just-bash is a TypeScript reimplementation of bash and coreutils, so `bash`
 // is an interpreter over the same files, not a real process.
@@ -15,6 +16,7 @@ import { modelsCommands } from './models-cli.js';
 import { openCommands, agentOpenCommands, agentShowCommands } from './open-cli.js';
 import { runTool } from './run.js';
 import { WATCH_GLOSS } from './ns/watch.js';
+import { FILE_CAP, rasterMime, prepareImageSized } from './attachments.js';
 
 const MAX_LINES = 2000;
 const MAX_CHARS = 50_000;
@@ -135,8 +137,43 @@ export function shellFor(fs, hooks = {}) {
   });
 }
 
+export const LOOK_MAX = 8; // paths per look call
+export const LOOK_REFUSAL = 'This model cannot see images; ask the person to switch to a model marked images.';
+const absPath = (p) => normalize(String(p).startsWith('/') ? String(p) : CWD + '/' + p);
+const isSvg = (p, bytes) => /\.svgz?$/i.test(p) || /^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*<svg[\s>]/i.test(new TextDecoder().decode(bytes.subarray(0, 512)));
+// One text line per path, then the images in the same order. A path that is not
+// a raster image is refused on its line; if none could be sent the call fails.
+// Returns { text, images } (agent.js toTool turns it into text and image blocks).
+export async function lookAt(paths, fs, prepare) {
+  if (!Array.isArray(paths) || !paths.length) throw new Error('Give look at least one image path in `paths`.');
+  if (paths.length > LOOK_MAX) throw new Error(`look takes at most ${LOOK_MAX} paths per call (got ${paths.length}); split them into several calls.`);
+  const lines = [], images = [];
+  for (const p of [...new Set(paths.map(absPath))]) {
+    let bytes;
+    try {
+      bytes = await fs.readFileBuffer(p);
+    } catch (e) { lines.push(`${p}: not sent. ${explain(e, p).message}`); continue; }
+    if (bytes.length > FILE_CAP) { lines.push(`${p}: not sent. It is ${bytes.length.toLocaleString('en-US')} bytes; look reads files up to 20 MB.`); continue; }
+    const mime = rasterMime(bytes);
+    if (!mime) {
+      lines.push(`${p}: not sent. ${isSvg(p, bytes) ? 'SVG is not sent as an image; it is text, so read its markup with the read tool.' : 'It is not a PNG, JPEG, GIF or WebP image; check it with bash `file ' + p + '`.'}`);
+      continue;
+    }
+    try {
+      const r = await prepare(bytes);
+      images.push(r.image);
+      const kind = mime.slice(6).toUpperCase();
+      const sent = r.sentWidth === r.width && r.sentHeight === r.height ? `sent at full size as ${r.image.mimeType.slice(6).toUpperCase()}` : `sent scaled to ${r.sentWidth}x${r.sentHeight} ${r.image.mimeType.slice(6).toUpperCase()}`;
+      lines.push(`${p}: image ${images.length}, ${kind} ${r.width}x${r.height}, ${sent}, ${r.bytes.toLocaleString('en-US')} bytes`);
+    } catch (e) { lines.push(`${p}: not sent. ${e.message}`); }
+  }
+  if (!images.length) throw new Error(lines.join('\n'));
+  lines.push(`[${images.length} image${images.length > 1 ? 's' : ''} attached in this order; they count toward this conversation's context]`);
+  return { text: lines.join('\n'), images };
+}
+
 export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
-  const abs = (p) => normalize(p.startsWith('/') ? p : CWD + '/' + p);
+  const abs = absPath;
   // A subagent works in its own namespace (hooks.namespaceFor(caller) gives
   // its mounts), reached over a 9P connection like any task across a
   // boundary: the page serves a capability view cut from the agent's tree and
@@ -324,9 +361,27 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
     },
   };
 
+  // Pixels reach the model only through this tool, never from read: sending an
+  // image is an explicit, countable act the transcript shows (JOURNEYS AG1).
+  // opts.seesImages is false for a text-only model (agent.js toTool): a plain
+  // refusal, never a silent send or a silent drop.
+  const prepare = hooks.prepareImage ?? prepareImageSized;
+  const look = {
+    name: 'look', label: 'Look', images: true,
+    description: `See image files: each PNG, JPEG, GIF (first frame) or WebP is sent to you as an image, scaled to at most 2000px and 4 MB (the file is unchanged). At most ${LOOK_MAX} paths per call. Images count toward the conversation's context; look only when seeing the pixels matters.`,
+    parameters: Type.Object({
+      paths: Type.Array(Type.String(), { minItems: 1, maxItems: LOOK_MAX, description: `Image files, absolute or relative to ${CWD} (at most ${LOOK_MAX})` }),
+      note: Type.Optional(Type.String({ description: 'What you are looking for (shown to the user)' })),
+    }),
+    async execute({ paths }, { caller, seesImages } = {}) {
+      if (seesImages === false) throw new Error(LOOK_REFUSAL);
+      return lookAt(paths, fsFor(caller), prepare);
+    },
+  };
+
   const run = runTool({ vfs, Type, CWD, abs, fsFor: (caller) => nsFor(caller, 'run'), sidOf: (caller) => hooks.sessionOf?.(caller) ?? null, oneAtATime, ...(hooks.makeWorker ? { makeWorker: hooks.makeWorker } : {}) });
   // closeView(caller): drop a finished subagent's 9P connection.
-  return Object.assign([read, write, edit, bashTool, run], { closeView: (caller) => { views.get(caller)?.close(); views.delete(caller); } });
+  return Object.assign([read, write, edit, bashTool, run, look], { closeView: (caller) => { views.get(caller)?.close(); views.delete(caller); } });
 }
 
 // ── Context: AGENTS.md files and skills ─────────────────────────────
@@ -384,7 +439,7 @@ export async function systemPrompt(vfs) {
   const mounts = [...vfs.mounts].filter(([, m]) => m.live)
     .map(([n, m]) => `/mnt/${n}${m.readOnly ? ' (read-only)' : ''}`);
   let s = `You are BayLeaf Pouch, a coding agent running entirely inside the user's web browser.
-You work on files through the read, write, edit, bash and run tools. Filesystem:
+You work on files through the read, write, edit, bash, run and look tools. Filesystem:
 - ${CWD}: the user's workspace (browser-private storage). Default working directory.
 - /pouch: shared instructions (AGENTS.md) and skills (skills/<name>/SKILL.md).
 - /tmp: scratch, lost on reload.
@@ -393,6 +448,7 @@ You work on files through the read, write, edit, bash and run tools. Filesystem:
 ${vfs.seedLayer ? `- ${CWD} is stacked over the read-only seed archive ${vfs.seedLayer.name}: your files win, edits land in ${CWD}, removing a seed file hides it.\n` : ''}${mounts.length ? '- Folders the user mounted from their device: ' + mounts.join(', ') + '\n' : ''}The bash tool is a simulated shell with coreutils-like commands plus zip/unzip/tar: no network, no installs, no python/node/git.
 The run tool executes JavaScript (QuickJS) over a copy of the files you name, with no network: use it instead of awk/sed/jq for anything that needs real parsing (quoted CSV, nested JSON) or arithmetic, and to test JavaScript; save reusable scripts in ${CWD} and run them by path. Its file writes are applied to the workspace when it finishes.
 The one exception is the \`bayleaf\` command (web search/fetch, a remote sandbox VM, inboxes): it leaves the pouch and asks the user each time; see the bayleaf-cli skill.
+The look tool shows you image files (PNG, JPEG, GIF, WebP; at most ${LOOK_MAX} per call): use it when the user points at an image, or to check a chart or picture you made, not for text files. Images count toward context; it fails on models without images.
 The subagent tool runs a self-contained task (web research, exploring a codebase) in a background subagent while you keep talking with the user: use it when the user asks for background work or when such a task would take many steps. Each subagent step costs a request from the same daily allowance; its report arrives later as a message, so do not poll for it.
 ${GRAPH_GLOSS} You are main (a1); only you spawn and stop subagents.
 ${WATCH_GLOSS}

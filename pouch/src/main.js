@@ -2083,6 +2083,7 @@ function argSummary(name, args) {
   if (name === 'bash') return (args.command ?? '').split('\n')[0];
   if (name === 'run' && args.code != null) return 'js: ' + (args.code.split('\n').find((l) => l.trim()) ?? '');
   if (name === 'agents' || name === 'subagent') return agentSummary(name, args);
+  if (name === 'look') return `${(args.paths ?? []).length} image${(args.paths ?? []).length === 1 ? '' : 's'}: ${(args.paths ?? []).map((p) => String(p).split('/').pop()).join(', ')}`;
   if (name === 'watch') return args.action === 'watch' ? `${(args.paths ?? []).join(', ')}${args.once ? ' (once)' : ''}${args.by && args.by !== 'user' ? ` by ${args.by}` : ''}` : `${args.action ?? ''} ${args.id ?? ''}`.trim();
   return args.path ?? JSON.stringify(args).slice(0, 120);
 }
@@ -2108,6 +2109,9 @@ function toolDetail(it) {
       pre.append(lines(e.oldText, '- ', 'del'), lines(e.newText, '+ ', 'add'));
     });
     parts.push(pre);
+  } else if (it.name === 'look') {
+    if (a.note) parts.push(el('p', { className: 'look-note', textContent: a.note }));
+    if (it.images?.length) parts.push(el('div', { className: 'look-strip big' }, ...lookThumbs(it)), el('p', { className: 'look-note', textContent: `Sent ${it.images.length} image${it.images.length > 1 ? 's' : ''} to the model as shown; they count toward this conversation's context.` }));
   } else if (it.name !== 'read') parts.push(el('pre', { textContent: JSON.stringify(a, null, 1) }));
   // The marker line becomes the badge and this note; the rest stays as sent.
   const eg = it.name === 'bash' ? egressOf(it.output) : null;
@@ -2200,8 +2204,25 @@ function toolCard(it, prefix = '') {
     const who = eg.audiences.length ? eg.audiences.join('\n') : 'see the bayleaf-cli skill';
     sum.prepend(el('span', { className: 'egress', title: `Sent outside the pouch (${eg.commands.join(', ')}) to:\n${who}` }, icon('egress'), el('span', { textContent: 'left the pouch' })));
   }
+  // A look stays visible while collapsed: small thumbnails in its summary.
+  if (it.name === 'look' && it.images?.length) sum.append(el('span', { className: 'look-strip', title: 'Sent to the model' }, ...lookThumbs(it)));
   d.append(sum, ...toolDetail(it));
   return d;
+}
+// Thumbnails of what a look sent, from the stored bytes (blob URLs, no network).
+// The log re-renders every frame, so each image's URL is made once.
+const lookUrls = new Map(); // `${call id}:${index}` -> blob URL
+function lookThumbs(it) {
+  const names = [...String(it.output ?? '').matchAll(/^(\S+): image \d+,/gm)].map((m) => m[1]);
+  return it.images.map((img, i) => {
+    const k = `${it.id}:${i}`;
+    if (!lookUrls.has(k)) {
+      const bin = atob(img.data), bytes = new Uint8Array(bin.length);
+      for (let j = 0; j < bin.length; j++) bytes[j] = bin.charCodeAt(j);
+      lookUrls.set(k, URL.createObjectURL(new Blob([bytes], { type: img.mimeType })));
+    }
+    return el('img', { src: lookUrls.get(k), alt: names[i] ?? `image ${i + 1}`, title: names[i] ?? '', loading: 'lazy' });
+  });
 }
 // A report without words: where its work went instead (it sent it by message).
 function quietText(it) {

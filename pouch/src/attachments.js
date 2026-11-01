@@ -14,7 +14,9 @@ const base64 = (bytes) => {
   for (let i = 0; i < bytes.length; i += 8192) s += String.fromCharCode(...bytes.subarray(i, i + 8192));
   return btoa(s);
 };
-export async function prepareImage(bytes) {
+export async function prepareImage(bytes) { return (await prepareImageSized(bytes)).image; }
+// The same, with what the look tool reports: original and sent dimensions, sent bytes.
+export async function prepareImageSized(bytes) {
   const mime = rasterMime(bytes);
   if (!mime) throw new Error('Only PNG, JPEG, GIF and WebP images can be understood. SVG and other formats stay local files.');
   const bitmap = await createImageBitmap(new Blob([bytes], { type: mime }));
@@ -28,7 +30,8 @@ export async function prepareImage(bytes) {
     let blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
     if (!blob || blob.size > IMAGE_CAP) blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', .85));
     if (!blob || blob.size > IMAGE_CAP) throw new Error('Prepared image exceeds 4 MB. Use a smaller image.');
-    return { type: 'image', data: base64(new Uint8Array(await blob.arrayBuffer())), mimeType: blob.type };
+    return { image: { type: 'image', data: base64(new Uint8Array(await blob.arrayBuffer())), mimeType: blob.type },
+      width: bitmap.width, height: bitmap.height, sentWidth: canvas.width, sentHeight: canvas.height, bytes: blob.size };
   } finally { bitmap.close(); }
 }
 export function attachmentContext(files) {
