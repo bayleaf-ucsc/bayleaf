@@ -1,0 +1,10 @@
+import { launch, sleep } from './lib.mjs';
+const ctx = await launch({ userDataDir: '/tmp/pouch-qa/p3-chat' });
+const page = ctx.pages()[0] ?? await ctx.newPage();
+await page.goto(process.env.POUCH_URL); await page.waitForSelector('.msg.user'); await sleep(1500);
+const desc = () => page.evaluate(() => { const a = document.activeElement; return a.tagName + '.' + a.className + ' ' + (a.dataset?.act ?? '') + ' in msg:' + !!a.closest('.msg'); });
+await page.locator('.msg.assistant >> nth=0').focus(); console.log('focus', await desc());
+await page.keyboard.press('Shift+Tab'); console.log('shift-tab', await desc());
+await page.keyboard.press('Tab'); console.log('tab', await desc());
+await page.keyboard.press('Tab'); console.log('tab', await desc());
+await ctx.close();

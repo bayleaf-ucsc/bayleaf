@@ -1,0 +1,11 @@
+import { launch, instrument, URL, sleep } from './lib.mjs';
+const ctx = await launch({});
+const page = ctx.pages()[0] ?? await ctx.newPage();
+const errors = instrument(page);
+await page.goto(URL);
+await sleep(3000);
+await page.locator('#tree .row:has(.name[title="/work/sub"]) .more').click();
+await page.locator('#sheet-actions button', { hasText: 'Download as .tar' }).click();
+await sleep(3000);
+console.log(page.dialogLog, errors);
+await ctx.close();

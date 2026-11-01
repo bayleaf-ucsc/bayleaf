@@ -1,0 +1,14 @@
+import { chromium } from 'playwright';
+import { spawn } from 'node:child_process';
+const srv = spawn('node', ['/tmp/pouch-qa/local-serve.mjs', '/tmp/pouch-qa/local-build', '8792'], { stdio: 'ignore' });
+await new Promise((r) => setTimeout(r, 500));
+const ctx = await chromium.launchPersistentContext('/tmp/pouch-qa/local-profile', { executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: ['--enable-unsafe-webgpu', '--enable-features=WebGPU'], viewport: { width: 1400, height: 900 } });
+await ctx.route('https://**/*', (r) => r.request().url().endsWith('/models') ? r.fulfill({ json: { data: [] } }) : r.abort());
+const page = ctx.pages()[0];
+page.on('dialog', (d) => d.accept());
+await page.goto('http://127.0.0.1:8792/pouch.html');
+await page.waitForTimeout(3000);
+await page.screenshot({ path: '/tmp/pouch-qa/local-dbg2.png' });
+console.log(await page.evaluate(() => { const r = document.querySelector('#shield-btn').getBoundingClientRect(); const e = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return e.outerHTML.slice(0, 200); }));
+console.log(await page.evaluate(() => [...document.querySelectorAll('dialog[open]')].map((d) => d.id)));
+await ctx.close(); srv.kill();

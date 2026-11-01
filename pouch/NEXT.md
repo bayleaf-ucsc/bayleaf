@@ -5,8 +5,10 @@ Working state: worktree `~/Desktop/bayleaf-pouch`, branch `pouch`, checkpoint co
 `run` tool, offline handling, composer card, Transformers.js provider with weights built into `dist/`.
 Read `README.md`, `JOURNEYS.md` (story map; the source of truth for scope) and
 `DEPLOYMENT.md` first. Journey test scripts and the AX/UX/joint/speech reports were moved out of `/tmp` into
-`test/journeys/` (uncommitted; scripts still use `/tmp/pouch-qa/...` profile dirs, and the
-reports quote transcripts, so scrub before committing).
+`test/journeys/` (committed after a scan for secrets and private data). They are an
+archive, not a suite: they use `/tmp/pouch-qa/...` profile dirs, need `playwright` (and
+`md-unit.mjs` needs `linkedom`), which `package.json` does not declare, and some steps
+predate the current UI (t7's per-file Undo). The Playwright Test rework below replaces them.
 
 ## Decided, not yet built
 
