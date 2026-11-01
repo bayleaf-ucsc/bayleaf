@@ -520,12 +520,20 @@ it) gives the user just-bash over the namespace the main agent sees: /work, /pou
   per kind for clicks (`pouch.view`): a command does what its arguments say, the same every
   time (that is why Markdown opens in Preview here while a click opens it in its remembered
   mode, Raw at first).
-  **Agents get a refusing `open`.** In the agents' bash it exits 1 with "only the person
-  using Pouch opens files in their editor ... link it in your reply", because an agent's
-  `open` would take over the user's pane mid-task (and, with `--interactive`, run a report's
-  scripts without a person choosing to). A link in a reply already leaves the choice, and
-  the timing, to the person; the refusal says so in one line, so a small model does not
-  loop on `command not found`.
+  **Agents show; the person opens.** In the agents' bash `open` exits 1 with "open is the
+  person's; use `show <path>`", because an agent's `open` would take over the user's pane
+  mid-task (and, with `--interactive`, run a report's scripts without a person choosing
+  to). `show <path> [--raw | --preview | --static]` takes the same paths and type defaults
+  (a folder shows Files) and never `--interactive`. It opens at once unless that would get
+  in the person's way: unsaved edits in the editor, a dialog open, a key, pointer or wheel
+  touch of the page in the last 4 s (`SHOW_QUIET_MS` in `src/main.js`; sending a message
+  does not count), or a subagent asking. Then it is offered instead: a card in that agent's
+  transcript ("Pouch wants to show you ...") with an Open button. Either way the transcript
+  records it (an opened show is a one-line "Shown" card), and the agent reads one line:
+  `shown: opened /work/r.html (Preview, Static)` or `shown: offered ... (user busy: unsaved
+  edits)`. Both exit 0 (the person has it either way); errors are 1, usage 2. The cards are
+  read back from the bash output, so they survive reload. This rule is provisional
+  (LANGUAGE.md "Show"). Links in replies still work.
 - **Security.** The terminal runs nothing outside the page except `bayleaf`, which asks on
   the same approval sheet as an agent ("Send this outside the pouch from the terminal?",
   "you, in the terminal") on every use: the terminal belongs to no session, so no "Allow
@@ -764,7 +772,7 @@ transparency log, and no tagged reproducible release has been made.
 ## HTML reports
 
 An agent can write a self-contained HTML report (inline CSS and script, images as `data:`
-URLs) and link it; the link opens it in Preview. Reports come from your data, possibly
+URLs) and show it (bash `show`) or link it; either opens it in Preview, Static. Reports come from your data, possibly
 very sensitive, and an agent that read a hostile file may have been manipulated into
 writing one that tries to leak it. So the viewer renders rich reports with **no network
 egress and no access to Pouch** (its storage, key, files and other frames).

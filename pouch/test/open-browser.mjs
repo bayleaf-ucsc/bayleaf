@@ -216,17 +216,102 @@ try {
   assert.match(out, /211\s+P\s+N\s+G/);
   ok('cat on a binary file shows a note, not bytes; piping keeps the bytes');
 
-  // 9. The agent's open is refused and opens nothing; the agent is told to link instead.
+  // 9. The agent's open is refused and opens nothing; the agent is pointed to show.
   await rule(page, { who: 'main', when: '/show me the report/.test(c.since)', reply: [['bash', { command: 'open --interactive /work/report.html' }]] });
-  await rule(page, { who: 'main', when: '/only the person using Pouch/.test(c.since)', reply: 'Here it is: [the report](/work/report.html).' });
+  await rule(page, { who: 'main', when: '/open is the person/.test(c.since)', reply: 'Here it is: [the report](/work/report.html).' });
   await rule(page, { who: 'title', reply: 'Report', sticky: false });
   await send(page, 'show me the report');
   // The refusal reaches main's next request (idle alone can resolve before the turn starts).
-  await page.waitForFunction(() => /only the person using Pouch opens files/.test(window.fake.seen('main')), null, T)
+  await page.waitForFunction(() => /open is the person's; use `show <path>`/.test(window.fake.seen('main')), null, T)
     .catch(async (e) => { console.log('DEBUG requests:', await page.evaluate(() => JSON.stringify(Object.keys(window.fake.requests))), '| status:', await page.textContent('#status')); throw e; });
   await idle(page);
   assert.equal(await page.textContent('#editor-path'), '/work/app.js', 'the agent opened nothing');
-  ok('an agent\'s `open` (bash tool) is refused with a pointer to links; the editor is untouched');
+  ok('an agent\'s `open` (bash tool) is refused with a pointer to show; the editor is untouched');
+
+  // Show (LANGUAGE.md): an agent's bash `show`, opened when the person is idle, offered when busy.
+  const shown = (page) => page.$$eval('#log .shown', (l) => l.map((n) => n.dataset.shown));
+  async function agentShows(page, cmd, ask, extra = {}) {
+    const n = (await shown(page)).length;
+    await rule(page, { who: 'main', when: `/${ask}/.test(c.since)`, reply: [['bash', { command: cmd }]], ...extra });
+    await rule(page, { who: 'main', when: '/shown: /.test(c.since)', reply: 'There.' });
+    await send(page, ask);
+    return n;
+  }
+  const seenShown = (page, re) => page.waitForFunction((re) => new RegExp(re).test(window.fake.seen('main')), re, T);
+
+  // 10. Unsaved edits (app.js from step 7): offered, not opened; the agent's line says why.
+  let n0 = await agentShows(page, 'show /work/site/notes.md', 'show the notes while dirty');
+  await seenShown(page, 'shown: offered /work/site/notes\\.md \\(Preview\\); not opened \\(user busy: unsaved edits\\)');
+  await idle(page);
+  await page.waitForFunction((n) => document.querySelectorAll('#log .shown').length > n, n0, T);
+  assert.deepEqual((await shown(page)).slice(n0), ['offered']);
+  assert.equal(await page.textContent('#editor-path'), '/work/app.js', 'nothing opened over the unsaved edits');
+  assert.equal(await page.isVisible('#sheet[open]'), false, 'no Discard question either');
+  assert.match(await page.textContent('#log .shown:last-of-type'), /Pouch wants to show you \/work\/site\/notes\.md \(Preview\); not opened while you were busy \(unsaved edits\)/);
+  ok('agent show with unsaved edits: offered in the transcript (a "shown" card), nothing opens, no Discard question; the agent reads "offered ... unsaved edits"');
+
+  // 11. The card's Open button opens it in its mode (after saving the edits).
+  await page.click('#rail [data-panel="editor"]').catch(() => {});
+  await page.click('#save');
+  await page.waitForFunction(() => !document.getElementById('editor-path').classList.contains('dirty'), null, T);
+  await page.click('#log .shown[data-shown="offered"] button');
+  await editorPath(page, '/work/site/notes.md');
+  assert.equal(await pressed(page, '#view-mode'), 'Preview');
+  ok('the shown card\'s Open button opens the file in the mode show chose (Preview)');
+
+  // 12. Idle: show opens at once (sending does not count as being busy); HTML is Static.
+  await page.waitForTimeout(4200);
+  n0 = await agentShows(page, 'show /work/report.html', 'show the report now');
+  await seenShown(page, 'shown: opened /work/report\\.html \\(Preview, Static\\)');
+  await idle(page);
+  await editorPath(page, '/work/report.html');
+  assert.equal(await pressed(page, '#script-mode'), 'Static');
+  await page.waitForFunction((n) => document.querySelectorAll('#log .shown').length > n, n0, T);
+  assert.deepEqual((await shown(page)).slice(n0), ['opened']);
+  ok('agent show when the person is idle: opens at once in Preview, Static; the transcript records "Shown"');
+
+  // 13. The person typed a moment ago: offered.
+  n0 = await agentShows(page, 'show /work/app.js', 'show the code', { gate: 'typed' });
+  await page.waitForFunction(() => window.fake.requests.main?.length && document.getElementById('send-label')?.textContent !== 'Send', null, T);
+  await page.click('#input'); await page.keyboard.type('hm');
+  await gate(page, 'typed');
+  await seenShown(page, 'shown: offered /work/app\\.js \\(Raw\\); not opened \\(user busy: typing or pointing just now\\)');
+  await idle(page);
+  assert.equal(await page.textContent('#editor-path'), '/work/report.html', 'still the report');
+  await page.fill('#input', '');
+  ok('agent show while the person was just typing: offered, not opened');
+
+  // 14. A folder, idle: Files at that folder.
+  await page.waitForTimeout(4200);
+  await agentShows(page, 'show /work/site', 'show the folder');
+  await seenShown(page, 'shown: opened /work/site \\(Files\\)');
+  await idle(page);
+  assert.equal(await panel(page), 'files');
+  assert.equal(await page.isVisible('#tree .row[data-path="/work/site/notes.md"]'), true);
+  ok('agent show of a folder when idle: the Files panel with it expanded');
+
+  // 15. --interactive is refused before the page; the editor stays.
+  await page.waitForTimeout(4200);
+  await agentShows(page, 'show --interactive /work/report.html', 'show it running');
+  await page.waitForFunction(() => /--interactive is the person's choice/.test(window.fake.seen('main')), null, T);
+  await idle(page);
+  assert.equal(await page.textContent('#editor-path'), '/work/report.html');
+  assert.equal(await pressed(page, '#script-mode'), 'Static');
+  ok('agent show --interactive: refused (exit 1), nothing runs');
+
+  // 16. From a subagent: always offered, in its own thread; Open there reveals the folder.
+  await page.waitForTimeout(4200);
+  await rule(page, { who: 'main', when: '/ask a subagent to show/.test(c.since)', reply: [['subagent', { action: 'spawn', name: 'scout', task: 'Show /work/site.' }]] });
+  await rule(page, { who: 'scout', reply: [['bash', { command: 'show /work/site' }]] });
+  await rule(page, { who: 'scout', when: '/shown: /.test(c.since)', reply: 'Showed it.' });
+  await send(page, 'ask a subagent to show the folder');
+  await page.waitForFunction(() => /shown: offered \/work\/site \(Files\); not opened \(user busy: a subagent asked\)/.test(window.fake.seen('scout')), null, T);
+  await page.click('#rail [data-panel="editor"]');
+  await page.click('.subagent .sa-acts button[aria-label="Open subagent scout"]');
+  await page.waitForSelector('#log.child-view .shown[data-shown="offered"]', T);
+  await page.click('#log.child-view .shown button');
+  await page.waitForFunction(() => document.getElementById('app').dataset.panel === 'files', null, T);
+  ok('agent show from a subagent: offered, never opened; its thread has the card, and Open reveals the folder');
 
   assert.deepEqual(errors, [], 'no page errors');
   assert.deepEqual(outbound, [], 'nothing outbound');

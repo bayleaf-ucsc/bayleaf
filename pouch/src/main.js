@@ -255,6 +255,39 @@ async function openFile(path, line, { link = false, mode = null, interactive = f
   if (fileView === 'raw') editor.focus();
   return true;
 }
+
+// Show (LANGUAGE.md): an agent puts a file or folder in front of the person
+// (bash `show`, src/open-cli.js). For now it opens at once only when that
+// would not get in their way; otherwise the transcript offers it (shownCard).
+// Provisional, pending experience with it.
+const SHOW_QUIET_MS = 4000; // a touch of the page this recent means the person is busy
+let lastTouch = 0;
+for (const ev of ['keydown', 'pointerdown', 'wheel']) document.addEventListener(ev, () => { lastTouch = performance.now(); }, { capture: true, passive: true });
+function showBusy(caller) {
+  if (caller != null && agent?.who(caller)?.child != null) return 'a subagent asked';
+  if (dirty) return 'unsaved edits';
+  if (document.querySelector('dialog[open]')) return 'a dialog is open';
+  if (performance.now() - lastTouch < SHOW_QUIET_MS) return 'typing or pointing just now';
+  return null;
+}
+async function show({ path, dir, mode }, caller) {
+  const reason = showBusy(caller);
+  if (reason) return { opened: false, reason };
+  if (dir) await revealDir(path);
+  else if (!(await openFile(path, undefined, { mode }))) return { opened: false, reason: 'unsaved edits' };
+  return { opened: true };
+}
+// A bash result's `shown:` lines, read back so the card survives reload.
+const SHOWN = /^shown: (opened|offered) (.+?) \((Raw|Preview|Preview, Static|Files)\)(?:; not opened \(user busy: ([^)]*)\))?/gm;
+const shownLines = (output) => (typeof output === 'string' ? [...output.matchAll(SHOWN)] : []).map(([, how, path, label, reason]) => ({ how, path, label, reason }));
+function shownCard({ how, path, label, reason }) {
+  const b = el('button', { type: 'button', textContent: 'Open', title: `Open ${path} (${label})` });
+  b.onclick = () => (label === 'Files' ? revealDir(path) : openFile(path, undefined, { mode: label === 'Raw' ? 'raw' : 'preview' })).catch((e) => fail(e.message));
+  const what = how === 'opened' ? `Shown: ${path} (${label})` : `Pouch wants to show you ${path} (${label}); not opened while you were busy (${reason})`;
+  const card = el('p', { className: 'notice reverted shown', role: 'status' }, what, b);
+  card.dataset.shown = how;
+  return card;
+}
 async function saveFile() {
   if (!openPath || viewOnly) return;
   try {
@@ -1779,6 +1812,7 @@ function childItems(v, name, childId, compact) {
         `${x.status === 'running' ? '... ' : x.status === 'error' ? '! ' : ''}${x.name}: ${argSummary(x.name, x.args)}`) : toolCard(x, 'sa:');
       if (compact && spawn && x.status !== 'error') { line.dataset.spawn = spawn.mode ?? 'agent'; line.dataset.names = JSON.stringify([spawn.name ?? 'subagent']); }
       out.push(line);
+      if (x.name === 'bash') out.push(...shownLines(x.output).map(shownCard));
     } else if (x.type === 'notice') out.push(el('p', { className: 'notice', textContent: x.text }));
   }
   if (final) out.push(el('div', { className: 'sa-final', role: 'article', ariaLabel: `Final answer from ${name}` }, el('span', { className: 'sa-who', textContent: 'Final answer' }), replyBody(final.text, nextCache)));
@@ -2279,6 +2313,7 @@ function renderLog() {
       const child = it.name === 'subagent' && it.args?.action === 'spawn' && it.status !== 'error' ? it.details?.child : null;
       const early = child == null && it.name === 'subagent' && it.args?.action === 'spawn' && it.status === 'running' ? spawnedAs(it) : null;
       out.push(child != null ? subagentCard(it, child) : early ? subagentCard(it, early.id) : startingSpawn(it) ? subagentCard(it, null) : toolCard(it));
+      if (it.name === 'bash') out.push(...shownLines(it.output).map(shownCard));
     } else if (it.type === 'report') {
       out.push(reportCard(it, nextCache));
     } else if (it.type === 'compaction') {
@@ -2952,6 +2987,7 @@ function quotaError(msg) { return /\b429\b|quota|rate.?limit|too many requests|a
 // chores (title, usage), so a follow-up need not wait for them.
 async function send(text, attached = { files: [], images: [] }, turnModel = $('model').value, runEnded = () => {}, adopted = () => {}) {
   follow.pin();
+  lastTouch = 0; // sending hands the turn over: the keys that sent it do not make the person busy
   const t0 = Date.now();
   if (!sessions.current) { await sessions.create(); ledger.adopt('new', sessions.current.id); adopted(sessions.current.id); }
   const s = sessions.current; // the run belongs to this session even if you switch away
@@ -3415,6 +3451,7 @@ const withWatch = (list) => { list.push(watchTool({ Type, watches, callerOf: wat
         mainView: (caller, base) => { const w = caller == null ? null : agent?.who(caller); return w && w.child == null && w.sid != null ? mainNamespace(w.sid, base) : base; },
         ...egressHooks,
         models: modelService, modelsWho,
+        show,
       })),
       systemPrompt: () => systemPrompt(vfs),
       getClient: async () => (verified ? client : null),

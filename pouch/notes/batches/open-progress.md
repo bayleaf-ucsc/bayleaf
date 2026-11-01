@@ -10,3 +10,11 @@
 - [x] regressions: batchE-node 6, ns-node 10, controlplane-node 9, bayleaf-cli-node, taskscope-node, markdown-node pass; batchE-browser 10/10, batchF-browser 5/5, batchG-browser 8/8
 - [x] docs: README Terminal (`cat` and `open` bullet, table, flags, agent refusal), Previews note; JOURNEYS TM8-TM11. LANGUAGE.md unchanged (no new term)
 - gaps: `open` on /session or other overlay-only paths: the command stats through the terminal's view but openFile reads vfs.fs, so it fails with the read error (not tested). No `+line` argument. Phone layout not exercised for `open` (same panel switch as a link). Not built with --with-models, not deployed, not committed.
+
+# `show` progress (agents; Adam's decision: the agent shows, the person opens; option (c) "for now")
+- [x] src/open-cli.js: agentShowCommands (open's parseArgs/planOpen with the name `show`; never --interactive), SHOW_HELP; AGENT_REFUSAL points to show. tools.js: bashFor registers show with hooks.show(req, caller); system prompt line. defaults.js: pouch-environment tip (an unedited copy updates in place, an edited one is offered, vfs.seed)
+- [x] main.js: show/showBusy (subagent, unsaved edits, a dialog open, a key/pointer/wheel touch within SHOW_QUIET_MS = 4000; send() resets the touch), shownLines/shownCard read back from the bash output (like egressOf), in main's log and the subagent thread
+- [x] decisions: offered and opened both exit 0 (the person has it either way; a non-zero exit turns the tool card red and invites retries); the line says which. Open on a card uses show's mode
+- [x] test/open-node.mjs 9/9; test/open-browser.mjs 16/16; batchE-node 6, ns-node 10, controlplane-node 9, batchG-browser 8/8, subagent-browser 10; build ok
+- [x] docs: LANGUAGE.md Show; README Terminal (agents show) and HTML reports; JOURNEYS TM11 updated, TM12-TM14
+- gaps: a subagent with a remapped namespace shows a path the card then opens in the page's vfs (the default view maps /work the same; a custom spawn ns may not). Subagents' own system prompt does not teach show. Phone layout not exercised. Busy does not consider a running terminal command or an open sheet that is not a <dialog>.

@@ -12,7 +12,7 @@ import { serve, Client, NinepFs } from './ns/9p.js';
 import { archiveCommands } from './archive.js';
 import { bayleafCommands } from './bayleaf-cli.js';
 import { modelsCommands } from './models-cli.js';
-import { openCommands, agentOpenCommands } from './open-cli.js';
+import { openCommands, agentOpenCommands, agentShowCommands } from './open-cli.js';
 import { runTool } from './run.js';
 import { WATCH_GLOSS } from './ns/watch.js';
 
@@ -178,8 +178,10 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
       env: { HOME: CWD, USER: 'pouch', PATH: '/usr/bin:/bin' },
       commands: COMMANDS,
       // `models` (src/models-cli.js): hooks.models is the shared service; whoOf names the asker.
-      // `open` refuses for agents and says to link the file (src/open-cli.js).
-      customCommands: [...archiveCommands(defineCommand), ...cli, ...modelsCommands(defineCommand, hooks.models, () => hooks.modelsWho?.(caller) ?? { by: 'agent', caller }), ...agentOpenCommands(defineCommand)],
+      // `open` refuses for agents and points to `show`; hooks.show(req, caller)
+      // opens or offers it (src/open-cli.js, main.js show).
+      customCommands: [...archiveCommands(defineCommand), ...cli, ...modelsCommands(defineCommand, hooks.models, () => hooks.modelsWho?.(caller) ?? { by: 'agent', caller }), ...agentOpenCommands(defineCommand),
+        ...agentShowCommands(defineCommand, { show: hooks.show && ((req) => hooks.show(req, caller)) })],
       executionLimits: { maxCommandCount: 100_000, maxLoopIterations: 100_000 },
       ...bashOptions,
     });
@@ -372,7 +374,8 @@ ${GRAPH_GLOSS} You are main (a1); only you spawn and stop subagents.
 ${WATCH_GLOSS}
 ${UL_GLOSS}
 The user can open any file in the editor and download any file or folder (as .zip) from the file browser. Markdown, HTML, SVG, images, audio and video files also have a preview.
-When a visual report would help, write one self-contained .html file (inline CSS and JS, images as data: URLs; nothing loads from the network, and scripts are off unless the user turns them on) and link it: it opens in the preview.
+When a result is worth seeing (a report, a file you changed, a folder of outputs), show it: bash \`show <path>\` puts it in front of the user (\`open\` is theirs). It opens now, or waits in the transcript with an Open button if they are busy; the one line it prints says which.
+When a visual report would help, write one self-contained .html file (inline CSS and JS, images as data: URLs; nothing loads from the network, and scripts are off unless the user turns them on), then show it or link it: it opens in the preview.
 Keep changes minimal: prefer edit over rewriting files, and do not reformat or restyle existing code unless asked (conventions apply to code you write). Be concise. Say what you changed.
 Replies render as markdown. Refer to files as markdown links like [app.js](/work/app.js) or [app.js:12](/work/app.js:12): they open in the user's editor.`;
   for (const a of agents) s += `\n\n<instructions source="${a.path}">\n${a.text.trim()}\n</instructions>`;

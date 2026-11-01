@@ -48,6 +48,10 @@ Tips:
 - Use the edit tool rather than sed -i for precise changes.
 - To make something the user can run, write an .html file; they can download
   it from the file browser and open it.
+- \`show <path>\` puts a file or folder in front of the user (a report, a file
+  you changed, a folder of outputs). \`open\` is theirs, not yours. If they are
+  busy it waits in the transcript with an Open button; the line it prints
+  says whether it opened or was offered.
 - Packaging: \`zip -r out.zip folder\` and \`unzip file.zip -d dest\`. The user
   can also download any folder as .zip from the file browser.
 `,

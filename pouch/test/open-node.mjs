@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { InMemoryFs } from 'just-bash';
 import { Type } from 'typebox';
-import { parseArgs, planOpen, AGENT_REFUSAL } from '../src/open-cli.js';
+import { parseArgs, planOpen, AGENT_REFUSAL, SHOW_HELP } from '../src/open-cli.js';
 import { shellFor, createTools } from '../src/tools.js';
 globalThis.navigator ??= {};
 const { binaryOutput } = await import('../src/terminal.js');
@@ -138,6 +138,39 @@ const [, , , bash] = createTools({ fs: afs, changed() {} }, Type, { defenseInDep
 await assert.rejects(bash.execute({ command: 'open --interactive /work/r.html' }, {}), (e) => {
   assert.ok(e.message.includes(AGENT_REFUSAL), e.message); assert.match(e.message, /exit code 1/); return true;
 });
-ok('agents: `open` in the bash tool is refused with exit 1 and says to link the file (HTML opens Static)');
+assert.match(AGENT_REFUSAL, /open is the person's; use `show <path>`/);
+ok('agents: `open` in the bash tool is refused with exit 1 and points to `show`');
 
-console.log(`\n${passed}/8 passed`);
+// 9. An agent's show: open's paths, defaults and checks; the page (a fake here) opens or offers.
+await afs.mkdir('/work/out', { recursive: true });
+await afs.writeFile('/work/n.md', '# n');
+await afs.writeFile('/work/b.bin', new Uint8Array([97, 0, 98]));
+const asked = [];
+let answer = { opened: true };
+const [, , , sbash] = createTools({ fs: afs, changed() {} }, Type, { defenseInDepth: false }, { show: async (req, caller) => { asked.push({ ...req, caller }); return answer; } });
+let o = await sbash.execute({ command: 'show n.md' }, { caller: 7 });
+assert.match(o, /^shown: opened \/work\/n\.md \(Preview\)/);
+assert.deepEqual(asked.pop(), { path: '/work/n.md', dir: false, mode: 'preview', label: 'Preview', caller: 7 });
+o = await sbash.execute({ command: 'show /work/r.html' }, {});
+assert.match(o, /shown: opened \/work\/r\.html \(Preview, Static\)/);
+o = await sbash.execute({ command: 'show out' }, {});
+assert.match(o, /shown: opened \/work\/out \(Files\)/);
+assert.equal(asked.pop().dir, true);
+answer = { opened: false, reason: 'unsaved edits' };
+o = await sbash.execute({ command: 'show --raw n.md' }, {});
+assert.match(o, /^shown: offered \/work\/n\.md \(Raw\); not opened \(user busy: unsaved edits\), the transcript has an Open button/);
+const n0 = asked.length;
+for (const [cmd, re] of [
+  ['show --interactive r.html', /--interactive is the person's choice/],
+  ['show nope.md', /no such file/],
+  ['show b.bin', /looks binary/],
+  ['show --static n.md', /--static is for HTML reports/],
+  ['show --raw out', /--raw is for files/],
+]) await assert.rejects(sbash.execute({ command: cmd }, {}), (e) => { assert.match(e.message, re, cmd); assert.doesNotMatch(e.message, /`open /, cmd); return true; });
+assert.equal(asked.length, n0, 'misuse never reaches the page');
+assert.match(SHOW_HELP, /no --interactive/);
+// Without the page's hook (no Interface), show fails and says to link.
+await assert.rejects(bash.execute({ command: 'show n.md' }, {}), /no Interface here/);
+ok('agents: `show` opens or offers through the page (path, mode, label, caller), folders as Files; --interactive, missing, binary and wrong flags are refused before the page');
+
+console.log(`\n${passed}/9 passed`);
