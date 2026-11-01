@@ -10,6 +10,21 @@ archive, not a suite: they use `/tmp/pouch-qa/...` profile dirs, need `playwrigh
 `md-unit.mjs` needs `linkedom`), which `package.json` does not declare, and some steps
 predate the current UI (t7's per-file Undo). The Playwright Test rework below replaces them.
 
+## Next: TypeScript migration (after #142, 2026-11-01)
+
+#142 split `src/main.js` into Interface regions (`src/interface/`) and made the trust
+boundaries build checks (`arch.mjs`, README "Architecture"). Next, convert to TypeScript
+(#143's step 2), boundaries first:
+- Type the trust boundaries: `src/sealed.js` (client handle, `sealedFetch`),
+  `src/bayleaf-api.js`, the egress modules in `NETWORK`, and `src/egress.js` consent.
+- Give each region's returned object an interface (`EditingRegion`, ...) and `app` a type
+  composed of them; the getters and setters show which state crosses regions, a list to
+  shrink (`state.js` cells such as `agent`, `client`, `view` written from several regions).
+- Keep `arch.mjs` on TypeScript's parser (`.ts` sources too), and keep `node build.mjs`
+  the one command: esbuild strips types; `tsc --noEmit` as a separate check.
+- Then retire the `app` service locator where a region needs only two or three
+  functions: pass them in explicitly.
+
 ## Decided, not yet built
 
 Items 1 and 2 were built in Batch B (2026-10-30, uncommitted); see JOURNEYS (D12, R2, R3, R5).

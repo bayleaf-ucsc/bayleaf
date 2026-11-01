@@ -24,7 +24,8 @@ cd pouch && npm ci && node build.mjs   # writes dist/pouch.html and prints its S
 python3 -m http.server 8742 --directory dist   # or save the file and open it from disk
 ```
 
-Edit `pouch.html` (markup, styles, CSP) and `src/`. `build.mjs` bundles `src/main.js`
+Edit `pouch.html` (markup, styles, CSP) and `src/`. `build.mjs` first checks the trust
+boundaries and module structure (`arch.mjs`, "Architecture" below), then bundles `src/main.js`
 with its dependencies, pinned by `package-lock.json`, into the page's one inline script
 and stamps the Content-Security-Policy with its hash. `node build.mjs --watch` rebuilds
 on changes to `src/`. Serve it from `localhost` or HTTPS: opened from disk, browsers give
@@ -270,6 +271,59 @@ the optional Transformers.js model's hash-checked files) and loopback http on th
 (used only for the Localhost provider you set up). An auditor checks the file's hash and
 that its CSP is as stated.
 
+## Architecture: trust boundaries the build checks
+
+Pouch is meant for highly sensitive data, so its trust claims shape its modules, and the
+build keeps them true instead of leaving them to convention and review. `arch.mjs` runs
+before `build.mjs` bundles anything (and on its own: `node arch.mjs`); a violation fails the
+build with a message naming the boundary and why it exists. `test/arch-node.mjs` shows a
+deliberate violation of each rule failing and the real tree passing.
+
+| Rule | What the build checks | Allowed |
+|---|---|---|
+| egress | network APIs (`fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `WebTransport`, `RTCPeerConnection`, `sendBeacon`, `importScripts`, `Worker`, `import()` of a non-bundled path) appear only in egress modules, each allowed only its own APIs | `src/sealed.js` (EHBP ciphertext to the attested enclave), `src/bayleaf-api.js` (account plane: claim, allowance, Campus Pass, Sealed model list; metadata only), `src/bayleaf-cli.js` (the agent's `bayleaf` command, approved through `egress.js`), `src/localhost.js` (Localhost provider), `src/models.js` and `src/assets.js` (hash-checked weights and runtimes), `src/offline.js` and `sw.js` (the offline copy, this origin); `Worker` only in `src/run.js`, `src/pdf.js`, `src/media.js` and `src/local/engine.js` (bundled, hash-checked code from `blob:` URLs) |
+| html | no first-party code turns a string into HTML (`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `srcdoc`, `document.write`, `DOMParser`, ...), as a property or an `el()` prop | `viewer.html` only ("HTML reports") |
+| sealed | only `src/sealed.js` imports `tinfoil` or reaches into the client (`secureClient`, `openAIOptions`); checked in the sources and in esbuild's metafile | `src/sealed.js` |
+| cdn | no third-party CDN URL in the assembled page (`assertNoCdn`, as for runtimes) | URLs only compared against, never fetched (the Sigstore issuer the Tinfoil SDK checks) |
+| layers | the core (files, namespaces, storage, providers, sandboxed runtimes: `CORE` in `arch.mjs`) imports only the core; only `src/main.js` imports the Interface | |
+| seams | a region is imported from outside only through its entry modules: `src/run.js`, `src/pdf.js`, `src/media.js`, `src/local/engine.js` and `src/local/provider.js`; Interface regions never import each other | |
+| size | each module stays within 700 lines; `src/main.js` within 60 | |
+
+An allowance no module uses any more is also an error, so the lists in `arch.mjs` stay an
+exact inventory of where Pouch can reach out. The scan parses code (TypeScript's parser, no
+type checking), so comments and strings do not count and a local named `fetch` is not the
+network. It covers first-party code; bundled packages are held by what may import them and
+by the page's CSP, which remains the enforcement in the browser.
+
+**The Interface.** `src/main.js` only composes the Interface (LANGUAGE.md) from regions in `src/interface/`, in the
+order their wiring runs. Each region is a factory, `createXRegion(app)`, returning its
+interface; a region reaches another only as `app.<region>.<name>`, resolved when called, and
+state another region writes is a getter and setter on its owner's interface.
+
+| Region | Responsibility |
+|---|---|
+| `state.js` | shared cells (credential, client, agent, models, view), status line, frame, action sheets |
+| `editing.js` | the open file, conflicts and diffs, previews, `show` |
+| `tree.js` | the file browser: tree, uploads, archives, clipboard, first visit, Run script |
+| `connection.js` | Sealed verification, the network state, the Sealed model list |
+| `providers.js` | Transformers.js and Localhost: picker entries and settings |
+| `auth.js` | device claim, the key form, Erase everything |
+| `install.js` | the offline copy and updates |
+| `session-list.js` | the session list, egress consent hooks, model, pdf and media services |
+| `namespaces.js` | control plane wiring: per-session namespaces, the terminal |
+| `subagents.js` | subagent registry per session, child transcripts and cards |
+| `meters.js` | the Usage panel |
+| `transcript.js` | attaching a session, rendering its log, the message toolbar, revert |
+| `queues.js` | send button and modes, steering and follow-up queues, the context meter |
+| `harness.js` | the control plane's harness side: stop, steer, follow-up through ctl files |
+| `send.js` | a turn's admission and errors, the composer's keys and send menu |
+| `commands.js` | slash commands, the activity tray, the composer widget |
+| `boot.js` | file watches, opening the agent, the first render |
+
+These interfaces are where the TypeScript migration puts its types (`NEXT.md`), and the
+trust boundaries are where the trusted core of #143 can replace one module at a time,
+starting with egress.
+
 ## The coding agent
 
 | Piece | What | Source |
@@ -280,7 +334,7 @@ that its CSP is as stated.
 | Shell | [just-bash](https://github.com/vercel-labs/just-bash): bash and coreutils reimplemented in TypeScript, no processes, no network | `src/tools.js` |
 | Files | one tree stitched from several stores (below) | `src/vfs.js` |
 | Editor | CodeMirror 6 with JS/TS, Python, Markdown, HTML, CSS, JSON | `src/editor.js` |
-| UI | sessions sidebar, chat, one side panel at a time (Files, Editor, Usage, Trust, Settings) from an icon rail; drawer, full-screen sheets and a bottom bar on phones | `pouch.html`, `src/main.js`, `src/layout.js` |
+| UI | sessions sidebar, chat, one side panel at a time (Files, Editor, Usage, Trust, Settings) from an icon rail; drawer, full-screen sheets and a bottom bar on phones | `pouch.html`, `src/main.js` and `src/interface/` ("Architecture"), `src/layout.js` |
 | Composer | one card: activity tray (running subagents and `run` calls, approvals waiting, steering not yet read and the follow-up or paused message; Stop, Stop all, Cancel, Edit, Steer now), `@` path / `$` skill / `/` command autocomplete, the shield popover (lane, egress grants), Usage count, model picker, Send / Stop with the Steer-or-Queue split button while Pouch works; the turn footer (model, duration, time) is in `main.js` | `src/composer.js`, `src/main.js` |
 | Preferences / attachments | local display defaults; one ingest path for Attach, composer drop and image paste | `src/settings.js`, `src/attachments.js` |
 | Titles | a session is named after its first turn by one tool-less completion on the session's own provider and model; the sparkle beside the title field, the session menu and `/rename` alone suggest another; never a different provider | `src/naming.js` |
@@ -578,7 +632,7 @@ it) gives the user just-bash over the namespace the main agent sees: /work, /pou
   to). `show <path> [--raw | --preview | --static]` takes the same paths and type defaults
   (a folder shows Files) and never `--interactive`. It opens at once unless that would get
   in the person's way: unsaved edits in the editor, a dialog open, a key, pointer or wheel
-  touch of the page in the last 4 s (`SHOW_QUIET_MS` in `src/main.js`; sending a message
+  touch of the page in the last 4 s (`SHOW_QUIET_MS` in `src/interface/editing.js`; sending a message
   does not count), or a subagent asking. Then it is offered instead: a card in that agent's
   transcript ("Pouch wants to show you ...") with an Open button. Either way the transcript
   records it (an opened show is a one-line "Shown" card), and the agent reads one line:
@@ -675,8 +729,8 @@ behind QuickJS, not a new security boundary against a compromised page.
 The file tree is the control plane (`src/ns/control.js`); the Interface is one client among
 several, as rio's `/dev/wsys` and acme's `/mnt/acme` are in Plan 9. Every Interface control
 that acts writes a file; the terminal writes the same files with `echo`, and the main agent
-writes ctl files from bash. What a write does (the harness side) is one block in
-`src/main.js`, marked "Control plane: the harness side", so the tray, the terminal and an
+writes ctl files from bash. What a write does (the harness side) is one Interface region,
+`src/interface/harness.js`, marked "Control plane: the harness side", so the tray, the terminal and an
 agent always get the same behavior: a steer typed in the terminal appears in the tray, and a
 Stop clicked in the tray is in the events log.
 
@@ -779,7 +833,7 @@ controls, 3 direct by design). For each control it writes the file from a just-b
 and from the main agent's view and checks the harness was asked to do the same thing; then it
 checks statically that the Interface handler writes the control file (`ctl(...)`) and that
 no direct harness call (`agent.abort`, `subagents.stop`, `stopCall`, `detach`, `steer`,
-`watches.remove`, ...) appears in `src/main.js` outside the harness-side block. It failed on
+`watches.remove`, ...) appears in the Interface (`src/main.js`, `src/interface/`) outside the harness-side block. It failed on
 all 21 handlers before Batch F. `test/batchF-browser.mjs` drives the same paths in a page.
 
 ## Stance: no BayLeaf-controlled component holds plaintext
