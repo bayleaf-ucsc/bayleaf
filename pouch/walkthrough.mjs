@@ -388,7 +388,8 @@ const selected = scenes.filter((s) => !only || only.includes(s.id));
 log(`${stories.length} stories, ${selected.length} scenes, ${selected.reduce((n, s) => n + s.shots.length, 0)} shots`);
 const html = await fixturePage();
 log('page bundled');
-const server = createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end(html); });
+const viewer = readFileSync(join(root, 'viewer.html')); // the report viewer (README "HTML reports")
+const server = createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end(req.url.startsWith('/viewer.html') ? viewer : html); });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const url = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({ headless: true });

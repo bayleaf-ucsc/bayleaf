@@ -611,8 +611,10 @@ agent and how long the text was.
 **Who sees what (capabilities).** /session is not in the shared namespace; each client is
 handed a view:
 - The Interface and the terminal: every session, ctl and in writable.
-- The main agent: only its own session, at `/session/<sid>` and `/session/current`. ctl is
-  writable (the same authority `echo kill > /task/<id>/ctl` already gave it); in is refused
+- The main agent: only its own session, at `/session/<sid>` and `/session/current`, and
+  only its own session's tasks under `/task` (its runs, subagents and watches; Batch G: it
+  could kill another session's subagents, and the user's terminal commands, before). ctl is
+  writable (the same authority `echo kill > /task/<id>/ctl` gives it over its own tasks); in is refused
   with EPERM, because agents message each other with the agents tool, which enforces the
   session's message caps and tags who wrote. Making in writable for agents would duplicate
   that path without the caps.
@@ -703,8 +705,127 @@ transparency log, and no tagged reproducible release has been made.
   An escape would have to break QuickJS and the wasm sandbox. Assessment and tests:
   `experiments/quickjs/README.md`.
 - **No HTML from models.** Replies render as `textContent`, so a reply cannot inject
-  markup into the page that holds your key.
+  markup into the page that holds your key. HTML an agent writes to a file renders only
+  in the report viewer (below), never in this page.
+- **One frame, and media from memory.** `frame-src 'self'` exists only to embed
+  `/viewer.html` (HTML reports, below), which Pouch frames sandboxed into an opaque origin;
+  `media-src blob:` plays audio and video previews from files already in the page. Neither
+  reaches the network: the viewer has its own policy with no network at all.
 - **Fail closed.** If attestation fails, Send stays disabled. No plaintext fallback exists.
+
+## HTML reports
+
+An agent can write a self-contained HTML report (inline CSS and script, images as `data:`
+URLs) and link it; the link opens it in Preview. Reports come from your data, possibly
+very sensitive, and an agent that read a hostile file may have been manipulated into
+writing one that tries to leak it. So the viewer renders rich reports with **no network
+egress and no access to Pouch** (its storage, key, files and other frames).
+
+**Two frames.** Pouch frames `/viewer.html` (a static file, built, hashed and listed in
+SHA256SUMS like the rest of the shell) with `sandbox="allow-scripts"` and no
+`allow-same-origin`, so the viewer runs in an opaque origin. The viewer renders the report
+in an inner `srcdoc` frame, which inherits the viewer's policy. Why not one frame: a
+`srcdoc` or `blob:` frame inside Pouch inherits Pouch's policy, whose hash-only
+`script-src` would block every report script, and loosening Pouch's policy is not on the
+table.
+
+**The viewer's policy** (meta tag in `viewer.html`, and as a header with `frame-ancestors
+'self'` and `sandbox allow-scripts`, so it is opaque even when opened on its own; checked
+by `deploy.mjs`):
+`default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:
+blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none';
+child-src 'none'; worker-src 'none'; manifest-src 'none'; object-src 'none'; form-action
+'none'; base-uri 'none'`, plus `Referrer-Policy: no-referrer` and a `Permissions-Policy`
+denying camera, microphone, geolocation, clipboard, fullscreen, payment and device APIs.
+`'unsafe-inline'` rather than a hash: reports carry their own inline scripts, and a hash
+would switch `'unsafe-inline'` off; the viewer document has nothing to steal and no network.
+`_headers` detaches the page's CSP, `X-Frame-Options` and `Permissions-Policy` for this one
+path (`headers.mjs`; the detach semantics were checked against `wrangler dev`).
+
+**Messages.** Pouch posts `{ html, scripts }` to the viewer when it loads, with
+targetOrigin `'*'` (the only one an opaque origin matches), so nothing but the report text
+is ever posted. Pouch registers no window `message` listener at all (the exfiltration
+suite checks the built page), so nothing the viewer or a report posts reaches Pouch's code.
+The viewer accepts a message only when `event.source === parent`, with exactly the keys
+`html` (a string up to 5 MB) and `scripts` (a boolean); a report posting to its parent
+(the viewer) is ignored, so it cannot re-render itself with scripts on. Each message makes
+a fresh inner frame, so nothing from a previous report keeps running.
+
+**Cleanup before rendering.** The viewer parses the report with `DOMParser` (an inert
+document: nothing runs or loads) and removes `<link>`, `<base>`, `<meta http-equiv>` and
+every `target`/`formtarget`, inside `<template>` contents too, repeating on its own output
+until nothing changes. Reason: WebKit acts on two of them before any policy applies
+(below). Nothing a `<link>` could load is allowed anyway.
+
+**Static and Interactive.** Static (the default, every time a report opens) gives the
+inner frame `sandbox=""`: no script runs at all, which closes every script-based channel.
+Interactive gives it `allow-scripts` (still no same-origin, forms, popups, modals,
+downloads or navigation of other frames). Interactive keeps one channel no web policy
+governs: **WebRTC** (STUN/TURN to a server the script names, over UDP or TCP), plus in
+WebKit a `<link rel=preconnect>` a script adds. A hostile report in Interactive mode could
+therefore send out what it shows (never your other files, Pouch's storage or key). The
+interface says so beside the switch, and Interactive is never remembered.
+
+### HTML viewer: what it blocks
+
+`test/viewer-exfil-browser.mjs` runs one hostile report in each mode against a loopback
+recorder (two HTTP ports, TCP for TURN and WebSocket, UDP for STUN; in Chromium
+`*.exfil.test` resolves to it and a net log catches DNS lookups), with stand-ins for
+Pouch's state on the host page. Chromium 1248 and WebKit 2370, 2026-11-01. "Naive" is a
+`sandbox="allow-scripts"` srcdoc frame in a page with no CSP: the sanity check that the
+suite sees leaks (37 tagged channels in Chromium, 34 in WebKit; an unsandboxed frame leaked
+42 and also read the host's localStorage, cookie and IndexedDB).
+
+| Channel | Static | Interactive | Naive |
+|---|---|---|---|
+| fetch, XHR, sendBeacon, EventSource, WebSocket, WebTransport | no script | blocked (`connect-src 'none'`) | leaked |
+| `new Image()`, `Audio()`, `document.write`, `import()`, workers (remote, `blob:`), SharedWorker, service worker, paint worklet | no script | blocked | leaked (most) |
+| `img`, `picture`/`srcset`, SVG `image`/`use`, `input type=image`, `video`/`audio`/`poster`/`source`/`track` | blocked (`img-src`/`media-src` `data: blob:`) | blocked | leaked |
+| `script src`, `link` stylesheet/preload/prefetch/modulepreload/icon/manifest | blocked (and links removed) | blocked | leaked |
+| CSS `url()`, `@import`, `image-set`, `@font-face`, cursor, mask, list-style, border-image | blocked | blocked | leaked |
+| `object`, `embed`; `iframe` with a remote or Pouch-origin `src`; nested `srcdoc` | blocked (`object-src`, `frame-src 'none'`; srcdoc inherits) | blocked | leaked |
+| `link rel=preconnect`/`dns-prefetch` in markup | blocked (removed; WebKit connected before the fix) | blocked | connections seen |
+| `link rel=preconnect` added by script | no script | **leaks in WebKit** (bare TCP connection; with a hostname, a DNS lookup) | leaked |
+| `meta refresh`, `<base href>` | blocked (removed; `base-uri 'none'`) | blocked | leaked (base) |
+| the frame navigating itself (`location =`, a clicked link) | blocked (the viewer's `frame-src 'none'`) | blocked | navigated |
+| `top`/`parent` navigation, `target=_top/_parent/_blank` links and `area` (clicked by a person), `window.open`, forms GET/POST and `formtarget` | blocked (sandbox; targets removed: WebKit connected on click before refusing) | blocked (script-added targets: the same WebKit click connection) | leaked |
+| `a ping`, `download` | blocked | blocked | leaked |
+| WebRTC (STUN, TURN over UDP and TCP, data channel) | no script | **leaks** (both engines) | leaked |
+| Pouch's `document`, `localStorage`, cookie, IndexedDB, Cache Storage via `top`/`parent` or its own | no script | SecurityError (opaque origin) | read everything (unsandboxed) |
+| `postMessage` to the viewer (re-render with scripts on) | no script | ignored (`event.source` check) | no viewer: reaches the host |
+| `postMessage` to Pouch | no script | delivered; Pouch has no listener | delivered |
+| BroadcastChannel, `history.pushState` to another origin | no script | not received; SecurityError | received when unsandboxed; error |
+| DNS lookups (Chromium net log) | none | none | seen |
+
+Residual: Interactive mode's WebRTC (and WebKit's script-added preconnect). Mitigation:
+Static is the default and is not switchable by the report; Interactive is a per-opening
+choice labeled with this risk. Not tested: Firefox (not installed here); real DNS (only
+Chromium's net log); timing or covert channels to other frames (no shared origin to
+signal through); a person following a link out of a report (links cannot navigate
+anywhere, which is also a usability cost).
+
+## Previews
+
+`.md`, `.html`/`.htm` and `.svg` files get **Raw | Preview** in the editor header; images
+(PNG, JPEG, GIF, WebP), audio (MP3, WAV, Ogg, Opus, M4A, AAC, FLAC) and video (MP4, WebM,
+Ogg, MOV) open as a preview only, with no Save (there is no text to save over them).
+`src/preview.js` holds the table; PDFs and databases are later rows there.
+
+- Markdown previews with Pouch's own renderer (DOM nodes, no HTML): only local raster
+  images under `/work` are drawn; a remote image is a link you must confirm.
+- HTML previews in the report viewer (above). A link in a reply to an `.html` file opens
+  Preview; a link with a line number opens Raw.
+- SVG is drawn as an `<img>` from a `blob:` URL, never inlined: no script in it runs and
+  nothing it references loads. Audio and video play from `blob:` URLs (`media-src blob:`).
+- Each kind remembers its last mode (`pouch.view` in localStorage; Markdown starts Raw,
+  HTML and SVG Preview). A preview shows the saved file; with unsaved edits it says so. It
+  follows changes on disk (an agent rewriting a report) when the bytes change.
+- Caps: reports up to 5 MB, media up to 50 MB (read whole into memory); past that, a
+  message and Raw or Download.
+- Offline, HTML Preview says it needs a connection: the offline copy pins `viewer.html`
+  (with its headers), but Chromium does not route a sandboxed, opaque-origin frame's
+  navigation through the service worker (checked 2026-11-01), so the viewer cannot load
+  from it. Markdown, image and media previews work offline.
 
 ## Transformers.js: a model in this browser
 

@@ -11,6 +11,7 @@ import { Vfs, DEFAULTS, normalize } from './vfs.js';
 import defaults from './defaults.js';
 import { createEditor, highlight } from './editor.js';
 import { renderMarkdown } from './markdown.js';
+import { createPreview, previewOf, rememberedMode, rememberMode, MEDIA_MAX } from './preview.js';
 import { createTools, systemPrompt, loadContext, CWD, defaultSubagentNs, describeSpecs } from './tools.js';
 import { openAgent, Type } from './agent.js';
 import { collect, packTar, packZip, unpackTar, unpackZip } from './archive.js';
@@ -24,6 +25,7 @@ import { createSessions, sameId, titleOf, notesKey, convKey, revertKey, subagent
 import { createWatches, watchTool, baseOf, isGlob, MAX_WAKES } from './ns/watch.js';
 import { parseSpecs, over } from './ns/namespace.js';
 import { createControl, why } from './ns/control.js';
+import { TaskFs } from './ns/tasks.js';
 import { createComposer } from './composer.js';
 import { createEgress, egressOf, grantsFor, revoke, serviceName } from './egress.js';
 import { LOCAL, support as localSupport, stored as localStored, engine as localEngine, importFiles as localImport, remove as localRemove } from './local/engine.js';
@@ -121,6 +123,61 @@ const editor = createEditor($('editor'), {
   onChange: (d) => { dirty = d; $('save').disabled = !d; $('editor-path').classList.toggle('dirty', d); markEditor(); },
 });
 
+// Previews (src/preview.js, README "Previews"): Raw | Preview for markdown,
+// HTML and SVG; images, audio and video open as a preview only (viewOnly:
+// there is no text to edit, so nothing can be saved over them). A preview
+// shows the saved file. HTML reports start Static every time: Interactive is
+// never remembered, because its scripts keep a way out (WebRTC).
+let fileView = 'raw', viewOnly = false, scripts = false, shown = null;
+const preview = createPreview($('preview'), { markdown: (text, path) => renderMarkdown(text, { ...mdCtx, cwd: normalize(path + '/..') }) });
+function setView(mode) {
+  const p = openPath && previewOf(openPath);
+  fileView = p ? mode : 'raw';
+  $('view-mode').hidden = !p?.raw;
+  for (const b of $('view-mode').children) b.setAttribute('aria-pressed', String(b.dataset.mode === fileView));
+  $('editor').hidden = fileView === 'preview';
+  $('preview').hidden = fileView !== 'preview';
+  $('save').hidden = viewOnly;
+  shown = null;
+  if (fileView === 'preview') renderPreview();
+  else { preview.clear(); $('preview-bar').hidden = true; }
+}
+// Draws the saved file; on a file change, only if its bytes changed.
+async function renderPreview() {
+  const path = openPath, p = previewOf(path), html = p.kind === 'html';
+  $('script-mode').hidden = !html;
+  for (const b of $('script-mode').children) b.setAttribute('aria-pressed', String((b.dataset.scripts === 'on') === scripts));
+  $('preview-note').textContent = [
+    dirty && 'Showing the saved version: save to preview your edits.',
+    html && (scripts
+      ? 'Interactive: scripts run. They cannot read Pouch or your files, and web requests are blocked, but a script can still reach the network over WebRTC (and in Safari, a link preconnect), so a hostile report could send out what it shows. Only for reports you trust.'
+      : 'Static: no scripts run, and nothing in this report can reach the network.'),
+  ].filter(Boolean).join(' ');
+  $('preview-bar').hidden = !$('preview-note').textContent;
+  try {
+    const st = await vfs.fs.stat(path);
+    if (!p.raw && st.size > MEDIA_MAX) return preview.notice(`This file is ${(st.size / 2 ** 20).toFixed(0)} MB; Preview shows files up to 50 MB. Download it instead.`);
+    const bytes = await vfs.fs.readFileBuffer(path);
+    const sig = [scripts, ...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].join();
+    if (path !== openPath || fileView !== 'preview' || sig === shown) return;
+    shown = sig;
+    preview.render(path, bytes, { scripts });
+  } catch (e) { preview.notice('Could not preview this file: ' + e.message); }
+}
+$('view-mode').onclick = (e) => {
+  const m = e.target.closest('button')?.dataset.mode;
+  if (!m || m === fileView || !openPath) return;
+  rememberMode(previewOf(openPath).kind, m);
+  setView(m);
+  if (m === 'raw') editor.focus();
+};
+$('script-mode').onclick = (e) => {
+  const on = e.target.closest('button')?.dataset.scripts;
+  if (!on || (on === 'on') === scripts) return;
+  scripts = on === 'on';
+  renderPreview();
+};
+
 function showEditor(path) {
   $('editor-path').textContent = path;
   $('editor-pane').classList.remove('empty');
@@ -156,10 +213,23 @@ function setReviewBar(text) {
   $('review-text').textContent = text ?? '';
 }
 
-async function openFile(path, line) {
+// link: opened from a reply, where an HTML report opens in Preview; a line
+// number always opens Raw. Otherwise each kind opens in its last mode.
+async function openFile(path, line, { link = false } = {}) {
+  const p = previewOf(path);
+  const want = line ? 'raw' : link && p?.kind === 'html' ? 'preview' : null;
   // Reopening the file you are editing only moves the cursor: no reload, no loss.
   if (path !== openPath || merging) {
     if (dirty && !(await ask(`Discard unsaved changes to ${openPath}?`, 'Discard', 'danger'))) return;
+    if (p && !p.raw) { // image, audio, video: a preview only
+      await vfs.fs.stat(path);
+      openPath = path; merging = false; viewOnly = true; scripts = false;
+      setReviewBar(null); setConflict(null);
+      editor.load(path, '');
+      setView('preview');
+      showEditor(path);
+      return;
+    }
     const bytes = await vfs.fs.readFileBuffer(path);
     if (bytes.includes(0)) return sheet(path + ' looks binary', [
       ARCHIVE.test(path) && vfs.where(path) !== 'mount-ro' && ['Unpack here', () => unpackHere(path)],
@@ -167,16 +237,17 @@ async function openFile(path, line) {
       ARCHIVE.test(path) && ['Layer under /work (read-only seed)', () => stackSeed(path)],
       ['Download', () => download(path)],
     ]);
-    openPath = path; merging = false;
+    openPath = path; merging = false; viewOnly = false; scripts = false;
     setReviewBar(null); setConflict(null);
     editor.load(path, new TextDecoder().decode(bytes));
-  }
+    setView(want ?? (p ? rememberedMode(p.kind) : 'raw'));
+  } else if (want && want !== fileView) setView(want);
   showEditor(path);
   if (line) editor.gotoLine(line);
-  editor.focus();
+  if (fileView === 'raw') editor.focus();
 }
 async function saveFile() {
-  if (!openPath) return;
+  if (!openPath || viewOnly) return;
   try {
     // In the conflict diff, Save is Done and then a write; with hunks left
     // unsettled it writes nothing and says so (neither side is ever dropped).
@@ -209,9 +280,10 @@ function settleDiff() {
 }
 async function closeFile() {
   if (dirty && !(await ask(`Discard unsaved changes to ${openPath}?`, 'Discard', 'danger'))) return;
-  openPath = null; dirty = false; merging = false;
+  openPath = null; dirty = false; merging = false; viewOnly = false; scripts = false;
   setReviewBar(null); setConflict(null);
   editor.load('', '');
+  setView('raw');
   editorEmpty();
   layout.open('files');
   renderTree();
@@ -240,6 +312,12 @@ $('conflict-theirs').onclick = () => {
 // with edits, raise a conflict. If it was deleted: close a clean buffer; keep
 // a dirty one and say so (Save would re-create the file, deliberately).
 async function syncEditor() {
+  if (openPath && viewOnly && !(await vfs.fs.exists(openPath))) { openPath = null; viewOnly = false; setView('raw'); editorEmpty(); return; }
+  if (openPath && !viewOnly) await syncText();
+  if (!openPath && fileView !== 'raw') setView('raw'); // a deleted file closed
+  if (openPath && fileView === 'preview' && (await vfs.fs.exists(openPath))) renderPreview();
+}
+async function syncText() {
   if (!openPath) return;
   if (!(await vfs.fs.exists(openPath))) {
     if (dirty) { $('editor-path').textContent = openPath + ' (deleted)'; return; }
@@ -1380,7 +1458,9 @@ const agentFile = (sid, ref, file) => `/session/${sid}/agents/${asRef(ref)}/${fi
 const mainNs = new Map(); // sid -> namespace
 function mainNamespace(sid, base) {
   if (sid == null) return base;
-  if (!mainNs.has(String(sid))) mainNs.set(String(sid), over(base, [['/session', control.view({ by: 'agent', sid }), { label: 'control (a1)' }]]));
+  // /task too is cut to this session: its runs, subagents and watches (src/ns/tasks.js).
+  if (!mainNs.has(String(sid))) mainNs.set(String(sid), over(base, [['/session', control.view({ by: 'agent', sid }), { label: 'control (a1)' }],
+    ['/task', new TaskFs(vfs.tasks, () => vfs.watches, { sid }), { label: 'tasks (this session)' }]]));
   return mainNs.get(String(sid));
 }
 { // main's working/idle state, for /session and its events
@@ -1446,7 +1526,7 @@ const TASK_STATE = { running: 'running', finished: 'done', failed: 'failed', sto
 function onKids(sid, list) {
   kids.set(String(sid), list);
   if (childFollowUps.size) flushChildFollowUps(sid, list);
-  for (const c of list) vfs.tasks.upsert('sa:' + c.id, { kind: 'subagent', label: c.name, status: TASK_STATE[c.status] ?? c.status,
+  for (const c of list) vfs.tasks.upsert('sa:' + c.id, { kind: 'subagent', sid, label: c.name, status: TASK_STATE[c.status] ?? c.status,
     ns: describeSpecs(vfs, c.ns?.length ? c.ns : defaultSubagentNs(vfs)), kill: () => stopChildOf(sid, c.id) });
   for (const c of list) control.state(sid, refOf(list, c), c.status);
   sessions.render();
@@ -1960,7 +2040,7 @@ const mdCtx = {
   copy: (t) => navigator.clipboard.writeText(t),
   external: openExternal,
   image: (path, alt) => localImages.render(path, alt),
-  open: (t) => (t.kind === 'dir' ? revealDir(t.path) : openFile(t.path, t.line)).catch((e) => fail(e.message)),
+  open: (t) => (t.kind === 'dir' ? revealDir(t.path) : openFile(t.path, t.line, { link: true })).catch((e) => fail(e.message)),
 };
 // Streaming re-renders the whole log each frame; only replies whose text or
 // link answers changed are re-parsed. Unused entries drop out each render.
@@ -1983,7 +2063,7 @@ function linkify(text) {
     if (!isFile(abs)) continue;
     out.push(text.slice(last, m.index));
     const b = el('button', { type: 'button', className: 'path', textContent: tok, title: 'Open ' + abs + (line ? ' at line ' + line : '') });
-    b.onclick = () => openFile(abs, line ? Number(line) : undefined).catch((e) => fail(e.message));
+    b.onclick = () => openFile(abs, line ? Number(line) : undefined, { link: true }).catch((e) => fail(e.message));
     out.push(b);
     last = m.index + tok.length;
   }
@@ -3224,6 +3304,7 @@ const withWatch = (list) => { list.push(watchTool({ Type, watches, callerOf: wat
         // A subagent's namespace: what its spawn declared, or the default view.
         namespaceFor: (caller) => { const w = caller == null ? null : agent?.who(caller); return w?.child != null ? (w.ns?.length ? w.ns : defaultSubagentNs(vfs)) : null; },
         // Main's tools see its own session's control files at /session (src/ns/control.js).
+        sessionOf: (caller) => (caller == null ? null : agent?.who(caller)?.sid ?? null),
         mainView: (caller, base) => { const w = caller == null ? null : agent?.who(caller); return w && w.child == null && w.sid != null ? mainNamespace(w.sid, base) : base; },
         ...egressHooks,
       })),

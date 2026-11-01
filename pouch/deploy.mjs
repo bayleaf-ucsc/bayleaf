@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { homedir, tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { headersFile, viewerCsp } from './headers.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const check = process.argv.includes('--check');
@@ -22,8 +23,8 @@ if (listed.some((x) => !x) || listed[0][1] !== 'pouch.html' || listed[0][0] !== 
 // Allowlist: only these shapes may be uploaded, each within Cloudflare Static
 // Assets' 25 MiB per-file limit, and few enough files for any plan.
 const FILE_MAX = 25 * 2 ** 20, FILES_MAX = 20_000;
-const SHELL = ['sw.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png'];
-const SHAPES = [/^pouch\.html$/, /^sw\.js$/, /^manifest\.webmanifest$/, /^icons\/[a-z0-9-]+\.png$/, /^models\/[a-z0-9.-]+\/manifest\.[0-9a-f]{16}\.json$/, /^models\/[a-z0-9.-]+\/worker\.[0-9a-f]{16}\.js$/, /^models\/[a-z0-9.-]+\/[0-9a-f]{64}\.bin$/];
+const SHELL = ['sw.js', 'viewer.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png'];
+const SHAPES = [/^pouch\.html$/, /^sw\.js$/, /^viewer\.html$/, /^manifest\.webmanifest$/, /^icons\/[a-z0-9-]+\.png$/, /^models\/[a-z0-9.-]+\/manifest\.[0-9a-f]{16}\.json$/, /^models\/[a-z0-9.-]+\/worker\.[0-9a-f]{16}\.js$/, /^models\/[a-z0-9.-]+\/[0-9a-f]{64}\.bin$/];
 if (listed.length + 3 > FILES_MAX) throw new Error(`Too many files: ${listed.length}`);
 const files = listed.map(([sha, path]) => {
   if (!SHAPES.some((re) => re.test(path)) || new Set(listed.map((x) => x[1])).size !== listed.length) throw new Error(`Not an allowed artifact path: ${path}`);
@@ -58,6 +59,13 @@ const csp = text.match(/<meta http-equiv="Content-Security-Policy" content="([^"
 if (!csp || !csp.includes("connect-src 'self' https://api.bayleaf.dev http://localhost:* http://127.0.0.1:*;") || /script-src[^;]*'unsafe-(inline|eval|hashes)'/.test(csp)
   || !csp.includes("worker-src 'self' blob:;") || !csp.includes("manifest-src 'self';") || !csp.includes("img-src 'self' data: blob:;") || !csp.startsWith("default-src 'none';"))
   throw new Error('Unexpected CSP'); // 'wasm-unsafe-eval' (QuickJS, ONNX Runtime) is expected; JS eval is not
+// frame-src 'self' embeds /viewer.html (sandboxed, opaque origin); media-src blob: plays
+// audio and video previews from files already in the page. Nothing else may load a frame or media.
+if (!csp.includes("frame-src 'self';") || !csp.includes("media-src blob:;") || /(child|frame|media)-src[^;]*(https?:|\*|data:)/.test(csp)) throw new Error('Unexpected CSP (frames or media)');
+// The viewer: no network of any kind, inline script and style only (README "HTML reports").
+const vcsp = viewerCsp(source);
+const VIEWER = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; manifest-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'";
+if (vcsp !== VIEWER) throw new Error('Unexpected viewer CSP');
 // worker-src 'self' is for /sw.js only; manifest-src 'self' for /manifest.webmanifest.
 const scripts = [...text.matchAll(/<script>([\s\S]*?)<\/script>/g)];
 const expected = scripts.map(([, body]) => `'sha256-${createHash('sha256').update(body).digest('base64')}'`);
@@ -81,36 +89,9 @@ writeFileSync(join(staging, 'assets/pouch.html'), html);
 writeFileSync(join(staging, 'assets/SHA256SUMS'), manifest);
 for (const f of [...shellFiles, ...modelFiles]) { mkdirSync(dirname(join(staging, 'assets', f.path)), { recursive: true }); copyFileSync(join(source, f.path), join(staging, 'assets', f.path)); }
 writeFileSync(join(staging, 'assets/_redirects'), '/ /pouch.html 200\n');
-// Rules for one path merge (same header: comma-joined), so Cache-Control is
-// set per path, never on /*: the page and checksums are never cached; sw.js
-// and the manifest are revalidated every time (no-cache), so a release reaches
-// them at once; icons may be cached for a day; the content-hash-named model
-// files are immutable.
-writeFileSync(join(staging, 'assets/_headers'), `/
-  Cache-Control: no-store, no-transform
-/pouch.html
-  Cache-Control: no-store, no-transform
-/SHA256SUMS
-  Cache-Control: no-store, no-transform
-/sw.js
-  Cache-Control: no-cache, no-transform
-/manifest.webmanifest
-  Cache-Control: no-cache, no-transform
-/icons/*
-  Cache-Control: public, max-age=86400
-/models/*
-  Cache-Control: public, max-age=31536000, immutable
-/*
-  NEL: {"max_age":0}
-  Report-To: {"group":"cf-nel","max_age":0,"endpoints":[]}
-  Content-Security-Policy: ${csp}; frame-ancestors 'none'; object-src 'none'
-  X-Content-Type-Options: nosniff
-  X-Frame-Options: DENY
-  Referrer-Policy: no-referrer
-  Permissions-Policy: camera=(), microphone=(), geolocation=()
-  Strict-Transport-Security: max-age=31536000
-  X-Robots-Tag: noindex
-`);
+// Headers per path (headers.mjs): the page's CSP everywhere but /viewer.html,
+// which carries the report viewer's own network-less policy.
+writeFileSync(join(staging, 'assets/_headers'), headersFile(csp, vcsp));
 const config = JSON.parse(readFileSync(join(root, 'wrangler.jsonc'), 'utf8'));
 config.assets.directory = './assets';
 writeFileSync(join(staging, 'wrangler.json'), JSON.stringify(config, null, 2));
@@ -172,6 +153,9 @@ for (const f of shellFiles) {
   if (response.status !== 200 || response.headers.has('set-cookie') || response.headers.get('cache-control') !== cache)
     throw new Error(`Unexpected response or cache policy: /${f.path}`);
   if (createHash('sha256').update(body).digest('hex') !== f.sha) throw new Error(`Served bytes differ: /${f.path}`);
+  if (f.path === 'viewer.html' && (!response.headers.get('content-security-policy')?.startsWith(vcsp + "; frame-ancestors 'self'; sandbox allow-scripts")
+    || /frame-ancestors 'none'/.test(response.headers.get('content-security-policy')) || response.headers.get('x-frame-options') !== 'SAMEORIGIN'))
+    throw new Error('Viewer served without its own policy');
 }
 console.log(`Verified ${shellFiles.length} app shell files: exact bytes, cache policy`);
 if (modelFiles.length) console.log(`Verified ${modelFiles.length} model files: immutable and byte-exact`);

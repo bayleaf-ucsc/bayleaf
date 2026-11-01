@@ -16,7 +16,7 @@ const BANNED = [
   { re: /\bLocal (lane|model|turn)\b|["'`]Local:|\bLocal is\b|\bLocal works\b/g, use: 'Transformers.js' },
   { re: /(?<!BayLeaf )\bSealed (lane|model list)\b|["'`]Sealed:/g, use: 'BayLeaf Sealed' },
   { re: /\bQueue(d|s)?\b|\bqueues it\b|"queue"|'queue'|data-mode="queue"/g, use: 'Follow-up (queuing is the strategy, not the name)' },
-  { re: /\(s[1-9]\d*\)|\b(id|ids|handle) s[1-9]\d*\b|["'`]s[1-9]\d*["'`]|\bs[1-9]\d*, s[1-9]\d*\b|main \(s1\)/g, use: 'a-handles: a1 (main), a2, ...' },
+  { re: /(?<!\w)\(s[1-9]\d*\)|\b(id|ids|handle) s[1-9]\d*\b|["'`]s[1-9]\d*["'`]|\bs[1-9]\d*, s[1-9]\d*\b|main \(s1\)/g, use: 'a-handles: a1 (main), a2, ...' },
   { re: /\bSessions in this scope\b|\bsessions of (this|your) scope\b|\bmessage another session\b/g, use: 'agents of this session' },
 ];
 // [pattern source, context substring, reason]

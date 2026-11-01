@@ -11,7 +11,7 @@
 //
 // A file:// copy has no service worker: it behaves exactly as before.
 
-const SHELL = ['pouch.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png'];
+const SHELL = ['pouch.html', 'viewer.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png'];
 const PREFIX = 'pouch-shell-';
 const OFF = 'pouch.offline'; // 'off' after Uninstall; Erase all clears it
 const KEEP = ['content-type', 'content-security-policy', 'x-content-type-options', 'x-frame-options', 'referrer-policy', 'permissions-policy'];

@@ -355,6 +355,22 @@ leaves the page, and it asks every time.
 <sub><b>TM1</b> ok · <b>TM2</b> ok · <b>TM3</b> ok · <b>TM4</b> ok. The terminal is the agents' shell for humans: the same files and commands, each command a /task entry; Ctrl+C writes kill to its ctl file.</sub>
 <!-- /wt -->
 
+### Reports: what the agent made, seen safely
+
+An agent can write a self-contained HTML report and link it. The link opens it in Preview,
+in a sandboxed viewer that has no network and no way into Pouch; scripts stay off unless
+you turn on Interactive (README "HTML reports").
+
+<!-- wt:shot report-static -->
+<img src="walkthrough/images/report-static.png" alt="The editor showing /work/tides.html in Preview: a &quot;Raw | Preview&quot; switch in the header, a note &quot;Static: no scripts run, and nothing in this report can reach the network.&quot; beside a &quot;Static | Interactive&quot; switch, and the report itself: a heading, four bars of tide heights, a collapsed Method section and the line &quot;Sorting needs scripts.&quot;" width="663"><br>
+<sub><b>HR1</b> ok · <b>HR4</b> ok. A report the agent wrote opens from its link in Preview, Static: rendered in a sandboxed viewer with no network, no script running.</sub>
+<!-- /wt -->
+
+<!-- wt:shot report-interactive -->
+<img src="walkthrough/images/report-interactive.png" alt="The same report in Interactive mode: the note now reads that scripts run, cannot read Pouch or files, web requests are blocked, but a script can still reach the network over WebRTC, so only for reports you trust; the report's last line reads &quot;Scripts ran: sorted by height.&quot;" width="663"><br>
+<sub><b>HR2</b> ok. Interactive runs the report's scripts and says plainly what stays open (WebRTC); it is never remembered.</sub>
+<!-- /wt -->
+
 ## 10. Offline, install, and Transformers.js: Commuter
 
 <!-- wt:status F1 F2 F3 F4 F5 --><b>F1</b> ok · <b>F2</b> ok · <b>F3</b> ok · <b>F4</b> built · <b>F5</b> ok in Chromium, gap elsewhere<!-- /wt -->
@@ -423,7 +439,7 @@ says so.
 ## Coverage
 
 <!-- wt:coverage -->
-70 of 130 stories in [JOURNEYS.md](JOURNEYS.md) are illustrated. JOURNEYS.md reuses D20, D21, G14, D19 for different stories; a second use is written with .2 here (D20.2).
+73 of 139 stories in [JOURNEYS.md](JOURNEYS.md) are illustrated. JOURNEYS.md reuses D20, D21, G14, D19 for different stories; a second use is written with .2 here (D20.2).
 
 **Not yet illustrated**
 
@@ -439,6 +455,7 @@ says so.
 - 9. Localhost provider (slice, 2026-10-31; Desk persona with a model server, e.g. oMLX): LH2 (ok), LH6 (ok), LH7 (ok), LH8 (ok), LH9 (ok), LH10 (ok), LH11 (gap), LH12 (ok)
 - 10. Terminal (Batch E, 2026-11-01; Desk and Lab personas): TM5 (ok), TM6 (ok), TM7 (ok)
 - 11. Control plane (Batch F, 2026-11-01; Desk and Lab personas, and agents): CP1 (ok), CP2 (ok), CP3 (ok), CP4 (ok), CP5 (ok), CP6 (gap)
+- 12. HTML reports and previews (Batch G, 2026-11-01; Desk and Lab personas, and agents): HR3 (ok), HR5 (ok), HR6 (ok), HR7 (ok), HR8 (ok), HR9 (gap)
 <!-- /wt -->
 
 **Gaps found while building this walkthrough.** The trust panel's mount tables used to

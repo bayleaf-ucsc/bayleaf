@@ -29,7 +29,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src __SCRIPT_HASHES__ 'wasm-unsafe-eval'; worker-src 'self' blob:; manifest-src 'self'; style-src 'unsafe-inline'; connect-src 'self' https://api.bayleaf.dev http://localhost:* http://127.0.0.1:*; img-src 'self' data: blob:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src __SCRIPT_HASHES__ 'wasm-unsafe-eval'; worker-src 'self' blob:; manifest-src 'self'; style-src 'unsafe-inline'; connect-src 'self' https://api.bayleaf.dev http://localhost:* http://127.0.0.1:*; img-src 'self' data: blob:; frame-src 'self'; media-src blob:; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#2f6b3a">
@@ -203,6 +203,23 @@
   #editor { flex: 1; min-height: 0; overflow: hidden; }
   #editor-empty { padding: 1.25rem 1rem; color: var(--muted); font-size: .9rem; }
   #editor-pane.empty #editor, #editor-pane:not(.empty) #editor-empty, #editor-pane.empty #save, #editor-pane.empty #close-file { display: none; }
+  /* Previews (README "Previews"): Raw | Preview, and Static | Interactive for HTML reports */
+  #editor[hidden], #preview[hidden], #editor-pane.empty #preview, #editor-pane.empty #view-mode, #editor-pane.empty #preview-bar, .seg[hidden] { display: none; }
+  .seg { display: inline-flex; flex: none; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg > button { border: 0; border-radius: 0; background: transparent; color: var(--muted); font-size: .8rem; padding: 0 .65rem; }
+  .seg > button + button { border-left: 1px solid var(--line); }
+  .seg > button[aria-pressed="true"] { background: var(--current); color: var(--leaf); font-weight: 600; }
+  #preview-bar { justify-content: space-between; }
+  #preview-note { flex: 1; min-width: 12rem; }
+  #preview { flex: 1; min-height: 0; overflow: auto; }
+  #preview.frame { overflow: hidden; }
+  #preview iframe.viewer { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
+  #preview.md .md-preview { max-width: 48rem; margin: 0 auto; padding: 1rem; }
+  #preview.media { display: grid; place-items: center; padding: 1rem; }
+  #preview .preview-image { max-width: 100%; max-height: 100%; object-fit: contain; background: repeating-conic-gradient(#0001 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
+  #preview .preview-video { max-width: 100%; max-height: 100%; }
+  #preview .preview-audio { width: min(100%, 32rem); }
+  .preview-notice { padding: 1.25rem 1rem; color: var(--muted); }
 
   /* Chat column: content stays at a readable measure, centered. */
   /* Pouch anchors the thread itself (src/follow.js); the browser's own scroll anchoring differs between engines. */
@@ -858,6 +875,7 @@
         <button id="to-files" class="icon" type="button" aria-label="Back to files" title="Back to files"><svg class="i"><use href="#i-back"/></svg></button>
         <span class="title path" id="editor-path">No file open</span>
         <span id="editor-busy" role="status" hidden>Pouch is editing...</span>
+        <div id="view-mode" class="seg" role="group" aria-label="Show this file as" hidden><button type="button" data-mode="raw" aria-pressed="true">Raw</button><button type="button" data-mode="preview" aria-pressed="false">Preview</button></div>
         <button id="save" class="icon" type="button" disabled aria-label="Save" title="Save (Ctrl+S)"><svg class="i"><use href="#i-save"/></svg></button>
         <button id="close-file" class="icon" type="button" aria-label="Close file" title="Close file"><svg class="i"><use href="#i-x"/></svg></button>
       </div>
@@ -874,8 +892,13 @@
         <button id="conflict-theirs" type="button">Take theirs</button>
       </div>
       <p id="editor-status" role="status" hidden></p>
+      <div class="bar notice-bar" id="preview-bar" hidden>
+        <span id="preview-note"></span>
+        <div id="script-mode" class="seg" role="group" aria-label="Scripts in this report" hidden><button type="button" data-scripts="off" aria-pressed="true">Static</button><button type="button" data-scripts="on" aria-pressed="false">Interactive</button></div>
+      </div>
       <p id="editor-empty">No file open. Pick one in Files, or open a path from a reply.</p>
       <div id="editor"></div>
+      <div id="preview" hidden></div>
     </section>
     <section class="panel" id="terminal-pane" aria-label="Terminal">
       <div class="bar">

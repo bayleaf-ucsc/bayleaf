@@ -44,7 +44,7 @@ function rootOf(fs, p) {
 }
 
 // tools.js passes its helpers so `run` shares path rules, errors and recording.
-export function runTool({ vfs, Type, CWD, abs, fsFor, oneAtATime = (_p, fn) => fn(), makeWorker = browserWorker }) {
+export function runTool({ vfs, Type, CWD, abs, fsFor, sidOf = () => null, oneAtATime = (_p, fn) => fn(), makeWorker = browserWorker }) {
   return {
     name: 'run', label: 'Run',
     description: 'Run JavaScript (QuickJS, ES2023, no Node or browser APIs) when bash/awk is not enough: real parsing (CSV with quotes, JSON), arithmetic, data transforms. ' +
@@ -102,7 +102,7 @@ export function runTool({ vfs, Type, CWD, abs, fsFor, oneAtATime = (_p, fn) => f
       let killed = false;
       const stop = () => ac.abort();
       signal?.addEventListener('abort', stop, { once: true });
-      const task = vfs.tasks.add({ kind: 'run', key: callId, label: path != null ? filename : (code.split('\n').find((l) => l.trim()) ?? '').trim().slice(0, 60),
+      const task = vfs.tasks.add({ kind: 'run', key: callId, sid: sidOf(caller), label: path != null ? filename : (code.split('\n').find((l) => l.trim()) ?? '').trim().slice(0, 60),
         ns: runNs.describe(), kill: () => { killed = true; ac.abort(); } });
       let r;
       try {

@@ -440,6 +440,34 @@ export const scenes = [
     },
   },
   {
+    id: 'reports', stories: ['HR1', 'HR2'],
+    shots: [
+      { id: 'report-static', target: '#editor-pane', maxHeight: 460, stories: ['HR1', 'HR4'],
+        alt: 'The editor showing /work/tides.html in Preview: a "Raw | Preview" switch in the header, a note "Static: no scripts run, and nothing in this report can reach the network." beside a "Static | Interactive" switch, and the report itself: a heading, four bars of tide heights, a collapsed Method section and the line "Sorting needs scripts."',
+        caption: 'A report the agent wrote opens from its link in Preview, Static: rendered in a sandboxed viewer with no network, no script running.' },
+      { id: 'report-interactive', target: '#editor-pane', maxHeight: 460, stories: ['HR2'],
+        alt: 'The same report in Interactive mode: the note now reads that scripts run, cannot read Pouch or files, web requests are blocked, but a script can still reach the network over WebRTC, so only for reports you trust; the report\'s last line reads "Scripts ran: sorted by height."',
+        caption: 'Interactive runs the report\'s scripts and says plainly what stays open (WebRTC); it is never remembered.' },
+    ],
+    async run({ page, shot, rule, send, idle }) {
+      const T = { timeout: 15000 };
+      await rule({ who: 'main', when: '/tide report/.test(c.since)', reply: [['write', { path: '/work/tides.html', content: "<!doctype html><html><head><meta charset=\"utf-8\"><title>Tide log</title><style>body{font:15px/1.4 system-ui,sans-serif;margin:24px;color:#1d2a33} h1{font-size:20px;margin:0 0 4px} .muted{color:#53636d} .row{display:flex;align-items:center;gap:8px;margin:6px 0} .row b{width:90px;font-weight:500} .bar{height:14px;background:#2f7d5b;border-radius:3px} details{margin-top:14px}</style></head><body><h1>Low tides, March</h1><p class=\"muted\">From /work/tides.csv: 4 days, lowest first.</p><div class=\"row\"><b>Mar 9</b><div class=\"bar\" style=\"width:62%\"></div>-1.4 ft</div><div class=\"row\"><b>Mar 10</b><div class=\"bar\" style=\"width:53%\"></div>-1.2 ft</div><div class=\"row\"><b>Mar 8</b><div class=\"bar\" style=\"width:35%\"></div>-0.8 ft</div><div class=\"row\"><b>Mar 11</b><div class=\"bar\" style=\"width:18%\"></div>-0.4 ft</div><details><summary>Method</summary><p>Daily minimum of the predicted height.</p></details><p id=\"js\" class=\"muted\">Sorting needs scripts.</p><script>document.getElementById('js').textContent = 'Scripts ran: sorted by height.';</script></body></html>" }]] });
+      await rule({ who: 'main', when: '/tides.html/.test(c.since)', reply: 'Here it is: [tides.html](/work/tides.html). Scripts are off unless you turn on Interactive.' });
+      await send('Make me a tide report from tides.csv');
+      await idle();
+      await page.click('#log .md button:has-text("tides.html")');
+      await page.waitForFunction(() => document.querySelector('#script-mode [aria-pressed="true"]')?.textContent === 'Static', null, T);
+      await page.waitForFunction(() => document.querySelector('#preview iframe.viewer'), null, T);
+      await page.waitForTimeout(800);
+      await shot('report-static');
+      await page.click('#script-mode [data-scripts="on"]');
+      await page.waitForFunction(() => /WebRTC/.test(document.getElementById('preview-note').textContent), null, T);
+      await page.waitForTimeout(800);
+      await shot('report-interactive');
+      await page.click('#close-file');
+    },
+  },
+  {
     id: 'offline', stories: ['F1'],
     shots: [
       { id: 'offline-composer', target: ['#composer', '#status'], stories: ['F1'],

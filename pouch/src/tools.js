@@ -296,7 +296,7 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
     },
   };
 
-  const run = runTool({ vfs, Type, CWD, abs, fsFor: (caller) => nsFor(caller, 'run'), oneAtATime, ...(hooks.makeWorker ? { makeWorker: hooks.makeWorker } : {}) });
+  const run = runTool({ vfs, Type, CWD, abs, fsFor: (caller) => nsFor(caller, 'run'), sidOf: (caller) => hooks.sessionOf?.(caller) ?? null, oneAtATime, ...(hooks.makeWorker ? { makeWorker: hooks.makeWorker } : {}) });
   // closeView(caller): drop a finished subagent's 9P connection.
   return Object.assign([read, write, edit, bashTool, run], { closeView: (caller) => { views.get(caller)?.close(); views.delete(caller); } });
 }
@@ -356,7 +356,7 @@ You work on files through the read, write, edit, bash and run tools. Filesystem:
 - ${CWD}: the user's workspace (browser-private storage). Default working directory.
 - /pouch: shared instructions (AGENTS.md) and skills (skills/<name>/SKILL.md).
 - /tmp: scratch, lost on reload.
-- /task: running and recent run calls and subagents as files: \`cat /task/<id>/status\`, \`cat /task/<id>/ns\` (what it can see), \`echo kill > /task/<id>/ctl\`.
+- /task: this session's running and recent run calls and subagents as files: \`cat /task/<id>/status\`, \`cat /task/<id>/ns\` (what it can see), \`echo kill > /task/<id>/ctl\`.
 - /session/current: your session's agents as files: \`cat /session/current/status\`, \`cat /session/current/agents/a2/status\`, \`echo stop > /session/current/agents/a2/ctl\` (message agents with the agents tool, not files).
 ${vfs.seedLayer ? `- ${CWD} is stacked over the read-only seed archive ${vfs.seedLayer.name}: your files win, edits land in ${CWD}, removing a seed file hides it.\n` : ''}${mounts.length ? '- Folders the user mounted from their device: ' + mounts.join(', ') + '\n' : ''}The bash tool is a simulated shell with coreutils-like commands plus zip/unzip/tar: no network, no installs, no python/node/git.
 The run tool executes JavaScript (QuickJS) over a copy of the files you name, with no network: use it instead of awk/sed/jq for anything that needs real parsing (quoted CSV, nested JSON) or arithmetic, and to test JavaScript; save reusable scripts in ${CWD} and run them by path. Its file writes are applied to the workspace when it finishes.
@@ -365,7 +365,8 @@ The subagent tool runs a self-contained task (web research, exploring a codebase
 ${GRAPH_GLOSS} You are main (a1); only you spawn and stop subagents.
 ${WATCH_GLOSS}
 ${UL_GLOSS}
-The user can open any file in the editor and download any file or folder (as .zip) from the file browser.
+The user can open any file in the editor and download any file or folder (as .zip) from the file browser. Markdown, HTML, SVG, images, audio and video files also have a preview.
+When a visual report would help, write one self-contained .html file (inline CSS and JS, images as data: URLs; nothing loads from the network, and scripts are off unless the user turns them on) and link it: it opens in the preview.
 Keep changes minimal: prefer edit over rewriting files, and do not reformat or restyle existing code unless asked (conventions apply to code you write). Be concise. Say what you changed.
 Replies render as markdown. Refer to files as markdown links like [app.js](/work/app.js) or [app.js:12](/work/app.js:12): they open in the user's editor.`;
   for (const a of agents) s += `\n\n<instructions source="${a.path}">\n${a.text.trim()}\n</instructions>`;

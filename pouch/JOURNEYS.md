@@ -202,6 +202,18 @@ Everything that acts is a file; the Interface is one client among several (READM
 - CP6 gap: just-bash 3.6 throws a failed redirection out of the whole script, so in one bash call an EPERM or EINVAL on a control file skips the commands after it (true of /task ctl before Batch F too).
 (`test/batchF-browser.mjs`; parity inventory in `test/controlplane-node.mjs`)
 
+### 12. HTML reports and previews (Batch G, 2026-11-01; Desk and Lab personas, and agents)
+Reports come from the user's data; the viewer must render them with no way out (README "HTML reports").
+- HR1 ok (fake model): the agent writes a self-contained `/work/report.html` and replies with a link; the link opens Preview, Static, in the sandboxed viewer (the prompt tells agents to write such reports and link them).
+- HR2 ok: the user turns on Interactive; the report's script runs, and the note beside the switch names the residual (WebRTC, Safari preconnect). Reopening starts Static again: Interactive is never remembered.
+- HR3 ok: Raw is one click; the tree opens HTML in the last mode chosen (per kind); a reply link still opens Preview, a link with a line number Raw.
+- HR4 ok: a hostile report (remote images, fetch, preconnect, writes to `top.localStorage`, posts to Pouch and to the viewer, navigates itself) opened Interactive inside Pouch: no request leaves, Pouch's storage and title are untouched, the editor stays put. The full channel table, both engines: `test/viewer-exfil-browser.mjs`.
+- HR5 ok: Markdown Preview uses Pouch's renderer (local images only; a remote image stays a link); with unsaved edits Preview shows the saved version and says so.
+- HR6 ok: PNG, SVG and WAV open as previews from blobs, with no Save; the SVG's script does not run. A report over 5 MB says so.
+- HR7 ok: main in one session cannot see or kill another session's subagent through `/task` (ENOENT); the terminal still sees and controls everything (`test/taskscope-node.mjs`, `test/batchG-browser.mjs`).
+- HR8 ok (real BayLeaf Sealed, GLM-5.3, 2026-11-01, 5 requests sent, a 6th aborted at the cap): asked for a small self-contained report summarizing `/work/sales.csv`, main read the CSV, wrote `/work/sales-report.html` (1.7 KB: inline CSS, a table and CSS bars, no script, no remote URL) and linked it; the link opened Preview, Static, rendered correctly (`test/batchG-sealed.mjs`). The test's CSV lost its newlines (a harness quoting bug, since fixed); main noticed and parsed it anyway.
+- HR9 gap: HTML Preview does not work offline (Chromium does not serve a sandboxed frame from the offline copy; Preview says so and Raw works). Links inside a report go nowhere (navigation is blocked by design); a "copy link" affordance could come later. Not tested in Firefox.
+
 ## Release slices
 
 1. **Walking skeleton (now):** A1–A4, T1–T2, I1, D1–D4, D7, R1, O1–O2, L1.

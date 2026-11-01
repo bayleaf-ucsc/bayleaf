@@ -26,10 +26,11 @@ function buildId() {
 }
 const BUILD_ID = buildId();
 
-// The installable app shell around pouch.html, copied as is (icons/make-icons.py
+// The installable app shell around pouch.html, copied as is (viewer.html is
+// the report viewer, README "HTML reports") (icons/make-icons.py
 // regenerates the PNGs). sw.js does not depend on the page, so its hash can be
 // built into the page, which shows whether the served worker is this one.
-const STATIC = ['sw.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png'];
+const STATIC = ['sw.js', 'viewer.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png'];
 const SW_SHA256 = sha256(readFileSync('sw.js'), 'hex');
 
 function assemble(code) {

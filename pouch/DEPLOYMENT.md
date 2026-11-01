@@ -102,6 +102,19 @@ cache headers. README "Install and the offline copy" has the policy.
   and refusal, pass-through, trust panel, uninstall, Erase all). To check after deploy:
   the Content-Type Cloudflare serves for `.webmanifest`, install on Android and iOS.
 
+## Pending: HTML reports and previews (Batch G, not deployed)
+
+- CSP delta (page): `frame-src 'self'; media-src blob:` (embed `/viewer.html`; play audio
+  and video previews from memory). No other directive changes; `deploy.mjs` rejects any
+  network source in `frame-src`, `child-src` or `media-src`.
+- New shell file `viewer.html` (in SHA256SUMS, the offline copy and the deploy allowlist)
+  with its own policy: no network of any kind (README "HTML reports"). `_headers` now comes
+  from `headers.mjs`: `/viewer.html` detaches the page's CSP, `X-Frame-Options` and
+  `Permissions-Policy` and sets its own CSP with `frame-ancestors 'self'; sandbox
+  allow-scripts`, `X-Frame-Options: SAMEORIGIN` and `Cache-Control: no-cache`. Detach
+  semantics checked with `wrangler dev` 4.91 (asset worker); recheck the served headers
+  after the first deploy (`deploy.mjs` verifies them).
+
 ## Current artifact: Localhost provider (2026-11-01)
 
 - Built from commit `93798dc` (clean; label `93798dc 2026-11-01`) in a temporary clean

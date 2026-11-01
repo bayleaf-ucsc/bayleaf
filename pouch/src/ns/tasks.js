@@ -22,7 +22,8 @@ const LOG_LINES = 12;
 export class Tasks extends EventTarget {
   constructor({ keep = 20 } = {}) { super(); this.keep = keep; this.next = 1; this.byId = new Map(); this.byKey = new Map(); }
 
-  // fields: { kind: 'run'|'subagent', label, key?, ns: string[] | () => string[], kill?: () => any }
+  // fields: { kind: 'run'|'subagent'|'terminal', label, key?, sid? (the session it
+  // belongs to; none for the user's terminal), ns: string[] | () => string[], kill?: () => any }
   add(fields) {
     const t = { id: this.next++, status: 'running', started: Date.now(), log: [], ...fields };
     t.note = (line) => { t.log.push(String(line).replace(/\s+/g, ' ').slice(0, 200)); t.log.splice(0, t.log.length - LOG_LINES); this.changed(); };
@@ -69,9 +70,16 @@ export class Tasks extends EventTarget {
 }
 
 // The /task tree over a Tasks registry. Read-only except ctl.
+// sid: a main agent's view, holding only its own session's tasks and watches
+// (other sessions' subagents and the user's terminal commands do not exist
+// for it, so it cannot stop them). Without sid: every task, for the
+// Interface and the terminal.
 export class TaskFs extends BaseFs {
   // watches: () => the registry (or null), read lazily since it starts later.
-  constructor(tasks, watches = () => null) { super(); this.tasks = tasks; this.watches = watches; }
+  constructor(tasks, watches = () => null, { sid = null } = {}) {
+    super(); this.tasks = tasks; this.watches = watches;
+    this.mine = sid == null ? () => true : (x) => x.sid != null && String(x.sid) === String(sid);
+  }
   // /task/watch/...: { w, file } or { dir: true } for /task/watch itself.
   findWatch(path, op) {
     const [, id, file, ...rest] = parts(path);
@@ -79,7 +87,7 @@ export class TaskFs extends BaseFs {
     if (!reg) throw fsError('ENOENT', op, path);
     if (!id) return { dir: true, reg };
     const w = reg.get(id);
-    if (!w || rest.length || (file && !WFILES.includes(file))) throw fsError('ENOENT', op, path);
+    if (!w || !this.mine(w) || rest.length || (file && !WFILES.includes(file))) throw fsError('ENOENT', op, path);
     return { w, file, reg };
   }
   wtext(w, file) {
@@ -90,7 +98,7 @@ export class TaskFs extends BaseFs {
   find(path, op) {
     const [id, file, ...rest] = parts(path);
     const t = id && this.tasks.get(id);
-    if (id && !t) throw fsError('ENOENT', op, path);
+    if (id && (!t || !this.mine(t))) throw fsError('ENOENT', op, path);
     if (rest.length || (file && !FILES.includes(file))) throw fsError('ENOENT', op, path);
     return { t, file };
   }
@@ -125,12 +133,12 @@ export class TaskFs extends BaseFs {
     if (this.isWatch(path)) {
       const { dir, w, file, reg } = this.findWatch(path, 'scandir');
       if (file) throw fsError('ENOTDIR', 'scandir', path);
-      return (dir ? reg.all().map((x) => x.id) : WFILES).map((name) => ({ name, isFile: !dir, isDirectory: !!dir, isSymbolicLink: false }));
+      return (dir ? reg.all().filter(this.mine).map((x) => x.id) : WFILES).map((name) => ({ name, isFile: !dir, isDirectory: !!dir, isSymbolicLink: false }));
     }
     const { t, file } = this.find(path, 'scandir');
     if (file) throw fsError('ENOTDIR', 'scandir', path);
     // /task/watch is listed only while there are watches (it can always be opened).
-    const names = t ? FILES : [...this.tasks.list().map((x) => String(x.id)), ...(this.watches()?.all().length ? ['watch'] : [])];
+    const names = t ? FILES : [...this.tasks.list().filter(this.mine).map((x) => String(x.id)), ...(this.watches()?.all().some(this.mine) ? ['watch'] : [])];
     return names.map((name) => ({ name, isFile: !!t, isDirectory: !t, isSymbolicLink: false }));
   }
   async readdir(path) { return (await this.readdirWithFileTypes(path)).map((d) => d.name); }

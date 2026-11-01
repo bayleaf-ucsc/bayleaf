@@ -26,7 +26,7 @@ const scratch = mkdtempSync(join(tmpdir(), 'pouch-pwa-'));
 
 // Variants of build A: B (a release with a different label), T (B's SUMS but
 // other HTML: tampered), S (B with a changed sw.js, SUMS updated).
-const shell = ['pouch.html', 'SHA256SUMS', 'sw.js', 'manifest.webmanifest', 'icons'];
+const shell = ['pouch.html', 'SHA256SUMS', 'sw.js', 'viewer.html', 'manifest.webmanifest', 'icons'];
 function variant(name, edit) {
   const dir = join(scratch, name);
   mkdirSync(dir);
