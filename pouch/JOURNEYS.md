@@ -239,9 +239,9 @@ Story IDs from the media stories draft (PD1-PD6, AG3-AG5, AG9). pdf.js runs in i
 
 ### 14. Audio and video (libav.js runtime, 2026-11-01; Lab, Desk, Analyst and Phone personas, and agents)
 Story IDs from the media stories draft (AV1-AV6, AG1, AG2, AG5-AG7, AG9). libav.js (FFmpeg 9, variant `webm-vp9-cli`) runs in its own worker from verified same-origin parts, behind `ffprobe` and `ffmpeg` (README "The second tool: libav.js").
-- AV1 ok (data), ? (plain language): `ffprobe -v error -show_format -show_streams -of json` gives duration, streams, codecs and size for WebM, Ogg, WAV and FLAC; the plain-language summary is the model's job. MP4/MOV/M4A are not readable here (gap below).
-- AV2 partial: `ffmpeg -i talk.webm -vn -c:a copy talk.opus` works (checked in `test/media-browser.mjs`); WAV becomes FLAC or Opus. Opus to WAV fails (no swresample in this variant) and says so; M4A/AAC input is the WebCodecs gap.
-- AV3 partial: trims (`-ss -t -c copy`), scaling and VP8/VP9 transcodes work for WebM; MOV input is the gap. Video encoding is single-threaded and slow.
+- AV1 ok (data), ? (plain language): `ffprobe -v error -show_format -show_streams -of json` gives duration, streams, codecs and size for WebM, Ogg, WAV and FLAC, and for MOV, MP4, M4A and MP3 on the WebCodecs path (built from the demuxer, with the display rotation and a `note:` when this browser cannot decode a stream); the plain-language summary is the model's job.
+- AV2 ok: `ffmpeg -i talk.webm -vn -c:a copy talk.opus`; `ffmpeg -i memo.m4a memo.wav` (AAC), MP3 and MOV audio to WAV, FLAC or Opus with `-ar`, `-ac`, `-ss`/`-t`; Opus to WAV and 24-bit to 16-bit go to the conversion path (aresample), as do `loudnorm` and `dynaudnorm` (all in `test/media-browser.mjs`).
+- AV3 partial: trims (`-ss -t -c copy`), scaling and VP8/VP9 transcodes work for WebM; from MOV/MP4 only frames and audio come out (no H.264 encoder or MP4 muxer: the hint suggests a local re-export). Video encoding is single-threaded and slow.
 - AV4 gap: no transcoded preview in the file browser yet (the runtime can produce the WebM).
 - AV5 ok (one run, 2026-11-01): kimi-k3 on BayLeaf Sealed (4 requests; a fifth, likely the title, was refused by the test's cap) probed a 4 s VP9 WebM, extracted frames, looked at them in one look call and answered "from 0s to about 1.5s a red background displays the word "ONE" ..., then it cuts at about t=2s to a blue background showing "TWO"": both scenes, in order, with times (`test/media-sealed.mjs`, run on a local merge with the look branch, PR #128).
 - AV6 partial: caps refuse up front with their names (`MAX_INPUT_BYTES` before the runtime loads, `MAX_INPUT_SECONDS` from the container); memory is guarded by the jobs estimate, not measured on a phone.
@@ -249,7 +249,7 @@ Story IDs from the media stories draft (AV1-AV6, AG1, AG2, AG5-AG7, AG9). libav.
 - AG6 ok: each run is a `/task` job; Stop mid-ffmpeg ends it within a second (the worker is ended), writes nothing, and the next job runs (`test/media-browser.mjs`).
 - AG7 ? : the media skill budgets at most 8 frames per look, rate from the duration; the AV5 run followed it, but cost is not yet shown to the agent.
 - AG9 ? : a skill recipe (`base64 -w0` a frame into a report), not run end to end.
-- Gap (all AV on phone media): MP4/MOV/M4A, H.264, HEVC, AAC and MP3 do not decode in any published libav.js variant; the fallback is WebCodecs, not built.
+- Phone media (WebCodecs path, 2026-11-01): H.264 MOV/MP4 frames (rotation applied), AAC/MP3 audio ok in Playwright's Chromium and installed Chrome; HEVC frames ok in Chrome, refused with a clear message in Playwright's Chromium (no HEVC there). Firefox, Safari and phones untested. The evidence that prompted it: an agent refused a `.mov`, hit "'aresample' filter not present" on audio filters, and then suggested a third-party converter site, which the media skill now rules out.
 
 ## Release slices
 

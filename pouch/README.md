@@ -1246,14 +1246,55 @@ JavaScript and a link, Stop, offline reuse, and the network log).
   OffscreenCanvas in the worker. `-ss` seeks, `-t`/`-to` bound, `-r` and `-frames:v` work;
   each "wrote" line gives the frame's time in the source (story AG1).
 
-What decodes: WebM/Matroska, Ogg, WAV and FLAC containers; VP8 and VP9 video; Opus, FLAC
-and PCM audio (`ffmpeg -decoders`). Encoders: VP8, VP9, Opus, FLAC, PCM. Not in any
-published libav.js variant: MP4/MOV demuxing, H.264, HEVC, AAC (the author does not publish
-patent-encumbered codecs), and MP3 (only in `obsolete`). This variant also has no
-swresample, so Opus cannot become WAV or FLAC. These fail with FFmpeg's error plus a hint
-naming the gap; an "empty output with exit 0" from libav.js counts as a failure. The
-planned fallback for MP4/H.264/AAC is WebCodecs (decode in the browser, frames or PCM into
-libav), not built here.
+What the CLI build decodes: WebM/Matroska, Ogg, WAV and FLAC containers; VP8 and VP9
+video; Opus, FLAC and PCM audio (`ffmpeg -decoders`). Encoders: VP8, VP9, Opus, FLAC, PCM.
+No published libav.js variant decodes H.264, HEVC or AAC (the author does not publish
+patent-encumbered codecs), and MP3 is only in `obsolete`; an "empty output with exit 0"
+from libav.js counts as a failure.
+
+**The WebCodecs path** (phone videos and voice memos). MOV, MP4, M4A and MP3 inputs are
+recognized by their first bytes (`src/media/wc.js` `sniff`) and handled without libav's
+programs. A second, API-only build, `webcodecs-avf` (same release, 3.4 MiB wasm: the MOV
+demuxer, swresample, the audio and video filters, the FLAC and Opus encoders, no
+decoders for those codecs), demuxes; the browser's `VideoDecoder` and `AudioDecoder`
+decode (each codec feature-detected with `isConfigSupported`); MP3 frames are walked in JS,
+since no variant demuxes MP3. Chosen over mp4box.js plus a JS resampler because the same
+build also supplies `aresample` and the audio filters the CLI build is missing, with no
+new license family (LGPL FFmpeg from the sources already shipped) and no CSP change.
+
+| Input | Probe | Frames | Audio out |
+|---|---|---|---|
+| H.264 in MOV/MP4 | yes | yes (all Chromium builds tested) | AAC, MP3, Opus tracks |
+| HEVC in MOV/MP4 | yes, plus a `note:` when undecodable | where `VideoDecoder` has HEVC (Chrome with hardware support: yes; Playwright's Chromium: no, refused clearly) | as above |
+| AAC (M4A), MP3 | yes | no video | WAV, FLAC, Opus |
+| ProRes, ALAC, others in MOV | yes | refused, naming the codec | refused, naming the codec |
+
+- `ffprobe` builds the report from the demuxer (format, streams, duration, frame counts,
+  frame rate, profile, the display rotation as `side_data_list`) and writes it as ffprobe
+  does: `-of json`, `default` (with `nw`/`nk`), `csv` (`p=0`), `compact`, `flat`, with
+  `-show_entries` and `-select_streams`. Without `-v error` it prints FFmpeg's `Input #0`
+  summary on stderr.
+- Frames: the image recipes work unchanged (`-ss T -frames:v 1 out.png`, `-vf
+  fps=1/N,scale=W:-1 f-%03d.png`). Frames are drawn with OffscreenCanvas: the display
+  rotation is applied as ffmpeg's autorotate does, then `-vf` fps (ffmpeg's frame choice,
+  round to nearest), scale (numbers, `iw`/`ih` arithmetic, `-1`/`-2`) and crop. Other
+  video filters are refused with that list.
+- Audio: decoded to float, trimmed by `-ss`/`-t`/`-to`, then through `-af` and an
+  `aformat` sink in the avf build (`aresample` converts the rate, layout and sample format),
+  to WAV (`pcm_s16le` default, `pcm_s24le`, `pcm_s32le`, `pcm_f32le`, `pcm_u8`, written in
+  JS because the build has no PCM encoders but f32), FLAC (24-bit sources stay 24-bit) or
+  Opus in Ogg or WebM. Audio filters: acompressor, adeclick, adeclip, aecho, afade,
+  aformat, agate, alimiter, amix, anull, apad, aresample, asettb, asplit, atempo, atrim,
+  bandpass, bandreject, dynaudnorm, equalizer, loudnorm, pan, volume.
+- Conversions the CLI build cannot do (it has no `aresample`, so Opus to WAV, 24-bit to
+  16-bit, `-ar`, and `loudnorm`/`dynaudnorm` fail there even though `-filters` lists them)
+  are retried on this path when the output is audio only; `ffmpeg -filters` now adds a note
+  saying which filters run where.
+- Not available, with a one-line hint (frames, audio, or a local re-export): writing MP4,
+  MOV, M4A, MP3 or AAC, and any video out of a MOV/MP4. libav.js's `ff_init_filter_graph`
+  double-frees on a graph error, which wedges the heap, so the audio graph is built from
+  the lower-level calls. A custom libav.js build (MP3 demuxer, PCM encoders, an MP4 muxer
+  for `-c copy` cuts) is a later option.
 
 Caps are named constants in `src/media.js`: `MAX_INPUT_BYTES` 256 MiB per call (checked
 before the runtime loads), `MAX_INPUT_SECONDS` 3 h per input, `MAX_OUTPUT_BYTES` 256 MiB
@@ -1271,7 +1312,10 @@ the released wasm once from verified bytes, then removes `fetch` and `XMLHttpReq
 the worker. Each job gets a fresh libav instance, so no job sees another's files. Non-threaded:
 no COOP/COEP, and the page's CSP did not change. The bundled `media` skill gives agents the
 recipe (probe first; at most 8 frames per look, rate picked from the duration; look at them
-if a look tool is available; audio copy; trims) and the pitfalls. Tests: `node
+if a look tool is available; audio copy; trims), the real codec coverage and filter list,
+and never to send the person's media to an online converter (it suggests a local re-export
+instead: QuickTime Export As, the phone's "Most Compatible" setting, a screen recorder's
+WebM, or ffmpeg on their own computer). Tests: `node
 test/media-node.mjs` (parsing, time syntax, image plans, caps, errors, jobs and Stop with a
 fake engine, build pins and source) and `node test/media-browser.mjs` (the real runtime
 under the production CSP on tiny committed fixtures in `test/fixtures/media/`: ffprobe JSON,
