@@ -173,8 +173,9 @@ export function createSessions(deps) {
   // ── Delete (L2) ───────────────────────────────────────────────────
   // Erases the transcript (its own database), its notes and revert token.
   // A legacy session is stopped and reset; once none is left, the shared
-  // legacy database goes too.
-  async function remove(id, ask = true) {
+  // legacy database goes too. stay: if it was current, a blank session takes its
+  // place instead of the next session (a revert of the first message, D12).
+  async function remove(id, ask = true, { stay = false } = {}) {
     const legacy = deps.agent()?.isLegacy?.(id);
     if (ask && !(await deps.ask(legacy ? 'Delete this session? It was saved before per-session storage: it is stopped and reset now, and its history is purged once no such session is left (or by Erase all).' : 'Delete this session? Its conversation is erased from this browser.', 'Delete', 'danger'))) return;
     try { await deps.agent()?.deleteSession(id); }
@@ -193,7 +194,7 @@ export function createSessions(deps) {
     if (sameId(id, session?.id)) {
       session = null; await deps.attach();
       const rest = await all();
-      if (rest.length) return select(rest[0].id);
+      if (rest.length && !stay) return select(rest[0].id);
     }
     render();
   }
@@ -263,10 +264,20 @@ export function createSessions(deps) {
     }
   }
 
-  // New takes effect at the click: the current session becomes none at once,
-  // so a message sent before the new one exists (New, then Enter) waits for
-  // it (send() calls create(), which hands back this same creation) instead
-  // of going into the previous session (Batch F).
+  // New opens a blank session (LANGUAGE.md): no session is current, nothing
+  // is stored and no row is added; the first send makes the session (create()).
+  // New in a blank session stays there, so pressing it again makes
+  // nothing. It takes effect at the click, so New then Enter sends into the
+  // new session, never the previous one (Batch F). A reload in a blank session
+  // lands in the last saved one: the blank one lived in this page only.
+  function blank() {
+    if (session) { session = null; deps.attach(); render(); }
+    if (layout.narrow()) layout.setSide(false, false);
+    $('input').focus();
+  }
+
+  // The first send from a blank session: make the session. A second send before it
+  // exists waits for this same creation (send() calls create() again).
   let creating = null;
   function create() {
     const agent = deps.agent();
@@ -284,8 +295,6 @@ export function createSessions(deps) {
       store.setSetting('lastSession', id);
       await deps.attach();
       await render();
-      if (layout.narrow()) layout.setSide(false, false);
-      $('input').focus();
     })().finally(() => { creating = null; });
     return creating;
   }
@@ -299,9 +308,8 @@ export function createSessions(deps) {
     await render();
     await deps.attach();
   }
-  const startNew = () => create().catch((e) => status(e.message, 'bad'));
-  $('new').onclick = startNew;
-  $('new-top').onclick = startNew;
+  $('new').onclick = blank;
+  $('new-top').onclick = blank;
 
   // Boot: the last session (or the newest), and drop a legacy database that
   // only holds sessions deleted before L2.
@@ -316,7 +324,7 @@ export function createSessions(deps) {
 
   return {
     get current() { return session; },
-    running, all, find, save, update, render, create, select, remove, afterTurn, boot,
+    running, all, find, save, update, render, blank, create, select, remove, afterTurn, boot,
     compact, renameAuto, costOf: (s) => costNote(modelOf(s ?? session)),
   };
 }

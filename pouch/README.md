@@ -221,6 +221,19 @@ Left out on purpose (no journey moment to tie them to): coloring tool pills by t
 animating session switches or panel opens, coloring the main agent, and per-file colors in
 the tree.
 
+## Sessions: New and revert
+
+New session (sidebar, top bar or `/new`) opens a **blank session**: an empty transcript
+and the composer, with nothing stored and no sidebar row. The first send makes the
+session, so pressing New repeatedly makes nothing, and New then Enter sends into the new
+session, never the previous one. A reload in a blank session lands in the last saved one.
+
+Revert to here (D12) forks the conversation, so later messages fold into an undoable
+"Other branch"; on your own message it reverts to just before it and puts the text back
+in the box. On the first message there is nothing before it, so the session is deleted
+and a blank session takes its place with the text in the box: send again and it is named
+afresh, leave and nothing remains. That one cannot be undone (the sheet says so).
+
 ## Deployed as static HTML: where state lives
 
 The build step is the last place code runs before your browser. What deploys is

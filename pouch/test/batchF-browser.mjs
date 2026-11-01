@@ -4,7 +4,9 @@
 // writing files while the tray follows, the main agent reads /session and
 // writes its subagent's ctl (in is refused, and the failed write names what
 // did not run), reads its changes and usage files, and New then Enter right away
-// sends into the new session, not the previous one.
+// sends into the new session, not the previous one. New opens a blank
+// session (nothing stored until the first send), and reverting a session's
+// first message empties it into one, text back in the box.
 // Run: node test/batchF-browser.mjs
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
@@ -160,6 +162,58 @@ try {
   assert.match(body, /stopped [\d.]+s subagent mapper/);
   assert.doesNotMatch(body, /events\\n\d/, 'its own session only');
   ok('main agent: reads /session/current/status, writes its subagent\'s ctl (stopped), gets EPERM writing in (CP6: the skipped command named), reads changes and usage');
+
+  // 6. New is a draft: spamming it stores nothing; the first send makes one session.
+  const stored = () => page.evaluate(() => new Promise((res, rej) => { const r = indexedDB.open('bayleaf-pouch'); r.onerror = rej; r.onsuccess = () => { const q = r.result.transaction('sessions').objectStore('sessions').count(); q.onsuccess = () => { res(q.result); r.result.close(); }; }; }));
+  const rows = () => page.$$eval('#session-list li.session', (l) => l.length);
+  const before = { stored: await stored(), rows: await rows() };
+  for (let i = 0; i < 5; i++) await page.$eval(i % 2 ? '#new' : '#new-top', (b) => b.click());
+  await sleep(300);
+  assert.deepEqual({ stored: await stored(), rows: await rows() }, before, 'New made no sessions');
+  assert.equal(await page.$$eval('#session-list li.session[aria-current="true"]', (l) => l.length), 0, 'no row is current in a draft');
+  assert.equal(await page.evaluate(() => document.activeElement?.id), 'input', 'the composer has focus');
+  assert.equal(await page.$('#log .msg'), null, 'the transcript is empty');
+  await rule(page, { who: 'main', when: '/Badly worded/.test(c.since)', reply: 'Reply one.' });
+  await rule(page, { who: 'main', when: '/later one/.test(c.since)', reply: 'Reply two.' });
+  await send(page, 'Badly worded first message'); await idle(page);
+  await page.waitForFunction(() => /Reply one\./.test(document.getElementById('log').textContent), null, T);
+  await send(page, 'And a later one'); await idle(page);
+  await page.waitForFunction(() => /Reply two\./.test(document.getElementById('log').textContent), null, T);
+  assert.equal(await stored(), before.stored + 1, 'the first send made exactly one session');
+  assert.equal(await rows(), before.rows + 1);
+  const draftId = await page.evaluate(() => document.querySelector('#session-list li.session[aria-current="true"]')?.dataset.id);
+
+  // 7. Revert on the first message: back to empty, the text in the box, no session left behind.
+  await page.locator('#log .msg.user', { hasText: 'Badly worded' }).hover();
+  await page.locator('#log .msg.user', { hasText: 'Badly worded' }).locator('button[aria-label^="Revert to here"]').click();
+  await page.waitForFunction(() => /session is deleted with the 3 messages after it/.test(document.getElementById('sheet-body').textContent), null, T)
+    .catch(async (e) => { console.log('sheet:', await page.textContent('#sheet-body'), '| status:', await page.textContent('#status')); throw e; });
+  await page.click('#sheet-actions button.danger');
+  await page.waitForFunction(() => document.getElementById('input').value === 'Badly worded first message', null, T);
+  assert.equal(await stored(), before.stored, 'the reverted session is gone from storage');
+  assert.equal(await page.$(`#session-list li.session[data-id="${draftId}"]`), null, 'and from the sidebar');
+  assert.equal(await page.$('#log .msg'), null, 'the transcript is empty');
+  assert.equal(await page.textContent('#title'), 'New session');
+  await page.$eval('#new', (b) => b.click()); // New in the draft keeps it, and the text
+  assert.equal(await page.inputValue('#input'), 'Badly worded first message');
+  await rule(page, { who: 'main', when: '/Better worded/.test(c.since)', reply: 'Better reply.' });
+  await rule(page, { who: 'title', reply: 'Renamed again', sticky: false });
+  await send(page, 'Better worded first message'); await idle(page);
+  await page.waitForFunction(() => document.getElementById('title').textContent === 'Renamed again', null, T);
+  const fresh = await page.evaluate(() => JSON.stringify(window.fake.requests.main.at(-1).messages));
+  assert.doesNotMatch(fresh, /Badly worded|later one/, 'nothing of the reverted session reached the model');
+  assert.equal(await stored(), before.stored + 1);
+  ok('New is a draft: five clicks store nothing; first send makes one session; reverting its first message empties it, text back, no row left, named again');
+
+  // 8. Revert the first message, then leave: no empty session lingers.
+  await page.locator('#log .msg.user', { hasText: 'Better worded' }).hover();
+  await page.locator('#log .msg.user', { hasText: 'Better worded' }).locator('button[aria-label^="Revert to here"]').click();
+  await page.click('#sheet-actions button.danger');
+  await page.waitForFunction(() => document.getElementById('input').value.includes('Better worded'), null, T);
+  await page.$eval('#session-list li.session .s-open', (b) => b.click());
+  assert.equal(await stored(), before.stored);
+  assert.equal(await rows(), before.rows);
+  ok('revert of the first message, then leave: nothing stays behind');
 
   await page.screenshot({ path: join(shots, 'batchF-tray-terminal.png') });
   assert.deepEqual(errors, []);

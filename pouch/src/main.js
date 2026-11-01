@@ -2519,7 +2519,7 @@ async function revertTo(it) {
   if (it.type === 'user' && !it.steer && !it.watch && !it.from?.ref) {
     const at = view.items.indexOf(it);
     const before = view.items.slice(0, at).findLast((i) => i.entry && !i.streaming && (i.type === 'user' || i.text || i.error));
-    if (!before) return status('This is the first message, so there is nothing before it to revert to. Copy it into /new to start over.', 'bad');
+    if (!before) return revertFirst(it, at);
     return revertTo({ ...before, draft: it.text, draftAt: at });
   }
   const idx = view.items.findIndex((i) => i.cut === it.cut && i.entry === it.entry && i.type === it.type);
@@ -2540,6 +2540,25 @@ async function revertTo(it) {
     status(`Reverted to ${shortTime(it.at)}. Files were not changed.${it.draft != null ? ' Your message is back in the box.' : ''}`);
     if (it.draft != null) putBack(it.draft);
   }]], body);
+}
+// Before the first message there is nothing to keep: the session is deleted
+// and a blank session takes its place, with the message back in the box, so it is
+// named again by its next first turn and does not linger if you leave. No
+// branch is kept, so this one cannot be undone (the sheet says so).
+function revertFirst(it, at) {
+  const sid = sessions.current.id;
+  const later = view.items.slice(at + 1).filter((i) => i.type === 'user' || (i.type === 'assistant' && (i.text || i.error))).length;
+  const agents = (kids.get(String(sid)) ?? []).length;
+  const body = el('div', { className: 'revert-body' }, el('p', {
+    textContent: `Your message goes back into the box to edit and send again. This is the first message, so the session is deleted${later ? ` with the ${later} message${later > 1 ? 's' : ''} after it` : ''}${agents ? ' and its subagents' : ''}, and a new one starts when you send. Files stay as they are. This cannot be undone.`,
+  }));
+  sheet('Revert to before this message?', [['Revert', async () => {
+    if (busy()) return;
+    await sessions.remove(sid, false, { stay: true });
+    if (sessions.current) return; // the delete failed (another tab holds it): the status says why
+    status('Reverted to an empty session. Files were not changed. Your message is back in the box.');
+    putBack(it.text);
+  }, 'danger']], body);
 }
 
 async function undoRevert(sid) {
@@ -3230,11 +3249,11 @@ async function revertLast() {
   if (busy()) return status('Stop Pouch before reverting.', 'bad');
   const items = view?.items ?? [], u = items.findLastIndex((i) => i.type === 'user');
   const target = u < 0 ? null : items.slice(0, u).findLast((i) => i.entry && !i.streaming && (i.type === 'user' || i.text || i.error));
-  if (!target) return status(u < 0 ? 'Nothing to revert yet.' : 'The last turn is the first one; nothing earlier to revert to. Use /new for a fresh session.', 'bad');
-  return revertTo(target);
+  if (u < 0) return status('Nothing to revert yet.', 'bad');
+  return revertTo(target ?? items[u]); // the first turn: revert to empty (revertFirst)
 }
 const COMMANDS = [
-  { name: 'new', hint: 'Start a new session', run: () => sessions.create() },
+  { name: 'new', hint: 'Start a new session', run: () => sessions.blank() },
   { name: 'seed', hint: '<archive> stacks /work over a read-only .zip or .tar; /seed off removes it', run: async (arg) => {
     if (arg === 'off') { await vfs.unstack(); renderTree(); return status('Removed the seed layer; /work shows only your files.'); }
     if (!arg) return status(vfs.seedLayer ? `/work is stacked over ${vfs.seedLayer.name}. /seed off removes it.` : 'Give an archive: /seed /work/starter.zip', vfs.seedLayer ? '' : 'bad');

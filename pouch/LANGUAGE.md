@@ -90,6 +90,11 @@ reverted.
 threads. Sessions are the boundary for agent messages, joins and caps; they do not
 own files (the Workspace is shared).
 
+**Blank session.** Where New session (and `/new`) brings you: an empty transcript and
+the composer, with nothing stored and no sidebar row. The first send makes it a Session.
+Not a "draft", which is the composer's unsent text (a blank session can hold one).
+Reverting a session's first message also leaves a blank session.
+
 **Workspace.** The files Pouch works on. At most one per browser; Pouch starts with
 none, and Erase all returns to none. Shared by all sessions.
 
