@@ -1,0 +1,301 @@
+{
+  "phase": "restart-offline",
+  "at": "2026-10-29T07:16:01.707Z",
+  "browser": "156.0.8078.73",
+  "load": {
+    "load_ms": 776.9950000047684,
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+    "adapter": {
+      "vendor": "apple",
+      "architecture": "metal-3",
+      "description": ""
+    },
+    "features": [
+      "depth32float-stencil8",
+      "chromium-experimental-subgroup-matrix",
+      "rg11b10ufloat-renderable",
+      "bgra8unorm-storage",
+      "texture-formats-tier1",
+      "texture-compression-bc",
+      "dual-source-blending",
+      "core-features-and-limits",
+      "float32-filterable",
+      "indirect-first-instance",
+      "texture-compression-astc-sliced-3d",
+      "float32-blendable",
+      "atomic-vec2u-min-max",
+      "subgroup-size-control",
+      "texture-compression-unaligned",
+      "texture-compression-astc",
+      "texture-compression-etc2",
+      "depth-clip-control",
+      "texture-compression-bc-sliced-3d",
+      "clip-distances",
+      "timestamp-query",
+      "texture-formats-tier2",
+      "shader-f16",
+      "primitive-index",
+      "texture-component-swizzle",
+      "subgroups"
+    ],
+    "limits": {
+      "maxBufferSize": 4294967292,
+      "maxStorageBufferBindingSize": 4294967292
+    },
+    "ort": {
+      "common": "1.31.0-dev.20260911-2a43ec07e",
+      "web": "1.31.0-dev.20260914-8d85527a0"
+    },
+    "fetches": [
+      "http://127.0.0.1:8768/assets/runtime/ort-wasm-simd-threaded.asyncify.wasm",
+      "http://127.0.0.1:8768/assets/model/tokenizer.json",
+      "http://127.0.0.1:8768/assets/model/tokenizer_config.json"
+    ]
+  },
+  "generation": {
+    "text": "The capital of France is Paris.",
+    "stream_text": "The capital of France is Paris.<|im_end|>",
+    "input_tokens": 34,
+    "output_token_callbacks": 8,
+    "generation_ms": 138.20500001311302,
+    "ttft_ms": 65.38500002026558,
+    "decode_ms": 72.39499998092651,
+    "dispatches": 2633,
+    "submissions": 212,
+    "interrupted": false,
+    "prompt": "<|startoftext|><|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\nWhat is the capital of France? Answer in one sentence.<|im_end|>\n<|im_start|>assistant\n<think></think>"
+  },
+  "agent": {
+    "status": "final",
+    "duration_ms": 1148.1349999904633,
+    "trace": [
+      {
+        "text": "<tool_call>\n<function=read>\n<parameter=path>\nnote.txt\n</parameter>\n</function>\n</tool_call>",
+        "stream_text": "<tool_call>\n<function=read>\n<parameter=path>\nnote.txt\n</parameter>\n</function>\n</tool_call><|im_end|>",
+        "input_tokens": 386,
+        "output_token_callbacks": 17,
+        "generation_ms": 309.36500000953674,
+        "ttft_ms": 180.25999999046326,
+        "decode_ms": 127.90999999642372,
+        "dispatches": 5737,
+        "submissions": 458,
+        "interrupted": false,
+        "prompt": "<|startoftext|><|im_start|>system\nYou are a concise coding assistant inside a browser. Use read, write, edit and bash tools for real file operations in /work. Never claim an edit without using a tool. Read files before editing. Tool errors are feedback: inspect and retry. No network, real processes, code execution or package installs. Finish with a concise summary.\n\n<tools>\n{\"name\": \"read\", \"description\": \"Read a UTF-8 text file. Paths relative to /work.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"path\": {\"type\": \"string\"}}, \"required\": [\"path\"]}}\n{\"name\": \"write\", \"description\": \"Create or overwrite a file with exact content. Parents created.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"path\": {\"type\": \"string\"}, \"content\": {\"type\": \"string\"}}, \"required\": [\"path\", \"content\"]}}\n{\"name\": \"edit\", \"description\": \"Replace exact oldText with newText. oldText must match exactly once. Read first, include neighboring lines if ambiguous.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"path\": {\"type\": \"string\"}, \"oldText\": {\"type\": \"string\"}, \"newText\": {\"type\": \"string\"}}, \"required\": [\"path\", \"oldText\", \"newText\"]}}\n{\"name\": \"bash\", \"description\": \"Simulated bash over synthetic /work only. ls, find, cat, grep, sed, printf. No network, node, python or processes.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"command\": {\"type\": \"string\"}}, \"required\": [\"command\"]}}\n</tools><|im_end|>\n<|im_start|>user\nRead note.txt and change exactly red to blue, preserving the newline. Use edit. Change nothing else.<|im_end|>\n<|im_start|>assistant\n<think></think>",
+        "calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "read",
+              "arguments": {
+                "path": "note.txt"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "call": {
+          "type": "function",
+          "function": {
+            "name": "read",
+            "arguments": {
+              "path": "note.txt"
+            }
+          }
+        },
+        "result": "red\n"
+      },
+      {
+        "text": "<tool_call>\n<function=edit>\n<parameter=path>\nnote.txt\n</parameter>\n<parameter=oldText>\nred\n</parameter>\n<parameter=newText>\nblue\n</parameter>\n</function>\n</tool_call>",
+        "stream_text": "<tool_call>\n<function=edit>\n<parameter=path>\nnote.txt\n</parameter>\n<parameter=oldText>\nred\n</parameter>\n<parameter=newText>\nblue\n</parameter>\n</function>\n</tool_call><|im_end|>",
+        "input_tokens": 419,
+        "output_token_callbacks": 33,
+        "generation_ms": 460.55000001192093,
+        "ttft_ms": 190.4399999976158,
+        "decode_ms": 268.97999998927116,
+        "dispatches": 11033,
+        "submissions": 858,
+        "interrupted": false,
+        "prompt": "<|startoftext|><|im_start|>system\nYou are a concise coding assistant inside a browser. Use read, write, edit and bash tools for real file operations in /work. Never claim an edit without using a tool. Read files before editing. Tool errors are feedback: inspect and retry. No network, real processes, code execution or package installs. Finish with a concise summary.\n\n<tools>\n{\"name\": \"read\", \"description\": \"Read a UTF-8 text file. Paths relative to /work.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"path\": {\"type\": \"string\"}}, \"required\": [\"path\"]}}\n{\"name\": \"write\", \"description\": \"Create or overwrite a file with exact content. Parents created.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"path\": {\"type\": \"string\"}, \"content\": {\"type\": \"string\"}}, \"required\": [\"path\", \"content\"]}}\n{\"name\": \"edit\", \"description\": \"Replace exact oldText with newText. oldText must match exactly once. Read first, include neighboring lines if ambiguous.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"path\": {\"type\": \"string\"}, \"oldText\": {\"type\": \"string\"}, \"newText\": {\"type\": \"string\"}}, \"required\": [\"path\", \"oldText\", \"newText\"]}}\n{\"name\": \"bash\", \"description\": \"Simulated bash over synthetic /work only. ls, find, cat, grep, sed, printf. No network, node, python or processes.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"command\": {\"type\": \"string\"}}, \"required\": [\"command\"]}}\n</tools><|im_end|>\n<|im_start|>user\nRead note.txt and change exactly red to blue, preserving the newline. Use edit. Change nothing else.<|im_end|>\n<|im_start|>assistant\n<think></think><tool_call>\n<function=read>\n<parameter=path>\nnote.txt\n</parameter>\n</function>\n</tool_call><|im_end|>\n<|im_start|>tool\n<tool_response>\nred\n\n</tool_response><|im_end|>\n<|im_start|>assistant\n<think></think>",
+        "calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "edit",
+              "arguments": {
+                "path": "note.txt",
+                "oldText": "red",
+                "newText": "blue"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "call": {
+          "type": "function",
+          "function": {
+            "name": "edit",
+            "arguments": {
+              "path": "note.txt",
+              "oldText": "red",
+              "newText": "blue"
+            }
+          }
+        },
+        "result": "Applied 1 edit to /work/note.txt\nblue\n"
+      },
+      {
+        "text": "Done. `note.txt` now contains `blue` (with its newline preserved); nothing else was changed.",
+        "stream_text": "Done. `note.txt` now contains `blue` (with its newline preserved); nothing else was changed.<|im_end|>",
+        "input_tokens": 480,
+        "output_token_callbacks": 23,
+        "generation_ms": 373.55000001192093,
+        "ttft_ms": 202.0300000011921,
+        "decode_ms": 170.37999999523163,
+        "dispatches": 7723,
+        "submissions": 608,
+        "interrupted": false,
+        "prompt": "<|startoftext|><|im_start|>system\nYou are a concise coding assistant inside a browser. Use read, write, edit and bash tools for real file operations in /work. Never claim an edit without using a tool. Read files before editing. Tool errors are feedback: inspect and retry. No network, real processes, code execution or package installs. Finish with a concise summary.\n\n<tools>\n{\"name\": \"read\", \"description\": \"Read a UTF-8 text file. Paths relative to /work.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"path\": {\"type\": \"string\"}}, \"required\": [\"path\"]}}\n{\"name\": \"write\", \"description\": \"Create or overwrite a file with exact content. Parents created.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"path\": {\"type\": \"string\"}, \"content\": {\"type\": \"string\"}}, \"required\": [\"path\", \"content\"]}}\n{\"name\": \"edit\", \"description\": \"Replace exact oldText with newText. oldText must match exactly once. Read first, include neighboring lines if ambiguous.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"path\": {\"type\": \"string\"}, \"oldText\": {\"type\": \"string\"}, \"newText\": {\"type\": \"string\"}}, \"required\": [\"path\", \"oldText\", \"newText\"]}}\n{\"name\": \"bash\", \"description\": \"Simulated bash over synthetic /work only. ls, find, cat, grep, sed, printf. No network, node, python or processes.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"command\": {\"type\": \"string\"}}, \"required\": [\"command\"]}}\n</tools><|im_end|>\n<|im_start|>user\nRead note.txt and change exactly red to blue, preserving the newline. Use edit. Change nothing else.<|im_end|>\n<|im_start|>assistant\n<think></think><tool_call>\n<function=read>\n<parameter=path>\nnote.txt\n</parameter>\n</function>\n</tool_call><|im_end|>\n<|im_start|>tool\n<tool_response>\nred\n\n</tool_response><|im_end|>\n<|im_start|>assistant\n<think></think><tool_call>\n<function=edit>\n<parameter=path>\nnote.txt\n</parameter>\n<parameter=oldText>\nred\n</parameter>\n<parameter=newText>\nblue\n</parameter>\n</function>\n</tool_call><|im_end|>\n<|im_start|>tool\n<tool_response>\nApplied 1 edit to /work/note.txt\nblue\n\n</tool_response><|im_end|>\n<|im_start|>assistant\n<think></think>",
+        "calls": []
+      }
+    ],
+    "files": {
+      "/work/note.txt": "blue\n"
+    },
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a concise coding assistant inside a browser. Use read, write, edit and bash tools for real file operations in /work. Never claim an edit without using a tool. Read files before editing. Tool errors are feedback: inspect and retry. No network, real processes, code execution or package installs. Finish with a concise summary."
+      },
+      {
+        "role": "user",
+        "content": "Read note.txt and change exactly red to blue, preserving the newline. Use edit. Change nothing else."
+      },
+      {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "read",
+              "arguments": {
+                "path": "note.txt"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": "red\n"
+      },
+      {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "edit",
+              "arguments": {
+                "path": "note.txt",
+                "oldText": "red",
+                "newText": "blue"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": "Applied 1 edit to /work/note.txt\nblue\n"
+      },
+      {
+        "role": "assistant",
+        "content": "Done. `note.txt` now contains `blue` (with its newline preserved); nothing else was changed."
+      }
+    ]
+  },
+  "agentPass": true,
+  "externalAttempts": [],
+  "inventory": {
+    "fetches": [
+      "http://127.0.0.1:8768/assets/runtime/ort-wasm-simd-threaded.asyncify.wasm",
+      "http://127.0.0.1:8768/assets/model/tokenizer.json",
+      "http://127.0.0.1:8768/assets/model/tokenizer_config.json"
+    ],
+    "estimate": {
+      "quota": 12968301483,
+      "usage": 2230883243,
+      "usageDetails": {
+        "caches": 2230882816,
+        "serviceWorkerRegistrations": 427
+      }
+    },
+    "persisted": false,
+    "caches": [
+      "transformers-cache",
+      "lfm3-qualification-v1"
+    ],
+    "indexedDB": [],
+    "template": "{{- bos_token -}}\n{%- set preserve_thinking = preserve_thinking | default(false) -%}\n{%- set enable_thinking = enable_thinking | default(true) -%}\n\n{%- macro render_value(v) -%}\n    {%- if v is string -%}\n        {{- v -}}\n    {%- elif v is boolean -%}\n        {{- \"true\" if v else \"false\" -}}\n    {%- elif v is none -%}\n        {{- \"null\" -}}\n    {%- elif v is mapping or (v is sequence and v is not string) -%}\n        {{- v | tojson -}}\n    {%- else -%}\n        {{- v -}}\n    {%- endif -%}\n{%- endmacro -%}\n\n{%- macro parse_content(content) -%}\n    {%- if content is string -%}\n        {{- content -}}\n    {%- elif content is mapping and content.get(\"type\") == \"image\" -%}\n        {{- \"<|vision_start|><|image|><|vision_end|>\" -}}\n    {%- elif content is mapping and content.get(\"type\") == \"video\" -%}\n        {{- \"<|vision_start|><|video|><|vision_end|>\" -}}\n    {%- elif content is mapping and content.get(\"type\") == \"text\" -%}\n        {{- (content.get(\"text\") or \"\") | string -}}\n    {%- elif content is mapping -%}\n        {{- content | tojson -}}\n    {%- elif content is iterable -%}\n        {%- set _ns = namespace(result=\"\") -%}\n        {%- for item in content -%}\n            {%- if item is string -%}\n                {%- set _ns.result = _ns.result + item -%}\n            {%- elif item is mapping and item.get(\"type\") == \"image\" -%}\n                {%- set _ns.result = _ns.result + \"<|vision_start|><|image|><|vision_end|>\" -%}\n            {%- elif item is mapping and item.get(\"type\") == \"video\" -%}\n                {%- set _ns.result = _ns.result + \"<|vision_start|><|video|><|vision_end|>\" -%}\n            {%- elif item is mapping and item.get(\"type\") == \"text\" -%}\n                {%- set _ns.result = _ns.result + ((item.get(\"text\") or \"\") | string) -%}\n            {%- else -%}\n                {%- set _ns.result = _ns.result + (item | tojson) -%}\n            {%- endif -%}\n        {%- endfor -%}\n        {{- _ns.result -}}\n    {%- elif content is not none -%}\n        {{- content | tojson -}}\n    {%- endif -%}\n{%- endmacro -%}\n\n{%- macro render_tool_calls(tool_calls) -%}\n    {%- for tool_call in tool_calls -%}\n        {%- if not loop.first -%}{{- \"\\n\\n\" -}}{%- endif -%}\n        {%- set func = tool_call[\"function\"] if \"function\" in tool_call else tool_call -%}\n        {%- set func_args = func.get(\"arguments\") -%}\n        {%- if func_args is string and (func_args | trim) not in [\"\", \"{}\", \"null\"] -%}\n            {{- raise_exception(\"Tool call arguments must be a mapping, got a JSON-encoded string: parse arguments with json.loads() before applying the chat template\") -}}\n        {%- endif -%}\n        {{- \"<tool_call>\\n<function=\" + func[\"name\"] + \">\\n\" -}}\n        {%- if func_args is mapping -%}\n            {%- for arg_name, arg_value in func_args.items() -%}\n                {{- \"<parameter=\" + arg_name + \">\\n\" + render_value(arg_value) + \"\\n</parameter>\\n\" -}}\n            {%- endfor -%}\n        {%- endif -%}\n        {{- \"</function>\\n</tool_call>\" -}}\n    {%- endfor -%}\n{%- endmacro -%}\n\n{%- macro tool_to_json(tool) -%}\n    {%- set fn = tool.function if tool.function is defined else tool -%}\n    {%- set ns_t = namespace(first=true) -%}\n    {{- \"{\" -}}\n    {%- for k, v in fn.items() -%}\n        {%- if k != \"defer_loading\" -%}\n            {%- if not ns_t.first -%}{{- \", \" -}}{%- endif -%}\n            {%- set ns_t.first = false -%}\n            {{- k | tojson -}}{{- \": \" -}}{{- v | tojson -}}\n        {%- endif -%}\n    {%- endfor -%}\n    {{- \"}\" -}}\n{%- endmacro -%}\n\n{%- macro is_tool_reference(item) -%}\n    {{- \"1\" if item is mapping and item.get(\"type\") == \"tool_reference\" else \"\" -}}\n{%- endmacro -%}\n\n{%- macro referenced_tool_to_json(name) -%}\n    {%- set _ns = namespace(found=none) -%}\n    {%- for tool in tools or [] -%}\n        {%- set fn = tool.function if tool.function is defined else tool -%}\n        {%- if fn.name == name -%}\n            {%- set _ns.found = fn -%}\n        {%- endif -%}\n    {%- endfor -%}\n    {%- if _ns.found is none -%}\n        {{- raise_exception(\"Tool reference '\" + name | string + \"' not found in available tools. Every tool referenced by a tool_reference must be in `tools` on every request.\") -}}\n    {%- endif -%}\n    {{- tool_to_json(_ns.found) -}}\n{%- endmacro -%}\n\n{%- macro render_tool_response(content) -%}\n    {%- if content is string and \"<tool_response>\" in content -%}\n        {{- content -}}\n    {%- else -%}\n    {{- \"<tool_response>\\n\" -}}\n    {%- if content is string -%}\n        {{- content -}}\n    {%- elif content is mapping -%}\n        {{- parse_content(content) -}}\n    {%- elif content is iterable -%}\n        {%- for item in content -%}\n            {%- if not loop.first -%}{{- \"\\n\" -}}{%- endif -%}\n            {%- if is_tool_reference(item) -%}\n                {%- if loop.first or not is_tool_reference(loop.previtem) -%}\n                    {{- \"<additional_tools>\\n\" -}}\n                {%- endif -%}\n                {{- referenced_tool_to_json(item.name) -}}\n                {%- if loop.last or not is_tool_reference(loop.nextitem) -%}\n                    {{- \"\\n</additional_tools>\" -}}\n                {%- endif -%}\n            {%- elif item is mapping and item.result is defined and item.result is mapping and item.result.tools is defined -%}\n                {{- \"<additional_tools>\\n\" -}}\n                {%- set _tl = item.result.tools -%}\n                {%- if _tl is string -%}\n                    {{- _tl -}}\n                {%- elif _tl is mapping -%}\n                    {{- tool_to_json(_tl) -}}\n                {%- else -%}\n                    {%- for t in _tl -%}\n                        {%- if not loop.first -%}{{- \"\\n\" -}}{%- endif -%}\n                        {{- tool_to_json(t) -}}\n                    {%- endfor -%}\n                {%- endif -%}\n                {{- \"\\n</additional_tools>\" -}}\n            {%- else -%}\n                {{- parse_content(item) -}}\n            {%- endif -%}\n        {%- endfor -%}\n    {%- elif content is not none -%}\n        {{- content | tojson -}}\n    {%- endif -%}\n    {{- \"\\n</tool_response>\" -}}\n    {%- endif -%}\n{%- endmacro -%}\n\n{%- set ns = namespace(system_prompt=\"\", last_user_index=-1) -%}\n{%- if messages and messages[0][\"role\"] == \"system\" -%}\n    {%- if messages[0].get(\"content\") -%}\n        {%- set ns.system_prompt = parse_content(messages[0][\"content\"]) -%}\n    {%- endif -%}\n    {%- set messages = messages[1:] -%}\n{%- endif -%}\n{%- if tools -%}\n    {%- set tools_ns = namespace(lines=[]) -%}\n    {%- for tool in tools -%}\n        {%- set fn = tool.function if tool.function is defined else tool -%}\n        {%- set _dyn = (fn.defer_loading is defined and fn.defer_loading) or (tool.defer_loading is defined and tool.defer_loading) -%}\n        {%- if not _dyn -%}\n            {%- set tools_ns.lines = tools_ns.lines + [tool_to_json(fn)] -%}\n        {%- endif -%}\n    {%- endfor -%}\n    {%- if tools_ns.lines -%}\n        {%- set ns.system_prompt = ns.system_prompt + (\"\\n\\n\" if ns.system_prompt else \"\") + \"<tools>\\n\" + (tools_ns.lines | join(\"\\n\")) + \"\\n</tools>\" -%}\n    {%- endif -%}\n{%- endif -%}\n{%- if ns.system_prompt -%}\n    {{- \"<|im_start|>system\\n\" + ns.system_prompt + \"<|im_end|>\\n\" -}}\n{%- endif -%}\n{%- for message in messages -%}\n    {%- if message[\"role\"] == \"user\" -%}\n        {%- set ns.last_user_index = loop.index0 -%}\n    {%- endif -%}\n{%- endfor -%}\n{%- set carry = namespace(pending=[]) -%}\n{%- for message in messages -%}\n    {%- set _next = messages[loop.index0 + 1] if not loop.last else none -%}\n    {%- set _merge = message.role == \"tool\" and not message.get(\"additional_tools\")\n        and _next is not none and _next.role == \"tool\" and not _next.get(\"additional_tools\")\n        and message.get(\"tool_call_id\") and _next.get(\"tool_call_id\") == message.get(\"tool_call_id\") -%}\n    {%- set _items = [] -%}\n    {%- if message.role == \"tool\" and not message.get(\"additional_tools\") -%}\n        {%- set _c = message.get(\"content\") -%}\n        {%- if _c is string -%}\n            {%- set _items = [{\"type\": \"text\", \"text\": _c}] if _c else [] -%}\n        {%- elif _c is mapping -%}\n            {%- set _items = [_c] -%}\n        {%- elif _c is iterable -%}\n            {%- set _items = _c | list -%}\n        {%- elif _c is not none -%}\n            {%- set _items = [_c] -%}\n        {%- endif -%}\n    {%- endif -%}\n    {%- if _merge -%}\n        {%- set carry.pending = carry.pending + _items -%}\n    {%- else -%}\n    {{- \"<|im_start|>\" + message.role + \"\\n\" -}}\n    {%- if message.role == \"assistant\" -%}\n        {%- generation -%}\n        {%- set thinking = message.thinking if message.thinking is defined else message.reasoning if message.reasoning is defined else message.reasoning_content -%}\n        {%- set keep_thinking = preserve_thinking or loop.index0 > ns.last_user_index -%}\n        {%- if thinking is defined and keep_thinking -%}\n            {{- \"<think>\" + (thinking or \"\") + \"</think>\" -}}\n        {%- elif keep_thinking and \"</think>\" not in (message.get(\"content\") if message.get(\"content\") is string else \"\") -%}\n            {{- \"<think></think>\" -}}\n        {%- endif -%}\n        {%- set _cfm_tag = \"CONTINUE_FINAL_MESSAGE_TAG \" -%}\n        {%- set _has_cfm = false -%}\n        {%- set content = \"\" -%}\n        {%- if message.get(\"content\") -%}\n            {%- set content = parse_content(message.content) -%}\n        {%- endif -%}\n        {%- if not keep_thinking -%}\n            {%- if \"</think>\" in content -%}\n                {%- set content = content.split(\"</think>\")[-1] | trim -%}\n            {%- endif -%}\n            {%- set content = \"<think></think>\" + content -%}\n        {%- endif -%}\n        {%- if content.endswith(_cfm_tag) -%}\n            {%- set _has_cfm = true -%}\n            {%- set _trunc_len = (content | length) - (_cfm_tag | length) -%}\n            {%- set content = content[:_trunc_len] -%}\n        {%- endif -%}\n        {{- content -}}\n        {%- if message.tool_calls -%}\n            {{- render_tool_calls(message.tool_calls) -}}\n        {%- endif -%}\n        {%- if _has_cfm -%}\n            {{- _cfm_tag -}}\n        {%- endif -%}\n        {{- \"<|im_end|>\\n\" -}}\n        {%- endgeneration -%}\n    {%- elif message.role == \"tool\" -%}\n        {%- if message.get(\"additional_tools\") -%}\n            {%- set _at = message[\"additional_tools\"] -%}\n            {%- if _at is mapping or (_at is sequence and _at is not string) -%}\n                {%- set _src = _at -%}\n            {%- else -%}\n                {%- set _src = message.get(\"content\") -%}\n            {%- endif -%}\n            {%- if _src is string and \"<tool_response>\" in _src -%}\n                {{- _src -}}\n            {%- elif _src is string and \"<additional_tools>\" in _src -%}\n                {{- \"<tool_response>\\n\" + _src + \"\\n</tool_response>\" -}}\n            {%- elif _src -%}\n                {{- \"<tool_response>\\n<additional_tools>\\n\" -}}\n                {%- if _src is string -%}\n                    {{- _src -}}\n                {%- elif _src is mapping -%}\n                    {{- tool_to_json(_src) -}}\n                {%- else -%}\n                    {%- for t in _src -%}\n                        {%- if not loop.first -%}{{- \"\\n\" -}}{%- endif -%}\n                        {{- tool_to_json(t) -}}\n                    {%- endfor -%}\n                {%- endif -%}\n                {{- \"\\n</additional_tools>\\n</tool_response>\" -}}\n            {%- endif -%}\n        {%- elif carry.pending -%}\n            {{- render_tool_response(carry.pending + _items) -}}\n            {%- set carry.pending = [] -%}\n        {%- else -%}\n            {{- render_tool_response(\"\" if message.get(\"content\") is none else message.get(\"content\")) -}}\n        {%- endif -%}\n        {{- \"<|im_end|>\\n\" -}}\n    {%- else %}\n        {%- if message.get(\"content\") -%}\n            {{- parse_content(message[\"content\"]) -}}\n        {%- endif -%}\n        {{- \"<|im_end|>\\n\" -}}\n    {%- endif %}\n    {%- endif -%}\n{%- endfor -%}\n{%- if add_generation_prompt -%}\n    {{- \"<|im_start|>assistant\\n\" -}}\n    {%- if enable_thinking -%}\n        {{- \"<think>\" -}}\n    {%- else -%}\n        {{- \"<think></think>\" -}}\n    {%- endif -%}\n{%- endif -%}\n"
+  },
+  "csp": [],
+  "network": [
+    {
+      "url": "http://127.0.0.1:8768/",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/app.js",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/worker.js",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/favicon.ico",
+      "method": "GET",
+      "serviceWorker": true
+    },
+    {
+      "url": "http://127.0.0.1:8768/assets/runtime/transformers.js",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/tools.bundle.js",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/assets/runtime/ort-wasm-simd-threaded.asyncify.mjs",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/assets/runtime/ort-wasm-simd-threaded.asyncify.wasm",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/assets/model/tokenizer.json",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8768/assets/model/tokenizer_config.json",
+      "method": "GET",
+      "serviceWorker": false
+    }
+  ],
+  "errors": [
+    "Failed to load resource: the server responded with a status of 404 (File not found)"
+  ]
+}

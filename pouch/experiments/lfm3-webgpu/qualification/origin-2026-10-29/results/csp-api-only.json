@@ -1,0 +1,43 @@
+{
+  "phase": "csp-api-only",
+  "at": "2026-10-29T07:18:45.043Z",
+  "browser": "156.0.8078.73",
+  "responseCSP": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src https://api.bayleaf.dev; style-src 'self'; img-src 'self'; base-uri 'none'; object-src 'none'",
+  "expectedConnectSrcFailure": "Error: page.evaluate: Error: ModelFileNotFoundError: `local_files_only=true` or `env.allowRemoteModels=false` and file was not found locally at \"http://127.0.0.1:8769/assets/model/config.json\".\nModelFileNotFoundError: `local_files_only=true` or `env.allowRemoteModels=false` and file was not found locally at \"http://127.0.0.1:8769/assets/model/config.json\".\n    at loadResourceFile (http://127.0.0.1:8769/assets/runtime/transformers.js:7556:17)\n    at async getModelFile (http://127.0.0.1:8769/assets/runtime/transformers.js:7705:10)\n    at async getModelText (http://127.0.0.1:8769/assets/runtime/transformers.js:7708:18)\n    at async getModelJSON (http://127.0.0.1:8769/assets/runtime/transformers.js:7719:16)\n    at async loadConfig (http://127.0.0.1:8769/assets/runtime/transformers.js:23986:10)\n    at async _PretrainedConfig.from_pretrained (http://127.0.0.1:8769/assets/runtime/transformers.js:24439:28)\n    at async get_model_files (http://127.0.0.1:8769/assets/runtime/transformers.js:26271:12)\n    at async get_files (http://127.0.0.1:8769/assets/runtime/transformers.js:35471:17)\n    at async get_pipeline_files (http://127.0.0.1:8769/assets/runtime/transformers.js:35495:17)\n    at async pipeline2 (http://127.0.0.1:8769/assets/runtime/transformers.js:35538:26)\n    at loadResourceFile (http://127.0.0.1:8769/assets/runtime/transformers.js:7556:17)\n    at async getModelFile (http://127.0.0.1:8769/assets/runtime/transformers.js:7705:10)\n    at async getModelText (http://127.0.0.1:8769/assets/runtime/transformers.js:7708:18)\n    at async getModelJSON (http://127.0.0.1:8769/assets/runtime/transformers.js:7719:16)\n    at async loadConfig (http://127.0.0.1:8769/assets/runtime/transformers.js:23986:10)\n    at async _PretrainedConfig.from_pretrained (http://127.0.0.1:8769/assets/runtime/transformers.js:24439:28)\n    at async get_model_files (http://127.0.0.1:8769/assets/runtime/transformers.js:26271:12)\n    at async get_files (http://127.0.0.1:8769/assets/runtime/transformers.js:35471:17)\n    at async get_pipeline_files (http://127.0.0.1:8769/assets/runtime/transformers.js:35495:17)\n    at async pipeline2 (http://127.0.0.1:8769/assets/runtime/transformers.js:35538:26)\n    at worker.onmessage (http://127.0.0.1:8769/app.js:4:216)",
+  "workerCSP": [
+    {
+      "directive": "connect-src",
+      "blocked": "http://127.0.0.1:8769/assets/model/config.json"
+    }
+  ],
+  "network": [
+    {
+      "url": "http://127.0.0.1:8769/",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8769/app.js",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8769/worker.js",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8769/assets/runtime/transformers.js",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8769/tools.bundle.js",
+      "method": "GET",
+      "serviceWorker": false
+    }
+  ],
+  "errors": [
+    "Failed to load resource: the server responded with a status of 404 (File not found)"
+  ]
+}

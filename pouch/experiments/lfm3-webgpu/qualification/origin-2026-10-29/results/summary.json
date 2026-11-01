@@ -1,0 +1,500 @@
+{
+  "generated_at": "2026-10-29T07:24:03.057Z",
+  "hardware": {
+    "cpu": "Apple M3 Max",
+    "physical_memory_bytes": 68719476736,
+    "source": "sysctl -n machdep.cpu.brand_string hw.memsize"
+  },
+  "boundary": {
+    "inference": "browser WebGPU only",
+    "modelAssets": "downloaded public assets served on loopback",
+    "remoteFallback": false,
+    "fixtureOnly": true,
+    "mobileHardwareTested": false,
+    "profilePersistenceGranted": false
+  },
+  "gates": {
+    "localGeneration": "pass",
+    "boundedTools": "partial",
+    "exactMultiFileBytes": "fail",
+    "offlineReload": "pass",
+    "offlineBrowserRestart": "pass",
+    "coldOfflineNegativeControl": "pass",
+    "multiTurn": "partial",
+    "resourceCharacterization": "partial",
+    "strictSameOriginCSP": "pass",
+    "unchangedAPIOnlyConnectCSP": "fail",
+    "mobile": "untested"
+  },
+  "assets": {
+    "count": 11,
+    "total_bytes": 1134290334,
+    "revision": "ab9fec4c681a25bec3b48b0b97a62fc2660a2985",
+    "ort": "1.31.0-dev.20260914-8d85527a0",
+    "hosts": [
+      "cdn.jsdelivr.net",
+      "huggingface.co",
+      "us.aws.cdn.hf.co"
+    ]
+  },
+  "baseline": {
+    "browser": "156.0.8078.73",
+    "adapter": {
+      "vendor": "apple",
+      "architecture": "metal-3",
+      "description": ""
+    },
+    "load_ms": 1646.875,
+    "generation": {
+      "input_tokens": 34,
+      "output_token_callbacks": 8,
+      "generation_ms": 167.6850000023842,
+      "ttft_ms": 91.25499999523163,
+      "decode_tokens_per_second": 92.15983146325465,
+      "dispatches": 2633,
+      "submissions": 212,
+      "interrupted": false
+    }
+  },
+  "tasks": {
+    "tree": {
+      "pass": 3,
+      "trials": 3,
+      "durations_ms": [
+        4372.715000003576,
+        4383.860000014305,
+        4606.300000011921
+      ],
+      "model_rounds": [
+        4,
+        4,
+        4
+      ],
+      "tool_calls": [
+        5,
+        5,
+        5
+      ],
+      "input_tokens": [
+        [
+          398,
+          459,
+          607,
+          646
+        ],
+        [
+          398,
+          459,
+          607,
+          646
+        ],
+        [
+          398,
+          459,
+          607,
+          646
+        ]
+      ],
+      "output_token_callbacks": [
+        395,
+        395,
+        395
+      ]
+    },
+    "edit": {
+      "pass": 3,
+      "trials": 3,
+      "durations_ms": [
+        1528.8850000202656,
+        1531.0900000035763,
+        1526.7999999821186
+      ],
+      "model_rounds": [
+        3,
+        3,
+        3
+      ],
+      "tool_calls": [
+        2,
+        2,
+        2
+      ],
+      "input_tokens": [
+        [
+          390,
+          448,
+          555
+        ],
+        [
+          390,
+          448,
+          555
+        ],
+        [
+          390,
+          448,
+          555
+        ]
+      ],
+      "output_token_callbacks": [
+        103,
+        103,
+        103
+      ]
+    },
+    "feature": {
+      "pass": 0,
+      "trials": 3,
+      "durations_ms": [
+        3019.2100000083447,
+        2934.6949999928474,
+        2973.485000014305
+      ],
+      "model_rounds": [
+        3,
+        3,
+        3
+      ],
+      "tool_calls": [
+        5,
+        5,
+        5
+      ],
+      "input_tokens": [
+        [
+          426,
+          519,
+          765
+        ],
+        [
+          426,
+          519,
+          765
+        ],
+        [
+          426,
+          519,
+          765
+        ]
+      ],
+      "output_token_callbacks": [
+        248,
+        248,
+        248
+      ]
+    },
+    "missing": {
+      "pass": 3,
+      "trials": 3,
+      "durations_ms": [
+        2233.645000010729,
+        2199.149999976158,
+        2211.5399999916553
+      ],
+      "model_rounds": [
+        4,
+        4,
+        4
+      ],
+      "tool_calls": [
+        3,
+        3,
+        3
+      ],
+      "input_tokens": [
+        [
+          448,
+          509,
+          569,
+          678
+        ],
+        [
+          448,
+          509,
+          569,
+          678
+        ],
+        [
+          448,
+          509,
+          569,
+          678
+        ]
+      ],
+      "output_token_callbacks": [
+        139,
+        139,
+        139
+      ]
+    },
+    "ambiguous": {
+      "pass": 3,
+      "trials": 3,
+      "durations_ms": [
+        1645.030000001192,
+        1635.7899999916553,
+        1646.844999998808
+      ],
+      "model_rounds": [
+        3,
+        3,
+        3
+      ],
+      "tool_calls": [
+        2,
+        2,
+        2
+      ],
+      "input_tokens": [
+        [
+          478,
+          523,
+          606
+        ],
+        [
+          478,
+          523,
+          606
+        ],
+        [
+          478,
+          523,
+          606
+        ]
+      ],
+      "output_token_callbacks": [
+        105,
+        105,
+        105
+      ]
+    }
+  },
+  "offline": {
+    "reload_load_ms": 783.7100000083447,
+    "restart_load_ms": 776.9950000047684,
+    "reload_tool_pass": true,
+    "restart_tool_pass": true,
+    "external_attempts": [],
+    "storage": {
+      "quota": 12968301483,
+      "usage": 2230883243,
+      "usageDetails": {
+        "caches": 2230882816,
+        "serviceWorkerRegistrations": 427
+      }
+    },
+    "caches": [
+      "transformers-cache",
+      "lfm3-qualification-v1"
+    ],
+    "indexedDB": [],
+    "persisted": false
+  },
+  "resources": {
+    "load_ms": 820.0699999928474,
+    "turns": [
+      {
+        "turn": 1,
+        "status": "final",
+        "duration_ms": 643.705000013113,
+        "inputs": [
+          383,
+          428
+        ],
+        "final": "Project name: **Lantern**. Color: **violet**."
+      },
+      {
+        "turn": 2,
+        "status": "final",
+        "duration_ms": 985.4600000083447,
+        "inputs": [
+          472,
+          549
+        ],
+        "final": "Done. `facts.txt` now reads:\n\n```\nproject=Lantern\ncolor=violet\ncount=1\n```\n\nAll other content preserved."
+      },
+      {
+        "turn": 3,
+        "status": "final",
+        "duration_ms": 687.5349999964237,
+        "inputs": [
+          608
+        ],
+        "final": "You asked me to remember the project name and color from `facts.txt`. I read it earlier and found:\n\n- **Project name:** Lantern\n- **Color:** violet\n\nSo I recall **Lantern** and **violet** for this conversation."
+      },
+      {
+        "turn": 4,
+        "status": "final",
+        "duration_ms": 1827.6049999892712,
+        "inputs": [
+          685,
+          747,
+          798
+        ],
+        "final": "Created `/work/marker.txt` with exactly `READY` followed by a newline."
+      },
+      {
+        "turn": 5,
+        "status": "final",
+        "duration_ms": 1345.405000001192,
+        "inputs": [
+          846,
+          923
+        ],
+        "final": "Done. `facts.txt` now reads:\n\n```\nproject=Lantern\ncolor=violet\ncount=2\n```\n\nAll other content preserved."
+      },
+      {
+        "turn": 6,
+        "status": "final",
+        "duration_ms": 992.7549999952316,
+        "inputs": [
+          978
+        ],
+        "final": "From earlier: `marker.txt` contains exactly `READY` followed by a newline. The original color (from `facts.txt`) was **violet**.</think>- `marker.txt` contains: `READY` (and a newline after it).\n- The original color (from `facts.txt`) was **violet**."
+      },
+      {
+        "turn": 7,
+        "status": "final",
+        "duration_ms": 1522.0799999833107,
+        "inputs": [
+          1040,
+          1094
+        ],
+        "final": "`marker.txt` now contains:\n\n```\nREADY\nDONE\n```\n\n(The file still starts with `READY` and ends with `DONE`, each followed by a newline.)"
+      },
+      {
+        "turn": 8,
+        "status": "final",
+        "duration_ms": 1689.1800000071526,
+        "inputs": [
+          1163,
+          1240
+        ],
+        "final": "Done. `facts.txt` now reads:\n\n```\nproject=Lantern\ncolor=amber\ncount=2\n```\n\nAll other content preserved."
+      },
+      {
+        "turn": 9,
+        "status": "final",
+        "duration_ms": 872.4749999940395,
+        "inputs": [
+          1297
+        ],
+        "final": "- Original color: **violet**\n- Current color: **amber**\n- Project name: **Lantern**\n- Count: **2**"
+      },
+      {
+        "turn": 10,
+        "status": "final",
+        "duration_ms": 1475.469999998808,
+        "inputs": [
+          1357
+        ],
+        "final": "`facts.txt` contains `project=Lantern`, `color=amber`, `count=2`; `marker.txt` contains `READY` on the first line and `DONE` on the second line.</think>`facts.txt` shows project **Lantern**, color **amber**, count **2**; `marker.txt` has `READY` followed by `DONE` (each on its own line)."
+      }
+    ],
+    "finalBytesPass": false,
+    "finalFiles": {
+      "/work/facts.txt": "project=Lantern\ncolor=amber\ncount=2\n",
+      "/work/marker.txt": "READY\nDONE"
+    },
+    "sustained": [
+      {
+        "input_tokens": 49,
+        "output_token_callbacks": 384,
+        "generation_ms": 3173.2699999809265,
+        "ttft_ms": 44.804999977350235,
+        "decode_tokens_per_second": 122.44539111345071,
+        "dispatches": 124089,
+        "submissions": 9425,
+        "interrupted": false
+      },
+      {
+        "input_tokens": 49,
+        "output_token_callbacks": 384,
+        "generation_ms": 3124.5349999964237,
+        "ttft_ms": 44.714999973773956,
+        "decode_tokens_per_second": 124.38214872602421,
+        "dispatches": 124089,
+        "submissions": 9425,
+        "interrupted": false
+      },
+      {
+        "input_tokens": 49,
+        "output_token_callbacks": 384,
+        "generation_ms": 3083.880000025034,
+        "ttft_ms": 45.110000014305115,
+        "decode_tokens_per_second": 126.06189869636216,
+        "dispatches": 124089,
+        "submissions": 9425,
+        "interrupted": false
+      }
+    ],
+    "interrupt": {
+      "input_tokens": 19,
+      "output_token_callbacks": 51,
+      "generation_ms": 506.375,
+      "ttft_ms": 144.92500001192093,
+      "decode_tokens_per_second": 138.4121359724283,
+      "dispatches": 16232,
+      "submissions": 1257,
+      "interrupted": true
+    },
+    "afterInterrupt": "OK.",
+    "contextProbe": {
+      "input_tokens": 3616,
+      "output_token_callbacks": 16,
+      "generation_ms": 2294.110000014305,
+      "ttft_ms": 2101.125,
+      "decode_tokens_per_second": 80.31913469723966,
+      "dispatches": 5406,
+      "submissions": 433,
+      "interrupted": false,
+      "text": "I’m not sure what you’re asking, but I’m ready to help."
+    },
+    "contextGuard": "Error: page.evaluate: Error: Error: Qualification context cap 8192 exceeded: 18012\nError: Qualification context cap 8192 exceeded: 18012\n    at generate (http://127.0.0.1:8768/worker.js:44:43)\n    at self.onmessage (http://127.0.0.1:8768/worker.js:75:44)\n    at generate (http://127.0.0.1:8768/worker.js:44:43)\n    at self.onmessage (http://127.0.0.1:8768/worker.js:75:44)\n    at worker.onmessage (http://127.0.0.1:8768/app.js:4:216)",
+    "memory": {
+      "jsHeap": {
+        "used": 8447435,
+        "total": 13158423,
+        "limit": 4395630592
+      },
+      "measureMemoryAvailable": true
+    }
+  },
+  "cspNegativeControl": {
+    "policy": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src https://api.bayleaf.dev; style-src 'self'; img-src 'self'; base-uri 'none'; object-src 'none'",
+    "violations": [
+      {
+        "directive": "connect-src",
+        "blocked": "http://127.0.0.1:8769/assets/model/config.json"
+      }
+    ],
+    "expectedFailure": "Error: page.evaluate: Error: ModelFileNotFoundError: `local_files_only=true` or `env.allowRemoteModels=false` and file was not found locally at \"http://127.0.0.1:8769/assets/model/config.json\".\nModelFileNotFoundError: `local_files_only=true` or `env.allowRemoteModels=false` and file was not found locally at \"http://127.0.0.1:8769/assets/model/config.json\".\n    at loadResourceFile (http://127.0.0.1:8769/assets/runtime/transformers.js:7556:17)\n    at async getModelFile (http://127.0.0.1:8769/assets/runtime/transformers.js:7705:10)\n    at async getModelText (http://127.0.0.1:8769/assets/runtime/transformers.js:7708:18)\n    at async getModelJSON (http://127.0.0.1:8769/assets/runtime/transformers.js:7719:16)\n    at async loadConfig (http://127.0.0.1:8769/assets/runtime/transformers.js:23986:10)\n    at async _PretrainedConfig.from_pretrained (http://127.0.0.1:8769/assets/runtime/transformers.js:24439:28)\n    at async get_model_files (http://127.0.0.1:8769/assets/runtime/transformers.js:26271:12)\n    at async get_files (http://127.0.0.1:8769/assets/runtime/transformers.js:35471:17)\n    at async get_pipeline_files (http://127.0.0.1:8769/assets/runtime/transformers.js:35495:17)\n    at async pipeline2 (http://127.0.0.1:8769/assets/runtime/transformers.js:35538:26)\n    at loadResourceFile (http://127.0.0.1:8769/assets/runtime/transformers.js:7556:17)\n    at async getModelFile (http://127.0.0.1:8769/assets/runtime/transformers.js:7705:10)\n    at async getModelText (http://127.0.0.1:8769/assets/runtime/transformers.js:7708:18)\n    at async getModelJSON (http://127.0.0.1:8769/assets/runtime/transformers.js:7719:16)\n    at async loadConfig (http://127.0.0.1:8769/assets/runtime/transformers.js:23986:10)\n    at async _PretrainedConfig.from_pretrained (http://127.0.0.1:8769/assets/runtime/transformers.js:24439:28)\n    at async get_model_files (http://127.0.0.1:8769/assets/runtime/transformers.js:26271:12)\n    at async get_files (http://127.0.0.1:8769/assets/runtime/transformers.js:35471:17)\n    at async get_pipeline_files (http://127.0.0.1:8769/assets/runtime/transformers.js:35495:17)\n    at async pipeline2 (http://127.0.0.1:8769/assets/runtime/transformers.js:35538:26)\n    at worker.onmessage (http://127.0.0.1:8769/app.js:4:216)",
+    "errors": [
+      "Failed to load resource: the server responded with a status of 404 (File not found)"
+    ]
+  },
+  "wasmNegativeControl": {
+    "policy": "default-src 'none'; script-src 'self'; worker-src 'self'; connect-src 'self' https://api.bayleaf.dev; style-src 'self'; img-src 'self'; base-uri 'none'; object-src 'none'",
+    "violations": [
+      {
+        "directive": "script-src",
+        "blocked": "wasm-eval"
+      },
+      {
+        "directive": "script-src",
+        "blocked": "wasm-eval"
+      }
+    ],
+    "expectedFailure": "Error: page.evaluate: Error: Error: no available backend found. ERR: [webgpu] RuntimeError: Aborted(CompileError: WebAssembly.instantiate(): Compiling or instantiating WebAssembly module violates the following Content Security policy directive because 'unsafe-eval' is not an allowed source of script in the following Content Security Policy directive: \"script-src 'self'\".). Build with -sASSERTIONS for more info.\nError: no available backend found. ERR: [webgpu] RuntimeError: Aborted(CompileError: WebAssembly.instantiate(): Compiling or instantiating WebAssembly module violates the following Content Security policy directive because 'unsafe-eval' is not an allowed source of script in the following Content Security Policy directive: \"script-src 'self'\".). Build with -sASSERTIONS for more info.\n    at Da (http://127.0.0.1:8770/assets/runtime/transformers.js:8584:19)\n    at async a.create (http://127.0.0.1:8770/assets/runtime/transformers.js:9046:20)\n    at async createInferenceSession (http://127.0.0.1:8770/assets/runtime/transformers.js:13453:19)\n    at async http://127.0.0.1:8770/assets/runtime/transformers.js:24596:25\n    at async Promise.all (index 0)\n    at async constructSessions (http://127.0.0.1:8770/assets/runtime/transformers.js:24586:5)\n    at async Promise.all (index 0)\n    at async Lfm3ForCausalLM.from_pretrained (http://127.0.0.1:8770/assets/runtime/transformers.js:26546:18)\n    at async AutoModelForCausalLM.from_pretrained (http://127.0.0.1:8770/assets/runtime/transformers.js:33781:14)\n    at async Promise.all (index 2)\n    at Da (http://127.0.0.1:8770/assets/runtime/transformers.js:8584:19)\n    at async a.create (http://127.0.0.1:8770/assets/runtime/transformers.js:9046:20)\n    at async createInferenceSession (http://127.0.0.1:8770/assets/runtime/transformers.js:13453:19)\n    at async http://127.0.0.1:8770/assets/runtime/transformers.js:24596:25\n    at async Promise.all (index 0)\n    at async constructSessions (http://127.0.0.1:8770/assets/runtime/transformers.js:24586:5)\n    at async Promise.all (index 0)\n    at async Lfm3ForCausalLM.from_pretrained (http://127.0.0.1:8770/assets/runtime/transformers.js:26546:18)\n    at async AutoModelForCausalLM.from_pretrained (http://127.0.0.1:8770/assets/runtime/transformers.js:33781:14)\n    at async Promise.all (index 2)\n    at worker.onmessage (http://127.0.0.1:8770/app.js:4:216)"
+  },
+  "sources": {
+    "worker.js": "db62231d428d79b72b81dfdb1437ed221ff04e3cc42b336efb091c9cdf935fad",
+    "app.js": "4f54ac1d1d1931422d9a7649933f8be8bfea87c526c1b7b1944e5921c6fd00ba",
+    "sw.js": "a197c1737ac2e5f7cff300cc0db0a9a79508a81d9fc1655ce4fd65d7f10d3b6e",
+    "server.py": "68d6c074c8d605cbb75fbca5093138d67e8abb6a5bd3978c8e566f27e4ec0a2c",
+    "run.mjs": "2510db69223cc5802de682bc17c2ea39790919fd1ef795a1435297d1e9b4462d",
+    "fixtures.mjs": "386df611fb51592958d1dbc516446bd9d5284adb2aa40567ac5b0d58a58d1607",
+    "tools.bundle.js": "6587523ffcb4bd974346b9b14adbbd5f64f408336c96282572dd30b99e8a51c1",
+    "package-lock.json": "a740c94584ab3bb88c1397e3529e639f01042cf915ca123cdfd7936060c9795a"
+  }
+}
