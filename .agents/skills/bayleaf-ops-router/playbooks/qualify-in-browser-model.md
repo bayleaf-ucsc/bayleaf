@@ -1,7 +1,7 @@
 ---
 source-skill: bayleaf-ops-router
 description: Qualify a model (or a new revision, dtype, runtime or recipe) for BayLeaf Pouch's Transformers.js provider, from license intake to shipping, with one config-driven harness.
-last-reviewed: 2026-10-31
+last-reviewed: 2026-11-01
 ---
 
 # Qualify an In-Browser Model for Pouch
@@ -74,14 +74,18 @@ recipe too, and a recipe edit re-qualifies the model.
      needs (`q4f16`). Cloudflare's 25 MiB per-file limit is not a constraint:
      `build-models.mjs` splits every file into 20 MiB hashed parts
      automatically.
-   - **Tool-call format and special tokens.** The worker and Pouch parse
-     Qwen3-Coder-style native XML (`<tool_call><function=…><parameter=…>`). A
-     different format needs a parser in `qualify-worker.js` *and*
-     `src/local/provider.ts`. Check whether the call tags are special tokens.
+   - **Tool-call format and special tokens.** Production Pouch parses
+     Qwen3-Coder-style native XML (`<tool_call><function=…><parameter=…>`).
+     Qualification's `model-adapters.mjs` registers XML and Gemma formats;
+     shipping another format still needs a parser in `src/local/provider.ts`.
+     Check whether the call tags are special tokens.
      MiniCPM5's `<function>`/`<param>` tags are, so a decoder with
      `skip_special_tokens: true` deletes them and calls never parse (Ollama
      #18483). Both workers stream with `skip_special_tokens: false`. Keep it
-     that way, and confirm the parser sees the tags. Note CDATA, Python-literal
+     that way, and confirm the parser sees the tags. Transformers.js's pipeline
+     returned text strips special tokens regardless of its streamer settings:
+     qualification consumes the preserved stream instead. A setting alone is
+     not proof. Note CDATA, Python-literal
      arrays and how values carry newlines (the LFM3 template wraps each value
      in one `\n`, the root of the byte-fidelity failures).
    - **Chat template**: does it accept `tools` and `enable_thinking: false`?
@@ -102,7 +106,7 @@ recipe too, and a recipe edit re-qualifies the model.
 
 3. **Smoke.** `cd pouch/experiments/lfm3-webgpu/qualification && npm ci`
    (once). Then run
-   `node qualify.mjs configs/<id>.json --tasks edit --trials 0 --out smoke-<id> --fetch`.
+   `node qualify.mjs configs/<id>.json --phase agent --tasks edit --trials 0 --out smoke-<id> --fetch`.
    Chrome runs headless with `--enable-unsafe-webgpu --enable-features=WebGPU`
    in a fresh `/tmp` profile. Pass: the `load` line prints a time (not
    `FAILED`); `node summarize.mjs results/smoke-<id>.json` shows the adapter
@@ -121,7 +125,7 @@ recipe too, and a recipe edit re-qualifies the model.
    jsonlist, yaml) plus `heldOut: "all"`. Trials: greedy x1 plus 7 sampled at
    T 0.3/top_p 0.95 (seeds 1–7). Step cap, token budget and max new tokens
    come from the profile (8 steps, 4096 prompt tokens, 512 new). Run
-   `node qualify.mjs configs/<id>.json` (a 9-task x 2-setup x 8-trial matrix
+   `node qualify.mjs configs/<id>.json --phase agent` (a 9-task x 2-setup x 8-trial matrix
    takes 15–30 min on the M3 Max; use `background: true`), then
    `node summarize.mjs results/<id>-agent.json`.
    Pass (to ship): recipe core ≥ 52/56, with no task below 6/8; held-out ≥ the
@@ -160,7 +164,7 @@ recipe too, and a recipe edit re-qualifies the model.
    Pass: the rule applied and written down with the numbers.
 
 7. **Perf and memory.** `node qualify.mjs configs/<id>.json --phase perf`
-   (or `--phase all`). It records the download size, cold load (first load in
+    (or `--phase all`). It records the download size, cold load (first load in
    the fresh profile), warm load (page reload, then from Cache Storage), TTFT,
    prefill and decode tok/s at ~1k and ~4k prompt tokens (3 runs each, 256
    forced tokens), the Chrome RSS peak, and GPU deltas. Caveats to state with
@@ -168,7 +172,15 @@ recipe too, and a recipe edit re-qualifies the model.
    is not a network download. The IOAccelerator GPU counter is system-wide and
    noisy (its baseline moved from 2.3 to 9 GB between runs), so trust Chrome
    RSS and relative ordering over absolute GPU deltas. Close other GPU-heavy
-   apps. One reference machine (M3 Max, Chrome stable) is not a population.
+    apps. One reference machine (M3 Max, Chrome stable) is not a population.
+    The generalized v2 runner defaults to `--phase all` and samples Chrome's
+    full process tree during load, agent trials and performance operations.
+    Per-turn timing/token metrics are saved in behavioral summaries too.
+    Peaks are sampled lower bounds; absent counters are null. V1's profile-path
+    command-line matcher could miss renderer/GPU helpers, so its RSS is not
+    directly comparable with v2. Re-establish the LFM3 reference with v2 before
+    making a cross-family memory decision; do not silently relax the budget.
+    Busy-machine timing is diagnostic only, not comparative qualification.
    Pass: decode ≥ ~60 tok/s at ~4k and RSS peak within budget on the
    reference machine; otherwise shrink the context budget or reject.
 
@@ -239,6 +251,49 @@ at `run2.mjs`, and it should import `tasks.mjs`. What differs:
 - License and open-weight intake (step 1) applies unchanged.
 
 ## Refinement log
+
+### 2026-11-01: Gemma E2B/E4B QAT-mobile evaluation (full matrices and perf)
+
+- Ran three matched 144-trial matrices plus six throughput repetitions each:
+  E4B, corrected E2B, fresh LFM3. Verified identical runtime/harness, recipes,
+  tool layers and limits across final receipts; zero external requests. Results
+  and caveats: `pouch/experiments/gemma4/README.md`. Neither Gemma qualifies;
+  LFM3 reproduces core 54/56 and held-out 16/16. No deployment/model change.
+- Reality corrected three adapter assumptions: the tokenizer registry cannot
+  discover the local alias; pipeline returned text strips special tokens even
+  when its streamer preserves them; Gemma emits both bare and JSON-quoted
+  argument strings. Explicit pinned tokenizer/template construction and safe
+  parser variants were needed. Invalidated the first E2B matrix and reran all
+  three final comparisons on the same repaired adapter, without prompt tuning.
+- Used text-only QAT-mobile files (2.32/3.36 GB) to stay inside the download
+  ceiling. q2f16 is a mixed-QAT artifact label, not uniform two-bit precision.
+  Missing standalone LICENSE files were resolved through the cards' linked
+  Google Apache-2.0 text; conversion provenance remains weaker than artifact pins.
+- Before full matrices, explicitly chose a 20 GB emergency desktop RSS guard
+  for measurement, not shipping acceptance. Sampled full-run RSS peaks were
+  5.64/11.13/11.57 GB (LFM3/E2B/E4B). Even LFM3 exceeds the old approximate
+  5 GB target under the corrected instrument; do not silently call that gate
+  passed or reinterpret noisy system GPU deltas as model VRAM.
+- Added --fetch-only so the next candidate can download while current GPU work
+  runs, without simultaneous models. Monitoring stdout at every milestone
+  caused many session wakes and repeated cached-context traffic; future long
+  batches should favor one completion event and durable logs over chatty wakes.
+
+### 2026-11-01: generalized harness and resource instrumentation (partial run)
+
+- Kept historical paths and added `pouch/qualify-model.mjs` as the neutral entry.
+  Added explicit loader/tool-format adapters and Gemma parser/transcript tests;
+  Gemma weight loading and qualification remain pending.
+- Found that old RSS sampling could omit helpers without the profile path in
+  their command line. V2 follows the Chrome process tree, samples operation
+  peaks and retains per-turn performance in behavioral results. The old RSS
+  budget needs a same-instrument LFM3 reference, not an automatic relaxation.
+- Standard `all` now runs behavior and standalone perf; `agent` still records
+  trial memory and per-turn timings. Tests cover null counters, failed-operation
+  measurements and legacy/partial/context summary rendering. Direct cache
+  sweeps retain LFM3-specific assumptions and reject other families explicitly.
+- This is instrumentation/regression work, not a full step-4 qualification or
+  a model/default change. No new weights, production deployment or publication.
 
 <!-- One dated entry per run: what differed from these steps, what surprised you,
 what you fixed. This playbook has not yet guided a full qualification. -->

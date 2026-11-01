@@ -1,0 +1,27 @@
+{
+  "id": "gemma4-e2b-qat",
+  "comment": "Text-only QAT-mobile ONNX evaluation, not shipping. Apache License 2.0 verified at https://ai.google.dev/gemma/docs/gemma_4_license (export has no LICENSE file). onnx-community export of google/gemma-4-E2B-it-qat-mobile-transformers; exporter/base SHA not documented, artifact revision and HF LFS SHA256s pinned instead. Mixed QAT precision, q2f16 is the artifact suffix, not uniformly 2-bit weights. Transformers.js 4.3.2 Gemma4ForCausalLM selects embeddings and decoder only. Native Gemma tools; template supports tools and enable_thinking=false. Vendor recommends T=1/top_p=.95/top_k=64; controlled comparison uses Pouch T=.3/top_p=.95 and greedy, no thinking. Text assets 2,324,194,060 bytes; shader-f16 required. Actual RSS measured, no shipping memory acceptance implied.",
+  "model": {
+    "repo": "onnx-community/gemma-4-E2B-it-qat-mobile-ONNX",
+    "revision": "a7f19b0ab28252b77cea830f52b8290b2479c87d",
+    "dtype": "q2f16",
+    "license": "Apache-2.0",
+    "files": [
+      {"name":"chat_template.jinja","bytes":17336,"sha256":"2f1b4d75d067bae3fe44e676721c7f077d243bc007156cb9c2f8b5836613d082"},
+      {"name":"config.json","bytes":6673,"sha256":"2387efbdf9d703a03f5e18f5de054eaff7956bb9dbce392bc576e38974f93654"},
+      {"name":"generation_config.json","bytes":209,"sha256":"fb53f4c64e58896a63472e8eb304397db4a39453e1da0f5d57625ec5a8c1050e"},
+      {"name":"onnx/decoder_model_merged_q2f16.onnx","bytes":807184,"sha256":"c0e72ee12b6715bc968621a09ee695e232f6e5f1190f4fae6d02ba2c5319ddee"},
+      {"name":"onnx/decoder_model_merged_q2f16.onnx_data","bytes":994621440,"sha256":"9b9e8d541335ccdd0226c697882a84a1cb77ac2726ce097e5847589b1e632bcc"},
+      {"name":"onnx/embed_tokens_q2f16.onnx","bytes":5491,"sha256":"ee1b97a04187ba19a23a8ca1761bcd5f241e37ef9ed29ccedb4c1f15e54ec114"},
+      {"name":"onnx/embed_tokens_q2f16.onnx_data","bytes":1296564224,"sha256":"a4e548ba02cabd151b9aea983c0338d8ce80b34b00a02a17a3fff50509f03076"},
+      {"name":"tokenizer.json","bytes":32169626,"sha256":"cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f"},
+      {"name":"tokenizer_config.json","bytes":1877,"sha256":"7df7e062c54d160443fd723987cd885a55e869d3048e2c1b563a3a965c903f95"}
+    ]
+  },
+  "execution": {"loader":"gemma4","toolFormat":"gemma4"},
+  "measurements":{"sampleMs":500,"abortGB":20},
+  "setups": {"baseline":{"recipe":"none","toolLayer":"pouch"},"recipe":{"recipe":"profiles","toolLayer":"pouch"}},
+  "tasks":"core", "heldOut":"all",
+  "stepCap":8, "budget":4096, "maxNew":512,
+  "trials":{"greedy":1,"sampled":7,"temperature":0.3,"top_p":0.95}
+}
