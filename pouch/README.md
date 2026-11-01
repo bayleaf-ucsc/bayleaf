@@ -894,9 +894,22 @@ Ogg, MOV) open as a preview only, with no Save (there is no text to save over th
 Builds carry an optional second provider next to
 BayLeaf Sealed: **LFM3 1.7B (in this browser)** under Transformers.js in the picker, the `onnx-community/LFM3-1.7B-ONNX` q4f16
 export at a pinned revision, run by Transformers.js 4.3.2 and ONNX Runtime Web on
-WebGPU. The picker shows it when the WebGPU adapter meets its requirements and otherwise lists it
-disabled with the reason; `models get` and Settings then refuse before the approval sheet, so
-nothing is downloaded. Requirements (`gpuSupport` in `src/local/engine.js`, read from
+WebGPU. It is for computers only. The picker shows it when the device and the WebGPU adapter meet its
+requirements and otherwise lists it disabled with the reason; `models get` and Settings then refuse
+before the approval sheet, so nothing is downloaded. Phones and tablets are refused first
+(`deviceSupport` in `src/local/engine.js`): on a Pixel 10 Pro (2026-11-01, Chrome Android, WebGPU
+hardware accelerated) the adapter passed every check below and the 1.1 GB download worked, but the
+first request (a one-shot prefill of about 4K tokens: system prompt plus tools) froze the whole
+phone for about 60 s with Android's "System UI isn't responding" dialog, twice, and left GPU
+glitches behind. The reply did arrive; the cause is scheduling, not memory: one long GPU
+submission starves the system compositor on a mobile GPU. Signals, any of which refuses:
+`navigator.userAgentData.mobile`, a user-agent string naming Android, iPhone, iPad or Mobile,
+iPadOS's desktop-style "Macintosh" string with touch points, and `navigator.deviceMemory` below 8
+(Chrome caps it at 8, so it can refuse but never qualify). A coarse pointer alone is not a signal,
+so touch laptops are not refused. On such a device a model already downloaded stays removable
+(Settings shows Remove, never Download); a saved choice of Transformers.js stays selected but Send
+refuses with the reason before any GPU work, rather than quietly sending to Sealed. GPU
+requirements (`gpuSupport` in `src/local/engine.js`, read from
 `navigator.gpu.requestAdapter()`, no device and no download): an adapter, the `shader-f16`
 feature (q4f16), and `maxStorageBuffersPerShaderStage` of at least 10. The last comes from
 Firefox on an M3 Max (2026-11-01), whose adapter reports 9: ORT-Web failed mid-turn with "Too

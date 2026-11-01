@@ -8,7 +8,7 @@ import { Sha256, sha256hex } from '../src/sha256.js';
 import { openStore, fillFile, rangeSource, blobSource, verifiedFile, fileState, partAssets } from '../src/assets.js';
 import { createModelStore } from '../src/models.js';
 import { createModelService, modelsCommands } from '../src/models-cli.js';
-import { gpuSupport, friendlyError, MIN_STORAGE_BUFFERS } from '../src/local/engine.js';
+import { gpuSupport, deviceSupport, DEVICE_REASON, friendlyError, MIN_STORAGE_BUFFERS } from '../src/local/engine.js';
 import { createJobs, sleepAndHash } from '../src/jobs.js';
 import { Tasks, TaskFs } from '../src/ns/tasks.js';
 import { CDN, assertNoCdn } from '../build-runtime.mjs';
@@ -206,6 +206,27 @@ await t('gpuSupport: storage-buffer limit 9 vs 10, missing shader-f16, no adapte
   assert.match((await gpuSupport({ requestAdapter: async () => null })).reason, /no usable graphics adapter/);
   assert.match((await gpuSupport({ requestAdapter: async () => { throw new Error('boom'); } })).reason, /WebGPU failed: boom/);
   assert.match((await gpuSupport(undefined)).reason, /WebGPU is not available/);
+});
+const UA = {
+  pixel: 'Mozilla/5.0 (Linux; Android 16; Pixel 10 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36',
+  tabletAndroid: 'Mozilla/5.0 (Linux; Android 16; Pixel Tablet) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+  ipad: 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+  ipadDesktop: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15',
+  win: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+};
+await t('deviceSupport: phones and tablets refused before any GPU check; a touch laptop is not', () => {
+  const no = { ok: false, reason: DEVICE_REASON };
+  assert.deepEqual(deviceSupport({ userAgentData: { mobile: true }, userAgent: UA.win }), no); // UA-CH wins over a desktop-looking UA string
+  assert.deepEqual(deviceSupport({ userAgent: UA.pixel }), no);
+  assert.deepEqual(deviceSupport({ userAgent: UA.tabletAndroid, userAgentData: { mobile: false } }), no);
+  assert.deepEqual(deviceSupport({ userAgent: UA.ipad }), no);
+  assert.deepEqual(deviceSupport({ userAgent: UA.ipadDesktop, maxTouchPoints: 5 }), no); // iPadOS "Request Desktop Website"
+  assert.deepEqual(deviceSupport({ userAgent: UA.ipadDesktop, maxTouchPoints: 0 }), { ok: true }); // a Mac
+  assert.deepEqual(deviceSupport({ userAgent: UA.win, userAgentData: { mobile: false }, maxTouchPoints: 10, deviceMemory: 8 }), { ok: true }); // touch laptop
+  const low = deviceSupport({ userAgent: UA.win, userAgentData: { mobile: false }, deviceMemory: 4 });
+  assert.equal(low.ok, false); assert.match(low.reason, /at least 8 GB of memory; this device reports 4 GB/);
+  assert.deepEqual(deviceSupport({}), { ok: true });
+  assert.equal(DEVICE_REASON, 'In-browser models are turned off on phones and tablets: on a Pixel test the first request froze the whole phone for about a minute. Use a BayLeaf Sealed model here.');
 });
 await t('friendlyError: the runtime storage-buffer error reads like the up-front check', () => {
   const raw = '[WebGPU] Kernel "MatMulNBits" failed. Error: shader_helper.cc:308 ValidateVariable numbers_storage_buffers_ <= limits_.maxStorageBuffersPerShaderStage was false. Too many storage buffers in shader. Current: 10, Max is 9';

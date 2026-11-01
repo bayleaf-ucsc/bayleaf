@@ -41,9 +41,32 @@ export async function gpuSupport(gpu) {
   return { ok: true };
 }
 
+// Phones and tablets are refused before any GPU check. Evidence: a Pixel 10 Pro
+// (2026-11-01, Chrome Android, WebGPU hardware accelerated) passed gpuSupport and
+// downloaded the weights, but the first request (a one-shot prefill of about 4K
+// tokens) froze the whole phone for about 60 s with "System UI isn't
+// responding", twice, and left GPU glitches behind. A long single GPU submission
+// starves the OS compositor on a mobile GPU: scheduling, not memory. Signals, in order:
+// - UA_CH_MOBILE: navigator.userAgentData.mobile (Chromium's own answer);
+// - UA_MOBILE: the user-agent string names Android, iPhone, iPad or Mobile;
+// - IPADOS_DESKTOP_UA: iPadOS Safari claims "Macintosh" but has touch points
+//   (no Mac has a touchscreen);
+// - LOW_MEMORY: navigator.deviceMemory below 8 (Chrome caps it at 8, so it can
+//   only refuse, never qualify).
+// A coarse pointer alone is not used: touch laptops would be refused.
+export const DEVICE_REASON = 'In-browser models are turned off on phones and tablets: on a Pixel test the first request froze the whole phone for about a minute. Use a BayLeaf Sealed model here.';
+const UA_MOBILE = /Android|iPhone|iPad|iPod|Mobile/;
+export function deviceSupport({ userAgentData, userAgent = '', maxTouchPoints = 0, deviceMemory } = {}) {
+  if (userAgentData?.mobile === true || UA_MOBILE.test(userAgent) || (/Macintosh/.test(userAgent) && maxTouchPoints > 1)) return { ok: false, reason: DEVICE_REASON };
+  if (typeof deviceMemory === 'number' && deviceMemory < 8) return { ok: false, reason: `In-browser models need a computer with at least 8 GB of memory; this device reports ${deviceMemory} GB. Use a BayLeaf Sealed model here.` };
+  return { ok: true };
+}
+
 export async function support() {
   if (!LOCAL) return { ok: false, reason: 'This build of Pouch does not include the local model.' };
-  return gpuSupport(globalThis.navigator?.gpu);
+  const nav = globalThis.navigator ?? {};
+  const device = deviceSupport(nav);
+  return device.ok ? gpuSupport(nav.gpu) : device;
 }
 
 // The same limit, met at run time (an adapter that reported more than the device
