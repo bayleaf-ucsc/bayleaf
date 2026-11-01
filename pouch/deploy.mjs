@@ -1,9 +1,11 @@
 // Deploy a prebuilt artifact, never a moving source tree. No credentials enter assets.
-// node build.mjs [--with-models] && node deploy.mjs [--check] [path/to/dist]
+// node build.mjs && node deploy.mjs [--check] [path/to/dist]
 // --check stops after verifying and staging: nothing is published.
 // The artifact is exactly the files SHA256SUMS lists: pouch.html, the app shell
-// (sw.js, manifest, icons), and with --with-models the Local lane's
-// dist/models/<id>/ (manifest, worker, parts).
+// (sw.js, manifest, icons), and the tool runtimes under dist/runtime/<group>/
+// (manifest and content-hash parts, build-runtime.mjs). Model weights are not
+// part of it: the page fetches them from the BayLeaf HF gateway and checks them
+// against models.lock.json, which this script compares with the gateway's catalog.
 import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, copyFileSync, rmSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,7 +26,7 @@ if (listed.some((x) => !x) || listed[0][1] !== 'pouch.html' || listed[0][0] !== 
 // Assets' 25 MiB per-file limit, and few enough files for any plan.
 const FILE_MAX = 25 * 2 ** 20, FILES_MAX = 20_000;
 const SHELL = ['sw.js', 'viewer.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png'];
-const SHAPES = [/^pouch\.html$/, /^sw\.js$/, /^viewer\.html$/, /^manifest\.webmanifest$/, /^icons\/[a-z0-9-]+\.png$/, /^models\/[a-z0-9.-]+\/manifest\.[0-9a-f]{16}\.json$/, /^models\/[a-z0-9.-]+\/worker\.[0-9a-f]{16}\.js$/, /^models\/[a-z0-9.-]+\/[0-9a-f]{64}\.bin$/];
+const SHAPES = [/^pouch\.html$/, /^sw\.js$/, /^viewer\.html$/, /^manifest\.webmanifest$/, /^icons\/[a-z0-9-]+\.png$/, /^runtime\/[a-z0-9-]+\/manifest\.[0-9a-f]{16}\.json$/, /^runtime\/[a-z0-9-]+\/[0-9a-f]{64}\.bin$/];
 if (listed.length + 3 > FILES_MAX) throw new Error(`Too many files: ${listed.length}`);
 const files = listed.map(([sha, path]) => {
   if (!SHAPES.some((re) => re.test(path)) || new Set(listed.map((x) => x[1])).size !== listed.length) throw new Error(`Not an allowed artifact path: ${path}`);
@@ -32,23 +34,23 @@ const files = listed.map(([sha, path]) => {
   if (bytes.length > FILE_MAX) throw new Error(`${path} is over 25 MiB`);
   if (createHash('sha256').update(bytes).digest('hex') !== sha) throw new Error(`Checksum mismatch: ${path}`);
   if (path.endsWith('.bin') && !path.endsWith(`/${sha}.bin`)) throw new Error(`Part name is not its hash: ${path}`);
-  if (/\/(manifest|worker)\./.test(path) && !path.includes(`.${sha.slice(0, 16)}.`)) throw new Error(`Name is not its hash: ${path}`);
+  if (/\/manifest\./.test(path) && !path.includes(`.${sha.slice(0, 16)}.`)) throw new Error(`Name is not its hash: ${path}`);
   return { path, sha, size: bytes.length };
 });
-// The page must embed the manifest it ships with (build-models.mjs define LOCAL_MODEL).
+// The page must embed each runtime manifest it ships with (build-models.mjs define LOCAL_MODEL).
 for (const f of files.filter((x) => x.path.includes('/manifest.'))) {
   if (!html.includes(f.sha)) throw new Error(`pouch.html does not trust ${f.path}`);
   const m = JSON.parse(readFileSync(join(source, f.path), 'utf8'));
   const dir = f.path.slice(0, f.path.lastIndexOf('/') + 1);
-  for (const part of [m.worker, ...m.files.flatMap((x) => x.parts)]) {
+  for (const part of m.files.flatMap((x) => x.parts)) {
     const row = files.find((x) => x.path === dir + part.path);
     if (!row || row.sha !== part.sha256 || row.size !== part.bytes) throw new Error(`Manifest part missing or different: ${dir}${part.path}`);
   }
 }
-const modelFiles = files.filter((f) => f.path.startsWith('models/'));
+const modelFiles = files.filter((f) => f.path.startsWith('runtime/'));
 // The offline copy pins every shell file, and the page shows whether the
 // served worker is the one it was built with: all must ship, and agree.
-const shellFiles = files.filter((f) => !f.path.startsWith('models/') && f.path !== 'pouch.html');
+const shellFiles = files.filter((f) => !f.path.startsWith('runtime/') && f.path !== 'pouch.html');
 if (SHELL.some((p) => !shellFiles.find((f) => f.path === p))) throw new Error('App shell file missing from SHA256SUMS');
 if (!html.includes(files.find((f) => f.path === 'sw.js').sha)) throw new Error('pouch.html does not expect this sw.js');
 const text = html.toString('utf8');
@@ -78,11 +80,11 @@ mkdirSync(snapshot, { recursive: true });
 writeFileSync(join(snapshot, 'pouch.html'), html);
 writeFileSync(join(snapshot, 'SHA256SUMS'), manifest);
 for (const f of shellFiles) { mkdirSync(dirname(join(snapshot, f.path)), { recursive: true }); copyFileSync(join(source, f.path), join(snapshot, f.path)); }
-// Model parts are content-addressed: the snapshot keeps their list (SHA256SUMS);
-// rebuild them with build.mjs --with-models from the pinned models.lock.json.
+// Runtime parts are content-addressed: the snapshot keeps their list (SHA256SUMS);
+// rebuild them with build.mjs from the pinned npm packages (models.lock.json runtime).
 // Stage only allowlisted public files, outside the checkout and its Wrangler caches.
 const staging = mkdtempSync(join(tmpdir(), 'pouch-static-'));
-// Each staging copy holds the whole artifact (about 1.1 GB with models): never leave one behind.
+// Each staging copy holds the whole artifact (about 40 MiB): never leave one behind.
 process.on('exit', () => rmSync(staging, { recursive: true, force: true }));
 mkdirSync(join(staging, 'assets'));
 writeFileSync(join(staging, 'assets/pouch.html'), html);
@@ -97,6 +99,26 @@ config.assets.directory = './assets';
 writeFileSync(join(staging, 'wrangler.json'), JSON.stringify(config, null, 2));
 copyFileSync(join(staging, 'assets/_headers'), join(snapshot, '_headers'));
 copyFileSync(join(staging, 'assets/_redirects'), join(snapshot, '_redirects'));
+
+// The weights the page will fetch: models.lock.json must agree with the gateway's
+// catalog (same commit, every file approved with the same size and SHA-256). The
+// lock stays the authority in the page; this catches a release the gateway does
+// not (or no longer) serve before users meet it. Metadata only, a few KB.
+{
+  const lock = JSON.parse(readFileSync(join(root, 'models.lock.json'), 'utf8'));
+  for (const m of lock.models) {
+    const r = await fetch(`https://api.bayleaf.dev/hf/catalog/${m.repo}`, { signal: AbortSignal.timeout(20000), headers: { Accept: 'application/json' } });
+    if (!r.ok) throw new Error(`Gateway catalog for ${m.repo}: HTTP ${r.status} (is the release approved?)`);
+    const rel = (await r.json()).releases?.find((x) => x.revision === m.revision);
+    if (!rel) throw new Error(`Gateway does not approve ${m.repo}@${m.revision}`);
+    for (const f of m.files) {
+      const g = rel.files.find((x) => x.path === f.name);
+      if (!g || g.bytes !== f.bytes || g.sha256 !== f.sha256) throw new Error(`Gateway catalog differs from models.lock.json: ${m.repo}/${f.name}`);
+      if (g.mirrored === false) throw new Error(`Gateway has not mirrored ${m.repo}/${f.name} yet (503 until the hourly cron)`);
+    }
+    console.log(`Gateway approves ${m.id} (${m.repo}@${m.revision.slice(0, 12)}): ${m.files.length} files match models.lock.json`);
+  }
+}
 
 if (check) {
   console.log(`Checked and staged ${files.length} files (${(files.reduce((n, f) => n + f.size, 0) / 2 ** 20).toFixed(0)} MiB, largest ${(Math.max(...files.map((f) => f.size)) / 2 ** 20).toFixed(1)} MiB); not deployed (--check), staging removed.`);
@@ -132,9 +154,7 @@ for (const path of ['/', '/pouch.html', '/SHA256SUMS']) {
   if (!response.headers.get('content-security-policy')?.startsWith(csp)) throw new Error(`CSP mismatch: ${path}`);
   console.log(`Verified HTTPS ${path}: 200, exact bytes, no cookies, NEL disabled`);
 }
-// Model files: every one downloaded and hashed (about 1 GB), with immutable
-// caching. A size check by HEAD is not possible: Cloudflare omits
-// Content-Length on HEAD for cached assets and ignores Range on them.
+// Runtime parts: every one downloaded and hashed (about 30 MiB), with immutable caching.
 const verifyModelFile = async (f) => {
   for (let attempt = 1; ; attempt++) {
     const response = await fetch(`https://pouch.bayleaf.dev/${f.path}`, { signal: AbortSignal.timeout(120000), redirect: 'error' });
@@ -158,4 +178,4 @@ for (const f of shellFiles) {
     throw new Error('Viewer served without its own policy');
 }
 console.log(`Verified ${shellFiles.length} app shell files: exact bytes, cache policy`);
-if (modelFiles.length) console.log(`Verified ${modelFiles.length} model files: immutable and byte-exact`);
+if (modelFiles.length) console.log(`Verified ${modelFiles.length} runtime parts: immutable and byte-exact`);

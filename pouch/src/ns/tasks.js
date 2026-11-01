@@ -3,7 +3,7 @@
 //   /task/<id>/status  one line: state, seconds, kind, label   (read)
 //   /task/<id>/log     the last few lines the task reported    (read)
 //   /task/<id>/ns      its mount table, one line per mount     (read)
-//   /task/<id>/ctl     write "kill" to stop it                 (write)
+//   /task/<id>/ctl     write "kill" (or "stop") to stop it     (write)
 //   /task/watch/<id>/{paths,note,ctl}  file watches (src/ns/watch.js);
 //                      write "stop" to ctl to unwatch, "deliver" to hand
 //                      its held changes to the agent now
@@ -22,7 +22,7 @@ const LOG_LINES = 12;
 export class Tasks extends EventTarget {
   constructor({ keep = 20 } = {}) { super(); this.keep = keep; this.next = 1; this.byId = new Map(); this.byKey = new Map(); }
 
-  // fields: { kind: 'run'|'subagent'|'terminal', label, key?, sid? (the session it
+  // fields: { kind: 'run'|'subagent'|'terminal'|'download'|'job', label, key?, sid? (the session it
   // belongs to; none for the user's terminal), ns: string[] | () => string[], kill?: () => any }
   add(fields) {
     const t = { id: this.next++, status: 'running', started: Date.now(), log: [], ...fields };
@@ -156,7 +156,7 @@ export class TaskFs extends BaseFs {
     if (file !== 'ctl') throw fsError('EROFS', 'open', path);
     const cmd = (typeof content === 'string' ? content : new TextDecoder().decode(content)).trim();
     if (!cmd) return; // a shell redirection truncates first: nothing to do
-    if (cmd !== 'kill') throw fsError('EINVAL', 'write', path, `ctl accepts one command: kill (got "${cmd.slice(0, 20)}")`);
+    if (cmd !== 'kill' && cmd !== 'stop') throw fsError('EINVAL', 'write', path, `ctl accepts one command: kill (alias stop) (got "${cmd.slice(0, 20)}")`);
     await this.tasks.kill(t);
   }
   async appendFile(path, content) { return this.writeFile(path, content); }

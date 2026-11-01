@@ -11,6 +11,11 @@ Pins live in `models.lock.json`; evidence lives in `experiments/`.
 | LFM3-1.7B fp16 | as above | not run: 3.56 GB, over the size budget | `quant.json` |
 | MiniCPM5-2B (community ONNX only, q4f16 ~1.83 GB) | Apache-2.0 | candidate, not qualified: no official WebGPU export; tool tags are special tokens and need a dedicated parser | survey notes (2026-11-01) |
 
+Delivery (since batch H, 2026-11-01): weights come from the BayLeaf HF gateway
+(`api.bayleaf.dev/hf`, issue #121), which mirrors an approved release; the page checks
+every file against `models.lock.json`, and `deploy.mjs` checks the gateway's catalog
+agrees with the lock. A model ships only if it is pinned here and approved there.
+
 License intake is a human gate: a non-permissive license, like the one that ships today,
 stays in use only by Adam's explicit decision, recorded here.
 

@@ -1,21 +1,21 @@
 // The Transformers.js provider's files and worker: fetch, verify, keep, load, generate.
 //
-// Trust: the build embeds the SHA-256 of one manifest (LOCAL_MODEL, from
-// build-models.mjs). The manifest lists every part of every file with its
-// SHA-256, so each part is checked with crypto.subtle before it is kept or
-// used: on download, on every load from storage, and when picked from disk.
-// A part that fails is deleted and fetched once more; failing twice refuses.
-// Parts come only from this page's own origin (CSP connect-src 'self'), never
-// from a CDN or Hugging Face, and are kept in Cache Storage so later loads
-// work offline. The worker script is itself a verified part, started from a
-// blob: URL (CSP worker-src blob:); it has no network (src/local/worker.js).
+// Trust: the build embeds LOCAL_MODEL (build-models.mjs): the model's pinned
+// files (models.lock.json: name, size, SHA-256) and the SHA-256 of the runtime
+// manifest. Two sources, both checked before anything is kept or used:
+// - the weights from the BayLeaf HF gateway (src/models.js), in byte ranges,
+//   hashed incrementally against the lock, kept in Cache Storage, resumable;
+// - the runtime (the Transformers.js + ORT worker bundle and the ORT wasm) from
+//   this page's own origin, as content-hash parts (src/assets.js partAssets).
+// Every later load re-checks every chunk and part and needs no network. The
+// worker script is itself a verified part, started from a blob: URL (CSP
+// worker-src blob:); it has no network (src/local/worker.js).
+import { createModelStore } from '../models.js';
+import { partAssets } from '../assets.js';
+
 export const LOCAL = typeof LOCAL_MODEL !== 'undefined' ? LOCAL_MODEL : null; // eslint-disable-line no-undef
-const CACHE = 'pouch-local-models';
-const PARALLEL = 4;
-// Cache keys do not depend on where the page is served from.
-const keyOf = (name) => `https://pouch-local.invalid/${LOCAL.dir}${name}`;
-const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
-const digest = async (blob) => hex(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()));
+export const models = createModelStore(LOCAL ? [LOCAL] : []);
+const runtime = LOCAL && partAssets(LOCAL.runtime);
 
 export async function support() {
   if (!LOCAL) return { ok: false, reason: 'This build of Pouch does not include the local model.' };
@@ -25,133 +25,33 @@ export async function support() {
   return { ok: true };
 }
 
-// Cache Storage, or (where a page cannot use it, e.g. a saved file://
-// copy) memory for this page load only.
-const mem = new Map();
-// create: false only looks (caches.open would create an empty cache again
-// after Remove or Erase all, and it would show up as site data).
-async function store({ create = true } = {}) {
-  try { if (globalThis.caches) { if (!create && !(await caches.has(CACHE))) return { persistent: true, match: async () => undefined, keys: async () => [] }; const c = await caches.open(CACHE); return { persistent: true, match: (n) => c.match(keyOf(n)), put: (n, b) => c.put(keyOf(n), new Response(b)), del: (n) => c.delete(keyOf(n)), keys: async () => (await c.keys()).map((r) => r.url.slice(keyOf('').length)) }; } }
-  catch { /* SecurityError on opaque origins */ }
-  return { persistent: false, match: async (n) => mem.has(n) ? new Response(mem.get(n)) : undefined, put: async (n, b) => { mem.set(n, b); }, del: async (n) => mem.delete(n), keys: async () => [...mem.keys()] };
-}
-const url = (name) => new URL(LOCAL.dir + name, document.baseURI).href;
-
-async function verified(st, name, sha256) {
-  const r = await st.match(name);
-  if (!r) return null;
-  const blob = await r.blob(); // immutable: the bytes checked are the bytes used
-  if (await digest(blob) === sha256) return blob;
-  await st.del(name);
-  return null;
-}
-
-async function fetchPart(st, part, onBytes, signal) {
-  for (let attempt = 1; ; attempt++) {
-    const r = await fetch(url(part.path), { signal, cache: attempt > 1 ? 'reload' : 'default' });
-    if (!r.ok) throw new Error(`${part.path}: HTTP ${r.status}`);
-    const chunks = [], reader = r.body.getReader();
-    let got = 0;
-    for (;;) { const { done, value } = await reader.read(); if (done) break; chunks.push(value); got += value.length; onBytes(value.length); }
-    const blob = new Blob(chunks);
-    if (blob.size === part.bytes && await digest(blob) === part.sha256) { await st.put(part.path, blob); return blob; }
-    onBytes(-got);
-    if (attempt >= 2) throw new Error(`Part ${part.path} failed its SHA-256 check twice; nothing from it was used.`);
-  }
-}
-
-// The manifest the build trusts: from storage, a picked file, or the server.
-async function manifest(st, { network = true } = {}) {
-  let blob = await verified(st, LOCAL.manifest, LOCAL.sha256);
-  if (!blob && network) {
-    const r = await fetch(url(LOCAL.manifest), { cache: 'no-cache' });
-    if (!r.ok) throw new Error(`Model manifest: HTTP ${r.status}`);
-    blob = await r.blob();
-    if (await digest(blob) !== LOCAL.sha256) throw new Error('The model manifest does not match this page; refused.');
-    await st.put(LOCAL.manifest, blob);
-  }
-  return blob && JSON.parse(await blob.text());
-}
-const partsOf = (m) => [{ ...m.worker, path: m.worker.path }, ...m.files.flatMap((f) => f.parts)];
-
-// { bytes, total, complete, persistent }: what is kept in this browser.
+// { bytes, total, complete, persistent, downloading }: the weights (the runtime is small
+// and comes from this origin on first load).
 export async function stored() {
   if (!LOCAL) return { bytes: 0, total: 0, complete: false };
-  const st = await store({ create: false });
-  const have = new Set(await st.keys());
-  const m = have.has(LOCAL.manifest) ? await manifest(st, { network: false }).catch(() => null) : null;
-  const total = LOCAL.bytes;
-  if (!m) return { bytes: 0, total, complete: false, persistent: st.persistent };
-  const parts = partsOf(m), kept = parts.filter((p) => have.has(p.path));
-  return { bytes: kept.reduce((n, p) => n + p.bytes, 0), total, complete: kept.length === parts.length, persistent: st.persistent };
+  const s = await models.status(LOCAL.id);
+  return { bytes: s.bytes, total: s.total, complete: s.complete, persistent: s.persistent, downloading: s.downloading };
 }
 
-// Every file, verified: downloads what is missing (onProgress({ done, total, fetched, repaired })).
-export async function obtain({ onProgress = () => {}, signal, network = true } = {}) {
-  const st = await store();
-  const m = await manifest(st, { network });
-  if (!m) throw new Error('The Transformers.js model is not in this browser. Download it, or load a saved copy from a folder.');
-  const parts = partsOf(m), blobs = new Map();
-  const p = { done: 0, total: parts.reduce((n, x) => n + x.bytes, 0), fetched: 0, repaired: 0 };
-  let next = 0;
-  // The first refusal (or the caller's Stop) stops every stream: nothing more is downloaded.
-  const halt = new AbortController(), sig = signal ? AbortSignal.any([signal, halt.signal]) : halt.signal;
-  async function stream() {
-    while (next < parts.length) {
-      const part = parts[next++];
-      if (sig.aborted) throw new DOMException('Stopped.', 'AbortError');
-      const kept = await st.match(part.path);
-      let blob = kept && await kept.blob(); // immutable: the bytes checked are the bytes used
-      if (blob && await digest(blob) !== part.sha256) { await st.del(part.path); blob = null; p.repaired++; }
-      else if (!blob) p.fetched++;
-      if (blob) { p.done += part.bytes; onProgress({ ...p }); }
-      else {
-        if (!network) throw new Error(`Part ${part.path} is missing or damaged, and the network is not available.`);
-        blob = await fetchPart(st, part, (n) => { p.done += n; onProgress({ ...p }); }, sig);
-      }
-      blobs.set(part.path, blob);
-    }
-  }
-  await Promise.all(Array.from({ length: PARALLEL }, () => stream().catch((e) => { halt.abort(); throw e; })));
-  const files = Object.fromEntries(m.files.map((f) => [f.name, new Blob(f.parts.map((x) => blobs.get(x.path)))]));
-  return { manifest: m, worker: blobs.get(m.worker.path), files, progress: p, persistent: st.persistent };
+// Verified weights and runtime. onProgress({ done, total, fetched, repaired }).
+export async function obtain({ onProgress = () => {}, network = true } = {}) {
+  const rt = await runtime.obtain({ network, onProgress: (p) => onProgress({ ...p, phase: 'runtime' }) });
+  const w = await models.files(LOCAL.id, { network, onProgress });
+  return { runtime: rt, files: w.files, repaired: w.repaired };
 }
 
-// A saved copy picked by the user: the dist/models/<id>/ folder (part files by
-// name) and/or the original upstream files (matched by name and size, then cut
-// at the manifest's part boundaries). Every part is checked like a download.
+// A saved copy picked by the user: the original upstream files (by name and size) and/or
+// a saved runtime/<group>/ folder (parts by name). Every byte checked like a download.
 export async function importFiles(fileList) {
-  const st = await store();
-  const picked = [...fileList];
-  const byName = new Map(picked.map((f) => [f.name, f]));
-  let m = await manifest(st, { network: false });
-  if (!m) {
-    const f = byName.get(LOCAL.manifest);
-    if (!f) throw new Error(`Pick the saved model folder: it must contain ${LOCAL.manifest}.`);
-    if (await digest(f) !== LOCAL.sha256) throw new Error('That manifest does not match this page; refused.');
-    await st.put(LOCAL.manifest, f);
-    m = JSON.parse(await f.text());
-  }
-  let added = 0, bad = 0;
-  const offer = async (part, blob) => {
-    if (blob.size !== part.bytes || await digest(blob) !== part.sha256) { bad++; return; }
-    await st.put(part.path, blob); added++;
-  };
-  const have = new Set(await st.keys());
-  for (const part of partsOf(m)) if (!have.has(part.path) && byName.has(part.path)) await offer(part, byName.get(part.path));
-  for (const file of m.files) {
-    const src = picked.find((f) => f.name === file.name.split('/').pop() && f.size === file.bytes);
-    if (!src) continue;
-    let at = 0;
-    for (const part of file.parts) { if (!have.has(part.path)) await offer(part, src.slice(at, at + part.bytes)); at += part.bytes; }
-  }
-  return { added, bad, ...(await stored()) };
+  const r = await models.ingest(LOCAL.id, fileList);
+  const rt = await runtime.importFiles(fileList);
+  return { added: r.added + rt.added, bad: r.bad.length + rt.bad, refused: r.bad, bytes: r.bytes, total: r.total, complete: r.complete };
 }
 
 export async function remove() {
   await engine.dispose();
-  mem.clear();
-  try { await caches.delete(CACHE); } catch {}
+  await models.remove(LOCAL.id);
+  await runtime.remove();
 }
 
 // ── The worker ─────────────────────────────────────────────────────
@@ -173,8 +73,8 @@ export const engine = {
     if (worker && !starting) return Promise.resolve({ loaded: true });
     starting ??= (async () => {
       const got = await obtain({ onProgress, network });
-      onProgress?.({ ...got.progress, phase: 'loading' });
-      const src = URL.createObjectURL(new Blob([got.worker], { type: 'text/javascript' }));
+      onProgress?.({ done: LOCAL.bytes, total: LOCAL.bytes, phase: 'loading' });
+      const src = URL.createObjectURL(new Blob([got.runtime.files['worker.js']], { type: 'text/javascript' }));
       worker = new Worker(src, { type: 'module', name: 'pouch-local' });
       URL.revokeObjectURL(src);
       worker.onmessage = ({ data }) => {
@@ -186,9 +86,8 @@ export const engine = {
         data.error ? p.reject(new Error(data.error)) : p.resolve(data.result);
       };
       worker.onerror = (e) => { for (const p of pending.values()) p.reject(new Error(e.message || 'The Transformers.js model worker failed.')); pending.clear(); };
-      const wasm = got.manifest.files.find((f) => f.role === 'wasm');
-      const files = Object.fromEntries(Object.entries(got.files).filter(([n]) => n !== wasm.name));
-      return await call('load', { files, wasm: got.files[wasm.name] });
+      const wasm = got.runtime.manifest.files.find((f) => f.role === 'wasm');
+      return await call('load', { files: got.files, wasm: got.runtime.files[wasm.name] });
     })();
     starting.catch(() => { worker?.terminate(); worker = null; }).finally(() => {});
     return starting.then((r) => { starting = null; return r; }, (e) => { starting = null; throw e; });

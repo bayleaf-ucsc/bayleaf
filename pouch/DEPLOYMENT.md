@@ -13,9 +13,10 @@ the same operator identifies bytes but is not independent evidence of their prov
   telemetry collector, conversation store or server-side application code.
   `run_worker_first: false`, observability disabled, workers.dev and preview URLs disabled.
 - Only `pouch.html`, `SHA256SUMS`, the app shell (`sw.js`, `manifest.webmanifest`,
-  `icons/*.png`), static `_headers`/`_redirects` configuration and,
-  for a `--with-models` build, the Transformers.js provider's `models/<id>/` files listed in
-  `SHA256SUMS` enter the allowlisted upload (see "Transformers.js artifact" below). `/` rewrites internally to `/pouch.html` (200).
+  `icons/*.png`), static `_headers`/`_redirects` configuration and the tool
+  runtimes under `runtime/<group>/` listed in `SHA256SUMS` enter the allowlisted
+  upload (see "Transformers.js artifact" below). Model weights are not uploaded: they
+  come from the BayLeaf HF gateway. `/` rewrites internally to `/pouch.html` (200).
   Unmatched paths return 404 rather than exposing source or SPA fallback.
 - The host may process/retain request metadata, including IP addresses, paths,
   timestamps and security events. No claim that static hosting proves API/model
@@ -34,49 +35,49 @@ the same operator identifies bytes but is not independent evidence of their prov
   settings were changed. No platform script injection was observed: served bytes
   match the local artifact exactly.
 
-## Transformers.js artifact (built and tested locally, not deployed; called the "Local lane" before 2026-10-31)
+## Transformers.js artifact (weights from the BayLeaf HF gateway since 2026-11-01; not deployed)
 
-`node build.mjs --with-models` adds `dist/models/lfm3-1.7b-q4f16/`; the default build
-stays models-free and unchanged. Shape of the tested build (2026-10-29):
+Weights left the artifact (issue #121). The page downloads the LFM3 files from
+`https://api.bayleaf.dev/hf/onnx-community/LFM3-1.7B-ONNX/resolve/<commit>/<path>` in
+32 MiB byte ranges and checks each whole file against `models.lock.json` (pinned into the
+page by the build); `src/models.js`, README "Transformers.js". `node build.mjs` always
+builds the runtime (`--no-models` omits the provider; `--with-models` is accepted and
+does nothing more) and needs no model files. Shape of the tested build (2026-11-01):
 
 | File | Count | Size |
 |---|---:|---|
-| `manifest.<sha16>.json` (every part's order, size, SHA-256; each whole file's size and SHA-256) | 1 | ~15 KB |
-| `worker.<sha16>.js` (Transformers.js 4.3.2 + ORT Web 1.31.0-dev WebGPU bundle) | 1 | ~0.56 MB |
-| `<sha256>.bin` parts (ORT wasm: 2; model, tokenizer, config: 59) | 61 | ≤ 20 MiB each |
-| total | 63 | 1,081 MB (1.056 GiB) |
+| `runtime/transformers/manifest.<sha16>.json` (each file's parts, sizes, SHA-256) | 1 | ~1 KB |
+| `runtime/transformers/<sha256>.bin`: the worker bundle (Transformers.js 4.3.2 + ORT Web 1.31.0-dev WebGPU, CDN and Hub defaults rewritten to nothing and the gateway) | 1 | 0.56 MB |
+| `runtime/transformers/<sha256>.bin`: the ORT wasm, split at 20 MiB | 2 | 26.9 MB |
+| whole artifact with the page, sums and app shell | 12 | 31 MiB |
 
-With `pouch.html`, `SHA256SUMS`, `_headers` and `_redirects` the upload is 67 files.
-Limits (Cloudflare Workers platform limits, Static Assets, checked 2026-10-29,
-<https://developers.cloudflare.com/workers/platform/limits/#static-assets>): 25 MiB per
-file, 20,000 files per version (Free) or 100,000 (Paid), 100 `_headers` rules. Parts are
-20 MiB for margin; the ORT wasm (26.9 MB) is over the per-file limit and is split too.
-`deploy.mjs` refuses any listed file over 25 MiB, any path outside the allowlist
-(`pouch.html`, `models/<id>/manifest.<hex16>.json`, `worker.<hex16>.js`,
-`<sha256>.bin`), any name that is not its content hash, any file whose bytes differ
-from `SHA256SUMS`, a manifest that `pouch.html` does not embed, and a manifest part
-that is missing or different.
+With `_headers` and `_redirects` the upload is 14 files (was 70 files, 1,086 MiB).
+`deploy.mjs` refuses any listed file over 25 MiB (Cloudflare Static Assets' limit,
+<https://developers.cloudflare.com/workers/platform/limits/#static-assets>), any path
+outside the allowlist (`pouch.html`, the shell, `runtime/<group>/manifest.<hex16>.json`,
+`runtime/<group>/<sha256>.bin`), any name that is not its content hash, any file whose
+bytes differ from `SHA256SUMS`, a runtime manifest that `pouch.html` does not embed, and
+a manifest part that is missing or different. Instead of downloading 1 GB of weights to
+verify them, it checks that `GET /hf/catalog/<repo>` approves the lock's commit with every
+file at the same size and SHA-256 and already mirrored (metadata, a few KB).
 
-Headers: `Cache-Control` is set per path, never on `/*` (Cloudflare merges matching
-rules and comma-joins a repeated header): `/`, `/pouch.html`, `/SHA256SUMS` stay
-`no-store, no-transform`; `/models/*` is `public, max-age=31536000, immutable`
-(content-addressed names). The security headers and CSP stay on `/*`.
+Headers: `Cache-Control` is set per path, never on `/*`: `/`, `/pouch.html`,
+`/SHA256SUMS` stay `no-store, no-transform`; `/runtime/*` is `public, max-age=31536000,
+immutable` (content-addressed names). The security headers and CSP stay on `/*`.
 
-Privacy: the static host (Cloudflare, the same operator and service that already serve
-the page) sees that a client downloaded the model files: request metadata such as IP
-address, paths and timestamps. No prompt, file or reply goes anywhere with Transformers.js;
-there is no new operator, endpoint or Worker script. The page asks before downloading.
-Pouch fetches only from its own origin, never from Hugging Face or a CDN at run time.
+Privacy: Cloudflare (the static host) sees runtime downloads; the BayLeaf API's gateway
+sees which LFM3 files and byte ranges a client fetched, with its IP and timing (no
+identity: the gateway is keyless and ignores credentials; see the API's HF-GATEWAY.md).
+Hugging Face sees nothing. No prompt, file or reply goes anywhere with Transformers.js.
+The page asks before downloading (an approval sheet naming size, storage, license and
+origin). `connect-src` is unchanged: `https://api.bayleaf.dev` was already listed.
 
-Deploy (needs approval; not run): `npm ci && node fetch-models.mjs && node build.mjs
---with-models && node deploy.mjs --check && node deploy.mjs`. `--check` verifies and
-stages without publishing. The first upload sends about 1.1 GB; later deploys reuse
-unchanged parts by hash. After deploy, `deploy.mjs` downloads every model file (about
-1 GB, four at a time) and checks its SHA-256 and the immutable cache policy. A cheaper
-size check is not possible: Cloudflare omits `Content-Length` on HEAD for cached assets
-and ignores `Range` on them.
-`.deploy/<sha256>/` snapshots keep `pouch.html` and the part list (`SHA256SUMS`), not the
-1 GB of parts: rebuild them from `models.lock.json` to roll back a models build.
+Deploy (needs approval; not run): `npm ci && node build.mjs && node deploy.mjs --check &&
+node deploy.mjs`. After deploy, `deploy.mjs` downloads every runtime part (about 30 MiB)
+and checks its SHA-256 and the immutable cache policy. Users who downloaded the model
+from pouch.bayleaf.dev keep it: the page reassembles the old parts, checks them against
+the lock and moves them (README "Transformers.js"). The old `models/` parts on the host
+stop being uploaded; a release without them makes those URLs 404.
 
 ## Installable app shell (built and tested locally, not deployed; 2026-10-30)
 

@@ -45,8 +45,8 @@ function assemble(code) {
   mkdirSync(`${OUT}/icons`, { recursive: true });
   for (const f of STATIC) copyFileSync(f, `${OUT}/${f}`);
   // The whole deployable artifact is the files SHA256SUMS lists: pouch.html
-  // (first), the app shell, plus dist/models/** with --with-models (deploy.mjs
-  // uploads exactly these). sha256sum -c SHA256SUMS checks a downloaded or
+  // (first), the app shell, plus dist/runtime/** (deploy.mjs uploads exactly
+  // these). Model weights are not in it: they come from the BayLeaf HF gateway. sha256sum -c SHA256SUMS checks a downloaded or
   // served copy against the build; the offline copy checks itself against it.
   const sums = [[sha256(html, 'hex'), 'pouch.html'], ...STATIC.map((f) => [sha256(readFileSync(f), 'hex'), f]), ...(models?.sums ?? [])];
   writeFileSync(`${OUT}/SHA256SUMS`, sums.map(([h, p]) => `${h}  ${p}\n`).join(''));
@@ -60,10 +60,12 @@ function assemble(code) {
 const WORKER_SRC = (await build({ entryPoints: ['src/run/worker-browser.js'], bundle: true, minify: true, write: false,
   format: 'iife', platform: 'browser', target: 'es2022', legalComments: 'inline', logLevel: 'warning' })).outputFiles[0].text;
 
-// --with-models: the Local lane's model, runtime and manifest under
-// dist/models/ (build-models.mjs). The page embeds the manifest's hash; a
-// build without it has LOCAL_MODEL null and offers no Local lane.
-const models = process.argv.includes('--with-models') ? await (await import('./build-models.mjs')).buildModels(OUT) : null;
+// The Transformers.js provider: its runtime under dist/runtime/transformers/
+// and the model's pins (build-models.mjs; weights come from the BayLeaf HF
+// gateway at run time, so the build needs none). --no-models builds without
+// it: LOCAL_MODEL null, no Transformers.js provider. (--with-models, which
+// once put 1.1 GB of weights in dist/, is accepted and does nothing more.)
+const models = process.argv.includes('--no-models') ? null : await (await import('./build-models.mjs')).buildModels(OUT);
 
 const ctx = await context({
   entryPoints: ['src/main.js'],

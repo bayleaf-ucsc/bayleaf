@@ -132,7 +132,7 @@ await test('/task files: status, ns, log, ctl kill, refusals', async () => {
   assert.equal(await ns.readFile(`/task/${t.id}/log`), 'loaded 3 files\n');
   const bash = new Bash({ fs: ns, cwd: '/', defenseInDepth: false });
   // just-bash rejects exec when a redirection's write fails (as for any read-only mount).
-  const e = await rejects(bash.exec(`echo stop > /task/${t.id}/ctl`), 'EINVAL');
+  const e = await rejects(bash.exec(`echo pause > /task/${t.id}/ctl`), 'EINVAL'); // stop is an alias of kill (batch H)
   assert.match(e.message, /ctl accepts one command: kill/);
   const r = await bash.exec(`echo kill > /task/${t.id}/ctl; cat /task/${t.id}/status`);
   assert.equal(r.exitCode, 0, r.stderr); assert.ok(killed); assert.match(r.stdout, /^killed /);

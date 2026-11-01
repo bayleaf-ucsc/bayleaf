@@ -674,8 +674,8 @@ transparency log, and no tagged reproducible release has been made.
   Attestation verification succeeds under this policy because the relay's
   `/sealed/attestation` bundle carries the whole trust root (verified 2026-10-27,
   tinfoil 1.3.0). `'self'` was added for the Transformers.js provider (below) and is used only to fetch
-  `models/<id>/` files, each checked against a manifest whose SHA-256 is built into the
-  page; the static host already serves the page, so it is not a new operator. It also
+  `runtime/<group>/` parts, each checked against a manifest whose SHA-256 is built into the
+  page (the weights come from `api.bayleaf.dev/hf`, checked against `models.lock.json`); the static host already serves the page, so it is not a new operator. It also
   lets page script send data to that host, which before needed `api.bayleaf.dev`: the
   same operator, but a different service with different logs (Cloudflare Workers Static
   Assets keeps request metadata, not bodies; see DEPLOYMENT.md).
@@ -829,30 +829,52 @@ Ogg, MOV) open as a preview only, with no Save (there is no text to save over th
 
 ## Transformers.js: a model in this browser
 
-Builds made with `node build.mjs --with-models` carry an optional second provider next to
+Builds carry an optional second provider next to
 BayLeaf Sealed: **LFM3 1.7B (in this browser)** under Transformers.js in the picker, the `onnx-community/LFM3-1.7B-ONNX` q4f16
 export at a pinned revision, run by Transformers.js 4.3.2 and ONNX Runtime Web on
 WebGPU. The picker shows it when WebGPU works and otherwise lists it disabled with the
 reason. Choosing it is the only way in: Pouch never switches providers by itself, and the
-shield says "Transformers.js: in this browser, nothing sent".
+shield says "Transformers.js: in this browser, nothing sent". (`node build.mjs --no-models` omits it.)
 
-- **Files.** `models.lock.json` pins every file (URL, revision, size, SHA-256);
-  `node fetch-models.mjs` fetches them into `~/.cache/bayleaf-pouch/models` (never the
-  repo). The build cuts each file, and the ORT wasm, into parts of at most 20 MiB named
-  by their SHA-256 under `dist/models/<id>/`, bundles Transformers.js and the ORT WebGPU
-  build (with its embedded wasm glue) into one `worker.<hash>.js`, and writes
-  `manifest.<hash>.json`. The page embeds that manifest's SHA-256 and so trusts exactly
-  those bytes. Nothing comes from a CDN or Hugging Face at run time.
-- **Loading.** The first use asks, then downloads (bytes and percent in the status line
-  and Settings), checks every part with `crypto.subtle` and keeps it in Cache Storage. A
-  part that fails is fetched once more, then refused. Every later load checks every kept
-  part again (a damaged one is dropped and fetched again) and needs no network. The
-  worker starts from a verified `blob:` (CSP `worker-src blob:`), has no `fetch`, and gets
-  the files as blobs and the wasm as bytes. Settings can **Load from folder/files**: a
-  saved `models/<id>/` folder, or the original upstream files (cut at the manifest's part
-  boundaries and checked the same way), for offline or `file://` copies (where it is
-  kept for that page load only). **Remove the model** frees the storage; **Erase all**
-  removes it too.
+- **Weights, from the BayLeaf HF gateway** (`src/models.js`, issue #121). `models.lock.json`
+  pins every file (size, SHA-256, revision); the build puts those pins in the page. The
+  page fetches each file from `https://api.bayleaf.dev/hf/<repo>/resolve/<commit>/<path>`
+  (BayLeaf's mirror: Hugging Face sees no request) in 32 MiB byte ranges, four in flight,
+  each retried on failure, and hashes the file **incrementally** in order
+  (`src/sha256.js`, a 60-line SHA-256 whose state survives a reload, tested against NIST
+  vectors and `crypto.subtle`), so the 1.09 GB weights are never in memory at once. Each
+  chunk is kept in Cache Storage as it is hashed, with the hash state after it: Stop (or
+  a closed tab) keeps the verified prefix, and the next download continues there. A
+  file whose whole hash differs from the lock is refused by name and dropped. The
+  gateway's catalog (license, distribution, qualification) is shown, never trusted for
+  bytes; `deploy.mjs` checks it agrees with the lock.
+- **Runtime, from Pouch's origin** (`build-runtime.mjs`, `src/assets.js` `partAssets`).
+  The Transformers.js + ORT worker bundle and the ORT wasm, cut into content-hash parts of
+  at most 20 MiB under `dist/runtime/transformers/` with a manifest whose SHA-256 the page
+  embeds. The bundle's library defaults that name a CDN or the Hub are rewritten at build
+  and the build fails if any remain (`test/batchH-node.mjs` scans the artifact too).
+- **Loading.** Every later load re-checks every chunk (`crypto.subtle` against the receipt
+  recorded when the whole file matched the lock) and needs no network; a damaged chunk is
+  fetched again by range and checked against the same receipt. The worker starts from a
+  verified `blob:` (CSP `worker-src blob:`), has no `fetch`, and gets the files as blobs
+  and the wasm as bytes. Measured with the real model (M3 Max, Chrome, 2026-11-01):
+  putting 1.09 GB into the store took 6 s with the browser 0.4 GiB above idle; loading
+  peaked at 3.0 GiB in one process (ORT holds the weights as one buffer, as before).
+- **Consent: the `models` command** (`src/models-cli.js`). `models list | status | get |
+  remove | verify`, for agents and the terminal; Settings' Download, Stop and Remove call
+  the same code. `get` always opens an approval sheet naming size, storage, license and
+  attribution, and origin; anyone may ask, only the user's click approves. The download is
+  a `/task` entry whatever asked (`echo stop > /task/<id>/ctl`, the tray, Settings' Stop).
+  The user's `remove` frees at once; an agent's asks, because it destroys a consented
+  download that offline use depends on and costs 1 GB to undo.
+- **Moving an earlier copy.** Parts kept by builds that served the weights from
+  pouch.bayleaf.dev (cache `pouch-local-models`) are reassembled on first load, checked
+  against the lock like a download, moved, and the old cache deleted: nothing is
+  downloaded again. Files that do not match are dropped with a message.
+- **Load from folder/files**: the original upstream files (matched by name and size),
+  hashed against the lock the same way, plus a saved `runtime/transformers/` folder, for
+  offline or `file://` copies (kept for that page load only there). **Remove the model**
+  frees the storage; **Erase all** removes it too.
 - **Recipe** (`experiments/lfm3-webgpu`, agent v2 "v8"; the `transformersjs` profile in `src/profiles.js`, moved there byte for byte). A short grounded system prompt
   naming `/work`, one byte-exact example turn, four short tool schemas (read, write,
   edit, bash: no `run`, no subagents, which would spend BayLeaf Sealed requests), greedy
@@ -991,6 +1013,23 @@ own code, so it is a convenience, not an independent proof.
   the sites fetched. The UI must mark which actions stay inside the pouch and which ones
   leave it. Tinfoil's tool-like catalog entries stay hidden until their data paths are
   reviewed.
+
+## Tool runtimes and engine jobs (plumbing; no tools yet)
+
+For the coming media and data tools (OCR, ASR, DuckDB, libav):
+
+- **Convention** (`build-runtime.mjs`): each heavy tool runs in its own same-origin
+  worker; its files ship as content-hash parts under `runtime/<group>/` listed in
+  `SHA256SUMS`; any model it needs comes from the gateway, pinned in the build. No asset
+  may default to a CDN or the Hub (`assertNoCdn`, at build and in tests).
+- **Reassembler** (`src/assets.js`): `partAssets(pin)` for runtime files over 25 MiB;
+  `fillFile` / `rangeSource` / `verifiedFile` for large gateway files. One rule: nothing
+  is used unless its SHA-256 matches a hash the page was built with.
+- **Engine jobs** (`src/jobs.js`): one instance per engine shared by every agent, a queue
+  (serial by default, `concurrency` per engine), each job a `/task` entry whose ctl stops
+  only that job, a memory guard (unloads idle engines, then refuses with a reason), and
+  capability scoping: a job gets its caller's namespace view, never the global tree.
+  Tested with a sleep-and-hash engine (`test/batchH-node.mjs`).
 
 ## The `bayleaf` command: the one way out
 

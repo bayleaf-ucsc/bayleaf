@@ -28,7 +28,8 @@ import { createControl, why } from './ns/control.js';
 import { TaskFs } from './ns/tasks.js';
 import { createComposer } from './composer.js';
 import { createEgress, egressOf, grantsFor, revoke, serviceName } from './egress.js';
-import { LOCAL, support as localSupport, stored as localStored, engine as localEngine, importFiles as localImport, remove as localRemove } from './local/engine.js';
+import { LOCAL, support as localSupport, stored as localStored, engine as localEngine, importFiles as localImport, remove as localRemove, models as modelStore } from './local/engine.js';
+import { createModelService } from './models-cli.js';
 import { isLocal, HINTS } from './local/provider.js';
 import { isLocalhost, testConnection, parseLocalhostUrl, explainMessage, DEFAULT_URL, TRANSPORTS } from './localhost.js';
 import { createOffline, short } from './offline.js';
@@ -989,7 +990,9 @@ function pickerProvider() {
   label.title = local ? 'Transformers.js: the model runs in this browser; nothing is sent. The model applies when you next send.' : 'BayLeaf Sealed: requests are encrypted to the enclave. The model applies when you next send; running work keeps its model.';
   composer?.refreshShield();
 }
-// Downloading is a choice (about 1.1 GB); progress shows in the status line and Settings.
+// Downloading is a choice (about 1.1 GB): the same approval sheet and /task
+// download as `models get` (src/models-cli.js); progress shows in the status
+// line and Settings, and Stop writes the download's /task ctl.
 let localLoading = null;
 async function ensureLocal() {
   if (!localOk.ok) { status(`Transformers.js is not available: ${localOk.reason}`, 'bad'); return false; }
@@ -997,7 +1000,14 @@ async function ensureLocal() {
   const st = await localStored();
   if (!st.complete) {
     if (!navigator.onLine) { status('The Transformers.js model is not in this browser yet, and you are offline. Settings can load a saved copy from a folder.', 'bad'); return false; }
-    if (!(await ask(`Download the Transformers.js model (${LOCAL.label}, about ${mib(LOCAL.bytes - st.bytes)}) from pouch.bayleaf.dev into this browser? Each part is checked against this page's manifest. Afterwards it works offline, and nothing you type is ever sent. Remove it any time in Settings.`, 'Download', 'primary', 'Download the Transformers.js model?'))) return false;
+    let r;
+    try { r = await modelService.get(LOCAL.id, { by: 'user', via: 'Settings' }); }
+    catch (e) { status(e.code === 'EDENIED' ? 'Not downloaded.' : 'Transformers.js model: ' + e.message, e.code === 'EDENIED' ? '' : 'bad'); return false; }
+    if (!r.already) {
+      renderLocalSettings();
+      try { await r.promise; }
+      catch (e) { status(e.name === 'AbortError' ? `Download stopped at ${mib((await localStored()).bytes)}; Download resumes where it stopped.` : 'Transformers.js model: ' + e.message, e.name === 'AbortError' ? '' : 'bad'); renderLocalSettings(); return false; }
+    }
   }
   return startLocal();
 }
@@ -1016,7 +1026,8 @@ function localProgress(p) {
   progressAt = Date.now();
   const pct = p.total ? Math.floor((p.done / p.total) * 100) : 0;
   const text = p.phase === 'loading' ? `Transformers.js: verified ${mib(p.total)}; starting the model on your GPU...`
-    : `Transformers.js: ${p.fetched || p.repaired ? 'downloading and checking' : 'checking'} ${mib(p.done)} of ${mib(p.total)} (${pct}%)${p.repaired ? `, ${p.repaired} damaged part${p.repaired > 1 ? 's' : ''} fetched again` : ''}`;
+    : p.phase === 'runtime' ? `Transformers.js: ${p.fetched || p.repaired ? 'fetching and checking' : 'checking'} the runtime, ${mib(p.done)} of ${mib(p.total)} (${pct}%)`
+    : `Transformers.js: ${p.downloading ? 'downloading from api.bayleaf.dev and checking' : p.fetched || p.repaired ? 'downloading and checking' : 'checking'} ${mib(p.done)} of ${mib(p.total)} (${pct}%)${p.repaired ? `, ${p.repaired} damaged chunk${p.repaired > 1 ? 's' : ''} fetched again` : ''}`;
   status(text);
   const bar = $('local-progress');
   if (bar) { bar.hidden = false; bar.max = p.total || 1; bar.value = p.done; }
@@ -1052,15 +1063,23 @@ async function renderLocalSettings() {
   $('local-state').textContent = !localOk.ok ? `Not available here: ${localOk.reason}`
     : st.complete ? `${LOCAL.label} is kept in this browser (${mib(st.bytes)}${st.persistent ? '' : ', for this page load only'}). It works offline.`
     : st.bytes ? `${mib(st.bytes)} of ${mib(st.total)} downloaded.` : `Not downloaded (about ${mib(LOCAL.bytes)}).`;
-  $('local-download').hidden = !localOk.ok || st.complete;
-  $('local-remove').hidden = !st.bytes;
-  if (!localLoading) $('local-progress').hidden = true;
+  const dl = modelService.downloads.get(LOCAL.id);
+  const running = dl?.status === 'running';
+  if (running) $('local-state').textContent = `Downloading from api.bayleaf.dev as /task/${dl.id}: ${mib(dl.progress?.done ?? 0)} of ${mib(dl.progress?.total ?? LOCAL.bytes)}. Every file is checked against this page's pins.`;
+  else if (!st.complete && st.bytes) $('local-state').textContent = `${mib(st.bytes)} of ${mib(st.total)} downloaded and kept; Download resumes where it stopped.`;
+  $('local-download').hidden = !localOk.ok || st.complete || running;
+  $('local-download').textContent = st.bytes && !st.complete ? 'Resume download' : 'Download';
+  $('local-stop').hidden = !running;
+  $('local-remove').hidden = !st.bytes || running;
+  if (!localLoading && !running) $('local-progress').hidden = true;
 }
 $('local-download').onclick = async () => { if (await ensureLocal()) renderLocalSettings(); };
+// Stop is the download's /task ctl, as `echo stop > /task/<id>/ctl` in the terminal.
+$('local-stop').onclick = () => { const t = modelService.downloads.get(LOCAL.id); if (t?.status === 'running') ctl(`/task/${t.id}/ctl`, 'stop').catch((e) => status(e.message, 'bad')); };
 $('local-remove').onclick = async () => {
   if (localRuns.size) return status('Stop the Transformers.js turn before removing the model.', 'bad');
   if (!(await ask('Remove the Transformers.js model from this browser? Sessions and files stay. Downloading it again takes about 1.1 GB.', 'Remove', 'danger'))) return;
-  await localRemove();
+  await localRemove(); // the same store code as `models remove` (src/models.js)
   if (localPicked()) { $('model').value = (await store.getSetting('sealedModel')) ?? models[0]?.id ?? ''; await store.setSetting('model', $('model').value); pickerProvider(); updateSend(); }
   const est = await navigator.storage?.estimate?.().catch(() => null);
   status(`Transformers.js model removed.${est ? ` This site now uses ${mib(est.usage)} of storage.` : ''}`);
@@ -1071,12 +1090,12 @@ for (const id of ['local-folder', 'local-files']) {
   $(id).onchange = async () => {
     const files = $(id).files;
     if (!files?.length) return;
-    status('Checking the picked files against this page\'s manifest...');
+    status('Checking the picked files against this page\'s pins...');
     try {
       const r = await localImport(files);
       $(id).value = '';
-      status(r.complete ? `Transformers.js model loaded from your files (${r.added} parts verified${r.bad ? `, ${r.bad} refused` : ''}).`
-        : `${r.added} parts verified${r.bad ? `, ${r.bad} refused (wrong bytes)` : ''}; ${mib(r.total - r.bytes)} still missing.`, r.bad ? 'bad' : '');
+      status(r.complete ? `Transformers.js model loaded from your files (${r.added} files verified${r.bad ? `, ${r.bad} refused` : ''}).`
+        : `${r.added} files verified${r.bad ? `, refused (wrong bytes): ${r.refused.join(', ') || r.bad}` : ''}; ${mib(r.total - r.bytes)} still missing.`, r.bad ? 'bad' : '');
     } catch (e) { status(e.message, 'bad'); }
     renderLocalSettings();
   };
@@ -1421,6 +1440,36 @@ const egressHooks = {
   onEgress: (e, caller) => { if (!childOf(caller)) noteEgress(e); },
 };
 
+// ── Models (src/models-cli.js): weights from the BayLeaf HF gateway ─────
+// One service for the `models` command (agents and the terminal) and
+// Settings. Downloads ask on the approval sheet, one at a time; only a
+// click approves. Each download is a /task entry with its own ctl.
+const modelsWho = (caller) => {
+  const w = caller == null ? null : agent?.who(caller), c = childOf(caller);
+  return { by: 'agent', caller, sid: w?.sid ?? null, name: c ? `subagent "${c.name}"` : 'main (a1)' };
+};
+let modelAsks = Promise.resolve();
+function approveModel(req, who) {
+  const run = modelAsks.then(async () => {
+    const asker = who.by === 'agent' ? `${who.sid != null ? `${titleOf(await sessions.find(who.sid).catch(() => null))} › ` : ''}${who.name}` : `you, in ${who.via ?? 'Pouch'}`;
+    const get = req.action === 'get';
+    const row = (k, v) => v ? [el('dt', { textContent: k }), el('dd', { textContent: v })] : [];
+    const body = el('div', { className: 'model-approval' },
+      el('p', { textContent: who.by === 'agent' ? `Asked by ${asker}. Only you can approve.` : `Asked by ${asker}.` }),
+      el('dl', {}, ...row(get ? 'Size' : 'Frees', mib(req.bytes) + (get && req.bytes < req.total ? ` (of ${mib(req.total)}; the rest is already kept)` : '')),
+        ...row('Kept in', req.location), ...row('License', req.license + (req.licenseUrl ? ` (${req.licenseUrl})` : '')), ...row('Attribution', req.attribution),
+        ...row('Redistribution', req.distribution), ...row('From', req.origin)),
+      el('p', { className: 'muted', textContent: get ? 'Every file is checked against the SHA-256 this page was built with. Nothing you type is sent; the gateway sees only which file ranges are requested. Stop any time from /task, Settings or the terminal; remove it any time.' : 'Sessions and files stay. Downloading it again takes the full size.' }));
+    return ask(body, get ? 'Download' : 'Remove', get ? 'primary' : 'danger', get ? (who.by === 'agent' ? `${who.name} asks to download ${req.label}` : `Download ${req.label}?`) : `${who.name} asks to remove ${req.label}`);
+  });
+  modelAsks = run.catch(() => {});
+  return run;
+}
+const modelService = createModelService({ store: modelStore, tasks: vfs.tasks, approve: approveModel,
+  onChange: () => { const t = LOCAL && modelService.downloads.get(LOCAL.id); if (t?.status === 'running' && t.progress) localProgress({ ...t.progress, downloading: true }); renderLocalSettingsSoon(); } });
+let settingsTimer = null;
+const renderLocalSettingsSoon = () => { if (!settingsTimer) settingsTimer = setTimeout(() => { settingsTimer = null; renderLocalSettings(); }, 250); };
+
 // ── Control plane (src/ns/control.js, README "Control plane") ─────────
 // Everything that acts is a file under /session (agents) or /task (runs,
 // terminal commands, watches). The Interface is one client: its buttons call
@@ -1488,7 +1537,7 @@ function mainNamespace(sid, base) {
 // The user's shell over the same namespace; `bayleaf` asks every use. Ctrl+`
 // opens it (or focuses it); opening it never sends anything.
 const terminal = createTerminal({ vfs, fs: over(vfs.as('user'), [['/session', control.view({ by: 'user', label: 'terminal' }), { label: 'control (you)' }]]), onChange: () => renderTree(),
-  hooks: { bayleafCredential: () => key, approveEgress: (req) => egress.approve(req, null, undefined, 'you, in the terminal') } });
+  hooks: { bayleafCredential: () => key, approveEgress: (req) => egress.approve(req, null, undefined, 'you, in the terminal'), models: modelService } });
 document.addEventListener('keydown', (e) => {
   if (e.key !== '`' || !e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]')) return;
   e.preventDefault();
@@ -3293,6 +3342,14 @@ const withWatch = (list) => { list.push(watchTool({ Type, watches, callerOf: wat
   localOk = await localSupport();
   await loadModels();
   renderLocalSettings();
+  // Parts kept from pouch.bayleaf.dev before the gateway: reassembled, checked
+  // against the pins and moved, so nobody downloads 1.1 GB again (src/models.js).
+  if (LOCAL) modelStore.migrate().then((r) => {
+    if (!r) return;
+    if (r.migrated.length || r.partial.length) status(`Moved the Transformers.js model kept by an earlier Pouch (${mib(r.bytes)}, checked against this page's pins)${r.partial.length ? '; Download fetches the rest' : ''}. Nothing was downloaded again.`);
+    else if (r.refused.length) status(`An earlier Pouch kept files that do not match this page's pins (${r.refused.join(', ')}); they were removed. Download fetches them from api.bayleaf.dev.`, 'bad');
+    renderLocalSettings();
+  }, (e) => status('Could not move the model kept by an earlier Pouch: ' + e.message, 'bad'));
   try {
     agent = await openAgent({
       local: LOCAL && localOk.ok ? { info: LOCAL, engine: localEngine, onHint: showHint } : null,
@@ -3307,6 +3364,7 @@ const withWatch = (list) => { list.push(watchTool({ Type, watches, callerOf: wat
         sessionOf: (caller) => (caller == null ? null : agent?.who(caller)?.sid ?? null),
         mainView: (caller, base) => { const w = caller == null ? null : agent?.who(caller); return w && w.child == null && w.sid != null ? mainNamespace(w.sid, base) : base; },
         ...egressHooks,
+        models: modelService, modelsWho,
       })),
       systemPrompt: () => systemPrompt(vfs),
       getClient: async () => (verified ? client : null),

@@ -9,7 +9,7 @@
 // Handled: same-origin GETs of the shell (/, /pouch.html, the report viewer,
 // the manifest, icons),
 // cache-first from the one cache named pouch-shell-<sha256 of pouch.html>.
-// Everything else (api.bayleaf.dev, /models/**, /SHA256SUMS, /sw.js) is not
+// Everything else (api.bayleaf.dev, /runtime/**, /SHA256SUMS, /sw.js) is not
 // intercepted: the browser fetches it as if this worker did not exist. Nor is any URL
 // with a query string: the page fetches a release as /pouch.html?fresh, which
 // must come from the server, not from this cache. (A query, not cache:

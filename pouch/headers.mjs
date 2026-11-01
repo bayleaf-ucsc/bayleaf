@@ -18,7 +18,7 @@ export const VIEWER_PERMISSIONS = 'camera=(), microphone=(), geolocation=(), dis
 // set per path, never on /*: the page and checksums are never cached; sw.js,
 // the viewer and the manifest are revalidated every time (no-cache), so a
 // release reaches them at once; icons may be cached for a day; the
-// content-hash-named model files are immutable. /viewer.html detaches the
+// content-hash-named runtime parts are immutable. /viewer.html detaches the
 // page's CSP, frame and permission headers and sets its own ("! Name" removes
 // what an earlier rule attached; checked against wrangler dev, 2026-10-31).
 export function headersFile(csp, vcsp) {
@@ -34,7 +34,7 @@ export function headersFile(csp, vcsp) {
   Cache-Control: no-cache, no-transform
 /icons/*
   Cache-Control: public, max-age=86400
-/models/*
+/runtime/*
   Cache-Control: public, max-age=31536000, immutable
 /*
   NEL: {"max_age":0}

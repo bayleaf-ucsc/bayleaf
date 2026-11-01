@@ -9,6 +9,8 @@ export async function stored() { return { bytes: LOCAL.bytes, total: LOCAL.bytes
 export async function obtain() { throw new Error('walkthrough: no model files'); }
 export async function importFiles() { return stored(); }
 export async function remove() {}
+// The model store behind `models` (src/models.js): already downloaded, nothing to move.
+export const models = { models: [], migrate: async () => null, status: async () => ({ id: LOCAL.id, label: LOCAL.label, total: LOCAL.bytes, bytes: LOCAL.bytes, complete: true, files: [] }), catalog: async () => [], release: async () => null };
 export const engine = {
   loaded: () => true,
   start: async () => ({ loaded: true }),

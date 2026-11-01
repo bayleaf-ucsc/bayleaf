@@ -11,6 +11,7 @@ import { subset } from './ns/namespace.js';
 import { serve, Client, NinepFs } from './ns/9p.js';
 import { archiveCommands } from './archive.js';
 import { bayleafCommands } from './bayleaf-cli.js';
+import { modelsCommands } from './models-cli.js';
 import { runTool } from './run.js';
 import { WATCH_GLOSS } from './ns/watch.js';
 
@@ -106,7 +107,7 @@ export function shellFor(fs, hooks = {}) {
     fs, cwd: CWD,
     env: { HOME: CWD, USER: 'user', PATH: '/usr/bin:/bin' },
     commands: COMMANDS,
-    customCommands: [...archiveCommands(defineCommand), ...bayleafCommands(defineCommand, hooks)],
+    customCommands: [...archiveCommands(defineCommand), ...bayleafCommands(defineCommand, hooks), ...modelsCommands(defineCommand, hooks.models, { by: 'user', via: 'terminal' })],
     executionLimits: { maxCommandCount: 100_000, maxLoopIterations: 100_000 },
   });
 }
@@ -173,7 +174,8 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
       fs: fsFor(caller), cwd: CWD,
       env: { HOME: CWD, USER: 'pouch', PATH: '/usr/bin:/bin' },
       commands: COMMANDS,
-      customCommands: [...archiveCommands(defineCommand), ...cli],
+      // `models` (src/models-cli.js): hooks.models is the shared service; whoOf names the asker.
+      customCommands: [...archiveCommands(defineCommand), ...cli, ...modelsCommands(defineCommand, hooks.models, () => hooks.modelsWho?.(caller) ?? { by: 'agent', caller })],
       executionLimits: { maxCommandCount: 100_000, maxLoopIterations: 100_000 },
       ...bashOptions,
     });

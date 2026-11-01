@@ -66,12 +66,26 @@ whiteouts, `/task` files, 9P2000 at the `run` and subagent boundaries. See READM
 ## Waiting on Adam
 
 - **Deploy** the current build to pouch.bayleaf.dev (first upload ~1.1 GB):
-  `node fetch-models.mjs && node build.mjs --with-models && node deploy.mjs --check && node deploy.mjs`.
+  `node build.mjs && node deploy.mjs --check && node deploy.mjs` (weights come from the HF gateway since batch H).
 - **Commit/push** policy for the post-checkpoint work.
 - **API issues to file** (public repo): a capped `/web/http` relay for `bayleaf web http`;
   read-only `/sandbox/files` requests create or wake the VM.
 - **Test key**: a separate key at `~/.tokens/bayleaf-api-test` so tests stop spending
   the personal Sealed allowance.
+
+## Might go faster with cross-origin isolation (COOP/COEP; not built)
+
+Cross-origin isolation would allow SharedArrayBuffer and threads. Pouch does not set
+COOP/COEP today; these would gain from it:
+
+- ONNX Runtime Web's CPU (WASM) fallback with threads, for OCR (PP-OCRv6) and ASR
+  (Parakeet int8) when WebGPU is missing or lacks shader-f16.
+- DuckDB-Wasm's `coi` bundle (threads and SIMD) instead of the `eh` bundle.
+- libav.js threaded builds for video decode and transcode.
+
+Costs to weigh first: every subresource and frame must be same-origin or CORP/CORS
+(the report viewer frame, the gateway already sends CORS), and the offline copy and
+service worker must serve the headers too.
 
 ## Later (lower priority)
 

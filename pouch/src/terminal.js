@@ -33,12 +33,13 @@ export function capOutput(text) {
 }
 const commonPrefix = (xs) => xs.reduce((a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; return a.slice(0, i); });
 
-// deps: { vfs, fs? (the user's namespace, with /session), hooks: { bayleafCredential, approveEgress(req) }, onChange() }
+// deps: { vfs, fs? (the user's namespace, with /session), hooks: { bayleafCredential, approveEgress(req), models? (src/models-cli.js service) }, onChange() }
 export function createTerminal({ vfs, fs: userFs, hooks = {}, onChange }) {
   const fs = serialized(userFs ?? vfs.as('user'));
   const shell = shellFor(fs, {
     bayleafCredential: () => hooks.bayleafCredential?.() ?? null,
     approveEgress: hooks.approveEgress && ((req) => hooks.approveEgress(req)),
+    models: hooks.models,
   });
   let cwd = CWD, env = null, running = null; // running: { task, settle }
   let history = [];
