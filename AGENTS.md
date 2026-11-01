@@ -304,6 +304,19 @@ transcript of the development session.
 
 ---
 
+## Review Bots
+
+Pull requests are reviewed by two bots, Greptile and CodeRabbit (CodeRabbit since
+2026-11-01). Their tuning is undecided (issue #136): **live with the defaults for a
+week** (until about 2026-11-08) and record what they catch and what they cost before
+proposing configuration changes. Meanwhile:
+
+- Fix plausible findings, but do not change code just to please a bot. Getting changes
+  into production often reveals more than review does.
+- The agent that authored the PR decides when to stop fix rounds. Bots are good at bug
+  hunting but do not see the broader process context.
+- Wait for CodeRabbit's re-review before merging.
+
 ## Commit Style
 
 ```
