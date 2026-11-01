@@ -277,7 +277,7 @@ export function createComposer(deps) {
     const trust = el('button', { type: 'button', className: 'link', textContent: 'What can BayLeaf see?' });
     trust.onclick = () => { hideShield(); s.trust(); };
     pop.replaceChildren(
-      el('p', { className: 'pop-provider' }, icon('lock'), el('strong', { textContent: s.provider })),
+      el('p', { className: 'pop-provider' }, icon(s.icon ?? 'lock'), el('strong', { textContent: s.provider })),
       el('p', { className: 'muted', textContent: s.detail }),
       el('h3', { textContent: 'Allowed for this session without asking' }), grants, trust);
     pop.hidden = false;

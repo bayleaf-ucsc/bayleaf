@@ -223,8 +223,8 @@ export function createSessions(deps) {
   async function afterTurn(sid, v, ok, turnModel) {
     await update(sid, { updated: Date.now(), ...(v?.usage ? { usage: v.usage } : {}) });
     render();
-    if (!deps.isLocal?.(turnModel)) deps.usage.refresh(); // a Local turn used no allowance and asks no server
-    // A Local session is not named by Sealed behind the user's back: it keeps
+    if (!deps.isLocal?.(turnModel)) deps.usage.refresh(); // a Transformers.js or Localhost turn used no allowance and asks BayLeaf nothing
+    // Such a session is not named by Sealed behind the user's back: it keeps
     // its first-message title (the sparkle stays an explicit choice).
     if (deps.isLocal?.(turnModel)) return;
     const fresh = await find(sid);

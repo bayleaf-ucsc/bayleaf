@@ -1,10 +1,12 @@
 // The engine: pi-durable conversations, as Pouch extends them, over the
-// BayLeaf Sealed and Transformers.js providers. Profiles: src/profiles.js.
+// BayLeaf Sealed, Transformers.js and Localhost providers. Profiles: src/profiles.js.
 //
-// Security boundary (do not loosen): every model request leaves this module
-// through the Tinfoil SecureClient's fetch, which EHBP-encrypts the body in the
-// page to the attested enclave before BayLeaf relays it. There is no plaintext
-// path: if no verified client is available, the request fails.
+// Security boundary (do not loosen): every BayLeaf Sealed request leaves this
+// module through the Tinfoil SecureClient's fetch, which EHBP-encrypts the body in
+// the page to the attested enclave before BayLeaf relays it. There is no plaintext
+// path to BayLeaf: if no verified client is available, the request fails. The one
+// plaintext path is Localhost (src/localhost.js), to a loopback server the user
+// configured, through its own origin-checked fetch; it never reaches BayLeaf.
 //
 // Layers, outside in:
 //   UI  ->  openAgent() API  ->  pi-durable Harness (durable transcript, tools,
@@ -12,6 +14,7 @@
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { createModels, createProvider } from '@earendil-works/pi-ai/models';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
+import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy';
 import { createRegistry, defineExtension, defineTool, section, Harness, MemoryStorage } from '@earendil-works/pi-durable';
 import { IndexedDbStorage } from '@earendil-works/pi-durable/storage/indexeddb';
 import { Type } from 'typebox';
@@ -20,6 +23,7 @@ import { WATCH_KIND } from './ns/watch.js';
 import { asRef, relabel } from './graph.js';
 import { attachmentContext } from './attachments.js';
 import { LOCAL_PROVIDER, isLocal, localApi, localModel } from './local/provider.js';
+import { LOCALHOST_PROVIDER, isLocalhost, localhostApi, localhostModel } from './localhost.js';
 
 export { Type, MemoryStorage, REPORT_KIND };
 
@@ -158,8 +162,10 @@ const newId = () => `p-${crypto.randomUUID()}`;
 const dbExists = async (name) => !indexedDB.databases || (await indexedDB.databases()).some((d) => d.name === name);
 
 // Model ids starting "local:" are the Transformers.js provider (src/local/provider.js,
-// profile transformersjs): generated in this browser, never sent. Every other id is BayLeaf Sealed.
-const modelRef = (modelId) => ({ provider: isLocal(modelId) ? LOCAL_PROVIDER : PROVIDER, modelId });
+// profile transformersjs): generated in this browser, never sent. "localhost:" ids are
+// the Localhost provider (src/localhost.js, profile localhost). Every other id is BayLeaf Sealed.
+const modelRef = (modelId) => ({ provider: isLocal(modelId) ? LOCAL_PROVIDER : isLocalhost(modelId) ? LOCALHOST_PROVIDER : PROVIDER, modelId });
+export const needsSealed = (modelId) => !isLocal(modelId) && !isLocalhost(modelId);
 
 // pointer: { get(id), set(id, convId) } keeps which conversation in a
 // session's database is current; a revert (D12) forks and moves it.
@@ -168,7 +174,9 @@ const modelRef = (modelId) => ({ provider: isLocal(modelId) ? LOCAL_PROVIDER : P
 // (src/subagents.js); without reg there is no subagent tool.
 // onInterrupted(sids): sessions whose run a reload cut off (aborted, not resumed).
 // local: { info: LOCAL_MODEL, engine, onHint } adds the Transformers.js provider.
-export async function openAgent({ storage, tools = [], systemPrompt, getClient, models: initialModels = [], pointer, subagents: saDeps, onInterrupted, local, onRequest }) {
+// localhost: { config: { base, key, transport, models }, onWait } adds the Localhost
+// provider; setLocalhost(config or null) replaces it (Settings, key removal).
+export async function openAgent({ storage, tools = [], systemPrompt, getClient, models: initialModels = [], pointer, subagents: saDeps, onInterrupted, local, localhost, onRequest }) {
   const models = createModels();
   let catalog = [];
   const api = withFetch(openAICompletionsApi(), sealedFetch(getClient, onRequest));
@@ -180,6 +188,17 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
     }));
   }
   setModels(initialModels);
+  let lhConfig = null, lhCatalog = [];
+  const lhApi = localhostApi({ completions: openAICompletionsApi(), responses: openAIResponsesApi() }, () => lhConfig, { onWait: localhost?.onWait });
+  function setLocalhost(config) {
+    lhConfig = config?.base ? config : null;
+    lhCatalog = lhConfig ? (lhConfig.models ?? []).map((m) => localhostModel(m, lhConfig)) : [];
+    models.setProvider(createProvider({
+      id: LOCALHOST_PROVIDER, name: 'Localhost (your machine)', baseUrl: lhConfig?.base ?? 'http://127.0.0.1/v1', models: lhCatalog, api: lhApi,
+      auth: { apiKey: { name: 'Localhost', resolve: async () => ({ auth: { apiKey: lhConfig?.key || 'none' } }) } },
+    }));
+  }
+  setLocalhost(localhost?.config);
   if (local?.info) {
     models.setProvider(createProvider({
       id: LOCAL_PROVIDER, name: 'Transformers.js (in this browser)', baseUrl: 'local:', models: [localModel(local.info)], api: localApi(local.engine, { onHint: local.onHint }),
@@ -217,7 +236,8 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
         ...compactionFor(),
         // Getter: recomputed from whatever catalog setModels() installed last.
         get modelOverrides() {
-          return Object.fromEntries(catalog.map((m) => [`${PROVIDER}/${m.id}`, compactionFor(m.contextWindow)]));
+          return Object.fromEntries([...catalog.map((m) => [`${PROVIDER}/${m.id}`, compactionFor(m.contextWindow)]),
+            ...lhCatalog.map((m) => [`${LOCALHOST_PROVIDER}/${m.id}`, compactionFor(m.contextWindow)])]);
         },
       },
     },
@@ -351,7 +371,7 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
   }
 
   return {
-    setModels,
+    setModels, setLocalhost,
     isLegacy: (id) => !storage && isLegacy(id),
     async createSession(modelId) {
       const id = storage ? null : newId();
@@ -413,9 +433,11 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
     // reads them before the message; the transcript entry keeps only `text`.
     async send(id, text, notes = [], attachments = { files: [], images: [] }, modelId) {
       // Fail before admitting the input, so it is not queued behind a dead database.
-      // A Transformers.js turn needs no BayLeaf Sealed connection (and makes no request).
+      // A Transformers.js or Localhost turn needs no BayLeaf Sealed connection (and makes no request to it).
       const c = await conv(id);
-      if (!isLocal(modelId ?? (await c.agent(ctx))?.model?.modelId) && !(await getClient())) throw new Error('Not connected to BayLeaf Sealed: sign in (or use campus access) and wait for verification.');
+      const target = modelId ?? (await c.agent(ctx))?.model?.modelId;
+      if (isLocalhost(target) && !lhCatalog.some((m) => m.id === target)) throw new Error('That Localhost model is not set up in this browser any more: test the connection in Settings > Providers > Localhost, or pick another model. No request was sent.');
+      if (needsSealed(target) && !(await getClient())) throw new Error('Not connected to BayLeaf Sealed: sign in (or use campus access) and wait for verification.');
       const state = await c.viewState(ctx), running = !!state.value.docs['pi.live']?.run;
       state.dispose();
       if (running) throw new Error('This conversation is still running. Wait or stop it before sending.');

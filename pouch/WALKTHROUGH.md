@@ -367,6 +367,18 @@ served service worker and are not illustrated yet.
 <sub><b>F4</b> built. Transformers.js answers and runs tools in this browser with nothing sent; switching providers is always explicit. <i>Scripted reenactment with a fake model.</i></sub>
 <!-- /wt -->
 
+A model server on your own computer (oMLX, Ollama, LM Studio) is the third provider, under the machine's trust root:
+
+<!-- wt:shot localhost-settings -->
+<img src="walkthrough/images/localhost-settings.png" alt="Settings, Providers, Localhost: the address http://127.0.0.1:12348/v1, a masked key field, Transport Detect, and Test connection results: address, server answered, CORS allowed, no key needed, two models, OpenAI Responses detected." width="331"><br>
+<sub><b>LH1</b> ok · <b>LH3</b> ok. Localhost connects Pouch to a model server on this computer; Test connection checks reachability, CORS, the key, the models and the transport without generating anything. <i>Scripted reenactment with a fake model.</i></sub>
+<!-- /wt -->
+
+<!-- wt:shot localhost-turn -->
+<img src="walkthrough/images/localhost-turn.png" alt="A turn on Localhost: the picker shows Qwen3.8-27B-oQ4e-mtp (your machine) with a laptop icon, a read tool pill and a short answer." width="792"><br>
+<sub><b>LH4</b> ok · <b>LH5</b> ok. A Localhost turn runs on your own server: no allowance, no BayLeaf request, and it keeps working with Wi-Fi off. <i>Scripted reenactment with a fake model.</i></sub>
+<!-- /wt -->
+
 ## 11. On a phone
 
 <!-- wt:status D17 D20.2 D21.2 A8 R6 --><b>D17</b> ok · <b>D20.2</b> ok · <b>D21.2</b> ok · <b>A8</b> ok · <b>R6</b> built, untested<!-- /wt -->
@@ -399,7 +411,7 @@ says so.
 ## Coverage
 
 <!-- wt:coverage -->
-62 of 104 stories in [JOURNEYS.md](JOURNEYS.md) are illustrated. JOURNEYS.md reuses D20, D21, G14, D19 for different stories; a second use is written with .2 here (D20.2).
+66 of 116 stories in [JOURNEYS.md](JOURNEYS.md) are illustrated. JOURNEYS.md reuses D20, D21, G14, D19 for different stories; a second use is written with .2 here (D20.2).
 
 **Not yet illustrated**
 
@@ -412,6 +424,7 @@ says so.
 - 6. Take files out: O1 (ok), O2 (ok), O3 (ok), O4 (ok), O5 (untested), O6 (gap)
 - 7. Leave: L2 (ok), L4 (untested)
 - 8. Work offline: F2 (ok), F3 (ok), F5 (ok in Chromium, gap elsewhere)
+- 9. Localhost provider (slice, 2026-10-31; Desk persona with a model server, e.g. oMLX): LH2 (ok), LH6 (ok), LH7 (ok), LH8 (ok), LH9 (ok), LH10 (ok), LH11 (gap), LH12 (ok)
 <!-- /wt -->
 
 **Gaps found while building this walkthrough.** The trust panel's mount tables used to

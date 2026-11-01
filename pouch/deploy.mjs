@@ -52,7 +52,10 @@ if (SHELL.some((p) => !shellFiles.find((f) => f.path === p))) throw new Error('A
 if (!html.includes(files.find((f) => f.path === 'sw.js').sha)) throw new Error('pouch.html does not expect this sw.js');
 const text = html.toString('utf8');
 const csp = text.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)"/i)?.[1];
-if (!csp || !csp.includes("connect-src 'self' https://api.bayleaf.dev;") || /script-src[^;]*'unsafe-(inline|eval|hashes)'/.test(csp)
+// connect-src: BayLeaf, this origin (the Transformers.js model) and loopback http for the
+// Localhost provider (LANGUAGE.md: the user's own machine). Nothing else, ever.
+// No [::1]: CSP host sources cannot name IPv6 literals.
+if (!csp || !csp.includes("connect-src 'self' https://api.bayleaf.dev http://localhost:* http://127.0.0.1:*;") || /script-src[^;]*'unsafe-(inline|eval|hashes)'/.test(csp)
   || !csp.includes("worker-src 'self' blob:;") || !csp.includes("manifest-src 'self';") || !csp.includes("img-src 'self' data: blob:;") || !csp.startsWith("default-src 'none';"))
   throw new Error('Unexpected CSP'); // 'wasm-unsafe-eval' (QuickJS, ONNX Runtime) is expected; JS eval is not
 // worker-src 'self' is for /sw.js only; manifest-src 'self' for /manifest.webmanifest.

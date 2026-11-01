@@ -2,7 +2,7 @@
 // profile. The engine is pi-durable as Pouch extends it (src/agent.js:
 // routing, compaction, steering; src/subagents.js: spawn, join, detach,
 // caps; src/tools.js: per-path write serialization). A profile is what one
-// kind of agent runs with: its prompt, tool set, loop and limits. Four exist,
+// kind of agent runs with: its prompt, tool set, loop and limits. Five exist,
 // and this module is the one place that says how they differ:
 //
 //   profile         tools                                   loop               limits
@@ -10,6 +10,7 @@
 //   subagent        page tools, subagent swapped for agents multi-step         per-pair message caps
 //   oneshot         none (no extensions, no Pouch prompt)   exactly one call   1 request
 //   transformersjs  4 qualified tools (read/write/edit/bash) multi-step       8 steps, ~4k tokens
+//   localhost       page tools minus subagent and agents     multi-step         24 steps, no allowance
 //
 // profileOf() picks one. The engine reads `agent(...)` (pi-durable agent
 // config for a conversation it creates) and the transformersjs recipe; main's
@@ -85,6 +86,15 @@ export const FEWSHOT = [
 
 export const TJS = Object.freeze({ STEP_CAP, BUDGET, MAX_NEW, SYSTEM, TOOLS, FEWSHOT });
 
+// ── localhost: a model on the user's own server (src/localhost.js applies it).
+// Main's prompt and page tools, without subagents: one local server runs a few
+// requests at a time (oMLX: 4) and a second model may not fit in memory, so a
+// Localhost agent works alone. The step cap stops a small model looping on a
+// failing tool; capable models finished every qualification task well inside it.
+export const LOCALHOST_STEP_CAP = 24;
+export const LOCALHOST_DROP_TOOLS = ['subagent', 'agents'];
+export const LOCALHOST_NOTE = 'You run on a model server on the user\'s own computer (Localhost). Subagents are not available here: ignore guidance about the subagent tool and do the work yourself.';
+
 // pi-durable agent configs. tool/peerTool are subagents.js's two tools: a
 // subagent loses `subagent` and gains `agents` (list, message, join).
 export const PROFILES = Object.freeze({
@@ -94,11 +104,14 @@ export const PROFILES = Object.freeze({
   oneshot: { name: 'oneshot', tools: 'none', loop: 'one call', limits: '1 request',
     agent: ({ model, name, ref, toLabel }) => ({ model, extensions: [], modelTools: [], instructions: oneshotInstructions(name, ref, toLabel) }) },
   transformersjs: { name: 'transformersjs', tools: TOOLS, loop: 'multi-step', limits: `${STEP_CAP} steps, ${BUDGET} tokens`, recipe: TJS },
+  localhost: { name: 'localhost', tools: { remove: LOCALHOST_DROP_TOOLS }, loop: 'multi-step', limits: `${LOCALHOST_STEP_CAP} steps, no allowance` },
 });
+export const isLocalhost = (modelId) => String(modelId ?? '').startsWith('localhost:');
 
 // Which profile an agent runs: the provider decides first (a Transformers.js
 // model always gets its qualified recipe), then the agent's role.
 export function profileOf({ modelId, child = false, oneshot = false } = {}) {
   if (isLocal(modelId)) return 'transformersjs';
+  if (isLocalhost(modelId)) return 'localhost';
   return oneshot ? 'oneshot' : child ? 'subagent' : 'main';
 }

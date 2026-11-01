@@ -32,7 +32,7 @@ position; that is expected and stated.
 |---|---|---|---|
 | BayLeaf | **BayLeaf Sealed** | built | Tinfoil enclaves via api.bayleaf.dev; BayLeaf relays ciphertext it cannot read |
 | The browser | **Transformers.js** | built | Transformers.js 4.3.2 on ONNX Runtime Web (WebGPU backend), in the page (LFM3) |
-| The user's machine | **Localhost** | not built | an OpenAI-compatible server on loopback: oMLX, Ollama, LM Studio, or a proxy the user runs and verifies themselves (e.g. to their own Tinfoil account) |
+| The user's machine | **Localhost** | built (2026-10-31; not deployed) | an OpenAI-compatible server on loopback: oMLX, Ollama, LM Studio, or a proxy the user runs and verifies themselves (e.g. to their own Tinfoil account). `src/localhost.js` |
 
 Excluded by policy: any non-localhost endpoint other than BayLeaf. Pouch does not
 integrate third-party services directly (not even personal Tinfoil accounts); users
@@ -41,16 +41,18 @@ forwards to is the user's choice and responsibility.
 
 Localhost consequences: `connect-src` gains `http://localhost:*` and
 `http://127.0.0.1:*` as a permanent, documented exception (a CSP is fixed per build,
-not per user); Chrome's Local Network Access permission adds a browser-side gate;
-loopback HTTP is allowed from an HTTPS page; the local server must allow the
-`https://pouch.bayleaf.dev` origin (CORS), documented per server.
+not per user); `http://[::1]` is not possible, because CSP host sources cannot name IPv6
+literals, so Pouch accepts only `localhost` and `127.0.0.1`; Chrome's Local Network Access
+permission adds a browser-side gate; loopback HTTP is allowed from an HTTPS page; the local
+server must allow the `https://pouch.bayleaf.dev` origin (CORS), documented per server
+(README "Localhost").
 
 **Harness.** What turns a model into an agent: the step loop, prompt assembly, tools,
 limits, message queues and persistence. A harness is an **engine** plus a **profile**.
 - *Engine*: pi-durable, extended by Pouch (routing, join, detach, caps, per-path
   write serialization).
-- *Profile*: the prompt, tool set, limits and namespace defaults. Four exist, named in
-  `src/profiles.js` (main, subagent, oneshot, transformersjs):
+- *Profile*: the prompt, tool set, limits and namespace defaults. Five exist, named in
+  `src/profiles.js` (main, subagent, oneshot, transformersjs, localhost):
 
   | Profile | Tools | Loop | Limits |
   |---|---|---|---|
@@ -58,8 +60,11 @@ limits, message queues and persistence. A harness is an **engine** plus a **prof
   | subagent | trimmed (list, message, join) | multi-step | per-pair caps |
   | one-shot | none | exactly one call | 1 request |
   | Transformers.js (LFM3) | 4 qualified tools, tested recipe | multi-step | 8 steps, ~4k context |
+  | localhost | main's prompt and tools minus subagent and agents | multi-step | 24 steps, no allowance |
 
-  A Localhost provider will likely need its own profile per model family, as LFM3 did.
+  Localhost has one profile for every model so far: the server's own chat template does
+  the per-family work that LFM3 needed a recipe for. A model family that needs more gets
+  its own entry, as LFM3 did.
 
 **Context.** What the model actually receives on a given step: system prompt, loaded
 skills, the surviving turns of its thread's current branch, tool results, steers,

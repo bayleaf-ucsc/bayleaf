@@ -445,6 +445,35 @@ export const scenes = [
     },
   },
   {
+    id: 'localhost', stories: ['LH3', 'LH5'], reenactment: true,
+    shots: [
+      { id: 'localhost-settings', target: '#lh-settings', maxHeight: 640, stories: ['LH1', 'LH3'],
+        alt: 'Settings, Providers, Localhost: the address http://127.0.0.1:12348/v1, a masked key field, Transport Detect, and Test connection results: address, server answered, CORS allowed, no key needed, two models, OpenAI Responses detected.',
+        caption: 'Localhost connects Pouch to a model server on this computer; Test connection checks reachability, CORS, the key, the models and the transport without generating anything.' },
+      { id: 'localhost-turn', target: [['last:#log .msg.user', 'last:#log .msg.assistant'], '#composer'], stack: true, stories: ['LH4', 'LH5'],
+        alt: 'A turn on Localhost: the picker shows Qwen3.8-27B-oQ4e-mtp (your machine) with a laptop icon, a read tool pill and a short answer.',
+        caption: 'A Localhost turn runs on your own server: no allowance, no BayLeaf request, and it keeps working with Wi-Fi off.' },
+    ],
+    async run(ctx) {
+      const { page, shot, send, idle, panel, T } = ctx;
+      await ctx.seed({ '/work/notes.md': '- buy stamps\n- call the library\n- send the draft\n' });
+      await ctx.localhost({ models: [['Qwen3.8-27B-oQ4e-mtp', 262144], ['MiniCPM5-2B-oQ8', 131072]],
+        queue: [{ call: { name: 'read', arguments: { path: 'notes.md' } } }, { text: 'notes.md lists three tasks: buy stamps, call the library, send the draft.' }] });
+      await panel('settings');
+      await page.fill('#lh-url', 'http://127.0.0.1:12348');
+      await page.click('#lh-test');
+      await page.waitForSelector('#model optgroup[label="Localhost"]', { ...T, state: 'attached' });
+      await page.locator('#lh-settings').scrollIntoViewIfNeeded();
+      await page.evaluate(() => { document.getElementById('status').textContent = ''; });
+      await shot('localhost-settings');
+      await page.selectOption('#model', 'localhost:Qwen3.8-27B-oQ4e-mtp');
+      await page.evaluate(() => { document.getElementById('status').textContent = ''; });
+      await send('What is in notes.md?');
+      await idle();
+      await shot('localhost-turn');
+    },
+  },
+  {
     id: 'sessions', stories: ['D8', 'D9', 'D12'],
     shots: [
       { id: 'sessions-sidebar', target: ['#new', 'last:#session-list .session'], stories: ['D3', 'D8', 'D9'],

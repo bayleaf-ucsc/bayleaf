@@ -24,7 +24,7 @@ the same operator identifies bytes but is not independent evidence of their prov
   BayLeaf API/Tinfoil encrypted path. The `bayleaf` tool's approved non-inference
   egress is a separate plaintext boundary, as described in the README.
 - CSP is the built page's exact hash-based script policy, with only
-  `connect-src 'self' https://api.bayleaf.dev` (`'self'` since the Transformers.js provider: model files); the response additionally denies framing and
+  `connect-src 'self' https://api.bayleaf.dev http://localhost:* http://127.0.0.1:*` (`'self'` since the Transformers.js provider: model files; loopback since the Localhost provider, not yet deployed; `deploy.mjs` checks this exact list); the response additionally denies framing and
   objects. `no-store, no-transform`, no-referrer, nosniff, HSTS, noindex and restrictive
   camera/microphone/geolocation policy are static response headers.
 - Cloudflare initially injected NEL network-error-reporting headers. Removing them

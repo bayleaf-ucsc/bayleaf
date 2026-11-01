@@ -210,7 +210,7 @@ measures contrast for seeds 1-12 in both themes (light text min 4.79:1, dark 5.8
 | Editor follows or conflicts (R4) | The lines that changed underneath you flash once in the editor, separate from the conflict bar. |
 | Revert to here (D12) | Messages after the point dim (200 ms) and fold into a collapsed "Other branch: N messages Pouch no longer sees"; the file tree does not move, because files are not touched. |
 | Build identity (I-stories, offline copy) | A swatch seeded from the first byte of the page's sha256 beside the hash in "This copy" and in the update notice: the same build always shows the same color, a new build a visibly different one. The hash stays the authority. |
-| Providers | Fixed theme tokens, never agent hues: `--provider-sealed` (leaf, BayLeaf Sealed) and `--provider-tjs` (blue, Transformers.js) on the model picker's provider icon and the composer shield. |
+| Providers | Fixed theme tokens, never agent hues: `--provider-sealed` (leaf, BayLeaf Sealed), `--provider-tjs` (blue, Transformers.js) and `--provider-localhost` (amber, Localhost) on the model picker's provider icon and the composer shield. |
 
 Every moment is keyed (`src/motion.js`): the log, tree and tray are rebuilt on every
 streamed token, so `arm(key)` starts a clock and each rebuild's `play()` resumes the
@@ -242,11 +242,13 @@ separate model or API service is stateless.
 | Prompts, file contents the agent reads, replies | in transit only, EHBP-encrypted to the Tinfoil enclave | the attested enclave; not BayLeaf |
 | Transformers.js turns (prompts, files, replies) | this browser only: generated on its GPU | nobody else; nothing is sent |
 | Transformers.js model files (optional, ~1.1 GB) | Cache Storage (`pouch-local-models`), until Remove the model or Erase all | the static host sees that this browser downloaded them |
+| Localhost address, optional API key, model list | IndexedDB `settings.localhost`, until Remove key, Remove Localhost or Erase all; never synced | only your server, which receives the key with each request |
 
-The CSP's `connect-src 'self' https://api.bayleaf.dev` means the page has one remote
-network peer plus its own static origin, which it uses only to download the optional
-Transformers.js model's hash-checked files. An auditor checks the file's hash and that its CSP is
-as stated.
+The CSP's `connect-src 'self' https://api.bayleaf.dev http://localhost:* http://127.0.0.1:*`
+means the page has one remote network peer, its own static origin (used only to download
+the optional Transformers.js model's hash-checked files) and loopback http on this computer
+(used only for the Localhost provider you set up). An auditor checks the file's hash and
+that its CSP is as stated.
 
 ## The coding agent
 
@@ -557,6 +559,16 @@ transparency log, and no tagged reproducible release has been made.
   lets page script send data to that host, which before needed `api.bayleaf.dev`: the
   same operator, but a different service with different logs (Cloudflare Workers Static
   Assets keeps request metadata, not bodies; see DEPLOYMENT.md).
+- **Loopback for Localhost, nothing else on your network.** `http://localhost:*` and
+  `http://127.0.0.1:*` were added for the Localhost provider (below): a permanent,
+  build-wide exception, since a CSP is fixed per build, not per user. It does not reach
+  LAN addresses, other hosts or `0.0.0.0`. `http://[::1]:*` is not in it: CSP host
+  sources cannot name IPv6 literals (Chromium 156 ignores it as an invalid source), so an
+  IPv6-only server is reached as `localhost`. The cost of the widening: any script in the
+  page could talk to any loopback service that allows the page's origin (CORS) or that
+  answers no-cors requests; with hash-pinned scripts only, that is the same code you
+  checked. Chromium's Local Network Access permission adds a browser-side gate when the
+  page is served from `https://pouch.bayleaf.dev`.
 - **An offline copy that changes only when you say so.** `worker-src 'self' blob:` and
   `manifest-src 'self'` exist for installing: `'self'` in `worker-src` lets the page
   register `/sw.js`, the one script not covered by the hash list. See "Install and the
@@ -618,6 +630,49 @@ shield says "Transformers.js: in this browser, nothing sent".
   a deletion, is left alone), `write` saves a non-empty file ending with exactly one
   newline, and a `bash` failure with no output says so ("no output, exit 1 (for grep this
   means no matches...)"). Each is disclosed in the tool description and its result.
+
+## Localhost: a model server on this computer
+
+Settings > Providers > Localhost connects Pouch to an OpenAI-compatible server on
+loopback that the user runs: oMLX, Ollama, LM Studio, llama.cpp's server, or a proxy (for
+example to their own Tinfoil account; Pouch itself integrates no third party). Source:
+`src/localhost.js` (pure, node-tested), profile `localhost` in `src/profiles.js`.
+
+- **Address**: `http://localhost` or `http://127.0.0.1`, any port; a bare origin gets
+  `/v1`. Everything else is refused in code (lookalikes such as `127.0.0.1.evil.com`,
+  `localhost.evil`, `0.0.0.0`, LAN addresses, `user@host` forms, https) and again by the
+  CSP. Every request goes through one fetch that refuses any origin but the configured one.
+- **Key** (optional): kept in this browser's IndexedDB like the BayLeaf key, shown masked,
+  never synced, sent only to that server; Remove key or Erase all deletes it.
+- **Test connection** checks the address, reachability, CORS, the key, the model list
+  (`/v1/models`, with `max_model_len` or `context_length` as the context window) and the
+  transport, without generating anything. A failed fetch is diagnosed with a `no-cors`
+  probe: if the server answers it, the real request was blocked by CORS, and Pouch names the
+  origin to allow (`server.cors_origins` in oMLX's `~/.omlx/settings.json`, `OLLAMA_ORIGINS`
+  for Ollama, LM Studio's Enable CORS). A denied Local Network Access permission is
+  reported as such where the browser exposes it.
+- **Transports**: pi-ai's own OpenAI Chat Completions and OpenAI Responses APIs, chosen by
+  probing `POST /v1/responses` with an empty body (a 400/422 validation error means the
+  route exists; 404/405 means it does not), or by the user. Streaming, tool calls, usage
+  and abort work through both; reasoning streams (`reasoning_content`, reasoning summary
+  events) but no reasoning controls are sent.
+- **Profile `localhost`**: main's prompt and page tools without `subagent` and `agents`
+  (one local server runs a few requests at a time and a second model may not fit in
+  memory, so a Localhost agent works alone; a note in the prompt says so), and a 24-step
+  cap per message. No allowance is used and BayLeaf is not asked for anything, not even a
+  session title. Usage counts tokens when the server reports them.
+- **Interface**: a Localhost group in the picker (laptop icon, its own color), a shield
+  saying "your machine runs the model" and what is sent; "Waiting for your server: it may
+  be loading the model" after 4 s without a token; specific errors (unreachable, CORS,
+  401, model missing, context too long). It keeps working with Wi-Fi off. Switching to or
+  from it is always an explicit picker choice.
+- **Chrome Local Network Access**: from `https://pouch.bayleaf.dev`, Chromium may ask
+  whether the site may reach devices on the local network the first time it calls the
+  server. Denying it makes every request fail like an unreachable server; change it in the
+  site settings. oMLX also rejects the older Private Network Access preflight header
+  (`Disallowed CORS private-network`), which current Chromium no longer sends.
+- **Tested** with `test/dummy-openai.mjs`, a loopback stand-in shaped after oMLX's captured
+  responses (`test/fixtures/omlx/`): `test/localhost-node.mjs`, `test/localhost-browser.mjs`.
 
 ## Offline
 
@@ -685,6 +740,10 @@ own code, so it is a convenience, not an independent proof.
   copied, rotate it from the dashboard. Until users can hold more than one key, rotating
   also cuts off your other clients. Narrower credentials are a separate API concern, not
   a Pouch one. Campus Pass needs no key at all, but works only on campus.
+- **Localhost content.** A Localhost turn sends this session's messages, the files the
+  model reads and tool results in plaintext to your server. Pouch checks that the address
+  is loopback; it cannot see what the server does next (logging, or forwarding to another
+  provider as a proxy). That is your machine's trust root, and your responsibility.
 - **Which actions are sealed.** Only Sealed inference is encrypted from BayLeaf. The shell's
   `bayleaf` command (web search and fetch, Sandboxes, Inboxes; below) is plaintext to
   BayLeaf under its ordinary no-logging posture, and some of it reaches Tavily, Daytona or

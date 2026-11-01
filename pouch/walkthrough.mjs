@@ -26,6 +26,7 @@ import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 import { build } from 'esbuild';
 import { decode, encode, shrink, diff } from './walkthrough/png.mjs';
+import { startDummy } from './test/dummy-openai.mjs';
 // WALKTHROUGH_SCENES: another scenes module (tests of the generator itself).
 const { scenes } = await import(process.env.WALKTHROUGH_SCENES ? resolve(process.env.WALKTHROUGH_SCENES) : './walkthrough/scenes.mjs');
 
@@ -52,7 +53,7 @@ export function parseStories(md) {
   for (const line of md.split('\n')) {
     if (/^#{2,3} /.test(line)) section = line.replace(/^#+ /, '');
     else if (/^[A-Z][^-].*\(slice, /.test(line)) section = line.split(' (')[0];
-    const m = /^- ([A-Z]\d+[a-z]?|Caps|Mechanics) ([^:]*?):\s(.*)$/.exec(line);
+    const m = /^- ([A-Z]{1,2}\d+[a-z]?|Caps|Mechanics) ([^:]*?):\s(.*)$/.exec(line);
     if (!m) continue;
     const n = out.filter((s) => s.id === m[1]).length + 1;
     out.push({ id: m[1], n, ref: n > 1 ? `${m[1]}.${n}` : m[1], status: m[2].replace(/\s*\(.*$/, '').trim() || m[2], text: m[3], section });
@@ -108,6 +109,10 @@ const INIT = `(() => {
   crypto.randomUUID = () => '00000000-0000-4000-8000-' + String(++n).padStart(12, '0');
   Math.random = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
 })();`;
+
+// One loopback dummy for every scene that needs a Localhost server (closed at exit).
+let dummyP = null;
+const dummyServer = () => (dummyP ??= startDummy());
 
 // ── Scene runner ───────────────────────────────────────────────────
 const fresh = new Map(); // shot id -> { img (decoded, final density), text, scene, shot }
@@ -172,6 +177,18 @@ async function runScene(browser, url, sc) {
     },
     sidebar: async () => { if ((await page.getAttribute('#flipper', 'aria-expanded')) !== 'true') await page.click('#flipper'); },
     shot: (id, opts) => shot(page, sc, id, opts),
+    // A Localhost server at oMLX's usual address, answered by the loopback dummy
+    // (test/dummy-openai.mjs): the page shows 127.0.0.1:12348 whatever port the dummy got,
+    // and a real server on that port is never contacted.
+    localhost: async ({ models, queue = [] } = {}) => {
+      const d = await dummyServer();
+      Object.assign(d.cfg, { key: null, cors: ['*'], responses: true, models, queue });
+      await context.route('http://127.0.0.1:12348/**', async (r) => {
+        const u = new URL(r.request().url());
+        await r.fulfill({ response: await r.fetch({ url: d.url + u.pathname + u.search }) });
+      });
+      return d;
+    },
   };
   try {
     await page.goto(url + (sc.path ?? '/'));
@@ -398,4 +415,5 @@ const total = files.reduce((n, f) => n + statSync(join(IMAGES, f)).size, 0);
 log(`images: ${files.length} (${(total / 1024).toFixed(0)} KiB), changed ${changed.length}${changed.length ? `: ${changed.join(', ')}` : ''}; drafted ${drafted}; illustrated ${illustrated.size}/${stories.length}`);
 if (stale.length) log(`stale images (no scene declares them): ${stale.join(', ')}`);
 if (total > BUDGET) { console.error(`walkthrough/images/ is ${(total / 1048576).toFixed(2)} MiB, over the ${BUDGET / 1048576} MiB budget: crop tighter or use density 1`); process.exitCode = 1; }
+if (dummyP) await (await dummyP).close();
 if (failures.length) { console.error(`${failures.length} scene(s) failed:\n${failures.join('\n')}`); process.exitCode = 1; }

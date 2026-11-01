@@ -26,8 +26,7 @@ export function createUsage({ getKey }) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const j = await r.json();
         const sealed = j.budgets?.find((b) => b.provider === 'sealed');
-        const std = j.budgets?.find((b) => b.provider === 'openrouter');
-        next = { mode: 'key', ...budget(sealed), standard: std && { remaining: num(std.remaining), limit: num(std.limit), unit: std.unit } };
+        next = { mode: 'key', ...budget(sealed) };
       } else {
         const r = await fetch(API + '/campus-pass');
         if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -190,10 +189,6 @@ export function renderPanel(host, s, rows, led = null) {
   }
   out.push(box);
   out.push(el('p', { textContent: 'Each model step uses one request: every tool round in a turn, every compaction summary, and every automatic title. A turn that reads two files and then replies takes three.' }));
-  if (s.standard) {
-    const std = s.standard.unit === 'usd' && s.standard.remaining != null ? `$${s.standard.remaining.toFixed(2)} of $${s.standard.limit?.toFixed(2)} left` : 'separate budget';
-    out.push(el('p', { className: 'std', textContent: `BayLeaf API plaintext requests (OpenRouter): ${std}. Not used by Pouch, which sends only BayLeaf Sealed requests.` }));
-  }
   out.push(el('h3', { textContent: 'Today by session' }));
   const shown = rows.filter((r) => r.input || r.output || r.requests);
   if (!shown.length) out.push(el('p', { className: 'muted', textContent: 'Nothing counted yet. Rows appear after a session\'s first turn.' }));

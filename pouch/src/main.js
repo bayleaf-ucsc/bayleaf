@@ -26,6 +26,7 @@ import { createComposer } from './composer.js';
 import { createEgress, egressOf, grantsFor, revoke, serviceName } from './egress.js';
 import { LOCAL, support as localSupport, stored as localStored, engine as localEngine, importFiles as localImport, remove as localRemove } from './local/engine.js';
 import { isLocal, HINTS } from './local/provider.js';
+import { isLocalhost, testConnection, parseLocalhostUrl, explainMessage, DEFAULT_URL, TRANSPORTS } from './localhost.js';
 import { createOffline, short } from './offline.js';
 import { createFollow } from './follow.js';
 import { dismissible, guardDialog } from './dismiss.js';
@@ -799,15 +800,17 @@ let recheck = null;
 const lostRuns = new Set(); // sessions whose turn the network cut off
 const OFFLINE = 'Offline: the model is unreachable. Files, the editor, archives and run keep working; sending comes back when the network does.';
 const LOCAL_OFFLINE = 'Offline: BayLeaf Sealed is unreachable. Transformers.js keeps working; it needs no network.';
+const LOCALHOST_OFFLINE = 'Offline: BayLeaf Sealed is unreachable. Localhost keeps working: your server is on this computer.';
 function isNetworkError(msg) { return /failed to fetch|networkerror|network ?error|load failed|connection (error|lost)|ERR_INTERNET|ERR_NETWORK|fetch failed/i.test(msg ?? ''); }
 function goOffline() {
   const was = offline;
   offline = true; verified = false; client = null;
   setBadge('offline', 'Offline: the model is unreachable');
-  status(localPicked() ? LOCAL_OFFLINE : OFFLINE, 'offline');
-  $('input').placeholder = localPicked() ? PLACEHOLDER : 'Offline: keep typing; Send comes back with the network';
+  status(localPicked() ? LOCAL_OFFLINE : localhostPicked() ? LOCALHOST_OFFLINE : OFFLINE, 'offline');
+  $('input').placeholder = offSealedPicked() ? PLACEHOLDER : 'Offline: keep typing; Send comes back with the network';
   // A turn waiting on a dead stream would otherwise hang until the socket times out.
-  for (const sid of sessions.running) { if (localRuns.has(sid)) continue; lostRuns.add(sid); agent?.abort(sid).catch(() => {}); }
+  // Transformers.js and Localhost turns need no network beyond this computer.
+  for (const sid of sessions.running) { if (localRuns.has(sid) || lhRuns.has(sid)) continue; lostRuns.add(sid); agent?.abort(sid).catch(() => {}); }
   if (!was) { clearInterval(recheck); recheck = setInterval(probe, 15_000); }
   updateSend(); scheduleRender();
 }
@@ -860,7 +863,7 @@ async function loadModels() {
   // The picker groups models by provider (LANGUAGE.md), each named specifically.
   const none = !models.length && saved !== LOCAL_ID ? [Object.assign(new Option('Model list unavailable', '', true, true), { disabled: true })] : [];
   const group = (label, opts) => (opts.length ? [el('optgroup', { label }, ...opts)] : []);
-  $('model').replaceChildren(...group('BayLeaf Sealed', [...none, ...models.map((m) => new Option(m.name + (m.multimodal ? ' · images' : ''), m.id, false, m.id === saved))]), ...group('Transformers.js', localOption(saved)));
+  $('model').replaceChildren(...group('BayLeaf Sealed', [...none, ...models.map((m) => new Option(m.name + (m.multimodal ? ' · images' : ''), m.id, false, m.id === saved))]), ...group('Transformers.js', localOption(saved)), ...group('Localhost', localhostOptions(saved)));
   agent?.setModels?.(models);
   pickerProvider();
 }
@@ -872,7 +875,8 @@ $('model').onchange = async () => {
   await store.setSetting('model', $('model').value);
   if (!localPicked()) await store.setSetting('sealedModel', $('model').value);
   pickerProvider(); updateSend();
-  status(localPicked() ? 'Transformers.js selected for your next user turn: the model runs in this browser and nothing is sent.' : 'Model selected for your next user turn. Running work is unchanged.');
+  status(localPicked() ? 'Transformers.js selected for your next user turn: the model runs in this browser and nothing is sent.'
+    : localhostPicked() ? 'Localhost selected for your next user turn: your server on this computer runs it. No allowance is used.' : 'Model selected for your next user turn. Running work is unchanged.');
 };
 
 // ── Transformers.js provider (src/local/): a model in this browser, chosen explicitly
@@ -882,7 +886,7 @@ let localOk = { ok: false, reason: '' };
 const localRuns = new Set(); // sessions whose current turn runs on Transformers.js
 const LOCAL_ID = LOCAL && 'local:' + LOCAL.id;
 const localPicked = () => isLocal($('model').value);
-const canSend = () => !!agent && (localPicked() || (verified && !offline));
+const canSend = () => !!agent && (offSealedPicked() || (verified && !offline));
 const mib = (n) => `${(n / 2 ** 20).toLocaleString(undefined, { maximumFractionDigits: 0 })} MB`;
 function localOption(saved) {
   if (!LOCAL) return [];
@@ -892,12 +896,16 @@ function localOption(saved) {
   return [o];
 }
 function pickerProvider() {
-  const local = localPicked(), label = $('model').closest('.provider-model');
-  label.querySelector('use').setAttribute('href', local ? '#i-chip' : '#i-lock');
-  // Providers keep fixed theme colors (continuity): BayLeaf Sealed and Transformers.js never share one.
+  const local = localPicked(), lhost = localhostPicked(), label = $('model').closest('.provider-model');
+  label.dataset.sealedTitle ??= label.title; // the page's own wording, kept from the first call
+  label.querySelector('use').setAttribute('href', local ? '#i-chip' : lhost ? '#i-laptop' : '#i-lock');
+  // Providers keep fixed theme colors (continuity): no two providers share one.
   label.classList.toggle('provider-tjs', local);
+  label.classList.toggle('provider-localhost', lhost);
+  label.title = local ? 'Transformers.js: runs in this browser, nothing is sent.' : lhost ? 'Localhost: your server on this computer runs the model. The model applies to your next user turn.' : label.dataset.sealedTitle;
   $('shield-btn')?.classList.toggle('provider-tjs', local);
-  if (offline) $('input').placeholder = local ? PLACEHOLDER : 'Offline: keep typing; Send comes back with the network';
+  $('shield-btn')?.classList.toggle('provider-localhost', lhost);
+  if (offline) $('input').placeholder = local || lhost ? PLACEHOLDER : 'Offline: keep typing; Send comes back with the network';
   label.title = local ? 'Transformers.js: the model runs in this browser; nothing is sent. The model applies when you next send.' : 'BayLeaf Sealed: requests are encrypted to the enclave. The model applies when you next send; running work keeps its model.';
   composer?.refreshShield();
 }
@@ -992,6 +1000,98 @@ for (const id of ['local-folder', 'local-files']) {
     } catch (e) { status(e.message, 'bad'); }
     renderLocalSettings();
   };
+}
+
+// ── Localhost provider (src/localhost.js): a model server on this computer
+// Set up only here, by the user: an address on loopback, an optional key (kept in
+// this browser's IndexedDB like the BayLeaf key, shown masked, removable; Erase all
+// removes it), and the transport. Test connection checks reachability, CORS, the
+// key, the model list and the transport, without generating anything.
+let lh = null; // { base, key, transport, detected, models: [{ id, contextWindow }], testedAt }
+const lhRuns = new Set(); // sessions whose current turn runs on Localhost
+const localhostPicked = () => isLocalhost($('model').value);
+const offSealed = (id) => isLocal(id) || isLocalhost(id);
+const offSealedPicked = () => offSealed($('model').value);
+const lhModels = () => lh?.models ?? [];
+const lhAgentConfig = () => (lh?.base && lh.models?.length ? { base: lh.base, key: lh.key || '', transport: lh.transport, models: lh.models } : null);
+function localhostOptions(saved) {
+  return lhModels().map((m) => {
+    const o = new Option(`${m.id} (your machine)`, 'localhost:' + m.id, false, saved === 'localhost:' + m.id);
+    o.title = `Runs on your server at ${lh.base}. Pouch sends it this session's messages and the files the model reads.`;
+    return o;
+  });
+}
+async function saveLocalhost(next) {
+  lh = next;
+  await store.setSetting('localhost', lh ?? undefined);
+  agent?.setLocalhost?.(lhAgentConfig());
+  await loadModels();
+  renderLocalhostSettings();
+}
+const mask = (k) => (k.length <= 8 ? '•'.repeat(k.length) : `${k.slice(0, 3)}${'•'.repeat(6)}${k.slice(-4)}`);
+function renderLocalhostSettings(result) {
+  if (!$('lh-settings')) return;
+  if (document.activeElement !== $('lh-url')) $('lh-url').value = lh?.base ?? $('lh-url').value ?? '';
+  if (!$('lh-url').value) $('lh-url').placeholder = DEFAULT_URL;
+  $('lh-transport').value = lh?.transportChoice ?? 'auto';
+  $('lh-key').value = '';
+  $('lh-key').placeholder = lh?.key ? `saved: ${mask(lh.key)} (type to replace)` : 'only if your server asks for one';
+  $('lh-key-remove').hidden = !lh?.key;
+  $('lh-forget').hidden = !lh;
+  $('lh-key-state').textContent = lh?.key ? `Key saved in this browser (${mask(lh.key)}), never synced; it is sent only to ${lh.base}. Remove key or Erase all deletes it.` : 'Kept in this browser only, never synced or sent anywhere but your server. Erase all removes it.';
+  if (result) {
+    $('lh-steps').replaceChildren(...result.steps.map((s) => el('li', { className: s.ok ? 'ok' : 'bad', textContent: s.text })));
+    $('lh-fix').hidden = result.ok;
+    $('lh-fix').textContent = result.ok ? '' : fixFor(result);
+  } else if (lh?.models?.length && !$('lh-steps').childElementCount) {
+    $('lh-steps').replaceChildren(el('li', { className: 'ok', textContent: `Set up: ${lh.models.length} model${lh.models.length === 1 ? '' : 's'} from ${lh.base}, ${TRANSPORTS[lh.transport]}. They are in the model picker under Localhost.` }));
+  }
+}
+function fixFor(r) {
+  if (r.kind === 'cors') return `To fix: allow the origin ${location.origin} on your server, restart it, then press Test connection again. Pouch cannot do this for you: your server decides who may call it.`;
+  if (r.kind === 'lna') return 'To fix: allow this site to reach devices on your local network (Chrome asks once; the site settings let you change your answer), then test again.';
+  if (r.kind === 'unreachable') return 'To fix: start your server and check the port. Pouch only tries the address above.';
+  if (r.kind === 'auth') return 'To fix: copy the API key from your server\'s settings into the key field.';
+  return '';
+}
+$('lh-test').onclick = async () => {
+  const url = $('lh-url').value.trim() || DEFAULT_URL;
+  const parsed = parseLocalhostUrl(url);
+  const typedKey = $('lh-key').value.trim();
+  const key = typedKey || (lh && parsed.ok && parsed.base === lh.base ? lh.key : '') || '';
+  const choice = $('lh-transport').value;
+  $('lh-test').disabled = true;
+  $('lh-steps').replaceChildren(el('li', { className: 'ok', textContent: 'Testing...' }));
+  try {
+    const r = await testConnection({ url, key, transport: choice });
+    if (r.ok) {
+      await saveLocalhost({ base: r.base, key, transport: r.transport, transportChoice: choice, detected: r.detected, models: r.models, testedAt: Date.now() });
+      status(`Localhost is set up: ${r.models.length} model${r.models.length === 1 ? '' : 's'} in the picker under Localhost.`);
+    }
+    renderLocalhostSettings(r);
+    if (!r.ok) status('Localhost test failed: ' + r.error, 'bad');
+  } finally { $('lh-test').disabled = false; }
+};
+$('lh-key-remove').onclick = async () => {
+  if (!lh?.key) return;
+  if (!(await ask('Remove the Localhost API key from this browser? Your server keeps its own copy; Pouch will send no key until you add one again.', 'Remove key', 'danger', 'Remove key?'))) return;
+  await saveLocalhost({ ...lh, key: '' });
+  status('Localhost key removed from this browser.');
+};
+$('lh-forget').onclick = async () => {
+  if (lhRuns.size) return status('Stop the Localhost turn before removing Localhost.', 'bad');
+  if (!(await ask('Remove Localhost from this browser: its address, key and model list? Sessions stay; picking a Localhost model again needs a new Test connection.', 'Remove', 'danger', 'Remove Localhost?'))) return;
+  const was = localhostPicked();
+  await saveLocalhost(null);
+  $('lh-steps').replaceChildren(); $('lh-url').value = '';
+  if (was) { $('model').value = (await store.getSetting('sealedModel')) ?? models[0]?.id ?? ''; await store.setSetting('model', $('model').value); pickerProvider(); updateSend(); }
+  status('Localhost removed from this browser.' + (was ? ' The picker is back on a BayLeaf Sealed model.' : ''));
+};
+// A long wait for the first token is usually the server loading the model.
+let lhWaitShown = false;
+function localhostWait(kind, model) {
+  if (kind === 'slow') { lhWaitShown = true; status(`Waiting for your server: it may be loading ${model.id.slice('localhost:'.length)} (the first use after a while can take a minute).`); }
+  else if (lhWaitShown) { lhWaitShown = false; status(''); }
 }
 
 // ── Device claim (RFC 8628 shape). One poll loop, its own controller. ─
@@ -1184,7 +1284,7 @@ let focus = null; // { sid, id }
 const sessions = createSessions({
   forgetWatches: (id) => watches.removeSession(id),
   agent: () => agent, view: () => view, connected: () => (agent && verified ? client : null),
-  model: () => $('model').value, setModel: (id) => { $('model').value = id; pickerProvider(); }, hasModel: (id) => models.some((m) => m.id === id) || (localOk.ok && id === LOCAL_ID), isLocal,
+  model: () => $('model').value, setModel: (id) => { $('model').value = id; pickerProvider(); }, hasModel: (id) => models.some((m) => m.id === id) || (localOk.ok && id === LOCAL_ID) || lhModels().some((m) => 'localhost:' + m.id === id), isLocal: offSealed,
   attach: () => attach(), status, ask, sheet, countRequest: (id, kind) => ledger.add(id, kind).then(meter), layout, usage, quotaError, exhaustedText,
   agentError: () => agentError,
   runningChildren: (sid) => (kids.get(String(sid)) ?? []).filter((c) => c.status === 'running').length,
@@ -1904,7 +2004,7 @@ function renderLog() {
   const out = [];
   if (!view?.items.length) {
     out.push(el('p', { className: 'notice' + (attachError ? ' bad' : ''), textContent: attachError ? attachError : agent
-      ? 'Ask Pouch to read, write or reorganize files in /work or a mounted folder. Everything stays in this browser; model requests are sealed.'
+      ? 'Ask Pouch to read, write or reorganize files in /work or a mounted folder. ' + (localhostPicked() ? 'Files stay in this browser; model requests go to your server on this computer.' : 'Everything stays in this browser; model requests are sealed.')
       : (agentError ?? 'Starting...') }));
   }
   const nextCache = new Map();
@@ -2029,7 +2129,7 @@ async function recordTurn(sid, v, ms) {
   await store.setSetting(turnsKey(sid), all);
   if (sameId(sid, sessions.current?.id)) { turnTimes = all; scheduleRender(); }
 }
-const modelName = (id) => models.find((m) => m.id === id)?.name ?? (LOCAL && id === LOCAL_ID ? `${LOCAL.label} (Transformers.js)` : id);
+const modelName = (id) => models.find((m) => m.id === id)?.name ?? (LOCAL && id === LOCAL_ID ? `${LOCAL.label} (Transformers.js)` : isLocalhost(id) ? `${id.slice('localhost:'.length)} (Localhost)` : id);
 function message(it, label, ...kids) {
   // A step that only thought before calling tools gets no toolbar: it has
   // nothing to copy, and its reply's toolbar reverts to after its tools.
@@ -2257,7 +2357,7 @@ function updateSend() {
 // Send the current session's follow-up once the model's turn is over.
 function pump() {
   const key = curKey(), q = followUps.get(key);
-  if (!q || q.paused || busy() || submitting.has(key) || holdingFollowUp || !(isLocal(q.turnModel) ? agent : agent && verified && !offline)) return;
+  if (!q || q.paused || busy() || submitting.has(key) || holdingFollowUp || !(offSealed(q.turnModel) ? agent : agent && verified && !offline)) return;
   followUps.delete(key);
   announce('Follow-up sent: it starts the next turn.', false);
   dispatch(key, () => q);
@@ -2497,6 +2597,7 @@ async function send(text, attached = { files: [], images: [] }, turnModel = $('m
   sessions.running.add(String(sid)); sessions.render();
   lostRuns.delete(String(sid));
   if (isLocal(turnModel)) { localRuns.add(String(sid)); clearHint(sid); }
+  if (isLocalhost(turnModel)) lhRuns.add(String(sid));
   activeRun = String(sid);
   const notes = (await store.getSetting(notesKey(sid))) ?? [];
   const admitted = () => notes.length && store.setSetting(notesKey(sid), undefined);
@@ -2513,7 +2614,8 @@ async function send(text, attached = { files: [], images: [] }, turnModel = $('m
     else admitted();
     // The run's own error (an assistant item) may carry the HTTP status the summary lost.
     const detail = e.message + ' ' + (view?.items.findLast?.((i) => i.error)?.error ?? '');
-    if (quotaError(detail)) status(exhaustedText(await usage.refresh()), 'bad');
+    if (isLocalhost(turnModel)) { if (!refused && e.message !== 'Stopped.') status('Localhost: ' + (explainMessage(detail, turnModel.slice('localhost:'.length)) ?? e.message), 'bad'); }
+    else if (quotaError(detail)) status(exhaustedText(await usage.refresh()), 'bad');
     else if (!isLocal(turnModel) && (lostRuns.has(String(sid)) || isNetworkError(detail))) {
       lostRuns.add(String(sid));
       if (!navigator.onLine || !(await probe())) goOffline();
@@ -2521,7 +2623,7 @@ async function send(text, attached = { files: [], images: [] }, turnModel = $('m
     }
     else if (!refused && e.message !== 'Stopped.') status('Request failed: ' + e.message, 'bad');
   }
-  finally { sessions.running.delete(String(sid)); localRuns.delete(String(sid)); activeRun = null; runEnded(); }
+  finally { sessions.running.delete(String(sid)); localRuns.delete(String(sid)); lhRuns.delete(String(sid)); activeRun = null; runEnded(); if (lhWaitShown) localhostWait('flowing'); }
   if (refused) throw refused;
   const ms = Date.now() - t0;
   const v = await agent.snapshot(sid).catch(() => null);
@@ -2543,7 +2645,11 @@ $('composer').onsubmit = async (e) => {
   const text = raw.trim() || (attachments.files.length ? 'Please examine the attached files.' : '');
   if (!text) return;
   const turnModel = $('model').value; // freeze before any asynchronous preparation
-  if (isLocal(turnModel)) {
+  if (isLocalhost(turnModel)) {
+    // Localhost needs your server, not the internet or the enclave.
+    if (!agent) return status(agentError ?? 'The agent is not available.', 'bad');
+    if (!lhModels().some((m) => 'localhost:' + m.id === turnModel)) return status('That Localhost model is not set up in this browser: Settings > Providers > Localhost, Test connection. Your message stays here.', 'bad');
+  } else if (isLocal(turnModel)) {
     // Transformers.js needs no network or enclave, only the model in this browser.
     if (!agent) return status(agentError ?? 'The agent is not available.', 'bad');
     if (!(await ensureLocal())) return; // the text stays in the composer
@@ -2826,6 +2932,14 @@ composer = createComposer({
   },
   shield: async () => {
     const sid = sessions.current?.id;
+    if (localhostPicked()) return {
+      provider: 'Localhost: your machine runs the model', icon: 'laptop',
+      detail: `${$('model').value.slice('localhost:'.length)} runs on your server at ${lh?.base ?? 'this computer'}. Pouch sends that server this session's messages, the files the model reads and tool results, in plain text over loopback; it never leaves this computer through Pouch. What your server does with them (logs, or forwarding them as a proxy) is your responsibility. No BayLeaf allowance is used, and it works with Wi-Fi off. Tools run here, in the page.`,
+      grants: (await grantsFor(sid)).map((service) => ({ label: serviceName(service), revoke: async () => {
+        await revoke(sid, service); status(`Pouch will ask again before ${serviceName(service)} in this session.`);
+      } })),
+      trust: () => layout.open('trust'),
+    };
     if (localPicked()) return {
       provider: 'Transformers.js: in this browser, nothing sent',
       detail: `${LOCAL.label} runs in this browser on your GPU. Prompts, files and replies stay here; no request leaves for any model. Tools run here, in the page. Switch to a BayLeaf Sealed model in the picker for larger tasks.`,
@@ -2931,6 +3045,8 @@ const withWatch = (list) => { list.push(watchTool({ Type, watches, callerOf: wat
   renderTree();
   $('welcome').hidden = !!(await store.getSetting('welcomed').catch(() => true));
   key = (await store.getSetting('key')) ?? null;
+  lh = (await store.getSetting('localhost')) ?? null;
+  renderLocalhostSettings();
   renderAuth();
   usage.refresh();
   localOk = await localSupport();
@@ -2939,6 +3055,7 @@ const withWatch = (list) => { list.push(watchTool({ Type, watches, callerOf: wat
   try {
     agent = await openAgent({
       local: LOCAL && localOk.ok ? { info: LOCAL, engine: localEngine, onHint: showHint } : null,
+      localhost: { config: lhAgentConfig(), onWait: localhostWait },
       tools: toolList = withWatch(createTools(vfs, Type, {}, {
         // A subagent's writes carry its name for file watches.
         sourceOf: (caller) => { const w = agent?.who(caller); const r = w?.child != null && refOfChild(w.sid, w.child); return r ? `subagent ${r.name} (${r.ref})` : 'subagent'; },

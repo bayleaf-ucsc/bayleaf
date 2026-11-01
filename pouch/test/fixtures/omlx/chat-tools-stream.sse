@@ -1,0 +1,20 @@
+data: {"id":"chatcmpl-405bf192","object":"chat.completion.chunk","created":0,"model":"keepalive","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-405bf192","object":"chat.completion.chunk","created":1793490364,"model":"MiniCPM5-2B-oQ8","choices":[{"index":0,"delta":{"role":"assistant"}}]}
+
+data: {"id":"chatcmpl-405bf192","object":"chat.completion.chunk","created":1793490365,"model":"MiniCPM5-2B-oQ8","choices":[{"index":0,"delta":{"reasoning_content":"\nThe"}}]}
+
+data: {"id":"chatcmpl-405bf192","object":"chat.completion.chunk","created":1793490365,"model":"MiniCPM5-2B-oQ8","choices":[{"index":0,"delta":{"reasoning_content":" user wants me to read the file \"notes.txt\". Let"}}]}
+
+data: {"id":"chatcmpl-405bf192","object":"chat.completion.chunk","created":1793490365,"model":"MiniCPM5-2B-oQ8","choices":[{"index":0,"delta":{"reasoning_content":" me use the read function.\n"}}]}
+
+data: {"id":"chatcmpl-405bf192","object":"chat.completion.chunk","created":1793490365,"model":"MiniCPM5-2B-oQ8","choices":[{"index":0,"delta":{"content":"\n\n"}}]}
+
+data: {"id":"chatcmpl-405bf192","object":"chat.completion.chunk","created":1793490365,"model":"MiniCPM5-2B-oQ8","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_b1cae0f7","type":"function","function":{"name":"read","arguments":"{\"path\": \"notes.txt\"}"}}]}}]}
+
+data: {"id":"chatcmpl-405bf192","object":"chat.completion.chunk","created":1793490365,"model":"MiniCPM5-2B-oQ8","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: {"id":"chatcmpl-405bf192","object":"chat.completion.chunk","created":1793490365,"model":"MiniCPM5-2B-oQ8","choices":[],"usage":{"prompt_tokens":224,"completion_tokens":35,"total_tokens":259,"input_tokens":224,"output_tokens":35,"prompt_tokens_details":{"cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":21},"time_to_first_token":0.21,"time_to_first_visible_token":0.21,"total_time":0.56,"prompt_eval_duration":0.21,"generation_duration":0.35,"prompt_tokens_per_second":1072.79,"generation_tokens_per_second":99.27}}
+
+data: [DONE]
+
