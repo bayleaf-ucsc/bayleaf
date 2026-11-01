@@ -10,5 +10,6 @@
 - [x] tests: test/ctx-node.mjs 5/5 (incl. real compaction, LFM3 trim persistence), test/ctx-browser.mjs 8/8; graph-fixture `usage` option (additive)
 - [x] regressions: node batchA-E, composer, local, ul (scratch build), theme, localhost, prompt, markdown pass; browser batchA 9, B 17, C 22, D 11, E 10 (flaked once under 9-way parallel load, passes alone), composer, localhost 10, sendmode 11, graphs-node, graphs-browser 13, subagent-browser 10, watch-browser 16 (fixture consumers) pass; upgrade-browser fails building its baseline tree (missing quickjs deps in /tmp/pouch-qa/ul/basetree), unrelated
 - [x] docs: README (allowance section + Transformers.js), JOURNEYS D8c, LANGUAGE Context (context meter, trimmed)
+- [x] one Usage button, two readings (allowance · context), each with its own bar and warn state, one accessible name; #composer-ctx is now a span inside #composer-usage (usage.js labelComposer combines the names). ctx-browser 8, ctx-node 5, batchA-browser 9, batchD-browser 11, composer-browser pass; screenshots /tmp/pouch-qa/merged-usage-{desktop,phone}-{light,dark}.png
 - [ ] unverified: live Sealed usage reporting through Tinfoil (no live requests by design); real oMLX usage; real LFM3 trimming in a browser with the model; walkthrough images not regenerated (composer toolbar gained a control when a session has content)
 Not committed, not deployed.

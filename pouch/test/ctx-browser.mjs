@@ -2,7 +2,8 @@
 // panel): hidden before anything is said; after a reply that reports usage, the
 // exact count against the model's window ("12.5k / 128k"), then "~" once text is
 // added after it; near the auto-compaction point it turns warn-colored and says
-// so in words (aria-label, title); it opens Usage, which spells it out with a
+// so in words (aria-label, title). It is the second reading of the composer's one
+// Usage button (the first is the allowance, each with its own bar); it opens Usage, which spells it out with a
 // Compact now button; both themes; phone layout drops the window but keeps the
 // count, with no horizontal scroll. BayLeaf Sealed is the scripted fake
 // (test/graph-fixture.js, its `usage` option). Transformers.js trimming is
@@ -56,6 +57,7 @@ async function open(name, viewport = { width: 1280, height: 800 }) {
     const u = new URL(r.request().url());
     if (u.pathname === '/sealed/models') return r.fulfill({ json: { data: [{ id: 'fake', name: 'fake', tool_calling: true, multimodal: false, context_window: 131072, endpoints: ['/v1/chat/completions'] }] } });
     if (u.pathname.includes('usage')) return r.fulfill({ json: {} });
+    if (u.pathname.endsWith('/campus-pass')) return r.fulfill({ json: { campus_network: true, enabled: true, quota: { remaining: 150, limit: 200 } } });
     if (!/\/sealed\/attestation|\/campus-pass/.test(u.pathname)) { bayleafHits++; console.log('  bayleaf request:', r.request().method(), u.pathname); }
     return r.abort();
   });
@@ -69,26 +71,50 @@ async function open(name, viewport = { width: 1280, height: 800 }) {
 const rule = (page, r) => page.evaluate((r) => { window.fake.rule({ ...r, when: r.when ? new Function('c', 'return ' + r.when) : undefined }); }, r);
 const idle = (page) => page.waitForFunction(() => document.getElementById('send-label')?.textContent === 'Send', null, T);
 async function send(page, text) { await page.fill('#input', text); await page.press('#input', 'Enter'); }
-const meter = (page) => page.$eval('#composer-ctx', (b) => ({ hidden: b.hidden, text: b.innerText, label: b.ariaLabel, level: b.dataset.level, fill: b.style.getPropertyValue('--fill'), color: getComputedStyle(b).color }));
+const meter = (page) => page.$eval('#composer-ctx', (b) => ({ hidden: b.hidden, text: b.innerText, label: document.getElementById('composer-usage').ariaLabel, level: b.dataset.level, fill: b.style.getPropertyValue('--fill'), color: getComputedStyle(b).color }));
+const qa = '/tmp/pouch-qa';
+async function shoot(page, name) {
+  for (const t of ['light', 'dark']) {
+    await page.evaluate((t) => { document.documentElement.dataset.theme = t; }, t);
+    await page.waitForTimeout(100);
+    await page.screenshot({ path: join(qa, `merged-usage-${name}-${t}.png`) });
+  }
+  await page.evaluate(() => { delete document.documentElement.dataset.theme; });
+}
 
 let s;
 try {
   s = await open('desk');
   const { page } = s;
   assert.equal((await meter(page)).hidden, true, 'nothing to count before the first message');
-  ok('hidden before the session holds anything');
+  await page.waitForFunction(() => document.getElementById('composer-usage-num').textContent === '150', null, T);
+  const alone = await page.evaluate(() => ({ sep: getComputedStyle(document.querySelector('#composer-usage .sep')).display, label: document.getElementById('composer-usage').ariaLabel,
+    fill: document.getElementById('composer-allow').style.getPropertyValue('--fill'), bar: getComputedStyle(document.getElementById('composer-allow'), '::after').content }));
+  assert.equal(alone.sep, 'none');
+  assert.equal(alone.fill, '75%');
+  assert.notEqual(alone.bar, 'none', 'the allowance reading has its bar when the fraction is known');
+  assert.match(alone.label, /^Usage\. Allowance: about 150 of 200 BayLeaf Sealed requests left today \(shared on this network\)[^]*\. Opens Usage\.$/);
+  assert.doesNotMatch(alone.label, /Context/);
+  ok('hidden before the session holds anything: the button is the allowance reading alone, with its 75% bar');
 
   // Titles take the first unmatched-or-title request; main gets the usage rule.
   await rule(page, { who: 'main', reply: { content: 'Hello there.', usage: { prompt_tokens: 12431, completion_tokens: 69 }, ms: 1 } });
   await send(page, 'hi');
   await idle(page);
-  await page.waitForFunction(() => /server reported/.test(document.getElementById('composer-ctx').ariaLabel ?? ''), null, T);
+  await page.waitForFunction(() => /server reported/.test(document.getElementById('composer-usage').ariaLabel ?? ''), null, T);
   let m = await meter(page);
   assert.equal(m.text, '12.5k / 128k');
   assert.equal(m.level, 'ok');
   assert.equal(m.fill, '10%');
-  assert.match(m.label, /^Context: 12,500 tokens of a 131,072-token window; as the last reply's server reported\. Opens Usage\.$/);
-  ok('after a reply: the server-reported count against the window, exact (no ~), 10% bar');
+  assert.match(m.label, /^Usage\. Allowance: about 150 of 200 [^]*\. Context: 12,500 tokens of a 131,072-token window; as the last reply's server reported\. Opens Usage\.$/);
+  const one = await page.evaluate(() => ({ buttons: document.querySelectorAll('#composer-toolbar button[id^="composer-"]').length, usage: document.querySelectorAll('#composer-toolbar #composer-usage').length,
+    inside: !!document.querySelector('#composer-usage #composer-ctx'), ctxButton: document.getElementById('composer-ctx').tagName, title: document.getElementById('composer-usage').title,
+    sep: getComputedStyle(document.querySelector('#composer-usage .sep')).display !== 'none', h: document.getElementById('composer-usage').getBoundingClientRect().height }));
+  assert.deepEqual([one.buttons, one.usage, one.inside, one.ctxButton, one.sep], [1, 1, true, 'SPAN', true]);
+  assert.match(one.title, /Allowance: [^]*Context: 12,500/);
+  assert.ok(one.h >= 44, JSON.stringify(one));
+  await shoot(page, 'desktop');
+  ok('after a reply: one Usage button naming both readings; the context is the exact server count against the window, 10% bar');
 
   // A message typed but not sent changes nothing: only the stored conversation counts.
   await page.fill('#input', 'x'.repeat(5000));
@@ -123,7 +149,7 @@ try {
   ok('both themes: the near color is the theme\'s warn color, distinct from plain text and the surface');
 
   // It opens Usage, which spells it out with Compact now.
-  await page.click('#composer-ctx');
+  await page.click('#composer-usage');
   await page.waitForSelector('#usage-body .ctx-now', T);
   const panel = await page.$eval('#usage-body .ctx-now', (s) => ({ text: s.textContent, level: s.dataset.level, first: s === s.parentElement.firstElementChild, button: s.querySelector('button')?.textContent }));
   assert.ok(panel.first, 'above the allowance');
@@ -139,14 +165,16 @@ try {
   await page.setViewportSize({ width: 390, height: 800 });
   await page.waitForTimeout(200);
   const phone = await page.evaluate(() => {
-    const b = document.getElementById('composer-ctx'), r = b.getBoundingClientRect(), bar = document.getElementById('composer-toolbar').getBoundingClientRect();
-    return { of: getComputedStyle(document.getElementById('composer-ctx-of')).display, w: r.width, h: r.height, right: r.right, barRight: bar.right, sw: document.documentElement.scrollWidth, visible: r.width > 0 };
+    const b = document.getElementById('composer-usage'), r = b.getBoundingClientRect(), bar = document.getElementById('composer-toolbar').getBoundingClientRect();
+    const ctx = document.getElementById('composer-ctx').getBoundingClientRect(), send = document.getElementById('send').getBoundingClientRect();
+    return { ctxW: ctx.width, sendRight: send.right, num: document.getElementById('composer-usage-num').getBoundingClientRect().width, of: getComputedStyle(document.getElementById('composer-ctx-of')).display, w: r.width, h: r.height, right: r.right, barRight: bar.right, sw: document.documentElement.scrollWidth, visible: r.width > 0 };
   });
   assert.equal(phone.of, 'none');
-  assert.ok(phone.visible && phone.h >= 44, JSON.stringify(phone));
-  assert.ok(phone.right <= phone.barRight + 0.5 && phone.sw <= 390, JSON.stringify(phone));
+  assert.ok(phone.visible && phone.h >= 44 && phone.ctxW > 0 && phone.num > 0, JSON.stringify(phone));
+  assert.ok(phone.right <= phone.barRight + 0.5 && phone.sendRight <= phone.barRight + 0.5 && phone.sw <= 390, JSON.stringify(phone));
   await page.screenshot({ path: join(shots, 'ctx-phone.png') });
-  ok('phone (390 px): the count stays (44 px tall), the window hides, no horizontal scroll');
+  await shoot(page, 'phone');
+  ok('phone (390 px): both counts stay in one 44 px button, the window hides, no horizontal scroll');
 
   assert.equal(bayleafHits, 0, 'counting sends nothing');
   assert.deepEqual(errors, []);

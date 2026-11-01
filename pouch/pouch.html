@@ -397,16 +397,19 @@
   form#composer textarea { width: 100%; resize: none; min-height: 2.6rem; max-height: 40vh; padding: .7rem .9rem .3rem; border: 0; outline: none; background: transparent; font-size: 16px; border-radius: 16px; }
   #composer-toolbar { display: flex; align-items: center; gap: .15rem; width: 100%; min-width: 0; padding: .2rem .45rem .45rem; }
   #composer-toolbar > button.icon { width: 2.75rem; height: 2.75rem; } /* 44px targets everywhere, as before */
-  #composer-usage { width: auto !important; padding: 0 .45rem; gap: .25rem; display: inline-flex; align-items: center; }
-  #composer-usage .num { font-size: .78rem; font-variant-numeric: tabular-nums; }
-  #composer-usage.low { color: var(--warn); }
-  /* Context meter (src/context.js): about how many tokens the next request carries,
-     a thin bar of the window along its foot. Warn color near the window and past it;
-     the words (title, aria-label, Usage panel) say which, never the color alone. */
-  #composer-ctx { flex: none; position: relative; display: inline-block; line-height: 2.75rem; height: 2.75rem; min-height: 0; padding: 0 .45rem; border: 0; background: none; color: var(--muted); font-size: .78rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  #composer-ctx[hidden] { display: none; }
-  #composer-ctx::after { content: ''; position: absolute; left: .45rem; right: .45rem; bottom: .55rem; height: 2px; border-radius: 1px; background: linear-gradient(to right, currentColor var(--fill, 0%), var(--line) var(--fill, 0%)); }
-  #composer-ctx:hover { color: var(--ink); }
+  /* One Usage button, two readings: the allowance left (src/usage.js renderMeter)
+     and, once the session holds something, about how many tokens the next request
+     carries (src/context.js, main.js renderCtx). Each reading has its own thin bar
+     along its foot and its own warn state; the words (title, aria-label, Usage
+     panel) say which, never the color alone. */
+  #composer-usage { width: auto !important; padding: 0 .45rem; gap: .3rem; display: inline-flex; align-items: center; }
+  #composer-usage .reading { position: relative; display: inline-block; line-height: 2.75rem; height: 2.75rem; font-size: .78rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #composer-usage .reading::after { content: ''; position: absolute; left: 0; right: 0; bottom: .55rem; height: 2px; border-radius: 1px; background: linear-gradient(to right, currentColor var(--fill, 0%), var(--line) var(--fill, 0%)); }
+  #composer-usage .num { font-size: inherit; line-height: inherit; }
+  #composer-allow.unknown::after { content: none; }
+  #composer-allow.low { color: var(--warn); font-weight: 600; }
+  #composer-usage .sep { color: var(--muted); }
+  #composer-usage:has(#composer-ctx[hidden]) .sep, #composer-ctx[hidden] { display: none; }
   #composer-ctx[data-level="near"], #composer-ctx[data-level="over"] { color: var(--warn); }
   #composer-ctx[data-level="over"] { font-weight: 600; }
   .ctx-now { margin-bottom: 1rem; }
@@ -414,8 +417,8 @@
   .ctx-now .big { font-size: 1.5rem; font-weight: 650; font-variant-numeric: tabular-nums; }
   .ctx-now .big small { font-size: .85rem; font-weight: 400; color: var(--muted); }
   .ctx-now[data-level="near"] .big, .ctx-now[data-level="over"] .big { color: var(--warn); }
-  /* A phone keeps the count and the bar; the window and "trimmed" are in the label. */
-  @media (max-width: 600px) { #composer-ctx .ctx-of { display: none; } }
+  /* A phone keeps both counts and bars; the window and "trimmed" are in the label. */
+  @media (max-width: 600px) { #composer-ctx .ctx-of { display: none; } #composer-usage { gap: .2rem; padding: 0 .3rem; } }
   .provider-model { margin-left: auto; display: flex; align-items: center; gap: .1rem; min-width: 0; padding-left: .35rem; color: var(--muted); }
   .provider-model .i { width: 15px; height: 15px; }
   #composer-toolbar #model { min-width: 0; max-width: 15rem; min-height: 2.75rem; }
@@ -854,8 +857,7 @@
       <div id="composer-toolbar">
         <button id="attach-file" class="icon" type="button" aria-label="Attach files" title="Attach files (or drop here)"><svg class="i"><use href="#i-plus-circle"/></svg></button>
         <button id="shield-btn" class="icon" type="button" aria-expanded="false" aria-controls="shield-pop" aria-label="Provider and permissions for this session" title="Provider and permissions for this session"><svg class="i"><use href="#i-shield"/></svg></button>
-        <button id="composer-usage" class="icon unknown" type="button" aria-label="Usage" title="Usage"><svg class="i"><use href="#i-usage"/></svg><span class="num" id="composer-usage-num">?</span></button>
-        <button id="composer-ctx" type="button" data-level="ok" hidden><span id="composer-ctx-num"></span><span id="composer-ctx-of" class="ctx-of"></span><span id="composer-ctx-trim" class="ctx-of" hidden>, trimmed</span></button>
+        <button id="composer-usage" class="icon" type="button" aria-label="Usage" title="Usage"><svg class="i" aria-hidden="true"><use href="#i-usage"/></svg><span id="composer-allow" class="reading unknown"><span class="num" id="composer-usage-num">?</span></span><span class="sep" aria-hidden="true">&middot;</span><span id="composer-ctx" class="reading" data-level="ok" hidden><span id="composer-ctx-num"></span><span id="composer-ctx-of" class="ctx-of"></span><span id="composer-ctx-trim" class="ctx-of" hidden>, trimmed</span></span></button>
         <label class="provider-model" title="BayLeaf Sealed: requests are encrypted to the enclave. The model applies when you next send; running work keeps its model."><svg class="i" aria-hidden="true"><use href="#i-lock"/></svg><select id="model" aria-label="Model for next user turn"></select></label>
         <div id="sendmode" class="split" hidden>
           <button id="sendmode-main" type="button"><svg class="i" aria-hidden="true"><use href="#i-send"/></svg><span id="sendmode-label">Steer</span></button>

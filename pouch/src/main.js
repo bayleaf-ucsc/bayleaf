@@ -19,7 +19,7 @@ import { collect, packTar, packZip, unpackTar, unpackZip } from './archive.js';
 import { $, el, icon, seeded } from './dom.js';
 import { arm, armed, play, flipFrom, fold, snapshot, reduced } from './motion.js';
 import { createLayout } from './layout.js';
-import { createUsage, renderMeter, renderPanel, exhaustedText, extractKey, createLedger } from './usage.js';
+import { createUsage, renderMeter, labelComposer, renderPanel, exhaustedText, extractKey, createLedger } from './usage.js';
 import { MAIN, refOf, asRef } from './graph.js';
 import { createTerminal } from './terminal.js';
 import { createSessions, sameId, titleOf, notesKey, convKey, revertKey, subagentsKey, interruptedKey, turnsKey, watchesKey } from './sessions.js';
@@ -2557,14 +2557,14 @@ function renderCtx() {
   if (!b) return;
   const now = contextNow();
   b.hidden = !now;
-  if (!now) return;
+  if (!now) { if ('ctx' in $('composer-usage').dataset) { delete $('composer-usage').dataset.ctx; labelComposer(); } return; }
   const { d, ctx } = now;
   b.dataset.level = d.level;
   b.style.setProperty('--fill', d.fill == null ? '0%' : `${Math.round(d.fill * 100)}%`);
   $('composer-ctx-num').textContent = d.count;
   $('composer-ctx-of').textContent = d.of ? ` / ${d.of}` : '';
   $('composer-ctx-trim').hidden = !ctx.trimmed;
-  b.ariaLabel = d.label + ' Opens Usage.'; b.title = d.label;
+  if ($('composer-usage').dataset.ctx !== d.label) { $('composer-usage').dataset.ctx = d.label; labelComposer(); }
 }
 function updateSend() {
   renderCtx();
@@ -3125,7 +3125,6 @@ document.addEventListener('pouch-sendmode', () => updateSend());
 function autosize() { const i = $('input'); i.style.height = 'auto'; i.style.height = Math.min(i.scrollHeight + 2, innerHeight * 0.4) + 'px'; }
 $('input').addEventListener('input', autosize);
 $('composer-usage').onclick = () => layout.toggle('usage');
-$('composer-ctx').onclick = () => layout.toggle('usage');
 // Follow-ups and paused messages live in this page only: ask before a reload or close drops them.
 addEventListener('beforeunload', (e) => { if (followUps.size || childFollowUps.size || steers.size) e.preventDefault(); });
 
