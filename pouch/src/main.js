@@ -2519,7 +2519,7 @@ async function revertTo(it) {
   if (it.type === 'user' && !it.steer && !it.watch && !it.from?.ref) {
     const at = view.items.indexOf(it);
     const before = view.items.slice(0, at).findLast((i) => i.entry && !i.streaming && (i.type === 'user' || i.text || i.error));
-    if (!before) return status('This is the first message, so there is nothing before it to revert to. Copy it into /new to start over.', 'bad');
+    if (!before) return revertFirst(it, at);
     return revertTo({ ...before, draft: it.text, draftAt: at });
   }
   const idx = view.items.findIndex((i) => i.cut === it.cut && i.entry === it.entry && i.type === it.type);
@@ -2540,6 +2540,34 @@ async function revertTo(it) {
     status(`Reverted to ${shortTime(it.at)}. Files were not changed.${it.draft != null ? ' Your message is back in the box.' : ''}`);
     if (it.draft != null) putBack(it.draft);
   }]], body);
+}
+// Before the first message there is nothing to keep: the session is deleted
+// and a blank session takes its place, with the message back in the box, so it is
+// named again by its next first turn and does not linger if you leave. No
+// branch is kept, so this one cannot be undone (the sheet says so).
+function revertFirst(it, at) {
+  const sid = sessions.current.id;
+  const later = view.items.slice(at + 1).filter((i) => i.type === 'user' || (i.type === 'assistant' && (i.text || i.error))).length;
+  const agents = (kids.get(String(sid)) ?? []).length;
+  const body = el('div', { className: 'revert-body' }, el('p', {
+    textContent: `Your message goes back into the box to edit and send again. This is the first message, so the session is deleted${later ? ` with the ${later} message${later > 1 ? 's' : ''} after it` : ''}${agents ? ' and its subagents' : ''}, and a new one starts when you send. Files stay as they are. This cannot be undone.`,
+  }));
+  sheet('Revert to before this message?', [['Revert', async () => {
+    if (busy()) return;
+    // Not deleted (another tab holds it): the status says why. Deleted: the message
+    // comes back even if another session was opened meanwhile. Until it settles, a
+    // send to this session is refused (it would start a turn the delete then erases).
+    deleting.add(String(sid)); updateSend();
+    let gone;
+    try { gone = await sessions.remove(sid, false, { stay: true }); }
+    finally { deleting.delete(String(sid)); updateSend(); }
+    if (!gone) return;
+    // A follow-up held for this session (paused by Stop) comes back too: the blank session has another key.
+    const held = followUps.get(String(sid));
+    if (held) { followUps.delete(String(sid)); composer.renderTray(); putBack(held.text); }
+    status(`${sessions.current ? 'Deleted that session' : 'Reverted to an empty session'}. Files were not changed. Your message is back in the box.`);
+    putBack(it.text);
+  }, 'danger']], body);
 }
 
 async function undoRevert(sid) {
@@ -2563,6 +2591,7 @@ const busy = () => !!view?.busy;
 const PLACEHOLDER = 'Ask Pouch. @ for files, $ for skills, / for commands';
 const attachments = createAttachments({ vfs, composer: $('composer'), input: $('input'), picker: $('attachment-picker'), button: $('attach-file'), chips: $('attachment-chips'), warning: $('attachment-warning'), status });
 const submitting = new Set(); // per session: a send from Enter until its model turn ends (after-turn chores run on)
+const deleting = new Set(); // sessions a first-message revert is deleting: sends to them wait for it to settle
 // While Pouch works (JOURNEYS D25), a message is a Steer or a Follow-up
 // (LANGUAGE.md). A steer joins the running turn at its next step boundary: a
 // pi-durable steer, tracked here so Stop can take it back. A follow-up is held
@@ -2698,7 +2727,7 @@ function updateSend() {
 // Send the current session's follow-up once the model's turn is over.
 function pump() {
   const key = curKey(), q = followUps.get(key);
-  if (!q || q.paused || busy() || submitting.has(key) || holdingFollowUp || !(offSealed(q.turnModel) ? agent : agent && verified && !offline)) return;
+  if (!q || q.paused || busy() || submitting.has(key) || deleting.has(key) || holdingFollowUp || !(offSealed(q.turnModel) ? agent : agent && verified && !offline)) return;
   followUps.delete(key);
   announce('Follow-up sent: it starts the next turn.', false);
   dispatch(key, () => q);
@@ -3042,13 +3071,16 @@ async function send(text, attached = { files: [], images: [] }, turnModel = $('m
   follow.pin();
   lastTouch = 0; // sending hands the turn over: the keys that sent it do not make the person busy
   const t0 = Date.now();
-  if (!sessions.current) { await sessions.create(); ledger.adopt('new', sessions.current.id); adopted(sessions.current.id); }
-  const s = sessions.current; // the run belongs to this session even if you switch away
+  let s = sessions.current; // the run belongs to this session even if you switch away
+  if (!s) {
+    s = await sessions.create((made) => { ledger.adopt('new', made.id); adopted(made.id); });
+    if (!s) throw new Error(agentError ?? 'The agent is not available.');
+  }
   const sid = s.id;
   s.model = turnModel;
   // Until a real title comes: the prompt's start, cut at a word, without trailing / . , : (critique 6).
   if (!s.title) { const t = text.replace(/\s+/g, ' ').trim(); s.title = (t.length > 60 ? t.slice(0, 60).replace(/\s+\S*$/, '') || t.slice(0, 60) : t).replace(/[\s/.,:;-]+$/, ''); }
-  s.updated = Date.now(); await sessions.save();
+  s.updated = Date.now(); await sessions.save(s);
   if (interrupted && sameId(sid, sessions.current?.id)) interrupted = false;
   await store.setSetting(interruptedKey(sid), undefined);
   sessions.running.add(String(sid)); sessions.render();
@@ -3101,6 +3133,7 @@ $('composer').onsubmit = async (e) => {
   const key = curKey();
   const text = raw.trim() || (attachments.files.length ? 'Please examine the attached files.' : '');
   if (!text) return;
+  if (deleting.has(key)) return status('This session is being deleted. Your message stays here.', 'bad');
   const turnModel = $('model').value; // freeze before any asynchronous preparation
   if (isLocalhost(turnModel)) {
     // Localhost needs your server, not the internet or the enclave.
@@ -3230,11 +3263,11 @@ async function revertLast() {
   if (busy()) return status('Stop Pouch before reverting.', 'bad');
   const items = view?.items ?? [], u = items.findLastIndex((i) => i.type === 'user');
   const target = u < 0 ? null : items.slice(0, u).findLast((i) => i.entry && !i.streaming && (i.type === 'user' || i.text || i.error));
-  if (!target) return status(u < 0 ? 'Nothing to revert yet.' : 'The last turn is the first one; nothing earlier to revert to. Use /new for a fresh session.', 'bad');
-  return revertTo(target);
+  if (u < 0) return status('Nothing to revert yet.', 'bad');
+  return revertTo(target ?? items[u]); // the first turn: revert to empty (revertFirst)
 }
 const COMMANDS = [
-  { name: 'new', hint: 'Start a new session', run: () => sessions.create() },
+  { name: 'new', hint: 'Start a new session', run: () => sessions.blank() },
   { name: 'seed', hint: '<archive> stacks /work over a read-only .zip or .tar; /seed off removes it', run: async (arg) => {
     if (arg === 'off') { await vfs.unstack(); renderTree(); return status('Removed the seed layer; /work shows only your files.'); }
     if (!arg) return status(vfs.seedLayer ? `/work is stacked over ${vfs.seedLayer.name}. /seed off removes it.` : 'Give an archive: /seed /work/starter.zip', vfs.seedLayer ? '' : 'bad');

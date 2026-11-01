@@ -45,7 +45,7 @@ export function createSessions(deps) {
 
   const all = async () => (await store.all('sessions')).sort((a, b) => b.updated - a.updated);
   const find = async (id) => sameId(id, session?.id) ? session : (await all()).find((x) => sameId(x.id, id));
-  const save = () => session && store.put('sessions', session.id, session);
+  const save = (s = session) => s && store.put('sessions', s.id, s);
 
   // Patch a stored session; the current one is patched in memory too.
   async function update(id, patch) {
@@ -173,12 +173,26 @@ export function createSessions(deps) {
   // ── Delete (L2) ───────────────────────────────────────────────────
   // Erases the transcript (its own database), its notes and revert token.
   // A legacy session is stopped and reset; once none is left, the shared
-  // legacy database goes too.
-  async function remove(id, ask = true) {
+  // legacy database goes too. stay: if it was current, a blank session takes its
+  // place instead of the next session (a revert of the first message, D12).
+  async function remove(id, ask = true, { stay = false } = {}) {
     const legacy = deps.agent()?.isLegacy?.(id);
-    if (ask && !(await deps.ask(legacy ? 'Delete this session? It was saved before per-session storage: it is stopped and reset now, and its history is purged once no such session is left (or by Erase all).' : 'Delete this session? Its conversation is erased from this browser.', 'Delete', 'danger'))) return;
+    if (ask && !(await deps.ask(legacy ? 'Delete this session? It was saved before per-session storage: it is stopped and reset now, and its history is purged once no such session is left (or by Erase all).' : 'Delete this session? Its conversation is erased from this browser.', 'Delete', 'danger'))) return false;
     try { await deps.agent()?.deleteSession(id); }
-    catch (e) { return status('Could not delete: ' + e.message, 'bad'); }
+    catch (e) { status('Could not delete: ' + e.message, 'bad'); return false; }
+    // The conversation is gone now, so this returns true even if a cleanup step fails
+    // (a first-message revert then still puts the message back).
+    try { await clearRecords(id); }
+    catch (e) { status('Deleted, but could not clear its saved settings: ' + e.message, 'bad'); }
+    if (sameId(id, session?.id)) {
+      session = null; await deps.attach();
+      const rest = await all();
+      if (rest.length && !stay) { await select(rest[0].id); return true; }
+    }
+    render();
+    return true;
+  }
+  async function clearRecords(id) {
     await store.del('sessions', id);
     await store.setSetting(notesKey(id), undefined);
     await store.setSetting(grantsKey(id), undefined);
@@ -190,12 +204,6 @@ export function createSessions(deps) {
     await store.setSetting(watchesKey(id), undefined); deps.forgetWatches?.(id);
     if (sameId(await store.getSetting('lastSession'), id)) await store.setSetting('lastSession', undefined);
     await dropLegacyIfDone();
-    if (sameId(id, session?.id)) {
-      session = null; await deps.attach();
-      const rest = await all();
-      if (rest.length) return select(rest[0].id);
-    }
-    render();
   }
   async function dropLegacyIfDone() {
     const agent = deps.agent();
@@ -263,45 +271,67 @@ export function createSessions(deps) {
     }
   }
 
-  // New takes effect at the click: the current session becomes none at once,
-  // so a message sent before the new one exists (New, then Enter) waits for
-  // it (send() calls create(), which hands back this same creation) instead
-  // of going into the previous session (Batch F).
-  let creating = null;
-  function create() {
+  // New opens a blank session (LANGUAGE.md): no session is current, nothing
+  // is stored and no row is added; the first send makes the session (create()).
+  // New in a blank session stays there, so pressing it again makes
+  // nothing. It takes effect at the click, so New then Enter sends into the
+  // new session, never the previous one (Batch F). A reload in a blank session
+  // lands in the last saved one: the blank one lived in this page only.
+  // nav: bumped by each navigation (New, a selection), so one still in flight
+  // when another starts does not land afterwards.
+  let nav = 0;
+  function blank() {
+    nav++;
+    if (session) { session = null; deps.attach(); render(); }
+    if (layout.narrow()) layout.setSide(false, false);
+    $('input').focus();
+  }
+
+  // The first send from a blank session: make the session, and resolve to it. A
+  // second send from the same blank view waits for this same creation; after New
+  // (nav moved on) a send makes its own, so New always means a separate session.
+  // New or a selection meanwhile wins the view; the send still goes to the made session.
+  let creating = null; // { gen, promise }
+  // onMade(made): called once the session exists, before it is current, so the
+  // send can claim it first (a second Enter then waits instead of racing it).
+  function create(onMade = () => {}) {
     const agent = deps.agent();
     if (!agent) return Promise.resolve(status(deps.agentError() ?? 'The agent is not available.', 'bad'));
-    if (creating) return creating;
+    if (creating?.gen === nav) return creating.promise;
     const prev = session;
     if (session) { session = null; deps.attach(); }
-    creating = (async () => {
+    const gen = nav;
+    const promise = (async () => {
       const model = deps.model() || 'glm-5-3';
       let id;
       try { id = await agent.createSession(model); }
-      catch (e) { if (!session) { session = prev; await deps.attach(); await render(); } throw e; }
-      session = { id, title: '', updated: Date.now(), model };
-      await save();
+      catch (e) { if (!session && gen === nav) { session = prev; await deps.attach(); await render(); } throw e; }
+      const made = { id, title: '', updated: Date.now(), model };
+      await save(made);
+      onMade(made);
+      if (gen !== nav) { await render(); return made; }
+      session = made;
       store.setSetting('lastSession', id);
       await deps.attach();
       await render();
-      if (layout.narrow()) layout.setSide(false, false);
-      $('input').focus();
-    })().finally(() => { creating = null; });
-    return creating;
+      return made;
+    })().finally(() => { if (creating?.promise === promise) creating = null; });
+    creating = { gen, promise };
+    return promise;
   }
 
   async function select(id) {
+    const gen = ++nav;
     const found = (await store.all('sessions')).find((s) => sameId(s.id, id));
-    if (!found) return;
+    if (!found || gen !== nav) return;
     session = found;
     store.setSetting('lastSession', session.id);
     if (session.model && deps.hasModel(session.model)) deps.setModel(session.model);
     await render();
     await deps.attach();
   }
-  const startNew = () => create().catch((e) => status(e.message, 'bad'));
-  $('new').onclick = startNew;
-  $('new-top').onclick = startNew;
+  $('new').onclick = blank;
+  $('new-top').onclick = blank;
 
   // Boot: the last session (or the newest), and drop a legacy database that
   // only holds sessions deleted before L2.
@@ -316,7 +346,7 @@ export function createSessions(deps) {
 
   return {
     get current() { return session; },
-    running, all, find, save, update, render, create, select, remove, afterTurn, boot,
+    running, all, find, save, update, render, blank, create, select, remove, afterTurn, boot,
     compact, renameAuto, costOf: (s) => costNote(modelOf(s ?? session)),
   };
 }
