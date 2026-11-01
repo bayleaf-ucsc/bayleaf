@@ -106,7 +106,8 @@ function sources(files) {
   for (const [path, text] of files) {
     if (path.endsWith('.html')) {
       let k = 0;
-      for (const m of text.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
+      // Any case and any attributes: a script the scan missed would be a way around it.
+      for (const m of text.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi)) {
         if (m[1].trim() === '/*APP*/') continue;
         const line = text.slice(0, m.index).split('\n').length - 1;
         out.push({ path, name: `${path}#script${k++}.js`, text: '\n'.repeat(line) + m[1] });
