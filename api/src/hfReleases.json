@@ -1,0 +1,125 @@
+{
+  "comment": "Approved releases for the HF artifact gateway (issue #121). One entry approves one repository at one commit for an explicit file inventory under recorded distribution terms; nothing else in the repository is served. Author `files` with scripts/hf-release.mjs; license, distribution and qualification record human decisions. See HF-GATEWAY.md.",
+  "releases": [
+    {
+      "repo": "onnx-community/LFM3-1.7B-ONNX",
+      "revision": "ab9fec4c681a25bec3b48b0b97a62fc2660a2985",
+      "aliases": [
+        "main"
+      ],
+      "title": "LFM3 1.7B (ONNX, q4f16)",
+      "base_model": "LiquidAI/LFM3-1.7B",
+      "task": "text-generation",
+      "library": "transformers.js",
+      "architecture": "lfm3",
+      "formats": [
+        "onnx"
+      ],
+      "variants": [
+        {
+          "name": "q4f16",
+          "files": [
+            "config.json",
+            "generation_config.json",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "special_tokens_map.json",
+            "chat_template.jinja",
+            "onnx/model_q4f16.onnx",
+            "onnx/model_q4f16.onnx_data"
+          ]
+        }
+      ],
+      "license": {
+        "name": "LFM Open License v1.0",
+        "file": "LICENSE",
+        "url": "https://huggingface.co/onnx-community/LFM3-1.7B-ONNX/blob/ab9fec4c681a25bec3b48b0b97a62fc2660a2985/LICENSE"
+      },
+      "distribution": {
+        "basis": "LFM Open License v1.0 section 4 permits redistribution of unmodified copies with a copy of the License, which is served as LICENSE. Section 5 limits commercial use; that limitation binds recipients too.",
+        "reviewed": "2026-11-01",
+        "decision": "Adam accepted LFM3 for BayLeaf on a non-commercial reading (pouch/MODELS.md on the pouch branch); pouch.bayleaf.dev already redistributes these exact bytes publicly. Serving them here changes the delivery origin, not the redistribution."
+      },
+      "qualification": [
+        {
+          "client": "BayLeaf Pouch",
+          "runtime": "Transformers.js 4.3.2, onnxruntime-web 1.31.0-dev, WebGPU",
+          "status": "ships",
+          "evidence": "https://github.com/bayleaf-ucsc/bayleaf/blob/pouch/pouch/MODELS.md"
+        }
+      ],
+      "files": [
+        {
+          "path": "config.json",
+          "bytes": 1549,
+          "sha256": "beb7c0a3e61147e15b50151728b8dc15b994c46a3cd524264b98b1485b1acf9c",
+          "git_oid": "476d05d797b7be26b60ee5f787a926943de50f46",
+          "lfs": false
+        },
+        {
+          "path": "generation_config.json",
+          "bytes": 241,
+          "sha256": "422ed8749f8849f763ffe836a709a2c58e1adcf3d32dfa4da48b3959e87ecce9",
+          "git_oid": "11e374515f224f60f4c28f5e4619f428909d9c4d",
+          "lfs": false
+        },
+        {
+          "path": "tokenizer.json",
+          "bytes": 17908635,
+          "sha256": "7e226e34bface23ccf6e495d157bf77186c1c30a7659880e1a8994db528c3701",
+          "git_oid": "6378e4e44d17d17b8acfd77923e66aef8c495234",
+          "lfs": true
+        },
+        {
+          "path": "tokenizer_config.json",
+          "bytes": 14262,
+          "sha256": "4e1748d03b2162c6cf5d53b13cd0cf01aae0c98d47a8b99bfb737d7fdc3d1d05",
+          "git_oid": "ff46f3f2f6bd2cca0c51aa5f9fc7769ff02e789f",
+          "lfs": false
+        },
+        {
+          "path": "special_tokens_map.json",
+          "bytes": 92,
+          "sha256": "7946f864cbfb62a1b041bda937244210a1a87f4a6cab3a48b791131b2cd57f88",
+          "git_oid": "5d871daaacbf26aaa9cb47c2935f30e797ee35a7",
+          "lfs": false
+        },
+        {
+          "path": "chat_template.jinja",
+          "bytes": 12129,
+          "sha256": "f45005c50cd2a97329722bf3a2dee9f16c04cdf825a589b280fb7e99e6827818",
+          "git_oid": "d0747b8b5fc99eaecfe02a04eefcff75eb181334",
+          "lfs": false
+        },
+        {
+          "path": "onnx/model_q4f16.onnx",
+          "bytes": 296714,
+          "sha256": "ef4f1e8b5e1af2e1a64230c71a344954fa047db7f3d718437908030817a0ee73",
+          "git_oid": "d048bacee36b41d7d5080c75ed9ab869f0b2720f",
+          "lfs": true
+        },
+        {
+          "path": "onnx/model_q4f16.onnx_data",
+          "bytes": 1087789056,
+          "sha256": "7a83bb217011b85cdab7f0d42806f32b86dc4365201fd5a68bffa5b41f40cce7",
+          "git_oid": "5c64885938abe038ae31ea06a38a8deb8c9db605",
+          "lfs": true
+        },
+        {
+          "path": "LICENSE",
+          "bytes": 10574,
+          "sha256": "4d28ca14dedc0b3d0fcc2b3339f0e79931faa33874f3d24f522183a8fc70068c",
+          "git_oid": "25e731c697c4fe4c52ee654cedf7106a827748d2",
+          "lfs": false
+        },
+        {
+          "path": "README.md",
+          "bytes": 47751,
+          "sha256": "68253bf9dc136e03197fe700a2e59da935fe3d20cd3de8b56f87a75b903d42c9",
+          "git_oid": "5f4732947e7852d863edd2da4001683b51a1acf0",
+          "lfs": false
+        }
+      ]
+    }
+  ]
+}

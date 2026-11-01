@@ -30,6 +30,8 @@ re-enable Workers Observability for content, do not introduce response caching o
 prompt/completion text, and do not inject the user identity anywhere it would be
 persisted. Public wording must claim the *posture* ("retains no content, no
 standing operator access to content in flight"), not full attested ZOA.
+The `HF_ARTIFACTS` R2 bucket (issue #121) stores only operator-approved public
+model artifacts and no request content.
 
 ### The one exception: BayLeaf Sealed
 
@@ -99,6 +101,9 @@ src/
                         ensureBackendKey, healBackendKey, resolveOrKeyInfo
   daytona.ts            Daytona sandbox API client (lifecycle, exec, file ops)
   web.ts                Web search and page fetch clients (Tavily Search + Tavily Extract)
+  hfRegistry.ts         HF artifact gateway: approved-release registry, lookup, registryProblems()
+  hfMirror.ts           HF artifact gateway: hourly cron mirror of approved blobs into R2 (HF_TOKEN boundary)
+  hfReleases.json       Approved HF releases (repo, commit, file inventory, terms), bundled at build
   utils/
     auth.ts             resolveAuth(): IDENTITY only — Campus Pass or Bayleaf token. Returns no credential.
     backend.ts          resolveBackendCredential() + sendWithHeal(): per-backend credential + 401 heal-retry
@@ -117,6 +122,7 @@ src/
     claim.tsx           claimRoutes: RFC 8628-style device flow for handing a key to a terminal
     dashboard.tsx       dashboardRoutes: / (landing), /dashboard (self-heals sandbox ID cache)
     docs.ts             docsRoutes: /docs (Scalar viewer), /docs/openapi.json, /docs/SKILL.md
+    hf.ts               Keyless HF artifact gateway: /hf/catalog, /hf/.../resolve/... (issue #121)
     key.ts              keyRoutes: POST|DELETE /key (session-gated, hidden from the spec)
     llms.ts             llmsRoutes: /llms.txt and the agent-facing skill prose
     proxy.ts            proxyRoutes: POST /responses, POST /chat/completions, /v1/* catch-all
@@ -129,6 +135,9 @@ scripts/
   spend-limits.mjs      Operator tool: adjust OR-side daily caps by roster or by current cap
   harness-sealed.py     Sealed lane conformance suite (needs wrangler dev over HTTPS; see TESTING.md)
   harness-sealed-attestation.py  Serves mutated attestation bundles; asserts the client refuses all of them
+  hf-release.mjs        Operator tool: author an HF release's file inventory and hashes from a pinned commit
+  test-hf.mjs           HF artifact gateway contract tests (`npm run test:hf`)
+  qualify-hf-browser.mjs  Browser qualification of the HF gateway with Transformers.js
   open-weight-policy/   Historical OpenRouter-spend analysis for the evidence policy
     analyze.mjs          Writes local, mode-0600 metadata and spend reports
     README.md            Policy scope and invocation
@@ -798,6 +807,17 @@ established. Production Chat runs upstream Lathe 0.31.0 with wrapping enabled;
 private and public isolated tests plus production-tool exposure smoke passed. See the
 rollout record in `chat/DESIGN.md` and `PREVIEWS.md`.
 
+### HF artifact gateway (issue #121)
+
+Deployed 2026-11-01. `routes/hf.ts` serves approved Hugging Face model artifacts
+keylessly and read-only under `/hf`, Hub-shaped for Transformers.js. It mirrors
+ahead of time, never proxies: the hourly cron (`hfMirror.ts`) copies approved
+blobs into R2 (`HF_ARTIFACTS`) keyed by SHA-256, and downloads never contact
+Hugging Face. `HF_TOKEN` is read-only and sent only to `huggingface.co`, never on
+a download path. R2 holds only public artifacts, never request content.
+`HF_GATEWAY_ENABLED` is the kill switch. Read `HF-GATEWAY.md` before changing
+this facet; run `npm run test:hf` and `npm run test:docs`.
+
 ```
 /                       Landing       /login         OIDC start      /callback   OIDC callback
 /logout                 Clear         /dashboard     User UI         /key        POST|DELETE
@@ -823,6 +843,9 @@ rollout record in `chat/DESIGN.md` and `PREVIEWS.md`.
 /sealed/.well-known/opencode/config   GET: Authenticated Sealed OpenCode config
 /recommended-model      Current recommended model slug + display name (JSON, unauthenticated)
 /campus-pass            Read-only keyless standard inference availability for the caller
+/hf/catalog             GET: approved HF releases (keyless; issue #121)
+/hf/catalog/{ns}/{repo} GET: one repository's approved releases, with per-file mirror state
+/hf/{ns}/{repo}/resolve/{revision}/{path}  GET|HEAD: approved artifact bytes from R2 (Range supported)
 /docs                   Interactive API docs (Scalar viewer, loads /docs/openapi.json)
 /docs/openapi.json      OpenAPI 3.1 spec (auto-generated from Zod schemas)
 /docs/SKILL.md          Agent skill file (public; personalized with email when authenticated)

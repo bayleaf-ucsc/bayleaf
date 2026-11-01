@@ -433,6 +433,18 @@ user identity.
 
 ---
 
+## HF Artifact Gateway (`/hf/*`, issue #121, deployed 2026-11-01)
+
+**Stores public artifacts only, nothing about requests.** The hourly cron copies
+operator-approved Hugging Face model files into the `bayleaf-hf-artifacts` R2
+bucket, keyed `sha256/<hex>`. These are public model weights, licenses and
+READMEs, not user data. Downloads are keyless and served from R2; they are not
+logged, cached per caller or recorded in D1 or telemetry. Revoking a release
+stops serving at once, but its blobs stay in R2 until the operator deletes them
+by hand. See [HF-GATEWAY.md](HF-GATEWAY.md).
+
+---
+
 ## Cloudflare Workers Platform
 
 Observability (request tracing) is **disabled** in the worker configuration, so
@@ -503,6 +515,7 @@ platform-log or provider retention schedules.
 | API session state | Client cookie | 24 hours |
 | Sandboxes session metadata | Cloudflare D1 and host-only client cookie | 24 hours, then scheduled cleanup; explicit logout removes the session row |
 | Edge logs | Cloudflare | ~72 hours (platform default) |
+| Approved public model artifacts (no request data) | Cloudflare R2 `bayleaf-hf-artifacts` | While approved; deleted by hand after revocation |
 | Operational telemetry (rolling out) | Separate private Cloudflare Worker/D1 | 90-day live maximum from observation; bounded purge delay; paid-plan recovery up to 30 additional days after physical deletion; reports/exports share source expiry |
 ## Sandbox credentials (issue #90, rollout pending)
 

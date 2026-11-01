@@ -724,3 +724,39 @@ export const InboxCredentialListSchema = z.object({ credentials: z.array(InboxCr
 
 export const InboxCredentialRevokeSchema = z.object({ id: z.string(), revoked: z.literal(true) }).openapi('InboxCredentialRevoke',
   { description: 'Hard delete, rechecked at receipt reservation. Authentication remains required even if no credentials remain. Create a replacement credential to restore authorized delivery; revocation never reopens anonymous reception.' });
+
+// ── HF artifact gateway (issue #121) ──────────────────────────────
+
+export const HfArtifactFileSchema = z.object({
+  path: z.string().openapi({ description: 'Path within the upstream repository at the pinned commit.' }),
+  bytes: z.number().int().openapi({ description: 'Exact size in bytes.' }),
+  sha256: z.string().openapi({ description: 'SHA-256 of the file. Verify downloads against a hash your client pins; this catalog is served by the same operator as the bytes.' }),
+  git_oid: z.string().openapi({ description: 'Upstream git object ID at the pinned commit (blob SHA-1 of the file, or of its LFS pointer when `lfs` is true).' }),
+  lfs: z.boolean().openapi({ description: 'Whether upstream stores the file through Git LFS; its SHA-256 is then the commit\'s LFS object ID.' }),
+  url: z.string().openapi({ description: 'Download URL on this gateway, pinned to the commit.' }),
+  mirrored: z.boolean().optional().openapi({ description: 'Present only on the per-repository endpoint: whether the bytes are ready to serve. Files not yet mirrored answer 503.' }),
+}).openapi('HfArtifactFile');
+
+export const HfReleaseSchema = z.object({
+  repo: z.string().openapi({ description: 'Upstream Hugging Face repository ID, unchanged. BayLeaf neither authored nor endorses it.' }),
+  revision: z.string().openapi({ description: 'The approved upstream commit.' }),
+  aliases: z.array(z.string()).openapi({ description: 'Other revision names (such as `main`) that resolve to this approved commit. They never follow upstream.' }),
+  title: z.string(),
+  base_model: z.string().optional(),
+  task: z.string(),
+  library: z.string(),
+  architecture: z.string(),
+  formats: z.array(z.string()),
+  variants: z.array(z.object({ name: z.string(), files: z.array(z.string()) })).openapi({ description: 'Named subsets of `files` (for example a quantization) a client needs together.' }),
+  license: z.object({ name: z.string(), file: z.string(), url: z.string() }).openapi({ description: 'Upstream license. Its file is served with the weights; its terms bind you.' }),
+  distribution: z.object({ basis: z.string(), reviewed: z.string(), decision: z.string() }).openapi({ description: 'Why BayLeaf may redistribute this release, and when that was reviewed.' }),
+  qualification: z.array(z.object({ client: z.string(), runtime: z.string(), status: z.string(), evidence: z.string() }))
+    .openapi({ description: 'Clients this release was tested with. Availability is not qualification: an empty list means untested.' }),
+  files: z.array(HfArtifactFileSchema).openapi({ description: 'The complete approved inventory. Nothing else in the repository is served.' }),
+  upstream_url: z.string(),
+}).openapi('HfRelease');
+
+export const HfCatalogSchema = z.object({
+  releases: z.array(HfReleaseSchema),
+  notice: z.string(),
+}).openapi('HfCatalog');

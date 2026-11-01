@@ -17,7 +17,9 @@ Media). **Publicly visible; never commit secrets, API keys, or credentials.**
   restricted to verifiably open-weight models, plus Sealed confidential
   inference through Tinfoil. It provides keyless on-campus access, key-based
   off-campus access, web search/fetch, and sandboxed code execution. Source:
-  `api/` in this repo.
+  `api/` in this repo. It also serves a keyless, read-only HF artifact gateway at
+  `https://api.bayleaf.dev/hf/`: approved Hugging Face model files mirrored into
+  R2 (issue #121, see `api/HF-GATEWAY.md`).
 - **BayLeaf Probe**: `https://probe.bayleaf.dev`, a non-public,
   HTTP-Basic-authenticated Cloudflare Worker powering UptimeRobot synthetic
   monitoring. Its deployed layers test browser-based Chat, OWUI HTTP inference,

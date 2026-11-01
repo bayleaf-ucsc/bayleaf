@@ -4,7 +4,7 @@
 
 This is a plain-spoken summary of what BayLeaf collects, where it goes, and how
 long it lives. The canonical retention policies for each service are kept in the
-public repository and linked below. Last updated: October 2026.
+public repository and linked below. Last updated: November 2026.
 
 ## What BayLeaf is, for privacy purposes
 
@@ -128,6 +128,14 @@ ITS-operated or ITS-supported one.
 - **Web search and page fetch (Chat and API):** queries and URLs you ask
   BayLeaf to look up are forwarded to Tavily and not retained by BayLeaf.
   Tavily does not receive your identity.
+- **Model artifact downloads (API, keyless):** the
+  [HF artifact gateway](api/HF-GATEWAY.md) at `api.bayleaf.dev/hf/` serves
+  operator-approved public model files without a key or sign-in. To answer each
+  request, BayLeaf and Cloudflare process request metadata such as your IP
+  address, the time, and which files and byte ranges you asked for. BayLeaf does
+  not log or store these requests, and they add nothing to telemetry; Cloudflare
+  edge logs apply as below. Hugging Face receives no per-user requests: BayLeaf
+  fetches each approved file once in advance and serves its own stored copy.
 - **Edge logs:** standard Cloudflare and DigitalOcean platform logs (IPs,
   status codes, timestamps) are kept by those vendors at their default
   retention (~72 hours for Cloudflare).
@@ -297,7 +305,8 @@ research-and-education identity broker.
   its D1 edge database), including the protected preview gateway on
   `bayleaf-proxies.dev`, and hosts the private operational
   telemetry Worker/D1 collector described above, plus Inboxes Email Routing,
-  receiving Worker, private R2 payload storage and separate D1 metadata/search.
+  receiving Worker, private R2 payload storage and separate D1 metadata/search,
+  and R2 storage of approved public model artifacts (no user data).
 - [Daytona](https://www.daytona.io/): sandboxed Linux execution environments
   for the Code Sandbox feature (opt-in).
 - [Tavily](https://tavily.com/): web search and page content extraction. No

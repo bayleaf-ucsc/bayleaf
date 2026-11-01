@@ -54,6 +54,14 @@ export interface Bindings {
   SEALED_ENABLED: string;
   SEALED_RPD_LIMIT: string;
 
+  // HF artifact gateway (issue #121). Fail closed unless exactly "true".
+  // HF_ARTIFACTS holds only operator-approved public model artifacts, keyed by
+  // SHA-256; HF_TOKEN is a read-only Hub token used by the mirror cron alone,
+  // never on a download request and never sent beyond huggingface.co.
+  HF_GATEWAY_ENABLED?: string;
+  HF_ARTIFACTS?: R2Bucket;
+  HF_TOKEN?: string;
+
   // D1 database
   DB: D1Database;
 
