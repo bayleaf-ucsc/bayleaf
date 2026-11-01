@@ -65,8 +65,8 @@ const fake = { label: 'fake pdf', memory: 1, create: () => ({ async run(input, {
   if (fake.hang) await new Promise((_, rej) => signal.addEventListener('abort', () => rej(new DOMException('Stopped.', 'AbortError'))));
   if (input.password === 'enc') throw Object.assign(new Error('encrypted: it needs a password to open'), { code: 'EENCRYPTED' });
   if (input.action === 'info') return { pages: 3, info: { Title: 'Fake' }, size: [612, 792], rotate: 0, noText: [], scanned: 3 };
-  if (input.action === 'text') return { numPages: 3, pages: [{ n: input.first, text: 'Hi', empty: false }] };
-  return { numPages: 12, pages: [{ n: input.first, width: 10, height: 20, bytes: new Uint8Array([137, 80, 78, 71]) }] };
+  if (input.action === 'text') return { numPages: fake.numPages ?? 3, pages: [{ n: input.first, text: 'Hi', empty: false }] };
+  return { numPages: fake.numPages ?? 12, pages: [{ n: input.first, width: 10, height: 20, bytes: new Uint8Array([137, 80, 78, 71]) }] };
 } }) };
 
 await t('the commands in the terminal shell: caps, errors, outputs, /task jobs', async () => {
@@ -84,6 +84,18 @@ await t('the commands in the terminal shell: caps, errors, outputs, /task jobs',
   r = await sh('pdftotext -f 2 a.pdf'); assert.match(r.stdout, /wrote \/work\/a\.txt/); assert.equal(await fs.readFile('/work/a.txt'), '[page 2]\nHi\n\f');
   assert.equal(asked.at(-1).last, 2 + TEXT_MAX_PAGES - 1, 'an open range asks for at most TEXT_MAX_PAGES');
   r = await sh('pdftoppm -f 9 a.pdf out/p'); assert.match(r.stdout, /wrote \/work\/out\/p-09\.png \(page 9, 10x20 at 150 DPI\)/, 'poppler pads to the page count');
+  // Stopping at a cap without -l: exit 0, and the note on stdout as well as stderr.
+  fake.numPages = 312;
+  r = await sh('pdftoppm a.pdf big/p'); assert.equal(r.exitCode, 0);
+  assert.match(r.stdout, /\n\[stopped at page 50 of 312: pass -f 51 -l 100 for more\]\n$/); assert.match(r.stderr, /pdftoppm: stopped at page 50 of 312 \(RENDER_MAX_PAGES\); continue with -f 51/);
+  r = await sh('pdftoppm -q -f 263 a.pdf big/p'); assert.equal(r.stdout, '', 'a range that reaches the end says nothing');
+  r = await sh('pdftoppm -q -f 262 a.pdf big/p'); assert.equal(r.stdout, '[stopped at page 311 of 312: pass -f 312 -l 312 for more]\n', '-q keeps the note');
+  r = await sh('pdftoppm -f 1 -l 50 a.pdf big/p'); assert.doesNotMatch(r.stdout + r.stderr, /stopped at/, 'an explicit -l is never a cut');
+  fake.numPages = 2500;
+  r = await sh('pdftotext a.pdf -'); assert.equal(r.exitCode, 0); assert.match(r.stdout, /\[stopped at page 2000 of 2500: pass -f 2001 -l 2500 for more\]\n$/);
+  r = await sh('pdftotext a.pdf'); assert.match(r.stdout, /^wrote \/work\/a\.txt .*\n\[stopped at page 2000 of 2500: pass -f 2001 -l 2500 for more\]\n$/);
+  assert.doesNotMatch(await fs.readFile('/work/a.txt'), /stopped at/, 'the written text has no note');
+  delete fake.numPages;
   r = await sh('pdftoppm -f 1 -l 60 a.pdf p'); assert.equal(r.exitCode, 99); assert.match(r.stderr, /at most 50 per call/);
   r = await sh('pdfinfo -upw enc a.pdf'); assert.equal(r.exitCode, 3); assert.match(r.stderr, /encrypted/);
   assert.ok(tasks.list().every((x) => x.kind === 'job') && tasks.list().length >= 4, 'each run is a /task job');

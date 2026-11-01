@@ -183,6 +183,8 @@ one with \`echo stop > /task/<id>/ctl\`.
   the first 500 pages; pdftoppm: at most 50 pages per call, 18-600 DPI
   (default 150), 25 million pixels per page (letter at 600 DPI is over:
   use 300). Ranges over a cap are refused; go in batches with -f and -l.
+  Without -l a long PDF stops at the cap and the output ends with a line
+  like [stopped at page 50 of 312: pass -f 51 -l 100 for more].
 - Files over 256 MiB are refused. Encrypted PDFs need \`-upw PASSWORD\`
   (exit 3 without it); ask the user, do not guess.
 - Not supported: PPM/TIFF output, -scale-to, -rx/-ry, -bbox, writing or

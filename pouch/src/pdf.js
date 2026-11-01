@@ -272,6 +272,16 @@ export function pdfCommands(defineCommand, service, whoOf = () => ({ name: 'term
     return j.error ?? ok(formatInfo(j.r, { password: a.opts.upw != null || a.opts.opw != null }));
   });
 
+  // An open range (no -l) that reached the per-call cap still exits 0, but says so on
+  // stdout, where an agent reads, as well as stderr, with the next batch to ask for.
+  // Even -q keeps it: a silent cut reads as the whole document.
+  const capNote = (cmd, range, cap, numPages, name) => {
+    const end = range.first + cap - 1;
+    if (range.last != null || numPages <= end) return { out: '', err: '' };
+    return { out: `[stopped at page ${end} of ${numPages}: pass -f ${end + 1} -l ${Math.min(end + cap, numPages)} for more]\n`,
+      err: `${cmd}: stopped at page ${end} of ${numPages} (${name}); continue with -f ${end + 1}\n` };
+  };
+
   const pdftotext = defineCommand('pdftotext', async (args, ctx) => {
     const a = parse('pdftotext', args);
     if (a.done) return a.done;
@@ -280,12 +290,12 @@ export function pdfCommands(defineCommand, service, whoOf = () => ({ name: 'term
     const j = await job('pdftotext', ctx, a.files[0], { action: 'text', first: range.first, last: range.last ?? range.first + TEXT_MAX_PAGES - 1, layout: !!a.opts.layout, password: a.opts.upw ?? a.opts.opw });
     if (j.error) return j.error;
     const text = formatText(j.r, a.opts);
-    const more = range.last == null && j.r.numPages > range.first + TEXT_MAX_PAGES - 1 ? `pdftotext: stopped at page ${range.first + TEXT_MAX_PAGES - 1} of ${j.r.numPages} (TEXT_MAX_PAGES); continue with -f ${range.first + TEXT_MAX_PAGES}\n` : '';
+    const more = capNote('pdftotext', range, TEXT_MAX_PAGES, j.r.numPages, 'TEXT_MAX_PAGES');
     const out = a.files[1] ?? j.p.replace(/\.pdf$/i, '') + '.txt';
-    if (out === '-') return ok(text, more);
+    if (out === '-') return ok(text + more.out, more.err);
     const o = abs(ctx.cwd, out);
     await ctx.fs.writeFile(o, text);
-    return ok(a.opts.q ? '' : `wrote ${o} (pages ${j.r.pages[0]?.n ?? '-'}-${j.r.pages.at(-1)?.n ?? '-'} of ${j.r.numPages})\n`, more);
+    return ok((a.opts.q ? '' : `wrote ${o} (pages ${j.r.pages[0]?.n ?? '-'}-${j.r.pages.at(-1)?.n ?? '-'} of ${j.r.numPages})\n`) + more.out, more.err);
   });
 
   const pdftoppm = defineCommand('pdftoppm', async (args, ctx) => {
@@ -305,8 +315,8 @@ export function pdfCommands(defineCommand, service, whoOf = () => ({ name: 'term
       await ctx.fs.writeFile(o, pg.bytes);
       lines.push(`wrote ${o} (page ${pg.n}, ${pg.width}x${pg.height} at ${dpi} DPI)`);
     }
-    const more = range.last == null && j.r.numPages > range.first + RENDER_MAX_PAGES - 1 ? `pdftoppm: stopped at page ${range.first + RENDER_MAX_PAGES - 1} of ${j.r.numPages} (RENDER_MAX_PAGES); continue with -f ${range.first + RENDER_MAX_PAGES}\n` : '';
-    return ok(a.opts.q ? '' : lines.join('\n') + '\n', more);
+    const more = capNote('pdftoppm', range, RENDER_MAX_PAGES, j.r.numPages, 'RENDER_MAX_PAGES');
+    return ok((a.opts.q ? '' : lines.join('\n') + '\n') + more.out, more.err);
   });
 
   return [pdfinfo, pdftotext, pdftoppm];

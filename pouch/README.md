@@ -1158,7 +1158,9 @@ names and flags so a model's prior knowledge works:
 Caps are named constants in `src/pdf.js` and errors cite them: `MAX_PDF_BYTES` 256 MiB,
 `TEXT_MAX_PAGES` 2000 per call, `INFO_SCAN_PAGES` 500, `RENDER_MAX_PAGES` 50 per call,
 `MIN_DPI`-`MAX_DPI` 18-600 (default 150), `MAX_PIXELS` 25 million per page. A range over a
-cap is refused, not cut. Exit codes follow poppler: 1 for a file error, 3 for an encrypted
+cap is refused, not cut. Without `-l`, `pdftotext` and `pdftoppm` stop at their cap with
+exit 0 and say so on stdout (where an agent reads it, even with `-q`) as well as stderr:
+`[stopped at page 50 of 312: pass -f 51 -l 100 for more]`. Exit codes follow poppler: 1 for a file error, 3 for an encrypted
 PDF without its password, 99 for bad arguments; 130 when stopped.
 
 Each command is an engine job (`/task`, Stop through ctl); one worker serves the terminal
