@@ -17,6 +17,7 @@ const gateway = arg('gateway', 'https://api.bayleaf.dev').replace(/\/$/, '');
 const only = arg('repo');
 const PART = 20 * 2 ** 20, PARALLEL = 4;
 const { releases } = JSON.parse(readFileSync(new URL('../src/hfReleases.json', import.meta.url)));
+if (only && !releases.some((r) => r.repo === only)) { console.log(`FAIL ${only}: not in src/hfReleases.json`); process.exit(1); }
 let failures = 0;
 const fail = (msg) => { failures++; console.log(`FAIL ${msg}`); };
 

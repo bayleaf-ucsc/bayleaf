@@ -17,8 +17,10 @@ import { approvedBlobs, blobKey, type HfFile, type HfRelease } from './hfRegistr
 
 const HUB = 'https://huggingface.co';
 const MAX_HOPS = 4;
-// The hourly cron's wall limit is 15 minutes; start no new blob after this.
-const BUDGET_MS = 10 * 60_000;
+// The hourly cron's wall limit is 15 minutes: start no new blob after 10, and
+// abort any transfer still running at 13, leaving time to finish the run.
+const START_BUDGET_MS = 10 * 60_000;
+const HARD_DEADLINE_MS = 13 * 60_000;
 
 const encodePath = (path: string) => path.split('/').map(encodeURIComponent).join('/');
 
@@ -31,14 +33,14 @@ export function allowedUpstream(url: URL): 'hub' | 'storage' | null {
 }
 
 /** The pinned file's bytes from upstream, following only validated redirects. */
-async function fetchUpstream(env: Bindings, release: HfRelease, file: HfFile): Promise<Response | string> {
+async function fetchUpstream(env: Bindings, release: HfRelease, file: HfFile, signal: AbortSignal): Promise<Response | string> {
   let url = new URL(`${HUB}/${release.repo}/resolve/${release.revision}/${encodePath(file.path)}`);
   for (let hop = 0; hop <= MAX_HOPS; hop++) {
     const kind = allowedUpstream(url);
     if (!kind) return `refused redirect to ${url.hostname}`;
     const headers: Record<string, string> = { 'User-Agent': 'bayleaf-api-hf-mirror (+https://api.bayleaf.dev/llms.txt)' };
     if (kind === 'hub' && env.HF_TOKEN) headers.Authorization = `Bearer ${env.HF_TOKEN}`;
-    const response = await fetch(url.href, { headers, redirect: 'manual' });
+    const response = await fetch(url.href, { headers, redirect: 'manual', signal });
     if (response.status >= 300 && response.status < 400) {
       await response.body?.cancel();
       const location = response.headers.get('Location');
@@ -57,36 +59,39 @@ async function fetchUpstream(env: Bindings, release: HfRelease, file: HfFile): P
 
 export interface MirrorReport { approved: number; present: number; mirrored: number; failed: number; deferred: number }
 
-/** Mirror every approved blob missing from R2, oldest registry entry first. */
-export async function mirrorHfReleases(env: Bindings, now: () => number = Date.now): Promise<MirrorReport> {
+export interface MirrorOptions { now?: () => number; startBudgetMs?: number; hardDeadlineMs?: number }
+
+/**
+ * Mirror every approved blob missing from R2, smallest first, so a slow or
+ * stalled large file cannot starve the rest. Each blob fails independently;
+ * a run-wide deadline aborts the upstream request and its body transfer.
+ */
+export async function mirrorHfReleases(env: Bindings, options: MirrorOptions = {}): Promise<MirrorReport> {
+  const { now = Date.now, startBudgetMs = START_BUDGET_MS, hardDeadlineMs = HARD_DEADLINE_MS } = options;
   const report: MirrorReport = { approved: 0, present: 0, mirrored: 0, failed: 0, deferred: 0 };
   const bucket = env.HF_ARTIFACTS;
   if (env.HF_GATEWAY_ENABLED !== 'true' || !bucket) return report;
   const started = now();
-  for (const { release, file } of approvedBlobs()) {
+  const deadline = AbortSignal.timeout(hardDeadlineMs);
+  const blobs = approvedBlobs().sort((a, b) => a.file.bytes - b.file.bytes);
+  for (const { release, file } of blobs) {
     report.approved++;
     const key = blobKey(file.sha256);
-    const existing = await bucket.head(key);
-    if (existing && existing.size === file.bytes) { report.present++; continue; }
-    if (now() - started > BUDGET_MS) { report.deferred++; continue; }
-    const upstream = await fetchUpstream(env, release, file);
-    if (typeof upstream === 'string') {
-      console.warn('HF mirror failed', { key, reason: upstream }); // Public artifact metadata only.
-      report.failed++;
-      continue;
-    }
-    const declared = upstream.headers.get('Content-Length');
-    if (declared !== null && Number(declared) !== file.bytes) {
-      await upstream.body?.cancel();
-      console.warn('HF mirror failed', { key, reason: `size ${declared} != ${file.bytes}` });
-      report.failed++;
-      continue;
-    }
     try {
+      const existing = await bucket.head(key);
+      if (existing && existing.size === file.bytes) { report.present++; continue; }
+      if (now() - started > startBudgetMs || deadline.aborted) { report.deferred++; continue; }
+      const upstream = await fetchUpstream(env, release, file, deadline);
+      if (typeof upstream === 'string') throw new Error(upstream);
+      const declared = upstream.headers.get('Content-Length');
+      if (declared !== null && Number(declared) !== file.bytes) {
+        await upstream.body?.cancel();
+        throw new Error(`size ${declared} != ${file.bytes}`);
+      }
       // FixedLengthStream gives R2 the length up front and errors on any
       // shortfall or excess; the sha256 option makes R2 reject other bytes.
       const sized = new FixedLengthStream(file.bytes);
-      const piping = upstream.body!.pipeTo(sized.writable);
+      const piping = upstream.body!.pipeTo(sized.writable, { signal: deadline });
       piping.catch(() => {}); // Surfaced through Promise.all below.
       await Promise.all([bucket.put(key, sized.readable, {
         sha256: file.sha256,
@@ -95,7 +100,7 @@ export async function mirrorHfReleases(env: Bindings, now: () => number = Date.n
       }), piping]);
       report.mirrored++;
     } catch (e) {
-      console.warn('HF mirror failed', { key, reason: String((e as Error)?.message ?? e) });
+      console.warn('HF mirror failed', { key, reason: String((e as Error)?.message ?? e) }); // Public artifact metadata only.
       report.failed++;
     }
   }

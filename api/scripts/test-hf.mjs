@@ -25,6 +25,8 @@ const upstream = {
   'LICENSE': Buffer.from('Synthetic license text\n'),
   'wrong.bin': bytes(1000, 2),
   'evil.bin': bytes(10, 3),
+  'throws.bin': bytes(5, 4),          // upstream fetch rejects; mirrored first (smallest)
+  'stall.bin': bytes(4 * 2 ** 20, 5), // upstream body never finishes; mirrored last (largest)
 };
 const entry = (path, lfs = false, override = {}) => ({ path, bytes: upstream[path].length, sha256: sha(upstream[path]), git_oid: 'c'.repeat(40), lfs, ...override });
 const meta = { title: 'Tiny', task: 'text-generation', library: 'transformers.js', architecture: 'tiny', formats: ['onnx'],
@@ -36,7 +38,8 @@ const registry = { releases: [
     files: [entry('config.json'), entry('onnx/model.onnx_data', true), entry('LICENSE')] },
   // The registry's hash for wrong.bin is not what upstream serves; evil.bin redirects off-Hub.
   { repo: 'test-org/bad', revision: BAD_COMMIT, aliases: [], ...meta, task: 'other', variants: [],
-    files: [entry('LICENSE'), entry('wrong.bin', true, { sha256: 'd'.repeat(64) }), entry('evil.bin', true)] },
+    files: [entry('LICENSE'), entry('wrong.bin', true, { sha256: 'd'.repeat(64) }), entry('evil.bin', true),
+      entry('throws.bin', true), entry('stall.bin', true)] },
 ] };
 
 const bundle = await build({ absWorkingDir: root, stdin: { resolveDir: root, contents: `
@@ -47,7 +50,7 @@ const bundle = await build({ absWorkingDir: root, stdin: { resolveDir: root, con
   export { PreviewConnections, SandboxBrowser, SandboxManagement } from './src/index';
   export default { ...worker, async fetch(request, env, ctx) {
     const path = new URL(request.url).pathname;
-    if (path === '/__mirror') return Response.json(await mirrorHfReleases(env));
+    if (path === '/__mirror') return Response.json(await mirrorHfReleases(env, { hardDeadlineMs: 3000 }));
     if (path === '/__registry') return Response.json({ fixture: registryProblems(HF_RELEASES), real: registryProblems(real.releases) });
     return worker.fetch(request, request.headers.get('X-Test-Disabled') ? { ...env, HF_GATEWAY_ENABLED: 'false' } : env, ctx);
   }};
@@ -78,6 +81,7 @@ const mf = new Miniflare(convertV4MiniflareOptions({
         if (cached) return new Response(upstream[decodeURIComponent(cached[1])]);
         const file = m && decodeURIComponent(m[1]);
         if (!file || !upstream[file]) return new Response('missing', { status: 404 });
+        if (file === 'throws.bin') throw new Error('synthetic network failure');
         if (file === 'evil.bin') return new Response(null, { status: 302, headers: { Location: 'https://evil.example/steal' } });
         if (file.endsWith('.onnx_data') || file.endsWith('.bin')) {
           return new Response(null, { status: 302, headers: { Location: `https://us.aws.cdn.hf.co/xet-bridge-us/x/${encodeURIComponent(file)}?Signature=s` } });
@@ -86,7 +90,10 @@ const mf = new Miniflare(convertV4MiniflareOptions({
       }
       if (url.hostname === 'us.aws.cdn.hf.co') {
         assert.equal(auth, null, 'the token never reaches a storage host');
-        return new Response(upstream[decodeURIComponent(url.pathname.split('/').pop())]);
+        const name = decodeURIComponent(url.pathname.split('/').pop());
+        if (name === 'stall.bin') return new Response(new ReadableStream({ start(c) { c.enqueue(upstream[name].subarray(0, 100)); } }),
+          { headers: { 'Content-Length': String(upstream[name].length) } });
+        return new Response(upstream[name]);
       }
       throw new Error(`unexpected outbound request to ${url.hostname}`);
     } }],
@@ -117,9 +124,11 @@ try {
     assert.equal(outbound.length, 0);
   });
 
-  await check('mirror: token only to the Hub, storage redirects without it, off-Hub redirects refused, wrong bytes rejected by R2', async () => {
+  await check('mirror: token only to the Hub, storage redirects without it, off-Hub redirects refused, wrong bytes rejected by R2, a rejected fetch and a stalled transfer fail alone', async () => {
+    const t0 = Date.now();
     const report = await (await get('/__mirror')).json();
-    assert.deepEqual(report, { approved: 5, present: 0, mirrored: 3, failed: 2, deferred: 0 });
+    assert.deepEqual(report, { approved: 7, present: 0, mirrored: 3, failed: 4, deferred: 0 });
+    assert.ok(Date.now() - t0 < 15_000, 'the deadline ends the stalled transfer');
     assert.ok(!outbound.some((o) => o.host === 'evil.example'), 'the refused redirect is never followed');
     assert.ok(outbound.some((o) => o.host === 'us.aws.cdn.hf.co' && o.auth === null));
     const again = await (await get('/__mirror')).json();
@@ -222,7 +231,7 @@ try {
   });
 
   await check('failed mirrors stay unavailable (503), never served from upstream', async () => {
-    for (const name of ['wrong.bin', 'evil.bin']) assert.equal((await get(file(name, BAD_COMMIT, 'test-org/bad'))).status, 503);
+    for (const name of ['wrong.bin', 'evil.bin', 'throws.bin', 'stall.bin']) assert.equal((await get(file(name, BAD_COMMIT, 'test-org/bad'))).status, 503);
   });
 
   await check('query strings are 400; writes are 405', async () => {
@@ -259,7 +268,7 @@ try {
     const tiny = await (await get('/hf/catalog/test-org/tiny-model')).json();
     assert.ok(tiny.releases[0].files.every((f) => f.mirrored === true));
     const bad = await (await get('/hf/catalog/test-org/bad')).json();
-    assert.deepEqual(bad.releases[0].files.map((f) => f.mirrored), [true, false, false]);
+    assert.deepEqual(bad.releases[0].files.map((f) => f.mirrored), [true, false, false, false, false]);
     assert.equal((await get('/hf/catalog/nobody/nothing')).status, 404);
   });
 
