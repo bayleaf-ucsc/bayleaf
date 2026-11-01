@@ -1,0 +1,14 @@
+{
+ "id": "lfm3-q4f16-requal",
+ "comment": "Shipped recipe qualification (2026-11-01): the transformersjs recipe imported verbatim from src/profiles.js versus agent-v2's v8 text, same session, q4f16 from the fetch-models cache. v8-pouch isolates the text difference on Pouch's tool layer (the decision-relevant comparison); v8-v8 is v8 with its original tool layer (the 39/40, 56/56 reference); baseline is the no-recipe floor.",
+ "model": { "lockId": "lfm3-1.7b-q4f16" },
+ "setups": {
+  "shipped": { "recipe": "profiles", "toolLayer": "pouch" },
+  "v8-pouch": { "recipe": "v8", "toolLayer": "pouch" },
+  "v8-v8": { "recipe": "v8", "toolLayer": "v8" },
+  "baseline": { "recipe": "none", "toolLayer": "pouch" }
+ },
+ "tasks": "core",
+ "heldOut": "all",
+ "trials": { "greedy": 1, "sampled": 7, "temperature": 0.3, "top_p": 0.95 }
+}

@@ -1,0 +1,147 @@
+{
+ "phase": "perf",
+ "dtype": "q4",
+ "at": "2026-11-01T03:13:57.339Z",
+ "browser": "156.0.8078.74",
+ "profile": "/var/folders/qj/gyqbn5y57956rrqd_g6yfqwr0000gn/T/lfm3-quant-7oycGz",
+ "headless": true,
+ "memBefore": {
+  "gpuInUseBytes": 6113165312,
+  "chromeRssKB": 1142400
+ },
+ "load": {
+  "load_ms": 1570.2849999666214,
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+  "adapter": {
+   "vendor": "apple",
+   "architecture": "metal-3",
+   "description": ""
+  },
+  "features": [
+   "depth32float-stencil8",
+   "chromium-experimental-subgroup-matrix",
+   "rg11b10ufloat-renderable",
+   "texture-formats-tier1",
+   "bgra8unorm-storage",
+   "texture-compression-bc",
+   "dual-source-blending",
+   "core-features-and-limits",
+   "float32-filterable",
+   "indirect-first-instance",
+   "texture-compression-astc-sliced-3d",
+   "float32-blendable",
+   "atomic-vec2u-min-max",
+   "subgroup-size-control",
+   "texture-compression-unaligned",
+   "texture-compression-astc",
+   "texture-compression-etc2",
+   "depth-clip-control",
+   "texture-compression-bc-sliced-3d",
+   "shader-f16",
+   "timestamp-query",
+   "texture-formats-tier2",
+   "clip-distances",
+   "primitive-index",
+   "texture-component-swizzle",
+   "subgroups"
+  ],
+  "limits": {
+   "maxBufferSize": 4294967292,
+   "maxStorageBufferBindingSize": 4294967292
+  },
+  "ort": {
+   "common": "1.31.0-dev.20260911-2a43ec07e",
+   "web": "1.31.0-dev.20260914-8d85527a0"
+  }
+ },
+ "memAfterLoad": {
+  "gpuInUseBytes": 8066252800,
+  "chromeRssKB": 4031088
+ },
+ "coldLoadMs": 1570.2849999666214,
+ "memAfterDispose": {
+  "gpuInUseBytes": 6649266176,
+  "chromeRssKB": 4031568
+ },
+ "warmLoadMs": 3852.064999997616,
+ "memAfterWarmLoad": {
+  "gpuInUseBytes": 8176713728,
+  "chromeRssKB": 4199728
+ },
+ "perf": [
+  {
+   "label": "~1k",
+   "input_tokens": 960,
+   "output_tokens": 256,
+   "ttft_ms": 863,
+   "decode_ms": 2701,
+   "prefill_tok_s": 1111.9,
+   "decode_tok_s": 94.4,
+   "gpuInUseBytes": 7774699520,
+   "chromeRssKB": 4422688
+  },
+  {
+   "label": "~1k",
+   "input_tokens": 960,
+   "output_tokens": 256,
+   "ttft_ms": 551,
+   "decode_ms": 2447,
+   "prefill_tok_s": 1741.7,
+   "decode_tok_s": 104.2,
+   "gpuInUseBytes": 7385251840,
+   "chromeRssKB": 4549744
+  },
+  {
+   "label": "~1k",
+   "input_tokens": 960,
+   "output_tokens": 256,
+   "ttft_ms": 578,
+   "decode_ms": 2613,
+   "prefill_tok_s": 1660.4,
+   "decode_tok_s": 97.6,
+   "gpuInUseBytes": 7170932736,
+   "chromeRssKB": 4536288
+  },
+  {
+   "label": "~4k",
+   "input_tokens": 3780,
+   "output_tokens": 256,
+   "ttft_ms": 3179,
+   "decode_ms": 3898,
+   "prefill_tok_s": 1189.2,
+   "decode_tok_s": 65.4,
+   "gpuInUseBytes": 7593623552,
+   "chromeRssKB": 4540128
+  },
+  {
+   "label": "~4k",
+   "input_tokens": 3780,
+   "output_tokens": 256,
+   "ttft_ms": 3455,
+   "decode_ms": 3853,
+   "prefill_tok_s": 1094.2,
+   "decode_tok_s": 66.2,
+   "gpuInUseBytes": 7615660032,
+   "chromeRssKB": 4530416
+  },
+  {
+   "label": "~4k",
+   "input_tokens": 3780,
+   "output_tokens": 256,
+   "ttft_ms": 3346,
+   "decode_ms": 4160,
+   "prefill_tok_s": 1129.8,
+   "decode_tok_s": 61.3,
+   "gpuInUseBytes": 7407157248,
+   "chromeRssKB": 4510160
+  }
+ ],
+ "memAfterPerf": {
+  "gpuInUseBytes": 7410515968,
+  "chromeRssKB": 4509600
+ },
+ "externalRequests": [],
+ "errors": [
+  "Failed to load resource: the server responded with a status of 404 (File not found)"
+ ]
+}

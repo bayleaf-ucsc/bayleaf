@@ -1,0 +1,80 @@
+{
+ "id": "lfm3-q4-repro",
+ "comment": "Reproduces quant.json's q4 row (and agent-v2's v0/v8 rows on the first five tasks): 'original' = v0 text on the raw experiment tools, 'recipe' = v8 text on the v8 tools; 384 new tokens, 8 steps, 8192-token total cap as in run-quant.mjs.",
+ "model": {
+  "repo": "onnx-community/LFM3-1.7B-ONNX",
+  "revision": "ab9fec4c681a25bec3b48b0b97a62fc2660a2985",
+  "dtype": "q4",
+  "license": "LFM Open License v1.0",
+  "files": [
+   {
+    "name": "config.json",
+    "url": "https://huggingface.co/onnx-community/LFM3-1.7B-ONNX/resolve/ab9fec4c681a25bec3b48b0b97a62fc2660a2985/config.json",
+    "bytes": 1549,
+    "sha256": "beb7c0a3e61147e15b50151728b8dc15b994c46a3cd524264b98b1485b1acf9c"
+   },
+   {
+    "name": "generation_config.json",
+    "url": "https://huggingface.co/onnx-community/LFM3-1.7B-ONNX/resolve/ab9fec4c681a25bec3b48b0b97a62fc2660a2985/generation_config.json",
+    "bytes": 241,
+    "sha256": "422ed8749f8849f763ffe836a709a2c58e1adcf3d32dfa4da48b3959e87ecce9"
+   },
+   {
+    "name": "tokenizer.json",
+    "url": "https://huggingface.co/onnx-community/LFM3-1.7B-ONNX/resolve/ab9fec4c681a25bec3b48b0b97a62fc2660a2985/tokenizer.json",
+    "bytes": 17908635,
+    "sha256": "7e226e34bface23ccf6e495d157bf77186c1c30a7659880e1a8994db528c3701"
+   },
+   {
+    "name": "tokenizer_config.json",
+    "url": "https://huggingface.co/onnx-community/LFM3-1.7B-ONNX/resolve/ab9fec4c681a25bec3b48b0b97a62fc2660a2985/tokenizer_config.json",
+    "bytes": 14262,
+    "sha256": "4e1748d03b2162c6cf5d53b13cd0cf01aae0c98d47a8b99bfb737d7fdc3d1d05"
+   },
+   {
+    "name": "special_tokens_map.json",
+    "url": "https://huggingface.co/onnx-community/LFM3-1.7B-ONNX/resolve/ab9fec4c681a25bec3b48b0b97a62fc2660a2985/special_tokens_map.json",
+    "bytes": 92,
+    "sha256": "7946f864cbfb62a1b041bda937244210a1a87f4a6cab3a48b791131b2cd57f88"
+   },
+   {
+    "name": "chat_template.jinja",
+    "url": "https://huggingface.co/onnx-community/LFM3-1.7B-ONNX/resolve/ab9fec4c681a25bec3b48b0b97a62fc2660a2985/chat_template.jinja",
+    "bytes": 12129,
+    "sha256": "f45005c50cd2a97329722bf3a2dee9f16c04cdf825a589b280fb7e99e6827818"
+   },
+   {
+    "name": "onnx/model_q4.onnx",
+    "bytes": 301147,
+    "sha256": "25d392070c56dbf33da1d4546542e3e6e232d462be670ac5ad9a1189fcf14f93"
+   },
+   {
+    "name": "onnx/model_q4.onnx_data",
+    "bytes": 1297248256,
+    "sha256": "71d16f55618638fe7f90658a0040b25cb1faa190b12f85f36f2353df9480aee8"
+   }
+  ]
+ },
+ "setups": {
+  "original": {
+   "recipe": "none",
+   "toolLayer": "v8-raw"
+  },
+  "recipe": {
+   "recipe": "v8",
+   "toolLayer": "v8"
+  }
+ },
+ "tasks": "core",
+ "heldOut": [],
+ "trials": {
+  "greedy": 1,
+  "sampled": 7,
+  "temperature": 0.3,
+  "top_p": 0.95
+ },
+ "stepCap": 8,
+ "maxNew": 384,
+ "budget": 7808,
+ "timeoutMs": 120000
+}

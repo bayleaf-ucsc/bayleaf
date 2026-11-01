@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!--
+  Same policy as pouch.html, plus exactly what a wasm engine in a worker needs:
+    'wasm-unsafe-eval'  compile the inline QuickJS wasm (no eval, no new Function)
+    worker-src blob:    start the worker from the bundled source string
+  A blob: worker inherits this policy, so it cannot reach any other host either.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src __SCRIPT_HASHES__ 'wasm-unsafe-eval'; worker-src blob:; style-src 'unsafe-inline'; connect-src https://api.bayleaf.dev; img-src data: blob:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>Pouch run: QuickJS experiment</title>
+<style>
+  body { font: 15px/1.4 system-ui, sans-serif; max-width: 60rem; margin: 1.5rem auto; padding: 0 1rem; }
+  textarea, pre { width: 100%; box-sizing: border-box; font: 13px/1.35 ui-monospace, monospace; }
+  textarea { height: 9rem; }
+  pre { background: color-mix(in srgb, currentColor 7%, transparent); padding: .5rem; min-height: 2rem; white-space: pre-wrap; }
+  .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin: .5rem 0; }
+  input[type=number] { width: 6rem; }
+  [data-status=ok] { color: green; } [data-status=timeout], [data-status=oom], [data-status=error], [data-status=cancelled] { color: #c33; }
+</style>
+</head>
+<body>
+<h1>Pouch run: QuickJS in a worker</h1>
+<p>Guest code sees only <code>console</code>, <code>print</code>, <code>args</code>, <code>stdin</code>, <code>exit</code> and an in-memory <code>fs</code>. Its file writes come back as proposed changes.</p>
+<div class="row" id="presets">Presets:</div>
+<textarea id="code" spellcheck="false" aria-label="Code"></textarea>
+<div class="row">
+  <label>time ms <input id="time" type="number" value="2000"></label>
+  <label>memory MiB <input id="mem" type="number" value="32"></label>
+  <button id="run">Run</button> <button id="cancel" disabled>Cancel</button>
+  <span id="status" role="status"></span>
+</div>
+<h2>Output</h2><pre id="out"></pre>
+<h2>Proposed changes</h2><pre id="changes"></pre>
+<div class="row">
+  <button id="apply" disabled>Apply</button>
+  <label><input id="atomic" type="checkbox"> all or nothing</label>
+  <button id="touch">Edit /src/notes.md elsewhere</button>
+</div>
+<h2>Files (host)</h2><pre id="files"></pre>
+<script>/*APP*/</script>
+</body>
+</html>

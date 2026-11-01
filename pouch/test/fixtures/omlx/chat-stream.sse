@@ -1,0 +1,23 @@
+data: {"id":"chatcmpl-50f2c793","object":"chat.completion.chunk","created":0,"model":"keepalive","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-50f2c793","object":"chat.completion.chunk","created":1793490358,"model":"MiniCPM5-2B-oQ8","choices":[{"index":0,"delta":{"role":"assistant"}}]}
+
+data: {"id":"chatcmpl-50f2c793","object":"chat.completion.chunk","created":1793490358,"model":"MiniCPM5-2B-oQ8","choices":[{"index":0,"delta":{"reasoning_content":"
+We"}}]}
+
+data: {"id":"chatcmpl-50f2c793","object":"chat.completion.chunk","created":1793490358,"model":"MiniCPM5-2B-oQ8","choices":[{"index":0,"delta":{"reasoning_content":" need to respond in exactly five words. The user says \"Say hello"}}]}
+
+data: {"id":"chatcmpl-50f2c793","object":"chat.completion.chunk","created":1793490358,"model":"MiniCPM5-2B-oQ8","choices":[{"index":0,"delta":{"reasoning_content":" in five words.\" So we need to generate a response that is"}}]}
+
+data: {"id":"chatcmpl-50f2c793","object":"chat.completion.chunk","created":1793490358,"model":"MiniCPM5-2B-oQ8","choices":[{"index":0,"delta":{"reasoning_content":" five words long. Let's count: \"Hello, this is a"}}]}
+
+data: {"id":"chatcmpl-50f2c793","object":"chat.completion.chunk","created":1793490358,"model":"MiniCPM5-2B-oQ8","choices":[{"index":0,"delta":{"reasoning_content":" greeting.\" That's five words? \"Hello\" (1),"}}]}
+
+data: {"id":"chatcmpl-50f2c793","object":"chat.completion.chunk","created":1793490358,"model":"MiniCPM5-2B-oQ8","choices":[{"index":0,"delta":{"reasoning_content":" \"this\" (2"}}]}
+
+data: {"id":"chatcmpl-50f2c793","object":"chat.completion.chunk","created":1793490358,"model":"MiniCPM5-2B-oQ8","choices":[{"index":0,"delta":{},"finish_reason":"length"}]}
+
+data: {"id":"chatcmpl-50f2c793","object":"chat.completion.chunk","created":1793490358,"model":"MiniCPM5-2B-oQ8","choices":[],"usage":{"prompt_tokens":18,"completion_tokens":60,"total_tokens":78,"input_tokens":18,"output_tokens":60,"prompt_tokens_details":{"cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":62},"model_load_duration":1.7,"time_to_first_token":0.12,"time_to_first_visible_token":0.13,"total_time":0.62,"prompt_eval_duration":0.12,"generation_duration":0.5,"prompt_tokens_per_second":144.47,"generation_tokens_per_second":120.8}}
+
+data: [DONE]
+

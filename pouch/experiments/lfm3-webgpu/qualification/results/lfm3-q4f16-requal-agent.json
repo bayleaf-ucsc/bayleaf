@@ -1,0 +1,3417 @@
+{
+ "schema": "pouch-qualify-v1",
+ "at": "2026-11-01T03:56:47.177Z",
+ "config": {
+  "path": "experiments/lfm3-webgpu/qualification/configs/lfm3-q4f16-requal.json",
+  "id": "lfm3-q4f16-requal",
+  "comment": "Shipped recipe qualification (2026-11-01): the transformersjs recipe imported verbatim from src/profiles.js versus agent-v2's v8 text, same session, q4f16 from the fetch-models cache. v8-pouch isolates the text difference on Pouch's tool layer (the decision-relevant comparison); v8-v8 is v8 with its original tool layer (the 39/40, 56/56 reference); baseline is the no-recipe floor.",
+  "model": {
+   "lockId": "lfm3-1.7b-q4f16"
+  },
+  "setups": {
+   "shipped": {
+    "recipe": "profiles",
+    "toolLayer": "pouch"
+   },
+   "v8-pouch": {
+    "recipe": "v8",
+    "toolLayer": "pouch"
+   },
+   "v8-v8": {
+    "recipe": "v8",
+    "toolLayer": "v8"
+   },
+   "baseline": {
+    "recipe": "none",
+    "toolLayer": "pouch"
+   }
+  },
+  "tasks": "core",
+  "heldOut": "all",
+  "trials": {
+   "greedy": 1,
+   "sampled": 7,
+   "temperature": 0.3,
+   "top_p": 0.95
+  }
+ },
+ "model": {
+  "repo": "onnx-community/LFM3-1.7B-ONNX",
+  "revision": "ab9fec4c681a25bec3b48b0b97a62fc2660a2985",
+  "dtype": "q4f16",
+  "download_bytes": 1106022678,
+  "files": [
+   {
+    "name": "config.json",
+    "bytes": 1549,
+    "sha256": "beb7c0a3e61147e15b50151728b8dc15b994c46a3cd524264b98b1485b1acf9c"
+   },
+   {
+    "name": "generation_config.json",
+    "bytes": 241,
+    "sha256": "422ed8749f8849f763ffe836a709a2c58e1adcf3d32dfa4da48b3959e87ecce9"
+   },
+   {
+    "name": "tokenizer.json",
+    "bytes": 17908635,
+    "sha256": "7e226e34bface23ccf6e495d157bf77186c1c30a7659880e1a8994db528c3701"
+   },
+   {
+    "name": "tokenizer_config.json",
+    "bytes": 14262,
+    "sha256": "4e1748d03b2162c6cf5d53b13cd0cf01aae0c98d47a8b99bfb737d7fdc3d1d05"
+   },
+   {
+    "name": "special_tokens_map.json",
+    "bytes": 92,
+    "sha256": "7946f864cbfb62a1b041bda937244210a1a87f4a6cab3a48b791131b2cd57f88"
+   },
+   {
+    "name": "chat_template.jinja",
+    "bytes": 12129,
+    "sha256": "f45005c50cd2a97329722bf3a2dee9f16c04cdf825a589b280fb7e99e6827818"
+   },
+   {
+    "name": "onnx/model_q4f16.onnx",
+    "bytes": 296714,
+    "sha256": "ef4f1e8b5e1af2e1a64230c71a344954fa047db7f3d718437908030817a0ee73"
+   },
+   {
+    "name": "onnx/model_q4f16.onnx_data",
+    "bytes": 1087789056,
+    "sha256": "7a83bb217011b85cdab7f0d42806f32b86dc4365201fd5a68bffa5b41f40cce7"
+   }
+  ]
+ },
+ "phase": "agent",
+ "runtime": {
+  "transformers": "4.3.2",
+  "ort": "1.31.0-dev.20260914-8d85527a0",
+  "sha256": {
+   "transformers.js": "f9e04d8c2f7839e32b0b6cf8f63ae1d0e13b06b453fddffdb9a1f595a4c733b1",
+   "ort-wasm-simd-threaded.asyncify.mjs": "0966b6105cd936744498aa60df7a22cbd47af3374dbc64a9ab561c08a71e3611",
+   "ort-wasm-simd-threaded.asyncify.wasm": "49871f5a4409519797e127440868a6d1923339d9185907f301a5b2a1d90af082"
+  },
+  "matchesLock": true
+ },
+ "browser": "156.0.8078.74",
+ "memBefore": {
+  "gpuInUseBytes": 11038064640,
+  "chromeRssKB": 1129552
+ },
+ "load": {
+  "load_ms": 2664.6650000214577,
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+  "adapter": {
+   "vendor": "apple",
+   "architecture": "metal-3"
+  },
+  "shaderF16": true,
+  "ort": {
+   "common": "1.31.0-dev.20260911-2a43ec07e",
+   "web": "1.31.0-dev.20260914-8d85527a0"
+  }
+ },
+ "memAfterLoad": {
+  "gpuInUseBytes": 12330795008,
+  "chromeRssKB": 4063984
+ },
+ "setups": {
+  "shipped": {
+   "recipe": "profiles",
+   "toolLayer": "pouch",
+   "recipeSha256": "3f58dd31da15c0e8978b567ba7a8e599fb161775c48eef382cb1cdd1d6de9481",
+   "limits": {
+    "stepCap": 8,
+    "maxNew": 512,
+    "budget": 4096,
+    "timeoutMs": 120000
+   },
+   "tasks": {
+    "tree": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 1,
+     "ms": [
+      5931,
+      8817,
+      8521,
+      45891,
+      43618,
+      16099,
+      10549,
+      10573
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      5,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 5
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 10573
+    },
+    "edit": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      2389,
+      3795,
+      3776,
+      4366,
+      4311,
+      3939,
+      4084,
+      3862
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 3939
+    },
+    "feature": {
+     "n": 8,
+     "pass": 6,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 2,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 2,
+     "ms": [
+      3964,
+      7986,
+      8122,
+      6591,
+      12108,
+      34391,
+      39508,
+      12038
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "wrong",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "wrong",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 12038
+    },
+    "rename": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      8726,
+      10789,
+      9609,
+      7856,
+      9646,
+      7826,
+      9764,
+      9505
+     ],
+     "rounds": [
+      4,
+      4,
+      4,
+      3,
+      4,
+      3,
+      4,
+      4
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      }
+     ],
+     "median_ms": 9609
+    },
+    "config": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      3560,
+      7127,
+      7242,
+      7185,
+      7209,
+      7235,
+      7175,
+      7265
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 7209
+    },
+    "jsonlist": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      2997,
+      5411,
+      5377,
+      5311,
+      5576,
+      5174,
+      5388,
+      5371
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 5377
+    },
+    "yaml": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      2380,
+      4146,
+      4545,
+      4641,
+      4589,
+      4369,
+      4518,
+      4524
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 4524
+    },
+    "delete-line": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      1864,
+      3928,
+      2961,
+      2991,
+      3486,
+      2690,
+      3435,
+      2982
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 2991
+    },
+    "replace-all": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 8,
+     "ms": [
+      2935,
+      5261,
+      5445,
+      5390,
+      5224,
+      5307,
+      5309,
+      5517
+     ],
+     "rounds": [
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      }
+     ],
+     "median_ms": 5309
+    }
+   }
+  },
+  "v8-pouch": {
+   "recipe": "v8",
+   "toolLayer": "pouch",
+   "recipeSha256": "a0cf0b3ffaf9e355989c2ca6a77aed35ecd65991d34d6486d247761c6b6dd8a0",
+   "limits": {
+    "stepCap": 8,
+    "maxNew": 384,
+    "budget": 7808,
+    "timeoutMs": 120000
+   },
+   "tasks": {
+    "tree": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 1,
+     "ms": [
+      3480,
+      6727,
+      7410,
+      9824,
+      7179,
+      8359,
+      7129,
+      7146
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      5,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 5
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 7179
+    },
+    "edit": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      2027,
+      3297,
+      3482,
+      3585,
+      3653,
+      3835,
+      3747,
+      3663
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 3653
+    },
+    "feature": {
+     "n": 8,
+     "pass": 6,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 2,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 2,
+     "ms": [
+      3605,
+      7475,
+      7302,
+      7526,
+      7488,
+      8036,
+      8104,
+      7451
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "wrong",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "wrong",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 7488
+    },
+    "rename": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      4763,
+      9218,
+      8987,
+      9223,
+      9306,
+      9385,
+      9234,
+      9223
+     ],
+     "rounds": [
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      }
+     ],
+     "median_ms": 9223
+    },
+    "config": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      3516,
+      6948,
+      7080,
+      6826,
+      7013,
+      6784,
+      6910,
+      6958
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 6948
+    },
+    "jsonlist": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      2575,
+      5094,
+      5054,
+      4875,
+      4938,
+      4988,
+      4950,
+      5186
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 4988
+    },
+    "yaml": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      2214,
+      4093,
+      4145,
+      4031,
+      4314,
+      4294,
+      4324,
+      4134
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 4145
+    },
+    "delete-line": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      1839,
+      3420,
+      3751,
+      3645,
+      3176,
+      3715,
+      3331,
+      3342
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 3420
+    },
+    "replace-all": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 8,
+     "ms": [
+      2755,
+      5068,
+      5160,
+      5428,
+      6690,
+      5570,
+      5003,
+      5096
+     ],
+     "rounds": [
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      }
+     ],
+     "median_ms": 5160
+    }
+   }
+  },
+  "v8-v8": {
+   "recipe": "v8",
+   "toolLayer": "v8",
+   "recipeSha256": "a0cf0b3ffaf9e355989c2ca6a77aed35ecd65991d34d6486d247761c6b6dd8a0",
+   "limits": {
+    "stepCap": 8,
+    "maxNew": 384,
+    "budget": 7808,
+    "timeoutMs": 120000
+   },
+   "tasks": {
+    "tree": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 1,
+     "ms": [
+      3375,
+      8041,
+      8005,
+      9828,
+      7063,
+      7028,
+      7249,
+      8482
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      5,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 5
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 8005
+    },
+    "edit": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      1998,
+      3221,
+      3699,
+      3343,
+      3622,
+      3733,
+      3340,
+      3208
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 3343
+    },
+    "feature": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 2,
+     "ms": [
+      3413,
+      7121,
+      7246,
+      7301,
+      7179,
+      7940,
+      9333,
+      6964
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 7246
+    },
+    "rename": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      4329,
+      8985,
+      9011,
+      9138,
+      9161,
+      10623,
+      9737,
+      9719
+     ],
+     "rounds": [
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      }
+     ],
+     "median_ms": 9161
+    },
+    "config": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      3511,
+      6981,
+      6778,
+      6990,
+      6970,
+      7024,
+      6966,
+      6998
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 6981
+    },
+    "jsonlist": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      2667,
+      4983,
+      5132,
+      5195,
+      5215,
+      4894,
+      4959,
+      5186
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 5132
+    },
+    "yaml": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      2193,
+      4234,
+      4211,
+      4421,
+      4356,
+      4407,
+      4498,
+      4463
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 4407
+    },
+    "delete-line": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      1832,
+      4057,
+      3263,
+      3779,
+      3293,
+      2954,
+      3386,
+      3002
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 3293
+    },
+    "replace-all": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 8,
+     "ms": [
+      3699,
+      7062,
+      6247,
+      6246,
+      6366,
+      6323,
+      6582,
+      6916
+     ],
+     "rounds": [
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      4
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      }
+     ],
+     "median_ms": 6366
+    }
+   }
+  },
+  "baseline": {
+   "recipe": "none",
+   "toolLayer": "pouch",
+   "recipeSha256": "ba63a3f9025ba78f258d868093f9e4af833bd70efbfdc2a6584d95ae25a48ac8",
+   "limits": {
+    "stepCap": 8,
+    "maxNew": 384,
+    "budget": 7808,
+    "timeoutMs": 120000
+   },
+   "tasks": {
+    "tree": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      4374,
+      9839,
+      9735,
+      9833,
+      9436,
+      8827,
+      9970,
+      9892
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 9833
+    },
+    "edit": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      1491,
+      3166,
+      3067,
+      3019,
+      2996,
+      3039,
+      3043,
+      3043
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 3043
+    },
+    "feature": {
+     "n": 8,
+     "pass": 0,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 8,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      2949,
+      6907,
+      6886,
+      6687,
+      6920,
+      6767,
+      6728,
+      6812
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      4,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "wrong",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "wrong",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "wrong",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "wrong",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "wrong",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "wrong",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "wrong",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "wrong",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 6812
+    },
+    "rename": {
+     "n": 8,
+     "pass": 0,
+     "parse": 0,
+     "cap": 8,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 33,
+     "ms": [
+      4445,
+      8499,
+      8252,
+      7443,
+      7295,
+      7415,
+      7150,
+      7534
+     ],
+     "rounds": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "cap",
+       "status": "round_limit",
+       "rounds": 8
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "cap",
+       "status": "round_limit",
+       "rounds": 8
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "cap",
+       "status": "round_limit",
+       "rounds": 8
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "cap",
+       "status": "round_limit",
+       "rounds": 8
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "cap",
+       "status": "round_limit",
+       "rounds": 8
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "cap",
+       "status": "round_limit",
+       "rounds": 8
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "cap",
+       "status": "round_limit",
+       "rounds": 8
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "cap",
+       "status": "round_limit",
+       "rounds": 8
+      }
+     ],
+     "median_ms": 7443
+    },
+    "config": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      3156,
+      6365,
+      6401,
+      6415,
+      6903,
+      6764,
+      6668,
+      6418
+     ],
+     "rounds": [
+      4,
+      4,
+      3,
+      4,
+      4,
+      4,
+      4,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 4
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 6418
+    },
+    "jsonlist": {
+     "n": 8,
+     "pass": 7,
+     "parse": 0,
+     "cap": 1,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 4,
+     "ms": [
+      3725,
+      12251,
+      8245,
+      7464,
+      6295,
+      8163,
+      8341,
+      7339
+     ],
+     "rounds": [
+      5,
+      8,
+      6,
+      5,
+      5,
+      6,
+      6,
+      5
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 5
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "cap",
+       "status": "round_limit",
+       "rounds": 8
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 6
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 5
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 5
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 6
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 6
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 5
+      }
+     ],
+     "median_ms": 8163
+    },
+    "yaml": {
+     "n": 8,
+     "pass": 1,
+     "parse": 0,
+     "cap": 7,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 42,
+     "ms": [
+      6200,
+      11711,
+      3670,
+      11854,
+      11752,
+      11714,
+      11682,
+      11681
+     ],
+     "rounds": [
+      8,
+      8,
+      3,
+      8,
+      8,
+      8,
+      8,
+      8
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "cap",
+       "status": "round_limit",
+       "rounds": 8
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "cap",
+       "status": "round_limit",
+       "rounds": 8
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "cap",
+       "status": "round_limit",
+       "rounds": 8
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "cap",
+       "status": "round_limit",
+       "rounds": 8
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "cap",
+       "status": "round_limit",
+       "rounds": 8
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "cap",
+       "status": "round_limit",
+       "rounds": 8
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "cap",
+       "status": "round_limit",
+       "rounds": 8
+      }
+     ],
+     "median_ms": 11711
+    },
+    "delete-line": {
+     "n": 8,
+     "pass": 0,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 8,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 0,
+     "ms": [
+      1420,
+      2685,
+      2769,
+      2672,
+      2760,
+      2684,
+      2331,
+      2784
+     ],
+     "rounds": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      3
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "wrong",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "wrong",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "wrong",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "wrong",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "wrong",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "wrong",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "wrong",
+       "status": "final",
+       "rounds": 3
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "wrong",
+       "status": "final",
+       "rounds": 3
+      }
+     ],
+     "median_ms": 2685
+    },
+    "replace-all": {
+     "n": 8,
+     "pass": 8,
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "timeout": 0,
+     "load": 0,
+     "other": 0,
+     "toolErrors": 8,
+     "ms": [
+      3094,
+      6542,
+      6228,
+      6293,
+      6555,
+      6722,
+      6523,
+      6544
+     ],
+     "rounds": [
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5
+     ],
+     "trials": [
+      {
+       "trial": 0,
+       "seed": null,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 5
+      },
+      {
+       "trial": 1,
+       "seed": 1,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 5
+      },
+      {
+       "trial": 2,
+       "seed": 2,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 5
+      },
+      {
+       "trial": 3,
+       "seed": 3,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 5
+      },
+      {
+       "trial": 4,
+       "seed": 4,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 5
+      },
+      {
+       "trial": 5,
+       "seed": 5,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 5
+      },
+      {
+       "trial": 6,
+       "seed": 6,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 5
+      },
+      {
+       "trial": 7,
+       "seed": 7,
+       "cls": "pass",
+       "status": "final",
+       "rounds": 5
+      }
+     ],
+     "median_ms": 6542
+    }
+   }
+  }
+ },
+ "externalRequests": [],
+ "consoleErrors": [
+  "Failed to load resource: the server responded with a status of 404 (Not Found)"
+ ]
+}

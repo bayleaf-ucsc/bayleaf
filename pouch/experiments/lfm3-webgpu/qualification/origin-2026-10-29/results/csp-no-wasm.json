@@ -1,0 +1,86 @@
+{
+  "phase": "csp-no-wasm",
+  "at": "2026-10-29T07:19:49.697Z",
+  "browser": "156.0.8078.73",
+  "responseCSP": "default-src 'none'; script-src 'self'; worker-src 'self'; connect-src 'self' https://api.bayleaf.dev; style-src 'self'; img-src 'self'; base-uri 'none'; object-src 'none'",
+  "expectedWasmFailure": "Error: page.evaluate: Error: Error: no available backend found. ERR: [webgpu] RuntimeError: Aborted(CompileError: WebAssembly.instantiate(): Compiling or instantiating WebAssembly module violates the following Content Security policy directive because 'unsafe-eval' is not an allowed source of script in the following Content Security Policy directive: \"script-src 'self'\".). Build with -sASSERTIONS for more info.\nError: no available backend found. ERR: [webgpu] RuntimeError: Aborted(CompileError: WebAssembly.instantiate(): Compiling or instantiating WebAssembly module violates the following Content Security policy directive because 'unsafe-eval' is not an allowed source of script in the following Content Security Policy directive: \"script-src 'self'\".). Build with -sASSERTIONS for more info.\n    at Da (http://127.0.0.1:8770/assets/runtime/transformers.js:8584:19)\n    at async a.create (http://127.0.0.1:8770/assets/runtime/transformers.js:9046:20)\n    at async createInferenceSession (http://127.0.0.1:8770/assets/runtime/transformers.js:13453:19)\n    at async http://127.0.0.1:8770/assets/runtime/transformers.js:24596:25\n    at async Promise.all (index 0)\n    at async constructSessions (http://127.0.0.1:8770/assets/runtime/transformers.js:24586:5)\n    at async Promise.all (index 0)\n    at async Lfm3ForCausalLM.from_pretrained (http://127.0.0.1:8770/assets/runtime/transformers.js:26546:18)\n    at async AutoModelForCausalLM.from_pretrained (http://127.0.0.1:8770/assets/runtime/transformers.js:33781:14)\n    at async Promise.all (index 2)\n    at Da (http://127.0.0.1:8770/assets/runtime/transformers.js:8584:19)\n    at async a.create (http://127.0.0.1:8770/assets/runtime/transformers.js:9046:20)\n    at async createInferenceSession (http://127.0.0.1:8770/assets/runtime/transformers.js:13453:19)\n    at async http://127.0.0.1:8770/assets/runtime/transformers.js:24596:25\n    at async Promise.all (index 0)\n    at async constructSessions (http://127.0.0.1:8770/assets/runtime/transformers.js:24586:5)\n    at async Promise.all (index 0)\n    at async Lfm3ForCausalLM.from_pretrained (http://127.0.0.1:8770/assets/runtime/transformers.js:26546:18)\n    at async AutoModelForCausalLM.from_pretrained (http://127.0.0.1:8770/assets/runtime/transformers.js:33781:14)\n    at async Promise.all (index 2)\n    at worker.onmessage (http://127.0.0.1:8770/app.js:4:216)",
+  "workerCSP": [
+    {
+      "directive": "script-src",
+      "blocked": "wasm-eval"
+    },
+    {
+      "directive": "script-src",
+      "blocked": "wasm-eval"
+    }
+  ],
+  "network": [
+    {
+      "url": "http://127.0.0.1:8770/",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8770/app.js",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8770/worker.js",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8770/assets/runtime/transformers.js",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8770/tools.bundle.js",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8770/assets/model/config.json",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8770/assets/model/onnx/model_q4f16.onnx",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8770/assets/model/onnx/model_q4f16.onnx_data",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8770/assets/model/generation_config.json",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8770/assets/runtime/ort-wasm-simd-threaded.asyncify.mjs",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8770/assets/runtime/ort-wasm-simd-threaded.asyncify.wasm",
+      "method": "GET",
+      "serviceWorker": false
+    },
+    {
+      "url": "http://127.0.0.1:8770/assets/runtime/ort-wasm-simd-threaded.asyncify.wasm",
+      "method": "GET",
+      "serviceWorker": false
+    }
+  ],
+  "errors": [
+    "Failed to load resource: the server responded with a status of 404 (File not found)",
+    "wasm streaming compile failed: CompileError: WebAssembly.instantiateStreaming(): Compiling or instantiating WebAssembly module violates the following Content Security policy directive because 'unsafe-eval' is not an allowed source of script in the following Content Security Policy directive: \"script-src 'self'\".",
+    "falling back to ArrayBuffer instantiation",
+    "failed to asynchronously prepare wasm: CompileError: WebAssembly.instantiate(): Compiling or instantiating WebAssembly module violates the following Content Security policy directive because 'unsafe-eval' is not an allowed source of script in the following Content Security Policy directive: \"script-src 'self'\".",
+    "Aborted(CompileError: WebAssembly.instantiate(): Compiling or instantiating WebAssembly module violates the following Content Security policy directive because 'unsafe-eval' is not an allowed source of script in the following Content Security Policy directive: \"script-src 'self'\".)"
+  ]
+}

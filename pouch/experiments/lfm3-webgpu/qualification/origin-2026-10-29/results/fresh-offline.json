@@ -1,0 +1,14 @@
+{
+  "phase": "fresh-offline",
+  "at": "2026-10-29T07:16:05.114Z",
+  "browser": "156.0.8078.73",
+  "expectedColdOfflineFailure": "Error: page.goto: net::ERR_INTERNET_DISCONNECTED at http://127.0.0.1:8768/\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:8768/\", waiting until \"load\"\u001b[22m\n",
+  "network": [
+    {
+      "url": "http://127.0.0.1:8768/",
+      "method": "GET",
+      "serviceWorker": false
+    }
+  ],
+  "errors": []
+}

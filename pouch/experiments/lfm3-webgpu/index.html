@@ -1,0 +1,29 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>LFM3 browser WebGPU qualification</title>
+<style>body{font:16px system-ui;max-width:900px;margin:2rem auto}pre{white-space:pre-wrap}button{padding:.6rem}</style>
+<h1>LFM3 browser WebGPU qualification</h1>
+<p>This tests the published wllama runtime against the official GGUF metadata before fetching 1 GB of weights. The diagnostic copy sets tensor count to zero to bypass truncated-file bounds checking. It cannot establish working inference.</p>
+<button id="probe">Probe GPU and model architecture</button>
+<pre id="output"></pre>
+<script type="module">
+import {Wllama} from './vendor/esm/index.js';
+const out = document.querySelector('#output');
+const evidence = {runtime:'@wllama/wllama 3.8.1', model:'LiquidAI/LFM3-1.7B-GGUF/LFM3-1.7B-QAD-Q4_0.gguf', test:'header-only architecture probe, not generation'};
+function log(...args){out.textContent = (out.textContent + args.map(x=> typeof x==='string'?x:JSON.stringify(x)).join(' ')+'\n').split('\n').slice(-20).join('\n');}
+document.querySelector('#probe').onclick = async () => {
+  document.querySelector('#probe').disabled = true;
+  try {
+    evidence.userAgent = navigator.userAgent;
+    evidence.crossOriginIsolated = crossOriginIsolated;
+    evidence.gpuAPI = !!navigator.gpu;
+    const adapter = await navigator.gpu?.requestAdapter();
+    evidence.adapter = adapter ? {vendor:adapter.info?.vendor,architecture:adapter.info?.architecture,device:adapter.info?.device,description:adapter.info?.description,features:[...adapter.features]} : null;
+    log(evidence);
+    const w = new Wllama({default:'./vendor/esm/wasm/wllama.wasm'}, {logger:{debug:log,log,warn:log,error:log}});
+    await w.loadModel([await (await fetch('./model-header.gguf')).blob()], {n_gpu_layers:99,n_ctx:512,n_threads:1});
+    evidence.result='Unexpected load success: header-only artifact must not be used for generation';
+  } catch(e) {evidence.result=String(e);log('RESULT',evidence.result);}
+  window.evidence=evidence;
+};
+</script>

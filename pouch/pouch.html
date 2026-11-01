@@ -1,0 +1,1063 @@
+<!doctype html>
+<!--
+  BayLeaf Pouch (proof of concept, issue #120).
+
+  A single-file coding agent whose whole security argument fits on one screen:
+
+    1. Conversations and files live only in this browser (IndexedDB and the
+       origin-private file system), or in folders you explicitly hand it.
+    2. Every inference body bound for BayLeaf is encrypted in this page, by the
+       vendored Tinfoil SDK, to a hardware-attested enclave key. BayLeaf relays
+       ciphertext. The optional Transformers.js provider sends no inference at
+       all: its model runs here, in this browser. The optional Localhost provider
+       sends plaintext only to a server on this computer that you configured.
+    3. The Content-Security-Policy below lets this page talk to api.bayleaf.dev,
+       its own origin ('self': only to download the optional Transformers.js model's
+       hash-checked parts) and loopback http (localhost, 127.0.0.1: only the
+       Localhost server you set up), and run exactly the scripts whose hashes it names.
+    4. You run a copy whose SHA-256 you can compare with a public release, so the
+       operator cannot quietly change the code after you check it.
+
+  Point 4 is the one that matters most and the one software cannot enforce.
+  Trust roots: BayLeaf, your browser, and your own machine; every provider
+  sits under one of them. See README.md for the stance and its limits.
+
+  Edit this file and src/, not dist/pouch.html: build.mjs bundles src/main.js
+  where the APP marker sits and stamps the CSP script hashes.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src __SCRIPT_HASHES__ 'wasm-unsafe-eval'; worker-src 'self' blob:; manifest-src 'self'; style-src 'unsafe-inline'; connect-src 'self' https://api.bayleaf.dev http://localhost:* http://127.0.0.1:*; img-src 'self' data: blob:; frame-src 'self'; media-src blob:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#2f6b3a">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="Pouch">
+<script>
+// Before paint; build.mjs hashes this script alongside the app.
+(() => {
+  let preference = 'system';
+  try { preference = localStorage.getItem('pouch.theme') || 'system'; } catch {}
+  if (!['light', 'dark', 'system'].includes(preference)) preference = 'system';
+  document.documentElement.dataset.theme = preference === 'system'
+    ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : preference;
+})();
+</script>
+<title>BayLeaf Pouch</title>
+<style>
+  :root {
+    color-scheme: light;
+    --ink: #1d2a33; --muted: #53636d; --line: #dde4e8; --surface: #fff;
+    --leaf: #2f6b3a; --leaf-soft: #e8f1ea; --bg: #f7f9fa; --side: #f3f6f7; --hover: #eaeff1; --current: #e1ebe3;
+    --primary: #2f6b3a; --primary-hover: #27592f; --on-primary: #fff;
+    --warn: #8a4b00; --warn-soft: #fdf3e6; --warn-line: #efd3ad; --bad: #a12020; --bad-soft: #fbeaea; --bad-line: #e4b9b9;
+    --review: #eef4fb; --track: #d3dcd6; --selection: #c6dfeb; --added: #e1f0e4; --deleted: #f9e4e4; --added-mark: #b6dcbd; --deleted-mark: #efbcbc;
+    --syntax-keyword: #770088; --syntax-atom: #221199; --syntax-number: #116644; --syntax-string: #aa1111; --syntax-escape: #a83700;
+    --syntax-definition: #0000cc; --syntax-local: #3300aa; --syntax-type: #006644; --syntax-class: #116677; --syntax-property: #225566; --syntax-comment: #806000;
+    --shadow: rgba(20, 30, 35, .18); --backdrop: rgba(20, 30, 35, .4);
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace; --rail-w: 2.75rem; --bar-h: 3rem;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ink: #e1e9ed; --muted: #aabac3; --line: #3a4a53; --surface: #172127;
+    --leaf: #96d5a1; --leaf-soft: #233b2d; --bg: #1d2a31; --side: #131d23; --hover: #2a3942; --current: #2b4434;
+    --primary: #96d5a1; --primary-hover: #afe5b9; --on-primary: #12271a;
+    --warn: #f5c078; --warn-soft: #3a2d1c; --warn-line: #725633; --bad: #ffaaaa; --bad-soft: #42292d; --bad-line: #815154;
+    --review: #243544; --track: #42564b; --selection: #35586d; --added: #233c2e; --deleted: #42292d; --added-mark: #3c6146; --deleted-mark: #754047;
+    --syntax-keyword: #dfb2f4; --syntax-atom: #b8b7ff; --syntax-number: #98d9bb; --syntax-string: #ffb3a8; --syntax-escape: #f5c078;
+    --syntax-definition: #a4caff; --syntax-local: #c9bbff; --syntax-type: #98d9bb; --syntax-class: #95d5e3; --syntax-property: #a0d4e0; --syntax-comment: #c5bf9a;
+    --shadow: rgba(0, 0, 0, .4); --backdrop: rgba(0, 0, 0, .6);
+  }
+  a { color: var(--leaf); } ::selection { background: var(--selection); color: var(--ink); }
+  input, textarea { background: var(--surface); accent-color: var(--leaf); }
+  input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
+  .theme-field { display: flex; align-items: center; gap: .6rem; margin: .5rem 0 1rem; }
+  .theme-field select { margin-left: auto; min-height: 2.75rem; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { margin: 0; font: 15px/1.45 system-ui, -apple-system, sans-serif; color: var(--ink); background: var(--surface); overflow: hidden; }
+  button, select, textarea, input { font: inherit; color: inherit; }
+  button { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: .3rem .65rem; cursor: pointer; min-height: 2rem; }
+  button:hover { background: var(--bg); }
+  button.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+  button.primary:hover { background: var(--primary-hover); }
+  button.danger { color: var(--bad); border-color: var(--bad-line); }
+  button.quiet { border-color: transparent; background: transparent; }
+  button:disabled { opacity: .5; cursor: default; }
+  :focus-visible { outline: 2px solid var(--leaf); outline-offset: 1px; }
+  select { border: 1px solid var(--line); border-radius: 8px; padding: .25rem .4rem; background: var(--surface); min-height: 2rem; max-width: 100%; }
+  .ok { color: var(--leaf); } .pending { color: var(--warn); } .bad { color: var(--bad); } .muted { color: var(--muted); }
+  .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  /* Icons: Lucide-style strokes from the sprite at the top of <body>. */
+  svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  button.icon { display: inline-grid; place-items: center; width: 2.25rem; height: 2.25rem; min-height: 0; padding: 0; flex: none; border: 1px solid transparent; background: transparent; color: var(--muted); position: relative; }
+  button.icon:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
+  button.icon[aria-pressed="true"] { background: var(--current); color: var(--leaf); }
+  button.icon.danger { color: var(--bad); border-color: transparent; }
+  button.icon.danger:hover { background: var(--bad-soft); color: var(--bad); }
+
+  /* Layout: sessions | chat | one panel | icon rail. Widths come from layout.js. */
+  #app { height: 100%; display: grid; grid-template-rows: minmax(0, 1fr); grid-template-columns: 0 minmax(0, 1fr) var(--panel-w, 0) var(--rail-w); }
+  #app.side-open { grid-template-columns: var(--side-w, 260px) minmax(0, 1fr) var(--panel-w, 0) var(--rail-w); }
+  #sidebar { grid-column: 1; grid-row: 1; display: none; flex-direction: column; min-width: 0; min-height: 0; position: relative; background: var(--side); border-right: 1px solid var(--line); }
+  #app.side-open #sidebar { display: flex; }
+  #chat { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--surface); }
+  #panel-host { grid-column: 3; grid-row: 1; display: none; position: relative; min-width: 0; min-height: 0; border-left: 1px solid var(--line); background: var(--surface); }
+  #app:is([data-panel="files"], [data-panel="editor"], [data-panel="terminal"], [data-panel="usage"], [data-panel="trust"], [data-panel="settings"]) #panel-host { display: block; }
+  .panel { display: none; flex-direction: column; height: 100%; min-height: 0; min-width: 0; }
+  #app[data-panel="files"] #files, #app[data-panel="editor"] #editor-pane, #app[data-panel="usage"] #usage, #app[data-panel="trust"] #trust { display: flex; }
+  #app[data-panel="settings"] #settings { display: flex; }
+  #app[data-panel="terminal"] #terminal-pane { display: flex; }
+  /* Terminal (src/terminal.js): a plain log and a labeled input, no emulator. */
+  #term-log { flex: 1; min-height: 0; overflow: auto; padding: .5rem .75rem; font: .8rem/1.45 var(--mono); }
+  #term-log pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; }
+  .term-cmd { color: var(--leaf); margin-top: .35rem; white-space: pre-wrap; word-break: break-word; }
+  .term-ps { opacity: .75; }
+  .term-err { color: var(--bad); }
+  .term-exit { font-size: .72rem; opacity: .6; }
+  .term-live { font-size: .72rem; }
+  #term-form { display: flex; align-items: center; gap: .4rem; padding: .4rem .6rem calc(.4rem + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); font: .8rem var(--mono); }
+  #term-prompt { color: var(--leaf); white-space: nowrap; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
+  #term-input { flex: 1; min-width: 0; min-height: 44px; font: 16px var(--mono); background: transparent; color: inherit; border: 0; outline: none; }
+  #term-form:focus-within { box-shadow: inset 0 2px 0 var(--leaf); }
+  .setting-check { display: flex; align-items: center; gap: .6rem; min-height: 44px; }
+  .setting-check input { width: 1.2rem; height: 1.2rem; }
+  .panel > .bar { display: flex; gap: .2rem; align-items: center; flex-wrap: wrap; padding: .35rem .4rem .35rem .75rem; min-height: var(--bar-h); border-bottom: 1px solid var(--line); }
+  .panel > .bar .title { flex: 1; min-width: 0; font-weight: 600; font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .panel > .bar .title.path { font: .8rem var(--mono); }
+  .panel-body { flex: 1; min-height: 0; overflow: auto; padding: .75rem 1rem 2rem; font-size: .9rem; }
+  .panel-body h3 { font-size: .9rem; margin: 1rem 0 .3rem; }
+  .panel-body p { margin: 0 0 .6rem; }
+
+  /* Drag handles: pointer, or focus and Left/Right; double-click resets. */
+  .handle { position: absolute; top: 0; bottom: 0; width: 9px; z-index: 6; cursor: col-resize; touch-action: none; }
+  #panel-handle { left: -5px; } #side-handle { right: -5px; }
+  .handle::after { content: ''; position: absolute; top: 0; bottom: 0; left: 3px; width: 3px; border-radius: 2px; transition: background .15s; }
+  .handle:hover::after, .handle:focus-visible::after, .handle.active::after { background: var(--leaf); opacity: .55; }
+  .handle:focus-visible { outline: none; }
+  body.resizing { cursor: col-resize; -webkit-user-select: none; user-select: none; }
+
+  /* Sidebar: sessions */
+  .side-head { display: flex; align-items: center; gap: .4rem; padding: .35rem .5rem .35rem .85rem; min-height: var(--bar-h); }
+  .brand { flex: 1; font-weight: 650; font-size: .95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #side-close { display: none; }
+  #new { display: flex; align-items: center; gap: .55rem; margin: .1rem .5rem .6rem; padding: .45rem .65rem; background: var(--surface); text-align: left; font-size: .9rem; }
+  #new svg { color: var(--muted); }
+  #session-list { list-style: none; margin: 0; padding: 0 .5rem 1rem; overflow: auto; flex: 1; min-height: 0; }
+  #session-list .empty { padding: .4rem .65rem; font-size: .85rem; }
+  .session { display: flex; align-items: center; gap: .1rem; border-radius: 8px; margin-bottom: 1px; }
+  .session:hover { background: var(--hover); }
+  .session[aria-current="true"] { background: var(--current); }
+  .s-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: .5rem; border: 0; background: transparent; padding: .4rem .3rem .4rem .65rem; text-align: left; min-height: 2.25rem; }
+  .s-open:hover { background: transparent; }
+  .s-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .88rem; }
+  .s-time { flex: none; font-size: .72rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .s-more { opacity: 0; width: 1.9rem; height: 1.9rem; margin-right: .15rem; }
+  .session:hover .s-more, .session:focus-within .s-more, .session[aria-current="true"] .s-more { opacity: 1; }
+  .session .title-edit { padding: .2rem; }
+  .s-legacy { flex: none; font-size: .68rem; color: var(--muted); border: 1px solid var(--line, currentColor); border-radius: 4px; padding: 0 .25rem; }
+  .session .s-trash { display: none; width: 1.9rem; height: 1.9rem; margin-right: .15rem; color: var(--bad); }
+  .quick-delete .session .s-trash { display: inline-grid; }
+  .quick-delete .session .s-more { display: none; }
+  .spin { flex: none; width: .8rem; height: .8rem; border: 2px solid var(--track); border-top-color: var(--leaf); border-radius: 50%; animation: spin .9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; background: var(--leaf); border-color: var(--leaf); width: .5rem; height: .5rem; } }
+
+  /* Chat top bar */
+  #topbar { display: flex; align-items: center; gap: .2rem; padding: .35rem .5rem; min-height: var(--bar-h); border-bottom: 1px solid var(--line); }
+  #app.side-open #new-top { display: none; }
+  #title-wrap { flex: 1; min-width: 0; display: flex; }
+  #title { min-width: 0; max-width: 100%; border: 0; background: transparent; padding: .3rem .5rem; font-weight: 600; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #title:hover { background: var(--hover); }
+  .title-edit { display: flex; align-items: center; gap: .2rem; flex: 1; min-width: 0; }
+  .title-input { flex: 1; min-width: 0; border: 1px solid var(--leaf); border-radius: 8px; padding: .28rem .5rem; font-weight: 600; background: var(--surface); outline: none; box-shadow: 0 0 0 3px var(--leaf-soft); }
+  .spark { color: var(--leaf) !important; }
+  .spark.working svg { animation: pulse 1s ease-in-out infinite; }
+  #model { field-sizing: content; border-color: transparent; background: transparent; color: var(--muted); font-size: .85rem; max-width: 12rem; cursor: pointer; }
+  #model:hover { background: var(--hover); color: var(--ink); }
+  #badge.ok { color: var(--leaf); } #badge.pending { color: var(--warn); } #badge.pending svg { animation: pulse 1.4s ease-in-out infinite; } #badge.bad { color: var(--bad); }
+  #badge.offline { color: var(--muted); } #status.offline { color: var(--warn); } #composer.offline { border-style: dashed; }
+  pre.run-out { max-height: 50vh; overflow: auto; white-space: pre-wrap; font-size: .8rem; }
+  #auth.on { color: var(--leaf); }
+  #auth.on::after { content: ''; position: absolute; right: 6px; bottom: 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--leaf); box-shadow: 0 0 0 2px var(--surface); }
+
+  /* Icon rail; a bottom bar on phones */
+  #rail { grid-column: 4; grid-row: 1; display: flex; flex-direction: column; align-items: center; gap: .2rem; padding: .4rem 0 .5rem; border-left: 1px solid var(--line); background: var(--side); }
+  #rail .grow { flex: 1; }
+  #rail .lbl, #rail .mobile-only { display: none; }
+  #rail button.dot::before { content: ''; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 2px var(--side); }
+  #rail-usage { height: auto; padding: .35rem 0 .3rem; gap: 3px; }
+  .meter { display: block; width: 1.4rem; height: 3px; border-radius: 2px; background: var(--track); overflow: hidden; }
+  .meter > span { display: block; height: 100%; width: var(--fill, 0%); background: var(--leaf); }
+  .num { font-size: .62rem; line-height: 1; font-variant-numeric: tabular-nums; }
+  .low .meter > span { background: var(--warn); } #rail-usage.low { color: var(--warn); }
+  .unknown .meter { visibility: hidden; }
+
+  /* Editor */
+  #editor { flex: 1; min-height: 0; overflow: hidden; }
+  #editor-empty { padding: 1.25rem 1rem; color: var(--muted); font-size: .9rem; }
+  #editor-pane.empty #editor, #editor-pane:not(.empty) #editor-empty, #editor-pane.empty #save, #editor-pane.empty #close-file { display: none; }
+  /* Previews (README "Previews"): Raw | Preview, and Static | Interactive for HTML reports */
+  #editor[hidden], #preview[hidden], #editor-pane.empty #preview, #editor-pane.empty #view-mode, #editor-pane.empty #preview-bar, .seg[hidden] { display: none; }
+  .seg { display: inline-flex; flex: none; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg > button { border: 0; border-radius: 0; background: transparent; color: var(--muted); font-size: .8rem; padding: 0 .65rem; }
+  .seg > button + button { border-left: 1px solid var(--line); }
+  .seg > button[aria-pressed="true"] { background: var(--current); color: var(--leaf); font-weight: 600; }
+  #preview-bar { justify-content: space-between; }
+  #preview-note { flex: 1; min-width: 12rem; }
+  #preview { flex: 1; min-height: 0; overflow: auto; }
+  #preview.frame { overflow: hidden; }
+  #preview iframe.viewer { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
+  #preview.md .md-preview { max-width: 48rem; margin: 0 auto; padding: 1rem; }
+  #preview.media { display: grid; place-items: center; padding: 1rem; }
+  #preview .preview-image { max-width: 100%; max-height: 100%; object-fit: contain; background: repeating-conic-gradient(#0001 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
+  #preview .preview-video { max-width: 100%; max-height: 100%; }
+  #preview .preview-audio { width: min(100%, 32rem); }
+  .preview-notice { padding: 1.25rem 1rem; color: var(--muted); }
+
+  /* Chat column: content stays at a readable measure, centered. */
+  /* Pouch anchors the thread itself (src/follow.js); the browser's own scroll anchoring differs between engines. */
+  #log { flex: 1; overflow: auto; overflow-anchor: none; padding: 1rem max(.75rem, calc((100% - 48rem) / 2)) .5rem; }
+
+  /* File tree */
+  #tree { flex: 1; overflow: auto; padding: .25rem 0 3rem; font-size: .9rem; -webkit-user-select: none; user-select: none; }
+  .row { display: flex; align-items: center; gap: .25rem; padding: .1rem .25rem .1rem calc(.4rem + var(--depth) * .9rem); min-height: 2rem; cursor: pointer; }
+  .row:hover { background: var(--bg); }
+  .row.current { background: var(--leaf-soft); }
+  .row.drop { outline: 2px dashed var(--leaf); outline-offset: -2px; background: var(--leaf-soft); }
+  .row .twisty { width: 1rem; display: grid; place-items: center; color: var(--muted); flex: none; }
+  .row .twisty svg { width: 14px; height: 14px; transition: transform .12s; }
+  .row[aria-expanded="true"] .twisty svg { transform: rotate(90deg); }
+  .row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .tag { font-size: .7rem; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 .25rem; min-height: 0; background: transparent; cursor: help; }
+  .row:focus-visible { outline: 2px solid var(--leaf); outline-offset: -2px; }
+  .row .more { display: grid; place-items: center; min-height: 1.8rem; padding: 0 .4rem; border-color: transparent; background: transparent; color: var(--muted); }
+  .row .more:hover { background: var(--hover); color: var(--ink); }
+  .row .more svg { width: 16px; height: 16px; }
+
+  /* Editor */
+  #editor { flex: 1; min-height: 0; overflow: hidden; }
+  .dirty::after { content: " (unsaved)"; color: var(--warn); }
+  .panel > .notice-bar { font-size: .85rem; }
+  .panel > .notice-bar[hidden] { display: none; }
+  .notice-bar > span { flex: 1; min-width: 10rem; overflow-wrap: anywhere; }
+  .notice-bar.review { background: var(--review); }
+  .notice-bar.conflict { background: var(--warn-soft); color: var(--warn); }
+
+  /* Chat */
+  /* Messages: yours are tinted bubbles on the right, replies are full-width text,
+     tool calls are small grey pills. The toolbar row under each message keeps
+     its space at rest, so showing it never moves the log. */
+  .msg { margin: .5rem 0 .1rem; border-radius: 10px; outline: none; }
+  .msg.user { margin-top: 1rem; }
+  .msg.bare { margin-bottom: .25rem; }
+  .msg:focus-visible { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--leaf); }
+  .msg .body { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg.user { display: flex; flex-direction: column; align-items: flex-end; }
+  .msg.user .body { max-width: min(80%, 36rem); background: var(--leaf-soft); color: var(--ink); border-radius: 18px 18px 4px 18px; padding: .5rem .85rem; }
+  .msg-bar { display: flex; align-items: center; gap: .1rem; height: 2rem; visibility: hidden; color: var(--muted); font-size: .75rem; }
+  .msg.user .msg-bar { justify-content: flex-end; }
+  .msg:hover .msg-bar, .msg:focus-within .msg-bar, .msg.show .msg-bar { visibility: visible; }
+  .msg-bar .when { padding: 0 .35rem; font-variant-numeric: tabular-nums; }
+  .msg-bar button.icon { width: 1.9rem; height: 1.9rem; }
+  .msg-bar button.icon .i { width: 1rem; height: 1rem; }
+  .msg-bar button.icon:disabled { opacity: .4; cursor: not-allowed; }
+  /* Turn footer: under a turn's final reply, the meta line stays visible
+     (model, duration, time); its actions appear like any toolbar's. */
+  .msg-bar.footer { visibility: visible; gap: .1rem; }
+  .msg-bar.footer .meta { flex: 1; min-width: 0; padding: 0 .1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .msg-bar.footer .meta .sep { padding: 0 .3rem; }
+  .msg-bar.footer .acts { display: flex; visibility: hidden; }
+  .msg:hover .msg-bar.footer .acts, .msg:focus-within .msg-bar.footer .acts, .msg.show .msg-bar.footer .acts { visibility: visible; }
+  .typing { display: inline-flex; gap: 3px; padding: .35rem 0; }
+  .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: typing 1.2s infinite ease-in-out; }
+  .typing i:nth-child(2) { animation-delay: .15s; } .typing i:nth-child(3) { animation-delay: .3s; }
+  @keyframes typing { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .typing i { animation: none; opacity: .6; } }
+  .notice.reverted { display: flex; justify-content: center; align-items: center; gap: .5rem; color: var(--ink); }
+  .msg .thinking { color: var(--muted); font-size: .85rem; white-space: pre-wrap; border-left: 2px solid var(--line); padding-left: .5rem; margin: .2rem 0 .45rem; }
+  /* Streaming reasoning: the newest lines in a capped box with no scroll box of its own (README "Scrolling"). */
+  details.reasoning.live .thinking { max-height: 8rem; overflow: hidden; -webkit-mask-image: linear-gradient(transparent, #000 1.5rem); mask-image: linear-gradient(transparent, #000 1.5rem); }
+  details.tool { margin: .25rem 0; width: fit-content; max-width: 100%; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--muted); font-size: .78rem; }
+  details.tool[open] { width: auto; border-radius: 10px; }
+  details.tool summary { cursor: pointer; padding: .15rem .7rem; font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  details.tool pre { margin: 0; padding: .4rem .5rem; border-top: 1px solid var(--line); max-height: 18rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .78rem; }
+  details.tool.sa-joins summary { font-family: inherit; }
+  details.tool.sa-joins[open] { border-radius: 10px; width: 100%; padding: 0 .5rem .4rem; }
+  details.tool.error summary { color: var(--bad); }
+  details.tool pre.mini-diff .del { color: var(--bad); }
+  details.tool pre.mini-diff .add { color: var(--leaf); }
+  details.tool pre.mini-diff .sep, details.tool pre.cmd { color: var(--muted); }
+  .msg .body button.path { font: inherit; font-family: var(--mono); font-size: .9em; min-height: 0; padding: 0 .2rem; border: 0; border-bottom: 1px dotted var(--leaf); border-radius: 0; background: var(--leaf-soft); color: var(--leaf); overflow-wrap: anywhere; text-align: left; }
+  /* Replies are markdown rendered to DOM (src/markdown.js); user text stays pre-wrap. */
+  .msg .body.md { white-space: normal; line-height: 1.55; min-width: 0; }
+  .md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
+  .md p, .md ul, .md ol, .md blockquote, .md .code, .md .table, .md hr { margin: .45rem 0; }
+  .md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { margin: .8rem 0 .35rem; line-height: 1.3; }
+  .md h1 { font-size: 1.2rem; } .md h2 { font-size: 1.1rem; } .md h3 { font-size: 1rem; }
+  .md h4, .md h5, .md h6 { font-size: .92rem; color: var(--muted); }
+  .md ul, .md ol { padding-left: 1.4rem; }
+  .md ul.tight > li > p, .md ol.tight > li > p { margin: 0; }
+  .md li.task { list-style: none; } .md li.task > input { margin: 0 .35rem 0 -1.2rem; vertical-align: -.1em; }
+  .md li.task > input + p { display: inline; }
+  .md blockquote { border-left: 3px solid var(--line); padding-left: .6rem; color: var(--muted); margin-left: 0; margin-right: 0; }
+  .md hr { border: 0; border-top: 1px solid var(--line); }
+  .md :not(pre) > code { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 0 .2rem; font-size: .88em; overflow-wrap: anywhere; }
+  .md button.path > code { border: 0; background: none; padding: 0; }
+  .md p.raw { font-family: var(--mono); font-size: .85em; white-space: pre-wrap; color: var(--muted); }
+  .md .url, .md .host { color: var(--muted); font-size: .88em; overflow-wrap: anywhere; }
+  .md button.ext { font: inherit; min-height: 0; padding: 0; border: 0; border-radius: 0; background: none; color: var(--leaf); text-decoration: underline; text-align: left; overflow-wrap: anywhere; }
+  .md .path.missing { font-family: var(--mono); font-size: .9em; color: var(--muted); text-decoration: line-through dotted; cursor: help; overflow-wrap: anywhere; }
+  .md .table { overflow-x: auto; max-width: 100%; }
+  .md table { border-collapse: collapse; font-size: .88rem; }
+  .md th, .md td { border: 1px solid var(--line); padding: .2rem .45rem; vertical-align: top; }
+  .md th { background: var(--bg); text-align: left; }
+  .md .code { border: 1px solid var(--line); border-radius: 6px; background: var(--surface); max-width: 100%; }
+  .md .code-head { display: flex; justify-content: space-between; align-items: center; padding: 0 .2rem 0 .5rem; border-bottom: 1px solid var(--line); background: var(--bg); font: .72rem var(--mono); color: var(--muted); border-radius: 6px 6px 0 0; }
+  .md .code-head button { min-height: 1.6rem; padding: 0 .5rem; font-size: .75rem; border-color: transparent; background: transparent; }
+  .md pre { margin: 0; padding: .45rem .55rem; overflow-x: auto; font: .8rem/1.45 var(--mono); white-space: pre; }
+  /* Shared Lezer tokens for replies, editor, and deleted merge chunks. */
+  .tok-keyword, .tok-controlKeyword, .tok-moduleKeyword { color: var(--syntax-keyword); }
+  .tok-atom, .tok-bool, .tok-url, .tok-labelName { color: var(--syntax-atom); }
+  .tok-literal, .tok-number, .tok-inserted { color: var(--syntax-number); }
+  .tok-string, .tok-deleted { color: var(--syntax-string); }
+  .tok-string2, .tok-regexp, .tok-escape { color: var(--syntax-escape); }
+  .tok-variableName.tok-definition { color: var(--syntax-definition); } .tok-variableName.tok-local { color: var(--syntax-local); }
+  .tok-typeName, .tok-namespace { color: var(--syntax-type); } .tok-className { color: var(--syntax-class); }
+  .tok-macroName, .tok-variableName2 { color: var(--syntax-property); } .tok-propertyName.tok-definition { color: var(--syntax-definition); }
+  .tok-comment { color: var(--syntax-comment); } .tok-meta { color: var(--muted); } .tok-invalid { color: var(--bad); }
+  .tok-tagName { color: var(--syntax-type); } .tok-attributeName { color: var(--syntax-definition); }
+  .tok-heading { font-weight: bold; } .tok-emphasis { font-style: italic; } .tok-strong { font-weight: bold; }
+  .tok-link { text-decoration: underline; } .tok-strikethrough { text-decoration: line-through; }
+  /* Subagents (D16): a card at the spawn point, a report where it joined. */
+  .subagent { margin: .4rem 0 .6rem; border: 1px solid var(--line); border-left: 3px solid var(--leaf); border-radius: 8px; background: var(--surface); padding: .45rem .6rem; font-size: .85rem; max-width: 100%; box-sizing: border-box; }
+  .subagent.running { border-left-color: var(--leaf); }
+  .subagent.failed, .subagent.interrupted { border-left-color: var(--warn); }
+  .subagent.stopped { border-left-color: var(--muted); }
+  .sa-head { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
+  .sa-name { font-weight: 600; font-family: var(--mono); font-size: .82rem; overflow-wrap: anywhere; }
+  .sa-status { font-size: .7rem; border-radius: 4px; padding: 0 .3rem; border: 1px solid currentColor; color: var(--muted); text-transform: lowercase; }
+  .sa-status.running { color: var(--leaf); }
+  .sa-status.finished { color: var(--leaf); background: var(--leaf-soft); }
+  .sa-status.failed, .sa-status.interrupted { color: var(--warn); }
+  .sa-meta { color: var(--muted); font-size: .76rem; font-variant-numeric: tabular-nums; }
+  .sa-acts { margin-left: auto; display: flex; gap: .3rem; }
+  .sa-acts button { font-size: .78rem; }
+  .sa-task { margin: .3rem 0 .2rem; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+  .sa-err { margin: .2rem 0; color: var(--warn); font-size: .8rem; overflow-wrap: anywhere; }
+  .sa-log > summary { cursor: pointer; color: var(--muted); font-size: .78rem; padding: .15rem 0; }
+  .sa-items { border-top: 1px dashed var(--line); margin-top: .2rem; padding-top: .2rem; }
+  .sa-items .msg.user { align-items: flex-start; margin-top: .4rem; }
+  .sa-items .msg.user .body { max-width: 100%; border-radius: 8px; font-size: .82rem; white-space: pre-wrap; }
+  .sa-items .msg.assistant .body { font-size: .85rem; }
+  .msg.report { border: 1px solid var(--line); border-left: 3px solid var(--leaf); border-radius: 8px; padding: .35rem .6rem .1rem; background: var(--surface); }
+  .sa-report-head { font-weight: 600; font-size: .85rem; display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+  .sa-usage { margin: .4rem 0; font-size: .85rem; }
+  .sa-input { width: 100%; box-sizing: border-box; font: inherit; }
+  .session { flex-wrap: wrap; }
+  .s-children { flex-basis: 100%; list-style: none; margin: 0 0 .2rem; padding: 0 0 0 1.1rem; }
+  .s-child-open { width: 100%; display: flex; align-items: center; gap: .45rem; border: 0; border-left: 2px solid var(--line); border-radius: 0 6px 6px 0; background: transparent; padding: .2rem .4rem .2rem .55rem; min-height: 2rem; text-align: left; font-size: .8rem; }
+  .s-child-open[aria-current="true"] { background: var(--leaf-soft); border-left-color: var(--leaf); }
+  .s-child-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+  .s-child-state { flex: none; font-size: .68rem; color: var(--muted); }
+  .s-child-state.working { color: var(--leaf); }
+  .s-child-state.waiting, .s-child-state.failed, .s-child-state.interrupted { color: var(--warn); }
+  .sa-who { display: block; font-size: .7rem; color: var(--muted); margin-bottom: .1rem; }
+  .msg.user.steer .body { border: 1px solid var(--leaf); }
+  .msg.user.steer .sa-who { color: var(--leaf); font-weight: 600; }
+  /* Agent graphs: who a message came from, and per-edge counts. */
+  .msg.user.from .body { border: 1px dashed var(--muted); }
+  .msg .sa-who.msg-from { font-weight: 600; }
+  .sa-edges { margin: .15rem 0 0; font-size: .74rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .s-child-msgs { flex: none; font-size: .66rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .sa-line { font-family: var(--mono); font-size: .75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: .05rem 0; }
+  .sa-line.error { color: var(--bad); }
+  .sa-final { margin-top: .35rem; padding: .35rem .5rem; border-radius: 6px; background: var(--leaf-soft); }
+  .sa-final .sa-who { color: var(--leaf); font-weight: 600; }
+  .sa-view-head { position: sticky; top: 0; z-index: 1; margin: 0 0 .6rem; border: 1px solid var(--line); border-left: 3px solid var(--leaf); border-radius: 8px; background: var(--surface); padding: .45rem .6rem; font-size: .85rem; }
+  .sa-mounts { margin: .2rem 0 0; font-size: .76rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; overflow-wrap: anywhere; }
+  .sa-mounts code { font-size: .74rem; }
+  .s-kids { flex: none; font-size: .68rem; min-width: 1.1rem; text-align: center; color: var(--on-primary); background: var(--primary); border-radius: 999px; padding: 0 .3rem; }
+  .card { margin: .75rem max(.75rem, calc((100% - 48rem) / 2)) 0; padding: .6rem .75rem; border: 1px solid var(--line); border-radius: 8px; background: var(--leaf-soft); font-size: .88rem; }
+  .card[hidden] { display: none; }
+  .card p { margin: 0 0 .4rem; }
+  .card .actions { display: flex; gap: .4rem; flex-wrap: wrap; }
+  button.link { border: 0; background: none; padding: 0; min-height: 0; color: var(--leaf); text-decoration: underline; }
+  .notice { font-size: .8rem; color: var(--muted); text-align: center; margin: .5rem 0; }
+  /* Composer: one elevated card holding the activity tray, the input, and a
+     row of verbs (left) and settings (right), after OpenChamber's. */
+  form#composer { position: relative; display: flex; flex-direction: column; width: min(48rem, calc(100% - 1.5rem)); margin: 0 auto; padding: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 1px 2px var(--shadow), 0 6px 18px -10px var(--shadow); }
+  form#composer:focus-within { border-color: var(--leaf); }
+  form#composer textarea { width: 100%; resize: none; min-height: 2.6rem; max-height: 40vh; padding: .7rem .9rem .3rem; border: 0; outline: none; background: transparent; font-size: 16px; border-radius: 16px; }
+  #composer-toolbar { display: flex; align-items: center; gap: .15rem; width: 100%; min-width: 0; padding: .2rem .45rem .45rem; }
+  #composer-toolbar > button.icon { width: 2.75rem; height: 2.75rem; } /* 44px targets everywhere, as before */
+  #composer-usage { width: auto !important; padding: 0 .45rem; gap: .25rem; display: inline-flex; align-items: center; }
+  #composer-usage .num { font-size: .78rem; font-variant-numeric: tabular-nums; }
+  #composer-usage.low { color: var(--warn); }
+  .provider-model { margin-left: auto; display: flex; align-items: center; gap: .1rem; min-width: 0; padding-left: .35rem; color: var(--muted); }
+  .provider-model .i { width: 15px; height: 15px; }
+  #composer-toolbar #model { min-width: 0; max-width: 15rem; min-height: 2.75rem; }
+  #send { flex: none; display: grid; place-items: center; width: 2.75rem; height: 2.75rem; min-height: 0; padding: 0; margin-left: .2rem; border-radius: 50%; }
+  #send.followup { background: var(--surface); color: var(--leaf); border-color: var(--leaf); }
+  /* While Pouch works and the draft is not empty: Steer or Follow-up, a split
+     button next to Stop (JOURNEYS D25). Both parts are 44px targets. */
+  .split { position: relative; flex: none; display: flex; margin-left: .2rem; }
+  .split > button { min-height: 2.75rem; height: 2.75rem; border: 1px solid var(--leaf); background: var(--surface); color: var(--leaf); }
+  #sendmode-main { display: flex; align-items: center; gap: .3rem; padding: 0 .7rem; border-radius: 1.4rem 0 0 1.4rem; font-weight: 600; }
+  #sendmode-more { width: 2.75rem; padding: 0; display: grid; place-items: center; border-left: 0; border-radius: 0 1.4rem 1.4rem 0; }
+  #sendmode-menu { position: absolute; right: 0; bottom: calc(100% + .35rem); z-index: 6; min-width: 16rem; max-width: calc(100vw - 1.5rem); display: grid; padding: .3rem; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 6px 24px rgb(0 0 0 / .18); }
+  #sendmode-menu button { display: grid; justify-items: start; gap: .1rem; min-height: 2.75rem; padding: .35rem .7rem; border: 0; background: none; text-align: left; border-radius: 8px; color: var(--ink); }
+  #sendmode-menu button:hover, #sendmode-menu button:focus-visible { background: var(--bg); }
+  #sendmode-menu .sm-key { color: var(--muted); font-weight: 400; }
+  #sendmode-menu .sm-sep { height: 1px; margin: .25rem .4rem; background: var(--line); }
+  #sendmode-menu button[aria-disabled="true"] { opacity: .55; }
+  #sendmode-main:disabled { opacity: .55; }
+  #sendmode-menu .sm-note { color: var(--warn); font-size: .78rem; }
+  #sendmode-menu .sm-link { color: var(--leaf); font-size: .85rem; }
+  .tray-row[data-kind="steer"] .tray-origin, .tray-row[data-kind="steer"] svg { color: var(--leaf); }
+  .tray-row[data-kind="followup"].paused .tray-origin { color: var(--warn); }
+  /* Activity tray: what is running or waiting, above the input. */
+  #tray { background: var(--bg); border-bottom: 1px solid var(--line); border-radius: 15px 15px 0 0; font-size: .85rem; color: var(--muted); }
+  .tray-head { display: flex; align-items: center; gap: .5rem; padding: .1rem .45rem .1rem .85rem; min-height: 2.5rem; }
+  #tray-count { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Disclosure convention (README "Disclosures"): an edge panel's chevron points where the
+     panel goes when clicked. The tray sits above the input: collapsed points up (it opens
+     upward), open points down (it folds back down). Inline twisties stay right/down. */
+  #tray-toggle svg { transition: transform .12s; }
+  #tray:not(.collapsed) #tray-toggle svg { transform: rotate(180deg); }
+  #tray.collapsed #tray-list { display: none; }
+  #tray-list { list-style: none; margin: 0; padding: 0 .45rem .35rem .85rem; max-height: 11rem; overflow: auto; }
+  .tray-row { display: flex; align-items: center; gap: .55rem; min-height: 2.1rem; }
+  .tray-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: .8rem var(--mono); color: var(--ink); }
+  button.tray-text { border: 0; background: none; padding: 0; min-height: 0; text-align: left; border-radius: 0; }
+  button.tray-text:hover { background: none; text-decoration: underline; }
+  .tray-origin { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .78rem; }
+  .tray-text { min-width: 4rem; }
+  .tray-row[data-kind="approval"] .tray-origin, .tray-row[data-kind="approval"] svg { color: var(--warn); }
+  #composer button, #ac .ac-opt { -webkit-tap-highlight-color: transparent; }
+  .tray-time { flex: none; min-width: 3.6rem; text-align: right; font-size: .78rem; font-variant-numeric: tabular-nums; }
+  .tray-time:empty { min-width: 0; }
+  button.tray-stop { flex: none; border: 0; background: transparent; color: var(--bad); padding: 0 .45rem; min-height: 2rem; }
+  button.tray-stop:hover:not(:disabled) { background: var(--bad-soft); }
+  button.tray-bg { flex: none; border: 0; background: transparent; color: var(--leaf); padding: 0 .45rem; min-height: 2rem; }
+  button.tray-bg:hover:not(:disabled) { text-decoration: underline; }
+  /* Autocomplete (@ / $ /) and the shield popover float above the card. */
+  #ac, #shield-pop { position: absolute; z-index: 20; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 28px var(--shadow); }
+  #ac { left: 0; right: 0; bottom: calc(100% + 6px); max-height: min(18rem, 45dvh); overflow: auto; padding: .25rem; }
+  .ac-opt { display: flex; align-items: baseline; gap: .7rem; min-height: 2.25rem; padding: .45rem .6rem; border-radius: 8px; cursor: pointer; }
+  .ac-opt[aria-selected="true"] { background: var(--current); }
+  .ac-opt[aria-disabled="true"] { color: var(--muted); cursor: default; background: none; }
+  .ac-label { flex: none; max-width: 100%; overflow-wrap: anywhere; }
+  .ac-opt.mono .ac-label { font: .82rem var(--mono); }
+  .ac-detail { flex: 1; min-width: 0; color: var(--muted); font-size: .8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ac-cost { flex: none; color: var(--muted); font-size: .75rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #shield-pop { left: .4rem; bottom: 3.4rem; width: min(22rem, calc(100% - .8rem)); padding: .7rem .85rem; font-size: .85rem; }
+  #shield-pop p { margin: 0 0 .4rem; }
+  #shield-pop h3 { font-size: .8rem; margin: .6rem 0 .25rem; color: var(--muted); font-weight: 600; }
+  .pop-provider { display: flex; align-items: center; gap: .4rem; color: var(--leaf); }
+  .pop-grants { list-style: none; margin: 0 0 .5rem; padding: 0; }
+  .pop-grants li { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 2.25rem; }
+  #composer.drop { outline: 2px dashed var(--leaf); background: var(--leaf-soft); }
+  #attachment-chips { display: flex; gap: .3rem; flex-wrap: wrap; max-height: 8rem; overflow: auto; }
+  .attachment { display: inline-flex; align-items: center; gap: .3rem; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; font-size: .8rem; max-width: 100%; padding-left: .4rem; }
+  .attachment > span { min-width: 0; overflow-wrap: anywhere; }
+  .attachment button { min-width: 44px; min-height: 44px; border: 0; background: transparent; }
+  #attachment-warning { font-size: .8rem; color: var(--warn); margin: 0; }
+  details.reasoning { color: var(--muted); font-size: .85rem; margin: .3rem 0; }
+  details.reasoning summary { cursor: pointer; min-height: 2rem; padding: .25rem 0; }
+  .msg .attachment-refs { font-size: .8rem; color: var(--muted); max-width: 100%; overflow-wrap: anywhere; }
+  .md img { display: block; max-width: 100%; max-height: 32rem; object-fit: contain; }
+  #send.stop { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+  #local-hint { width: min(48rem, calc(100% - 1.5rem)); margin: .25rem auto 0; font-size: .82rem; padding: .4rem .6rem; border-radius: .5rem; background: var(--warn-soft); border: 1px solid var(--warn-line); }
+  #local-hint button { font-size: .8rem; margin-left: .25rem; }
+  #local-settings progress { width: 100%; }
+  .local-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+  #status { width: min(48rem, calc(100% - 1.5rem)); margin: .25rem auto .45rem; font-size: .8rem; color: var(--muted); min-height: 1rem; }
+  .sealed { font-size: .72rem; color: var(--leaf); border: 1px solid var(--leaf); border-radius: 4px; padding: 0 .3rem; white-space: nowrap; }
+
+  /* Usage panel */
+  .quota { padding: .75rem .85rem; border-radius: 10px; background: var(--bg); margin-bottom: .75rem; }
+  .quota .big { font-size: 1.5rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .quota .big small { font-size: .85rem; font-weight: 400; color: var(--muted); }
+  .quota .bar { height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; margin: .45rem 0; }
+  .quota .bar > span { display: block; height: 100%; width: var(--fill, 0%); background: var(--leaf); }
+  .quota.low .bar > span { background: var(--warn); } .quota.low .big { color: var(--warn); }
+  .quota p { margin: .2rem 0 0; font-size: .85rem; }
+  table.tokens { width: 100%; table-layout: auto; border-collapse: collapse; font-size: .82rem; }
+  table.tokens col.n { width: 3.6rem; }
+  table.tokens th, table.tokens td { text-align: right; padding: .25rem .3rem; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /* Titles stay readable: at least 7rem, wrapped to two lines, then clipped. */
+  table.tokens col:first-child { min-width: 7rem; }
+  table.tokens th:first-child, table.tokens td:first-child { text-align: left; min-width: 7rem; white-space: normal; overflow-wrap: anywhere; }
+  table.tokens .clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+  table.tokens tr.total td { font-weight: 600; border-top: 1px solid var(--line); }
+  table.tokens .toks { display: block; font-size: .74rem; font-weight: 400; }
+  table.tokens col.n { width: 4.6rem; }
+  .quota .outside { font-size: .82rem; color: var(--ink); }
+  table.tokens th { color: var(--muted); font-weight: 500; }
+  table.tokens tr.current td { font-weight: 600; }
+
+  /* Trust panel */
+  #trust dl { display: grid; grid-template-columns: max-content 1fr; gap: .2rem .8rem; margin: .5rem 0; font-size: .82rem; }
+  #trust dd { margin: 0; overflow-wrap: anywhere; font-family: var(--mono); font-size: .75rem; }
+  #trust dt { color: var(--muted); }
+  .reply-facts { display: grid; grid-template-columns: max-content 1fr; gap: .2rem .8rem; margin: 0; font-size: .85rem; }
+  .reply-facts dt { color: var(--muted); } .reply-facts dd { margin: 0; overflow-wrap: anywhere; }
+  #shield-btn.ok { color: var(--leaf); } #shield-btn.bad { color: var(--bad); } #shield-btn.pending svg { animation: pulse 1.4s ease-in-out infinite; }
+
+  dialog { color: var(--ink); background: var(--surface); max-width: min(34rem, 94vw); border: 1px solid var(--line); border-radius: 12px; padding: 1rem; box-shadow: 0 10px 30px var(--shadow); }
+  dialog::backdrop { background: var(--backdrop); }
+  dialog menu { display: flex; flex-direction: column; gap: .35rem; padding: 0; margin: .5rem 0 0; }
+  dialog menu button { text-align: left; min-height: 2.5rem; }
+  dialog h2 { font-size: 1rem; margin: 0 0 .5rem; font-family: var(--mono); overflow-wrap: anywhere; }
+  #sheet-body p { white-space: pre-wrap; font-size: .88rem; margin: 0 0 .5rem; }
+  .key-form { display: grid; gap: .35rem; margin: .25rem 0 .5rem; font-size: .88rem; }
+  .key-row { display: flex; gap: .4rem; }
+  .key-input { flex: 1; min-width: 0; font: .85rem var(--mono); padding: .45rem .55rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
+  #sheet-body p.key-why { margin: 0; min-height: 1.2em; color: var(--muted); }
+  #sheet-body p.key-why.bad { color: var(--bad); }
+  #sheet-body pre { font-size: .75rem; max-height: 50vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 .5rem; }
+  code { font-family: var(--mono); }
+
+  /* Leaving the pouch (D10): the approval sheet and the tool-card badge. */
+  #egress { width: min(34rem, 94vw); max-height: 90vh; overflow: auto; border-top: 4px solid var(--warn); }
+  #egress h2 { font-family: inherit; }
+  #egress h3 { font-size: .85rem; margin: .7rem 0 .25rem; color: var(--muted); font-weight: 600; }
+  #egress-summary { margin: 0 0 .2rem; overflow-wrap: anywhere; }
+  #egress-meta { margin: 0; font-size: .78rem; font-family: var(--mono); overflow-wrap: anywhere; }
+  #egress-detail { font-size: .75rem; max-height: 30vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; padding: .4rem .5rem; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+  #egress-audiences { margin: 0; padding-left: 1.2rem; font-size: .85rem; }
+  #egress menu button { min-height: 2.75rem; }
+  #egress-deny { font-weight: 600; }
+  details.tool summary .egress { display: inline-flex; align-items: center; gap: .2rem; margin-right: .4rem; padding: 0 .35rem; border-radius: 999px; background: var(--warn-soft); color: var(--warn); border: 1px solid var(--warn-line); font-family: inherit; font-size: .75rem; vertical-align: middle; }
+  details.tool summary .egress .i { width: .85rem; height: .85rem; }
+  details.tool .egress-note { margin: 0; padding: .35rem .5rem; border-top: 1px solid var(--line); background: var(--warn-soft); color: var(--warn); font-size: .8rem; overflow-wrap: anywhere; }
+
+  /* Phones: the sidebar is a drawer, panels are full-screen sheets, the rail is a bottom bar. */
+  @media (max-width: 860px) {
+    #app, #app.side-open { grid-template-columns: 100%; grid-template-rows: minmax(0, 1fr) auto; }
+    #chat { grid-column: 1; grid-row: 1; }
+    #rail { grid-column: 1; grid-row: 2; flex-direction: row; gap: 0; padding: 0 0 env(safe-area-inset-bottom); border-left: 0; border-top: 1px solid var(--line); background: var(--surface); }
+    #rail button { flex: 1; width: auto; height: auto; min-height: 3.25rem; border-radius: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
+    #rail .lbl { display: block; font-size: .68rem; line-height: 1; }
+    #rail .mobile-only { display: flex; } #rail .desktop-only, #rail .grow { display: none; }
+    #rail button.dot::before { right: calc(50% - 16px); box-shadow: 0 0 0 2px var(--surface); }
+    #rail-usage .meter { display: none; } #rail-usage .num { font-size: .68rem; }
+    #rail-usage:not(.unknown) .num::after { content: ' left'; }
+    #rail button[aria-pressed="true"] { color: var(--leaf); }
+    #sidebar, #app.side-open #sidebar { display: flex; position: fixed; z-index: 40; top: 0; bottom: 0; left: 0; width: min(85vw, 20rem); transform: translateX(-100%); visibility: hidden; transition: transform .2s ease, visibility .2s; box-shadow: 0 0 24px var(--shadow); }
+    #app.side-open #sidebar { transform: none; visibility: visible; }
+    #backdrop { position: fixed; inset: 0; z-index: 35; background: var(--backdrop); }
+    #side-close { display: inline-grid; }
+    #panel-host { position: fixed; z-index: 30; left: 0; right: 0; top: 0; bottom: calc(3.25rem + 1px + env(safe-area-inset-bottom)); border-left: 0; }
+    .handle, #new-top { display: none; }
+    #model { max-width: 9rem; }
+    #composer-toolbar #model { max-width: 9rem; }
+    #egress { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; border-radius: 0; border-left: 0; border-right: 0; box-sizing: border-box; }
+    #egress-detail { max-height: 40dvh; }
+    @media (prefers-reduced-motion: reduce) { #sidebar { transition: none; } }
+  }
+  /* Fingers, not cursors: 44px targets (WCAG 2.5.5 / platform guidelines). */
+  @media (pointer: coarse) {
+    button, select { min-height: 2.75rem; }
+    button.icon { width: 2.75rem; height: 2.75rem; }
+    .s-more { opacity: 1; }
+    .s-open { min-height: 2.75rem; }
+    .row { min-height: 2.75rem; }
+    .row .more, .row .more:hover { min-height: 2.75rem; min-width: 2.75rem; }
+    .msg .body button.path { min-height: 1.6rem; }
+    .row .tag { min-height: 1.6rem; }
+    #send { width: 2.75rem; height: 2.75rem; }
+    #composer-toolbar > button.icon, #composer-toolbar #model { width: 2.75rem; height: 2.75rem; min-height: 2.75rem; }
+    #composer-toolbar #model { width: auto; }
+    #composer-usage { min-width: 2.75rem; }
+    #tray-toggle, button.tray-stop, button.tray-bg, button.tray-text { min-height: 2.75rem; min-width: 2.75rem; }
+    .tray-row { min-height: 2.75rem; }
+    .tray-row[data-kind="followup"], .tray-row[data-kind="steer"] { flex-wrap: wrap; column-gap: .35rem; }
+    #sendmode-main svg { display: none; }
+    .ac-opt { min-height: 2.75rem; align-items: center; }
+    .pop-grants li { min-height: 2.75rem; }
+    .msg-bar { height: 2.75rem; }
+    .msg-bar button.icon { width: 2.75rem; height: 2.75rem; }
+    .msg { -webkit-tap-highlight-color: transparent; }
+  }
+  /* Higher specificity than CodeMirror's injected base/merge themes. */
+  #editor .cm-editor { color: var(--ink); background: var(--surface); }
+  #editor .cm-editor.cm-focused { outline: 2px solid var(--leaf); outline-offset: -2px; }
+  #editor .cm-gutters, #editor .cm-panels, #editor .cm-tooltip { color: var(--muted); background: var(--bg); border-color: var(--line); }
+  #editor .cm-activeLine, #editor .cm-activeLineGutter { background: var(--hover); }
+  #editor .cm-cursor, #editor .cm-dropCursor { border-left-color: var(--ink); }
+  #editor .cm-selectionBackground, #editor .cm-focused .cm-selectionBackground { background: var(--selection); }
+  #editor .cm-content ::selection { background: var(--selection); }
+  #editor .cm-searchMatch { background: var(--warn-soft); outline: 1px solid var(--warn); }
+  #editor .cm-selectionMatch, #editor .cm-matchingBracket { background: var(--current); outline: 1px solid var(--leaf); }
+  #editor .cm-inlineChangedLine, #editor .cm-changedLine { background: var(--added); }
+  #editor .cm-deletedChunk { background: var(--deleted); }
+  /* Each hunk says whose lines are whose (critique 3): Pouch's struck through above, yours below. */
+  #editor .cm-deletedChunk .cm-deletedLine { text-decoration: line-through; text-decoration-color: color-mix(in srgb, currentColor 55%, transparent); }
+  #editor .cm-deletedChunk::before, #editor .cm-deletedChunk::after { display: block; width: fit-content; margin: 2px 0; padding: 0 .4rem; border-radius: 999px; font-size: .7rem; font-weight: 600; line-height: 1.5; font-family: system-ui, sans-serif; }
+  #editor .cm-deletedChunk::before { content: "Pouch's version"; background: var(--surface); color: var(--bad); border: 1px solid currentColor; }
+  #editor .cm-deletedChunk::after { content: "Your version below"; background: var(--surface); color: var(--leaf); border: 1px solid currentColor; }
+  #editor-status { margin: 0; padding: .35rem .75rem; font-size: .85rem; border-bottom: 1px solid var(--line); }
+  #editor-status.bad { color: var(--bad); }
+  #editor-busy { font-size: .75rem; color: var(--leaf); white-space: nowrap; }
+  #editor .cm-changedText { background: var(--added-mark); }
+  #editor .cm-deletedText { background: var(--deleted-mark); }
+  #editor .cm-deletedLineGutter { background: var(--bad); }
+  #editor .cm-changedLineGutter, #editor .cm-inlineChangedLineGutter { background: var(--leaf); }
+  #editor .cm-collapsedLines { color: var(--muted); background: var(--bg); }
+  #editor .cm-chunkButtons button { color: var(--ink); background: var(--surface); border: 1px solid var(--line); }
+  #editor .cm-chunkButtons button:hover { background: var(--hover); }
+  #editor .cm-chunkButtons button[name="reject"] { color: var(--bad); }
+  #editor .cm-chunkButtons button[name="accept"] { color: var(--leaf); }
+  @media (max-width: 860px) {
+    button, select, button.icon, .s-open, dialog menu button { min-height: 44px; }
+    button.icon { min-width: 44px; }
+    #editor .cm-chunkButtons button { min-height: 44px; }
+  }
+  /* ── Continuity: color carries identity, motion carries continuity (README) ──
+     JS sets one number per agent (--seed: its spawn order, a3 -> 3) and
+     nothing else; the hue, tint and theme lightness live here. Labels always
+     say the same thing in words. Contrast is tested (test/batchB-browser.mjs):
+     text uses 4.5:1, dots and edges 3:1, first 12 seeds, both themes. */
+  :root { --agent-l: 48%; --agent-c: 0.13; --watch: #7a3e9d; --provider-sealed: var(--leaf); --provider-tjs: #2c5d8f; --provider-localhost: #8a4b14; }
+  :root[data-theme="dark"] { --agent-l: 76%; --agent-c: 0.11; --watch: #d6b0ef; --provider-tjs: #9cc3ee; --provider-localhost: #f0b97a; }
+  [style*="--seed"], .main-agent {
+    --hue: calc(var(--seed) * 137.508deg);
+    --agent: oklch(var(--agent-l) var(--agent-c) var(--hue));
+    --agent-tint: color-mix(in oklch, var(--agent) 12%, transparent);
+  }
+  .main-agent { --seed: 0; --agent-c: 0; }
+  .sa-dot { flex: none; display: inline-block; width: .55rem; height: .55rem; border-radius: 50%; background: var(--agent, var(--muted)); }
+  .subagent[style*="--seed"], .msg.report[style*="--seed"], .sa-view-head[style*="--seed"] { border-left-color: var(--agent); }
+  .sa-view-head[style*="--seed"] .sa-name, .subagent[style*="--seed"] > .sa-head .sa-name { color: var(--agent); }
+  .s-child[style*="--seed"] .s-child-open { border-left-color: var(--agent); }
+  .s-child[style*="--seed"] .s-child-open[aria-current="true"] { background: var(--agent-tint); }
+  .tray-row[style*="--seed"] { box-shadow: inset 3px 0 0 var(--agent); padding-left: .4rem; }
+  .tray-row[style*="--seed"] > svg { color: var(--agent); }
+  .msg-from[style*="--seed"], .sa-who.msg-from[style*="--seed"] { color: var(--agent); }
+  .sa-to[style*="--seed"] { color: var(--agent); font-weight: 600; }
+  .sa-to .sa-dot { margin-right: .25rem; vertical-align: middle; }
+  .sa-edges { display: flex; gap: .4rem; align-items: baseline; flex-wrap: wrap; }
+  .sa-edges ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .15rem .7rem; }
+  .sa-edge { display: inline-flex; align-items: center; gap: .3rem; }
+  .sa-edge .n { font-weight: 600; color: var(--ink); }
+  .sa-edges-k { color: var(--muted); }
+  .watch-from, .msg .sa-who.watch-from { color: var(--watch); }
+  .provider-model { color: var(--provider-sealed); } .provider-model.provider-tjs { color: var(--provider-tjs); } .provider-model.provider-localhost { color: var(--provider-localhost); }
+  #shield-btn.ok.provider-tjs { color: var(--provider-tjs); } #shield-btn.provider-localhost { color: var(--provider-localhost); }
+  #lh-settings .lh-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; } #lh-settings input[type=url], #lh-settings input[type=password] { flex: 1 1 12em; min-width: 0; min-height: 44px; font: inherit; }
+  #lh-steps { list-style: none; padding: 0; margin: 6px 0; } #lh-steps li { margin: 2px 0; } #lh-steps li.bad { color: var(--bad, #b00020); } #lh-steps li::before { content: '\2713  '; } #lh-steps li.bad::before { content: '\2717  '; }
+  .build-swatch { display: inline-block; width: .8rem; height: .8rem; border-radius: 3px; margin-right: .35rem; vertical-align: -.1rem;
+    --agent: oklch(var(--agent-l) 0.15 var(--hue)); background: var(--agent); border: 1px solid var(--line); }
+  .swatches:empty { display: none; }
+  /* Motion: transform and opacity only, played by src/motion.js. */
+  .msg.arrived { position: relative; }
+  .msg.arrived::after { content: ''; position: absolute; inset: 0; border-radius: 10px; pointer-events: none; opacity: 0;
+    background: color-mix(in oklch, var(--agent, var(--leaf)) 16%, transparent); box-shadow: inset 0 0 0 2px var(--agent, var(--leaf)); }
+  .tree .row.pulsed, .row.pulsed { box-shadow: inset 3px 0 0 var(--watch); }
+  .tray-row.morphed { box-shadow: inset 3px 0 0 var(--leaf); }
+  .cm-flash { background: color-mix(in oklch, var(--warn) 22%, transparent); animation: cm-flash 1.5s ease-out forwards; }
+  @keyframes cm-flash { from { background: color-mix(in oklch, var(--warn) 30%, transparent); } to { background: transparent; } }
+  .leaving { opacity: .35; transition: opacity .2s ease; }
+  details.other-branch { margin: .3rem auto .8rem; max-width: 40rem; font-size: .8rem; color: var(--muted); border: 1px dashed var(--line); border-radius: 8px; padding: .3rem .6rem; opacity: .8; }
+  details.other-branch summary { cursor: pointer; }
+  details.other-branch p { margin: .3rem 0; overflow-wrap: anywhere; }
+  .still-mark { outline: 2px solid var(--agent, var(--leaf)); outline-offset: -2px; }
+  .msg.still-mark::after { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) {
+    .cm-flash { animation: none; background: color-mix(in oklch, var(--warn) 22%, transparent); }
+    .leaving { transition: none; }
+  }
+
+  /* Subagent view header: one opaque bar, details on demand (critique 3). */
+  /* Lines come to rest below the sticky header, never half under it. */
+  /* New content arrived below the viewport: a pill over the composer's top edge. */
+  #below { position: sticky; bottom: .4rem; z-index: 4; align-self: center; margin: -2.4rem auto .4rem; padding: .3rem .8rem; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--leaf); font-size: .82rem; box-shadow: 0 2px 8px var(--shadow); }
+  #log.child-view { padding-top: 0; scroll-padding-top: 3.6rem; }
+  .sa-view-head { position: sticky; top: 0; z-index: 3; margin: 0 calc(-1 * max(.75rem, (100% - 48rem) / 2)) .6rem; border: 0; border-bottom: 1px solid var(--line); border-left: 3px solid var(--leaf); border-radius: 0; background: var(--surface); padding: .1rem .6rem; font-size: .85rem; }
+  .sa-bar { display: flex; align-items: center; gap: .45rem; min-height: 2.5rem; flex-wrap: nowrap; min-width: 0; }
+  .sa-view-head { box-shadow: 0 6px 8px -6px var(--shadow); }
+  @media (pointer: fine) { .sa-bar button { min-height: 2rem; padding-block: 0; } }
+  .sa-bar .sa-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sa-bar .sa-meta { white-space: nowrap; }
+  /* Breadcrumbs: <session> > <agent> (Batch D). The session crumb pops out. */
+  .sa-crumbs { flex: 1 1 auto; min-width: 0; }
+  .sa-crumbs ol { display: flex; align-items: center; gap: .3rem; list-style: none; margin: 0; padding: 0; min-width: 0; }
+  .sa-crumbs li { display: flex; align-items: center; gap: .35rem; min-width: 0; }
+  /* The session crumb gives way first (it shrinks 100 times faster), so the subagent's name stays whole. */
+  .sa-crumbs li:first-child { flex: 0 100 auto; min-width: 2.5rem; }
+  .sa-crumbs li + li::before { content: "\203A"; color: var(--muted); }
+  .sa-crumbs li + li { flex: 0 1 auto; font-weight: 600; }
+  .sa-from { white-space: nowrap; font-size: .76rem; font-weight: 400; }
+  .sa-back { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; }
+  .sa-stats-more { display: none; margin: 0; font-size: .78rem; }
+  @media (max-width: 600px) { .sa-bar .sa-stats { display: none; } .sa-stats-more { display: block; } .sa-from { display: none; } }
+  /* The frame (Batch D): inside a subagent, the chat column and its composer
+     wear the agent's hue, so the view never passes for the parent, even scrolled. */
+  #chat { position: relative; }
+  #chat.in-child::after { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6; box-shadow: inset 0 0 0 3px var(--agent, var(--leaf)); }
+  #chat.in-child #log { background: linear-gradient(var(--agent-tint, transparent), var(--agent-tint, transparent)) left / 6px 100% no-repeat; }
+  #chat.in-child form#composer { border-color: var(--agent, var(--leaf)); border-width: 2px; }
+  #chat.in-child.child-ended form#composer { display: none; }
+  #log .sa-ended { position: sticky; bottom: 0; z-index: 3; display: flex; align-items: center; gap: .5rem; text-align: left; margin: .5rem 0 0; padding: .35rem .6rem; background: var(--surface); border: 1px solid var(--agent, var(--line)); border-radius: 10px; font-size: .85rem; }
+  #log .sa-ended span { flex: 1; min-width: 0; }
+  #log .sa-ended button { flex: none; min-height: 2.5rem; }
+  .fold-ghost { background: var(--bg); border-radius: 10px; box-shadow: 0 0 0 3px var(--agent, var(--line)); }
+  .sa-view-head.collapsed:not(.details) .sa-more { display: none; }
+  .sa-more { padding: .1rem 0 .3rem; }
+  .sa-more .sa-meta { margin: 0; }
+  /* Expanded inline transcript: its own tinted scroll box (critique 5). */
+  .sa-log[open] .sa-items { max-height: 22rem; overflow: auto; background: var(--agent-tint, var(--leaf-soft)); border-radius: 6px; padding: 0 .45rem .4rem; border-top: 0; }
+  .sa-fold { position: sticky; top: 0; z-index: 1; display: block; width: calc(100% + .9rem); margin: 0 -.45rem .2rem; border: 0; border-bottom: 1px solid var(--line); border-radius: 6px 6px 0 0; background: var(--surface); text-align: left; font-size: .76rem; padding: .3rem .5rem; color: var(--agent, var(--ink)); font-weight: 600; }
+  /* Composer: the placeholder never clips (critique 4). */
+  #input:placeholder-shown { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #input::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Desktop: the sidebar floats when the chat would be under 480px. */
+  #app.side-open.side-overlay { grid-template-columns: 0 minmax(0, 1fr) var(--panel-w, 0) var(--rail-w); }
+  #app.side-overlay #sidebar { position: fixed; z-index: 35; top: 0; bottom: 0; left: 0; width: var(--side-w, 260px); box-shadow: 0 0 24px var(--shadow); }
+  #app.side-overlay #side-handle { display: none; }
+  /* The overlaid sidebar gets the drawer's scrim over the chat column, visual
+     only: a click there closes the sidebar and still lands (layout.js). */
+  #app.side-overlay #backdrop { position: fixed; inset: 0 calc(var(--panel-w, 0px) + var(--rail-w, 0px)) 0 0; z-index: 34; background: var(--backdrop); pointer-events: none; }
+  /* Trust panel: verdicts first, hashes behind Details, mounts stacked (critique 10). */
+  #trust .facts-more summary { cursor: pointer; font-family: inherit; font-size: .82rem; }
+  #trust .facts-more dl { grid-template-columns: 1fr; gap: 0; }
+  #trust .facts-more dt { margin-top: .3rem; }
+  #trust #ns-facts { display: block; }
+  #trust #ns-facts dt { margin-top: .5rem; overflow-wrap: anywhere; }
+  #trust #ns-facts dd pre { margin: .15rem 0 0 .8rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<!-- Icons: paths from Lucide (https://lucide.dev), ISC License, Copyright (c) Lucide Contributors. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-panel-left" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></symbol>
+  <symbol id="i-new" viewBox="0 0 24 24"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></symbol>
+  <symbol id="i-ellipsis" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></symbol>
+  <symbol id="i-files" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+  <symbol id="i-editor" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m10 13-2 2 2 2"/><path d="m14 17 2-2-2-2"/></symbol>
+  <symbol id="i-usage" viewBox="0 0 24 24"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
+  <symbol id="i-shield-check" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-shield-alert" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+  <symbol id="i-mount" viewBox="0 0 24 24"><path d="M2 9V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1"/><path d="M2 13h10"/><path d="m9 16 3-3-3-3"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></symbol>
+  <symbol id="i-egress" viewBox="0 0 24 24"><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect width="12" height="12" x="6" y="6" rx="2" fill="currentColor"/></symbol>
+  <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <!-- More Lucide (ISC): composer tray, provider and footer. -->
+  <symbol id="i-plus-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></symbol>
+  <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-laptop" viewBox="0 0 24 24"><path d="M18 5a2 2 0 0 1 2 2v8.526a2 2 0 0 0 .212.897l1.068 2.127a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45l1.068-2.127A2 2 0 0 0 4 15.526V7a2 2 0 0 1 2-2z"/><path d="M20.054 15.987H3.946"/></symbol>
+  <symbol id="i-chip" viewBox="0 0 24 24"><rect width="14" height="14" x="5" y="5" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="i-chevron-up" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></symbol>
+</svg>
+<div id="app" data-panel="">
+  <aside id="sidebar" aria-label="Sessions">
+    <div class="side-head">
+      <span class="brand">BayLeaf Pouch</span>
+      <button id="side-close" class="icon" type="button" aria-label="Close sessions" title="Close sessions"><svg class="i"><use href="#i-x"/></svg></button>
+    </div>
+    <button id="new" type="button"><svg class="i"><use href="#i-new"/></svg>New session</button>
+    <ul id="session-list" aria-label="Sessions and their agents"></ul>
+    <div class="handle" id="side-handle" role="separator" aria-orientation="vertical" aria-label="Resize sessions" title="Drag to resize; double-click to reset" tabindex="0"></div>
+  </aside>
+  <div id="backdrop" hidden></div>
+  <section id="chat" aria-label="Chat">
+    <header id="topbar">
+      <button id="flipper" class="icon" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Show sessions" title="Show sessions"><svg class="i"><use href="#i-panel-left"/></svg></button>
+      <button id="new-top" class="icon" type="button" aria-label="New session" title="New session"><svg class="i"><use href="#i-new"/></svg></button>
+      <div id="title-wrap"><button id="title" type="button" title="Rename this session">New session</button></div>
+      <button id="badge" class="icon pending" type="button" aria-label="Verifying enclave" title="Verifying enclave"><svg class="i"><use href="#i-shield"/></svg></button>
+      <button id="auth" class="icon" type="button" aria-label="Sign in" title="Sign in"><svg class="i"><use href="#i-key"/></svg></button>
+    </header>
+    <div id="erased" class="card" role="status" hidden>
+      <p>All Pouch data in this browser was erased. Pouch recreates its empty databases as it starts, so the browser's storage tools will list them again, empty.</p>
+      <div class="actions"><button id="erased-dismiss" type="button">Dismiss</button></div>
+    </div>
+    <div id="update" class="card" role="status" hidden>
+      <p><span id="update-swatches" class="swatches"></span> <span id="update-text"></span></p>
+      <div class="actions"><button id="update-go" type="button" class="primary">Update</button><button id="update-later" type="button">Later</button></div>
+    </div>
+    <div id="default-update" class="card" role="status" hidden>
+      <p id="default-update-text"></p>
+      <div class="actions"><button id="default-take" type="button" class="primary">Take the new one</button><button id="default-keep" type="button">Keep mine</button></div>
+    </div>
+    <div id="welcome" class="card" hidden>
+      <p><strong>Pouch is a coding agent for files kept in this browser; what it asks the AI is encrypted so that BayLeaf cannot read it.</strong></p>
+      <p><b>work</b> is this browser, <b>pouch</b> holds shared instructions and skills, <b>tmp</b> is memory (gone on reload), and mounted folders are on your device. <button type="button" class="link" id="welcome-where">More about where files are kept</button></p>
+      <p class="muted">On a borrowed computer: Download all, then Erase all before you leave.</p>
+      <div class="actions">
+        <button id="welcome-upload" type="button" class="primary">Upload files</button>
+        <button id="welcome-mount" type="button">Mount a folder</button>
+        <button id="welcome-dismiss" type="button">Got it</button>
+      </div>
+    </div>
+    <div id="log" aria-live="polite"></div>
+    <button id="below" type="button" hidden>New reply below</button>
+    <form id="composer">
+      <div id="ac" role="listbox" hidden></div>
+      <div id="shield-pop" role="dialog" aria-label="This session's provider and permissions" hidden></div>
+      <section id="tray" aria-label="Activity" hidden>
+        <div class="tray-head">
+          <svg class="i" aria-hidden="true"><use href="#i-terminal"/></svg>
+          <span id="tray-count" role="status"></span>
+          <button id="tray-toggle" class="icon" type="button" aria-expanded="true" aria-controls="tray-list" aria-label="Hide activity" title="Hide activity" data-points="down"><svg class="i"><use href="#i-chevron-up"/></svg></button>
+          <button id="tray-stop-all" class="tray-stop" type="button" hidden>Stop all</button>
+        </div>
+        <ul id="tray-list"></ul>
+      </section>
+      <textarea id="input" rows="1" placeholder="Ask Pouch. @ for files, $ for skills, / for commands" aria-label="Message"></textarea>
+      <div id="attachment-chips" aria-label="Pending attachments"></div>
+      <p id="attachment-warning" role="status" hidden></p>
+      <div id="composer-toolbar">
+        <button id="attach-file" class="icon" type="button" aria-label="Attach files" title="Attach files (or drop here)"><svg class="i"><use href="#i-plus-circle"/></svg></button>
+        <button id="shield-btn" class="icon" type="button" aria-expanded="false" aria-controls="shield-pop" aria-label="Provider and permissions for this session" title="Provider and permissions for this session"><svg class="i"><use href="#i-shield"/></svg></button>
+        <button id="composer-usage" class="icon unknown" type="button" aria-label="Usage" title="Usage"><svg class="i"><use href="#i-usage"/></svg><span class="num" id="composer-usage-num">?</span></button>
+        <label class="provider-model" title="BayLeaf Sealed: requests are encrypted to the enclave. The model applies when you next send; running work keeps its model."><svg class="i" aria-hidden="true"><use href="#i-lock"/></svg><select id="model" aria-label="Model for next user turn"></select></label>
+        <div id="sendmode" class="split" hidden>
+          <button id="sendmode-main" type="button"><svg class="i" aria-hidden="true"><use href="#i-send"/></svg><span id="sendmode-label">Steer</span></button>
+          <button id="sendmode-more" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="sendmode-menu" aria-label="More ways to send" title="More ways to send"><svg class="i" aria-hidden="true"><use href="#i-chevron-up"/></svg></button>
+          <div id="sendmode-menu" role="menu" aria-label="Send while Pouch works" hidden>
+            <button type="button" role="menuitem" data-mode="steer"><span>Steer now: read after current step<span class="sm-key"></span></span><small class="sm-note" id="sendmode-detach" hidden></small></button>
+            <button type="button" role="menuitem" data-mode="followup"><span>Follow-up after this turn<span class="sm-key"></span></span></button>
+            <button type="button" role="menuitem" data-mode="stopsend"><span>Stop and send<span class="sm-key"></span></span></button>
+            <div role="separator" class="sm-sep"></div>
+            <button type="button" role="menuitem" data-mode="settings" class="sm-link"><span><span id="sendmode-enter"></span> Change what Enter does</span></button>
+          </div>
+        </div>
+        <button id="send" class="primary" type="submit" disabled title="Send"><svg class="i"><use href="#i-send"/></svg><span class="vh" id="send-label">Send</span></button>
+      </div>
+    </form>
+    <div id="local-hint" role="status" hidden><span id="local-hint-text"></span> <button id="local-hint-switch" type="button">Use BayLeaf Sealed next</button> <button id="local-hint-dismiss" type="button" aria-label="Dismiss">Dismiss</button></div>
+    <div id="status" role="status"></div>
+    <div id="send-live" class="vh" aria-live="polite"></div>
+  </section>
+  <div id="panel-host">
+    <div class="handle" id="panel-handle" role="separator" aria-orientation="vertical" aria-label="Resize panel" title="Drag to resize; double-click to reset" tabindex="0"></div>
+    <section class="panel" id="files" aria-label="Files">
+      <div class="bar">
+        <span class="title">Files</span>
+        <button id="download-all" class="icon" type="button" aria-label="Download all" title="Download everything in /work as one .zip"><svg class="i"><use href="#i-download"/></svg></button>
+        <button id="mount" class="icon" type="button" aria-label="Mount a folder" title="Mount a folder from this device"><svg class="i"><use href="#i-mount"/></svg></button>
+        <button id="refresh" class="icon" type="button" aria-label="Refresh" title="Refresh"><svg class="i"><use href="#i-refresh"/></svg></button>
+        <button class="icon panel-close" type="button" aria-label="Close panel" title="Close panel"><svg class="i"><use href="#i-x"/></svg></button>
+      </div>
+      <div id="tree" role="tree" aria-label="Files"></div>
+    </section>
+    <section class="panel empty" id="editor-pane" aria-label="Editor">
+      <div class="bar">
+        <button id="to-files" class="icon" type="button" aria-label="Back to files" title="Back to files"><svg class="i"><use href="#i-back"/></svg></button>
+        <span class="title path" id="editor-path">No file open</span>
+        <span id="editor-busy" role="status" hidden>Pouch is editing...</span>
+        <div id="view-mode" class="seg" role="group" aria-label="Show this file as" hidden><button type="button" data-mode="raw" aria-pressed="true">Raw</button><button type="button" data-mode="preview" aria-pressed="false">Preview</button></div>
+        <button id="save" class="icon" type="button" disabled aria-label="Save" title="Save (Ctrl+S)"><svg class="i"><use href="#i-save"/></svg></button>
+        <button id="close-file" class="icon" type="button" aria-label="Close file" title="Close file"><svg class="i"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="bar notice-bar review" id="review-bar" role="status" hidden>
+        <span id="review-text"></span>
+        <button id="review-mine" type="button" hidden>Keep mine for the rest</button>
+        <button id="review-theirs" type="button" hidden>Take theirs for the rest</button>
+        <button id="review-done" type="button" class="primary">Done</button>
+      </div>
+      <div class="bar notice-bar conflict" id="conflict-bar" role="alert" hidden>
+        <span>Pouch changed this file while you were editing.</span>
+        <button id="conflict-diff" type="button">Show diff</button>
+        <button id="conflict-mine" type="button">Keep mine</button>
+        <button id="conflict-theirs" type="button">Take theirs</button>
+      </div>
+      <p id="editor-status" role="status" hidden></p>
+      <div class="bar notice-bar" id="preview-bar" hidden>
+        <span id="preview-note"></span>
+        <div id="script-mode" class="seg" role="group" aria-label="Scripts in this report" hidden><button type="button" data-scripts="off" aria-pressed="true">Static</button><button type="button" data-scripts="on" aria-pressed="false">Interactive</button></div>
+      </div>
+      <p id="editor-empty">No file open. Pick one in Files, or open a path from a reply.</p>
+      <div id="editor"></div>
+      <div id="preview" hidden></div>
+    </section>
+    <section class="panel" id="terminal-pane" aria-label="Terminal">
+      <div class="bar">
+        <span class="title">Terminal</span>
+        <button id="term-stop" class="icon" type="button" aria-label="Interrupt (Ctrl+C)" title="Interrupt the running command (Ctrl+C): writes kill to its /task ctl"><svg class="i"><use href="#i-stop"/></svg></button>
+        <button id="term-copy" class="icon" type="button" aria-label="Copy last output" title="Copy the last command's output"><svg class="i"><use href="#i-copy"/></svg></button>
+        <button id="term-clear" class="icon" type="button" aria-label="Clear" title="Clear (Ctrl+L)"><svg class="i"><use href="#i-trash"/></svg></button>
+        <button class="icon panel-close" type="button" aria-label="Close panel" title="Close panel"><svg class="i"><use href="#i-x"/></svg></button>
+      </div>
+      <div id="term-log" role="log" aria-label="Terminal output" aria-live="polite" tabindex="0"></div>
+      <form id="term-form">
+        <label id="term-prompt" for="term-input">~ $</label>
+        <input id="term-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" aria-describedby="term-help" placeholder="ls /work">
+        <span id="term-help" hidden>Commands run in this page over your files. Up and Down recall history, Tab completes paths, Ctrl+C interrupts, Ctrl+L clears. Only bayleaf leaves the page, and it asks first.</span>
+      </form>
+    </section>
+    <section class="panel" id="usage" aria-label="Usage">
+      <div class="bar">
+        <span class="title">Usage</span>
+        <button id="usage-refresh" class="icon" type="button" aria-label="Refresh usage" title="Check again"><svg class="i"><use href="#i-refresh"/></svg></button>
+        <button class="icon panel-close" type="button" aria-label="Close panel" title="Close panel"><svg class="i"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="panel-body" id="usage-body"></div>
+    </section>
+    <section class="panel" id="trust" aria-label="What can BayLeaf see?">
+      <div class="bar">
+        <span class="title">What can BayLeaf see?</span>
+        <button id="trust-close" class="icon panel-close" type="button" aria-label="Close panel" title="Close panel"><svg class="i"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="panel-body">
+        <p>Your conversations and files stay in this browser. Each model request is encrypted here,
+        to an enclave whose hardware attestation and published code this page verified.
+        BayLeaf relays ciphertext and sees who you are (your key, or your IP under Campus Pass),
+        when you send, how many bytes, and which model ran. It cannot read prompts, replies or
+        the file contents your agent reads. The agent's tools run in this page, not on a server.
+        The weakest link is this page itself.</p>
+        <p><strong>The <code>bayleaf</code> command can send data outside the pouch; Pouch asks you every time.</strong>
+        Web search and fetch, the sandbox VM and inboxes are plaintext to BayLeaf (not logged, by policy) and some reach third parties.
+        Each request shows exactly what goes and who can see it, and a denial sends nothing.</p>
+        <dl id="facts"></dl>
+        <h3>What each task can see</h3>
+        <p>Every task works in a namespace: only the folders bound into it exist for it. The agent sees the tree below; each <code>run</code> call and subagent gets a narrower one, reached over the 9P file protocol, and the agent can read the same list at <code>/task/&lt;id&gt;/ns</code>. Namespaces limit files, not the network: leaving the pouch is still governed by this page's Content-Security-Policy and your per-session grants.</p>
+        <dl id="ns-facts"></dl>
+        <p id="seed-row" hidden><button id="seed-remove" type="button">Remove the seed layer</button></p>
+        <h3>Check this page</h3>
+        <p>This page talks only to <code>api.bayleaf.dev</code>, to a model server on this computer if you set one up under Settings > Providers > Localhost (loopback <code>http://localhost</code> or <code>http://127.0.0.1</code>, nothing else), and to its own origin to download the optional Transformers.js model: its Content-Security-Policy (<code>connect-src</code>) says so, and the browser enforces it. That model's files are checked against a manifest whose SHA-256 is built into this page; downloading them tells the host that this browser fetched the model, nothing more. Transformers.js turns send nothing.</p>
+        <p>Build <code id="build-id">__BUILD_ID__</code>. A page cannot vouch for its own hash: the one below is what this page's code checked when it kept the copy. Save the page, then compare its hash with <code>SHA256SUMS</code> from the release:
+        <code>shasum -a 256 pouch.html</code></p>
+        <h3>This copy</h3>
+        <dl id="copy-facts"></dl>
+        <p id="copy-note" role="status"></p>
+        <p class="local-actions">
+          <button id="copy-check" type="button">Check for updates</button>
+          <button id="copy-install" type="button" hidden>Install app</button>
+          <button id="copy-keep" type="button" hidden>Keep an offline copy</button>
+          <button id="copy-remove" type="button" class="danger" hidden>Uninstall offline copy</button>
+        </p>
+        <p class="muted">The hosted page keeps an offline copy: its files are checked against <code>SHA256SUMS</code> before they are kept, it loads with no network, and it changes only when you press Update, which checks the new files the same way. One part updates without asking: browsers replace <code>sw.js</code>, the small script that serves the copy, whenever the server's bytes change. It only serves the kept files; the Service worker line says whether it is the one this build expects.</p>
+        <p><a id="source-link" href="https://github.com/bayleaf-ucsc/bayleaf/tree/pouch/pouch" target="_blank" rel="noopener noreferrer">Source code and releases on GitHub</a></p>
+      </div>
+    </section>
+    <section class="panel" id="settings" aria-label="Settings">
+      <div class="bar"><span class="title">Settings</span><button class="icon panel-close" type="button" aria-label="Close panel" title="Close panel"><svg class="i"><use href="#i-x"/></svg></button></div>
+      <div class="panel-body">
+        <label class="theme-field" for="theme-preference">Appearance
+          <select id="theme-preference" aria-label="Appearance"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
+        </label>
+        <h3>New message display</h3>
+        <label class="setting-check"><input id="reasoning-expanded" type="checkbox">Expand reasoning by default</label>
+        <label class="setting-check"><input id="tools-expanded" type="checkbox">Expand tool calls by default</label>
+        <p class="muted">Display preferences only, saved in this browser. They do not enable reasoning or change model reasoning effort. Existing messages keep their own open/closed state while streaming. Erase all resets these preferences.</p>
+        <h3>Sending while Pouch works</h3>
+        <label class="theme-field" for="send-mode">While Pouch is working, Enter:
+          <select id="send-mode"><option value="steer">Steer</option><option value="followup">Follow-up</option></select>
+        </label>
+        <p class="muted">Steer: Pouch reads your message after its current step, in the same turn. Follow-up: it waits until the whole turn ends, then starts the next turn. Alt+Enter (Option+Enter on a Mac) does the other one for a single message; the arrow next to Stop offers both. Saved in this browser.</p>
+        <h3>Offline copy and updates</h3>
+        <p>Pouch changes only when you press Update. <button type="button" class="link" id="settings-copy">See this copy and check for updates</button></p>
+        <h3>Model selection</h3><p>The model below your message applies to your next user turn. Running work, including subagents, keeps the model it started with.</p>
+        <h3>Providers</h3>
+        <p class="muted">Who runs the model. BayLeaf Sealed (BayLeaf, encrypted to an enclave), Transformers.js (this browser) and Localhost (a server on this computer). Pouch never switches providers by itself.</p>
+        <h3 id="lh-h">Localhost: a model server on this computer</h3>
+        <div id="lh-settings" role="group" aria-labelledby="lh-h">
+          <p class="muted">For an OpenAI-compatible server you run yourself (oMLX, Ollama, LM Studio, llama.cpp, or a proxy you control). Pouch sends it your messages, the files the model reads and tool results; what your server does with them is up to you. No BayLeaf allowance is used, and it works with Wi-Fi off.</p>
+          <label class="theme-field" for="lh-url">Server address</label>
+          <div class="lh-row"><input id="lh-url" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="http://127.0.0.1:12348/v1" aria-describedby="lh-hint"></div>
+          <p id="lh-hint" class="muted">This computer only: localhost or 127.0.0.1. Usual ports: oMLX 12348, Ollama 11434, LM Studio 1234, llama.cpp 8080.</p>
+          <label class="theme-field" for="lh-key">API key (optional)</label>
+          <div class="lh-row"><input id="lh-key" type="password" autocomplete="off" spellcheck="false" placeholder="only if your server asks for one"><button id="lh-key-remove" type="button" class="danger" hidden>Remove key</button></div>
+          <p id="lh-key-state" class="muted">Kept in this browser only, never synced or sent anywhere but your server. Erase all removes it.</p>
+          <label class="theme-field" for="lh-transport">Transport
+            <select id="lh-transport"><option value="auto">Detect</option><option value="completions">OpenAI Chat Completions</option><option value="responses">OpenAI Responses</option></select>
+          </label>
+          <p class="local-actions"><button id="lh-test" type="button">Test connection</button> <button id="lh-forget" type="button" class="danger" hidden>Remove Localhost</button></p>
+          <ul id="lh-steps" aria-live="polite"></ul>
+          <p id="lh-fix" class="muted" hidden></p>
+        </div>
+        <h3>Transformers.js model</h3>
+        <div id="local-settings">
+          <p id="local-state" class="muted">Checking...</p>
+          <progress id="local-progress" hidden></progress>
+          <p class="local-actions">
+            <button id="local-download" type="button" hidden>Download</button>
+            <button id="local-stop" type="button" hidden>Stop download</button>
+            <button id="local-folder-btn" type="button">Load from folder</button>
+            <button id="local-files-btn" type="button">Load from files</button>
+            <button id="local-remove" type="button" class="danger" hidden>Remove the model</button>
+          </p>
+          <input id="local-folder" type="file" webkitdirectory multiple hidden>
+          <input id="local-files" type="file" multiple hidden>
+          <p class="muted">Transformers.js runs a small model (about 1.1 GB, downloaded once from BayLeaf's model mirror at api.bayleaf.dev and checked against this page's pins) in this browser, on this device's GPU. Nothing you type is sent. It suits looking around a workspace and small, literal edits; use BayLeaf Sealed for bigger work. The original model files (and a saved <code>runtime</code> folder) can be loaded without the network. The terminal's <code>models</code> command does the same. Erase all removes it too.</p>
+        </div>
+      </div>
+    </section>
+  </div>
+  <nav id="rail" aria-label="Panels">
+    <button class="icon mobile-only" type="button" data-panel="chat" aria-label="Chat" title="Chat"><svg class="i"><use href="#i-chat"/></svg><span class="lbl">Chat</span></button>
+    <button class="icon" type="button" data-panel="files" aria-label="Files" title="Files"><svg class="i"><use href="#i-files"/></svg><span class="lbl">Files</span></button>
+    <button class="icon" type="button" data-panel="editor" aria-label="Editor" title="Editor"><svg class="i"><use href="#i-editor"/></svg><span class="lbl">Editor</span></button>
+    <button class="icon" type="button" data-panel="terminal" aria-label="Terminal" title="Terminal (Ctrl+`)"><svg class="i"><use href="#i-terminal"/></svg><span class="lbl">Terminal</span></button>
+    <button class="icon unknown" id="rail-usage" type="button" data-panel="usage" aria-label="Usage" title="Usage"><svg class="i"><use href="#i-usage"/></svg><span class="meter"><span></span></span><span class="num" id="usage-num">?</span></button>
+    <button class="icon desktop-only" type="button" data-panel="trust" aria-label="What can BayLeaf see?" title="What can BayLeaf see?"><svg class="i"><use href="#i-shield"/></svg></button>
+    <button class="icon desktop-only" type="button" data-panel="settings" aria-label="Settings" title="Settings"><svg class="i"><use href="#i-settings"/></svg></button>
+    <button class="icon mobile-only" id="more" type="button" aria-label="More" title="More"><svg class="i"><use href="#i-ellipsis"/></svg><span class="lbl">More</span></button>
+    <span class="grow"></span>
+    <button id="erase" class="icon danger desktop-only" type="button" aria-label="Erase all" title="Erase all Pouch data in this browser"><svg class="i"><use href="#i-trash"/></svg></button>
+  </nav>
+</div>
+
+<dialog id="claim">
+  <p>Approve <strong>BayLeaf Pouch</strong> in the tab that just opened, after checking that it shows this code:</p>
+  <p style="font-size:1.6rem;font-family:var(--mono);text-align:center" id="claim-code"></p>
+  <p class="pending" id="claim-state">Waiting for approval...</p>
+  <p style="font-size:.85rem">If no tab opened, visit <code id="claim-url"></code>. This hands over your personal BayLeaf key, which is stored in this browser.</p>
+  <button id="claim-cancel" type="button">Cancel</button>
+</dialog>
+<dialog id="sheet">
+  <h2 id="sheet-title"></h2>
+  <div id="sheet-body" hidden></div>
+  <menu id="sheet-actions"></menu>
+</dialog>
+<dialog id="egress" aria-labelledby="egress-h" aria-describedby="egress-summary">
+  <h2 id="egress-h">Send this outside the pouch?</h2>
+  <p id="egress-summary"></p>
+  <p id="egress-meta" class="muted"></p>
+  <h3>Exactly what is sent</h3>
+  <pre id="egress-detail" tabindex="0"></pre>
+  <h3>Who can see this</h3>
+  <ul id="egress-audiences"></ul>
+  <menu>
+    <button id="egress-deny" type="button">Deny</button>
+    <button id="egress-once" type="button">Allow once</button>
+    <button id="egress-session" type="button">Allow for this session</button>
+  </menu>
+</dialog>
+<input type="file" id="upload" multiple hidden>
+<input type="file" id="attachment-picker" multiple hidden>
+<input type="file" id="upload-dir" webkitdirectory multiple hidden>
+
+<script>/*APP*/</script>
+</body>
+</html>

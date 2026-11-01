@@ -1,0 +1,13 @@
+# UL realignment progress (2026-10-31)
+- [x] before-build snapshot: /tmp/pouch-qa/ul-before (ec88ab0, sha 7ba29134...)
+- [x] baseline (ec88ab0 src, frozen copy /tmp/pouch-qa/ul/basetree): all node+browser pass incl composer, pwa 17/17; EXCEPT graphs-browser fails pre-existing at G-cap (expects "Not sent: s[34] and s[34] have exchanged 8 messages" in a request)
+- [x] graph.js handles a1.. + asRef/refOf/migrateRows; subagents.js agent-facing text; watch.js owner migration; dom seedOf both forms
+- [x] pouch.html strings, settings sendMode followup (+ 'queue' migration), composer tray, main.js send-mode + provider strings + picker optgroups
+- [ ] profiles.js, agent.js lane->db rename + pi ACL table, sidebar labels, tests, ul-node, upgrade test, docs
+- [x] profiles.js (TJS recipe moved, value-identical to HEAD), agent.js lanes->dbs + ACL table, sidebar labels, egress "Session › agent"
+- [x] tests updated; r1 full run: all node + browser pass (graphs-browser after string fix: 13 passed); upgrade-browser 6/6
+- [ ] dist rebuild + ul-node, docs, walkthrough, real sanity, deploy --check
+- [x] docs (README trust roots, JOURNEYS, WALKTHROUGH, NEXT, DEPLOYMENT, LANGUAGE "Realigned"); walkthrough run1 changed 16, run2 changed 0
+- [x] real sanity test/ul-sealed.mjs: 8 requests, all 4 checks ok (follow-up held, from counter (a2), model used join a2 / list a1 a2)
+- [x] final build sha 25d6860a..., ul-node 0 retired terms, deploy --check ok (70 files)
+- [x] r2 full rerun: 29/29 suites pass (node, browser, pwa 17/17, ul-node, upgrade 6/6); temp trees removed

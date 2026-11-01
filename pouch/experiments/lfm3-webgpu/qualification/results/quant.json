@@ -1,0 +1,193 @@
+{
+ "schema": "lfm3-quant-v1",
+ "model": "onnx-community/LFM3-1.7B-ONNX@ab9fec4c, Transformers.js 4.3.2, ORT Web WebGPU, headless Chrome",
+ "protocol": "per task: greedy x1 + T=0.3/top_p=0.95 seeds 1-7 (Transformers.js sampler RNG seeded); 8-step cap; byte-exact grading as agent-v2 (config/jsonlist graded on parsed JSON)",
+ "classes": "pass; parse = malformed native XML tool call; cap = 8-step limit; wrong = normal finish, well-formed calls, wrong bytes; other = token/time limit",
+ "variants": {
+  "q4f16": {
+   "file": "model_q4f16",
+   "download_bytes": 1088085770,
+   "agent_fatal": null,
+   "externalRequests": 0,
+   "original": {
+    "tree": "8/8",
+    "edit": "8/8",
+    "feature": "0/8",
+    "rename": "0/8",
+    "config": "8/8",
+    "jsonlist": "8/8",
+    "yaml": "1/8",
+    "five": "24/40",
+    "all": "33/56",
+    "failures": {
+     "parse": 0,
+     "cap": 15,
+     "wrong": 8,
+     "other": 0
+    },
+    "toolErrors": 69,
+    "median_ms": 7385.5
+   },
+   "recipe": {
+    "tree": "8/8",
+    "edit": "8/8",
+    "feature": "8/8",
+    "rename": "8/8",
+    "config": "8/8",
+    "jsonlist": "8/8",
+    "yaml": "8/8",
+    "five": "40/40",
+    "all": "56/56",
+    "failures": {
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "other": 0
+    },
+    "toolErrors": 3,
+    "median_ms": 6045.5
+   },
+   "perf_fatal": null,
+   "gpu_load_delta_gb": 1.19,
+   "gpu_peak_4k_delta_gb": 1.34,
+   "chrome_rss_peak_gb": 4.72,
+   "cold_load_ms": 1470,
+   "warm_load_ms": 2707,
+   "~1k": {
+    "ttft_ms": 423,
+    "decode_tok_s": 112.3,
+    "prefill_tok_s": 2268.2
+   },
+   "~4k": {
+    "ttft_ms": 2402,
+    "decode_tok_s": 72.7,
+    "prefill_tok_s": 1574
+   }
+  },
+  "q4": {
+   "file": "model_q4",
+   "download_bytes": 1297549403,
+   "agent_fatal": null,
+   "externalRequests": 0,
+   "original": {
+    "tree": "8/8",
+    "edit": "8/8",
+    "feature": "0/8",
+    "rename": "0/8",
+    "config": "8/8",
+    "jsonlist": "8/8",
+    "yaml": "3/8",
+    "five": "24/40",
+    "all": "35/56",
+    "failures": {
+     "parse": 0,
+     "cap": 13,
+     "wrong": 8,
+     "other": 0
+    },
+    "toolErrors": 55,
+    "median_ms": 7081.0
+   },
+   "recipe": {
+    "tree": "8/8",
+    "edit": "8/8",
+    "feature": "8/8",
+    "rename": "8/8",
+    "config": "8/8",
+    "jsonlist": "8/8",
+    "yaml": "8/8",
+    "five": "40/40",
+    "all": "56/56",
+    "failures": {
+     "parse": 0,
+     "cap": 0,
+     "wrong": 0,
+     "other": 0
+    },
+    "toolErrors": 3,
+    "median_ms": 6191.0
+   },
+   "perf_fatal": null,
+   "gpu_load_delta_gb": 1.95,
+   "gpu_peak_4k_delta_gb": 1.66,
+   "chrome_rss_peak_gb": 4.55,
+   "cold_load_ms": 1570,
+   "warm_load_ms": 3852,
+   "~1k": {
+    "ttft_ms": 578,
+    "decode_tok_s": 97.6,
+    "prefill_tok_s": 1660.4
+   },
+   "~4k": {
+    "ttft_ms": 3346,
+    "decode_tok_s": 65.4,
+    "prefill_tok_s": 1129.8
+   }
+  },
+  "q8": {
+   "file": "model_quantized",
+   "download_bytes": 2175882841,
+   "agent_fatal": null,
+   "externalRequests": 0,
+   "original": {
+    "tree": "8/8",
+    "edit": "8/8",
+    "feature": "0/8",
+    "rename": "0/8",
+    "config": "8/8",
+    "jsonlist": "8/8",
+    "yaml": "8/8",
+    "five": "24/40",
+    "all": "40/56",
+    "failures": {
+     "parse": 0,
+     "cap": 8,
+     "wrong": 8,
+     "other": 0
+    },
+    "toolErrors": 21,
+    "median_ms": 7580.5
+   },
+   "recipe": {
+    "tree": "8/8",
+    "edit": "8/8",
+    "feature": "0/8",
+    "rename": "8/8",
+    "config": "8/8",
+    "jsonlist": "8/8",
+    "yaml": "8/8",
+    "five": "32/40",
+    "all": "48/56",
+    "failures": {
+     "parse": 0,
+     "cap": 0,
+     "wrong": 8,
+     "other": 0
+    },
+    "toolErrors": 6,
+    "median_ms": 7653.5
+   },
+   "perf_fatal": null,
+   "gpu_load_delta_gb": 2.42,
+   "gpu_peak_4k_delta_gb": 2.41,
+   "chrome_rss_peak_gb": 7.02,
+   "cold_load_ms": 2512,
+   "warm_load_ms": 8435,
+   "~1k": {
+    "ttft_ms": 532,
+    "decode_tok_s": 80.7,
+    "prefill_tok_s": 1805.8
+   },
+   "~4k": {
+    "ttft_ms": 2986,
+    "decode_tok_s": 57.6,
+    "prefill_tok_s": 1265.8
+   }
+  }
+ },
+ "skipped": {
+  "fp16": "3,558,502,927 B (two external-data shards). Skipped: over the ~3.5 GB bound, and Transformers.js Cache Storage duplicates weights inside the browser profile (q8 profile measured 2.2 GB), so fp16 needed ~7.1 GB with ~7.5 GB free.",
+  "int8/uint8": "not published at this revision; Transformers.js maps dtype q8 to model_quantized (8-bit MatMulNBits block weights, fp32 activations and KV cache).",
+  "partB_omlx": "Skipped: LiquidAI/LFM3-1.7B-MLX-4bit (991 MB) and -8bit (1.86 GB) declare model_type lfm3; oMLX 0.7.2 bundles mlx-lm 0.31.4.dev with no lfm3 module, and the model card says mlx-lm support is in progress. Nothing downloaded."
+ }
+}

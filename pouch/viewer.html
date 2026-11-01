@@ -1,0 +1,85 @@
+<!doctype html>
+<!--
+  BayLeaf Pouch report viewer: renders one HTML report that an agent wrote,
+  with no way out to the network and no way into Pouch (README "HTML reports").
+
+  Pouch frames this file with sandbox="allow-scripts" (no allow-same-origin),
+  so it runs in an opaque origin: it cannot read Pouch's storage, files or key,
+  and Pouch cannot read it. Its policy (this meta tag, and the same policy as a
+  header, which also sets frame-ancestors and sandbox) allows no fetch of any
+  kind: inline script and style, data: and blob: images, fonts and media only.
+  A report rendered in the inner srcdoc frame inherits this policy.
+
+  script-src is 'unsafe-inline', not a hash: reports carry their own inline
+  scripts (charts, toggles), and a hash here would switch 'unsafe-inline' off.
+  That is safe only because this document has nothing to steal and no network.
+
+  The one input is a message from the parent (Pouch): { html, scripts }. A
+  message from anywhere else, including the report itself, is ignored, so a
+  report cannot re-render itself with scripts on. Nothing is sent back.
+
+  Before rendering, the markup loses what WebKit acts on before any policy
+  applies (test/viewer-exfil-browser.mjs): <link> (rel=preconnect opens a
+  connection to the named host, unasked), and link targets (a click on a
+  target=_blank/_top/_parent link connects before the sandbox refuses the
+  navigation). <base> and <meta http-equiv> go too. Nothing a <link> could
+  load is allowed here anyway. DOMParser builds an inert document; the pass
+  repeats on its own output until nothing changes, so a parse-serialize
+  round trip cannot bring a removed element back. In Static mode the frame
+  parses exactly like DOMParser (scripting off), so this holds; in
+  Interactive mode a script can add such elements again (README).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; manifest-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="x-dns-prefetch-control" content="off">
+<meta name="referrer" content="no-referrer">
+<title>Report</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #fff; }
+  iframe { display: block; border: 0; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<script>
+(() => {
+  const MAX = 5 * 2 ** 20; // Pouch enforces the same cap and says so first
+  let frame = null;
+  // Returns how many things it removed, including inside <template> contents
+  // (declarative shadow roots become live in the frame).
+  const clean = (root) => {
+    let n = 0;
+    for (const e of root.querySelectorAll('link, base, meta[http-equiv]')) { e.remove(); n++; }
+    for (const e of root.querySelectorAll('[target], [formtarget]')) { e.removeAttribute('target'); e.removeAttribute('formtarget'); n++; }
+    for (const t of root.querySelectorAll('template')) n += clean(t.content);
+    return n;
+  };
+  addEventListener('message', (e) => {
+    if (e.source !== parent || parent === window) return;
+    const d = e.data;
+    if (!d || typeof d !== 'object' || Object.keys(d).sort().join() !== 'html,scripts') return;
+    if (typeof d.html !== 'string' || typeof d.scripts !== 'boolean' || d.html.length > MAX) return;
+    let html = d.html;
+    for (let pass = 0; ; pass++) {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      if (!clean(doc) && pass) break;
+      if (pass === 4) return; // never settles: show nothing
+      html = (doc.doctype ? '<!doctype html>' : '') + doc.documentElement.outerHTML;
+    }
+    // A new frame per message: nothing of the previous report keeps running.
+    const f = document.createElement('iframe');
+    // Static: no scripts at all. Interactive: scripts, still no same-origin,
+    // forms, popups, modals, downloads or navigation of other frames.
+    f.setAttribute('sandbox', d.scripts ? 'allow-scripts' : '');
+    f.setAttribute('referrerpolicy', 'no-referrer');
+    f.setAttribute('allow', "camera 'none'; microphone 'none'; geolocation 'none'; display-capture 'none'; clipboard-read 'none'; clipboard-write 'none'; fullscreen 'none'; payment 'none'; usb 'none'; serial 'none'; hid 'none'; bluetooth 'none'; midi 'none'");
+    f.title = 'Report';
+    f.srcdoc = html;
+    if (frame) frame.replaceWith(f); else document.body.append(f);
+    frame = f;
+  });
+})();
+</script>
+</body>
+</html>

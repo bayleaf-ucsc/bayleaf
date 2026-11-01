@@ -1,0 +1,9 @@
+- 00:38 start: read Pouch CSP/build, chose quickjs-emscripten-core + singlefile variant
+- 00:39 npm install pinned quickjs-emscripten-core 0.32.0 + singlefile variants
+- 00:40 src/core.js works in Node: hello, fs changes, timeout, oom, exit, error
+- 00:41 wrote src/worker.js, worker-browser.js, host.js (runInWorker, applyChanges, MemFS); writing node tests
+- 00:42 node tests written (21); running
+- 00:43 node tests 20/20 PASS (stack overflow leaks -> emscripten abort on dispose; harmless with one worker per run). next: browser build
+- 00:44 build.mjs + index.html + demo.js; dist built
+- 00:44 test/browser.mjs written; running
+- 00:45 DONE: node 20/20 PASS, browser 18/18 PASS, README with CSP delta + assessment
