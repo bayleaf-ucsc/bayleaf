@@ -140,20 +140,31 @@ export function shellFor(fs, hooks = {}) {
 export const LOOK_MAX = 8; // paths per look call
 export const LOOK_REFUSAL = 'This model cannot see images; ask the person to switch to a model marked images.';
 const absPath = (p) => normalize(String(p).startsWith('/') ? String(p) : CWD + '/' + p);
-const isSvg = (p, bytes) => /\.svgz?$/i.test(p) || /^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*<svg[\s>]/i.test(new TextDecoder().decode(bytes.subarray(0, 512)));
+// Skips an XML declaration and comments by hand: one regex for it backtracks (CodeQL).
+function isSvg(p, bytes) {
+  if (/\.svgz?$/i.test(p)) return true;
+  let t = new TextDecoder().decode(bytes.subarray(0, 512)).trimStart().replace(/^<\?xml[^>]*>/i, '').trimStart();
+  while (t.startsWith('<!--')) { const end = t.indexOf('-->'); if (end < 0) return false; t = t.slice(end + 3).trimStart(); }
+  return /^<svg[\s>]/i.test(t);
+}
 // One text line per path, then the images in the same order. A path that is not
 // a raster image is refused on its line; if none could be sent the call fails.
 // Returns { text, images } (agent.js toTool turns it into text and image blocks).
-export async function lookAt(paths, fs, prepare) {
+// signal: Stop skips the paths not yet read or prepared.
+export async function lookAt(paths, fs, prepare, signal) {
   if (!Array.isArray(paths) || !paths.length) throw new Error('Give look at least one image path in `paths`.');
   if (paths.length > LOOK_MAX) throw new Error(`look takes at most ${LOOK_MAX} paths per call (got ${paths.length}); split them into several calls.`);
   const lines = [], images = [];
   for (const p of [...new Set(paths.map(absPath))]) {
+    signal?.throwIfAborted();
+    const tooBig = (n) => `${p}: not sent. It is ${n.toLocaleString('en-US')} bytes; look reads files up to 20 MB.`;
     let bytes;
     try {
+      const size = (await fs.stat(p)).size; // a mounted folder's file can be huge: refuse before reading it
+      if (size > FILE_CAP) { lines.push(tooBig(size)); continue; }
       bytes = await fs.readFileBuffer(p);
     } catch (e) { lines.push(`${p}: not sent. ${explain(e, p).message}`); continue; }
-    if (bytes.length > FILE_CAP) { lines.push(`${p}: not sent. It is ${bytes.length.toLocaleString('en-US')} bytes; look reads files up to 20 MB.`); continue; }
+    if (bytes.length > FILE_CAP) { lines.push(tooBig(bytes.length)); continue; }
     const mime = rasterMime(bytes);
     if (!mime) {
       lines.push(`${p}: not sent. ${isSvg(p, bytes) ? 'SVG is not sent as an image; it is text, so read its markup with the read tool.' : 'It is not a PNG, JPEG, GIF or WebP image; check it with bash `file ' + p + '`.'}`);
@@ -161,11 +172,12 @@ export async function lookAt(paths, fs, prepare) {
     }
     try {
       const r = await prepare(bytes);
+      signal?.throwIfAborted();
       images.push(r.image);
       const kind = mime.slice(6).toUpperCase();
       const sent = r.sentWidth === r.width && r.sentHeight === r.height ? `sent at full size as ${r.image.mimeType.slice(6).toUpperCase()}` : `sent scaled to ${r.sentWidth}x${r.sentHeight} ${r.image.mimeType.slice(6).toUpperCase()}`;
       lines.push(`${p}: image ${images.length}, ${kind} ${r.width}x${r.height}, ${sent}, ${r.bytes.toLocaleString('en-US')} bytes`);
-    } catch (e) { lines.push(`${p}: not sent. ${e.message}`); }
+    } catch (e) { if (signal?.aborted) throw e; lines.push(`${p}: not sent. ${e.message}`); }
   }
   if (!images.length) throw new Error(lines.join('\n'));
   lines.push(`[${images.length} image${images.length > 1 ? 's' : ''} attached in this order; they count toward this conversation's context]`);
@@ -373,9 +385,9 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
       paths: Type.Array(Type.String(), { minItems: 1, maxItems: LOOK_MAX, description: `Image files, absolute or relative to ${CWD} (at most ${LOOK_MAX})` }),
       note: Type.Optional(Type.String({ description: 'What you are looking for (shown to the user)' })),
     }),
-    async execute({ paths }, { caller, seesImages } = {}) {
+    async execute({ paths }, { caller, seesImages, signal } = {}) {
       if (seesImages === false) throw new Error(LOOK_REFUSAL);
-      return lookAt(paths, fsFor(caller), prepare);
+      return lookAt(paths, fsFor(caller), prepare, signal);
     },
   };
 

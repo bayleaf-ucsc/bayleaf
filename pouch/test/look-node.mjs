@@ -26,6 +26,12 @@ const fs = {
     if (!files.has(p)) { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; }
     return files.get(p);
   },
+  async stat(p) {
+    if (p === '/work/dir') return { size: 0, isDirectory: true };
+    if (p === '/work/huge.png') return { size: 25 * 1024 * 1024 };
+    if (!files.has(p)) { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; }
+    return { size: files.get(p).length };
+  },
 };
 const prepared = [];
 const prepare = async (bytes) => {
@@ -57,6 +63,15 @@ ok('one line per path (original and sent size, bytes), refusals inline, duplicat
 
 await assert.rejects(lookAt(['notes.md', 'logo.svg'], fs, prepare), (e) => /notes\.md: not sent/.test(e.message) && /logo\.svg: not sent/.test(e.message));
 ok('a call with nothing sendable fails, naming each path');
+
+await assert.rejects(lookAt(['huge.png'], fs, prepare), /huge\.png: not sent\. It is 26,214,400 bytes/);
+files.set('/work/commented.txt', new TextEncoder().encode('<?xml version="1.0"?><!-- a --> <!-- b --><svg/>'.replace('<svg/>', '<svg >')));
+await assert.rejects(lookAt(['commented.txt'], fs, prepare), /SVG is not sent as an image/);
+const ac = new AbortController(); ac.abort();
+const preparedAt = prepared.length;
+await assert.rejects(lookAt(['chart.png', 'photo.jpg'], fs, prepare, ac.signal), (e) => e.name === 'AbortError');
+assert.equal(prepared.length, preparedAt, "stopped before preparing anything");
+ok('a file over the cap is refused from its size, unread; SVG behind comments is still named; Stop skips the rest');
 
 // ── the tool through createTools: the text-only refusal comes before any read
 const vfs = { fs, changed() {}, mounts: new Map() };

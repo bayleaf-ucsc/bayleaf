@@ -86,6 +86,8 @@ try {
     console.log(JSON.stringify({ model: MODEL, requests: sent, attempts: n, lookCalls: looks, thumbnails: thumbs,
       text: /BLUE\s*TRIANGLE\s*42/i.test(reply), number42: /42/.test(reply), triangle: /triangle/i.test(reply), blue: /blue/i.test(reply), replyChars: reply.length, outside }, null, 1));
     assert.ok(sent <= CAP, 'request cap');
+    assert.ok(looks >= 1, 'the model called look'); assert.ok(thumbs >= 1, 'the card shows what was sent');
+    assert.ok(/42/.test(reply) || /triangle/i.test(reply), 'the reply reads the image');
     console.log(`done (${at()}): screenshot ${join(shots, 'look-sealed.png')}`);
   }
 } finally {

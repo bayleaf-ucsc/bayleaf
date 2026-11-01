@@ -2083,7 +2083,7 @@ function argSummary(name, args) {
   if (name === 'bash') return (args.command ?? '').split('\n')[0];
   if (name === 'run' && args.code != null) return 'js: ' + (args.code.split('\n').find((l) => l.trim()) ?? '');
   if (name === 'agents' || name === 'subagent') return agentSummary(name, args);
-  if (name === 'look') return `${(args.paths ?? []).length} image${(args.paths ?? []).length === 1 ? '' : 's'}: ${(args.paths ?? []).map((p) => String(p).split('/').pop()).join(', ')}`;
+  if (name === 'look') { const ps = Array.isArray(args.paths) ? args.paths : []; return `${ps.length} image${ps.length === 1 ? '' : 's'}: ${ps.map((p) => String(p).split('/').pop()).join(', ')}`; }
   if (name === 'watch') return args.action === 'watch' ? `${(args.paths ?? []).join(', ')}${args.once ? ' (once)' : ''}${args.by && args.by !== 'user' ? ` by ${args.by}` : ''}` : `${args.action ?? ''} ${args.id ?? ''}`.trim();
   return args.path ?? JSON.stringify(args).slice(0, 120);
 }
@@ -2210,12 +2210,21 @@ function toolCard(it, prefix = '') {
   return d;
 }
 // Thumbnails of what a look sent, from the stored bytes (blob URLs, no network).
-// The log re-renders every frame, so each image's URL is made once.
-const lookUrls = new Map(); // `${call id}:${index}` -> blob URL
+// The log re-renders every frame, so each image's URL is made once, keyed by
+// its bytes (providers reuse call ids across conversations), and revoked once
+// a render no longer shows it (sweepLooks, after renderLog builds).
+const lookUrls = new Map(); // base64 data -> blob URL
+const lookShown = new Set();
+function sweepLooks() {
+  for (const [k, url] of lookUrls) if (!lookShown.has(k)) { URL.revokeObjectURL(url); lookUrls.delete(k); }
+  lookShown.clear();
+}
 function lookThumbs(it) {
-  const names = [...String(it.output ?? '').matchAll(/^(\S+): image \d+,/gm)].map((m) => m[1]);
+  const names = [];
+  for (const [, path, n] of String(it.output ?? '').matchAll(/^(.+): image (\d+),/gm)) names[n - 1] = path;
   return it.images.map((img, i) => {
-    const k = `${it.id}:${i}`;
+    const k = img.data;
+    lookShown.add(k);
     if (!lookUrls.has(k)) {
       const bin = atob(img.data), bytes = new Uint8Array(bin.length);
       for (let j = 0; j < bin.length; j++) bytes[j] = bin.charCodeAt(j);
@@ -2289,6 +2298,7 @@ function renderLog() {
   if (fc?.ref) seeded(chat, fc.ref); else chat.style.removeProperty('--seed');
   if (focus) {
     log.replaceChildren(...childLog()); follow.restore(mark);
+    sweepLooks();
     if (focus.pinTop) follow.top();
     else follow.stick();
     playArrivals(log);
@@ -2382,7 +2392,7 @@ function renderLog() {
   const f = document.activeElement, fKey = log.contains(f) ? f.closest('.msg')?.dataset.key : null;
   const fAct = fKey && f.dataset.act;
   log.replaceChildren(...out); follow.restore(mark);
-  localImages.sweep();
+  localImages.sweep(); sweepLooks();
   if (fKey) log.querySelector(`.msg[data-key="${CSS.escape(fKey)}"]${fAct ? ` [data-act="${fAct}"]` : ''}`)?.focus({ preventScroll: true });
   follow.stick();
   // Scrolled up while something new arrived below: say so (critique 19).
