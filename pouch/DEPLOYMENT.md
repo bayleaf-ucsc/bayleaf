@@ -116,7 +116,28 @@ cache headers. README "Install and the offline copy" has the policy.
   semantics checked with `wrangler dev` 4.91 (asset worker); recheck the served headers
   after the first deploy (`deploy.mjs` verifies them).
 
-## Current artifact: Localhost provider (2026-11-01)
+## Current artifact: terminal, control plane, report viewer, gateway weights (2026-11-01)
+
+- Built from commit `98f90d0` (clean; label `98f90d0 2026-11-01`) in a temporary clean
+  checkout with `node build.mjs` (weights no longer in the artifact; the Transformers.js
+  provider is included, its weights come from https://api.bayleaf.dev/hf at run time).
+- HTML SHA-256: `b7f0c1d471de62b92deb3a565398e98b9b8b06356bde0f40215841c5468a7909`.
+- 12 files, 31 MiB staged (previously 70 files, 1,086 MiB); 6 uploaded, 7 unchanged.
+- CSP delta: `frame-src 'self'`, `media-src blob:`. New path `/viewer.html` with its own
+  headers (CSP without network sources, `sandbox allow-scripts`, `frame-ancestors 'self'`,
+  Permissions-Policy, `X-Frame-Options: SAMEORIGIN`); confirmed live as the only CSP on
+  that path.
+- Cloudflare version: `118dbb23-1b6e-4d31-80e7-03a04bf40702`. Previous: `194f6ac7-…`.
+- `deploy.mjs` passed first time (page, sums, 7 shell files, 4 runtime parts; gateway
+  catalog checked against `models.lock.json` instead of downloading weights). Headless
+  Chromium on the live site: service worker active, no installability errors, no CSP
+  violations, no native dialogs; only pouch.bayleaf.dev and api.bayleaf.dev contacted;
+  the gateway catalog is reachable from the page; the viewer loads sandboxed.
+- Includes Batches E (terminal, provider-true titles), F (control plane), G (report
+  viewer, previews) and H (gateway weights, models command). Existing users' cached
+  weights migrate on first load without re-downloading.
+
+## Earlier artifact: Localhost provider (2026-11-01)
 
 - Built from commit `93798dc` (clean; label `93798dc 2026-11-01`) in a temporary clean
   checkout with `node build.mjs --with-models`.
