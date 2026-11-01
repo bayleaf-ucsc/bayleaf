@@ -62,6 +62,12 @@
 
   // BayLeaf Inboxes owner RPC (issue #97, local proof of concept; see inbox/DESIGN.md).
   // Deploy the bayleaf-inboxes Worker before any API deploy that includes this binding.
+  // HF artifact gateway (issue #121): approved public model artifacts only,
+  // content-addressed by SHA-256. No request content is ever written here.
+  "r2_buckets": [
+    { "binding": "HF_ARTIFACTS", "bucket_name": "bayleaf-hf-artifacts" }
+  ],
+
   "services": [
     { "binding": "INBOXES", "service": "bayleaf-inboxes", "entrypoint": "InboxManagement" }
   ],
@@ -87,6 +93,7 @@
     // BayLeaf Inboxes facade, issue #97. Community access enabled 2026-10-21.
     // /inboxes is 404 unless exactly "true". Evidence: inbox/QUALIFICATION.md.
     "INBOXES_ENABLED": "true",
+    "HF_GATEWAY_ENABLED": "true",
     // Community access: no operator-only account-generation restriction.
     "INBOXES_PILOT_OWNER": "",
     // GCP Vertex AI Configuration

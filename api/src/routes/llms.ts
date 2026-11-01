@@ -43,6 +43,7 @@ llmsRoutes.get('/llms.txt', async (c) => {
     grantsEnabled: c.env.GRANTS_ENABLED === 'true',
     inboxesEnabled: c.env.INBOXES_ENABLED === 'true',
     inboxesPilot: !!c.env.INBOXES_PILOT_OWNER,
+    hfEnabled: c.env.HF_GATEWAY_ENABLED === 'true',
     standardBackends: ALT_BACKENDS.map(b => ({ prefix: b.prefix, label: b.label, enabled: isBackendEnabled(c.env, b.key) })),
   });
   return c.text(body, 200, { 'Content-Type': 'text/markdown; charset=utf-8' });
@@ -62,6 +63,7 @@ interface LlmsTxtInput {
   grantsEnabled: boolean;
   inboxesEnabled: boolean;
   inboxesPilot?: boolean;
+  hfEnabled?: boolean;
   standardBackends: { prefix: string; label: string; enabled: boolean }[];
 }
 
@@ -116,6 +118,7 @@ ${sealedEnabled ? '- [Sealed LLM inference](#sealed-llm-inference): a separate e
 - [Sandboxed code execution](#sandboxed-code-execution): persistent Linux tools and browser workspaces.
 - [Computer use](#computer-use): observe and drive an already-running sandbox Desktop through the owner API.
 - [Web search and page fetch](#web-search-and-page-fetch): wire web tools into an agent.
+${input.hfEnabled ? '- [Model artifact downloads](#model-artifact-downloads): keyless approved Hugging Face files for local or in-browser inference.' : ''}
 ${input.inboxesEnabled ? '- [Inboxes: receive email and webhooks while you are away](#inboxes-receive-email-and-webhooks-while-you-are-away): collect messages while your computer is off.' : ''}
 ${gwsEnabled ? '- [Google Workspace CLI](#google-workspace-cli-gws): direct, user-authorized integration.' : ''}
 - [Canvas LMS](#canvas-lms): direct, user-authorized course integration.
@@ -1209,7 +1212,15 @@ ${fence}
 Search returns ranked results plus an optional AI-generated ${bt}answer${bt}. Fetch
 returns clean extracted content suitable for LLM consumption (${bt}markdown${bt} default,
 ${bt}text${bt} or ${bt}html${bt} also supported).
-${gwsEnabled ? buildGwsSection(placeholderEmail, bt, fence) : ''}${buildCanvasSection(bt, fence)}
+${input.hfEnabled ? `
+### Model artifact downloads
+
+Keyless, read-only copies of operator-approved Hugging Face model files, pinned to
+a commit and served from BayLeaf storage (Hugging Face is never contacted per request).
+List releases, files and SHA-256 hashes with ${bt}GET /hf/catalog${bt}; for Transformers.js
+set ${bt}env.remoteHost = 'https://api.bayleaf.dev/hf/'${bt}. Exact contracts are under the
+[Artifacts tag](https://api.bayleaf.dev/docs#tag/artifacts) in OpenAPI.
+` : ''}${gwsEnabled ? buildGwsSection(placeholderEmail, bt, fence) : ''}${buildCanvasSection(bt, fence)}
 ---
 
 ## Notes

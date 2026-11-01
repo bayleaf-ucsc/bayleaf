@@ -37,6 +37,8 @@ import { usageRoutes } from './routes/usage';
 import { campusPassRoutes } from './routes/campusPass';
 export { SandboxBrowser } from './sandboxBrowser';
 import { webRoutes } from './routes/web';
+import { hfRoutes } from './routes/hf';
+import { mirrorHfReleases } from './hfMirror';
 import { docsRoutes } from './routes/docs';
 import { llmsRoutes } from './routes/llms';
 import { sandboxWellKnownRoutes, sealedWellKnownRoutes, wellKnownRoutes } from './routes/wellknown';
@@ -103,15 +105,27 @@ const sealedCors = cors({
   exposeHeaders: ['Ehbp-Response-Nonce', 'X-Tinfoil-Usage-Metrics', 'WWW-Authenticate'],
   maxAge: 86400,
 });
+// The HF artifact gateway is keyless and read-only. Browsers send Range (and
+// conditional headers) and must read the range, hash and commit headers that
+// Transformers.js and resumable downloads depend on.
+const hfCors = cors({
+  origin: '*',
+  allowMethods: ['GET', 'HEAD', 'OPTIONS'],
+  allowHeaders: ['Range', 'If-None-Match', 'If-Range'],
+  exposeHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length', 'ETag', 'X-Repo-Commit', 'X-Linked-Size', 'X-Linked-Etag', 'Retry-After'],
+  maxAge: 86400,
+});
 app.use('*', (c, next) => {
   const path = c.req.path;
   if (path.startsWith('/previews/') || path === '/auth/service' || path.startsWith('/auth/service/')) return next();
+  if (path === '/hf' || path.startsWith('/hf/')) return hfCors(c, next);
   return path.startsWith('/sealed/') ? sealedCors(c, next) : apiCors(c, next);
 });
 
 app.use('*', async (c, next) => {
   const token = c.req.header('Authorization')?.replace(/^Bearer\s+/i, '').trim();
-  if (token?.startsWith(GRANT_PREFIX)) {
+  // The keyless HF artifact gateway ignores credentials, including grants.
+  if (token?.startsWith(GRANT_PREFIX) && !(c.req.path === '/hf' || c.req.path.startsWith('/hf/'))) {
     const rejection = await guardGrant(c, token);
     if (rejection) return rejection;
   }
@@ -199,6 +213,7 @@ app.route('/sandbox/computer', computerRoutes);
 app.route('/usage', usageRoutes);
 app.route('/sandbox', sandboxRoutes);
 app.route('/web', webRoutes);
+app.route('/hf', hfRoutes);
 app.route('/docs', docsRoutes);
 app.route('/.well-known', wellKnownRoutes);
 app.route('/sandbox/.well-known', sandboxWellKnownRoutes);
@@ -246,6 +261,7 @@ app.doc31('/docs/openapi.json', (c) => ({
     { name: 'Meta', description: 'API metadata and documentation' },
     { name: 'Grants', description: GRANT_WORKFLOW },
     { name: 'Inboxes', description: 'Owner-managed email and HTTP reception with bounded stored content, outside the inference ZDR boundary; requires an ordinary key or sandbox credential.' },
+    { name: 'Artifacts', description: 'Keyless, read-only delivery of approved Hugging Face model artifacts from this origin, for clients whose network egress is limited to it. Not a Hub proxy: approved files are mirrored ahead of time and requests never reach Hugging Face.' },
     { name: 'Previews', description: 'Transient preview registration for the designated installation, with explicit public or private access policy.' },
   ],
 }));
@@ -281,5 +297,10 @@ export default {
     }
     if (env.GRANTS_ENABLED === 'true') await cleanupGrants(env);
     if (env.PREVIEWS_ENABLED === 'true') await cleanupPreviews(env);
+    if (env.HF_GATEWAY_ENABLED === 'true') {
+      const mirror = await mirrorHfReleases(env);
+      console.info('HF mirror', mirror); // Counts only; observability stays disabled.
+      if (mirror.failed) throw new Error('HF mirror needs retry');
+    }
   },
 };

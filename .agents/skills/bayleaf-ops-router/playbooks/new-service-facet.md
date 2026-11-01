@@ -228,3 +228,8 @@ traffic without changing the Worker.
   likewise reused existing data flows and controls. A new discovery URL alone
   is not a new service facet; only the human ship gate and route verification
   applied.
+- 2026-11-01: HF artifact gateway (#121) shipped as a real new facet behind the
+  `HF_GATEWAY_ENABLED` kill switch, with a new R2 store of public artifacts only.
+  Research before implementation replaced the issue's per-request proxy hypothesis
+  with mirror-ahead (cron to R2). Exposure matrix lives in api/HF-GATEWAY.md; no
+  telemetry was added.
