@@ -14,7 +14,7 @@ import { renderMarkdown } from './markdown.js';
 import { createPreview, previewOf, rememberedMode, rememberMode, MEDIA_MAX } from './preview.js';
 import { createTools, systemPrompt, loadContext, CWD, defaultSubagentNs, describeSpecs } from './tools.js';
 import { openAgent, Type, compactionFor } from './agent.js';
-import { describe as describeContext, autoCompactAt } from './context.js';
+import { describe as describeContext, autoCompactAt, contextFor } from './context.js';
 import { collect, packTar, packZip, unpackTar, unpackZip } from './archive.js';
 import { $, el, icon, seeded } from './dom.js';
 import { arm, armed, play, flipFrom, fold, snapshot, reduced } from './motion.js';
@@ -2544,7 +2544,7 @@ function showSplit(on, who) {
 // From the stored transcript only: computing it sends nothing. Hidden in a
 // subagent's view and before the session holds anything.
 function contextNow() {
-  const id = $('model').value, c = !focus && view?.context;
+  const id = $('model').value, c = !focus && contextFor(view?.context, isLocal(id));
   if (!c?.tokens) return null;
   const sealed = models.find((m) => m.id === id), host = isLocalhost(id) ? lh?.models?.find((m) => 'localhost:' + m.id === id) : null;
   const known = isLocal(id) ? null : host ? host.contextWindow ?? null : sealed?.windowReported ? sealed.contextWindow : null;

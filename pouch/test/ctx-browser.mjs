@@ -72,12 +72,11 @@ const rule = (page, r) => page.evaluate((r) => { window.fake.rule({ ...r, when: 
 const idle = (page) => page.waitForFunction(() => document.getElementById('send-label')?.textContent === 'Send', null, T);
 async function send(page, text) { await page.fill('#input', text); await page.press('#input', 'Enter'); }
 const meter = (page) => page.$eval('#composer-ctx', (b) => ({ hidden: b.hidden, text: b.innerText, label: document.getElementById('composer-usage').ariaLabel, level: b.dataset.level, fill: b.style.getPropertyValue('--fill'), color: getComputedStyle(b).color }));
-const qa = '/tmp/pouch-qa';
 async function shoot(page, name) {
   for (const t of ['light', 'dark']) {
     await page.evaluate((t) => { document.documentElement.dataset.theme = t; }, t);
     await page.waitForTimeout(100);
-    await page.screenshot({ path: join(qa, `merged-usage-${name}-${t}.png`) });
+    await page.screenshot({ path: join(shots, `merged-usage-${name}-${t}.png`) });
   }
   await page.evaluate(() => { delete document.documentElement.dataset.theme; });
 }

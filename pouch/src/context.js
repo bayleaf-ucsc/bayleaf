@@ -30,6 +30,8 @@ const HEADS = new Set(['pi.compaction', 'pi.reset']);
 //   exact      nothing was added since the measured reply (tokens is the provider's figure)
 //   trimmed    parts the Transformers.js provider left out of the measured request (0 elsewhere)
 //   compacted  the context starts from a compaction summary
+//   full       only when trimmed: every active entry estimated, which is what
+//              another provider would be sent (contextFor)
 export function contextOf(entries = []) {
   // Kept turns follow the head but are older than it (lower ids): their usage
   // predates the summary, so, as in pi-durable, only entries newer than the head are measured.
@@ -47,8 +49,14 @@ export function contextOf(entries = []) {
     for (const m of i === at ? ms.slice(ms.indexOf(msg) + 1) : ms) if (m?.role) added += estimateMessageTokens(m);
   }
   const measured = msg ? calculateContextTokens(msg.usage) : 0;
-  return { tokens: measured + added, measured, added, exact: !!msg && added === 0, trimmed: msg?.contextTrimmed ?? 0, compacted: entries[0]?.kind === 'pi.compaction' };
+  const trimmed = msg?.contextTrimmed ?? 0;
+  const full = trimmed ? entries.reduce((n, e) => n + (e.model ?? []).reduce((k, m) => k + (m?.role ? estimateMessageTokens(m) : 0), 0), 0) : undefined;
+  return { tokens: measured + added, measured, added, exact: !!msg && added === 0, trimmed, compacted: entries[0]?.kind === 'pi.compaction', ...(full != null && { full }) };
 }
+
+// The context as the picked provider would receive it: away from Transformers.js,
+// the turns it left out go along again, so a trimmed measurement undercounts.
+export const contextFor = (ctx, local) => (ctx?.full != null && !local ? { ...ctx, tokens: ctx.full, measured: 0, added: ctx.full, exact: false, trimmed: 0 } : ctx);
 
 // "812", "12.4k", "98k", "1.2M": short enough for the composer toolbar.
 // window: a power-of-two window reads as people name it (131,072 is "128k",

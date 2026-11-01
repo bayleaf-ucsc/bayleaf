@@ -6,7 +6,7 @@
 // fresh watch. No network: a fake verified client and a fake engine.
 // Run: node test/ctx-node.mjs
 import assert from 'node:assert/strict';
-const { contextOf, describe, short, autoCompactAt } = await import('../src/context.js');
+const { contextOf, contextFor, describe, short, autoCompactAt } = await import('../src/context.js');
 const { openAgent, MemoryStorage, compactionFor } = await import('../src/agent.js');
 
 let passed = 0;
@@ -125,10 +125,13 @@ const tool = (text) => e('pi.tool-result', { role: 'toolResult', toolCallId: 'c'
     await agent.send(l, 'second', [], undefined, 'local:lfm3'); await settle(l);
     v = await agent.snapshot(l);
     assert.deepEqual([v.context.measured, v.context.trimmed], [4020, 3], 'what the model saw, and how much fit() left out');
+    assert.equal(contextFor(v.context, true), v.context, 'Transformers.js keeps its measurement');
+    const away = contextFor(v.context, false);
+    assert.ok(away.tokens === v.context.full && away.trimmed === 0 && !away.exact && away.measured === 0, `another provider gets the whole estimate: ${JSON.stringify(away)}`);
     trim = 0;
     await agent.send(l, 'third', [], undefined, 'local:lfm3'); await settle(l);
     assert.equal((await agent.snapshot(l)).context.trimmed, 0, 'the mark is the newest reply\'s, not sticky');
-    ok('end to end: Sealed usage reaches view.context; a real compaction restarts the count; a Transformers.js trim is stored with its reply and read back');
+    ok('end to end: Sealed usage reaches view.context; a real compaction restarts the count; a Transformers.js trim is stored with its reply and read back, and switching provider estimates the whole context');
   } finally { await agent.close(); }
 }
 
