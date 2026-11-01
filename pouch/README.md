@@ -255,7 +255,7 @@ that its CSP is as stated.
 | Piece | What | Source |
 |---|---|---|
 | Agent loop | [pi-durable](https://github.com/earendil-works/pi): durable conversations in IndexedDB, tool tasks, automatic compaction | `src/agent.js` |
-| Tools | `read`, `write`, `edit`, `bash`, all in the page; `run` in a throwaway worker | `src/tools.js`, `src/run.js` |
+| Tools | `read`, `write`, `edit`, `bash`, `look`, all in the page; `run` in a throwaway worker | `src/tools.js`, `src/run.js` |
 | Run | JavaScript in [QuickJS](https://github.com/justjake/quickjs-emscripten) (WebAssembly, MIT) in a `blob:` worker per call, over a copy of the files it names; writes come back as changes checked against the snapshot. Also on a `.js` file's menu (Run script), offline too | `src/run.js`, `src/run/` (from `experiments/quickjs`) |
 | Shell | [just-bash](https://github.com/vercel-labs/just-bash): bash and coreutils reimplemented in TypeScript, no processes, no network | `src/tools.js` |
 | Files | one tree stitched from several stores (below) | `src/vfs.js` |
@@ -308,6 +308,27 @@ PNG/JPEG/GIF/WebP attachments also become pi-ai image blocks inside the same sea
 re-encoded in the browser to at most 2000px and 4 MB (first frame for animations). Models
 marked **images** are derived from `/sealed/models`'s `multimodal` metadata. Text-only models
 refuse pending raster images before inference; other formats, including SVG, stay files only.
+
+The agent sees images only through the **`look`** tool (`look { paths, note? }`, at most
+eight paths per call), never from `read`: sending pixels is an explicit act, one card per
+call, counted like any tool round. Each PNG/JPEG/GIF/WebP is prepared exactly like an
+attachment (same `prepareImage`, originals unchanged); the result is one line per path
+(original and sent size, bytes) followed by the images. SVG is refused with a hint to read its
+markup; other formats and missing files are refused on their line. The card shows thumbnails
+of what was sent, from the stored bytes (blob URLs, no network), and notes that images count
+toward context; allowance and token accounting are whatever the provider reports. Placement on
+the wire is pi-ai's: in OpenAI chat format a `tool` message cannot hold images, so the tool
+message carries the text and the images follow in a user message ("Attached image(s) from tool
+result:"); the Responses transport puts `input_image` parts in the `function_call_output`.
+On a model not marked images (every Localhost model today, Sealed models without
+`multimodal`), `look` stays in the tool list but fails before reading anything with "This model
+cannot see images; ask the person to switch to a model marked images." Keeping the tool and the
+prompt line consistent across models means a small model asked to look at a picture reaches the
+one tool that names the remedy, instead of reading a binary file or describing it from its
+name. Transformers.js (LFM3) keeps its four qualified tools and never sees `look`. Switching an
+image-bearing session to a text-only model replaces earlier images with pi-ai's "(tool image
+omitted: model does not support images)", so pixels never go to a model that cannot take them.
+Subagents get `look` too, judged by their own model.
 
 Every model step of a BayLeaf Sealed session is one Sealed request from a daily allowance:
 each tool round, each compaction summary and each automatic or suggested title. Titles

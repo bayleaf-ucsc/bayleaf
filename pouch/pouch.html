@@ -291,6 +291,11 @@
   details.tool.sa-joins summary { font-family: inherit; }
   details.tool.sa-joins[open] { border-radius: 10px; width: 100%; padding: 0 .5rem .4rem; }
   details.tool.error summary { color: var(--bad); }
+  details.tool .look-strip { display: inline-flex; gap: .2rem; margin-left: .4rem; vertical-align: middle; }
+  details.tool .look-strip img { height: 1.4rem; max-width: 3rem; object-fit: cover; border-radius: 3px; border: 1px solid var(--line); }
+  details.tool .look-strip.big { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0; padding: .4rem .5rem; border-top: 1px solid var(--line); }
+  details.tool .look-strip.big img { height: 6rem; max-width: 12rem; object-fit: contain; }
+  details.tool .look-note { margin: 0; padding: .2rem .5rem; font-size: .75rem; }
   details.tool pre.mini-diff .del { color: var(--bad); }
   details.tool pre.mini-diff .add { color: var(--leaf); }
   details.tool pre.mini-diff .sep, details.tool pre.cmd { color: var(--muted); }

@@ -124,7 +124,10 @@ const cap = (text) => text.length <= TOOL_OUTPUT_CAP ? text
 // without aborting the whole turn: the tool fails with "Stopped." and the
 // model reads that and carries on.
 const callStops = new Map(); // call id -> AbortController
-function toTool(t) {
+// seesImages(ref): whether the calling conversation's model takes images
+// (undefined when unknown), asked only for a tool marked `images` (look),
+// which may return { text, images }.
+function toTool(t, seesImages = () => undefined) {
   return defineTool({
     name: t.name, label: t.label ?? t.name, description: t.description, parameters: t.parameters,
     execute: async (args, api, context) => {
@@ -132,8 +135,9 @@ function toTool(t) {
       const signal = AbortSignal.any([context.abortSignal, stop.signal].filter(Boolean));
       callStops.set(api.callId, stop);
       try {
-        const text = await t.execute(args, { signal, output: (s) => api.output(String(s)), caller: api.conversationId, callId: api.callId });
-        return { output: [{ type: 'text', text: cap(String(text ?? '')) }] };
+        const r = await t.execute(args, { signal, output: (s) => api.output(String(s)), caller: api.conversationId, callId: api.callId, seesImages: t.images ? seesImages((await api.agent?.(context))?.model) : undefined });
+        if (Array.isArray(r?.images)) return { output: [{ type: 'text', text: cap(String(r.text ?? '')) }, ...r.images] };
+        return { output: [{ type: 'text', text: cap(String(r ?? '')) }] };
       } finally { callStops.delete(api.callId); }
     },
   });
@@ -217,10 +221,14 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
     dbOf: (sid) => dbOf(sid), openDb: (name) => openDb(name), conv: (sid) => conv(sid),
   }) : null;
 
+  // The same flag the composer's image guard reads (model.input from `multimodal`);
+  // Transformers.js and Localhost models are text only.
+  const seesImages = (ref) => !ref ? undefined
+    : [...catalog, ...lhCatalog].find((m) => m.provider === ref.provider && m.id === ref.modelId)?.input.includes('image') ?? false;
   const registry = createRegistry();
   registry.install(defineExtension({
     name: 'pouch',
-    tools: [...tools.map(toTool), ...(subagents ? [subagents.tool, subagents.peerTool] : [])],
+    tools: [...tools.map((t) => toTool(t, seesImages)), ...(subagents ? [subagents.tool, subagents.peerTool] : [])],
     sections: systemPrompt ? [section('pouch', () => systemPrompt(), { tag: false })] : [],
   }));
 
@@ -635,7 +643,9 @@ export function normalize(view) {
       case 'pi.tool-result': {
         const t = tools.get(msg?.toolCallId);
         if (msg?.isError) toolErrors++;
-        if (t) Object.assign(t, { output: textOf(msg.content), status: msg.isError ? 'error' : 'done', ...((msg.details ?? e.data?.details) != null ? { details: msg.details ?? e.data.details } : {}) });
+        // images: what a look call sent, for the card's thumbnails (the bytes as sent, not the file now).
+        const images = (msg?.content ?? []).filter((b) => b.type === 'image');
+        if (t) Object.assign(t, { output: textOf(msg.content), status: msg.isError ? 'error' : 'done', ...(images.length ? { images } : {}), ...((msg.details ?? e.data?.details) != null ? { details: msg.details ?? e.data.details } : {}) });
         const owner = owners.get(msg?.toolCallId);
         if (owner) Object.assign(owner, { cut: e.id, cutAt: msg.timestamp ?? owner.cutAt });
         break;
