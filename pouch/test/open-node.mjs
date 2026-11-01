@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { InMemoryFs } from 'just-bash';
 import { Type } from 'typebox';
 import { parseArgs, planOpen, AGENT_REFUSAL, SHOW_HELP } from '../src/open-cli.js';
-import { shellFor, createTools } from '../src/tools.js';
+import { shellFor, createTools, clip } from '../src/tools.js';
 globalThis.navigator ??= {};
 const { binaryOutput } = await import('../src/terminal.js');
 
@@ -177,4 +177,21 @@ assert.match(SHOW_HELP, /no --interactive/);
 await assert.rejects(bash.execute({ command: 'show n.md' }, {}), /no Interface here/);
 ok('agents: `show` opens or offers through the page (path, mode, label, caller), folders as Files; --interactive, missing, binary and wrong flags are refused before the page');
 
-console.log(`\n${passed}/9 passed`);
+// Clipped bash output keeps `shown:` lines whole: one crossing the cap, and
+// many past it, within a fixed budget, never past the cap.
+{
+  const SH = (i) => `shown: opened /work/f${i}.md (Preview)`;
+  const cross = 'x'.repeat(49_990) + '\n' + SH(0) + '\n' + 'y'.repeat(100);
+  const c = clip(cross);
+  assert.match(c, /^shown: opened \/work\/f0\.md \(Preview\)$/m);
+  assert.equal(c.match(/shown: /g).length, 1, 'not duplicated');
+  const many = 'z'.repeat(60_000) + '\n' + Array.from({ length: 2000 }, (_, i) => SH(i)).join('\n');
+  const m = clip(many);
+  assert.ok(m.length < 50_100, `stays near the cap: ${m.length}`);
+  assert.match(m, /^shown: opened \/work\/f0\.md/m);
+  assert.match(m, /\[truncated: \d+ more characters\]$/);
+  for (const l of m.split('\n').filter((l) => l.includes('shown:'))) assert.match(l, /^shown: opened \/work\/f\d+\.md \(Preview\)$/);
+}
+ok('clip keeps shown: lines whole across the cap, inside a fixed budget');
+
+console.log(`\n${passed}/10 passed`);

@@ -26,11 +26,28 @@ export const CWD = '/work';
 const MISSING = new Set(['tar', 'yq', 'xan', 'sqlite3', 'python', 'python3', 'js-exec', 'node', 'gzip', 'gunzip', 'zcat', 'curl']);
 export const COMMANDS = getCommandNames().filter((c) => !MISSING.has(c));
 
-function clip(text) {
+const SHOWN_BUDGET = 10_000;
+export function clip(text) {
   if (text.length <= MAX_CHARS) return text;
-  // `show` lines past the cap are kept, inside it, so their cards survive (main.js shownLines).
-  const shown = (text.slice(MAX_CHARS).match(/^shown: .*$/gm) ?? []).map((l) => l.slice(0, 1000)).join('\n');
-  const head = text.slice(0, MAX_CHARS - shown.length - 1);
+  // `show` lines the cap would cut are kept, whole and inside it, so their cards
+  // survive (main.js shownLines); together at most SHOWN_BUDGET characters.
+  const from = text.lastIndexOf('\n', MAX_CHARS - SHOWN_BUDGET) + 1;
+  const kept = [];
+  let size = 0;
+  for (const m of text.slice(from).matchAll(/^shown: .*$/gm)) {
+    const line = { at: from + m.index, end: from + m.index + m[0].length, text: m[0].slice(0, 1000) };
+    if (line.end <= MAX_CHARS - SHOWN_BUDGET) continue;
+    if (size + line.text.length + 1 > SHOWN_BUDGET) break;
+    kept.push(line);
+    size += line.text.length + 1;
+  }
+  // Lines that still fit whole in the head stay there; a line the head would cut moves out of it.
+  let cut = MAX_CHARS - size;
+  const tail = kept.filter((l) => l.end > cut);
+  cut = MAX_CHARS - tail.reduce((n, l) => n + l.text.length + 1, 0);
+  for (const l of tail) if (l.at < cut) cut = l.at;
+  const head = text.slice(0, cut).replace(/\n$/, '');
+  const shown = tail.map((l) => l.text).join('\n');
   return head + (shown ? '\n' + shown : '') + `\n[truncated: ${text.length - head.length} more characters]`;
 }
 
