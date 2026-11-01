@@ -163,7 +163,7 @@ export function usageText({ allowance: a = {}, turn = null, today = null } = {})
     : `${a.remaining} of ${a.limit} requests left today (the user's key, also spent by their other tools and devices)`;
   return `allowance: ${line}\n` + (a.resetsAt ? `resets: ${new Date(a.resetsAt).toISOString()}\n` : '')
     + `requests-this-turn: ${n(turn)}\nrequests-today-this-session: ${n(today)}\n`
-    + 'Each model step is one request: every tool round, subagent step, compaction and title.\n';
+    + 'With BayLeaf Sealed, each model step is one request: every tool round, subagent step, compaction and title. Localhost and Transformers.js steps spend none.\n';
 }
 
 // /session/<sid>/changes: the paths the agents changed since the user's last
@@ -183,6 +183,8 @@ export function createChanges() {
       const k = String(sid);
       if (!bySid.has(k)) bySid.set(k, new Map());
       const m = bySid.get(k), had = m.get(path);
+      // A directory removed or moved away takes what is noted under it along.
+      if (op === 'deleted') for (const [p, c] of m) if (p.startsWith(path + '/')) { if (c.op === 'created') m.delete(p); else { c.op = 'deleted'; c.by.add(by); } }
       if (!had) { m.set(path, { op, by: new Set([by]) }); return; }
       had.by.add(by);
       if (had.op === 'created' && op === 'deleted') m.delete(path);

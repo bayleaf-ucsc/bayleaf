@@ -132,7 +132,8 @@ export function noting(fs, onChange) {
   return new Proxy(fs, {
     get(target, prop) {
       if (prop === 'writeFile' || prop === 'appendFile') return write(prop);
-      if (prop === 'rm') return async (p, ...a) => { const r = await target.rm(p, ...a); onChange('deleted', normalize(p)); return r; };
+      // rm -f of a path that was never there changes nothing.
+      if (prop === 'rm') return async (p, ...a) => { const had = await was(p); const r = await target.rm(p, ...a); if (had) onChange('deleted', normalize(p)); return r; };
       if (prop === 'mkdir') return async (p, ...a) => { const had = await was(p); const r = await target.mkdir(p, ...a); if (!had) onChange('created', normalize(p)); return r; };
       if (prop === 'cp') return async (s, d, ...a) => { const had = await was(d); const r = await target.cp(s, d, ...a); onChange(had ? 'modified' : 'created', normalize(d)); return r; };
       if (prop === 'mv') return async (s, d, ...a) => { const had = await was(d); const r = await target.mv(s, d, ...a); onChange('deleted', normalize(s)); onChange(had ? 'modified' : 'created', normalize(d)); return r; };
@@ -190,12 +191,20 @@ export function commandsOf(script) {
   return out;
 }
 // "bash: <path>: <why>" and a note naming what did not run. The failed
-// command is the first one that names the path (or its tail).
+// command is the one that writes the path (or its tail) by redirection or
+// tee, named as a whole word; when that is not exactly one, or the path is
+// only read, the note counts nothing rather than guess (a rerun could repeat
+// a command that did run).
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export function stoppedAt(script, path, why, cwd = CWD) {
   const cmds = commandsOf(script);
   const rel = path.startsWith(cwd + '/') ? path.slice(cwd.length + 1) : null;
-  const names = [path, rel, path.split('/').slice(-2).join('/')].filter(Boolean);
-  const k = cmds.findIndex((c) => names.some((x) => c.includes(x)));
+  const tail = path.split('/').slice(-2).join('/');
+  const name = [path, rel].filter(Boolean).map(esc).join('|');
+  const end = `(?=$|[\\s'"<>;|&)])`;
+  const writes = new RegExp(`(>>?|\\btee(\\s+-a)?)\\s*['"]?(?:${name}|\\S*/${esc(tail)})${end}`);
+  const hits = cmds.flatMap((c, i) => (writes.test(c) ? [i] : []));
+  const k = hits.length === 1 ? hits[0] : -1;
   const later = k < 0 ? [] : cmds.slice(k + 1);
   const list = later.slice(0, 5).map((c) => '`' + (c.length > 80 ? c.slice(0, 79) + '…' : c) + '`').join(', ') + (later.length > 5 ? `, and ${later.length - 5} more` : '');
   const before = k > 0 ? `the ${k} command${k > 1 ? 's' : ''} before it ran but ${k > 1 ? 'their' : 'its'} output is lost` : k < 0 ? 'output printed before it is lost' : '';

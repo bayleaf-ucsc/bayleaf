@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { InMemoryFs, Bash } from 'just-bash';
 import { Namespace, over, codeOf } from '../src/ns/namespace.js';
 import { createControl, createChanges, changesText, usageText, parseIn, parseCtl, why } from '../src/ns/control.js';
-import { execScript, tagWrites, noting, commandsOf } from '../src/tools.js';
+import { execScript, tagWrites, noting, commandsOf, stoppedAt } from '../src/tools.js';
 import { Tasks, TaskFs } from '../src/ns/tasks.js';
 import { serve, Client, OREAD } from '../src/ns/9p.js';
 
@@ -255,6 +255,11 @@ await test('changes: net paths changed this turn, subagents marked, actions left
   const r = await new Bash({ fs: noting(fs, (op, p) => seen.note(1, op, p, 'a1')), cwd: '/work' }).exec('echo a > keep; echo b > made; rm gone; mv from to; mkdir dir; cp keep dir/copy; cat keep > /dev/null');
   assert.equal(r.exitCode, 0, r.stderr);
   assert.equal(changesText(seen.list(1)), 'created a1 /work/dir\ncreated a1 /work/dir/copy\ndeleted a1 /work/from\ndeleted a1 /work/gone\nmodified a1 /work/keep\ncreated a1 /work/made\ncreated a1 /work/to\n');
+  // rm -f of nothing notes nothing; a directory removed takes its noted children along.
+  seen.begin(1);
+  const r2 = await new Bash({ fs: noting(fs, (op, p) => seen.note(1, op, p, 'a1')), cwd: '/work' }).exec('rm -f missing.txt; echo c > dir/new; rm -r dir');
+  assert.equal(r2.exitCode, 0, r2.stderr);
+  assert.equal(changesText(seen.list(1)), 'deleted a1 /work/dir\n');
   // Read through the control plane, the agent's own session only.
   const page = fakePage();
   page.changes.note(1, 'created', '/work/report.md', 'a1'); page.changes.note(1, 'modified', '/work/notes.md', 'a2');
@@ -277,6 +282,11 @@ await test('CP6: a failed control write reports itself and names what did not ru
   r = await page.terminal("echo explode > /session/1/ctl && echo ok; echo 'a; b'");
   assert.match(r.stderr, /ctl accepts: stop, detach/);
   assert.match(r.stderr, /including the rest of its line; 1 later command did not run: `echo 'a; b'`/);
+  // The failed write is the one command that redirects into the path: a read of it,
+  // or a short name inside another word, is not; unsure, nothing is counted.
+  assert.match(stoppedAt('cat /session/current/agents/a2/ctl; echo item >> /work/log; echo explode > /session/current/agents/a2/ctl; echo x', '/session/current/agents/a2/ctl', 'EINVAL'), /the 2 commands before it ran but their output is lost; 1 later command did not run: `echo x`/);
+  assert.match(stoppedAt('cat notes.md; echo hi > d; echo after', '/work/d', 'EIO'), /the 1 command before it ran.*1 later command did not run: `echo after`/);
+  assert.match(stoppedAt('echo a > /work/x; echo b > /work/x; echo c', '/work/x', 'EIO'), /output printed before it is lost; commands after it did not run/);
   // Failures that are not writes still throw; ordinary scripts are untouched.
   assert.equal((await page.agent('cat /session/current/status; echo after')).stdout, 'working agents=2 running=1\nafter\n');
   assert.deepEqual(commandsOf("a; b 'c;d'\n# x; y\nfor i in 1; do e; done"), ['a', "b 'c;d'", 'for i in 1', 'do e', 'done']);
