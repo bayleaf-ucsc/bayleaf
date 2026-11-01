@@ -198,7 +198,9 @@ export function pdfEngine({ assets = PDF_RUNTIME && partAssets(PDF_RUNTIME), spa
         };
         w.onerror = (e) => { for (const p of pending.values()) p.reject(new Error(e.message || 'the pdf worker failed')); pending.clear(); worker = null; };
         worker = w;
-        await call('load', { pack: await got.files['data.pack'].arrayBuffer() });
+        // A runtime that fails to load is not kept: the next job starts a fresh worker.
+        try { await call('load', { pack: await got.files['data.pack'].arrayBuffer() }); }
+        catch (e) { w.terminate(); if (worker === w) worker = null; throw e; }
       }
       function call(action, data, { note, signal } = {}) {
         return new Promise((resolve, reject) => {

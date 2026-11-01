@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { InMemoryFs } from 'just-bash';
-import { parseArgs, pageRange, formatInfo, formatText, createPdfService, pdfCommands, HELP,
+import { parseArgs, pageRange, formatInfo, formatText, createPdfService, pdfCommands, pdfEngine, HELP,
   RENDER_MAX_PAGES, TEXT_MAX_PAGES, MAX_DPI, MAX_PDF_BYTES } from '../src/pdf.js';
 import { Tasks } from '../src/ns/tasks.js';
 import { shellFor } from '../src/tools.js';
@@ -153,6 +153,22 @@ await t('build: pinned pdf.js, no CDN, no scripting, packed data', async () => {
     assert.ok(pin.bytes < 6 * 2 ** 20, `runtime is ${pin.bytes} bytes`);
     assert.deepEqual([...pack([['a', Buffer.from('xy')]])].slice(0, 4), [11, 0, 0, 0]); // {"a":[0,2]}
   } finally { rmSync(out, { recursive: true, force: true }); }
+});
+
+await t('pdfEngine: a worker whose load fails is dropped, and the next job starts a new one', async () => {
+  const spawned = [];
+  const assets = { obtain: async () => ({ files: { 'data.pack': new Blob(['x']) } }) };
+  const spawn = () => {
+    const n = spawned.length, w = { terminated: false, terminate() { w.terminated = true; },
+      postMessage(m) { if (m.id) queueMicrotask(() => w.onmessage({ data: m.action === 'load' && n === 0 ? { id: m.id, error: 'bad pack' } : { id: m.id, result: { ok: m.action } } })); } };
+    spawned.push(w); return w;
+  };
+  const run = pdfEngine({ assets, spawn }).create();
+  const signal = new AbortController().signal;
+  await assert.rejects(run.run({ action: 'info', data: new Uint8Array(1) }, { signal }), /bad pack/);
+  assert.equal(spawned[0].terminated, true);
+  assert.deepEqual(await run.run({ action: 'info', data: new Uint8Array(1) }, { signal }), { ok: 'info' });
+  assert.equal(spawned.length, 2);
 });
 
 console.log(`pdf-node: ${pass} passed`);
