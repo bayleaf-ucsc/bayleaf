@@ -113,6 +113,12 @@ await t('the commands in the terminal shell: mapping, outputs, -y, gaps, /task j
   r = await sh('ffprobe -v error -show_format -of json a.webm');
   assert.equal(r.exitCode, 0, r.stderr); assert.equal(JSON.parse(r.stdout).format.filename, '/work/a.webm');
   assert.deepEqual(asked.at(-1).args, ['-hide_banner', '-v', 'error', '-show_format', '-of', 'json', 'in0.webm']);
+  await fs.writeFile('/work/a"b\\.webm', new Uint8Array([0x1a, 0x45, 0xdf, 0xa3]));
+  r = await sh(`ffprobe -of json 'a"b\\.webm'`);
+  assert.equal(JSON.parse(r.stdout).format.filename, '/work/a"b\\.webm', 'a quote or backslash in a name keeps the JSON valid');
+  const n = asked.length;
+  r = await sh('ffmpeg -y -i a.webm -an ./a.webm');
+  assert.equal(r.exitCode, 1); assert.match(r.stderr, /Output \/work\/a\.webm is the same as an input/); assert.equal(asked.length, n, 'refused before any job');
   r = await sh('ffmpeg -i a.webm -vn -c:a copy sub/voice.opus');
   assert.equal(r.exitCode, 0, r.stderr); assert.equal(r.stdout, 'wrote /work/sub/voice.opus (4 bytes)\n');
   assert.equal(r.stderr, "Input #0, matroska,webm, from '/work/a.webm':\nOutput #0, ogg, to '/work/sub/voice.opus':\n", 'no progress line; real paths');

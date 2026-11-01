@@ -22,6 +22,7 @@ const stopped = new Set(); // job ids asked to stop
 const check = (id) => { if (stopped.has(id)) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' }); };
 const tick = () => new Promise((r) => setTimeout(r, 0)); // lets a stop message in
 const fail = (msg, code) => Object.assign(new Error(msg), { code });
+const DECODE_STEP = 8; // packets per decode call when extracting frames (bounds the RGBA held at once)
 
 // A new libav instance whose print and printErr land in out/err.
 async function instance(out, err) {
@@ -77,7 +78,7 @@ const actions = {
   },
 
   // Frames as images: { input: { name, label, bytes }, ss, t, filters, want, maxImages, maxPixels, type, quality, maxSeconds }
-  async frames({ input, ss, t, filters, want, maxImages, maxPixels, type, quality, maxSeconds }, id, note) {
+  async frames({ input, ss, t, filters, want, maxImages, maxPixels, maxBytes = Infinity, type, quality, maxSeconds }, id, note) {
     const out = [], err = [], m = await instance(out, err);
     let c, pkt, frame, graph;
     try {
@@ -105,6 +106,7 @@ const actions = {
       } catch { throw fail(`could not set up the filters "${chain}": ${err.slice(-3).join(' ') || 'unknown filter or bad option'} (this build has fps, scale, crop, trim, null, split, settb)`, 'EFILTER'); }
       const [, src, sink] = graph;
       const images = [], end = t != null ? ss + t : Infinity;
+      let bytes = 0;
       for (let done = false; !done;) {
         check(id); await tick();
         const [res, packets] = await m.ff_read_frame_multi(fmt, pkt, { limit: 2 * 2 ** 20 });
@@ -113,14 +115,22 @@ const actions = {
         const mine = packets[vi] ?? [];
         const past = mine.length && m.i64tof64(mine.at(-1).pts, mine.at(-1).ptshi) * tb > end + 1;
         const fin = eof || past;
-        const frames = await m.ff_decode_filter_multi(c, src, sink, pkt, frame, mine, { fin, ignoreErrors: true });
-        for (const fr of frames) {
+        // A few packets at a time: each decoded frame is full-size RGBA, and a
+        // 2 MiB read of a well-compressed video holds hundreds of them.
+        for (let i = 0; i === 0 || i < mine.length; i += DECODE_STEP) {
+          const last = i + DECODE_STEP >= mine.length;
+          const frames = await m.ff_decode_filter_multi(c, src, sink, pkt, frame, mine.slice(i, i + DECODE_STEP), { fin: fin && last, ignoreErrors: true });
+          for (const fr of frames) {
+            if (images.length >= want) break;
+            if (images.length >= maxImages) throw fail(`that would write more than ${maxImages} images (MAX_IMAGES); add -frames:v N or a lower rate (fps=1/10)`, 'ECAP');
+            if (fr.width * fr.height > maxPixels) throw fail(`frames are ${fr.width}x${fr.height}, over ${maxPixels} pixels (MAX_FRAME_PIXELS); add scale=1280:-1`, 'ECAP');
+            const time = fr.pts * (fr.time_base_num ?? vs.time_base_num) / (fr.time_base_den ?? vs.time_base_den);
+            const img = await encode(fr, type, quality);
+            if ((bytes += img.length) > maxBytes) throw fail(`the images come to over ${Math.round(maxBytes / 2 ** 20)} MiB together (MAX_OUTPUT_BYTES); add -frames:v N, a lower rate or scale=1280:-1`, 'ECAP');
+            images.push({ t: time, width: fr.width, height: fr.height, bytes: img });
+            note(`frame ${images.length} at ${fmtTime(time)}`);
+          }
           if (images.length >= want) break;
-          if (images.length >= maxImages) throw fail(`that would write more than ${maxImages} images (MAX_IMAGES); add -frames:v N or a lower rate (fps=1/10)`, 'ECAP');
-          if (fr.width * fr.height > maxPixels) throw fail(`frames are ${fr.width}x${fr.height}, over ${maxPixels} pixels (MAX_FRAME_PIXELS); add scale=1280:-1`, 'ECAP');
-          const time = fr.pts * (fr.time_base_num ?? vs.time_base_num) / (fr.time_base_den ?? vs.time_base_den);
-          images.push({ t: time, width: fr.width, height: fr.height, bytes: await encode(fr, type, quality) });
-          note(`frame ${images.length} at ${fmtTime(time)}`);
         }
         done = fin || images.length >= want;
       }

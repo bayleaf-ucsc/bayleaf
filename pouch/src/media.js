@@ -316,7 +316,13 @@ export function mediaCommands(defineCommand, service, whoOf = () => ({ name: 'te
       `ffprobe ${read.files[0]?.path.split('/').pop() ?? ''}`.trim());
     if (j.error) return j.error;
     const names = inputs.map((f) => [f.name, f.label]);
-    let stdout = j.r.stdout ? names.reduce((t, [from, to]) => t.split(from).join(to), j.r.stdout) + '\n' : '', more = '';
+    // Paths go back into the report escaped as its writer would (a quote in a name must not break JSON).
+    const of = a.args.findIndex((x) => x === '-of' || x === '-print_format' || x === '-output_format');
+    const writer = of >= 0 ? String(a.args[of + 1]).split(/[=:]/)[0] : 'default';
+    const escOut = writer === 'json' ? (s) => JSON.stringify(s).slice(1, -1)
+      : writer === 'xml' ? (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
+      : (s) => s;
+    let stdout = j.r.stdout ? names.map(([from, to]) => [from, escOut(to)]).reduce((t, [from, to]) => t.split(from).join(to), j.r.stdout) + '\n' : '', more = '';
     if (stdout.length > MAX_STDOUT_BYTES) { stdout = stdout.slice(0, MAX_STDOUT_BYTES); more = `ffprobe: output cut at ${MAX_STDOUT_BYTES / 2 ** 20} MiB (MAX_STDOUT_BYTES); narrow it with -show_entries or -select_streams\n`; }
     const stderr = tidy(j.r.stderr, names);
     return { stdout, stderr: stderr + (j.r.code ? hint(stderr) : '') + more, exitCode: j.r.code ? 1 : 0 };
@@ -333,6 +339,9 @@ export function mediaCommands(defineCommand, service, whoOf = () => ({ name: 'te
       return { stdout: j.r.stdout ? j.r.stdout + '\n' : '', stderr: tidy(j.r.stderr), exitCode: j.r.code ? 1 : 0 };
     }
     const outPaths = a.outputs.map((o) => abs(ctx.cwd, o.path));
+    // Each file reaches FFmpeg under its own internal name, so it cannot see an output that is an input.
+    const inPaths = a.inputs.map((i) => abs(ctx.cwd, i.path)), same = outPaths.find((p) => inPaths.includes(p));
+    if (same) return fail('ffmpeg', `Output ${same} is the same as an input; FFmpeg does not edit in place (not even with -y). Write a new file, then mv it over.`);
     const images = a.outputs.filter((o) => isImageOutput(o.path));
     if (images.length && images.length !== a.outputs.length) return fail('ffmpeg', 'write images and media in separate calls');
     if (!images.length && a.outputs.some((o) => o.path.includes('%'))) return fail('ffmpeg', 'numbered outputs (%d) are for images only');
@@ -348,7 +357,7 @@ export function mediaCommands(defineCommand, service, whoOf = () => ({ name: 'te
       const plan = imagePlan(a);
       if (plan.error) return fail('ffmpeg', plan.error);
       const j = await job('ffmpeg', ctx, { action: 'frames', input: inputs[0], ss: plan.ss, t: plan.t, filters: plan.filters, want: plan.want,
-        maxImages: MAX_IMAGES, maxPixels: MAX_FRAME_PIXELS, type: plan.type, quality: plan.quality, maxSeconds: MAX_INPUT_SECONDS }, `ffmpeg ${read.files[0].path.split('/').pop()} (frames)`);
+        maxImages: MAX_IMAGES, maxPixels: MAX_FRAME_PIXELS, maxBytes: MAX_OUTPUT_BYTES, type: plan.type, quality: plan.quality, maxSeconds: MAX_INPUT_SECONDS }, `ffmpeg ${read.files[0].path.split('/').pop()} (frames)`);
       if (j.error) return j.error;
       const base = outPaths[0], lines = [];
       for (const [i, im] of j.r.images.entries()) {
