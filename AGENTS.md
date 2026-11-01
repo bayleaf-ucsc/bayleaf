@@ -315,7 +315,8 @@ proposing configuration changes. Meanwhile:
   into production often reveals more than review does.
 - The agent that authored the PR decides when to stop fix rounds. Bots are good at bug
   hunting but do not see the broader process context.
-- Wait for CodeRabbit's re-review before merging.
+- Greptile's review is sufficient to merge; CodeRabbit's re-review does not gate merges
+  (Adam, 2026-11-01). Still handle real CodeRabbit findings when they arrive.
 
 ## Commit Style
 
