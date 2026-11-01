@@ -79,7 +79,7 @@ from pouch.bayleaf.dev keep it: the page reassembles the old parts, checks them 
 the lock and moves them (README "Transformers.js"). The old `models/` parts on the host
 stop being uploaded; a release without them makes those URLs 404.
 
-## pdf.js runtime (built and tested locally, not deployed; 2026-11-01)
+## pdf.js runtime (2026-11-01; deployed with `d1ab1c6`)
 
 Pouch's first heavy-tool runtime: `build-pdf.mjs` builds `runtime/pdf/` from
 `pdfjs-dist` 6.4.299 (exact pin in `package.json`; npm integrity in the lockfile; the
@@ -103,7 +103,7 @@ and pdf.js makes no request of its own (checked with no CSP violation in
 `test/pdf-browser.mjs`, Chromium only). Privacy: Cloudflare sees that this browser
 fetched the pdf runtime; no PDF content leaves the page.
 
-## libav.js runtime (built and tested locally, not deployed; 2026-11-01)
+## libav.js runtime (2026-11-01; deployed with `d1ab1c6`)
 
 Pouch's second heavy-tool runtime: `build-libav.mjs` builds `runtime/libav/` from
 `@libav.js/variant-webm-vp9-cli` and `@libav.js/variant-webcodecs-avf` 6.10.9 (exact pins in
@@ -202,7 +202,29 @@ cache headers. README "Install and the offline copy" has the policy.
   semantics checked with `wrangler dev` 4.91 (asset worker); recheck the served headers
   after the first deploy (`deploy.mjs` verifies them).
 
-## Current artifact: terminal, control plane, report viewer, gateway weights (2026-11-01)
+## Current artifact: the 2026-11-01 merge sequence (`d1ab1c6`)
+
+- Built from clean `main` at `d1ab1c6` (label `d1ab1c6 2026-11-01`) after `npm install`,
+  with `node build.mjs`; deployed with `node deploy.mjs`.
+- HTML SHA-256: `dd3b16d726bc986310b96e794129331a47f010742ab8dd9454b141885594a1ee`.
+- Cloudflare version: `bbe4d34b-660a-443b-9343-5ee0dc50d819`. Previous: dirty playtest
+  builds of the same work earlier that day (`8ec19641` through `a163496e`, labelled
+  `916b6d7+dirty`).
+- `deploy.mjs` verified the page, `SHA256SUMS`, 7 shell files and 24 runtime parts
+  (pdf.js, libav.js with its webcodecs-avf build and the hosted LGPL sources, the
+  Transformers.js runtime), byte-exact and immutable.
+- Includes: context meter and one usage button (#124); terminal `open`, binary-safe `cat`
+  and the agent's `show` (#123, #134); unlisted skills (#126); WebGPU capability check and
+  the phone/tablet refusal for in-browser models (#127); `look` (#128); blank sessions
+  and first-message revert (#129); agent-readable `usage`/`changes` files and the CP6 fix
+  (#130); pdf.js tools (#131); libav.js `ffprobe`/`ffmpeg` (#132); Unicode file names
+  (#133); WebCodecs decode for MOV/MP4/AAC/MP3 (#135).
+- Playtested by Adam on Mac Chrome during the day (show, meters, unlisted skills, look,
+  revert, blank sessions, session self-knowledge, the pdf flow, ffmpeg on WAV); phone
+  dismissal checked on a Pixel 10 Pro, where in-browser LFM3 froze the device and is now
+  refused. Not verified: Firefox and Safari end to end, phones beyond that.
+
+## Earlier artifact: terminal, control plane, report viewer, gateway weights (2026-11-01)
 
 - Built from commit `98f90d0` (clean; label `98f90d0 2026-11-01`) in a temporary clean
   checkout with `node build.mjs` (weights no longer in the artifact; the Transformers.js
