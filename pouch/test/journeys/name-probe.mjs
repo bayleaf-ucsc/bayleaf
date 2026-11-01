@@ -1,4 +1,4 @@
-const { TinfoilAI } = await import('/Users/adam/Desktop/bayleaf-pouch/pouch/node_modules/tinfoil/dist/index.js');
+const { TinfoilAI } = await import('tinfoil');
 const client = new TinfoilAI({ bearerToken: process.env.BAYLEAF_API_KEY, baseURL: 'https://api.bayleaf.dev/sealed/v1/', attestationBundleURL: 'https://api.bayleaf.dev/sealed' });
 await client.ready();
 const r = await client.chat.completions.create({ model: 'glm-5-3', max_tokens: 40, stream: false, chat_template_kwargs: { enable_thinking: false }, messages: [

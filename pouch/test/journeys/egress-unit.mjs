@@ -1,4 +1,4 @@
-import { egressOf } from '/Users/adam/Desktop/bayleaf-pouch/pouch/src/egress.js';
+import { egressOf } from '../../src/egress.js';
 const out = "bayleaf: denied by the user (nothing was sent)\n1. X\n[left the pouch: BayLeaf operator (plaintext to BayLeaf; not logged by policy); Tavily (search provider)]\n[this call sent data outside the pouch: web search]";
 const e = egressOf(out);
 console.log(JSON.stringify(e));

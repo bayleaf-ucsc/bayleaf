@@ -45,9 +45,8 @@ overfitting, and failure classes in `qualify.mjs` (`pass parse cap wrong timeout
 `test/ax-cli.mjs` exposes the page's exact prompt and tools from Node. The `*-sealed.mjs`
 tests are live but UI-coupled and bespoke. (Note: `test/journeys/` holds per-journey browser
 scripts `t1`-`t17`, debug probes and `reports/` (AX, UX and joint studies, research
-notes); its runs are recorded in `JOURNEYS.md`. It has no `tasks.mjs`. A few probes
-import from an absolute path of the old `bayleaf-pouch` checkout and need that path
-changed before they run.)
+notes); its runs are recorded in `JOURNEYS.md`. It has no `tasks.mjs`. They are an
+archive (see NEXT.md for what they need to run).)
 
 ## 2. Agent stories
 

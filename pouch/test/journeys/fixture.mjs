@@ -6,8 +6,8 @@
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
-const { build } = await import('/Users/adam/Desktop/bayleaf-pouch/pouch/node_modules/esbuild/lib/main.js');
-const root = '/Users/adam/Desktop/bayleaf-pouch/pouch';
+const { build } = await import('esbuild');
+const root = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
 const stub = `
 const wait = ms => new Promise(r => setTimeout(r,ms));
 window.requests=[]; window.script=window.script||[]; window.netDown=false;
