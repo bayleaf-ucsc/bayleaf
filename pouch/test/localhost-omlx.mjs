@@ -20,30 +20,18 @@ const only = process.argv[4]?.split(',');
 const out = process.env.POUCH_RESULTS || '/tmp/pouch-qa/omlx-results';
 mkdirSync(out, { recursive: true });
 
-// The qualification tasks, verbatim from experiments/lfm3-webgpu/qualification/run2.mjs.
-const base = { 'README.md': '# Lantern\nA small temperature converter. src/convert.js is logic, src/ui.js is display.\n', 'src/convert.js': 'export function celsiusToFahrenheit(c) {\n  return c * 9 / 5 + 30;\n}\n', 'src/ui.js': 'export const label = "Temperature";\n', 'docs/notes.txt': 'Keep output concise.\n' };
-const fixed = (f) => ({ ...f, 'src/convert.js': f['src/convert.js'].replace('+ 30', '+ 32') });
-const uiR = 'import { celsiusToFahrenheit } from "./convert.js";\nexport const label = "Temperature";\nexport function show(c) {\n  return label + ": " + celsiusToFahrenheit(c);\n}\n';
-const renameFiles = { ...fixed(base), 'src/ui.js': uiR };
-const cfgFiles = { 'README.md': base['README.md'], 'config.json': '{\n  "precision": 1\n}\n', 'src/convert.js': fixed(base)['src/convert.js'], 'src/ui.js': 'import config from "../config.json" with { type: "json" };\nimport { celsiusToFahrenheit } from "./convert.js";\nexport function show(c) {\n  return celsiusToFahrenheit(c).toFixed(config.precision);\n}\n' };
-const same = (a, b) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
-const blankless = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v.replace(/\n\s*\n/g, '\n')]));
-const tasks = [
-  { name: 'tree', files: base, prompt: 'Inspect this unfamiliar workspace using tools. List its tree, read the README and source files, then summarize what the project does. Do not change files.',
-    check: (f, calls, ans) => same(f, base) && calls.some((c) => c === 'bash' || c === 'ls' || c === 'find') && calls.filter((c) => c === 'read').length >= 3 && /convert|temperature|celsius/i.test(ans) },
-  { name: 'edit', files: base, prompt: 'Read src/convert.js and correct the Celsius-to-Fahrenheit offset from 30 to 32. Change nothing else.', check: (f) => same(f, fixed(base)) },
-  { name: 'feature', files: base, prompt: 'Add the exact line export const unit = "F"; followed by a newline to the end of src/ui.js. Create docs/unit.txt with exactly Fahrenheit followed by a newline. Also fix the offset in src/convert.js from 30 to 32. Read files first; change nothing else.',
-    check: (f) => same(f, { ...fixed(base), 'src/ui.js': base['src/ui.js'] + 'export const unit = "F";\n', 'docs/unit.txt': 'Fahrenheit\n' }),
-    lenient: (f) => same(blankless(f), blankless({ ...fixed(base), 'src/ui.js': base['src/ui.js'] + 'export const unit = "F";\n', 'docs/unit.txt': 'Fahrenheit\n' })) },
-  { name: 'rename', files: renameFiles, prompt: 'Rename the function celsiusToFahrenheit to toFahrenheit everywhere in the workspace: its definition, imports and calls. Find all uses first. Change nothing else.',
-    check: (f) => same(f, Object.fromEntries(Object.entries(renameFiles).map(([k, v]) => [k, v.replaceAll('celsiusToFahrenheit', 'toFahrenheit')]))) },
-  { name: 'config', files: cfgFiles, prompt: 'Add a "unit" field with the value "F" to config.json, keeping "precision". Then change show() in src/ui.js so it returns the formatted number followed by a space and config.unit, for example "50.0 F". Read files first. Change nothing else.',
-    check: (f) => { try { const c = JSON.parse(f['config.json']); if (JSON.stringify(c) !== '{"precision":1,"unit":"F"}') return false;
-      if (!same({ ...f, 'config.json': 0, 'src/ui.js': 0 }, { ...cfgFiles, 'config.json': 0, 'src/ui.js': 0 })) return false;
-      const ui = f['src/ui.js']; if (!/^import config from "\.\.\/config\.json" with \{ type: "json" \};\nimport \{ celsiusToFahrenheit \} from "\.\/convert\.js";\n/.test(ui)) return false;
-      const body = ui.split('\n').slice(2).join('\n').replace(/export /g, '');
-      return new Function('config', 'celsiusToFahrenheit', body + '\nreturn show(10);')(c, (x) => x * 9 / 5 + 32) === '50.0 F'; } catch { return false; } } },
-].filter((t) => !only || only.includes(t.name));
+// The qualification tasks from experiments/lfm3-webgpu/qualification/tasks.mjs
+// (read only; run2.mjs was retired), the five agent tasks. tasks.mjs keys files
+// by absolute path (/work/...) and grades (files, { trace }, answer); this page
+// harness seeds relative paths and records tool names, so adapt both ways.
+import { TASKS, FIVE } from '../experiments/lfm3-webgpu/qualification/tasks.mjs';
+const rel = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k.replace(/^\/work\//, ''), v]));
+const abs = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => ['/work/' + k, v]));
+const traceOf = (calls) => ({ trace: calls.map((name) => ({ call: { function: { name } } })) });
+const tasks = FIVE.map((n) => TASKS[n]).map((t) => ({ name: t.name, files: rel(t.files), prompt: t.prompt,
+  check: (f, calls, ans) => t.check(abs(f), traceOf(calls), ans),
+  ...(t.lenient ? { lenient: (f) => t.lenient(abs(f), traceOf([]), '') } : {}) }))
+  .filter((t) => !only || only.includes(t.name));
 
 // Tool calls in a request's history, for either transport.
 function historyOf(post, transport) {

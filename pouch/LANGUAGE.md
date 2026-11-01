@@ -16,6 +16,7 @@ Session  (many; the scope for messages, joins and caps; all share the one Worksp
     Thread
   Namespace (per agent) = that agent's view of the Workspace: its capabilities
 Interface               = how a person perceives and acts on Sessions and Threads
+Control plane (/session, /task) = the files through which the Interface, the terminal and agents act
 ```
 
 ## Terms
@@ -97,9 +98,19 @@ What an agent can see is what it can touch; namespaces do not govern the network
 workspace: the Pouch page. *Open:* name the agent-facing counterpart (tools and /task
 files, through which agents perceive the same things): "Surface", "Tools", or nothing.
 
+**Control plane.** The files through which anything that acts is controlled:
+`/session/<sid>/agents/a<n>/{status,ctl,in,last,ns}`, `/session/events`, and `/task` for runs,
+terminal commands and watches (README "Control plane", `src/ns/control.js`). The Interface is
+one client of it, the terminal another, the main agent a third; what a write does is the same
+whoever wrote it. Who may write what is the Namespace they were handed (the main agent sees
+only its own session and may not write `in`; subagents see none of it). Not the Thread: the
+transcript is content, not control state. Partly answers open question 1: agents act through
+tools and the control plane, and perceive through the same files.
+
 ## Messages to a working agent
 
-**Steer.** A message delivered into the running turn, read after the current step.
+**Steer.** A message delivered into the running turn, read after the current step. As a file:
+`steer` written to the agent's `in`.
 
 **Follow-up.** A message meant for after the turn ends. Delivered by queuing; "queue"
 is the strategy, not the name. (Replaces "Queue" in the interface.)
@@ -172,3 +183,4 @@ Deliberately left:
   Trust roots: BayLeaf, the browser, the user's own machine.
 - 2026-10-31: one Thread per Agent; agents act and the interface must convey it.
 - 2026-10-31: at most one Workspace; starts at zero; Erase all returns to zero.
+- 2026-11-01: Control plane adopted (Adam): the file tree is the authority for everything that acts; the Interface is one client among several.

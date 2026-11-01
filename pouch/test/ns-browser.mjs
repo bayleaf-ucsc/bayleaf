@@ -107,10 +107,10 @@ try {
   assert.match(r[5].at(-1), /^keep\n\/tmp {2}rw scratch\n\/work\/sub {2}ro .*\(narrowed\)/);
   ok('narrowed run cannot see /pouch; default run reaches it; :ro refuses writes');
 
-  // 3. The tray's Stop flushes a run: its status says stopped, nothing lands.
+  // 3. The tray's Stop flushes a run through its ctl file: its status says killed, nothing lands.
   await page.evaluate(() => window.script.push(
     { calls: [['run', { code: 'fs.writeFile("never.txt", "x"); while (true) {}' }]] },
-    { calls: [['bash', { command: 'ls never.txt 2>&1; for d in /task/*; do cat $d/status; done | grep -c stopped' }]] },
+    { calls: [['bash', { command: 'ls never.txt 2>&1; for d in /task/*; do cat $d/status; done | grep -c killed' }]] },
     { text: 'done' }));
   const n0 = await page.evaluate(() => window.requests.length);
   await page.fill('#input', 'loop'); await page.click('#send');
@@ -123,7 +123,7 @@ try {
   await stopBtn.click();
   await page.waitForFunction((n) => window.requests.length >= n + 3 && document.getElementById('send-label').textContent === 'Send', n0, { timeout: 30000 });
   r = await page.evaluate((n) => window.requests.slice(n).map((b) => b.messages.filter((m) => m.role === 'tool').map((m) => typeof m.content === 'string' ? m.content : m.content.map((c) => c.text).join('')).at(-1)), n0);
-  assert.match(r[1], /Stopped\./);
+  assert.match(r[1], /Killed through \/task\/\d+\/ctl\./); // the tray stops it by writing its ctl file (Batch F)
   assert.match(r[2], /No such file|cannot access|not found/i); assert.match(r[2], /\n1$/);
   ok('tray Stop flushes the run (tray row shows /task id and mounts)');
 
@@ -134,7 +134,7 @@ try {
   ]);
   const kill = r[1];
   assert.ok(kill.some((t) => /Killed through \/task\/\d+\/ctl\./.test(t)), kill.join('\n---\n'));
-  assert.ok(kill.some((t) => /^1$/.test(t.trim())), kill.join('\n---\n'));
+  assert.ok(kill.some((t) => /^2$/.test(t.trim())), kill.join('\n---\n')); // with section 3's, also killed through its ctl
   ok('echo kill > /task/<id>/ctl stops a running run');
 
   // 5. Seed layer: /seed stacks /work over a tar; union, copy-up, whiteout, /seed off.

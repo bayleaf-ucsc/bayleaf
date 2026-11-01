@@ -263,18 +263,31 @@ export function createSessions(deps) {
     }
   }
 
-  async function create() {
+  // New takes effect at the click: the current session becomes none at once,
+  // so a message sent before the new one exists (New, then Enter) waits for
+  // it (send() calls create(), which hands back this same creation) instead
+  // of going into the previous session (Batch F).
+  let creating = null;
+  function create() {
     const agent = deps.agent();
-    if (!agent) return status(deps.agentError() ?? 'The agent is not available.', 'bad');
-    const model = deps.model() || 'glm-5-3';
-    const id = await agent.createSession(model);
-    session = { id, title: '', updated: Date.now(), model };
-    await save();
-    store.setSetting('lastSession', id);
-    await deps.attach();
-    await render();
-    if (layout.narrow()) layout.setSide(false, false);
-    $('input').focus();
+    if (!agent) return Promise.resolve(status(deps.agentError() ?? 'The agent is not available.', 'bad'));
+    if (creating) return creating;
+    const prev = session;
+    if (session) { session = null; deps.attach(); }
+    creating = (async () => {
+      const model = deps.model() || 'glm-5-3';
+      let id;
+      try { id = await agent.createSession(model); }
+      catch (e) { if (!session) { session = prev; await deps.attach(); await render(); } throw e; }
+      session = { id, title: '', updated: Date.now(), model };
+      await save();
+      store.setSetting('lastSession', id);
+      await deps.attach();
+      await render();
+      if (layout.narrow()) layout.setSide(false, false);
+      $('input').focus();
+    })().finally(() => { creating = null; });
+    return creating;
   }
 
   async function select(id) {

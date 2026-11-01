@@ -423,7 +423,7 @@ says so.
 ## Coverage
 
 <!-- wt:coverage -->
-70 of 124 stories in [JOURNEYS.md](JOURNEYS.md) are illustrated. JOURNEYS.md reuses D20, D21, G14, D19 for different stories; a second use is written with .2 here (D20.2).
+70 of 130 stories in [JOURNEYS.md](JOURNEYS.md) are illustrated. JOURNEYS.md reuses D20, D21, G14, D19 for different stories; a second use is written with .2 here (D20.2).
 
 **Not yet illustrated**
 
@@ -438,6 +438,7 @@ says so.
 - 8. Work offline: F2 (ok), F3 (ok), F5 (ok in Chromium, gap elsewhere)
 - 9. Localhost provider (slice, 2026-10-31; Desk persona with a model server, e.g. oMLX): LH2 (ok), LH6 (ok), LH7 (ok), LH8 (ok), LH9 (ok), LH10 (ok), LH11 (gap), LH12 (ok)
 - 10. Terminal (Batch E, 2026-11-01; Desk and Lab personas): TM5 (ok), TM6 (ok), TM7 (ok)
+- 11. Control plane (Batch F, 2026-11-01; Desk and Lab personas, and agents): CP1 (ok), CP2 (ok), CP3 (ok), CP4 (ok), CP5 (ok), CP6 (gap)
 <!-- /wt -->
 
 **Gaps found while building this walkthrough.** The trust panel's mount tables used to

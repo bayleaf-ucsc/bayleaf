@@ -145,8 +145,11 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
     views.set(caller, view);
     return view;
   }
+  // The main agent's own namespace adds its session's control files
+  // (hooks.mainView, src/ns/control.js); `run` never gets them (nsFor).
   function viewFor(caller, source = 'agent') {
-    return viewOf(caller)?.fs ?? (vfs.as ? vfs.as(source) : vfs.fs);
+    const base = vfs.as ? vfs.as(source) : vfs.fs;
+    return viewOf(caller)?.fs ?? (caller != null && hooks.mainView ? hooks.mainView(caller, base) : base);
   }
   const nsFor = (caller, source) => viewOf(caller)?.ns ?? (vfs.as ? vfs.as(source) : vfs.fs);
   const writableFor = (caller) => {
@@ -354,6 +357,7 @@ You work on files through the read, write, edit, bash and run tools. Filesystem:
 - /pouch: shared instructions (AGENTS.md) and skills (skills/<name>/SKILL.md).
 - /tmp: scratch, lost on reload.
 - /task: running and recent run calls and subagents as files: \`cat /task/<id>/status\`, \`cat /task/<id>/ns\` (what it can see), \`echo kill > /task/<id>/ctl\`.
+- /session/current: your session's agents as files: \`cat /session/current/status\`, \`cat /session/current/agents/a2/status\`, \`echo stop > /session/current/agents/a2/ctl\` (message agents with the agents tool, not files).
 ${vfs.seedLayer ? `- ${CWD} is stacked over the read-only seed archive ${vfs.seedLayer.name}: your files win, edits land in ${CWD}, removing a seed file hides it.\n` : ''}${mounts.length ? '- Folders the user mounted from their device: ' + mounts.join(', ') + '\n' : ''}The bash tool is a simulated shell with coreutils-like commands plus zip/unzip/tar: no network, no installs, no python/node/git.
 The run tool executes JavaScript (QuickJS) over a copy of the files you name, with no network: use it instead of awk/sed/jq for anything that needs real parsing (quoted CSV, nested JSON) or arithmetic, and to test JavaScript; save reusable scripts in ${CWD} and run them by path. Its file writes are applied to the workspace when it finishes.
 The one exception is the \`bayleaf\` command (web search/fetch, a remote sandbox VM, inboxes): it leaves the pouch and asks the user each time; see the bayleaf-cli skill.

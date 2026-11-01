@@ -178,7 +178,7 @@ export function serve(port, fs, { root = '/', msize: max = 128 << 10, commit, on
   const send = (m) => { const b = encode(m); port.postMessage(b.buffer, [b.buffer]); };
   const err = (code, text) => Object.assign(new Error(`${code}: ${text}`), { code });
 
-  async function handle(m) {
+  async function handle(m, t) {
     const fid = (n = m.fid) => { const f = fids.get(n); if (!f) throw err('EBADF', 'unknown fid'); return f; };
     switch (m.type) {
       case 'Tversion': {
@@ -195,7 +195,7 @@ export function serve(port, fs, { root = '/', msize: max = 128 << 10, commit, on
       }
       case 'Tflush': {
         const t = live.get(m.oldtag);
-        if (t) t.flushed = true;
+        if (t) { t.flushed = true; t.ac.abort(); } // a blocked stream read gives up
         return { type: 'Rflush' };
       }
       case 'Twalk': {
@@ -235,6 +235,8 @@ export function serve(port, fs, { root = '/', msize: max = 128 << 10, commit, on
         const mode = m.mode & 3;
         if (st.isDirectory && mode !== OREAD) throw err('EISDIR', `illegal operation on a directory, open '${p}'`);
         Object.assign(f, { open: true, mode, dir: st.isDirectory, rclose: !!(m.mode & ORCLOSE) });
+        // A streaming file (/session/events): each read waits for what is new to this fid.
+        if (!st.isDirectory && mode === OREAD) f.stream = fs.openStream?.(full(p)) ?? null;
         if (!st.isDirectory && mode !== OREAD && mode !== OEXEC) {
           f.data = m.mode & OTRUNC || m.type === 'Tcreate' ? new Uint8Array() : await fs.readFileBuffer(full(p));
           if (m.mode & OTRUNC) f.dirty = true;
@@ -263,6 +265,13 @@ export function serve(port, fs, { root = '/', msize: max = 128 << 10, commit, on
           f.at += n;
           const data = new Uint8Array(n); let o = 0;
           for (const b of out) { data.set(b, o); o += b.length; }
+          return { type: 'Rread', data };
+        }
+        if (f.stream) {
+          // Offsets mean nothing in a stream: a read returns the next events (at most count bytes of them).
+          f.pending ??= new Uint8Array();
+          if (!f.pending.length) f.pending = await f.stream.read(t.ac.signal);
+          const data = f.pending.slice(0, count); f.pending = f.pending.slice(count);
           return { type: 'Rread', data };
         }
         f.data ??= await fs.readFileBuffer(full(f.path));
@@ -311,10 +320,10 @@ export function serve(port, fs, { root = '/', msize: max = 128 << 10, commit, on
     let m;
     try { m = decode(new Uint8Array(e.data ?? e)); } catch (x) { return send({ type: 'Rerror', tag: NOTAG, ename: `EINVAL: ${x.message}` }); }
     if (stopped) return send({ type: 'Rerror', tag: m.tag, ename: stopped });
-    const t = { flushed: false };
+    const t = { flushed: false, ac: new AbortController() };
     if (m.type !== 'Tflush') live.set(m.tag, t);
     let r;
-    try { r = await handle(m); } catch (x) { r = { type: 'Rerror', ename: ename(x) }; }
+    try { r = await handle(m, t); } catch (x) { r = { type: 'Rerror', ename: ename(x) }; }
     live.delete(m.tag);
     if (t.flushed) return; // a flushed request gets no answer (its Rflush went first)
     if (stopped && m.type !== 'Tflush') r = { type: 'Rerror', ename: stopped };
@@ -325,10 +334,10 @@ export function serve(port, fs, { root = '/', msize: max = 128 << 10, commit, on
     // Rerror (a write already handed to commit still lands; nothing new starts).
     flushAll(reason = 'EINTR: interrupted (stopped)') {
       stopped = reason;
-      for (const [tag, t] of live) { t.flushed = true; send({ type: 'Rerror', tag, ename: reason }); }
+      for (const [tag, t] of live) { t.flushed = true; t.ac.abort(); send({ type: 'Rerror', tag, ename: reason }); }
       live.clear();
     },
-    close() { stopped ??= 'EPIPE: connection closed'; fids.clear(); port.onmessage = null; port.close?.(); },
+    close() { stopped ??= 'EPIPE: connection closed'; for (const t of live.values()) t.ac.abort(); fids.clear(); port.onmessage = null; port.close?.(); },
   };
 }
 

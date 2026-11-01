@@ -33,9 +33,9 @@ export function capOutput(text) {
 }
 const commonPrefix = (xs) => xs.reduce((a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; return a.slice(0, i); });
 
-// deps: { vfs, hooks: { bayleafCredential, approveEgress(req) }, onChange() }
-export function createTerminal({ vfs, hooks = {}, onChange }) {
-  const fs = serialized(vfs.as('user'));
+// deps: { vfs, fs? (the user's namespace, with /session), hooks: { bayleafCredential, approveEgress(req) }, onChange() }
+export function createTerminal({ vfs, fs: userFs, hooks = {}, onChange }) {
+  const fs = serialized(userFs ?? vfs.as('user'));
   const shell = shellFor(fs, {
     bayleafCredential: () => hooks.bayleafCredential?.() ?? null,
     approveEgress: hooks.approveEgress && ((req) => hooks.approveEgress(req)),

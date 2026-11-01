@@ -271,6 +271,13 @@ export class Namespace extends BaseFs {
     await t.e.fs.writeFile(t.p, toBytes(content, encodingOf(options)));
     this.unwhite(t.point, t.rel);
   }
+  // A file that streams (src/ns/control.js /session/events): the first
+  // member's reader, or null for an ordinary file. 9P reads it per fid.
+  openStream(path) {
+    const { entries, rel } = this.layers(path);
+    const e = entries[0];
+    return e?.fs.openStream?.(join(e.root, rel)) ?? null;
+  }
   async mkdir(path, options) {
     const s = this.single(path, 'mkdir');
     if (s) return s.fs.mkdir(s.p, options);
@@ -340,5 +347,13 @@ export function subset(parent, specs, { scratch, emptyRoot } = {}) {
     ns.mount(parent, path, { root: path, readOnly, label: (from?.label || 'fs') + (readOnly && !from?.readOnly ? ' (narrowed)' : '') });
   }
   if (scratch) ns.mount(scratch, '/tmp', { label: 'scratch' });
+  return ns;
+}
+// One client's namespace: `base` everywhere, plus its own file servers at
+// the given points (the terminal's and the main agent's /session views,
+// src/ns/control.js). binds: [[point, fs, { label }], ...].
+export function over(base, binds, { label = 'shared' } = {}) {
+  const ns = new Namespace().mount(base, '/', { label });
+  for (const [point, fs, opts] of binds) ns.mount(fs, point, opts);
   return ns;
 }

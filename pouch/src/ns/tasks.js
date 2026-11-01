@@ -5,7 +5,8 @@
 //   /task/<id>/ns      its mount table, one line per mount     (read)
 //   /task/<id>/ctl     write "kill" to stop it                 (write)
 //   /task/watch/<id>/{paths,note,ctl}  file watches (src/ns/watch.js);
-//                      write "stop" to ctl to unwatch
+//                      write "stop" to ctl to unwatch, "deliver" to hand
+//                      its held changes to the agent now
 //
 // Tasks are `run` calls and subagents, running or recent. A model checks one
 // with `cat /task/3/status` and stops one with `echo kill > /task/3/ctl`, so
@@ -139,9 +140,9 @@ export class TaskFs extends BaseFs {
       if (file !== 'ctl') throw fsError('EROFS', 'open', path);
       const cmd = (typeof content === 'string' ? content : new TextDecoder().decode(content)).trim();
       if (!cmd) return;
-      if (cmd !== 'stop') throw fsError('EINVAL', 'write', path, `ctl accepts one command: stop (got "${cmd.slice(0, 20)}")`);
-      reg.remove(w.id);
-      return;
+      if (cmd === 'stop') return reg.remove(w.id);
+      if (cmd === 'deliver') return reg.deliverHeld(w.id);
+      throw fsError('EINVAL', 'write', path, `ctl accepts: stop, deliver (got "${cmd.slice(0, 20)}")`);
     }
     const { t, file } = this.find(path, 'open');
     if (file !== 'ctl') throw fsError('EROFS', 'open', path);

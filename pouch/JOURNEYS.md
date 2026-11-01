@@ -192,6 +192,16 @@ A model server on the user's own computer, the third trust root (LANGUAGE.md). `
 - TM7 ok: `bayleaf web search ...` opens the approval sheet ("from the terminal", "you, in the terminal", no session grant); Deny prints "denied by the user (nothing was sent)" and nothing leaves.
 (`test/batchE-browser.mjs` sections 5-10)
 
+### 11. Control plane (Batch F, 2026-11-01; Desk and Lab personas, and agents)
+Everything that acts is a file; the Interface is one client among several (README "Control plane").
+- CP1 ok: the terminal stops a background subagent: `echo stop > /session/current/agents/a3/ctl`; the write returns once it stopped (`cat .../a3/status` reads `stopped`), the tray row goes, and the live region says "From the terminal: stop reader (a3)". A bad command answers like Rerror: `EINVAL: ctl accepts: stop, detach (got "explode")`.
+- CP2 ok: the terminal steers main: `printf 'steer\nuse tabs' > /session/current/agents/a1/in` while main works; the steer shows in the tray like one typed in the composer and main reads it after its step. Steering an idle main is refused with what to write instead (`message` starts a turn, `followup` queues one).
+- CP3 ok: an agent reads its session: main's bash `cat /session/current/status` reads `working agents=4 running=1`; `ls /session` lists only its own session; it can stop its own subagent through ctl (the authority `/task/<id>/ctl` already gave) and gets EPERM writing `in` (agents message each other with the agents tool, which applies the caps).
+- CP4 ok: the Interface and the terminal agree: the tray's Stop on a subagent is a write to its ctl, so `cat /session/events` shows `a2 ctl stop by you` and `a2 state stopped`, and the file statuses and tray rows are drawn from one cache. Events never carry message text (only sizes).
+- CP5 ok: New, then Enter at once: the message starts the new session, never the previous one (Batch E bug).
+- CP6 gap: just-bash 3.6 throws a failed redirection out of the whole script, so in one bash call an EPERM or EINVAL on a control file skips the commands after it (true of /task ctl before Batch F too).
+(`test/batchF-browser.mjs`; parity inventory in `test/controlplane-node.mjs`)
+
 ## Release slices
 
 1. **Walking skeleton (now):** A1–A4, T1–T2, I1, D1–D4, D7, R1, O1–O2, L1.

@@ -189,7 +189,7 @@ function harness({ files = {} } = {}) {
   assert.deepEqual(await tfs.readdir('/watch'), ['w1', 'w2']);
   assert.equal(await tfs.readFile('/watch/w2/paths'), '/work/essay.md\n');
   assert.match(await tfs.readFile('/watch/w2/note'), /offer to re-run the panel\nby user; owner main \(a1\)/);
-  await assert.rejects(tfs.writeFile('/watch/w2/ctl', 'kill'), /accepts one command: stop/);
+  await assert.rejects(tfs.writeFile('/watch/w2/ctl', 'kill'), /ctl accepts: stop, deliver/);
   await tfs.writeFile('/watch/w2/ctl', 'stop\n');
   assert.equal(h.reg.get('w2'), undefined);
   assert.match(await tool.execute({ action: 'unwatch', id: 'w1' }), /Stopped watching/);

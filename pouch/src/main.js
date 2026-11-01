@@ -22,7 +22,8 @@ import { MAIN, refOf, asRef } from './graph.js';
 import { createTerminal } from './terminal.js';
 import { createSessions, sameId, titleOf, notesKey, convKey, revertKey, subagentsKey, interruptedKey, turnsKey, watchesKey } from './sessions.js';
 import { createWatches, watchTool, baseOf, isGlob, MAX_WAKES } from './ns/watch.js';
-import { parseSpecs } from './ns/namespace.js';
+import { parseSpecs, over } from './ns/namespace.js';
+import { createControl, why } from './ns/control.js';
 import { createComposer } from './composer.js';
 import { createEgress, egressOf, grantsFor, revoke, serviceName } from './egress.js';
 import { LOCAL, support as localSupport, stored as localStored, engine as localEngine, importFiles as localImport, remove as localRemove } from './local/engine.js';
@@ -1342,10 +1343,71 @@ const egressHooks = {
   onEgress: (e, caller) => { if (!childOf(caller)) noteEgress(e); },
 };
 
+// ── Control plane (src/ns/control.js, README "Control plane") ─────────
+// Everything that acts is a file under /session (agents) or /task (runs,
+// terminal commands, watches). The Interface is one client: its buttons call
+// ctl(), which writes those files through the user's namespace, exactly as
+// the terminal's `echo stop > ...` does. What a write does is the harness
+// side, below ("Control plane: the harness side"). The agent files are served
+// from the same caches the Interface draws (kids, sessions.running), so the
+// two cannot disagree; the Interface hears changes from the events tail.
+const mainSince = new Map(); // session id -> when main's current turn started
+async function agentRows(sid) {
+  const k = String(sid);
+  const l = kids.has(k) ? kids.get(k) : await loadKids(sid);
+  const working = sessions.running.has(k);
+  const state = stopping.has(k) ? 'stopping' : working ? (agent?.subagents?.blocked(sid).length ? 'waiting' : 'working') : 'idle';
+  return [{ ref: MAIN, name: 'main', kind: 'main', state, since: working ? mainSince.get(k) : undefined, ns: vfs.describe() },
+    ...l.map((c) => ({ ref: refOf(l, c), name: c.name, kind: 'subagent', state: c.status, since: c.resumed ?? c.started, ended: c.status === 'running' ? undefined : c.ended, task: c.task,
+      ns: describeSpecs(vfs, c.ns?.length ? c.ns : defaultSubagentNs(vfs)) }))];
+}
+const control = createControl({
+  sessions: async () => (await sessions.all()).map((x) => ({ id: x.id, title: titleOf(x) })),
+  current: () => sessions.current?.id ?? null,
+  agents: agentRows,
+  last: async (sid, ref) => {
+    if (asRef(ref) === MAIN) return (await agent?.snapshot(sid).catch(() => null))?.items.findLast((i) => i.type === 'assistant' && i.text)?.text ?? '';
+    const l = kids.get(String(sid)) ?? [], c = l.find((x) => refOf(l, x) === ref);
+    return c && agent?.subagents ? (await agent.subagents.summary(sid, c.id).catch(() => null))?.answer ?? '' : '';
+  },
+});
+// The user's namespace: the shared tree plus /session with the user's authority.
+const userNs = over(vfs.fs, [['/session', control.view({ by: 'user' }), { label: 'control (you)' }]]);
+// Every acting control in the Interface goes through here (test/controlplane-node.mjs).
+const ctl = (path, text) => userNs.writeFile(path, text);
+const agentFile = (sid, ref, file) => `/session/${sid}/agents/${asRef(ref)}/${file}`;
+// Main sees its own session's control files, ctl writable, in refused (control.js).
+const mainNs = new Map(); // sid -> namespace
+function mainNamespace(sid, base) {
+  if (sid == null) return base;
+  if (!mainNs.has(String(sid))) mainNs.set(String(sid), over(base, [['/session', control.view({ by: 'agent', sid }), { label: 'control (a1)' }]]));
+  return mainNs.get(String(sid));
+}
+{ // main's working/idle state, for /session and its events
+  const r = sessions.running, add = r.add.bind(r), del = r.delete.bind(r);
+  r.add = (k) => { const had = r.has(k); add(k); if (!had) { mainSince.set(k, Date.now()); control.state(k, MAIN, 'working'); } return r; };
+  r.delete = (k) => { const had = del(k); if (had) control.state(k, MAIN, 'idle'); return had; };
+}
+// The events tail: a blocking-read loop, as any client would run it. Writes
+// that came from the terminal or the main agent are said out loud here.
+(async () => {
+  for await (const evs of control.tail()) {
+    let mine = false;
+    for (const e of evs) {
+      const [, sid, ref, kind, ...rest] = e.line.split(' ');
+      if (!sameId(sid, sessions.current?.id)) continue;
+      mine = true;
+      const by = rest.join(' ').match(/by (you \(terminal\)|main \(a1\))/)?.[1];
+      if (by && (kind === 'ctl' || kind === 'in')) announce(`${by === 'main (a1)' ? 'Main' : 'From the terminal'}: ${kind === 'ctl' ? rest[0] + (rest[1] === 'all' ? ' all' : '') : rest[0]} ${whoRef(ref)}.`, false);
+    }
+    if (mine) { composer?.renderTray(); updateSend(); sessions.render(); }
+  }
+})();
+
 // ── Terminal (terminal.js) ──────────────────────────────────────────
 // The user's shell over the same namespace; `bayleaf` asks every use. Ctrl+`
 // opens it (or focuses it); opening it never sends anything.
-const terminal = createTerminal({ vfs, onChange: () => renderTree(),
+const terminal = createTerminal({ vfs, fs: over(vfs.as('user'), [['/session', control.view({ by: 'user', label: 'terminal' }), { label: 'control (you)' }]]), onChange: () => renderTree(),
   hooks: { bayleafCredential: () => key, approveEgress: (req) => egress.approve(req, null, undefined, 'you, in the terminal') } });
 document.addEventListener('keydown', (e) => {
   if (e.key !== '`' || !e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]')) return;
@@ -1385,7 +1447,8 @@ function onKids(sid, list) {
   kids.set(String(sid), list);
   if (childFollowUps.size) flushChildFollowUps(sid, list);
   for (const c of list) vfs.tasks.upsert('sa:' + c.id, { kind: 'subagent', label: c.name, status: TASK_STATE[c.status] ?? c.status,
-    ns: describeSpecs(vfs, c.ns?.length ? c.ns : defaultSubagentNs(vfs)), kill: () => agent.subagents.stop(sid, c.id) });
+    ns: describeSpecs(vfs, c.ns?.length ? c.ns : defaultSubagentNs(vfs)), kill: () => stopChildOf(sid, c.id) });
+  for (const c of list) control.state(sid, refOf(list, c), c.status);
   sessions.render();
   if (sameId(sid, sessions.current?.id)) { watchKids(); scheduleRender(); composer?.renderTray(); }
   if (layout.current() === 'usage') renderUsagePanel();
@@ -1457,8 +1520,7 @@ function messageChild(c) {
   sheet(`Message subagent ${c.name}`, [[c.status === 'running' ? 'Send (joins its work)' : 'Send (it starts again)', async () => {
     const t = box.value.trim();
     if (!t) return;
-    await agent.subagents.message(sessions.current.id, c.id, t);
-    status(`Sent to ${c.name}.`);
+    await ctl(agentFile(sessions.current.id, c.ref ?? refOf(kids.get(String(sessions.current.id)) ?? [], c), 'in'), 'message\n' + t).catch((e) => fail(why(e)));
   }]], el('div', {}, el('p', { textContent: c.status === 'running' ? 'It reads this after its current step. Its report will reflect it.' : 'It continues from where it ended and posts a new report.' }), box));
   setTimeout(() => box.focus(), 0);
 }
@@ -1618,7 +1680,7 @@ function childLog() {
   const acts = el('span', { className: 'sa-acts' }, more);
   if (c.status === 'running') {
     const stop = el('button', { type: 'button', className: 'danger', textContent: 'Stop', ariaLabel: `Stop subagent ${c.name}` });
-    stop.onclick = () => { stop.disabled = true; agent.subagents.stop(focus.sid, c.id).catch((e) => fail(e.message)); };
+    stop.onclick = () => { stop.disabled = true; ctl(agentFile(focus.sid, refOf(kids.get(String(focus.sid)) ?? [], c), 'ctl'), 'stop').catch((e) => fail(why(e))); };
     acts.append(stop);
   }
   const mounts = t ? vfs.tasks.mounts(t) : describeSpecs(vfs, c.ns?.length ? c.ns : defaultSubagentNs(vfs));
@@ -1688,12 +1750,12 @@ function subagentCard(it, childId) {
   }
   if (c?.status === 'interrupted') {
     const res = el('button', { type: 'button', className: 'primary', textContent: 'Resume', ariaLabel: `Resume subagent ${name}` });
-    res.onclick = () => { res.disabled = true; agent.subagents.message(sessions.current.id, c.id, 'Continue your task where you left off: a page reload interrupted you.').catch((e) => fail(e.message)); };
+    res.onclick = () => { res.disabled = true; ctl(agentFile(sessions.current.id, refOf(kids.get(String(sessions.current.id)) ?? [], c), 'in'), 'message\nContinue your task where you left off: a page reload interrupted you.').catch((e) => fail(why(e))); };
     acts.append(res);
   }
   if (c?.status === 'running') {
     const stop = el('button', { type: 'button', className: 'danger', textContent: 'Stop', ariaLabel: `Stop subagent ${name}` });
-    stop.onclick = () => { stop.disabled = true; agent.subagents.stop(sessions.current.id, c.id).catch((e) => fail(e.message)); };
+    stop.onclick = () => { stop.disabled = true; ctl(agentFile(sessions.current.id, refOf(kids.get(String(sessions.current.id)) ?? [], c), 'ctl'), 'stop').catch((e) => fail(why(e))); };
     acts.append(stop);
   }
   head.append(acts);
@@ -2379,9 +2441,12 @@ function pump() {
 async function dispatch(key, prepare) {
   spend.delete('new'); spend.set(String(key), 0); // this session's "requests this turn" starts over
   submitting.add(key); updateSend(); composer.renderTray();
-  let q = null;
-  const runEnded = () => { submitting.delete(key); updateSend(); composer.renderTray(); };
-  try { q = await prepare(); if (q) await send(q.text, q.attached, q.turnModel, runEnded); }
+  let q = null, k = key;
+  const runEnded = () => { submitting.delete(k); updateSend(); composer.renderTray(); };
+  // A first message's session is made inside send(): from then on this send
+  // belongs to it, so "new" is free for the next New (New, then Enter).
+  const adopted = (id) => { submitting.delete(k); k = String(id); submitting.add(k); };
+  try { q = await prepare(); if (q) await send(q.text, q.attached, q.turnModel, runEnded, adopted); }
   catch (e) {
     // The watched view can say idle a moment before pi-durable's run ends:
     // then the follow-up waits and goes on the next try.
@@ -2425,22 +2490,25 @@ async function holdFollowUp(key, prepare) {
   } catch (err) { status(err.message, 'bad'); }
   finally { holdingFollowUp = false; composer.renderTray(); updateSend(); }
 }
-// Steer main: the text joins its running turn after the current step. If main
-// is blocked on a subagent (a foreground spawn, a join), steering detaches it
-// (G10): the call returns at once and the subagent keeps running.
+// Steer main (the composer, Steer now): written to main's in file; the
+// harness side (steerSession) detaches a subagent main waits on, tracks it in
+// the tray and announces it, whoever wrote.
+let promoteNext = false; // Steer now: the tray row morphs in place
 async function steerMain(key, text, promoted = false) {
-  const sid = sessions.current.id, names = waitingOn(sid);
   $('input').value = ''; autosize();
-  let s;
-  try {
-    s = names.length ? await agent.subagents.detach(sid, text) : null;
-    if (!s || s === true) s = await agent.steer(sid, text);
-    watches.userSpoke(sid);
-  } catch (e) { putBack(text); return status(e.message, 'bad'); }
-  const held = names.length ? heldCards(sid) : [];
-  track(key, sid, { id: s.id, text, at: Date.now(), ...(names.length ? { detach: names.join(', ') } : {}) }, s.placed, promoted);
-  if (held.length) foldIntoTray(held);
-  announce(names.length ? `Steering: Pouch reads this after its current step. Main stopped waiting on ${names.join(', ')}; it keeps running.` : 'Steering: Pouch reads this after its current step.');
+  promoteNext = promoted;
+  try { await ctl(agentFile(key, MAIN, 'in'), 'steer\n' + text); }
+  catch (e) { putBack(text); status(why(e), 'bad'); }
+  finally { promoteNext = false; }
+}
+// The composer's follow-up for main, text only, is a file write too; one
+// with attachments is held directly, because attachments are page-held
+// files and blobs a write to in cannot carry (README "Control plane").
+async function followUpMain(key, text, prepare) {
+  if (key === 'new' || attachments.files.length) return holdFollowUp(key, prepare);
+  $('input').value = ''; autosize();
+  try { await ctl(agentFile(key, MAIN, 'in'), 'followup\n' + text); }
+  catch (e) { putBack(text); status(why(e), 'bad'); }
 }
 // Follow a steer until it is placed: delivered into the turn, or (it raced
 // the turn's end) the start of the next turn, which runs like any other.
@@ -2551,9 +2619,22 @@ function countRequest() {
 const turnSpend = () => spend.get(String(sessions.current?.id ?? 'new')) ?? spend.get('new') ?? null;
 // Keys of sessions whose Stop is still winding down (the abort not settled).
 const stopping = new Set();
-async function stopMain() {
-  const sid = sessions.current?.id, key = curKey();
+// Stop main (the button, Esc, Stop and send): Stop in a session stops its
+// subagents too, so the Interface writes "stop all" to main's ctl.
+async function stopMain(sid = sessions.current?.id) {
   if (sid == null) return;
+  await ctl(agentFile(sid, MAIN, 'ctl'), 'stop all').catch((e) => status(why(e), 'bad'));
+}
+// ── Control plane: the harness side ───────────────────────────────
+// What a write to /session does, whoever wrote it (the Interface, the
+// terminal, the main agent). The only place the Interface calls the harness
+// to act; test/controlplane-node.mjs checks that nothing outside does.
+const busyIn = (sid) => (sameId(sid, sessions.current?.id) ? busy() : sessions.running.has(String(sid)));
+const childByRef = (sid, ref) => { const l = kids.get(String(sid)) ?? []; return l.find((x) => refOf(l, x) === asRef(ref)) ?? l.find((x) => x.id === ref); };
+const ctlErr = (msg) => Object.assign(new Error(msg), { code: 'EINVAL' });
+async function stopSession(sid, all) {
+  const key = String(sid);
+  if (!sessions.running.has(key) && !busyIn(sid)) { if (all) await agent?.subagents?.stopAll?.(sid); return all ? 'stopped its subagents' : 'main (a1) is idle'; }
   stopping.add(key); updateSend();
   try {
     const back = await withdrawSteers(key, sid, (s) => !s.child);
@@ -2564,7 +2645,7 @@ async function stopMain() {
     }
     composer.renderTray();
     // Stop in a session stops its subagents too (as Stop all does).
-    await Promise.allSettled([agent.abort(sid), agent?.subagents?.stopAll?.(sid)]);
+    await Promise.allSettled([agent.abort(sid), all ? agent?.subagents?.stopAll?.(sid) : null]);
     // A steer that slipped in while the run wound down (Enter right after
     // Stop) has no step left to be read after: it becomes the next turn.
     const late = await withdrawSteers(key, sid, (s) => !s.child);
@@ -2575,6 +2656,101 @@ async function stopMain() {
     }
   } finally { stopping.delete(key); composer.renderTray(); updateSend(); queueMicrotask(pump); }
 }
+// Stop one subagent: steers not yet read and its follow-up become one paused item.
+async function stopChildOf(sid, id) {
+  const c = childByRef(sid, id) ?? (kids.get(String(sid)) ?? []).find((x) => x.id === id);
+  if (!c) throw ctlErr(`no agent ${id} in this session`);
+  const key = String(sid);
+  const back = await withdrawSteers(key, sid, (s) => s.child === c.id);
+  const q = childFollowUps.get(c.id);
+  if (back.length || q) {
+    childFollowUps.set(c.id, { sid, name: c.name, at: Date.now(), ...q, text: [...back, q?.text].filter(Boolean).join('\n\n'), paused: true });
+    announce(`Stopped ${c.name}. Your unsent message to it is paused in the activity tray.`);
+  }
+  composer.renderTray();
+  const note = await agent.subagents.stop(sid, c.id);
+  // A ctl write returns once it took effect: reading its status next says stopped.
+  for (let i = 0; i < 60 && (await loadKids(sid)).find((x) => x.id === c.id)?.status === 'running'; i++) await new Promise((r) => setTimeout(r, 50));
+  return note;
+}
+// Main's steer: detach a subagent it waits on (G10), then track it in the tray.
+async function steerSession(sid, text) {
+  const key = String(sid), names = waitingOn(sid);
+  let s = names.length ? await agent.subagents.detach(sid, text) : null;
+  if (!s || s === true) s = await agent.steer(sid, text);
+  watches.userSpoke(sid);
+  const held = names.length && sameId(sid, sessions.current?.id) ? heldCards(sid) : [];
+  track(key, sid, { id: s.id, text, at: Date.now(), ...(names.length ? { detach: names.join(', ') } : {}) }, s.placed, promoteNext);
+  if (held.length) foldIntoTray(held);
+  announce(names.length ? `Steering: Pouch reads this after its current step. Main stopped waiting on ${names.join(', ')}; it keeps running.` : 'Steering: Pouch reads this after its current step.');
+  return { id: s.id };
+}
+// A subagent's follow-up goes once its turn ends (it finished): the
+// message wakes it, like Message on its card. Stopped or failed: paused.
+function flushChildFollowUps(sid, list) {
+  for (const [id, q] of childFollowUps) {
+    if (q.paused || String(q.sid) !== String(sid)) continue;
+    const c = list.find((x) => x.id === id);
+    if (c?.status === 'running') continue;
+    if (c?.status !== 'finished') { childFollowUps.set(id, { ...q, paused: true }); announce(`${q.name} ${c?.status ?? 'is gone'}; your follow-up to it is paused.`); continue; }
+    childFollowUps.delete(id);
+    agent.subagents.message(sid, id, q.text).then(() => announce(`Follow-up sent to ${q.name}; it works on it now.`, false), (e) => { childFollowUps.set(id, { ...q, paused: true }); status(e.message, 'bad'); });
+  }
+}
+control.drive({
+  async stop(sid, ref, { all }) {
+    if (!agent) throw ctlErr('the agent is not available');
+    if (asRef(ref) === MAIN) return stopSession(sid, all);
+    return stopChildOf(sid, ref);
+  },
+  async detach(sid, ref) {
+    const held = agent?.subagents?.blocked(sid).flatMap((h) => h.ids) ?? [];
+    if (!held.length) throw ctlErr('main is not waiting on any subagent');
+    if (asRef(ref) !== MAIN && !held.includes(asRef(ref))) throw ctlErr(`main is not waiting on ${asRef(ref)} (it waits on ${held.join(', ')})`);
+    const cards = sameId(sid, sessions.current?.id) ? heldCards(sid) : [];
+    await agent.subagents.detach(sid);
+    foldIntoTray(cards);
+    const names = held.map((r) => childByRef(sid, r)?.name ?? r);
+    status(`${names.join(', ')} ${names.length > 1 ? 'continue' : 'continues'} in the background; main stopped waiting.`);
+    return { detached: held };
+  },
+  async send(sid, ref, mode, text) {
+    if (!agent) throw ctlErr('the agent is not available');
+    const key = String(sid);
+    if (asRef(ref) === MAIN) {
+      const working = busyIn(sid) || submitting.has(key);
+      if (mode === 'followup') { await holdFollowUp(key, async () => ({ text, attached: noFiles(), turnModel: $('model').value, at: Date.now() })); return { followup: true }; }
+      if (working) return steerSession(sid, text);
+      if (mode === 'steer') throw ctlErr('main (a1) is idle, so there is no turn to steer: write message to start one, or followup');
+      if (!sameId(sid, sessions.current?.id)) throw ctlErr('a turn starts only in the session open in the Interface: open it, or write followup to queue this');
+      dispatch(key, async () => ({ text, attached: noFiles(), turnModel: $('model').value, at: Date.now() }));
+      return { started: true };
+    }
+    const c = childByRef(sid, ref);
+    if (!c) throw ctlErr(`no agent ${ref} in this session`);
+    if (mode === 'steer') {
+      if (c.status !== 'running') throw ctlErr(`${c.name} (${asRef(ref)}) is not running (${c.status}): write message to start it again`);
+      const s = await agent.subagents.steerTracked(sid, c.id, text);
+      track(key, sid, { id: s.id, text, at: Date.now(), child: c.id, name: c.name }, s.placed);
+      announce(`Steering ${c.name}: it reads this after its current step.`);
+      return { id: s.id };
+    }
+    if (mode === 'followup' && c.status === 'running') {
+      const had = childFollowUps.get(c.id);
+      childFollowUps.set(c.id, { sid, name: c.name, at: Date.now(), ...had, text: had ? `${had.text}\n\n${text}` : text, paused: false });
+      announce(had ? `Added to the follow-up for ${c.name}.` : `Follow-up for ${c.name}: it goes when its turn ends.`);
+      composer.renderTray(); updateSend();
+      return { followup: true };
+    }
+    if (c.oneshot) throw ctlErr(`${c.name} is a one-shot and takes no messages`);
+    childFollowUps.delete(c.id);
+    const note = await agent.subagents.message(sid, c.id, text);
+    status(`Sent to ${c.name}.`);
+    return { note };
+  },
+});
+// ── End of the harness side ───────────────────────────────────────
+
 // A paused message or follow-up goes now: as the next turn when idle, or into
 // the running turn (Steer now).
 async function sendNow(key, steer) {
@@ -2595,10 +2771,10 @@ function quotaError(msg) { return /\b429\b|quota|rate.?limit|too many requests|a
 
 // runEnded: called once the model's turn is over, before the after-turn
 // chores (title, usage), so a follow-up need not wait for them.
-async function send(text, attached = { files: [], images: [] }, turnModel = $('model').value, runEnded = () => {}) {
+async function send(text, attached = { files: [], images: [] }, turnModel = $('model').value, runEnded = () => {}, adopted = () => {}) {
   follow.pin();
   const t0 = Date.now();
-  if (!sessions.current) { await sessions.create(); ledger.adopt('new', sessions.current.id); }
+  if (!sessions.current) { await sessions.create(); ledger.adopt('new', sessions.current.id); adopted(sessions.current.id); }
   const s = sessions.current; // the run belongs to this session even if you switch away
   const sid = s.id;
   s.model = turnModel;
@@ -2683,11 +2859,11 @@ $('composer').onsubmit = async (e) => {
   }
   // Stop is winding down: no step is left to read a steer, so the text
   // waits as a follow-up and goes as the next turn once the run has ended.
-  if (stopping.has(key)) { announce('Pouch is stopping: your message goes as the next turn.'); return holdFollowUp(key, prepare); }
+  if (stopping.has(key)) { announce('Pouch is stopping: your message goes as the next turn.'); return followUpMain(key, text, prepare); }
   // Steering carries text only; attachments go with a follow-up.
   if (busy() && mode === 'steer' && !attachments.files.length) return steerMain(key, text);
   if (busy() && mode === 'steer') announce('Attachments go only with a new turn, so this message is a follow-up for after this turn.');
-  return holdFollowUp(key, prepare);
+  return followUpMain(key, text, prepare);
 };
 function blockedNow() { const sid = sessions.current?.id; return sid != null && !!agent?.subagents?.blocked(sid).length; }
 // While the agent in view works, the round button is Stop.
@@ -2700,48 +2876,18 @@ $('send').onclick = (e) => {
   if (busy()) { e.preventDefault(); stopMain(); }
 };
 // The subagent's view: steer joins its run at its next step boundary (S3);
-// follow-up waits for its turn to end, then messages it (it starts again).
+// follow-up waits for its turn to end, then messages it. Both are writes to
+// its in file; Stop writes its ctl. The harness side does the rest.
 async function toChild(text, mode) {
   const c = focusedChild();
   if (!text || !c) return;
-  const sid = focus.sid, key = String(sid);
-  if (mode === 'followup') {
-    const had = childFollowUps.get(c.id);
-    childFollowUps.set(c.id, { sid, name: c.name, at: Date.now(), ...had, text: had ? `${had.text}\n\n${text}` : text, paused: false });
-    $('input').value = ''; autosize();
-    announce(had ? `Added to the follow-up for ${c.name}.` : `Follow-up for ${c.name}: it goes when its turn ends.`);
-    composer.renderTray(); updateSend();
-    return;
-  }
-  try {
-    const s = await agent.subagents.steerTracked(sid, c.id, text);
-    $('input').value = ''; autosize();
-    track(key, sid, { id: s.id, text, at: Date.now(), child: c.id, name: c.name }, s.placed);
-    announce(`Steering ${c.name}: it reads this after its current step.`);
-  } catch (e) { status(e.message, 'bad'); updateSend(); }
+  $('input').value = ''; autosize();
+  try { await ctl(agentFile(focus.sid, refOf(kids.get(String(focus.sid)) ?? [], c), 'in'), `${mode}\n${text}`); }
+  catch (e) { putBack(text); status(why(e), 'bad'); updateSend(); }
 }
 async function stopChild(c) {
-  const sid = focus?.sid ?? sessions.current?.id, key = String(sid);
-  const back = await withdrawSteers(key, sid, (s) => s.child === c.id);
-  const q = childFollowUps.get(c.id);
-  if (back.length || q) {
-    childFollowUps.set(c.id, { sid, name: c.name, at: Date.now(), ...q, text: [...back, q?.text].filter(Boolean).join('\n\n'), paused: true });
-    announce(`Stopped ${c.name}. Your unsent message to it is paused in the activity tray.`);
-  }
-  composer.renderTray();
-  await agent.subagents.stop(sid, c.id);
-}
-// A subagent's follow-up goes once its turn ends (it finished): the
-// message wakes it, like Message on its card. Stopped or failed: paused.
-function flushChildFollowUps(sid, list) {
-  for (const [id, q] of childFollowUps) {
-    if (q.paused || String(q.sid) !== String(sid)) continue;
-    const c = list.find((x) => x.id === id);
-    if (c?.status === 'running') continue;
-    if (c?.status !== 'finished') { childFollowUps.set(id, { ...q, paused: true }); announce(`${q.name} ${c?.status ?? 'is gone'}; your follow-up to it is paused.`); continue; }
-    childFollowUps.delete(id);
-    agent.subagents.message(sid, id, q.text).then(() => announce(`Follow-up sent to ${q.name}; it works on it now.`, false), (e) => { childFollowUps.set(id, { ...q, paused: true }); status(e.message, 'bad'); });
-  }
+  const sid = focus?.sid ?? sessions.current?.id;
+  await ctl(agentFile(sid, refOf(kids.get(String(sid)) ?? [], c), 'ctl'), 'stop').catch((e) => status(why(e), 'bad'));
 }
 // Keys (D25): Enter sends with the default mode, Alt/Option+Enter with the
 // other, Shift+Enter is a new line, Esc stops, Alt+Up takes the follow-up
@@ -2872,8 +3018,8 @@ function activity() {
   for (const c of l) if (c.status === 'running') {
     const t = vfs.tasks.byKeyOf('sa:' + c.id), ref = refOf(l, c), waited = held.has(ref);
     rows.push({ key: 'sa:' + c.id, kind: 'subagent', seed: ref, text: `${c.name}: ${excerpt(c.task)}`, title: `Open ${c.name}: ` + c.task + (t ? `\n/task/${t.id} sees:\n${vfs.tasks.mounts(t).join('\n')}` : ''), origin: waited ? `main waits on ${ref}` : t ? `subagent ${ref}, /task/${t.id}` : `subagent ${ref}`, since: c.resumed ?? c.started,
-      open: (e) => openChild(sid, c.id, e?.currentTarget), stop: () => agent.subagents.stop(sid, c.id),
-      ...(waited ? { background: async () => { const held = heldCards(sid); await agent.subagents.detach(sid); foldIntoTray(held); status(`${c.name} continues in the background; main stopped waiting.`); } } : {}) });
+      open: (e) => openChild(sid, c.id, e?.currentTarget), stop: () => ctl(agentFile(sid, ref, 'ctl'), 'stop').catch((e) => status(why(e), 'bad')),
+      ...(waited ? { background: () => ctl(agentFile(sid, ref, 'ctl'), 'detach').catch((e) => status(why(e), 'bad')) } : {}) });
   }
   // A message refused at a cap (graph.js): visible until dismissed.
   for (const [i, e] of (capEvents.get(String(sid)) ?? []).entries()) {
@@ -2887,7 +3033,7 @@ function activity() {
     const task = vfs.tasks.byKeyOf(t.id);
     rows.push({ key: 'run:' + t.id, kind: 'run', text: 'run ' + (t.args?.path ?? excerpt(t.args?.code?.split('\n').find((l) => l.trim()) ?? '', 70)),
       title: (t.args?.code ?? t.args?.path) + (task ? `\n/task/${task.id} sees:\n${vfs.tasks.mounts(task).join('\n')}` : ''),
-      origin: task ? `run, /task/${task.id}` : 'run', since: runSeen.get(t.id), stop: () => { if (!agent.stopCall(t.id)) status('That run already finished.'); } });
+      origin: task ? `run, /task/${task.id}` : 'run', since: runSeen.get(t.id), stop: () => (task ? ctl(`/task/${task.id}/ctl`, 'kill').catch((e) => status(why(e), 'bad')) : status('That run already finished.')) });
   }
   for (const id of runSeen.keys()) if (!live.has(id)) runSeen.delete(id);
   for (const p of egress.pending) {
@@ -2920,11 +3066,10 @@ function activity() {
     const c = (kids.get(String(sid)) ?? []).find((x) => x.id === id);
     rows.push({ key: 'cq:' + id, kind: 'followup', paused: cq.paused, text: excerpt(cq.text), title: cq.text,
       origin: cq.paused ? `Paused for ${cq.name}` : `Follow-up for ${cq.name} · after its turn`,
-      actions: cq.paused ? [{ label: 'Send', act: 'send', ariaLabel: `Send paused message to ${cq.name}`, run: async () => { childFollowUps.delete(id); composer.renderTray(); await agent.subagents.message(sid, id, cq.text); announce(`Sent to ${cq.name}.`); } }]
+      actions: cq.paused ? [{ label: 'Send', act: 'send', ariaLabel: `Send paused message to ${cq.name}`, run: async () => { childFollowUps.delete(id); composer.renderTray(); await ctl(agentFile(sid, c ? refOf(kids.get(String(sid)) ?? [], c) : id, 'in'), 'message\n' + cq.text).catch((e) => status(why(e), 'bad')); } }]
         : c?.status === 'running' ? [{ label: 'Steer now', act: 'promote', ariaLabel: `Steer now: send to ${cq.name} after its current step`, run: async () => {
           childFollowUps.delete(id);
-          const s = await agent.subagents.steerTracked(sid, id, cq.text);
-          track(key, sid, { id: s.id, text: cq.text, at: Date.now(), child: id, name: cq.name }, s.placed);
+          await ctl(agentFile(sid, refOf(kids.get(String(sid)) ?? [], c), 'in'), 'steer\n' + cq.text).catch((e) => status(why(e), 'bad'));
         } }] : [],
       stopLabel: 'Cancel', stopAria: `Cancel follow-up for ${cq.name}`, stop: () => { childFollowUps.delete(id); putBack(cq.text); announce('Follow-up cancelled and put back in the box.'); composer.renderTray(); } });
   }
@@ -2943,8 +3088,7 @@ composer = createComposer({
   // stopped work starts no new request.
   stopAll: async () => {
     const sid = sessions.current?.id;
-    const rows = activity().filter((r) => r.kind === 'subagent' || r.kind === 'run');
-    await Promise.allSettled([busy() ? stopMain() : null, sid != null ? agent?.subagents?.stopAll(sid) : null, ...rows.map((r) => r.stop?.())]);
+    if (sid != null) await ctl(`/session/${sid}/ctl`, 'stop').catch((e) => status(why(e), 'bad'));
     announce('Stopped everything in this session. Requests in flight were cancelled; one BayLeaf had already received may still count, and no new one starts.');
   },
   shield: async () => {
@@ -3026,11 +3170,11 @@ function watchRows(sid) {
     const what = w.paths.map(shortPath).join(', ');
     const origin = `${w.id} · changes ${watchByText(w)}${w.owner !== MAIN ? ` · for ${w.ownerName} (${w.owner})` : ''} · /task/watch/${w.id}`;
     const title = `${w.note ? w.note + '\n' : ''}${w.paths.join('\n')}\n${w.once ? 'Removed after its first event.' : `Wakes the agent at most ${MAX_WAKES} times between your messages.`}`;
-    const stop = () => { watches.remove(w.id); announce(`Stopped watching ${what}.`); };
+    const stop = () => ctl(`/task/watch/${w.id}/ctl`, 'stop').then(() => announce(`Stopped watching ${what}.`), (e) => status(why(e), 'bad'));
     if (w.held.length) {
       const files = [...new Set(w.held.map((h) => shortPath(h.path)))];
       rows.push({ key: 'watch:' + w.id, kind: 'watch', text: `${w.held.length} change${w.held.length === 1 ? '' : 's'} to ${files.join(', ')}, not delivered`, title, origin,
-        actions: [{ label: 'Deliver', act: 'deliver', ariaLabel: `Deliver ${w.held.length} held changes to the agent`, run: () => watches.deliverHeld(w.id) }],
+        actions: [{ label: 'Deliver', act: 'deliver', ariaLabel: `Deliver ${w.held.length} held changes to the agent`, run: () => ctl(`/task/watch/${w.id}/ctl`, 'deliver').catch((e) => status(why(e), 'bad')) }],
         stopLabel: 'Stop watching', stopAria: `Stop watching ${what}`, stop });
     } else if (w.once && w.paths.some(isGlob)) {
       rows.push({ key: 'watch:' + w.id, kind: 'watch', text: `Waiting for files in ${w.paths.map((p) => shortPath(baseOf(p))).join(', ')}${w.note ? ': ' + w.note : ''}`, title, origin, since: w.created,
@@ -3079,6 +3223,8 @@ const withWatch = (list) => { list.push(watchTool({ Type, watches, callerOf: wat
         // A subagent's change is its own run; the main agent's joins the turn.
         // A subagent's namespace: what its spawn declared, or the default view.
         namespaceFor: (caller) => { const w = caller == null ? null : agent?.who(caller); return w?.child != null ? (w.ns?.length ? w.ns : defaultSubagentNs(vfs)) : null; },
+        // Main's tools see its own session's control files at /session (src/ns/control.js).
+        mainView: (caller, base) => { const w = caller == null ? null : agent?.who(caller); return w && w.child == null && w.sid != null ? mainNamespace(w.sid, base) : base; },
         ...egressHooks,
       })),
       systemPrompt: () => systemPrompt(vfs),

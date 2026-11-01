@@ -543,6 +543,8 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
       // File watches (src/ns/watch.js): deliver an event; is that session running?
       notify: (sid, ref, ev) => subagents.notify(sid, ref, ev),
       busyOf: (sid, ref) => subagents.busyOf(sid, ref),
+      // Its last answer and request count (/session/<sid>/agents/a<n>/last).
+      summary: (sid, child) => subagents.summary(sid, child),
     },
     // Who made a tool call: { sid, child, ns } (child: the subagent id, or null;
     // ns: the mounts its spawn declared, if any).

@@ -457,7 +457,7 @@ entry point if needed. Tests mock the Sealed provider and spend no inference quo
 
 A Terminal panel (rail icon, or Ctrl+` from anywhere; Ctrl+` again from its input closes
 it) gives the user just-bash over the namespace the main agent sees: /work, /pouch, /tmp,
-/task and mounts (`src/terminal.js`). It is deliberately not a terminal emulator: a
+/task, /session (every session) and mounts (`src/terminal.js`). It is deliberately not a terminal emulator: a
 `role="log"` output region and one labeled text input, no new dependency, usable at
 390 px (16 px input, so phones do not zoom).
 
@@ -468,9 +468,9 @@ it) gives the user just-bash over the namespace the main agent sees: /work, /pou
   shared by the agents' write/edit tools, `run` write-backs and the terminal).
 - **Tasks.** Each command is a /task entry, kind `terminal` (`cat /task/<id>/status`).
   **Ctrl+C writes `kill` to `/task/<id>/ctl`**, the same control file an agent writes;
-  it does not call the abort directly. This is the first instance of the control-plane
-  seam: from the terminal, `echo kill > /task/<n>/ctl` stops an agent's `run` or a
-  subagent the same way. Killed commands show `exit 130`.
+  it does not call the abort directly. From the terminal, `echo kill > /task/<n>/ctl` stops
+  an agent's `run` or a subagent the same way, and `/session` steers and stops agents (see
+  "Control plane"). Killed commands show `exit 130`.
 - **Line editing.** The browser's own input editing, copy and paste; Up/Down history
   (persisted in localStorage as `pouch.terminal.history`, capped at 200, cleared by Erase
   all with the rest of localStorage); Tab completes paths; `clear` or Ctrl+L clears;
@@ -561,6 +561,89 @@ a namespace cannot widen or narrow that. Namespaces do not isolate the main agen
 user's files: they bound tasks, not the page. A worker's 9P port is a
 capability, but the worker itself is our code, so this is defense in depth
 behind QuickJS, not a new security boundary against a compromised page.
+
+## Control plane: everything that acts is a file
+
+The file tree is the control plane (`src/ns/control.js`); the Interface is one client among
+several, as rio's `/dev/wsys` and acme's `/mnt/acme` are in Plan 9. Every Interface control
+that acts writes a file; the terminal writes the same files with `echo`, and the main agent
+writes ctl files from bash. What a write does (the harness side) is one block in
+`src/main.js`, marked "Control plane: the harness side", so the tray, the terminal and an
+agent always get the same behavior: a steer typed in the terminal appears in the tray, and a
+Stop clicked in the tray is in the events log.
+
+```
+/session/events                     recent state changes, one per line: "<seq> <sid> <ref> <what>"
+/session/current                    the session open in the Interface (an agent: its own)
+/session/<sid>/title, status        status: "<main state> agents=<n> running=<k>"
+/session/<sid>/ctl                  stop (main and all its subagents), detach
+/session/<sid>/agents/a<n>/status   "<state> <seconds> <kind> <name>[: task]"
+/session/<sid>/agents/a<n>/ctl      stop (or kill); a1 also "stop all"; detach
+/session/<sid>/agents/a<n>/in       a message: steer | followup | message
+/session/<sid>/agents/a<n>/last     its latest answer
+/session/<sid>/agents/a<n>/ns       its mount table
+/task/<id>/{status,log,ns,ctl}      runs, terminal commands, subagents (ctl: kill)
+/task/watch/<id>/{paths,note,ctl}   watches (ctl: stop, deliver)
+```
+
+**Grammar.** ctl takes one command per line; every line is checked before any runs, and a bad
+one fails the whole write the way a 9P Rerror does: `EINVAL: ctl accepts: stop, detach (got
+"explode")`. `detach` returns main's waiting call (a foreground spawn or a join) so the
+subagent keeps running in the background; on `a<n>` it is refused unless main waits on that
+agent. `in` takes a header line (`steer`, `followup` or `message`) with the text below it, the
+header as the first word (`echo steer use tabs > in`), or plain text, which is a message. A
+steer joins a working agent's turn after its current step and is refused for an idle one; a
+follow-up waits for the turn to end; a message steers a working agent and starts an idle one
+(main: only in the session open in the Interface, where a turn's bookkeeping lives). There is
+no `from` header: who wrote is the view the writer was handed, so nobody can claim to be
+someone else. A write returns once it took effect (a stopped subagent's status reads
+`stopped` next); same-page writers also get the harness's receipt back (a steer's id, which
+the tray follows), while a 9P writer gets the usual byte count.
+
+**Events.** `cat /session/events` prints the last 50 lines. Over 9P, an open fid of
+`events` reads like acme's event file: each read blocks until something new happens, and
+Tflush ends a blocked read (`openStream` in `src/ns/namespace.js` and `src/ns/9p.js`). The
+Interface runs the same blocking-read loop (`control.tail()`), no callbacks: from it, it
+re-draws the tray and sidebar and says writes from the terminal or main out loud ("From the
+terminal: stop reader (a3)"). Events never carry message text, only who did what to which
+agent and how long the text was.
+
+**Who sees what (capabilities).** /session is not in the shared namespace; each client is
+handed a view:
+- The Interface and the terminal: every session, ctl and in writable.
+- The main agent: only its own session, at `/session/<sid>` and `/session/current`. ctl is
+  writable (the same authority `echo kill > /task/<id>/ctl` already gave it); in is refused
+  with EPERM, because agents message each other with the agents tool, which enforces the
+  session's message caps and tags who wrote. Making in writable for agents would duplicate
+  that path without the caps.
+- Subagents and `run`: no /session, as they have no /task. A subagent stopping its siblings
+  or steering main is outside any task it is given, and a second messaging path would cost
+  small models tokens and confusion (the AX argument); the agents tool stays their surface
+  and is not rewritten as a file shim. Because /session is not in the shared tree, a
+  capability view cut from it (`ns: ["/session"]`) cannot name it either.
+
+**What stays direct, and why.** Same-page calls are direct namespace calls (no 9P on the hot
+path); 9P is only for boundaries, as before. Three acting controls stay direct calls:
+- Send (a new turn), a paused follow-up's Send, and a follow-up with attachments: a turn may
+  create the session and carries attachments held in the page; a write to `in` carries text
+  to an existing session. Text-only follow-ups do go through `in`.
+- Cancel on a steer, Cancel and Edit on a follow-up: taking your own unsent words back into
+  the composer is editing, not acting on an agent.
+- Allow and Deny on the approval sheet: consent must not be a file. Main can write its own
+  session's ctl, so a writable approval file would let an agent approve itself.
+
+Out of scope: things that do not act (editor text, theme, layout, Usage). The Thread itself
+(transcript items, streaming text) is content, not control state, and still reaches the
+Interface from the harness's view stream; the control files and the tray read one cache of
+agent states, so they cannot disagree.
+
+**Parity test.** `test/controlplane-node.mjs` keeps the inventory in one table (21 acting
+controls, 3 direct by design). For each control it writes the file from a just-bash terminal
+and from the main agent's view and checks the harness was asked to do the same thing; then it
+checks statically that the Interface handler writes the control file (`ctl(...)`) and that
+no direct harness call (`agent.abort`, `subagents.stop`, `stopCall`, `detach`, `steer`,
+`watches.remove`, ...) appears in `src/main.js` outside the harness-side block. It failed on
+all 21 handlers before Batch F. `test/batchF-browser.mjs` drives the same paths in a page.
 
 ## Stance: no BayLeaf-controlled component holds plaintext
 
