@@ -1,0 +1,16 @@
+import { launch, sheetClick, sleep, waitSignedIn, newSession } from './lib.mjs';
+const ctx = await launch({ fresh: true, userDataDir: '/tmp/pouch-qa/layout-dbg2' });
+const page = ctx.pages()[0] ?? await ctx.newPage();
+page.on('dialog', (d) => d.accept(process.env.BAYLEAF_API_KEY));
+page.on('pageerror', (e) => console.log('PAGEERROR', e.stack.split('\n').slice(0, 6).join('\n')));
+await page.goto('http://127.0.0.1:8744/pouch.html');
+await page.waitForSelector('#badge.ok', { timeout: 60_000 });
+await page.click('#auth'); await sheetClick(page, 'Paste a key'); await waitSignedIn(page);
+await page.waitForSelector('#badge.ok', { timeout: 60_000 });
+let n = 0;
+await page.route('**/sealed/v1/chat/completions', (r) => { n++; r.fulfill({ status: 429, contentType: 'application/json', body: JSON.stringify({ error: { message: 'Daily Sealed request limit reached' } }) }); });
+await newSession(page); await sleep(300);
+await page.fill('#input', 'mocked'); await page.click('#send');
+await sleep(15000);
+console.log('mocked hits', n, '| status:', await page.textContent('#status'), '| log:', (await page.textContent('#log')).slice(0, 200));
+await ctx.close();

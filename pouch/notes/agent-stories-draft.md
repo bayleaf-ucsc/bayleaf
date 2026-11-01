@@ -43,9 +43,11 @@ Prior art worth reusing: `experiments/lfm3-webgpu/qualification/tasks.mjs` alrea
 right shape (files, prompt, `check(files, result, answer)`), a CORE/HELD_OUT split against
 overfitting, and failure classes in `qualify.mjs` (`pass parse cap wrong timeout load other`).
 `test/ax-cli.mjs` exposes the page's exact prompt and tools from Node. The `*-sealed.mjs`
-tests are live but UI-coupled and bespoke. (Note: `test/journeys/`, per-journey browser
-scripts `t1`-`t17` and debug probes, is local and not yet committed; its runs are recorded
-in `JOURNEYS.md`. It has no `tasks.mjs` or `reports/`.)
+tests are live but UI-coupled and bespoke. (Note: `test/journeys/` holds per-journey browser
+scripts `t1`-`t17`, debug probes and `reports/` (AX, UX and joint studies, research
+notes); its runs are recorded in `JOURNEYS.md`. It has no `tasks.mjs`. A few probes
+import from an absolute path of the old `bayleaf-pouch` checkout and need that path
+changed before they run.)
 
 ## 2. Agent stories
 
@@ -97,7 +99,7 @@ in `JOURNEYS.md`. It has no `tasks.mjs` or `reports/`.)
   Features: `run` (QuickJS), `files`, prompt "prefer run to awk".
   Eval: the t14 fixture (quoted commas, doubled quotes, line breaks, `$85,000`); "total salary
   per department, as out.csv". Grader: compare with Python `csv` (as t14 does). Budget 10. Det.
-  Tiers: F vs M (M tends to awk). Coverage: `test/journeys/t14-analyst.mjs` (local, uncommitted; live, browser),
+  Tiers: F vs M (M tends to awk). Coverage: `test/journeys/t14-analyst.mjs` (live, browser),
   `batchC-sealed.mjs` (one subagent `run`).
 
 - **AG16** As an agent, I want AGENTS.md and skills to be found and obeyed, so that a project's

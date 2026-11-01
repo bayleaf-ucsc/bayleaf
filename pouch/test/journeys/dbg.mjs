@@ -1,0 +1,12 @@
+import { launch, instrument, sleep, ensurePanel } from './lib.mjs';
+const ctx = await launch({ fresh: true, userDataDir: '/tmp/pouch-qa/layout-dbg' });
+const page = ctx.pages()[0] ?? await ctx.newPage();
+await page.setViewportSize({ width: 1280, height: 800 });
+page.on('pageerror', (e) => console.log('PAGEERROR', e.stack));
+await page.goto('http://127.0.0.1:8744/pouch.html');
+await sleep(3000);
+await ensurePanel(page, 'files');
+await page.click('#tree .row[data-path="/pouch"]'); await sleep(300);
+await page.click('#tree .row[data-path="/pouch/AGENTS.md"]'); await sleep(800);
+console.log('panel', await page.getAttribute('#app', 'data-panel'));
+await ctx.close();

@@ -5,8 +5,9 @@ Working state: worktree `~/Desktop/bayleaf-pouch`, branch `pouch`, checkpoint co
 `run` tool, offline handling, composer card, Transformers.js provider with weights built into `dist/`.
 Read `README.md`, `JOURNEYS.md` (story map; the source of truth for scope) and
 `DEPLOYMENT.md` first. Journey test scripts and the AX/UX/joint/speech reports were moved out of `/tmp` into
-`test/journeys/` (uncommitted; scripts still use `/tmp/pouch-qa/...` profile dirs, and the
-reports quote transcripts, so scrub before committing).
+`test/journeys/` (committed after a scan for secrets and private data; scripts still use
+`/tmp/pouch-qa/...` profile dirs, and a few probes import from the old `bayleaf-pouch`
+checkout path).
 
 ## Decided, not yet built
 
