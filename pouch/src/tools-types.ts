@@ -6,6 +6,7 @@ import type { BaseFs, Namespace } from './ns/namespace.ts';
 import type { Addons, AddonWho } from './addons.ts';
 import type { OpenHooks, ShowRequest } from './open-cli.ts';
 import type { PdfService } from './pdf.ts';
+import type { DuckdbService } from './duckdb.ts';
 import type { RunToolDeps } from './run.ts';
 import type { EgressNotice, EgressRequest } from './trust.ts';
 import type { bayleafCommands } from './bayleaf-cli.ts';
@@ -22,7 +23,7 @@ export interface EditSpec { oldText?: string; newText?: string; replaceAll?: boo
 export type RmOpts = Parameters<ToolFs['rm']>[1];
 export type MkdirOpts = Parameters<ToolFs['mkdir']>[1];
 export type CpOpts = Parameters<ToolFs['cp']>[2];
-export type ShellHooks = Parameters<typeof bayleafCommands>[1] & OpenHooks & { addons?: Addons; pdf?: PdfService; media?: Parameters<typeof mediaCommands>[1] };
+export type ShellHooks = Parameters<typeof bayleafCommands>[1] & OpenHooks & { addons?: Addons; pdf?: PdfService; media?: Parameters<typeof mediaCommands>[1]; duckdb?: DuckdbService };
 // The page's side of the tools: namespaces, egress approval, the shared engines.
 export interface ToolsHooks {
   namespaceFor?(caller: Caller): string[] | null | undefined; // a subagent's mounts
@@ -34,7 +35,7 @@ export interface ToolsHooks {
   onEgress?(e: EgressNotice, caller: Caller): void;
   addons?: Addons; addonsWho?(caller: Caller): Extract<AddonWho, { by: 'agent' }> | undefined;
   show?(req: ShowRequest, caller: Caller): Promise<{ opened?: boolean; reason?: string } | null | undefined>;
-  pdf?: PdfService; media?: Parameters<typeof mediaCommands>[1];
+  pdf?: PdfService; media?: Parameters<typeof mediaCommands>[1]; duckdb?: DuckdbService;
   prepareImage?(bytes: Uint8Array): Promise<PreparedImage>;
   sessionOf?(caller?: ConversationId): string | number | null; // a SessionId: legacy sessions are numeric
   makeWorker?: RunToolDeps['makeWorker'];

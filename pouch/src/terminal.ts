@@ -48,10 +48,10 @@ export function binaryOutput(text: unknown): string | null {
 const errText = (e: unknown) => String((e && typeof e === 'object' && 'message' in e ? e.message : null) ?? e);
 const commonPrefix = (xs: string[]) => xs.reduce((a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; return a.slice(0, i); });
 
-// addons, pdf, media: the src/addons-cli.ts, src/pdf.ts and src/media.ts
+// addons, pdf, media, duckdb: the src/addons-cli.ts, src/pdf.ts, src/media.ts and src/duckdb.ts
 // services, passed through to shellFor. openFile and revealDir back the
 // `open` command (src/open-cli.ts).
-export interface TerminalHooks extends Pick<ShellHooks, 'addons' | 'pdf' | 'media'>, Pick<OpenHooks, 'openFile' | 'revealDir'> {
+export interface TerminalHooks extends Pick<ShellHooks, 'addons' | 'pdf' | 'media' | 'duckdb'>, Pick<OpenHooks, 'openFile' | 'revealDir'> {
   bayleafCredential?(): string | null | undefined;
   approveEgress?(req: EgressRequest): Promise<boolean>;
 }
@@ -78,6 +78,7 @@ export function createTerminal({ vfs, fs: userFs, hooks = {}, onChange }: Termin
     addons: hooks.addons,
     pdf: hooks.pdf,
     media: hooks.media,
+    duckdb: hooks.duckdb,
     openFile: hooks.openFile,
     revealDir: hooks.revealDir,
   });

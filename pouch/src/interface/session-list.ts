@@ -5,17 +5,19 @@ import { $, el } from '../dom.ts';
 import { exhaustedText } from '../usage.ts';
 import { createPdfService } from '../pdf.ts';
 import { createMediaService } from '../media.ts';
+import { createDuckdbService } from '../duckdb.ts';
 import { createSessions, revertKey, sameId, titleOf } from '../sessions.ts';
 import { createEgress, grantsFor, revoke, serviceName } from '../egress.ts';
 import { LOCAL, localWorker, setSource } from '../local/host.ts';
 import { askTitle, buildLock, createAddons, sizeText } from '../addons.ts';
-import { LFM3, LIBAVJS, PDFJS, REGISTRY, TRANSFORMERSJS } from '../addons-registry.ts';
+import { DUCKDB, LFM3, LIBAVJS, PDFJS, REGISTRY, TRANSFORMERSJS } from '../addons-registry.ts';
 import type { ConversationId } from '@earendil-works/pi-durable';
 import type { ThreadItem, ToolItem } from '../agent-types.ts';
 import type { Egress } from '../egress.ts';
 import type { EgressNotice, EgressTrace } from '../trust.ts';
 import type { MediaService } from '../media.ts';
 import type { AddonRequest, AddonWho, Addons } from '../addons.ts';
+import type { DuckdbService } from '../duckdb.ts';
 import type { PdfService } from '../pdf.ts';
 import type { Caller, ToolsHooks } from '../tools-types.ts';
 import type { App } from './app.ts';
@@ -37,6 +39,7 @@ export interface SessionListRegion {
   // This page's pouch-build:<sha256> lock (boot holds it); the sweep reads the others.
   build: ReturnType<typeof buildLock>;
   addonsWho(caller: Caller): AgentWho;
+  duckdbService: DuckdbService;
   mediaService: MediaService;
   pdfService: PdfService;
   sessions: ReturnType<typeof createSessions>;
@@ -139,7 +142,7 @@ export function createSessionListRegion(app: App): SessionListRegion {
   const addons = createAddons({ entries: REGISTRY, tasks: app.state.vfs.tasks, approve: approveAddon, otherBuilds: () => build.others(),
     // A loaded worker holds its add-on's code (and LFM3's weights): let it go first,
     // so the next use goes through the install path again.
-    beforeRemove: (id) => (id === LFM3 || id === TRANSFORMERSJS ? localWorker.dispose() : id === PDFJS ? pdfService.jobs.unload('pdf') : id === LIBAVJS ? mediaService.jobs.unload('libav') : undefined),
+    beforeRemove: (id) => (id === LFM3 || id === TRANSFORMERSJS ? localWorker.dispose() : id === PDFJS ? pdfService.jobs.unload('pdf') : id === LIBAVJS ? mediaService.jobs.unload('libav') : id === DUCKDB ? duckdbService.jobs.unload('duckdb') : undefined),
     onChange: () => {
       const t = LFM3 ? addons.installing(LFM3) : undefined;
       if (t?.progress) app.providers.localProgress({ ...t.progress, installing: true });
@@ -158,6 +161,8 @@ export function createSessionListRegion(app: App): SessionListRegion {
   const pdfService = createPdfService({ tasks: app.state.vfs.tasks, addons });
   // ffprobe, ffmpeg (src/media.ts): one libav.js worker, the same way.
   const mediaService = createMediaService({ tasks: app.state.vfs.tasks, addons });
+  // duckdb (src/duckdb.ts): one DuckDB-Wasm worker, the same way; an asked add-on (src/addons-registry.ts).
+  const duckdbService = createDuckdbService({ tasks: app.state.vfs.tasks, addons });
 
   return {
     get activeRun() { return activeRun; }, set activeRun(v) { activeRun = v; },
@@ -167,6 +172,7 @@ export function createSessionListRegion(app: App): SessionListRegion {
     liveEgress,
     addons,
     addonsWho,
+    duckdbService,
     build,
     mediaService,
     pdfService,

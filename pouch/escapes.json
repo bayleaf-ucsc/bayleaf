@@ -2,6 +2,7 @@
   "src/agent.ts": {"as": 3},
   "src/bayleaf-cli.ts": {"as": 1},
   "src/dom.ts": {"as": 1},
+  "src/duckdb.ts": {"as": 1},
   "src/interface/connection.ts": {"as": 1},
   "src/interface/subagents.ts": {"as": 2},
   "src/interface/transcript.ts": {"as": 2},

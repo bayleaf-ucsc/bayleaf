@@ -39,8 +39,9 @@ function rewrite(text, rewrites, name) {
 
 // Bundle a worker entry; rewrites: [[RegExp, replacement, expectedCount]] on
 // the minified bundle. sources: { 'path/suffix.mjs': rewrites } on a module's
-// source before bundling (for code that minification would rename).
-export async function bundleWorker(entry, rewrites = [], { sources = {} } = {}) {
+// source before bundling (for code that minification would rename). alias:
+// esbuild's, for a package file its exports leave out (build-duckdb.mjs).
+export async function bundleWorker(entry, rewrites = [], { sources = {}, alias } = {}) {
   const hit = new Set();
   const plugins = Object.keys(sources).length ? [{ name: 'source-rewrites', setup(b) {
     b.onLoad({ filter: /\.m?js$/ }, async ({ path }) => {
@@ -51,7 +52,7 @@ export async function bundleWorker(entry, rewrites = [], { sources = {} } = {}) 
       return { contents: rewrite(await readFile(path, 'utf8'), sources[key], key), loader: 'js' };
     });
   } }] : [];
-  let text = (await build({ entryPoints: [entry], bundle: true, minify: true, write: false, plugins,
+  let text = (await build({ entryPoints: [entry], bundle: true, minify: true, write: false, plugins, ...(alias ? { alias } : {}),
     format: 'esm', platform: 'browser', target: 'es2022', legalComments: 'inline', logLevel: 'warning' })).outputFiles[0].text;
   for (const k of Object.keys(sources)) if (!hit.has(k)) throw new Error(`${entry}: ${k} was never bundled, so its rewrites did not apply`);
   text = rewrite(text, rewrites, entry);

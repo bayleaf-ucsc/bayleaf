@@ -152,7 +152,7 @@ export function createBootRegion(app: App): BootRegion {
           // Every change an agent makes, for /session/<sid>/changes (subagents marked by their ref).
           onChange: (caller, op, path) => { const w = app.state.agent?.who(caller); if (w?.sid != null) app.namespaces.changes.note(w.sid, op, path, w.child != null ? refOfChild(w.sid, w.child)?.ref ?? 'subagent' : MAIN); },
           ...app.sessionList.egressHooks,
-          addons: app.sessionList.addons, addonsWho: app.sessionList.addonsWho, pdf: app.sessionList.pdfService, media: app.sessionList.mediaService,
+          addons: app.sessionList.addons, addonsWho: app.sessionList.addonsWho, pdf: app.sessionList.pdfService, media: app.sessionList.mediaService, duckdb: app.sessionList.duckdbService,
           show: app.editing.show,
         }))),
         systemPrompt: () => systemPrompt(app.state.vfs),
