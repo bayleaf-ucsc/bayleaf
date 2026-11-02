@@ -1,0 +1,7 @@
+/target/
+/pkg/
+/tools/
+/test-results/
+/node_modules/
+/qr.js
+/*.log

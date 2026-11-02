@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pouch transfer experiment</title>
+<style>
+  :root { color-scheme: light dark; font: 16px/1.5 system-ui; }
+  body { max-width: 780px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.5rem; } h2 { font-size: 1.1rem; }
+  section { border: 1px solid #8886; border-radius: 12px; padding: 1rem; margin: 1rem 0; }
+  button, input, textarea { font: inherit; } button { padding: .5rem .8rem; margin: .4rem .3rem .4rem 0; }
+  textarea { box-sizing: border-box; width: 100%; overflow-wrap: anywhere; min-height: 5rem; }
+  input[type=file] { display: block; max-width: 100%; }
+  canvas { max-width: 100%; height: auto !important; } pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .muted { opacity: .75; font-size: .9rem; } #downloads a { display: block; margin: .6rem 0; }
+  progress { width: 100%; } [hidden] { display: none !important; }
+</style>
+<h1>Pouch transfer experiment</h1>
+<p>Sendme-compatible file handoffs. Standalone, not connected to your Pouch files or credentials.</p>
+<p class="muted">Synthetic/public files only. Uses Iroh’s public relay infrastructure: relays see connection metadata, not file contents. Browser transfers are relayed. Keep both pages open. Files and partial downloads are held in memory, lost on reload. 64 MiB total, 256 files maximum.</p>
+<button id="start" disabled>Connect to relay</button><button id="stop" disabled>Stop and clear</button>
+<p id="status" role="status">Loading transfer runtime…</p>
+<section>
+  <h2>Send</h2>
+  <label>Files <input id="files" type="file" multiple></label>
+  <p><label>Or folder <input id="folder" type="file" webkitdirectory multiple></label></p>
+  <button id="send" disabled>Create ticket</button>
+  <label for="out">Share this ticket, or scan the QR to open a receive link</label>
+  <textarea id="out" readonly></textarea>
+  <canvas id="qr" hidden aria-label="Receive link QR code"></canvas>
+  <p id="qr-note" class="muted"></p>
+  <p class="muted">Treat the ticket as access-bearing. It is not single-use. Stop sharing by closing this endpoint. Native client: <code>sendme receive TICKET</code>.</p>
+</section>
+<section>
+  <h2>Receive</h2>
+  <label for="ticket">Sendme ticket (or receive link)</label>
+  <textarea id="ticket" spellcheck="false"></textarea>
+  <button id="receive" disabled>Receive / retry</button><button id="pause" disabled>Pause</button>
+  <progress id="progress" max="1" value="0"></progress>
+  <p id="counts" class="muted"></p>
+  <div id="downloads"></div>
+  <p class="muted">Receiving does not run, mount, or overwrite anything. Save each verified file explicitly.</p>
+</section>
+<details><summary>Diagnostic log</summary><pre id="log"></pre></details>
+<script type="module" src="./app.js"></script>
+</html>
