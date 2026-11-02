@@ -35,7 +35,7 @@ const csp = readFileSync('pouch.html', 'utf8').match(/http-equiv="Content-Securi
 const html = `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><title>duckdb spike</title><script>${script}</script>`;
 const server = createServer((req, res) => {
   if (req.url === '/duckdb-eh.wasm') { res.writeHead(200, { 'content-type': 'application/wasm' }); return res.end(wasm); }
-  if (req.url.startsWith('/ext/')) { res.writeHead(200, { 'content-type': 'application/wasm' }); return res.end(readFileSync('/tmp/ddb-ext/' + req.url.slice(5))); }
+  if (/^\/ext\/(parquet|json)\.wasm$/.test(req.url)) { res.writeHead(200, { 'content-type': 'application/wasm' }); return res.end(readFileSync('/tmp/ddb-ext/' + req.url.slice(5))); }
   if (req.url === '/') { res.writeHead(200, { 'content-type': 'text/html' }); return res.end(html); }
   res.writeHead(404); res.end();
 });

@@ -148,11 +148,21 @@ export function scan(sql: string): { statements: string[]; literals: Literal[]; 
     if (ch === ';') { if (sql.slice(start, i).trim()) statements.push(sql.slice(start, i).trim()); start = i + 1; last = ''; }
   }
   if (sql.slice(start).trim()) statements.push(sql.slice(start).trim());
-  return { statements: statements.filter((s) => !/^(--[^\n]*\n?|\/\*[\s\S]*?\*\/|\s)*$/.test(s)), literals, dot };
+  return { statements: statements.filter((s) => skipComments(s) !== ''), literals, dot };
+}
+// The text after leading whitespace and comments, in one linear pass (a regex
+// alternation for this backtracks exponentially on '----' or '/**//**/').
+export function skipComments(s: string) {
+  for (let i = 0; ;) {
+    while (i < s.length && /\s/.test(s[i])) i++;
+    if (s.startsWith('--', i)) { const e = s.indexOf('\n', i); if (e < 0) return ''; i = e + 1; }
+    else if (s.startsWith('/*', i)) { const e = s.indexOf('*/', i + 2); if (e < 0) return s.slice(i); i = e + 2; }
+    else return s.slice(i);
+  }
 }
 // Statements whose result is only a count or "Success": printed as nothing.
-const QUIET = /^(?:--[^\n]*\n|\/\*[\s\S]*?\*\/|\s)*(CREATE|INSERT|UPDATE|DELETE|COPY|DROP|ALTER|SET|RESET|LOAD|INSTALL|DETACH|USE|BEGIN|COMMIT|ROLLBACK|ABORT|CHECKPOINT|VACUUM|ANALYZE|EXPORT|IMPORT|TRUNCATE|COMMENT)\b/i;
-export const isQuiet = (sql: string, r: DuckResult) => QUIET.test(sql) && r.columns.length === 1 && ['Count', 'Success'].includes(r.columns[0].name);
+const QUIET = /^(CREATE|INSERT|UPDATE|DELETE|COPY|DROP|ALTER|SET|RESET|LOAD|INSTALL|DETACH|USE|BEGIN|COMMIT|ROLLBACK|ABORT|CHECKPOINT|VACUUM|ANALYZE|EXPORT|IMPORT|TRUNCATE|COMMENT)\b/i;
+export const isQuiet = (sql: string, r: DuckResult) => QUIET.test(skipComments(sql)) && r.columns.length === 1 && ['Count', 'Success'].includes(r.columns[0].name);
 
 const abs = (cwd: string, p: string) => normalize(p.startsWith('/') ? p : cwd + '/' + p);
 const URLISH = /^[a-z][a-z0-9+.-]*:\/\//i;

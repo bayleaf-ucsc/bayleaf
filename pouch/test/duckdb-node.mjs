@@ -99,6 +99,13 @@ await t('duckType, isQuiet, plainError, explain', () => {
   assert.ok(isQuiet('COPY t TO x', res([['Count', 'Int64']], [[3]])));
   assert.ok(isQuiet('-- c\nSET x=1', res([['Success', 'Bool']], [])));
   assert.ok(!isQuiet('SELECT count(*) AS Count FROM t', res([['Count', 'Int64']], [[3]])));
+  assert.ok(isQuiet('/* a */ /* b */\n-- c\n  insert into t values (1)', res([['Count', 'Int64']], [[1]])));
+  // Linear on the inputs CodeQL flagged as exponential for the old regexes.
+  const t0 = performance.now();
+  assert.ok(!isQuiet('-'.repeat(60000) + 'x', res([['Count', 'Int64']], [[1]])));
+  assert.ok(!isQuiet('/*' + '*//*'.repeat(30000), res([['Count', 'Int64']], [[1]])));
+  assert.deepEqual(scan('select 1;\n' + '-'.repeat(60000) + '\n; /* open').statements, ['select 1', '/* open']);
+  assert.ok(performance.now() - t0 < 2000);
   assert.equal(plainError('{"exception_type":"Parser","exception_message":"syntax error at or near \\"SELEC\\""}'), 'Parser Error: syntax error at or near "SELEC"');
   assert.match(explain('Permission Error: Cannot access file "/work/x.csv" - file system operations are disabled by configuration'), /^\/work\/x\.csv: no such file in your files \(ls \/work\/ to check/);
   assert.match(explain('Permission Error: Cannot access file "https://e.com/x.csv" - file system operations are disabled'), /has no network[\s\S]*put the file in \/work/);
