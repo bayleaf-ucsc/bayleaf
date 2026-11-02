@@ -14,7 +14,7 @@
   "src/graph.ts": {"as": 1, "!": 2},
   "src/interface/auth.ts": {"as": 1},
   "src/interface/boot.ts": {"as": 13, "!": 4},
-  "src/interface/commands.ts": {"as": 7, "!": 11},
+  "src/interface/commands.ts": {"as": 6, "!": 11},
   "src/interface/connection.ts": {"as": 5, "!": 6},
   "src/interface/editing.ts": {"as": 9, "!": 9},
   "src/interface/harness.ts": {"as": 1, "!": 18, "as unknown as": 3},

@@ -1,7 +1,7 @@
 // Control plane, the harness side: stop, steer and follow-up through ctl files.
 
 import { $ } from '../dom.ts';
-import { MAIN, asRef, refOf } from '../graph.ts';
+import { MAIN, asRef, findChild } from '../graph.ts';
 import { sameId } from '../sessions.ts';
 import type { ConversationId } from '@earendil-works/pi-durable';
 import type { App } from './app.ts';
@@ -22,7 +22,7 @@ export function createHarnessRegion(app: App): HarnessRegion {
   // terminal, the main agent). The only place the Interface calls the harness
   // to act; test/controlplane-node.mjs checks that nothing outside does.
   const busyIn = (sid: SessionId) => (sameId(sid, app.sessionList.sessions.current?.id) ? app.queues.busy() : app.sessionList.sessions.running.has(String(sid)));
-  const childByRef = (sid: SessionId, ref: string | ConversationId) => { const l = app.subagents.kids.get(String(sid)) ?? []; return l.find((x) => refOf(l, x) === asRef(ref)) ?? l.find((x) => x.id === ref); };
+  const childByRef = (sid: SessionId, ref: string | ConversationId) => findChild(app.subagents.kids.get(String(sid)) ?? [], ref);
   const ctlErr = (msg: string) => Object.assign(new Error(msg), { code: 'EINVAL' });
   async function stopSession(sid: SessionId, all: boolean) {
     const key = String(sid);
@@ -50,7 +50,7 @@ export function createHarnessRegion(app: App): HarnessRegion {
   }
   // Stop one subagent: steers not yet read and its follow-up become one paused item.
   async function stopChildOf(sid: SessionId, id: string | ConversationId) {
-    const c = childByRef(sid, id) ?? (app.subagents.kids.get(String(sid)) ?? []).find((x) => x.id === id);
+    const c = childByRef(sid, id);
     if (!c) throw ctlErr(`no agent ${id} in this session`);
     const key = String(sid);
     const back = await app.queues.withdrawSteers(key, sid, (s) => s.child === c.id);

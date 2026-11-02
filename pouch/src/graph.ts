@@ -31,6 +31,9 @@ export type Handle = string;
 export interface HandleRow { ref?: Handle; sent?: Record<Handle, number>; got?: Record<Handle, number>; wokenBy?: Handle; to?: Handle; lastSent?: { to?: string } }
 export const asRef = (x: unknown): Handle => { const s = String(x ?? ''); const m = /^s(\d+)$/i.exec(s.trim()); return m ? 'a' + m[1] : s; };
 export const refOf = <R extends { ref?: Handle }>(l: readonly R[], c: R): Handle => asRef(c.ref ?? `a${l.indexOf(c) + 2}`);
+// A child by handle (a3, s3) or by its conversation id, which arrives as a number or as text from a path.
+export const findChild = <R extends { ref?: Handle; id: unknown }>(l: readonly R[], ref: unknown): R | undefined =>
+  l.find((x) => refOf(l, x) === asRef(ref)) ?? l.find((x) => String(x.id) === String(ref));
 // A stored label ("main (s1)", "chair (s2)") with its handles upgraded.
 export const relabel = <T>(t: T): T => (typeof t === 'string' ? t.replace(/\(s(\d+)\)/g, '(a$1)') as T : t);
 const rekey = <V>(o: Record<string, V> | undefined) => (o ? Object.fromEntries(Object.entries(o).map(([k, v]) => [asRef(k), v])) : o);

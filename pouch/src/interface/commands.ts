@@ -142,7 +142,12 @@ export function createCommandsRegion(app: App): CommandsRegion {
       const c = (app.subagents.kids.get(String(sid)) ?? []).find((x) => x.id === id);
       rows.push({ key: 'cq:' + id, kind: 'followup', paused: cq.paused, text: excerpt(cq.text), title: cq.text,
         origin: cq.paused ? `Paused for ${cq.name}` : `Follow-up for ${cq.name} · after its turn`,
-        actions: cq.paused ? [{ label: 'Send', act: 'send', ariaLabel: `Send paused message to ${cq.name}`, run: async () => { app.queues.childFollowUps.delete(id); app.state.composer!.renderTray(); await app.namespaces.ctl(app.namespaces.agentFile(sid!, (c ? refOf(app.subagents.kids.get(String(sid)) ?? [], c) : id) as string, 'in'), 'message\n' + cq.text).catch((e) => app.state.status(why(e), 'bad')); } }]
+        actions: cq.paused ? [{ label: 'Send', act: 'send', ariaLabel: `Send paused message to ${cq.name}`, run: async () => {
+          app.queues.childFollowUps.delete(id); app.state.composer!.renderTray();
+          // Its row is gone (the session was edited elsewhere): nothing to send to, so the text comes back.
+          if (!c) { app.queues.putBack(cq.text); app.queues.announce(`${cq.name} is no longer in this session; your message is back in the box.`); return; }
+          await app.namespaces.ctl(app.namespaces.agentFile(sid!, refOf(app.subagents.kids.get(String(sid)) ?? [], c), 'in'), 'message\n' + cq.text).catch((e) => app.state.status(why(e), 'bad'));
+        } }]
           : c?.status === 'running' ? [{ label: 'Steer now', act: 'promote', ariaLabel: `Steer now: send to ${cq.name} after its current step`, run: async () => {
             app.queues.childFollowUps.delete(id);
             await app.namespaces.ctl(app.namespaces.agentFile(sid!, refOf(app.subagents.kids.get(String(sid)) ?? [], c), 'in'), 'steer\n' + cq.text).catch((e) => app.state.status(why(e), 'bad'));
