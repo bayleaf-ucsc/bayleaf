@@ -111,6 +111,8 @@ try {
   ok('Settings > Add-ons: a row with label, size, used by, state; Make available offline (40 MiB) asks once and installs');
 
   // 4. Parts no entry of this build names (an older build's) are offered to free, then gone; pdf.js stays.
+  // Seed only after boot's own sweep (4 s after boot, src/interface/boot.ts) has run, or it may take the key first.
+  await page.waitForFunction(() => performance.now() > 8000, null, T);
   await page.evaluate(async () => { const c = await caches.open('pouch-runtime'); await c.put('https://pouch-runtime.invalid/' + encodeURIComponent('runtime/old/' + 'a'.repeat(64) + '.bin'), new Response(new Uint8Array(300000))); });
   await page.evaluate(() => document.getElementById('addons-offline').click()); // Settings is still open from 3 // any action re-renders; Make available offline has nothing left
   await page.waitForFunction(() => /^Free 0\.3 MiB from older versions$/.test(document.getElementById('addons-sweep')?.textContent) && !document.getElementById('addons-sweep').hidden, null, T);
