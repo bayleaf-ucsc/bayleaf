@@ -78,6 +78,13 @@ Findings:
 7. The library bundle contains one CDN default (`getJsDelivrBundles`, unused here):
    `assertNoCdn` catches it, so the build rewrites that string (one exact match).
 
+8. (Found while building, 2026-11-02.) A database file cannot be handed back: after
+   `ATTACH '/work/t.duckdb'` (or opening it as the main database), `CHECKPOINT`, `DETACH`
+   and even `reset()`, DuckDB's web file system still reports "File /work/t.duckdb is
+   already locked exclusively", `copyFileToBuffer` throws a `WebAssembly.Exception`, and
+   `read_blob` on it fails the same way. A new file also opens read-only unless
+   `accessMode` is READ_WRITE. So `duckdb DBFILE` is refused with a Parquet recipe.
+
 **Decision.** Build it: 1.32.0, `eh` only, blocking bindings in Pouch's own worker, wasm in two
 parts, `parquet` and `json` pinned by SHA-256 and served from memory by the stand-in XHR, a
 fresh locked database per job. The `json` extension is needed for `read_json` and `-json`

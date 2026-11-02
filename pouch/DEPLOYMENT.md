@@ -100,6 +100,32 @@ and pdf.js makes no request of its own (checked with no CSP violation in
 `test/pdf-browser.mjs`, Chromium only). Privacy: Cloudflare sees that this browser
 fetched pdf.js; no PDF content leaves the page.
 
+## DuckDB-Wasm add-on
+
+Pouch's third heavy-tool runtime: `build-duckdb.mjs` builds `runtime/duckdb/` from
+`@duckdb/duckdb-wasm` 1.32.0 (exact pin in `package.json`; npm integrity in the lockfile; the
+build also checks the SHA-256 of `duckdb-eh.wasm` and `duckdb-browser-blocking.mjs`) and the
+DuckDB v1.4.3 `parquet` and `json` extensions from `extensions.duckdb.org` (fetched once with
+curl into `node_modules/.cache/pouch-duckdb-ext/`, pinned by SHA-256 in `EXTENSIONS`). The page
+embeds its manifest's SHA-256 (define `POUCH_DUCKDB_RUNTIME`). It is the asked add-on `duckdb`
+(`src/addons-registry.ts`): the page fetches it only when the person installs it, never on a command.
+
+| File | Count | Size |
+|---|---:|---|
+| `runtime/duckdb/manifest.<sha16>.json` | 1 | ~1 KB |
+| `worker.js` part: src/duckdb/worker.ts with DuckDB-Wasm's synchronous browser bindings and apache-arrow 17 | 1 | 1.3 MiB |
+| `duckdb-eh.wasm` parts: the released `duckdb-eh.wasm` with one 48-byte string rewritten (an unpkg stylesheet link in the EXPLAIN html template) | 2 | 32.7 MiB (20.0 + 12.7) |
+| `extensions.pack` part: the signed `parquet` (2.9 MiB) and `json` (0.8 MiB) extensions for v1.4.3 `wasm_eh`, unmodified | 1 | 3.7 MiB |
+| `NOTICE.txt` part: DuckDB's MIT license (the npm package ships none), a pointer to its third_party licenses, apache-arrow's LICENSE and NOTICE | 1 | 112 KB |
+
+Total 37.8 MiB in 6 files (largest 20.0 MiB, under the 25 MiB per-file limit). Only the
+`eh` build ships (every browser Pouch supports has Wasm exceptions); not the `mvp` or `coi`
+builds or the library's own async worker. Not threaded (no SharedArrayBuffer, so no
+COOP/COEP). CSP delta: none; the worker is a `blob:` module worker and wasm runs under the
+existing `'wasm-unsafe-eval'` (checked with no CSP violation in `test/duckdb-browser.mjs`,
+Chromium only). Privacy: Cloudflare sees that this browser fetched the DuckDB runtime; no
+data leaves the page.
+
 ## libav.js add-on
 
 Pouch's second heavy-tool add-on (quiet: 7.8 MiB from this origin; the 44 MiB source offer

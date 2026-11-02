@@ -283,14 +283,14 @@ deliberate violation of each rule failing and the real tree passing.
 
 | Rule | What the build checks | Allowed |
 |---|---|---|
-| egress | network APIs (`fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `WebTransport`, `RTCPeerConnection`, `sendBeacon`, `importScripts`, `Worker`, `import()` of a non-bundled path) appear only in egress modules, each allowed only its own APIs | `src/sealed.ts` (EHBP ciphertext to the attested enclave), `src/bayleaf-api.ts` (account plane: claim, allowance, Campus Pass, Sealed model list; metadata only), `src/bayleaf-cli.ts` (the agent's `bayleaf` command, approved through `egress.ts`), `src/localhost.ts` (Localhost provider), `src/models.ts` and `src/assets.ts` (hash-checked weights and runtimes), `src/offline.ts` and `sw.js` (the offline copy, this origin); `Worker` only in `src/run.ts`, `src/pdf.ts`, `src/media.ts` and `src/local/engine.ts` (bundled, hash-checked code from `blob:` URLs) |
+| egress | network APIs (`fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `WebTransport`, `RTCPeerConnection`, `sendBeacon`, `importScripts`, `Worker`, `import()` of a non-bundled path) appear only in egress modules, each allowed only its own APIs | `src/sealed.ts` (EHBP ciphertext to the attested enclave), `src/bayleaf-api.ts` (account plane: claim, allowance, Campus Pass, Sealed model list; metadata only), `src/bayleaf-cli.ts` (the agent's `bayleaf` command, approved through `egress.ts`), `src/localhost.ts` (Localhost provider), `src/models.ts` and `src/assets.ts` (hash-checked weights and runtimes), `src/offline.ts` and `sw.js` (the offline copy, this origin); `Worker` only in `src/run.ts`, `src/pdf.ts`, `src/media.ts`, `src/duckdb.ts` and `src/local/engine.ts` (bundled, hash-checked code from `blob:` URLs) |
 | html | no first-party code turns a string into HTML (`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `srcdoc`, `document.write`, `DOMParser`, ...), as a property or an `el()` prop | `viewer.html` only ("HTML reports") |
 | sealed | only `src/sealed.ts` imports `tinfoil` or reaches into the client (`secureClient`, `openAIOptions`); checked in the sources and in esbuild's metafile | `src/sealed.ts` |
 | cdn | no third-party CDN URL in the assembled page (`assertNoCdn`, as for runtimes) | URLs only compared against, never fetched (the Sigstore issuer the Tinfoil SDK checks) |
 | exact | no `any` in a trust-boundary module (`EXACT` in `arch.mjs`): where data crosses a boundary, its type is the claim an auditor reads | `src/trust.ts`, `src/egress.ts`, `src/ns/namespace.ts`, `src/ns/control.ts`, the egress modules and `src/sealed.ts` |
 | layers | the core (files, namespaces, storage, providers, sandboxed runtimes: `CORE` in `arch.mjs`) imports only the core; only `src/main.ts` imports the Interface | |
-| seams | a region is imported from outside only through its entry modules: `src/run.ts`, `src/pdf.ts`, `src/media.ts`, `src/local/host.ts` and `src/local/provider.ts`; Interface regions never import each other | |
-| contract | a contract module (`CONTRACTS` in `arch.mjs`) holds types only, no runtime statement, and is imported only with `import type`; a contract may be imported across a seam, never across a layer | `src/trust.ts`, `src/agent-types.ts`, `src/subagents-types.ts`, `src/tools-types.ts`, `src/interface/app.ts`, and `protocol.ts` in `src/run/`, `src/local/`, `src/pdf/` and `src/media/` (each worker's messages) |
+| seams | a region is imported from outside only through its entry modules: `src/run.ts`, `src/pdf.ts`, `src/media.ts`, `src/duckdb.ts`, `src/local/host.ts` and `src/local/provider.ts`; Interface regions never import each other | |
+| contract | a contract module (`CONTRACTS` in `arch.mjs`) holds types only, no runtime statement, and is imported only with `import type`; a contract may be imported across a seam, never across a layer | `src/trust.ts`, `src/agent-types.ts`, `src/subagents-types.ts`, `src/tools-types.ts`, `src/interface/app.ts`, and `protocol.ts` in `src/run/`, `src/local/`, `src/pdf/`, `src/media/` and `src/duckdb/` (each worker's messages) |
 | escapes | each module's casts (`as`, `as unknown as`) and non-null assertions (`!`) stay within its count in `escapes.json`; a count above it fails, and so does one below it until `node arch.mjs --lower` records it, so the counts only go down | the counts in `escapes.json`: mostly where untyped data enters (JSON, `postMessage`, a tool's arguments) |
 | size | each module stays within 700 lines; `src/main.ts` within 60 | |
 
@@ -1366,7 +1366,7 @@ Adding one is one registry entry plus its worker:
 
 ## Tool workers and jobs
 
-For heavy tools (pdf.js and libav.js now; OCR, ASR, DuckDB later):
+For heavy tools (pdf.js, libav.js and DuckDB-Wasm now; OCR and ASR later):
 
 - **Convention** (`build-runtime.mjs`): each heavy tool runs in its own same-origin
   worker; its files ship as content-hash parts under `runtime/<group>/` listed in
@@ -1511,6 +1511,75 @@ fake worker, build pins and source) and `node test/media-browser.mjs` (the real 
 under the production CSP on tiny committed fixtures in `test/fixtures/media/`: ffprobe JSON,
 frame colors and times from VP8 and VP9, JPEG, audio copy, trim, VP9 transcode, the gaps'
 messages, Stop mid-ffmpeg, offline reuse, and the network log).
+
+### The third tool: DuckDB-Wasm (`duckdb`)
+
+`src/duckdb.ts` adds the DuckDB CLI's `duckdb` command to the terminal and the agents' bash
+(DuckDB v1.4.3, `@duckdb/duckdb-wasm` 1.32.0, the newest real release: npm's `latest` tag is
+a dev build), with the CLI's flags so a model's prior knowledge works (JOURNEYS section 16):
+
+    duckdb [-box|-csv|-json|-jsonlines|-markdown|-line|-list] [-c SQL | -f FILE] [-o OUT] [-maxrows N] [SQL]
+
+SQL comes from `-c`, `-f FILE`, a second argument, or standard input (`duckdb < q.sql`).
+Files are named in the SQL by path in single quotes (`FROM '/work/sales.csv'`, globs too):
+before the job runs, every quoted string that names a file in the caller's own view is
+handed to the engine as bytes under its absolute path (relative paths are made absolute in
+the SQL), and every `COPY ... TO` target that exists afterwards is written back. DuckDB
+never sees Pouch's tree, only those files. Statements run in order and the first error
+stops the rest; results print in DuckDB's box format by default, and statements whose
+result is only a count (CREATE, COPY, SET ...) print nothing; "wrote PATH" goes to stderr
+so stdout stays data. Errors arrive as DuckDB's text, with a hint where the next attempt
+needs one (a missing file names the folder to `ls`; a refused URL says there is no
+network; a CSV error suggests `all_varchar=true`). Every command starts with an empty
+in-memory database. Database files (`duckdb data.duckdb`, `ATTACH`) are refused with the
+Parquet recipe: DuckDB-Wasm 1.32.0 keeps an attached file locked after DETACH and even
+after `reset()`, so its bytes cannot be copied back (the spike's README). Dot commands are
+refused with their flag or SQL equivalent.
+
+Caps are named constants in `src/duckdb.ts`: `MAX_INPUT_BYTES` 256 MiB of files per call
+and `MAX_GLOB_FILES` 1000 per glob (refused before the runtime loads), `MAX_OUTPUT_BYTES`
+256 MiB written (over it nothing is written), `DEFAULT_MAX_ROWS` 40 printed per result
+(`-maxrows` up to `MAX_ROWS` 10,000; a note says how to see more), `MAX_STDOUT_BYTES` 256
+KiB printed per call, `MAX_CELL_WIDTH` 48 characters in box and markdown (csv and json are
+never cut), DuckDB's `memory_limit` 512 MB per job, and an `ENGINE_MEMORY` estimate of 1 GiB
+for the jobs memory guard. Each command is an engine job (`/task`, Stop through ctl); a query
+cannot be interrupted inside wasm, so Stop ends the worker and the next job starts a new one
+(exit 130). A wasm trap ends the worker too. Exit codes: 1 for errors (not installed included, as for pdf.js), 130 when stopped.
+
+**An asked add-on.** The runtime is the `duckdb` entry in `src/addons-registry.ts` (37.8 MiB,
+over the 10 MiB quiet tier), so unlike pdf.js and libav.js it never installs on first use:
+`duckdbWorker` takes `addons.assets('duckdb')`, whose `obtain()` hands back verified Blobs or
+throws the standard "not installed: DuckDB (38 MiB). Run `addons install duckdb`; the user
+will be asked." The duckdb skill tells the agent to run `addons install duckdb --wait`, which
+opens the person's sheet; Settings > Add-ons lists it too. The commands are wrapped with
+`installLines()` like pdf.js's.
+
+**Containment.** The runtime (`build-duckdb.mjs`, `src/duckdb/worker.ts`) is DuckDB-Wasm's
+synchronous browser bindings (not in the package's exports, so aliased) bundled into Pouch's
+own module worker with its own small protocol; the wasm is compiled in the worker from
+verified bytes through an `instantiateWasm` override, never fetched. Only `core_functions` is
+statically linked in the published builds, so the `parquet` and `json` extensions (signed
+side modules for v1.4.3 `wasm_eh`, fetched once at build into a gitignored cache and pinned by
+SHA-256) ship in `extensions.pack`. DuckDB loads extensions with a synchronous XMLHttpRequest;
+the worker replaces `XMLHttpRequest` with a stand-in that answers only those two names from
+memory and throws for anything else, and removes `fetch`, `WebSocket`, `EventSource` and
+`importScripts`. Each job's fresh database then loads the two extensions, turns autoload and
+autoinstall off, refuses community extensions, sets `allowed_directories` to the folders of the
+call's own files and `enable_external_access=false`, and locks the configuration, so SQL
+cannot undo any of it. Two build rewrites remove CDN defaults: the library's unused jsDelivr
+bundle URL, and in the engine's data an unpkg stylesheet link in `EXPLAIN (FORMAT html)`'s
+template (replaced by an empty `data:` stylesheet of the same length); `assertNoCdn` then
+checks the worker, the whole wasm and both extensions. Not threaded (no COOP/COEP); the
+page's CSP did not change. The bundled `duckdb` skill gives agents the recipe (DESCRIBE,
+SUMMARIZE and a few rows first; the whole COPY in a `.sql` next to the output, run with
+`duckdb -f` so the person can rerun it; cleaning money, `n/a` and mixed case) and the caps.
+Tests: `node test/duckdb-node.mjs` (parsing, the SQL scanner, planning, caps, formats, hints,
+not installed, jobs, Stop and traps with a fake worker, build pins) and `node
+test/duckdb-browser.mjs` (the real runtime under the production CSP: install, CSV, Parquet,
+JSON, the messy export against an independent computation, `-f` and stdin byte for byte, a
+24 MiB CSV, caps, the network refused, Stop, offline reuse, the network log), and `node
+test/duckdb-journey-browser.mjs` (stories DB1-DB4 in the real page with the scripted fake model).
+The spike behind each choice: `experiments/duckdb-wasm/`.
 
 ## The `bayleaf` command: the one way out
 
