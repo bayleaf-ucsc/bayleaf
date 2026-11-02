@@ -18,6 +18,7 @@ import { createConnectionRegion } from './interface/connection.ts';
 import { createProvidersRegion } from './interface/providers.ts';
 import { createAuthRegion } from './interface/auth.ts';
 import { createInstallRegion } from './interface/install.ts';
+import { updateLine } from './addons.ts';
 import { createSessionListRegion } from './interface/session-list.ts';
 import { createNamespacesRegion } from './interface/namespaces.ts';
 import { createAddonsRegion } from './interface/addons.ts';
@@ -38,7 +39,8 @@ app.tree = createTreeRegion(app);
 app.connection = createConnectionRegion(app);
 app.providers = createProvidersRegion(app);
 app.auth = createAuthRegion(app);
-app.install = createInstallRegion({ layout: app.state.layout, status: app.state.status, ask: app.tree.ask });
+app.install = createInstallRegion({ layout: app.state.layout, status: app.state.status, ask: app.tree.ask,
+  addonsLine: async (sums, read) => updateLine(await app.sessionList.addons.updateChanges(sums, read)) });
 app.sessionList = createSessionListRegion(app);
 app.namespaces = createNamespacesRegion(app);
 app.addons = createAddonsRegion(app);

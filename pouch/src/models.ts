@@ -142,5 +142,7 @@ export function createModelStore(models: ModelPin[], { gateway = GATEWAY, fetchI
   }
   const release = async (id: string) => { const m = get(id); return (await catalog().catch(() => [])).find((x) => x.repo === m.repo && x.revision === m.revision) ?? null; };
 
-  return { models, get, status, download, stop, files, ingest, remove, catalog, release, urlOf, totalOf, isDownloading: (id: string) => running.has(id) };
+  // The storage key of each pinned file (its chunks are key#i, its state key.state).
+  const keysOf = (id: string) => { const m = get(id); return m.files.map((f) => keyOf(m, f)); };
+  return { models, get, status, download, stop, files, ingest, remove, catalog, keysOf, release, urlOf, totalOf, isDownloading: (id: string) => running.has(id) };
 }

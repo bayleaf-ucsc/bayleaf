@@ -131,6 +131,8 @@ export function createBootRegion(app: App): BootRegion {
     app.addons.render();
     // Model parts kept by builds before add-ons (the pouch-local-models cache) are
     // discarded, not migrated: Pouch has no users to carry over (LANGUAGE.md, 2026-11-01).
+    // Parts and files no entry of this build names (src/addons.ts sweep), once boot is done.
+    setTimeout(() => app.sessionList.addons.sweep().then((r) => { if (r.bytes) app.addons.render(); }, () => {}), 4000);
     if (await globalThis.caches?.delete('pouch-local-models').catch(() => false)) app.addons.notice('Removed model files kept by an older build of Pouch; Install LFM3 again here.');
     try {
       app.state.agent = await openAgent({

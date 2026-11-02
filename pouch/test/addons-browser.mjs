@@ -110,6 +110,17 @@ try {
   assert.ok(runtimeHits.length && runtimeHits.every((p) => p.startsWith('/runtime/pdf/')), runtimeHits.join(', '));
   ok('Settings > Add-ons: a row with label, size, used by, state; Make available offline (40 MiB) asks once and installs');
 
+  // 4. Parts no entry of this build names (an older build's) are offered to free, then gone; pdf.js stays.
+  await page.evaluate(async () => { const c = await caches.open('pouch-runtime'); await c.put('https://pouch-runtime.invalid/' + encodeURIComponent('runtime/old/' + 'a'.repeat(64) + '.bin'), new Response(new Uint8Array(300000))); });
+  await page.evaluate(() => document.getElementById('addons-offline').click()); // Settings is still open from 3 // any action re-renders; Make available offline has nothing left
+  await page.waitForFunction(() => /^Free 0\.3 MiB from older versions$/.test(document.getElementById('addons-sweep')?.textContent) && !document.getElementById('addons-sweep').hidden, null, T);
+  await page.click('#addons-sweep');
+  await page.waitForFunction(() => /Freed 0\.3 MiB from older versions of add-ons/.test(document.getElementById('status')?.textContent), null, T);
+  assert.equal(await page.evaluate(async () => (await (await caches.open('pouch-runtime')).keys()).some((r) => r.url.includes('old'))), false);
+  await page.waitForSelector('[data-addon="pdfjs"][data-state="installed"]', T);
+  await page.waitForSelector('#addons-sweep[hidden]', { state: 'attached', ...T });
+  ok('Settings > Add-ons: "Free 0.3 MiB from older versions" deletes only what no entry names; pdf.js stays installed');
+
   assert.deepEqual(errors, []);
   console.log(`\naddons-browser: ${passed} passed`);
 } catch (e) {

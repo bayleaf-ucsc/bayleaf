@@ -88,6 +88,9 @@ export function createAddonsRegion(app: App): AddonsRegion {
       const offline = $<HTMLButtonElement>('addons-offline');
       offline.hidden = !missing.length;
       offline.textContent = `Make available offline (${sizeText(missing.reduce((n, s) => n + s.size - s.bytes, 0))})`;
+      const stale = await app.sessionList.addons.sweep({ dry: true }).catch(() => null), sweepBtn = $<HTMLButtonElement>('addons-sweep');
+      sweepBtn.hidden = !stale?.bytes;
+      if (stale?.bytes) sweepBtn.textContent = `Free ${sizeText(stale.bytes)} from older versions`;
       const est = await navigator.storage?.estimate?.().catch(() => null);
       $('addons-storage').textContent = (noticeLine ? noticeLine + ' ' : '') + (est?.usage != null ? `This site uses ${sizeText(est.usage)} of storage${est.quota ? ` (the browser allows about ${sizeText(est.quota)})` : ''}. Erase all removes every add-on.` : 'Erase all removes every add-on.');
     })().finally(() => { rendering = null; if (again) { again = false; render(); } });
@@ -103,6 +106,12 @@ export function createAddonsRegion(app: App): AddonsRegion {
       app.state.status(r.started.length ? `Installing ${r.started.length} add-on${r.started.length > 1 ? 's' : ''}; progress in Settings > Add-ons and /task.${r.denied.length ? ` Not installed: ${r.denied.join(', ')}.` : ''}` : r.denied.length ? 'Nothing was installed.' : 'Every add-on this device can run is installed.');
       await Promise.allSettled(r.started.map((t) => t.promise));
     } catch (e) { app.state.status(fieldOf(e, 'message'), 'bad'); }
+    render();
+  };
+  // Parts and files only older builds named (src/addons.ts sweep); boot runs it too.
+  $('addons-sweep').onclick = async () => {
+    const r = await app.sessionList.addons.sweep().catch((e: Error) => { app.state.status(e.message, 'bad'); return null; });
+    if (r) app.state.status(r.skipped ? 'An install is running; try again when it ends.' : `Freed ${sizeText(r.bytes)} from older versions of add-ons.`);
     render();
   };
   for (const id of ['addon-folder', 'addon-files']) {

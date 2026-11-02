@@ -120,6 +120,9 @@ export function partAssets(pin: PartsPin, { storeName = 'pouch-runtime', base = 
   }
   return {
     pin,
+    // The kept manifest, if it matches the pin (no network): what the parts are.
+    async storedManifest() { return manifest(await openStore(storeName, { create: false }), { network: false }).catch(() => null); },
+    key,
     // { bytes, total, complete, persistent }
     async stored() {
       const st = await openStore(storeName, { create: false });

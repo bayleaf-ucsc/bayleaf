@@ -22,7 +22,7 @@
 // Removing is the person's right without asking; an agent's remove always asks.
 // Every install is a /task entry (kind 'install'), stoppable through its ctl,
 // the tray and Settings; installing again resumes.
-import { mib, partAssets } from './assets.ts';
+import { mib, openStore, partAssets } from './assets.ts';
 import { createModelStore, GATEWAY } from './models.ts';
 import type { AssetProgress, FetchImpl, PartsManifest, RuntimeFiles } from './assets.ts';
 import type { ModelRelease } from './models.ts';
@@ -90,6 +90,18 @@ export const say = {
   installing: (d: AddonDef, size: number) => `installing ${d.label} (${sizeText(size)}, once, from Pouch's own origin)`,
   notBuilt: (label: string) => `not available here: this build of Pouch leaves ${label} out.`,
 };
+// The update notice's line: "This update changes pdf.js: 1.2 MiB to fetch; LFM3 1.7B unchanged."
+export function updateLine(changes: { label: string; tier: AddonTier; change: 'unchanged' | 'changed' | 'removed'; bytes: number; weights: boolean }[]): string {
+  if (!changes.length) return '';
+  const changed = changes.filter((c) => c.change === 'changed'), removed = changes.filter((c) => c.change === 'removed'), same = changes.filter((c) => c.change === 'unchanged');
+  const parts = [
+    ...changed.map((c) => `${c.label}: ${sizeText(c.bytes)} to fetch${c.tier === 'asked' ? ' (asks again)' : ''}`),
+    ...removed.map((c) => `${c.label}: not in the new build`),
+    ...(same.length ? [`${same.map((c) => c.label).join(', ')} unchanged`] : []),
+  ];
+  const weights = changes.filter((c) => c.weights).map((c) => c.label);
+  return `${changed.length || removed.length ? 'This update changes ' : 'Add-ons: '}${parts.join('; ')}.${weights.length ? ` (${weights.join(', ')}: only the code from Pouch's origin is compared; a weights change shows after updating.)` : ''}`;
+}
 const coded = (message: string, code: string) => Object.assign(new Error(message), { code });
 
 // ── Files backends ──────────────────────────────────────────────────
@@ -103,6 +115,10 @@ export interface AddonBackend {
   importFiles(list: File[]): Promise<{ added: number; refused: string[] }>;
   remove(): Promise<void>;
   release?(): Promise<ModelRelease | null>; // display metadata (license, qualification), never trusted for bytes
+  // Which keys of its store this build's pin names (the sweep keeps them); none: keep the store whole.
+  owns?(): Promise<(key: string) => boolean>;
+  // Origin parts only: bytes a new manifest needs that are not kept (the update notice).
+  toFetch?(next: PartsManifest): Promise<number>;
 }
 export interface BackendOptions { fetchImpl?: FetchImpl; base?: () => string; gateway?: string; chunk?: number }
 
@@ -115,6 +131,17 @@ export function originBackend(pin: PartsPin, { fetchImpl, base }: BackendOptions
     async files({ network = true, onProgress }) { const got = await pa.obtain({ network, onProgress }); return { files: got.files, manifest: got.manifest, repaired: got.progress.repaired }; },
     async importFiles(list) { const r = await pa.importFiles(list); return { added: r.added, refused: r.bad ? [`${r.bad} part${r.bad > 1 ? 's' : ''} of ${pin.dir}`] : [] }; },
     remove: () => pa.remove(),
+    // The pin's manifest and, once it is kept, exactly its parts. Before that, every part
+    // under its directory stays: a new build reuses unchanged content-hash parts.
+    async owns() {
+      const m = await pa.storedManifest(), mine = pa.key(pin.manifest);
+      const parts = m && new Set(m.files.flatMap((f) => f.parts.map((p) => pa.key(p.path))));
+      return (k) => k === mine || (k.startsWith(pin.dir) && (parts ? parts.has(k) : !/manifest\.[0-9a-f]{16}\.json$/.test(k)));
+    },
+    async toFetch(next) {
+      const st = await openStore(ORIGIN_STORE, { create: false }), have = new Set(await st.keys(pin.dir));
+      return next.files.flatMap((f) => f.parts).filter((p) => !have.has(pa.key(p.path))).reduce((n, p) => n + p.bytes, 0);
+    },
   };
 }
 
@@ -128,6 +155,7 @@ export function gatewayBackend(pin: ModelPin, { fetchImpl, gateway = GATEWAY, ch
     async importFiles(list) { const r = await st.ingest(pin.id, list); return { added: r.added, refused: r.bad }; },
     remove: () => st.remove(pin.id),
     release: () => st.release(pin.id),
+    async owns() { const ks = st.keysOf(pin.id); return (k) => ks.some((x) => k === x + '.state' || k.startsWith(x + '#')); },
   };
 }
 export const backendOf = (d: AddonDef, o: BackendOptions = {}) => (isOrigin(d.files) ? originBackend(d.files.origin, o) : gatewayBackend(d.files.gateway, o));
@@ -341,8 +369,53 @@ export function createAddons({ entries, tasks, approve, onChange = () => {}, bef
     const blobs = Object.values(got).flatMap((g) => Object.values(g.files));
     return { files: blobs.length, bytes: blobs.reduce((n, b) => n + b.size, 0) };
   }
+  // Stale-part sweep: delete what no entry of this build names any more (parts of
+  // older manifests, other revisions' chunks), never a current pin's keys and never
+  // while an install runs. A store with a backend that cannot say what it owns is
+  // left whole. dry: only measure (Settings' "Free N MiB from older versions").
+  async function sweep({ dry = false }: { dry?: boolean } = {}) {
+    if (entries.some((d) => running(d.id))) return { skipped: true, bytes: 0, keys: 0 };
+    let bytes = 0, keys = 0;
+    for (const name of [ORIGIN_STORE, GATEWAY_STORE]) {
+      const mine = entries.map((d) => be(d)).filter((b) => b.store === name);
+      if (mine.some((b) => !b.owns)) continue;
+      const owners = await Promise.all(mine.map((b) => b.owns?.() ?? ((): boolean => true)));
+      const st = await openStore(name, { create: false });
+      for (const k of await st.keys()) {
+        if (owners.some((o) => o(k))) continue;
+        if (entries.some((d) => running(d.id))) return { skipped: true, bytes, keys }; // an install began meanwhile
+        bytes += (await st.get(k))?.size ?? 0; keys++;
+        if (!dry) await st.del(k);
+      }
+      if (!dry && keys && !(await st.keys()).length) await st.drop();
+    }
+    if (!dry && keys) onChange();
+    return { skipped: false, bytes, keys };
+  }
+
+  // What a published build changes among the installed add-ons, read from its
+  // SHA256SUMS (manifest paths, each with its hash) and those manifests (read(path),
+  // checked by the caller). Origin parts only: gateway pins live in the new page.
+  async function updateChanges(sums: Record<string, string>, read: (path: string) => Promise<PartsManifest>) {
+    const out: { id: string; label: string; tier: AddonTier; change: 'unchanged' | 'changed' | 'removed'; bytes: number; weights: boolean }[] = [];
+    for (const d of entries.filter((x) => !x.hidden)) {
+      if (!(await status(d.id)).installed) continue;
+      let change: 'unchanged' | 'changed' | 'removed' = 'unchanged', bytes = 0;
+      for (const x of closure(d, byId)) {
+        if (!isOrigin(x.files)) continue;
+        const pin = x.files.origin, next = Object.keys(sums).find((p) => p.startsWith(pin.dir) && /manifest\.[0-9a-f]{16}\.json$/.test(p));
+        if (!next) { change = 'removed'; continue; }
+        if (next === pin.dir + pin.manifest) continue;
+        if (change !== 'removed') change = 'changed';
+        bytes += await be(x).toFetch?.(await read(next)) ?? 0;
+      }
+      out.push({ id: d.id, label: d.label, tier: tierOf(d, byId), change, bytes, weights: closure(d, byId).some((x) => !isOrigin(x.files)) });
+    }
+    return out;
+  }
+
   const release = async (name: string) => { for (const x of closure(resolve(name), byId)) { const r = await be(x).release?.().catch(() => null); if (r) return r; } return null; };
 
-  return { entries, get, resolve, status, list, install, ensure, files, assets, remove, installAll, total, importFiles, verify, release, request,
+  return { entries, get, resolve, status, list, install, ensure, files, assets, remove, installAll, total, importFiles, verify, release, request, sweep, updateChanges,
     stop: (name: string) => running(resolve(name).id)?.kill?.(), installing: running, tier: (d: AddonDef) => tierOf(d, byId), closure: (d: AddonDef) => closure(d, byId) };
 }
