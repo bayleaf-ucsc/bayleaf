@@ -205,7 +205,9 @@ cache headers. README "Install and the offline copy" has the policy.
   byte-exact and immutable.
 - Includes the TypeScript migration (#147) and the type-debt pay-down with its bug fixes
   and guards (#148).
-- Playtest pending. Not verified: Firefox and Safari end to end.
+- Before the playtest, the live Sealed journey suites and twelve scripted journeys against
+  the deployed site passed (about 137 Sealed requests); then playtested on Mac Chrome.
+  Not verified: Firefox and Safari end to end.
 
 ## Deploy and verify
 
