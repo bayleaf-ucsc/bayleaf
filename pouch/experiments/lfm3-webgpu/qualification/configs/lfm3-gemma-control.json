@@ -1,0 +1,10 @@
+{
+  "id":"lfm3-gemma-control",
+  "comment":"Contemporaneous control for Gemma E2B/E4B QAT evaluation. Same 8-step, 4096-prompt-token, 512-output-token limits for both baseline and recipe, rather than letting generic baseline inherit legacy larger-context defaults. Existing approved LFM3 pins/license unchanged.",
+  "model":{"lockId":"lfm3-1.7b-q4f16"},
+  "measurements":{"sampleMs":500,"abortGB":20},
+  "setups":{"baseline":{"recipe":"none","toolLayer":"pouch"},"recipe":{"recipe":"profiles","toolLayer":"pouch"}},
+  "tasks":"core", "heldOut":"all",
+  "stepCap":8, "budget":4096, "maxNew":512,
+  "trials":{"greedy":1,"sampled":7,"temperature":0.3,"top_p":0.95}
+}

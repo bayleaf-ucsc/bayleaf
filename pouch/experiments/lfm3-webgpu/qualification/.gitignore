@@ -11,3 +11,8 @@ results/quant-*-agent.json
 # qualify.mjs: per-trial traces and smoke runs stay local; results/<config>-<phase>.json is committed.
 results/traces/
 results/smoke-*.json
+# Superseded instrumentation/adapter diagnostics remain local. Final matched
+# comparison receipts are retained instead of these exploratory runs.
+results/gemma4-e2b-qat-all.json
+results/generalized-lfm3-greedy-all.json
+results/generalized-lfm3-greedy-all.md

@@ -4,8 +4,9 @@
 // this file changes only when the agent loop or the tool semantics change.
 // Generation options mirror pouch/src/local/worker.js (enable_thinking false, native
 // tokens kept in the stream, greedy unless the trial samples).
-import { pipeline, PreTrainedTokenizer, TextStreamer, env, InterruptableStoppingCriteria, random, Tensor } from '/runtime/transformers.js';
+import { pipeline, PreTrainedTokenizer, Gemma4ForCausalLM, TextGenerationPipeline, TextStreamer, env, InterruptableStoppingCriteria, random, Tensor } from '/runtime/transformers.js';
 import { Bash, InMemoryFs } from './tools.bundle.js';
+import { executionOptions, parseToolCalls, withToolIds } from './model-adapters.mjs';
 
 env.allowRemoteModels = false; env.allowLocalModels = true; env.localModelPath = new URL('/m/', location.href).href;
 env.useBrowserCache = true; env.useWasmCache = false;
@@ -13,6 +14,7 @@ env.backends.onnx.wasm.wasmPaths = { mjs: '/runtime/ort-wasm-simd-threaded.async
 env.backends.onnx.wasm.numThreads = 1;
 
 let generator, fs, layer, toolSet;
+let execution = executionOptions();
 
 // ── Tool layer. Two wordings: 'v8' (the experiment) and 'pouch' (mirrors src/tools.js).
 const CWD = '/work';
@@ -83,31 +85,20 @@ async function execute(name, a) {
   throw Error('Unknown tool ' + name);
 }
 
-// ── Native XML tool calls (as src/local/provider.js parseToolCalls). A model with a
-// different tool-call format needs its own parser here and in Pouch: record that at intake.
-function coerce(name, key, v) {
-  const t = toolSet.find((x) => x.function.name === name)?.function.parameters.properties?.[key]?.type;
-  if (!t || t === 'string') return v; try { return JSON.parse(v); } catch { return v; }
-}
-function parse(text) {
-  const calls = [];
-  for (const m of text.matchAll(/<tool_call>\s*<function=([^>\n]+)>([\s\S]*?)<\/function>\s*<\/tool_call>/g)) {
-    const args = {}; for (const p of m[2].matchAll(/<parameter=([^>\n]+)>\n?([\s\S]*?)\n?<\/parameter>/g)) args[p[1]] = coerce(m[1], p[1], p[2]);
-    calls.push({ type: 'function', function: { name: m[1].trim(), arguments: args } });
-  }
-  if (text.includes('<tool_call>') && !calls.length) throw Error('Malformed/incomplete native XML tool call'); return calls;
-}
-
 async function generate(messages, { maxNew = 384, budget = 8192, withTools = false, sampling = null, minNew = 0 } = {}) {
+  if (execution.toolFormat === 'gemma4') messages = withToolIds(messages);
   const prompt = generator.tokenizer.apply_chat_template(messages, { tokenize: false, add_generation_prompt: true, enable_thinking: false, ...(withTools ? { tools: toolSet } : {}) });
   const inputTokens = generator.tokenizer.encode(prompt, { add_special_tokens: false }).length;
   if (inputTokens > budget) { const e = Error(`context budget ${budget} exceeded: ${inputTokens}`); e.context = true; throw e; }
   const sample = sampling ? { do_sample: true, temperature: sampling.temperature, top_p: sampling.top_p ?? 1, top_k: 0 } : { do_sample: false };
   if (minNew) sample.min_new_tokens = minNew;
-  const start = performance.now(); let first = null, last = null, tokens = 0;
-  const out = await generator(prompt, { max_new_tokens: maxNew, ...sample, return_full_text: false, add_special_tokens: false, stopping_criteria: new InterruptableStoppingCriteria(),
-    streamer: new TextStreamer(generator.tokenizer, { skip_prompt: true, skip_special_tokens: false, callback_function: () => {}, token_callback_function: () => { tokens++; first ??= performance.now(); last = performance.now(); } }) });
-  return { text: out[0].generated_text, input_tokens: inputTokens, output_tokens: tokens, generation_ms: performance.now() - start, ttft_ms: first === null ? null : first - start, decode_ms: first === null ? null : last - first };
+  const start = performance.now(); let first = null, last = null, tokens = 0, text = '';
+  // TextGenerationPipeline hard-codes skip_special_tokens=true for its returned
+  // generated_text, even when the streamer preserves them. Gemma's call tags
+  // are special tokens: parse the preserved stream, never that stripped result.
+  await generator(prompt, { max_new_tokens: maxNew, ...sample, return_full_text: false, add_special_tokens: false, stopping_criteria: new InterruptableStoppingCriteria(),
+    streamer: new TextStreamer(generator.tokenizer, { skip_prompt: true, skip_special_tokens: false, callback_function: (delta) => { text += delta; }, token_callback_function: () => { tokens++; first ??= performance.now(); last = performance.now(); } }) });
+  return { text, input_tokens: inputTokens, output_tokens: tokens, generation_ms: performance.now() - start, ttft_ms: first === null ? null : first - start, decode_ms: first === null ? null : last - first };
 }
 
 // ── Long-context sweep (perf phase with --lengths). Drives model.forward directly so
@@ -175,7 +166,10 @@ async function step(ids, cache, total, wantTop = false) {
   return { cache: next, token: best, finite, top };
 }
 const progress = (p) => postMessage({ progress: p });
-const EOS = 124900;
+const isEOS = (id) => {
+  const eos = generator.model.generation_config?.eos_token_id ?? generator.model.config.eos_token_id;
+  return (Array.isArray(eos) ? eos : [eos]).includes(id);
+};
 async function context({ length: N, chunk = 0, decodeTokens = 96, answerTokens = 24, capMs = 600000, label = '' }) {
   gpuErrors.length = 0;
   const t0 = performance.now(), P = buildPrompt(N), tokenizeMs = performance.now() - t0;
@@ -205,13 +199,14 @@ async function context({ length: N, chunk = 0, decodeTokens = 96, answerTokens =
       if (q === 0) { row.ttftMs = Math.round(s0 - start + performance.now() - s0); row.prefillMs = Math.round(s0 - start); }
       const ids = [s.token], first = q === 0 ? s.top : undefined; let fork = s.cache, tFirst = performance.now();
       const want = q === 0 ? decodeTokens : answerTokens;
-      while (ids.length < want && (q === 0 || ids.at(-1) !== EOS)) {
+      while (ids.length < want && (q === 0 || !isEOS(ids.at(-1)))) {
         const d = await step([ids.at(-1)], fork, ++total); await disposeAll(fork); fork = d.cache;
         if (!d.finite) throw Error(`non-finite logits while decoding at ${total}`);
         ids.push(d.token);
       }
       const tLast = performance.now(); await disposeAll(fork);
-      const answer = generator.tokenizer.decode(ids.slice(0, (ids.indexOf(EOS) + 1 || ids.length + 1) - 1), { skip_special_tokens: true }).trim();
+      const eosAt = ids.findIndex(isEOS);
+      const answer = generator.tokenizer.decode(ids.slice(0, eosAt < 0 ? ids.length : eosAt), { skip_special_tokens: true }).trim();
       row.needles.push({ gate: n.gate, depth: n.depth, pass: answer.toLowerCase().includes(n.phrase), answer: answer.slice(0, 80) });
       if (q === 0) { row.decodeTokens = ids.length; row.decodeTokS = +((ids.length - 1) / ((tLast - tFirst) / 1000)).toFixed(1); row.firstTop5 = first; row.greedyIds = ids; }
     }
@@ -264,7 +259,7 @@ async function agent({ prompt, files, recipe, layer: l, sampling = null, seed = 
     rounds = round + 1;
     if (performance.now() - start > timeoutMs) { status = 'timeout'; break; }
     let g; try { g = await generate(history, { withTools: true, sampling, maxNew, budget }); } catch (e) { trace.push({ error: String(e) }); status = e.context ? 'context' : 'generation_error'; break; }
-    let calls; try { calls = parse(g.text); } catch (e) { trace.push({ ...g, error: String(e) }); status = 'parse_error'; break; }
+    let calls; try { calls = parseToolCalls(g.text, execution.toolFormat, toolSet); } catch (e) { trace.push({ ...g, error: String(e) }); status = 'parse_error'; break; }
     trace.push({ ...g, calls }); history.push({ role: 'assistant', content: calls.length ? '' : g.text, ...(calls.length ? { tool_calls: calls } : {}) });
     if (!calls.length) { status = g.output_tokens >= maxNew ? 'token_limit' : 'final'; break; }
     if (calls.length > 8) { status = 'call_limit'; break; }
@@ -279,14 +274,33 @@ self.onmessage = async ({ data }) => {
     let result;
     if (action === 'load') {
       const adapter = await navigator.gpu.requestAdapter(); const start = performance.now();
-      generator = await pipeline('text-generation', 'model', { dtype: data.dtype, device: 'webgpu', ...(data.loadOptions ?? {}) });
+      if (!adapter) throw Error('No WebGPU adapter');
+      execution = executionOptions(data.execution);
+      const options = { dtype: data.dtype, device: 'webgpu', ...(data.loadOptions ?? {}) };
+      if (execution.loader === 'gemma4') {
+        // The runtime's tokenizer-file registry knows HF ids, not our local alias.
+        // GemmaTokenizer is a plain PreTrainedTokenizer subclass. Construct from
+        // pinned files explicitly, including its separately stored chat template.
+        const [json, tokenizerConfig, template] = await Promise.all([
+          fetch('/m/model/tokenizer.json').then((r) => r.json()),
+          fetch('/m/model/tokenizer_config.json').then((r) => r.json()),
+          fetch('/m/model/chat_template.jinja').then((r) => r.text()),
+        ]);
+        const tokenizer = new PreTrainedTokenizer(json, { ...tokenizerConfig, chat_template: template });
+        const model = await Gemma4ForCausalLM.from_pretrained('model', options);
+        generator = new TextGenerationPipeline({ task: 'text-generation', model, tokenizer });
+      } else generator = await pipeline('text-generation', 'model', options);
       // The pipeline registry does not discover tokenizer files for a local alias.
       generator.tokenizer ??= new PreTrainedTokenizer(...await Promise.all(['tokenizer.json', 'tokenizer_config.json'].map(async (f) => (await fetch('/m/model/' + f)).json())));
       result = { load_ms: performance.now() - start, userAgent: navigator.userAgent, adapter: { vendor: adapter.info.vendor, architecture: adapter.info.architecture }, shaderF16: adapter.features.has('shader-f16'), ort: env.backends.onnx.versions };
     } else if (action === 'agent') result = await agent(data);
     else if (action === 'generate') { toolSet = []; result = await generate(data.messages, data.options); }
-    else if (action === 'context') result = await context(data);
-    else if (action === 'tail') result = await tail(data);
+    else if (action === 'context' || action === 'tail') {
+      // Direct-forward/cache probes retain LFM3-specific cache assumptions. Do not
+      // silently label them cross-family tests; agent/throughput phases are generic.
+      if (execution.loader !== 'text-generation' || generator.model.config.model_type !== 'lfm3') throw Error('Direct context/tail probes currently support LFM3 only');
+      result = action === 'context' ? await context(data) : await tail(data);
+    }
     else if (action === 'dispose') { await generator?.dispose(); generator = null; result = 'disposed'; }
     else throw Error('Unknown action');
     postMessage({ id, result });
