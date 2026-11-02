@@ -103,7 +103,7 @@ export function createSubagents(deps: SubagentDeps) {
   const waitable = (sub: Submission): Waitable => ({ id: sub.id, wait: () => sub.wait(ctx) });
   // Handles: a2, a3, ... in spawn order (graph.ts refOf; rows made before graphs have none).
   const find = (l: SubagentRow[], ref: unknown) => l.find((c) => c.id === ref || c.name === ref || refOf(l, c) === asRef(ref) || c.name === slug(ref));
-  const label = (l: SubagentRow[], ref: Handle | undefined) => { if (ref === MAIN) return `main (${MAIN})`; const c = l.find((x) => refOf(l, x) === ref); return c ? `${c.name} (${ref})` : ref as Handle; };
+  const label = (l: SubagentRow[], ref: Handle) => { if (ref === MAIN) return `main (${MAIN})`; const c = l.find((x) => refOf(l, x) === ref); return c ? `${c.name} (${ref})` : ref; };
   // Whether an agent of the session is in a model run right now.
   async function busy(conv: Conversation) {
     const state = await conv.viewState(ctx), b = !!state.value.docs['pi.live']?.run;
@@ -214,7 +214,7 @@ export function createSubagents(deps: SubagentDeps) {
     const verb = ({ finished: 'finished', failed: 'failed', stopped: 'was stopped by the user', interrupted: 'was interrupted by a page reload (the user can resume it from its card)' } as Partial<Record<SubagentStatus, string>>)[child.status];
     const l = await list(sid), ref = child.ref ?? refOf(l, find(l, child.id) ?? child);
     const to = Object.keys(child.sent ?? {}).map((r) => label(l, r)).join(', ');
-    const body = byMessage && child.sentIn !== child.sub ? `A message from ${label(l, child.wokenBy)} woke it, and it ended without sending anything; its reply stays in its transcript.`
+    const body = byMessage && child.sentIn !== child.sub ? `A message from ${child.wokenBy ? label(l, child.wokenBy) : 'another agent'} woke it, and it ended without sending anything; its reply stays in its transcript.`
       : byMessage ? `It delivered its work by message (to ${to || 'other agents'}), so its output is not repeated here.`
       : child.status !== 'finished' && answer?.trim() ? `Its last output before it ${({ failed: 'failed', interrupted: 'was interrupted' } as Partial<Record<SubagentStatus, string>>)[child.status] ?? 'was stopped'} (work in progress, not a report): ${answer.trim()}`
       : answer?.trim() || (child.status === 'finished' ? '(It gave no answer.)' : '(No answer yet.)');

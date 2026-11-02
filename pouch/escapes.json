@@ -64,7 +64,7 @@
   "src/settings.ts": {"as": 3, "!": 1},
   "src/sha256.ts": {"!": 1},
   "src/store.ts": {"as": 1, "!": 1},
-  "src/subagents.ts": {"as": 13, "!": 10},
+  "src/subagents.ts": {"as": 12, "!": 10},
   "src/terminal.ts": {"as": 2, "!": 5},
   "src/theme.ts": {"as": 4, "!": 2},
   "src/tools.ts": {"as": 19, "!": 6, "as unknown as": 6},
