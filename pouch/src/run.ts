@@ -19,8 +19,28 @@ import { runInWorker } from './run/host.ts';
 import { SNAPSHOT, globBase } from './run/over9p.ts';
 import { serve } from './ns/9p.ts';
 import { parseSpecs, subset, within } from './ns/namespace.ts';
+import type { ConversationId } from '@earendil-works/pi-durable';
+import type { Type as Typebox } from 'typebox';
+import type { Namespace } from './ns/namespace.ts';
+import type { ChangeOp, RunRequest } from './run/core.ts';
+import type { RunWorker } from './run/host.ts';
+import type { Tasks } from './ns/tasks.ts';
 
 export { SNAPSHOT };
+export type { AppliedChange, Change, ChangeConflict, RunLimits, RunRequest, RunResult, RunStatus } from './run/core.ts';
+export type { RunWorker } from './run/host.ts';
+export type { RunLoaded, RunMessage, RunWorkerMessage } from './run/protocol.ts';
+
+export interface RunToolDeps {
+  vfs: { tasks: Pick<Tasks, 'add'>; changed(): void }; Type: typeof Typebox; CWD: string; abs: (p: string) => string;
+  fsFor: (caller?: ConversationId) => Namespace; sidOf?: (caller?: ConversationId) => string | null;
+  oneAtATime?: <T>(p: string, fn: () => Promise<T>) => Promise<T>; makeWorker?: () => RunWorker;
+}
+export interface RunArgs {
+  code?: string; path?: string; files?: string[]; ns?: string[]; args?: string[]; stdin?: string;
+  limits?: { timeMs?: number; memoryMB?: number; outputKB?: number };
+}
+export interface RunCallContext { signal?: AbortSignal; caller?: ConversationId; callId?: string }
 
 // What the agent may ask for; it can lower these, never raise them.
 const CAPS = { timeMs: 5000, memoryMB: 64, outputKB: 64 };
@@ -28,23 +48,23 @@ const CAPS = { timeMs: 5000, memoryMB: 64, outputKB: 64 };
 // WORKER_SRC is the bundled src/run/worker-browser.ts (build.mjs defines it).
 // A blob: worker inherits the page CSP: connect-src api.bayleaf.dev only, and
 // no eval; the worker also drops fetch and storage after loading the engine.
-function browserWorker() {
+function browserWorker(): RunWorker {
   if (typeof WORKER_SRC === 'undefined') throw new Error('this build has no run engine');
   const url = URL.createObjectURL(new Blob([WORKER_SRC], { type: 'text/javascript' }));
   try { return new Worker(url); } finally { URL.revokeObjectURL(url); }
 }
 
-const kb = (n) => (n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`);
+const kb = (n: number) => (n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`);
 
 // The mount a path belongs to in the agent's namespace: /work, /pouch,
 // /mnt/<name>, or the top folder of the in-memory root (/tmp, /home).
-function rootOf(fs, p) {
+function rootOf(fs: Namespace, p: string) {
   const { point } = fs.layers(p);
   return point === '/' ? '/' + (p.split('/')[1] ?? '') : point;
 }
 
 // tools.js passes its helpers so `run` shares path rules, errors and recording.
-export function runTool({ vfs, Type, CWD, abs, fsFor, sidOf = () => null, oneAtATime = (_p, fn) => fn(), makeWorker = browserWorker }) {
+export function runTool({ vfs, Type, CWD, abs, fsFor, sidOf = () => null, oneAtATime = (_p, fn) => fn(), makeWorker = browserWorker }: RunToolDeps) {
   return {
     name: 'run', label: 'Run',
     description: 'Run JavaScript (QuickJS, ES2023, no Node or browser APIs) when bash/awk is not enough: real parsing (CSV with quotes, JSON), arithmetic, data transforms. ' +
@@ -66,7 +86,7 @@ export function runTool({ vfs, Type, CWD, abs, fsFor, sidOf = () => null, oneAtA
         outputKB: Type.Optional(Type.Integer({ minimum: 1, maximum: CAPS.outputKB })),
       })),
     }),
-    async execute({ code, path, files, ns, args = [], stdin = '', limits = {} }, { signal, caller, callId } = {}) {
+    async execute({ code, path, files, ns, args = [], stdin = '', limits = {} }: RunArgs, { signal, caller, callId }: RunCallContext = {}): Promise<string> {
       if ((code == null) === (path == null)) throw new Error('give exactly one of `code` or `path`');
       const fs = fsFor(caller);
       let filename = CWD + '/main.js', home = CWD;
@@ -83,26 +103,26 @@ export function runTool({ vfs, Type, CWD, abs, fsFor, sidOf = () => null, oneAtA
       const paths = parseSpecs(declared).map((d) => d.path);
       for (const b of bases) if (!paths.some((d) => within(b, d))) throw new Error(`files: ${b} is outside this run's namespace (${paths.join(', ')}); add its folder to \`ns\`, or leave \`ns\` out`);
       const scratch = paths.some((d) => within(d, '/tmp')) ? null : new InMemoryFs();
-      const runNs = subset(fs, declared, { scratch });
-      const clamp = (v, cap) => Math.max(1, Math.min(cap, v ?? cap));
+      const runNs = subset(fs, declared, { scratch }); // subset skips a null scratch
+      const clamp = (v: number | undefined, cap: number) => Math.max(1, Math.min(cap, v ?? cap));
       const request = {
-        code, filename, cwd: CWD, args: args.map(String), stdin: String(stdin), specs,
+        code: code!, filename, cwd: CWD, args: args.map(String), stdin: String(stdin), specs,
         limits: { ...DEFAULT_LIMITS, maxFiles: SNAPSHOT.maxFiles, maxFileBytes: SNAPSHOT.maxFileBytes,
           timeMs: clamp(limits.timeMs, CAPS.timeMs), memoryBytes: clamp(limits.memoryMB, CAPS.memoryMB) << 20,
           maxOutputBytes: clamp(limits.outputKB, CAPS.outputKB) << 10 },
-      };
+      } satisfies RunRequest;
       // Serve the namespace over 9P; writes take their turn per path and are recorded.
-      const landed = [];
+      const landed: { path: string; op: 'write' | 'remove' }[] = [];
       const { port1, port2 } = new MessageChannel();
       const server = serve(port1, runNs, {
-        commit: (p, b, op) => oneAtATime(p, () => (op === 'remove' ? runNs.rm(p) : runNs.writeFile(p, b))),
+        commit: (p, b, op) => oneAtATime(p, () => (op === 'remove' ? runNs.rm(p) : runNs.writeFile(p, b!))),
         onCommit: (p, op) => landed.push({ path: p, op }),
       });
       const ac = new AbortController();
       let killed = false;
       const stop = () => ac.abort();
       signal?.addEventListener('abort', stop, { once: true });
-      const task = vfs.tasks.add({ kind: 'run', key: callId, sid: sidOf(caller), label: path != null ? filename : (code.split('\n').find((l) => l.trim()) ?? '').trim().slice(0, 60),
+      const task = vfs.tasks.add({ kind: 'run', key: callId, sid: sidOf(caller), label: path != null ? filename : (code!.split('\n').find((l) => l.trim()) ?? '').trim().slice(0, 60),
         ns: runNs.describe(), kill: () => { killed = true; ac.abort(); } });
       let r;
       try {
@@ -112,8 +132,8 @@ export function runTool({ vfs, Type, CWD, abs, fsFor, sidOf = () => null, oneAtA
       } finally { signal?.removeEventListener('abort', stop); server.close(); }
       const outside = landed.filter((c) => !(scratch && within(c.path, '/tmp')));
       if (outside.length) vfs.changed();
-      const listOf = (xs) => xs.slice(0, 20).map((c) => `${c.op === 'remove' ? 'deleted' : 'wrote'} ${c.path}`).join(', ') + (xs.length > 20 ? `, and ${xs.length - 20} more` : '');
-      if (r.phase === 'load') { task.end('failed', r.message); throw new Error(r.message); }
+      const listOf = (xs: typeof landed) => xs.slice(0, 20).map((c) => `${c.op === 'remove' ? 'deleted' : 'wrote'} ${c.path}`).join(', ') + (xs.length > 20 ? `, and ${xs.length - 20} more` : '');
+      if (r.phase === 'load') { task.end('failed', r.message); throw new Error(r.message!); }
       if (r.status === 'cancelled') {
         task.end(killed ? 'killed' : 'stopped');
         const already = outside.length ? ` ${outside.length} change(s) had already been written: ${listOf(outside)}.` : '';
@@ -124,19 +144,19 @@ export function runTool({ vfs, Type, CWD, abs, fsFor, sidOf = () => null, oneAtA
 
       // The worker wrote back what the guest changed, unless the run was cut off.
       const cut = ['timeout', 'oom', 'cancelled'].includes(r.status);
-      const dropScratch = (xs = []) => xs.filter((c) => !(scratch && within(c.path, '/tmp')));
+      const dropScratch = <T extends { path: string }>(xs: T[] = []) => xs.filter((c) => !(scratch && within(c.path, '/tmp')));
       const applied = dropScratch(r.applied), conflicts = dropScratch(r.conflicts);
       const scratchWrites = (r.applied ?? []).length - applied.length;
       const sizes = new Map(r.changes.map((c) => [c.path, c.bytes?.byteLength]));
-      const verb = { create: 'created', modify: 'modified', delete: 'deleted' };
+      const verb: Record<ChangeOp, string> = { create: 'created', modify: 'modified', delete: 'deleted' };
       let text = `status: ${r.status}, exit code ${r.exitCode}, ${r.ms} ms${r.message ? `\n${r.message}` : ''}`;
       if (r.stdout) text += `\nstdout:\n${r.stdout.trimEnd()}`;
       if (r.stderr) text += `\nstderr:\n${r.stderr.trimEnd()}`;
       if (r.truncated) text += `\n[output truncated at ${request.limits.maxOutputBytes >> 10} KB]`;
       if (!r.stdout && !r.stderr && !r.message) text += '\n(no output)';
       // At most 20 names per list, so a script that writes hundreds of files stays readable.
-      const list = (xs, f) => xs.slice(0, 20).map(f).join(', ') + (xs.length > 20 ? `, and ${xs.length - 20} more` : '');
-      if (applied.length) text += `\nchanges applied (${applied.length}): ` + list(applied, (c) => `${verb[c.op]} ${c.path}${sizes.get(c.path) != null ? ` (${kb(sizes.get(c.path))})` : ''}`);
+      const list = <T>(xs: T[], f: (x: T) => string) => xs.slice(0, 20).map(f).join(', ') + (xs.length > 20 ? `, and ${xs.length - 20} more` : '');
+      if (applied.length) text += `\nchanges applied (${applied.length}): ` + list(applied, (c) => `${verb[c.op]} ${c.path}${sizes.get(c.path) != null ? ` (${kb(sizes.get(c.path)!)})` : ''}`);
       if (conflicts.length) text += `\nconflicts, not applied (${conflicts.length}): ` + list(conflicts, (c) => `${c.path} (${c.reason}${c.error ? ': ' + c.error : ''})`) + '. Read the file again and rerun.';
       if (scratchWrites) text += `\n(${scratchWrites} scratch file(s) under /tmp, discarded with the run)`;
       if (cut && r.changes.length) text += `\n${r.changes.length} proposed change(s) discarded because the run did not finish.`;

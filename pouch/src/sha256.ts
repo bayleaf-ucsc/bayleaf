@@ -17,11 +17,15 @@ const K = new Uint32Array([
   0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2]);
 const IV = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
 const W = new Uint32Array(64);
+// JSON-safe: h is 8 words, rest the hex of the unhashed tail (under 64 bytes).
+export interface Sha256State { h: number[]; length: number; rest?: string }
+export type Sha256Input = Uint8Array | ArrayBuffer;
 
 export class Sha256 {
+  declare h: Uint32Array; declare buf: Uint8Array; declare fill: number; declare length: number;
   constructor() { this.h = new Uint32Array(IV); this.buf = new Uint8Array(64); this.fill = 0; this.length = 0; }
   // Compress 64-byte blocks of `d` starting at `at`.
-  #blocks(d, at, end) {
+  #blocks(d: Uint8Array, at: number, end: number) {
     const h = this.h;
     for (; at + 64 <= end; at += 64) {
       for (let i = 0; i < 16; i++) { const j = at + i * 4; W[i] = (d[j] << 24) | (d[j + 1] << 16) | (d[j + 2] << 8) | d[j + 3]; }
@@ -40,7 +44,7 @@ export class Sha256 {
     }
     return at;
   }
-  update(bytes) {
+  update(bytes: Sha256Input) {
     const d = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     this.length += d.length;
     let at = 0;
@@ -54,7 +58,7 @@ export class Sha256 {
     this.buf.set(d.subarray(at)); this.fill = d.length - at;
     return this;
   }
-  hex() {
+  hex(): string {
     const s = Sha256.resume(this.state(true)), len = s.length;
     const pad = new Uint8Array(((s.fill + 9 + 63) >> 6) * 64 - s.fill);
     pad[0] = 0x80;
@@ -63,16 +67,15 @@ export class Sha256 {
     s.update(pad);
     return [...s.h].map((x) => x.toString(16).padStart(8, '0')).join('');
   }
-  // { h: [8 words], length, rest: hex of the unhashed tail (under 64 bytes) }: JSON-safe.
-  state(any = false) {
+  state(any = false): Sha256State {
     if (this.fill && !any) throw new Error('Sha256 state is saved at 64-byte boundaries only');
     return { h: [...this.h], length: this.length, rest: [...this.buf.subarray(0, this.fill)].map((b) => b.toString(16).padStart(2, '0')).join('') };
   }
-  static resume({ h, length, rest = '' }) {
+  static resume({ h, length, rest = '' }: Sha256State) {
     const s = new Sha256();
     s.h.set(h); s.length = length - rest.length / 2; s.fill = 0;
-    if (rest) s.update(Uint8Array.from(rest.match(/../g), (x) => parseInt(x, 16)));
+    if (rest) s.update(Uint8Array.from(rest.match(/../g)!, (x) => parseInt(x, 16)));
     return s;
   }
 }
-export const sha256hex = (bytes) => new Sha256().update(bytes).hex();
+export const sha256hex = (bytes: Sha256Input) => new Sha256().update(bytes).hex();

@@ -12,20 +12,36 @@ import { MAX_WAKES, baseOf, createWatches, isGlob, watchTool } from '../ns/watch
 import { parseSpecs } from '../ns/namespace.ts';
 import { why } from '../ns/control.ts';
 import { LOCAL, engine as localEngine, support as localSupport, models as modelStore } from '../local/engine.ts';
+import type { App } from './app.ts';
+import type { ConversationId } from '@earendil-works/pi-durable';
+import type { AgentToolSpec, OpenAgentOptions, SessionId } from '../agent-types.ts';
+import type { StoredWatch, Watch, Watches } from '../ns/watch.ts';
+import type { TrayRow } from '../composer.ts';
 
-export function createBootRegion(app) {
+// The page's tools (createTools) with the watch tool; closeView drops a finished subagent's view.
+export type ToolList = (ReturnType<typeof createTools>[number] | ReturnType<typeof watchTool>)[] & Pick<ReturnType<typeof createTools>, 'closeView'>;
+
+export interface BootRegion {
+  readonly agentError: string | null;
+  // Kept for Run script, which uses the run tool without the model.
+  readonly toolList: ToolList | never[];
+  watches: Watches;
+  watchRows(sid: SessionId): TrayRow[];
+}
+
+export function createBootRegion(app: App): BootRegion {
   // ── File watches (JOURNEYS G13-G17, src/ns/watch.ts) ────────────────
   // Each watch belongs to a session and an owner in it (main s1 or a
   // subagent). Events reach the owner through the same paths as messages
   // (agent.subagents.notify); the tray shows every watch with Stop watching.
-  let agentReady;
+  let agentReady!: (value?: unknown) => void;
   const agentStarted = new Promise((r) => { agentReady = r; });
-  const refOfChild = (sid, id) => { const l = app.subagents.kids.get(String(sid)) ?? [], c = l.find((x) => x.id === id); return c ? { ref: refOf(l, c), name: c.name, c } : null; };
+  const refOfChild = (sid: SessionId, id: unknown) => { const l = app.subagents.kids.get(String(sid)) ?? [], c = l.find((x) => x.id === id); return c ? { ref: refOf(l, c), name: c.name, c } : null; };
   const watches = app.state.vfs.watches = createWatches({
     fs: app.state.vfs.fs,
-    load: (sid) => store.getSetting(watchesKey(sid)),
+    load: (sid) => store.getSetting<StoredWatch[]>(watchesKey(sid)),
     save: (sid, l) => store.setSetting(watchesKey(sid), l.length ? l : undefined),
-    sessions: async () => (await app.sessionList.sessions.all()).map((x) => x.id),
+    sessions: async () => (await app.sessionList.sessions.all()).map((x) => x.id as string), // watch.ts keys sessions by string
     // A subagent watches only inside its own mounts; main sees the whole tree.
     scopeOf: (sid, owner) => {
       if (asRef(owner) === MAIN) return null;
@@ -34,18 +50,19 @@ export function createBootRegion(app) {
     },
     followUpHeld: (sid) => { const q = app.queues.followUps.get(String(sid)); return !!q && !q.paused; },
     userSending: (sid) => app.queues.submitting.has(String(sid)),
-    busy: (sid, owner) => app.state.agent?.subagents?.busyOf(sid, owner) ?? false,
+    // Known mismatch: a plain false without an agent, where watch.ts expects a promise (it calls .catch on it).
+    busy: (sid, owner) => app.state.agent?.subagents?.busyOf(sid, owner) ?? false as unknown as Promise<boolean>,
     deliver: (sid, owner, { paths = [], ...ev }) => {
       for (const p of paths) arm('pulse:' + p);
       if (paths.length) app.tree.renderTree();
-      return app.state.agent.subagents.notify(sid, owner, ev);
+      return app.state.agent!.subagents!.notify(sid, owner, ev);
     },
     ready: agentStarted,
     onChange: () => app.state.composer?.renderTray(),
   });
-  async function watchCaller(caller) {
-    const w = app.state.agent?.who(caller) ?? {};
-    const sid = w.sid ?? caller;
+  async function watchCaller(caller: unknown) {
+    const w: { sid?: SessionId | null; child?: ConversationId | null } = app.state.agent?.who(caller as ConversationId) ?? {};
+    const sid = (w.sid ?? caller) as string;
     if (w.child != null) {
       const r = refOfChild(sid, w.child);
       if (!r) throw new Error('This subagent is not registered yet; try again.');
@@ -53,11 +70,11 @@ export function createBootRegion(app) {
     }
     return { sid, owner: MAIN, ownerName: 'main' };
   }
-  const watchByText = (w) => (w.by === 'user' ? 'by you' : w.by === 'agent' ? 'by agents' : 'by anyone');
-  const shortPath = (p) => (p.startsWith('/work/') ? p.slice(6) : p);
-  function watchRows(sid) {
-    const rows = [];
-    for (const w of watches.list(sid)) {
+  const watchByText = (w: Watch) => (w.by === 'user' ? 'by you' : w.by === 'agent' ? 'by agents' : 'by anyone');
+  const shortPath = (p: string) => (p.startsWith('/work/') ? p.slice(6) : p);
+  function watchRows(sid: SessionId) {
+    const rows: TrayRow[] = [];
+    for (const w of watches.list(sid as string)) {
       const what = w.paths.map(shortPath).join(', ');
       const origin = `${w.id} · changes ${watchByText(w)}${w.owner !== MAIN ? ` · for ${w.ownerName} (${w.owner})` : ''} · /task/watch/${w.id}`;
       const title = `${w.note ? w.note + '\n' : ''}${w.paths.join('\n')}\n${w.once ? 'Removed after its first event.' : `Wakes the agent at most ${MAX_WAKES} times between your messages.`}`;
@@ -80,24 +97,24 @@ export function createBootRegion(app) {
 
   // ── Boot ────────────────────────────────────────────────────────────
   // Files first, so the workspace is usable even if the network or the agent is not.
-  let agentError = null;
-  let toolList = []; // kept for Run script, which uses the run tool without the model
+  let agentError: string | null = null;
+  let toolList: ToolList | never[] = []; // kept for Run script, which uses the run tool without the model
   // The watch tool joins the page's tools (BayLeaf Sealed, main and subagents;
   // the transformersjs profile keeps its four qualified tools).
-  const withWatch = (list) => { list.push(watchTool({ Type, watches, callerOf: watchCaller })); return list; };
+  const withWatch = (list: ToolList) => { list.push(watchTool({ Type, watches, callerOf: watchCaller })); return list; };
   (async () => {
     app.state.usage.subscribe(async (st) => { await app.state.ledger.observe(st.remaining); app.state.meter(); if (app.state.layout.current() === 'usage') app.meters.renderUsagePanel(); if (!app.state.key && app.state.verified && /^Not signed in/.test($('status').textContent)) app.state.status(app.auth.campusLine(st)); });
     if (location.hash === '#erased') { history.replaceState(null, '', location.pathname + location.search); $('erased').hidden = false; }
     navigator.storage.persist?.().catch(() => {});
     // Not awaited: the offline copy must never hold up files or the agent.
-    app.install.shellCopy.start().then(() => app.install.shellCopy.supported && app.install.shellCopy.enabled() && navigator.onLine && app.install.checkUpdate(false))
-      .catch((e) => app.install.renderCopy('Offline copy: ' + e.message, 'bad'));
-    try { await app.state.vfs.init(); } catch (e) { app.state.status('Storage problem: ' + e.message, 'bad'); }
+    app.install.shellCopy.start().then<unknown>(() => app.install.shellCopy.supported && app.install.shellCopy.enabled() && navigator.onLine && app.install.checkUpdate(false))
+      .catch((e: Error) => app.install.renderCopy('Offline copy: ' + e.message, 'bad'));
+    try { await app.state.vfs.init(); } catch (e) { app.state.status('Storage problem: ' + (e as Error).message, 'bad'); }
     app.tree.offerDefaults();
     app.tree.renderTree();
     $('welcome').hidden = !!(await store.getSetting('welcomed').catch(() => true));
-    app.state.key = (await store.getSetting('key')) ?? null;
-    app.providers.lh = (await store.getSetting('localhost')) ?? null;
+    app.state.key = (await store.getSetting<string>('key')) ?? null;
+    app.providers.lh = (await store.getSetting<NonNullable<App['providers']['lh']>>('localhost')) ?? null;
     app.providers.renderLocalhostSettings();
     app.auth.renderAuth();
     app.state.usage.refresh();
@@ -114,60 +131,60 @@ export function createBootRegion(app) {
     }, (e) => app.state.status('Could not move the model kept by an earlier Pouch: ' + e.message, 'bad'));
     try {
       app.state.agent = await openAgent({
-        local: LOCAL && app.providers.localOk.ok ? { info: LOCAL, engine: localEngine, onHint: app.providers.showHint } : null,
+        local: (LOCAL && app.providers.localOk.ok ? { info: LOCAL, engine: localEngine, onHint: app.providers.showHint } : null) as OpenAgentOptions['local'],
         localhost: { config: app.providers.lhAgentConfig(), onWait: app.providers.localhostWait },
-        tools: toolList = withWatch(createTools(app.state.vfs, Type, {}, {
+        tools: (toolList = withWatch(createTools(app.state.vfs, Type, {}, {
           // A subagent's writes carry its name for file watches.
-          sourceOf: (caller) => { const w = app.state.agent?.who(caller); const r = w?.child != null && refOfChild(w.sid, w.child); return r ? `subagent ${r.name} (${r.ref})` : 'subagent'; },
+          sourceOf: (caller) => { const w = app.state.agent?.who(caller!); const r = w?.child != null && refOfChild(w.sid, w.child); return r ? `subagent ${r.name} (${r.ref})` : 'subagent'; },
           // A subagent's change is its own run; the main agent's joins the turn.
           // A subagent's namespace: what its spawn declared, or the default view.
           namespaceFor: (caller) => { const w = caller == null ? null : app.state.agent?.who(caller); return w?.child != null ? (w.ns?.length ? w.ns : defaultSubagentNs(app.state.vfs)) : null; },
           // Main's tools see its own session's control files at /session (src/ns/control.ts).
-          sessionOf: (caller) => (caller == null ? null : app.state.agent?.who(caller)?.sid ?? null),
+          sessionOf: (caller) => (caller == null ? null : app.state.agent?.who(caller)?.sid as string ?? null),
           mainView: (caller, base) => { const w = caller == null ? null : app.state.agent?.who(caller); return w && w.child == null && w.sid != null ? app.namespaces.mainNamespace(w.sid, base) : base; },
           // Every change an agent makes, for /session/<sid>/changes (subagents marked by their ref).
-          onChange: (caller, op, path) => { const w = app.state.agent?.who(caller); if (w?.sid != null) app.namespaces.changes.note(w.sid, op, path, w.child != null ? refOfChild(w.sid, w.child)?.ref ?? 'subagent' : MAIN); },
+          onChange: (caller, op, path) => { const w = app.state.agent?.who(caller!); if (w?.sid != null) app.namespaces.changes.note(w.sid, op, path, w.child != null ? refOfChild(w.sid, w.child)?.ref ?? 'subagent' : MAIN); },
           ...app.sessionList.egressHooks,
           models: app.sessionList.modelService, modelsWho: app.sessionList.modelsWho, pdf: app.sessionList.pdfService, media: app.sessionList.mediaService,
           show: app.editing.show,
-        })),
+        }))) as AgentToolSpec[], // tools.ts's typed args against the agent's Record<string, unknown>
         systemPrompt: () => systemPrompt(app.state.vfs),
         getClient: async () => (app.state.verified ? app.state.client : null),
         onRequest: app.queues.countRequest,
         models: app.state.models,
-        pointer: { get: (id) => store.getSetting(convKey(id)), set: (id, c) => store.setSetting(convKey(id), c) },
+        pointer: { get: (id) => store.getSetting(convKey(id)), set: (id, c) => store.setSetting(convKey(id), c) as Promise<void> },
         onInterrupted: async (sids) => {
           for (const sid of sids) if (sid != null) await store.setSetting(interruptedKey(sid), true);
           if (sids.some((x) => sameId(x, app.sessionList.sessions.current?.id))) { app.transcript.interrupted = true; app.transcript.scheduleRender(); }
         },
         subagents: {
-          reg: { get: (sid) => store.getSetting(subagentsKey(sid)), set: (sid, l) => store.setSetting(subagentsKey(sid), l) },
+          reg: { get: (sid) => store.getSetting(subagentsKey(sid)), set: (sid, l) => store.setSetting(subagentsKey(sid), l) as Promise<void> },
           onChange: app.subagents.onKids,
           onCap: (sid, e) => { const list = app.commands.capEvents.get(String(sid)) ?? []; list.push(e); app.commands.capEvents.set(String(sid), list.slice(-3)); if (sameId(sid, app.sessionList.sessions.current?.id)) app.state.composer?.renderTray(); },
           onBlocked: (sid) => { if (sameId(sid, app.sessionList.sessions.current?.id)) { app.state.composer?.renderTray(); app.queues.updateSend(); } },
           onReport: (sid, sub) => app.subagents.drive(sid, () => sub.wait()),
           // The user's follow-up goes before agent wakes (D25).
           followUpHeld: (sid) => { const q = app.queues.followUps.get(String(sid)); return (!!q && !q.paused) || app.queues.submitting.has(String(sid)); },
-          onSettle: async (sid, c) => { toolList.closeView?.(c.id); app.state.usage.refresh(); },
+          onSettle: async (sid, c) => { (toolList as Partial<ToolList>).closeView?.(c.id); app.state.usage.refresh(); },
           lowAllowance: app.subagents.lowAllowance,
           // A one-shot's attached files, read in main's namespace (paths relative to /work).
           readFile: async (f) => {
             const path = normalize(f.startsWith('/') ? f : CWD + '/' + f);
-            const text = await app.state.vfs.fs.readFile(path).catch((e) => { throw new Error(`files: ${path} could not be read (${/ENOENT/.test(e.code ?? e.message) ? 'it does not exist' : e.message}).`); });
+            const text = await app.state.vfs.fs.readFile(path).catch((e: { code?: string; message: string }) => { throw new Error(`files: ${path} could not be read (${/ENOENT/.test(e.code ?? e.message) ? 'it does not exist' : e.message}).`); });
             return { path, text };
           },
-          watchLines: (sid, ref) => { const l = watches.list(sid).filter((w) => ref === MAIN || w.owner === ref); return l.length ? 'Watches: ' + l.map((w) => `${w.id} ${w.paths.join(', ')}${w.note ? ` (${w.note})` : ''}`).join('; ') : ''; },
+          watchLines: (sid, ref) => { const l = watches.list(sid as string).filter((w) => ref === MAIN || w.owner === ref); return l.length ? 'Watches: ' + l.map((w) => `${w.id} ${w.paths.join(', ')}${w.note ? ` (${w.note})` : ''}`).join('; ') : ''; },
         },
       });
     } catch (e) {
-      agentError = 'The agent could not start: ' + e.message;
+      agentError = 'The agent could not start: ' + (e as Error).message;
       app.state.status(agentError, 'bad');
     }
     if (!(await app.sessionList.sessions.boot())) app.transcript.renderLog();
     // Sessions whose subagents were running when the page went away: open them
     // so pi-durable resumes their runs and the reports still arrive.
     if (app.state.agent?.subagents) {
-      const ids = [];
+      const ids: SessionId[] = [];
       for (const s of await app.sessionList.sessions.all()) if ((await app.subagents.loadKids(s.id)).some((c) => c.status === 'running' || (c.sub && !c.foreground && c.reported !== c.sub))) ids.push(s.id);
       if (ids.length) { app.sessionList.sessions.render(); app.state.agent.open(ids); }
     }

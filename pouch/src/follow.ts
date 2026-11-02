@@ -14,10 +14,19 @@
 //
 // The rules key off scroll events, not wheel or touch events, so a wheel, a
 // finger, a scrollbar drag and the keyboard all count the same way.
-export function createFollow(log) {
+export interface ScrollMark { top: number; inner: Map<string | undefined, { top: number; end: boolean }> }
+export interface Follow {
+  readonly following: boolean;
+  stick(): void;
+  pin(smooth?: boolean): void;
+  top(): void;
+  mark(): ScrollMark;
+  restore(m: ScrollMark): void;
+}
+export function createFollow(log: HTMLElement): Follow {
   let follow = true, lastTop = log.scrollTop;
   const gap = () => log.scrollHeight - log.scrollTop - log.clientHeight;
-  const set = (top) => { log.scrollTop = top; lastTop = log.scrollTop; };
+  const set = (top: number) => { log.scrollTop = top; lastTop = log.scrollTop; };
   log.addEventListener('scroll', () => {
     const t = log.scrollTop;
     if (gap() <= 2) follow = true;
@@ -27,9 +36,9 @@ export function createFollow(log) {
   // Rule 2: toggle the disclosure ourselves, so the correction lands in the
   // same frame (a toggle event comes a task later, after a paint).
   log.addEventListener('click', (e) => {
-    const s = e.target.closest?.('summary');
-    const d = s?.parentElement;
-    if (!s || d?.tagName !== 'DETAILS' || !log.contains(d) || e.target.closest('button, a, input, select, textarea') || e.defaultPrevented) return;
+    const s = (e.target as Element).closest?.('summary');
+    const d = s?.parentElement as HTMLDetailsElement | null | undefined;
+    if (!s || d?.tagName !== 'DETAILS' || !log.contains(d) || (e.target as Element).closest('button, a, input, select, textarea') || e.defaultPrevented) return;
     e.preventDefault();
     const y = s.getBoundingClientRect().top;
     d.open = !d.open;
@@ -51,11 +60,11 @@ export function createFollow(log) {
     // Around a re-render: mark() before building it, restore() once it is in.
     // The thread keeps its place (or follows); inner boxes, which carry
     // data-sk="<stable key>", keep theirs, and one at its end stays there (rule 3).
-    mark: () => ({ top: log.scrollTop, inner: new Map([...log.querySelectorAll('[data-sk]')].map((n) => [n.dataset.sk, { top: n.scrollTop, end: n.scrollHeight - n.scrollTop - n.clientHeight <= 2 }])) }),
+    mark: () => ({ top: log.scrollTop, inner: new Map([...log.querySelectorAll<HTMLElement>('[data-sk]')].map((n) => [n.dataset.sk, { top: n.scrollTop, end: n.scrollHeight - n.scrollTop - n.clientHeight <= 2 }])) }),
     restore(m) {
-      for (const n of log.querySelectorAll('[data-sk]')) {
+      for (const n of log.querySelectorAll<HTMLElement>('[data-sk]')) {
         const w = m.inner.get(n.dataset.sk);
-        if (n.dataset.sk.startsWith('live:') || w?.end) n.scrollTop = n.scrollHeight;
+        if (n.dataset.sk!.startsWith('live:') || w?.end) n.scrollTop = n.scrollHeight;
         else if (w) n.scrollTop = w.top;
       }
       if (!follow) set(m.top);

@@ -13,9 +13,10 @@
 // 'mp4' (ISO BMFF / QuickTime: ftyp, or an old .mov that starts with moov,
 // mdat, wide, free or skip), 'mp3' (ID3v2, or an MPEG audio layer III sync),
 // or null (the libav CLI path: WebM, Ogg, WAV, FLAC ...).
-export function sniff(b) {
+export type MediaKind = 'mp4' | 'mp3';
+export function sniff(b: Uint8Array | null | undefined): MediaKind | null {
   if (!b || b.length < 12) return null;
-  const at = (i, n) => String.fromCharCode(...b.subarray(i, i + n));
+  const at = (i: number, n: number) => String.fromCharCode(...b.subarray(i, i + n));
   if (['ftyp', 'moov', 'mdat', 'wide', 'free', 'skip', 'pnot'].includes(at(4, 4))) return 'mp4';
   if (at(0, 3) === 'ID3') return 'mp3';
   if (mp3Header(b, 0)) return 'mp3';
@@ -23,21 +24,23 @@ export function sniff(b) {
 }
 
 // ── MP3 ──────────────────────────────────────────────────────────────
-const MP3_RATES = { 3: [44100, 48000, 32000], 2: [22050, 24000, 16000], 0: [11025, 12000, 8000] };
-const MP3_KBPS = { 1: [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320], 2: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160] };
-// The layer III frame header at i: { size, sampleRate, channels, samples, kbps } or null.
-export function mp3Header(b, i) {
+const MP3_RATES: Record<number, number[]> = { 3: [44100, 48000, 32000], 2: [22050, 24000, 16000], 0: [11025, 12000, 8000] };
+const MP3_KBPS: Record<number, number[]> = { 1: [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320], 2: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160] };
+// The layer III frame header at i, or null.
+export interface Mp3Header { size: number; sampleRate: number; channels: number; samples: number; kbps: number }
+export interface Mp3Frame extends Mp3Header { offset: number }
+export function mp3Header(b: Uint8Array, i: number): Mp3Header | null {
   if (i + 4 > b.length || b[i] !== 0xff || (b[i + 1] & 0xe0) !== 0xe0) return null;
   const ver = (b[i + 1] >> 3) & 3, layer = (b[i + 1] >> 1) & 3, br = b[i + 2] >> 4, sr = (b[i + 2] >> 2) & 3, pad = (b[i + 2] >> 1) & 1;
   if (ver === 1 || layer !== 1 || br === 0 || br === 15 || sr === 3) return null;
   const sampleRate = MP3_RATES[ver][sr], kbps = MP3_KBPS[ver === 3 ? 1 : 2][br], samples = ver === 3 ? 1152 : 576;
   return { size: Math.floor((samples / 8) * kbps * 1000 / sampleRate) + pad, sampleRate, channels: (b[i + 3] >> 6) === 3 ? 1 : 2, samples, kbps };
 }
-// Every frame: { offset, size, ... }; an ID3v2 tag in front is skipped, junk between frames resyncs.
-export function mp3Frames(b) {
+// Every frame; an ID3v2 tag in front is skipped, junk between frames resyncs.
+export function mp3Frames(b: Uint8Array): Mp3Frame[] {
   let i = 0;
   if (b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) i = 10 + ((b[6] << 21) | (b[7] << 14) | (b[8] << 7) | b[9]) + (b[5] & 0x10 ? 10 : 0);
-  const out = [];
+  const out: Mp3Frame[] = [];
   while (i + 4 <= b.length) {
     const h = mp3Header(b, i);
     if (!h || i + h.size > b.length) { i++; continue; }
@@ -47,8 +50,8 @@ export function mp3Frames(b) {
 }
 
 // ── Codec strings (WebCodecs registry) from FFmpeg's codec name and extradata ──
-const hex2 = (n) => n.toString(16).padStart(2, '0');
-export function codecString(name, extradata, tag) {
+const hex2 = (n: number) => n.toString(16).padStart(2, '0');
+export function codecString(name: string, extradata: Uint8Array | null | undefined, tag?: string): string | null {
   const x = extradata ?? new Uint8Array(0);
   if (name === 'h264') return x.length >= 4 && x[0] === 1 ? `avc1.${hex2(x[1])}${hex2(x[2])}${hex2(x[3])}` : null;
   if (name === 'hevc') {
@@ -71,7 +74,7 @@ export function codecString(name, extradata, tag) {
 }
 
 // The display matrix (nine 16.16/2.30 int32s) as ffprobe's rotation: degrees counterclockwise.
-export function rotationOf(m) {
+export function rotationOf(m: ArrayLike<number>): number {
   const s0 = Math.hypot(m[0], m[3]), s1 = Math.hypot(m[1], m[4]);
   if (!s0 || !s1) return 0;
   const r = -Math.atan2(m[1] / s1, m[0] / s0) * 180 / Math.PI;
@@ -79,11 +82,12 @@ export function rotationOf(m) {
 }
 
 // ── WAV ──────────────────────────────────────────────────────────────
-// -> { sampleRate, channels, bits, float, codec, data: Float32Array[] (planar) } or throws.
-export function readWav(b) {
-  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength), tag = (i) => String.fromCharCode(b[i], b[i + 1], b[i + 2], b[i + 3]);
+// Planar float samples, or throws.
+export interface Wav { sampleRate: number; channels: number; bits: number; float: boolean; codec: string; data: Float32Array[] }
+export function readWav(b: Uint8Array): Wav {
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength), tag = (i: number) => String.fromCharCode(b[i], b[i + 1], b[i + 2], b[i + 3]);
   if (tag(0) !== 'RIFF' || tag(8) !== 'WAVE') throw new Error('not a RIFF WAVE file');
-  let fmt = null, data = null;
+  let fmt: { code: number; channels: number; sampleRate: number; bits: number } | null = null, data: Uint8Array | null = null;
   for (let i = 12; i + 8 <= b.length;) {
     const id = tag(i), size = dv.getUint32(i + 4, true);
     if (id === 'fmt ') {
@@ -108,9 +112,9 @@ export function readWav(b) {
   return { sampleRate, channels, bits, float, codec, data: out };
 }
 // WAV codec -> the libav sample format its writer takes, and bytes per sample.
-export const WAV_CODECS = { pcm_u8: ['u8', 1], pcm_s16le: ['s16', 2], pcm_s24le: ['s32', 3], pcm_s32le: ['s32', 4], pcm_f32le: ['flt', 4] };
-export function wavHeader(codec, sampleRate, channels, dataBytes) {
-  const bps = WAV_CODECS[codec][1], h = new DataView(new ArrayBuffer(44)), put = (i, s) => [...s].forEach((c, k) => h.setUint8(i + k, c.charCodeAt(0)));
+export const WAV_CODECS: Record<string, [sampleFmt: string, bytes: number]> = { pcm_u8: ['u8', 1], pcm_s16le: ['s16', 2], pcm_s24le: ['s32', 3], pcm_s32le: ['s32', 4], pcm_f32le: ['flt', 4] };
+export function wavHeader(codec: string, sampleRate: number, channels: number, dataBytes: number): Uint8Array {
+  const bps = WAV_CODECS[codec][1], h = new DataView(new ArrayBuffer(44)), put = (i: number, s: string) => [...s].forEach((c, k) => h.setUint8(i + k, c.charCodeAt(0)));
   put(0, 'RIFF'); h.setUint32(4, 36 + dataBytes, true); put(8, 'WAVE'); put(12, 'fmt ');
   h.setUint32(16, 16, true); h.setUint16(20, codec === 'pcm_f32le' ? 3 : 1, true); h.setUint16(22, channels, true);
   h.setUint32(24, sampleRate, true); h.setUint32(28, sampleRate * channels * bps, true); h.setUint16(32, channels * bps, true);
@@ -118,7 +122,8 @@ export function wavHeader(codec, sampleRate, channels, dataBytes) {
   return new Uint8Array(h.buffer);
 }
 // Interleaved samples (Uint8Array u8, Int16Array s16, Int32Array s32, Float32Array flt) as WAV data bytes.
-export function wavBytes(codec, samples) {
+export type WavSamples = Uint8Array | Int16Array | Int32Array | Float32Array;
+export function wavBytes(codec: string, samples: WavSamples): Uint8Array {
   if (codec !== 'pcm_s24le') return new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength).slice();
   const out = new Uint8Array(samples.length * 3);
   for (let i = 0; i < samples.length; i++) { const v = samples[i]; out[i * 3] = (v >> 8) & 255; out[i * 3 + 1] = (v >> 16) & 255; out[i * 3 + 2] = (v >> 24) & 255; }
@@ -128,28 +133,30 @@ export function wavBytes(codec, samples) {
 // ── -vf on this path: fps, scale, crop (and null), drawn with a canvas ──
 // Arithmetic over numbers, iw, ih (and in_w, in_h; crop's x and y also ow, oh,
 // out_w, out_h), + - * / and parentheses.
-function expr(s, vars) {
+function expr(s: unknown, vars: Record<string, number>): number {
   const t = String(s).replace(/\s+/g, '').match(/\d+(?:\.\d+)?|in_w|in_h|out_w|out_h|iw|ih|ow|oh|[-+*/()]/g);
   if (!t || t.join('') !== String(s).replace(/\s+/g, '')) return NaN;
   let i = 0;
-  const atom = () => { const x = t[i++]; if (x === '(') { const v = sum(); i++; return v; } if (x === '-') return -atom(); return x in vars ? vars[x] : Number(x); };
-  const prod = () => { let v = atom(); while (t[i] === '*' || t[i] === '/') v = t[i++] === '*' ? v * atom() : v / atom(); return v; };
-  const sum = () => { let v = prod(); while (t[i] === '+' || t[i] === '-') v = t[i++] === '+' ? v + prod() : v - prod(); return v; };
+  const atom = (): number => { const x = t[i++]; if (x === '(') { const v = sum(); i++; return v; } if (x === '-') return -atom(); return x in vars ? vars[x] : Number(x); };
+  const prod = (): number => { let v = atom(); while (t[i] === '*' || t[i] === '/') v = t[i++] === '*' ? v * atom() : v / atom(); return v; };
+  const sum = (): number => { let v = prod(); while (t[i] === '+' || t[i] === '-') v = t[i++] === '+' ? v + prod() : v - prod(); return v; };
   const v = sum();
   return i === t.length ? v : NaN;
 }
-const opts = (body, names) => {
-  const o = {}, parts = body ? body.split(':') : [];
+const opts = (body: string | undefined, names: string[]) => {
+  const o: Record<string, string> = {}, parts = body ? body.split(':') : [];
   parts.forEach((p, k) => { const m = /^([a-z_]+)=(.*)$/.exec(p); if (m) o[m[1]] = m[2]; else if (names[k]) o[names[k]] = p; });
   return o;
 };
 export const WC_FILTERS = 'fps, scale, crop and null';
 // The conversion path's audio filters (libav.js webcodecs-avf: its audio-filters and swresample fragments).
 export const AUDIO_FILTERS = 'acompressor, adeclick, adeclip, aecho, afade, aformat, agate, alimiter, amix, anull, apad, aresample, asettb, asplit, atempo, atrim, bandpass, bandreject, dynaudnorm, equalizer, loudnorm, pan, volume';
-// filters (strings) -> { rate (frames per second or null), ops: [{ crop | scale }] } or { error }.
-export function vfPlan(filters) {
-  let rate = null;
-  const ops = [];
+// rate: frames per second or null; ops in order: scale [w, h], crop [w, h, x?, y?].
+export type VfOp = { scale: string[]; crop?: undefined } | { crop: (string | undefined)[]; scale?: undefined };
+export type VfPlan = { rate: number | null; ops: VfOp[]; error?: undefined } | { error: string; rate?: undefined; ops?: undefined };
+export function vfPlan(filters: string[]): VfPlan {
+  let rate: number | null = null;
+  const ops: VfOp[] = [];
   for (const f of filters) {
     const [, name, body] = /^([a-z_0-9]+)(?:=(.*))?$/.exec(f) ?? [];
     if (name === 'null' || name === 'format' || name === 'setsar') continue;
@@ -165,15 +172,16 @@ export function vfPlan(filters) {
   }
   return { rate, ops };
 }
-// The picture for a source of iw x ih: { sx, sy, sw, sh, w, h } (the source rect and the output size) or { error }.
-export function geometry(ops, iw, ih) {
+// The picture for a source of iw x ih: the source rect (sx, sy, sw, sh) and the output size.
+export type Geometry = { sx: number; sy: number; sw: number; sh: number; w: number; h: number; error?: undefined } | { error: string };
+export function geometry(ops: VfOp[], iw: number, ih: number): Geometry {
   let sx = 0, sy = 0, sw = iw, sh = ih, w = iw, h = ih;
   for (const op of ops) {
     const vars = { iw: w, ih: h, in_w: w, in_h: h };
     if (op.scale) {
       let [W, H] = op.scale.map((e) => expr(e, vars));
       if (!Number.isFinite(W) || !Number.isFinite(H) || (W <= 0 && H <= 0)) return { error: `scale=${op.scale.join(':')}: use numbers, iw, ih, or -1/-2 for one side` };
-      const even = (v, n) => Math.max(n, Math.round(v / n) * n);
+      const even = (v: number, n: number) => Math.max(n, Math.round(v / n) * n);
       if (W < 0) W = even(H * w / h, -W); else if (H < 0) H = even(W * h / w, -H);
       w = Math.round(W); h = Math.round(H); continue;
     }
@@ -193,16 +201,16 @@ export function geometry(ops, iw, ih) {
 // the last frame whose time rounds to n or before (ties go later). It emits at
 // most cap slots in all (the caller's frame or image limit), so a long gap or a
 // high rate cannot grow one emit list without bound.
-export function fpsPicker(rate, cap = Infinity) {
-  let start = null, next = 0, held = null, emitted = 0;
-  const slotOf = (t) => Math.floor((t - start) * rate + 0.5 + 1e-9);
-  const fill = (upto, emit) => { while (held && next < upto && emitted < cap) { emit.push([held, start + next / rate]); next++; emitted++; } };
+export function fpsPicker<F>(rate: number, cap = Infinity) {
+  let start: number | null = null, next = 0, held: F | null = null, emitted = 0;
+  const slotOf = (t: number) => Math.floor((t - start!) * rate + 0.5 + 1e-9);
+  const fill = (upto: number, emit: [F, number][]) => { while (held && next < upto && emitted < cap) { emit.push([held, start! + next / rate]); next++; emitted++; } };
   return {
     // Frame at time t arrives: -> { emit: [[frame, slotTime]...], release } where
     // release is the frame it replaces (close it after drawing the emits).
-    push(frame, t) {
+    push(frame: F, t: number) {
       if (start == null) start = t;
-      const emit = [];
+      const emit: [F, number][] = [];
       fill(slotOf(t), emit);
       const release = held;
       held = frame;
@@ -210,8 +218,8 @@ export function fpsPicker(rate, cap = Infinity) {
     },
     // The stream ended at endT (the last frame's end, or the -t limit): slots
     // before it are filled; a stream shorter than one slot still yields one frame.
-    end(endT) {
-      const emit = [];
+    end(endT: number) {
+      const emit: [F, number][] = [];
       if (held) { fill(Math.max(Number.isFinite(endT) ? slotOf(endT) : 0, emitted ? 0 : next + 1), emit); }
       const release = held; held = null;
       return { emit, release };

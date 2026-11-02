@@ -12,8 +12,21 @@
 // worker-src blob:); it has no network (src/local/worker.ts).
 import { createModelStore } from '../models.ts';
 import { partAssets } from '../assets.ts';
+import type { PartsPin } from '../assets.ts';
+import type { ModelPin } from '../models.ts';
+import type { LocalAction, LocalGenerateRequest, LocalGenerateResult, LocalLoadResult, LocalReply } from './protocol.ts';
 
-export const LOCAL = typeof LOCAL_MODEL !== 'undefined' ? LOCAL_MODEL : null; // eslint-disable-line no-undef
+export type { LocalAction, LocalChatMessage, LocalEngine, LocalGenerateRequest, LocalGenerateResult, LocalLoadResult, LocalReply, LocalRequest, LocalToolCall, LocalToolSchema } from './protocol.ts';
+// The model's pins as build-models.mjs embeds them (from models.lock.json).
+export interface LocalModel extends ModelPin { dtype: string; bytes: number; runtime: PartsPin }
+export type Support = { ok: true } | { ok: false; reason: string };
+export interface LocalProgress { done: number; total: number; fetched?: number; repaired?: number; phase?: 'runtime' | 'loading' }
+// The slices of WebGPU (not in this TypeScript's DOM lib) and Navigator read here.
+interface GpuAdapterLike { features?: { has?(feature: string): boolean }; limits?: { maxStorageBuffersPerShaderStage?: number }; info?: { vendor?: string; architecture?: string } }
+export interface GpuLike { requestAdapter(): Promise<GpuAdapterLike | null> }
+export interface DeviceSignals { userAgentData?: { mobile?: boolean }; userAgent?: string; maxTouchPoints?: number; deviceMemory?: number; gpu?: GpuLike }
+
+export const LOCAL = typeof LOCAL_MODEL !== 'undefined' ? LOCAL_MODEL as LocalModel : null; // eslint-disable-line no-undef
 export const models = createModelStore(LOCAL ? [LOCAL] : []);
 const runtime = LOCAL && partAssets(LOCAL.runtime);
 
@@ -26,14 +39,14 @@ const runtime = LOCAL && partAssets(LOCAL.runtime);
 // works. The kernel that needs 10 is not yet identified.
 export const MIN_STORAGE_BUFFERS = 10;
 const ELSEWHERE = 'Use Chrome or Edge, or a BayLeaf Sealed model.';
-const buffersReason = (have, need = MIN_STORAGE_BUFFERS) => `This browser's WebGPU allows ${have} storage buffers per shader; LFM3 needs ${need}. ${ELSEWHERE}`;
+const buffersReason = (have: number, need = MIN_STORAGE_BUFFERS) => `This browser's WebGPU allows ${have} storage buffers per shader; LFM3 needs ${need}. ${ELSEWHERE}`;
 
 // gpu: navigator.gpu or a stand-in. Asks for an adapter only: no device, no download.
-export async function gpuSupport(gpu) {
+export async function gpuSupport(gpu: GpuLike | undefined): Promise<Support> {
   if (!gpu) return { ok: false, reason: 'WebGPU is not available in this browser (a recent Chrome or Edge on a computer has it).' };
   let adapter;
   try { adapter = await gpu.requestAdapter(); }
-  catch (e) { return { ok: false, reason: 'WebGPU failed: ' + e.message }; }
+  catch (e) { return { ok: false, reason: 'WebGPU failed: ' + (e as Error).message }; }
   if (!adapter) return { ok: false, reason: 'WebGPU found no usable graphics adapter on this device.' };
   if (!adapter.features?.has?.('shader-f16')) return { ok: false, reason: `This browser's WebGPU lacks shader-f16, which LFM3 (q4f16) needs. ${ELSEWHERE}` };
   const buffers = adapter.limits?.maxStorageBuffersPerShaderStage ?? 0;
@@ -56,22 +69,22 @@ export async function gpuSupport(gpu) {
 // A coarse pointer alone is not used: touch laptops would be refused.
 export const DEVICE_REASON = 'In-browser models are turned off on phones and tablets: on a Pixel test the first request froze the whole phone for about a minute. Use a BayLeaf Sealed model here.';
 const UA_MOBILE = /Android|iPhone|iPad|iPod|Mobile/;
-export function deviceSupport({ userAgentData, userAgent = '', maxTouchPoints = 0, deviceMemory } = {}) {
+export function deviceSupport({ userAgentData, userAgent = '', maxTouchPoints = 0, deviceMemory }: DeviceSignals = {}): Support {
   if (userAgentData?.mobile === true || UA_MOBILE.test(userAgent) || (/Macintosh/.test(userAgent) && maxTouchPoints > 1)) return { ok: false, reason: DEVICE_REASON };
   if (typeof deviceMemory === 'number' && deviceMemory < 8) return { ok: false, reason: `In-browser models need a computer with at least 8 GB of memory; this device reports ${deviceMemory} GB. Use a BayLeaf Sealed model here.` };
   return { ok: true };
 }
 
-export async function support() {
+export async function support(): Promise<Support> {
   if (!LOCAL) return { ok: false, reason: 'This build of Pouch does not include the local model.' };
-  const nav = globalThis.navigator ?? {};
+  const nav: DeviceSignals = globalThis.navigator ?? {};
   const device = deviceSupport(nav);
   return device.ok ? gpuSupport(nav.gpu) : device;
 }
 
 // The same limit, met at run time (an adapter that reported more than the device
 // got): the friendly reason instead of ORT's raw message.
-export function friendlyError(message) {
+export function friendlyError(message: string): string {
   const m = /Too many storage buffers in shader\. Current: (\d+), Max is (\d+)/.exec(String(message));
   return m ? buffersReason(Number(m[2]), Number(m[1])) : message;
 }
@@ -85,77 +98,77 @@ export async function stored() {
 }
 
 // Verified weights and runtime. onProgress({ done, total, fetched, repaired }).
-export async function obtain({ onProgress = () => {}, network = true } = {}) {
-  const rt = await runtime.obtain({ network, onProgress: (p) => onProgress({ ...p, phase: 'runtime' }) });
-  const w = await models.files(LOCAL.id, { network, onProgress });
+export async function obtain({ onProgress = () => {}, network = true }: { onProgress?: (p: LocalProgress) => void; network?: boolean } = {}) {
+  const rt = await runtime!.obtain({ network, onProgress: (p: LocalProgress) => onProgress({ ...p, phase: 'runtime' }) });
+  const w = await models.files(LOCAL!.id, { network, onProgress });
   return { runtime: rt, files: w.files, repaired: w.repaired };
 }
 
 // A saved copy picked by the user: the original upstream files (by name and size) and/or
 // a saved runtime/<group>/ folder (parts by name). Every byte checked like a download.
-export async function importFiles(fileList) {
-  const r = await models.ingest(LOCAL.id, fileList);
-  const rt = await runtime.importFiles(fileList);
+export async function importFiles(fileList: FileList | File[]) {
+  const r = await models.ingest(LOCAL!.id, fileList);
+  const rt = await runtime!.importFiles(fileList);
   return { added: r.added + rt.added, bad: r.bad.length + rt.bad, refused: r.bad, bytes: r.bytes, total: r.total, complete: r.complete };
 }
 
 export async function remove() {
   await engine.dispose();
-  await models.remove(LOCAL.id);
-  await runtime.remove();
+  await models.remove(LOCAL!.id);
+  await runtime!.remove();
 }
 
 // ── The worker ─────────────────────────────────────────────────────
-let worker = null, starting = null, seq = 0;
-const pending = new Map();
-function call(action, data = {}, onDelta) {
-  return new Promise((resolve, reject) => {
+let worker: Worker | null = null, starting: Promise<LocalLoadResult> | null = null, seq = 0;
+const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void; onDelta?: (delta: string) => void }>();
+function call<T>(action: LocalAction, data: object = {}, onDelta?: (delta: string) => void) {
+  return new Promise<T>((resolve, reject) => {
     const id = ++seq;
-    pending.set(id, { resolve, reject, onDelta });
-    worker.postMessage({ id, action, ...data });
+    pending.set(id, { resolve: resolve as (v: unknown) => void, reject, onDelta });
+    worker!.postMessage({ id, action, ...data });
   });
 }
-let chain = Promise.resolve(); // one generation at a time
+let chain: Promise<unknown> = Promise.resolve(); // one generation at a time
 
 export const engine = {
   loaded: () => !!worker && !starting,
   // Load the model (downloading what is missing if allowed).
-  start({ onProgress, network = true } = {}) {
+  start({ onProgress, network = true }: { onProgress?: (p: LocalProgress) => void; network?: boolean } = {}): Promise<LocalLoadResult | { loaded: true }> {
     if (worker && !starting) return Promise.resolve({ loaded: true });
     starting ??= (async () => {
       const got = await obtain({ onProgress, network });
-      onProgress?.({ done: LOCAL.bytes, total: LOCAL.bytes, phase: 'loading' });
+      onProgress?.({ done: LOCAL!.bytes, total: LOCAL!.bytes, phase: 'loading' });
       const src = URL.createObjectURL(new Blob([got.runtime.files['worker.js']], { type: 'text/javascript' }));
       worker = new Worker(src, { type: 'module', name: 'pouch-local' });
       URL.revokeObjectURL(src);
-      worker.onmessage = ({ data }) => {
-        const p = pending.get(data.id);
+      worker.onmessage = ({ data }: MessageEvent<LocalReply>) => {
+        const p = pending.get(data.id!); // a progress report has no id: no match
         if (data.progress) return;
         if (!p) return;
         if (data.delta !== undefined) return p.onDelta?.(data.delta);
-        pending.delete(data.id);
+        pending.delete(data.id!);
         data.error ? p.reject(new Error(friendlyError(data.error))) : p.resolve(data.result);
       };
       worker.onerror = (e) => { for (const p of pending.values()) p.reject(new Error(friendlyError(e.message) || 'The Transformers.js model worker failed.')); pending.clear(); };
       const wasm = got.runtime.manifest.files.find((f) => f.role === 'wasm');
-      return await call('load', { files: got.files, wasm: got.runtime.files[wasm.name] });
+      return await call<LocalLoadResult>('load', { files: got.files, wasm: got.runtime.files[wasm!.name] });
     })();
     starting.catch(() => { worker?.terminate(); worker = null; }).finally(() => {});
     return starting.then((r) => { starting = null; return r; }, (e) => { starting = null; throw e; });
   },
-  generate(req, { onDelta, signal } = {}) {
+  generate(req: LocalGenerateRequest, { onDelta, signal }: { onDelta?: (delta: string) => void; signal?: AbortSignal } = {}): Promise<LocalGenerateResult> {
     const run = chain.then(async () => {
       if (!worker || starting) await this.start({ network: navigator.onLine });
       if (signal?.aborted) throw new DOMException('Stopped.', 'AbortError');
       const stop = () => worker?.postMessage({ action: 'interrupt' });
       signal?.addEventListener('abort', stop, { once: true });
-      try { return await call('generate', req, onDelta); }
+      try { return await call<LocalGenerateResult>('generate', req, onDelta); }
       finally { signal?.removeEventListener('abort', stop); }
     });
     chain = run.catch(() => {});
     return run;
   },
-  async dispose() {
+  async dispose(): Promise<void> {
     const w = worker; worker = null; starting = null;
     if (!w) return;
     try { await Promise.race([new Promise((r) => { w.onmessage = r; w.postMessage({ id: -1, action: 'dispose' }); }), new Promise((r) => setTimeout(r, 2000))]); } catch {}

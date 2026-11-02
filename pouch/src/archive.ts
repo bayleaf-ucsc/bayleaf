@@ -3,16 +3,21 @@
 // Pouch brings its own. Zip compression uses the browser's own
 // CompressionStream('deflate-raw'), which is asynchronous and needs no library.
 // Both the shell (zip, unzip, tar commands) and the file browser use this.
+import type { defineCommand as DefineCommand } from 'just-bash';
 import { normalize } from './vfs.ts';
+import type { FileServer } from './ns/namespace.ts';
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
 // ── Collect a tree into entries ─────────────────────────────────────
-// Entries are { path, dir, data? } with paths relative to `base` and '/'-separated.
-export async function collect(fs, base, rel) {
-  const out = [];
-  const walk = async (r) => {
+// Paths relative to `base` and '/'-separated.
+export type ArchiveEntry = { path: string; dir: true } | { path: string; dir: false; data: Uint8Array };
+// What collect and extract use of a file server (a Namespace, just-bash's fs).
+export type ArchiveFs = Pick<FileServer, 'stat' | 'readFileBuffer' | 'readdir' | 'mkdir' | 'writeFile'>;
+export async function collect(fs: ArchiveFs, base: string, rel: string) {
+  const out: ArchiveEntry[] = [];
+  const walk = async (r: string): Promise<unknown> => {
     const full = normalize(base + '/' + r);
     const st = await fs.stat(full);
     if (!st.isDirectory) return out.push({ path: r, dir: false, data: await fs.readFileBuffer(full) });
@@ -24,8 +29,8 @@ export async function collect(fs, base, rel) {
 }
 
 // Write entries under `dest`, refusing paths that climb out of it ("zip slip").
-export async function extract(fs, dest, entries) {
-  const written = [];
+export async function extract(fs: ArchiveFs, dest: string, entries: ArchiveEntry[]) {
+  const written: string[] = [];
   for (const e of entries) {
     const clean = normalize('/' + e.path).slice(1);
     if (!clean || e.path.split('/').includes('..')) continue;
@@ -40,10 +45,10 @@ export async function extract(fs, dest, entries) {
 
 // ── tar (ustar) ─────────────────────────────────────────────────────
 // One 512-byte ustar header. `type` is '0' file, '5' folder, 'x' PAX record.
-function tarHeader(name, size, type, prefix = '') {
+function tarHeader(name: string, size: number, type: string, prefix = '') {
   const h = new Uint8Array(512);
-  const put = (off, len, s) => h.set(enc.encode(s).subarray(0, len), off);
-  const oct = (n, len) => n.toString(8).padStart(len - 1, '0');
+  const put = (off: number, len: number, s: string) => h.set(enc.encode(s).subarray(0, len), off);
+  const oct = (n: number, len: number) => n.toString(8).padStart(len - 1, '0');
   put(0, 100, name); put(100, 8, oct(type === '5' ? 0o755 : 0o644, 8)); put(108, 8, oct(0, 8)); put(116, 8, oct(0, 8));
   put(124, 12, oct(size, 12)); put(136, 12, oct(Math.floor(Date.now() / 1000), 12));
   put(148, 8, '        '); put(156, 1, type); put(257, 6, 'ustar'); put(263, 2, '00'); put(345, 155, prefix);
@@ -54,7 +59,7 @@ function tarHeader(name, size, type, prefix = '') {
 // Headers for one entry. ustar fits a path in prefix (155 bytes) / name (100
 // bytes) split at a slash; longer paths ride in a PAX "path=" record first,
 // which every modern tar (GNU, bsdtar, Python, 7-Zip) understands.
-function entryHeaders(path, size, dir) {
+function entryHeaders(path: string, size: number, dir: boolean) {
   const full = dir ? path + '/' : path;
   const type = dir ? '5' : '0';
   if (enc.encode(full).length <= 100) return [tarHeader(full, size, type)];
@@ -72,8 +77,8 @@ function entryHeaders(path, size, dir) {
   return [tarHeader('PaxHeader', record.length, 'x'), record, pad, tarHeader(dec.decode(short).replace(/^[^/]*\//, ''), size, type)];
 }
 
-export function packTar(entries) {
-  const parts = [];
+export function packTar(entries: ArchiveEntry[]) {
+  const parts: Uint8Array[] = [];
   for (const e of entries) {
     const size = e.dir ? 0 : e.data.length;
     parts.push(...entryHeaders(e.path, size, e.dir));
@@ -83,10 +88,10 @@ export function packTar(entries) {
   return concat(parts);
 }
 
-export function unpackTar(bytes) {
-  const out = [];
-  const str = (off, len) => dec.decode(bytes.subarray(off, off + len)).replace(/\0.*$/s, '');
-  let paxPath = null;
+export function unpackTar(bytes: Uint8Array) {
+  const out: ArchiveEntry[] = [];
+  const str = (off: number, len: number) => dec.decode(bytes.subarray(off, off + len)).replace(/\0.*$/s, '');
+  let paxPath: string | null = null;
   for (let off = 0; off + 512 <= bytes.length;) {
     if (bytes.subarray(off, off + 512).every((b) => b === 0)) break;
     const prefix = str(off + 345, 155), name = str(off, 100);
@@ -112,17 +117,17 @@ const CRC = new Uint32Array(256).map((_, n) => {
   for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
   return c;
 });
-function crc32(data) {
+function crc32(data: Uint8Array) {
   let c = 0xffffffff;
   for (const b of data) c = CRC[(c ^ b) & 0xff] ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
 }
-async function through(stream, data) {
-  return new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(stream)).arrayBuffer());
+async function through(stream: CompressionStream | DecompressionStream, data: Uint8Array) {
+  return new Uint8Array(await new Response(new Blob([data as Uint8Array<ArrayBuffer>]).stream().pipeThrough(stream)).arrayBuffer());
 }
 
-export async function packZip(entries) {
-  const files = [], central = [];
+export async function packZip(entries: ArchiveEntry[]) {
+  const files: Uint8Array[] = [], central: Uint8Array[] = [];
   let offset = 0;
   const now = new Date();
   const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
@@ -155,14 +160,14 @@ export async function packZip(entries) {
   return concat([...files, cd, new Uint8Array(end.buffer)]);
 }
 
-export async function unpackZip(bytes) {
+export async function unpackZip(bytes: Uint8Array) {
   const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let eocd = -1;
   for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65_557); i--) if (v.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
   if (eocd < 0) throw new Error('not a zip file (no end-of-directory record)');
   const count = v.getUint16(eocd + 10, true);
   let p = v.getUint32(eocd + 16, true);
-  const out = [];
+  const out: ArchiveEntry[] = [];
   for (let n = 0; n < count; n++) {
     if (v.getUint32(p, true) !== 0x02014b50) throw new Error('corrupt zip directory');
     const method = v.getUint16(p + 10, true), csize = v.getUint32(p + 20, true);
@@ -180,7 +185,7 @@ export async function unpackZip(bytes) {
   return out;
 }
 
-function concat(parts) {
+function concat(parts: Uint8Array[]) {
   const out = new Uint8Array(parts.reduce((a, p) => a + p.length, 0));
   let o = 0;
   for (const p of parts) { out.set(p, o); o += p.length; }
@@ -189,16 +194,16 @@ function concat(parts) {
 
 // ── Shell commands ──────────────────────────────────────────────────
 // Deliberately small option sets, with usage text an agent can act on.
-export function archiveCommands(defineCommand) {
+export function archiveCommands(defineCommand: typeof DefineCommand) {
   const ok = (stdout = '') => ({ stdout, stderr: '', exitCode: 0 });
-  const fail = (msg) => ({ stdout: '', stderr: msg + '\n', exitCode: 1 });
-  const abs = (ctx, p) => normalize(p.startsWith('/') ? p : ctx.cwd + '/' + p);
-  const relOf = (p) => normalize(p).split('/').pop();
+  const fail = (msg: string) => ({ stdout: '', stderr: msg + '\n', exitCode: 1 });
+  const abs = (ctx: { cwd: string }, p: string) => normalize(p.startsWith('/') ? p : ctx.cwd + '/' + p);
+  const relOf = (p: string) => normalize(p).split('/').pop()!;
 
   const zip = defineCommand('zip', async (args, ctx) => {
     const a = args.filter((x) => x !== '-r' && x !== '-q');
     if (a.length < 2) return fail('usage: zip [-r] OUT.zip PATH...   (folders are always included recursively)');
-    const entries = [];
+    const entries: ArchiveEntry[] = [];
     for (const src of a.slice(1)) {
       const full = abs(ctx, src);
       if (!(await ctx.fs.exists(full))) return fail(`zip: ${full}: no such file or directory`);
@@ -215,8 +220,8 @@ export function archiveCommands(defineCommand) {
     const dest = d >= 0 ? abs(ctx, a[d + 1] ?? '.') : ctx.cwd;
     const file = a.find((x, i) => d < 0 || (i !== d && i !== d + 1));
     if (!file) return fail('usage: unzip [-l] FILE.zip [-d DIR]');
-    let entries;
-    try { entries = await unpackZip(await ctx.fs.readFileBuffer(abs(ctx, file))); } catch (e) { return fail(`unzip: ${e.message}`); }
+    let entries: ArchiveEntry[];
+    try { entries = await unpackZip(await ctx.fs.readFileBuffer(abs(ctx, file))); } catch (e) { return fail(`unzip: ${(e as Error).message}`); }
     if (list) return ok(entries.map((e) => (e.dir ? e.path + '/' : `${e.data.length}\t${e.path}`)).join('\n') + '\n');
     const written = await extract(ctx.fs, dest, entries);
     return ok(`extracted ${written.length} files into ${dest}\n`);
@@ -234,7 +239,7 @@ export function archiveCommands(defineCommand) {
     const ci = rest.indexOf('-C');
     if (ci >= 0) { cdir = abs(ctx, rest[ci + 1]); rest.splice(ci, 2); }
     if (flags.includes('c')) {
-      const entries = [];
+      const entries: ArchiveEntry[] = [];
       for (const src of rest) {
         const full = abs({ cwd: cdir }, src);
         if (!(await ctx.fs.exists(full))) return fail(`tar: ${full}: no such file or directory`);

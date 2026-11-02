@@ -9,7 +9,9 @@
 // (continuity: the lines that just changed underneath you, README).
 import { EditorView, basicSetup } from 'codemirror';
 import { EditorState, Compartment, Transaction, StateField, StateEffect } from '@codemirror/state';
-import { keymap, Decoration } from '@codemirror/view';
+import { keymap, Decoration, type DecorationSet } from '@codemirror/view';
+import type { Extension } from '@codemirror/state';
+import type { Language } from '@codemirror/language';
 import { indentWithTab } from '@codemirror/commands';
 import { unifiedMergeView, getChunks, acceptChunk, rejectChunk } from '@codemirror/merge';
 import { highlightCode, classHighlighter } from '@lezer/highlight';
@@ -21,7 +23,7 @@ import { html, htmlLanguage } from '@codemirror/lang-html';
 import { css, cssLanguage } from '@codemirror/lang-css';
 import { json, jsonLanguage } from '@codemirror/lang-json';
 
-const byExt = {
+const byExt: Record<string, () => Extension> = {
   js: () => javascript(), mjs: () => javascript(), cjs: () => javascript(),
   jsx: () => javascript({ jsx: true }),
   ts: () => javascript({ typescript: true }), tsx: () => javascript({ typescript: true, jsx: true }),
@@ -32,17 +34,17 @@ const byExt = {
 
 // Code blocks in replies reuse the same parsers: Lezer tokens become spans
 // with tok-* classes (styled in pouch.html), built as DOM nodes, never HTML.
-const byFence = {
+const byFence: Record<string, Language> = {
   js: javascriptLanguage, javascript: javascriptLanguage, mjs: javascriptLanguage, cjs: javascriptLanguage,
   jsx: jsxLanguage, ts: typescriptLanguage, typescript: typescriptLanguage, tsx: tsxLanguage,
   py: pythonLanguage, python: pythonLanguage, md: markdownLanguage, markdown: markdownLanguage,
   html: htmlLanguage, htm: htmlLanguage, xml: htmlLanguage, svg: htmlLanguage,
   css: cssLanguage, json: jsonLanguage, jsonc: jsonLanguage,
 };
-export function highlight(code, lang, doc = document) {
+export function highlight(code: string, lang: string, doc = document): Node[] | null {
   const language = byFence[lang];
   if (!language) return null;
-  const out = [];
+  const out: Node[] = [];
   highlightCode(code, language.parser.parse(code), classHighlighter, (text, cls) => {
     if (!cls) return out.push(doc.createTextNode(text));
     const s = doc.createElement('span');
@@ -52,8 +54,8 @@ export function highlight(code, lang, doc = document) {
   return out;
 }
 
-export function languageFor(path) {
-  const ext = path.split('.').pop().toLowerCase();
+export function languageFor(path: string): Extension {
+  const ext = path.split('.').pop()!.toLowerCase();
   return byExt[ext]?.() ?? [];
 }
 
@@ -66,7 +68,7 @@ const theme = EditorView.theme({
 });
 
 // Merge controls with words a screen reader can say; labels depend on the mode.
-const controls = (labels) => (type, action) => {
+const controls = (labels: Record<'accept' | 'reject', string>) => (type: 'accept' | 'reject', action: (e: MouseEvent) => void) => {
   const b = document.createElement('button');
   b.type = 'button';
   b.textContent = labels[type];
@@ -78,7 +80,8 @@ const controls = (labels) => (type, action) => {
 
 // Lines that differ between two texts, as a 1-based range in `a` (common
 // prefix and suffix trimmed), or null when they are equal.
-export function changedLines(a, b) {
+export interface LineRange { from: number; to: number }
+export function changedLines(a: string, b: string): LineRange | null {
   if (a === b) return null;
   const x = a.split('\n'), y = b.split('\n');
   let i = 0; while (i < x.length && i < y.length && x[i] === y[i]) i++;
@@ -86,8 +89,8 @@ export function changedLines(a, b) {
   const from = Math.min(i + 1, x.length);
   return { from, to: Math.max(from, x.length - j) };
 }
-const setFlash = StateEffect.define();
-const flashField = StateField.define({
+const setFlash = StateEffect.define<DecorationSet>();
+const flashField = StateField.define<DecorationSet>({
   create: () => Decoration.none,
   update(deco, tr) {
     for (const e of tr.effects) if (e.is(setFlash)) return e.value;
@@ -96,12 +99,29 @@ const flashField = StateField.define({
   provide: (f) => EditorView.decorations.from(f),
 });
 
+export type EditorMode = 'normal' | 'merge';
+export interface Editor {
+  view: EditorView;
+  readonly mode: EditorMode;
+  readonly baseline: string;
+  load(path: string, text: string): void;
+  text(): string;
+  markSaved(): void;
+  setBaseline(text: string): void;
+  diff(path: string, original: string, current: string): void;
+  flash(other: string): LineRange | null;
+  unresolved(): number;
+  settleAll(keepMine: boolean): void;
+  endDiff(): void;
+  gotoLine(n: number): void;
+  focus(): void;
+}
 // onChange(dirty) fires when the buffer diverges from or returns to the baseline.
-export function createEditor(parent, { onSave, onChange }) {
+export function createEditor(parent: Element, { onSave, onChange }: { onSave(): void; onChange(dirty: boolean): void }): Editor {
   const lang = new Compartment(), merge = new Compartment(), ro = new Compartment(), label = new Compartment(), palette = new Compartment();
   const colorTheme = () => EditorView.theme({}, { dark: document.documentElement.dataset.theme === 'dark' });
   let saved = '';
-  let mode = 'normal'; // 'normal' | 'merge' (editable diff)
+  let mode: EditorMode = 'normal'; // merge: editable diff
   const quiet = Transaction.addToHistory.of(false);
   const view = new EditorView({
     parent,
@@ -120,7 +140,7 @@ export function createEditor(parent, { onSave, onChange }) {
     }),
   });
   document.documentElement.addEventListener('pouch-theme', () => view.dispatch({ effects: palette.reconfigure(colorTheme()) }));
-  function setDoc(path, text, extra = []) {
+  function setDoc(path: string, text: string, extra: StateEffect<unknown>[] = []) {
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: text },
       effects: [lang.reconfigure(languageFor(path)), label.reconfigure(EditorView.contentAttributes.of({ 'aria-label': 'Contents of ' + path })), ...extra],
@@ -154,7 +174,7 @@ export function createEditor(parent, { onSave, onChange }) {
       const r = changedLines(view.state.doc.toString(), other);
       if (!r) return null;
       const doc = view.state.doc, line = Decoration.line({ class: 'cm-flash' });
-      const marks = [];
+      const marks: ReturnType<typeof line.range>[] = [];
       for (let n = r.from; n <= Math.min(r.to, doc.lines); n++) marks.push(line.range(doc.line(n).from));
       view.dispatch({ effects: setFlash.of(Decoration.set(marks)) });
       setTimeout(() => view.dispatch({ effects: setFlash.of(Decoration.none) }), 1600);

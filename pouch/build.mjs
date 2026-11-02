@@ -8,7 +8,7 @@
 // nothing else can run, and prints the file's SHA-256 for a release.
 import { build, context } from 'esbuild';
 import { createHash } from 'node:crypto';
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { assertArchitecture, checkArchitecture, checkMetafile, checkNoCdn, loadTree } from './arch.mjs';
 
@@ -37,6 +37,14 @@ const SW_SHA256 = sha256(readFileSync('sw.js'), 'hex');
 // The trust boundaries and module structure (arch.mjs, README "Architecture"):
 // checked on the sources before anything is built, and on the bundle below.
 assertArchitecture(checkArchitecture(loadTree()));
+
+// The types (tsc --noEmit, strict): esbuild only strips them, so this is where
+// they are checked. The page and the workers have different globals, hence
+// two projects. --watch skips it (run `npm run typecheck` alongside).
+if (!watch) {
+  const tsc = (p) => spawnSync(process.execPath, ['node_modules/typescript/bin/tsc', '-p', p], { stdio: 'inherit' }).status;
+  if (tsc('tsconfig.json') || tsc('tsconfig.worker.json')) { console.error('Pouch type check failed (tsc)'); process.exit(1); }
+}
 
 function assemble(code) {
   // An inline script ends at the first "</script", wherever it appears.
@@ -113,6 +121,5 @@ else { await ctx.rebuild(); await ctx.dispose(); }
 // --walkthrough: then refresh WALKTHROUGH.md's screenshots and statuses
 // (walkthrough.mjs bundles its own copy of src/ with a scripted fake model).
 if (process.argv.includes('--walkthrough') && !watch) {
-  const { spawnSync } = await import('node:child_process');
   process.exitCode = spawnSync(process.execPath, ['walkthrough.mjs'], { stdio: 'inherit' }).status ?? 1;
 }

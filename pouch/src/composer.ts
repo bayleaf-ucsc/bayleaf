@@ -3,25 +3,60 @@
 // shield popover (this session's provider and egress grants). the Interface (src/interface/queues.ts, send.js) owns
 // sending and run bookkeeping and supplies what is active; this module owns
 // how the card shows it. Nodes only, never HTML strings.
-//
-// deps: {
-//   vfs, input,
-//   roots() -> top-level folders to index for @ (/work, /pouch, /tmp, mounts),
-//   skills() -> Promise<[{ name, description, path, requests? }]>,
-//   commands: [{ name, hint, run(arg) }],
-//   activity() -> [{ key, kind, text, title?, origin, since?, stop?(), open?() }],
-//   stopAll() (main too), turnSpend() -> requests this turn or null, mainBusy(), shield() -> Promise<{ provider, detail, grants: [{ label, revoke() }], trust() }>,
-//   onTray(), called after the tray changes height,
-// }
 import { $, el, icon, seeded } from './dom.ts';
 import { dismissible } from './dismiss.ts';
+import type { Vfs } from './vfs.ts';
+
+export interface ComposerSkill { name: string; description: string; path: string; requests?: string | number; unlisted?: boolean }
+export interface ComposerCommand { name: string; hint: string; run(arg: string): unknown }
+export type TrayKind = 'subagent' | 'run' | 'approval' | 'cap' | 'steer' | 'followup' | 'watch' | (string & {});
+// A pending input's labeled button (D25): Edit, Steer now, Send.
+export interface TrayAction { label: string; ariaLabel?: string; title?: string; act: string; run(): unknown }
+export interface TrayRow {
+  key: string; kind: TrayKind; text: string; title?: string; origin: string;
+  since?: number; seed?: string; paused?: boolean;
+  open?(): void; background?(): unknown; stop?(): unknown; stopLabel?: string; stopAria?: string;
+  actions?: TrayAction[];
+}
+export interface ShieldGrant { label: string; revoke(): Promise<void> }
+export interface ShieldInfo { provider: string; icon?: string; detail: string; grants: ShieldGrant[]; trust(): void }
+export interface ComposerDeps {
+  vfs: Pick<Vfs, 'addEventListener' | 'list'>;
+  input: HTMLTextAreaElement;
+  fail(message: string): void;
+  // Top-level folders to index for @ (/work, /pouch, /tmp, mounts).
+  roots(): string[];
+  skills(): Promise<ComposerSkill[]>;
+  commands: ComposerCommand[];
+  activity(): TrayRow[];
+  // Stops main too.
+  stopAll(): Promise<void>;
+  // Requests this turn, or null.
+  turnSpend?(): number | null | undefined;
+  mainBusy?(): boolean;
+  shield(): Promise<ShieldInfo>;
+  // Called after the tray changes height.
+  onTray?(): void;
+  onRow?(li: HTMLLIElement, r: TrayRow): void;
+}
+export interface Composer {
+  renderTray(): void;
+  onKeydown(e: KeyboardEvent): boolean;
+  runCommand(text: string): boolean;
+  close(): void;
+  hideShield(refocus?: boolean): void;
+  refreshShield(): void;
+}
+type TokenKind = 'command' | 'path' | 'skill';
+interface Token { kind: TokenKind; start: number; end: number; q: string }
+interface AcItem { label: string; detail?: string; value?: ComposerCommand | ComposerSkill | string; disabled?: boolean; mono?: boolean; cost?: string }
 
 const PATH_CAP = 3000; // entries indexed for @; a huge mounted folder stops here
 const SKIP = new Set(['node_modules', '.git']);
 const SHOWN = 8;
 
 // "12s", "35m 41s", "6h 56m": the tray's elapsed column.
-export function elapsed(ms) {
+export function elapsed(ms: number): string {
   const t = Math.max(0, Math.floor(ms / 1000));
   if (t < 60) return `${t}s`;
   if (t < 3600) return `${Math.floor(t / 60)}m ${t % 60}s`;
@@ -30,7 +65,7 @@ export function elapsed(ms) {
 
 // Subsequence match: contiguous runs and basename hits score higher, then
 // shorter paths. null when q is not a subsequence of s.
-export function fuzzy(q, s) {
+export function fuzzy(q: string, s: string): number | null {
   if (!q) return -s.length;
   const a = s.toLowerCase(), b = q.toLowerCase(), base = a.lastIndexOf('/', a.length - 2) + 1;
   let i = 0, score = 0, run = 0;
@@ -42,18 +77,18 @@ export function fuzzy(q, s) {
   return i < b.length ? null : score - s.length * 0.05;
 }
 
-export function createComposer(deps) {
+export function createComposer(deps: ComposerDeps): Composer {
   const { input } = deps;
 
   // ── Activity tray ─────────────────────────────────────────────────
-  const tray = $('tray'), list = $('tray-list'), toggle = $('tray-toggle'), stopAll = $('tray-stop-all');
-  let collapsed = false, timer = 0;
-  const tick = () => { for (const t of list.querySelectorAll('[data-since]')) t.textContent = elapsed(Date.now() - Number(t.dataset.since)); };
+  const tray = $('tray'), list = $('tray-list'), toggle = $('tray-toggle'), stopAll = $<HTMLButtonElement>('tray-stop-all');
+  let collapsed = false, timer: ReturnType<typeof setTimeout> | 0 = 0;
+  const tick = () => { for (const t of list.querySelectorAll<HTMLElement>('[data-since]')) t.textContent = elapsed(Date.now() - Number(t.dataset.since)); };
   function renderTray() {
     const rows = deps.activity();
     const wasHidden = tray.hidden, oldH = tray.offsetHeight;
     tray.hidden = !rows.length;
-    const counts = {};
+    const counts: Record<string, number> = {};
     for (const r of rows) counts[r.kind] = (counts[r.kind] ?? 0) + 1;
     const running = (counts.subagent ?? 0) + (counts.run ?? 0);
     const n = deps.turnSpend?.();
@@ -62,7 +97,7 @@ export function createComposer(deps) {
     // Main working counts too: Stop all stops main as well.
     stopAll.hidden = rows.filter((r) => r.stop && (r.kind === 'subagent' || r.kind === 'run')).length + (deps.mainBusy?.() ? 1 : 0) < 2;
     // Rebuilding drops focus; give it back to the same row's button.
-    const f = document.activeElement, fKey = list.contains(f) ? f.closest('[data-key]')?.dataset.key : null, fAct = fKey && f.dataset.act;
+    const f = document.activeElement as HTMLElement | null, fKey = list.contains(f) ? f!.closest<HTMLElement>('[data-key]')?.dataset.key : null, fAct = fKey && f!.dataset.act;
     list.replaceChildren(...rows.map((r) => {
       // data-kind, not a class: .subagent already styles the transcript's cards.
       const li = el('li', { className: 'tray-row' });
@@ -71,42 +106,42 @@ export function createComposer(deps) {
       if (r.paused) li.classList.add('paused');
       li.append(icon(r.kind === 'subagent' ? 'bot' : r.kind === 'run' ? 'terminal' : r.kind === 'approval' || r.kind === 'cap' ? 'shield-alert' : r.kind === 'steer' ? 'send' : r.kind === 'watch' ? 'eye' : 'clock'));
       const text = el(r.open ? 'button' : 'span', { className: 'tray-text', textContent: r.text, title: r.title ?? r.text });
-      if (r.open) { text.type = 'button'; text.onclick = r.open; text.dataset.act = 'open'; }
+      if (r.open) { (text as HTMLButtonElement).type = 'button'; text.onclick = r.open; text.dataset.act = 'open'; }
       li.append(text, el('span', { className: 'tray-origin', textContent: r.origin }));
       const t = el('span', { className: 'tray-time' });
-      if (r.since) { t.dataset.since = r.since; t.textContent = elapsed(Date.now() - r.since); }
+      if (r.since) { t.dataset.since = r.since as unknown as string; t.textContent = elapsed(Date.now() - r.since); }
       li.append(t);
       if (r.background) {
         // G12: main stops waiting on it; the subagent keeps running.
         const b = el('button', { type: 'button', className: 'tray-bg', textContent: 'Background', title: 'Main stops waiting; this subagent keeps running and reports later', ariaLabel: `Send ${r.text} to the background` });
         b.dataset.act = 'bg';
-        b.onclick = async () => { b.disabled = true; try { await r.background(); } catch (e) { deps.fail(e.message); } };
+        b.onclick = async () => { b.disabled = true; try { await r.background!(); } catch (e) { deps.fail((e as Error).message); } };
         li.append(b);
       }
       // Pending input (D25): Edit, Steer now, Send, each a visible labeled button.
       for (const a of r.actions ?? []) {
         const b = el('button', { type: 'button', className: 'tray-bg', textContent: a.label, ariaLabel: a.ariaLabel ?? a.label, title: a.title ?? a.ariaLabel ?? a.label });
         b.dataset.act = a.act;
-        b.onclick = async () => { b.disabled = true; try { await a.run(); } catch (e) { deps.fail(e.message); } };
+        b.onclick = async () => { b.disabled = true; try { await a.run(); } catch (e) { deps.fail((e as Error).message); } };
         li.append(b);
       }
       if (r.stop) {
         const b = el('button', { type: 'button', className: 'tray-stop', textContent: r.stopLabel ?? 'Stop', ariaLabel: r.stopAria ?? `${r.stopLabel ?? 'Stop'} ${r.kind === 'followup' ? 'follow-up' : r.text}` });
         b.dataset.act = 'stop';
-        b.onclick = async () => { b.disabled = true; try { await r.stop(); } catch (e) { deps.fail(e.message); } };
+        b.onclick = async () => { b.disabled = true; try { await r.stop!(); } catch (e) { deps.fail((e as Error).message); } };
         li.append(b);
       }
       deps.onRow?.(li, r); // continuity: a fold or morph resumes over the rebuild
       return li;
     }));
-    if (fKey) list.querySelector(`[data-key="${CSS.escape(fKey)}"] [data-act="${fAct}"]`)?.focus({ preventScroll: true });
+    if (fKey) list.querySelector<HTMLElement>(`[data-key="${CSS.escape(fKey)}"] [data-act="${fAct}"]`)?.focus({ preventScroll: true });
     // Elapsed ticks only while someone can see it.
     const live = !tray.hidden && !collapsed && rows.some((r) => r.since);
     if (live && !timer) timer = setInterval(() => { if (document.visibilityState === 'visible') tick(); }, 1000);
     if (!live && timer) { clearInterval(timer); timer = 0; }
     if (wasHidden !== tray.hidden || oldH !== tray.offsetHeight) deps.onTray?.();
   }
-  function setCollapsed(v) {
+  function setCollapsed(v: boolean) {
     collapsed = v;
     tray.classList.toggle('collapsed', v);
     toggle.ariaExpanded = String(!v);
@@ -121,15 +156,15 @@ export function createComposer(deps) {
 
   // ── Autocomplete: @ paths, $ skills, / commands ──────────────────
   const ac = $('ac');
-  let state = null; // { kind, start, end, q, items, active }
-  let paths = null, scanning = null, skills = null;
+  let state: (Token & { items: AcItem[]; active: number }) | null = null;
+  let paths: string[] | null = null, scanning: Promise<string[]> | null = null, skills: ComposerSkill[] | null = null;
   deps.vfs.addEventListener('change', () => { paths = null; skills = null; });
 
   async function scan() {
-    const out = [];
-    const queue = deps.roots().map((r) => [r, 0]);
+    const out: string[] = [];
+    const queue = deps.roots().map((r): [string, number] => [r, 0]);
     while (queue.length && out.length < PATH_CAP) {
-      const [dir, depth] = queue.shift();
+      const [dir, depth] = queue.shift()!;
       let entries;
       try { entries = await deps.vfs.list(dir); } catch { continue; }
       for (const e of entries) {
@@ -146,24 +181,24 @@ export function createComposer(deps) {
   const indexSkills = async () => (skills ??= await deps.skills().catch(() => []));
 
   // What is being typed at the caret, if it is one of the three triggers.
-  function token() {
+  function token(): Token | null {
     const v = input.value, c = input.selectionStart;
     if (c !== input.selectionEnd) return null;
-    const before = v.slice(0, c);
+    const before = v.slice(0, c!);
     let m;
-    if ((m = /^\/([\w-]*)$/.exec(before)) && !/^\S/.test(v.slice(c))) return { kind: 'command', start: 0, end: c, q: m[1] };
-    if ((m = /(?:^|\s)@(\S*)$/.exec(before))) return { kind: 'path', start: c - m[1].length - 1, end: c, q: m[1] };
-    if ((m = /(?:^|\s)\$([\w.-]*)$/.exec(before))) return { kind: 'skill', start: c - m[1].length - 1, end: c, q: m[1] };
+    if ((m = /^\/([\w-]*)$/.exec(before)) && !/^\S/.test(v.slice(c!))) return { kind: 'command', start: 0, end: c!, q: m[1] };
+    if ((m = /(?:^|\s)@(\S*)$/.exec(before))) return { kind: 'path', start: c! - m[1].length - 1, end: c!, q: m[1] };
+    if ((m = /(?:^|\s)\$([\w.-]*)$/.exec(before))) return { kind: 'skill', start: c! - m[1].length - 1, end: c!, q: m[1] };
     return null;
   }
-  const rank = (xs, q, key) => xs.map((x) => [x, fuzzy(q, key(x))]).filter(([, s]) => s != null).sort((a, b) => b[1] - a[1]).slice(0, SHOWN).map(([x]) => x);
+  const rank = <T>(xs: T[], q: string, key: (x: T) => string) => xs.map((x): [T, number | null] => [x, fuzzy(q, key(x))]).filter(([, s]) => s != null).sort((a, b) => b[1]! - a[1]!).slice(0, SHOWN).map(([x]) => x);
 
   let gen = 0;
   async function update() {
     const t = token();
     if (!t) return close();
     const g = ++gen;
-    let items;
+    let items: AcItem[];
     if (t.kind === 'command') items = rank(deps.commands, t.q, (c) => c.name).map((c) => ({ label: '/' + c.name, detail: c.hint, value: c }));
     else if (t.kind === 'skill') {
       const all = await indexSkills();
@@ -180,14 +215,14 @@ export function createComposer(deps) {
     if (!items.length) items = [{ label: t.kind === 'command' ? 'No such command (Enter sends it as text)' : 'No match', disabled: true }];
     open(t, items);
   }
-  const KIND = { path: 'Files and folders', skill: 'Skills', command: 'Commands' };
-  function open(t, items) {
+  const KIND: Record<TokenKind, string> = { path: 'Files and folders', skill: 'Skills', command: 'Commands' };
+  function open(t: Token, items: AcItem[]) {
     const keep = state?.kind === t.kind ? Math.max(0, state.active) : 0;
     state = { ...t, items, active: Math.min(keep, items.length - 1) };
     if (items[state.active]?.disabled) state.active = items.findIndex((i) => !i.disabled);
     ac.ariaLabel = KIND[t.kind];
     ac.replaceChildren(...items.map((it, i) => {
-      const o = el('div', { id: 'ac-' + i, role: 'option', className: 'ac-opt' + (it.mono ? ' mono' : ''), ariaSelected: String(i === state.active), ariaDisabled: it.disabled ? 'true' : null },
+      const o = el('div', { id: 'ac-' + i, role: 'option', className: 'ac-opt' + (it.mono ? ' mono' : ''), ariaSelected: String(i === state!.active), ariaDisabled: it.disabled ? 'true' : null },
         el('span', { className: 'ac-label', textContent: it.label }), ...(it.detail ? [el('span', { className: 'ac-detail', textContent: it.detail })] : []), ...(it.cost ? [el('span', { className: 'ac-cost', textContent: it.cost })] : []));
       if (!it.disabled) {
         // pointerdown keeps focus (and the soft keyboard) in the input.
@@ -202,8 +237,8 @@ export function createComposer(deps) {
   }
   function mark() {
     const opts = ac.children;
-    for (let i = 0; i < opts.length; i++) opts[i].ariaSelected = String(i === state.active);
-    if (state.active >= 0) { input.setAttribute('aria-activedescendant', 'ac-' + state.active); opts[state.active]?.scrollIntoView({ block: 'nearest' }); }
+    for (let i = 0; i < opts.length; i++) opts[i].ariaSelected = String(i === state!.active);
+    if (state!.active >= 0) { input.setAttribute('aria-activedescendant', 'ac-' + state!.active); opts[state!.active]?.scrollIntoView({ block: 'nearest' }); }
     else input.removeAttribute('aria-activedescendant');
   }
   function close() {
@@ -212,7 +247,7 @@ export function createComposer(deps) {
     state = null; ac.hidden = true; ac.replaceChildren();
     input.setAttribute('aria-expanded', 'false'); input.removeAttribute('aria-activedescendant');
   }
-  function replace(start, end, text) {
+  function replace(start: number, end: number, text: string) {
     const v = input.value;
     input.value = v.slice(0, start) + text + v.slice(end);
     const c = start + text.length;
@@ -220,23 +255,23 @@ export function createComposer(deps) {
     input.dispatchEvent(new Event('input')); // autosize, and the next token check
   }
   // run: Enter or a tap runs a command; Tab only completes its name.
-  function choose(i, run) {
+  function choose(i: number, run: boolean) {
     const it = state?.items[i];
     if (!it || it.disabled) return;
-    const { kind, start, end } = state;
+    const { kind, start, end } = state!;
     close();
     if (kind === 'command') {
-      if (run) { input.value = ''; input.dispatchEvent(new Event('input')); runCommand('/' + it.value.name); }
-      else replace(start, end, '/' + it.value.name + ' ');
-    } else if (kind === 'skill') replace(start, end, it.value.unlisted ? `Use the ${it.value.name} skill (${it.value.path}). ` : `Use the ${it.value.name} skill. `);
-    else replace(start, end, it.value + (it.value.endsWith('/') ? '' : ' '));
+      if (run) { input.value = ''; input.dispatchEvent(new Event('input')); runCommand('/' + (it.value as ComposerCommand).name); }
+      else replace(start, end, '/' + (it.value as ComposerCommand).name + ' ');
+    } else if (kind === 'skill') replace(start, end, (it.value as ComposerSkill).unlisted ? `Use the ${(it.value as ComposerSkill).name} skill (${(it.value as ComposerSkill).path}). ` : `Use the ${(it.value as ComposerSkill).name} skill. `);
+    else replace(start, end, it.value + ((it.value as string).endsWith('/') ? '' : ' '));
     input.focus();
   }
   // The Interface (src/interface/send.ts) calls this first from the input's keydown; true means handled.
-  function onKeydown(e) {
+  function onKeydown(e: KeyboardEvent) {
     if (!state || ac.hidden) return false;
-    const n = state.items.length, step = (d) => {
-      for (let k = 1; k <= n; k++) { const j = (state.active + d * k + n * 2) % n; if (!state.items[j].disabled) { state.active = j; break; } }
+    const n = state.items.length, step = (d: number) => {
+      for (let k = 1; k <= n; k++) { const j = (state!.active + d * k + n * 2) % n; if (!state!.items[j].disabled) { state!.active = j; break; } }
       mark();
     };
     if (e.key === 'ArrowDown') step(1);
@@ -255,11 +290,11 @@ export function createComposer(deps) {
   input.setAttribute('aria-expanded', 'false');
 
   // "/name rest": a known command runs (true); anything else is a message.
-  function runCommand(text) {
+  function runCommand(text: string) {
     const m = /^\/([\w-]+)(?:\s+([\s\S]*))?$/.exec(text.trim());
     const c = m && deps.commands.find((x) => x.name === m[1]);
     if (!c) return false;
-    Promise.resolve(c.run(m[2]?.trim() ?? '')).catch((e) => deps.fail(e.message));
+    Promise.resolve(c.run(m![2]?.trim() ?? '')).catch((e: Error) => deps.fail(e.message));
     return true;
   }
 
@@ -285,7 +320,7 @@ export function createComposer(deps) {
     shieldBtn.ariaExpanded = 'true';
     if (hadFocus) pop.querySelector('button')?.focus();
   }
-  function hideShield(refocus) {
+  function hideShield(refocus?: boolean) {
     if (pop.hidden) return;
     pop.hidden = true; shieldBtn.ariaExpanded = 'false';
     if (refocus) shieldBtn.focus();

@@ -8,9 +8,28 @@ import { sameId, titleOf } from '../sessions.ts';
 import { over } from '../ns/namespace.ts';
 import { createChanges, createControl } from '../ns/control.ts';
 import { TaskFs } from '../ns/tasks.ts';
+import type { AssistantItem, SessionId } from '../agent-types.ts';
+import type { AgentRow, Changes, Control, UsageFacts } from '../ns/control.ts';
+import type { TerminalVfs } from '../terminal.ts';
+import type { ViewMode } from '../preview.ts';
+import type { Namespace } from '../ns/namespace.ts';
+import type { App } from './app.ts';
 
-export function createNamespacesRegion(app) {
-  let settingsTimer = null;
+export interface NamespacesRegion {
+  // The path of one agent's control file: /session/<sid>/agents/<ref>/<file>.
+  agentFile(sid: SessionId, ref: string, file: string): string;
+  // What the agents changed this turn, per session.
+  changes: Changes;
+  control: Control;
+  // Every acting control in the Interface: a write through the user's namespace.
+  ctl(path: string, text: string): Promise<unknown>;
+  // Main's namespace: base plus its own session's /session and /task.
+  mainNamespace(sid: SessionId | null | undefined, base: Namespace): Namespace;
+  renderLocalSettingsSoon(): void;
+}
+
+export function createNamespacesRegion(app: App): NamespacesRegion {
+  let settingsTimer: ReturnType<typeof setTimeout> | null = null;
   const renderLocalSettingsSoon = () => { if (!settingsTimer) settingsTimer = setTimeout(() => { settingsTimer = null; app.providers.renderLocalSettings(); }, 250); };
 
   // ── Control plane (src/ns/control.ts, README "Control plane") ─────────
@@ -21,14 +40,14 @@ export function createNamespacesRegion(app) {
   // side, below ("Control plane: the harness side"). The agent files are served
   // from the same caches the Interface draws (kids, sessions.running), so the
   // two cannot disagree; the Interface hears changes from the events tail.
-  const mainSince = new Map(); // session id -> when main's current turn started
-  async function agentRows(sid) {
+  const mainSince = new Map<string, number>(); // session id -> when main's current turn started
+  async function agentRows(sid: string): Promise<AgentRow[]> {
     const k = String(sid);
-    const l = app.subagents.kids.has(k) ? app.subagents.kids.get(k) : await app.subagents.loadKids(sid);
+    const l = app.subagents.kids.has(k) ? app.subagents.kids.get(k)! : await app.subagents.loadKids(sid);
     const working = app.sessionList.sessions.running.has(k);
     const state = app.queues.stopping.has(k) ? 'stopping' : working ? (app.state.agent?.subagents?.blocked(sid).length ? 'waiting' : 'working') : 'idle';
     return [{ ref: MAIN, name: 'main', kind: 'main', state, since: working ? mainSince.get(k) : undefined, ns: app.state.vfs.describe() },
-      ...l.map((c) => ({ ref: refOf(l, c), name: c.name, kind: 'subagent', state: c.status, since: c.resumed ?? c.started, ended: c.status === 'running' ? undefined : c.ended, task: c.task,
+      ...l.map((c) => ({ ref: refOf(l, c), name: c.name, kind: 'subagent' as const, state: c.status, since: c.resumed ?? c.started, ended: c.status === 'running' ? undefined : c.ended, task: c.task,
         ns: describeSpecs(app.state.vfs, c.ns?.length ? c.ns : defaultSubagentNs(app.state.vfs)) }))];
   }
   const changes = createChanges(); // what the agents changed this turn, per session
@@ -37,32 +56,32 @@ export function createNamespacesRegion(app) {
     current: () => app.sessionList.sessions.current?.id ?? null,
     agents: agentRows,
     last: async (sid, ref) => {
-      if (asRef(ref) === MAIN) return (await app.state.agent?.snapshot(sid).catch(() => null))?.items.findLast((i) => i.type === 'assistant' && i.text)?.text ?? '';
+      if (asRef(ref) === MAIN) return ((await app.state.agent?.snapshot(sid).catch(() => null))?.items.findLast((i) => i.type === 'assistant' && i.text) as AssistantItem | undefined)?.text ?? '';
       const l = app.subagents.kids.get(String(sid)) ?? [], c = l.find((x) => refOf(l, x) === ref);
       return c && app.state.agent?.subagents ? (await app.state.agent.subagents.summary(sid, c.id).catch(() => null))?.answer ?? '' : '';
     },
     // /session/<sid>/usage: the allowance, this turn's requests (spend) and today's (the ledger).
-    usage: async (sid) => ({ allowance: app.state.usage.state, turn: app.queues.spend.get(String(sid)) ?? 0, today: (await app.state.ledger.snapshot().catch(() => null))?.bySid?.[String(sid)] ?? 0 }),
+    usage: async (sid) => ({ allowance: app.state.usage.state as UsageFacts['allowance'], turn: app.queues.spend.get(String(sid)) ?? 0, today: (await app.state.ledger.snapshot().catch(() => null))?.bySid?.[String(sid)] ?? 0 }), // usage.ts's resetsAt is a Date; new Date() takes it
     changes: (sid) => changes.list(sid),
   });
   // The user's namespace: the shared tree plus /session with the user's authority.
   const userNs = over(app.state.vfs.fs, [['/session', control.view({ by: 'user' }), { label: 'control (you)' }]]);
   // Every acting control in the Interface goes through here (test/controlplane-node.mjs).
-  const ctl = (path, text) => userNs.writeFile(path, text);
-  const agentFile = (sid, ref, file) => `/session/${sid}/agents/${asRef(ref)}/${file}`;
+  const ctl = (path: string, text: string) => userNs.writeFile(path, text);
+  const agentFile = (sid: SessionId, ref: string, file: string) => `/session/${sid}/agents/${asRef(ref)}/${file}`;
   // Main sees its own session's control files, ctl writable, in refused (control.js).
-  const mainNs = new Map(); // sid -> namespace
-  function mainNamespace(sid, base) {
+  const mainNs = new Map<string, Namespace>(); // sid -> namespace
+  function mainNamespace(sid: SessionId | null | undefined, base: Namespace) {
     if (sid == null) return base;
     // /task too is cut to this session: its runs, subagents and watches (src/ns/tasks.ts).
     if (!mainNs.has(String(sid))) mainNs.set(String(sid), over(base, [['/session', control.view({ by: 'agent', sid }), { label: 'control (a1)' }],
       ['/task', new TaskFs(app.state.vfs.tasks, () => app.state.vfs.watches, { sid }), { label: 'tasks (this session)' }]]));
-    return mainNs.get(String(sid));
+    return mainNs.get(String(sid))!;
   }
   { // main's working/idle state, for /session and its events
     const r = app.sessionList.sessions.running, add = r.add.bind(r), del = r.delete.bind(r);
-    r.add = (k) => { const had = r.has(k); add(k); if (!had) { mainSince.set(k, Date.now()); control.state(k, MAIN, 'working'); } return r; };
-    r.delete = (k) => { const had = del(k); if (had) control.state(k, MAIN, 'idle'); return had; };
+    r.add = (k: string) => { const had = r.has(k); add(k); if (!had) { mainSince.set(k, Date.now()); control.state(k, MAIN, 'working'); } return r; };
+    r.delete = (k: string) => { const had = del(k); if (had) control.state(k, MAIN, 'idle'); return had; };
   }
   // The events tail: a blocking-read loop, as any client would run it. Writes
   // that came from the terminal or the main agent are said out loud here.
@@ -83,9 +102,9 @@ export function createNamespacesRegion(app) {
   // ── Terminal (terminal.js) ──────────────────────────────────────────
   // The user's shell over the same namespace; `bayleaf` asks every use. Ctrl+`
   // opens it (or focuses it); opening it never sends anything.
-  const terminal = createTerminal({ vfs: app.state.vfs, fs: over(app.state.vfs.as('user'), [['/session', control.view({ by: 'user', label: 'terminal' }), { label: 'control (you)' }]]), onChange: () => app.tree.renderTree(),
+  const terminal = createTerminal({ vfs: app.state.vfs as TerminalVfs, fs: over(app.state.vfs.as('user'), [['/session', control.view({ by: 'user', label: 'terminal' }), { label: 'control (you)' }]]), onChange: () => app.tree.renderTree(),
     hooks: { bayleafCredential: () => app.state.key, approveEgress: (req) => app.sessionList.egress.approve(req, null, undefined, 'you, in the terminal'), models: app.sessionList.modelService, pdf: app.sessionList.pdfService, media: app.sessionList.mediaService,
-      openFile: ({ path, mode, interactive }) => app.editing.openFile(path, undefined, { mode, interactive }), revealDir: (path) => app.transcript.revealDir(path) } });
+      openFile: ({ path, mode, interactive }) => app.editing.openFile(path, undefined, { mode: mode as ViewMode, interactive }) as Promise<boolean>, revealDir: (path) => app.transcript.revealDir(path) } });
   document.addEventListener('keydown', (e) => {
     if (e.key !== '`' || !e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]')) return;
     e.preventDefault();

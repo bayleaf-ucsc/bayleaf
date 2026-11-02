@@ -4,6 +4,8 @@
 // (EHBP ciphertext), and the agent's `bayleaf` command through bayleaf-cli.js
 // after egress.js's consent. arch.mjs fails the build if any other module
 // calls the network (README "Architecture").
+// Response shapes: ClaimStart, ClaimPollReply, UsageReply, CampusPassReply,
+// SealedModelList in src/trust.ts (callers cast res.json() to them).
 export const API = 'https://api.bayleaf.dev';
 export const SEALED = API + '/sealed';
 
@@ -12,11 +14,11 @@ export const claimInitiate = () => fetch(API + '/auth/claim/initiate', {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ client: 'BayLeaf Pouch' }),
 });
-export const claimPoll = (deviceCode, signal) => fetch(API + '/auth/claim/poll?d=' + encodeURIComponent(deviceCode), { signal });
+export const claimPoll = (deviceCode: string, signal?: AbortSignal) => fetch(API + '/auth/claim/poll?d=' + encodeURIComponent(deviceCode), { signal });
 
 // A key's budgets (also BayLeaf's verdict on the key), and Campus Pass's quota.
-export const usageOf = (key) => fetch(API + '/usage', { headers: { Authorization: 'Bearer ' + key } });
+export const usageOf = (key: string) => fetch(API + '/usage', { headers: { Authorization: 'Bearer ' + key } });
 export const campusPass = () => fetch(API + '/campus-pass');
 
 // The Sealed model list: small and unauthenticated, so it doubles as the reachability probe.
-export const sealedModels = (init) => fetch(SEALED + '/models', init);
+export const sealedModels = (init?: RequestInit) => fetch(SEALED + '/models', init);

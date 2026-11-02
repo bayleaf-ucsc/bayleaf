@@ -7,11 +7,12 @@
 // Version 4 deleted the `changes` store (change review, dropped 2026-10-29):
 // it held whole before-copies of files the agent changed.
 const DB = 'bayleaf-pouch';
-const STORES = ['sessions', 'settings', 'mounts', 'shared'];
+export type StoreName = 'sessions' | 'settings' | 'mounts' | 'shared';
+const STORES: StoreName[] = ['sessions', 'settings', 'mounts', 'shared'];
 
-let dbp = null;
+let dbp: Promise<IDBDatabase> | null = null;
 function db() {
-  dbp ??= new Promise((resolve, reject) => {
+  dbp ??= new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(DB, 4);
     req.onupgradeneeded = () => {
       for (const s of STORES) if (!req.result.objectStoreNames.contains(s)) req.result.createObjectStore(s);
@@ -23,9 +24,10 @@ function db() {
   return dbp;
 }
 
-export async function tx(store, mode, fn) {
+// What comes back is whatever was stored: callers name the type they wrote (T).
+export async function tx<T = unknown>(store: StoreName, mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest | undefined): Promise<T> {
   const d = await db();
-  return new Promise((resolve, reject) => {
+  return new Promise<T>((resolve, reject) => {
     const t = d.transaction(store, mode);
     const req = fn(t.objectStore(store));
     t.oncomplete = () => resolve(req?.result);
@@ -33,14 +35,14 @@ export async function tx(store, mode, fn) {
   });
 }
 
-export const get = (store, k) => tx(store, 'readonly', (s) => s.get(k));
-export const put = (store, k, v) => tx(store, 'readwrite', (s) => (v === undefined ? s.delete(k) : s.put(v, k)));
-export const del = (store, k) => tx(store, 'readwrite', (s) => s.delete(k));
-export const all = (store) => tx(store, 'readonly', (s) => s.getAll());
-export const keys = (store) => tx(store, 'readonly', (s) => s.getAllKeys());
+export const get = <T = unknown>(store: StoreName, k: IDBValidKey) => tx<T | undefined>(store, 'readonly', (s) => s.get(k));
+export const put = (store: StoreName, k: IDBValidKey, v: unknown) => tx<unknown>(store, 'readwrite', (s) => (v === undefined ? s.delete(k) : s.put(v, k)));
+export const del = (store: StoreName, k: IDBValidKey) => tx<undefined>(store, 'readwrite', (s) => s.delete(k));
+export const all = <T = unknown>(store: StoreName) => tx<T[]>(store, 'readonly', (s) => s.getAll());
+export const keys = (store: StoreName) => tx<IDBValidKey[]>(store, 'readonly', (s) => s.getAllKeys());
 
-export const getSetting = (k) => get('settings', k);
-export const setSetting = (k, v) => put('settings', k, v);
+export const getSetting = <T = unknown>(k: string) => get<T>('settings', k);
+export const setSetting = (k: string, v: unknown) => put('settings', k, v);
 
 // The red button. Removes everything this origin stored: every IndexedDB
 // database, all of OPFS, local/session storage and Cache Storage. Folders
@@ -48,14 +50,15 @@ export const setSetting = (k, v) => put('settings', k, v);
 // not touched; only Pouch's handles to them are forgotten.
 export async function eraseEverything() {
   if (dbp) { (await dbp).close(); dbp = null; }
-  const names = indexedDB.databases ? (await indexedDB.databases()).map((d) => d.name) : [DB];
-  await Promise.all(names.map((n) => new Promise((res) => {
+  const names = indexedDB.databases ? (await indexedDB.databases()).map((d) => d.name!) : [DB];
+  await Promise.all(names.map((n) => new Promise<void>((res) => {
     const r = indexedDB.deleteDatabase(n);
     r.onsuccess = r.onerror = r.onblocked = () => res();
   })));
   try {
     const root = await navigator.storage.getDirectory();
-    for await (const name of root.keys()) await root.removeEntry(name, { recursive: true });
+    // keys() is in the File System spec but not yet in TypeScript's DOM lib.
+    for await (const name of (root as FileSystemDirectoryHandle & { keys(): AsyncIterable<string> }).keys()) await root.removeEntry(name, { recursive: true });
   } catch { /* no OPFS in this browser */ }
   try { localStorage.clear(); sessionStorage.clear(); } catch {}
   try { for (const k of await caches.keys()) await caches.delete(k); } catch {}

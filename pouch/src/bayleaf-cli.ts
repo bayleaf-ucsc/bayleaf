@@ -8,11 +8,44 @@
 //   - help is local and asks nothing.
 // Inference, key management and browser-session routes are deliberately absent.
 //
-// Hooks (all optional; missing approveEgress fails closed):
-//   bayleafCredential(): string | null | Promise<...>   'sk-bayleaf-...', or null for Campus Pass
-//   approveEgress({ command, service, summary, detail, audiences }): Promise<boolean>
-//   onEgress({ command, service, summary, audiences, method, path, status, ok }): void
+// Hooks: all optional; a missing approveEgress fails closed.
+import type { defineCommand as DefineCommand, ExecResult, ResolvedCommandContext, ByteString } from 'just-bash';
 import { normalize } from './vfs.ts';
+import type { CampusPassReply, EgressHook, EgressNotice, EgressService, UsageReply } from './trust.ts';
+
+export interface BayleafHooks {
+  // 'sk-bayleaf-...', or null for Campus Pass.
+  bayleafCredential?(): string | null | undefined | Promise<string | null | undefined>;
+  approveEgress?: EgressHook;
+  onEgress?(e: EgressNotice): void;
+}
+type CmdResult = ExecResult;
+type Opts = Record<string, string | true>;
+interface Parsed { opts: Opts; pos: string[] }
+// Values are true (a switch), a string (takes a value), or an alias ('-n'); $rest as above.
+type Spec = Record<string, string | true>;
+interface SendRequest {
+  service: EgressService; audiences: string[]; method: string; path: string; summary: string; detail: string;
+  body?: unknown; raw?: Uint8Array; binary?: boolean; needKey?: boolean;
+}
+// A binary reply sets bytes and no json (see send).
+type Sent<T> = { error: CmdResult; json?: undefined; bytes?: undefined } | { error?: undefined; json: T; bytes?: Uint8Array };
+interface Cli {
+  ctx: ResolvedCommandContext; notice: string;
+  credential(): Promise<string | null>;
+  usage(m: string): CmdResult;
+  out(stdout: string): CmdResult;
+  local(p: string): string;
+  writeLocal(p: string, data: Uint8Array): Promise<string>;
+  send<T = Record<string, unknown>>(req: SendRequest): Promise<Sent<T>>;
+}
+interface Leaf { args: string; brief?: string; about: string; flags: Record<string, string>; examples: string[]; cred: string; privacy: string; spec: Spec; run(c: Cli, parsed: Parsed): Promise<CmdResult> }
+interface Group { about?: string; [k: string]: Leaf | Group | string | undefined }
+type Node = Leaf | Group;
+// Reply shapes the human-readable output reads (--json prints them whole).
+interface Inbox { id: string; type: string; address?: string; url?: string; label?: string; state: string; expires_at?: number }
+interface InboxMessage { id: string; type: string; received_at: number; size: number; preview?: { from?: string; subject?: string; method?: string; path?: string } }
+interface ExecReply { output?: string; exitCode?: number }
 
 export const API = 'https://api.bayleaf.dev';
 const MAX_FILE = 10 * 1024 * 1024;   // sandbox files put/get cap
@@ -33,26 +66,27 @@ const AUD = {
   inboxNew: ['BayLeaf operator (inbox contents are stored by BayLeaf)', 'anyone you give the address or URL to'],
 };
 
-const ok = (stdout = '', stderr = '') => ({ stdout, stderr, exitCode: 0 });
-const fail = (msg, stderr = '') => ({ stdout: '', stderr: stderr + msg + '\n', exitCode: 1 });
-const usage = (msg, path) => ({ stdout: '', stderr: `bayleaf: ${msg}\nRun \`bayleaf ${[...path, ''].join(' ')}--help\` for usage.\n`, exitCode: 2 });
-const bytesOf = (s) => Uint8Array.from(s, (c) => c.charCodeAt(0)); // just-bash stdin is a byte string
-const isText = (b) => !b.subarray(0, 8000).includes(0);
-const firstLines = (b, n = 5) => isText(b) ? dec.decode(b.subarray(0, 2000)).split('\n').slice(0, n).join('\n') : '(binary)';
-const clipLine = (s, n) => { const t = s.replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 3) + '...' : t; };
-const q = (s) => "'" + String(s).replace(/'/g, `'\\''`) + "'";
+const ok = (stdout = '', stderr = ''): CmdResult => ({ stdout, stderr, exitCode: 0 });
+const fail = (msg: string, stderr = ''): CmdResult => ({ stdout: '', stderr: stderr + msg + '\n', exitCode: 1 });
+const usage = (msg: string, path: string[]): CmdResult => ({ stdout: '', stderr: `bayleaf: ${msg}\nRun \`bayleaf ${[...path, ''].join(' ')}--help\` for usage.\n`, exitCode: 2 });
+// just-bash stdin is a byte string: a ByteString is a latin1 string at runtime.
+const bytesOf = (s: ByteString | string) => Uint8Array.from(s as string, (c) => c.charCodeAt(0));
+const isText = (b: Uint8Array) => !b.subarray(0, 8000).includes(0);
+const firstLines = (b: Uint8Array, n = 5) => isText(b) ? dec.decode(b.subarray(0, 2000)).split('\n').slice(0, n).join('\n') : '(binary)';
+const clipLine = (s: string, n: number) => { const t = s.replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 3) + '...' : t; };
+const q = (s: string) => "'" + String(s).replace(/'/g, `'\\''`) + "'";
 
 // ── Flag parsing ────────────────────────────────────────────────────
 // spec: { '--json': true, '-n': 'value' }; aliases via { '--max': '-n' }.
 // $rest: options end at the first positional word (exec SCRIPT may hold its own flags).
-function parse(args, spec) {
-  const opts = {}, pos = [];
+function parse(args: string[], spec: Spec): { error: string; opts?: undefined; pos?: undefined } | { error?: undefined; opts: Opts; pos: string[] } {
+  const opts: Opts = {}, pos: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--' || (spec.$rest && pos.length)) { pos.push(...args.slice(a === '--' ? i + 1 : i)); break; }
     if (a.startsWith('-') && a !== '-') {
       let [name, inline] = a.includes('=') ? [a.slice(0, a.indexOf('=')), a.slice(a.indexOf('=') + 1)] : [a];
-      if (typeof spec[name] === 'string' && spec[name].startsWith('-')) name = spec[name];
+      if (typeof spec[name] === 'string' && (spec[name] as string).startsWith('-')) name = spec[name] as string;
       const kind = spec[name];
       if (!kind) return { error: `unknown option ${a}` };
       if (kind === true) opts[name] = true;
@@ -63,12 +97,11 @@ function parse(args, spec) {
 }
 
 // ── The command table ───────────────────────────────────────────────
-// Each leaf: { args, brief?, about, flags, examples, cred: 'key'|'any', privacy, spec, run }.
-// Help is rendered from these fields, so the help text and the parser agree.
+// Each leaf is a Leaf; help is rendered from these fields, so the help text and the parser agree.
 const KEY = 'personal key (sk-bayleaf-...)';
 const ANY = 'personal key, or Campus Pass on the UCSC network';
 
-const TREE = {
+const TREE: Group = {
   status: {
     args: '[--json]', about: 'Show the credential mode and, with a key, your allowances. Read-only.',
     cred: ANY, privacy: 'Sends no content: with a key GET /usage, otherwise GET /campus-pass.',
@@ -76,7 +109,7 @@ const TREE = {
     examples: ['bayleaf status'],
     async run(c, { opts }) {
       const key = await c.credential();
-      const r = await c.send({ service: 'account', audiences: AUD.account, method: 'GET',
+      const r = await c.send<UsageReply & CampusPassReply>({ service: 'account', audiences: AUD.account, method: 'GET',
         path: key ? '/usage' : '/campus-pass',
         summary: key ? 'Account status: read your allowances' : 'Account status: check Campus Pass for this network',
         detail: key ? 'GET /usage with your key; no content' : 'GET /campus-pass with no credential; no content' });
@@ -106,7 +139,7 @@ const TREE = {
         if (!query) return c.usage('give a search query');
         const n = opts['-n'] === undefined ? 5 : Number(opts['-n']);
         if (!Number.isInteger(n) || n < 1 || n > 20) return c.usage('-n must be 1–20');
-        const r = await c.send({ service: 'web', audiences: AUD.search, method: 'POST', path: '/web/search',
+        const r = await c.send<{ results?: { title: string; url: string; snippet?: string }[] }>({ service: 'web', audiences: AUD.search, method: 'POST', path: '/web/search',
           body: { query, max_results: n }, summary: `Web search: "${query}"`, detail: `query: ${query}\nmax_results: ${n}` });
         if (r.error) return r.error;
         if (opts['--json']) return c.out(JSON.stringify(r.json, null, 2) + '\n');
@@ -127,7 +160,7 @@ const TREE = {
         const bad = pos.find((u) => !/^https?:\/\/\S+$/.test(u));
         if (bad) return c.usage(`not an http(s) URL: ${bad}`);
         const format = opts['--text'] ? 'text' : 'markdown';
-        const r = await c.send({ service: 'web', audiences: AUD.fetch, method: 'POST', path: '/web/fetch',
+        const r = await c.send<{ results?: { url: string; content: string }[]; failed_results?: { url: string; error: string }[] }>({ service: 'web', audiences: AUD.fetch, method: 'POST', path: '/web/fetch',
           body: { urls: pos, format }, summary: `Web fetch: ${pos.length === 1 ? pos[0] : pos.length + ' URLs'}`, detail: `format: ${format}\nurls:\n${pos.join('\n')}` });
         if (r.error) return r.error;
         let err = (r.json.failed_results ?? []).map((f) => `bayleaf: could not fetch ${f.url}: ${f.error}\n`).join('');
@@ -135,7 +168,7 @@ const TREE = {
           : (r.json.results ?? []).map((x) => `==> ${x.url} <==\n${x.content.trimEnd()}\n`).join('\n');
         const code = (r.json.results ?? []).length ? 0 : 1;
         if (opts['-o']) {
-          const note = await c.writeLocal(opts['-o'], enc.encode(text));
+          const note = await c.writeLocal(opts['-o'] as string, enc.encode(text));
           return { stdout: note, stderr: c.notice + err, exitCode: code };
         }
         return { stdout: text, stderr: c.notice + err, exitCode: code };
@@ -149,7 +182,7 @@ const TREE = {
       cred: KEY, privacy: 'Sends no content.', flags: { '--json': 'raw JSON' }, spec: { '--json': true },
       examples: ['bayleaf sandbox status'],
       async run(c, { opts }) {
-        const r = await c.send({ service: 'sandbox', audiences: AUD.sandbox, method: 'GET', path: '/sandbox', needKey: true,
+        const r = await c.send<{ state: string; id?: string; cpu?: number; memory?: number; disk?: number; autoStopInterval?: number; createdAt?: string; updatedAt?: string }>({ service: 'sandbox', audiences: AUD.sandbox, method: 'GET', path: '/sandbox', needKey: true,
           summary: 'Sandbox status (read-only)', detail: 'GET /sandbox; no content' });
         if (r.error) return r.error;
         if (opts['--json']) return c.out(JSON.stringify(r.json, null, 2) + '\n');
@@ -170,7 +203,7 @@ const TREE = {
         const script = pos.length === 1 && pos[0] === '-' ? dec.decode(bytesOf(c.ctx.stdin ?? '')) : pos.join(' ');
         if (!script.trim()) return c.usage('give a script, or - to read it from stdin');
         const body = { command: script, ...(opts['-w'] ? { workdir: opts['-w'] } : {}) };
-        const r = await c.send({ service: 'sandbox', audiences: AUD.exec, method: 'POST', path: '/sandbox/exec', needKey: true, body,
+        const r = await c.send<ExecReply>({ service: 'sandbox', audiences: AUD.exec, method: 'POST', path: '/sandbox/exec', needKey: true, body,
           summary: `Sandbox exec: ${script.split('\n')[0].slice(0, 80)}${script.length > 80 || script.includes('\n') ? ' ...' : ''}`,
           detail: `${opts['-w'] ? `workdir: ${opts['-w']}\n` : ''}script (${enc.encode(script).length} bytes):\n${script}` });
         if (r.error) return r.error;
@@ -183,7 +216,7 @@ const TREE = {
       cred: KEY, privacy: 'Sends no content.', flags: {}, spec: {},
       examples: ['bayleaf sandbox poke'],
       async run(c) {
-        const r = await c.send({ service: 'sandbox', audiences: AUD.sandbox, method: 'POST', path: '/sandbox/poke', needKey: true,
+        const r = await c.send<{ state: string }>({ service: 'sandbox', audiences: AUD.sandbox, method: 'POST', path: '/sandbox/poke', needKey: true,
           summary: 'Sandbox poke (keeps it awake, wakes it if stopped)', detail: 'POST /sandbox/poke; no content' });
         if (r.error) return r.error;
         return c.out(`state: ${r.json.state}\n`);
@@ -197,7 +230,7 @@ const TREE = {
         examples: ['bayleaf sandbox files ls /home/daytona/workspace'],
         async run(c, { pos }) {
           const dir = pos[0] ?? '/home/daytona/workspace';
-          const r = await c.send({ service: 'sandbox', audiences: AUD.sandbox, method: 'POST', path: '/sandbox/exec', needKey: true,
+          const r = await c.send<ExecReply>({ service: 'sandbox', audiences: AUD.sandbox, method: 'POST', path: '/sandbox/exec', needKey: true,
             body: { command: `ls -la -- ${q(dir)}` }, summary: `Sandbox list: ${dir}`, detail: `script: ls -la -- ${q(dir)}` });
           if (r.error) return r.error;
           return { stdout: r.json.output ?? '', stderr: c.notice, exitCode: r.json.exitCode ?? 1 };
@@ -212,7 +245,7 @@ const TREE = {
           if (pos.length !== 2) return c.usage('give POUCH_PATH (or -) and REMOTE_PATH');
           const [src, remote] = pos;
           if (!remote.startsWith('/')) return c.usage('REMOTE_PATH must be absolute, e.g. /home/daytona/workspace/x');
-          let data;
+          let data: Uint8Array;
           if (src === '-') data = bytesOf(c.ctx.stdin ?? '');
           else {
             const p = c.local(src);
@@ -237,7 +270,7 @@ const TREE = {
           const r = await c.send({ service: 'sandbox', audiences: AUD.sandbox, method: 'GET', path: '/sandbox/files' + encodePath(remote), needKey: true,
             binary: true, summary: `Sandbox download: ${remote}`, detail: `GET ${remote}; no content sent` });
           if (r.error) return r.error;
-          const data = r.bytes;
+          const data = r.bytes!;
           if (dest === '-') {
             if (!isText(data)) return fail(`bayleaf: ${remote} is binary (${data.length} bytes); give a POUCH_PATH to save it`, c.notice);
             return c.out(dec.decode(data));
@@ -257,7 +290,7 @@ const TREE = {
           const port = Number(pos[0]);
           if (pos.length !== 1 || !Number.isInteger(port) || port < 3000 || port > 9999) return c.usage('give one PORT, 3000–9999');
           const access = opts['--public'] ? 'public' : 'private';
-          const r = await c.send({ service: 'sandbox', audiences: access === 'public' ? AUD.previewPublic : AUD.previewPrivate,
+          const r = await c.send<{ url: string; expires_at: string }>({ service: 'sandbox', audiences: access === 'public' ? AUD.previewPublic : AUD.previewPrivate,
             method: 'POST', path: '/sandbox/expose', needKey: true, body: { port, access },
             summary: `Sandbox preview: expose port ${port} (${access})`, detail: `port: ${port}\naccess: ${access}` });
           if (r.error) return r.error;
@@ -286,7 +319,7 @@ const TREE = {
       cred: KEY, privacy: 'Sends no content.', flags: { '--json': 'raw JSON' }, spec: { '--json': true },
       examples: ['bayleaf inbox list'],
       async run(c, { opts }) {
-        const r = await c.send({ service: 'inbox', audiences: AUD.inbox, method: 'GET', path: '/inboxes', needKey: true, summary: 'Inbox list', detail: 'GET /inboxes; no content' });
+        const r = await c.send<{ inboxes?: Inbox[]; owner_usage?: { bytes: number; limit_bytes: number } }>({ service: 'inbox', audiences: AUD.inbox, method: 'GET', path: '/inboxes', needKey: true, summary: 'Inbox list', detail: 'GET /inboxes; no content' });
         if (r.error) return r.error;
         if (opts['--json']) return c.out(JSON.stringify(r.json, null, 2) + '\n');
         const xs = r.json.inboxes ?? [];
@@ -322,16 +355,16 @@ const TREE = {
       async run(c, { opts, pos }) {
         if (pos.length !== 1) return c.usage('give one INBOX_ID');
         const p = new URLSearchParams();
-        if (opts['-q']) p.set('q', opts['-q']);
-        if (opts['-n']) p.set('limit', opts['-n']);
+        if (opts['-q']) p.set('q', opts['-q'] as string);
+        if (opts['-n']) p.set('limit', opts['-n'] as string);
         if (opts['--archived']) p.set('archived', 'true');
         if (opts['--all']) p.set('archived', 'all');
         const path = `/inboxes/${encodeURIComponent(pos[0])}/messages${p.size ? '?' + p : ''}`;
-        const r = await c.send({ service: 'inbox', audiences: AUD.inbox, method: 'GET', path, needKey: true, summary: `Inbox messages: ${pos[0]}${opts['-q'] ? ` matching "${opts['-q']}"` : ''}`, detail: `GET ${path}` });
+        const r = await c.send<{ messages?: InboxMessage[]; next_cursor?: string | null }>({ service: 'inbox', audiences: AUD.inbox, method: 'GET', path, needKey: true, summary: `Inbox messages: ${pos[0]}${opts['-q'] ? ` matching "${opts['-q']}"` : ''}`, detail: `GET ${path}` });
         if (r.error) return r.error;
         if (opts['--json']) return c.out(JSON.stringify(r.json, null, 2) + '\n');
         const ms = r.json.messages ?? [];
-        const pv = (m) => m.type === 'email' ? `${m.preview?.from ?? ''} | ${m.preview?.subject ?? ''}` : `${m.preview?.method ?? ''} ${m.preview?.path ?? ''}`;
+        const pv = (m: InboxMessage) => m.type === 'email' ? `${m.preview?.from ?? ''} | ${m.preview?.subject ?? ''}` : `${m.preview?.method ?? ''} ${m.preview?.path ?? ''}`;
         return c.out((ms.length ? ms.map((m) => `${m.id}\t${new Date(m.received_at * 1000).toISOString()}\t${m.size}B\t${pv(m)}`).join('\n') : 'no messages') +
           (r.json.next_cursor ? '\n(more: use --json for next_cursor)' : '') + '\n');
       },
@@ -343,7 +376,7 @@ const TREE = {
       async run(c, { pos }) {
         if (pos.length !== 2) return c.usage('give INBOX_ID and MESSAGE_ID');
         const path = `/inboxes/${encodeURIComponent(pos[0])}/messages/${encodeURIComponent(pos[1])}/text`;
-        const r = await c.send({ service: 'inbox', audiences: AUD.inbox, method: 'GET', path, needKey: true, summary: `Inbox read: ${pos[1]}`, detail: `GET ${path}` });
+        const r = await c.send<{ type: string; source: string; truncated?: boolean; text: string }>({ service: 'inbox', audiences: AUD.inbox, method: 'GET', path, needKey: true, summary: `Inbox read: ${pos[1]}`, detail: `GET ${path}` });
         if (r.error) return r.error;
         const j = r.json;
         return c.out(`[untrusted ${j.type} message text, source: ${j.source}${j.truncated ? ', truncated' : ''}]\n${j.text}\n`);
@@ -359,16 +392,16 @@ const TREE = {
       async run(c, { opts, pos }) {
         const type = pos[0];
         if (pos.length !== 1 || !['email', 'http'].includes(type)) return c.usage('give the type: email or http');
-        const body = { type };
+        const body: { type: string; access?: string; label?: string; ttl_seconds?: number; preset?: string } = { type };
         if (type === 'http') {
           if (!!opts['--open'] === !!opts['--closed']) return c.usage('http inboxes need exactly one of --open or --closed');
           body.access = opts['--open'] ? 'open' : 'closed';
         } else if (opts['--open'] || opts['--closed']) return c.usage('--open/--closed apply to http inboxes only');
-        if (opts['--label']) body.label = opts['--label'];
+        if (opts['--label']) body.label = opts['--label'] as string;
         if (opts['--ttl'] && opts['--experiment']) return c.usage('use --ttl or --experiment, not both');
         if (opts['--ttl']) { body.ttl_seconds = Number(opts['--ttl']); if (!Number.isInteger(body.ttl_seconds) || body.ttl_seconds < 60) return c.usage('--ttl must be an integer ≥ 60'); }
         if (opts['--experiment']) body.preset = 'experiment';
-        const r = await c.send({ service: 'inbox', audiences: AUD.inboxNew, method: 'POST', path: '/inboxes', needKey: true, body,
+        const r = await c.send<Inbox>({ service: 'inbox', audiences: AUD.inboxNew, method: 'POST', path: '/inboxes', needKey: true, body,
           summary: `Inbox create: ${type}${body.access ? ' (' + body.access + ')' : ''}`, detail: JSON.stringify(body, null, 2) });
         if (r.error) return r.error;
         if (opts['--json']) return c.out(JSON.stringify(r.json, null, 2) + '\n');
@@ -382,7 +415,7 @@ const TREE = {
       examples: ['bayleaf inbox destroy ibx_...'],
       async run(c, { pos }) {
         if (pos.length !== 1) return c.usage('give one INBOX_ID');
-        const r = await c.send({ service: 'inbox', audiences: AUD.inbox, method: 'DELETE', path: `/inboxes/${encodeURIComponent(pos[0])}`, needKey: true,
+        const r = await c.send<{ state: string }>({ service: 'inbox', audiences: AUD.inbox, method: 'DELETE', path: `/inboxes/${encodeURIComponent(pos[0])}`, needKey: true,
           summary: `Inbox DESTROY: ${pos[0]} (irreversible)`, detail: `DELETE /inboxes/${pos[0]}` });
         return r.error ?? c.out(`${pos[0]}: ${r.json.state}\n`);
       },
@@ -390,14 +423,14 @@ const TREE = {
   },
 };
 
-const encodePath = (p) => p.split('/').map(encodeURIComponent).join('/');
-const isLeaf = (n) => typeof n?.run === 'function';
-const children = (n) => Object.entries(n).filter(([, v]) => v && typeof v === 'object' && (isLeaf(v) || v.about));
+const encodePath = (p: string) => p.split('/').map(encodeURIComponent).join('/');
+const isLeaf = (n: Node | undefined): n is Leaf => typeof n?.run === 'function';
+const children = (n: Group) => Object.entries(n).filter(([, v]) => v && typeof v === 'object' && (isLeaf(v) || v.about)) as [string, Node][];
 
 // ── Help, rendered from the table ───────────────────────────────────
 const PRIVACY = 'Everything except help leaves the pouch: plaintext to BayLeaf (no-logging policy, not encryption), and some of it reaches third parties. Each request asks the user first.';
 
-function help(node, path) {
+function help(node: Node, path: string[]) {
   const name = ['bayleaf', ...path].join(' ');
   if (isLeaf(node)) {
     let s = `usage: ${name} ${node.args}\n${node.about}\n`;
@@ -407,8 +440,8 @@ function help(node, path) {
     if (node.examples?.length) s += '\nexamples:\n' + node.examples.map((e) => '  ' + e).join('\n') + '\n';
     return s;
   }
-  const rows = [];
-  const walk = (n, p) => {
+  const rows: [string, string][] = [];
+  const walk = (n: Group, p: string[]) => {
     for (const [k, v] of children(n)) {
       if (isLeaf(v)) rows.push([[...p, k].join(' ') + (v.args ? ' ' + v.args : ''), v.brief ?? v.about.split('. ')[0].replace(/\.$/, '')]);
       else walk(v, [...p, k]);
@@ -423,21 +456,21 @@ function help(node, path) {
 }
 
 // ── The command ─────────────────────────────────────────────────────
-export function bayleafCommands(defineCommand, hooks = {}, { base = API } = {}) {
+export function bayleafCommands(defineCommand: typeof DefineCommand, hooks: BayleafHooks = {}, { base = API }: { base?: string } = {}) {
   const bayleaf = defineCommand('bayleaf', async (args, ctx) => {
     // Walk the tree as far as the words go.
-    let node = TREE; const path = [];
+    let node: Node = TREE; const path: string[] = [];
     while (args.length && !args[0].startsWith('-') && !isLeaf(node) && node[args[0]] && typeof node[args[0]] === 'object') {
-      path.push(args[0]); node = node[args.shift()];
+      path.push(args[0]); node = node[args.shift()!] as Node;
     }
-    if (args[0] === 'help' && !path.length) { args.shift(); while (args.length && node[args[0]]) { path.push(args[0]); node = node[args.shift()]; } return ok(help(node, path)); }
+    if (args[0] === 'help' && !path.length) { args.shift(); while (args.length && (node as Group)[args[0]]) { path.push(args[0]); node = (node as Group)[args.shift()!] as Node; } return ok(help(node, path)); }
     if (args.includes('--help') || args.includes('-h') || (!isLeaf(node) && !args.length)) return ok(help(node, path));
     if (!isLeaf(node)) return usage(`unknown command: ${['bayleaf', ...path, args[0]].join(' ')}`, path);
     const parsed = parse(args, node.spec);
     if (parsed.error) return usage(parsed.error, path);
 
     const command = ['bayleaf', ...path].join(' ');
-    const c = {
+    const c: Cli = {
       ctx, notice: '',
       credential: async () => (await hooks.bayleafCredential?.()) || null,
       usage: (m) => usage(m, path),
@@ -451,7 +484,7 @@ export function bayleafCommands(defineCommand, hooks = {}, { base = API } = {}) 
         return `wrote ${data.length} bytes to ${full}${existed ? ' (overwrote the existing file)' : ''}\n`;
       },
       // One request: credential check, approval, notice, fetch, report.
-      async send({ service, summary, detail, audiences, method, path: route, body, raw, binary, needKey }) {
+      async send<T>({ service, summary, detail, audiences, method, path: route, body, raw, binary, needKey }: SendRequest): Promise<Sent<T>> {
         const key = await c.credential();
         if (needKey && !key) return { error: fail(`bayleaf: ${command} needs a personal BayLeaf key (sk-bayleaf-...); Campus Pass does not cover it. Sign in to Pouch with a key. Nothing was sent.`) };
         const approve = hooks.approveEgress;
@@ -459,18 +492,18 @@ export function bayleafCommands(defineCommand, hooks = {}, { base = API } = {}) 
         try { allowed = approve ? await approve({ command, service, summary, detail, audiences }) === true : false; } catch { allowed = false; }
         if (!allowed) return { error: fail('bayleaf: denied by the user (nothing was sent)') };
         c.notice += `[left the pouch: ${audiences.join('; ')}]\n`;
-        const headers = {};
+        const headers: Record<string, string> = {};
         if (key) headers.Authorization = `Bearer ${key}`;
         if (body !== undefined) headers['Content-Type'] = 'application/json';
         if (raw !== undefined) headers['Content-Type'] = 'application/octet-stream';
-        let res;
-        const report = (status) => hooks.onEgress?.({ command, service, summary, audiences, method, path: route, status, ok: status >= 200 && status < 300 });
+        let res: Response;
+        const report = (status: number) => hooks.onEgress?.({ command, service, summary, audiences, method, path: route, status, ok: status >= 200 && status < 300 });
         try {
           res = await fetch(base + route, { method, headers, signal: ctx.signal,
-            body: body !== undefined ? JSON.stringify(body) : raw });
+            body: body !== undefined ? JSON.stringify(body) : raw as Uint8Array<ArrayBuffer> | undefined }); // fs bytes are never shared memory
         } catch (e) {
           report(0);
-          const why = e?.name === 'AbortError' ? 'cancelled' : `network error (${e?.message ?? e}); the request may have been sent`;
+          const why = (e as Error | undefined)?.name === 'AbortError' ? 'cancelled' : `network error (${(e as Error | undefined)?.message ?? e}); the request may have been sent`;
           return { error: fail(`bayleaf: ${why}`, c.notice) };
         }
         report(res.status);
@@ -485,15 +518,15 @@ export function bayleafCommands(defineCommand, hooks = {}, { base = API } = {}) 
           if (len > MAX_FILE) return { error: fail(`bayleaf: remote file is ${len} bytes; the limit is ${MAX_FILE} (10 MiB)`, c.notice) };
           const bytes = new Uint8Array(await res.arrayBuffer());
           if (bytes.length > MAX_FILE) return { error: fail(`bayleaf: remote file is ${bytes.length} bytes; the limit is ${MAX_FILE} (10 MiB)`, c.notice) };
-          return { bytes };
+          return { bytes } as Sent<T>; // no json: only `files get` asks for binary, and reads bytes
         }
-        if (res.status === 204) return { json: {} };
+        if (res.status === 204) return { json: {} as T };
         const text = await res.text();
-        try { return { json: JSON.parse(text) }; } catch { return { json: { raw: text } }; }
+        try { return { json: JSON.parse(text) }; } catch { return { json: { raw: text } as T }; }
       },
     };
-    try { return await node.run(c, parsed); }
-    catch (e) { return fail(`bayleaf: ${e?.message ?? e}`, c.notice); }
+    try { return await node.run(c, parsed as Parsed); } // parse's errors are never empty
+    catch (e) { return fail(`bayleaf: ${(e as Error | undefined)?.message ?? e}`, c.notice); }
   });
   return [bayleaf];
 }

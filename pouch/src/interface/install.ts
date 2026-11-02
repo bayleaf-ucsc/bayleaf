@@ -1,26 +1,34 @@
 // Offline copy and updates (offline.js, sw.js).
 
 import { $, el } from '../dom.ts';
-import { createOffline, short } from '../offline.ts';
+import { createOffline, short, type Offline } from '../offline.ts';
+import type { App } from './app.ts';
 
-export function createInstallRegion(app) {
+export interface InstallRegion {
+  checkUpdate(manual?: boolean): Promise<void>;
+  // Redraws Settings > Trust's offline copy facts; note replaces the note line.
+  renderCopy(note?: string, cls?: string): Promise<void>;
+  shellCopy: Offline;
+}
+
+export function createInstallRegion(app: App): InstallRegion {
   // ── Offline copy and updates (offline.js, sw.js) ──────────────────────
   // The hosted page keeps a hash-checked copy of itself; it changes only on Update.
   const SW_EXPECTED = typeof SW_SHA256 !== 'undefined' ? SW_SHA256 : null; // eslint-disable-line no-undef (build.mjs define)
-  const shellCopy = createOffline({ swSha256: SW_EXPECTED });
-  async function renderCopy(note, cls = '') {
+  const shellCopy = createOffline({ swSha256: SW_EXPECTED as string }); // null outside a build: swMatches() then compares against null
+  async function renderCopy(note?: string, cls = '') {
     const f = $('copy-facts');
-    const row = (label, value, c = '') => f.append(el('dt', { textContent: label }), el('dd', { textContent: value, className: c }));
+    const row = (label: string, value: string, c = '') => f.append(el('dt', { textContent: label }), el('dd', { textContent: value, className: c }));
     const pinned = await shellCopy.pinned().catch(() => null);
     const st = shellCopy.state;
     f.replaceChildren();
     row('Running from', location.protocol === 'file:' ? 'a file on this device' : shellCopy.servedOffline() ? 'the offline copy in this browser' : 'the network');
     row('Offline copy', !shellCopy.supported ? 'not available here (no service worker)' : pinned ? 'sha256 ' + short(pinned) : shellCopy.enabled() ? 'not kept yet' : 'uninstalled', pinned ? 'ok' : '');
-    if (pinned) f.lastChild.prepend(swatch(pinned));
+    if (pinned) (f.lastChild as Element).prepend(swatch(pinned));
     if (shellCopy.supported) {
-      row('Published', st.published ? `sha256 ${short(st.published)} (checked ${st.checkedAt.toLocaleTimeString()})` : st.error ? 'not checked: ' + st.error : 'not checked yet',
+      row('Published', st.published ? `sha256 ${short(st.published)} (checked ${st.checkedAt!.toLocaleTimeString()})` : st.error ? 'not checked: ' + st.error : 'not checked yet',
         st.published && pinned ? (st.published === pinned ? 'ok' : 'pending') : '');
-      if (st.published) f.lastChild.prepend(swatch(st.published));
+      if (st.published) (f.lastChild as Element).prepend(swatch(st.published));
       const m = await shellCopy.swMatches();
       row('Service worker', m == null ? 'could not check sw.js' : m ? `sw.js matches this build (${short(SW_EXPECTED)})` : `sw.js differs from this build: expected ${short(SW_EXPECTED)}, served ${short(st.swScript)}`, m == null ? '' : m ? 'ok' : 'bad');
     }
@@ -36,13 +44,13 @@ export function createInstallRegion(app) {
   // Build identity (continuity): a swatch from the first byte of the page's
   // sha256, so the same build always shows the same color and a new one a
   // visibly different one. The hash beside it stays the authority.
-  function swatch(hash) {
+  function swatch(hash: string | null) {
     const n = parseInt(String(hash).slice(0, 2), 16);
     const s = el('span', { className: 'build-swatch', role: 'img', ariaLabel: `build color ${n}`, title: `Build color from sha256 ${short(hash)}` });
     s.style.setProperty('--seed', String(Number.isFinite(n) ? n : 0));
     return s;
   }
-  async function checkUpdate(manual) {
+  async function checkUpdate(manual?: boolean) {
     const r = await shellCopy.check();
     if (r.update) {
       $('update-swatches')?.replaceChildren(swatch(r.pinned), ' to ', swatch(r.published));
@@ -53,13 +61,13 @@ export function createInstallRegion(app) {
     else if (app.state.layout.current() === 'trust') renderCopy();
   }
   async function applyUpdate() {
-    const btn = $('update-go'); btn.disabled = true;
+    const btn = $<HTMLButtonElement>('update-go'); btn.disabled = true;
     const was = await shellCopy.pinned();
     try {
       await shellCopy.update();
       location.reload();
     } catch (e) {
-      const msg = `Update refused: ${e.message}. Still running sha256 ${short(was)}; nothing was changed.`;
+      const msg = `Update refused: ${(e as Error).message}. Still running sha256 ${short(was)}; nothing was changed.`;
       $('update-text').textContent = msg; $('update').classList.add('bad');
       app.state.status(msg, 'bad'); renderCopy(msg, 'bad');
     } finally { btn.disabled = false; }
@@ -73,9 +81,9 @@ export function createInstallRegion(app) {
     renderCopy('Offline copy removed. This tab keeps running; reloading loads the published build from the network.');
   };
   $('copy-keep').onclick = async () => {
-    try { await shellCopy.keep(); renderCopy('Offline copy kept.'); } catch (e) { renderCopy('Could not keep a copy: ' + e.message, 'bad'); }
+    try { await shellCopy.keep(); renderCopy('Offline copy kept.'); } catch (e) { renderCopy('Could not keep a copy: ' + (e as Error).message, 'bad'); }
   };
-  $('copy-install').onclick = async () => { const p = shellCopy.state.installPrompt; shellCopy.state.installPrompt = null; await p?.prompt(); renderCopy(); };
+  $('copy-install').onclick = async () => { const p = shellCopy.state.installPrompt; shellCopy.state.installPrompt = null; await (p as (Event & { prompt: () => Promise<unknown> }) | null)?.prompt(); renderCopy(); }; // BeforeInstallPromptEvent is not in lib.dom
   $('settings-copy').onclick = () => app.state.layout.open('trust');
   // An installed app: ask once more for persistent storage (files, sessions, the Local model).
   addEventListener('appinstalled', () => { navigator.storage.persist?.().catch(() => {}); renderCopy(); });

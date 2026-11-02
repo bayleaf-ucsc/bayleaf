@@ -124,6 +124,28 @@ await test('seams: a region is imported only through its entry modules', () => {
   fails(withFile('src/interface/tree.ts', "import { createEditingRegion } from './editing.ts';"), 'seams', 'src/interface/tree.ts', /inside src\/interface\//);
 });
 
+await test('contract: types only, imported only as types, and may then cross a seam', () => {
+  fails(withFile('src/trust.ts', 'export const DEFAULT_GRANT = "web";'), 'contract', 'src/trust.ts', /has a statement that runs/);
+  fails(withFile('src/trust.ts', "import { normalize } from './vfs.ts';"), 'contract', 'src/trust.ts', /has a statement that runs/);
+  const msg = fails(withFile('src/egress.ts', "import { type Authority } from './trust.ts';\nimport * as trust from './trust.ts';"), 'contract', 'src/egress.ts', /imports src\/trust.ts as a value/);
+  assert.match(msg, /Use `import type`/);
+  // Interface regions share the App type without importing each other's code.
+  assert.deepEqual(checkArchitecture(withFile('src/interface/tree.ts', "import type { App } from './app.ts';")), []);
+  fails(withFile('src/interface/tree.ts', "import { App } from './app.ts';"), 'contract', 'src/interface/tree.ts', /as a value/);
+  assert.deepEqual(checkArchitecture(withFile('src/interface/app.ts', "import type { TreeRegion } from './tree.ts';")), []);
+  // A type-only import still respects layers: the core does not lean on UI types either.
+  fails(withFile('src/vfs.ts', "import type { App } from './interface/app.ts';"), 'layers', 'src/vfs.ts', /imports the Interface/);
+});
+
+await test('exact: no `any` in trust-boundary modules, wherever it is written', () => {
+  for (const [path, code] of [['src/sealed.ts', 'export const x = (r: any) => r;'], ['src/egress.ts', 'let y = 1 as any;'],
+    ['src/ns/control.ts', 'type T = Record<string, any>;'], ['src/trust.ts', 'export type Loose = any[];']]) {
+    fails(withFile(path, code), 'exact', path, /uses `any`/);
+  }
+  // Elsewhere `any` is tsc's business, and comments and strings never count.
+  assert.deepEqual(checkArchitecture(withFile('src/graph.ts', 'export const z = (v: any) => v; // any\nexport const w = "any";')), []);
+});
+
 await test('size: a module over its budget fails; main.js stays thin', () => {
   fails(withFile('src/graph.ts', (t) => t + '\n'.repeat(800)), 'size', 'src/graph.ts', /over its budget of 700/);
   fails(withFile('src/main.ts', (t) => t + '// x\n'.repeat(60)), 'size', 'src/main.ts', /over its budget of 60/);
@@ -131,7 +153,7 @@ await test('size: a module over its budget fails; main.js stays thin', () => {
 
 await test('the pre-split main.js (2974dda) fails egress, sealed and size', () => {
   let old;
-  try { old = execSync('git show 2974dda:pouch/src/main.ts', { cwd: import.meta.dirname, stdio: ['ignore', 'pipe', 'ignore'] }).toString(); }
+  try { old = execSync('git show 2974dda:pouch/src/main.js', { cwd: import.meta.dirname, stdio: ['ignore', 'pipe', 'ignore'] }).toString(); }
   catch { console.log('  (skipped: commit 2974dda not in this clone)'); return; }
   const errors = checkArchitecture(withFile('src/main.ts', () => old));
   for (const rule of ['egress', 'sealed', 'size']) assert.ok(errors.some((e) => e.startsWith(`[${rule}] src/main.ts`)), rule);

@@ -7,15 +7,53 @@ import { fold, reduced, snapshot } from '../motion.ts';
 import { MAIN, asRef, refOf } from '../graph.ts';
 import { sameId, titleOf } from '../sessions.ts';
 import { why } from '../ns/control.ts';
+import type { ConversationId } from '@earendil-works/pi-durable';
+import type { AssistantItem, NormalizedView, SessionId, ThreadView, ToolItem, UserItem } from '../agent-types.ts';
+import type { SubagentRow, SubagentStatus } from '../subagents-types.ts';
+import type { SessionRecord } from '../sessions.ts';
+import type { App } from './app.ts';
 
-export function createSubagentsRegion(app) {
+// The subagent tool's arguments, as its cards and summaries read them.
+export interface SubagentArgs { action?: string; ids?: unknown; id?: unknown; to?: unknown; text?: string; mode?: string; name?: string; background?: boolean; task?: string }
+// What a spawn's tool result carries in details.
+interface SpawnDetails { child?: ConversationId; name?: string; ref?: string; oneshot?: boolean }
+type ReplyCache = Parameters<App['transcript']['replyBody']>[1];
+
+export interface SubagentsRegion {
+  agentSummary(name: string, a: SubagentArgs | string | null | undefined): string;
+  // The subagent's own view (S2, S3), for the log while app.sessionList.focus is set.
+  childLog(): HTMLElement[];
+  childState(sid: SessionId, c: SubagentRow): string;
+  childViews: Map<ConversationId, ThreadView>;
+  // A run nobody sent (a report): a send's bookkeeping around wait.
+  drive(sid: SessionId, wait: () => Promise<unknown>): Promise<void>;
+  dropKidWatches(): void;
+  edgeText(l: SubagentRow[], c: SubagentRow): string;
+  fmtDur(ms: number): string;
+  focusedChild(): SubagentRow | null | undefined;
+  // Session id -> its registry rows, as last changed.
+  kids: Map<string, SubagentRow[]>;
+  get lastHeight(): number | null; set lastHeight(v: number | null);
+  loadKids(sid: SessionId | null | undefined): Promise<SubagentRow[]>;
+  lowAllowance(): string | null;
+  msgCount(c: SubagentRow): number;
+  onKids(sid: SessionId, list: SubagentRow[]): void;
+  openChild(sid: SessionId, id: ConversationId, from?: Element | null): Promise<void>;
+  parentName(s: SessionRecord | null | undefined): string;
+  subagentCard(it: ToolItem, childId: ConversationId | null): HTMLElement;
+  swapDraft(from: string, to: string): void;
+  watchKids(): void;
+  whoRef(ref: unknown): string;
+}
+
+export function createSubagentsRegion(app: App): SubagentsRegion {
   // ── Subagents (subagents.js, D15/D16) ───────────────────────────────
   // kids: session id -> its registry rows, as last changed. A report starts a
   // parent run nobody sent; drive() does a send's bookkeeping for it.
-  const kids = new Map();
-  const childViews = new Map(); // child id -> normalized view (current session's children)
-  let childWatches = new Map(); // child id -> dispose
-  async function loadKids(sid) {
+  const kids = new Map<string, SubagentRow[]>();
+  const childViews = new Map<ConversationId, ThreadView>(); // child id -> normalized view (current session's children)
+  let childWatches = new Map<ConversationId, () => void>(); // child id -> dispose
+  async function loadKids(sid: SessionId | null | undefined) {
     if (sid == null || !app.state.agent?.subagents) return [];
     const l = await app.state.agent.subagents.list(sid);
     kids.set(String(sid), l);
@@ -28,15 +66,15 @@ export function createSubagentsRegion(app) {
     for (const id of want) {
       if (childWatches.has(id)) continue;
       childWatches.set(id, () => {});
-      app.state.agent.subagents.watch(sid, id, (v) => { childViews.set(id, v); app.transcript.scheduleRender(); })
+      app.state.agent!.subagents!.watch(sid!, id, (v) => { childViews.set(id, v); app.transcript.scheduleRender(); })
         .then((d) => { if (childWatches.has(id)) childWatches.set(id, d); else d(); }, () => childWatches.delete(id));
     }
   }
   function dropKidWatches() { for (const d of childWatches.values()) d(); childWatches = new Map(); childViews.clear(); }
-  let tick = 0;
+  let tick: ReturnType<typeof setInterval> | 0 = 0;
   // Subagents as /task entries (src/ns/tasks.ts), so the agent and the tray read one source.
-  const TASK_STATE = { running: 'running', finished: 'done', failed: 'failed', stopped: 'stopped', interrupted: 'interrupted' };
-  function onKids(sid, list) {
+  const TASK_STATE = { running: 'running', finished: 'done', failed: 'failed', stopped: 'stopped', interrupted: 'interrupted' } satisfies Record<SubagentStatus, string>;
+  function onKids(sid: SessionId, list: SubagentRow[]) {
     kids.set(String(sid), list);
     if (app.queues.childFollowUps.size) app.harness.flushChildFollowUps(sid, list);
     for (const c of list) app.state.vfs.tasks.upsert('sa:' + c.id, { kind: 'subagent', sid, label: c.name, status: TASK_STATE[c.status] ?? c.status,
@@ -50,7 +88,7 @@ export function createSubagentsRegion(app) {
     if (anyRunning && !tick) tick = setInterval(() => { if (app.sessionList.sessions.current && (kids.get(String(app.sessionList.sessions.current.id)) ?? []).some((c) => c.status === 'running')) app.transcript.scheduleRender(); }, 1000);
     if (!anyRunning && tick) { clearInterval(tick); tick = 0; }
   }
-  async function drive(sid, wait) {
+  async function drive(sid: SessionId, wait: () => Promise<unknown>) {
     const t0 = Date.now();
     app.sessionList.sessions.running.add(String(sid)); app.sessionList.sessions.render();
     const mine = !app.sessionList.activeRun;
@@ -61,7 +99,7 @@ export function createSubagentsRegion(app) {
       if (mine) app.sessionList.activeRun = null;
     }
     const ms = Date.now() - t0;
-    const v = await app.state.agent.snapshot(sid).catch(() => null);
+    const v = await app.state.agent!.snapshot(sid).catch(() => null);
     await app.transcript.recordTurn(sid, v, ms);
     await app.sessionList.sessions.afterTurn(sid, v, true);
   }
@@ -72,34 +110,34 @@ export function createSubagentsRegion(app) {
     return null;
   };
   // Agent graphs (G9): message counts per edge, from the registry rows.
-  const sum = (o) => Object.values(o ?? {}).reduce((a, b) => a + b, 0);
-  const msgCount = (c) => sum(c.got) + sum(c.sent);
-  const refName = (l, ref) => { ref = asRef(ref); if (ref === MAIN) return `main (${MAIN})`; const c = l.find((x) => refOf(l, x) === ref); return c ? `${c.name} (${ref})` : ref; };
-  const byRef = (o) => Object.entries(o ?? {}).sort(([a], [b]) => Number(a.slice(1)) - Number(b.slice(1)));
-  const edgeText = (l, c) => [...byRef(c.got).map(([r, n]) => `from ${refName(l, r)} ${n}`), ...byRef(c.sent).map(([r, n]) => `to ${refName(l, r)} ${n}`)].join(', ');
+  const sum = (o?: Record<string, number>) => Object.values(o ?? {}).reduce((a, b) => a + b, 0);
+  const msgCount = (c: SubagentRow) => sum(c.got) + sum(c.sent);
+  const refName = (l: SubagentRow[], ref: string) => { ref = asRef(ref); if (ref === MAIN) return `main (${MAIN})`; const c = l.find((x) => refOf(l, x) === ref); return c ? `${c.name} (${ref})` : ref; };
+  const byRef = (o?: Record<string, number>) => Object.entries(o ?? {}).sort(([a], [b]) => Number(a.slice(1)) - Number(b.slice(1)));
+  const edgeText = (l: SubagentRow[], c: SubagentRow) => [...byRef(c.got).map(([r, n]) => `from ${refName(l, r)} ${n}`), ...byRef(c.sent).map(([r, n]) => `to ${refName(l, r)} ${n}`)].join(', ');
   // A small to/from list, each peer in its own color (continuity: G9).
-  function edgeLine(l, c) {
-    const entry = (dir, [r, n]) => seeded(el('li', { className: 'sa-edge' }, el('span', { className: 'sa-dot', ariaHidden: 'true' }), `${dir} ${refName(l, r)} `, el('span', { className: 'n', textContent: String(n) })), r);
+  function edgeLine(l: SubagentRow[], c: SubagentRow) {
+    const entry = (dir: string, [r, n]: [string, number]) => seeded(el('li', { className: 'sa-edge' }, el('span', { className: 'sa-dot', ariaHidden: 'true' }), `${dir} ${refName(l, r)} `, el('span', { className: 'n', textContent: String(n) })), r);
     const got = byRef(c.got).map((e) => entry('from', e)), sent = byRef(c.sent).map((e) => entry('to', e));
     if (!got.length && !sent.length) return null;
     return el('div', { className: 'sa-edges', ariaLabel: 'Messages' }, el('span', { className: 'sa-edges-k', textContent: 'Messages' }),
       el('ul', {}, ...got, ...sent));
   }
   // Who a handle is, for pills: "chair (a2)", "main (a1)".
-  const whoRef = (ref) => refName(kids.get(String(app.sessionList.sessions.current?.id)) ?? [], String(ref));
-  const refRange = (ids) => {
+  const whoRef = (ref: unknown) => refName(kids.get(String(app.sessionList.sessions.current?.id)) ?? [], String(ref));
+  const refRange = (ids: string[]) => {
     ids = ids.map(asRef);
     const n = ids.map((x) => /^a(\d+)$/.exec(x)?.[1]).map(Number);
     if (ids.length > 2 && n.every((x, i) => x && (i === 0 || x === n[i - 1] + 1))) return `${ids[0]}-${ids.at(-1)}`;
     return ids.join(', ');
   };
   // The agents and subagent tools in words, not JSON (critique 9).
-  function agentSummary(name, a) {
+  function agentSummary(name: string, a: SubagentArgs | string | null | undefined) {
     if (!a || typeof a !== 'object') return String(a ?? '');
-    const ids = [].concat(a.ids ?? (a.action === 'join' ? a.id ?? [] : [])).map(String);
-    const quote = (t) => t ? `: "${app.commands.excerpt(t, 60)}"` : '';
+    const ids = ([] as unknown[]).concat(a.ids ?? (a.action === 'join' ? a.id ?? [] : [])).map(String);
+    const quote = (t?: string) => t ? `: "${app.commands.excerpt(t, 60)}"` : '';
     switch (a.action) {
-      case 'message': { const to = [].concat(a.to ?? (ids.length ? ids : a.id ?? [])).map(String); return `message -> ${to.map(whoRef).join(', ') || '?'}${quote(a.text)}`; }
+      case 'message': { const to = ([] as unknown[]).concat(a.to ?? (ids.length ? ids : a.id ?? [])).map(String); return `message -> ${to.map(whoRef).join(', ') || '?'}${quote(a.text)}`; }
       case 'join': return `join ${refRange(ids)}`;
       case 'spawn': return `spawn ${a.mode === 'oneshot' ? 'one-shot ' : ''}${a.name ?? 'subagent'}${a.background === false ? ' (waits)' : ''}`;
       case 'list': return 'list';
@@ -107,27 +145,27 @@ export function createSubagentsRegion(app) {
       default: return a.action ?? '';
     }
   }
-  const fmtDur = (ms) => { const t = Math.max(0, Math.round(ms / 1000)); return t < 60 ? `${t}s` : `${Math.floor(t / 60)}m ${String(t % 60).padStart(2, '0')}s`; };
-  function messageChild(c) {
+  const fmtDur = (ms: number) => { const t = Math.max(0, Math.round(ms / 1000)); return t < 60 ? `${t}s` : `${Math.floor(t / 60)}m ${String(t % 60).padStart(2, '0')}s`; };
+  function messageChild(c: SubagentRow) {
     const box = el('textarea', { className: 'sa-input', rows: 3, placeholder: `What should ${c.name} do or know?`, ariaLabel: `Message to subagent ${c.name}` });
     app.state.sheet(`Message subagent ${c.name}`, [[c.status === 'running' ? 'Send (joins its work)' : 'Send (it starts again)', async () => {
       const t = box.value.trim();
       if (!t) return;
-      await app.namespaces.ctl(app.namespaces.agentFile(app.sessionList.sessions.current.id, c.ref ?? refOf(kids.get(String(app.sessionList.sessions.current.id)) ?? [], c), 'in'), 'message\n' + t).catch((e) => app.tree.fail(why(e)));
+      await app.namespaces.ctl(app.namespaces.agentFile(app.sessionList.sessions.current!.id, c.ref ?? refOf(kids.get(String(app.sessionList.sessions.current!.id)) ?? [], c), 'in'), 'message\n' + t).catch((e) => app.tree.fail(why(e)));
     }]], el('div', {}, el('p', { textContent: c.status === 'running' ? 'It reads this after its current step. Its report will reflect it.' : 'It continues from where it ended and posts a new report.' }), box));
     setTimeout(() => box.focus(), 0);
   }
   // What a child is doing, in the words the session list and its view use:
   // working, waiting (an approval of its is open), finished, stopped, failed, interrupted.
-  function childState(sid, c) {
+  function childState(sid: SessionId, c: SubagentRow) {
     if (c.status === 'running') return app.sessionList.egress.pending.some((p) => sameId(p.sid, sid) && p.agentName === c.name) ? 'waiting' : 'working';
     return c.status;
   }
   // The composer's text belongs to the view it was typed in: main's draft waits
   // while a subagent is open, and that subagent's waits for its next opening.
-  const drafts = new Map();
-  function swapDraft(from, to) {
-    const i = $('input');
+  const drafts = new Map<string, string>();
+  function swapDraft(from: string, to: string) {
+    const i = $<HTMLTextAreaElement>('input');
     drafts.set(from, i.value);
     i.value = drafts.get(to) ?? '';
     drafts.delete(to);
@@ -136,7 +174,7 @@ export function createSubagentsRegion(app) {
   // Opening and leaving a subagent view (README "Subagent views"): the view zooms
   // out of what was clicked (its card, tray row or sidebar row) and folds back
   // into its card; under reduced motion the frame flashes instead.
-  function zoomIn(rect) {
+  function zoomIn(rect: DOMRect | undefined) {
     const log = $('log');
     if (reduced() || !rect?.width) { flash($('chat')); return; }
     const r = log.getBoundingClientRect();
@@ -145,14 +183,14 @@ export function createSubagentsRegion(app) {
     a.id = 'child-open';
     a.finished.catch(() => {}).finally(() => { log.style.transformOrigin = ''; });
   }
-  function flash(node) {
+  function flash(node: Element | null) {
     if (!node) return;
     node.classList.add('still-mark');
     setTimeout(() => node.classList.remove('still-mark'), 900);
   }
   // Open a subagent's own view (S2): select its parent session first if needed.
   // from: what was clicked, the motion's origin (default: its card in the log).
-  async function openChild(sid, id, from = null) {
+  async function openChild(sid: SessionId, id: ConversationId, from: Element | null = null) {
     const card = () => $('log').querySelector(`.subagent[data-child="${CSS.escape(String(id))}"]`);
     const origin = (from?.isConnected && from.getClientRects().length ? from : null) ?? card();
     const rect = origin?.getBoundingClientRect();
@@ -196,14 +234,14 @@ export function createSubagentsRegion(app) {
     e.preventDefault();
     closeChild();
   });
-  const focusedChild = () => app.sessionList.focus && (kids.get(app.sessionList.focus.sid) ?? []).find((c) => c.id === app.sessionList.focus.id);
+  const focusedChild = () => app.sessionList.focus && (kids.get(app.sessionList.focus.sid) ?? []).find((c) => c.id === app.sessionList.focus!.id);
 
   // A child's transcript, for its card (compact: one line per tool call, the
   // final answer set apart) and for its own view (full: the session's own
   // rendering). The user's steering messages are marked in both.
-  function childItems(v, name, childId, compact) {
-    const out = [], nextCache = new Map(), items = v?.items ?? [];
-    const final = compact && !v?.busy ? items.findLast((x) => x.type === 'assistant' && x.text && !x.streaming) : null;
+  function childItems(v: NormalizedView | undefined, name: string, childId: ConversationId, compact: boolean) {
+    const out: HTMLElement[] = [], nextCache: ReplyCache = new Map(), items = v?.items ?? [];
+    const final = compact && !v?.busy ? items.findLast((x) => x.type === 'assistant' && x.text && !x.streaming) as AssistantItem | undefined : null;
     let first = true;
     for (const x of items) {
       if (x.type === 'user') {
@@ -222,16 +260,16 @@ export function createSubagentsRegion(app) {
           ...(x.streaming && !compact ? [el('span', { className: 'typing', role: 'img', ariaLabel: `${name} is replying`, title: 'Replying' }, el('i'), el('i'), el('i'))] : [])));
       } else if (x.type === 'tool') {
         // Spawns in one round read as one line: "spawn 4 one-shot judges".
-        const prev = out.at(-1), spawn = x.name === 'subagent' && x.args?.action === 'spawn' ? x.args : null;
+        const prev = out.at(-1), spawn = x.name === 'subagent' && (x.args as SubagentArgs | undefined)?.action === 'spawn' ? x.args as SubagentArgs : null;
         if (compact && spawn && prev?.dataset?.spawn === (spawn.mode ?? 'agent')) {
-          const names = [...JSON.parse(prev.dataset.names), spawn.name ?? 'subagent'];
+          const names = [...JSON.parse(prev.dataset.names!) as string[], spawn.name ?? 'subagent'];
           prev.dataset.names = JSON.stringify(names);
           prev.textContent = `subagent: ${spawnGroupText(names, spawn.mode)}`;
           prev.title = names.join(', ');
           continue;
         }
-        const line = compact ? el('div', { className: 'sa-line' + (x.status === 'error' ? ' error' : ''), title: app.transcript.argSummary(x.name, x.args) },
-          `${x.status === 'running' ? '... ' : x.status === 'error' ? '! ' : ''}${x.name}: ${app.transcript.argSummary(x.name, x.args)}`) : app.transcript.toolCard(x, 'sa:');
+        const line = compact ? el('div', { className: 'sa-line' + (x.status === 'error' ? ' error' : ''), title: app.transcript.argSummary(x.name, x.args as SubagentArgs) },
+          `${x.status === 'running' ? '... ' : x.status === 'error' ? '! ' : ''}${x.name}: ${app.transcript.argSummary(x.name, x.args as SubagentArgs)}`) : app.transcript.toolCard(x, 'sa:');
         if (compact && spawn && x.status !== 'error') { line.dataset.spawn = spawn.mode ?? 'agent'; line.dataset.names = JSON.stringify([spawn.name ?? 'subagent']); }
         out.push(line);
         if (x.name === 'bash') out.push(...shownLines(x.output).map(app.editing.shownCard));
@@ -243,22 +281,22 @@ export function createSubagentsRegion(app) {
   }
 
   // "spawn 4 one-shot judges" from judge-argument, judge-evidence, ...
-  function spawnGroupText(names, mode) {
+  function spawnGroupText(names: string[], mode?: string) {
     const stem = names.every((n) => n.includes('-')) && new Set(names.map((n) => n.split('-')[0])).size === 1 ? names[0].split('-')[0] : null;
     return `spawn ${names.length} ${mode === 'oneshot' ? 'one-shot ' : ''}${stem ? stem + 's' : 'subagents'}`;
   }
   // The parent's name in a subagent's header and notes: its title once it has
   // one, not the first-message placeholder, and never with a trailing period.
-  const parentName = (s) => (s?.titleSource || s?.titleEdited ? titleOf(s) : 'main').replace(/[.\s]+$/, '');
+  const parentName = (s: SessionRecord | null | undefined) => (s?.titleSource || (s as { titleEdited?: boolean } | null | undefined)?.titleEdited ? titleOf(s) : 'main').replace(/[.\s]+$/, '');
   let saDetails = false; // the subagent header's Details disclosure, across renders
 
   // The subagent's own view (S2, S3): who it is and what it may reach, its
   // live transcript, and an end note once it is done. The composer steers it.
   function childLog() {
-    const c = focusedChild(), v = childViews.get(app.sessionList.focus.id);
+    const c = focusedChild(), v = childViews.get(app.sessionList.focus!.id);
     const parent = parentName(app.sessionList.sessions.current);
     if (!c) return [el('p', { className: 'notice bad', textContent: 'That subagent is no longer in this session.' })];
-    const st = childState(app.sessionList.focus.sid, c), t = app.state.vfs.tasks.byKeyOf('sa:' + c.id);
+    const st = childState(app.sessionList.focus!.sid, c), t = app.state.vfs.tasks.byKeyOf('sa:' + c.id);
     // One bar (critique 3): back, name in its color, state, elapsed, requests,
     // Details, Stop. Task, messages and namespace fold under Details once the
     // transcript scrolls; at the top they show.
@@ -269,19 +307,19 @@ export function createSubagentsRegion(app) {
     const crumbs = el('nav', { className: 'sa-crumbs', ariaLabel: 'Where you are' }, el('ol', {},
       el('li', {}, back),
       el('li', {}, el('span', { className: 'sa-dot', ariaHidden: 'true' }), el('span', { className: 'sa-name', ariaCurrent: 'page', textContent: c.name }),
-        ...(app.sessionList.focus.from ? [el('span', { className: 'sa-from muted', textContent: ` opened from ${app.sessionList.focus.from}` })] : []))));
+        ...(app.sessionList.focus!.from ? [el('span', { className: 'sa-from muted', textContent: ` opened from ${app.sessionList.focus!.from}` })] : []))));
     const more = el('button', { type: 'button', className: 'sa-more-btn', textContent: 'Details', ariaExpanded: String(saDetails) });
     const acts = el('span', { className: 'sa-acts' }, more);
     if (c.status === 'running') {
       const stop = el('button', { type: 'button', className: 'danger', textContent: 'Stop', ariaLabel: `Stop subagent ${c.name}` });
-      stop.onclick = () => { stop.disabled = true; app.namespaces.ctl(app.namespaces.agentFile(app.sessionList.focus.sid, refOf(kids.get(String(app.sessionList.focus.sid)) ?? [], c), 'ctl'), 'stop').catch((e) => app.tree.fail(why(e))); };
+      stop.onclick = () => { stop.disabled = true; app.namespaces.ctl(app.namespaces.agentFile(app.sessionList.focus!.sid, refOf(kids.get(String(app.sessionList.focus!.sid)) ?? [], c), 'ctl'), 'stop').catch((e) => app.tree.fail(why(e))); };
       acts.append(stop);
     }
     const mounts = t ? app.state.vfs.tasks.mounts(t) : describeSpecs(app.state.vfs, c.ns?.length ? c.ns : defaultSubagentNs(app.state.vfs));
     const body = el('div', { className: 'sa-more', id: 'sa-more' },
       el('p', { className: 'sa-meta', textContent: [...(c.ref ? [c.ref] : []), `subagent of ${parent}`, ...(t ? [`/task/${t.id}`] : [])].join(' · ') }),
       el('p', { className: 'sa-task', textContent: c.task, title: c.task }),
-      ...[edgeLine(kids.get(app.sessionList.focus.sid) ?? [], c)].filter(Boolean),
+      ...[edgeLine(kids.get(app.sessionList.focus!.sid) ?? [], c)].filter(Boolean) as HTMLElement[],
       el('p', { className: 'sa-mounts', title: 'What this subagent can reach (its namespace)' }, 'Sees: ', ...mounts.map((m) => el('code', { textContent: m }))));
     more.setAttribute('aria-controls', 'sa-more');
     const head = seeded(el('section', { className: 'sa-view-head' + (saDetails ? ' details' : '') + ($('log').scrollTop > 24 ? ' collapsed' : ''), ariaLabel: `Subagent ${c.name} of ${parent}` },
@@ -292,17 +330,17 @@ export function createSubagentsRegion(app) {
       body), c.ref);
     more.onclick = () => { saDetails = !saDetails; head.classList.toggle('details', saDetails); more.ariaExpanded = String(saDetails); };
     // On a phone the stats ride under Details, so the name keeps the bar (critique 7).
-    body.prepend(el('p', { className: 'sa-stats-more muted', textContent: head.querySelector('.sa-stats').textContent }));
+    body.prepend(el('p', { className: 'sa-stats-more muted', textContent: head.querySelector('.sa-stats')!.textContent! }));
     const out = [head, ...childItems(v, c.name, c.id, false)];
     if (c.status !== 'running') {
       // Ended: one compact bar in place of the composer (critique 7).
       const b = el('button', { type: 'button', textContent: 'Back', ariaLabel: `Back to ${title}`, title: `Back to ${title} (Esc)` });
       b.onclick = () => closeChild();
-      out.push(el('p', { className: 'notice sa-ended', role: 'status' }, el('span', { textContent: st === 'finished' ? `${c.name} finished; its report is in main's thread.` : `${c.name} ${{ stopped: 'was stopped', failed: 'failed', interrupted: 'was interrupted' }[st] ?? 'ended'}; its last output is in main's thread.` }), b));
+      out.push(el('p', { className: 'notice sa-ended', role: 'status' }, el('span', { textContent: st === 'finished' ? `${c.name} finished; its report is in main's thread.` : `${c.name} ${({ stopped: 'was stopped', failed: 'failed', interrupted: 'was interrupted' } as Record<string, string | undefined>)[st] ?? 'ended'}; its last output is in main's thread.` }), b));
     }
     return out;
   }
-  let lastHeight = null; // the transcript's height at the last render (the "New reply below" pill)
+  let lastHeight: number | null = null; // the transcript's height at the last render (the "New reply below" pill)
   $('below').onclick = () => { app.state.follow.pin(!matchMedia('(prefers-reduced-motion: reduce)').matches); $('below').hidden = true; };
   $('log').addEventListener('scroll', () => { if (app.state.follow.following) $('below').hidden = true; }, { passive: true });
   // The header folds to its bar once the transcript scrolls (critique 3).
@@ -314,16 +352,16 @@ export function createSubagentsRegion(app) {
   // The card at the spawn point (D16): status, time, requests, Stop, Message,
   // Open (its own view), the transcript (compact; filled when opened, live while
   // it runs), and the files it changed.
-  function subagentCard(it, childId) {
+  function subagentCard(it: ToolItem, childId: ConversationId | null) {
     const c = (kids.get(String(app.sessionList.sessions.current?.id)) ?? []).find((x) => x.id === childId);
-    const v = childViews.get(childId);
-    const name = c?.name ?? it.details?.name ?? it.args?.name ?? 'subagent';
+    const v = childViews.get(childId!);
+    const name = c?.name ?? (it.details as SpawnDetails | undefined)?.name ?? (it.args as SubagentArgs | undefined)?.name ?? 'subagent';
     const st = c?.status ?? (it.status === 'running' ? 'starting' : 'unknown');
-    const box = seeded(el('section', { className: `subagent ${st}`, ariaLabel: `Subagent ${name}: ${st}` }), c?.ref ?? it.details?.ref);
-    box.dataset.child = childId;
-    const meta = [];
+    const box = seeded(el('section', { className: `subagent ${st}`, ariaLabel: `Subagent ${name}: ${st}` }), c?.ref ?? (it.details as SpawnDetails | undefined)?.ref);
+    box.dataset.child = childId as unknown as string; // dataset stringifies: 'null' for a spawn still starting
+    const meta: string[] = [];
     if (c?.ref) meta.push(c.ref);
-    if (c?.oneshot ?? it.details?.oneshot) meta.push('one-shot');
+    if (c?.oneshot ?? (it.details as SpawnDetails | undefined)?.oneshot) meta.push('one-shot');
     if (c) meta.push(fmtDur((c.status === 'running' ? Date.now() : c.ended ?? Date.now()) - (c.resumed ?? c.started)));
     const steps = v?.steps ?? c?.requests;
     if (steps != null) meta.push(`${steps} request${steps === 1 ? '' : 's'}`);
@@ -337,23 +375,23 @@ export function createSubagentsRegion(app) {
     const acts = el('span', { className: 'sa-acts' });
     if (c) {
       const open = el('button', { type: 'button', textContent: 'Open', ariaLabel: `Open subagent ${name}` });
-      open.onclick = () => openChild(app.sessionList.sessions.current.id, c.id, box);
+      open.onclick = () => openChild(app.sessionList.sessions.current!.id, c.id, box);
       const msg = el('button', { type: 'button', textContent: 'Message', ariaLabel: `Message subagent ${name}` });
       msg.onclick = () => messageChild(c);
       acts.append(open, ...(c.oneshot ? [] : [msg])); // a one-shot takes no messages
     }
     if (c?.status === 'interrupted') {
       const res = el('button', { type: 'button', className: 'primary', textContent: 'Resume', ariaLabel: `Resume subagent ${name}` });
-      res.onclick = () => { res.disabled = true; app.namespaces.ctl(app.namespaces.agentFile(app.sessionList.sessions.current.id, refOf(kids.get(String(app.sessionList.sessions.current.id)) ?? [], c), 'in'), 'message\nContinue your task where you left off: a page reload interrupted you.').catch((e) => app.tree.fail(why(e))); };
+      res.onclick = () => { res.disabled = true; app.namespaces.ctl(app.namespaces.agentFile(app.sessionList.sessions.current!.id, refOf(kids.get(String(app.sessionList.sessions.current!.id)) ?? [], c), 'in'), 'message\nContinue your task where you left off: a page reload interrupted you.').catch((e) => app.tree.fail(why(e))); };
       acts.append(res);
     }
     if (c?.status === 'running') {
       const stop = el('button', { type: 'button', className: 'danger', textContent: 'Stop', ariaLabel: `Stop subagent ${name}` });
-      stop.onclick = () => { stop.disabled = true; app.namespaces.ctl(app.namespaces.agentFile(app.sessionList.sessions.current.id, refOf(kids.get(String(app.sessionList.sessions.current.id)) ?? [], c), 'ctl'), 'stop').catch((e) => app.tree.fail(why(e))); };
+      stop.onclick = () => { stop.disabled = true; app.namespaces.ctl(app.namespaces.agentFile(app.sessionList.sessions.current!.id, refOf(kids.get(String(app.sessionList.sessions.current!.id)) ?? [], c), 'ctl'), 'stop').catch((e) => app.tree.fail(why(e))); };
       acts.append(stop);
     }
     head.append(acts);
-    box.append(head, el('p', { className: 'sa-task', textContent: c?.task ?? it.args?.task ?? '', title: c?.task ?? '' }));
+    box.append(head, el('p', { className: 'sa-task', textContent: c?.task ?? (it.args as SubagentArgs | undefined)?.task ?? '', title: c?.task ?? '' }));
     const edges = c && edgeLine(kids.get(String(app.sessionList.sessions.current?.id)) ?? [], c);
     if (edges) box.append(edges);
     if (c?.error && st === 'failed') box.append(el('p', { className: 'sa-err', textContent: c.error }));
@@ -362,7 +400,7 @@ export function createSubagentsRegion(app) {
     // a toggle used to record the state and draw nothing until something else
     // re-rendered the log (never, once the child had finished).
     const d = el('details', { className: 'sa-log', open: app.transcript.openTools.has(key) });
-    const n = v?.items.length ?? 0, steered = v?.items.filter((x) => x.steer).length ?? 0;
+    const n = v?.items.length ?? 0, steered = v?.items.filter((x) => (x as UserItem).steer).length ?? 0;
     d.append(el('summary', { textContent: (v ? `Transcript (${n} item${n === 1 ? '' : 's'})` : 'Transcript') + (steered ? `, steered by you ${steered === 1 ? 'once' : steered + ' times'}` : '') }));
     // Expanded, the transcript scrolls in its own tinted box under a sticky
     // "Collapse <name>" bar, so it never passes for the main session (critique 5).
@@ -370,7 +408,7 @@ export function createSubagentsRegion(app) {
       if (d.querySelector('.sa-items')) return;
       const fold = el('button', { type: 'button', className: 'sa-fold', textContent: `Collapse ${name}`, ariaLabel: `Collapse the transcript of ${name}` });
       fold.onclick = () => { d.open = false; box.scrollIntoView({ block: 'nearest' }); };
-      const items = el('div', { className: 'sa-items', tabIndex: 0, role: 'region', ariaLabel: `Transcript of ${name}` }, fold, ...childItems(childViews.get(childId), name, childId, true));
+      const items = el('div', { className: 'sa-items', tabIndex: 0, role: 'region', ariaLabel: `Transcript of ${name}` }, fold, ...childItems(childViews.get(childId!), name, childId!, true));
       items.dataset.sk = key; // keeps its place across re-renders (src/follow.ts)
       d.append(items);
     };

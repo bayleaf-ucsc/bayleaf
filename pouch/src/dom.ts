@@ -1,14 +1,17 @@
 // The few DOM helpers every module shares. Nodes only, never HTML strings.
-export const $ = (id) => document.getElementById(id);
+// By id: pouch.html declares every id the page uses, so a missing one is a bug.
+export const $ = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T;
 
-export function el(tag, props = {}, ...kids) {
+// props are assigned as properties; style may be a CSS string.
+type Props<T> = Partial<Omit<T, 'style'>> & { style?: string };
+export function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Props<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] {
   const n = Object.assign(document.createElement(tag), props);
   n.append(...kids);
   return n;
 }
 
 // An icon from the sprite in pouch.html (<symbol id="i-NAME">).
-export function icon(name) {
+export function icon(name: string): SVGSVGElement {
   const NS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('class', 'i');
@@ -23,8 +26,8 @@ export function icon(name) {
 // CSS's business. JS sets one number, its spawn order (a3 -> --seed: 3), and
 // pouch.html turns it into a hue. Main (a1) stays neutral; unknown refs get nothing.
 // Older builds' s-handles (s3) read the same (graph.js asRef).
-export const seedOf = (ref) => { const m = /^[as](\d+)$/.exec(String(ref ?? '')); return m ? Number(m[1]) : null; };
-export function seeded(node, ref) {
+export const seedOf = (ref: unknown): number | null => { const m = /^[as](\d+)$/.exec(String(ref ?? '')); return m ? Number(m[1]) : null; };
+export function seeded<T extends HTMLElement | SVGElement>(node: T, ref: unknown): T {
   const n = seedOf(ref);
   if (n === 1) node.classList.add('main-agent');
   else if (n != null) node.style.setProperty('--seed', String(n));

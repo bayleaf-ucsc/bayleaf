@@ -3,17 +3,28 @@
 // proposed file changes out. Nothing here touches the network, storage or the
 // page; the guest sees only the in-memory snapshot through a tiny fs API.
 //
-//   request = { files: [{ path, bytes: Uint8Array, hash }], code, filename?, cwd?,
-//               args?: string[], stdin?: string, limits?: {...} }
-//   result  = { status: 'ok'|'error'|'timeout'|'oom'|'cancelled'|'exit',
-//               exitCode, message?, stdout, stderr, truncated,
-//               changes: [{ path, op: 'create'|'modify'|'delete', baseHash, bytes? }],
-//               ms }
-//
 // A Python runtime (Pyodide) would implement the same runRequest contract with
 // a different engine in the middle; validate(), normalize() and diff() carry over.
+import type { DisposableResult, ExecutePendingJobsResult, QuickJSContext, QuickJSHandle, QuickJSWASMModule } from 'quickjs-emscripten-core';
 
-export const DEFAULT_LIMITS = {
+export interface RunLimits { timeMs: number; memoryBytes: number; maxOutputBytes: number; maxFileBytes: number; maxFiles: number; stackBytes: number }
+export interface SnapshotFile { path: string; bytes: Uint8Array; hash?: string }
+// specs: with a 9P namespace, the paths, folders and globs the worker reads itself.
+export interface RunRequest { files?: SnapshotFile[]; specs?: string[]; code: string; filename?: string; cwd?: string; args?: string[]; stdin?: string; limits?: Partial<RunLimits> }
+export type RunStatus = 'ok' | 'error' | 'timeout' | 'oom' | 'cancelled' | 'exit';
+export type ChangeOp = 'create' | 'modify' | 'delete';
+export interface Change { path: string; op: ChangeOp; baseHash: string | null; bytes?: Uint8Array }
+export interface AppliedChange { path: string; op: ChangeOp }
+export interface ChangeConflict { path: string; op: ChangeOp; reason: string; error?: string }
+// phase 'load': the snapshot could not be read; applied/conflicts: what a 9P write-back did.
+export interface RunResult {
+  status: RunStatus; exitCode: number; message?: string | null; stdout: string; stderr: string; truncated: boolean;
+  changes: Change[]; ms: number; phase?: 'load'; applied?: AppliedChange[]; conflicts?: ChangeConflict[];
+}
+interface Sink { stdout: string; stderr: string; used: number; truncated: boolean; write(stream: 'stdout' | 'stderr', text: string): void }
+type HostValue = string | number | boolean | ArrayBuffer | HostValue[];
+
+export const DEFAULT_LIMITS: RunLimits = {
   timeMs: 5000, memoryBytes: 64 << 20, maxOutputBytes: 64 << 10,
   maxFileBytes: 4 << 20, maxFiles: 500, stackBytes: 1 << 20,
 };
@@ -24,13 +35,13 @@ export const CODES = { timeout: 124, cancelled: 130, oom: 137 };
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
-export async function sha256(bytes) {
-  const d = await crypto.subtle.digest('SHA-256', bytes);
+export async function sha256(bytes: Uint8Array): Promise<string> {
+  const d = await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>); // never shared memory here
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 // Absolute, slash-separated, no "." or ".." left, so "/a/../b" and "b" meet.
-export function normalize(path) {
+export function normalize(path: string): string {
   const out = [];
   for (const part of String(path).split('/')) {
     if (!part || part === '.') continue;
@@ -40,7 +51,7 @@ export function normalize(path) {
 }
 
 // Refuse an oversized snapshot before spending any engine time on it.
-export function validate(req, limits) {
+export function validate(req: RunRequest, limits: RunLimits) {
   if (typeof req.code !== 'string') throw new Error('code must be a string');
   const files = req.files ?? [];
   if (files.length > limits.maxFiles) throw new Error(`snapshot has ${files.length} files, limit ${limits.maxFiles}`);
@@ -50,8 +61,8 @@ export function validate(req, limits) {
 }
 
 // Bounded text sink: keeps the first maxBytes (UTF-8) across stdout+stderr.
-function sink(maxBytes) {
-  const s = { stdout: '', stderr: '', used: 0, truncated: false };
+function sink(maxBytes: number) {
+  const s = { stdout: '', stderr: '', used: 0, truncated: false } as Sink;
   s.write = (stream, text) => {
     if (s.truncated) return;
     const b = enc.encode(text);
@@ -65,8 +76,8 @@ function sink(maxBytes) {
 }
 
 // Proposed changes: compare the guest's final working set with the snapshot.
-async function diff(initial, work) {
-  const changes = [];
+async function diff(initial: Map<string, { bytes: Uint8Array; hash: string }>, work: Map<string, Uint8Array>) {
+  const changes: Change[] = [];
   for (const [path, bytes] of work) {
     const was = initial.get(path);
     if (!was) changes.push({ path, op: 'create', baseHash: null, bytes });
@@ -75,15 +86,15 @@ async function diff(initial, work) {
   for (const [path, was] of initial) if (!work.has(path)) changes.push({ path, op: 'delete', baseHash: was.hash });
   return changes.sort((a, b) => a.path.localeCompare(b.path));
 }
-const sameBytes = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((v, i) => v === b[i]);
 
 // quickjs: a QuickJSWASMModule (from quickjs-emscripten-core). shouldCancel: an
 // optional poll for soft cancellation, checked from the interrupt handler.
-export async function runRequest(quickjs, req, { shouldCancel = () => false } = {}) {
+export async function runRequest(quickjs: QuickJSWASMModule, req: RunRequest, { shouldCancel = () => false }: { shouldCancel?: () => boolean } = {}): Promise<RunResult> {
   const limits = { ...DEFAULT_LIMITS, ...req.limits };
   validate(req, limits);
   const t0 = performance.now();
-  const initial = new Map();
+  const initial = new Map<string, { bytes: Uint8Array; hash: string }>();
   for (const f of req.files ?? []) initial.set(normalize(f.path), { bytes: f.bytes, hash: f.hash ?? await sha256(f.bytes) });
   const work = new Map([...initial].map(([p, f]) => [p, f.bytes]));
   const out = sink(limits.maxOutputBytes);
@@ -95,21 +106,22 @@ export async function runRequest(quickjs, req, { shouldCancel = () => false } = 
   // Why a reason variable: QuickJS reports every interrupt as the same
   // "interrupted" InternalError, which the guest could even catch; the host
   // remembers why it pulled the plug and keeps pulling until the run ends.
-  let reason = null, exitCode = 0;
+  let reason: 'timeout' | 'cancelled' | 'exit' | null = null, exitCode = 0;
   rt.setInterruptHandler(() => {
     if (!reason && Date.now() > deadline) reason = 'timeout';
     if (!reason && shouldCancel()) reason = 'cancelled';
     return reason !== null;
   });
   const vm = rt.newContext();
-  const result = (status, message) => ({ status, exitCode, message, stdout: out.stdout, stderr: out.stderr, truncated: out.truncated });
+  // changes and ms are filled in once the run is over.
+  const result = (status: RunStatus, message: string | null) => ({ status, exitCode, message, stdout: out.stdout, stderr: out.stderr, truncated: out.truncated }) as RunResult;
 
   try {
-    install(vm, { out, work, limits, req, exit: (code) => { exitCode = code | 0; reason = 'exit'; } });
-    let r = vm.evalCode(req.code, req.filename ?? '/main.js', { type: 'global' });
+    install(vm, { out, work, limits, req, exit: (code: number) => { exitCode = code | 0; reason = 'exit'; } });
+    let r: DisposableResult<QuickJSHandle, QuickJSHandle> | ExecutePendingJobsResult = vm.evalCode(req.code, req.filename ?? '/main.js', { type: 'global' });
     // Settle promise jobs (async functions, .then) so their output lands too.
-    if (!r.error) { r.value.dispose(); r = rt.executePendingJobs(); if (!r.error) r.value?.dispose?.(); }
-    let res;
+    if (!r.error) { r.value.dispose(); r = rt.executePendingJobs(); if (!r.error) (r.value as { dispose?(): void })?.dispose?.(); } // value is a job count: a no-op
+    let res: RunResult;
     if (r.error) {
       const err = vm.dump(r.error); r.error.dispose();
       const message = describe(err);
@@ -126,7 +138,7 @@ export async function runRequest(quickjs, req, { shouldCancel = () => false } = 
     // A host-side throw (e.g. wasm trap) means the engine state is suspect:
     // report it and propose nothing.
     exitCode = 1;
-    return { ...result(/memory/i.test(e.message) ? 'oom' : 'error', `engine: ${e.message}`), changes: [], ms: Math.round(performance.now() - t0) };
+    return { ...result(/memory/i.test((e as Error).message) ? 'oom' : 'error', `engine: ${(e as Error).message}`), changes: [], ms: Math.round(performance.now() - t0) };
   } finally {
     // After a stack overflow or OOM, QuickJS can leak objects and fail its
     // free-time assertion (an emscripten abort). The result is already
@@ -135,7 +147,7 @@ export async function runRequest(quickjs, req, { shouldCancel = () => false } = 
   }
 }
 
-function describe(err) {
+function describe(err: { name?: string; message?: string; stack?: string } | string | number | boolean | null | undefined) {
   if (err && typeof err === 'object') return `${err.name ?? 'Error'}: ${err.message ?? ''}${err.stack ? '\n' + err.stack : ''}`.trim();
   return String(err);
 }
@@ -143,38 +155,40 @@ function describe(err) {
 // The guest's whole world: console/print, args, stdin, exit() and fs. Host
 // functions take and return plain values only; a small guest-side prelude
 // adapts typed arrays so no host object ever crosses into the guest.
-function install(vm, { out, work, limits, req, exit }) {
+interface Guest { out: Sink; work: Map<string, Uint8Array>; limits: RunLimits; req: RunRequest; exit: (code: number) => void }
+function install(vm: QuickJSContext, { out, work, limits, req, exit }: Guest) {
   const host = vm.newObject();
-  const def = (name, f) => {
+  // The guest's values are untrusted; each host function names what the prelude passes it.
+  const def = <A extends unknown[]>(name: string, f: (...args: A) => HostValue | void) => {
     const h = vm.newFunction(name, (...hs) => {
-      const v = f(...hs.map((x) => vm.dump(x)));
+      const v = f(...(hs.map((x) => vm.dump(x)) as A));
       return v === undefined ? undefined : toHandle(vm, v);
     });
     vm.setProp(host, name, h); h.dispose();
   };
-  const text = (xs) => xs.map((x) => (typeof x === 'string' ? x : safeJSON(x))).join(' ') + '\n';
+  const text = (xs: unknown[]) => xs.map((x) => (typeof x === 'string' ? x : safeJSON(x))).join(' ') + '\n';
   // Relative guest paths resolve against the request's cwd (Pouch: /work).
   const cwd = normalize(req.cwd ?? '/');
-  const res = (p) => normalize(String(p).startsWith('/') ? p : cwd + '/' + p);
-  const need = (p) => { const k = res(p); if (!work.has(k)) throw new Error(`ENOENT: ${k}`); return k; };
+  const res = (p: string) => normalize(String(p).startsWith('/') ? p : cwd + '/' + p);
+  const need = (p: string) => { const k = res(p); if (!work.has(k)) throw new Error(`ENOENT: ${k}`); return k; };
 
-  def('out', (xs) => out.write('stdout', text(xs)));
-  def('err', (xs) => out.write('stderr', text(xs)));
-  def('exit', (code) => exit(code ?? 0));
-  def('readFile', (p) => dec.decode(work.get(need(p))));
-  def('readBytes', (p) => work.get(need(p)).slice().buffer); // a copy, never a view of host memory
-  def('writeFile', (p, data) => {
+  def('out', (xs: unknown[]) => out.write('stdout', text(xs)));
+  def('err', (xs: unknown[]) => out.write('stderr', text(xs)));
+  def('exit', (code?: number) => exit(code ?? 0));
+  def('readFile', (p: string) => dec.decode(work.get(need(p))));
+  def('readBytes', (p: string) => work.get(need(p))!.slice().buffer); // a copy, never a view of host memory
+  def('writeFile', (p: string, data: string | number[]) => {
     const k = res(p);
     const bytes = typeof data === 'string' ? enc.encode(data) : new Uint8Array(data);
     if (bytes.byteLength > limits.maxFileBytes) throw new Error(`EFBIG: ${k} exceeds ${limits.maxFileBytes} bytes`);
     if (!work.has(k) && work.size >= limits.maxFiles) throw new Error(`EMFILE: more than ${limits.maxFiles} files`);
     work.set(k, bytes);
   });
-  def('exists', (p) => work.has(res(p)) || isDir(work, res(p)));
-  def('rm', (p) => { work.delete(need(p)); });
-  def('readdir', (p) => {
+  def('exists', (p: string) => work.has(res(p)) || isDir(work, res(p)));
+  def('rm', (p: string) => { work.delete(need(p)); });
+  def('readdir', (p?: string) => {
     const dir = res(p ?? cwd), pre = dir === '/' ? '/' : dir + '/';
-    const names = new Set();
+    const names = new Set<string>();
     for (const k of work.keys()) if (k.startsWith(pre)) names.add(k.slice(pre.length).split('/')[0]);
     if (!names.size && !isDir(work, dir)) throw new Error(`ENOTDIR: ${dir}`);
     return [...names].sort();
@@ -204,9 +218,9 @@ function install(vm, { out, work, limits, req, exit }) {
   f.dispose(); host.dispose();
 }
 
-const isDir = (work, dir) => dir === '/' || [...work.keys()].some((k) => k.startsWith(dir + '/'));
+const isDir = (work: Map<string, Uint8Array>, dir: string) => dir === '/' || [...work.keys()].some((k) => k.startsWith(dir + '/'));
 
-function toHandle(vm, v) {
+function toHandle(vm: QuickJSContext, v: HostValue): QuickJSHandle {
   if (typeof v === 'string') return vm.newString(v);
   if (typeof v === 'number') return vm.newNumber(v);
   if (typeof v === 'boolean') return v ? vm.true : vm.false;
@@ -215,4 +229,4 @@ function toHandle(vm, v) {
   return vm.undefined;
 }
 
-function safeJSON(x) { try { return JSON.stringify(x); } catch { return String(x); } }
+function safeJSON(x: unknown) { try { return JSON.stringify(x); } catch { return String(x); } }

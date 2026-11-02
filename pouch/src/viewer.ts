@@ -12,10 +12,15 @@
 // no message from the viewer or the report reaches Pouch's code.
 export const VIEWER_MAX = 5 * 2 ** 20; // characters; viewer.html enforces the same cap
 
+export interface Viewer {
+  show(html: string, opts?: { scripts?: boolean }): void;
+  clear(): void;
+  readonly frame: HTMLIFrameElement | null;
+}
 // show(html, { scripts }) replaces whatever the box showed with a fresh
 // viewer, so nothing from a previous report keeps running.
-export function createViewer(box, { src = 'viewer.html', doc = document } = {}) {
-  let frame = null;
+export function createViewer(box: Element, { src = 'viewer.html', doc = document }: { src?: string; doc?: Document } = {}): Viewer {
+  let frame: HTMLIFrameElement | null = null;
   return {
     show(html, { scripts = false } = {}) {
       if (html.length > VIEWER_MAX) throw new Error(`This report is ${(html.length / 2 ** 20).toFixed(1)} MB; Preview shows reports up to 5 MB. Use Raw, or Download it.`);

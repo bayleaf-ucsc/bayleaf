@@ -5,45 +5,91 @@ import { $, el } from '../dom.ts';
 import { LOCAL, engine as localEngine, importFiles as localImport, remove as localRemove, stored as localStored } from '../local/engine.ts';
 import { HINTS, isLocal } from '../local/provider.ts';
 import { DEFAULT_URL, TRANSPORTS, isLocalhost, parseLocalhostUrl, testConnection } from '../localhost.ts';
+import type { App } from './app.ts';
+import type { LocalProgress, Support } from '../local/engine.ts';
+import type { LocalHint } from '../local/provider.ts';
+import type { LocalhostModelInfo, LocalhostTest, LocalhostTransport } from '../localhost.ts';
+import type { LocalhostConfig, SessionId } from '../agent-types.ts';
+import type { Api, Model } from '@earendil-works/pi-ai';
 
-export function createProvidersRegion(app) {
+// Localhost as set up by the user and kept in settings ('localhost').
+export interface LocalhostSetup {
+  base: string; key: string; transport: LocalhostTransport; transportChoice?: LocalhostTransport | 'auto';
+  detected?: LocalhostTransport; models: LocalhostModelInfo[]; testedAt?: number;
+}
+// testConnection's result with ok as the discriminant (its inferred type widens ok to boolean).
+type LocalhostReady = Extract<LocalhostTest, { detected: unknown }>;
+type LocalhostOutcome = (LocalhostReady & { ok: true }) | (Exclude<LocalhostTest, LocalhostReady> & { ok: false });
+// Download or load progress for the status line; downloading: a /task download (models get).
+export type LocalStatusProgress = LocalProgress & { downloading?: boolean };
+
+export interface ProvidersRegion {
+  canSend(): boolean;
+  clearHint(sid: SessionId | null | undefined): void;
+  // Download (asking first) and start Transformers.js; false with a status line when it cannot.
+  ensureLocal(): Promise<boolean>;
+  get lh(): LocalhostSetup | null; set lh(v: LocalhostSetup | null);
+  lhAgentConfig(): LocalhostConfig | null;
+  lhModels(): LocalhostModelInfo[];
+  lhRuns: Set<string>; // sessions whose current turn runs on Localhost
+  readonly lhWaitShown: boolean;
+  LOCAL_ID: string | null;
+  localhostOptions(saved: string): HTMLOptionElement[];
+  localhostPicked(): boolean;
+  localhostWait(kind: 'slow' | 'flowing', model: Model<Api>): void;
+  get localOk(): Support; set localOk(v: Support);
+  localOption(saved: string): HTMLOptionElement[];
+  localPicked(): boolean;
+  localProgress(p: LocalStatusProgress): void;
+  localRuns: Set<string>; // sessions whose current turn runs on Transformers.js
+  mib(n: number): string;
+  offSealed(id: string): boolean;
+  offSealedPicked(): boolean;
+  pickerProvider(): void;
+  renderHint(): void;
+  renderLocalhostSettings(result?: LocalhostTest): void;
+  renderLocalSettings(): Promise<void>;
+  showHint(kind: LocalHint): void;
+}
+
+export function createProvidersRegion(app: App): ProvidersRegion {
   // ── Transformers.js provider (src/local/): a model in this browser, chosen explicitly
   // The picker offers it when this build carries it and WebGPU works; otherwise
   // it is listed disabled with the reason. Nothing is downloaded without asking.
-  let localOk = { ok: false, reason: '' };
-  const localRuns = new Set(); // sessions whose current turn runs on Transformers.js
+  let localOk: Support = { ok: false, reason: '' };
+  const localRuns = new Set<string>(); // sessions whose current turn runs on Transformers.js
   const LOCAL_ID = LOCAL && 'local:' + LOCAL.id;
-  const localPicked = () => isLocal($('model').value);
+  const localPicked = () => isLocal($<HTMLSelectElement>('model').value);
   const canSend = () => !!app.state.agent && (offSealedPicked() || (app.state.verified && !app.connection.offline));
-  const mib = (n) => `${(n / 2 ** 20).toLocaleString(undefined, { maximumFractionDigits: 0 })} MB`;
+  const mib = (n: number) => `${(n / 2 ** 20).toLocaleString(undefined, { maximumFractionDigits: 0 })} MB`;
   // A saved choice of Transformers.js stays selected even when unavailable (a phone,
   // a weak adapter): Send then refuses with the reason (ensureLocal) instead of
   // quietly sending the message to Sealed.
-  function localOption(saved) {
+  function localOption(saved: string) {
     if (!LOCAL) return [];
-    const o = new Option(localOk.ok ? `${LOCAL.label} (in this browser)` : `${LOCAL.label} (unavailable: ${localOk.reason})`, LOCAL_ID, false, saved === LOCAL_ID);
+    const o = new Option(localOk.ok ? `${LOCAL.label} (in this browser)` : `${LOCAL.label} (unavailable: ${localOk.reason})`, LOCAL_ID!, false, saved === LOCAL_ID);
     o.disabled = !localOk.ok;
     o.title = localOk.ok ? 'Runs in this browser on your GPU. Nothing is sent.' : localOk.reason;
     return [o];
   }
   function pickerProvider() {
-    const local = localPicked(), lhost = localhostPicked(), label = $('model').closest('.provider-model');
+    const local = localPicked(), lhost = localhostPicked(), label = $<HTMLSelectElement>('model').closest<HTMLElement>('.provider-model')!;
     label.dataset.sealedTitle ??= label.title; // the page's own wording, kept from the first call
-    label.querySelector('use').setAttribute('href', local ? '#i-chip' : lhost ? '#i-laptop' : '#i-lock');
+    label.querySelector('use')!.setAttribute('href', local ? '#i-chip' : lhost ? '#i-laptop' : '#i-lock');
     // Providers keep fixed theme colors (continuity): no two providers share one.
     label.classList.toggle('provider-tjs', local);
     label.classList.toggle('provider-localhost', lhost);
     label.title = local ? 'Transformers.js: runs in this browser, nothing is sent.' : lhost ? 'Localhost: your server on this computer runs the model. The model applies to your next user turn.' : label.dataset.sealedTitle;
     $('shield-btn')?.classList.toggle('provider-tjs', local);
     $('shield-btn')?.classList.toggle('provider-localhost', lhost);
-    if (app.connection.offline) $('input').placeholder = local || lhost ? app.queues.PLACEHOLDER : 'Offline: keep typing; Send comes back with the network';
+    if (app.connection.offline) $<HTMLTextAreaElement>('input').placeholder = local || lhost ? app.queues.PLACEHOLDER : 'Offline: keep typing; Send comes back with the network';
     label.title = local ? 'Transformers.js: the model runs in this browser; nothing is sent. The model applies when you next send.' : 'BayLeaf Sealed: requests are encrypted to the enclave. The model applies when you next send; running work keeps its model.';
     app.state.composer?.refreshShield();
   }
   // Downloading is a choice (about 1.1 GB): the same approval sheet and /task
   // download as `models get` (src/models-cli.ts); progress shows in the status
   // line and Settings, and Stop writes the download's /task ctl.
-  let localLoading = null;
+  let localLoading: Promise<boolean> | null = null;
   async function ensureLocal() {
     if (!localOk.ok) { app.state.status(`Transformers.js is not available: ${localOk.reason}`, 'bad'); return false; }
     if (localEngine.loaded()) return true;
@@ -51,27 +97,27 @@ export function createProvidersRegion(app) {
     if (!st.complete) {
       if (!navigator.onLine) { app.state.status('The Transformers.js model is not in this browser yet, and you are offline. Settings can load a saved copy from a folder.', 'bad'); return false; }
       let r;
-      try { r = await app.sessionList.modelService.get(LOCAL.id, { by: 'user', via: 'Settings' }); }
-      catch (e) { app.state.status(e.code === 'EDENIED' ? 'Not downloaded.' : 'Transformers.js model: ' + e.message, e.code === 'EDENIED' ? '' : 'bad'); return false; }
+      try { r = await app.sessionList.modelService.get(LOCAL!.id, { by: 'user', via: 'Settings' }); }
+      catch (e) { app.state.status((e as Error & { code?: string }).code === 'EDENIED' ? 'Not downloaded.' : 'Transformers.js model: ' + (e as Error).message, (e as Error & { code?: string }).code === 'EDENIED' ? '' : 'bad'); return false; }
       if (!r.already) {
         renderLocalSettings();
         try { await r.promise; }
-        catch (e) { app.state.status(e.name === 'AbortError' ? `Download stopped at ${mib((await localStored()).bytes)}; Download resumes where it stopped.` : 'Transformers.js model: ' + e.message, e.name === 'AbortError' ? '' : 'bad'); renderLocalSettings(); return false; }
+        catch (e) { app.state.status((e as Error).name === 'AbortError' ? `Download stopped at ${mib((await localStored()).bytes)}; Download resumes where it stopped.` : 'Transformers.js model: ' + (e as Error).message, (e as Error).name === 'AbortError' ? '' : 'bad'); renderLocalSettings(); return false; }
       }
     }
     return startLocal();
   }
-  function startLocal() {
+  function startLocal(): Promise<boolean> {
     const box = $('local-settings');
     box.dataset.state = 'loading';
     localLoading ??= localEngine.start({ onProgress: localProgress, network: navigator.onLine })
-      .then(() => { box.dataset.state = 'ready'; app.state.status(`${LOCAL.label} is ready in this browser (Transformers.js).`); return true; },
-        (e) => { box.dataset.state = 'error'; box.dataset.error = e.message; app.state.status('Transformers.js model: ' + e.message, 'bad'); return false; })
+      .then(() => { box.dataset.state = 'ready'; app.state.status(`${LOCAL!.label} is ready in this browser (Transformers.js).`); return true; },
+        (e: Error) => { box.dataset.state = 'error'; box.dataset.error = e.message; app.state.status('Transformers.js model: ' + e.message, 'bad'); return false; })
       .finally(() => { localLoading = null; renderLocalSettings(); });
     return localLoading;
   }
   let progressAt = 0;
-  function localProgress(p) {
+  function localProgress(p: LocalStatusProgress) {
     if (p.phase !== 'loading' && p.done < p.total && Date.now() - progressAt < 150) return; // a few updates a second
     progressAt = Date.now();
     const pct = p.total ? Math.floor((p.done / p.total) * 100) : 0;
@@ -79,18 +125,18 @@ export function createProvidersRegion(app) {
       : p.phase === 'runtime' ? `Transformers.js: ${p.fetched || p.repaired ? 'fetching and checking' : 'checking'} the runtime, ${mib(p.done)} of ${mib(p.total)} (${pct}%)`
       : `Transformers.js: ${p.downloading ? 'downloading from api.bayleaf.dev and checking' : p.fetched || p.repaired ? 'downloading and checking' : 'checking'} ${mib(p.done)} of ${mib(p.total)} (${pct}%)${p.repaired ? `, ${p.repaired} damaged chunk${p.repaired > 1 ? 's' : ''} fetched again` : ''}`;
     app.state.status(text);
-    const bar = $('local-progress');
+    const bar = $<HTMLProgressElement>('local-progress');
     if (bar) { bar.hidden = false; bar.max = p.total || 1; bar.value = p.done; }
   }
   // A reason to suggest Sealed (never a switch): shown under the composer for the session that ran.
-  const hints = new Map(); // sid -> Set of kinds
-  function showHint(kind) {
+  const hints = new Map<string, Set<LocalHint>>(); // sid -> Set of kinds
+  function showHint(kind: LocalHint) {
     const sid = [...localRuns].at(-1);
     if (sid == null) return;
-    (hints.get(sid) ?? hints.set(sid, new Set()).get(sid)).add(kind);
+    (hints.get(sid) ?? hints.set(sid, new Set()).get(sid)!).add(kind);
     renderHint();
   }
-  function clearHint(sid) { hints.delete(String(sid)); renderHint(); }
+  function clearHint(sid: SessionId | null | undefined) { hints.delete(String(sid)); renderHint(); }
   function renderHint() {
     const box = $('local-hint'), kinds = [...(hints.get(String(app.sessionList.sessions.current?.id)) ?? [])];
     box.hidden = !kinds.length;
@@ -98,9 +144,9 @@ export function createProvidersRegion(app) {
     $('local-hint-text').textContent = kinds.map((k) => HINTS[k]).join(' ') + ' BayLeaf Sealed (a larger model, encrypted to the enclave) may do better.';
   }
   $('local-hint-switch').onclick = async () => {
-    const to = (await store.getSetting('sealedModel')) ?? app.state.models[0]?.id;
+    const to = (await store.getSetting<string>('sealedModel')) ?? app.state.models[0]?.id;
     if (!to || !app.state.models.some((m) => m.id === to)) return app.state.status('No BayLeaf Sealed model is available right now.', 'bad');
-    $('model').value = to; await store.setSetting('model', to); pickerProvider(); app.queues.updateSend();
+    $<HTMLSelectElement>('model').value = to; await store.setSetting('model', to); pickerProvider(); app.queues.updateSend();
     clearHint(app.sessionList.sessions.current?.id);
     app.state.status(`Switched the picker to BayLeaf Sealed (${app.transcript.modelName(to)}) for your next message. Nothing was sent.`);
   };
@@ -125,28 +171,28 @@ export function createProvidersRegion(app) {
   }
   $('local-download').onclick = async () => { if (await ensureLocal()) renderLocalSettings(); };
   // Stop is the download's /task ctl, as `echo stop > /task/<id>/ctl` in the terminal.
-  $('local-stop').onclick = () => { const t = app.sessionList.modelService.downloads.get(LOCAL.id); if (t?.status === 'running') app.namespaces.ctl(`/task/${t.id}/ctl`, 'stop').catch((e) => app.state.status(e.message, 'bad')); };
+  $('local-stop').onclick = () => { const t = app.sessionList.modelService.downloads.get(LOCAL!.id); if (t?.status === 'running') app.namespaces.ctl(`/task/${t.id}/ctl`, 'stop').catch((e: Error) => app.state.status(e.message, 'bad')); };
   $('local-remove').onclick = async () => {
     if (localRuns.size) return app.state.status('Stop the Transformers.js turn before removing the model.', 'bad');
     if (!(await app.tree.ask('Remove the Transformers.js model from this browser? Sessions and files stay. Downloading it again takes about 1.1 GB.', 'Remove', 'danger'))) return;
     await localRemove(); // the same store code as `models remove` (src/models.ts)
-    if (localPicked()) { $('model').value = (await store.getSetting('sealedModel')) ?? app.state.models[0]?.id ?? ''; await store.setSetting('model', $('model').value); pickerProvider(); app.queues.updateSend(); }
+    if (localPicked()) { $<HTMLSelectElement>('model').value = (await store.getSetting('sealedModel')) ?? app.state.models[0]?.id ?? ''; await store.setSetting('model', $<HTMLSelectElement>('model').value); pickerProvider(); app.queues.updateSend(); }
     const est = await navigator.storage?.estimate?.().catch(() => null);
-    app.state.status(`Transformers.js model removed.${est ? ` This site now uses ${mib(est.usage)} of storage.` : ''}`);
+    app.state.status(`Transformers.js model removed.${est ? ` This site now uses ${mib(est.usage!)} of storage.` : ''}`);
     renderLocalSettings();
   };
   for (const id of ['local-folder', 'local-files']) {
     $(id + '-btn').onclick = () => $(id).click();
     $(id).onchange = async () => {
-      const files = $(id).files;
+      const files = $<HTMLInputElement>(id).files;
       if (!files?.length) return;
       app.state.status('Checking the picked files against this page\'s pins...');
       try {
         const r = await localImport(files);
-        $(id).value = '';
+        $<HTMLInputElement>(id).value = '';
         app.state.status(r.complete ? `Transformers.js model loaded from your files (${r.added} files verified${r.bad ? `, ${r.bad} refused` : ''}).`
           : `${r.added} files verified${r.bad ? `, refused (wrong bytes): ${r.refused.join(', ') || r.bad}` : ''}; ${mib(r.total - r.bytes)} still missing.`, r.bad ? 'bad' : '');
-      } catch (e) { app.state.status(e.message, 'bad'); }
+      } catch (e) { app.state.status((e as Error).message, 'bad'); }
       renderLocalSettings();
     };
   }
@@ -156,35 +202,35 @@ export function createProvidersRegion(app) {
   // this browser's IndexedDB like the BayLeaf key, shown masked, removable; Erase all
   // removes it), and the transport. Test connection checks reachability, CORS, the
   // key, the model list and the transport, without generating anything.
-  let lh = null; // { base, key, transport, detected, models: [{ id, contextWindow }], testedAt }
-  const lhRuns = new Set(); // sessions whose current turn runs on Localhost
-  const localhostPicked = () => isLocalhost($('model').value);
-  const offSealed = (id) => isLocal(id) || isLocalhost(id);
-  const offSealedPicked = () => offSealed($('model').value);
+  let lh: LocalhostSetup | null = null;
+  const lhRuns = new Set<string>(); // sessions whose current turn runs on Localhost
+  const localhostPicked = () => isLocalhost($<HTMLSelectElement>('model').value);
+  const offSealed = (id: string) => isLocal(id) || isLocalhost(id);
+  const offSealedPicked = () => offSealed($<HTMLSelectElement>('model').value);
   const lhModels = () => lh?.models ?? [];
   const lhAgentConfig = () => (lh?.base && lh.models?.length ? { base: lh.base, key: lh.key || '', transport: lh.transport, models: lh.models } : null);
-  function localhostOptions(saved) {
+  function localhostOptions(saved: string) {
     return lhModels().map((m) => {
       const o = new Option(`${m.id} (your machine)`, 'localhost:' + m.id, false, saved === 'localhost:' + m.id);
-      o.title = `Runs on your server at ${lh.base}. Pouch sends it this session's messages and the files the model reads.`;
+      o.title = `Runs on your server at ${lh!.base}. Pouch sends it this session's messages and the files the model reads.`;
       return o;
     });
   }
-  async function saveLocalhost(next) {
+  async function saveLocalhost(next: LocalhostSetup | null) {
     lh = next;
     await store.setSetting('localhost', lh ?? undefined);
     app.state.agent?.setLocalhost?.(lhAgentConfig());
     await app.connection.loadModels();
     renderLocalhostSettings();
   }
-  const mask = (k) => (k.length <= 8 ? '•'.repeat(k.length) : `${k.slice(0, 3)}${'•'.repeat(6)}${k.slice(-4)}`);
-  function renderLocalhostSettings(result) {
+  const mask = (k: string) => (k.length <= 8 ? '•'.repeat(k.length) : `${k.slice(0, 3)}${'•'.repeat(6)}${k.slice(-4)}`);
+  function renderLocalhostSettings(result?: LocalhostTest) {
     if (!$('lh-settings')) return;
-    if (document.activeElement !== $('lh-url')) $('lh-url').value = lh?.base ?? $('lh-url').value ?? '';
-    if (!$('lh-url').value) $('lh-url').placeholder = DEFAULT_URL;
-    $('lh-transport').value = lh?.transportChoice ?? 'auto';
-    $('lh-key').value = '';
-    $('lh-key').placeholder = lh?.key ? `saved: ${mask(lh.key)} (type to replace)` : 'only if your server asks for one';
+    if (document.activeElement !== $<HTMLInputElement>('lh-url')) $<HTMLInputElement>('lh-url').value = lh?.base ?? $<HTMLInputElement>('lh-url').value ?? '';
+    if (!$<HTMLInputElement>('lh-url').value) $<HTMLInputElement>('lh-url').placeholder = DEFAULT_URL;
+    $<HTMLSelectElement>('lh-transport').value = lh?.transportChoice ?? 'auto';
+    $<HTMLInputElement>('lh-key').value = '';
+    $<HTMLInputElement>('lh-key').placeholder = lh?.key ? `saved: ${mask(lh.key)} (type to replace)` : 'only if your server asks for one';
     $('lh-key-remove').hidden = !lh?.key;
     $('lh-forget').hidden = !lh;
     $('lh-key-state').textContent = lh?.key ? `Key saved in this browser (${mask(lh.key)}), never synced; it is sent only to ${lh.base}. Remove key or Erase all deletes it.` : 'Kept in this browser only, never synced or sent anywhere but your server. Erase all removes it.';
@@ -196,30 +242,30 @@ export function createProvidersRegion(app) {
       $('lh-steps').replaceChildren(el('li', { className: 'ok', textContent: `Set up: ${lh.models.length} model${lh.models.length === 1 ? '' : 's'} from ${lh.base}, ${TRANSPORTS[lh.transport]}. They are in the model picker under Localhost.` }));
     }
   }
-  function fixFor(r) {
+  function fixFor(r: { ok: boolean; kind?: string }) {
     if (r.kind === 'cors') return `To fix: allow the origin ${location.origin} on your server, restart it, then press Test connection again. Pouch cannot do this for you: your server decides who may call it.`;
     if (r.kind === 'lna') return 'To fix: allow this site to reach devices on your local network (Chrome asks once; the site settings let you change your answer), then test again.';
     if (r.kind === 'unreachable') return 'To fix: start your server and check the port. Pouch only tries the address above.';
     if (r.kind === 'auth') return 'To fix: copy the API key from your server\'s settings into the key field.';
     return '';
   }
-  $('lh-test').onclick = async () => {
-    const url = $('lh-url').value.trim() || DEFAULT_URL;
+  $<HTMLButtonElement>('lh-test').onclick = async () => {
+    const url = $<HTMLInputElement>('lh-url').value.trim() || DEFAULT_URL;
     const parsed = parseLocalhostUrl(url);
-    const typedKey = $('lh-key').value.trim();
+    const typedKey = $<HTMLInputElement>('lh-key').value.trim();
     const key = typedKey || (lh && parsed.ok && parsed.base === lh.base ? lh.key : '') || '';
-    const choice = $('lh-transport').value;
-    $('lh-test').disabled = true;
+    const choice = $<HTMLSelectElement>('lh-transport').value as LocalhostTransport | 'auto';
+    $<HTMLButtonElement>('lh-test').disabled = true;
     $('lh-steps').replaceChildren(el('li', { className: 'ok', textContent: 'Testing...' }));
     try {
-      const r = await testConnection({ url, key, transport: choice });
+      const r = await testConnection({ url, key, transport: choice }) as LocalhostOutcome;
       if (r.ok) {
         await saveLocalhost({ base: r.base, key, transport: r.transport, transportChoice: choice, detected: r.detected, models: r.models, testedAt: Date.now() });
         app.state.status(`Localhost is set up: ${r.models.length} model${r.models.length === 1 ? '' : 's'} in the picker under Localhost.`);
       }
       renderLocalhostSettings(r);
       if (!r.ok) app.state.status('Localhost test failed: ' + r.error, 'bad');
-    } finally { $('lh-test').disabled = false; }
+    } finally { $<HTMLButtonElement>('lh-test').disabled = false; }
   };
   $('lh-key-remove').onclick = async () => {
     if (!lh?.key) return;
@@ -232,13 +278,13 @@ export function createProvidersRegion(app) {
     if (!(await app.tree.ask('Remove Localhost from this browser: its address, key and model list? Sessions stay; picking a Localhost model again needs a new Test connection.', 'Remove', 'danger', 'Remove Localhost?'))) return;
     const was = localhostPicked();
     await saveLocalhost(null);
-    $('lh-steps').replaceChildren(); $('lh-url').value = '';
-    if (was) { $('model').value = (await store.getSetting('sealedModel')) ?? app.state.models[0]?.id ?? ''; await store.setSetting('model', $('model').value); pickerProvider(); app.queues.updateSend(); }
+    $('lh-steps').replaceChildren(); $<HTMLInputElement>('lh-url').value = '';
+    if (was) { $<HTMLSelectElement>('model').value = (await store.getSetting('sealedModel')) ?? app.state.models[0]?.id ?? ''; await store.setSetting('model', $<HTMLSelectElement>('model').value); pickerProvider(); app.queues.updateSend(); }
     app.state.status('Localhost removed from this browser.' + (was ? ' The picker is back on a BayLeaf Sealed model.' : ''));
   };
   // A long wait for the first token is usually the server loading the model.
   let lhWaitShown = false;
-  function localhostWait(kind, model) {
+  function localhostWait(kind: 'slow' | 'flowing', model: Model<Api>) {
     if (kind === 'slow') { lhWaitShown = true; app.state.status(`Waiting for your server: it may be loading ${model.id.slice('localhost:'.length)} (the first use after a while can take a minute).`); }
     else if (lhWaitShown) { lhWaitShown = false; app.state.status(''); }
   }

@@ -19,6 +19,12 @@ import { mediaCommands } from './media.ts';
 import { runTool } from './run.ts';
 import { WATCH_GLOSS } from './ns/watch.ts';
 import { FILE_CAP, rasterMime, prepareImageSized } from './attachments.ts';
+import type { Type as Typebox } from 'typebox';
+import type { BashOptions, CommandName, ExecOptions, IFileSystem } from 'just-bash';
+import type { LookOutput, ToolCallOptions } from './agent-types.ts';
+import type { PreparedImage } from './attachments.ts';
+import type { EgressNotice } from './trust.ts';
+import type { Caller, ChangeOp, CpOpts, EditSpec, Errorish, FsMethods, MkdirOpts, RmOpts, ShellHooks, SkillInfo, ToolFs, ToolsHooks, ToolsVfs, View } from './tools-types.ts';
 
 const MAX_LINES = 2000;
 const MAX_CHARS = 50_000;
@@ -28,15 +34,15 @@ export const CWD = '/work';
 // zlib stub and throw; leave them out so the shell says "command not found".
 // zip, unzip and tar come back as Pouch's own commands (archive.js).
 const MISSING = new Set(['tar', 'yq', 'xan', 'sqlite3', 'python', 'python3', 'js-exec', 'node', 'gzip', 'gunzip', 'zcat', 'curl']);
-export const COMMANDS = getCommandNames().filter((c) => !MISSING.has(c));
+export const COMMANDS = getCommandNames().filter((c) => !MISSING.has(c)) as CommandName[];
 
 const SHOWN_BUDGET = 10_000;
-export function clip(text) {
+export function clip(text: string) {
   if (text.length <= MAX_CHARS) return text;
   // `show` lines the cap would cut are kept, whole and inside it, so their cards
   // survive (shownLines, read by src/interface/transcript.ts); together at most SHOWN_BUDGET characters.
   const from = text.lastIndexOf('\n', MAX_CHARS - SHOWN_BUDGET) + 1;
-  const kept = [];
+  const kept: { at: number; end: number; text: string }[] = [];
   let size = 0;
   for (const m of text.slice(from).matchAll(/^shown: .*$/gm)) {
     const line = { at: from + m.index, end: from + m.index + m[0].length, text: m[0].slice(0, 1000) };
@@ -60,8 +66,8 @@ export function clip(text) {
 // them with the path the agent used and a next step.
 // writable: the places this caller may write (a subagent's namespace can make
 // /work read-only), named in the EROFS error so it picks one instead of looping.
-function explain(e, p, writable = [CWD, '/tmp']) {
-  const code = e.code ?? e.message.match(/^(E[A-Z]+)/)?.[1];
+function explain(e: unknown, p: string, writable = [CWD, '/tmp']): Error {
+  const code = (e as Errorish).code ?? (e as Errorish).message.match(/^(E[A-Z]+)/)?.[1];
   const dir = normalize(p + '/..');
   switch (code) {
     case 'ENOENT': return new Error(`${p} does not exist. List ${dir} with bash \`ls ${dir}\`, or search with \`find ${CWD} -name '<name>'\`.`);
@@ -69,7 +75,7 @@ function explain(e, p, writable = [CWD, '/tmp']) {
     case 'ENOTDIR': return new Error(`A part of ${p} is a file, not a folder.`);
     case 'EROFS': return new Error(`${p} is read-only for you. You can write under ${writable.join(', ')}; for example ${writable[0]}/${p.split('/').pop()}.`);
     case 'ENOTSUP': return new Error(`This browser cannot write ${p}. Write under ${CWD} instead.`);
-    default: return e;
+    default: return e as Error;
   }
 }
 
@@ -78,23 +84,23 @@ function explain(e, p, writable = [CWD, '/tmp']) {
 // retype it as a plain space. Folding Unicode spaces (NFKC, then any run of
 // whitespace) and case finds the real file; the hint spells it in ASCII, as
 // a $'...' word, so the next attempt cannot lose the character again.
-const fold = (s) => s.normalize('NFKC').replace(/\s+/g, ' ').toLowerCase();
-const dollarQuote = (s) => "$'" + s.replace(/[\\']/g, '\\$&').replace(/[^\x20-\x7e]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')) + "'";
-export async function nearMiss(fs, p) {
+const fold = (s: string) => s.normalize('NFKC').replace(/\s+/g, ' ').toLowerCase();
+const dollarQuote = (s: string) => "$'" + s.replace(/[\\']/g, '\\$&').replace(/[^\x20-\x7e]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')) + "'";
+export async function nearMiss(fs: Pick<IFileSystem, 'readdir'>, p: string) {
   const dir = normalize(p + '/..'), name = p.split('/').pop();
   if (!name) return null;
   const twins = (await fs.readdir(dir).catch(() => [])).filter((n) => n !== name && fold(n) === fold(name));
   if (!twins.length) return null;
-  const odd = (n) => [...new Set([...n].filter((c) => c > '\x7e'))].map((c) => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0'));
+  const odd = (n: string) => [...new Set([...n].filter((c) => c > '\x7e'))].map((c) => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0'));
   return `[hint: ${p} does not exist, but ${twins.map((n) => `${n} does (Unicode ${odd(n).join(', ') || 'case'}; type it as ${dollarQuote(normalize(dir + '/' + n))} or use a glob)`).join('; ')}]`;
 }
-async function explainNear(fs, e, p, writable) {
+async function explainNear(fs: Pick<IFileSystem, 'readdir'>, e: unknown, p: string, writable?: string[]) {
   const out = explain(e, p, writable);
-  const hint = out !== e && /ENOENT/.test(e.code ?? e.message) ? await nearMiss(fs, p) : null;
+  const hint = out !== e && /ENOENT/.test((e as Errorish).code ?? (e as Errorish).message) ? await nearMiss(fs, p) : null;
   return hint ? new Error(out.message + ' ' + hint) : out;
 }
 
-const lineOf = (text, index) => text.slice(0, index).split('\n').length;
+const lineOf = (text: string, index: number) => text.slice(0, index).split('\n').length;
 
 // Native XML tool calls wrap each value in newlines, and small models get the
 // trailing newline wrong: an append drops a file's last newline, or oldText
@@ -102,7 +108,7 @@ const lineOf = (text, index) => text.slice(0, index).split('\n').length;
 // every lane and disclosed in the tool descriptions: newText ends with a line
 // break exactly when oldText does (the same \n or \r\n). An empty newText (a
 // deletion) is left alone. Returns the edit and whether it changed.
-export function matchNewline(e) {
+export function matchNewline(e: EditSpec): [EditSpec, boolean] {
   if (typeof e.oldText !== 'string' || typeof e.newText !== 'string' || e.newText === '') return [e, false];
   const end = e.oldText.match(/\r?\n$/)?.[0] ?? '';
   const has = /\n$/.test(e.newText);
@@ -110,7 +116,7 @@ export function matchNewline(e) {
   return [{ ...e, newText: end ? e.newText + end : e.newText.replace(/(\r?\n)+$/, '') }, true];
 }
 // A written text file ends with exactly one line break (the file's own \n or \r\n).
-export function oneFinalNewline(content) {
+export function oneFinalNewline(content: string): [string, boolean] {
   if (typeof content !== 'string' || content === '' || content.includes('\0')) return [content, false];
   const nl = /\r\n/.test(content) ? '\r\n' : '\n';
   const fixed = content.replace(/(\r?\n)*$/, '') + nl;
@@ -127,10 +133,10 @@ export function oneFinalNewline(content) {
 // win (seen in t17: a rename lost its import change). Edits and writes of
 // the same path therefore take turns, page-wide: the agents' tools, `run`
 // write-backs and the terminal (src/terminal.ts) share this one queue.
-const turns = new Map(); // path -> tail of its queue
+const turns = new Map<string, Promise<unknown>>(); // path -> tail of its queue
 // Keys are NFC, so the two spellings of "café" (which name one file, see
 // spell in src/ns/namespace.ts) share a queue.
-export const oneAtATime = (p, fn) => {
+export const oneAtATime = <T>(p: string, fn: () => T | Promise<T>): Promise<T> => {
   p = String(p).normalize('NFC');
   const run = (turns.get(p) ?? Promise.resolve()).then(fn, fn);
   const tail = run.catch(() => {});
@@ -139,23 +145,23 @@ export const oneAtATime = (p, fn) => {
   return run;
 };
 // A filesystem whose writes take their path's turn (a move or copy waits on its target).
-export function serialized(fs) {
-  return new Proxy(fs, {
+export function serialized<F extends object>(fs: F): F {
+  return new Proxy(fs as FsMethods, {
     get(target, prop) {
-      if (prop === 'writeFile' || prop === 'appendFile' || prop === 'rm') return (p, ...a) => oneAtATime(normalize(p), () => target[prop](p, ...a));
-      if (prop === 'mv' || prop === 'cp') return (s, d, ...a) => oneAtATime(normalize(d), () => target[prop](s, d, ...a));
+      if (prop === 'writeFile' || prop === 'appendFile' || prop === 'rm') return (p: string, ...a: unknown[]) => oneAtATime(normalize(p), () => target[prop](p, ...a));
+      if (prop === 'mv' || prop === 'cp') return (s: string, d: string, ...a: unknown[]) => oneAtATime(normalize(d), () => target[prop](s, d, ...a));
       const v = target[prop];
       return typeof v === 'function' ? v.bind(target) : v;
     },
-  });
+  }) as F;
 }
 // A filesystem that reports each successful change to onChange(op, path)
 // ('created' | 'modified' | 'deleted'), for /session/<sid>/changes. One stat
 // before a write tells created from modified; paths only, never content.
 // The paths under a directory, depth first, at most MOVED_MAX ([] for a file).
 const MOVED_MAX = 1000;
-async function under(fs, dir, out = []) {
-  let items;
+async function under(fs: ToolFs, dir: string, out: string[] = []) {
+  let items: string[];
   try { if (!(await fs.stat(dir)).isDirectory) return out; items = await fs.readdir(dir); } catch { return out; }
   for (const name of items) {
     if (out.length >= MOVED_MAX) break;
@@ -164,28 +170,28 @@ async function under(fs, dir, out = []) {
   }
   return out;
 }
-export function noting(fs, onChange) {
-  const was = (p) => fs.stat(p).then(() => true, () => false);
-  const write = (prop) => async (p, ...a) => { const had = await was(p); const r = await fs[prop](p, ...a); onChange(had ? 'modified' : 'created', normalize(p)); return r; };
+export function noting<F extends ToolFs>(fs: F, onChange: (op: ChangeOp, path: string) => void): F {
+  const was = (p: string) => fs.stat(p).then(() => true, () => false);
+  const write = (prop: 'writeFile' | 'appendFile') => async (p: string, ...a: unknown[]) => { const had = await was(p); const r = await (fs as unknown as FsMethods)[prop](p, ...a); onChange(had ? 'modified' : 'created', normalize(p)); return r; };
   return new Proxy(fs, {
     get(target, prop) {
       if (prop === 'writeFile' || prop === 'appendFile') return write(prop);
       // rm -f of a path that was never there changes nothing.
       // A folder's contents count as deleted too, so recreating them reads as modified.
-      if (prop === 'rm') return async (p, ...a) => {
+      if (prop === 'rm') return async (p: string, ...a: [RmOpts?]) => {
         const had = await was(p), inside = had ? await under(target, normalize(p)) : [];
         const r = await target.rm(p, ...a);
         if (had) { for (const q of inside.reverse()) onChange('deleted', q); onChange('deleted', normalize(p)); } // deepest first
         return r;
       };
-      if (prop === 'mkdir') return async (p, ...a) => { const had = await was(p); const r = await target.mkdir(p, ...a); if (!had) onChange('created', normalize(p)); return r; };
-      if (prop === 'cp') return async (s, d, ...a) => {
+      if (prop === 'mkdir') return async (p: string, ...a: [MkdirOpts?]) => { const had = await was(p); const r = await target.mkdir(p, ...a); if (!had) onChange('created', normalize(p)); return r; };
+      if (prop === 'cp') return async (s: string, d: string, ...a: [CpOpts?]) => {
         const had = await was(d); const r = await target.cp(s, d, ...a);
         onChange(had ? 'modified' : 'created', normalize(d));
         if (!had) for (const p of await under(target, normalize(d))) onChange('created', p); // cp -r to a new path
         return r;
       };
-      if (prop === 'mv') return async (s, d, ...a) => {
+      if (prop === 'mv') return async (s: string, d: string, ...a: []) => {
         const had = await was(d); const r = await target.mv(s, d, ...a);
         onChange('deleted', normalize(s)); onChange(had ? 'modified' : 'created', normalize(d));
         // A folder moved or copied to a new path: everything under it is new there
@@ -193,7 +199,7 @@ export function noting(fs, onChange) {
         if (!had) for (const p of await under(target, normalize(d))) onChange('created', p);
         return r;
       };
-      const v = target[prop];
+      const v = (target as unknown as FsMethods)[prop];
       return typeof v === 'function' ? v.bind(target) : v;
     },
   });
@@ -210,30 +216,30 @@ export function noting(fs, onChange) {
 // failure and every top-level command that did not run, so a small model
 // reruns them instead of reporting work that never happened. Upstream draft
 // in the PR that added this; drop both once just-bash reports the write.
-const WRITES = new Set(['writeFile', 'appendFile']);
-export function tagWrites(fs) {
-  return new Proxy(fs, {
+const WRITES = new Set<PropertyKey>(['writeFile', 'appendFile']);
+export function tagWrites<F extends object>(fs: F): F {
+  return new Proxy(fs as FsMethods, {
     get(target, prop) {
       const v = target[prop];
-      if (WRITES.has(prop)) return (p, ...a) => v.call(target, p, ...a).catch((e) => { if (e && typeof e === 'object') e.pouchWrite ??= normalize(p); throw e; });
+      if (WRITES.has(prop)) return (p: string, ...a: unknown[]) => v.call(target, p, ...a).catch((e) => { if (e && typeof e === 'object') e.pouchWrite ??= normalize(p); throw e; });
       return typeof v === 'function' ? v.bind(target) : v;
     },
-  });
+  }) as F;
 }
-const reason = (e) => String(e?.message ?? e).replace(/, (write|open) '[^']*'$/, '');
-export async function execScript(bash, script, opts = {}) {
+const reason = (e: unknown) => String((e as Errorish)?.message ?? e).replace(/, (write|open) '[^']*'$/, '');
+export async function execScript(bash: Bash, script: string, opts: ExecOptions = {}) {
   try { return await bash.exec(script, opts); }
   catch (e) {
-    if (!e?.pouchWrite || opts.signal?.aborted) throw e;
-    return { stdout: '', stderr: stoppedAt(script, e.pouchWrite, reason(e), opts.cwd ?? CWD), exitCode: 1 };
+    if (!(e as Errorish)?.pouchWrite || opts.signal?.aborted) throw e;
+    return { stdout: '', stderr: stoppedAt(script, (e as Errorish).pouchWrite!, reason(e), opts.cwd ?? CWD), exitCode: 1 };
   }
 }
 // A script's commands, split at unquoted ";" and line breaks (a loop body
 // splits too; this only counts and quotes what did not run). The browser
 // build of just-bash exports no parser.
-export function commandsOf(script) {
-  const out = [];
-  let cur = '', q = null;
+export function commandsOf(script: string) {
+  const out: string[] = [];
+  let cur = '', q: string | null = null;
   for (let i = 0; i < script.length; i++) {
     const ch = script[i];
     if (q) { cur += ch; if (ch === '\\' && q !== "'") cur += script[++i] ?? ''; else if (ch === q) q = null; continue; }
@@ -251,12 +257,12 @@ export function commandsOf(script) {
 // tee, named as a whole word; when that is not exactly one, or the path is
 // only read, the note counts nothing rather than guess (a rerun could repeat
 // a command that did run).
-const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-export function stoppedAt(script, path, why, cwd = CWD) {
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export function stoppedAt(script: string, path: string, why: string, cwd = CWD) {
   const cmds = commandsOf(script);
   const rel = path.startsWith(cwd + '/') ? path.slice(cwd.length + 1) : null;
   const tail = path.split('/').slice(-2).join('/');
-  const name = [path, rel].filter(Boolean).map(esc).join('|');
+  const name = ([path, rel].filter(Boolean) as string[]).map(esc).join('|');
   const end = `(?=$|[\\s'"<>;|&)])`;
   // The tail alone only matches a target built from a variable ($dir/a9/ctl), so a
   // literal write to another path ending the same way is not taken for it.
@@ -276,9 +282,9 @@ export function stoppedAt(script, path, why, cwd = CWD) {
 // `bayleaf` CLI the agents get, over whatever fs the caller passes, plus
 // `open` (src/open-cli.ts; hooks.openFile shows a file in the editor pane,
 // hooks.revealDir a folder in Files).
-export function shellFor(fs, hooks = {}) {
+export function shellFor(fs: IFileSystem | ToolFs, hooks: ShellHooks = {}) {
   return new Bash({
-    fs: tagWrites(fs), cwd: CWD,
+    fs: tagWrites(fs) as IFileSystem, cwd: CWD, // as in bashFor
     env: { HOME: CWD, USER: 'user', PATH: '/usr/bin:/bin' },
     commands: COMMANDS,
     customCommands: [...archiveCommands(defineCommand), ...bayleafCommands(defineCommand, hooks), ...modelsCommands(defineCommand, hooks.models, { by: 'user', via: 'terminal' }), ...pdfCommands(defineCommand, hooks.pdf, { name: 'terminal' }), ...mediaCommands(defineCommand, hooks.media, { name: 'terminal' }), ...openCommands(defineCommand, { openFile: hooks.openFile, revealDir: hooks.revealDir })],
@@ -288,9 +294,9 @@ export function shellFor(fs, hooks = {}) {
 
 export const LOOK_MAX = 8; // paths per look call
 export const LOOK_REFUSAL = 'This model cannot see images; ask the person to switch to a model marked images.';
-const absPath = (p) => normalize(String(p).startsWith('/') ? String(p) : CWD + '/' + p);
+const absPath = (p: unknown) => normalize(String(p).startsWith('/') ? String(p) : CWD + '/' + p);
 // Skips an XML declaration and comments by hand: one regex for it backtracks (CodeQL).
-function isSvg(p, bytes) {
+function isSvg(p: string, bytes: Uint8Array) {
   if (/\.svgz?$/i.test(p)) return true;
   let t = new TextDecoder().decode(bytes.subarray(0, 512)).trimStart().replace(/^<\?xml[^>]*>/i, '').trimStart();
   while (t.startsWith('<!--')) { const end = t.indexOf('-->'); if (end < 0) return false; t = t.slice(end + 3).trimStart(); }
@@ -300,14 +306,14 @@ function isSvg(p, bytes) {
 // a raster image is refused on its line; if none could be sent the call fails.
 // Returns { text, images } (agent.js toTool turns it into text and image blocks).
 // signal: Stop skips the paths not yet read or prepared.
-export async function lookAt(paths, fs, prepare, signal) {
+export async function lookAt(paths: unknown, fs: Pick<IFileSystem, 'stat' | 'readFileBuffer'>, prepare: (bytes: Uint8Array) => Promise<PreparedImage>, signal?: AbortSignal): Promise<LookOutput> {
   if (!Array.isArray(paths) || !paths.length) throw new Error('Give look at least one image path in `paths`.');
   if (paths.length > LOOK_MAX) throw new Error(`look takes at most ${LOOK_MAX} paths per call (got ${paths.length}); split them into several calls.`);
-  const lines = [], images = [];
+  const lines: string[] = [], images: PreparedImage['image'][] = [];
   for (const p of [...new Set(paths.map(absPath))]) {
     signal?.throwIfAborted();
-    const tooBig = (n) => `${p}: not sent. It is ${n.toLocaleString('en-US')} bytes; look reads files up to 20 MB.`;
-    let bytes;
+    const tooBig = (n: number) => `${p}: not sent. It is ${n.toLocaleString('en-US')} bytes; look reads files up to 20 MB.`;
+    let bytes: Uint8Array;
     try {
       const size = (await fs.stat(p)).size; // a mounted folder's file can be huge: refuse before reading it
       signal?.throwIfAborted();
@@ -328,14 +334,14 @@ export async function lookAt(paths, fs, prepare, signal) {
       const kind = mime.slice(6).toUpperCase();
       const sent = r.sentWidth === r.width && r.sentHeight === r.height ? `sent at full size as ${r.image.mimeType.slice(6).toUpperCase()}` : `sent scaled to ${r.sentWidth}x${r.sentHeight} ${r.image.mimeType.slice(6).toUpperCase()}`;
       lines.push(`${p}: image ${images.length}, ${kind} ${r.width}x${r.height}, ${sent}, ${r.bytes.toLocaleString('en-US')} bytes`);
-    } catch (e) { if (signal?.aborted) throw e; lines.push(`${p}: not sent. ${e.message}`); }
+    } catch (e) { if (signal?.aborted) throw e; lines.push(`${p}: not sent. ${(e as Error).message}`); }
   }
   if (!images.length) throw new Error(lines.join('\n'));
   lines.push(`[${images.length} image${images.length > 1 ? 's' : ''} attached in this order; they count toward this conversation's context]`);
   return { text: lines.join('\n'), images };
 }
 
-export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
+export function createTools(vfs: ToolsVfs, Type: typeof Typebox, bashOptions: Partial<BashOptions> = {}, hooks: ToolsHooks = {}) {
   const abs = absPath;
   // A subagent works in its own namespace (hooks.namespaceFor(caller) gives
   // its mounts), reached over a 9P connection like any task across a
@@ -345,8 +351,8 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
   // agent's tools as 'agent', its run calls as 'run', a subagent's as itself.
   // A subagent reaches its namespace over 9P; `run` needs the namespace
   // itself (it builds the run's narrower one from it), so nsFor hands that out.
-  const views = new Map(); // caller -> { key, fs, ns, close }
-  function viewOf(caller) {
+  const views = new Map<Caller, View>(); // caller -> { key, fs, ns, close }
+  function viewOf(caller: Caller): View | null {
     const specs = hooks.namespaceFor?.(caller);
     if (!specs) return null;
     const key = specs.join(',');
@@ -361,9 +367,9 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
     const remote = new NinepFs(client);
     // Calls wait for the 9P handshake; resolvePath and getAllPaths stay synchronous.
     const fs = new Proxy(remote, { get(t, k) {
-      const v = t[k];
+      const v = (t as unknown as FsMethods)[k];
       if (typeof v !== 'function' || k === 'resolvePath' || k === 'getAllPaths') return typeof v === 'function' ? v.bind(t) : v;
-      return async (...a) => { await ready; return v.apply(t, a); };
+      return async (...a: unknown[]) => { await ready; return v.apply(t, a); };
     } });
     const view = { key, fs, ns, close: () => { client.close(); server.close(); } };
     views.set(caller, view);
@@ -371,7 +377,7 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
   }
   // The main agent's own namespace adds its session's control files
   // (hooks.mainView, src/ns/control.ts); `run` never gets them (nsFor).
-  function viewFor(caller, source = 'agent') {
+  function viewFor(caller: Caller, source = 'agent'): ToolFs {
     const base = vfs.as ? vfs.as(source) : vfs.fs;
     return viewOf(caller)?.fs ?? (caller != null && hooks.mainView ? hooks.mainView(caller, base) : base);
   }
@@ -379,47 +385,47 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
   // /session/<sid>/changes. Watch attribution (vfs.as) names the kind of
   // writer but not its session, and sees only watched paths, so the tools
   // report here, where the caller is known.
-  const noted = (caller, fs) => (hooks.onChange && caller != null ? noting(fs, (op, p) => hooks.onChange(caller, op, p)) : fs);
-  const nsFor = (caller, source) => noted(caller, viewOf(caller)?.ns ?? (vfs.as ? vfs.as(source) : vfs.fs));
-  const writableFor = (caller) => {
+  const noted = <F extends ToolFs>(caller: Caller, fs: F) => (hooks.onChange && caller != null ? noting(fs, (op, p) => hooks.onChange!(caller, op, p)) : fs);
+  const nsFor = (caller: Caller, source: string) => noted(caller, viewOf(caller)?.ns ?? (vfs.as ? vfs.as(source) : vfs.fs));
+  const writableFor = (caller: Caller) => {
     const specs = hooks.namespaceFor?.(caller);
     if (!specs) return [CWD, '/tmp'];
     const rw = specs.filter((x) => !/:ro$/.test(x)).map((x) => x.replace(/:rw$/, '')).filter((x) => !x.startsWith('/pouch'));
     return [...rw, '/tmp'];
   };
-  const fsFor = (caller, source) => noted(caller, viewFor(caller, source));
+  const fsFor = (caller: Caller, source?: string) => noted(caller, viewFor(caller, source));
   const fs = fsFor(undefined);
   // One interpreter per call, bound to its caller and its own list of what it
   // sent (the main agent and subagents run bash concurrently); the filesystem
   // underneath is shared and persistent.
   // misses collects the absolute paths lookups did not find (at most 8), for
   // the near-match hint after a "No such file or directory".
-  function bashFor(caller, sent, misses = new Set()) {
+  function bashFor(caller: Caller, sent: EgressNotice[], misses = new Set<string>()) {
     const cli = bayleafCommands(defineCommand, {
       bayleafCredential: () => hooks.bayleafCredential?.() ?? null,
-      approveEgress: hooks.approveEgress && ((req) => hooks.approveEgress(req, caller)),
+      approveEgress: hooks.approveEgress && ((req) => hooks.approveEgress!(req, caller)),
       onEgress: (e) => { sent.push(e); hooks.onEgress?.(e, caller); },
     });
     const looks = ['stat', 'lstat', 'readFile', 'readFileBuffer', 'readdir', 'readdirWithFileTypes'];
     const watched = new Proxy(fsFor(caller), { get(t, k) {
-      const v = t[k];
-      if (typeof v !== 'function' || !looks.includes(k)) return typeof v === 'function' ? v.bind(t) : v;
-      return async (p, ...a) => {
+      const v = (t as unknown as FsMethods)[k];
+      if (typeof v !== 'function' || !looks.includes(k as string)) return typeof v === 'function' ? v.bind(t) : v;
+      return async (p: string, ...a: unknown[]) => {
         try { return await v.call(t, p, ...a); } catch (e) {
-          if (/ENOENT/.test(e?.code ?? e?.message) && misses.size < 8) misses.add(normalize(p));
+          if (/ENOENT/.test((e as Errorish)?.code ?? (e as Errorish)?.message) && misses.size < 8) misses.add(normalize(p));
           throw e;
         }
       };
     } });
     return new Bash({
-      fs: tagWrites(watched), cwd: CWD,
+      fs: tagWrites(watched) as unknown as IFileSystem, cwd: CWD, // a BaseFs serves as one, but its writeFile resolves a receipt (unknown) where just-bash's says void
       env: { HOME: CWD, USER: 'pouch', PATH: '/usr/bin:/bin' },
       commands: COMMANDS,
       // `models` (src/models-cli.ts): hooks.models is the shared service; whoOf names the asker.
       // `open` refuses for agents and points to `show`; hooks.show(req, caller)
       // opens or offers it (src/open-cli.ts, src/interface/editing.ts show).
       customCommands: [...archiveCommands(defineCommand), ...cli, ...modelsCommands(defineCommand, hooks.models, () => hooks.modelsWho?.(caller) ?? { by: 'agent', caller }), ...agentOpenCommands(defineCommand),
-        ...agentShowCommands(defineCommand, { show: hooks.show && ((req) => hooks.show(req, caller)) }),
+        ...agentShowCommands(defineCommand, { show: hooks.show && ((req) => hooks.show!(req, caller)) }),
         // pdfinfo, pdftotext, pdftoppm (src/pdf.ts): hooks.pdf is the shared engine; jobs are labelled with the caller.
         ...pdfCommands(defineCommand, hooks.pdf, () => hooks.modelsWho?.(caller) ?? { name: 'agent' }),
         // ffprobe, ffmpeg (src/media.ts): hooks.media is the shared libav engine.
@@ -437,7 +443,7 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
       offset: Type.Optional(Type.Integer({ minimum: 1, description: 'First line to return, 1-based' })),
       limit: Type.Optional(Type.Integer({ minimum: 1, description: 'Maximum lines to return' })),
     }),
-    async execute({ path, offset = 1, limit = MAX_LINES }) {
+    async execute({ path, offset = 1, limit = MAX_LINES }: { path: string; offset?: number; limit?: number }) {
       const p = abs(path);
       const bytes = await fs.readFileBuffer(p).catch(async (e) => { throw await explainNear(fs, e, p); });
       if (bytes.subarray(0, 8000).includes(0)) return `${p} is a binary file (${bytes.length} bytes); it cannot be shown as text. Use bash \`file ${p}\` or \`od -c ${p} | head\`.`;
@@ -454,9 +460,9 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
     name: 'write', label: 'Write',
     description: 'Create or overwrite a file with the given content. Parent folders are created as needed. A non-empty file is saved ending with exactly one newline.',
     parameters: Type.Object({ path: Type.String(), content: Type.String() }),
-    execute({ path, content }, opts = {}) { return oneAtATime(abs(path), () => writeOne({ path, content }, opts)); },
+    execute({ path, content }: { path: string; content: string }, opts: Partial<ToolCallOptions> = {}) { return oneAtATime(abs(path), () => writeOne({ path, content }, opts)); },
   };
-  async function writeOne({ path, content }, { caller } = {}) {
+  async function writeOne({ path, content }: { path: string; content: string }, { caller }: Partial<ToolCallOptions> = {}) {
       const p = abs(path), fs = fsFor(caller);
       const [text, fixed] = oneFinalNewline(content);
       try {
@@ -482,14 +488,15 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
         oldText: Type.String(), newText: Type.String(), replaceAll: Type.Optional(Type.Boolean()),
       }), { description: 'Several replacements, applied in order' })),
     }),
-    execute(args, opts = {}) { return oneAtATime(abs(args.path), () => editOne(args, opts)); },
+    execute(args: EditArgs, opts: Partial<ToolCallOptions> = {}) { return oneAtATime(abs(args.path), () => editOne(args, opts)); },
   };
-  async function editOne({ path, oldText, newText, replaceAll = false, edits }, { caller } = {}) {
+  interface EditArgs extends EditSpec { path: string; edits?: EditSpec[] }
+  async function editOne({ path, oldText, newText, replaceAll = false, edits }: EditArgs, { caller }: Partial<ToolCallOptions> = {}) {
       const p = abs(path), fs = fsFor(caller);
       let matched = 0;
-      const list = (edits?.length ? edits : [{ oldText, newText, replaceAll }]).map((e) => { const [x, c] = matchNewline(e); matched += c; return x; });
+      const list = (edits?.length ? edits : [{ oldText, newText, replaceAll }]).map((e) => { const [x, c] = matchNewline(e); matched += c as unknown as number; return x; }); // true counts 1
       let text = await fs.readFile(p).catch(async (e) => { throw await explainNear(fs, e, p); });
-      const starts = [];
+      const starts: [number, number][] = [];
       for (const [n, e] of list.entries()) {
         const which = list.length > 1 ? ` (edit ${n + 1} of ${list.length}; nothing was written)` : '';
         if (!e.oldText) throw new Error(`oldText is empty${which}; use write to create a file`);
@@ -504,7 +511,7 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
           throw new Error(`oldText matches ${count} times in ${p} (lines ${at.join(', ')})${which}; include neighboring lines to make it unique, or set replaceAll.`);
         }
         starts.push([lineOf(text, text.indexOf(e.oldText)), e.newText.split('\n').length]);
-        text = e.replaceAll ? text.split(e.oldText).join(e.newText) : text.replace(e.oldText, () => e.newText);
+        text = e.replaceAll ? text.split(e.oldText).join(e.newText) : text.replace(e.oldText, () => e.newText!);
       }
       try { await fs.writeFile(p, text); } catch (e) { throw explain(e, p, writableFor(caller)); }
       vfs.changed();
@@ -525,8 +532,8 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
       `There is no network, no python, node, git or package manager, and no real processes (for real parsing or computation use the run tool). Each call starts fresh in ${CWD}; use \`cd dir && ...\` within one call. \`ls /bin\` lists every command. ` +
       '`bayleaf --help` for BayLeaf web search/fetch, sandbox VM and inboxes (these leave the pouch and ask the user).',
     parameters: Type.Object({ command: Type.String({ description: 'Bash script to run' }) }),
-    async execute({ command }, { signal, caller } = {}) {
-      const sent = [], misses = new Set();
+    async execute({ command }: { command: string }, { signal, caller }: Partial<ToolCallOptions> = {}) {
+      const sent: EgressNotice[] = [], misses = new Set<string>();
       const r = await execScript(bashFor(caller, sent, misses), command, { cwd: CWD, signal });
       vfs.changed();
       // Marker the model and the UI both see: this call sent data outside the pouch.
@@ -562,7 +569,7 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
       paths: Type.Array(Type.String(), { minItems: 1, maxItems: LOOK_MAX, description: `Image files, absolute or relative to ${CWD} (at most ${LOOK_MAX})` }),
       note: Type.Optional(Type.String({ description: 'What you are looking for (shown to the user)' })),
     }),
-    async execute({ paths }, { caller, seesImages, signal } = {}) {
+    async execute({ paths }: { paths: string[] }, { caller, seesImages, signal }: Partial<ToolCallOptions> = {}) {
       if (seesImages === false) throw new Error(LOOK_REFUSAL);
       return lookAt(paths, fsFor(caller), prepare, signal);
     },
@@ -570,7 +577,7 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
 
   const run = runTool({ vfs, Type, CWD, abs, fsFor: (caller) => nsFor(caller, 'run'), sidOf: (caller) => hooks.sessionOf?.(caller) ?? null, oneAtATime, ...(hooks.makeWorker ? { makeWorker: hooks.makeWorker } : {}) });
   // closeView(caller): drop a finished subagent's 9P connection.
-  return Object.assign([read, write, edit, bashTool, run, look], { closeView: (caller) => { views.get(caller)?.close(); views.delete(caller); } });
+  return Object.assign([read, write, edit, bashTool, run, look], { closeView: (caller: Caller) => { views.get(caller)?.close(); views.delete(caller); } });
 }
 
 // ── Context: AGENTS.md files and skills ─────────────────────────────
@@ -582,9 +589,9 @@ export function createTools(vfs, Type, bashOptions = {}, hooks = {}) {
 const AGENTS_FILES = ['/pouch/AGENTS.md', '/work/AGENTS.md'];
 const SKILL_ROOTS = ['/pouch/skills', '/work/.agents/skills'];
 
-function frontmatter(text) {
+function frontmatter(text: string) {
   const m = text.replace(/\r\n?/g, '\n').match(/^---\n([\s\S]*?)\n---/);
-  const out = {};
+  const out: { name?: string; description?: string; requests?: string; listed?: boolean; [key: string]: string | boolean | undefined } = {};
   for (const line of m?.[1].split('\n') ?? []) {
     const kv = line.match(/^(\w[\w-]*):\s*(.*)$/);
     if (kv) out[kv[1]] = kv[2].replace(/^["']|["']$/g, '');
@@ -594,14 +601,14 @@ function frontmatter(text) {
   return out;
 }
 
-export async function loadContext(vfs) {
-  const agents = [];
+export async function loadContext(vfs: Pick<ToolsVfs, 'fs'>) {
+  const agents: { path: string; text: string }[] = [];
   for (const p of AGENTS_FILES) {
     try { agents.push({ path: p, text: await vfs.fs.readFile(p) }); } catch {}
   }
-  const skills = [];
+  const skills: SkillInfo[] = [];
   for (const root of SKILL_ROOTS) {
-    let names = [];
+    let names: string[] = [];
     try { names = await vfs.fs.readdir(root); } catch { continue; }
     for (const name of names) {
       const path = `${root}/${name}/SKILL.md`;
@@ -617,13 +624,13 @@ export async function loadContext(vfs) {
 // What a subagent sees unless its spawn says otherwise: the workspace,
 // instructions and skills read-only, the folders the user mounted (as
 // mounted), and a private /tmp. Not /task: it cannot stop its siblings.
-export function defaultSubagentNs(vfs) {
+export function defaultSubagentNs(vfs: Pick<ToolsVfs, 'mounts'>) {
   return ['/work', '/pouch:ro', ...[...vfs.mounts].filter(([, m]) => m.live).map(([n, m]) => `/mnt/${n}${m.readOnly ? ':ro' : ''}`)];
 }
 // Mount lines for a list of specs, as /task/<id>/ns and the trust panel show them.
-export function describeSpecs(vfs, specs) { return subset(vfs.fs, specs, { scratch: new InMemoryFs() }).describe(); }
+export function describeSpecs(vfs: Pick<ToolsVfs, 'fs'>, specs: string[]) { return subset(vfs.fs, specs, { scratch: new InMemoryFs() }).describe(); }
 
-export async function systemPrompt(vfs) {
+export async function systemPrompt(vfs: Pick<ToolsVfs, 'fs' | 'mounts' | 'seedLayer'>) {
   const { agents, skills } = await loadContext(vfs);
   const mounts = [...vfs.mounts].filter(([, m]) => m.live)
     .map(([n, m]) => `/mnt/${n}${m.readOnly ? ' (read-only)' : ''}`);

@@ -19,15 +19,15 @@ async function test(name, fn) { await fn(); passed++; console.log('ok', name); }
 // op: the file write that performs it ({sid} 1, {ref} a2, {task} a /task id,
 // {watch} w1). agent: what the main agent may do with the same file
 // ('ok', or the error code it gets by design). anchor: where its handler is
-// in the UI shell, src/main.ts and src/interface/*.js (the handler is the next
+// in the UI shell, src/main.ts and src/interface/*.ts (the handler is the next
 // `lines` lines, or a helper it calls).
 // via: helpers the handler calls, each of which must itself write a control file.
 export const CONTROLS = [
   { id: 'card-stop', what: 'Subagent card: Stop', op: ['/session/{sid}/agents/{ref}/ctl', 'stop'], expect: ['stop', '1', 'a2', { all: false }], agent: 'ok', anchor: 'ariaLabel: `Stop subagent ${name}` });', lines: 2 },
   { id: 'view-stop', what: 'Subagent view: Stop', op: ['/session/{sid}/agents/{ref}/ctl', 'stop'], expect: ['stop', '1', 'a2', { all: false }], agent: 'ok', anchor: 'ariaLabel: `Stop subagent ${c.name}` });', lines: 2 },
-  { id: 'card-message', what: 'Subagent card: Message (sheet Send)', op: ['/session/{sid}/agents/{ref}/in', 'message\nlook at b.txt'], expect: ['send', '1', 'a2', 'message', 'look at b.txt'], agent: 'EPERM', anchor: 'function messageChild(c) {', lines: 8 },
+  { id: 'card-message', what: 'Subagent card: Message (sheet Send)', op: ['/session/{sid}/agents/{ref}/in', 'message\nlook at b.txt'], expect: ['send', '1', 'a2', 'message', 'look at b.txt'], agent: 'EPERM', anchor: 'function messageChild(c: SubagentRow) {', lines: 8 },
   { id: 'card-resume', what: 'Subagent card: Resume', op: ['/session/{sid}/agents/{ref}/in', 'message Continue your task'], expect: ['send', '1', 'a2', 'message', 'Continue your task'], agent: 'EPERM', anchor: 'ariaLabel: `Resume subagent ${name}` });', lines: 2 },
-  { id: 'tray-sa-stop', what: 'Tray subagent row: Stop', op: ['/session/{sid}/agents/{ref}/ctl', 'stop'], expect: ['stop', '1', 'a2', { all: false }], agent: 'ok', anchor: 'open: (e) => app.subagents.openChild(sid, c.id, e?.currentTarget),', lines: 1 },
+  { id: 'tray-sa-stop', what: 'Tray subagent row: Stop', op: ['/session/{sid}/agents/{ref}/ctl', 'stop'], expect: ['stop', '1', 'a2', { all: false }], agent: 'ok', anchor: 'open: (e?: Event) => app.subagents.openChild(sid!, c.id, e?.currentTarget as HTMLElement | undefined)', lines: 1 },
   { id: 'tray-background', what: 'Tray subagent row: Background', op: ['/session/{sid}/agents/{ref}/ctl', 'detach'], expect: ['detach', '1', 'a2'], agent: 'ok', anchor: '...(waited ? { background:', lines: 1 },
   { id: 'tray-run-stop', what: 'Tray run row: Stop', op: ['/task/{task}/ctl', 'kill'], expect: ['kill'], agent: 'ok', anchor: "origin: task ? `run, /task/${task.id}` : 'run'", lines: 1 },
   { id: 'stop-all', what: 'Tray: Stop all', op: ['/session/{sid}/ctl', 'stop'], expect: ['stop', '1', 'a1', { all: true }], agent: 'ok', anchor: 'stopAll: async () => {', lines: 4 },
@@ -186,7 +186,7 @@ await test('events: a blocking read in JS and over 9P (flush interrupts it)', as
 // The Interface's sources, one string: its region factories indent their bodies.
 const interfaceDir = new URL('../src/interface/', import.meta.url);
 const main = [readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8'),
-  ...readdirSync(interfaceDir).filter((f) => f.endsWith('.js')).sort().map((f) => readFileSync(new URL(f, interfaceDir), 'utf8'))].join('\n');
+  ...readdirSync(interfaceDir).filter((f) => f.endsWith('.ts')).sort().map((f) => readFileSync(new URL(f, interfaceDir), 'utf8'))].join('\n');
 const lines = main.split('\n');
 const bodyOf = (name) => {
   const i = lines.findIndex((l) => new RegExp(`^\\s*(async )?function ${name}\\(`).test(l));

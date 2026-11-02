@@ -12,25 +12,42 @@
 // One store for everyone: the Transformers.js engine (src/local/engine.ts), the
 // `models` command (src/models-cli.ts) and Settings' Download/Remove buttons.
 import { openStore, fillFile, fileState, verifiedFile, rangeSource, blobSource, dropFile, CHUNK, PARALLEL } from './assets.ts';
+import type { FetchImpl, FilePin, VerifiedBlob } from './assets.ts';
+
+// A lock entry (models.lock.json).
+export interface ModelPin { id: string; label: string; repo: string; revision: string; license: string; files: FilePin[] }
+export interface ModelStatus {
+  id: string; label: string; total: number; bytes: number; complete: boolean; downloading: boolean; persistent: boolean;
+  files: { name: string; bytes: number; kept: number; complete: boolean }[];
+}
+export interface ModelProgress { done: number; total: number; fetched: number; repaired?: number; file?: string }
+export interface RangeRetry { i: number; attempt: number; error: string }
+// A gateway catalog release, display only (never trusted for bytes).
+export interface ModelRelease {
+  repo: string; revision: string; files: { bytes: number }[]; license?: { name?: string; url?: string }; base_model?: string;
+  distribution?: { basis?: string }; qualification?: { client: string; status: string }[];
+}
+// Parts kept by builds before the gateway (the old manifest: where parts are, nothing more).
+interface OldManifest { id: string; revision: string; files?: (FilePin & { parts: { path: string }[] })[] }
+export type ModelStore = ReturnType<typeof createModelStore>;
 
 export const GATEWAY = 'https://api.bayleaf.dev/hf';
 const STORE = 'pouch-models';
 const OLD_CACHE = 'pouch-local-models'; // parts cached from pouch.bayleaf.dev before the gateway
 
-// m: { id, label, repo, revision, license, files: [{ name, bytes, sha256 }] } (a lock entry)
-export function createModelStore(models, { gateway = GATEWAY, fetchImpl = (...a) => fetch(...a), chunk = CHUNK, parallel = PARALLEL } = {}) {
-  const byId = new Map(models.map((m) => [m.id, m]));
-  const keyOf = (m, f) => `${m.repo}@${m.revision}/${f.name}`;
-  const urlOf = (m, f) => `${gateway}/${m.repo}/resolve/${m.revision}/${f.name.split('/').map(encodeURIComponent).join('/')}`;
-  const totalOf = (m) => m.files.reduce((n, f) => n + f.bytes, 0);
-  const get = (id) => {
+export function createModelStore(models: ModelPin[], { gateway = GATEWAY, fetchImpl = (...a: Parameters<FetchImpl>) => fetch(...a), chunk = CHUNK, parallel = PARALLEL }: { gateway?: string; fetchImpl?: FetchImpl; chunk?: number; parallel?: number } = {}) {
+  const byId = new Map<string, ModelPin>(models.map((m) => [m.id, m]));
+  const keyOf = (m: ModelPin, f: FilePin) => `${m.repo}@${m.revision}/${f.name}`;
+  const urlOf = (m: ModelPin, f: FilePin) => `${gateway}/${m.repo}/resolve/${m.revision}/${f.name.split('/').map(encodeURIComponent).join('/')}`;
+  const totalOf = (m: ModelPin) => m.files.reduce((n, f) => n + f.bytes, 0);
+  const get = (id: string): ModelPin => {
     const m = byId.get(id);
     if (!m) throw Object.assign(new Error(`unknown model "${id}". Known: ${[...byId.keys()].join(', ') || 'none in this build'}. Run \`models list\`.`), { code: 'ENOENT' });
     return m;
   };
-  const running = new Map(); // id -> { promise, ctrl }: one download per model at a time
+  const running = new Map<string, { promise: Promise<ModelStatus>; ctrl: AbortController }>(); // one download per model at a time
 
-  async function status(id) {
+  async function status(id: string): Promise<ModelStatus> {
     const m = get(id), st = await openStore(STORE, { create: false });
     const per = await Promise.all(m.files.map((f) => fileState(st, keyOf(m, f), f, chunk)));
     return { id, label: m.label, total: totalOf(m), bytes: per.reduce((n, p) => n + p.bytes, 0), complete: per.every((p) => p.complete),
@@ -40,9 +57,9 @@ export function createModelStore(models, { gateway = GATEWAY, fetchImpl = (...a)
 
   // Download whatever is missing. onProgress({ done, total, fetched }) in bytes.
   // Returns the running download if one exists (one per model).
-  function download(id, { signal, onProgress = () => {}, onRetry } = {}) {
+  function download(id: string, { signal, onProgress = () => {}, onRetry }: { signal?: AbortSignal; onProgress?: (p: ModelProgress) => void; onRetry?: (r: RangeRetry) => void } = {}): Promise<ModelStatus> {
     const m = get(id);
-    if (running.has(id)) return running.get(id).promise;
+    if (running.has(id)) return running.get(id)!.promise;
     const ctrl = new AbortController(), sig = signal ? AbortSignal.any([signal, ctrl.signal]) : ctrl.signal;
     const promise = (async () => {
       const st = await openStore(STORE);
@@ -58,12 +75,12 @@ export function createModelStore(models, { gateway = GATEWAY, fetchImpl = (...a)
     running.set(id, { promise, ctrl });
     return promise;
   }
-  const stop = (id) => running.get(id)?.ctrl.abort();
+  const stop = (id: string) => running.get(id)?.ctrl.abort();
 
   // Every file as a verified Blob (re-checked chunk by chunk); a damaged chunk is
   // fetched again by range when the network may be used.
-  async function files(id, { network = true, onProgress = () => {} } = {}) {
-    const m = get(id), st = await openStore(STORE, { create: false }), out = {};
+  async function files(id: string, { network = true, onProgress = () => {} }: { network?: boolean; onProgress?: (p: ModelProgress) => void } = {}) {
+    const m = get(id), st = await openStore(STORE, { create: false }), out: Record<string, VerifiedBlob> = {};
     let done = 0, repaired = 0;
     const total = totalOf(m);
     for (const f of m.files) {
@@ -77,19 +94,19 @@ export function createModelStore(models, { gateway = GATEWAY, fetchImpl = (...a)
 
   // Picked files (the original upstream files, matched by name and size), each hashed
   // against its pin like a download. { added, bad: [names], complete }.
-  async function ingest(id, list) {
+  async function ingest(id: string, list: Iterable<File>) {
     const m = get(id), st = await openStore(STORE), picked = [...list];
-    let added = 0; const bad = [];
+    let added = 0; const bad: string[] = [];
     for (const f of m.files) {
       const src = picked.find((x) => x.name === f.name.split('/').pop() && x.size === f.bytes);
       if (!src || (await fileState(st, keyOf(m, f), f, chunk)).complete) continue;
       try { await fillFile(st, keyOf(m, f), f, blobSource(src), { chunk, parallel: 1 }); added++; }
-      catch (e) { if (e.code === 'EINTEGRITY') bad.push(f.name); else throw e; }
+      catch (e) { if ((e as { code?: string }).code === 'EINTEGRITY') bad.push(f.name); else throw e; }
     }
     return { added, bad, ...(await status(id)) };
   }
 
-  async function remove(id) {
+  async function remove(id: string) {
     const m = get(id);
     stop(id);
     await running.get(id)?.promise.catch(() => {});
@@ -105,27 +122,27 @@ export function createModelStore(models, { gateway = GATEWAY, fetchImpl = (...a)
   // its contiguous prefix. The old cache is deleted afterwards. The old manifest is
   // not trusted for anything but where the parts are: the lock hash decides.
   async function migrate() {
-    let old;
+    let old: Cache;
     try { if (!globalThis.caches || !(await caches.has(OLD_CACHE))) return null; old = await caches.open(OLD_CACHE); } catch { return null; }
-    const reqs = await old.keys(), byName = new Map(reqs.map((r) => [r.url.split('/').pop(), r]));
-    const report = { migrated: [], partial: [], refused: [], bytes: 0 };
+    const reqs = await old.keys(), byName = new Map<string | undefined, Request>(reqs.map((r) => [r.url.split('/').pop(), r]));
+    const report = { migrated: [] as string[], partial: [] as string[], refused: [] as string[], bytes: 0 };
     const st = await openStore(STORE);
     for (const r of reqs.filter((x) => /\/manifest\.[0-9a-f]{16}\.json$/.test(x.url))) {
-      let man; try { man = await (await old.match(r)).json(); } catch { continue; }
+      let man: OldManifest; try { man = await (await old.match(r))!.json(); } catch { continue; }
       const m = byId.get(man.id);
       if (!m || man.revision !== m.revision) continue;
       for (const f of m.files) {
         const of = man.files?.find((x) => x.name === f.name && x.sha256 === f.sha256 && x.bytes === f.bytes);
         if (!of || (await fileState(st, keyOf(m, f), f, chunk)).complete) continue;
-        const blobs = [];
-        for (const part of of.parts) { const hit = byName.get(part.path) && await old.match(byName.get(part.path)); if (!hit) break; blobs.push(await hit.blob()); }
+        const blobs: Blob[] = [];
+        for (const part of of.parts) { const hit = byName.get(part.path) && await old.match(byName.get(part.path)!); if (!hit) break; blobs.push(await hit.blob()); }
         if (!blobs.length) continue;
         const whole = new Blob(blobs);
         try {
           const s = await fillFile(st, keyOf(m, f), f, blobSource(whole), { chunk, parallel: 1, until: whole.size >= f.bytes ? f.bytes : Math.floor(whole.size / chunk) * chunk });
           (s.verified ? report.migrated : report.partial).push(f.name);
           report.bytes += s.verified ? f.bytes : s.done * chunk;
-        } catch (e) { if (e.code === 'EINTEGRITY') report.refused.push(f.name); else throw e; }
+        } catch (e) { if ((e as { code?: string }).code === 'EINTEGRITY') report.refused.push(f.name); else throw e; }
       }
     }
     await caches.delete(OLD_CACHE);
@@ -133,15 +150,15 @@ export function createModelStore(models, { gateway = GATEWAY, fetchImpl = (...a)
   }
 
   // The gateway's public catalog (license, distribution, qualification), for display only.
-  let catalogCache = null;
-  async function catalog({ refresh = false } = {}) {
+  let catalogCache: ModelRelease[] | null = null;
+  async function catalog({ refresh = false } = {}): Promise<ModelRelease[]> {
     if (catalogCache && !refresh) return catalogCache;
     const r = await fetchImpl(`${gateway}/catalog`, { headers: { Accept: 'application/json' } });
     if (!r.ok) throw new Error(`${gateway}/catalog: HTTP ${r.status}`);
-    catalogCache = (await r.json()).releases ?? [];
+    catalogCache = ((await r.json()).releases ?? []) as ModelRelease[];
     return catalogCache;
   }
-  const release = async (id) => { const m = get(id); return (await catalog().catch(() => [])).find((x) => x.repo === m.repo && x.revision === m.revision) ?? null; };
+  const release = async (id: string) => { const m = get(id); return (await catalog().catch(() => [])).find((x) => x.repo === m.repo && x.revision === m.revision) ?? null; };
 
-  return { models, get, status, download, stop, files, ingest, remove, migrate, catalog, release, urlOf, totalOf, isDownloading: (id) => running.has(id) };
+  return { models, get, status, download, stop, files, ingest, remove, migrate, catalog, release, urlOf, totalOf, isDownloading: (id: string) => running.has(id) };
 }

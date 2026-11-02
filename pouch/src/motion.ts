@@ -8,17 +8,19 @@
 // moment is keyed, not tied to a node: arm(key) starts its clock, and each
 // rebuild calls play() on the new node, which resumes the animation where it
 // was (a negative delay) until it has run its course.
-const started = new Map(); // key -> performance.now() at arm()
+const started = new Map<string, number>(); // key -> performance.now() at arm()
 const STILL_MS = 1000;
 
 export const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-export const arm = (key) => { started.set(key, performance.now()); };
-export const armed = (key) => started.has(key);
+export const arm = (key: string) => { started.set(key, performance.now()); };
+export const armed = (key: string) => started.has(key);
 
 // Returns the Animation (or null: reduced motion, unarmed, or over).
 // mark: a class the node wears for the rest of the moment (removed on time,
 // even if nothing rebuilds the node).
-export function play(node, key, keyframes, ms, { pseudo, easing = 'ease-out', mark } = {}) {
+export type Keyframes = Keyframe[] | PropertyIndexedKeyframes;
+export interface PlayOptions { pseudo?: string; easing?: string; mark?: string }
+export function play(node: Element | null | undefined, key: string, keyframes: Keyframes | ((node: Element) => Keyframes), ms: number, { pseudo, easing = 'ease-out', mark }: PlayOptions = {}): Animation | null {
   const t0 = started.get(key);
   if (t0 == null || !node) return null;
   const t = performance.now() - t0;
@@ -36,18 +38,19 @@ export function play(node, key, keyframes, ms, { pseudo, easing = 'ease-out', ma
 }
 
 // FLIP from a remembered rectangle to where `node` is now.
-export const flipFrom = (first) => (node) => {
+export const flipFrom = (first: DOMRect) => (node: Element): Keyframe[] => {
   const last = node.getBoundingClientRect();
   const dx = first.left - last.left, dy = first.top - last.top;
   return [{ transform: `translate(${dx}px, ${dy}px)`, opacity: 0.55 }, { transform: 'none', opacity: 1 }];
 };
 
 // Take a snapshot of `node` (its place and a copy) before it is rebuilt.
-export const snapshot = (node) => (node?.isConnected ? { rect: node.getBoundingClientRect(), copy: node.cloneNode(true) } : null);
+export interface Snapshot { rect: DOMRect; copy: HTMLElement }
+export const snapshot = (node: Element | null | undefined): Snapshot | null => (node?.isConnected ? { rect: node.getBoundingClientRect(), copy: node.cloneNode(true) as HTMLElement } : null);
 // A ghost of a snapshot that folds into `to` (fixed position, removed after).
-export function fold(from, to, ms = 240) {
+export function fold(from: Snapshot | null | undefined, to: Element | null | undefined, ms = 240): Animation | null {
   if (!from || !to?.isConnected || reduced()) return null;
-  const a = from.rect, b = to.getBoundingClientRect();
+  const a = from.rect, b = to!.getBoundingClientRect();
   if (!a.width || !a.height || !b.width || !b.height) return null;
   const ghost = from.copy;
   ghost.removeAttribute('id');

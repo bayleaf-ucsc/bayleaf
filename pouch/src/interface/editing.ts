@@ -5,19 +5,43 @@ import { createEditor } from '../editor.ts';
 import { renderMarkdown } from '../markdown.ts';
 import { MEDIA_MAX, createPreview, previewOf, rememberMode, rememberedMode } from '../preview.ts';
 import { $, el } from '../dom.ts';
+import type { App } from './app.ts';
+import type { Preview, ViewMode } from '../preview.ts';
+import type { ShowRequest, ShownLine } from '../open-cli.ts';
+import type { Caller } from '../tools-types.ts';
 
-export function createEditingRegion(app) {
+export interface OpenFileOptions {
+  link?: boolean; // opened from a reply: an HTML report opens in Preview
+  mode?: ViewMode | null; interactive?: boolean; // the terminal's `open` names both, remembering neither
+  recheck?: (() => string | null) | null; // show: a reason to stop after the read
+}
+// true when opened, false when the user kept unsaved changes, or why it was not: 'binary' or recheck()'s.
+export type OpenFileResult = boolean | string;
+export interface ShowResult { opened: boolean; reason?: string }
+
+export interface EditingRegion {
+  // When the person last touched the page (show waits while they are busy).
+  get lastTouch(): number; set lastTouch(v: number);
+  openFile(path: string, line?: number, opts?: OpenFileOptions): Promise<OpenFileResult>;
+  get openPath(): string | null; set openPath(v: string | null);
+  // Show (LANGUAGE.md): an agent puts a file or folder in front of the person.
+  show(req: Pick<ShowRequest, 'path' | 'dir' | 'mode'>, caller: Caller): Promise<ShowResult>;
+  shownCard(line: ShownLine): HTMLParagraphElement;
+  syncEditor(): Promise<void>;
+}
+
+export function createEditingRegion(app: App): EditingRegion {
   // ── Editor ──────────────────────────────────────────────────────────
   // The editor keeps a baseline: the text it last loaded or saved. When the
   // file changes on disk under a dirty buffer, that is a conflict for the user
   // to settle (story map R4), never a silent overwrite either way.
-  let openPath = null;
+  let openPath: string | null = null;
   let dirty = false;
-  let conflict = null;   // disk text that arrived while the buffer was dirty
+  let conflict: string | null = null;   // disk text that arrived while the buffer was dirty
   let merging = false;   // the conflict diff (theirs vs mine) is shown
   const editor = createEditor($('editor'), {
     onSave: () => saveFile(),
-    onChange: (d) => { dirty = d; $('save').disabled = !d; $('editor-path').classList.toggle('dirty', d); markEditor(); },
+    onChange: (d) => { dirty = d; $<HTMLButtonElement>('save').disabled = !d; $('editor-path').classList.toggle('dirty', d); markEditor(); },
   });
 
   // Previews (src/preview.ts, README "Previews"): Raw | Preview for markdown,
@@ -25,13 +49,13 @@ export function createEditingRegion(app) {
   // there is no text to edit, so nothing can be saved over them). A preview
   // shows the saved file. HTML reports start Static every time: Interactive is
   // never remembered, because its scripts keep a way out (WebRTC).
-  let fileView = 'raw', viewOnly = false, scripts = false, shown = null;
+  let fileView: ViewMode = 'raw', viewOnly = false, scripts = false, shown: string | null = null;
   const preview = createPreview($('preview'), { markdown: (text, path) => renderMarkdown(text, { ...app.transcript.mdCtx, cwd: normalize(path + '/..') }) });
-  function setView(mode) {
-    const p = openPath && previewOf(openPath);
+  function setView(mode: ViewMode) {
+    const p = (openPath && previewOf(openPath)) as Preview | null; // '' acts as null here
     fileView = p ? mode : 'raw';
     $('view-mode').hidden = !p?.raw;
-    for (const b of $('view-mode').children) b.setAttribute('aria-pressed', String(b.dataset.mode === fileView));
+    for (const b of $('view-mode').children as HTMLCollectionOf<HTMLElement>) b.setAttribute('aria-pressed', String(b.dataset.mode === fileView));
     $('editor').hidden = fileView === 'preview';
     $('preview').hidden = fileView !== 'preview';
     $('save').hidden = viewOnly;
@@ -41,9 +65,10 @@ export function createEditingRegion(app) {
   }
   // Draws the saved file; on a file change, only if its bytes changed.
   async function renderPreview() {
-    const path = openPath, p = previewOf(path), html = p.kind === 'html';
+    // Only called with a file open that has a preview (setView, syncEditor).
+    const path = openPath!, p = previewOf(path)!, html = p.kind === 'html';
     $('script-mode').hidden = !html;
-    for (const b of $('script-mode').children) b.setAttribute('aria-pressed', String((b.dataset.scripts === 'on') === scripts));
+    for (const b of $('script-mode').children as HTMLCollectionOf<HTMLElement>) b.setAttribute('aria-pressed', String((b.dataset.scripts === 'on') === scripts));
     $('preview-note').textContent = [
       dirty && 'Showing the saved version: save to preview your edits.',
       html && (scripts
@@ -55,27 +80,27 @@ export function createEditingRegion(app) {
       const st = await app.state.vfs.fs.stat(path);
       if (!p.raw && st.size > MEDIA_MAX) return preview.notice(`This file is ${(st.size / 2 ** 20).toFixed(0)} MB; Preview shows files up to 50 MB. Download it instead.`);
       const bytes = await app.state.vfs.fs.readFileBuffer(path);
-      const sig = [scripts, ...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].join();
+      const sig = [scripts, ...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>))].join();
       if (path !== openPath || fileView !== 'preview' || sig === shown) return;
       shown = sig;
       preview.render(path, bytes, { scripts });
-    } catch (e) { preview.notice('Could not preview this file: ' + e.message); }
+    } catch (e) { preview.notice('Could not preview this file: ' + (e as Error).message); }
   }
   $('view-mode').onclick = (e) => {
-    const m = e.target.closest('button')?.dataset.mode;
+    const m = (e.target as Element).closest('button')?.dataset.mode as ViewMode | undefined;
     if (!m || m === fileView || !openPath) return;
-    rememberMode(previewOf(openPath).kind, m);
+    rememberMode(previewOf(openPath)!.kind, m);
     setView(m);
     if (m === 'raw') editor.focus();
   };
   $('script-mode').onclick = (e) => {
-    const on = e.target.closest('button')?.dataset.scripts;
+    const on = (e.target as Element).closest('button')?.dataset.scripts;
     if (!on || (on === 'on') === scripts) return;
     scripts = on === 'on';
     renderPreview();
   };
 
-  function showEditor(path) {
+  function showEditor(path: string) {
     $('editor-path').textContent = path;
     $('editor-pane').classList.remove('empty');
     app.state.layout.open('editor');
@@ -89,9 +114,9 @@ export function createEditingRegion(app) {
   }
   // A dot on the Editor rail icon while the buffer holds unsaved or conflicting edits.
   function markEditor() {
-    $('rail').querySelector('[data-panel="editor"]').classList.toggle('dot', !!openPath && (dirty || conflict != null));
+    $('rail').querySelector('[data-panel="editor"]')!.classList.toggle('dot', !!openPath && (dirty || conflict != null));
   }
-  function setConflict(theirs) {
+  function setConflict(theirs: string | null) {
     conflict = theirs;
     $('conflict-bar').hidden = theirs == null;
     $('conflict-diff').hidden = merging; // the diff is already open (critique 3)
@@ -100,11 +125,11 @@ export function createEditingRegion(app) {
   }
   // Save and conflict feedback, in the editor pane rather than under the chat
   // composer, and cleared once the conflict is settled (critique 2).
-  function editorStatus(text, kind = '') {
+  function editorStatus(text: string | null, kind = '') {
     const n = $('editor-status');
     n.hidden = !text; n.textContent = text ?? ''; n.className = kind;
   }
-  function setReviewBar(text) {
+  function setReviewBar(text: string | null) {
     $('review-bar').hidden = text == null;
     $('review-mine').hidden = $('review-theirs').hidden = true;
     $('review-text').textContent = text ?? '';
@@ -115,9 +140,9 @@ export function createEditingRegion(app) {
   // mode, interactive: the terminal's `open` (src/open-cli.ts) names both, and
   // remembers neither. Returns true when opened, false when the user kept
   // unsaved changes, or a reason it was not: 'binary', or recheck()'s (show).
-  async function openFile(path, line, { link = false, mode = null, interactive = false, recheck = null } = {}) {
+  async function openFile(path: string, line?: number, { link = false, mode = null, interactive = false, recheck = null }: OpenFileOptions = {}): Promise<OpenFileResult> {
     const p = previewOf(path);
-    const want = mode ?? (line ? 'raw' : link && p?.kind === 'html' ? 'preview' : null);
+    const want: ViewMode | null = mode ?? (line ? 'raw' : link && p?.kind === 'html' ? 'preview' : null);
     const wantScripts = !!mode && p?.kind === 'html' && interactive;
     // Reopening the file you are editing only moves the cursor: no reload, no loss.
     if (path !== openPath || merging) {
@@ -165,14 +190,14 @@ export function createEditingRegion(app) {
   const SHOW_QUIET_MS = 4000; // a touch of the page this recent means the person is busy
   let lastTouch = 0;
   for (const ev of ['keydown', 'pointerdown', 'wheel']) document.addEventListener(ev, () => { lastTouch = performance.now(); }, { capture: true, passive: true });
-  function showBusy(caller) {
+  function showBusy(caller: Caller) {
     if (caller != null && app.state.agent?.who(caller)?.child != null) return 'a subagent asked';
     if (dirty) return 'unsaved edits';
     if (document.querySelector('dialog[open]')) return 'a dialog is open';
     if (performance.now() - lastTouch < SHOW_QUIET_MS) return 'typing or pointing just now';
     return null;
   }
-  async function show({ path, dir, mode }, caller) {
+  async function show({ path, dir, mode }: Pick<ShowRequest, 'path' | 'dir' | 'mode'>, caller: Caller): Promise<ShowResult> {
     const reason = showBusy(caller);
     if (reason) return { opened: false, reason };
     if (dir) await app.transcript.revealDir(path);
@@ -184,9 +209,9 @@ export function createEditingRegion(app) {
     return { opened: true };
   }
   // A bash result's `shown:` lines, read back so the card survives reload.
-  function shownCard({ how, path, label, reason }) {
+  function shownCard({ how, path, label, reason }: ShownLine) {
     const b = el('button', { type: 'button', textContent: 'Open', title: `Open ${path} (${label})` });
-    b.onclick = () => (label === 'Files' ? app.transcript.revealDir(path) : openFile(path, undefined, { mode: label === 'Raw' ? 'raw' : 'preview' })).catch((e) => app.tree.fail(e.message));
+    b.onclick = () => (label === 'Files' ? app.transcript.revealDir(path) : openFile(path, undefined, { mode: label === 'Raw' ? 'raw' : 'preview' })).catch((e: Error) => app.tree.fail(e.message));
     const what = how === 'opened' ? `Shown: ${path} (${label})` : `Pouch wants to show you ${path} (${label}); not opened while you were busy (${reason})`;
     const card = el('p', { className: 'notice reverted shown', role: 'status' }, what, b);
     card.dataset.shown = how;
@@ -208,7 +233,7 @@ export function createEditingRegion(app) {
       }
       await app.state.userFs.writeFile(openPath, editor.text()); editor.markSaved(); setConflict(null); app.state.vfs.changed();
       editorStatus(null);
-    } catch (e) { editorStatus('Could not save: ' + e.message, 'bad'); }
+    } catch (e) { editorStatus('Could not save: ' + (e as Error).message, 'bad'); }
   }
   // Leave the conflict diff once every hunk is kept or taken; until then the
   // bar counts what is left and offers to settle the rest one way.
@@ -244,14 +269,14 @@ export function createEditingRegion(app) {
   $('review-theirs').onclick = () => { editor.settleAll(false); settleDiff(); editor.focus(); };
   $('conflict-diff').onclick = () => {
     merging = true; $('conflict-diff').hidden = true;
-    editor.diff(openPath, conflict, editor.text());
+    editor.diff(openPath!, conflict!, editor.text());
     setReviewBar('Each change shows Pouch\'s version struck through, then your version. Keep mine or Take theirs on each, then Done (or Save).');
     editor.focus();
   };
-  $('conflict-mine').onclick = () => { editor.setBaseline(conflict); setConflict(null); editor.focus(); };
+  $('conflict-mine').onclick = () => { editor.setBaseline(conflict!); setConflict(null); editor.focus(); };
   $('conflict-theirs').onclick = () => {
     merging = false; setReviewBar(null);
-    editor.load(openPath, conflict); setConflict(null); editor.focus();
+    editor.load(openPath!, conflict!); setConflict(null); editor.focus();
   };
 
   // When the agent changes the open file and you have no edits, follow it;

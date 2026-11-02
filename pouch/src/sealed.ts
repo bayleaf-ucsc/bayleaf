@@ -6,6 +6,7 @@
 // may wait for it (ready) and show its verification document, nothing more.
 import { TinfoilAI } from 'tinfoil';
 import { SEALED } from './bayleaf-api.ts';
+import type { Attestation, SealedHandle } from './trust.ts';
 
 // Must match the TinfoilAI client's baseURL: the SDK's encrypting fetch refuses
 // any origin other than the one it attested for, which is a second guard.
@@ -13,7 +14,7 @@ export const BASE_URL = SEALED + '/v1/';
 
 // One client per credential: a BayLeaf key, or 'campus' for Campus Pass.
 // cacheSecret scopes Tinfoil's prompt cache to this device.
-export function createSealedClient({ bearerToken, cacheSecret }) {
+export function createSealedClient({ bearerToken, cacheSecret }: { bearerToken: string; cacheSecret: string }): SealedHandle {
   return new TinfoilAI({ bearerToken, baseURL: BASE_URL, attestationBundleURL: SEALED, userCacheSecret: cacheSecret });
 }
 
@@ -21,9 +22,13 @@ export function createSealedClient({ bearerToken, cacheSecret }) {
 // once. TinfoilAI keeps its SecureClient and bearer token in fields that are
 // private in TypeScript only; tinfoil is exact-pinned, and we check the shape
 // so an SDK change fails loudly instead of silently.
-export function sealedFetch(getClient, onRequest) {
-  return async (input, init = {}) => {
-    const client = await getClient();
+// What sealedFetch reaches behind a SealedHandle; every field is checked before use.
+interface SealedInternals { getVerificationDocument(): Promise<Attestation | undefined>; secureClient?: { fetch?: unknown }; openAIOptions?: { apiKey?: unknown } }
+export function sealedFetch(getClient: () => Promise<SealedHandle | null>, onRequest?: () => void): typeof fetch {
+  return async (input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> => {
+    // The one cast out of the opaque handle: every SealedHandle is a TinfoilAI
+    // (createSealedClient), whose fields are private in TypeScript only.
+    const client = (await getClient()) as unknown as SealedInternals | null;
     if (!client) throw new Error('Not connected to BayLeaf Sealed: sign in (or use campus access) and wait for verification.');
     const doc = await client.getVerificationDocument();
     if (!doc?.securityVerified) throw new Error('Enclave attestation is not verified; refusing to send.');
@@ -38,6 +43,6 @@ export function sealedFetch(getClient, onRequest) {
     // Counted as it leaves (one request from the allowance), for the tray's live spend.
     if (init.signal?.aborted) throw new DOMException('Stopped before sending.', 'AbortError');
     onRequest?.();
-    return secure.fetch(input, { ...init, headers });
+    return (secure.fetch as typeof fetch)(input, { ...init, headers });
   };
 }

@@ -12,25 +12,37 @@ const KEY = 'pouch.layout';
 const NARROW = matchMedia('(max-width: 860px)');
 const SIDE = { def: 260, min: 200, max: 480 };
 const PANEL_MIN = 240, CHAT_MIN = 360, OVERLAY_MIN = 480;
-const DEFAULT_W = { files: 300, terminal: 420, usage: 320, trust: 360, settings: 340, editor: () => Math.round(innerWidth * 0.5) };
-const clamp = (v, lo, hi) => Math.round(Math.min(hi, Math.max(lo, v)));
+export type PanelName = 'files' | 'terminal' | 'usage' | 'trust' | 'settings' | 'editor';
+const DEFAULT_W: Record<PanelName, number | (() => number)> = { files: 300, terminal: 420, usage: 320, trust: 360, settings: 340, editor: () => Math.round(innerWidth * 0.5) };
+const clamp = (v: number, lo: number, hi: number) => Math.round(Math.min(hi, Math.max(lo, v)));
 
-export function createLayout({ onPanel } = {}) {
-  let prefs = {};
-  try { prefs = JSON.parse(localStorage.getItem(KEY)) ?? {}; } catch { /* corrupt or blocked: defaults */ }
+interface LayoutPrefs { widths: Partial<Record<PanelName, number>>; sideW?: number; side?: boolean; panel?: PanelName | null }
+export interface Layout {
+  open(name: PanelName | 'chat' | null | undefined): void;
+  toggle(name: PanelName): void;
+  close(): void;
+  current(): PanelName | null;
+  narrow(): boolean;
+  overlaid(): boolean;
+  setSide(open: boolean, persist?: boolean): void;
+  sideOpen(): boolean;
+}
+export function createLayout({ onPanel }: { onPanel?(panel: PanelName | null): void } = {}): Layout {
+  let prefs = {} as LayoutPrefs;
+  try { prefs = JSON.parse(localStorage.getItem(KEY)!) ?? {}; } catch { /* corrupt or blocked: defaults */ }
   prefs.widths ??= {};
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch {} };
   const app = $('app');
   const narrow = () => NARROW.matches;
-  let panel = null;
+  let panel: PanelName | null = null;
 
   const sideOpen = () => app.classList.contains('side-open');
   const sideW = () => clamp(prefs.sideW ?? SIDE.def, SIDE.min, SIDE.max);
   const railW = () => $('rail').getBoundingClientRect().width || 44;
   // A panel may grow until the chat would drop below CHAT_MIN.
   const panelMax = () => Math.max(PANEL_MIN, innerWidth - railW() - CHAT_MIN);
-  const defaultW = (p) => (typeof DEFAULT_W[p] === 'function' ? DEFAULT_W[p]() : DEFAULT_W[p]);
-  const panelW = (p) => clamp(prefs.widths[p] ?? defaultW(p), PANEL_MIN, panelMax());
+  const defaultW = (p: PanelName) => (typeof DEFAULT_W[p] === 'function' ? (DEFAULT_W[p] as () => number)() : DEFAULT_W[p] as number);
+  const panelW = (p: PanelName) => clamp(prefs.widths[p] ?? defaultW(p), PANEL_MIN, panelMax());
 
   // Desktop with a panel open: when the chat would drop below OVERLAY_MIN,
   // the sessions sidebar floats over the chat instead of taking a column.
@@ -45,7 +57,7 @@ export function createLayout({ onPanel } = {}) {
     Object.assign(sh, { ariaValueNow: String(sideW()), ariaValueMin: String(SIDE.min), ariaValueMax: String(SIDE.max) });
   }
 
-  function setSide(open, persist = true) {
+  function setSide(open: boolean, persist = true) {
     app.classList.toggle('side-open', open);
     const f = $('flipper'), label = open ? 'Hide sessions' : 'Show sessions';
     f.setAttribute('aria-expanded', String(open)); f.ariaLabel = label; f.title = label;
@@ -54,10 +66,10 @@ export function createLayout({ onPanel } = {}) {
     if (open && (narrow() || overlay())) $('new').focus();
   }
 
-  function open(name) {
+  function open(name: PanelName | 'chat' | null | undefined) {
     panel = name && name !== 'chat' ? name : null;
     app.dataset.panel = panel ?? '';
-    for (const b of $('rail').querySelectorAll('button[data-panel]')) {
+    for (const b of $('rail').querySelectorAll<HTMLElement>('button[data-panel]')) {
       b.setAttribute('aria-pressed', String(b.dataset.panel === (panel ?? 'chat')));
     }
     if (narrow()) { if (sideOpen()) setSide(false, false); }
@@ -65,10 +77,10 @@ export function createLayout({ onPanel } = {}) {
     apply();
     onPanel?.(panel);
   }
-  const toggle = (name) => open(panel === name ? null : name);
+  const toggle = (name: PanelName) => open(panel === name ? null : name);
 
   // One routine for both handles. dir is +1 when dragging right widens.
-  function resizer(handle, { get, set, reset, dir }) {
+  function resizer(handle: HTMLElement, { get, set, reset, dir }: { get(): number; set(w: number, persist: boolean): void; reset(): void; dir: number }) {
     handle.onpointerdown = (e) => {
       if (e.button !== 0) return;
       e.preventDefault();
@@ -93,7 +105,7 @@ export function createLayout({ onPanel } = {}) {
   }
   resizer($('panel-handle'), {
     dir: -1, // the handle is on the panel's left edge
-    get: () => panelW(panel),
+    get: () => panelW(panel!),
     set: (w, persist) => { if (!panel) return; prefs.widths[panel] = clamp(w, PANEL_MIN, panelMax()); apply(); if (persist) save(); },
     reset: () => { if (!panel) return; delete prefs.widths[panel]; save(); apply(); },
   });
@@ -110,8 +122,8 @@ export function createLayout({ onPanel } = {}) {
   $('side-close').onclick = dismiss;
   $('backdrop').onclick = dismiss;
   $('rail').addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-panel]');
-    if (b) b.dataset.panel === 'chat' ? open(null) : toggle(b.dataset.panel);
+    const b = (e.target as Element).closest<HTMLElement>('button[data-panel]');
+    if (b) b.dataset.panel === 'chat' ? open(null) : toggle(b.dataset.panel as PanelName);
   });
   for (const b of document.querySelectorAll('.panel-close')) b.addEventListener('click', () => open(null));
   // A floating sidebar is a drawer: outside or Esc closes it (src/dismiss.ts).
@@ -126,7 +138,7 @@ export function createLayout({ onPanel } = {}) {
     if (t && (t.closest('input, textarea, select, [contenteditable], .cm-editor, #panel-host, #rail') || t === $('input'))) return;
     if (!(t === document.body || !t || t.closest('#sidebar') || t === $('flipper'))) return;
     if (sideOpen() && (narrow() || overlay())) setSide(false, false);
-    if (!$('input').disabled) $('input').focus(); // the key itself lands in the box
+    if (!$<HTMLTextAreaElement>('input').disabled) $('input').focus(); // the key itself lands in the box
   });
   addEventListener('resize', apply);
   // Crossing the phone breakpoint: a drawer never stays open, the desktop frame comes back.

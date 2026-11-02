@@ -13,7 +13,7 @@ let passed = 0;
 const ok = (name) => { passed++; console.log('ok', name); };
 
 const files = [];
-const walk = (d) => { for (const f of readdirSync(d)) { const p = join(d, f); if (statSync(p).isDirectory()) walk(p); else if (p.endsWith('.js')) files.push(p); } };
+const walk = (d) => { for (const f of readdirSync(d)) { const p = join(d, f); if (statSync(p).isDirectory()) walk(p); else if (p.endsWith('.ts')) files.push(p); } };
 walk(join(root, 'src'));
 const hits = [];
 for (const f of files) readFileSync(f, 'utf8').split('\n').forEach((line, i) => {

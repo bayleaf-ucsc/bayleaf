@@ -16,22 +16,26 @@ const PREFIX = 'pouch-shell-';
 const OFF = 'pouch.offline'; // 'off' after Uninstall; Erase all clears it
 const KEEP = ['content-type', 'content-security-policy', 'x-content-type-options', 'x-frame-options', 'referrer-policy', 'permissions-policy'];
 
-const hex = async (buf) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', buf))].map((b) => b.toString(16).padStart(2, '0')).join('');
-export const short = (h) => (h ? h.slice(0, 12) : '?');
+const hex = async (buf: ArrayBuffer) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', buf))].map((b) => b.toString(16).padStart(2, '0')).join('');
+export const short = (h: string | null | undefined) => (h ? h.slice(0, 12) : '?');
 
-async function fetchSums() {
+// path -> sha256 hex, from /SHA256SUMS.
+export type Sums = Record<string, string>;
+async function fetchSums(): Promise<Sums> {
   const r = await fetch('/SHA256SUMS?fresh', { cache: 'no-store' });
   if (!r.ok) throw new Error(`SHA256SUMS: HTTP ${r.status}`);
-  const sums = {};
+  const sums: Sums = {};
   for (const line of (await r.text()).split('\n')) { const m = line.match(/^([0-9a-f]{64}) {2}(\S+)$/); if (m) sums[m[2]] = m[1]; }
   if (!sums['pouch.html']) throw new Error('SHA256SUMS lists no pouch.html');
   return sums;
 }
 
-export function createOffline({ swSha256 }) {
+export interface OfflineState { supported: boolean; published: string | null; checkedAt: Date | null; error: string | null; swScript: string | null; installPrompt: Event | null }
+export type Offline = ReturnType<typeof createOffline>;
+export function createOffline({ swSha256 }: { swSha256: string }) {
   const sw = globalThis.navigator?.serviceWorker;
   const supported = !!(sw && globalThis.isSecureContext && /^https?:$/.test(location.protocol) && globalThis.caches);
-  const state = { supported, published: null, checkedAt: null, error: null, swScript: null, installPrompt: null };
+  const state: OfflineState = { supported, published: null, checkedAt: null, error: null, swScript: null, installPrompt: null };
 
   addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); state.installPrompt = e; }); // Chromium only
 
@@ -44,8 +48,8 @@ export function createOffline({ swSha256 }) {
   }
 
   // Fetch, verify, then swap. A mismatch throws before any cache is touched.
-  async function pin(sums) {
-    const files = [];
+  async function pin(sums: Sums) {
+    const files: [string, ArrayBuffer, Headers][] = [];
     for (const path of SHELL) {
       const r = await fetch('/' + path + '?fresh', { cache: 'no-store' });
       if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
@@ -53,7 +57,7 @@ export function createOffline({ swSha256 }) {
       if (got !== sums[path]) throw new Error(`${path} as served (${short(got)}) does not match SHA256SUMS (${short(sums[path])})`);
       // Keep the security headers: the CSP header adds what the meta tag cannot (frame-ancestors).
       const headers = new Headers();
-      for (const h of KEEP) if (r.headers.has(h)) headers.set(h, r.headers.get(h));
+      for (const h of KEEP) if (r.headers.has(h)) headers.set(h, r.headers.get(h)!);
       files.push([path, body, headers]);
     }
     const name = PREFIX + sums['pouch.html'];
@@ -70,7 +74,7 @@ export function createOffline({ swSha256 }) {
     enabled: () => { try { return localStorage.getItem(OFF) !== 'off'; } catch { return true; } },
     // Served by the worker from the pinned cache, rather than from the network.
     servedOffline: () => !!sw?.controller,
-    installed: () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true,
+    installed: () => matchMedia('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true, // iOS Safari only
 
     async start() {
       if (!supported || !this.enabled()) return;
@@ -82,7 +86,7 @@ export function createOffline({ swSha256 }) {
     async check() {
       state.error = null;
       try { const sums = await fetchSums(); state.published = sums['pouch.html']; state.checkedAt = new Date(); }
-      catch (e) { state.error = e.message; }
+      catch (e) { state.error = (e as Error).message; }
       const p = await pinned();
       return { pinned: p, published: state.published, update: !!(p && state.published && state.published !== p) };
     },

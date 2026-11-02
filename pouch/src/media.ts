@@ -29,10 +29,20 @@ import { partAssets } from './assets.ts';
 import { createJobs } from './jobs.ts';
 import { normalize } from './vfs.ts';
 import { sniff, AUDIO_FILTERS, WC_FILTERS, WAV_CODECS } from './media/wc.ts';
+import type { defineCommand as DefineCommand, ResolvedCommandContext, IFileSystem, ExecResult } from 'just-bash';
+import type { CodedError, EngineOptions, JobHandle, JobOutcome, Note, Pending, RunOptions, ServiceOptions, WhoOf } from './pdf.ts';
+import type { EngineDef } from './jobs.ts';
+import type { PartsPin, RuntimeFiles } from './assets.ts';
+import type { AudioOut, MediaAction, MediaCallBody, MediaJob, MediaProbe, MediaReply, MediaResult, MediaResultOf, ProbeFormat, ProbeStream } from './media/protocol.ts';
+export type { MediaJob, MediaReply, MediaRequest, MediaResult } from './media/protocol.ts';
 
-export const LIBAV_RUNTIME = typeof POUCH_LIBAV_RUNTIME !== 'undefined' ? POUCH_LIBAV_RUNTIME : null; // eslint-disable-line no-undef
+// After its `if (x.error) return`, a result is its success shape: a refusal's
+// message is never empty, but tsc cannot know a string is truthy.
+type Checked<T> = Extract<T, { error?: undefined }> & { error?: string };
+
+export const LIBAV_RUNTIME = typeof POUCH_LIBAV_RUNTIME !== 'undefined' ? POUCH_LIBAV_RUNTIME as PartsPin : null; // eslint-disable-line no-undef
 // The LGPL corresponding source (build-libav.mjs): never fetched by the page, named in help and NOTICE.
-export const LIBAV_SOURCE = typeof POUCH_LIBAV_SOURCE !== 'undefined' ? POUCH_LIBAV_SOURCE : null; // eslint-disable-line no-undef
+export const LIBAV_SOURCE = typeof POUCH_LIBAV_SOURCE !== 'undefined' ? POUCH_LIBAV_SOURCE as PartsPin : null; // eslint-disable-line no-undef
 
 // Caps, named so errors and the media skill can cite them.
 export const MAX_INPUT_BYTES = 256 * 2 ** 20;  // all inputs of one call together; refused before anything loads
@@ -46,9 +56,9 @@ export const ENGINE_MEMORY = 1 * 2 ** 30;      // the jobs memory guard's estima
 const STOP_GRACE_MS = 1000;                    // after Stop, how long before the worker is ended (ffmpeg itself cannot be interrupted)
 
 const ok = (stdout = '', stderr = '') => ({ stdout, stderr, exitCode: 0 });
-const fail = (cmd, msg, code = 1) => ({ stdout: '', stderr: `${cmd}: ${msg}\n`, exitCode: code });
+const fail = (cmd: string, msg: string, code = 1) => ({ stdout: '', stderr: `${cmd}: ${msg}\n`, exitCode: code });
 
-const IMAGE = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' };
+const IMAGE: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' };
 // What this build reads and writes (variant webm-vp9-cli, plus the WebCodecs path), for hints.
 export const CODECS = 'WebM/Matroska, Ogg, WAV and FLAC files; VP8, VP9, Opus, FLAC and PCM audio';
 export const WC_CODECS = 'MOV, MP4, M4A and MP3 files: H.264 video (HEVC where this browser decodes it), AAC and MP3 audio, decoded by the browser';
@@ -95,12 +105,16 @@ const INFO = new Set(['version', 'buildconf', 'formats', 'muxers', 'demuxers', '
 const FFPROBE_VALUES = new Set(['v', 'loglevel', 'of', 'print_format', 'output_format', 'show_entries', 'select_streams', 'read_intervals', 'f',
   'show_optional_fields', 'analyzeduration', 'probesize', 'threads', 'i', 'o', 'output', 'sections_filter']);
 
-const scheme = (p) => /^[a-z][a-z0-9+.-]*:/i.test(p) && !p.startsWith('/');
-const ext = (p) => (/\.([a-z0-9]+)$/i.exec(p)?.[1] ?? '').toLowerCase();
+const scheme = (p: string) => /^[a-z][a-z0-9+.-]*:/i.test(p) && !p.startsWith('/');
+const ext = (p: string) => (/\.([a-z0-9]+)$/i.exec(p)?.[1] ?? '').toLowerCase();
 
-// ffprobe argv -> { args (with the inputs' indexes), files } or { error } / { help } / { info }.
-export function parseProbe(args) {
-  const files = [], out = [];
+// ffprobe argv -> its args (with the inputs' indexes) and files, or a refusal, or help.
+export type ProbeArg = string | { file: number };
+export type ProbeArgs = { help: true; error?: undefined; args?: undefined; files?: undefined }
+  | { error: string; help?: undefined; args?: undefined; files?: undefined }
+  | { args: ProbeArg[]; files: string[]; help?: undefined; error?: undefined };
+export function parseProbe(args: string[]): ProbeArgs {
+  const files: string[] = [], out: ProbeArg[] = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '-h' || a === '-help' || a === '--help' || a === '-?') return { help: true };
@@ -122,11 +136,17 @@ export function parseProbe(args) {
   return { args: out, files };
 }
 
-// ffmpeg argv -> { args, inputs, outputs, flags } where inputs/outputs are
-// paths and args holds { input: n } / { output: n } placeholders; or { error } / { help }.
-export function parseFfmpeg(args) {
-  const inputs = [], outputs = [], out = [], opts = [], flags = new Set();
-  let pendingInput = []; // options since the last input or output (they apply to the next file)
+// ffmpeg argv -> args with { input: n } / { output: n } placeholders for the files; or a refusal, or help.
+// An option: [name without its stream specifier, value, name as given] (a switch has only the first).
+export type FfOpt = [base: string, value?: string, name?: string];
+export interface FfFile { path: string; opts: FfOpt[] }
+export type FfArg = string | { input: number; output?: undefined } | { output: number; input?: undefined };
+export interface FfmpegCall { args: FfArg[]; inputs: FfFile[]; outputs: FfFile[]; flags: Set<string>; info: boolean; help?: undefined; error?: undefined }
+export type FfmpegArgs = { help: true; args: string[]; error?: undefined; info?: undefined; flags?: undefined }
+  | { error: string; help?: undefined; args?: undefined; info?: undefined; flags?: undefined } | FfmpegCall;
+export function parseFfmpeg(args: string[]): FfmpegArgs {
+  const inputs: FfFile[] = [], outputs: FfFile[] = [], out: FfArg[] = [], opts: FfOpt[] = [], flags = new Set<string>();
+  let pendingInput: FfOpt[] = []; // options since the last input or output (they apply to the next file)
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '-h' || a === '-help' || a === '--help' || a === '-?') return { help: true, args };
@@ -151,34 +171,35 @@ export function parseFfmpeg(args) {
 }
 
 // FFmpeg time syntax: [-][HH:]MM:SS[.m...], or seconds with an optional s/ms/us unit.
-export function parseTime(v) {
+export function parseTime(v: unknown) {
   const s = String(v).trim();
   let m = /^(-?)(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)$/.exec(s);
   if (m) return (m[1] ? -1 : 1) * ((+(m[2] ?? 0)) * 3600 + +m[3] * 60 + +m[4]);
   m = /^(-?\d+(?:\.\d*)?|-?\.\d+)(s|ms|us)?$/.exec(s);
-  if (m) return +m[1] / ({ ms: 1e3, us: 1e6 }[m[2]] ?? 1);
+  if (m) return +m[1] / (({ ms: 1e3, us: 1e6 } as Record<string, number>)[m[2]] ?? 1);
   return NaN;
 }
 
 // The image path: one input, image outputs, the options it understands.
 const IMAGE_OPTS = new Set(['ss', 't', 'to', 'vf', 'filter', 'r', 'frames', 'vframes', 'q', 'qscale', 'v', 'loglevel', 'f', 'c', 'codec', 'vcodec', 'start_number', 'update', 'y', 'n', 'an', 'sn', 'dn', 'hide_banner', 'nostdin', 'nostats', 'stats']);
-export const isImageOutput = (p) => !!IMAGE[ext(p)];
-export function imagePlan(parsed) {
+export const isImageOutput = (p: string) => !!IMAGE[ext(p)];
+export interface ImagePlan { path: string; pattern: boolean; ss: number; t: number | null; filters: string[]; want: number; quality: number; start: number; type: string; error?: undefined }
+export function imagePlan(parsed: FfmpegCall): ImagePlan | { error: string } {
   const { inputs, outputs } = parsed;
   if (outputs.length !== 1) return { error: 'images: one output name per call (use a %03d pattern for many)' };
   if (inputs.length !== 1) return { error: 'images: one input per call' };
   const all = [...inputs[0].opts, ...outputs[0].opts];
-  let ss = 0, t = null, to = null, rate = null, want = null, quality = 0.9, start = 1, filters = [];
+  let ss = 0, t: number | null = null, to: number | null = null, rate: string | null = null, want: number | null = null, quality = 0.9, start = 1, filters: string[] = [];
   for (const [base, v, name] of all) {
     if (!IMAGE_OPTS.has(base)) return { error: `-${name ?? base} is not supported when writing images (Pouch encodes frames itself; it takes -ss, -t, -to, -vf, -r, -frames:v, -q:v, -start_number)` };
     if (v === undefined) continue;
     if (base === 'ss') { ss = parseTime(v); if (!(ss >= 0)) return { error: `-ss ${v}: not a time (seconds, or HH:MM:SS.ms)` }; }
     if (base === 't') { t = parseTime(v); if (!(t > 0)) return { error: `-t ${v}: not a positive duration` }; }
     if (base === 'to') { to = parseTime(v); if (!(to > 0)) return { error: `-to ${v}: not a time` }; }
-    if (base === 'vf' || (base === 'filter' && /^filter:v/.test(name))) filters = v.split(',').filter(Boolean);
-    if (base === 'filter' && !/^filter:v/.test(name)) return { error: `-${name}: use -vf for video filters` };
+    if (base === 'vf' || (base === 'filter' && /^filter:v/.test(name!))) filters = v.split(',').filter(Boolean);
+    if (base === 'filter' && !/^filter:v/.test(name!)) return { error: `-${name}: use -vf for video filters` };
     if (base === 'r') { if (!/^\d+(\.\d+)?(\/\d+)?$/.test(v)) return { error: `-r ${v}: a rate such as 1, 0.5 or 1/10` }; rate = v; }
-    if (base === 'frames' || base === 'vframes') { if (name !== 'vframes' && !/^frames(:v)?$/.test(name)) return { error: `-${name}: use -frames:v` }; want = Number(v); if (!(Number.isInteger(want) && want > 0)) return { error: `-${name} ${v}: a whole number of frames` }; }
+    if (base === 'frames' || base === 'vframes') { if (name !== 'vframes' && !/^frames(:v)?$/.test(name!)) return { error: `-${name}: use -frames:v` }; want = Number(v); if (!(Number.isInteger(want) && want > 0)) return { error: `-${name} ${v}: a whole number of frames` }; }
     if (base === 'q' || base === 'qscale') { const q = Number(v); if (!(q >= 1 && q <= 31)) return { error: `-${name} ${v}: 2 (best) to 31` }; quality = Math.max(0.05, Math.min(1, 1 - (q - 2) / 30)); }
     if (base === 'start_number') { start = Number(v); if (!Number.isInteger(start) || start < 0) return { error: `-start_number ${v}: a whole number` }; }
     if ((base === 'c' || base === 'codec' || base === 'vcodec') && !/^(png|mjpeg|libwebp|copy)$/.test(v)) return { error: `-${name} ${v}: images are PNG, JPEG or WebP by the file name` };
@@ -188,14 +209,14 @@ export function imagePlan(parsed) {
   if (rate) filters.push(`fps=${rate}`);
   const path = outputs[0].path, pattern = /%(0?\d*)d/.test(path);
   if (!pattern && want == null) want = 1; // ffmpeg -update writes one picture; Pouch writes the first
-  if (!pattern && want > 1) return { error: `-frames:v ${want} with one file name: use a pattern such as frame-%03d.${ext(path)}` };
+  if (!pattern && want! > 1) return { error: `-frames:v ${want} with one file name: use a pattern such as frame-%03d.${ext(path)}` };
   return { path, pattern, ss, t, filters, want: want ?? Infinity, quality, start, type: IMAGE[ext(path)] };
 }
-export const frameName = (pattern, n) => pattern.replace(/%(0?)(\d*)d/, (_, z, w) => String(n).padStart(Number(w) || 0, z ? '0' : ' ').replace(/ /g, '0'));
+export const frameName = (pattern: string, n: number) => pattern.replace(/%(0?)(\d*)d/, (_, z, w) => String(n).padStart(Number(w) || 0, z ? '0' : ' ').replace(/ /g, '0'));
 
 // FFmpeg's log, without progress lines, first and last lines kept; libav's
 // names (in0.webm, out0.opus) back to the caller's paths.
-export function tidy(text, names = []) {
+export function tidy(text: unknown, names: string[][] = []) {
   let lines = String(text ?? '').split('\n').filter((l) => l && !/^\s*(frame|size)=.*time=/.test(l));
   if (lines.length > MAX_STDERR_LINES) {
     const head = Math.floor(MAX_STDERR_LINES / 3), tail = MAX_STDERR_LINES - head;
@@ -205,20 +226,21 @@ export function tidy(text, names = []) {
   for (const [from, to] of names) out = out.split(from).join(to);
   return out ? out + '\n' : '';
 }
-const hint = (stderr) => (/Could not open|Invalid data found|Unknown decoder|could not find codec|Decoder .* not found|Unknown encoder|Requested output format .* not known|Unable to choose an output format|Unable to find a suitable output format|Encoder not found|No such filter|Filter not found|Could not open encoder|received no packets/i.test(stderr) ? `ffmpeg: hint: ${GAP}.\n` : '');
+const hint = (stderr: string) => (/Could not open|Invalid data found|Unknown decoder|could not find codec|Decoder .* not found|Unknown encoder|Requested output format .* not known|Unable to choose an output format|Unable to find a suitable output format|Encoder not found|No such filter|Filter not found|Could not open encoder|received no packets/i.test(stderr) ? `ffmpeg: hint: ${GAP}.\n` : '');
 
 // ── ffprobe's report for the WebCodecs path ──────────────────────────
 // ffprobe prints these as strings in JSON; the rest are numbers.
 const PROBE_STRINGS = new Set(['duration', 'start_time', 'bit_rate', 'size', 'sample_rate', 'nb_frames', 'time_base', 'r_frame_rate', 'avg_frame_rate', 'codec_tag']);
-const probeValue = (k, v) => (k === 'duration' || k === 'start_time' ? Number(v).toFixed(6) : String(v));
-// probe: the worker's { format, streams, notes }; args: parseProbe's args (strings only matter); filename: the caller's path.
-// -> { stdout, stderr } as ffprobe would write them, or { error }.
-export function writeProbe(probe, args, filename) {
-  const opt = (names) => { const i = args.findIndex((a) => typeof a === 'string' && names.includes(a)); return i >= 0 ? String(args[i + 1]) : null; };
-  const has = (n) => args.includes(n);
+const probeValue = (k: string, v: unknown) => (k === 'duration' || k === 'start_time' ? Number(v).toFixed(6) : String(v));
+// args: parseProbe's args (strings only matter); filename: the caller's path.
+// -> stdout and stderr as ffprobe would write them, or a refusal.
+type Section = [name: string, body: Record<string, unknown>, side: Record<string, unknown>[] | null | undefined, tags?: Record<string, string> | null];
+export function writeProbe(probe: MediaProbe, args: ProbeArg[], filename: string): { stdout: string; stderr: string; error?: undefined } | { error: string } {
+  const opt = (names: string[]) => { const i = args.findIndex((a) => typeof a === 'string' && names.includes(a)); return i >= 0 ? String(args[i + 1]) : null; };
+  const has = (n: string) => args.includes(n);
   const entries = opt(['-show_entries']), select = opt(['-select_streams']), of = opt(['-of', '-print_format', '-output_format']) ?? 'default';
   const level = opt(['-v', '-loglevel']) ?? 'info';
-  let want = null; // section -> Set of keys (empty set: every key)
+  let want: Record<string, Set<string>> | null = null; // section -> Set of keys (empty set: every key)
   if (entries) {
     want = {};
     for (const part of entries.split(':')) {
@@ -228,43 +250,43 @@ export function writeProbe(probe, args, filename) {
     }
   }
   const showFormat = has('-show_format') || !!want?.format, showStreams = has('-show_streams') || !!want?.stream || !!want?.side_data;
-  const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && !(typeof v === 'number' && Number.isNaN(v))));
-  const pick = (o, keys) => (keys && keys.size ? Object.fromEntries([...keys].filter((k) => k in o).map((k) => [k, o[k]])) : o);
-  const sel = (s) => {
+  const clean = <T extends object>(o: T) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && !(typeof v === 'number' && Number.isNaN(v)))) as T;
+  const pick = (o: Record<string, unknown>, keys: Set<string> | null | undefined) => (keys && keys.size ? Object.fromEntries([...keys].filter((k) => k in o).map((k) => [k, o[k]])) : o);
+  const sel = (s: ProbeStream) => {
     if (!select) return true;
     const m = /^(?:([vasdt])(?::(\d+))?|(\d+))$/.exec(select);
     if (!m) return true;
     if (m[3] != null) return s.index === Number(m[3]);
-    const type = { v: 'video', a: 'audio', s: 'subtitle', d: 'data', t: 'attachment' }[m[1]];
+    const type = ({ v: 'video', a: 'audio', s: 'subtitle', d: 'data', t: 'attachment' } as Record<string, string>)[m[1]];
     return s.codec_type === type;
   };
   let streams = probe.streams.filter(sel);
   if (select && /:\d+$/.test(select)) streams = streams.slice(Number(select.split(':')[1]), Number(select.split(':')[1]) + 1);
-  const format = clean({ filename, ...probe.format });
-  const sections = [];
+  const format = clean({ filename, ...probe.format } as ProbeFormat);
+  const sections: Section[] = [];
   if (showStreams) for (const s of streams) {
     const { side_data_list: sd, ...rest } = clean(s);
     const keys = want?.stream ?? (want ? new Set(['__none__']) : null);
     const body = pick(rest, keys);
-    const side = want ? (want.side_data && sd ? sd.map((d) => pick(d, want.side_data)) : null) : sd;
+    const side = want ? (want.side_data && sd ? sd.map((d) => pick(d, want!.side_data)) : null) : sd;
     sections.push(['stream', body, side]);
   }
   if (showFormat) { const { tags, ...rest } = format; sections.push(['format', pick(rest, want?.format), null, want ? null : tags]); }
   const [writer, ...wopts] = of.split(/[=:]/);
-  const wo = Object.fromEntries(of.includes('=') ? of.slice(of.indexOf('=') + 1).split(':').map((x) => x.split('=')) : []);
+  const wo = Object.fromEntries(of.includes('=') ? of.slice(of.indexOf('=') + 1).split(':').map((x) => x.split('=')) : []) as Record<string, string>;
   const nokey = wo.nokey === '1' || wo.nk === '1', nowrap = wo.noprint_wrappers === '1' || wo.nw === '1', p0 = wo.p === '0' || wo.print_section === '0';
   void wopts;
-  const val = (k, v) => probeValue(k, v);
+  const val = (k: string, v: unknown) => probeValue(k, v);
   let stdout = '';
   if (writer === 'json') {
-    const json = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === 'object' ? v : PROBE_STRINGS.has(k) ? val(k, v) : v]));
-    const out = {};
+    const json = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === 'object' ? v : PROBE_STRINGS.has(k) ? val(k, v) : v]));
+    const out: { streams?: unknown[]; format?: unknown } = {};
     if (showStreams) out.streams = sections.filter(([n]) => n === 'stream').map(([, b, sd]) => ({ ...json(b), ...(sd ? { side_data_list: sd.map(json) } : {}) }));
-    if (showFormat) { const [, b, , tags] = sections.find(([n]) => n === 'format'); out.format = { ...json(b), ...(tags ? { tags } : {}) }; }
+    if (showFormat) { const [, b, , tags] = sections.find(([n]) => n === 'format')!; out.format = { ...json(b), ...(tags ? { tags } : {}) }; }
     stdout = JSON.stringify(out, null, 4) + '\n';
   } else if (writer === 'default' || writer === 'compact' || writer === 'csv' || writer === 'flat') {
-    const lines = [];
-    const kv = (k, v) => (nokey ? val(k, v) : `${k}=${val(k, v)}`);
+    const lines: string[] = [];
+    const kv = (k: string, v: unknown) => (nokey ? val(k, v) : `${k}=${val(k, v)}`);
     sections.forEach(([name, body, sd, tags], n) => {
       const pairs = Object.entries(body), extra = [...(sd ?? []).flatMap((d) => Object.entries(d)), ...Object.entries(tags ?? {}).map(([k, v]) => [`TAG:${k}`, v])];
       if (writer === 'default') {
@@ -277,7 +299,7 @@ export function writeProbe(probe, args, filename) {
       } else {
         // Cells escaped as ffprobe's writers do: csv quotes a cell holding a comma, quote or newline; compact backslash-escapes.
         const sep = writer === 'csv' ? ',' : '|';
-        const esc = (s) => (writer === 'csv' ? (/[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s) : s.replace(/[\\|\n\r]/g, (c) => ({ '\n': '\\n', '\r': '\\r' })[c] ?? `\\${c}`));
+        const esc = (s: string) => (writer === 'csv' ? (/[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s) : s.replace(/[\\|\n\r]/g, (c) => ({ '\n': '\\n', '\r': '\\r' } as Record<string, string>)[c] ?? `\\${c}`));
         const cells = [...pairs, ...extra].map(([k, v]) => esc(String(writer === 'csv' || nokey ? val(k, v) : `${k}=${val(k, v)}`)));
         lines.push((p0 ? cells : [name, ...cells]).join(sep));
       }
@@ -286,7 +308,7 @@ export function writeProbe(probe, args, filename) {
   } else return { error: `-of ${of}: on MOV/MP4/MP3 input this ffprobe writes json, default, csv, compact or flat` };
   let stderr = '';
   if (!/^(quiet|panic|fatal|error|-8|0|8|16)$/.test(level)) {
-    const f = probe.format, hms = (x) => { const t = Number(x) || 0; return `${String(Math.floor(t / 3600)).padStart(2, '0')}:${String(Math.floor(t / 60) % 60).padStart(2, '0')}:${(t % 60).toFixed(2).padStart(5, '0')}`; };
+    const f = probe.format, hms = (x: unknown) => { const t = Number(x) || 0; return `${String(Math.floor(t / 3600)).padStart(2, '0')}:${String(Math.floor(t / 60) % 60).padStart(2, '0')}:${(t % 60).toFixed(2).padStart(5, '0')}`; };
     stderr = `Input #0, ${f.format_name}, from '${filename}':\n  Duration: ${hms(f.duration)}, start: ${Number(f.start_time ?? 0).toFixed(6)}, bitrate: ${Math.round((f.bit_rate ?? 0) / 1000)} kb/s\n`
       + probe.streams.map((s) => `  Stream #0:${s.index}: ${s.codec_type === 'video' ? `Video: ${s.codec_name}${s.profile ? ` (${s.profile})` : ''}, ${s.width}x${s.height}, ${Number(eval2(s.avg_frame_rate)).toFixed(2).replace(/\.00$/, '')} fps${s.side_data_list ? `, rotation ${s.side_data_list[0].rotation}` : ''}`
         : s.codec_type === 'audio' ? `Audio: ${s.codec_name}${s.profile ? ` (${s.profile})` : ''}, ${s.sample_rate} Hz, ${s.channel_layout}` : `${s.codec_type}: ${s.codec_name}`}\n`).join('');
@@ -294,23 +316,25 @@ export function writeProbe(probe, args, filename) {
   for (const n of probe.notes ?? []) stderr += `ffprobe: note: ${n}\n`;
   return { stdout, stderr };
 }
-const eval2 = (r) => { const [a, b] = String(r).split('/').map(Number); return b ? a / b : a || 0; };
+const eval2 = (r: unknown) => { const [a, b] = String(r).split('/').map(Number); return b ? a / b : a || 0; };
 
 // The WebCodecs path's audio plan: one input, one WAV/FLAC/Opus output, the options it takes.
-const AUDIO_OUT = { wav: 'wav', flac: 'flac', opus: 'ogg', ogg: 'ogg', oga: 'ogg', webm: 'webm', weba: 'webm', mka: 'webm' };
+const AUDIO_OUT: Record<string, string> = { wav: 'wav', flac: 'flac', opus: 'ogg', ogg: 'ogg', oga: 'ogg', webm: 'webm', weba: 'webm', mka: 'webm' };
 const AUDIO_OPTS = new Set(['ss', 't', 'to', 'vn', 'sn', 'dn', 'y', 'n', 'af', 'filter', 'ar', 'ac', 'sample_fmt', 'c', 'codec', 'acodec', 'b', 'ab', 'map', 'f', 'v', 'loglevel',
   'hide_banner', 'nostdin', 'nostats', 'stats', 'map_metadata']);
 // -f names that agree with the output's extension (any other -f is refused, not ignored).
-const AUDIO_F = { wav: 'wav', flac: 'flac', ogg: 'ogg', opus: 'ogg', webm: 'webm', matroska: 'webm' };
-export const isAudioOutput = (p) => !!AUDIO_OUT[ext(p)];
+const AUDIO_F: Record<string, string> = { wav: 'wav', flac: 'flac', ogg: 'ogg', opus: 'ogg', webm: 'webm', matroska: 'webm' };
+export const isAudioOutput = (p: string) => !!AUDIO_OUT[ext(p)];
 // Safe to retry on the conversion path (which writes audio only): the output cannot carry video, or -vn says so.
-const audioOnly = (a) => a.outputs.length === 1 && (/^(wav|flac|opus|oga|weba|mka)$/.test(ext(a.outputs[0].path)) || (isAudioOutput(a.outputs[0].path) && a.flags.has('vn')));
-export function audioPlan(parsed) {
+const audioOnly = (a: FfmpegCall) => a.outputs.length === 1 && (/^(wav|flac|opus|oga|weba|mka)$/.test(ext(a.outputs[0].path)) || (isAudioOutput(a.outputs[0].path) && a.flags.has('vn')));
+export interface AudioPlan { path: string; ss: number; t: number | null; filters: string | null; rate: number | null; channels: number | null; out: Omit<AudioOut, 'name'>; error?: undefined }
+export function audioPlan(parsed: FfmpegCall): AudioPlan | { error: string } {
   const { inputs, outputs } = parsed;
   if (inputs.length !== 1 || outputs.length !== 1) return { error: 'audio from MOV/MP4/MP3 (or with conversion): one input and one output per call' };
   const path = outputs[0].path, x = ext(path), format = AUDIO_OUT[x];
   if (!format) return { error: /^(mp4|m4a|mov|aac|mp3|m4v|3gp|mkv|avi)$/.test(x) ? `.${x}: ${NO_VIDEO_OUT.replace(/^writing video/, `writing .${x}`)}` : `.${x}: audio is written as .wav, .flac, .opus (or .ogg, .webm)` };
-  let ss = 0, t = null, to = null, filters = null, rate = null, channels = null, codec = null, sampleFmt = null, bitRate = null, vn = false;
+  let ss = 0, t: number | null = null, to: number | null = null, filters: string | null = null, rate: number | null = null, channels: number | null = null,
+    codec: string | null = null, sampleFmt: string | null = null, bitRate: number | null = null, vn = false;
   for (const o of [...inputs[0].opts, ...outputs[0].opts]) {
     const [base, v, name] = o;
     if (!AUDIO_OPTS.has(base)) return { error: `-${name ?? base} is not supported on this path (it takes -ss, -t, -to, -vn, -af, -ar, -ac, -sample_fmt, -c:a, -b:a)` };
@@ -318,25 +342,25 @@ export function audioPlan(parsed) {
     if (base === 'ss') { ss = parseTime(v); if (!(ss >= 0)) return { error: `-ss ${v}: not a time (seconds, or HH:MM:SS.ms)` }; }
     if (base === 't') { t = parseTime(v); if (!(t > 0)) return { error: `-t ${v}: not a positive duration` }; }
     if (base === 'to') { to = parseTime(v); if (!(to > 0)) return { error: `-to ${v}: not a time` }; }
-    if (base === 'af' || (base === 'filter' && /^filter:a/.test(name))) filters = v;
-    if (base === 'filter' && !/^filter:a/.test(name)) return { error: `-${name}: use -af for audio filters (and extract frames for video)` };
+    if (base === 'af' || (base === 'filter' && /^filter:a/.test(name!))) filters = v;
+    if (base === 'filter' && !/^filter:a/.test(name!)) return { error: `-${name}: use -af for audio filters (and extract frames for video)` };
     if (base === 'ar') { rate = Number(v.replace(/k$/i, '000')); if (!(Number.isInteger(rate) && rate >= 1000 && rate <= 384000)) return { error: `-ar ${v}: a sample rate in Hz such as 16000 or 48000` }; }
     if (base === 'ac') { channels = Number(v); if (!(Number.isInteger(channels) && channels >= 1 && channels <= 8)) return { error: `-ac ${v}: 1 to 8 channels` }; }
-    if (base === 'sample_fmt') { sampleFmt = { s16: 's16', s16p: 's16', s32: 's32', s32p: 's32', flt: 'flt', fltp: 'flt', u8: 'u8', u8p: 'u8' }[v]; if (!sampleFmt) return { error: `-sample_fmt ${v}: s16, s32, flt or u8` }; }
+    if (base === 'sample_fmt') { sampleFmt = ({ s16: 's16', s16p: 's16', s32: 's32', s32p: 's32', flt: 'flt', fltp: 'flt', u8: 'u8', u8p: 'u8' } as Record<string, string>)[v]; if (!sampleFmt) return { error: `-sample_fmt ${v}: s16, s32, flt or u8` }; }
     if (base === 'c' || base === 'codec' || base === 'acodec') {
-      if (/^c(odec)?:v|^vcodec/.test(name)) continue;
+      if (/^c(odec)?:v|^vcodec/.test(name!)) continue;
       if (v === 'copy') return { error: `-${name} copy: this path decodes and re-encodes; drop -c copy and write .wav, .flac or .opus` };
       codec = v;
     }
-    if (base === 'b' || base === 'ab') { if (/^b:v/.test(name)) continue; const m = /^(\d+(?:\.\d+)?)(k|m)?$/i.exec(v); if (!m) return { error: `-${name} ${v}: a bitrate such as 64k` }; bitRate = Math.round(+m[1] * ({ k: 1e3, m: 1e6 }[m[2]?.toLowerCase()] ?? 1)); }
+    if (base === 'b' || base === 'ab') { if (/^b:v/.test(name!)) continue; const m = /^(\d+(?:\.\d+)?)(k|m)?$/i.exec(v); if (!m) return { error: `-${name} ${v}: a bitrate such as 64k` }; bitRate = Math.round(+m[1] * (({ k: 1e3, m: 1e6 } as Record<string, number>)[m[2]?.toLowerCase() as string] ?? 1)); }
     if (base === 'map' && !/^0(:a(:0)?)?$/.test(v)) return { error: `-map ${v}: this path takes the first audio stream (-map 0:a)` };
     if (base === 'f' && !inputs[0].opts.includes(o) && AUDIO_F[v] !== format) return { error: `-f ${v}: this path picks the format from the name (.${x} is ${format}); drop -f or rename the output` };
   }
   void vn;
   if (to != null) { if (to <= ss) return { error: `-to ${to} is not after -ss ${ss}` }; t = t ?? to - ss; }
-  let out;
+  let out: AudioPlan['out'];
   if (format === 'wav') {
-    codec = codec ?? { s32: 'pcm_s32le', flt: 'pcm_f32le', u8: 'pcm_u8' }[sampleFmt] ?? 'pcm_s16le';
+    codec = codec ?? ({ s32: 'pcm_s32le', flt: 'pcm_f32le', u8: 'pcm_u8' } as Record<string, string>)[sampleFmt as string] ?? 'pcm_s16le';
     if (!WAV_CODECS[codec]) return { error: `-c:a ${codec}: WAV is written as ${Object.keys(WAV_CODECS).join(', ')}` };
     out = { format, codec, sampleFmt: WAV_CODECS[codec][0] };
   } else if (format === 'flac') {
@@ -351,27 +375,27 @@ export function audioPlan(parsed) {
 
 // ── The engine: one worker from the verified runtime ─────────────────
 const stopped = () => new DOMException('Stopped.', 'AbortError');
-const codeError = (msg, code) => Object.assign(new Error(msg), { code });
+const codeError = (msg: string, code?: string) => Object.assign(new Error(msg), { code });
 
-function defaultSpawn(files) {
+function defaultSpawn(files: RuntimeFiles) {
   const src = URL.createObjectURL(new Blob([files['worker.js']], { type: 'text/javascript' }));
   try { return new Worker(src, { type: 'module', name: 'pouch-libav' }); } finally { URL.revokeObjectURL(src); }
 }
 
 // Same shape as src/pdf.ts pdfEngine (a third runtime should share one).
-export function mediaEngine({ assets = LIBAV_RUNTIME && partAssets(LIBAV_RUNTIME), spawn = defaultSpawn, onLoad } = {}) {
+export function mediaEngine({ assets = LIBAV_RUNTIME && partAssets(LIBAV_RUNTIME), spawn = defaultSpawn, onLoad }: EngineOptions = {}): EngineDef<MediaJob, MediaResult> {
   return {
     label: 'libav.js', memory: ENGINE_MEMORY, concurrency: 1,
     create() {
       if (!assets) throw codeError('this build of Pouch has no media runtime (built with it left out)', 'ENOSYS');
-      let worker = null, seq = 0;
-      const pending = new Map();
-      async function start(note) {
+      let worker: Worker | null = null, seq = 0;
+      const pending = new Map<number, Pending<MediaResult>>();
+      async function start(note: Note | undefined) {
         note?.('loading the media runtime');
-        const got = await assets.obtain({ network: globalThis.navigator?.onLine !== false });
+        const got = await assets!.obtain({ network: globalThis.navigator?.onLine !== false });
         onLoad?.(got);
         const w = spawn(got.files);
-        w.onmessage = ({ data }) => {
+        w.onmessage = ({ data }: MessageEvent<MediaReply>) => {
           const p = pending.get(data.id);
           if (!p) return;
           if (data.note !== undefined) return p.note?.(data.note);
@@ -384,18 +408,18 @@ export function mediaEngine({ assets = LIBAV_RUNTIME && partAssets(LIBAV_RUNTIME
         try { await call('load', { wasm: await got.files['libav.wasm'].arrayBuffer(), avf: await got.files['libav-avf.wasm']?.arrayBuffer() }); }
         catch (e) { w.terminate(); if (worker === w) worker = null; throw e; }
       }
-      function call(action, data, { note, signal } = {}) {
-        return new Promise((resolve, reject) => {
-          const id = ++seq, w = worker;
+      function call(action: MediaAction | 'load', data: MediaCallBody, { note, signal }: { note?: Note; signal?: AbortSignal } = {}) {
+        return new Promise<MediaResult>((resolve, reject) => {
+          const id = ++seq, w = worker!;
           pending.set(id, { resolve, reject, note });
           if (signal) signal.addEventListener('abort', () => {
             w.postMessage({ action: 'stop', job: id });
             // ffmpeg runs to completion inside wasm: a job that does not stop in time ends the worker; the next starts a new one.
             const t = setTimeout(() => { if (pending.has(id)) { pending.delete(id); w.terminate(); if (worker === w) worker = null; reject(stopped()); } }, STOP_GRACE_MS);
-            pending.get(id) && (pending.get(id).timer = t);
+            pending.get(id) && (pending.get(id)!.timer = t);
           }, { once: true });
-          const transfer = [...(data.inputs ?? []), ...(data.input ? [data.input] : [])].map((f) => f.bytes.buffer);
-          w.postMessage({ id, action, ...data }, data.wasm ? [data.wasm, data.avf].filter(Boolean) : transfer);
+          const transfer = [...(data.inputs ?? []), ...(data.input ? [data.input] : [])].map((f) => f.bytes.buffer as ArrayBuffer);
+          w.postMessage({ id, action, ...data }, data.wasm ? [data.wasm, data.avf].filter(Boolean) as ArrayBuffer[] : transfer);
         });
       }
       return {
@@ -414,11 +438,11 @@ export function mediaEngine({ assets = LIBAV_RUNTIME && partAssets(LIBAV_RUNTIME
 }
 
 // The service shared by the terminal and every agent: one engine, its jobs.
-export function createMediaService({ tasks, engine = mediaEngine(), budget } = {}) {
+export function createMediaService({ tasks, engine = mediaEngine(), budget }: ServiceOptions<MediaJob, MediaResult> = {} as ServiceOptions<MediaJob, MediaResult>) {
   const jobs = createJobs({ tasks, engines: { libav: engine }, ...(budget ? { budget } : {}) });
   return {
     jobs,
-    run(input, { who = {}, fs, signal, label } = {}) {
+    run(input: MediaJob, { who = {}, fs, signal, label }: RunOptions = {}): JobHandle {
       const { task, result } = jobs.submit('libav', input, { caller: { sid: who.sid ?? undefined, name: who.name, fs }, label });
       const kill = () => tasks.kill(task).catch(() => {});
       if (signal) { if (signal.aborted) kill(); else signal.addEventListener('abort', kill, { once: true }); }
@@ -428,11 +452,11 @@ export function createMediaService({ tasks, engine = mediaEngine(), budget } = {
 }
 
 // ── Shell commands ───────────────────────────────────────────────────
-const abs = (cwd, p) => normalize(p.startsWith('/') ? p : cwd + '/' + p);
+const abs = (cwd: string, p: string) => normalize(p.startsWith('/') ? p : cwd + '/' + p);
 
-// Read inputs within MAX_INPUT_BYTES: -> { files: [{ path, bytes }] } or { error }.
-async function readInputs(cmd, ctx, paths) {
-  const files = [];
+// Read inputs within MAX_INPUT_BYTES.
+async function readInputs(cmd: string, ctx: ResolvedCommandContext, paths: string[]): Promise<{ error: ExecResult; files?: undefined } | { error?: undefined; files: { path: string; bytes: Uint8Array }[] }> {
+  const files: { path: string; bytes: Uint8Array }[] = [];
   let total = 0;
   for (const raw of paths) {
     const p = abs(ctx.cwd, raw);
@@ -446,21 +470,22 @@ async function readInputs(cmd, ctx, paths) {
   return { files };
 }
 
-// service: createMediaService(); whoOf(): { name, sid? } for the /task label.
-export function mediaCommands(defineCommand, service, whoOf = () => ({ name: 'terminal' })) {
+export type MediaService = ReturnType<typeof createMediaService>;
+// whoOf: who the /task label names.
+export function mediaCommands(defineCommand: typeof DefineCommand, service: MediaService | null | undefined, whoOf: WhoOf = () => ({ name: 'terminal' })) {
   const who = () => (typeof whoOf === 'function' ? whoOf() : whoOf) ?? {};
-  async function job(cmd, ctx, input, label) {
-    const { task, result } = service.run(input, { who: who(), fs: ctx.fs, signal: ctx.signal, label });
-    try { return { r: await result, task }; }
+  async function job<A extends MediaAction>(cmd: string, ctx: ResolvedCommandContext, input: MediaJob & { action: A }, label: string): Promise<JobOutcome<MediaResultOf<A>>> {
+    const { task, result } = service!.run(input, { who: who(), fs: ctx.fs, signal: ctx.signal, label });
+    try { return { r: await result as MediaResultOf<A>, task }; }
     catch (e) {
-      if (e?.name === 'AbortError') return { error: fail(cmd, `stopped (/task/${task.id})`, 130) };
-      return { error: { ...fail(cmd, e.message), ...(e.code === 'EFORMAT' || e.code === 'ECODEC' ? { stderr: `${cmd}: ${e.message}\n${cmd}: hint: ${GAP}.\n` } : {}) } };
+      if ((e as CodedError)?.name === 'AbortError') return { error: fail(cmd, `stopped (/task/${task.id})`, 130) };
+      return { error: { ...fail(cmd, (e as CodedError).message), ...((e as CodedError).code === 'EFORMAT' || (e as CodedError).code === 'ECODEC' ? { stderr: `${cmd}: ${(e as CodedError).message}\n${cmd}: hint: ${GAP}.\n` } : {}) } };
     }
   }
-  const mkdirFor = (fs, p) => fs.mkdir(normalize(p + '/..'), { recursive: true }).catch(() => {});
+  const mkdirFor = (fs: IFileSystem, p: string) => fs.mkdir(normalize(p + '/..'), { recursive: true }).catch(() => {});
 
   const ffprobe = defineCommand('ffprobe', async (args, ctx) => {
-    const a = parseProbe(args);
+    const a = parseProbe(args) as Checked<ProbeArgs>;
     if (a.help) return ok(HELP.ffprobe);
     if (a.error) return { stdout: '', stderr: `ffprobe: ${a.error}\n${HELP.ffprobe}`, exitCode: 1 };
     if (!service) return fail('ffprobe', 'the media runtime is not available here');
@@ -471,7 +496,7 @@ export function mediaCommands(defineCommand, service, whoOf = () => ({ name: 'te
     if (kind) { // MOV/MP4/M4A or MP3: the WebCodecs path builds the report
       const j = await job('ffprobe', ctx, { action: 'wc.probe', input: inputs[0], kind }, `ffprobe ${read.files[0].path.split('/').pop()}`);
       if (j.error) return j.error;
-      const w = writeProbe(j.r, a.args, read.files[0].path);
+      const w = writeProbe(j.r, a.args, read.files[0].path) as Checked<ReturnType<typeof writeProbe>>;
       if (w.error) return fail('ffprobe', w.error);
       return { stdout: w.stdout.length > MAX_STDOUT_BYTES ? w.stdout.slice(0, MAX_STDOUT_BYTES) : w.stdout, stderr: w.stderr, exitCode: 0 };
     }
@@ -483,9 +508,9 @@ export function mediaCommands(defineCommand, service, whoOf = () => ({ name: 'te
     // Paths go back into the report escaped as its writer would (a quote in a name must not break JSON).
     const of = a.args.findIndex((x) => x === '-of' || x === '-print_format' || x === '-output_format');
     const writer = of >= 0 ? String(a.args[of + 1]).split(/[=:]/)[0] : 'default';
-    const escOut = writer === 'json' ? (s) => JSON.stringify(s).slice(1, -1)
-      : writer === 'xml' ? (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
-      : (s) => s;
+    const escOut = writer === 'json' ? (s: string) => JSON.stringify(s).slice(1, -1)
+      : writer === 'xml' ? (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
+      : (s: string) => s;
     let stdout = j.r.stdout ? names.map(([from, to]) => [from, escOut(to)]).reduce((t, [from, to]) => t.split(from).join(to), j.r.stdout) + '\n' : '', more = '';
     if (stdout.length > MAX_STDOUT_BYTES) { stdout = stdout.slice(0, MAX_STDOUT_BYTES); more = `ffprobe: output cut at ${MAX_STDOUT_BYTES / 2 ** 20} MiB (MAX_STDOUT_BYTES); narrow it with -show_entries or -select_streams\n`; }
     const stderr = tidy(j.r.stderr, names);
@@ -493,7 +518,7 @@ export function mediaCommands(defineCommand, service, whoOf = () => ({ name: 'te
   });
 
   const ffmpeg = defineCommand('ffmpeg', async (args, ctx) => {
-    const a = parseFfmpeg(args);
+    const a = parseFfmpeg(args) as Checked<FfmpegArgs>;
     if (a.help && !a.args.slice(1).length) return ok(HELP.ffmpeg);
     if (a.error) return { stdout: '', stderr: `ffmpeg: ${a.error}\n${HELP.ffmpeg}`, exitCode: 1 };
     if (!service) return fail('ffmpeg', 'the media runtime is not available here');
@@ -501,7 +526,7 @@ export function mediaCommands(defineCommand, service, whoOf = () => ({ name: 'te
       const j = await job('ffmpeg', ctx, { action: 'run', program: 'ffmpeg', args: ['-hide_banner', ...args], inputs: [], outputs: [], maxSeconds: 0, maxOutputBytes: 0 }, `ffmpeg ${args[0]}`);
       if (j.error) return j.error;
       // The CLI build lists audio filters it can only run when no conversion is needed (it has no aresample): say where they run.
-      const note = a.flags.has('filters') ? `\nPouch: audio filters with -af run on the conversion path (WAV, FLAC or Opus out), which has aresample and: ${AUDIO_FILTERS}.\nVideo filters: WebM/Ogg input as listed above; MOV/MP4 input (the browser's decoder): ${WC_FILTERS}.\n` : '';
+      const note = a.flags!.has('filters') ? `\nPouch: audio filters with -af run on the conversion path (WAV, FLAC or Opus out), which has aresample and: ${AUDIO_FILTERS}.\nVideo filters: WebM/Ogg input as listed above; MOV/MP4 input (the browser's decoder): ${WC_FILTERS}.\n` : '';
       return { stdout: j.r.stdout ? j.r.stdout + '\n' + note : note, stderr: tidy(j.r.stderr), exitCode: j.r.code ? 1 : 0 };
     }
     const outPaths = a.outputs.map((o) => abs(ctx.cwd, o.path));
@@ -521,7 +546,7 @@ export function mediaCommands(defineCommand, service, whoOf = () => ({ name: 'te
 
     const kind = inputs.length === 1 ? sniff(inputs[0].bytes) : inputs.map((f) => sniff(f.bytes)).find(Boolean) ?? null;
     if (images.length) {
-      const plan = imagePlan(a);
+      const plan = imagePlan(a) as Checked<ReturnType<typeof imagePlan>>;
       if (plan.error) return fail('ffmpeg', plan.error);
       if (kind === 'mp3') return fail('ffmpeg', `${read.files[0].path} has no video stream`);
       const j = await job('ffmpeg', ctx, { action: kind ? 'wc.frames' : 'frames', input: inputs[0], ss: plan.ss, t: plan.t, filters: plan.filters, want: plan.want,
@@ -537,14 +562,14 @@ export function mediaCommands(defineCommand, service, whoOf = () => ({ name: 'te
         await ctx.fs.writeFile(p, im.bytes);
         lines.push(`wrote ${p} (t=${+im.t.toFixed(3)}s, ${im.width}x${im.height})`);
       }
-      const quiet = a.args.some((x, i) => (x === '-v' || x === '-loglevel') && /^(quiet|panic|fatal|error|-8|0|8|16)$/.test(a.args[i + 1]));
+      const quiet = a.args.some((x, i) => (x === '-v' || x === '-loglevel') && /^(quiet|panic|fatal|error|-8|0|8|16)$/.test(a.args[i + 1] as string));
       return ok(quiet ? '' : lines.join('\n') + '\n');
     }
 
     // The WebCodecs path's audio: MOV/MP4/MP3 inputs, or a conversion the CLI build cannot do (below).
-    async function viaAudio(plan, note = '') {
+    async function viaAudio(plan: AudioPlan, note = '') {
       const j = await job('ffmpeg', ctx, { action: 'wc.audio', input: inputs[0], kind, ss: plan.ss, t: plan.t, filters: plan.filters, rate: plan.rate, channels: plan.channels,
-        out: { name: `out0.${ext(plan.path)}`, ...plan.out }, maxSeconds: MAX_INPUT_SECONDS, maxOutputBytes: MAX_OUTPUT_BYTES }, `ffmpeg ${read.files[0].path.split('/').pop()} (audio)`);
+        out: { name: `out0.${ext(plan.path)}`, ...plan.out }, maxSeconds: MAX_INPUT_SECONDS, maxOutputBytes: MAX_OUTPUT_BYTES }, `ffmpeg ${read.files![0].path.split('/').pop()} (audio)`);
       if (j.error) return { ...j.error, stderr: note + j.error.stderr };
       const f = j.r.files[0];
       await mkdirFor(ctx.fs, outPaths[0]);
@@ -553,7 +578,7 @@ export function mediaCommands(defineCommand, service, whoOf = () => ({ name: 'te
     }
     if (kind) {
       if (inputs.length > 1) return fail('ffmpeg', 'MOV/MP4/MP3 inputs: one input per call');
-      const plan = audioPlan(a);
+      const plan = audioPlan(a) as Checked<ReturnType<typeof audioPlan>>;
       if (plan.error) return fail('ffmpeg', plan.error);
       if (/\.(webm|mka)$/i.test(plan.path) && !a.flags.has('vn') && kind === 'mp4') return fail('ffmpeg', `${NO_VIDEO_OUT}. For audio only, add -vn`);
       return viaAudio(plan);
@@ -572,7 +597,7 @@ export function mediaCommands(defineCommand, service, whoOf = () => ({ name: 'te
     if (j.r.code || empty.length) {
       // No aresample in the CLI build: format, rate and layout conversions and most audio filters fail there. The avf build has them.
       if ((/'aresample' filter not present|No such filter: 'aresample'|Error reinitializing filters|Failed to inject frame into filter network/.test(stderr) || empty.length) && audioOnly(a)) {
-        const plan = audioPlan(a);
+        const plan = audioPlan(a) as Checked<ReturnType<typeof audioPlan>>;
         if (!plan.error) return viaAudio(plan);
       }
       return { stdout: '', stderr: stderr + (empty.length ? `ffmpeg: nothing was written to ${empty.join(', ')}\n` : '') + hint(stderr), exitCode: 1 };
@@ -580,8 +605,8 @@ export function mediaCommands(defineCommand, service, whoOf = () => ({ name: 'te
     const lines = [];
     for (const [i, f] of j.r.files.entries()) {
       await mkdirFor(ctx.fs, outPaths[i]);
-      await ctx.fs.writeFile(outPaths[i], f.bytes);
-      lines.push(`wrote ${outPaths[i]} (${f.bytes.length.toLocaleString('en-US')} bytes)`);
+      await ctx.fs.writeFile(outPaths[i], f.bytes!); // empty and missing outputs failed above
+      lines.push(`wrote ${outPaths[i]} (${f.bytes!.length.toLocaleString('en-US')} bytes)`);
     }
     return { stdout: lines.join('\n') + '\n', stderr, exitCode: 0 };
   });

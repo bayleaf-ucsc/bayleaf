@@ -57,7 +57,7 @@ await test('read-only mount refuses writes with EROFS', async () => {
 
 const seed = () => new SeedFs([
   { path: 'starter/README.md', dir: false, data: enc.encode('seed readme\n') },
-  { path: 'starter/src/main.ts', dir: false, data: enc.encode('seed main\n') },
+  { path: 'starter/src/main.js', dir: false, data: enc.encode('seed main\n') },
   { path: 'starter/src/util.js', dir: false, data: enc.encode('seed util\n') },
 ], 'starter.zip');
 
@@ -70,9 +70,9 @@ await test('seed layer: deep union, user wins, copy-up, refused rm without white
   assert.deepEqual(await ns.readdir('/work'), ['README.md', 'src']);
   await ns.writeFile('/work/src/new.js', 'n'); // creates src in the user layer
   assert.deepEqual(await ns.readdir('/work/src'), ['main.js', 'new.js', 'util.js']); // deep union keeps the seed's files
-  await ns.writeFile('/work/src/main.ts', 'edited');
-  assert.equal(await user.readFile('/src/main.ts'), 'edited');
-  assert.equal(await ns.readFile('/work/src/main.ts'), 'edited');
+  await ns.writeFile('/work/src/main.js', 'edited');
+  assert.equal(await user.readFile('/src/main.js'), 'edited');
+  assert.equal(await ns.readFile('/work/src/main.js'), 'edited');
   const e = await rejects(ns.rm('/work/src/util.js'), 'EROFS');
   assert.match(e.message, /read-only layer/);
 });
@@ -91,7 +91,7 @@ await test('whiteouts: rm hides a seed file, recreate clears it, rm -r hides a f
   await ns.writeFile('/work/src/util.js', 'back');
   assert.equal(await ns.readFile('/work/src/util.js'), 'back');
   assert.deepEqual(saved.at(-1), []);
-  await ns.writeFile('/work/src/main.ts', 'mine'); // in both layers now
+  await ns.writeFile('/work/src/main.js', 'mine'); // in both layers now
   await ns.rm('/work/src', { recursive: true });
   assert.ok(!(await ns.exists('/work/src')));
   await ns.mkdir('/work/src');
@@ -147,9 +147,9 @@ await test('just-bash over a namespace with a seed union', async () => {
   ns.mount(seed(), '/work', { flag: 'after', readOnly: true });
   ns.whiteouts('/work');
   const bash = new Bash({ fs: ns, cwd: '/work', defenseInDepth: false });
-  const r = await bash.exec('find . -type f | sort; echo x >> src/main.ts; cat src/main.ts; rm README.md; ls; grep -rl seed .');
+  const r = await bash.exec('find . -type f | sort; echo x >> src/main.js; cat src/main.js; rm README.md; ls; grep -rl seed .');
   assert.equal(r.exitCode, 0, r.stderr);
-  assert.equal(r.stdout, './README.md\n./src/main.ts\n./src/util.js\nseed main\nx\nsrc\nsrc/main.js\nsrc/util.js\n');
+  assert.equal(r.stdout, './README.md\n./src/main.js\n./src/util.js\nseed main\nx\nsrc\nsrc/main.js\nsrc/util.js\n');
 });
 
 await test('1k-file listing: union and plain mount', async () => {

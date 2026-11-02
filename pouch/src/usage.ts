@@ -10,22 +10,35 @@
 import { $, el } from './dom.ts';
 import { campusPass, usageOf } from './bayleaf-api.ts';
 
-const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
-const budget = (b) => ({ remaining: num(b?.remaining), limit: num(b?.limit), used: num(b?.used), resetsAt: b?.resets_at ? new Date(b.resets_at) : null });
+// The allowance as last checked; remaining and limit are null when unknown.
+export interface Allowance {
+  mode: 'unknown' | 'key' | 'campus'; remaining: number | null; limit: number | null; used?: number | null;
+  resetsAt?: Date | null; approximate?: boolean; offCampus?: boolean; error?: string;
+}
+// Today's request ledger (createLedger).
+export interface Ledger {
+  day: string; bySid: Record<string, number>; kinds: Record<string, number>;
+  seen: { remaining: number; counted: number; at: number } | null; outside: { down: number; up: number; at: number | null }; carry: number;
+}
+// One row of the Usage panel's table.
+export interface UsageRow { title: string; input?: number; output?: number; cost?: number; requests?: number; current?: boolean; subagents?: number }
 
-export function createUsage({ getKey }) {
-  let state = { mode: 'unknown', remaining: null, limit: null };
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+const budget = (b: { remaining?: unknown; limit?: unknown; used?: unknown; resets_at?: string } | undefined) => ({ remaining: num(b?.remaining), limit: num(b?.limit), used: num(b?.used), resetsAt: b?.resets_at ? new Date(b.resets_at) : null });
+
+export function createUsage({ getKey }: { getKey(): string | null | undefined }) {
+  let state: Allowance = { mode: 'unknown', remaining: null, limit: null };
   let gen = 0;
-  const subs = new Set();
+  const subs = new Set<(s: Allowance) => void>();
   async function refresh() {
     const g = ++gen, key = getKey();
-    let next;
+    let next: Allowance;
     try {
       if (key) {
         const r = await usageOf(key);
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const j = await r.json();
-        const sealed = j.budgets?.find((b) => b.provider === 'sealed');
+        const sealed = j.budgets?.find((b: { provider?: string }) => b.provider === 'sealed');
         next = { mode: 'key', ...budget(sealed) };
       } else {
         const r = await campusPass();
@@ -36,7 +49,7 @@ export function createUsage({ getKey }) {
           : { mode: 'campus', offCampus: !j.campus_network, remaining: null, limit: null };
       }
     } catch (e) {
-      next = { mode: key ? 'key' : 'campus', error: e.message, remaining: null, limit: null };
+      next = { mode: key ? 'key' : 'campus', error: (e as Error).message, remaining: null, limit: null };
     }
     if (g === gen) { state = next; for (const f of subs) f(state); }
     return state;
@@ -44,7 +57,7 @@ export function createUsage({ getKey }) {
   return {
     refresh,
     get state() { return state; },
-    subscribe(fn) { subs.add(fn); fn(state); return () => subs.delete(fn); },
+    subscribe(fn: (s: Allowance) => void) { subs.add(fn); fn(state); return () => subs.delete(fn); },
   };
 }
 
@@ -60,12 +73,12 @@ export function createUsage({ getKey }) {
 // either way under Pouch. The ledger never reconciles the two into an
 // "Other" figure. It only notes, between two checks of the allowance, how
 // far it moved beyond what this browser sent then (outside: { down, up, at }).
-// storage: { get(), set(v) }; dayOf(): the current allowance day (a string).
-export function createLedger(storage, dayOf) {
-  let led = null;
+// dayOf(): the current allowance day (a string).
+export function createLedger(storage: { get(): Promise<Ledger | null | undefined>; set(v: Ledger): Promise<void> | void }, dayOf: () => string | null | undefined) {
+  let led = null as Ledger | null;
   // dayOf() is null while the allowance is unknown: keep counting into the current day.
-  const fresh = () => ({ day: dayOf() ?? new Date().toDateString(), bySid: {}, kinds: {}, seen: null, outside: { down: 0, up: 0, at: null }, carry: 0 });
-  const total = (l) => Object.values(l.bySid).reduce((a, b) => a + b, 0);
+  const fresh = (): Ledger => ({ day: dayOf() ?? new Date().toDateString(), bySid: {}, kinds: {}, seen: null, outside: { down: 0, up: 0, at: null }, carry: 0 });
+  const total = (l: Ledger) => Object.values(l.bySid).reduce((a, b) => a + b, 0);
   async function load() {
     led ??= (await storage.get().catch(() => null)) ?? fresh();
     const d = dayOf();
@@ -74,7 +87,7 @@ export function createLedger(storage, dayOf) {
   }
   let saving = Promise.resolve();
   return {
-    async add(sid, kind = 'turn') {
+    async add(sid: unknown, kind = 'turn') {
       const l = await load();
       const k = String(sid ?? 'new');
       l.bySid[k] = (l.bySid[k] ?? 0) + 1;
@@ -82,7 +95,7 @@ export function createLedger(storage, dayOf) {
       saving = saving.then(() => storage.set(l)).catch(() => {});
     },
     // A first message counts under 'new' until its session exists.
-    async adopt(from, to) {
+    async adopt(from: unknown, to: unknown) {
       const l = await load(), a = String(from), b = String(to);
       if (a === b || !l.bySid[a]) return;
       l.bySid[b] = (l.bySid[b] ?? 0) + l.bySid[a]; delete l.bySid[a];
@@ -92,7 +105,7 @@ export function createLedger(storage, dayOf) {
     // browser sent in between, happened outside it. A request still in flight
     // can be counted before BayLeaf books it, so a rise no larger than what
     // was sent in between is carried to the next check, not reported.
-    async observe(remaining, at = Date.now()) {
+    async observe(remaining: number | null | undefined, at = Date.now()) {
       if (remaining == null) return;
       const l = await load();
       l.outside ??= { down: 0, up: 0, at: null }; l.carry ??= 0;
@@ -110,26 +123,26 @@ export function createLedger(storage, dayOf) {
     snapshot: async () => structuredClone(await load()),
   };
 }
-export const counted = (led) => Object.values(led?.bySid ?? {}).reduce((a, b) => a + b, 0);
+export const counted = (led: Ledger | null | undefined) => Object.values(led?.bySid ?? {}).reduce((a, b) => a + b, 0);
 // "down 3 and up 120", or null when nothing moved outside this browser.
-export function outsideText(led) {
+export function outsideText(led: Ledger | null | undefined) {
   const o = led?.outside;
   const parts = [o?.down && `down ${fmt(o.down)}`, o?.up && `up ${fmt(o.up)}`].filter(Boolean);
   return parts.length ? parts.join(' and ') : null;
 }
 
-export const extractKey = (text) => /sk-bayleaf-[A-Za-z0-9_-]+/.exec(String(text ?? ''))?.[0] ?? null;
-export const fraction = (s) => (s.remaining != null && s.limit ? Math.max(0, Math.min(1, s.remaining / s.limit)) : null);
-const isLow = (s) => { const f = fraction(s); return f != null && f < 0.1; };
+export const extractKey = (text: unknown) => /sk-bayleaf-[A-Za-z0-9_-]+/.exec(String(text ?? ''))?.[0] ?? null;
+export const fraction = (s: Allowance) => (s.remaining != null && s.limit ? Math.max(0, Math.min(1, s.remaining / s.limit)) : null);
+const isLow = (s: Allowance) => { const f = fraction(s); return f != null && f < 0.1; };
 
 // "5:00 PM", or "Thu 5:00 PM" when the reset is not today, in the user's zone.
-export function resetText(d) {
+export function resetText(d: Date | null | undefined) {
   if (!d || Number.isNaN(d.getTime())) return null;
   const today = d.toDateString() === new Date().toDateString();
   return d.toLocaleString([], today ? { hour: 'numeric', minute: '2-digit' } : { weekday: 'short', hour: 'numeric', minute: '2-digit' });
 }
 
-export function exhaustedText(s) {
+export function exhaustedText(s: Allowance) {
   const at = resetText(s.resetsAt);
   const when = at ? ` It resets at ${at} (your time).` : ' It resets daily.';
   return s.mode === 'campus'
@@ -140,7 +153,7 @@ export function exhaustedText(s) {
 // The rail's Usage icon (a small bar and the number left) and the
 // composer's compact copy of it (the number).
 // led: today's ledger, for the tooltip's "this browser today" line.
-export function renderMeter(s, led = null) {
+export function renderMeter(s: Allowance, led: Ledger | null = null) {
   const f = fraction(s);
   // Off campus without a key: nothing can be sent, so 0, not "?" (or 100).
   const off = s.mode === 'campus' && s.offCampus;
@@ -170,11 +183,11 @@ export function labelComposer() {
   b.ariaLabel = `Usage. ${b.title} Opens Usage.`;
 }
 
-const fmt = (n) => (n ?? 0).toLocaleString();
+const fmt = (n: number | null | undefined) => (n ?? 0).toLocaleString();
 
 // rows: [{ title, input, output, cost, current }] for the token table; led: today's ledger.
-export function renderPanel(host, s, rows, led = null) {
-  const out = [];
+export function renderPanel(host: HTMLElement, s: Allowance, rows: UsageRow[], led: Ledger | null = null) {
+  const out: HTMLElement[] = [];
   const f = fraction(s);
   const box = el('div', { className: 'quota' + (isLow(s) ? ' low' : '') });
   if (s.remaining == null) {
@@ -184,8 +197,8 @@ export function renderPanel(host, s, rows, led = null) {
       : 'Checking...' }));
   } else {
     const bar = el('div', { className: 'bar' }, el('span'));
-    bar.style.setProperty('--fill', `${Math.round(f * 100)}%`);
-    bar.role = 'img'; bar.ariaLabel = `${Math.round(f * 100)}% left`;
+    bar.style.setProperty('--fill', `${Math.round(f! * 100)}%`);
+    bar.role = 'img'; bar.ariaLabel = `${Math.round(f! * 100)}% left`;
     box.append(
       el('div', { className: 'big' }, `${s.mode === 'campus' ? 'about ' : ''}${s.remaining}`, el('small', { textContent: ` of ${s.limit} left today` })),
       bar,
@@ -196,7 +209,7 @@ export function renderPanel(host, s, rows, led = null) {
     const at = resetText(s.resetsAt);
     if (at) box.append(el('p', { className: 'muted', textContent: `Resets at ${at} (your time).` }));
     const out = outsideText(led);
-    if (out) box.append(el('p', { className: 'outside', textContent: `Changed outside this browser: ${out} since ${new Date(led.outside.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} or earlier today. ${s.mode === 'campus' ? 'Others on this network share it' : 'This key is also used elsewhere, or the allowance was reset or raised'}; the number above is the allowance as BayLeaf reports it.` }));
+    if (out) box.append(el('p', { className: 'outside', textContent: `Changed outside this browser: ${out} since ${new Date(led!.outside.at!).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} or earlier today. ${s.mode === 'campus' ? 'Others on this network share it' : 'This key is also used elsewhere, or the allowance was reset or raised'}; the number above is the allowance as BayLeaf reports it.` }));
   }
   out.push(box);
   out.push(el('p', { textContent: 'Each model step uses one request: every tool round in a turn, every compaction summary, and every automatic title of a BayLeaf Sealed session. A turn that reads two files and then replies takes three.' }));
@@ -204,14 +217,14 @@ export function renderPanel(host, s, rows, led = null) {
   const shown = rows.filter((r) => r.input || r.output || r.requests);
   if (!shown.length) out.push(el('p', { className: 'muted', textContent: 'Nothing counted yet. Rows appear after a session\'s first turn.' }));
   else {
-    const anyCost = shown.some((r) => r.cost > 0);
+    const anyCost = shown.some((r) => r.cost! > 0);
     // Three columns fit the 320 px drawer: tokens ride under the session name.
     const head = el('tr', {}, el('th', { textContent: 'Session' }), el('th', { textContent: 'Requests', title: 'Requests sent today, counted as they left: turns, subagents, titles, compactions and stopped requests' }), ...(anyCost ? [el('th', { textContent: 'Cost' })] : []));
-    const toks = (r) => r.input || r.output ? [el('span', { className: 'toks muted', textContent: `${fmt(r.input)} in, ${fmt(r.output)} out` })] : [];
-    const row = (r, cls = '') => el('tr', { className: (r.current ? 'current ' : '') + cls },
+    const toks = (r: UsageRow) => r.input || r.output ? [el('span', { className: 'toks muted', textContent: `${fmt(r.input)} in, ${fmt(r.output)} out` })] : [];
+    const row = (r: UsageRow, cls = '') => el('tr', { className: (r.current ? 'current ' : '') + cls },
       el('td', { title: r.subagents ? `${r.title} (with ${r.subagents} subagent${r.subagents > 1 ? 's' : ''})` : r.title }, el('span', { className: 'clamp', textContent: r.title }), ...toks(r)),
       el('td', { textContent: r.requests != null ? fmt(r.requests) : '' }),
-      ...(anyCost ? [el('td', { textContent: r.cost > 0 ? `$${r.cost.toFixed(4)}` : '' })] : []));
+      ...(anyCost ? [el('td', { textContent: r.cost! > 0 ? `$${r.cost!.toFixed(4)}` : '' })] : []));
     const body = shown.map((r) => row(r));
     if (led) body.push(row({ title: 'This browser today', requests: counted(led) }, 'total'));
     const cols = el('colgroup', {}, el('col'), ...Array.from({ length: anyCost ? 2 : 1 }, () => el('col', { className: 'n' })));

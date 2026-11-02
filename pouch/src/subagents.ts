@@ -28,6 +28,11 @@
 //   result number `seq`, so a join after a message waits for a newer result.
 import { defineTool } from '@earendil-works/pi-durable';
 import { Type } from 'typebox';
+import type { Context } from '@earendil-works/chord';
+import type { ConversationId, Conversation, InputEntry, InputSubmissionDraft, ModelRef, Submission, SubmissionId, ToolRegistration, UsageState, UserInput } from '@earendil-works/pi-durable';
+import type { ContentLike, SessionId, StoredMessage } from './agent-types.ts';
+import type { Handle, HoldResult, Scope } from './graph.ts';
+import type { Sender, SubagentDeps, SubagentOwner, SubagentRow, SubagentStatus, SubagentSummary, Waitable } from './subagents-types.ts';
 import { PROFILES, GRAPH_GLOSS, SUBAGENT_DIR, scratchOf } from './profiles.ts';
 export { GRAPH_GLOSS, SUBAGENT_DIR, scratchOf };
 import { createScope, MAIN, JOIN_DEFAULT_S, JOIN_MAX_S, MAX_SCOPE_MESSAGES, MAX_PAIR_MESSAGES, asRef, refOf, migrateRows } from './graph.ts';
@@ -38,42 +43,45 @@ export const REPORT_KIND = 'pouch.subagent';
 // Message): the model sees `content`, the transcripts show data.text marked as
 // the user's, and the report quotes it so the parent knows it was steered.
 export const STEER_KIND = 'pouch.steer';
-const fromUser = (text) => `[Message from the user, who is watching your work; not from the main agent] ${text}`;
+const fromUser = (text: string) => `[Message from the user, who is watching your work; not from the main agent] ${text}`;
 // A message from another agent of the session: the model sees the tag and
 // the text; data { from, name, to, text } lets every view label the sender.
 export const MESSAGE_KIND = 'pouch.msg';
 // A file-watch event (src/ns/watch.ts): data { watches: [{ id, note }], lines, mode }.
 export { WATCH_KIND } from './ns/watch.ts';
-export const tagOf = (name, ref) => `[from ${name} (${ref})]`;
+export const tagOf = (name: string, ref: Handle) => `[from ${name} (${ref})]`;
 // Five is the panel (a chair and four judges); one spare for a helper.
 export const MAX_RUNNING = 6;
 const ctx0 = undefined;
 
-const slug = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24);
-const textOf = (content) => typeof content === 'string' ? content
+const slug = (s: unknown) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24);
+const textOf = (content: ContentLike | undefined) => typeof content === 'string' ? content
   : (content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join('');
 
 // The prompts (GRAPH_GLOSS, the subagent and one-shot instructions) live
 // with their profiles in src/profiles.ts.
 export const MAX_FILE_CHARS = 48_000, MAX_FILES_CHARS = 120_000;
 
-// deps: { ctx, dbOf(sid), openDb(name), conv(sid), modelRef(id), normalizeView(view, entries),
-//         reg: { get(sid), set(sid, list) }, onChange(sid, list), onReport(sid, submission, child),
-//         onSettle(sid, child), lowAllowance() -> string|null, sidOf(convId) }
-export function createSubagents(deps) {
+// The arguments of the subagent and agents tools (spawn's are SpawnArgs).
+interface ToolArgs extends SpawnArgs { action: string; id?: string; ids?: string[]; timeout?: number; text?: string }
+interface SpawnArgs { task?: string; name?: string; background?: boolean; ns?: string[]; report?: boolean; mode?: string; files?: string[]; to?: string }
+// One join target's line in a join result.
+interface Joined { id: Handle; name: string; state: string; blocked_ms: number; timed_out?: boolean; cached?: boolean; quiet_since?: string; age_s?: number; fresh?: boolean; last?: string; sent_to?: string; sent_preview?: string }
+
+export function createSubagents(deps: SubagentDeps) {
   const ctx = deps.ctx ?? ctx0;
-  const tracking = new Set();
+  const tracking = new Set<string>();
   let closing = false;
-  const owners = new Map(); // child conversation id -> { sid, child id, ns? }
-  const locks = new Map();  // sid -> promise chain for registry updates
-  const scopes = new Map(); // sid -> createScope(): caps, arrivals, blocking calls
-  const scope = (sid) => { const k = String(sid); if (!scopes.has(k)) scopes.set(k, createScope()); return scopes.get(k); };
-  const results = new Map(); // "childId:seq" -> its last message at that result (join)
-  const reserved = new Map(); // sid -> { n: last short id number given, names }
-  const last = new Map();   // sid -> registry rows as last written (synchronous reads for waits)
+  const owners = new Map<ConversationId, SubagentOwner>(); // child conversation id -> { sid, child id, ns? }
+  const locks = new Map<string, Promise<unknown>>();  // sid -> promise chain for registry updates
+  const scopes = new Map<string, Scope>(); // sid -> createScope(): caps, arrivals, blocking calls
+  const scope = (sid: SessionId) => { const k = String(sid); if (!scopes.has(k)) scopes.set(k, createScope()); return scopes.get(k)!; };
+  const results = new Map<string, string>(); // "childId:seq" -> its last message at that result (join)
+  const reserved = new Map<string, { n: number; names: Set<string> }>(); // sid -> { n: last short id number given, names }
+  const last = new Map<string, SubagentRow[]>();   // sid -> registry rows as last written (synchronous reads for waits)
 
   // Serialize read-modify-write of one session's registry.
-  function update(sid, fn) {
+  function update(sid: SessionId, fn: (list: SubagentRow[]) => SubagentRow[] | void | Promise<SubagentRow[] | void>) {
     const prev = locks.get(String(sid)) ?? Promise.resolve();
     const next = prev.then(async () => {
       const list = migrateRows((await deps.reg.get(String(sid))) ?? []);
@@ -89,15 +97,15 @@ export function createSubagents(deps) {
     return next;
   }
   // Rows read through migrateRows: a registry written before a-handles reads as a1, a2, ...
-  const list = async (sid) => migrateRows((await deps.reg.get(String(sid))) ?? []);
-  const running = (l) => l.filter((c) => c.status === 'running');
+  const list = async (sid: SessionId) => migrateRows((await deps.reg.get(String(sid))) ?? []);
+  const running = (l: SubagentRow[]) => l.filter((c) => c.status === 'running');
   // A submission the page can await without a pi-durable context (drive()).
-  const waitable = (sub) => ({ id: sub.id, wait: () => sub.wait(ctx) });
+  const waitable = (sub: Submission): Waitable => ({ id: sub.id, wait: () => sub.wait(ctx) });
   // Handles: a2, a3, ... in spawn order (graph.js refOf; rows made before graphs have none).
-  const find = (l, ref) => l.find((c) => c.id === ref || c.name === ref || refOf(l, c) === asRef(ref) || c.name === slug(ref));
-  const label = (l, ref) => { if (ref === MAIN) return `main (${MAIN})`; const c = l.find((x) => refOf(l, x) === ref); return c ? `${c.name} (${ref})` : ref; };
+  const find = (l: SubagentRow[], ref: unknown) => l.find((c) => c.id === ref || c.name === ref || refOf(l, c) === asRef(ref) || c.name === slug(ref));
+  const label = (l: SubagentRow[], ref: Handle | undefined) => { if (ref === MAIN) return `main (${MAIN})`; const c = l.find((x) => refOf(l, x) === ref); return c ? `${c.name} (${ref})` : ref as Handle; };
   // Whether an agent of the session is in a model run right now.
-  async function busy(conv) {
+  async function busy(conv: Conversation) {
     const state = await conv.viewState(ctx), b = !!state.value.docs['pi.live']?.run;
     state.dispose();
     return b;
@@ -108,12 +116,12 @@ export function createSubagents(deps) {
   // waits while main works or the page holds a follow-up for it, so it
   // follows the user's turn. deps.followUpHeld(sid) says whether one is held.
   // idleOnly: wait only for the follow-up (a busy main takes it as a steer).
-  async function userFirst(sid, parent, idleOnly = false) {
+  async function userFirst(sid: SessionId, parent: Conversation, idleOnly = false) {
     if (!deps.followUpHeld) return;
     while (!closing && (deps.followUpHeld(sid) || (!idleOnly && await busy(parent)))) await new Promise((r) => setTimeout(r, 150));
   }
-  async function harnessOf(sid) { return (await deps.openDb(deps.dbOf(sid))).harness; }
-  async function childConv(sid, id) {
+  async function harnessOf(sid: SessionId) { return (await deps.openDb(deps.dbOf(sid))).harness; }
+  async function childConv(sid: SessionId, id: ConversationId) {
     const c = await (await harnessOf(sid)).conversation(id, ctx);
     if (!c) throw new Error('That subagent no longer exists.');
     return c;
@@ -121,15 +129,15 @@ export function createSubagents(deps) {
 
   // The child's final state: its last answer, how many model requests it
   // made, and what the user told it (placed steering messages, in order).
-  async function summary(sid, id) {
+  async function summary(sid: SessionId, id: ConversationId): Promise<SubagentSummary> {
     const c = await childConv(sid, id);
-    let answer = '', requests = 0, toolErrors = 0, cursor;
-    const steers = [];
+    let answer = '', requests = 0, toolErrors = 0, cursor: Parameters<Conversation['entries']>[2];
+    const steers: string[] = [];
     do {
       const page = await c.entries(cursor ? {} : { order: 'ascending' }, 500, cursor, ctx);
       for (const e of page.items) {
-        if (e.kind === STEER_KIND) steers.push(String(e.data?.text ?? ''));
-        if (e.kind === 'pi.tool-result' && e.model?.[0]?.isError) toolErrors++;
+        if (e.kind === STEER_KIND) steers.push(String((e.data as { text?: string } | null | undefined)?.text ?? ''));
+        if (e.kind === 'pi.tool-result' && (e.model?.[0] as StoredMessage | undefined)?.isError) toolErrors++;
         if (e.kind !== 'pi.assistant') continue;
         requests++;
         const t = textOf(e.model?.[0]?.content);
@@ -138,42 +146,42 @@ export function createSubagents(deps) {
       cursor = page.next;
     } while (cursor);
     // Its tokens (pi.usage), rolled into the parent's row of the Usage panel.
-    let usage;
+    let usage: SubagentSummary['usage'];
     try {
       const st = await c.viewState(ctx);
       usage = { input: 0, output: 0, cost: 0 };
-      for (const m of Object.values(st.value.docs['pi.usage']?.models ?? {})) { usage.input += m.input ?? 0; usage.output += m.output ?? 0; usage.cost += m.cost?.total ?? 0; }
+      for (const m of Object.values((st.value.docs['pi.usage'] as UsageState | undefined)?.models ?? {})) { usage.input += m.input ?? 0; usage.output += m.output ?? 0; usage.cost += m.cost?.total ?? 0; }
       st.dispose();
     } catch { usage = undefined; }
     return { answer, requests, toolErrors, steers, usage };
   }
   // For the parent model: the user's words to the child, quoted.
-  const steerNote = (steers) => steers?.length
+  const steerNote = (steers: string[] | undefined) => steers?.length
     ? `\n\nThe user steered this subagent while it worked (typed into its view, not by you): ${steers.map((t) => JSON.stringify(t.slice(0, 500))).join('; ')}.` : '';
 
   // Wait for one child submission to settle, record it, and tell the parent.
-  async function track(sid, childId, subId, quiet = false) {
+  async function track(sid: SessionId, childId: ConversationId, subId: SubmissionId | undefined, quiet = false) {
     const key = `${childId}:${subId}`;
     if (tracking.has(key)) return;
     tracking.add(key);
     try {
       const harness = await harnessOf(sid);
       const sub = subId ? await harness.submission(subId, ctx) : null;
-      const settled = sub ? await sub.wait(ctx).catch((e) => ({ status: 'unanswered', reason: 'error', detail: e.message })) : null;
+      const settled = sub ? await sub.wait(ctx).catch((e) => ({ status: 'unanswered' as const, reason: 'error', detail: e.message as string })) : null;
       if (closing) return; // the page is going away: the next open decides (resume())
-      const status = !settled ? 'interrupted' : settled.status === 'done' ? 'finished' : settled.reason === 'aborted' ? 'stopped' : 'failed';
-      const why = settled && settled.status !== 'done' ? (typeof settled.detail === 'string' ? settled.detail : settled.detail?.message ?? settled.reason ?? '') : '';
-      const { answer, requests, toolErrors, steers, usage } = await summary(sid, childId).catch(() => ({ answer: '', requests: 0, toolErrors: 0, steers: [] }));
+      const status: SubagentStatus = !settled ? 'interrupted' : settled.status === 'done' ? 'finished' : settled.reason === 'aborted' ? 'stopped' : 'failed';
+      const why = settled && settled.status !== 'done' ? (typeof settled.detail === 'string' ? settled.detail : (settled.detail as { message?: string } | undefined)?.message ?? settled.reason ?? '') : '';
+      const { answer, requests, toolErrors, steers, usage } = await summary(sid, childId).catch((): SubagentSummary => ({ answer: '', requests: 0, toolErrors: 0, steers: [] }));
       // Main joined on it: the join result carries this answer, so no report
       // is posted besides (no duplicates). Decided before the update below
       // releases the join.
       const l0 = await list(sid), row = l0.find((c) => c.id === childId);
       const joined = row && row.sub === subId && scope(sid).held(MAIN).some((h) => h.kind === 'join' && h.ids.includes(refOf(l0, row)));
-      let child;
+      let child!: SubagentRow | undefined; // set inside the update
       await update(sid, (l) => l.map((c) => {
         if (c.id !== childId || c.sub !== subId) return c;
         child = { ...c, status, ended: Date.now(), requests, toolErrors, ...(usage ? { usage } : {}), seq: (c.seq ?? 0) + 1, ...(why ? { error: String(why).slice(0, 300) } : {}), ...(joined ? { reported: subId, joinedBy: MAIN } : {}) };
-        results.set(`${childId}:${child.seq}`, answer);
+        results.set(`${childId}:${child!.seq}`, answer);
         return child;
       }));
       if (!child) return; // superseded by a later message to the child
@@ -181,9 +189,9 @@ export function createSubagents(deps) {
       // tagged as from it, so it counts as delivered by message.
       if (child.oneshot && child.to && status === 'finished' && answer.trim() && !(child.to === MAIN && (child.foreground || joined))) {
         try {
-          await send(sid, { ref: child.ref, name: child.name, child }, child.to, answer);
+          await send(sid, { ref: child.ref!, name: child.name, child }, child.to, answer);
           child = (await list(sid)).find((c) => c.id === childId) ?? child;
-        } catch (e) { child = { ...child, error: `its reply could not be forwarded: ${e.message}`.slice(0, 300) }; }
+        } catch (e) { child = { ...child!, error: `its reply could not be forwarded: ${(e as Error).message}`.slice(0, 300) }; }
       }
       deps.onSettle?.(sid, child);
       if (child.foreground || child.reported === subId) return;
@@ -196,19 +204,19 @@ export function createSubagents(deps) {
       if (child.sentIn === subId || child.wokenBy) return await report(sid, child, null, true, steers, true);
       await report(sid, child, answer, quiet, steers);
     } catch (e) {
-      if (!/closed|deleted|No such session|no longer exists/i.test(e.message)) console.warn('Pouch subagent watcher:', e);
+      if (!/closed|deleted|No such session|no longer exists/i.test((e as Error).message)) console.warn('Pouch subagent watcher:', e);
     } finally { tracking.delete(key); }
   }
 
   // force quiet: after a reload, so a report never starts a parent run by itself.
   // byMessage: it sent its work to other agents; say so, without its words.
-  async function report(sid, child, answer, forceQuiet = false, steers = [], byMessage = false) {
-    const verb = { finished: 'finished', failed: 'failed', stopped: 'was stopped by the user', interrupted: 'was interrupted by a page reload (the user can resume it from its card)' }[child.status];
+  async function report(sid: SessionId, child: SubagentRow, answer: string | null, forceQuiet = false, steers: string[] = [], byMessage = false) {
+    const verb = ({ finished: 'finished', failed: 'failed', stopped: 'was stopped by the user', interrupted: 'was interrupted by a page reload (the user can resume it from its card)' } as Partial<Record<SubagentStatus, string>>)[child.status];
     const l = await list(sid), ref = child.ref ?? refOf(l, find(l, child.id) ?? child);
     const to = Object.keys(child.sent ?? {}).map((r) => label(l, r)).join(', ');
     const body = byMessage && child.sentIn !== child.sub ? `A message from ${label(l, child.wokenBy)} woke it, and it ended without sending anything; its reply stays in its transcript.`
       : byMessage ? `It delivered its work by message (to ${to || 'other agents'}), so its output is not repeated here.`
-      : child.status !== 'finished' && answer?.trim() ? `Its last output before it ${{ failed: 'failed', interrupted: 'was interrupted' }[child.status] ?? 'was stopped'} (work in progress, not a report): ${answer.trim()}`
+      : child.status !== 'finished' && answer?.trim() ? `Its last output before it ${({ failed: 'failed', interrupted: 'was interrupted' } as Partial<Record<SubagentStatus, string>>)[child.status] ?? 'was stopped'} (work in progress, not a report): ${answer.trim()}`
       : answer?.trim() || (child.status === 'finished' ? '(It gave no answer.)' : '(No answer yet.)');
     const content = `[Subagent report from Pouch, not typed by the user] Subagent "${child.name}" (${ref}) ${verb}${child.error && child.status === 'failed' ? ` (${child.error})` : ''}. Its task: ${child.task.slice(0, 300)}${steerNote(steers)}\n\n${body}` +
       (byMessage ? '' : child.status === 'finished' ? '\n\nUse this report to continue helping the user; mention briefly what it found.' : child.oneshot ? '' : '\n\nIts partial work, if any, may be under ' + scratchOf(child.ns) + '/. Tell the user only if it matters now.');
@@ -222,7 +230,7 @@ export function createSubagents(deps) {
     if (!quiet && !waitedOn) await userFirst(sid, parent);
     const sub = await parent.submit(quiet
       ? { type: 'write', requestId, entry: { kind: REPORT_KIND, data, model: [{ role: 'user', content, timestamp: Date.now() }] } }
-      : { type: 'input', requestId, content, entry: { kind: REPORT_KIND, data }, ...(waitedOn ? { whenBusy: 'steer' } : {}) }, ctx);
+      : { type: 'input', requestId, content, entry: { kind: REPORT_KIND, data }, ...(waitedOn ? { whenBusy: 'steer' as const } : {}) }, ctx);
     await update(sid, (l) => l.map((c) => (c.id === child.id ? { ...c, reported: child.sub } : c)));
     if (!quiet && !waitedOn) deps.onReport?.(sid, waitable(sub), child);
   }
@@ -231,13 +239,13 @@ export function createSubagents(deps) {
   // was running is interrupted until the user resumes it; one whose
   // submission settled before its report was posted reports now. Both
   // reports are quiet writes (deduplicated by request id): no request spent.
-  async function resume(sid, aborted = []) {
+  async function resume(sid: SessionId, aborted: ConversationId[] = []) {
     const cut = new Set(aborted);
     for (const c of await list(sid)) owners.set(c.id, { sid, id: c.id, ns: c.ns });
     for (const c of await list(sid)) {
       if (c.status === 'running' && (cut.has(c.id) || !c.sub)) {
         const { answer, requests } = await summary(sid, c.id).catch(() => ({ answer: '', requests: c.requests }));
-        let child;
+        let child!: SubagentRow | undefined; // set inside the update
         await update(sid, (l) => l.map((x) => (x.id === c.id ? (child = { ...x, status: 'interrupted', ended: Date.now(), requests }) : x)));
         if (child && !child.foreground) await report(sid, child, answer, true).catch(() => {});
       } else if (c.status === 'running' || (!c.foreground && c.sub && c.reported !== c.sub)) track(sid, c.id, c.sub, true);
@@ -245,7 +253,7 @@ export function createSubagents(deps) {
   }
 
   // Attached files for a one-shot, read in main's namespace, size-capped.
-  async function attach(files) {
+  async function attach(files: string[] | undefined) {
     if (!files?.length) return '';
     if (!deps.readFile) throw new Error('files: attaching files is not available here.');
     let out = '', total = 0;
@@ -259,16 +267,16 @@ export function createSubagents(deps) {
     return out;
   }
 
-  async function spawn(sid, parentModel, { task, name, background = true, ns, report: reports = true, mode, files, to }, signal) {
+  async function spawn(sid: SessionId, parentModel: ModelRef | undefined, { task, name, background = true, ns, report: reports = true, mode, files, to }: SpawnArgs, signal?: AbortSignal): Promise<{ child: SubagentRow; text: string }> {
     if (!task?.trim()) throw new Error('task is empty: describe the self-contained job for the subagent.');
     const oneshot = mode === 'oneshot';
     if (!oneshot && files?.length) throw new Error('files is for mode "oneshot" only; a full subagent reads files itself (give the paths in its task).');
     if (!oneshot && to != null) throw new Error('to is for mode "oneshot" only; tell a full subagent in its task where to send its result.');
     const l = await list(sid);
-    let toRef = null;
+    let toRef: Handle | null = null;
     if (oneshot && to != null && String(to).trim()) {
       to = asRef(to);
-      toRef = to === MAIN || to === 'main' ? MAIN : refOf(l, find(l, String(to)) ?? {});
+      toRef = to === MAIN || to === 'main' ? MAIN : refOf(l, find(l, String(to)) ?? ({} as SubagentRow));
       if (toRef !== MAIN && !find(l, String(to))) throw new Error(`to: no agent "${to}" in this session. Known: ${[`main (${MAIN})`, ...l.map((c) => label(l, refOf(l, c)))].join(', ')}.`);
     }
     const attached = oneshot ? await attach(files) : '';
@@ -293,7 +301,7 @@ export function createSubagents(deps) {
     // Known as a subagent (and its namespace) before its first tool call can run.
     owners.set(child.id, { sid, id: child.id, ns: ns?.length ? ns : undefined });
     const sub = await child.submit({ type: 'input', content: task + attached, requestId: `sa-task:${child.id}` }, ctx);
-    const entry = { id: child.id, ref, name: n, task, status: 'running', started: Date.now(), sub: sub.id, requests: 0, ...(ns?.length && !oneshot ? { ns } : {}), ...(background ? {} : { foreground: true }), ...(reports === false ? { noReport: true } : {}),
+    const entry: SubagentRow = { id: child.id, ref, name: n, task, status: 'running', started: Date.now(), sub: sub.id, requests: 0, ...(ns?.length && !oneshot ? { ns } : {}), ...(background ? {} : { foreground: true }), ...(reports === false ? { noReport: true } : {}),
       ...(oneshot ? { oneshot: true, ...(files?.length ? { files: files.map(String) } : {}), ...(toRef ? { to: toRef } : {}) } : {}) };
     await update(sid, (x) => [...x, entry]);
     const low = deps.lowAllowance?.();
@@ -313,14 +321,14 @@ export function createSubagents(deps) {
     deps.onBlocked?.(sid);
     held.then(() => deps.onBlocked?.(sid));
     try {
-      const done = track(sid, child.id, sub.id).then(() => ({ type: 'done' }));
+      const done = track(sid, child.id, sub.id).then((): HoldResult => ({ type: 'done' }));
       const r = await Promise.race([done, held]);
       if (r.type === 'detached') return { child: entry, text: r.note };
       scope(sid).release(MAIN, { type: 'done' }, (h) => h.kind === 'spawn' && h.ids.includes(ref));
       const fin = find(await list(sid), child.id);
       const { answer, steers } = await summary(sid, child.id);
       if (fin?.status !== 'finished') throw new Error(`Subagent "${n}" (${ref}) ${fin?.status ?? 'failed'}${fin?.error ? `: ${fin.error}` : ''}.${steerNote(steers)}${answer ? `\nLast output:\n${answer}` : ''}`);
-      return { child: fin, text: fin.sentIn === fin.sub ? `Subagent "${n}" (${ref}) finished; it delivered its work by message.` : `Subagent "${n}" (${ref}) finished:${steerNote(steers)}\n\n${answer}` };
+      return { child: fin!, text: fin!.sentIn === fin.sub ? `Subagent "${n}" (${ref}) finished; it delivered its work by message.` : `Subagent "${n}" (${ref}) finished:${steerNote(steers)}\n\n${answer}` };
     } finally { signal?.removeEventListener('abort', abort); }
   }
 
@@ -329,7 +337,7 @@ export function createSubagents(deps) {
   // later like a background one. input: the user's message, a pi-durable
   // input draft (agent.js builds it) placed at main's next step; without it,
   // the user pressed Background. Never stops anything.
-  async function detach(sid, { text, input } = {}) {
+  async function detach(sid: SessionId, { text, input }: { text?: string; input?: InputSubmissionDraft } = {}): Promise<boolean | Submission> {
     const held = scope(sid).held(MAIN);
     if (!held.length) return false;
     scope(sid).newTurn();
@@ -350,7 +358,7 @@ export function createSubagents(deps) {
   // one, like a report (user-first holds; the page drives main's turn). Not
   // counted against the message caps: watches have their own wake cap.
   // Resolves to { done } for a wake (its run's end), {} otherwise.
-  async function notify(sid, ref, { content, entry, mode }) {
+  async function notify(sid: SessionId, ref: Handle, { content, entry, mode }: { content: UserInput; entry?: InputEntry; mode?: string }): Promise<{ done?: ReturnType<Submission['wait']> }> {
     if (ref === MAIN) {
       const parent = await deps.conv(sid);
       if (mode === 'steer' || await busy(parent)) { await parent.submit({ type: 'input', content, entry, whenBusy: 'steer' }, ctx); return {}; }
@@ -369,14 +377,14 @@ export function createSubagents(deps) {
     track(sid, target.id, sub.id);
     return { done: sub.wait(ctx) };
   }
-  async function busyOf(sid, ref) {
+  async function busyOf(sid: SessionId, ref: Handle) {
     if (ref === MAIN) return busy(await deps.conv(sid));
     const l = await list(sid), target = find(l, ref);
     return !!target && target.status === 'running' && busy(await childConv(sid, target.id));
   }
 
   // Who is a caller: main (a1) or one of the session's subagents.
-  async function senderOf(sid, convId) {
+  async function senderOf(sid: SessionId, convId: ConversationId): Promise<Sender> {
     const o = owners.get(convId);
     if (!o) return { ref: MAIN, name: 'main', child: null };
     let l = await list(sid), c = l.find((x) => x.id === o.id);
@@ -387,14 +395,14 @@ export function createSubagents(deps) {
   }
 
   // One message from an agent of the session to another (G4, G5, G11).
-  async function send(sid, from, to, text) {
+  async function send(sid: SessionId, from: Sender, to: unknown, text: string | undefined) {
     if (!text?.trim()) throw new Error('text is empty.');
     if (to == null || !String(to).trim()) throw new Error('to is empty: give the handle of an agent in this session (action "list" shows them).');
     to = asRef(to);
     const l = await list(sid);
     const target = to === MAIN || to === 'main' ? null : find(l, String(to));
     if (to !== MAIN && to !== 'main' && !target) throw new Error(`No agent "${to}" in this session (main ${MAIN} and its subagents). Known: ${[`main (${MAIN})`, ...l.map((c) => label(l, refOf(l, c)))].join(', ')}. Messages never leave this session.`);
-    const toRef = target ? refOf(l, target) : MAIN;
+    const toRef: Handle = target ? refOf(l, target) : MAIN;
     if (toRef === from.ref) throw new Error('That is you: message another agent.');
     if (target?.oneshot) throw new Error(`${label(l, toRef)} is a one-shot: it makes one request and takes no messages. Spawn another one-shot with the question (and what it needs attached).`);
     if (target && target.status !== 'running' && from.child && target.status !== 'finished') throw new Error(`${label(l, toRef)} ${target.status === 'stopped' ? 'was stopped by the user' : `is ${target.status}`}; only main or the user can restart it.`);
@@ -404,7 +412,7 @@ export function createSubagents(deps) {
     if (target) scope(sid).markSent(from.ref, toRef, target.seq ?? 0);
     const content = `${tagOf(from.name, from.ref)} ${text}`;
     const entry = { kind: MESSAGE_KIND, data: { from: from.ref, name: from.name, to: toRef, text } };
-    let result;
+    let result: string;
     if (!target) {
       const parent = await deps.conv(sid);
       if (await busy(parent)) { await parent.submit({ type: 'input', content, entry, whenBusy: 'steer' }, ctx); result = `Sent to main (${MAIN}); it reads this before its next step.`; }
@@ -437,10 +445,10 @@ export function createSubagents(deps) {
   // and return each one's last message. Already quiet: at once, cached, with
   // its age. Never wakes anyone. Several joiners of one target are released
   // in the same tick (graph.js check) with the same text (results cache).
-  async function join(sid, from, ids, timeout, signal) {
+  async function join(sid: SessionId, from: Sender, ids: unknown, timeout: unknown, signal?: AbortSignal) {
     const want = (Array.isArray(ids) ? ids : [ids]).filter((x) => x != null && String(x).trim()).map(asRef);
     if (!want.length) throw new Error('ids is empty: give the subagent handles to join (action "list" shows them).');
-    const l = await list(sid), refs = [];
+    const l = await list(sid), refs: Handle[] = [];
     for (const w of want) {
       if (w === MAIN || w === 'main') throw new Error(`main (${MAIN}) cannot be joined: it answers by message. Join subagents only.`);
       const c = find(l, w);
@@ -451,10 +459,10 @@ export function createSubagents(deps) {
     const loop = scope(sid).cycle(from.ref, refs);
     if (loop) throw new Error(`Refused: joining would close a cycle of blocked agents (${loop.map((r) => label(l, r)).join(' -> ')}). One of you must answer by message instead.`);
     const secs = Math.min(Math.max(Number(timeout) || JOIN_DEFAULT_S, 1), JOIN_MAX_S);
-    const rowOf = (ref) => { const x = last.get(String(sid)) ?? l; return x.find((y) => refOf(x, y) === ref); };
-    const ready = (ref) => { const c = rowOf(ref); return !c || (c.status !== 'running' && (c.seq ?? 0) > scope(sid).sentSeq(from.ref, ref)); };
+    const rowOf = (ref: Handle) => { const x = last.get(String(sid)) ?? l; return x.find((y) => refOf(x, y) === ref); };
+    const ready = (ref: Handle) => { const c = rowOf(ref); return !c || (c.status !== 'running' && (c.seq ?? 0) > scope(sid).sentSeq(from.ref, ref)); };
     const t0 = Date.now(), cached = new Set(refs.filter(ready));
-    let r = { type: 'ready' };
+    let r: HoldResult = { type: 'ready' };
     if (cached.size < refs.length) {
       const holding = scope(sid).hold(from.ref, { kind: 'join', ids: refs, ready, timeoutMs: secs * 1000, signal });
       deps.onBlocked?.(sid);
@@ -464,16 +472,16 @@ export function createSubagents(deps) {
     if (r.type === 'aborted') throw new Error('Stopped.');
     if (r.type === 'detached') return r.note;
     const now = await list(sid), blocked = Date.now() - t0;
-    const STATE = { finished: 'quiet', stopped: 'stopped', interrupted: 'stopped', failed: 'failed', running: 'running' };
-    const out = [];
+    const STATE: Partial<Record<string, string>> = { finished: 'quiet', stopped: 'stopped', interrupted: 'stopped', failed: 'failed', running: 'running' };
+    const out: Joined[] = [];
     for (const ref of refs) {
-      const c = now.find((y) => refOf(now, y) === ref);
+      const c = now.find((y) => refOf(now, y) === ref)!;
       const key = `${c.id}:${c.seq ?? 0}`;
       const text = c.status === 'running' ? (await summary(sid, c.id).catch(() => ({ answer: '' }))).answer
         : results.get(key) ?? (await summary(sid, c.id).catch(() => ({ answer: '' }))).answer;
       if (c.status !== 'running') results.set(key, text);
       const lastMsg = text.length > 4000 ? text.slice(0, 4000) + ` [${text.length - 4000} more characters]` : text;
-      const o = { id: ref, name: c.name, state: STATE[c.status] ?? c.status, blocked_ms: cached.has(ref) ? 0 : blocked };
+      const o: Joined = { id: ref, name: c.name, state: STATE[c.status] ?? c.status, blocked_ms: cached.has(ref) ? 0 : blocked };
       if (r.type === 'timeout' && c.status === 'running') o.timed_out = true;
       else if (cached.has(ref)) Object.assign(o, { cached: true, quiet_since: new Date(c.ended ?? Date.now()).toISOString(), age_s: Math.round((Date.now() - (c.ended ?? Date.now())) / 1000) });
       else o.fresh = true;
@@ -488,9 +496,9 @@ export function createSubagents(deps) {
   }
 
   // The session's agents, for `list` (G5): handle, name, state, parent, task, message counts.
-  async function roster(sid, from) {
+  async function roster(sid: SessionId, from: { ref: Handle }) {
     const l = await list(sid);
-    const inOf = (ref) => l.reduce((n, c) => n + (c.sent?.[ref] ?? 0), 0);
+    const inOf = (ref: Handle) => l.reduce((n, c) => n + (c.sent?.[ref] ?? 0), 0);
     const lines = [`- ${MAIN} main${from.ref === MAIN ? ' (you)' : ''}: the top-level agent, talking with the user. Messages received: ${inOf(MAIN)}.`];
     for (const c of l) {
       const ref = refOf(l, c), got = Object.values(c.got ?? {}).reduce((a, b) => a + b, 0), sent = Object.values(c.sent ?? {}).reduce((a, b) => a + b, 0);
@@ -503,14 +511,14 @@ export function createSubagents(deps) {
 
   // user: typed by the user (marked STEER_KIND and quoted in the report),
   // otherwise sent by the main agent's tool (tagged as from main).
-  async function message(sid, ref, text, { user = false } = {}) {
+  async function message(sid: SessionId, ref: string, text: string | undefined, { user = false } = {}) {
     if (!user) return send(sid, { ref: MAIN, name: 'main', child: null }, ref, text);
     const l = await list(sid), c = find(l, ref);
     if (!c) throw new Error(`No subagent "${ref}" in this session. Known: ${l.map((x) => x.name).join(', ') || 'none'}.`);
     if (!text?.trim()) throw new Error('text is empty.');
     if (c.oneshot) throw new Error(`"${c.name}" is a one-shot: it makes one request and takes no messages.`);
     const conv = await childConv(sid, c.id);
-    const input = { type: 'input', content: fromUser(text), entry: { kind: STEER_KIND, data: { text } } };
+    const input: InputSubmissionDraft = { type: 'input', content: fromUser(text), entry: { kind: STEER_KIND, data: { text } } };
     if (c.status === 'running') {
       await conv.submit({ ...input, whenBusy: 'steer' }, ctx);
       scope(sid).release(refOf(l, c), { type: 'detached', note: `Interrupted: the user wrote to you (their message follows). Join again afterwards if you still need to.` });
@@ -532,7 +540,7 @@ export function createSubagents(deps) {
   // blocking, as it does for main (G10).
   // out (optional): its .sub is set to the submission, so the page can track
   // and withdraw it.
-  async function steer(sid, ref, text, out) {
+  async function steer(sid: SessionId, ref: unknown, text: string | undefined, out?: { sub?: Submission }) {
     const l = await list(sid), c = find(l, ref);
     if (!c) throw new Error(`No subagent "${ref}" in this session.`);
     if (!text?.trim()) throw new Error('text is empty.');
@@ -545,7 +553,7 @@ export function createSubagents(deps) {
     return `Sent to "${c.name}"; it reads this before its next step.`;
   }
 
-  async function stop(sid, ref) {
+  async function stop(sid: SessionId, ref: unknown) {
     const l = await list(sid), c = find(l, ref);
     if (!c) throw new Error(`No subagent "${ref}" in this session.`);
     if (c.status !== 'running') return `"${c.name}" is not running (${c.status}).`;
@@ -553,7 +561,7 @@ export function createSubagents(deps) {
     return `Stopped "${c.name}" (${refOf(l, c)}).`;
   }
 
-  async function status(sid, ref) {
+  async function status(sid: SessionId, ref: unknown) {
     const l = await list(sid);
     if (!ref) {
       if (!l.length) return 'No subagents in this session.';
@@ -571,7 +579,7 @@ export function createSubagents(deps) {
   const TEXT = Type.Optional(Type.String({ description: 'message: what to tell it' }));
   const CAPS = `At most ${MAX_SCOPE_MESSAGES} messages per user turn in this session and ${MAX_PAIR_MESSAGES} between any two agents.`;
 
-  async function act(args, api, context, from, sid) {
+  async function act(args: ToolArgs, api: unknown, context: Context, from: Sender, sid: SessionId): Promise<string | null> {
     if (args.action === 'list') return roster(sid, from);
     if (args.action === 'message') return send(sid, from, args.to ?? args.id ?? args.name, args.text);
     if (args.action === 'join') return join(sid, from, args.ids ?? args.id ?? args.to, args.timeout, context.abortSignal);
@@ -595,21 +603,21 @@ export function createSubagents(deps) {
       id: Type.Optional(Type.String({ description: 'stop/status: the subagent handle or name' })),
       ids: JOIN_IDS, timeout: TIMEOUT, text: TEXT,
     }),
-    execute: async (args, api, context) => {
+    execute: async (args: ToolArgs, api, context) => {
       const sid = deps.sidOf(api.conversationId);
       if (owners.has(api.conversationId)) throw new Error('Subagents cannot start subagents; use the agents tool.');
-      let text;
+      let text: string | null;
       if (args.action === 'spawn') {
         const agent = await api.agent(context);
         const r = await spawn(sid, agent.model, args, context.abortSignal);
-        await api.details({ child: r.child.id, name: r.child.name, ref: r.child.ref, ...(r.child.oneshot ? { oneshot: true } : {}) }, context);
+        await api.details({ child: r.child.id, name: r.child.name, ref: r.child.ref!, ...(r.child.oneshot ? { oneshot: true } : {}) }, context);
         text = r.text;
       } else if (args.action === 'stop') text = await stop(sid, args.id ?? args.to ?? args.name);
       else if (args.action === 'status') text = await status(sid, args.id ?? args.to ?? args.name);
       else text = await act(args, api, context, { ref: MAIN, name: 'main', child: null }, sid);
-      return { output: [{ type: 'text', text }] };
+      return { output: [{ type: 'text', text: text! }] }; // act answers every action the schema allows
     },
-  });
+  } as ToolRegistration); // label: not in pi-durable's tool type, passed through as before
 
   // The subagents' trimmed tool (deferred: offered only where modelTools adds it).
   const peerTool = defineTool({
@@ -619,27 +627,27 @@ export function createSubagents(deps) {
       action: Type.Union([Type.Literal('list'), Type.Literal('message'), Type.Literal('join')]),
       to: ID, ids: JOIN_IDS, timeout: TIMEOUT, text: TEXT,
     }),
-    execute: async (args, api, context) => {
+    execute: async (args: ToolArgs, api, context) => {
       if (!owners.has(api.conversationId)) throw new Error('This tool is for subagents; use the subagent tool.');
-      const sid = owners.get(api.conversationId).sid;
+      const sid = owners.get(api.conversationId)!.sid;
       const from = await senderOf(sid, api.conversationId);
       const text = await act(args, api, context, from, sid);
       if (text == null) throw new Error(`Unknown action "${args.action}": use list, message or join.`);
       return { output: [{ type: 'text', text }] };
     },
-  });
+  } as ToolRegistration);
 
   return {
     close() { closing = true; },
     tool, peerTool, list, resume, spawn, message, steer, stop, status, summary, childConv, detach, notify, busyOf,
     // What main (or a child ref) is blocked on: [{ kind, ids, since }].
-    blocked: (sid, ref = MAIN) => scope(sid).held(ref),
+    blocked: (sid: SessionId, ref: Handle = MAIN) => scope(sid).held(ref),
     // The user wrote to main: the message caps start over (graph.js).
-    newTurn: (sid) => scope(sid).newTurn(),
-    refOf: (l, c) => refOf(l, c), asRef,
+    newTurn: (sid: SessionId) => scope(sid).newTurn(),
+    refOf: (l: SubagentRow[], c: SubagentRow) => refOf(l, c), asRef,
     // The child behind a conversation id, if it is one: { sid, id }.
-    owner: (convId) => owners.get(convId) ?? null,
-    async stopAll(sid) {
+    owner: (convId: ConversationId) => owners.get(convId) ?? null,
+    async stopAll(sid: SessionId) {
       for (const c of running(await list(sid))) await (await childConv(sid, c.id).catch(() => null))?.abort(ctx).catch(() => {});
     },
   };

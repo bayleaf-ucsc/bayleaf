@@ -2,29 +2,38 @@
 // (D3, D8, L2). Owns which session is current; the Interface (src/interface/) reads it through
 // `current` and supplies the transcript (attach) and the agent.
 //
-// A session record: { id, title, titleSource?, updated, model, usage? }.
-// titleSource is 'user' for a title someone typed (never overwritten),
-// 'auto' for a generated one, and absent for the first-message fallback.
 import * as store from './store.ts';
 import { $, el, icon, seeded } from './dom.ts';
 import { digest, suggestTitle, titleEditor, costNote, providerOf } from './naming.ts';
+import type { ConversationId } from '@earendil-works/pi-durable';
+import type { PouchAgent } from './agent.ts';
+import type { SessionId, ThreadUsage, ThreadView } from './agent-types.ts';
+import type { Allowance } from './usage.ts';
 
-const sparkTip = (model) => `Suggest a title from the thread (${costNote(model)})`;
+// titleSource is 'user' for a title someone typed (never overwritten),
+// 'auto' for a generated one, and absent for the first-message fallback.
+export interface SessionRecord { id: SessionId; title: string; titleSource?: 'user' | 'auto'; titleTried?: boolean; updated: number; model?: string; usage?: ThreadUsage }
+// A subagent row in the sidebar.
+export interface SessionChild { id: ConversationId; name: string; ref?: string; task: string; state: string; open?: boolean; msgs?: number; edges?: string }
+// An action sheet entry: label, action, and 'danger' for a destructive one.
+export type SheetAction = [string, () => unknown, string?];
+
+const sparkTip = (model: string) => `Suggest a title from the thread (${costNote(model)})`;
 const LEGACY_TIP = 'Saved before each session had its own storage. Deleting it stops and resets it; its history is purged once no such session is left, or by Erase all.';
 // pi-durable conversation ids are numbers, but data attributes are strings,
 // and IndexedDB keys 13 and "13" differ. Match on the string form.
-export const sameId = (a, b) => a != null && b != null && String(a) === String(b);
-export const titleOf = (s) => s?.title || 'New session';
-export const notesKey = (sid) => 'agentNotes:' + sid; // per-session notes for the agent (src/interface/send.ts)
-export const grantsKey = (sid) => 'egressGrants:' + sid; // "Allow for this session" services (egress.js)
-export const convKey = (sid) => 'conversation:' + sid; // the current conversation in its database (agent.js, D12)
-export const interruptedKey = (sid) => 'interrupted:' + sid; // a reload cut off its run; Resume offered (src/interface/transcript.ts)
-export const subagentsKey = (sid) => 'subagents:' + sid; // the session's subagents and their state (subagents.js)
-export const revertKey = (sid) => 'revert:' + sid; // the last revert, while it can be undone; conversation only, never file bytes (D12)
-export const watchesKey = (sid) => 'watches:' + sid; // its file watches (src/ns/watch.ts)
-export const turnsKey = (sid) => 'turnTimes:' + sid; // turn-start entry -> measured duration (ms), for the turn footer (src/interface/transcript.ts)
+export const sameId = (a: unknown, b: unknown) => a != null && b != null && String(a) === String(b);
+export const titleOf = (s: { title?: string } | null | undefined) => s?.title || 'New session';
+export const notesKey = (sid: SessionId) => 'agentNotes:' + sid; // per-session notes for the agent (src/interface/send.ts)
+export const grantsKey = (sid: SessionId) => 'egressGrants:' + sid; // "Allow for this session" services (egress.js)
+export const convKey = (sid: SessionId) => 'conversation:' + sid; // the current conversation in its database (agent.js, D12)
+export const interruptedKey = (sid: SessionId) => 'interrupted:' + sid; // a reload cut off its run; Resume offered (src/interface/transcript.ts)
+export const subagentsKey = (sid: SessionId) => 'subagents:' + sid; // the session's subagents and their state (subagents.js)
+export const revertKey = (sid: SessionId) => 'revert:' + sid; // the last revert, while it can be undone; conversation only, never file bytes (D12)
+export const watchesKey = (sid: SessionId) => 'watches:' + sid; // its file watches (src/ns/watch.ts)
+export const turnsKey = (sid: SessionId) => 'turnTimes:' + sid; // turn-start entry -> measured duration (ms), for the turn footer (src/interface/transcript.ts)
 
-function ago(t) {
+function ago(t: number) {
   const m = Math.round((Date.now() - t) / 60_000);
   if (m < 1) return 'now';
   if (m < 60) return m + 'm';
@@ -33,26 +42,35 @@ function ago(t) {
   return new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
-// deps: { agent(), view(), connected() -> verified client or null, model(),
-//   setModel(id), hasModel(id), attach(), status(text, cls), sheet, layout,
-//   usage, quotaError, exhaustedText, agentError(), onRender(list),
-//   grants(id) -> Promise<[{ service, label }]>, revoke(id, service),
-//   children(id) -> [{ id, name, task, state, open }], openChild(id, child) }
-export function createSessions(deps) {
+export interface SessionsDeps {
+  agent(): PouchAgent | null | undefined; view(): ThreadView | null | undefined;
+  connected(): unknown; // the verified client, or null
+  model(): string | null | undefined; setModel(id: string): void; hasModel(id: string): boolean;
+  attach(): Promise<void> | void; status(text: string, cls?: string): void;
+  sheet(title: string, actions: SheetAction[]): void; ask(question: string, action: string, tone?: string): Promise<boolean>;
+  layout: { narrow(): boolean; setSide(open: boolean, animate: boolean): void };
+  usage: { refresh(): Promise<Allowance> }; quotaError(message: string): boolean; exhaustedText(s: Allowance): string;
+  agentError(): string | null | undefined; onRender?(list: SessionRecord[]): void;
+  grants?(id: SessionId): Promise<{ service: string; label: string }[]>; revoke(id: SessionId, service: string): Promise<unknown>;
+  children?(id: SessionId): SessionChild[]; openChild(id: SessionId, child: ConversationId, button: HTMLElement): Promise<unknown>;
+  runningChildren?(id: SessionId): number; extraActions?(s: SessionRecord): Promise<SheetAction[]> | SheetAction[];
+  forgetWatches?(id: SessionId): void; countRequest?(id: SessionId, kind: string): void; isLocal?(model: string | undefined): boolean;
+}
+export function createSessions(deps: SessionsDeps) {
   const { layout, status } = deps;
-  let session = null; // current { id, title, updated, model }
-  const running = new Set(); // string ids with a send in flight: the sidebar's busy mark
+  let session = null as SessionRecord | null; // current { id, title, updated, model }
+  const running = new Set<string>(); // string ids with a send in flight: the sidebar's busy mark
 
-  const all = async () => (await store.all('sessions')).sort((a, b) => b.updated - a.updated);
-  const find = async (id) => sameId(id, session?.id) ? session : (await all()).find((x) => sameId(x.id, id));
-  const save = (s = session) => s && store.put('sessions', s.id, s);
+  const all = async () => (await store.all<SessionRecord>('sessions')).sort((a, b) => b.updated - a.updated);
+  const find = async (id: unknown) => sameId(id, session?.id) ? session : (await all()).find((x) => sameId(x.id, id));
+  const save = (s: SessionRecord | null = session) => s && store.put('sessions', s.id, s);
 
   // Patch a stored session; the current one is patched in memory too.
-  async function update(id, patch) {
+  async function update(id: unknown, patch: Partial<SessionRecord>) {
     const s = await find(id);
     if (!s) return null;
     Object.assign(s, patch);
-    for (const [k, v] of Object.entries(patch)) if (v === undefined) delete s[k];
+    for (const [k, v] of Object.entries(patch)) if (v === undefined) delete (s as Partial<SessionRecord>)[k as keyof SessionRecord];
     await store.put('sessions', s.id, s);
     return s;
   }
@@ -61,7 +79,7 @@ export function createSessions(deps) {
   // Shift held (desktop only): each row grows a trash button that deletes at
   // once, no confirm. The row menu's Delete still asks.
   let shift = false;
-  const setShift = (on) => {
+  const setShift = (on: boolean) => {
     on = on && !matchMedia('(pointer: coarse)').matches;
     if (on === shift) return;
     shift = on;
@@ -72,9 +90,9 @@ export function createSessions(deps) {
   addEventListener('blur', () => setShift(false));
   document.addEventListener('visibilitychange', () => setShift(false));
 
-  function row(s) {
+  function row(s: SessionRecord) {
     const li = el('li', { className: 'session' });
-    li.dataset.id = s.id;
+    li.dataset.id = s.id as string; // a legacy numeric id reads back as its string (sameId)
     if (sameId(s.id, session?.id)) li.setAttribute('aria-current', 'true');
     const busyNow = running.has(String(s.id));
     const legacy = deps.agent()?.isLegacy?.(s.id);
@@ -105,7 +123,7 @@ export function createSessions(deps) {
         if (c.open) b.setAttribute('aria-current', 'true');
         b.onclick = async () => { await deps.openChild(s.id, c.id, b); };
         const row = seeded(el('li', { className: 's-child' }, b), c.ref);
-        row.dataset.child = c.id;
+        row.dataset.child = c.id as unknown as string; // numeric, stored as its string
         return row;
       })));
     }
@@ -124,22 +142,22 @@ export function createSessions(deps) {
     document.title = session?.title ? `${session.title} – BayLeaf Pouch` : 'BayLeaf Pouch';
   }
 
-  async function menu(s, li) {
+  async function menu(s: SessionRecord, li: HTMLElement) {
     // Active "Allow for this session" grants, each revocable here (D10).
     const grants = (await deps.grants?.(s.id)) ?? [];
     const extra = (await deps.extraActions?.(s)) ?? [];
     deps.sheet(titleOf(s), [
       ...extra,
-      ...grants.map((g) => [`Stop allowing ${g.label} without asking`, async () => {
+      ...grants.map((g): SheetAction => [`Stop allowing ${g.label} without asking`, async () => {
         await deps.revoke(s.id, g.service); status(`Pouch will ask again before ${g.label} in this session.`);
       }]),
-      ['Rename', () => editTitle(s, li.querySelector('.s-open'))],
+      ['Rename', () => editTitle(s, li.querySelector<HTMLElement>('.s-open'))],
       [`Suggest a title (${costNote(modelOf(s))})`, () => renameAuto(s.id)],
       [`Compact now (summarize older turns; ${costNote(modelOf(s))})`, () => compact(s.id)],
       ['Delete session', () => remove(s.id), 'danger'],
     ]);
   }
-  async function renameAuto(id) {
+  async function renameAuto(id: SessionId) {
     const t = await nameFrom(id, true);
     if (t) { await update(id, { title: t, titleSource: 'auto' }); render(); }
     return t;
@@ -147,9 +165,9 @@ export function createSessions(deps) {
 
   // The session's provider and model: its last turn's, else the picker's.
   // Titles and compaction run there and nowhere else.
-  const modelOf = (s) => s?.model || deps.model() || 'glm-5-3';
+  const modelOf = (s: SessionRecord | null | undefined) => s?.model || deps.model() || 'glm-5-3';
   // Why the session's provider cannot take a request now, or null.
-  function unavailable(model) {
+  function unavailable(model: string) {
     if (!deps.agent()) return deps.agentError?.() ?? 'The agent is not available.';
     const p = providerOf(model);
     if (p === 'BayLeaf Sealed') return deps.connected() ? null : 'This session runs on BayLeaf Sealed, which is not connected: sign in, or use Campus Pass on campus, and wait for the enclave check. No other provider was asked.';
@@ -161,12 +179,12 @@ export function createSessions(deps) {
 
   // Compaction (the menu and /compact): pi-durable summarizes on the
   // conversation's own model, so it stays on the session's provider.
-  async function compact(id) {
+  async function compact(id: SessionId) {
     const s = await find(id);
     const why = unavailable(modelOf(s));
     if (why) return status(why, 'bad');
     status(`Compacting (${costNote(modelOf(s))})...`);
-    try { await deps.agent().compact(id); status('Older turns summarized.'); } catch (e) { status(e.message, 'bad'); }
+    try { await deps.agent()!.compact(id); status('Older turns summarized.'); } catch (e) { status((e as Error).message, 'bad'); }
     finally { if (providerOf(modelOf(s)) === 'BayLeaf Sealed') deps.usage.refresh(); }
   }
 
@@ -175,15 +193,15 @@ export function createSessions(deps) {
   // A legacy session is stopped and reset; once none is left, the shared
   // legacy database goes too. stay: if it was current, a blank session takes its
   // place instead of the next session (a revert of the first message, D12).
-  async function remove(id, ask = true, { stay = false } = {}) {
+  async function remove(id: SessionId, ask = true, { stay = false } = {}) {
     const legacy = deps.agent()?.isLegacy?.(id);
     if (ask && !(await deps.ask(legacy ? 'Delete this session? It was saved before per-session storage: it is stopped and reset now, and its history is purged once no such session is left (or by Erase all).' : 'Delete this session? Its conversation is erased from this browser.', 'Delete', 'danger'))) return false;
     try { await deps.agent()?.deleteSession(id); }
-    catch (e) { status('Could not delete: ' + e.message, 'bad'); return false; }
+    catch (e) { status('Could not delete: ' + (e as Error).message, 'bad'); return false; }
     // The conversation is gone now, so this returns true even if a cleanup step fails
     // (a first-message revert then still puts the message back).
     try { await clearRecords(id); }
-    catch (e) { status('Deleted, but could not clear its saved settings: ' + e.message, 'bad'); }
+    catch (e) { status('Deleted, but could not clear its saved settings: ' + (e as Error).message, 'bad'); }
     if (sameId(id, session?.id)) {
       session = null; await deps.attach();
       const rest = await all();
@@ -192,7 +210,7 @@ export function createSessions(deps) {
     render();
     return true;
   }
-  async function clearRecords(id) {
+  async function clearRecords(id: SessionId) {
     await store.del('sessions', id);
     await store.setSetting(notesKey(id), undefined);
     await store.setSetting(grantsKey(id), undefined);
@@ -214,7 +232,7 @@ export function createSessions(deps) {
   // Click-to-edit in place, in the top bar and in a sidebar row (naming.js).
   // A title someone typed is 'user'; a kept suggestion is 'auto'; empty
   // falls back to the first message.
-  function editTitle(s, host) {
+  function editTitle(s: SessionRecord, host: HTMLElement | null) {
     titleEditor(host, {
       value: s.title ?? '',
       tip: sparkTip(modelOf(s)),
@@ -228,22 +246,22 @@ export function createSessions(deps) {
   // A title suggestion from the conversation, on the session's own provider
   // and model (naming.js); never another. quiet: after a first turn, skip
   // without a word.
-  async function nameFrom(id, recent, quiet = false, turnModel) {
+  async function nameFrom(id: SessionId, recent: boolean, quiet = false, turnModel?: string) {
     const s = await find(id);
     const model = turnModel || modelOf(s);
     const sealed = providerOf(model) === 'BayLeaf Sealed';
     const why = unavailable(model);
     if (why) { if (!quiet) status(why, 'bad'); return null; }
     try {
-      const v = sameId(id, session?.id) && deps.view() ? deps.view() : await deps.agent().snapshot(id);
+      const v = sameId(id, session?.id) && deps.view() ? deps.view() : await deps.agent()!.snapshot(id);
       const text = digest(v?.items, recent);
       if (!text) { if (!quiet) status('Nothing to name yet: send a message first.'); return null; }
       if (sealed) deps.countRequest?.(id, 'title'); // one request from the allowance, outside the transcript
-      const t = await suggestTitle((...a) => deps.agent().complete(...a), model, text);
+      const t = await suggestTitle((...a: Parameters<PouchAgent['complete']>) => deps.agent()!.complete(...a), model, text);
       if (!t && !quiet) status('No title came back; the old one stays.');
       return t;
     } catch (e) {
-      if (!quiet) status(sealed && deps.quotaError(e.message) ? deps.exhaustedText(await deps.usage.refresh()) : `Could not suggest a title (${providerOf(model)}): ` + e.message, 'bad');
+      if (!quiet) status(sealed && deps.quotaError((e as Error).message) ? deps.exhaustedText(await deps.usage.refresh()) : `Could not suggest a title (${providerOf(model)}): ` + (e as Error).message, 'bad');
       return null;
     } finally { if (sealed) deps.usage.refresh(); }
   }
@@ -256,7 +274,7 @@ export function createSessions(deps) {
   // runs in the model's worker (the page stays responsive), at most 24 new
   // tokens from a digest well inside its 4k budget; a message sent meanwhile
   // waits for it in the engine's one-at-a-time queue.
-  async function afterTurn(sid, v, ok, turnModel) {
+  async function afterTurn(sid: SessionId, v: ThreadView | null | undefined, ok: boolean, turnModel?: string) {
     await update(sid, { updated: Date.now(), ...(v?.usage ? { usage: v.usage } : {}) });
     render();
     if (!deps.isLocal?.(turnModel)) deps.usage.refresh(); // a Transformers.js or Localhost turn used no allowance and asks BayLeaf nothing
@@ -291,10 +309,10 @@ export function createSessions(deps) {
   // second send from the same blank view waits for this same creation; after New
   // (nav moved on) a send makes its own, so New always means a separate session.
   // New or a selection meanwhile wins the view; the send still goes to the made session.
-  let creating = null; // { gen, promise }
+  let creating = null as { gen: number; promise: Promise<SessionRecord> } | null;
   // onMade(made): called once the session exists, before it is current, so the
   // send can claim it first (a second Enter then waits instead of racing it).
-  function create(onMade = () => {}) {
+  function create(onMade: (made: SessionRecord) => void = () => {}) {
     const agent = deps.agent();
     if (!agent) return Promise.resolve(status(deps.agentError() ?? 'The agent is not available.', 'bad'));
     if (creating?.gen === nav) return creating.promise;
@@ -303,10 +321,10 @@ export function createSessions(deps) {
     const gen = nav;
     const promise = (async () => {
       const model = deps.model() || 'glm-5-3';
-      let id;
+      let id: SessionId;
       try { id = await agent.createSession(model); }
       catch (e) { if (!session && gen === nav) { session = prev; await deps.attach(); await render(); } throw e; }
-      const made = { id, title: '', updated: Date.now(), model };
+      const made: SessionRecord = { id, title: '', updated: Date.now(), model };
       await save(made);
       onMade(made);
       if (gen !== nav) { await render(); return made; }
@@ -320,9 +338,9 @@ export function createSessions(deps) {
     return promise;
   }
 
-  async function select(id) {
+  async function select(id: SessionId) {
     const gen = ++nav;
-    const found = (await store.all('sessions')).find((s) => sameId(s.id, id));
+    const found = (await store.all<SessionRecord>('sessions')).find((s) => sameId(s.id, id));
     if (!found || gen !== nav) return;
     session = found;
     store.setSetting('lastSession', session.id);
@@ -347,6 +365,6 @@ export function createSessions(deps) {
   return {
     get current() { return session; },
     running, all, find, save, update, render, blank, create, select, remove, afterTurn, boot,
-    compact, renameAuto, costOf: (s) => costNote(modelOf(s ?? session)),
+    compact, renameAuto, costOf: (s?: SessionRecord | null) => costNote(modelOf(s ?? session)),
   };
 }

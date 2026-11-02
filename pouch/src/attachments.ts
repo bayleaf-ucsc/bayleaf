@@ -1,45 +1,56 @@
 // Picker, drop and image paste share one local-only ingest path. No fetch here.
 import { el } from './dom.ts';
+import type { Vfs } from './vfs.ts';
+import type { AttachedFile } from './agent-types.ts';
 export const FILE_CAP = 20 * 1024 * 1024;
 export const IMAGE_CAP = 4 * 1024 * 1024;
-export function rasterMime(bytes) {
+export type RasterMime = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
+export function rasterMime(bytes: Uint8Array): RasterMime | null {
   if (bytes[0] === 137 && String.fromCharCode(...bytes.slice(1, 4)) === 'PNG') return 'image/png';
   if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return 'image/jpeg';
   if (/^GIF8[79]a$/.test(String.fromCharCode(...bytes.slice(0, 6)))) return 'image/gif';
   if (String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF' && String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP') return 'image/webp';
   return null;
 }
-const base64 = (bytes) => {
+const base64 = (bytes: Uint8Array) => {
   let s = '';
   for (let i = 0; i < bytes.length; i += 8192) s += String.fromCharCode(...bytes.subarray(i, i + 8192));
   return btoa(s);
 };
-export async function prepareImage(bytes) { return (await prepareImageSized(bytes)).image; }
+// An image content block, as sent to the model.
+export interface ImageBlock { type: 'image'; data: string; mimeType: string }
+export interface PreparedImage { image: ImageBlock; width: number; height: number; sentWidth: number; sentHeight: number; bytes: number }
+export async function prepareImage(bytes: Uint8Array): Promise<ImageBlock> { return (await prepareImageSized(bytes)).image; }
 // The same, with what the look tool reports: original and sent dimensions, sent bytes.
-export async function prepareImageSized(bytes) {
+export async function prepareImageSized(bytes: Uint8Array): Promise<PreparedImage> {
   const mime = rasterMime(bytes);
   if (!mime) throw new Error('Only PNG, JPEG, GIF and WebP images can be understood. SVG and other formats stay local files.');
-  const bitmap = await createImageBitmap(new Blob([bytes], { type: mime }));
+  const bitmap = await createImageBitmap(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: mime }));
   try {
     if (!bitmap.width || !bitmap.height || bitmap.width * bitmap.height > 80_000_000) throw new Error('Image dimensions are too large. Use a smaller image.');
     const scale = Math.min(1, 2000 / Math.max(bitmap.width, bitmap.height));
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(bitmap.width * scale)); canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     // Re-encode locally: strips metadata and preserves the untouched original in VFS.
-    let blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
-    if (!blob || blob.size > IMAGE_CAP) blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', .85));
+    let blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/png'));
+    if (!blob || blob.size > IMAGE_CAP) blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', .85));
     if (!blob || blob.size > IMAGE_CAP) throw new Error('Prepared image exceeds 4 MB. Use a smaller image.');
-    return { image: { type: 'image', data: base64(new Uint8Array(await blob.arrayBuffer())), mimeType: blob.type },
+    return { image: { type: 'image' as const, data: base64(new Uint8Array(await blob.arrayBuffer())), mimeType: blob.type },
       width: bitmap.width, height: bitmap.height, sentWidth: canvas.width, sentHeight: canvas.height, bytes: blob.size };
   } finally { bitmap.close(); }
 }
-export function attachmentContext(files) {
+// A file the user attached, saved under /work/.attachments.
+export type Attachment = Required<AttachedFile>; // image always set here
+export function attachmentContext(files: Pick<Attachment, 'path' | 'name' | 'size' | 'type'>[]): string {
   return files.length ? '\n\n[Files attached by the user, stored locally in Pouch. Read these VFS paths with read or bash as needed; binary files are not text. Raster images are also included as image blocks (first frame, at most 2000px/4MB); originals are unchanged.\n' + files.map((f) => JSON.stringify({ path: f.path, name: f.name, size: f.size, type: f.type })).join('\n') + '\n]' : '';
 }
 // Markdown images never fetch URLs. Only magic-checked local raster bytes become blobs.
-export function createLocalImages(vfs) {
-  const urls = new Map();
+// Just what this module uses of the page's Vfs; tests pass one without as or changed.
+export type AttachmentVfs = Pick<Vfs, 'fs'> & Partial<Pick<Vfs, 'as'>> & { changed?(path: string): void };
+export interface LocalImages { sweep(): void; render(path: string, alt: string): HTMLSpanElement | null }
+export function createLocalImages(vfs: AttachmentVfs): LocalImages {
+  const urls = new Map<Element, string>();
   const sweep = () => { for (const [node, url] of urls) if (!node.isConnected) { URL.revokeObjectURL(url); urls.delete(node); } };
   addEventListener('pagehide', () => { for (const url of urls.values()) URL.revokeObjectURL(url); urls.clear(); });
   return {
@@ -53,7 +64,7 @@ export function createLocalImages(vfs) {
           if (stat.size > FILE_CAP) return;
           const bytes = await vfs.fs.readFileBuffer(path), type = rasterMime(bytes);
           if (!type || !box.isConnected) return;
-          const url = URL.createObjectURL(new Blob([bytes], { type }));
+          const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type }));
           urls.set(box, url);
           box.replaceChildren(el('img', { src: url, alt: alt || path, loading: 'lazy' }));
         } catch { box.textContent = 'Image unavailable: ' + (alt || path); }
@@ -62,8 +73,19 @@ export function createLocalImages(vfs) {
     },
   };
 }
-export function createAttachments({ vfs, composer, input, picker, button, chips, warning, status, changed = () => {} }) {
-  let pending = [], jobs = 0, serial = Promise.resolve();
+export interface AttachmentsOptions {
+  vfs: AttachmentVfs; composer: HTMLElement; input: HTMLElement; picker: HTMLInputElement; button: HTMLElement;
+  chips: HTMLElement; warning: HTMLElement; status(text: string, tone?: string): void; changed?(): void;
+}
+export interface Attachments {
+  ingest(files: Iterable<File> | ArrayLike<File>): Promise<void>;
+  readonly files: Attachment[];
+  readonly loading: boolean;
+  prepare(model?: { multimodal?: boolean } | null): Promise<{ files: Attachment[]; images: ImageBlock[] }>;
+  clear(files?: Attachment[]): void;
+}
+export function createAttachments({ vfs, composer, input, picker, button, chips, warning, status, changed = () => {} }: AttachmentsOptions): Attachments {
+  let pending: Attachment[] = [], jobs = 0, serial = Promise.resolve();
   const render = () => {
     chips.replaceChildren(...pending.map((f) => {
       const remove = el('button', { type: 'button', textContent: '×', ariaLabel: 'Remove attachment ' + f.name });
@@ -75,7 +97,7 @@ export function createAttachments({ vfs, composer, input, picker, button, chips,
     warning.hidden = !warning.textContent;
     changed();
   };
-  const ingest = (files) => {
+  const ingest = (files: Iterable<File> | ArrayLike<File>) => {
     const batch = Array.from(files); jobs++; changed();
     const task = serial.then(async () => {
       for (const file of batch) {
@@ -95,19 +117,19 @@ export function createAttachments({ vfs, composer, input, picker, button, chips,
         render();
       }
     });
-    serial = task.catch((e) => status(e.message, 'bad')).finally(() => { jobs--; render(); });
+    serial = task.catch((e: Error) => status(e.message, 'bad')).finally(() => { jobs--; render(); });
     return serial;
   };
   button.onclick = () => picker.click();
-  picker.onchange = () => { ingest(picker.files); picker.value = ''; };
-  composer.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; composer.classList.add('drop'); } });
-  composer.addEventListener('dragleave', (e) => { if (!composer.contains(e.relatedTarget)) composer.classList.remove('drop'); });
+  picker.onchange = () => { ingest(picker.files!); picker.value = ''; };
+  composer.addEventListener('dragover', (e) => { if (e.dataTransfer!.types.includes('Files')) { e.preventDefault(); e.dataTransfer!.dropEffect = 'copy'; composer.classList.add('drop'); } });
+  composer.addEventListener('dragleave', (e) => { if (!composer.contains(e.relatedTarget as Node | null)) composer.classList.remove('drop'); });
   composer.addEventListener('drop', (e) => {
-    if (!e.dataTransfer.files.length) return;
-    e.preventDefault(); e.stopPropagation(); composer.classList.remove('drop'); ingest(e.dataTransfer.files);
+    if (!e.dataTransfer!.files.length) return;
+    e.preventDefault(); e.stopPropagation(); composer.classList.remove('drop'); ingest(e.dataTransfer!.files);
   });
   input.addEventListener('paste', (e) => {
-    const images = Array.from(e.clipboardData?.items ?? []).filter((x) => x.kind === 'file' && x.type.startsWith('image/')).map((x) => x.getAsFile()).filter(Boolean);
+    const images = Array.from(e.clipboardData?.items ?? []).filter((x) => x.kind === 'file' && x.type.startsWith('image/')).map((x) => x.getAsFile()).filter(Boolean) as File[];
     if (images.length) { e.preventDefault(); ingest(images); }
   });
   return {
@@ -116,7 +138,7 @@ export function createAttachments({ vfs, composer, input, picker, button, chips,
       if (jobs) throw new Error('Wait for attachments to finish saving.');
       if (pending.some((f) => f.image) && model?.multimodal !== true) throw new Error('Choose a model marked “images” before sending these images. No request was sent.');
       const files = pending.map((f) => ({ ...f }));
-      const images = [];
+      const images: ImageBlock[] = [];
       for (const f of files) if (f.image) images.push(await prepareImage(await vfs.fs.readFileBuffer(f.path)));
       return { files, images };
     },

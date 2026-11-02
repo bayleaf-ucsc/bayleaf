@@ -9,6 +9,7 @@
 // reaches another only through app.<region>.<name>, resolved when called. They
 // are created in this order, which is the order their top-level wiring runs.
 
+import type { App } from './interface/app.ts';
 import { createStateRegion } from './interface/state.ts';
 import { createEditingRegion } from './interface/editing.ts';
 import { createTreeRegion } from './interface/tree.ts';
@@ -27,7 +28,8 @@ import { createSendRegion } from './interface/send.ts';
 import { createCommandsRegion } from './interface/commands.ts';
 import { createBootRegion } from './interface/boot.ts';
 
-const app = {};
+// Filled in below, one region at a time: a region uses another only when called.
+const app = {} as App;
 app.state = createStateRegion(app);
 app.editing = createEditingRegion(app);
 app.tree = createTreeRegion(app);

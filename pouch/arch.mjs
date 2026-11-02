@@ -13,12 +13,14 @@
 //   html      only viewer.html turns a string into HTML (agent-written reports)
 //   sealed    only src/sealed.ts touches the encrypting client (the Tinfoil SDK)
 //   cdn       no third-party CDN in the page (assertNoCdn, build-runtime.mjs)
+//   exact     trust-boundary modules say exactly what crosses them: no `any`
 // Structure rules:
 //   layers    the core never imports UI; nothing imports the Interface but main.js
 //   seams     a region is imported only through its entry modules
+//   contract  a contract module is types only, and imported only as types
 //   size      every module stays within its line budget
 //
-// The parser is TypeScript's (no type checking): the scan sees code, not
+// The parser is TypeScript's (no type checking; tsc --noEmit does that): the scan sees code, not
 // comments or strings, and tells a local `fetch` parameter from the global.
 // It covers first-party code (src/, sw.js, the pages' inline scripts); bundled
 // packages are checked by what imports them (checkMetafile) and by the CSP.
@@ -36,7 +38,7 @@ const NETWORK_APIS = ['fetch', 'XMLHttpRequest', 'WebSocket', 'WebTransport', 'E
 export const NETWORK = {
   'src/bayleaf-api.ts': { apis: ['fetch'], why: 'the account plane: device claim, a key\'s allowance, Campus Pass, the Sealed model list (metadata only, never content)' },
   'src/sealed.ts': { apis: ['fetch'], why: 'the encrypting fetch: EHBP ciphertext to the attested enclave' },
-  'src/bayleaf-cli.ts': { apis: ['fetch'], why: 'the agent\'s `bayleaf` command to api.bayleaf.dev, each request approved through egress.js' },
+  'src/bayleaf-cli.ts': { apis: ['fetch'], why: 'the agent\'s `bayleaf` command to api.bayleaf.dev, each request approved through egress.ts' },
   'src/localhost.ts': { apis: ['fetch'], why: 'the Localhost provider: a model server on this computer, behind guardedFetch\'s origin check' },
   'src/models.ts': { apis: ['fetch'], why: 'model weights from the BayLeaf HF gateway, hash-checked against models.lock.json' },
   'src/assets.ts': { apis: ['fetch'], why: 'pinned runtimes and weights by range, hash-checked against the build\'s pins' },
@@ -53,7 +55,7 @@ const WHY_EGRESS = 'Plaintext must leave Pouch only through modules whose every 
 // ── HTML: who may render a string as HTML ───────────────────────────
 // Agent-written HTML runs only in viewer.html: a separate page with its own
 // network-less CSP, framed with an opaque origin (README "HTML reports").
-// Everything else builds DOM nodes (dom.js el()), never parses markup.
+// Everything else builds DOM nodes (dom.ts el()), never parses markup.
 const HTML_SINKS = ['innerHTML', 'outerHTML', 'insertAdjacentHTML', 'srcdoc', 'parseFromString',
   'createContextualFragment', 'setHTMLUnsafe', 'parseHTMLUnsafe', 'document.write', 'document.writeln'];
 export const HTML = {
@@ -73,7 +75,7 @@ const WHY_SEALED = 'The encrypting client holds the credential and decides what 
 // ── Layers ──────────────────────────────────────────────────────────
 // The core: files, namespaces, storage, providers and sandboxed runtimes. It
 // works without a page, so it imports only itself (and packages).
-export const CORE = ['src/vfs.ts', 'src/store.ts', 'src/archive.ts', 'src/graph.ts', 'src/ns/', 'src/run.ts', 'src/run/',
+export const CORE = ['src/trust.ts', 'src/vfs.ts', 'src/store.ts', 'src/archive.ts', 'src/graph.ts', 'src/ns/', 'src/run.ts', 'src/run/',
   'src/local/', 'src/localhost.ts', 'src/sealed.ts', 'src/bayleaf-api.ts', 'src/profiles.ts', 'src/models.ts',
   'src/assets.ts', 'src/sha256.ts', 'src/pdf/', 'src/media/', 'src/shims/'];
 // The Interface (LANGUAGE.md): the page's wiring, composed by main.js from
@@ -87,11 +89,36 @@ const WHY_LAYERS = 'The core must stay testable and portable without a page (and
 // only the entries. src/interface/ regions reach each other through `app`.
 export const REGIONS = {
   'src/interface/': { entries: [], importers: ['src/main.ts'], why: 'Interface regions are composed only by main.js and reach each other through app.<region>' },
-  'src/run/': { entries: ['src/run.ts'], why: 'run.js is the run tool\'s one door: the worker and its 9P bridge are its implementation' },
-  'src/pdf/': { entries: ['src/pdf.ts'], why: 'pdf.js owns the pdf.js worker and its pin' },
-  'src/media/': { entries: ['src/media.ts'], why: 'media.js owns the libav.js worker and its pins' },
+  'src/run/': { entries: ['src/run.ts'], why: 'run.ts is the run tool\'s one door: the worker and its 9P bridge are its implementation' },
+  'src/pdf/': { entries: ['src/pdf.ts'], why: 'pdf.ts owns the pdf.js worker and its pin' },
+  'src/media/': { entries: ['src/media.ts'], why: 'media.ts owns the libav.js worker and its pins' },
   'src/local/': { entries: ['src/local/engine.ts', 'src/local/provider.ts'], why: 'the engine (weights, worker) and the provider adapter are the Transformers.js doors; the worker is private' },
 };
+
+// ── Contracts: types-only modules ───────────────────────────────────
+// A contract holds no code, so depending on it couples types, never behavior:
+// it may be imported (as types) across a seam its region's code may not cross.
+export const CONTRACTS = {
+  'src/trust.ts': { why: 'the data that crosses Pouch\'s trust boundaries, which the trusted core of #143 can take over one at a time' },
+  'src/agent-types.ts': { why: 'the agent engine and the thread view transcripts render (agent.ts implements them)' },
+  'src/subagents-types.ts': { why: 'the subagent registry and what the page supplies to it (subagents.ts implements them)' },
+  'src/tools-types.ts': { why: 'the tools\' hooks and file views (tools.ts implements them)' },
+  'src/run/protocol.ts': { why: 'the messages between run.ts and the QuickJS worker' },
+  'src/local/protocol.ts': { why: 'the messages between the Transformers.js engine and its worker' },
+  'src/pdf/protocol.ts': { why: 'the messages between pdf.ts and the pdf.js worker' },
+  'src/media/protocol.ts': { why: 'the messages between media.ts and the libav.js worker' },
+  'src/interface/app.ts': { why: 'the App type: the regions\' interfaces, through which regions reach each other' },
+};
+const WHY_CONTRACT = 'A contract states what crosses a boundary and does nothing itself; '
+  + 'move the code to a module that implements the contract';
+
+// ── Exact types at trust boundaries ─────────────────────────────────
+// `any` switches the type checker off. Where data crosses a trust boundary
+// its type is the claim an auditor reads, so these modules may not use it.
+export const EXACT = ['src/trust.ts', 'src/egress.ts', 'src/ns/namespace.ts', 'src/ns/control.ts',
+  ...Object.keys(NETWORK).filter((p) => p.startsWith('src/')), ...Object.keys(SEALED)];
+const WHY_EXACT = 'A trust boundary\'s types are what an auditor (and tsc) relies on; '
+  + 'name the shape, or take `unknown` and narrow it';
 
 // ── Size budgets (lines) ────────────────────────────────────────────
 export const BUDGET = { default: 700, 'src/main.ts': 60 };
@@ -181,10 +208,12 @@ function scan(sf, checker) {
   };
   const visit = (n) => {
     if (ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) {
-      if (n.moduleSpecifier && ts.isStringLiteral(n.moduleSpecifier)) imports.push({ spec: n.moduleSpecifier.text, line: at(n) });
+      if (n.moduleSpecifier && ts.isStringLiteral(n.moduleSpecifier)) imports.push({ spec: n.moduleSpecifier.text, line: at(n), typeOnly: typeOnly(n) });
+    } else if (n.kind === ts.SyntaxKind.AnyKeyword) {
+      found.push({ kind: 'any', api: 'any', line: at(n) });
     } else if (ts.isCallExpression(n) && n.expression.kind === ts.SyntaxKind.ImportKeyword) {
       const a = n.arguments[0];
-      if (a && ts.isStringLiteralLike(a)) imports.push({ spec: a.text, line: at(n) });
+      if (a && ts.isStringLiteralLike(a)) imports.push({ spec: a.text, line: at(n), typeOnly: false });
       if (!(a && ts.isStringLiteralLike(a) && a.text.startsWith('.'))) found.push({ kind: 'network', api: 'import()', line: at(n) });
     } else if (ts.isCallExpression(n) && REFLECTIVE.includes(n.expression.getText(sf).replace(/^(globalThis|self|window)\./, ''))) {
       const a = n.arguments[1];
@@ -227,6 +256,22 @@ function scan(sf, checker) {
   return { found, imports };
 }
 
+// An import or export that is erased: `import type`, or only `type` specifiers.
+function typeOnly(n) {
+  if (ts.isExportDeclaration(n)) return n.isTypeOnly || (!!n.exportClause && ts.isNamedExports(n.exportClause) && n.exportClause.elements.every((e) => e.isTypeOnly));
+  const c = n.importClause;
+  if (!c) return false; // import './x': run for its effects
+  if (c.isTypeOnly) return true;
+  return !c.name && !!c.namedBindings && ts.isNamedImports(c.namedBindings) && c.namedBindings.elements.length > 0 && c.namedBindings.elements.every((e) => e.isTypeOnly);
+}
+// Top-level statements that run (a contract may have none).
+const TYPE_ONLY_STATEMENTS = [ts.SyntaxKind.InterfaceDeclaration, ts.SyntaxKind.TypeAliasDeclaration, ts.SyntaxKind.EmptyStatement];
+function runtimeStatements(sf) {
+  return sf.statements.filter((st) => !TYPE_ONLY_STATEMENTS.includes(st.kind)
+    && !((ts.isImportDeclaration(st) || ts.isExportDeclaration(st)) && typeOnly(st)))
+    .map((st) => sf.getLineAndCharacterOfPosition(st.getStart(sf)).line + 1);
+}
+
 const resolve = (from, spec) => {
   if (!spec.startsWith('.')) return spec;
   const parts = from.split('/').slice(0, -1);
@@ -242,9 +287,13 @@ export function checkArchitecture(files) {
   const usedNet = new Map(), usedHtml = new Set(), usedSealed = new Set();
   const graph = []; // { from, to, line }
   for (const s of list) {
-    const { found, imports } = scan(program.getSourceFile(s.name), checker);
+    const sf = program.getSourceFile(s.name);
+    const { found, imports } = scan(sf, checker);
+    if (CONTRACTS[s.path]) for (const line of runtimeStatements(sf)) errors.push(fmt('contract', s.path, line, 'has a statement that runs', WHY_CONTRACT));
     for (const f of found) {
-      if (f.kind === 'network') {
+      if (f.kind === 'any') {
+        if (EXACT.includes(s.path)) errors.push(fmt('exact', s.path, f.line, 'uses `any`', WHY_EXACT));
+      } else if (f.kind === 'network') {
         const allow = NETWORK[s.path];
         if (allow?.apis.includes(f.api)) { if (!usedNet.has(s.path)) usedNet.set(s.path, new Set()); usedNet.get(s.path).add(f.api); }
         else errors.push(fmt('egress', s.path, f.line, `uses ${f.api}, but it is not an egress module for ${f.api}`, WHY_EGRESS));
@@ -261,7 +310,7 @@ export function checkArchitecture(files) {
         if (SEALED[s.path]) usedSealed.add(s.path);
         else errors.push(fmt('sealed', s.path, im.line, `imports ${im.spec}`, WHY_SEALED));
       }
-      if (im.spec.startsWith('.')) graph.push({ from: s.path, to: resolve(s.path, im.spec), line: im.line });
+      if (im.spec.startsWith('.')) graph.push({ from: s.path, to: resolve(s.path, im.spec), line: im.line, typeOnly: im.typeOnly });
     }
   }
   // Allowances nobody uses any more: the inventory must stay exact.
@@ -272,13 +321,19 @@ export function checkArchitecture(files) {
   for (const [rule, table, used] of [['html', HTML, usedHtml], ['sealed', SEALED, usedSealed]]) {
     for (const path of Object.keys(table)) if (files.has(path) && !used.has(path)) errors.push(fmt(rule, path, 0, `is allowed in ${rule.toUpperCase()} but no longer needs it`, 'Remove the allowance so the list stays an exact inventory'));
   }
+  for (const path of Object.keys(CONTRACTS)) if (!files.has(path)) errors.push(fmt('contract', path, 0, 'is listed in CONTRACTS but does not exist', 'Remove it so the list stays an exact inventory'));
   // Layers: the core imports only the core; only main.js imports the Interface.
   for (const { from, to, line } of graph) {
     if (inside(from, CORE) && to.startsWith('src/') && !inside(to, CORE)) errors.push(fmt('layers', from, line, `is core but imports ${to}`, WHY_LAYERS));
     if (inside(to, INTERFACE) && !inside(from, INTERFACE)) errors.push(fmt('layers', from, line, `imports the Interface (${to})`, WHY_LAYERS));
   }
+  // Contracts are imported as types, which may cross a seam (not a layer).
+  for (const { from, to, line, typeOnly } of graph) {
+    if (CONTRACTS[to] && !typeOnly) errors.push(fmt('contract', from, line, `imports ${to} as a value`, `Use \`import type\`: ${CONTRACTS[to].why}`));
+  }
   // Seams: from outside a region, only its entries (and listed importers).
-  for (const { from, to, line } of graph) {
+  for (const { from, to, line, typeOnly } of graph) {
+    if (typeOnly && (CONTRACTS[to] || CONTRACTS[from])) continue; // a contract may also gather its regions' types
     for (const [dir, r] of Object.entries(REGIONS)) {
       const within = from.startsWith(dir) || r.entries.includes(from); // the entries are the region too
       if (!to.startsWith(dir) || (within && dir !== 'src/interface/')) continue;
@@ -349,5 +404,5 @@ export function assertArchitecture(errors) {
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   const errors = checkArchitecture(loadTree());
   if (errors.length) { console.error(errors.join('\n')); process.exit(1); }
-  console.log('arch: trust, layer, seam and size rules hold');
+  console.log('arch: trust, exact-type, layer, seam, contract and size rules hold');
 }

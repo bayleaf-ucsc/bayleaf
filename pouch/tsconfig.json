@@ -14,7 +14,11 @@
     "erasableSyntaxOnly": true,
     "isolatedModules": true,
     "skipLibCheck": true,
-    "strict": true
+    "strict": true,
+    // esbuild reads this file: alwaysStrict would prepend "use strict" to the
+    // bundle and change how bundled sloppy-mode packages run. Pouch's own
+    // sources are ES modules, so they are strict either way.
+    "alwaysStrict": false
   },
   "include": ["src/**/*.ts"],
   "exclude": ["src/run/worker.ts", "src/run/worker-browser.ts", "src/pdf/worker.ts", "src/media/worker.ts", "src/local/worker.ts"]

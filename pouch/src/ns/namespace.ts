@@ -36,100 +36,145 @@
 //   and everything below it in read-only members. Without a whiteout store,
 //   removing a read-only member's file is refused with EROFS.
 
+import type { BindOptions, CapabilitySpec, MountLine, MountOptions } from '../trust.ts';
+
+// ── The file-server contract ──────────────────────────────────────
+// What every member of a Namespace implements (and what a Namespace is);
+// just-bash's InMemoryFs fits it as it is.
+export interface FileStat { isFile: boolean; isDirectory: boolean; isSymbolicLink: boolean; mode: number; size: number; mtime: Date }
+export interface DirEntry { name: string; isFile: boolean; isDirectory: boolean; isSymbolicLink: boolean }
+export type FileContent = string | Uint8Array;
+// An encoding name ('utf8', 'base64', 'latin1') or just-bash's { encoding } bag.
+export type EncodingOption = string | { encoding?: string | null } | null;
+export interface MkdirOptions { recursive?: boolean }
+export interface RmOptions { recursive?: boolean; force?: boolean }
+export interface CpOptions { recursive?: boolean }
+// A file that streams (/session/events): each read waits for what comes next.
+export interface FileStream { read(signal?: AbortSignal): Promise<Uint8Array> }
+export interface FileServer {
+  stat(path: string): Promise<FileStat>;
+  readFileBuffer(path: string): Promise<Uint8Array>;
+  // unknown: a control file answers a same-page writer with the harness's receipt.
+  writeFile(path: string, content: FileContent, options?: EncodingOption): Promise<unknown>;
+  mkdir(path: string, options?: MkdirOptions): Promise<void>;
+  rm(path: string, options?: RmOptions): Promise<void>;
+  readdir(path: string): Promise<string[]>;
+  readdirWithFileTypes?(path: string): Promise<DirEntry[]>;
+  openStream?(path: string): FileStream | null;
+}
+export type FsError = Error & { code: string };
+type Errorish = { code?: string; message?: unknown } | null | undefined;
+
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
 // just-bash expects Node-style errors ("ENOENT: ...") and sometimes reads .code.
-export function fsError(code, op, path, why) {
-  const text = why ?? { ENOENT: 'no such file or directory', EEXIST: 'file already exists', ENOTDIR: 'not a directory',
+export function fsError(code: string, op: string, path: string, why?: string): FsError {
+  const text = why ?? ({ ENOENT: 'no such file or directory', EEXIST: 'file already exists', ENOTDIR: 'not a directory',
     EISDIR: 'illegal operation on a directory', EROFS: 'read-only file system', ENOTSUP: 'operation not supported',
-    ENOTEMPTY: 'directory not empty', EINVAL: 'invalid argument', EBUSY: 'resource busy' }[code];
+    ENOTEMPTY: 'directory not empty', EINVAL: 'invalid argument', EBUSY: 'resource busy' } as Record<string, string | undefined>)[code];
   return Object.assign(new Error(`${code}: ${text}, ${op} '${path}'`), { code });
 }
-export const codeOf = (e) => e?.code ?? String(e?.message ?? '').match(/^(E[A-Z]+)/)?.[1];
+export const codeOf = (e: unknown): string | undefined => (e as Errorish)?.code ?? String((e as Errorish)?.message ?? '').match(/^(E[A-Z]+)/)?.[1];
 
-export function normalize(path) {
-  const out = [];
+export function normalize(path: string): string {
+  const out: string[] = [];
   for (const part of String(path).split('/')) {
     if (!part || part === '.') continue;
     if (part === '..') out.pop(); else out.push(part);
   }
   return '/' + out.join('/');
 }
-export const parts = (path) => normalize(path).split('/').filter(Boolean);
-export const join = (a, b) => normalize(a + '/' + b);
-const resolvePath = (base, path) => normalize(path.startsWith('/') ? path : base + '/' + path);
-export const toBytes = (content, encoding) => typeof content !== 'string' ? content
+export const parts = (path: string): string[] => normalize(path).split('/').filter(Boolean);
+export const join = (a: string, b: string): string => normalize(a + '/' + b);
+const resolvePath = (base: string, path: string): string => normalize(path.startsWith('/') ? path : base + '/' + path);
+export const toBytes = (content: FileContent, encoding?: string | null): Uint8Array => typeof content !== 'string' ? content
   : encoding === 'base64' ? Uint8Array.from(atob(content), (c) => c.charCodeAt(0)) : enc.encode(content);
-export const encodingOf = (o) => (typeof o === 'string' ? o : o?.encoding);
-const dirStat = { isFile: false, isDirectory: true, isSymbolicLink: false, mode: 0o755, size: 0, mtime: new Date(0) };
+export const encodingOf = (o?: EncodingOption): string | null | undefined => (typeof o === 'string' ? o : o?.encoding);
+const dirStat: FileStat = { isFile: false, isDirectory: true, isSymbolicLink: false, mode: 0o755, size: 0, mtime: new Date(0) };
 // Is `p` equal to `root` or inside it?
-export const within = (p, root) => root === '/' || p === root || p.startsWith(root + '/');
+export const within = (p: string, root: string): boolean => root === '/' || p === root || p.startsWith(root + '/');
 
 // Methods every file server shares, written once in terms of the primitive ones.
-export class BaseFs {
-  resolvePath(base, path) { return resolvePath(base, path); }
-  getAllPaths() { return []; } // only used for globbing in-memory trees
-  async readFile(path, options) {
+export abstract class BaseFs implements FileServer {
+  abstract stat(path: string): Promise<FileStat>;
+  abstract readFileBuffer(path: string): Promise<Uint8Array>;
+  abstract writeFile(path: string, content: FileContent, options?: EncodingOption): Promise<unknown>;
+  abstract mkdir(path: string, options?: MkdirOptions): Promise<void>;
+  abstract rm(path: string, options?: RmOptions): Promise<void>;
+  abstract readdir(path: string): Promise<string[]>;
+  resolvePath(base: string, path: string): string { return resolvePath(base, path); }
+  getAllPaths(): string[] { return []; } // only used for globbing in-memory trees
+  async readFile(path: string, options?: EncodingOption): Promise<string> {
     const bytes = await this.readFileBuffer(path);
     const e = encodingOf(options);
     if (e === 'base64') return btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(''));
     if (e === 'latin1' || e === 'binary') return Array.from(bytes, (b) => String.fromCharCode(b)).join('');
     return dec.decode(bytes);
   }
-  async appendFile(path, content, options) {
+  async appendFile(path: string, content: FileContent, options?: EncodingOption): Promise<void> {
     const old = (await this.exists(path)) ? await this.readFileBuffer(path) : new Uint8Array();
     const add = toBytes(content, encodingOf(options));
     const both = new Uint8Array(old.length + add.length); both.set(old); both.set(add, old.length);
     await this.writeFile(path, both);
   }
-  async exists(path) { try { await this.stat(path); return true; } catch { return false; } }
-  lstat(path) { return this.stat(path); }
-  async realpath(path) { await this.stat(path); return normalize(path); }
-  async readdirWithFileTypes(path) {
+  async exists(path: string): Promise<boolean> { try { await this.stat(path); return true; } catch { return false; } }
+  lstat(path: string): Promise<FileStat> { return this.stat(path); }
+  async realpath(path: string): Promise<string> { await this.stat(path); return normalize(path); }
+  async readdirWithFileTypes(path: string): Promise<DirEntry[]> {
     const names = await this.readdir(path);
     return Promise.all(names.map(async (name) => {
       const s = await this.stat(normalize(path + '/' + name));
       return { name, isFile: s.isFile, isDirectory: s.isDirectory, isSymbolicLink: false };
     }));
   }
-  async cp(src, dest, options) {
+  async cp(src: string, dest: string, options?: CpOptions): Promise<unknown> {
     const s = await this.stat(src);
     if (s.isFile) return this.writeFile(dest, await this.readFileBuffer(src));
     if (!options?.recursive) throw fsError('EISDIR', 'cp', src);
     await this.mkdir(dest, { recursive: true });
     for (const name of await this.readdir(src)) await this.cp(src + '/' + name, dest + '/' + name, options);
   }
-  async mv(src, dest) { await this.cp(src, dest, { recursive: true }); await this.rm(src, { recursive: true }); }
+  async mv(src: string, dest: string): Promise<void> { await this.cp(src, dest, { recursive: true }); await this.rm(src, { recursive: true }); }
   async chmod() {}
   async utimes() {}
-  async symlink(_t, p) { throw fsError('ENOTSUP', 'symlink', p); }
-  async link(_e, p) { throw fsError('ENOTSUP', 'link', p); }
-  async readlink(p) { throw fsError('EINVAL', 'readlink', p); }
+  async symlink(_t: string, p: string): Promise<void> { throw fsError('ENOTSUP', 'symlink', p); }
+  async link(_e: string, p: string): Promise<void> { throw fsError('ENOTSUP', 'link', p); }
+  async readlink(p: string): Promise<string> { throw fsError('EINVAL', 'readlink', p); }
 }
 
 // A missing path is the only error that moves lookup on to the next member.
-const missing = (e) => ['ENOENT', 'ENOTDIR'].includes(codeOf(e));
+const missing = (e: unknown): boolean => ['ENOENT', 'ENOTDIR'].includes(codeOf(e)!);
+
+// One member of a mount point: a file server seen from `root` inside it.
+export interface Member { fs: FileServer; root: string; readOnly: boolean; label: string }
+// Removals of read-only members' files, relative to the mount point.
+export interface Whiteouts { paths: Set<string>; save(list: string[]): void }
+export interface Layers { point: string; entries: Member[]; rel: string }
+interface Located { e: Member; p: string }
+interface Target extends Located { point: string; rel: string }
+// over()'s binds: [point, fs, options].
+export type Bind = [point: string, fs: FileServer, opts?: MountOptions];
 
 export class Namespace extends BaseFs {
+  declare table: Map<string, Member[]>; // mount point -> members, in search order
+  declare wh: Map<string, Whiteouts>; // mount point -> its whiteouts
   constructor() {
     super();
-    // mount point -> [{ fs, root, readOnly, label }], in search order
     this.table = new Map();
-    // mount point -> { paths: Set of paths relative to the point, save() }
     this.wh = new Map();
   }
 
   // mount(2): attach a file server at `point`. root is the path inside fs.
-  mount(fs, point, { flag = 'replace', readOnly = false, root = '/', label = '' } = {}) {
+  mount(fs: FileServer, point: string, { flag = 'replace', readOnly = false, root = '/', label = '' }: MountOptions = {}): this {
     point = normalize(point);
-    const entry = { fs, root: normalize(root), readOnly, label };
+    const entry: Member = { fs, root: normalize(root), readOnly, label };
     const now = flag === 'replace' ? [] : this.table.get(point) ?? this.inherited(point);
     this.table.set(point, flag === 'after' ? [...now, entry] : [entry, ...now]);
     return this;
   }
   // bind(2): make `point` show what `path` shows now (its whole union).
-  bind(path, point, { flag = 'replace', readOnly = false } = {}) {
+  bind(path: string, point: string, { flag = 'replace', readOnly = false }: BindOptions = {}): this {
     const { entries, rel } = this.layers(path);
     const copy = entries.map((e) => ({ ...e, root: join(e.root, rel), readOnly: e.readOnly || readOnly }));
     point = normalize(point);
@@ -138,13 +183,13 @@ export class Namespace extends BaseFs {
     return this;
   }
   // Without fs: drop the whole mount point. With fs: drop that member only.
-  unmount(point, fs) {
+  unmount(point: string, fs?: FileServer): void {
     point = normalize(point);
     const left = fs ? (this.table.get(point) ?? []).filter((e) => e.fs !== fs) : [];
     if (left.length) this.table.set(point, left); else { this.table.delete(point); this.wh.delete(point); }
   }
   // rfork(RFNAMEG): a copy of the table; later binds in either do not affect the other.
-  clone() {
+  clone(): Namespace {
     const ns = new Namespace();
     for (const [p, l] of this.table) ns.table.set(p, [...l]);
     for (const [p, w] of this.wh) ns.wh.set(p, w);
@@ -152,17 +197,17 @@ export class Namespace extends BaseFs {
   }
   // A union with whiteouts: removals of read-only members' files are remembered
   // in `paths` (relative to the point) and save() is called after each change.
-  whiteouts(point, paths = [], save = () => {}) { this.wh.set(normalize(point), { paths: new Set(paths), save }); }
+  whiteouts(point: string, paths: string[] = [], save: (list: string[]) => void = () => {}): void { this.wh.set(normalize(point), { paths: new Set(paths), save }); }
 
   // What a union mount point would start from if it is not in the table yet:
   // the members of the enclosing mount at that path (so 'before' adds to it).
-  inherited(point) {
+  inherited(point: string): Member[] {
     if (!this.table.size) return [];
     const { entries, rel } = this.layers(point);
     return entries.map((e) => ({ ...e, root: join(e.root, rel) }));
   }
   // The longest mount point covering `path`, its members and the rest of the path.
-  layers(path) {
+  layers(path: string): Layers {
     const p = normalize(path);
     for (let at = p; ; at = normalize(at + '/..')) {
       const entries = this.table.get(at);
@@ -171,45 +216,45 @@ export class Namespace extends BaseFs {
     }
   }
   // Mount points directly below `path` (they appear in its listing).
-  childMounts(path) {
-    const p = normalize(path), out = new Set();
+  childMounts(path: string): Set<string> {
+    const p = normalize(path), out = new Set<string>();
     for (const m of this.table.keys()) {
       if (m === p || !within(m, p)) continue;
       out.add(m.slice(p === '/' ? 1 : p.length + 1).split('/')[0]);
     }
     return out;
   }
-  hidden(point, e, rel) {
+  hidden(point: string, e: Member, rel: string): boolean {
     const w = this.wh.get(point);
     if (!w || !e.readOnly || !w.paths.size) return false;
     for (let r = rel; ; r = normalize(r + '/..')) { if (w.paths.has(r)) return true; if (r === '/') return false; }
   }
-  members(path) {
+  members(path: string): { point: string; rel: string; list: Located[] } {
     const { point, entries, rel } = this.layers(path);
     return { point, rel, list: entries.filter((e) => !this.hidden(point, e, rel)).map((e) => ({ e, p: join(e.root, rel) })) };
   }
 
   // ── The file-server interface, resolved through the table ──────────
-  async stat(path) {
+  async stat(path: string): Promise<FileStat> {
     for (const { e, p } of this.members(path).list) {
       try { return await e.fs.stat(p); } catch (err) { if (!missing(err)) throw err; }
     }
     if (this.childMounts(path).size || this.table.has(normalize(path))) return { ...dirStat };
     throw fsError('ENOENT', 'stat', path);
   }
-  async readFileBuffer(path) {
+  async readFileBuffer(path: string): Promise<Uint8Array> {
     for (const { e, p } of this.members(path).list) {
       try { return await e.fs.readFileBuffer(p); } catch (err) { if (!missing(err)) throw err; }
     }
     if (this.childMounts(path).size) throw fsError('EISDIR', 'read', path);
     throw fsError('ENOENT', 'open', path);
   }
-  async readdirWithFileTypes(path) {
+  async readdirWithFileTypes(path: string): Promise<DirEntry[]> {
     const { point, rel, list } = this.members(path);
-    const seen = new Map();
-    let found = false, err0 = null;
+    const seen = new Map<string, DirEntry>();
+    let found = false, err0: unknown = null;
     for (const { e, p } of list) {
-      let items;
+      let items: Array<{ name: string; isFile?: boolean; isDirectory?: boolean }>;
       try {
         items = e.fs.readdirWithFileTypes ? await e.fs.readdirWithFileTypes(p)
           : await Promise.all((await e.fs.readdir(p)).map(async (name) => { const s = await e.fs.stat(join(p, name)); return { name, isFile: s.isFile, isDirectory: s.isDirectory }; }));
@@ -224,11 +269,11 @@ export class Namespace extends BaseFs {
     if (!found && !seen.size && !this.table.has(normalize(path))) throw codeOf(err0) === 'ENOTDIR' ? err0 : fsError('ENOENT', 'scandir', path);
     return [...seen.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   }
-  async readdir(path) { return (await this.readdirWithFileTypes(path)).map((d) => d.name); }
+  async readdir(path: string): Promise<string[]> { return (await this.readdirWithFileTypes(path)).map((d) => d.name); }
 
   // Where a create or write lands: the member that has the file if it is
   // writable, otherwise the first writable member (copy-up).
-  async target(path, op) {
+  async target(path: string, op: string): Promise<Target> {
     const { point, rel, list } = this.members(path);
     const all = this.layers(path).entries;
     for (const { e, p } of list) {
@@ -240,7 +285,7 @@ export class Namespace extends BaseFs {
     return { point, rel, e, p: join(e.root, rel) };
   }
   // Make the parent folder exist in the target member if it exists in the union.
-  async parentIn(t, path, op) {
+  async parentIn(t: Target, path: string, op: string): Promise<void> {
     const parent = normalize(path + '/..');
     if (parent === normalize(path)) return;
     const st = await this.stat(parent).catch(() => null);
@@ -249,20 +294,20 @@ export class Namespace extends BaseFs {
     const pp = normalize(t.p + '/..');
     if (pp !== t.p && !(await t.e.fs.stat(pp).then(() => true, () => false))) await t.e.fs.mkdir(pp, { recursive: true });
   }
-  unwhite(point, rel) {
+  unwhite(point: string, rel: string): boolean {
     const w = this.wh.get(point);
     if (w?.paths.delete(rel)) { w.save([...w.paths]); return true; }
     return false;
   }
   // The common case, one member and no whiteouts: hand the call straight on,
   // so a plain mount costs one table lookup and keeps the store's own errors.
-  single(path, op) {
+  single(path: string, op: string): { fs: FileServer; p: string } | null {
     const { point, entries, rel } = this.layers(path);
     if (entries.length !== 1 || this.wh.has(point) || this.childMounts(path).size) return null;
     if (entries[0].readOnly) throw fsError('EROFS', op, path);
     return { fs: entries[0].fs, p: join(entries[0].root, rel) };
   }
-  async writeFile(path, content, options) {
+  async writeFile(path: string, content: FileContent, options?: EncodingOption): Promise<unknown> {
     const s = this.single(path, 'open');
     if (s) return s.fs.writeFile(s.p, toBytes(content, encodingOf(options)));
     if (this.childMounts(path).size) throw fsError('EISDIR', 'open', path);
@@ -273,12 +318,12 @@ export class Namespace extends BaseFs {
   }
   // A file that streams (src/ns/control.ts /session/events): the first
   // member's reader, or null for an ordinary file. 9P reads it per fid.
-  openStream(path) {
+  openStream(path: string): FileStream | null {
     const { entries, rel } = this.layers(path);
     const e = entries[0];
     return e?.fs.openStream?.(join(e.root, rel)) ?? null;
   }
-  async mkdir(path, options) {
+  async mkdir(path: string, options?: MkdirOptions): Promise<void> {
     const s = this.single(path, 'mkdir');
     if (s) return s.fs.mkdir(s.p, options);
     if (await this.exists(path)) {
@@ -297,20 +342,20 @@ export class Namespace extends BaseFs {
     const was = this.unwhite(t.point, t.rel);
     await t.e.fs.mkdir(t.p, { recursive: !!options?.recursive });
     if (was) {
-      const w = this.wh.get(t.point);
+      const w = this.wh.get(t.point)!; // unwhite found it
       for (const e of this.layers(path).entries) if (e.readOnly) {
         for (const n of await e.fs.readdir(join(e.root, t.rel)).catch(() => [])) w.paths.add(join(t.rel, n));
       }
       w.save([...w.paths]);
     }
   }
-  async rm(path, options) {
+  async rm(path: string, options?: RmOptions): Promise<void> {
     const p0 = normalize(path);
     if (this.table.has(p0) || this.childMounts(p0).size) throw fsError('EBUSY', 'rm', path, 'a mount point cannot be removed');
     const s = this.single(path, 'rm');
     if (s) return s.fs.rm(s.p, options);
     const { point, rel, list } = this.members(path);
-    const have = [];
+    const have: Array<Located & { st: FileStat }> = [];
     for (const m of list) { const st = await m.e.fs.stat(m.p).catch(() => null); if (st) have.push({ ...m, st }); }
     if (!have.length) { if (options?.force) return; throw fsError('ENOENT', 'rm', path); }
     if (have[0].st.isDirectory && !options?.recursive && (await this.readdir(path)).length) throw fsError('ENOTEMPTY', 'rm', path);
@@ -318,18 +363,18 @@ export class Namespace extends BaseFs {
     const w = this.wh.get(point);
     if (lower.length && !w) throw fsError('EROFS', 'rm', path, 'it comes from a read-only layer');
     for (const m of have) if (!m.e.readOnly) await m.e.fs.rm(m.p, { recursive: true, force: true });
-    if (lower.length) { w.paths.add(rel); w.save([...w.paths]); }
+    if (lower.length) { w!.paths.add(rel); w!.save([...w!.paths]); }
   }
   // The stored spelling of `path` (or of its folders, for a new name) when it differs only in Unicode
   // normalization ("café" typed precomposed, NFC, stored decomposed, NFD, as
   // macOS and old zips write it), else null. Canonically equivalent names are
   // the same name to a person, so a miss on one finds the other.
-  async spell(path) {
+  async spell(path: string): Promise<string | null> {
     const p = normalize(path);
     if (p === '/' || ascii(p)) return null;
-    const parent = normalize(p + '/..'), name = p.split('/').pop();
+    const parent = normalize(p + '/..'), name = p.split('/').pop()!;
     const dir = (await this.spell(parent)) ?? parent;
-    const names = await this.readdir(dir).catch(() => []);
+    const names = await this.readdir(dir).catch((): string[] => []);
     // A new name keeps its own spelling, under its folder's stored one.
     const found = (names.includes(name) ? name : names.find((n) => n.normalize('NFC') === name.normalize('NFC'))) ?? name;
     return dir !== parent || found !== name ? join(dir, found) : null;
@@ -337,7 +382,7 @@ export class Namespace extends BaseFs {
 
   // ── Description, for the trust panel, the tray and /task/<id>/ns ─────
   // One line per mount point: "/work  rw opfs, ro seed:starter.zip".
-  describe({ hide = [] } = {}) {
+  describe({ hide = [] }: { hide?: string[] } = {}): MountLine[] {
     return [...this.table].filter(([p]) => !hide.includes(p)).sort(([a], [b]) => a.localeCompare(b))
       .map(([p, l]) => `${p}  ${l.map((e) => `${e.readOnly ? 'ro' : 'rw'} ${e.label || e.fs.constructor?.name || 'fs'}`).join(', ')}`);
   }
@@ -347,13 +392,15 @@ export class Namespace extends BaseFs {
 // (spell, above) once. A change resolves first, so a write, mkdir or rm (even
 // rm -f, which does not fail on a miss) lands on the existing file or folder,
 // not a lookalike.
-const ascii = (s) => !/[^\x00-\x7f]/.test(s);
+const ascii = (s: string): boolean => !/[^\x00-\x7f]/.test(s);
 const exactly = Namespace.prototype.stat; // without the fallback
-const stored = async (ns, path) =>
+const stored = async (ns: Namespace, path: string): Promise<string> =>
   ascii(String(path)) || (await exactly.call(ns, path).catch(() => null)) ? path : ((await ns.spell(path)) ?? path);
+// The wrappers replace methods by name, which the class's types cannot follow.
+type PathMethods = Record<string, (this: Namespace, path: string, ...a: unknown[]) => Promise<unknown>>;
 for (const op of ['stat', 'readFileBuffer', 'readdirWithFileTypes']) {
-  const f = Namespace.prototype[op];
-  Namespace.prototype[op] = async function (path, ...a) {
+  const f = (Namespace.prototype as unknown as PathMethods)[op];
+  (Namespace.prototype as unknown as PathMethods)[op] = async function (path, ...a) {
     try { return await f.call(this, path, ...a); } catch (e) {
       const alt = missing(e) && !ascii(String(path)) ? await this.spell(path) : null;
       if (!alt) throw e;
@@ -362,14 +409,14 @@ for (const op of ['stat', 'readFileBuffer', 'readdirWithFileTypes']) {
   };
 }
 for (const op of ['writeFile', 'mkdir', 'rm']) {
-  const f = Namespace.prototype[op];
-  Namespace.prototype[op] = async function (path, ...a) { return f.call(this, await stored(this, path), ...a); };
+  const f = (Namespace.prototype as unknown as PathMethods)[op];
+  (Namespace.prototype as unknown as PathMethods)[op] = async function (path, ...a) { return f.call(this, await stored(this, path), ...a); };
 }
 // A rename that changes only the normalization ("café" NFD to NFC) resolves
 // both ends to the same stored file, so copy-then-remove would delete it; it
 // goes through a temporary name instead.
 const mv = Namespace.prototype.mv;
-Namespace.prototype.mv = async function (src, dest) {
+Namespace.prototype.mv = async function (src: string, dest: string) {
   if (normalize(src) === normalize(dest)) { await this.stat(src); return; } // onto itself: nothing to do
   const from = normalize(await stored(this, src));
   if (from !== normalize(await stored(this, dest))) return mv.call(this, src, dest);
@@ -383,13 +430,13 @@ Namespace.prototype.mv = async function (src, dest) {
 // `parent`, each at the same path (so recorded changes, diffs and conflict
 // messages name the same paths everywhere), plus a private scratch /tmp if a
 // scratch file server is given. specs: ['/work', '/pouch:ro', ...].
-export function parseSpecs(specs) {
+export function parseSpecs(specs: string[]): CapabilitySpec[] {
   return specs.map((s) => {
-    const m = String(s).trim().match(/^(.*?)(?::(ro|rw))?$/);
+    const m = String(s).trim().match(/^(.*?)(?::(ro|rw))?$/)!; // always matches
     return { path: normalize(m[1]), readOnly: m[2] === 'ro' };
   });
 }
-export function subset(parent, specs, { scratch, emptyRoot } = {}) {
+export function subset(parent: Namespace, specs: string[], { scratch, emptyRoot }: { scratch?: FileServer | null; emptyRoot?: FileServer } = {}): Namespace {
   const ns = new Namespace();
   if (emptyRoot) ns.mount(emptyRoot, '/', { readOnly: true, label: 'root' });
   for (const { path, readOnly } of parseSpecs(specs)) {
@@ -402,7 +449,7 @@ export function subset(parent, specs, { scratch, emptyRoot } = {}) {
 // One client's namespace: `base` everywhere, plus its own file servers at
 // the given points (the terminal's and the main agent's /session views,
 // src/ns/control.ts). binds: [[point, fs, { label }], ...].
-export function over(base, binds, { label = 'shared' } = {}) {
+export function over(base: FileServer, binds: Bind[], { label = 'shared' }: { label?: string } = {}): Namespace {
   const ns = new Namespace().mount(base, '/', { label });
   for (const [point, fs, opts] of binds) ns.mount(fs, point, opts);
   return ns;

@@ -20,13 +20,32 @@
 // Network: list and status read the gateway's public catalog (metadata, no
 // content); downloads carry nothing but which byte ranges are wanted. All
 // bytes are checked against the build's pins (src/models.ts).
+import type { Command, defineCommand as DefineCommand, ExecResult, ResolvedCommandContext } from 'just-bash';
 import { GATEWAY } from './models.ts';
+import type { ModelPin, ModelProgress, ModelStatus, ModelStore, ModelRelease } from './models.ts';
+import type { Task, Tasks } from './ns/tasks.ts';
+
+// Who asks: the user (via the terminal or Settings) or an agent's conversation.
+export type ModelWho = { by: 'user'; via?: string } | { by: 'agent'; caller?: unknown; sid?: string | number | null; name?: string };
+export interface ModelSupport { ok: boolean; reason?: string }
+// What the approval sheet shows.
+export interface ModelRequest {
+  action: 'get' | 'remove'; id: string; label: string; who: ModelWho; bytes: number; total: number; location: string;
+  license: string; licenseUrl: string | null; attribution: string; distribution: string | null; origin: string;
+}
+export interface ModelServiceDeps {
+  store: ModelStore; tasks: Tasks; approve?: (req: ModelRequest, who: ModelWho) => Promise<boolean>;
+  onChange?(): void; supports?(id: string): ModelSupport | Promise<ModelSupport>; // can this browser run it; checked before the sheet
+}
+export type DownloadTask = Task & { progress?: ModelProgress | { done: number; total: number }; promise?: Promise<ModelStatus> };
+export interface ModelRow { id: string; bytes: number; license: string; qualification: string; state: string; pinned: boolean }
+export type ModelService = ReturnType<typeof createModelService>;
 
 const ok = (stdout = '', stderr = '') => ({ stdout, stderr, exitCode: 0 });
-const fail = (msg) => ({ stdout: '', stderr: msg + '\n', exitCode: 1 });
-const usage = (msg) => ({ stdout: '', stderr: `models: ${msg}\nRun \`models --help\` for usage.\n`, exitCode: 2 });
-const size = (n) => n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : `${(n / 1e6).toFixed(1)} MB`;
-const pad = (s, n) => String(s).padEnd(n);
+const fail = (msg: string) => ({ stdout: '', stderr: msg + '\n', exitCode: 1 });
+const usage = (msg: string) => ({ stdout: '', stderr: `models: ${msg}\nRun \`models --help\` for usage.\n`, exitCode: 2 });
+const size = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : `${(n / 1e6).toFixed(1)} MB`;
+const pad = (s: unknown, n: number) => String(s).padEnd(n);
 
 export const HELP = `models: model weights kept in this browser (from the BayLeaf HF gateway, ${GATEWAY})
 
@@ -42,19 +61,16 @@ the gateway's catalog is informative. Downloads send no content: only which
 byte ranges of which public file. Exit codes: 0 ok, 1 error or denied, 2 usage.
 `;
 
-// deps: { store (src/models.ts), tasks (src/ns/tasks.ts Tasks), approve(req, who) -> Promise<boolean>,
-//         onChange?(), supports?(id) -> { ok, reason } (can this browser run it; checked before the sheet) }. who: { by: 'user', via } or { by: 'agent', caller, sid, name }.
-export function createModelService({ store, tasks, approve, onChange = () => {}, supports = () => ({ ok: true }) }) {
-  const downloads = new Map(); // id -> task
-  const resolve = (name) => {
+export function createModelService({ store, tasks, approve, onChange = () => {}, supports = () => ({ ok: true }) }: ModelServiceDeps) {
+  const downloads = new Map<string, DownloadTask>(); // id -> task
+  const resolve = (name: string) => {
     const ids = store.models.map((m) => m.id);
     if (ids.includes(name)) return store.get(name);
     const hits = ids.filter((i) => i.startsWith(name));
     if (hits.length === 1) return store.get(hits[0]);
     throw Object.assign(new Error(hits.length ? `"${name}" matches ${hits.join(', ')}; say which.` : `no pinned model "${name}". Run \`models list\` for names.`), { code: 'ENOENT' });
   };
-  // What the approval sheet shows.
-  async function request(m, action, who) {
+  async function request(m: ModelPin, action: ModelRequest['action'], who: ModelWho): Promise<ModelRequest> {
     const rel = await store.release(m.id);
     const st = await store.status(m.id);
     return {
@@ -68,19 +84,20 @@ export function createModelService({ store, tasks, approve, onChange = () => {},
     };
   }
 
-  async function get(name, who, { signal } = {}) {
+  async function get(name: string, who: ModelWho, { signal }: { signal?: AbortSignal } = {}): Promise<
+    { already: true; status: ModelStatus; task?: undefined; promise?: undefined; joined?: undefined } | { already?: undefined; task: DownloadTask; promise: Promise<ModelStatus>; joined?: boolean }> {
     const m = resolve(name);
     const st = await store.status(m.id);
     const can = await supports(m.id);
     if (st.complete && !can.ok) throw Object.assign(new Error(`${m.label} is downloaded, but cannot run in this browser. ${can.reason}`), { code: 'ENOTSUP' });
     if (st.complete) return { already: true, status: st };
-    if (downloads.get(m.id)?.status === 'running') return { task: downloads.get(m.id), promise: downloads.get(m.id).promise, joined: true };
+    if (downloads.get(m.id)?.status === 'running') return { task: downloads.get(m.id)!, promise: downloads.get(m.id)!.promise!, joined: true };
     if (!can.ok) throw Object.assign(new Error(`${m.label} cannot run in this browser, so it was not downloaded (nothing was fetched). ${can.reason}`), { code: 'ENOTSUP' });
     let allowed = false;
     try { allowed = approve ? await approve(await request(m, 'get', who), who) === true : false; } catch { allowed = false; }
     if (!allowed) throw Object.assign(new Error(`denied by the user: ${m.label} was not downloaded (nothing was fetched).`), { code: 'EDENIED' });
     let last = -1;
-    const task = tasks.add({ kind: 'download', label: `models get ${m.id}`, sid: who.by === 'agent' ? who.sid : undefined,
+    const task: DownloadTask = tasks.add({ kind: 'download', label: `models get ${m.id}`, sid: who.by === 'agent' ? who.sid : undefined,
       ns: [`writes: browser storage (pouch-models), reads: ${GATEWAY}/${m.repo}`], kill: () => store.stop(m.id) });
     task.note(`approved by the user; ${size(st.total - st.bytes)} to fetch`);
     task.progress = { done: st.bytes, total: st.total };
@@ -97,7 +114,7 @@ export function createModelService({ store, tasks, approve, onChange = () => {},
     return { task, promise: task.promise };
   }
 
-  async function remove(name, who) {
+  async function remove(name: string, who: ModelWho): Promise<{ nothing: true; freed?: undefined } | { nothing?: undefined; freed: number }> {
     const m = resolve(name);
     const st = await store.status(m.id);
     if (!st.bytes && !st.downloading) return { nothing: true };
@@ -112,9 +129,9 @@ export function createModelService({ store, tasks, approve, onChange = () => {},
   }
 
   async function rows({ offline = false } = {}) {
-    let catalog = null, note = '';
-    if (!offline) { try { catalog = await store.catalog(); } catch (e) { note = `(gateway catalog unavailable: ${e.message}; showing pinned models only)`; } }
-    const out = [];
+    let catalog: ModelRelease[] | null = null, note = '';
+    if (!offline) { try { catalog = await store.catalog(); } catch (e) { note = `(gateway catalog unavailable: ${(e as Error).message}; showing pinned models only)`; } }
+    const out: ModelRow[] = [];
     for (const m of store.models) {
       const st = await store.status(m.id), rel = catalog?.find((r) => r.repo === m.repo && r.revision === m.revision);
       out.push({ id: m.id, bytes: st.total, license: rel?.license?.name ?? m.license.split(' (')[0], qualification: rel?.qualification?.map((q) => `${q.client}: ${q.status}`).join('; ') ?? '-',
@@ -127,18 +144,19 @@ export function createModelService({ store, tasks, approve, onChange = () => {},
     return { rows: out, note, fromGateway: !!catalog };
   }
 
-  return { get, remove, rows, request, resolve, status: (name) => store.status(resolve(name).id), downloads, store };
+  return { get, remove, rows, request, resolve, status: (name: string) => store.status(resolve(name).id), downloads, store };
 }
 
 // The command, bound to who is typing: { by: 'user', via: 'terminal' } or an agent's who.
-export function modelsCommands(defineCommand, service, whoOf) {
+export function modelsCommands(defineCommand: typeof DefineCommand, service: ModelService | undefined, whoOf: ModelWho | (() => ModelWho)) {
   if (!service) return [];
-  return [defineCommand('models', async (args, ctx) => {
+  // Every known sub returns; the cast admits the unreachable fall-through (undefined).
+  return [(defineCommand as (name: string, run: (args: string[], ctx: ResolvedCommandContext) => Promise<ExecResult | undefined>) => Command)('models', async (args, ctx) => {
     const [sub, ...rest] = args;
     if (!sub || sub === '--help' || sub === '-h' || sub === 'help' || rest.includes('--help')) return ok(HELP);
     const who = typeof whoOf === 'function' ? whoOf() : whoOf;
     const flags = rest.filter((a) => a.startsWith('-')), pos = rest.filter((a) => !a.startsWith('-'));
-    const known = { list: ['--offline'], status: [], get: ['--wait'], remove: [], verify: [] }[sub];
+    const known = ({ list: ['--offline'], status: [], get: ['--wait'], remove: [], verify: [] } as Record<string, string[] | undefined>)[sub];
     if (!known) return usage(`unknown command: models ${sub}`);
     const bad = flags.find((f) => !known.includes(f));
     if (bad) return usage(`unknown option ${bad} for models ${sub}`);
@@ -170,7 +188,7 @@ export function modelsCommands(defineCommand, service, whoOf) {
         const stopOnAbort = () => r.task.kill?.();
         ctx?.signal?.addEventListener('abort', stopOnAbort, { once: true });
         try { const s = await r.promise; return ok(`downloaded and verified ${s.id} (${size(s.total)}) as ${where}\n`); }
-        catch (e) { return fail(`models: ${e.name === 'AbortError' ? `stopped (${where}); \`models get ${pos[0]}\` resumes where it stopped` : e.message}`); }
+        catch (e) { return fail(`models: ${(e as Error).name === 'AbortError' ? `stopped (${where}); \`models get ${pos[0]}\` resumes where it stopped` : (e as Error).message}`); }
         finally { ctx?.signal?.removeEventListener('abort', stopOnAbort); }
       }
       if (sub === 'verify') {
@@ -184,7 +202,7 @@ export function modelsCommands(defineCommand, service, whoOf) {
         return ok(r.nothing ? `${pos[0]} is not downloaded; nothing to remove.\n` : `removed ${pos[0]}: freed ${size(r.freed)}. \`models get ${pos[0]}\` downloads it again (the user will be asked).\n`);
       }
     } catch (e) {
-      return fail(`models: ${e.message}`);
+      return fail(`models: ${(e as Error).message}`);
     }
   })];
 }

@@ -18,21 +18,42 @@
 // being checked is in memory. Every load re-checks every chunk (crypto.subtle
 // against the receipt recorded when the whole file matched its pin).
 import { Sha256 } from './sha256.ts';
+import type { Sha256State } from './sha256.ts';
+
+export type FetchImpl = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+// A pinned upstream file (a lock entry's file), or a manifest's file.
+export interface FilePin { name: string; bytes: number; sha256: string }
+// A build define naming a manifest of content-addressed parts.
+export interface PartsPin { dir: string; manifest: string; sha256: string; bytes?: number }
+interface Part { path: string; bytes: number; sha256: string }
+// role: what the file is to its runtime (build-models.mjs marks the 'wasm').
+export interface PartsManifest { files: (FilePin & { parts: Part[]; role?: string })[] }
+// What an engine needs of partAssets: the runtime's verified files by name.
+export type RuntimeFiles = Record<string, Blob>;
+export interface ObtainedRuntime { files: RuntimeFiles }
+export interface RuntimeAssets { obtain(opts: { network?: boolean; signal?: AbortSignal }): Promise<ObtainedRuntime> }
+export interface AssetProgress { done: number; total: number; fetched: number; repaired: number }
+// Bytes for chunk i, [from, to) of the file.
+export type RangeSource = (i: number, from: number, to: number, signal?: AbortSignal) => Promise<Uint8Array<ArrayBuffer>>;
+export type VerifiedBlob = Blob & { repaired: number };
 
 // Range and storage unit for large files (a multiple of 64; tests define POUCH_CHUNK smaller).
 export const CHUNK = typeof POUCH_CHUNK !== 'undefined' ? POUCH_CHUNK : 32 * 2 ** 20; // eslint-disable-line no-undef
 export const PARALLEL = 4;               // ranges in flight
 const RETRIES = 3;                       // per range, for network errors and short bodies
-const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
-export const digest = async (data) => hex(await crypto.subtle.digest('SHA-256', data instanceof Blob ? await data.arrayBuffer() : data));
+const hex = (buf: ArrayBuffer) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+export const digest = async (data: Blob | BufferSource) => hex(await crypto.subtle.digest('SHA-256', data instanceof Blob ? await data.arrayBuffer() : data));
 const stopped = () => new DOMException('Stopped.', 'AbortError');
-const sleep = (ms, signal) => new Promise((res, rej) => { const t = setTimeout(res, ms); signal?.addEventListener('abort', () => { clearTimeout(t); rej(stopped()); }, { once: true }); });
-export const mib = (n) => `${(n / 2 ** 20).toFixed(n < 10 * 2 ** 20 ? 1 : 0)} MiB`;
+const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((res, rej) => { const t = setTimeout(res, ms); signal?.addEventListener('abort', () => { clearTimeout(t); rej(stopped()); }, { once: true }); });
+export const mib = (n: number) => `${(n / 2 ** 20).toFixed(n < 10 * 2 ** 20 ? 1 : 0)} MiB`;
 
 // ── Storage ──────────────────────────────────────────────────────────
-// { persistent, get(key) -> Blob|null, put(key, Blob|string), del(key), keys(prefix), drop() }
-const mem = new Map(); // name -> Map, for pages without Cache Storage
-export async function openStore(name, { create = true } = {}) {
+export interface AssetStore {
+  persistent: boolean; get(k: string): Promise<Blob | null>; put(k: string, b: Blob | string): Promise<void>;
+  del(k: string): Promise<unknown>; keys(prefix?: string): Promise<string[]>; drop(): Promise<unknown>;
+}
+const mem = new Map<string, Map<string, Blob | string>>(); // for pages without Cache Storage
+export async function openStore(name: string, { create = true }: { create?: boolean } = {}): Promise<AssetStore> {
   const base = `https://${name}.invalid/`;
   try {
     if (globalThis.caches) {
@@ -41,7 +62,7 @@ export async function openStore(name, { create = true } = {}) {
       const c = await caches.open(name);
       // Keys become one encoded path segment: Cache Storage ignores a URL's #fragment
       // (chunk keys end in #<i>) and treats ? as a query.
-      const at = (k) => base + encodeURIComponent(k);
+      const at = (k: string) => base + encodeURIComponent(k);
       return {
         persistent: true,
         get: async (k) => (await (await c.match(at(k)))?.blob()) ?? null,
@@ -52,10 +73,10 @@ export async function openStore(name, { create = true } = {}) {
       };
     }
   } catch { /* SecurityError on opaque origins */ }
-  const m = mem.get(name) ?? mem.set(name, new Map()).get(name);
+  const m = mem.get(name) ?? mem.set(name, new Map()).get(name)!;
   return {
     persistent: false,
-    get: async (k) => m.has(k) ? new Blob([m.get(k)]) : null,
+    get: async (k) => m.has(k) ? new Blob([m.get(k)!]) : null,
     put: async (k, b) => { m.set(k, b); },
     del: async (k) => { m.delete(k); },
     keys: async (prefix = '') => [...m.keys()].filter((k) => k.startsWith(prefix)),
@@ -67,10 +88,11 @@ export async function openStore(name, { create = true } = {}) {
 // pin: { dir: 'runtime/<group>/', manifest: 'manifest.<16>.json', sha256 } (a build define).
 // Manifest (format 2): { files: [{ name, bytes, sha256, parts: [{ path, bytes, sha256 }] }] }.
 // A part that fails is deleted and fetched once more; failing twice refuses.
-export function partAssets(pin, { storeName = 'pouch-runtime', base = () => globalThis.document?.baseURI ?? location.href, fetchImpl = (...a) => fetch(...a) } = {}) {
-  const url = (name) => new URL(pin.dir + name, base()).href;
-  const key = (name) => pin.dir + name;
-  async function manifest(st, { network = true } = {}) {
+export type PartAssets = ReturnType<typeof partAssets>;
+export function partAssets(pin: PartsPin, { storeName = 'pouch-runtime', base = () => globalThis.document?.baseURI ?? location.href, fetchImpl = (...a: Parameters<FetchImpl>) => fetch(...a) }: { storeName?: string; base?: () => string; fetchImpl?: FetchImpl } = {}) {
+  const url = (name: string) => new URL(pin.dir + name, base()).href;
+  const key = (name: string) => pin.dir + name;
+  async function manifest(st: AssetStore, { network = true } = {}): Promise<PartsManifest | null> {
     let blob = await st.get(key(pin.manifest));
     if (blob && await digest(blob) !== pin.sha256) { await st.del(key(pin.manifest)); blob = null; }
     if (!blob && network) {
@@ -82,7 +104,7 @@ export function partAssets(pin, { storeName = 'pouch-runtime', base = () => glob
     }
     return blob && JSON.parse(await blob.text());
   }
-  async function fetchPart(st, part, onBytes, signal) {
+  async function fetchPart(st: AssetStore, part: Part, onBytes: (n: number) => void, signal: AbortSignal): Promise<Blob> {
     for (let attempt = 1; ; attempt++) {
       const r = await fetchImpl(url(part.path), { signal, cache: attempt > 1 ? 'reload' : 'default' });
       if (!r.ok) throw new Error(`${pin.dir}${part.path}: HTTP ${r.status}`);
@@ -105,11 +127,11 @@ export function partAssets(pin, { storeName = 'pouch-runtime', base = () => glob
       return { bytes: kept.reduce((n, p) => n + p.bytes, 0), total: parts.reduce((n, p) => n + p.bytes, 0), complete: kept.length === parts.length, persistent: st.persistent };
     },
     // Every file as a verified Blob: { manifest, files: { name: Blob }, progress }.
-    async obtain({ onProgress = () => {}, signal, network = true } = {}) {
+    async obtain({ onProgress = () => {}, signal, network = true }: { onProgress?: (p: AssetProgress) => void; signal?: AbortSignal; network?: boolean } = {}) {
       const st = await openStore(storeName);
       const m = await manifest(st, { network });
       if (!m) throw new Error(`The runtime files (${pin.dir}) are not in this browser, and the network is not available.`);
-      const parts = m.files.flatMap((f) => f.parts), blobs = new Map();
+      const parts = m.files.flatMap((f) => f.parts), blobs = new Map<string, Blob>();
       const p = { done: 0, total: parts.reduce((n, x) => n + x.bytes, 0), fetched: 0, repaired: 0 };
       let next = 0;
       const halt = new AbortController(), sig = signal ? AbortSignal.any([signal, halt.signal]) : halt.signal;
@@ -129,14 +151,14 @@ export function partAssets(pin, { storeName = 'pouch-runtime', base = () => glob
         }
       }
       await Promise.all(Array.from({ length: PARALLEL }, () => stream().catch((e) => { halt.abort(); throw e; })));
-      return { manifest: m, files: Object.fromEntries(m.files.map((f) => [f.name, new Blob(f.parts.map((x) => blobs.get(x.path)))])), progress: p, persistent: st.persistent };
+      return { manifest: m, files: Object.fromEntries(m.files.map((f) => [f.name, new Blob(f.parts.map((x) => blobs.get(x.path)!))])), progress: p, persistent: st.persistent };
     },
     // Picked files: the manifest and parts by name (a saved runtime/<group>/ folder). Each checked.
-    async importFiles(list) {
+    async importFiles(list: Iterable<File>) {
       const st = await openStore(storeName), byName = new Map([...list].map((f) => [f.name, f]));
       let m = await manifest(st, { network: false });
       if (!m && byName.has(pin.manifest)) {
-        const f = byName.get(pin.manifest);
+        const f = byName.get(pin.manifest)!;
         if (await digest(f) !== pin.sha256) throw new Error(`${pin.manifest} does not match this page; refused.`);
         await st.put(key(pin.manifest), f); m = JSON.parse(await f.text());
       }
@@ -158,19 +180,20 @@ export function partAssets(pin, { storeName = 'pouch-runtime', base = () => glob
 // chunk i], chunks: [crypto.subtle SHA-256 of chunk i], verified }. Chunks 0..done-1 are
 // stored and hashed in order; `verified` is set only when the whole file matched the pin,
 // and from then on chunks[] are receipts that later loads check each chunk against.
-const chunkKey = (key, i) => `${key}#${i}`;
-async function readState(st, key, f, chunk) {
+export interface ChunkState { sha256: string; bytes: number; chunk: number; done: number; states: (Sha256State | null)[]; chunks: string[]; verified: boolean }
+const chunkKey = (key: string, i: number) => `${key}#${i}`;
+async function readState(st: AssetStore, key: string, f: FilePin, chunk: number): Promise<ChunkState> {
   try {
     const s = JSON.parse(await (await st.get(key + '.state'))?.text() ?? 'null');
     if (s && s.sha256 === f.sha256 && s.bytes === f.bytes && s.chunk === chunk) return s;
   } catch { /* unreadable: start over */ }
   return { sha256: f.sha256, bytes: f.bytes, chunk, done: 0, states: [], chunks: [], verified: false };
 }
-const writeState = (st, key, s) => st.put(key + '.state', new Blob([JSON.stringify(s)]));
-export async function dropFile(st, key) { for (const k of await st.keys(key + '#')) await st.del(k); await st.del(key + '.state'); }
+const writeState = (st: AssetStore, key: string, s: ChunkState) => st.put(key + '.state', new Blob([JSON.stringify(s)]));
+export async function dropFile(st: AssetStore, key: string) { for (const k of await st.keys(key + '#')) await st.del(k); await st.del(key + '.state'); }
 
 // How much of f is kept: { bytes, complete }. Cheap: reads only the state.
-export async function fileState(st, key, f, chunk = CHUNK) {
+export async function fileState(st: AssetStore, key: string, f: FilePin, chunk = CHUNK) {
   const s = await readState(st, key, f, chunk);
   return { bytes: s.verified ? f.bytes : Math.min(s.done * chunk, f.bytes), complete: !!s.verified };
 }
@@ -178,7 +201,8 @@ export async function fileState(st, key, f, chunk = CHUNK) {
 // Feed chunks from `source(i, from, to) -> Promise<Uint8Array>` into the file, resuming
 // where the state says, `parallel` sources in flight, hashed and stored strictly in order.
 // Throws, with the file's name, if the whole does not match the pin (and drops it all).
-export async function fillFile(st, key, f, source, { chunk = CHUNK, parallel = PARALLEL, signal, onBytes = () => {}, until = f.bytes } = {}) {
+export async function fillFile(st: AssetStore, key: string, f: FilePin, source: RangeSource,
+  { chunk = CHUNK, parallel = PARALLEL, signal, onBytes = () => {}, until = f.bytes }: { chunk?: number; parallel?: number; signal?: AbortSignal; onBytes?: (n: number, kind: 'kept' | 'new') => void; until?: number } = {}) {
   let s = await readState(st, key, f, chunk);
   if (s.verified) return s;
   const n = Math.ceil(f.bytes / chunk) || 1;
@@ -188,9 +212,9 @@ export async function fillFile(st, key, f, source, { chunk = CHUNK, parallel = P
     if (!b || await digest(b) !== s.chunks[i]) { s.done = i; s.states.length = i; s.chunks.length = i; break; }
   }
   onBytes(Math.min(s.done * chunk, f.bytes), 'kept');
-  const hash = s.done ? Sha256.resume(s.states[s.done - 1]) : new Sha256();
+  const hash = s.done ? Sha256.resume(s.states[s.done - 1]!) : new Sha256();
   const halt = new AbortController(), sig = signal ? AbortSignal.any([signal, halt.signal]) : halt.signal;
-  const inflight = new Map();
+  const inflight = new Map<number, Promise<Uint8Array<ArrayBuffer>>>();
   let next = s.done;
   const last = Math.min(n, Math.ceil(until / chunk));
   const launch = () => {
@@ -204,7 +228,7 @@ export async function fillFile(st, key, f, source, { chunk = CHUNK, parallel = P
   try {
     for (let i = s.done; i < last; i++) {
       launch();
-      const bytes = await inflight.get(i);
+      const bytes = await inflight.get(i)!;
       inflight.delete(i);
       if (sig.aborted) throw stopped();
       // Hash in 4 MiB slices, yielding between them, so the page stays responsive.
@@ -230,7 +254,7 @@ export async function fillFile(st, key, f, source, { chunk = CHUNK, parallel = P
 
 // A source of byte ranges over HTTP (the gateway answers 206 to `Range: bytes=a-b`).
 // Each range is retried on network errors and short bodies, with backoff.
-export function rangeSource(url, { fetchImpl = (...a) => fetch(...a), retries = RETRIES, onRetry = () => {} } = {}) {
+export function rangeSource(url: string, { fetchImpl = (...a: Parameters<FetchImpl>) => fetch(...a), retries = RETRIES, onRetry = () => {} }: { fetchImpl?: FetchImpl; retries?: number; onRetry?: (r: { i: number; attempt: number; error: string }) => void } = {}): RangeSource {
   return async (i, from, to, signal) => {
     for (let attempt = 1; ; attempt++) {
       try {
@@ -242,22 +266,22 @@ export function rangeSource(url, { fetchImpl = (...a) => fetch(...a), retries = 
         return b;
       } catch (e) {
         if (signal?.aborted) throw stopped();
-        if (e.fatal || attempt > retries) throw new Error(`${url.split('/resolve/')[1] ?? url} bytes ${from}-${to - 1}: ${e.message}`);
-        onRetry({ i, attempt, error: e.message });
+        if ((e as { fatal?: boolean }).fatal || attempt > retries) throw new Error(`${url.split('/resolve/')[1] ?? url} bytes ${from}-${to - 1}: ${(e as Error).message}`);
+        onRetry({ i, attempt, error: (e as Error).message });
         await sleep(500 * 2 ** attempt, signal);
       }
     }
   };
 }
 // A source over a Blob or File already here (a picked file, or old parts reassembled).
-export const blobSource = (blob) => async (i, from, to) => new Uint8Array(await blob.slice(from, to).arrayBuffer());
+export const blobSource = (blob: Blob): RangeSource => async (i, from, to) => new Uint8Array(await blob.slice(from, to).arrayBuffer());
 
 // The verified file as one Blob: every chunk re-checked against its receipt.
 // repair(i, from, to) may fetch a damaged chunk again (checked against the same receipt).
-export async function verifiedFile(st, key, f, { chunk = CHUNK, repair, onBytes = () => {} } = {}) {
+export async function verifiedFile(st: AssetStore, key: string, f: FilePin, { chunk = CHUNK, repair, onBytes = () => {} }: { chunk?: number; repair?: RangeSource | null; onBytes?: (n: number) => void } = {}): Promise<VerifiedBlob | null> {
   const s = await readState(st, key, f, chunk);
   if (!s.verified) return null;
-  const n = Math.ceil(f.bytes / chunk) || 1, parts = [];
+  const n = Math.ceil(f.bytes / chunk) || 1, parts: Blob[] = [];
   let repaired = 0;
   for (let i = 0; i < n; i++) {
     let b = await st.get(chunkKey(key, i));
@@ -270,7 +294,7 @@ export async function verifiedFile(st, key, f, { chunk = CHUNK, repair, onBytes 
     }
     parts.push(b); onBytes(b.size);
   }
-  const blob = new Blob(parts);
+  const blob = new Blob(parts) as VerifiedBlob;
   blob.repaired = repaired;
   return blob;
 }
