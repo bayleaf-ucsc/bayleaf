@@ -14,5 +14,5 @@ await page.goto('http://127.0.0.1:8792/pouch.html');
 await page.waitForSelector('#model option[value^="local:"]', { state: 'attached' });
 console.log('option', await page.$eval('#model option[value^="local:"]', (o) => o.textContent + ' disabled=' + o.disabled));
 await page.selectOption('#model', { index: await page.$$eval('#model option', (os) => os.findIndex((o) => o.value.startsWith('local:'))) });
-for (let i = 0; i < 24; i++) { await new Promise((r) => setTimeout(r, 5000)); console.log(i * 5, 'req', n, '|', await page.$eval('#local-settings', (b) => b.dataset.state + ' ' + (b.dataset.error ?? '')), '|', (await page.textContent('#status')).slice(0, 90)); if (/ready|error/.test(await page.$eval('#local-settings', (b) => b.dataset.state))) break; }
+for (let i = 0; i < 24; i++) { await new Promise((r) => setTimeout(r, 5000)); console.log(i * 5, 'req', n, '|', await page.$eval('#addons-settings', (b) => b.dataset.tjs + ' ' + (b.dataset.error ?? '')), '|', (await page.textContent('#status')).slice(0, 90)); if (/ready|error/.test(await page.$eval('#addons-settings', (b) => b.dataset.tjs))) break; }
 await ctx.close(); srv.kill();

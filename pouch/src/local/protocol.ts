@@ -1,4 +1,4 @@
-// The protocol between src/local/engine.ts (the page) and src/local/worker.ts,
+// The protocol between src/local/host.ts (the page) and src/local/worker.ts,
 // the Transformers.js model worker. Types only: the worker imports it without
 // pulling in the page side.
 
@@ -32,6 +32,6 @@ export type LocalReply =
   | Only<{ id: number; result: LocalLoadResult | LocalGenerateResult | 'disposed' }>
   | Only<{ id: number; error: string }>;
 
-export interface LocalEngine {
+export interface LocalWorker {
   generate(req: LocalGenerateRequest, o?: { onDelta?: (delta: string) => void; signal?: AbortSignal }): Promise<LocalGenerateResult>;
 }

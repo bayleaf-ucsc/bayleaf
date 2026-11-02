@@ -500,7 +500,9 @@
   #send.stop { background: var(--ink); border-color: var(--ink); color: var(--surface); }
   #local-hint { width: min(48rem, calc(100% - 1.5rem)); margin: .25rem auto 0; font-size: .82rem; padding: .4rem .6rem; border-radius: .5rem; background: var(--warn-soft); border: 1px solid var(--warn-line); }
   #local-hint button { font-size: .8rem; margin-left: .25rem; }
-  #local-settings progress { width: 100%; }
+  .addon-rows { list-style: none; padding: 0; margin: .5rem 0; display: grid; gap: .6rem; }
+  .addon-rows progress { width: 100%; }
+  .addon-state { margin: .15rem 0; }
   .local-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
   #status { width: min(48rem, calc(100% - 1.5rem)); margin: .25rem auto .45rem; font-size: .8rem; color: var(--muted); min-height: 1rem; }
   .sealed { font-size: .72rem; color: var(--leaf); border: 1px solid var(--leaf); border-radius: 4px; padding: 0 .3rem; white-space: nowrap; }
@@ -968,7 +970,7 @@
         <dl id="ns-facts"></dl>
         <p id="seed-row" hidden><button id="seed-remove" type="button">Remove the seed layer</button></p>
         <h3>Check this page</h3>
-        <p>This page talks only to <code>api.bayleaf.dev</code>, to a model server on this computer if you set one up under Settings > Providers > Localhost (loopback <code>http://localhost</code> or <code>http://127.0.0.1</code>, nothing else), and to its own origin to download the optional Transformers.js model: its Content-Security-Policy (<code>connect-src</code>) says so, and the browser enforces it. That model's files are checked against a manifest whose SHA-256 is built into this page; downloading them tells the host that this browser fetched the model, nothing more. Transformers.js turns send nothing.</p>
+        <p>This page talks only to <code>api.bayleaf.dev</code>, to a model server on this computer if you set one up under Settings > Providers > Localhost (loopback <code>http://localhost</code> or <code>http://127.0.0.1</code>, nothing else), and to its own origin for its own files and its small add-ons: its Content-Security-Policy (<code>connect-src</code>) says so, and the browser enforces it. Every add-on (Settings > Add-ons) is checked against the SHA-256 built into this page; installing one tells BayLeaf that this browser fetched it, nothing more. LFM3's weights come from BayLeaf's model mirror at <code>api.bayleaf.dev</code>. Transformers.js turns send nothing.</p>
         <p>Build <code id="build-id">__BUILD_ID__</code>. A page cannot vouch for its own hash: the one below is what this page's code checked when it kept the copy. Save the page, then compare its hash with <code>SHA256SUMS</code> from the release:
         <code>shasum -a 256 pouch.html</code></p>
         <h3>This copy</h3>
@@ -976,9 +978,9 @@
         <p id="copy-note" role="status"></p>
         <p class="local-actions">
           <button id="copy-check" type="button">Check for updates</button>
-          <button id="copy-install" type="button" hidden>Install app</button>
+          <button id="copy-install" type="button" hidden>Add to this device</button>
           <button id="copy-keep" type="button" hidden>Keep an offline copy</button>
-          <button id="copy-remove" type="button" class="danger" hidden>Uninstall offline copy</button>
+          <button id="copy-remove" type="button" class="danger" hidden>Remove offline copy</button>
         </p>
         <p class="muted">The hosted page keeps an offline copy: its files are checked against <code>SHA256SUMS</code> before they are kept, it loads with no network, and it changes only when you press Update, which checks the new files the same way. One part updates without asking: browsers replace <code>sw.js</code>, the small script that serves the copy, whenever the server's bytes change. It only serves the kept files; the Service worker line says whether it is the one this build expects.</p>
         <p><a id="source-link" href="https://github.com/bayleaf-ucsc/bayleaf/tree/pouch/pouch" target="_blank" rel="noopener noreferrer">Source code and releases on GitHub</a></p>
@@ -1020,20 +1022,14 @@
           <ul id="lh-steps" aria-live="polite"></ul>
           <p id="lh-fix" class="muted" hidden></p>
         </div>
-        <h3>Transformers.js model</h3>
-        <div id="local-settings">
-          <p id="local-state" class="muted">Checking...</p>
-          <progress id="local-progress" hidden></progress>
-          <p class="local-actions">
-            <button id="local-download" type="button" hidden>Download</button>
-            <button id="local-stop" type="button" hidden>Stop download</button>
-            <button id="local-folder-btn" type="button">Load from folder</button>
-            <button id="local-files-btn" type="button">Load from files</button>
-            <button id="local-remove" type="button" class="danger" hidden>Remove the model</button>
-          </p>
-          <input id="local-folder" type="file" webkitdirectory multiple hidden>
-          <input id="local-files" type="file" multiple hidden>
-          <p class="muted">Transformers.js runs a small model (about 1.1 GB, downloaded once from BayLeaf's model mirror at api.bayleaf.dev and checked against this page's pins) in this browser, on this device's GPU. Nothing you type is sent. It suits looking around a workspace and small, literal edits; use BayLeaf Sealed for bigger work. The original model files (and a saved <code>runtime</code> folder) can be loaded without the network. The terminal's <code>models</code> command does the same. Erase all removes it too.</p>
+        <h3 id="addons-h">Add-ons</h3>
+        <div id="addons-settings" role="group" aria-labelledby="addons-h">
+          <p class="muted">Optional tools and models Pouch keeps in this browser: fetched only when wanted, checked against the SHA-256 this page was built with, kept outside your files, removable any time. Small ones from Pouch's own origin (at most 10 MiB) install on first use and say so; every other install asks you first. LFM3 runs Transformers.js on this device's GPU: nothing you type is sent; it suits looking around a workspace and small, literal edits, so use BayLeaf Sealed for bigger work. A model can also install from a saved folder, with no network; its original files cover the weights only, so with no network also pick the saved <code>runtime/transformers/</code> manifest and parts. The terminal's <code>addons</code> command does the same.</p>
+          <ul id="addons-rows" class="addon-rows" aria-live="polite"><li class="muted">Checking...</li></ul>
+          <p class="local-actions"><button id="addons-offline" type="button" hidden>Make available offline</button> <button id="addons-sweep" type="button" hidden>Free space from older versions</button></p>
+          <p id="addons-storage" class="muted"></p>
+          <input id="addon-folder" type="file" webkitdirectory multiple hidden>
+          <input id="addon-files" type="file" multiple hidden>
         </div>
       </div>
     </section>

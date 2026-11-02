@@ -27,10 +27,12 @@ const entry = `
 import { InMemoryFs } from 'just-bash';
 import { shellFor } from './src/tools.ts';
 import { createPdfService } from './src/pdf.ts';
+import { createAddons } from './src/addons.ts';
+import { REGISTRY } from './src/addons-registry.ts';
 import { Tasks } from './src/ns/tasks.ts';
 const fs = new InMemoryFs();
 const tasks = new Tasks();
-const pdf = createPdfService({ tasks });
+const pdf = createPdfService({ tasks, addons: createAddons({ entries: REGISTRY, tasks }) });
 const shell = shellFor(fs, { pdf });
 window.violations = [];
 document.addEventListener('securitypolicyviolation', (e) => window.violations.push(e.violatedDirective + ' ' + e.blockedURI));
@@ -91,6 +93,12 @@ try {
 
   r = await sh('pdfinfo paper.pdf');
   assert.equal(r.code, 0, r.err);
+  // pdf.js is a quiet add-on: no sheet, and the first use says it installed, once.
+  assert.match(r.err, /^pdfinfo: installing pdf\.js \(3\.\d MiB, once, from Pouch's own origin\)$/m);
+  const inst = (await page.evaluate(() => window.pouch.tasks())).filter((x) => x.kind === 'install');
+  assert.deepEqual(inst.map((x) => [x.label, x.status]), [['addons install pdfjs', 'done']]);
+  assert.doesNotMatch((await sh('pdfinfo paper.pdf')).err, /installing/, 'the next command installs nothing');
+  ok('quiet add-on: the first command installs pdf.js as a /task install and says so on stderr; the next is silent');
   assert.match(r.out, /^Title:\s+Pouch fixture$/m); assert.match(r.out, /^Author:\s+BayLeaf tests$/m);
   assert.match(r.out, /^Pages:\s+3$/m); assert.match(r.out, /^Encrypted:\s+no$/m);
   assert.match(r.out, /^Page size:\s+612 x 792 pts \(letter\)$/m); assert.match(r.out, /^JavaScript:\s+no$/m);

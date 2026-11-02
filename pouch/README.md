@@ -264,7 +264,7 @@ artifact (Adam, 2026-11-01).
 | Identity, claims, keys, spend metadata | BayLeaf API (`api.bayleaf.dev`) | the BayLeaf operator; no prompt or file content |
 | Prompts, file contents the agent reads, replies | in transit only, EHBP-encrypted to the Tinfoil enclave | the attested enclave; not BayLeaf |
 | Transformers.js turns (prompts, files, replies) | this browser only: generated on its GPU | nobody else; nothing is sent |
-| Transformers.js model files (optional, ~1.1 GB) | Cache Storage (`pouch-models`; earlier builds' `pouch-local-models` is migrated and deleted), until Remove the model or Erase all | the BayLeaf HF gateway sees which files and byte ranges this browser fetched |
+| Add-ons (optional: pdf.js, libav.js, LFM3 ~1.1 GB) | Cache Storage (`pouch-runtime`, `pouch-models`; earlier builds' `pouch-local-models` is deleted at boot), until Remove (Settings > Add-ons, `addons remove`) or Erase all | the BayLeaf HF gateway sees which files and byte ranges this browser fetched |
 | Localhost address, optional API key, model list | IndexedDB `settings.localhost`, until Remove key, Remove Localhost or Erase all; never synced | only your server, which receives the key with each request |
 
 The CSP's `connect-src 'self' https://api.bayleaf.dev http://localhost:* http://127.0.0.1:*`
@@ -289,7 +289,7 @@ deliberate violation of each rule failing and the real tree passing.
 | cdn | no third-party CDN URL in the assembled page (`assertNoCdn`, as for runtimes) | URLs only compared against, never fetched (the Sigstore issuer the Tinfoil SDK checks) |
 | exact | no `any` in a trust-boundary module (`EXACT` in `arch.mjs`): where data crosses a boundary, its type is the claim an auditor reads | `src/trust.ts`, `src/egress.ts`, `src/ns/namespace.ts`, `src/ns/control.ts`, the egress modules and `src/sealed.ts` |
 | layers | the core (files, namespaces, storage, providers, sandboxed runtimes: `CORE` in `arch.mjs`) imports only the core; only `src/main.ts` imports the Interface | |
-| seams | a region is imported from outside only through its entry modules: `src/run.ts`, `src/pdf.ts`, `src/media.ts`, `src/local/engine.ts` and `src/local/provider.ts`; Interface regions never import each other | |
+| seams | a region is imported from outside only through its entry modules: `src/run.ts`, `src/pdf.ts`, `src/media.ts`, `src/local/host.ts` and `src/local/provider.ts`; Interface regions never import each other | |
 | contract | a contract module (`CONTRACTS` in `arch.mjs`) holds types only, no runtime statement, and is imported only with `import type`; a contract may be imported across a seam, never across a layer | `src/trust.ts`, `src/agent-types.ts`, `src/subagents-types.ts`, `src/tools-types.ts`, `src/interface/app.ts`, and `protocol.ts` in `src/run/`, `src/local/`, `src/pdf/` and `src/media/` (each worker's messages) |
 | escapes | each module's casts (`as`, `as unknown as`) and non-null assertions (`!`) stay within its count in `escapes.json`; a count above it fails, and so does one below it until `node arch.mjs --lower` records it, so the counts only go down | the counts in `escapes.json`: mostly where untyped data enters (JSON, `postMessage`, a tool's arguments) |
 | size | each module stays within 700 lines; `src/main.ts` within 60 | |
@@ -1053,25 +1053,25 @@ Builds carry an optional second provider next to
 BayLeaf Sealed: **LFM3 1.7B (in this browser)** under Transformers.js in the picker, the `onnx-community/LFM3-1.7B-ONNX` q4f16
 export at a pinned revision, run by Transformers.js 4.3.2 and ONNX Runtime Web on
 WebGPU. It is for computers only. The picker shows it when the device and the WebGPU adapter meet its
-requirements and otherwise lists it disabled with the reason; `models get` and Settings then refuse
-before the approval sheet, so nothing is downloaded. Phones and tablets are refused first
-(`deviceSupport` in `src/local/engine.ts`): on a Pixel 10 Pro the adapter passes every check
+requirements and otherwise lists it disabled with the reason; `addons install` and Settings then refuse
+before the approval sheet ("not available here: <reason>; nothing was fetched"), so nothing is installed. Phones and tablets are refused first
+(`deviceSupport` in `src/local/host.ts`): on a Pixel 10 Pro the adapter passes every check
 below, but the first request's one-shot prefill froze the whole phone for about a minute ("System
 UI isn't responding"). The cause is scheduling, not memory: one long GPU submission starves the
 system compositor on a mobile GPU. Signals, any of which refuses:
 `navigator.userAgentData.mobile`, a user-agent string naming Android, iPhone, iPad or Mobile,
 iPadOS's desktop-style "Macintosh" string with touch points, and `navigator.deviceMemory` below 8
 (Chrome caps it at 8, so it can refuse but never qualify). A coarse pointer alone is not a signal,
-so touch laptops are not refused. On such a device a model already downloaded stays removable
-(Settings shows Remove, never Download); a saved choice of Transformers.js stays selected but Send
+so touch laptops are not refused. On such a device an installed model stays removable
+(Settings > Add-ons shows Remove, never Install); a saved choice of Transformers.js stays selected but Send
 refuses with the reason before any GPU work, rather than quietly sending to Sealed. GPU
-requirements (`gpuSupport` in `src/local/engine.ts`, read from
+requirements (`gpuSupport` in `src/local/host.ts`, read from
 `navigator.gpu.requestAdapter()`, no device and no download): an adapter, the `shader-f16`
 feature (q4f16), and `maxStorageBuffersPerShaderStage` of at least 10. The last because
 Firefox on an M3 Max reports 9 and ORT-Web then fails mid-turn with "Too many storage buffers in
 shader. Current: 10, Max is 9" (kernel not identified); Chrome on the same machine reports more. Pouch does not create the device (ONNX
 Runtime Web's WebGPU EP calls `requestDevice` itself), so if a device still gets less than the
-adapter reported, that runtime error is shown as the same plain reason. Choosing it is the only way in: Pouch never switches providers by itself, and the
+adapter reported, that ORT error is shown as the same plain reason. Choosing it is the only way in: Pouch never switches providers by itself, and the
 shield says "Transformers.js: in this browser, nothing sent". (`node build.mjs --no-models` omits it.)
 
 - **Weights, from the BayLeaf HF gateway** (`src/models.ts`, issue #121). `models.lock.json`
@@ -1082,37 +1082,35 @@ shield says "Transformers.js: in this browser, nothing sent". (`node build.mjs -
   (`src/sha256.ts`, a 60-line SHA-256 whose state survives a reload, tested against NIST
   vectors and `crypto.subtle`), so the 1.09 GB weights are never in memory at once. Each
   chunk is kept in Cache Storage as it is hashed, with the hash state after it: Stop (or
-  a closed tab) keeps the verified prefix, and the next download continues there. A
+  a closed tab) keeps the stored prefix (each file's whole hash is checked at its end), and the next install continues there. A
   file whose whole hash differs from the lock is refused by name and dropped. The
   gateway's catalog (license, distribution, qualification) is shown, never trusted for
   bytes; `deploy.mjs` checks it agrees with the lock.
-- **Runtime, from Pouch's origin** (`build-runtime.mjs`, `src/assets.ts` `partAssets`).
-  The Transformers.js + ORT worker bundle and the ORT wasm, cut into content-hash parts of
+- **Code, from Pouch's origin** (`build-runtime.mjs`, `src/assets.ts` `partAssets`): the
+  hidden `transformersjs` add-on that LFM3 needs, installed with it (26 MiB). The Transformers.js + ORT worker bundle and the ORT wasm, cut into content-hash parts of
   at most 20 MiB under `dist/runtime/transformers/` with a manifest whose SHA-256 the page
   embeds. The bundle's library defaults that name a CDN or the Hub are rewritten at build
   and the build fails if any remain (`test/batchH-node.mjs` scans the artifact too).
-- **Loading.** Every later load re-checks every chunk (`crypto.subtle` against the receipt
+- **Starting.** Every later start re-checks every chunk (`crypto.subtle` against the receipt
   recorded when the whole file matched the lock) and needs no network; a damaged chunk is
   fetched again by range and checked against the same receipt. The worker starts from a
   verified `blob:` (CSP `worker-src blob:`), has no `fetch`, and gets the files as blobs
   and the wasm as bytes. Measured with the real model (M3 Max, Chrome, 2026-11-01):
   putting 1.09 GB into the store took 6 s with the browser 0.4 GiB above idle; loading
   peaked at 3.0 GiB in one process (ORT holds the weights as one buffer, as before).
-- **Consent: the `models` command** (`src/models-cli.ts`). `models list | status | get |
-  remove | verify`, for agents and the terminal; Settings' Download, Stop and Remove call
-  the same code. `get` always opens an approval sheet naming size, storage, license and
-  attribution, and origin; anyone may ask, only the user's click approves. The download is
-  a `/task` entry whatever asked (`echo stop > /task/<id>/ctl`, the tray, Settings' Stop).
-  The user's `remove` frees at once; an agent's asks, because it destroys a consented
-  download that offline use depends on and costs 1 GB to undo.
-- **Moving an earlier copy.** Parts kept by builds that served the weights from
-  pouch.bayleaf.dev (cache `pouch-local-models`) are reassembled on first load, checked
-  against the lock like a download, moved, and the old cache deleted: nothing is
-  downloaded again. Files that do not match are dropped with a message.
-- **Load from folder/files**: the original upstream files (matched by name and size),
+- **Consent: an asked add-on** (README "Add-ons"). LFM3 and its code are one add-on of
+  about 1.1 GB; `addons install lfm3` (agents and the terminal), Settings > Add-ons and
+  choosing it in the picker open the same approval sheet naming size, storage, license,
+  attribution and origin; only the user's click approves. The install is a `/task` entry
+  (kind `install`) whatever asked (`echo stop > /task/<id>/ctl`, the tray, Settings' Stop).
+  The user's Remove frees at once; an agent's `addons remove` asks, because it destroys a
+  consented install that offline use depends on and costs 1 GB to undo.
+- **Older builds' copies** (cache `pouch-local-models`) are deleted at boot with a one-line
+  notice in Settings > Add-ons; there is no migration (LANGUAGE.md, 2026-11-01).
+- **Install from folder/files**: the original upstream files (matched by name and size),
   hashed against the lock the same way, plus a saved `runtime/transformers/` folder, for
-  offline or `file://` copies (kept for that page load only there). **Remove the model**
-  frees the storage; **Erase all** removes it too.
+  offline or `file://` copies (kept for that page load only there). **Remove** frees the
+  storage; **Erase all** removes every add-on.
 - **Recipe** (`experiments/lfm3-webgpu`, agent v2 "v8"; the `transformersjs` profile in `src/profiles.ts`, moved there byte for byte). A short grounded system prompt
   naming `/work`, one byte-exact example turn, four short tool schemas (read, write,
   edit, bash: no `run`, no subagents, which would spend BayLeaf Sealed requests), greedy
@@ -1131,7 +1129,7 @@ shield says "Transformers.js: in this browser, nothing sent". (`node build.mjs -
   or the thread outgrows its context. Its sessions are auto-named after the first turn
   by the same model in its worker (at most 24 new tokens from a digest well inside the 4k
   budget, so the page stays responsive; a message sent meanwhile waits its turn in the
-  engine's queue) and use none of the BayLeaf Sealed allowance.
+  worker's queue) and use none of the BayLeaf Sealed allowance.
 - **Tool policy for every provider.** Native XML tool calls blur trailing newlines, so
   `edit` makes newText end with a line break exactly when oldText does (an empty newText,
   a deletion, is left alone), `write` saves a non-empty file ending with exactly one
@@ -1197,31 +1195,40 @@ A saved copy of `pouch.html` opened from disk (`file://`) starts offline and wor
 one caveat: Chromium refuses OPFS to `file://` pages, so `/work` falls back to memory
 (tagged "memory only") and is lost on reload; IndexedDB (`/pouch`, sessions, settings)
 does persist. Sealed sending needs the network, because attestation fetches the
-enclave's bundle; Transformers.js does not (load its files from a saved folder in Settings).
+enclave's bundle; Transformers.js does not (install LFM3 from a saved folder in Settings > Add-ons).
 
 ## Install and the offline copy
 
-Open `https://pouch.bayleaf.dev` and use the browser's Install (Chromium: the address
-bar, or "Install app" in the trust panel; Android: Add to Home screen; Safari: Share,
-Add to Dock or Add to Home Screen). Firefox desktop cannot install web apps; Pouch works
+Open `https://pouch.bayleaf.dev` and add it to this device with the browser's own
+install (Chromium: the address bar, or **Add to this device** in the trust panel;
+Android: Add to Home screen; Safari: Share, Add to Dock or Add to Home Screen). Pouch
+says "Add to this device" rather than "Install app" because Install is the add-ons' verb. Firefox desktop cannot install web apps; Pouch works
 the same in a tab. Installed or not, the hosted page keeps an offline copy of itself:
 
 - **Pinned, checked bytes.** On the first visit the page fetches `pouch.html`, the
   manifest and icons with the cache bypassed, checks each against `/SHA256SUMS`, and
   only then stores them in Cache Storage under `pouch-shell-<sha256 of pouch.html>`.
   `/sw.js` serves exactly those files (`/`, `/pouch.html`, manifest, icons) from that
-  cache, online or not. It does not touch `api.bayleaf.dev`, `/models/**` (the Transformers.js
-  provider's own verified cache), `/SHA256SUMS`, itself, or any URL with a query.
+  cache, online or not. It does not touch `api.bayleaf.dev`, `/runtime/**` (add-ons keep
+  their own verified caches), `/SHA256SUMS`, itself, or any URL with a query.
 - **Explicit updates.** At start (when online) and on "Check for updates", the page
   reads `/SHA256SUMS`. If the published HTML hash differs from the pinned one, a notice
   names both. Nothing changes until you press Update, which fetches the new files,
   checks them against the SHA256SUMS just fetched, and swaps the cache and reloads only
   if all match; otherwise it says which file did not match and keeps the running copy.
+  The notice adds one line on the installed add-ons ("This update changes pdf.js: 1.2 MiB
+  to fetch; LFM3 1.7B unchanged."; an asked one adds "(asks again)", since a changed pin is
+  a new install needing approval). It reads only what the published `SHA256SUMS` lists:
+  each `runtime/<group>/manifest.<hex16>.json` path (a new name means new parts), fetched
+  from this origin and checked against its listed hash, then compared with the parts kept
+  here. **Limit:** gateway pins (LFM3's weights) live in the new `pouch.html`, which the
+  notice does not fetch, so for a model only its code from this origin is compared and the
+  line says so; a weights change shows after updating. Tests: `node test/addons-sweep-node.mjs`.
 - **The trust panel says which build runs:** where it was loaded from, the pinned hash,
   the published hash when last checked, whether the served `sw.js` matches the hash
   built into this page, whether Pouch runs installed, and whether storage is persistent
-  (requested at start and on install, which also covers the Transformers.js model's cache).
-- **Uninstall offline copy** (trust panel) unregisters the worker, deletes the copy and
+  (requested at start and when added to the device, which also covers the add-ons' caches).
+- **Remove offline copy** (trust panel) unregisters the worker, deletes the copy and
   remembers the choice; **Erase all** also does both (the next visit starts fresh).
 
 **The unavoidable channel.** Browsers re-fetch `sw.js` on navigation and replace it,
@@ -1258,22 +1265,122 @@ own code, so it is a convenience, not an independent proof.
   leave it. Tinfoil's tool-like catalog entries stay hidden until their data paths are
   reviewed.
 
-## Tool runtimes and engine jobs
+## Add-ons
+
+An **add-on** (LANGUAGE.md) is something optional Pouch keeps in this browser so a tool or
+a Provider can work: pdf.js (3.9 MiB), libav.js (7.8 MiB), LFM3 1.7B (about 1.1 GB with the
+26 MiB Transformers.js code it needs). Fetched only when wanted, checked against hashes
+this page was built with, kept outside the Workspace, removable at any time.
+
+- **Registry** (`src/addons-registry.ts`): one entry per add-on, built from the build's
+  pins: `id`, `label`, `kind` (`tool` or `model`), `files` (`{ origin: PartsPin }`: parts
+  from this origin through `partAssets`; or `{ gateway: ModelPin }`: pinned upstream files
+  from the HF gateway through `fillFile`), `needs` (hidden entries installed with it),
+  `license`, `extraLicense`, `attribution`, `notice`, `usedBy` (commands) or `provider`,
+  and `device()` (can this browser run it). A build that leaves a pin out has no entry.
+- **Consent tier** (`tierOf` in `src/addons.ts`), derived, never declared: *quiet* when the
+  add-on and what it needs total at most 10 MiB, all from this origin, with no license
+  beyond the NOTICE Pouch ships; *asked* otherwise. Quiet ones install on a tool's first
+  use: the job's `/task` note and the command's stderr say "installing pdf.js (3.9 MiB,
+  once, from Pouch's own origin)". Asked ones need the user's click on the install sheet,
+  which names who asks ("main (a1) asks to install LFM3 1.7B"), size, where it is kept,
+  license, attribution and origin, and "Only you can approve"; no approve hook means deny.
+- **Agents meet the tiers as strings**, one sentence each, state then next step: a tool
+  whose add-on asks returns at once with `not installed: <label> (<size>). Run \`addons
+  install <id>\`; the user will be asked.` and never opens a sheet; `denied by the user:
+  nothing was installed (<label>).`; `not available here: <reason>; nothing was fetched`;
+  `stopped; \`addons install <id>\` resumes.`; offline: `not installed, and the network is
+  not available: <label> (<size>)`.
+- **The `addons` command** (`src/addons-cli.ts`, the same just-bash command for agents and
+  the terminal): `list` (NAME, KIND, SIZE, STATE, USED BY), `info <name>`, `install <name>
+  [--wait]`, `install --all` (Make available offline: quiet ones directly, one combined
+  sheet for the asked ones), `remove <name>` (the user's frees at once; an agent's asks),
+  `verify <name>` (re-check every kept byte, no network). Names accept unique prefixes.
+  Exit codes 0, 1 (error or denied), 2 (usage). Every install is a `/task` entry of kind
+  `install`, stoppable through its ctl, the tray and Settings; installing again resumes.
+- **Settings > Add-ons** (`src/interface/addons.ts`): a row per add-on with its label, what
+  uses it, size and state (or "not available here: reason"), and Install / Stop / Remove;
+  model rows also Install from folder / Install from files. **Make available offline**
+  shows the total still to fetch; the footer shows the site's storage use. Erase all
+  removes every add-on.
+- **Stale-part sweep** (`sweep` in `src/addons.ts`). Parts are content-addressed, so a new
+  build reuses unchanged ones, but a changed pin leaves the old ones behind. The sweep
+  deletes from `pouch-runtime` and `pouch-models` exactly the keys no registry entry of the
+  running build names: parts not in an entry's kept manifest, older manifests, directories
+  no entry has, and other revisions' chunks. It never touches a current pin's keys, keeps
+  every part under an entry's directory until that entry's new manifest is kept (they may
+  be reused), skips a store whose backend cannot say what it owns, and does nothing while
+  any install runs. It runs 4 s after boot and from Settings > Add-ons, whose footer
+  offers "Free N MiB from older versions" when a dry run finds something. A build that
+  leaves an add-on out (`--no-models`) therefore frees that add-on's files too.
+  Tabs share Cache Storage, so a tab still running an older build may need exactly
+  those keys. Every page holds a shared Web Lock `pouch-build:<sha256 of its pouch.html>`
+  for its lifetime (`buildLock`; `pouch-build:unknown` before an offline copy is pinned,
+  which never vouches for a build). While any other build's lock is held, the boot sweep
+  is skipped silently and Settings says "Another tab runs a different Pouch build; close
+  it to free N MiB" instead of freeing. Without `navigator.locks` the boot sweep is
+  skipped and Settings still frees, saying it cannot tell whether an older tab is open.
+  Tests: `node test/addons-sweep-node.mjs` (a fake Cache Storage), `test/addons-browser.mjs`.
+- **Tests**: `node test/addons-node.mjs` (the real registry built from `dist/`'s pins, the
+  tier rule, the strings, the command, ensure, hidden parts, device refusal, install
+  --all), `node test/addons-browser.mjs` (an asked pdf.js in a real page: the tool's
+  not-installed string, an agent's install sheet and denial, Settings and Make available
+  offline), and the add-on parts of `test/batchH-browser.mjs`, `test/pdf-browser.mjs` and
+  `test/media-browser.mjs`.
+
+### Add-ons: the recipe
+
+Adding one is one registry entry plus its worker:
+
+1. **Build its files** with a pin: for code, a `build-<tool>.mjs` calling
+   `build-runtime.mjs`'s `writeRuntime(out, '<group>', files)` (parts under 25 MiB, listed in
+   SHA256SUMS, uploaded by `deploy.mjs`), and a `NOTICE.txt` among the files; for weights,
+   an entry in `models.lock.json` (every file's size and SHA-256) and the gateway's
+   approval of that repo and revision (`api/HF-GATEWAY.md`).
+2. **Define the pin** in `build.mjs` (`define: { POUCH_<TOOL>_RUNTIME: JSON.stringify(pin) }`)
+   and declare it in `src/globals.d.ts`.
+3. **One entry** in `REGISTRY` (`src/addons-registry.ts`), present only when the pin is:
+
+   ```ts
+   ...(DUCKDB ? [{ id: 'duckdb', label: 'DuckDB-Wasm', kind: 'tool' as const, files: { origin: DUCKDB },
+     license: 'MIT (NOTICE.txt)', notice: `${DUCKDB.dir}NOTICE.txt`, usedBy: ['duckdb'] }] : []),
+   ...(PARAKEET ? [{ id: 'parakeet-tdt-0.6b-v3', label: 'Parakeet TDT 0.6B v3', kind: 'model' as const,
+     files: { gateway: PARAKEET }, needs: ['parakeet-runtime'], license: 'CC-BY-4.0', extraLicense: true,
+     attribution: 'NVIDIA, Parakeet TDT 0.6B v3 (CC-BY-4.0)', usedBy: ['transcribe'] }] : []),
+   ```
+
+   A model that needs its own code adds a `hidden: true` tool-kind entry for it (as
+   `transformersjs` is for LFM3) and names it in `needs`; the user sees one add-on with
+   one size. The tier follows: DuckDB (about 36 MiB) and Parakeet (about 1.2 GB, from the
+   gateway) both ask.
+4. **Its worker** takes its files from the service, never from a pin: a tool's worker
+   definition gets `assets: addons.assets('<id>')` (see `createPdfService({ tasks, addons })`)
+   and calls `assets.obtain({ network, signal, note })` when it starts, which installs a
+   quiet add-on (noting it), or throws the asked tier's `ENOTINSTALLED` string, then hands
+   back verified Blobs by file name (`manifest` too, for origin parts). A model's host
+   calls `addons.files('<id>')` (every file of it and its `needs`, keyed by add-on id).
+   Wrap the commands with `installLines()` (`src/pdf.ts`) so a quiet install's line reaches
+   stderr. Put the entry module in `arch.mjs` `NETWORK` (Worker) and `REGIONS`, its
+   protocol in `CONTRACTS`.
+5. **Tests**: add the entry to the registry assertion in `test/addons-node.mjs`.
+
+## Tool workers and jobs
 
 For heavy tools (pdf.js and libav.js now; OCR, ASR, DuckDB later):
 
 - **Convention** (`build-runtime.mjs`): each heavy tool runs in its own same-origin
   worker; its files ship as content-hash parts under `runtime/<group>/` listed in
-  `SHA256SUMS`; any model it needs comes from the gateway, pinned in the build. No asset
-  may default to a CDN or the Hub (`assertNoCdn`, at build and in tests).
-- **Reassembler** (`src/assets.ts`): `partAssets(pin)` for runtime files over 25 MiB;
-  `fillFile` / `rangeSource` / `verifiedFile` for large gateway files. One rule: nothing
-  is used unless its SHA-256 matches a hash the page was built with.
-- **Engine jobs** (`src/jobs.ts`): one instance per engine shared by every agent, a queue
-  (serial by default, `concurrency` per engine), each job a `/task` entry whose ctl stops
-  only that job, a memory guard (unloads idle engines, then refuses with a reason), and
-  capability scoping: a job gets its caller's namespace view, never the global tree.
-  Tested with a sleep-and-hash engine (`test/batchH-node.mjs`).
+  `SHA256SUMS`, as an add-on (above); any model it needs comes from the gateway, pinned in
+  the build. No asset may default to a CDN or the Hub (`assertNoCdn`, at build and in tests).
+- **Reassembler** (`src/assets.ts`): `partAssets(pin)` for files cut into parts under
+  25 MiB; `fillFile` / `rangeSource` / `verifiedFile` for large gateway files. One rule:
+  nothing is used unless its SHA-256 matches a hash the page was built with.
+- **Jobs** (`src/jobs.ts`): one instance per worker shared by every agent, a queue
+  (serial by default, `concurrency` per worker), each job a `/task` entry whose ctl stops
+  only that job, a memory guard (unloads idle workers, then refuses with a reason), and
+  capability scoping: a job gets its caller's namespace view, never the global tree. A
+  worker's add-on is ensured before it starts. Tested with a sleep-and-hash worker
+  (`test/batchH-node.mjs`).
 
 ### The first tool: pdf.js (`pdfinfo`, `pdftotext`, `pdftoppm`)
 
@@ -1297,8 +1404,9 @@ exit 0 and say so on stdout (where an agent reads it, even with `-q`) as well as
 `[stopped at page 50 of 312: pass -f 51 -l 100 for more]`. Exit codes follow poppler: 1 for a file error, 3 for an encrypted
 PDF without its password, 99 for bad arguments; 130 when stopped.
 
-Each command is an engine job (`/task`, Stop through ctl); one worker serves the terminal
-and every agent. A non-PDF is refused before the runtime loads. The runtime
+Each command is a job (`/task`, Stop through ctl); one worker serves the terminal
+and every agent. A non-PDF is refused before pdf.js loads. pdf.js is a quiet add-on: the
+first command installs it and says so on stderr. Its files
 (`build-pdf.mjs`, `src/pdf/worker.ts`; sizes and licenses in DEPLOYMENT.md) runs pdf.js's
 worker code in the same thread, reads cmaps, fonts and decoder wasm from a verified
 `data.pack` instead of fetching them, and then removes `fetch` and `XMLHttpRequest` from
@@ -1307,7 +1415,7 @@ page's CSP did not change. The bundled `pdf` skill gives agents the recipe (chec
 layer, extract with page markers and cite, render scans and look at them when a look tool
 is available, crop figures for reports) and the caps. Tests: `node test/pdf-node.mjs`
 (parsing, caps, errors, jobs, build pins) and `node test/pdf-browser.mjs` (the real
-runtime under the production CSP on fixture PDFs, an encrypted one, a hostile one with
+worker under the production CSP, installed as a quiet add-on, on fixture PDFs, an encrypted one, a hostile one with
 JavaScript and a link, Stop, offline reuse, and the network log).
 
 ### The second tool: libav.js (`ffprobe`, `ffmpeg`)
@@ -1380,13 +1488,14 @@ new license family (LGPL FFmpeg from the sources already shipped) and no CSP cha
 Caps are named constants in `src/media.ts`: `MAX_INPUT_BYTES` 256 MiB per call (checked
 before the runtime loads), `MAX_INPUT_SECONDS` 3 h per input, `MAX_OUTPUT_BYTES` 256 MiB
 (over it nothing is written), `MAX_IMAGES` 100 per call, `MAX_FRAME_PIXELS` 3840x2160,
-`MAX_STDOUT_BYTES` 1 MiB, `MAX_STDERR_LINES` 60. Each run is an engine job (`/task`, Stop
+`MAX_STDOUT_BYTES` 1 MiB, `MAX_STDERR_LINES` 60. Each run is a job (`/task`, Stop
 through ctl) with an `ENGINE_MEMORY` estimate of 1 GiB for the jobs memory guard. FFmpeg
 runs to completion inside wasm, so Stop ends the worker after `STOP_GRACE_MS` (1 s) and the
 next job starts a new one; a stopped job writes nothing. Exit codes: 1 for errors, 130 when
 stopped.
 
-The runtime (`build-libav.mjs`, `src/media/worker.ts`) bundles libav.js's wrapper and
+libav.js is a quiet add-on (the first command installs it and says so on stderr). Its
+files (`build-libav.mjs`, `src/media/worker.ts`) bundle libav.js's wrapper and
 Emscripten factory into one module worker (three build-time rewrite rules, six replacements,
 each matched an exact number of times: Emscripten's Node branches and libav.js's own worker bootstrap), compiles
 the released wasm once from verified bytes, then removes `fetch` and `XMLHttpRequest` from
@@ -1398,7 +1507,7 @@ and never to send the person's media to an online converter (it suggests a local
 instead: QuickTime Export As, the phone's "Most Compatible" setting, a screen recorder's
 WebM, or ffmpeg on their own computer). Tests: `node
 test/media-node.mjs` (parsing, time syntax, image plans, caps, errors, jobs and Stop with a
-fake engine, build pins and source) and `node test/media-browser.mjs` (the real runtime
+fake worker, build pins and source) and `node test/media-browser.mjs` (the real worker
 under the production CSP on tiny committed fixtures in `test/fixtures/media/`: ffprobe JSON,
 frame colors and times from VP8 and VP9, JPEG, audio copy, trim, VP9 transcode, the gaps'
 messages, Stop mid-ffmpeg, offline reuse, and the network log).

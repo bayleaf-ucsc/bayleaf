@@ -1,5 +1,5 @@
 // Audio and video commands for the shell, on Pouch's second heavy-tool
-// runtime (libav.js: FFmpeg 9 compiled to WebAssembly):
+// add-on (libav.js: FFmpeg 9 compiled to WebAssembly):
 //
 //   ffprobe [OPTIONS] FILE         ffprobe itself: -show_format -show_streams -of json ...
 //   ffmpeg  [OPTIONS] -i IN ... OUT  ffmpeg itself, over copies of the files
@@ -20,24 +20,24 @@
 // Audio conversions the CLI build cannot do (it has no aresample) are retried
 // there. Video re-encoding and MP4 muxing are not available: a one-line hint.
 //
-// The runtime (build-libav.mjs, src/media/worker.ts) is fetched only when a
-// media command first needs it, from this origin as content-hash parts
-// checked against the manifest this page was built with (src/assets.ts
-// partAssets), and then kept for offline use. Every command is an engine job
-// (src/jobs.ts): a /task entry whose ctl stops it.
-import { partAssets } from './assets.ts';
+// libav.js (build-libav.mjs, src/media/worker.ts) is a quiet add-on
+// (src/addons.ts): installed when a media command first needs it, from this
+// origin as content-hash parts checked against the manifest this page was
+// built with, then kept for offline use; the command's output says it
+// installed. Every command is a job (src/jobs.ts): a /task entry whose ctl stops it.
 import { createJobs } from './jobs.ts';
+import { LIBAVJS } from './addons-registry.ts';
+import { say } from './addons.ts';
 import { normalize } from './vfs.ts';
 import { sniff, AUDIO_FILTERS, WC_FILTERS, WAV_CODECS } from './media/wc.ts';
 import type { defineCommand as DefineCommand, ResolvedCommandContext, IFileSystem, ExecResult } from 'just-bash';
-import { coded } from './pdf.ts';
-import type { EngineOptions, JobHandle, JobOutcome, Note, Pending, RunOptions, ServiceOptions, WhoOf } from './pdf.ts';
-import type { EngineDef } from './jobs.ts';
+import { coded, installLines } from './pdf.ts';
+import type { WorkerOptions, JobHandle, JobOutcome, Note, Pending, RunOptions, ServiceOptions, WhoOf } from './pdf.ts';
+import type { WorkerDef } from './jobs.ts';
 import type { RuntimeFiles } from './assets.ts';
 import type { AudioOut, MediaAction, MediaCallBody, MediaInput, MediaJob, MediaProbe, MediaReply, MediaResult, MediaResultOf, ProbeStream } from './media/protocol.ts';
 export type { MediaJob, MediaReply, MediaRequest, MediaResult } from './media/protocol.ts';
 
-export const LIBAV_RUNTIME = typeof POUCH_LIBAV_RUNTIME !== 'undefined' ? POUCH_LIBAV_RUNTIME : null; // eslint-disable-line no-undef
 // The LGPL corresponding source (build-libav.mjs): never fetched by the page, named in help and NOTICE.
 export const LIBAV_SOURCE = typeof POUCH_LIBAV_SOURCE !== 'undefined' ? POUCH_LIBAV_SOURCE : null; // eslint-disable-line no-undef
 
@@ -49,7 +49,7 @@ export const MAX_IMAGES = 100;                 // images per ffmpeg call
 export const MAX_FRAME_PIXELS = 3840 * 2160;   // per image (width x height)
 export const MAX_STDOUT_BYTES = 1 * 2 ** 20;   // ffprobe's report; more is cut with a note
 export const MAX_STDERR_LINES = 60;            // FFmpeg's log, first and last lines kept
-export const ENGINE_MEMORY = 1 * 2 ** 30;      // the jobs memory guard's estimate: inputs, MEMFS copies, decode buffers
+export const WORKER_MEMORY = 1 * 2 ** 30;      // the jobs memory guard's estimate: inputs, MEMFS copies, decode buffers
 const STOP_GRACE_MS = 1000;                    // after Stop, how long before the worker is ended (ffmpeg itself cannot be interrupted)
 
 const ok = (stdout = '', stderr = '') => ({ stdout, stderr, exitCode: 0 });
@@ -381,7 +381,7 @@ export function audioPlan(parsed: FfmpegCall): AudioPlan | { error: string } {
   return { path, ss, t, filters, rate, channels, out };
 }
 
-// ── The engine: one worker from the verified runtime ─────────────────
+// ── The worker: started from libav.js's verified files ───────────────
 const stopped = () => new DOMException('Stopped.', 'AbortError');
 const codeError = (msg: string, code?: string) => Object.assign(new Error(msg), { code });
 
@@ -390,18 +390,17 @@ function defaultSpawn(files: RuntimeFiles) {
   try { return new Worker(src, { type: 'module', name: 'pouch-libav' }); } finally { URL.revokeObjectURL(src); }
 }
 
-// Same shape as src/pdf.ts pdfEngine (a third runtime should share one).
-export function mediaEngine({ assets = LIBAV_RUNTIME && partAssets(LIBAV_RUNTIME), spawn = defaultSpawn, onLoad }: EngineOptions = {}): EngineDef<MediaJob, MediaResult> {
+// Same shape as src/pdf.ts pdfWorker (a third tool should share one).
+export function mediaWorker({ assets = null, spawn = defaultSpawn, onLoad }: WorkerOptions = {}): WorkerDef<MediaJob, MediaResult> {
   return {
-    label: 'libav.js', memory: ENGINE_MEMORY, concurrency: 1,
+    label: 'libav.js', memory: WORKER_MEMORY, concurrency: 1,
     create() {
-      if (!assets) throw codeError('this build of Pouch has no media runtime (built with it left out)', 'ENOSYS');
-      const runtime = assets;
+      if (!assets) throw codeError(say.notBuilt('libav.js'), 'ENOSYS');
+      const files = assets;
       let worker: Worker | null = null, seq = 0;
       const pending = new Map<number, Pending<MediaResult>>();
-      async function start(note: Note | undefined) {
-        note?.('loading the media runtime');
-        const got = await runtime.obtain({ network: globalThis.navigator?.onLine !== false });
+      async function start(note: Note | undefined, signal: AbortSignal) {
+        const got = await files.obtain({ network: globalThis.navigator?.onLine !== false, signal, note });
         onLoad?.(got);
         const w = spawn(got.files);
         w.onmessage = ({ data }: MessageEvent<MediaReply>) => {
@@ -435,7 +434,7 @@ export function mediaEngine({ assets = LIBAV_RUNTIME && partAssets(LIBAV_RUNTIME
       }
       return {
         async run({ action, ...data }, { signal, note }) {
-          if (!worker) await start(note);
+          if (!worker) await start(note, signal).catch((e) => { throw signal.aborted ? stopped() : e; });
           if (signal.aborted) throw stopped();
           const w = worker;
           if (!w) throw new Error('the media worker failed while starting');
@@ -446,15 +445,16 @@ export function mediaEngine({ assets = LIBAV_RUNTIME && partAssets(LIBAV_RUNTIME
           if (data.input) data.input = copy(data.input);
           return call(w, action, data, transfer, { note, signal });
         },
-        dispose() { worker?.terminate(); worker = null; },
+        // Removing the add-on unloads it: a job still running ends with a reason, never hangs.
+        dispose() { worker?.terminate(); worker = null; for (const p of pending.values()) { clearTimeout(p.timer); p.reject(new Error('libav.js was removed while this job ran.')); } pending.clear(); },
       };
     },
   };
 }
 
-// The service shared by the terminal and every agent: one engine, its jobs.
-export function createMediaService({ tasks, engine = mediaEngine(), budget }: ServiceOptions<MediaJob, MediaResult>) {
-  const jobs = createJobs({ tasks, engines: { libav: engine }, ...(budget ? { budget } : {}) });
+// The service shared by the terminal and every agent: one worker, its jobs.
+export function createMediaService({ tasks, addons, worker = mediaWorker({ assets: addons?.assets(LIBAVJS) }), budget }: ServiceOptions<MediaJob, MediaResult>) {
+  const jobs = createJobs({ tasks, workers: { libav: worker }, ...(budget ? { budget } : {}) });
   return {
     jobs,
     run(input: MediaJob, { who = {}, fs, signal, label }: RunOptions = {}): JobHandle {
@@ -486,26 +486,28 @@ async function readInputs(cmd: string, ctx: ResolvedCommandContext, paths: strin
 }
 
 export type MediaService = ReturnType<typeof createMediaService>;
+const NOT_HERE = say.notBuilt('libav.js').replace(/\.$/, '');
 // whoOf: who the /task label names.
 export function mediaCommands(defineCommand: typeof DefineCommand, service: MediaService | null | undefined, whoOf: WhoOf = () => ({ name: 'terminal' })) {
   const who = () => (typeof whoOf === 'function' ? whoOf() : whoOf) ?? {};
+  const installs = installLines();
   async function job<A extends MediaAction>(cmd: string, ctx: ResolvedCommandContext, input: MediaJob & { action: A }, label: string): Promise<JobOutcome<MediaResultOf<A>>> {
-    if (!service) return { error: fail(cmd, 'the media runtime is not available here') };
+    if (!service) return { error: fail(cmd, NOT_HERE) };
     const { task, result } = service.run(input, { who: who(), fs: ctx.fs, signal: ctx.signal, label });
-    try { return { r: await result as MediaResultOf<A>, task }; } // the engine answers by action
+    try { return { r: await result as MediaResultOf<A>, task }; } // the worker answers by action
     catch (caught) {
       const e = coded(caught);
       if (e.name === 'AbortError') return { error: fail(cmd, `stopped (/task/${task.id})`, 130) };
       return { error: { ...fail(cmd, e.message), ...(e.code === 'EFORMAT' || e.code === 'ECODEC' ? { stderr: `${cmd}: ${e.message}\n${cmd}: hint: ${GAP}.\n` } : {}) } };
-    }
+    } finally { installs.note(ctx, task); }
   }
   const mkdirFor = (fs: IFileSystem, p: string) => fs.mkdir(normalize(p + '/..'), { recursive: true }).catch(() => {});
 
-  const ffprobe = defineCommand('ffprobe', async (args, ctx) => {
+  const ffprobe = defineCommand('ffprobe', installs.wrap('ffprobe', async (args, ctx) => {
     const a = parseProbe(args);
     if (a.help) return ok(HELP.ffprobe);
     if (a.error !== undefined) return { stdout: '', stderr: `ffprobe: ${a.error}\n${HELP.ffprobe}`, exitCode: 1 };
-    if (!service) return fail('ffprobe', 'the media runtime is not available here');
+    if (!service) return fail('ffprobe', NOT_HERE);
     const read = await readInputs('ffprobe', ctx, a.files);
     if (read.error) return read.error;
     const inputs = read.files.map((f, i) => ({ name: `in${i}.${ext(f.path) || 'bin'}`, label: f.path, bytes: f.bytes }));
@@ -532,13 +534,13 @@ export function mediaCommands(defineCommand: typeof DefineCommand, service: Medi
     if (stdout.length > MAX_STDOUT_BYTES) { stdout = stdout.slice(0, MAX_STDOUT_BYTES); more = `ffprobe: output cut at ${MAX_STDOUT_BYTES / 2 ** 20} MiB (MAX_STDOUT_BYTES); narrow it with -show_entries or -select_streams\n`; }
     const stderr = tidy(j.r.stderr, names);
     return { stdout, stderr: stderr + (j.r.code ? hint(stderr) : '') + more, exitCode: j.r.code ? 1 : 0 };
-  });
+  }));
 
-  const ffmpeg = defineCommand('ffmpeg', async (args, ctx) => {
+  const ffmpeg = defineCommand('ffmpeg', installs.wrap('ffmpeg', async (args, ctx) => {
     const a = parseFfmpeg(args);
     if (a.help && !a.args.slice(1).length) return ok(HELP.ffmpeg);
     if (a.error !== undefined) return { stdout: '', stderr: `ffmpeg: ${a.error}\n${HELP.ffmpeg}`, exitCode: 1 };
-    if (!service) return fail('ffmpeg', 'the media runtime is not available here');
+    if (!service) return fail('ffmpeg', NOT_HERE);
     if (a.help || a.info) { // -h filter=scale, -codecs, -L ...: FFmpeg answers
       const j = await job('ffmpeg', ctx, { action: 'run', program: 'ffmpeg', args: ['-hide_banner', ...args], inputs: [], outputs: [], maxSeconds: 0, maxOutputBytes: 0 }, `ffmpeg ${args[0]}`);
       if (j.error) return j.error;
@@ -627,7 +629,7 @@ export function mediaCommands(defineCommand: typeof DefineCommand, service: Medi
       lines.push(`wrote ${outPaths[i]} (${bytes.length.toLocaleString('en-US')} bytes)`);
     }
     return { stdout: lines.join('\n') + '\n', stderr, exitCode: 0 };
-  });
+  }));
 
   return [ffprobe, ffmpeg];
 }

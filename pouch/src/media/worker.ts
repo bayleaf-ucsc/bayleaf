@@ -56,7 +56,7 @@ const context2d = (canvas: OffscreenCanvas) => { const ctx = canvas.getContext('
 
 // A new libav instance of a build, its wasm compiled by load; err gets printErr, out print.
 async function start(wrapper: typeof libav, make: Factory, module: Promise<WebAssembly.Module> | null, err: string[], out?: string[]) {
-  if (!module) throw fail('the media runtime is not loaded', 'EPROTO');
+  if (!module) throw fail('libav.js is not loaded', 'EPROTO');
   const mod = await module;
   return wrapper.LibAV({ noworker: true, factory: (opts) => make({ ...opts,
     instantiateWasm(imports: WebAssembly.Imports, done: WasmDone) { WebAssembly.instantiate(mod, imports).then((inst) => done(inst, mod)); return {}; },

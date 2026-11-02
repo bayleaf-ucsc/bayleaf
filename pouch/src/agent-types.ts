@@ -56,7 +56,7 @@ export interface OpenAgentOptions {
   pointer?: ThreadPointer;
   subagents?: SubagentHost; // without reg there is no subagent tool
   onInterrupted?(sids: SessionId[]): void; // sessions whose run a reload cut off (aborted, not resumed)
-  local?: { info: Parameters<typeof localModel>[0]; engine: Parameters<typeof localApi>[0]; onHint?: NonNullable<Parameters<typeof localApi>[1]>['onHint'] };
+  local?: { info: Parameters<typeof localModel>[0]; worker: Parameters<typeof localApi>[0]; onHint?: NonNullable<Parameters<typeof localApi>[1]>['onHint'] };
   localhost?: { config?: Partial<LocalhostConfig> | null; onWait?: NonNullable<Parameters<typeof localhostApi>[2]>['onWait'] };
   onRequest?: Parameters<typeof sealedFetch>[1];
 }

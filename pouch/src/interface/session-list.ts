@@ -1,4 +1,4 @@
-// Session list, egress consent hooks and the shared model, pdf and media services.
+// Session list, egress consent hooks and the shared add-ons, pdf and media services.
 
 import * as store from '../store.ts';
 import { $, el } from '../dom.ts';
@@ -7,21 +7,22 @@ import { createPdfService } from '../pdf.ts';
 import { createMediaService } from '../media.ts';
 import { createSessions, revertKey, sameId, titleOf } from '../sessions.ts';
 import { createEgress, grantsFor, revoke, serviceName } from '../egress.ts';
-import { LOCAL, models as modelStore } from '../local/engine.ts';
-import { askTitle, createModelService } from '../models-cli.ts';
+import { LOCAL, localWorker, setSource } from '../local/host.ts';
+import { askTitle, buildLock, createAddons, sizeText } from '../addons.ts';
+import { LFM3, LIBAVJS, PDFJS, REGISTRY, TRANSFORMERSJS } from '../addons-registry.ts';
 import type { ConversationId } from '@earendil-works/pi-durable';
 import type { ThreadItem, ToolItem } from '../agent-types.ts';
 import type { Egress } from '../egress.ts';
 import type { EgressNotice, EgressTrace } from '../trust.ts';
 import type { MediaService } from '../media.ts';
-import type { ModelRequest, ModelService, ModelWho } from '../models-cli.ts';
+import type { AddonRequest, AddonWho, Addons } from '../addons.ts';
 import type { PdfService } from '../pdf.ts';
 import type { Caller, ToolsHooks } from '../tools-types.ts';
 import type { App } from './app.ts';
 
 // The subagent whose view fills the chat pane; from: the peer it was opened from.
 export interface SubagentFocus { sid: string; id: ConversationId; from: string | null; pinTop?: boolean }
-export type AgentWho = Extract<ModelWho, { by: 'agent' }>;
+export type AgentWho = Extract<AddonWho, { by: 'agent' }>;
 
 export interface SessionListRegion {
   // The session whose run is active (a turn, a resumed run or Run script), if any.
@@ -32,9 +33,11 @@ export interface SessionListRegion {
   get focus(): SubagentFocus | null; set focus(v: SubagentFocus | null);
   // Running bash card id -> what left so far, until its output carries the marker.
   liveEgress: Map<string, Omit<EgressTrace, 'text'>>;
+  addons: Addons;
+  // This page's pouch-build:<sha256> lock (boot holds it); the sweep reads the others.
+  build: ReturnType<typeof buildLock>;
+  addonsWho(caller: Caller): AgentWho;
   mediaService: MediaService;
-  modelService: ModelService;
-  modelsWho(caller: Caller): AgentWho;
   pdfService: PdfService;
   sessions: ReturnType<typeof createSessions>;
 }
@@ -104,38 +107,57 @@ export function createSessionListRegion(app: App): SessionListRegion {
     onEgress: (e, caller) => { if (!childOf(caller)) noteEgress(e); },
   };
 
-  // ── Models (src/models-cli.ts): weights from the BayLeaf HF gateway ─────
-  // One service for the `models` command (agents and the terminal) and
-  // Settings. Downloads ask on the approval sheet, one at a time; only a
-  // click approves. Each download is a /task entry with its own ctl.
-  const modelsWho = (caller: Caller): AgentWho => {
+  // ── Add-ons (src/addons.ts): one service for the `addons` command (agents
+  // and the terminal), Settings > Add-ons and the workers that need one.
+  // Asked installs open the approval sheet, one at a time; only a click
+  // approves. Each install is a /task entry with its own ctl.
+  const addonsWho = (caller: Caller): AgentWho => {
     const w = caller == null ? null : app.state.agent?.who(caller), c = childOf(caller);
     return { by: 'agent', caller, sid: w?.sid ?? null, name: c ? `subagent "${c.name}"` : 'main (a1)' };
   };
-  let modelAsks: Promise<unknown> = Promise.resolve();
-  function approveModel(req: ModelRequest, who: ModelWho) {
-    const run = modelAsks.then(async () => {
+  let addonAsks: Promise<unknown> = Promise.resolve();
+  function approveAddon(req: AddonRequest) {
+    const run = addonAsks.then(async () => {
+      const who = req.who;
       const asker = who.by === 'agent' ? `${who.sid != null ? `${titleOf(await sessions.find(who.sid).catch(() => null))} › ` : ''}${who.name}` : `you, in ${who.via ?? 'Pouch'}`;
-      const get = req.action === 'get';
+      const install = req.action === 'install';
       const row = (k: string, v: string | null | undefined) => v ? [el('dt', { textContent: k }), el('dd', { textContent: v })] : [];
+      const items = req.items.map((i) => el('dl', {}, ...(req.items.length > 1 ? row('Add-on', i.label) : []),
+        ...row(install ? 'Size' : 'Frees', sizeText(i.bytes) + (install && i.bytes < i.size ? ` (of ${sizeText(i.size)}; the rest is already kept)` : '')),
+        ...row('License', i.license + (i.licenseUrl ? ` (${i.licenseUrl})` : '')), ...row('Attribution', i.attribution),
+        ...row('Redistribution', i.distribution), ...row('From', i.from.join('; '))));
       const body = el('div', { className: 'model-approval' },
         el('p', { textContent: who.by === 'agent' ? `Asked by ${asker}. Only you can approve.` : `Asked by ${asker}.` }),
-        el('dl', {}, ...row(get ? 'Size' : 'Frees', app.providers.mib(req.bytes) + (get && req.bytes < req.total ? ` (of ${app.providers.mib(req.total)}; the rest is already kept)` : '')),
-          ...row('Kept in', req.location), ...row('License', req.license + (req.licenseUrl ? ` (${req.licenseUrl})` : '')), ...row('Attribution', req.attribution),
-          ...row('Redistribution', req.distribution), ...row('From', req.origin)),
-        el('p', { className: 'muted', textContent: get ? 'Every file is checked against the SHA-256 this page was built with. Nothing you type is sent; the gateway sees only which file ranges are requested. Stop any time from /task, Settings or the terminal; remove it any time.' : 'Sessions and files stay. Downloading it again takes the full size.' }));
-      return app.tree.ask(body, get ? 'Download' : 'Remove', get ? 'primary' : 'danger', askTitle({ ...req, who }));
+        ...items, el('dl', {}, ...row('Kept in', req.location)),
+        el('p', { className: 'muted', textContent: install ? 'Every file is checked against the SHA-256 this page was built with. Nothing you type is sent; the server sees only which files or byte ranges are requested. Stop any time from /task, Settings or the terminal; remove it any time.' : 'Sessions and files stay. Installing it again takes the full size.' }));
+      return app.tree.ask(body, install ? 'Install' : 'Remove', install ? 'primary' : 'danger', askTitle(req));
     });
-    modelAsks = run.catch(() => {});
+    addonAsks = run.catch(() => {});
     return run;
   }
-  const modelService = createModelService({ store: modelStore, tasks: app.state.vfs.tasks, approve: approveModel,
-    supports: (id) => (LOCAL && id === LOCAL.id ? app.providers.localOk : { ok: true }),
-    onChange: () => { const t = LOCAL && modelService.downloads.get(LOCAL.id); if (t?.status === 'running' && t.progress) app.providers.localProgress({ ...t.progress, downloading: true }); app.namespaces.renderLocalSettingsSoon(); } });
+  const build = buildLock(globalThis.navigator?.locks);
+  const addons = createAddons({ entries: REGISTRY, tasks: app.state.vfs.tasks, approve: approveAddon, otherBuilds: () => build.others(),
+    // A loaded worker holds its add-on's code (and LFM3's weights): let it go first,
+    // so the next use goes through the install path again.
+    beforeRemove: (id) => (id === LFM3 || id === TRANSFORMERSJS ? localWorker.dispose() : id === PDFJS ? pdfService.jobs.unload('pdf') : id === LIBAVJS ? mediaService.jobs.unload('libav') : undefined),
+    onChange: () => {
+      const t = LFM3 ? addons.installing(LFM3) : undefined;
+      if (t?.progress) app.providers.localProgress({ ...t.progress, installing: true });
+      app.addons.renderSoon();
+    } });
+  // The Transformers.js worker starts only from installed, verified files.
+  if (LOCAL && LFM3) {
+    const model = LFM3;
+    setSource(async ({ network, onProgress }) => {
+      const got = await addons.files(model, { network, onProgress: (p) => onProgress?.({ done: p.done, total: p.total, ...(p.id === TRANSFORMERSJS ? { phase: 'code' as const } : {}) }) });
+      const w = got[model], c = got[TRANSFORMERSJS];
+      return { weights: w.files, code: { files: c.files, manifest: c.manifest }, repaired: w.repaired + c.repaired };
+    });
+  }
   // pdfinfo, pdftotext, pdftoppm (src/pdf.ts): one pdf.js worker for the terminal and every agent, its runs /task jobs.
-  const pdfService = createPdfService({ tasks: app.state.vfs.tasks });
+  const pdfService = createPdfService({ tasks: app.state.vfs.tasks, addons });
   // ffprobe, ffmpeg (src/media.ts): one libav.js worker, the same way.
-  const mediaService = createMediaService({ tasks: app.state.vfs.tasks });
+  const mediaService = createMediaService({ tasks: app.state.vfs.tasks, addons });
 
   return {
     get activeRun() { return activeRun; }, set activeRun(v) { activeRun = v; },
@@ -143,9 +165,10 @@ export function createSessionListRegion(app: App): SessionListRegion {
     egressHooks,
     get focus() { return focus; }, set focus(v) { focus = v; },
     liveEgress,
+    addons,
+    addonsWho,
+    build,
     mediaService,
-    modelService,
-    modelsWho,
     pdfService,
     sessions,
   };

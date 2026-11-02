@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { InMemoryFs } from 'just-bash';
-import { parseArgs, pageRange, formatInfo, formatText, createPdfService, pdfCommands, pdfEngine, HELP,
+import { parseArgs, pageRange, formatInfo, formatText, createPdfService, pdfCommands, pdfWorker, HELP,
   RENDER_MAX_PAGES, TEXT_MAX_PAGES, MAX_DPI, MAX_PDF_BYTES } from '../src/pdf.ts';
 import { Tasks } from '../src/ns/tasks.ts';
 import { shellFor } from '../src/tools.ts';
@@ -74,7 +74,7 @@ await t('the commands in the terminal shell: caps, errors, outputs, /task jobs',
   await fs.mkdir('/work', { recursive: true });
   await fs.writeFile('/work/a.pdf', textPdf());
   await fs.writeFile('/work/n.txt', 'not a pdf');
-  const shell = shellFor(fs, { pdf: createPdfService({ tasks, engine: fake }) });
+  const shell = shellFor(fs, { pdf: createPdfService({ tasks, worker: fake }) });
   const sh = async (c) => shell.exec(c, { cwd: '/work' });
   let r = await sh('pdfinfo --help');
   assert.equal(r.exitCode, 0); assert.equal(r.stdout, HELP.pdfinfo);
@@ -115,18 +115,18 @@ await t('size cap before anything loads', async () => {
   await fs.mkdir('/work', { recursive: true });
   await fs.writeFile('/work/big.pdf', '%PDF-1.7\n');
   const big = new Proxy(fs, { get: (t, k) => (k === 'stat' ? async (p) => ({ ...(await t.stat(p)), size: MAX_PDF_BYTES + 1 }) : typeof t[k] === 'function' ? t[k].bind(t) : t[k]) });
-  const [info] = pdfCommands((name, fn) => ({ name, fn }), createPdfService({ tasks: new Tasks(), engine: fake }));
+  const [info] = pdfCommands((name, fn) => ({ name, fn }), createPdfService({ tasks: new Tasks(), worker: fake }));
   const r = await info.fn(['big.pdf'], { fs: big, cwd: '/work' });
   assert.equal(r.exitCode, 1); assert.match(r.stderr, /the cap is 256 MiB \(MAX_PDF_BYTES\)/);
 });
 
-await t('no service and no runtime: clear errors', async () => {
+await t('no service and no add-on: clear errors', async () => {
   const fs = new InMemoryFs();
   await fs.mkdir('/work', { recursive: true }); await fs.writeFile('/work/a.pdf', textPdf());
   let r = await shellFor(fs, {}).exec('pdfinfo a.pdf', { cwd: '/work' });
-  assert.match(r.stderr, /the pdf runtime is not available here/);
+  assert.match(r.stderr, /not available here: this build of Pouch leaves pdf\.js out$/m);
   r = await shellFor(fs, { pdf: createPdfService({ tasks: new Tasks() }) }).exec('pdfinfo a.pdf', { cwd: '/work' });
-  assert.match(r.stderr, /no pdf runtime/);
+  assert.match(r.stderr, /not available here: this build of Pouch leaves pdf\.js out/);
 });
 
 await t('agents get the same commands (createTools bash)', () => {
@@ -155,7 +155,7 @@ await t('build: pinned pdf.js, no CDN, no scripting, packed data', async () => {
   } finally { rmSync(out, { recursive: true, force: true }); }
 });
 
-await t('pdfEngine: a worker whose load fails is dropped, and the next job starts a new one', async () => {
+await t('pdfWorker: a worker whose load fails is dropped, and the next job starts a new one', async () => {
   const spawned = [];
   const assets = { obtain: async () => ({ files: { 'data.pack': new Blob(['x']) } }) };
   const spawn = () => {
@@ -163,7 +163,7 @@ await t('pdfEngine: a worker whose load fails is dropped, and the next job start
       postMessage(m) { if (m.id) queueMicrotask(() => w.onmessage({ data: m.action === 'load' && n === 0 ? { id: m.id, error: 'bad pack' } : { id: m.id, result: { ok: m.action } } })); } };
     spawned.push(w); return w;
   };
-  const run = pdfEngine({ assets, spawn }).create();
+  const run = pdfWorker({ assets, spawn }).create();
   const signal = new AbortController().signal;
   await assert.rejects(run.run({ action: 'info', data: new Uint8Array(1) }, { signal }), /bad pack/);
   assert.equal(spawned[0].terminated, true);

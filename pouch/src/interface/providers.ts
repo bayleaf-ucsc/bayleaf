@@ -2,11 +2,13 @@
 
 import * as store from '../store.ts';
 import { $, el } from '../dom.ts';
-import { LOCAL, engine as localEngine, importFiles as localImport, remove as localRemove, stored as localStored, support as localSupport } from '../local/engine.ts';
+import { LOCAL, localWorker, support as localSupport } from '../local/host.ts';
+import { LFM3 } from '../addons-registry.ts';
+import { sizeText } from '../addons.ts';
 import { HINTS, isLocal } from '../local/provider.ts';
 import { DEFAULT_URL, TRANSPORTS, isLocalhost, parseLocalhostUrl, testConnection } from '../localhost.ts';
 import type { App } from './app.ts';
-import type { LocalProgress, Support } from '../local/engine.ts';
+import type { LocalProgress, Support } from '../local/host.ts';
 import type { LocalHint } from '../local/provider.ts';
 import type { LocalhostModelInfo, LocalhostTest, LocalhostTransport } from '../localhost.ts';
 import type { LocalhostConfig, SessionId } from '../agent-types.ts';
@@ -17,15 +19,15 @@ export interface LocalhostSetup {
   base: string; key: string; transport: LocalhostTransport; transportChoice?: LocalhostTransport | 'auto';
   detected?: LocalhostTransport; models: LocalhostModelInfo[]; testedAt?: number;
 }
-// Download or load progress for the status line; downloading: a /task download (models get).
-export type LocalStatusProgress = LocalProgress & { downloading?: boolean };
+// Install or start progress for the status line; installing: a /task install (addons install).
+export type LocalStatusProgress = LocalProgress & { installing?: boolean };
 
 export interface ProvidersRegion {
   canSend(): boolean;
   // Whether this browser can run Transformers.js (boot checks once).
   checkLocalSupport(): Promise<void>;
   clearHint(sid: SessionId | null | undefined): void;
-  // Download (asking first) and start Transformers.js; false with a status line when it cannot.
+  // Install LFM3 (asking first) and start Transformers.js; false with a status line when it cannot.
   ensureLocal(): Promise<boolean>;
   readonly lh: LocalhostSetup | null;
   lhAgentConfig(): LocalhostConfig | null;
@@ -48,7 +50,6 @@ export interface ProvidersRegion {
   pickerProvider(): void;
   renderHint(): void;
   renderLocalhostSettings(result?: LocalhostTest): void;
-  renderLocalSettings(): Promise<void>;
   // The Localhost setup kept in this browser, read back at boot.
   restoreLocalhost(): Promise<void>;
   showHint(kind: LocalHint): void;
@@ -57,7 +58,7 @@ export interface ProvidersRegion {
 export function createProvidersRegion(app: App): ProvidersRegion {
   // ── Transformers.js provider (src/local/): a model in this browser, chosen explicitly
   // The picker offers it when this build carries it and WebGPU works; otherwise
-  // it is listed disabled with the reason. Nothing is downloaded without asking.
+  // it is listed disabled with the reason. Nothing is installed without asking.
   let localOk: Support = { ok: false, reason: '' };
   const localRuns = new Set<string>(); // sessions whose current turn runs on Transformers.js
   const LOCAL_ID = LOCAL ? 'local:' + LOCAL.id : null;
@@ -91,35 +92,33 @@ export function createProvidersRegion(app: App): ProvidersRegion {
     label.title = local ? 'Transformers.js: the model runs in this browser; nothing is sent. The model applies when you next send.' : 'BayLeaf Sealed: requests are encrypted to the enclave. The model applies when you next send; running work keeps its model.';
     app.state.composer?.refreshShield();
   }
-  // Downloading is a choice (about 1.1 GB): the same approval sheet and /task
-  // download as `models get` (src/models-cli.ts); progress shows in the status
-  // line and Settings, and Stop writes the download's /task ctl.
+  // Installing is a choice (about 1.1 GB): the same approval sheet and /task
+  // install as `addons install` (src/addons.ts); progress shows in the status
+  // line and Settings > Add-ons, and Stop writes the install's /task ctl.
   let localLoading: Promise<boolean> | null = null;
   async function ensureLocal() {
     if (!localOk.ok) { app.state.status(`Transformers.js is not available: ${localOk.reason}`, 'bad'); return false; }
-    if (!LOCAL) { app.state.status('Transformers.js is not available: this build of Pouch does not include it.', 'bad'); return false; }
-    if (localEngine.loaded()) return true;
-    const st = await localStored();
-    if (!st.complete) {
-      if (!navigator.onLine) { app.state.status('The Transformers.js model is not in this browser yet, and you are offline. Settings can load a saved copy from a folder.', 'bad'); return false; }
-      let r;
-      try { r = await app.sessionList.modelService.get(LOCAL.id, { by: 'user', via: 'Settings' }); }
-      catch (e) { const denied = fieldOf(e, 'code') === 'EDENIED'; app.state.status(denied ? 'Not downloaded.' : 'Transformers.js model: ' + fieldOf(e, 'message'), denied ? '' : 'bad'); return false; }
-      if (!r.already) {
-        renderLocalSettings();
-        try { await r.promise; }
-        catch (e) { const stopped = fieldOf(e, 'name') === 'AbortError'; app.state.status(stopped ? `Download stopped at ${mib((await localStored()).bytes)}; Download resumes where it stopped.` : 'Transformers.js model: ' + fieldOf(e, 'message'), stopped ? '' : 'bad'); renderLocalSettings(); return false; }
-      }
+    if (!LOCAL || !LFM3) { app.state.status('Transformers.js is not available: this build of Pouch leaves it out.', 'bad'); return false; }
+    if (localWorker.loaded()) return true;
+    const addons = app.sessionList.addons;
+    let r;
+    try { r = await addons.install(LFM3, { by: 'user', via: 'Settings' }); }
+    catch (e) { const denied = fieldOf(e, 'code') === 'EDENIED'; app.state.status(denied ? `Not installed: ${LOCAL.label}.` : `${LOCAL.label}: ${fieldOf(e, 'message')}`, denied ? '' : 'bad'); return false; }
+    if (!r.already) {
+      app.addons.render();
+      try { await r.promise; }
+      catch (e) { const stopped = fieldOf(e, 'name') === 'AbortError'; app.state.status(stopped ? `Install stopped at ${sizeText((await addons.status(LFM3)).bytes)}; Install resumes where it stopped.` : `${LOCAL.label}: ${fieldOf(e, 'message')}`, stopped ? '' : 'bad'); app.addons.render(); return false; }
     }
     return startLocal(LOCAL.label);
   }
+  // data-tjs on Settings > Add-ons: loading, ready or error (the real-model journeys read it).
   function startLocal(label: string): Promise<boolean> {
-    const box = $('local-settings');
-    box.dataset.state = 'loading';
-    localLoading ??= localEngine.start({ onProgress: localProgress, network: navigator.onLine })
-      .then(() => { box.dataset.state = 'ready'; app.state.status(`${label} is ready in this browser (Transformers.js).`); return true; },
-        (e: Error) => { box.dataset.state = 'error'; box.dataset.error = e.message; app.state.status('Transformers.js model: ' + e.message, 'bad'); return false; })
-      .finally(() => { localLoading = null; renderLocalSettings(); });
+    const box = $('addons-settings');
+    box.dataset.tjs = 'loading';
+    localLoading ??= localWorker.start({ onProgress: localProgress, network: navigator.onLine })
+      .then(() => { box.dataset.tjs = 'ready'; app.state.status(`${label} is ready in this browser (Transformers.js).`); return true; },
+        (e: Error) => { box.dataset.tjs = 'error'; box.dataset.error = e.message; app.state.status(`${label}: ${e.message}`, 'bad'); return false; })
+      .finally(() => { localLoading = null; app.addons.render(); });
     return localLoading;
   }
   let progressAt = 0;
@@ -127,12 +126,10 @@ export function createProvidersRegion(app: App): ProvidersRegion {
     if (p.phase !== 'loading' && p.done < p.total && Date.now() - progressAt < 150) return; // a few updates a second
     progressAt = Date.now();
     const pct = p.total ? Math.floor((p.done / p.total) * 100) : 0;
-    const text = p.phase === 'loading' ? `Transformers.js: verified ${mib(p.total)}; starting the model on your GPU...`
-      : p.phase === 'runtime' ? `Transformers.js: ${p.fetched || p.repaired ? 'fetching and checking' : 'checking'} the runtime, ${mib(p.done)} of ${mib(p.total)} (${pct}%)`
-      : `Transformers.js: ${p.downloading ? 'downloading from api.bayleaf.dev and checking' : p.fetched || p.repaired ? 'downloading and checking' : 'checking'} ${mib(p.done)} of ${mib(p.total)} (${pct}%)${p.repaired ? `, ${p.repaired} damaged chunk${p.repaired > 1 ? 's' : ''} fetched again` : ''}`;
+    const text = p.phase === 'loading' ? `Transformers.js: checked ${mib(p.total)}; starting the model on your GPU...`
+      : p.phase === 'code' ? `Transformers.js: checking its code, ${mib(p.done)} of ${mib(p.total)} (${pct}%)`
+      : `Transformers.js: ${p.installing ? 'installing LFM3 and checking' : p.repaired ? 'repairing and checking' : 'checking'} ${mib(p.done)} of ${mib(p.total)} (${pct}%)${p.repaired ? `, ${p.repaired} damaged chunk${p.repaired > 1 ? 's' : ''} fetched again` : ''}`;
     app.state.status(text);
-    const bar = $<HTMLProgressElement>('local-progress');
-    if (bar) { bar.hidden = false; bar.max = p.total || 1; bar.value = p.done; }
   }
   // A reason to suggest Sealed (never a switch): shown under the composer for the session that ran.
   const hints = new Map<string, Set<LocalHint>>(); // sid -> Set of kinds
@@ -159,52 +156,6 @@ export function createProvidersRegion(app: App): ProvidersRegion {
     app.state.status(`Switched the picker to BayLeaf Sealed (${app.transcript.modelName(to)}) for your next message. Nothing was sent.`);
   };
   $('local-hint-dismiss').onclick = () => clearHint(app.sessionList.sessions.current?.id);
-  async function renderLocalSettings() {
-    const box = $('local-settings');
-    if (!box) return;
-    if (!LOCAL) { $('local-state').textContent = 'This build of Pouch does not include the Transformers.js model.'; box.querySelectorAll('button').forEach((b) => { b.hidden = true; }); return; }
-    const st = await localStored();
-    $('local-state').textContent = !localOk.ok ? `Not available here: ${localOk.reason}${st.bytes ? ` A downloaded copy (${mib(st.bytes)}) is kept in this browser; Remove frees the space.` : ''}`
-      : st.complete ? `${LOCAL.label} is kept in this browser (${mib(st.bytes)}${st.persistent ? '' : ', for this page load only'}). It works offline.`
-      : st.bytes ? `${mib(st.bytes)} of ${mib(st.total)} downloaded.` : `Not downloaded (about ${mib(LOCAL.bytes)}).`;
-    const dl = app.sessionList.modelService.downloads.get(LOCAL.id);
-    const running = dl?.status === 'running';
-    if (running) $('local-state').textContent = `Downloading from api.bayleaf.dev as /task/${dl.id}: ${mib(dl.progress?.done ?? 0)} of ${mib(dl.progress?.total ?? LOCAL.bytes)}. Every file is checked against this page's pins.`;
-    else if (!st.complete && st.bytes) $('local-state').textContent = `${mib(st.bytes)} of ${mib(st.total)} downloaded and kept; Download resumes where it stopped.`;
-    $('local-download').hidden = !localOk.ok || st.complete || running;
-    $('local-download').textContent = st.bytes && !st.complete ? 'Resume download' : 'Download';
-    $('local-stop').hidden = !running;
-    $('local-remove').hidden = !st.bytes || running;
-    if (!localLoading && !running) $('local-progress').hidden = true;
-  }
-  $('local-download').onclick = async () => { if (await ensureLocal()) renderLocalSettings(); };
-  // Stop is the download's /task ctl, as `echo stop > /task/<id>/ctl` in the terminal.
-  $('local-stop').onclick = () => { const t = LOCAL && app.sessionList.modelService.downloads.get(LOCAL.id); if (t?.status === 'running') app.namespaces.ctl(`/task/${t.id}/ctl`, 'stop').catch((e: Error) => app.state.status(e.message, 'bad')); };
-  $('local-remove').onclick = async () => {
-    if (localRuns.size) return app.state.status('Stop the Transformers.js turn before removing the model.', 'bad');
-    if (!(await app.tree.ask('Remove the Transformers.js model from this browser? Sessions and files stay. Downloading it again takes about 1.1 GB.', 'Remove', 'danger'))) return;
-    await localRemove(); // the same store code as `models remove` (src/models.ts)
-    if (localPicked()) { $<HTMLSelectElement>('model').value = (await store.getSetting('sealedModel')) ?? app.connection.models[0]?.id ?? ''; await store.setSetting('model', $<HTMLSelectElement>('model').value); pickerProvider(); app.queues.updateSend(); }
-    const est = await navigator.storage?.estimate?.().catch(() => null);
-    app.state.status(`Transformers.js model removed.${est?.usage != null ? ` This site now uses ${mib(est.usage)} of storage.` : ''}`);
-    renderLocalSettings();
-  };
-  for (const id of ['local-folder', 'local-files']) {
-    $(id + '-btn').onclick = () => $(id).click();
-    $(id).onchange = async () => {
-      const files = $<HTMLInputElement>(id).files;
-      if (!files?.length) return;
-      app.state.status('Checking the picked files against this page\'s pins...');
-      try {
-        const r = await localImport(files);
-        $<HTMLInputElement>(id).value = '';
-        app.state.status(r.complete ? `Transformers.js model loaded from your files (${r.added} files verified${r.bad ? `, ${r.bad} refused` : ''}).`
-          : `${r.added} files verified${r.bad ? `, refused (wrong bytes): ${r.refused.join(', ') || r.bad}` : ''}; ${mib(r.total - r.bytes)} still missing.`, r.bad ? 'bad' : '');
-      } catch (e) { app.state.status(fieldOf(e, 'message'), 'bad'); }
-      renderLocalSettings();
-    };
-  }
-
   // ── Localhost provider (src/localhost.ts): a model server on this computer
   // Set up only here, by the user: an address on loopback, an optional key (kept in
   // this browser's IndexedDB like the BayLeaf key, shown masked, removable; Erase all
@@ -325,7 +276,6 @@ export function createProvidersRegion(app: App): ProvidersRegion {
     pickerProvider,
     renderHint,
     renderLocalhostSettings,
-    renderLocalSettings,
     restoreLocalhost: async () => { lh = (await store.getSetting<LocalhostSetup>('localhost')) ?? null; renderLocalhostSettings(); },
     showHint,
   };

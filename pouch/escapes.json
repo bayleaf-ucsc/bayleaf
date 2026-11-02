@@ -5,7 +5,7 @@
   "src/interface/connection.ts": {"as": 1},
   "src/interface/subagents.ts": {"as": 2},
   "src/interface/transcript.ts": {"as": 2},
-  "src/local/engine.ts": {"as": 1},
+  "src/local/host.ts": {"as": 1},
   "src/local/provider.ts": {"as": 1},
   "src/localhost.ts": {"as": 1},
   "src/main.ts": {"as": 1},

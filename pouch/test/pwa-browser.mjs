@@ -198,15 +198,15 @@ if (!process.argv.includes('--webkit-only')) try {
   ok(f['Service worker'][1] === 'bad' && /differs/.test(f['Service worker'][0]), 'changed sw.js is flagged: ' + f['Service worker'][0]);
   await page.screenshot({ path: join(SHOTS, 'pwa-trust-sw-mismatch.png') });
 
-  // Uninstall offline copy: unregistered, cache gone, stays off on reload; Keep restores.
+  // Remove offline copy: unregistered, cache gone, stays off on reload; Keep restores.
   serve.dir = B;
   await page.click('#copy-remove');
-  await page.click('#sheet-actions button >> text=Uninstall'); // asked inline (Batch C: no native confirm)
+  await page.click('#sheet-actions button >> text=Remove'); // asked inline (Batch C: no native confirm)
   await page.waitForFunction(async () => !(await navigator.serviceWorker.getRegistrations()).length && !(await caches.keys()).some((k) => k.startsWith('pouch-shell-')));
   serve.log = [];
   const navOff = await page.reload(); await sleep(1500);
   ok(!navOff.fromServiceWorker() && serve.log.includes('/') && !(await shellCaches(page)).length && !(await page.evaluate(() => navigator.serviceWorker.getRegistrations())).length,
-    'Uninstall: worker unregistered, copy deleted, reload comes from the network and stays uninstalled');
+    'Remove offline copy: worker unregistered, copy deleted, reload comes from the network and stays uninstalled');
   await openTrust(page);
   await page.click('#copy-keep');
   await waitPinned(page, hB);

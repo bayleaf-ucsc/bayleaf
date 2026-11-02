@@ -15,7 +15,7 @@ independent evidence of their provenance.
 - Only `pouch.html`, `SHA256SUMS`, the app shell (`sw.js`, `manifest.webmanifest`,
   `icons/*.png`), static `_headers`/`_redirects` configuration and the tool
   runtimes under `runtime/<group>/` listed in `SHA256SUMS` enter the allowlisted
-  upload (see "Transformers.js runtime and model weights" below). Model weights are not uploaded: they
+  upload (see "Transformers.js code and LFM3 weights" below; README "Add-ons"). Model weights are not uploaded: they
   come from the BayLeaf HF gateway. `/` rewrites internally to `/pouch.html` (200).
   Unmatched paths return 404 rather than exposing source or SPA fallback.
 - The host may process/retain request metadata, including IP addresses, paths,
@@ -34,14 +34,15 @@ independent evidence of their provenance.
   zone-wide settings are changed. `deploy.mjs` checks that served bytes match the
   local artifact exactly (no platform script injection).
 
-## Transformers.js runtime and model weights
+## Transformers.js code and LFM3 weights
 
-Weights are not in the artifact (issue #121). The page downloads the LFM3 files from
+Both are one asked add-on (README "Add-ons"): installed only after the user approves.
+Weights are not in the artifact (issue #121). The page fetches the LFM3 files from
 `https://api.bayleaf.dev/hf/onnx-community/LFM3-1.7B-ONNX/resolve/<commit>/<path>` in
 32 MiB byte ranges and checks each whole file against `models.lock.json` (pinned into the
-page by the build); `src/models.ts`, README "Transformers.js". `node build.mjs` always
-builds the runtime (`--no-models` omits the provider; `--with-models` is accepted and
-does nothing more) and needs no model files. Shape of the build:
+page by the build); `src/models.ts`, README "Transformers.js". `node build.mjs` builds the
+Transformers.js code and needs no model files; `--no-models` builds without the code and the
+provider, and `--with-models` is accepted and does nothing more. Shape of the build:
 
 | File | Count | Size |
 |---|---:|---|
@@ -71,12 +72,13 @@ The page asks before downloading (an approval sheet naming size, storage, licens
 origin).
 
 Weights that earlier builds served from pouch.bayleaf.dev's `models/` path (now 404) are
-migrated on first load: the page reassembles the cached parts, checks them against the
-lock and moves them (README "Transformers.js").
+not migrated: the first load deletes their cache (`pouch-local-models`), so LFM3 must be
+installed again (`src/interface/boot.ts`).
 
-## pdf.js runtime
+## pdf.js add-on
 
-Pouch's first heavy-tool runtime: `build-pdf.mjs` builds `runtime/pdf/` from
+Pouch's first heavy-tool add-on (quiet: 3.9 MiB from this origin, so it installs on first
+use and says so): `build-pdf.mjs` builds `runtime/pdf/` from
 `pdfjs-dist` 6.4.299 (exact pin in `package.json`; npm integrity in the lockfile; the
 build also checks the SHA-256 of `pdf.mjs` and `pdf.worker.mjs`). The page embeds its
 manifest's SHA-256 (define `POUCH_PDF_RUNTIME`) and fetches it only when a pdf command
@@ -96,11 +98,12 @@ decoders, `legacy/` and the `web/` viewer. CSP delta: none; the worker is a `blo
 worker (`worker-src 'self' blob:`), wasm runs under the existing `'wasm-unsafe-eval'`,
 and pdf.js makes no request of its own (checked with no CSP violation in
 `test/pdf-browser.mjs`, Chromium only). Privacy: Cloudflare sees that this browser
-fetched the pdf runtime; no PDF content leaves the page.
+fetched pdf.js; no PDF content leaves the page.
 
-## libav.js runtime
+## libav.js add-on
 
-Pouch's second heavy-tool runtime: `build-libav.mjs` builds `runtime/libav/` from
+Pouch's second heavy-tool add-on (quiet: 7.8 MiB from this origin; the 44 MiB source offer
+is never fetched by the page): `build-libav.mjs` builds `runtime/libav/` from
 `@libav.js/variant-webm-vp9-cli` and `@libav.js/variant-webcodecs-avf` 6.10.9 (exact pins in
 `package.json`; npm integrity in the lockfile; the build also checks the SHA-256 of each
 wrapper, factory and wasm; the webm-vp9-cli ones equal the libav.js 6.10.9.0 release zip's

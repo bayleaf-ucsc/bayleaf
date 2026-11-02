@@ -8,7 +8,7 @@ import { sameId, titleOf } from '../sessions.ts';
 import { why } from '../ns/control.ts';
 import { createComposer } from '../composer.ts';
 import { grantsFor, revoke, serviceName } from '../egress.ts';
-import { LOCAL } from '../local/engine.ts';
+import { LOCAL } from '../local/host.ts';
 import type { App } from './app.ts';
 import type { ThreadItem } from '../agent-types.ts';
 import type { SubagentHost, SubagentRow } from '../subagents-types.ts';

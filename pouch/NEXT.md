@@ -14,6 +14,24 @@ dirs, need `playwright` (and `md-unit.mjs` needs `linkedom`), which `package.jso
 not declare, and some steps predate the current UI (t7's per-file Undo). The
 qualification rework below replaces them.
 
+## Add-ons
+
+Done (2026-11-01): the add-on realignment as decided in
+`notes/addons-language-proposal.md` (adopted; LANGUAGE.md "Add-on", README "Add-ons"):
+one registry from the build's pins, the `addons` command (no `models` alias), the quiet and
+asked tiers, Settings > Add-ons with Make available offline, every install a `/task` of
+kind `install`, jobs' engines renamed to workers. Follow-ups:
+- DuckDB-Wasm and Parakeet TDT 0.6B v3 land as registry entries on their own branches
+  (README "Add-ons: the recipe").
+- The gateway catalog's unpinned releases are no longer listed (`models list` showed them
+  as "not in this build"); `addons info` still reads the catalog for a pinned model.
+- Quiet installs run without a session (`sid` unset), so an agent's own /task view does
+  not list them; the command's stderr and the job's note carry the line instead.
+- The update notice's add-ons line is tested in node only (`test/addons-sweep-node.mjs`);
+  `test/pwa-browser.mjs`'s releases carry no add-on parts, so it sees an empty line.
+- The real-model journeys (`test/batchH-real.mjs`, `test/journeys/t17-local.mjs`) were
+  updated for the new selectors but not rerun (they need the real 1.1 GB model and a GPU).
+
 ## TypeScript migration (#143's step 2)
 
 Done (2026-11-02): every source under `src/` is strict TypeScript, checked by `tsc --noEmit`

@@ -21,4 +21,8 @@ assert.match(prompt, /self-contained \.html file \(inline CSS and JS, images as 
 assert.match(prompt, /link it: it opens in the preview/);
 for (const wrong of [/\bCDN\b/i, /<script src/i, /fetch\(/]) assert.ok(!wrong.test(prompt), `main's prompt does not suggest ${wrong}`);
 assert.match(prompt, /\/task: this session's/, "main's /task is its own session's (src/ns/tasks.ts)");
-console.log('ok prompt: UL gloss in main prompt, transformersjs verbatim, no removed features promised, HTML reports');
+// Add-ons (2026-11-01): main's bash tool names the `addons` command; the qualified
+// transformersjs recipe is untouched and never mentions the retired `models` command.
+assert.match(tools, /`addons list` shows optional tools and models kept in this browser/);
+for (const s of [TJS.SYSTEM, ...TJS.TOOLS.map((x) => x.function.description)]) assert.ok(!/\bmodels (get|list)\b|\baddons\b/.test(s), 'transformersjs recipe stays verbatim');
+console.log('ok prompt: UL gloss in main prompt, transformersjs verbatim, no removed features promised, HTML reports, addons');

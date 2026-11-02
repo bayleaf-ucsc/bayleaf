@@ -184,7 +184,7 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
   setLocalhost(localhost?.config);
   if (local?.info) {
     models.setProvider(createProvider({
-      id: LOCAL_PROVIDER, name: 'Transformers.js (in this browser)', baseUrl: 'local:', models: [localModel(local.info)], api: localApi(local.engine, { onHint: local.onHint }),
+      id: LOCAL_PROVIDER, name: 'Transformers.js (in this browser)', baseUrl: 'local:', models: [localModel(local.info)], api: localApi(local.worker, { onHint: local.onHint }),
       auth: { apiKey: { name: 'Transformers.js', resolve: async () => ({ auth: { apiKey: 'local' } }) } },
     }));
   }

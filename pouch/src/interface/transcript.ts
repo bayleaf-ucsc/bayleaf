@@ -10,7 +10,7 @@ import { $, el, icon, seeded } from '../dom.ts';
 import { asRef } from '../graph.ts';
 import { interruptedKey, revertKey, sameId, turnsKey } from '../sessions.ts';
 import { egressOf } from '../egress.ts';
-import { LOCAL } from '../local/engine.ts';
+import { LOCAL } from '../local/host.ts';
 import { isLocalhost } from '../localhost.ts';
 import type { ConversationId, EntryId } from '@earendil-works/pi-durable';
 import type { AssistantItem, MessageMarks, NormalizedView, ReportItem, SessionId, ThreadItem, ThreadView, ToolItem, UserItem } from '../agent-types.ts';

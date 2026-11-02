@@ -1,5 +1,5 @@
 // Batch H (node): incremental SHA-256, ranged/chunked files, the part reassembler,
-// the model store and `models` command consent, the engine job service, and the
+// the gateway model store, the device checks, the job service (workers), and the
 // no-CDN check over the built artifact.   node test/batchH-node.mjs
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
@@ -7,8 +7,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { Sha256, sha256hex } from '../src/sha256.ts';
 import { openStore, fillFile, rangeSource, blobSource, verifiedFile, fileState, partAssets } from '../src/assets.ts';
 import { createModelStore } from '../src/models.ts';
-import { askTitle, createModelService, modelsCommands } from '../src/models-cli.ts';
-import { gpuSupport, deviceSupport, DEVICE_REASON, friendlyError, MIN_STORAGE_BUFFERS } from '../src/local/engine.ts';
+import { gpuSupport, deviceSupport, DEVICE_REASON, friendlyError, MIN_STORAGE_BUFFERS } from '../src/local/host.ts';
 import { createJobs, sleepAndHash } from '../src/jobs.ts';
 import { Tasks, TaskFs } from '../src/ns/tasks.ts';
 import { CDN, assertNoCdn } from '../build-runtime.mjs';
@@ -128,80 +127,15 @@ await t('partAssets: reassemble, refuse a bad part twice, import parts by name',
   assert.equal(H(Buffer.from(await (await rt2.obtain({ network: false })).files['worker.js'].arrayBuffer())), H(w));
 });
 
-// ── The model store and `models` command ──
-const fakeModel = () => {
-  const cfg = Buffer.from('{"a":1}'), weights = randomBytes(4 * C + 7);
-  const m = { id: 'tiny-q4', label: 'Tiny', repo: 'org/Tiny-ONNX', revision: 'a'.repeat(40), license: 'Apache-2.0 (test)',
-    files: [{ name: 'config.json', bytes: cfg.length, sha256: H(cfg) }, { name: 'onnx/model.onnx_data', bytes: weights.length, sha256: H(weights) }] };
-  return { m, served: { 'config.json': cfg, 'onnx/model.onnx_data': weights } };
-};
-async function sh(cmd, args, who = { by: 'user', via: 'terminal' }) {
-  let fn; modelsCommands((name, f) => { fn = f; return name; }, cmd, who);
-  return fn(args, {});
-}
-await t('models: get asks; deny fetches nothing; approve downloads as a /task with stop and resume', async () => {
-  const { m, served } = fakeModel(), log = [];
-  const store = createModelStore([m], { gateway: 'https://gw/hf', fetchImpl: gateway(served, { log }), chunk: C, parallel: 1 });
-  const tasks = new Tasks(), asked = [];
-  let answer = false;
-  const svc = createModelService({ store, tasks, approve: async (req, who) => { asked.push({ req, who }); return answer; } });
-  const st0 = await sh(svc, ['status', 'tiny-q4']);
-  assert.match(st0.stdout, /not downloaded .*models get tiny-q4/);
-  const denied = await sh(svc, ['get', 'tiny'], { by: 'agent', sid: 1, name: 'main (a1)' });
-  assert.equal(denied.exitCode, 1); assert.match(denied.stderr, /denied by the user.*nothing was fetched/);
-  assert.equal(log.length, 0, 'nothing fetched on deny');
-  assert.equal(asked[0].who.by, 'agent');
-  for (const k of ['bytes', 'location', 'license', 'attribution', 'origin']) assert.ok(asked[0].req[k], `sheet names ${k}`);
-  answer = true;
-  const r = await sh(svc, ['get', 'tiny-q4'], { by: 'agent', sid: 1, name: 'main (a1)' });
-  assert.match(r.stdout, /as \/task\/(\d+).*echo stop > \/task\/\d+\/ctl/);
-  const id = r.stdout.match(/\/task\/(\d+)/)[1];
-  const fs = new TaskFs(tasks, () => null, { sid: 1 });
-  assert.match(new TextDecoder().decode(await fs.readFileBuffer(`/${id}/status`)), /running .* download models get tiny-q4/);
-  await fs.writeFile(`/${id}/ctl`, 'stop');
-  await tasks.get(id).promise.catch(() => {});
-  assert.equal(tasks.get(id).status, 'stopped');
-  assert.equal(new TaskFs(tasks, () => null, { sid: 2 }).readdir('/').then((l) => l.includes(id)) instanceof Promise, true);
-  assert.ok(!(await new TaskFs(tasks, () => null, { sid: 2 }).readdir('/')).includes(String(id)), 'another session cannot see it');
-  const w = await sh(svc, ['get', 'tiny-q4', '--wait']);
-  assert.equal(w.exitCode, 0, w.stderr); assert.match(w.stdout, /downloaded and verified/);
-  assert.match((await sh(svc, ['list', '--offline'])).stdout, /tiny-q4 .* downloaded/);
-  const files = await store.files('tiny-q4', { network: false });
-  assert.equal(H(Buffer.from(await files.files['onnx/model.onnx_data'].arrayBuffer())), m.files[1].sha256);
-});
-await t('models remove: the user frees at once; an agent asks; errors teach', async () => {
-  const { m, served } = fakeModel();
-  const store = createModelStore([m], { gateway: 'https://gw/hf', fetchImpl: gateway(served), chunk: C });
-  const tasks = new Tasks(); let answer = true, asks = 0;
-  const svc = createModelService({ store, tasks, approve: async () => { asks++; return answer; } });
-  await (await svc.get('tiny-q4', { by: 'user' })).promise;
-  answer = false;
-  const r1 = await sh(svc, ['remove', 'tiny-q4'], { by: 'agent', sid: 1, name: 'main (a1)' });
-  assert.equal(r1.exitCode, 1); assert.match(r1.stderr, /denied by the user: Tiny was kept/);
-  assert.ok((await store.status('tiny-q4')).complete);
-  const before = asks;
-  const r2 = await sh(svc, ['remove', 'tiny-q4']);
-  assert.equal(r2.exitCode, 0); assert.match(r2.stdout, /freed/); assert.equal(asks, before, 'the user is not asked');
-  await assert.rejects(store.files('tiny-q4', { network: false }), /not downloaded .*Run `models get tiny-q4`; the user will be asked to approve/);
-  assert.match((await sh(svc, ['get', 'nope'])).stderr, /no pinned model "nope". Run `models list`/);
-  assert.equal((await sh(svc, ['frob'])).exitCode, 2);
-});
-await t('models: a tampered gateway file fails the download task naming the file', async () => {
-  const { m, served } = fakeModel();
-  const store = createModelStore([m], { gateway: 'https://gw/hf', fetchImpl: gateway(served, { corrupt: (p, from) => p.endsWith('onnx_data') && from === 0 }), chunk: C });
-  const svc = createModelService({ store, tasks: new Tasks(), approve: async () => true });
-  const r = await sh(svc, ['get', 'tiny-q4', '--wait']);
-  assert.equal(r.exitCode, 1); assert.match(r.stderr, /onnx\/model\.onnx_data: SHA-256 differs from the pin/);
-});
-await t('models: a malformed catalog entry is skipped, not a broken model list', async () => {
+// ── The gateway model store (the add-ons gateway backend; the command is test/addons-node.mjs) ──
+await t('model store: a malformed catalog entry is skipped, not a broken catalog', async () => {
   const good = { repo: 'x/ok', revision: 'r', files: [{ bytes: 5 }], license: { name: 'MIT' }, qualification: [{ client: 'pouch', status: 'passed' }] };
   const releases = [good, { repo: 'x/a', revision: 'r', files: [null] }, { repo: 'x/b', revision: 'r', files: [], qualification: 'yes' },
     { repo: 'x/c', revision: 'r', files: [], license: { name: 5 } }, { repo: 'x/d', revision: 'r', files: [{ bytes: '5' }] }];
   const fetchImpl = async () => new Response(JSON.stringify({ releases }), { status: 200 });
   const store = createModelStore([], { gateway: 'https://gw/hf', fetchImpl });
   assert.deepEqual((await store.catalog()).map((r) => r.repo), ['x/ok']);
-  const r = await sh(createModelService({ store, tasks: new Tasks(), approve: async () => true }), ['list']);
-  assert.equal(r.exitCode, 0, r.stderr); assert.match(r.stdout, /x\/ok .*pouch: passed/);
+  assert.deepEqual((await store.catalog())[0].qualification, [{ client: 'pouch', status: 'passed' }]);
 });
 
 // ── WebGPU capability, before anything is offered or downloaded ──
@@ -236,34 +170,18 @@ await t('deviceSupport: phones and tablets refused before any GPU check; a touch
   const low = deviceSupport({ userAgent: UA.win, userAgentData: { mobile: false }, deviceMemory: 4 });
   assert.equal(low.ok, false); assert.match(low.reason, /at least 8 GB of memory; this device reports 4 GB/);
   assert.deepEqual(deviceSupport({}), { ok: true });
-  assert.equal(DEVICE_REASON, 'In-browser models are turned off on phones and tablets: on a Pixel test the first request froze the whole phone for about a minute. Use a BayLeaf Sealed model here.');
+  assert.equal(DEVICE_REASON, 'Transformers.js is turned off on phones and tablets: on a Pixel test the first request froze the whole phone for about a minute. Use a BayLeaf Sealed model here.');
 });
 await t('friendlyError: the runtime storage-buffer error reads like the up-front check', () => {
   const raw = '[WebGPU] Kernel "MatMulNBits" failed. Error: shader_helper.cc:308 ValidateVariable numbers_storage_buffers_ <= limits_.maxStorageBuffersPerShaderStage was false. Too many storage buffers in shader. Current: 10, Max is 9';
   assert.equal(friendlyError(raw), "This browser's WebGPU allows 9 storage buffers per shader; LFM3 needs 10. Use Chrome or Edge, or a BayLeaf Sealed model.");
   assert.equal(friendlyError('other failure'), 'other failure');
 });
-await t('models get refuses up front when the browser cannot run the model: no sheet, nothing fetched; a cached copy is not reported as ready', async () => {
-  const { m, served } = fakeModel(), log = [];
-  const store = createModelStore([m], { gateway: 'https://gw/hf', fetchImpl: gateway(served, { log }), chunk: C });
-  let asks = 0;
-  const reason = (await gpuSupport(adapter({ buffers: 9 }))).reason;
-  const svc = createModelService({ store, tasks: new Tasks(), approve: async () => { asks++; return true; }, supports: (id) => (id === m.id ? { ok: false, reason } : { ok: true }) });
-  const r = await sh(svc, ['get', 'tiny-q4']);
-  assert.equal(r.exitCode, 1);
-  assert.match(r.stderr, /Tiny cannot run in this browser, so it was not downloaded \(nothing was fetched\)\. This browser's WebGPU allows 9 storage buffers per shader; LFM3 needs 10/);
-  assert.equal(asks, 0); assert.equal(log.length, 0);
-  await store.download(m.id);
-  const cached = await sh(svc, ['get', 'tiny-q4']);
-  assert.equal(cached.exitCode, 1);
-  assert.match(cached.stderr, /Tiny is downloaded, but cannot run in this browser\. This browser's WebGPU allows 9/);
-});
-
-// ── The engine job service ──
+// ── The job service (workers) ──
 const memFs = (files) => ({ readFileBuffer: async (p) => { if (!(p in files)) throw Object.assign(new Error(`ENOENT: ${p}`), { code: 'ENOENT' }); return new TextEncoder().encode(files[p]); } });
-await t('jobs: one engine shared, serial by default, per-job stop, isolation', async () => {
+await t('jobs: one worker shared, serial by default, per-job stop, isolation', async () => {
   const tasks = new Tasks({ keep: 50 }); let created = 0;
-  const jobs = createJobs({ tasks, engines: { hash: sleepAndHash(sha256hex, { onCreate: () => created++ }) } });
+  const jobs = createJobs({ tasks, workers: { hash: sleepAndHash(sha256hex, { onCreate: () => created++ }) } });
   const alice = { sid: 1, name: 'a1', fs: memFs({ '/work/a.txt': 'alice' }) }, bob = { sid: 2, name: 'a1', fs: memFs({ '/work/b.txt': 'bob' }) };
   const t0 = Date.now();
   const j1 = jobs.submit('hash', { path: '/work/a.txt', ms: 60 }, { caller: alice });
@@ -276,14 +194,14 @@ await t('jobs: one engine shared, serial by default, per-job stop, isolation', a
   assert.equal((await j2.result).sha256, sha256hex(new TextEncoder().encode('bob')));
   await assert.rejects(j3.result, /ENOENT/);
   await assert.rejects(j4.result, /Stopped/);
-  assert.equal(created, 1, 'one engine instance');
+  assert.equal(created, 1, 'one worker instance');
   assert.ok(Date.now() - t0 >= 170, 'serial');
   assert.deepEqual([j1, j2, j3, j4].map((j) => j.task.status), ['done', 'done', 'failed', 'stopped']);
   assert.ok(!(await new TaskFs(tasks, () => null, { sid: 2 }).readdir('/')).includes(String(j1.task.id)), 'jobs are per-session in /task');
 });
-await t('jobs: concurrency per engine; stopping a running job leaves its neighbour running', async () => {
+await t('jobs: concurrency per worker; stopping a running job leaves its neighbour running', async () => {
   const tasks = new Tasks();
-  const jobs = createJobs({ tasks, engines: { hash: sleepAndHash(sha256hex, { concurrency: 2 }) } });
+  const jobs = createJobs({ tasks, workers: { hash: sleepAndHash(sha256hex, { concurrency: 2 }) } });
   const c = { sid: 1, name: 'a1', fs: memFs({ '/x': 'x' }) };
   const t0 = Date.now();
   const a = jobs.submit('hash', { path: '/x', ms: 80 }, { caller: c }), b = jobs.submit('hash', { path: '/x', ms: 80 }, { caller: c });
@@ -295,10 +213,10 @@ await t('jobs: concurrency per engine; stopping a running job leaves its neighbo
   assert.ok(Date.now() - t0 < 150, 'ran side by side');
   assert.equal(b.task.status, 'done');
 });
-await t('jobs: memory guard unloads idle engines, refuses when busy; no fs, no job', async () => {
+await t('jobs: memory guard unloads idle workers, refuses when busy; no fs, no job', async () => {
   const GiB = 2 ** 30, tasks = new Tasks(); let disposed = 0;
   const big = (name) => ({ ...sleepAndHash(sha256hex, { memory: 1.5 * GiB }), create() { const e = sleepAndHash(sha256hex).create(); e.dispose = () => { disposed++; }; return e; } });
-  const jobs = createJobs({ tasks, budget: 2 * GiB, engines: { ocr: big('ocr'), asr: big('asr') } });
+  const jobs = createJobs({ tasks, budget: 2 * GiB, workers: { ocr: big('ocr'), asr: big('asr') } });
   const c = { sid: 1, name: 'a1', fs: memFs({ '/x': 'x' }) };
   await jobs.submit('ocr', { path: '/x', ms: 1 }, { caller: c }).result;
   await jobs.submit('asr', { path: '/x', ms: 1 }, { caller: c }).result;
@@ -331,11 +249,5 @@ await t('no tool asset defaults to a CDN or the Hub (dist/)', () => {
   assert.ok(scanned >= 3 && listed.some((p) => p.startsWith('runtime/transformers/')), 'runtime listed in SHA256SUMS');
   assert.ok(!listed.some((p) => p.startsWith('models/')), 'no weights in the artifact');
   void readdirSync;
-});
-await t('approval titles name who asks, the user included', () => {
-  assert.equal(askTitle({ action: 'remove', label: 'Qwen', who: { by: 'user', via: 'Settings' } }), 'Remove Qwen?');
-  assert.equal(askTitle({ action: 'get', label: 'Qwen', who: { by: 'user' } }), 'Download Qwen?');
-  assert.equal(askTitle({ action: 'remove', label: 'Qwen', who: { by: 'agent', name: 'main (a1)' } }), 'main (a1) asks to remove Qwen');
-  assert.equal(askTitle({ action: 'get', label: 'Qwen', who: { by: 'agent' } }), 'An agent asks to download Qwen');
 });
 console.log(`\n${n} passed`);

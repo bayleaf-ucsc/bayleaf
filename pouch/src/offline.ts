@@ -13,7 +13,7 @@
 
 const SHELL = ['pouch.html', 'viewer.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png'];
 const PREFIX = 'pouch-shell-';
-const OFF = 'pouch.offline'; // 'off' after Uninstall; Erase all clears it
+const OFF = 'pouch.offline'; // 'off' after Remove offline copy; Erase all clears it
 const KEEP = ['content-type', 'content-security-policy', 'x-content-type-options', 'x-frame-options', 'referrer-policy', 'permissions-policy'];
 
 const hex = async (buf: ArrayBuffer) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', buf))].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -82,13 +82,26 @@ export function createOffline({ swSha256 }: { swSha256: string }) {
       if (!(await pinned()) && navigator.onLine) await pin(await fetchSums());
     },
 
-    // { pinned, published, update } where update means the published build differs.
+    // { pinned, published, update, sums } where update means the published build differs.
     async check() {
       state.error = null;
-      try { const sums = await fetchSums(); state.published = sums['pouch.html']; state.checkedAt = new Date(); }
+      let sums: Sums | null = null;
+      try { sums = await fetchSums(); state.published = sums['pouch.html']; state.checkedAt = new Date(); }
       catch (e) { state.error = e instanceof Error ? e.message : String(e); }
       const p = await pinned();
-      return { pinned: p, published: state.published, update: !!(p && state.published && state.published !== p) };
+      return { pinned: p, published: state.published, update: !!(p && state.published && state.published !== p), sums };
+    },
+
+    // A published add-on parts manifest (runtime/<group>/manifest.<hex16>.json), checked
+    // against the SHA256SUMS just read: the update notice's add-ons line. Same origin,
+    // the path the page fetches when it installs; nothing else is read.
+    async manifest(sums: Sums, path: string): Promise<{ files: { parts: { path: string; bytes: number; sha256: string }[]; name: string; bytes: number; sha256: string }[] }> {
+      if (!/^runtime\/[a-z0-9-]+\/manifest\.[0-9a-f]{16}\.json$/.test(path) || !sums[path]) throw new Error(`${path} is not a published manifest`);
+      const r = await fetch('/' + path, { cache: 'no-cache' });
+      if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
+      const buf = await r.arrayBuffer();
+      if (await hex(buf) !== sums[path]) throw new Error(`${path} does not match SHA256SUMS`);
+      return JSON.parse(new TextDecoder().decode(buf)); // its hash matched the published list: the build's shape
     },
 
     // Only on the user's click. Throws (and keeps the running copy) on any mismatch.
@@ -98,7 +111,7 @@ export function createOffline({ swSha256 }: { swSha256: string }) {
       return pin(sums);
     },
 
-    async uninstall({ remember = true } = {}) {
+    async remove({ remember = true } = {}) {
       if (remember) try { localStorage.setItem(OFF, 'off'); } catch {}
       for (const r of (await sw?.getRegistrations?.()) ?? []) await r.unregister();
       if (globalThis.caches) for (const k of await caches.keys()) if (k.startsWith(PREFIX)) await caches.delete(k);

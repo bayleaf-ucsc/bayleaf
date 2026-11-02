@@ -1,7 +1,7 @@
 // Offline copy and updates (offline.ts, sw.js).
 
 import { $, el } from '../dom.ts';
-import { createOffline, short, type Offline } from '../offline.ts';
+import { createOffline, short, type Offline, type Sums } from '../offline.ts';
 import type { App } from './app.ts';
 
 export interface InstallRegion {
@@ -24,9 +24,11 @@ export interface InstallDeps {
   layout: App['state']['layout'];
   status: App['state']['status'];
   ask: App['tree']['ask'];
+  // The add-ons line for a published build (src/addons.ts updateChanges, updateLine); called later.
+  addonsLine?(sums: Sums, read: (path: string) => Promise<Awaited<ReturnType<Offline['manifest']>>>): Promise<string>;
 }
 
-export function createInstallRegion({ layout, status, ask }: InstallDeps): InstallRegion {
+export function createInstallRegion({ layout, status, ask, addonsLine }: InstallDeps): InstallRegion {
   // ── Offline copy and updates (offline.ts, sw.js) ──────────────────────
   // The hosted page keeps a hash-checked copy of itself; it changes only on Update.
   const SW_EXPECTED = typeof SW_SHA256 !== 'undefined' ? SW_SHA256 : null; // eslint-disable-line no-undef (build.mjs define)
@@ -69,8 +71,11 @@ export function createInstallRegion({ layout, status, ask }: InstallDeps): Insta
     const r = await shellCopy.check();
     if (r.update) {
       $('update-swatches')?.replaceChildren(swatch(r.pinned), ' to ', swatch(r.published));
-      $('update-text').textContent = `Update available. This copy is sha256 ${short(r.pinned)}; the published build is sha256 ${short(r.published)}. Nothing changes until you press Update, which checks the new files against SHA256SUMS first.`;
+      const base = `Update available. This copy is sha256 ${short(r.pinned)}; the published build is sha256 ${short(r.published)}. Nothing changes until you press Update, which checks the new files against SHA256SUMS first.`;
+      $('update-text').textContent = base;
       $('update').hidden = false;
+      const sums = r.sums;
+      if (sums && addonsLine) addonsLine(sums, (p) => shellCopy.manifest(sums, p)).then((line) => { if (line) $('update-text').textContent = `${base} ${line}`; }, () => {});
     } else $('update').hidden = true;
     if (manual) renderCopy(shellCopy.state.error ? 'Could not check: ' + shellCopy.state.error : r.update ? 'An update is available (see the notice above the chat).' : 'This copy is the published build.', shellCopy.state.error ? 'bad' : '');
     else if (layout.current() === 'trust') renderCopy();
@@ -91,8 +96,8 @@ export function createInstallRegion({ layout, status, ask }: InstallDeps): Insta
   $('update-later').onclick = () => { $('update').hidden = true; };
   $('copy-check').onclick = () => checkUpdate(true);
   $('copy-remove').onclick = async () => {
-    if (!(await ask('Uninstall the offline copy? Pouch then loads from the network each time (and not without it). Files and sessions stay.', 'Uninstall', 'danger'))) return;
-    await shellCopy.uninstall();
+    if (!(await ask('Remove the offline copy? Pouch then loads from the network each time (and not without it). Files and sessions stay.', 'Remove', 'danger', 'Remove offline copy?'))) return;
+    await shellCopy.remove();
     renderCopy('Offline copy removed. This tab keeps running; reloading loads the published build from the network.');
   };
   $('copy-keep').onclick = async () => {

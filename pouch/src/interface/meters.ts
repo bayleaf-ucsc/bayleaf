@@ -3,7 +3,7 @@
 import { $, el } from '../dom.ts';
 import { renderPanel, type UsageRow } from '../usage.ts';
 import { sameId, titleOf } from '../sessions.ts';
-import { LOCAL } from '../local/engine.ts';
+import { LOCAL } from '../local/host.ts';
 import type { ThreadUsage } from '../agent-types.ts';
 import type { SessionRecord } from '../sessions.ts';
 import type { App } from './app.ts';

@@ -50,13 +50,15 @@ try {
   await page.goto(url);
   await page.click('#welcome button >> text=Got it', { timeout: 5000 }).catch(() => {});
   await page.click('button[data-panel="settings"]');
-  await page.waitForFunction(() => /Not downloaded/.test(document.getElementById('local-state')?.textContent ?? ''), null, { timeout: 30000 });
+  await page.waitForFunction(() => /not installed/.test(document.querySelector('[data-addon] .addon-state')?.textContent ?? ''), null, { timeout: 30000 });
   const before = peak.total;
   const dir = join(CACHE, m.id, m.revision);
-  const picked = m.files.map((f) => join(dir, f.name));
+  // The original upstream files cover the weights; the Transformers.js code comes from the build's saved parts.
+  const code = join(dist, 'runtime', 'transformers');
+  const picked = [...m.files.map((f) => join(dir, f.name)), ...readdirSync(code).map((n) => join(code, n))];
   let t = Date.now();
-  await page.setInputFiles('#local-files', picked);
-  await page.waitForFunction(() => /loaded from your files/.test(document.getElementById('status')?.textContent ?? ''), null, { timeout: 600000 });
+  await page.setInputFiles('#addon-files', picked);
+  await page.waitForFunction(() => /installed from your files/.test(document.getElementById('status')?.textContent ?? ''), null, { timeout: 600000 });
   const ingest = { ms: Date.now() - t, peak: peak.total };
   console.log(`ok Load from files: ${m.files.length} files, 1.09 GB hashed incrementally against the lock and kept in ${(ingest.ms / 1000).toFixed(0)} s; browser peak RSS ${GB(ingest.peak)} (idle ${GB(before)})`);
   peak.total = 0; peak.proc = 0;
@@ -65,7 +67,7 @@ try {
   await page.selectOption('#model', `local:${m.id}`);
   t = Date.now();
   await page.fill('#input', 'List the files in /work.'); await page.press('#input', 'Enter');
-  await page.waitForFunction((id) => /is ready in this browser/.test(document.getElementById('status')?.textContent ?? '') || document.getElementById('local-settings')?.dataset.state === 'ready', m.id, { timeout: 300000 });
+  await page.waitForFunction((id) => /is ready in this browser/.test(document.getElementById('status')?.textContent ?? '') || document.getElementById('addons-settings')?.dataset.tjs === 'ready', m.id, { timeout: 300000 });
   const load = { ms: Date.now() - t, peak: peak.total, proc: peak.proc };
   await page.waitForFunction(() => document.getElementById('send-label')?.textContent === 'Send', null, { timeout: 300000 });
   const turn = { ms: Date.now() - t, peak: peak.total, proc: peak.proc };
