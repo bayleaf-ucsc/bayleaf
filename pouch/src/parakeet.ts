@@ -187,7 +187,6 @@ export type AsrService = ReturnType<typeof createAsrService>;
 const ok = (stdout: string, stderr = ''): ExecResult => ({ stdout, stderr, exitCode: 0 });
 const fail = (msg: string, exitCode = 1): ExecResult => ({ stdout: '', stderr: `transcribe: ${msg}\n`, exitCode });
 const abs = (cwd: string, p: string) => normalize(p.startsWith('/') ? p : cwd + '/' + p);
-const ext = (p: string) => p.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() ?? '';
 const isResult = (x: unknown): x is AsrResult => typeof x === 'object' && x !== null && 'words' in x && Array.isArray(x.words) && 'text' in x && typeof x.text === 'string';
 const mmss = (t: number) => `${Math.floor(t / 60)}:${String(Math.round(t % 60)).padStart(2, '0')}`;
 

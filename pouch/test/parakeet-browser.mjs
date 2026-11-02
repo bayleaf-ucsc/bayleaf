@@ -16,7 +16,7 @@
 // shader-f16, or without `say`.
 // Run: node test/parakeet-browser.mjs   (PARAKEET_CHROME: a Chrome binary; default the installed Google Chrome)
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, rmSync, existsSync, statSync, openSync, readSync, closeSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, rmSync, existsSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:http';

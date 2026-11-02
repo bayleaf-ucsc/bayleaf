@@ -151,7 +151,7 @@ await t('the command: decode then transcribe as two /task jobs; -o writes the fo
   r = await sh('transcribe interviews/i1.m4a');
   assert.equal(r.stdout, '[00:00] Four score years ago.\n[00:03] Now we are engaged\n[00:05] in a great civil war,\n');
   assert.match(r.stderr, /13 words\. Speakers are not separated\./);
-  r = await sh('transcribe interviews/i1.m4a --json -o interviews/i1.json');
+  assert.equal((await sh('transcribe interviews/i1.m4a --json -o interviews/i1.json')).exitCode, 0);
   assert.equal(JSON.parse(await fs.readFile('/work/interviews/i1.json')).words.length, 13);
   r = await sh('transcribe interviews/i1.m4a --vtt -o interviews/i1.json');
   assert.equal(r.exitCode, 2); assert.match(r.stderr, /--vtt but -o interviews\/i1\.json ends in \.json/);
