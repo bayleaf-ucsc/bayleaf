@@ -75,7 +75,7 @@ export interface QueuesRegion {
 
 export function createQueuesRegion(app: App): QueuesRegion {
   // ── Composer (composer.ts) ──────────────────────────────────────────
-  const busy = () => !!app.state.view?.busy;
+  const busy = () => !!app.transcript.view?.busy;
   const PLACEHOLDER = 'Ask Pouch. @ for files, $ for skills, / for commands';
   const attachments = createAttachments({ vfs: app.state.vfs, composer: $('composer'), input: $('input'), picker: $<HTMLInputElement>('attachment-picker'), button: $('attach-file'), chips: $('attachment-chips'), warning: $('attachment-warning'), status: app.state.status });
   const submitting = new Set<string>(); // per session: a send from Enter until its model turn ends (after-turn chores run on)
@@ -159,7 +159,7 @@ export function createQueuesRegion(app: App): QueuesRegion {
   // subagent's view and before the session holds anything.
   function contextNow() {
     // None in a subagent's view.
-    const id = $<HTMLSelectElement>('model').value, c = app.sessionList.focus ? null : contextFor(app.state.view?.context, isLocal(id));
+    const id = $<HTMLSelectElement>('model').value, c = app.sessionList.focus ? null : contextFor(app.transcript.view?.context, isLocal(id));
     if (!c?.tokens) return null;
     const sealed = app.connection.models.find((m) => m.id === id), host = isLocalhost(id) ? app.providers.lh?.models?.find((m) => 'localhost:' + m.id === id) : null;
     const known = isLocal(id) ? null : host ? host.contextWindow ?? null : sealed?.windowReported ? sealed.contextWindow : null;

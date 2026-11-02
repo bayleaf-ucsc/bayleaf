@@ -38,7 +38,6 @@ export interface SubagentsRegion {
   focusedChild(): SubagentRow | null | undefined;
   // Session id -> its registry rows, as last changed.
   kids: Map<string, SubagentRow[]>;
-  get lastHeight(): number | null; set lastHeight(v: number | null);
   loadKids(sid: SessionId | null | undefined): Promise<SubagentRow[]>;
   lowAllowance(): string | null;
   msgCount(c: SubagentRow): number;
@@ -360,7 +359,6 @@ export function createSubagentsRegion(app: App): SubagentsRegion {
     return out;
   }
   const ENDED: Record<string, string | undefined> = { stopped: 'was stopped', failed: 'failed', interrupted: 'was interrupted' };
-  let lastHeight: number | null = null; // the transcript's height at the last render (the "New reply below" pill)
   $('below').onclick = () => { app.state.follow.pin(!matchMedia('(prefers-reduced-motion: reduce)').matches); $('below').hidden = true; };
   $('log').addEventListener('scroll', () => { if (app.state.follow.following) $('below').hidden = true; }, { passive: true });
   // The header folds to its bar once the transcript scrolls (critique 3).
@@ -450,7 +448,6 @@ export function createSubagentsRegion(app: App): SubagentsRegion {
     fmtDur,
     focusedChild,
     kids,
-    get lastHeight() { return lastHeight; }, set lastHeight(v) { lastHeight = v; },
     loadKids,
     lowAllowance,
     msgCount,

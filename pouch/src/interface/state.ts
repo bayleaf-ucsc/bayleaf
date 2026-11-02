@@ -1,4 +1,4 @@
-// Interface state: the shared cells (credential, agent, composer, view), status line, frame and action sheets.
+// Interface state: the shared cells (credential, agent, composer), status line, frame and action sheets.
 
 import { createSettings } from '../settings.ts';
 import { createLocalImages } from '../attachments.ts';
@@ -12,7 +12,6 @@ import { createFollow } from '../follow.ts';
 import { dismissible, guardDialog } from '../dismiss.ts';
 import type { App } from './app.ts';
 import type { PouchAgent } from '../agent.ts';
-import type { ThreadView } from '../agent-types.ts';
 import type { Composer } from '../composer.ts';
 import type { Settings } from '../settings.ts';
 import type { LocalImages } from '../attachments.ts';
@@ -38,12 +37,10 @@ export interface StateRegion {
   sheet(title: string, actions: (SheetAction | false | null | undefined | '')[], body?: SheetBody): void;
   status(text: string, cls?: string): void;
   STEER_LABEL: string;
-  get unwatch(): (() => void) | null; set unwatch(v: (() => void) | null);
   usage: ReturnType<typeof createUsage>;
   // The user's own writes, attributed 'user'.
   userFs: ReturnType<Vfs['as']>;
   vfs: Vfs;
-  get view(): ThreadView | null; set view(v: ThreadView | null);
 }
 
 export function createStateRegion(app: App): StateRegion {
@@ -60,9 +57,7 @@ export function createStateRegion(app: App): StateRegion {
   let agent: PouchAgent | null = null;      // from openAgent, or null if it could not open
   // How a message read mid-turn is labeled, in main's transcript and a subagent's (D25).
   const STEER_LABEL = 'You, while it worked';
-  let view: ThreadView | null = null;       // last normalized view of the current session
   let composer: Composer | null = null;   // composer.ts: tray, autocomplete, shield popover (set below)
-  let unwatch: (() => void) | null = null;
 
   function status(text: string, cls = '') { $('status').textContent = text; $('status').className = cls; }
 
@@ -132,10 +127,8 @@ export function createStateRegion(app: App): StateRegion {
     sheet,
     status,
     STEER_LABEL,
-    get unwatch() { return unwatch; }, set unwatch(v) { unwatch = v; },
     usage,
     userFs,
     vfs,
-    get view() { return view; }, set view(v) { view = v; },
   };
 }

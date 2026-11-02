@@ -46,7 +46,7 @@ export function createSessionListRegion(app: App): SessionListRegion {
   let focus: SubagentFocus | null = null;
   const sessions = createSessions({
     forgetWatches: (id) => app.boot.watches.removeSession(String(id)), // watches key sessions by string id
-    agent: () => app.state.agent, view: () => app.state.view, connected: () => (app.state.agent ? app.connection.sealed() : null),
+    agent: () => app.state.agent, view: () => app.transcript.view, connected: () => (app.state.agent ? app.connection.sealed() : null),
     model: () => $<HTMLSelectElement>('model').value, setModel: (id) => { $<HTMLSelectElement>('model').value = id; app.providers.pickerProvider(); }, hasModel: (id) => app.connection.models.some((m) => m.id === id) || (app.providers.localOk.ok && id === app.providers.LOCAL_ID) || app.providers.lhModels().some((m) => 'localhost:' + m.id === id), isLocal: app.providers.offSealed,
     attach: () => app.transcript.attach(), status: app.state.status, ask: app.tree.ask, sheet: app.state.sheet, countRequest: (id, kind) => app.state.ledger.add(id, kind).then(app.state.meter), layout: app.state.layout, usage: app.state.usage, quotaError: (msg) => app.send.quotaError(msg), exhaustedText,
     agentError: () => app.boot.agentError,
@@ -80,7 +80,7 @@ export function createSessionListRegion(app: App): SessionListRegion {
   const liveEgress: SessionListRegion['liveEgress'] = new Map();
   function noteEgress(e: EgressNotice) {
     if (!sameId(runSession(), sessions.current?.id)) return; // shown from the marker when you switch back
-    const t = app.state.view?.items.findLast((i: ThreadItem): i is ToolItem => i.type === 'tool' && i.name === 'bash' && i.status === 'running');
+    const t = app.transcript.view?.items.findLast((i: ThreadItem): i is ToolItem => i.type === 'tool' && i.name === 'bash' && i.status === 'running');
     if (!t) return;
     const prev = liveEgress.get(t.id) ?? { commands: [], audiences: [] };
     liveEgress.set(t.id, {

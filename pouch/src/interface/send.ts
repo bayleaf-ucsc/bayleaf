@@ -91,7 +91,7 @@ export function createSendRegion(app: App): SendRegion {
       else if (e.message === 'Stopped.' && !(await agent?.snapshot(sid).catch(() => null))?.items.some((i) => i.type === 'user' && i.text === text)) refused = new Error('Stopped before your message was sent; it is back in the box.');
       else admitted();
       // The run's own error (an assistant item) may carry the HTTP status the summary lost.
-      const failed = app.state.view?.items.findLast?.((i) => i.type === 'assistant' && !!i.error);
+      const failed = app.transcript.view?.items.findLast?.((i) => i.type === 'assistant' && !!i.error);
       const detail = e.message + ' ' + (failed?.type === 'assistant' ? failed.error ?? '' : '');
       if (isLocalhost(turnModel)) { if (!refused && e.message !== 'Stopped.') app.state.status('Localhost: ' + (explainMessage(detail, turnModel.slice('localhost:'.length)) ?? e.message), 'bad'); }
       else if (quotaError(detail)) app.state.status(exhaustedText(await app.state.usage.refresh()), 'bad');

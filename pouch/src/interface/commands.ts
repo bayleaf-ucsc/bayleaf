@@ -35,7 +35,7 @@ export function createCommandsRegion(app: App): CommandsRegion {
   // Slash commands: typed whole ("/rename Notes") or picked from the list.
   async function revertLast() {
     if (app.queues.busy()) return app.state.status('Stop Pouch before reverting.', 'bad');
-    const items = app.state.view?.items ?? [], u = items.findLastIndex((i) => i.type === 'user'), last = items[u];
+    const items = app.transcript.view?.items ?? [], u = items.findLastIndex((i) => i.type === 'user'), last = items[u];
     if (u < 0 || last?.type !== 'user') return app.state.status('Nothing to revert yet.', 'bad');
     const target = items.slice(0, u).filter(isMessage).findLast((i) => i.entry && !i.streaming && (i.type === 'user' || i.text || i.error));
     return app.transcript.revertTo(target ?? last); // the first turn: revert to empty (revertFirst)
@@ -91,7 +91,7 @@ export function createCommandsRegion(app: App): CommandsRegion {
     const l = app.subagents.kids.get(String(sid)) ?? [];
     // A spawn the model is still writing (or starting): a row at once, so the
     // seconds before the subagent exists are not a dead zone (critique 48).
-    if (!app.sessionList.focus) for (const it of app.state.view?.items ?? []) if (it.type === 'tool' && startingSpawn(it)) {
+    if (!app.sessionList.focus) for (const it of app.transcript.view?.items ?? []) if (it.type === 'tool' && startingSpawn(it)) {
       const since = runSeen.get(it.id) ?? Date.now(); runSeen.set(it.id, since);
       rows.push({ key: 'sa-start:' + it.id, kind: 'subagent', text: `${textField(it.args, 'name') ?? 'subagent'}: starting`, title: textField(it.args, 'task') ?? 'A subagent is starting', origin: 'starting', since });
     }
@@ -107,7 +107,7 @@ export function createCommandsRegion(app: App): CommandsRegion {
         stop: () => { const list = capEvents.get(String(sid)) ?? []; list.splice(list.indexOf(e), 1); app.state.composer?.renderTray(); } });
     }
     const live = new Set<string>();
-    for (const t of app.state.view?.items ?? []) if (t.type === 'tool' && t.name === 'run' && t.status === 'running') {
+    for (const t of app.transcript.view?.items ?? []) if (t.type === 'tool' && t.name === 'run' && t.status === 'running') {
       const path = textField(t.args, 'path'), code = textField(t.args, 'code');
       live.add(t.id);
       if (!runSeen.has(t.id)) runSeen.set(t.id, Date.now());

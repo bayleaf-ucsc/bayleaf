@@ -23,7 +23,7 @@ export function createMetersRegion(app: App): MetersRegion {
     // from today's ledger (subagents and titles are counted under the session).
     const rows: UsageRow[] = await Promise.all(list.map(async (s) => {
       const current = sameId(s.id, app.sessionList.sessions.current?.id);
-      const u: Partial<ThreadUsage> = (current && app.state.view?.usage) || s.usage || {};
+      const u: Partial<ThreadUsage> = (current && app.transcript.view?.usage) || s.usage || {};
       const subs = (await app.subagents.loadKids(s.id).catch(() => [])) ?? [];
       const sum = (k: 'input' | 'output' | 'cost') => subs.reduce((n, c) => n + (c.usage?.[k] ?? 0), 0);
       return { title: titleOf(s), input: (u.input ?? 0) + sum('input'), output: (u.output ?? 0) + sum('output'), cost: (u.cost ?? 0) + sum('cost'),
