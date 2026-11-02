@@ -88,7 +88,8 @@ export function parseToolCalls(text, format, tools = []) {
       at = end + 12;
     }
   } else if (format === 'xml') {
-    for (const m of text.matchAll(/<tool_call>\s*<function=([^>\n]+)>([\s\S]*?)<\/function>\s*<\/tool_call>/g)) {
+    const CALL = /<tool_call>\s*<function=([^>\n]+)>([\s\S]*?)<\/function>\s*<\/tool_call>/g;
+    for (const m of text.matchAll(CALL)) {
       const args = {};
       for (const p of m[2].matchAll(/<parameter=([^>\n]+)>\n?([\s\S]*?)\n?<\/parameter>/g)) {
         const key = p[1]; if (['__proto__', 'prototype', 'constructor'].includes(key)) throw Error('Unsafe XML argument key');
@@ -98,7 +99,8 @@ export function parseToolCalls(text, format, tools = []) {
       }
       calls.push({ type: 'function', function: { name: m[1].trim(), arguments: args } });
     }
-    if ((text.match(/<tool_call>/g) ?? []).length !== calls.length) throw Error('Malformed/incomplete native XML tool call');
+    // Count call boundaries, not tags: a literal <tool_call> inside a parameter value is data.
+    if (text.replace(CALL, '').includes('<tool_call>')) throw Error('Malformed/incomplete native XML tool call');
   } else throw Error(`Unknown tool format ${format}`);
   return calls;
 }

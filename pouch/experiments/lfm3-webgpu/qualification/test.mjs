@@ -53,6 +53,9 @@ test('XML recipe remains byte-compatible and coerces schema types', () => {
   const tools = [{ function: { name: 'edit', parameters: { properties: { replaceAll: { type: 'boolean' } } } } }];
   const [call] = parseToolCalls('<tool_call><function=edit><parameter=oldText>\na\n\n</parameter><parameter=replaceAll>\ntrue\n</parameter></function></tool_call>', 'xml', tools);
   assert.deepEqual(call.function.arguments, { oldText: 'a\n', replaceAll: true });
+  const [write] = parseToolCalls('<tool_call><function=write><parameter=content>\nsee <tool_call> here\n</parameter></function></tool_call>', 'xml');
+  assert.equal(write.function.arguments.content, 'see <tool_call> here'); // A literal tag in a value is data.
+  assert.throws(() => parseToolCalls('<tool_call><function=read></function></tool_call><tool_call><function=write>', 'xml'));
 });
 test('Gemma transcript ids pair parallel and few-shot tool results without mutation', () => {
   const messages = [{ role: 'assistant', tool_calls: ['read', 'write'].map((name) => ({ function: { name, arguments: {} } })) }, { role: 'tool', content: 'one' }, { role: 'tool', content: 'two' }];
