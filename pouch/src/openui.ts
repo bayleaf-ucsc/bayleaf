@@ -176,13 +176,14 @@ export function renderUi(src: string, ctx: UiContext): { node: HTMLElement; erro
   function chartLabels(v: Value | undefined, call: Call) {
     const all = arr(v) ?? [];
     if (all.length > MAX_POINTS) warn(call, `showing the first ${MAX_POINTS} of ${all.length} labels`);
-    return all.slice(0, MAX_POINTS).map((x) => text(x) ?? '');
+    return { labels: all.slice(0, MAX_POINTS).map((x) => text(x) ?? ''), count: all.length };
   }
-  function series(v: Value | undefined, call: Call, n: number) {
+  // n: labels shown; count: labels written, which each Series should match.
+  function series(v: Value | undefined, call: Call, n: number, count: number) {
     return (arr(v) ?? []).flatMap((s) => {
       if (!(s instanceof Call) || s.name !== 'Series') { warn(call, 'series must be Series(name, values)'); return []; }
       const raw = arr(s.args[1]) ?? [];
-      if (raw.length !== n) warn(call, `Series "${text(s.args[0]) ?? ''}" has ${raw.length} values for ${n} labels`);
+      if (raw.length !== count) warn(call, `Series "${text(s.args[0]) ?? ''}" has ${raw.length} values for ${count} labels`);
       const values = raw.slice(0, MAX_POINTS).map((x) => (typeof x === 'number' && Number.isFinite(x) ? x : null));
       return [{ name: text(s.args[0]) ?? '', values: Array.from({ length: n }, (_, i) => values[i] ?? null) }];
     });
@@ -246,8 +247,8 @@ export function renderUi(src: string, ctx: UiContext): { node: HTMLElement; erro
       return box;
     },
     BarChart: (a, c) => {
-      const labels = chartLabels(a[0], c), unit = text(a[2]) ?? '', whole = deref(a[3]) === true;
-      const ss = series(a[1], c, labels.length);
+      const { labels, count } = chartLabels(a[0], c), unit = text(a[2]) ?? '', whole = deref(a[3]) === true;
+      const ss = series(a[1], c, labels.length, count);
       if (!labels.length || !ss.length) return warn(c, 'needs labels and Series');
       const max = Math.max(...ss.flatMap((s) => s.values.map((v) => Math.abs(v ?? 0))), 0) || 1;
       const total = whole ? ss[0].values.reduce<number>((t, v) => t + (v ?? 0), 0) : 0;
@@ -260,8 +261,8 @@ export function renderUi(src: string, ctx: UiContext): { node: HTMLElement; erro
       return el('figure', 'oui-chart', legend(ss.map((s) => s.name)), ...rows, whole ? el('div', 'oui-label', 'Total: ' + fmt(total, unit)) : null);
     },
     LineChart: (a, c) => {
-      const labels = chartLabels(a[0], c), unit = text(a[2]) ?? '';
-      const ss = series(a[1], c, labels.length);
+      const { labels, count } = chartLabels(a[0], c), unit = text(a[2]) ?? '';
+      const ss = series(a[1], c, labels.length, count);
       const all = ss.flatMap((s) => s.values.filter((v): v is number => v != null));
       if (labels.length < 2 || !all.length) return warn(c, 'needs at least two labels and a Series');
       const lo = Math.min(...all), hi = Math.max(...all), W = 300, H = 100, span = hi - lo || 1;

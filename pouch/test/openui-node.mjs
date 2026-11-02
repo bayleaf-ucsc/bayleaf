@@ -58,6 +58,7 @@ const ui = (src) => renderUi(src, { doc, md, inline });
   const n = 501, labels = JSON.stringify(Array.from({ length: n }, (_, i) => 'd' + i)), vals = JSON.stringify(Array.from({ length: n }, (_, i) => i));
   const cut = ui(`root = Stack([LineChart(${labels}, [Series("x", ${vals})])])`);
   assert.ok(cut.errors.some((e) => /showing the first 500 of 501 labels/.test(e)), cut.errors.join('; '));
+  assert.equal(cut.errors.length, 1, 'a matched 501-value Series is not a mismatch: ' + cut.errors.join('; '));
   const short = ui('root = Stack([BarChart(["a", "b"], [Series("s", [1])])])');
   assert.ok(short.errors.some((e) => /Series "s" has 1 values for 2 labels/.test(e)));
   const small = flat(ui('root = Stack([Stat("Rate", 0.004), LineChart(["a", "b"], [Series("r", [0.001, 0.002])])])').node);
