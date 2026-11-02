@@ -56,11 +56,14 @@ export interface SessionsDeps {
   runningChildren?(id: SessionId): number; extraActions?(s: SessionRecord): Promise<SheetAction[]> | SheetAction[];
   forgetWatches?(id: SessionId): void; countRequest?(id: SessionId, kind: string): void; isLocal?(model: string | undefined): boolean;
 }
+const errText = (e: unknown) => e instanceof Error ? e.message : String(e);
 export function createSessions(deps: SessionsDeps) {
   const { layout, status } = deps;
-  let session = null as SessionRecord | null; // current { id, title, updated, model }
+  let session: SessionRecord | null = null; // current { id, title, updated, model }
   const running = new Set<string>(); // string ids with a send in flight: the sidebar's busy mark
 
+  // After unavailable() said yes; a clear error if the agent went away meanwhile.
+  const agentNow = () => { const a = deps.agent(); if (!a) throw new Error(deps.agentError() ?? 'The agent is not available.'); return a; };
   const all = async () => (await store.all<SessionRecord>('sessions')).sort((a, b) => b.updated - a.updated);
   const find = async (id: unknown) => sameId(id, session?.id) ? session : (await all()).find((x) => sameId(x.id, id));
   const save = (s: SessionRecord | null = session) => s && store.put('sessions', s.id, s);
@@ -70,7 +73,7 @@ export function createSessions(deps: SessionsDeps) {
     const s = await find(id);
     if (!s) return null;
     Object.assign(s, patch);
-    for (const [k, v] of Object.entries(patch)) if (v === undefined) delete (s as Partial<SessionRecord>)[k as keyof SessionRecord];
+    for (const [k, v] of Object.entries(patch)) if (v === undefined) Reflect.deleteProperty(s, k);
     await store.put('sessions', s.id, s);
     return s;
   }
@@ -92,7 +95,7 @@ export function createSessions(deps: SessionsDeps) {
 
   function row(s: SessionRecord) {
     const li = el('li', { className: 'session' });
-    li.dataset.id = s.id as string; // a legacy numeric id reads back as its string (sameId)
+    li.dataset.id = String(s.id); // a legacy numeric id reads back as its string (sameId)
     if (sameId(s.id, session?.id)) li.setAttribute('aria-current', 'true');
     const busyNow = running.has(String(s.id));
     const legacy = deps.agent()?.isLegacy?.(s.id);
@@ -123,7 +126,7 @@ export function createSessions(deps: SessionsDeps) {
         if (c.open) b.setAttribute('aria-current', 'true');
         b.onclick = async () => { await deps.openChild(s.id, c.id, b); };
         const row = seeded(el('li', { className: 's-child' }, b), c.ref);
-        row.dataset.child = c.id as unknown as string; // numeric, stored as its string
+        row.dataset.child = String(c.id); // numeric, stored as its string
         return row;
       })));
     }
@@ -184,7 +187,7 @@ export function createSessions(deps: SessionsDeps) {
     const why = unavailable(modelOf(s));
     if (why) return status(why, 'bad');
     status(`Compacting (${costNote(modelOf(s))})...`);
-    try { await deps.agent()!.compact(id); status('Older turns summarized.'); } catch (e) { status((e as Error).message, 'bad'); }
+    try { await agentNow().compact(id); status('Older turns summarized.'); } catch (e) { status(errText(e), 'bad'); }
     finally { if (providerOf(modelOf(s)) === 'BayLeaf Sealed') deps.usage.refresh(); }
   }
 
@@ -197,11 +200,11 @@ export function createSessions(deps: SessionsDeps) {
     const legacy = deps.agent()?.isLegacy?.(id);
     if (ask && !(await deps.ask(legacy ? 'Delete this session? It was saved before per-session storage: it is stopped and reset now, and its history is purged once no such session is left (or by Erase all).' : 'Delete this session? Its conversation is erased from this browser.', 'Delete', 'danger'))) return false;
     try { await deps.agent()?.deleteSession(id); }
-    catch (e) { status('Could not delete: ' + (e as Error).message, 'bad'); return false; }
+    catch (e) { status('Could not delete: ' + errText(e), 'bad'); return false; }
     // The conversation is gone now, so this returns true even if a cleanup step fails
     // (a first-message revert then still puts the message back).
     try { await clearRecords(id); }
-    catch (e) { status('Deleted, but could not clear its saved settings: ' + (e as Error).message, 'bad'); }
+    catch (e) { status('Deleted, but could not clear its saved settings: ' + errText(e), 'bad'); }
     if (sameId(id, session?.id)) {
       session = null; await deps.attach();
       const rest = await all();
@@ -253,15 +256,15 @@ export function createSessions(deps: SessionsDeps) {
     const why = unavailable(model);
     if (why) { if (!quiet) status(why, 'bad'); return null; }
     try {
-      const v = sameId(id, session?.id) && deps.view() ? deps.view() : await deps.agent()!.snapshot(id);
+      const v = sameId(id, session?.id) && deps.view() ? deps.view() : await agentNow().snapshot(id);
       const text = digest(v?.items, recent);
       if (!text) { if (!quiet) status('Nothing to name yet: send a message first.'); return null; }
       if (sealed) deps.countRequest?.(id, 'title'); // one request from the allowance, outside the transcript
-      const t = await suggestTitle((...a: Parameters<PouchAgent['complete']>) => deps.agent()!.complete(...a), model, text);
+      const t = await suggestTitle((...a: Parameters<PouchAgent['complete']>) => agentNow().complete(...a), model, text);
       if (!t && !quiet) status('No title came back; the old one stays.');
       return t;
     } catch (e) {
-      if (!quiet) status(sealed && deps.quotaError((e as Error).message) ? deps.exhaustedText(await deps.usage.refresh()) : `Could not suggest a title (${providerOf(model)}): ` + (e as Error).message, 'bad');
+      if (!quiet) status(sealed && deps.quotaError(errText(e)) ? deps.exhaustedText(await deps.usage.refresh()) : `Could not suggest a title (${providerOf(model)}): ` + errText(e), 'bad');
       return null;
     } finally { if (sealed) deps.usage.refresh(); }
   }
@@ -309,7 +312,7 @@ export function createSessions(deps: SessionsDeps) {
   // second send from the same blank view waits for this same creation; after New
   // (nav moved on) a send makes its own, so New always means a separate session.
   // New or a selection meanwhile wins the view; the send still goes to the made session.
-  let creating = null as { gen: number; promise: Promise<SessionRecord> } | null;
+  let creating: { gen: number; promise: Promise<SessionRecord> } | null = null;
   // onMade(made): called once the session exists, before it is current, so the
   // send can claim it first (a second Enter then waits instead of racing it).
   function create(onMade: (made: SessionRecord) => void = () => {}) {

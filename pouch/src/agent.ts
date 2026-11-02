@@ -18,9 +18,10 @@ import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.l
 import { createRegistry, defineExtension, defineTool, section, Harness, MemoryStorage } from '@earendil-works/pi-durable';
 import { IndexedDbStorage } from '@earendil-works/pi-durable/storage/indexeddb';
 import { Type } from 'typebox';
-import type { Api, AssistantMessage, Context as PiContext, ImageContent, Model, ProviderStreams, StreamOptions, TextContent, ThinkingContent, TranscriptContext } from '@earendil-works/pi-ai';
+import type { Api, AssistantMessage, Context as PiContext, ImageContent, Model, ProviderStreams, StreamOptions, TextContent, ThinkingContent } from '@earendil-works/pi-ai';
+import { normalizeContext } from '@earendil-works/pi-ai/utils/transcript';
 import type { ConversationId, ConversationView, Cursor, EntryId, EntryRecord, HarnessOptions, InputSubmissionDraft, LiveState, ModelRef, SettledSubmissionRecord, Storage, Submission, SubmissionId, SubmissionRecord, ToolRegistration, UsageState } from '@earendil-works/pi-durable';
-import type { AgentToolSpec, AssistantItem, Attachments, ContentLike, LocalhostConfig, LookOutput, NormalizedView, OpenAgentOptions, PouchEntry, SealedModelInfo, SessionId, StoredMessage, ThreadItem, UserItem, ThreadUsage, ThreadView, ToolItem } from './agent-types.ts';
+import type { AgentToolSpec, AssistantItem, Attachments, ReportItem, ContentLike, LocalhostConfig, LookOutput, NormalizedView, OpenAgentOptions, PouchEntry, SealedModelInfo, SessionId, ThreadItem, UserItem, ThreadUsage, ThreadView, ToolItem } from './agent-types.ts';
 import type { SubagentRow } from './subagents-types.ts';
 type Subagents = ReturnType<typeof createSubagents>;
 import { createSubagents, REPORT_KIND, STEER_KIND, MESSAGE_KIND } from './subagents.ts';
@@ -106,21 +107,20 @@ const callStops = new Map<string, AbortController>(); // call id -> AbortControl
 // (undefined when unknown), asked only for a tool marked `images` (look),
 // which may return { text, images }.
 function toTool(t: AgentToolSpec, seesImages: (ref: ModelRef | undefined) => boolean | undefined = () => undefined) {
-  // label: not in pi-durable's tool type, passed through as before (hence the cast).
   return defineTool({
-    name: t.name, label: t.label ?? t.name, description: t.description, parameters: t.parameters,
+    name: t.name, description: t.description, parameters: t.parameters,
     execute: async (args, api, context) => {
       const stop = new AbortController();
-      const signal = AbortSignal.any([context.abortSignal, stop.signal].filter(Boolean) as AbortSignal[]);
+      const signal = AbortSignal.any([context.abortSignal, stop.signal].filter((s): s is AbortSignal => !!s));
       callStops.set(api.callId, stop);
       try {
         // A string, or look's { text, images }.
-        const r = await t.execute(args as Record<string, unknown>, { signal, output: (s) => api.output(String(s)), caller: api.conversationId, callId: api.callId, seesImages: t.images ? seesImages((await api.agent?.(context))?.model) : undefined }) as Partial<LookOutput>;
-        if (Array.isArray(r?.images)) return { output: [{ type: 'text', text: cap(String(r.text ?? '')) }, ...r.images] };
+        const r = await t.execute(args, { signal, output: (s) => api.output(String(s)), caller: api.conversationId, callId: api.callId, seesImages: t.images ? seesImages((await api.agent?.(context))?.model) : undefined });
+        if (typeof r === 'object' && r && Array.isArray(r.images)) return { output: [{ type: 'text', text: cap(String(r.text ?? '')) }, ...r.images] };
         return { output: [{ type: 'text', text: cap(String(r ?? '')) }] };
       } finally { callStops.delete(api.callId); }
     },
-  } as ToolRegistration);
+  });
 }
 
 // Hold one IndexedDB storage. pi-durable has no cross-process locking, so two
@@ -173,8 +173,9 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
   let lhConfig: LocalhostConfig | null = null, lhCatalog: Model<Api>[] = [];
   const lhApi = localhostApi({ completions: openAICompletionsApi(), responses: openAIResponsesApi() }, () => lhConfig, { onWait: localhost?.onWait });
   function setLocalhost(config: Partial<LocalhostConfig> | null | undefined) {
-    lhConfig = config?.base ? config as LocalhostConfig : null;
-    lhCatalog = lhConfig ? (lhConfig.models ?? []).map((m) => localhostModel(m, lhConfig!)) : [];
+    const cfg = config?.base ? { ...config, base: config.base } : null;
+    lhConfig = cfg;
+    lhCatalog = cfg ? (cfg.models ?? []).map((m) => localhostModel(m, cfg)) : [];
     models.setProvider(createProvider({
       id: LOCALHOST_PROVIDER, name: 'Localhost (your machine)', baseUrl: lhConfig?.base ?? 'http://127.0.0.1/v1', models: lhCatalog, api: lhApi,
       auth: { apiKey: { name: 'Localhost', resolve: async () => ({ auth: { apiKey: lhConfig?.key || 'none' } }) } },
@@ -183,7 +184,7 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
   setLocalhost(localhost?.config);
   if (local?.info) {
     models.setProvider(createProvider({
-      id: LOCAL_PROVIDER, name: 'Transformers.js (in this browser)', baseUrl: 'local:', models: [localModel(local.info) as Model<Api>], api: localApi(local.engine, { onHint: local.onHint }),
+      id: LOCAL_PROVIDER, name: 'Transformers.js (in this browser)', baseUrl: 'local:', models: [localModel(local.info)], api: localApi(local.engine, { onHint: local.onHint }),
       auth: { apiKey: { name: 'Transformers.js', resolve: async () => ({ auth: { apiKey: 'local' } }) } },
     }));
   }
@@ -235,8 +236,9 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
   interface OpenDb { harness: Harness; release: () => void; storage: Storage; sid: string | null; interrupted: ConversationId[] }
   const dbs = new Map<string, Promise<OpenDb>>();
   function openDb(name: string): Promise<OpenDb> {
-    if (!dbs.has(name)) {
-      const p = (async () => {
+    let p = dbs.get(name);
+    if (!p) {
+      p = (async () => {
         const release = storage ? () => {} : await acquireLock(name);
         try {
           const st = storage ?? await IndexedDbStorage.open(name);
@@ -268,7 +270,7 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
         if (parents.length) onInterrupted?.(parents.map((c) => sidOf(c)));
       }, () => {});
     }
-    return dbs.get(name)!;
+    return p;
   }
   async function quiesce(harness: Harness) {
     const ins = await harness.inspect(ctx);
@@ -293,9 +295,10 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
   const convIds = new Map<SessionId, ConversationId>();
   async function locate(id: SessionId) {
     const { harness, storage: st } = await openDb(dbOf(id));
-    if (shared(id)) return { harness, convId: id as ConversationId };
-    if (!convIds.has(id)) {
-      let convId = await pointer?.get(id);
+    if (shared(id)) return { harness, convId: id as ConversationId }; // a shared database's session id is its conversation id
+    let convId = convIds.get(id);
+    if (convId == null) {
+      convId = await pointer?.get(id) ?? undefined;
       if (convId == null) {
         const page = await st.scanConversations({}, 1, undefined, ctx);
         if (!page.items[0]) throw new Error(`No such session: ${id}`);
@@ -304,7 +307,7 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
       convIds.set(id, convId);
       own(id, convId);
     }
-    return { harness, convId: convIds.get(id)! };
+    return { harness, convId };
   }
   const conv = async (id: SessionId) => {
     const { harness, convId } = await locate(id);
@@ -315,7 +318,7 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
   const watchers = new Map<() => void, string>(); // dispose -> session id
 
   async function watch(id: SessionId, onView: (view: ThreadView) => void, child?: ConversationId) {
-    const c = child ? await subagents!.childConv(id, child) : await conv(id);
+    const c = child ? await (subagents ?? noSubagents()).childConv(id, child) : await conv(id);
     // The view holds only the active context, which compaction and reset
     // cut short. Keep the whole transcript for display: scan what is stored,
     // then append each entry the view adds (entries are immutable).
@@ -329,7 +332,7 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
     } while (cursor);
     const view = await c.viewState(ctx);
     // context: sized from the active entries only (src/context.ts), not the whole history.
-    const push = (value: ConversationView) => { value.entries.forEach(add); onView({ ...normalize({ ...value, entries: history }), context: contextOf(value.entries as readonly PouchEntry[]) }); };
+    const push = (value: ConversationView) => { value.entries.forEach(add); onView({ ...normalize({ ...value, entries: history }), context: contextOf(pouchEntries(value.entries)) }); };
     push(view.value);
     const unsubscribe = view.subscribe(push);
     const dispose = () => { watchers.delete(dispose); unsubscribe?.(); view.dispose(); };
@@ -345,10 +348,16 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
       if (!rec || rec.status !== 'queued') break;
       await new Promise((r) => setTimeout(r, 120));
     }
-    if (!rec?.entry) return null;
-    let v = null as ThreadView | null;
-    (await watch(id, (x) => { v = x; }, child))();
-    return { late: !v?.items.find((i): i is UserItem => (i as UserItem).entry === rec!.entry)?.steer }; // the steer's own item
+    const entry = rec?.entry;
+    if (!entry) return null;
+    const v = await once(id, child);
+    return { late: !v?.items.find((i): i is UserItem => i.type === 'user' && i.entry === entry)?.steer }; // the steer's own item
+  }
+  // One normalized view, without staying subscribed.
+  async function once(id: SessionId, child?: ConversationId) {
+    const got: ThreadView[] = [];
+    (await watch(id, (x) => { got.push(x); }, child))();
+    return got.at(-1) ?? null;
   }
 
   async function point(id: SessionId, convId: ConversationId) {
@@ -362,10 +371,9 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
     setModels, setLocalhost,
     isLegacy: (id: SessionId) => !storage && isLegacy(id),
     async createSession(modelId: string): Promise<SessionId> {
-      const id = (storage ? null : newId()) as string; // null only with an injected storage, which returns before using it
-      const { harness } = await openDb(storage ? 'memory' : dbFor(id));
-      const c = await harness.createConversation({ ownership: { kind: 'ownerless' }, agent: { model: modelRef(modelId) } }, ctx);
-      if (storage) return c.id;
+      const create = async (db: string) => (await openDb(db)).harness.createConversation({ ownership: { kind: 'ownerless' }, agent: { model: modelRef(modelId) } }, ctx);
+      if (storage) return (await create('memory')).id;
+      const id = newId(), c = await create(dbFor(id));
       convIds.set(id, c.id);
       own(id, c.id);
       return id;
@@ -482,9 +490,9 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
       const model = models.getModel(ref.provider, modelId);
       if (!model) throw new Error(`${modelId} is not available in this browser now; nothing was sent.`);
       const context: PiContext = { messages: [{ role: 'user', content: prompt, timestamp: Date.now() }] };
-      // A raw Context straight to the provider streams (pi-ai types want a normalized TranscriptContext).
+      // Provider streams take a normalized context (Models.completeSimple normalizes its own).
       const r = ref.provider === PROVIDER
-        ? await quietSealed.streamSimple(model, context as unknown as TranscriptContext, { maxTokens, signal, apiKey: 'sealed' }).result()
+        ? await quietSealed.streamSimple(model, normalizeContext(context), { maxTokens, signal, apiKey: 'sealed' }).result()
         : await models.completeSimple(model, context, { maxTokens, signal });
       if (r.stopReason === 'error' || r.stopReason === 'aborted') throw new Error(r.errorMessage || 'The model returned an error.');
       return r.content.filter((c): c is TextContent => c.type === 'text').map((c) => c.text).join('');
@@ -509,7 +517,7 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
       stopAll: (sid: SessionId) => subagents.stopAll(sid),
       message: (sid: SessionId, child: string | ConversationId, text: string) => subagents.message(sid, child, text, { user: true }),
       // From the subagent's view: joins its running work, never restarts it.
-      steer: (sid: SessionId, child: string | ConversationId, text: string) => subagents.steer(sid, child, text),
+      steer: async (sid: SessionId, child: string | ConversationId, text: string) => (await subagents.steer(sid, child, text)).note,
       watch: (sid: SessionId, child: ConversationId, onView: (view: ThreadView) => void) => watch(sid, onView, child),
       resume: (sid: SessionId) => subagents.resume(sid),
       // Main's blocking calls (a foreground spawn, a wait): [{ kind, ids, since }].
@@ -524,9 +532,8 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
       // Steering a subagent; resolves to { note, id, placed }.
       // child: the subagent's conversation id (its registry id).
       steerTracked: async (sid: SessionId, child: ConversationId, text: string) => {
-        const out: { sub?: Submission } = {};
-        const note = await subagents.steer(sid, child, text, out);
-        return { note, id: out.sub!.id, placed: placement(sid, out.sub!, child) };
+        const { note, sub } = await subagents.steer(sid, child, text);
+        return { note, id: sub.id, placed: placement(sid, sub, child) };
       },
       refOf: (l: SubagentRow[], c: SubagentRow) => subagents.refOf(l, c),
       // File watches (src/ns/watch.ts): deliver an event; is that session running?
@@ -544,11 +551,7 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
     // Open the databases of these sessions, so their running children carry on.
     async open(ids: SessionId[]) { for (const id of ids) if (!shared(id)) await openDb(dbFor(id)).catch(() => {}); },
     // One normalized view, without staying subscribed (titles, token totals).
-    async snapshot(id: SessionId) {
-      let v = null as ThreadView | null;
-      (await watch(id, (x) => { v = x; }))();
-      return v;
-    },
+    snapshot: (id: SessionId) => once(id),
     async close() {
       subagents?.close();
       for (const d of [...watchers.keys()]) d();
@@ -558,9 +561,14 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
 }
 
 function describeUnanswered(s: Extract<SettledSubmissionRecord, { status: 'unanswered' }>) {
-  const detail = typeof s.detail === 'string' ? s.detail : (s.detail as { message?: string } | undefined)?.message ?? (s.detail ? JSON.stringify(s.detail) : '');
-  return ({ aborted: 'Stopped.', run_failed: 'An earlier request failed.' } as Record<string, string | undefined>)[s.reason] ?? `${s.reason}${detail ? `: ${detail}` : ''}`;
+  const d = s.detail, message = d && typeof d === 'object' && !Array.isArray(d) ? d.message : undefined;
+  const detail = typeof d === 'string' ? d : message != null ? String(message) : d ? JSON.stringify(d) : '';
+  return UNANSWERED[s.reason] ?? `${s.reason}${detail ? `: ${detail}` : ''}`;
 }
+const UNANSWERED: Partial<Record<string, string>> = { aborted: 'Stopped.', run_failed: 'An earlier request failed.' };
+const noSubagents = (): never => { throw new Error('Subagents are not enabled in this page.'); };
+// Pouch's own entry kinds carry PouchEntryData; pi-durable types data as any JSON.
+const pouchEntries = (entries: readonly EntryRecord[]) => entries as readonly PouchEntry[];
 
 // ---- view normalization: pi-durable's ConversationView -> flat render list ----
 
@@ -569,16 +577,16 @@ const textOf = (content: ContentLike | undefined) => typeof content === 'string'
 
 // One pi-ai AssistantMessage -> an assistant item (if it says anything) plus
 // one tool item per call. Partial messages carry partial tool arguments.
-type AssistantBlocks = AssistantMessage['content'] | undefined; // an assistant message's blocks
-function assistantItems(msg: StoredMessage, streaming: boolean, tools: Map<string, ToolItem>) {
+function assistantItems(msg: AssistantMessage, streaming: boolean, tools: Map<string, ToolItem>) {
   const out: ThreadItem[] = [];
-  const text = (msg.content as AssistantBlocks)?.filter((b) => b.type === 'text').map((b) => (b as TextContent).text).join('') ?? '';
-  const thinking = (msg.content as AssistantBlocks)?.filter((b) => b.type === 'thinking').map((b) => (b as ThinkingContent).thinking).join('') ?? '';
+  const blocks = Array.isArray(msg.content) ? msg.content : [];
+  const text = blocks.filter((b): b is TextContent => b.type === 'text').map((b) => b.text).join('');
+  const thinking = blocks.filter((b): b is ThinkingContent => b.type === 'thinking').map((b) => b.thinking).join('');
   const error = msg.stopReason === 'error' ? (msg.errorMessage || 'Model error') : msg.stopReason === 'aborted' ? 'Stopped.' : undefined;
   if (text || thinking || error || streaming) out.push({ type: 'assistant', text, thinking, streaming, ...(error ? { error } : {}) });
-  for (const b of (msg.content as AssistantBlocks) ?? []) {
+  for (const b of blocks) {
     if (b.type !== 'toolCall') continue;
-    const item: ToolItem = { type: 'tool', id: b.id, name: b.name, args: b.arguments ?? (b as { partialArgs?: unknown }).partialArgs ?? {}, output: '', status: 'running' };
+    const item: ToolItem = { type: 'tool', id: b.id, name: b.name, args: b.arguments ?? ('partialArgs' in b ? b.partialArgs : undefined) ?? {}, output: '', status: 'running' };
     tools.set(b.id, item);
     out.push(item);
   }
@@ -595,9 +603,9 @@ export function normalize(view: Pick<ConversationView, 'entries' | 'docs'>): Nor
   let toolErrors = 0; // failed tool calls, also for the card
   let ended = false; // the last reply had no tool calls: no turn is open
   const mark = <T extends ThreadItem>(it: T, e: PouchEntry, msg: { timestamp?: number } | undefined) => Object.assign(it, { entry: e.id, at: msg?.timestamp, cut: e.id, cutAt: msg?.timestamp });
-  for (const e of view.entries as readonly PouchEntry[]) {
+  for (const e of pouchEntries(view.entries)) {
     const msg = e.model?.[0];
-    if (e.kind === 'pi.assistant' && msg) ended = msg.stopReason !== 'toolUse';
+    if (e.kind === 'pi.assistant' && msg?.role === 'assistant') ended = msg.stopReason !== 'toolUse';
     switch (e.kind) {
       case 'pi.user': items.push(mark({ type: 'user', text: textOf(msg?.content) }, e, msg)); break;
       // A steer placed after the turn ended (it raced the final reply) started
@@ -609,39 +617,43 @@ export function normalize(view: Pick<ConversationView, 'entries' | 'docs'>): Nor
       case WATCH_KIND: items.push(mark({ type: 'user', ...(ended || e.data?.mode !== 'steer' ? {} : { steer: true }), watch: e.data, text: (e.data?.lines ?? []).join('\n') || textOf(msg?.content) }, e, msg)); break;
       case USER_KIND: items.push(mark({ type: 'user', text: e.data?.text ?? textOf(msg?.content), attachments: e.data?.attachments ?? [] }, e, msg)); break;
       case 'pi.assistant': {
-        if (!msg) break;
+        if (msg?.role !== 'assistant') break;
         steps++;
-        const out = assistantItems(msg, false, tools);
-        if (out[0]?.type === 'assistant') {
-          mark(out[0], e, msg);
-          (out[0] as AssistantItem).model = msg.model; // the turn footer names it
-          for (const t of out) if (t.type === 'tool') owners.set(t.id, out[0] as AssistantItem);
+        const out = assistantItems(msg, false, tools), head = out[0];
+        if (head?.type === 'assistant') {
+          mark(head, e, msg);
+          head.model = msg.model; // the turn footer names it
+          for (const t of out) if (t.type === 'tool') owners.set(t.id, head);
         }
         items.push(...out);
         break;
       }
       case 'pi.tool-result': {
-        const t = tools.get(msg?.toolCallId!);
-        if (msg?.isError) toolErrors++;
+        if (msg?.role !== 'toolResult') break;
+        const t = tools.get(msg.toolCallId);
+        if (msg.isError) toolErrors++;
         // images: what a look call sent, for the card's thumbnails (the bytes as sent, not the file now).
-        const images = ((msg?.content ?? []) as ImageContent[]).filter((b) => b.type === 'image');
-        if (t) Object.assign(t, { output: textOf(msg!.content), status: msg!.isError ? 'error' : 'done', ...(images.length ? { images } : {}), ...((msg!.details ?? e.data?.details) != null ? { details: msg!.details ?? e.data!.details } : {}) });
-        const owner = owners.get(msg?.toolCallId!);
-        if (owner) Object.assign(owner, { cut: e.id, cutAt: msg!.timestamp ?? owner.cutAt });
+        const images = msg.content.filter((b): b is ImageContent => b.type === 'image');
+        const details = msg.details ?? e.data?.details;
+        if (t) Object.assign(t, { output: textOf(msg.content), status: msg.isError ? 'error' : 'done', ...(images.length ? { images } : {}), ...(details != null ? { details } : {}) });
+        const owner = owners.get(msg.toolCallId);
+        if (owner) Object.assign(owner, { cut: e.id, cutAt: msg.timestamp ?? owner.cutAt });
         break;
       }
       case 'pi.compaction': items.push({ type: 'compaction', summary: e.model?.map((m) => textOf(m.content)).join('\n') ?? '' }); break;
       case 'pi.reset': items.push({ type: 'notice', text: 'Context reset.' }); break;
-      case REPORT_KIND: items.push(mark({ type: 'report', ...e.data, ...(e.data?.ref ? { ref: asRef(e.data.ref) } : {}), ...(e.data?.byMessage ? { byMessage: relabel(e.data.byMessage) } : {}), ...(e.data?.lastSent ? { lastSent: { ...e.data.lastSent, to: relabel(e.data.lastSent.to) } } : {}) } as ThreadItem, e, msg ?? { timestamp: e.createdAt })); break;
+      case REPORT_KIND: items.push(mark({ type: 'report', ...e.data, ...(e.data?.ref ? { ref: asRef(e.data.ref) } : {}), ...(e.data?.byMessage ? { byMessage: relabel(e.data.byMessage) } : {}), ...(e.data?.lastSent ? { lastSent: { ...e.data.lastSent, to: relabel(e.data.lastSent.to) } } : {}) } satisfies ReportItem, e, msg ?? { timestamp: e.createdAt })); break;
     }
   }
-  const live = (view.docs['pi.live'] ?? {}) as LiveState;
+  // pi-durable's built-in documents, as its types name them by kind.
+  const docs = view.docs as { 'pi.live'?: LiveState; 'pi.usage'?: UsageState };
+  const live = docs['pi.live'] ?? {};
   // Running tool output (results land as entries; this is the stream before that).
   for (const slot of live.tools ?? []) {
     const t = tools.get(slot.callId);
     if (t && t.status === 'running' && slot.output) t.output = slot.output;
   }
-  if (live.generation?.message) items.push(...assistantItems(live.generation.message as StoredMessage, true, tools));
+  if (live.generation?.message) items.push(...assistantItems(live.generation.message, true, tools));
   if (live.generation?.retry) items.push({ type: 'notice', text: `Retrying: ${live.generation.retry.error}` });
   if (live.compactions?.length) items.push({ type: 'notice', text: 'Compacting context…' });
   if (live.compactionFailure) items.push({ type: 'notice', text: `Compaction failed: ${live.compactionFailure.error}` });
@@ -650,7 +662,7 @@ export function normalize(view: Pick<ConversationView, 'entries' | 'docs'>): Nor
   // A running call's details (a spawned subagent's id) before its result lands.
   for (const slot of live.tools ?? []) { const t = tools.get(slot.callId); if (t && slot.details != null && t.details == null) t.details = slot.details; }
   // requests: model responses (steps), for the Usage panel's Requests column.
-  const usage: ThreadUsage | undefined = usageOf(view.docs['pi.usage'] as UsageState | undefined) ?? (steps ? { input: 0, output: 0, cost: 0 } : undefined);
+  const usage: ThreadUsage | undefined = usageOf(docs['pi.usage']) ?? (steps ? { input: 0, output: 0, cost: 0 } : undefined);
   if (usage) usage.requests = steps;
   return { busy: !!live.run, items, steps, toolErrors, usage };
 }

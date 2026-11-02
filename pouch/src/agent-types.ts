@@ -1,6 +1,7 @@
 // Types of the engine's surface (src/agent.ts) and of the thread views it
 // renders, kept out of agent.ts for its size budget. Types only: no runtime code.
-import type { AssistantMessage, ImageContent, Message, TSchema, ToolResultMessage } from '@earendil-works/pi-ai';
+import type { ImageContent } from '@earendil-works/pi-ai';
+import type { TObject } from 'typebox';
 import type { JsonValue } from '@earendil-works/chord';
 import type { ConversationId, EntryId, EntryRecord, Storage } from '@earendil-works/pi-durable';
 import type { Handle } from './graph.ts';
@@ -35,7 +36,7 @@ export interface ToolCallOptions {
 export interface LookOutput { text: string; images: ImageContent[] }
 // A UI tool spec: what src/tools.ts (and run.ts) build, before agent.ts wraps it.
 export interface AgentToolSpec {
-  name: string; label?: string; description: string; parameters: TSchema; images?: boolean;
+  name: string; label?: string; description: string; parameters: TObject; images?: boolean;
   execute(args: Record<string, unknown>, opts: ToolCallOptions): Promise<string | LookOutput> | string | LookOutput;
 }
 
@@ -63,16 +64,13 @@ export interface Attachments { files: AttachedFile[]; images: ImageContent[] }
 
 // Content as stored: a string or blocks, of which text blocks carry text.
 export type ContentLike = string | readonly { type: string; text?: string }[];
-// Any stored pi-ai message, read without narrowing on its role first.
-export type StoredMessage = Partial<Omit<AssistantMessage, 'role' | 'content'> & Omit<ToolResultMessage, 'role' | 'content'>>
-  & { role?: Message['role']; content?: Message['content']; contextTrimmed?: number };
 // What Pouch's own entry kinds carry in data (send(), src/subagents.ts, src/ns/watch.ts).
 export type PouchEntryData = {
   text?: string; from?: string; name?: string; to?: string; mode?: string; lines?: string[]; attachments?: AttachedFile[];
   details?: JsonValue; ref?: string; byMessage?: string; lastSent?: { to: string; text: string };
   child?: ConversationId; status?: string; task?: string; steers?: string[]; oneshot?: boolean;
 };
-export type PouchEntry = Omit<EntryRecord, 'data' | 'model'> & { data?: PouchEntryData; model?: readonly StoredMessage[]; createdAt?: number };
+export type PouchEntry = Omit<EntryRecord, 'data'> & { data?: PouchEntryData; createdAt?: number };
 
 // ---- a thread's flat render list (normalize) ----
 // entry, the entry a message came from; at, its time (ms); cut and cutAt, the last entry a revert keeps.

@@ -29,9 +29,10 @@ interface Turn { user: string; reply: string; tools: Set<string> }
 function turnsOf(items: readonly ThreadItem[]) {
   const turns: Turn[] = [];
   for (const it of items) {
-    if (it.type === 'user') turns.push({ user: it.text, reply: '', tools: new Set() });
-    else if (turns.length && it.type === 'assistant' && it.text) turns.at(-1)!.reply = it.text;
-    else if (turns.length && it.type === 'tool') turns.at(-1)!.tools.add(it.name);
+    if (it.type === 'user') { turns.push({ user: it.text, reply: '', tools: new Set() }); continue; }
+    const t = turns.at(-1);
+    if (t && it.type === 'assistant' && it.text) t.reply = it.text;
+    else if (t && it.type === 'tool') t.tools.add(it.name);
   }
   return turns;
 }
@@ -80,18 +81,19 @@ export interface TitleEditorOptions {
 }
 export function titleEditor(host: HTMLElement | null | undefined, { value, tip, suggest, save, done }: TitleEditorOptions) {
   if (!host?.isConnected) return;
+  const home = host;
   const input = el('input', { type: 'text', className: 'title-input', value, maxLength: 60, ariaLabel: 'Session title', placeholder: 'Session title' });
   const spark = el('button', { type: 'button', className: 'icon spark', ariaLabel: 'Suggest a title', title: tip }, icon('sparkles'));
   const wrap = el('span', { className: 'title-edit' }, input, spark);
-  let suggested = null as string | null, naming = false, finished = false;
+  let suggested: string | null = null, naming = false, finished = false;
   const finish = async (keep: boolean) => {
     if (finished) return;
     finished = true;
     const t = input.value.trim().slice(0, 60);
     if (keep && t !== value) await save(t, t === suggested ? 'auto' : 'user');
-    wrap.replaceWith(host!);
+    wrap.replaceWith(home);
     await done?.();
-    if (host!.isConnected) host!.focus();
+    if (home.isConnected) home.focus();
   };
   input.onkeydown = (e) => {
     if (e.key === 'Enter') { e.preventDefault(); finish(true); }

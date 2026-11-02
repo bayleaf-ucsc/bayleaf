@@ -29,8 +29,8 @@
 import { defineTool } from '@earendil-works/pi-durable';
 import { Type } from 'typebox';
 import type { Context } from '@earendil-works/chord';
-import type { ConversationId, Conversation, InputEntry, InputSubmissionDraft, ModelRef, Submission, SubmissionId, ToolRegistration, UsageState, UserInput } from '@earendil-works/pi-durable';
-import type { ContentLike, SessionId, StoredMessage } from './agent-types.ts';
+import type { ConversationId, Conversation, InputEntry, InputSubmissionDraft, ModelRef, Submission, SubmissionId, UsageState, UserInput } from '@earendil-works/pi-durable';
+import type { ContentLike, SessionId } from './agent-types.ts';
 import type { Handle, HoldResult, Scope } from './graph.ts';
 import type { Sender, SubagentDeps, SubagentOwner, SubagentRow, SubagentStatus, SubagentSummary, Waitable } from './subagents-types.ts';
 import { PROFILES, GRAPH_GLOSS, SUBAGENT_DIR, scratchOf } from './profiles.ts';
@@ -54,6 +54,11 @@ export const tagOf = (name: string, ref: Handle) => `[from ${name} (${ref})]`;
 export const MAX_RUNNING = 6;
 const ctx0 = undefined;
 
+const VERBS: Partial<Record<SubagentStatus, string>> = { finished: 'finished', failed: 'failed', stopped: 'was stopped by the user', interrupted: 'was interrupted by a page reload (the user can resume it from its card)' };
+const CUT: Partial<Record<SubagentStatus, string>> = { failed: 'failed', interrupted: 'was interrupted' };
+const errText = (e: unknown) => e instanceof Error ? e.message : String(e);
+// A JSON object's fields, read without trusting their types.
+const dataOf = (d: unknown): Record<string, unknown> | undefined => d && typeof d === 'object' && !Array.isArray(d) ? Object.fromEntries(Object.entries(d)) : undefined;
 const slug = (s: unknown) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24);
 const textOf = (content: ContentLike | undefined) => typeof content === 'string' ? content
   : (content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join('');
@@ -75,7 +80,7 @@ export function createSubagents(deps: SubagentDeps) {
   const owners = new Map<ConversationId, SubagentOwner>(); // child conversation id -> { sid, child id, ns? }
   const locks = new Map<string, Promise<unknown>>();  // sid -> promise chain for registry updates
   const scopes = new Map<string, Scope>(); // sid -> createScope(): caps, arrivals, blocking calls
-  const scope = (sid: SessionId) => { const k = String(sid); if (!scopes.has(k)) scopes.set(k, createScope()); return scopes.get(k)!; };
+  const scope = (sid: SessionId) => { const k = String(sid); let s = scopes.get(k); if (!s) scopes.set(k, s = createScope()); return s; };
   const results = new Map<string, string>(); // "childId:seq" -> its last message at that result (join)
   const reserved = new Map<string, { n: number; names: Set<string> }>(); // sid -> { n: last short id number given, names }
   const last = new Map<string, SubagentRow[]>();   // sid -> registry rows as last written (synchronous reads for waits)
@@ -136,8 +141,9 @@ export function createSubagents(deps: SubagentDeps) {
     do {
       const page = await c.entries(cursor ? {} : { order: 'ascending' }, 500, cursor, ctx);
       for (const e of page.items) {
-        if (e.kind === STEER_KIND) steers.push(String((e.data as { text?: string } | null | undefined)?.text ?? ''));
-        if (e.kind === 'pi.tool-result' && (e.model?.[0] as StoredMessage | undefined)?.isError) toolErrors++;
+        if (e.kind === STEER_KIND) steers.push(String(dataOf(e.data)?.text ?? ''));
+        const m = e.model?.[0];
+        if (e.kind === 'pi.tool-result' && m?.role === 'toolResult' && m.isError) toolErrors++;
         if (e.kind !== 'pi.assistant') continue;
         requests++;
         const t = textOf(e.model?.[0]?.content);
@@ -167,31 +173,33 @@ export function createSubagents(deps: SubagentDeps) {
     try {
       const harness = await harnessOf(sid);
       const sub = subId ? await harness.submission(subId, ctx) : null;
-      const settled = sub ? await sub.wait(ctx).catch((e) => ({ status: 'unanswered' as const, reason: 'error', detail: e.message as string })) : null;
+      const settled = sub ? await sub.wait(ctx).catch((e: unknown) => ({ status: 'unanswered' as const, reason: 'error', detail: errText(e) })) : null;
       if (closing) return; // the page is going away: the next open decides (resume())
       const status: SubagentStatus = !settled ? 'interrupted' : settled.status === 'done' ? 'finished' : settled.reason === 'aborted' ? 'stopped' : 'failed';
-      const why = settled && settled.status !== 'done' ? (typeof settled.detail === 'string' ? settled.detail : (settled.detail as { message?: string } | undefined)?.message ?? settled.reason ?? '') : '';
+      const why = settled && settled.status !== 'done' ? (typeof settled.detail === 'string' ? settled.detail : dataOf(settled.detail)?.message ?? settled.reason ?? '') : '';
       const { answer, requests, toolErrors, steers, usage } = await summary(sid, childId).catch((): SubagentSummary => ({ answer: '', requests: 0, toolErrors: 0, steers: [] }));
       // Main joined on it: the join result carries this answer, so no report
       // is posted besides (no duplicates). Decided before the update below
       // releases the join.
       const l0 = await list(sid), row = l0.find((c) => c.id === childId);
       const joined = row && row.sub === subId && scope(sid).held(MAIN).some((h) => h.kind === 'join' && h.ids.includes(refOf(l0, row)));
-      let child!: SubagentRow | undefined; // set inside the update
+      const updated: SubagentRow[] = []; // filled inside the update
       await update(sid, (l) => l.map((c) => {
         if (c.id !== childId || c.sub !== subId) return c;
-        child = { ...c, status, ended: Date.now(), requests, toolErrors, ...(usage ? { usage } : {}), seq: (c.seq ?? 0) + 1, ...(why ? { error: String(why).slice(0, 300) } : {}), ...(joined ? { reported: subId, joinedBy: MAIN } : {}) };
-        results.set(`${childId}:${child!.seq}`, answer);
-        return child;
+        const seq = (c.seq ?? 0) + 1, row: SubagentRow = { ...c, status, ended: Date.now(), requests, toolErrors, ...(usage ? { usage } : {}), seq, ...(why ? { error: String(why).slice(0, 300) } : {}), ...(joined ? { reported: subId, joinedBy: MAIN } : {}) };
+        updated.push(row);
+        results.set(`${childId}:${seq}`, answer);
+        return row;
       }));
+      let child = updated.at(-1);
       if (!child) return; // superseded by a later message to the child
       // A one-shot with `to`: the harness forwards its reply (it has no tools),
       // tagged as from it, so it counts as delivered by message.
       if (child.oneshot && child.to && status === 'finished' && answer.trim() && !(child.to === MAIN && (child.foreground || joined))) {
         try {
-          await send(sid, { ref: child.ref!, name: child.name, child }, child.to, answer);
+          await send(sid, { ref: child.ref ?? refOf(l0, row ?? child), name: child.name, child }, child.to, answer);
           child = (await list(sid)).find((c) => c.id === childId) ?? child;
-        } catch (e) { child = { ...child!, error: `its reply could not be forwarded: ${(e as Error).message}`.slice(0, 300) }; }
+        } catch (e) { child = { ...child, error: `its reply could not be forwarded: ${errText(e)}`.slice(0, 300) }; }
       }
       deps.onSettle?.(sid, child);
       if (child.foreground || child.reported === subId) return;
@@ -204,19 +212,19 @@ export function createSubagents(deps: SubagentDeps) {
       if (child.sentIn === subId || child.wokenBy) return await report(sid, child, null, true, steers, true);
       await report(sid, child, answer, quiet, steers);
     } catch (e) {
-      if (!/closed|deleted|No such session|no longer exists/i.test((e as Error).message)) console.warn('Pouch subagent watcher:', e);
+      if (!/closed|deleted|No such session|no longer exists/i.test(errText(e))) console.warn('Pouch subagent watcher:', e);
     } finally { tracking.delete(key); }
   }
 
   // force quiet: after a reload, so a report never starts a parent run by itself.
   // byMessage: it sent its work to other agents; say so, without its words.
   async function report(sid: SessionId, child: SubagentRow, answer: string | null, forceQuiet = false, steers: string[] = [], byMessage = false) {
-    const verb = ({ finished: 'finished', failed: 'failed', stopped: 'was stopped by the user', interrupted: 'was interrupted by a page reload (the user can resume it from its card)' } as Partial<Record<SubagentStatus, string>>)[child.status];
+    const verb = VERBS[child.status];
     const l = await list(sid), ref = child.ref ?? refOf(l, find(l, child.id) ?? child);
     const to = Object.keys(child.sent ?? {}).map((r) => label(l, r)).join(', ');
     const body = byMessage && child.sentIn !== child.sub ? `A message from ${child.wokenBy ? label(l, child.wokenBy) : 'another agent'} woke it, and it ended without sending anything; its reply stays in its transcript.`
       : byMessage ? `It delivered its work by message (to ${to || 'other agents'}), so its output is not repeated here.`
-      : child.status !== 'finished' && answer?.trim() ? `Its last output before it ${({ failed: 'failed', interrupted: 'was interrupted' } as Partial<Record<SubagentStatus, string>>)[child.status] ?? 'was stopped'} (work in progress, not a report): ${answer.trim()}`
+      : child.status !== 'finished' && answer?.trim() ? `Its last output before it ${CUT[child.status] ?? 'was stopped'} (work in progress, not a report): ${answer.trim()}`
       : answer?.trim() || (child.status === 'finished' ? '(It gave no answer.)' : '(No answer yet.)');
     const content = `[Subagent report from Pouch, not typed by the user] Subagent "${child.name}" (${ref}) ${verb}${child.error && child.status === 'failed' ? ` (${child.error})` : ''}. Its task: ${child.task.slice(0, 300)}${steerNote(steers)}\n\n${body}` +
       (byMessage ? '' : child.status === 'finished' ? '\n\nUse this report to continue helping the user; mention briefly what it found.' : child.oneshot ? '' : '\n\nIts partial work, if any, may be under ' + scratchOf(child.ns) + '/. Tell the user only if it matters now.');
@@ -267,7 +275,7 @@ export function createSubagents(deps: SubagentDeps) {
     return out;
   }
 
-  async function spawn(sid: SessionId, parentModel: ModelRef | undefined, { task, name, background = true, ns, report: reports = true, mode, files, to }: SpawnArgs, signal?: AbortSignal): Promise<{ child: SubagentRow; text: string }> {
+  async function spawn(sid: SessionId, parentModel: ModelRef | undefined, { task, name, background = true, ns, report: reports = true, mode, files, to }: SpawnArgs, signal?: AbortSignal): Promise<{ child: SubagentRow; ref: Handle; text: string }> {
     if (!task?.trim()) throw new Error('task is empty: describe the self-contained job for the subagent.');
     const oneshot = mode === 'oneshot';
     if (!oneshot && files?.length) throw new Error('files is for mode "oneshot" only; a full subagent reads files itself (give the paths in its task).');
@@ -276,8 +284,9 @@ export function createSubagents(deps: SubagentDeps) {
     let toRef: Handle | null = null;
     if (oneshot && to != null && String(to).trim()) {
       to = asRef(to);
-      toRef = to === MAIN || to === 'main' ? MAIN : refOf(l, find(l, String(to)) ?? ({} as SubagentRow));
-      if (toRef !== MAIN && !find(l, String(to))) throw new Error(`to: no agent "${to}" in this session. Known: ${[`main (${MAIN})`, ...l.map((c) => label(l, refOf(l, c)))].join(', ')}.`);
+      const target = to === MAIN || to === 'main' ? null : find(l, to);
+      if (target === undefined) throw new Error(`to: no agent "${to}" in this session. Known: ${[`main (${MAIN})`, ...l.map((c) => label(l, refOf(l, c)))].join(', ')}.`);
+      toRef = target ? refOf(l, target) : MAIN;
     }
     const attached = oneshot ? await attach(files) : '';
     if (running(l).length >= MAX_RUNNING) throw new Error(`${MAX_RUNNING} subagents are already running in this session, the limit. Wait for a report, or stop one (action "stop"), then spawn again. Running: ${running(l).map((c) => c.name).join(', ')}.`);
@@ -307,11 +316,11 @@ export function createSubagents(deps: SubagentDeps) {
     const low = deps.lowAllowance?.();
     if (background && oneshot) {
       track(sid, child.id, sub.id);
-      return { child: entry, text: `Started one-shot "${n}" (handle ${ref}): one request, no tools${files?.length ? `, with ${files.length} attached file${files.length > 1 ? 's' : ''}` : ''}. Its reply ${toRef ? `goes to ${label(l, toRef)} as a message from it` : 'arrives later as its report'}; do not poll. Join it with "join" when you have nothing else to do.${low ? ` Warning: ${low}` : ''}` };
+      return { child: entry, ref, text: `Started one-shot "${n}" (handle ${ref}): one request, no tools${files?.length ? `, with ${files.length} attached file${files.length > 1 ? 's' : ''}` : ''}. Its reply ${toRef ? `goes to ${label(l, toRef)} as a message from it` : 'arrives later as its report'}; do not poll. Join it with "join" when you have nothing else to do.${low ? ` Warning: ${low}` : ''}` };
     }
     if (background) {
       track(sid, child.id, sub.id);
-      return { child: entry, text: `Started subagent "${n}" (handle ${ref}) in the background. Its report will arrive later as a message; keep helping the user meanwhile and do not poll for it. (List agents with action "list", message it by handle with "message", block until it goes quiet with "join" only when you have nothing else to do, end it with "stop".)${low ? ` Warning: ${low}` : ''}` };
+      return { child: entry, ref, text: `Started subagent "${n}" (handle ${ref}) in the background. Its report will arrive later as a message; keep helping the user meanwhile and do not poll for it. (List agents with action "list", message it by handle with "message", block until it goes quiet with "join" only when you have nothing else to do, end it with "stop".)${low ? ` Warning: ${low}` : ''}` };
     }
     const abort = () => child.abort(ctx).catch(() => {});
     signal?.addEventListener('abort', abort, { once: true });
@@ -323,12 +332,12 @@ export function createSubagents(deps: SubagentDeps) {
     try {
       const done = track(sid, child.id, sub.id).then((): HoldResult => ({ type: 'done' }));
       const r = await Promise.race([done, held]);
-      if (r.type === 'detached') return { child: entry, text: r.note };
+      if (r.type === 'detached') return { child: entry, ref, text: r.note };
       scope(sid).release(MAIN, { type: 'done' }, (h) => h.kind === 'spawn' && h.ids.includes(ref));
       const fin = find(await list(sid), child.id);
       const { answer, steers } = await summary(sid, child.id);
       if (fin?.status !== 'finished') throw new Error(`Subagent "${n}" (${ref}) ${fin?.status ?? 'failed'}${fin?.error ? `: ${fin.error}` : ''}.${steerNote(steers)}${answer ? `\nLast output:\n${answer}` : ''}`);
-      return { child: fin!, text: fin!.sentIn === fin.sub ? `Subagent "${n}" (${ref}) finished; it delivered its work by message.` : `Subagent "${n}" (${ref}) finished:${steerNote(steers)}\n\n${answer}` };
+      return { child: fin, ref, text: fin.sentIn === fin.sub ? `Subagent "${n}" (${ref}) finished; it delivered its work by message.` : `Subagent "${n}" (${ref}) finished:${steerNote(steers)}\n\n${answer}` };
     } finally { signal?.removeEventListener('abort', abort); }
   }
 
@@ -475,7 +484,8 @@ export function createSubagents(deps: SubagentDeps) {
     const STATE: Partial<Record<string, string>> = { finished: 'quiet', stopped: 'stopped', interrupted: 'stopped', failed: 'failed', running: 'running' };
     const out: Joined[] = [];
     for (const ref of refs) {
-      const c = now.find((y) => refOf(now, y) === ref)!;
+      const c = now.find((y) => refOf(now, y) === ref);
+      if (!c) continue; // its session's registry went away meanwhile
       const key = `${c.id}:${c.seq ?? 0}`;
       const text = c.status === 'running' ? (await summary(sid, c.id).catch(() => ({ answer: '' }))).answer
         : results.get(key) ?? (await summary(sid, c.id).catch(() => ({ answer: '' }))).answer;
@@ -538,19 +548,17 @@ export function createSubagents(deps: SubagentDeps) {
   // before submitting; a run ending in between is the one remaining race.
   // A child blocked in `join` is released first: user steering preempts
   // blocking, as it does for main (G10).
-  // out (optional): its .sub is set to the submission, so the page can track
-  // and withdraw it.
-  async function steer(sid: SessionId, ref: unknown, text: string | undefined, out?: { sub?: Submission }) {
+  // Resolves to { note, sub }: sub is the submission, so the page can track and withdraw it.
+  async function steer(sid: SessionId, ref: unknown, text: string | undefined) {
     const l = await list(sid), c = find(l, ref);
     if (!c) throw new Error(`No subagent "${ref}" in this session.`);
     if (!text?.trim()) throw new Error('text is empty.');
     if (c.oneshot) throw new Error(`"${c.name}" is a one-shot: it makes one request and cannot be steered; nothing was sent.`);
     const conv = await childConv(sid, c.id);
     if (c.status !== 'running' || !(await busy(conv))) throw new Error(`"${c.name}" has finished; nothing was sent. Its report went to main's thread.`);
-    if (out) out.sub = await conv.submit({ type: 'input', content: fromUser(text), entry: { kind: STEER_KIND, data: { text } }, whenBusy: 'steer' }, ctx);
-    else await conv.submit({ type: 'input', content: fromUser(text), entry: { kind: STEER_KIND, data: { text } }, whenBusy: 'steer' }, ctx);
+    const sub = await conv.submit({ type: 'input', content: fromUser(text), entry: { kind: STEER_KIND, data: { text } }, whenBusy: 'steer' }, ctx);
     scope(sid).release(refOf(l, c), { type: 'detached', note: `Interrupted: the user wrote to you (their message follows). Join again afterwards if you still need to.` });
-    return `Sent to "${c.name}"; it reads this before its next step.`;
+    return { note: `Sent to "${c.name}"; it reads this before its next step.`, sub };
   }
 
   async function stop(sid: SessionId, ref: unknown) {
@@ -587,7 +595,7 @@ export function createSubagents(deps: SubagentDeps) {
   }
 
   const tool = defineTool({
-    name: 'subagent', label: 'Subagent',
+    name: 'subagent',
     description: 'Run self-contained tasks in subagents (separate Pouch agents with read/write/edit/bash and the bayleaf CLI, but no subagents of their own) while you keep talking to the user, and connect them by messages. ' +
       `action "spawn" starts one and returns its handle (background by default: returns at once; its report arrives later as a message). "list" shows the agents of this session (you are main, ${MAIN}). "message" sends text to one handle (to: "a3"). "join" blocks until the given subagents are quiet and returns each one's last message (fresh, or cached with its age if it was already quiet; it never wakes one: message, then join). "stop" ends one. At most ${MAX_RUNNING} run at once. ${CAPS} Each of their steps costs one request from the daily allowance; mode "oneshot" costs exactly one. Several spawns with background false in one step run in parallel and return together.`,
     parameters: Type.Object({
@@ -610,32 +618,33 @@ export function createSubagents(deps: SubagentDeps) {
       if (args.action === 'spawn') {
         const agent = await api.agent(context);
         const r = await spawn(sid, agent.model, args, context.abortSignal);
-        await api.details({ child: r.child.id, name: r.child.name, ref: r.child.ref!, ...(r.child.oneshot ? { oneshot: true } : {}) }, context);
+        await api.details({ child: r.child.id, name: r.child.name, ref: r.ref, ...(r.child.oneshot ? { oneshot: true } : {}) }, context);
         text = r.text;
       } else if (args.action === 'stop') text = await stop(sid, args.id ?? args.to ?? args.name);
       else if (args.action === 'status') text = await status(sid, args.id ?? args.to ?? args.name);
       else text = await act(args, api, context, { ref: MAIN, name: 'main', child: null }, sid);
-      return { output: [{ type: 'text', text: text! }] }; // act answers every action the schema allows
+      if (text == null) throw new Error(`Unknown action "${args.action}": use spawn, list, message, join, stop or status.`);
+      return { output: [{ type: 'text', text }] };
     },
-  } as ToolRegistration); // label: not in pi-durable's tool type, passed through as before
+  });
 
   // The subagents' trimmed tool (deferred: offered only where modelTools adds it).
   const peerTool = defineTool({
-    name: 'agents', label: 'Agents', deferred: true,
+    name: 'agents', deferred: true,
     description: `Talk to the other agents of your session by handle: main is ${MAIN}, subagents are a2, a3, ... "list" shows them (handle, name, state, task). "message" sends text to one handle (to: "a2"); it arrives between their steps, tagged with your name and handle. "join" blocks until the given subagents are quiet and returns each one's last message (cached if already quiet; it never wakes one: message, then join); use it only when you have nothing else to do. You cannot spawn or stop agents; to stop, finish your reply. ${CAPS}`,
     parameters: Type.Object({
       action: Type.Union([Type.Literal('list'), Type.Literal('message'), Type.Literal('join')]),
       to: ID, ids: JOIN_IDS, timeout: TIMEOUT, text: TEXT,
     }),
     execute: async (args: ToolArgs, api, context) => {
-      if (!owners.has(api.conversationId)) throw new Error('This tool is for subagents; use the subagent tool.');
-      const sid = owners.get(api.conversationId)!.sid;
+      const sid = owners.get(api.conversationId)?.sid;
+      if (sid == null) throw new Error('This tool is for subagents; use the subagent tool.');
       const from = await senderOf(sid, api.conversationId);
       const text = await act(args, api, context, from, sid);
       if (text == null) throw new Error(`Unknown action "${args.action}": use list, message or join.`);
       return { output: [{ type: 'text', text }] };
     },
-  } as ToolRegistration);
+  });
 
   return {
     close() { closing = true; },
