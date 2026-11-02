@@ -223,10 +223,13 @@ function scan(sf, checker) {
     } else if (ts.isAsExpression(n) || ts.isTypeAssertionExpression(n)) {
       const t = n.type;
       const isConst = ts.isTypeReferenceNode(t) && t.typeName.getText(sf) === 'const';
-      const inner = n.expression;
+      let inner = n.expression;
+      while (ts.isParenthesizedExpression(inner)) inner = inner.expression;
       const viaUnknown = (ts.isAsExpression(inner) || ts.isTypeAssertionExpression(inner)) && inner.type.kind === ts.SyntaxKind.UnknownKeyword;
-      const outer = ts.isAsExpression(n.parent) || ts.isTypeAssertionExpression(n.parent);
-      // x as unknown as T counts once, as itself, not as two casts.
+      let up = n.parent;
+      while (ts.isParenthesizedExpression(up)) up = up.parent;
+      const outer = ts.isAsExpression(up) || ts.isTypeAssertionExpression(up);
+      // x as unknown as T counts once, as itself, not as two casts, (x as unknown) as T too.
       if (viaUnknown) found.push({ kind: 'escape', api: 'as unknown as', line: at(n) });
       else if (!isConst && !(t.kind === ts.SyntaxKind.UnknownKeyword && outer)) found.push({ kind: 'escape', api: 'as', line: at(n) });
     } else if (ts.isNonNullExpression(n)) {

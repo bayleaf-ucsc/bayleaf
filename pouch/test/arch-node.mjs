@@ -152,6 +152,8 @@ await test('escapes: casts and non-null assertions only go down, and escapes.jso
   assert.ok(grow('export const b = (x?: string) => x!;').some((e) => /has \d+ `!`, over/.test(e)));
   const dbl = grow('export const c = (x: number) => x as unknown as string;');
   assert.ok(dbl.some((e) => /`as unknown as`, over/.test(e)) && !dbl.some((e) => /`as`, over/.test(e)), 'a double cast counts once, as itself');
+  const paren = grow('export const c = (x: number) => ((x as unknown)) as string;');
+  assert.ok(paren.some((e) => /`as unknown as`, over/.test(e)) && !paren.some((e) => /`as`, over/.test(e)), 'parentheses do not split a double cast');
   assert.deepEqual(grow('export const d = [1, 2] as const;'), [], '`as const` is not an escape');
   // Paying one down fails until the file records it, so it cannot grow back unnoticed.
   const n = countEscapes(tree)['src/graph.ts']?.as ?? 0;
