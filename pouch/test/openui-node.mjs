@@ -48,6 +48,22 @@ const ui = (src) => renderUi(src, { doc, md, inline });
   assert.ok(flat(r.node).some((n) => n.text === 'in the tab'));
   assert.deepEqual(r.errors, ['line 2: Tab: children are a list: write [chart]; shown anyway']);
 }
+// Review findings (#155, Greptile): a program that spends the whole node budget
+// still returns; a chart that cuts says so; small values keep their digits.
+{
+  const full = ui('root = Stack([' + Array.from({ length: 1999 }, () => 'Badge("b")').join(', ') + '])');
+  assert.ok(full && full.node.className === 'oui', 'exactly the budget renders');
+  const over = ui('root = Stack([' + Array.from({ length: 2100 }, () => 'Badge("b")').join(', ') + '])');
+  assert.equal(over, null, 'over the budget: nothing to show, so a code block');
+  const n = 501, labels = JSON.stringify(Array.from({ length: n }, (_, i) => 'd' + i)), vals = JSON.stringify(Array.from({ length: n }, (_, i) => i));
+  const cut = ui(`root = Stack([LineChart(${labels}, [Series("x", ${vals})])])`);
+  assert.ok(cut.errors.some((e) => /showing the first 500 of 501 labels/.test(e)), cut.errors.join('; '));
+  const short = ui('root = Stack([BarChart(["a", "b"], [Series("s", [1])])])');
+  assert.ok(short.errors.some((e) => /Series "s" has 1 values for 2 labels/.test(e)));
+  const small = flat(ui('root = Stack([Stat("Rate", 0.004), LineChart(["a", "b"], [Series("r", [0.001, 0.002])])])').node);
+  assert.ok(small.some((n) => n.textContent === '0.004'), 'small stat keeps its digits');
+  assert.ok(small.some((n) => n.textContent === '0.001 – 0.002'), 'small range keeps its digits');
+}
 // Loops and a missing root: no hang, no crash; nothing to show stays a code block.
 {
   const r = ui('root = Stack([a])\na = Stack([root])');

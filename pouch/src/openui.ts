@@ -161,7 +161,8 @@ export function renderUi(src: string, ctx: UiContext): { node: HTMLElement; erro
   const arr = (v: Value | undefined) => { const x = deref(v); return Array.isArray(x) ? x.map(deref) : null; };
   const obj = (v: Value | undefined) => { const x = deref(v); return x && typeof x === 'object' && !Array.isArray(x) && !(x instanceof Call) && !(x instanceof Ref) ? x : null; };
   const toned = <T extends HTMLElement>(n: T, v: Value | undefined) => { const t = text(v); n.setAttribute('data-tone', t && TONES.has(t) ? t : 'neutral'); return n; };
-  const fmt = (n: number, unit = '') => n.toLocaleString(undefined, { maximumFractionDigits: 2 }) + (unit ? ' ' + unit : '');
+  // Two decimals from 1 up; below that, three significant digits, so 0.004 is not 0.
+  const fmt = (n: number, unit = '') => n.toLocaleString(undefined, Math.abs(n) >= 1 || n === 0 ? { maximumFractionDigits: 2 } : { maximumSignificantDigits: 3 }) + (unit ? ' ' + unit : '');
 
   // A lone component where a list belongs is shown (it is unambiguous), with a
   // note: hosts that follow the spec drop it.
@@ -171,10 +172,18 @@ export function renderUi(src: string, ctx: UiContext): { node: HTMLElement; erro
     if (!a) { warn(call, 'children are a list, like [a, b]'); return []; }
     return a.flatMap((x) => { const n = item(x, call); return n ? [n] : []; });
   }
+  // A chart shows at most MAX_POINTS labels and says so when it cuts.
+  function chartLabels(v: Value | undefined, call: Call) {
+    const all = arr(v) ?? [];
+    if (all.length > MAX_POINTS) warn(call, `showing the first ${MAX_POINTS} of ${all.length} labels`);
+    return all.slice(0, MAX_POINTS).map((x) => text(x) ?? '');
+  }
   function series(v: Value | undefined, call: Call, n: number) {
     return (arr(v) ?? []).flatMap((s) => {
       if (!(s instanceof Call) || s.name !== 'Series') { warn(call, 'series must be Series(name, values)'); return []; }
-      const values = (arr(s.args[1]) ?? []).slice(0, MAX_POINTS).map((x) => (typeof x === 'number' && Number.isFinite(x) ? x : null));
+      const raw = arr(s.args[1]) ?? [];
+      if (raw.length !== n) warn(call, `Series "${text(s.args[0]) ?? ''}" has ${raw.length} values for ${n} labels`);
+      const values = raw.slice(0, MAX_POINTS).map((x) => (typeof x === 'number' && Number.isFinite(x) ? x : null));
       return [{ name: text(s.args[0]) ?? '', values: Array.from({ length: n }, (_, i) => values[i] ?? null) }];
     });
   }
@@ -237,7 +246,7 @@ export function renderUi(src: string, ctx: UiContext): { node: HTMLElement; erro
       return box;
     },
     BarChart: (a, c) => {
-      const labels = (arr(a[0]) ?? []).slice(0, MAX_POINTS).map((x) => text(x) ?? ''), unit = text(a[2]) ?? '', whole = deref(a[3]) === true;
+      const labels = chartLabels(a[0], c), unit = text(a[2]) ?? '', whole = deref(a[3]) === true;
       const ss = series(a[1], c, labels.length);
       if (!labels.length || !ss.length) return warn(c, 'needs labels and Series');
       const max = Math.max(...ss.flatMap((s) => s.values.map((v) => Math.abs(v ?? 0))), 0) || 1;
@@ -251,7 +260,7 @@ export function renderUi(src: string, ctx: UiContext): { node: HTMLElement; erro
       return el('figure', 'oui-chart', legend(ss.map((s) => s.name)), ...rows, whole ? el('div', 'oui-label', 'Total: ' + fmt(total, unit)) : null);
     },
     LineChart: (a, c) => {
-      const labels = (arr(a[0]) ?? []).slice(0, MAX_POINTS).map((x) => text(x) ?? ''), unit = text(a[2]) ?? '';
+      const labels = chartLabels(a[0], c), unit = text(a[2]) ?? '';
       const ss = series(a[1], c, labels.length);
       const all = ss.flatMap((s) => s.values.filter((v): v is number => v != null));
       if (labels.length < 2 || !all.length) return warn(c, 'needs at least two labels and a Series');
@@ -298,5 +307,9 @@ export function renderUi(src: string, ctx: UiContext): { node: HTMLElement; erro
   try { node = item(new Ref(entry), null); } catch (e) { warn(null, message(e)); node = null; }
   if (!node) return null;
   if (!stmts.has('root')) errors.unshift(`no root statement: showing ${entry}`);
-  return { node: el('div', 'oui', node), errors };
+  // The wrapper is outside the node budget: a program that spends it all still returns.
+  const wrap = doc.createElement('div');
+  wrap.className = 'oui';
+  wrap.append(node);
+  return { node: wrap, errors };
 }
