@@ -256,7 +256,7 @@ The add-on realignment (LANGUAGE.md "Add-on", README "Add-ons"): one registry, o
 - AO1 ok: a person sees every add-on in Settings > Add-ons with what uses it, its size and state (or "not available here: reason"), and installs, stops or removes it; Make available offline shows the total and asks once for the asked ones (`test/addons-browser.mjs`, `test/batchH-browser.mjs`).
 - AO2 ok: small add-ons from Pouch's own origin install on first use without a question and say so (PD5; `test/media-browser.mjs`).
 - AO3 ok: an agent whose tool needs an asked add-on gets "not installed: pdf.js (40 MiB). Run `addons install pdfjs`; the user will be asked." at once, with no sheet; its `addons install` opens the sheet ("main (a1) asks to install pdf.js ... Only you can approve") and a Cancel returns "denied by the user: nothing was installed (pdf.js)." (`test/addons-browser.mjs`, a build whose pdf.js pin claims 40 MiB).
-- AO4 ok: every install is a /task entry (kind `install`); Stop through ctl, the tray or Settings keeps the verified prefix and installing again resumes after a reload (`test/batchH-browser.mjs`, `test/addons-node.mjs`).
+- AO4 ok: every install is a /task entry (kind `install`); Stop through ctl, the tray or Settings keeps the stored prefix and installing again resumes after a reload (`test/batchH-browser.mjs`, `test/addons-node.mjs`).
 - AO5 ? : real DuckDB-Wasm and Parakeet add-ons (asked: 36 MiB from this origin; about 1.2 GB from the gateway, CC-BY-4.0) are on other branches; the recipe is README "Add-ons: the recipe".
 
 ## Release slices

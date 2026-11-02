@@ -1082,7 +1082,7 @@ shield says "Transformers.js: in this browser, nothing sent". (`node build.mjs -
   (`src/sha256.ts`, a 60-line SHA-256 whose state survives a reload, tested against NIST
   vectors and `crypto.subtle`), so the 1.09 GB weights are never in memory at once. Each
   chunk is kept in Cache Storage as it is hashed, with the hash state after it: Stop (or
-  a closed tab) keeps the verified prefix, and the next install continues there. A
+  a closed tab) keeps the stored prefix (each file's whole hash is checked at its end), and the next install continues there. A
   file whose whole hash differs from the lock is refused by name and dropped. The
   gateway's catalog (license, distribution, qualification) is shown, never trusted for
   bytes; `deploy.mjs` checks it agrees with the lock.

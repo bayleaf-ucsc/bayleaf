@@ -40,9 +40,9 @@ Both are one asked add-on (README "Add-ons"): installed only after the user appr
 Weights are not in the artifact (issue #121). The page fetches the LFM3 files from
 `https://api.bayleaf.dev/hf/onnx-community/LFM3-1.7B-ONNX/resolve/<commit>/<path>` in
 32 MiB byte ranges and checks each whole file against `models.lock.json` (pinned into the
-page by the build); `src/models.ts`, README "Transformers.js". `node build.mjs` always
-builds the Transformers.js code (`--no-models` omits the provider; `--with-models` is accepted and
-does nothing more) and needs no model files. Shape of the build:
+page by the build); `src/models.ts`, README "Transformers.js". `node build.mjs` builds the
+Transformers.js code and needs no model files; `--no-models` builds without the code and the
+provider, and `--with-models` is accepted and does nothing more. Shape of the build:
 
 | File | Count | Size |
 |---|---:|---|
@@ -72,8 +72,8 @@ The page asks before downloading (an approval sheet naming size, storage, licens
 origin).
 
 Weights that earlier builds served from pouch.bayleaf.dev's `models/` path (now 404) are
-migrated on first load: the page reassembles the cached parts, checks them against the
-lock and moves them (README "Transformers.js").
+not migrated: the first load deletes their cache (`pouch-local-models`), so LFM3 must be
+installed again (`src/interface/boot.ts`).
 
 ## pdf.js add-on
 
