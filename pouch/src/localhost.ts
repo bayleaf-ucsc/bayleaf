@@ -186,7 +186,12 @@ export function applyProfile(context: TranscriptContext): TranscriptContext {
   const messages = context.messages.map((m) => m.role === 'system' && m.toolsAdded?.length
     ? { ...m, toolsAdded: m.toolsAdded.filter((t) => !LOCALHOST_DROP_TOOLS.includes(t.name)) } : m);
   const first = messages.findIndex((m) => m.role === 'system');
-  if (first >= 0 && messages.some((m) => m.role === 'system' && m.toolsAdded?.length)) messages[first] = { ...messages[first], content: (messages[first] as SystemMessage).content + '\n\n' + LOCALHOST_NOTE } as SystemMessage;
+  const sys = messages[first];
+  if (sys?.role === 'system' && messages.some((m) => m.role === 'system' && m.toolsAdded?.length)) {
+    // pi-ai allows text parts as well as a string.
+    const content: SystemMessage['content'] = typeof sys.content === 'string' ? sys.content + '\n\n' + LOCALHOST_NOTE : [...sys.content, { type: 'text', text: LOCALHOST_NOTE }];
+    messages[first] = { ...sys, content };
+  }
   return { ...context, messages };
 }
 export function stepsThisTurn(messages: Message[]) {

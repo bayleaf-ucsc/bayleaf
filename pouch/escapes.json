@@ -34,7 +34,7 @@
   "src/local/engine.ts": {"as": 3, "!": 12},
   "src/local/provider.ts": {"as": 2},
   "src/local/worker.ts": {"as": 5, "!": 3},
-  "src/localhost.ts": {"as": 11, "!": 2},
+  "src/localhost.ts": {"as": 9, "!": 2},
   "src/main.ts": {"as": 1},
   "src/markdown.ts": {"as": 10, "!": 5},
   "src/media.ts": {"as": 29, "!": 17},
