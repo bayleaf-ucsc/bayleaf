@@ -63,6 +63,8 @@ try {
   // A Follow-up while main works: Alt+Enter with the default Steer setting.
   await page.fill('#input', 'Follow-up: once counter has reported, list the agents in this session with their handles, in one short line each.');
   await page.press('#input', 'Alt+Enter');
+  // The follow-up is a write to main's in file, held by the harness side: wait for its row.
+  await page.waitForSelector('#tray-list .tray-row[data-kind="followup"]', { timeout: 2000 }).catch(() => {});
   const tray = await page.evaluate(() => [...document.querySelectorAll('#tray-list .tray-row')].map((r) => `${r.dataset.kind}: ${r.querySelector('.tray-origin')?.textContent ?? ''}`));
   console.log('tray after Alt+Enter:', JSON.stringify(tray));
   const heldFollowUp = tray.some((t) => /^followup: Follow-up · /.test(t));
