@@ -72,7 +72,7 @@ export interface QueuesRegion {
 }
 
 export function createQueuesRegion(app: App): QueuesRegion {
-  // ── Composer (composer.js) ──────────────────────────────────────────
+  // ── Composer (composer.ts) ──────────────────────────────────────────
   const busy = () => !!app.state.view?.busy;
   const PLACEHOLDER = 'Ask Pouch. @ for files, $ for skills, / for commands';
   const attachments = createAttachments({ vfs: app.state.vfs as AttachmentVfs, composer: $('composer'), input: $('input'), picker: $<HTMLInputElement>('attachment-picker'), button: $('attach-file'), chips: $('attachment-chips'), warning: $('attachment-warning'), status: app.state.status });
@@ -83,7 +83,7 @@ export function createQueuesRegion(app: App): QueuesRegion {
   // pi-durable steer, tracked here so Stop can take it back. A follow-up is held
   // here (one slot per session; queuing is the strategy, not the name) and starts
   // the next turn once the model's turn ends, before any wake from an agent
-  // (subagents.js userFirst). Input is never dropped: it is steered, held as a
+  // (subagents.ts userFirst). Input is never dropped: it is steered, held as a
   // follow-up, paused after Stop, or refused with a reason.
   const followUps = new Map<string, FollowUp>(); // by session key
   const steers = new Map<string, SteerItem[]>(); // by session key

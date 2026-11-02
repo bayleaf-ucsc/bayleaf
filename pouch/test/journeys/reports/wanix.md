@@ -82,7 +82,7 @@ exclude the 11 MB download on a cold phone.
   python, package managers), at ~11 MB extra and seconds of boot, but no network without a relay,
   so package managers still fail under the single-peer CSP. The remote BayLeaf sandbox already
   covers expressive work.
-- **Unify `/work` as a namespace?** This is the strongest conceptual fit. Pouch's `src/vfs.ts`
+- **Unify `/work` as a namespace?** This is the strongest conceptual fit. Pouch's `src/vfs.js`
   already "stitches one tree from several stores" (OPFS `/work`, File System Access `/mnt/*`,
   memory fallback). Wanix's bind/union model, with `#web/opfs`, `web/fsa`, `idbfs`, `caches`
   (model files in Cache Storage), `httpfs`, and 9P import (a remote sandbox as a mount), is the

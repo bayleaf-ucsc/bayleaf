@@ -101,7 +101,7 @@ export function createSubagents(deps: SubagentDeps) {
   const running = (l: SubagentRow[]) => l.filter((c) => c.status === 'running');
   // A submission the page can await without a pi-durable context (drive()).
   const waitable = (sub: Submission): Waitable => ({ id: sub.id, wait: () => sub.wait(ctx) });
-  // Handles: a2, a3, ... in spawn order (graph.js refOf; rows made before graphs have none).
+  // Handles: a2, a3, ... in spawn order (graph.ts refOf; rows made before graphs have none).
   const find = (l: SubagentRow[], ref: unknown) => l.find((c) => c.id === ref || c.name === ref || refOf(l, c) === asRef(ref) || c.name === slug(ref));
   const label = (l: SubagentRow[], ref: Handle | undefined) => { if (ref === MAIN) return `main (${MAIN})`; const c = l.find((x) => refOf(l, x) === ref); return c ? `${c.name} (${ref})` : ref as Handle; };
   // Whether an agent of the session is in a model run right now.
@@ -235,7 +235,7 @@ export function createSubagents(deps: SubagentDeps) {
     if (!quiet && !waitedOn) deps.onReport?.(sid, waitable(sub), child);
   }
 
-  // After a reload (agent.js aborted every live run, `aborted`): a child that
+  // After a reload (agent.ts aborted every live run, `aborted`): a child that
   // was running is interrupted until the user resumes it; one whose
   // submission settled before its report was posted reports now. Both
   // reports are quiet writes (deduplicated by request id): no request spent.
@@ -335,7 +335,7 @@ export function createSubagents(deps: SubagentDeps) {
   // Detach main's blocking calls (G10, G12): each returns at once, the
   // subagents it waited on keep running, and a foreground child reports
   // later like a background one. input: the user's message, a pi-durable
-  // input draft (agent.js builds it) placed at main's next step; without it,
+  // input draft (agent.ts builds it) placed at main's next step; without it,
   // the user pressed Background. Never stops anything.
   async function detach(sid: SessionId, { text, input }: { text?: string; input?: InputSubmissionDraft } = {}): Promise<boolean | Submission> {
     const held = scope(sid).held(MAIN);
@@ -444,7 +444,7 @@ export function createSubagents(deps: SubagentDeps) {
   // nothing queued) with a result newer than the joiner's last message to it,
   // and return each one's last message. Already quiet: at once, cached, with
   // its age. Never wakes anyone. Several joiners of one target are released
-  // in the same tick (graph.js check) with the same text (results cache).
+  // in the same tick (graph.ts check) with the same text (results cache).
   async function join(sid: SessionId, from: Sender, ids: unknown, timeout: unknown, signal?: AbortSignal) {
     const want = (Array.isArray(ids) ? ids : [ids]).filter((x) => x != null && String(x).trim()).map(asRef);
     if (!want.length) throw new Error('ids is empty: give the subagent handles to join (action "list" shows them).');
@@ -642,7 +642,7 @@ export function createSubagents(deps: SubagentDeps) {
     tool, peerTool, list, resume, spawn, message, steer, stop, status, summary, childConv, detach, notify, busyOf,
     // What main (or a child ref) is blocked on: [{ kind, ids, since }].
     blocked: (sid: SessionId, ref: Handle = MAIN) => scope(sid).held(ref),
-    // The user wrote to main: the message caps start over (graph.js).
+    // The user wrote to main: the message caps start over (graph.ts).
     newTurn: (sid: SessionId) => scope(sid).newTurn(),
     refOf: (l: SubagentRow[], c: SubagentRow) => refOf(l, c), asRef,
     // The child behind a conversation id, if it is one: { sid, id }.

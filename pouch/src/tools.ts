@@ -32,7 +32,7 @@ export const CWD = '/work';
 
 // just-bash's browser build lacks these, or (gzip family) would call our
 // zlib stub and throw; leave them out so the shell says "command not found".
-// zip, unzip and tar come back as Pouch's own commands (archive.js).
+// zip, unzip and tar come back as Pouch's own commands (archive.ts).
 const MISSING = new Set(['tar', 'yq', 'xan', 'sqlite3', 'python', 'python3', 'js-exec', 'node', 'gzip', 'gunzip', 'zcat', 'curl']);
 export const COMMANDS = getCommandNames().filter((c) => !MISSING.has(c)) as CommandName[];
 
@@ -126,7 +126,7 @@ export function oneFinalNewline(content: string): [string, boolean] {
 // The `bayleaf` command's hooks pass through (src/bayleaf-cli.ts):
 // bayleafCredential(), approveEgress(request, caller) (absent: every send is
 // denied) and onEgress(event, caller). Each bash call also lists what it sent
-// in its result. `caller` is the calling conversation (agent.js toTool), so
+// in its result. `caller` is the calling conversation (agent.ts toTool), so
 // the host can tell a subagent from the main agent; calls may run at once.
 // One model message can carry several calls, and they run concurrently: two
 // edits of one file would both read the original and the last write would
@@ -304,7 +304,7 @@ function isSvg(p: string, bytes: Uint8Array) {
 }
 // One text line per path, then the images in the same order. A path that is not
 // a raster image is refused on its line; if none could be sent the call fails.
-// Returns { text, images } (agent.js toTool turns it into text and image blocks).
+// Returns { text, images } (agent.ts toTool turns it into text and image blocks).
 // signal: Stop skips the paths not yet read or prepared.
 export async function lookAt(paths: unknown, fs: Pick<IFileSystem, 'stat' | 'readFileBuffer'>, prepare: (bytes: Uint8Array) => Promise<PreparedImage>, signal?: AbortSignal): Promise<LookOutput> {
   if (!Array.isArray(paths) || !paths.length) throw new Error('Give look at least one image path in `paths`.');
@@ -559,7 +559,7 @@ export function createTools(vfs: ToolsVfs, Type: typeof Typebox, bashOptions: Pa
 
   // Pixels reach the model only through this tool, never from read: sending an
   // image is an explicit, countable act the transcript shows (JOURNEYS AG1).
-  // opts.seesImages is false for a text-only model (agent.js toTool): a plain
+  // opts.seesImages is false for a text-only model (agent.ts toTool): a plain
   // refusal, never a silent send or a silent drop.
   const prepare = hooks.prepareImage ?? prepareImageSized;
   const look = {

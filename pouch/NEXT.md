@@ -16,17 +16,48 @@ qualification rework below replaces them.
 
 ## TypeScript migration (#143's step 2)
 
-The trust boundaries are build checks (`arch.mjs`, README "Architecture"). Convert to
-TypeScript, boundaries first:
-- Type the trust boundaries: `src/sealed.ts` (client handle, `sealedFetch`),
-  `src/bayleaf-api.ts`, the egress modules in `NETWORK`, and `src/egress.ts` consent.
-- Give each region's returned object an interface (`EditingRegion`, ...) and `app` a type
-  composed of them; the getters and setters show which state crosses regions, a list to
-  shrink (`state.js` cells such as `agent`, `client`, `view` written from several regions).
-- Keep `arch.mjs` on TypeScript's parser (`.ts` sources too), and keep `node build.mjs`
-  the one command: esbuild strips types; `tsc --noEmit` as a separate check.
-- Then retire the `app` service locator where a region needs only two or three
-  functions: pass them in explicitly.
+Done (2026-11-02): every source under `src/` is strict TypeScript, checked by `tsc --noEmit`
+in `node build.mjs` (two projects: the page, and the worker entries on the WebWorker
+library); no behavior changed, since every bundle matches the last JavaScript build apart
+from module paths. The trust boundaries are typed in `src/trust.ts` (egress, Sealed
+attestation and the opaque `SealedHandle`, account-plane replies, the control plane's
+`Authority`/`CtlCommand`/`InMessage`, namespace binds), as plain data the trusted core can take
+over one boundary at a time; `FileServer` (`src/ns/namespace.ts`) is the file server's
+contract. Each region declares its interface (`EditingRegion`, ...) and `App`
+(`src/interface/app.ts`) composes them. `arch.mjs` adds two rules: `exact` (no `any` in
+trust-boundary modules) and `contract` (types-only modules, imported only as types). No
+explicit `any` is left in `src/`.
+
+Next:
+- Shrink the escape hatches: 585 `as` casts, 461 non-null assertions, 35 `as unknown as`.
+  A ratchet would hold the line: a node test that counts them per module against a
+  committed baseline and fails when a count grows (lowering the baseline as they go).
+- Retire the `app` service locator where a region needs only two or three functions:
+  pass them in explicitly.
+- Shrink the cross-region accessor cells (the `get`/`set` pairs in region interfaces, such
+  as the `state.ts` cells `agent`, `client` and `view`, written from several regions).
+- Reconcile the type mismatches the migration papered over with casts: `SessionId` (string)
+  against pi-durable's numeric `ConversationId` across `src/ns/watch.ts` and the harness
+  region (legacy numeric ids may never match a watch key); `FileServer.writeFile`'s
+  `Promise<unknown>` receipt against just-bash's `IFileSystem` (one cast at `new Bash`);
+  `Allowance.resetsAt` as `Date` (usage) against `string | number` (control plane).
+
+Possible bugs the types surfaced (not fixed in the migration, which changed no behavior):
+- `src/ns/watch.ts`: `deps.busy(...).catch` throws when the harness answers a plain `false`
+  (no agent open) instead of a promise.
+- `src/media.ts`: `ffmpeg -h filter=scale` returns a help shape without `flags`, so
+  `a.flags.has('filters')` throws a TypeError after ffmpeg answered.
+- `src/interface/session-list.ts`: removing a model as the user (not an agent) asks
+  "undefined asks to remove ...".
+- `src/subagents.ts`: `label()` returns an undefined handle as is, so a wake reads "A message
+  from undefined woke it".
+- `src/localhost.ts`: `applyProfile` appends `LOCALHOST_NOTE` to system content assuming a
+  string; array content becomes "[object Object]".
+- `src/interface/harness.ts`: `childByRef`'s fallback compares a numeric registry id with a
+  string ref, so it never matches (`src/interface/commands.ts` passes the numeric id when the
+  child is gone).
+- `src/markdown.ts`: inline code such as `https:443` looks like a path but parses as an
+  external target, and `ctx.kind(undefined)` is called on it.
 
 ## Qualification rework
 

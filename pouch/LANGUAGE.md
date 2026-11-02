@@ -105,8 +105,9 @@ What an agent can see is what it can touch; namespaces do not govern the network
 **Interface.** How a person perceives and acts on sessions, threads, agents and the
 workspace: the Pouch page. *Open:* name the agent-facing counterpart (tools and /task
 files, through which agents perceive the same things): "Surface", "Tools", or nothing.
-In code, the Interface is `src/main.ts` composing its **regions** (`src/interface/*.js`,
-README "Architecture"); a region reaches another only through its interface on `app`.
+In code, the Interface is `src/main.ts` composing its **regions** (`src/interface/*.ts`,
+README "Architecture"); a region reaches another only through its interface on `app`,
+whose type `App` composes the regions' interfaces.
 
 **Egress module.** A module allowed to use the network, each for one stated reason (Sealed
 ciphertext, the BayLeaf API account plane, the `bayleaf` command, Localhost, hash-checked
@@ -117,6 +118,10 @@ API (`arch.mjs`). Distinct from egress *consent* (`src/egress.ts`): which reques
 **Core.** The modules that work without a page: files, namespaces, storage, providers and
 sandboxed runtimes (`CORE` in `arch.mjs`). The core never imports the Interface; it is what
 the trusted core of #143 would replace, one boundary at a time.
+
+**Contract.** A types-only module stating what crosses a boundary (a worker's messages, the
+trust-boundary data in `src/trust.ts`, the `App` the regions share): no code, imported only
+as types, so it may cross a seam but never a layer (`CONTRACTS` in `arch.mjs`).
 
 **Show.** The agent's act of putting a file or folder in front of the person (bash
 `show <path>`, `src/open-cli.ts`). Its counterpart is **Open**, the person's act (the
@@ -160,7 +165,7 @@ appears outside its own session view, it is prefixed with the session title
 | "lane", "Sealed lane", "Local lane", "Local: ..." | Provider: **BayLeaf Sealed**, **Transformers.js**; picker groups by provider | interface, harness notes, docs; CSS `--provider-sealed`, `--provider-tjs` |
 | "Queue", "Queued · after this turn" | **Follow-up**, "Follow-up · after this turn"; send mode value `followup` | split button, menu, setting, tray, announcements |
 | "sessions of this scope" (agent-facing) | "agents of this session", "by handle" | `agents`/`subagent` tool text, `GRAPH_GLOSS`, errors |
-| profiles implicit in agent.js, subagents.js, local/ | `src/profiles.ts`: `PROFILES`, `profileOf()`, the transformersjs recipe (moved byte for byte; values checked identical) | subagents.js and local/provider.js read it |
+| profiles implicit in agent.js, subagents.js, local/ | `src/profiles.ts`: `PROFILES`, `profileOf()`, the transformersjs recipe (moved byte for byte; values checked identical) | `src/subagents.ts` and `src/local/provider.ts` read it |
 | pi-durable "conversation"/"session" read as a Pouch session | anti-corruption table at the top of `src/agent.ts` (conversation = Thread storage, whenBusy steer = Steer, held input = Follow-up) | `src/agent.ts` |
 | sidebar "Subagents of ..." | "Agents in ...", each "Agent scout (a2), a subagent of main" | `src/sessions.ts` |
 | a subagent's approval sheet "subagent x · session: T" | "T › x (subagent)" | `src/egress.ts` |
@@ -189,7 +194,7 @@ Deliberately left:
   breaks stored model ids and caches for no reader's benefit.
 - Storage keys (`conversation:<sid>`, database names) and pi-durable's own words inside
   `src/agent.ts` and `src/subagents.ts`, behind the anti-corruption table.
-- `graph.js` keeps `createScope`/`MAX_SCOPE_MESSAGES` as code names for one session's
+- `src/graph.ts` keeps `createScope`/`MAX_SCOPE_MESSAGES` as code names for one session's
   routing state.
 - The API's own "plaintext lane" (an api.bayleaf.dev term) keeps its wording.
 
@@ -214,4 +219,5 @@ Deliberately left:
 - 2026-10-31: at most one Workspace; starts at zero; Erase all returns to zero.
 - 2026-11-01: Control plane adopted (Adam): the file tree is the authority for everything that acts; the Interface is one client among several.
 - 2026-11-01: Show adopted (Adam): the agent shows, the person opens; show opens unless the person is busy, else offers (provisional).
-- 2026-11-01: Egress module, Core and Interface regions built with #144: `src/egress.ts` holds consent, `NETWORK` in `arch.mjs` inventories the egress modules, and the build checks both.
+- 2026-11-01: Egress module, Core and Interface regions built with #144: `src/egress.js` holds consent, `NETWORK` in `arch.mjs` inventories the egress modules, and the build checks both.
+- 2026-11-02: Pouch's sources are strict TypeScript (#143's step 2), with no change in behavior; trust-boundary data and worker messages are typed **contracts** the build checks.

@@ -1,7 +1,7 @@
 // Agent graphs (JOURNEYS G1-G12): the routing state of one session, its
 // main agent and its subagents, which message each other by handle (main is
 // a1, subagents a2, a3, ... in spawn order; LANGUAGE.md "Handles"). Pure
-// bookkeeping, no pi-durable: subagents.js does the delivery and calls in here to
+// bookkeeping, no pi-durable: subagents.ts does the delivery and calls in here to
 //
 // - admit a message under the caps (per user turn: the whole session, and each
 //   pair of agents in either direction), so a graph cannot ping-pong away

@@ -3,10 +3,10 @@
 // per-session grants behind "Allow for this session".
 //
 // A grant is (session id, service), kept in settings under grantsKey(sid) as
-// a list of services; sessions.js deletes it with the session. Approvals
+// a list of services; sessions.ts deletes it with the session. Approvals
 // queue: one sheet at a time, in the order the requests asked.
 //
-// Tool output carries two durable traces (tools.js, bayleaf-cli.js):
+// Tool output carries two durable traces (tools.ts, bayleaf-cli.ts):
 //   [left the pouch: <audience>; <audience>]        one per request, stderr
 //   [this call sent data outside the pouch: <cmds>] the bash result's last line
 // egressOf(output) reads them back, so a badge survives reload.
@@ -89,7 +89,7 @@ export function createEgress(deps: EgressDeps = {}): Egress {
     });
   }
 
-  // The hook bayleaf-cli.js awaits. Resolves true only on an explicit allow.
+  // The hook bayleaf-cli.ts awaits. Resolves true only on an explicit allow.
   // agentName: the subagent asking, or none for the main agent. A session
   // grant covers the session's subagents too. asker: who else asks, named on
   // the sheet instead of a session (the terminal: sid null, so no grant applies).

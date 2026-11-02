@@ -101,7 +101,7 @@
   button.icon.danger { color: var(--bad); border-color: transparent; }
   button.icon.danger:hover { background: var(--bad-soft); color: var(--bad); }
 
-  /* Layout: sessions | chat | one panel | icon rail. Widths come from layout.js. */
+  /* Layout: sessions | chat | one panel | icon rail. Widths come from layout.ts. */
   #app { height: 100%; display: grid; grid-template-rows: minmax(0, 1fr); grid-template-columns: 0 minmax(0, 1fr) var(--panel-w, 0) var(--rail-w); }
   #app.side-open { grid-template-columns: var(--side-w, 260px) minmax(0, 1fr) var(--panel-w, 0) var(--rail-w); }
   #sidebar { grid-column: 1; grid-row: 1; display: none; flex-direction: column; min-width: 0; min-height: 0; position: relative; background: var(--side); border-right: 1px solid var(--line); }
@@ -404,7 +404,7 @@
   #composer-toolbar > button.icon { width: 2.75rem; height: 2.75rem; } /* 44px targets everywhere, as before */
   /* One Usage button, two readings: the allowance left (src/usage.ts renderMeter)
      and, once the session holds something, about how many tokens the next request
-     carries (src/context.ts, main.js renderCtx). Each reading has its own thin bar
+     carries (src/context.ts, src/interface/queues.ts renderCtx). Each reading has its own thin bar
      along its foot and its own warn state; the words (title, aria-label, Usage
      panel) say which, never the color alone. */
   #composer-usage { width: auto !important; padding: 0 .45rem; gap: .3rem; display: inline-flex; align-items: center; }
@@ -748,7 +748,7 @@
   #app.side-overlay #sidebar { position: fixed; z-index: 35; top: 0; bottom: 0; left: 0; width: var(--side-w, 260px); box-shadow: 0 0 24px var(--shadow); }
   #app.side-overlay #side-handle { display: none; }
   /* The overlaid sidebar gets the drawer's scrim over the chat column, visual
-     only: a click there closes the sidebar and still lands (layout.js). */
+     only: a click there closes the sidebar and still lands (layout.ts). */
   #app.side-overlay #backdrop { position: fixed; inset: 0 calc(var(--panel-w, 0px) + var(--rail-w, 0px)) 0 0; z-index: 34; background: var(--backdrop); pointer-events: none; }
   /* Trust panel: verdicts first, hashes behind Details, mounts stacked (critique 10). */
   #trust .facts-more summary { cursor: pointer; font-family: inherit; font-size: .82rem; }

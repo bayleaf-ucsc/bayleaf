@@ -204,7 +204,7 @@ cache headers. README "Install and the offline copy" has the policy.
 - `deploy.mjs` verified the page, `SHA256SUMS`, 7 shell files and 24 runtime parts
   (pdf.js, libav.js with its webcodecs-avf build and the hosted LGPL sources, the
   Transformers.js runtime), byte-exact and immutable.
-- Includes the trust-boundary split of `src/main.ts` (#144).
+- Includes the trust-boundary split of `src/main.js` (#144).
 - Playtested on Mac Chrome; on a Pixel 10 Pro, in-browser LFM3 froze the device and is
   now refused on phones and tablets. Not verified: Firefox and Safari end to end.
 

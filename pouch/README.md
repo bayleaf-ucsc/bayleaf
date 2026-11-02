@@ -24,11 +24,13 @@ cd pouch && npm ci && node build.mjs   # writes dist/pouch.html and prints its S
 python3 -m http.server 8742 --directory dist   # or save the file and open it from disk
 ```
 
-Edit `pouch.html` (markup, styles, CSP) and `src/`. `build.mjs` first checks the trust
-boundaries and module structure (`arch.mjs`, "Architecture" below), then bundles `src/main.ts`
-with its dependencies, pinned by `package-lock.json`, into the page's one inline script
-and stamps the Content-Security-Policy with its hash. `node build.mjs --watch` rebuilds
-on changes to `src/`. Serve it from `localhost` or HTTPS: opened from disk, browsers give
+Edit `pouch.html` (markup, styles, CSP) and `src/` (TypeScript). `build.mjs` first checks the
+trust boundaries and module structure (`arch.mjs`) and the types (`tsc`, "Architecture"
+below), then bundles `src/main.ts` with its dependencies, pinned by `package-lock.json`, into
+the page's one inline script and stamps the Content-Security-Policy with its hash.
+`node build.mjs --watch` rebuilds on changes to `src/` without the type check (run
+`npm run typecheck` alongside). The node tests import the `.ts` sources directly, so they
+need a Node that strips types (22.18 or later). Serve it from `localhost` or HTTPS: opened from disk, browsers give
 the page no origin-private file system, so `/work` falls back to memory.
 
 ## Sending while Pouch works
@@ -281,12 +283,14 @@ deliberate violation of each rule failing and the real tree passing.
 
 | Rule | What the build checks | Allowed |
 |---|---|---|
-| egress | network APIs (`fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `WebTransport`, `RTCPeerConnection`, `sendBeacon`, `importScripts`, `Worker`, `import()` of a non-bundled path) appear only in egress modules, each allowed only its own APIs | `src/sealed.ts` (EHBP ciphertext to the attested enclave), `src/bayleaf-api.ts` (account plane: claim, allowance, Campus Pass, Sealed model list; metadata only), `src/bayleaf-cli.ts` (the agent's `bayleaf` command, approved through `egress.js`), `src/localhost.ts` (Localhost provider), `src/models.ts` and `src/assets.ts` (hash-checked weights and runtimes), `src/offline.ts` and `sw.js` (the offline copy, this origin); `Worker` only in `src/run.ts`, `src/pdf.ts`, `src/media.ts` and `src/local/engine.ts` (bundled, hash-checked code from `blob:` URLs) |
+| egress | network APIs (`fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `WebTransport`, `RTCPeerConnection`, `sendBeacon`, `importScripts`, `Worker`, `import()` of a non-bundled path) appear only in egress modules, each allowed only its own APIs | `src/sealed.ts` (EHBP ciphertext to the attested enclave), `src/bayleaf-api.ts` (account plane: claim, allowance, Campus Pass, Sealed model list; metadata only), `src/bayleaf-cli.ts` (the agent's `bayleaf` command, approved through `egress.ts`), `src/localhost.ts` (Localhost provider), `src/models.ts` and `src/assets.ts` (hash-checked weights and runtimes), `src/offline.ts` and `sw.js` (the offline copy, this origin); `Worker` only in `src/run.ts`, `src/pdf.ts`, `src/media.ts` and `src/local/engine.ts` (bundled, hash-checked code from `blob:` URLs) |
 | html | no first-party code turns a string into HTML (`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `srcdoc`, `document.write`, `DOMParser`, ...), as a property or an `el()` prop | `viewer.html` only ("HTML reports") |
 | sealed | only `src/sealed.ts` imports `tinfoil` or reaches into the client (`secureClient`, `openAIOptions`); checked in the sources and in esbuild's metafile | `src/sealed.ts` |
 | cdn | no third-party CDN URL in the assembled page (`assertNoCdn`, as for runtimes) | URLs only compared against, never fetched (the Sigstore issuer the Tinfoil SDK checks) |
+| exact | no `any` in a trust-boundary module (`EXACT` in `arch.mjs`): where data crosses a boundary, its type is the claim an auditor reads | `src/trust.ts`, `src/egress.ts`, `src/ns/namespace.ts`, `src/ns/control.ts`, the egress modules and `src/sealed.ts` |
 | layers | the core (files, namespaces, storage, providers, sandboxed runtimes: `CORE` in `arch.mjs`) imports only the core; only `src/main.ts` imports the Interface | |
 | seams | a region is imported from outside only through its entry modules: `src/run.ts`, `src/pdf.ts`, `src/media.ts`, `src/local/engine.ts` and `src/local/provider.ts`; Interface regions never import each other | |
+| contract | a contract module (`CONTRACTS` in `arch.mjs`) holds types only, no runtime statement, and is imported only with `import type`; a contract may be imported across a seam, never across a layer | `src/trust.ts`, `src/agent-types.ts`, `src/subagents-types.ts`, `src/tools-types.ts`, `src/interface/app.ts`, and `protocol.ts` in `src/run/`, `src/local/`, `src/pdf/` and `src/media/` (each worker's messages) |
 | size | each module stays within 700 lines; `src/main.ts` within 60 | |
 
 An allowance no module uses any more is also an error, so the lists in `arch.mjs` stay an
@@ -295,34 +299,54 @@ type checking), so comments and strings do not count and a local named `fetch` i
 network. It covers first-party code; bundled packages are held by what may import them and
 by the page's CSP, which remains the enforcement in the browser.
 
+**Types.** The sources are strict TypeScript, and `build.mjs` runs `tsc --noEmit` on two
+projects before bundling: `tsconfig.json` for the page (DOM library) and
+`tsconfig.worker.json` for the five worker entries (WebWorker library), since a worker's
+global is not a `Window`. esbuild only strips the types, and Node runs the `.ts` sources
+unbundled in the tests, so the sources use only erasable syntax (`erasableSyntaxOnly`,
+`verbatimModuleSyntax`) and relative imports end in `.ts`. `alwaysStrict` is off because
+esbuild reads `tsconfig.json` and would otherwise prepend `"use strict"` to the bundle,
+changing bundled sloppy-mode packages; Pouch's own ES modules are strict regardless.
+`src/trust.ts` is the data that crosses the trust boundaries, as plain data: egress
+requests, Sealed attestation and the opaque `SealedHandle` (`ready`,
+`getVerificationDocument`; outside `src/sealed.ts` the type system cannot reach the
+encrypting client), account-plane replies, the control plane's `Authority`, `CtlCommand`
+and `InMessage`, and namespace binds. `FileServer` in `src/ns/namespace.ts` is the file
+server's contract.
+
 **The Interface.** `src/main.ts` only composes the Interface (LANGUAGE.md) from regions in `src/interface/`, in the
 order their wiring runs. Each region is a factory, `createXRegion(app)`, returning its
-interface; a region reaches another only as `app.<region>.<name>`, resolved when called, and
-state another region writes is a getter and setter on its owner's interface.
+interface, `XRegion`, declared in the region's own module; `App` (`src/interface/app.ts`, a
+contract) composes them, and `src/main.ts` starts from `const app = {} as App`. A region
+reaches another only as `app.<region>.<name>`, resolved when called, and a cell another
+region writes is a `get`/`set` accessor pair in its owner's interface, so the cross-region
+state is listed in the types.
 
 | Region | Responsibility |
 |---|---|
-| `state.js` | shared cells (credential, client, agent, models, view), status line, frame, action sheets |
-| `editing.js` | the open file, conflicts and diffs, previews, `show` |
-| `tree.js` | the file browser: tree, uploads, archives, clipboard, first visit, Run script |
-| `connection.js` | Sealed verification, the network state, the Sealed model list |
-| `providers.js` | Transformers.js and Localhost: picker entries and settings |
-| `auth.js` | device claim, the key form, Erase everything |
-| `install.js` | the offline copy and updates |
-| `session-list.js` | the session list, egress consent hooks, model, pdf and media services |
-| `namespaces.js` | control plane wiring: per-session namespaces, the terminal |
-| `subagents.js` | subagent registry per session, child transcripts and cards |
-| `meters.js` | the Usage panel |
-| `transcript.js` | attaching a session, rendering its log, the message toolbar, revert |
-| `queues.js` | send button and modes, steering and follow-up queues, the context meter |
-| `harness.js` | the control plane's harness side: stop, steer, follow-up through ctl files |
-| `send.js` | a turn's admission and errors, the composer's keys and send menu |
-| `commands.js` | slash commands, the activity tray, the composer widget |
-| `boot.js` | file watches, opening the agent, the first render |
+| `state.ts` | shared cells (credential, client, agent, models, view), status line, frame, action sheets |
+| `editing.ts` | the open file, conflicts and diffs, previews, `show` |
+| `tree.ts` | the file browser: tree, uploads, archives, clipboard, first visit, Run script |
+| `connection.ts` | Sealed verification, the network state, the Sealed model list |
+| `providers.ts` | Transformers.js and Localhost: picker entries and settings |
+| `auth.ts` | device claim, the key form, Erase everything |
+| `install.ts` | the offline copy and updates |
+| `session-list.ts` | the session list, egress consent hooks, model, pdf and media services |
+| `namespaces.ts` | control plane wiring: per-session namespaces, the terminal |
+| `subagents.ts` | subagent registry per session, child transcripts and cards |
+| `meters.ts` | the Usage panel |
+| `transcript.ts` | attaching a session, rendering its log, the message toolbar, revert |
+| `queues.ts` | send button and modes, steering and follow-up queues, the context meter |
+| `harness.ts` | the control plane's harness side: stop, steer, follow-up through ctl files |
+| `send.ts` | a turn's admission and errors, the composer's keys and send menu |
+| `commands.ts` | slash commands, the activity tray, the composer widget |
+| `boot.ts` | file watches, opening the agent, the first render |
 
-These interfaces are where the TypeScript migration puts its types (`NEXT.md`), and the
-trust boundaries are where the trusted core of #143 can replace one module at a time,
-starting with egress.
+The migration changed no behavior: bundled without identifier minification, every bundle
+(the page and the four worker runtimes) matches the last JavaScript build apart from module
+paths. The types still lean on casts and non-null assertions, and `app` is still a service
+locator (`NEXT.md`). The typed trust boundaries are where the trusted core of #143 can
+replace one module at a time, starting with egress.
 
 ## The coding agent
 
@@ -335,7 +359,7 @@ starting with egress.
 | Files | one tree stitched from several stores (below) | `src/vfs.ts` |
 | Editor | CodeMirror 6 with JS/TS, Python, Markdown, HTML, CSS, JSON | `src/editor.ts` |
 | UI | sessions sidebar, chat, one side panel at a time (Files, Editor, Usage, Trust, Settings) from an icon rail; drawer, full-screen sheets and a bottom bar on phones | `pouch.html`, `src/main.ts` and `src/interface/` ("Architecture"), `src/layout.ts` |
-| Composer | one card: activity tray (running subagents and `run` calls, approvals waiting, steering not yet read and the follow-up or paused message; Stop, Stop all, Cancel, Edit, Steer now), `@` path / `$` skill / `/` command autocomplete, the shield popover (provider, egress grants), Usage count, model picker, Send / Stop with the Steer-or-Follow-up split button while Pouch works; the turn footer (model, duration, time) is in `main.js` | `src/composer.ts`, `src/main.ts` |
+| Composer | one card: activity tray (running subagents and `run` calls, approvals waiting, steering not yet read and the follow-up or paused message; Stop, Stop all, Cancel, Edit, Steer now), `@` path / `$` skill / `/` command autocomplete, the shield popover (provider, egress grants), Usage count, model picker, Send / Stop with the Steer-or-Follow-up split button while Pouch works; the turn footer (model, duration, time) is the transcript region's | `src/composer.ts`, `src/interface/transcript.ts` |
 | Preferences / attachments | local display defaults; one ingest path for Attach, composer drop and image paste | `src/settings.ts`, `src/attachments.ts` |
 | Titles | a session is named after its first turn by one tool-less completion on the session's own provider and model; the sparkle beside the title field, the session menu and `/rename` alone suggest another; never a different provider | `src/naming.ts` |
 | Usage | today's Sealed allowance (`/usage` with a key, `/campus-pass` without), checked on load, sign-in and after each run, never polled; tokens per session | `src/usage.ts` |

@@ -69,7 +69,7 @@ export function createNamespacesRegion(app: App): NamespacesRegion {
   // Every acting control in the Interface goes through here (test/controlplane-node.mjs).
   const ctl = (path: string, text: string) => userNs.writeFile(path, text);
   const agentFile = (sid: SessionId, ref: string, file: string) => `/session/${sid}/agents/${asRef(ref)}/${file}`;
-  // Main sees its own session's control files, ctl writable, in refused (control.js).
+  // Main sees its own session's control files, ctl writable, in refused (control.ts).
   const mainNs = new Map<string, Namespace>(); // sid -> namespace
   function mainNamespace(sid: SessionId | null | undefined, base: Namespace) {
     if (sid == null) return base;
@@ -99,7 +99,7 @@ export function createNamespacesRegion(app: App): NamespacesRegion {
     }
   })();
 
-  // ── Terminal (terminal.js) ──────────────────────────────────────────
+  // ── Terminal (terminal.ts) ──────────────────────────────────────────
   // The user's shell over the same namespace; `bayleaf` asks every use. Ctrl+`
   // opens it (or focuses it); opening it never sends anything.
   const terminal = createTerminal({ vfs: app.state.vfs as TerminalVfs, fs: over(app.state.vfs.as('user'), [['/session', control.view({ by: 'user', label: 'terminal' }), { label: 'control (you)' }]]), onChange: () => app.tree.renderTree(),

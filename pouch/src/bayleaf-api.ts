@@ -1,8 +1,8 @@
 // The BayLeaf API's account plane, in plaintext: device claim, a key's
 // allowance, Campus Pass and the Sealed model list. Only metadata goes here,
-// never a prompt, a reply or a file: content leaves only through sealed.js
-// (EHBP ciphertext), and the agent's `bayleaf` command through bayleaf-cli.js
-// after egress.js's consent. arch.mjs fails the build if any other module
+// never a prompt, a reply or a file: content leaves only through sealed.ts
+// (EHBP ciphertext), and the agent's `bayleaf` command through bayleaf-cli.ts
+// after egress.ts's consent. arch.mjs fails the build if any other module
 // calls the network (README "Architecture").
 // Response shapes: ClaimStart, ClaimPollReply, UsageReply, CampusPassReply,
 // SealedModelList in src/trust.ts (callers cast res.json() to them).

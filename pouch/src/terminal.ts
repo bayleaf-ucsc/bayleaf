@@ -5,7 +5,7 @@
 // belongs to no session, so no "Allow for this session" grant applies).
 //
 // Writes go through vfs.as('user') (file watches see them as the user's, like
-// editor saves) and through the page-wide per-path write queue (tools.js
+// editor saves) and through the page-wide per-path write queue (tools.ts
 // serialized), so a terminal write waits for an agent's edit of the same file.
 //
 // Each command is a /task entry (kind "terminal"). Ctrl+C does not call the

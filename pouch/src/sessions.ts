@@ -25,10 +25,10 @@ const LEGACY_TIP = 'Saved before each session had its own storage. Deleting it s
 export const sameId = (a: unknown, b: unknown) => a != null && b != null && String(a) === String(b);
 export const titleOf = (s: { title?: string } | null | undefined) => s?.title || 'New session';
 export const notesKey = (sid: SessionId) => 'agentNotes:' + sid; // per-session notes for the agent (src/interface/send.ts)
-export const grantsKey = (sid: SessionId) => 'egressGrants:' + sid; // "Allow for this session" services (egress.js)
-export const convKey = (sid: SessionId) => 'conversation:' + sid; // the current conversation in its database (agent.js, D12)
+export const grantsKey = (sid: SessionId) => 'egressGrants:' + sid; // "Allow for this session" services (egress.ts)
+export const convKey = (sid: SessionId) => 'conversation:' + sid; // the current conversation in its database (agent.ts, D12)
 export const interruptedKey = (sid: SessionId) => 'interrupted:' + sid; // a reload cut off its run; Resume offered (src/interface/transcript.ts)
-export const subagentsKey = (sid: SessionId) => 'subagents:' + sid; // the session's subagents and their state (subagents.js)
+export const subagentsKey = (sid: SessionId) => 'subagents:' + sid; // the session's subagents and their state (subagents.ts)
 export const revertKey = (sid: SessionId) => 'revert:' + sid; // the last revert, while it can be undone; conversation only, never file bytes (D12)
 export const watchesKey = (sid: SessionId) => 'watches:' + sid; // its file watches (src/ns/watch.ts)
 export const turnsKey = (sid: SessionId) => 'turnTimes:' + sid; // turn-start entry -> measured duration (ms), for the turn footer (src/interface/transcript.ts)
@@ -229,7 +229,7 @@ export function createSessions(deps: SessionsDeps) {
     await agent.dropLegacy().catch(() => {});
   }
 
-  // Click-to-edit in place, in the top bar and in a sidebar row (naming.js).
+  // Click-to-edit in place, in the top bar and in a sidebar row (naming.ts).
   // A title someone typed is 'user'; a kept suggestion is 'auto'; empty
   // falls back to the first message.
   function editTitle(s: SessionRecord, host: HTMLElement | null) {
@@ -244,7 +244,7 @@ export function createSessions(deps: SessionsDeps) {
   $('title').onclick = () => { if (session) editTitle(session, $('title')); };
 
   // A title suggestion from the conversation, on the session's own provider
-  // and model (naming.js); never another. quiet: after a first turn, skip
+  // and model (naming.ts); never another. quiet: after a first turn, skip
   // without a word.
   async function nameFrom(id: SessionId, recent: boolean, quiet = false, turnModel?: string) {
     const s = await find(id);

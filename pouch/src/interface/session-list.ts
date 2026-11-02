@@ -40,7 +40,7 @@ export interface SessionListRegion {
 }
 
 export function createSessionListRegion(app: App): SessionListRegion {
-  // ── Sessions (sessions.js) ──────────────────────────────────────────
+  // ── Sessions (sessions.ts) ──────────────────────────────────────────
   // focus: the subagent of the current session whose view fills the chat pane
   // (its live transcript; the composer steers it), or null for the session.
   let focus: SubagentFocus | null = null;
@@ -69,7 +69,7 @@ export function createSessionListRegion(app: App): SessionListRegion {
     },
   });
 
-  // ── Leaving the pouch (egress.js, D10) ──────────────────────────────
+  // ── Leaving the pouch (egress.ts, D10) ──────────────────────────────
   // The bayleaf command asks before every request; a run belongs to the
   // session it was sent from, even if you switch away meanwhile.
   // The session whose run is active (a turn, a resumed run or Run script), if any.
@@ -89,7 +89,7 @@ export function createSessionListRegion(app: App): SessionListRegion {
     });
     app.transcript.scheduleRender();
   }
-  // caller: the conversation whose tool asks (agent.js); a subagent's request
+  // caller: the conversation whose tool asks (agent.ts); a subagent's request
   // belongs to its own session and names it on the sheet.
   const childOf = (caller: Caller) => {
     const w = caller == null ? null : app.state.agent?.who(caller);

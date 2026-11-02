@@ -15,7 +15,7 @@
 //   cdn       no third-party CDN in the page (assertNoCdn, build-runtime.mjs)
 //   exact     trust-boundary modules say exactly what crosses them: no `any`
 // Structure rules:
-//   layers    the core never imports UI; nothing imports the Interface but main.js
+//   layers    the core never imports UI; nothing imports the Interface but main.ts
 //   seams     a region is imported only through its entry modules
 //   contract  a contract module is types only, and imported only as types
 //   size      every module stays within its line budget
@@ -78,7 +78,7 @@ const WHY_SEALED = 'The encrypting client holds the credential and decides what 
 export const CORE = ['src/trust.ts', 'src/vfs.ts', 'src/store.ts', 'src/archive.ts', 'src/graph.ts', 'src/ns/', 'src/run.ts', 'src/run/',
   'src/local/', 'src/localhost.ts', 'src/sealed.ts', 'src/bayleaf-api.ts', 'src/profiles.ts', 'src/models.ts',
   'src/assets.ts', 'src/sha256.ts', 'src/pdf/', 'src/media/', 'src/shims/'];
-// The Interface (LANGUAGE.md): the page's wiring, composed by main.js from
+// The Interface (LANGUAGE.md): the page's wiring, composed by main.ts from
 // src/interface/ regions.
 const INTERFACE = ['src/main.ts', 'src/interface/'];
 const WHY_LAYERS = 'The core must stay testable and portable without a page (and replaceable by the trusted core of #143); '
@@ -88,7 +88,7 @@ const WHY_LAYERS = 'The core must stay testable and portable without a page (and
 // A region's other modules are its implementation: outside code imports
 // only the entries. src/interface/ regions reach each other through `app`.
 export const REGIONS = {
-  'src/interface/': { entries: [], importers: ['src/main.ts'], why: 'Interface regions are composed only by main.js and reach each other through app.<region>' },
+  'src/interface/': { entries: [], importers: ['src/main.ts'], why: 'Interface regions are composed only by main.ts and reach each other through app.<region>' },
   'src/run/': { entries: ['src/run.ts'], why: 'run.ts is the run tool\'s one door: the worker and its 9P bridge are its implementation' },
   'src/pdf/': { entries: ['src/pdf.ts'], why: 'pdf.ts owns the pdf.js worker and its pin' },
   'src/media/': { entries: ['src/media.ts'], why: 'media.ts owns the libav.js worker and its pins' },
@@ -322,7 +322,7 @@ export function checkArchitecture(files) {
     for (const path of Object.keys(table)) if (files.has(path) && !used.has(path)) errors.push(fmt(rule, path, 0, `is allowed in ${rule.toUpperCase()} but no longer needs it`, 'Remove the allowance so the list stays an exact inventory'));
   }
   for (const path of Object.keys(CONTRACTS)) if (!files.has(path)) errors.push(fmt('contract', path, 0, 'is listed in CONTRACTS but does not exist', 'Remove it so the list stays an exact inventory'));
-  // Layers: the core imports only the core; only main.js imports the Interface.
+  // Layers: the core imports only the core; only main.ts imports the Interface.
   for (const { from, to, line } of graph) {
     if (inside(from, CORE) && to.startsWith('src/') && !inside(to, CORE)) errors.push(fmt('layers', from, line, `is core but imports ${to}`, WHY_LAYERS));
     if (inside(to, INTERFACE) && !inside(from, INTERFACE)) errors.push(fmt('layers', from, line, `imports the Interface (${to})`, WHY_LAYERS));

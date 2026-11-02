@@ -11,7 +11,7 @@ let fails = 0;
 const ok = (c, m) => { console.log(`${c ? 'PASS' : 'FAIL'} ${m}`); if (!c) fails++; };
 const until = async (f, ms = 5000) => { const t = Date.now(); while (!(await f())) { if (Date.now() - t > ms) return false; await sleep(25); } return true; };
 
-// 0. graph.js alone: caps, cycles, join release, detach.
+// 0. graph.ts alone: caps, cycles, join release, detach.
 {
   const s = createScope();
   let refused = null;

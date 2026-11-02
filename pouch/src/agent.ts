@@ -473,7 +473,7 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
       return !!c;
     },
     // One tool-less completion on modelId's own provider (session titles,
-    // naming.js): BayLeaf Sealed through the encrypting fetch, Localhost through
+    // naming.ts): BayLeaf Sealed through the encrypting fetch, Localhost through
     // its guarded fetch, Transformers.js in the page's worker. Never another
     // provider: an unknown or unconfigured model fails, nothing is sent elsewhere.
     // A Sealed call is not reported to onRequest; the caller counts it (as a title).

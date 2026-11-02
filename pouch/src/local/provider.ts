@@ -1,5 +1,5 @@
 // The Transformers.js provider as a pi-ai provider: generation runs in this browser on the
-// WebGPU worker (src/local/worker.ts via engine.js); nothing is sent anywhere.
+// WebGPU worker (src/local/worker.ts via engine.ts); nothing is sent anywhere.
 //
 // It applies the recipe qualified in experiments/lfm3-webgpu (agent v2, "v8"):
 // a grounded system prompt naming /work, one byte-exact few-shot turn, four

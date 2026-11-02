@@ -1,4 +1,4 @@
-// The context meter in the real page (src/context.ts, main.js renderCtx, Usage
+// The context meter in the real page (src/context.ts, src/interface/queues.ts renderCtx, Usage
 // panel): hidden before anything is said; after a reply that reports usage, the
 // exact count against the model's window ("12.5k / 128k"), then "~" once text is
 // added after it; near the auto-compaction point it turns warn-colored and says

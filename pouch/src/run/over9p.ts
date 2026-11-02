@@ -83,7 +83,7 @@ export async function load(fs: RunNinepFs, specs: string[], cwd: string) {
 }
 
 // Write the guest's changes back over 9P, each only if the file still
-// matches the snapshot (applyChanges in host.js does the checking).
+// matches the snapshot (applyChanges in host.ts does the checking).
 export function writeBack(fs: RunNinepFs, changes: Change[]) {
   return applyChanges({
     exists: (p) => fs.exists(p), readFileBuffer: (p) => fs.readFileBuffer(p), rm: (p) => fs.rm(p),

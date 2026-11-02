@@ -1,4 +1,4 @@
-// Node checks of the look tool (src/tools.ts lookAt, agent.js toTool; JOURNEYS
+// Node checks of the look tool (src/tools.ts lookAt, agent.ts toTool; JOURNEYS
 // AG1, AG4, AG8): path validation, the per-call cap, format refusals, the
 // text-only refusal, and where the image sits in the request pi-ai actually
 // sends (OpenAI chat format: the tool message is text, the image follows in a

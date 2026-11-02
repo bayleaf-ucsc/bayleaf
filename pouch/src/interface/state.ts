@@ -72,14 +72,14 @@ export function createStateRegion(app: App): StateRegion {
   // How a message read mid-turn is labeled, in main's transcript and a subagent's (D25).
   const STEER_LABEL = 'You, while it worked';
   let view: NormalizedView | ThreadView | null = null;       // last normalized view of the current session
-  let composer: Composer | null = null;   // composer.js: tray, autocomplete, shield popover (set below)
+  let composer: Composer | null = null;   // composer.ts: tray, autocomplete, shield popover (set below)
   let unwatch: (() => void) | null = null;
 
   function status(text: string, cls = '') { $('status').textContent = text; $('status').className = cls; }
 
-  // ── Frame: sidebar, rail and panels (layout.js) ─────────────────────
+  // ── Frame: sidebar, rail and panels (layout.ts) ─────────────────────
   const usage = createUsage({ getKey: () => key });
-  // Every Sealed request of the allowance day, by session (usage.js); the day is
+  // Every Sealed request of the allowance day, by session (usage.ts); the day is
   // the allowance's own (it ends at resetsAt).
   const ledger = createLedger({ get: () => store.getSetting<Ledger>('requestLedger'), set: (v) => store.setSetting('requestLedger', v) as Promise<void> },
     () => usage.state.resetsAt?.toISOString() ?? null);

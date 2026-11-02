@@ -14,7 +14,7 @@ import type { ThreadItem } from '../agent-types.ts';
 import type { SubagentHost, SubagentRow } from '../subagents-types.ts';
 import type { ComposerCommand, TrayRow } from '../composer.ts';
 
-// A message refused at a cap (graph.js), shown in the tray until dismissed.
+// A message refused at a cap (graph.ts), shown in the tray until dismissed.
 export type CapEvent = Parameters<NonNullable<SubagentHost['onCap']>>[1];
 // What the tray reads of a thread item (a tool call's args and details).
 export interface ActivityItem {
@@ -97,7 +97,7 @@ export function createCommandsRegion(app: App): CommandsRegion {
         open: (e?: Event) => app.subagents.openChild(sid!, c.id, e?.currentTarget as HTMLElement | undefined), stop: () => app.namespaces.ctl(app.namespaces.agentFile(sid!, ref, 'ctl'), 'stop').catch((e) => app.state.status(why(e), 'bad')),
         ...(waited ? { background: () => app.namespaces.ctl(app.namespaces.agentFile(sid!, ref, 'ctl'), 'detach').catch((e) => app.state.status(why(e), 'bad')) } : {}) });
     }
-    // A message refused at a cap (graph.js): visible until dismissed.
+    // A message refused at a cap (graph.ts): visible until dismissed.
     for (const [i, e] of (capEvents.get(String(sid)) ?? []).entries()) {
       rows.push({ key: `cap:${e.at}:${i}`, kind: 'cap', text: `${e.from} to ${e.to}: not sent`, title: e.text, origin: 'message limit', stopLabel: 'Dismiss',
         stop: () => { const list = capEvents.get(String(sid)) ?? []; list.splice(list.indexOf(e), 1); app.state.composer!.renderTray(); } });

@@ -1,5 +1,5 @@
 // Batch E, node: titles and compaction stay on the session's provider
-// (agent.complete, naming.js suggestTitle, pi-durable compaction), for BayLeaf
+// (agent.complete, naming.ts suggestTitle, pi-durable compaction), for BayLeaf
 // Sealed (a fake verified client whose encrypting fetch records every request),
 // Localhost (the loopback dummy, test/dummy-openai.mjs) and Transformers.js (a
 // fake engine). Asserts which provider received each request, and that a

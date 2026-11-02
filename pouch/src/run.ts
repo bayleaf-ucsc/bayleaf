@@ -63,7 +63,7 @@ function rootOf(fs: Namespace, p: string) {
   return point === '/' ? '/' + (p.split('/')[1] ?? '') : point;
 }
 
-// tools.js passes its helpers so `run` shares path rules, errors and recording.
+// tools.ts passes its helpers so `run` shares path rules, errors and recording.
 export function runTool({ vfs, Type, CWD, abs, fsFor, sidOf = () => null, oneAtATime = (_p, fn) => fn(), makeWorker = browserWorker }: RunToolDeps) {
   return {
     name: 'run', label: 'Run',

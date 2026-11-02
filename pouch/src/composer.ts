@@ -1,6 +1,6 @@
 // The composer card, after OpenChamber's: an activity tray above the input,
 // autocomplete for @ paths, $ skills and / commands in the input, and the
-// shield popover (this session's provider and egress grants). the Interface (src/interface/queues.ts, send.js) owns
+// shield popover (this session's provider and egress grants). the Interface (src/interface/queues.ts, send.ts) owns
 // sending and run bookkeeping and supplies what is active; this module owns
 // how the card shows it. Nodes only, never HTML strings.
 import { $, el, icon, seeded } from './dom.ts';

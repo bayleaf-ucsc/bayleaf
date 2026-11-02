@@ -269,7 +269,7 @@ path metrics: **repeats** (identical failing calls) and **overshoot** (calls ove
 Harness features with no agent story or eval at all today:
 - **No model-agnostic runner.** `tasks.mjs` graders are bound to the LFM3 browser worker
   (`qualify.mjs`) and were adapted ad hoc for LH12; Sealed checks are UI-driven browser scripts.
-  Needed: one `test/evals/` runner driving `src/agent.ts` over a Node VFS (as `ax-cli.mjs`
+  Needed: one `test/evals/` runner driving `src/agent.js` over a Node VFS (as `ax-cli.mjs`
   does), with adapters `sealed | localhost | transformersjs | fake`, tasks as data, the fake
   replaying scripted turns for zero-request harness runs, and per-tier `N/A` for absent tools
   (S has no watch or subagent) instead of failures.

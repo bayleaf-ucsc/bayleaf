@@ -25,7 +25,7 @@ export function icon(name: string): SVGSVGElement {
 // Continuity (README "Continuity: color and motion"): an agent's color is
 // CSS's business. JS sets one number, its spawn order (a3 -> --seed: 3), and
 // pouch.html turns it into a hue. Main (a1) stays neutral; unknown refs get nothing.
-// Older builds' s-handles (s3) read the same (graph.js asRef).
+// Older builds' s-handles (s3) read the same (graph.ts asRef).
 export const seedOf = (ref: unknown): number | null => { const m = /^[as](\d+)$/.exec(String(ref ?? '')); return m ? Number(m[1]) : null; };
 export function seeded<T extends HTMLElement | SVGElement>(node: T, ref: unknown): T {
   const n = seedOf(ref);

@@ -109,7 +109,7 @@ await test('cdn: a third-party CDN in the page fails; a URL only compared agains
   assert.deepEqual(checkNoCdn('const issuer="https://token.actions.githubusercontent.com"', 'pouch.html'), []);
 });
 
-await test('layers: the core imports no UI, and only main.js imports the Interface', () => {
+await test('layers: the core imports no UI, and only main.ts imports the Interface', () => {
   const msg = fails(withFile('src/vfs.ts', "import { $ } from './dom.ts';"), 'layers', 'src/vfs.ts', /is core but imports src\/dom.ts/);
   assert.match(msg, /UI depends on the core, never the reverse/);
   fails(withFile('src/ns/watch.ts', "import { createUsage } from '../usage.ts';"), 'layers', 'src/ns/watch.ts', /imports src\/usage.ts/);
@@ -146,7 +146,7 @@ await test('exact: no `any` in trust-boundary modules, wherever it is written', 
   assert.deepEqual(checkArchitecture(withFile('src/graph.ts', 'export const z = (v: any) => v; // any\nexport const w = "any";')), []);
 });
 
-await test('size: a module over its budget fails; main.js stays thin', () => {
+await test('size: a module over its budget fails; main.ts stays thin', () => {
   fails(withFile('src/graph.ts', (t) => t + '\n'.repeat(800)), 'size', 'src/graph.ts', /over its budget of 700/);
   fails(withFile('src/main.ts', (t) => t + '// x\n'.repeat(60)), 'size', 'src/main.ts', /over its budget of 60/);
 });

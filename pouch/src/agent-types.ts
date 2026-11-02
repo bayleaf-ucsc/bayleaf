@@ -26,14 +26,14 @@ export interface ThreadPointer {
   set(id: SessionId, convId: ConversationId): Promise<void> | void;
 }
 
-// What a page tool's execute() is handed (agent.js toTool); tools default each part.
+// What a page tool's execute() is handed (agent.ts toTool); tools default each part.
 export interface ToolCallOptions {
   signal: AbortSignal; output(chunk: unknown): void; caller: ConversationId; callId: string;
   seesImages: boolean | undefined; // asked only for a tool marked `images`
 }
 // look's result: text lines plus the images, in order.
 export interface LookOutput { text: string; images: ImageContent[] }
-// A UI tool spec: what src/tools.ts (and run.ts) build, before agent.js wraps it.
+// A UI tool spec: what src/tools.ts (and run.ts) build, before agent.ts wraps it.
 export interface AgentToolSpec {
   name: string; label?: string; description: string; parameters: TSchema; images?: boolean;
   execute(args: Record<string, unknown>, opts: ToolCallOptions): Promise<string | LookOutput> | string | LookOutput;

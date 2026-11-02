@@ -1,4 +1,4 @@
-// Offline copy and updates (offline.js, sw.js).
+// Offline copy and updates (offline.ts, sw.js).
 
 import { $, el } from '../dom.ts';
 import { createOffline, short, type Offline } from '../offline.ts';
@@ -12,7 +12,7 @@ export interface InstallRegion {
 }
 
 export function createInstallRegion(app: App): InstallRegion {
-  // ── Offline copy and updates (offline.js, sw.js) ──────────────────────
+  // ── Offline copy and updates (offline.ts, sw.js) ──────────────────────
   // The hosted page keeps a hash-checked copy of itself; it changes only on Update.
   const SW_EXPECTED = typeof SW_SHA256 !== 'undefined' ? SW_SHA256 : null; // eslint-disable-line no-undef (build.mjs define)
   const shellCopy = createOffline({ swSha256: SW_EXPECTED as string }); // null outside a build: swMatches() then compares against null

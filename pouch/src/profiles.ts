@@ -105,7 +105,7 @@ export const LOCALHOST_STEP_CAP = 24;
 export const LOCALHOST_DROP_TOOLS = ['subagent', 'agents'];
 export const LOCALHOST_NOTE = 'You run on a model server on the user\'s own computer (Localhost). Subagents are not available here: ignore guidance about the subagent tool and do the work yourself.';
 
-// pi-durable agent configs. tool/peerTool are subagents.js's two tools: a
+// pi-durable agent configs. tool/peerTool are subagents.ts's two tools: a
 // subagent loses `subagent` and gains `agents` (list, message, join).
 export interface ProfileAgentInput {
   model: ModelRef | undefined; name: string; ref: string; task: string; ns?: string[]; toLabel: string;

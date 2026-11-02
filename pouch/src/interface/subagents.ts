@@ -47,7 +47,7 @@ export interface SubagentsRegion {
 }
 
 export function createSubagentsRegion(app: App): SubagentsRegion {
-  // ── Subagents (subagents.js, D15/D16) ───────────────────────────────
+  // ── Subagents (subagents.ts, D15/D16) ───────────────────────────────
   // kids: session id -> its registry rows, as last changed. A report starts a
   // parent run nobody sent; drive() does a send's bookkeeping for it.
   const kids = new Map<string, SubagentRow[]>();
