@@ -49,7 +49,7 @@ export function createUsage({ getKey }: { getKey(): string | null | undefined })
           : { mode: 'campus', offCampus: !j.campus_network, remaining: null, limit: null };
       }
     } catch (e) {
-      next = { mode: key ? 'key' : 'campus', error: (e as Error).message, remaining: null, limit: null };
+      next = { mode: key ? 'key' : 'campus', error: e instanceof Error ? e.message : String(e), remaining: null, limit: null };
     }
     if (g === gen) { state = next; for (const f of subs) f(state); }
     return state;
@@ -75,7 +75,7 @@ export function createUsage({ getKey }: { getKey(): string | null | undefined })
 // far it moved beyond what this browser sent then (outside: { down, up, at }).
 // dayOf(): the current allowance day (a string).
 export function createLedger(storage: { get(): Promise<Ledger | null | undefined>; set(v: Ledger): Promise<void> | void }, dayOf: () => string | null | undefined) {
-  let led = null as Ledger | null;
+  let led: Ledger | null = null;
   // dayOf() is null while the allowance is unknown: keep counting into the current day.
   const fresh = (): Ledger => ({ day: dayOf() ?? new Date().toDateString(), bySid: {}, kinds: {}, seen: null, outside: { down: 0, up: 0, at: null }, carry: 0 });
   const total = (l: Ledger) => Object.values(l.bySid).reduce((a, b) => a + b, 0);
@@ -196,9 +196,10 @@ export function renderPanel(host: HTMLElement, s: Allowance, rows: UsageRow[], l
       : s.error ? `Could not check the allowance (${s.error}). That means unknown, not zero.`
       : 'Checking...' }));
   } else {
+    const pct = Math.round((f ?? 0) * 100); // f is null only when the limit is unknown
     const bar = el('div', { className: 'bar' }, el('span'));
-    bar.style.setProperty('--fill', `${Math.round(f! * 100)}%`);
-    bar.role = 'img'; bar.ariaLabel = `${Math.round(f! * 100)}% left`;
+    bar.style.setProperty('--fill', `${pct}%`);
+    bar.role = 'img'; bar.ariaLabel = `${pct}% left`;
     box.append(
       el('div', { className: 'big' }, `${s.mode === 'campus' ? 'about ' : ''}${s.remaining}`, el('small', { textContent: ` of ${s.limit} left today` })),
       bar,
@@ -208,8 +209,8 @@ export function renderPanel(host: HTMLElement, s: Allowance, rows: UsageRow[], l
     );
     const at = resetText(s.resetsAt);
     if (at) box.append(el('p', { className: 'muted', textContent: `Resets at ${at} (your time).` }));
-    const out = outsideText(led);
-    if (out) box.append(el('p', { className: 'outside', textContent: `Changed outside this browser: ${out} since ${new Date(led!.outside.at!).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} or earlier today. ${s.mode === 'campus' ? 'Others on this network share it' : 'This key is also used elsewhere, or the allowance was reset or raised'}; the number above is the allowance as BayLeaf reports it.` }));
+    const out = outsideText(led), since = led?.outside.at;
+    if (out && since != null) box.append(el('p', { className: 'outside', textContent: `Changed outside this browser: ${out} since ${new Date(since).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} or earlier today. ${s.mode === 'campus' ? 'Others on this network share it' : 'This key is also used elsewhere, or the allowance was reset or raised'}; the number above is the allowance as BayLeaf reports it.` }));
   }
   out.push(box);
   out.push(el('p', { textContent: 'Each model step uses one request: every tool round in a turn, every compaction summary, and every automatic title of a BayLeaf Sealed session. A turn that reads two files and then replies takes three.' }));
@@ -217,14 +218,14 @@ export function renderPanel(host: HTMLElement, s: Allowance, rows: UsageRow[], l
   const shown = rows.filter((r) => r.input || r.output || r.requests);
   if (!shown.length) out.push(el('p', { className: 'muted', textContent: 'Nothing counted yet. Rows appear after a session\'s first turn.' }));
   else {
-    const anyCost = shown.some((r) => r.cost! > 0);
+    const anyCost = shown.some((r) => (r.cost ?? 0) > 0);
     // Three columns fit the 320 px drawer: tokens ride under the session name.
     const head = el('tr', {}, el('th', { textContent: 'Session' }), el('th', { textContent: 'Requests', title: 'Requests sent today, counted as they left: turns, subagents, titles, compactions and stopped requests' }), ...(anyCost ? [el('th', { textContent: 'Cost' })] : []));
     const toks = (r: UsageRow) => r.input || r.output ? [el('span', { className: 'toks muted', textContent: `${fmt(r.input)} in, ${fmt(r.output)} out` })] : [];
     const row = (r: UsageRow, cls = '') => el('tr', { className: (r.current ? 'current ' : '') + cls },
       el('td', { title: r.subagents ? `${r.title} (with ${r.subagents} subagent${r.subagents > 1 ? 's' : ''})` : r.title }, el('span', { className: 'clamp', textContent: r.title }), ...toks(r)),
       el('td', { textContent: r.requests != null ? fmt(r.requests) : '' }),
-      ...(anyCost ? [el('td', { textContent: r.cost! > 0 ? `$${r.cost!.toFixed(4)}` : '' })] : []));
+      ...(anyCost ? [el('td', { textContent: r.cost && r.cost > 0 ? `$${r.cost.toFixed(4)}` : '' })] : []));
     const body = shown.map((r) => row(r));
     if (led) body.push(row({ title: 'This browser today', requests: counted(led) }, 'total'));
     const cols = el('colgroup', {}, el('col'), ...Array.from({ length: anyCost ? 2 : 1 }, () => el('col', { className: 'n' })));

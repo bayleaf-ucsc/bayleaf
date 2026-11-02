@@ -10,18 +10,23 @@ import type { Allowance } from '../usage.ts';
 import type { ClaimPollReply, ClaimStart } from '../trust.ts';
 
 export interface AuthRegion {
+  // sk-bayleaf-... or null for Campus Pass; written only here.
+  readonly key: string | null;
   // The status line while not signed in: what Campus Pass can do from here.
   campusLine(st: Allowance): string;
   eraseAll(): Promise<void>;
   renderAuth(): void;
+  // The key kept in this browser, read back at boot.
+  restoreKey(): Promise<void>;
 }
 
 export function createAuthRegion(app: App): AuthRegion {
+  let key: string | null = null; // sk-bayleaf-... or null for Campus Pass
   // ── Device claim (RFC 8628 shape). One poll loop, its own controller. ─
   async function claim() {
     const r = await claimInitiate();
     if (!r.ok) return app.state.status('Could not start sign-in (HTTP ' + r.status + ').', 'bad');
-    const c = await r.json() as ClaimStart;
+    const c: ClaimStart = await r.json();
     $('claim-code').textContent = c.user_code;
     $('claim-url').textContent = c.claim_url;
     $('claim-state').textContent = 'Waiting for approval...'; $('claim-state').className = 'pending';
@@ -50,9 +55,9 @@ export function createAuthRegion(app: App): AuthRegion {
   }
   function renderAuth() {
     const b = $('auth');
-    b.ariaLabel = app.state.key ? 'Forget key' : 'Sign in';
-    b.title = app.state.key ? 'Signed in with your BayLeaf key. Click to forget it in this browser.' : 'Sign in (without a key, Campus Pass works on the UCSC network)';
-    b.classList.toggle('on', !!app.state.key);
+    b.ariaLabel = key ? 'Forget key' : 'Sign in';
+    b.title = key ? 'Signed in with your BayLeaf key. Click to forget it in this browser.' : 'Sign in (without a key, Campus Pass works on the UCSC network)';
+    b.classList.toggle('on', !!key);
   }
   // Not signed in: what Campus Pass can do from here (the check says whether
   // this network is on campus; unknown until it answers).
@@ -62,7 +67,7 @@ export function createAuthRegion(app: App): AuthRegion {
     return 'Not signed in: using Campus Pass, which works only on the UCSC network.';
   }
   async function useKey(k: string) {
-    app.state.key = k; await store.setSetting('key', app.state.key); renderAuth(); app.state.usage.refresh(); await app.connection.connect();
+    key = k; await store.setSetting('key', key); renderAuth(); app.state.usage.refresh(); await app.connection.connect();
   }
   // BayLeaf's verdict on a key before it is kept: true, or the reason it is not.
   async function checkKey(k: string) {
@@ -95,9 +100,9 @@ export function createAuthRegion(app: App): AuthRegion {
     return form;
   }
   $('auth').onclick = async () => {
-    if (!app.state.key) { app.state.sheet('Sign in to BayLeaf', [['Approve on a device where you are signed in (recommended)', claim]], keyForm()); return; }
+    if (!key) { app.state.sheet('Sign in to BayLeaf', [['Approve on a device where you are signed in (recommended)', claim]], keyForm()); return; }
     if (!(await app.tree.ask('Remove your BayLeaf key from this browser? Files and sessions stay.', 'Remove key', 'danger'))) return;
-    app.state.key = null; await store.setSetting('key', undefined); renderAuth(); app.state.usage.refresh(); app.connection.connect();
+    key = null; await store.setSetting('key', undefined); renderAuth(); app.state.usage.refresh(); app.connection.connect();
   };
 
   // ── Erase everything ────────────────────────────────────────────────
@@ -124,6 +129,8 @@ export function createAuthRegion(app: App): AuthRegion {
   return {
     campusLine,
     eraseAll,
+    get key() { return key; },
     renderAuth,
+    restoreKey: async () => { key = (await store.getSetting<string>('key')) ?? null; },
   };
 }

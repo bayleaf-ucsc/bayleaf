@@ -6,7 +6,8 @@
 //
 // The Interface (LANGUAGE.md) is split into regions under src/interface/ (README "Architecture").
 // Each region is a factory that takes `app` and returns its interface; a region
-// reaches another only through app.<region>.<name>, resolved when called. They
+// reaches another only through app.<region>.<name>, resolved when called. A region
+// that needs only earlier ones takes them as values instead (install). They
 // are created in this order, which is the order their top-level wiring runs.
 
 import type { App } from './interface/app.ts';
@@ -36,7 +37,7 @@ app.tree = createTreeRegion(app);
 app.connection = createConnectionRegion(app);
 app.providers = createProvidersRegion(app);
 app.auth = createAuthRegion(app);
-app.install = createInstallRegion(app);
+app.install = createInstallRegion({ layout: app.state.layout, status: app.state.status, ask: app.tree.ask });
 app.sessionList = createSessionListRegion(app);
 app.namespaces = createNamespacesRegion(app);
 app.subagents = createSubagentsRegion(app);

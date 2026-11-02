@@ -22,36 +22,42 @@ import { attribute, type Watches } from './ns/watch.ts';
 
 export { normalize };
 
-// lib.dom lacks the File System Access API's async iteration and permissions (Chromium).
+// lib.dom lacks the File System Access API's folder picker and permissions
+// (Chromium); declared as browsers have them.
 type HandleMode = 'read' | 'readwrite';
+declare global {
+  interface Window { showDirectoryPicker?(o: { mode: HandleMode }): Promise<DirHandle> }
+}
+// A picked folder's handle, which can ask for permission again.
 export interface DirHandle extends FileSystemDirectoryHandle {
-  keys(): AsyncIterableIterator<string>;
-  entries(): AsyncIterableIterator<[string, FileSystemFileHandle | FileSystemDirectoryHandle]>;
   queryPermission?(d: { mode: HandleMode }): Promise<PermissionState>;
   requestPermission(d: { mode: HandleMode }): Promise<PermissionState>;
 }
-type PickerWindow = { showDirectoryPicker(o: { mode: HandleMode }): Promise<DirHandle> };
+const nameOf = (e: unknown): unknown => (typeof e === 'object' && e && 'name' in e ? e.name : undefined); // a DOMException's
+const base = (p: string): string => p.slice(p.lastIndexOf('/') + 1);
+// Bytes a file API takes: not a view of shared memory (a copy if it is one).
+const plain = (b: Uint8Array): Uint8Array<ArrayBuffer> => (b.buffer instanceof ArrayBuffer ? new Uint8Array(b.buffer, b.byteOffset, b.byteLength) : b.slice());
 
 // ── FileSystemDirectoryHandle adapter: OPFS and picked folders ─────
 export class HandleFs extends BaseFs {
-  declare root: DirHandle;
+  declare root: FileSystemDirectoryHandle;
   declare readOnly: boolean;
-  constructor(root: DirHandle, { readOnly = false }: { readOnly?: boolean } = {}) { super(); this.root = root; this.readOnly = readOnly; }
+  constructor(root: FileSystemDirectoryHandle, { readOnly = false }: { readOnly?: boolean } = {}) { super(); this.root = root; this.readOnly = readOnly; }
 
-  async dir(path: string, { create = false, op = 'open' }: { create?: boolean; op?: string } = {}): Promise<DirHandle> {
-    let h: FileSystemDirectoryHandle = this.root;
+  async dir(path: string, { create = false, op = 'open' }: { create?: boolean; op?: string } = {}): Promise<FileSystemDirectoryHandle> {
+    let h = this.root;
     for (const name of parts(path)) {
       try { h = await h.getDirectoryHandle(name, { create }); } catch (e) {
-        throw fsError((e as DOMException).name === 'TypeMismatchError' ? 'ENOTDIR' : 'ENOENT', op, path);
+        throw fsError(nameOf(e) === 'TypeMismatchError' ? 'ENOTDIR' : 'ENOENT', op, path);
       }
     }
-    return h as DirHandle;
+    return h;
   }
   async entry(path: string, op: string): Promise<FileSystemFileHandle | FileSystemDirectoryHandle> {
     const p = parts(path);
     if (!p.length) return this.root;
     const parent = await this.dir('/' + p.slice(0, -1).join('/'), { op });
-    const name = p.at(-1)!;
+    const name = p[p.length - 1]; // p is not empty
     try { return await parent.getFileHandle(name); } catch {}
     try { return await parent.getDirectoryHandle(name); } catch {}
     throw fsError('ENOENT', op, path);
@@ -71,22 +77,23 @@ export class HandleFs extends BaseFs {
   }
   async writeFile(path: string, content: FileContent, options?: EncodingOption): Promise<void> {
     this.guard('open', path);
-    const p = parts(path);
-    const parent = await this.dir('/' + p.slice(0, -1).join('/'), { op: 'open' });
-    const fh = await parent.getFileHandle(p.at(-1)!, { create: true });
+    const p = parts(path), name = p.pop();
+    if (name === undefined) throw fsError('EISDIR', 'open', path);
+    const parent = await this.dir('/' + p.join('/'), { op: 'open' });
+    const fh = await parent.getFileHandle(name, { create: true });
     // createWritable is missing in some older Safari builds; fail loudly rather than corrupt.
     if (!fh.createWritable) throw fsError('ENOTSUP', 'write (this browser cannot write files here)', path);
     const w = await fh.createWritable();
-    await w.write(toBytes(content, encodingOf(options)) as Uint8Array<ArrayBuffer>); // never a SharedArrayBuffer view here
+    await w.write(plain(toBytes(content, encodingOf(options))));
     await w.close();
   }
   async mkdir(path: string, options?: MkdirOptions): Promise<void> {
     this.guard('mkdir', path);
-    const p = parts(path);
+    const p = parts(path), name = p.pop();
     if (!options?.recursive) {
-      if (await this.exists(path)) throw fsError('EEXIST', 'mkdir', path);
-      const parent = await this.dir('/' + p.slice(0, -1).join('/'), { op: 'mkdir' });
-      await parent.getDirectoryHandle(p.at(-1)!, { create: true });
+      if (name === undefined || await this.exists(path)) throw fsError('EEXIST', 'mkdir', path); // '/' always exists
+      const parent = await this.dir('/' + p.join('/'), { op: 'mkdir' });
+      await parent.getDirectoryHandle(name, { create: true });
     } else await this.dir(path, { create: true, op: 'mkdir' });
   }
   async readdir(path: string): Promise<string[]> {
@@ -103,13 +110,13 @@ export class HandleFs extends BaseFs {
   }
   async rm(path: string, options?: RmOptions): Promise<void> {
     this.guard('rm', path);
-    const p = parts(path);
-    if (!p.length) throw fsError('EINVAL', 'rm', path);
-    const parent = await this.dir('/' + p.slice(0, -1).join('/'), { op: 'rm' }).catch((e) => { if (options?.force) return null; throw e; });
+    const p = parts(path), name = p.pop();
+    if (name === undefined) throw fsError('EINVAL', 'rm', path);
+    const parent = await this.dir('/' + p.join('/'), { op: 'rm' }).catch((e) => { if (options?.force) return null; throw e; });
     if (!parent) return;
-    try { await parent.removeEntry(p.at(-1)!, { recursive: !!options?.recursive }); } catch (e) {
-      if ((e as DOMException).name === 'NotFoundError') { if (options?.force) return; throw fsError('ENOENT', 'rm', path); }
-      if ((e as DOMException).name === 'InvalidModificationError') throw fsError('ENOTEMPTY', 'rm', path);
+    try { await parent.removeEntry(name, { recursive: !!options?.recursive }); } catch (e) {
+      if (nameOf(e) === 'NotFoundError') { if (options?.force) return; throw fsError('ENOENT', 'rm', path); }
+      if (nameOf(e) === 'InvalidModificationError') throw fsError('ENOTEMPTY', 'rm', path);
       throw e;
     }
   }
@@ -118,20 +125,20 @@ export class HandleFs extends BaseFs {
 // ── IndexedDB adapter for /pouch ──────────────────────────────────
 // A flat map from path to record; directories are explicit records. Small by
 // design (instructions and skills), so listing scans all keys.
-export interface IdbRecord { kind: 'file' | 'dir'; data?: Uint8Array; mtime: number }
+export type IdbRecord = { kind: 'file'; data: Uint8Array; mtime: number } | { kind: 'dir'; mtime: number };
 export class IdbFs extends BaseFs {
   async rec(path: string): Promise<IdbRecord | undefined> { return path === '/' ? { kind: 'dir', mtime: 0 } : store.get<IdbRecord>('shared', normalize(path)); }
   async stat(path: string): Promise<FileStat> {
     const r = await this.rec(path);
     if (!r) throw fsError('ENOENT', 'stat', path);
     return { isFile: r.kind === 'file', isDirectory: r.kind === 'dir', isSymbolicLink: false,
-      mode: r.kind === 'dir' ? 0o755 : 0o644, size: r.data?.length ?? 0, mtime: new Date(r.mtime) };
+      mode: r.kind === 'dir' ? 0o755 : 0o644, size: r.kind === 'file' ? r.data.length : 0, mtime: new Date(r.mtime) };
   }
   async readFileBuffer(path: string): Promise<Uint8Array> {
     const r = await this.rec(path);
     if (!r) throw fsError('ENOENT', 'open', path);
     if (r.kind === 'dir') throw fsError('EISDIR', 'read', path);
-    return r.data!; // a file record has its bytes
+    return r.data;
   }
   async parentMustExist(path: string, op: string): Promise<void> {
     const parent = normalize(path + '/..');
@@ -157,13 +164,13 @@ export class IdbFs extends BaseFs {
   }
   async children(path: string): Promise<string[]> {
     const prefix = path === '/' ? '/' : normalize(path) + '/';
-    return ((await store.keys('shared')) as string[]).filter((k) => k.startsWith(prefix) && !k.slice(prefix.length).includes('/'));
+    return (await store.keys('shared')).filter((k) => typeof k === 'string' && k.startsWith(prefix) && !k.slice(prefix.length).includes('/')).map(String);
   }
   async readdir(path: string): Promise<string[]> {
     const r = await this.rec(path);
     if (!r) throw fsError('ENOENT', 'scandir', path);
     if (r.kind !== 'dir') throw fsError('ENOTDIR', 'scandir', path);
-    return (await this.children(path)).map((k) => k.split('/').pop()!).sort();
+    return (await this.children(path)).map(base).sort();
   }
   async rm(path: string, options?: RmOptions): Promise<void> {
     const r = await this.rec(path);
@@ -198,7 +205,7 @@ export class Vfs extends EventTarget {
   declare seedLayer: SeedLayer | null;
   declare watches: Watches | null;
   declare views: Map<string, Namespace>;
-  declare opfs: DirHandle | undefined;
+  declare opfs: FileSystemDirectoryHandle | undefined;
   declare opfsMissing: boolean | undefined;
   declare defaultUpdates: string[] | undefined; // bundled defaults offered over an edited copy
   constructor() {
@@ -216,10 +223,11 @@ export class Vfs extends EventTarget {
   // them: 'user' (editor, uploads, undo), 'agent', 'run', 'subagent <name> (sN)'.
   // Writes through vfs.fs itself are not reported.
   as(source: string): Namespace {
-    if (!this.views.has(source)) this.views.set(source, attribute(this.fs, source, {
+    let view = this.views.get(source);
+    if (!view) this.views.set(source, (view = attribute(this.fs, source, {
       wants: (p) => !!this.watches?.wants(p), wantsUnder: (p) => !!this.watches?.wantsUnder(p), observe: (e) => this.watches?.observe(e),
-    }));
-    return this.views.get(source)!;
+    })));
+    return view;
   }
 
   async init(): Promise<void> {
@@ -228,7 +236,7 @@ export class Vfs extends EventTarget {
     // OPFS. Absent in very old browsers and some embedded webviews: fall back to
     // memory and say so, rather than refuse to start.
     try {
-      this.opfs = (await navigator.storage.getDirectory()) as DirHandle;
+      this.opfs = await navigator.storage.getDirectory();
       this.ns.mount(new HandleFs(this.opfs), '/work', { label: 'opfs' });
     } catch {
       this.opfsMissing = true;
@@ -240,9 +248,10 @@ export class Vfs extends EventTarget {
     await this.seed();
     const layer = await store.getSetting<{ name: string; bytes: Uint8Array }>('seedLayer').catch(() => null);
     if (layer) await this.stack(layer.name, layer.bytes, { save: false }).catch((e) => console.warn('Pouch seed layer:', e));
-    for (const name of (await store.keys('mounts')) as string[]) {
-      const { handle, readOnly } = (await store.get<{ handle: DirHandle; readOnly: boolean }>('mounts', name))!;
-      this.mounts.set(name, { handle, readOnly, live: false });
+    for (const name of (await store.keys('mounts')).map(String)) { // mounts are keyed by name
+      const rec = await store.get<{ handle: DirHandle; readOnly: boolean }>('mounts', name);
+      if (!rec) continue;
+      this.mounts.set(name, { handle: rec.handle, readOnly: rec.readOnly, live: false });
       await this.reconnect(name, { ask: false });
     }
   }
@@ -312,7 +321,8 @@ export class Vfs extends EventTarget {
 
   // ask=true must run inside a user gesture: browsers only prompt from one.
   async reconnect(name: string, { ask }: { ask: boolean }): Promise<boolean> {
-    const m = this.mounts.get(name)!;
+    const m = this.mounts.get(name);
+    if (!m) return false;
     const mode: { mode: HandleMode } = { mode: m.readOnly ? 'read' : 'readwrite' };
     let state = await m.handle.queryPermission?.(mode) ?? 'granted';
     if (state !== 'granted' && ask) state = await m.handle.requestPermission(mode);
@@ -326,7 +336,8 @@ export class Vfs extends EventTarget {
   }
 
   async pick(readOnly: boolean): Promise<string> {
-    const handle = await (window as unknown as PickerWindow).showDirectoryPicker({ mode: readOnly ? 'read' : 'readwrite' });
+    if (!window.showDirectoryPicker) throw new Error('This browser cannot pick folders (Chromium can).');
+    const handle = await window.showDirectoryPicker({ mode: readOnly ? 'read' : 'readwrite' });
     let name = handle.name.replace(/[^\w.-]+/g, '-') || 'folder';
     for (let i = 2; this.mounts.has(name); i++) name = handle.name + '-' + i;
     await store.put('mounts', name, { handle, readOnly });

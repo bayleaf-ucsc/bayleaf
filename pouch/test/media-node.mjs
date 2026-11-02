@@ -100,6 +100,7 @@ const fake = { label: 'fake libav', memory: 1, create: () => ({ async run(input,
     return { width: 64, height: 48, images: [0, 10, 20].slice(0, Math.min(3, input.want)).map((s) => ({ t: s, width: 32, height: 24, bytes: new Uint8Array([137, 80, 78, 71]) })) };
   }
   if (input.program === 'ffprobe') return { code: 0, stdout: `{ "format": { "filename": "${input.inputs[0].name}" } }`, stderr: '', files: [] };
+  if (input.args.includes('-h')) return { code: 0, stdout: 'Filter scale', stderr: '', files: [] };
   if (input.args.includes('-codecs')) return { code: 0, stdout: ' DEV.L. vp8', stderr: '', files: [] };
   const empty = input.args.includes('pcm_s16le');
   return { code: 0, stdout: '', stderr: `Input #0, matroska,webm, from '${input.inputs[0].name}':\nframe=  1 fps=0 size=0kB time=00:00:00.00\nOutput #0, ogg, to '${input.outputs[0]}':`,
@@ -144,6 +145,7 @@ await t('the commands in the terminal shell: mapping, outputs, -y, gaps, /task j
   r = await sh('ffmpeg -i c.mp4 still.png');
   assert.equal(r.exitCode, 1); assert.match(r.stderr, /cannot open it/); assert.match(r.stderr, /hint: this build reads and writes WebM/);
   r = await sh('ffmpeg -codecs'); assert.equal(r.exitCode, 0); assert.match(r.stdout, /vp8/);
+  r = await sh('ffmpeg -h filter=scale'); assert.equal(r.exitCode, 0, r.stderr); assert.equal(r.stdout, 'Filter scale\n', 'FFmpeg answers a help topic (no flags parsed)');
   r = await sh('ffmpeg -i nope.webm o.opus'); assert.equal(r.exitCode, 1); assert.match(r.stderr, /\/work\/nope\.webm: No such file or directory/);
   assert.ok(tasks.list().every((x) => x.kind === 'job') && tasks.list().length >= 6, 'each run is a /task job');
   assert.equal(tasks.list()[0].label, 'ffprobe a.webm');

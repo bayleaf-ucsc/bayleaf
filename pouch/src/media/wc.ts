@@ -203,15 +203,15 @@ export function geometry(ops: VfOp[], iw: number, ih: number): Geometry {
 // high rate cannot grow one emit list without bound.
 export function fpsPicker<F>(rate: number, cap = Infinity) {
   let start: number | null = null, next = 0, held: F | null = null, emitted = 0;
-  const slotOf = (t: number) => Math.floor((t - start!) * rate + 0.5 + 1e-9);
-  const fill = (upto: number, emit: [F, number][]) => { while (held && next < upto && emitted < cap) { emit.push([held, start! + next / rate]); next++; emitted++; } };
+  const slotOf = (start: number, t: number) => Math.floor((t - start) * rate + 0.5 + 1e-9);
+  const fill = (start: number, upto: number, emit: [F, number][]) => { while (held && next < upto && emitted < cap) { emit.push([held, start + next / rate]); next++; emitted++; } };
   return {
     // Frame at time t arrives: -> { emit: [[frame, slotTime]...], release } where
     // release is the frame it replaces (close it after drawing the emits).
     push(frame: F, t: number) {
-      if (start == null) start = t;
+      const s = start ??= t;
       const emit: [F, number][] = [];
-      fill(slotOf(t), emit);
+      fill(s, slotOf(s, t), emit);
       const release = held;
       held = frame;
       return { emit, release };
@@ -220,7 +220,7 @@ export function fpsPicker<F>(rate: number, cap = Infinity) {
     // before it are filled; a stream shorter than one slot still yields one frame.
     end(endT: number) {
       const emit: [F, number][] = [];
-      if (held) { fill(Math.max(Number.isFinite(endT) ? slotOf(endT) : 0, emitted ? 0 : next + 1), emit); }
+      if (held && start != null) { const s = start; fill(s, Math.max(Number.isFinite(endT) ? slotOf(s, endT) : 0, emitted ? 0 : next + 1), emit); } // held implies a start
       const release = held; held = null;
       return { emit, release };
     },

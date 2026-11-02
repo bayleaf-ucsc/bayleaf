@@ -49,7 +49,9 @@ export interface Composer {
 }
 type TokenKind = 'command' | 'path' | 'skill';
 interface Token { kind: TokenKind; start: number; end: number; q: string }
-interface AcItem { label: string; detail?: string; value?: ComposerCommand | ComposerSkill | string; disabled?: boolean; mono?: boolean; cost?: string }
+// What choosing an item inserts or runs; placeholders (disabled) have none.
+type AcPick = { kind: 'command'; command: ComposerCommand } | { kind: 'skill'; skill: ComposerSkill } | { kind: 'path'; path: string };
+interface AcItem { label: string; detail?: string; pick?: AcPick; disabled?: boolean; mono?: boolean; cost?: string }
 
 const PATH_CAP = 3000; // entries indexed for @; a huge mounted folder stops here
 const SKIP = new Set(['node_modules', '.git']);
@@ -77,6 +79,8 @@ export function fuzzy(q: string, s: string): number | null {
   return i < b.length ? null : score - s.length * 0.05;
 }
 
+const errMessage = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
 export function createComposer(deps: ComposerDeps): Composer {
   const { input } = deps;
 
@@ -97,7 +101,8 @@ export function createComposer(deps: ComposerDeps): Composer {
     // Main working counts too: Stop all stops main as well.
     stopAll.hidden = rows.filter((r) => r.stop && (r.kind === 'subagent' || r.kind === 'run')).length + (deps.mainBusy?.() ? 1 : 0) < 2;
     // Rebuilding drops focus; give it back to the same row's button.
-    const f = document.activeElement as HTMLElement | null, fKey = list.contains(f) ? f!.closest<HTMLElement>('[data-key]')?.dataset.key : null, fAct = fKey && f!.dataset.act;
+    const f = document.activeElement instanceof HTMLElement && list.contains(document.activeElement) ? document.activeElement : null;
+    const fKey = f?.closest<HTMLElement>('[data-key]')?.dataset.key, fAct = fKey && f?.dataset.act;
     list.replaceChildren(...rows.map((r) => {
       // data-kind, not a class: .subagent already styles the transcript's cards.
       const li = el('li', { className: 'tray-row' });
@@ -105,30 +110,32 @@ export function createComposer(deps: ComposerDeps): Composer {
       if (r.seed) seeded(li, r.seed); // the agent's color (continuity)
       if (r.paused) li.classList.add('paused');
       li.append(icon(r.kind === 'subagent' ? 'bot' : r.kind === 'run' ? 'terminal' : r.kind === 'approval' || r.kind === 'cap' ? 'shield-alert' : r.kind === 'steer' ? 'send' : r.kind === 'watch' ? 'eye' : 'clock'));
-      const text = el(r.open ? 'button' : 'span', { className: 'tray-text', textContent: r.text, title: r.title ?? r.text });
-      if (r.open) { (text as HTMLButtonElement).type = 'button'; text.onclick = r.open; text.dataset.act = 'open'; }
+      const props = { className: 'tray-text', textContent: r.text, title: r.title ?? r.text };
+      const text = r.open ? el('button', { ...props, type: 'button', onclick: r.open }) : el('span', props);
+      if (r.open) text.dataset.act = 'open';
       li.append(text, el('span', { className: 'tray-origin', textContent: r.origin }));
       const t = el('span', { className: 'tray-time' });
-      if (r.since) { t.dataset.since = r.since as unknown as string; t.textContent = elapsed(Date.now() - r.since); }
+      if (r.since) { t.dataset.since = String(r.since); t.textContent = elapsed(Date.now() - r.since); }
       li.append(t);
-      if (r.background) {
+      const { background, stop } = r;
+      if (background) {
         // G12: main stops waiting on it; the subagent keeps running.
         const b = el('button', { type: 'button', className: 'tray-bg', textContent: 'Background', title: 'Main stops waiting; this subagent keeps running and reports later', ariaLabel: `Send ${r.text} to the background` });
         b.dataset.act = 'bg';
-        b.onclick = async () => { b.disabled = true; try { await r.background!(); } catch (e) { deps.fail((e as Error).message); } };
+        b.onclick = async () => { b.disabled = true; try { await background(); } catch (e) { deps.fail(errMessage(e)); } };
         li.append(b);
       }
       // Pending input (D25): Edit, Steer now, Send, each a visible labeled button.
       for (const a of r.actions ?? []) {
         const b = el('button', { type: 'button', className: 'tray-bg', textContent: a.label, ariaLabel: a.ariaLabel ?? a.label, title: a.title ?? a.ariaLabel ?? a.label });
         b.dataset.act = a.act;
-        b.onclick = async () => { b.disabled = true; try { await a.run(); } catch (e) { deps.fail((e as Error).message); } };
+        b.onclick = async () => { b.disabled = true; try { await a.run(); } catch (e) { deps.fail(errMessage(e)); } };
         li.append(b);
       }
-      if (r.stop) {
+      if (stop) {
         const b = el('button', { type: 'button', className: 'tray-stop', textContent: r.stopLabel ?? 'Stop', ariaLabel: r.stopAria ?? `${r.stopLabel ?? 'Stop'} ${r.kind === 'followup' ? 'follow-up' : r.text}` });
         b.dataset.act = 'stop';
-        b.onclick = async () => { b.disabled = true; try { await r.stop!(); } catch (e) { deps.fail((e as Error).message); } };
+        b.onclick = async () => { b.disabled = true; try { await stop(); } catch (e) { deps.fail(errMessage(e)); } };
         li.append(b);
       }
       deps.onRow?.(li, r); // continuity: a fold or morph resumes over the rebuild
@@ -163,8 +170,10 @@ export function createComposer(deps: ComposerDeps): Composer {
   async function scan() {
     const out: string[] = [];
     const queue = deps.roots().map((r): [string, number] => [r, 0]);
-    while (queue.length && out.length < PATH_CAP) {
-      const [dir, depth] = queue.shift()!;
+    while (out.length < PATH_CAP) {
+      const next = queue.shift();
+      if (!next) break;
+      const [dir, depth] = next;
       let entries;
       try { entries = await deps.vfs.list(dir); } catch { continue; }
       for (const e of entries) {
@@ -183,15 +192,15 @@ export function createComposer(deps: ComposerDeps): Composer {
   // What is being typed at the caret, if it is one of the three triggers.
   function token(): Token | null {
     const v = input.value, c = input.selectionStart;
-    if (c !== input.selectionEnd) return null;
-    const before = v.slice(0, c!);
+    if (c === null || c !== input.selectionEnd) return null;
+    const before = v.slice(0, c);
     let m;
-    if ((m = /^\/([\w-]*)$/.exec(before)) && !/^\S/.test(v.slice(c!))) return { kind: 'command', start: 0, end: c!, q: m[1] };
-    if ((m = /(?:^|\s)@(\S*)$/.exec(before))) return { kind: 'path', start: c! - m[1].length - 1, end: c!, q: m[1] };
-    if ((m = /(?:^|\s)\$([\w.-]*)$/.exec(before))) return { kind: 'skill', start: c! - m[1].length - 1, end: c!, q: m[1] };
+    if ((m = /^\/([\w-]*)$/.exec(before)) && !/^\S/.test(v.slice(c))) return { kind: 'command', start: 0, end: c, q: m[1] };
+    if ((m = /(?:^|\s)@(\S*)$/.exec(before))) return { kind: 'path', start: c - m[1].length - 1, end: c, q: m[1] };
+    if ((m = /(?:^|\s)\$([\w.-]*)$/.exec(before))) return { kind: 'skill', start: c - m[1].length - 1, end: c, q: m[1] };
     return null;
   }
-  const rank = <T>(xs: T[], q: string, key: (x: T) => string) => xs.map((x): [T, number | null] => [x, fuzzy(q, key(x))]).filter(([, s]) => s != null).sort((a, b) => b[1]! - a[1]!).slice(0, SHOWN).map(([x]) => x);
+  const rank = <T>(xs: T[], q: string, key: (x: T) => string) => xs.map((x): [T, number | null] => [x, fuzzy(q, key(x))]).filter((p): p is [T, number] => p[1] != null).sort((a, b) => b[1] - a[1]).slice(0, SHOWN).map(([x]) => x);
 
   let gen = 0;
   async function update() {
@@ -199,17 +208,17 @@ export function createComposer(deps: ComposerDeps): Composer {
     if (!t) return close();
     const g = ++gen;
     let items: AcItem[];
-    if (t.kind === 'command') items = rank(deps.commands, t.q, (c) => c.name).map((c) => ({ label: '/' + c.name, detail: c.hint, value: c }));
+    if (t.kind === 'command') items = rank(deps.commands, t.q, (c) => c.name).map((c) => ({ label: '/' + c.name, detail: c.hint, pick: { kind: 'command' as const, command: c } }));
     else if (t.kind === 'skill') {
       const all = await indexSkills();
       // requests: the skill's declared cost (frontmatter), shown before it is used.
       // Unlisted skills stay pickable (the person chooses deliberately), marked so.
-      items = rank(all, t.q, (s) => s.name).map((s) => ({ label: s.name, detail: (s.unlisted ? 'Unlisted. ' : '') + s.description, value: s, ...(s.requests ? { cost: `about ${String(s.requests).replace(/-/g, '–')} requests` } : {}) }));
+      items = rank(all, t.q, (s) => s.name).map((s) => ({ label: s.name, detail: (s.unlisted ? 'Unlisted. ' : '') + s.description, pick: { kind: 'skill' as const, skill: s }, ...(s.requests ? { cost: `about ${String(s.requests).replace(/-/g, '–')} requests` } : {}) }));
       if (!all.length) items = [{ label: 'No skills yet', detail: 'Skills live in /pouch/skills and /work/.agents/skills', disabled: true }];
     } else {
       if (!paths) open(t, [{ label: 'Indexing files...', disabled: true }]);
       const all = await indexPaths();
-      items = rank(all, t.q, (p) => p).map((p) => ({ label: p, value: p, mono: true }));
+      items = rank(all, t.q, (p) => p).map((p) => ({ label: p, pick: { kind: 'path' as const, path: p }, mono: true }));
     }
     if (g !== gen) return; // typed on meanwhile
     if (!items.length) items = [{ label: t.kind === 'command' ? 'No such command (Enter sends it as text)' : 'No match', disabled: true }];
@@ -218,11 +227,12 @@ export function createComposer(deps: ComposerDeps): Composer {
   const KIND: Record<TokenKind, string> = { path: 'Files and folders', skill: 'Skills', command: 'Commands' };
   function open(t: Token, items: AcItem[]) {
     const keep = state?.kind === t.kind ? Math.max(0, state.active) : 0;
-    state = { ...t, items, active: Math.min(keep, items.length - 1) };
-    if (items[state.active]?.disabled) state.active = items.findIndex((i) => !i.disabled);
+    const s = { ...t, items, active: Math.min(keep, items.length - 1) };
+    if (items[s.active]?.disabled) s.active = items.findIndex((i) => !i.disabled);
+    state = s;
     ac.ariaLabel = KIND[t.kind];
     ac.replaceChildren(...items.map((it, i) => {
-      const o = el('div', { id: 'ac-' + i, role: 'option', className: 'ac-opt' + (it.mono ? ' mono' : ''), ariaSelected: String(i === state!.active), ariaDisabled: it.disabled ? 'true' : null },
+      const o = el('div', { id: 'ac-' + i, role: 'option', className: 'ac-opt' + (it.mono ? ' mono' : ''), ariaSelected: String(i === s.active), ariaDisabled: it.disabled ? 'true' : null },
         el('span', { className: 'ac-label', textContent: it.label }), ...(it.detail ? [el('span', { className: 'ac-detail', textContent: it.detail })] : []), ...(it.cost ? [el('span', { className: 'ac-cost', textContent: it.cost })] : []));
       if (!it.disabled) {
         // pointerdown keeps focus (and the soft keyboard) in the input.
@@ -237,8 +247,9 @@ export function createComposer(deps: ComposerDeps): Composer {
   }
   function mark() {
     const opts = ac.children;
-    for (let i = 0; i < opts.length; i++) opts[i].ariaSelected = String(i === state!.active);
-    if (state!.active >= 0) { input.setAttribute('aria-activedescendant', 'ac-' + state!.active); opts[state!.active]?.scrollIntoView({ block: 'nearest' }); }
+    const active = state?.active ?? -1;
+    for (let i = 0; i < opts.length; i++) opts[i].ariaSelected = String(i === active);
+    if (active >= 0) { input.setAttribute('aria-activedescendant', 'ac-' + active); opts[active]?.scrollIntoView({ block: 'nearest' }); }
     else input.removeAttribute('aria-activedescendant');
   }
   function close() {
@@ -256,28 +267,29 @@ export function createComposer(deps: ComposerDeps): Composer {
   }
   // run: Enter or a tap runs a command; Tab only completes its name.
   function choose(i: number, run: boolean) {
-    const it = state?.items[i];
-    if (!it || it.disabled) return;
-    const { kind, start, end } = state!;
+    if (!state) return;
+    const { items, start, end } = state, pick = items[i]?.pick;
+    if (!pick || items[i].disabled) return;
     close();
-    if (kind === 'command') {
-      if (run) { input.value = ''; input.dispatchEvent(new Event('input')); runCommand('/' + (it.value as ComposerCommand).name); }
-      else replace(start, end, '/' + (it.value as ComposerCommand).name + ' ');
-    } else if (kind === 'skill') replace(start, end, (it.value as ComposerSkill).unlisted ? `Use the ${(it.value as ComposerSkill).name} skill (${(it.value as ComposerSkill).path}). ` : `Use the ${(it.value as ComposerSkill).name} skill. `);
-    else replace(start, end, it.value + ((it.value as string).endsWith('/') ? '' : ' '));
+    if (pick.kind === 'command') {
+      if (run) { input.value = ''; input.dispatchEvent(new Event('input')); runCommand('/' + pick.command.name); }
+      else replace(start, end, '/' + pick.command.name + ' ');
+    } else if (pick.kind === 'skill') replace(start, end, pick.skill.unlisted ? `Use the ${pick.skill.name} skill (${pick.skill.path}). ` : `Use the ${pick.skill.name} skill. `);
+    else replace(start, end, pick.path + (pick.path.endsWith('/') ? '' : ' '));
     input.focus();
   }
   // The Interface (src/interface/send.ts) calls this first from the input's keydown; true means handled.
   function onKeydown(e: KeyboardEvent) {
-    if (!state || ac.hidden) return false;
-    const n = state.items.length, step = (d: number) => {
-      for (let k = 1; k <= n; k++) { const j = (state!.active + d * k + n * 2) % n; if (!state!.items[j].disabled) { state!.active = j; break; } }
+    const s = state;
+    if (!s || ac.hidden) return false;
+    const n = s.items.length, step = (d: number) => {
+      for (let k = 1; k <= n; k++) { const j = (s.active + d * k + n * 2) % n; if (!s.items[j].disabled) { s.active = j; break; } }
       mark();
     };
     if (e.key === 'ArrowDown') step(1);
     else if (e.key === 'ArrowUp') step(-1);
     else if (e.key === 'Escape') close();
-    else if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey && state.active >= 0 && !state.items[state.active].disabled) choose(state.active, e.key === 'Enter');
+    else if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey && s.active >= 0 && !s.items[s.active].disabled) choose(s.active, e.key === 'Enter');
     else return false;
     e.preventDefault();
     return true;
@@ -293,8 +305,8 @@ export function createComposer(deps: ComposerDeps): Composer {
   function runCommand(text: string) {
     const m = /^\/([\w-]+)(?:\s+([\s\S]*))?$/.exec(text.trim());
     const c = m && deps.commands.find((x) => x.name === m[1]);
-    if (!c) return false;
-    Promise.resolve(c.run(m![2]?.trim() ?? '')).catch((e: Error) => deps.fail(e.message));
+    if (!m || !c) return false;
+    Promise.resolve(c.run(m[2]?.trim() ?? '')).catch((e: unknown) => deps.fail(errMessage(e)));
     return true;
   }
 

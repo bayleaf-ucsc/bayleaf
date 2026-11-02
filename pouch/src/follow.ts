@@ -36,9 +36,10 @@ export function createFollow(log: HTMLElement): Follow {
   // Rule 2: toggle the disclosure ourselves, so the correction lands in the
   // same frame (a toggle event comes a task later, after a paint).
   log.addEventListener('click', (e) => {
-    const s = (e.target as Element).closest?.('summary');
-    const d = s?.parentElement as HTMLDetailsElement | null | undefined;
-    if (!s || d?.tagName !== 'DETAILS' || !log.contains(d) || (e.target as Element).closest('button, a, input, select, textarea') || e.defaultPrevented) return;
+    const t = e.target instanceof Element ? e.target : null;
+    const s = t?.closest('summary');
+    const d = s?.parentElement;
+    if (!t || !s || !(d instanceof HTMLDetailsElement) || !log.contains(d) || t.closest('button, a, input, select, textarea') || e.defaultPrevented) return;
     e.preventDefault();
     const y = s.getBoundingClientRect().top;
     d.open = !d.open;
@@ -63,8 +64,8 @@ export function createFollow(log: HTMLElement): Follow {
     mark: () => ({ top: log.scrollTop, inner: new Map([...log.querySelectorAll<HTMLElement>('[data-sk]')].map((n) => [n.dataset.sk, { top: n.scrollTop, end: n.scrollHeight - n.scrollTop - n.clientHeight <= 2 }])) }),
     restore(m) {
       for (const n of log.querySelectorAll<HTMLElement>('[data-sk]')) {
-        const w = m.inner.get(n.dataset.sk);
-        if (n.dataset.sk!.startsWith('live:') || w?.end) n.scrollTop = n.scrollHeight;
+        const sk = n.dataset.sk ?? '', w = m.inner.get(n.dataset.sk);
+        if (sk.startsWith('live:') || w?.end) n.scrollTop = n.scrollHeight;
         else if (w) n.scrollTop = w.top;
       }
       if (!follow) set(m.top);

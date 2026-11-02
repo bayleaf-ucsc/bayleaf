@@ -196,17 +196,18 @@ cache headers. README "Install and the offline copy" has the policy.
 
 ## Current artifact
 
-- `5c58759` (label `5c58759 2026-11-01`), built from clean `main` with `npm install` and
-  `node build.mjs` (which now runs the build-time trust checks, `arch.mjs`), deployed with
-  `node deploy.mjs`.
-- HTML SHA-256: `8fc06553b133bdbaee5a831921fbc0aebf7aa3dfd729a12a092345bd6d22f68c`.
-- Cloudflare version: `6caa07b9-ec8f-438c-83fd-562119ad599d`.
-- `deploy.mjs` verified the page, `SHA256SUMS`, 7 shell files and 24 runtime parts
-  (pdf.js, libav.js with its webcodecs-avf build and the hosted LGPL sources, the
-  Transformers.js runtime), byte-exact and immutable.
-- Includes the trust-boundary split of `src/main.js` (#144).
-- Playtested on Mac Chrome; on a Pixel 10 Pro, in-browser LFM3 froze the device and is
-  now refused on phones and tablets. Not verified: Firefox and Safari end to end.
+- `e4bfeb9` (label `e4bfeb9 2026-11-02`), the head of #148 stacked on #147 (not yet on
+  `main`), built from a clean tree with `npm ci` and `node build.mjs` (which now also runs
+  `tsc` on both projects), deployed with `node deploy.mjs` for playtesting.
+- HTML SHA-256: `492d41198448f522629c670ed6c625bddfe50c408ac16cc64af9b04527a65290`.
+- Cloudflare version: `ddc52cdd-ca0a-4c78-87e6-14d993cacde3`.
+- `deploy.mjs` verified the page, `SHA256SUMS`, 7 shell files and 24 runtime parts,
+  byte-exact and immutable.
+- Includes the TypeScript migration (#147) and the type-debt pay-down with its bug fixes
+  and guards (#148).
+- Before the playtest, the live Sealed journey suites and twelve scripted journeys against
+  the deployed site passed (about 137 Sealed requests); then playtested on Mac Chrome.
+  Not verified: Firefox and Safari end to end.
 
 ## Deploy and verify
 

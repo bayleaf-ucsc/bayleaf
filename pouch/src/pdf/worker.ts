@@ -18,17 +18,16 @@
 /// <reference path="./pdfjs.d.ts" />
 import * as pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs';
 import { getDocument, AnnotationMode } from 'pdfjs-dist/build/pdf.mjs';
-import type { TextItem } from 'pdfjs-dist/types/src/display/api';
-import type { PdfDocInfo, PdfInfo, PdfInfoJob, PdfJob, PdfLoad, PdfReply, PdfRenderJob, PdfRequest, PdfResult, PdfStop, PdfTextJob, PdfTextPage, PdfImage, PdfRender } from './protocol.ts';
-
-(globalThis as { pdfjsWorker?: unknown }).pdfjsWorker = pdfjsWorker; // pdf.js runs its worker side in this thread
+import type { PDFPageProxy, TextItem, TextMarkedContent } from 'pdfjs-dist/types/src/display/api';
+import type { PdfDocInfo, PdfInfo, PdfInfoJob, PdfJob, PdfReply, PdfRenderJob, PdfRequest, PdfResult, PdfTextJob, PdfTextPage, PdfImage } from './protocol.ts';
 
 let files: Map<string, Uint8Array> | null = null; // path in data.pack
-(globalThis as { pouchFile?: (url: unknown) => Uint8Array }).pouchFile = (url) => {
+const pouchFile = (url: unknown) => {
   const b = files?.get(String(url));
   if (!b) throw new Error(`${url} is not in Pouch's pdf runtime`);
   return b.slice(); // pdf.js may transfer or detach what it gets
 };
+Object.assign(globalThis, { pdfjsWorker, pouchFile }); // pdf.js runs its worker side in this thread
 
 // data.pack: u32 LE header length, JSON { path: [offset, length] }, bytes.
 function unpack(buf: ArrayBuffer) {
@@ -44,8 +43,15 @@ class OffscreenCanvasFactory {
     const canvas = new OffscreenCanvas(width, height);
     return { canvas, context: canvas.getContext('2d', { willReadFrequently: true }) };
   }
-  reset(cc: CanvasAndContext, width: number, height: number) { cc.canvas!.width = width; cc.canvas!.height = height; }
-  destroy(cc: CanvasAndContext) { cc.canvas!.width = cc.canvas!.height = 0; cc.canvas = null; cc.context = null; }
+  reset(cc: CanvasAndContext, width: number, height: number) { const canvas = live(cc); canvas.width = width; canvas.height = height; }
+  destroy(cc: CanvasAndContext) { const canvas = live(cc); canvas.width = canvas.height = 0; cc.canvas = null; cc.context = null; }
+}
+// pdf.js's own canvas factory throws the same on a destroyed pair.
+function live(cc: CanvasAndContext) { if (!cc.canvas) throw new Error('Canvas is not specified'); return cc.canvas; }
+function context2d(canvas: OffscreenCanvas) {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('no 2D canvas context in this worker');
+  return ctx;
 }
 class NoFilterFactory {
   addFilter() { return 'none'; } addHCMFilter() { return 'none'; } addAlphaFilter() { return 'none'; }
@@ -65,17 +71,25 @@ const OPTIONS = {
 const stopped = new Set(); // job ids asked to stop
 const check = (id: number) => { if (stopped.has(id)) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' }); };
 
-type Thrown = { name?: string; code?: unknown; message?: string } | null | undefined;
+// What a thrown value carries, whatever was thrown.
+const isObject = (e: unknown): e is object => typeof e === 'object' && e !== null;
+const nameOf = (e: unknown) => isObject(e) && 'name' in e ? e.name : undefined;
+const codeOf = (e: unknown) => isObject(e) && 'code' in e ? e.code : undefined;
+const messageOf = (e: unknown) => isObject(e) && 'message' in e ? e.message : undefined;
 async function open(data: Uint8Array, password: string | undefined) {
   const task = getDocument({ ...OPTIONS, data, password });
   try { return await task.promise; }
   catch (e) {
     await task.destroy().catch(() => {});
-    if ((e as Thrown)?.name === 'PasswordException') throw Object.assign(new Error((e as Thrown)!.code === 2 ? 'incorrect password' : 'encrypted: it needs a password to open'), { code: 'EENCRYPTED' });
-    if ((e as Thrown)?.name === 'InvalidPDFException') throw Object.assign(new Error('not a PDF file (or damaged beyond repair)'), { code: 'ENOTPDF' });
+    if (nameOf(e) === 'PasswordException') throw Object.assign(new Error(codeOf(e) === 2 ? 'incorrect password' : 'encrypted: it needs a password to open'), { code: 'EENCRYPTED' });
+    if (nameOf(e) === 'InvalidPDFException') throw Object.assign(new Error('not a PDF file (or damaged beyond repair)'), { code: 'ENOTPDF' });
     throw e;
   }
 }
+
+// Without includeMarkedContent pdf.js yields TextItems only; the guard says so to tsc.
+const isTextItem = (it: TextItem | TextMarkedContent): it is TextItem => 'str' in it;
+const textItems = async (page: PDFPageProxy) => (await page.getTextContent()).items.filter(isTextItem);
 
 const textOf = (items: TextItem[]) => items.map((it) => it.str + (it.hasEOL ? '\n' : '')).join('');
 // -layout: lines by baseline, items left to right, gaps as spaces (an approximation of poppler's).
@@ -109,12 +123,12 @@ const actions = {
       const { info } = await doc.getMetadata();
       const js = await doc.getJSActions().catch(() => null), hasJs = await doc.hasJSActions?.().catch(() => false);
       const p1 = await doc.getPage(1), [x0, y0, x1, y1] = p1.view;
-      const out: PdfInfo = { pages: doc.numPages, info: info as PdfDocInfo, javascript: !!(js && Object.keys(js).length) || !!hasJs,
+      const out: PdfInfo = { pages: doc.numPages, info: info as PdfDocInfo /* pdf.js types it as object */, javascript: !!(js && Object.keys(js).length) || !!hasJs,
         size: [x1 - x0, y1 - y0], rotate: p1.rotate, noText: [], scanned: Math.min(doc.numPages, scan) };
       for (let n = 1; n <= out.scanned; n++) {
         check(id);
         const page = n === 1 ? p1 : await doc.getPage(n);
-        if (!hasText((await page.getTextContent()).items as TextItem[])) out.noText.push(n);
+        if (!hasText(await textItems(page))) out.noText.push(n);
         if (n !== 1) page.cleanup();
       }
       return out;
@@ -128,7 +142,7 @@ const actions = {
       for (let n = first; n <= hi; n++) {
         check(id);
         const page = await doc.getPage(n);
-        const { items } = await page.getTextContent() as { items: TextItem[] }; // without includeMarkedContent: TextItems only
+        const items = await textItems(page);
         pages.push({ n, text: layout ? layoutOf(items) : textOf(items), empty: !hasText(items) });
         page.cleanup();
         if (n % 10 === 0) note(`page ${n} of ${hi}`);
@@ -149,14 +163,14 @@ const actions = {
         const viewport = page.getViewport({ scale: dpi / 72 });
         const w = Math.ceil(viewport.width - 1e-6), h = Math.ceil(viewport.height - 1e-6); // 792 pt at 600 DPI is 6600, not 6601
         if (w * h > maxPixels) throw Object.assign(new Error(`page ${n} at ${dpi} DPI is ${w}x${h} pixels, over the cap of ${maxPixels}; lower -r`), { code: 'ECAP' });
-        const canvas = new OffscreenCanvas(w, h), ctx = canvas.getContext('2d')!;
+        const canvas = new OffscreenCanvas(w, h), ctx = context2d(canvas);
         ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
         await page.render({ canvasContext: ctx, canvas, viewport, annotationMode: AnnotationMode.ENABLE }).promise;
         let img = canvas;
         if (crop) {
           const x = Math.min(crop.x, w - 1), y = Math.min(crop.y, h - 1);
           const cw = Math.max(1, Math.min(crop.W || w - x, w - x)), ch = Math.max(1, Math.min(crop.H || h - y, h - y));
-          img = new OffscreenCanvas(cw, ch); img.getContext('2d')!.drawImage(canvas, x, y, cw, ch, 0, 0, cw, ch);
+          img = new OffscreenCanvas(cw, ch); context2d(img).drawImage(canvas, x, y, cw, ch, 0, 0, cw, ch);
         }
         const blob = await img.convertToBlob({ type, quality: 0.9 });
         total += blob.size;
@@ -170,24 +184,34 @@ const actions = {
   },
 };
 
+function run(job: PdfJob, id: number, note: Note): Promise<PdfResult> {
+  switch (job.action) {
+    case 'info': return actions.info(job, id);
+    case 'text': return actions.text(job, id, note);
+    case 'render': return actions.render(job, id, note);
+  }
+}
+// Rendered pages move to the page rather than being copied.
+const transferOf = (result: PdfResult) => !('pages' in result) || !Array.isArray(result.pages) ? [] :
+  result.pages.flatMap((p) => ('bytes' in p && p.bytes.buffer instanceof ArrayBuffer ? [p.bytes.buffer] : []));
+
 self.onmessage = async ({ data: msg }: MessageEvent<PdfRequest>) => {
-  const { id, action } = msg;
-  if (action === 'stop') { stopped.add((msg as PdfStop).job); return; }
+  if (msg.action === 'stop') { stopped.add(msg.job); return; }
+  const { id } = msg;
   try {
     let result: PdfResult;
-    if (action === 'load') {
-      files = unpack((msg as PdfLoad).pack);
+    if (msg.action === 'load') {
+      files = unpack(msg.pack);
       // From here on this worker has no network at all (see the header).
       for (const k of ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'importScripts']) {
-        try { Object.defineProperty(globalThis, k, { value: undefined, configurable: false, writable: false }); } catch { (globalThis as Record<string, unknown>)[k] = undefined; }
+        try { Object.defineProperty(globalThis, k, { value: undefined, configurable: false, writable: false }); } catch { Object.assign(globalThis, { [k]: undefined }); }
       }
       result = { files: files.size };
     } else {
-      result = await (actions[action] as (job: PdfJob, id: number, note: Note) => Promise<PdfResult>)(msg as PdfJob, id, (line) => postMessage({ id, note: line } satisfies PdfReply));
+      result = await run(msg, id, (line) => postMessage({ id, note: line } satisfies PdfReply));
     }
-    const transfer = (Array.isArray((result as PdfRender)?.pages) ? (result as PdfRender).pages : []).flatMap((p) => (p.bytes ? [p.bytes.buffer as ArrayBuffer] : []));
-    postMessage({ id, result } satisfies PdfReply, transfer);
+    postMessage({ id, result } satisfies PdfReply, transferOf(result));
   } catch (e) {
-    postMessage({ id, error: String((e as Thrown)?.message ?? e), code: (e as Thrown)?.code, name: (e as Thrown)?.name });
+    postMessage({ id, error: String(messageOf(e) ?? e), code: codeOf(e), name: nameOf(e) });
   } finally { stopped.delete(id); }
 };

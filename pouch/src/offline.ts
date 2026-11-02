@@ -57,7 +57,7 @@ export function createOffline({ swSha256 }: { swSha256: string }) {
       if (got !== sums[path]) throw new Error(`${path} as served (${short(got)}) does not match SHA256SUMS (${short(sums[path])})`);
       // Keep the security headers: the CSP header adds what the meta tag cannot (frame-ancestors).
       const headers = new Headers();
-      for (const h of KEEP) if (r.headers.has(h)) headers.set(h, r.headers.get(h)!);
+      for (const h of KEEP) { const v = r.headers.get(h); if (v !== null) headers.set(h, v); }
       files.push([path, body, headers]);
     }
     const name = PREFIX + sums['pouch.html'];
@@ -74,7 +74,7 @@ export function createOffline({ swSha256 }: { swSha256: string }) {
     enabled: () => { try { return localStorage.getItem(OFF) !== 'off'; } catch { return true; } },
     // Served by the worker from the pinned cache, rather than from the network.
     servedOffline: () => !!sw?.controller,
-    installed: () => matchMedia('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true, // iOS Safari only
+    installed: () => matchMedia('(display-mode: standalone)').matches || ('standalone' in navigator && navigator.standalone === true), // iOS Safari only
 
     async start() {
       if (!supported || !this.enabled()) return;
@@ -86,7 +86,7 @@ export function createOffline({ swSha256 }: { swSha256: string }) {
     async check() {
       state.error = null;
       try { const sums = await fetchSums(); state.published = sums['pouch.html']; state.checkedAt = new Date(); }
-      catch (e) { state.error = (e as Error).message; }
+      catch (e) { state.error = e instanceof Error ? e.message : String(e); }
       const p = await pinned();
       return { pinned: p, published: state.published, update: !!(p && state.published && state.published !== p) };
     },

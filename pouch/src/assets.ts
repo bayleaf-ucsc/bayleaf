@@ -19,12 +19,11 @@
 // against the receipt recorded when the whole file matched its pin).
 import { Sha256 } from './sha256.ts';
 import type { Sha256State } from './sha256.ts';
+import type { FilePin, PartsPin } from './trust.ts';
 
 export type FetchImpl = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-// A pinned upstream file (a lock entry's file), or a manifest's file.
-export interface FilePin { name: string; bytes: number; sha256: string }
-// A build define naming a manifest of content-addressed parts.
-export interface PartsPin { dir: string; manifest: string; sha256: string; bytes?: number }
+// The pins live in the trust contract (both tsconfig projects type the build defines with them).
+export type { FilePin, PartsPin };
 interface Part { path: string; bytes: number; sha256: string }
 // role: what the file is to its runtime (build-models.mjs marks the 'wasm').
 export interface PartsManifest { files: (FilePin & { parts: Part[]; role?: string })[] }
@@ -73,10 +72,11 @@ export async function openStore(name: string, { create = true }: { create?: bool
       };
     }
   } catch { /* SecurityError on opaque origins */ }
-  const m = mem.get(name) ?? mem.set(name, new Map()).get(name)!;
+  const m = mem.get(name) ?? new Map<string, Blob | string>();
+  mem.set(name, m);
   return {
     persistent: false,
-    get: async (k) => m.has(k) ? new Blob([m.get(k)!]) : null,
+    get: async (k) => { const v = m.get(k); return v === undefined ? null : new Blob([v]); },
     put: async (k, b) => { m.set(k, b); },
     del: async (k) => { m.delete(k); },
     keys: async (prefix = '') => [...m.keys()].filter((k) => k.startsWith(prefix)),
@@ -89,6 +89,8 @@ export async function openStore(name: string, { create = true }: { create?: bool
 // Manifest (format 2): { files: [{ name, bytes, sha256, parts: [{ path, bytes, sha256 }] }] }.
 // A part that fails is deleted and fetched once more; failing twice refuses.
 export type PartAssets = ReturnType<typeof partAssets>;
+// Called only on bytes whose SHA-256 matched the page's pin: the shape is the build's.
+const parseManifest = async (b: Blob): Promise<PartsManifest> => JSON.parse(await b.text());
 export function partAssets(pin: PartsPin, { storeName = 'pouch-runtime', base = () => globalThis.document?.baseURI ?? location.href, fetchImpl = (...a: Parameters<FetchImpl>) => fetch(...a) }: { storeName?: string; base?: () => string; fetchImpl?: FetchImpl } = {}) {
   const url = (name: string) => new URL(pin.dir + name, base()).href;
   const key = (name: string) => pin.dir + name;
@@ -102,7 +104,7 @@ export function partAssets(pin: PartsPin, { storeName = 'pouch-runtime', base = 
       if (await digest(blob) !== pin.sha256) throw new Error(`${pin.dir}${pin.manifest} does not match this page; refused.`);
       await st.put(key(pin.manifest), blob);
     }
-    return blob && JSON.parse(await blob.text());
+    return blob && parseManifest(blob);
   }
   async function fetchPart(st: AssetStore, part: Part, onBytes: (n: number) => void, signal: AbortSignal): Promise<Blob> {
     for (let attempt = 1; ; attempt++) {
@@ -151,16 +153,18 @@ export function partAssets(pin: PartsPin, { storeName = 'pouch-runtime', base = 
         }
       }
       await Promise.all(Array.from({ length: PARALLEL }, () => stream().catch((e) => { halt.abort(); throw e; })));
-      return { manifest: m, files: Object.fromEntries(m.files.map((f) => [f.name, new Blob(f.parts.map((x) => blobs.get(x.path)!))])), progress: p, persistent: st.persistent };
+      // stream() set every part or threw.
+      const blobOf = (path: string) => { const b = blobs.get(path); if (!b) throw new Error(`Part ${pin.dir}${path} was not obtained.`); return b; };
+      return { manifest: m, files: Object.fromEntries(m.files.map((f) => [f.name, new Blob(f.parts.map((x) => blobOf(x.path)))])), progress: p, persistent: st.persistent };
     },
     // Picked files: the manifest and parts by name (a saved runtime/<group>/ folder). Each checked.
     async importFiles(list: Iterable<File>) {
       const st = await openStore(storeName), byName = new Map([...list].map((f) => [f.name, f]));
       let m = await manifest(st, { network: false });
-      if (!m && byName.has(pin.manifest)) {
-        const f = byName.get(pin.manifest)!;
-        if (await digest(f) !== pin.sha256) throw new Error(`${pin.manifest} does not match this page; refused.`);
-        await st.put(key(pin.manifest), f); m = JSON.parse(await f.text());
+      const picked = byName.get(pin.manifest);
+      if (!m && picked) {
+        if (await digest(picked) !== pin.sha256) throw new Error(`${pin.manifest} does not match this page; refused.`);
+        await st.put(key(pin.manifest), picked); m = await parseManifest(picked);
       }
       let added = 0, bad = 0;
       if (m) for (const part of m.files.flatMap((f) => f.parts)) {
@@ -211,8 +215,12 @@ export async function fillFile(st: AssetStore, key: string, f: FilePin, source: 
     const b = await st.get(chunkKey(key, i));
     if (!b || await digest(b) !== s.chunks[i]) { s.done = i; s.states.length = i; s.chunks.length = i; break; }
   }
+  // No hash state is saved after the last chunk: if a reload came between storing
+  // it and recording the verdict, that chunk is fetched again.
+  while (s.done && !s.states[s.done - 1]) { s.done--; s.states.length = s.done; s.chunks.length = s.done; }
   onBytes(Math.min(s.done * chunk, f.bytes), 'kept');
-  const hash = s.done ? Sha256.resume(s.states[s.done - 1]!) : new Sha256();
+  const saved = s.done ? s.states[s.done - 1] : null;
+  const hash = saved ? Sha256.resume(saved) : new Sha256();
   const halt = new AbortController(), sig = signal ? AbortSignal.any([signal, halt.signal]) : halt.signal;
   const inflight = new Map<number, Promise<Uint8Array<ArrayBuffer>>>();
   let next = s.done;
@@ -228,7 +236,9 @@ export async function fillFile(st: AssetStore, key: string, f: FilePin, source: 
   try {
     for (let i = s.done; i < last; i++) {
       launch();
-      const bytes = await inflight.get(i)!;
+      const pending = inflight.get(i);
+      if (!pending) throw new Error(`${f.name}: chunk ${i} was never requested.`); // launch() runs ahead of i
+      const bytes = await pending;
       inflight.delete(i);
       if (sig.aborted) throw stopped();
       // Hash in 4 MiB slices, yielding between them, so the page stays responsive.
@@ -266,8 +276,9 @@ export function rangeSource(url: string, { fetchImpl = (...a: Parameters<FetchIm
         return b;
       } catch (e) {
         if (signal?.aborted) throw stopped();
-        if ((e as { fatal?: boolean }).fatal || attempt > retries) throw new Error(`${url.split('/resolve/')[1] ?? url} bytes ${from}-${to - 1}: ${(e as Error).message}`);
-        onRetry({ i, attempt, error: (e as Error).message });
+        const message = e instanceof Error ? e.message : String(e);
+        if ((e instanceof Error && 'fatal' in e && e.fatal) || attempt > retries) throw new Error(`${url.split('/resolve/')[1] ?? url} bytes ${from}-${to - 1}: ${message}`);
+        onRetry({ i, attempt, error: message });
         await sleep(500 * 2 ** attempt, signal);
       }
     }
@@ -294,7 +305,5 @@ export async function verifiedFile(st: AssetStore, key: string, f: FilePin, { ch
     }
     parts.push(b); onBytes(b.size);
   }
-  const blob = new Blob(parts) as VerifiedBlob;
-  blob.repaired = repaired;
-  return blob;
+  return Object.assign(new Blob(parts), { repaired });
 }

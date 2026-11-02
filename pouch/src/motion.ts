@@ -46,11 +46,15 @@ export const flipFrom = (first: DOMRect) => (node: Element): Keyframe[] => {
 
 // Take a snapshot of `node` (its place and a copy) before it is rebuilt.
 export interface Snapshot { rect: DOMRect; copy: HTMLElement }
-export const snapshot = (node: Element | null | undefined): Snapshot | null => (node?.isConnected ? { rect: node.getBoundingClientRect(), copy: node.cloneNode(true) as HTMLElement } : null);
+// Only HTML nodes fold: the ghost is positioned through its style.
+export function snapshot(node: Element | null | undefined): Snapshot | null {
+  const copy = node?.isConnected ? node.cloneNode(true) : null;
+  return node && copy instanceof HTMLElement ? { rect: node.getBoundingClientRect(), copy } : null;
+}
 // A ghost of a snapshot that folds into `to` (fixed position, removed after).
 export function fold(from: Snapshot | null | undefined, to: Element | null | undefined, ms = 240): Animation | null {
   if (!from || !to?.isConnected || reduced()) return null;
-  const a = from.rect, b = to!.getBoundingClientRect();
+  const a = from.rect, b = to.getBoundingClientRect();
   if (!a.width || !a.height || !b.width || !b.height) return null;
   const ghost = from.copy;
   ghost.removeAttribute('id');

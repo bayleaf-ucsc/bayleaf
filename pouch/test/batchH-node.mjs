@@ -7,7 +7,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { Sha256, sha256hex } from '../src/sha256.ts';
 import { openStore, fillFile, rangeSource, blobSource, verifiedFile, fileState, partAssets } from '../src/assets.ts';
 import { createModelStore } from '../src/models.ts';
-import { createModelService, modelsCommands } from '../src/models-cli.ts';
+import { askTitle, createModelService, modelsCommands } from '../src/models-cli.ts';
 import { gpuSupport, deviceSupport, DEVICE_REASON, friendlyError, MIN_STORAGE_BUFFERS } from '../src/local/engine.ts';
 import { createJobs, sleepAndHash } from '../src/jobs.ts';
 import { Tasks, TaskFs } from '../src/ns/tasks.ts';
@@ -193,6 +193,16 @@ await t('models: a tampered gateway file fails the download task naming the file
   const r = await sh(svc, ['get', 'tiny-q4', '--wait']);
   assert.equal(r.exitCode, 1); assert.match(r.stderr, /onnx\/model\.onnx_data: SHA-256 differs from the pin/);
 });
+await t('models: a malformed catalog entry is skipped, not a broken model list', async () => {
+  const good = { repo: 'x/ok', revision: 'r', files: [{ bytes: 5 }], license: { name: 'MIT' }, qualification: [{ client: 'pouch', status: 'passed' }] };
+  const releases = [good, { repo: 'x/a', revision: 'r', files: [null] }, { repo: 'x/b', revision: 'r', files: [], qualification: 'yes' },
+    { repo: 'x/c', revision: 'r', files: [], license: { name: 5 } }, { repo: 'x/d', revision: 'r', files: [{ bytes: '5' }] }];
+  const fetchImpl = async () => new Response(JSON.stringify({ releases }), { status: 200 });
+  const store = createModelStore([], { gateway: 'https://gw/hf', fetchImpl });
+  assert.deepEqual((await store.catalog()).map((r) => r.repo), ['x/ok']);
+  const r = await sh(createModelService({ store, tasks: new Tasks(), approve: async () => true }), ['list']);
+  assert.equal(r.exitCode, 0, r.stderr); assert.match(r.stdout, /x\/ok .*pouch: passed/);
+});
 
 // ── WebGPU capability, before anything is offered or downloaded ──
 const adapter = ({ f16 = true, buffers = MIN_STORAGE_BUFFERS } = {}) => ({ requestAdapter: async () => ({ features: new Set(f16 ? ['shader-f16'] : []), limits: { maxStorageBuffersPerShaderStage: buffers } }) });
@@ -321,5 +331,11 @@ await t('no tool asset defaults to a CDN or the Hub (dist/)', () => {
   assert.ok(scanned >= 3 && listed.some((p) => p.startsWith('runtime/transformers/')), 'runtime listed in SHA256SUMS');
   assert.ok(!listed.some((p) => p.startsWith('models/')), 'no weights in the artifact');
   void readdirSync;
+});
+await t('approval titles name who asks, the user included', () => {
+  assert.equal(askTitle({ action: 'remove', label: 'Qwen', who: { by: 'user', via: 'Settings' } }), 'Remove Qwen?');
+  assert.equal(askTitle({ action: 'get', label: 'Qwen', who: { by: 'user' } }), 'Download Qwen?');
+  assert.equal(askTitle({ action: 'remove', label: 'Qwen', who: { by: 'agent', name: 'main (a1)' } }), 'main (a1) asks to remove Qwen');
+  assert.equal(askTitle({ action: 'get', label: 'Qwen', who: { by: 'agent' } }), 'An agent asks to download Qwen');
 });
 console.log(`\n${n} passed`);

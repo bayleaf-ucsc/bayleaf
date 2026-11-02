@@ -21,6 +21,7 @@ import { shellFor, serialized, execScript, CWD } from './tools.ts';
 import type { EgressRequest } from './trust.ts';
 import type { Namespace } from './ns/namespace.ts';
 import type { Task } from './ns/tasks.ts';
+import type { OpenHooks } from './open-cli.ts';
 import type { ShellHooks } from './tools-types.ts';
 import type { Vfs } from './vfs.ts';
 
@@ -44,16 +45,15 @@ export function binaryOutput(text: unknown): string | null {
   if (!t.slice(0, 8000).includes('\0')) return null;
   return `[binary output: ${t.length} bytes not shown. Try \`od -c FILE | head\`, \`file FILE\`, or \`open FILE\` for images, audio and video]`;
 }
+const errText = (e: unknown) => String((e && typeof e === 'object' && 'message' in e ? e.message : null) ?? e);
 const commonPrefix = (xs: string[]) => xs.reduce((a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; return a.slice(0, i); });
 
 // models, pdf, media: the src/models-cli.ts, src/pdf.ts and src/media.ts
 // services, passed through to shellFor. openFile and revealDir back the
 // `open` command (src/open-cli.ts).
-export interface TerminalHooks extends Pick<ShellHooks, 'models' | 'pdf' | 'media'> {
+export interface TerminalHooks extends Pick<ShellHooks, 'models' | 'pdf' | 'media'>, Pick<OpenHooks, 'openFile' | 'revealDir'> {
   bayleafCredential?(): string | null | undefined;
   approveEgress?(req: EgressRequest): Promise<boolean>;
-  openFile?(o: { path: string; mode?: string; interactive?: boolean }): Promise<boolean>;
-  revealDir?(path: string): unknown;
 }
 // Just what the terminal uses of the page's Vfs and its /task table.
 export type TerminalTask = Task;
@@ -74,7 +74,7 @@ export function createTerminal({ vfs, fs: userFs, hooks = {}, onChange }: Termin
   const fs = serialized(userFs ?? vfs.as('user'));
   const shell = shellFor(fs, {
     bayleafCredential: () => hooks.bayleafCredential?.() ?? null,
-    approveEgress: hooks.approveEgress && ((req: EgressRequest) => hooks.approveEgress!(req)),
+    approveEgress: hooks.approveEgress && ((req: EgressRequest) => hooks.approveEgress?.(req) ?? Promise.resolve(false)),
     models: hooks.models,
     pdf: hooks.pdf,
     media: hooks.media,
@@ -83,7 +83,7 @@ export function createTerminal({ vfs, fs: userFs, hooks = {}, onChange }: Termin
   });
   let cwd: string = CWD, env: Record<string, string> | null = null, running: { task: TerminalTask } | null = null;
   let history: string[] = [];
-  try { history = JSON.parse(localStorage.getItem(HISTORY_KEY)!) ?? []; } catch {}
+  try { const h: unknown = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? 'null'); if (Array.isArray(h)) history = h.filter((x) => typeof x === 'string'); } catch {}
   let at = history.length, draft = '';
   const log = $('term-log'), input = $<HTMLInputElement>('term-input'), prompt = $('term-prompt');
   const setPrompt = () => { prompt.textContent = (cwd === CWD ? '~' : cwd.replace(/^\/work\//, '~/')) + ' $'; };
@@ -98,7 +98,7 @@ export function createTerminal({ vfs, fs: userFs, hooks = {}, onChange }: Termin
   function block(cmd: string) {
     const b = el('div', { className: 'term-block' }, el('div', { className: 'term-cmd' }, el('span', { className: 'term-ps', textContent: prompt.textContent + ' ' }), cmd));
     log.append(b);
-    while (log.children.length > KEEP_BLOCKS) log.firstElementChild!.remove();
+    while (log.children.length > KEEP_BLOCKS) log.firstElementChild?.remove();
     return b;
   }
   const scroll = () => { log.scrollTop = log.scrollHeight; };
@@ -124,7 +124,7 @@ export function createTerminal({ vfs, fs: userFs, hooks = {}, onChange }: Termin
     scroll();
     let r: ShellResult;
     try { r = await execScript(shell, line, { cwd, ...(env ? { env, replaceEnv: true } : {}), signal: ac.signal }); }
-    catch (e) { r = { stdout: '', stderr: String((e as Error)?.message ?? e) + '\n', exitCode: 1 }; }
+    catch (e) { r = { stdout: '', stderr: errText(e) + '\n', exitCode: 1 }; }
     finally { clearInterval(timer); live.remove(); running = null; input.removeAttribute('aria-busy'); }
     if (!killed && r.env) { env = r.env; cwd = normalize(r.env.PWD || cwd); setPrompt(); }
     const screen = (t: string) => { const bin = binaryOutput(t); return bin ? { text: '', note: bin } : capOutput(t); };
@@ -143,7 +143,7 @@ export function createTerminal({ vfs, fs: userFs, hooks = {}, onChange }: Termin
   async function interrupt() {
     if (!running) { block(input.value + '^C'); input.value = ''; scroll(); return; }
     try { await vfs.fs.writeFile(`/task/${running.task.id}/ctl`, 'kill'); }
-    catch (e) { print(log.lastElementChild!, String((e as Error)?.message ?? e), 'term-err'); }
+    catch (e) { print(log.lastElementChild ?? log, errText(e), 'term-err'); }
   }
   function clear() { log.replaceChildren(); }
 
@@ -165,7 +165,7 @@ export function createTerminal({ vfs, fs: userFs, hooks = {}, onChange }: Termin
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (running) { print(log.lastElementChild!, 'A command is running; Ctrl+C stops it.', 'term-note muted'); return; }
+      if (running) { print(log.lastElementChild ?? log, 'A command is running; Ctrl+C stops it.', 'term-note muted'); return; }
       const cmd = input.value; input.value = ''; run(cmd); return;
     }
     // Ctrl+C interrupts unless text is selected in the field (then it copies).

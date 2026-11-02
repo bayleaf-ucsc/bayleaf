@@ -1,0 +1,22 @@
+{
+  "src/agent.ts": {"as": 3},
+  "src/bayleaf-cli.ts": {"as": 1},
+  "src/dom.ts": {"as": 1},
+  "src/interface/connection.ts": {"as": 1},
+  "src/interface/subagents.ts": {"as": 2},
+  "src/interface/transcript.ts": {"as": 2},
+  "src/local/engine.ts": {"as": 1},
+  "src/local/provider.ts": {"as": 1},
+  "src/localhost.ts": {"as": 1},
+  "src/main.ts": {"as": 1},
+  "src/media.ts": {"as": 1},
+  "src/ns/9p.ts": {"as": 1},
+  "src/pdf.ts": {"as": 1},
+  "src/pdf/worker.ts": {"as": 2},
+  "src/run/core.ts": {"as": 1},
+  "src/run/host.ts": {"as": 1},
+  "src/run/worker.ts": {"as": 1},
+  "src/sealed.ts": {"as unknown as": 1},
+  "src/subagents.ts": {"as": 1},
+  "src/tools.ts": {"as": 1}
+}

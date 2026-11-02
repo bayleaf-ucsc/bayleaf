@@ -117,6 +117,18 @@ const JUDGES = ['argument', 'evidence', 'clarity', 'audience'];
   ok(w?.status === 'stopped', 'the subagent is stopped: ' + w?.status);
 }
 
+// A one-shot's `to` must name an agent of the session: an unknown handle is
+// refused, not routed to main.
+{
+  const sid = await agent.createSession('m');
+  fake.rule({ who: 'main', when: (c) => /misroute/.test(c.since), reply: [['subagent', { action: 'spawn', mode: 'oneshot', name: 'j-x', task: 'Judge X.', to: 'a9' }]] });
+  fake.rule({ who: 'main', when: (c) => /to: no agent "a9"/.test(c.since), reply: 'ok.' });
+  await agent.send(sid, 'misroute test');
+  await settle(sid);
+  ok(/to: no agent "a9" in this session/.test(fake.seen('main')), 'one-shot to an unknown handle is refused');
+  ok(!(await agent.subagents.list(sid)).length && !fake.requests['j-x'], 'and nothing was spawned or sent');
+}
+
 agent.close?.();
 console.log(fails ? `${fails} FAILED` : 'all passed');
 process.exit(fails ? 1 : 0);

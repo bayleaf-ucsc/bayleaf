@@ -21,8 +21,8 @@
 // many it left out (message.contextTrimmed). Its measured part is what the
 // model actually saw, which is less than the session holds once trimming starts.
 import { calculateContextTokens, estimateMessageTokens } from '@earendil-works/pi-ai/utils/estimate';
-import type { Message, Usage } from '@earendil-works/pi-ai';
-import type { PouchEntry, StoredMessage } from './agent-types.ts';
+import type { AssistantMessage } from '@earendil-works/pi-ai';
+import type { PouchEntry } from './agent-types.ts';
 
 const HEADS = new Set(['pi.compaction', 'pi.reset']);
 
@@ -38,21 +38,25 @@ export function contextOf(entries: readonly PouchEntry[] = []): ContextSize {
   // Kept turns follow the head but are older than it (lower ids): their usage
   // predates the summary, so, as in pi-durable, only entries newer than the head are measured.
   const head = HEADS.has(entries[0]?.kind) ? entries[0].id : null;
-  let at = -1, msg = null as StoredMessage | null | undefined;
+  // at: the measured reply's entry; k: its index among that entry's messages.
+  let at = -1, k = -1, msg: AssistantMessage | undefined;
   for (let i = entries.length - 1; i >= 0 && !msg; i--) {
     if (head != null && (i === 0 || entries[i].id <= head)) continue;
-    const m = (entries[i].model ?? []).findLast((x) => x?.role === 'assistant' && x.stopReason !== 'error' && x.stopReason !== 'aborted' && x.usage && calculateContextTokens(x.usage) > 0);
-    if (m) { msg = m; at = i; }
+    const ms = entries[i].model ?? [];
+    k = ms.findLastIndex((x) => x?.role === 'assistant' && x.stopReason !== 'error' && x.stopReason !== 'aborted' && x.usage && calculateContextTokens(x.usage) > 0);
+    const m = ms[k];
+    if (m?.role === 'assistant') { msg = m; at = i; }
   }
   let added = 0;
   for (let i = 0; i < entries.length; i++) {
     const ms = entries[i].model ?? [];
     if (i < at) continue;
-    for (const m of i === at ? ms.slice(ms.indexOf(msg!) + 1) : ms) if (m?.role) added += estimateMessageTokens(m as Message);
+    for (const m of i === at ? ms.slice(k + 1) : ms) if (m?.role) added += estimateMessageTokens(m);
   }
-  const measured = msg ? calculateContextTokens(msg.usage as Usage) : 0;
-  const trimmed = msg?.contextTrimmed ?? 0;
-  const full = trimmed ? entries.reduce((n, e) => n + (e.model ?? []).reduce((k, m) => k + (m?.role ? estimateMessageTokens(m as Message) : 0), 0), 0) : undefined;
+  const measured = msg ? calculateContextTokens(msg.usage) : 0;
+  // Transformers.js (src/local/provider.ts) adds contextTrimmed to its replies.
+  const trimmed = msg && 'contextTrimmed' in msg && typeof msg.contextTrimmed === 'number' ? msg.contextTrimmed : 0;
+  const full = trimmed ? entries.reduce((n, e) => n + (e.model ?? []).reduce((t, m) => t + (m?.role ? estimateMessageTokens(m) : 0), 0), 0) : undefined;
   return { tokens: measured + added, measured, added, exact: !!msg && added === 0, trimmed, compacted: entries[0]?.kind === 'pi.compaction', ...(full != null && { full }) };
 }
 
@@ -92,7 +96,7 @@ export function describe(ctx: ContextSize | null | undefined, { window = null, b
   const text = limit ? `${count} / ${short(limit, true)}` : count;
   const fill = limit ? Math.max(0, Math.min(1, n / limit)) : null;
   const parts = [];
-  parts.push(`Context: ${approx ? 'about ' : ''}${n.toLocaleString()} tokens${limit ? ` of ${budget ? 'the Transformers.js model\'s ' + budget.toLocaleString() + '-token budget' : 'a ' + window!.toLocaleString() + '-token window'}` : ' (this model\'s window is unknown)'}`);
+  parts.push(`Context: ${approx ? 'about ' : ''}${n.toLocaleString()} tokens${limit ? ` of ${budget ? 'the Transformers.js model\'s ' + budget.toLocaleString() + '-token budget' : 'a ' + limit.toLocaleString() + '-token window'}` : ' (this model\'s window is unknown)'}`);
   if (ctx.measured && ctx.added) parts.push(`${ctx.measured.toLocaleString()} as the last reply's server reported, plus about ${ctx.added.toLocaleString()} estimated since`);
   else if (ctx.measured) parts.push('as the last reply\'s server reported');
   else if (n) parts.push('estimated from text length: no reply has reported usage yet');

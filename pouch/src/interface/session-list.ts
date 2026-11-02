@@ -8,9 +8,9 @@ import { createMediaService } from '../media.ts';
 import { createSessions, revertKey, sameId, titleOf } from '../sessions.ts';
 import { createEgress, grantsFor, revoke, serviceName } from '../egress.ts';
 import { LOCAL, models as modelStore } from '../local/engine.ts';
-import { createModelService } from '../models-cli.ts';
+import { askTitle, createModelService } from '../models-cli.ts';
 import type { ConversationId } from '@earendil-works/pi-durable';
-import type { ThreadView, ToolItem } from '../agent-types.ts';
+import type { ThreadItem, ToolItem } from '../agent-types.ts';
 import type { Egress } from '../egress.ts';
 import type { EgressNotice, EgressTrace } from '../trust.ts';
 import type { MediaService } from '../media.ts';
@@ -45,9 +45,9 @@ export function createSessionListRegion(app: App): SessionListRegion {
   // (its live transcript; the composer steers it), or null for the session.
   let focus: SubagentFocus | null = null;
   const sessions = createSessions({
-    forgetWatches: (id) => app.boot.watches.removeSession(id as string), // watches key sessions by string id
-    agent: () => app.state.agent, view: () => app.state.view as ThreadView | null, connected: () => (app.state.agent && app.state.verified ? app.state.client : null),
-    model: () => $<HTMLSelectElement>('model').value, setModel: (id) => { $<HTMLSelectElement>('model').value = id; app.providers.pickerProvider(); }, hasModel: (id) => app.state.models.some((m) => m.id === id) || (app.providers.localOk.ok && id === app.providers.LOCAL_ID) || app.providers.lhModels().some((m) => 'localhost:' + m.id === id), isLocal: app.providers.offSealed,
+    forgetWatches: (id) => app.boot.watches.removeSession(String(id)), // watches key sessions by string id
+    agent: () => app.state.agent, view: () => app.transcript.view, connected: () => (app.state.agent ? app.connection.sealed() : null),
+    model: () => $<HTMLSelectElement>('model').value, setModel: (id) => { $<HTMLSelectElement>('model').value = id; app.providers.pickerProvider(); }, hasModel: (id) => app.connection.models.some((m) => m.id === id) || (app.providers.localOk.ok && id === app.providers.LOCAL_ID) || app.providers.lhModels().some((m) => 'localhost:' + m.id === id), isLocal: app.providers.offSealed,
     attach: () => app.transcript.attach(), status: app.state.status, ask: app.tree.ask, sheet: app.state.sheet, countRequest: (id, kind) => app.state.ledger.add(id, kind).then(app.state.meter), layout: app.state.layout, usage: app.state.usage, quotaError: (msg) => app.send.quotaError(msg), exhaustedText,
     agentError: () => app.boot.agentError,
     runningChildren: (sid) => (app.subagents.kids.get(String(sid)) ?? []).filter((c) => c.status === 'running').length,
@@ -80,7 +80,7 @@ export function createSessionListRegion(app: App): SessionListRegion {
   const liveEgress: SessionListRegion['liveEgress'] = new Map();
   function noteEgress(e: EgressNotice) {
     if (!sameId(runSession(), sessions.current?.id)) return; // shown from the marker when you switch back
-    const t = app.state.view?.items.findLast?.((i) => i.type === 'tool' && i.name === 'bash' && i.status === 'running') as ToolItem | undefined;
+    const t = app.transcript.view?.items.findLast((i: ThreadItem): i is ToolItem => i.type === 'tool' && i.name === 'bash' && i.status === 'running');
     if (!t) return;
     const prev = liveEgress.get(t.id) ?? { commands: [], audiences: [] };
     liveEgress.set(t.id, {
@@ -96,7 +96,7 @@ export function createSessionListRegion(app: App): SessionListRegion {
     return w?.child != null ? { sid: w.sid, id: w.child, name: (app.subagents.kids.get(String(w.sid)) ?? []).find((c) => c.id === w.child)?.name ?? 'subagent' } : null;
   };
   const egressHooks: SessionListRegion['egressHooks'] = {
-    bayleafCredential: () => app.state.key,
+    bayleafCredential: () => app.auth.key,
     approveEgress: (req, caller) => {
       const c = childOf(caller);
       return c ? egress.approve(req, c.sid, c.name) : egress.approve(req, runSession());
@@ -124,7 +124,7 @@ export function createSessionListRegion(app: App): SessionListRegion {
           ...row('Kept in', req.location), ...row('License', req.license + (req.licenseUrl ? ` (${req.licenseUrl})` : '')), ...row('Attribution', req.attribution),
           ...row('Redistribution', req.distribution), ...row('From', req.origin)),
         el('p', { className: 'muted', textContent: get ? 'Every file is checked against the SHA-256 this page was built with. Nothing you type is sent; the gateway sees only which file ranges are requested. Stop any time from /task, Settings or the terminal; remove it any time.' : 'Sessions and files stay. Downloading it again takes the full size.' }));
-      return app.tree.ask(body as unknown as string, get ? 'Download' : 'Remove', get ? 'primary' : 'danger', get ? (who.by === 'agent' ? `${who.name} asks to download ${req.label}` : `Download ${req.label}?`) : `${(who as { name?: string }).name} asks to remove ${req.label}`); // TreeRegion.ask is typed string; it takes a Node body too
+      return app.tree.ask(body, get ? 'Download' : 'Remove', get ? 'primary' : 'danger', askTitle({ ...req, who }));
     });
     modelAsks = run.catch(() => {});
     return run;

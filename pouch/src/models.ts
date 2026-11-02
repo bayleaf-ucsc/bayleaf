@@ -12,10 +12,11 @@
 // One store for everyone: the Transformers.js engine (src/local/engine.ts), the
 // `models` command (src/models-cli.ts) and Settings' Download/Remove buttons.
 import { openStore, fillFile, fileState, verifiedFile, rangeSource, blobSource, dropFile, CHUNK, PARALLEL } from './assets.ts';
-import type { FetchImpl, FilePin, VerifiedBlob } from './assets.ts';
+import type { FetchImpl, VerifiedBlob } from './assets.ts';
+import type { FilePin, ModelPin } from './trust.ts';
 
 // A lock entry (models.lock.json).
-export interface ModelPin { id: string; label: string; repo: string; revision: string; license: string; files: FilePin[] }
+export type { ModelPin };
 export interface ModelStatus {
   id: string; label: string; total: number; bytes: number; complete: boolean; downloading: boolean; persistent: boolean;
   files: { name: string; bytes: number; kept: number; complete: boolean }[];
@@ -34,6 +35,20 @@ export type ModelStore = ReturnType<typeof createModelStore>;
 export const GATEWAY = 'https://api.bayleaf.dev/hf';
 const STORE = 'pouch-models';
 const OLD_CACHE = 'pouch-local-models'; // parts cached from pouch.bayleaf.dev before the gateway
+// fillFile's EINTEGRITY and friends.
+const codeOf = (e: unknown) => (e instanceof Error && 'code' in e ? e.code : undefined);
+// A catalog entry Pouch can match and size; the rest is optional display, but
+// what `models list` and `models status` read must have the shape they read.
+const isObj = (x: unknown): x is object => typeof x === 'object' && x !== null;
+const optString = (o: object, k: string) => !(k in o) || Reflect.get(o, k) === undefined || typeof Reflect.get(o, k) === 'string';
+const isRelease = (r: unknown): r is ModelRelease => isObj(r) && 'repo' in r && typeof r.repo === 'string'
+  && 'revision' in r && typeof r.revision === 'string'
+  && 'files' in r && Array.isArray(r.files) && r.files.every((f) => isObj(f) && 'bytes' in f && typeof f.bytes === 'number')
+  && optString(r, 'base_model')
+  && (!('license' in r) || r.license == null || isObj(r.license) && optString(r.license, 'name') && optString(r.license, 'url'))
+  && (!('distribution' in r) || r.distribution == null || isObj(r.distribution) && optString(r.distribution, 'basis'))
+  && (!('qualification' in r) || r.qualification == null || Array.isArray(r.qualification)
+    && r.qualification.every((q) => isObj(q) && 'client' in q && typeof q.client === 'string' && 'status' in q && typeof q.status === 'string'));
 
 export function createModelStore(models: ModelPin[], { gateway = GATEWAY, fetchImpl = (...a: Parameters<FetchImpl>) => fetch(...a), chunk = CHUNK, parallel = PARALLEL }: { gateway?: string; fetchImpl?: FetchImpl; chunk?: number; parallel?: number } = {}) {
   const byId = new Map<string, ModelPin>(models.map((m) => [m.id, m]));
@@ -59,7 +74,8 @@ export function createModelStore(models: ModelPin[], { gateway = GATEWAY, fetchI
   // Returns the running download if one exists (one per model).
   function download(id: string, { signal, onProgress = () => {}, onRetry }: { signal?: AbortSignal; onProgress?: (p: ModelProgress) => void; onRetry?: (r: RangeRetry) => void } = {}): Promise<ModelStatus> {
     const m = get(id);
-    if (running.has(id)) return running.get(id)!.promise;
+    const already = running.get(id);
+    if (already) return already.promise;
     const ctrl = new AbortController(), sig = signal ? AbortSignal.any([signal, ctrl.signal]) : ctrl.signal;
     const promise = (async () => {
       const st = await openStore(STORE);
@@ -101,7 +117,7 @@ export function createModelStore(models: ModelPin[], { gateway = GATEWAY, fetchI
       const src = picked.find((x) => x.name === f.name.split('/').pop() && x.size === f.bytes);
       if (!src || (await fileState(st, keyOf(m, f), f, chunk)).complete) continue;
       try { await fillFile(st, keyOf(m, f), f, blobSource(src), { chunk, parallel: 1 }); added++; }
-      catch (e) { if ((e as { code?: string }).code === 'EINTEGRITY') bad.push(f.name); else throw e; }
+      catch (e) { if (codeOf(e) === 'EINTEGRITY') bad.push(f.name); else throw e; }
     }
     return { added, bad, ...(await status(id)) };
   }
@@ -125,24 +141,25 @@ export function createModelStore(models: ModelPin[], { gateway = GATEWAY, fetchI
     let old: Cache;
     try { if (!globalThis.caches || !(await caches.has(OLD_CACHE))) return null; old = await caches.open(OLD_CACHE); } catch { return null; }
     const reqs = await old.keys(), byName = new Map<string | undefined, Request>(reqs.map((r) => [r.url.split('/').pop(), r]));
-    const report = { migrated: [] as string[], partial: [] as string[], refused: [] as string[], bytes: 0 };
+    const report: { migrated: string[]; partial: string[]; refused: string[]; bytes: number } = { migrated: [], partial: [], refused: [], bytes: 0 };
     const st = await openStore(STORE);
     for (const r of reqs.filter((x) => /\/manifest\.[0-9a-f]{16}\.json$/.test(x.url))) {
-      let man: OldManifest; try { man = await (await old.match(r))!.json(); } catch { continue; }
+      // Read for where the parts are only; the lock decides what they are.
+      let man: OldManifest; try { const hit = await old.match(r); if (!hit) continue; man = await hit.json(); } catch { continue; }
       const m = byId.get(man.id);
       if (!m || man.revision !== m.revision) continue;
       for (const f of m.files) {
         const of = man.files?.find((x) => x.name === f.name && x.sha256 === f.sha256 && x.bytes === f.bytes);
         if (!of || (await fileState(st, keyOf(m, f), f, chunk)).complete) continue;
         const blobs: Blob[] = [];
-        for (const part of of.parts) { const hit = byName.get(part.path) && await old.match(byName.get(part.path)!); if (!hit) break; blobs.push(await hit.blob()); }
+        for (const part of of.parts) { const req = byName.get(part.path), hit = req && await old.match(req); if (!hit) break; blobs.push(await hit.blob()); }
         if (!blobs.length) continue;
         const whole = new Blob(blobs);
         try {
           const s = await fillFile(st, keyOf(m, f), f, blobSource(whole), { chunk, parallel: 1, until: whole.size >= f.bytes ? f.bytes : Math.floor(whole.size / chunk) * chunk });
           (s.verified ? report.migrated : report.partial).push(f.name);
           report.bytes += s.verified ? f.bytes : s.done * chunk;
-        } catch (e) { if ((e as { code?: string }).code === 'EINTEGRITY') report.refused.push(f.name); else throw e; }
+        } catch (e) { if (codeOf(e) === 'EINTEGRITY') report.refused.push(f.name); else throw e; }
       }
     }
     await caches.delete(OLD_CACHE);
@@ -155,7 +172,9 @@ export function createModelStore(models: ModelPin[], { gateway = GATEWAY, fetchI
     if (catalogCache && !refresh) return catalogCache;
     const r = await fetchImpl(`${gateway}/catalog`, { headers: { Accept: 'application/json' } });
     if (!r.ok) throw new Error(`${gateway}/catalog: HTTP ${r.status}`);
-    catalogCache = ((await r.json()).releases ?? []) as ModelRelease[];
+    const body: unknown = await r.json();
+    const releases = typeof body === 'object' && body !== null && 'releases' in body && Array.isArray(body.releases) ? body.releases : [];
+    catalogCache = releases.filter(isRelease); // display only: an entry without repo, revision and files is skipped
     return catalogCache;
   }
   const release = async (id: string) => { const m = get(id); return (await catalog().catch(() => [])).find((x) => x.repo === m.repo && x.revision === m.revision) ?? null; };

@@ -50,15 +50,14 @@ export const setSetting = (k: string, v: unknown) => put('settings', k, v);
 // not touched; only Pouch's handles to them are forgotten.
 export async function eraseEverything() {
   if (dbp) { (await dbp).close(); dbp = null; }
-  const names = indexedDB.databases ? (await indexedDB.databases()).map((d) => d.name!) : [DB];
+  const names = indexedDB.databases ? (await indexedDB.databases()).flatMap((d) => d.name ?? []) : [DB];
   await Promise.all(names.map((n) => new Promise<void>((res) => {
     const r = indexedDB.deleteDatabase(n);
     r.onsuccess = r.onerror = r.onblocked = () => res();
   })));
   try {
     const root = await navigator.storage.getDirectory();
-    // keys() is in the File System spec but not yet in TypeScript's DOM lib.
-    for await (const name of (root as FileSystemDirectoryHandle & { keys(): AsyncIterable<string> }).keys()) await root.removeEntry(name, { recursive: true });
+    for await (const name of root.keys()) await root.removeEntry(name, { recursive: true });
   } catch { /* no OPFS in this browser */ }
   try { localStorage.clear(); sessionStorage.clear(); } catch {}
   try { for (const k of await caches.keys()) await caches.delete(k); } catch {}

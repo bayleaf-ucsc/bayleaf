@@ -6,7 +6,7 @@ import { renderMarkdown } from '../markdown.ts';
 import { MEDIA_MAX, createPreview, previewOf, rememberMode, rememberedMode } from '../preview.ts';
 import { $, el } from '../dom.ts';
 import type { App } from './app.ts';
-import type { Preview, ViewMode } from '../preview.ts';
+import type { ViewMode } from '../preview.ts';
 import type { ShowRequest, ShownLine } from '../open-cli.ts';
 import type { Caller } from '../tools-types.ts';
 
@@ -18,12 +18,18 @@ export interface OpenFileOptions {
 // true when opened, false when the user kept unsaved changes, or why it was not: 'binary' or recheck()'s.
 export type OpenFileResult = boolean | string;
 export interface ShowResult { opened: boolean; reason?: string }
+const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const isViewMode = (m: string | undefined): m is ViewMode => m === 'raw' || m === 'preview';
+// The button an event in a segmented control landed on.
+const buttonOf = (e: Event) => (e.target instanceof Element ? e.target.closest('button') : null);
 
 export interface EditingRegion {
-  // When the person last touched the page (show waits while they are busy).
-  get lastTouch(): number; set lastTouch(v: number);
+  // Sending hands the turn over: the keys that sent it do not make the person busy (show).
+  handOver(): void;
   openFile(path: string, line?: number, opts?: OpenFileOptions): Promise<OpenFileResult>;
-  get openPath(): string | null; set openPath(v: string | null);
+  readonly openPath: string | null;
+  // A rename moved from to to: the open file follows if it was there or inside.
+  renamed(from: string, to: string): void;
   // Show (LANGUAGE.md): an agent puts a file or folder in front of the person.
   show(req: Pick<ShowRequest, 'path' | 'dir' | 'mode'>, caller: Caller): Promise<ShowResult>;
   shownCard(line: ShownLine): HTMLParagraphElement;
@@ -52,10 +58,10 @@ export function createEditingRegion(app: App): EditingRegion {
   let fileView: ViewMode = 'raw', viewOnly = false, scripts = false, shown: string | null = null;
   const preview = createPreview($('preview'), { markdown: (text, path) => renderMarkdown(text, { ...app.transcript.mdCtx, cwd: normalize(path + '/..') }) });
   function setView(mode: ViewMode) {
-    const p = (openPath && previewOf(openPath)) as Preview | null; // '' acts as null here
+    const p = openPath ? previewOf(openPath) : null;
     fileView = p ? mode : 'raw';
     $('view-mode').hidden = !p?.raw;
-    for (const b of $('view-mode').children as HTMLCollectionOf<HTMLElement>) b.setAttribute('aria-pressed', String(b.dataset.mode === fileView));
+    for (const b of $('view-mode').querySelectorAll<HTMLElement>(':scope > *')) b.setAttribute('aria-pressed', String(b.dataset.mode === fileView));
     $('editor').hidden = fileView === 'preview';
     $('preview').hidden = fileView !== 'preview';
     $('save').hidden = viewOnly;
@@ -65,10 +71,12 @@ export function createEditingRegion(app: App): EditingRegion {
   }
   // Draws the saved file; on a file change, only if its bytes changed.
   async function renderPreview() {
-    // Only called with a file open that has a preview (setView, syncEditor).
-    const path = openPath!, p = previewOf(path)!, html = p.kind === 'html';
+    // Called with a file open that has a preview (setView, syncEditor).
+    const path = openPath, p = path && previewOf(path);
+    if (!path || !p) return;
+    const html = p.kind === 'html';
     $('script-mode').hidden = !html;
-    for (const b of $('script-mode').children as HTMLCollectionOf<HTMLElement>) b.setAttribute('aria-pressed', String((b.dataset.scripts === 'on') === scripts));
+    for (const b of $('script-mode').querySelectorAll<HTMLElement>(':scope > *')) b.setAttribute('aria-pressed', String((b.dataset.scripts === 'on') === scripts));
     $('preview-note').textContent = [
       dirty && 'Showing the saved version: save to preview your edits.',
       html && (scripts
@@ -80,21 +88,23 @@ export function createEditingRegion(app: App): EditingRegion {
       const st = await app.state.vfs.fs.stat(path);
       if (!p.raw && st.size > MEDIA_MAX) return preview.notice(`This file is ${(st.size / 2 ** 20).toFixed(0)} MB; Preview shows files up to 50 MB. Download it instead.`);
       const bytes = await app.state.vfs.fs.readFileBuffer(path);
-      const sig = [scripts, ...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>))].join();
+      // digest takes only ArrayBuffer-backed views: other bytes (a SharedArrayBuffer's) are copied.
+      const view = bytes.buffer instanceof ArrayBuffer ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.length) : bytes.slice();
+      const sig = [scripts, ...new Uint8Array(await crypto.subtle.digest('SHA-256', view))].join();
       if (path !== openPath || fileView !== 'preview' || sig === shown) return;
       shown = sig;
       preview.render(path, bytes, { scripts });
-    } catch (e) { preview.notice('Could not preview this file: ' + (e as Error).message); }
+    } catch (e) { preview.notice('Could not preview this file: ' + messageOf(e)); }
   }
   $('view-mode').onclick = (e) => {
-    const m = (e.target as Element).closest('button')?.dataset.mode as ViewMode | undefined;
-    if (!m || m === fileView || !openPath) return;
-    rememberMode(previewOf(openPath)!.kind, m);
+    const m = buttonOf(e)?.dataset.mode, p = openPath && previewOf(openPath);
+    if (!isViewMode(m) || m === fileView || !p) return;
+    rememberMode(p.kind, m);
     setView(m);
     if (m === 'raw') editor.focus();
   };
   $('script-mode').onclick = (e) => {
-    const on = (e.target as Element).closest('button')?.dataset.scripts;
+    const on = buttonOf(e)?.dataset.scripts;
     if (!on || (on === 'on') === scripts) return;
     scripts = on === 'on';
     renderPreview();
@@ -114,7 +124,7 @@ export function createEditingRegion(app: App): EditingRegion {
   }
   // A dot on the Editor rail icon while the buffer holds unsaved or conflicting edits.
   function markEditor() {
-    $('rail').querySelector('[data-panel="editor"]')!.classList.toggle('dot', !!openPath && (dirty || conflict != null));
+    $('rail').querySelector('[data-panel="editor"]')?.classList.toggle('dot', !!openPath && (dirty || conflict != null));
   }
   function setConflict(theirs: string | null) {
     conflict = theirs;
@@ -233,7 +243,7 @@ export function createEditingRegion(app: App): EditingRegion {
       }
       await app.state.userFs.writeFile(openPath, editor.text()); editor.markSaved(); setConflict(null); app.state.vfs.changed();
       editorStatus(null);
-    } catch (e) { editorStatus('Could not save: ' + (e as Error).message, 'bad'); }
+    } catch (e) { editorStatus('Could not save: ' + messageOf(e), 'bad'); }
   }
   // Leave the conflict diff once every hunk is kept or taken; until then the
   // bar counts what is left and offers to settle the rest one way.
@@ -267,16 +277,19 @@ export function createEditingRegion(app: App): EditingRegion {
   $('review-done').onclick = () => { settleDiff(); editor.focus(); };
   $('review-mine').onclick = () => { editor.settleAll(true); settleDiff(); editor.focus(); };
   $('review-theirs').onclick = () => { editor.settleAll(false); settleDiff(); editor.focus(); };
+  // The conflict bar shows only while a file is open with a conflict.
   $('conflict-diff').onclick = () => {
+    if (openPath == null || conflict == null) return;
     merging = true; $('conflict-diff').hidden = true;
-    editor.diff(openPath!, conflict!, editor.text());
+    editor.diff(openPath, conflict, editor.text());
     setReviewBar('Each change shows Pouch\'s version struck through, then your version. Keep mine or Take theirs on each, then Done (or Save).');
     editor.focus();
   };
-  $('conflict-mine').onclick = () => { editor.setBaseline(conflict!); setConflict(null); editor.focus(); };
+  $('conflict-mine').onclick = () => { if (conflict == null) return; editor.setBaseline(conflict); setConflict(null); editor.focus(); };
   $('conflict-theirs').onclick = () => {
+    if (openPath == null || conflict == null) return;
     merging = false; setReviewBar(null);
-    editor.load(openPath!, conflict!); setConflict(null); editor.focus();
+    editor.load(openPath, conflict); setConflict(null); editor.focus();
   };
 
   // When the agent changes the open file and you have no edits, follow it;
@@ -308,9 +321,13 @@ export function createEditingRegion(app: App): EditingRegion {
   }
 
   return {
-    get lastTouch() { return lastTouch; }, set lastTouch(v) { lastTouch = v; },
+    handOver: () => { lastTouch = 0; },
     openFile,
-    get openPath() { return openPath; }, set openPath(v) { openPath = v; },
+    get openPath() { return openPath; },
+    renamed: (from, to) => {
+      if (openPath !== from && !openPath?.startsWith(from + '/')) return;
+      openPath = to + openPath.slice(from.length); $('editor-path').textContent = openPath;
+    },
     show,
     shownCard,
     syncEditor,

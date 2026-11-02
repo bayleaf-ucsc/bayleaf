@@ -13,7 +13,7 @@ import { egressOf } from '../egress.ts';
 import { LOCAL } from '../local/engine.ts';
 import { isLocalhost } from '../localhost.ts';
 import type { ConversationId, EntryId } from '@earendil-works/pi-durable';
-import type { AssistantItem, MessageMarks, NormalizedView, ReportItem, SessionId, ThreadItem, ToolItem, UserItem } from '../agent-types.ts';
+import type { AssistantItem, MessageMarks, NormalizedView, ReportItem, SessionId, ThreadItem, ThreadView, ToolItem, UserItem } from '../agent-types.ts';
 import type { MarkdownContext, PathKind } from '../markdown.ts';
 import type { App } from './app.ts';
 
@@ -33,20 +33,28 @@ type Marked = MessageMarks & { type: string; text?: string; error?: string; stre
 type QuietItem = ReportItem | ToolItem;
 // The last revert, while it can be undone (store, revertKey); branch: display-only outline.
 interface RevertToken { session: string; from: ConversationId; to: ConversationId; at?: number; cut?: EntryId; branch?: { who: string; text: string }[] }
+// Tool arguments arrive untyped from the model.
+const toolArgs = (v: unknown) => (v && typeof v === 'object' ? v as ToolArgs : undefined);
+// One id or a list of them, as concat would spread it.
+const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : [v]);
+// A spawn's tool result names its child conversation once it exists.
+const spawnedChild = (details: unknown) => (details && typeof details === 'object' && 'child' in details ? details.child as ConversationId | undefined : undefined);
+const isMessage = (i: ThreadItem): i is UserItem | AssistantItem | ReportItem => i.type === 'user' || i.type === 'assistant' || i.type === 'report';
 
 export interface TranscriptRegion {
-  argSummary(name: string, args: ToolArgs | string | null | undefined): string;
+  argSummary(name: string, args: unknown): string;
   // Open the current session's thread in the log (newest call wins).
   attach(): Promise<void>;
-  // The current session's last run was cut off by a reload.
-  get interrupted(): boolean; set interrupted(v: boolean);
-  get linkVer(): number; set linkVer(v: number);
+  // A send in sid ends the current session's reload interruption (send clears the stored flag).
+  clearInterrupted(sid: SessionId): void;
+  // Files changed: path links are rechecked lazily and cached replies re-render.
+  filesChanged(): void;
+  // A reload cut these sessions' runs off; the current one offers Continue.
+  markInterrupted(sids: SessionId[]): void;
   mdCtx: MarkdownContext;
   modelName(id: string): string;
   // Disclosures the user opened, by key, across renders.
   openTools: Set<string>;
-  // Bumped when files change, so path links are rechecked lazily.
-  get pathGen(): number; set pathGen(v: number);
   reasoningCard(it: AssistantItem, key: string | number): HTMLDetailsElement;
   recordTurn(sid: SessionId, v: NormalizedView | null, ms: number): Promise<void>;
   renderLog(): void;
@@ -57,6 +65,8 @@ export interface TranscriptRegion {
   shortTime(t: number | null | undefined): string;
   toolCard(it: ToolItem, prefix?: string): HTMLDetailsElement;
   undoRevert(sid: SessionId | null | undefined): Promise<void>;
+  // The current session's last normalized view; written only here.
+  readonly view: ThreadView | null;
 }
 
 export function createTranscriptRegion(app: App): TranscriptRegion {
@@ -65,6 +75,9 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
   // disposes itself, or a slow scan of session A would paint over session B.
   let attachGen = 0;
   let interrupted = false; // the current session's last run was cut off by a reload
+  let view: ThreadView | null = null; // last normalized view of the current session
+  let unwatch: (() => void) | null = null; // the current session's watcher
+  let lastHeight: number | null = null; // the log's height at the last render (the "New reply below" pill)
   async function resumeRun() {
     const sid = app.sessionList.sessions.current?.id;
     if (sid == null) return;
@@ -79,7 +92,7 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
     const gen = ++attachGen;
     if (app.sessionList.focus) app.subagents.swapDraft('child:' + app.sessionList.focus.id, 'main');
     app.sessionList.focus = null;
-    app.state.unwatch?.(); app.state.unwatch = null; app.state.view = null; attachError = null; turnTimes = {}; app.subagents.lastHeight = null; $('below').hidden = true; app.state.follow.pin(); app.subagents.dropKidWatches(); renderLog(); app.queues.updateSend();
+    unwatch?.(); unwatch = null; view = null; attachError = null; turnTimes = {}; lastHeight = null; $('below').hidden = true; app.state.follow.pin(); app.subagents.dropKidWatches(); renderLog(); app.queues.updateSend();
     const session = app.sessionList.sessions.current;
     if (!session || !app.state.agent) return;
     await app.subagents.loadKids(session.id);
@@ -94,10 +107,10 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
     // Another tab may hold this session's database (its Web Lock): say so.
     const dispose = await app.state.agent.watch(session.id, (v) => {
       if (gen !== attachGen) return;
-      app.state.view = v; scheduleRender(); app.queues.updateSend();
+      view = v; scheduleRender(); app.queues.updateSend();
     }).catch((e) => { if (gen === attachGen) { attachError = e.message; renderLog(); app.state.status(e.message, 'bad'); } return () => {}; });
     if (gen !== attachGen) return dispose();
-    app.state.unwatch = dispose;
+    unwatch = dispose;
   }
 
   // ── Transcript rendering ────────────────────────────────────────────
@@ -108,9 +121,10 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
     // Streaming: a capped box showing the newest lines, overflow hidden (no
     // inner scroller, so nothing traps a wheel or a finger); done: full height.
     const words = it.streaming ? 0 : it.thinking.trim().split(/\s+/).length;
+    const thinking = el('div', { className: 'thinking', textContent: it.thinking });
     const d = el('details', { className: 'reasoning' + (it.streaming ? ' live' : '') }, el('summary', { textContent: it.streaming ? 'Reasoning (in progress)' : `Reasoning, ${words.toLocaleString()} word${words === 1 ? '' : 's'}` }),
-      el('div', { className: 'thinking', textContent: it.thinking }));
-    if (it.streaming) (d.lastChild as HTMLElement).dataset.sk = 'live:' + key;
+      thinking);
+    if (it.streaming) thinking.dataset.sk = 'live:' + key;
     return app.state.settings.bind(d, `reasoning:${app.sessionList.sessions.current?.id}:${key}`, 'reasoning');
   }
   let renderQueued = false;
@@ -122,9 +136,11 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
 
   // Tool calls read as what they do: a write is a path and its text, an edit is
   // old and new lines, bash is its command. Never JSON with escaped newlines.
-  function argSummary(name: string, args: ToolArgs | string | null | undefined) {
-    if (typeof args === 'string') return args.slice(0, 120);
-    if (!args) return '';
+  function argSummary(name: string, raw: unknown) {
+    if (typeof raw === 'string') return raw.slice(0, 120);
+    if (!raw) return '';
+    const args = toolArgs(raw);
+    if (!args) return JSON.stringify(raw).slice(0, 120);
     if (name === 'bash') return (args.command ?? '').split('\n')[0];
     if (name === 'run' && args.code != null) return 'js: ' + (args.code.split('\n').find((l) => l.trim()) ?? '');
     if (name === 'agents' || name === 'subagent') return app.subagents.agentSummary(name, args);
@@ -136,7 +152,7 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
     return el('span', { className: cls, textContent: String(text ?? '').split('\n').map((l) => prefix + l).join('\n') + '\n' });
   }
   function toolDetail(it: ToolItem) {
-    const a = it.args && typeof it.args === 'object' ? it.args as ToolArgs : null;
+    const a = toolArgs(it.args);
     const parts: HTMLElement[] = [];
     if (!a) { if (it.args) parts.push(el('pre', { textContent: String(it.args) })); }
     else if (it.name === 'bash') parts.push(el('pre', { className: 'cmd', textContent: '$ ' + (a.command ?? '') }));
@@ -160,8 +176,8 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
     } else if (it.name !== 'read') parts.push(el('pre', { textContent: JSON.stringify(a, null, 1) }));
     // The marker line becomes the badge and this note; the rest stays as sent.
     const eg = it.name === 'bash' ? egressOf(it.output) : null;
-    if (eg || app.sessionList.liveEgress.has(it.id)) {
-      const e = (eg ?? app.sessionList.liveEgress.get(it.id))!;
+    const e = eg ?? app.sessionList.liveEgress.get(it.id);
+    if (e) {
       parts.push(el('p', { className: 'egress-note', textContent: `Left the pouch (${e.commands.join(', ')}). Who can see it: ${e.audiences.join('; ') || 'see the bayleaf-cli skill'}.` }));
     }
     parts.push(el('pre', { textContent: (eg ? eg.text : it.output) || (it.status === 'running' ? 'running...' : '') }));
@@ -189,11 +205,8 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
 
   // A folder link reveals the folder: expand the way down and show the tree.
   async function revealDir(path: string) {
-    for (let q = path; q !== '/'; q = normalize(q + '/..')) app.tree.expanded.add(q);
-    app.tree.focusPath = path;
     app.state.layout.open('files');
-    await app.tree.renderTree();
-    app.tree.treeRows().find((r) => r.dataset.path === path)?.scrollIntoView({ block: 'nearest' });
+    await app.tree.reveal(path);
   }
   // Navigation is not governed by connect-src: the address itself is the leak.
   function openExternal(url: string) {
@@ -203,7 +216,7 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
   const mdCtx: MarkdownContext = {
     cwd: CWD,
     kind: pathKind,
-    text: (t) => linkify(t) as Node[], // strings too: markdown appends them as text
+    text: (t) => linkify(t),
     highlight: (code, lang) => highlight(code, lang),
     copy: (t) => navigator.clipboard.writeText(t),
     external: openExternal,
@@ -220,22 +233,22 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
     if (!next.has(text)) next.set(text, { node, ver: linkVer });
     return node;
   }
-  // Split text into strings and buttons; DOM nodes only, never HTML.
+  // Split text into text nodes and buttons; DOM nodes only, never HTML.
   function linkify(text: string) {
-    const out: (string | HTMLButtonElement)[] = [];
+    const out: Node[] = [];
     let last = 0;
     for (const m of text.matchAll(PATH)) {
       const [tok, p, line] = m;
       if (!p.includes('/') && !/\.\w+$/.test(p)) continue;
       const abs = normalize(p.startsWith('/') ? p : CWD + '/' + p);
       if (!isFile(abs)) continue;
-      out.push(text.slice(last, m.index));
+      out.push(document.createTextNode(text.slice(last, m.index)));
       const b = el('button', { type: 'button', className: 'path', textContent: tok, title: 'Open ' + abs + (line ? ' at line ' + line : '') });
       b.onclick = () => app.editing.openFile(abs, line ? Number(line) : undefined, { link: true }).catch((e) => app.tree.fail(e.message));
       out.push(b);
       last = m.index + tok.length;
     }
-    out.push(text.slice(last));
+    out.push(document.createTextNode(text.slice(last)));
     return out;
   }
 
@@ -243,7 +256,7 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
     const k = prefix + it.id;
     const d = app.state.settings.bind(el('details', { className: 'tool' + (it.status === 'error' ? ' error' : '') }), `tool:${app.sessionList.sessions.current?.id}:${k}`, 'tools');
     const mark = it.status === 'running' ? '... ' : it.status === 'error' ? '! ' : '';
-    const sum = el('summary', {}, el('span', { className: 'what', textContent: `${mark}${it.name}: ${argSummary(it.name, it.args as ToolArgs)}` }));
+    const sum = el('summary', {}, el('span', { className: 'what', textContent: `${mark}${it.name}: ${argSummary(it.name, it.args)}` }));
     const eg = it.name === 'bash' ? (egressOf(it.output) ?? app.sessionList.liveEgress.get(it.id)) : null;
     if (eg) {
       const who = eg.audiences.length ? eg.audiences.join('\n') : 'see the bayleaf-cli skill';
@@ -266,8 +279,8 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
   }
   function lookThumbs(it: ToolItem) {
     const names: string[] = [];
-    for (const [, path, n] of String(it.output ?? '').matchAll(/^(.+): image (\d+),/gm)) names[(n as unknown as number) - 1] = path; // n: digits, which - coerces
-    return it.images!.map((img, i) => {
+    for (const [, path, n] of String(it.output ?? '').matchAll(/^(.+): image (\d+),/gm)) names[Number(n) - 1] = path;
+    return (it.images ?? []).map((img, i) => {
       const k = img.data;
       lookShown.add(k);
       if (!lookUrls.has(k)) {
@@ -291,7 +304,7 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
     const rows = app.subagents.kids.get(String(app.sessionList.sessions.current?.id)) ?? [];
     for (const it of items) {
       if (it.type === 'report') who.set(it.ref ?? it.name, it.byMessage || who.get(it.ref ?? it.name) || '');
-      else for (const id of ([] as unknown[]).concat((it.args as ToolArgs | undefined)?.ids ?? (it.args as ToolArgs | undefined)?.id ?? [])) {
+      else for (const id of list(toolArgs(it.args)?.ids ?? toolArgs(it.args)?.id ?? [])) {
         const c = rows.find((x) => x.ref === asRef(id) || x.name === String(id));
         const ref = c?.ref ?? String(id);
         if (!who.get(ref)) who.set(ref, c?.lastSent && c.sentIn === c.sub ? c.lastSent.to : '');
@@ -310,23 +323,24 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
     return d;
   }
   // A subagent's report, where it joined the parent (the model saw it as a message).
-  const REPORT_VERB: Record<string, string> = { finished: 'finished', failed: 'failed', stopped: 'was stopped', interrupted: 'was interrupted' };
+  const REPORT_VERB: Record<string, string | undefined> = { finished: 'finished', failed: 'failed', stopped: 'was stopped', interrupted: 'was interrupted' };
+  const REPORT_LAST: Record<string, string | undefined> = { stopped: 'Last output before stop', failed: 'Last output before it failed', interrupted: 'Last output before the reload' };
   function reportCard(it: ReportItem, nextCache: ReplyCache) {
-    const kids_: HTMLElement[] = [el('div', { className: 'sa-report-head' }, el('span', { className: `sa-status ${it.status}`, textContent: it.status }), ` Subagent ${it.name} ${REPORT_VERB[it.status!] ?? it.status}`)];
+    const kids_: HTMLElement[] = [el('div', { className: 'sa-report-head' }, el('span', { className: `sa-status ${it.status}`, textContent: it.status }), ` Subagent ${it.name} ${REPORT_VERB[it.status ?? ''] ?? it.status}`)];
     // Not finished: its last words are work in progress, not a report (critique 49, 59).
-    const LAST: Record<string, string> = { stopped: 'Last output before stop', failed: 'Last output before it failed', interrupted: 'Last output before the reload' };
-    if (it.text && LAST[it.status!]) kids_.push(el('p', { className: 'sa-last muted', textContent: LAST[it.status!] + ':' }));
+    const last = REPORT_LAST[it.status ?? ''];
+    if (it.text && last) kids_.push(el('p', { className: 'sa-last muted', textContent: last + ':' }));
     if (it.text) kids_.push(replyBody(it.text, nextCache));
     else kids_.push(el('div', { className: 'body muted', textContent: quietText(it) }));
-    return seeded(message({ ...it, type: 'report', text: it.text }, LAST[it.status!] ? `${LAST[it.status!]} from subagent ${it.name}` : `Report from subagent ${it.name}`, ...kids_), it.ref);
+    return seeded(message({ ...it, type: 'report', text: it.text }, last ? `${last} from subagent ${it.name}` : `Report from subagent ${it.name}`, ...kids_), it.ref);
   }
 
   // "Pouch is editing..." in the editor header while a write or edit to the open
   // file is being sent or carried out, by main or a subagent (critique 10).
   function markEditing() {
     const at = (p: unknown) => (typeof p === 'string' && p ? normalize(p.startsWith('/') ? p : '/work/' + p) : null);
-    const views = [app.state.view, ...app.subagents.childViews.values()].filter(Boolean) as NormalizedView[];
-    const on = !!app.editing.openPath && views.some((v) => v.items.some((it) => it.type === 'tool' && it.status === 'running' && (it.name === 'write' || it.name === 'edit') && at((it.args as ToolArgs | undefined)?.path) === app.editing.openPath));
+    const views = [view, ...app.subagents.childViews.values()].filter((v) => v != null);
+    const on = !!app.editing.openPath && views.some((v) => v.items.some((it) => it.type === 'tool' && it.status === 'running' && (it.name === 'write' || it.name === 'edit') && at(toolArgs(it.args)?.path) === app.editing.openPath));
     $('editor-busy').hidden = !on;
   }
   function renderLog() {
@@ -352,29 +366,30 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
       return;
     }
     const out: HTMLElement[] = [];
-    if (!app.state.view?.items.length) {
+    if (!view?.items.length) {
       out.push(el('p', { className: 'notice' + (attachError ? ' bad' : ''), textContent: attachError ? attachError : app.state.agent
         ? 'Ask Pouch to read, write or reorganize files in /work or a mounted folder. ' + (app.providers.localhostPicked() ? 'Files stay in this browser; model requests go to your server on this computer.' : 'Everything stays in this browser; model requests are sealed.')
         : (app.boot.agentError ?? 'Starting...') }));
     }
     const nextCache: ReplyCache = new Map();
-    finals = turnFinals(app.state.view);
+    finals = turnFinals(view);
     let quietRun: QuietItem[] = [];
     const flushQuiet = () => {
-      const manyIds = quietRun.length === 1 && quietRun[0].type === 'tool' && ([] as unknown[]).concat((quietRun[0].args as ToolArgs | undefined)?.ids ?? []).length > 1;
+      const manyIds = quietRun.length === 1 && quietRun[0].type === 'tool' && list(toolArgs(quietRun[0].args)?.ids ?? []).length > 1;
       if (quietRun.length > 1 || manyIds) out.push(quietGroup(quietRun, nextCache));
       else for (const it of quietRun) out.push(it.type === 'report' ? reportCard(it, nextCache) : toolCard(it));
       quietRun = [];
     };
-    for (const it of app.state.view?.items ?? []) {
+    const items = view?.items ?? [];
+    for (const it of items) {
       const quietItem = (it.type === 'report' && !it.text && it.status === 'finished') ||
-        (it.type === 'tool' && it.name === 'subagent' && (it.args as ToolArgs | undefined)?.action === 'join' && it.status === 'done');
+        (it.type === 'tool' && it.name === 'subagent' && toolArgs(it.args)?.action === 'join' && it.status === 'done');
       if (quietItem) { quietRun.push(it); continue; }
       flushQuiet();
       if (it.type === 'user' && it.watch) {
         // A file-watch event (G14): labeled with the watch that caused it, as a
         // wake (it started this turn) or read between steps.
-        const ws = (it.watch as { watches?: { id: string; note?: string }[] }).watches ?? []; // not in PouchEntryData
+        const ws = it.watch.watches ?? [];
         const label = `${it.steer || it.watch.mode === 'steer' ? 'From' : 'Woken by'} watch ${ws.map((w) => w.id + (w.note ? `: ${w.note}` : '')).join('; ')}`;
         const m = message(it, label, el('span', { className: 'sa-who msg-from watch-from', textContent: label }), el('div', { className: 'body', textContent: (it.watch.lines ?? []).filter((l) => l.startsWith('[from files]')).map((l) => l.slice(13)).join('\n') || it.text }));
         m.classList.add('from', 'watch');
@@ -394,14 +409,15 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
           ...(it.attachments?.length ? [el('div', { className: 'attachment-refs' }, ...it.attachments.map((f) => el('span', { title: f.path, textContent: `${f.name} (${f.size.toLocaleString()} B) `, ariaLabel: `${f.name}, ${f.size} bytes, ${f.path}` })))] : [])));
       } else if (it.type === 'assistant') {
         const kids: HTMLElement[] = [];
-        if (it.thinking) kids.push(reasoningCard(it, app.state.view!.items.indexOf(it)));
+        if (it.thinking) kids.push(reasoningCard(it, items.indexOf(it)));
         if (it.text) kids.push(replyBody(it.text, nextCache));
-        if (it.error) kids.push(el('div', { className: 'body bad', textContent: app.connection.lostRuns.has(String(app.sessionList.sessions.current?.id)) && it === app.state.view!.items.findLast((i: Marked) => i.error) ? 'Connection lost: the network dropped during this turn. Nothing more was sent; send again when back online.' : it.error }));
+        if (it.error) kids.push(el('div', { className: 'body bad', textContent: app.connection.lostRuns.has(String(app.sessionList.sessions.current?.id)) && it === items.findLast((i: Marked) => i.error) ? 'Connection lost: the network dropped during this turn. Nothing more was sent; send again when back online.' : it.error }));
         if (it.streaming) kids.push(el('span', { className: 'typing', role: 'img', ariaLabel: 'Pouch is replying', title: 'Replying' }, el('i'), el('i'), el('i')));
         out.push(message(it, 'Reply from Pouch', ...kids));
       } else if (it.type === 'tool') {
-        const child = it.name === 'subagent' && (it.args as ToolArgs | undefined)?.action === 'spawn' && it.status !== 'error' ? (it.details as { child?: ConversationId } | undefined)?.child : null;
-        const early = child == null && it.name === 'subagent' && (it.args as ToolArgs | undefined)?.action === 'spawn' && it.status === 'running' ? app.commands.spawnedAs(it) : null;
+        const spawn = it.name === 'subagent' && toolArgs(it.args)?.action === 'spawn';
+        const child = spawn && it.status !== 'error' ? spawnedChild(it.details) : null;
+        const early = child == null && spawn && it.status === 'running' ? app.commands.spawnedAs(it) : null;
         out.push(child != null ? app.subagents.subagentCard(it, child) : early ? app.subagents.subagentCard(it, early.id) : app.commands.startingSpawn(it) ? app.subagents.subagentCard(it, null) : toolCard(it));
         if (it.name === 'bash') out.push(...shownLines(it.output).map(app.editing.shownCard));
       } else if (it.type === 'report') {
@@ -414,13 +430,13 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
     }
     flushQuiet();
     // A reload cut off the last run; nothing resumes without a click (no request spent).
-    if (interrupted && app.state.view && !app.queues.busy()) {
+    if (interrupted && view && !app.queues.busy()) {
       const b = el('button', { type: 'button', className: 'primary', textContent: 'Resume' });
       b.onclick = () => { b.disabled = true; resumeRun(); };
       out.push(el('p', { className: 'notice reverted', role: 'status' }, 'The page reloaded while Pouch was working, so that run stopped.', b));
     }
     // "Reverted to <time>. Undo", where the conversation was cut.
-    if (revertable && app.state.view) {
+    if (revertable && view) {
       const undo = el('button', { type: 'button', textContent: 'Undo', disabled: app.queues.busy() });
       undo.onclick = () => undoRevert(app.sessionList.sessions.current?.id).catch((e) => app.tree.fail(e.message));
       const note = el('p', { className: 'notice reverted', role: 'status' }, `Reverted to ${shortTime(revertable.at)}. Files stay as they are.`, undo);
@@ -428,21 +444,22 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
       const other = n ? el('details', { className: 'other-branch' },
         el('summary', { textContent: `Other branch: ${n} message${n === 1 ? '' : 's'} Pouch no longer sees` }),
         ...revertable.branch.map((b) => el('p', {}, el('b', { textContent: b.who + ': ' }), b.text))) : null;
-      const at = out.findIndex((n) => n.dataset?.cut === String(revertable!.cut));
-      if (at < 0) out.push(...[note, other].filter(Boolean) as HTMLElement[]);
-      else out.splice(at + 1, 0, ...[note, other].filter(Boolean) as HTMLElement[]);
+      const cut = String(revertable.cut), shown = other ? [note, other] : [note];
+      const at = out.findIndex((n) => n.dataset?.cut === cut);
+      if (at < 0) out.push(...shown);
+      else out.splice(at + 1, 0, ...shown);
     }
     mdCache = nextCache;
     // Rebuilding the log drops focus; give it back to the same message or button.
-    const f = document.activeElement, fKey = log.contains(f) ? f!.closest<HTMLElement>('.msg')?.dataset.key : null;
-    const fAct = fKey && (f as HTMLElement).dataset.act;
+    const f = document.activeElement, fKey = f && log.contains(f) ? f.closest<HTMLElement>('.msg')?.dataset.key : null;
+    const fAct = fKey && f instanceof HTMLElement ? f.dataset.act : undefined;
     log.replaceChildren(...out); app.state.follow.restore(mark);
     app.state.localImages.sweep(); sweepLooks();
     if (fKey) log.querySelector<HTMLElement>(`.msg[data-key="${CSS.escape(fKey)}"]${fAct ? ` [data-act="${fAct}"]` : ''}`)?.focus({ preventScroll: true });
     app.state.follow.stick();
     // Scrolled up while something new arrived below: say so (critique 19).
-    if (!app.state.follow.following && log.scrollHeight > (app.subagents.lastHeight ?? 0) + 4 && app.subagents.lastHeight != null) $('below').hidden = false;
-    app.subagents.lastHeight = log.scrollHeight;
+    if (!app.state.follow.following && log.scrollHeight > (lastHeight ?? 0) + 4 && lastHeight != null) $('below').hidden = false;
+    lastHeight = log.scrollHeight;
     app.queues.playArrivals(log);
     app.state.composer?.renderTray();
   }
@@ -480,7 +497,7 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
     await store.setSetting(turnsKey(sid), all);
     if (sameId(sid, app.sessionList.sessions.current?.id)) { turnTimes = all; scheduleRender(); }
   }
-  const modelName = (id: string) => app.state.models.find((m) => m.id === id)?.name ?? (LOCAL && id === app.providers.LOCAL_ID ? `${LOCAL.label} (Transformers.js)` : isLocalhost(id) ? `${id.slice('localhost:'.length)} (Localhost)` : id);
+  const modelName = (id: string) => app.connection.models.find((m) => m.id === id)?.name ?? (LOCAL && id === app.providers.LOCAL_ID ? `${LOCAL.label} (Transformers.js)` : isLocalhost(id) ? `${id.slice('localhost:'.length)} (Localhost)` : id);
   function message(it: MessageItem, label: string, ...kids: (Node | string)[]) {
     // A step that only thought before calling tools gets no toolbar: it has
     // nothing to copy, and its reply's toolbar reverts to after its tools.
@@ -488,11 +505,11 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
     const m = el('div', { className: `msg ${it.type}${it.streaming ? ' streaming' : ''}${bar ? '' : ' bare'}`, role: 'article', ariaLabel: label }, ...kids);
     if (!bar) return m;
     m.tabIndex = 0;
-    m.dataset.key = it.entry as unknown as string; // dataset stringifies the ids
-    m.dataset.cut = it.cut as unknown as string;
+    m.dataset.key = String(it.entry);
+    m.dataset.cut = String(it.cut);
     if (shownKey === it.entry) m.classList.add('show');
     m.onclick = (e) => {
-      if ((e.target as Element).closest('button, a, summary, input')) return;
+      if (e.target instanceof Element && e.target.closest('button, a, summary, input')) return;
       shownKey = shownKey === it.entry ? null : it.entry;
       for (const x of $('log').querySelectorAll('.msg.show')) x.classList.remove('show');
       if (shownKey) m.classList.add('show');
@@ -500,9 +517,9 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
     const start = finals.get(it);
     const row = el('div', { className: 'msg-bar' + (start ? ' footer' : '') });
     const when = it.at && el('time', { className: 'when', textContent: shortTime(it.at), title: new Date(it.at).toLocaleString(), dateTime: new Date(it.at).toISOString() });
-    const ms = start && turnTimes[start.entry!];
+    const ms = start?.entry != null ? turnTimes[start.entry] : undefined;
     if (start) {
-      const parts = [it.model && modelName(it.model), ms != null && app.subagents.fmtDur(ms), when].filter(Boolean) as (string | HTMLTimeElement)[];
+      const parts = [it.model && modelName(it.model), ms != null && app.subagents.fmtDur(ms), when].filter((x): x is string | HTMLTimeElement => !!x);
       const meta = el('span', { className: 'meta' });
       parts.forEach((x, i) => meta.append(...(i ? [el('span', { className: 'sep', ariaHidden: 'true', textContent: '·' })] : []), x));
       if (when) when.className = '';
@@ -521,7 +538,8 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
       await navigator.clipboard.writeText(it.text ?? '');
       app.state.status('Copied.');
     }, !it.text);
-    const why = app.queues.busy() ? ' (not while Pouch is working)' : app.state.agent?.isLegacy(app.sessionList.sessions.current?.id!) ? ' (not for sessions saved before per-session storage)' : '';
+    const sid = app.sessionList.sessions.current?.id;
+    const why = app.queues.busy() ? ' (not while Pouch is working)' : sid != null && app.state.agent?.isLegacy(sid) ? ' (not for sessions saved before per-session storage)' : '';
     tool('revert', 'undo', 'Revert to here' + why, () => revertTo(it), !!why);
     if (start) {
       tool('more', 'ellipsis', 'More', async () => {
@@ -550,25 +568,27 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
     .map((i: Marked) => ({ who: i.type === 'user' ? 'You' : 'Pouch', text: String(i.text ?? '').slice(0, 160) }));
   async function revertTo(it: MessageItem): Promise<void> {
     const s = app.sessionList.sessions.current;
-    if (!s || app.queues.busy() || !app.state.view) return;
+    if (!s || app.queues.busy() || !view) return;
     const sid = s.id;
     // Your own message: revert to just before it, and its text comes back into
     // the box to edit and send again (D12), never a message left without a reply.
     if (it.type === 'user' && !it.steer && !it.watch && !it.from?.ref) {
-      const at = app.state.view.items.indexOf(it);
-      const before = app.state.view.items.slice(0, at).findLast((i: Marked) => i.entry && !i.streaming && (i.type === 'user' || i.text || i.error));
-      if (!before) return revertFirst(it, at);
-      return revertTo({ ...(before as MessageItem), draft: it.text, draftAt: at });
+      const items = view.items, at = items.indexOf(it);
+      const before = items.slice(0, at).findLast((i): i is MessageItem => isMessage(i) && !!i.entry && !(i.type === 'assistant' && i.streaming) && (i.type === 'user' || !!i.text || (i.type === 'assistant' && !!i.error)));
+      if (!before) return revertFirst(it, at, sid, items);
+      return revertTo({ ...before, draft: it.text, draftAt: at });
     }
-    const idx = app.state.view.items.findIndex((i: Marked) => i.cut === it.cut && i.entry === it.entry && i.type === it.type);
-    const later = app.state.view.items.slice(idx + 1).filter((i) => i.type === 'user' || (i.type === 'assistant' && (i.text || i.error))).length;
+    const idx = view.items.findIndex((i: Marked) => i.cut === it.cut && i.entry === it.entry && i.type === it.type);
+    const later = view.items.slice(idx + 1).filter((i) => i.type === 'user' || (i.type === 'assistant' && (i.text || i.error))).length;
     const body = el('div', { className: 'revert-body' }, el('p', {
       textContent: `${it.draft != null ? 'Your message goes back into the box to edit and send again. ' : ''}${later ? `${later} later message${later > 1 ? 's' : ''} fold${later > 1 ? '' : 's'} into another branch, and Pouch will not see ${later > 1 ? 'them' : 'it'} again.` : 'Nothing comes after this message.'} Files stay as they are. You can undo this.`,
     }));
     app.state.sheet(it.draft != null ? 'Revert to before this message?' : 'Revert to here?', [['Revert', async () => {
-      if (app.queues.busy()) return;
-      const branch = branchOutline(app.state.view!.items.slice(idx + 1));
-      const r = await app.state.agent!.revert(sid, it.cut!);
+      const v = view, agent = app.state.agent;
+      if (app.queues.busy() || !v || !agent) return;
+      if (it.cut == null) throw new Error('This message has no point to revert to.');
+      const branch = branchOutline(v.items.slice(idx + 1));
+      const r = await agent.revert(sid, it.cut);
       await store.setSetting(revertKey(sid), { session: String(sid), from: r.from, to: r.to, at: it.at, cut: it.cut, branch });
       // Motion carries continuity: the leaving messages dim before they fold.
       const leaving = [...$('log').querySelectorAll('.msg, .tool, .notice')].filter((n) => n.compareDocumentPosition($('log').querySelector(`[data-cut="${CSS.escape(String(it.cut))}"]`) ?? n) & Node.DOCUMENT_POSITION_PRECEDING);
@@ -583,9 +603,8 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
   // and a blank session takes its place, with the message back in the box, so it is
   // named again by its next first turn and does not linger if you leave. No
   // branch is kept, so this one cannot be undone (the sheet says so).
-  function revertFirst(it: MessageItem, at: number) {
-    const sid = app.sessionList.sessions.current!.id;
-    const later = app.state.view!.items.slice(at + 1).filter((i) => i.type === 'user' || (i.type === 'assistant' && (i.text || i.error))).length;
+  function revertFirst(it: UserItem, at: number, sid: SessionId, items: ThreadItem[]) {
+    const later = items.slice(at + 1).filter((i) => i.type === 'user' || (i.type === 'assistant' && (i.text || i.error))).length;
     const agents = (app.subagents.kids.get(String(sid)) ?? []).length;
     const body = el('div', { className: 'revert-body' }, el('p', {
       textContent: `Your message goes back into the box to edit and send again. This is the first message, so the session is deleted${later ? ` with the ${later} message${later > 1 ? 's' : ''} after it` : ''}${agents ? ' and its subagents' : ''}, and a new one starts when you send. Files stay as they are. This cannot be undone.`,
@@ -602,9 +621,9 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
       if (!gone) return;
       // A follow-up held for this session (paused by Stop) comes back too: the blank session has another key.
       const held = app.queues.followUps.get(String(sid));
-      if (held) { app.queues.followUps.delete(String(sid)); app.state.composer!.renderTray(); app.queues.putBack(held.text); }
+      if (held) { app.queues.followUps.delete(String(sid)); app.state.composer?.renderTray(); app.queues.putBack(held.text); }
       app.state.status(`${app.sessionList.sessions.current ? 'Deleted that session' : 'Reverted to an empty session'}. Files were not changed. Your message is back in the box.`);
-      app.queues.putBack(it.text!);
+      app.queues.putBack(it.text);
     }, 'danger']], body);
   }
 
@@ -615,10 +634,11 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
     if (!t) return;
     if (app.queues.busy()) return app.state.status('Stop Pouch before undoing the revert.', 'bad');
     // Turns sent since the revert stay behind in the abandoned branch.
-    const items = app.state.view?.items ?? [], cut = items.findIndex((i: Marked) => String(i.cut) === String(t.cut));
+    const items = view?.items ?? [], cut = items.findIndex((i: Marked) => String(i.cut) === String(t.cut));
     const since = cut < 0 ? 0 : items.slice(cut + 1).filter((i) => i.type === 'user').length;
     if (since && !(await app.tree.ask(`Undo the revert? The ${since} message${since > 1 ? 's' : ''} you sent since leave${since > 1 ? '' : 's'} the view, and the branch from before the revert comes back.`, 'Undo the revert'))) return;
-    await app.state.agent!.point(sid, t.from);
+    if (!app.state.agent) return app.state.status('Pouch is not ready yet: try the undo again in a moment.', 'bad');
+    await app.state.agent.point(sid, t.from);
     await store.setSetting(revertKey(sid), undefined);
     await attach();
     app.state.status('Revert undone.');
@@ -627,12 +647,12 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
   return {
     argSummary,
     attach,
-    get interrupted() { return interrupted; }, set interrupted(v) { interrupted = v; },
-    get linkVer() { return linkVer; }, set linkVer(v) { linkVer = v; },
+    clearInterrupted: (sid) => { if (interrupted && sameId(sid, app.sessionList.sessions.current?.id)) interrupted = false; },
+    filesChanged: () => { pathGen++; linkVer++; scheduleRender(); },
+    markInterrupted: (sids) => { if (sids.some((x) => sameId(x, app.sessionList.sessions.current?.id))) { interrupted = true; scheduleRender(); } },
     mdCtx,
     modelName,
     openTools,
-    get pathGen() { return pathGen; }, set pathGen(v) { pathGen = v; },
     reasoningCard,
     recordTurn,
     renderLog,
@@ -643,5 +663,6 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
     shortTime,
     toolCard,
     undoRevert,
+    get view() { return view; },
   };
 }

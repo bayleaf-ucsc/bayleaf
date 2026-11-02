@@ -16,7 +16,7 @@ import type { LocalChatMessage, LocalGenerateRequest, LocalGenerateResult, Local
 type GpuNavigator = WorkerNavigator & { gpu?: { requestAdapter(): Promise<{ info?: { vendor?: string; architecture?: string } } | null> } };
 
 const refused: string[] = [];
-self.fetch = async (input: RequestInfo | URL) => { refused.push(String((input as Request)?.url ?? input)); throw new TypeError('The Transformers.js model has no network access.'); };
+self.fetch = async (input: RequestInfo | URL) => { refused.push(input instanceof Request ? input.url : String(input)); throw new TypeError('The Transformers.js model has no network access.'); };
 
 let generator: TextGenerationPipeline | null = null;
 let stopping: InterruptableStoppingCriteria | null = null;
@@ -27,7 +27,7 @@ function blobCache(files: Record<string, Blob>) {
   const names = Object.keys(files).sort((a, b) => b.length - a.length);
   return {
     async match(key: string | Request) {
-      const url = String((key as Request)?.url ?? key);
+      const url = typeof key === 'string' ? key : key.url;
       const name = names.find((n) => url.endsWith('/' + n));
       return name ? new Response(files[name], { headers: { 'content-length': String(files[name].size) } }) : undefined;
     },
@@ -36,10 +36,12 @@ function blobCache(files: Record<string, Blob>) {
 }
 
 async function load({ files, wasm }: { files: Record<string, Blob>; wasm: Blob }): Promise<LocalLoadResult> {
-  const adapter = await (navigator as GpuNavigator).gpu?.requestAdapter();
+  const nav: GpuNavigator = navigator;
+  const adapter = await nav.gpu?.requestAdapter();
   if (!adapter) throw new Error('WebGPU has no adapter in this browser.');
   Object.assign(env, { allowRemoteModels: false, allowLocalModels: true, localModelPath: '/pouch-local/', useBrowserCache: false, useWasmCache: false, useCustomCache: true, customCache: blobCache(files) });
-  const ort = env.backends.onnx.wasm!;
+  const ort = env.backends.onnx.wasm;
+  if (!ort) throw new Error('Transformers.js has no ONNX Runtime wasm backend in this build.');
   // No wasmPaths: the ORT WebGPU bundle uses its embedded glue, and the binary comes from here.
   ort.wasmPaths = undefined;
   ort.wasmBinary = new Uint8Array(await wasm.arrayBuffer());
@@ -54,38 +56,41 @@ async function load({ files, wasm }: { files: Record<string, Blob>; wasm: Blob }
   return { load_ms: Math.round(performance.now() - t0), adapter: { vendor: adapter.info?.vendor, architecture: adapter.info?.architecture }, refused: [...refused] };
 }
 
-// enable_thinking and tools reach the chat template, which Transformers.js's option type does not list.
-const render = (messages: LocalChatMessage[], tools?: readonly LocalToolSchema[]) => generator!.tokenizer.apply_chat_template(messages, {
-  tokenize: false, add_generation_prompt: true, enable_thinking: false, ...(tools?.length ? { tools } : {}),
-} as { tokenize: false; add_generation_prompt: boolean });
-const count = (prompt: string) => generator!.tokenizer.encode(prompt, { add_special_tokens: false }).length;
+type Tokenizer = TextGenerationPipeline['tokenizer'];
+// enable_thinking reaches the chat template, which Transformers.js's option type does not list.
+interface TemplateOptions { tokenize: false; add_generation_prompt: boolean; enable_thinking: boolean; tools?: LocalToolSchema[] }
+function render(tokenizer: Tokenizer, messages: LocalChatMessage[], tools?: readonly LocalToolSchema[]) {
+  const options: TemplateOptions = { tokenize: false, add_generation_prompt: true, enable_thinking: false, ...(tools?.length ? { tools: [...tools] } : {}) };
+  return tokenizer.apply_chat_template(messages, options);
+}
 
 // Fit the prompt in the budget: drop the oldest earlier turns whole (a turn
 // starts at a user message), then shorten the current turn's oldest tool
 // results. head (system + example) and the latest user message always stay.
-function fit(head: LocalChatMessage[], history: LocalChatMessage[], tools: readonly LocalToolSchema[], budget: number) {
+function fit(tokenizer: Tokenizer, head: LocalChatMessage[], history: LocalChatMessage[], tools: readonly LocalToolSchema[], budget: number) {
+  const count = (prompt: string) => tokenizer.encode(prompt, { add_special_tokens: false }).length;
   let rest = [...history], trimmed = 0;
-  let prompt = render([...head, ...rest], tools), tokens = count(prompt);
+  let prompt = render(tokenizer, [...head, ...rest], tools), tokens = count(prompt);
   const lastUser = () => rest.findLastIndex((m) => m.role === 'user');
   while (tokens > budget) {
     const cut = rest.findIndex((m, i) => i > 0 && m.role === 'user');
     if (cut <= 0 || cut > lastUser()) break;
     rest = rest.slice(cut); trimmed++;
-    prompt = render([...head, ...rest], tools); tokens = count(prompt);
+    prompt = render(tokenizer, [...head, ...rest], tools); tokens = count(prompt);
   }
   for (let i = lastUser() + 1; tokens > budget && i < rest.length; i++) {
     const m = rest[i];
     if (m.role !== 'tool' || m.content.length <= 600) continue;
     rest[i] = { ...m, content: m.content.slice(0, 600) + '\n[shortened: Transformers.js keeps about 4k tokens of context]' };
     trimmed++;
-    prompt = render([...head, ...rest], tools); tokens = count(prompt);
+    prompt = render(tokenizer, [...head, ...rest], tools); tokens = count(prompt);
   }
   return { prompt, tokens, trimmed, over: tokens > budget };
 }
 
 async function generate(id: number, { head, history, tools, budget = 4096, maxNew = 512 }: LocalGenerateRequest): Promise<LocalGenerateResult> {
   if (!generator) throw new Error('The Transformers.js model is not loaded.');
-  const { prompt, tokens, trimmed, over } = fit(head, history, tools, budget);
+  const { prompt, tokens, trimmed, over } = fit(generator.tokenizer, head, history, tools, budget);
   if (over) return { over: true, input_tokens: tokens, trimmed };
   stopping = new InterruptableStoppingCriteria();
   let output = 0, first: number | null = null;
@@ -113,5 +118,5 @@ self.onmessage = async ({ data }: MessageEvent<LocalRequest>) => {
     else if (action === 'dispose') { await generator?.dispose(); generator = null; result = 'disposed'; }
     else throw new Error('Unknown action ' + action);
     postMessage({ id, result });
-  } catch (e) { postMessage({ id, error: String((e as Error)?.message ?? e) }); }
+  } catch (e) { postMessage({ id, error: String(typeof e === 'object' && e && 'message' in e ? e.message ?? e : e) }); }
 };

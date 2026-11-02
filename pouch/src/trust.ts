@@ -74,3 +74,12 @@ export interface BindOptions { flag?: BindFlag; readOnly?: boolean }
 export interface CapabilitySpec { path: string; readOnly: boolean }
 // describe() reports the mount table as lines: "/work  rw opfs, ro seed starter.zip".
 export type MountLine = string;
+
+// ── Pins: what the hash checks compare against (src/assets.ts, src/models.ts, build defines) ──
+// A pinned upstream file (a lock entry's file), or a manifest's file.
+export interface FilePin { name: string; bytes: number; sha256: string }
+// A build define naming a manifest of content-addressed parts.
+export interface PartsPin { dir: string; manifest: string; sha256: string; bytes?: number }
+export interface ModelPin { id: string; label: string; repo: string; revision: string; license: string; files: FilePin[] }
+// The Transformers.js model's pins as build-models.mjs embeds them (from models.lock.json).
+export interface LocalModel extends ModelPin { dtype: string; bytes: number; runtime: PartsPin }

@@ -12,6 +12,7 @@ import { gfm } from 'micromark-extension-gfm';
 import { gfmFromMarkdown } from 'mdast-util-gfm';
 import type { Nodes, Definition, Code, TableRow, TableCell } from 'mdast';
 
+const childrenOf = (n: Nodes): Nodes[] => ('children' in n ? n.children : []);
 const SCHEME = /^[a-z][a-z\d+.-]*:/i;
 
 function normalizePath(p: string) {
@@ -35,7 +36,11 @@ export function parseTarget(href: unknown, cwd = '/work'): LinkTarget | null {
     if (!/^https?:/i.test(s)) return null;
     try { const u = new URL(s); return { type: 'external', url: u.href, host: u.host }; } catch { return null; }
   }
-  let line: number | undefined, col: number | '' | undefined;
+  return pathTarget(s, cwd);
+}
+// A target already known to be a path (no scheme check), with its line suffix.
+export function pathTarget(href: string, cwd = '/work'): PathTarget | null {
+  let s = href, line: number | undefined, col: number | '' | undefined;
   const frag = s.match(/#L(\d+)(?:-L?\d+)?$/i);
   if (frag) line = Number(frag[1]);
   s = s.replace(/[?#].*$/, '');
@@ -72,7 +77,7 @@ export function renderMarkdown(text: string, ctx: MarkdownContext): Node[] {
   const defs = new Map<string, Definition>();
   (function collect(n: Nodes) {
     if (n.type === 'definition') defs.set(n.identifier, n);
-    (n as { children?: Nodes[] }).children?.forEach(collect);
+    childrenOf(n).forEach(collect);
   })(tree);
 
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string | null, ...kids: (Node | string | null | undefined)[]): HTMLElementTagNameMap[K] => {
@@ -82,7 +87,7 @@ export function renderMarkdown(text: string, ctx: MarkdownContext): Node[] {
     return n;
   };
   const txt = (s: string) => doc.createTextNode(s);
-  const kids = (n: Nodes, o: NodeOptions): Node[] => ((n as { children?: Nodes[] }).children ?? []).flatMap((c) => node(c, o));
+  const kids = (n: Nodes, o: NodeOptions): Node[] => childrenOf(n).flatMap((c) => node(c, o));
 
   function fileLink(t: PathTarget, content: Node[]) {
     const k = ctx.kind(t.path);
@@ -107,12 +112,12 @@ export function renderMarkdown(text: string, ctx: MarkdownContext): Node[] {
     b.title = t.url;
     b.addEventListener('click', () => ctx.external(t.url));
     // The host is always visible, so a link cannot pose as somewhere else.
-    if (!b.textContent!.includes(t.host)) b.append(el('span', 'host', ' (' + t.host + ')'));
+    if (!b.textContent?.includes(t.host)) b.append(el('span', 'host', ' (' + t.host + ')'));
     return [b];
   }
   function image(url: string, alt: string | null | undefined): Node[] {
     const target = parseTarget(url, ctx.cwd);
-    const local = target?.type === 'path' && ctx.image?.(target.path, alt!);
+    const local = target?.type === 'path' && ctx.image?.(target.path, alt ?? '');
     return local ? [local] : link(url, [txt('image: ' + (alt || url))]);
   }
   function codeBlock(n: Code) {
@@ -133,12 +138,14 @@ export function renderMarkdown(text: string, ctx: MarkdownContext): Node[] {
     switch (n.type) {
       case 'root': return kids(n, o);
       case 'paragraph': return [el('p', null, ...kids(n, { ...o, phrasing: true }))];
-      case 'heading': return [el(('h' + n.depth) as 'h1', null, ...kids(n, { ...o, phrasing: true }))];
+      case 'heading': return [el(`h${n.depth}` as const, null, ...kids(n, { ...o, phrasing: true }))];
       case 'thematicBreak': return [el('hr')];
       case 'blockquote': return [el('blockquote', null, ...kids(n, o))];
       case 'list': {
-        const l = el(n.ordered ? 'ol' : 'ul', n.spread ? null : 'tight', ...kids(n, o));
-        if (n.ordered && n.start != null && n.start !== 1) (l as HTMLOListElement).start = n.start;
+        const cls = n.spread ? null : 'tight', items = kids(n, o);
+        if (!n.ordered) return [el('ul', cls, ...items)];
+        const l = el('ol', cls, ...items);
+        if (n.start != null && n.start !== 1) l.start = n.start;
         return [l];
       }
       case 'listItem': {
@@ -163,9 +170,10 @@ export function renderMarkdown(text: string, ctx: MarkdownContext): Node[] {
       case 'inlineCode': {
         const c = el('code', null, n.value);
         if (!o.inLink && looksLikePath(n.value)) {
-          const t = parseTarget(n.value, ctx.cwd);
-          const k = t && ctx.kind((t as PathTarget).path);
-          if (k === 'file' || k === 'dir') return [fileLink(t as PathTarget, [c])];
+          // Parsed as a path: notes.md:12 is a file and line here, not a URL scheme.
+          const t = pathTarget(n.value, ctx.cwd);
+          const k = t && ctx.kind(t.path);
+          if (t && (k === 'file' || k === 'dir')) return [fileLink(t, [c])];
         }
         return [c];
       }
@@ -174,8 +182,8 @@ export function renderMarkdown(text: string, ctx: MarkdownContext): Node[] {
       case 'linkReference':
       case 'imageReference': {
         const d = defs.get(n.identifier);
-        const content = n.type === 'imageReference' ? [txt('image: ' + (n.alt || n.label!))] : kids(n, { ...o, inLink: true });
-        return d ? n.type === 'imageReference' ? image(d.url, (n as { alt?: string | null }).alt || n.label) : link(d.url, content) : content;
+        const content = n.type === 'imageReference' ? [txt('image: ' + (n.alt || n.label || n.identifier))] : kids(n, { ...o, inLink: true });
+        return d ? n.type === 'imageReference' ? image(d.url, n.alt || n.label) : link(d.url, content) : content;
       }
       case 'definition': return [];
       case 'footnoteReference': return [el('sup', null, '[' + n.label + ']')];
@@ -184,16 +192,18 @@ export function renderMarkdown(text: string, ctx: MarkdownContext): Node[] {
         const [head, ...rows] = n.children;
         const cell = (tag: 'th' | 'td', c: TableCell, i: number) => {
           const td = el(tag, null, ...kids(c, { ...o, phrasing: true }));
-          if (n.align?.[i]) td.style.textAlign = n.align[i]!;
+          const a = n.align?.[i];
+          if (a) td.style.textAlign = a;
           return td;
         };
         const tr = (r: TableRow, tag: 'th' | 'td') => el('tr', null, ...r.children.map((c, i) => cell(tag, c, i)));
-        const table = el('table', null, el('thead', null, tr(head!, 'th')));
+        if (!head) return [];
+        const table = el('table', null, el('thead', null, tr(head, 'th')));
         if (rows.length) table.append(el('tbody', null, ...rows.map((r) => tr(r, 'td'))));
         return [el('div', 'table', table)];
       }
       default:
-        return (n as { children?: unknown }).children ? kids(n, o) : (n as { value?: string }).value != null ? [txt((n as { value: string }).value)] : [];
+        return 'children' in n ? kids(n, o) : 'value' in n ? [txt(n.value)] : [];
     }
   }
   return node(tree);

@@ -20,16 +20,18 @@ export const serviceName = (s: EgressService): string => SERVICE[s] ?? s;
 
 // A session's grants, as data: the services it may use without asking.
 export type Grants = EgressService[];
-// The id as sessions.ts types it: pi-durable brands the numeric ids, which plain data cannot.
-type SessionKey = Parameters<typeof grantsKey>[0];
-export const grantsFor = async (sid: EgressSid): Promise<Grants> => (sid == null ? [] : ((await store.getSetting(grantsKey(sid as SessionKey))) as Grants | undefined) ?? []);
-async function grant(sid: EgressSid, service: EgressService) {
+// pi-durable brands numeric session ids, which plain data cannot carry; the key
+// is a string either way ('egressGrants:5'), so pass the id as one.
+const keyOf = (sid: string | number) => grantsKey(String(sid));
+export const grantsFor = async (sid: EgressSid): Promise<Grants> => (sid == null ? [] : (await store.getSetting<Grants>(keyOf(sid))) ?? []);
+async function grant(sid: string | number, service: EgressService) {
   const list = await grantsFor(sid);
-  if (!list.includes(service)) await store.setSetting(grantsKey(sid as SessionKey), [...list, service]);
+  if (!list.includes(service)) await store.setSetting(keyOf(sid), [...list, service]);
 }
 export async function revoke(sid: EgressSid, service: EgressService) {
+  if (sid == null) return;
   const list = (await grantsFor(sid)).filter((s) => s !== service);
-  await store.setSetting(grantsKey(sid as SessionKey), list.length ? list : undefined);
+  await store.setSetting(keyOf(sid), list.length ? list : undefined);
 }
 
 const MARKER = /\n?\[this call sent data outside the pouch: ([^\]\n]*)\](?=(?:\n\[exit code \d+\])?\s*$)/;
@@ -48,10 +50,10 @@ function splitTop(s: string): string[] {
 // null when the call sent nothing.
 export function egressOf(output: unknown): EgressTrace | null {
   const s = String(output ?? '');
-  const m = s.match(MARKER);
+  const m = MARKER.exec(s); // MARKER is not global: exec is stateless
   if (!m) return null;
   const audiences = [...new Set([...s.matchAll(LEFT)].flatMap((x) => splitTop(x[1])))];
-  return { commands: m[1].split(', '), audiences, text: s.slice(0, m.index) + s.slice(m.index! + m[0].length) };
+  return { commands: m[1].split(', '), audiences, text: s.slice(0, m.index) + s.slice(m.index + m[0].length) };
 }
 
 export interface EgressDeps { sessionTitle?(sid: EgressSid): Promise<string>; onGrant?(): void; onPending?(pending: EgressPending[]): void }

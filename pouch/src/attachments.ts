@@ -1,5 +1,5 @@
 // Picker, drop and image paste share one local-only ingest path. No fetch here.
-import { el } from './dom.ts';
+import { blobOf, el } from './dom.ts';
 import type { Vfs } from './vfs.ts';
 import type { AttachedFile } from './agent-types.ts';
 export const FILE_CAP = 20 * 1024 * 1024;
@@ -25,13 +25,15 @@ export async function prepareImage(bytes: Uint8Array): Promise<ImageBlock> { ret
 export async function prepareImageSized(bytes: Uint8Array): Promise<PreparedImage> {
   const mime = rasterMime(bytes);
   if (!mime) throw new Error('Only PNG, JPEG, GIF and WebP images can be understood. SVG and other formats stay local files.');
-  const bitmap = await createImageBitmap(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: mime }));
+  const bitmap = await createImageBitmap(blobOf(bytes, mime));
   try {
     if (!bitmap.width || !bitmap.height || bitmap.width * bitmap.height > 80_000_000) throw new Error('Image dimensions are too large. Use a smaller image.');
     const scale = Math.min(1, 2000 / Math.max(bitmap.width, bitmap.height));
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(bitmap.width * scale)); canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-    canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('This browser cannot draw the image to prepare it.');
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     // Re-encode locally: strips metadata and preserves the untouched original in VFS.
     let blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/png'));
     if (!blob || blob.size > IMAGE_CAP) blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', .85));
@@ -64,7 +66,7 @@ export function createLocalImages(vfs: AttachmentVfs): LocalImages {
           if (stat.size > FILE_CAP) return;
           const bytes = await vfs.fs.readFileBuffer(path), type = rasterMime(bytes);
           if (!type || !box.isConnected) return;
-          const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type }));
+          const url = URL.createObjectURL(blobOf(bytes, type));
           urls.set(box, url);
           box.replaceChildren(el('img', { src: url, alt: alt || path, loading: 'lazy' }));
         } catch { box.textContent = 'Image unavailable: ' + (alt || path); }
@@ -121,15 +123,16 @@ export function createAttachments({ vfs, composer, input, picker, button, chips,
     return serial;
   };
   button.onclick = () => picker.click();
-  picker.onchange = () => { ingest(picker.files!); picker.value = ''; };
-  composer.addEventListener('dragover', (e) => { if (e.dataTransfer!.types.includes('Files')) { e.preventDefault(); e.dataTransfer!.dropEffect = 'copy'; composer.classList.add('drop'); } });
-  composer.addEventListener('dragleave', (e) => { if (!composer.contains(e.relatedTarget as Node | null)) composer.classList.remove('drop'); });
+  picker.onchange = () => { ingest(picker.files ?? []); picker.value = ''; };
+  composer.addEventListener('dragover', (e) => { const dt = e.dataTransfer; if (dt?.types.includes('Files')) { e.preventDefault(); dt.dropEffect = 'copy'; composer.classList.add('drop'); } });
+  composer.addEventListener('dragleave', (e) => { if (!composer.contains(e.relatedTarget instanceof Node ? e.relatedTarget : null)) composer.classList.remove('drop'); });
   composer.addEventListener('drop', (e) => {
-    if (!e.dataTransfer!.files.length) return;
-    e.preventDefault(); e.stopPropagation(); composer.classList.remove('drop'); ingest(e.dataTransfer!.files);
+    const files = e.dataTransfer?.files;
+    if (!files?.length) return;
+    e.preventDefault(); e.stopPropagation(); composer.classList.remove('drop'); ingest(files);
   });
   input.addEventListener('paste', (e) => {
-    const images = Array.from(e.clipboardData?.items ?? []).filter((x) => x.kind === 'file' && x.type.startsWith('image/')).map((x) => x.getAsFile()).filter(Boolean) as File[];
+    const images = Array.from(e.clipboardData?.items ?? []).filter((x) => x.kind === 'file' && x.type.startsWith('image/')).map((x) => x.getAsFile()).filter((f) => f !== null);
     if (images.length) { e.preventDefault(); ingest(images); }
   });
   return {

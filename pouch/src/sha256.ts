@@ -74,7 +74,7 @@ export class Sha256 {
   static resume({ h, length, rest = '' }: Sha256State) {
     const s = new Sha256();
     s.h.set(h); s.length = length - rest.length / 2; s.fill = 0;
-    if (rest) s.update(Uint8Array.from(rest.match(/../g)!, (x) => parseInt(x, 16)));
+    if (rest) s.update(Uint8Array.from(rest.match(/../g) ?? [], (x) => parseInt(x, 16)));
     return s;
   }
 }

@@ -21,7 +21,7 @@ import { normalize } from './vfs.ts';
 import type { defineCommand as DefineCommand, ResolvedCommandContext, IFileSystem, ExecResult } from 'just-bash';
 import type { Task, TaskFields, Tasks } from './ns/tasks.ts';
 import type { EngineDef } from './jobs.ts';
-import type { ObtainedRuntime, PartsPin, RuntimeAssets, RuntimeFiles } from './assets.ts';
+import type { ObtainedRuntime, RuntimeAssets, RuntimeFiles } from './assets.ts';
 import type { PdfAction, PdfInfo, PdfJob, PdfJobBody, PdfJobInput, PdfReply, PdfResult, PdfResultOf, PdfText } from './pdf/protocol.ts';
 export type { PdfJob, PdfReply, PdfRequest, PdfResult } from './pdf/protocol.ts';
 
@@ -39,10 +39,12 @@ export interface ServiceOptions<J, R> { tasks: Tasks; engine?: EngineDef<J, R>; 
 export interface JobHandle { task: Task; result: Promise<unknown> }
 export type WhoOf = Who | (() => Who | undefined);
 export type CodedError = Error & { code?: string };
+// A job's rejection as an error to report (engines reject with Errors; anything else is wrapped).
+export const coded = (e: unknown): CodedError => (e instanceof Error ? e : new Error(String(e)));
 // A command's job: its failure as the shell's result, or the engine's answer.
 export type JobOutcome<R> = { error: ExecResult; r?: undefined } | { error?: undefined; r: R; task: Task };
 
-export const PDF_RUNTIME = typeof POUCH_PDF_RUNTIME !== 'undefined' ? POUCH_PDF_RUNTIME as PartsPin : null; // eslint-disable-line no-undef
+export const PDF_RUNTIME = typeof POUCH_PDF_RUNTIME !== 'undefined' ? POUCH_PDF_RUNTIME : null; // eslint-disable-line no-undef
 
 // Caps, named so errors and the pdf skill can cite them.
 export const MAX_PDF_BYTES = 256 * 2 ** 20; // a larger file is refused before anything loads
@@ -125,9 +127,10 @@ export function parseArgs(cmd: PdfCommand, args: string[]): PdfArgs {
   const [lo, hi] = spec.positional;
   if (files.length < lo || files.length > hi) return { error: cmd === 'pdftoppm' ? 'needs FILE.pdf and an output PREFIX' : `needs ${lo === hi ? 'one' : `${lo} to ${hi}`} file argument${hi > 1 ? 's' : ''}`, code: 99 };
   for (const k of ['f', 'l', 'r', 'x', 'y', 'W', 'H']) {
-    if (opts[k] === undefined) continue;
-    if (!INT.test(opts[k] as string)) return { error: `-${k} needs a whole number, not "${opts[k]}"`, code: 99 };
-    opts[k] = Number(opts[k]);
+    const v = opts[k];
+    if (v === undefined) continue;
+    if (typeof v !== 'string' || !INT.test(v)) return { error: `-${k} needs a whole number, not "${v}"`, code: 99 };
+    opts[k] = Number(v);
   }
   if (opts.f !== undefined && opts.f < 1) return { error: '-f counts pages from 1', code: 99 };
   if (opts.l !== undefined && opts.l < 1) return { error: '-l counts pages from 1', code: 99 };
@@ -144,7 +147,8 @@ export function parseArgs(cmd: PdfCommand, args: string[]): PdfArgs {
 
 // Pages first..last for a call, within its cap; null `last` means "to the end"
 // (the worker clamps to the page count). A range over the cap is refused, not cut.
-export type PageRange = { error: string; first?: undefined; last?: undefined } | { error?: undefined; first: number; last: number | null };
+export interface PageSpan { error?: undefined; first: number; last: number | null }
+export type PageRange = { error: string; first?: undefined; last?: undefined } | PageSpan;
 export function pageRange(opts: PdfOpts, cap: number, cmd: string): PageRange {
   const first = opts.f ?? 1, last = opts.singlefile ? first : opts.l ?? null; // -singlefile: the first page only, as poppler
   if (last != null && last - first + 1 > cap) return { error: `pages ${first}-${last} are ${last - first + 1} pages; ${cmd} takes at most ${cap} per call. Use -f and -l to go in batches.` };
@@ -214,11 +218,12 @@ export function pdfEngine({ assets = PDF_RUNTIME && partAssets(PDF_RUNTIME), spa
     label: 'pdf.js', memory: ENGINE_MEMORY, concurrency: 1,
     create() {
       if (!assets) throw codeError('this build of Pouch has no pdf runtime (built with it left out)', 'ENOSYS');
+      const runtime = assets;
       let worker: Worker | null = null, seq = 0;
       const pending = new Map<number, Pending<PdfResult>>();
       async function start(note: Note | undefined, signal: AbortSignal) {
         note?.('loading the pdf runtime');
-        const got = await assets!.obtain({ network: globalThis.navigator?.onLine !== false, signal });
+        const got = await runtime.obtain({ network: globalThis.navigator?.onLine !== false, signal });
         if (signal?.aborted) throw stopped();
         onLoad?.(got);
         const w = spawn(got.files);
@@ -232,20 +237,22 @@ export function pdfEngine({ assets = PDF_RUNTIME && partAssets(PDF_RUNTIME), spa
         w.onerror = (e) => { for (const p of pending.values()) p.reject(new Error(e.message || 'the pdf worker failed')); pending.clear(); worker = null; };
         worker = w;
         // A runtime that fails to load is not kept: the next job starts a fresh worker.
-        try { await call('load', { pack: await got.files['data.pack'].arrayBuffer() }); }
+        try { await call(w, 'load', { pack: await got.files['data.pack'].arrayBuffer() }); }
         catch (e) { w.terminate(); if (worker === w) worker = null; throw e; }
       }
-      function call(action: PdfAction | 'load', data: PdfJobBody | { pack: ArrayBuffer; data?: undefined }, { note, signal }: { note?: Note; signal?: AbortSignal } = {}) {
+      // data: a copy the worker may take (its buffer is transferred).
+      function call(w: Worker, action: PdfAction | 'load', data: (PdfJobBody & { data: Uint8Array<ArrayBuffer> }) | { pack: ArrayBuffer; data?: undefined }, { note, signal }: { note?: Note; signal?: AbortSignal } = {}) {
         return new Promise<PdfResult>((resolve, reject) => {
-          const id = ++seq, w = worker!;
+          const id = ++seq;
           pending.set(id, { resolve, reject, note });
           if (signal) signal.addEventListener('abort', () => {
             w.postMessage({ action: 'stop', job: id });
             // A page that does not finish within the grace period ends the worker; the next job starts a new one.
             const t = setTimeout(() => { if (pending.has(id)) { pending.delete(id); w.terminate(); if (worker === w) worker = null; reject(stopped()); } }, STOP_GRACE_MS);
-            pending.get(id) && (pending.get(id)!.timer = t);
+            const p = pending.get(id);
+            if (p) p.timer = t;
           }, { once: true });
-          w.postMessage({ id, action, ...data }, data.data ? [data.data.buffer as ArrayBuffer] : []);
+          w.postMessage({ id, action, ...data }, data.data ? [data.data.buffer] : []);
         });
       }
       return {
@@ -253,7 +260,9 @@ export function pdfEngine({ assets = PDF_RUNTIME && partAssets(PDF_RUNTIME), spa
           // Stop also ends a first-run download (assets.obtain takes the signal).
           if (!worker) await start(note, signal).catch((e) => { throw signal.aborted ? stopped() : e; });
           if (signal.aborted) throw stopped();
-          return call(action, { data: data.slice(), ...opts }, { note, signal });
+          const w = worker;
+          if (!w) throw new Error('the pdf worker failed while starting');
+          return call(w, action, { data: data.slice(), ...opts }, { note, signal });
         },
         dispose() { worker?.terminate(); worker = null; },
       };
@@ -262,7 +271,7 @@ export function pdfEngine({ assets = PDF_RUNTIME && partAssets(PDF_RUNTIME), spa
 }
 
 // The service shared by the terminal and every agent: one engine, its jobs.
-export function createPdfService({ tasks, engine = pdfEngine(), budget }: ServiceOptions<PdfJob, PdfResult> = {} as ServiceOptions<PdfJob, PdfResult>) {
+export function createPdfService({ tasks, engine = pdfEngine(), budget }: ServiceOptions<PdfJob, PdfResult>) {
   const jobs = createJobs({ tasks, engines: { pdf: engine }, ...(budget ? { budget } : {}) });
   return {
     jobs,
@@ -280,38 +289,40 @@ export type PdfService = ReturnType<typeof createPdfService>;
 // whoOf: who the /task label names.
 export function pdfCommands(defineCommand: typeof DefineCommand, service: PdfService | null | undefined, whoOf: WhoOf = () => ({ name: 'terminal' })) {
   const who = () => (typeof whoOf === 'function' ? whoOf() : whoOf) ?? {};
-  async function job<A extends PdfAction>(cmd: PdfCommand, ctx: ResolvedCommandContext, file: string, input: PdfJobInput & { action: A }): Promise<JobOutcome<PdfResultOf<A>> & { p?: string }> {
+  async function job<A extends PdfAction>(cmd: PdfCommand, ctx: ResolvedCommandContext, file: string, input: PdfJobInput & { action: A }): Promise<{ error: ExecResult; r?: undefined } | { error?: undefined; r: PdfResultOf<A>; task: Task; p: string }> {
     if (!service) return { error: fail(cmd, 'the pdf runtime is not available here') };
     const read = await readPdf(cmd, ctx, file);
     if (read.error) return read;
-    const { task, result } = service.run({ ...input, data: read.data } as PdfJob, { who: who(), fs: ctx.fs, signal: ctx.signal, label: `${cmd} ${read.p.split('/').pop()}` });
-    try { return { p: read.p, r: await result as PdfResultOf<A>, task }; }
-    catch (e) {
-      if ((e as CodedError)?.name === 'AbortError') return { error: fail(cmd, `stopped (/task/${task.id})`, 130) };
-      const what = (e as CodedError).code === 'EENCRYPTED' ? `${read.p}: ${(e as CodedError).message}${input.password ? '' : ' (try -upw PASSWORD)'}`
-        : (e as CodedError).code === 'ENOTPDF' ? `${read.p}: ${(e as CodedError).message}` : (e as CodedError).code === 'ERANGE' || (e as CodedError).code === 'ECAP' ? (e as CodedError).message : `${read.p}: ${(e as CodedError).message}`;
-      return { error: fail(cmd, what, (e as CodedError).code === 'EENCRYPTED' ? 3 : 1) };
+    const { task, result } = service.run({ ...input, data: read.data }, { who: who(), fs: ctx.fs, signal: ctx.signal, label: `${cmd} ${read.p.split('/').pop()}` });
+    try { return { p: read.p, r: await result as PdfResultOf<A>, task }; } // the engine answers by action
+    catch (caught) {
+      const e = coded(caught);
+      if (e.name === 'AbortError') return { error: fail(cmd, `stopped (/task/${task.id})`, 130) };
+      const what = e.code === 'EENCRYPTED' ? `${read.p}: ${e.message}${input.password ? '' : ' (try -upw PASSWORD)'}`
+        : e.code === 'ERANGE' || e.code === 'ECAP' ? e.message : `${read.p}: ${e.message}`;
+      return { error: fail(cmd, what, e.code === 'EENCRYPTED' ? 3 : 1) };
     }
   }
   const parse = (cmd: PdfCommand, args: string[]): { done: ExecResult; opts?: undefined; files?: undefined } | { done?: undefined; opts: PdfOpts; files: string[] } => {
     const a = parseArgs(cmd, args);
     if (a.help) return { done: ok(HELP[cmd]) };
-    if (a.error) return { done: { stdout: '', stderr: `${cmd}: ${a.error}\n${HELP[cmd]}`, exitCode: a.code } };
-    return a as Extract<PdfArgs, { opts: PdfOpts }>; // an empty error message cannot happen
+    if (a.error !== undefined) return { done: { stdout: '', stderr: `${cmd}: ${a.error}\n${HELP[cmd]}`, exitCode: a.code } };
+    return a;
   };
 
   const pdfinfo = defineCommand('pdfinfo', async (args, ctx) => {
     const a = parse('pdfinfo', args);
     if (a.done) return a.done;
     const j = await job('pdfinfo', ctx, a.files[0], { action: 'info', password: a.opts.upw ?? a.opts.opw, scan: INFO_SCAN_PAGES });
-    return j.error ?? ok(formatInfo(j.r!, { password: a.opts.upw != null || a.opts.opw != null }));
+    if (j.error) return j.error;
+    return ok(formatInfo(j.r, { password: a.opts.upw != null || a.opts.opw != null }));
   });
 
   // An open range (no -l) that reached the per-call cap still exits 0, but says so on
   // stdout, where an agent reads, as well as stderr, with the next batch to ask for.
   // Even -q keeps it: a silent cut reads as the whole document.
-  const capNote = (cmd: PdfCommand, range: PageRange, cap: number, numPages: number, name: string) => {
-    const end = range.first! + cap - 1;
+  const capNote = (cmd: PdfCommand, range: PageSpan, cap: number, numPages: number, name: string) => {
+    const end = range.first + cap - 1;
     if (range.last != null || numPages <= end) return { out: '', err: '' };
     return { out: `[stopped at page ${end} of ${numPages}: pass -f ${end + 1} -l ${Math.min(end + cap, numPages)} for more]\n`,
       err: `${cmd}: stopped at page ${end} of ${numPages} (${name}); continue with -f ${end + 1}\n` };
@@ -321,12 +332,12 @@ export function pdfCommands(defineCommand: typeof DefineCommand, service: PdfSer
     const a = parse('pdftotext', args);
     if (a.done) return a.done;
     const range = pageRange(a.opts, TEXT_MAX_PAGES, 'pdftotext');
-    if (range.error) return fail('pdftotext', range.error, 99);
-    const j = await job('pdftotext', ctx, a.files[0], { action: 'text', first: range.first!, last: range.last ?? range.first! + TEXT_MAX_PAGES - 1, layout: !!a.opts.layout, password: a.opts.upw ?? a.opts.opw });
+    if (range.error !== undefined) return fail('pdftotext', range.error, 99);
+    const j = await job('pdftotext', ctx, a.files[0], { action: 'text', first: range.first, last: range.last ?? range.first + TEXT_MAX_PAGES - 1, layout: !!a.opts.layout, password: a.opts.upw ?? a.opts.opw });
     if (j.error) return j.error;
     const text = formatText(j.r, a.opts);
     const more = capNote('pdftotext', range, TEXT_MAX_PAGES, j.r.numPages, 'TEXT_MAX_PAGES');
-    const out = a.files[1] ?? j.p!.replace(/\.pdf$/i, '') + '.txt';
+    const out = a.files[1] ?? j.p.replace(/\.pdf$/i, '') + '.txt';
     if (out === '-') return ok(text + more.out, more.err);
     const o = abs(ctx.cwd, out);
     await ctx.fs.writeFile(o, text);
@@ -337,10 +348,10 @@ export function pdfCommands(defineCommand: typeof DefineCommand, service: PdfSer
     const a = parse('pdftoppm', args);
     if (a.done) return a.done;
     const range = pageRange(a.opts, RENDER_MAX_PAGES, 'pdftoppm');
-    if (range.error) return fail('pdftoppm', range.error, 99);
+    if (range.error !== undefined) return fail('pdftoppm', range.error, 99);
     const dpi = a.opts.r ?? DEFAULT_DPI, jpeg = !!a.opts.jpeg;
     const crop = ['x', 'y', 'W', 'H'].some((k) => a.opts[k] !== undefined) ? { x: a.opts.x ?? 0, y: a.opts.y ?? 0, W: a.opts.W, H: a.opts.H } : null;
-    const j = await job('pdftoppm', ctx, a.files[0], { action: 'render', first: range.first!, last: range.last ?? range.first! + RENDER_MAX_PAGES - 1, dpi, maxPixels: MAX_PIXELS, maxBytes: RENDER_MAX_BYTES, type: jpeg ? 'image/jpeg' : 'image/png', crop, password: a.opts.upw ?? a.opts.opw });
+    const j = await job('pdftoppm', ctx, a.files[0], { action: 'render', first: range.first, last: range.last ?? range.first + RENDER_MAX_PAGES - 1, dpi, maxPixels: MAX_PIXELS, maxBytes: RENDER_MAX_BYTES, type: jpeg ? 'image/jpeg' : 'image/png', crop, password: a.opts.upw ?? a.opts.opw });
     if (j.error) return j.error;
     const ext = jpeg ? 'jpg' : 'png', prefix = abs(ctx.cwd, a.files[1]), digits = String(j.r.numPages).length;
     const lines = [];

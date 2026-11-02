@@ -34,7 +34,7 @@
 //
 // Events never carry message content: who did what to which agent, and sizes.
 import type { ControlView, CtlCommand, CtlTarget, InMessage, InMode, Writer } from '../trust.ts';
-import { BaseFs, fsError, normalize, parts, type DirEntry, type FileContent, type FileStat, type FileStream, type FsError } from './namespace.ts';
+import { BaseFs, fsError, normalize, parts, type DirEntry, type FileContent, type FileStat, type FileStream } from './namespace.ts';
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -50,14 +50,14 @@ const LAST_CHARS = 4000;
 // any runs. Session ctl: stop | detach. a1: stop | stop all | detach.
 // aN: stop | detach. "kill" is accepted for stop (as /task/<id>/ctl says).
 export function parseCtl(text: string, { main = false, session = false }: CtlTarget = {}): CtlCommand[] {
-  const allowed: string[] = session ? ['stop', 'detach'] : main ? ['stop', 'stop all', 'detach'] : ['stop', 'detach'];
+  const allowed: CtlCommand[] = session ? ['stop', 'detach'] : main ? ['stop', 'stop all', 'detach'] : ['stop', 'detach'];
   const cmds: CtlCommand[] = [];
   for (const raw of String(text).split('\n')) {
     const line = raw.trim().replace(/\s+/g, ' ');
     if (!line) continue;
-    const cmd = line === 'kill' ? 'stop' : line;
-    if (!allowed.includes(cmd)) throw Object.assign(new Error(`ctl accepts: ${allowed.join(', ')} (got "${line.slice(0, 30)}")`), { code: 'EINVAL' });
-    cmds.push(cmd as CtlCommand);
+    const cmd = allowed.find((c) => c === (line === 'kill' ? 'stop' : line));
+    if (!cmd) throw Object.assign(new Error(`ctl accepts: ${allowed.join(', ')} (got "${line.slice(0, 30)}")`), { code: 'EINVAL' });
+    cmds.push(cmd);
   }
   return cmds;
 }
@@ -68,12 +68,13 @@ export function parseCtl(text: string, { main = false, session = false }: CtlTar
 export function parseIn(text: string): InMessage {
   const s = String(text).replace(/\r\n/g, '\n');
   const m = s.match(/^\s*(steer|followup|follow-up|message)(?:[ \t]*\n|[ \t]+)([\s\S]*)$/) ?? s.match(/^\s*(steer|followup|follow-up|message)\s*$/);
-  const mode = (m ? (m[1] === 'follow-up' ? 'followup' : m[1]) : 'message') as InMode;
+  const mode: InMode = m?.[1] === 'steer' ? 'steer' : m?.[1] === 'followup' || m?.[1] === 'follow-up' ? 'followup' : 'message';
   const body = (m ? m[2] ?? '' : s).trim();
   return { mode, text: body };
 }
 // An error from a control write, in the words the Interface shows a person.
-export const why = (e: unknown): string => String((e as { message?: unknown } | null | undefined)?.message ?? e).replace(/^E[A-Z]+: /, '').replace(/, (write|open|stat|scandir) '[^']*'$/, '');
+const messageOf = (e: unknown): unknown => (typeof e === 'object' && e && 'message' in e ? e.message : undefined);
+export const why = (e: unknown): string => String(messageOf(e) ?? e).replace(/^E[A-Z]+: /, '').replace(/, (write|open|stat|scandir) '[^']*'$/, '');
 
 // ── The registry and the event log ──────────────────────────────────
 type Awaitable<T> = T | Promise<T>;
@@ -81,7 +82,7 @@ export type SessionKey = string | number | null | undefined;
 export interface SessionRow { id: string | number; title?: string }
 export interface AgentRow { ref: string; name: string; kind: 'main' | 'subagent'; state: string; since?: number; ended?: number; task?: string; ns?: string[] }
 // src/usage.ts state, as usageText reads it.
-export interface Allowance { mode?: string; offCampus?: boolean; remaining?: number | null; limit?: number | null; resetsAt?: string | number | null }
+export interface Allowance { mode?: string; offCampus?: boolean; remaining?: number | null; limit?: number | null; resetsAt?: Date | string | number | null } // usage.ts gives a Date
 export interface UsageFacts { allowance?: Allowance; turn?: number | null; today?: number | null } // counts only
 export type ChangeOp = 'created' | 'modified' | 'deleted';
 export interface Change { op: ChangeOp; path: string; by: string[] }
@@ -95,6 +96,8 @@ export interface ControlDeps {
   changes?(sid: string): Awaitable<Change[] | null | undefined>; // createChanges().list
 }
 export interface ByWriter { by: Writer }
+// One call into the driver, as act() takes it.
+export type DriverCall = { op: 'stop'; all: boolean } | { op: 'detach' } | { op: 'send'; mode: InMode; text: string };
 // The harness side, registered with drive().
 export interface ControlDriver {
   stop(sid: string, ref: string, opts: { all: boolean }, who: ByWriter): unknown;
@@ -112,7 +115,7 @@ export interface Control {
   tail(opts?: { sid?: SessionKey; signal?: AbortSignal; from?: number }): AsyncGenerator<ControlEvent[]>;
   readonly seq: number;
   recent(sid?: SessionKey): string[];
-  act(op: keyof ControlDriver, sid: string, ref: string, args: unknown[], by: Writer): Promise<unknown>;
+  act(call: DriverCall, sid: string, ref: string, by: Writer): Promise<unknown>;
   view(opts?: ControlView): SessionFs;
 }
 export function createControl(deps: ControlDeps): Control {
@@ -157,15 +160,17 @@ export function createControl(deps: ControlDeps): Control {
       while (!signal?.aborted) {
         let got;
         try { got = await ctl.next(at, { sid, signal }); } catch { return; }
-        at = got.at(-1)!.seq;
+        at = got[got.length - 1].seq; // next() never returns an empty list
         yield got;
       }
     },
     get seq() { return seq; },
     recent(sid = null) { return log.filter((e) => sid == null || e.sid === String(sid)).slice(-SHOW_EVENTS).map((e) => e.line); },
-    async act(op, sid, ref, args, by) {
+    async act(call, sid, ref, by) {
       if (!driver) throw fsError('EAGAIN', 'write', `/session/${sid}`, 'the agent is not ready yet; try again');
-      return (driver[op] as (...a: unknown[]) => unknown)(sid, ref, ...args, { by }); // args are op's own
+      if (call.op === 'stop') return driver.stop(sid, ref, { all: call.all }, { by });
+      if (call.op === 'detach') return driver.detach(sid, ref, { by });
+      return driver.send(sid, ref, call.mode, call.text, { by });
     },
     view(opts) { return new SessionFs(ctl, opts); },
   };
@@ -213,8 +218,9 @@ export function createChanges() {
     note(sid: SessionKey, op: ChangeOp, path: string, by: string) {
       if (sid == null || NOT_FILES.test(path)) return;
       const k = String(sid);
-      if (!bySid.has(k)) bySid.set(k, new Map());
-      const m = bySid.get(k)!, had = m.get(path);
+      let m = bySid.get(k);
+      if (!m) bySid.set(k, (m = new Map()));
+      const had = m.get(path);
       // A directory removed or moved away takes what is noted under it along.
       if (op === 'deleted') for (const [p, c] of m) if (p.startsWith(path + '/')) { if (c.op === 'created') m.delete(p); else { c.op = 'deleted'; c.by.add(by); } }
       if (!had) { m.set(path, { op, by: new Set([by]) }); return; }
@@ -235,7 +241,9 @@ export const changesText = (list: Change[] = []): string => list.map((c) => `${c
 
 // The /session tree as one writer sees it.
 // What find() resolves a path to: { root } | { events } | { sid, file? } | { sid, agentsDir } | { sid, a, file? }
-interface SessionNode { root?: true; events?: true; sid?: string; file?: string; agentsDir?: true; a?: AgentRow }
+type NotInSession = { sid?: undefined; file?: undefined; agentsDir?: undefined; a?: undefined };
+type SessionNode = ({ root: true; events?: undefined } & NotInSession) | ({ events: true; root?: undefined } & NotInSession)
+  | { root?: undefined; events?: undefined; sid: string; file?: string; agentsDir?: true; a?: AgentRow };
 export class SessionFs extends BaseFs {
   declare ctl: Control;
   declare by: Writer;
@@ -272,16 +280,17 @@ export class SessionFs extends BaseFs {
   }
   async text(n: SessionNode): Promise<string> {
     if (n.events) return this.ctl.recent(this.sid).map((l) => l + '\n').join('');
+    if (n.sid === undefined) return '';
     if (n.a) {
       if (n.file === 'status') return agentStatus(n.a);
       if (n.file === 'ns') return (n.a.ns ?? []).map((l) => l + '\n').join('');
-      if (n.file === 'last') { const t = String((await this.d.last?.(n.sid!, n.a.ref)) ?? ''); return t ? t.slice(-LAST_CHARS).replace(/\n?$/, '\n') : ''; }
+      if (n.file === 'last') { const t = String((await this.d.last?.(n.sid, n.a.ref)) ?? ''); return t ? t.slice(-LAST_CHARS).replace(/\n?$/, '\n') : ''; }
       return ''; // ctl and in read empty
     }
     if (n.file === 'title') return `${(await this.d.sessions()).find((s) => String(s.id) === n.sid)?.title || 'Untitled'}\n`;
-    if (n.file === 'status') return sessionStatus(await this.d.agents(n.sid!));
-    if (n.file === 'usage') return usageText((await this.d.usage?.(n.sid!)) ?? {});
-    if (n.file === 'changes') return changesText((await this.d.changes?.(n.sid!)) ?? []);
+    if (n.file === 'status') return sessionStatus(await this.d.agents(n.sid));
+    if (n.file === 'usage') return usageText((await this.d.usage?.(n.sid)) ?? {});
+    if (n.file === 'changes') return changesText((await this.d.changes?.(n.sid)) ?? []);
     return '';
   }
   async stat(path: string): Promise<FileStat> {
@@ -303,7 +312,7 @@ export class SessionFs extends BaseFs {
     const file = (name: string): DirEntry => ({ name, isFile: true, isDirectory: false, isSymbolicLink: false });
     if (n.root) return [file('events'), ...((this.sid ?? this.d.current()) != null ? [dir('current')] : []), ...(await this.sids()).map(dir)];
     if (n.a) return AGENT_FILES.map(file);
-    if (n.agentsDir) return (await this.d.agents(n.sid!)).map((a) => dir(a.ref));
+    if (n.agentsDir) return (await this.d.agents(n.sid)).map((a) => dir(a.ref));
     return SESSION_FILES.map((f) => (f === 'agents' ? dir(f) : file(f)));
   }
   async readdir(path: string): Promise<string[]> { return (await this.readdirWithFileTypes(path)).map((d) => d.name); }
@@ -311,18 +320,20 @@ export class SessionFs extends BaseFs {
   // tray can follow it); over 9P a write answers with its count, as usual.
   async writeFile(path: string, content: FileContent): Promise<unknown> {
     const n = await this.find(path, 'open');
-    if (!WRITABLE.has(n.file)) throw fsError(n.file || n.events ? 'EROFS' : 'EISDIR', 'open', this.P(path));
+    if (n.sid === undefined || !WRITABLE.has(n.file)) throw fsError(n.file || n.events ? 'EROFS' : 'EISDIR', 'open', this.P(path));
     const text = typeof content === 'string' ? content : dec.decode(content);
     const who = this.by === 'user' ? (this.label ? `you (${this.label})` : 'you') : 'main (a1)';
-    const fail = (e: unknown): never => { throw fsError((e as FsError).code ?? 'EINVAL', 'write', this.P(path), (e as FsError).message); };
+    const fail = (e: unknown): never => {
+      const code = typeof e === 'object' && e && 'code' in e && typeof e.code === 'string' ? e.code : 'EINVAL', m = messageOf(e);
+      throw fsError(code, 'write', this.P(path), typeof m === 'string' ? m : undefined);
+    };
     if (n.file === 'ctl') {
-      let cmds!: CtlCommand[]; // fail() throws
-      try { cmds = parseCtl(text, { main: n.a?.ref === 'a1', session: !n.a }); } catch (e) { fail(e); }
+      const cmds = ((): CtlCommand[] => { try { return parseCtl(text, { main: n.a?.ref === 'a1', session: !n.a }); } catch (e) { return fail(e); } })();
       let out: unknown;
       for (const cmd of cmds) {
         const ref = n.a?.ref ?? 'a1', all = !n.a ? cmd === 'stop' : cmd === 'stop all';
         this.ctl.emit(n.sid, ref, `ctl ${n.a ? cmd : cmd === 'stop' ? 'stop all' : cmd} by ${who}`);
-        try { out = await this.ctl.act(cmd === 'detach' ? 'detach' : 'stop', n.sid!, ref, cmd === 'detach' ? [] : [{ all }], this.by); } catch (e) { fail(e); }
+        try { out = await this.ctl.act(cmd === 'detach' ? { op: 'detach' } : { op: 'stop', all }, n.sid, ref, this.by); } catch (e) { fail(e); }
       }
       return out;
     }
@@ -330,10 +341,11 @@ export class SessionFs extends BaseFs {
     if (this.by !== 'user') throw fsError('EPERM', 'write', this.P(path), 'agents message each other with the agents tool (it applies the message caps); in is for people');
     const { mode, text: body } = parseIn(text);
     if (!body) return; // a shell redirection truncates first: nothing to do
-    this.ctl.emit(n.sid, n.a!.ref, `in ${mode} by ${who} (${body.length} chars)`);
-    try { return await this.ctl.act('send', n.sid!, n.a!.ref, [mode, body], this.by); } catch (e) { fail(e); }
+    if (!n.a) throw fsError('EISDIR', 'open', this.P(path)); // in is an agent's file (find allows no other)
+    this.ctl.emit(n.sid, n.a.ref, `in ${mode} by ${who} (${body.length} chars)`);
+    try { return await this.ctl.act({ op: 'send', mode, text: body }, n.sid, n.a.ref, this.by); } catch (e) { fail(e); }
   }
-  async appendFile(path: string, content: FileContent): Promise<void> { return this.writeFile(path, content) as Promise<void>; } // the receipt is writeFile's
+  async appendFile(path: string, content: FileContent): Promise<unknown> { return this.writeFile(path, content); } // the receipt is writeFile's
   // A 9P open of /session/events reads like acme's event file: each read
   // waits for events after the last one this fid saw (the first: after the open).
   openStream(path: string): FileStream | null {
@@ -341,7 +353,7 @@ export class SessionFs extends BaseFs {
     let at = this.ctl.seq;
     return { read: async (signal?: AbortSignal) => {
       const got = await this.ctl.next(at, { sid: this.sid, signal });
-      at = got.at(-1)!.seq;
+      at = got[got.length - 1].seq; // next() never returns an empty list
       return enc.encode(got.map((e) => e.line + '\n').join(''));
     } };
   }

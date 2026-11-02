@@ -33,7 +33,7 @@ export type { RunLoaded, RunMessage, RunWorkerMessage } from './run/protocol.ts'
 
 export interface RunToolDeps {
   vfs: { tasks: Pick<Tasks, 'add'>; changed(): void }; Type: typeof Typebox; CWD: string; abs: (p: string) => string;
-  fsFor: (caller?: ConversationId) => Namespace; sidOf?: (caller?: ConversationId) => string | null;
+  fsFor: (caller?: ConversationId) => Namespace; sidOf?: (caller?: ConversationId) => string | number | null;
   oneAtATime?: <T>(p: string, fn: () => Promise<T>) => Promise<T>; makeWorker?: () => RunWorker;
 }
 export interface RunArgs {
@@ -87,14 +87,16 @@ export function runTool({ vfs, Type, CWD, abs, fsFor, sidOf = () => null, oneAtA
       })),
     }),
     async execute({ code, path, files, ns, args = [], stdin = '', limits = {} }: RunArgs, { signal, caller, callId }: RunCallContext = {}): Promise<string> {
-      if ((code == null) === (path == null)) throw new Error('give exactly one of `code` or `path`');
+      const oneOf = () => new Error('give exactly one of `code` or `path`');
+      if ((code == null) === (path == null)) throw oneOf();
       const fs = fsFor(caller);
-      let filename = CWD + '/main.js', home = CWD;
+      let filename = CWD + '/main.js', home = CWD, source: string;
       if (path != null) {
         filename = abs(path);
-        code = await fs.readFile(filename).catch(() => { throw new Error(`${filename} does not exist; write the script first, or pass it as \`code\``); });
+        source = await fs.readFile(filename).catch(() => { throw new Error(`${filename} does not exist; write the script first, or pass it as \`code\``); });
         home = normalize(filename + '/..');
-      }
+      } else if (code != null) source = code;
+      else throw oneOf(); // checked above; this tells tsc
       const specs = files?.length ? files : [home];
       const bases = specs.map((f) => globBase(abs(f)));
       // The run's namespace: declared, or /work plus the mounts its files live in.
@@ -106,7 +108,7 @@ export function runTool({ vfs, Type, CWD, abs, fsFor, sidOf = () => null, oneAtA
       const runNs = subset(fs, declared, { scratch }); // subset skips a null scratch
       const clamp = (v: number | undefined, cap: number) => Math.max(1, Math.min(cap, v ?? cap));
       const request = {
-        code: code!, filename, cwd: CWD, args: args.map(String), stdin: String(stdin), specs,
+        code: source, filename, cwd: CWD, args: args.map(String), stdin: String(stdin), specs,
         limits: { ...DEFAULT_LIMITS, maxFiles: SNAPSHOT.maxFiles, maxFileBytes: SNAPSHOT.maxFileBytes,
           timeMs: clamp(limits.timeMs, CAPS.timeMs), memoryBytes: clamp(limits.memoryMB, CAPS.memoryMB) << 20,
           maxOutputBytes: clamp(limits.outputKB, CAPS.outputKB) << 10 },
@@ -115,14 +117,14 @@ export function runTool({ vfs, Type, CWD, abs, fsFor, sidOf = () => null, oneAtA
       const landed: { path: string; op: 'write' | 'remove' }[] = [];
       const { port1, port2 } = new MessageChannel();
       const server = serve(port1, runNs, {
-        commit: (p, b, op) => oneAtATime(p, () => (op === 'remove' ? runNs.rm(p) : runNs.writeFile(p, b!))),
+        commit: (p, b, op) => oneAtATime(p, () => (op === 'remove' ? runNs.rm(p) : b ? runNs.writeFile(p, b) : Promise.reject(new Error(`EIO: no bytes to write to ${p}`)))),
         onCommit: (p, op) => landed.push({ path: p, op }),
       });
       const ac = new AbortController();
       let killed = false;
       const stop = () => ac.abort();
       signal?.addEventListener('abort', stop, { once: true });
-      const task = vfs.tasks.add({ kind: 'run', key: callId, sid: sidOf(caller), label: path != null ? filename : (code!.split('\n').find((l) => l.trim()) ?? '').trim().slice(0, 60),
+      const task = vfs.tasks.add({ kind: 'run', key: callId, sid: sidOf(caller), label: path != null ? filename : (source.split('\n').find((l) => l.trim()) ?? '').trim().slice(0, 60),
         ns: runNs.describe(), kill: () => { killed = true; ac.abort(); } });
       let r;
       try {
@@ -133,7 +135,7 @@ export function runTool({ vfs, Type, CWD, abs, fsFor, sidOf = () => null, oneAtA
       const outside = landed.filter((c) => !(scratch && within(c.path, '/tmp')));
       if (outside.length) vfs.changed();
       const listOf = (xs: typeof landed) => xs.slice(0, 20).map((c) => `${c.op === 'remove' ? 'deleted' : 'wrote'} ${c.path}`).join(', ') + (xs.length > 20 ? `, and ${xs.length - 20} more` : '');
-      if (r.phase === 'load') { task.end('failed', r.message); throw new Error(r.message!); }
+      if (r.phase === 'load') { task.end('failed', r.message); throw new Error(r.message ?? 'reading the files over 9P failed'); }
       if (r.status === 'cancelled') {
         task.end(killed ? 'killed' : 'stopped');
         const already = outside.length ? ` ${outside.length} change(s) had already been written: ${listOf(outside)}.` : '';
@@ -156,7 +158,7 @@ export function runTool({ vfs, Type, CWD, abs, fsFor, sidOf = () => null, oneAtA
       if (!r.stdout && !r.stderr && !r.message) text += '\n(no output)';
       // At most 20 names per list, so a script that writes hundreds of files stays readable.
       const list = <T>(xs: T[], f: (x: T) => string) => xs.slice(0, 20).map(f).join(', ') + (xs.length > 20 ? `, and ${xs.length - 20} more` : '');
-      if (applied.length) text += `\nchanges applied (${applied.length}): ` + list(applied, (c) => `${verb[c.op]} ${c.path}${sizes.get(c.path) != null ? ` (${kb(sizes.get(c.path)!)})` : ''}`);
+      if (applied.length) text += `\nchanges applied (${applied.length}): ` + list(applied, (c) => { const n = sizes.get(c.path); return `${verb[c.op]} ${c.path}${n != null ? ` (${kb(n)})` : ''}`; });
       if (conflicts.length) text += `\nconflicts, not applied (${conflicts.length}): ` + list(conflicts, (c) => `${c.path} (${c.reason}${c.error ? ': ' + c.error : ''})`) + '. Read the file again and rerun.';
       if (scratchWrites) text += `\n(${scratchWrites} scratch file(s) under /tmp, discarded with the run)`;
       if (cut && r.changes.length) text += `\n${r.changes.length} proposed change(s) discarded because the run did not finish.`;

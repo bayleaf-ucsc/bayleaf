@@ -2,6 +2,11 @@
 // A region reaches another only as app.<region>.<name>, resolved when called;
 // each region's interface is declared in its own module, next to the factory
 // that implements it. A contract (arch.mjs): types only.
+//
+// A cell lives with its writer, read-only elsewhere. Kept on app deliberately:
+// state.agent and state.composer (many readers), sessionList.focus and activeRun
+// (activeRun's writers claim with different semantics: NEXT.md), and every call
+// to a later region, since the regions call each other in real cycles.
 import type { StateRegion } from './state.ts';
 import type { EditingRegion } from './editing.ts';
 import type { TreeRegion } from './tree.ts';

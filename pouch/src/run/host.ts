@@ -33,7 +33,8 @@ export async function snapshot(fs: Pick<RunFs, 'readFileBuffer'>, paths: string[
   return files;
 }
 
-const fail = (status: RunStatus, message: string, ms = 0): RunResult => ({ status, exitCode: CODES[status as keyof typeof CODES] ?? 1, message, stdout: '', stderr: '', truncated: false, changes: [], ms });
+const exitCodes: Partial<Record<RunStatus, number>> = CODES;
+const fail = (status: RunStatus, message: string, ms = 0): RunResult => ({ status, exitCode: exitCodes[status] ?? 1, message, stdout: '', stderr: '', truncated: false, changes: [], ms });
 
 // makeWorker() returns a Web-Worker-shaped object (postMessage, terminate,
 // onmessage, onerror). The hard deadline (timeMs + graceMs) backs up
@@ -92,14 +93,18 @@ export async function applyChanges(fs: RunFs, changes: Change[], { atomic = fals
   const current = async (path: string) => ((await fs.exists(path)) ? sha256(new Uint8Array(await fs.readFileBuffer(path))) : null);
   const checked = [];
   for (const c of changes) {
-    const now = await current(c.path);
+    // A refused check (deleted between exists and read, a dropped mount) is a
+    // conflict for that file, so the run still reports a result.
+    let now: string | null = null, error: string | undefined;
+    try { now = await current(c.path); } catch (e) { error = e instanceof Error ? e.message : String(e); }
     let conflict: string | null = null;
-    if (c.op === 'create' && now !== null) conflict = 'file was created since the snapshot';
+    if (error !== undefined) conflict = 'could not check the file';
+    else if (c.op === 'create' && now !== null) conflict = 'file was created since the snapshot';
     else if (c.op !== 'create' && now === null) conflict = 'file was deleted since the snapshot';
     else if (c.op !== 'create' && now !== c.baseHash) conflict = 'file changed since the snapshot';
-    checked.push({ c, conflict });
+    checked.push({ c, conflict, error });
   }
-  const conflicts: ChangeConflict[] = checked.filter((x) => x.conflict).map(({ c, conflict }) => ({ path: c.path, op: c.op, reason: conflict! }));
+  const conflicts: ChangeConflict[] = checked.flatMap(({ c, conflict, error }) => (conflict ? [{ path: c.path, op: c.op, reason: conflict, ...(error === undefined ? {} : { error }) }] : []));
   const applied: AppliedChange[] = [];
   if (atomic && conflicts.length) return { applied, conflicts };
   // Why check-then-write is not a transaction: another writer can still slip
@@ -110,8 +115,8 @@ export async function applyChanges(fs: RunFs, changes: Change[], { atomic = fals
     // A refused write (read-only mount, no such folder) is reported like a conflict.
     try {
       if (c.op === 'delete') await fs.rm(c.path);
-      else await fs.writeFile(c.path, c.bytes!);
-    } catch (e) { conflicts.push({ path: c.path, op: c.op, reason: 'write failed', error: (e as Error).message }); continue; }
+      else await fs.writeFile(c.path, c.bytes);
+    } catch (e) { conflicts.push({ path: c.path, op: c.op, reason: 'write failed', error: e instanceof Error ? e.message : String(e) }); continue; }
     applied.push({ path: c.path, op: c.op });
   }
   return { applied, conflicts };

@@ -4,7 +4,7 @@ import * as store from '../store.ts';
 import { $ } from '../dom.ts';
 import { exhaustedText } from '../usage.ts';
 import { refOf } from '../graph.ts';
-import { interruptedKey, notesKey, sameId, type SessionRecord } from '../sessions.ts';
+import { interruptedKey, notesKey, type SessionRecord } from '../sessions.ts';
 import { why } from '../ns/control.ts';
 import { isLocal } from '../local/provider.ts';
 import { explainMessage, isLocalhost } from '../localhost.ts';
@@ -25,19 +25,24 @@ export interface SendRegion {
 }
 
 export function createSendRegion(app: App): SendRegion {
+  // The composer exists once the regions are created (src/interface/commands.ts).
+  const renderTray = () => app.state.composer?.renderTray();
+  const composer = () => app.state.composer ?? (() => { throw new Error('The composer is not ready.'); })();
+  // A thrown value as an Error (a library may throw a non-Error).
+  const errorOf = (x: unknown) => (x instanceof Error ? x : new Error(typeof x === 'object' && x && 'message' in x ? String(x.message) : String(x)));
   // A paused message or follow-up goes now: as the next turn when idle, or into
   // the running turn (Steer now).
   async function sendNow(key: string, steer: boolean) {
     const q = app.queues.followUps.get(key);
     if (!q) return;
     if (!app.queues.busy() && !app.queues.submitting.has(key)) { app.queues.followUps.delete(key); return app.queues.dispatch(key, () => q); }
-    if (!steer) { app.queues.followUps.set(key, { ...q, paused: false }); app.queues.announce('Follow-up: it goes after this turn.'); return app.state.composer!.renderTray(); }
+    if (!steer) { app.queues.followUps.set(key, { ...q, paused: false }); app.queues.announce('Follow-up: it goes after this turn.'); return renderTray(); }
     if (q.attached.files.length || q.attached.images.length) return app.state.status('This follow-up has attachments, which go only with a new turn; it stays a follow-up.', 'bad');
     app.queues.followUps.delete(key);
     const keep = $<HTMLTextAreaElement>('input').value;
     await app.queues.steerMain(key, q.text, true);
     if (keep && !$<HTMLTextAreaElement>('input').value) { $<HTMLTextAreaElement>('input').value = keep; autosize(); }
-    app.state.composer!.renderTray(); app.queues.updateSend();
+    renderTray(); app.queues.updateSend();
   }
   const NOT_ADMITTED = /^Not connected|still running/;
   // HTTP 429 or a quota message, from the relay or the model provider.
@@ -47,7 +52,7 @@ export function createSendRegion(app: App): SendRegion {
   // chores (title, usage), so a follow-up need not wait for them.
   async function send(text: string, attached: Attachments = { files: [], images: [] }, turnModel = $<HTMLSelectElement>('model').value, runEnded = () => {}, adopted: (id: SessionId) => void = () => {}) {
     app.state.follow.pin();
-    app.editing.lastTouch = 0; // sending hands the turn over: the keys that sent it do not make the person busy
+    app.editing.handOver();
     const t0 = Date.now();
     let s: SessionRecord | null | void = app.sessionList.sessions.current; // the run belongs to this session even if you switch away
     if (!s) {
@@ -59,7 +64,7 @@ export function createSendRegion(app: App): SendRegion {
     // Until a real title comes: the prompt's start, cut at a word, without trailing / . , : (critique 6).
     if (!s.title) { const t = text.replace(/\s+/g, ' ').trim(); s.title = (t.length > 60 ? t.slice(0, 60).replace(/\s+\S*$/, '') || t.slice(0, 60) : t).replace(/[\s/.,:;-]+$/, ''); }
     s.updated = Date.now(); await app.sessionList.sessions.save(s);
-    if (app.transcript.interrupted && sameId(sid, app.sessionList.sessions.current?.id)) app.transcript.interrupted = false;
+    app.transcript.clearInterrupted(sid);
     await store.setSetting(interruptedKey(sid), undefined);
     app.sessionList.sessions.running.add(String(sid)); app.sessionList.sessions.render();
     app.connection.lostRuns.delete(String(sid));
@@ -69,31 +74,38 @@ export function createSendRegion(app: App): SendRegion {
     const notes = (await store.getSetting<string[]>(notesKey(sid))) ?? [];
     const admitted = () => notes.length && store.setSetting(notesKey(sid), undefined);
     let ok = false, refused: Error | null = null;
-    app.boot.watches.userSpoke(sid as string); // the user wrote: watches may wake it again
-    try { await app.state.agent!.send(sid, text, notes, attached, turnModel); admitted(); ok = true; }
-    catch (e) {
+    app.boot.watches.userSpoke(String(sid)); // the user wrote: watches may wake it again
+    const agent = app.state.agent;
+    try {
+      // Not admitted: dispatch keeps the text (NOT_ADMITTED).
+      if (!agent) throw new Error('Not connected: the agent is not available.');
+      await agent.send(sid, text, notes, attached, turnModel); admitted(); ok = true;
+    }
+    catch (x) {
+      const e = errorOf(x);
       // Refused before admission: nothing entered the transcript. The caller
       // holds it as a follow-up or restores the text (dispatch), so it is never lost.
-      if (NOT_ADMITTED.test((e as Error).message)) refused = e as Error;
+      if (NOT_ADMITTED.test(e.message)) refused = e;
       // Stopped before the message entered the transcript: it was never sent,
       // so it comes back to the box (dispatch) rather than vanishing.
-      else if ((e as Error).message === 'Stopped.' && !(await app.state.agent!.snapshot(sid).catch(() => null))?.items.some((i) => i.type === 'user' && i.text === text)) refused = new Error('Stopped before your message was sent; it is back in the box.');
+      else if (e.message === 'Stopped.' && !(await agent?.snapshot(sid).catch(() => null))?.items.some((i) => i.type === 'user' && i.text === text)) refused = new Error('Stopped before your message was sent; it is back in the box.');
       else admitted();
       // The run's own error (an assistant item) may carry the HTTP status the summary lost.
-      const detail = (e as Error).message + ' ' + ((app.state.view as { items: { error?: string }[] } | null)?.items.findLast?.((i) => i.error)?.error ?? '');
-      if (isLocalhost(turnModel)) { if (!refused && (e as Error).message !== 'Stopped.') app.state.status('Localhost: ' + (explainMessage(detail, turnModel.slice('localhost:'.length)) ?? (e as Error).message), 'bad'); }
+      const failed = app.transcript.view?.items.findLast?.((i) => i.type === 'assistant' && !!i.error);
+      const detail = e.message + ' ' + (failed?.type === 'assistant' ? failed.error ?? '' : '');
+      if (isLocalhost(turnModel)) { if (!refused && e.message !== 'Stopped.') app.state.status('Localhost: ' + (explainMessage(detail, turnModel.slice('localhost:'.length)) ?? e.message), 'bad'); }
       else if (quotaError(detail)) app.state.status(exhaustedText(await app.state.usage.refresh()), 'bad');
       else if (!isLocal(turnModel) && (app.connection.lostRuns.has(String(sid)) || app.connection.isNetworkError(detail))) {
         app.connection.lostRuns.add(String(sid));
         if (!navigator.onLine || !(await app.connection.probe())) app.connection.goOffline();
         else app.state.status('Connection lost during the turn; nothing more was sent. Send again to continue.', 'bad');
       }
-      else if (!refused && (e as Error).message !== 'Stopped.') app.state.status('Request failed: ' + (e as Error).message, 'bad');
+      else if (!refused && e.message !== 'Stopped.') app.state.status('Request failed: ' + e.message, 'bad');
     }
-    finally { app.sessionList.sessions.running.delete(String(sid)); app.providers.localRuns.delete(String(sid)); app.providers.lhRuns.delete(String(sid)); app.sessionList.activeRun = null; runEnded(); if (app.providers.lhWaitShown) (app.providers.localhostWait as (kind: 'flowing') => void)('flowing'); } // 'flowing' needs no model
+    finally { app.sessionList.sessions.running.delete(String(sid)); app.providers.localRuns.delete(String(sid)); app.providers.lhRuns.delete(String(sid)); app.sessionList.activeRun = null; runEnded(); if (app.providers.lhWaitShown) app.providers.localhostWait('flowing'); }
     if (refused) throw refused;
     const ms = Date.now() - t0;
-    const v = await app.state.agent!.snapshot(sid).catch(() => null);
+    const v = (await agent?.snapshot(sid).catch(() => null)) ?? null;
     await app.transcript.recordTurn(sid, v, ms);
     await app.sessionList.sessions.afterTurn(sid, v, ok, turnModel);
   }
@@ -107,7 +119,7 @@ export function createSendRegion(app: App): SendRegion {
     const mode = asked === 'default' ? app.state.settings.sendMode() : asked === 'other' ? app.queues.otherMode(app.state.settings.sendMode()) : asked;
     const raw = $<HTMLTextAreaElement>('input').value;
     if (app.sessionList.focus) return toChild(raw.trim(), mode);
-    if (app.state.composer!.runCommand(raw)) { $<HTMLTextAreaElement>('input').value = ''; autosize(); return; }
+    if (composer().runCommand(raw)) { $<HTMLTextAreaElement>('input').value = ''; autosize(); return; }
     const key = app.queues.curKey();
     const text = raw.trim() || (app.queues.attachments.files.length ? 'Please examine the attached files.' : '');
     if (!text) return;
@@ -123,10 +135,10 @@ export function createSendRegion(app: App): SendRegion {
       if (!(await app.providers.ensureLocal())) return; // the text stays in the composer
     } else {
       if (app.connection.offline) return app.state.status(app.connection.OFFLINE, 'offline'); // the text stays in the composer
-      if (!app.state.agent || !app.state.verified) return app.state.status(app.boot.agentError ?? 'Not ready yet: Pouch is still verifying the enclave. Your message stays here.', 'bad');
+      if (!app.state.agent || !app.connection.verified) return app.state.status(app.boot.agentError ?? 'Not ready yet: Pouch is still verifying the enclave. Your message stays here.', 'bad');
     }
     const prepare = async () => {
-      const attached = await app.queues.attachments.prepare(app.state.models.find((m) => m.id === turnModel) ?? { id: turnModel, multimodal: false } as { multimodal: boolean });
+      const attached = await app.queues.attachments.prepare(app.connection.models.find((m) => m.id === turnModel));
       if (key !== app.queues.curKey()) throw new Error('Session changed while preparing attachments. Review this message and press Send again. Nothing was sent.');
       $<HTMLTextAreaElement>('input').value = ''; autosize(); app.queues.attachments.clear(attached.files);
       return { text, attached, turnModel, at: Date.now() };
@@ -158,15 +170,16 @@ export function createSendRegion(app: App): SendRegion {
   // follow-up waits for its turn to end, then messages it. Both are writes to
   // its in file; Stop writes its ctl. The harness side does the rest.
   async function toChild(text: string, mode: string) {
-    const c = app.subagents.focusedChild();
-    if (!text || !c) return;
+    const c = app.subagents.focusedChild(), f = app.sessionList.focus;
+    if (!text || !c || !f) return;
     $<HTMLTextAreaElement>('input').value = ''; autosize();
-    try { await app.namespaces.ctl(app.namespaces.agentFile(app.sessionList.focus!.sid, refOf(app.subagents.kids.get(String(app.sessionList.focus!.sid)) ?? [], c), 'in'), `${mode}\n${text}`); }
+    try { await app.namespaces.ctl(app.namespaces.agentFile(f.sid, refOf(app.subagents.kids.get(String(f.sid)) ?? [], c), 'in'), `${mode}\n${text}`); }
     catch (e) { app.queues.putBack(text); app.state.status(why(e), 'bad'); app.queues.updateSend(); }
   }
   async function stopChild(c: SubagentRow) {
     const sid = app.sessionList.focus?.sid ?? app.sessionList.sessions.current?.id;
-    await app.namespaces.ctl(app.namespaces.agentFile(sid!, refOf(app.subagents.kids.get(String(sid)) ?? [], c), 'ctl'), 'stop').catch((e) => app.state.status(why(e), 'bad'));
+    if (sid == null) return;
+    await app.namespaces.ctl(app.namespaces.agentFile(sid, refOf(app.subagents.kids.get(String(sid)) ?? [], c), 'ctl'), 'stop').catch((e) => app.state.status(why(e), 'bad'));
   }
   // Keys (D25): Enter sends with the default mode, Alt/Option+Enter with the
   // other, Shift+Enter is a new line, Esc stops, Alt+Up takes the follow-up
@@ -175,7 +188,7 @@ export function createSendRegion(app: App): SendRegion {
   const altOnly = (e: KeyboardEvent) => e.altKey && !e.ctrlKey && !e.metaKey;
   $('input').onkeydown = (e) => {
     if (e.isComposing || e.keyCode === 229) return; // an IME is composing: its Enter is not ours
-    if (app.state.composer!.onKeydown(e)) return;
+    if (composer().onKeydown(e)) return;
     if (e.key === 'Escape' && $('sendmode-menu').hidden) {
       // In a subagent view Esc returns to the parent (the document handler);
       // its Stop is a button. In main, Esc stops the run.
@@ -185,7 +198,10 @@ export function createSendRegion(app: App): SendRegion {
     if (e.key === 'ArrowUp' && altOnly(e)) {
       const key = app.queues.curKey();
       if (!app.sessionList.focus && app.queues.followUps.has(key)) { e.preventDefault(); app.queues.cancelFollowUp(key, 'edit'); }
-      else if (app.sessionList.focus && app.queues.childFollowUps.has(app.sessionList.focus.id)) { e.preventDefault(); const q = app.queues.childFollowUps.get(app.sessionList.focus.id); app.queues.childFollowUps.delete(app.sessionList.focus.id); app.queues.putBack(q!.text); app.state.composer!.renderTray(); }
+      else if (app.sessionList.focus) {
+        const id = app.sessionList.focus.id, q = app.queues.childFollowUps.get(id);
+        if (q) { e.preventDefault(); app.queues.childFollowUps.delete(id); app.queues.putBack(q.text); renderTray(); }
+      }
       return;
     }
     if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !matchMedia('(pointer: coarse)').matches) {
@@ -209,23 +225,23 @@ export function createSendRegion(app: App): SendRegion {
     menu.hidden = false; $('sendmode-more').ariaExpanded = 'true';
     // Focus what Enter would do (or, with no draft yet, the setting).
     const enter = menu.querySelector<HTMLElement>(`[data-mode="${app.state.settings.sendMode()}"]`);
-    (enter?.ariaDisabled === 'true' ? menu.querySelector<HTMLElement>('[data-mode="settings"]') : enter ?? menu.querySelector('button'))!.focus();
+    (enter?.ariaDisabled === 'true' ? menu.querySelector<HTMLElement>('[data-mode="settings"]') : enter ?? menu.querySelector('button'))?.focus();
   }
   $('sendmode-main').onclick = () => { nextMode = 'default'; $<HTMLFormElement>('composer').requestSubmit(); };
   $('sendmode-more').onclick = () => ($('sendmode-menu').hidden ? openSendMenu() : closeSendMenu(true));
   $('sendmode-menu').onclick = (e) => {
-    const b = (e.target as Element).closest<HTMLElement>('[data-mode]');
+    const b = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-mode]') : null;
     if (!b || b.ariaDisabled === 'true') return;
     closeSendMenu();
     if (b.dataset.mode === 'settings') return app.state.layout.open('settings');
-    nextMode = b.dataset.mode!;
+    nextMode = b.dataset.mode ?? 'default';
     $<HTMLFormElement>('composer').requestSubmit();
     $('input').focus();
   };
   $('sendmode-menu').onkeydown = (e) => {
-    const items = [...$('sendmode-menu').querySelectorAll<HTMLElement>('button:not([hidden])')], i = items.indexOf(document.activeElement as HTMLElement);
+    const items = [...$('sendmode-menu').querySelectorAll<HTMLElement>('button:not([hidden])')], i = items.findIndex((x) => x === document.activeElement);
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus(); }
-    else if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); items.at(e.key === 'Home' ? 0 : -1)!.focus(); }
+    else if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); items.at(e.key === 'Home' ? 0 : -1)?.focus(); }
     else if (e.key === 'Tab') closeSendMenu();
   };
   dismissible({ isOpen: () => !$('sendmode-menu').hidden, inside: () => [$('sendmode')], close: (how) => closeSendMenu(how === 'esc') });

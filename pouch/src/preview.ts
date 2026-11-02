@@ -3,7 +3,7 @@
 // they also have Raw text, and how the preview is drawn; a later kind (PDF,
 // a database) is one row here and one case in render(). Files with no row
 // keep today's behavior: text opens in the editor, binaries get the sheet.
-import { el } from './dom.ts';
+import { blobOf, el } from './dom.ts';
 import { createViewer, VIEWER_MAX, type Viewer } from './viewer.ts';
 
 const MIME: Record<string, string> = {
@@ -15,7 +15,8 @@ const MIME: Record<string, string> = {
 // kind opens in until the user picks the other one (remembered per kind).
 export type PreviewKind = 'markdown' | 'html' | 'svg' | 'image' | 'audio' | 'video';
 export type ViewMode = 'raw' | 'preview';
-export const KINDS: Record<PreviewKind, { ext: string[]; raw: boolean; preview?: ViewMode }> = {
+type Kind = { ext: string[]; raw: true; preview: ViewMode } | { ext: string[]; raw: false };
+export const KINDS: Record<PreviewKind, Kind> = {
   markdown: { ext: ['md', 'markdown'], raw: true, preview: 'raw' },
   html: { ext: ['html', 'htm'], raw: true, preview: 'preview' },
   svg: { ext: ['svg'], raw: true, preview: 'preview' },
@@ -27,21 +28,29 @@ export const KINDS: Record<PreviewKind, { ext: string[]; raw: boolean; preview?:
 export const MEDIA_MAX = 50 * 2 ** 20; // bytes: images, audio and video are read whole into memory
 
 export interface Preview { kind: PreviewKind; raw: boolean; mime: string | null }
+const isKind = (k: string): k is PreviewKind => Object.hasOwn(KINDS, k);
+const baseName = (path: string) => path.slice(path.lastIndexOf('/') + 1);
 export function previewOf(path: string): Preview | null {
-  const ext = path.split('/').pop()!.split('.').pop()!.toLowerCase();
-  for (const [kind, k] of Object.entries(KINDS)) if (k.ext.includes(ext)) return { kind: kind as PreviewKind, raw: k.raw, mime: MIME[ext] ?? null };
+  const name = baseName(path), ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase();
+  for (const [kind, k] of Object.entries(KINDS)) if (isKind(kind) && k.ext.includes(ext)) return { kind, raw: k.raw, mime: MIME[ext] ?? null };
   return null;
 }
 
-// The last mode per kind, in localStorage (Erase all clears it).
+// The last mode per kind, in localStorage (Erase all clears it). Stored
+// values are checked: a bad one reads as the kind's default.
 const KEY = 'pouch.view';
+const stored = (storage: Pick<Storage, 'getItem'>): Record<string, unknown> => {
+  const v: unknown = JSON.parse(storage.getItem(KEY) ?? 'null');
+  return v && typeof v === 'object' ? { ...v } : {};
+};
 export function rememberedMode(kind: PreviewKind, storage: Pick<Storage, 'getItem'> = localStorage): ViewMode {
-  if (!KINDS[kind]?.raw) return 'preview';
-  try { return JSON.parse(storage.getItem(KEY)!)?.[kind] ?? KINDS[kind].preview; } catch { return KINDS[kind].preview!; }
+  const k: Kind | undefined = KINDS[kind];
+  if (!k?.raw) return 'preview';
+  try { const v = stored(storage)[kind]; return v === 'raw' || v === 'preview' ? v : k.preview; } catch { return k.preview; }
 }
 export function rememberMode(kind: PreviewKind, mode: ViewMode, storage: Pick<Storage, 'getItem' | 'setItem'> = localStorage) {
   if (!KINDS[kind]?.raw) return;
-  try { const v: Partial<Record<PreviewKind, ViewMode>> = JSON.parse(storage.getItem(KEY)!) ?? {}; v[kind] = mode; storage.setItem(KEY, JSON.stringify(v)); } catch {}
+  try { const v = stored(storage); v[kind] = mode; storage.setItem(KEY, JSON.stringify(v)); } catch {}
 }
 
 // box: the element previews draw into. markdown(text, path): DOM nodes from
@@ -82,8 +91,8 @@ export function createPreview(box: HTMLElement, { markdown, doc = document }: { 
         reset('media');
         if (bytes.length > MEDIA_MAX) return notice(`This file is ${(bytes.length / 2 ** 20).toFixed(0)} MB; Preview shows files up to 50 MB. Download it instead.`);
         // SVG too is drawn as an <img> from a blob: no script runs and nothing loads.
-        url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: p.mime! }));
-        const name = path.split('/').pop()!;
+        url = URL.createObjectURL(blobOf(bytes, p.mime ?? ''));
+        const name = baseName(path);
         const media = p.kind === 'audio' ? el('audio', { controls: true, src: url, preload: 'metadata', ariaLabel: name })
           : p.kind === 'video' ? el('video', { controls: true, src: url, preload: 'metadata', ariaLabel: name })
           : el('img', { src: url, alt: name });

@@ -4,36 +4,42 @@ import * as store from '../store.ts';
 import { normalize } from '../vfs.ts';
 import { CWD } from '../tools.ts';
 import { collect, packTar, packZip, unpackTar, unpackZip } from '../archive.ts';
-import { $, el, icon } from '../dom.ts';
+import { $, blobOf, el, icon } from '../dom.ts';
 import { play } from '../motion.ts';
 import type { App } from './app.ts';
-import type { ArchiveEntry, ArchiveFs } from '../archive.ts';
+import type { ArchiveEntry } from '../archive.ts';
+import type { runTool } from '../run.ts';
 
 // An incoming file: its destination and a reader for its bytes.
 export interface IncomingFile { path: string; data(): Promise<Uint8Array | string> }
 export interface BatchResult { written: number; skipped: number; paths: string[] }
 // A tree row, with its place in the tree kept on the element for keyboard moves.
-export type TreeRow = HTMLDivElement & { meta: { depth: number; isDir: boolean; locked?: boolean } };
+export type TreeRow = HTMLDivElement & { meta: { path: string; depth: number; isDir: boolean; locked?: boolean } };
 type Sheet = App['state']['sheet'];
-type SheetAction = Exclude<Parameters<Sheet>[1][number], false | null | undefined | ''>;
+type SheetItem = Parameters<Sheet>[1][number];
 type SheetBody = Parameters<Sheet>[2];
 type Root = [path: string, name: string, tag: string, mountName?: string, locked?: boolean];
-type PickerWindow = Window & { showDirectoryPicker?: unknown }; // Chromium only
 type ChoiceOption = [value: string, label: string, cls?: string];
+type RunTool = ReturnType<typeof runTool>;
+const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
+// The entry API's isFile and isDirectory say which kind an entry is; its types do not.
+const isFileEntry = (e: FileSystemEntry): e is FileSystemFileEntry => e.isFile;
+const isDirEntry = (e: FileSystemEntry): e is FileSystemDirectoryEntry => e.isDirectory;
 
 export interface TreeRegion {
   ARCHIVE: RegExp;
   // A yes/no question in the sheet; resolves true only on the verb.
-  ask(text: string, verb?: string, cls?: string, title?: string): Promise<boolean>;
+  ask(text: string | Node, verb?: string, cls?: string, title?: string): Promise<boolean>;
   download(path: string, bytes?: Blob | Uint8Array): void | Promise<void>;
-  expanded: Set<string>;
   fail(m: string): void;
   // The row holding the roving tab stop.
-  get focusPath(): string; set focusPath(v: string);
+  readonly focusPath: string;
   listArchive(path: string): Promise<void>;
   offerDefaults(): void;
   renderNamespaces(): void;
   renderTree(): Promise<void>;
+  // Expand the way down to a folder, give it the tab stop and scroll it into view.
+  reveal(path: string): Promise<void>;
   stackSeed(path: string): Promise<void>;
   treeRows(): TreeRow[];
   unpackHere(path: string): Promise<void>;
@@ -66,7 +72,7 @@ export function createTreeRegion(app: App): TreeRegion {
 
   function download(path: string, bytes?: Blob | Uint8Array) {
     const go = (b: Blob | Uint8Array) => {
-      const url = URL.createObjectURL(b instanceof Blob ? b : new Blob([b as BlobPart]));
+      const url = URL.createObjectURL(b instanceof Blob ? b : blobOf(b, ''));
       const a = el('a', { href: url, download: path.split('/').pop() });
       document.body.append(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
@@ -77,8 +83,7 @@ export function createTreeRegion(app: App): TreeRegion {
   // Folders leave as .zip (opens natively on Windows, macOS and phones) or .tar.
   async function downloadDir(path: string, format = 'zip', fileName?: string) {
     const name = path.split('/').pop() || 'folder';
-    // Cast: Namespace.writeFile resolves unknown where ArchiveFs says void (unify in the core).
-    const entries = await collect(app.state.vfs.fs as ArchiveFs, normalize(path + '/..'), name);
+    const entries = await collect(app.state.vfs.fs, normalize(path + '/..'), name);
     download(fileName ?? `${name}.${format}`, format === 'zip' ? await packZip(entries) : packTar(entries));
     app.state.status(`Downloaded ${path} as .${format} (${entries.filter((e) => !e.dir).length} files).`);
   }
@@ -86,7 +91,7 @@ export function createTreeRegion(app: App): TreeRegion {
   // "file.txt" -> "file (2).txt", the first name not taken.
   async function freeName(path: string) {
     const dir = normalize(path + '/..'), base = path.slice(dir.length).replace(/^\//, '');
-    const [, stem, ext = ''] = base.match(/^(.+?)(\.[^.]*)?$/)!;
+    const [, stem = base, ext = ''] = /^(.+?)(\.[^.]*)?$/.exec(base) ?? [];
     for (let i = 2; ; i++) {
       const p = normalize(`${dir}/${stem} (${i})${ext}`);
       if (!(await app.state.vfs.fs.exists(p))) return p;
@@ -97,7 +102,7 @@ export function createTreeRegion(app: App): TreeRegion {
   function choose(title: string, options: (ChoiceOption | false)[], body?: SheetBody) {
     return new Promise<string | null>((resolve) => {
       $<HTMLDialogElement>('sheet').addEventListener('close', () => resolve(null), { once: true });
-      app.state.sheet(title, (options.filter(Boolean) as ChoiceOption[]).map(([value, label, cls]): SheetAction => [label, () => resolve(value), cls]), body);
+      app.state.sheet(title, options.map((o): SheetItem => o && [o[1], () => resolve(o[0]), o[2]]), body);
     });
   }
 
@@ -147,7 +152,7 @@ export function createTreeRegion(app: App): TreeRegion {
       const r = await writeBatch(where, items, dirs);
       if (r) { expanded.add(where); app.state.status(`${verb} ${r.written} file${r.written === 1 ? '' : 's'} in ${where}${r.skipped ? ` (${r.skipped} skipped)` : ''}.`); }
       return r;
-    } catch (e) { fail('Could not add files: ' + (e as Error).message); }
+    } catch (e) { fail('Could not add files: ' + messageOf(e)); }
     finally { app.state.vfs.changed(); }
   }
   const fileItem = (path: string, file: File): IncomingFile => ({ path, data: async () => new Uint8Array(await file.arrayBuffer()) });
@@ -157,14 +162,15 @@ export function createTreeRegion(app: App): TreeRegion {
   // webkitRelativePath. Both lists must be read before the first await: the
   // browser empties a DataTransfer once the drop event returns.
   async function dropInto(dir: string, dataTransfer: DataTransfer) {
-    const entries = [...dataTransfer.items].map((i) => i.webkitGetAsEntry?.()).filter(Boolean) as FileSystemEntry[];
+    const entries = [...dataTransfer.items].flatMap((i) => i.webkitGetAsEntry?.() ?? []);
     const files = [...dataTransfer.files];
     const items: IncomingFile[] = [], dirs: string[] = [];
     const walk = async (entry: FileSystemEntry, rel: string): Promise<number | undefined> => {
       const path = normalize(dir + '/' + rel);
-      if (entry.isFile) return items.push(fileItem(path, await new Promise<File>((res, rej) => (entry as FileSystemFileEntry).file(res, rej))));
+      if (isFileEntry(entry)) return items.push(fileItem(path, await new Promise<File>((res, rej) => entry.file(res, rej))));
+      if (!isDirEntry(entry)) return;
       dirs.push(path);
-      const reader = (entry as FileSystemDirectoryEntry).createReader();
+      const reader = entry.createReader();
       for (;;) {
         const batch = await new Promise<FileSystemEntry[]>((res, rej) => reader.readEntries(res, rej));
         if (!batch.length) break;
@@ -174,7 +180,7 @@ export function createTreeRegion(app: App): TreeRegion {
     try {
       if (entries.length) for (const e of entries) await walk(e, e.name);
       else for (const f of files) items.push(fileItem(normalize(dir + '/' + (f.webkitRelativePath || f.name)), f));
-    } catch (e) { return fail('Could not read the dropped files: ' + (e as Error).message); }
+    } catch (e) { return fail('Could not read the dropped files: ' + messageOf(e)); }
     await addFiles(dir, items, dirs);
   }
 
@@ -182,7 +188,7 @@ export function createTreeRegion(app: App): TreeRegion {
   function uploadTo(dir: string, folder = false) {
     const input = $<HTMLInputElement>(folder ? 'upload-dir' : 'upload');
     input.onchange = async () => {
-      const files = [...input.files!]; input.value = '';
+      const files = [...(input.files ?? [])]; input.value = '';
       await addFiles(dir, files.map((f) => fileItem(normalize(dir + '/' + (f.webkitRelativePath || f.name)), f)));
       app.state.layout.open('files');
     };
@@ -202,10 +208,10 @@ export function createTreeRegion(app: App): TreeRegion {
   // until you change or remove them; your own files win.
   async function stackSeed(path: string) {
     try {
-      const n = await app.state.vfs.stack(path.split('/').pop()!, await app.state.vfs.fs.readFileBuffer(path));
+      const n = await app.state.vfs.stack(path.split('/').pop() ?? path, await app.state.vfs.fs.readFileBuffer(path));
       app.state.status(`/work is now stacked over ${path.split('/').pop()} (${n} files, read-only). Your files win; remove the layer under What can BayLeaf see?`);
       renderTree(); renderNamespaces(); app.state.vfs.watches?.rescan('seed');
-    } catch (e) { app.state.status('Could not use it as a seed layer: ' + (e as Error).message, 'bad'); }
+    } catch (e) { app.state.status('Could not use it as a seed layer: ' + messageOf(e), 'bad'); }
   }
   // The trust panel's mount tables: the agent's, then each task's.
   function renderNamespaces() {
@@ -255,12 +261,12 @@ export function createTreeRegion(app: App): TreeRegion {
     const bytes = await app.state.vfs.fs.readFileBuffer(path);
     if (bytes.includes(0)) return fail(`${path} looks binary. Download it instead.`);
     try { await navigator.clipboard.writeText(new TextDecoder().decode(bytes)); app.state.status(`Copied the text of ${path}.`); }
-    catch (e) { fail(`This browser did not allow copying (${(e as Error).message}). Open the file, select all in the editor and copy from there.`); }
+    catch (e) { fail(`This browser did not allow copying (${messageOf(e)}). Open the file, select all in the editor and copy from there.`); }
   }
   async function newFromClipboard(dir: string) {
     let text: string;
     try { text = await navigator.clipboard.readText(); }
-    catch (e) { return fail(`This browser did not allow reading the clipboard (${(e as Error).message}). Make a new file and paste into the editor instead.`); }
+    catch (e) { return fail(`This browser did not allow reading the clipboard (${messageOf(e)}). Make a new file and paste into the editor instead.`); }
     if (!text) return fail('The clipboard holds no text.');
     const name = (await askName('New file from clipboard', `Name for the new file (${text.length} characters from the clipboard)`, 'pasted.txt'))?.trim();
     if (!name) return;
@@ -285,7 +291,7 @@ export function createTreeRegion(app: App): TreeRegion {
   }
   // A yes/no question in the sheet (never a native confirm, which blocks the
   // page and is easy to dismiss by reflex). Resolves true only on the verb.
-  function ask(text: string, verb = 'OK', cls = 'primary', title = 'Are you sure?') {
+  function ask(text: string | Node, verb = 'OK', cls = 'primary', title = 'Are you sure?') {
     return new Promise<boolean>((resolve) => {
       let done = false;
       const onClose = () => { if ($<HTMLDialogElement>('sheet').open) return; $<HTMLDialogElement>('sheet').removeEventListener('close', onClose); if (!done) resolve(false); };
@@ -306,6 +312,13 @@ export function createTreeRegion(app: App): TreeRegion {
     if (kind !== 'dir') app.editing.openFile(p);
   }
 
+  async function reveal(path: string) {
+    for (let q = path; q !== '/'; q = normalize(q + '/..')) expanded.add(q);
+    focusPath = path;
+    await renderTree();
+    treeRows().find((r) => r.dataset.path === path)?.scrollIntoView({ block: 'nearest' });
+  }
+
   async function rename(path: string) {
     const name = await askName('Rename', 'Rename to', path.split('/').pop(), 'Rename');
     if (!name || name.includes('/')) return;
@@ -315,7 +328,7 @@ export function createTreeRegion(app: App): TreeRegion {
     if (await app.state.vfs.fs.exists(dest)) return fail(`${name} already exists in ${normalize(path + '/..')}. Pick another name, or delete that one first.`);
     await app.state.userFs.mv(path, dest);
     // The open file may be the renamed entry or inside a renamed folder.
-    if (app.editing.openPath === path || app.editing.openPath?.startsWith(path + '/')) { app.editing.openPath = dest + app.editing.openPath.slice(path.length); $('editor-path').textContent = app.editing.openPath; }
+    app.editing.renamed(path, dest);
     if (focusPath === path) focusPath = dest;
     app.state.vfs.changed();
   }
@@ -335,7 +348,7 @@ export function createTreeRegion(app: App): TreeRegion {
 
   function toggle(path: string) { expanded.has(path) ? expanded.delete(path) : expanded.add(path); renderTree(); }
 
-  function entryActions(path: string, isDir: boolean, mountName?: string): (SheetAction | false)[] {
+  function entryActions(path: string, isDir: boolean, mountName?: string): SheetItem[] {
     const ro = app.state.vfs.where(path) === 'mount-ro';
     const isRoot = ROOTS.some(([r]) => r === path);
     if (isDir) return ([
@@ -351,7 +364,7 @@ export function createTreeRegion(app: App): TreeRegion {
       !mountName && !isRoot && ['Rename', () => rename(path)],
       !mountName && !isRoot && ['Delete', () => remove(path, true), 'danger'],
       mountName && ['Unmount (the folder itself is untouched)', () => app.state.vfs.unmount(mountName), 'danger'],
-    ] as (SheetAction | false)[]).filter((a) => a && !(ro && /^(New|Upload|Rename|Delete)/.test(a[0])));
+    ] satisfies SheetItem[]).filter((a) => !a || !(ro && /^(New|Upload|Rename|Delete)/.test(a[0])));
     return [
       ['Open in editor', () => app.editing.openFile(path)],
       ARCHIVE.test(path) && !ro && ['Unpack here', () => unpackHere(path)],
@@ -369,14 +382,13 @@ export function createTreeRegion(app: App): TreeRegion {
   // roving tab stop: Tab enters at the last focused row, arrows move within.
   let focusPath = '/work';
   function row(depth: number, { path, name, isDir, tag, mountName, locked }: { path: string; name: string; isDir: boolean; tag?: string; mountName?: string; locked?: boolean }) {
-    const r = el('div', { className: 'row' + (path === app.editing.openPath ? ' current' : ''), role: 'treeitem', tabIndex: -1,
-      ariaLabel: name + (tag ? ', ' + tag : ''), ariaLevel: String(depth + 1), ariaSelected: String(path === app.editing.openPath) }) as TreeRow;
+    const r: TreeRow = Object.assign(el('div', { className: 'row' + (path === app.editing.openPath ? ' current' : ''), role: 'treeitem', tabIndex: -1,
+      ariaLabel: name + (tag ? ', ' + tag : ''), ariaLevel: String(depth + 1), ariaSelected: String(path === app.editing.openPath) }), { meta: { path, depth, isDir, locked } });
     r.dataset.path = path;
-    r.meta = { depth, isDir, locked };
     // A watched file that just woke the agent pulses once (G14, G17).
     play(r, 'pulse:' + path, [{ opacity: 0.45 }, { opacity: 1 }, { opacity: 0.6 }, { opacity: 1 }], 1100, { mark: 'pulsed' });
     if (isDir && !locked) r.ariaExpanded = String(expanded.has(path));
-    r.style.setProperty('--depth', depth as unknown as string);
+    r.style.setProperty('--depth', String(depth));
     r.append(
       el('span', { className: 'twisty', ariaHidden: 'true' }, ...(isDir ? [icon('chevron')] : [])),
       el('span', { className: 'name', textContent: name, title: path }),
@@ -388,7 +400,7 @@ export function createTreeRegion(app: App): TreeRegion {
       r.append(t);
     }
     if (locked) {
-      r.onclick = () => app.state.vfs.reconnect(mountName!, { ask: true }).catch((e: Error) => fail(e.message));
+      if (mountName) r.onclick = () => app.state.vfs.reconnect(mountName, { ask: true }).catch((e: unknown) => fail(messageOf(e)));
       return r;
     }
     const more = el('button', { type: 'button', className: 'more', ariaLabel: 'Actions for ' + name, title: 'Actions', tabIndex: -1 }, icon('ellipsis'));
@@ -403,7 +415,7 @@ export function createTreeRegion(app: App): TreeRegion {
     const target = isDir ? path : normalize(path + '/..');
     r.ondragover = (e) => { e.preventDefault(); e.stopPropagation(); r.classList.add('drop'); };
     r.ondragleave = () => r.classList.remove('drop');
-    r.ondrop = (e) => { e.preventDefault(); e.stopPropagation(); r.classList.remove('drop'); dropInto(target, e.dataTransfer!); };
+    r.ondrop = (e) => { e.preventDefault(); e.stopPropagation(); r.classList.remove('drop'); if (e.dataTransfer) dropInto(target, e.dataTransfer); };
     return r;
   }
 
@@ -411,16 +423,17 @@ export function createTreeRegion(app: App): TreeRegion {
   function focusRow(r: TreeRow | undefined) {
     if (!r) return;
     for (const x of treeRows()) x.tabIndex = -1;
-    r.tabIndex = 0; focusPath = r.dataset.path!; r.focus();
+    r.tabIndex = 0; focusPath = r.meta.path; r.focus();
   }
   function rowMenu(r: TreeRow) {
     // click() returns undefined, so `more?.click() ?? r.click()` would click both.
     if (!$<HTMLDialogElement>('sheet').open) (r.querySelector<HTMLElement>('.more') ?? r).click();
   }
+  const rowOf = (t: EventTarget | null) => (t instanceof Element ? t.closest<TreeRow>('.row[data-path]') : null);
   $('tree').onkeydown = (e) => {
-    const r = (e.target as Element).closest?.<TreeRow>('.row[data-path]');
+    const r = rowOf(e.target);
     if (!r || e.target !== r) return;
-    const list = treeRows(), i = list.indexOf(r), { depth, isDir, locked } = r.meta, path = r.dataset.path!;
+    const list = treeRows(), i = list.indexOf(r), { path, depth, isDir, locked } = r.meta;
     const go = (n: number) => { e.preventDefault(); focusRow(list[Math.max(0, Math.min(n, list.length - 1))]); };
     if (e.key === 'ArrowDown') return go(i + 1);
     if (e.key === 'ArrowUp') return go(i - 1);
@@ -430,7 +443,7 @@ export function createTreeRegion(app: App): TreeRegion {
       e.preventDefault();
       if (!isDir || locked) return;
       if (!expanded.has(path)) return toggle(path);
-      if (list[i + 1]?.meta.depth! > depth) focusRow(list[i + 1]);
+      if ((list[i + 1]?.meta.depth ?? -1) > depth) focusRow(list[i + 1]);
     } else if (e.key === 'ArrowLeft') {
       e.preventDefault();
       if (isDir && expanded.has(path)) return toggle(path);
@@ -443,17 +456,17 @@ export function createTreeRegion(app: App): TreeRegion {
   };
   // Right-click, and the menu key where the browser turns it into this event.
   $('tree').oncontextmenu = (e) => {
-    const r = (e.target as Element).closest?.<TreeRow>('.row[data-path]');
+    const r = rowOf(e.target);
     if (!r) return;
-    e.preventDefault(); focusPath = r.dataset.path!; rowMenu(r);
+    e.preventDefault(); focusPath = r.meta.path; rowMenu(r);
   };
 
   async function children(path: string, depth: number, out: HTMLDivElement[]) {
     let list;
     try { list = await app.state.vfs.list(path); } catch (e) {
-      out.push(el('div', { className: 'row muted', textContent: (e as Error).message, style: `--depth:${depth}` })); return;
+      out.push(el('div', { className: 'row muted', textContent: messageOf(e), style: `--depth:${depth}` })); return;
     }
-    list.sort((a, b) => ((b.isDirectory as unknown as number) - (a.isDirectory as unknown as number)) || a.name.localeCompare(b.name));
+    list.sort((a, b) => (Number(b.isDirectory) - Number(a.isDirectory)) || a.name.localeCompare(b.name));
     for (const d of list) {
       const p = normalize(path + '/' + d.name);
       out.push(row(depth, { path: p, name: d.name, isDir: d.isDirectory }));
@@ -480,37 +493,39 @@ export function createTreeRegion(app: App): TreeRegion {
   }
   // Dropping on empty tree space lands in /work.
   $('tree').ondragover = (e) => e.preventDefault();
-  $('tree').ondrop = (e) => { e.preventDefault(); dropInto(CWD, e.dataTransfer!); };
+  $('tree').ondrop = (e) => { e.preventDefault(); if (e.dataTransfer) dropInto(CWD, e.dataTransfer); };
 
   let changeTimer: ReturnType<typeof setTimeout> | 0 = 0;
   app.state.vfs.addEventListener('change', () => {
     clearTimeout(changeTimer);
-    changeTimer = setTimeout(() => { renderTree(); app.editing.syncEditor(); app.transcript.pathGen++; app.transcript.linkVer++; app.transcript.scheduleRender(); }, 150);
+    changeTimer = setTimeout(() => { renderTree(); app.editing.syncEditor(); app.transcript.filesChanged(); }, 150);
   });
   $('refresh').onclick = () => app.state.vfs.changed();
   // Everything in /work in one file: the "export before I leave" button (O3, L3).
-  $('download-all').onclick = () => downloadDir('/work', 'zip', `pouch-work-${new Date().toISOString().slice(0, 10)}.zip`).catch((e: Error) => fail(e.message));
+  $('download-all').onclick = () => downloadDir('/work', 'zip', `pouch-work-${new Date().toISOString().slice(0, 10)}.zip`).catch((e: unknown) => fail(messageOf(e)));
+  const canMount = 'showDirectoryPicker' in window; // Chromium only
   function mountFolder() {
-    if (!(window as PickerWindow).showDirectoryPicker) return fail($('mount').title);
+    if (!canMount) return fail($('mount').title);
     app.state.sheet('Mount a folder from this device', [
       ['Read and write', () => app.state.vfs.pick(false).then((p) => { expanded.add(p); app.state.vfs.changed(); })],
       ['Read only', () => app.state.vfs.pick(true).then((p) => { expanded.add(p); app.state.vfs.changed(); })],
     ]);
   }
-  if (!(window as PickerWindow).showDirectoryPicker) $('mount').title = 'This browser cannot mount device folders (Chromium only). Use upload and download instead.';
+  if (!canMount) $('mount').title = 'This browser cannot mount device folders (Chromium only). Use upload and download instead.';
   $('mount').onclick = mountFolder;
 
   // ── First visit (A5, T4, L3) and the after-erase notice (L1) ──────────
   $('welcome-where').onclick = storageInfo;
   $('welcome-upload').onclick = () => uploadTo('/work');
-  if ((window as PickerWindow).showDirectoryPicker) $('welcome-mount').onclick = mountFolder; else $('welcome-mount').hidden = true;
+  if (canMount) $('welcome-mount').onclick = mountFolder; else $('welcome-mount').hidden = true;
   $('welcome-dismiss').onclick = () => { $('welcome').hidden = true; store.setSetting('welcomed', true); };
   $('erased-dismiss').onclick = () => { $('erased').hidden = true; };
 
   // ── Run script (D18, D19): the run tool without the model ────────────
   // Its writes are attributed to the current session's run (egress, watches). Works offline.
   async function runScript(path: string) {
-    const tool = app.boot.toolList.find((t) => t.name === 'run');
+    const tools: App['boot']['toolList'][number][] = app.boot.toolList;
+    const tool = tools.find((t): t is RunTool => t.name === 'run');
     if (!tool) return fail('The run engine is not available.');
     if (app.queues.busy() || app.sessionList.activeRun) return fail('Wait for the current turn to finish, then run the script.');
     const sid = app.sessionList.sessions.current?.id;
@@ -518,7 +533,7 @@ export function createTreeRegion(app: App): TreeRegion {
     let text: string;
     app.state.status('Running ' + path);
     // A script saved in /work sees all of /work, as the agent's run of it most likely did.
-    try { text = await (tool.execute as (args: { path: string; files?: string[] }) => Promise<string>)({ path, ...(path.startsWith(CWD + '/') ? { files: [CWD] } : {}) }); } catch (e) { text = (e as Error).message.replace(/^<harness>|<\/harness>$/g, '').trim(); }
+    try { text = await tool.execute({ path, ...(path.startsWith(CWD + '/') ? { files: [CWD] } : {}) }); } catch (e) { text = messageOf(e).replace(/^<harness>|<\/harness>$/g, '').trim(); }
     finally { app.sessionList.activeRun = null; app.state.status(''); }
     app.state.sheet('Ran ' + path.split('/').pop(), [], el('pre', { className: 'run-out', textContent: text }));
   }
@@ -527,13 +542,13 @@ export function createTreeRegion(app: App): TreeRegion {
     ARCHIVE,
     ask,
     download,
-    expanded,
     fail,
-    get focusPath() { return focusPath; }, set focusPath(v) { focusPath = v; },
+    get focusPath() { return focusPath; },
     listArchive,
     offerDefaults,
     renderNamespaces,
     renderTree,
+    reveal,
     stackSeed,
     treeRows,
     unpackHere,

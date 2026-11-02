@@ -24,6 +24,7 @@
 //   conversions the CLI build cannot do (no aresample) fall back to it too.
 /// <reference path="./libav.d.ts" />
 import libav from '../../node_modules/@libav.js/variant-webm-vp9-cli/dist/libav-6.10.9.0-webm-vp9-cli.mjs';
+import type { AV, CopiedPacket, Factory, VideoCopy } from '../../node_modules/@libav.js/variant-webm-vp9-cli/dist/libav-6.10.9.0-webm-vp9-cli.mjs';
 import factory from '../../node_modules/@libav.js/variant-webm-vp9-cli/dist/libav-6.10.9.0-webm-vp9-cli.wasm.mjs';
 import avf from '../../node_modules/@libav.js/variant-webcodecs-avf/dist/libav-6.10.9.0-webcodecs-avf.mjs';
 import avfFactory from '../../node_modules/@libav.js/variant-webcodecs-avf/dist/libav-6.10.9.0-webcodecs-avf.wasm.mjs';
@@ -31,18 +32,13 @@ import { codecString, mp3Frames, readWav, rotationOf, vfPlan, geometry, fpsPicke
 import type { Geometry, MediaKind, Wav } from './wc.ts';
 import type { AudioJob, AudioResult, FramesJob, FramesResult, MediaImage, MediaInput, MediaLoad, MediaProbe, MediaReply, MediaRequest, MediaResult, MediaStop, ProbeJob, ProbeStream, RunJob, RunResult } from './protocol.ts';
 
-type AV = Awaited<ReturnType<typeof instance>>; // a libav.js instance (either build), its API called directly
 type Frame = import('@libav.js/variant-webm-vp9-cli').Frame;
-type Packets = Record<number, import('@libav.js/variant-webm-vp9-cli').Packet[]>; // ff_read_frame_multi's, copied out
-// libav.js types these (ptr, index); Pouch passes the element's own pointer (sd + k * 12), the index left 0.
-type SideDataField = (p: number) => Promise<number>;
+type Packets = Record<number, CopiedPacket[]>; // ff_read_frame_multi's, copied out
+type Stream = import('@libav.js/variant-webm-vp9-cli').Stream;
 type Note = (line: string) => void;
-type Thrown = { name?: string; code?: string; message?: string } | null | undefined;
 type WasmDone = (inst: WebAssembly.Instance, mod: WebAssembly.Module) => void;
-type CodecProps = import('@libav.js/variant-webm-vp9-cli').AVCodecContextProps;
-type Mp4Stream = Awaited<ReturnType<typeof openMp4>>['streams'][number];
-// geometry() once its error is checked.
-type Picture = Extract<Geometry, { w: number }> & { error?: string };
+// A frames job's canvas, sized by geometry() on the first frame.
+interface Picture { geo: Extract<Geometry, { w: number }>; canvas: OffscreenCanvas; ctx: OffscreenCanvasRenderingContext2D }
 
 let wasm: Promise<WebAssembly.Module> | null = null; // compiled once (jobs posted meanwhile wait for it)
 let avfWasm: Promise<WebAssembly.Module> | null = null; // the same for the webcodecs-avf build
@@ -51,20 +47,23 @@ const check = (id: number) => { if (stopped.has(id)) throw Object.assign(new Err
 const tick = () => new Promise((r) => setTimeout(r, 0)); // lets a stop message in
 const fail = (msg: string, code: string) => Object.assign(new Error(msg), { code });
 const DECODE_STEP = 8; // packets per decode call when extracting frames (bounds the RGBA held at once)
+// A thrown value's fields, whatever was thrown.
+function thrown(e: unknown) {
+  const o: { message?: unknown; code?: unknown; name?: unknown } = typeof e === 'object' && e !== null ? e : {};
+  return { message: String(o.message ?? e), code: typeof o.code === 'string' ? o.code : undefined, name: typeof o.name === 'string' ? o.name : undefined };
+}
+const context2d = (canvas: OffscreenCanvas) => { const ctx = canvas.getContext('2d'); if (!ctx) throw new Error('OffscreenCanvas has no 2d context here'); return ctx; };
 
-// A new libav instance whose print and printErr land in out/err.
-async function instance(out: string[], err: string[]) {
-  const mod = await wasm;
-  return libav.LibAV({ noworker: true, factory: (opts: Record<string, unknown>) => factory({ ...opts,
-    instantiateWasm(imports: WebAssembly.Imports, done: WasmDone) { WebAssembly.instantiate(mod!, imports).then((inst) => done(inst, mod!)); return {}; },
-    print: (s: string) => out.push(s), printErr: (s: string) => err.push(s) }) });
+// A new libav instance of a build, its wasm compiled by load; err gets printErr, out print.
+async function start(wrapper: typeof libav, make: Factory, module: Promise<WebAssembly.Module> | null, err: string[], out?: string[]) {
+  if (!module) throw fail('the media runtime is not loaded', 'EPROTO');
+  const mod = await module;
+  return wrapper.LibAV({ noworker: true, factory: (opts) => make({ ...opts,
+    instantiateWasm(imports: WebAssembly.Imports, done: WasmDone) { WebAssembly.instantiate(mod, imports).then((inst) => done(inst, mod)); return {}; },
+    print: (s: string) => out?.push(s), printErr: (s: string) => err.push(s) }) });
 }
-async function avfInstance(err: string[]) {
-  const mod = await avfWasm;
-  return avf.LibAV({ noworker: true, factory: (opts: Record<string, unknown>) => avfFactory({ ...opts,
-    instantiateWasm(imports: WebAssembly.Imports, done: WasmDone) { WebAssembly.instantiate(mod!, imports).then((inst) => done(inst, mod!)); return {}; },
-    print: () => {}, printErr: (s: string) => err.push(s) }) });
-}
+const instance = (out: string[], err: string[]) => start(libav, factory, wasm, err, out);
+const avfInstance = (err: string[]) => start(avf, avfFactory, avfWasm, err);
 
 // ── The WebCodecs path ───────────────────────────────────────────────
 const H264_PROFILES: Record<number, string> = { 66: 'Constrained Baseline', 77: 'Main', 88: 'Extended', 100: 'High', 110: 'High 10', 122: 'High 4:2:2', 244: 'High 4:4:4 Predictive' };
@@ -74,6 +73,7 @@ const LONG: Record<string, string> = { h264: 'H.264 / AVC / MPEG-4 AVC / MPEG-4 
   mp3: 'MP3 (MPEG audio layer 3)', opus: 'Opus (Opus Interactive Audio Codec)', alac: 'ALAC (Apple Lossless Audio Codec)', prores: 'Apple ProRes (iCodec Pro)',
   mjpeg: 'Motion JPEG', vp9: 'Google VP9', av1: 'Alliance for Open Media AV1', flac: 'FLAC (Free Lossless Audio Codec)', mov_text: '3GPP Timed Text subtitle' };
 const fourcc = (n: number) => String.fromCharCode(n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >>> 24) & 255).replace(/[^\x20-\x7e]/g, '.');
+const SAMPLE_FMT_IDS: Record<string, number> = { u8: 0, s16: 1, s32: 2, flt: 3 };
 const SAMPLE_FMTS = ['u8', 's16', 's32', 'flt', 'dbl', 'u8p', 's16p', 's32p', 'fltp', 'dblp', 's64', 's64p'];
 const layoutOf = (n: number) => (n === 1 ? 4 : n === 2 ? 3 : (2 ** n) - 1);
 const layoutName = (n: number) => (n === 1 ? 'mono' : n === 2 ? 'stereo' : `${n} channels`);
@@ -82,15 +82,16 @@ const ratio = (x: number) => { if (!(x > 0)) return '0/0'; for (const d of [1, 1
 async function videoSupport(config: VideoDecoderConfig) {
   if (typeof VideoDecoder === 'undefined') return { supported: false, why: 'this browser has no WebCodecs VideoDecoder' };
   try { const r = await VideoDecoder.isConfigSupported(config); return r.supported ? { supported: true } : { supported: false, why: `this browser's VideoDecoder cannot decode ${config.codec}` }; }
-  catch (e) { return { supported: false, why: String((e as Thrown)!.message ?? e) }; }
+  catch (e) { return { supported: false, why: thrown(e).message }; }
 }
 async function audioSupport(config: AudioDecoderConfig) {
   if (typeof AudioDecoder === 'undefined') return { supported: false, why: 'this browser has no WebCodecs AudioDecoder' };
   try { const r = await AudioDecoder.isConfigSupported(config); return r.supported ? { supported: true } : { supported: false, why: `this browser's AudioDecoder cannot decode ${config.codec}` }; }
-  catch (e) { return { supported: false, why: String((e as Thrown)!.message ?? e) }; }
+  catch (e) { return { supported: false, why: thrown(e).message }; }
 }
 
-// An MP4/MOV demuxed by the avf build: { fmt, streams: [{ ...stream, par, name, config, rotation }], duration }.
+// An MP4/MOV demuxed by the avf build: { fmt, streams: [{ ...stream, par, name, video or audio (a WebCodecs config, null
+// when there is no decoder for it), rotation }], duration }.
 async function openMp4(m: AV, input: MediaInput, err: string[]) {
   await m.writeFile(input.name, input.bytes);
   let fmt, streams;
@@ -106,15 +107,16 @@ async function openMp4(m: AV, input: MediaInput, err: string[]) {
       const sd = await m.AVCodecParameters_coded_side_data(s.codecpar);
       for (let k = 0; k < nsd; k++) {
         const p = sd + k * 12; // AVPacketSideData { uint8_t *data; size_t size; enum type } in wasm32
-        if (await (m.AVPacketSideData_type as SideDataField)(p) === 5 && await (m.AVPacketSideData_size as SideDataField)(p) >= 36) rotation = rotationOf(await m.copyout_s32(await (m.AVPacketSideData_data as SideDataField)(p), 9)); // AV_PKT_DATA_DISPLAYMATRIX
+        if (await m.AVPacketSideData_type(p) === 5 && await m.AVPacketSideData_size(p) >= 36) rotation = rotationOf(await m.copyout_s32(await m.AVPacketSideData_data(p), 9)); // AV_PKT_DATA_DISPLAYMATRIX
       }
     }
     const sdur = m.i64tof64(await m.AVStream_duration(s.ptr), await m.AVStream_durationhi(s.ptr));
-    const tag = fourcc(par.codec_tag!), codec = codecString(name, par.extradata, tag);
-    const config = s.codec_type === m.AVMEDIA_TYPE_VIDEO
-      ? codec && { codec, codedWidth: par.width, codedHeight: par.height, ...(par.extradata?.length && /^(avc1|hvc1|hev1|vp09|av01)/.test(codec) && name !== 'vp9' && name !== 'av1' ? { description: par.extradata } : {}) }
-      : s.codec_type === m.AVMEDIA_TYPE_AUDIO ? codec && { codec, sampleRate: par.sample_rate, numberOfChannels: par.channels || 1, ...(par.extradata?.length && name !== 'mp3' ? { description: par.extradata } : {}) } : null;
-    out.push({ ...s, par, name, tag, config, rotation, duration: sdur > 0 && sdur !== m.AV_NOPTS_VALUE ? sdur * s.time_base_num / s.time_base_den : NaN });
+    const tag = fourcc(par.codec_tag), codec = codecString(name, par.extradata, tag), extra = par.extradata;
+    const video: VideoDecoderConfig | null = s.codec_type === m.AVMEDIA_TYPE_VIDEO && codec
+      ? { codec, codedWidth: par.width, codedHeight: par.height, ...(extra?.length && /^(avc1|hvc1|hev1|vp09|av01)/.test(codec) && name !== 'vp9' && name !== 'av1' ? { description: extra } : {}) } : null;
+    const audio: AudioDecoderConfig | null = s.codec_type === m.AVMEDIA_TYPE_AUDIO && codec
+      ? { codec, sampleRate: par.sample_rate, numberOfChannels: par.channels || 1, ...(extra?.length && name !== 'mp3' ? { description: extra } : {}) } : null;
+    out.push({ ...s, par, name, tag, video, audio, rotation, duration: sdur > 0 && sdur !== m.AV_NOPTS_VALUE ? sdur * s.time_base_num / s.time_base_den : NaN });
   }
   return { fmt, streams: out, duration: d > 0 && d !== m.AV_NOPTS_VALUE ? d / m.AV_TIME_BASE : NaN };
 }
@@ -149,24 +151,25 @@ const wcActions = {
     try {
       const { fmt, streams, duration } = await openMp4(m, input, err);
       const counts = streams.map(() => 0), pkt = await m.av_packet_alloc();
-      await eachPackets(m, fmt, pkt, id, (packets) => { for (const [i, p] of Object.entries(packets)) (counts as unknown as Record<string, number>)[i] += p.length; });
+      await eachPackets(m, fmt, pkt, id, (packets) => { for (const [i, p] of Object.entries(packets)) counts[Number(i)] += p.length; });
       const out: ProbeStream[] = [];
       for (const [i, s] of streams.entries()) {
-        const p = s.par, base = { index: i, codec_name: s.name, codec_long_name: LONG[s.name] ?? s.name, codec_tag_string: s.tag, codec_tag: `0x${(p.codec_tag! >>> 0).toString(16).padStart(4, '0')}`,
-          time_base: `${s.time_base_num}/${s.time_base_den}`, duration: s.duration, nb_frames: counts[i], ...(p.bit_rate! > 0 ? { bit_rate: p.bit_rate } : {}) };
+        const p = s.par, base = { index: i, codec_name: s.name, codec_long_name: LONG[s.name] ?? s.name, codec_tag_string: s.tag, codec_tag: `0x${(p.codec_tag >>> 0).toString(16).padStart(4, '0')}`,
+          time_base: `${s.time_base_num}/${s.time_base_den}`, duration: s.duration, nb_frames: counts[i], ...(p.bit_rate > 0 ? { bit_rate: p.bit_rate } : {}) };
         if (s.codec_type === m.AVMEDIA_TYPE_VIDEO) {
           const rate = counts[i] && s.duration > 0 ? counts[i] / s.duration : 0;
-          const sup = s.config ? await videoSupport(s.config as VideoDecoderConfig) : { supported: false, why: `no WebCodecs decoder for ${s.name} video` };
+          const sup = s.video ? await videoSupport(s.video) : { supported: false, why: `no WebCodecs decoder for ${s.name} video` };
           if (!sup.supported) notes.push(`stream ${i} (${s.name}): ${sup.why}; frames from it will fail`);
-          out.push({ ...base, codec_type: 'video', profile: (s.name === 'h264' ? H264_PROFILES : s.name === 'hevc' ? HEVC_PROFILES : {} as Record<number, string>)[p.profile!] ?? String(p.profile),
+          const profiles: Record<number, string> = s.name === 'h264' ? H264_PROFILES : s.name === 'hevc' ? HEVC_PROFILES : {};
+          out.push({ ...base, codec_type: 'video', profile: profiles[p.profile] ?? String(p.profile),
             width: p.width, height: p.height, coded_width: p.width, coded_height: p.height, pix_fmt: p.format >= 0 ? ['yuv420p'][p.format] ?? undefined : undefined, level: p.level,
-            r_frame_rate: ratio(rate), avg_frame_rate: ratio(rate), ...(s.config ? { webcodecs_codec: s.config.codec } : {}),
+            r_frame_rate: ratio(rate), avg_frame_rate: ratio(rate), ...(s.video ? { webcodecs_codec: s.video.codec } : {}),
             ...(s.rotation ? { side_data_list: [{ side_data_type: 'Display Matrix', rotation: s.rotation }] } : {}) });
         } else if (s.codec_type === m.AVMEDIA_TYPE_AUDIO) {
-          const sup = s.config ? await audioSupport(s.config as AudioDecoderConfig) : { supported: false, why: `no WebCodecs decoder for ${s.name} audio` };
+          const sup = s.audio ? await audioSupport(s.audio) : { supported: false, why: `no WebCodecs decoder for ${s.name} audio` };
           if (!sup.supported) notes.push(`stream ${i} (${s.name}): ${sup.why}; audio from it will fail`);
-          out.push({ ...base, codec_type: 'audio', profile: s.name === 'aac' ? AAC_PROFILES[p.profile!] ?? String(p.profile) : undefined, sample_fmt: SAMPLE_FMTS[p.format] ?? 'fltp',
-            sample_rate: p.sample_rate, channels: p.channels, channel_layout: layoutName(p.channels!) });
+          out.push({ ...base, codec_type: 'audio', profile: s.name === 'aac' ? AAC_PROFILES[p.profile] ?? String(p.profile) : undefined, sample_fmt: SAMPLE_FMTS[p.format] ?? 'fltp',
+            sample_rate: p.sample_rate, channels: p.channels, channel_layout: layoutName(p.channels) });
         } else out.push({ ...base, codec_type: ['video', 'audio', 'data', 'subtitle', 'attachment'][s.codec_type] ?? 'data' });
       }
       const brand = String.fromCharCode(...input.bytes.subarray(8, 12));
@@ -178,7 +181,7 @@ const wcActions = {
   // Frames from an MP4/MOV's video: the libav path's arguments; decoded by VideoDecoder, drawn here.
   async frames({ input, ss, t, filters, want, maxImages, maxPixels, maxBytes = Infinity, type, quality, maxSeconds }: FramesJob, id: number, note: Note): Promise<FramesResult> {
     const plan = vfPlan(filters);
-    if (plan.error) throw fail(plan.error, 'EFILTER');
+    if (plan.error !== undefined) throw fail(plan.error, 'EFILTER');
     const err: string[] = [], m = await avfInstance(err);
     let dec: VideoDecoder | null = null;
     const live = new Set<VideoFrame>(); // not yet closed
@@ -188,28 +191,32 @@ const wcActions = {
       const vi = streams.findIndex((s) => s.codec_type === m.AVMEDIA_TYPE_VIDEO);
       if (vi < 0) throw fail(`${input.label} has no video stream`, 'ENOVIDEO');
       const vs = streams[vi], tb = vs.time_base_num / vs.time_base_den;
-      if (!vs.config) throw fail(`${input.label}: its video is ${vs.name}, which the browser's VideoDecoder does not take here (H.264, HEVC where the browser supports it, VP9, AV1)`, 'ECODEC');
-      const sup = await videoSupport(vs.config as VideoDecoderConfig);
+      const config = vs.video;
+      if (!config) throw fail(`${input.label}: its video is ${vs.name}, which the browser's VideoDecoder does not take here (H.264, HEVC where the browser supports it, VP9, AV1)`, 'ECODEC');
+      const sup = await videoSupport(config);
       if (!sup.supported) throw fail(`${input.label}: ${sup.why} (${vs.name}${vs.name === 'hevc' ? ': HEVC decodes in Chrome and Edge with hardware support, and in Safari' : ''})`, 'ECODEC');
       if (ss > 0) { const [lo, hi] = m.f64toi64(Math.floor(ss / tb)); await m.av_seek_frame(fmt, vi, lo, hi, m.AVSEEK_FLAG_BACKWARD); }
       const end = t != null ? ss + t : Infinity, rot = ((vs.rotation % 360) + 360) % 360;
       const images: MediaImage[] = [], decoded: VideoFrame[] = [];
-      // failure is set by the decoder's callback; geo, canvas and ctx on the first frame drawn (draw).
-      let bytes = 0, failure = null as DOMException | null, last = -Infinity, step = 0, geo = null as unknown as Picture, canvas = null as unknown as OffscreenCanvas, ctx = null as unknown as OffscreenCanvasRenderingContext2D;
-      dec = new VideoDecoder({ output: (f) => { live.add(f); decoded.push(f); }, error: (e) => { failure = e; } });
-      dec.configure(vs.config as VideoDecoderConfig);
+      // Set by callbacks: failure by the decoder's, pic by the first frame drawn (draw).
+      const seen: { failure: DOMException | null; pic: Picture | null } = { failure: null, pic: null };
+      let bytes = 0, last = -Infinity, step = 0;
+      const decoder = dec = new VideoDecoder({ output: (f) => { live.add(f); decoded.push(f); }, error: (e) => { seen.failure = e; } });
+      decoder.configure(config);
       const picker = plan.rate ? fpsPicker<VideoFrame>(plan.rate, Math.min(want, maxImages + 1)) : null; // one past MAX_IMAGES, so draw refuses
       const release = (f: VideoFrame | null) => { if (f && live.has(f)) { f.close(); live.delete(f); } };
+      const picture = (iw: number, ih: number) => {
+        const geo = geometry(plan.ops, iw, ih);
+        if (geo.error !== undefined) throw fail(geo.error, 'EFILTER');
+        if (geo.w * geo.h > maxPixels) throw fail(`frames are ${geo.w}x${geo.h}, over ${maxPixels} pixels (MAX_FRAME_PIXELS); add scale=1280:-1`, 'ECAP');
+        const canvas = new OffscreenCanvas(geo.w, geo.h);
+        return { geo, canvas, ctx: context2d(canvas) };
+      };
       async function draw(f: VideoFrame, time: number) {
         if (images.length >= want) return;
         if (images.length >= maxImages) throw fail(`that would write more than ${maxImages} images (MAX_IMAGES); add -frames:v N or a lower rate (fps=1/10)`, 'ECAP');
         const iw = rot % 180 ? f.displayHeight : f.displayWidth, ih = rot % 180 ? f.displayWidth : f.displayHeight;
-        if (!geo) {
-          geo = geometry(plan.ops!, iw, ih) as Picture;
-          if (geo.error) throw fail(geo.error, 'EFILTER');
-          if (geo.w * geo.h > maxPixels) throw fail(`frames are ${geo.w}x${geo.h}, over ${maxPixels} pixels (MAX_FRAME_PIXELS); add scale=1280:-1`, 'ECAP');
-          canvas = new OffscreenCanvas(geo.w, geo.h); ctx = canvas.getContext('2d')!;
-        }
+        const { geo, canvas, ctx } = seen.pic ??= picture(iw, ih);
         // The rotated source rect (sx, sy, sw, sh) onto the canvas: rotate about the center, draw the whole frame scaled.
         const kx = geo.w / geo.sw, ky = geo.h / geo.sh;
         ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, geo.w, geo.h);
@@ -222,8 +229,8 @@ const wcActions = {
       }
       // Decoded frames in presentation order: trim to [ss, end), then the fps choice or every frame.
       async function drain() {
-        while (decoded.length) {
-          const f = decoded.shift()!, time = f.timestamp / 1e6;
+        for (let f = decoded.shift(); f; f = decoded.shift()) {
+          const time = f.timestamp / 1e6;
           if (time + 1e-6 < ss || time >= end || images.length >= want) { release(f); continue; }
           if (time > last) { if (last > -Infinity) step = time - last; last = time; }
           if (!picker) { await draw(f, time); release(f); continue; }
@@ -235,21 +242,21 @@ const wcActions = {
       const pkt = await m.av_packet_alloc();
       await eachPackets(m, fmt, pkt, id, async (packets) => {
         for (const p of packets[vi] ?? []) {
-          const pts = m.i64tof64(p.pts!, p.ptshi!), dts = m.i64tof64(p.dts!, p.dtshi!);
-          dec!.decode(new EncodedVideoChunk({ type: p.flags! & 1 ? 'key' : 'delta', timestamp: Math.round((pts !== m.AV_NOPTS_VALUE ? pts : dts) * tb * 1e6), data: p.data }));
-          while (dec!.decodeQueueSize > 8 && !failure) { check(id); await new Promise((r) => setTimeout(r, 1)); }
-          if (failure) throw fail(`${input.label}: the browser's decoder failed (${failure.message})`, 'ECODEC');
+          const pts = m.i64tof64(p.pts, p.ptshi), dts = m.i64tof64(p.dts, p.dtshi);
+          decoder.decode(new EncodedVideoChunk({ type: p.flags & 1 ? 'key' : 'delta', timestamp: Math.round((pts !== m.AV_NOPTS_VALUE ? pts : dts) * tb * 1e6), data: p.data }));
+          while (decoder.decodeQueueSize > 8 && !seen.failure) { check(id); await new Promise((r) => setTimeout(r, 1)); }
+          if (seen.failure) throw fail(`${input.label}: the browser's decoder failed (${seen.failure.message})`, 'ECODEC');
           await drain();
           if (images.length >= want) return true;
           if (pts !== m.AV_NOPTS_VALUE && pts * tb > end + 1) return true;
         }
         return false;
       });
-      if (images.length < want) { await dec.flush().catch((e) => { failure ??= e; }); await drain(); }
-      if (failure && !images.length) throw fail(`${input.label}: the browser's decoder failed (${failure.message ?? failure})`, 'ECODEC');
+      if (images.length < want) { await decoder.flush().catch((e) => { seen.failure ??= e; }); await drain(); }
+      if (seen.failure && !images.length) throw fail(`${input.label}: the browser's decoder failed (${seen.failure.message ?? seen.failure})`, 'ECODEC');
       if (picker && images.length < want) { const r = picker.end(Math.min(end, last + (step || 0))); for (const [g, at] of r.emit) await draw(g, at); release(r.release); }
-      if (!images.length) throw fail(`no frames${ss > 0 ? ` at or after ${fmtTime(ss)}` : ''}: check -ss against the duration (ffprobe)`, 'ENOFRAMES');
-      return { width: geo.w, height: geo.h, images };
+      if (!images.length || !seen.pic) throw fail(`no frames${ss > 0 ? ` at or after ${fmtTime(ss)}` : ''}: check -ss against the duration (ffprobe)`, 'ENOFRAMES'); // pic is set by the first image
+      return { width: seen.pic.geo.w, height: seen.pic.geo.h, images };
     } finally {
       for (const f of live) f.close();
       try { dec?.close(); } catch { /* closed */ }
@@ -261,24 +268,24 @@ const wcActions = {
   //   out: { name, format: wav|flac|ogg|webm, codec, sampleFmt, bitRate }, maxSeconds, maxOutputBytes }.
   async audio({ input, kind, ss, t, filters, rate, channels, out, maxSeconds, maxOutputBytes }: AudioJob, id: number): Promise<AudioResult> {
     const err: string[] = [], m = await avfInstance(err);
-    let adec = null as AudioDecoder | null; // set by audioSource's keep
+    const opened: { decoder?: AudioDecoder } = {}; // set by audioSource's keep
     try {
       const end = t != null ? ss + t : Infinity;
       // 1. A source of planar float frames: pull() -> [{ data: Float32Array[], rate }] batches, null at the end.
-      const src = await audioSource(m, input, kind, err, id, maxSeconds, (d) => { adec = d; });
+      const src = await audioSource(m, input, kind, err, id, maxSeconds, (d) => { opened.decoder = d; });
       const inRate = src.rate, inCh = src.channels, outRate = rate || (out.codec === 'libopus' ? (([48000, 24000, 16000, 12000, 8000].includes(inRate)) ? inRate : 48000) : inRate);
       const outCh = channels || (out.codec === 'libopus' ? Math.min(inCh, 2) : inCh);
       // 2. The encoder (FLAC, Opus) and muxer, or the WAV writer.
       const sampleFmt = out.sampleFmt ?? (src.deep || /^pcm_(s24|s32|f32|f64)/.test(src.codec) ? 's32' : 's16'); // FLAC keeps a deeper source's depth, as ffmpeg does
-      const fmtId = ({ u8: 0, s16: 1, s32: 2, flt: 3 } as Record<string, number>)[sampleFmt];
-      let enc: { c: number; frame: number; pkt: number } | null = null, oc: number | null = null, pb: number | null = null, frameSize = 0;
-      if (out.format !== 'wav') {
-        // channel_layoutmask: libav.js's wrapper takes it; its types do not list it.
-        const [, c, frame, pkt, fs] = await m.ff_init_encoder(out.codec, { ctx: { sample_fmt: fmtId, sample_rate: outRate, channel_layoutmask: layoutOf(outCh), ...(out.bitRate ? { bit_rate: out.bitRate } : {}) } as CodecProps, time_base: [1, outRate] });
-        enc = { c, frame, pkt }; frameSize = fs;
-        [oc, , pb] = await m.ff_init_muxer({ format_name: out.format, filename: out.name, open: true }, [[c, 1, outRate]]);
+      const fmtId = SAMPLE_FMT_IDS[sampleFmt];
+      // null: the WAV writer.
+      const enc = out.format === 'wav' ? null : await (async () => {
+        const [, c, frame, pkt, frameSize] = await m.ff_init_encoder(out.codec, { ctx: { sample_fmt: fmtId, sample_rate: outRate, channel_layoutmask: layoutOf(outCh), ...(out.bitRate ? { bit_rate: out.bitRate } : {}) }, time_base: [1, outRate] });
+        const [oc, , pb] = await m.ff_init_muxer({ format_name: out.format, filename: out.name, open: true }, [[c, 1, outRate]]);
         await m.avformat_write_header(oc, 0);
-      }
+        return { c, frame, pkt, frameSize, oc, pb };
+      })();
+      const frameSize = enc?.frameSize ?? 0;
       // 3. The graph: the user's -af, then (aformat, auto-inserted aresample) to the output's rate, format and layout.
       const [srcCtx, sinkCtx] = await audioGraph(m, filters || 'anull', { rate: inRate, fmt: m.AV_SAMPLE_FMT_FLTP, layout: layoutOf(inCh) }, { rate: outRate, fmt: fmtId, layout: layoutOf(outCh), frameSize }).catch((e) => {
         throw fail(`could not set up the audio filters "${filters}": ${err.slice(-3).join(' ') || e.message} (audio filters here: ${AUDIO_FILTERS})`, 'EFILTER');
@@ -289,11 +296,11 @@ const wcActions = {
       const put = (b: Uint8Array) => { total += b.length; if (total > maxOutputBytes) throw fail(`the output is over ${maxOutputBytes / 2 ** 20} MiB (MAX_OUTPUT_BYTES); nothing was written. Trim (-ss/-t), or use FLAC or Opus`, 'ECAP'); chunks.push(b); };
       async function feed(frames: Frame[], fin: boolean) {
         const got = await m.ff_filter_multi(srcCtx, sinkCtx, fr, frames, { fin }).catch((e) => { throw fail(`the audio filters failed: ${err.slice(-2).join(' ') || e.message}`, 'EFILTER'); });
-        for (const g of got) written += g.nb_samples!;
-        if (out.format === 'wav') { for (const g of got) put(wavBytes(out.codec, g.data)); return; }
-        for (const g of got) { g.pts = outPts; g.ptshi = 0; outPts += g.nb_samples!; }
-        const pkts = await m.ff_encode_multi(enc!.c, enc!.frame, enc!.pkt, got, fin);
-        if (pkts.length) await m.ff_write_multi(oc!, enc!.pkt, pkts);
+        for (const g of got) written += g.nb_samples ?? 0; // copied-out audio frames always carry it
+        if (!enc) { for (const g of got) put(wavBytes(out.codec, g.data)); return; }
+        for (const g of got) { g.pts = outPts; g.ptshi = 0; outPts += g.nb_samples ?? 0; }
+        const pkts = await m.ff_encode_multi(enc.c, enc.frame, enc.pkt, got, fin);
+        if (pkts.length) await m.ff_write_multi(enc.oc, enc.pkt, pkts);
       }
       for (;;) {
         check(id); await tick();
@@ -311,19 +318,19 @@ const wcActions = {
       }
       await feed([], true);
       let bytes: Uint8Array | null;
-      if (out.format === 'wav') {
+      if (!enc) {
         const data = new Uint8Array(total); let o = 0; for (const c of chunks) { data.set(c, o); o += c.length; }
         bytes = new Uint8Array(44 + total); bytes.set(wavHeader(out.codec, outRate, outCh, total)); bytes.set(data, 44);
         if (!written) bytes = null;
       } else {
-        await m.av_write_trailer(oc!); await m.ff_free_muxer(oc!, pb!);
+        await m.av_write_trailer(enc.oc); await m.ff_free_muxer(enc.oc, enc.pb);
         bytes = await m.readFile(out.name);
         if (bytes.length > maxOutputBytes) throw fail(`the output is over ${maxOutputBytes / 2 ** 20} MiB (MAX_OUTPUT_BYTES); nothing was written`, 'ECAP');
       }
       if (!bytes?.length || !written) throw fail(`${input.label}: no audio${ss > 0 ? ` at or after ${fmtTime(ss)}` : ''}`, 'ENOAUDIO');
       return { files: [{ name: out.name, bytes }], rate: outRate, channels: outCh, source: { codec: src.codec, rate: inRate, channels: inCh } };
     } finally {
-      try { adec?.close(); } catch { /* closed */ }
+      try { opened.decoder?.close(); } catch { /* closed */ }
       m.terminate?.();
     }
   },
@@ -339,7 +346,7 @@ async function audioGraph(m: AV, chain: string, inp: AudioFormat, out: AudioForm
   const g = await m.avfilter_graph_alloc();
   if (!g) throw new Error('could not allocate a filter graph');
   const make = async (name: string, label: string, args: string | null) => {
-    const c = await m.avfilter_graph_create_filter_js(await m.avfilter_get_by_name(name), label, args as string, null as unknown as number, g); // null: no args (abuffersink), no opaque (a NULL pointer)
+    const c = await m.avfilter_graph_create_filter_js(await m.avfilter_get_by_name(name), label, args, null, g); // null: no args (abuffersink), no opaque (a NULL pointer)
     if (!c) { await m.avfilter_graph_free_js(g); throw new Error(`could not create ${name}`); }
     return c;
   };
@@ -365,7 +372,7 @@ async function audioSource(m: AV, input: MediaInput, kind: MediaKind | null, err
   const head = String.fromCharCode(...input.bytes.subarray(0, 4)) + String.fromCharCode(...input.bytes.subarray(8, 12));
   if (head === 'RIFFWAVE') {
     let w: Wav;
-    try { w = readWav(input.bytes); } catch (e) { throw fail(`${input.label}: ${(e as Thrown)!.message}`, 'EFORMAT'); }
+    try { w = readWav(input.bytes); } catch (e) { throw fail(`${input.label}: ${thrown(e).message}`, 'EFORMAT'); }
     tooLong(w.data[0].length / w.sampleRate);
     let i = 0; const STEP = 65536;
     return { rate: w.sampleRate, channels: w.channels, codec: w.codec, async pull() { if (i >= w.data[0].length) return null; const b = [w.data.map((c) => c.subarray(i, i + STEP))]; i += STEP; return b; } };
@@ -375,30 +382,31 @@ async function audioSource(m: AV, input: MediaInput, kind: MediaKind | null, err
     const sup = await audioSupport(config);
     if (!sup.supported) throw fail(`${input.label}: ${sup.why}`, 'ECODEC');
     const ready: Float32Array[][] = [];
-    let failure = null as DOMException | null, done = false, got = null as { rate: number; channels: number } | null; // set by the decoder's callbacks
+    const seen: { failure: DOMException | null; got: { rate: number; channels: number } | null } = { failure: null, got: null }; // set by the decoder's callbacks
+    let done = false;
     const dec = new AudioDecoder({ output: (a) => {
-      got ??= { rate: a.sampleRate, channels: a.numberOfChannels };
+      seen.got ??= { rate: a.sampleRate, channels: a.numberOfChannels };
       const n = a.numberOfFrames, data: Float32Array[] = [];
       for (let c = 0; c < a.numberOfChannels; c++) { const d = new Float32Array(n); a.copyTo(d, { planeIndex: c, format: 'f32-planar' }); data.push(d); }
       a.close(); ready.push(data);
-    }, error: (e) => { failure = e; } });
+    }, error: (e) => { seen.failure = e; } });
     keep(dec); dec.configure(config);
     const it = chunks();
     async function pull(): Promise<Float32Array[][] | null> {
       for (;;) {
-        if (failure) throw fail(`${input.label}: the browser's audio decoder failed (${failure.message})`, 'ECODEC');
+        if (seen.failure) throw fail(`${input.label}: the browser's audio decoder failed (${seen.failure.message})`, 'ECODEC');
         if (ready.length) { const b = ready.splice(0); return b; }
         if (done) return null;
         const { value, done: end } = await it.next();
-        if (end) { done = true; await dec.flush().catch((e) => { failure ??= e; }); continue; }
+        if (end) { done = true; await dec.flush().catch((e) => { seen.failure ??= e; }); continue; }
         for (const c of value) dec.decode(c);
-        while (dec.decodeQueueSize > 16 && !failure) { check(id); await new Promise((r) => setTimeout(r, 1)); }
+        while (dec.decodeQueueSize > 16 && !seen.failure) { check(id); await new Promise((r) => setTimeout(r, 1)); }
         await tick();
       }
     }
     // The first decoded batch says the real rate and channels (HE-AAC's SBR doubles the container's rate).
     let first = await pull();
-    return { rate: got?.rate ?? config.sampleRate, channels: got?.channels ?? config.numberOfChannels, codec: config.codec, async pull() {
+    return { rate: seen.got?.rate ?? config.sampleRate, channels: seen.got?.channels ?? config.numberOfChannels, codec: config.codec, async pull() {
       if (first) { const b = first; first = null; return b; }
       return pull();
     } };
@@ -415,7 +423,8 @@ async function audioSource(m: AV, input: MediaInput, kind: MediaKind | null, err
     });
   }
   // A container the avf build demuxes: MP4/MOV (decoded by AudioDecoder), or FLAC/Ogg/WebM (decoded by libav).
-  const { fmt, streams, duration } = kind === 'mp4' ? await openMp4(m, input, err) : await (async () => {
+  // Either demuxer's streams; only openMp4's carry a name and an AudioDecoder config.
+  const { fmt, streams, duration }: { fmt: number; streams: (Stream & { name?: string; audio?: AudioDecoderConfig | null })[]; duration: number } = kind === 'mp4' ? await openMp4(m, input, err) : await (async () => {
     await m.writeFile(input.name, input.bytes);
     let fmt, streams;
     try { [fmt, streams] = await m.ff_init_demuxer_file(input.name); } catch { throw fail(`${input.label}: cannot open it (${err.slice(-1)[0] || 'unknown format'})`, 'EFORMAT'); }
@@ -425,7 +434,7 @@ async function audioSource(m: AV, input: MediaInput, kind: MediaKind | null, err
   tooLong(duration);
   const ai = streams.findIndex((s) => s.codec_type === m.AVMEDIA_TYPE_AUDIO);
   if (ai < 0) throw fail(`${input.label} has no audio stream`, 'ENOAUDIO');
-  const as = streams[ai] as (typeof streams)[number] & Partial<Pick<Mp4Stream, 'config' | 'name'>>, pkt = await m.av_packet_alloc();
+  const as = streams[ai], pkt = await m.av_packet_alloc();
   async function* packets() {
     for (;;) {
       check(id);
@@ -436,10 +445,11 @@ async function audioSource(m: AV, input: MediaInput, kind: MediaKind | null, err
     }
   }
   if (kind === 'mp4') {
-    if (!as.config) throw fail(`${input.label}: its audio is ${as.name}, which the browser's AudioDecoder does not take here (AAC, MP3, Opus, FLAC)`, 'ECODEC');
+    const config = as.audio;
+    if (!config) throw fail(`${input.label}: its audio is ${as.name}, which the browser's AudioDecoder does not take here (AAC, MP3, Opus, FLAC)`, 'ECODEC');
     const tb = as.time_base_num / as.time_base_den;
-    return viaDecoder(as.config as AudioDecoderConfig, async function* () {
-      for await (const ps of packets()) yield ps.map((p) => new EncodedAudioChunk({ type: 'key', timestamp: Math.round(m.i64tof64(p.pts!, p.ptshi!) * tb * 1e6), data: p.data }));
+    return viaDecoder(config, async function* () {
+      for await (const ps of packets()) yield ps.map((p) => new EncodedAudioChunk({ type: 'key', timestamp: Math.round(m.i64tof64(p.pts, p.ptshi) * tb * 1e6), data: p.data }));
     });
   }
   // libav decodes FLAC and Opus itself (to whatever sample format), then the frames become planar float.
@@ -449,7 +459,7 @@ async function audioSource(m: AV, input: MediaInput, kind: MediaKind | null, err
   catch { throw fail(`${input.label}: no decoder here for its audio (${name}); this path decodes AAC and MP3 (browser), FLAC, Opus and PCM WAV`, 'ECODEC'); }
   const it = packets();
   const toFloat = (f: Frame) => {
-    const ch = f.channels || par.channels || 1, n = f.nb_samples!, planar = f.format >= 5, k = [128, 32768, 2147483648, 1][f.format % 5] ?? 1, off = f.format % 5 === 0 ? 128 : 0;
+    const ch = f.channels || par.channels || 1, n = f.nb_samples ?? 0, planar = f.format >= 5, k = [128, 32768, 2147483648, 1][f.format % 5] ?? 1, off = f.format % 5 === 0 ? 128 : 0;
     return Array.from({ length: ch }, (_, c) => { const d = new Float32Array(n); for (let s = 0; s < n; s++) d[s] = ((planar ? f.data[c][s] : f.data[s * ch + c]) - off) / k; return d; });
   };
   let done = false;
@@ -463,7 +473,7 @@ async function audioSource(m: AV, input: MediaInput, kind: MediaKind | null, err
   let first: Frame[] = [];
   while (!done && !first.length) first = await decode();
   const deep = first.length > 0 && (first[0].format === 2 || first[0].format === 7); // AV_SAMPLE_FMT_S32, S32P
-  return { rate: par.sample_rate!, channels: par.channels || 1, codec: name, deep, async pull() {
+  return { rate: par.sample_rate, channels: par.channels || 1, codec: name, deep, async pull() {
     if (first.length) { const f = first; first = []; return f.map(toFloat); }
     if (done) return null;
     return (await decode()).map(toFloat);
@@ -552,13 +562,13 @@ const actions = {
         const eof = res === m.AVERROR_EOF;
         if (res < 0 && !eof && res !== -m.EAGAIN) throw fail(`${input.label}: read error ${res}`, 'EIO');
         const mine = packets[vi] ?? [];
-        const past = mine.length && m.i64tof64(mine.at(-1)!.pts!, mine.at(-1)!.ptshi!) * tb > end + 1;
+        const tail = mine.at(-1), past = !!tail && m.i64tof64(tail.pts, tail.ptshi) * tb > end + 1;
         const fin = eof || past;
         // A few packets at a time: each decoded frame is full-size RGBA, and a
         // 2 MiB read of a well-compressed video holds hundreds of them.
         for (let i = 0; i === 0 || i < mine.length; i += DECODE_STEP) {
           const last = i + DECODE_STEP >= mine.length;
-          const frames = await m.ff_decode_filter_multi(c, src, sink, pkt, frame, mine.slice(i, i + DECODE_STEP), { fin: (fin && last) as boolean, ignoreErrors: true }) as RGBAFrame[]; // fin may be 0 (no packets)
+          const frames = await m.ff_decode_filter_multi(c, src, sink, pkt, frame, mine.slice(i, i + DECODE_STEP), { fin: fin && last, ignoreErrors: true, copyoutFrame: 'video' }); // 'video': what the default picks for these frames
           for (const fr of frames) {
             if (images.length >= want) break;
             if (images.length >= maxImages) throw fail(`that would write more than ${maxImages} images (MAX_IMAGES); add -frames:v N or a lower rate (fps=1/10)`, 'ECAP');
@@ -579,42 +589,45 @@ const actions = {
   },
 };
 
-// What the RGBA sink gives: one plane, its size and time always set.
-type RGBAFrame = Frame & { width: number; height: number; pts: number; data: Uint8Array };
-async function encode(fr: RGBAFrame, type: string, quality: number) {
+// What the RGBA sink gives: one plane, placed by layout.
+async function encode(fr: VideoCopy, type: string, quality: number) {
   const { width: w, height: h } = fr, stride = fr.layout?.[0]?.stride ?? w * 4, off = fr.layout?.[0]?.offset ?? 0;
-  let px: Uint8Array | Uint8ClampedArray = fr.data;
+  let px: Uint8Array<ArrayBuffer> | Uint8ClampedArray<ArrayBuffer> = fr.data;
   if (stride !== w * 4 || off) { const tight = new Uint8ClampedArray(w * h * 4); for (let y = 0; y < h; y++) tight.set(px.subarray(off + y * stride, off + y * stride + w * 4), y * w * 4); px = tight; }
   const canvas = new OffscreenCanvas(w, h);
-  canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(px.buffer as ArrayBuffer, px.byteOffset, w * h * 4), w, h), 0, 0);
+  context2d(canvas).putImageData(new ImageData(new Uint8ClampedArray(px.buffer, px.byteOffset, w * h * 4), w, h), 0, 0);
   return new Uint8Array(await (await canvas.convertToBlob({ type, quality })).arrayBuffer());
 }
 
 self.onmessage = async ({ data: msg }: MessageEvent<MediaRequest>) => {
-  const { id, action } = msg;
-  if (action === 'stop') { stopped.add((msg as MediaStop).job); return; }
+  if (msg.action === 'stop') { stopped.add(msg.job); return; }
+  const { id } = msg, action: string = msg.action;
+  const note: Note = (line) => postMessage({ id, note: line } satisfies MediaReply);
   try {
     let result: MediaResult;
-    if (action === 'load') {
-      wasm = WebAssembly.compile((msg as MediaLoad).wasm);
-      avfWasm = (msg as MediaLoad).avf ? WebAssembly.compile((msg as MediaLoad).avf!) : Promise.reject(new Error('no WebCodecs build in this runtime'));
-      avfWasm.catch(() => {});
-      await wasm;
-      // From here on this worker has no network at all (see the header).
-      for (const k of ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'importScripts']) {
-        try { Object.defineProperty(globalThis, k, { value: undefined, configurable: false, writable: false }); } catch { (globalThis as Record<string, unknown>)[k] = undefined; }
-      }
-      result = { version: (libav as unknown as { VER: string }).VER, config: (libav as unknown as { CONFIG: unknown }).CONFIG }; // not in libav.js's types
-    } else if (action === 'run' || action === 'frames') {
-      result = await (actions[action] as (job: RunJob | FramesJob, id: number, note: Note) => Promise<MediaResult>)(msg as RunJob | FramesJob, id, (line) => postMessage({ id, note: line } satisfies MediaReply));
-    } else if (action === 'wc.probe' || action === 'wc.frames' || action === 'wc.audio') {
-      result = await (wcActions[action.slice(3) as keyof typeof wcActions] as (job: ProbeJob | FramesJob | AudioJob, id: number, note: Note) => Promise<MediaResult>)(msg as ProbeJob | FramesJob | AudioJob, id, (line) => postMessage({ id, note: line } satisfies MediaReply));
-    } else {
-      throw fail(`unknown action ${action}`, 'EPROTO');
+    switch (msg.action) {
+      case 'load':
+        wasm = WebAssembly.compile(msg.wasm);
+        avfWasm = msg.avf ? WebAssembly.compile(msg.avf) : Promise.reject(new Error('no WebCodecs build in this runtime'));
+        avfWasm.catch(() => {});
+        await wasm;
+        // From here on this worker has no network at all (see the header).
+        for (const k of ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'importScripts']) {
+          try { Object.defineProperty(globalThis, k, { value: undefined, configurable: false, writable: false }); } catch { Reflect.set(globalThis, k, undefined); }
+        }
+        result = { version: libav.VER, config: libav.CONFIG };
+        break;
+      case 'run': result = await actions.run(msg, id); break;
+      case 'frames': result = await actions.frames(msg, id, note); break;
+      case 'wc.probe': result = await wcActions.probe(msg, id); break;
+      case 'wc.frames': result = await wcActions.frames(msg, id, note); break;
+      case 'wc.audio': result = await wcActions.audio(msg, id); break;
+      default: throw fail(`unknown action ${action}`, 'EPROTO');
     }
-    const transfer = [...(result?.files ?? []), ...(result?.images ?? [])].flatMap((f) => (f.bytes ? [f.bytes.buffer as ArrayBuffer] : []));
+    const transfer = [...(result?.files ?? []), ...(result?.images ?? [])].flatMap((f) => (f.bytes?.buffer instanceof ArrayBuffer ? [f.bytes.buffer] : []));
     postMessage({ id, result } satisfies MediaReply, transfer);
   } catch (e) {
-    postMessage({ id, error: String((e as Thrown)?.message ?? e), code: (e as Thrown)?.code, name: (e as Thrown)?.name });
+    const { message: error, code, name } = thrown(e);
+    postMessage({ id, error, code, name } satisfies MediaReply);
   } finally { stopped.delete(id); }
 };

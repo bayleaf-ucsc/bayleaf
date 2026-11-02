@@ -291,6 +291,7 @@ deliberate violation of each rule failing and the real tree passing.
 | layers | the core (files, namespaces, storage, providers, sandboxed runtimes: `CORE` in `arch.mjs`) imports only the core; only `src/main.ts` imports the Interface | |
 | seams | a region is imported from outside only through its entry modules: `src/run.ts`, `src/pdf.ts`, `src/media.ts`, `src/local/engine.ts` and `src/local/provider.ts`; Interface regions never import each other | |
 | contract | a contract module (`CONTRACTS` in `arch.mjs`) holds types only, no runtime statement, and is imported only with `import type`; a contract may be imported across a seam, never across a layer | `src/trust.ts`, `src/agent-types.ts`, `src/subagents-types.ts`, `src/tools-types.ts`, `src/interface/app.ts`, and `protocol.ts` in `src/run/`, `src/local/`, `src/pdf/` and `src/media/` (each worker's messages) |
+| escapes | each module's casts (`as`, `as unknown as`) and non-null assertions (`!`) stay within its count in `escapes.json`; a count above it fails, and so does one below it until `node arch.mjs --lower` records it, so the counts only go down | the counts in `escapes.json`: mostly where untyped data enters (JSON, `postMessage`, a tool's arguments) |
 | size | each module stays within 700 lines; `src/main.ts` within 60 | |
 
 An allowance no module uses any more is also an error, so the lists in `arch.mjs` stay an
@@ -318,24 +319,30 @@ server's contract.
 order their wiring runs. Each region is a factory, `createXRegion(app)`, returning its
 interface, `XRegion`, declared in the region's own module; `App` (`src/interface/app.ts`, a
 contract) composes them, and `src/main.ts` starts from `const app = {} as App`. A region
-reaches another only as `app.<region>.<name>`, resolved when called, and a cell another
-region writes is a `get`/`set` accessor pair in its owner's interface, so the cross-region
-state is listed in the types.
+reaches another only as `app.<region>.<name>`, resolved when called; a region that needs
+only earlier ones takes them as values instead (`install.ts`). A cell lives with the region
+that writes it and is read-only elsewhere (a getter); another region changes it only
+through a named method of its owner (`transcript.filesChanged()`, `tree.reveal(path)`), so
+the cross-region state is listed in the types. Some stays on `app` deliberately: the
+agent and the composer in `state.ts`, which many regions read; the session list's `focus`
+and `activeRun`; and every call to a later region. Those calls form real cycles (queues and
+send, transcript and subagents), where a locator resolved at call time is the simplest
+correct design.
 
 | Region | Responsibility |
 |---|---|
-| `state.ts` | shared cells (credential, client, agent, models, view), status line, frame, action sheets |
+| `state.ts` | shared cells (agent, composer), status line, frame, action sheets, usage |
 | `editing.ts` | the open file, conflicts and diffs, previews, `show` |
 | `tree.ts` | the file browser: tree, uploads, archives, clipboard, first visit, Run script |
-| `connection.ts` | Sealed verification, the network state, the Sealed model list |
+| `connection.ts` | Sealed verification and the verified client, the network state, the Sealed model list |
 | `providers.ts` | Transformers.js and Localhost: picker entries and settings |
-| `auth.ts` | device claim, the key form, Erase everything |
+| `auth.ts` | the key, device claim, the key form, Erase everything |
 | `install.ts` | the offline copy and updates |
 | `session-list.ts` | the session list, egress consent hooks, model, pdf and media services |
 | `namespaces.ts` | control plane wiring: per-session namespaces, the terminal |
 | `subagents.ts` | subagent registry per session, child transcripts and cards |
 | `meters.ts` | the Usage panel |
-| `transcript.ts` | attaching a session, rendering its log, the message toolbar, revert |
+| `transcript.ts` | attaching a session and its view, rendering its log, the message toolbar, revert |
 | `queues.ts` | send button and modes, steering and follow-up queues, the context meter |
 | `harness.ts` | the control plane's harness side: stop, steer, follow-up through ctl files |
 | `send.ts` | a turn's admission and errors, the composer's keys and send menu |
@@ -344,8 +351,8 @@ state is listed in the types.
 
 The migration changed no behavior: bundled without identifier minification, every bundle
 (the page and the four worker runtimes) matches the last JavaScript build apart from module
-paths. The types still lean on casts and non-null assertions, and `app` is still a service
-locator (`NEXT.md`). The typed trust boundaries are where the trusted core of #143 can
+paths. The casts and non-null assertions it left are since paid down to what the
+`escapes` rule lists, and `app` remains a narrowed service locator (`NEXT.md`). The typed trust boundaries are where the trusted core of #143 can
 replace one module at a time, starting with egress.
 
 ## The coding agent

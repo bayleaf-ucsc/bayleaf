@@ -42,19 +42,20 @@ export class Tasks extends EventTarget {
   constructor({ keep = 20 }: { keep?: number } = {}) { super(); this.keep = keep; this.next = 1; this.byId = new Map(); this.byKey = new Map(); }
 
   add(fields: TaskFields): Task {
-    const t = { id: this.next++, status: 'running', started: Date.now(), log: [] as string[], ...fields } as Task; // note and end follow
-    t.note = (line) => { t.log.push(String(line).replace(/\s+/g, ' ').slice(0, 200)); t.log.splice(0, t.log.length - LOG_LINES); this.changed(); };
-    t.end = (status, line) => { if (t.status !== 'running') return; t.status = status; t.ended = Date.now(); if (line) t.note(line); this.prune(); this.changed(); };
+    const t: Task = { id: this.next++, status: 'running', started: Date.now(), log: [], ...fields,
+      note: (line) => { t.log.push(String(line).replace(/\s+/g, ' ').slice(0, 200)); t.log.splice(0, t.log.length - LOG_LINES); this.changed(); },
+      end: (status, line) => { if (t.status !== 'running') return; t.status = status; t.ended = Date.now(); if (line) t.note(line); this.prune(); this.changed(); },
+    };
     this.byId.set(t.id, t);
     if (t.key) this.byKey.set(t.key, t);
     this.prune();
     this.changed();
     return t;
   }
-  // Add or update the task with this key (subagents report state changes).
-  upsert(key: string, fields: Partial<TaskFields>): Task {
+  // Add or update the task with this key (subagents report state changes); kind is for a new key.
+  upsert(key: string, fields: TaskFields): Task {
     const t = this.byKey.get(key);
-    if (!t) return this.add({ key, ...fields } as TaskFields); // a new key is expected to bring its kind
+    if (!t) return this.add({ key, ...fields });
     const { status, ...rest } = fields;
     Object.assign(t, rest);
     if (status && status !== t.status) {
@@ -116,7 +117,7 @@ export class TaskFs extends BaseFs {
   }
   find(path: string, op: string): { t: Task | undefined; file: string | undefined } {
     const [id, file, ...rest] = parts(path);
-    const t = (id && this.tasks.get(id)) as Task | undefined; // '' for /task itself: falsy either way
+    const t = id ? this.tasks.get(id) : undefined; // none for /task itself
     if (id && (!t || !this.mine(t))) throw fsError('ENOENT', op, path);
     if (rest.length || (file && !FILES.includes(file))) throw fsError('ENOENT', op, path);
     return { t, file };
@@ -131,22 +132,22 @@ export class TaskFs extends BaseFs {
   async stat(path: string): Promise<FileStat> {
     if (this.isWatch(path)) {
       const { dir, w, file } = this.findWatch(path, 'stat');
-      if (dir || !file) return { isFile: false, isDirectory: true, isSymbolicLink: false, mode: 0o555, size: 0, mtime: new Date(w?.created ?? 0) };
-      return { isFile: true, isDirectory: false, isSymbolicLink: false, mode: file === 'ctl' ? 0o200 : 0o444, size: enc.encode(this.wtext(w!, file)).length, mtime: new Date(w!.created) };
+      if (dir || !file || !w) return { isFile: false, isDirectory: true, isSymbolicLink: false, mode: 0o555, size: 0, mtime: new Date(w?.created ?? 0) };
+      return { isFile: true, isDirectory: false, isSymbolicLink: false, mode: file === 'ctl' ? 0o200 : 0o444, size: enc.encode(this.wtext(w, file)).length, mtime: new Date(w.created) };
     }
     const { t, file } = this.find(path, 'stat');
-    if (!file) return { isFile: false, isDirectory: true, isSymbolicLink: false, mode: 0o555, size: 0, mtime: new Date(t?.started ?? 0) };
-    return { isFile: true, isDirectory: false, isSymbolicLink: false, mode: file === 'ctl' ? 0o200 : 0o444, size: enc.encode(this.text(t!, file)).length, mtime: new Date(t!.ended ?? t!.started) };
+    if (!t || !file) return { isFile: false, isDirectory: true, isSymbolicLink: false, mode: 0o555, size: 0, mtime: new Date(t?.started ?? 0) };
+    return { isFile: true, isDirectory: false, isSymbolicLink: false, mode: file === 'ctl' ? 0o200 : 0o444, size: enc.encode(this.text(t, file)).length, mtime: new Date(t.ended ?? t.started) };
   }
   async readFileBuffer(path: string): Promise<Uint8Array> {
     if (this.isWatch(path)) {
       const { dir, w, file } = this.findWatch(path, 'open');
-      if (dir || !file) throw fsError('EISDIR', 'read', path);
-      return enc.encode(this.wtext(w!, file));
+      if (dir || !file || !w) throw fsError('EISDIR', 'read', path); // a file is always a watch's
+      return enc.encode(this.wtext(w, file));
     }
     const { t, file } = this.find(path, 'open');
-    if (!file) throw fsError('EISDIR', 'read', path);
-    return enc.encode(this.text(t!, file));
+    if (!t || !file) throw fsError('EISDIR', 'read', path); // a file is always a task's
+    return enc.encode(this.text(t, file));
   }
   async readdirWithFileTypes(path: string): Promise<DirEntry[]> {
     if (this.isWatch(path)) {
@@ -164,21 +165,21 @@ export class TaskFs extends BaseFs {
   async writeFile(path: string, content: FileContent): Promise<unknown> {
     if (this.isWatch(path)) {
       const { w, file, reg } = this.findWatch(path, 'open');
-      if (file !== 'ctl') throw fsError('EROFS', 'open', path);
+      if (file !== 'ctl' || !w) throw fsError('EROFS', 'open', path);
       const cmd = (typeof content === 'string' ? content : new TextDecoder().decode(content)).trim();
       if (!cmd) return;
-      if (cmd === 'stop') return reg.remove(w!.id);
-      if (cmd === 'deliver') return reg.deliverHeld(w!.id);
+      if (cmd === 'stop') return reg.remove(w.id);
+      if (cmd === 'deliver') return reg.deliverHeld(w.id);
       throw fsError('EINVAL', 'write', path, `ctl accepts: stop, deliver (got "${cmd.slice(0, 20)}")`);
     }
     const { t, file } = this.find(path, 'open');
-    if (file !== 'ctl') throw fsError('EROFS', 'open', path);
+    if (file !== 'ctl' || !t) throw fsError('EROFS', 'open', path);
     const cmd = (typeof content === 'string' ? content : new TextDecoder().decode(content)).trim();
     if (!cmd) return; // a shell redirection truncates first: nothing to do
     if (cmd !== 'kill' && cmd !== 'stop') throw fsError('EINVAL', 'write', path, `ctl accepts one command: kill (alias stop) (got "${cmd.slice(0, 20)}")`);
-    await this.tasks.kill(t!);
+    await this.tasks.kill(t);
   }
-  async appendFile(path: string, content: FileContent): Promise<void> { return this.writeFile(path, content) as Promise<void>; } // the receipt is writeFile's
+  async appendFile(path: string, content: FileContent): Promise<unknown> { return this.writeFile(path, content); } // the receipt is writeFile's
   async mkdir(path: string): Promise<void> { throw fsError('EROFS', 'mkdir', normalize(path)); }
   async rm(path: string): Promise<void> { throw fsError('EROFS', 'rm', normalize(path)); }
 }

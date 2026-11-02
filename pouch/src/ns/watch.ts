@@ -142,14 +142,17 @@ export function change(before?: Bytes, after?: Bytes, prior?: { size: number } |
   if (!hs.length) return { verb: 'saved', detail: before.length === after.length ? 'no changes' : 'only line endings changed' };
   const add = hs.reduce((s, x) => s + x[1], 0), del = hs.reduce((s, x) => s + x[2], 0);
   const at = (x: Hunk) => (x[1] <= 1 ? `${x[0]}` : `${x[0]}-${x[0] + x[1] - 1}`);
-  const where = hs.length > 4 ? `lines ${hs[0][0]}-${hs.at(-1)![0] + Math.max(0, hs.at(-1)![1] - 1)} in ${hs.length} places`
+  const last = hs[hs.length - 1];
+  const where = hs.length > 4 ? `lines ${hs[0][0]}-${last[0] + Math.max(0, last[1] - 1)} in ${hs.length} places`
     : `line${hs.length === 1 && hs[0][1] <= 1 ? '' : 's'} ${hs.map(at).join(', ')}`;
   return { verb: 'changed', detail: `${where} (+${add} -${del})` };
 }
 export const summarize = (b?: Bytes, a?: Bytes, p?: { size: number } | null) => { const c = change(b, a, p); return c.detail ? `${c.verb}: ${c.detail}` : c.verb; };
 
 async function digest(bytes: Uint8Array) {
-  const h = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>));
+  // subtle.digest takes no shared memory: a view of a plain buffer as it is, else a copy.
+  const plain = bytes.buffer instanceof ArrayBuffer ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength) : bytes.slice();
+  const h = new Uint8Array(await crypto.subtle.digest('SHA-256', plain));
   return Array.from(h.subarray(0, 12), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 const fingerprint = async (bytes: Uint8Array): Promise<Fingerprint> => ({ h: await digest(bytes), size: bytes.length });
@@ -277,14 +280,15 @@ export function createWatches(deps: WatchDeps) {
   }
 
   const USERISH = ['user', 'outside', 'seed'];
+  const BYS: WatchBy[] = ['user', 'agent', 'any'];
   const byFits = (w: Watch, source: WriteSource) => (w.by === 'any' ? true : w.by === 'agent' ? !USERISH.includes(source) : USERISH.includes(source));
 
   async function add(sid: string, owner: Handle, ownerName: string, args: WatchArgs) {
     await loadSid(sid);
     const raw = Array.isArray(args.paths) ? args.paths : args.paths != null ? [args.paths] : args.path != null ? [args.path] : [];
     if (!raw.length) throw new Error('paths is empty: give files or globs, e.g. ["/work/essay.md"] or ["/work/data/*.csv"].');
-    const by = args.by ?? 'user';
-    if (!['user', 'agent', 'any'].includes(by)) throw new Error(`by must be "user", "agent" or "any" (got "${by}").`);
+    const by = BYS.find((b) => b === (args.by ?? 'user'));
+    if (!by) throw new Error(`by must be "user", "agent" or "any" (got "${args.by}").`);
     const scope = deps.scopeOf(sid, owner);
     const paths: string[] = [];
     for (const r of raw) {
@@ -295,7 +299,7 @@ export function createWatches(deps: WatchDeps) {
       if (!isGlob(p) && (await deps.fs.stat(p).then((s) => s.isDirectory, () => false))) p = p + '/**';
       paths.push(p);
     }
-    const w: Watch = { id: 'w' + next++, sid: String(sid), owner, ownerName, paths, by: by as WatchBy, once: !!args.once, note: String(args.note ?? '').trim().slice(0, 200), created: Date.now(), wakes: 0, held: [], files: {} };
+    const w: Watch = { id: 'w' + next++, sid: String(sid), owner, ownerName, paths, by, once: !!args.once, note: String(args.note ?? '').trim().slice(0, 200), created: Date.now(), wakes: 0, held: [], files: {} };
     for (const p of paths) for (const f of await expand(deps.fs, p)) {
       const b = await deps.fs.readFileBuffer(f).catch(() => null);
       if (b) w.files[f] = await fingerprint(b);
@@ -378,8 +382,8 @@ export function createWatches(deps: WatchDeps) {
       if (!busy && !e.forced && w.wakes >= MAX_WAKES) { w.held.push(e); continue; }
       send.push(e);
     }
-    const ws = [...new Set(send.map((e) => e.watch))].map((id) => byId.get(id)!); // send kept only live watches
-    for (const w of new Set(evs.map((e) => byId.get(e.watch)).filter(Boolean))) persist(w!.sid);
+    const ws = [...new Set(send.map((e) => e.watch))].flatMap((id) => byId.get(id) ?? []); // send kept only live watches
+    for (const w of new Set(evs.flatMap((e) => byId.get(e.watch) ?? []))) persist(w.sid);
     if (!send.length) { changed(); return; }
     const content = formatEvents(send, ws);
     const entry: WatchEntry = { kind: WATCH_KIND, data: { watches: ws.map((w) => ({ id: w.id, note: w.note, paths: w.paths, once: w.once })), lines: content.split('\n'), mode: busy ? 'steer' : 'wake' } };

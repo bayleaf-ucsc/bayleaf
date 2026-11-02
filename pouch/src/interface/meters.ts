@@ -23,7 +23,7 @@ export function createMetersRegion(app: App): MetersRegion {
     // from today's ledger (subagents and titles are counted under the session).
     const rows: UsageRow[] = await Promise.all(list.map(async (s) => {
       const current = sameId(s.id, app.sessionList.sessions.current?.id);
-      const u = ((current && app.state.view?.usage) || s.usage || {}) as Partial<ThreadUsage>;
+      const u: Partial<ThreadUsage> = (current && app.transcript.view?.usage) || s.usage || {};
       const subs = (await app.subagents.loadKids(s.id).catch(() => [])) ?? [];
       const sum = (k: 'input' | 'output' | 'cost') => subs.reduce((n, c) => n + (c.usage?.[k] ?? 0), 0);
       return { title: titleOf(s), input: (u.input ?? 0) + sum('input'), output: (u.output ?? 0) + sum('output'), cost: (u.cost ?? 0) + sum('cost'),
@@ -31,7 +31,7 @@ export function createMetersRegion(app: App): MetersRegion {
     }));
     const known = new Set(list.map((s) => String(s.id)));
     const gone = Object.entries(led.bySid).filter(([k]) => !known.has(k)).reduce((n, [, v]) => n + v, 0);
-    if (gone) rows.push({ title: 'Deleted sessions', requests: gone, input: null, output: null } as unknown as UsageRow); // renderPanel reads null as no tokens
+    if (gone) rows.push({ title: 'Deleted sessions', requests: gone }); // no tokens: their sessions are gone
     renderPanel($('usage-body'), app.state.usage.state, rows, led);
     // This session's context (the composer's meter, spelled out), above the allowance.
     const now = app.queues.contextNow();
@@ -42,7 +42,7 @@ export function createMetersRegion(app: App): MetersRegion {
         el('div', { className: 'big' }, now.d.count, el('small', { textContent: now.d.of ? ` of ${now.d.of} tokens` : ' tokens' })),
         el('p', { textContent: now.d.label }),
         el('p', { className: 'muted', textContent: 'Counted in this browser from the stored conversation: the newest reply\'s own usage, as its server reported it, plus an estimate (about 3.5 characters a token) for anything since. Nothing is sent to count it.' }),
-        el('button', { type: 'button', className: 'ctx-compact', textContent: `Compact now (${app.sessionList.sessions.costOf(s)})`, onclick: async () => { await app.sessionList.sessions.compact(s!.id); if (app.state.layout.current() === 'usage') renderUsagePanel(); } }));
+        el('button', { type: 'button', className: 'ctx-compact', textContent: `Compact now (${app.sessionList.sessions.costOf(s)})`, onclick: async () => { if (!s) return; await app.sessionList.sessions.compact(s.id); if (app.state.layout.current() === 'usage') renderUsagePanel(); } }));
       box.dataset.level = now.d.level;
       $('usage-body').prepend(box);
     }

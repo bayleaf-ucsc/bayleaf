@@ -55,7 +55,7 @@ export function highlight(code: string, lang: string, doc = document): Node[] | 
 }
 
 export function languageFor(path: string): Extension {
-  const ext = path.split('.').pop()!.toLowerCase();
+  const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
   return byExt[ext]?.() ?? [];
 }
 
