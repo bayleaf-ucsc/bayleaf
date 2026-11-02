@@ -81,7 +81,7 @@ export type SessionKey = string | number | null | undefined;
 export interface SessionRow { id: string | number; title?: string }
 export interface AgentRow { ref: string; name: string; kind: 'main' | 'subagent'; state: string; since?: number; ended?: number; task?: string; ns?: string[] }
 // src/usage.ts state, as usageText reads it.
-export interface Allowance { mode?: string; offCampus?: boolean; remaining?: number | null; limit?: number | null; resetsAt?: string | number | null }
+export interface Allowance { mode?: string; offCampus?: boolean; remaining?: number | null; limit?: number | null; resetsAt?: Date | string | number | null } // usage.ts gives a Date
 export interface UsageFacts { allowance?: Allowance; turn?: number | null; today?: number | null } // counts only
 export type ChangeOp = 'created' | 'modified' | 'deleted';
 export interface Change { op: ChangeOp; path: string; by: string[] }

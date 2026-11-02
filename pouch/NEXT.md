@@ -36,28 +36,6 @@ Next:
   pass them in explicitly.
 - Shrink the cross-region accessor cells (the `get`/`set` pairs in region interfaces, such
   as the `state.ts` cells `agent`, `client` and `view`, written from several regions).
-- Reconcile the type mismatches the migration papered over with casts: `SessionId` (string)
-  against pi-durable's numeric `ConversationId` across `src/ns/watch.ts` and the harness
-  region (legacy numeric ids may never match a watch key); `FileServer.writeFile`'s
-  `Promise<unknown>` receipt against just-bash's `IFileSystem` (one cast at `new Bash`);
-  `Allowance.resetsAt` as `Date` (usage) against `string | number` (control plane).
-
-Possible bugs the types surfaced (not fixed in the migration, which changed no behavior):
-- `src/ns/watch.ts`: `deps.busy(...).catch` throws when the harness answers a plain `false`
-  (no agent open) instead of a promise.
-- `src/media.ts`: `ffmpeg -h filter=scale` returns a help shape without `flags`, so
-  `a.flags.has('filters')` throws a TypeError after ffmpeg answered.
-- `src/interface/session-list.ts`: removing a model as the user (not an agent) asks
-  "undefined asks to remove ...".
-- `src/subagents.ts`: `label()` returns an undefined handle as is, so a wake reads "A message
-  from undefined woke it".
-- `src/localhost.ts`: `applyProfile` appends `LOCALHOST_NOTE` to system content assuming a
-  string; array content becomes "[object Object]".
-- `src/interface/harness.ts`: `childByRef`'s fallback compares a numeric registry id with a
-  string ref, so it never matches (`src/interface/commands.ts` passes the numeric id when the
-  child is gone).
-- `src/markdown.ts`: inline code such as `https:443` looks like a path but parses as an
-  external target, and `ctx.kind(undefined)` is called on it.
 
 ## Qualification rework
 

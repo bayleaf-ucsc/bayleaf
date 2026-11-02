@@ -9,7 +9,7 @@ import { over } from '../ns/namespace.ts';
 import { createChanges, createControl } from '../ns/control.ts';
 import { TaskFs } from '../ns/tasks.ts';
 import type { AssistantItem, SessionId } from '../agent-types.ts';
-import type { AgentRow, Changes, Control, UsageFacts } from '../ns/control.ts';
+import type { AgentRow, Changes, Control } from '../ns/control.ts';
 import type { TerminalVfs } from '../terminal.ts';
 import type { ViewMode } from '../preview.ts';
 import type { Namespace } from '../ns/namespace.ts';
@@ -61,7 +61,7 @@ export function createNamespacesRegion(app: App): NamespacesRegion {
       return c && app.state.agent?.subagents ? (await app.state.agent.subagents.summary(sid, c.id).catch(() => null))?.answer ?? '' : '';
     },
     // /session/<sid>/usage: the allowance, this turn's requests (spend) and today's (the ledger).
-    usage: async (sid) => ({ allowance: app.state.usage.state as UsageFacts['allowance'], turn: app.queues.spend.get(String(sid)) ?? 0, today: (await app.state.ledger.snapshot().catch(() => null))?.bySid?.[String(sid)] ?? 0 }), // usage.ts's resetsAt is a Date; new Date() takes it
+    usage: async (sid) => ({ allowance: app.state.usage.state, turn: app.queues.spend.get(String(sid)) ?? 0, today: (await app.state.ledger.snapshot().catch(() => null))?.bySid?.[String(sid)] ?? 0 }),
     changes: (sid) => changes.list(sid),
   });
   // The user's namespace: the shared tree plus /session with the user's authority.

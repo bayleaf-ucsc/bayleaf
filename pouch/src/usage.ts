@@ -217,14 +217,14 @@ export function renderPanel(host: HTMLElement, s: Allowance, rows: UsageRow[], l
   const shown = rows.filter((r) => r.input || r.output || r.requests);
   if (!shown.length) out.push(el('p', { className: 'muted', textContent: 'Nothing counted yet. Rows appear after a session\'s first turn.' }));
   else {
-    const anyCost = shown.some((r) => r.cost! > 0);
+    const anyCost = shown.some((r) => (r.cost ?? 0) > 0);
     // Three columns fit the 320 px drawer: tokens ride under the session name.
     const head = el('tr', {}, el('th', { textContent: 'Session' }), el('th', { textContent: 'Requests', title: 'Requests sent today, counted as they left: turns, subagents, titles, compactions and stopped requests' }), ...(anyCost ? [el('th', { textContent: 'Cost' })] : []));
     const toks = (r: UsageRow) => r.input || r.output ? [el('span', { className: 'toks muted', textContent: `${fmt(r.input)} in, ${fmt(r.output)} out` })] : [];
     const row = (r: UsageRow, cls = '') => el('tr', { className: (r.current ? 'current ' : '') + cls },
       el('td', { title: r.subagents ? `${r.title} (with ${r.subagents} subagent${r.subagents > 1 ? 's' : ''})` : r.title }, el('span', { className: 'clamp', textContent: r.title }), ...toks(r)),
       el('td', { textContent: r.requests != null ? fmt(r.requests) : '' }),
-      ...(anyCost ? [el('td', { textContent: r.cost! > 0 ? `$${r.cost!.toFixed(4)}` : '' })] : []));
+      ...(anyCost ? [el('td', { textContent: r.cost && r.cost > 0 ? `$${r.cost.toFixed(4)}` : '' })] : []));
     const body = shown.map((r) => row(r));
     if (led) body.push(row({ title: 'This browser today', requests: counted(led) }, 'total'));
     const cols = el('colgroup', {}, el('col'), ...Array.from({ length: anyCost ? 2 : 1 }, () => el('col', { className: 'n' })));

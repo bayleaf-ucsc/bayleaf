@@ -31,7 +31,7 @@ export function createMetersRegion(app: App): MetersRegion {
     }));
     const known = new Set(list.map((s) => String(s.id)));
     const gone = Object.entries(led.bySid).filter(([k]) => !known.has(k)).reduce((n, [, v]) => n + v, 0);
-    if (gone) rows.push({ title: 'Deleted sessions', requests: gone, input: null, output: null } as unknown as UsageRow); // renderPanel reads null as no tokens
+    if (gone) rows.push({ title: 'Deleted sessions', requests: gone }); // no tokens: their sessions are gone
     renderPanel($('usage-body'), app.state.usage.state, rows, led);
     // This session's context (the composer's meter, spelled out), above the allowance.
     const now = app.queues.contextNow();

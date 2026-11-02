@@ -19,8 +19,8 @@
   "src/interface/editing.ts": {"as": 9, "!": 9},
   "src/interface/harness.ts": {"!": 18},
   "src/interface/install.ts": {"as": 6, "!": 1},
-  "src/interface/meters.ts": {"as": 1, "!": 1, "as unknown as": 1},
-  "src/interface/namespaces.ts": {"as": 5, "!": 2},
+  "src/interface/meters.ts": {"as": 1, "!": 1},
+  "src/interface/namespaces.ts": {"as": 4, "!": 2},
   "src/interface/providers.ts": {"as": 9, "!": 9},
   "src/interface/queues.ts": {"as": 8, "!": 20},
   "src/interface/send.ts": {"as": 13, "!": 15},
@@ -68,6 +68,6 @@
   "src/terminal.ts": {"as": 2, "!": 5},
   "src/theme.ts": {"as": 4, "!": 2},
   "src/tools.ts": {"as": 18, "!": 6, "as unknown as": 5},
-  "src/usage.ts": {"as": 2, "!": 7},
+  "src/usage.ts": {"as": 2, "!": 4},
   "src/vfs.ts": {"as": 8, "!": 9, "as unknown as": 1}
 }
