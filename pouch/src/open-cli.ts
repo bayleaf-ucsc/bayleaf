@@ -97,7 +97,8 @@ export function planOpen(path: string, flag: string | null | undefined, { binary
   const label = mode === 'raw' ? 'Raw' : kind === 'html' ? (interactive ? 'Preview, Interactive' : 'Preview, Static') : 'Preview';
   return { mode, interactive, kind, label };
 }
-const article = (kind: string) => (({ markdown: 'a Markdown', svg: 'an SVG', image: 'an image', audio: 'an audio', video: 'a video', text: 'a text' } as Record<string, string | undefined>)[kind] ?? 'a ' + kind) + ' file';
+const ARTICLE: Partial<Record<string, string>> = { markdown: 'a Markdown', svg: 'an SVG', image: 'an image', audio: 'an audio', video: 'a video', text: 'a text' };
+const article = (kind: string) => (ARTICLE[kind] ?? 'a ' + kind) + ' file';
 
 // The terminal's command. revealDir(path): show the folder in Files.
 export function openCommands(defineCommand: typeof DefineCommand, { openFile, revealDir }: OpenHooks = {}) {
@@ -105,14 +106,14 @@ export function openCommands(defineCommand: typeof DefineCommand, { openFile, re
   return [defineCommand('open', async (args, ctx) => {
     const a = parseArgs(args);
     if (a.help) return ok(HELP);
-    if (a.error) return usage(a.error);
-    const path = normalize(a.path!.startsWith('/') ? a.path! : ctx.cwd + '/' + a.path);
+    if (a.error !== undefined) return usage(a.error);
+    const path = normalize(a.path.startsWith('/') ? a.path : ctx.cwd + '/' + a.path);
     let st: FsStat;
     try { st = await ctx.fs.stat(path); } catch { return fail(`${path}: no such file. List the folder with \`ls ${normalize(path + '/..')}\`.`); }
     if (st.isDirectory) {
       if (a.flag) return usage(`${a.flag} is for files; ${path} is a folder (\`open ${a.path}\` shows it in Files)`);
       if (!revealDir) return fail(`${path} is a folder; list it with \`ls ${path}\`.`);
-      try { await revealDir(path); } catch (e) { return fail(`${path}: ${(e as Error | undefined)?.message ?? e}`); }
+      try { await revealDir(path); } catch (e) { return fail(`${path}: ${e instanceof Error ? e.message : e}`); }
       return ok(`showing ${path} in Files\n`);
     }
     let binary = false;
@@ -121,10 +122,10 @@ export function openCommands(defineCommand: typeof DefineCommand, { openFile, re
       binary = bytes.subarray(0, 8000).includes(0);
     }
     const plan = planOpen(path, a.flag, { binary });
-    if (plan.error) return fail(plan.error);
+    if (plan.error !== undefined) return fail(plan.error);
     let opened: boolean | string | undefined;
-    try { opened = await openFile({ path, mode: plan.mode!, interactive: plan.interactive! }); }
-    catch (e) { return fail(`${path}: ${(e as Error | undefined)?.message ?? e}`); }
+    try { opened = await openFile({ path, mode: plan.mode, interactive: plan.interactive }); }
+    catch (e) { return fail(`${path}: ${e instanceof Error ? e.message : e}`); }
     if (opened === false) return fail(`kept your unsaved changes; ${path} was not opened.`);
     if (opened !== true && opened !== undefined) return fail(`${path} was not opened (${opened}).`);
     return ok(`opened ${path} (${plan.label})\n`);
@@ -165,8 +166,8 @@ export function agentShowCommands(defineCommand: typeof DefineCommand, { show }:
     if (args.includes('--interactive')) return sfail('--interactive is the person\'s choice: show opens HTML Static, and they can switch it to Interactive.');
     const a = parseArgs(args, 'show');
     if (a.help) return ok(SHOW_HELP);
-    if (a.error) return susage(a.error);
-    const path = normalize(a.path!.startsWith('/') ? a.path! : ctx.cwd + '/' + a.path);
+    if (a.error !== undefined) return susage(a.error);
+    const path = normalize(a.path.startsWith('/') ? a.path : ctx.cwd + '/' + a.path);
     let st: FsStat;
     try { st = await ctx.fs.stat(path); } catch { return sfail(`${path}: no such file. List the folder with \`ls ${normalize(path + '/..')}\`.`); }
     let plan: OpenPlan | { dir: true; mode: null; label: string; error?: undefined };
@@ -180,12 +181,12 @@ export function agentShowCommands(defineCommand: typeof DefineCommand, { show }:
         binary = bytes.subarray(0, 8000).includes(0);
       }
       plan = planOpen(path, a.flag, { binary });
-      if (plan.error) return sfail(plan.error.replaceAll('`open ', '`show '));
+      if (plan.error !== undefined) return sfail(plan.error.replaceAll('`open ', '`show '));
     }
     if (!show) return sfail('there is no Interface here to show it in; link it in your reply instead.');
     let r: { opened?: boolean; reason?: string } | null | undefined;
     try { r = await show({ path, dir: !!plan.dir, mode: plan.mode, label: plan.label }); }
-    catch (e) { return sfail(`${path}: ${(e as Error | undefined)?.message ?? e}`); }
+    catch (e) { return sfail(`${path}: ${e instanceof Error ? e.message : e}`); }
     if (r?.opened) return ok(`shown: opened ${path} (${plan.label})\n`);
     return ok(`shown: offered ${path} (${plan.label}); not opened (user busy: ${r?.reason ?? 'unknown'}), the transcript has an Open button for them\n`);
   })];

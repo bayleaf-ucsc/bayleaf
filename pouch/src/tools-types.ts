@@ -13,9 +13,6 @@ import type { mediaCommands } from './media.ts';
 import type { Vfs } from './vfs.ts';
 
 export type Caller = ConversationId | undefined; // the calling conversation; undefined: none (the page's own fs)
-export type Errorish = Error & { code?: string; pouchWrite?: string };
-// The fs methods the proxies in src/tools.ts wrap, looked up by name.
-export type FsMethods = Record<PropertyKey, (...a: unknown[]) => Promise<unknown>>;
 // What a proxied filesystem has: every Pouch fs (Namespace, NinepFs, a control view) is a BaseFs.
 export type ToolFs = BaseFs;
 export type ChangeOp = 'created' | 'modified' | 'deleted';

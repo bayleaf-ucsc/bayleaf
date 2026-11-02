@@ -20,7 +20,7 @@
 // Network: list and status read the gateway's public catalog (metadata, no
 // content); downloads carry nothing but which byte ranges are wanted. All
 // bytes are checked against the build's pins (src/models.ts).
-import type { Command, defineCommand as DefineCommand, ExecResult, ResolvedCommandContext } from 'just-bash';
+import type { defineCommand as DefineCommand } from 'just-bash';
 import { GATEWAY } from './models.ts';
 import type { ModelPin, ModelProgress, ModelStatus, ModelStore, ModelRelease } from './models.ts';
 import type { Task, Tasks } from './ns/tasks.ts';
@@ -97,7 +97,9 @@ export function createModelService({ store, tasks, approve, onChange = () => {},
     const can = await supports(m.id);
     if (st.complete && !can.ok) throw Object.assign(new Error(`${m.label} is downloaded, but cannot run in this browser. ${can.reason}`), { code: 'ENOTSUP' });
     if (st.complete) return { already: true, status: st };
-    if (downloads.get(m.id)?.status === 'running') return { task: downloads.get(m.id)!, promise: downloads.get(m.id)!.promise!, joined: true };
+    // A task enters downloads with its promise already set (below).
+    const running = downloads.get(m.id);
+    if (running?.status === 'running' && running.promise) return { task: running, promise: running.promise, joined: true };
     if (!can.ok) throw Object.assign(new Error(`${m.label} cannot run in this browser, so it was not downloaded (nothing was fetched). ${can.reason}`), { code: 'ENOTSUP' });
     let allowed = false;
     try { allowed = approve ? await approve(await request(m, 'get', who), who) === true : false; } catch { allowed = false; }
@@ -136,7 +138,7 @@ export function createModelService({ store, tasks, approve, onChange = () => {},
 
   async function rows({ offline = false } = {}) {
     let catalog: ModelRelease[] | null = null, note = '';
-    if (!offline) { try { catalog = await store.catalog(); } catch (e) { note = `(gateway catalog unavailable: ${(e as Error).message}; showing pinned models only)`; } }
+    if (!offline) { try { catalog = await store.catalog(); } catch (e) { note = `(gateway catalog unavailable: ${(e instanceof Error ? e.message : e)}; showing pinned models only)`; } }
     const out: ModelRow[] = [];
     for (const m of store.models) {
       const st = await store.status(m.id), rel = catalog?.find((r) => r.repo === m.repo && r.revision === m.revision);
@@ -153,16 +155,18 @@ export function createModelService({ store, tasks, approve, onChange = () => {},
   return { get, remove, rows, request, resolve, status: (name: string) => store.status(resolve(name).id), downloads, store };
 }
 
+// Each sub and the flags it takes.
+const FLAGS: Partial<Record<string, string[]>> = { list: ['--offline'], status: [], get: ['--wait'], remove: [], verify: [] };
+
 // The command, bound to who is typing: { by: 'user', via: 'terminal' } or an agent's who.
 export function modelsCommands(defineCommand: typeof DefineCommand, service: ModelService | undefined, whoOf: ModelWho | (() => ModelWho)) {
   if (!service) return [];
-  // Every known sub returns; the cast admits the unreachable fall-through (undefined).
-  return [(defineCommand as (name: string, run: (args: string[], ctx: ResolvedCommandContext) => Promise<ExecResult | undefined>) => Command)('models', async (args, ctx) => {
+  return [defineCommand('models', async (args, ctx) => {
     const [sub, ...rest] = args;
     if (!sub || sub === '--help' || sub === '-h' || sub === 'help' || rest.includes('--help')) return ok(HELP);
     const who = typeof whoOf === 'function' ? whoOf() : whoOf;
     const flags = rest.filter((a) => a.startsWith('-')), pos = rest.filter((a) => !a.startsWith('-'));
-    const known = ({ list: ['--offline'], status: [], get: ['--wait'], remove: [], verify: [] } as Record<string, string[] | undefined>)[sub];
+    const known = FLAGS[sub];
     if (!known) return usage(`unknown command: models ${sub}`);
     const bad = flags.find((f) => !known.includes(f));
     if (bad) return usage(`unknown option ${bad} for models ${sub}`);
@@ -194,7 +198,7 @@ export function modelsCommands(defineCommand: typeof DefineCommand, service: Mod
         const stopOnAbort = () => r.task.kill?.();
         ctx?.signal?.addEventListener('abort', stopOnAbort, { once: true });
         try { const s = await r.promise; return ok(`downloaded and verified ${s.id} (${size(s.total)}) as ${where}\n`); }
-        catch (e) { return fail(`models: ${(e as Error).name === 'AbortError' ? `stopped (${where}); \`models get ${pos[0]}\` resumes where it stopped` : (e as Error).message}`); }
+        catch (e) { return fail(`models: ${e instanceof Error && e.name === 'AbortError' ? `stopped (${where}); \`models get ${pos[0]}\` resumes where it stopped` : (e instanceof Error ? e.message : e)}`); }
         finally { ctx?.signal?.removeEventListener('abort', stopOnAbort); }
       }
       if (sub === 'verify') {
@@ -207,8 +211,9 @@ export function modelsCommands(defineCommand: typeof DefineCommand, service: Mod
         const r = await service.remove(pos[0], who);
         return ok(r.nothing ? `${pos[0]} is not downloaded; nothing to remove.\n` : `removed ${pos[0]}: freed ${size(r.freed)}. \`models get ${pos[0]}\` downloads it again (the user will be asked).\n`);
       }
+      return usage(`unknown command: models ${sub}`); // unreachable: FLAGS names every sub above
     } catch (e) {
-      return fail(`models: ${(e as Error).message}`);
+      return fail(`models: ${(e instanceof Error ? e.message : e)}`);
     }
   })];
 }
