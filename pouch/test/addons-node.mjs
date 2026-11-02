@@ -16,7 +16,7 @@ const pinOf = (group) => {
 };
 const lock = JSON.parse(readFileSync('models.lock.json', 'utf8')).models[0];
 if (built) {
-  globalThis.POUCH_PDF_RUNTIME = pinOf('pdf'); globalThis.POUCH_LIBAV_RUNTIME = pinOf('libav');
+  globalThis.POUCH_PDF_RUNTIME = pinOf('pdf'); globalThis.POUCH_LIBAV_RUNTIME = pinOf('libav'); globalThis.POUCH_DUCKDB_RUNTIME = pinOf('duckdb');
   globalThis.LOCAL_MODEL = { ...lock, bytes: lock.files.reduce((n, f) => n + f.bytes, 0), runtime: pinOf('transformers') };
 }
 const { QUIET_MAX, askTitle, createAddons, gatewayBackend, originBackend, say, sizeText, tierOf } = await import('../src/addons.ts');
@@ -84,19 +84,21 @@ async function sh(addons, args, who = { by: 'user', via: 'terminal' }) {
 const agent = { by: 'agent', sid: 1, name: 'main (a1)' };
 
 // ── The registry, built from this build's pins ──
-await t('the registry from this build: pdf.js and libav.js quiet, Transformers.js and LFM3 asked, LFM3 needs the hidden code', async () => {
+await t('the registry from this build: pdf.js and libav.js quiet, DuckDB, Transformers.js and LFM3 asked, LFM3 needs the hidden code', async () => {
   if (!built) { console.log('  (skipped: run node build.mjs first)'); return; }
   const byId = new Map(REGISTRY.map((d) => [d.id, d]));
-  assert.deepEqual(REGISTRY.map((d) => d.id), ['pdfjs', 'libavjs', 'transformersjs', lock.id]);
-  assert.deepEqual(REGISTRY.map((d) => tierOf(d, byId)), ['quiet', 'quiet', 'asked', 'asked']);
+  assert.deepEqual(REGISTRY.map((d) => d.id), ['pdfjs', 'libavjs', 'duckdb', 'transformersjs', lock.id]);
+  assert.deepEqual(REGISTRY.map((d) => tierOf(d, byId)), ['quiet', 'quiet', 'asked', 'asked', 'asked']);
+  assert.deepEqual(byId.get('duckdb').usedBy, ['duckdb']);
   assert.ok(byId.get('transformersjs').hidden);
   assert.deepEqual(byId.get(lock.id).needs, ['transformersjs']);
   const svc = createAddons({ entries: REGISTRY, tasks: new Tasks(), online: () => false });
   const lfm = await svc.status(lock.id);
   assert.match(sizeText(lfm.size), /^1\.1 GB$/, 'one size, code included');
-  assert.deepEqual((await svc.list()).map((s) => s.id), ['pdfjs', 'libavjs', lock.id], 'hidden code is not listed alone');
+  assert.deepEqual((await svc.list()).map((s) => s.id), ['pdfjs', 'libavjs', 'duckdb', lock.id], 'hidden code is not listed alone');
+  assert.equal((await svc.status('duckdb')).state, 'not installed');
   assert.equal(svc.resolve('lfm3').id, lock.id, 'unique prefixes');
-  console.log(`  pdf.js ${sizeText(pinOf('pdf').bytes)}, libav.js ${sizeText(pinOf('libav').bytes)}, Transformers.js ${sizeText(pinOf('transformers').bytes)}, LFM3 ${sizeText(lfm.size)}`);
+  console.log(`  pdf.js ${sizeText(pinOf('pdf').bytes)}, libav.js ${sizeText(pinOf('libav').bytes)}, DuckDB ${sizeText(pinOf('duckdb').bytes)}, Transformers.js ${sizeText(pinOf('transformers').bytes)}, LFM3 ${sizeText(lfm.size)}`);
 });
 await t('the tier rule: at most 10 MiB, from this origin, no extra license; closure counts', () => {
   const o = (id, bytes, x = {}) => ({ id, label: id, kind: 'tool', files: { origin: { dir: 'd/', manifest: 'm', sha256: 'x', bytes } }, license: 'MIT', ...x });

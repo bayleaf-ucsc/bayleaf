@@ -25,8 +25,9 @@ Available (run \`ls /bin\` for the full list): cat, ls, find, tree, grep, rg,
 sed, awk, head, tail, sort, uniq, wc, cut, paste, join, column, tr, diff, jq,
 base64, sha256sum, file, seq, date, xargs, tee, mkdir, mv, cp, rm, touch,
 html-to-markdown, Pouch's own zip, unzip and tar (no -z compression),
-pdfinfo, pdftotext and pdftoppm for PDFs (the pdf skill), and ffprobe and
-ffmpeg for audio and video (the media skill).
+pdfinfo, pdftotext and pdftoppm for PDFs (the pdf skill), ffprobe and
+ffmpeg for audio and video (the media skill), and duckdb for SQL over CSV,
+Parquet and JSON files (the duckdb skill).
 Shell builtins work: for, while, functions, pipes, redirection, $(...).
 
 Not available: network (curl), package managers, python, node, git, gzip,
@@ -268,6 +269,84 @@ installed on their own computer. Do not guess at content you could not decode.
   refused there. Use -y to overwrite.
 - \`ffmpeg -decoders\`, \`-encoders\`, \`-filters\` list the WebM build; H.264,
   AAC and MP3 do not appear there because the browser decodes them.
+`,
+  '/skills/duckdb/SKILL.md': `---
+name: duckdb
+description: Analyze CSV, Parquet and JSON files with SQL (totals, medians, group-bys, joins, cleaning messy exports) and write the results to new files, with duckdb in the bash tool. Read before analyzing any tabular data file.
+---
+
+# Data analysis with DuckDB in Pouch
+
+DuckDB runs inside this browser with no network: the data stays here, and
+you see only what a command prints (at most 40 rows per result by default).
+Never cat or read a whole data file to analyze it; ask DuckDB.
+
+DuckDB is an add-on (about 38 MiB) the person approves once. If duckdb
+answers "not installed", run \`addons install duckdb --wait\`: the person is
+asked, and the command returns when they decide. If they deny it, say so; do
+not work around it by reading the whole file.
+
+Name files by full path inside single quotes; Pouch hands exactly those
+files to DuckDB, and COPY ... TO writes new files into /work.
+
+## Recipe: a summary CSV someone can rerun
+
+1. Look before you query (each is one call):
+   \`duckdb -c "DESCRIBE FROM '/work/sales.csv'"\` (columns and the types DuckDB guessed),
+   \`duckdb -c "SUMMARIZE FROM '/work/sales.csv'"\` (min, max, nulls, distinct counts),
+   \`duckdb -c "FROM '/work/sales.csv' LIMIT 5"\`.
+   If an amount is varchar (\`$85,000\`) or a date column is varchar, clean it in SQL (below).
+2. Write the whole query, ending in COPY, to a .sql file next to the output
+   (write tool, path /work/<name>.sql), for example:
+
+       COPY (
+         SELECT upper(trim(region)) AS region,
+                strftime(date_trunc('month', CAST(order_date AS DATE)), '%Y-%m') AS month,
+                sum(amount) AS total, median(amount) AS median
+         FROM '/work/sales.csv'
+         GROUP BY ALL ORDER BY ALL
+       ) TO '/work/<name>.csv' (HEADER);
+
+3. Run it: \`duckdb -f /work/<name>.sql\`. stderr says "wrote /work/<name>.csv".
+   Check it: \`duckdb -c "FROM '/work/<name>.csv'"\`. The person can rerun the
+   same file in the terminal (\`duckdb -f /work/<name>.sql\`) and get the same bytes.
+4. Tell the person the file names and what the numbers mean; quote a few rows.
+
+## Messy exports
+
+- Quoted fields with commas, doubled quotes and line breaks: DuckDB's sniffer
+  reads these. Check row counts (\`SELECT count(*) FROM ...\`) against what the
+  person expects.
+- Look at raw text first when types look wrong:
+  \`read_csv('/work/f.csv', all_varchar=true)\`.
+- Money: \`CAST(replace(replace(amount, '$', ''), ',', '') AS DECIMAL(14,2))\`;
+  use TRY_CAST to turn junk into NULL, and count the NULLs you made.
+- Missing markers: \`read_csv('/work/f.csv', nullstr=['n/a', 'NA', ''])\`.
+- Codes in mixed case or with spaces: \`upper(trim(code))\`.
+- Dates in another order: \`strptime(d, '%m/%d/%Y')\`, or \`dateformat='%m/%d/%Y'\`.
+- Totals of DECIMAL stay exact; say how you treated the rows you dropped.
+
+## Other inputs and outputs
+
+- Parquet: \`FROM '/work/f.parquet'\`; JSON: \`FROM read_json('/work/f.json')\`;
+  several files: \`FROM '/work/2024-*.csv'\` (add \`filename=true\` to see which).
+- Output formats for printing: -csv, -json, -markdown (for a report), -box (default).
+  \`-maxrows N\` prints more rows (at most 10000); for all rows, COPY to a file.
+- COPY TO '/work/x.parquet' (FORMAT parquet) or (FORMAT json) works too.
+- Every command starts with an empty database. To keep a cleaned table,
+  write it as Parquet (\`COPY (...) TO '/work/clean.parquet' (FORMAT parquet)\`)
+  and query that file next time. Database files (.duckdb) are not supported.
+
+## Limits
+
+- 256 MiB of input files and 256 MiB written per call; 256 KiB printed.
+  Over a cap is refused with the cap's name.
+- No network: https:// paths, httpfs and INSTALL are refused. No other
+  extensions (no Excel or SQLite files: ask the person to export CSV).
+- No ATTACH, no dot commands (.mode, .tables): use flags, and put several
+  statements in one -c or .sql file (CREATE TABLE, then SELECT) when they
+  need the same tables.
+- Each command is a job; the first one after a page load takes about a second.
 `,
   '/skills/skill-authoring/SKILL.md': `---
 name: skill-authoring

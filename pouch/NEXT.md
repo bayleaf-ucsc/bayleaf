@@ -131,6 +131,15 @@ See README "Namespaces"; stories I10, D19-D21.
 - A capped `/web/http` relay for `bayleaf web http`.
 - Read-only `/sandbox/files` requests create or wake the VM.
 
+## DuckDB follow-ups
+
+- Database files: DuckDB-Wasm 1.32.0 keeps an attached file locked after DETACH and
+  `reset()`. Retry with a newer release, or OPFS-backed files; until then Parquet is the
+  way to keep a table.
+- Excel and SQLite inputs: `excel` (0.6 MiB) and `sqlite_scanner` (1.6 MiB) for v1.4.3
+  `wasm_eh` exist and would load the same way; the Analyst persona would use both.
+- A preview of `.parquet` and `.csv` in the file browser through this runtime (survey section 7).
+
 ## Might go faster with cross-origin isolation (COOP/COEP)
 
 Cross-origin isolation would allow SharedArrayBuffer and threads. Pouch does not set

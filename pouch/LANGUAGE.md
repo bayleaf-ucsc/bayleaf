@@ -145,7 +145,7 @@ tools and the control plane, and perceive through the same files.
 **Add-on.** Something optional Pouch keeps in this browser so a tool or a Provider can
 work: code, weights or data, fetched only when wanted, checked against hashes this page was
 built with, kept outside the Workspace (agents cannot see or edit it as files), removable at
-any time. Two **kinds**: `tool` (code that adds commands: pdf.js, libav.js) and `model`
+any time. Two **kinds**: `tool` (code that adds commands: pdf.js, libav.js, DuckDB) and `model`
 (weights a Provider runs: LFM3 1.7B). A model add-on that needs code names a hidden
 tool-kind add-on (the Transformers.js code), shown as one add-on with one size. One
 registry (`src/addons-registry.ts`), one service (`src/addons.ts`), one command (`addons`)

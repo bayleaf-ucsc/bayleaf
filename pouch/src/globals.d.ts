@@ -5,6 +5,7 @@ declare const WORKER_SRC: string;
 declare const LOCAL_MODEL: import('./trust.ts').LocalModel;
 declare const SW_SHA256: string;
 declare const POUCH_PDF_RUNTIME: import('./trust.ts').PartsPin;
+declare const POUCH_DUCKDB_RUNTIME: import('./trust.ts').PartsPin;
 declare const POUCH_LIBAV_RUNTIME: import('./trust.ts').PartsPin;
 declare const POUCH_LIBAV_SOURCE: import('./trust.ts').PartsPin;
 declare const POUCH_CHUNK: number;

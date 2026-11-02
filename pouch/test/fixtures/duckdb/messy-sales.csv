@@ -1,0 +1,9 @@
+order_id,region,order_date,amount,note,code
+1,"West",2026-01-05,"$85,000","said ""hi"", then left",ab1
+2,west ,2026-01-17,"$1,250.50",n/a,AB1
+3,East,2026-01-20,n/a,"multi
+line note",cd2
+4,EAST,2026-02-02,$300,,Cd2
+5,"North, Upper",2026-02-14,"$12,000.25",plain,ef3
+6,West,2026-02-28,$450,n/a,ab1
+7,east,2026-02-09,"$2,000",,CD2
