@@ -34,7 +34,7 @@ export async function buildModels(out) {
     { name: 'worker.js', role: 'worker', bytes: worker },
     { name: wasm.name, role: 'wasm', bytes: readFileSync('node_modules/' + wasm.npm) },
   ]);
-  const m = lock.models[0];
+  const m = lock.models.find((x) => !x.kind); // the chat model (the speech-to-text model is build-parakeet.mjs's)
   if (!m) return { sums, local: null };
   const files = m.files.map(({ name, bytes, sha256 }) => ({ name, bytes, sha256 }));
   const local = { id: m.id, label: m.label, repo: m.repo, revision: m.revision, dtype: m.dtype, license: m.license,

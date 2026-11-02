@@ -96,6 +96,11 @@ the composer, with nothing stored and no sidebar row. The first send makes it a 
 Not a "draft", which is the composer's unsent text (a blank session can hold one).
 Reverting a session's first message also leaves a blank session.
 
+**Speech transcript.** What `transcribe` makes: the words spoken in an audio or video
+file, with times (`[mm:ss]` lines, subtitles or JSON). Not a thread, which is the record of
+an agent's turns; say "speech transcript" where both could be meant. It does not say who
+spoke (no speaker labels).
+
 **Workspace.** The files Pouch works on. At most one per browser; Pouch starts with
 none, and Erase all returns to none. Shared by all sessions.
 

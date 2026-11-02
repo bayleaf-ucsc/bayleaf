@@ -98,7 +98,7 @@ export function addonsCommands(defineCommand: typeof DefineCommand, addons: Addo
         const gw = !('origin' in d.files) ? d.files.gateway : null;
         const rel = gw ? await addons.release(s.id).catch(() => null) : null;
         const lines = [`${s.id}: ${s.label} (${s.kind}${s.hidden ? ', part of another add-on' : ''})`, `  state: ${stateText(s)}`, `  size: ${sizeText(s.size)}; ${s.tier === 'quiet' ? 'installs on first use (small, from Pouch\'s own origin)' : 'asks the user before installing'}`,
-          `  used by: ${usedByText(s)}`, `  license: ${rel?.license?.name ?? d.license}`, ...(d.attribution ? [`  attribution: ${d.attribution}`] : []),
+          `  used by: ${usedByText(s)}`, `  license: ${rel?.license?.name ?? d.license}`, ...(d.attribution ? [`  attribution: ${d.attribution}`] : []), ...(d.runs ? [`  runs: ${d.runs}`] : []),
           `  source: ${gw ? `${gw.repo}@${gw.revision.slice(0, 12)} via ${GATEWAY}` : 'Pouch\'s own origin' + (d.notice ? ` (license notice: ${d.notice})` : '')}`,
           ...(rel?.qualification ? [`  qualification: ${rel.qualification.map((q) => `${q.client} ${q.status}`).join('; ')}`] : []),
           ...(s.parts.length > 1 ? s.parts.map((p) => `  ${p.complete ? 'ok  ' : p.bytes ? 'part' : '-   '} ${pad(sizeText(p.size), 9)} ${p.id === s.id ? p.label : `${p.label} (needed)`}`) : []),

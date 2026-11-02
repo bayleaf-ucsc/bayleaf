@@ -18,6 +18,9 @@ const lock = JSON.parse(readFileSync('models.lock.json', 'utf8')).models[0];
 if (built) {
   globalThis.POUCH_PDF_RUNTIME = pinOf('pdf'); globalThis.POUCH_LIBAV_RUNTIME = pinOf('libav'); globalThis.POUCH_DUCKDB_RUNTIME = pinOf('duckdb');
   globalThis.LOCAL_MODEL = { ...lock, bytes: lock.files.reduce((n, f) => n + f.bytes, 0), runtime: pinOf('transformers') };
+  const asr = JSON.parse(readFileSync('models.lock.json', 'utf8')).models.find((m) => m.kind === 'speech-to-text');
+  globalThis.POUCH_PARAKEET = { model: { id: asr.id, label: asr.label, repo: asr.repo, revision: asr.revision, license: asr.license, attribution: asr.attribution, runs: asr.runs,
+    files: asr.files.map(({ name, bytes, sha256 }) => ({ name, bytes, sha256 })) }, encoder: asr.encoder, decoder: asr.decoder, vocab: asr.vocab, runtime: pinOf('parakeet') };
 }
 const { QUIET_MAX, askTitle, createAddons, gatewayBackend, originBackend, say, sizeText, tierOf } = await import('../src/addons.ts');
 const { addonsCommands, HELP } = await import('../src/addons-cli.ts');
@@ -84,20 +87,26 @@ async function sh(addons, args, who = { by: 'user', via: 'terminal' }) {
 const agent = { by: 'agent', sid: 1, name: 'main (a1)' };
 
 // ── The registry, built from this build's pins ──
-await t('the registry from this build: pdf.js and libav.js quiet, DuckDB, Transformers.js and LFM3 asked, LFM3 needs the hidden code', async () => {
+await t('the registry from this build: pdf.js and libav.js quiet; DuckDB, Transformers.js, LFM3, the Parakeet runtime and Parakeet asked; each model needs its hidden code', async () => {
   if (!built) { console.log('  (skipped: run node build.mjs first)'); return; }
   const byId = new Map(REGISTRY.map((d) => [d.id, d]));
-  assert.deepEqual(REGISTRY.map((d) => d.id), ['pdfjs', 'libavjs', 'duckdb', 'transformersjs', lock.id]);
-  assert.deepEqual(REGISTRY.map((d) => tierOf(d, byId)), ['quiet', 'quiet', 'asked', 'asked', 'asked']);
+  assert.deepEqual(REGISTRY.map((d) => d.id), ['pdfjs', 'libavjs', 'duckdb', 'transformersjs', lock.id, 'parakeet-runtime', 'parakeet-tdt-0.6b-v3']);
+  assert.deepEqual(REGISTRY.map((d) => tierOf(d, byId)), ['quiet', 'quiet', 'asked', 'asked', 'asked', 'asked', 'asked']);
   assert.deepEqual(byId.get('duckdb').usedBy, ['duckdb']);
+  const pk = byId.get('parakeet-tdt-0.6b-v3');
+  assert.ok(byId.get('parakeet-runtime').hidden); assert.deepEqual(pk.needs, ['parakeet-runtime']); assert.equal(pk.kind, 'model');
+  assert.equal(pk.license, 'CC-BY-4.0'); assert.match(pk.attribution, /NVIDIA/); assert.match(pk.runs, /only in this browser/); assert.deepEqual(pk.usedBy, ['transcribe']);
   assert.ok(byId.get('transformersjs').hidden);
   assert.deepEqual(byId.get(lock.id).needs, ['transformersjs']);
   const svc = createAddons({ entries: REGISTRY, tasks: new Tasks(), online: () => false });
   const lfm = await svc.status(lock.id);
   assert.match(sizeText(lfm.size), /^1\.1 GB$/, 'one size, code included');
-  assert.deepEqual((await svc.list()).map((s) => s.id), ['pdfjs', 'libavjs', 'duckdb', lock.id], 'hidden code is not listed alone');
+  assert.deepEqual((await svc.list()).map((s) => s.id), ['pdfjs', 'libavjs', 'duckdb', lock.id, 'parakeet-tdt-0.6b-v3'], 'hidden code is not listed alone');
   assert.equal((await svc.status('duckdb')).state, 'not installed');
   assert.equal(svc.resolve('lfm3').id, lock.id, 'unique prefixes');
+  assert.equal(svc.resolve('parakeet').id, 'parakeet-tdt-0.6b-v3', 'the hidden runtime does not make `parakeet` ambiguous');
+  const pks = await svc.status('parakeet');
+  assert.match(sizeText(pks.size), /^1\.3 GB$/, 'one size, runtime included');
   console.log(`  pdf.js ${sizeText(pinOf('pdf').bytes)}, libav.js ${sizeText(pinOf('libav').bytes)}, DuckDB ${sizeText(pinOf('duckdb').bytes)}, Transformers.js ${sizeText(pinOf('transformers').bytes)}, LFM3 ${sizeText(lfm.size)}`);
 });
 await t('the tier rule: at most 10 MiB, from this origin, no extra license; closure counts', () => {

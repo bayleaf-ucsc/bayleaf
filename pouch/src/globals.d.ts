@@ -8,4 +8,5 @@ declare const POUCH_PDF_RUNTIME: import('./trust.ts').PartsPin;
 declare const POUCH_DUCKDB_RUNTIME: import('./trust.ts').PartsPin;
 declare const POUCH_LIBAV_RUNTIME: import('./trust.ts').PartsPin;
 declare const POUCH_LIBAV_SOURCE: import('./trust.ts').PartsPin;
+declare const POUCH_PARAKEET: import('./trust.ts').AsrPin | null;
 declare const POUCH_CHUNK: number;

@@ -21,8 +21,6 @@ Done (2026-11-01): the add-on realignment as decided in
 one registry from the build's pins, the `addons` command (no `models` alias), the quiet and
 asked tiers, Settings > Add-ons with Make available offline, every install a `/task` of
 kind `install`, jobs' engines renamed to workers. Follow-ups:
-- DuckDB-Wasm and Parakeet TDT 0.6B v3 land as registry entries on their own branches
-  (README "Add-ons: the recipe").
 - The gateway catalog's unpinned releases are no longer listed (`models list` showed them
   as "not in this build"); `addons info` still reads the catalog for a pinned model.
 - Quiet installs run without a session (`sid` unset), so an agent's own /task view does
@@ -145,8 +143,10 @@ See README "Namespaces"; stories I10, D19-D21.
 Cross-origin isolation would allow SharedArrayBuffer and threads. Pouch does not set
 COOP/COEP; these would gain from it:
 
-- ONNX Runtime Web's CPU (WASM) fallback with threads, for OCR (PP-OCRv6) and ASR
-  (Parakeet int8) when WebGPU is missing or lacks shader-f16.
+- ONNX Runtime Web's CPU (WASM) fallback with threads, for OCR (PP-OCRv6) and speech to
+  text (Parakeet) when WebGPU is missing or lacks shader-f16; today `transcribe` refuses
+  there. The spike's int8 encoder ran at RTF 0.4-0.5 on WebGPU-with-wasm-fallback, single
+  thread; threads would make a CPU path plausible for short clips.
 - DuckDB-Wasm's `coi` bundle (threads and SIMD) instead of the `eh` bundle.
 - libav.js threaded builds for video decode and transcode.
 
@@ -168,6 +168,15 @@ service worker must serve the headers too.
 - Large-file steering: prompt the agent to use `run` rather than `read` on big data.
 - Known gaps: Firefox/Safari untested; storage persistence not requested for model
   cache; subagents not aborted on network loss.
-- Speech I/O: abandoned for now. Survey in `test/journeys/reports/speech-cactus-survey.md`:
+- Speech to text follow-ups (`transcribe`, Parakeet): speaker labels (diarization; story
+  TR7 gap: a separate model such as pyannote's segmentation in ONNX, then clustering);
+  one shared `runtime/ort/` group for the ORT wasm both the Transformers.js and Parakeet
+  runtimes carry (25.6 MiB each); memory (a loaded model holds about 4.6 GiB across
+  Chrome's processes: try streaming the encoder into ORT instead of a JS copy, and
+  releasing ORT's wasm-heap copy); a progress line for the terminal itself (today in
+  `/task/<id>/log`); live microphone dictation (parakeet.js has a streaming transcriber);
+  qualification on Intel, AMD and NVIDIA GPUs, Firefox and Safari, and noisy real
+  interviews; the gateway release's deploy and approval.
+- Speech I/O (beyond `transcribe`): abandoned for now. Survey in `test/journeys/reports/speech-cactus-survey.md`:
   Whistle (17 MB, WASM CPU, closed engine source) or Moonshine (MIT) for STT; device
   voices for TTS; Kokoro/Kitten depend on GPL-3.0 eSpeak NG. No Google/Chrome-only paths.

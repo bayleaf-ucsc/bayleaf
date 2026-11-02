@@ -466,6 +466,22 @@ export function createMediaService({ tasks, addons, worker = mediaWorker({ asset
   };
 }
 
+// Decode any input this runtime reads (WebM, Ogg, WAV, FLAC; MOV/MP4/M4A and MP3
+// through WebCodecs) to mono float PCM at `rate`, as one wc.audio job: for tools
+// that need samples, not a file (speech to text, src/parakeet.ts). The samples
+// are a copy, aligned for Float32Array, of the f32 WAV the job writes.
+export interface PcmRequest { path: string; bytes: Uint8Array; rate: number; maxSeconds: number }
+export function decodePcm(service: MediaService, { path, bytes, rate, maxSeconds }: PcmRequest, opts: RunOptions = {}) {
+  const { task, result } = service.run({ action: 'wc.audio', input: { name: `in0.${ext(path) || 'bin'}`, label: path, bytes }, kind: sniff(bytes), ss: 0, t: null, filters: null, rate, channels: 1,
+    out: { name: 'out0.wav', format: 'wav', codec: 'pcm_f32le', sampleFmt: 'flt' }, maxSeconds, maxOutputBytes: maxSeconds * rate * 4 + 44 }, opts);
+  return { task, samples: result.then((r) => {
+    const wav = r && typeof r === 'object' && 'files' in r && Array.isArray(r.files) ? r.files[0]?.bytes : null;
+    if (!(wav instanceof Uint8Array) || wav.length < 44) throw new Error(`${path}: libav.js returned no audio`);
+    // pcm_f32le after the 44-byte header wavHeader writes (src/media/wc.ts).
+    return new Float32Array(wav.buffer.slice(wav.byteOffset + 44, wav.byteOffset + 44 + Math.floor((wav.length - 44) / 4) * 4));
+  }) };
+}
+
 // ── Shell commands ───────────────────────────────────────────────────
 const abs = (cwd: string, p: string) => normalize(p.startsWith('/') ? p : cwd + '/' + p);
 
