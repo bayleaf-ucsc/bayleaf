@@ -1,0 +1,345 @@
+{
+ "chrome": "156.0.8078.74",
+ "date": "2026-11-02T05:11:12.769Z",
+ "results": [
+  {
+   "encoder": "encoder-model.fp16.onnx",
+   "decoder": "decoder_joint-model.int8.onnx",
+   "backend": "webgpu-hybrid",
+   "ort": "1.31.0-dev.20260911-2a43ec07e",
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "f16": true
+   },
+   "read_ms": 535,
+   "load_ms": 1454,
+   "clips": [
+    {
+     "clip": "gettysburg.wav",
+     "seconds": 30.07,
+     "cold": {
+      "ms": 596,
+      "rtf": 0.0198,
+      "dispatches": 1279
+     },
+     "text": "Fourscore and seven years ago our fathers brought forth on this continent a new nation, conceived in liberty, and dedicated to the proposition that all men are created equal. Now we are engaged in a great civil war, testing whether that nation, or any nation so conceived and so dedicated, can long endure. We are met on a great battlefield of that war, we have come to dedicate a portion of that field as a final resting place for those who here gave their lives that that nation might live. It is altogether fitting and proper that we should do this.",
+     "chunks": 4,
+     "firstChunk": {
+      "text": "Fourscore and seven years ago our fathers brought forth on this continent a new nation, conceived in liberty, and dedicated to the proposition that all men are created equal.",
+      "timestamp": [
+       0,
+       9.76
+      ]
+     },
+     "lastChunk": {
+      "text": "It is altogether fitting and proper that we should do this.",
+      "timestamp": [
+       27.12,
+       29.68
+      ]
+     },
+     "warm": {
+      "ms": 521,
+      "rtf": 0.0173,
+      "dispatches": 1279
+     },
+     "wer": 0.0388
+    },
+    {
+     "clip": "spanish.wav",
+     "seconds": 11.19,
+     "cold": {
+      "ms": 237,
+      "rtf": 0.0212,
+      "dispatches": 1279
+     },
+     "text": "En un lugar de la mancha, de cuyo nombre no quiero acordarme, no a mucho tiempo que vivía un hidalgo de los de lanza en astillero, adarga antigua, rocí flaco hidalgo corredor.",
+     "chunks": 1,
+     "firstChunk": {
+      "text": "En un lugar de la mancha, de cuyo nombre no quiero acordarme, no a mucho tiempo que vivía un hidalgo de los de lanza en astillero, adarga antigua, rocí flaco hidalgo corredor.",
+      "timestamp": [
+       0,
+       11.12
+      ]
+     },
+     "lastChunk": {
+      "text": "En un lugar de la mancha, de cuyo nombre no quiero acordarme, no a mucho tiempo que vivía un hidalgo de los de lanza en astillero, adarga antigua, rocí flaco hidalgo corredor.",
+      "timestamp": [
+       0,
+       11.12
+      ]
+     },
+     "warm": {
+      "ms": 232,
+      "rtf": 0.0208,
+      "dispatches": 1279
+     },
+     "wer": 0.1212
+    },
+    {
+     "clip": "long.wav",
+     "seconds": 190.22,
+     "cold": {
+      "ms": 5069,
+      "rtf": 0.0266,
+      "dispatches": 5116
+     },
+     "text": "Fourscore and seven years ago, our fathers brought forth on this continent, a new nation, conceived in liberty, and dedicated to the proposition that all men are created equal. Now we are engaged in a great civil war, testing whether that nation, or any nation so conceived and so dedicated, can long endure. We are met on a great battlefield of that war, we have come to dedicate a portion of that field as a final resting place for those who here gave their lives that that nation might live. It is altogether fitting and proper that we should do this, but, in a larger sense, we cannot dedicate, we cannot consecrate, we cannot hallow this ground. The brave men, living and dead, who struggled here, have consecrated it, far above our poor power to add or detract, the world will little note, nor long remember what we say here, but it can never forget what they did here. We the people of the United States, in order to form a more perfect union, establish justice, ensure domestic tranquility, provide for the common defense, promote the general welfare, and secure the blessings of liberty to ourselves and our posterity, do ordain and establish this constitution for the United States of America, when in the course of human events, it becomes necessary for one people to dissolve the political bands which have connected them with another, and to assume among the powers of the earth, the separate and equal station to which the laws of nature and of nature's God entitle them, a decent respect to the opinions of mankind requires that they should declare the causes which impel them to the separation. We hold these truths to be self-evident, that all men are created equal, that they are endowed by their Creator with certain unalienable rights, that among these are life, liberty and the pursuit of happiness, that to secure these rights, governments are instituted among men, deriving their just powers from the consent of the governed. Fondly do we hope, fervently do we pray, that this mighty scourge of war may speedily pass away, with malice toward none, with charity for all, with firmness in the right as God gives us to see the right, let us strive on to finish the work we are in, to bind up the nation's wounds, to care for him who shall have borne the battle and for his widow and his orphan, to do all which may achieve and cherish a just and lasting peace among ourselves and with all nations, a well-regulated public library, being necessary to the education of a free people, shall be open to every reader, and the records it keeps shall be kept no longer than its work requires. Congress shall make no law respecting an establishment of religion, or prohibiting the free exercise thereof, or abridging the freedom of speech, or of the press, or the right of the people peaceably to assemble, and to petition the government for a redress of grievances, it is for us the living, rather, to be dedicated here to the unfinished work which they who fought here have thus far so nobly advanced. It is rather for us to be here dedicated to the great task remaining before us, that from these honor dead we take increased devotion to that cause for which they gave the last full measure of devotion, that we here highly resolve that these dead shall not have died in vain, that this nation, under God, shall have a new birth of freedom, and that government of the people, by the people, for the people, shall not perish from the earth.",
+     "chunks": 10,
+     "firstChunk": {
+      "text": "Fourscore and seven years ago, our fathers brought forth on this continent, a new nation, conceived in liberty, and dedicated to the proposition that all men are created equal.",
+      "timestamp": [
+       0,
+       9.76
+      ]
+     },
+     "lastChunk": {
+      "text": "It is rather for us to be here dedicated to the great task remaining before us, that from these honor dead we take increased devotion to that cause for which they gave the last full measure of devotion, that we here highly resolve that these dead shall not have died in vain, that this nation, under God, shall have a new birth of freedom, and that government of the people, by the people, for the people, shall not perish from the earth.",
+      "timestamp": [
+       166.96,
+       189.84
+      ]
+     },
+     "warm": {
+      "ms": 5165,
+      "rtf": 0.0272,
+      "dispatches": 5116
+     },
+     "wer": 0.0209
+    }
+   ],
+   "refused": [],
+   "pair": "fp16-int8",
+   "bytes": 1257264588,
+   "heapBefore": 2025812,
+   "heapAfter": 1349003443
+  },
+  {
+   "encoder": "encoder-model.int8.onnx",
+   "decoder": "decoder_joint-model.int8.onnx",
+   "backend": "webgpu-hybrid",
+   "ort": "1.31.0-dev.20260911-2a43ec07e",
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "f16": true
+   },
+   "read_ms": 326,
+   "load_ms": 1593,
+   "clips": [
+    {
+     "clip": "gettysburg.wav",
+     "seconds": 30.07,
+     "cold": {
+      "ms": 10950,
+      "rtf": 0.3641,
+      "dispatches": 1969
+     },
+     "text": "Four score and seven years ago our fathers brought forth on this continent a new nation, conceived in liberty, and dedicated to the proposition that all men are created equal, now we are engaged in a great civil war, testing whether that nation, or any nation so conceived and so dedicated, can long endure. We are met on a great battlefield of that war, we have come to dedicate a portion of that field, as a final resting place for those who here gave their lives that that nation might live. It is altogether fitting and proper that we should do this.",
+     "chunks": 3,
+     "firstChunk": {
+      "text": "Four score and seven years ago our fathers brought forth on this continent a new nation, conceived in liberty, and dedicated to the proposition that all men are created equal, now we are engaged in a great civil war, testing whether that nation, or any nation so conceived and so dedicated, can long endure.",
+      "timestamp": [
+       0,
+       17.6
+      ]
+     },
+     "lastChunk": {
+      "text": "It is altogether fitting and proper that we should do this.",
+      "timestamp": [
+       27.12,
+       29.84
+      ]
+     },
+     "warm": {
+      "ms": 11486,
+      "rtf": 0.382,
+      "dispatches": 1969
+     },
+     "wer": 0.0194
+    },
+    {
+     "clip": "spanish.wav",
+     "seconds": 11.19,
+     "cold": {
+      "ms": 4454,
+      "rtf": 0.3981,
+      "dispatches": 1969
+     },
+     "text": "En un lugar de la mancha, de cuyo no quiero acordarme, no ha mucho tiempo que vivía un hidalgo de los de lanza en astillero, adarga antigua, rosín flaco hidalgo corredor.",
+     "chunks": 1,
+     "firstChunk": {
+      "text": "En un lugar de la mancha, de cuyo no quiero acordarme, no ha mucho tiempo que vivía un hidalgo de los de lanza en astillero, adarga antigua, rosín flaco hidalgo corredor.",
+      "timestamp": [
+       0,
+       11.12
+      ]
+     },
+     "lastChunk": {
+      "text": "En un lugar de la mancha, de cuyo no quiero acordarme, no ha mucho tiempo que vivía un hidalgo de los de lanza en astillero, adarga antigua, rosín flaco hidalgo corredor.",
+      "timestamp": [
+       0,
+       11.12
+      ]
+     },
+     "warm": {
+      "ms": 4327,
+      "rtf": 0.3867,
+      "dispatches": 1969
+     },
+     "wer": 0.1212
+    },
+    {
+     "clip": "long.wav",
+     "seconds": 190.22,
+     "cold": {
+      "ms": 95685,
+      "rtf": 0.503,
+      "dispatches": 5907
+     },
+     "text": "Four score and seven years ago our fathers brought forth on this continent a new nation, conceived in liberty, and dedicated to the proposition that all men are created equal. Now we are engaged in a great civil war, testing whether that nation, or any nation so conceived and so dedicated, can long endure. We are met on a great battlefield of that war, we have come to dedicate a portion of that field, as a final resting place for those who here gave their lives that that nation might live. It is altogether fitting and proper that we should do this, but, in a larger sense, we can not dedicate, we can not consecrate, we can not hallow this ground, the brave men, living and dead, who struggled here, have consecrated it, far above our poor power to add or detract, the world will little note, nor long remember what we say here, but it can never forget what they did here, we the people of the United States, in order to form a more perfect union, establish justice, ensure domestic tranquility, provide for the common defense, promote the general welfare, and secure the blessings of liberty to ourselves and our posterity, do ordain and establish this constitution for the United States of America, when in the course of human events, it becomes necessary for one people to dissolve the political bands which have connected them with another, and to assume among the powers of the earth, the separate and equal station to which the laws of nature and of nature's God entitled them, a decent respect to the opinions of mankind requires that they should declare the causes which impel them to the separation. We hold these truths to be self-evident, that all men are created equal, that they are endowed by their creator with certain unalienable rights, that among these are life, liberty, and the pursuit of happiness, that to secure these rights, governments are instituted among men, deriving their just powers from the consent of the governed. Fondly do we hope, fervently do we pray, that this mighty scourge of war may speedily pass away, with malice toward none, with charity for all, with firmness in the right as God gives us to see the right, let us strive on to finish the work we are in, to bind up the nation's wounds, to care for him who shall have borne the battle and for his widow and his orphan, to do all which may achieve and cherish a just and lasting peace among ourselves and with all nations, a well-regulated public library, being necessary to the education of a free people, shall be open to every reader, and the records it keeps shall be kept no longer than its work requires. Congress shall make no law respecting an establishment of religion, or prohibiting the free exercise thereof, or abridging the freedom of speech, or of the press, or the right of the people peaceably to assemble, and to petition the government for a redress of grievances, it is for us the living, rather, to be dedicated here to the unfinished work which they who fought here have thus far so nobly advanced, it is rather for us to be here dedicated to the great task remaining before us, that from these honor dead we take increased devotion to that cause for which they gave the last full measure of devotion, that we here highly resolve that these dead shall not have died in vain, that this nation, under God, shall have a new birth of freedom, and that government of the people, by the people, for the people shall not perish from the earth.",
+     "chunks": 7,
+     "firstChunk": {
+      "text": "Four score and seven years ago our fathers brought forth on this continent a new nation, conceived in liberty, and dedicated to the proposition that all men are created equal.",
+      "timestamp": [
+       0,
+       9.76
+      ]
+     },
+     "lastChunk": {
+      "text": "Congress shall make no law respecting an establishment of religion, or prohibiting the free exercise thereof, or abridging the freedom of speech, or of the press, or the right of the people peaceably to assemble, and to petition the government for a redress of grievances, it is for us the living, rather, to be dedicated here to the unfinished work which they who fought here have thus far so nobly advanced, it is rather for us to be here dedicated to the great task remaining before us, that from these honor dead we take increased devotion to that cause for which they gave the last full measure of devotion, that we here highly resolve that these dead shall not have died in vain, that this nation, under God, shall have a new birth of freedom, and that government of the people, by the people, for the people shall not perish from the earth.",
+      "timestamp": [
+       144.56,
+       190.08
+      ]
+     },
+     "warm": {
+      "ms": 95909,
+      "rtf": 0.5042,
+      "dispatches": 5907
+     },
+     "wer": 0.0096
+    }
+   ],
+   "refused": [],
+   "pair": "int8-int8",
+   "bytes": 670488135,
+   "heapBefore": 2025812,
+   "heapAfter": 829756462
+  },
+  {
+   "encoder": "encoder-model.fp16.onnx",
+   "decoder": "decoder_joint-model.fp16.onnx",
+   "backend": "webgpu-hybrid",
+   "ort": "1.31.0-dev.20260911-2a43ec07e",
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "f16": true
+   },
+   "read_ms": 506,
+   "load_ms": 1438,
+   "clips": [
+    {
+     "clip": "gettysburg.wav",
+     "seconds": 30.07,
+     "cold": {
+      "ms": 389,
+      "rtf": 0.0129,
+      "dispatches": 1279
+     },
+     "text": "Fourscore and seven years ago our fathers brought forth on this continent, a new nation, conceived in liberty, and dedicated to the proposition that all men are created equal. Now we are engaged in a great civil war, testing whether that nation, or any nation so conceived and so dedicated, can long endure. We are met on a great battlefield of that war, we have come to dedicate a portion of that field, as a final resting place for those who here gave their lives that that nation might live. It is altogether fitting and proper that we should do this.",
+     "chunks": 4,
+     "firstChunk": {
+      "text": "Fourscore and seven years ago our fathers brought forth on this continent, a new nation, conceived in liberty, and dedicated to the proposition that all men are created equal.",
+      "timestamp": [
+       0,
+       9.76
+      ]
+     },
+     "lastChunk": {
+      "text": "It is altogether fitting and proper that we should do this.",
+      "timestamp": [
+       27.12,
+       29.68
+      ]
+     },
+     "warm": {
+      "ms": 331,
+      "rtf": 0.011,
+      "dispatches": 1279
+     },
+     "wer": 0.0388
+    },
+    {
+     "clip": "spanish.wav",
+     "seconds": 11.19,
+     "cold": {
+      "ms": 146,
+      "rtf": 0.013,
+      "dispatches": 1279
+     },
+     "text": "En un lugar de la mancha, de cuyo nombre no quiero acordarme, no a mucho tiempo que vivía un hidalgo de los de lanza en astillero, adarga antigua, rocí flaco hidalgo corredor.",
+     "chunks": 1,
+     "firstChunk": {
+      "text": "En un lugar de la mancha, de cuyo nombre no quiero acordarme, no a mucho tiempo que vivía un hidalgo de los de lanza en astillero, adarga antigua, rocí flaco hidalgo corredor.",
+      "timestamp": [
+       0,
+       11.12
+      ]
+     },
+     "lastChunk": {
+      "text": "En un lugar de la mancha, de cuyo nombre no quiero acordarme, no a mucho tiempo que vivía un hidalgo de los de lanza en astillero, adarga antigua, rocí flaco hidalgo corredor.",
+      "timestamp": [
+       0,
+       11.12
+      ]
+     },
+     "warm": {
+      "ms": 142,
+      "rtf": 0.0127,
+      "dispatches": 1279
+     },
+     "wer": 0.1212
+    },
+    {
+     "clip": "long.wav",
+     "seconds": 190.22,
+     "cold": {
+      "ms": 2603,
+      "rtf": 0.0137,
+      "dispatches": 3837
+     },
+     "text": "Fourscore and seven years ago, our fathers brought forth on this continent, a new nation, conceived in liberty, and dedicated to the proposition that all men are created equal. Now we are engaged in a great civil war, testing whether that nation, or any nation so conceived and so dedicated, can long endure. We are met on a great battlefield of that war, we have come to dedicate a portion of that field as a final resting place for those who here gave their lives that that nation might live. It is altogether fitting and proper that we should do this, but, in a larger sense, we cannot dedicate, we cannot consecrate, we cannot hallow this ground. The brave men, living and dead, who struggled here, have consecrated it, far above our poor power to add or detract, the world will little note, nor long remember what we say here, but it can never forget what they did here. We, the people of the United States, in order to form a more perfect union, establish justice, ensure domestic tranquility, provide for the common defense, promote the general welfare, and secure the blessings of liberty to ourselves and our posterity, do ordain and establish this constitution for the United States of America, when in the course of human events, it becomes necessary for one people to dissolve the political bands which have connected them with another, and to assume among the powers of the earth, the separate and equal station to which the laws of nature and of nature's God entitle them, a decent respect to the opinions of mankind requires that they should declare the causes which impel them to the separation. We hold these truths to be self-evident, that all men are created equal, that they are endowed by their Creator with certain unalienable rights, that among these are life, liberty and the pursuit of happiness, that to secure these rights, governments are instituted among men, deriving their just powers from the consent of the governed. Fondly do we hope, fervently do we pray, that this mighty scourge of war may speedily pass away, with malice toward none, with charity for all, with firmness in the right as God gives us to see the right, let us strive on to finish the work we are in, to bind up the nation's wounds, to care for him who shall have borne the battle and for his widow and his orphan, to do all which may achieve and cherish a just and lasting peace among ourselves and with all nations, a well-regulated public library, being necessary to the education of a free people, shall be open to every reader, and the records it keeps shall be kept no longer than its work requires. Congress shall make no law respecting an establishment of religion, or prohibiting the free exercise thereof, or abridging the freedom of speech, or of the press, or the right of the people peaceably to assemble, and to petition the government for a redress of grievances, it is for us the living, rather, to be dedicated here to the unfinished work which they who fought here have thus far so nobly advanced. It is rather for us to be here dedicated to the great task remaining before us, that from these honored dead we take increased devotion to that cause for which they gave the last full measure of devotion, that we here highly resolve that these dead shall not have died in vain, that this nation, under God, shall have a new birth of freedom, and that government of the people, by the people, for the people, shall not perish from the earth.",
+     "chunks": 10,
+     "firstChunk": {
+      "text": "Fourscore and seven years ago, our fathers brought forth on this continent, a new nation, conceived in liberty, and dedicated to the proposition that all men are created equal.",
+      "timestamp": [
+       0,
+       9.76
+      ]
+     },
+     "lastChunk": {
+      "text": "It is rather for us to be here dedicated to the great task remaining before us, that from these honored dead we take increased devotion to that cause for which they gave the last full measure of devotion, that we here highly resolve that these dead shall not have died in vain, that this nation, under God, shall have a new birth of freedom, and that government of the people, by the people, for the people, shall not perish from the earth.",
+      "timestamp": [
+       166.96,
+       190
+      ]
+     },
+     "warm": {
+      "ms": 2608,
+      "rtf": 0.0137,
+      "dispatches": 3837
+     },
+     "wer": 0.0193
+    }
+   ],
+   "refused": [],
+   "pair": "fp16-fp16",
+   "bytes": 1275328724,
+   "heapBefore": 2025812,
+   "heapAfter": 1352791199
+  }
+ ]
+}
