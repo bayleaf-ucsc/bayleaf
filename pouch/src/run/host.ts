@@ -93,14 +93,18 @@ export async function applyChanges(fs: RunFs, changes: Change[], { atomic = fals
   const current = async (path: string) => ((await fs.exists(path)) ? sha256(new Uint8Array(await fs.readFileBuffer(path))) : null);
   const checked = [];
   for (const c of changes) {
-    const now = await current(c.path);
+    // A refused check (deleted between exists and read, a dropped mount) is a
+    // conflict for that file, so the run still reports a result.
+    let now: string | null = null, error: string | undefined;
+    try { now = await current(c.path); } catch (e) { error = e instanceof Error ? e.message : String(e); }
     let conflict: string | null = null;
-    if (c.op === 'create' && now !== null) conflict = 'file was created since the snapshot';
+    if (error !== undefined) conflict = 'could not check the file';
+    else if (c.op === 'create' && now !== null) conflict = 'file was created since the snapshot';
     else if (c.op !== 'create' && now === null) conflict = 'file was deleted since the snapshot';
     else if (c.op !== 'create' && now !== c.baseHash) conflict = 'file changed since the snapshot';
-    checked.push({ c, conflict });
+    checked.push({ c, conflict, error });
   }
-  const conflicts: ChangeConflict[] = checked.flatMap(({ c, conflict }) => (conflict ? [{ path: c.path, op: c.op, reason: conflict }] : []));
+  const conflicts: ChangeConflict[] = checked.flatMap(({ c, conflict, error }) => (conflict ? [{ path: c.path, op: c.op, reason: conflict, ...(error === undefined ? {} : { error }) }] : []));
   const applied: AppliedChange[] = [];
   if (atomic && conflicts.length) return { applied, conflicts };
   // Why check-then-write is not a transaction: another writer can still slip

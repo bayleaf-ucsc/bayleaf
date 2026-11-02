@@ -1,11 +1,13 @@
 // 9P2000: codec round-trips, and a client mounted over a MessageChannel to a
 // server exporting a namespace subtree (walk, create, read, write, remove,
-// stat, wstat, readdir, errors, flush, commit hook, 1k-file listing).
+// stat, wstat, readdir, errors, flush, commit hook, 1k-file listing), and
+// the run write-back that goes over it.
 // Run: node test/9p-node.mjs
 import assert from 'node:assert/strict';
 import { InMemoryFs, Bash } from 'just-bash';
 import { Namespace, codeOf } from '../src/ns/namespace.ts';
 import { encode, decode, packStats, unpackStats, serve, Client, NinepFs, DMDIR, QTDIR, NOTAG } from '../src/ns/9p.ts';
+import { applyChanges, MemFS } from '../src/run/host.ts';
 
 let passed = 0;
 async function test(name, fn) { await fn(); passed++; console.log('ok', name); }
@@ -163,6 +165,15 @@ await test('1k-file listing and startup over 9P', async () => {
   for (let i = 0; i < 100; i++) await remote.readFile(`/big/f${i}.txt`);
   console.log(`   connect ${connect.toFixed(1)} ms; list 1000 ${list.toFixed(1)} ms; 100 small reads ${(performance.now() - t).toFixed(1)} ms`);
   close();
+});
+
+await test('run write-back: a file that cannot be checked is a conflict, not a lost result', async () => {
+  const fs = new MemFS({ 'a.txt': 'x' }), read = fs.readFileBuffer.bind(fs);
+  // Deleted between exists() and the read, as over a live 9P mount.
+  fs.readFileBuffer = async (p) => { if (p.endsWith('a.txt')) throw new Error('ENOENT: a.txt'); return read(p); };
+  const r = await applyChanges(fs, [{ op: 'modify', path: '/a.txt', baseHash: 'h', bytes: new Uint8Array([1]) }, { op: 'create', path: '/c.txt', bytes: new Uint8Array([2]) }]);
+  assert.deepEqual(r.conflicts, [{ path: '/a.txt', op: 'modify', reason: 'could not check the file', error: 'ENOENT: a.txt' }]);
+  assert.deepEqual(r.applied, [{ path: '/c.txt', op: 'create' }]);
 });
 
 console.log(`9p-node: ${passed} passed`);
