@@ -74,7 +74,8 @@ export async function term(page, cmd, T = { timeout: 60000 }) {
   const n = await page.$$eval('#term-log .term-block', (l) => l.length);
   await page.fill('#term-input', cmd); await page.press('#term-input', 'Enter');
   await page.waitForFunction((n) => { const b = document.querySelectorAll('#term-log .term-block'); return b.length > n && !b[b.length - 1].querySelector('.term-live'); }, n, T);
-  return page.$eval('#term-log .term-block:last-child', (b) => b.textContent);
+  // The output only: the echoed command would run into the first line of it.
+  return page.$eval('#term-log .term-block:last-child', (b) => [...b.querySelectorAll('pre, .term-exit')].map((x) => x.textContent).join('\n'));
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
