@@ -126,7 +126,7 @@ export function localApi(engine: LocalEngine, { onHint }: { onHint?: (kind: Loca
           history: toLocalMessages(context.messages), tools: withTools ? TOOLS : [], budget: BUDGET,
           // A plain request (a title) may ask for fewer new tokens; the tool recipe keeps MAX_NEW.
           maxNew: withTools ? MAX_NEW : Math.min(MAX_NEW, options.maxTokens ?? MAX_NEW) }, { onDelta, signal: options.signal });
-      } catch (e) { return fail(options.signal?.aborted ? 'aborted' : 'error', String((e as Error)?.message ?? e)); }
+      } catch (e) { return fail(options.signal?.aborted ? 'aborted' : 'error', String(typeof e === 'object' && e && 'message' in e ? e.message ?? e : e)); }
       if (r.trimmed) onHint?.('context');
       if (r.over) { onHint?.('context'); return fail('error', `This message alone is longer than the Transformers.js model's ${BUDGET}-token context (${r.input_tokens} tokens). Shorten it, or switch to BayLeaf Sealed.`); }
       msg.usage = { ...zero(), input: r.input_tokens, output: r.output_tokens, totalTokens: r.input_tokens + r.output_tokens };

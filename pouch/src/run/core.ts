@@ -13,7 +13,8 @@ export interface SnapshotFile { path: string; bytes: Uint8Array; hash?: string }
 export interface RunRequest { files?: SnapshotFile[]; specs?: string[]; code: string; filename?: string; cwd?: string; args?: string[]; stdin?: string; limits?: Partial<RunLimits> }
 export type RunStatus = 'ok' | 'error' | 'timeout' | 'oom' | 'cancelled' | 'exit';
 export type ChangeOp = 'create' | 'modify' | 'delete';
-export interface Change { path: string; op: ChangeOp; baseHash: string | null; bytes?: Uint8Array }
+// A delete carries no bytes; a create or modify always does.
+export type Change = { path: string; baseHash: string | null } & ({ op: 'delete'; bytes?: undefined } | { op: 'create' | 'modify'; bytes: Uint8Array });
 export interface AppliedChange { path: string; op: ChangeOp }
 export interface ChangeConflict { path: string; op: ChangeOp; reason: string; error?: string }
 // phase 'load': the snapshot could not be read; applied/conflicts: what a 9P write-back did.
@@ -36,7 +37,9 @@ const enc = new TextEncoder();
 const dec = new TextDecoder();
 
 export async function sha256(bytes: Uint8Array): Promise<string> {
-  const d = await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>); // never shared memory here
+  // digest refuses shared memory; a view over a SharedArrayBuffer is copied out first.
+  const view = bytes.buffer instanceof ArrayBuffer ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength) : bytes.slice();
+  const d = await crypto.subtle.digest('SHA-256', view);
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
@@ -62,8 +65,7 @@ export function validate(req: RunRequest, limits: RunLimits) {
 
 // Bounded text sink: keeps the first maxBytes (UTF-8) across stdout+stderr.
 function sink(maxBytes: number) {
-  const s = { stdout: '', stderr: '', used: 0, truncated: false } as Sink;
-  s.write = (stream, text) => {
+  const s: Sink = { stdout: '', stderr: '', used: 0, truncated: false, write(stream, text) {
     if (s.truncated) return;
     const b = enc.encode(text);
     if (s.used + b.length > maxBytes) {
@@ -71,7 +73,7 @@ function sink(maxBytes: number) {
       s.used = maxBytes; s.truncated = true; return;
     }
     s[stream] += text; s.used += b.length;
-  };
+  } };
   return s;
 }
 
@@ -114,14 +116,14 @@ export async function runRequest(quickjs: QuickJSWASMModule, req: RunRequest, { 
   });
   const vm = rt.newContext();
   // changes and ms are filled in once the run is over.
-  const result = (status: RunStatus, message: string | null) => ({ status, exitCode, message, stdout: out.stdout, stderr: out.stderr, truncated: out.truncated }) as RunResult;
+  const result = (status: RunStatus, message: string | null) => ({ status, exitCode, message, stdout: out.stdout, stderr: out.stderr, truncated: out.truncated });
 
   try {
     install(vm, { out, work, limits, req, exit: (code: number) => { exitCode = code | 0; reason = 'exit'; } });
     let r: DisposableResult<QuickJSHandle, QuickJSHandle> | ExecutePendingJobsResult = vm.evalCode(req.code, req.filename ?? '/main.js', { type: 'global' });
-    // Settle promise jobs (async functions, .then) so their output lands too.
-    if (!r.error) { r.value.dispose(); r = rt.executePendingJobs(); if (!r.error) (r.value as { dispose?(): void })?.dispose?.(); } // value is a job count: a no-op
-    let res: RunResult;
+    // Settle promise jobs (async functions, .then) so their output lands too; their result is a job count.
+    if (!r.error) { r.value.dispose(); r = rt.executePendingJobs(); }
+    let res: ReturnType<typeof result>;
     if (r.error) {
       const err = vm.dump(r.error); r.error.dispose();
       const message = describe(err);
@@ -131,14 +133,14 @@ export async function runRequest(quickjs: QuickJSWASMModule, req: RunRequest, { 
       else { exitCode = 1; res = result('error', message); }
     } else if (reason === 'exit') res = result('exit', null);
     else res = result('ok', null);
-    res.changes = await diff(initial, work);
-    res.ms = Math.round(performance.now() - t0);
-    return res;
+    const changes = await diff(initial, work);
+    return { ...res, changes, ms: Math.round(performance.now() - t0) };
   } catch (e) {
     // A host-side throw (e.g. wasm trap) means the engine state is suspect:
     // report it and propose nothing.
     exitCode = 1;
-    return { ...result(/memory/i.test((e as Error).message) ? 'oom' : 'error', `engine: ${(e as Error).message}`), changes: [], ms: Math.round(performance.now() - t0) };
+    const message = e instanceof Error ? e.message : String(e);
+    return { ...result(/memory/i.test(message) ? 'oom' : 'error', `engine: ${message}`), changes: [], ms: Math.round(performance.now() - t0) };
   } finally {
     // After a stack overflow or OOM, QuickJS can leak objects and fail its
     // free-time assertion (an emscripten abort). The result is already
@@ -171,12 +173,13 @@ function install(vm: QuickJSContext, { out, work, limits, req, exit }: Guest) {
   const cwd = normalize(req.cwd ?? '/');
   const res = (p: string) => normalize(String(p).startsWith('/') ? p : cwd + '/' + p);
   const need = (p: string) => { const k = res(p); if (!work.has(k)) throw new Error(`ENOENT: ${k}`); return k; };
+  const read = (p: string) => { const k = res(p), b = work.get(k); if (!b) throw new Error(`ENOENT: ${k}`); return b; };
 
   def('out', (xs: unknown[]) => out.write('stdout', text(xs)));
   def('err', (xs: unknown[]) => out.write('stderr', text(xs)));
   def('exit', (code?: number) => exit(code ?? 0));
-  def('readFile', (p: string) => dec.decode(work.get(need(p))));
-  def('readBytes', (p: string) => work.get(need(p))!.slice().buffer); // a copy, never a view of host memory
+  def('readFile', (p: string) => dec.decode(read(p)));
+  def('readBytes', (p: string) => read(p).slice().buffer); // a copy, never a view of host memory
   def('writeFile', (p: string, data: string | number[]) => {
     const k = res(p);
     const bytes = typeof data === 'string' ? enc.encode(data) : new Uint8Array(data);

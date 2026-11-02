@@ -23,6 +23,7 @@ export interface RunPort {
   postMessage(msg: RunWorkerMessage, transfer?: Transferable[]): void;
 }
 
+const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const failed = (message: string): RunResult => ({ status: 'error', exitCode: 1, message, stdout: '', stderr: '', truncated: false, changes: [], ms: 0 });
 
 export async function serve(port: RunPort, variant: QuickJSSyncVariant, { lockdown = () => {} } = {}) {
@@ -38,19 +39,21 @@ export async function serve(port: RunPort, variant: QuickJSSyncVariant, { lockdo
     used = true;
     let result: RunResult | undefined, fs: RunNinepFs | null = null;
     try {
-      let request = msg!.request;
-      if (msg!.ns) {
-        fs = new NinepFs(await new Client(msg!.ns).connect());
+      let request = msg.request;
+      if (msg.ns) {
+        fs = new NinepFs(await new Client(msg.ns).connect());
         let snap: Awaited<ReturnType<typeof load>> | undefined;
-        try { snap = await load(fs, request.specs!, request.cwd!); }
-        catch (err) { result = { ...failed((err as Error).message), phase: 'load' }; }
+        try {
+          if (!request.specs || !request.cwd) throw new Error('a run over 9P needs specs and cwd');
+          snap = await load(fs, request.specs, request.cwd);
+        } catch (err) { result = { ...failed(messageOf(err)), phase: 'load' }; }
         if (snap) {
           port.postMessage({ type: 'loaded', files: snap.files.length, bytes: snap.bytes });
           request = { ...request, files: snap.files };
         }
       }
       if (!result) result = await runRequest(quickjs, request);
-    } catch (err) { result = failed(`rejected: ${(err as Error).message}`); }
+    } catch (err) { result = failed(`rejected: ${messageOf(err)}`); }
     if (fs && result.changes.length && !['timeout', 'oom', 'cancelled'].includes(result.status)) {
       port.postMessage({ type: 'ran' });
       const { applied, conflicts } = await writeBack(fs, result.changes);
