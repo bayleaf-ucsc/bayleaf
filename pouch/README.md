@@ -600,7 +600,7 @@ Subagent views and steering, with a gated fake model: `node test/subagent-browse
 Agent graphs: `node test/graphs-node.mjs` (routing, caps, join, cycles, detach) and
 `node test/graphs-browser.mjs` (G1-G12 in the page), both on the rule-based fake in
 `test/graph-fixture.js`; `test/graphs-sealed.mjs` is one live panel run (spends requests).
-Offline checks: `node test/{theme-node,composer-node,markdown-node,vfs-node,subagents-node,bayleaf-cli-node}.mjs`
+Offline checks: `node test/{theme-node,composer-node,markdown-node,openui-node,vfs-node,subagents-node,bayleaf-cli-node}.mjs`
 (run each file separately). Full-UI mocks and desktop/390px light/dark screenshots:
 `POUCH_OUT=/scratch/build node build.mjs`, then the same `POUCH_OUT` with
 `node test/composer-browser.mjs`. Set `PLAYWRIGHT_MODULE` to an installed Playwright ESM

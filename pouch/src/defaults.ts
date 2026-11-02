@@ -370,6 +370,50 @@ files to DuckDB, and COPY ... TO writes new files into /work.
   need the same tables.
 - Each command is a job; the first one after a page load takes about a second.
 `,
+  '/skills/ui-blocks/SKILL.md': `---
+name: ui-blocks
+description: Show tables, charts, stats, steps and cards in a reply with an openui-lang block. Read before writing one.
+---
+
+# UI blocks
+
+A fenced \`\`\`openui-lang block in a reply renders as native UI. Use one for
+data or structure the user would otherwise have to picture: values across
+items, comparisons, trends, steps, status. Keep explanations in markdown
+around it. Not for a few numbers, a short list or code.
+
+Syntax: one statement per line, \`name = Component(args)\`. The first line
+is \`root = Stack([...])\`. Arguments are positional, in the order below;
+optional ones (marked ?) can be left off the end. Strings in "double quotes",
+lists [a, b], objects {key: value}, numbers, true, false, null. A statement
+may use a name defined on a later line. Nothing else: no +, no $variables,
+no @functions.
+
+    root = Stack([note, chart])
+    note = Callout("Most trees were planted in **2019**.", "info")
+    chart = BarChart(["2018", "2019", "2020"], [Series("Trees", [4, 11, 6])], "trees")
+
+Components (Tone is "neutral", "info", "success", "warning" or "error"):
+- Stack(children), Row(children): items stacked, or side by side
+- Card(title, children); Details(title, children): collapsed until opened
+- Tabs([Tab(label, children), ...])
+- Text(markdown); Badge(label, tone?); Callout(markdown, tone?, title?)
+- KeyValue([{label: "Size", value: 12}, ...])
+- Table(columns, rows): columns ["A", "B"], rows [["x", 1], ["y", 2]]
+- Stat(label, value, delta?, tone?): one key number; delta like "+12%"
+- Progress(label, value, max?): max defaults to 100
+- Steps([{title, markdown?, status?}], direction?): status "done",
+  "current", "todo" or "blocked"; direction "column" or "row"
+- BarChart(labels, [Series(name, values)], unit?, whole?): categories;
+  whole true when one series is parts of a total
+- LineChart(labels, [Series(name, values)], unit?): values over time; null
+  marks a gap
+
+children is always a list, even of one: \`Tab("Trend", [chart])\`, not
+\`Tab("Trend", chart)\`. Card holds no Card. Each Series has one value per label.
+A unit is printed after each number: use a word ("USD", "trees"), not "$". If a part is wrong,
+Pouch drops it and lists the problem under "Program" below the block.
+`,
   '/skills/skill-authoring/SKILL.md': `---
 name: skill-authoring
 description: How to write a new Pouch skill. Read when the user asks to save a workflow, lesson or procedure for later sessions.

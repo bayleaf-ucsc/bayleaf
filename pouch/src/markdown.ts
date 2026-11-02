@@ -11,6 +11,7 @@ import { fromMarkdown } from 'mdast-util-from-markdown';
 import { gfm } from 'micromark-extension-gfm';
 import { gfmFromMarkdown } from 'mdast-util-gfm';
 import type { Nodes, Definition, Code, TableRow, TableCell } from 'mdast';
+import { renderUi } from './openui.ts';
 
 const childrenOf = (n: Nodes): Nodes[] => ('children' in n ? n.children : []);
 const SCHEME = /^[a-z][a-z\d+.-]*:/i;
@@ -71,7 +72,10 @@ export interface MarkdownContext {
 // o.inLink: no nested buttons, so bare paths inside link text stay text.
 // o.phrasing: inside a paragraph, heading or cell (inline context).
 interface NodeOptions { inLink?: boolean; phrasing?: boolean }
-export function renderMarkdown(text: string, ctx: MarkdownContext): Node[] {
+// ui: false inside a UI block's own markdown, so blocks do not nest.
+// inline: a single paragraph comes back as its contents (a card title).
+interface RenderOptions { ui?: boolean; inline?: boolean }
+export function renderMarkdown(text: string, ctx: MarkdownContext, ro: RenderOptions = {}): Node[] {
   const doc = ctx.doc ?? document;
   const tree = fromMarkdown(text, { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] });
   const defs = new Map<string, Definition>();
@@ -133,6 +137,20 @@ export function renderMarkdown(text: string, ctx: MarkdownContext): Node[] {
     });
     return el('div', 'code', el('div', 'code-head', el('span', null, n.lang ?? ''), copy), el('pre', null, code));
   }
+  // An openui-lang fence (openui.ts), with its program and what was dropped
+  // one click away; with nothing to show yet it stays a code block.
+  function uiBlock(n: Code) {
+    const ui = renderUi(n.value, {
+      doc,
+      md: (s) => renderMarkdown(s, ctx, { ui: false }),
+      inline: (s) => renderMarkdown(s, ctx, { ui: false, inline: true }),
+    });
+    if (!ui) return codeBlock(n);
+    const dropped = ui.errors.length ? `, ${ui.errors.length} problem${ui.errors.length === 1 ? '' : 's'}` : '';
+    ui.node.append(el('details', 'oui-source', el('summary', null, 'Program' + dropped),
+      ui.errors.length ? el('ul', 'oui-errors', ...ui.errors.map((e) => el('li', null, e))) : null, codeBlock(n)));
+    return ui.node;
+  }
 
   function node(n: Nodes, o: NodeOptions = {}): Node[] {
     switch (n.type) {
@@ -159,7 +177,7 @@ export function renderMarkdown(text: string, ctx: MarkdownContext): Node[] {
         li.append(...kids(n, o));
         return [li];
       }
-      case 'code': return [codeBlock(n)];
+      case 'code': return [ro.ui !== false && /^openui(-lang)?$/i.test(n.lang ?? '') ? uiBlock(n) : codeBlock(n)];
       // Raw HTML is shown, not interpreted: as a text run inline, a block otherwise.
       case 'html': return o.phrasing ? [txt(n.value)] : [el('p', 'raw', n.value)];
       case 'text': return o.inLink || !ctx.text ? [txt(n.value)] : ctx.text(n.value);
@@ -206,5 +224,6 @@ export function renderMarkdown(text: string, ctx: MarkdownContext): Node[] {
         return 'children' in n ? kids(n, o) : 'value' in n ? [txt(n.value)] : [];
     }
   }
-  return node(tree);
+  const only = tree.children.length === 1 ? tree.children[0] : null;
+  return ro.inline && only?.type === 'paragraph' ? kids(only, { phrasing: true }) : node(tree);
 }
