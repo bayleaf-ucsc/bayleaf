@@ -1216,6 +1216,14 @@ the same in a tab. Installed or not, the hosted page keeps an offline copy of it
   names both. Nothing changes until you press Update, which fetches the new files,
   checks them against the SHA256SUMS just fetched, and swaps the cache and reloads only
   if all match; otherwise it says which file did not match and keeps the running copy.
+  The notice adds one line on the installed add-ons ("This update changes pdf.js: 1.2 MiB
+  to fetch; LFM3 1.7B unchanged."; an asked one adds "(asks again)", since a changed pin is
+  a new install needing approval). It reads only what the published `SHA256SUMS` lists:
+  each `runtime/<group>/manifest.<hex16>.json` path (a new name means new parts), fetched
+  from this origin and checked against its listed hash, then compared with the parts kept
+  here. **Limit:** gateway pins (LFM3's weights) live in the new `pouch.html`, which the
+  notice does not fetch, so for a model only its code from this origin is compared and the
+  line says so; a weights change shows after updating. Tests: `node test/addons-sweep-node.mjs`.
 - **The trust panel says which build runs:** where it was loaded from, the pinned hash,
   the published hash when last checked, whether the served `sw.js` matches the hash
   built into this page, whether Pouch runs installed, and whether storage is persistent
@@ -1295,6 +1303,17 @@ this page was built with, kept outside the Workspace, removable at any time.
   model rows also Install from folder / Install from files. **Make available offline**
   shows the total still to fetch; the footer shows the site's storage use. Erase all
   removes every add-on.
+- **Stale-part sweep** (`sweep` in `src/addons.ts`). Parts are content-addressed, so a new
+  build reuses unchanged ones, but a changed pin leaves the old ones behind. The sweep
+  deletes from `pouch-runtime` and `pouch-models` exactly the keys no registry entry of the
+  running build names: parts not in an entry's kept manifest, older manifests, directories
+  no entry has, and other revisions' chunks. It never touches a current pin's keys, keeps
+  every part under an entry's directory until that entry's new manifest is kept (they may
+  be reused), skips a store whose backend cannot say what it owns, and does nothing while
+  any install runs. It runs 4 s after boot and from Settings > Add-ons, whose footer
+  offers "Free N MiB from older versions" when a dry run finds something. A build that
+  leaves an add-on out (`--no-models`) therefore frees that add-on's files too.
+  Tests: `node test/addons-sweep-node.mjs` (a fake Cache Storage), `test/addons-browser.mjs`.
 - **Tests**: `node test/addons-node.mjs` (the real registry built from `dist/`'s pins, the
   tier rule, the strings, the command, ensure, hidden parts, device refusal, install
   --all), `node test/addons-browser.mjs` (an asked pdf.js in a real page: the tool's

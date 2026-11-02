@@ -27,6 +27,8 @@ kind `install`, jobs' engines renamed to workers. Follow-ups:
   as "not in this build"); `addons info` still reads the catalog for a pinned model.
 - Quiet installs run without a session (`sid` unset), so an agent's own /task view does
   not list them; the command's stderr and the job's note carry the line instead.
+- The update notice's add-ons line is tested in node only (`test/addons-sweep-node.mjs`);
+  `test/pwa-browser.mjs`'s releases carry no add-on parts, so it sees an empty line.
 - The real-model journeys (`test/batchH-real.mjs`, `test/journeys/t17-local.mjs`) were
   updated for the new selectors but not rerun (they need the real 1.1 GB model and a GPU).
 
