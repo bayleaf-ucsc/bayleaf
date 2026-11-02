@@ -154,14 +154,14 @@
       "distribution": {
         "basis": "CC-BY-4.0 (NVIDIA's model card and this repository's card) permits redistribution with attribution, a link to the license and an indication of changes. ATTRIBUTION.md, served with the weights alongside README.md, states the derivation: FP16 conversion with ONNX Runtime cast fixes of istupakov/parakeet-tdt-0.6b-v3-onnx at 8f23f0c0, itself an ONNX export of nvidia/parakeet-tdt-0.6b-v3. The repository has no license text file; license.url is the legal code.",
         "reviewed": "2026-11-01",
-        "decision": "Proposed for BayLeaf Pouch speech-to-text (branch pouch-parakeet): a permissive license, pending Adam's approval and an API deploy. Pouch shows the attribution (NVIDIA, CC-BY-4.0, the conversion chain) wherever it offers the model."
+        "decision": "Adam approved Parakeet for BayLeaf Pouch speech-to-text on 2026-11-02 (a permissive license); deployed to this gateway the same day. Pouch shows the attribution (NVIDIA, CC-BY-4.0, the conversion chain) wherever it offers the model."
       },
       "qualification": [
         {
           "client": "BayLeaf Pouch",
           "runtime": "parakeet.js 1.4.4, onnxruntime-web 1.31.0-dev; encoder fp16 on WebGPU, decoder fp16 on WASM",
-          "status": "candidate",
-          "evidence": "https://github.com/bayleaf-ucsc/bayleaf/blob/pouch-parakeet/pouch/experiments/parakeet-webgpu/README.md"
+          "status": "ships",
+          "evidence": "https://github.com/bayleaf-ucsc/bayleaf/blob/main/pouch/experiments/parakeet-webgpu/README.md"
         }
       ],
       "files": [
