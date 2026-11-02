@@ -6,7 +6,7 @@
     "target": "es2022",
     "module": "preserve",
     "moduleResolution": "bundler",
-    "lib": ["es2023", "dom", "dom.iterable"],
+    "lib": ["es2023", "dom", "dom.iterable", "dom.asynciterable"],
     "types": [],
     "noEmit": true,
     "allowImportingTsExtensions": true,

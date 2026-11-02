@@ -57,8 +57,7 @@ export async function eraseEverything() {
   })));
   try {
     const root = await navigator.storage.getDirectory();
-    // keys() is in the File System spec but not yet in TypeScript's DOM lib.
-    for await (const name of (root as FileSystemDirectoryHandle & { keys(): AsyncIterable<string> }).keys()) await root.removeEntry(name, { recursive: true });
+    for await (const name of root.keys()) await root.removeEntry(name, { recursive: true });
   } catch { /* no OPFS in this browser */ }
   try { localStorage.clear(); sessionStorage.clear(); } catch {}
   try { for (const k of await caches.keys()) await caches.delete(k); } catch {}

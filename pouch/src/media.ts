@@ -33,13 +33,13 @@ import type { defineCommand as DefineCommand, ResolvedCommandContext, IFileSyste
 import { coded } from './pdf.ts';
 import type { EngineOptions, JobHandle, JobOutcome, Note, Pending, RunOptions, ServiceOptions, WhoOf } from './pdf.ts';
 import type { EngineDef } from './jobs.ts';
-import type { PartsPin, RuntimeFiles } from './assets.ts';
+import type { RuntimeFiles } from './assets.ts';
 import type { AudioOut, MediaAction, MediaCallBody, MediaInput, MediaJob, MediaProbe, MediaReply, MediaResult, MediaResultOf, ProbeStream } from './media/protocol.ts';
 export type { MediaJob, MediaReply, MediaRequest, MediaResult } from './media/protocol.ts';
 
-export const LIBAV_RUNTIME = typeof POUCH_LIBAV_RUNTIME !== 'undefined' ? POUCH_LIBAV_RUNTIME as PartsPin : null; // eslint-disable-line no-undef
+export const LIBAV_RUNTIME = typeof POUCH_LIBAV_RUNTIME !== 'undefined' ? POUCH_LIBAV_RUNTIME : null; // eslint-disable-line no-undef
 // The LGPL corresponding source (build-libav.mjs): never fetched by the page, named in help and NOTICE.
-export const LIBAV_SOURCE = typeof POUCH_LIBAV_SOURCE !== 'undefined' ? POUCH_LIBAV_SOURCE as PartsPin : null; // eslint-disable-line no-undef
+export const LIBAV_SOURCE = typeof POUCH_LIBAV_SOURCE !== 'undefined' ? POUCH_LIBAV_SOURCE : null; // eslint-disable-line no-undef
 
 // Caps, named so errors and the media skill can cite them.
 export const MAX_INPUT_BYTES = 256 * 2 ** 20;  // all inputs of one call together; refused before anything loads

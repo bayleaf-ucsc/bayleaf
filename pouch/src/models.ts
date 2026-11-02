@@ -12,10 +12,11 @@
 // One store for everyone: the Transformers.js engine (src/local/engine.ts), the
 // `models` command (src/models-cli.ts) and Settings' Download/Remove buttons.
 import { openStore, fillFile, fileState, verifiedFile, rangeSource, blobSource, dropFile, CHUNK, PARALLEL } from './assets.ts';
-import type { FetchImpl, FilePin, VerifiedBlob } from './assets.ts';
+import type { FetchImpl, VerifiedBlob } from './assets.ts';
+import type { FilePin, ModelPin } from './trust.ts';
 
 // A lock entry (models.lock.json).
-export interface ModelPin { id: string; label: string; repo: string; revision: string; license: string; files: FilePin[] }
+export type { ModelPin };
 export interface ModelStatus {
   id: string; label: string; total: number; bytes: number; complete: boolean; downloading: boolean; persistent: boolean;
   files: { name: string; bytes: number; kept: number; complete: boolean }[];

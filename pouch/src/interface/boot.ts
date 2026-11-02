@@ -14,7 +14,7 @@ import { why } from '../ns/control.ts';
 import { LOCAL, engine as localEngine, models as modelStore } from '../local/engine.ts';
 import type { App } from './app.ts';
 import type { ConversationId } from '@earendil-works/pi-durable';
-import type { AgentToolSpec, SessionId } from '../agent-types.ts';
+import type { SessionId } from '../agent-types.ts';
 import type { StoredWatch, Watch, Watches } from '../ns/watch.ts';
 import type { TrayRow } from '../composer.ts';
 
@@ -155,7 +155,7 @@ export function createBootRegion(app: App): BootRegion {
           ...app.sessionList.egressHooks,
           models: app.sessionList.modelService, modelsWho: app.sessionList.modelsWho, pdf: app.sessionList.pdfService, media: app.sessionList.mediaService,
           show: app.editing.show,
-        }))) as AgentToolSpec[], // execute's typed args against the agent's Record<string, unknown> (agent-types.ts)
+        }))),
         systemPrompt: () => systemPrompt(app.state.vfs),
         getClient: async () => app.connection.sealed(),
         onRequest: app.queues.countRequest,

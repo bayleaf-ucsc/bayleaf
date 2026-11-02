@@ -19,12 +19,11 @@
 // against the receipt recorded when the whole file matched its pin).
 import { Sha256 } from './sha256.ts';
 import type { Sha256State } from './sha256.ts';
+import type { FilePin, PartsPin } from './trust.ts';
 
 export type FetchImpl = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-// A pinned upstream file (a lock entry's file), or a manifest's file.
-export interface FilePin { name: string; bytes: number; sha256: string }
-// A build define naming a manifest of content-addressed parts.
-export interface PartsPin { dir: string; manifest: string; sha256: string; bytes?: number }
+// The pins live in the trust contract (both tsconfig projects type the build defines with them).
+export type { FilePin, PartsPin };
 interface Part { path: string; bytes: number; sha256: string }
 // role: what the file is to its runtime (build-models.mjs marks the 'wasm').
 export interface PartsManifest { files: (FilePin & { parts: Part[]; role?: string })[] }

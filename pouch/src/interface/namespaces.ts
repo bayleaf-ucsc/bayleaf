@@ -104,7 +104,7 @@ export function createNamespacesRegion(app: App): NamespacesRegion {
   const terminal = createTerminal({ vfs: app.state.vfs, fs: over(app.state.vfs.as('user'), [['/session', control.view({ by: 'user', label: 'terminal' }), { label: 'control (you)' }]]), onChange: () => app.tree.renderTree(),
     hooks: { bayleafCredential: () => app.auth.key, approveEgress: (req) => app.sessionList.egress.approve(req, null, undefined, 'you, in the terminal'), models: app.sessionList.modelService, pdf: app.sessionList.pdfService, media: app.sessionList.mediaService,
       // The cast: terminal.ts declares boolean, but open-cli.ts's hook also takes a reason string, which `open` prints.
-      openFile: ({ path, mode, interactive }) => app.editing.openFile(path, undefined, { mode: mode === 'raw' || mode === 'preview' ? mode : null, interactive }) as Promise<boolean>, revealDir: (path) => app.transcript.revealDir(path) } });
+      openFile: ({ path, mode, interactive }) => app.editing.openFile(path, undefined, { mode: mode === 'raw' || mode === 'preview' ? mode : null, interactive }), revealDir: (path) => app.transcript.revealDir(path) } });
   document.addEventListener('keydown', (e) => {
     if (e.key !== '`' || !e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]')) return;
     e.preventDefault();

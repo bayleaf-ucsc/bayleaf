@@ -22,14 +22,10 @@ import { attribute, type Watches } from './ns/watch.ts';
 
 export { normalize };
 
-// lib.dom (without dom.asynciterable) lacks the File System Access API's async
-// iteration, folder picker and permissions (Chromium); declared as browsers have them.
+// lib.dom lacks the File System Access API's folder picker and permissions
+// (Chromium); declared as browsers have them.
 type HandleMode = 'read' | 'readwrite';
 declare global {
-  interface FileSystemDirectoryHandle {
-    keys(): AsyncIterableIterator<string>;
-    entries(): AsyncIterableIterator<[string, FileSystemFileHandle | FileSystemDirectoryHandle]>;
-  }
   interface Window { showDirectoryPicker?(o: { mode: HandleMode }): Promise<DirHandle> }
 }
 // A picked folder's handle, which can ask for permission again.

@@ -35,10 +35,13 @@ export interface ToolCallOptions {
 // look's result: text lines plus the images, in order.
 export interface LookOutput { text: string; images: ImageContent[] }
 // A UI tool spec: what src/tools.ts (and run.ts) build, before agent.ts wraps it.
-export interface AgentToolSpec {
+// Args: what execute reads; pi-durable checks the model's arguments against parameters first.
+export interface AgentToolSpec<Args = Record<string, unknown>> {
   name: string; label?: string; description: string; parameters: TObject; images?: boolean;
-  execute(args: Record<string, unknown>, opts: ToolCallOptions): Promise<string | LookOutput> | string | LookOutput;
+  execute(args: Args, opts: ToolCallOptions): Promise<string | LookOutput> | string | LookOutput;
 }
+// Any tool, whatever its args (execute is a method, so each tool's own args type is accepted).
+export type AnyToolSpec = AgentToolSpec<object>;
 
 // Settings > Providers > Localhost: the server and the models it offers.
 export type LocalhostConfig = LocalhostServer & { models?: LocalhostModelInfo[] };
@@ -46,7 +49,7 @@ export type GetClient = Parameters<typeof sealedFetch>[0];
 
 export interface OpenAgentOptions {
   storage?: Storage; // tests: one shared database for every session
-  tools?: AgentToolSpec[];
+  tools?: AnyToolSpec[];
   systemPrompt?: () => string | Promise<string>;
   getClient: GetClient;
   models?: SealedModelInfo[];
@@ -69,6 +72,7 @@ export type PouchEntryData = {
   text?: string; from?: string; name?: string; to?: string; mode?: string; lines?: string[]; attachments?: AttachedFile[];
   details?: JsonValue; ref?: string; byMessage?: string; lastSent?: { to: string; text: string };
   child?: ConversationId; status?: string; task?: string; steers?: string[]; oneshot?: boolean;
+  watches?: { id: string; note?: string }[]; // a watch event's watches (src/ns/watch.ts)
 };
 export type PouchEntry = Omit<EntryRecord, 'data'> & { data?: PouchEntryData; createdAt?: number };
 

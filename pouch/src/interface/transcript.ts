@@ -389,7 +389,7 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
       if (it.type === 'user' && it.watch) {
         // A file-watch event (G14): labeled with the watch that caused it, as a
         // wake (it started this turn) or read between steps.
-        const ws = (it.watch as { watches?: { id: string; note?: string }[] }).watches ?? []; // not in PouchEntryData
+        const ws = it.watch.watches ?? [];
         const label = `${it.steer || it.watch.mode === 'steer' ? 'From' : 'Woken by'} watch ${ws.map((w) => w.id + (w.note ? `: ${w.note}` : '')).join('; ')}`;
         const m = message(it, label, el('span', { className: 'sa-who msg-from watch-from', textContent: label }), el('div', { className: 'body', textContent: (it.watch.lines ?? []).filter((l) => l.startsWith('[from files]')).map((l) => l.slice(13)).join('\n') || it.text }));
         m.classList.add('from', 'watch');

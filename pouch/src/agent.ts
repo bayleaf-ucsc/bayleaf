@@ -21,7 +21,7 @@ import { Type } from 'typebox';
 import type { Api, AssistantMessage, Context as PiContext, ImageContent, Model, ProviderStreams, StreamOptions, TextContent, ThinkingContent } from '@earendil-works/pi-ai';
 import { normalizeContext } from '@earendil-works/pi-ai/utils/transcript';
 import type { ConversationId, ConversationView, Cursor, EntryId, EntryRecord, HarnessOptions, InputSubmissionDraft, LiveState, ModelRef, SettledSubmissionRecord, Storage, Submission, SubmissionId, SubmissionRecord, ToolRegistration, UsageState } from '@earendil-works/pi-durable';
-import type { AgentToolSpec, AssistantItem, Attachments, ReportItem, ContentLike, LocalhostConfig, LookOutput, NormalizedView, OpenAgentOptions, PouchEntry, SealedModelInfo, SessionId, ThreadItem, UserItem, ThreadUsage, ThreadView, ToolItem } from './agent-types.ts';
+import type { AnyToolSpec, AssistantItem, Attachments, ReportItem, ContentLike, LocalhostConfig, LookOutput, NormalizedView, OpenAgentOptions, PouchEntry, SealedModelInfo, SessionId, ThreadItem, UserItem, ThreadUsage, ThreadView, ToolItem } from './agent-types.ts';
 import type { SubagentRow } from './subagents-types.ts';
 type Subagents = ReturnType<typeof createSubagents>;
 import { createSubagents, REPORT_KIND, STEER_KIND, MESSAGE_KIND } from './subagents.ts';
@@ -106,7 +106,7 @@ const callStops = new Map<string, AbortController>(); // call id -> AbortControl
 // seesImages(ref): whether the calling conversation's model takes images
 // (undefined when unknown), asked only for a tool marked `images` (look),
 // which may return { text, images }.
-function toTool(t: AgentToolSpec, seesImages: (ref: ModelRef | undefined) => boolean | undefined = () => undefined) {
+function toTool(t: AnyToolSpec, seesImages: (ref: ModelRef | undefined) => boolean | undefined = () => undefined) {
   return defineTool({
     name: t.name, description: t.description, parameters: t.parameters,
     execute: async (args, api, context) => {

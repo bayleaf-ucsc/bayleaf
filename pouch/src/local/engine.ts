@@ -12,13 +12,11 @@
 // worker-src blob:); it has no network (src/local/worker.ts).
 import { createModelStore } from '../models.ts';
 import { partAssets } from '../assets.ts';
-import type { PartsPin } from '../assets.ts';
-import type { ModelPin } from '../models.ts';
+import type { LocalModel } from '../trust.ts';
 import type { LocalAction, LocalGenerateRequest, LocalGenerateResult, LocalLoadResult, LocalReply } from './protocol.ts';
 
 export type { LocalAction, LocalChatMessage, LocalEngine, LocalGenerateRequest, LocalGenerateResult, LocalLoadResult, LocalReply, LocalRequest, LocalToolCall, LocalToolSchema } from './protocol.ts';
-// The model's pins as build-models.mjs embeds them (from models.lock.json).
-export interface LocalModel extends ModelPin { dtype: string; bytes: number; runtime: PartsPin }
+export type { LocalModel };
 export type Support = { ok: true } | { ok: false; reason: string };
 export interface LocalProgress { done: number; total: number; fetched?: number; repaired?: number; phase?: 'runtime' | 'loading' }
 // The slices of WebGPU (not in this TypeScript's DOM lib) and Navigator read here.
@@ -26,7 +24,7 @@ interface GpuAdapterLike { features?: { has?(feature: string): boolean }; limits
 export interface GpuLike { requestAdapter(): Promise<GpuAdapterLike | null> }
 export interface DeviceSignals { userAgentData?: { mobile?: boolean }; userAgent?: string; maxTouchPoints?: number; deviceMemory?: number; gpu?: GpuLike }
 
-export const LOCAL = typeof LOCAL_MODEL !== 'undefined' ? LOCAL_MODEL as LocalModel : null; // eslint-disable-line no-undef
+export const LOCAL = typeof LOCAL_MODEL !== 'undefined' ? LOCAL_MODEL : null; // eslint-disable-line no-undef
 export const models = createModelStore(LOCAL ? [LOCAL] : []);
 const pinned = LOCAL && { local: LOCAL, runtime: partAssets(LOCAL.runtime) };
 const NOT_BUILT = 'This build of Pouch does not include the local model.';

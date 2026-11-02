@@ -21,7 +21,7 @@ import { normalize } from './vfs.ts';
 import type { defineCommand as DefineCommand, ResolvedCommandContext, IFileSystem, ExecResult } from 'just-bash';
 import type { Task, TaskFields, Tasks } from './ns/tasks.ts';
 import type { EngineDef } from './jobs.ts';
-import type { ObtainedRuntime, PartsPin, RuntimeAssets, RuntimeFiles } from './assets.ts';
+import type { ObtainedRuntime, RuntimeAssets, RuntimeFiles } from './assets.ts';
 import type { PdfAction, PdfInfo, PdfJob, PdfJobBody, PdfJobInput, PdfReply, PdfResult, PdfResultOf, PdfText } from './pdf/protocol.ts';
 export type { PdfJob, PdfReply, PdfRequest, PdfResult } from './pdf/protocol.ts';
 
@@ -44,7 +44,7 @@ export const coded = (e: unknown): CodedError => (e instanceof Error ? e : new E
 // A command's job: its failure as the shell's result, or the engine's answer.
 export type JobOutcome<R> = { error: ExecResult; r?: undefined } | { error?: undefined; r: R; task: Task };
 
-export const PDF_RUNTIME = typeof POUCH_PDF_RUNTIME !== 'undefined' ? POUCH_PDF_RUNTIME as PartsPin : null; // eslint-disable-line no-undef
+export const PDF_RUNTIME = typeof POUCH_PDF_RUNTIME !== 'undefined' ? POUCH_PDF_RUNTIME : null; // eslint-disable-line no-undef
 
 // Caps, named so errors and the pdf skill can cite them.
 export const MAX_PDF_BYTES = 256 * 2 ** 20; // a larger file is refused before anything loads

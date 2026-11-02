@@ -21,6 +21,7 @@ import { shellFor, serialized, execScript, CWD } from './tools.ts';
 import type { EgressRequest } from './trust.ts';
 import type { Namespace } from './ns/namespace.ts';
 import type { Task } from './ns/tasks.ts';
+import type { OpenHooks } from './open-cli.ts';
 import type { ShellHooks } from './tools-types.ts';
 import type { Vfs } from './vfs.ts';
 
@@ -50,11 +51,9 @@ const commonPrefix = (xs: string[]) => xs.reduce((a, b) => { let i = 0; while (i
 // models, pdf, media: the src/models-cli.ts, src/pdf.ts and src/media.ts
 // services, passed through to shellFor. openFile and revealDir back the
 // `open` command (src/open-cli.ts).
-export interface TerminalHooks extends Pick<ShellHooks, 'models' | 'pdf' | 'media'> {
+export interface TerminalHooks extends Pick<ShellHooks, 'models' | 'pdf' | 'media'>, Pick<OpenHooks, 'openFile' | 'revealDir'> {
   bayleafCredential?(): string | null | undefined;
   approveEgress?(req: EgressRequest): Promise<boolean>;
-  openFile?(o: { path: string; mode?: string; interactive?: boolean }): Promise<boolean>;
-  revealDir?(path: string): unknown;
 }
 // Just what the terminal uses of the page's Vfs and its /task table.
 export type TerminalTask = Task;
