@@ -3,7 +3,7 @@
 //   node test/arch-node.mjs
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
-import { checkArchitecture, checkMetafile, checkNoCdn, loadTree, NETWORK } from '../arch.mjs';
+import { checkArchitecture, checkMetafile, checkNoCdn, countEscapes, loadTree, NETWORK } from '../arch.mjs';
 
 let passed = 0;
 async function test(name, fn) { await fn(); passed++; console.log('ok', name); }
@@ -144,6 +144,19 @@ await test('exact: no `any` in trust-boundary modules, wherever it is written', 
   }
   // Elsewhere `any` is tsc's business, and comments and strings never count.
   assert.deepEqual(checkArchitecture(withFile('src/graph.ts', 'export const z = (v: any) => v; // any\nexport const w = "any";')), []);
+});
+
+await test('escapes: casts and non-null assertions only go down, and escapes.json stays exact', () => {
+  const grow = (code) => checkArchitecture(withFile('src/graph.ts', code), tree.escapes);
+  assert.ok(grow('export const a = (x: unknown) => x as string;').some((e) => /^\[escapes\] src\/graph.ts: has \d+ `as`, over its/.test(e)));
+  assert.ok(grow('export const b = (x?: string) => x!;').some((e) => /has \d+ `!`, over/.test(e)));
+  const dbl = grow('export const c = (x: number) => x as unknown as string;');
+  assert.ok(dbl.some((e) => /`as unknown as`, over/.test(e)) && !dbl.some((e) => /`as`, over/.test(e)), 'a double cast counts once, as itself');
+  assert.deepEqual(grow('export const d = [1, 2] as const;'), [], '`as const` is not an escape');
+  // Paying one down fails until the file records it, so it cannot grow back unnoticed.
+  const n = countEscapes(tree)['src/graph.ts']?.as ?? 0;
+  const slack = { ...tree.escapes, 'src/graph.ts': { ...tree.escapes['src/graph.ts'], as: n + 1 } };
+  assert.ok(checkArchitecture(tree, slack).some((e) => /src\/graph.ts: has \d+ `as`, under its/.test(e)));
 });
 
 await test('size: a module over its budget fails; main.ts stays thin', () => {

@@ -18,6 +18,7 @@
 //   layers    the core never imports UI; nothing imports the Interface but main.ts
 //   seams     a region is imported only through its entry modules
 //   contract  a contract module is types only, and imported only as types
+//   escapes   casts and non-null assertions only go down (escapes.json)
 //   size      every module stays within its line budget
 //
 // The parser is TypeScript's (no type checking; tsc --noEmit does that): the scan sees code, not
@@ -25,7 +26,7 @@
 // It covers first-party code (src/, sw.js, the pages' inline scripts); bundled
 // packages are checked by what imports them (checkMetafile) and by the CSP.
 import ts from 'typescript';
-import { readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { assertNoCdn } from './build-runtime.mjs';
@@ -120,6 +121,16 @@ export const EXACT = ['src/trust.ts', 'src/egress.ts', 'src/ns/namespace.ts', 's
 const WHY_EXACT = 'A trust boundary\'s types are what an auditor (and tsc) relies on; '
   + 'name the shape, or take `unknown` and narrow it';
 
+// ── Escape hatches: a ratchet ───────────────────────────────────────
+// Each `x as T`, `x!` and `x as unknown as T` tells tsc to trust the author
+// instead of checking. escapes.json counts them per module; a count may only
+// go down. A module over its count fails, and so does one under it, until
+// `node arch.mjs --lower` writes the lower count (it never raises one), so the
+// file stays an exact inventory. `as const` narrows and is not counted.
+export const ESCAPE_KINDS = ['as', '!', 'as unknown as'];
+const WHY_ESCAPES = 'Every escape hatch is a claim tsc cannot check; '
+  + 'type the value, narrow it with a check, or take `unknown` where it enters';
+
 // ── Size budgets (lines) ────────────────────────────────────────────
 export const BUDGET = { default: 700, 'src/main.ts': 60 };
 
@@ -209,6 +220,17 @@ function scan(sf, checker) {
   const visit = (n) => {
     if (ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) {
       if (n.moduleSpecifier && ts.isStringLiteral(n.moduleSpecifier)) imports.push({ spec: n.moduleSpecifier.text, line: at(n), typeOnly: typeOnly(n) });
+    } else if (ts.isAsExpression(n) || ts.isTypeAssertionExpression(n)) {
+      const t = n.type;
+      const isConst = ts.isTypeReferenceNode(t) && t.typeName.getText(sf) === 'const';
+      const inner = n.expression;
+      const viaUnknown = (ts.isAsExpression(inner) || ts.isTypeAssertionExpression(inner)) && inner.type.kind === ts.SyntaxKind.UnknownKeyword;
+      const outer = ts.isAsExpression(n.parent) || ts.isTypeAssertionExpression(n.parent);
+      // x as unknown as T counts once, as itself, not as two casts.
+      if (viaUnknown) found.push({ kind: 'escape', api: 'as unknown as', line: at(n) });
+      else if (!isConst && !(t.kind === ts.SyntaxKind.UnknownKeyword && outer)) found.push({ kind: 'escape', api: 'as', line: at(n) });
+    } else if (ts.isNonNullExpression(n)) {
+      found.push({ kind: 'escape', api: '!', line: at(n) });
     } else if (n.kind === ts.SyntaxKind.AnyKeyword) {
       found.push({ kind: 'any', api: 'any', line: at(n) });
     } else if (ts.isCallExpression(n) && n.expression.kind === ts.SyntaxKind.ImportKeyword) {
@@ -279,8 +301,21 @@ const resolve = (from, spec) => {
   return parts.join('/');
 };
 
+// Escape hatches per module, { path: { as, '!', 'as unknown as' } } (zeros omitted).
+export function countEscapes(files) {
+  const list = sources(files).filter((s) => s.path.startsWith('src/'));
+  const { program, checker } = parse(list);
+  const out = {};
+  for (const s of list) for (const f of scan(program.getSourceFile(s.name), checker).found) {
+    if (f.kind !== 'escape') continue;
+    (out[s.path] ??= {})[f.api] = (out[s.path][f.api] ?? 0) + 1;
+  }
+  return out;
+}
+
 // The checks over a set of files; returns violation messages (empty: it holds).
-export function checkArchitecture(files) {
+// escapes: the committed counts (escapes.json); undefined skips the ratchet.
+export function checkArchitecture(files, escapes = files.escapes) {
   const list = sources(files);
   const { program, checker } = parse(list);
   const errors = [];
@@ -341,6 +376,18 @@ export function checkArchitecture(files) {
       errors.push(fmt('seams', from, line, `imports ${to}, inside ${dir}`, `Import ${r.entries.length ? r.entries.join(' or ') : 'nothing from it'} instead: ${r.why}`));
     }
   }
+  // Escape hatches: only down, and the file exact.
+  if (escapes) {
+    const now = countEscapes(files);
+    for (const path of new Set([...Object.keys(now), ...Object.keys(escapes)])) {
+      if (!files.has(path)) { errors.push(fmt('escapes', path, 0, 'is listed in escapes.json but does not exist', 'Remove it (node arch.mjs --lower)')); continue; }
+      for (const k of ESCAPE_KINDS) {
+        const n = now[path]?.[k] ?? 0, max = escapes[path]?.[k] ?? 0;
+        if (n > max) errors.push(fmt('escapes', path, 0, `has ${n} \`${k}\`, over its ${max} in escapes.json`, WHY_ESCAPES));
+        else if (n < max) errors.push(fmt('escapes', path, 0, `has ${n} \`${k}\`, under its ${max}`, 'Good: record it with node arch.mjs --lower so it cannot grow back'));
+      }
+    }
+  }
   // Size budgets.
   for (const [path, text] of files) {
     if (!path.startsWith('src/') || !isSource(path)) continue;
@@ -394,6 +441,7 @@ export function loadTree(root = import.meta.dirname) {
   };
   walk(join(root, 'src'));
   for (const f of ['sw.js', 'viewer.html', 'pouch.html']) files.set(f, readFileSync(join(root, f), 'utf8'));
+  files.escapes = JSON.parse(readFileSync(join(root, 'escapes.json'), 'utf8'));
   return files;
 }
 
@@ -401,8 +449,23 @@ export function assertArchitecture(errors) {
   if (errors.length) throw new Error(`Pouch architecture check failed (arch.mjs):\n  ${errors.join('\n  ')}`);
 }
 
+// --lower: write each module's count where it went down (never up).
+function lowerEscapes(root = import.meta.dirname) {
+  const files = loadTree(root), was = files.escapes, now = countEscapes(files), next = {};
+  for (const path of Object.keys(now).sort()) {
+    const row = {};
+    for (const k of ESCAPE_KINDS) { const n = now[path][k] ?? 0, max = was[path]?.[k] ?? 0; if (Math.min(n, max)) row[k] = Math.min(n, max); }
+    if (Object.keys(row).length) next[path] = row;
+  }
+  writeFileSync(join(root, 'escapes.json'), formatEscapes(next));
+}
+// One module per line, so a diff shows which module paid down what.
+export const formatEscapes = (counts) => '{\n' + Object.keys(counts).sort()
+  .map((p) => `  ${JSON.stringify(p)}: ${JSON.stringify(counts[p]).replaceAll(',', ', ').replaceAll(':', ': ')}`).join(',\n') + '\n}\n';
+
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
+  if (process.argv.includes('--lower')) lowerEscapes();
   const errors = checkArchitecture(loadTree());
   if (errors.length) { console.error(errors.join('\n')); process.exit(1); }
-  console.log('arch: trust, exact-type, layer, seam, contract and size rules hold');
+  console.log('arch: trust, exact-type, layer, seam, contract, escape and size rules hold');
 }
