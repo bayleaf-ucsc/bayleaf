@@ -12,11 +12,11 @@ import { createFollow } from '../follow.ts';
 import { dismissible, guardDialog } from '../dismiss.ts';
 import type { App } from './app.ts';
 import type { PouchAgent } from '../agent.ts';
-import type { NormalizedView, SealedModelInfo, ThreadView } from '../agent-types.ts';
+import type { SealedModelInfo, ThreadView } from '../agent-types.ts';
 import type { SealedHandle } from '../trust.ts';
 import type { Composer } from '../composer.ts';
 import type { Settings } from '../settings.ts';
-import type { AttachmentVfs, LocalImages } from '../attachments.ts';
+import type { LocalImages } from '../attachments.ts';
 import type { Layout } from '../layout.ts';
 import type { Ledger } from '../usage.ts';
 import type { Follow } from '../follow.ts';
@@ -50,7 +50,7 @@ export interface StateRegion {
   userFs: ReturnType<Vfs['as']>;
   get verified(): boolean; set verified(v: boolean);
   vfs: Vfs;
-  get view(): NormalizedView | ThreadView | null; set view(v: NormalizedView | ThreadView | null);
+  get view(): ThreadView | null; set view(v: ThreadView | null);
 }
 
 export function createStateRegion(app: App): StateRegion {
@@ -61,8 +61,7 @@ export function createStateRegion(app: App): StateRegion {
   // The user's own writes (editor, uploads, drops, unpack, rename, delete):
   // attributed 'user', so file watches can tell them from the agent's (src/ns/watch.ts).
   const userFs = vfs.as('user');
-  // Cast: Namespace.writeFile resolves unknown where AttachmentFs says void (unify in the core).
-  const localImages = createLocalImages(vfs as AttachmentVfs);
+  const localImages = createLocalImages(vfs);
 
   let key: string | null = null;        // sk-bayleaf-... or null for Campus Pass
   let client: SealedHandle | null = null;     // Sealed client (src/sealed.ts), verified once per credential
@@ -71,7 +70,7 @@ export function createStateRegion(app: App): StateRegion {
   let models: PickerModel[] = [];       // Sealed chat models with tool calling
   // How a message read mid-turn is labeled, in main's transcript and a subagent's (D25).
   const STEER_LABEL = 'You, while it worked';
-  let view: NormalizedView | ThreadView | null = null;       // last normalized view of the current session
+  let view: ThreadView | null = null;       // last normalized view of the current session
   let composer: Composer | null = null;   // composer.ts: tray, autocomplete, shield popover (set below)
   let unwatch: (() => void) | null = null;
 
@@ -81,7 +80,7 @@ export function createStateRegion(app: App): StateRegion {
   const usage = createUsage({ getKey: () => key });
   // Every Sealed request of the allowance day, by session (usage.ts); the day is
   // the allowance's own (it ends at resetsAt).
-  const ledger = createLedger({ get: () => store.getSetting<Ledger>('requestLedger'), set: (v) => store.setSetting('requestLedger', v) as Promise<void> },
+  const ledger = createLedger({ get: () => store.getSetting<Ledger>('requestLedger'), set: async (v) => { await store.setSetting('requestLedger', v); } },
     () => usage.state.resetsAt?.toISOString() ?? null);
   // The allowance badge, its tooltip split into this browser's count and the allowance.
   const meter = async () => renderMeter(usage.state, await ledger.snapshot().catch(() => null));
@@ -99,13 +98,13 @@ export function createStateRegion(app: App): StateRegion {
     $('sheet-body').replaceChildren(...(body == null ? [] : [typeof body === 'string' ? el('p', { textContent: body }) : body]));
     $('sheet-body').hidden = body == null;
     // A tree row that opened the sheet may be rebuilt meanwhile: return focus to its successor.
-    const opener = document.activeElement as HTMLElement | null;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     $<HTMLDialogElement>('sheet').addEventListener('close', () => {
       if (opener && !opener.isConnected && (opener.dataset?.path || opener.classList?.contains('more'))) app.tree.treeRows().find((r) => r.dataset.path === app.tree.focusPath)?.focus();
     }, { once: true });
-    $('sheet-actions').replaceChildren(...(actions.filter(Boolean) as SheetAction[]).map(([label, fn, cls]) => {
+    $('sheet-actions').replaceChildren(...actions.flatMap((a) => (a ? [a] : [])).map(([label, fn, cls]) => {
       const b = el('button', { type: 'button', textContent: label, className: cls ?? '' });
-      b.onclick = async () => { $<HTMLDialogElement>('sheet').close(); try { await fn(); } catch (e) { app.tree.fail((e as Error).message); } };
+      b.onclick = async () => { $<HTMLDialogElement>('sheet').close(); try { await fn(); } catch (e) { app.tree.fail(e instanceof Error ? e.message : String(e)); } };
       return b;
     }), el('button', { type: 'button', textContent: 'Cancel', onclick: () => $<HTMLDialogElement>('sheet').close() }));
     // A field typed into and then dismissed comes back as it was (src/dismiss.ts).

@@ -14,7 +14,7 @@ import { why } from '../ns/control.ts';
 import { LOCAL, engine as localEngine, support as localSupport, models as modelStore } from '../local/engine.ts';
 import type { App } from './app.ts';
 import type { ConversationId } from '@earendil-works/pi-durable';
-import type { AgentToolSpec, OpenAgentOptions, SessionId } from '../agent-types.ts';
+import type { AgentToolSpec, SessionId } from '../agent-types.ts';
 import type { StoredWatch, Watch, Watches } from '../ns/watch.ts';
 import type { TrayRow } from '../composer.ts';
 
@@ -28,6 +28,10 @@ export interface BootRegion {
   watches: Watches;
   watchRows(sid: SessionId): TrayRow[];
 }
+
+// A thrown value's message (a library may throw a non-Error).
+const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const isConversation = (x: unknown): x is ConversationId => typeof x === 'number';
 
 export function createBootRegion(app: App): BootRegion {
   // ── File watches (JOURNEYS G13-G17, src/ns/watch.ts) ────────────────
@@ -57,13 +61,16 @@ export function createBootRegion(app: App): BootRegion {
     deliver: async (sid, owner, { paths = [], ...ev }) => {
       for (const p of paths) arm('pulse:' + p);
       if (paths.length) app.tree.renderTree();
-      return app.state.agent!.subagents!.notify(await sessionOfKey(sid), owner, ev);
+      const sa = app.state.agent?.subagents;
+      if (!sa) throw new Error('The agent is not available, so the watch event was not delivered.');
+      return sa.notify(await sessionOfKey(sid), owner, ev);
     },
     ready: agentStarted,
     onChange: () => app.state.composer?.renderTray(),
   });
   async function watchCaller(caller: unknown) {
-    const w: { sid?: SessionId | null; child?: ConversationId | null } = app.state.agent?.who(caller as ConversationId) ?? {};
+    // watch.ts hands over the tool's caller untyped; a conversation id is a number.
+    const w: { sid?: SessionId | null; child?: ConversationId | null } = (isConversation(caller) && app.state.agent?.who(caller)) || {};
     const sid = String(w.sid ?? caller);
     if (w.child != null) {
       const r = refOfChild(sid, w.child);
@@ -111,7 +118,7 @@ export function createBootRegion(app: App): BootRegion {
     // Not awaited: the offline copy must never hold up files or the agent.
     app.install.shellCopy.start().then<unknown>(() => app.install.shellCopy.supported && app.install.shellCopy.enabled() && navigator.onLine && app.install.checkUpdate(false))
       .catch((e: Error) => app.install.renderCopy('Offline copy: ' + e.message, 'bad'));
-    try { await app.state.vfs.init(); } catch (e) { app.state.status('Storage problem: ' + (e as Error).message, 'bad'); }
+    try { await app.state.vfs.init(); } catch (e) { app.state.status('Storage problem: ' + messageOf(e), 'bad'); }
     app.tree.offerDefaults();
     app.tree.renderTree();
     $('welcome').hidden = !!(await store.getSetting('welcomed').catch(() => true));
@@ -133,11 +140,11 @@ export function createBootRegion(app: App): BootRegion {
     }, (e) => app.state.status('Could not move the model kept by an earlier Pouch: ' + e.message, 'bad'));
     try {
       app.state.agent = await openAgent({
-        local: (LOCAL && app.providers.localOk.ok ? { info: LOCAL, engine: localEngine, onHint: app.providers.showHint } : null) as OpenAgentOptions['local'],
+        local: LOCAL && app.providers.localOk.ok ? { info: LOCAL, engine: localEngine, onHint: app.providers.showHint } : undefined,
         localhost: { config: app.providers.lhAgentConfig(), onWait: app.providers.localhostWait },
         tools: (toolList = withWatch(createTools(app.state.vfs, Type, {}, {
           // A subagent's writes carry its name for file watches.
-          sourceOf: (caller) => { const w = app.state.agent?.who(caller!); const r = w?.child != null && refOfChild(w.sid, w.child); return r ? `subagent ${r.name} (${r.ref})` : 'subagent'; },
+          sourceOf: (caller) => { const w = caller == null ? null : app.state.agent?.who(caller); const r = w?.child != null && refOfChild(w.sid, w.child); return r ? `subagent ${r.name} (${r.ref})` : 'subagent'; },
           // A subagent's change is its own run; the main agent's joins the turn.
           // A subagent's namespace: what its spawn declared, or the default view.
           namespaceFor: (caller) => { const w = caller == null ? null : app.state.agent?.who(caller); return w?.child != null ? (w.ns?.length ? w.ns : defaultSubagentNs(app.state.vfs)) : null; },
@@ -145,29 +152,29 @@ export function createBootRegion(app: App): BootRegion {
           sessionOf: (caller) => (caller == null ? null : app.state.agent?.who(caller)?.sid ?? null),
           mainView: (caller, base) => { const w = caller == null ? null : app.state.agent?.who(caller); return w && w.child == null && w.sid != null ? app.namespaces.mainNamespace(w.sid, base) : base; },
           // Every change an agent makes, for /session/<sid>/changes (subagents marked by their ref).
-          onChange: (caller, op, path) => { const w = app.state.agent?.who(caller!); if (w?.sid != null) app.namespaces.changes.note(w.sid, op, path, w.child != null ? refOfChild(w.sid, w.child)?.ref ?? 'subagent' : MAIN); },
+          onChange: (caller, op, path) => { const w = app.state.agent?.who(caller); if (w?.sid != null) app.namespaces.changes.note(w.sid, op, path, w.child != null ? refOfChild(w.sid, w.child)?.ref ?? 'subagent' : MAIN); },
           ...app.sessionList.egressHooks,
           models: app.sessionList.modelService, modelsWho: app.sessionList.modelsWho, pdf: app.sessionList.pdfService, media: app.sessionList.mediaService,
           show: app.editing.show,
-        }))) as AgentToolSpec[], // tools.ts's typed args against the agent's Record<string, unknown>
+        }))) as AgentToolSpec[], // execute's typed args against the agent's Record<string, unknown> (agent-types.ts)
         systemPrompt: () => systemPrompt(app.state.vfs),
         getClient: async () => (app.state.verified ? app.state.client : null),
         onRequest: app.queues.countRequest,
         models: app.state.models,
-        pointer: { get: (id) => store.getSetting(convKey(id)), set: (id, c) => store.setSetting(convKey(id), c) as Promise<void> },
+        pointer: { get: (id) => store.getSetting(convKey(id)), set: async (id, c) => { await store.setSetting(convKey(id), c); } },
         onInterrupted: async (sids) => {
           for (const sid of sids) if (sid != null) await store.setSetting(interruptedKey(sid), true);
           if (sids.some((x) => sameId(x, app.sessionList.sessions.current?.id))) { app.transcript.interrupted = true; app.transcript.scheduleRender(); }
         },
         subagents: {
-          reg: { get: (sid) => store.getSetting(subagentsKey(sid)), set: (sid, l) => store.setSetting(subagentsKey(sid), l) as Promise<void> },
+          reg: { get: (sid) => store.getSetting(subagentsKey(sid)), set: async (sid, l) => { await store.setSetting(subagentsKey(sid), l); } },
           onChange: app.subagents.onKids,
           onCap: (sid, e) => { const list = app.commands.capEvents.get(String(sid)) ?? []; list.push(e); app.commands.capEvents.set(String(sid), list.slice(-3)); if (sameId(sid, app.sessionList.sessions.current?.id)) app.state.composer?.renderTray(); },
           onBlocked: (sid) => { if (sameId(sid, app.sessionList.sessions.current?.id)) { app.state.composer?.renderTray(); app.queues.updateSend(); } },
           onReport: (sid, sub) => app.subagents.drive(sid, () => sub.wait()),
           // The user's follow-up goes before agent wakes (D25).
           followUpHeld: (sid) => { const q = app.queues.followUps.get(String(sid)); return (!!q && !q.paused) || app.queues.submitting.has(String(sid)); },
-          onSettle: async (sid, c) => { (toolList as Partial<ToolList>).closeView?.(c.id); app.state.usage.refresh(); },
+          onSettle: async (sid, c) => { if ('closeView' in toolList) toolList.closeView(c.id); app.state.usage.refresh(); },
           lowAllowance: app.subagents.lowAllowance,
           // A one-shot's attached files, read in main's namespace (paths relative to /work).
           readFile: async (f) => {
@@ -179,7 +186,7 @@ export function createBootRegion(app: App): BootRegion {
         },
       });
     } catch (e) {
-      agentError = 'The agent could not start: ' + (e as Error).message;
+      agentError = 'The agent could not start: ' + messageOf(e);
       app.state.status(agentError, 'bad');
     }
     if (!(await app.sessionList.sessions.boot())) app.transcript.renderLog();

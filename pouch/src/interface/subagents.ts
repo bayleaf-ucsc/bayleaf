@@ -8,7 +8,7 @@ import { MAIN, asRef, refOf } from '../graph.ts';
 import { sameId, titleOf } from '../sessions.ts';
 import { why } from '../ns/control.ts';
 import type { ConversationId } from '@earendil-works/pi-durable';
-import type { AssistantItem, NormalizedView, SessionId, ThreadView, ToolItem, UserItem } from '../agent-types.ts';
+import type { AssistantItem, NormalizedView, SessionId, ThreadView, ToolItem } from '../agent-types.ts';
 import type { SubagentRow, SubagentStatus } from '../subagents-types.ts';
 import type { SessionRecord } from '../sessions.ts';
 import type { App } from './app.ts';
@@ -18,9 +18,14 @@ export interface SubagentArgs { action?: string; ids?: unknown; id?: unknown; to
 // What a spawn's tool result carries in details.
 interface SpawnDetails { child?: ConversationId; name?: string; ref?: string; oneshot?: boolean }
 type ReplyCache = Parameters<App['transcript']['replyBody']>[1];
+// Tool arguments and results arrive untyped from the model and the engine.
+const subArgs = (v: unknown) => (v && typeof v === 'object' ? v as SubagentArgs : undefined);
+const spawnDetails = (v: unknown) => (v && typeof v === 'object' ? v as SpawnDetails : undefined);
+// One id or a list of them, as concat would spread it.
+const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : [v]);
 
 export interface SubagentsRegion {
-  agentSummary(name: string, a: SubagentArgs | string | null | undefined): string;
+  agentSummary(name: string, args: unknown): string;
   // The subagent's own view (S2, S3), for the log while app.sessionList.focus is set.
   childLog(): HTMLElement[];
   childState(sid: SessionId, c: SubagentRow): string;
@@ -63,10 +68,12 @@ export function createSubagentsRegion(app: App): SubagentsRegion {
     const sid = app.sessionList.sessions.current?.id;
     const want = new Set((kids.get(String(sid)) ?? []).map((c) => c.id));
     for (const [id, d] of childWatches) if (!want.has(id)) { d(); childWatches.delete(id); childViews.delete(id); }
+    const subs = app.state.agent?.subagents;
+    if (sid == null || !subs) return;
     for (const id of want) {
       if (childWatches.has(id)) continue;
       childWatches.set(id, () => {});
-      app.state.agent!.subagents!.watch(sid!, id, (v) => { childViews.set(id, v); app.transcript.scheduleRender(); })
+      subs.watch(sid, id, (v) => { childViews.set(id, v); app.transcript.scheduleRender(); })
         .then((d) => { if (childWatches.has(id)) childWatches.set(id, d); else d(); }, () => childWatches.delete(id));
     }
   }
@@ -99,7 +106,7 @@ export function createSubagentsRegion(app: App): SubagentsRegion {
       if (mine) app.sessionList.activeRun = null;
     }
     const ms = Date.now() - t0;
-    const v = await app.state.agent!.snapshot(sid).catch(() => null);
+    const v = (await app.state.agent?.snapshot(sid).catch(() => null)) ?? null;
     await app.transcript.recordTurn(sid, v, ms);
     await app.sessionList.sessions.afterTurn(sid, v, true);
   }
@@ -132,12 +139,13 @@ export function createSubagentsRegion(app: App): SubagentsRegion {
     return ids.join(', ');
   };
   // The agents and subagent tools in words, not JSON (critique 9).
-  function agentSummary(name: string, a: SubagentArgs | string | null | undefined) {
-    if (!a || typeof a !== 'object') return String(a ?? '');
-    const ids = ([] as unknown[]).concat(a.ids ?? (a.action === 'join' ? a.id ?? [] : [])).map(String);
+  function agentSummary(name: string, raw: unknown) {
+    const a = subArgs(raw);
+    if (!a) return String(raw ?? '');
+    const ids = list(a.ids ?? (a.action === 'join' ? a.id ?? [] : [])).map(String);
     const quote = (t?: string) => t ? `: "${app.commands.excerpt(t, 60)}"` : '';
     switch (a.action) {
-      case 'message': { const to = ([] as unknown[]).concat(a.to ?? (ids.length ? ids : a.id ?? [])).map(String); return `message -> ${to.map(whoRef).join(', ') || '?'}${quote(a.text)}`; }
+      case 'message': { const to = list(a.to ?? (ids.length ? ids : a.id ?? [])).map(String); return `message -> ${to.map(whoRef).join(', ') || '?'}${quote(a.text)}`; }
       case 'join': return `join ${refRange(ids)}`;
       case 'spawn': return `spawn ${a.mode === 'oneshot' ? 'one-shot ' : ''}${a.name ?? 'subagent'}${a.background === false ? ' (waits)' : ''}`;
       case 'list': return 'list';
@@ -145,13 +153,20 @@ export function createSubagentsRegion(app: App): SubagentsRegion {
       default: return a.action ?? '';
     }
   }
+  // Cards and sheets act on the session open when clicked.
+  const currentSid = () => {
+    const s = app.sessionList.sessions.current;
+    if (!s) throw new Error('No session is open.');
+    return s.id;
+  };
   const fmtDur = (ms: number) => { const t = Math.max(0, Math.round(ms / 1000)); return t < 60 ? `${t}s` : `${Math.floor(t / 60)}m ${String(t % 60).padStart(2, '0')}s`; };
   function messageChild(c: SubagentRow) {
     const box = el('textarea', { className: 'sa-input', rows: 3, placeholder: `What should ${c.name} do or know?`, ariaLabel: `Message to subagent ${c.name}` });
     app.state.sheet(`Message subagent ${c.name}`, [[c.status === 'running' ? 'Send (joins its work)' : 'Send (it starts again)', async () => {
       const t = box.value.trim();
       if (!t) return;
-      await app.namespaces.ctl(app.namespaces.agentFile(app.sessionList.sessions.current!.id, c.ref ?? refOf(kids.get(String(app.sessionList.sessions.current!.id)) ?? [], c), 'in'), 'message\n' + t).catch((e) => app.tree.fail(why(e)));
+      const sid = currentSid();
+      await app.namespaces.ctl(app.namespaces.agentFile(sid, c.ref ?? refOf(kids.get(String(sid)) ?? [], c), 'in'), 'message\n' + t).catch((e) => app.tree.fail(why(e)));
     }]], el('div', {}, el('p', { textContent: c.status === 'running' ? 'It reads this after its current step. Its report will reflect it.' : 'It continues from where it ended and posts a new report.' }), box));
     setTimeout(() => box.focus(), 0);
   }
@@ -234,14 +249,15 @@ export function createSubagentsRegion(app: App): SubagentsRegion {
     e.preventDefault();
     closeChild();
   });
-  const focusedChild = () => app.sessionList.focus && (kids.get(app.sessionList.focus.sid) ?? []).find((c) => c.id === app.sessionList.focus!.id);
+  const focusedChild = () => { const f = app.sessionList.focus; return f && (kids.get(f.sid) ?? []).find((c) => c.id === f.id); };
 
   // A child's transcript, for its card (compact: one line per tool call, the
   // final answer set apart) and for its own view (full: the session's own
   // rendering). The user's steering messages are marked in both.
-  function childItems(v: NormalizedView | undefined, name: string, childId: ConversationId, compact: boolean) {
+  function childItems(v: NormalizedView | undefined, name: string, childId: ConversationId | null, compact: boolean) {
     const out: HTMLElement[] = [], nextCache: ReplyCache = new Map(), items = v?.items ?? [];
-    const final = compact && !v?.busy ? items.findLast((x) => x.type === 'assistant' && x.text && !x.streaming) as AssistantItem | undefined : null;
+    const final = compact && !v?.busy ? items.findLast((x): x is AssistantItem => x.type === 'assistant' && !!x.text && !x.streaming) : null;
+    const spawnRuns = new Map<HTMLElement, { mode: string; names: string[] }>(); // compact spawn lines -> the spawns they stand for
     let first = true;
     for (const x of items) {
       if (x.type === 'user') {
@@ -260,17 +276,17 @@ export function createSubagentsRegion(app: App): SubagentsRegion {
           ...(x.streaming && !compact ? [el('span', { className: 'typing', role: 'img', ariaLabel: `${name} is replying`, title: 'Replying' }, el('i'), el('i'), el('i'))] : [])));
       } else if (x.type === 'tool') {
         // Spawns in one round read as one line: "spawn 4 one-shot judges".
-        const prev = out.at(-1), spawn = x.name === 'subagent' && (x.args as SubagentArgs | undefined)?.action === 'spawn' ? x.args as SubagentArgs : null;
-        if (compact && spawn && prev?.dataset?.spawn === (spawn.mode ?? 'agent')) {
-          const names = [...JSON.parse(prev.dataset.names!) as string[], spawn.name ?? 'subagent'];
-          prev.dataset.names = JSON.stringify(names);
-          prev.textContent = `subagent: ${spawnGroupText(names, spawn.mode)}`;
-          prev.title = names.join(', ');
+        const prev = out.at(-1), a = subArgs(x.args), spawn = x.name === 'subagent' && a?.action === 'spawn' ? a : null;
+        const run = prev && spawnRuns.get(prev);
+        if (compact && spawn && prev && run && run.mode === (spawn.mode ?? 'agent')) {
+          run.names.push(spawn.name ?? 'subagent');
+          prev.textContent = `subagent: ${spawnGroupText(run.names, spawn.mode)}`;
+          prev.title = run.names.join(', ');
           continue;
         }
-        const line = compact ? el('div', { className: 'sa-line' + (x.status === 'error' ? ' error' : ''), title: app.transcript.argSummary(x.name, x.args as SubagentArgs) },
-          `${x.status === 'running' ? '... ' : x.status === 'error' ? '! ' : ''}${x.name}: ${app.transcript.argSummary(x.name, x.args as SubagentArgs)}`) : app.transcript.toolCard(x, 'sa:');
-        if (compact && spawn && x.status !== 'error') { line.dataset.spawn = spawn.mode ?? 'agent'; line.dataset.names = JSON.stringify([spawn.name ?? 'subagent']); }
+        const line = compact ? el('div', { className: 'sa-line' + (x.status === 'error' ? ' error' : ''), title: app.transcript.argSummary(x.name, x.args) },
+          `${x.status === 'running' ? '... ' : x.status === 'error' ? '! ' : ''}${x.name}: ${app.transcript.argSummary(x.name, x.args)}`) : app.transcript.toolCard(x, 'sa:');
+        if (compact && spawn && x.status !== 'error') spawnRuns.set(line, { mode: spawn.mode ?? 'agent', names: [spawn.name ?? 'subagent'] });
         out.push(line);
         if (x.name === 'bash') out.push(...shownLines(x.output).map(app.editing.shownCard));
       } else if (x.type === 'notice') out.push(el('p', { className: 'notice', textContent: x.text }));
@@ -287,16 +303,17 @@ export function createSubagentsRegion(app: App): SubagentsRegion {
   }
   // The parent's name in a subagent's header and notes: its title once it has
   // one, not the first-message placeholder, and never with a trailing period.
-  const parentName = (s: SessionRecord | null | undefined) => (s?.titleSource || (s as { titleEdited?: boolean } | null | undefined)?.titleEdited ? titleOf(s) : 'main').replace(/[.\s]+$/, '');
+  const parentName = (s: SessionRecord | null | undefined) => (s?.titleSource ? titleOf(s) : 'main').replace(/[.\s]+$/, '');
   let saDetails = false; // the subagent header's Details disclosure, across renders
 
   // The subagent's own view (S2, S3): who it is and what it may reach, its
   // live transcript, and an end note once it is done. The composer steers it.
   function childLog() {
-    const c = focusedChild(), v = childViews.get(app.sessionList.focus!.id);
+    const focus = app.sessionList.focus, c = focusedChild();
     const parent = parentName(app.sessionList.sessions.current);
-    if (!c) return [el('p', { className: 'notice bad', textContent: 'That subagent is no longer in this session.' })];
-    const st = childState(app.sessionList.focus!.sid, c), t = app.state.vfs.tasks.byKeyOf('sa:' + c.id);
+    if (!focus || !c) return [el('p', { className: 'notice bad', textContent: 'That subagent is no longer in this session.' })];
+    const v = childViews.get(focus.id);
+    const st = childState(focus.sid, c), t = app.state.vfs.tasks.byKeyOf('sa:' + c.id);
     // One bar (critique 3): back, name in its color, state, elapsed, requests,
     // Details, Stop. Task, messages and namespace fold under Details once the
     // transcript scrolls; at the top they show.
@@ -307,39 +324,42 @@ export function createSubagentsRegion(app: App): SubagentsRegion {
     const crumbs = el('nav', { className: 'sa-crumbs', ariaLabel: 'Where you are' }, el('ol', {},
       el('li', {}, back),
       el('li', {}, el('span', { className: 'sa-dot', ariaHidden: 'true' }), el('span', { className: 'sa-name', ariaCurrent: 'page', textContent: c.name }),
-        ...(app.sessionList.focus!.from ? [el('span', { className: 'sa-from muted', textContent: ` opened from ${app.sessionList.focus!.from}` })] : []))));
+        ...(focus.from ? [el('span', { className: 'sa-from muted', textContent: ` opened from ${focus.from}` })] : []))));
     const more = el('button', { type: 'button', className: 'sa-more-btn', textContent: 'Details', ariaExpanded: String(saDetails) });
     const acts = el('span', { className: 'sa-acts' }, more);
     if (c.status === 'running') {
       const stop = el('button', { type: 'button', className: 'danger', textContent: 'Stop', ariaLabel: `Stop subagent ${c.name}` });
-      stop.onclick = () => { stop.disabled = true; app.namespaces.ctl(app.namespaces.agentFile(app.sessionList.focus!.sid, refOf(kids.get(String(app.sessionList.focus!.sid)) ?? [], c), 'ctl'), 'stop').catch((e) => app.tree.fail(why(e))); };
+      stop.onclick = () => { stop.disabled = true; app.namespaces.ctl(app.namespaces.agentFile(focus.sid, refOf(kids.get(String(focus.sid)) ?? [], c), 'ctl'), 'stop').catch((e) => app.tree.fail(why(e))); };
       acts.append(stop);
     }
+    const edges = edgeLine(kids.get(focus.sid) ?? [], c);
+    const stats = el('span', { className: 'sa-meta sa-stats', textContent: [fmtDur((c.status === 'running' ? Date.now() : c.ended ?? Date.now()) - (c.resumed ?? c.started)), `${v?.steps ?? c.requests ?? 0} req`, ...((v?.toolErrors ?? c.toolErrors) ? [`${v?.toolErrors ?? c.toolErrors} tool err`] : [])].join(' · ') });
     const mounts = t ? app.state.vfs.tasks.mounts(t) : describeSpecs(app.state.vfs, c.ns?.length ? c.ns : defaultSubagentNs(app.state.vfs));
     const body = el('div', { className: 'sa-more', id: 'sa-more' },
       el('p', { className: 'sa-meta', textContent: [...(c.ref ? [c.ref] : []), `subagent of ${parent}`, ...(t ? [`/task/${t.id}`] : [])].join(' · ') }),
       el('p', { className: 'sa-task', textContent: c.task, title: c.task }),
-      ...[edgeLine(kids.get(app.sessionList.focus!.sid) ?? [], c)].filter(Boolean) as HTMLElement[],
+      ...(edges ? [edges] : []),
       el('p', { className: 'sa-mounts', title: 'What this subagent can reach (its namespace)' }, 'Sees: ', ...mounts.map((m) => el('code', { textContent: m }))));
     more.setAttribute('aria-controls', 'sa-more');
     const head = seeded(el('section', { className: 'sa-view-head' + (saDetails ? ' details' : '') + ($('log').scrollTop > 24 ? ' collapsed' : ''), ariaLabel: `Subagent ${c.name} of ${parent}` },
       el('div', { className: 'sa-bar' }, crumbs,
         el('span', { className: `sa-status ${c.status}`, textContent: st }),
-        el('span', { className: 'sa-meta sa-stats', textContent: [fmtDur((c.status === 'running' ? Date.now() : c.ended ?? Date.now()) - (c.resumed ?? c.started)), `${v?.steps ?? c.requests ?? 0} req`, ...((v?.toolErrors ?? c.toolErrors) ? [`${v?.toolErrors ?? c.toolErrors} tool err`] : [])].join(' · ') }),
+        stats,
         acts),
       body), c.ref);
     more.onclick = () => { saDetails = !saDetails; head.classList.toggle('details', saDetails); more.ariaExpanded = String(saDetails); };
     // On a phone the stats ride under Details, so the name keeps the bar (critique 7).
-    body.prepend(el('p', { className: 'sa-stats-more muted', textContent: head.querySelector('.sa-stats')!.textContent! }));
+    body.prepend(el('p', { className: 'sa-stats-more muted', textContent: stats.textContent }));
     const out = [head, ...childItems(v, c.name, c.id, false)];
     if (c.status !== 'running') {
       // Ended: one compact bar in place of the composer (critique 7).
       const b = el('button', { type: 'button', textContent: 'Back', ariaLabel: `Back to ${title}`, title: `Back to ${title} (Esc)` });
       b.onclick = () => closeChild();
-      out.push(el('p', { className: 'notice sa-ended', role: 'status' }, el('span', { textContent: st === 'finished' ? `${c.name} finished; its report is in main's thread.` : `${c.name} ${({ stopped: 'was stopped', failed: 'failed', interrupted: 'was interrupted' } as Record<string, string | undefined>)[st] ?? 'ended'}; its last output is in main's thread.` }), b));
+      out.push(el('p', { className: 'notice sa-ended', role: 'status' }, el('span', { textContent: st === 'finished' ? `${c.name} finished; its report is in main's thread.` : `${c.name} ${ENDED[st] ?? 'ended'}; its last output is in main's thread.` }), b));
     }
     return out;
   }
+  const ENDED: Record<string, string | undefined> = { stopped: 'was stopped', failed: 'failed', interrupted: 'was interrupted' };
   let lastHeight: number | null = null; // the transcript's height at the last render (the "New reply below" pill)
   $('below').onclick = () => { app.state.follow.pin(!matchMedia('(prefers-reduced-motion: reduce)').matches); $('below').hidden = true; };
   $('log').addEventListener('scroll', () => { if (app.state.follow.following) $('below').hidden = true; }, { passive: true });
@@ -354,14 +374,15 @@ export function createSubagentsRegion(app: App): SubagentsRegion {
   // it runs), and the files it changed.
   function subagentCard(it: ToolItem, childId: ConversationId | null) {
     const c = (kids.get(String(app.sessionList.sessions.current?.id)) ?? []).find((x) => x.id === childId);
-    const v = childViews.get(childId!);
-    const name = c?.name ?? (it.details as SpawnDetails | undefined)?.name ?? (it.args as SubagentArgs | undefined)?.name ?? 'subagent';
+    const v = childId == null ? undefined : childViews.get(childId);
+    const details = spawnDetails(it.details), args = subArgs(it.args);
+    const name = c?.name ?? details?.name ?? args?.name ?? 'subagent';
     const st = c?.status ?? (it.status === 'running' ? 'starting' : 'unknown');
-    const box = seeded(el('section', { className: `subagent ${st}`, ariaLabel: `Subagent ${name}: ${st}` }), c?.ref ?? (it.details as SpawnDetails | undefined)?.ref);
-    box.dataset.child = childId as unknown as string; // dataset stringifies: 'null' for a spawn still starting
+    const box = seeded(el('section', { className: `subagent ${st}`, ariaLabel: `Subagent ${name}: ${st}` }), c?.ref ?? details?.ref);
+    box.dataset.child = String(childId); // 'null' for a spawn still starting: no card lookup asks for it
     const meta: string[] = [];
     if (c?.ref) meta.push(c.ref);
-    if (c?.oneshot ?? (it.details as SpawnDetails | undefined)?.oneshot) meta.push('one-shot');
+    if (c?.oneshot ?? details?.oneshot) meta.push('one-shot');
     if (c) meta.push(fmtDur((c.status === 'running' ? Date.now() : c.ended ?? Date.now()) - (c.resumed ?? c.started)));
     const steps = v?.steps ?? c?.requests;
     if (steps != null) meta.push(`${steps} request${steps === 1 ? '' : 's'}`);
@@ -375,23 +396,23 @@ export function createSubagentsRegion(app: App): SubagentsRegion {
     const acts = el('span', { className: 'sa-acts' });
     if (c) {
       const open = el('button', { type: 'button', textContent: 'Open', ariaLabel: `Open subagent ${name}` });
-      open.onclick = () => openChild(app.sessionList.sessions.current!.id, c.id, box);
+      open.onclick = () => openChild(currentSid(), c.id, box);
       const msg = el('button', { type: 'button', textContent: 'Message', ariaLabel: `Message subagent ${name}` });
       msg.onclick = () => messageChild(c);
       acts.append(open, ...(c.oneshot ? [] : [msg])); // a one-shot takes no messages
     }
     if (c?.status === 'interrupted') {
       const res = el('button', { type: 'button', className: 'primary', textContent: 'Resume', ariaLabel: `Resume subagent ${name}` });
-      res.onclick = () => { res.disabled = true; app.namespaces.ctl(app.namespaces.agentFile(app.sessionList.sessions.current!.id, refOf(kids.get(String(app.sessionList.sessions.current!.id)) ?? [], c), 'in'), 'message\nContinue your task where you left off: a page reload interrupted you.').catch((e) => app.tree.fail(why(e))); };
+      res.onclick = () => { res.disabled = true; const sid = currentSid(); app.namespaces.ctl(app.namespaces.agentFile(sid, refOf(kids.get(String(sid)) ?? [], c), 'in'), 'message\nContinue your task where you left off: a page reload interrupted you.').catch((e) => app.tree.fail(why(e))); };
       acts.append(res);
     }
     if (c?.status === 'running') {
       const stop = el('button', { type: 'button', className: 'danger', textContent: 'Stop', ariaLabel: `Stop subagent ${name}` });
-      stop.onclick = () => { stop.disabled = true; app.namespaces.ctl(app.namespaces.agentFile(app.sessionList.sessions.current!.id, refOf(kids.get(String(app.sessionList.sessions.current!.id)) ?? [], c), 'ctl'), 'stop').catch((e) => app.tree.fail(why(e))); };
+      stop.onclick = () => { stop.disabled = true; const sid = currentSid(); app.namespaces.ctl(app.namespaces.agentFile(sid, refOf(kids.get(String(sid)) ?? [], c), 'ctl'), 'stop').catch((e) => app.tree.fail(why(e))); };
       acts.append(stop);
     }
     head.append(acts);
-    box.append(head, el('p', { className: 'sa-task', textContent: c?.task ?? (it.args as SubagentArgs | undefined)?.task ?? '', title: c?.task ?? '' }));
+    box.append(head, el('p', { className: 'sa-task', textContent: c?.task ?? args?.task ?? '', title: c?.task ?? '' }));
     const edges = c && edgeLine(kids.get(String(app.sessionList.sessions.current?.id)) ?? [], c);
     if (edges) box.append(edges);
     if (c?.error && st === 'failed') box.append(el('p', { className: 'sa-err', textContent: c.error }));
@@ -400,7 +421,7 @@ export function createSubagentsRegion(app: App): SubagentsRegion {
     // a toggle used to record the state and draw nothing until something else
     // re-rendered the log (never, once the child had finished).
     const d = el('details', { className: 'sa-log', open: app.transcript.openTools.has(key) });
-    const n = v?.items.length ?? 0, steered = v?.items.filter((x) => (x as UserItem).steer).length ?? 0;
+    const n = v?.items.length ?? 0, steered = v?.items.filter((x) => x.type === 'user' && x.steer).length ?? 0;
     d.append(el('summary', { textContent: (v ? `Transcript (${n} item${n === 1 ? '' : 's'})` : 'Transcript') + (steered ? `, steered by you ${steered === 1 ? 'once' : steered + ' times'}` : '') }));
     // Expanded, the transcript scrolls in its own tinted box under a sticky
     // "Collapse <name>" bar, so it never passes for the main session (critique 5).
@@ -408,7 +429,7 @@ export function createSubagentsRegion(app: App): SubagentsRegion {
       if (d.querySelector('.sa-items')) return;
       const fold = el('button', { type: 'button', className: 'sa-fold', textContent: `Collapse ${name}`, ariaLabel: `Collapse the transcript of ${name}` });
       fold.onclick = () => { d.open = false; box.scrollIntoView({ block: 'nearest' }); };
-      const items = el('div', { className: 'sa-items', tabIndex: 0, role: 'region', ariaLabel: `Transcript of ${name}` }, fold, ...childItems(childViews.get(childId!), name, childId!, true));
+      const items = el('div', { className: 'sa-items', tabIndex: 0, role: 'region', ariaLabel: `Transcript of ${name}` }, fold, ...childItems(childId == null ? undefined : childViews.get(childId), name, childId, true));
       items.dataset.sk = key; // keeps its place across re-renders (src/follow.ts)
       d.append(items);
     };

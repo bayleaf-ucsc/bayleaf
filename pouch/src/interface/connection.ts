@@ -24,6 +24,9 @@ export interface ConnectionRegion {
   probe(): Promise<boolean>;
 }
 
+// A thrown value's message (a library may throw a non-Error).
+const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
 export function createConnectionRegion(app: App): ConnectionRegion {
   // ── Sealed client: verification and credential ───────────────────────
   function fact(label: string, value: string, cls = '') {
@@ -47,7 +50,8 @@ export function createConnectionRegion(app: App): ConnectionRegion {
       const ok = doc.securityVerified === true;
       // Hashes fold behind "Verified · Details" (critique 10); the summary says the verdict.
       const same = doc.codeFingerprint === doc.enclaveFingerprint;
-      const steps = Object.entries(doc.steps ?? {}) as [string, AttestationStep][];
+      // A step listed without a result counts as failed (shown, and not Verified).
+      const steps = Object.entries(doc.steps ?? {}).map(([k, x]): [string, AttestationStep] => [k, x ?? { status: 'missing' }]);
       const good = ok && same && steps.every(([, x]) => x.status === 'success');
       const more = el('dl', {});
       const sub = (label: string, value: string, cls = '') => more.append(el('dt', { textContent: label }), el('dd', { textContent: value, className: cls }));
@@ -69,10 +73,10 @@ export function createConnectionRegion(app: App): ConnectionRegion {
     } catch (e) {
       // Fail closed: no plaintext fallback exists anywhere in this app. An
       // unreachable network is not a failed verification: say which it was.
-      if (!navigator.onLine || isNetworkError((e as Error).message)) goOffline();
+      if (!navigator.onLine || isNetworkError(messageOf(e))) goOffline();
       else {
         setBadge('bad', 'Enclave not verified: nothing will be sent');
-        app.state.status('Could not verify the enclave, so nothing will be sent: ' + (e as Error).message, 'bad');
+        app.state.status('Could not verify the enclave, so nothing will be sent: ' + messageOf(e), 'bad');
       }
     }
     app.queues.updateSend();
@@ -98,7 +102,7 @@ export function createConnectionRegion(app: App): ConnectionRegion {
     // A turn waiting on a dead stream would otherwise hang until the socket times out.
     // Transformers.js and Localhost turns need no network beyond this computer.
     for (const sid of app.sessionList.sessions.running) { if (app.providers.localRuns.has(sid) || app.providers.lhRuns.has(sid)) continue; lostRuns.add(sid); app.state.agent?.abort(sid).catch(() => {}); }
-    if (!was) { clearInterval(recheck!); recheck = setInterval(probe, 15_000); }
+    if (!was) { clearInterval(recheck ?? undefined); recheck = setInterval(probe, 15_000); }
     app.queues.updateSend(); app.transcript.scheduleRender();
   }
   // Can the relay be reached at all? The model list is small and unauthenticated.
@@ -110,7 +114,7 @@ export function createConnectionRegion(app: App): ConnectionRegion {
     return true;
   }
   async function backOnline() {
-    offline = false; clearInterval(recheck!); recheck = null;
+    offline = false; clearInterval(recheck ?? undefined); recheck = null;
     $<HTMLTextAreaElement>('input').placeholder = app.queues.PLACEHOLDER;
     app.state.status('Back online: verifying the enclave again.');
     if (!app.state.models.length) await loadModels();
@@ -124,9 +128,10 @@ export function createConnectionRegion(app: App): ConnectionRegion {
     const b = $('badge');
     b.className = 'icon ' + state;
     b.ariaLabel = text; b.title = text + '. Click for what BayLeaf can see.';
-    b.querySelector('use')!.setAttribute('href', state === 'ok' ? '#i-shield-check' : state === 'bad' ? '#i-shield-alert' : '#i-shield');
+    const href = state === 'ok' ? '#i-shield-check' : state === 'bad' ? '#i-shield-alert' : '#i-shield';
+    b.querySelector('use')?.setAttribute('href', href);
     // The composer's shield shows the same state; it opens the provider popover.
-    $('shield-btn').querySelector('use')!.setAttribute('href', b.querySelector('use')!.getAttribute('href')!);
+    $('shield-btn').querySelector('use')?.setAttribute('href', href);
     $('shield-btn').className = 'icon ' + state;
     app.state.composer?.refreshShield();
   }
@@ -134,7 +139,7 @@ export function createConnectionRegion(app: App): ConnectionRegion {
 
   async function loadModels() {
     try {
-      const data = ((await (await sealedModels()).json()) as SealedModelList).data ?? [];
+      const data = ((await (await sealedModels()).json()) as SealedModelList).data ?? []; // JSON from the relay: typed where it enters
       // Chat models that can call tools. Tinfoil's tool-like entries (websearch,
       // doc-upload, pii-filter) stay out until their data paths are reviewed.
       app.state.models = data
@@ -143,7 +148,7 @@ export function createConnectionRegion(app: App): ConnectionRegion {
         .map((m) => ({ id: m.id, name: m.name ?? m.id, contextWindow: m.context_window ?? 131072, windowReported: m.context_window != null, reasoning: !!m.reasoning, multimodal: m.multimodal === true,
           cost: m.pricing && { input: m.pricing.inputTokenPricePer1M ?? 0, output: m.pricing.outputTokenPricePer1M ?? 0, cacheRead: 0 } }));
     } catch (e) {
-      app.state.status('Could not load the BayLeaf Sealed model list: ' + (e as Error).message, 'bad');
+      app.state.status('Could not load the BayLeaf Sealed model list: ' + messageOf(e), 'bad');
     }
     const saved = (await store.getSetting<string>('model')) ?? 'glm-5-3';
     // Transformers.js is never the default: without a BayLeaf Sealed list, a placeholder holds the place.

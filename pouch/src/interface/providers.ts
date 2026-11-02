@@ -17,9 +17,6 @@ export interface LocalhostSetup {
   base: string; key: string; transport: LocalhostTransport; transportChoice?: LocalhostTransport | 'auto';
   detected?: LocalhostTransport; models: LocalhostModelInfo[]; testedAt?: number;
 }
-// testConnection's result with ok as the discriminant (its inferred type widens ok to boolean).
-type LocalhostReady = Extract<LocalhostTest, { detected: unknown }>;
-type LocalhostOutcome = (LocalhostReady & { ok: true }) | (Exclude<LocalhostTest, LocalhostReady> & { ok: false });
 // Download or load progress for the status line; downloading: a /task download (models get).
 export type LocalStatusProgress = LocalProgress & { downloading?: boolean };
 
@@ -36,7 +33,8 @@ export interface ProvidersRegion {
   LOCAL_ID: string | null;
   localhostOptions(saved: string): HTMLOptionElement[];
   localhostPicked(): boolean;
-  localhostWait(kind: 'slow' | 'flowing', model: Model<Api>): void;
+  // model: the one loading, for 'slow'; 'flowing' clears the line.
+  localhostWait(kind: 'slow' | 'flowing', model?: Model<Api>): void;
   get localOk(): Support; set localOk(v: Support);
   localOption(saved: string): HTMLOptionElement[];
   localPicked(): boolean;
@@ -58,7 +56,9 @@ export function createProvidersRegion(app: App): ProvidersRegion {
   // it is listed disabled with the reason. Nothing is downloaded without asking.
   let localOk: Support = { ok: false, reason: '' };
   const localRuns = new Set<string>(); // sessions whose current turn runs on Transformers.js
-  const LOCAL_ID = LOCAL && 'local:' + LOCAL.id;
+  const LOCAL_ID = LOCAL ? 'local:' + LOCAL.id : null;
+  // A thrown value's fields, without trusting its shape.
+  const fieldOf = (e: unknown, k: string) => String(typeof e === 'object' && e !== null ? Reflect.get(e, k) ?? '' : k === 'message' ? e : '');
   const localPicked = () => isLocal($<HTMLSelectElement>('model').value);
   const canSend = () => !!app.state.agent && (offSealedPicked() || (app.state.verified && !app.connection.offline));
   const mib = (n: number) => `${(n / 2 ** 20).toLocaleString(undefined, { maximumFractionDigits: 0 })} MB`;
@@ -66,16 +66,17 @@ export function createProvidersRegion(app: App): ProvidersRegion {
   // a weak adapter): Send then refuses with the reason (ensureLocal) instead of
   // quietly sending the message to Sealed.
   function localOption(saved: string) {
-    if (!LOCAL) return [];
-    const o = new Option(localOk.ok ? `${LOCAL.label} (in this browser)` : `${LOCAL.label} (unavailable: ${localOk.reason})`, LOCAL_ID!, false, saved === LOCAL_ID);
+    if (!LOCAL || !LOCAL_ID) return [];
+    const o = new Option(localOk.ok ? `${LOCAL.label} (in this browser)` : `${LOCAL.label} (unavailable: ${localOk.reason})`, LOCAL_ID, false, saved === LOCAL_ID);
     o.disabled = !localOk.ok;
     o.title = localOk.ok ? 'Runs in this browser on your GPU. Nothing is sent.' : localOk.reason;
     return [o];
   }
   function pickerProvider() {
-    const local = localPicked(), lhost = localhostPicked(), label = $<HTMLSelectElement>('model').closest<HTMLElement>('.provider-model')!;
+    const local = localPicked(), lhost = localhostPicked(), label = $<HTMLSelectElement>('model').closest<HTMLElement>('.provider-model');
+    if (!label) throw new Error('pouch.html: #model is outside .provider-model');
     label.dataset.sealedTitle ??= label.title; // the page's own wording, kept from the first call
-    label.querySelector('use')!.setAttribute('href', local ? '#i-chip' : lhost ? '#i-laptop' : '#i-lock');
+    label.querySelector('use')?.setAttribute('href', local ? '#i-chip' : lhost ? '#i-laptop' : '#i-lock');
     // Providers keep fixed theme colors (continuity): no two providers share one.
     label.classList.toggle('provider-tjs', local);
     label.classList.toggle('provider-localhost', lhost);
@@ -92,26 +93,27 @@ export function createProvidersRegion(app: App): ProvidersRegion {
   let localLoading: Promise<boolean> | null = null;
   async function ensureLocal() {
     if (!localOk.ok) { app.state.status(`Transformers.js is not available: ${localOk.reason}`, 'bad'); return false; }
+    if (!LOCAL) { app.state.status('Transformers.js is not available: this build of Pouch does not include it.', 'bad'); return false; }
     if (localEngine.loaded()) return true;
     const st = await localStored();
     if (!st.complete) {
       if (!navigator.onLine) { app.state.status('The Transformers.js model is not in this browser yet, and you are offline. Settings can load a saved copy from a folder.', 'bad'); return false; }
       let r;
-      try { r = await app.sessionList.modelService.get(LOCAL!.id, { by: 'user', via: 'Settings' }); }
-      catch (e) { app.state.status((e as Error & { code?: string }).code === 'EDENIED' ? 'Not downloaded.' : 'Transformers.js model: ' + (e as Error).message, (e as Error & { code?: string }).code === 'EDENIED' ? '' : 'bad'); return false; }
+      try { r = await app.sessionList.modelService.get(LOCAL.id, { by: 'user', via: 'Settings' }); }
+      catch (e) { const denied = fieldOf(e, 'code') === 'EDENIED'; app.state.status(denied ? 'Not downloaded.' : 'Transformers.js model: ' + fieldOf(e, 'message'), denied ? '' : 'bad'); return false; }
       if (!r.already) {
         renderLocalSettings();
         try { await r.promise; }
-        catch (e) { app.state.status((e as Error).name === 'AbortError' ? `Download stopped at ${mib((await localStored()).bytes)}; Download resumes where it stopped.` : 'Transformers.js model: ' + (e as Error).message, (e as Error).name === 'AbortError' ? '' : 'bad'); renderLocalSettings(); return false; }
+        catch (e) { const stopped = fieldOf(e, 'name') === 'AbortError'; app.state.status(stopped ? `Download stopped at ${mib((await localStored()).bytes)}; Download resumes where it stopped.` : 'Transformers.js model: ' + fieldOf(e, 'message'), stopped ? '' : 'bad'); renderLocalSettings(); return false; }
       }
     }
-    return startLocal();
+    return startLocal(LOCAL.label);
   }
-  function startLocal(): Promise<boolean> {
+  function startLocal(label: string): Promise<boolean> {
     const box = $('local-settings');
     box.dataset.state = 'loading';
     localLoading ??= localEngine.start({ onProgress: localProgress, network: navigator.onLine })
-      .then(() => { box.dataset.state = 'ready'; app.state.status(`${LOCAL!.label} is ready in this browser (Transformers.js).`); return true; },
+      .then(() => { box.dataset.state = 'ready'; app.state.status(`${label} is ready in this browser (Transformers.js).`); return true; },
         (e: Error) => { box.dataset.state = 'error'; box.dataset.error = e.message; app.state.status('Transformers.js model: ' + e.message, 'bad'); return false; })
       .finally(() => { localLoading = null; renderLocalSettings(); });
     return localLoading;
@@ -133,7 +135,9 @@ export function createProvidersRegion(app: App): ProvidersRegion {
   function showHint(kind: LocalHint) {
     const sid = [...localRuns].at(-1);
     if (sid == null) return;
-    (hints.get(sid) ?? hints.set(sid, new Set()).get(sid)!).add(kind);
+    let kinds = hints.get(sid);
+    if (!kinds) hints.set(sid, kinds = new Set());
+    kinds.add(kind);
     renderHint();
   }
   function clearHint(sid: SessionId | null | undefined) { hints.delete(String(sid)); renderHint(); }
@@ -171,14 +175,14 @@ export function createProvidersRegion(app: App): ProvidersRegion {
   }
   $('local-download').onclick = async () => { if (await ensureLocal()) renderLocalSettings(); };
   // Stop is the download's /task ctl, as `echo stop > /task/<id>/ctl` in the terminal.
-  $('local-stop').onclick = () => { const t = app.sessionList.modelService.downloads.get(LOCAL!.id); if (t?.status === 'running') app.namespaces.ctl(`/task/${t.id}/ctl`, 'stop').catch((e: Error) => app.state.status(e.message, 'bad')); };
+  $('local-stop').onclick = () => { const t = LOCAL && app.sessionList.modelService.downloads.get(LOCAL.id); if (t?.status === 'running') app.namespaces.ctl(`/task/${t.id}/ctl`, 'stop').catch((e: Error) => app.state.status(e.message, 'bad')); };
   $('local-remove').onclick = async () => {
     if (localRuns.size) return app.state.status('Stop the Transformers.js turn before removing the model.', 'bad');
     if (!(await app.tree.ask('Remove the Transformers.js model from this browser? Sessions and files stay. Downloading it again takes about 1.1 GB.', 'Remove', 'danger'))) return;
     await localRemove(); // the same store code as `models remove` (src/models.ts)
     if (localPicked()) { $<HTMLSelectElement>('model').value = (await store.getSetting('sealedModel')) ?? app.state.models[0]?.id ?? ''; await store.setSetting('model', $<HTMLSelectElement>('model').value); pickerProvider(); app.queues.updateSend(); }
     const est = await navigator.storage?.estimate?.().catch(() => null);
-    app.state.status(`Transformers.js model removed.${est ? ` This site now uses ${mib(est.usage!)} of storage.` : ''}`);
+    app.state.status(`Transformers.js model removed.${est?.usage != null ? ` This site now uses ${mib(est.usage)} of storage.` : ''}`);
     renderLocalSettings();
   };
   for (const id of ['local-folder', 'local-files']) {
@@ -192,7 +196,7 @@ export function createProvidersRegion(app: App): ProvidersRegion {
         $<HTMLInputElement>(id).value = '';
         app.state.status(r.complete ? `Transformers.js model loaded from your files (${r.added} files verified${r.bad ? `, ${r.bad} refused` : ''}).`
           : `${r.added} files verified${r.bad ? `, refused (wrong bytes): ${r.refused.join(', ') || r.bad}` : ''}; ${mib(r.total - r.bytes)} still missing.`, r.bad ? 'bad' : '');
-      } catch (e) { app.state.status((e as Error).message, 'bad'); }
+      } catch (e) { app.state.status(fieldOf(e, 'message'), 'bad'); }
       renderLocalSettings();
     };
   }
@@ -210,9 +214,11 @@ export function createProvidersRegion(app: App): ProvidersRegion {
   const lhModels = () => lh?.models ?? [];
   const lhAgentConfig = () => (lh?.base && lh.models?.length ? { base: lh.base, key: lh.key || '', transport: lh.transport, models: lh.models } : null);
   function localhostOptions(saved: string) {
+    if (!lh) return [];
+    const { base } = lh;
     return lhModels().map((m) => {
       const o = new Option(`${m.id} (your machine)`, 'localhost:' + m.id, false, saved === 'localhost:' + m.id);
-      o.title = `Runs on your server at ${lh!.base}. Pouch sends it this session's messages and the files the model reads.`;
+      o.title = `Runs on your server at ${base}. Pouch sends it this session's messages and the files the model reads.`;
       return o;
     });
   }
@@ -254,11 +260,12 @@ export function createProvidersRegion(app: App): ProvidersRegion {
     const parsed = parseLocalhostUrl(url);
     const typedKey = $<HTMLInputElement>('lh-key').value.trim();
     const key = typedKey || (lh && parsed.ok && parsed.base === lh.base ? lh.key : '') || '';
-    const choice = $<HTMLSelectElement>('lh-transport').value as LocalhostTransport | 'auto';
+    const picked = $<HTMLSelectElement>('lh-transport').value;
+    const choice = picked === 'completions' || picked === 'responses' ? picked : 'auto';
     $<HTMLButtonElement>('lh-test').disabled = true;
     $('lh-steps').replaceChildren(el('li', { className: 'ok', textContent: 'Testing...' }));
     try {
-      const r = await testConnection({ url, key, transport: choice }) as LocalhostOutcome;
+      const r = await testConnection({ url, key, transport: choice });
       if (r.ok) {
         await saveLocalhost({ base: r.base, key, transport: r.transport, transportChoice: choice, detected: r.detected, models: r.models, testedAt: Date.now() });
         app.state.status(`Localhost is set up: ${r.models.length} model${r.models.length === 1 ? '' : 's'} in the picker under Localhost.`);
@@ -284,8 +291,8 @@ export function createProvidersRegion(app: App): ProvidersRegion {
   };
   // A long wait for the first token is usually the server loading the model.
   let lhWaitShown = false;
-  function localhostWait(kind: 'slow' | 'flowing', model: Model<Api>) {
-    if (kind === 'slow') { lhWaitShown = true; app.state.status(`Waiting for your server: it may be loading ${model.id.slice('localhost:'.length)} (the first use after a while can take a minute).`); }
+  function localhostWait(kind: 'slow' | 'flowing', model?: Model<Api>) {
+    if (kind === 'slow') { lhWaitShown = true; app.state.status(`Waiting for your server: it may be loading ${model ? model.id.slice('localhost:'.length) : 'the model'} (the first use after a while can take a minute).`); }
     else if (lhWaitShown) { lhWaitShown = false; app.state.status(''); }
   }
 

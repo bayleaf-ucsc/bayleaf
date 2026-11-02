@@ -1,6 +1,6 @@
 // Composer: send button and modes, steering and follow-up queues, the context meter.
 
-import { createAttachments, type Attachments, type AttachmentVfs } from '../attachments.ts';
+import { createAttachments, type Attachments } from '../attachments.ts';
 import { compactionFor } from '../agent.ts';
 import { autoCompactAt, contextFor, describe as describeContext } from '../context.ts';
 import { $ } from '../dom.ts';
@@ -12,7 +12,7 @@ import { BUDGET, isLocal } from '../local/provider.ts';
 import { isLocalhost } from '../localhost.ts';
 import type { ConversationId, SubmissionId } from '@earendil-works/pi-durable';
 import type { App } from './app.ts';
-import type { SessionId, ThreadView } from '../agent-types.ts';
+import type { SessionId } from '../agent-types.ts';
 import type { ContextMeter, ContextSize } from '../context.ts';
 import type { Snapshot } from '../motion.ts';
 import type { TrayRow } from '../composer.ts';
@@ -28,6 +28,8 @@ export interface ChildFollowUp { sid: SessionId; text: string; name: string; at:
 export type Placement = Promise<{ late: boolean } | null>;
 export interface HeldCard { id: ConversationId; card: Snapshot | null }
 interface Arrival { text: string; first: DOMRect; kf?: Keyframe[] }
+const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const ENDED: Record<string, string> = { stopped: 'was stopped', failed: 'failed', interrupted: 'was interrupted' };
 
 export interface QueuesRegion {
   // To the polite live region; to the status line too when seen.
@@ -75,7 +77,7 @@ export function createQueuesRegion(app: App): QueuesRegion {
   // ── Composer (composer.ts) ──────────────────────────────────────────
   const busy = () => !!app.state.view?.busy;
   const PLACEHOLDER = 'Ask Pouch. @ for files, $ for skills, / for commands';
-  const attachments = createAttachments({ vfs: app.state.vfs as AttachmentVfs, composer: $('composer'), input: $('input'), picker: $<HTMLInputElement>('attachment-picker'), button: $('attach-file'), chips: $('attachment-chips'), warning: $('attachment-warning'), status: app.state.status });
+  const attachments = createAttachments({ vfs: app.state.vfs, composer: $('composer'), input: $('input'), picker: $<HTMLInputElement>('attachment-picker'), button: $('attach-file'), chips: $('attachment-chips'), warning: $('attachment-warning'), status: app.state.status });
   const submitting = new Set<string>(); // per session: a send from Enter until its model turn ends (after-turn chores run on)
   const deleting = new Set<string>(); // sessions a first-message revert is deleting: sends to them wait for it to settle
   // While Pouch works (JOURNEYS D25), a message is a Steer or a Follow-up
@@ -119,7 +121,7 @@ export function createQueuesRegion(app: App): QueuesRegion {
     if (kind === 'stop' && !app.sessionList.focus) $('send').setAttribute('aria-keyshortcuts', 'Escape'); else $('send').removeAttribute('aria-keyshortcuts');
     $('send').classList.toggle('stop', kind === 'stop');
     $('send').classList.toggle('followup', kind === 'followup');
-    $('send').querySelector('use')!.setAttribute('href', kind === 'stop' ? '#i-stop' : '#i-send');
+    $('send').querySelector('use')?.setAttribute('href', kind === 'stop' ? '#i-stop' : '#i-send');
   }
   // The split button (Steer or Follow-up, and a menu) beside Stop: shown while the
   // agent in view works and the draft is not empty.
@@ -130,8 +132,9 @@ export function createQueuesRegion(app: App): QueuesRegion {
     const blocked = !app.sessionList.focus ? waitingOn() : [];
     $('sendmode-label').textContent = MODE_LABEL[m];
     const what = m === 'steer' ? `Steer: send into ${who}'s current turn, read after its current step (Enter)` : `Follow-up: send after ${who}'s turn ends (Enter)`;
-    $('sendmode-main').ariaLabel = `${what}. Alt+Enter to ${MODE_VERB[other]} instead.` + (m === 'steer' && blocked.length ? ` Steering will detach ${blocked.join(', ')}.` : '');
-    $('sendmode-main').title = $('sendmode-main').ariaLabel!;
+    const label = `${what}. Alt+Enter to ${MODE_VERB[other]} instead.` + (m === 'steer' && blocked.length ? ` Steering will detach ${blocked.join(', ')}.` : '');
+    $('sendmode-main').ariaLabel = label;
+    $('sendmode-main').title = label;
     // One-shot sends are plain menu items (critique 4): the key that does the
     // same is said in text; the setting is its own item below a separator.
     const draft = hasDraft();
@@ -140,28 +143,30 @@ export function createQueuesRegion(app: App): QueuesRegion {
       const keys = b.dataset.mode === m ? 'Enter' : b.dataset.mode === other ? 'Alt+Enter' : null;
       const k = b.querySelector('.sm-key');
       if (k) k.textContent = keys ? ` (${keys})` : '';
-      b.title = b.firstElementChild!.textContent! + (keys ? ` (${keys})` : '');
+      b.title = (b.firstElementChild?.textContent ?? '') + (keys ? ` (${keys})` : '');
       if (b.dataset.mode !== 'settings') b.ariaDisabled = String(!draft);
     }
     $('sendmode-enter').textContent = `Enter now ${m === 'steer' ? 'steers' : 'sends a follow-up'}.`;
     const note = $('sendmode-detach');
     note.hidden = !blocked.length;
     note.textContent = blocked.length ? `Steering will detach ${blocked.join(', ')}` : '';
-    $('sendmode-menu').querySelector<HTMLElement>('[data-mode="stopsend"]')!.hidden = !!app.sessionList.focus;
+    const stopSend = $('sendmode-menu').querySelector<HTMLElement>('[data-mode="stopsend"]');
+    if (stopSend) stopSend.hidden = !!app.sessionList.focus;
   }
   // The context meter (src/context.ts): about how many tokens main's next request
   // would carry, against the window of the model in the picker (where it goes).
   // From the stored transcript only: computing it sends nothing. Hidden in a
   // subagent's view and before the session holds anything.
   function contextNow() {
-    // c is false in a subagent's view, falsy like null.
-    const id = $<HTMLSelectElement>('model').value, c = (!app.sessionList.focus && contextFor((app.state.view as ThreadView | null)?.context, isLocal(id))) as ContextSize | null;
+    // None in a subagent's view.
+    const id = $<HTMLSelectElement>('model').value, c = app.sessionList.focus ? null : contextFor(app.state.view?.context, isLocal(id));
     if (!c?.tokens) return null;
     const sealed = app.state.models.find((m) => m.id === id), host = isLocalhost(id) ? app.providers.lh?.models?.find((m) => 'localhost:' + m.id === id) : null;
     const known = isLocal(id) ? null : host ? host.contextWindow ?? null : sealed?.windowReported ? sealed.contextWindow : null;
     // Where pi-durable compacts uses the window pi-ai was given, defaults included (src/agent.ts, src/localhost.ts).
     const used = isLocal(id) ? null : host ? host.contextWindow ?? 32_768 : sealed?.contextWindow ?? null;
-    return { ctx: c, d: describeContext(c, { window: known, budget: isLocal(id) ? BUDGET : null, auto: used && autoCompactAt(used, compactionFor(used)) })! };
+    const d = describeContext(c, { window: known, budget: isLocal(id) ? BUDGET : null, auto: used && autoCompactAt(used, compactionFor(used)) });
+    return d && { ctx: c, d };
   }
   function renderCtx() {
     const b = $('composer-ctx');
@@ -186,9 +191,9 @@ export function createQueuesRegion(app: App): QueuesRegion {
       const c = app.subagents.focusedChild(), live = c?.status === 'running';
       input.dataset.child = String(app.sessionList.focus.id);
       input.disabled = !live;
-      const ended = ({ stopped: 'was stopped', failed: 'failed', interrupted: 'was interrupted' } as Record<string, string>)[c?.status as string] ?? 'has finished';
-      input.placeholder = live ? `Steer ${c!.name}: it reads this after its current step` : `${c?.name ?? 'This subagent'} ${ended}. Go back to ${app.subagents.parentName(app.sessionList.sessions.current)} to continue.`;
-      if (live) setSend('stop', `Stop ${c!.name}`, 'Stop', `Stop ${c!.name}`);
+      const ended = ENDED[c?.status ?? ''] ?? 'has finished';
+      input.placeholder = live ? `Steer ${c.name}: it reads this after its current step` : `${c?.name ?? 'This subagent'} ${ended}. Go back to ${app.subagents.parentName(app.sessionList.sessions.current)} to continue.`;
+      if (live) setSend('stop', `Stop ${c.name}`, 'Stop', `Stop ${c.name}`);
       else setSend('send', `The subagent ${ended}`);
       $<HTMLButtonElement>('send').disabled = !live;
       showSplit(live, c?.name);
@@ -223,9 +228,9 @@ export function createQueuesRegion(app: App): QueuesRegion {
   async function dispatch(key: string, prepare: () => FollowUp | null | Promise<FollowUp | null>) {
     spend.delete('new'); spend.set(String(key), 0); // this session's "requests this turn" starts over
     app.namespaces.changes.begin(key); // and so does /session/<sid>/changes
-    submitting.add(key); updateSend(); app.state.composer!.renderTray();
+    submitting.add(key); updateSend(); app.state.composer?.renderTray();
     let q: FollowUp | null = null, k = key;
-    const runEnded = () => { submitting.delete(k); updateSend(); app.state.composer!.renderTray(); };
+    const runEnded = () => { submitting.delete(k); updateSend(); app.state.composer?.renderTray(); };
     // A first message's session is made inside send(): from then on this send
     // belongs to it, so "new" is free for the next New (New, then Enter).
     const adopted = (id: SessionId) => { submitting.delete(k); k = String(id); submitting.add(k); };
@@ -233,9 +238,9 @@ export function createQueuesRegion(app: App): QueuesRegion {
     catch (e) {
       // The watched view can say idle a moment before pi-durable's run ends:
       // then the follow-up waits and goes on the next try.
-      if (q && /still running/.test((e as Error).message) && !followUps.has(key) && (q.tries = (q.tries ?? 0) + 1) <= 25) { followUps.set(key, q); setTimeout(pump, 400); }
+      if (q && /still running/.test(messageOf(e)) && !followUps.has(key) && (q.tries = (q.tries ?? 0) + 1) <= 25) { followUps.set(key, q); setTimeout(pump, 400); }
       else {
-        app.state.status((e as Error).message, 'bad');
+        app.state.status(messageOf(e), 'bad');
         if (q && !$<HTMLTextAreaElement>('input').value.trim()) { $<HTMLTextAreaElement>('input').value = q.text; app.send.autosize(); } // not sent: the text comes back
       }
     }
@@ -254,7 +259,7 @@ export function createQueuesRegion(app: App): QueuesRegion {
     followUps.delete(key);
     putBack(q.text);
     announce(how === 'edit' ? 'Follow-up back in the box for editing.' : q.attached.files.length ? 'Follow-up cancelled and put back; its attachments are still in your files.' : 'Follow-up cancelled and put back in the box.');
-    app.state.composer!.renderTray(); updateSend();
+    app.state.composer?.renderTray(); updateSend();
   }
   // Hold the draft as the follow-up, or add it to the one follow-up (said so).
   async function holdFollowUp(key: string, prepare: () => Promise<FollowUp>) {
@@ -270,8 +275,8 @@ export function createQueuesRegion(app: App): QueuesRegion {
         followUps.set(key, q);
         announce('Follow-up: it goes after this turn.');
       }
-    } catch (err) { app.state.status((err as Error).message, 'bad'); }
-    finally { holdingFollowUp = false; app.state.composer!.renderTray(); updateSend(); }
+    } catch (err) { app.state.status(messageOf(err), 'bad'); }
+    finally { holdingFollowUp = false; app.state.composer?.renderTray(); updateSend(); }
   }
   // Steer main (the composer, Steer now): written to main's in file; the
   // harness side (steerSession) detaches a subagent main waits on, tracks it in
@@ -299,7 +304,7 @@ export function createQueuesRegion(app: App): QueuesRegion {
   function track(key: string, sid: SessionId, s: SteerItem, placed: Placement, promoted = false) {
     steers.set(key, [...(steers.get(key) ?? []), s]);
     if (promoted) arm('morph:steer:' + s.id);
-    app.state.composer!.renderTray();
+    app.state.composer?.renderTray();
     placed.then(async (p) => {
       const list = steers.get(key) ?? [], i = list.indexOf(s);
       if (i < 0) return; // taken back (Cancel, Stop)
@@ -308,14 +313,15 @@ export function createQueuesRegion(app: App): QueuesRegion {
       if (p && !p.late && row && !$('tray').classList.contains('collapsed')) { arrivals.set(s.id, { text: s.text, first: row.getBoundingClientRect() }); arm('arrive:' + s.id); arm('glow:' + s.id); }
       list.splice(i, 1);
       if (!list.length) steers.delete(key);
-      app.state.composer!.renderTray(); updateSend();
+      app.state.composer?.renderTray(); updateSend();
       if (/^Steering/.test($('status').textContent)) app.state.status(''); // critique 8: it was read
       if (!p && !s.withdrawing) return unplaced(key, s);
       if (!p) return;
       const who = s.child ? s.name : 'Pouch';
       if (!p.late) { app.transcript.scheduleRender(); return announce(`Steering delivered to ${who}.`, false); }
       announce(`${who} had finished its turn, so your steering message was sent as the next turn.`);
-      if (!s.child) app.subagents.drive(sid, () => app.state.agent!.waitFor(sid, s.id));
+      const agent = app.state.agent;
+      if (!s.child && agent) app.subagents.drive(sid, () => agent.waitFor(sid, s.id));
     }, () => {});
   }
   // A steer that raced the run's end and was never placed (nor withdrawn):
@@ -325,7 +331,7 @@ export function createQueuesRegion(app: App): QueuesRegion {
     const q = followUps.get(key);
     followUps.set(key, { attached: noFiles(), turnModel: $<HTMLSelectElement>('model').value, at: Date.now(), ...q, text: [q?.text, s.text].filter(Boolean).join('\n\n'), paused: false });
     announce('Pouch had just finished, so your message is a follow-up and goes as the next turn.');
-    app.state.composer!.renderTray(); updateSend(); queueMicrotask(pump);
+    app.state.composer?.renderTray(); updateSend(); queueMicrotask(pump);
   }
   // Steering messages travelling from the tray into the transcript.
   const arrivals = new Map<SubmissionId, Arrival>();
@@ -352,13 +358,13 @@ export function createQueuesRegion(app: App): QueuesRegion {
     return l.filter((c) => refs.has(refOf(l, c))).map((c) => ({ id: c.id, card: snapshot($('log').querySelector(`.subagent[data-child="${CSS.escape(String(c.id))}"]`) ?? pill(c)) }));
   }
   function foldIntoTray(held: HeldCard[]) {
-    app.state.composer!.renderTray();
+    app.state.composer?.renderTray();
     for (const h of held) {
       arm('fold:sa:' + h.id);
       const row = $('tray-list').querySelector(`[data-key="sa:${CSS.escape(String(h.id))}"]`);
       if (h.card && row) fold(h.card, row);
     }
-    app.state.composer!.renderTray();
+    app.state.composer?.renderTray();
   }
   // What a tray row carries over a rebuild: its fold or morph highlight.
   function trayRowMotion(li: HTMLLIElement, r: TrayRow) {
@@ -371,7 +377,7 @@ export function createQueuesRegion(app: App): QueuesRegion {
     const mine = list.filter(which);
     for (const s of mine) s.withdrawing = true; // its placement may resolve null meanwhile: not lost
     for (const s of mine) {
-      const r = await app.state.agent!.withdraw(sid, s.id).catch(() => 'settled');
+      const r = app.state.agent ? await app.state.agent.withdraw(sid, s.id).catch(() => 'settled') : 'settled';
       list.splice(list.indexOf(s), 1);
       if (r === 'aborted') back.push(s.text);
     }

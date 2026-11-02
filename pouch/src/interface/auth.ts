@@ -21,7 +21,7 @@ export function createAuthRegion(app: App): AuthRegion {
   async function claim() {
     const r = await claimInitiate();
     if (!r.ok) return app.state.status('Could not start sign-in (HTTP ' + r.status + ').', 'bad');
-    const c = await r.json() as ClaimStart;
+    const c: ClaimStart = await r.json();
     $('claim-code').textContent = c.user_code;
     $('claim-url').textContent = c.claim_url;
     $('claim-state').textContent = 'Waiting for approval...'; $('claim-state').className = 'pending';

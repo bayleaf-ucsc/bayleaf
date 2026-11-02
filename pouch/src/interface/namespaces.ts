@@ -10,8 +10,6 @@ import { createChanges, createControl } from '../ns/control.ts';
 import { TaskFs } from '../ns/tasks.ts';
 import type { AssistantItem, SessionId } from '../agent-types.ts';
 import type { AgentRow, Changes, Control } from '../ns/control.ts';
-import type { TerminalVfs } from '../terminal.ts';
-import type { ViewMode } from '../preview.ts';
 import type { Namespace } from '../ns/namespace.ts';
 import type { App } from './app.ts';
 
@@ -43,7 +41,7 @@ export function createNamespacesRegion(app: App): NamespacesRegion {
   const mainSince = new Map<string, number>(); // session id -> when main's current turn started
   async function agentRows(sid: string): Promise<AgentRow[]> {
     const k = String(sid);
-    const l = app.subagents.kids.has(k) ? app.subagents.kids.get(k)! : await app.subagents.loadKids(sid);
+    const l = app.subagents.kids.get(k) ?? await app.subagents.loadKids(sid);
     const working = app.sessionList.sessions.running.has(k);
     const state = app.queues.stopping.has(k) ? 'stopping' : working ? (app.state.agent?.subagents?.blocked(sid).length ? 'waiting' : 'working') : 'idle';
     return [{ ref: MAIN, name: 'main', kind: 'main', state, since: working ? mainSince.get(k) : undefined, ns: app.state.vfs.describe() },
@@ -56,7 +54,7 @@ export function createNamespacesRegion(app: App): NamespacesRegion {
     current: () => app.sessionList.sessions.current?.id ?? null,
     agents: agentRows,
     last: async (sid, ref) => {
-      if (asRef(ref) === MAIN) return ((await app.state.agent?.snapshot(sid).catch(() => null))?.items.findLast((i) => i.type === 'assistant' && i.text) as AssistantItem | undefined)?.text ?? '';
+      if (asRef(ref) === MAIN) return (await app.state.agent?.snapshot(sid).catch(() => null))?.items.findLast((i): i is AssistantItem => i.type === 'assistant' && !!i.text)?.text ?? '';
       const l = app.subagents.kids.get(String(sid)) ?? [], c = l.find((x) => refOf(l, x) === ref);
       return c && app.state.agent?.subagents ? (await app.state.agent.subagents.summary(sid, c.id).catch(() => null))?.answer ?? '' : '';
     },
@@ -74,9 +72,10 @@ export function createNamespacesRegion(app: App): NamespacesRegion {
   function mainNamespace(sid: SessionId | null | undefined, base: Namespace) {
     if (sid == null) return base;
     // /task too is cut to this session: its runs, subagents and watches (src/ns/tasks.ts).
-    if (!mainNs.has(String(sid))) mainNs.set(String(sid), over(base, [['/session', control.view({ by: 'agent', sid }), { label: 'control (a1)' }],
+    let ns = mainNs.get(String(sid));
+    if (!ns) mainNs.set(String(sid), ns = over(base, [['/session', control.view({ by: 'agent', sid }), { label: 'control (a1)' }],
       ['/task', new TaskFs(app.state.vfs.tasks, () => app.state.vfs.watches, { sid }), { label: 'tasks (this session)' }]]));
-    return mainNs.get(String(sid))!;
+    return ns;
   }
   { // main's working/idle state, for /session and its events
     const r = app.sessionList.sessions.running, add = r.add.bind(r), del = r.delete.bind(r);
@@ -102,9 +101,10 @@ export function createNamespacesRegion(app: App): NamespacesRegion {
   // ── Terminal (terminal.ts) ──────────────────────────────────────────
   // The user's shell over the same namespace; `bayleaf` asks every use. Ctrl+`
   // opens it (or focuses it); opening it never sends anything.
-  const terminal = createTerminal({ vfs: app.state.vfs as TerminalVfs, fs: over(app.state.vfs.as('user'), [['/session', control.view({ by: 'user', label: 'terminal' }), { label: 'control (you)' }]]), onChange: () => app.tree.renderTree(),
+  const terminal = createTerminal({ vfs: app.state.vfs, fs: over(app.state.vfs.as('user'), [['/session', control.view({ by: 'user', label: 'terminal' }), { label: 'control (you)' }]]), onChange: () => app.tree.renderTree(),
     hooks: { bayleafCredential: () => app.state.key, approveEgress: (req) => app.sessionList.egress.approve(req, null, undefined, 'you, in the terminal'), models: app.sessionList.modelService, pdf: app.sessionList.pdfService, media: app.sessionList.mediaService,
-      openFile: ({ path, mode, interactive }) => app.editing.openFile(path, undefined, { mode: mode as ViewMode, interactive }) as Promise<boolean>, revealDir: (path) => app.transcript.revealDir(path) } });
+      // The cast: terminal.ts declares boolean, but open-cli.ts's hook also takes a reason string, which `open` prints.
+      openFile: ({ path, mode, interactive }) => app.editing.openFile(path, undefined, { mode: mode === 'raw' || mode === 'preview' ? mode : null, interactive }) as Promise<boolean>, revealDir: (path) => app.transcript.revealDir(path) } });
   document.addEventListener('keydown', (e) => {
     if (e.key !== '`' || !e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]')) return;
     e.preventDefault();
