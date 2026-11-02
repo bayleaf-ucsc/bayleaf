@@ -32,7 +32,7 @@ const ASK = 'How did each region do month by month? Show me in the chat, I don\'
 
 // Every value the data explains: per region-month totals, medians and order
 // counts, and the sums a summary might show (per region, per month, overall).
-const { rows, regions, months, total } = expectedGrid();
+const { rows, regions, months } = expectedGrid();
 const sum = (xs) => Math.round(xs.reduce((s, x) => s + (x ?? 0), 0) * 100) / 100;
 const explained = new Set([...rows.flatMap(([, , t, m, n]) => [t, m, n]),
   ...regions.map((r) => sum(rows.filter((x) => x[0] === r).map((x) => x[2]))), ...regions.map((r) => sum(rows.filter((x) => x[0] === r).map((x) => x[4]))),
