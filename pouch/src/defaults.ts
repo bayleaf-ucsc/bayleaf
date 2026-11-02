@@ -155,8 +155,8 @@ description: Read, quote and cite PDFs, and see scanned pages or figures, with p
 
 Poppler's command names, run by pdf.js inside this browser. Nothing leaves
 the pouch, and a PDF's JavaScript never runs (pdfinfo only reports it).
-The first command downloads the pdf runtime (about 4 MiB, from Pouch's own
-site) and keeps it for offline use. Each command is a /task job; stop a long
+The first command installs pdf.js (about 4 MiB, once, from Pouch's own
+origin; its output says so) and keeps it for offline use. Each command is a /task job; stop a long
 one with \`echo stop > /task/<id>/ctl\`.
 
 ## Recipe
@@ -204,8 +204,8 @@ description: Inspect audio and video files (phone MOV/MP4 videos, voice memos, W
 
 FFmpeg 9 (libav.js) runs inside this browser: \`ffprobe\` and \`ffmpeg\` with
 their usual flags, over copies of the files. Nothing leaves the pouch. The
-first command downloads the media runtime (about 8 MiB, from Pouch's own
-site) and keeps it for offline use. Each command is a /task job; stop a long
+first command installs libav.js (about 8 MiB, once, from Pouch's own
+origin; its output says so) and keeps it for offline use. Each command is a /task job; stop a long
 one with \`echo stop > /task/<id>/ctl\`.
 
 ## What works

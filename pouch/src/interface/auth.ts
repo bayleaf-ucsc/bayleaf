@@ -4,7 +4,7 @@ import * as store from '../store.ts';
 import { $, el } from '../dom.ts';
 import { extractKey } from '../usage.ts';
 import { claimInitiate, claimPoll, usageOf } from '../bayleaf-api.ts';
-import { engine as localEngine } from '../local/engine.ts';
+import { localWorker } from '../local/host.ts';
 import type { App } from './app.ts';
 import type { Allowance } from '../usage.ts';
 import type { ClaimPollReply, ClaimStart } from '../trust.ts';
@@ -111,9 +111,9 @@ export function createAuthRegion(app: App): AuthRegion {
     app.state.status('Erasing...');
     try { await app.state.agent?.close(); } catch {}
     app.state.agent = null;
-    await localEngine.dispose().catch(() => {});
-    await app.install.shellCopy.uninstall({ remember: false }).catch(() => {}); // the next visit keeps a fresh copy
-    await store.eraseEverything(); // includes the Local model's and the offline copy's Cache Storage
+    await localWorker.dispose().catch(() => {});
+    await app.install.shellCopy.remove({ remember: false }).catch(() => {}); // the next visit keeps a fresh copy
+    await store.eraseEverything(); // includes every add-on's and the offline copy's Cache Storage
     location.hash = 'erased'; // the reloaded page says it worked (L1)
     location.reload();
   }

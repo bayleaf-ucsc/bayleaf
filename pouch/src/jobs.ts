@@ -1,43 +1,46 @@
-// Engine jobs: one instance of each heavy tool engine (OCR, ASR, DuckDB...)
-// shared by every agent and the terminal, with a queue in front of it.
+// Jobs: one instance of each heavy tool's worker (pdf.js, libav.js, later
+// DuckDB, OCR, ASR) shared by every agent and the terminal, with a queue in
+// front of it. A worker's add-on (src/addons.ts) is installed, or installed
+// quietly, or refused, before the worker starts (its create/run calls
+// addons.assets(id).obtain()).
 //
-// - One engine per kind, created on first use and kept warm; jobs queue
-//   (serial by default, `concurrency` per engine).
+// - One worker per kind, created on first use and kept warm; jobs queue
+//   (serial by default, `concurrency` per worker).
 // - Each job is a /task entry (src/ns/tasks.ts) with its own ctl: `stop`
 //   aborts that job only (a queued job leaves the queue; a running one gets
-//   its signal aborted). Other jobs, and the engine, carry on.
-// - Memory guard: each engine declares an estimate; loading one that would
-//   exceed the budget first unloads idle engines, then refuses with a reason.
+//   its signal aborted). Other jobs, and the worker, carry on.
+// - Memory guard: each worker declares an estimate; starting one that would
+//   exceed the budget first unloads idle workers, then refuses with a reason.
 // - Capability scoping: a job gets the filesystem its caller passed (the
 //   caller's own namespace view), never Pouch's global tree. This module
-//   imports no vfs at all, so an engine cannot reach past what it was handed.
+//   imports no vfs at all, so a worker cannot reach past what it was handed.
 //
 import type { IFileSystem } from 'just-bash';
 import type { Task, TaskFields, Tasks } from './ns/tasks.ts';
-// An engine definition (J its input, R its answer); memory in bytes.
-export interface EngineRun { fs: IFileSystem; signal: AbortSignal; note(line: string): void }
-export interface EngineInstance<J = unknown, R = unknown> { run(input: J, opts: EngineRun): R | Promise<R>; dispose?(): unknown }
-export interface EngineDef<J = unknown, R = unknown> { label?: string; memory?: number; concurrency?: number; create(): EngineInstance<J, R> | Promise<EngineInstance<J, R>> }
+// A worker definition (J its input, R its answer); memory in bytes.
+export interface WorkerRun { fs: IFileSystem; signal: AbortSignal; note(line: string): void }
+export interface WorkerInstance<J = unknown, R = unknown> { run(input: J, opts: WorkerRun): R | Promise<R>; dispose?(): unknown }
+export interface WorkerDef<J = unknown, R = unknown> { label?: string; memory?: number; concurrency?: number; create(): WorkerInstance<J, R> | Promise<WorkerInstance<J, R>> }
 export interface JobCaller { sid?: TaskFields['sid']; name?: string; fs?: IFileSystem }
-interface Job { name: string; def: EngineDef; input: unknown; caller: JobCaller; fs: IFileSystem; ctrl: AbortController; settle: { res(v: unknown): void; rej(e: unknown): void }; state: string; task: Task }
-interface LiveEngine { def: EngineDef; instance: EngineInstance | null; active: number; queue: Job[]; lastUsed: number; ready: Promise<void> | null }
-export interface JobsOptions { tasks: Tasks; engines?: Record<string, EngineDef>; budget?: number }
+interface Job { name: string; def: WorkerDef; input: unknown; caller: JobCaller; fs: IFileSystem; ctrl: AbortController; settle: { res(v: unknown): void; rej(e: unknown): void }; state: string; task: Task }
+interface LiveWorker { def: WorkerDef; instance: WorkerInstance | null; active: number; queue: Job[]; lastUsed: number; ready: Promise<void> | null }
+export interface JobsOptions { tasks: Tasks; workers?: Record<string, WorkerDef>; budget?: number }
 const GiB = 2 ** 30;
 const stopped = () => new DOMException('Stopped.', 'AbortError');
 const message = (err: unknown) => String(typeof err === 'object' && err && 'message' in err && err.message != null ? err.message : err);
 
-export function createJobs({ tasks, engines = {}, budget = defaultBudget() }: JobsOptions) {
-  const defs = new Map(Object.entries(engines));
-  const live = new Map<string, LiveEngine>(); // name -> { instance, active, queue: [], lastUsed }
+export function createJobs({ tasks, workers = {}, budget = defaultBudget() }: JobsOptions) {
+  const defs = new Map(Object.entries(workers));
+  const live = new Map<string, LiveWorker>(); // name -> { instance, active, queue: [], lastUsed }
 
-  function define(name: string, def: EngineDef) { if (defs.has(name)) throw new Error(`engine ${name} is already defined`); defs.set(name, def); }
+  function define(name: string, def: WorkerDef) { if (defs.has(name)) throw new Error(`worker ${name} is already defined`); defs.set(name, def); }
   const used = () => [...live.values()].reduce((n, e) => n + (e.def.memory ?? 0), 0);
 
-  async function ensure(name: string, def: EngineDef) {
+  async function ensure(name: string, def: WorkerDef) {
     const have = live.get(name);
     if (have) { await have.ready; return have; } // one instance, even while it starts
     const need = def.memory ?? 0;
-    // Unload idle engines, least recently used first, until it fits.
+    // Unload idle workers, least recently used first, until it fits.
     for (const [k, e] of [...live.entries()].sort((a, b) => a[1].lastUsed - b[1].lastUsed)) {
       if (used() + need <= budget) break;
       if (!e.active && !e.queue.length) await unload(k);
@@ -46,7 +49,7 @@ export function createJobs({ tasks, engines = {}, budget = defaultBudget() }: Jo
       const busy = [...live.entries()].map(([k, e]) => `${k} (${((e.def.memory ?? 0) / GiB).toFixed(1)} GiB)`).join(', ');
       throw Object.assign(new Error(`not enough memory budget to start ${name}: it needs about ${(need / GiB).toFixed(1)} GiB and ${(used() / GiB).toFixed(1)} of ${(budget / GiB).toFixed(1)} GiB is held by ${busy}, which are busy. Wait for their jobs, or stop one through its /task ctl.`), { code: 'ENOMEM' });
     }
-    const e: LiveEngine = { def, instance: null, active: 0, queue: [], lastUsed: Date.now(), ready: null };
+    const e: LiveWorker = { def, instance: null, active: 0, queue: [], lastUsed: Date.now(), ready: null };
     live.set(name, e);
     e.ready = Promise.resolve().then(() => def.create()).then((inst) => { e.instance = inst; }, (err) => { live.delete(name); throw err; });
     await e.ready;
@@ -60,10 +63,10 @@ export function createJobs({ tasks, engines = {}, budget = defaultBudget() }: Jo
   }
 
   // Submit a job. caller: { sid?, name, fs } (fs: the caller's namespace view).
-  // Returns { task, result } (result: a Promise of the engine's answer).
+  // Returns { task, result } (result: a Promise of the worker's answer).
   function submit(name: string, input: unknown, { caller = {}, label }: { caller?: JobCaller; label?: string } = {}) {
     const def = defs.get(name);
-    if (!def) throw Object.assign(new Error(`unknown engine "${name}". Known: ${[...defs.keys()].join(', ') || 'none'}`), { code: 'ENOENT' });
+    if (!def) throw Object.assign(new Error(`unknown worker "${name}". Known: ${[...defs.keys()].join(', ') || 'none'}`), { code: 'ENOENT' });
     const fs = caller.fs;
     if (!fs) throw new Error('a job needs its caller\'s filesystem view (caller.fs)');
     const ctrl = new AbortController();
@@ -88,7 +91,7 @@ export function createJobs({ tasks, engines = {}, budget = defaultBudget() }: Jo
   }
   async function enqueue(job: Job) {
     if (job.ctrl.signal.aborted) return;
-    let e: LiveEngine;
+    let e: LiveWorker;
     try { e = await ensure(job.name, job.def); }
     catch (err) { job.state = 'failed'; job.task.end('failed', message(err)); job.settle.rej(err); return; }
     if (job.ctrl.signal.aborted) return;
@@ -103,7 +106,7 @@ export function createJobs({ tasks, engines = {}, budget = defaultBudget() }: Jo
       job.task.note('running');
       (async () => {
         try {
-          if (!e.instance) throw new Error(`engine ${name} is not ready`);
+          if (!e.instance) throw new Error(`worker ${name} is not ready`);
           const out = await e.instance.run(job.input, { fs: job.fs, signal: job.ctrl.signal, note: (l) => job.task.note(l) });
           if (job.ctrl.signal.aborted) throw stopped();
           job.state = 'done'; job.task.end('done'); job.settle.res(out);
@@ -124,13 +127,13 @@ export function defaultBudget() {
   return Math.min(4 * GiB, dm ? (dm * GiB) / 4 : 2 * GiB);
 }
 
-// The trivial engine the tests use: wait `ms` (abortable), then hash a file from the caller's view.
-export const sleepAndHash = (sha256hex: (bytes: Uint8Array) => string, { memory = 0.1 * GiB, concurrency = 1, onCreate = () => {} } = {}): EngineDef => ({
+// The trivial worker the tests use: wait `ms` (abortable), then hash a file from the caller's view.
+export const sleepAndHash = (sha256hex: (bytes: Uint8Array) => string, { memory = 0.1 * GiB, concurrency = 1, onCreate = () => {} } = {}): WorkerDef => ({
   label: 'sleep-and-hash', memory, concurrency,
   create() {
     onCreate();
     return {
-      async run({ path, ms = 10 }: { path: string; ms?: number }, { fs, signal, note }: EngineRun) {
+      async run({ path, ms = 10 }: { path: string; ms?: number }, { fs, signal, note }: WorkerRun) {
         await new Promise((res, rej) => { const t = setTimeout(res, ms); signal.addEventListener('abort', () => { clearTimeout(t); rej(stopped()); }, { once: true }); });
         const bytes = await fs.readFileBuffer(path);
         note(`hashed ${bytes.length} bytes`);

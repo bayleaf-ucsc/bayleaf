@@ -40,10 +40,12 @@ const entry = `
 import { InMemoryFs } from 'just-bash';
 import { shellFor } from './src/tools.ts';
 import { createMediaService } from './src/media.ts';
+import { createAddons } from './src/addons.ts';
+import { REGISTRY } from './src/addons-registry.ts';
 import { Tasks } from './src/ns/tasks.ts';
 const fs = new InMemoryFs();
 const tasks = new Tasks();
-const media = createMediaService({ tasks });
+const media = createMediaService({ tasks, addons: createAddons({ entries: REGISTRY, tasks }) });
 const shell = shellFor(fs, { media });
 window.violations = [];
 document.addEventListener('securitypolicyviolation', (e) => window.violations.push(e.violatedDirective + ' ' + e.blockedURI));
@@ -107,6 +109,9 @@ try {
   // AG2: a structured probe.
   r = await sh('ffprobe -v error -show_format -show_streams -of json colors.webm');
   assert.equal(r.code, 0, r.err);
+  // libav.js is a quiet add-on: no sheet; the first use says it installed (stderr), stdout stays the report.
+  assert.match(r.err, /^ffprobe: installing libav\.js \(\d\.\d MiB, once, from Pouch's own origin\)$/m);
+  assert.deepEqual((await page.evaluate(() => window.pouch.tasks())).filter((x) => x.kind === 'install').map((x) => [x.label, x.status]), [['addons install libavjs', 'done']]);
   const probe = JSON.parse(r.out);
   assert.deepEqual(probe.streams.map((s) => s.codec_name), ['vp8', 'opus']);
   assert.equal(probe.streams[0].width, 64); assert.equal(probe.streams[0].height, 48);

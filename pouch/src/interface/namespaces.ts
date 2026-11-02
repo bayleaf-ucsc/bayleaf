@@ -23,13 +23,9 @@ export interface NamespacesRegion {
   ctl(path: string, text: string): Promise<unknown>;
   // Main's namespace: base plus its own session's /session and /task.
   mainNamespace(sid: SessionId | null | undefined, base: Namespace): Namespace;
-  renderLocalSettingsSoon(): void;
 }
 
 export function createNamespacesRegion(app: App): NamespacesRegion {
-  let settingsTimer: ReturnType<typeof setTimeout> | null = null;
-  const renderLocalSettingsSoon = () => { if (!settingsTimer) settingsTimer = setTimeout(() => { settingsTimer = null; app.providers.renderLocalSettings(); }, 250); };
-
   // ── Control plane (src/ns/control.ts, README "Control plane") ─────────
   // Everything that acts is a file under /session (agents) or /task (runs,
   // terminal commands, watches). The Interface is one client: its buttons call
@@ -102,7 +98,7 @@ export function createNamespacesRegion(app: App): NamespacesRegion {
   // The user's shell over the same namespace; `bayleaf` asks every use. Ctrl+`
   // opens it (or focuses it); opening it never sends anything.
   const terminal = createTerminal({ vfs: app.state.vfs, fs: over(app.state.vfs.as('user'), [['/session', control.view({ by: 'user', label: 'terminal' }), { label: 'control (you)' }]]), onChange: () => app.tree.renderTree(),
-    hooks: { bayleafCredential: () => app.auth.key, approveEgress: (req) => app.sessionList.egress.approve(req, null, undefined, 'you, in the terminal'), models: app.sessionList.modelService, pdf: app.sessionList.pdfService, media: app.sessionList.mediaService,
+    hooks: { bayleafCredential: () => app.auth.key, approveEgress: (req) => app.sessionList.egress.approve(req, null, undefined, 'you, in the terminal'), addons: app.sessionList.addons, pdf: app.sessionList.pdfService, media: app.sessionList.mediaService,
       // The cast: terminal.ts declares boolean, but open-cli.ts's hook also takes a reason string, which `open` prints.
       openFile: ({ path, mode, interactive }) => app.editing.openFile(path, undefined, { mode: mode === 'raw' || mode === 'preview' ? mode : null, interactive }), revealDir: (path) => app.transcript.revealDir(path) } });
   document.addEventListener('keydown', (e) => {
@@ -118,6 +114,5 @@ export function createNamespacesRegion(app: App): NamespacesRegion {
     control,
     ctl,
     mainNamespace,
-    renderLocalSettingsSoon,
   };
 }

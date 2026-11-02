@@ -1,4 +1,4 @@
-// PDF commands for the shell, on Pouch's first heavy-tool runtime (pdf.js):
+// PDF commands for the shell, on Pouch's first heavy-tool add-on (pdf.js):
 //
 //   pdfinfo  [-upw PW] FILE                     pages, metadata, encryption, JS, text layer
 //   pdftotext [-f N] [-l N] [-layout] [-nopgbrk] [-nomarkers] [-upw PW] FILE [OUT|-]
@@ -8,43 +8,55 @@
 // what differs says so in an error. pdftotext marks each page ("[page N]") so
 // answers can cite pages (AG3) and names pages with no text layer (AG4).
 //
-// The runtime (build-pdf.mjs, src/pdf/worker.ts) is fetched only when a pdf
-// command first needs it, from this origin as content-hash parts checked
-// against the manifest this page was built with (src/assets.ts partAssets),
-// and then kept for offline use. Every command is an engine job
-// (src/jobs.ts): a /task entry whose ctl stops it, one worker shared by every
-// agent and the terminal. Commands read and write only the caller's own
+// pdf.js (build-pdf.mjs, src/pdf/worker.ts) is a quiet add-on (src/addons.ts):
+// installed when a pdf command first needs it, from this origin as
+// content-hash parts checked against the manifest this page was built with,
+// then kept for offline use; the command's output says it installed. Every
+// command is a job (src/jobs.ts): a /task entry whose ctl stops it, one
+// worker shared by every agent and the terminal. Commands read and write only the caller's own
 // filesystem view (ctx.fs); the worker gets bytes, never a filesystem.
-import { partAssets } from './assets.ts';
 import { createJobs } from './jobs.ts';
+import { PDFJS } from './addons-registry.ts';
+import { say } from './addons.ts';
 import { normalize } from './vfs.ts';
 import type { defineCommand as DefineCommand, ResolvedCommandContext, IFileSystem, ExecResult } from 'just-bash';
 import type { Task, TaskFields, Tasks } from './ns/tasks.ts';
-import type { EngineDef } from './jobs.ts';
+import type { WorkerDef } from './jobs.ts';
+import type { Addons } from './addons.ts';
 import type { ObtainedRuntime, RuntimeAssets, RuntimeFiles } from './assets.ts';
 import type { PdfAction, PdfInfo, PdfJob, PdfJobBody, PdfJobInput, PdfReply, PdfResult, PdfResultOf, PdfText } from './pdf/protocol.ts';
 export type { PdfJob, PdfReply, PdfRequest, PdfResult } from './pdf/protocol.ts';
 
-// ── Heavy-tool runtimes: what src/media.ts shares with this one ──────
-// spawn: tests may pass their own worker.
-export interface EngineOptions { assets?: RuntimeAssets | null; spawn?: (files: RuntimeFiles) => Worker; onLoad?: (got: ObtainedRuntime) => void }
+// ── Heavy-tool workers: what src/media.ts shares with this one ──────
+// assets: the add-on's verified files (addons.assets(id)); spawn: tests may pass their own worker.
+export interface WorkerOptions { assets?: RuntimeAssets | null; spawn?: (files: RuntimeFiles) => Worker; onLoad?: (got: ObtainedRuntime) => void }
 export type Note = (line: string) => void;
 // A job waiting for its reply.
 export interface Pending<R> { resolve(result: R): void; reject(e: unknown): void; note?: Note; timer?: ReturnType<typeof setTimeout> }
 // Who a job is for (the /task label); fs is the caller's own view (capability scoping).
 export interface Who { name?: string; sid?: TaskFields['sid'] }
 export interface RunOptions { who?: Who; fs?: IFileSystem; signal?: AbortSignal; label?: string }
-export interface ServiceOptions<J, R> { tasks: Tasks; engine?: EngineDef<J, R>; budget?: number }
-// The engine's answer is the caller's to read: jobs do not know its type.
+// addons: where the worker's files come from (no addons and no worker: not available here).
+export interface ServiceOptions<J, R> { tasks: Tasks; addons?: Addons; worker?: WorkerDef<J, R>; budget?: number }
+// The worker's answer is the caller's to read: jobs do not know its type.
 export interface JobHandle { task: Task; result: Promise<unknown> }
 export type WhoOf = Who | (() => Who | undefined);
 export type CodedError = Error & { code?: string };
-// A job's rejection as an error to report (engines reject with Errors; anything else is wrapped).
+// A job's rejection as an error to report (workers reject with Errors; anything else is wrapped).
 export const coded = (e: unknown): CodedError => (e instanceof Error ? e : new Error(String(e)));
-// A command's job: its failure as the shell's result, or the engine's answer.
+// A command's job: its failure as the shell's result, or the worker's answer.
 export type JobOutcome<R> = { error: ExecResult; r?: undefined } | { error?: undefined; r: R; task: Task };
 
-export const PDF_RUNTIME = typeof POUCH_PDF_RUNTIME !== 'undefined' ? POUCH_PDF_RUNTIME : null; // eslint-disable-line no-undef
+// A quiet install during a command: its line ("installing pdf.js (...)") joins the
+// command's stderr, where the agent reads it, as well as the job's /task note.
+export function installLines() {
+  const seen = new WeakMap<object, string>();
+  type Run = (args: string[], ctx: ResolvedCommandContext) => Promise<ExecResult>;
+  return {
+    note(ctx: object, task: Task) { const l = task.log.find((x) => x.startsWith('installing ')); if (l) seen.set(ctx, l); },
+    wrap: (cmd: string, run: Run): Run => async (args, ctx) => { const r = await run(args, ctx), l = seen.get(ctx); return l ? { ...r, stderr: `${cmd}: ${l}\n${r.stderr}` } : r; },
+  };
+}
 
 // Caps, named so errors and the pdf skill can cite them.
 export const MAX_PDF_BYTES = 256 * 2 ** 20; // a larger file is refused before anything loads
@@ -56,7 +68,7 @@ export const MIN_DPI = 18;
 export const MAX_DPI = 600;
 export const MAX_PIXELS = 25_000_000;       // per rendered page (width x height), before any crop
 export const RENDER_MAX_BYTES = 256 * 2 ** 20; // encoded images per pdftoppm call, together
-export const ENGINE_MEMORY = 0.25 * 2 ** 30; // the jobs memory guard's estimate for the worker
+export const WORKER_MEMORY = 0.25 * 2 ** 30; // the jobs memory guard's estimate for the worker
 const STOP_GRACE_MS = 3000;                 // after Stop, how long a page may take before the worker is ended
 
 const ok = (stdout = '', stderr = '') => ({ stdout, stderr, exitCode: 0 });
@@ -204,7 +216,7 @@ export function formatText(r: PdfText, { nopgbrk, nomarkers }: { nopgbrk?: boole
   }).join('');
 }
 
-// ── The engine: one worker from the verified runtime ─────────────────
+// ── The worker: started from pdf.js's verified files ─────────────────
 const stopped = () => new DOMException('Stopped.', 'AbortError');
 const codeError = (msg: string, code?: string) => Object.assign(new Error(msg), { code });
 
@@ -213,17 +225,16 @@ function defaultSpawn(files: RuntimeFiles) {
   try { return new Worker(src, { type: 'module', name: 'pouch-pdf' }); } finally { URL.revokeObjectURL(src); }
 }
 
-export function pdfEngine({ assets = PDF_RUNTIME && partAssets(PDF_RUNTIME), spawn = defaultSpawn, onLoad }: EngineOptions = {}): EngineDef<PdfJob, PdfResult> {
+export function pdfWorker({ assets = null, spawn = defaultSpawn, onLoad }: WorkerOptions = {}): WorkerDef<PdfJob, PdfResult> {
   return {
-    label: 'pdf.js', memory: ENGINE_MEMORY, concurrency: 1,
+    label: 'pdf.js', memory: WORKER_MEMORY, concurrency: 1,
     create() {
-      if (!assets) throw codeError('this build of Pouch has no pdf runtime (built with it left out)', 'ENOSYS');
-      const runtime = assets;
+      if (!assets) throw codeError(say.notBuilt('pdf.js'), 'ENOSYS');
+      const files = assets;
       let worker: Worker | null = null, seq = 0;
       const pending = new Map<number, Pending<PdfResult>>();
       async function start(note: Note | undefined, signal: AbortSignal) {
-        note?.('loading the pdf runtime');
-        const got = await runtime.obtain({ network: globalThis.navigator?.onLine !== false, signal });
+        const got = await files.obtain({ network: globalThis.navigator?.onLine !== false, signal, note });
         if (signal?.aborted) throw stopped();
         onLoad?.(got);
         const w = spawn(got.files);
@@ -236,7 +247,7 @@ export function pdfEngine({ assets = PDF_RUNTIME && partAssets(PDF_RUNTIME), spa
         };
         w.onerror = (e) => { for (const p of pending.values()) p.reject(new Error(e.message || 'the pdf worker failed')); pending.clear(); worker = null; };
         worker = w;
-        // A runtime that fails to load is not kept: the next job starts a fresh worker.
+        // A worker that fails to load is not kept: the next job starts a fresh one.
         try { await call(w, 'load', { pack: await got.files['data.pack'].arrayBuffer() }); }
         catch (e) { w.terminate(); if (worker === w) worker = null; throw e; }
       }
@@ -257,7 +268,7 @@ export function pdfEngine({ assets = PDF_RUNTIME && partAssets(PDF_RUNTIME), spa
       }
       return {
         async run({ action, data, ...opts }, { signal, note }) {
-          // Stop also ends a first-run download (assets.obtain takes the signal).
+          // Stop also ends a first-use install (assets.obtain takes the signal).
           if (!worker) await start(note, signal).catch((e) => { throw signal.aborted ? stopped() : e; });
           if (signal.aborted) throw stopped();
           const w = worker;
@@ -270,9 +281,9 @@ export function pdfEngine({ assets = PDF_RUNTIME && partAssets(PDF_RUNTIME), spa
   };
 }
 
-// The service shared by the terminal and every agent: one engine, its jobs.
-export function createPdfService({ tasks, engine = pdfEngine(), budget }: ServiceOptions<PdfJob, PdfResult>) {
-  const jobs = createJobs({ tasks, engines: { pdf: engine }, ...(budget ? { budget } : {}) });
+// The service shared by the terminal and every agent: one worker, its jobs.
+export function createPdfService({ tasks, addons, worker = pdfWorker({ assets: addons?.assets(PDFJS) }), budget }: ServiceOptions<PdfJob, PdfResult>) {
+  const jobs = createJobs({ tasks, workers: { pdf: worker }, ...(budget ? { budget } : {}) });
   return {
     jobs,
     run(input: PdfJob, { who = {}, fs, signal, label }: RunOptions = {}): JobHandle {
@@ -289,19 +300,21 @@ export type PdfService = ReturnType<typeof createPdfService>;
 // whoOf: who the /task label names.
 export function pdfCommands(defineCommand: typeof DefineCommand, service: PdfService | null | undefined, whoOf: WhoOf = () => ({ name: 'terminal' })) {
   const who = () => (typeof whoOf === 'function' ? whoOf() : whoOf) ?? {};
+  const installs = installLines();
   async function job<A extends PdfAction>(cmd: PdfCommand, ctx: ResolvedCommandContext, file: string, input: PdfJobInput & { action: A }): Promise<{ error: ExecResult; r?: undefined } | { error?: undefined; r: PdfResultOf<A>; task: Task; p: string }> {
-    if (!service) return { error: fail(cmd, 'the pdf runtime is not available here') };
+    if (!service) return { error: fail(cmd, say.notBuilt('pdf.js').replace(/\.$/, '')) };
     const read = await readPdf(cmd, ctx, file);
     if (read.error) return read;
     const { task, result } = service.run({ ...input, data: read.data }, { who: who(), fs: ctx.fs, signal: ctx.signal, label: `${cmd} ${read.p.split('/').pop()}` });
-    try { return { p: read.p, r: await result as PdfResultOf<A>, task }; } // the engine answers by action
+    try { return { p: read.p, r: await result as PdfResultOf<A>, task }; } // the worker answers by action
     catch (caught) {
       const e = coded(caught);
       if (e.name === 'AbortError') return { error: fail(cmd, `stopped (/task/${task.id})`, 130) };
+      if (e.code === 'ENOTINSTALLED' || e.code === 'ENOTSUP' || e.code === 'ENETDOWN' || e.code === 'ENOSYS') return { error: fail(cmd, e.message) };
       const what = e.code === 'EENCRYPTED' ? `${read.p}: ${e.message}${input.password ? '' : ' (try -upw PASSWORD)'}`
         : e.code === 'ERANGE' || e.code === 'ECAP' ? e.message : `${read.p}: ${e.message}`;
       return { error: fail(cmd, what, e.code === 'EENCRYPTED' ? 3 : 1) };
-    }
+    } finally { installs.note(ctx, task); }
   }
   const parse = (cmd: PdfCommand, args: string[]): { done: ExecResult; opts?: undefined; files?: undefined } | { done?: undefined; opts: PdfOpts; files: string[] } => {
     const a = parseArgs(cmd, args);
@@ -310,13 +323,13 @@ export function pdfCommands(defineCommand: typeof DefineCommand, service: PdfSer
     return a;
   };
 
-  const pdfinfo = defineCommand('pdfinfo', async (args, ctx) => {
+  const pdfinfo = defineCommand('pdfinfo', installs.wrap('pdfinfo', async (args, ctx) => {
     const a = parse('pdfinfo', args);
     if (a.done) return a.done;
     const j = await job('pdfinfo', ctx, a.files[0], { action: 'info', password: a.opts.upw ?? a.opts.opw, scan: INFO_SCAN_PAGES });
     if (j.error) return j.error;
     return ok(formatInfo(j.r, { password: a.opts.upw != null || a.opts.opw != null }));
-  });
+  }));
 
   // An open range (no -l) that reached the per-call cap still exits 0, but says so on
   // stdout, where an agent reads, as well as stderr, with the next batch to ask for.
@@ -328,7 +341,7 @@ export function pdfCommands(defineCommand: typeof DefineCommand, service: PdfSer
       err: `${cmd}: stopped at page ${end} of ${numPages} (${name}); continue with -f ${end + 1}\n` };
   };
 
-  const pdftotext = defineCommand('pdftotext', async (args, ctx) => {
+  const pdftotext = defineCommand('pdftotext', installs.wrap('pdftotext', async (args, ctx) => {
     const a = parse('pdftotext', args);
     if (a.done) return a.done;
     const range = pageRange(a.opts, TEXT_MAX_PAGES, 'pdftotext');
@@ -342,9 +355,9 @@ export function pdfCommands(defineCommand: typeof DefineCommand, service: PdfSer
     const o = abs(ctx.cwd, out);
     await ctx.fs.writeFile(o, text);
     return ok((a.opts.q ? '' : `wrote ${o} (pages ${j.r.pages[0]?.n ?? '-'}-${j.r.pages.at(-1)?.n ?? '-'} of ${j.r.numPages})\n`) + more.out, more.err);
-  });
+  }));
 
-  const pdftoppm = defineCommand('pdftoppm', async (args, ctx) => {
+  const pdftoppm = defineCommand('pdftoppm', installs.wrap('pdftoppm', async (args, ctx) => {
     const a = parse('pdftoppm', args);
     if (a.done) return a.done;
     const range = pageRange(a.opts, RENDER_MAX_PAGES, 'pdftoppm');
@@ -363,7 +376,7 @@ export function pdfCommands(defineCommand: typeof DefineCommand, service: PdfSer
     }
     const more = capNote('pdftoppm', range, RENDER_MAX_PAGES, j.r.numPages, 'RENDER_MAX_PAGES');
     return ok((a.opts.q ? '' : lines.join('\n') + '\n') + more.out, more.err);
-  });
+  }));
 
   return [pdfinfo, pdftotext, pdftoppm];
 }

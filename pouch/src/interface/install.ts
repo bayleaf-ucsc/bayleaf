@@ -91,8 +91,8 @@ export function createInstallRegion({ layout, status, ask }: InstallDeps): Insta
   $('update-later').onclick = () => { $('update').hidden = true; };
   $('copy-check').onclick = () => checkUpdate(true);
   $('copy-remove').onclick = async () => {
-    if (!(await ask('Uninstall the offline copy? Pouch then loads from the network each time (and not without it). Files and sessions stay.', 'Uninstall', 'danger'))) return;
-    await shellCopy.uninstall();
+    if (!(await ask('Remove the offline copy? Pouch then loads from the network each time (and not without it). Files and sessions stay.', 'Remove', 'danger', 'Remove offline copy?'))) return;
+    await shellCopy.remove();
     renderCopy('Offline copy removed. This tab keeps running; reloading loads the published build from the network.');
   };
   $('copy-keep').onclick = async () => {

@@ -20,7 +20,7 @@ const FILES = ['ctl', 'log', 'ns', 'status'];
 const WFILES = ['ctl', 'note', 'paths'];
 const LOG_LINES = 12;
 
-export type TaskKind = 'run' | 'subagent' | 'terminal' | 'download' | 'job';
+export type TaskKind = 'run' | 'subagent' | 'terminal' | 'install' | 'job';
 export interface TaskFields {
   kind: TaskKind; label?: string; key?: string;
   sid?: string | number | null; // the session it belongs to; none for the user's terminal

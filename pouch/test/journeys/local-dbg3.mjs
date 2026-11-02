@@ -13,9 +13,9 @@ await page.goto('http://127.0.0.1:8792/pouch.html');
 await page.waitForSelector('#model option[value^="local:"]', { state: 'attached' });
 const id = await page.$eval('#model option[value^="local:"]', (o) => o.value);
 await page.selectOption('#model', id);
-await page.waitForFunction(() => /ready|error/.test(document.querySelector('#local-settings').dataset.state ?? ''));
+await page.waitForFunction(() => /ready|error/.test(document.querySelector('#addons-settings').dataset.tjs ?? ''));
 await page.evaluate(() => { window.__st = []; new MutationObserver(() => window.__st.push(document.querySelector('#status').textContent)).observe(document.querySelector('#status'), { childList: true, characterData: true, subtree: true }); });
-console.log('state', await page.$eval('#local-settings', (b) => b.dataset.state));
+console.log('state', await page.$eval('#addons-settings', (b) => b.dataset.tjs));
 console.log('seed...');
 await Promise.race([page.evaluate(async () => {
   const root = await navigator.storage.getDirectory(); const names = [];

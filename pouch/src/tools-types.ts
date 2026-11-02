@@ -3,7 +3,7 @@
 import type { ConversationId } from '@earendil-works/pi-durable';
 import type { PreparedImage } from './attachments.ts';
 import type { BaseFs, Namespace } from './ns/namespace.ts';
-import type { ModelService, ModelWho } from './models-cli.ts';
+import type { Addons, AddonWho } from './addons.ts';
 import type { OpenHooks, ShowRequest } from './open-cli.ts';
 import type { PdfService } from './pdf.ts';
 import type { RunToolDeps } from './run.ts';
@@ -22,7 +22,7 @@ export interface EditSpec { oldText?: string; newText?: string; replaceAll?: boo
 export type RmOpts = Parameters<ToolFs['rm']>[1];
 export type MkdirOpts = Parameters<ToolFs['mkdir']>[1];
 export type CpOpts = Parameters<ToolFs['cp']>[2];
-export type ShellHooks = Parameters<typeof bayleafCommands>[1] & OpenHooks & { models?: ModelService; pdf?: PdfService; media?: Parameters<typeof mediaCommands>[1] };
+export type ShellHooks = Parameters<typeof bayleafCommands>[1] & OpenHooks & { addons?: Addons; pdf?: PdfService; media?: Parameters<typeof mediaCommands>[1] };
 // The page's side of the tools: namespaces, egress approval, the shared engines.
 export interface ToolsHooks {
   namespaceFor?(caller: Caller): string[] | null | undefined; // a subagent's mounts
@@ -32,7 +32,7 @@ export interface ToolsHooks {
   bayleafCredential?(): string | null | undefined;
   approveEgress?(req: EgressRequest, caller: Caller): Promise<boolean>;
   onEgress?(e: EgressNotice, caller: Caller): void;
-  models?: ModelService; modelsWho?(caller: Caller): Extract<ModelWho, { by: 'agent' }> | undefined;
+  addons?: Addons; addonsWho?(caller: Caller): Extract<AddonWho, { by: 'agent' }> | undefined;
   show?(req: ShowRequest, caller: Caller): Promise<{ opened?: boolean; reason?: string } | null | undefined>;
   pdf?: PdfService; media?: Parameters<typeof mediaCommands>[1];
   prepareImage?(bytes: Uint8Array): Promise<PreparedImage>;

@@ -1,5 +1,5 @@
 // The Transformers.js provider as a pi-ai provider: generation runs in this browser on the
-// WebGPU worker (src/local/worker.ts via engine.ts); nothing is sent anywhere.
+// WebGPU worker (src/local/worker.ts via host.ts); nothing is sent anywhere.
 //
 // It applies the recipe qualified in experiments/lfm3-webgpu (agent v2, "v8"):
 // a grounded system prompt naming /work, one byte-exact few-shot turn, four
@@ -15,8 +15,8 @@ import { TJS } from '../profiles.ts';
 export const { STEP_CAP, BUDGET, MAX_NEW, SYSTEM, TOOLS, FEWSHOT } = TJS;
 export { isLocal } from '../profiles.ts';
 import type { Api, AssistantMessage, ImageContent, JsonObject, JsonValue, Message, Model, StreamOptions, TextContent, ToolCall } from '@earendil-works/pi-ai';
-import type { LocalModel } from './engine.ts';
-import type { LocalChatMessage, LocalEngine, LocalToolCall, LocalToolSchema } from './protocol.ts';
+import type { LocalModel } from './host.ts';
+import type { LocalChatMessage, LocalWorker, LocalToolCall, LocalToolSchema } from './protocol.ts';
 
 export type LocalHint = keyof typeof HINTS;
 // contextTrimmed: how many turns or tool results the model did not see (src/context.ts).
@@ -85,9 +85,9 @@ export const HINTS = {
 const zero = () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } });
 let callN = 0;
 
-// engine: { generate(req, { onDelta, signal }) } (src/local/engine.ts).
+// worker: { generate(req, { onDelta, signal }) } (src/local/host.ts).
 // onHint(kind): a reason to suggest BayLeaf Sealed; the page shows it, never switches.
-export function localApi(engine: LocalEngine, { onHint }: { onHint?: (kind: LocalHint) => void } = {}) {
+export function localApi(worker: LocalWorker, { onHint }: { onHint?: (kind: LocalHint) => void } = {}) {
   function stream(model: Model<Api>, context: { messages: Message[] }, options: StreamOptions = {}) {
     const s = createAssistantMessageEventStream();
     const msg: LocalAssistantMessage = { role: 'assistant', content: [], api: model.api, provider: model.provider, model: model.id, usage: zero(), stopReason: 'stop', timestamp: Date.now() };
@@ -122,7 +122,7 @@ export function localApi(engine: LocalEngine, { onHint }: { onHint?: (kind: Loca
       };
       let r;
       try {
-        r = await engine.generate({ head: withTools ? [{ role: 'system', content: SYSTEM }, ...FEWSHOT] : [{ role: 'system', content: 'You are a concise assistant.' }],
+        r = await worker.generate({ head: withTools ? [{ role: 'system', content: SYSTEM }, ...FEWSHOT] : [{ role: 'system', content: 'You are a concise assistant.' }],
           history: toLocalMessages(context.messages), tools: withTools ? TOOLS : [], budget: BUDGET,
           // A plain request (a title) may ask for fewer new tokens; the tool recipe keeps MAX_NEW.
           maxNew: withTools ? MAX_NEW : Math.min(MAX_NEW, options.maxTokens ?? MAX_NEW) }, { onDelta, signal: options.signal });

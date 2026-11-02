@@ -26,6 +26,12 @@ const BANNED = [
     // is foreign only when every s-token in it is one of them.
     foreign: (m) => m.match(/s\d+p?/g).every((t) => /^s(?:16|24|32|64)p?$/.test(t)) },
   { re: /\bSessions in this scope\b|\bsessions of (this|your) scope\b|\bmessage another session\b/g, use: 'agents of this session' },
+  // The add-ons realignment (2026-11-01).
+  { re: /\b(pdf|media|Transformers\.js) runtime\b/g, use: 'the add-on\'s name (pdf.js, libav.js, Transformers.js)' },
+  { re: /\b[Tt]he local model\b|\bIn-browser models?\b/g, use: 'LFM3 or Transformers.js' },
+  { re: /\bnot downloaded\b|\bResume download\b|\bStop download\b|\bRemove the model\b|\bLoad from (folder|files)\b|\bDownload the model\b/g, use: 'add-on verbs: not installed, Install, Stop, Remove, Install from folder' },
+  { re: /`models(?: (?:get|list|status|remove|verify)\b[^`]*)?`|\bmodels (?:get|status|verify) [a-z]|defineCommand\(["']models["']/g, use: 'the `addons` command (no alias)' },
+  { re: /\bInstall app\b|\bUninstall offline copy\b|\b[Ee]ngine jobs?\b/g, use: 'Add to this device, Remove offline copy, jobs on workers' },
 ];
 // [matched text, context substring, reason]
 const ALLOW = [
@@ -56,9 +62,9 @@ if (hits.length) {
 }
 // The guard must be able to fail: the retired terms are still detectable, and
 // the sample-format exemption does not swallow a real handle.
-const probe = 'Queued · after this turn | Local lane | main (s1) | "s3"';
+const probe = 'Queued · after this turn | Local lane | main (s1) | "s3" | `models get x` | the pdf runtime';
 const caught = BANNED.filter(({ re }) => new RegExp(re.source).test(probe)).length;
-if (caught < 3) { console.log(`FAIL the patterns no longer catch the retired terms (${caught})`); process.exit(1); }
+if (caught < 5) { console.log(`FAIL the patterns no longer catch the retired terms (${caught})`); process.exit(1); }
 const handles = BANNED.find((b) => b.foreign);
 if (!handles.foreign('"s16"') || handles.foreign('"s3"') || handles.foreign('s16, s3')) { console.log('FAIL the sample-format exemption covers a session handle'); process.exit(1); }
 console.log(`ul-node: 0 retired terms in ${texts.length} first-party sources (${ALLOW.length} allowlisted context)`);

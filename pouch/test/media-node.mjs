@@ -112,7 +112,7 @@ await t('the commands in the terminal shell: mapping, outputs, -y, gaps, /task j
   await fs.mkdir('/work', { recursive: true });
   await fs.writeFile('/work/a.webm', new Uint8Array([0x1a, 0x45, 0xdf, 0xa3]));
   await fs.writeFile('/work/c.mp4', new Uint8Array([0, 0, 0, 0x18]));
-  const shell = shellFor(fs, { media: createMediaService({ tasks, engine: fake }) });
+  const shell = shellFor(fs, { media: createMediaService({ tasks, worker: fake }) });
   const sh = async (c) => shell.exec(c, { cwd: '/work' });
   let r = await sh('ffprobe --help'); assert.equal(r.exitCode, 0); assert.equal(r.stdout, HELP.ffprobe);
   r = await sh('ffmpeg -h'); assert.equal(r.stdout, HELP.ffmpeg);
@@ -165,7 +165,7 @@ await t('input size cap before anything loads', async () => {
   await fs.writeFile('/work/big.webm', 'x');
   const big = new Proxy(fs, { get: (t, k) => (k === 'stat' ? async (p) => ({ ...(await t.stat(p)), size: MAX_INPUT_BYTES + 1 }) : typeof t[k] === 'function' ? t[k].bind(t) : t[k]) });
   const before = asked.length;
-  const [probe, ffmpeg] = mediaCommands((name, fn) => ({ name, fn }), createMediaService({ tasks: new Tasks(), engine: fake }));
+  const [probe, ffmpeg] = mediaCommands((name, fn) => ({ name, fn }), createMediaService({ tasks: new Tasks(), worker: fake }));
   let r = await probe.fn(['big.webm'], { fs: big, cwd: '/work' });
   assert.equal(r.exitCode, 1); assert.match(r.stderr, /the cap is 256 MiB \(MAX_INPUT_BYTES\)/);
   r = await ffmpeg.fn(['-i', 'big.webm', 'o.opus'], { fs: big, cwd: '/work' });
@@ -173,13 +173,13 @@ await t('input size cap before anything loads', async () => {
   assert.equal(asked.length, before, 'the engine was never asked');
 });
 
-await t('no service and no runtime: clear errors', async () => {
+await t('no service and no add-on: clear errors', async () => {
   const fs = new InMemoryFs();
   await fs.mkdir('/work', { recursive: true }); await fs.writeFile('/work/a.webm', 'x');
   let r = await shellFor(fs, {}).exec('ffprobe a.webm', { cwd: '/work' });
-  assert.match(r.stderr, /the media runtime is not available here/);
+  assert.match(r.stderr, /not available here: this build of Pouch leaves libav\.js out$/m);
   r = await shellFor(fs, { media: createMediaService({ tasks: new Tasks() }) }).exec('ffprobe a.webm', { cwd: '/work' });
-  assert.match(r.stderr, /no media runtime/);
+  assert.match(r.stderr, /not available here: this build of Pouch leaves libav\.js out/);
 });
 
 await t('agents get the same commands (createTools bash)', () => {
@@ -327,7 +327,7 @@ await t('routing with a fake engine: MOV to wc.*, WebM to the CLI, a missing are
     if (input.action === 'wc.audio') return { files: [{ name: input.out.name, bytes: new Uint8Array(50) }], rate: 16000, channels: 1 };
     return { code: cliStderr ? 1 : 0, stdout: '', stderr: cliStderr, files: input.outputs.map((name) => ({ name, bytes: cliStderr ? null : new Uint8Array(5) })) };
   } }) };
-  const tasks = new Tasks(), media = createMediaService({ tasks, engine }), fs = new InMemoryFs(), sh = shellFor(fs, { media });
+  const tasks = new Tasks(), media = createMediaService({ tasks, worker: engine }), fs = new InMemoryFs(), sh = shellFor(fs, { media });
   await fs.mkdir('/w', { recursive: true });
   for (const f of ['scene.mov', 'tone.mp3', 'colors.webm', 'tone24.wav']) await fs.writeFile('/w/' + f, fx(f));
   const run = async (c) => { calls.length = 0; const r = await sh.exec(c, { cwd: '/w' }); return { ...r, calls: [...calls] }; };

@@ -103,7 +103,7 @@ const tool = (text) => e('pi.tool-result', { role: 'toolResult', toolCallId: 'c'
   let trim = 0;
   const engine = { async generate() { return { text: 'Browser reply.', input_tokens: 4000, output_tokens: 20, trimmed: trim }; } };
   const agent = await openAgent({ storage: new MemoryStorage(), tools: [], systemPrompt: async () => 'Test agent.', getClient: async () => client,
-    models: [{ id: 'glm-5-3', contextWindow: 32_768 }], local: { info: { id: 'lfm3', label: 'LFM3' }, engine } });
+    models: [{ id: 'glm-5-3', contextWindow: 32_768 }], local: { info: { id: 'lfm3', label: 'LFM3' }, worker: engine } });
   const settle = async (id) => { for (let k = 0; k < 200 && (await agent.snapshot(id)).busy; k++) await new Promise((r) => setTimeout(r, 25)); };
   try {
     const s = await agent.createSession('glm-5-3');

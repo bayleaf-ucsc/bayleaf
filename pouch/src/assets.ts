@@ -27,10 +27,11 @@ export type { FilePin, PartsPin };
 interface Part { path: string; bytes: number; sha256: string }
 // role: what the file is to its runtime (build-models.mjs marks the 'wasm').
 export interface PartsManifest { files: (FilePin & { parts: Part[]; role?: string })[] }
-// What an engine needs of partAssets: the runtime's verified files by name.
+// What a worker needs of its add-on: verified files by name (src/addons.ts assets();
+// note: where a quiet install says so).
 export type RuntimeFiles = Record<string, Blob>;
 export interface ObtainedRuntime { files: RuntimeFiles }
-export interface RuntimeAssets { obtain(opts: { network?: boolean; signal?: AbortSignal }): Promise<ObtainedRuntime> }
+export interface RuntimeAssets { obtain(opts: { network?: boolean; signal?: AbortSignal; note?(line: string): void }): Promise<ObtainedRuntime> }
 export interface AssetProgress { done: number; total: number; fetched: number; repaired: number }
 // Bytes for chunk i, [from, to) of the file.
 export type RangeSource = (i: number, from: number, to: number, signal?: AbortSignal) => Promise<Uint8Array<ArrayBuffer>>;

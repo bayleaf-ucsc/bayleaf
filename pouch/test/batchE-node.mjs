@@ -34,7 +34,7 @@ const agent = await openAgent({
   storage: new MemoryStorage(), tools: [], systemPrompt: async () => 'Test agent.',
   getClient: async () => client, onRequest: () => { onRequests++; },
   models: [{ id: 'glm-5-3', contextWindow: 32_768 }],
-  local: { info: { id: 'lfm3', label: 'LFM3' }, engine },
+  local: { info: { id: "lfm3", label: "LFM3" }, worker: engine },
   localhost: { config: { base: dummy.url + '/v1', key: KEY, transport: 'completions', models: [{ id: 'dummy-small', contextWindow: 32_768 }] } },
 });
 const complete = (...a) => agent.complete(...a);

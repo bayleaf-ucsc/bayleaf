@@ -10,7 +10,7 @@ await page.goto('http://127.0.0.1:8792/pouch.html');
 await page.waitForSelector('#model option[value^="local:"]', { state: 'attached' });
 const id = await page.$eval('#model option[value^="local:"]', (o) => o.value);
 await page.selectOption('#model', id);
-await page.waitForFunction(() => /ready|error/.test(document.querySelector('#local-settings').dataset.state ?? ''));
+await page.waitForFunction(() => /ready|error/.test(document.querySelector('#addons-settings').dataset.tjs ?? ''));
 const ui = 'import { celsiusToFahrenheit } from "./convert.js";\nexport const label = "Temperature";\nexport function show(c) {\n  return label + ": " + celsiusToFahrenheit(c);\n}\n';
 await page.evaluate(async (ui) => { const root = await navigator.storage.getDirectory(); const names = []; for await (const n of root.keys()) names.push(n); for (const n of names) await root.removeEntry(n, { recursive: true });
   const put = async (p, t) => { let d = root; const parts = p.split('/'); for (const x of parts.slice(0, -1)) d = await d.getDirectoryHandle(x, { create: true }); const w = await (await d.getFileHandle(parts.at(-1), { create: true })).createWritable(); await w.write(t); await w.close(); };

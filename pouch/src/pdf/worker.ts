@@ -24,7 +24,7 @@ import type { PdfDocInfo, PdfInfo, PdfInfoJob, PdfJob, PdfReply, PdfRenderJob, P
 let files: Map<string, Uint8Array> | null = null; // path in data.pack
 const pouchFile = (url: unknown) => {
   const b = files?.get(String(url));
-  if (!b) throw new Error(`${url} is not in Pouch's pdf runtime`);
+  if (!b) throw new Error(`${url} is not in Pouch's pdf.js files`);
   return b.slice(); // pdf.js may transfer or detach what it gets
 };
 Object.assign(globalThis, { pdfjsWorker, pouchFile }); // pdf.js runs its worker side in this thread

@@ -12,7 +12,7 @@ import { subset } from './ns/namespace.ts';
 import { serve, Client, NinepFs } from './ns/9p.ts';
 import { archiveCommands } from './archive.ts';
 import { bayleafCommands } from './bayleaf-cli.ts';
-import { modelsCommands } from './models-cli.ts';
+import { addonsCommands } from './addons-cli.ts';
 import { openCommands, agentOpenCommands, agentShowCommands } from './open-cli.ts';
 import { pdfCommands } from './pdf.ts';
 import { mediaCommands } from './media.ts';
@@ -298,7 +298,7 @@ export function shellFor(fs: IFileSystem | ToolFs, hooks: ShellHooks = {}) {
     fs: tagWrites(fs), cwd: CWD,
     env: { HOME: CWD, USER: 'user', PATH: '/usr/bin:/bin' },
     commands: COMMANDS,
-    customCommands: [...archiveCommands(defineCommand), ...bayleafCommands(defineCommand, hooks), ...modelsCommands(defineCommand, hooks.models, { by: 'user', via: 'terminal' }), ...pdfCommands(defineCommand, hooks.pdf, { name: 'terminal' }), ...mediaCommands(defineCommand, hooks.media, { name: 'terminal' }), ...openCommands(defineCommand, { openFile: hooks.openFile, revealDir: hooks.revealDir })],
+    customCommands: [...archiveCommands(defineCommand), ...bayleafCommands(defineCommand, hooks), ...addonsCommands(defineCommand, hooks.addons, { by: 'user', via: 'terminal' }), ...pdfCommands(defineCommand, hooks.pdf, { name: 'terminal' }), ...mediaCommands(defineCommand, hooks.media, { name: 'terminal' }), ...openCommands(defineCommand, { openFile: hooks.openFile, revealDir: hooks.revealDir })],
     executionLimits: { maxCommandCount: 100_000, maxLoopIterations: 100_000 },
   });
 }
@@ -430,15 +430,15 @@ export function createTools(vfs: ToolsVfs, Type: typeof Typebox, bashOptions: Pa
       fs: tagWrites(watched), cwd: CWD,
       env: { HOME: CWD, USER: 'pouch', PATH: '/usr/bin:/bin' },
       commands: COMMANDS,
-      // `models` (src/models-cli.ts): hooks.models is the shared service; whoOf names the asker.
+      // `addons` (src/addons-cli.ts): hooks.addons is the shared service; whoOf names the asker.
       // `open` refuses for agents and points to `show`; hooks.show(req, caller)
       // opens or offers it (src/open-cli.ts, src/interface/editing.ts show).
-      customCommands: [...archiveCommands(defineCommand), ...cli, ...modelsCommands(defineCommand, hooks.models, () => hooks.modelsWho?.(caller) ?? { by: 'agent', caller }), ...agentOpenCommands(defineCommand),
+      customCommands: [...archiveCommands(defineCommand), ...cli, ...addonsCommands(defineCommand, hooks.addons, () => hooks.addonsWho?.(caller) ?? { by: 'agent', caller }), ...agentOpenCommands(defineCommand),
         ...agentShowCommands(defineCommand, { show: hooks.show && (async (req) => hooks.show?.(req, caller)) }),
-        // pdfinfo, pdftotext, pdftoppm (src/pdf.ts): hooks.pdf is the shared engine; jobs are labelled with the caller.
-        ...pdfCommands(defineCommand, hooks.pdf, () => hooks.modelsWho?.(caller) ?? { name: 'agent' }),
+        // pdfinfo, pdftotext, pdftoppm (src/pdf.ts): hooks.pdf is the shared worker; jobs are labelled with the caller.
+        ...pdfCommands(defineCommand, hooks.pdf, () => hooks.addonsWho?.(caller) ?? { name: 'agent' }),
         // ffprobe, ffmpeg (src/media.ts): hooks.media is the shared libav engine.
-        ...mediaCommands(defineCommand, hooks.media, () => hooks.modelsWho?.(caller) ?? { name: 'agent' })],
+        ...mediaCommands(defineCommand, hooks.media, () => hooks.addonsWho?.(caller) ?? { name: 'agent' })],
       executionLimits: { maxCommandCount: 100_000, maxLoopIterations: 100_000 },
       ...bashOptions,
     });
@@ -540,7 +540,8 @@ export function createTools(vfs: ToolsVfs, Type: typeof Typebox, bashOptions: Pa
     description: `Run a bash script in a simulated shell (just-bash) over the same files, starting in ${CWD}. ` +
       'Has coreutils, grep, rg, sed, awk, find, jq, diff, sort, xargs, zip/unzip/tar (no compression flags), pdfinfo/pdftotext/pdftoppm for PDFs (see the pdf skill), and ffprobe/ffmpeg for audio and video (see the media skill). ' +
       `There is no network, no python, node, git or package manager, and no real processes (for real parsing or computation use the run tool). Each call starts fresh in ${CWD}; use \`cd dir && ...\` within one call. \`ls /bin\` lists every command. ` +
-      '`bayleaf --help` for BayLeaf web search/fetch, sandbox VM and inboxes (these leave the pouch and ask the user).',
+      '`bayleaf --help` for BayLeaf web search/fetch, sandbox VM and inboxes (these leave the pouch and ask the user). ' +
+      '`addons list` shows optional tools and models kept in this browser; a command whose add-on is not installed says what to run (`addons install <name>`; large ones ask the user).',
     parameters: Type.Object({ command: Type.String({ description: 'Bash script to run' }) }),
     async execute({ command }: { command: string }, { signal, caller }: Partial<ToolCallOptions> = {}) {
       const sent: EgressNotice[] = [], misses = new Set<string>();

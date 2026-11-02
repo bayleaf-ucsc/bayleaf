@@ -42,13 +42,13 @@ export const NETWORK = {
   'src/bayleaf-cli.ts': { apis: ['fetch'], why: 'the agent\'s `bayleaf` command to api.bayleaf.dev, each request approved through egress.ts' },
   'src/localhost.ts': { apis: ['fetch'], why: 'the Localhost provider: a model server on this computer, behind guardedFetch\'s origin check' },
   'src/models.ts': { apis: ['fetch'], why: 'model weights from the BayLeaf HF gateway, hash-checked against models.lock.json' },
-  'src/assets.ts': { apis: ['fetch'], why: 'pinned runtimes and weights by range, hash-checked against the build\'s pins' },
+  'src/assets.ts': { apis: ['fetch'], why: 'add-on files: origin parts and weights by range, hash-checked against the build\'s pins' },
   'src/offline.ts': { apis: ['fetch'], why: 'the offline copy: SHA256SUMS and the app shell from this origin' },
   'sw.js': { apis: ['fetch'], why: 'the service worker: serves the offline copy, else passes the request to this origin' },
   'src/run.ts': { apis: ['Worker'], why: 'starts the bundled QuickJS worker from a blob: URL; the worker drops its network APIs' },
   'src/pdf.ts': { apis: ['Worker'], why: 'starts the hash-checked pdf.js worker from a blob: URL; the worker drops its network APIs' },
   'src/media.ts': { apis: ['Worker'], why: 'starts the hash-checked libav.js worker from a blob: URL; the worker drops its network APIs' },
-  'src/local/engine.ts': { apis: ['Worker'], why: 'starts the hash-checked Transformers.js worker from a blob: URL' },
+  'src/local/host.ts': { apis: ['Worker'], why: 'starts the hash-checked Transformers.js worker from a blob: URL' },
 };
 const WHY_EGRESS = 'Plaintext must leave Pouch only through modules whose every request is known: '
   + 'add the module to NETWORK in arch.mjs with its reason, or route the request through one that is there';
@@ -77,7 +77,7 @@ const WHY_SEALED = 'The encrypting client holds the credential and decides what 
 // The core: files, namespaces, storage, providers and sandboxed runtimes. It
 // works without a page, so it imports only itself (and packages).
 export const CORE = ['src/trust.ts', 'src/vfs.ts', 'src/store.ts', 'src/archive.ts', 'src/graph.ts', 'src/ns/', 'src/run.ts', 'src/run/',
-  'src/local/', 'src/localhost.ts', 'src/sealed.ts', 'src/bayleaf-api.ts', 'src/profiles.ts', 'src/models.ts',
+  'src/local/', 'src/localhost.ts', 'src/sealed.ts', 'src/bayleaf-api.ts', 'src/profiles.ts', 'src/models.ts', 'src/addons.ts', 'src/addons-registry.ts',
   'src/assets.ts', 'src/sha256.ts', 'src/pdf/', 'src/media/', 'src/shims/'];
 // The Interface (LANGUAGE.md): the page's wiring, composed by main.ts from
 // src/interface/ regions.
@@ -91,9 +91,9 @@ const WHY_LAYERS = 'The core must stay testable and portable without a page (and
 export const REGIONS = {
   'src/interface/': { entries: [], importers: ['src/main.ts'], why: 'Interface regions are composed only by main.ts and reach each other through app.<region>' },
   'src/run/': { entries: ['src/run.ts'], why: 'run.ts is the run tool\'s one door: the worker and its 9P bridge are its implementation' },
-  'src/pdf/': { entries: ['src/pdf.ts'], why: 'pdf.ts owns the pdf.js worker and its pin' },
-  'src/media/': { entries: ['src/media.ts'], why: 'media.ts owns the libav.js worker and its pins' },
-  'src/local/': { entries: ['src/local/engine.ts', 'src/local/provider.ts'], why: 'the engine (weights, worker) and the provider adapter are the Transformers.js doors; the worker is private' },
+  'src/pdf/': { entries: ['src/pdf.ts'], why: 'pdf.ts owns the pdf.js worker (its pin is the add-on registry\'s)' },
+  'src/media/': { entries: ['src/media.ts'], why: 'media.ts owns the libav.js worker and its source offer (its pin is the add-on registry\'s)' },
+  'src/local/': { entries: ['src/local/host.ts', 'src/local/provider.ts'], why: 'the host (device check, worker) and the provider adapter are the Transformers.js doors; the worker is private' },
 };
 
 // ── Contracts: types-only modules ───────────────────────────────────
@@ -105,7 +105,7 @@ export const CONTRACTS = {
   'src/subagents-types.ts': { why: 'the subagent registry and what the page supplies to it (subagents.ts implements them)' },
   'src/tools-types.ts': { why: 'the tools\' hooks and file views (tools.ts implements them)' },
   'src/run/protocol.ts': { why: 'the messages between run.ts and the QuickJS worker' },
-  'src/local/protocol.ts': { why: 'the messages between the Transformers.js engine and its worker' },
+  'src/local/protocol.ts': { why: 'the messages between the Transformers.js host and its worker' },
   'src/pdf/protocol.ts': { why: 'the messages between pdf.ts and the pdf.js worker' },
   'src/media/protocol.ts': { why: 'the messages between media.ts and the libav.js worker' },
   'src/interface/app.ts': { why: 'the App type: the regions\' interfaces, through which regions reach each other' },
@@ -116,7 +116,7 @@ const WHY_CONTRACT = 'A contract states what crosses a boundary and does nothing
 // ── Exact types at trust boundaries ─────────────────────────────────
 // `any` switches the type checker off. Where data crosses a trust boundary
 // its type is the claim an auditor reads, so these modules may not use it.
-export const EXACT = ['src/trust.ts', 'src/egress.ts', 'src/ns/namespace.ts', 'src/ns/control.ts',
+export const EXACT = ['src/trust.ts', 'src/egress.ts', 'src/ns/namespace.ts', 'src/ns/control.ts', 'src/addons.ts',
   ...Object.keys(NETWORK).filter((p) => p.startsWith('src/')), ...Object.keys(SEALED)];
 const WHY_EXACT = 'A trust boundary\'s types are what an auditor (and tsc) relies on; '
   + 'name the shape, or take `unknown` and narrow it';

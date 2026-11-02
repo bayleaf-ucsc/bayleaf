@@ -11,7 +11,7 @@ import { convKey, interruptedKey, sameId, subagentsKey, watchesKey } from '../se
 import { MAX_WAKES, baseOf, createWatches, isGlob, watchTool } from '../ns/watch.ts';
 import { parseSpecs } from '../ns/namespace.ts';
 import { why } from '../ns/control.ts';
-import { LOCAL, engine as localEngine, models as modelStore } from '../local/engine.ts';
+import { LOCAL, localWorker } from '../local/host.ts';
 import type { App } from './app.ts';
 import type { ConversationId } from '@earendil-works/pi-durable';
 import type { SessionId } from '../agent-types.ts';
@@ -128,18 +128,13 @@ export function createBootRegion(app: App): BootRegion {
     app.state.usage.refresh();
     await app.providers.checkLocalSupport();
     await app.connection.loadModels();
-    app.providers.renderLocalSettings();
-    // Parts kept from pouch.bayleaf.dev before the gateway: reassembled, checked
-    // against the pins and moved, so nobody downloads 1.1 GB again (src/models.ts).
-    if (LOCAL) modelStore.migrate().then((r) => {
-      if (!r) return;
-      if (r.migrated.length || r.partial.length) app.state.status(`Moved the Transformers.js model kept by an earlier Pouch (${app.providers.mib(r.bytes)}, checked against this page's pins)${r.partial.length ? '; Download fetches the rest' : ''}. Nothing was downloaded again.`);
-      else if (r.refused.length) app.state.status(`An earlier Pouch kept files that do not match this page's pins (${r.refused.join(', ')}); they were removed. Download fetches them from api.bayleaf.dev.`, 'bad');
-      app.providers.renderLocalSettings();
-    }, (e) => app.state.status('Could not move the model kept by an earlier Pouch: ' + e.message, 'bad'));
+    app.addons.render();
+    // Model parts kept by builds before add-ons (the pouch-local-models cache) are
+    // discarded, not migrated: Pouch has no users to carry over (LANGUAGE.md, 2026-11-01).
+    if (await globalThis.caches?.delete('pouch-local-models').catch(() => false)) app.addons.notice('Removed model files kept by an older build of Pouch; Install LFM3 again here.');
     try {
       app.state.agent = await openAgent({
-        local: LOCAL && app.providers.localOk.ok ? { info: LOCAL, engine: localEngine, onHint: app.providers.showHint } : undefined,
+        local: LOCAL && app.providers.localOk.ok ? { info: LOCAL, worker: localWorker, onHint: app.providers.showHint } : undefined,
         localhost: { config: app.providers.lhAgentConfig(), onWait: app.providers.localhostWait },
         tools: (toolList = withWatch(createTools(app.state.vfs, Type, {}, {
           // A subagent's writes carry its name for file watches.
@@ -153,7 +148,7 @@ export function createBootRegion(app: App): BootRegion {
           // Every change an agent makes, for /session/<sid>/changes (subagents marked by their ref).
           onChange: (caller, op, path) => { const w = app.state.agent?.who(caller); if (w?.sid != null) app.namespaces.changes.note(w.sid, op, path, w.child != null ? refOfChild(w.sid, w.child)?.ref ?? 'subagent' : MAIN); },
           ...app.sessionList.egressHooks,
-          models: app.sessionList.modelService, modelsWho: app.sessionList.modelsWho, pdf: app.sessionList.pdfService, media: app.sessionList.mediaService,
+          addons: app.sessionList.addons, addonsWho: app.sessionList.addonsWho, pdf: app.sessionList.pdfService, media: app.sessionList.mediaService,
           show: app.editing.show,
         }))),
         systemPrompt: () => systemPrompt(app.state.vfs),

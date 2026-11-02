@@ -16,6 +16,7 @@ import type { AuthRegion } from './auth.ts';
 import type { InstallRegion } from './install.ts';
 import type { SessionListRegion } from './session-list.ts';
 import type { NamespacesRegion } from './namespaces.ts';
+import type { AddonsRegion } from './addons.ts';
 import type { SubagentsRegion } from './subagents.ts';
 import type { MetersRegion } from './meters.ts';
 import type { TranscriptRegion } from './transcript.ts';
@@ -35,6 +36,7 @@ export interface App {
   install: InstallRegion;
   sessionList: SessionListRegion;
   namespaces: NamespacesRegion;
+  addons: AddonsRegion;
   subagents: SubagentsRegion;
   meters: MetersRegion;
   transcript: TranscriptRegion;

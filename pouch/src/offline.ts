@@ -13,7 +13,7 @@
 
 const SHELL = ['pouch.html', 'viewer.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png'];
 const PREFIX = 'pouch-shell-';
-const OFF = 'pouch.offline'; // 'off' after Uninstall; Erase all clears it
+const OFF = 'pouch.offline'; // 'off' after Remove offline copy; Erase all clears it
 const KEEP = ['content-type', 'content-security-policy', 'x-content-type-options', 'x-frame-options', 'referrer-policy', 'permissions-policy'];
 
 const hex = async (buf: ArrayBuffer) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', buf))].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -98,7 +98,7 @@ export function createOffline({ swSha256 }: { swSha256: string }) {
       return pin(sums);
     },
 
-    async uninstall({ remember = true } = {}) {
+    async remove({ remember = true } = {}) {
       if (remember) try { localStorage.setItem(OFF, 'off'); } catch {}
       for (const r of (await sw?.getRegistrations?.()) ?? []) await r.unregister();
       if (globalThis.caches) for (const k of await caches.keys()) if (k.startsWith(PREFIX)) await caches.delete(k);
