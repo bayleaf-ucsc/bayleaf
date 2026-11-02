@@ -1,8 +1,8 @@
 # Pouch: ubiquitous language
 
 Status: adopted (Adam). Code, interface text, prompts and docs use these terms;
-"Retired terms" lists the words they replaced, which `test/ul-node.mjs` keeps out of the
-built page. *Open* marks questions still unresolved; the decisions log records the
+"Retired terms" lists the words they replaced, which `test/ul-node.mjs` keeps out of
+first-party code. *Open* marks questions still unresolved; the decisions log records the
 decisions that still hold (git history keeps the rest).
 
 ## The shape
@@ -173,7 +173,7 @@ report labels are mapped as they load; the saved send mode "queue" is rewritten 
 "followup" at startup. Tools accept old handles (an agent copying `s3` from an old
 transcript reaches a3). No IndexedDB version bump was needed. `test/upgrade-browser.mjs`
 makes a profile with the old build and reads it with the new one; `test/ul-node.mjs`
-greps the built page for the retired terms.
+scans first-party code for the retired terms.
 
 Deliberately left:
 - Old transcripts keep their text: the model context of an existing thread still holds
@@ -214,4 +214,4 @@ Deliberately left:
 - 2026-10-31: at most one Workspace; starts at zero; Erase all returns to zero.
 - 2026-11-01: Control plane adopted (Adam): the file tree is the authority for everything that acts; the Interface is one client among several.
 - 2026-11-01: Show adopted (Adam): the agent shows, the person opens; show opens unless the person is busy, else offers (provisional).
-- 2026-11-01: Egress module, Core and Interface regions proposed with #142 (trust boundaries checked at build time); not yet adopted.
+- 2026-11-01: Egress module, Core and Interface regions built with #144: `src/egress.ts` holds consent, `NETWORK` in `arch.mjs` inventories the egress modules, and the build checks both.

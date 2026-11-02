@@ -14,8 +14,11 @@ const ok = (name) => { passed++; console.log('ok', name); };
 
 // ── 1. No JS-computed colors: JS sets --seed (a number) and nothing else ──
 const files = [];
-const walk = (d) => { for (const f of readdirSync(d)) { const p = join(d, f); if (statSync(p).isDirectory()) walk(p); else if (p.endsWith('.js')) files.push(p); } };
+const walk = (d) => { for (const f of readdirSync(d)) { const p = join(d, f); if (statSync(p).isDirectory()) walk(p); else if (p.endsWith('.ts')) files.push(p); } };
 walk(join(root, 'src'));
+// Workers that render documents or media, not UI: their pixels are the
+// document's own. The pdf.js worker paints a page's white paper under it.
+const RENDERERS = new Set(['src/pdf/worker.ts']);
 const COLOR = [
   /\b(?:hsla?|rgba?|oklch|oklab|lab|lch|hwb)\(/,             // color functions in strings
   /\.style\.(?:color|background(?:Color)?|borderColor|borderLeftColor|fill|stroke|outlineColor)\s*=/,
@@ -25,6 +28,7 @@ const COLOR = [
 const hits = [];
 for (const f of files) {
   if (f.includes('/local/')) continue; // model runtime, no UI
+  if (RENDERERS.has(f.slice(root.length + 1))) continue;
   readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
     if (/^\s*\/\//.test(line)) return;
     for (const re of COLOR) if (re.test(line)) hits.push(`${f.slice(root.length + 1)}:${i + 1}: ${line.trim().slice(0, 100)}`);
@@ -34,11 +38,11 @@ for (const f of files) {
 const allowed = hits.filter((h) => !/var\(--/.test(h));
 assert.deepEqual(allowed, [], 'inline color computation in src:\n' + allowed.join('\n'));
 const seeds = files.flatMap((f) => [...readFileSync(f, 'utf8').matchAll(/setProperty\('--seed'/g)].map(() => f.slice(root.length + 1)));
-assert.ok(seeds.includes('src/dom.ts'), 'dom.js seeded() sets --seed');
+assert.ok(seeds.includes('src/dom.ts'), 'dom.ts seeded() sets --seed');
 ok(`no JS-computed colors in ${files.length} source files; --seed set only in ${[...new Set(seeds)].join(', ')}`);
 
 // ── 2. Change review is gone ──
-assert.ok(!existsSync(join(root, 'src/review.js')), 'src/review.js removed');
+assert.ok(!existsSync(join(root, 'src/review.js')) && !existsSync(join(root, 'src/review.ts')), 'src/review removed');
 const src = files.map((f) => readFileSync(f, 'utf8')).join('\n');
 for (const re of [/createReview|review\.(?:begin|end|undo|describe|hide|unhide|since|unseen)/, /addChange|changesFor|pruneChanges/, /changed-dot|Changed \$\{n\} file/, /the user undid your/, /Also undo changes/, /function recording\(/]) {
   assert.ok(!re.test(src), 'still in src: ' + re);

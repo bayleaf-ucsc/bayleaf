@@ -1,5 +1,5 @@
 {
-  "comment": "Pinned assets for Pouch's Local lane. fetch-models.mjs downloads model files into a cache outside the repo and checks these hashes; build.mjs --with-models splits them into dist/models/. Weights are never committed.",
+  "comment": "Pinned assets for Pouch's Transformers.js provider. The page downloads model files from the BayLeaf HF gateway (api.bayleaf.dev/hf) and checks them against these hashes (src/models.ts); fetch-models.mjs fetches the same files into a cache outside the repo and checks them too. Weights are never committed or built into dist/.",
   "models": [
     {
       "id": "lfm3-1.7b-q4f16",
