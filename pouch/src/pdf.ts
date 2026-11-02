@@ -275,7 +275,8 @@ export function pdfWorker({ assets = null, spawn = defaultSpawn, onLoad }: Worke
           if (!w) throw new Error('the pdf worker failed while starting');
           return call(w, action, { data: data.slice(), ...opts }, { note, signal });
         },
-        dispose() { worker?.terminate(); worker = null; },
+        // Removing the add-on unloads it: a job still running ends with a reason, never hangs.
+        dispose() { worker?.terminate(); worker = null; for (const p of pending.values()) { clearTimeout(p.timer); p.reject(new Error('pdf.js was removed while this job ran.')); } pending.clear(); },
       };
     },
   };

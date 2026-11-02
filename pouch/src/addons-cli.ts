@@ -65,10 +65,13 @@ export function addonsCommands(defineCommand: typeof DefineCommand, addons: Addo
     const bad = flags.find((f) => !known.includes(f));
     if (bad) return usage(`unknown option ${bad} for addons ${sub}`);
     // --wait: until the task ends; the tool's own Stop stops the install too.
-    async function wait(task: InstallTask, done: string) {
-      const stop = () => task.kill?.();
-      ctx?.signal?.addEventListener('abort', stop, { once: true });
-      try { await task.promise; return null; }
+    // --all: every task this command started stops together; ones it joined are only waited for.
+    async function wait(task: InstallTask, done: string, own: InstallTask[] = [task]) {
+      let leave = () => {};
+      const left = new Promise<never>((_, rej) => { leave = () => rej(new DOMException('Stopped.', 'AbortError')); });
+      const stop = () => { for (const t of own) t.kill?.(); leave(); };
+      if (ctx?.signal?.aborted) stop(); else ctx?.signal?.addEventListener('abort', stop, { once: true });
+      try { await Promise.race([task.promise, left]); return null; }
       catch (e) { return e instanceof Error && e.name === 'AbortError' ? `stopped (/task/${task.id}); ${done}` : message(e); }
       finally { ctx?.signal?.removeEventListener('abort', stop); }
     }
@@ -83,9 +86,10 @@ export function addonsCommands(defineCommand: typeof DefineCommand, addons: Addo
       if (sub === 'install' && flags.includes('--all')) {
         if (pos.length) return usage('addons install --all takes no name');
         const r = await addons.installAll(who);
-        const lines = [...r.started.map((t) => `installing as /task/${t.id}: ${t.label}`), ...(r.denied.length ? [`denied by the user: nothing was installed (${r.denied.join(', ')})`] : [])];
-        if (!r.started.length && !r.denied.length) return ok('every add-on this device can run is installed\n');
-        if (flags.includes('--wait')) for (const t of r.started) { const e = await wait(t, '`addons install --all` resumes'); if (e) return fail(e); }
+        const lines = [...r.started.map((t) => `installing as /task/${t.id}: ${t.label}`), ...r.joined.map((t) => `already installing as /task/${t.id}: ${t.label}`),
+          ...(r.denied.length ? [`denied by the user: nothing was installed (${r.denied.join(', ')})`] : [])];
+        if (!r.started.length && !r.joined.length && !r.denied.length) return ok('every add-on this device can run is installed\n');
+        if (flags.includes('--wait')) for (const t of [...r.started, ...r.joined]) { const e = await wait(t, '`addons install --all` resumes', r.started); if (e) return fail(e); }
         return { stdout: lines.join('\n') + '\n', stderr: '', exitCode: r.denied.length ? 1 : 0 };
       }
       if (pos.length !== 1) return usage(`addons ${sub} takes one name`);

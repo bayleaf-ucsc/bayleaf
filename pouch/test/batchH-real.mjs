@@ -53,10 +53,12 @@ try {
   await page.waitForFunction(() => /not installed/.test(document.querySelector('[data-addon] .addon-state')?.textContent ?? ''), null, { timeout: 30000 });
   const before = peak.total;
   const dir = join(CACHE, m.id, m.revision);
-  const picked = m.files.map((f) => join(dir, f.name));
+  // The original upstream files cover the weights; the Transformers.js code comes from the build's saved parts.
+  const code = join(dist, 'runtime', 'transformers');
+  const picked = [...m.files.map((f) => join(dir, f.name)), ...readdirSync(code).map((n) => join(code, n))];
   let t = Date.now();
   await page.setInputFiles('#addon-files', picked);
-  await page.waitForFunction(() => /loaded from your files/.test(document.getElementById('status')?.textContent ?? ''), null, { timeout: 600000 });
+  await page.waitForFunction(() => /installed from your files/.test(document.getElementById('status')?.textContent ?? ''), null, { timeout: 600000 });
   const ingest = { ms: Date.now() - t, peak: peak.total };
   console.log(`ok Load from files: ${m.files.length} files, 1.09 GB hashed incrementally against the lock and kept in ${(ingest.ms / 1000).toFixed(0)} s; browser peak RSS ${GB(ingest.peak)} (idle ${GB(before)})`);
   peak.total = 0; peak.proc = 0;

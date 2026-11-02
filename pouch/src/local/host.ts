@@ -147,6 +147,9 @@ export const localWorker = {
   async dispose(): Promise<void> {
     const w = worker; worker = null; starting = null;
     if (!w) return;
+    // A reply still running ends with a reason, so the generation chain moves on (removing LFM3 mid-turn).
+    for (const p of pending.values()) p.reject(new Error('The Transformers.js model was unloaded.'));
+    pending.clear();
     try { await Promise.race([new Promise((r) => { w.onmessage = r; w.postMessage({ id: -1, action: 'dispose' }); }), new Promise((r) => setTimeout(r, 2000))]); } catch {}
     w.terminate();
   },

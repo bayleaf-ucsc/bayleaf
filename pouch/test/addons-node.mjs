@@ -245,4 +245,20 @@ await t('install --all: quiet ones directly, one combined sheet for the asked on
   assert.equal(asked.length, 2);
   assert.match((await sh(addons, ['install', '--all'])).stdout, /every add-on this device can run is installed/);
 });
+await t('two installs racing the sheet share one task; a joined job stopping leaves it running', async () => {
+  const a = gatewayAddon('m-r');
+  const { addons } = setup([a], { slow: 20 });
+  const [r1, r2] = await Promise.all([addons.install('m-r', agent), addons.install('m-r', { by: 'user', via: 'Settings' })]);
+  assert.equal(r1.task, r2.task, 'the second caller joins after its sheet closes');
+  assert.ok(r2.joined);
+  const pdf = originAddon('pdfq', 9000), s = setup([pdf], { slow: 20 });
+  const own = await s.addons.install('pdfq', { by: 'user', via: 'Settings' }), ctrl = new AbortController();
+  const job = s.addons.ensure('pdfq', agent, { signal: ctrl.signal });
+  await new Promise((r) => setTimeout(r, 5)); ctrl.abort();
+  await assert.rejects(job, { name: 'AbortError' });
+  assert.equal(own.task.status, 'running', 'the install a joined job left keeps going');
+  await own.promise;
+  assert.ok((await s.addons.status('pdfq')).installed);
+  await r1.promise;
+});
 console.log(`\n${n} passed`);

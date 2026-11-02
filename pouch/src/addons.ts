@@ -111,7 +111,7 @@ export interface AddonBackend {
   store: string; from: string;  // the Cache Storage name; where bytes come from (the sheet's "From")
   stored(): Promise<Stored>;
   fill(o: { signal?: AbortSignal; onProgress?(done: number): void; onRetry?(line: string): void }): Promise<void>;
-  files(o: { network?: boolean; onProgress?(p: { done: number; total: number }): void }): Promise<AddonFilesOut>;
+  files(o: { network?: boolean; signal?: AbortSignal; onProgress?(p: { done: number; total: number }): void }): Promise<AddonFilesOut>;
   importFiles(list: File[]): Promise<{ added: number; refused: string[] }>;
   remove(): Promise<void>;
   release?(): Promise<ModelRelease | null>; // display metadata (license, qualification), never trusted for bytes
@@ -128,7 +128,7 @@ export function originBackend(pin: PartsPin, { fetchImpl, base }: BackendOptions
     store: ORIGIN_STORE, from: `${globalThis.location?.host || 'this page'}/${pin.dir} (Pouch's own origin)`,
     stored: () => pa.stored(),
     async fill({ signal, onProgress }) { await pa.obtain({ network: true, signal, onProgress: (p: AssetProgress) => onProgress?.(p.done) }); },
-    async files({ network = true, onProgress }) { const got = await pa.obtain({ network, onProgress }); return { files: got.files, manifest: got.manifest, repaired: got.progress.repaired }; },
+    async files({ network = true, signal, onProgress }) { const got = await pa.obtain({ network, signal, onProgress }); return { files: got.files, manifest: got.manifest, repaired: got.progress.repaired }; },
     async importFiles(list) { const r = await pa.importFiles(list); return { added: r.added, refused: r.bad ? [`${r.bad} part${r.bad > 1 ? 's' : ''} of ${pin.dir}`] : [] }; },
     remove: () => pa.remove(),
     // The pin's manifest and, once it is kept, exactly its parts. Before that, every part
@@ -254,6 +254,9 @@ export function createAddons({ entries, tasks, approve, onChange = () => {}, bef
     if (joined?.promise) return { task: joined, promise: joined.promise, joined: true };
     if (!online()) throw coded(say.offline(d, s.size), 'ENETDOWN');
     if (s.tier === 'asked' && !approved && !(await ask(await request([d], 'install', who)))) throw coded(say.denied(d), 'EDENIED');
+    // Another caller may have started it while the sheet was open: join, so one task owns the download and its Stop.
+    const late = running(d.id);
+    if (late?.promise) return { task: late, promise: late.promise, joined: true };
     return start(d, s, who);
   }
   function start(d: AddonDef, s: AddonStatus, who: AddonWho): InstallResult {
@@ -297,26 +300,29 @@ export function createAddons({ entries, tasks, approve, onChange = () => {}, bef
     const r = await install(d.id, who);
     if (r.already) return { fresh: false };
     note?.(say.installing(d, s.size - s.bytes));
-    const kill = () => r.task.kill?.();
+    // Stopping the job stops an install it started; a joined one (Settings', another job's) keeps going.
+    let leave = () => {};
+    const left = new Promise<never>((_, rej) => { leave = () => rej(new DOMException('Stopped.', 'AbortError')); });
+    const kill = r.joined ? leave : () => r.task.kill?.();
     signal?.addEventListener('abort', kill, { once: true });
-    try { await r.promise; } finally { signal?.removeEventListener('abort', kill); }
+    try { await (r.joined ? Promise.race([r.promise, left]) : r.promise); } finally { signal?.removeEventListener('abort', kill); }
     return { fresh: true };
   }
 
   // Every file of an add-on and what it needs, each verified (a damaged part is
   // fetched again when the network may be used). Not installed: NOT_INSTALLED.
-  async function files(name: string, { network = online(), onProgress }: { network?: boolean; onProgress?(p: { done: number; total: number; id: string }): void } = {}) {
+  async function files(name: string, { network = online(), signal, onProgress }: { network?: boolean; signal?: AbortSignal; onProgress?(p: { done: number; total: number; id: string }): void } = {}) {
     const d = resolve(name), s = await status(d.id);
     if (!s.installed) throw coded(network || s.tier === 'asked' ? say.notInstalled(d, s.size, s.tier) : say.offline(d, s.size), 'ENOTINSTALLED');
     const out: Record<string, AddonFilesOut> = {};
-    for (const x of closure(d, byId)) out[x.id] = await be(x).files({ network, onProgress: (p) => onProgress?.({ ...p, id: x.id }) });
+    for (const x of closure(d, byId)) out[x.id] = await be(x).files({ network, signal, onProgress: (p) => onProgress?.({ ...p, id: x.id }) });
     return out;
   }
   // A worker's verified files, installing quietly first when allowed (src/pdf.ts, src/media.ts).
   const assets = (name: string, who: AddonWho = { by: 'user' }) => ({
     async obtain({ network, signal, note }: { network?: boolean; signal?: AbortSignal; note?(line: string): void } = {}) {
       await ensure(name, who, { note, signal });
-      const d = resolve(name), got = (await files(name, { network }))[d.id];
+      const d = resolve(name), got = (await files(name, { network, signal }))[d.id];
       return { files: got.files, manifest: got.manifest };
     },
   });
@@ -341,7 +347,8 @@ export function createAddons({ entries, tasks, approve, onChange = () => {}, bef
   // Everything this device can run that is not installed: quiet ones directly,
   // asked ones through one combined sheet.
   async function installAll(who: AddonWho) {
-    const want = (await list()).filter((s) => !s.installed && s.state !== 'not available here' && !s.task);
+    const rows = await list(), want = rows.filter((s) => !s.installed && s.state !== 'not available here' && !s.task);
+    const joined = [...new Set(rows.flatMap((s) => (s.task ? [s.task] : [])))]; // already running: --wait waits for them too
     const asked = want.filter((s) => s.tier === 'asked').map((s) => get(s.id));
     if (!online() && want.length) throw coded(`not installed, and the network is not available: ${want.map((s) => s.label).join(', ')}. Try again when online.`, 'ENETDOWN');
     const approved = asked.length ? await ask(await request(asked, 'install', who)) : true;
@@ -351,7 +358,7 @@ export function createAddons({ entries, tasks, approve, onChange = () => {}, bef
       const r = await prepare(get(s.id), who, s.tier === 'asked');
       if (!r.already) started.push(r.task);
     }
-    return { started, denied: approved ? [] : asked.map((d) => d.label), already: (await list()).filter((s) => s.installed).length };
+    return { started, joined: joined.filter((t) => !started.includes(t)), denied: approved ? [] : asked.map((d) => d.label), already: (await list()).filter((s) => s.installed).length };
   }
   const total = async () => (await list()).filter((s) => s.state !== 'not available here').reduce((n, s) => n + s.size, 0);
 

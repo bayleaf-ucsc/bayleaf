@@ -9,7 +9,7 @@ import { createSessions, revertKey, sameId, titleOf } from '../sessions.ts';
 import { createEgress, grantsFor, revoke, serviceName } from '../egress.ts';
 import { LOCAL, localWorker, setSource } from '../local/host.ts';
 import { askTitle, createAddons, sizeText } from '../addons.ts';
-import { LFM3, REGISTRY, TRANSFORMERSJS } from '../addons-registry.ts';
+import { LFM3, LIBAVJS, PDFJS, REGISTRY, TRANSFORMERSJS } from '../addons-registry.ts';
 import type { ConversationId } from '@earendil-works/pi-durable';
 import type { ThreadItem, ToolItem } from '../agent-types.ts';
 import type { Egress } from '../egress.ts';
@@ -134,8 +134,9 @@ export function createSessionListRegion(app: App): SessionListRegion {
     return run;
   }
   const addons = createAddons({ entries: REGISTRY, tasks: app.state.vfs.tasks, approve: approveAddon,
-    // The Transformers.js worker holds the weights and code: let it go first.
-    beforeRemove: (id) => (id === LFM3 || id === TRANSFORMERSJS ? localWorker.dispose() : undefined),
+    // A loaded worker holds its add-on's code (and LFM3's weights): let it go first,
+    // so the next use goes through the install path again.
+    beforeRemove: (id) => (id === LFM3 || id === TRANSFORMERSJS ? localWorker.dispose() : id === PDFJS ? pdfService.jobs.unload('pdf') : id === LIBAVJS ? mediaService.jobs.unload('libav') : undefined),
     onChange: () => {
       const t = LFM3 ? addons.installing(LFM3) : undefined;
       if (t?.progress) app.providers.localProgress({ ...t.progress, installing: true });

@@ -227,7 +227,8 @@ try {
     const before = await cacheInfo(page);
     await ensurePanel(page, 'settings');
     await page.$eval('[data-addon^="lfm3"] [data-act="remove"]', (b) => b.click());
-    await page.waitForFunction(() => /Local model removed/.test(document.querySelector('#status').textContent));
+    await page.click('#sheet-actions button >> text=Remove');
+    await page.waitForFunction(() => /LFM3 [^ ]+ removed/.test(document.querySelector('#status').textContent));
     ok(!(await cacheInfo(page)).keys.includes('pouch-local-models'), 'Remove deletes the model cache (and does not recreate it)');
     const pick = await page.$eval('#model', (s) => `${s.value} [${[...s.options].map((o) => o.value + (o.disabled ? '(disabled)' : '')).join(', ')}]`);
     ok(!pick.startsWith('local:'), `after removal the picker is back on Sealed (${pick}); a reloaded Local session still shows its own lane`);
@@ -300,9 +301,9 @@ try {
     const n0 = net.length;
     await ensurePanel(page, 'settings');
     await page.setInputFiles('#addon-files', [join(d, manifestName), join(d, manifest.worker.path), ...wasmParts, ...upstream]);
-    await page.waitForFunction(() => /Local model loaded from your files|still missing|refused|Pick the/.test(document.querySelector('#status').textContent), null, { timeout: 300_000 });
+    await page.waitForFunction(() => /installed from your files|still missing|refused|Pick the/.test(document.querySelector('#status').textContent), null, { timeout: 300_000 });
     const st = await page.textContent('#status');
-    ok(/Local model loaded from your files/.test(st), `Load from files (original upstream files + saved runtime parts), offline: "${st}"`);
+    ok(/installed from your files/.test(st), `Load from files (original upstream files + saved runtime parts), offline: "${st}"`);
     await page.selectOption('#model', LOCAL_ID);
     const ready = await pickLocal(page);
     const r = await ask(page, 'Reply with just the word OK. Do not use tools.');

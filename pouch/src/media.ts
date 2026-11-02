@@ -445,7 +445,8 @@ export function mediaWorker({ assets = null, spawn = defaultSpawn, onLoad }: Wor
           if (data.input) data.input = copy(data.input);
           return call(w, action, data, transfer, { note, signal });
         },
-        dispose() { worker?.terminate(); worker = null; },
+        // Removing the add-on unloads it: a job still running ends with a reason, never hangs.
+        dispose() { worker?.terminate(); worker = null; for (const p of pending.values()) { clearTimeout(p.timer); p.reject(new Error('libav.js was removed while this job ran.')); } pending.clear(); },
       };
     },
   };
