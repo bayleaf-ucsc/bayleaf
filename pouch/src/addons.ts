@@ -187,10 +187,42 @@ export interface AddonsOptions {
   beforeRemove?(id: string): unknown;         // let a running worker go (the Transformers.js worker holds the weights)
   online?(): boolean;
   backend?(d: AddonDef): AddonBackend;        // tests swap the files backend
+  otherBuilds?(): Promise<number | null>;     // open tabs running another build (null: cannot tell); see buildLock
+}
+
+// ── Open builds (Web Locks) ─────────────────────────────────────────
+// Every page holds a shared lock pouch-build:<sha256 of its pouch.html> for its
+// lifetime, so the sweep can see whether another tab runs a different build: that
+// tab's add-on keys are not this build's, and deleting them would break it. A page
+// that does not know its hash (no pinned offline copy yet) holds pouch-build:unknown,
+// which never vouches for a build: one is this page's own, any other counts.
+export const BUILD_LOCK = 'pouch-build:';
+export interface SweepResult { skipped: boolean; blocked?: 'install' | 'other build' | 'unchecked'; unchecked?: boolean; bytes: number; keys: number }
+export interface LockManagerLike {
+  request(name: string, options: { mode: 'shared' }, callback: () => Promise<unknown>): Promise<unknown>;
+  query(): Promise<{ held?: { name?: string }[] }>;
+}
+export function buildLock(locks: LockManagerLike | undefined) {
+  let mine: string | null = null, held: Promise<void> = Promise.resolve();
+  return {
+    // Held until the page closes (the callback's promise never settles).
+    hold(hash: string | null) {
+      if (!locks || mine) return;
+      mine = hash ?? 'unknown';
+      held = new Promise<void>((granted) => { locks.request(BUILD_LOCK + mine, { mode: 'shared' }, () => { granted(); return new Promise(() => {}); }).catch(() => granted()); });
+    },
+    async others(): Promise<number | null> {
+      if (!locks) return null;
+      await held;
+      const names = ((await locks.query()).held ?? []).map((l) => l.name ?? '').filter((n) => n.startsWith(BUILD_LOCK)).map((n) => n.slice(BUILD_LOCK.length));
+      const me = mine ?? 'unknown', unknown = names.filter((n) => n === 'unknown').length;
+      return names.filter((n) => n !== me).length + (me === 'unknown' ? Math.max(0, unknown - (mine ? 1 : 0)) : 0);
+    },
+  };
 }
 export type Addons = ReturnType<typeof createAddons>;
 
-export function createAddons({ entries, tasks, approve, onChange = () => {}, beforeRemove, online = () => globalThis.navigator?.onLine !== false, backend = (d) => backendOf(d) }: AddonsOptions) {
+export function createAddons({ entries, tasks, approve, onChange = () => {}, beforeRemove, online = () => globalThis.navigator?.onLine !== false, backend = (d) => backendOf(d), otherBuilds }: AddonsOptions) {
   const byId = new Map(entries.map((d) => [d.id, d]));
   if (byId.size !== entries.length) throw new Error('two add-ons share an id');
   const backends = new Map(entries.map((d) => [d.id, backend(d)]));
@@ -380,8 +412,17 @@ export function createAddons({ entries, tasks, approve, onChange = () => {}, bef
   // older manifests, other revisions' chunks), never a current pin's keys and never
   // while an install runs. A store with a backend that cannot say what it owns is
   // left whole. dry: only measure (Settings' "Free N MiB from older versions").
-  async function sweep({ dry = false }: { dry?: boolean } = {}) {
-    if (entries.some((d) => running(d.id))) return { skipped: true, bytes: 0, keys: 0 };
+  // While another tab runs a different build nothing is deleted (blocked: 'other build',
+  // with what would be freed); auto (boot) also waits when it cannot tell (no Web Locks:
+  // unchecked, and Settings says so).
+  async function sweep({ dry = false, auto = false }: { dry?: boolean; auto?: boolean } = {}): Promise<SweepResult> {
+    const busy = () => entries.some((d) => running(d.id));
+    if (busy()) return { skipped: true, blocked: 'install', bytes: 0, keys: 0 };
+    const others = otherBuilds ? await otherBuilds().catch(() => null) : 0;
+    if (others === null && auto) return { skipped: true, blocked: 'unchecked', bytes: 0, keys: 0 };
+    const blocked = others ? 'other build' : undefined;
+    if (blocked && auto) return { skipped: true, blocked, bytes: 0, keys: 0 };
+    const measure = dry || !!blocked;
     let bytes = 0, keys = 0;
     for (const name of [ORIGIN_STORE, GATEWAY_STORE]) {
       const mine = entries.map((d) => be(d)).filter((b) => b.store === name);
@@ -390,14 +431,14 @@ export function createAddons({ entries, tasks, approve, onChange = () => {}, bef
       const st = await openStore(name, { create: false });
       for (const k of await st.keys()) {
         if (owners.some((o) => o(k))) continue;
-        if (entries.some((d) => running(d.id))) return { skipped: true, bytes, keys }; // an install began meanwhile
+        if (busy()) return { skipped: true, blocked: 'install', bytes, keys }; // an install began meanwhile
         bytes += (await st.get(k))?.size ?? 0; keys++;
-        if (!dry) await st.del(k);
+        if (!measure) await st.del(k);
       }
-      if (!dry && keys && !(await st.keys()).length) await st.drop();
+      if (!measure && keys && !(await st.keys()).length) await st.drop();
     }
-    if (!dry && keys) onChange();
-    return { skipped: false, bytes, keys };
+    if (!measure && keys) onChange();
+    return { skipped: !!blocked, ...(blocked ? { blocked } : {}), ...(others === null ? { unchecked: true } : {}), bytes, keys };
   }
 
   // What a published build changes among the installed add-ons, read from its

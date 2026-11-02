@@ -115,6 +115,8 @@ export function createBootRegion(app: App): BootRegion {
     app.state.usage.subscribe(async (st) => { await app.state.ledger.observe(st.remaining); app.state.meter(); if (app.state.layout.current() === 'usage') app.meters.renderUsagePanel(); if (!app.auth.key && app.connection.verified && /^Not signed in/.test($('status').textContent)) app.state.status(app.auth.campusLine(st)); });
     if (location.hash === '#erased') { history.replaceState(null, '', location.pathname + location.search); $('erased').hidden = false; }
     navigator.storage.persist?.().catch(() => {});
+    // This build's shared lock, for the page's lifetime: another tab's sweep waits while it is open.
+    app.install.shellCopy.pinned().catch(() => null).then((hash) => app.sessionList.build.hold(hash));
     // Not awaited: the offline copy must never hold up files or the agent.
     app.install.shellCopy.start().then<unknown>(() => app.install.shellCopy.supported && app.install.shellCopy.enabled() && navigator.onLine && app.install.checkUpdate(false))
       .catch((e: Error) => app.install.renderCopy('Offline copy: ' + e.message, 'bad'));
@@ -132,7 +134,7 @@ export function createBootRegion(app: App): BootRegion {
     // Model parts kept by builds before add-ons (the pouch-local-models cache) are
     // discarded, not migrated: Pouch has no users to carry over (LANGUAGE.md, 2026-11-01).
     // Parts and files no entry of this build names (src/addons.ts sweep), once boot is done.
-    setTimeout(() => app.sessionList.addons.sweep().then((r) => { if (r.bytes) app.addons.render(); }, () => {}), 4000);
+    setTimeout(() => app.sessionList.addons.sweep({ auto: true }).then((r) => { if (r.bytes) app.addons.render(); }, () => {}), 4000);
     if (await globalThis.caches?.delete('pouch-local-models').catch(() => false)) app.addons.notice('Removed model files kept by an older build of Pouch; Install LFM3 again here.');
     try {
       app.state.agent = await openAgent({

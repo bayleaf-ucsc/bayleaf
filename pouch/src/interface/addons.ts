@@ -90,7 +90,8 @@ export function createAddonsRegion(app: App): AddonsRegion {
       offline.textContent = `Make available offline (${sizeText(missing.reduce((n, s) => n + s.size - s.bytes, 0))})`;
       const stale = await app.sessionList.addons.sweep({ dry: true }).catch(() => null), sweepBtn = $<HTMLButtonElement>('addons-sweep');
       sweepBtn.hidden = !stale?.bytes;
-      if (stale?.bytes) sweepBtn.textContent = `Free ${sizeText(stale.bytes)} from older versions`;
+      sweepBtn.disabled = stale?.blocked === 'other build';
+      if (stale?.bytes) sweepBtn.textContent = stale.blocked === 'other build' ? `Another tab runs a different Pouch build; close it to free ${sizeText(stale.bytes)}` : `Free ${sizeText(stale.bytes)} from older versions${stale.unchecked ? ' (this browser cannot tell whether another tab runs an older build)' : ''}`;
       const est = await navigator.storage?.estimate?.().catch(() => null);
       $('addons-storage').textContent = (noticeLine ? noticeLine + ' ' : '') + (est?.usage != null ? `This site uses ${sizeText(est.usage)} of storage${est.quota ? ` (the browser allows about ${sizeText(est.quota)})` : ''}. Erase all removes every add-on.` : 'Erase all removes every add-on.');
     })().finally(() => { rendering = null; if (again) { again = false; render(); } });
@@ -111,7 +112,7 @@ export function createAddonsRegion(app: App): AddonsRegion {
   // Parts and files only older builds named (src/addons.ts sweep); boot runs it too.
   $('addons-sweep').onclick = async () => {
     const r = await app.sessionList.addons.sweep().catch((e: Error) => { app.state.status(e.message, 'bad'); return null; });
-    if (r) app.state.status(r.skipped ? 'An install is running; try again when it ends.' : `Freed ${sizeText(r.bytes)} from older versions of add-ons.`);
+    if (r) app.state.status(r.blocked === 'install' ? 'An install is running; try again when it ends.' : r.blocked === 'other build' ? `Another tab runs a different Pouch build; close it to free ${sizeText(r.bytes)}.` : `Freed ${sizeText(r.bytes)} from older versions of add-ons.`);
     render();
   };
   for (const id of ['addon-folder', 'addon-files']) {

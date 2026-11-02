@@ -23,7 +23,7 @@ globalThis.caches = {
     };
   },
 };
-const { createAddons, originBackend, gatewayBackend, updateLine, ORIGIN_STORE, GATEWAY_STORE } = await import('../src/addons.ts');
+const { buildLock, createAddons, originBackend, gatewayBackend, updateLine, ORIGIN_STORE, GATEWAY_STORE } = await import('../src/addons.ts');
 const { openStore } = await import('../src/assets.ts');
 const { Tasks } = await import('../src/ns/tasks.ts');
 
@@ -48,9 +48,9 @@ const fetchFor = (origin, gw, { slow = 0 } = {}) => async (url, init = {}) => {
   if (u.endsWith('/catalog')) return new Response('{"releases":[]}');
   const b = origin.get(u.split('/').pop()); return b ? new Response(b) : new Response('', { status: 404 });
 };
-function service(defs, origin, gw, opts) {
+function service(defs, origin, gw, opts = {}) {
   const fetchImpl = fetchFor(origin, gw, opts);
-  return createAddons({ entries: defs, tasks: new Tasks(), online: () => true, approve: async () => true,
+  return createAddons({ entries: defs, tasks: new Tasks(), online: () => true, approve: async () => true, ...(opts.otherBuilds ? { otherBuilds: opts.otherBuilds } : {}),
     backend: (d) => ('origin' in d.files ? originBackend(d.files.origin, { fetchImpl, base: () => 'https://pouch.test/' }) : gatewayBackend(d.files.gateway, { fetchImpl, gateway: 'https://gw.test/hf', chunk: C })) });
 }
 const keysOf = async (name) => (await openStore(name, { create: false })).keys();
@@ -92,7 +92,7 @@ await t('sweep: never during an install; a store whose backend cannot say what i
   await (await service([tool(stale.pin, 'stale')], stale.served, {}).install('stale', { by: 'user' })).promise;
   const svc = service([tool(v.pin, 'slow')], v.served, {}, { slow: 30 });
   const r = await svc.install('slow', { by: 'user' });
-  assert.deepEqual(await svc.sweep(), { skipped: true, bytes: 0, keys: 0 });
+  assert.deepEqual(await svc.sweep(), { skipped: true, blocked: 'install', bytes: 0, keys: 0 });
   assert.ok((await keysOf(ORIGIN_STORE)).some((k) => k.startsWith('runtime/stale/')), 'nothing deleted during an install');
   await r.promise;
   const blind = createAddons({ entries: [tool(v.pin, 'slow')], tasks: new Tasks(), backend: (d) => ({ ...originBackend(d.files.origin), owns: undefined }) });
@@ -100,6 +100,44 @@ await t('sweep: never during an install; a store whose backend cannot say what i
   await blind.sweep(); // (its build names no gateway entry, so that store's files do go)
   assert.deepEqual(await keysOf(ORIGIN_STORE), before, 'origin store untouched');
   assert.equal((await service([tool(v.pin, 'slow')], v.served, {}).sweep()).keys > 0, true, 'with ownership known, the stale tool goes');
+});
+// A fake navigator.locks: every tab's requests in one list (what query() reports as held).
+function fakeLocks(held = []) {
+  return { held, request: async (name, { mode }, cb) => { held.push({ name, mode }); return cb(); }, query: async () => ({ held: [...held] }) };
+}
+await t('sweep waits while another tab runs a different build (Web Locks); this build alone, it sweeps', async () => {
+  const v = originBuild('runtime/lk/', randomBytes(6000)), stale = originBuild('runtime/lk-old/', randomBytes(3000));
+  await (await service([tool(stale.pin, 'old')], stale.served, {}).install('old', { by: 'user' })).promise;
+  const has = async () => (await keysOf(ORIGIN_STORE)).some((k) => k.startsWith('runtime/lk-old/'));
+  // Another tab holds an older build's lock.
+  const locks = fakeLocks([{ name: 'pouch-build:' + 'b'.repeat(64), mode: 'shared' }]), lock = buildLock(locks);
+  lock.hold('a'.repeat(64));
+  const svc = service([tool(v.pin, 'lk')], v.served, {}, { otherBuilds: () => lock.others() });
+  assert.equal(await lock.others(), 1);
+  const auto = await svc.sweep({ auto: true });
+  assert.equal(auto.blocked, 'other build'); assert.equal(auto.bytes, 0, 'boot: skipped silently, nothing measured');
+  const settings = await svc.sweep();
+  assert.equal(settings.blocked, 'other build'); assert.ok(settings.bytes > 0, 'Settings: what closing it would free');
+  assert.ok(await has(), 'nothing deleted while the other build is open');
+  // An unknown page (no pinned copy) also blocks; this page's own unknown lock does not.
+  const u = buildLock(fakeLocks()); u.hold(null);
+  assert.equal(await u.others(), 0, 'only this page, hash unknown: sweeps');
+  const u2 = fakeLocks([{ name: 'pouch-build:unknown', mode: 'shared' }]), l2 = buildLock(u2); l2.hold('a'.repeat(64));
+  assert.equal(await l2.others(), 1, 'another page of unknown build blocks');
+  // The other tab closes: only this build's locks (two tabs of it) remain.
+  locks.held.splice(0, 1); locks.held.push({ name: 'pouch-build:' + 'a'.repeat(64), mode: 'shared' });
+  assert.equal(await lock.others(), 0);
+  const r = await svc.sweep({ auto: true });
+  assert.equal(r.skipped, false); assert.ok(r.keys > 0);
+  assert.ok(!(await has()), 'swept once only this build is open');
+  // No Web Locks: boot skips; Settings sweeps and says it could not check.
+  assert.equal(await buildLock(undefined).others(), null);
+  await (await service([tool(stale.pin, 'old')], stale.served, {}).install('old', { by: 'user' })).promise;
+  const blind = service([tool(v.pin, 'lk')], v.served, {}, { otherBuilds: () => buildLock(undefined).others() });
+  assert.equal((await blind.sweep({ auto: true })).blocked, 'unchecked');
+  assert.ok(await has());
+  const manual = await blind.sweep();
+  assert.ok(manual.unchecked && manual.keys > 0 && !(await has()));
 });
 await t('update notice: which installed add-ons a published build changes, what each fetches, asked ones ask again', async () => {
   const shared = randomBytes(4096), v1 = originBuild('runtime/u/', Buffer.concat([shared, randomBytes(8000)])), v2 = originBuild('runtime/u/', Buffer.concat([shared, randomBytes(3000)]));

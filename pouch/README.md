@@ -1313,6 +1313,13 @@ this page was built with, kept outside the Workspace, removable at any time.
   any install runs. It runs 4 s after boot and from Settings > Add-ons, whose footer
   offers "Free N MiB from older versions" when a dry run finds something. A build that
   leaves an add-on out (`--no-models`) therefore frees that add-on's files too.
+  Tabs share Cache Storage, so a tab still running an older build may need exactly
+  those keys. Every page holds a shared Web Lock `pouch-build:<sha256 of its pouch.html>`
+  for its lifetime (`buildLock`; `pouch-build:unknown` before an offline copy is pinned,
+  which never vouches for a build). While any other build's lock is held, the boot sweep
+  is skipped silently and Settings says "Another tab runs a different Pouch build; close
+  it to free N MiB" instead of freeing. Without `navigator.locks` the boot sweep is
+  skipped and Settings still frees, saying it cannot tell whether an older tab is open.
   Tests: `node test/addons-sweep-node.mjs` (a fake Cache Storage), `test/addons-browser.mjs`.
 - **Tests**: `node test/addons-node.mjs` (the real registry built from `dist/`'s pins, the
   tier rule, the strings, the command, ensure, hidden parts, device refusal, install

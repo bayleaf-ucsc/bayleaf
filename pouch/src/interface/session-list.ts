@@ -8,7 +8,7 @@ import { createMediaService } from '../media.ts';
 import { createSessions, revertKey, sameId, titleOf } from '../sessions.ts';
 import { createEgress, grantsFor, revoke, serviceName } from '../egress.ts';
 import { LOCAL, localWorker, setSource } from '../local/host.ts';
-import { askTitle, createAddons, sizeText } from '../addons.ts';
+import { askTitle, buildLock, createAddons, sizeText } from '../addons.ts';
 import { LFM3, LIBAVJS, PDFJS, REGISTRY, TRANSFORMERSJS } from '../addons-registry.ts';
 import type { ConversationId } from '@earendil-works/pi-durable';
 import type { ThreadItem, ToolItem } from '../agent-types.ts';
@@ -34,6 +34,8 @@ export interface SessionListRegion {
   // Running bash card id -> what left so far, until its output carries the marker.
   liveEgress: Map<string, Omit<EgressTrace, 'text'>>;
   addons: Addons;
+  // This page's pouch-build:<sha256> lock (boot holds it); the sweep reads the others.
+  build: ReturnType<typeof buildLock>;
   addonsWho(caller: Caller): AgentWho;
   mediaService: MediaService;
   pdfService: PdfService;
@@ -133,7 +135,8 @@ export function createSessionListRegion(app: App): SessionListRegion {
     addonAsks = run.catch(() => {});
     return run;
   }
-  const addons = createAddons({ entries: REGISTRY, tasks: app.state.vfs.tasks, approve: approveAddon,
+  const build = buildLock(globalThis.navigator?.locks);
+  const addons = createAddons({ entries: REGISTRY, tasks: app.state.vfs.tasks, approve: approveAddon, otherBuilds: () => build.others(),
     // A loaded worker holds its add-on's code (and LFM3's weights): let it go first,
     // so the next use goes through the install path again.
     beforeRemove: (id) => (id === LFM3 || id === TRANSFORMERSJS ? localWorker.dispose() : id === PDFJS ? pdfService.jobs.unload('pdf') : id === LIBAVJS ? mediaService.jobs.unload('libav') : undefined),
@@ -164,6 +167,7 @@ export function createSessionListRegion(app: App): SessionListRegion {
     liveEgress,
     addons,
     addonsWho,
+    build,
     mediaService,
     pdfService,
     sessions,
