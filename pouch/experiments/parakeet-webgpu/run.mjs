@@ -77,13 +77,14 @@ const bundle = (await build({ entryPoints: [join(here, 'spike.js')], bundle: tru
 const ortDist = join(pouch, 'node_modules/onnxruntime-web/dist');
 const server = createServer((req, res) => {
   const u = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+  if (u.split('/').includes('..')) { res.statusCode = 400; return res.end(); }
   const file = u === '/spike.js' ? null : u.startsWith('/model/') ? join(DIR, u.slice(7)) : u.startsWith('/audio/') ? join(audio, u.slice(7)) : u.startsWith('/ort/') ? join(ortDist, u.slice(5)) : null;
   if (u === '/') { res.setHeader('content-type', 'text/html'); return res.end('<!doctype html><script type="module" src="/spike.js"></script>'); }
   if (u === '/spike.js') { res.setHeader('content-type', 'text/javascript'); return res.end(bundle); }
   if (!file || !existsSync(file)) { res.statusCode = 404; return res.end(); }
   res.setHeader('content-length', statSync(file).size);
   res.end(readFileSync(file));
-}).listen(0);
+}).listen(0, '127.0.0.1');
 const base = `http://127.0.0.1:${server.address().port}/`;
 
 const PAIRS = { 'fp16-int8': ['encoder-model.fp16.onnx', 'decoder_joint-model.int8.onnx'], 'int8-int8': ['encoder-model.int8.onnx', 'decoder_joint-model.int8.onnx'],

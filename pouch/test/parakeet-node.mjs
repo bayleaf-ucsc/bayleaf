@@ -18,7 +18,7 @@ const scratch = mkdtempSync(join(tmpdir(), 'pouch-parakeet-'));
 const built = await buildParakeet(scratch);
 globalThis.POUCH_PARAKEET = built.pin;
 const PIN = built.pin, model = PIN.model;
-const { parseArgs, support, createAsrService, asrWorker, HELP, DIARIZATION_GAP, MAX_SECONDS } = await import('../src/parakeet.ts');
+const { parseArgs, support, createAsrService, asrWorker, mmss, HELP, DIARIZATION_GAP, MAX_SECONDS } = await import('../src/parakeet.ts');
 const { cues, clock, stamp, toSrt, toVtt, toTxt, toJson, render, CUE_SECONDS, CUE_CHARS } = await import('../src/parakeet/format.ts');
 const { createMediaService, MAX_INPUT_BYTES } = await import('../src/media.ts');
 const { wavHeader } = await import('../src/media/wc.ts');
@@ -73,6 +73,7 @@ await t('clock and stamp: SRT and VTT times, [mm:ss] and [h:mm:ss]', () => {
   assert.equal(clock(0.0004, '.'), '00:00:00.000');
   assert.equal(clock(59.9996, '.'), '00:01:00.000', 'rounds to the millisecond, carrying');
   assert.equal(stamp(65.9), '[01:05]');
+  assert.deepEqual([mmss(8.2), mmss(59.6), mmss(119.7)], ['0:08', '1:00', '2:00'], 'job labels round once, never :60');
   assert.equal(stamp(3725), '[1:02:05]');
 });
 
