@@ -139,7 +139,6 @@ See README "Namespaces"; stories I10, D19-D21.
 - Excel and SQLite inputs: `excel` (0.6 MiB) and `sqlite_scanner` (1.6 MiB) for v1.4.3
   `wasm_eh` exist and would load the same way; the Analyst persona would use both.
 - A preview of `.parquet` and `.csv` in the file browser through this runtime (survey section 7).
-- The live Sealed run of DB1 and DB2 (`test/duckdb-sealed.mjs`).
 
 ## Might go faster with cross-origin isolation (COOP/COEP)
 

@@ -168,7 +168,11 @@ const abs = (cwd: string, p: string) => normalize(p.startsWith('/') ? p : cwd + 
 const URLISH = /^[a-z][a-z0-9+.-]*:\/\//i;
 const GLOB = /[*?[]/;
 const dirOf = (p: string) => p.slice(0, p.lastIndexOf('/') + 1) || '/';
-const globRe = (seg: string) => new RegExp('^' + seg.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]') + '$');
+const globSource = (seg: string, special: RegExp) => '^' + seg.replace(special, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]') + '$';
+// A [..] class as written; an unbalanced '[' (say in replace(x, '[', '')) matches itself.
+const globRe = (seg: string) => {
+  try { return new RegExp(globSource(seg, /[.+^${}()|\\]/g)); } catch { return new RegExp(globSource(seg, /[.+^${}()|\\[\]]/g)); }
+};
 // The files a glob names in fs: * ? [..] in any segment, ** for any depth.
 export async function expandGlob(fs: Pick<IFileSystem, 'readdir' | 'stat'>, pattern: string, limit = MAX_GLOB_FILES): Promise<string[]> {
   const segs = pattern.split('/').filter(Boolean), out: string[] = [];

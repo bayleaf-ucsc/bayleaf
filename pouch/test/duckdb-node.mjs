@@ -59,6 +59,8 @@ await t('plan: quoted paths become inputs, relative ones absolute; COPY targets 
   assert.deepEqual(p.statements, ["SELECT * FROM '/work/a.csv' WHERE x <> 'CM'", "COPY (FROM '/work/data/2024-*.csv') TO '/work/out/sum.csv' (HEADER)"]);
   assert.deepEqual(p.allowed.sort(), ['/work/', '/work/data/', '/work/out/']);
   assert.deepEqual(await expandGlob(fs, '/work/**/*.parquet'), ['/work/sub/deep/z.parquet']);
+  const b = await plan(fs, '/work', "SELECT replace(region, '[', '') FROM 'a.csv'");
+  assert.deepEqual(b.inputs, ['/work/a.csv'], 'an unbalanced [ in a string is not a glob error');
   const u = await plan(fs, '/work', "SELECT * FROM 'https://example.com/x.csv' WHERE note = 'a.csv'");
   assert.deepEqual(u.inputs, ['/work/a.csv'], 'a URL is never a file; a literal naming a file is handed over');
 });
