@@ -7,7 +7,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { Sha256, sha256hex } from '../src/sha256.ts';
 import { openStore, fillFile, rangeSource, blobSource, verifiedFile, fileState, partAssets } from '../src/assets.ts';
 import { createModelStore } from '../src/models.ts';
-import { createModelService, modelsCommands } from '../src/models-cli.ts';
+import { askTitle, createModelService, modelsCommands } from '../src/models-cli.ts';
 import { gpuSupport, deviceSupport, DEVICE_REASON, friendlyError, MIN_STORAGE_BUFFERS } from '../src/local/engine.ts';
 import { createJobs, sleepAndHash } from '../src/jobs.ts';
 import { Tasks, TaskFs } from '../src/ns/tasks.ts';
@@ -321,5 +321,11 @@ await t('no tool asset defaults to a CDN or the Hub (dist/)', () => {
   assert.ok(scanned >= 3 && listed.some((p) => p.startsWith('runtime/transformers/')), 'runtime listed in SHA256SUMS');
   assert.ok(!listed.some((p) => p.startsWith('models/')), 'no weights in the artifact');
   void readdirSync;
+});
+await t('approval titles name who asks, the user included', () => {
+  assert.equal(askTitle({ action: 'remove', label: 'Qwen', who: { by: 'user', via: 'Settings' } }), 'Remove Qwen?');
+  assert.equal(askTitle({ action: 'get', label: 'Qwen', who: { by: 'user' } }), 'Download Qwen?');
+  assert.equal(askTitle({ action: 'remove', label: 'Qwen', who: { by: 'agent', name: 'main (a1)' } }), 'main (a1) asks to remove Qwen');
+  assert.equal(askTitle({ action: 'get', label: 'Qwen', who: { by: 'agent' } }), 'An agent asks to download Qwen');
 });
 console.log(`\n${n} passed`);

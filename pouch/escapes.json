@@ -24,7 +24,7 @@
   "src/interface/providers.ts": {"as": 9, "!": 9},
   "src/interface/queues.ts": {"as": 8, "!": 20},
   "src/interface/send.ts": {"as": 14, "!": 15},
-  "src/interface/session-list.ts": {"as": 4, "as unknown as": 1},
+  "src/interface/session-list.ts": {"as": 3, "as unknown as": 1},
   "src/interface/state.ts": {"as": 5},
   "src/interface/subagents.ts": {"as": 17, "!": 25, "as unknown as": 1},
   "src/interface/transcript.ts": {"as": 22, "!": 21, "as unknown as": 3},

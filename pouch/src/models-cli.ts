@@ -33,6 +33,12 @@ export interface ModelRequest {
   action: 'get' | 'remove'; id: string; label: string; who: ModelWho; bytes: number; total: number; location: string;
   license: string; licenseUrl: string | null; attribution: string; distribution: string | null; origin: string;
 }
+// The approval sheet's title: an agent asks by name; the user's own request is a question.
+export function askTitle(req: Pick<ModelRequest, 'action' | 'label' | 'who'>): string {
+  const verb = req.action === 'get' ? 'download' : 'remove';
+  if (req.who.by === 'agent') return `${req.who.name ?? 'An agent'} asks to ${verb} ${req.label}`;
+  return `${verb[0].toUpperCase()}${verb.slice(1)} ${req.label}?`;
+}
 export interface ModelServiceDeps {
   store: ModelStore; tasks: Tasks; approve?: (req: ModelRequest, who: ModelWho) => Promise<boolean>;
   onChange?(): void; supports?(id: string): ModelSupport | Promise<ModelSupport>; // can this browser run it; checked before the sheet

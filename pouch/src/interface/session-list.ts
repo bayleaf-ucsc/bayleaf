@@ -8,7 +8,7 @@ import { createMediaService } from '../media.ts';
 import { createSessions, revertKey, sameId, titleOf } from '../sessions.ts';
 import { createEgress, grantsFor, revoke, serviceName } from '../egress.ts';
 import { LOCAL, models as modelStore } from '../local/engine.ts';
-import { createModelService } from '../models-cli.ts';
+import { askTitle, createModelService } from '../models-cli.ts';
 import type { ConversationId } from '@earendil-works/pi-durable';
 import type { ThreadView, ToolItem } from '../agent-types.ts';
 import type { Egress } from '../egress.ts';
@@ -124,7 +124,7 @@ export function createSessionListRegion(app: App): SessionListRegion {
           ...row('Kept in', req.location), ...row('License', req.license + (req.licenseUrl ? ` (${req.licenseUrl})` : '')), ...row('Attribution', req.attribution),
           ...row('Redistribution', req.distribution), ...row('From', req.origin)),
         el('p', { className: 'muted', textContent: get ? 'Every file is checked against the SHA-256 this page was built with. Nothing you type is sent; the gateway sees only which file ranges are requested. Stop any time from /task, Settings or the terminal; remove it any time.' : 'Sessions and files stay. Downloading it again takes the full size.' }));
-      return app.tree.ask(body as unknown as string, get ? 'Download' : 'Remove', get ? 'primary' : 'danger', get ? (who.by === 'agent' ? `${who.name} asks to download ${req.label}` : `Download ${req.label}?`) : `${(who as { name?: string }).name} asks to remove ${req.label}`); // TreeRegion.ask is typed string; it takes a Node body too
+      return app.tree.ask(body as unknown as string, get ? 'Download' : 'Remove', get ? 'primary' : 'danger', askTitle({ ...req, who })); // TreeRegion.ask is typed string; it takes a Node body too
     });
     modelAsks = run.catch(() => {});
     return run;
