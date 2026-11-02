@@ -65,6 +65,12 @@ const ui = (src) => renderUi(src, { doc, md, inline });
   assert.ok(small.some((n) => n.textContent === '0.004'), 'small stat keeps its digits');
   assert.ok(small.some((n) => n.textContent === '0.001 – 0.002'), 'small range keeps its digits');
 }
+// A cycle that does not pass through root (#155, CodeRabbit): reported, not a stack overflow.
+{
+  const r = ui('root = Stack([Text("kept"), a])\na = Stack([b])\nb = Stack([a])');
+  assert.ok(r && flat(r.node).some((n) => n.text === 'kept'), 'the rest still renders');
+  assert.ok(r.errors.some((e) => /Stack: contains itself through a cycle/.test(e)), r.errors.join('; '));
+}
 // Loops and a missing root: no hang, no crash; nothing to show stays a code block.
 {
   const r = ui('root = Stack([a])\na = Stack([root])');

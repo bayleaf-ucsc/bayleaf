@@ -136,6 +136,7 @@ export function renderUi(src: string, ctx: UiContext): { node: HTMLElement; erro
   if (!entry) return null;
   let budget = MAX_NODES;
   const resolving = new Set<string>();
+  const active = new Set<Call>(); // calls being rendered, for cycles through lists
 
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string | null, ...kids: (Node | string | null | undefined)[]): HTMLElementTagNameMap[K] => {
     if (--budget < 0) throw new Error('too large to show');
@@ -300,8 +301,12 @@ export function renderUi(src: string, ctx: UiContext): { node: HTMLElement; erro
     if (!(x instanceof Call)) return warn(parent, 'expected a component, got ' + (Array.isArray(x) ? 'a list' : typeof x));
     const make = COMPONENTS[x.name];
     if (!make) return warn(x, x.name === 'Tab' || x.name === 'Series' ? 'only valid inside ' + (x.name === 'Tab' ? 'Tabs' : 'a chart') : 'not a component Pouch shows');
+    // Children arrive dereferenced (arr), so a cycle is caught by the call
+    // itself, not only by name: a = Stack([b]), b = Stack([a]).
+    if (active.has(x)) return warn(x, 'contains itself through a cycle of references');
+    active.add(x);
     if (name) resolving.add(name);
-    try { return make(x.args, x); } finally { if (name) resolving.delete(name); }
+    try { return make(x.args, x); } finally { active.delete(x); if (name) resolving.delete(name); }
   }
 
   let node: Node | null;
