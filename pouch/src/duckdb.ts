@@ -121,6 +121,14 @@ export function parseArgs(args: string[]): DuckArgs {
 // ── SQL scanning: statements, quoted strings, COPY targets ───────────
 // A string literal and where it sits: [start, end) covers the quotes.
 export interface Literal { value: string; start: number; end: number; after: string }
+// Just past the */ closing the /* at i, counting nested /* */ as DuckDB does; -1 if unclosed.
+function blockEnd(s: string, i: number) {
+  for (let depth = 0, j = i; j < s.length - 1; j++) {
+    if (s[j] === '/' && s[j + 1] === '*') { depth++; j++; }
+    else if (s[j] === '*' && s[j + 1] === '/') { j++; if (--depth === 0) return j + 1; }
+  }
+  return -1;
+}
 // Splits on ; outside quotes, comments and $$ strings; collects '...' literals with the keyword before each.
 export function scan(sql: string): { statements: string[]; literals: Literal[]; dot: string | null } {
   const statements: string[] = [], literals: Literal[] = [];
@@ -129,7 +137,7 @@ export function scan(sql: string): { statements: string[]; literals: Literal[]; 
   for (let i = 0; i < sql.length; i++) {
     const ch = sql[i];
     if (ch === '-' && sql[i + 1] === '-') { const e = sql.indexOf('\n', i); i = e < 0 ? sql.length : e; continue; }
-    if (ch === '/' && sql[i + 1] === '*') { const e = sql.indexOf('*/', i + 2); i = e < 0 ? sql.length : e + 1; continue; }
+    if (ch === '/' && sql[i + 1] === '*') { const e = blockEnd(sql, i); i = e < 0 ? sql.length : e - 1; continue; }
     if (ch === '.' && lineStart(i) && /[a-z]/i.test(sql[i + 1] ?? '')) { dot ??= sql.slice(i, sql.indexOf('\n', i) < 0 ? undefined : sql.indexOf('\n', i)).trim(); }
     if (ch === "'" || ch === '"') {
       let j = i + 1, value = '';
@@ -156,7 +164,7 @@ export function skipComments(s: string) {
   for (let i = 0; ;) {
     while (i < s.length && /\s/.test(s[i])) i++;
     if (s.startsWith('--', i)) { const e = s.indexOf('\n', i); if (e < 0) return ''; i = e + 1; }
-    else if (s.startsWith('/*', i)) { const e = s.indexOf('*/', i + 2); if (e < 0) return s.slice(i); i = e + 2; }
+    else if (s.startsWith('/*', i)) { const e = blockEnd(s, i); if (e < 0) return s.slice(i); i = e; }
     else return s.slice(i);
   }
 }

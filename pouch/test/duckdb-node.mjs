@@ -102,6 +102,8 @@ await t('duckType, isQuiet, plainError, explain', () => {
   assert.ok(isQuiet('-- c\nSET x=1', res([['Success', 'Bool']], [])));
   assert.ok(!isQuiet('SELECT count(*) AS Count FROM t', res([['Count', 'Int64']], [[3]])));
   assert.ok(isQuiet('/* a */ /* b */\n-- c\n  insert into t values (1)', res([['Count', 'Int64']], [[1]])));
+  assert.ok(isQuiet('/* outer /* inner */ still; outer */ INSERT INTO t VALUES (1)', res([['Count', 'Int64']], [[1]])), 'nested block comments');
+  assert.deepEqual(scan("/* a /* b */ ; */ select 1; select '/*'").statements, ["/* a /* b */ ; */ select 1", "select '/*'"]);
   // Linear on the inputs CodeQL flagged as exponential for the old regexes.
   const t0 = performance.now();
   assert.ok(!isQuiet('-'.repeat(60000) + 'x', res([['Count', 'Int64']], [[1]])));
