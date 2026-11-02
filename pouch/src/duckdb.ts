@@ -136,6 +136,8 @@ export function scan(sql: string): { statements: string[]; literals: Literal[]; 
   const lineStart = (i: number) => sql.slice(start, i).trim() === '';
   for (let i = 0; i < sql.length; i++) {
     const ch = sql[i];
+    // A comment ends a word, as whitespace does.
+    if (word && (ch === '-' && sql[i + 1] === '-' || ch === '/' && sql[i + 1] === '*')) { last = word.toUpperCase(); word = ''; }
     if (ch === '-' && sql[i + 1] === '-') { const e = sql.indexOf('\n', i); i = e < 0 ? sql.length : e; continue; }
     if (ch === '/' && sql[i + 1] === '*') { const e = blockEnd(sql, i); i = e < 0 ? sql.length : e - 1; continue; }
     if (ch === '.' && lineStart(i) && /[a-z]/i.test(sql[i + 1] ?? '')) { dot ??= sql.slice(i, sql.indexOf('\n', i) < 0 ? undefined : sql.indexOf('\n', i)).trim(); }
