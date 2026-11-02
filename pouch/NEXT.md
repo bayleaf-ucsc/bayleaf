@@ -28,14 +28,46 @@ contract. Each region declares its interface (`EditingRegion`, ...) and `App`
 trust-boundary modules) and `contract` (types-only modules, imported only as types). No
 explicit `any` is left in `src/`.
 
+The escape hatches are paid down (2026-11-01): from 585 `as` casts, 461 non-null
+assertions and 35 `as unknown as` to 24 casts and one `as unknown as` (`src/sealed.ts`,
+out of the opaque `SealedHandle`), with no `!` left. The remainder is mostly where
+untyped data enters (JSON from the relay, `postMessage` payloads, a tool's untyped
+arguments, pdf.js's loose types) and `$()`'s element type. Where a cast hid a real
+question, a guard now answers it (the stage commits list each behavior change). A ratchet
+holds the line: `arch.mjs`'s `escapes` rule counts `as`, `!` and `as unknown as` per
+module against `escapes.json` and fails when a count grows, and also when one falls
+without being recorded, so the file stays exact. After removing escapes, `node arch.mjs
+--lower` writes the lower counts (it never raises one; a new escape means removing
+another, or saying why in review).
+
+The `app` service locator stays, narrowed. What moved:
+- `install.ts` takes its three needs (`layout`, `status`, `ask`) as values; the regions
+  after it still call it through `app.install`.
+- Single-writer cells live with their writer, read-only elsewhere: the Sealed client and
+  `verified` in `connection.ts` (`sealed()` returns the verified client or null, so
+  `state.ts` no longer holds the `SealedHandle`), the Sealed model list there too, the
+  key in `auth.ts`, the session's view in `transcript.ts`; `state.unwatch` and
+  `subagents.lastHeight` became transcript locals.
+- Setters became named methods on the owner: `transcript.filesChanged()`,
+  `clearInterrupted(sid)`, `markInterrupted(sids)`, `editing.handOver()`,
+  `editing.renamed(from, to)`, `tree.reveal(path)`, `auth.restoreKey()`,
+  `providers.restoreLocalhost()` and `providers.checkLocalSupport()`.
+
+What stays on `app`, deliberately: `state.agent` (read by a dozen regions; boot opens it,
+Erase all drops it), `state.composer` (set once by `commands.ts`, null-checked by earlier
+regions), `sessionList.focus` (read throughout; `session-list.ts` closes over it),
+`sessionList.activeRun`, and every late call to a later region. The regions call each
+other in real cycles (queues and send, transcript and subagents, the session list and
+transcript, connection and providers), and there a locator resolved at call time is the
+simplest correct design: passing late-bound functions in as deps would rebuild it piece
+by piece.
+
 Next:
-- Shrink the escape hatches: 585 `as` casts, 461 non-null assertions, 35 `as unknown as`.
-  A ratchet would hold the line: a node test that counts them per module against a
-  committed baseline and fails when a count grows (lowering the baseline as they go).
-- Retire the `app` service locator where a region needs only two or three functions:
-  pass them in explicitly.
-- Shrink the cross-region accessor cells (the `get`/`set` pairs in region interfaces, such
-  as the `state.ts` cells `agent`, `client` and `view`, written from several regions).
+- A claim API for `sessionList.activeRun`: its three writers claim it differently (a turn
+  in `send.ts` takes it outright, a subagent report's `drive` in `subagents.ts` only when it
+  is free and releases only its own claim, Run script in `tree.ts` refuses while anything
+  runs), and each releases by writing null, so it needs its own design rather than a
+  setter rename.
 
 ## Qualification rework
 
