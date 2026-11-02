@@ -255,15 +255,22 @@ cache headers. README "Install and the offline copy" has the policy.
 
 ## Current artifact
 
-- `bed7b86` (label `bed7b86 2026-11-02`), `main` after merging #153 and #154, built from a
-  clean worktree of `origin/main` with `npm ci` and `node build.mjs`, deployed with
-  `node deploy.mjs` (`--check` first: the gateway approved LFM3, 8 files, and Parakeet, 4
-  files, against `models.lock.json`).
-- HTML SHA-256: `f8d12c3f0dfcac56488c6dc3debdfd1044753507385a4ea002d38ceb041ccad9`.
-- Cloudflare version: `4d5545e7-fbd1-4f06-9369-07ce7fc13191`.
+- `c07a469` (label `c07a469 2026-11-02`), `main` after merging #155 (openui-lang UI blocks
+  in replies, JOURNEYS section 18), built from a clean checkout of `origin/main` with
+  `npm ci` and `node build.mjs`, deployed with `node deploy.mjs` (`--check` first: the
+  gateway approved LFM3, 8 files, and Parakeet, 4 files). Only `pouch.html` and
+  `SHA256SUMS` changed; the 42 other files were already uploaded.
+- HTML SHA-256: `2b0f4347df5bca09c0f8ef6eca8d2aa12431548474ca7754539fb890e6ce2464`.
+- Cloudflare version: `0b55f871-c106-4f9e-b284-093a275c7837`.
 - `deploy.mjs` verified the page, `SHA256SUMS`, 7 shell files and 35 runtime parts,
-  byte-exact and immutable; an independent download of `pouch.html` matched `SHA256SUMS`.
-- Includes the add-on realignment (#151), the DuckDB add-on (#153) and the Parakeet
+  byte-exact and immutable; an independent download of `pouch.html` matched `SHA256SUMS`
+  and contains the UI-block renderer and the ui-blocks prompt line. The page loaded in
+  OpenChamber's browser with no errors. Not verified live: a model reply rendering a
+  block on the deployed site (the UI journey's evidence is local, `test/ui-sealed.mjs`).
+- Previous artifact: `bed7b86`, HTML SHA-256
+  `f8d12c3f0dfcac56488c6dc3debdfd1044753507385a4ea002d38ceb041ccad9`, Cloudflare version
+  `4d5545e7-fbd1-4f06-9369-07ce7fc13191`.
+- `bed7b86` included the add-on realignment (#151), the DuckDB add-on (#153) and the Parakeet
   speech-to-text add-on (#154; its gateway release was redeployed as API version
   `a9e0af76-5805-435c-8ca9-7028f9401986`).
 - Smoke against the deployed site (headless Chrome with WebGPU, M3 Max, a fresh profile):
