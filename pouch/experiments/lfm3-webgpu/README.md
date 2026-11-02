@@ -242,7 +242,7 @@ The workflow around it, from license intake to shipping, is the ops playbook
 | `qualification/qualify.mjs` | verify model and runtime sha256s, serve loopback with a strict CSP, drive headless Chrome, write `results/<id>-<phase>.json` (schema `pouch-qualify-v1`) and gitignored `results/traces/` |
 | `qualification/qualify-worker.js`, `qualify-page.js`, `qualify.html` | the agent loop, native XML parser and tool layer in a module worker; the page only bridges |
 | `qualification/tasks.mjs` | the seven core tasks (verbatim from run2/run-quant) and held-out tasks (`delete-line`, `replace-all`) |
-| `qualification/recipes.mjs` | recipe sources (`profiles` = `src/profiles.js` TJS, what ships; `v8`, `none` frozen from agent-v2; or a JSON path) and tool layers (`pouch` mirrors `src/tools.js`; `v8`; `v8-raw`) |
+| `qualification/recipes.mjs` | recipe sources (`profiles` = `src/profiles.ts` TJS, what ships; `v8`, `none` frozen from agent-v2; or a JSON path) and tool layers (`pouch` mirrors `src/tools.ts`; `v8`; `v8-raw`) |
 | `qualification/summarize.mjs` | pass/n tables (five, core, held-out), failure classes, perf; `--against` replays a legacy trace file trial by trial |
 | `qualification/configs/` | `lfm3-q4f16.json` (standard matrix: baseline vs shipped recipe), `lfm3-{q4f16,q4,q8}-repro.json` (quant reproduction) |
 

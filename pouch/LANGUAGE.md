@@ -219,5 +219,5 @@ Deliberately left:
 - 2026-10-31: at most one Workspace; starts at zero; Erase all returns to zero.
 - 2026-11-01: Control plane adopted (Adam): the file tree is the authority for everything that acts; the Interface is one client among several.
 - 2026-11-01: Show adopted (Adam): the agent shows, the person opens; show opens unless the person is busy, else offers (provisional).
-- 2026-11-01: Egress module, Core and Interface regions built with #144: `src/egress.js` holds consent, `NETWORK` in `arch.mjs` inventories the egress modules, and the build checks both.
+- 2026-11-01: Egress module, Core and Interface regions built with #144: `src/egress.ts` holds consent, `NETWORK` in `arch.mjs` inventories the egress modules, and the build checks both.
 - 2026-11-02: Pouch's sources are strict TypeScript (#143's step 2), with no change in behavior; trust-boundary data and worker messages are typed **contracts** the build checks.

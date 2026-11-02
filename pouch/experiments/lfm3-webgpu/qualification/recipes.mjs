@@ -6,13 +6,13 @@
 // result can be tied to the exact text that was qualified.
 //
 //   recipe     source
-//   profiles   pouch/src/profiles.js transformersjs (TJS): exactly what ships (default)
+//   profiles   pouch/src/profiles.ts transformersjs (TJS): exactly what ships (default)
 //   v8         agent-v2's "v8" text, frozen here verbatim from the old worker.js
 //   none       agent-v2's "v0" baseline: generic prompt, same four schemas, no few-shot
 //   <path>     a JSON file { system, tools, fewshot } (a tuning candidate)
 //
 //   tool layer  behaviour
-//   pouch       mirrors pouch/src/tools.js: newline matching, one final newline on write,
+//   pouch       mirrors pouch/src/tools.ts: newline matching, one final newline on write,
 //               informative empty-grep errors, its result wording (default)
 //   v8          the experiment's tools with v8's normalization and grep explanation
 //   v8-raw      the experiment's tools with neither (agent-v2 v0, quant "original")
@@ -22,7 +22,7 @@
 // first qualification of the shipped few-shot text against the shipped tool wording.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { TJS } from '../../../src/profiles.js';
+import { TJS } from '../../../src/profiles.ts';
 
 const BASE = 'You are a concise coding assistant inside a browser. Use read, write, edit and bash tools for real file operations in /work. Never claim an edit without using a tool. Read files before editing. Tool errors are feedback: inspect and retry. No network, real processes, code execution or package installs. Finish with a concise summary.';
 const FIDELITY = BASE + ' Make exactly the requested change and nothing more: never add blank lines, reformat, reorder or tidy surrounding text. To append a line to a file, use edit with oldText set to the current last line and newText set to that same line plus a newline plus the new line (no blank line in between) unless asked otherwise.';
