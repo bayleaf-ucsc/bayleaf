@@ -26,8 +26,8 @@ sed, awk, head, tail, sort, uniq, wc, cut, paste, join, column, tr, diff, jq,
 base64, sha256sum, file, seq, date, xargs, tee, mkdir, mv, cp, rm, touch,
 html-to-markdown, Pouch's own zip, unzip and tar (no -z compression),
 pdfinfo, pdftotext and pdftoppm for PDFs (the pdf skill), ffprobe and
-ffmpeg for audio and video (the media skill), and duckdb for SQL over CSV,
-Parquet and JSON files (the duckdb skill).
+ffmpeg for audio and video, transcribe for speech to text (the media skill), and
+duckdb for SQL over CSV, Parquet and JSON files (the duckdb skill).
 Shell builtins work: for, while, functions, pipes, redirection, $(...).
 
 Not available: network (curl), package managers, python, node, git, gzip,
@@ -198,7 +198,7 @@ one with \`echo stop > /task/<id>/ctl\`.
 `,
   '/skills/media/SKILL.md': `---
 name: media
-description: Inspect audio and video files (phone MOV/MP4 videos, voice memos, WebM, MP3), pull out still frames to look at, extract audio, trim and convert, with ffprobe and ffmpeg in the bash tool. Read before working with any audio or video file.
+description: Inspect audio and video files (phone MOV/MP4 videos, voice memos, WebM, MP3), pull out still frames to look at, extract audio, trim and convert, with ffprobe and ffmpeg, and transcribe speech with timestamps, in the bash tool. Read before working with any audio or video file.
 ---
 
 # Audio and video in Pouch
@@ -257,6 +257,28 @@ installed on their own computer. Do not guess at content you could not decode.
    at keyframes; re-encode with \`-c:v libvpx-vp9 -b:v 1M\` for exact cuts).
    Trim audio from anything: \`ffmpeg -ss 30 -t 20 -i in.mov -vn cut.wav\`.
 6. For a report, embed a frame as a data URL (\`base64 -w0 frames/f-002.png\`).
+
+## Speech to text: transcribe
+
+\`transcribe FILE [--txt|--srt|--vtt|--json] [-o OUT]\` turns speech in any file
+above (M4A voice memos, MP4 calls, WAV, ...) into text with timestamps, on
+this computer's GPU (NVIDIA Parakeet TDT 0.6B v3, about 50x real time on a
+recent laptop). The audio never leaves the browser. \`--txt\` (default) gives
+"[mm:ss] sentence" lines; \`--srt\`/\`--vtt\` subtitles; \`--json\` segments and
+words with start and end seconds. 25 European languages, detected by itself.
+
+- The model is an add-on, about 1.3 GB once, that the user must approve: if
+  transcribe says it is not installed, run \`addons install parakeet\` (an
+  approval sheet opens for the user) and wait for it, or ask the user.
+- Speakers are not separated (no diarization). Never invent speaker labels;
+  say the transcript is unlabeled.
+- Batch: one call per file, written next to it, e.g.
+  \`for f in /work/interviews/*.m4a; do transcribe "$f" -o "\${f%.*}.txt"; done\`.
+  Each is a /task job (decode, then transcribe); they run one at a time.
+- Cite times as the transcript gives them ([12:05]). Reading a transcript
+  sends its text to your model's provider: read what the task needs.
+- Refused on phones and tablets, and without WebGPU's shader-f16: say so and
+  suggest a computer with Chrome or Edge. Caps: 256 MiB per file, 2 hours.
 
 ## Caps and pitfalls
 

@@ -80,6 +80,10 @@ export type MountLine = string;
 export interface FilePin { name: string; bytes: number; sha256: string }
 // A build define naming a manifest of content-addressed parts.
 export interface PartsPin { dir: string; manifest: string; sha256: string; bytes?: number }
-export interface ModelPin { id: string; label: string; repo: string; revision: string; license: string; files: FilePin[] }
+// attribution and runs: what the approval sheet says about it beyond the license (models.lock.json).
+export interface ModelPin { id: string; label: string; repo: string; revision: string; license: string; files: FilePin[]; attribution?: string; runs?: string }
 // The Transformers.js model's pins as build-models.mjs embeds them (from models.lock.json).
 export interface LocalModel extends ModelPin { dtype: string; bytes: number; runtime: PartsPin }
+// The speech-to-text model's pins as build-parakeet.mjs embeds them: which lock files are
+// the encoder, decoder and vocabulary, and the runtime manifest (worker bundle, ORT wasm).
+export interface AsrPin { model: ModelPin; encoder: string; decoder: string; vocab: string; runtime: PartsPin }

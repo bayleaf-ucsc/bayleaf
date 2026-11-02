@@ -283,7 +283,7 @@ deliberate violation of each rule failing and the real tree passing.
 
 | Rule | What the build checks | Allowed |
 |---|---|---|
-| egress | network APIs (`fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `WebTransport`, `RTCPeerConnection`, `sendBeacon`, `importScripts`, `Worker`, `import()` of a non-bundled path) appear only in egress modules, each allowed only its own APIs | `src/sealed.ts` (EHBP ciphertext to the attested enclave), `src/bayleaf-api.ts` (account plane: claim, allowance, Campus Pass, Sealed model list; metadata only), `src/bayleaf-cli.ts` (the agent's `bayleaf` command, approved through `egress.ts`), `src/localhost.ts` (Localhost provider), `src/models.ts` and `src/assets.ts` (hash-checked weights and runtimes), `src/offline.ts` and `sw.js` (the offline copy, this origin); `Worker` only in `src/run.ts`, `src/pdf.ts`, `src/media.ts`, `src/duckdb.ts` and `src/local/engine.ts` (bundled, hash-checked code from `blob:` URLs) |
+| egress | network APIs (`fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `WebTransport`, `RTCPeerConnection`, `sendBeacon`, `importScripts`, `Worker`, `import()` of a non-bundled path) appear only in egress modules, each allowed only its own APIs | `src/sealed.ts` (EHBP ciphertext to the attested enclave), `src/bayleaf-api.ts` (account plane: claim, allowance, Campus Pass, Sealed model list; metadata only), `src/bayleaf-cli.ts` (the agent's `bayleaf` command, approved through `egress.ts`), `src/localhost.ts` (Localhost provider), `src/models.ts` and `src/assets.ts` (hash-checked weights and runtimes), `src/offline.ts` and `sw.js` (the offline copy, this origin); `Worker` only in `src/run.ts`, `src/pdf.ts`, `src/media.ts`, `src/duckdb.ts`, `src/parakeet.ts` and `src/local/engine.ts` (bundled, hash-checked code from `blob:` URLs) |
 | html | no first-party code turns a string into HTML (`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `srcdoc`, `document.write`, `DOMParser`, ...), as a property or an `el()` prop | `viewer.html` only ("HTML reports") |
 | sealed | only `src/sealed.ts` imports `tinfoil` or reaches into the client (`secureClient`, `openAIOptions`); checked in the sources and in esbuild's metafile | `src/sealed.ts` |
 | cdn | no third-party CDN URL in the assembled page (`assertNoCdn`, as for runtimes) | URLs only compared against, never fetched (the Sigstore issuer the Tinfoil SDK checks) |
@@ -1366,7 +1366,7 @@ Adding one is one registry entry plus its worker:
 
 ## Tool workers and jobs
 
-For heavy tools (pdf.js, libav.js and DuckDB-Wasm now; OCR and ASR later):
+For heavy tools (pdf.js, libav.js, DuckDB-Wasm and parakeet.js now; OCR later):
 
 - **Convention** (`build-runtime.mjs`): each heavy tool runs in its own same-origin
   worker; its files ship as content-hash parts under `runtime/<group>/` listed in
@@ -1580,6 +1580,65 @@ JSON, the messy export against an independent computation, `-f` and stdin byte f
 24 MiB CSV, caps, the network refused, Stop, offline reuse, the network log), and `node
 test/duckdb-journey-browser.mjs` (stories DB1-DB4 in the real page with the scripted fake model).
 The spike behind each choice: `experiments/duckdb-wasm/`.
+
+### The fourth tool: parakeet.js (`transcribe`)
+
+`src/parakeet.ts` adds speech to text to the terminal and the agents' bash (stories
+TR1-TR7, the Interviewer persona): NVIDIA Parakeet TDT 0.6B v3 (25 European languages,
+detected by itself; punctuation and capitals; word timestamps) through parakeet.js and ONNX
+Runtime Web, the encoder on WebGPU and the decoder on ORT's wasm, both fp16.
+
+    transcribe FILE [--txt|--srt|--vtt|--json] [-o OUT] [-y] [--lang auto]
+
+- Any audio or video the media runtime reads (M4A voice memos, MP4 calls, MOV, MP3, WAV,
+  FLAC, Ogg, Opus, WebM). Two jobs, each a `/task` entry: the media runtime decodes
+  it to 16 kHz mono float (`decodePcm` in `src/media.ts`, its `wc.audio` job with an f32 WAV
+  out), then the Parakeet worker transcribes it. Audio over 180 s is cut by parakeet.js into
+  90 s windows merged at sentence gaps; each window notes progress in the job's log, and
+  `echo stop > /task/<id>/ctl` stops between windows (or ends the worker after 3 s).
+- Formats (`src/parakeet/format.ts`): cues from the word timestamps, ending at a sentence's
+  end, a 1 s pause, 7 s or 84 characters; `--txt` (default) is `[mm:ss] text` per cue
+  (`[h:mm:ss]` from an hour), `--srt` and `--vtt` subtitles (the VTT carries a NOTE with
+  the source and model), `--json` `{text, segments, words}` with seconds and confidences.
+  `-o` writes (its extension picks the format), else it prints (1 MiB at most).
+- **Speakers are not separated** (story TR7): Parakeet has no diarization. The help, the
+  VTT note, the JSON (`"speakers": null`), every summary line and the media skill say so.
+- Refused, before anything is read: phones and tablets and computers reporting under 8 GB
+  (the same signals as the Transformers.js provider), no WebGPU, no `shader-f16`; and the
+  add-on not yet installed (the standard "not installed: Parakeet TDT 0.6B v3 (1.3 GB). Run
+  `addons install parakeet-tdt-0.6b-v3`; the user will be asked."). Caps: 256 MiB per file
+  (`MAX_INPUT_BYTES`, media's), 2 hours of audio (`MAX_SECONDS`), each named in its error.
+- Add-ons (TR1): two registry entries (`src/addons-registry.ts`): the model-kind add-on
+  `parakeet-tdt-0.6b-v3` (weights from the gateway, CC-BY-4.0, asked) and its hidden
+  tool-kind runtime `parakeet-runtime` (this origin, 25.8 MiB with NOTICE.txt), installed
+  together as one add-on with one size (1.3 GB). `addons install parakeet` opens the add-on
+  sheet, which also says where an add-on runs (`runs`: "only in this browser, on this
+  computer's GPU") and the attribution CC-BY-4.0 asks for (NVIDIA; the ONNX export by
+  istupakov, the fp16 conversion by ysdede). The worker takes its files from
+  `addons.files('parakeet-tdt-0.6b-v3')` (the model's and the runtime's, re-checked).
+  Removing it ends the worker first. libav.js, which decodes the audio, is quiet: the first
+  `transcribe` installs it and says so on stderr.
+- The worker drops its network: `fetch` answers only the verified vocab (parakeet.js's
+  tokenizer fetches its URL) and refuses everything else; the graphs reach ORT as bytes;
+  `hub.js` (`fromHub`, which reads huggingface.co) is not in the bundle; parakeet.js's
+  jsDelivr default is removed at build. It ends 5 minutes after its last job (`IDLE_MS`):
+  a loaded model holds about 4.6 GiB across Chrome's processes.
+
+Measured (Chrome 156, Apple M3 Max; `experiments/parakeet-webgpu/README.md`,
+`test/parakeet-browser.mjs`): 31:42 of speech from an M4A in 27.8 s from a cold, offline
+page (71x real time; word error rate 1.9% against the spoken text); a 30 s clip in 0.25 s
+warm; model load 1.4 s from bytes; the 1.28 GB model download and hash check 7.9 s from a
+local stand-in for the gateway. The fp16 decoder is twice as fast as int8 at that length with the
+same accuracy (the spike's decision). Not measured: other GPUs, Firefox and Safari, noisy
+real recordings.
+
+Tests: `node test/parakeet-node.mjs` (arguments, cues and the four formats, refusals,
+the command with fake workers: two jobs, -o and -y, caps, Stop through `/task`, the
+consent sheet's fields, the build's pins and containment), `node test/parakeet-browser.mjs`
+(the real runtime under the production CSP: download and verify, M4A and MP4 to all four
+formats with WER under 10%, window progress and Stop, offline after a reload, the network
+log; `PARAKEET_MARATHON=<file>` adds an interview-length run with time and memory; skips
+without WebGPU and `shader-f16`), and `node test/parakeet-sealed.mjs` (story TR4 live).
 
 ## The `bayleaf` command: the one way out
 

@@ -189,6 +189,36 @@ made, because the source sits next to the binary. The wasm is unmodified; the wr
 bundled unmodified, and the Emscripten factory with three rewrite rules (six replacements)
 that disable code paths, visible in `build-libav.mjs`.
 
+## Parakeet (speech-to-text) runtime and model
+
+Pouch's third heavy-tool runtime: `build-parakeet.mjs` builds `runtime/parakeet/` from
+`parakeet.js` 1.4.4 (MIT; exact pin in `package.json`, SHA-256 of its six source files in
+`models.lock.json`) and the same `onnxruntime-web` 1.31.0-dev the Transformers.js runtime
+pins (`package.json` overrides parakeet.js's 1.24.1). The page embeds its manifest's
+SHA-256 (define `POUCH_PARAKEET`, with the model's pins) and fetches it on the first
+`transcribe`. `--no-models` leaves it out.
+
+| File | Count | Size |
+|---|---:|---|
+| `runtime/parakeet/manifest.<sha16>.json` | 1 | ~1 KB |
+| `worker.js` part: src/parakeet/worker.ts with parakeet.js (no `hub.js`) and ORT's WebGPU bundle; one rewrite (parakeet.js's jsDelivr default for ORT's wasm, removed) | 1 | 160 KB |
+| `ort-wasm-simd-threaded.asyncify.wasm`, split at 20 MiB: byte-identical to the Transformers.js runtime's copy | 2 | 25.6 MiB |
+| `NOTICE.txt` part: what is shipped, parakeet.js's MIT LICENSE verbatim, ONNX Runtime's MIT terms | 1 | 2 KB |
+
+Total 25.8 MiB in 5 files. The wasm is a second copy of `runtime/transformers/`'s (same
+lock hash): a shared `runtime/ort/` group would save 25.6 MiB of deploy and of download
+for someone who uses both; deferred (NEXT.md). CSP delta: none (a `blob:` module worker,
+wasm under `'wasm-unsafe-eval'`; checked with no violation in `test/parakeet-browser.mjs`).
+
+The model's weights are not in the artifact: `ysdede/parakeet-tdt-0.6b-v3-onnx` at
+`e5356bf6` (CC-BY-4.0; config, vocab, `encoder-model.fp16.onnx` 1.24 GB and
+`decoder_joint-model.fp16.onnx` 36 MB, 1.28 GB together) come from the BayLeaf HF gateway
+after the user approves `addons install parakeet` (two add-ons, one sheet: the model and
+its hidden runtime, `parakeet-runtime`), checked against `models.lock.json` like LFM3. **The gateway release must be deployed first**: `deploy.mjs` refuses to deploy a
+lock the gateway's catalog does not approve and mirror. Privacy: Cloudflare sees that this
+browser fetched the runtime and which byte ranges of the model; no audio or transcript
+leaves the page.
+
 ## Installable app shell
 
 `build.mjs` also emits `sw.js`, `manifest.webmanifest` and `icons/*.png`

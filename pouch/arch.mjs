@@ -50,6 +50,7 @@ export const NETWORK = {
   'src/media.ts': { apis: ['Worker'], why: 'starts the hash-checked libav.js worker from a blob: URL; the worker drops its network APIs' },
   'src/duckdb.ts': { apis: ['Worker'], why: 'starts the hash-checked DuckDB-Wasm worker from a blob: URL; the worker drops its network APIs and DuckDB is locked to the job\'s files' },
   'src/local/host.ts': { apis: ['Worker'], why: 'starts the hash-checked Transformers.js worker from a blob: URL' },
+  'src/parakeet.ts': { apis: ['Worker'], why: 'starts the hash-checked Parakeet (speech-to-text) worker from a blob: URL; the worker drops its network APIs' },
 };
 const WHY_EGRESS = 'Plaintext must leave Pouch only through modules whose every request is known: '
   + 'add the module to NETWORK in arch.mjs with its reason, or route the request through one that is there';
@@ -79,7 +80,7 @@ const WHY_SEALED = 'The encrypting client holds the credential and decides what 
 // works without a page, so it imports only itself (and packages).
 export const CORE = ['src/trust.ts', 'src/vfs.ts', 'src/store.ts', 'src/archive.ts', 'src/graph.ts', 'src/ns/', 'src/run.ts', 'src/run/',
   'src/local/', 'src/localhost.ts', 'src/sealed.ts', 'src/bayleaf-api.ts', 'src/profiles.ts', 'src/models.ts', 'src/addons.ts', 'src/addons-registry.ts',
-  'src/assets.ts', 'src/sha256.ts', 'src/pdf/', 'src/media/', 'src/duckdb/', 'src/shims/'];
+  'src/assets.ts', 'src/sha256.ts', 'src/pdf/', 'src/media/', 'src/duckdb/', 'src/parakeet/', 'src/shims/'];
 // The Interface (LANGUAGE.md): the page's wiring, composed by main.ts from
 // src/interface/ regions.
 const INTERFACE = ['src/main.ts', 'src/interface/'];
@@ -95,6 +96,7 @@ export const REGIONS = {
   'src/pdf/': { entries: ['src/pdf.ts'], why: 'pdf.ts owns the pdf.js worker (its pin is the add-on registry\'s)' },
   'src/media/': { entries: ['src/media.ts'], why: 'media.ts owns the libav.js worker and its source offer (its pin is the add-on registry\'s)' },
   'src/duckdb/': { entries: ['src/duckdb.ts'], why: 'duckdb.ts owns the DuckDB-Wasm worker (its pin is the add-on registry\'s)' },
+  'src/parakeet/': { entries: ['src/parakeet.ts'], why: 'parakeet.ts owns the speech-to-text worker and the transcript formats (its pins are the add-on registry\'s)' },
   'src/local/': { entries: ['src/local/host.ts', 'src/local/provider.ts'], why: 'the host (device check, worker) and the provider adapter are the Transformers.js doors; the worker is private' },
 };
 
@@ -111,6 +113,7 @@ export const CONTRACTS = {
   'src/pdf/protocol.ts': { why: 'the messages between pdf.ts and the pdf.js worker' },
   'src/media/protocol.ts': { why: 'the messages between media.ts and the libav.js worker' },
   'src/duckdb/protocol.ts': { why: 'the messages between duckdb.ts and the DuckDB-Wasm worker' },
+  'src/parakeet/protocol.ts': { why: 'the messages between parakeet.ts and the Parakeet worker' },
   'src/interface/app.ts': { why: 'the App type: the regions\' interfaces, through which regions reach each other' },
 };
 const WHY_CONTRACT = 'A contract states what crosses a boundary and does nothing itself; '

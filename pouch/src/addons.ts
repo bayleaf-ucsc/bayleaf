@@ -48,6 +48,7 @@ export interface AddonDef {
   license: string;           // as the sheet shows it
   extraLicense?: boolean;    // terms beyond the NOTICE Pouch ships: always asks
   attribution?: string;      // required credit (CC-BY), shown on the sheet and in `addons info`
+  runs?: string;             // where it runs, for the sheet and `addons info` ("only in this browser, on this computer's GPU")
   notice?: string;           // the shipped NOTICE, relative to the page
   usedBy?: string[];         // the commands that need it
   provider?: string;         // or the Provider it serves
@@ -170,7 +171,7 @@ export interface AddonStatus {
   parts: { id: string; label: string; size: number; bytes: number; complete: boolean }[];
 }
 // What the install sheet shows, per add-on.
-export interface AddonRequestItem { id: string; label: string; kind: AddonKind; bytes: number; size: number; license: string; licenseUrl: string | null; attribution: string | null; distribution: string | null; from: string[] }
+export interface AddonRequestItem { id: string; label: string; kind: AddonKind; bytes: number; size: number; license: string; licenseUrl: string | null; attribution: string | null; runs: string | null; distribution: string | null; from: string[] }
 export interface AddonRequest { action: 'install' | 'remove'; who: AddonWho; items: AddonRequestItem[]; bytes: number; location: string }
 // The sheet's title: an agent asks by name; the user's own request is a question.
 export function askTitle(req: Pick<AddonRequest, 'action' | 'who' | 'items'>): string {
@@ -264,7 +265,7 @@ export function createAddons({ entries, tasks, approve, onChange = () => {}, bef
     const attribution = d.attribution ?? (isOrigin(d.files) ? null : `${d.files.gateway.repo} at ${d.files.gateway.revision.slice(0, 12)}${rel?.base_model ? `, from ${rel.base_model}` : ''}`);
     return { id: d.id, label: d.label, kind: d.kind, bytes: action === 'install' ? s.size - s.bytes : s.bytes, size: s.size,
       license: rel?.license?.name ?? all.map((x) => x.license).filter((l, i, a) => a.indexOf(l) === i).join('; '), licenseUrl: rel?.license?.url ?? null,
-      attribution, distribution: rel?.distribution?.basis ?? null, from: [...new Set(all.map((x) => be(x).from))] };
+      attribution, runs: d.runs ?? null, distribution: rel?.distribution?.basis ?? null, from: [...new Set(all.map((x) => be(x).from))] };
   }
   async function request(ds: AddonDef[], action: AddonRequest['action'], who: AddonWho): Promise<AddonRequest> {
     const items = await Promise.all(ds.map((d) => item(d, action)));

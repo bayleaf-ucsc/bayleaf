@@ -1,5 +1,5 @@
 {
-  "comment": "Pinned assets for Pouch's Transformers.js provider. The page downloads model files from the BayLeaf HF gateway (api.bayleaf.dev/hf) and checks them against these hashes (src/models.ts); fetch-models.mjs fetches the same files into a cache outside the repo and checks them too. Weights are never committed or built into dist/.",
+  "comment": "Pinned assets for Pouch's in-browser models: the Transformers.js provider's LFM3 and the speech-to-text model (Parakeet, build-parakeet.mjs). The page downloads model files from the BayLeaf HF gateway (api.bayleaf.dev/hf) and checks them against these hashes (src/models.ts); fetch-models.mjs fetches the same files into a cache outside the repo and checks them too. Weights are never committed or built into dist/.",
   "models": [
     {
       "id": "lfm3-1.7b-q4f16",
@@ -58,6 +58,46 @@
           "sha256": "7a83bb217011b85cdab7f0d42806f32b86dc4365201fd5a68bffa5b41f40cce7"
         }
       ]
+    },
+    {
+      "id": "parakeet-tdt-0.6b-v3",
+      "label": "Parakeet TDT 0.6B v3",
+      "repo": "ysdede/parakeet-tdt-0.6b-v3-onnx",
+      "revision": "e5356bf6e24bdb7a269536b0e9e7869bc034b893",
+      "dtype": "fp16",
+      "kind": "speech-to-text",
+      "license": "CC-BY-4.0 (NVIDIA)",
+      "attribution": "Parakeet TDT 0.6B v3 by NVIDIA (nvidia/parakeet-tdt-0.6b-v3), CC-BY-4.0; ONNX export by istupakov, FP16 conversion by ysdede; used unmodified",
+      "runs": "only in this browser, on this computer's GPU (WebGPU); audio and transcripts never leave it",
+      "encoder": "encoder-model.fp16.onnx",
+      "decoder": "decoder_joint-model.fp16.onnx",
+      "vocab": "vocab.txt",
+      "files": [
+        {
+          "name": "config.json",
+          "url": "https://huggingface.co/ysdede/parakeet-tdt-0.6b-v3-onnx/resolve/e5356bf6e24bdb7a269536b0e9e7869bc034b893/config.json",
+          "bytes": 101,
+          "sha256": "562aedb0b804acbeb4e04215de190846c37e0bb239b696376df69d555785373a"
+        },
+        {
+          "name": "vocab.txt",
+          "url": "https://huggingface.co/ysdede/parakeet-tdt-0.6b-v3-onnx/resolve/e5356bf6e24bdb7a269536b0e9e7869bc034b893/vocab.txt",
+          "bytes": 102132,
+          "sha256": "ba8e4007c65f4bb4358ffe2ecc13d9ccc7a10351151065242b5c3a943e685742"
+        },
+        {
+          "name": "decoder_joint-model.fp16.onnx",
+          "url": "https://huggingface.co/ysdede/parakeet-tdt-0.6b-v3-onnx/resolve/e5356bf6e24bdb7a269536b0e9e7869bc034b893/decoder_joint-model.fp16.onnx",
+          "bytes": 36266140,
+          "sha256": "b33a73b7c1d71b9d5a0911f5cb478be3dcbf79f53355c531ab1cd1dcd68ad8ef"
+        },
+        {
+          "name": "encoder-model.fp16.onnx",
+          "url": "https://huggingface.co/ysdede/parakeet-tdt-0.6b-v3-onnx/resolve/e5356bf6e24bdb7a269536b0e9e7869bc034b893/encoder-model.fp16.onnx",
+          "bytes": 1238960452,
+          "sha256": "a2bdeeb99cb7e5548818e823127b33854dd0c26f5d0c8da91effdd895ea0e717"
+        }
+      ]
     }
   ],
   "runtime": {
@@ -78,6 +118,18 @@
           "sha256": "49871f5a4409519797e127440868a6d1923339d9185907f301a5b2a1d90af082"
         }
       ]
+    },
+    "parakeet.js": {
+      "version": "1.4.4",
+      "comment": "Bundled with the same onnxruntime-web (package.json overrides its 1.24.1 pin) into one worker; its own copy of the ORT wasm under runtime/parakeet/.",
+      "files": {
+        "src/parakeet.js": "74e175f9e4d6adbcd77572cb84aba79570f1f80cc76e4deb6c34c12286b9b636",
+        "src/backend.js": "533a6a710eb78ddacbdb717651b410dea821fea2c773cbe7bfeb5743a8ce079b",
+        "src/tokenizer.js": "f166b9fd5c65be9ca63c45df01ec059e6766e1f31cf80dff5bfa03ac312f5857",
+        "src/mel.js": "5a1bdcbf1025bb16d7c792ffb485d0e739f3862aa2bf4f96b1339989336ea211",
+        "src/long_audio.js": "6123800dc5e75357bac355f9ca4a27ac14df9d81254ca3356ef0560adfbc6040",
+        "src/preprocessor.js": "a0d2d7b4d6ad1937271e158bf764eecdc7a1eae6784e16f0cb3e5f56dd419b18"
+      }
     }
   }
 }

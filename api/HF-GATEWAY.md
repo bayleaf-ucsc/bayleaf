@@ -117,7 +117,8 @@ Download behaviour:
   operator account's approval is not redistribution permission for everyone. Each
   future gated release needs its own terms review, and must not be unlocked for all
   callers merely because the token can read it.
-- **Sufficiency cap.** One release today (~1.1 GB). Downloads cost R2 reads ($0.36
+- **Sufficiency cap.** Two releases (~2.38 GB): LFM3 1.7B (~1.1 GB) and Parakeet TDT 0.6B v3 (~1.28 GB: fp16 encoder and
+  decoder, vocabulary, config, README and ATTRIBUTION; CC-BY-4.0). Downloads cost R2 reads ($0.36
   per million; a 20 MiB-ranged 1 GB download is about 52) and Worker requests. Add a
   per-IP rate-limit binding if abuse appears; none is needed at birth.
 
@@ -178,3 +179,9 @@ Production record (2026-11-01 UTC):
   requests; 0 redirects. Transformers.js's `bytes=0-0` size probe got 206.
 - Not yet measured: concurrent load from many clients, mobile browsers, Pouch's
   ranged-part integration (follows in the Pouch branch).
+- 2026-11-02: the Parakeet TDT 0.6B v3 release deployed as API version
+  `cc70d86c-825b-4937-b45d-f1654bf2bf64` from the `pouch-parakeet` branch; the live
+  catalog matched the registry (`--catalog-only`), files awaiting the hourly cron.
+- 2026-11-02: every Parakeet file mirrored; `verify-hf-release.mjs` found all six
+  byte-exact by SHA-256 (PASS, 86 s from a home connection; the 1.24 GB fp16 encoder
+  took 83 s in 20 MiB ranges).

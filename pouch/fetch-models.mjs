@@ -1,4 +1,4 @@
-// Fetch the Transformers.js provider's pinned model files into a cache outside the repo and
+// Fetch the in-browser models' pinned files (LFM3, Parakeet) into a cache outside the repo and
 // check them against models.lock.json. Weights never enter git or the repo tree.
 //
 //   node fetch-models.mjs            (cache: ~/.cache/bayleaf-pouch/models, or $POUCH_MODEL_CACHE)
@@ -27,9 +27,10 @@ export async function sha256File(path) {
 const ok = async (path, f) => existsSync(path) && statSync(path).size === f.bytes && await sha256File(path) === f.sha256;
 
 // Path of a verified copy of each model file: { [modelId]: { [name]: path } }.
-export async function ensureModels({ log = console.log } = {}) {
+// only: model ids to fetch (default: every model in the lock).
+export async function ensureModels({ log = console.log, only = null } = {}) {
   const out = {};
-  for (const m of lock.models) {
+  for (const m of lock.models.filter((x) => !only || only.includes(x.id))) {
     out[m.id] = {};
     for (const f of m.files) {
       const dest = join(CACHE, m.id, m.revision, f.name);

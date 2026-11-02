@@ -98,7 +98,7 @@ export function createNamespacesRegion(app: App): NamespacesRegion {
   // The user's shell over the same namespace; `bayleaf` asks every use. Ctrl+`
   // opens it (or focuses it); opening it never sends anything.
   const terminal = createTerminal({ vfs: app.state.vfs, fs: over(app.state.vfs.as('user'), [['/session', control.view({ by: 'user', label: 'terminal' }), { label: 'control (you)' }]]), onChange: () => app.tree.renderTree(),
-    hooks: { bayleafCredential: () => app.auth.key, approveEgress: (req) => app.sessionList.egress.approve(req, null, undefined, 'you, in the terminal'), addons: app.sessionList.addons, pdf: app.sessionList.pdfService, media: app.sessionList.mediaService, duckdb: app.sessionList.duckdbService,
+    hooks: { bayleafCredential: () => app.auth.key, approveEgress: (req) => app.sessionList.egress.approve(req, null, undefined, 'you, in the terminal'), addons: app.sessionList.addons, pdf: app.sessionList.pdfService, media: app.sessionList.mediaService, duckdb: app.sessionList.duckdbService, transcribe: app.sessionList.asrService,
       // The cast: terminal.ts declares boolean, but open-cli.ts's hook also takes a reason string, which `open` prints.
       openFile: ({ path, mode, interactive }) => app.editing.openFile(path, undefined, { mode: mode === 'raw' || mode === 'preview' ? mode : null, interactive }), revealDir: (path) => app.transcript.revealDir(path) } });
   document.addEventListener('keydown', (e) => {

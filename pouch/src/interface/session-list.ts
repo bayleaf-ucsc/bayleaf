@@ -6,11 +6,13 @@ import { exhaustedText } from '../usage.ts';
 import { createPdfService } from '../pdf.ts';
 import { createMediaService } from '../media.ts';
 import { createDuckdbService } from '../duckdb.ts';
+import { PARAKEET, createAsrService } from '../parakeet.ts';
+import type { AsrService } from '../parakeet.ts';
 import { createSessions, revertKey, sameId, titleOf } from '../sessions.ts';
 import { createEgress, grantsFor, revoke, serviceName } from '../egress.ts';
 import { LOCAL, localWorker, setSource } from '../local/host.ts';
 import { askTitle, buildLock, createAddons, sizeText } from '../addons.ts';
-import { DUCKDB, LFM3, LIBAVJS, PDFJS, REGISTRY, TRANSFORMERSJS } from '../addons-registry.ts';
+import { DUCKDB, LFM3, LIBAVJS, PARAKEET_RUNTIME, PDFJS, REGISTRY, TRANSFORMERSJS } from '../addons-registry.ts';
 import type { ConversationId } from '@earendil-works/pi-durable';
 import type { ThreadItem, ToolItem } from '../agent-types.ts';
 import type { Egress } from '../egress.ts';
@@ -41,6 +43,7 @@ export interface SessionListRegion {
   addonsWho(caller: Caller): AgentWho;
   duckdbService: DuckdbService;
   mediaService: MediaService;
+  asrService: AsrService;
   pdfService: PdfService;
   sessions: ReturnType<typeof createSessions>;
 }
@@ -128,7 +131,7 @@ export function createSessionListRegion(app: App): SessionListRegion {
       const items = req.items.map((i) => el('dl', {}, ...(req.items.length > 1 ? row('Add-on', i.label) : []),
         ...row(install ? 'Size' : 'Frees', sizeText(i.bytes) + (install && i.bytes < i.size ? ` (of ${sizeText(i.size)}; the rest is already kept)` : '')),
         ...row('License', i.license + (i.licenseUrl ? ` (${i.licenseUrl})` : '')), ...row('Attribution', i.attribution),
-        ...row('Redistribution', i.distribution), ...row('From', i.from.join('; '))));
+        ...row('Redistribution', i.distribution), ...row('Runs', i.runs), ...row('From', i.from.join('; '))));
       const body = el('div', { className: 'model-approval' },
         el('p', { textContent: who.by === 'agent' ? `Asked by ${asker}. Only you can approve.` : `Asked by ${asker}.` }),
         ...items, el('dl', {}, ...row('Kept in', req.location)),
@@ -141,8 +144,10 @@ export function createSessionListRegion(app: App): SessionListRegion {
   const build = buildLock(globalThis.navigator?.locks);
   const addons = createAddons({ entries: REGISTRY, tasks: app.state.vfs.tasks, approve: approveAddon, otherBuilds: () => build.others(),
     // A loaded worker holds its add-on's code (and LFM3's weights): let it go first,
-    // so the next use goes through the install path again.
-    beforeRemove: (id) => (id === LFM3 || id === TRANSFORMERSJS ? localWorker.dispose() : id === PDFJS ? pdfService.jobs.unload('pdf') : id === LIBAVJS ? mediaService.jobs.unload('libav') : id === DUCKDB ? duckdbService.jobs.unload('duckdb') : undefined),
+    // so the next use goes through the install path again. Speech to text's worker
+    // likewise (src/parakeet.ts; set below, before any removal can run).
+    beforeRemove: (id) => (id === LFM3 || id === TRANSFORMERSJS ? localWorker.dispose() : id === PDFJS ? pdfService.jobs.unload('pdf') : id === LIBAVJS ? mediaService.jobs.unload('libav') : id === DUCKDB ? duckdbService.jobs.unload('duckdb')
+      : PARAKEET && (id === PARAKEET.model.id || id === PARAKEET_RUNTIME) ? asrService.jobs.unload('parakeet') : undefined),
     onChange: () => {
       const t = LFM3 ? addons.installing(LFM3) : undefined;
       if (t?.progress) app.providers.localProgress({ ...t.progress, installing: true });
@@ -163,6 +168,8 @@ export function createSessionListRegion(app: App): SessionListRegion {
   const mediaService = createMediaService({ tasks: app.state.vfs.tasks, addons });
   // duckdb (src/duckdb.ts): one DuckDB-Wasm worker, the same way; an asked add-on (src/addons-registry.ts).
   const duckdbService = createDuckdbService({ tasks: app.state.vfs.tasks, addons });
+  // transcribe (src/parakeet.ts): decodes on mediaService, then one Parakeet worker, the same way.
+  const asrService = createAsrService({ tasks: app.state.vfs.tasks, media: mediaService, addons });
 
   return {
     get activeRun() { return activeRun; }, set activeRun(v) { activeRun = v; },
@@ -174,6 +181,7 @@ export function createSessionListRegion(app: App): SessionListRegion {
     addonsWho,
     duckdbService,
     build,
+    asrService,
     mediaService,
     pdfService,
     sessions,

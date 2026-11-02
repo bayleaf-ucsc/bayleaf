@@ -17,6 +17,7 @@ import { openCommands, agentOpenCommands, agentShowCommands } from './open-cli.t
 import { pdfCommands } from './pdf.ts';
 import { mediaCommands } from './media.ts';
 import { duckdbCommands } from './duckdb.ts';
+import { transcribeCommands } from './parakeet.ts';
 import { runTool } from './run.ts';
 import { WATCH_GLOSS } from './ns/watch.ts';
 import { FILE_CAP, rasterMime, prepareImageSized } from './attachments.ts';
@@ -299,7 +300,7 @@ export function shellFor(fs: IFileSystem | ToolFs, hooks: ShellHooks = {}) {
     fs: tagWrites(fs), cwd: CWD,
     env: { HOME: CWD, USER: 'user', PATH: '/usr/bin:/bin' },
     commands: COMMANDS,
-    customCommands: [...archiveCommands(defineCommand), ...bayleafCommands(defineCommand, hooks), ...addonsCommands(defineCommand, hooks.addons, { by: 'user', via: 'terminal' }), ...pdfCommands(defineCommand, hooks.pdf, { name: 'terminal' }), ...mediaCommands(defineCommand, hooks.media, { name: 'terminal' }), ...duckdbCommands(defineCommand, hooks.duckdb, { name: 'terminal' }), ...openCommands(defineCommand, { openFile: hooks.openFile, revealDir: hooks.revealDir })],
+    customCommands: [...archiveCommands(defineCommand), ...bayleafCommands(defineCommand, hooks), ...addonsCommands(defineCommand, hooks.addons, { by: 'user', via: 'terminal' }), ...pdfCommands(defineCommand, hooks.pdf, { name: 'terminal' }), ...mediaCommands(defineCommand, hooks.media, { name: 'terminal' }), ...duckdbCommands(defineCommand, hooks.duckdb, { name: 'terminal' }), ...transcribeCommands(defineCommand, hooks.transcribe, { name: 'terminal' }), ...openCommands(defineCommand, { openFile: hooks.openFile, revealDir: hooks.revealDir })],
     executionLimits: { maxCommandCount: 100_000, maxLoopIterations: 100_000 },
   });
 }
@@ -441,7 +442,9 @@ export function createTools(vfs: ToolsVfs, Type: typeof Typebox, bashOptions: Pa
         // ffprobe, ffmpeg (src/media.ts): hooks.media is the shared libav engine.
         ...mediaCommands(defineCommand, hooks.media, () => hooks.addonsWho?.(caller) ?? { name: 'agent' }),
         // duckdb (src/duckdb.ts): hooks.duckdb is the shared DuckDB worker.
-        ...duckdbCommands(defineCommand, hooks.duckdb, () => hooks.addonsWho?.(caller) ?? { name: 'agent' })],
+        ...duckdbCommands(defineCommand, hooks.duckdb, () => hooks.addonsWho?.(caller) ?? { name: 'agent' }),
+        // transcribe (src/parakeet.ts): decodes on hooks.media's worker, then the shared Parakeet worker.
+        ...transcribeCommands(defineCommand, hooks.transcribe, () => hooks.addonsWho?.(caller) ?? { name: 'agent' })],
       executionLimits: { maxCommandCount: 100_000, maxLoopIterations: 100_000 },
       ...bashOptions,
     });
