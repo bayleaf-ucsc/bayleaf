@@ -9,14 +9,30 @@ import { $ } from './dom.ts';
 import { dismissible } from './dismiss.ts';
 
 const KEY = 'pouch.layout';
-const NARROW = matchMedia('(max-width: 860px)');
 const SIDE = { def: 260, min: 200, max: 480 };
 const PANEL_MIN = 240, CHAT_MIN = 360, OVERLAY_MIN = 480;
 export type PanelName = 'files' | 'terminal' | 'usage' | 'trust' | 'settings' | 'editor';
 const DEFAULT_W: Record<PanelName, number | (() => number)> = { files: 300, terminal: 420, usage: 320, trust: 360, settings: 340, editor: () => Math.round(innerWidth * 0.5) };
+const isPanel = (v: unknown): v is PanelName => typeof v === 'string' && Object.hasOwn(DEFAULT_W, v);
 const clamp = (v: number, lo: number, hi: number) => Math.round(Math.min(hi, Math.max(lo, v)));
 
-interface LayoutPrefs { widths: Partial<Record<PanelName, number>>; sideW?: number; side?: boolean; panel?: PanelName | null }
+export interface LayoutPrefs { widths: Partial<Record<PanelName, number>>; sideW?: number; side?: boolean; panel?: PanelName | null }
+// Stored prefs are whatever an older build (or a hand edit) left: keep only
+// the fields that have the right shape, so a bad one falls back to its default.
+const isWidth = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+export function parsePrefs(raw: unknown): LayoutPrefs {
+  const o: Record<string, unknown> = raw && typeof raw === 'object' ? { ...raw } : {};
+  const widths: LayoutPrefs['widths'] = {};
+  if (o.widths && typeof o.widths === 'object') {
+    for (const [k, v] of Object.entries(o.widths)) if (isPanel(k) && isWidth(v)) widths[k] = v;
+  }
+  return {
+    widths,
+    ...(isWidth(o.sideW) ? { sideW: o.sideW } : {}),
+    ...(typeof o.side === 'boolean' ? { side: o.side } : {}),
+    ...(o.panel === null || isPanel(o.panel) ? { panel: o.panel } : {}),
+  };
+}
 export interface Layout {
   open(name: PanelName | 'chat' | null | undefined): void;
   toggle(name: PanelName): void;
@@ -28,9 +44,9 @@ export interface Layout {
   sideOpen(): boolean;
 }
 export function createLayout({ onPanel }: { onPanel?(panel: PanelName | null): void } = {}): Layout {
-  let prefs = {} as LayoutPrefs;
-  try { prefs = JSON.parse(localStorage.getItem(KEY)!) ?? {}; } catch { /* corrupt or blocked: defaults */ }
-  prefs.widths ??= {};
+  const NARROW = matchMedia('(max-width: 860px)');
+  let prefs = parsePrefs(null);
+  try { prefs = parsePrefs(JSON.parse(localStorage.getItem(KEY) ?? 'null')); } catch { /* corrupt or blocked: defaults */ }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch {} };
   const app = $('app');
   const narrow = () => NARROW.matches;
@@ -41,7 +57,7 @@ export function createLayout({ onPanel }: { onPanel?(panel: PanelName | null): v
   const railW = () => $('rail').getBoundingClientRect().width || 44;
   // A panel may grow until the chat would drop below CHAT_MIN.
   const panelMax = () => Math.max(PANEL_MIN, innerWidth - railW() - CHAT_MIN);
-  const defaultW = (p: PanelName) => (typeof DEFAULT_W[p] === 'function' ? (DEFAULT_W[p] as () => number)() : DEFAULT_W[p] as number);
+  const defaultW = (p: PanelName) => { const d = DEFAULT_W[p]; return typeof d === 'function' ? d() : d; };
   const panelW = (p: PanelName) => clamp(prefs.widths[p] ?? defaultW(p), PANEL_MIN, panelMax());
 
   // Desktop with a panel open: when the chat would drop below OVERLAY_MIN,
@@ -105,7 +121,7 @@ export function createLayout({ onPanel }: { onPanel?(panel: PanelName | null): v
   }
   resizer($('panel-handle'), {
     dir: -1, // the handle is on the panel's left edge
-    get: () => panelW(panel!),
+    get: () => (panel ? panelW(panel) : 0),
     set: (w, persist) => { if (!panel) return; prefs.widths[panel] = clamp(w, PANEL_MIN, panelMax()); apply(); if (persist) save(); },
     reset: () => { if (!panel) return; delete prefs.widths[panel]; save(); apply(); },
   });
@@ -122,8 +138,9 @@ export function createLayout({ onPanel }: { onPanel?(panel: PanelName | null): v
   $('side-close').onclick = dismiss;
   $('backdrop').onclick = dismiss;
   $('rail').addEventListener('click', (e) => {
-    const b = (e.target as Element).closest<HTMLElement>('button[data-panel]');
-    if (b) b.dataset.panel === 'chat' ? open(null) : toggle(b.dataset.panel as PanelName);
+    const p = e.target instanceof Element ? e.target.closest<HTMLElement>('button[data-panel]')?.dataset.panel : undefined;
+    if (p === 'chat') open(null);
+    else if (isPanel(p)) toggle(p);
   });
   for (const b of document.querySelectorAll('.panel-close')) b.addEventListener('click', () => open(null));
   // A floating sidebar is a drawer: outside or Esc closes it (src/dismiss.ts).

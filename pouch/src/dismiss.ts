@@ -43,7 +43,8 @@ const onBackdrop = (n: Element, e: PointerEvent) => n.tagName === 'DIALOG' && e.
 document.addEventListener('pointerdown', (e) => {
   const i = top();
   if (!i) return;
-  if (i.inside().some((n) => n?.contains(e.target as Node | null) && !onBackdrop(n, e))) return;
+  const t = e.target instanceof Node ? e.target : null;
+  if (i.inside().some((n) => n?.contains(t) && !onBackdrop(n, e))) return;
   dismiss(i, 'outside');
 }, true);
 document.addEventListener('keydown', (e) => {

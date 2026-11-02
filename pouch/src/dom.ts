@@ -1,5 +1,6 @@
 // The few DOM helpers every module shares. Nodes only, never HTML strings.
 // By id: pouch.html declares every id the page uses, so a missing one is a bug.
+// This cast is the one place Pouch trusts pouch.html's ids and their element types.
 export const $ = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T;
 
 // props are assigned as properties; style may be a CSS string.
@@ -8,6 +9,12 @@ export function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Props<H
   const n = Object.assign(document.createElement(tag), props);
   n.append(...kids);
   return n;
+}
+
+// A Blob of bytes. Blob takes only ArrayBuffer-backed views, so other bytes (a SharedArrayBuffer's) are copied.
+export function blobOf(bytes: Uint8Array, type: string): Blob {
+  const { buffer } = bytes;
+  return new Blob([buffer instanceof ArrayBuffer ? new Uint8Array(buffer, bytes.byteOffset, bytes.length) : bytes.slice()], { type });
 }
 
 // An icon from the sprite in pouch.html (<symbol id="i-NAME">).
