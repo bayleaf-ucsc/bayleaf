@@ -185,3 +185,7 @@ Production record (2026-11-01 UTC):
 - 2026-11-02: every Parakeet file mirrored; `verify-hf-release.mjs` found all six
   byte-exact by SHA-256 (PASS, 86 s from a home connection; the 1.24 GB fp16 encoder
   took 83 s in 20 MiB ranges).
+- 2026-11-02: the Parakeet release text updated to approved and deployed; API version
+  `a9e0af76-5805-435c-8ca9-7028f9401986` from `main` (`bed7b86`). The live catalog showed
+  the new text, `status: ships`, and all six files mirrored. Pouch `bed7b86` then installed
+  the model from the gateway in 60 s.

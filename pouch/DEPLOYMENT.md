@@ -255,17 +255,26 @@ cache headers. README "Install and the offline copy" has the policy.
 
 ## Current artifact
 
-- `e4bfeb9` (label `e4bfeb9 2026-11-02`), the head of #148 stacked on #147 (not yet on
-  `main`), built from a clean tree with `npm ci` and `node build.mjs` (which now also runs
-  `tsc` on both projects), deployed with `node deploy.mjs` for playtesting.
-- HTML SHA-256: `492d41198448f522629c670ed6c625bddfe50c408ac16cc64af9b04527a65290`.
-- Cloudflare version: `ddc52cdd-ca0a-4c78-87e6-14d993cacde3`.
-- `deploy.mjs` verified the page, `SHA256SUMS`, 7 shell files and 24 runtime parts,
-  byte-exact and immutable.
-- Includes the TypeScript migration (#147) and the type-debt pay-down with its bug fixes
-  and guards (#148).
-- Before the playtest, the live Sealed journey suites and twelve scripted journeys against
-  the deployed site passed (about 137 Sealed requests); then playtested on Mac Chrome.
+- `bed7b86` (label `bed7b86 2026-11-02`), `main` after merging #153 and #154, built from a
+  clean worktree of `origin/main` with `npm ci` and `node build.mjs`, deployed with
+  `node deploy.mjs` (`--check` first: the gateway approved LFM3, 8 files, and Parakeet, 4
+  files, against `models.lock.json`).
+- HTML SHA-256: `f8d12c3f0dfcac56488c6dc3debdfd1044753507385a4ea002d38ceb041ccad9`.
+- Cloudflare version: `4d5545e7-fbd1-4f06-9369-07ce7fc13191`.
+- `deploy.mjs` verified the page, `SHA256SUMS`, 7 shell files and 35 runtime parts,
+  byte-exact and immutable; an independent download of `pouch.html` matched `SHA256SUMS`.
+- Includes the add-on realignment (#151), the DuckDB add-on (#153) and the Parakeet
+  speech-to-text add-on (#154; its gateway release was redeployed as API version
+  `a9e0af76-5805-435c-8ca9-7028f9401986`).
+- Smoke against the deployed site (headless Chrome with WebGPU, M3 Max, a fresh profile):
+  the build label shows; Settings > Add-ons and `addons list` show pdf.js, libav.js,
+  DuckDB, LFM3 and Parakeet; `duckdb -c "select 42"` returned the not-installed string,
+  then printed 42 after installing DuckDB from Settings (1.8 s); `transcribe --help` says
+  speakers are not separated; Parakeet installed from Settings in 60 s (1.28 GB from
+  `api.bayleaf.dev/hf`); a 3 s `say` clip uploaded through Files transcribed in 3.9 s
+  (including libav.js's first-use install) as "Bay Leaf Pouch transcribes interviews
+  locally." No page errors; the console showed ONNX Runtime's node-placement warnings and
+  a 404 for `/favicon.ico`. No Sealed requests.
   Not verified: Firefox and Safari end to end.
 
 ## Deploy and verify
