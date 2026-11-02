@@ -31,14 +31,15 @@ export interface TreeRegion {
   // A yes/no question in the sheet; resolves true only on the verb.
   ask(text: string | Node, verb?: string, cls?: string, title?: string): Promise<boolean>;
   download(path: string, bytes?: Blob | Uint8Array): void | Promise<void>;
-  expanded: Set<string>;
   fail(m: string): void;
   // The row holding the roving tab stop.
-  get focusPath(): string; set focusPath(v: string);
+  readonly focusPath: string;
   listArchive(path: string): Promise<void>;
   offerDefaults(): void;
   renderNamespaces(): void;
   renderTree(): Promise<void>;
+  // Expand the way down to a folder, give it the tab stop and scroll it into view.
+  reveal(path: string): Promise<void>;
   stackSeed(path: string): Promise<void>;
   treeRows(): TreeRow[];
   unpackHere(path: string): Promise<void>;
@@ -311,6 +312,13 @@ export function createTreeRegion(app: App): TreeRegion {
     if (kind !== 'dir') app.editing.openFile(p);
   }
 
+  async function reveal(path: string) {
+    for (let q = path; q !== '/'; q = normalize(q + '/..')) expanded.add(q);
+    focusPath = path;
+    await renderTree();
+    treeRows().find((r) => r.dataset.path === path)?.scrollIntoView({ block: 'nearest' });
+  }
+
   async function rename(path: string) {
     const name = await askName('Rename', 'Rename to', path.split('/').pop(), 'Rename');
     if (!name || name.includes('/')) return;
@@ -320,7 +328,7 @@ export function createTreeRegion(app: App): TreeRegion {
     if (await app.state.vfs.fs.exists(dest)) return fail(`${name} already exists in ${normalize(path + '/..')}. Pick another name, or delete that one first.`);
     await app.state.userFs.mv(path, dest);
     // The open file may be the renamed entry or inside a renamed folder.
-    if (app.editing.openPath === path || app.editing.openPath?.startsWith(path + '/')) { app.editing.openPath = dest + app.editing.openPath.slice(path.length); $('editor-path').textContent = app.editing.openPath; }
+    app.editing.renamed(path, dest);
     if (focusPath === path) focusPath = dest;
     app.state.vfs.changed();
   }
@@ -490,7 +498,7 @@ export function createTreeRegion(app: App): TreeRegion {
   let changeTimer: ReturnType<typeof setTimeout> | 0 = 0;
   app.state.vfs.addEventListener('change', () => {
     clearTimeout(changeTimer);
-    changeTimer = setTimeout(() => { renderTree(); app.editing.syncEditor(); app.transcript.pathGen++; app.transcript.linkVer++; app.transcript.scheduleRender(); }, 150);
+    changeTimer = setTimeout(() => { renderTree(); app.editing.syncEditor(); app.transcript.filesChanged(); }, 150);
   });
   $('refresh').onclick = () => app.state.vfs.changed();
   // Everything in /work in one file: the "export before I leave" button (O3, L3).
@@ -534,13 +542,13 @@ export function createTreeRegion(app: App): TreeRegion {
     ARCHIVE,
     ask,
     download,
-    expanded,
     fail,
-    get focusPath() { return focusPath; }, set focusPath(v) { focusPath = v; },
+    get focusPath() { return focusPath; },
     listArchive,
     offerDefaults,
     renderNamespaces,
     renderTree,
+    reveal,
     stackSeed,
     treeRows,
     unpackHere,

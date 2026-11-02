@@ -45,15 +45,16 @@ export interface TranscriptRegion {
   argSummary(name: string, args: unknown): string;
   // Open the current session's thread in the log (newest call wins).
   attach(): Promise<void>;
-  // The current session's last run was cut off by a reload.
-  get interrupted(): boolean; set interrupted(v: boolean);
-  get linkVer(): number; set linkVer(v: number);
+  // A send in sid ends the current session's reload interruption (send clears the stored flag).
+  clearInterrupted(sid: SessionId): void;
+  // Files changed: path links are rechecked lazily and cached replies re-render.
+  filesChanged(): void;
+  // A reload cut these sessions' runs off; the current one offers Continue.
+  markInterrupted(sids: SessionId[]): void;
   mdCtx: MarkdownContext;
   modelName(id: string): string;
   // Disclosures the user opened, by key, across renders.
   openTools: Set<string>;
-  // Bumped when files change, so path links are rechecked lazily.
-  get pathGen(): number; set pathGen(v: number);
   reasoningCard(it: AssistantItem, key: string | number): HTMLDetailsElement;
   recordTurn(sid: SessionId, v: NormalizedView | null, ms: number): Promise<void>;
   renderLog(): void;
@@ -204,11 +205,8 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
 
   // A folder link reveals the folder: expand the way down and show the tree.
   async function revealDir(path: string) {
-    for (let q = path; q !== '/'; q = normalize(q + '/..')) app.tree.expanded.add(q);
-    app.tree.focusPath = path;
     app.state.layout.open('files');
-    await app.tree.renderTree();
-    app.tree.treeRows().find((r) => r.dataset.path === path)?.scrollIntoView({ block: 'nearest' });
+    await app.tree.reveal(path);
   }
   // Navigation is not governed by connect-src: the address itself is the leak.
   function openExternal(url: string) {
@@ -649,12 +647,12 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
   return {
     argSummary,
     attach,
-    get interrupted() { return interrupted; }, set interrupted(v) { interrupted = v; },
-    get linkVer() { return linkVer; }, set linkVer(v) { linkVer = v; },
+    clearInterrupted: (sid) => { if (interrupted && sameId(sid, app.sessionList.sessions.current?.id)) interrupted = false; },
+    filesChanged: () => { pathGen++; linkVer++; scheduleRender(); },
+    markInterrupted: (sids) => { if (sids.some((x) => sameId(x, app.sessionList.sessions.current?.id))) { interrupted = true; scheduleRender(); } },
     mdCtx,
     modelName,
     openTools,
-    get pathGen() { return pathGen; }, set pathGen(v) { pathGen = v; },
     reasoningCard,
     recordTurn,
     renderLog,

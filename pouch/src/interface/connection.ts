@@ -52,7 +52,7 @@ export function createConnectionRegion(app: App): ConnectionRegion {
       cacheSecret = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
       await store.setSetting('cacheSecret', cacheSecret);
     }
-    const c = createSealedClient({ bearerToken: app.state.key ?? 'campus', cacheSecret });
+    const c = createSealedClient({ bearerToken: app.auth.key ?? 'campus', cacheSecret });
     $('facts').replaceChildren();
     try {
       await c.ready();
@@ -75,11 +75,11 @@ export function createConnectionRegion(app: App): ConnectionRegion {
       for (const [step, state] of steps) sub('Step: ' + step, state.status + (state.error ? ' – ' + state.error : ''), state.status === 'success' ? 'ok' : 'bad');
       $('facts').append(el('dt', { textContent: 'Enclave' }), el('dd', {},
         el('details', { className: 'facts-more' }, el('summary', {}, el('span', { className: good ? 'ok' : 'bad', textContent: good ? 'Verified' : 'Not verified' }), ` · ${doc.releaseTag ?? ''} · Details`), more)));
-      fact('Credential', app.state.key ? 'personal key (stored in this browser)' : 'Campus Pass (no account; campus network only)');
+      fact('Credential', app.auth.key ? 'personal key (stored in this browser)' : 'Campus Pass (no account; campus network only)');
       if (!ok) throw new Error('attestation did not verify');
       client = c; verified = true;
       setBadge('ok', 'BayLeaf Sealed: enclave verified');
-      app.state.status(app.state.key ? '' : app.auth.campusLine(app.state.usage.state));
+      app.state.status(app.auth.key ? '' : app.auth.campusLine(app.state.usage.state));
     } catch (e) {
       // Fail closed: no plaintext fallback exists anywhere in this app. An
       // unreachable network is not a failed verification: say which it was.

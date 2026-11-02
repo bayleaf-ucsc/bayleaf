@@ -24,10 +24,12 @@ const isViewMode = (m: string | undefined): m is ViewMode => m === 'raw' || m ==
 const buttonOf = (e: Event) => (e.target instanceof Element ? e.target.closest('button') : null);
 
 export interface EditingRegion {
-  // When the person last touched the page (show waits while they are busy).
-  get lastTouch(): number; set lastTouch(v: number);
+  // Sending hands the turn over: the keys that sent it do not make the person busy (show).
+  handOver(): void;
   openFile(path: string, line?: number, opts?: OpenFileOptions): Promise<OpenFileResult>;
-  get openPath(): string | null; set openPath(v: string | null);
+  readonly openPath: string | null;
+  // A rename moved from to to: the open file follows if it was there or inside.
+  renamed(from: string, to: string): void;
   // Show (LANGUAGE.md): an agent puts a file or folder in front of the person.
   show(req: Pick<ShowRequest, 'path' | 'dir' | 'mode'>, caller: Caller): Promise<ShowResult>;
   shownCard(line: ShownLine): HTMLParagraphElement;
@@ -319,9 +321,13 @@ export function createEditingRegion(app: App): EditingRegion {
   }
 
   return {
-    get lastTouch() { return lastTouch; }, set lastTouch(v) { lastTouch = v; },
+    handOver: () => { lastTouch = 0; },
     openFile,
-    get openPath() { return openPath; }, set openPath(v) { openPath = v; },
+    get openPath() { return openPath; },
+    renamed: (from, to) => {
+      if (openPath !== from && !openPath?.startsWith(from + '/')) return;
+      openPath = to + openPath.slice(from.length); $('editor-path').textContent = openPath;
+    },
     show,
     shownCard,
     syncEditor,

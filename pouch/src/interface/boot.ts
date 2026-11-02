@@ -11,7 +11,7 @@ import { convKey, interruptedKey, sameId, subagentsKey, watchesKey } from '../se
 import { MAX_WAKES, baseOf, createWatches, isGlob, watchTool } from '../ns/watch.ts';
 import { parseSpecs } from '../ns/namespace.ts';
 import { why } from '../ns/control.ts';
-import { LOCAL, engine as localEngine, support as localSupport, models as modelStore } from '../local/engine.ts';
+import { LOCAL, engine as localEngine, models as modelStore } from '../local/engine.ts';
 import type { App } from './app.ts';
 import type { ConversationId } from '@earendil-works/pi-durable';
 import type { AgentToolSpec, SessionId } from '../agent-types.ts';
@@ -112,7 +112,7 @@ export function createBootRegion(app: App): BootRegion {
   // the transformersjs profile keeps its four qualified tools).
   const withWatch = (list: ToolList) => { list.push(watchTool({ Type, watches, callerOf: watchCaller })); return list; };
   (async () => {
-    app.state.usage.subscribe(async (st) => { await app.state.ledger.observe(st.remaining); app.state.meter(); if (app.state.layout.current() === 'usage') app.meters.renderUsagePanel(); if (!app.state.key && app.connection.verified && /^Not signed in/.test($('status').textContent)) app.state.status(app.auth.campusLine(st)); });
+    app.state.usage.subscribe(async (st) => { await app.state.ledger.observe(st.remaining); app.state.meter(); if (app.state.layout.current() === 'usage') app.meters.renderUsagePanel(); if (!app.auth.key && app.connection.verified && /^Not signed in/.test($('status').textContent)) app.state.status(app.auth.campusLine(st)); });
     if (location.hash === '#erased') { history.replaceState(null, '', location.pathname + location.search); $('erased').hidden = false; }
     navigator.storage.persist?.().catch(() => {});
     // Not awaited: the offline copy must never hold up files or the agent.
@@ -122,12 +122,11 @@ export function createBootRegion(app: App): BootRegion {
     app.tree.offerDefaults();
     app.tree.renderTree();
     $('welcome').hidden = !!(await store.getSetting('welcomed').catch(() => true));
-    app.state.key = (await store.getSetting<string>('key')) ?? null;
-    app.providers.lh = (await store.getSetting<NonNullable<App['providers']['lh']>>('localhost')) ?? null;
-    app.providers.renderLocalhostSettings();
+    await app.auth.restoreKey();
+    await app.providers.restoreLocalhost();
     app.auth.renderAuth();
     app.state.usage.refresh();
-    app.providers.localOk = await localSupport();
+    await app.providers.checkLocalSupport();
     await app.connection.loadModels();
     app.providers.renderLocalSettings();
     // Parts kept from pouch.bayleaf.dev before the gateway: reassembled, checked
@@ -164,7 +163,7 @@ export function createBootRegion(app: App): BootRegion {
         pointer: { get: (id) => store.getSetting(convKey(id)), set: async (id, c) => { await store.setSetting(convKey(id), c); } },
         onInterrupted: async (sids) => {
           for (const sid of sids) if (sid != null) await store.setSetting(interruptedKey(sid), true);
-          if (sids.some((x) => sameId(x, app.sessionList.sessions.current?.id))) { app.transcript.interrupted = true; app.transcript.scheduleRender(); }
+          app.transcript.markInterrupted(sids);
         },
         subagents: {
           reg: { get: (sid) => store.getSetting(subagentsKey(sid)), set: async (sid, l) => { await store.setSetting(subagentsKey(sid), l); } },

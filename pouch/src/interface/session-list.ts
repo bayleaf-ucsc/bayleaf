@@ -96,7 +96,7 @@ export function createSessionListRegion(app: App): SessionListRegion {
     return w?.child != null ? { sid: w.sid, id: w.child, name: (app.subagents.kids.get(String(w.sid)) ?? []).find((c) => c.id === w.child)?.name ?? 'subagent' } : null;
   };
   const egressHooks: SessionListRegion['egressHooks'] = {
-    bayleafCredential: () => app.state.key,
+    bayleafCredential: () => app.auth.key,
     approveEgress: (req, caller) => {
       const c = childOf(caller);
       return c ? egress.approve(req, c.sid, c.name) : egress.approve(req, runSession());

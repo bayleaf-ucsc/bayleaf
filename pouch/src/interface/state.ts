@@ -1,4 +1,4 @@
-// Interface state: the shared cells (credential, agent, composer), status line, frame and action sheets.
+// Interface state: the shared cells (agent, composer), status line, frame and action sheets.
 
 import { createSettings } from '../settings.ts';
 import { createLocalImages } from '../attachments.ts';
@@ -27,8 +27,6 @@ export interface StateRegion {
   get agent(): PouchAgent | null; set agent(v: PouchAgent | null);
   get composer(): Composer | null; set composer(v: Composer | null);
   follow: Follow;
-  // sk-bayleaf-... or null for Campus Pass.
-  get key(): string | null; set key(v: string | null);
   layout: Layout;
   ledger: ReturnType<typeof createLedger>;
   localImages: LocalImages;
@@ -53,7 +51,6 @@ export function createStateRegion(app: App): StateRegion {
   const userFs = vfs.as('user');
   const localImages = createLocalImages(vfs);
 
-  let key: string | null = null;        // sk-bayleaf-... or null for Campus Pass
   let agent: PouchAgent | null = null;      // from openAgent, or null if it could not open
   // How a message read mid-turn is labeled, in main's transcript and a subagent's (D25).
   const STEER_LABEL = 'You, while it worked';
@@ -62,7 +59,7 @@ export function createStateRegion(app: App): StateRegion {
   function status(text: string, cls = '') { $('status').textContent = text; $('status').className = cls; }
 
   // ── Frame: sidebar, rail and panels (layout.ts) ─────────────────────
-  const usage = createUsage({ getKey: () => key });
+  const usage = createUsage({ getKey: () => app.auth.key }); // called late: auth is created after state
   // Every Sealed request of the allowance day, by session (usage.ts); the day is
   // the allowance's own (it ends at resetsAt).
   const ledger = createLedger({ get: () => store.getSetting<Ledger>('requestLedger'), set: async (v) => { await store.setSetting('requestLedger', v); } },
@@ -118,7 +115,6 @@ export function createStateRegion(app: App): StateRegion {
     get agent() { return agent; }, set agent(v) { agent = v; },
     get composer() { return composer; }, set composer(v) { composer = v; },
     follow,
-    get key() { return key; }, set key(v) { key = v; },
     layout,
     ledger,
     localImages,

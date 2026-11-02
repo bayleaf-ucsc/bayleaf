@@ -2,7 +2,7 @@
 
 import * as store from '../store.ts';
 import { $, el } from '../dom.ts';
-import { LOCAL, engine as localEngine, importFiles as localImport, remove as localRemove, stored as localStored } from '../local/engine.ts';
+import { LOCAL, engine as localEngine, importFiles as localImport, remove as localRemove, stored as localStored, support as localSupport } from '../local/engine.ts';
 import { HINTS, isLocal } from '../local/provider.ts';
 import { DEFAULT_URL, TRANSPORTS, isLocalhost, parseLocalhostUrl, testConnection } from '../localhost.ts';
 import type { App } from './app.ts';
@@ -22,10 +22,12 @@ export type LocalStatusProgress = LocalProgress & { downloading?: boolean };
 
 export interface ProvidersRegion {
   canSend(): boolean;
+  // Whether this browser can run Transformers.js (boot checks once).
+  checkLocalSupport(): Promise<void>;
   clearHint(sid: SessionId | null | undefined): void;
   // Download (asking first) and start Transformers.js; false with a status line when it cannot.
   ensureLocal(): Promise<boolean>;
-  get lh(): LocalhostSetup | null; set lh(v: LocalhostSetup | null);
+  readonly lh: LocalhostSetup | null;
   lhAgentConfig(): LocalhostConfig | null;
   lhModels(): LocalhostModelInfo[];
   lhRuns: Set<string>; // sessions whose current turn runs on Localhost
@@ -35,7 +37,7 @@ export interface ProvidersRegion {
   localhostPicked(): boolean;
   // model: the one loading, for 'slow'; 'flowing' clears the line.
   localhostWait(kind: 'slow' | 'flowing', model?: Model<Api>): void;
-  get localOk(): Support; set localOk(v: Support);
+  readonly localOk: Support;
   localOption(saved: string): HTMLOptionElement[];
   localPicked(): boolean;
   localProgress(p: LocalStatusProgress): void;
@@ -47,6 +49,8 @@ export interface ProvidersRegion {
   renderHint(): void;
   renderLocalhostSettings(result?: LocalhostTest): void;
   renderLocalSettings(): Promise<void>;
+  // The Localhost setup kept in this browser, read back at boot.
+  restoreLocalhost(): Promise<void>;
   showHint(kind: LocalHint): void;
 }
 
@@ -298,9 +302,10 @@ export function createProvidersRegion(app: App): ProvidersRegion {
 
   return {
     canSend,
+    checkLocalSupport: async () => { localOk = await localSupport(); },
     clearHint,
     ensureLocal,
-    get lh() { return lh; }, set lh(v) { lh = v; },
+    get lh() { return lh; },
     lhAgentConfig,
     lhModels,
     lhRuns,
@@ -309,7 +314,7 @@ export function createProvidersRegion(app: App): ProvidersRegion {
     localhostOptions,
     localhostPicked,
     localhostWait,
-    get localOk() { return localOk; }, set localOk(v) { localOk = v; },
+    get localOk() { return localOk; },
     localOption,
     localPicked,
     localProgress,
@@ -321,6 +326,7 @@ export function createProvidersRegion(app: App): ProvidersRegion {
     renderHint,
     renderLocalhostSettings,
     renderLocalSettings,
+    restoreLocalhost: async () => { lh = (await store.getSetting<LocalhostSetup>('localhost')) ?? null; renderLocalhostSettings(); },
     showHint,
   };
 }

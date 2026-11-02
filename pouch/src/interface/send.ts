@@ -4,7 +4,7 @@ import * as store from '../store.ts';
 import { $ } from '../dom.ts';
 import { exhaustedText } from '../usage.ts';
 import { refOf } from '../graph.ts';
-import { interruptedKey, notesKey, sameId, type SessionRecord } from '../sessions.ts';
+import { interruptedKey, notesKey, type SessionRecord } from '../sessions.ts';
 import { why } from '../ns/control.ts';
 import { isLocal } from '../local/provider.ts';
 import { explainMessage, isLocalhost } from '../localhost.ts';
@@ -52,7 +52,7 @@ export function createSendRegion(app: App): SendRegion {
   // chores (title, usage), so a follow-up need not wait for them.
   async function send(text: string, attached: Attachments = { files: [], images: [] }, turnModel = $<HTMLSelectElement>('model').value, runEnded = () => {}, adopted: (id: SessionId) => void = () => {}) {
     app.state.follow.pin();
-    app.editing.lastTouch = 0; // sending hands the turn over: the keys that sent it do not make the person busy
+    app.editing.handOver();
     const t0 = Date.now();
     let s: SessionRecord | null | void = app.sessionList.sessions.current; // the run belongs to this session even if you switch away
     if (!s) {
@@ -64,7 +64,7 @@ export function createSendRegion(app: App): SendRegion {
     // Until a real title comes: the prompt's start, cut at a word, without trailing / . , : (critique 6).
     if (!s.title) { const t = text.replace(/\s+/g, ' ').trim(); s.title = (t.length > 60 ? t.slice(0, 60).replace(/\s+\S*$/, '') || t.slice(0, 60) : t).replace(/[\s/.,:;-]+$/, ''); }
     s.updated = Date.now(); await app.sessionList.sessions.save(s);
-    if (app.transcript.interrupted && sameId(sid, app.sessionList.sessions.current?.id)) app.transcript.interrupted = false;
+    app.transcript.clearInterrupted(sid);
     await store.setSetting(interruptedKey(sid), undefined);
     app.sessionList.sessions.running.add(String(sid)); app.sessionList.sessions.render();
     app.connection.lostRuns.delete(String(sid));
