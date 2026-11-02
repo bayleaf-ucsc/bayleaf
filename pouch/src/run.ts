@@ -33,7 +33,7 @@ export type { RunLoaded, RunMessage, RunWorkerMessage } from './run/protocol.ts'
 
 export interface RunToolDeps {
   vfs: { tasks: Pick<Tasks, 'add'>; changed(): void }; Type: typeof Typebox; CWD: string; abs: (p: string) => string;
-  fsFor: (caller?: ConversationId) => Namespace; sidOf?: (caller?: ConversationId) => string | null;
+  fsFor: (caller?: ConversationId) => Namespace; sidOf?: (caller?: ConversationId) => string | number | null;
   oneAtATime?: <T>(p: string, fn: () => Promise<T>) => Promise<T>; makeWorker?: () => RunWorker;
 }
 export interface RunArgs {

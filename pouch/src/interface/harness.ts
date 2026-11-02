@@ -60,7 +60,7 @@ export function createHarnessRegion(app: App): HarnessRegion {
       app.queues.announce(`Stopped ${c.name}. Your unsent message to it is paused in the activity tray.`);
     }
     app.state.composer!.renderTray();
-    const note = await app.state.agent!.subagents!.stop(sid, c.id as unknown as string); // a registry id where the agent declares string
+    const note = await app.state.agent!.subagents!.stop(sid, c.id);
     // A ctl write returns once it took effect: reading its status next says stopped.
     for (let i = 0; i < 60 && (await app.subagents.loadKids(sid)).find((x) => x.id === c.id)?.status === 'running'; i++) await new Promise((r) => setTimeout(r, 50));
     return note;
@@ -70,7 +70,7 @@ export function createHarnessRegion(app: App): HarnessRegion {
     const key = String(sid), names = app.queues.waitingOn(sid);
     let s = names.length ? await app.state.agent!.subagents!.detach(sid, text) : null;
     if (!s || s === true) s = await app.state.agent!.steer(sid, text);
-    app.boot.watches.userSpoke(sid as string);
+    app.boot.watches.userSpoke(String(sid));
     const held = names.length && sameId(sid, app.sessionList.sessions.current?.id) ? app.queues.heldCards(sid) : [];
     app.queues.track(key, sid, { id: s.id, text, at: Date.now(), ...(names.length ? { detach: names.join(', ') } : {}) }, s.placed, app.queues.promoteNext);
     if (held.length) app.queues.foldIntoTray(held);
@@ -86,7 +86,7 @@ export function createHarnessRegion(app: App): HarnessRegion {
       if (c?.status === 'running') continue;
       if (c?.status !== 'finished') { app.queues.childFollowUps.set(id, { ...q, paused: true }); app.queues.announce(`${q.name} ${c?.status ?? 'is gone'}; your follow-up to it is paused.`); continue; }
       app.queues.childFollowUps.delete(id);
-      app.state.agent!.subagents!.message(sid, id as unknown as string, q.text).then(() => app.queues.announce(`Follow-up sent to ${q.name}; it works on it now.`, false), (e: Error) => { app.queues.childFollowUps.set(id, { ...q, paused: true }); app.state.status(e.message, 'bad'); });
+      app.state.agent!.subagents!.message(sid, id, q.text).then(() => app.queues.announce(`Follow-up sent to ${q.name}; it works on it now.`, false), (e: Error) => { app.queues.childFollowUps.set(id, { ...q, paused: true }); app.state.status(e.message, 'bad'); });
     }
   }
   app.namespaces.control.drive({
@@ -136,7 +136,7 @@ export function createHarnessRegion(app: App): HarnessRegion {
       }
       if (c.oneshot) throw ctlErr(`${c.name} is a one-shot and takes no messages`);
       app.queues.childFollowUps.delete(c.id);
-      const note = await app.state.agent!.subagents!.message(sid, c.id as unknown as string, text);
+      const note = await app.state.agent!.subagents!.message(sid, c.id, text);
       app.state.status(`Sent to ${c.name}.`);
       return { note };
     },

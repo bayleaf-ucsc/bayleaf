@@ -37,11 +37,14 @@ export function createBootRegion(app: App): BootRegion {
   let agentReady!: (value?: unknown) => void;
   const agentStarted = new Promise((r) => { agentReady = r; });
   const refOfChild = (sid: SessionId, id: unknown) => { const l = app.subagents.kids.get(String(sid)) ?? [], c = l.find((x) => x.id === id); return c ? { ref: refOf(l, c), name: c.name, c } : null; };
+  // watch.ts keys sessions by their text; legacy sessions are numeric conversation ids,
+  // so the agent gets back the id itself (String(5) would miss conversation 5).
+  const sessionOfKey = async (key: string): Promise<SessionId> => (await app.sessionList.sessions.find(key))?.id ?? key;
   const watches = app.state.vfs.watches = createWatches({
     fs: app.state.vfs.fs,
     load: (sid) => store.getSetting<StoredWatch[]>(watchesKey(sid)),
     save: (sid, l) => store.setSetting(watchesKey(sid), l.length ? l : undefined),
-    sessions: async () => (await app.sessionList.sessions.all()).map((x) => x.id as string), // watch.ts keys sessions by string
+    sessions: async () => (await app.sessionList.sessions.all()).map((x) => String(x.id)),
     // A subagent watches only inside its own mounts; main sees the whole tree.
     scopeOf: (sid, owner) => {
       if (asRef(owner) === MAIN) return null;
@@ -50,18 +53,18 @@ export function createBootRegion(app: App): BootRegion {
     },
     followUpHeld: (sid) => { const q = app.queues.followUps.get(String(sid)); return !!q && !q.paused; },
     userSending: (sid) => app.queues.submitting.has(String(sid)),
-    busy: async (sid, owner) => (await app.state.agent?.subagents?.busyOf(sid, owner)) ?? false,
-    deliver: (sid, owner, { paths = [], ...ev }) => {
+    busy: async (sid, owner) => (await app.state.agent?.subagents?.busyOf(await sessionOfKey(sid), owner)) ?? false,
+    deliver: async (sid, owner, { paths = [], ...ev }) => {
       for (const p of paths) arm('pulse:' + p);
       if (paths.length) app.tree.renderTree();
-      return app.state.agent!.subagents!.notify(sid, owner, ev);
+      return app.state.agent!.subagents!.notify(await sessionOfKey(sid), owner, ev);
     },
     ready: agentStarted,
     onChange: () => app.state.composer?.renderTray(),
   });
   async function watchCaller(caller: unknown) {
     const w: { sid?: SessionId | null; child?: ConversationId | null } = app.state.agent?.who(caller as ConversationId) ?? {};
-    const sid = (w.sid ?? caller) as string;
+    const sid = String(w.sid ?? caller);
     if (w.child != null) {
       const r = refOfChild(sid, w.child);
       if (!r) throw new Error('This subagent is not registered yet; try again.');
@@ -73,7 +76,7 @@ export function createBootRegion(app: App): BootRegion {
   const shortPath = (p: string) => (p.startsWith('/work/') ? p.slice(6) : p);
   function watchRows(sid: SessionId) {
     const rows: TrayRow[] = [];
-    for (const w of watches.list(sid as string)) {
+    for (const w of watches.list(String(sid))) {
       const what = w.paths.map(shortPath).join(', ');
       const origin = `${w.id} · changes ${watchByText(w)}${w.owner !== MAIN ? ` · for ${w.ownerName} (${w.owner})` : ''} · /task/watch/${w.id}`;
       const title = `${w.note ? w.note + '\n' : ''}${w.paths.join('\n')}\n${w.once ? 'Removed after its first event.' : `Wakes the agent at most ${MAX_WAKES} times between your messages.`}`;
@@ -139,7 +142,7 @@ export function createBootRegion(app: App): BootRegion {
           // A subagent's namespace: what its spawn declared, or the default view.
           namespaceFor: (caller) => { const w = caller == null ? null : app.state.agent?.who(caller); return w?.child != null ? (w.ns?.length ? w.ns : defaultSubagentNs(app.state.vfs)) : null; },
           // Main's tools see its own session's control files at /session (src/ns/control.ts).
-          sessionOf: (caller) => (caller == null ? null : app.state.agent?.who(caller)?.sid as string ?? null),
+          sessionOf: (caller) => (caller == null ? null : app.state.agent?.who(caller)?.sid ?? null),
           mainView: (caller, base) => { const w = caller == null ? null : app.state.agent?.who(caller); return w && w.child == null && w.sid != null ? app.namespaces.mainNamespace(w.sid, base) : base; },
           // Every change an agent makes, for /session/<sid>/changes (subagents marked by their ref).
           onChange: (caller, op, path) => { const w = app.state.agent?.who(caller!); if (w?.sid != null) app.namespaces.changes.note(w.sid, op, path, w.child != null ? refOfChild(w.sid, w.child)?.ref ?? 'subagent' : MAIN); },
@@ -172,7 +175,7 @@ export function createBootRegion(app: App): BootRegion {
             const text = await app.state.vfs.fs.readFile(path).catch((e: { code?: string; message: string }) => { throw new Error(`files: ${path} could not be read (${/ENOENT/.test(e.code ?? e.message) ? 'it does not exist' : e.message}).`); });
             return { path, text };
           },
-          watchLines: (sid, ref) => { const l = watches.list(sid as string).filter((w) => ref === MAIN || w.owner === ref); return l.length ? 'Watches: ' + l.map((w) => `${w.id} ${w.paths.join(', ')}${w.note ? ` (${w.note})` : ''}`).join('; ') : ''; },
+          watchLines: (sid, ref) => { const l = watches.list(String(sid)).filter((w) => ref === MAIN || w.owner === ref); return l.length ? 'Watches: ' + l.map((w) => `${w.id} ${w.paths.join(', ')}${w.note ? ` (${w.note})` : ''}`).join('; ') : ''; },
         },
       });
     } catch (e) {

@@ -504,12 +504,12 @@ export async function openAgent({ storage, tools = [], systemPrompt, getClient, 
     // for the card's buttons. watchChild(sid, child, onView) is watch() of one.
     subagents: subagents && {
       list: (sid: SessionId) => subagents.list(sid),
-      stop: (sid: SessionId, child: string) => subagents.stop(sid, child),
+      stop: (sid: SessionId, child: string | ConversationId) => subagents.stop(sid, child),
       // Stop every running subagent of a session (Stop all): aborts their requests in flight.
       stopAll: (sid: SessionId) => subagents.stopAll(sid),
-      message: (sid: SessionId, child: string, text: string) => subagents.message(sid, child, text, { user: true }),
+      message: (sid: SessionId, child: string | ConversationId, text: string) => subagents.message(sid, child, text, { user: true }),
       // From the subagent's view: joins its running work, never restarts it.
-      steer: (sid: SessionId, child: string, text: string) => subagents.steer(sid, child, text),
+      steer: (sid: SessionId, child: string | ConversationId, text: string) => subagents.steer(sid, child, text),
       watch: (sid: SessionId, child: ConversationId, onView: (view: ThreadView) => void) => watch(sid, onView, child),
       resume: (sid: SessionId) => subagents.resume(sid),
       // Main's blocking calls (a foreground spawn, a wait): [{ kind, ids, since }].

@@ -69,7 +69,7 @@ export function createSendRegion(app: App): SendRegion {
     const notes = (await store.getSetting<string[]>(notesKey(sid))) ?? [];
     const admitted = () => notes.length && store.setSetting(notesKey(sid), undefined);
     let ok = false, refused: Error | null = null;
-    app.boot.watches.userSpoke(sid as string); // the user wrote: watches may wake it again
+    app.boot.watches.userSpoke(String(sid)); // the user wrote: watches may wake it again
     try { await app.state.agent!.send(sid, text, notes, attached, turnModel); admitted(); ok = true; }
     catch (e) {
       // Refused before admission: nothing entered the transcript. The caller

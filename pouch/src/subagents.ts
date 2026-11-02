@@ -511,7 +511,7 @@ export function createSubagents(deps: SubagentDeps) {
 
   // user: typed by the user (marked STEER_KIND and quoted in the report),
   // otherwise sent by the main agent's tool (tagged as from main).
-  async function message(sid: SessionId, ref: string, text: string | undefined, { user = false } = {}) {
+  async function message(sid: SessionId, ref: string | ConversationId, text: string | undefined, { user = false } = {}) {
     if (!user) return send(sid, { ref: MAIN, name: 'main', child: null }, ref, text);
     const l = await list(sid), c = find(l, ref);
     if (!c) throw new Error(`No subagent "${ref}" in this session. Known: ${l.map((x) => x.name).join(', ') || 'none'}.`);

@@ -39,7 +39,7 @@ export interface ToolsHooks {
   show?(req: ShowRequest, caller: Caller): Promise<{ opened?: boolean; reason?: string } | null | undefined>;
   pdf?: PdfService; media?: Parameters<typeof mediaCommands>[1];
   prepareImage?(bytes: Uint8Array): Promise<PreparedImage>;
-  sessionOf?(caller?: ConversationId): string | null;
+  sessionOf?(caller?: ConversationId): string | number | null; // a SessionId: legacy sessions are numeric
   makeWorker?: RunToolDeps['makeWorker'];
 }
 export type ToolsVfs = Pick<Vfs, 'fs' | 'mounts' | 'seedLayer'> & Partial<Pick<Vfs, 'as'>> & RunToolDeps['vfs'];
