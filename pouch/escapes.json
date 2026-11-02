@@ -67,7 +67,7 @@
   "src/subagents.ts": {"as": 12, "!": 10},
   "src/terminal.ts": {"as": 2, "!": 5},
   "src/theme.ts": {"as": 4, "!": 2},
-  "src/tools.ts": {"as": 19, "!": 6, "as unknown as": 6},
+  "src/tools.ts": {"as": 18, "!": 6, "as unknown as": 5},
   "src/usage.ts": {"as": 2, "!": 7},
   "src/vfs.ts": {"as": 8, "!": 9, "as unknown as": 1}
 }

@@ -216,15 +216,19 @@ export function noting<F extends ToolFs>(fs: F, onChange: (op: ChangeOp, path: s
 // failure and every top-level command that did not run, so a small model
 // reruns them instead of reporting work that never happened. Upstream draft
 // in the PR that added this; drop both once just-bash reports the write.
+// It is also the adapter to just-bash's IFileSystem: a write or copy resolves
+// nothing there, where Pouch's file servers resolve a receipt (a control file's answer).
 const WRITES = new Set<PropertyKey>(['writeFile', 'appendFile']);
-export function tagWrites<F extends object>(fs: F): F {
+export type ShellFs<F> = Omit<F, 'writeFile' | 'appendFile' | 'cp'> & Pick<IFileSystem, 'writeFile' | 'appendFile' | 'cp'>;
+export function tagWrites<F extends object>(fs: F): ShellFs<F> {
   return new Proxy(fs as FsMethods, {
     get(target, prop) {
       const v = target[prop];
-      if (WRITES.has(prop)) return (p: string, ...a: unknown[]) => v.call(target, p, ...a).catch((e) => { if (e && typeof e === 'object') e.pouchWrite ??= normalize(p); throw e; });
+      if (WRITES.has(prop)) return (p: string, ...a: unknown[]) => v.call(target, p, ...a).then(() => {}, (e) => { if (e && typeof e === 'object') e.pouchWrite ??= normalize(p); throw e; });
+      if (prop === 'cp') return (...a: unknown[]) => v.apply(target, a).then(() => {});
       return typeof v === 'function' ? v.bind(target) : v;
     },
-  }) as F;
+  }) as ShellFs<F>;
 }
 const reason = (e: unknown) => String((e as Errorish)?.message ?? e).replace(/, (write|open) '[^']*'$/, '');
 export async function execScript(bash: Bash, script: string, opts: ExecOptions = {}) {
@@ -284,7 +288,7 @@ export function stoppedAt(script: string, path: string, why: string, cwd = CWD) 
 // hooks.revealDir a folder in Files).
 export function shellFor(fs: IFileSystem | ToolFs, hooks: ShellHooks = {}) {
   return new Bash({
-    fs: tagWrites(fs) as IFileSystem, cwd: CWD, // as in bashFor
+    fs: tagWrites(fs), cwd: CWD,
     env: { HOME: CWD, USER: 'user', PATH: '/usr/bin:/bin' },
     commands: COMMANDS,
     customCommands: [...archiveCommands(defineCommand), ...bayleafCommands(defineCommand, hooks), ...modelsCommands(defineCommand, hooks.models, { by: 'user', via: 'terminal' }), ...pdfCommands(defineCommand, hooks.pdf, { name: 'terminal' }), ...mediaCommands(defineCommand, hooks.media, { name: 'terminal' }), ...openCommands(defineCommand, { openFile: hooks.openFile, revealDir: hooks.revealDir })],
@@ -418,7 +422,7 @@ export function createTools(vfs: ToolsVfs, Type: typeof Typebox, bashOptions: Pa
       };
     } });
     return new Bash({
-      fs: tagWrites(watched) as unknown as IFileSystem, cwd: CWD, // a BaseFs serves as one, but its writeFile resolves a receipt (unknown) where just-bash's says void
+      fs: tagWrites(watched), cwd: CWD,
       env: { HOME: CWD, USER: 'pouch', PATH: '/usr/bin:/bin' },
       commands: COMMANDS,
       // `models` (src/models-cli.ts): hooks.models is the shared service; whoOf names the asker.
