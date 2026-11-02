@@ -226,4 +226,23 @@ function harness({ files = {} } = {}) {
   assert.deepEqual(await expand(ns, '/work/data/**/*.csv'), ['/work/data/a.csv', '/work/data/sub/c.csv']);
   ok('expand: globs walk only below their base');
 }
+{
+  // No agent open: delivery fails and busy answers false (as a promise, the
+  // contract boot.ts keeps); a once watch still retires, nothing rejects unhandled.
+  const h = harness({ files: { '/work/essay.md': 'one\n' } });
+  await h.init();
+  const unhandled = []; const onRej = (e) => unhandled.push(e);
+  process.on('unhandledRejection', onRej);
+  const warn = console.warn; console.warn = () => {};
+  h.deps.deliver = async () => { throw new Error('no agent'); };
+  h.deps.busy = async () => false;
+  const reg = createWatches(h.deps), user = attribute(h.ns, 'user', reg);
+  await reg.add('1', 'a1', 'main', { paths: ['/work/essay.md'], once: true });
+  await user.writeFile('/work/essay.md', 'two\n');
+  await until(() => reg.list('1').length === 0);
+  await sleep(20);
+  console.warn = warn; process.off('unhandledRejection', onRej);
+  assert.deepEqual(unhandled, []);
+  ok('no agent open: a failed delivery with busy false retires a once watch without an unhandled rejection');
+}
 console.log(`watch-node: ${passed} passed`);

@@ -50,8 +50,7 @@ export function createBootRegion(app: App): BootRegion {
     },
     followUpHeld: (sid) => { const q = app.queues.followUps.get(String(sid)); return !!q && !q.paused; },
     userSending: (sid) => app.queues.submitting.has(String(sid)),
-    // Known mismatch: a plain false without an agent, where watch.ts expects a promise (it calls .catch on it).
-    busy: (sid, owner) => app.state.agent?.subagents?.busyOf(sid, owner) ?? false as unknown as Promise<boolean>,
+    busy: async (sid, owner) => (await app.state.agent?.subagents?.busyOf(sid, owner)) ?? false,
     deliver: (sid, owner, { paths = [], ...ev }) => {
       for (const p of paths) arm('pulse:' + p);
       if (paths.length) app.tree.renderTree();
