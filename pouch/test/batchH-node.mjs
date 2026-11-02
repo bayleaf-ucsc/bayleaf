@@ -193,6 +193,16 @@ await t('models: a tampered gateway file fails the download task naming the file
   const r = await sh(svc, ['get', 'tiny-q4', '--wait']);
   assert.equal(r.exitCode, 1); assert.match(r.stderr, /onnx\/model\.onnx_data: SHA-256 differs from the pin/);
 });
+await t('models: a malformed catalog entry is skipped, not a broken model list', async () => {
+  const good = { repo: 'x/ok', revision: 'r', files: [{ bytes: 5 }], license: { name: 'MIT' }, qualification: [{ client: 'pouch', status: 'passed' }] };
+  const releases = [good, { repo: 'x/a', revision: 'r', files: [null] }, { repo: 'x/b', revision: 'r', files: [], qualification: 'yes' },
+    { repo: 'x/c', revision: 'r', files: [], license: { name: 5 } }, { repo: 'x/d', revision: 'r', files: [{ bytes: '5' }] }];
+  const fetchImpl = async () => new Response(JSON.stringify({ releases }), { status: 200 });
+  const store = createModelStore([], { gateway: 'https://gw/hf', fetchImpl });
+  assert.deepEqual((await store.catalog()).map((r) => r.repo), ['x/ok']);
+  const r = await sh(createModelService({ store, tasks: new Tasks(), approve: async () => true }), ['list']);
+  assert.equal(r.exitCode, 0, r.stderr); assert.match(r.stdout, /x\/ok .*pouch: passed/);
+});
 
 // ── WebGPU capability, before anything is offered or downloaded ──
 const adapter = ({ f16 = true, buffers = MIN_STORAGE_BUFFERS } = {}) => ({ requestAdapter: async () => ({ features: new Set(f16 ? ['shader-f16'] : []), limits: { maxStorageBuffersPerShaderStage: buffers } }) });

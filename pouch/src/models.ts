@@ -37,9 +37,18 @@ const STORE = 'pouch-models';
 const OLD_CACHE = 'pouch-local-models'; // parts cached from pouch.bayleaf.dev before the gateway
 // fillFile's EINTEGRITY and friends.
 const codeOf = (e: unknown) => (e instanceof Error && 'code' in e ? e.code : undefined);
-// A catalog entry Pouch can match and size; the rest is optional display.
-const isRelease = (r: unknown): r is ModelRelease => typeof r === 'object' && r !== null && 'repo' in r && typeof r.repo === 'string'
-  && 'revision' in r && typeof r.revision === 'string' && 'files' in r && Array.isArray(r.files);
+// A catalog entry Pouch can match and size; the rest is optional display, but
+// what `models list` and `models status` read must have the shape they read.
+const isObj = (x: unknown): x is object => typeof x === 'object' && x !== null;
+const optString = (o: object, k: string) => !(k in o) || Reflect.get(o, k) === undefined || typeof Reflect.get(o, k) === 'string';
+const isRelease = (r: unknown): r is ModelRelease => isObj(r) && 'repo' in r && typeof r.repo === 'string'
+  && 'revision' in r && typeof r.revision === 'string'
+  && 'files' in r && Array.isArray(r.files) && r.files.every((f) => isObj(f) && 'bytes' in f && typeof f.bytes === 'number')
+  && optString(r, 'base_model')
+  && (!('license' in r) || r.license == null || isObj(r.license) && optString(r.license, 'name') && optString(r.license, 'url'))
+  && (!('distribution' in r) || r.distribution == null || isObj(r.distribution) && optString(r.distribution, 'basis'))
+  && (!('qualification' in r) || r.qualification == null || Array.isArray(r.qualification)
+    && r.qualification.every((q) => isObj(q) && 'client' in q && typeof q.client === 'string' && 'status' in q && typeof q.status === 'string'));
 
 export function createModelStore(models: ModelPin[], { gateway = GATEWAY, fetchImpl = (...a: Parameters<FetchImpl>) => fetch(...a), chunk = CHUNK, parallel = PARALLEL }: { gateway?: string; fetchImpl?: FetchImpl; chunk?: number; parallel?: number } = {}) {
   const byId = new Map<string, ModelPin>(models.map((m) => [m.id, m]));
