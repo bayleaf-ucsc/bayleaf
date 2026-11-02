@@ -1,6 +1,7 @@
 # Add-ons: a language proposal (draft, 2026-11-01)
 
-Status: proposal, not adopted. Written against the main checkout's uncommitted state
+Status: **adopted** 2026-11-01 with the decisions at the end; built on branch
+`pouch-addons` (LANGUAGE.md "Add-on", README "Add-ons", NEXT.md "Add-ons"). Written against the main checkout's uncommitted state
 (LANGUAGE.md, README "Transformers.js" and "Tool runtimes and engine jobs", `src/models.js`,
 `src/models-cli.js`, `src/jobs.js`, `src/assets.js`, `build-runtime.mjs`, `src/defaults.js`,
 `src/main.js`, `pouch.html`). Disciplines in play: domain-driven design (ubiquitous language),

@@ -142,6 +142,42 @@ only its own session and may not write `in`; subagents see none of it). Not the 
 transcript is content, not control state. Partly answers open question 1: agents act through
 tools and the control plane, and perceive through the same files.
 
+**Add-on.** Something optional Pouch keeps in this browser so a tool or a Provider can
+work: code, weights or data, fetched only when wanted, checked against hashes this page was
+built with, kept outside the Workspace (agents cannot see or edit it as files), removable at
+any time. Two **kinds**: `tool` (code that adds commands: pdf.js, libav.js) and `model`
+(weights a Provider runs: LFM3 1.7B). A model add-on that needs code names a hidden
+tool-kind add-on (the Transformers.js code), shown as one add-on with one size. One
+registry (`src/addons-registry.ts`), one service (`src/addons.ts`), one command (`addons`)
+and one Settings section (Add-ons). *Avoid:* extension, plugin, package, capability.
+Skills are not add-ons: a skill is Context, plain files the person may edit; an add-on may
+come with a skill.
+
+**Install / Remove.** Install: fetch what is missing, check every byte, keep it; installing
+again resumes a stopped install. Remove: delete it from this browser. "Download" means only
+files leaving /work for the person's disk. The browser's "Install app" is **Add to this
+device**; "Uninstall offline copy" is **Remove offline copy**.
+
+**State.** Exactly one of: *not installed*, *installing* (its /task), *partly installed*
+(Install resumes), *installed*, *not available here* (with a **reason** from the device
+check or the build, saying what would work instead). An installed add-on this device cannot
+run is still "not available here", with Remove offered.
+
+**Consent tier.** Derived from the registry entry, never declared. *Quiet*: at most 10 MiB,
+from Pouch's own origin, no license beyond the NOTICE Pouch ships; it installs on first use
+and the tool's output and /task note say so ("installing pdf.js (3.9 MiB, once, from
+Pouch's own origin)"). *Asked*: everything else; only a person's click on the install sheet
+approves. A tool that needs an asked add-on returns at once with "not installed: <label>
+(<size>). Run `addons install <id>`; the user will be asked." and never opens a sheet;
+anyone may request an install, an agent's remove always asks.
+
+**Make available offline.** Installs every add-on this device can run (quiet ones directly,
+asked ones through one combined sheet). Not the **offline copy**, which is the page itself.
+
+**Worker.** A heavy tool's (or Transformers.js's) Web Worker, started from its add-on's
+verified files; `src/jobs.ts` runs **jobs** on workers. Not **engine**, which is the
+Harness's (pi-durable).
+
 ## Messages to a working agent
 
 **Steer.** A message delivered into the running turn, read after the current step. As a file:
@@ -170,6 +206,13 @@ appears outside its own session view, it is prefixed with the session title
 | sidebar "Subagents of ..." | "Agents in ...", each "Agent scout (a2), a subagent of main" | `src/sessions.ts` |
 | a subagent's approval sheet "subagent x · session: T" | "T › x (subagent)" | `src/egress.ts` |
 | internal `lane()`, `laneOf`, `queued`, `childQueue`, `userQueued` | `openDb()`, `dbOf`, `followUps`, `childFollowUps`, `followUpHeld` | code |
+| the `models` command (`models list/status/get/remove/verify`), no alias | **`addons`** (`list/info/install/remove/verify`, `install --all`) | `src/addons-cli.ts`, prompts, skills, Settings |
+| "Transformers.js model" (Settings), Download / Resume download / Stop download / Remove the model / Load from folder | Settings > **Add-ons**: Install / Resume install / Stop / Remove / Install from folder / Install from files / Make available offline | `pouch.html`, `src/interface/addons.ts` |
+| states "downloaded", "partial", "not downloaded", "not in this build (no pin)" | **installed**, **partly installed**, **not installed**, **not available here: reason** | `src/addons.ts`, `src/addons-cli.ts` |
+| "the pdf runtime", "the media runtime", "the local model", "In-browser models" (UI and agent text) | the add-on's name: pdf.js, libav.js, LFM3, Transformers.js | skills, refusals, device reasons |
+| /task kind `download` | kind **`install`** | `src/ns/tasks.ts` |
+| "Install app", "Uninstall offline copy" | **Add to this device**, **Remove offline copy** | trust panel |
+| jobs' "engines" (`engines`, `EngineDef`, `pdfEngine`, `mediaEngine`, `localEngine`, `src/local/engine.ts`) | **workers** (`workers`, `WorkerDef`, `pdfWorker`, `mediaWorker`, `localWorker`, `src/local/host.ts`) | code, docs |
 
 Upgrade: stored data is read in both forms, never rewritten in bulk. Registry rows go
 through `migrateRows` on every read (handles, edge-count keys, wake marks, labels) and
@@ -197,6 +240,11 @@ Deliberately left:
 - `src/graph.ts` keeps `createScope`/`MAX_SCOPE_MESSAGES` as code names for one session's
   routing state.
 - The API's own "plaintext lane" (an api.bayleaf.dev term) keeps its wording.
+- Add-ons (2026-11-01): no aliases, migrations or shims (Pouch is R&D with no users this
+  week). Model files kept by builds before the gateway (`pouch-local-models`) are deleted
+  at boot with a one-line notice in Settings > Add-ons. Kept: the Cache Storage names
+  `pouch-runtime` and `pouch-models`, `runtime/<group>/` paths, `models.lock.json`,
+  `src/models.ts` (the gateway backend) and `partAssets`, which name mechanisms, not terms.
 
 ## Open questions
 
@@ -220,4 +268,9 @@ Deliberately left:
 - 2026-11-01: Control plane adopted (Adam): the file tree is the authority for everything that acts; the Interface is one client among several.
 - 2026-11-01: Show adopted (Adam): the agent shows, the person opens; show opens unless the person is busy, else offers (provisional).
 - 2026-11-01: Egress module, Core and Interface regions built with #144: `src/egress.ts` holds consent, `NETWORK` in `arch.mjs` inventories the egress modules, and the build checks both.
+- 2026-11-01: Add-ons adopted (Adam; `notes/addons-language-proposal.md`): noun add-on
+  (kinds tool, model); verbs Install / Remove ("Install app" becomes Add to this device;
+  Download only for files leaving /work); quiet tier at most 10 MiB, from Pouch's own
+  origin, no extra license, everything else asks; `models` renamed to `addons` with no
+  alias; jobs' engines renamed to workers; no compatibility shims.
 - 2026-11-02: Pouch's sources are strict TypeScript (#143's step 2), with no change in behavior; trust-boundary data and worker messages are typed **contracts** the build checks.
