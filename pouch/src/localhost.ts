@@ -26,6 +26,14 @@ export type LocalhostErrorKind = 'setup' | 'refused' | 'lna' | 'cors' | 'unreach
 export interface LocalhostModelInfo { id: string; contextWindow?: number | null }
 export interface LocalhostStep { name: string; ok: boolean; text: string }
 export interface LocalhostExplanation { kind: string; message: string }
+// What Test connection reports; ok is the discriminant.
+export interface LocalhostReady { ok: true; base: string; models: LocalhostModelInfo[]; transport: LocalhostTransport; detected: LocalhostTransport; steps: LocalhostStep[] }
+export interface LocalhostFailed { ok: false; base?: string; error: string; kind?: string; steps: LocalhostStep[] }
+export type LocalhostTest = LocalhostReady | LocalhostFailed;
+
+// A property of a thrown value or parsed JSON, without trusting its shape.
+const field = (v: unknown, k: string): unknown => (typeof v === 'object' && v !== null ? Reflect.get(v, k) : undefined);
+const messageOf = (e: unknown) => String(field(e, 'message') ?? e);
 
 export const LOCALHOST_PROVIDER = 'pouch-localhost';
 export const PREFIX = 'localhost:';
@@ -60,16 +68,16 @@ export function parseLocalhostUrl(input: unknown): LocalhostUrl {
 export function guardedFetch(getConfig: () => LocalhostConfig | null | undefined, { fetchImpl = (...a: Parameters<FetchLike>) => fetch(...a) }: { fetchImpl?: FetchLike } = {}): FetchLike {
   return async (input, init = {}) => {
     const cfg = getConfig();
-    const ok = cfg && parseLocalhostUrl(cfg.base);
-    if (!ok?.ok) throw new LocalhostError('setup', 'Localhost is not set up: Settings > Providers > Localhost.');
+    const ok = cfg ? parseLocalhostUrl(cfg.base) : null;
+    if (!cfg || !ok?.ok) throw new LocalhostError('setup', 'Localhost is not set up: Settings > Providers > Localhost.');
     const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
     if (url.origin !== ok.origin || !LOOPBACK.includes(url.hostname)) throw new LocalhostError('refused', `Refusing to send to ${url.origin}: Localhost only talks to ${ok.origin}.`);
     const headers = new Headers(init.headers);
     for (const k of [...headers.keys()]) if (k.startsWith('x-stainless')) headers.delete(k);
-    if (cfg!.key) headers.set('authorization', `Bearer ${cfg!.key}`); else headers.delete('authorization');
+    if (cfg.key) headers.set('authorization', `Bearer ${cfg.key}`); else headers.delete('authorization');
     try { return await fetchImpl(url.href, { ...init, headers }); }
     catch (e) {
-      if (init.signal?.aborted || (e as Error | undefined)?.name === 'AbortError') throw e;
+      if (init.signal?.aborted || field(e, 'name') === 'AbortError') throw e;
       throw await diagnose(ok, fetchImpl, e);
     }
   };
@@ -101,7 +109,7 @@ export async function diagnose(ok: { origin: string }, fetchImpl: FetchLike, cau
   let reachable = false;
   try { await fetchImpl(ok.origin + '/', { mode: 'no-cors', cache: 'no-store' }); reachable = true; } catch {}
   if (reachable) return new LocalhostError('cors', `Your server at ${ok.origin} answered but did not allow this page (CORS). Add ${origin ?? 'this page\'s origin'} to its allowed origins${origin ? '' : ' (a page opened from a file has origin "null"; serve Pouch over http instead)'}, restart it, and test again. ${CORS_HOWTO}`);
-  return new LocalhostError('unreachable', `Nothing answered at ${ok.origin}. Is the server running and listening on that port? (${String((cause as Error | undefined)?.message ?? cause)})`);
+  return new LocalhostError('unreachable', `Nothing answered at ${ok.origin}. Is the server running and listening on that port? (${messageOf(cause)})`);
 }
 export const CORS_HOWTO = 'oMLX: server.cors_origins in ~/.omlx/settings.json. Ollama: OLLAMA_ORIGINS. LM Studio: Developer > Settings > Enable CORS.';
 
@@ -127,26 +135,34 @@ export function explainMessage(msg: unknown, modelId?: string) {
 const readBody = async (r: Response) => { try { return await r.text(); } catch { return ''; } };
 
 // Test connection: reachability, auth, CORS, models, transport. Never generates.
-export type LocalhostTest = Awaited<ReturnType<typeof testConnection>>;
-export async function testConnection({ url, key, transport = 'auto' }: { url: string; key?: string | null; transport?: LocalhostTransport | 'auto' }, { fetchImpl }: { fetchImpl?: FetchLike } = {}) {
+export async function testConnection({ url, key, transport = 'auto' }: { url: string; key?: string | null; transport?: LocalhostTransport | 'auto' }, { fetchImpl }: { fetchImpl?: FetchLike } = {}): Promise<LocalhostTest> {
   const parsed = parseLocalhostUrl(url);
   if (!parsed.ok) return { ok: false, error: parsed.error, steps: [{ name: 'address', ok: false, text: parsed.error }] };
   const cfg = { base: parsed.base, key };
   const f = guardedFetch(() => cfg, { fetchImpl });
   const steps: LocalhostStep[] = [{ name: 'address', ok: true, text: `Only ${parsed.origin} (this computer).` }];
-  const fail = (name: string, text: string, kind?: string) => ({ ok: false, base: parsed.base, error: text, kind, steps: [...steps, { name, ok: false, text }] });
+  const fail = (name: string, text: string, kind?: string): LocalhostFailed => ({ ok: false, base: parsed.base, error: text, kind, steps: [...steps, { name, ok: false, text }] });
   let r: Response;
   try { r = await f(parsed.base + '/models', { headers: { accept: 'application/json' } }); }
-  catch (e) { return fail((e as LocalhostError).kind === 'cors' ? 'cors' : (e as LocalhostError).kind === 'lna' ? 'permission' : 'reach', (e as LocalhostError).message, (e as LocalhostError).kind); }
+  catch (e) {
+    // guardedFetch throws a LocalhostError for every failure but an abort.
+    const kind = e instanceof LocalhostError ? e.kind : undefined;
+    return fail(kind === 'cors' ? 'cors' : kind === 'lna' ? 'permission' : 'reach', messageOf(e), kind);
+  }
   steps.push({ name: 'reach', ok: true, text: `Your server answered${r.headers.get('server') ? ` (${r.headers.get('server')})` : ''}.` });
   steps.push({ name: 'cors', ok: true, text: 'It allows this page (CORS).' });
   if (!r.ok) { const ex = explain(r.status, await readBody(r)); return fail(ex.kind === 'auth' ? 'auth' : 'models', ex.message, ex.kind); }
   steps.push({ name: 'auth', ok: true, text: key ? 'Your key was accepted.' : 'No key needed.' });
-  let list: unknown;
-  try { list = (await r.json()).data; } catch { list = null; }
-  if (!Array.isArray(list)) return fail('models', 'Your server answered /models without an OpenAI-style model list.');
-  const models = list.filter((m) => m && typeof m.id === 'string' && !/embed|rerank|whisper|tts/i.test(m.id))
-    .map((m) => ({ id: m.id, contextWindow: num(m.max_model_len ?? m.context_length ?? m.max_context_length ?? m.loaded_context_length) }));
+  let body: unknown;
+  try { body = await r.json(); } catch { body = null; }
+  const data = field(body, 'data'), list: unknown[] | null = Array.isArray(data) ? data : null;
+  if (!list) return fail('models', 'Your server answered /models without an OpenAI-style model list.');
+  const models: LocalhostModelInfo[] = [];
+  for (const m of list) {
+    const id = field(m, 'id');
+    if (typeof id !== 'string' || /embed|rerank|whisper|tts/i.test(id)) continue;
+    models.push({ id, contextWindow: num(field(m, 'max_model_len') ?? field(m, 'context_length') ?? field(m, 'max_context_length') ?? field(m, 'loaded_context_length')) });
+  }
   if (!models.length) return fail('models', 'Your server lists no chat models. Load or download one there, then test again.');
   steps.push({ name: 'models', ok: true, text: `${models.length} model${models.length === 1 ? '' : 's'}: ${models.map((m) => m.id).join(', ')}.` });
   const detected = await detectTransport(f, parsed.base);
@@ -231,7 +247,7 @@ export function localhostApi(apis: { completions: ProviderStreams; responses: Pr
         const msg = await inner.result();
         if (msg.stopReason === 'error') msg.errorMessage = rewrite(msg.errorMessage); // idempotent
         out.end(msg);
-      } catch (e) { out.end(failMessage(model, String((e as Error | undefined)?.message ?? e))); }
+      } catch (e) { out.end(failMessage(model, messageOf(e))); }
       finally { settle(); }
     })();
     return out;
@@ -240,9 +256,9 @@ export function localhostApi(apis: { completions: ProviderStreams; responses: Pr
   // diagnosis (unreachable, CORS, permission) is the message worth showing. HTTP
   // errors stay as pi-ai wrote them: pi-durable reads them (a context overflow
   // compacts and retries); explainMessage() words them for display.
-  let lastFailure: Error | null = null;
-  const tracked = async (...a: Parameters<FetchLike>) => { try { lastFailure = null; return await fetch(...a); } catch (e) { lastFailure = e as Error; throw e; } };
-  const rewrite = (msg: string | undefined) => (/^connection error/i.test(msg ?? '') && lastFailure?.message ? lastFailure.message : msg);
+  let lastFailure: unknown = null;
+  const tracked = async (...a: Parameters<FetchLike>) => { try { lastFailure = null; return await fetch(...a); } catch (e) { lastFailure = e; throw e; } };
+  const rewrite = (msg: string | undefined) => { const why = field(lastFailure, 'message'); return /^connection error/i.test(msg ?? '') && typeof why === 'string' && why ? why : msg; };
   return { stream, streamSimple: stream };
 }
 const zeroUsage = () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } });

@@ -22,8 +22,9 @@ export function createSealedClient({ bearerToken, cacheSecret }: { bearerToken: 
 // once. TinfoilAI keeps its SecureClient and bearer token in fields that are
 // private in TypeScript only; tinfoil is exact-pinned, and we check the shape
 // so an SDK change fails loudly instead of silently.
-// What sealedFetch reaches behind a SealedHandle; every field is checked before use.
-interface SealedInternals { getVerificationDocument(): Promise<Attestation | undefined>; secureClient?: { fetch?: unknown }; openAIOptions?: { apiKey?: unknown } }
+// What sealedFetch reaches behind a SealedHandle; every field is checked before use
+// (fetch is checked to be a function, and is then the SDK's encrypting fetch).
+interface SealedInternals { getVerificationDocument(): Promise<Attestation | undefined>; secureClient?: { fetch?: typeof fetch }; openAIOptions?: { apiKey?: unknown } }
 export function sealedFetch(getClient: () => Promise<SealedHandle | null>, onRequest?: () => void): typeof fetch {
   return async (input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> => {
     // The one cast out of the opaque handle: every SealedHandle is a TinfoilAI
@@ -43,6 +44,6 @@ export function sealedFetch(getClient: () => Promise<SealedHandle | null>, onReq
     // Counted as it leaves (one request from the allowance), for the tray's live spend.
     if (init.signal?.aborted) throw new DOMException('Stopped before sending.', 'AbortError');
     onRequest?.();
-    return (secure.fetch as typeof fetch)(input, { ...init, headers });
+    return secure.fetch(input, { ...init, headers });
   };
 }
