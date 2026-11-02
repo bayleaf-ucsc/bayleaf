@@ -1,15 +1,15 @@
 // Batch H, the one live check against the BayLeaf HF gateway (public, keyless):
 // HEAD every pinned LFM3 file (size and ETag against models.lock.json), CORS for
 // Pouch's origin, a full ranged download of one small file through the app's own
-// code (src/assets.js fillFile, hashed against the lock), and one 32 MiB range of
+// code (src/assets.ts fillFile, hashed against the lock), and one 32 MiB range of
 // the weights compared with the same bytes of the local verified copy
 // (~/.cache/bayleaf-pouch/models, from fetch-models.mjs).   node test/batchH-gateway.mjs
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { openSync, readSync, closeSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { openStore, fillFile, rangeSource, CHUNK } from '../src/assets.js';
-import { createModelStore } from '../src/models.js';
+import { openStore, fillFile, rangeSource, CHUNK } from '../src/assets.ts';
+import { createModelStore } from '../src/models.ts';
 import { CACHE } from '../fetch-models.mjs';
 
 const lock = JSON.parse(readFileSync(new URL('../models.lock.json', import.meta.url), 'utf8'));

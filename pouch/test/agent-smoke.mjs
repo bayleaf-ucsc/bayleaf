@@ -1,4 +1,4 @@
-// Live smoke test of src/agent.js against the BayLeaf Sealed lane.
+// Live smoke test of src/agent.ts against the BayLeaf Sealed lane.
 //   set -a; source ~/.tokens/bayleaf-api; set +a; node test/agent-smoke.mjs
 // Checks: streaming, tool round trip, abort, session independence, manual
 // compaction, and that no request body reaches the network as plaintext.
@@ -18,7 +18,7 @@ globalThis.fetch = async (input, init) => {
 };
 
 const { TinfoilAI } = await import('tinfoil');
-const { openAgent, MemoryStorage, Type } = await import('../src/agent.js');
+const { openAgent, MemoryStorage, Type } = await import('../src/agent.ts');
 
 const key = process.env.BAYLEAF_API_KEY;
 assert.ok(key, 'BAYLEAF_API_KEY not set');

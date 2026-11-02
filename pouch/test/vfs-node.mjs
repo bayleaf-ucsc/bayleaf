@@ -1,9 +1,9 @@
 // Node check of the /pouch IndexedDB adapter and the tools, using fake-indexeddb.
 // Run: NODE_PATH=/tmp/pouch-scratch/fidb/node_modules node test/vfs-node.mjs
 import '/tmp/pouch-scratch/fidb/node_modules/fake-indexeddb/auto/index.mjs';
-import { Vfs, DEFAULTS } from '../src/vfs.js';
-import defaults from '../src/defaults.js';
-import { createTools, systemPrompt } from '../src/tools.js';
+import { Vfs, DEFAULTS } from '../src/vfs.ts';
+import defaults from '../src/defaults.ts';
+import { createTools, systemPrompt } from '../src/tools.ts';
 import { Type } from 'typebox';
 import { Bash } from 'just-bash';
 globalThis.navigator ??= {};

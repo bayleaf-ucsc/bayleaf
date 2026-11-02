@@ -2,10 +2,10 @@
 // Run: NODE_PATH=/tmp/pouch-scratch/fidb/node_modules node test/local-node.mjs
 import '/tmp/pouch-scratch/fidb/node_modules/fake-indexeddb/auto/index.mjs';
 import assert from 'node:assert/strict';
-import { Vfs, DEFAULTS } from '../src/vfs.js';
-import defaults from '../src/defaults.js';
-import { createTools, matchNewline, oneFinalNewline } from '../src/tools.js';
-import { parseToolCalls, toLocalMessages, turnState, localApi, STEP_CAP, isLocal } from '../src/local/provider.js';
+import { Vfs, DEFAULTS } from '../src/vfs.ts';
+import defaults from '../src/defaults.ts';
+import { createTools, matchNewline, oneFinalNewline } from '../src/tools.ts';
+import { parseToolCalls, toLocalMessages, turnState, localApi, STEP_CAP, isLocal } from '../src/local/provider.ts';
 import { Type } from 'typebox';
 globalThis.navigator ??= {};
 Object.assign(DEFAULTS, defaults);

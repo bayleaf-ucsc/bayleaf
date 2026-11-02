@@ -6,9 +6,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { parseLocalhostUrl, explainMessage, guardedFetch, testConnection, localhostModel, applyProfile, LOCALHOST_PROVIDER } from '../src/localhost.js';
-import { profileOf, LOCALHOST_STEP_CAP } from '../src/profiles.js';
-import { openAgent, MemoryStorage, Type, needsSealed } from '../src/agent.js';
+import { parseLocalhostUrl, explainMessage, guardedFetch, testConnection, localhostModel, applyProfile, LOCALHOST_PROVIDER } from '../src/localhost.ts';
+import { profileOf, LOCALHOST_STEP_CAP } from '../src/profiles.ts';
+import { openAgent, MemoryStorage, Type, needsSealed } from '../src/agent.ts';
 import { startDummy } from './dummy-openai.mjs';
 
 let pass = 0;
@@ -37,7 +37,9 @@ ok('guardedFetch: other origins refused, key set, x-stainless headers dropped');
 assert.equal(profileOf({ modelId: 'localhost:x' }), 'localhost'); assert.equal(needsSealed('localhost:x'), false); assert.equal(needsSealed('glm-5-3'), true);
 const prof = applyProfile({ messages: [{ role: 'system', content: 'P', toolsAdded: [{ name: 'read' }, { name: 'subagent' }, { name: 'agents' }] }, { role: 'user', content: 'x' }] });
 assert.deepEqual(prof.messages[0].toolsAdded.map((t) => t.name), ['read']); assert.match(prof.messages[0].content, /Subagents are not available/);
-ok('profile localhost: subagent and agents removed, note added');
+const parts = applyProfile({ messages: [{ role: 'system', content: [{ type: 'text', text: 'P' }], toolsAdded: [{ name: 'read' }] }] });
+assert.equal(parts.messages[0].content.length, 2); assert.equal(parts.messages[0].content[0].text, 'P'); assert.match(parts.messages[0].content[1].text, /Subagents are not available/);
+ok('profile localhost: subagent and agents removed, note added (as a text part when content is parts)');
 
 const KEY = 'test-key-1';
 const d = await startDummy({ key: KEY, loadMs: 0 });

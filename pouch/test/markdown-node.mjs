@@ -1,6 +1,6 @@
 // Minimal DOM deliberately has no HTML parser. All markdown must use nodes/text.
 import assert from 'node:assert/strict';
-import { renderMarkdown, parseTarget } from '../src/markdown.js';
+import { renderMarkdown, parseTarget } from '../src/markdown.ts';
 class Node {
   constructor(tag, text = '') { this.tag = tag; this.children = []; this.text = text; this.style = {}; this.events = {}; }
   append(...kids) { this.children.push(...kids); }
@@ -25,4 +25,11 @@ assert.deepEqual(calls,[],'rendering makes no navigation calls');
 flat.find(n=>n.className==='ext').events.click();assert.match(calls[0],/^https:\/\/evil.invalid/);
 assert.equal(parseTarget('data:image/svg+xml,evil'),null);assert.equal(parseTarget('javascript:alert(1)'),null);
 assert.deepEqual(parseTarget('/work/../work/a.js:2'),{type:'path',path:'/work/a.js',line:2,col:undefined});
+{
+  // Inline code: a bare name with a line is a file link; a scheme with a port is not a path.
+  const kinds = []; const c2 = { ...ctx, kind: (p) => { kinds.push(p); return 'file'; } };
+  const f2 = []; renderMarkdown('`notes.md:12` and `https:443`', c2).forEach(function v(n) { f2.push(n); for (const c of n.children) if (typeof c !== 'string') v(c); });
+  assert.ok(kinds.length && kinds.every((p) => p === '/work/notes.md'), 'only notes.md is looked up: ' + kinds.join(', '));
+  assert.ok(f2.some((n) => n.tag !== 'code' && n.title?.includes('/work/notes.md at line 12')), 'notes.md:12 links to its line');
+}
 console.log('PASS markdown DOM-only rendering, literal raw HTML, scheme blocking, local-image hook, external confirmation, tables/code/paths');

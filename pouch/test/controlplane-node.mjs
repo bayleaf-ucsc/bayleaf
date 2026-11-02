@@ -6,11 +6,11 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { InMemoryFs, Bash } from 'just-bash';
-import { Namespace, over, codeOf } from '../src/ns/namespace.js';
-import { createControl, createChanges, changesText, usageText, parseIn, parseCtl, why } from '../src/ns/control.js';
-import { execScript, tagWrites, noting, commandsOf, stoppedAt } from '../src/tools.js';
-import { Tasks, TaskFs } from '../src/ns/tasks.js';
-import { serve, Client, OREAD } from '../src/ns/9p.js';
+import { Namespace, over, codeOf } from '../src/ns/namespace.ts';
+import { createControl, createChanges, changesText, usageText, parseIn, parseCtl, why } from '../src/ns/control.ts';
+import { execScript, tagWrites, noting, commandsOf, stoppedAt } from '../src/tools.ts';
+import { Tasks, TaskFs } from '../src/ns/tasks.ts';
+import { serve, Client, OREAD } from '../src/ns/9p.ts';
 
 let passed = 0;
 async function test(name, fn) { await fn(); passed++; console.log('ok', name); }
@@ -19,15 +19,15 @@ async function test(name, fn) { await fn(); passed++; console.log('ok', name); }
 // op: the file write that performs it ({sid} 1, {ref} a2, {task} a /task id,
 // {watch} w1). agent: what the main agent may do with the same file
 // ('ok', or the error code it gets by design). anchor: where its handler is
-// in the UI shell, src/main.js and src/interface/*.js (the handler is the next
+// in the UI shell, src/main.ts and src/interface/*.ts (the handler is the next
 // `lines` lines, or a helper it calls).
 // via: helpers the handler calls, each of which must itself write a control file.
 export const CONTROLS = [
   { id: 'card-stop', what: 'Subagent card: Stop', op: ['/session/{sid}/agents/{ref}/ctl', 'stop'], expect: ['stop', '1', 'a2', { all: false }], agent: 'ok', anchor: 'ariaLabel: `Stop subagent ${name}` });', lines: 2 },
   { id: 'view-stop', what: 'Subagent view: Stop', op: ['/session/{sid}/agents/{ref}/ctl', 'stop'], expect: ['stop', '1', 'a2', { all: false }], agent: 'ok', anchor: 'ariaLabel: `Stop subagent ${c.name}` });', lines: 2 },
-  { id: 'card-message', what: 'Subagent card: Message (sheet Send)', op: ['/session/{sid}/agents/{ref}/in', 'message\nlook at b.txt'], expect: ['send', '1', 'a2', 'message', 'look at b.txt'], agent: 'EPERM', anchor: 'function messageChild(c) {', lines: 8 },
+  { id: 'card-message', what: 'Subagent card: Message (sheet Send)', op: ['/session/{sid}/agents/{ref}/in', 'message\nlook at b.txt'], expect: ['send', '1', 'a2', 'message', 'look at b.txt'], agent: 'EPERM', anchor: 'function messageChild(c: SubagentRow) {', lines: 8 },
   { id: 'card-resume', what: 'Subagent card: Resume', op: ['/session/{sid}/agents/{ref}/in', 'message Continue your task'], expect: ['send', '1', 'a2', 'message', 'Continue your task'], agent: 'EPERM', anchor: 'ariaLabel: `Resume subagent ${name}` });', lines: 2 },
-  { id: 'tray-sa-stop', what: 'Tray subagent row: Stop', op: ['/session/{sid}/agents/{ref}/ctl', 'stop'], expect: ['stop', '1', 'a2', { all: false }], agent: 'ok', anchor: 'open: (e) => app.subagents.openChild(sid, c.id, e?.currentTarget),', lines: 1 },
+  { id: 'tray-sa-stop', what: 'Tray subagent row: Stop', op: ['/session/{sid}/agents/{ref}/ctl', 'stop'], expect: ['stop', '1', 'a2', { all: false }], agent: 'ok', anchor: 'open: (e?: Event) => app.subagents.openChild(sid, c.id, e?.currentTarget instanceof Element ? e.currentTarget : null)', lines: 1 },
   { id: 'tray-background', what: 'Tray subagent row: Background', op: ['/session/{sid}/agents/{ref}/ctl', 'detach'], expect: ['detach', '1', 'a2'], agent: 'ok', anchor: '...(waited ? { background:', lines: 1 },
   { id: 'tray-run-stop', what: 'Tray run row: Stop', op: ['/task/{task}/ctl', 'kill'], expect: ['kill'], agent: 'ok', anchor: "origin: task ? `run, /task/${task.id}` : 'run'", lines: 1 },
   { id: 'stop-all', what: 'Tray: Stop all', op: ['/session/{sid}/ctl', 'stop'], expect: ['stop', '1', 'a1', { all: true }], agent: 'ok', anchor: 'stopAll: async () => {', lines: 4 },
@@ -40,7 +40,7 @@ export const CONTROLS = [
   { id: 'steer-child', what: 'Subagent view composer: Steer', op: ['/session/{sid}/agents/{ref}/in', 'steer\nskip tests'], expect: ['send', '1', 'a2', 'steer', 'skip tests'], agent: 'EPERM', anchor: 'if (app.sessionList.focus) return toChild(raw.trim(), mode);', lines: 1, via: ['toChild'] },
   { id: 'followup-child', what: 'Subagent view composer: Follow-up', op: ['/session/{sid}/agents/{ref}/in', 'followup\nthen report'], expect: ['send', '1', 'a2', 'followup', 'then report'], agent: 'EPERM', anchor: 'if (app.sessionList.focus) return toChild(raw.trim(), mode);', lines: 1, via: ['toChild'] },
   { id: 'child-stop-composer', what: 'Subagent view composer: Stop', op: ['/session/{sid}/agents/{ref}/ctl', 'stop'], expect: ['stop', '1', 'a2', { all: false }], agent: 'ok', anchor: "$('send').onclick = (e) => {", lines: 7, via: ['stopChild'] },
-  { id: 'child-paused-send', what: 'Tray paused message to a subagent: Send', op: ['/session/{sid}/agents/{ref}/in', 'message\nretry'], expect: ['send', '1', 'a2', 'message', 'retry'], agent: 'EPERM', anchor: 'ariaLabel: `Send paused message to ${cq.name}`', lines: 1 },
+  { id: 'child-paused-send', what: 'Tray paused message to a subagent: Send', op: ['/session/{sid}/agents/{ref}/in', 'message\nretry'], expect: ['send', '1', 'a2', 'message', 'retry'], agent: 'EPERM', anchor: 'ariaLabel: `Send paused message to ${cq.name}`', lines: 6 },
   { id: 'child-steer-now', what: 'Tray follow-up to a subagent: Steer now', op: ['/session/{sid}/agents/{ref}/in', 'steer\nretry'], expect: ['send', '1', 'a2', 'steer', 'retry'], agent: 'EPERM', anchor: 'ariaLabel: `Steer now: send to ${cq.name} after its current step`', lines: 4 },
   { id: 'watch-stop', what: 'Tray watch: Stop watching / Cancel', op: ['/task/watch/{watch}/ctl', 'stop'], expect: ['remove', 'w1'], agent: 'ok', anchor: "const what = w.paths.map(shortPath).join(', ');", lines: 4 },
   { id: 'watch-deliver', what: 'Tray watch: Deliver held changes', op: ['/task/watch/{watch}/ctl', 'deliver'], expect: ['deliverHeld', 'w1'], agent: 'ok', anchor: 'ariaLabel: `Deliver ${w.held.length} held changes to the agent`', lines: 1 },
@@ -185,8 +185,8 @@ await test('events: a blocking read in JS and over 9P (flush interrupts it)', as
 // ── Static: the Interface's handlers write control files ────────────
 // The Interface's sources, one string: its region factories indent their bodies.
 const interfaceDir = new URL('../src/interface/', import.meta.url);
-const main = [readFileSync(new URL('../src/main.js', import.meta.url), 'utf8'),
-  ...readdirSync(interfaceDir).filter((f) => f.endsWith('.js')).sort().map((f) => readFileSync(new URL(f, interfaceDir), 'utf8'))].join('\n');
+const main = [readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8'),
+  ...readdirSync(interfaceDir).filter((f) => f.endsWith('.ts')).sort().map((f) => readFileSync(new URL(f, interfaceDir), 'utf8'))].join('\n');
 const lines = main.split('\n');
 const bodyOf = (name) => {
   const i = lines.findIndex((l) => new RegExp(`^\\s*(async )?function ${name}\\(`).test(l));
@@ -220,7 +220,7 @@ await test('direct harness calls appear only inside the harness side (driver)', 
 });
 
 await test('the terminal stops with a ctl write too', async () => {
-  const t = readFileSync(new URL('../src/terminal.js', import.meta.url), 'utf8');
+  const t = readFileSync(new URL('../src/terminal.ts', import.meta.url), 'utf8');
   assert.match(t, /writeFile\(`\/task\/\$\{[^}]+\}\/ctl`, 'kill'\)/);
 });
 
@@ -252,7 +252,7 @@ await test('changes: net paths changed this turn, subagents marked, actions left
   assert.equal(changesText(c.list(1)), 'modified a1,a2 /work/b.js\ndeleted a3 /work/my file.txt\ncreated a1 /work/new.md\nmodified a1 /work/old.txt\n');
   c.begin(1); assert.equal(changesText(c.list(1)), '', 'a new turn starts empty');
   assert.equal(c.list(2).length, 1, 'sessions are separate');
-  // The tools' fs reports what a script changes (src/tools.js noting).
+  // The tools' fs reports what a script changes (src/tools.ts noting).
   const fs = new InMemoryFs();
   await fs.mkdir('/work', { recursive: true });
   for (const f of ['keep', 'gone', 'from']) await fs.writeFile('/work/' + f, 'x');

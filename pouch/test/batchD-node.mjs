@@ -4,7 +4,7 @@
 // reconciles the two into a negative "Other".
 // Run: node test/batchD-node.mjs
 import assert from 'node:assert/strict';
-import { createLedger, outsideText, counted } from '../src/usage.js';
+import { createLedger, outsideText, counted } from '../src/usage.ts';
 
 let passed = 0;
 const ok = (name) => { passed++; console.log('ok', name); };

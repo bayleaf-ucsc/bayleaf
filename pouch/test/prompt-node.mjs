@@ -4,9 +4,9 @@
 // it, and no removed feature (change review, file undo) is promised.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { UL_GLOSS, TJS } from '../src/profiles.js';
+import { UL_GLOSS, TJS } from '../src/profiles.ts';
 
-const tools = readFileSync(new URL('../src/tools.js', import.meta.url), 'utf8');
+const tools = readFileSync(new URL('../src/tools.ts', import.meta.url), 'utf8');
 const prompt = tools.slice(tools.indexOf('export async function systemPrompt'));
 
 for (const term of ['agent', 'session', 'thread', 'workspace', 'namespace', 'steer', 'follow-up', 'no undo'])
@@ -20,5 +20,5 @@ for (const stale of [/review a diff/i, /undo it/i, /reviewable changes/i, /Chang
 assert.match(prompt, /self-contained \.html file \(inline CSS and JS, images as data: URLs; nothing loads from the network/);
 assert.match(prompt, /link it: it opens in the preview/);
 for (const wrong of [/\bCDN\b/i, /<script src/i, /fetch\(/]) assert.ok(!wrong.test(prompt), `main's prompt does not suggest ${wrong}`);
-assert.match(prompt, /\/task: this session's/, "main's /task is its own session's (src/ns/tasks.js)");
+assert.match(prompt, /\/task: this session's/, "main's /task is its own session's (src/ns/tasks.ts)");
 console.log('ok prompt: UL gloss in main prompt, transformersjs verbatim, no removed features promised, HTML reports');

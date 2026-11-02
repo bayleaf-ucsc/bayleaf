@@ -49,7 +49,7 @@ export async function waitRow(page, path, present = true, timeout = 5000) {
   throw new Error(`row ${path} ${present ? 'never appeared' : 'never left'}`);
 }
 
-// The new frame (layout.js): one right panel at a time, sessions in a sidebar.
+// The new frame (layout.ts): one right panel at a time, sessions in a sidebar.
 export async function ensurePanel(page, name) {
   if ((await page.getAttribute('#app', 'data-panel')) !== name) await page.click(`#rail button[data-panel="${name}"]`);
   await page.waitForFunction((n) => document.querySelector('#app').dataset.panel === n, name);

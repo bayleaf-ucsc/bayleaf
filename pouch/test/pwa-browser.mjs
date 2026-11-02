@@ -1,4 +1,4 @@
-// The installable, offline copy (sw.js + src/offline.js) against a real build.
+// The installable, offline copy (sw.js + src/offline.ts) against a real build.
 //
 //   POUCH_OUT=/tmp/pouch-qa/distA node build.mjs
 //   POUCH_OUT=/tmp/pouch-qa/distA node test/pwa-browser.mjs [--webkit]

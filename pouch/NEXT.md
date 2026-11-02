@@ -16,17 +16,58 @@ qualification rework below replaces them.
 
 ## TypeScript migration (#143's step 2)
 
-The trust boundaries are build checks (`arch.mjs`, README "Architecture"). Convert to
-TypeScript, boundaries first:
-- Type the trust boundaries: `src/sealed.js` (client handle, `sealedFetch`),
-  `src/bayleaf-api.js`, the egress modules in `NETWORK`, and `src/egress.js` consent.
-- Give each region's returned object an interface (`EditingRegion`, ...) and `app` a type
-  composed of them; the getters and setters show which state crosses regions, a list to
-  shrink (`state.js` cells such as `agent`, `client`, `view` written from several regions).
-- Keep `arch.mjs` on TypeScript's parser (`.ts` sources too), and keep `node build.mjs`
-  the one command: esbuild strips types; `tsc --noEmit` as a separate check.
-- Then retire the `app` service locator where a region needs only two or three
-  functions: pass them in explicitly.
+Done (2026-11-02): every source under `src/` is strict TypeScript, checked by `tsc --noEmit`
+in `node build.mjs` (two projects: the page, and the worker entries on the WebWorker
+library); no behavior changed, since every bundle matches the last JavaScript build apart
+from module paths. The trust boundaries are typed in `src/trust.ts` (egress, Sealed
+attestation and the opaque `SealedHandle`, account-plane replies, the control plane's
+`Authority`/`CtlCommand`/`InMessage`, namespace binds), as plain data the trusted core can take
+over one boundary at a time; `FileServer` (`src/ns/namespace.ts`) is the file server's
+contract. Each region declares its interface (`EditingRegion`, ...) and `App`
+(`src/interface/app.ts`) composes them. `arch.mjs` adds two rules: `exact` (no `any` in
+trust-boundary modules) and `contract` (types-only modules, imported only as types). No
+explicit `any` is left in `src/`.
+
+The escape hatches are paid down (2026-11-01): from 585 `as` casts, 461 non-null
+assertions and 35 `as unknown as` to 24 casts and one `as unknown as` (`src/sealed.ts`,
+out of the opaque `SealedHandle`), with no `!` left. The remainder is mostly where
+untyped data enters (JSON from the relay, `postMessage` payloads, a tool's untyped
+arguments, pdf.js's loose types) and `$()`'s element type. Where a cast hid a real
+question, a guard now answers it (the stage commits list each behavior change). A ratchet
+holds the line: `arch.mjs`'s `escapes` rule counts `as`, `!` and `as unknown as` per
+module against `escapes.json` and fails when a count grows, and also when one falls
+without being recorded, so the file stays exact. After removing escapes, `node arch.mjs
+--lower` writes the lower counts (it never raises one; a new escape means removing
+another, or saying why in review).
+
+The `app` service locator stays, narrowed. What moved:
+- `install.ts` takes its three needs (`layout`, `status`, `ask`) as values; the regions
+  after it still call it through `app.install`.
+- Single-writer cells live with their writer, read-only elsewhere: the Sealed client and
+  `verified` in `connection.ts` (`sealed()` returns the verified client or null, so
+  `state.ts` no longer holds the `SealedHandle`), the Sealed model list there too, the
+  key in `auth.ts`, the session's view in `transcript.ts`; `state.unwatch` and
+  `subagents.lastHeight` became transcript locals.
+- Setters became named methods on the owner: `transcript.filesChanged()`,
+  `clearInterrupted(sid)`, `markInterrupted(sids)`, `editing.handOver()`,
+  `editing.renamed(from, to)`, `tree.reveal(path)`, `auth.restoreKey()`,
+  `providers.restoreLocalhost()` and `providers.checkLocalSupport()`.
+
+What stays on `app`, deliberately: `state.agent` (read by a dozen regions; boot opens it,
+Erase all drops it), `state.composer` (set once by `commands.ts`, null-checked by earlier
+regions), `sessionList.focus` (read throughout; `session-list.ts` closes over it),
+`sessionList.activeRun`, and every late call to a later region. The regions call each
+other in real cycles (queues and send, transcript and subagents, the session list and
+transcript, connection and providers), and there a locator resolved at call time is the
+simplest correct design: passing late-bound functions in as deps would rebuild it piece
+by piece.
+
+Next:
+- A claim API for `sessionList.activeRun`: its three writers claim it differently (a turn
+  in `send.ts` takes it outright, a subagent report's `drive` in `subagents.ts` only when it
+  is free and releases only its own claim, Run script in `tree.ts` refuses while anything
+  runs), and each releases by writing null, so it needs its own design rather than a
+  setter rename.
 
 ## Qualification rework
 
@@ -57,7 +98,7 @@ See README "Namespaces"; stories I10, D19-D21.
   at `/mnt/sandbox`. Needs: a WebSocket transport (one 9P message per frame; the codec
   already frames with size[4]), Tauth or a per-session token in `aname` (the port is no
   longer the capability), an egress grant per mount (it leaves the pouch, so CSP plus
-  `src/egress.js` decide, not the namespace), reconnect with fid re-walks, and
+  `src/egress.ts` decide, not the namespace), reconnect with fid re-walks, and
   latency-aware reads (bigger msize, read-ahead).
 - **Other tabs**: a BroadcastChannel cannot transfer ports; a SharedWorker or
   `navigator.locks` handshake handing out a MessagePort would.

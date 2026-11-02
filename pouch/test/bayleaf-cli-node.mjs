@@ -2,7 +2,7 @@
 // wrapped to prove nothing is sent), and live read-only calls when approved.
 // Run: set -a; source ~/.tokens/bayleaf-api; set +a; node test/bayleaf-cli-node.mjs [--live]
 import { Bash, defineCommand, InMemoryFs } from 'just-bash';
-import { bayleafCommands } from '../src/bayleaf-cli.js';
+import { bayleafCommands } from '../src/bayleaf-cli.ts';
 
 const calls = [];
 const realFetch = globalThis.fetch;
@@ -28,6 +28,33 @@ for (const [label, hooks] of [['no hook', { bayleafCredential: () => key }], ['h
 let asked = 0;
 await show('no key', shell({ bayleafCredential: () => null, approveEgress: async () => (asked++, false) }), 'bayleaf sandbox status');
 console.log('approval prompts for keyless sandbox status:', asked);
+
+// 3. Replies, against a stub origin: a JSON object reads as the route's shape;
+// a 204 or a body that is not a JSON object fails clearly where fields are read,
+// and stays acceptable where the reply is printed whole or ignored.
+{
+  const STUB = 'https://stub.invalid';
+  const replies = { '/sandbox/poke': () => new Response('<html>gateway</html>', { status: 200 }), '/inboxes/limits': () => new Response('plain'),
+    '/sandbox/expose/8000': () => new Response(null, { status: 204 }), '/sandbox': () => new Response(null, { status: 204 }),
+    '/inboxes': () => Response.json({ inboxes: [], owner_usage: { bytes: 1, limit_bytes: 2 } }) };
+  const before = globalThis.fetch;
+  globalThis.fetch = async (url, init) => String(url).startsWith(STUB) ? replies[String(url).slice(STUB.length)]() : before(url, init);
+  const sh = new Bash({ fs, cwd: '/work', defenseInDepth: false,
+    customCommands: bayleafCommands(defineCommand, { bayleafCredential: () => 'sk-bayleaf-stub', approveEgress: async () => true }, { base: STUB }) });
+  const check = async (cmd, exit, re) => {
+    const r = await sh.exec(cmd);
+    if (r.exitCode !== exit || !re.test(r.stdout + r.stderr)) { console.error(`FAIL ${cmd}: exit ${r.exitCode}\n${r.stdout}${r.stderr}`); process.exitCode = 1; }
+    else console.log(`ok   ${cmd}`);
+  };
+  await check('bayleaf sandbox poke', 1, /unexpected reply from BayLeaf \(not a JSON object\): <html>gateway<\/html>/);
+  await check('bayleaf sandbox status', 1, /unexpected reply from BayLeaf \(HTTP 204/);
+  await check('bayleaf inbox limits', 0, /"raw": "plain"/);
+  await check('bayleaf sandbox preview unexpose 8000', 0, /revoked preview for port 8000/);
+  await check('bayleaf inbox list', 0, /no inboxes\nstored: 1 of 2 bytes/);
+  await check('bayleaf web search -n 3', 2, /give a search query/);
+  await check('bayleaf help web about', 0, /^bayleaf web: Search the web/);
+  globalThis.fetch = before;
+}
 
 if (process.argv.includes('--live')) {
   const events = [];

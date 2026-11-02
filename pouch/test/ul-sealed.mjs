@@ -19,10 +19,10 @@ const key = process.env.BAYLEAF_API_KEY;
 assert.ok(key, 'BAYLEAF_API_KEY not set');
 const scratch = mkdtempSync(join(process.env.POUCH_TEST_TMP || tmpdir(), 'pouch-ul-sealed-'));
 
-const worker = (await build({ entryPoints: [join(root, 'src/run/worker-browser.js')], bundle: true, minify: true, write: false, format: 'iife' })).outputFiles[0].text;
-const bundled = await build({ entryPoints: [join(root, 'src/main.js')], bundle: true, write: false, format: 'iife',
+const worker = (await build({ entryPoints: [join(root, 'src/run/worker-browser.ts')], bundle: true, minify: true, write: false, format: 'iife' })).outputFiles[0].text;
+const bundled = await build({ entryPoints: [join(root, 'src/main.ts')], bundle: true, write: false, format: 'iife',
   define: { WORKER_SRC: JSON.stringify(worker), LOCAL_MODEL: 'null', SW_SHA256: '"test"' },
-  alias: { 'node:zlib': join(root, 'src/shims/zlib.js'), zlib: join(root, 'src/shims/zlib.js'), 'decode-named-character-reference': join(root, 'node_modules/decode-named-character-reference/index.js') } });
+  alias: { 'node:zlib': join(root, 'src/shims/zlib.ts'), zlib: join(root, 'src/shims/zlib.ts'), 'decode-named-character-reference': join(root, 'node_modules/decode-named-character-reference/index.js') } });
 let html = readFileSync(join(root, 'pouch.html'), 'utf8').replace('<script>/*APP*/</script>', () => '<script>' + bundled.outputFiles[0].text.replaceAll('</script', '<\\/script') + '</script>');
 html = html.replace('__SCRIPT_HASHES__', [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(([, s]) => `'sha256-${createHash('sha256').update(s).digest('base64')}'`).join(' '));
 const server = createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end(html); });
@@ -63,6 +63,8 @@ try {
   // A Follow-up while main works: Alt+Enter with the default Steer setting.
   await page.fill('#input', 'Follow-up: once counter has reported, list the agents in this session with their handles, in one short line each.');
   await page.press('#input', 'Alt+Enter');
+  // The follow-up is a write to main's in file, held by the harness side: wait for its row.
+  await page.waitForSelector('#tray-list .tray-row[data-kind="followup"]', { timeout: 2000 }).catch(() => {});
   const tray = await page.evaluate(() => [...document.querySelectorAll('#tray-list .tray-row')].map((r) => `${r.dataset.kind}: ${r.querySelector('.tray-origin')?.textContent ?? ''}`));
   console.log('tray after Alt+Enter:', JSON.stringify(tray));
   const heldFollowUp = tray.some((t) => /^followup: Follow-up · /.test(t));

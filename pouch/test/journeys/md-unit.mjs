@@ -1,13 +1,13 @@
 import { fileURLToPath } from 'node:url';
-// Unit tests for pouch/src/markdown.js with a fake DOM (linkedom).
+// Unit tests for pouch/src/markdown.ts with a fake DOM (linkedom).
 import { parseHTML } from 'linkedom';
 const { document, window } = parseHTML('<!doctype html><html><body></body></html>');
 globalThis.document = document; globalThis.window = window;
 for (const k of ['navigator', 'MutationObserver', 'requestAnimationFrame']) globalThis[k] ??= window[k] ?? (() => {});
 const P = fileURLToPath(new URL('../../src/', import.meta.url));
-const { renderMarkdown, parseTarget } = await import(P + 'markdown.js');
+const { renderMarkdown, parseTarget } = await import(P + 'markdown.ts');
 let highlight = null;
-try { ({ highlight } = await import(P + 'editor.js')); } catch (e) { console.log('editor.js not importable in Node:', e.message.split('\n')[0]); }
+try { ({ highlight } = await import(P + 'editor.ts')); } catch (e) { console.log('editor.ts not importable in Node:', e.message.split('\n')[0]); }
 const files = new Set(['/work/a.js', '/work/app.js', '/work/b.py']), dirs = new Set(['/work', '/work/src']);
 const opened = [], ext = [];
 const ctx = { doc: document, cwd: '/work', kind: (p) => files.has(p) ? 'file' : dirs.has(p) ? 'dir' : 'missing',

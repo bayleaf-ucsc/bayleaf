@@ -1,7 +1,7 @@
 // Offline provider-boundary checks: zero real inference and no network.
 import assert from 'node:assert/strict';
-import { openAgent, MemoryStorage, Type } from '../src/agent.js';
-import { attachmentContext, rasterMime } from '../src/attachments.js';
+import { openAgent, MemoryStorage, Type } from '../src/agent.ts';
+import { attachmentContext, rasterMime } from '../src/attachments.ts';
 globalThis.fetch = () => { throw new Error('Unexpected network'); };
 const requests = [];
 const chunk = (delta, finish = null) => ({ id: 'x', object: 'chat.completion.chunk', created: 0, model: 'old', choices: [{ index: 0, delta, finish_reason: finish }] });

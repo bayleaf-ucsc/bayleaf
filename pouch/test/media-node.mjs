@@ -1,8 +1,8 @@
-// The media commands without a browser (src/media.js): argument parsing,
+// The media commands without a browser (src/media.ts): argument parsing,
 // time syntax, the image path's plan, log tidying, caps, error messages, the
 // commands in the terminal's shell and the agents' bash, jobs with a fake
 // engine, and the build's pins, source and containment (build-libav.mjs);
-// the WebCodecs path's pure parts (src/media/wc.js): sniffing, codec strings,
+// the WebCodecs path's pure parts (src/media/wc.ts): sniffing, codec strings,
 // MP3 frames, WAV in and out, the -vf subset and fps choice, ffprobe's
 // writers, the audio plan, and the routing with a fake engine.
 // The real runtime: test/media-browser.mjs.
@@ -13,10 +13,10 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { InMemoryFs } from 'just-bash';
 import { parseProbe, parseFfmpeg, parseTime, imagePlan, frameName, tidy, createMediaService, mediaCommands, HELP,
-  MAX_INPUT_BYTES, MAX_IMAGES, MAX_STDERR_LINES, MAX_OUTPUT_BYTES, writeProbe, audioPlan } from '../src/media.js';
-import { sniff, codecString, mp3Frames, readWav, wavHeader, wavBytes, rotationOf, vfPlan, geometry, fpsPicker } from '../src/media/wc.js';
-import { Tasks } from '../src/ns/tasks.js';
-import { shellFor } from '../src/tools.js';
+  MAX_INPUT_BYTES, MAX_IMAGES, MAX_STDERR_LINES, MAX_OUTPUT_BYTES, writeProbe, audioPlan } from '../src/media.ts';
+import { sniff, codecString, mp3Frames, readWav, wavHeader, wavBytes, rotationOf, vfPlan, geometry, fpsPicker } from '../src/media/wc.ts';
+import { Tasks } from '../src/ns/tasks.ts';
+import { shellFor } from '../src/tools.ts';
 import { buildLibav, LIBAV, SOURCES, UNLINKED } from '../build-libav.mjs';
 import { assertNoCdn } from '../build-runtime.mjs';
 
@@ -100,6 +100,7 @@ const fake = { label: 'fake libav', memory: 1, create: () => ({ async run(input,
     return { width: 64, height: 48, images: [0, 10, 20].slice(0, Math.min(3, input.want)).map((s) => ({ t: s, width: 32, height: 24, bytes: new Uint8Array([137, 80, 78, 71]) })) };
   }
   if (input.program === 'ffprobe') return { code: 0, stdout: `{ "format": { "filename": "${input.inputs[0].name}" } }`, stderr: '', files: [] };
+  if (input.args.includes('-h')) return { code: 0, stdout: 'Filter scale', stderr: '', files: [] };
   if (input.args.includes('-codecs')) return { code: 0, stdout: ' DEV.L. vp8', stderr: '', files: [] };
   const empty = input.args.includes('pcm_s16le');
   return { code: 0, stdout: '', stderr: `Input #0, matroska,webm, from '${input.inputs[0].name}':\nframe=  1 fps=0 size=0kB time=00:00:00.00\nOutput #0, ogg, to '${input.outputs[0]}':`,
@@ -144,6 +145,7 @@ await t('the commands in the terminal shell: mapping, outputs, -y, gaps, /task j
   r = await sh('ffmpeg -i c.mp4 still.png');
   assert.equal(r.exitCode, 1); assert.match(r.stderr, /cannot open it/); assert.match(r.stderr, /hint: this build reads and writes WebM/);
   r = await sh('ffmpeg -codecs'); assert.equal(r.exitCode, 0); assert.match(r.stdout, /vp8/);
+  r = await sh('ffmpeg -h filter=scale'); assert.equal(r.exitCode, 0, r.stderr); assert.equal(r.stdout, 'Filter scale\n', 'FFmpeg answers a help topic (no flags parsed)');
   r = await sh('ffmpeg -i nope.webm o.opus'); assert.equal(r.exitCode, 1); assert.match(r.stderr, /\/work\/nope\.webm: No such file or directory/);
   assert.ok(tasks.list().every((x) => x.kind === 'job') && tasks.list().length >= 6, 'each run is a /task job');
   assert.equal(tasks.list()[0].label, 'ffprobe a.webm');
@@ -181,7 +183,7 @@ await t('no service and no runtime: clear errors', async () => {
 });
 
 await t('agents get the same commands (createTools bash)', () => {
-  const src = readFileSync(resolve(import.meta.dirname, '../src/tools.js'), 'utf8');
+  const src = readFileSync(resolve(import.meta.dirname, '../src/tools.ts'), 'utf8');
   assert.equal((src.match(/\.\.\.mediaCommands\(defineCommand, hooks\.media/g) ?? []).length, 2, 'terminal shellFor and agent bashFor');
 });
 

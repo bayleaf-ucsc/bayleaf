@@ -1,4 +1,4 @@
-// Fetch the Local lane's pinned model files into a cache outside the repo and
+// Fetch the Transformers.js provider's pinned model files into a cache outside the repo and
 // check them against models.lock.json. Weights never enter git or the repo tree.
 //
 //   node fetch-models.mjs            (cache: ~/.cache/bayleaf-pouch/models, or $POUCH_MODEL_CACHE)

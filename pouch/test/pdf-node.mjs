@@ -1,4 +1,4 @@
-// The pdf commands without a browser (src/pdf.js): argument parsing, caps,
+// The pdf commands without a browser (src/pdf.ts): argument parsing, caps,
 // error messages, output formats, the commands in the terminal's shell and
 // the agents' bash, jobs with a fake engine, and the build's pins and
 // containment (build-pdf.mjs). The real runtime: test/pdf-browser.mjs.
@@ -9,9 +9,9 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { InMemoryFs } from 'just-bash';
 import { parseArgs, pageRange, formatInfo, formatText, createPdfService, pdfCommands, pdfEngine, HELP,
-  RENDER_MAX_PAGES, TEXT_MAX_PAGES, MAX_DPI, MAX_PDF_BYTES } from '../src/pdf.js';
-import { Tasks } from '../src/ns/tasks.js';
-import { shellFor } from '../src/tools.js';
+  RENDER_MAX_PAGES, TEXT_MAX_PAGES, MAX_DPI, MAX_PDF_BYTES } from '../src/pdf.ts';
+import { Tasks } from '../src/ns/tasks.ts';
+import { shellFor } from '../src/tools.ts';
 import { buildPdf, pack } from '../build-pdf.mjs';
 import { assertNoCdn } from '../build-runtime.mjs';
 import { textPdf } from './pdf-fixtures.mjs';
@@ -130,7 +130,7 @@ await t('no service and no runtime: clear errors', async () => {
 });
 
 await t('agents get the same commands (createTools bash)', () => {
-  const src = readFileSync(resolve(import.meta.dirname, '../src/tools.js'), 'utf8');
+  const src = readFileSync(resolve(import.meta.dirname, '../src/tools.ts'), 'utf8');
   assert.equal((src.match(/\.\.\.pdfCommands\(defineCommand, hooks\.pdf/g) ?? []).length, 2, 'terminal shellFor and agent bashFor');
 });
 

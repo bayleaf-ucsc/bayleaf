@@ -2,8 +2,8 @@
 // scripted fake in test/graph-fixture.js: no network, no real model requests.
 // The browser journey is test/graphs-browser.mjs; this one is for routing.
 // Run: node test/graphs-node.mjs
-import { openAgent, MemoryStorage } from '../src/agent.js';
-import { createScope, MAX_PAIR_MESSAGES, MAX_SCOPE_MESSAGES } from '../src/graph.js';
+import { openAgent, MemoryStorage } from '../src/agent.ts';
+import { createScope, findChild, MAX_PAIR_MESSAGES, MAX_SCOPE_MESSAGES } from '../src/graph.ts';
 import { createFake, panelRules } from './graph-fixture.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -11,7 +11,12 @@ let fails = 0;
 const ok = (c, m) => { console.log(`${c ? 'PASS' : 'FAIL'} ${m}`); if (!c) fails++; };
 const until = async (f, ms = 5000) => { const t = Date.now(); while (!(await f())) { if (Date.now() - t > ms) return false; await sleep(25); } return true; };
 
-// 0. graph.js alone: caps, cycles, join release, detach.
+// 0. graph.ts alone: caps, cycles, join release, detach.
+{
+  const l = [{ id: 7, ref: 'a2' }, { id: 9 }];
+  ok(findChild(l, 'a2') === l[0] && findChild(l, 's3') === l[1] && findChild(l, 9) === l[1] && findChild(l, 'a9') === undefined, 'findChild by handle (a or s) or numeric id');
+  ok(findChild(l, '7') === l[0], 'findChild: a conversation id read from a path matches the numeric id');
+}
 {
   const s = createScope();
   let refused = null;

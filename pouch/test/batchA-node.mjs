@@ -4,8 +4,8 @@
 // scratch notes in /tmp when /work is read-only, and Stop aborting a request
 // in flight. No network, no real model requests.
 // Run: node test/batchA-node.mjs
-import { openAgent, MemoryStorage } from '../src/agent.js';
-import { scratchOf, SUBAGENT_DIR, MAX_FILE_CHARS } from '../src/subagents.js';
+import { openAgent, MemoryStorage } from '../src/agent.ts';
+import { scratchOf, SUBAGENT_DIR, MAX_FILE_CHARS } from '../src/subagents.ts';
 import { createFake } from './graph-fixture.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -115,6 +115,18 @@ const JUDGES = ['argument', 'evidence', 'clarity', 'audience'];
   ok(fake.total() === n0, `no new request after Stop (${fake.total() - n0} more)`);
   const w = (await agent.subagents.list(sid)).find((c) => c.name === 'worker');
   ok(w?.status === 'stopped', 'the subagent is stopped: ' + w?.status);
+}
+
+// A one-shot's `to` must name an agent of the session: an unknown handle is
+// refused, not routed to main.
+{
+  const sid = await agent.createSession('m');
+  fake.rule({ who: 'main', when: (c) => /misroute/.test(c.since), reply: [['subagent', { action: 'spawn', mode: 'oneshot', name: 'j-x', task: 'Judge X.', to: 'a9' }]] });
+  fake.rule({ who: 'main', when: (c) => /to: no agent "a9"/.test(c.since), reply: 'ok.' });
+  await agent.send(sid, 'misroute test');
+  await settle(sid);
+  ok(/to: no agent "a9" in this session/.test(fake.seen('main')), 'one-shot to an unknown handle is refused');
+  ok(!(await agent.subagents.list(sid)).length && !fake.requests['j-x'], 'and nothing was spawned or sent');
 }
 
 agent.close?.();

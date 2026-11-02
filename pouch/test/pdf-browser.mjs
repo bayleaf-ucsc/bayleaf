@@ -1,7 +1,7 @@
 // The real pdf.js runtime in a real page, under Pouch's production CSP and
 // headers: built by build-pdf.mjs into a scratch dir, fetched as verified
 // parts on first use, driven through the shell's pdfinfo / pdftotext /
-// pdftoppm (src/pdf.js) over an in-memory filesystem. Checks outputs on
+// pdftoppm (src/pdf.ts) over an in-memory filesystem. Checks outputs on
 // fixture PDFs (test/pdf-fixtures.mjs, test/fixtures/pdf/encrypted.pdf), Stop
 // through /task ctl, that the only requests are this origin's runtime parts,
 // no CSP violation, and that a PDF's JavaScript and links do nothing.
@@ -25,9 +25,9 @@ const { pin } = await buildPdf(scratch);
 
 const entry = `
 import { InMemoryFs } from 'just-bash';
-import { shellFor } from './src/tools.js';
-import { createPdfService } from './src/pdf.js';
-import { Tasks } from './src/ns/tasks.js';
+import { shellFor } from './src/tools.ts';
+import { createPdfService } from './src/pdf.ts';
+import { Tasks } from './src/ns/tasks.ts';
 const fs = new InMemoryFs();
 const tasks = new Tasks();
 const pdf = createPdfService({ tasks });
@@ -45,10 +45,10 @@ window.pouch = {
   pixel: async (p, x, y) => { const b = await createImageBitmap(new Blob([await fs.readFileBuffer(p)])); const c = new OffscreenCanvas(b.width, b.height).getContext('2d'); c.drawImage(b, 0, 0); return { w: b.width, h: b.height, rgba: [...c.getImageData(x, y, 1, 1).data] }; },
   dark: async (p) => { const b = await createImageBitmap(new Blob([await fs.readFileBuffer(p)])); const c = new OffscreenCanvas(b.width, b.height).getContext('2d'); c.drawImage(b, 0, 0); const d = c.getImageData(0, 0, b.width, b.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 100) n++; return n; },
 };`;
-const worker = (await build({ entryPoints: [join(root, 'src/run/worker-browser.js')], bundle: true, minify: true, write: false, format: 'iife' })).outputFiles[0].text;
+const worker = (await build({ entryPoints: [join(root, 'src/run/worker-browser.ts')], bundle: true, minify: true, write: false, format: 'iife' })).outputFiles[0].text;
 const app = (await build({ stdin: { contents: entry, resolveDir: root, loader: 'js' }, bundle: true, write: false, format: 'iife', minify: true,
   define: { WORKER_SRC: JSON.stringify(worker), POUCH_PDF_RUNTIME: JSON.stringify(pin) },
-  alias: { 'node:zlib': join(root, 'src/shims/zlib.js'), zlib: join(root, 'src/shims/zlib.js') }, logLevel: 'error' })).outputFiles[0].text;
+  alias: { 'node:zlib': join(root, 'src/shims/zlib.ts'), zlib: join(root, 'src/shims/zlib.ts') }, logLevel: 'error' })).outputFiles[0].text;
 const script = app.replaceAll('</script', '<\\/script');
 // Pouch's own policy (pouch.html's meta tag), with this page's one script hash.
 const csp = readFileSync(join(root, 'pouch.html'), 'utf8').match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)[1]

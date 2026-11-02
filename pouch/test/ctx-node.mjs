@@ -1,4 +1,4 @@
-// The context meter, node: src/context.js counting (measured usage plus an
+// The context meter, node: src/context.ts counting (measured usage plus an
 // estimate of what came after, compaction heads, failed replies), the meter's
 // words and levels per provider, and end to end through openAgent: a Sealed
 // reply's reported usage reaches view.context; a Transformers.js reply that
@@ -6,8 +6,8 @@
 // fresh watch. No network: a fake verified client and a fake engine.
 // Run: node test/ctx-node.mjs
 import assert from 'node:assert/strict';
-const { contextOf, contextFor, describe, short, autoCompactAt } = await import('../src/context.js');
-const { openAgent, MemoryStorage, compactionFor } = await import('../src/agent.js');
+const { contextOf, contextFor, describe, short, autoCompactAt } = await import('../src/context.ts');
+const { openAgent, MemoryStorage, compactionFor } = await import('../src/agent.ts');
 
 let passed = 0;
 const ok = (name) => { passed++; console.log('ok', name); };

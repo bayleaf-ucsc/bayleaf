@@ -1,4 +1,4 @@
-// The `open` command and `cat` in the terminal (src/open-cli.js, src/terminal.js):
+// The `open` command and `cat` in the terminal (src/open-cli.ts, src/terminal.ts):
 // the content type -> mode table, the flags and their misuse, folders, missing
 // and binary files, the page hooks it calls (fakes here), and an agent's
 // `open` refusing through the bash tool. No page, no network.
@@ -6,10 +6,10 @@
 import assert from 'node:assert/strict';
 import { InMemoryFs } from 'just-bash';
 import { Type } from 'typebox';
-import { parseArgs, planOpen, AGENT_REFUSAL, SHOW_HELP, shownLines } from '../src/open-cli.js';
-import { shellFor, createTools, clip } from '../src/tools.js';
+import { parseArgs, planOpen, AGENT_REFUSAL, SHOW_HELP, shownLines } from '../src/open-cli.ts';
+import { shellFor, createTools, clip } from '../src/tools.ts';
 globalThis.navigator ??= {};
-const { binaryOutput } = await import('../src/terminal.js');
+const { binaryOutput } = await import('../src/terminal.ts');
 
 let passed = 0;
 const ok = (name) => { passed++; console.log('ok', name); };

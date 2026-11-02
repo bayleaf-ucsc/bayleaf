@@ -11,19 +11,22 @@
 // Trust rules (they fail the build):
 //   egress    only the modules in NETWORK may use network APIs
 //   html      only viewer.html turns a string into HTML (agent-written reports)
-//   sealed    only src/sealed.js touches the encrypting client (the Tinfoil SDK)
+//   sealed    only src/sealed.ts touches the encrypting client (the Tinfoil SDK)
 //   cdn       no third-party CDN in the page (assertNoCdn, build-runtime.mjs)
+//   exact     trust-boundary modules say exactly what crosses them: no `any`
 // Structure rules:
-//   layers    the core never imports UI; nothing imports the Interface but main.js
+//   layers    the core never imports UI; nothing imports the Interface but main.ts
 //   seams     a region is imported only through its entry modules
+//   contract  a contract module is types only, and imported only as types
+//   escapes   casts and non-null assertions only go down (escapes.json)
 //   size      every module stays within its line budget
 //
-// The parser is TypeScript's (no type checking): the scan sees code, not
+// The parser is TypeScript's (no type checking; tsc --noEmit does that): the scan sees code, not
 // comments or strings, and tells a local `fetch` parameter from the global.
 // It covers first-party code (src/, sw.js, the pages' inline scripts); bundled
 // packages are checked by what imports them (checkMetafile) and by the CSP.
 import ts from 'typescript';
-import { readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { assertNoCdn } from './build-runtime.mjs';
@@ -34,18 +37,18 @@ import { assertNoCdn } from './build-runtime.mjs';
 const NETWORK_APIS = ['fetch', 'XMLHttpRequest', 'WebSocket', 'WebTransport', 'EventSource', 'RTCPeerConnection',
   'sendBeacon', 'importScripts', 'Worker', 'SharedWorker', 'import()'];
 export const NETWORK = {
-  'src/bayleaf-api.js': { apis: ['fetch'], why: 'the account plane: device claim, a key\'s allowance, Campus Pass, the Sealed model list (metadata only, never content)' },
-  'src/sealed.js': { apis: ['fetch'], why: 'the encrypting fetch: EHBP ciphertext to the attested enclave' },
-  'src/bayleaf-cli.js': { apis: ['fetch'], why: 'the agent\'s `bayleaf` command to api.bayleaf.dev, each request approved through egress.js' },
-  'src/localhost.js': { apis: ['fetch'], why: 'the Localhost provider: a model server on this computer, behind guardedFetch\'s origin check' },
-  'src/models.js': { apis: ['fetch'], why: 'model weights from the BayLeaf HF gateway, hash-checked against models.lock.json' },
-  'src/assets.js': { apis: ['fetch'], why: 'pinned runtimes and weights by range, hash-checked against the build\'s pins' },
-  'src/offline.js': { apis: ['fetch'], why: 'the offline copy: SHA256SUMS and the app shell from this origin' },
+  'src/bayleaf-api.ts': { apis: ['fetch'], why: 'the account plane: device claim, a key\'s allowance, Campus Pass, the Sealed model list (metadata only, never content)' },
+  'src/sealed.ts': { apis: ['fetch'], why: 'the encrypting fetch: EHBP ciphertext to the attested enclave' },
+  'src/bayleaf-cli.ts': { apis: ['fetch'], why: 'the agent\'s `bayleaf` command to api.bayleaf.dev, each request approved through egress.ts' },
+  'src/localhost.ts': { apis: ['fetch'], why: 'the Localhost provider: a model server on this computer, behind guardedFetch\'s origin check' },
+  'src/models.ts': { apis: ['fetch'], why: 'model weights from the BayLeaf HF gateway, hash-checked against models.lock.json' },
+  'src/assets.ts': { apis: ['fetch'], why: 'pinned runtimes and weights by range, hash-checked against the build\'s pins' },
+  'src/offline.ts': { apis: ['fetch'], why: 'the offline copy: SHA256SUMS and the app shell from this origin' },
   'sw.js': { apis: ['fetch'], why: 'the service worker: serves the offline copy, else passes the request to this origin' },
-  'src/run.js': { apis: ['Worker'], why: 'starts the bundled QuickJS worker from a blob: URL; the worker drops its network APIs' },
-  'src/pdf.js': { apis: ['Worker'], why: 'starts the hash-checked pdf.js worker from a blob: URL; the worker drops its network APIs' },
-  'src/media.js': { apis: ['Worker'], why: 'starts the hash-checked libav.js worker from a blob: URL; the worker drops its network APIs' },
-  'src/local/engine.js': { apis: ['Worker'], why: 'starts the hash-checked Transformers.js worker from a blob: URL' },
+  'src/run.ts': { apis: ['Worker'], why: 'starts the bundled QuickJS worker from a blob: URL; the worker drops its network APIs' },
+  'src/pdf.ts': { apis: ['Worker'], why: 'starts the hash-checked pdf.js worker from a blob: URL; the worker drops its network APIs' },
+  'src/media.ts': { apis: ['Worker'], why: 'starts the hash-checked libav.js worker from a blob: URL; the worker drops its network APIs' },
+  'src/local/engine.ts': { apis: ['Worker'], why: 'starts the hash-checked Transformers.js worker from a blob: URL' },
 };
 const WHY_EGRESS = 'Plaintext must leave Pouch only through modules whose every request is known: '
   + 'add the module to NETWORK in arch.mjs with its reason, or route the request through one that is there';
@@ -53,7 +56,7 @@ const WHY_EGRESS = 'Plaintext must leave Pouch only through modules whose every 
 // ── HTML: who may render a string as HTML ───────────────────────────
 // Agent-written HTML runs only in viewer.html: a separate page with its own
 // network-less CSP, framed with an opaque origin (README "HTML reports").
-// Everything else builds DOM nodes (dom.js el()), never parses markup.
+// Everything else builds DOM nodes (dom.ts el()), never parses markup.
 const HTML_SINKS = ['innerHTML', 'outerHTML', 'insertAdjacentHTML', 'srcdoc', 'parseFromString',
   'createContextualFragment', 'setHTMLUnsafe', 'parseHTMLUnsafe', 'document.write', 'document.writeln'];
 export const HTML = {
@@ -64,7 +67,7 @@ const WHY_HTML = 'Agent-written HTML could carry script or exfiltrate through th
 
 // ── Sealed: who may touch the encrypting client ─────────────────────
 export const SEALED = {
-  'src/sealed.js': { why: 'the Sealed provider: builds the Tinfoil client and its encrypting fetch' },
+  'src/sealed.ts': { why: 'the Sealed provider: builds the Tinfoil client and its encrypting fetch' },
 };
 const SEALED_TOUCH = ['secureClient', 'openAIOptions'];
 const WHY_SEALED = 'The encrypting client holds the credential and decides what is encrypted to whom; '
@@ -73,12 +76,12 @@ const WHY_SEALED = 'The encrypting client holds the credential and decides what 
 // ── Layers ──────────────────────────────────────────────────────────
 // The core: files, namespaces, storage, providers and sandboxed runtimes. It
 // works without a page, so it imports only itself (and packages).
-export const CORE = ['src/vfs.js', 'src/store.js', 'src/archive.js', 'src/graph.js', 'src/ns/', 'src/run.js', 'src/run/',
-  'src/local/', 'src/localhost.js', 'src/sealed.js', 'src/bayleaf-api.js', 'src/profiles.js', 'src/models.js',
-  'src/assets.js', 'src/sha256.js', 'src/pdf/', 'src/media/', 'src/shims/'];
-// The Interface (LANGUAGE.md): the page's wiring, composed by main.js from
+export const CORE = ['src/trust.ts', 'src/vfs.ts', 'src/store.ts', 'src/archive.ts', 'src/graph.ts', 'src/ns/', 'src/run.ts', 'src/run/',
+  'src/local/', 'src/localhost.ts', 'src/sealed.ts', 'src/bayleaf-api.ts', 'src/profiles.ts', 'src/models.ts',
+  'src/assets.ts', 'src/sha256.ts', 'src/pdf/', 'src/media/', 'src/shims/'];
+// The Interface (LANGUAGE.md): the page's wiring, composed by main.ts from
 // src/interface/ regions.
-const INTERFACE = ['src/main.js', 'src/interface/'];
+const INTERFACE = ['src/main.ts', 'src/interface/'];
 const WHY_LAYERS = 'The core must stay testable and portable without a page (and replaceable by the trusted core of #143); '
   + 'UI depends on the core, never the reverse';
 
@@ -86,15 +89,50 @@ const WHY_LAYERS = 'The core must stay testable and portable without a page (and
 // A region's other modules are its implementation: outside code imports
 // only the entries. src/interface/ regions reach each other through `app`.
 export const REGIONS = {
-  'src/interface/': { entries: [], importers: ['src/main.js'], why: 'Interface regions are composed only by main.js and reach each other through app.<region>' },
-  'src/run/': { entries: ['src/run.js'], why: 'run.js is the run tool\'s one door: the worker and its 9P bridge are its implementation' },
-  'src/pdf/': { entries: ['src/pdf.js'], why: 'pdf.js owns the pdf.js worker and its pin' },
-  'src/media/': { entries: ['src/media.js'], why: 'media.js owns the libav.js worker and its pins' },
-  'src/local/': { entries: ['src/local/engine.js', 'src/local/provider.js'], why: 'the engine (weights, worker) and the provider adapter are the Transformers.js doors; the worker is private' },
+  'src/interface/': { entries: [], importers: ['src/main.ts'], why: 'Interface regions are composed only by main.ts and reach each other through app.<region>' },
+  'src/run/': { entries: ['src/run.ts'], why: 'run.ts is the run tool\'s one door: the worker and its 9P bridge are its implementation' },
+  'src/pdf/': { entries: ['src/pdf.ts'], why: 'pdf.ts owns the pdf.js worker and its pin' },
+  'src/media/': { entries: ['src/media.ts'], why: 'media.ts owns the libav.js worker and its pins' },
+  'src/local/': { entries: ['src/local/engine.ts', 'src/local/provider.ts'], why: 'the engine (weights, worker) and the provider adapter are the Transformers.js doors; the worker is private' },
 };
 
+// ── Contracts: types-only modules ───────────────────────────────────
+// A contract holds no code, so depending on it couples types, never behavior:
+// it may be imported (as types) across a seam its region's code may not cross.
+export const CONTRACTS = {
+  'src/trust.ts': { why: 'the data that crosses Pouch\'s trust boundaries, which the trusted core of #143 can take over one at a time' },
+  'src/agent-types.ts': { why: 'the agent engine and the thread view transcripts render (agent.ts implements them)' },
+  'src/subagents-types.ts': { why: 'the subagent registry and what the page supplies to it (subagents.ts implements them)' },
+  'src/tools-types.ts': { why: 'the tools\' hooks and file views (tools.ts implements them)' },
+  'src/run/protocol.ts': { why: 'the messages between run.ts and the QuickJS worker' },
+  'src/local/protocol.ts': { why: 'the messages between the Transformers.js engine and its worker' },
+  'src/pdf/protocol.ts': { why: 'the messages between pdf.ts and the pdf.js worker' },
+  'src/media/protocol.ts': { why: 'the messages between media.ts and the libav.js worker' },
+  'src/interface/app.ts': { why: 'the App type: the regions\' interfaces, through which regions reach each other' },
+};
+const WHY_CONTRACT = 'A contract states what crosses a boundary and does nothing itself; '
+  + 'move the code to a module that implements the contract';
+
+// ── Exact types at trust boundaries ─────────────────────────────────
+// `any` switches the type checker off. Where data crosses a trust boundary
+// its type is the claim an auditor reads, so these modules may not use it.
+export const EXACT = ['src/trust.ts', 'src/egress.ts', 'src/ns/namespace.ts', 'src/ns/control.ts',
+  ...Object.keys(NETWORK).filter((p) => p.startsWith('src/')), ...Object.keys(SEALED)];
+const WHY_EXACT = 'A trust boundary\'s types are what an auditor (and tsc) relies on; '
+  + 'name the shape, or take `unknown` and narrow it';
+
+// ── Escape hatches: a ratchet ───────────────────────────────────────
+// Each `x as T`, `x!` and `x as unknown as T` tells tsc to trust the author
+// instead of checking. escapes.json counts them per module; a count may only
+// go down. A module over its count fails, and so does one under it, until
+// `node arch.mjs --lower` writes the lower count (it never raises one), so the
+// file stays an exact inventory. `as const` narrows and is not counted.
+export const ESCAPE_KINDS = ['as', '!', 'as unknown as'];
+const WHY_ESCAPES = 'Every escape hatch is a claim tsc cannot check; '
+  + 'type the value, narrow it with a check, or take `unknown` where it enters';
+
 // ── Size budgets (lines) ────────────────────────────────────────────
-export const BUDGET = { default: 700, 'src/main.js': 60 };
+export const BUDGET = { default: 700, 'src/main.ts': 60 };
 
 // ─────────────────────────────────────────────────────────────────────
 const inside = (path, prefixes) => prefixes.some((p) => (p.endsWith('/') ? path.startsWith(p) : path === p));
@@ -181,10 +219,26 @@ function scan(sf, checker) {
   };
   const visit = (n) => {
     if (ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) {
-      if (n.moduleSpecifier && ts.isStringLiteral(n.moduleSpecifier)) imports.push({ spec: n.moduleSpecifier.text, line: at(n) });
+      if (n.moduleSpecifier && ts.isStringLiteral(n.moduleSpecifier)) imports.push({ spec: n.moduleSpecifier.text, line: at(n), typeOnly: typeOnly(n) });
+    } else if (ts.isAsExpression(n) || ts.isTypeAssertionExpression(n)) {
+      const t = n.type;
+      const isConst = ts.isTypeReferenceNode(t) && t.typeName.getText(sf) === 'const';
+      let inner = n.expression;
+      while (ts.isParenthesizedExpression(inner)) inner = inner.expression;
+      const viaUnknown = (ts.isAsExpression(inner) || ts.isTypeAssertionExpression(inner)) && inner.type.kind === ts.SyntaxKind.UnknownKeyword;
+      let up = n.parent;
+      while (ts.isParenthesizedExpression(up)) up = up.parent;
+      const outer = ts.isAsExpression(up) || ts.isTypeAssertionExpression(up);
+      // x as unknown as T counts once, as itself, not as two casts, (x as unknown) as T too.
+      if (viaUnknown) found.push({ kind: 'escape', api: 'as unknown as', line: at(n) });
+      else if (!isConst && !(t.kind === ts.SyntaxKind.UnknownKeyword && outer)) found.push({ kind: 'escape', api: 'as', line: at(n) });
+    } else if (ts.isNonNullExpression(n)) {
+      found.push({ kind: 'escape', api: '!', line: at(n) });
+    } else if (n.kind === ts.SyntaxKind.AnyKeyword) {
+      found.push({ kind: 'any', api: 'any', line: at(n) });
     } else if (ts.isCallExpression(n) && n.expression.kind === ts.SyntaxKind.ImportKeyword) {
       const a = n.arguments[0];
-      if (a && ts.isStringLiteralLike(a)) imports.push({ spec: a.text, line: at(n) });
+      if (a && ts.isStringLiteralLike(a)) imports.push({ spec: a.text, line: at(n), typeOnly: false });
       if (!(a && ts.isStringLiteralLike(a) && a.text.startsWith('.'))) found.push({ kind: 'network', api: 'import()', line: at(n) });
     } else if (ts.isCallExpression(n) && REFLECTIVE.includes(n.expression.getText(sf).replace(/^(globalThis|self|window)\./, ''))) {
       const a = n.arguments[1];
@@ -227,6 +281,22 @@ function scan(sf, checker) {
   return { found, imports };
 }
 
+// An import or export that is erased: `import type`, or only `type` specifiers.
+function typeOnly(n) {
+  if (ts.isExportDeclaration(n)) return n.isTypeOnly || (!!n.exportClause && ts.isNamedExports(n.exportClause) && n.exportClause.elements.every((e) => e.isTypeOnly));
+  const c = n.importClause;
+  if (!c) return false; // import './x': run for its effects
+  if (c.isTypeOnly) return true;
+  return !c.name && !!c.namedBindings && ts.isNamedImports(c.namedBindings) && c.namedBindings.elements.length > 0 && c.namedBindings.elements.every((e) => e.isTypeOnly);
+}
+// Top-level statements that run (a contract may have none).
+const TYPE_ONLY_STATEMENTS = [ts.SyntaxKind.InterfaceDeclaration, ts.SyntaxKind.TypeAliasDeclaration, ts.SyntaxKind.EmptyStatement];
+function runtimeStatements(sf) {
+  return sf.statements.filter((st) => !TYPE_ONLY_STATEMENTS.includes(st.kind)
+    && !((ts.isImportDeclaration(st) || ts.isExportDeclaration(st)) && typeOnly(st)))
+    .map((st) => sf.getLineAndCharacterOfPosition(st.getStart(sf)).line + 1);
+}
+
 const resolve = (from, spec) => {
   if (!spec.startsWith('.')) return spec;
   const parts = from.split('/').slice(0, -1);
@@ -234,17 +304,34 @@ const resolve = (from, spec) => {
   return parts.join('/');
 };
 
+// Escape hatches per module, { path: { as, '!', 'as unknown as' } } (zeros omitted).
+export function countEscapes(files) {
+  const list = sources(files).filter((s) => s.path.startsWith('src/'));
+  const { program, checker } = parse(list);
+  const out = {};
+  for (const s of list) for (const f of scan(program.getSourceFile(s.name), checker).found) {
+    if (f.kind !== 'escape') continue;
+    (out[s.path] ??= {})[f.api] = (out[s.path][f.api] ?? 0) + 1;
+  }
+  return out;
+}
+
 // The checks over a set of files; returns violation messages (empty: it holds).
-export function checkArchitecture(files) {
+// escapes: the committed counts (escapes.json); undefined skips the ratchet.
+export function checkArchitecture(files, escapes = files.escapes) {
   const list = sources(files);
   const { program, checker } = parse(list);
   const errors = [];
   const usedNet = new Map(), usedHtml = new Set(), usedSealed = new Set();
   const graph = []; // { from, to, line }
   for (const s of list) {
-    const { found, imports } = scan(program.getSourceFile(s.name), checker);
+    const sf = program.getSourceFile(s.name);
+    const { found, imports } = scan(sf, checker);
+    if (CONTRACTS[s.path]) for (const line of runtimeStatements(sf)) errors.push(fmt('contract', s.path, line, 'has a statement that runs', WHY_CONTRACT));
     for (const f of found) {
-      if (f.kind === 'network') {
+      if (f.kind === 'any') {
+        if (EXACT.includes(s.path)) errors.push(fmt('exact', s.path, f.line, 'uses `any`', WHY_EXACT));
+      } else if (f.kind === 'network') {
         const allow = NETWORK[s.path];
         if (allow?.apis.includes(f.api)) { if (!usedNet.has(s.path)) usedNet.set(s.path, new Set()); usedNet.get(s.path).add(f.api); }
         else errors.push(fmt('egress', s.path, f.line, `uses ${f.api}, but it is not an egress module for ${f.api}`, WHY_EGRESS));
@@ -261,7 +348,7 @@ export function checkArchitecture(files) {
         if (SEALED[s.path]) usedSealed.add(s.path);
         else errors.push(fmt('sealed', s.path, im.line, `imports ${im.spec}`, WHY_SEALED));
       }
-      if (im.spec.startsWith('.')) graph.push({ from: s.path, to: resolve(s.path, im.spec), line: im.line });
+      if (im.spec.startsWith('.')) graph.push({ from: s.path, to: resolve(s.path, im.spec), line: im.line, typeOnly: im.typeOnly });
     }
   }
   // Allowances nobody uses any more: the inventory must stay exact.
@@ -272,18 +359,36 @@ export function checkArchitecture(files) {
   for (const [rule, table, used] of [['html', HTML, usedHtml], ['sealed', SEALED, usedSealed]]) {
     for (const path of Object.keys(table)) if (files.has(path) && !used.has(path)) errors.push(fmt(rule, path, 0, `is allowed in ${rule.toUpperCase()} but no longer needs it`, 'Remove the allowance so the list stays an exact inventory'));
   }
-  // Layers: the core imports only the core; only main.js imports the Interface.
+  for (const path of Object.keys(CONTRACTS)) if (!files.has(path)) errors.push(fmt('contract', path, 0, 'is listed in CONTRACTS but does not exist', 'Remove it so the list stays an exact inventory'));
+  // Layers: the core imports only the core; only main.ts imports the Interface.
   for (const { from, to, line } of graph) {
     if (inside(from, CORE) && to.startsWith('src/') && !inside(to, CORE)) errors.push(fmt('layers', from, line, `is core but imports ${to}`, WHY_LAYERS));
     if (inside(to, INTERFACE) && !inside(from, INTERFACE)) errors.push(fmt('layers', from, line, `imports the Interface (${to})`, WHY_LAYERS));
   }
+  // Contracts are imported as types, which may cross a seam (not a layer).
+  for (const { from, to, line, typeOnly } of graph) {
+    if (CONTRACTS[to] && !typeOnly) errors.push(fmt('contract', from, line, `imports ${to} as a value`, `Use \`import type\`: ${CONTRACTS[to].why}`));
+  }
   // Seams: from outside a region, only its entries (and listed importers).
-  for (const { from, to, line } of graph) {
+  for (const { from, to, line, typeOnly } of graph) {
+    if (typeOnly && (CONTRACTS[to] || CONTRACTS[from])) continue; // a contract may also gather its regions' types
     for (const [dir, r] of Object.entries(REGIONS)) {
       const within = from.startsWith(dir) || r.entries.includes(from); // the entries are the region too
       if (!to.startsWith(dir) || (within && dir !== 'src/interface/')) continue;
       if (r.importers?.includes(from) || r.entries.includes(to)) continue;
       errors.push(fmt('seams', from, line, `imports ${to}, inside ${dir}`, `Import ${r.entries.length ? r.entries.join(' or ') : 'nothing from it'} instead: ${r.why}`));
+    }
+  }
+  // Escape hatches: only down, and the file exact.
+  if (escapes) {
+    const now = countEscapes(files);
+    for (const path of new Set([...Object.keys(now), ...Object.keys(escapes)])) {
+      if (!files.has(path)) { errors.push(fmt('escapes', path, 0, 'is listed in escapes.json but does not exist', 'Remove it (node arch.mjs --lower)')); continue; }
+      for (const k of ESCAPE_KINDS) {
+        const n = now[path]?.[k] ?? 0, max = escapes[path]?.[k] ?? 0;
+        if (n > max) errors.push(fmt('escapes', path, 0, `has ${n} \`${k}\`, over its ${max} in escapes.json`, WHY_ESCAPES));
+        else if (n < max) errors.push(fmt('escapes', path, 0, `has ${n} \`${k}\`, under its ${max}`, 'Good: record it with node arch.mjs --lower so it cannot grow back'));
+      }
     }
   }
   // Size budgets.
@@ -339,6 +444,7 @@ export function loadTree(root = import.meta.dirname) {
   };
   walk(join(root, 'src'));
   for (const f of ['sw.js', 'viewer.html', 'pouch.html']) files.set(f, readFileSync(join(root, f), 'utf8'));
+  files.escapes = JSON.parse(readFileSync(join(root, 'escapes.json'), 'utf8'));
   return files;
 }
 
@@ -346,8 +452,23 @@ export function assertArchitecture(errors) {
   if (errors.length) throw new Error(`Pouch architecture check failed (arch.mjs):\n  ${errors.join('\n  ')}`);
 }
 
+// --lower: write each module's count where it went down (never up).
+function lowerEscapes(root = import.meta.dirname) {
+  const files = loadTree(root), was = files.escapes, now = countEscapes(files), next = {};
+  for (const path of Object.keys(now).sort()) {
+    const row = {};
+    for (const k of ESCAPE_KINDS) { const n = now[path][k] ?? 0, max = was[path]?.[k] ?? 0; if (Math.min(n, max)) row[k] = Math.min(n, max); }
+    if (Object.keys(row).length) next[path] = row;
+  }
+  writeFileSync(join(root, 'escapes.json'), formatEscapes(next));
+}
+// One module per line, so a diff shows which module paid down what.
+export const formatEscapes = (counts) => '{\n' + Object.keys(counts).sort()
+  .map((p) => `  ${JSON.stringify(p)}: ${JSON.stringify(counts[p]).replaceAll(',', ', ').replaceAll(':', ': ')}`).join(',\n') + '\n}\n';
+
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
+  if (process.argv.includes('--lower')) lowerEscapes();
   const errors = checkArchitecture(loadTree());
   if (errors.length) { console.error(errors.join('\n')); process.exit(1); }
-  console.log('arch: trust, layer, seam and size rules hold');
+  console.log('arch: trust, exact-type, layer, seam, contract, escape and size rules hold');
 }

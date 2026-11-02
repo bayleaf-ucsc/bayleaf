@@ -6,9 +6,9 @@
 // Prints an outline only (who called what, sender tags, sizes), not content.
 import assert from 'node:assert/strict';
 const { TinfoilAI } = await import('tinfoil');
-const { openAgent, MemoryStorage, Type } = await import('../src/agent.js');
-const { GRAPH_GLOSS } = await import('../src/subagents.js');
-const defaults = (await import('../src/defaults.js')).default;
+const { openAgent, MemoryStorage, Type } = await import('../src/agent.ts');
+const { GRAPH_GLOSS } = await import('../src/subagents.ts');
+const defaults = (await import('../src/defaults.ts')).default;
 
 const CAP = Number(process.env.CAP ?? 32), MODEL = process.argv[2] ?? 'glm-5-3';
 const ESSAY = `# Walkable towns

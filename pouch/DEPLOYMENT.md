@@ -39,7 +39,7 @@ independent evidence of their provenance.
 Weights are not in the artifact (issue #121). The page downloads the LFM3 files from
 `https://api.bayleaf.dev/hf/onnx-community/LFM3-1.7B-ONNX/resolve/<commit>/<path>` in
 32 MiB byte ranges and checks each whole file against `models.lock.json` (pinned into the
-page by the build); `src/models.js`, README "Transformers.js". `node build.mjs` always
+page by the build); `src/models.ts`, README "Transformers.js". `node build.mjs` always
 builds the runtime (`--no-models` omits the provider; `--with-models` is accepted and
 does nothing more) and needs no model files. Shape of the build:
 
@@ -110,7 +110,7 @@ wrapper, factory and wasm; the webm-vp9-cli ones equal the libav.js 6.10.9.0 rel
 | File | Count | Size |
 |---|---:|---|
 | `runtime/libav/manifest.<sha16>.json` | 1 | ~1 KB |
-| `worker.js` part: src/media/worker.js (and src/media/wc.js) with both variants' wrappers and Emscripten factories | 1 | 450 KB |
+| `worker.js` part: src/media/worker.ts (and src/media/wc.ts) with both variants' wrappers and Emscripten factories | 1 | 450 KB |
 | `libav.wasm` part: the released `libav-6.10.9.0-webm-vp9-cli.wasm.wasm`, unmodified | 1 | 3.9 MiB |
 | `libav-avf.wasm` part: the released `libav-6.10.9.0-webcodecs-avf.wasm.wasm`, unmodified (the WebCodecs path: MOV demuxer, swresample, audio filters, FLAC and Opus encoders) | 1 | 3.4 MiB |
 | `NOTICE.txt` part: what is shipped, where the source is, and the LGPL-2.1, FFmpeg, libav.js, libvpx (license and patent grant), Opus and emfiberthreads licenses, verbatim | 1 | 39 KB |
@@ -196,17 +196,18 @@ cache headers. README "Install and the offline copy" has the policy.
 
 ## Current artifact
 
-- `5c58759` (label `5c58759 2026-11-01`), built from clean `main` with `npm install` and
-  `node build.mjs` (which now runs the build-time trust checks, `arch.mjs`), deployed with
-  `node deploy.mjs`.
-- HTML SHA-256: `8fc06553b133bdbaee5a831921fbc0aebf7aa3dfd729a12a092345bd6d22f68c`.
-- Cloudflare version: `6caa07b9-ec8f-438c-83fd-562119ad599d`.
-- `deploy.mjs` verified the page, `SHA256SUMS`, 7 shell files and 24 runtime parts
-  (pdf.js, libav.js with its webcodecs-avf build and the hosted LGPL sources, the
-  Transformers.js runtime), byte-exact and immutable.
-- Includes the trust-boundary split of `src/main.js` (#144).
-- Playtested on Mac Chrome; on a Pixel 10 Pro, in-browser LFM3 froze the device and is
-  now refused on phones and tablets. Not verified: Firefox and Safari end to end.
+- `e4bfeb9` (label `e4bfeb9 2026-11-02`), the head of #148 stacked on #147 (not yet on
+  `main`), built from a clean tree with `npm ci` and `node build.mjs` (which now also runs
+  `tsc` on both projects), deployed with `node deploy.mjs` for playtesting.
+- HTML SHA-256: `492d41198448f522629c670ed6c625bddfe50c408ac16cc64af9b04527a65290`.
+- Cloudflare version: `ddc52cdd-ca0a-4c78-87e6-14d993cacde3`.
+- `deploy.mjs` verified the page, `SHA256SUMS`, 7 shell files and 24 runtime parts,
+  byte-exact and immutable.
+- Includes the TypeScript migration (#147) and the type-debt pay-down with its bug fixes
+  and guards (#148).
+- Before the playtest, the live Sealed journey suites and twelve scripted journeys against
+  the deployed site passed (about 137 Sealed requests); then playtested on Mac Chrome.
+  Not verified: Firefox and Safari end to end.
 
 ## Deploy and verify
 

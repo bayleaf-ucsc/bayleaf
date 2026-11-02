@@ -26,7 +26,7 @@ export class TinfoilAI {
     this.chat={completions:{create:async b=>{window.titles.push(b);return {choices:[{message:{content:'Offline title'}}]};}}};
     this.secureClient={fetch:async (url,init)=>{
       const b=JSON.parse(init.body);
-      // Titles go through the encrypting fetch since Batch E (src/naming.js).
+      // Titles go through the encrypting fetch since Batch E (src/naming.ts).
       if(!(b.tools||[]).length && /Write a 2-5 word title/.test(JSON.stringify(b.messages))){window.titles.push(b);return sse([chunk({role:'assistant',content:'Offline title'}),chunk({},'stop')]);}
       window.requests.push(b);
       if(window.requests.length===1){while(!window.gate)await wait(10);
@@ -39,7 +39,7 @@ export class TinfoilAI {
   async ready(){} async getVerificationDocument(){return {securityVerified:true};}
 }
 `;
-const bundled = await build({ entryPoints: [join(root,'src/main.js')], bundle:true, write:false, format:'iife', alias:{'node:zlib':join(root,'src/shims/zlib.js'),zlib:join(root,'src/shims/zlib.js'),'decode-named-character-reference':join(root,'node_modules/decode-named-character-reference/index.js')}, plugins:[{
+const bundled = await build({ entryPoints: [join(root,'src/main.ts')], bundle:true, write:false, format:'iife', alias:{'node:zlib':join(root,'src/shims/zlib.ts'),zlib:join(root,'src/shims/zlib.ts'),'decode-named-character-reference':join(root,'node_modules/decode-named-character-reference/index.js')}, plugins:[{
   name:'offline-tinfoil', setup(b){b.onResolve({filter:/^tinfoil$/},()=>({path:'offline',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:stub,loader:'js'}));},
 }] });
 let fixture = readFileSync(join(root,'pouch.html'),'utf8').replace('<script>/*APP*/</script>',()=>'<script>'+bundled.outputFiles[0].text.replaceAll('</script','<\\/script')+'</script>');

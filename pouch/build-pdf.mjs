@@ -2,7 +2,7 @@
 // tool, under dist/runtime/pdf/ by the build-runtime.mjs convention.
 //
 // Three files, each checked against the manifest the page is built with:
-// - worker.js: src/pdf/worker.js bundled with pdfjs-dist's library and its
+// - worker.js: src/pdf/worker.ts bundled with pdfjs-dist's library and its
 //   worker code (one module worker; pdf.js runs its "worker" in that thread).
 // - data.pack: what pdf.js would otherwise fetch at run time (cmaps, standard
 //   fonts, the OpenJPEG, JBIG2 and qcms decoders' wasm, the CMYK ICC profile),
@@ -27,7 +27,7 @@ const LICENSES = ['LICENSE', 'wasm/LICENSE_PDFJS_OPENJPEG', 'wasm/LICENSE_OPENJP
   'wasm/LICENSE_PDFJS_QCMS', 'wasm/LICENSE_QCMS', 'standard_fonts/LICENSE_FOXIT', 'standard_fonts/LICENSE_LIBERATION', 'cmaps/LICENSE', 'iccs/LICENSE'];
 
 // pdf.js's run-time fetches, rewritten in its source to read data.pack
-// (pouchFile in src/pdf/worker.js); and its worker side must not adopt the
+// (pouchFile in src/pdf/worker.ts); and its worker side must not adopt the
 // module worker's own port (it would answer Pouch's messages).
 const SOURCES = { 'pdfjs-dist/build/pdf.worker.mjs': [
   [/async function fetchBinaryData\(url\) \{/g, 'async function fetchBinaryData(url) { return globalThis.pouchFile(url);', 1],
@@ -50,7 +50,7 @@ export async function buildPdf(out) {
   for (const [f, h] of Object.entries(PDFJS.sha256)) {
     if (createHash('sha256').update(readFileSync(DIR + f)).digest('hex') !== h) throw new Error(`${DIR}${f} differs from its pinned SHA-256`);
   }
-  const worker = await bundleWorker('src/pdf/worker.js', [], { sources: SOURCES });
+  const worker = await bundleWorker('src/pdf/worker.ts', [], { sources: SOURCES });
   if (/quickjs/i.test(worker)) throw new Error('the pdf worker bundle mentions quickjs: scripting must not ship');
   const entries = [
     ...readdirSync(DIR + 'cmaps').filter((f) => f.endsWith('.bcmap')).sort().map((f) => ['cmaps/' + f, readFileSync(DIR + 'cmaps/' + f)]),

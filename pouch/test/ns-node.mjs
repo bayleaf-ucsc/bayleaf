@@ -3,9 +3,9 @@
 // Run: node test/ns-node.mjs
 import assert from 'node:assert/strict';
 import { InMemoryFs, Bash } from 'just-bash';
-import { Namespace, subset, codeOf } from '../src/ns/namespace.js';
-import { SeedFs } from '../src/ns/seed.js';
-import { Tasks, TaskFs } from '../src/ns/tasks.js';
+import { Namespace, subset, codeOf } from '../src/ns/namespace.ts';
+import { SeedFs } from '../src/ns/seed.ts';
+import { Tasks, TaskFs } from '../src/ns/tasks.ts';
 
 const enc = new TextEncoder();
 let passed = 0;

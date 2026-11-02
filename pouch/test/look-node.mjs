@@ -1,4 +1,4 @@
-// Node checks of the look tool (src/tools.js lookAt, agent.js toTool; JOURNEYS
+// Node checks of the look tool (src/tools.ts lookAt, agent.ts toTool; JOURNEYS
 // AG1, AG4, AG8): path validation, the per-call cap, format refusals, the
 // text-only refusal, and where the image sits in the request pi-ai actually
 // sends (OpenAI chat format: the tool message is text, the image follows in a
@@ -6,8 +6,8 @@
 // prepareImage needs a canvas, so a fake stands in (the browser test uses the real one).
 // Run: node test/look-node.mjs
 import assert from 'node:assert/strict';
-import { openAgent, MemoryStorage, Type } from '../src/agent.js';
-import { createTools, lookAt, LOOK_MAX, LOOK_REFUSAL } from '../src/tools.js';
+import { openAgent, MemoryStorage, Type } from '../src/agent.ts';
+import { createTools, lookAt, LOOK_MAX, LOOK_REFUSAL } from '../src/tools.ts';
 
 let pass = 0;
 const ok = (name) => { pass++; console.log('ok', name); };

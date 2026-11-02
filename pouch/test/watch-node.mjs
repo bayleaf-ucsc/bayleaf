@@ -1,12 +1,12 @@
-// File watches (src/ns/watch.js) without a browser: globs, change summaries,
+// File watches (src/ns/watch.ts) without a browser: globs, change summaries,
 // write attribution through tagged views, and the delivery policy (busy
 // batching, idle wakes, wake cap and held events, once, user-first, scope,
 // rescan after a reload). Run: node test/watch-node.mjs
 import assert from 'node:assert/strict';
 import { InMemoryFs } from 'just-bash';
-import { Namespace, subset } from '../src/ns/namespace.js';
-import { Tasks, TaskFs } from '../src/ns/tasks.js';
-import { attribute, createWatches, globRe, baseOf, summarize, expand, formatEvents, watchTool, MAX_WAKES } from '../src/ns/watch.js';
+import { Namespace, subset } from '../src/ns/namespace.ts';
+import { Tasks, TaskFs } from '../src/ns/tasks.ts';
+import { attribute, createWatches, globRe, baseOf, summarize, expand, formatEvents, watchTool, MAX_WAKES } from '../src/ns/watch.ts';
 
 let passed = 0;
 const ok = (name) => { passed++; console.log('ok', name); };
@@ -225,5 +225,24 @@ function harness({ files = {} } = {}) {
   assert.deepEqual(await expand(ns, '/work/data/*.csv'), ['/work/data/a.csv']);
   assert.deepEqual(await expand(ns, '/work/data/**/*.csv'), ['/work/data/a.csv', '/work/data/sub/c.csv']);
   ok('expand: globs walk only below their base');
+}
+{
+  // No agent open: delivery fails and busy answers false (as a promise, the
+  // contract boot.ts keeps); a once watch still retires, nothing rejects unhandled.
+  const h = harness({ files: { '/work/essay.md': 'one\n' } });
+  await h.init();
+  const unhandled = []; const onRej = (e) => unhandled.push(e);
+  process.on('unhandledRejection', onRej);
+  const warn = console.warn; console.warn = () => {};
+  h.deps.deliver = async () => { throw new Error('no agent'); };
+  h.deps.busy = async () => false;
+  const reg = createWatches(h.deps), user = attribute(h.ns, 'user', reg);
+  await reg.add('1', 'a1', 'main', { paths: ['/work/essay.md'], once: true });
+  await user.writeFile('/work/essay.md', 'two\n');
+  await until(() => reg.list('1').length === 0);
+  await sleep(20);
+  console.warn = warn; process.off('unhandledRejection', onRej);
+  assert.deepEqual(unhandled, []);
+  ok('no agent open: a failed delivery with busy false retires a once watch without an unhandled rejection');
 }
 console.log(`watch-node: ${passed} passed`);

@@ -13,7 +13,7 @@ last-reviewed: 2026-10-31
 - Any re-qualification trigger in step 10 for the model that ships
   (`pouch/models.lock.json`).
 - Choosing a dtype, or deciding whether to offer users a choice.
-- Editing the `transformersjs` profile text in `pouch/src/profiles.js`.
+- Editing the `transformersjs` profile text in `pouch/src/profiles.ts`.
 
 Canonical facts: `pouch/experiments/lfm3-webgpu/README.md` (capability
 boundary, quantization), `pouch/LANGUAGE.md` (Provider; Harness = engine +
@@ -77,7 +77,7 @@ recipe too, and a recipe edit re-qualifies the model.
    - **Tool-call format and special tokens.** The worker and Pouch parse
      Qwen3-Coder-style native XML (`<tool_call><function=…><parameter=…>`). A
      different format needs a parser in `qualify-worker.js` *and*
-     `src/local/provider.js`. Check whether the call tags are special tokens.
+     `src/local/provider.ts`. Check whether the call tags are special tokens.
      MiniCPM5's `<function>`/`<param>` tags are, so a decoder with
      `skip_special_tokens: true` deletes them and calls never parse (Ollama
      #18483). Both workers stream with `skip_special_tokens: false`. Keep it
@@ -115,9 +115,9 @@ recipe too, and a recipe edit re-qualifies the model.
 4. **Baseline, then recipe.** `configs/<id>.json` gets two setups:
    `baseline` (`recipe: "none"`: generic prompt, the same four schemas, no
    few-shot) and `recipe` (`recipe: "profiles"`, the shipped
-   `transformersjs` text, imported from `src/profiles.js`, so what is
+   `transformersjs` text, imported from `src/profiles.ts`, so what is
    qualified is what ships), both with `toolLayer: "pouch"` (mirrors
-   `src/tools.js`). Tasks: `"core"` (tree, edit, feature, rename, config,
+   `src/tools.ts`). Tasks: `"core"` (tree, edit, feature, rename, config,
    jsonlist, yaml) plus `heldOut: "all"`. Trials: greedy x1 plus 7 sampled at
    T 0.3/top_p 0.95 (seeds 1–7). Step cap, token budget and max new tokens
    come from the profile (8 steps, 4096 prompt tokens, 512 new). Run
@@ -141,7 +141,7 @@ recipe too, and a recipe edit re-qualifies the model.
    that row's lift is partly teaching to the test. Add new held-out tasks to
    `HELD_OUT` in `tasks.mjs` (never to `CORE`), and treat a held-out
    regression as a failed candidate even if core improves. Tool-layer changes
-   (`src/tools.js`) count as recipe changes here: they apply to every provider,
+   (`src/tools.ts`) count as recipe changes here: they apply to every provider,
    so take them only when the change is honest for all (disclosed in the tool
    description, like newline matching).
    Pass: a candidate meets step 4's bar; core and held-out both reported.
@@ -173,7 +173,7 @@ recipe too, and a recipe edit re-qualifies the model.
    reference machine; otherwise shrink the context budget or reject.
 
 8. **Integration.**
-   - Profile text changes (`TJS` in `src/profiles.js`) only after re-running
+   - Profile text changes (`TJS` in `src/profiles.ts`) only after re-running
      step 4 with `recipe: "profiles"`. Record the new `recipeSha256` from the
      results file in the README. Proposed (not yet built): a test pinning
      that hash so drift fails CI.
@@ -181,7 +181,7 @@ recipe too, and a recipe edit re-qualifies the model.
      verbatim, without the UL gloss).
    - A new model or dtype: update `models.lock.json` (id, label, repo,
      revision, dtype, license, files), the worker's `pipeline(...)` dtype in
-     `src/local/worker.js`, and any parser or template changes from step 1.
+     `src/local/worker.ts`, and any parser or template changes from step 1.
    - `node pouch/fetch-models.mjs`, `node pouch/build.mjs --with-models`, then
      `node pouch/deploy.mjs --check`.
    - In the real app: run the in-app agent tasks through
@@ -211,14 +211,14 @@ recipe too, and a recipe edit re-qualifies the model.
     of these change: the model, its revision, the dtype or export, the
     Transformers.js or ORT Web version, the recipe (system prompt, few-shot,
     tool schemas or descriptions), the tool set or tool semantics/wording in
-    `src/tools.js` (newline matching, error text), the step cap or context
+    `src/tools.ts` (newline matching, error text), the step cap or context
     budget, or a major Chrome version on the reference machine. A
     runtime-only bump uses `runtime.expect` in the config. It must hold every
     core cell within 1/8 and not regress perf by more than 10%.
 
 ## Reusing this for Localhost model families
 
-Pouch's **Localhost** provider (`src/localhost.js`, profile `localhost`) runs
+Pouch's **Localhost** provider (`src/localhost.ts`, profile `localhost`) runs
 OpenAI-compatible servers on loopback (oMLX, Ollama, LM Studio). Use the same
 tasks (`tasks.mjs`, imported as data) and the same trial plan, failure
 classes and summary tables, through an OpenAI-compatible driver:

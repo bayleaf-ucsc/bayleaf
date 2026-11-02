@@ -2,7 +2,7 @@
 //
 // Weights are not in the artifact: the page downloads them from the BayLeaf HF
 // gateway (api.bayleaf.dev/hf) and checks every file against models.lock.json
-// (src/models.js), so building needs no model files at all. What ships is the
+// (src/models.ts), so building needs no model files at all. What ships is the
 // runtime, under dist/runtime/transformers/ (build-runtime.mjs): the
 // Transformers.js + ORT WebGPU worker bundle and the ORT wasm, both from npm
 // and checked against the lock's runtime hashes. The define LOCAL_MODEL gives
@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs';
 import { sha256File } from './fetch-models.mjs';
 import { bundleWorker, writeRuntime } from './build-runtime.mjs';
-import { GATEWAY } from './src/models.js';
+import { GATEWAY } from './src/models.ts';
 
 // Library defaults rewritten so nothing in the bundle points at a CDN or the Hub.
 // The worker never uses either (no fetch; wasm handed in; allowRemoteModels false).
@@ -29,7 +29,7 @@ export async function buildModels(out) {
   const wasm = rt['onnxruntime-web'].files[0];
   if (await sha256File('node_modules/' + wasm.npm) !== wasm.sha256) throw new Error('ORT wasm hash differs from models.lock.json');
 
-  const worker = await bundleWorker('src/local/worker.js', REWRITES);
+  const worker = await bundleWorker('src/local/worker.ts', REWRITES);
   const { sums, pin } = writeRuntime(out, 'transformers', [
     { name: 'worker.js', role: 'worker', bytes: worker },
     { name: wasm.name, role: 'wasm', bytes: readFileSync('node_modules/' + wasm.npm) },

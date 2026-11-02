@@ -5,10 +5,10 @@
 // - Every runtime file (the worker, wasm, data) is cut into parts of at most
 //   PART_MAX bytes named by their SHA-256 under dist/runtime/<group>/, listed in
 //   SHA256SUMS, and described by manifest.<hash>.json; the page embeds that
-//   manifest's SHA-256 and reassembles the files with src/assets.js partAssets,
+//   manifest's SHA-256 and reassembles the files with src/assets.ts partAssets,
 //   checking every part. Cloudflare Static Assets refuses files over 25 MiB.
 // - Model weights are not runtime: they come from the BayLeaf HF gateway
-//   (api.bayleaf.dev/hf), pinned in models.lock.json (src/models.js).
+//   (api.bayleaf.dev/hf), pinned in models.lock.json (src/models.ts).
 // - No asset may default to a third-party host: library defaults that point at
 //   a CDN or the Hub are rewritten at build (each rewrite must match exactly the
 //   expected number of times), and assertNoCdn fails the build if any remain.
