@@ -526,7 +526,7 @@ export function mediaCommands(defineCommand: typeof DefineCommand, service: Medi
       const j = await job('ffmpeg', ctx, { action: 'run', program: 'ffmpeg', args: ['-hide_banner', ...args], inputs: [], outputs: [], maxSeconds: 0, maxOutputBytes: 0 }, `ffmpeg ${args[0]}`);
       if (j.error) return j.error;
       // The CLI build lists audio filters it can only run when no conversion is needed (it has no aresample): say where they run.
-      const note = a.flags!.has('filters') ? `\nPouch: audio filters with -af run on the conversion path (WAV, FLAC or Opus out), which has aresample and: ${AUDIO_FILTERS}.\nVideo filters: WebM/Ogg input as listed above; MOV/MP4 input (the browser's decoder): ${WC_FILTERS}.\n` : '';
+      const note = a.flags?.has('filters') ? `\nPouch: audio filters with -af run on the conversion path (WAV, FLAC or Opus out), which has aresample and: ${AUDIO_FILTERS}.\nVideo filters: WebM/Ogg input as listed above; MOV/MP4 input (the browser's decoder): ${WC_FILTERS}.\n` : '';
       return { stdout: j.r.stdout ? j.r.stdout + '\n' + note : note, stderr: tidy(j.r.stderr), exitCode: j.r.code ? 1 : 0 };
     }
     const outPaths = a.outputs.map((o) => abs(ctx.cwd, o.path));

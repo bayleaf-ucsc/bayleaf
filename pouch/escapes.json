@@ -37,7 +37,7 @@
   "src/localhost.ts": {"as": 11, "!": 2},
   "src/main.ts": {"as": 1},
   "src/markdown.ts": {"as": 10, "!": 5},
-  "src/media.ts": {"as": 29, "!": 18},
+  "src/media.ts": {"as": 29, "!": 17},
   "src/media/wc.ts": {"!": 2},
   "src/media/worker.ts": {"as": 38, "!": 43, "as unknown as": 7},
   "src/models-cli.ts": {"as": 6, "!": 3},
