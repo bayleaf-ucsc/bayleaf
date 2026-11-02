@@ -18,7 +18,15 @@ function canPrompt(e: Event | null): e is BeforeInstallPromptEvent {
 }
 const errText = (e: unknown) => e instanceof Error ? e.message : String(e);
 
-export function createInstallRegion(app: App): InstallRegion {
+// What install reaches in earlier regions, passed as values (all exist before it);
+// later regions still call install through app.install.
+export interface InstallDeps {
+  layout: App['state']['layout'];
+  status: App['state']['status'];
+  ask: App['tree']['ask'];
+}
+
+export function createInstallRegion({ layout, status, ask }: InstallDeps): InstallRegion {
   // ── Offline copy and updates (offline.ts, sw.js) ──────────────────────
   // The hosted page keeps a hash-checked copy of itself; it changes only on Update.
   const SW_EXPECTED = typeof SW_SHA256 !== 'undefined' ? SW_SHA256 : null; // eslint-disable-line no-undef (build.mjs define)
@@ -65,7 +73,7 @@ export function createInstallRegion(app: App): InstallRegion {
       $('update').hidden = false;
     } else $('update').hidden = true;
     if (manual) renderCopy(shellCopy.state.error ? 'Could not check: ' + shellCopy.state.error : r.update ? 'An update is available (see the notice above the chat).' : 'This copy is the published build.', shellCopy.state.error ? 'bad' : '');
-    else if (app.state.layout.current() === 'trust') renderCopy();
+    else if (layout.current() === 'trust') renderCopy();
   }
   async function applyUpdate() {
     const btn = $<HTMLButtonElement>('update-go'); btn.disabled = true;
@@ -76,14 +84,14 @@ export function createInstallRegion(app: App): InstallRegion {
     } catch (e) {
       const msg = `Update refused: ${errText(e)}. Still running sha256 ${short(was)}; nothing was changed.`;
       $('update-text').textContent = msg; $('update').classList.add('bad');
-      app.state.status(msg, 'bad'); renderCopy(msg, 'bad');
+      status(msg, 'bad'); renderCopy(msg, 'bad');
     } finally { btn.disabled = false; }
   }
   $('update-go').onclick = applyUpdate;
   $('update-later').onclick = () => { $('update').hidden = true; };
   $('copy-check').onclick = () => checkUpdate(true);
   $('copy-remove').onclick = async () => {
-    if (!(await app.tree.ask('Uninstall the offline copy? Pouch then loads from the network each time (and not without it). Files and sessions stay.', 'Uninstall', 'danger'))) return;
+    if (!(await ask('Uninstall the offline copy? Pouch then loads from the network each time (and not without it). Files and sessions stay.', 'Uninstall', 'danger'))) return;
     await shellCopy.uninstall();
     renderCopy('Offline copy removed. This tab keeps running; reloading loads the published build from the network.');
   };
@@ -91,7 +99,7 @@ export function createInstallRegion(app: App): InstallRegion {
     try { await shellCopy.keep(); renderCopy('Offline copy kept.'); } catch (e) { renderCopy('Could not keep a copy: ' + errText(e), 'bad'); }
   };
   $('copy-install').onclick = async () => { const p = shellCopy.state.installPrompt; shellCopy.state.installPrompt = null; if (canPrompt(p)) await p.prompt(); renderCopy(); };
-  $('settings-copy').onclick = () => app.state.layout.open('trust');
+  $('settings-copy').onclick = () => layout.open('trust');
   // An installed app: ask once more for persistent storage (files, sessions, the Local model).
   addEventListener('appinstalled', () => { navigator.storage.persist?.().catch(() => {}); renderCopy(); });
 
