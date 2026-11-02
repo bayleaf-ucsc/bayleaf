@@ -112,7 +112,7 @@ export function createBootRegion(app: App): BootRegion {
   // the transformersjs profile keeps its four qualified tools).
   const withWatch = (list: ToolList) => { list.push(watchTool({ Type, watches, callerOf: watchCaller })); return list; };
   (async () => {
-    app.state.usage.subscribe(async (st) => { await app.state.ledger.observe(st.remaining); app.state.meter(); if (app.state.layout.current() === 'usage') app.meters.renderUsagePanel(); if (!app.state.key && app.state.verified && /^Not signed in/.test($('status').textContent)) app.state.status(app.auth.campusLine(st)); });
+    app.state.usage.subscribe(async (st) => { await app.state.ledger.observe(st.remaining); app.state.meter(); if (app.state.layout.current() === 'usage') app.meters.renderUsagePanel(); if (!app.state.key && app.connection.verified && /^Not signed in/.test($('status').textContent)) app.state.status(app.auth.campusLine(st)); });
     if (location.hash === '#erased') { history.replaceState(null, '', location.pathname + location.search); $('erased').hidden = false; }
     navigator.storage.persist?.().catch(() => {});
     // Not awaited: the offline copy must never hold up files or the agent.
@@ -158,9 +158,9 @@ export function createBootRegion(app: App): BootRegion {
           show: app.editing.show,
         }))) as AgentToolSpec[], // execute's typed args against the agent's Record<string, unknown> (agent-types.ts)
         systemPrompt: () => systemPrompt(app.state.vfs),
-        getClient: async () => (app.state.verified ? app.state.client : null),
+        getClient: async () => app.connection.sealed(),
         onRequest: app.queues.countRequest,
-        models: app.state.models,
+        models: app.connection.models,
         pointer: { get: (id) => store.getSetting(convKey(id)), set: async (id, c) => { await store.setSetting(convKey(id), c); } },
         onInterrupted: async (sids) => {
           for (const sid of sids) if (sid != null) await store.setSetting(interruptedKey(sid), true);

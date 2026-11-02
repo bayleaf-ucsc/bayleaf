@@ -161,7 +161,7 @@ export function createQueuesRegion(app: App): QueuesRegion {
     // None in a subagent's view.
     const id = $<HTMLSelectElement>('model').value, c = app.sessionList.focus ? null : contextFor(app.state.view?.context, isLocal(id));
     if (!c?.tokens) return null;
-    const sealed = app.state.models.find((m) => m.id === id), host = isLocalhost(id) ? app.providers.lh?.models?.find((m) => 'localhost:' + m.id === id) : null;
+    const sealed = app.connection.models.find((m) => m.id === id), host = isLocalhost(id) ? app.providers.lh?.models?.find((m) => 'localhost:' + m.id === id) : null;
     const known = isLocal(id) ? null : host ? host.contextWindow ?? null : sealed?.windowReported ? sealed.contextWindow : null;
     // Where pi-durable compacts uses the window pi-ai was given, defaults included (src/agent.ts, src/localhost.ts).
     const used = isLocal(id) ? null : host ? host.contextWindow ?? 32_768 : sealed?.contextWindow ?? null;
@@ -219,7 +219,7 @@ export function createQueuesRegion(app: App): QueuesRegion {
   // Send the current session's follow-up once the model's turn is over.
   function pump() {
     const key = curKey(), q = followUps.get(key);
-    if (!q || q.paused || busy() || submitting.has(key) || deleting.has(key) || holdingFollowUp || !(app.providers.offSealed(q.turnModel) ? app.state.agent : app.state.agent && app.state.verified && !app.connection.offline)) return;
+    if (!q || q.paused || busy() || submitting.has(key) || deleting.has(key) || holdingFollowUp || !(app.providers.offSealed(q.turnModel) ? app.state.agent : app.state.agent && app.connection.verified && !app.connection.offline)) return;
     followUps.delete(key);
     announce('Follow-up sent: it starts the next turn.', false);
     dispatch(key, () => q);

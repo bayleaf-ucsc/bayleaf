@@ -46,8 +46,8 @@ export function createSessionListRegion(app: App): SessionListRegion {
   let focus: SubagentFocus | null = null;
   const sessions = createSessions({
     forgetWatches: (id) => app.boot.watches.removeSession(String(id)), // watches key sessions by string id
-    agent: () => app.state.agent, view: () => app.state.view, connected: () => (app.state.agent && app.state.verified ? app.state.client : null),
-    model: () => $<HTMLSelectElement>('model').value, setModel: (id) => { $<HTMLSelectElement>('model').value = id; app.providers.pickerProvider(); }, hasModel: (id) => app.state.models.some((m) => m.id === id) || (app.providers.localOk.ok && id === app.providers.LOCAL_ID) || app.providers.lhModels().some((m) => 'localhost:' + m.id === id), isLocal: app.providers.offSealed,
+    agent: () => app.state.agent, view: () => app.state.view, connected: () => (app.state.agent ? app.connection.sealed() : null),
+    model: () => $<HTMLSelectElement>('model').value, setModel: (id) => { $<HTMLSelectElement>('model').value = id; app.providers.pickerProvider(); }, hasModel: (id) => app.connection.models.some((m) => m.id === id) || (app.providers.localOk.ok && id === app.providers.LOCAL_ID) || app.providers.lhModels().some((m) => 'localhost:' + m.id === id), isLocal: app.providers.offSealed,
     attach: () => app.transcript.attach(), status: app.state.status, ask: app.tree.ask, sheet: app.state.sheet, countRequest: (id, kind) => app.state.ledger.add(id, kind).then(app.state.meter), layout: app.state.layout, usage: app.state.usage, quotaError: (msg) => app.send.quotaError(msg), exhaustedText,
     agentError: () => app.boot.agentError,
     runningChildren: (sid) => (app.subagents.kids.get(String(sid)) ?? []).filter((c) => c.status === 'running').length,

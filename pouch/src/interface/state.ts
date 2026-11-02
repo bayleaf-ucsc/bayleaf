@@ -1,4 +1,4 @@
-// Interface state: the shared cells (credential, client, agent, models, view), status line, frame and action sheets.
+// Interface state: the shared cells (credential, agent, composer, view), status line, frame and action sheets.
 
 import { createSettings } from '../settings.ts';
 import { createLocalImages } from '../attachments.ts';
@@ -12,8 +12,7 @@ import { createFollow } from '../follow.ts';
 import { dismissible, guardDialog } from '../dismiss.ts';
 import type { App } from './app.ts';
 import type { PouchAgent } from '../agent.ts';
-import type { SealedModelInfo, ThreadView } from '../agent-types.ts';
-import type { SealedHandle } from '../trust.ts';
+import type { ThreadView } from '../agent-types.ts';
 import type { Composer } from '../composer.ts';
 import type { Settings } from '../settings.ts';
 import type { LocalImages } from '../attachments.ts';
@@ -21,16 +20,12 @@ import type { Layout } from '../layout.ts';
 import type { Ledger } from '../usage.ts';
 import type { Follow } from '../follow.ts';
 
-// A Sealed chat model in the picker (src/interface/connection.ts loadModels).
-export type PickerModel = SealedModelInfo & { name: string; windowReported?: boolean };
 // One button of an action sheet: label, what it does, optional class; falsy entries are skipped.
 export type SheetAction = [label: string, run: () => unknown, cls?: string];
 export type SheetBody = string | Node | null | undefined;
 
 export interface StateRegion {
   get agent(): PouchAgent | null; set agent(v: PouchAgent | null);
-  // Sealed client, verified once per credential.
-  get client(): SealedHandle | null; set client(v: SealedHandle | null);
   get composer(): Composer | null; set composer(v: Composer | null);
   follow: Follow;
   // sk-bayleaf-... or null for Campus Pass.
@@ -39,7 +34,6 @@ export interface StateRegion {
   ledger: ReturnType<typeof createLedger>;
   localImages: LocalImages;
   meter(): Promise<ReturnType<typeof renderMeter>>;
-  get models(): PickerModel[]; set models(v: PickerModel[]);
   settings: Settings;
   sheet(title: string, actions: (SheetAction | false | null | undefined | '')[], body?: SheetBody): void;
   status(text: string, cls?: string): void;
@@ -48,7 +42,6 @@ export interface StateRegion {
   usage: ReturnType<typeof createUsage>;
   // The user's own writes, attributed 'user'.
   userFs: ReturnType<Vfs['as']>;
-  get verified(): boolean; set verified(v: boolean);
   vfs: Vfs;
   get view(): ThreadView | null; set view(v: ThreadView | null);
 }
@@ -64,10 +57,7 @@ export function createStateRegion(app: App): StateRegion {
   const localImages = createLocalImages(vfs);
 
   let key: string | null = null;        // sk-bayleaf-... or null for Campus Pass
-  let client: SealedHandle | null = null;     // Sealed client (src/sealed.ts), verified once per credential
-  let verified = false;
   let agent: PouchAgent | null = null;      // from openAgent, or null if it could not open
-  let models: PickerModel[] = [];       // Sealed chat models with tool calling
   // How a message read mid-turn is labeled, in main's transcript and a subagent's (D25).
   const STEER_LABEL = 'You, while it worked';
   let view: ThreadView | null = null;       // last normalized view of the current session
@@ -131,7 +121,6 @@ export function createStateRegion(app: App): StateRegion {
 
   return {
     get agent() { return agent; }, set agent(v) { agent = v; },
-    get client() { return client; }, set client(v) { client = v; },
     get composer() { return composer; }, set composer(v) { composer = v; },
     follow,
     get key() { return key; }, set key(v) { key = v; },
@@ -139,7 +128,6 @@ export function createStateRegion(app: App): StateRegion {
     ledger,
     localImages,
     meter,
-    get models() { return models; }, set models(v) { models = v; },
     settings,
     sheet,
     status,
@@ -147,7 +135,6 @@ export function createStateRegion(app: App): StateRegion {
     get unwatch() { return unwatch; }, set unwatch(v) { unwatch = v; },
     usage,
     userFs,
-    get verified() { return verified; }, set verified(v) { verified = v; },
     vfs,
     get view() { return view; }, set view(v) { view = v; },
   };

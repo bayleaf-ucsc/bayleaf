@@ -135,10 +135,10 @@ export function createSendRegion(app: App): SendRegion {
       if (!(await app.providers.ensureLocal())) return; // the text stays in the composer
     } else {
       if (app.connection.offline) return app.state.status(app.connection.OFFLINE, 'offline'); // the text stays in the composer
-      if (!app.state.agent || !app.state.verified) return app.state.status(app.boot.agentError ?? 'Not ready yet: Pouch is still verifying the enclave. Your message stays here.', 'bad');
+      if (!app.state.agent || !app.connection.verified) return app.state.status(app.boot.agentError ?? 'Not ready yet: Pouch is still verifying the enclave. Your message stays here.', 'bad');
     }
     const prepare = async () => {
-      const attached = await app.queues.attachments.prepare(app.state.models.find((m) => m.id === turnModel));
+      const attached = await app.queues.attachments.prepare(app.connection.models.find((m) => m.id === turnModel));
       if (key !== app.queues.curKey()) throw new Error('Session changed while preparing attachments. Review this message and press Send again. Nothing was sent.');
       $<HTMLTextAreaElement>('input').value = ''; autosize(); app.queues.attachments.clear(attached.files);
       return { text, attached, turnModel, at: Date.now() };

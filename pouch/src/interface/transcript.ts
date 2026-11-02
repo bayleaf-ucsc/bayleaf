@@ -494,7 +494,7 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
     await store.setSetting(turnsKey(sid), all);
     if (sameId(sid, app.sessionList.sessions.current?.id)) { turnTimes = all; scheduleRender(); }
   }
-  const modelName = (id: string) => app.state.models.find((m) => m.id === id)?.name ?? (LOCAL && id === app.providers.LOCAL_ID ? `${LOCAL.label} (Transformers.js)` : isLocalhost(id) ? `${id.slice('localhost:'.length)} (Localhost)` : id);
+  const modelName = (id: string) => app.connection.models.find((m) => m.id === id)?.name ?? (LOCAL && id === app.providers.LOCAL_ID ? `${LOCAL.label} (Transformers.js)` : isLocalhost(id) ? `${id.slice('localhost:'.length)} (Localhost)` : id);
   function message(it: MessageItem, label: string, ...kids: (Node | string)[]) {
     // A step that only thought before calling tools gets no toolbar: it has
     // nothing to copy, and its reply's toolbar reverts to after its tools.

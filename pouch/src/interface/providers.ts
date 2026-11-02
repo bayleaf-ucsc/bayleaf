@@ -60,7 +60,7 @@ export function createProvidersRegion(app: App): ProvidersRegion {
   // A thrown value's fields, without trusting its shape.
   const fieldOf = (e: unknown, k: string) => String(typeof e === 'object' && e !== null ? Reflect.get(e, k) ?? '' : k === 'message' ? e : '');
   const localPicked = () => isLocal($<HTMLSelectElement>('model').value);
-  const canSend = () => !!app.state.agent && (offSealedPicked() || (app.state.verified && !app.connection.offline));
+  const canSend = () => !!app.state.agent && (offSealedPicked() || (app.connection.verified && !app.connection.offline));
   const mib = (n: number) => `${(n / 2 ** 20).toLocaleString(undefined, { maximumFractionDigits: 0 })} MB`;
   // A saved choice of Transformers.js stays selected even when unavailable (a phone,
   // a weak adapter): Send then refuses with the reason (ensureLocal) instead of
@@ -148,8 +148,8 @@ export function createProvidersRegion(app: App): ProvidersRegion {
     $('local-hint-text').textContent = kinds.map((k) => HINTS[k]).join(' ') + ' BayLeaf Sealed (a larger model, encrypted to the enclave) may do better.';
   }
   $('local-hint-switch').onclick = async () => {
-    const to = (await store.getSetting<string>('sealedModel')) ?? app.state.models[0]?.id;
-    if (!to || !app.state.models.some((m) => m.id === to)) return app.state.status('No BayLeaf Sealed model is available right now.', 'bad');
+    const to = (await store.getSetting<string>('sealedModel')) ?? app.connection.models[0]?.id;
+    if (!to || !app.connection.models.some((m) => m.id === to)) return app.state.status('No BayLeaf Sealed model is available right now.', 'bad');
     $<HTMLSelectElement>('model').value = to; await store.setSetting('model', to); pickerProvider(); app.queues.updateSend();
     clearHint(app.sessionList.sessions.current?.id);
     app.state.status(`Switched the picker to BayLeaf Sealed (${app.transcript.modelName(to)}) for your next message. Nothing was sent.`);
@@ -180,7 +180,7 @@ export function createProvidersRegion(app: App): ProvidersRegion {
     if (localRuns.size) return app.state.status('Stop the Transformers.js turn before removing the model.', 'bad');
     if (!(await app.tree.ask('Remove the Transformers.js model from this browser? Sessions and files stay. Downloading it again takes about 1.1 GB.', 'Remove', 'danger'))) return;
     await localRemove(); // the same store code as `models remove` (src/models.ts)
-    if (localPicked()) { $<HTMLSelectElement>('model').value = (await store.getSetting('sealedModel')) ?? app.state.models[0]?.id ?? ''; await store.setSetting('model', $<HTMLSelectElement>('model').value); pickerProvider(); app.queues.updateSend(); }
+    if (localPicked()) { $<HTMLSelectElement>('model').value = (await store.getSetting('sealedModel')) ?? app.connection.models[0]?.id ?? ''; await store.setSetting('model', $<HTMLSelectElement>('model').value); pickerProvider(); app.queues.updateSend(); }
     const est = await navigator.storage?.estimate?.().catch(() => null);
     app.state.status(`Transformers.js model removed.${est?.usage != null ? ` This site now uses ${mib(est.usage)} of storage.` : ''}`);
     renderLocalSettings();
@@ -286,7 +286,7 @@ export function createProvidersRegion(app: App): ProvidersRegion {
     const was = localhostPicked();
     await saveLocalhost(null);
     $('lh-steps').replaceChildren(); $<HTMLInputElement>('lh-url').value = '';
-    if (was) { $<HTMLSelectElement>('model').value = (await store.getSetting('sealedModel')) ?? app.state.models[0]?.id ?? ''; await store.setSetting('model', $<HTMLSelectElement>('model').value); pickerProvider(); app.queues.updateSend(); }
+    if (was) { $<HTMLSelectElement>('model').value = (await store.getSetting('sealedModel')) ?? app.connection.models[0]?.id ?? ''; await store.setSetting('model', $<HTMLSelectElement>('model').value); pickerProvider(); app.queues.updateSend(); }
     app.state.status('Localhost removed from this browser.' + (was ? ' The picker is back on a BayLeaf Sealed model.' : ''));
   };
   // A long wait for the first token is usually the server loading the model.

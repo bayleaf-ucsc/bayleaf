@@ -197,8 +197,8 @@ export function createCommandsRegion(app: App): CommandsRegion {
         trust: () => app.state.layout.open('trust'),
       };
       return {
-        provider: app.state.verified ? 'BayLeaf Sealed: encrypted to the enclave' : app.connection.offline ? 'BayLeaf Sealed: offline, nothing is sent' : 'BayLeaf Sealed: verifying the enclave',
-        detail: app.state.verified ? 'This session\'s model requests are encrypted in this page to an attested enclave; BayLeaf relays ciphertext. Tools run here, in the page.'
+        provider: app.connection.verified ? 'BayLeaf Sealed: encrypted to the enclave' : app.connection.offline ? 'BayLeaf Sealed: offline, nothing is sent' : 'BayLeaf Sealed: verifying the enclave',
+        detail: app.connection.verified ? 'This session\'s model requests are encrypted in this page to an attested enclave; BayLeaf relays ciphertext. Tools run here, in the page.'
           : 'Nothing is sent until the enclave verifies. There is no plaintext fallback.',
         grants: (await grantsFor(sid)).map((service) => ({ label: serviceName(service), revoke: async () => {
           await revoke(sid, service); app.state.status(`Pouch will ask again before ${serviceName(service)} in this session.`);
