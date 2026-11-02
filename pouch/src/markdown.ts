@@ -35,7 +35,11 @@ export function parseTarget(href: unknown, cwd = '/work'): LinkTarget | null {
     if (!/^https?:/i.test(s)) return null;
     try { const u = new URL(s); return { type: 'external', url: u.href, host: u.host }; } catch { return null; }
   }
-  let line: number | undefined, col: number | '' | undefined;
+  return pathTarget(s, cwd);
+}
+// A target already known to be a path (no scheme check), with its line suffix.
+export function pathTarget(href: string, cwd = '/work'): PathTarget | null {
+  let s = href, line: number | undefined, col: number | '' | undefined;
   const frag = s.match(/#L(\d+)(?:-L?\d+)?$/i);
   if (frag) line = Number(frag[1]);
   s = s.replace(/[?#].*$/, '');
@@ -163,9 +167,10 @@ export function renderMarkdown(text: string, ctx: MarkdownContext): Node[] {
       case 'inlineCode': {
         const c = el('code', null, n.value);
         if (!o.inLink && looksLikePath(n.value)) {
-          const t = parseTarget(n.value, ctx.cwd);
-          const k = t && ctx.kind((t as PathTarget).path);
-          if (k === 'file' || k === 'dir') return [fileLink(t as PathTarget, [c])];
+          // Parsed as a path: notes.md:12 is a file and line here, not a URL scheme.
+          const t = pathTarget(n.value, ctx.cwd);
+          const k = t && ctx.kind(t.path);
+          if (t && (k === 'file' || k === 'dir')) return [fileLink(t, [c])];
         }
         return [c];
       }
