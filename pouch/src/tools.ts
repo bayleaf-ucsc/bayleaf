@@ -670,7 +670,7 @@ The user can open any file in the editor and download any file or folder (as .zi
 When a result is worth seeing (a report, a file you changed, a folder of outputs), show it: bash \`show <path>\` puts it in front of the user (\`open\` is theirs). It opens now, or waits in the transcript with an Open button if they are busy; the one line it prints says which.
 When a visual report would help, write one self-contained .html file (inline CSS and JS, images as data: URLs; nothing loads from the network, and scripts are off unless the user turns them on), then show it or link it: it opens in the preview.
 Keep changes minimal: prefer edit over rewriting files, and do not reformat or restyle existing code unless asked (conventions apply to code you write). Be concise. Say what you changed.
-Replies render as markdown. Refer to files as markdown links like [app.js](/work/app.js) or [app.js:12](/work/app.js:12): they open in the user's editor.`;
+Replies render as markdown. Refer to files as markdown links like [app.js](/work/app.js) or [app.js:12](/work/app.js:12): they open in the user's editor. An \`\`\`openui-lang block in a reply renders as tables, charts and cards: read the ui-blocks skill before writing one.`;
   for (const a of agents) s += `\n\n<instructions source="${a.path}">\n${a.text.trim()}\n</instructions>`;
   if (skills.length) {
     s += '\n\n<skills>\nRead a skill\'s SKILL.md before acting on a task it covers. Skills not listed here can still be named: read /pouch/skills/<name>/SKILL.md or /work/.agents/skills/<name>/SKILL.md.\n';
