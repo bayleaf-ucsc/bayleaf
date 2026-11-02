@@ -30,10 +30,6 @@ export const OREAD = 0, OWRITE = 1, ORDWR = 2, OEXEC = 3, OTRUNC = 0x10, ORCLOSE
 const HEADER = 7; // size[4] type[1] tag[2]
 const IOHDR = 24; // a Rread/Twrite header and then some, the standard iounit slack
 
-// Message types and their fields, in wire order. Types: 1 2 4 8 (little-endian
-// integers), s (string: len[2] utf8), q (qid: type[1] vers[4] path[8]),
-// S (stat record, len[2] prefixed), d (data: count[4] bytes), W (wnames:
-// n[2] s*), Q (qids: n[2] q*).
 // The message shapes, keyed by type: the protocol boundary #143 plans to verify.
 export interface Qid { type: number; version: number; path: number }
 // A stat record. Optional fields get defaults when encoded; decoded ones are Required<NinepStat>.
@@ -67,29 +63,59 @@ type Shaped<K extends MessageType, Tag> = { [P in K]: { type: P } & Tag & Messag
 export type Message<K extends MessageType = MessageType> = Shaped<K, { tag: number }>;
 export type Untagged<K extends MessageType = MessageType> = Shaped<K, { tag?: number }>;
 
-const T = {
-  Tversion: [100, 'msize:4 version:s'], Rversion: [101, 'msize:4 version:s'],
-  Tauth: [102, 'afid:4 uname:s aname:s'], Rauth: [103, 'aqid:q'],
-  Tattach: [104, 'fid:4 afid:4 uname:s aname:s'], Rattach: [105, 'qid:q'],
-  Rerror: [107, 'ename:s'],
-  Tflush: [108, 'oldtag:2'], Rflush: [109, ''],
-  Twalk: [110, 'fid:4 newfid:4 wnames:W'], Rwalk: [111, 'qids:Q'],
-  Topen: [112, 'fid:4 mode:1'], Ropen: [113, 'qid:q iounit:4'],
-  Tcreate: [114, 'fid:4 name:s perm:4 mode:1'], Rcreate: [115, 'qid:q iounit:4'],
-  Tread: [116, 'fid:4 offset:8 count:4'], Rread: [117, 'data:d'],
-  Twrite: [118, 'fid:4 offset:8 data:d'], Rwrite: [119, 'count:4'],
-  Tclunk: [120, 'fid:4'], Rclunk: [121, ''],
-  Tremove: [122, 'fid:4'], Rremove: [123, ''],
-  Tstat: [124, 'fid:4'], Rstat: [125, 'stat:S'],
-  Twstat: [126, 'fid:4 stat:S'], Rwstat: [127, ''],
-} as const satisfies Record<MessageType, readonly [number, string]>;
-const NAMES = Object.fromEntries(Object.entries(T).map(([n, [code]]) => [code, n])) as Partial<Record<number, MessageType>>;
-const FIELDS = Object.fromEntries(Object.entries(T).map(([n, [, f]]) => [n, f ? f.split(' ').map((x) => x.split(':')) : []])) as Record<MessageType, string[][]>;
-
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
 // ── Codec ─────────────────────────────────────────────────────────────
+// One field kind on the wire, both ways. The spec table below gives each
+// message type its code and fields in wire order (an object's keys keep their
+// order), and tsc checks it against MessageFields: a field missing, extra or of
+// the wrong kind does not compile.
+interface Kind<V> { put(w: Writer, v: V): void; get(r: Reader): V }
+type Spec<F> = { readonly [N in keyof F]-?: Kind<F[N]> };
+const int = (n: 1 | 2 | 4 | 8): Kind<number> => ({ put: (w, v) => w.int(v, n), get: (r) => r.int(n) });
+const u8 = int(1), u16 = int(2), u32 = int(4), u64 = int(8);
+const str: Kind<string> = { put: (w, v) => w.str(v), get: (r) => r.str() };                 // len[2] utf8
+const qid: Kind<Qid> = { put: (w, v) => w.qid(v), get: (r) => r.qid() };                    // type[1] vers[4] path[8]
+const data: Kind<Uint8Array> = { put: (w, v) => { w.int(v.length, 4); w.bytes(v); }, get: (r) => r.bytes(r.int(4)) }; // count[4] bytes
+const many = <V>(k: Kind<V>): Kind<V[]> => ({ put: (w, v) => { w.int(v.length, 2); for (const x of v) k.put(w, x); }, get: (r) => Array.from({ length: r.int(2) }, () => k.get(r)) }); // n[2] then each
+// stat[n]: n[2], then the record, which carries its own size[2].
+const stat: Kind<NinepStat> = {
+  put: (w, v) => { const r = new Writer(); r.stat(v); w.int(r.n, 2); w.bytes(r.buf.subarray(0, r.n)); },
+  get: (r) => { r.int(2); return r.stat(); },
+};
+const SPEC: { readonly [K in MessageType]: readonly [code: number, fields: Spec<MessageFields[K]>] } = {
+  Tversion: [100, { msize: u32, version: str }], Rversion: [101, { msize: u32, version: str }],
+  Tauth: [102, { afid: u32, uname: str, aname: str }], Rauth: [103, { aqid: qid }],
+  Tattach: [104, { fid: u32, afid: u32, uname: str, aname: str }], Rattach: [105, { qid }],
+  Rerror: [107, { ename: str }],
+  Tflush: [108, { oldtag: u16 }], Rflush: [109, {}],
+  Twalk: [110, { fid: u32, newfid: u32, wnames: many(str) }], Rwalk: [111, { qids: many(qid) }],
+  Topen: [112, { fid: u32, mode: u8 }], Ropen: [113, { qid, iounit: u32 }],
+  Tcreate: [114, { fid: u32, name: str, perm: u32, mode: u8 }], Rcreate: [115, { qid, iounit: u32 }],
+  Tread: [116, { fid: u32, offset: u64, count: u32 }], Rread: [117, { data }],
+  Twrite: [118, { fid: u32, offset: u64, data }], Rwrite: [119, { count: u32 }],
+  Tclunk: [120, { fid: u32 }], Rclunk: [121, {}],
+  Tremove: [122, { fid: u32 }], Rremove: [123, {}],
+  Tstat: [124, { fid: u32 }], Rstat: [125, { stat }],
+  Twstat: [126, { fid: u32, stat }], Rwstat: [127, {}],
+};
+const keysOf = <O extends object>(o: O) => { const ks: Extract<keyof O, string>[] = []; for (const k in o) ks.push(k); return ks; };
+const NAMES = new Map(keysOf(SPEC).map((type) => [SPEC[type][0], type]));
+// The reply each request expects (Rerror aside), checked by the client.
+const REPLY: { readonly [K in TType]: ReplyOf<K> } = {
+  Tversion: 'Rversion', Tauth: 'Rauth', Tattach: 'Rattach', Tflush: 'Rflush', Twalk: 'Rwalk', Topen: 'Ropen',
+  Tcreate: 'Rcreate', Tread: 'Rread', Twrite: 'Rwrite', Tclunk: 'Rclunk', Tremove: 'Rremove', Tstat: 'Rstat', Twstat: 'Rwstat',
+};
+
+function put<F>(w: Writer, spec: Spec<F>, msg: F) { for (const name in spec) spec[name].put(w, msg[name]); }
+// Every field of F, though tsc sees only Partial<F>: decode's one cast completes it.
+function get<F>(r: Reader, spec: Spec<F>): Partial<F> {
+  const out: Partial<F> = {};
+  for (const name in spec) out[name] = spec[name].get(r);
+  return out;
+}
+
 class Writer {
   declare buf: Uint8Array<ArrayBuffer>; declare n: number;
   constructor() { this.buf = new Uint8Array(256); this.n = 0; }
@@ -133,22 +159,12 @@ class Reader {
   }
 }
 
-export function encode(msg: Untagged) {
-  const fields = FIELDS[msg.type];
-  if (!fields) throw new Error(`9P: unknown message type ${msg.type}`);
+export function encode<K extends MessageType>(msg: Untagged<K>) {
+  const spec = SPEC[msg.type];
+  if (!spec) throw new Error(`9P: unknown message type ${msg.type}`); // an untyped caller
   const w = new Writer();
-  w.int(0, 4); w.int(T[msg.type][0], 1); w.int(msg.tag ?? NOTAG, 2);
-  for (const [name, kind] of fields) {
-    // The field specs drive the codec, so each value is read untyped and cast to its kind.
-    const v = (msg as Record<string, unknown>)[name];
-    if (kind === 's') w.str(v as string);
-    else if (kind === 'q') w.qid(v as Qid);
-    else if (kind === 'S') { const r = new Writer(); r.stat(v as NinepStat); w.int(r.n, 2); w.bytes(r.buf.subarray(0, r.n)); } // stat[n]
-    else if (kind === 'd') { w.int((v as Uint8Array).length, 4); w.bytes(v as Uint8Array); }
-    else if (kind === 'W') { w.int((v as string[]).length, 2); for (const s of v as string[]) w.str(s); }
-    else if (kind === 'Q') { w.int((v as Qid[]).length, 2); for (const q of v as Qid[]) w.qid(q); }
-    else w.int((v as number | undefined) ?? 0, Number(kind));
-  }
+  w.int(0, 4); w.int(spec[0], 1); w.int(msg.tag ?? NOTAG, 2);
+  put(w, spec[1], msg);
   new DataView(w.buf.buffer).setUint32(0, w.n, true);
   return w.buf.slice(0, w.n);
 }
@@ -157,19 +173,9 @@ export function decode(bytes: Uint8Array | ArrayBuffer): Message {
   const r = new Reader(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
   const size = r.int(4);
   if (size !== r.b.length) throw new Error(`9P: size field ${size} but ${r.b.length} bytes`);
-  const type = NAMES[r.int(1)];
+  const type = NAMES.get(r.int(1));
   if (!type) throw new Error('9P: unknown message type');
-  const msg: Record<string, unknown> = { type, tag: r.int(2) };
-  for (const [name, kind] of FIELDS[type]) {
-    if (kind === 's') msg[name] = r.str();
-    else if (kind === 'q') msg[name] = r.qid();
-    else if (kind === 'S') { r.int(2); msg[name] = r.stat(); } // stat[n]: n[2] then the record (which has its own size)
-    else if (kind === 'd') msg[name] = r.bytes(r.int(4));
-    else if (kind === 'W') msg[name] = Array.from({ length: r.int(2) }, () => r.str());
-    else if (kind === 'Q') msg[name] = Array.from({ length: r.int(2) }, () => r.qid());
-    else msg[name] = r.int(Number(kind));
-  }
-  return msg as Message; // the field specs of `type` filled it in
+  return { type, tag: r.int(2), ...get(r, SPEC[type][1]) } as Message; // the spec for `type` read every field
 }
 
 // Packed stat records, as a directory read returns them.
@@ -188,11 +194,20 @@ const qidOf = (p: string, st: ServedStat): Qid => ({ type: st.isDirectory ? QTDI
 function statOf(p: string, st: ServedStat): NinepStat {
   const ro = (st.mode ?? 0o644) & 0o222 ? 0 : 1;
   return { qid: qidOf(p, st), mode: ((st.isDirectory ? DMDIR | 0o755 : 0o644) & ~(ro ? 0o222 : 0)) >>> 0, atime: 0,
-    mtime: Math.floor((+st.mtime || 0) / 1000) >>> 0, length: st.isDirectory ? 0 : st.size ?? 0, name: p === '/' ? '/' : p.split('/').pop()! };
+    mtime: Math.floor((+st.mtime || 0) / 1000) >>> 0, length: st.isDirectory ? 0 : st.size ?? 0, name: p === '/' ? '/' : base(p) };
 }
+const base = (p: string) => p.slice(p.lastIndexOf('/') + 1);
 const errno = (e: unknown) => codeOf(e) ?? 'EIO';
+const messageOf = (e: unknown) => String(typeof e === 'object' && e && 'message' in e && e.message != null ? e.message : e);
 // A Rerror string: the errno first so the client can rebuild a Node-style error.
-const ename = (e: unknown) => { const m = String((e as Error | undefined)?.message ?? e); return /^E[A-Z]+:/.test(m) ? m : `${errno(e)}: ${m}`; };
+const ename = (e: unknown) => { const m = messageOf(e); return /^E[A-Z]+:/.test(m) ? m : `${errno(e)}: ${m}`; };
+// The frame a message carries: a MessagePort wraps it in an event, a direct transport hands it over bare.
+function frameOf(e: unknown): Uint8Array {
+  const d = (typeof e === 'object' && e && 'data' in e ? e.data : null) ?? e;
+  if (d instanceof ArrayBuffer) return new Uint8Array(d);
+  if (ArrayBuffer.isView(d)) return new Uint8Array(d.buffer, d.byteOffset, d.byteLength);
+  throw new Error('9P: a message that is not bytes');
+}
 
 // ── Server ────────────────────────────────────────────────────────────
 // A MessagePort-shaped transport. Handlers get a MessageEvent, or the raw
@@ -218,10 +233,11 @@ export interface ServeOptions {
 // flushAll answers every request in flight with Rerror and refuses new ones
 // (Stop), close() also drops fids.
 export interface NinepServer { flushAll(reason?: string): void; close(): void }
-// One fid's server-side state; the directory cursor (entries, next, at) is set by the first read.
+// One fid's server-side state. data: the whole file, set at an open for writing (or the first read);
+// the directory cursor (packed entries, the next one, its offset) is set by the first read.
 interface ServedFid {
   path: string; open?: boolean; mode?: number; dir?: boolean; data?: Uint8Array; dirty?: boolean; rclose?: boolean;
-  stream?: FileStream | null; pending?: Uint8Array; entries?: Uint8Array[]; next?: number; at?: number;
+  stream?: FileStream | null; pending?: Uint8Array; cursor?: { entries: Uint8Array[]; next: number; at: number };
 }
 interface InFlight { flushed: boolean; ac: AbortController }
 type Reply = Untagged<RType>;
@@ -232,15 +248,14 @@ export function serve(port: NinepPort, fs: ServedFs, { root = '/', msize: max = 
   const live = new Map<number, InFlight>(); // by tag
   let msize = max, stopped: string | null = null;
   const full = (p: string) => join(root, p);
-  // A write always carries bytes; only a remove passes null.
-  const write = commit ?? ((p: string, b: Uint8Array | null, op: CommitOp) => (op === 'remove' ? fs.rm(p) : fs.writeFile(p, b!)));
-  const land = async (p: string, b: Uint8Array | null, op: CommitOp) => { await write(full(p), b, op); onCommit?.(full(p), op); };
+  // A change lands as a write of bytes, or a remove (null).
+  const write = commit ?? ((p: string, b: Uint8Array | null) => (b === null ? fs.rm(p) : fs.writeFile(p, b)));
+  const land = async (p: string, b: Uint8Array | null) => { const op = b === null ? 'remove' : 'write'; await write(full(p), b, op); onCommit?.(full(p), op); };
   const send = (m: Untagged) => { const b = encode(m); port.postMessage(b.buffer, [b.buffer]); };
   const err = (code: string, text: string) => Object.assign(new Error(`${code}: ${text}`), { code });
 
   async function handle(m: Message, t: InFlight): Promise<Reply> {
-    // Called only in cases whose message has a fid.
-    const fid = (n = (m as Message<'Tclunk'>).fid) => { const f = fids.get(n); if (!f) throw err('EBADF', 'unknown fid'); return f; };
+    const fid = (n: number) => { const f = fids.get(n); if (!f) throw err('EBADF', 'unknown fid'); return f; };
     switch (m.type) {
       case 'Tversion': {
         msize = Math.min(max, m.msize);
@@ -260,7 +275,7 @@ export function serve(port: NinepPort, fs: ServedFs, { root = '/', msize: max = 
         return { type: 'Rflush' };
       }
       case 'Twalk': {
-        const f = fid();
+        const f = fid(m.fid);
         if (f.open) throw err('EBADF', 'walk from an open fid');
         if (m.newfid !== m.fid && fids.has(m.newfid)) throw err('EBADF', 'newfid in use');
         let p = f.path;
@@ -277,7 +292,7 @@ export function serve(port: NinepPort, fs: ServedFs, { root = '/', msize: max = 
         return { type: 'Rwalk', qids };
       }
       case 'Topen': case 'Tcreate': {
-        const f = fid();
+        const f = fid(m.fid);
         if (f.open) throw err('EBADF', 'fid already open');
         let p = f.path, st;
         if (m.type === 'Tcreate') {
@@ -305,25 +320,26 @@ export function serve(port: NinepPort, fs: ServedFs, { root = '/', msize: max = 
         return { type: m.type === 'Tcreate' ? 'Rcreate' : 'Ropen', qid: qidOf(p, st), iounit: msize - IOHDR };
       }
       case 'Tread': {
-        const f = fid();
+        const f = fid(m.fid);
         if (!f.open || f.mode === OWRITE) throw err('EBADF', 'fid not open for reading');
         const count = Math.min(m.count, msize - IOHDR);
         if (f.dir) {
           // Directory reads return whole stat records; offset 0 restarts.
-          if (m.offset === 0 || !f.entries) {
+          if (m.offset === 0 || !f.cursor) {
             const ds = await fs.readdirWithFileTypes(full(f.path));
-            f.entries = await Promise.all(ds.map(async (d) => {
+            const entries = await Promise.all(ds.map(async (d) => {
               const p = join(f.path, d.name);
               const st = await fs.stat(full(p)).catch(() => ({ isDirectory: d.isDirectory, isFile: d.isFile, size: 0, mtime: 0 }));
               return packStats([statOf(p, st)]);
             }));
-            f.next = 0; f.at = 0;
+            f.cursor = { entries, next: 0, at: 0 };
           }
-          if (m.offset !== f.at) throw err('EINVAL', 'bad offset in directory read');
+          const c = f.cursor;
+          if (m.offset !== c.at) throw err('EINVAL', 'bad offset in directory read');
           const out: Uint8Array[] = [];
           let n = 0;
-          while (f.next! < f.entries.length && n + f.entries[f.next!].length <= count) { out.push(f.entries[f.next!]); n += f.entries[f.next!++].length; }
-          f.at! += n;
+          while (c.next < c.entries.length && n + c.entries[c.next].length <= count) { out.push(c.entries[c.next]); n += c.entries[c.next++].length; }
+          c.at += n;
           const data = new Uint8Array(n); let o = 0;
           for (const b of out) { data.set(b, o); o += b.length; }
           return { type: 'Rread', data };
@@ -339,33 +355,33 @@ export function serve(port: NinepPort, fs: ServedFs, { root = '/', msize: max = 
         return { type: 'Rread', data: f.data.slice(m.offset, m.offset + count) };
       }
       case 'Twrite': {
-        const f = fid();
-        if (!f.open || (f.mode !== OWRITE && f.mode !== ORDWR) || f.dir) throw err('EBADF', 'fid not open for writing');
-        const end = m.offset + m.data.length;
+        const f = fid(m.fid);
         // Open for writing means data was set at open or create.
-        if (end > f.data!.length) { const b = new Uint8Array(end); b.set(f.data!); f.data = b; }
-        f.data!.set(m.data, m.offset);
+        if (!f.open || (f.mode !== OWRITE && f.mode !== ORDWR) || f.dir || !f.data) throw err('EBADF', 'fid not open for writing');
+        const end = m.offset + m.data.length;
+        if (end > f.data.length) { const b = new Uint8Array(end); b.set(f.data); f.data = b; }
+        f.data.set(m.data, m.offset);
         f.dirty = true;
         return { type: 'Rwrite', count: m.data.length };
       }
       case 'Tclunk': case 'Tremove': {
-        const f = fid();
+        const f = fid(m.fid);
         fids.delete(m.fid); // the fid is gone whatever happens next (9P rule)
-        if (m.type === 'Tremove' || f.rclose) await land(f.path, null, 'remove');
-        else if (f.dirty) await land(f.path, f.data!, 'write');
+        if (m.type === 'Tremove' || f.rclose) await land(f.path, null);
+        else if (f.dirty && f.data) await land(f.path, f.data); // dirty: written since an open that set data
         return { type: m.type === 'Tremove' ? 'Rremove' : 'Rclunk' };
       }
       case 'Tstat': {
-        const f = fid();
+        const f = fid(m.fid);
         return { type: 'Rstat', stat: statOf(f.path, await fs.stat(full(f.path))) };
       }
       case 'Twstat': {
         // Only what Pouch's stores can do: truncate (length) and rename within a folder.
-        const f = fid(), s = m.stat;
+        const f = fid(m.fid), s = m.stat;
         if (s.length !== 0xffffffffffffffff && Number.isSafeInteger(s.length) && s.length >= 0 && s.length < 2 ** 52) {
           const b = await fs.readFileBuffer(full(f.path)).catch(() => new Uint8Array());
           const out = new Uint8Array(s.length); out.set(b.subarray(0, s.length));
-          await land(f.path, out, 'write');
+          await land(f.path, out);
         }
         if (s.name && s.name !== f.path.split('/').pop()) {
           const to = join(normalize(f.path + '/..'), s.name);
@@ -380,7 +396,7 @@ export function serve(port: NinepPort, fs: ServedFs, { root = '/', msize: max = 
 
   port.onmessage = async (e) => {
     let m: Message;
-    try { m = decode(new Uint8Array((e.data ?? e) as ArrayBuffer)); } catch (x) { return send({ type: 'Rerror', tag: NOTAG, ename: `EINVAL: ${(x as Error).message}` }); }
+    try { m = decode(frameOf(e)); } catch (x) { return send({ type: 'Rerror', tag: NOTAG, ename: `EINVAL: ${messageOf(x)}` }); }
     if (stopped) return send({ type: 'Rerror', tag: m.tag, ename: stopped });
     const t = { flushed: false, ac: new AbortController() };
     if (m.type !== 'Tflush') live.set(m.tag, t);
@@ -405,8 +421,11 @@ export function serve(port: NinepPort, fs: ServedFs, { root = '/', msize: max = 
 
 // ── Client ────────────────────────────────────────────────────────────
 // One connection: tags, fids, msize. call() resolves with the R-message or
-// rejects with an Error whose message is the Rerror string (code first).
+// rejects with an Error whose message is the Rerror string (code first). A
+// reply of another type than the request's (an Rread to a Twalk) rejects with
+// EPROTO: the server is broken or hostile, and its fields would be misread.
 interface Waiter { resolve(m: Message): void; reject(e: Error): void }
+const isReply = <K extends TType>(m: Message, want: ReplyOf<K>): m is Message & Message<ReplyOf<K>> => m.type === want;
 export class Client {
   declare port: NinepPort; declare msize: number; declare tags: Map<number, Waiter>; declare nextTag: number;
   declare nextFid: number; declare freeFids: number[]; declare closed?: boolean; declare root: number;
@@ -414,7 +433,7 @@ export class Client {
     this.port = port; this.msize = msize; this.tags = new Map(); this.nextTag = 0; this.nextFid = 1; this.freeFids = [];
     port.onmessage = (e) => {
       let m: Message;
-      try { m = decode(new Uint8Array((e.data ?? e) as ArrayBuffer)); } catch (x) { return this.fail(new Error((x as Error).message)); }
+      try { m = decode(frameOf(e)); } catch (x) { return this.fail(new Error(messageOf(x))); }
       const w = this.tags.get(m.tag);
       if (!w) return; // an answer to a flushed request
       this.tags.delete(m.tag);
@@ -425,14 +444,15 @@ export class Client {
   fail(e: Error) { for (const w of this.tags.values()) w.reject(e); this.tags.clear(); }
   tag() { for (;;) { const t = this.nextTag; this.nextTag = (this.nextTag + 1) % NOTAG; if (!this.tags.has(t)) return t; } }
   fid() { return this.freeFids.pop() ?? this.nextFid++; }
-  // The reply is trusted to match the request: the codec does not check that an Rread answers a Tread.
   call<K extends TType>(msg: Untagged<K>, { signal }: { signal?: AbortSignal } = {}): Promise<Message<ReplyOf<K>>> {
     if (this.closed) return Promise.reject(Object.assign(new Error('EPIPE: 9P connection closed'), { code: 'EPIPE' }));
     if (signal?.aborted) return Promise.reject(Object.assign(new Error('EINTR: interrupted (stopped)'), { code: 'EINTR' }));
     const tag = msg.type === 'Tversion' ? NOTAG : this.tag();
     return new Promise<Message<ReplyOf<K>>>((resolve, reject) => {
-      this.tags.set(tag, { resolve: resolve as (m: Message) => void, reject });
-      const b = encode({ ...msg, tag } as Untagged);
+      const want: ReplyOf<K> = REPLY[msg.type];
+      this.tags.set(tag, { reject, resolve: (m) => isReply(m, want) ? resolve(m)
+        : reject(Object.assign(new Error(`EPROTO: 9P ${m.type} in reply to ${msg.type}`), { code: 'EPROTO' })) });
+      const b = encode({ ...msg, tag });
       this.port.postMessage(b.buffer, [b.buffer]);
       // Stop: send Tflush, give up on the answer (9P: the server may still finish it).
       signal?.addEventListener('abort', () => {
@@ -514,7 +534,7 @@ export class NinepFs extends BaseFs {
   async readdir(path: string) { return (await this.readdirWithFileTypes(path)).map((d) => d.name); }
   async writeFile(path: string, content: string | Uint8Array) {
     const bytes = typeof content === 'string' ? enc.encode(content) : content;
-    const p = normalize(path), name = p.split('/').pop()!;
+    const p = normalize(path), name = base(p);
     const fid = await this.c.walk(p, this.signal).catch((e) => (e.code === 'ENOENT' ? null : Promise.reject(e)));
     if (fid != null) {
       try { await this.c.call({ type: 'Topen', fid, mode: OWRITE | OTRUNC }, { signal: this.signal }); await this.c.writeAll(fid, bytes, this.signal); }
@@ -536,7 +556,7 @@ export class NinepFs extends BaseFs {
       if (await this.exists(p)) return;
       if (p !== '/') await this.mkdir(normalize(p + '/..'), options);
     }
-    await this.with(normalize(p + '/..'), (dfid) => this.c.call({ type: 'Tcreate', fid: dfid, name: p.split('/').pop()!, perm: DMDIR | 0o755, mode: OREAD }, { signal: this.signal }));
+    await this.with(normalize(p + '/..'), (dfid) => this.c.call({ type: 'Tcreate', fid: dfid, name: base(p), perm: DMDIR | 0o755, mode: OREAD }, { signal: this.signal }));
   }
   async rm(path: string, options?: { recursive?: boolean; force?: boolean }): Promise<void> {
     const st = await this.stat(path).catch((e) => { if (options?.force && e.code === 'ENOENT') return null; throw e; });

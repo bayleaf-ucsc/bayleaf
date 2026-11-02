@@ -35,7 +35,9 @@ export const refOf = <R extends { ref?: Handle }>(l: readonly R[], c: R): Handle
 export const findChild = <R extends { ref?: Handle; id: unknown }>(l: readonly R[], ref: unknown): R | undefined =>
   l.find((x) => refOf(l, x) === asRef(ref)) ?? l.find((x) => String(x.id) === String(ref));
 // A stored label ("main (s1)", "chair (s2)") with its handles upgraded.
-export const relabel = <T>(t: T): T => (typeof t === 'string' ? t.replace(/\(s(\d+)\)/g, '(a$1)') as T : t);
+export function relabel(t: string): string;
+export function relabel<T>(t: T): T extends string ? string : T;
+export function relabel(t: unknown): unknown { return typeof t === 'string' ? t.replace(/\(s(\d+)\)/g, '(a$1)') : t; }
 const rekey = <V>(o: Record<string, V> | undefined) => (o ? Object.fromEntries(Object.entries(o).map(([k, v]) => [asRef(k), v])) : o);
 // Stored data: anything that is not an array passes through untouched.
 export function migrateRows<R extends HandleRow>(l: R[]): R[] {
@@ -73,7 +75,7 @@ export function createScope() {
     if (!holds.has(h)) return;
     holds.delete(h);
     clearTimeout(h.timer);
-    h.signal?.removeEventListener('abort', h.onAbort!);
+    if (h.onAbort) h.signal?.removeEventListener('abort', h.onAbort);
     h.resolve(result);
   }
 
@@ -93,7 +95,8 @@ export function createScope() {
     // Refund an admitted message that could not be delivered after all.
     undo(from: Handle, to: Handle) {
       const k = [from, to].sort().join('|');
-      if (pairs.get(k)) { pairs.set(k, pairs.get(k)! - 1); total--; }
+      const n = pairs.get(k);
+      if (n) { pairs.set(k, n - 1); total--; }
     },
     // `from` messaged `to` while `to` had produced `seq` results.
     markSent(from: Handle, to: Handle, seq: number) { sent.set(`${from}>${to}`, seq); },

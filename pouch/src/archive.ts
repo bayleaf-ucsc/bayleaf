@@ -123,7 +123,9 @@ function crc32(data: Uint8Array) {
   return (c ^ 0xffffffff) >>> 0;
 }
 async function through(stream: CompressionStream | DecompressionStream, data: Uint8Array) {
-  return new Uint8Array(await new Response(new Blob([data as Uint8Array<ArrayBuffer>]).stream().pipeThrough(stream)).arrayBuffer());
+  // A Blob takes no view of shared memory: a copy if it is one.
+  const plain = data.buffer instanceof ArrayBuffer ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : data.slice();
+  return new Uint8Array(await new Response(new Blob([plain]).stream().pipeThrough(stream)).arrayBuffer());
 }
 
 export async function packZip(entries: ArchiveEntry[]) {
@@ -198,7 +200,7 @@ export function archiveCommands(defineCommand: typeof DefineCommand) {
   const ok = (stdout = '') => ({ stdout, stderr: '', exitCode: 0 });
   const fail = (msg: string) => ({ stdout: '', stderr: msg + '\n', exitCode: 1 });
   const abs = (ctx: { cwd: string }, p: string) => normalize(p.startsWith('/') ? p : ctx.cwd + '/' + p);
-  const relOf = (p: string) => normalize(p).split('/').pop()!;
+  const relOf = (p: string) => { const n = normalize(p); return n.slice(n.lastIndexOf('/') + 1); };
 
   const zip = defineCommand('zip', async (args, ctx) => {
     const a = args.filter((x) => x !== '-r' && x !== '-q');
@@ -221,7 +223,7 @@ export function archiveCommands(defineCommand: typeof DefineCommand) {
     const file = a.find((x, i) => d < 0 || (i !== d && i !== d + 1));
     if (!file) return fail('usage: unzip [-l] FILE.zip [-d DIR]');
     let entries: ArchiveEntry[];
-    try { entries = await unpackZip(await ctx.fs.readFileBuffer(abs(ctx, file))); } catch (e) { return fail(`unzip: ${(e as Error).message}`); }
+    try { entries = await unpackZip(await ctx.fs.readFileBuffer(abs(ctx, file))); } catch (e) { return fail(`unzip: ${e instanceof Error ? e.message : String(e)}`); }
     if (list) return ok(entries.map((e) => (e.dir ? e.path + '/' : `${e.data.length}\t${e.path}`)).join('\n') + '\n');
     const written = await extract(ctx.fs, dest, entries);
     return ok(`extracted ${written.length} files into ${dest}\n`);

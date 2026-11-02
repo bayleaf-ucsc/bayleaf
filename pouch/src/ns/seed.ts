@@ -6,6 +6,8 @@
 import { BaseFs, fsError, normalize, type DirEntry, type FileStat } from './namespace.ts';
 import { unpackTar, unpackZip, type ArchiveEntry } from '../archive.ts';
 
+const base = (p: string): string => p.slice(p.lastIndexOf('/') + 1);
+
 export class SeedFs extends BaseFs {
   declare name: string;
   declare files: Map<string, Uint8Array>;
@@ -23,18 +25,18 @@ export class SeedFs extends BaseFs {
       const rel = strip ? e.path.replace(/^\/*[^/]+/, '') : e.path;
       const p = normalize(rel);
       if (p === '/') continue;
-      this.addDir(normalize(p + '/..'));
-      this.dirs.get(normalize(p + '/..'))!.add(p.split('/').pop()!);
+      this.addDir(normalize(p + '/..')).add(base(p));
       if (e.dir) this.addDir(p); else this.files.set(p, e.data);
     }
   }
-  addDir(p: string): void {
-    if (this.dirs.has(p)) return;
-    this.dirs.set(p, new Set());
-    if (p === '/') return;
-    const up = normalize(p + '/..');
-    this.addDir(up);
-    this.dirs.get(up)!.add(p.split('/').pop()!);
+  // The folder's child names, made (with its parents) if new.
+  addDir(p: string): Set<string> {
+    const had = this.dirs.get(p);
+    if (had) return had;
+    const kids = new Set<string>();
+    this.dirs.set(p, kids);
+    if (p !== '/') this.addDir(normalize(p + '/..')).add(base(p));
+    return kids;
   }
   get size(): number { return this.files.size; }
 

@@ -63,19 +63,23 @@ export interface FileServer {
   openStream?(path: string): FileStream | null;
 }
 export type FsError = Error & { code: string };
-type Errorish = { code?: string; message?: unknown } | null | undefined;
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
 // just-bash expects Node-style errors ("ENOENT: ...") and sometimes reads .code.
+const ERRORS: Partial<Record<string, string>> = { ENOENT: 'no such file or directory', EEXIST: 'file already exists', ENOTDIR: 'not a directory',
+  EISDIR: 'illegal operation on a directory', EROFS: 'read-only file system', ENOTSUP: 'operation not supported',
+  ENOTEMPTY: 'directory not empty', EINVAL: 'invalid argument', EBUSY: 'resource busy' };
 export function fsError(code: string, op: string, path: string, why?: string): FsError {
-  const text = why ?? ({ ENOENT: 'no such file or directory', EEXIST: 'file already exists', ENOTDIR: 'not a directory',
-    EISDIR: 'illegal operation on a directory', EROFS: 'read-only file system', ENOTSUP: 'operation not supported',
-    ENOTEMPTY: 'directory not empty', EINVAL: 'invalid argument', EBUSY: 'resource busy' } as Record<string, string | undefined>)[code];
-  return Object.assign(new Error(`${code}: ${text}, ${op} '${path}'`), { code });
+  return Object.assign(new Error(`${code}: ${why ?? ERRORS[code]}, ${op} '${path}'`), { code });
 }
-export const codeOf = (e: unknown): string | undefined => (e as Errorish)?.code ?? String((e as Errorish)?.message ?? '').match(/^(E[A-Z]+)/)?.[1];
+// An error's errno: its string code (a DOMException's numeric one is not an errno), else one leading its message.
+export const codeOf = (e: unknown): string | undefined => {
+  if (typeof e !== 'object' || !e) return undefined;
+  if ('code' in e && typeof e.code === 'string') return e.code;
+  return 'message' in e ? String(e.message ?? '').match(/^(E[A-Z]+)/)?.[1] : undefined;
+};
 
 export function normalize(path: string): string {
   const out: string[] = [];
@@ -112,11 +116,12 @@ export abstract class BaseFs implements FileServer {
     if (e === 'latin1' || e === 'binary') return Array.from(bytes, (b) => String.fromCharCode(b)).join('');
     return dec.decode(bytes);
   }
-  async appendFile(path: string, content: FileContent, options?: EncodingOption): Promise<void> {
+  // unknown: a control file's appendFile hands back its writeFile's receipt.
+  async appendFile(path: string, content: FileContent, options?: EncodingOption): Promise<unknown> {
     const old = (await this.exists(path)) ? await this.readFileBuffer(path) : new Uint8Array();
     const add = toBytes(content, encodingOf(options));
     const both = new Uint8Array(old.length + add.length); both.set(old); both.set(add, old.length);
-    await this.writeFile(path, both);
+    return this.writeFile(path, both);
   }
   async exists(path: string): Promise<boolean> { try { await this.stat(path); return true; } catch { return false; } }
   lstat(path: string): Promise<FileStat> { return this.stat(path); }
@@ -144,7 +149,7 @@ export abstract class BaseFs implements FileServer {
 }
 
 // A missing path is the only error that moves lookup on to the next member.
-const missing = (e: unknown): boolean => ['ENOENT', 'ENOTDIR'].includes(codeOf(e)!);
+const missing = (e: unknown): boolean => { const c = codeOf(e); return c === 'ENOENT' || c === 'ENOTDIR'; };
 
 // One member of a mount point: a file server seen from `root` inside it.
 export interface Member { fs: FileServer; root: string; readOnly: boolean; label: string }
@@ -294,10 +299,11 @@ export class Namespace extends BaseFs {
     const pp = normalize(t.p + '/..');
     if (pp !== t.p && !(await t.e.fs.stat(pp).then(() => true, () => false))) await t.e.fs.mkdir(pp, { recursive: true });
   }
-  unwhite(point: string, rel: string): boolean {
+  // Forget a whiteout at rel; the mount's whiteouts if there was one, else null.
+  unwhite(point: string, rel: string): Whiteouts | null {
     const w = this.wh.get(point);
-    if (w?.paths.delete(rel)) { w.save([...w.paths]); return true; }
-    return false;
+    if (w?.paths.delete(rel)) { w.save([...w.paths]); return w; }
+    return null;
   }
   // The common case, one member and no whiteouts: hand the call straight on,
   // so a plain mount costs one table lookup and keeps the store's own errors.
@@ -339,10 +345,9 @@ export class Namespace extends BaseFs {
     }
     // Recreating a whited-out folder: it starts empty (an opaque directory),
     // so the read-only members' old children stay hidden.
-    const was = this.unwhite(t.point, t.rel);
+    const w = this.unwhite(t.point, t.rel);
     await t.e.fs.mkdir(t.p, { recursive: !!options?.recursive });
-    if (was) {
-      const w = this.wh.get(t.point)!; // unwhite found it
+    if (w) {
       for (const e of this.layers(path).entries) if (e.readOnly) {
         for (const n of await e.fs.readdir(join(e.root, t.rel)).catch(() => [])) w.paths.add(join(t.rel, n));
       }
@@ -363,7 +368,7 @@ export class Namespace extends BaseFs {
     const w = this.wh.get(point);
     if (lower.length && !w) throw fsError('EROFS', 'rm', path, 'it comes from a read-only layer');
     for (const m of have) if (!m.e.readOnly) await m.e.fs.rm(m.p, { recursive: true, force: true });
-    if (lower.length) { w!.paths.add(rel); w!.save([...w!.paths]); }
+    if (lower.length && w) { w.paths.add(rel); w.save([...w.paths]); } // w: checked above
   }
   // The stored spelling of `path` (or of its folders, for a new name) when it differs only in Unicode
   // normalization ("café" typed precomposed, NFC, stored decomposed, NFD, as
@@ -372,7 +377,7 @@ export class Namespace extends BaseFs {
   async spell(path: string): Promise<string | null> {
     const p = normalize(path);
     if (p === '/' || ascii(p)) return null;
-    const parent = normalize(p + '/..'), name = p.split('/').pop()!;
+    const parent = normalize(p + '/..'), name = p.slice(p.lastIndexOf('/') + 1);
     const dir = (await this.spell(parent)) ?? parent;
     const names = await this.readdir(dir).catch((): string[] => []);
     // A new name keeps its own spelling, under its folder's stored one.
@@ -396,22 +401,20 @@ const ascii = (s: string): boolean => !/[^\x00-\x7f]/.test(s);
 const exactly = Namespace.prototype.stat; // without the fallback
 const stored = async (ns: Namespace, path: string): Promise<string> =>
   ascii(String(path)) || (await exactly.call(ns, path).catch(() => null)) ? path : ((await ns.spell(path)) ?? path);
-// The wrappers replace methods by name, which the class's types cannot follow.
-type PathMethods = Record<string, (this: Namespace, path: string, ...a: unknown[]) => Promise<unknown>>;
-for (const op of ['stat', 'readFileBuffer', 'readdirWithFileTypes']) {
-  const f = (Namespace.prototype as unknown as PathMethods)[op];
-  (Namespace.prototype as unknown as PathMethods)[op] = async function (path, ...a) {
-    try { return await f.call(this, path, ...a); } catch (e) {
-      const alt = missing(e) && !ascii(String(path)) ? await this.spell(path) : null;
-      if (!alt) throw e;
-      return f.call(this, alt, ...a).catch((e2) => { throw missing(e2) ? e : e2; });
-    }
-  };
-}
-for (const op of ['writeFile', 'mkdir', 'rm']) {
-  const f = (Namespace.prototype as unknown as PathMethods)[op];
-  (Namespace.prototype as unknown as PathMethods)[op] = async function (path, ...a) { return f.call(this, await stored(this, path), ...a); };
-}
+type PathMethod<A extends unknown[], R> = (this: Namespace, path: string, ...a: A) => Promise<R>;
+// A read that misses tries the stored spelling.
+const spelled = <A extends unknown[], R>(f: PathMethod<A, R>): PathMethod<A, R> => async function (path, ...a) {
+  try { return await f.call(this, path, ...a); } catch (e) {
+    const alt = missing(e) && !ascii(String(path)) ? await this.spell(path) : null;
+    if (!alt) throw e;
+    return f.call(this, alt, ...a).catch((e2) => { throw missing(e2) ? e : e2; });
+  }
+};
+// A change resolves the stored spelling first.
+const resolved = <A extends unknown[], R>(f: PathMethod<A, R>): PathMethod<A, R> => async function (path, ...a) { return f.call(this, await stored(this, path), ...a); };
+const proto = Namespace.prototype;
+proto.stat = spelled(proto.stat); proto.readFileBuffer = spelled(proto.readFileBuffer); proto.readdirWithFileTypes = spelled(proto.readdirWithFileTypes);
+proto.writeFile = resolved(proto.writeFile); proto.mkdir = resolved(proto.mkdir); proto.rm = resolved(proto.rm);
 // A rename that changes only the normalization ("café" NFD to NFC) resolves
 // both ends to the same stored file, so copy-then-remove would delete it; it
 // goes through a temporary name instead.
@@ -432,8 +435,8 @@ Namespace.prototype.mv = async function (src: string, dest: string) {
 // scratch file server is given. specs: ['/work', '/pouch:ro', ...].
 export function parseSpecs(specs: string[]): CapabilitySpec[] {
   return specs.map((s) => {
-    const m = String(s).trim().match(/^(.*?)(?::(ro|rw))?$/)!; // always matches
-    return { path: normalize(m[1]), readOnly: m[2] === 'ro' };
+    const t = String(s).trim(), m = /:(ro|rw)$/.exec(t);
+    return { path: normalize(m ? t.slice(0, m.index) : t), readOnly: m?.[1] === 'ro' };
   });
 }
 export function subset(parent: Namespace, specs: string[], { scratch, emptyRoot }: { scratch?: FileServer | null; emptyRoot?: FileServer } = {}): Namespace {

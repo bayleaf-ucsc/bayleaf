@@ -131,6 +131,22 @@ await test('client Tflush on abort', async () => {
   close();
 });
 
+await test('client rejects a reply of the wrong type (EPROTO)', async () => {
+  // A broken server: answers version and attach, then every request with an Rread.
+  const { port1, port2 } = new MessageChannel();
+  port1.onmessage = (e) => {
+    const m = decode(e.data);
+    const r = m.type === 'Tversion' ? { type: 'Rversion', tag: m.tag, msize: m.msize, version: '9P2000' }
+      : m.type === 'Tattach' ? { type: 'Rattach', tag: m.tag, qid } : { type: 'Rread', tag: m.tag, data: new Uint8Array([1]) };
+    const b = encode(r); port1.postMessage(b.buffer, [b.buffer]);
+  };
+  const client = await new Client(port2).connect();
+  const e = await rejects(client.call({ type: 'Twalk', fid: client.root, newfid: 9, wnames: [] }), 'EPROTO');
+  assert.match(e.message, /Rread in reply to Twalk/);
+  await rejects(new NinepFs(client).stat('/'), 'EPROTO');
+  client.close(); port1.close();
+});
+
 await test('1k-file listing and startup over 9P', async () => {
   const ns = new Namespace();
   const m = new InMemoryFs();
