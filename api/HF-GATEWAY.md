@@ -117,7 +117,9 @@ Download behaviour:
   operator account's approval is not redistribution permission for everyone. Each
   future gated release needs its own terms review, and must not be unlocked for all
   callers merely because the token can read it.
-- **Sufficiency cap.** One release today (~1.1 GB). Downloads cost R2 reads ($0.36
+- **Sufficiency cap.** Two releases (~2.38 GB): LFM3 1.7B (~1.1 GB) and, proposed on
+  the `pouch-parakeet` branch, Parakeet TDT 0.6B v3 (~1.28 GB: fp16 encoder and
+  decoder, vocabulary, config, README and ATTRIBUTION; CC-BY-4.0). Downloads cost R2 reads ($0.36
   per million; a 20 MiB-ranged 1 GB download is about 52) and Worker requests. Add a
   per-IP rate-limit binding if abuse appears; none is needed at birth.
 

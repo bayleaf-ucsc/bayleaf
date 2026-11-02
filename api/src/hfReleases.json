@@ -120,6 +120,94 @@
           "lfs": false
         }
       ]
+    },
+    {
+      "repo": "ysdede/parakeet-tdt-0.6b-v3-onnx",
+      "revision": "e5356bf6e24bdb7a269536b0e9e7869bc034b893",
+      "aliases": [
+        "main"
+      ],
+      "title": "Parakeet TDT 0.6B v3 (ONNX, fp16)",
+      "base_model": "nvidia/parakeet-tdt-0.6b-v3",
+      "task": "automatic-speech-recognition",
+      "library": "parakeet.js",
+      "architecture": "nemo-conformer-tdt",
+      "formats": [
+        "onnx"
+      ],
+      "variants": [
+        {
+          "name": "fp16",
+          "files": [
+            "config.json",
+            "vocab.txt",
+            "encoder-model.fp16.onnx",
+            "decoder_joint-model.fp16.onnx"
+          ]
+        }
+      ],
+      "license": {
+        "name": "CC-BY-4.0",
+        "file": "ATTRIBUTION.md",
+        "url": "https://creativecommons.org/licenses/by/4.0/legalcode"
+      },
+      "distribution": {
+        "basis": "CC-BY-4.0 (NVIDIA's model card and this repository's card) permits redistribution with attribution, a link to the license and an indication of changes. ATTRIBUTION.md, served with the weights alongside README.md, states the derivation: FP16 conversion with ONNX Runtime cast fixes of istupakov/parakeet-tdt-0.6b-v3-onnx at 8f23f0c0, itself an ONNX export of nvidia/parakeet-tdt-0.6b-v3. The repository has no license text file; license.url is the legal code.",
+        "reviewed": "2026-11-01",
+        "decision": "Proposed for BayLeaf Pouch speech-to-text (branch pouch-parakeet): a permissive license, pending Adam's approval and an API deploy. Pouch shows the attribution (NVIDIA, CC-BY-4.0, the conversion chain) wherever it offers the model."
+      },
+      "qualification": [
+        {
+          "client": "BayLeaf Pouch",
+          "runtime": "parakeet.js 1.4.4, onnxruntime-web 1.31.0-dev; encoder fp16 on WebGPU, decoder fp16 on WASM",
+          "status": "candidate",
+          "evidence": "https://github.com/bayleaf-ucsc/bayleaf/blob/pouch-parakeet/pouch/experiments/parakeet-webgpu/README.md"
+        }
+      ],
+      "files": [
+        {
+          "path": "config.json",
+          "bytes": 101,
+          "sha256": "562aedb0b804acbeb4e04215de190846c37e0bb239b696376df69d555785373a",
+          "git_oid": "5de6ea99db73850b09558ce850b43abfe6306706",
+          "lfs": false
+        },
+        {
+          "path": "vocab.txt",
+          "bytes": 102132,
+          "sha256": "ba8e4007c65f4bb4358ffe2ecc13d9ccc7a10351151065242b5c3a943e685742",
+          "git_oid": "6fc5460dee56572d6b34a19e42a45aeddc245cde",
+          "lfs": false
+        },
+        {
+          "path": "encoder-model.fp16.onnx",
+          "bytes": 1238960452,
+          "sha256": "a2bdeeb99cb7e5548818e823127b33854dd0c26f5d0c8da91effdd895ea0e717",
+          "git_oid": "433925daa5aaccca72c99269b1218fb4acee2392",
+          "lfs": true
+        },
+        {
+          "path": "decoder_joint-model.fp16.onnx",
+          "bytes": 36266140,
+          "sha256": "b33a73b7c1d71b9d5a0911f5cb478be3dcbf79f53355c531ab1cd1dcd68ad8ef",
+          "git_oid": "e92af988120104bb07a61efa7924205400821a2a",
+          "lfs": true
+        },
+        {
+          "path": "README.md",
+          "bytes": 563,
+          "sha256": "a9e3e39c2c95e904d368215e0ca8fae9ca50a53dd7ac1b761a916aa4338f73e3",
+          "git_oid": "eac4c6ebd7a1e017d0606ebbaa751751c6d599c7",
+          "lfs": false
+        },
+        {
+          "path": "ATTRIBUTION.md",
+          "bytes": 861,
+          "sha256": "d6616a0892a17ff03edfb4eac5c03a851be08a88e4b73ea3f4ce80600370f81b",
+          "git_oid": "f62e92af7925bb26a68451bcfa603d1ca2ec2f69",
+          "lfs": false
+        }
+      ]
     }
   ]
 }
