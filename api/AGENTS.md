@@ -721,7 +721,8 @@ reject a slug in the wrong slot. Embedded media fields are schema-supported but
 nonempty media is rejected until OpenRouter transport is qualified, even if its
 catalog advertises input modalities. Hosted/desktop adapters are explicitly deferred.
 
-Enabled in production on 2026-09-29 with a one-hour maximum. Read `GRANTS.md`
+Enabled in production on 2026-09-29 with a one-hour maximum, raised to 30 days on
+2026-11-02 for CI secrets (see `GRANTS.md`). Read `GRANTS.md`
 for the contract, rollout evidence, and browser example. Migration `0011`
 adds expiring grants and authorization transactions, never a durable app registry.
 `src/grants.ts` owns purpose-separated signed descriptors/tokens, global scope

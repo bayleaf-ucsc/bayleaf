@@ -1,5 +1,6 @@
 import type { FC } from 'hono/jsx';
 import { cardStyle } from './layout';
+import { describeSeconds } from '../grants';
 
 /** Recognition metadata is rendered; issued credentials stay in a JS closure. */
 export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }> = ({ model, maxSeconds }) => (
@@ -29,8 +30,9 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }>
           <option value="">Loading model catalog…</option>
         </select>
         <p id="grant-model-status" role="status"></p>
-        <label for="grant-seconds">Lifetime in seconds (maximum {maxSeconds})</label>
-        <input id="grant-seconds" type="number" min="1" max={maxSeconds} value={Math.min(3600, maxSeconds)} required/>
+        <label for="grant-seconds">Lifetime in seconds (maximum {maxSeconds}, {describeSeconds(maxSeconds)})</label>
+        <input id="grant-seconds" type="number" min="1" max={maxSeconds} value={Math.min(3600, maxSeconds)} required aria-describedby="grant-seconds-hint"/>
+        <p id="grant-seconds-hint"><small>86400 is one day; 604800 is one week.</small></p>
         <button id="create-grant" type="submit" disabled>Create token</button>
       </form>
     </details>
@@ -94,7 +96,10 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }>
       title.title = details; title.setAttribute('aria-label', name + '. ' + details);
       identity.append(title);
       const expiry = document.createElement('time'); expiry.dateTime = new Date(grant.expires_at * 1000).toISOString();
-      expiry.textContent = 'until ' + new Date(grant.expires_at * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      const expiresAt = new Date(grant.expires_at * 1000);
+      expiry.textContent = 'until ' + (expiresAt.toDateString() === new Date().toDateString()
+        ? expiresAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+        : expiresAt.toLocaleDateString([], { month: 'short', day: 'numeric' }));
       expiry.title = new Date(grant.expires_at * 1000).toLocaleString(); identity.append(expiry); item.append(identity);
       const actions = document.createElement('span'); actions.className = 'grant-actions';
       if (credentials.has(grant.id)) {
