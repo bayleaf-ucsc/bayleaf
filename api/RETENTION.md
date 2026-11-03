@@ -269,7 +269,7 @@ describe those apps.
 |---|---|
 | Signed client descriptor (app-supplied name and exact callback) | Valid ten minutes; held by the app, with no app-registration row |
 | Authorization transaction: descriptor, callback, app name, model, lifetime, state, browser-proof hash, PKCE challenge; after approval, code hash, owner email and key fingerprint | Expires within ten minutes; approved code within two minutes; successful exchange or denial deletes the row |
-| Grant: ID, memorable name (named-token revision), owner email and key fingerprint, model, creation/expiry, optional app name and callback | Until expiry (administrator maximum, initially one hour) or individual revocation |
+| Grant: ID, memorable name (named-token revision), owner email and key fingerprint, model, creation/expiry, optional app name and callback | Until expiry (administrator maximum: one hour initially, 30 days since 2026-11-02) or individual revocation |
 | Browser proof and login-return cookies (`bl_grant_flow`, `bl_grant_return`) | Host-only, HttpOnly, SameSite=Lax, Secure on HTTPS; at most ten minutes |
 
 The hourly scheduler deletes expired transaction and grant rows, normally within

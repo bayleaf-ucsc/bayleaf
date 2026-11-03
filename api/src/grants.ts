@@ -54,6 +54,14 @@ export function maxGrantSeconds(env: Bindings): number {
   return Number.isSafeInteger(value) && value > 0 ? value : 3600;
 }
 
+/** Human lifetime in its largest whole unit, "about" when it rounds down. */
+export function describeSeconds(seconds: number): string {
+  const units: [number, string][] = [[86400, 'day'], [3600, 'hour'], [60, 'minute'], [1, 'second']];
+  const [size, name] = units.find(([size]) => seconds >= size) ?? units[3];
+  const n = Math.floor(seconds / size);
+  return `${seconds % size ? 'about ' : ''}${n} ${name}${n === 1 ? '' : 's'}`;
+}
+
 export function grantError(c: Context<AppEnv>, code: string, message: string, status: 400 | 401 | 403 | 404 | 409 | 503) {
   if (status === 401) c.header('WWW-Authenticate', 'Bearer error="invalid_token"');
   return c.json({ error: { code, message } }, status);

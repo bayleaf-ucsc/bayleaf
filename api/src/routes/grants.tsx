@@ -8,7 +8,7 @@ import { resolveAuth } from '../utils/auth';
 import { ensureUserRow, getActiveRow } from '../provision';
 import { eligibleStandardModel, standardModelCatalog } from '../standardModels';
 import { BaseLayout, renderPage } from '../templates/layout';
-import { hash, issueGrant, maxGrantSeconds, nowSeconds, randomSecret, seal, unseal, validCallback, grantError, grantModelIds, storedGrantModels } from '../grants';
+import { describeSeconds, hash, issueGrant, maxGrantSeconds, nowSeconds, randomSecret, seal, unseal, validCallback, grantError, grantModelIds, storedGrantModels } from '../grants';
 import { GrantRequestSchema, GrantTokenSchema, GrantErrorSchema, ClientDescriptorRequestSchema,
   ClientDescriptorSchema, GrantExchangeSchema, GrantListSchema, GrantModelsSchema, GrantAuthorizeQuerySchema, ApiErrorSchema } from '../schemas';
 
@@ -237,7 +237,8 @@ grantRoutes.get('/authorize', async c => {
     <p>Destination: <strong>{new URL(tx.redirect_uri).origin}</strong></p>
     <p>Exact callback: <code>{tx.redirect_uri}</code></p>
     <p>Authorized models:</p><ul>{storedGrantModels(tx).map(model => <li><strong>{model}</strong></li>)}</ul>
-    <p>Lifetime: <strong>{tx.lifetime} seconds</strong>.</p>
+    <p>Lifetime: <strong>{describeSeconds(tx.lifetime)}</strong> from approval, until about <strong>{new Date((nowSeconds() + tx.lifetime) * 1000).toUTCString()}</strong>.</p>
+    {tx.lifetime > 86400 && <p>This token lasts longer than a day. Revoke it from your dashboard when the app no longer needs it.</p>}
     <p>This uses your existing allowance. The app receives a bearer token usable wherever it is copied, until expiry or revocation. BayLeaf retains no inference content; the app may handle or store what you enter.</p>
     <form method="post" action="/grants/authorize">
       <input type="hidden" name="request" value={id}/><input type="hidden" name="approval" value={approval}/>

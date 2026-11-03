@@ -1,7 +1,12 @@
 # Temporary inference tokens
 
 Implementation for [issue #76](https://github.com/bayleaf-ucsc/bayleaf/issues/76).
-Enabled in production on 2026-09-29 with a one-hour maximum lifetime.
+Enabled in production on 2026-09-29 with a one-hour maximum lifetime. The maximum
+was raised to 30 days (`GRANTS_MAX_SECONDS=2592000`) on 2026-11-02 so a course's
+CI workflow (for example, a push-triggered review bot) can hold a model-scoped
+token in repository secrets instead of an ordinary key that never expires. The
+dashboard default stays one hour; the consent page shows a long lifetime as a
+duration and expiry date, with a revocation reminder past one day.
 Memorable token names and the integrated dashboard card were deployed with
 migration `0012` on 2026-09-29. The revised `llms.txt` distinguishes ordinary
 keys, temporary tokens, standard inference, and Sealed.

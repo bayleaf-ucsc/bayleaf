@@ -83,7 +83,8 @@
     "BROWSER_SANDBOX_ENABLED": "true",
     // Disposable inference grants, issue #76. Migration 0011 applied 2026-09-29.
     "GRANTS_ENABLED": "true",
-    "GRANTS_MAX_SECONDS": "3600",
+    // 30 days (raised from 3600, 2026-11-02): fits a CI secret for one assignment.
+    "GRANTS_MAX_SECONDS": "2592000",
     // Owner-authenticated HTTP/WebSocket previews, issue #71. Enabled after
     // synthetic local/live qualification; rollout boundaries are in PREVIEWS.md.
     "PREVIEWS_ENABLED": "true",
