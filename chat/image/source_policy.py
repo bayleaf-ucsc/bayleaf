@@ -18,17 +18,29 @@ def safe_method(value):
 
 
 def minimized_source(source):
-    """Fail-closed experimental patch of the inspected v0.12.3 middleware only.
+    """Fail-closed patch of the inspected v0.13.0 middleware only.
 
     A production integration should patch upstream source/build explicitly and
     qualify that artifact, not import this ad hoc executor. Always use
     Resource(attributes={}), never Resource.create(), in the metrics provider.
     """
-    old = "route_path = getattr(route, 'path', request.url.path)"
+    old = "route_path = getattr(route, 'path', None)"
     method = "'http.method': request.method,"
     if source.count(old) != 1 or source.count(method) != 1:
         raise ValueError("unsupported_tagged_source")
-    return source.replace(old, "route_path = safe_route(getattr(route, 'path', request.url.path))").replace(method, "'http.method': safe_method(request.method),")
+    # The production pure-ASGI adapter replaces this middleware. Remove the new
+    # URL-exclusion helpers too: they reconstruct full URLs, and BayLeaf retains
+    # its fixed route policy rather than upstream's configurable exclusions.
+    for fragment in (
+        "from opentelemetry.instrumentation.asgi import get_host_port_url_tuple\n",
+        "from opentelemetry.util.http import get_excluded_urls\n",
+        "    # OTEL_PYTHON_FASTAPI_EXCLUDED_URLS, shared with traces\n    excluded_urls = get_excluded_urls('FASTAPI')\n\n",
+        "        _, _, url = get_host_port_url_tuple(request.scope)\n        if excluded_urls.url_disabled(url):\n            return await call_next(request)\n\n",
+    ):
+        if source.count(fragment) != 1:
+            raise ValueError("unsupported_tagged_source")
+        source = source.replace(fragment, "")
+    return source.replace(old, "route_path = safe_route(getattr(route, 'path', None))").replace(method, "'http.method': safe_method(request.method),")
 
 
 def minimized_setup_source(source):

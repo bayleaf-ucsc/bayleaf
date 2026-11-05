@@ -95,6 +95,14 @@ configs to restore if step 4's changes misbehave: re-push with
 
 ## Refinement log
 
+- 2026-11-04 (v0.13.0 preparation): Reviewed v0.12.5 too; its URL-exclusion
+  changes required adapting the metrics source patch rather than only repinning
+  hashes. Both architecture builds, amd64 boot/inference, full five-minute PG/TLS
+  export, all 16 Chromium cases and an actual old-image synthetic PG upgrade
+  passed. Docker disk exhaustion required approved removal of named historical
+  qualification images and unused build cache. Adam chose the new 1024-round
+  limit and default-on notification inbox. Publication/deployment remain pending.
+
 - 2026-10-27 (v0.12.4 preparation): Python 3.12 / Debian 13 image transition,
   but no migration changes and unchanged telemetry dependencies/adapter sources.
   Requalified actual frontend hashes as well as native source guards. Added an
