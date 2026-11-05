@@ -392,9 +392,33 @@ campus authentication flow: it does **not** test CILogon.
 
 Success requires both a visible nonempty response with OWUI's completed-message
 Copy control and a persisted, nonempty, error-free, `done: true` assistant record
-for that same message. The probe uses OWUI v0.11.3's `#chat-input`,
-`#send-message-button`, and response-container selectors. A chat URL or network
-idle is not success. HEAD waits for the entire lifecycle, including cleanup.
+for that same message. The probe uses `#chat-input`, `#send-message-button`,
+and response-container selectors, rechecked against OWUI v0.13.0. Composer
+preparation resolves, focuses, pastes and validates in one browser-side task,
+retrying while the initially visible editor is replaced during initialization.
+A chat URL or network idle is not success. HEAD waits for the entire lifecycle,
+including cleanup.
+
+**Composer race diagnosis and repair (2026-11-04 Pacific):** deployed
+browser GET repeatedly returned `browser_typed`, before submission, while Chat
+HTTP inference passed. Reproducing the complete probe through Node with the same
+Cloudflare Puppeteer SDK and a Cloudflare CDP browser exposed `page.focus()`
+failing because `#chat-input` disappeared after the visibility wait. This was
+editor replacement, not a renamed selector, expired JWT or release-notes dialog.
+The replacement-safe preparation passed the complete browser transaction in
+12.006 seconds, including completed visible output, same-message persistence,
+confirmed browser close and exact-chat deletion. Independent account lists were
+empty before and after. All 54 tests and Wrangler dry-run passed.
+
+With approval, deployed version `44fb81c1-c6a4-4167-a910-c879c81147d0` and qualified
+the actual `/chat/basic/e2e` endpoint at 2026-11-05 07:02 UTC. Anonymous GET/HEAD
+returned 401; authenticated GET/HEAD returned 200 / `ok` with Worker totals
+11.832/14.017 seconds, completed rendering/persistence and confirmed close/cleanup.
+Independent account lists were empty before, between and after those checks.
+An initial preflight saw one transient record and stopped before qualification;
+the next read found it gone, consistent with concurrent monitoring but not proof
+of its origin. No manual deletion or credential change was made. UptimeRobot's
+scheduled recovery and alert delivery were not independently verified.
 
 OWUI v0.11.3 creates opening chats inside `/api/chat/completions`, not
 `/api/v1/chats/new`. Request interception validates the fixed model, exact

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import puppeteer from '@cloudflare/puppeteer';
 import worker, { checkStream, probe, probeDetail, probeBrowser, cleanupSynthetic, metrics,
   DIRECT_MODEL, API_MODEL, renderedAnswer, probeCatalog, CATALOG_URL, CATALOG_BASE, CURATED_LISTS,
-  probeSandbox, SANDBOX_URL } from './index.mjs';
+  probeSandbox, SANDBOX_URL, prepareComposer } from './index.mjs';
 
 const frame = value => `data: ${JSON.stringify(value)}\n\n`;
 const choice = (delta, finish_reason = null) => ({ choices: [{ index: 0, delta, finish_reason }] });
@@ -443,7 +443,8 @@ test('browser success, render timeout, lost creation reply, and cleanup/close fa
           onRender('complete_rendered');
         }
       },
-      async waitForFunction() {
+      async waitForFunction(predicate) {
+        if (predicate === prepareComposer) return;
         if (mode === 'lost_reply' && ++renders === 2) setImmediate(() => controller.abort());
         if (mode === 'render_timeout') {
           controller.abort();
@@ -833,6 +834,38 @@ test('stalled stream cancellation is bounded without losing the original failed 
   assert.equal(m.phases.stream_cleanup, 1000);
   assert.equal(m.total, 1000);
   assert.equal(body.locked, false);
+});
+
+test('serialized composer preparation survives replacement and never duplicates or overwrites text', async () => {
+  const { runInNewContext } = await import('node:vm');
+  let input = null, pastes = 0, focused = 0;
+  const prepare = runInNewContext(`(${prepareComposer.toString()})`, {
+    document: { querySelector: () => input },
+    DataTransfer: class { setData(type, value) { assert.equal(type, 'text/plain'); this.text = value; } },
+    ClipboardEvent: class { constructor(type, options) { assert.equal(type, 'paste'); Object.assign(this, options); } },
+  });
+  const editor = () => ({
+    isContentEditable: true, isConnected: true, textContent: '',
+    getClientRects: () => [1], focus() { focused++; },
+    dispatchEvent(event) { pastes++; this.textContent = event.clipboardData.text; },
+  });
+  assert.equal(prepare(), false, 'composer disappeared after initial readiness');
+  input = editor();
+  input.isContentEditable = false;
+  assert.equal(prepare(), false);
+  input = editor();
+  assert.equal(prepare(), true);
+  assert.equal(prepare(), true);
+  assert.equal(pastes, 1);
+  input = editor();
+  assert.equal(prepare(), true, 'replacement editor receives its own paste');
+  input.textContent = 'Unexpected text';
+  assert.equal(prepare(), false);
+  assert.equal(input.textContent, 'Unexpected text');
+  input = editor();
+  input.isConnected = false;
+  assert.equal(prepare(), false, 'detachment during paste cannot pass');
+  assert.equal(focused, 3);
 });
 
 test('render predicate and serialized observer exclude reasoning and require completed-message control', async () => {

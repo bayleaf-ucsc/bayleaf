@@ -197,6 +197,14 @@ files. Do not commit or push without explicit approval.
 
 ## Refinement Log
 
+- 2026-11-04: OWUI v0.13.0 browser failure at `typed` was a composer replacement
+  race between visibility and focus, not selector renaming. Full-probe reproduction
+  with a wrapped Puppeteer page isolated the failing operation; simplified paste
+  tests passed and missed it. Wrangler `getPlatformProxy` remote setup stalled;
+  authenticated Cloudflare CDP with the same SDK reproduced and qualified the source
+  fix without changing secrets. Approved deployment then passed actual endpoint
+  GET/HEAD with confirmed cleanup; scheduled monitor recovery remains unverified.
+
 - 2026-10-27: Deployed passive `/api/sandbox` and exact probe-owner reaper exemption;
   fresh GET/HEAD passed and independent `lastActivityAt` remained unchanged.
   Adam requested status integration and supplied an authenticated dashboard:

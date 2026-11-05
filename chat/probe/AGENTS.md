@@ -154,6 +154,10 @@ require verification.
   confirmed exact synthetic-chat cleanup. Close and cleanup get independent
   bounded budgets after cancellation. Never delete unmarked or unrelated chats.
 - Session injection skips campus login; do not claim CILogon coverage.
+- OWUI v0.13.0 can replace the initially visible composer. Resolve, focus, paste
+  and validate within one retried browser task, not separate selector/focus calls.
+  Repair deployed as `44fb81c1-c6a4-4167-a910-c879c81147d0` on 2026-11-04 Pacific;
+  actual browser GET/HEAD passed with confirmed persistence, close and cleanup.
 - Fixed upstream, model, and prompt. No caller-supplied inference parameters.
 - Sealed uses pinned verifier/EHBP libraries, the dedicated `BAYLEAF_API_KEY`,
   25-second HTTP deadline, and independent limiter key `sealed`. Never bypass

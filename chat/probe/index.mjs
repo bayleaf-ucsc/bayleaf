@@ -589,6 +589,21 @@ export function renderedAnswer(complete = false, id = null, observe = false) {
   return false;
 }
 
+// Runs in the page. OWUI can replace its initially visible composer while
+// initializing the selected model. Resolve and edit it in one browser task,
+// rather than retaining readiness across separate CDP calls. Never append twice.
+export function prepareComposer() {
+  const input = document.querySelector('#chat-input');
+  if (!input?.isContentEditable || !input.getClientRects().length) return false;
+  if (input.textContent === "What's BayLeaf?") return true;
+  if (input.textContent.trim()) return false;
+  input.focus();
+  const data = new DataTransfer();
+  data.setData('text/plain', "What's BayLeaf?");
+  input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  return input.isConnected && input.textContent === "What's BayLeaf?";
+}
+
 export async function probeBrowser(sessionToken, browserBinding, signal, {
   driver = puppeteer, fetcher = fetch, timing = metrics(),
 } = {}) {
@@ -691,17 +706,8 @@ export async function probeBrowser(sessionToken, browserBinding, signal, {
     timing.mark('domcontentloaded');
     await step('composer', () => page.waitForSelector('#chat-input', { visible: true }));
     timing.mark('composer_ready');
-    await step('typed', async () => {
-      await bounded(() => page.focus('#chat-input'), signal);
-      // Use the editor's paste handler, not typing/input rules (smart quotes).
-      await bounded(() => page.$eval('#chat-input', input => {
-        const data = new DataTransfer();
-        data.setData('text/plain', "What's BayLeaf?");
-        input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
-      }), signal);
-      const exact = await bounded(() => page.$eval('#chat-input', input => input.textContent === "What's BayLeaf?"), signal);
-      if (!exact) throw new Error('composer_text');
-    });
+    // Keep the editor's paste handler to avoid smart-quote input rules.
+    await step('typed', () => page.waitForFunction(prepareComposer));
     timing.mark('send_start');
     await step('submitted', () => page.click('#send-message-button'));
     timing.mark('send_returned');
