@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https: http://localhost:* http://127.0.0.1:* http://[::1]:* ws://localhost:* ws://127.0.0.1:*; object-src 'none'; frame-src 'none'; base-uri 'self'" />
+    <title>Checkpoint · BayLeaf prototype</title>
+  </head>
+  <body>
+    <header class="masthead">
+      <p class="mark"><b>Checkpoint</b> <span>BayLeaf · local-first prototype</span></p>
+      <div id="notice" role="status" aria-live="polite">Opening your local workspace…</div>
+    </header>
+    <main id="app" hidden>
+      <div class="toolbar">
+        <div class="tabs" role="group" aria-label="Edit document">
+          <button id="draft-tab" aria-pressed="true">Draft <span class="file" aria-hidden="true">draft.md</span></button>
+          <button id="policy-tab" aria-pressed="false">Feedback policy <span class="file" aria-hidden="true">review-policy.md</span></button>
+        </div>
+        <span id="save-status">Saved locally</span>
+        <div class="machinery">
+          <details class="menu" id="critic-menu">
+            <summary>Critic <span id="critic-state" class="state">off</span></summary>
+            <div class="menu-panel">
+              <p id="connection">Not connected. Writing and checkpoints never need the network.</p>
+              <label for="model">Review model</label>
+              <input id="model" placeholder="openrouter:owner/model" spellcheck="false" />
+              <div class="actions"><button id="recommend">Use recommended</button><button id="connect" class="primary">Connect BayLeaf</button><button id="disconnect" hidden>Disconnect</button></div>
+              <p class="fine">Connecting asks BayLeaf for one hour of access to one model, drawn from your own allowance. Only feedback requests send text: the checkpoint's draft and policy, its previous draft, and your note. The token lives in this tab's memory and is gone on reload.</p>
+              <details class="advanced"><summary>API origin</summary><label for="api-origin" class="sr-only">API origin</label><input id="api-origin" value="https://api.bayleaf.dev" spellcheck="false" /></details>
+            </div>
+          </details>
+          <details class="menu" id="storage-menu">
+            <summary>Storage</summary>
+            <div class="menu-panel">
+              <p>Your only copy lives in this browser, at this exact address. There is no cloud sync. Clearing site data erases it.</p>
+              <div class="actions"><button id="import">Import workspace</button><button id="persist">Protect local storage</button></div>
+              <input id="import-file" type="file" accept=".json,application/json" hidden />
+              <p class="fine">Exports hold drafts, policies, complete Git history and feedback records: treat them as private documents. Importing opens the archive as a new workspace and leaves the current one in storage, though this prototype has no switcher. Export first.</p>
+            </div>
+          </details>
+          <button id="export" title="Download drafts, policy, Git history and feedback as one file">Export</button>
+        </div>
+      </div>
+      <section class="sheet" aria-label="Writing workspace">
+        <p id="editor-help">Autosaves to this browser. Saving never asks for feedback.</p>
+        <div id="editor" aria-label="Document editor"></div>
+        <div id="policy-editor" aria-label="Feedback policy editor" hidden></div>
+        <div class="commit">
+          <label for="checkpoint-note">Checkpoint note <span>optional</span></label>
+          <div class="commit-row">
+            <input id="checkpoint-note" maxlength="500" placeholder="What changed, or what are you trying to do?" />
+            <button id="checkpoint" class="primary">Save checkpoint</button>
+          </div>
+          <p id="checkpoint-hint">Records this draft and policy as a version. Connect a critic to ask for feedback too.</p>
+        </div>
+      </section>
+      <aside class="ledger history-section" aria-label="Checkpoints and feedback">
+        <h2>Checkpoints <span id="history-count"></span></h2>
+        <p class="fine">Read-only versions. Copying one back into the editor never rewrites history.</p>
+        <nav id="history" aria-label="Checkpoint history"></nav>
+        <article id="inspection"><p class="empty">No checkpoints yet. Save one when you reach a place worth returning to.</p></article>
+      </aside>
+    </main>
+    <footer>Prototype, not an assessment system. History is a working record, not proof of effort. Feedback can be wrong, and you may ignore it.</footer>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
