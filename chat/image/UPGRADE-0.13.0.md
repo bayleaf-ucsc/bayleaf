@@ -1,6 +1,7 @@
 # Open WebUI v0.13.0 qualification
 
-Prepared 2026-11-04. Adam confirmed personal-server soak. **Not deployed.**
+Deployed 2026-11-04 Pacific. Adam confirmed personal-server soak and explicitly
+approved publication and production deployment after local qualification.
 
 ## Release and compatibility review
 
@@ -15,7 +16,7 @@ Prepared 2026-11-04. Adam confirmed personal-server soak. **Not deployed.**
 - Three new migrations follow `0bd252b206fb`: `c41f8d9e2a10` adds resource
   comments/reactions; `6f8c2a91d4e7` adds `tool.is_active` with a true default;
   `e42c8f710a36` adds notifications. Changes to five older migrations are comments
-  only. No production migration has run in this preparation.
+  only. All three production migrations completed during the approved rollout.
 - Today's managed PostgreSQL backup (`2026-11-04T01:53:17Z`) was verified. App-only
   trusted-source restrictions remain intact. App spec, complete tools/functions/
   skills/models, hidden underlying model and global config/admin settings were
@@ -90,7 +91,27 @@ Proofs and private snapshots are under the session temporary directory
   the daemon was stopped, then because its disk filled. Adam approved removing
   only named historical qualification images and unused build cache. Existing
   v0.12.4 images, database images and unrelated project images were preserved.
-- Production publication/deployment and authenticated acceptance: pending approval.
+- Published source `364ac9e731234b39fa4a15293140f4dd36356ecd` built and deployed
+  as `79af5c90-9217-45ac-ad66-6399a8846ec3`, now ACTIVE. Build logs identify that
+  exact checkout; guarded minimization and all three migrations preceded server
+  PID 1. `/health` and version 0.13.0 passed. Authenticated Basic and Help returned
+  the expected short response.
+- Complete app spec is byte-identical before/after. Full private resource and
+  valve pulls found only `is_active=true` added on all nine tools. Existing
+  source, schemas, grants, valves, models, images and skills were unchanged;
+  the hidden base model was checked separately and unchanged. Existing known
+  repo-versus-live metadata/decorative differences were left outside this bump.
+- Global config added only comments off, notifications on and empty Mistral OCR
+  params; admin readback confirms the first two. Sub-agents remain disabled with
+  their saved finite limits. Served arrival loader/module match qualified bytes.
+- The comparison script initially expected nested sub-agent config; `configs
+  show` actually uses flat dotted keys. Correcting the local assertion completed
+  reconciliation without repeating inference or modifying production settings.
+- Adam confirmed fresh production CILogon sign-in, Sandbox and web-context tools
+  work and accepted the upgrade. Upload scenarios were not itemized; he explicitly
+  chose not to exercise the 1024-round limit. No further browser acceptance is
+  required for closure. A fresh production collector readback is not part of
+  these checks; the five-minute wire/export proof above uses isolated synthetic TLS.
 
 ## Rollback
 

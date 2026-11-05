@@ -102,6 +102,13 @@ through the appropriate playbook, don't paper over it in the backup.
 
 ## Refinement log
 
+- 2026-11-04 (OWUI v0.13.0): Full private pre/post resource and valve pulls plus
+  hidden-base reads found only `is_active=true` added to all nine tools. Synced
+  that field without overwriting known unrelated metadata/decorative drift.
+  Config/admin exports added comments off, notifications on and empty Mistral
+  OCR params. Saved sub-agent limits survived; global config keys are flat dotted
+  names. App spec and qualified served arrival assets were unchanged.
+
 - 2026-10-27 (OWUI v0.12.4): Full private pre/post resources, hidden base model
   and app spec were unchanged. Global config/admin snapshots revealed only new
   inactive upstream defaults (empty LDAP fallback domain/UI visibility and lazy

@@ -101,7 +101,14 @@ configs to restore if step 4's changes misbehave: re-push with
   export, all 16 Chromium cases and an actual old-image synthetic PG upgrade
   passed. Docker disk exhaustion required approved removal of named historical
   qualification images and unused build cache. Adam chose the new 1024-round
-  limit and default-on notification inbox. Publication/deployment remain pending.
+  limit and default-on notification inbox. Published `364ac9e`, deployment
+  `79af5c90` ACTIVE: exact checkout, all three migrations, guards/PID 1 and
+  Basic/Help inference passed. App spec unchanged; only true tool activation
+  fields and three new config defaults appeared in full private reconciliation.
+  `configs show` uses flat dotted keys, not nested sub-agent objects. Adam
+  confirmed fresh CILogon sign-in, Sandbox and web-context tools work and accepted
+  closure. Upload scenarios were not itemized; the round limit was deliberately
+  not exercised.
 
 - 2026-10-27 (v0.12.4 preparation): Python 3.12 / Debian 13 image transition,
   but no migration changes and unchanged telemetry dependencies/adapter sources.

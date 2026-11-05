@@ -23,7 +23,7 @@ Local checks (qualification harnesses stay with the collector in `telemetry/otlp
 
 Set `BAYLEAF_QUALIFICATION_OUTPUT` to an existing private temporary directory
 when requalifying a new release, so generated proofs do not overwrite historical
-evidence. See [v0.13.0 preparation](UPGRADE-0.13.0.md) and the previous
+evidence. See [v0.13.0 qualification](UPGRADE-0.13.0.md) and the previous
 [v0.12.4 qualification](UPGRADE-0.12.4.md).
 
 ```bash

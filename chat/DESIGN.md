@@ -40,16 +40,16 @@ default context points at the personal `Just Adam` team.
 | **HTTP port** | `8080` |
 
 **Image choice.** Use version-specific standard-image tags (currently
-`v0.12.4`), not rolling `main` or `slim`. BayLeaf stores uploads in DO Spaces
+`v0.13.0`), not rolling `main` or `slim`. BayLeaf stores uploads in DO Spaces
 via OWUI's S3 provider (§1, Object Storage). Before v0.12.0, the slim image
 omitted S3 support and refused to start with S3 storage configured. Upstream
 v0.12.0 adds S3 support to slim, but BayLeaf retains the standard image;
 switching image variants requires separate dependency and upload qualification.
 
 **Native aggregate telemetry (2026-10-20).** The live rung-4 build adds the
-qualified source minimization to the v0.12.4 standard image (upgraded 2026-10-27), pinned by
+qualified source minimization to the v0.13.0 standard image (upgraded 2026-11-04), pinned by
 immutable upstream index
-`sha256:a5b9e403d19154796850679c8c5d1295301cee954be8b84ddd62af92426558f7`.
+`sha256:2272b0fb7c8783a016bcc179abb467cfa34590c99c5e6560fe0e9155b4820a09`.
 The service command is `python /opt/bayleaf-otlp/startup_patch.py`, not the former
 echo-and-start wrapper. Exact source/package guards run at build and startup;
 the entrypoint prints guarded startup markers and retains the exec handoff to
@@ -61,6 +61,26 @@ pinned upstream image (`unexpected EOF`); one unchanged-source retry succeeded.
 One instance, one worker, the original size/pool and retention job were preserved.
 Repository-push auto-deploy remains **disabled**, so documentation publication
 does not restart Chat. This is not an OWUI upgrade or schema migration.
+
+**OWUI v0.13.0 upgrade (2026-11-04 Pacific):** deployment
+`79af5c90-9217-45ac-ad66-6399a8846ec3` reached ACTIVE from published source
+`364ac9e731234b39fa4a15293140f4dd36356ecd`. Both architecture builds, amd64
+boot/inference, full five-minute arm64 PostgreSQL/TLS export, all 16 Chromium
+arrival cases and a synthetic existing-database upgrade passed. The telemetry
+source adapter was adapted to upstream middleware changes without changing the
+collection policy. Three migrations completed through `e42c8f710a36`; an
+image-only rollback is not qualified. Today's managed PG backup was verified.
+Production guards, PID 1, health/version and authenticated Basic/Help inference
+passed. The complete app spec stayed unchanged. Full private pre/post pulls
+found only the new true `is_active` field on all nine tools; sources, schemas,
+valves, models, skills, grants and the hidden underlying model were unchanged.
+Config added comments off, notifications on and empty Mistral OCR params.
+Adam explicitly accepted the new notification inbox and 1024 tool-call default;
+sub-agents remain disabled with their saved finite limits. Served arrival assets
+match the qualified bytes. Adam confirmed fresh CILogon sign-in, Sandbox and
+web-context tools work and accepted the upgrade. Upload scenarios were not
+itemized; the 1024-round limit was deliberately not exercised. See
+[`image/UPGRADE-0.13.0.md`](image/UPGRADE-0.13.0.md).
 
 **OWUI v0.12.4 upgrade (2026-10-27):** deployment
 `c63a7deb-02c0-4261-880c-8a0eb8d0b2bd` reached ACTIVE from published source
@@ -327,7 +347,7 @@ OWUI is configured (via admin UI, not env vars) with an OpenRouter API
 connection that exposes all ZDR-eligible models. The OpenRouter API key is
 stored in OWUI's admin settings, not in the app spec.
 
-### Global Admin Settings Snapshot (2026-10-27)
+### Global Admin Settings Snapshot (2026-11-04)
 
 Read back from the live persistent config and admin API after operator edits.
 These are observed current values, not a before/after diff: earlier resource
@@ -337,6 +357,11 @@ changed during this backup.
 - Automations: `automations.enable=false`; default user permission
   `user.permissions.features.automations=false`. This is OWUI user automation,
   not the separate DigitalOcean retention-cleanup job.
+- Comments: `comments.enable=false`; new notification inbox:
+  `notifications.enable=true`. Adam accepted the default-on inbox on upgrade.
+  Tool-call rounds now use upstream's 1024 default. Sub-agents remain disabled
+  with saved limits of 20 concurrent, 20 async, 30 iterations and 30,000 output
+  characters. The upgrade added empty `rag.mistral_ocr_params={}`.
 - Context compaction: `chat.context_compaction.enable=true`, token threshold
   `80000`, token cap `80000`, retention percentage `40`. The compaction model
   and prompt-template overrides are both empty strings.
