@@ -167,7 +167,7 @@ try {
     for (const phrase of ['receive email', 'webhook events', 'form submissions', 'callbacks',
       'custom workflows', 'check, search or retrieve', 'Not for sending email', 'existing Gmail',
       'does not automatically run an agent']) assert.ok(description.includes(phrase), phrase);
-    for (const adapter of ['sandbox-plugin', 'nanobot-sandbox']) {
+    for (const adapter of ['sandbox-plugin']) {
       const hosted = readFileSync(root + adapter + '/skills/bayleaf-inboxes/SKILL.md', 'utf8');
       assert.equal(hosted.match(/^description: (.+)$/m)[1], description, `${adapter}: shared intent vocabulary`);
       assert.ok(hosted.includes('https://api.bayleaf.dev/docs/inboxes.md'));

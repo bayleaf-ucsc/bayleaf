@@ -42,7 +42,7 @@ try {
   assert.equal(await credential({ BAYLEAF_API_KEY: key }, dir), key);
   await rejects(() => credential({}, dir), 'credential_missing_or_invalid');
   await rejects(() => credential({ BAYLEAF_API_KEY: 'bad' }, dir), 'credential_missing_or_invalid');
-  const folder = join(dir, '.local/share/bayleaf/nanobot/credentials');
+   const folder = join(dir, '.local/share/bayleaf/jupyter/credentials');
   await mkdir(folder, { recursive: true });
   await writeFile(join(folder, 'owner-key'), key, { mode: 0o600 });
   assert.equal(await credential({}, dir), key);
@@ -116,7 +116,7 @@ try {
   await mcp.close(); await server.close();
   const [pa,pb] = InMemoryTransport.createLinkedPair();
   const privateServer = await serve(c,{privatePreviews:true},pa as any);
-  const privateClient = new McpClient({name:'nanobot-policy-test',version:'1'});
+   const privateClient = new McpClient({name:'private-preview-policy-test',version:'1'});
   await privateClient.connect(pb);
   const preview = (await privateClient.listTools()).tools.find(t=>t.name==='expose')!;
   assert.equal((preview.inputSchema.properties as any).access.const,'private');

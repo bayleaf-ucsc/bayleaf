@@ -4,22 +4,27 @@
 `ba7930bf-2a1b-43f2-8b38-ea7a1e648481`. Public-root readback confirmed the static
 illustration and OpenChamber-first guidance, with no hero connection controls.
 
-**Issue #94 deployed 2026-10-20 Pacific:** CollabMD rooms and owner-authorized Stop app / End
-sharing controls are available. CollabMD alone has a public
-gateway with its own room-password challenge. Two hours is guidance, not an
-automatic deadline. See [`api/COLLABMD.md`](../api/COLLABMD.md) for deployment and
-live evidence, process-cleanup limits, the dashboard-first agent-exposure decision,
-the accepted upstream save-feedback limitation and the skipped duration check.
+**Nanobot and CollabMD retired 2026-11-04 Pacific; deployed:** neither is a supported
+managed app. Existing user files and collaboration sidecars are not deleted.
+[`api/COLLABMD.md`](../api/COLLABMD.md) preserves historical deployment evidence.
+API `16453c35-0daf-4909-93b3-4cc44088f0f0` and Sandboxes
+`c004e183-59a2-423c-963c-4409b1a50b64` are active at 100%. Public home and API
+guidance readbacks confirm removal; synthetic lifecycle tests cover legacy-slot
+denial. No user sandbox was woken, restarted or modified for this rollout.
+Owner-authorized Stop app remains available: revoke access first, attempt process
+cleanup without waking compute, and report pending cleanup separately. Detached
+jobs may survive; stopping one app does not stop sibling apps or the sandbox.
 
 The public home explains the shared workspace and available managed services.
-Signed-in owners can manage OpenChamber, Nanobot, CollabMD, code-server,
-JupyterLab, dufs and ttyd. They use the same sandbox files; all except CollabMD
+Signed-in owners can manage OpenChamber, code-server,
+JupyterLab, dufs and ttyd. They use the same sandbox files; all
 retain an owner-authenticated private gateway. A Desktop card (Daytona's noVNC,
 private, no VNC password; deployed 2026-10-24) is described in
 [`api/DESKTOP.md`](../api/DESKTOP.md). The hero's small desktop illustration is
 decorative only, signed in or out: no login, launch control, or live connection.
-OpenChamber is the recommended starting point for text, file and command-based
-work. Desktop is an optional fallback for graphical tasks, launched deliberately
+OpenChamber is the primary graphical agent surface, both on desktop and in the
+sandbox, so working habits transfer between them. Desktop is an optional fallback
+for graphical computer-use tasks, launched deliberately
 from its card and opened in a separate tab. The page CSP permits no frames.
 The existing embed adapter/gateway capability remains available but is not used
 by this page.
@@ -64,8 +69,9 @@ archive download and hashes; outside-root symlinks stay disabled.
   fixed. Cookies never use a shared parent domain.
 - Applications run on isolated preview origins, never on the
   dashboard origin. The API dashboard retains key management, machine status,
-  keep-alive and destructive deletion. CollabMD alone has a public gateway with
-  its own room-password challenge; its management controls remain owner-only.
+  keep-alive and destructive deletion. All managed apps and their management
+  controls remain owner-only. Generic public/private preview API capability is
+  separate and unchanged.
 
 Successful sign-in schedules one bounded best-effort wake of **existing** compute.
 If it is running, sign-in refreshes its activity timestamp. This counts as
@@ -209,14 +215,13 @@ This is a coordinated two-Worker change. With approval:
 If the frontend must be rolled back, redeploy its previous version first. Do not
 remove the API entrypoint while the new frontend still depends on it. The new
 tables can remain inert; no destructive schema rollback is needed.
-## Local Nanobot and Jupyter additions (not deployed)
+## Historical application additions
 
-The presentation registry now includes Nanobot (preview) and JupyterLab alongside
-OpenChamber, code-server and Files. Five cards use two desktop columns, with the
-last card spanning the row, and a mobile stack. The API must be deployed first.
-See [`../api/NANOBOT-POC.md`](../api/NANOBOT-POC.md) and
-[`../api/JUPYTER-POC.md`](../api/JUPYTER-POC.md) for implementation, tests and
-remaining live gates. Neither addition changes the CILogon/session authority.
+The 2026-10-09 investigation added JupyterLab and a Nanobot preview alongside
+OpenChamber, code-server and Files. Nanobot was retired on 2026-11-04 and is not
+a supported managed surface. JupyterLab qualification and remaining live gates
+are recorded in [`../api/JUPYTER-POC.md`](../api/JUPYTER-POC.md). Neither addition
+changed the CILogon/session authority.
 ## Shell (ttyd)
 
 Deployed 2026-10-09: API `9f3ffc16-b694-47b5-b54d-a6071e82424f`, then

@@ -30,7 +30,7 @@ test limitations accepted. Optional restricted-email creation is enabled.
   passes. Both-ledger loss policy is decided: remain closed pending the incident's
   operator choice, never automatically reset endpoints or add a new ledger service.
 - [ ] **Managed installed-client qualification:** actual OpenChamber browser
-  permissions, Nanobot gateway registration, ten-minute refresh, managed relink,
+  permissions, ten-minute refresh, managed relink,
   and receipt during confirmed host sleep followed by cursor reconciliation.
   Production controller derives ownership from authenticated email, with no
   test-machine override. Staging credential verifiers live in staging D1 and

@@ -254,8 +254,10 @@ unauthenticated HTTP 401, and headerless public HTTP 200 with unconfigured heade
 filtered. Six smoke leases were revoked and independently returned 404; temporary
 fixture directories and the port-8943 listener were removed. The shared sandbox
 was preserved because concurrent unowned work had appeared. See `chat/DESIGN.md`.
-Live Nanobot 0.3.5 and dufs 0.46.0 qualification is recorded in
-[`PREVIEW-HEADERS-QUALIFICATION.md`](PREVIEW-HEADERS-QUALIFICATION.md). Injection,
+Historical live Nanobot 0.3.5 and dufs 0.46.0 qualification is recorded in
+[`PREVIEW-HEADERS-QUALIFICATION.md`](PREVIEW-HEADERS-QUALIFICATION.md). Nanobot was
+retired as a managed surface on 2026-11-04; its tests remain gateway evidence,
+not current app setup guidance. Injection,
 spoof replacement, anonymous private denial and revocation passed. Direct and
 wrapped traffic both arrived from loopback: a holder of a signed/provider preview
 capability could spoof Nanobot's assertion directly. Its trusted-peer setting does

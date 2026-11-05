@@ -4,12 +4,13 @@
 starts Daytona's own noVNC desktop through Toolbox instead of the installer and
 never creates a sandbox. See [`DESKTOP.md`](DESKTOP.md).
 
-**Issue #94 deployed 2026-10-20 Pacific:** managed services now have a serialized stop
-operation, separate access-revocation/process-cleanup status and no-wake cleanup.
-CollabMD adds a fixed-folder, password-protected public room. Existing services
-remain private; link expiry still does not stop apps. See [`COLLABMD.md`](COLLABMD.md)
-for deployment versions, qualification and per-app shutdown limits. The upstream
-save-feedback limitation is accepted; the two-hour soak was explicitly skipped.
+**CollabMD retired 2026-11-04 Pacific; deployed:** all remaining managed apps
+are private. Existing user documents and collaboration sidecars are not deleted;
+[`COLLABMD.md`](COLLABMD.md) retains historical deployment and qualification evidence.
+Generic public/private preview capability is unchanged. Managed services retain
+serialized per-app stop, separate access-revocation/process-cleanup status and
+no-wake cleanup. Stop does not certify termination of detached jobs, and link
+expiry still does not stop apps or sibling services.
 
 **Pending issue #90 revision:** local code now uses independent, Daytona-held
 sandbox credentials and sandbox-bound managed links. See
@@ -584,22 +585,15 @@ with explicit rollout approval and review of the qualification boundaries above.
 Rollback: disable the feature and revoke managed `__browser` preview slots.
 Preserve user files and the shared machine. Installation removal and whole-sandbox
 reset require separate explicit choices and prior export of wanted data.
-## Nanobot POC (deployed for owner evaluation)
+## Retired Nanobot evaluation
 
-See [NANOBOT-POC.md](NANOBOT-POC.md) for the fourth service's implementation,
-private application authentication, finalization/renewal contract, canonical MCP
-adapter, credential scope, tests and live gates. Its app secret never enters DO
-metadata or dashboard output; private preview registration uses the existing
-encrypted header envelope. No new migration or infrastructure secret.
+The Nanobot preview, first published for owner evaluation on 2026-10-09, was retired
+on 2026-11-04. Its investigation remains historical evidence, not a supported
+installation or publication workflow. OpenChamber is the primary graphical agent
+surface on desktop and in the sandbox. Retirement does not authorize erasing
+existing user files, credentials or conversation history.
 
-Nanobot's adapter/guide live in the independent `api/nanobot-sandbox` submodule,
-published as `bayleaf-ucsc/nanobot-sandbox` with explicit approval on 2026-10-09.
-The Worker embeds source at its own verified published
-SHA; it does not install this package from Git at sandbox runtime. Wrangler runs
-the OpenCode pin builder and the separate strict Nanobot asset builder. Explicit
-`--fixture` builds support isolated tests while publication is pending. See the
-Nanobot POC's approval-required init/submodule/release sequence. OpenCode's
-unchanged plugin does not need republishing for this work.
+## Code-server defaults
 
 Code-server's next deliberate setup seeds missing
 `user-data/User/settings.json` with `chat.disableAIFeatures: true` and

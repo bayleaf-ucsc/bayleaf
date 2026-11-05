@@ -20,7 +20,7 @@ class JupyterAdapter(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.env = patch.dict(os.environ, {'HOME':self.temp.name,
             'JUPYTER_TOKEN':'untrusted', 'JUPYTERLAB_SETTINGS_DIR':'/untrusted',
-            'BAYLEAF_NANOBOT_AUTH':'untrusted-app-auth', 'BAYLEAF_API_KEY':'do-not-pass',
+            'BAYLEAF_UNRELATED_AUTH':'untrusted-app-auth', 'BAYLEAF_API_KEY':'do-not-pass',
             'OPENAI_API_KEY':'do-not-pass'})
         self.env.start()
         self.addCleanup(self.env.stop)
@@ -68,7 +68,7 @@ class JupyterAdapter(unittest.TestCase):
         argv, env = setup.start_jupyter(None)
         self.assertNotIn('JUPYTER_TOKEN', env)
         self.assertNotIn('OPENAI_API_KEY', env)
-        self.assertNotIn('BAYLEAF_NANOBOT_AUTH', env)
+        self.assertNotIn('BAYLEAF_UNRELATED_AUTH', env)
         self.assertEqual(env['BAYLEAF_API_KEY'], self.placeholder)
         self.assertNotIn('do-not-pass', repr((argv,env)))
         self.assertEqual(env['JUPYTERLAB_SETTINGS_DIR'], str(setup.ROOT/'lab-settings'))

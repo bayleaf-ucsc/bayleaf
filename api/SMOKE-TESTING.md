@@ -86,7 +86,6 @@ than deleting arbitrary handles copied from a potentially poisoned account row.
 |---|---|---|
 | Trusted operator Mac CLI | Expose after review | Explicit guarded issuance/revoke/cleanup, no root authority in VM |
 | Hosted OpenChamber/OpenCode discovery and tools | Omit | Not an end-user or guest authority |
-| Hosted Nanobot discovery and tools | Omit | Same operator boundary |
 | BayLeaf Chat | Omit | No toolkit, model or group grants |
 | Desktop agent onboarding/catalogs | Omit | Must not distribute issuance authority |
 | Public `llms.txt`, OpenAPI and `/docs/SKILL.md` | Omit | No public smoke endpoint or advertised capability |

@@ -24,7 +24,7 @@ export async function credential(env = process.env, home = homedir()): Promise<s
   if (value === undefined) {
     // Fixed managed locations only, not a desktop credential store. MCP children
     // may receive proxy/CA settings but no owner credential environment.
-    for (const service of ['browser', 'nanobot', 'ttyd', 'jupyter', 'code-server', 'dufs', 'collabmd']) {
+    for (const service of ['browser', 'ttyd', 'jupyter', 'code-server', 'dufs']) {
       try { value = (await privateFile(join(home, '.local/share/bayleaf', service, 'credentials/owner-key'))).trim(); break; }
       catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') fail('credential_unavailable'); }
     }

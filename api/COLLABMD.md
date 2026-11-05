@@ -1,6 +1,24 @@
-# Disposable collaborative Markdown rooms (issue #94)
+# Retired: disposable collaborative Markdown rooms (issue #94)
 
-**Deployed 2026-10-20 Pacific.** CollabMD is the
+**Retired 2026-11-04 Pacific; deployed.** CollabMD is no longer a supported
+managed app. All remaining managed apps use private owner-authenticated gateways.
+Retirement does not delete existing user documents, `.collabmd`
+collaboration/comment sidecars, or other installed user state. Old managed room
+URLs fail closed; existing app processes and separately created previews are not
+stopped by this deployment. Generic public/private
+preview capabilities and generic per-app stop behavior remain supported.
+
+Everything below records the historical 2026-10-20 implementation and dated
+qualification evidence, not current recommendations or installation instructions.
+Referenced CollabMD-specific helpers have been retired with the integration.
+
+Retirement deployment: API `16453c35-0daf-4909-93b3-4cc44088f0f0`, Sandboxes
+`c004e183-59a2-423c-963c-4409b1a50b64`. Active 100% deployment and adapter removal
+were verified through Cloudflare; live public home and API guidance omit both
+CollabMD and Nanobot. Legacy managed-slot denial is covered by synthetic tests,
+not a request to an existing user's room. No sandbox was woken or modified.
+
+**Historically deployed 2026-10-20 Pacific.** CollabMD was the
 first managed service with public gateway access. Only its fixed `__collabmd`
 slot may use that policy; every other managed slot remains private. Management
 always requires the owner, never a room password or application cookie.
@@ -30,7 +48,6 @@ to merge safely.
 | --- | --- | --- |
 | Owner Sandboxes dashboard | Expose start, restart, stop, link/password copy | Existing host-only owner session, exact-Origin POSTs and private management binding |
 | Hosted OpenChamber/OpenCode | No new lifecycle tools; ordinary filesystem reads | No extra credentials or plugin publication |
-| Hosted Nanobot | No new lifecycle tools; ordinary filesystem reads | No extra credentials or adapter publication |
 | BayLeaf Chat | Omit room lifecycle tools in this first version | Owner dashboard is the deliberate sharing surface |
 | Desktop agents | Omit lifecycle tools; existing authorized file access remains | No new installed capability or credential scope |
 | HTTP / agent orientation | Document the folder and coordinated-edit limitation | Existing browser lifecycle endpoint gains OpenChamber stop only; per-app selection remains private RPC |

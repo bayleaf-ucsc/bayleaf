@@ -37,10 +37,6 @@ MAX_ARCHIVE_BYTES = 512*1024*1024
 MAX_UNPACKED_BYTES = 2*1024**3
 MAX_ARCHIVE_MEMBERS = 100000
 SERVICES = {
-    'collabmd': {'release': 'collabmd-0.1.55-managed-v1', 'port': 8795, 'directory': 'collabmd',
-        'install': 'install_collabmd', 'configure': 'configure_collabmd', 'prepare': 'prepare_plain_service',
-        'start': 'start_collabmd', 'bootstrap': 'bootstrap_plain_service', 'health': 'health_collabmd',
-        'health_path': '/api/auth/status', 'starting': 'starting_collabmd'},
     'ttyd': {'release': 'ttyd-1.7.7-managed-v1', 'port': 8794, 'directory': 'ttyd',
         'install': 'install_ttyd', 'configure': 'configure_ttyd', 'prepare': 'prepare_plain_service',
         'start': 'start_ttyd', 'bootstrap': 'bootstrap_plain_service', 'health': 'health_ttyd',
@@ -49,10 +45,6 @@ SERVICES = {
         'install': 'install_jupyter', 'configure': 'configure_jupyter', 'prepare': 'prepare_plain_service',
         'start': 'start_jupyter', 'bootstrap': 'bootstrap_plain_service', 'health': 'health_jupyter',
         'health_path': '/api/status', 'starting': 'starting_jupyter'},
-    'nanobot': {'release': 'nanobot-0.3.5-managed-v1', 'port': 8792, 'directory': 'nanobot',
-        'install': 'install_nanobot', 'configure': 'configure_nanobot', 'prepare': 'prepare_plain_service',
-        'start': 'start_nanobot', 'bootstrap': 'bootstrap_plain_service', 'health': 'health_nanobot',
-        'health_path': '/webui/bootstrap', 'starting': 'starting_nanobot'},
     'openchamber': {'release': RELEASE, 'port': PORT, 'directory': 'browser',
         'install': 'install', 'configure': 'configure', 'prepare': 'prepare_openchamber',
         'start': 'start_openchamber', 'bootstrap': 'bootstrap', 'health': 'health_openchamber',
@@ -82,8 +74,6 @@ def select_service(service, load_adapter=True):
         # Worker transfers this fixed, canonical adapter beside the installer.
         # One source serves installation and isolated upstream qualification.
         exec(compile(Path(__file__).with_name('jupyter-adapter.py').read_text(), 'jupyter-adapter.py', 'exec'), globals())
-    if load_adapter and service == 'collabmd' and 'install_collabmd' not in globals():
-        exec(compile(Path(__file__).with_name('collabmd-adapter.py').read_text(), 'collabmd-adapter.py', 'exec'), globals())
 PHASES = {'checking', 'installing', 'configuring', 'starting', 'ready', 'failed', 'stopped'}
 
 
@@ -265,8 +255,6 @@ def health():
         # Ignore proxy environment variables for the loopback readiness check.
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         target = f'http://127.0.0.1:{PORT}' + SERVICES[SERVICE]['health_path']
-        if SERVICE == 'nanobot':
-            target = urllib.request.Request(target, headers={'X-Nanobot-Auth':(ROOT / 'credentials/app-secret').read_text().strip()})
         if SERVICE == 'jupyter':
             target = urllib.request.Request(target, headers={'Authorization':'token '+(ROOT / 'credentials/app-secret').read_text().strip()})
         if SERVICE == 'ttyd':
@@ -294,11 +282,6 @@ def health_dufs(data):
     return isinstance(data, dict) and data.get('status') == 'OK'
 
 
-def health_nanobot(data):
-    expected = read('request.json', {}).get('preview_url', 'https://pending.invalid/')
-    return isinstance(data, dict) and data.get('ws_url') == 'wss://' + expected.removeprefix('https://') and bool(data.get('token'))
-
-
 def inspect():
     operation = read('state/operation.json', {})
     runtime = read('state/runtime.json', {})
@@ -311,8 +294,7 @@ def inspect():
         'timeline': events, 'started_at': operation.get('started_at'),
         'updated_at': operation.get('updated_at'), 'release': RELEASE,
         'installed': read('state/installation.json', {}).get('release') == RELEASE,
-        'ready': health(), 'running': alive(runtime.get('process')), 'port': PORT,
-        **({'preview_url': runtime.get('preview_url')} if SERVICE in ('nanobot', 'collabmd') else {})}
+        'ready': health(), 'running': alive(runtime.get('process')), 'port': PORT}
 
 
 def install(progress):
@@ -601,70 +583,6 @@ def configure_dufs():
     return None
 
 
-def install_nanobot(progress):
-    release = ROOT / 'releases' / RELEASE
-    python = release / 'bin/python'
-    with lock('install.lock'):
-        if read('state/installation.json', {}).get('release') == RELEASE and python.is_file():
-            return release
-        if sys.version_info < (3, 11):
-            raise Failure('python_311_required')
-        if not shutil.which('node'):
-            raise Failure('node_22_required')
-        try:
-            version = subprocess.check_output(['node','--version'], text=True, timeout=10).strip()
-            if int(version.lstrip('v').split('.')[0]) < 22:
-                raise Failure('node_22_required')
-        except (ValueError, subprocess.SubprocessError):
-            raise Failure('node_22_required') from None
-        if shutil.disk_usage(ROOT).free < 1024**3:
-            raise Failure('insufficient_disk')
-        progress.update('installing', step='installing_nanobot')
-        stage = release.with_name(RELEASE + '.staging')
-        if stage.exists():
-            shutil.rmtree(stage)
-        stage.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        command([sys.executable, '-m', 'venv', str(stage)], timeout=120)
-        command([str(stage/'bin/python'), '-m', 'pip', 'install', '--disable-pip-version-check',
-                 'nanobot-ai==0.3.5'], timeout=900)
-        command([str(stage/'bin/python'), '-c', 'import nanobot; assert nanobot.__version__ == "0.3.5"'])
-        if release.exists():
-            release.rename(release.with_name(RELEASE + '.retired-' + str(time.time_ns())))
-        stage.rename(release)
-        # Invoke the venv Python module, not pip-generated absolute shebangs.
-        atomic('state/installation.json', {'schema':SCHEMA, 'release':RELEASE, 'version':'0.3.5'})
-        return release
-
-
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args, **kwargs):
-        return None
-
-
-def nanobot_discovery(key):
-    opener = urllib.request.build_opener(NoRedirect())
-    def get(path):
-        req = urllib.request.Request('https://api.bayleaf.dev'+path,
-            headers={'Authorization':'Bearer '+key, 'User-Agent':'BayLeaf-managed-services'})
-        with opener.open(req, timeout=30) as response:
-            body = response.read(4*1024*1024+1)
-            if len(body) > 4*1024*1024:
-                raise ValueError('size')
-            return json.loads(body)
-    try:
-        model = get('/recommended-model')['model']
-        catalog = get('/v1/models')['data']
-        row = next(row for row in catalog if row.get('id') == model)
-        if not isinstance(model, str) or len(model) > 256:
-            raise ValueError('model')
-        context = row.get('context_length')
-        if not isinstance(context, int) or context < 8192:
-            raise ValueError('context')
-        return model, context
-    except Exception:
-        raise Failure('provider_configuration_unavailable') from None
-
-
 def managed_text(name, content):
     """Update generated files only if their previous managed hash still matches."""
     path = ROOT / name
@@ -687,23 +605,6 @@ def managed_text(name, content):
     atomic('state/managed-files.json', hashes)
 
 
-# Narrowed on purpose: no delete, destroy or credential tools without native approval.
-# Explicitly requested endpoint lifetimes can destroy content at expiry.
-INBOX_TOOLS = ['inboxes', 'inbox_create', 'inbox_messages', 'inbox_read', 'inbox_save', 'inbox_archive',
-               'inbox_lifetime', 'inbox_events', 'inbox_limits']
-
-
-def remove_managed_text(name):
-    path = ROOT / name
-    hashes = read('state/managed-files.json', {})
-    if path.exists():
-        if hashlib.sha256(path.read_bytes()).hexdigest() != hashes.get(name):
-            raise Failure('managed_file_changed')
-        path.unlink()
-        hashes.pop(name, None)
-        atomic('state/managed-files.json', hashes)
-
-
 def managed_mcp_entry(servers, name, value):
     # A reserved managed name is not permission to overwrite an owner's server.
     prior = read('state/shared-mcp-server.json')
@@ -713,7 +614,7 @@ def managed_mcp_entry(servers, name, value):
     atomic('state/shared-mcp-server.json', value)
 
 
-def shared_mcp_command(inboxes, private=False):
+def shared_mcp_command(inboxes):
     node = shutil.which('node')
     executable = Path.home() / '.local/share/bayleaf/cli/bayleaf.mjs'
     if not node or not executable.is_file():
@@ -724,112 +625,7 @@ def shared_mcp_command(inboxes, private=False):
         'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy',
         'NODE_EXTRA_CA_CERTS') if os.environ.get(name)}
     groups = 'computer,inboxes,previews' if inboxes else 'computer,previews'
-    return [node, str(executable), 'mcp', '--groups', groups,
-        *(['--private-previews'] if private else [])], network
-
-
-def configure_nanobot():
-    incoming = ROOT / 'credentials/incoming'
-    credential = ROOT / 'credentials/owner-key'
-    if incoming.exists():
-        incoming.chmod(0o600); os.replace(incoming, credential)
-    if not credential.exists():
-        raise Failure('credential_missing')
-    key = credential.read_text().strip()
-    if not re.fullmatch(r'dtn_secret_[A-Za-z0-9_-]+', key):
-        raise Failure('credential_invalid')
-    secret_path = ROOT / 'credentials/app-secret'
-    secret_path.chmod(0o600)
-    secret = secret_path.read_text().strip()
-    if not re.fullmatch('[a-f0-9]{64}', secret):
-        raise Failure('credential_invalid')
-    req = read('request.json', {})
-    preview = req.get('preview_url', 'https://pending.invalid/')
-    if not isinstance(preview, str) or not re.fullmatch(r'https://[a-z0-9.-]+/', preview):
-        raise Failure('preview_configuration_invalid')
-    assets = read('assets.json', {})
-    managed_text('adapter/nanobot-mcp.mjs', assets['nanobot-mcp.mjs'])
-    shared = read('cli-assets.json') is not None
-    if not shared:
-        managed_text('workspace/skills/bayleaf-sandboxes/SKILL.md', assets['bayleaf-sandboxes.md'])
-    # The API marks Inboxes enabled per upload; disabled capabilities are not advertised.
-    inboxes = assets.get('_inboxes') is True and 'bayleaf-inboxes.md' in assets
-    if inboxes and not shared:
-        managed_text('workspace/skills/bayleaf-inboxes/SKILL.md', assets['bayleaf-inboxes.md'])
-    else:
-        name = 'workspace/skills/bayleaf-inboxes/SKILL.md'
-        path = ROOT / name
-        hashes = read('state/managed-files.json', {})
-        if path.exists():
-            # Never discard a user-edited skill while disabling managed discovery.
-            if hashlib.sha256(path.read_bytes()).hexdigest() != hashes.get(name):
-                raise Failure('managed_file_changed')
-            path.unlink()
-            hashes.pop(name, None)
-            atomic('state/managed-files.json', hashes)
-    if '_source' in assets:
-        atomic('state/nanobot-package.json', assets['_source'])
-    model, context = nanobot_discovery(key)
-    try:
-        config_path = ROOT / 'config/config.json'
-        config = json.loads(config_path.read_text()) if config_path.exists() else {}
-        if not isinstance(config, dict):
-            raise ValueError('config')
-    except (ValueError, OSError):
-        raise Failure('managed_file_changed') from None
-    defaults = config.setdefault('agents', {}).setdefault('defaults', {})
-    defaults.update(workspace=str(ROOT/'workspace'), model=model, provider='custom', contextWindowTokens=context)
-    defaults.setdefault('dream', {'enabled':False})
-    defaults.setdefault('idleCompactAfterMinutes', 0)
-    defaults.setdefault('botIcon', '')
-    config.setdefault('gateway', {}).setdefault('heartbeat', {'enabled':False})
-    config['gateway'].update(host='127.0.0.1', restartMode='exit')
-    config.setdefault('providers', {})['custom'] = {'apiBase':'https://api.bayleaf.dev/v1', 'apiKey':'${BAYLEAF_API_KEY}'}
-    config.setdefault('channels', {})['websocket'] = {'enabled':True, 'host':'0.0.0.0', 'port':PORT,
-        'path':'/', 'publicWsUrl':'wss://'+preview.removeprefix('https://'),
-        'tokenIssueSecret':'${BAYLEAF_NANOBOT_AUTH}', 'websocketRequiresToken':True}
-    tools = config.setdefault('tools', {})
-    tools.setdefault('web', {})['enable'] = False
-    # MCP stdio children do not inherit the gateway's proxy/trust environment.
-    # Daytona substitutes the inert owner placeholder only through its TLS proxy.
-    # Pass network settings, never arbitrary environment variables or credentials.
-    network_env = {name:os.environ[name] for name in (
-        'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy',
-        'NODE_EXTRA_CA_CERTS',
-    ) if os.environ.get(name)}
-    proxy_args = ['--use-env-proxy'] if any(name in network_env for name in (
-        'HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy',
-    )) else []
-    tools.setdefault('mcpServers', {})['bayleaf'] = {'command':shutil.which('node') or 'node',
-        'args':[*proxy_args, str(ROOT/'adapter/nanobot-mcp.mjs')],
-        'env':network_env,
-        'enabledTools':(['search','fetch','usage', *(['inbox_save'] if inboxes else [])] if shared else
-            ['search','fetch','usage','expose','unexpose', *(INBOX_TOOLS if inboxes else [])])}
-    if shared:
-        command, network = shared_mcp_command(inboxes, private=True)
-        groups = read('cli-assets.json').get('groups')
-        if not isinstance(groups, dict) or any(not isinstance(groups.get(g), list) for g in ('computer','inboxes','previews')):
-            raise Failure('cli_assets_invalid')
-        enabled = [*groups['computer'], *(groups['inboxes'] if inboxes else []), *groups['previews']]
-        managed_mcp_entry(tools['mcpServers'], 'sandbox', {'command':command[0], 'args':command[1:],
-            'env':network, 'enabledTools':enabled})
-        for name in ('bayleaf-sandboxes', 'bayleaf-inboxes'):
-            remove_managed_text(f'workspace/skills/{name}/SKILL.md')
-        managed_text('workspace/skills/bayleaf-sandbox-orientation/SKILL.md', read('cli-assets.json')['SKILL.md'])
-    atomic('config/config.json', config)
-    (Path.home() / 'workspace').mkdir(parents=True, exist_ok=True)
-    # Origin/credential/config changes restart only this managed process. User
-    # histories, skills, memory and schedules are neither replaced nor deleted.
-    return hashlib.sha256((key+secret+json.dumps(config, sort_keys=True)).encode()).hexdigest()
-
-
-def start_nanobot(backend_port):
-    env = service_environment()
-    env = {name:value for name,value in env.items() if not name.startswith('NANOBOT_')}
-    env.update(BAYLEAF_API_KEY=(ROOT/'credentials/owner-key').read_text().strip(),
-        BAYLEAF_NANOBOT_AUTH=(ROOT/'credentials/app-secret').read_text().strip())
-    return [str(ROOT/'releases'/RELEASE/'bin/python'), '-m', 'nanobot', 'gateway', '--foreground',
-        '--config', str(ROOT/'config/config.json'), '--port', str(backend_port)], env
+    return [node, str(executable), 'mcp', '--groups', groups], network
 
 
 def start_dufs(backend_port):
@@ -1110,8 +906,7 @@ def supervise(operation):
                 start_new_session=True)
             marker = identity(child.pid, include_zombie=True)
             runtime = {'process': marker, 'release': RELEASE, 'configured': False,
-                'credential_hash': lease['credential_hash'], 'operation': operation,
-                **({'preview_url':lease.get('preview_url')} if SERVICE in ('nanobot', 'collabmd') else {})}
+                'credential_hash': lease['credential_hash'], 'operation': operation}
             atomic('state/runtime.json', runtime)
         def report(step):
             runtime.setdefault('timeline', []).append({'step':step, 'at':int(time.time())})

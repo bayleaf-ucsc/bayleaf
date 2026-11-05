@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Exact published adapters in isolated real local runtimes, synthetic HTTP only.
+// Exact published OpenChamber adapter in an isolated real local runtime, synthetic HTTP only.
 // This is not hosted Linux, browser approval UX, inference AX, or live API evidence.
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
@@ -9,7 +9,7 @@ import {once} from 'node:events';
 import {join, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 const repo = resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const pins = {openchamber:'eb40edabc1e7dd58a6e9be586115779402ccfd23',nanobot:'16ee3c3ba44f6ae64d6847e64a79fa7949c18c2a'};
+const pins = {openchamber:'eb40edabc1e7dd58a6e9be586115779402ccfd23'};
 const candidate = process.env.HOSTED_ADAPTER_ROOT;
 const root = await mkdtemp(join(process.env.HOSTED_QUALIFICATION_TMP || '/private/var/folders/qj/gyqbn5y57956rrqd_g6yfqwr0000gn/T/opencode','hosted-client-'));
 const inbox='ibx_'+'a'.repeat(26), message='msg_'+'b'.repeat(26);
@@ -33,13 +33,12 @@ const fixture=createServer(async(req,res)=>{
 fixture.listen(0,'127.0.0.1');await once(fixture,'listening');
 const origin='http://127.0.0.1:'+fixture.address().port;
 async function wait(fn,ms=40000){let last;const end=Date.now()+ms;while(Date.now()<end){try{const v=await fn();if(v)return v;}catch(e){last=e;}await new Promise(r=>setTimeout(r,150));}throw last||new Error('Readiness timeout');}
-async function stage(name,dir){await mkdir(dir,{recursive:true});const packageName=name==='openchamber'?'sandbox-plugin':'nanobot-sandbox';if(candidate){await cp(join(candidate,packageName),dir,{recursive:true,filter:path=>!path.split('/').includes('.git')});return;}const source=join(repo,'api',packageName);const files=execFileSync('git',['-C',source,'ls-tree','-r','--name-only',pins[name]],{encoding:'utf8'}).trim().split('\n');for(const f of files){const dest=join(dir,f);await mkdir(resolve(dest,'..'),{recursive:true});await writeFile(dest,execFileSync('git',['-C',source,'show',pins[name]+':'+f]));}}
+async function stage(dir){await mkdir(dir,{recursive:true});const packageName='sandbox-plugin';if(candidate){await cp(join(candidate,packageName),dir,{recursive:true,filter:path=>!path.split('/').includes('.git')});return;}const source=join(repo,'api',packageName);const files=execFileSync('git',['-C',source,'ls-tree','-r','--name-only',pins.openchamber],{encoding:'utf8'}).trim().split('\n');for(const f of files){const dest=join(dir,f);await mkdir(resolve(dest,'..'),{recursive:true});await writeFile(dest,execFileSync('git',['-C',source,'show',pins.openchamber+':'+f]));}}
 const redirect=`const old=globalThis.fetch;globalThis.fetch=(u,o)=>String(u).startsWith('https://api.bayleaf.dev/')?old(${JSON.stringify(origin)}+new URL(u).pathname+new URL(u).search,o):old(u,o);`;
 async function stop(c){if(c.exitCode===null&&c.signalCode===null){c.kill('SIGTERM');await once(c,'exit');}}
 try{
-  for(const d of ['config/opencode','workspace','data','cache','state','wrapper','nano/adapter','nano/credentials'])await mkdir(join(root,d),{recursive:true});
-  await stage('openchamber',join(root,'published-plugin'));
-  await stage('nanobot',join(root,'nano/adapter'));
+  for(const d of ['config/opencode','workspace','data','cache','state','wrapper'])await mkdir(join(root,d),{recursive:true});
+  await stage(join(root,'published-plugin'));
   await writeFile(join(root,'wrapper/package.json'),JSON.stringify({type:'module',exports:'./index.mjs'}));
   await writeFile(join(root,'wrapper/index.mjs'),`${redirect}
 import real from ${JSON.stringify(pathToFileURL(join(root,'published-plugin/index.mjs')).href)};
@@ -86,27 +85,6 @@ call:async({name,args,sessionID},{signal})=>{try{return await (await ctx.tool.li
   await stop(server);const count=calls.length;await new Promise(r=>setTimeout(r,500));assert.equal(calls.length,count);server=await start();
   assert.ok((await rpc('call',{sessionID,name:'bayleaf_inbox_messages',args:{inbox_id:inbox}})).content);
   console.log('PASS isolated process restart retains session and tool use (not Daytona sleep/wake)');
-  await writeFile(join(root,'nano/credentials/owner-key'),'sk-bayleaf-synthetic',{mode:0o600});
-  await writeFile(join(root,'redirect.mjs'),redirect);
-  const launchNano=()=>{const c=spawn('node',['--import',join(root,'redirect.mjs'),join(root,'nano/adapter/nanobot-mcp.mjs')],{env:{...env,HOME:root},stdio:['pipe','pipe','ignore']});children.push(c);let buffer='',id=0;const pending=new Map();c.stdout.on('data',chunk=>{buffer+=chunk;while(buffer.includes('\n')){const end=buffer.indexOf('\n'),line=buffer.slice(0,end);buffer=buffer.slice(end+1);const r=JSON.parse(line);pending.get(r.id)?.(r.result);pending.delete(r.id);}});return {c,request:(method,params={})=>new Promise((resolve,reject)=>{const n=++id;const timer=setTimeout(()=>{pending.delete(n);reject(new Error('MCP timeout'));},10000);pending.set(n,r=>{clearTimeout(timer);resolve(r)});c.stdin.write(JSON.stringify({jsonrpc:'2.0',id:n,method,params})+'\n');})};};
-  let nano=launchNano();await nano.request('initialize');const listed=(await nano.request('tools/list')).tools;
-  assert.equal(listed.filter(t=>t.name.startsWith('inbox')).length,candidate?9:6);
-  if(candidate)assert.ok(listed.find(t=>t.name==='inbox_create').inputSchema.properties.email_auth.anyOf);
-  if(candidate)assert.deepEqual(listed.find(t=>t.name==='inbox_create').inputSchema.properties.access.enum,['open','closed']);
-  assert.equal(!!listed.find(t=>t.name==='inbox_create').inputSchema.properties.ttl_seconds,!!candidate);
-  const call=(name,args)=>nano.request('tools/call',{name,arguments:args});
-  assert.ok(!(await call('inbox_create',{type:'http',...(candidate?{access:'closed'}:{}),label:'synthetic'})).isError);
-  if(candidate){assert.ok(!(await call('inbox_lifetime',{inbox_id:inbox,ttl_seconds:60})).isError);const page=await call('inbox_events',{inbox_id:inbox,after:'now'});assert.deepEqual(JSON.parse(page.content[0].text),{events:[],cursor:'synthetic_cursor',more:false});}
-  assert.ok(!(await call('inbox_archive',{inbox_id:inbox,message_id:message,archived:true})).isError);
-  for(const path of ['../escape','AGENTS.md','.opencode/config.json'])assert.ok((await call('inbox_save',{inbox_id:inbox,message_id:message,attachment:0,path})).isError);
-  assert.ok(!(await call('inbox_save',{inbox_id:inbox,message_id:message,attachment:0,path:'attachment.html'})).isError);
-  assert.deepEqual(await readFile(join(root,'workspace/inbox-downloads/attachment.html')),bytes);
-  assert.equal((await stat(join(root,'workspace/inbox-downloads/attachment.html'))).mode&0o777,0o600);
-  assert.ok((await call('inbox_save',{inbox_id:inbox,message_id:message,attachment:0,path:'attachment.html'})).isError);
-   console.log(`PASS ${candidate?'candidate':'published'} Nanobot MCP: ${candidate?9:6} inbox tools; create/archive without native approval; quarantined mode-0600 attachment, unsafe paths/overwrite denied`);
-  await stop(nano.c);nano=launchNano();await nano.request('initialize');assert.equal((await nano.request('tools/list')).tools.length,listed.length);
-  assert.ok(!(await call('inbox_messages',{inbox_id:inbox})).isError);
-  console.log('PASS MCP restart discovery/read (not managed Nanobot update or host wake)');
   console.log(JSON.stringify({pins:candidate?(process.env.HOSTED_ADAPTER_REVISION||'unpublished candidate source'):pins,platform:process.platform,opencode:execFileSync(process.env.OPENCODE_TEST_BINARY||'opencode',['--version'],{encoding:'utf8'}).trim(),liveAPI:false,managedClient:false}));
 }catch(e){failures++;console.error(e.stack);process.exitCode=1;}
 finally{for(const c of children)await stop(c);await new Promise(r=>fixture.close(r));await rm(root,{recursive:true,force:true});console.log('CLEANUP isolated runtime files and processes removed; failures='+failures);}

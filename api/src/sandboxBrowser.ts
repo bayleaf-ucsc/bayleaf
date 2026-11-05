@@ -6,9 +6,7 @@
 import type { Bindings } from './types';
 import setupSource from '../scripts/browser-setup.py';
 import jupyterSource from '../scripts/jupyter-adapter.py';
-import collabmdSource from '../scripts/collabmd-adapter.py';
 import desktopCleanupSource from '../scripts/desktop-cleanup.py';
-import nanobotAssets from '../.nanobot-assets.json';
 import sandboxCliAssets from '../.sandbox-cli-assets.json';
 import { getAccountRow, activeSandboxCredential, ensureSandboxCredential, revokeSandboxCredentials, rotateSandboxCredential } from './sandboxCredentials';
 import { DAYTONA_DEFAULT_API_URL, DAYTONA_DEFAULT_PROXY_URL } from './constants';
@@ -24,7 +22,7 @@ export const keyHash = async (token: string) => Array.from(new Uint8Array(await 
   b => b.toString(16).padStart(2, '0')).join('');
 
 type Phase = 'opening' | 'ready' | 'failed' | 'expired' | 'stopped';
-type Step = 'discover' | 'credentials' | 'wake' | 'prepare' | 'inspect' | 'register' | 'finalize' | 'inspect_final';
+type Step = 'discover' | 'credentials' | 'wake' | 'prepare' | 'inspect' | 'register';
 interface ProgressEvent { step: string; at: number; error?: string }
 interface Operation {
   service?: ServiceId; // Missing on legacy OpenChamber operations.
@@ -160,8 +158,8 @@ const dueAt = (op: Operation) => op.phase === 'ready' ? op.deadline * 1000 :
   !op.invalidated || op.cleanupPending ? op.nextAt ?? 0 : Infinity;
 
 // Reconstructible per-operation application credential, never DO metadata.
-// Only CollabMD intentionally returns its shareable room password to the owner
-// management response. Other apps may expose their own WS token (ttyd /token).
+// Never returned in management responses. Apps may expose their own WS token
+// through the authenticated application (ttyd /token).
 // Purpose-separated from preview encryption/session signing.
 async function managedAppSecret(env: Bindings, op: Operation): Promise<string> {
   const encoder = new TextEncoder();
@@ -294,8 +292,7 @@ export class SandboxBrowser {
       updated_at: op?.updatedAt, started_at: op?.startedAt,
       heartbeat_at: op?.heartbeatAt, timeline: op?.timeline ?? [], previous_failure: op?.previousFailure,
       access_revoked: op?.phase === 'stopped' ? op.invalidated === true : undefined,
-      cleanup_pending: op?.cleanupPending, cleanup_error: op?.cleanupError,
-      room_password: ready && service === 'collabmd' ? await managedAppSecret(this.env, op!) : undefined });
+      cleanup_pending: op?.cleanupPending, cleanup_error: op?.cleanupError });
   }
 
   async fetch(req: Request): Promise<Response> {
@@ -546,28 +543,15 @@ export class SandboxBrowser {
               if (!access?.placeholder) fail('sandbox_access_unavailable');
               await upload(this.env, id, ROOT, 'credentials/incoming', access!.placeholder!);
             }
-            if (['nanobot', 'jupyter', 'ttyd', 'collabmd'].includes(def.id)) {
+            if (['jupyter', 'ttyd'].includes(def.id)) {
               await upload(this.env, id, ROOT, 'credentials/app-secret', await managedAppSecret(this.env, op));
             }
             if (def.id === 'jupyter') await upload(this.env, id, ROOT, 'jupyter-adapter.py', jupyterSource);
-            if (def.id === 'collabmd') await upload(this.env, id, ROOT, 'collabmd-adapter.py', collabmdSource);
-            if (def.id === 'nanobot') {
-              const inboxes = inboxesEnabled;
-              await upload(this.env, id, ROOT, 'assets.json', JSON.stringify({ ...nanobotAssets, _inboxes: inboxes }));
-            }
             await execute(this.env, id, `bash -c '${def.credential ? `chmod 600 ${ROOT}/credentials/incoming; ` : ''}mv ${ROOT}/setup.next.py ${ROOT}/setup.py; mv ${ROOT}/request.next.json ${ROOT}/request.json'`);
             op.step = 'inspect'; op.progress = 'checking'; op.launches = 1;
             await this.save(op); // A crash here resumes via inspect, then relaunch.
             await execute(this.env, id, launch(op.operation, def));
-          } else if (op.step === 'finalize') {
-            await upload(this.env, id, ROOT, 'request.next.json', JSON.stringify({operation:op.operation,
-              deadline:op.setupDeadline, restart:false, preview_url:op.url,
-              inboxes_enabled:inboxesEnabled}));
-            await execute(this.env, id, `mv ${ROOT}/request.next.json ${ROOT}/request.json`);
-            op.step = 'inspect_final'; op.progress = 'configuring_preview'; op.launches = 1;
-            await this.save(op);
-            await execute(this.env, id, launch(op.operation, def));
-          } else if (op.step === 'inspect' || op.step === 'inspect_final') {
+          } else if (op.step === 'inspect') {
             const text = await execute(this.env, id, `python3 ${ROOT}/setup.py${def.id === 'openchamber' ? '' : ` --service ${def.id}`} inspect`);
             if (text.length > 8192) fail('invalid_setup_status');
             const result = JSON.parse(text) as Record<string, unknown>;
@@ -598,43 +582,41 @@ export class SandboxBrowser {
               }
               if (result.phase === 'ready' && result.ready === true && result.port === def.port &&
                   (result.service === def.id || (def.id === 'openchamber' && result.service === undefined))) {
-                if (op.step === 'inspect_final') {
-                  if (result.preview_url !== op.url) fail('preview_configuration_invalid');
-                  op.phase = 'ready'; op.progress = 'ready';
-                } else { op.step = 'register'; op.progress = 'registering_preview'; }
+                op.step = 'register'; op.progress = 'registering_preview';
               }
             }
           } else if (op.step === 'register') {
             // Reconcile the D1 commit / DO save crash window. Discover revoked
             // the previous slot before setup; only this serialized operation can
             // write a managed slot. Never rotate generations on an alarm retry.
-            const existing = ['nanobot', 'collabmd'].includes(def.id) ? await this.env.DB.prepare(`SELECT hostname, expires_at FROM preview_registrations
+            const existing = await this.env.DB.prepare(`SELECT hostname, expires_at FROM preview_registrations
               WHERE email=? AND deployment='__browser' AND slot=? AND owner_key_hash=?`)
-              .bind(op.email, def.slot, op.ownerKeyHash).first<{hostname:string;expires_at:number}>() : null;
+              .bind(op.email, def.slot, op.ownerKeyHash).first<{hostname:string;expires_at:number}>();
             if (existing) {
-              if (existing.expires_at <= now()) fail('preview_configuration_invalid');
-              op.url = `https://${existing.hostname}/`; op.deadline = Math.min(op.deadline, existing.expires_at);
-              op.step = 'finalize'; op.progress = 'configuring_preview';
+              if (existing.expires_at <= now()) fail('preview_unavailable');
+              const url = `https://${existing.hostname}/`;
+              op.url = 'landing' in def ? new URL(def.landing, url).href : url;
+              op.deadline = Math.min(op.deadline, existing.expires_at);
+              op.phase = 'ready'; op.progress = 'ready';
             } else {
-            const r = await platform(this.env, `/sandbox/${encodeURIComponent(id)}/ports/${def.port}/signed-preview-url?expiresInSeconds=${Math.max(1, op.deadline - now())}`);
-            if (!r.ok) fail('preview_unavailable');
-            const signed = await r.json() as { url: string };
-            const preview = await registerBrowserPreview(this.env, op.email, signed.url, op.deadline, op.ownerKeyHash, def.slot,
-              ['nanobot','jupyter','ttyd'].includes(def.id) ? await managedAppSecret(this.env, op) : undefined);
-            if (preview instanceof Response) fail('preview_unavailable');
-            else {
-              // The gateway's post-login redirect uses the same fixed landing path.
-              op.url = 'landing' in def ? new URL(def.landing, preview.url).href : preview.url;
-              op.deadline = Math.floor(Date.parse(preview.expires_at) / 1000);
-              if (['nanobot', 'collabmd'].includes(def.id)) { op.step = 'finalize'; op.progress = 'configuring_preview'; }
-              else { op.phase = 'ready'; op.progress = 'ready'; }
-            }
+              const r = await platform(this.env, `/sandbox/${encodeURIComponent(id)}/ports/${def.port}/signed-preview-url?expiresInSeconds=${Math.max(1, op.deadline - now())}`);
+              if (!r.ok) fail('preview_unavailable');
+              const signed = await r.json() as { url: string };
+              const preview = await registerBrowserPreview(this.env, op.email, signed.url, op.deadline, op.ownerKeyHash, def.slot,
+                ['jupyter','ttyd'].includes(def.id) ? await managedAppSecret(this.env, op) : undefined);
+              if (preview instanceof Response) fail('preview_unavailable');
+              else {
+                // The gateway's post-login redirect uses the same fixed landing path.
+                op.url = 'landing' in def ? new URL(def.landing, preview.url).href : preview.url;
+                op.deadline = Math.floor(Date.parse(preview.expires_at) / 1000);
+                op.phase = 'ready'; op.progress = 'ready';
+              }
             }
           }
         }
         op.transientFailures = 0;
         await this.save(op);
-        await this.schedule(op, op.phase === 'ready' ? op.deadline * 1000 : Date.now() + (['inspect','inspect_final'].includes(op.step) ? 10_000 : 1000));
+        await this.schedule(op, op.phase === 'ready' ? op.deadline * 1000 : Date.now() + (op.step === 'inspect' ? 10_000 : 1000));
       } catch (error) {
         // A started machine's Toolbox can lag behind its control-plane status.
         // Replaying prepare replaces staging files; inspect reconciles an ambiguous launch.

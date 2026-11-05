@@ -135,7 +135,8 @@ All are POST beneath `/sandbox/computer`:
 Approved follow-up (2026-10-24): [`sandbox-cli/README.md`](sandbox-cli/README.md)
 records shipped sandbox-only CLI/MCP wiring, Adam-only managed app refresh and
 the updated exposure matrix. OpenChamber uses a published duplicate-suppression
-plugin switch; Nanobot partitions its existing adapter through parent config.
+plugin switch. The Nanobot portion of that release is historical: that managed
+surface was retired on 2026-11-04.
 Live registry/read-only checks pass. Desktop was inactive during this release,
 so live screenshots/input and browser image rendering remain unqualified.
 
@@ -149,7 +150,6 @@ desktop skill distribution in llms.ts, and Chat tool architecture in DESIGN.md.
 |---|---|---|---|---|
 | HTTP API, all v1 methods | Expose, deployed 2026-10-24 | Generated OpenAPI plus concise llms workflow | Owner key/sandbox credential; observation handle is not authority | Adam/API maintainer: functional live qualification remains pending |
 | Hosted OpenChamber plugin, reads and input | Defer per brief; submodule untouched | Future native image-capable tools and focused skill, calling the central API | Native permission path for consequential control; human coordination without claiming a lock | Plugin maintainer: independently release package/pin, qualify fresh and already-running installations after API deployment |
-| Hosted Nanobot, reads and input | Defer; no native mutation approval UI | Future MCP image results plus installed skill and parent enabledTools/assets | Adam must decide input scope and consent before enabling writes; no localhost shortcut | Nanobot maintainer: separate package and parent installer release, qualify sleeping-client update behavior |
 | BayLeaf Chat, reads and input | Defer; no toolkit/model grants changed | Future toolkit and ordinary-user discoverable skill | Establish per-user API authority, consequential-action approval and stored screenshot-history disclosure | Chat maintainer with Adam: approve integration/data boundary before source or production changes |
 | Desktop OpenChamber/OpenCode, Standard and Sealed | Defer dedicated tools/skill delivery | Existing platform skill points to llms; this change adds orientation, not native image tooling | Owner API key, not temporary token; user consent for installation and input | Desktop integration maintainer: catalog skill/version or plugin choice, qualify updates and unprompted discovery in a fresh user session |
 

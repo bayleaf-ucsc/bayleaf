@@ -822,8 +822,8 @@ node scripts/test-sandbox-policy.mjs --serve
 node scripts/test-sealed-dashboard.mjs --serve
 ```
 
-The first command generates local build inputs using fixture Nanobot assets,
-not production credentials. The three servers serve unmodified application
+The first command generates local build inputs, not production credentials.
+The three servers serve unmodified application
 templates and client scripts. Only external backends/identities are synthetic.
 `/__harness-login` exists only in the grant harness; `/__fixture/*` exists only
 in the loopback sandbox preview. Neither is a production test endpoint. Use
@@ -1077,7 +1077,6 @@ Exposure scope for this transport-only fix (no new authority or capability):
 | --- | --- |
 | Desktop Standard/Sealed OpenCode/OpenChamber | Curl header transport and explicit Windows aliases deployed; Windows Standard browser handoff qualified, postapproval completion pending. |
 | Hosted OpenCode/Sandbox discovery | Shared Standard command corrected; no plugin or installer change. |
-| Hosted Nanobot | Not applicable: no OpenCode discovery command. |
 | Chat | Not applicable: no OpenCode discovery command. |
 | HTTP docs / llms.txt | Local getting-started guide splits Windows commands; publication requires a later approved push. Live llms.txt Windows guidance remains a follow-up. |
 

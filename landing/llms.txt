@@ -13,7 +13,7 @@ them to Chat or Sandboxes.
 ## For people
 
 - [BayLeaf Chat](https://chat.bayleaf.dev/): Open WebUI with a curated selection of proprietary and open-weight models, opt-in web search and code sandbox tools, and invite-code access groups for courses and programs. Sign in with UCSC via CILogon. Chat stores conversation history so it follows you across devices; the operator can read that history.
-- [BayLeaf Sandboxes](https://sandbox.bayleaf.dev/): a personal cloud computer, used through the browser, for trying agents and other software away from your own files. OpenChamber is the recommended starting point; Nanobot, CollabMD, VS Code (code-server), JupyterLab, a file manager, a shell and an optional Desktop share one workspace folder.
+- [BayLeaf Sandboxes](https://sandbox.bayleaf.dev/): a personal cloud computer, used through the browser, for trying agents and other software away from your own files. OpenChamber is the primary graphical agent surface, with working habits transferable from desktop to sandbox; VS Code (code-server), JupyterLab, a file manager, a shell and an optional Desktop share one workspace folder. All managed apps use private owner-authenticated gateways.
 - [Getting Started](https://github.com/bayleaf-ucsc/bayleaf/blob/main/GETTING-STARTED.md): orientation for new users of Chat and the API.
 - [Use Cases](https://github.com/bayleaf-ucsc/bayleaf/blob/main/USE-CASES.md): concrete recipes from campus use.
 - [Support](https://github.com/bayleaf-ucsc/bayleaf/blob/main/SUPPORT.md): where to ask for help.

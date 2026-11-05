@@ -38,7 +38,7 @@ workflow turns out to be.
    all; new public surface is a strategic call, not an operational one.
 6. **Agent capability exposure.** Run `bayleaf-powered-agent-capabilities.md`
    before calling the facet complete: decide discovery and invocation across
-   hosted OpenChamber, Nanobot, Chat, desktop agents and `llms.txt`. Record
+   hosted OpenChamber, Chat, desktop agents and `llms.txt`. Record
    deliberate omissions/deferrals; updating HTTP docs alone is not exposure.
 7. Record: the coordinated commit set, linked to the driving issue.
 

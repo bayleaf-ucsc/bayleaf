@@ -4,13 +4,6 @@ const COMMON_STEPS = ['checking', 'installing', 'configuring', 'starting', 'read
 const COMMON_ERRORS = ['insufficient_disk', 'requires_2_gib', 'installation_failed', 'port_in_use',
   'application_not_ready', 'setup_failed', 'setup_timeout'];
 export const SERVICE_DEFS = {
-  collabmd: {
-    id: 'collabmd', root: '/home/daytona/.local/share/bayleaf/collabmd', port: 8795,
-    slot: '__collabmd', credential: false, memoryGiB: 0, driver: 'installer',
-    steps: [...COMMON_STEPS, 'installing_collabmd', 'starting_collabmd', 'configuring_preview'],
-    errors: [...COMMON_ERRORS, 'credential_missing', 'credential_invalid', 'release_verification_failed',
-      'unsupported_architecture', 'sharing_directory_invalid', 'preview_configuration_invalid'],
-  },
   ttyd: {
     id: 'ttyd', root: '/home/daytona/.local/share/bayleaf/ttyd', port: 8794,
     slot: '__ttyd', credential: true, memoryGiB: 0, driver: 'installer',
@@ -22,13 +15,6 @@ export const SERVICE_DEFS = {
     slot: '__jupyter', credential: true, memoryGiB: 0, driver: 'installer',
     steps: [...COMMON_STEPS, 'installing_jupyter', 'starting_jupyter'],
     errors: [...COMMON_ERRORS, 'credential_missing', 'credential_invalid', 'python_311_required', 'managed_file_changed'],
-  },
-  nanobot: {
-    id: 'nanobot', root: '/home/daytona/.local/share/bayleaf/nanobot', port: 8792,
-    slot: '__nanobot', credential: true, memoryGiB: 0, driver: 'installer',
-    steps: [...COMMON_STEPS, 'installing_nanobot', 'starting_nanobot', 'configuring_preview'],
-    errors: [...COMMON_ERRORS, 'credential_missing', 'credential_invalid', 'python_311_required',
-      'node_22_required', 'provider_configuration_unavailable', 'managed_file_changed', 'preview_configuration_invalid'],
   },
   openchamber: {
     id: 'openchamber', root: '/home/daytona/.local/share/bayleaf/browser', port: 3100,
@@ -69,7 +55,7 @@ export const serviceDef = (id: unknown): ServiceDef | undefined =>
   typeof id === 'string' && Object.hasOwn(SERVICE_DEFS, id) ? SERVICE_DEFS[id as ServiceId] : undefined;
 export const managedSlot = (slot: string) => Object.values(SERVICE_DEFS).some(def => def.slot === slot);
 /** Fixed policy, never a caller-selected public/private switch. */
-export const managedAccess = (slot: string) => slot === '__collabmd' ? 'public' : 'private';
+export const managedAccess = (_slot: string) => 'private' as const;
 /** Fixed post-login landing path for a managed slot; never caller-selected. */
 export const managedLanding = (slot: string) => {
   const def = Object.values(SERVICE_DEFS).find(def => def.slot === slot);

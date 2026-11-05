@@ -148,8 +148,8 @@ scheduled checks need a separate, explicitly authorized execution plan.
 
 ## Follow the appropriate invocation path
 
-Hosted OpenChamber and Nanobot: load your installed bayleaf-inboxes skill and use
-its tools. Their permissions differ; do not bypass missing tools through shell
+Hosted OpenChamber: use your installed sandbox orientation and Inboxes tools;
+do not bypass missing tools through shell
 commands or broader credentials. Desktop agents: use an authorized HTTP client or
 guide the user in their own terminal. No additional desktop plugin is required.
 

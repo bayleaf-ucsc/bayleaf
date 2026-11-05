@@ -1,7 +1,6 @@
 ---
 name: bayleaf-sandbox-orientation
 description: Judgment for working across shell, apps, Desktop and received email/webhooks in a Linux BayLeaf sandbox.
-metadata: {"nanobot":{"always":true}}
 ---
 
 Shell, files, applications, desktop and cooperating agents share this machine.
@@ -15,12 +14,8 @@ Ask before consequential input, public exposure, or shortening an inbox lifetime
 
 Use discovered tools directly, not HTTP recipes. Open a computer session explicitly
 before screenshots or input. Desktop must already be active.
-In Nanobot, MCP images become saved artifacts: use `read_file` on the returned
-artifact path to see the screenshot before acting, not just `message` to send it.
-These artifacts persist in Nanobot storage; delete screenshots when no longer needed.
 Native inbox-save tools still save exact bodies/attachments; OpenChamber also retains approved
-message deletion and inbox destruction. Nanobot keeps private-only previews with
-no injected headers and quarantined, non-overwriting inbox saves. OpenChamber MCP
+message deletion and inbox destruction. OpenChamber MCP
 mutations ask native permission, but unlike old preview tools their prompt uses
 the tool name, not a private/public port-specific resource.
 
@@ -31,8 +26,7 @@ is not zero. Native web search/fetch and budget tools remain available.
 
 Files, histories and schedules persist; processes do not survive sleep. Schedules
 cannot wake compute or replay missed runs. OpenChamber users should load
-`bayleaf-scheduling` before scheduling. Nanobot's Dream/heartbeat/idle compaction
-are initially off; seed no jobs. Browser links last at most 24 hours without
+`bayleaf-scheduling` before scheduling. Browser links last at most 24 hours without
 stopping apps. Resume at https://sandbox.bayleaf.dev/. Default idle stop is one
 hour, archive after 24 hours stopped, reclamation after 90 inactive days.
 Standard inference uses ZDR providers, not Sealed; stored files/history are

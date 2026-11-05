@@ -52,7 +52,7 @@ try:
     archive=io.BytesIO()
     with tarfile.open(fileobj=archive,mode='w:gz') as tar:
         tar.add(REPO/'inbox/qualification/hosted-client-runtime.mjs',arcname='qualification/runtime.mjs')
-        for name in ['sandbox-plugin','nanobot-sandbox']:
+        for name in ['sandbox-plugin']:
             for path in (SOURCE/name).rglob('*'):
                 if path.is_file() and '.git' not in path.relative_to(SOURCE/name).parts:
                     tar.add(path,arcname='qualification/adapters/'+name+'/'+str(path.relative_to(SOURCE/name)))
@@ -62,7 +62,6 @@ try:
     execute('npm install --prefix /home/daytona/qualification/tools node@22 @openchamber/web@latest --no-audit --no-fund',420)
     prefix='export PATH=/home/daytona/qualification/tools/node_modules/.bin:$PATH; '
     execute(prefix+"node --input-type=module -e 'const {installOpenCodeV2}=await import(\"/home/daytona/qualification/tools/node_modules/@openchamber/web/server/lib/opencode/v2-install.js\"); await installOpenCodeV2();'",420)
-    execute('python3 -m venv /home/daytona/qualification/nanobot && /home/daytona/qualification/nanobot/bin/pip install --disable-pip-version-check nanobot-ai==0.3.5',420)
     cmd=prefix+'HOSTED_ADAPTER_ROOT=/home/daytona/qualification/adapters HOSTED_QUALIFICATION_TMP=/home/daytona/qualification OPENCODE_TEST_BINARY=/home/daytona/.opencode/bin/opencode node /home/daytona/qualification/runtime.mjs'
     execute(cmd,180)
     execute("printf 'owned persistent marker' > /home/daytona/qualification/resume-marker")

@@ -46,8 +46,8 @@ const bundle = await build({ absWorkingDir: root, stdin: { resolveDir: root, con
       const key=service==='openchamber'?'operation':'operation/'+service;
        if(path==='/__record')return Response.json(await this.testStorage.get(key));
        if(path==='/__registration-crash') {
-         const op=await this.testStorage.get(key);op.step='register';delete op.url;
-         await this.testStorage.put(key,op);return Response.json(op);
+         const op=await this.testStorage.get(key);op.phase='opening';op.step='register';op.nextAt=Date.now();delete op.url;
+         await this.testStorage.put(key,op);await this.arm();return Response.json(op);
        }
       if(path==='/__delay' || path==='/__retry') {
         const op=await this.testStorage.get(key);
@@ -89,7 +89,7 @@ const credentialsUploaded=[];
 const vault = new Map();
 let failCreate=false, creationRequests=0, rejectCreate=0;
 let computerUse=[], desktopUp=false, desktopCasing='pascal', desktopStartFails=false, registeredAtDesktopStop;
-let nanobotAuth, jupyterAuth, ttydAuth, collabmdAuth, nanobotReady=true, nanobotWrongOrigin=false, stopFails=false, stops=0;
+let jupyterAuth, ttydAuth, stopFails=false, stops=0;
 const machine = () => ({ id: machineId, state, memory, public: isPublic, labels: { 'synthetic-chat': email } });
 const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
   name: 'browser-harness', modules: true, script: bundle.outputFiles[0].text,
@@ -170,16 +170,15 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
         }
         if (u.searchParams.get('path').endsWith('credentials/app-secret')) {
           assert.match(text,/^[a-f0-9]{64}$/);
-          if(u.searchParams.get('path').includes('/collabmd/'))collabmdAuth=text;
-          else if(u.searchParams.get('path').includes('/ttyd/'))ttydAuth=text;
-          else if(u.searchParams.get('path').includes('/jupyter/'))jupyterAuth=text;else nanobotAuth=text;
+          if(u.searchParams.get('path').includes('/ttyd/'))ttydAuth=text;
+          else if(u.searchParams.get('path').includes('/jupyter/'))jupyterAuth=text;
+          else assert.fail('unexpected app-secret upload');
         }
         return Response.json({});
       }
       executions++;
       const { command } = await req.json();
       assert(!command.includes('sk-bayleaf-'), 'credential in command');
-      if(nanobotAuth)assert(!command.includes(nanobotAuth),'app secret in command');
       if(jupyterAuth)assert(!command.includes(jupyterAuth),'Jupyter secret in command');
       if(ttydAuth)assert(!command.includes(ttydAuth),'ttyd secret in command');
       if (command.includes('subprocess.Popen')) launches++;
@@ -196,12 +195,11 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
           {step:'credential-leak',at:Math.floor(Date.now()/1000),error:'secret'},
           {step:'connecting_bayleaf',at:9999999999999}],
       }) });
-      const appService = ['code-server','dufs','nanobot','jupyter','ttyd','collabmd'].find(id=>command.endsWith('--service '+id+' inspect'));
+      const appService = ['code-server','dufs','jupyter','ttyd'].find(id=>command.endsWith('--service '+id+' inspect'));
       if (appService) return Response.json({exitCode:0,result:JSON.stringify({
         schema:1,service:wrongService?'openchamber':appService,operation:incomingOperation.operation,
-        updated_at:Math.floor(Date.now()/1000),phase:'ready',ready:appService==='nanobot'?nanobotReady:true,
-        port:appService==='collabmd'?8795:appService==='dufs'?8790:appService==='nanobot'?8792:appService==='jupyter'?8793:appService==='ttyd'?8794:8791,
-        ...(['nanobot','collabmd'].includes(appService)?{preview_url:nanobotWrongOrigin?'https://wrong.invalid/':incomingOperation.preview_url}:{}),
+        updated_at:Math.floor(Date.now()/1000),phase:'ready',ready:true,
+        port:appService==='dufs'?8790:appService==='jupyter'?8793:appService==='ttyd'?8794:8791,
         timeline:[{step:appService==='dufs'?'installing_dufs':'installing_code_server',at:Math.floor(Date.now()/1000)}],
       })});
       return Response.json({ exitCode: 0, result: '' });
@@ -540,62 +538,42 @@ try {
     assert.equal((await (await req(path('code-server','status'))).json()).url,editor.url);
     await req(path('dufs','__expire'));await req(path('code-server','__expire'));
   });
-  await check('Nanobot finalization hides its link, retries one generation, injects only app auth, and preserves sibling services',async()=>{
-    const nb=action=>'/__test/'+action+'?service=nanobot';
-    const advance=async step=>{let op;for(let i=0;i<14;i++){op=await(await req(nb('__tick'))).json();if(op.step===step || op.phase!=='opening')return op;}throw new Error('Nanobot did not reach '+step);};
-    const sibling=(await status()).url;
-    await req(nb('start'),{method:'POST'});
-    let op=await advance('finalize');assert.equal(op.phase,'opening');assert(op.url);
-    assert.equal((await(await req(nb('status'))).json()).url,undefined);
-    const row=await db.prepare("SELECT * FROM preview_registrations WHERE slot='__nanobot'").first();
-    assert.equal(row.access,'private');assert(!JSON.stringify(row).includes(nanobotAuth));
-    assert(!JSON.stringify(op).includes(nanobotAuth));
-    const count=previewCalls;
-    await req(nb('__registration-crash'));
-    op=await advance('finalize');assert.equal(op.url,`https://${row.hostname}/`);
-    assert.equal((await db.prepare("SELECT generation FROM preview_registrations WHERE slot='__nanobot'").first()).generation,row.generation);
-    toolboxFailures=1;await req(nb('__tick'));
-    op=await advance('inspect_final');nanobotReady=false;
-    await req(nb('__tick'));assert.equal((await(await req(nb('status'))).json()).url,undefined);
-    nanobotReady=true;op=await(await req(nb('__tick'))).json();assert.equal(op.phase,'ready');
-    assert.equal(previewCalls,count);assert.equal((await status()).url,sibling);
-    const origin=new URL(op.url).origin;
-    assert.equal((await worker.fetch(op.url,{headers:{'X-Test-Origin':origin}})).status,401);
-    const session=jwt({aud:origin,generation:row.generation,exp:row.expires_at},previewSecret);
-    assert.equal((await worker.fetch(op.url,{headers:{Cookie:'__Host-bl-preview-session='+session,
-      'X-Test-Origin':origin,'Sec-Fetch-Site':'same-origin','X-Nanobot-Auth':'spoofed'}})).status,200);
-    assert.equal(lastForwarded['x-nanobot-auth'],nanobotAuth);
-    const old=op.url;await req(nb('__expire'));await req(nb('start'),{method:'POST'});
-    op=await advance('finalize');assert.notEqual(op.url,old);
-    await advance('inspect_final');op=await(await req(nb('__tick'))).json();assert.equal(op.phase,'ready');
-    assert.equal(incomingOperation.preview_url,op.url);
-    await req(nb('__expire'));
-  });
-  await check('Nanobot rejects wrong origin and lost previews, but survives ordinary-key rotation during finalization',async()=>{
-    const nb=action=>'/__test/'+action+'?service=nanobot';
-    const toFinalize=async()=>{await req(nb('start'),{method:'POST'});for(let i=0;i<12;i++){const op=await(await req(nb('__tick'))).json();if(op.step==='finalize')return op;}throw new Error('finalize missing');};
-    await toFinalize();await req(nb('__tick'));nanobotWrongOrigin=true;
-    let op=await(await req(nb('__tick'))).json();nanobotWrongOrigin=false;
-    assert.equal(op.phase,'failed');assert.equal(op.error,'preview_configuration_invalid');
-    assert.equal((await db.prepare("SELECT count(*) n FROM preview_registrations WHERE slot='__nanobot'").first()).n,0);
-    await toFinalize();
-    const old=(await db.prepare('SELECT bayleaf_token FROM user_keys WHERE email=?').bind(email).first()).bayleaf_token;
-    await db.prepare('UPDATE user_keys SET bayleaf_token=? WHERE email=?').bind('sk-bayleaf-rotated-during-finalize',email).run();
-    op=await(await req(nb('__tick'))).json();assert.notEqual(op.phase,'failed');
-    await db.prepare('UPDATE user_keys SET bayleaf_token=? WHERE email=?').bind(old,email).run();
-    await req(nb('__expire'));
-    await toFinalize();await db.prepare("DELETE FROM preview_registrations WHERE slot='__nanobot'").run();
-    op=await(await req(nb('__tick'))).json();assert.equal(op.phase,'expired');assert.equal(op.url,undefined);
+  for(const retired of ['nanobot','collabmd']) await check(`retired ${retired} cannot start and legacy managed previews fail closed`,async()=>{
+    const before={executions,launches,previewCalls,wakes};
+    assert.equal((await req('/__test/start?service='+retired,{method:'POST'})).status,400);
+    assert.deepEqual({executions,launches,previewCalls,wakes},before);
+    const row=await db.prepare("SELECT * FROM preview_registrations WHERE slot='__browser'").first();
+    const legacy={...row,hostname:'retired-private-fixture.previews.example.test',slot:'__'+retired};
+    const columns=Object.keys(legacy);
+    await db.prepare(`INSERT INTO preview_registrations (${columns.join(',')}) VALUES (${columns.map(()=>'?').join(',')})`).bind(...Object.values(legacy)).run();
+    const origin='https://'+legacy.hostname;
+    const session=jwt({aud:origin,generation:legacy.generation,exp:legacy.expires_at},previewSecret);
+    const forwarded=lastForwarded;
+    for(const access of ['private','public']) {
+      await db.prepare('UPDATE preview_registrations SET access=? WHERE hostname=?').bind(access,legacy.hostname).run();
+      assert.equal((await worker.fetch(origin+'/',{headers:{Cookie:'__Host-bl-preview-session='+session,
+        'X-Test-Origin':origin,'Sec-Fetch-Site':'same-origin'}})).status,404);
+    }
+    assert.equal(lastForwarded,forwarded,'retired slot must never reach the application');
+    await db.prepare('DELETE FROM preview_registrations WHERE hostname=?').bind(legacy.hostname).run();
   });
   await check('Jupyter keeps native token behind owner/origin gates on HTTP and WS, uploads only its sandbox placeholder, and coexists',async()=>{
     const jp=action=>'/__test/'+action+'?service=jupyter';
     const uploads=credentialsUploaded.length, sibling=(await status()).url;
-    const complete=async()=>{let op;for(let i=0;i<12;i++){op=await(await req(jp('__tick'))).json();if(op.phase==='ready')return op;}throw new Error('Jupyter failed');};
+    const complete=async()=>{let op;for(let i=0;i<12;i++){op=await(await req(jp('__tick'))).json();if(op.phase==='ready')return op;}throw new Error('Jupyter failed: '+JSON.stringify(op));};
     await req(jp('start'),{method:'POST'});let op=await complete();
     assert.equal((await status()).url,sibling);
-    assert(!JSON.stringify(op).includes(jupyterAuth));assert.notEqual(jupyterAuth,nanobotAuth);
+    assert(!JSON.stringify(op).includes(jupyterAuth));
     const row=await db.prepare("SELECT * FROM preview_registrations WHERE slot='__jupyter'").first();
     assert.equal(row.access,'private');assert(!JSON.stringify(row).includes(jupyterAuth));
+    const registeredUrl=op.url, calls=previewCalls;
+    await req(jp('__registration-crash'));
+    op=await complete();
+    assert.equal(op.url,registeredUrl,'registration retry reuses the existing hostname');
+    assert.equal(previewCalls,calls,'registration retry never requests a new signed URL');
+    const reconciled=await db.prepare("SELECT * FROM preview_registrations WHERE slot='__jupyter'").first();
+    assert.equal(reconciled.generation,row.generation,'registration retry preserves the generation');
+    assert.equal((await status()).url,sibling);
     const origin=new URL(op.url).origin;
     const session=jwt({aud:origin,generation:row.generation,exp:row.expires_at},previewSecret);
     const headers={Cookie:'__Host-bl-preview-session='+session,'X-Test-Origin':origin,'Sec-Fetch-Site':'same-origin'};
@@ -642,47 +620,46 @@ try {
     assert.equal((await status()).url,sibling);
     await req(tt('__expire'));assert.equal((await(await req(tt('status'))).json()).url,undefined);
   });
-  await check('CollabMD public policy never injects room auth; owner stop closes sockets and preserves siblings',async()=>{
-    const cm=action=>'/__test/'+action+'?service=collabmd';
-    const complete=async()=>{for(let i=0;i<14;i++){const op=await(await req(cm('__tick'))).json();if(op.phase==='ready')return op;}throw new Error('CollabMD failed');};
-    const sibling=(await status()).url, uploads=credentialsUploaded.length;
+  await check('Jupyter owner stop closes sockets, revokes access, and preserves siblings',async()=>{
+    const jp=action=>'/__test/'+action+'?service=jupyter';
+    const complete=async()=>{for(let i=0;i<14;i++){const op=await(await req(jp('__tick'))).json();if(op.phase==='ready')return op;}throw new Error('Jupyter failed');};
+    const sibling=(await status()).url;
     assert.equal((await worker.fetch(api+'/sandbox/expose',{method:'POST',headers:{Authorization:'Bearer sk-bayleaf-rotated',
-      'Content-Type':'application/json'},body:JSON.stringify({port:8795,access:'public'})})).status,400);
-    await req(cm('start'),{method:'POST'});
-    let op=await complete();const old=op.url, password=collabmdAuth;
-    assert.equal(credentialsUploaded.length,uploads,'CollabMD must not receive sandbox/inference credentials');
-    assert(!JSON.stringify(op).includes(password),'no room password in DO metadata');
-    const view=await(await req(cm('status'))).json();assert.equal(view.room_password,password);
-    assert.equal(view.deadline-op.startedAt,86400,'two hours is guidance, not an automatic deadline');
-    const row=await db.prepare("SELECT * FROM preview_registrations WHERE slot='__collabmd'").first();
-    assert.equal(row.access,'public');assert(row.owner_key_hash);
-    assert.equal((await worker.fetch(op.url)).status,200,'gateway is public; application owns password challenge');
-    assert.equal(lastForwarded.authorization,undefined);assert.equal(lastForwarded['x-nanobot-auth'],undefined);
+      'Content-Type':'application/json'},body:JSON.stringify({port:8793,access:'public'})})).status,400);
+    await req(jp('start'),{method:'POST'});
+    let op=await complete();const old=op.url, token=jupyterAuth;
+    assert(!JSON.stringify(op).includes(token),'no app secret in DO metadata');
+    const row=await db.prepare("SELECT * FROM preview_registrations WHERE slot='__jupyter'").first();
+    assert.equal(row.access,'private');assert(row.owner_key_hash);
+    assert.equal((await worker.fetch(op.url)).status,401);
     const origin=new URL(op.url).origin;
-    const socket=await worker.fetch(op.url+'ws',{headers:{Upgrade:'websocket','X-Test-Origin':origin}});
+    const session=jwt({aud:origin,generation:row.generation,exp:row.expires_at},previewSecret);
+    const headers={Cookie:'__Host-bl-preview-session='+session,'X-Test-Origin':origin,'Sec-Fetch-Site':'same-origin'};
+    const socket=await worker.fetch(op.url+'api/kernels/fixture/channels',{headers:{...headers,Upgrade:'websocket'}});
     assert.equal(socket.status,101);socket.webSocket.accept();
+    assert.equal(lastForwarded.authorization,'token '+token);
     const closed=new Promise(resolve=>socket.webSocket.addEventListener('close',resolve,{once:true}));
-    const stopped=await req(cm('stop'),{method:'POST'});assert.equal(stopped.status,200);
+    const stopped=await req(jp('stop'),{method:'POST'});assert.equal(stopped.status,200);
     const result=await stopped.json();assert.equal(result.access_revoked,true);assert.equal(result.cleanup_pending,false);
     await closed;
     assert.equal((await worker.fetch(old)).status,404);assert.equal((await status()).url,sibling);
-    assert.equal((await(await req(cm('status'))).json()).room_password,undefined);
-    const before=stops;await req(cm('stop'),{method:'POST'});assert.equal(stops,before,'stop is idempotent');
-    await req(cm('start'),{method:'POST'});op=await complete();
-    assert.notEqual(op.url,old);assert.notEqual(collabmdAuth,password);
-    const credential=(await db.prepare("SELECT owner_key_hash FROM preview_registrations WHERE slot='__collabmd'").first()).owner_key_hash;
+    assert.equal((await(await req(jp('status'))).json()).url,undefined);
+    const before=stops;await req(jp('stop'),{method:'POST'});assert.equal(stops,before,'stop is idempotent');
+    await req(jp('start'),{method:'POST'});op=await complete();
+    assert.notEqual(op.url,old);assert.notEqual(jupyterAuth,token);
+    const credential=(await db.prepare("SELECT owner_key_hash FROM preview_registrations WHERE slot='__jupyter'").first()).owner_key_hash;
     await db.prepare("UPDATE sandbox_credentials SET state='revoked' WHERE id=?").bind(credential).run();
-    assert.equal((await worker.fetch(op.url)).status,404,'public access still depends on active owner sandbox authority');
+    assert.equal((await worker.fetch(op.url)).status,404,'access depends on active owner sandbox authority');
     await db.prepare("UPDATE sandbox_credentials SET state='active' WHERE id=?").bind(credential).run();
     // A public row cannot turn an existing private service public.
     const siblingHost=new URL(sibling).hostname;
     await db.prepare("UPDATE preview_registrations SET access='public' WHERE hostname=?").bind(siblingHost).run();
     assert.equal((await worker.fetch(sibling)).status,404);
     await db.prepare("UPDATE preview_registrations SET access='private' WHERE hostname=?").bind(siblingHost).run();
-    await req(cm('stop'),{method:'POST'});
+    await req(jp('stop'),{method:'POST'});
   });
   await check('stop during setup cannot register later; partial cleanup retries and sleeping stop never wakes',async()=>{
-    const cm=action=>'/__test/'+action+'?service=collabmd';
+    const cm=action=>'/__test/'+action+'?service=jupyter';
     await req(cm('start'),{method:'POST'});
     for(let i=0;i<4;i++)await req(cm('__tick'));
     stopFails=true;
@@ -692,7 +669,7 @@ try {
     const probes=executions;await req(cm('status'));assert.equal(executions,probes,'status remains passive');
     stopFails=false;
     const finished=await(await req(cm('__tick'))).json();assert.equal(finished.phase,'stopped');assert.equal(finished.cleanupPending,false);
-    assert.equal((await db.prepare("SELECT count(*) n FROM preview_registrations WHERE slot='__collabmd'").first()).n,0);
+    assert.equal((await db.prepare("SELECT count(*) n FROM preview_registrations WHERE slot='__jupyter'").first()).n,0);
     await req(cm('start'),{method:'POST'});await req(cm('__tick'));
     state='archived';const before={executions,wakes};
     assert.equal((await req(cm('stop'),{method:'POST'})).status,200);

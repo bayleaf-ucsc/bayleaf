@@ -1,5 +1,9 @@
 # Inboxes qualification
 
+**Historical adapter evidence:** Nanobot was retired on 2026-11-04. Its pins,
+tests and managed-client gaps below describe the dated qualification only, not
+a currently supported surface or an outstanding release obligation.
+
 Current evidence as of **2026-10-21**. Authenticated campus community access is
 authorized for HTTP and receive-only email, including optional creation-only DKIM
 domain restrictions. Remaining tests are accepted limitations, not access gates. Contract:

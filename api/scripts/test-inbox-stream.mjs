@@ -12,9 +12,9 @@ import { generateVerifier } from '../../inbox/scripts/build-dkim.mjs';
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const INBOX = fileURLToPath(new URL('../../inbox/', import.meta.url));
 const fixtures = { name: 'build-only adapter fixtures', setup(b) {
-  b.onResolve({ filter: /(?:\.sandbox-plugin-ref|\.nanobot-assets)\.json$/ }, args => ({ path: args.path, namespace: 'fixture' }));
-  b.onLoad({ filter: /.*/, namespace: 'fixture' }, args => ({ loader: 'json', contents: JSON.stringify(
-    args.path.includes('sandbox-plugin') ? { package: 'synthetic-build-only-never-deploy' } : { _source: { mode: 'fixture' } }) }));
+  b.onResolve({ filter: /\.sandbox-plugin-ref\.json$/ }, args => ({ path: args.path, namespace: 'fixture' }));
+  b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ loader: 'json', contents: JSON.stringify(
+    { package: 'synthetic-build-only-never-deploy' }) }));
 } };
 const api = (await build({ absWorkingDir: ROOT, stdin: { resolveDir: ROOT, contents: `
 import app from './src/index.ts';

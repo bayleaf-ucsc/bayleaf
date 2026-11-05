@@ -75,6 +75,11 @@ this is why step 3's approval gate precedes both publishing and notifying.
 
 ## Refinement log
 
+- 2026-11-04 (CollabMD retirement, initially local): Replaced active room-sharing
+  disclosure with an explicit undeployed retirement note; existing documents,
+  sidecars and collaborator copies remain. No retention policy change, publication,
+  live-room cleanup or user notification occurred.
+
 - 2026-10-21 (#97, isolated local hardening): Retirement needs linkable generation
   fences in addition to owner-free cleanup handles. Draft disclosure distinguishes
   eventual handoff from atomic identity deletion and requires offline replay before

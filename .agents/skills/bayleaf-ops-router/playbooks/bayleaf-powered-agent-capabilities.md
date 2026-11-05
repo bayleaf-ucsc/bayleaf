@@ -49,10 +49,14 @@ Reconfirm these source locations at each run. New clients join this inventory.
 | Surface | Source / delivery to inspect | What must be decided |
 |---|---|---|
 | Hosted OpenChamber / OpenCode | `api/sandbox-plugin/` tools and `skills/`; `api/src/routes/wellknown.ts`; installer in `api/scripts/browser-setup.py` | Tool/skill registration in the actual workspace, native permissions, published package pin and refresh path |
-| Hosted Nanobot | `api/nanobot-sandbox/` MCP adapter and `skills/`; parent installer/assets | MCP discovery, skill installation, narrower mutation scope where native approval is absent, installed-version update path |
 | BayLeaf Chat | `chat/tools/`, `chat/skills/`, `chat/models/`; read `chat/AGENTS.md` and `chat/DESIGN.md` | Appropriate toolkit/model, grants versus default attachment, ordinary-user discoverability, mapping Chat identity to API authority |
 | Desktop OpenChamber / OpenCode | Standard and Sealed discovery/config in `api/src/routes/wellknown.ts`; setup guidance in `GETTING-STARTED.md` and `llms.ts`; any user-facing skill/plugin distribution identified there | What onboarding actually installs, useful advertised triggers, user consent, updates for existing installations, Standard/Sealed differences |
 | Main agent reference and HTTP docs | `api/src/routes/llms.ts` (`https://api.bayleaf.dev/llms.txt`), code-owned OpenAPI routes/schemas and `apiReference.ts` | Workflow orientation and accurate availability; exact contracts remain generated, not duplicated |
+
+OpenChamber is the primary graphical agent surface on desktop and in the sandbox;
+review transferability of workflows without assuming identical capabilities or
+credential boundaries. Nanobot was retired on 2026-11-04 and is excluded from
+current exposure decisions. Earlier refinement entries remain historical evidence.
 
 The desktop row is an obligation, not a claim that a complete capability package
 already ships. Trace actual distribution before naming a canonical owner. Do not
@@ -152,6 +156,18 @@ clients retain descriptions. Do not broaden credentials or bypass the central
 API to keep a retired capability appearing functional.
 
 ## Refinement log
+
+- 2026-11-04 (CollabMD retirement, local only): Removed managed-room discovery,
+  installer and owner password delivery. Generic public/private previews remain
+  available; all remaining managed apps are private. Registration crash recovery
+  is retained and tested against Jupyter rather than the retired room adapter.
+  Existing documents/sidecars remain untouched; deployment is separate.
+
+- 2026-11-04 (Nanobot retirement): Removed the retired hosted surface from the
+  active inventory and documentation exposure matrices. OpenChamber is the primary
+  graphical surface across desktop and sandbox, not a claim of capability parity.
+  Earlier Nanobot qualification and delivery entries remain historical; do not
+  treat their build or release instructions as current maintenance requirements.
 
 - 2026-11-01 (HF artifact gateway, #121): Exposure matrix recorded in
   api/HF-GATEWAY.md: llms.txt and OpenAPI (Artifacts tag) expose; hosted

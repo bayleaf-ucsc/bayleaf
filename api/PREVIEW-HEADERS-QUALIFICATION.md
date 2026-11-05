@@ -1,5 +1,9 @@
 # Registration headers: live app/provider qualification
 
+Nanobot was retired as a managed BayLeaf surface on 2026-11-04. The dated
+application tests and security findings below remain gateway evidence, not a
+recommendation to install or maintain Nanobot.
+
 2026-10-08, issue [#86](https://github.com/bayleaf-ucsc/bayleaf/issues/86).
 
 ## Result

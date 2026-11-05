@@ -7,47 +7,35 @@ credential store. See the release qualification below for remaining limits.
 
 ## Hosted wiring (2026-10-24)
 
-Deliberate OpenChamber and Nanobot setup now installs the shared executable before
+Deliberate OpenChamber setup installs the shared executable before
 configuration and registers `bayleaf mcp` through absolute installed-source and
-Node paths. The approved release below refreshed only Adam's two managed apps,
-preserving workspace, credentials, histories, schedules and owner-edit guards.
+Node paths. OpenChamber is the primary graphical agent surface on desktop and in
+the sandbox; this executable remains sandbox-only. Nanobot was retired on
+2026-11-04. Its dated release evidence below is historical, not current setup or
+publication guidance. Preserve existing user files, histories and owner-edit guards.
 
 - OpenCode V2 uses `mcp.servers.sandbox`, `codemode: false`: native tools named
   `sandbox_click`, `sandbox_screenshot`, etc. Proxy/CA child settings are allowlisted;
   no credentials or arbitrary NODE_OPTIONS enter settings. Managed credentials
   remain automatically discovered and literal Daytona placeholders unchanged.
-- Nanobot uses `tools.mcpServers.sandbox`, exact raw-name `enabledTools` generated
-  from the shared contract catalog. Its exposed names are `mcp_sandbox_click`, etc.
-  The old `bayleaf` adapter keeps search/fetch/usage and quarantined inbox-save only.
-  `--private-previews` narrows both schema and dispatch: public access and injected
-  headers are rejected before HTTP. No Nanobot authority/approval widening.
-  Pinned Nanobot 0.3.5 persists native MCP images as local artifacts rather than
-  inserting them directly into model context. Its `read_file` loads those artifacts
-  as image blocks; the shared orientation teaches this bridge. Screenshots therefore
-  persist in Nanobot media storage unless deleted, unlike the shared MCP itself.
 - OpenChamber's plugin switches only when deliberate setup supplies
   `BAYLEAF_SHARED_MCP=true`. It keeps native websearch/webfetch, usage, exact-byte
   inbox saves, message deletion and inbox destruction. All overlapping preview
   and inbox registrations disappear. Existing processes without the flag retain
   their old tools during remote package refresh. No desktop/general-OS wiring.
 - One shared `bayleaf-sandbox-orientation` replaces managed environment/Inboxes
-  recipe skills. OpenChamber retains `bayleaf-scheduling`. Nanobot schedule,
-  environment, persistence and privacy knowledge is in the shared orientation.
+  recipe skills. OpenChamber retains `bayleaf-scheduling`.
   Edited managed skills or an occupied owner-authored `sandbox` MCP entry fail
   visibly, never overwritten. No personal skills, memory or schedules are removed.
 - **Approval difference:** OpenCode seeds native `sandbox_*` ask rules and specific
   read-only allows. This replaces legacy per-port/private-public resource prompts
   with tool-name and wildcard-resource MCP prompts. Native retained save/delete
-  tools preserve their existing scoped permission UX. Nanobot still has no per-call
-  approval UI. This difference needs explicit rollout review, not an assertion of
-  permission parity. No floor control is added.
+  tools preserve their existing scoped permission UX. No floor control is added.
 
 Publication procedure: review and publish the two-file `api/sandbox-plugin` change to
 `bayleaf-ucsc/opencode-sandbox`, preserving a remotely advertised release ref.
-No Nanobot submodule release is required: its existing adapter already provides
-the retained four tools, and parent `enabledTools` partitions them. Strict plugin
-and Nanobot clean/published builds are unchanged and must pass before an approved
-API deployment. Then qualify an explicitly authorized managed setup for each UI,
+Strict plugin clean/published builds must pass before an approved
+API deployment. Then qualify an explicitly authorized managed OpenChamber setup,
 native image rendering/consent, placeholder substitution and fresh-agent behavior.
 No migration or frontend deployment is required for this wiring itself. Existing
 clients update only at deliberate setup; source tests are not live UI evidence.
@@ -61,15 +49,16 @@ The historical deferred matrix below records the CLI-only release decision for
 closed issue #117. This candidate implements its follow-on integration, not a
 reopening of that issue or a claim the migration is already delivered.
 
-Local candidate verification: shared CLI/SDK subprocess tests; 34 plugin tests;
+Historical 2026-10-24 candidate verification (including the now-retired Nanobot):
+shared CLI/SDK subprocess tests; 34 plugin tests;
 31 installer and 9 Nanobot configuration tests; Nanobot package/asset suites;
 both TypeScript checks; docs/computer/service-session/credential suites;
 33 synthetic browser lifecycle groups, Desktop cleanup and policy smoke passed.
 Actual isolated OpenCode 2.1.4 listed all 28 shared tools without overlapping
 native registrations, discovered orientation + scheduling, converted native images,
 and completed an actual click permission request/reply. Strict plugin build rejects
-the edited submodule as expected. Run the optional released-Nanobot image/registry
-check with `uv run --script scripts/harness-nanobot-shared-mcp.py`.
+the edited submodule as expected. The then-available optional released-Nanobot
+image/registry harness was `scripts/harness-nanobot-shared-mcp.py` (now retired).
 Released Nanobot 0.3.5 passed that actual stdio/registry check: 28 exact tool names,
 native screenshot converted to an isolated artifact and loaded by `read_file` as
 image blocks. No inference, live proxy substitution or UI image rendering involved.
@@ -164,7 +153,7 @@ source. It writes `~/.local/share/bayleaf/cli/bayleaf.mjs` (0700) and symlinks
 `/usr/local/bin/bayleaf` when writable, otherwise `bayleaf` beside the existing
 PATH-resolved Node executable, only when its directory is same-UID, writable and
 not group/world-writable. That normal PATH location is intended for terminals,
-OpenChamber children and Nanobot, not just a launcher-specific PATH. Occupied paths
+OpenChamber children, not just a launcher-specific PATH. Occupied paths
 or lack of write permission fail with `cli_path_conflict`/`cli_path_unavailable`,
 not sudo, an implicit lifecycle operation or a false successful install.
 Adam's live Linux image qualified the Node-directory fallback; other images and
@@ -175,7 +164,7 @@ Desktop's Toolbox-managed activation does not run this installer.
 
 Use `BAYLEAF_API_KEY` when present. MCP children without it read the existing
 managed `credentials/owner-key` from fixed BayLeaf service locations, in order
-browser, nanobot, ttyd, jupyter, code-server, dufs, collabmd. No new credential
+browser, ttyd, jupyter, code-server, dufs. No new credential
 copy is persisted. Files must be regular, same-UID, mode 0600 or stricter, bounded
 and not final-component symlinks. An invalid present environment/file fails closed.
 Literal `dtn_secret_` placeholders are preserved for Daytona HTTPS substitution.
@@ -201,7 +190,6 @@ and transient MCP results (a harness may retain those in its history).
 |---|---|
 | Sandbox CLI/MCP | Installer support deployed; all 28 tools listed on Adam's existing sandbox, with bounded read-only qualification below. API authority unchanged. Other machines install on next deliberate app setup. |
 | Hosted OpenChamber/OpenCode | Keep native plugin, search/fetch permission UX and all existing skills/tools unchanged. Do not register overlapping MCP Inbox/expose tools. Full migration needs plugin maintainer to disable migrated native registrations/recipe skills while retaining search/fetch and other functionality, publish approved submodule revision, then qualify V2 image/approval behavior. |
-| Hosted Nanobot | Keep existing stdio adapter and parent enabledTools unchanged. Full migration needs parent config to partition old search/fetch/usage from new computer/Inboxes/previews without duplicate registrations, preserve old inbox-save functionality or agree its replacement, and explicitly approve public/header support versus today's private-only surface. Its independently published adapter may need skill/registration edits before a full replacement. |
 | Shared sandbox orientation | ONE new short `SKILL.md` packaged, not yet registered. Replace old environment/specialized recipe guidance only alongside working harness migration; keep scheduling/lifecycle knowledge discoverable. No duplicate recipe skills added. |
 | Chat | Defer, Chat maintainer/Adam owns authority, grants, screenshot-history and consent decisions. No tools/config changed. |
 | Desktop OpenCode/OpenChamber, Standard/Sealed | Omit CLI installation: sandbox-only decision. Existing desktop onboarding/skills unchanged. |
@@ -209,9 +197,7 @@ and transient MCP results (a harness may retain those in its history).
 
 No submodule publication is required to build/install the CLI alone. Complete
 OpenCode migration does require an approved plugin release; do not weaken its clean
-published-pin guard. Nanobot can partition MCP servers in parent config, but a full
-single-skill/functional replacement needs coordinated adapter/skill work and may
-require its release. These are explicit deferred integration gates, not completed
+published-pin guard. These were explicit deferred integration gates, not completed
 capability delivery. Existing/running/sleeping clients have not been changed.
 
 ## Tests and deployment steps

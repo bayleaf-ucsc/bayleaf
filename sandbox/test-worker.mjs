@@ -25,7 +25,7 @@ const management = {
   async managed(input) {
     calls.push(['managed', input]);
     if (input.operation === 'wake-existing' && failWake) throw Error('synthetic unavailable');
-    if (input.operation !== 'wake-existing' && !['openchamber', 'code-server', 'dufs', 'ttyd', 'collabmd'].includes(input.service))
+    if (input.operation !== 'wake-existing' && !['openchamber', 'code-server', 'dufs', 'ttyd'].includes(input.service))
       return { status: 400, body: { error: 'invalid_operation' } };
     return { status: 200, body: { phase: 'idle', machine: 'absent' } };
   },
@@ -48,16 +48,18 @@ assert.equal(response.status, 200);
 assert.equal(response.headers.get('Referrer-Policy'), 'strict-origin', 'native sign-in forms need an Origin header');
 let html = await response.text();
 assert(html.includes('OpenChamber'));
+assert(!/nanobot/i.test(html), 'retired agent is not advertised');
+assert(html.includes('primary graphical agent surface in both places'));
 assert(html.includes('code-server'));
 assert(html.includes('Files (dufs)'));
 assert(html.includes('Shell (ttyd)'));
-assert(html.includes('Collaborative Editor (CollabMD)'));
+assert(!/collabmd/i.test(html), 'retired collaborative editor is not advertised');
 assert(html.includes('VS Code (code-server)'));
 assert(html.includes('A small computer in the cloud'));
 assert(html.includes('install it on your own computer'));
 assert(!html.includes('App help &amp; diagnostics'));
 assert(html.includes('class="callout"'), 'retention warning is outside disclosures');
-for (const url of ['https://openchamber.dev/', 'https://github.com/HKUDS/nanobot',
+for (const url of ['https://openchamber.dev/',
   'https://github.com/coder/code-server', 'https://jupyter.org/',
   'https://github.com/sigoden/dufs', 'https://tsl0922.github.io/ttyd/']) {
   assert(html.includes('href="'+url+'">'+url+'</a>'), 'upstream URL is fully visible');
@@ -101,6 +103,7 @@ for (let i=0; i<3; i++) {
   html = await response.text();
   assert.match(response.headers.get('Cache-Control'), /\bno-store\b/);
   assert(!html.includes('<script>untrusted</script>'));
+  assert(!/collabmd|room_password|copy-password|copy-link|End sharing/i.test(html), 'retired sharing controls and presentation are absent');
   assert.equal((await request('/services/openchamber/status', { cookie: sessionCookie })).status, 200);
 }
 assert.equal(mutations().length, 1, 'refresh and status never repeat login wake');
@@ -110,7 +113,7 @@ assert(html.includes('Start with OpenChamber'));
 assert.match(html, /id="desktop-open"[^>]+target="_blank"/);
 const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(match=>match[1]);
 assert.equal(new Set(ids).size,ids.length,'service controls have unique ids');
-for (const service of ['code-server', 'dufs', 'ttyd', 'collabmd', 'unknown']) {
+for (const service of ['code-server', 'dufs', 'ttyd', 'unknown']) {
   const path='/services/'+service;
   assert.equal((await request(path+'/status')).status,401);
   assert.equal((await request(path+'/status',{cookie:sessionCookie})).status,service!=='unknown'?200:400);
@@ -144,7 +147,7 @@ response = await request('/services/desktop/embed', { method: 'POST', cookie: se
 assert.equal(response.status, 200);
 assert.match(response.headers.get('Cache-Control'), /no-store/);
 assert.deepEqual(calls.at(-1), ['embed', { session: 'synthetic-session' }]);
-for (const other of ['openchamber', 'collabmd', 'unknown']) {
+for (const other of ['openchamber', 'code-server', 'unknown']) {
   assert.equal((await request('/services/'+other+'/embed', { method: 'POST', cookie: sessionCookie, headers: embedHeaders })).status, 404);
 }
 assert.equal(calls.filter(([name]) => name === 'embed').length, 1, 'only Desktop mints embed codes');
@@ -199,12 +202,12 @@ for(const [snapshot,expected] of [
       addEventListener(){},replaceChildren(){}});
     return elements.get(id);
   };
-  const root={dataset:{service:'collabmd',endpoint:'/services/collabmd'},querySelector:element};
+  const root={dataset:{service:'openchamber',endpoint:'/services/openchamber'},querySelector:element};
   runInNewContext(controls,{URL,Date,document:{querySelectorAll:()=>[root],createElement:()=>({})},
     window:{addEventListener(){}},setTimeout(){},clearTimeout(){},setInterval(){},
     fetch:async()=>({ok:true,status:200,json:async()=>snapshot})});
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(!element('#collabmd-stop').hidden,expected,'stop visibility for '+JSON.stringify(snapshot));
+  assert.equal(!element('#openchamber-stop').hidden,expected,'stop visibility for '+JSON.stringify(snapshot));
 }
 // Execute Desktop controls to prove page loads stay passive and Start stays explicit.
 function desktopPage(initial) {

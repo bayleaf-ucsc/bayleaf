@@ -574,7 +574,7 @@ checkbox, so it is recorded rather than deleted.
 When adding, materially changing, enabling, or retiring an API capability, run
 `.agents/skills/bayleaf-ops-router/playbooks/bayleaf-powered-agent-capabilities.md`
 (relative to the repo root). It coordinates explicit exposure decisions across
-hosted OpenChamber, Nanobot, Chat, desktop agent skills and `llms.txt`; HTTP
+hosted OpenChamber, Chat, desktop agent skills and `llms.txt`; HTTP
 documentation alone does not make a capability discoverable to configured agents.
 
 `/llms.txt` owns broad agent orientation, access choices, client setup and workflows
@@ -642,13 +642,12 @@ no password) and a registry-fixed noVNC landing path that the gateway's login
 callback also uses. Stop revokes first, never wakes, then reaps leaked session
 daemons with `scripts/desktop-cleanup.py`. Read `DESKTOP.md` first.
 
-**Issue #94 deployed 2026-10-20 Pacific:** CollabMD uses fixed port 8795 and
-`~/workspace/public-collaborative-docs/`, with a narrowly allowlisted public managed
-slot and its own password challenge, never injected guest authentication. All
-other managed apps remain private. Owner-authorized Stop app / End sharing revokes
-access before cleanup, does not wake sleeping compute and reports partial cleanup
-honestly. See `COLLABMD.md` for versions, real managed-room evidence, detached-job
-limits, the accepted upstream save-feedback limitation and the waived two-hour soak.
+**CollabMD retired 2026-11-04 Pacific; deployed:** all remaining managed apps
+use private owner-authenticated gateways. Existing user documents and collaboration
+sidecars are not deleted. `COLLABMD.md` preserves historical deployment evidence.
+Generic public/private preview API capability remains unchanged. Owner-authorized
+Stop app still revokes access before cleanup, never wakes sleeping compute, reports
+partial cleanup honestly and does not promise to terminate detached jobs.
 
 **Issue #90 local revision (rollout pending):** read `SANDBOX-CREDENTIALS.md`.
 Migration 0015 separates sandbox verifier metadata and account-generation sessions

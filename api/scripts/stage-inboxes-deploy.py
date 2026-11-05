@@ -18,12 +18,11 @@ temp_root.mkdir(exist_ok=True)
 base = Path(tempfile.mkdtemp(prefix='inbox-api-deploy-', dir=temp_root))
 stage = base / 'api'
 shutil.copytree(API, stage, ignore=shutil.ignore_patterns(
-    'node_modules', 'sandbox-plugin', 'nanobot-sandbox', '.wrangler', '.dev.vars',
+    'node_modules', 'sandbox-plugin', '.wrangler', '.dev.vars',
     '.dev.vars.*', '.env', '.env.*', 'reports', '__pycache__'))
 (stage / 'node_modules').symlink_to(API / 'node_modules', target_is_directory=True)
 (base / 'telemetry').symlink_to(REPO / 'telemetry', target_is_directory=True)
-for name, url in [('sandbox-plugin', 'https://github.com/bayleaf-ucsc/opencode-sandbox.git'),
-                  ('nanobot-sandbox', 'https://github.com/bayleaf-ucsc/nanobot-sandbox.git')]:
+for name, url in [('sandbox-plugin', 'https://github.com/bayleaf-ucsc/opencode-sandbox.git')]:
     # Local clones contain committed HEAD only, never uncommitted adapter edits.
     subprocess.run(['git', 'clone', '--quiet', '--no-hardlinks', str(API / name), str(stage / name)], check=True)
     subprocess.run(['git', '-C', str(stage / name), 'remote', 'set-url', 'origin', url], check=True)

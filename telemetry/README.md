@@ -347,7 +347,7 @@ and browser abuse protection before activation. There is no claim of free
 operation or full erasure/ZOA guarantee. No user-request Sealed metadata is added;
 only fixed summaries of the existing synthetic Sealed probe are included.
 
-Capability exposure to Chat, OpenChamber, Nanobot and public `llms.txt` is
+Capability exposure to Chat, OpenChamber and public `llms.txt` is
 deliberately deferred. This PoC grants no new agent or public read authority.
 
 ### Local playbook refinement, 2026-10-20

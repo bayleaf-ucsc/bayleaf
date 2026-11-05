@@ -27,12 +27,13 @@ and repair are separate exact-Origin POST actions. Existing owner-scoped lifecyc
 coordination remains authoritative; low-level controls, including destruction,
 live in the API dashboard. Unknown service IDs fail closed at the API binding.
 
-CollabMD (issue #94) alone uses a public gateway with a native room-password
-challenge, serving only `~/workspace/public-collaborative-docs/`. Stop app / End
-sharing revoke access before attempting owned-process cleanup and must remain
-available when compute is asleep or a link has expired. Do not imply that expiry
-stops apps or that stopping an app terminates all detached jobs. See
-`../api/COLLABMD.md` for deployment evidence and accepted qualification limits.
+All remaining managed apps use private owner-authenticated gateways. CollabMD was
+retired on 2026-11-04 Pacific; the deployed retirement does not delete
+existing user files or collaboration sidecars. Historical evidence remains in
+`../api/COLLABMD.md`. Stop app revokes access before attempting owned-process
+cleanup and must remain available when compute is asleep or a link has expired.
+Do not imply that expiry stops apps or that stopping an app terminates all detached
+jobs. Generic public/private preview API capability is separate and unchanged.
 
 Run `node sandbox/test-worker.mjs` from the root for adapter checks. API broker
 and lifecycle tests are documented in `README.md`. Deployment requires the API

@@ -146,7 +146,7 @@ the user has configured to that endpoint; the gateway ignores it, but set
 | Surface | Decision | Reason |
 |---|---|---|
 | `/llms.txt` and OpenAPI | expose | Keyless, read-only; agents building local-inference clients should find it. |
-| Hosted OpenChamber, Nanobot | defer | Sandboxes have open egress; no tool needed until a restricted sandbox profile exists. |
+| Hosted OpenChamber | defer | Sandboxes have open egress; no tool needed until a restricted sandbox profile exists. |
 | BayLeaf Chat | not applicable | Chat does not run models in the browser. |
 | Desktop agents | omit | Unrestricted egress; documentation is enough. |
 

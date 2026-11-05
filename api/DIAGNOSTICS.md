@@ -54,7 +54,6 @@ These are human browser views of existing capabilities, not new agent operations
 | Surface | Decision | Reason and delivery |
 | --- | --- | --- |
 | Hosted OpenChamber/OpenCode | No new tool | Existing preview/inbox tools retain lifecycle and read authority; no plugin/pin change. |
-| Hosted Nanobot | No new tool | Same existing API contracts; no adapter or installation change. |
 | BayLeaf Chat | No new tool/grant | Existing preview/inbox integration remains authoritative; no model configuration change. |
 | Desktop agents | No new package | No new agent verb or credential scope. |
 | Main guide | Expose human handoff | Inbox prose links to browser diagnostics and explicitly distinguishes management authority. |

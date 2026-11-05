@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "pretest:previews": "node scripts/build-sandbox-cli.mjs && python3 scripts/build-sandbox-plugin.py && python3 scripts/build-nanobot-assets.py --fixture",
-    "pretest:grants": "node scripts/build-sandbox-cli.mjs && python3 scripts/build-sandbox-plugin.py && python3 scripts/build-nanobot-assets.py --fixture",
-    "pretest:sandbox-browser": "node scripts/build-sandbox-cli.mjs && python3 scripts/build-sandbox-plugin.py && python3 scripts/build-nanobot-assets.py --fixture",
+    "pretest:previews": "node scripts/build-sandbox-cli.mjs && python3 scripts/build-sandbox-plugin.py",
+    "pretest:grants": "node scripts/build-sandbox-cli.mjs && python3 scripts/build-sandbox-plugin.py",
+    "pretest:sandbox-browser": "node scripts/build-sandbox-cli.mjs && python3 scripts/build-sandbox-plugin.py",
     "build:sandbox-cli": "npm ci --prefix sandbox-cli --ignore-scripts --no-audit --no-fund && node scripts/build-sandbox-cli.mjs",
     "pretest:docs": "node scripts/build-sandbox-cli.mjs",
     "pretest:computer": "node scripts/build-sandbox-cli.mjs",
@@ -25,7 +25,7 @@
     "test:hf": "node scripts/test-hf.mjs",
     "test:computer": "node scripts/test-computer.mjs",
     "test:sandbox-cli": "node scripts/test-sandbox-cli.mjs",
-    "test:shared-mcp": "node scripts/build-sandbox-cli.mjs && python3 scripts/test-browser-setup.py && python3 scripts/test-nanobot-setup.py && node scripts/harness-shared-mcp.mjs",
+    "test:shared-mcp": "node scripts/build-sandbox-cli.mjs && python3 scripts/test-browser-setup.py && node scripts/harness-shared-mcp.mjs",
     "test:sandbox-reaper": "node scripts/test-sandbox-reaper.mjs",
     "test:sandbox-browser": "python3 scripts/test-browser-setup.py && python3 scripts/test-desktop-cleanup.py && node scripts/test-sandbox-policy.mjs && node scripts/harness-sandbox-browser.mjs",
     "test:service-sessions": "node scripts/harness-service-sessions.mjs && node ../sandbox/test-worker.mjs",
@@ -38,10 +38,8 @@
     "test:diagnostics": "node --test scripts/test-diagnostics.mjs && node scripts/test-inboxes-e2e.mjs",
     "test:sandbox-credentials": "node scripts/harness-sandbox-credentials.mjs",
     "test:sandbox-plugin": "npm --prefix sandbox-plugin test",
-    "test:nanobot": "python3 scripts/build-nanobot-assets.py --fixture && npm --prefix nanobot-sandbox test && python3 scripts/test-nanobot-setup.py && python3 scripts/test-nanobot-assets.py",
     "test:jupyter": "python3 scripts/test-jupyter-setup.py",
     "test:ttyd": "python3 scripts/test-ttyd-setup.py",
-    "test:collabmd": "python3 scripts/test-collabmd-setup.py",
     "tail": "wrangler tail"
   },
   "overrides": {

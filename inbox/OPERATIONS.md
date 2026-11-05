@@ -37,9 +37,14 @@ and its unshimmed tripwire before upgrading dependencies. Never roll back to a
 pre-verifier or pre-fence receiver against databases containing those policies.
 Before any future restricted creation, confirm old receiver versions have drained.
 
-### Authentic hosted adapter assets
+### Historical hosted adapter assets (2026-10-21)
 
-Current published source revisions (2026-10-21; parent `39bf426`):
+Nanobot was retired on 2026-11-04. The two-adapter pins, build requirements and
+authority comparison below record that earlier rollout, not current Nanobot
+maintenance instructions. Current hosted agent delivery uses OpenChamber/OpenCode;
+inspect its actual published pin rather than reusing this snapshot.
+
+Published source revisions at that rollout (parent `39bf426`):
 
 | Repository | Published revision |
 |---|---|

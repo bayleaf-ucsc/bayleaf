@@ -21,7 +21,7 @@ const key = 'synthetic_installation_key_00000000000000000000';
 const oidcSecret = 'synthetic_oidc_secret_000000000000000000000000';
 const upstream = 'https://5000-synthetic-bearer.preview.example.test';
 const appPassword = 'synthetic app password';
-const appToken = 'nbwt_synthetic_application_token_000000000000000';
+const appToken = 'fixture_application_token_000000000000000';
 const REPLACED_ERROR = 'Preview application request failed. (The application\'s response body was replaced by the BayLeaf preview gateway.)';
 const bindings = {
   PREVIEWS_ENABLED: 'true', PREVIEWS_API_ORIGIN: api,
@@ -47,7 +47,7 @@ const bundled = await build({ absWorkingDir: root, stdin: { resolveDir: root, co
     const url = new URL(input instanceof Request ? input.url : input);
     if (url.pathname === '/transport-failure') throw new Error('synthetic transport failure ' + url.origin);
     // Real workerd sockets: enqueue server-first frames before the handshake
-    // returns, as Nanobot does. An echo-only fixture cannot catch greeting loss.
+    // returns. An echo-only fixture cannot catch greeting loss.
     if (url.pathname === '/initial-greeting') {
       const pair = new WebSocketPair();
       pair[1].accept();
@@ -106,7 +106,7 @@ const options = { workers: [{ name: 'preview-harness', modules: true, script: bu
     assert.equal(u.origin, upstream);
     lastUpstream = { url: u.href, method: request.method, headers: Object.fromEntries(request.headers), body: await request.text() };
     if (u.pathname === '/webui/bootstrap') {
-      if (request.headers.get('X-Nanobot-Auth') === appPassword) return Response.json({ api_token: appToken });
+      if (request.headers.get('X-Fixture-Auth') === appPassword) return Response.json({ api_token: appToken });
       return new Response(upstream, { status: 401, headers: {
         'WWW-Authenticate': 'Bearer realm="' + upstream + '"', 'Location': upstream,
         'Set-Cookie': 'debug=' + upstream, 'Content-Type': 'application/json', 'X-Debug': upstream,
@@ -438,7 +438,7 @@ try {
     for (const access of ['private', 'public']) {
       const config = { 'X-Authenticated-Owner': 'configured-assertion-secret',
         Authorization: 'Basic ' + Buffer.from('app-user:app-only-password').toString('base64'),
-        'X-Nanobot-Auth': 'fixed-app-password', Accept: 'application/configured' };
+        'X-Fixture-Auth': 'fixed-app-password', Accept: 'application/configured' };
       const response = await register({ access, upstream_headers: config });
       const data = await response.json();
       assert.equal(response.status, 200);
@@ -463,7 +463,7 @@ try {
       const client = access === 'private' ? owner : browser();
       if (access === 'private') await login(client, data.url);
       assert.equal((await client.visit(data.url, { headers: { 'x-authenticated-owner': 'spoof',
-        authorization: 'Bearer nbwt_browser', 'x-nanobot-auth': 'spoof', Accept: 'spoof',
+        authorization: 'Bearer fixture_browser', 'x-fixture-auth': 'spoof', Accept: 'spoof',
         Connection: 'X-Authenticated-Owner, Authorization' } })).status, 200);
       for (const [name, value] of Object.entries(config)) assert.equal(lastUpstream.headers[name.toLowerCase()], value);
       assert.equal(lastUpstream.headers.connection, undefined);
@@ -572,7 +572,7 @@ try {
   await check('app authentication is independent of the private owner gate; login and bearer reach only the app', async () => {
     const headers = { 'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty' };
     const before = outboundCalls;
-    for (const credentials of [{}, { 'X-Nanobot-Auth': appPassword }, { Authorization: `Bearer ${appToken}` },
+    for (const credentials of [{}, { 'X-Fixture-Auth': appPassword }, { Authorization: `Bearer ${appToken}` },
       { Authorization: 'Bearer sk-bayleaf-owner' }, { Authorization: `Bearer ${key}` }]) {
       assert.equal((await browser().visit(url + 'webui/bootstrap', { headers: { ...headers, ...credentials } })).status, 401);
     }
@@ -581,10 +581,10 @@ try {
     assert.equal(bootstrap.status, 401);
     assert.equal(await bootstrap.text(), REPLACED_ERROR);
     for (const name of ['WWW-Authenticate', 'Location', 'Set-Cookie', 'X-Debug']) assert.equal(bootstrap.headers.get(name), null);
-    const loggedIn = await owner.visit(url + 'webui/bootstrap', { headers: { ...headers, 'X-Nanobot-Auth': appPassword } });
+    const loggedIn = await owner.visit(url + 'webui/bootstrap', { headers: { ...headers, 'X-Fixture-Auth': appPassword } });
     assert.equal(loggedIn.status, 200);
     assert.equal((await loggedIn.json()).api_token, appToken);
-    assert.equal(lastUpstream.headers['x-nanobot-auth'], appPassword);
+    assert.equal(lastUpstream.headers['x-fixture-auth'], appPassword);
     const apiResponse = await owner.visit(url + 'webui/api', { headers: { ...headers, Authorization: `Bearer ${appToken}` } });
     assert.equal(apiResponse.status, 200);
     assert.equal(lastUpstream.headers.authorization, `Bearer ${appToken}`);
@@ -595,9 +595,9 @@ try {
       jwt({ email: 'owner@example.test', exp: 1 }),
       owner.cookies.get(new URL(url).host).get('__Host-bl-preview-session')];
     for (const credential of blocked) {
-      await owner.visit(url + 'webui/api', { headers: { ...headers, Authorization: `Bearer ${credential}`, 'X-Nanobot-Auth': credential } });
+      await owner.visit(url + 'webui/api', { headers: { ...headers, Authorization: `Bearer ${credential}`, 'X-Fixture-Auth': credential } });
       assert.equal(lastUpstream.headers.authorization, undefined, 'reserved bearer excluded');
-      assert.equal(lastUpstream.headers['x-nanobot-auth'], undefined, 'reserved custom credential excluded');
+      assert.equal(lastUpstream.headers['x-fixture-auth'], undefined, 'reserved custom credential excluded');
     }
     for (const authorization of ['Basic dXNlcjpwYXNz', 'Bearer one, Bearer two', 'Bearer ' + 'a'.repeat(4096)]) {
       await owner.visit(url, { headers: { ...headers, Authorization: authorization } });
@@ -612,22 +612,22 @@ try {
       for (const method of ['GET', 'POST']) {
         const response = await owner.visit(url + 'webui/bootstrap', { method, headers: {
           Origin: origin, 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Site': 'cross-site',
-          'X-Nanobot-Auth': appPassword, Authorization: `Bearer ${appToken}`,
+          'X-Fixture-Auth': appPassword, Authorization: `Bearer ${appToken}`,
         } });
         assert.equal(response.status, 403);
       }
     }
     assert.equal(outboundCalls, before);
-    await owner.visit(url, { headers: { 'Sec-Fetch-Site': 'cross-site', 'X-Nanobot-Auth': appPassword, Authorization: `Bearer ${appToken}` } });
+    await owner.visit(url, { headers: { 'Sec-Fetch-Site': 'cross-site', 'X-Fixture-Auth': appPassword, Authorization: `Bearer ${appToken}` } });
     assert.equal(lastUpstream.headers.authorization, undefined);
-    assert.equal(lastUpstream.headers['x-nanobot-auth'], undefined);
+    assert.equal(lastUpstream.headers['x-fixture-auth'], undefined);
     const publicUrl = (await (await register({ access: 'public' })).json()).url;
     await browser().visit(publicUrl, { headers: {
       'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Dest': 'iframe',
-      'X-Nanobot-Auth': appPassword, Authorization: `Bearer ${appToken}`,
+      'X-Fixture-Auth': appPassword, Authorization: `Bearer ${appToken}`,
     } });
     assert.equal(lastUpstream.headers.authorization, undefined);
-    assert.equal(lastUpstream.headers['x-nanobot-auth'], undefined);
+    assert.equal(lastUpstream.headers['x-fixture-auth'], undefined);
     await revoke(publicUrl);
   });
   await check('HTTP app errors preserve status; bodies pass unless large or naming the upstream; only validated retry metadata survives', async () => {

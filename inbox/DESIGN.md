@@ -448,7 +448,7 @@ in `QUALIFICATION.md`; full SMTP/storage semantics and worst-case concurrent
 memory remain unqualified.
 
 Exposure: HTTP owner API/OpenAPI, llms orientation and desktop HTTP guidance expose
-optional creation/readback. Hosted OpenCode and Nanobot currently omit the optional
+optional creation/readback. Hosted OpenCode currently omits the optional
 creation parameter; its package delivery is coordinated separately by the release
 owner. There is no policy mutation operation. Chat remains omitted (no new owner
 credential path). Enabling creation does not establish full SMTP/storage qualification.

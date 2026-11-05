@@ -243,7 +243,6 @@ enabled or assumed. Deletion here means live-store deletion, not provider histor
 | HTTP and generated OpenAPI | Expose finite GET events and bounded live SSE under existing owner middleware | Local real-HTTP/API/RPC tests; integration/rollout by main session |
 | Main agent reference (`llms.txt`) | Explain finite catch-up and explicitly requested live monitoring; no unsolicited watcher | Exact schema stays code-owned |
 | Hosted OpenChamber/OpenCode | Defer new typed event tool and live client; existing HTTP access unchanged | Adapter maintainer after transport contract qualification |
-| Hosted Nanobot | Defer new event MCP tool or background watcher; existing HTTP access unchanged | Adapter maintainer after transport contract qualification |
 | BayLeaf Chat | Defer event tooling, no reception-driven inference | Operator to choose scope after qualification |
 | Desktop Standard/Sealed | HTTP docs only; no new installation or background subscription | Desktop adapter maintainer after transport qualification |
 | Browser diagnostics | Omit: existing metadata snapshot is unchanged | Broader inspector remains separately deferred |

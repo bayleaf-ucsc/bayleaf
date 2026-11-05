@@ -15,6 +15,10 @@ implementation names. Use them where operational precision matters, not as
 service branding. This playbook is for operators, never ship it to sandbox agents.
 
 Read `api/AGENTS.md` and `api/SANDBOX-BROWSER.md` for the canonical contracts.
+OpenChamber is the primary graphical agent surface on desktop and in the sandbox;
+favor transferable workflows while respecting their different execution boundaries.
+Nanobot was retired on 2026-11-04. Earlier evidence below is historical, not a
+requirement to rebuild, publish, install or restart its retired adapter.
 `api/sandbox-plugin` is a submodule of `bayleaf-ucsc/opencode-sandbox`, owning
 tools and the environment skill. The parent owns API routes, launcher, remote
 config, and deployment. There is no npm publication workflow for the plugin.
@@ -90,6 +94,25 @@ rebuild the derived pin and redeploy the Worker. Application rollback is a separ
 explicit operation on the user-owned installation. Preserve user files and histories.
 
 ## Evidence and refinement log
+
+- 2026-11-04 (approved Nanobot/CollabMD retirement rollout): Deployed API
+  `16453c35-0daf-4909-93b3-4cc44088f0f0` and Sandboxes
+  `c004e183-59a2-423c-963c-4409b1a50b64`; verified active 100% versions, removed
+  adapter modules and live discovery absence. Strict unchanged plugin pin
+  `1061c6e` needed no publication. Lifecycle/session/docs/type checks passed;
+  no user compute wake or process/file cleanup. Python's default urllib UA hit
+  HTTP 403 on public readback; curl succeeded without changing service policy.
+
+- 2026-11-04 (CollabMD retirement, local only): Removed active recommendations and
+  the managed public-app exception, retaining generic public/private previews and
+  per-app stop semantics. Historical evidence is labeled retired; user files and
+  collaboration sidecars remain untouched. No deployment or live cleanup occurred.
+
+- 2026-11-04 (Nanobot retirement): Removed current Nanobot recommendations and
+  exposure rows from documentation, retaining dated qualification/refinement
+  evidence and clearly labeling the old investigation as retired. OpenChamber is
+  the primary graphical surface on desktop and sandbox. Documentation cleanup is
+  not live migration evidence or authorization to erase existing user state.
 
 - 2026-10-24 (local Sandboxes home simplification): Presentation-only changes
   need no API/plugin rebuild. Removed the hero launch/embed UI and frame CSP
@@ -271,7 +294,8 @@ explicit operation on the user-owned installation. Preserve user files and histo
   needs an optional post-registration configuration/readiness hook for apps with
   explicit public WS origins. App authentication and MCP permission semantics
   require decisions before presenting another service as equivalent. Findings
-  are in `api/NANOBOT-POC.md`; no runtime qualification or deployment in this pass.
+  were recorded in the now-retired Nanobot investigation; no runtime qualification
+  or deployment in this pass.
 
 - 2026-10-09 (Nanobot local POC): A fixed post-registration finalization step
   qualifies the actual bootstrap WS origin before surfacing ready. Named helper

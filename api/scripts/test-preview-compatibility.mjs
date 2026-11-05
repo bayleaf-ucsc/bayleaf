@@ -80,10 +80,10 @@ for (const secret of [env.OIDC_CLIENT_SECRET, env.PREVIEWS_SECRET]) {
         assert.equal(await applicationHeadersAllowed({ Any: token }, env, target), false);
         assert.equal(await applicationHeadersAllowed({ Authorization: 'Basic ' + btoa('app:' + token) }, env, target), false);
         const prepared = await upstreamRequest(request({
-          Authorization: `Bearer ${token}`, 'X-Nanobot-Auth': token,
+          Authorization: `Bearer ${token}`, 'X-Fixture-Auth': token,
         }), env, registration);
         assert.equal(prepared.headers.get('Authorization'), null);
-        assert.equal(prepared.headers.get('X-Nanobot-Auth'), null);
+        assert.equal(prepared.headers.get('X-Fixture-Auth'), null);
         jwtForms++;
       }
     }
@@ -94,18 +94,18 @@ console.log(`PASS ${jwtForms} Hono-verified JWT spellings excluded by actual hel
 for (const credential of ['sk-bayleaf-owner', 'sk-bayleaf-grant-test', 'sk-or-v1-test', 'tk_test', 'admin_test',
   'tvly-test', 'dt_test', 'campus', env.PREVIEWS_INSTALLATION_KEY, env.DAYTONA_API_KEY,
   target.hostname, target.hostname.split('.')[0], 'synthetic-signed-credential', 'SYNTHETIC-SIGNED-CREDENTIAL']) {
-  const prepared = await upstreamRequest(request({ Authorization: `Bearer ${credential}`, 'X-Nanobot-Auth': credential }), env, registration);
+  const prepared = await upstreamRequest(request({ Authorization: `Bearer ${credential}`, 'X-Fixture-Auth': credential }), env, registration);
   assert.equal(prepared.headers.get('Authorization'), null);
-  assert.equal(prepared.headers.get('X-Nanobot-Auth'), null);
+  assert.equal(prepared.headers.get('X-Fixture-Auth'), null);
   assert.equal(await applicationHeadersAllowed({ Any: credential }, env, target), false);
   assert.equal(await applicationHeadersAllowed({ Authorization: 'Basic ' + btoa('app:' + credential) }, env, target), false);
   assert.equal(await applicationHeadersAllowed({ Authorization: ' Bearer ' + credential + ' ' }, env, target), false);
   assert.equal(await applicationHeadersAllowed({ Authorization: ' Basic ' + btoa('app:' + credential) + ' ' }, env, target), false);
 }
-for (const token of ['nbwt_synthetic_application_token', signed('synthetic-app-only-signing-secret') + '=']) {
-  const prepared = await upstreamRequest(request({ Authorization: `Bearer ${token}`, 'X-Nanobot-Auth': 'synthetic app password' }), env, registration);
+for (const token of ['fixture_application_token', signed('synthetic-app-only-signing-secret') + '=']) {
+  const prepared = await upstreamRequest(request({ Authorization: `Bearer ${token}`, 'X-Fixture-Auth': 'synthetic app password' }), env, registration);
   assert.equal(prepared.headers.get('Authorization'), `Bearer ${token}`);
-  assert.equal(prepared.headers.get('X-Nanobot-Auth'), 'synthetic app password');
+  assert.equal(prepared.headers.get('X-Fixture-Auth'), 'synthetic app password');
 }
 for (const token of ['one.two.!bad', 'one.two.A', 'one.two.===']) {
   assert.equal(await platformCredential(token, request(), env, target), true, 'malformed JWT-like input is stripped without throwing');
@@ -117,9 +117,9 @@ for (const headers of [
 ]) {
   // Header builder alone must not forward credentials on the navigation
   // exception. The full foreign-Origin gate belongs to handlePreviewHost.
-  const prepared = await upstreamRequest(request({ ...headers, Authorization: 'Bearer nbwt_synthetic', 'X-Nanobot-Auth': 'app-password' }), env, registration);
+  const prepared = await upstreamRequest(request({ ...headers, Authorization: 'Bearer fixture_application_token', 'X-Fixture-Auth': 'app-password' }), env, registration);
   assert.equal(prepared.headers.get('Authorization'), null);
-  assert.equal(prepared.headers.get('X-Nanobot-Auth'), null);
+  assert.equal(prepared.headers.get('X-Fixture-Auth'), null);
 }
 console.log('PASS reserved secrets, malformed JWTs, app-token positive controls and credential origin restrictions');
 

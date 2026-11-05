@@ -30,7 +30,7 @@ collapsed in first-occurrence order; the 16-entry input bound applies before
 deduplication. Malformed persisted arrays fail closed.
 
 Exposure is API-only: generated HTTP contracts, the existing API dashboard and
-browser example expose this revision. Hosted OpenChamber, Nanobot, Chat and
+browser example expose this revision. Hosted OpenChamber, Chat and
 desktop adapters are intentionally unchanged under the approved API-only scope.
 This revision does not enable any backend or change model eligibility policy.
 

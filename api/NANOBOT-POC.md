@@ -1,4 +1,11 @@
-# Managed Nanobot investigation
+# Managed Nanobot investigation (retired historical record)
+
+**Retired 2026-11-04.** Nanobot is no longer a supported BayLeaf managed surface.
+OpenChamber is the primary graphical agent surface on desktop and in the sandbox,
+supporting transferable working habits. The investigation, commands, package pins,
+publication steps and future-tense proposals below are preserved as historical
+evidence, not current setup, deployment or maintenance instructions. They do not
+authorize restarting or reinstalling retired services or deleting user data.
 
 Issue [#87](https://github.com/bayleaf-ucsc/bayleaf/issues/87), 2026-10-09.
 This POC was deployed on 2026-10-09 for owner evaluation; it is not a

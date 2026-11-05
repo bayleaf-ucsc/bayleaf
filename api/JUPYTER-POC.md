@@ -7,7 +7,9 @@ Production Linux installation reached ready. Authenticated `/lab` and
 API access failed, and managed logs contained no app secret. The owner-gated
 browser link requires a fresh UCSC login in the agent's browser panel, so live
 interactive notebook/kernel qualification remains outstanding. Release versions
-and shared rollout evidence are recorded in `NANOBOT-POC.md`.
+and shared rollout evidence were recorded in the historical Nanobot investigation
+(that managed surface was retired on 2026-11-04). Nanobot comparisons below describe
+the 2026-10-09 implementation, not a current supported application.
 
 ## Integration follow-up
 

@@ -80,8 +80,9 @@ secret mounts stop setup rather than replacing unrelated mounts.
 
 Managed installers replace their `credentials/incoming` / `credentials/owner-key`
 with a placeholder. OpenCode bootstrap removes only older credential entries labeled
-`BayLeaf managed sandbox` for the exact managed integration. Nanobot configuration
-continues to reference its environment. User-authored credentials, config and agent
+`BayLeaf managed sandbox` for the exact managed integration. Nanobot was retired
+on 2026-11-04; any residual managed credential copies need an explicitly scoped
+migration or cleanup, not a reinstall of the retired app. User-authored credentials, config and agent
 histories are not searched or erased. Each installed agent service must complete
 setup to remove its own managed ordinary-key copy; mounting alone does not sanitize
 an existing disk or process environment. Do not describe an existing machine as
@@ -90,7 +91,7 @@ retain previously copied keys; revoking the ordinary key invalidates such copies
 
 Before production enablement:
 
-1. Review and publish both edited client packages, then rebuild their verified pins.
+1. Review and publish the edited OpenCode client package, then rebuild its verified pin.
    Test fixtures deliberately do not qualify Git publication or package loading.
 2. Apply migration `0015`, deploy API and Sandboxes frontend together with approval.
    Do not roll API code back past `0015` while relying on independent sandbox access.
@@ -98,7 +99,7 @@ Before production enablement:
    genuine authenticated BayLeaf success through Daytona, denied direct-placeholder
    use, and an independently controlled non-allowlisted destination. Echo responses
    cannot prove substitution. Verify HTTPS/TLS trust for curl, Python, Node/OpenCode,
-   Nanobot, and the attested Sealed transport without disabling verification.
+   and the attested Sealed transport without disabling verification.
 4. Exercise first attachment, restart, new-process environments, unchanged placeholder
    rotation propagation, failed attachment/retry, concurrent setup, independent
    revoke, ordinary revoke/reissue, and verified machine/secret cleanup. Do not wake

@@ -4,13 +4,11 @@
 export const inboxTestAssets = {
   name: 'inbox-test-only-adapter-assets',
   setup(b) {
-    b.onResolve({ filter: /(?:\.sandbox-plugin-ref|\.nanobot-assets)\.json$/ }, args => ({
+    b.onResolve({ filter: /\.sandbox-plugin-ref\.json$/ }, args => ({
       path: args.path, namespace: 'inbox-test-assets'
     }));
-    b.onLoad({ filter: /.*/, namespace: 'inbox-test-assets' }, args => ({
-      contents: JSON.stringify(args.path.includes('.sandbox-plugin-ref')
-        ? { package: 'test-only:no-sandbox-plugin' }
-        : { _source: { mode: 'fixture' }, 'nanobot-mcp.mjs': '// Test only: not an adapter.' }),
+    b.onLoad({ filter: /.*/, namespace: 'inbox-test-assets' }, () => ({
+      contents: JSON.stringify({ package: 'test-only:no-sandbox-plugin' }),
       loader: 'json'
     }));
   }

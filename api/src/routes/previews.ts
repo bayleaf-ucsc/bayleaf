@@ -385,13 +385,13 @@ export async function issueDesktopEmbed(env: Bindings, email: string): Promise<{
 
 export async function registerBrowserPreview(env: Bindings, email: string, url: string, expiresAt: number, ownerKeyHash: string, slot = '__browser', appSecret?: string) {
   if (env.BROWSER_SANDBOX_ENABLED !== 'true' || !managedSlot(slot)) return failure(503);
-  const requiresAppSecret = ['__nanobot','__jupyter','__ttyd'].includes(slot);
+  const requiresAppSecret = ['__jupyter','__ttyd'].includes(slot);
   if (requiresAppSecret !== (appSecret !== undefined) || (appSecret !== undefined && !/^[a-f0-9]{64}$/.test(appSecret))) return failure(400);
   return registerPreview(env, { ...apiPolicy(env), id: '__browser' }, {
     owner: { subject: email, email }, upstream_url: url, access: managedAccess(slot),
     ...(appSecret ? { upstream_headers: slot === '__jupyter'
-      ? { Authorization: `token ${appSecret}` } : slot === '__ttyd'
-      ? { Authorization: `Basic ${btoa('bayleaf:' + appSecret)}` } : { 'X-Nanobot-Auth': appSecret } } : {}),
+      ? { Authorization: `token ${appSecret}` }
+      : { Authorization: `Basic ${btoa('bayleaf:' + appSecret)}` } } : {}),
   }, slot, { expiresAt, ownerKeyHash });
 }
 

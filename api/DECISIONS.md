@@ -50,7 +50,6 @@ proof of OpenRouter compatibility. ZDR availability must be discovered, not pred
 | HTTP/OpenAPI and llms.txt | Exposed | Production typed route, schemas and workflow guidance |
 | Dashboard and consent | Exposed | Production creation/revocation and explicit two-model consent/PKCE verified |
 | Hosted OpenChamber/OpenCode | Defer | Operator: adapter and package qualification after API rollout |
-| Hosted Nanobot | Defer | Operator: MCP adapter qualification after API rollout |
 | BayLeaf Chat | Defer | Operator: identity/allowance mapping and toolkit consent after API rollout |
 | Desktop clients | Defer | Operator: opt-in tool/skill distribution after API rollout |
 

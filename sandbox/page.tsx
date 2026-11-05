@@ -63,8 +63,6 @@ const styles = `
   .service > .actions { grid-column:2; grid-row:1; align-self:center; }
   .service .actions > .button { width:auto; }
   .service > .status-box,.service > details,.service > form,.service > noscript { grid-column:1 / -1; }
-  .service > .sharing-boundary { grid-column:1 / -1; margin:0.4rem 0; font-size:0.9rem; color:#48594e; overflow-wrap:anywhere; }
-  .service[data-service=collabmd] > .actions { grid-column:1 / -1; grid-row:auto; }
   .service summary { padding:0.25rem 0; }
   .service .button { background:#fff; color:#1e5a3a; }
   .service .button:hover { background:#e5f0e8; }
@@ -107,13 +105,10 @@ const controls = (service: typeof SERVICES[number]) => `
     <p id="${service.id}-status" role="status" aria-live="polite">Checking status…</p>
   </div>
   <form id="${service.id}-login" method="post" action="/login" hidden><button class="button" type="submit">Sign in again</button></form>
-  ${service.id === 'collabmd' ? '<p class="sharing-boundary">During an active sharing session, anyone with the link and room password can edit documents in <code>~/workspace/public-collaborative-docs/</code>. End sharing stops access, not file retention.</p>' : ''}
   <div class="actions">
     <button type="button" class="button" id="${service.id}-start" aria-label="Open ${escapeHtml(service.name)}" hidden>${escapeHtml(service.launch)}</button>
     <a class="button" id="${service.id}-open" aria-label="Open ${escapeHtml(service.name)} (new tab)" hidden target="_blank" rel="noopener noreferrer">Open <span class="note-window">(new tab)</span></a>
-    <button type="button" class="secondary" id="${service.id}-copy-link" hidden>Copy link</button>
-    <button type="button" class="secondary" id="${service.id}-copy-password" hidden>Copy room password</button>
-    <button type="button" class="secondary" id="${service.id}-stop" hidden>${service.id === 'collabmd' ? 'End sharing' : 'Stop app'}</button>
+    <button type="button" class="secondary" id="${service.id}-stop" hidden>Stop app</button>
   </div>
   <details class="app-help"><summary>Using ${escapeHtml(service.name)} here</summary>
     <p id="${service.id}-intro" class="note" hidden>${escapeHtml(service.intro)}</p>
@@ -198,8 +193,6 @@ const controlsScript = `(() => {
       el('restart').hidden=!ready;
       const stoppable=!!s.operation&&['opening','ready','expired','failed'].includes(s.phase);
       el('stop').hidden=!(stoppable||s.cleanup_pending||s.access_revoked===false);
-      el('copy-link').hidden=!(ready&&service.id==='collabmd');
-      el('copy-password').hidden=!(ready&&service.id==='collabmd'&&s.room_password);
       const previous=s.previous_failure;
       el('previous').hidden=!previous;
       el('previous').textContent=previous?'Previous attempt failed at '+clock(previous.at)+' after '+duration(previous.elapsed)
@@ -210,7 +203,7 @@ const controlsScript = `(() => {
     function signedOut() {
       authExpired=true;ready=false;snapshot=undefined;clearTimeout(timer);
       root.dataset.phase='signed-out';
-       for(const id of ['start','restart','stop','copy-link','copy-password','open','timing','progress','previous','troubleshoot'])el(id).hidden=true;
+        for(const id of ['start','restart','stop','open','timing','progress','previous','troubleshoot'])el(id).hidden=true;
        el('open').removeAttribute('href');el('login').hidden=false;
       say('Your session has expired. Sign in again to continue.');
     }
@@ -249,13 +242,6 @@ const controlsScript = `(() => {
       finally {busy=false;actionButtons.forEach(b=>b.disabled=authExpired);}
     }
     ['start','restart','stop'].forEach(name=>el(name).addEventListener('click',()=>action(name)));
-    for(const [id,key] of [['copy-link','url'],['copy-password','room_password']]) {
-      el(id).addEventListener('click',async()=>{
-        if(!ready||!snapshot?.[key])return;
-        try {await navigator.clipboard.writeText(snapshot[key]);say(id==='copy-link'?'Link copied':'Room password copied');}
-        catch {say('Could not copy. Clipboard access is unavailable.');}
-      });
-    }
     window.addEventListener('focus',()=>{if(!busy)refresh();});
     setInterval(()=>{if(!busy&&ready&&snapshot?.deadline<=Math.floor(Date.now()/1000))refresh();},30000);
     setInterval(timing,1000);
@@ -300,13 +286,13 @@ ${session ? '' : '<form method="post" action="/login"><button class="button" typ
 ${cards}</section>
 <section aria-labelledby="ideas-title"><h2 id="ideas-title">Things you could try</h2><p class="note">The apps are more useful together, because they share the same files.</p>
 <div class="examples"><div class="example"><h3>Build something, then look inside</h3><div class="flow">OpenChamber → VS Code</div><p>Ask an agent to build a small web app, then open the same project in VS Code to read how it works and make your own changes.</p></div>
-<div class="example"><h3>Explore data, then hand it off</h3><div class="flow">Files → Nanobot → JupyterLab</div><p>Upload a dataset, ask Nanobot a few quick questions about it, then turn the analysis into a notebook for a collaborator.</p></div></div></section>
-<section class="beyond" aria-labelledby="beyond-title"><h2 id="beyond-title">Not limited to this list</h2><p>Your sandbox is a whole computer, so you can install other software too. The apps above are convenient starting points we’ve heard people ask for. Ask an agent in OpenChamber or Nanobot to help you set up something else.</p><p>If an app becomes part of your routine, consider installing it on your own computer. Each project’s site explains how.</p></section>
+<div class="example"><h3>Explore data, then hand it off</h3><div class="flow">Files → OpenChamber → JupyterLab</div><p>Upload a dataset, ask OpenChamber a few quick questions about it, then turn the analysis into a notebook for a collaborator.</p></div></div></section>
+<section class="beyond" aria-labelledby="beyond-title"><h2 id="beyond-title">Not limited to this list</h2><p>Your sandbox is a whole computer, so you can install other software too. The apps above are convenient starting points we’ve heard people ask for. Ask an agent in OpenChamber to help you set up something else.</p><p>If an app becomes part of your routine, consider installing it on your own computer. OpenChamber is our primary graphical agent surface in both places, so familiar workflows transfer between your sandbox and desktop. Each project’s site explains how.</p></section>
 <section class="care" id="care" aria-labelledby="care-title"><h2 id="care-title">Files, storage &amp; privacy</h2>
 <p class="callout"><strong>Sandboxes unused for 90 days are deleted</strong>, along with their files and app histories. Download anything you want to keep.</p>
 <details><summary>What happens when my sandbox sleeps?</summary><p>Saved files, settings, and app histories are kept. Running programs stop, including unfinished agent tasks. Unsaved work in an app may be lost.</p><p>Sandboxes normally sleep after about an hour of inactivity. Background activity can delay sleep. Opening an app restores access; signing in here also tries to wake an existing sandbox. Simply viewing this page does not keep it awake.</p></details>
 <details><summary>Who can see what’s in my sandbox?</summary><p>Browser access to these apps is private to your account. Apps and agents inside the sandbox can access shared files, so isolation from your personal computer is not protection from software you run here.</p><p>AI inference uses zero-data-retention providers. Workspace files and app histories are stored, and operators can access that storage. See the <a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md">privacy notice</a>.</p></details>
-<details><summary>Can I use my sandbox from BayLeaf Chat?</summary><p>Yes. <a href="https://chat.bayleaf.dev">BayLeaf Chat</a> can work with the same sandbox files. Its conversations are separate from OpenChamber and Nanobot.</p></details>
+<details><summary>Can I use my sandbox from BayLeaf Chat?</summary><p>Yes. <a href="https://chat.bayleaf.dev">BayLeaf Chat</a> can work with the same sandbox files. Its conversations are separate from OpenChamber.</p></details>
 <details><summary>Advanced controls</summary><p><a href="https://api.bayleaf.dev/dashboard#sandbox">Sandbox &amp; API controls</a> include sandbox deletion and API key management.</p></details>
 <p class="note"><a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/SUPPORT.md">Get help with your sandbox</a></p></section>
 <footer><span>Part of <a href="https://bayleaf.dev">BayLeaf</a> at UC Santa Cruz.</span><a href="https://github.com/bayleaf-ucsc/bayleaf/blob/main/PRIVACY.md">Privacy notice</a></footer>
