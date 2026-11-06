@@ -268,6 +268,27 @@ available whenever Tinfoil still serves the model.
 
 ## Refinement log
 
+- 2026-11-05: prepared DeepSeek V4.1 Flash recommendations for both API lanes,
+  dated 1017 on OpenRouter and upgraded-in-place bare ID on Tinfoil; refreshed
+  Kimi companions to K3.1 Pro and removed Gemma/GPT-OSS from Sealed curation.
+  Both Sealed candidates passed encrypted ordinary, full tool-round-trip and
+  synthetic vision checks. Standard canaries reached an upstream daily-key
+  budget 403, not a model-policy denial; do not conflate these or raise caps
+  implicitly. Standard inference and isolated OpenCode qualification remain
+  pending at that point. After the allowance reset, both standard candidates
+  passed ordinary, full tool-round-trip and synthetic vision checks. DeepSeek
+  failed the strict exact-text assertion on both lanes in the first post-reset
+  run, then passed the unchanged assertion and all remaining checks on retry;
+  the initial differing text was not captured, so its cause is unresolved.
+  With explicit approval, deployed API `6ea4483b-f610-4d2f-81fc-1e3b3242abd5`
+  and probe `083735c9-3233-4407-9f69-26cfbf9d911f`. Live recommended-model,
+  both authenticated remote model maps/defaults, Sealed EHBP marker and generated
+  llms.txt passed. Live catalog, standard recommendation and Sealed inference
+  probes all returned 200/ok, with no missing or deprecated curated models.
+  Isolated OpenCode qualification remains unperformed.
+  Fixed the probe absence test's stale hardcoded
+  model expectation to derive it from the pinned catalog base.
+
 - 2026-10-12: updated the Sealed discovery/onboarding pin and attestation-harness
   literal to `opencode-tinfoil@0.3.1`. OpenCode V2 canaries should use
   `--standalone` to isolate the server as well as temporary configuration and

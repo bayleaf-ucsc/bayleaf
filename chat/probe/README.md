@@ -169,7 +169,7 @@ does not use Adam's personal key, Campus Pass, an OpenRouter management
 credential, or the direct route's OpenRouter inference key.
 
 The fixed upstream is `https://api.bayleaf.dev/v1/chat/completions`; redirects
-are not followed. The fixed model is `openrouter:z-ai/glm-5.3-flash`, matching
+are not followed. The fixed model is `openrouter:deepseek/deepseek-v4.1-flash-1017`, matching
 `api/wrangler.jsonc`'s namespaced `RECOMMENDED_MODEL`; a drift test fails when
 they diverge. The request explicitly includes `provider: {zdr: true, sort:
 "throughput"}`, low reasoning effort, and `max_tokens: 2048`. The API still
@@ -198,7 +198,7 @@ encrypts once and decrypts the reply. No verification bypass, plaintext fallback
 success caching, inference retry, or content/key persistence exists.
 
 The fixed target is `https://api.bayleaf.dev/sealed/v1/chat/completions`, model
-`glm-5-3` (drift-tested against `SEALED_RECOMMENDED_MODEL`), prompt `What's BayLeaf?`,
+`deepseek-v4-1-flash` (drift-tested against `SEALED_RECOMMENDED_MODEL`), prompt `What's BayLeaf?`,
 streaming, `max_tokens: 2048`, and `chat_template_kwargs.reasoning_effort: low`.
 Green requires HTTP 200, the ciphertext relay marker, a valid EHBP nonce,
 authenticated decryption, nonempty visible answer, `finish_reason: stop`, `[DONE]`,

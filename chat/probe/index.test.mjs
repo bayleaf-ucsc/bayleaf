@@ -666,7 +666,7 @@ test('catalog absence and provider-originated deprecation flags are distinguishe
   });
   const absence = await probeCatalog(null, fetcherAbsence);
   assert.equal(absence.result, 'catalog_absence');
-  assert.deepEqual(absence.missing, ['openrouter:z-ai/glm-5.3-flash']);
+  assert.deepEqual(absence.missing, ['openrouter:' + CATALOG_BASE.openrouter]);
   assert.deepEqual(absence.catalogs, {});
 });
 

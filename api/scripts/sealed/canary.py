@@ -16,7 +16,7 @@ import time
 from tinfoil import TinfoilAI
 
 base = os.environ.get("BAYLEAF_SEALED_URL", "https://api.bayleaf.dev/sealed").rstrip("/")
-model = os.environ.get("SEALED_CANARY_MODEL", "glm-5-3")
+model = os.environ.get("SEALED_CANARY_MODEL", "deepseek-v4-1-flash")
 client = TinfoilAI(
     api_key=os.environ["BAYLEAF_API_KEY"],
     base_url=f"{base}/v1/",

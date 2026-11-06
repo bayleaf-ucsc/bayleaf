@@ -226,22 +226,23 @@
     "ALLOWED_EMAIL_DOMAIN": "ucsc.edu",
     
     // Campus Pass: allow on-campus users to access without personal API keys
-    "RECOMMENDED_MODEL": "openrouter:z-ai/glm-5.3-flash",
+    "RECOMMENDED_MODEL": "openrouter:deepseek/deepseek-v4.1-flash-1017",
 
     // Curated companion models for the OpenCode wellknown remote config.
     // Comma-separated namespaced slugs (openrouter: / vertex:). RECOMMENDED_MODEL is
     // injected automatically as the first entry; this list adds further picks the
     // user can select from /models in OpenCode without a full /v1/models browse.
     // Empty string is allowed and means "recommended model only".
-    "OPENCODE_CURATED_MODELS": "openrouter:qwen/qwen3.8-27b,openrouter:deepseek/deepseek-v4.1-flash",
+    "OPENCODE_CURATED_MODELS": "openrouter:z-ai/glm-5.3-flash,openrouter:qwen/qwen3.8-27b,openrouter:moonshotai/kimi-k3.1-pro",
 
     // Sealed recommendation and curated companions. These are bare Tinfoil IDs:
     // the dedicated /sealed route establishes provider provenance, while the
     // model field is inside the encrypted body and cannot be rewritten here.
-    // GLM 5.3 Flash is deprecated upstream (2026-10-09). GLM 5.3 is
-    // text-only and more expensive; companions retain cheaper and vision options.
-    "SEALED_RECOMMENDED_MODEL": "glm-5-3",
-    "SEALED_CURATED_MODELS": "deepseek-v4-1-flash,kimi-k3,gemma4-31b,gpt-oss-120b",
+    // DeepSeek is the fast, inexpensive vision-capable recommendation; Tinfoil
+    // upgraded its bare ID in place to the 1017 revision. GLM is text-only;
+    // Kimi K3.1 Pro retains a premium multimodal alternative.
+    "SEALED_RECOMMENDED_MODEL": "deepseek-v4-1-flash",
+    "SEALED_CURATED_MODELS": "glm-5-3,kimi-k3-1-pro",
 
     // OIDC authentication — provider-agnostic via .well-known discovery.
     // Currently configured for CILogon (https://www.cilogon.org/oidc).

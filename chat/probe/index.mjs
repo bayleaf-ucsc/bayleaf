@@ -7,8 +7,8 @@ import { probeSummary } from '../../telemetry/adapters/probes.mjs';
 const MAX_BYTES = 1024 * 1024;
 const MAX_EVENT_CHARS = 64 * 1024;
 export const DIRECT_MODEL = 'z-ai/glm-5.3-flash';
-export const API_MODEL = 'openrouter:z-ai/glm-5.3-flash';
-export const SEALED_MODEL = 'glm-5-3';
+export const API_MODEL = 'openrouter:deepseek/deepseek-v4.1-flash-1017';
+export const SEALED_MODEL = 'deepseek-v4-1-flash';
 export const SANDBOX_URL = 'https://api.bayleaf.dev/sandbox';
 const SEALED_BASE = 'https://api.bayleaf.dev/sealed';
 const SEALED_REPO = 'tinfoilsh/confidential-model-router';
@@ -203,10 +203,10 @@ export async function probeSealed(apiKey, signal, {
 // index.test.mjs asserts parity with that file. Absence from a provider's live
 // /v1/models listing proves a curated entry no longer resolves; Tinfoil also
 // publishes deprecated:true ahead of removal, reported as metadata, not failure.
-export const CATALOG_BASE = { openrouter: 'z-ai/glm-5.3-flash', tinfoil: 'glm-5-3' };
+export const CATALOG_BASE = { openrouter: 'deepseek/deepseek-v4.1-flash-1017', tinfoil: 'deepseek-v4-1-flash' };
 export const CURATED_LISTS = {
-  openrouter: ['qwen/qwen3.8-27b', 'deepseek/deepseek-v4.1-flash'],
-  tinfoil: ['deepseek-v4-1-flash', 'kimi-k3', 'gemma4-31b', 'gpt-oss-120b'],
+  openrouter: ['z-ai/glm-5.3-flash', 'qwen/qwen3.8-27b', 'moonshotai/kimi-k3.1-pro'],
+  tinfoil: ['glm-5-3', 'kimi-k3-1-pro'],
 };
 export const CATALOG_URL = {
   openrouter: 'https://openrouter.ai/api/v1/models',

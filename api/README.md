@@ -127,15 +127,16 @@ Then configure `OIDC_ISSUER` and related vars in `wrangler.jsonc`, and set `OIDC
 | `DAYTONA_DEPLOYMENT_LABEL` | Label prefix for sandbox tagging. Shared with chat.bayleaf.dev's Lathe so a user has one sandbox across both services (issue #14). | `chat.bayleaf.dev` |
 | `SEALED_ENABLED` | Master kill-switch for the Sealed lane. Must be exactly `"true"`; anything else 503s all of `/sealed/*`. | `true` |
 | `SEALED_RPD_LIMIT` | Per-user daily request guardrail for keyed Sealed traffic | `500` |
-| `SEALED_RECOMMENDED_MODEL` | Recommended Sealed model (bare Tinfoil ID) | `glm-5-3` |
-| `SEALED_CURATED_MODELS` | Comma-separated companion Sealed models (bare Tinfoil IDs) | `deepseek-v4-1-flash,kimi-k3,gemma4-31b,gpt-oss-120b` |
+| `SEALED_RECOMMENDED_MODEL` | Recommended Sealed model (bare Tinfoil ID) | `deepseek-v4-1-flash` |
+| `SEALED_CURATED_MODELS` | Comma-separated companion Sealed models (bare Tinfoil IDs) | `glm-5-3,kimi-k3-1-pro` |
 
 Sealed curation targets coding-agent use without treating every model as interchangeable:
-GLM 5.3 is the text-only recommendation; DeepSeek V4.1 Flash is the cheaper,
-vision-capable **experimental** alternative; Kimi K3 is a premium multimodal
-option; Gemma 4 31B offers economical vision; GPT-OSS 120B offers the cheapest
-text/reasoning option in this selection. GLM 5.3 Flash is deprecated upstream
-with a catalog deprecation date of 2026-10-09.
+DeepSeek V4.1 Flash is the fast, inexpensive, vision-capable recommendation.
+Tinfoil upgraded its bare ID in place to the 1017 revision; the standard API
+pins `openrouter:deepseek/deepseek-v4.1-flash-1017`. GLM 5.3 remains a text-only
+companion and Kimi K3.1 Pro a premium multimodal option. Tinfoil's documentation
+still labels DeepSeek experimental, and its live catalog labels Kimi K3.1 Pro
+experimental. Kimi K3 is deprecated with a catalog deprecation date of 2026-11-12.
 
 OpenCode discovery intersects the explicit curated IDs with the live catalog,
 omits deprecated or non-chat entries, and includes available per-million-token
