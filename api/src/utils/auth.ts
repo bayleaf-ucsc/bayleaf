@@ -29,6 +29,8 @@ import { recordUserActivity, USER_ACTIVITY_COLUMNS } from '../userActivity';
 
 export interface AuthResult {
   isCampusMode: boolean;
+  /** Which credential kind authenticated the caller; reported by GET /whoami. */
+  credential: 'key' | 'sandbox' | 'grant' | 'campus';
   userEmail: string | null;
   /**
    * Populated if auth was via a Bayleaf token. Its absence is what marks a
@@ -57,7 +59,7 @@ export async function resolveAuth(
     }
     const row = c.get('grantOwner')!;
     await recordUserActivity(row.email, c.env, row.user_last_active_at);
-    return { isCampusMode: false, userEmail: row.email, userKeyRow: row, clientIp };
+    return { isCampusMode: false, credential: 'grant', userEmail: row.email, userKeyRow: row, clientIp };
   }
 
   // If no key, empty key, or "campus" token, check for campus access
@@ -65,6 +67,7 @@ export async function resolveAuth(
     if (isCampusPassEligible(c.req.raw, c.env)) {
       return {
         isCampusMode: true,
+        credential: 'campus',
         userEmail: null,
         clientIp,
       };
@@ -81,7 +84,7 @@ export async function resolveAuth(
     const row = await authenticateSandboxCredential(c.env, providedKey);
     if (!row) return c.json({ error: { message: 'Invalid or revoked sandbox access.', code: 401 } }, 401);
     await recordUserActivity(row.email, c.env, row.user_last_active_at);
-    return { isCampusMode: false, userEmail: row.email, userKeyRow: row, clientIp };
+    return { isCampusMode: false, credential: 'sandbox', userEmail: row.email, userKeyRow: row, clientIp };
   }
 
   // Bayleaf proxy token — resolve via D1
@@ -106,6 +109,7 @@ export async function resolveAuth(
     // `resolveBackendCredential`, which mints on demand.
     return {
         isCampusMode: false,
+        credential: 'key',
         userEmail: row.email,
         userKeyRow: row,
         clientIp,

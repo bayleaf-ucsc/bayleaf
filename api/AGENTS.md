@@ -843,6 +843,7 @@ this facet; run `npm run test:hf` and `npm run test:docs`.
 /sealed/.well-known/opencode/config   GET: Authenticated Sealed OpenCode config
 /recommended-model      Current recommended model slug + display name (JSON, unauthenticated)
 /campus-pass            Read-only keyless standard inference availability for the caller
+/whoami                 Caller's own account email + credential kind (null email for Campus Pass; grants refused)
 /hf/catalog             GET: approved HF releases (keyless; issue #121)
 /hf/catalog/{ns}/{repo} GET: one repository's approved releases, with per-file mirror state
 /hf/{ns}/{repo}/resolve/{revision}/{path}  GET|HEAD: approved artifact bytes from R2 (Range supported)

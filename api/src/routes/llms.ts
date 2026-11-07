@@ -586,6 +586,11 @@ are not interchangeable; eligible Campus Pass requests omit the header:
 | **Campus Pass** (omit header) | On the UCSC campus network. No key needed for inference, web search/fetch, and other supported routes. Sandbox access requires a personal key. |
 | **Temporary inference token** (${bt}sk-bayleaf-grant-...${bt}) | One backend-qualified standard-inference model until expiry or revocation. No discovery, Sealed, other tools, account management, or token issuance. |
 
+To learn whose account a credential acts for, call ${bt}GET /whoami${bt}. It returns
+${bt}{"credential": "key" | "sandbox" | "campus", "email": ...}${bt}, with a null email under
+Campus Pass, and has no side effects. Temporary tokens are refused, so an app holding
+one cannot learn who granted it.
+
 BayLeaf applies a daily limit to each backend: some are price-based and others
 are request-based. Your current limits and remaining allowance are shown in the
 [dashboard](https://api.bayleaf.dev/dashboard). Standard-backend allowance is also

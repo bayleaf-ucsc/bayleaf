@@ -85,6 +85,11 @@ export const UsageResponseSchema = z.object({
   })),
 }).openapi('UsageResponse');
 
+export const WhoamiResponseSchema = z.object({
+  credential: z.enum(['key', 'sandbox', 'campus']).describe('key: ordinary personal API key. sandbox: controller-managed sandbox credential, acting for its owner. campus: anonymous Campus Pass; no person is identified.'),
+  email: z.string().nullable().describe('Account email the caller acts on behalf of, as recorded at sign-in. Null for Campus Pass.'),
+}).openapi('WhoamiResponse');
+
 // ── Shared ────────────────────────────────────────────────────────
 
 export const ApiErrorSchema = z.object({
