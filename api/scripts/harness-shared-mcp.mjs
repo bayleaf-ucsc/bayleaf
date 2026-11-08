@@ -68,7 +68,7 @@ try {
   const inventory=(await wait(async()=>{const r=await rpc('inspect');return r.output.tools.some(t=>t.id==='sandbox_click')&&r;})).output;
   assert.equal(inventory.tools.filter(t=>t.id.startsWith('sandbox_')).length,28);
   for(const name of ['bayleaf_expose','bayleaf_unexpose','bayleaf_inboxes','bayleaf_inbox_read'])assert(!inventory.tools.some(t=>t.id===name));
-  for(const name of ['bayleaf_usage','bayleaf_inbox_save','bayleaf_inbox_delete_message','bayleaf_inbox_destroy','webfetch'])assert(inventory.tools.some(t=>t.id===name));
+  for(const name of ['bayleaf_usage','bayleaf_whoami','bayleaf_directory','bayleaf_inbox_save','bayleaf_inbox_delete_message','bayleaf_inbox_destroy','webfetch'])assert(inventory.tools.some(t=>t.id===name));
   const skills=inventory.skills.data??inventory.skills;
   assert(skills.some(s=>s.id==='bayleaf-scheduling'));
   assert(skills.some(s=>s.name==='bayleaf-sandbox-orientation'));

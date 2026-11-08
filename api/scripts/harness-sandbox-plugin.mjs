@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 function assertRequiredTools(tools) {
-  for (const id of ['webfetch','bayleaf_usage','bayleaf_expose','bayleaf_unexpose']) {
+  for (const id of ['webfetch','bayleaf_usage','bayleaf_whoami','bayleaf_directory','bayleaf_expose','bayleaf_unexpose']) {
     assert.equal(tools.filter(tool=>tool.id===id).length,1,`required runtime tool: ${id}`);
   }
 }
@@ -17,7 +17,7 @@ function assertRequiredTools(tools) {
 // Bounded offline check of the qualification gate, without starting OpenCode or
 // loading/installing a plugin. The actual runtime inventory crosses the same gate.
 if (process.argv.includes('--self-test-tools')) {
-  const tools = ['webfetch','bayleaf_usage','bayleaf_expose','bayleaf_unexpose'].map(id=>({id}));
+  const tools = ['webfetch','bayleaf_usage','bayleaf_whoami','bayleaf_directory','bayleaf_expose','bayleaf_unexpose'].map(id=>({id}));
   assertRequiredTools(tools);
   for (const {id} of tools) {
     assert.throws(()=>assertRequiredTools(tools.filter(tool=>tool.id!==id)),
@@ -49,6 +49,8 @@ const fixture = createServer(async (req,res) => {
   }
   if (archives.has(path)) return res.end(archives.get(path));
   if (path === '/usage') return res.end(JSON.stringify({observed_at:'fixture',budgets:[]}));
+  if (path === '/whoami') return res.end(JSON.stringify({credential:'key',email:'fixture@ucsc.edu'}));
+  if (path === '/directory/fixture') return res.end(JSON.stringify({cruzid:'fixture',name:'Fixture',title:null,email:null,phone:null,details:{},links:[],source_url:'https://campusdirectory.ucsc.edu/cd_detail?uid=fixture'}));
   if (path === '/sandbox') return res.end(JSON.stringify({state:'started'}));
   if (path === '/sandbox/browser/status') return res.end(JSON.stringify({phase:'ready'}));
   if (path === '/sandbox/expose') {
@@ -224,8 +226,8 @@ m.bootstrap(${port},${JSON.stringify(operation)},${JSON.stringify(origin)})
   }
   console.log('PASS real V2 bootstrap, tool/skill registration, BayLeaf search, fetch allow/deny/ask/reject');
   { // Unconditional qualification; keep preview-session locals in their own scope.
-    for(const name of ['bayleaf_usage']) {
-      const r=await rpc('fetch',{sessionID:allowID,name,args:{}});
+    for(const [name,args] of [['bayleaf_usage',{}],['bayleaf_whoami',{}],['bayleaf_directory',{cruzid:'fixture'}]]) {
+      const r=await rpc('fetch',{sessionID:allowID,name,args});
       assert.ok(r.output.content);assert.ok(!r.output.error);
     }
     for(const name of ['bayleaf_expose','bayleaf_unexpose']) {
