@@ -35,6 +35,7 @@ import { reapInactiveSandboxes, SANDBOX_REAPER_CRON } from './sandboxReaper';
 import { sandboxBrowserRoutes } from './routes/sandboxBrowser';
 import { usageRoutes } from './routes/usage';
 import { whoamiRoutes } from './routes/whoami';
+import { directoryRoutes } from './routes/directory';
 import { campusPassRoutes } from './routes/campusPass';
 export { SandboxBrowser } from './sandboxBrowser';
 import { webRoutes } from './routes/web';
@@ -213,6 +214,7 @@ app.route('/sandbox/browser', sandboxBrowserRoutes);
 app.route('/sandbox/computer', computerRoutes);
 app.route('/usage', usageRoutes);
 app.route('/whoami', whoamiRoutes);
+app.route('/directory', directoryRoutes);
 app.route('/sandbox', sandboxRoutes);
 app.route('/web', webRoutes);
 app.route('/hf', hfRoutes);
@@ -261,6 +263,7 @@ app.doc31('/docs/openapi.json', (c) => ({
     { name: 'Sandbox', description: 'Sandboxed Linux code execution and file I/O' },
     { name: 'Web', description: 'Web search and page content fetching. An empty security alternative means eligible Campus Pass, not unconditional anonymous access. Temporary inference tokens are excluded.' },
     { name: 'Meta', description: 'API metadata and documentation' },
+    { name: 'Directory', description: 'On-demand lookup of one person in the public UCSC campus directory by CruzID. Personal access only; uncached; no search or enumeration.' },
     { name: 'Grants', description: GRANT_WORKFLOW },
     { name: 'Inboxes', description: 'Owner-managed email and HTTP reception with bounded stored content, outside the inference ZDR boundary; requires an ordinary key or sandbox credential.' },
     { name: 'Artifacts', description: 'Keyless, read-only delivery of approved Hugging Face model artifacts from this origin, for clients whose network egress is limited to it. Not a Hub proxy: approved files are mirrored ahead of time and requests never reach Hugging Face.' },

@@ -844,6 +844,7 @@ this facet; run `npm run test:hf` and `npm run test:docs`.
 /recommended-model      Current recommended model slug + display name (JSON, unauthenticated)
 /campus-pass            Read-only keyless standard inference availability for the caller
 /whoami                 Caller's own account email + credential kind (null email for Campus Pass; grants refused)
+/directory/{cruzid}     One public campus directory entry as JSON (personal key; uncached; daily cap)
 /hf/catalog             GET: approved HF releases (keyless; issue #121)
 /hf/catalog/{ns}/{repo} GET: one repository's approved releases, with per-file mirror state
 /hf/{ns}/{repo}/resolve/{revision}/{path}  GET|HEAD: approved artifact bytes from R2 (Range supported)

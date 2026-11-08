@@ -90,6 +90,17 @@ export const WhoamiResponseSchema = z.object({
   email: z.string().nullable().describe('Account email the caller acts on behalf of, as recorded at sign-in. Null for Campus Pass.'),
 }).openapi('WhoamiResponse');
 
+export const DirectoryEntrySchema = z.object({
+  cruzid: z.string(),
+  name: z.string().nullable(),
+  title: z.string().nullable().describe('Headline title; details may list more.'),
+  email: z.string().nullable().describe('As published. Undergraduate emails are withheld by UCSC policy since 2026-02.'),
+  phone: z.string().nullable(),
+  details: z.record(z.string(), z.union([z.string(), z.array(z.string())])).describe('Every labelled field the directory publishes, keyed by its label verbatim (e.g. "Department/ College/ Unit", "Affiliation", "Research Interests"). Lists become arrays; line breaks become newlines. Fields appear only when populated and may be stale.'),
+  links: z.array(z.object({ title: z.string(), url: z.string() })).describe('Published web links.'),
+  source_url: z.string().describe('The campus directory page this was read from.'),
+}).openapi('DirectoryEntry');
+
 // ── Shared ────────────────────────────────────────────────────────
 
 export const ApiErrorSchema = z.object({

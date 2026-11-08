@@ -95,6 +95,8 @@ try {
   }
   assert.deepEqual(spec.paths['/usage'].get.security, [{ Bearer: [] }]);
   assert.deepEqual(spec.paths['/whoami'].get.security, [{ Bearer: [] }, {}]);
+  assert.deepEqual(spec.paths['/directory/{cruzid}'].get.security, [{ Bearer: [] }]);
+  assert.deepEqual(spec.paths['/directory/{cruzid}'].get.tags, ['Directory']);
   assert.deepEqual(spec.components.schemas.WhoamiResponse.properties.credential.enum, ['key', 'sandbox', 'campus']);
    assert.deepEqual(spec.paths['/sandbox/exec'].post.security, [{ Bearer: [] }]);
    const inboxOperations = Object.entries(spec.paths).filter(([path]) => path.startsWith('/inboxes'))

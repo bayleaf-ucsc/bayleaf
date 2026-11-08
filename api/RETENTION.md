@@ -52,6 +52,15 @@ after 24 hours. Lookup failures, upstream errors, and malformed responses produc
 an `unknown` verdict that is denied but not cached. No prompt, completion, user
 identity, or request body enters this cache.
 
+### Campus directory lookups (`/directory/{cruzid}`)
+
+Each lookup fetches the public campusdirectory.ucsc.edu page on demand; nothing
+from the page is cached or stored, and the photo is discarded. The only state is
+a daily counter in `CAMPUS_RPD` KV keyed by a truncated SHA-256 of the caller's
+email and the UTC date, holding a count and expiring after 36 hours. It records
+how many lookups an account made, never whom they looked up. UCSC sees requests
+from Cloudflare addresses with a BayLeaf User-Agent, not the caller's identity.
+
 ---
 
 ## Sealed Lane Traffic (`/sealed/*`, enabled)
@@ -510,6 +519,7 @@ platform-log or provider retention schedules.
 | Prompts and completions | Not stored, not logged (ZDR passthrough, ZOA posture) | — |
 | Sealed-lane prompts and completions | Not stored, not logged, and not decryptable by BayLeaf (attested E2EE) | — |
 | Plaintext model-policy verdicts | Cloudflare `MODEL_STATUS` KV | 24 hours for positive and definite-negative; unknown is not stored |
+| Directory lookup counters (hashed account + date, count only) | Cloudflare `CAMPUS_RPD` KV | 36 hours |
 | User identity/activity and credentials (D1) | Cloudflare D1 | Daily eligibility after 18 calendar months of user inactivity, subject to known timestamps, exemptions/holds and resource dependencies; provider revocations retried |
 | Sandbox content | Daytona | 90 days after last activity |
 | API session state | Client cookie | 24 hours |

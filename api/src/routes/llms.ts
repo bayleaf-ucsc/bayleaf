@@ -118,6 +118,7 @@ ${sealedEnabled ? '- [Sealed LLM inference](#sealed-llm-inference): a separate e
 - [Sandboxed code execution](#sandboxed-code-execution): persistent Linux tools and browser workspaces.
 - [Computer use](#computer-use): observe and drive an already-running sandbox Desktop through the owner API.
 - [Web search and page fetch](#web-search-and-page-fetch): wire web tools into an agent.
+- [Campus directory](#campus-directory): look up one UCSC person by CruzID.
 ${input.hfEnabled ? '- [Model artifact downloads](#model-artifact-downloads): keyless approved Hugging Face files for local or in-browser inference.' : ''}
 ${input.inboxesEnabled ? '- [Inboxes: receive email and webhooks while you are away](#inboxes-receive-email-and-webhooks-while-you-are-away): collect messages while your computer is off.' : ''}
 ${gwsEnabled ? '- [Google Workspace CLI](#google-workspace-cli-gws): direct, user-authorized integration.' : ''}
@@ -1208,6 +1209,28 @@ ${fence}
 Search returns ranked results plus an optional AI-generated ${bt}answer${bt}. Fetch
 returns clean extracted content suitable for LLM consumption (${bt}markdown${bt} default,
 ${bt}text${bt} or ${bt}html${bt} also supported).
+
+### Campus directory
+
+Look up one person in the public UCSC campus directory by CruzID (personal key required):
+
+${fence}
+GET /directory/amsmith
+${fence}
+
+Returns ${bt}name${bt}, ${bt}title${bt}, ${bt}email${bt}, ${bt}phone${bt}, ${bt}links${bt}, and ${bt}details${bt}: every
+labelled field the entry publishes, keyed by its label verbatim (for example
+${bt}"Department/ College/ Unit"${bt}, ${bt}"Affiliation"${bt}, ${bt}"Research Interests"${bt} as a list).
+Fields appear only when populated and can be years stale (office hours, courses).
+404 means no public entry. Pair it with ${bt}GET /whoami${bt} to learn about the person you
+are working for.
+
+- For an @ucsc.edu address, pass the part before @; aliases will not resolve.
+- There is no search. To find someone by name, use Google Workspace directory search.
+- Lookups are uncached and capped per account per day; misses count toward the cap.
+- UCSC withholds undergraduate emails and FERPA-restricted students. Do not try to
+  recover withheld information elsewhere.
+- Look people up when the task needs it, not to build lists of community members.
 ${input.hfEnabled ? `
 ### Model artifact downloads
 

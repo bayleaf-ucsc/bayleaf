@@ -89,6 +89,8 @@ export interface Bindings {
   // Campus Pass configuration
   CAMPUS_IP_RANGES: string;        // Comma-separated CIDR ranges (e.g., "128.114.0.0/16,169.233.0.0/16")
   CAMPUS_RPD_LIMIT: string;        // Per-IP daily request limit for Campus Pass (parsed as integer)
+  DIRECTORY_ENABLED?: string;      // "true" enables GET /directory/{cruzid}; anything else fails closed
+  DIRECTORY_RPD_LIMIT?: string;    // Per-account daily directory lookups (parsed as integer)
   // Dev-only: when exactly "true", getAuthIP() falls back to 127.0.0.1 when
   // CF-Connecting-IP is absent (local dev has no Cloudflare edge). Never set in
   // production — it would re-introduce the CWE-290 fail-open getAuthIP prevents.

@@ -25,7 +25,7 @@ Use standard base URL https://api.bayleaf.dev/v1. Obtain the current recommended
 | Browser session | BayLeaf's own dashboard/grant management; not a cross-origin app credential. Cookie-authenticated writes require the BayLeaf origin. |
 | Inboxes | ${env.INBOXES_ENABLED === 'true' ? 'Enabled' : 'Disabled'} on this deployment. Owner operations accept ordinary keys and sandbox credentials only: not Campus Pass, temporary inference tokens or browser sessions. |
 
-Public operations explicitly declare no authentication. An empty alternative on a campus-supported operation means keyless access is conditional on the trusted campus network, not that arbitrary off-campus requests are accepted. Sandbox and personal usage inspection require personal access. GET /whoami reflects the account email and credential kind a caller acts for (null email under Campus Pass; temporary inference tokens refused).
+Public operations explicitly declare no authentication. An empty alternative on a campus-supported operation means keyless access is conditional on the trusted campus network, not that arbitrary off-campus requests are accepted. Sandbox and personal usage inspection require personal access. GET /whoami reflects the account email and credential kind a caller acts for (null email under Campus Pass; temporary inference tokens refused). GET /directory/{cruzid} reflects one public campus directory entry for personal-key callers, uncached and capped per account.
 
 ## Inference and privacy boundaries
 

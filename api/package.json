@@ -40,7 +40,8 @@
     "test:sandbox-plugin": "npm --prefix sandbox-plugin test",
     "test:jupyter": "python3 scripts/test-jupyter-setup.py",
     "test:ttyd": "python3 scripts/test-ttyd-setup.py",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "test:directory": "node scripts/test-directory.mjs"
   },
   "overrides": {
     "undici": "7.30.1",
