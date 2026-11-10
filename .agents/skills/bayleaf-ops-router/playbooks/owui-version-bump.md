@@ -101,7 +101,12 @@ configs to restore if step 4's changes misbehave: re-push with
   passed. Docker disk exhaustion required approved named v0.12.4 image/cache
   cleanup. Docker shutdown and an operator travel abort interrupted qualification;
   resumed sequential checks passed. Refreshed full private snapshots/spec were
-  unchanged overnight. Publication/deployment approval is still pending.
+  unchanged overnight. Approved source `12927dc` deployed as `4e42953a`, ACTIVE:
+  exact checkout, all three migrations, guards/PID 1, health/version and Basic/Help
+  inference passed. Full private resource/spec/valve reconciliation is unchanged;
+  only new config defaults appeared. Adam confirmed production works and accepted
+  the upgrade; individual browser scenarios were not itemized.
+  Adam requested a post-upgrade design to restore deploy-before-main publication.
 
 - 2026-11-04 (v0.13.0 preparation): Reviewed v0.12.5 too; its URL-exclusion
   changes required adapting the metrics source patch rather than only repinning

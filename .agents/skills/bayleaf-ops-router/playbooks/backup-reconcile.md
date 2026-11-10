@@ -102,6 +102,12 @@ through the appropriate playbook, don't paper over it in the backup.
 
 ## Refinement log
 
+- 2026-11-10 (OWUI v0.13.3): Refreshed complete private pre/post resources,
+  hidden base, valves and app spec were byte-identical. Only 18 new global config
+  keys and the unset admin chat-read limit appeared; no existing setting changed.
+  New external scoring routes remain disabled. Known repo/live metadata and skill
+  decorations were left untouched.
+
 - 2026-11-04 (OWUI v0.13.0): Full private pre/post resource and valve pulls plus
   hidden-base reads found only `is_active=true` added to all nine tools. Synced
   that field without overwriting known unrelated metadata/decorative drift.

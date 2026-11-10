@@ -40,16 +40,16 @@ default context points at the personal `Just Adam` team.
 | **HTTP port** | `8080` |
 
 **Image choice.** Use version-specific standard-image tags (currently
-`v0.13.0`), not rolling `main` or `slim`. BayLeaf stores uploads in DO Spaces
+`v0.13.3`), not rolling `main` or `slim`. BayLeaf stores uploads in DO Spaces
 via OWUI's S3 provider (§1, Object Storage). Before v0.12.0, the slim image
 omitted S3 support and refused to start with S3 storage configured. Upstream
 v0.12.0 adds S3 support to slim, but BayLeaf retains the standard image;
 switching image variants requires separate dependency and upload qualification.
 
 **Native aggregate telemetry (2026-10-20).** The live rung-4 build adds the
-qualified source minimization to the v0.13.0 standard image (upgraded 2026-11-04), pinned by
+qualified source minimization to the v0.13.3 standard image (upgraded 2026-11-10), pinned by
 immutable upstream index
-`sha256:2272b0fb7c8783a016bcc179abb467cfa34590c99c5e6560fe0e9155b4820a09`.
+`sha256:46b59158e6558eeb980bc828e0f1b30238ad24d82ed84d5e5eda1dab2a082f14`.
 The service command is `python /opt/bayleaf-otlp/startup_patch.py`, not the former
 echo-and-start wrapper. Exact source/package guards run at build and startup;
 the entrypoint prints guarded startup markers and retains the exec handoff to
@@ -61,6 +61,25 @@ pinned upstream image (`unexpected EOF`); one unchanged-source retry succeeded.
 One instance, one worker, the original size/pool and retention job were preserved.
 Repository-push auto-deploy remains **disabled**, so documentation publication
 does not restart Chat. This is not an OWUI upgrade or schema migration.
+
+**OWUI v0.13.3 upgrade (2026-11-10):** deployment
+`4e42953a-2d5f-4e64-acfa-869693edc362` reached ACTIVE from published source
+`12927dced930c71a453ab9e9905bc836a398c44f`. Both builds, all 16 Chromium arrival
+cases, a synthetic existing-database upgrade, full five-minute arm64 PG/TLS export
+and amd64 boot/inference passed. The telemetry adapter/dependency pins are
+unchanged; frontend guards were refreshed. All three migrations completed through
+`9f6c2a8d1b43`; image-only rollback is not qualified. Today's managed database
+backup was verified. Exact build checkout, source guards, server PID 1,
+health/version and authenticated Basic/Help inference passed in production.
+The complete app spec, resources, hidden base model, grants and valves remained
+byte-identical. Existing global settings were unchanged; new defaults include
+90-day renewable session expiry, 50,000-character full-text threshold, disabled
+auto tool approval/labels, keyword tool search and no chat-read character limit.
+Tool search remains disabled and terminal connections empty. Saved retrieval
+values remain 3/3/1000. Served arrival assets match qualified bytes. Adam confirmed
+the production experience works and accepted the upgrade; individual browser
+sign-in/tool/skill/upload scenarios were not itemized.
+See [`image/UPGRADE-0.13.3.md`](image/UPGRADE-0.13.3.md).
 
 **OWUI v0.13.0 upgrade (2026-11-04 Pacific):** deployment
 `79af5c90-9217-45ac-ad66-6399a8846ec3` reached ACTIVE from published source

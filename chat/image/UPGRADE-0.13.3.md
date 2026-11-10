@@ -1,8 +1,8 @@
 # Open WebUI v0.13.3 qualification
 
 Local qualification completed 2026-11-10 after preparation started 2026-11-09.
-Adam confirmed at least a day of issue-free personal-instance use. Production
-remains on v0.13.0 until separately approved publication and deployment.
+Adam confirmed at least a day of issue-free personal-instance use and approved
+publication/deployment. Production advanced to v0.13.3 on 2026-11-10.
 
 ## Release and compatibility review
 
@@ -88,7 +88,21 @@ Private snapshots and local proofs live under the session temporary directory
   at Adam's request to leave work; all remaining owned fixtures were removed.
   The successful resumed run used the same pinned PostgreSQL digest through its
   `postgres@sha256:...` reference because Docker no longer resolved `tag@digest`.
-- Publication and production deployment remain pending. No commit or push occurred.
+- Published `12927dced930c71a453ab9e9905bc836a398c44f`; deployment
+  `4e42953a-2d5f-4e64-acfa-869693edc362` reached ACTIVE. Build logs confirm the
+  exact checkout. Source guards, all three migrations, server PID 1, health/version
+  and authenticated Basic/Help short-response inference passed.
+- Full private post-deploy resource, hidden-base and valve snapshots are
+  byte-identical to the refreshed pre-deploy snapshots. The complete app spec is
+  byte-identical too. No existing global config values changed; 18 new upstream
+  keys appeared. Auto tool approval and labels are off, tool search remains off,
+  terminal connections remain empty and saved sub-agent limits survive unchanged.
+  Admin API adds only the unset chat-read limit. Served arrival assets match the
+  qualified bytes. Adam confirmed production works and accepted the upgrade;
+  individual fresh CILogon/browser tool/skill/upload scenarios were not itemized.
+- Adam flagged the custom-image workflow's conflict with deploy-first/commit-later:
+  DO currently requires pushed source before building a candidate. Finish this
+  upgrade first, then design a way to decouple candidate rollout from `main`.
 
 ## Rollback
 
