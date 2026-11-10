@@ -5,11 +5,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 HASHES = {
-    'build/index.html': '5a78675e4211e252a0bfce7120362c844d195aed2ba4371e95e47eb4141db86b',
-    'backend/open_webui/config.py': 'bea79faa7e42dedec2ba4715466543fbfea3d09badab5a2b90d9f9104f372812',
+    'build/index.html': 'ef15e5999dc3f8ae80d1cdf8013cbd788dac24cfc2f5d2a6dba42b391e10a65d',
+    'backend/open_webui/config.py': 'e1ccda60fa000c8008bd2da169b8b38b5e56ccb092d89218606a186cfdcb025c',
     'backend/start.sh': '29ef1237701355ea895c85b06992a3e0ef60dd5a8c218cfbf6d403df540bf5dd',
-    'build/_app/immutable/nodes/0.Cb3rY7DB.js': '97b8eed1f3e5fd48f4b44eb051bcc90c8c10972fac709fa2c91b8e09c8dbf096',
-    'build/_app/immutable/nodes/53.B5o9OJRH.js': '5084107ba171f99121f1afc33cf5868aae41e0bb19854e93c0b9f9be29ff5e18',
+    'build/_app/immutable/nodes/0.D2dVsOLW.js': '0202ef342d12b784a88a9d6a89e1960196d96e88c0327e97c99fcb1432e15ae2',
+    'build/_app/immutable/nodes/53.D_OC8Apn.js': '75b90502ebeda577c7171c9ac54d601f12609f32dfd8c5430f30c7a0329f4a34',
 }
 STOCK_LOADER = b''  # Exact pinned image has an empty loader, not an owned plugin registry.
 

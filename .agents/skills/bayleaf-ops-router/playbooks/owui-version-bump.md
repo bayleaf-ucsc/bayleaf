@@ -95,6 +95,14 @@ configs to restore if step 4's changes misbehave: re-push with
 
 ## Refinement log
 
+- 2026-11-10 (v0.13.3 preparation): Upstream guarded sources/package pins were
+  unchanged; frontend hashes needed refresh. Both builds, all 16 Chromium cases,
+  synthetic existing-PG upgrade, five-minute PG/TLS export and amd64 boot/inference
+  passed. Docker disk exhaustion required approved named v0.12.4 image/cache
+  cleanup. Docker shutdown and an operator travel abort interrupted qualification;
+  resumed sequential checks passed. Refreshed full private snapshots/spec were
+  unchanged overnight. Publication/deployment approval is still pending.
+
 - 2026-11-04 (v0.13.0 preparation): Reviewed v0.12.5 too; its URL-exclusion
   changes required adapting the metrics source patch rather than only repinning
   hashes. Both architecture builds, amd64 boot/inference, full five-minute PG/TLS

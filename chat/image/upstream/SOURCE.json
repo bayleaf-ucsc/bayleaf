@@ -1,7 +1,7 @@
 {
   "repository": "https://github.com/open-webui/open-webui",
-  "tag": "v0.13.0",
-  "commit": "c38885a1a737da4968f157092f304f3b5481d0bf",
+  "tag": "v0.13.3",
+  "commit": "b0e6098e940942281d9c83f3529ea117287a3a22",
   "files": {
     "LICENSE": "5f1bd74c48bf13ab0f82e177ad9e637313b92533d20ead2593d49347a47fc232",
     "env.py": "e7d3457cae9a9dfdff1526ec985b8af73a278193da311098dca5d7825bc7c6f9",

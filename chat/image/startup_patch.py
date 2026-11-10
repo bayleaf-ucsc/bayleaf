@@ -1,4 +1,4 @@
-"""Hash-locked v0.13.0 boot patch. Never start OWUI after a failed check."""
+"""Hash-locked v0.13.3 boot patch. Never start OWUI after a failed check."""
 import hashlib
 from importlib.metadata import version
 import json
@@ -118,7 +118,7 @@ def main():
     except Exception:
         print("[bayleaf] OTLP startup refused: source/configuration check failed", file=sys.stderr, flush=True)
         return 1
-    print("[bayleaf] v0.13.0 metrics source minimization verified", flush=True)
+    print("[bayleaf] v0.13.3 metrics source minimization verified", flush=True)
     os.chdir("/app/backend")
     os.execvp("bash", ["bash", "start.sh"])
 
