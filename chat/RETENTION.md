@@ -289,8 +289,9 @@ schemas, actual storage deletion, or concurrent writes during discovery.
 
 The job runs as a **DO App Platform Job** component (type: `SCHEDULED`,
 cron: `0 6 * * *`, timezone: `America/Los_Angeles`, i.e. daily at 6am Pacific).
-It builds from `chat/Dockerfile.retention` in the `bayleaf-ucsc/bayleaf` repo
-(`python:3.12-slim`). The Dockerfile installs pinned HTTP dependencies at build
+Its image is built locally from `chat/Dockerfile.retention` (`python:3.12-slim`)
+by `chat/release.py deploy retention-cleanup`, pushed to public GHCR and deployed
+by tag; DigitalOcean does not build from GitHub. The Dockerfile installs pinned HTTP dependencies at build
 time and runs Python directly, with no runtime package resolution or download.
 Refresh the pins using the `uv pip compile` command in the Dockerfile. The job
 component shares the app but authenticates to OWUI over HTTPS like any external

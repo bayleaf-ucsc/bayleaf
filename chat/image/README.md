@@ -1,9 +1,9 @@
 # BayLeaf Chat image
 
 The production image for BayLeaf Chat: the pinned upstream Open WebUI standard
-image plus BayLeaf's hash-guarded startup patch. DigitalOcean App Platform builds
-`chat/image/Dockerfile` with the repository root as context (see `../AGENTS.md`
-and `../DESIGN.md` §1). Moved here from `telemetry/otlp/`, where native metrics
+image plus BayLeaf's hash-guarded startup patch. `../release.py deploy open-webui`
+builds `chat/image/Dockerfile` locally with the repository root as context and
+deploys it from public GHCR (see `../AGENTS.md` and `../DESIGN.md` §1). Moved here from `telemetry/otlp/`, where native metrics
 first required a BayLeaf-built image (#112).
 
 | File | Role |

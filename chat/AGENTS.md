@@ -27,8 +27,13 @@ DigitalOcean App Platform, in the `BayLeaf / UCSC` team (slug `bayleaf-ucsc`).
 Managed via `doctl --context bayleaf`.
 
 - **App ID**: `f1a1e758-62e9-4e99-90cb-212cab12958d`
-- **Build**: repo-root context, `chat/image/Dockerfile`, immutable standard
-  `ghcr.io/open-webui/open-webui:v0.13.3` base; GitHub push auto-deploy disabled
+- **Images**: built locally by `chat/release.py` (`open-webui` from
+  `chat/image/Dockerfile` on the immutable standard
+  `ghcr.io/open-webui/open-webui:v0.13.3` base; `retention-cleanup` from
+  `chat/Dockerfile.retention`), pushed to the public package
+  `ghcr.io/bayleaf-ucsc/bayleaf-chat` and deployed by a never-reused tag that embeds
+  the files' fingerprint. Accepted tags and digests are
+  recorded in `chat/DEPLOYED.json`. DigitalOcean builds nothing from GitHub.
 - **Current version**: `v0.13.3`
 - **Database**: Managed PostgreSQL 17 (`bayleaf-chat-db`, ID `ea8c7549-e761-44e1-a9c3-e45e478a5202`)
 - **Storage**: DO Spaces (`bayleaf-ucsc-storage`, bucket-scoped access key)
@@ -40,18 +45,25 @@ doctl apps spec get f1a1e758-62e9-4e99-90cb-212cab12958d --context bayleaf      
 doctl apps spec get f1a1e758-62e9-4e99-90cb-212cab12958d --context bayleaf > spec.yaml  # Save spec to file
 doctl apps spec validate spec.yaml --context bayleaf                                     # Validate (may reject EV[] values on existing apps; update still works)
 doctl apps update f1a1e758-62e9-4e99-90cb-212cab12958d --spec spec.yaml --context bayleaf  # Deploy spec-only changes
-doctl apps update f1a1e758-62e9-4e99-90cb-212cab12958d --spec spec.yaml --update-sources --wait --context bayleaf  # Deploy spec + pushed main
+chat/release.py deploy <open-webui|retention-cleanup> [--dry-run]  # Build this checkout's image, push, run it in prod
+chat/release.py check [--record]                                     # Does this checkout match what prod runs?
 doctl apps logs f1a1e758-62e9-4e99-90cb-212cab12958d --context bayleaf                   # Tail logs
 ```
 
-**Source is pinned between deploys.** Chat builds `chat/image/Dockerfile` from
-GitHub `main`, with push auto-deploy disabled. Plain `doctl apps update`
-rebuilds the *previously deployed commit* with the new spec; it does not fetch
-`main`. Any change to `chat/image/` (or a spec change that references new repo
-paths) must be pushed first and deployed with `--update-sources` (or followed by
-`doctl apps create-deployment`). On 2026-10-22 a `dockerfile_path` change without
-it failed at build ("no such file") against the old commit; the prior deployment
-kept serving.
+**Deploy first, commit later.** `chat/release.py deploy <component>` builds the amd64 image from the
+files on disk (uncommitted changes allowed), labels it with a fingerprint of
+every file the Dockerfile copies, pushes it to GHCR and swaps only that
+component's source in the live spec to that image's tag. (DigitalOcean rejected
+digests it had not deployed before but accepts new tags.) Try it in production; when
+you like it, `chat/release.py check --record` writes `chat/DEPLOYED.json` only if
+every running fingerprint matches this checkout, then commit. A
+mismatch means files changed after deploying: redeploy or restore them. Pushing
+needs a GitHub token with `write:packages` (`gh auth refresh -s write:packages`,
+then `gh auth token | docker login ghcr.io -u <user> --password-stdin`). The package
+is public deliberately: it holds only public upstream bytes and public repo files,
+public GHCR storage and transfer are free (part of showing campus AI infrastructure
+can be cheap), and DigitalOcean needs no pull credential. Never bake secrets into
+the image; they arrive as runtime env vars.
 
 ## Env Var Changes
 
@@ -194,13 +206,13 @@ content changes; don't chase them.
    `doctl apps spec get f1a1e758-62e9-4e99-90cb-212cab12958d --context bayleaf > /tmp/bayleaf-chat-spec.yaml`
 5. Update the qualified base/source release in `chat/image/` (Dockerfile digest,
    `upstream/` files and `SOURCE.json` hashes), preserving unrelated spec
-   settings, the guarded entrypoint and disabled repository-push auto-deploy.
-   Commit and push to `main`: DigitalOcean builds from GitHub, not this checkout.
-6. Deploy, fetching the pushed source (without `--update-sources` the old commit rebuilds):
-   `doctl apps update f1a1e758-62e9-4e99-90cb-212cab12958d --spec /tmp/bayleaf-chat-spec.yaml --update-sources --wait --context bayleaf`
+   settings and the guarded entrypoint. No commit is needed yet.
+6. Deploy this checkout: `chat/release.py deploy open-webui` (run as a monitored
+   background command). It reads the live spec itself and changes only the image digest.
 7. Wait for ACTIVE deployment phase, then verify health:
    `curl -sS -o /dev/null -w '%{http_code}' https://chat.bayleaf.dev/health`
-8. Update the `Current version` line in this file.
+8. Once accepted, run `chat/release.py check --record`, update the
+   `Current version` line in this file, and commit.
 9. Diff the live spec env vars against DESIGN.md §1 and sync any drift.
 
 ## Customization Route

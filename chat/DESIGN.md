@@ -35,7 +35,7 @@ default context points at the personal `Just Adam` team.
 | **App ID** | `f1a1e758-62e9-4e99-90cb-212cab12958d` |
 | **Default ingress** | `bayleaf-chat-owui-app-6uicw.ondigitalocean.app` |
 | **Region** | `sfo` |
-| **Build** | Repo-root context, `chat/image/Dockerfile`; GitHub push auto-deploy disabled |
+| **Images** | Built locally by `chat/release.py` (`open-webui` from `chat/image/Dockerfile`, `retention-cleanup` from `chat/Dockerfile.retention`); public `ghcr.io/bayleaf-ucsc/bayleaf-chat`, deployed by fingerprint-named tag (`chat/DEPLOYED.json`) |
 | **Instance** | `apps-s-1vcpu-2gb` (1 instance) |
 | **HTTP port** | `8080` |
 

@@ -35,12 +35,10 @@ revert the image tag. Prod is the staging server; treat it accordingly.
    Since 2026-10-20 the version lives in the repo, not the spec: update
    `chat/image/Dockerfile` (base digest) and requalify `chat/image/upstream/`
    hashes and the startup patch (`../telemetry/qualification/otlp-rollout.md`),
-   build locally, then **commit and push to `main`**. Deploy with
-   `doctl apps update ... --update-sources --wait` (run as a monitored
-   background command); plain `doctl apps update` rebuilds the previously
-   deployed commit and silently ignores the push. Confirm the build log's
-   "Checking out commit" matches the pushed SHA, then `curl -sS -o /dev/null
-   -w '%{http_code}' https://chat.bayleaf.dev/health` (expect `200`).
+   then run `chat/release.py deploy open-webui` (monitored background command); no
+   commit or push first. It builds amd64 locally, pushes to GHCR and deploys by
+   tag. Then `curl -sS -o /dev/null -w '%{http_code}' https://chat.bayleaf.dev/health`
+   (expect `200`).
 2. Grep deploy logs for `[bayleaf] v0.12.4 metrics source minimization verified`
     (adjust the version), printed only after the entrypoint's version,
     environment and source-hash guards pass, and confirm `Started server
@@ -66,7 +64,8 @@ revert the image tag. Prod is the staging server; treat it accordingly.
 5. Run `backup-reconcile.md` to pull the post-bump state into the repo. The
    bump is the natural time for it (issue #65): model JSONs, function metas,
    and skill lists all move together.
-6. Update the `Current version` line in `chat/AGENTS.md`.
+6. Run `chat/release.py check --record` (refuses if the checkout differs from
+   what runs) and update the `Current version` line in `chat/AGENTS.md`.
 7. Diff the live spec's env vars against `chat/DESIGN.md` §1 and sync drift.
 8. Record: one coordinated commit, e.g. `update: OWUI v0.X.Y with model config
    sync and backup pull`.
@@ -87,9 +86,9 @@ refuse to start against a database whose Alembic revision it does not recognize;
 additive schema changes alone do not establish rollback safety. If migrations
 ran, assess database restoration or a tested downgrade with Adam before acting.
 Restoration can lose writes since the recovery point. When database compatibility
-is established, revert the `chat/image/` commit, push, and deploy with
-`--update-sources` (or roll back to the previous deployment in the DO console,
-    which reuses its already-built image). The repo backup from step 5 provides the model
+is established, restore the previous `chat/image/` files and run `chat/release.py
+deploy open-webui` (earlier digests are in the git history of `chat/DEPLOYED.json`), or
+roll back to the previous deployment in the DO console. The repo backup from step 5 provides the model
 configs to restore if step 4's changes misbehave: re-push with
 `owui-cli models update chat/models/<id>/model.json`.
 
@@ -178,3 +177,13 @@ configs to restore if step 4's changes misbehave: re-push with
   metadata drift, not changed prompts or grants. Corrected rollback step references;
   Adam reported the skill system seems okay in the browser. The inactive
   role-scoped skills were not exercised.
+- 2026-11-10 (after v0.13.3): Chat moved off DigitalOcean source builds so the
+  repo can lag production again. `chat/release.py` builds amd64 locally,
+  pushes to public GHCR (free; no pull credential) and deploys by tag; the
+  first push uploaded the full base, later pushes reuse it. Proven by redeploying
+  the accepted v0.13.3 code unchanged: health and Basic/Help smokes passed, and
+  the spec diff was only the `open-webui` source. The retention job moved the same day, so DigitalOcean builds nothing from GitHub.
+  DigitalOcean `doctl apps update` rejected a not-yet-deployed GHCR digest ("the
+  repository is known but this specific version is not") although `apps propose`
+  accepted it; a new tag deployed fine, so `release.py` deploys by
+  fingerprint-named tag. `open-webui` stays on its first digest until its next deploy.
