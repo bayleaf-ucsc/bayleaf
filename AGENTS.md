@@ -306,17 +306,18 @@ transcript of the development session.
 
 ## Review Bots
 
-Pull requests are reviewed by two bots, Greptile and CodeRabbit (CodeRabbit since
-2026-11-01). Their tuning is undecided (issue #136): **live with the defaults for a
-week** (until about 2026-11-08) and record what they catch and what they cost before
-proposing configuration changes. Meanwhile:
+Greptile and CodeRabbit review every PR, including incremental pushes (tuning:
+issue #136, `.coderabbit.yaml`).
 
-- Fix plausible findings, but do not change code just to please a bot. Getting changes
-  into production often reveals more than review does.
-- The agent that authored the PR decides when to stop fix rounds. Bots are good at bug
-  hunting but do not see the broader process context.
-- Greptile's review is sufficient to merge; CodeRabbit's re-review does not gate merges
-  (Adam, 2026-11-01). Still handle real CodeRabbit findings when they arrive.
+- Fix plausible findings; don't change code just to please a bot. The PR's author
+  decides when to stop fix rounds, and cosmetic suggestions alone never justify one.
+  Docs that misstate permissions, consent, behavior, or evidence are not cosmetic.
+- Greptile's review is sufficient to merge; CodeRabbit's re-review does not gate it.
+  Neither licenses ignoring a known substantive finding.
+- Before merging, read both bots' summaries, threads, and outside-diff findings,
+  not just those since the last push.
+- After merging, check for late findings. Fix, dismiss with a reason, or propose a
+  follow-up (ask before opening it). If review is still running, say so in the handoff.
 
 ## Commit Style
 

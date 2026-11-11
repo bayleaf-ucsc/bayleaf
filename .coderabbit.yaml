@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://www.coderabbit.ai/integrations/schema.v2.json
+# Keep bug-finding coverage; reduce review ceremony and mechanical prose feedback (#136).
+reviews:
+  profile: chill
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+  # No path exclusions: tests and consent/privacy documentation have caught real bugs.
+  high_level_summary: false
+  changed_files_summary: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  related_issues: false
+  related_prs: false
+  suggested_labels: false
+  suggested_reviewers: false
+  in_progress_fortune: false
+  poem: false
+  enable_prompt_for_ai_agents: false
+  tools:
+    markdownlint:
+      enabled: false
+    languagetool:
+      enabled: false
+  pre_merge_checks:
+    # Retired in the current schema; explicitly off for deployments still running it.
+    docstrings:
+      mode: "off"
+  finishing_touches:
+    docstrings:
+      enabled: false
+chat:
+  art: false
