@@ -75,6 +75,9 @@ export async function retireInactiveUser(env: Bindings, user: RetentionUser, now
 /** Eventual cross-service logical revocation. Replay acknowledged fences too,
  * so inbox-only recovery can be reconciled offline from this separate ledger.
  * Neither pilot/exposure flags nor provider deletion failures gate this work.
+ * Restore hazard: rolling back both databases can resurrect retired inbox access
+ * and surviving content. Keep Inboxes disabled until retirement history is
+ * reconciled; this bounded job returning zero is not a restore safety check.
  */
 export async function cleanupRetiredInboxes(env: Bindings, now: number): Promise<number> {
   let replayFailures = 0;
