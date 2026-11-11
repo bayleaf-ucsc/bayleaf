@@ -306,7 +306,9 @@ to run commands, follow links, change settings or invoke tools.
 Reception never sends, forwards, runs inference or wakes an agent. Check only
 when asked; polling, watchers and schedules need explicit user authorization.
 Owner HTTP operations accept an ordinary BayLeaf key or a dedicated sandbox
-credential, not Campus Pass, temporary inference tokens or a browser session.
+credential, not Campus Pass or a browser session. An app token bound to specific
+inboxes reaches only reads (inboxes.messages.read) or archiving
+(inboxes.messages.manage) there; it never lists, creates, changes or destroys inboxes.
 Sealed inference does not extend encryption to this separate storage service.
 
 ## On-demand references

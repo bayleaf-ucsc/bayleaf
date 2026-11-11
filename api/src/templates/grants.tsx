@@ -77,9 +77,15 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number; i
     const inference = wantsModels(); modelGroup.hidden = !inference; modelSelect.required = inference;
     const inbox = wantsInboxes(); if (inboxGroup) inboxGroup.hidden = !inbox;
     if (inbox && inboxesState === 'unloaded') loadInboxes();
+    if (inboxesState === 'ready') document.getElementById('grant-inbox-status').textContent = 'Select 1–16 inboxes. ' + inboxEffect();
     createButton.disabled = (inference && !catalogReady) || (inbox && (inboxesState !== 'ready' || !checkedInboxes().length));
   }
-  for (const box of scopeBoxes) box.onchange = syncScopes;
+  // Manage does not imply read: say what each checked inbox scope reveals.
+  const inboxEffect = () => checkedScopes().includes('inboxes.messages.read')
+    ? 'The app can read everything a chosen inbox has stored or will receive.'
+    : 'The app can archive or unarchive messages whose handles it already knows, seeing each one\'s sender and subject (or HTTP method and path), never its body.';
+  // A failed load waits for the user: only an explicit scope toggle retries it.
+  for (const box of scopeBoxes) box.onchange = () => { if (inboxesState === 'failed') inboxesState = 'unloaded'; syncScopes(); };
   async function request(path, init) {
     const response = await fetch(path, init); const body = await response.json();
     if (!response.ok) throw new Error(body.error?.message || 'Request failed'); return body;
@@ -126,10 +132,8 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number; i
         choices.append(label);
       }
       inboxesState = inboxes.length ? 'ready' : 'empty';
-      inboxStatus.textContent = inboxes.length
-        ? 'Select 1–16 inboxes. The app can read everything a chosen inbox has stored or will receive.'
-        : 'You have no active inboxes. Create one, or clear the inbox scopes to create a token.';
-    } catch { inboxesState = 'unloaded'; inboxStatus.textContent = 'Could not load your inboxes. Toggle an inbox scope to retry.'; }
+      if (!inboxes.length) inboxStatus.textContent = 'You have no active inboxes. Create one, or clear the inbox scopes to create a token.';
+    } catch { inboxesState = 'failed'; inboxStatus.textContent = 'Could not load your inboxes. Toggle an inbox scope to retry.'; }
     syncScopes();
   }
   async function refresh() {

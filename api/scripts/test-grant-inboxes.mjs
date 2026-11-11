@@ -43,6 +43,11 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [
   { ...apiWorker('api'), routes: ['api.example.test/*'] },
   apiWorker('api-off', { INBOXES_ENABLED: 'false' }),
   apiWorker('api-pilot', { INBOXES_PILOT_OWNER: GEN.b }),
+  // The inbox service failing must read as unavailable (retry), never as "you have no inboxes".
+  { ...apiWorker('api-down'), serviceBindings: { INBOXES: { name: 'broken-inboxes', entrypoint: 'InboxManagement' } } },
+  { name: 'broken-inboxes', modules: true, compatibilityDate: '2026-08-01', script: `import { WorkerEntrypoint } from 'cloudflare:workers';
+    export class InboxManagement extends WorkerEntrypoint { listInboxes() { throw new Error('synthetic outage'); } }
+    export default { fetch() { return new Response(null, { status: 503 }); } };` },
 ] }));
 
 const migrate = async (db, dir) => {
@@ -147,7 +152,7 @@ try {
     const res = await call(null, 'GET', '/grants/authorize?' + q, { worker });
     if (res.status !== 303) return { res };
     const cookie = session(email) + '; ' + res.headers.getSetCookie().find(c => c.startsWith('bl_grant_flow=')).split(';')[0];
-    const page = await call(null, 'GET', res.headers.get('Location'), { headers: { Cookie: cookie } });
+    const page = await call(null, 'GET', res.headers.get('Location'), { headers: { Cookie: cookie }, worker });
     const html = await expect(page, 200, null, 'consent page');
     return { client_id, verifier, cookie, html, id: new URL(res.headers.get('Location'), API).searchParams.get('request'),
       approval: html.match(/name="approval" value="([^"]+)"/)[1] };
@@ -184,7 +189,20 @@ try {
   assert.match(empty.html, /no active inboxes/i, 'visitor without inboxes is told so');
   assert.match(empty.html, /<button[^>]*value="approve"[^>]*disabled/, 'approve disabled without inboxes');
   assert.ok(!empty.html.includes('name="inbox"'));
-  console.log('PASS app-token inbox consent: no app-chosen inboxes, own-inbox checkboxes, empty/forged choice rejected, exchange rechecks, empty state');
+
+  await expect(await call('sk-bayleaf-a', 'GET', '/grants/inboxes', { worker: 'api-down' }), 503, 'inboxes_unavailable', 'outage listing');
+  await expect(await issue('sk-bayleaf-a', { scopes: READ, inboxes: [A.id] }, 'api-down'), 503, 'inboxes_unavailable', 'outage issuance');
+  const down = await start('a@example.test', {}, 'api-down');
+  assert.match(down.html, /could not be loaded/, 'outage is not reported as an empty inbox list');
+  assert.doesNotMatch(down.html, /no active inboxes/i);
+  assert.match(down.html, /<button[^>]*value="approve"[^>]*disabled/, 'approve disabled during an outage');
+
+  // Manage does not imply read, and the disclosure must not claim it does.
+  const manageOnly = await start('a@example.test', { scopes: JSON.stringify(['inboxes.messages.manage']) });
+  assert.match(manageOnly.html, /never its body/);
+  assert.doesNotMatch(manageOnly.html, /read everything/);
+  assert.match(flow.html, /read everything/, 'read consent still discloses full reading');
+  console.log('PASS app-token inbox consent: no app-chosen inboxes, own-inbox checkboxes, empty/forged choice rejected, exchange rechecks, empty and outage states, manage-only disclosure');
 } finally {
   await mf.dispose();
 }

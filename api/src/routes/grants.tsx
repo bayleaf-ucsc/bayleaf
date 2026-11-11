@@ -130,16 +130,25 @@ const inboxesAvailable = (c: Context<AppEnv>) => c.env.INBOXES_ENABLED === 'true
 type InboxChoice = { id: string; type: string; label: string | null; address?: string; url?: string };
 
 /** The owner's active inboxes, under the same pilot rule as the inbox facade. Empty when
- * Inboxes is off or unreachable: an unknown answer never widens what can be bound. */
-async function ownerInboxes(c: Context<AppEnv>, row: UserKeyRow | null): Promise<InboxChoice[]> {
+ * Inboxes is off or excludes the owner; null when the inbox service could not answer.
+ * Both bind nothing, but only null is worth retrying. */
+async function ownerInboxes(c: Context<AppEnv>, row: UserKeyRow | null): Promise<InboxChoice[] | null> {
   const generation = row?.account_generation;
   if (!inboxesAvailable(c) || !generation || (c.env.INBOXES_PILOT_OWNER && generation !== c.env.INBOXES_PILOT_OWNER)) return [];
   try {
     const result = await c.env.INBOXES!.listInboxes(generation) as { inboxes?: (InboxChoice & { state: string })[] };
     return (result?.inboxes ?? []).filter(i => i.state === 'active')
       .map(({ id, type, label, address, url }) => ({ id, type, label, address, url }));
-  } catch { return []; }
+  } catch { return null; }
 }
+
+const inboxesUnavailable = (c: Context<AppEnv>) =>
+  grantError(c, 'inboxes_unavailable', 'Your inboxes could not be checked right now. Try again shortly.', 503);
+
+/** What an inbox binding lets the app see. Manage does not imply read. */
+const inboxEffect = (scopes: GrantScope[]) => scopes.includes('inboxes.messages.read')
+  ? 'The app can read everything a chosen inbox has stored or will receive, until the token expires or you revoke it.'
+  : 'The app can archive or unarchive messages whose handles it already knows, seeing each one\'s sender and subject (or HTTP method and path), never its body.';
 
 /**
  * Inbox handles an inboxes.* scope binds, checked at issuance, approval and exchange: each
@@ -150,7 +159,9 @@ async function validateInboxes(c: Context<AppEnv>, scopes: GrantScope[], inboxes
   if (!needsInboxes(scopes)) return inboxes === undefined ? null
     : grantError(c, 'invalid_request', 'inboxes apply only to inboxes.* scopes.', 400);
   if (inboxes === undefined) return grantError(c, 'invalid_request', 'Specify inboxes for inboxes.* scopes.', 400);
-  const owned = new Set((await ownerInboxes(c, row)).map(i => i.id));
+  const choices = await ownerInboxes(c, row);
+  if (!choices) return inboxesUnavailable(c);
+  const owned = new Set(choices.map(i => i.id));
   if (!inboxes?.length || !inboxes.every(id => owned.has(id)))
     return grantError(c, 'inbox_not_allowed', 'Specify 1–16 of your own active inboxes.', 403);
   return null;
@@ -201,7 +212,8 @@ grantRoutes.openapi(createRoute({ method: 'get', path: '/inboxes', operationId: 
   responses: { 200: { description: 'Bindable inboxes', content: json(GrantInboxesSchema) }, ...errors },
 }), async c => {
   const row = await owner(c); if (row instanceof Response) return row as any;
-  return c.json({ inboxes: await ownerInboxes(c, row) });
+  const inboxes = await ownerInboxes(c, row);
+  return inboxes ? c.json({ inboxes }) : inboxesUnavailable(c) as any;
 });
 
 grantRoutes.openapi(createRoute({ method: 'get', path: '/models', operationId: 'listTemporaryInferenceModels', tags: ['Grants'],
@@ -313,7 +325,7 @@ grantRoutes.get('/authorize', async c => {
   }
   const { scopes, models } = storedAuthority(tx);
   const rejection = await validateGrant(c, scopes, models, tx.lifetime); if (rejection) return rejection;
-  const choices = needsInboxes(scopes) ? await ownerInboxes(c, await getActiveRow(session.email, c.env)) : null;
+  const choices = needsInboxes(scopes) ? await ownerInboxes(c, await getActiveRow(session.email, c.env)) : undefined;
   const approval = await seal(c.env, 'consent', { id, email: session.email, exp: tx.expires_at });
   return renderPage(c, <BaseLayout title="Authorize app"><section class="grant-panel">
     <GrantStyles/>
@@ -330,13 +342,14 @@ grantRoutes.get('/authorize', async c => {
     <p>{models && 'Inference uses your existing allowance. '}The app receives a bearer token usable wherever it is copied, until expiry or revocation.{models && ' BayLeaf retains no inference content; the app may handle or store what you enter.'}</p>
     <form method="post" action="/grants/authorize">
       <input type="hidden" name="request" value={id}/><input type="hidden" name="approval" value={approval}/>
-      {choices && <fieldset><legend>Inboxes this app may use</legend>
-        {choices.length ? choices.map(inbox => <label class="grant-choice"><input type="checkbox" name="inbox" value={inbox.id}/>{' '}
-          <strong>{inbox.label ?? inbox.id}</strong> <code>{inbox.address ?? inbox.url}</code></label>)
+      {choices !== undefined && <fieldset><legend>Inboxes this app may use</legend>
+        {choices === null ? <p>Your inboxes could not be loaded right now. Reload this page to try again.</p>
+          : choices.length ? choices.map(inbox => <label class="grant-choice"><input type="checkbox" name="inbox" value={inbox.id}/>{' '}
+            <strong>{inbox.label ?? inbox.id}</strong> <code>{inbox.address ?? inbox.url}</code></label>)
           : <p>You have no active inboxes to share. Create one, then start again in the app.</p>}
-        <p>The app can read everything a chosen inbox has stored or will receive, until the token expires or you revoke it. Inbox content is sender-controlled.</p>
+        <p>{inboxEffect(scopes)} Inbox content is sender-controlled.</p>
       </fieldset>}
-      <button name="decision" value="approve" type="submit" disabled={choices?.length === 0}>Authorize app token</button>{' '}
+      <button name="decision" value="approve" type="submit" disabled={choices === null || choices?.length === 0}>Authorize app token</button>{' '}
       <button name="decision" value="deny" type="submit">Cancel</button>
     </form>
   </section></BaseLayout>);
