@@ -3,8 +3,8 @@
 Design for generalizing temporary inference tokens ([GRANTS.md](GRANTS.md), issue #76)
 into tokens that reach bounded slices of the BayLeaf API. **Status: steps 1–2 and the
 first slice of step 3 (usage, identity and web scopes, scope storage and consent)
-deployed 2026-11-10; evidence in [GRANTS.md](GRANTS.md). Inbox and sandbox-file
-scopes are next.**
+deployed 2026-11-10; evidence in [GRANTS.md](GRANTS.md). Inbox scopes deployed
+2026-11-10 too (migration `0021`). Sandbox-file scopes are next.**
 
 ## Why
 
@@ -52,9 +52,10 @@ string (model slugs already contain `:`, `/` and `.`):
   they request those scopes.
 - **Minting is attenuation.** A credential may mint only authority it already
   holds. Today every scope is something an ordinary key or sandbox credential can
-  already do. Check this still holds whenever a family is added (inbox and
-  sandbox-file scopes especially): a scope must never exceed the minting
-  credential's own reach.
+  already do, including the inbox scopes (both credentials already read and
+  archive their owner's inboxes). Check this still holds whenever a family is added
+  (sandbox-file scopes next): a scope must never exceed the minting credential's
+  own reach.
 
 ## Scopes
 
@@ -103,6 +104,32 @@ it unless the visitor agreed to that.
 Political note: this scope makes BayLeaf a lightweight campus identity provider for
 community apps, a role the university's IAM normally holds. App authors learn who
 uses their apps; visitors decide that per app.
+
+## Inboxes
+
+**Binding.** `inboxes` is 1–16 handles (`ibx_…`) of the grantor's own active
+inboxes. Ownership is checked against the inbox Worker at issuance, consent and
+exchange; anything else is `403 inbox_not_allowed`. `inboxes` without an
+`inboxes.*` scope, or an `inboxes.*` scope without `inboxes`, is
+`400 invalid_request`. At request time the facade admits a token only on an `{id}`
+it is bound to (`403 insufficient_scope` otherwise). The inbox Worker is unchanged:
+it still sees only the grantor's `account_generation`. `GET /grants/inboxes` lists
+bindable inboxes for direct issuance.
+
+**Visitors choose at consent.** An app cannot know a visitor's inbox handles, so
+visitor authorization requests only the scope: an `inboxes` query parameter is
+rejected, and the consent page lists the visitor's active inboxes as checkboxes
+(approval is disabled when there are none). The exchanged token reports the chosen
+`inboxes`. This differs from `models`, which an app can name because the catalog is
+public. Requesting an inbox scope while Inboxes is unavailable is
+`403 inbox_not_allowed` before consent.
+
+**What approval means.** Inbox content is stored (not ZDR) and sender-controlled. An
+approved app can read everything a bound inbox has stored or will receive until
+expiry or revocation; the consent page says so. Tokens are revalidated on every
+inbox call, including each stream reauthorization, so a live event stream ends with
+`auth_revoked` once the token is revoked or expires. App tokens can never list,
+create, change or destroy inboxes, delete messages, or manage sender credentials.
 
 ## Sandbox files
 
@@ -181,8 +208,13 @@ Migration `0020` adds `scopes_json` to `inference_grants` and
 Unlike `0016`, it preserves rows. NULL fails closed, so roll out as: apply `0020`,
 deploy the Worker, then re-run the two backfill UPDATEs once (idempotent) to cover
 rows the old Worker inserted in between. `models_json` stays the model authority and
-holds `[]` for grants without inference scopes. `resources_json` (inboxes, sandbox
-dirs) is left for the families that need it.
+holds `[]` for grants without inference scopes.
+
+Migration `0021` adds nullable `inboxes_json` to both tables: NULL without an inbox
+scope, and on transactions NULL until the visitor approves. NULL or malformed binds
+nothing, which fails closed. It is an explicit column per resource type, like
+`models_json`, not the generic `resources_json` once proposed here. Roll out as:
+apply `0021`, then deploy (the old Worker ignores the column; the new one needs it).
 
 ## Exposure decisions
 
@@ -196,6 +228,10 @@ for the usage/identity/web slice:
 | Desktop skills | Expose | The `bayleaf-platform` skill mentions scoped app tokens and points to `llms.txt` |
 | `llms.txt` / OpenAPI | Expose | Orientation in `llms.txt`; exact contract in the Grants workflow and schemas |
 
+For the inbox slice: no hosted tool (sandbox agents already
+hold a credential that reads their own inboxes); the `bayleaf-inboxes` desktop skill
+and `llms.txt` mention bounded app tokens for apps, scripts and CI jobs.
+
 Consequential defaults: narrow default plus backfill (above). `identity.read`
 email disclosure and `scopes_json` storage approved as designed.
 
@@ -206,11 +242,13 @@ User-facing "temporary inference token" becomes **app token**. The
 
 ## Open questions
 
-- Consent wording per scope and per binding (inbox display names, dir slugs).
+- Consent wording per scope and per binding (dir slugs). Inbox choices show each
+  inbox's label (or handle) and address or URL.
 
 ## Order of work
 
 1. Fix the `mkdir` interpolation in `uploadFile`, standalone. (Done.)
 2. Declared route scopes and gate, behavior-identical: inference scopes only. (Done.)
 3. Remaining families one at a time, each with tests: usage/identity/web (deployed
-   2026-11-10, with scope storage and per-scope consent), inboxes, sandbox files.
+   2026-11-10, with scope storage and per-scope consent), inboxes (deployed
+   2026-11-10, with consent-time inbox selection), sandbox files.

@@ -106,8 +106,13 @@ ITS-operated or ITS-supported one.
   Inference scopes use your existing allowance; web search and fetch scopes use
   BayLeaf's shared web-search account, which has no per-user budget. If you
   approve the identity scope, the app learns your BayLeaf email address (a token
-  you issue yourself with that scope reveals it to anyone holding the token). BayLeaf
-   stores grant metadata (owner, token name, permitted scopes and models, expiry, optional app name and callback)
+  you issue yourself with that scope reveals it to anyone holding the token). If you
+  approve the inbox read scope (when available), the app can read everything the
+  inboxes you choose have stored or will receive, until the token expires or you
+  revoke it. The separate archive scope alone lets it archive or unarchive messages
+  whose handles it already knows, seeing each one's sender and subject (or HTTP
+  method and path) but never its body. BayLeaf
+   stores grant metadata (owner, token name, permitted scopes, models and inboxes, expiry, optional app name and callback)
   and short-lived authorization transactions, not a permanent app registration.
   Expired records are removed by hourly cleanup while the feature is enabled;
   D1 backup retention also applies. The receiving app may handle or retain what

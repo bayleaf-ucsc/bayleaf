@@ -4,6 +4,8 @@ Issue [#97](https://github.com/bayleaf-ucsc/bayleaf/issues/97). **Local proof of
 concept, opened to authenticated campus owners on 2026-10-21.**
 The receiver and API are enabled; `INBOXES_PILOT_OWNER` is explicitly empty.
 Ordinary API keys and sandbox credentials retain account-generation isolation.
+App tokens with an inbox scope (API-side, deployed 2026-11-10) reach only read or
+archive operations on bound inboxes and arrive here as the grantor's generation.
 Email Routing/MX are enabled for
 registered inboxes; email is unrestricted unless an optional policy is set at creation.
 Creation-only DKIM domain restrictions are enabled:

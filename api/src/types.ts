@@ -202,6 +202,8 @@ export interface InferenceGrant {
   models_json: string;
   /** JSON array of GrantScope. Migration 0020 backfilled older rows; NULL fails closed. */
   scopes_json: string | null;
+  /** JSON array of bound inbox handles; NULL when no inboxes.* scope (migration 0021). */
+  inboxes_json: string | null;
   expires_at: number;
   created_at: number;
   client_name: string | null;
@@ -216,6 +218,8 @@ export interface GrantTransaction {
   redirect_uri: string;
   models_json: string;
   scopes_json: string | null;
+  /** Chosen by the visitor on the consent page, so NULL until approval. */
+  inboxes_json: string | null;
   lifetime: number;
   challenge: string;
   state: string;

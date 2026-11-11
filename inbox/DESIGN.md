@@ -4,8 +4,11 @@ Implementation of [issue #97](https://github.com/bayleaf-ucsc/bayleaf/issues/97)
 **Status: authenticated campus community access authorized on 2026-10-21.**
 HTTP and ordinary receive-only email inboxes are available to all authenticated
 BayLeaf owners, using ordinary API keys or sandbox credentials and the existing
-account-generation isolation. Campus Pass and temporary inference tokens cannot
-own inboxes. `INBOXES_ENABLED=true` and an empty `INBOXES_PILOT_OWNER` are the
+account-generation isolation. Campus Pass and app tokens cannot own inboxes. An
+app token with `inboxes.messages.read` or `inboxes.messages.manage` (deployed in the API
+2026-11-10) reaches only the read or archive operations of
+the inboxes its grantor bound; the facade resolves it to the grantor's
+`account_generation`, so this Worker sees nothing new (`api/SCOPES.md`). `INBOXES_ENABLED=true` and an empty `INBOXES_PILOT_OWNER` are the
 source defaults. Optional creation-only DKIM domain restrictions are enabled; no outgoing email.
 The operator-only trial began on 2026-10-20. Remaining qualification limitations
 are accepted for community access, not access-approval gates. See `QUALIFICATION.md`.
@@ -154,7 +157,8 @@ comments. Save complete event cursors at the client's processing boundary and
 deduplicate after reconnect. This is passive observation, never a work queue,
 inference trigger or unsolicited agent activation.
 
-The API reauthorizes the actual ordinary/sandbox credential and account generation,
+The API reauthorizes the actual ordinary/sandbox credential (or app token and its
+inbox binding) and account generation,
 then reads a bounded RPC page every two seconds. The five-second fail-closed target
 uses a 4.5-second watchdog. Pilot/feature gates remain in force. Inbox expiry or
 destruction ends following; owner revocation, key rotation or generation change

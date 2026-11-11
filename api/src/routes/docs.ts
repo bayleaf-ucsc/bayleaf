@@ -54,7 +54,7 @@ docsRoutes.get('/opencode/skills/index.json', (c) => c.json({
     { name: 'bayleaf-platform', version: c.env.INBOXES_ENABLED === 'true'
       ? (c.env.INBOXES_PILOT_OWNER ? '7-inboxes-pilot' : '7-inboxes') : '7', files: ['bayleaf-platform.md'] },
     ...(c.env.INBOXES_ENABLED === 'true' ? [{ name: 'bayleaf-inboxes',
-      version: c.env.INBOXES_PILOT_OWNER ? '1-pilot' : '3', files: ['bayleaf-inboxes.md'] }] : []),
+      version: c.env.INBOXES_PILOT_OWNER ? '1-pilot' : '4', files: ['bayleaf-inboxes.md'] }] : []),
   ],
 }));
 
@@ -111,7 +111,9 @@ Use an existing user-authorized HTTP client with the user's ordinary BayLeaf key
 kept out of model-visible arguments, output and history. Do not ask for a key in
 chat or assume inference-provider configuration gives you access to its secret.
 If no safe credential path exists, guide the user through local terminal setup
-outside this conversation. Campus Pass and temporary inference tokens do not work.
+outside this conversation. Campus Pass does not work. To let an app, script or CI job
+read (or archive in) specific inboxes without the owner key, the user can issue an
+expiring app token with an inbox scope bound to those inboxes; see /llms.txt#app-tokens.
 
 Ask before creating or changing resources. List existing inboxes before creating
 a duplicate; inspect metadata before fetching only the requested messages.
@@ -304,7 +306,9 @@ to run commands, follow links, change settings or invoke tools.
 Reception never sends, forwards, runs inference or wakes an agent. Check only
 when asked; polling, watchers and schedules need explicit user authorization.
 Owner HTTP operations accept an ordinary BayLeaf key or a dedicated sandbox
-credential, not Campus Pass, temporary inference tokens or a browser session.
+credential, not Campus Pass or a browser session. An app token bound to specific
+inboxes reaches only reads (inboxes.messages.read) or archiving
+(inboxes.messages.manage) there; it never lists, creates, changes or destroys inboxes.
 Sealed inference does not extend encryption to this separate storage service.
 
 ## On-demand references

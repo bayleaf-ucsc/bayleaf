@@ -89,12 +89,15 @@ export function storedGrantModels(row: { models_json: string }): string[] {
   try { return grantModelIds(JSON.parse(row.models_json)) ?? []; } catch { return []; }
 }
 
+/** Everything a grant may do: scopes plus the resources they are bound to. */
+export interface GrantAuthority { scopes: GrantScope[]; models: string[]; inboxes: string[] }
+
 /** Issuance/list response fields describing authority. `model` stays a legacy alias. */
-export function grantAuthority(scopes: GrantScope[], models: string[]) {
-  return { scopes, models, ...(models.length ? { model: models[0] } : {}) };
+export function grantAuthority({ scopes, models, inboxes }: GrantAuthority) {
+  return { scopes, models, ...(models.length ? { model: models[0] } : {}), inboxes };
 }
 
-export async function issueGrant(env: Bindings, row: UserKeyRow, apiOrigin: string, scopes: GrantScope[], models: string[],
+export async function issueGrant(env: Bindings, row: UserKeyRow, apiOrigin: string, authority: GrantAuthority,
   expiresAt: number, clientName: string | null = null, redirectUri: string | null = null) {
   const ownerHash = await hash(row.bayleaf_token);
   for (let attempt = 0; attempt < 8; attempt++) {
@@ -103,14 +106,15 @@ export async function issueGrant(env: Bindings, row: UserKeyRow, apiOrigin: stri
     // Database uniqueness makes this safe under concurrent issuance. Expired
     // rows awaiting cleanup also reserve their names, without a history table.
     const inserted = await env.DB.prepare(`INSERT INTO inference_grants
-      (id, name, owner_email, owner_token_hash, models_json, scopes_json, expires_at, created_at, client_name, redirect_uri)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id`)
-      .bind(id, name, row.email, ownerHash, JSON.stringify(models), JSON.stringify(scopes), expiresAt, nowSeconds(),
+      (id, name, owner_email, owner_token_hash, models_json, scopes_json, inboxes_json, expires_at, created_at, client_name, redirect_uri)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id`)
+      .bind(id, name, row.email, ownerHash, JSON.stringify(authority.models), JSON.stringify(authority.scopes),
+        authority.inboxes.length ? JSON.stringify(authority.inboxes) : null, expiresAt, nowSeconds(),
         clientName, redirectUri).first();
     if (!inserted) continue;
     const token = GRANT_PREFIX + name + '.' + await seal(env, 'access', { id, name, exp: expiresAt });
     return { grant_id: id, name, key: token, access_token: token, token_type: 'Bearer' as const,
-      ...grantAuthority(scopes, models), expires_at: expiresAt, expires_in: Math.max(0, expiresAt - nowSeconds()),
+      ...grantAuthority(authority), expires_at: expiresAt, expires_in: Math.max(0, expiresAt - nowSeconds()),
       base_url: `${apiOrigin}/v1` };
   }
   return null;
@@ -138,6 +142,8 @@ export const GRANT_SCOPES = {
   'identity.read': 'Learn your BayLeaf account email address',
   'web.search': 'Search the web through BayLeaf',
   'web.fetch': 'Fetch web pages through BayLeaf',
+  'inboxes.messages.read': 'Read messages in the inboxes chosen below',
+  'inboxes.messages.manage': 'Archive or unarchive messages in those inboxes',
 } as const;
 export type GrantScope = keyof typeof GRANT_SCOPES;
 const ALL_SCOPES = Object.keys(GRANT_SCOPES) as GrantScope[];
@@ -145,6 +151,20 @@ const ALL_SCOPES = Object.keys(GRANT_SCOPES) as GrantScope[];
  * existed were backfilled with all three inference.* scopes by migration 0020. */
 export const DEFAULT_SCOPES: GrantScope[] = ['inference.chat'];
 export const needsModels = (scopes: GrantScope[]) => scopes.some(s => s.startsWith('inference.'));
+export const needsInboxes = (scopes: GrantScope[]) => scopes.some(s => s.startsWith('inboxes.'));
+
+/** Canonical inbox binding: 1–16 distinct handles. Ownership is checked against the
+ * inbox Worker at issuance, consent and exchange, not here. */
+export function grantInboxIds(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 16) return null;
+  if (!value.every(id => typeof id === 'string' && /^ibx_[a-z0-9]{1,60}$/i.test(id))) return null;
+  return [...new Set(value as string[])];
+}
+
+/** Persisted inbox binding; NULL or malformed binds nothing, which fails closed. */
+export function storedGrantInboxes(row: { inboxes_json: string | null }): string[] {
+  try { return grantInboxIds(JSON.parse(row.inboxes_json ?? 'null')) ?? []; } catch { return []; }
+}
 const SCOPE_TAG = Symbol('bayleaf.grantScope');
 
 /** Canonical scope set: known names only, deduplicated, in GRANT_SCOPES order. */
@@ -168,10 +188,18 @@ export function requireScope(scope: GrantScope): MiddlewareHandler<AppEnv> {
   return Object.assign(async (_c: Context<AppEnv>, next: () => Promise<void>) => { await next(); }, { [SCOPE_TAG]: scope });
 }
 
-/** The single scope declared by the matched routes. Ambiguity fails closed. */
+/**
+ * The scope declared by the route that will respond. Hono matches every pattern that fits
+ * (GET /inboxes/limits also fits GET /inboxes/:id), so only the first method-specific
+ * route counts: `use()` middleware registers as ALL, and an earlier method-specific route
+ * answers before later ones run. Several scopes on that route fail closed.
+ */
 function declaredScope(c: Context<AppEnv>): GrantScope | null {
+  const routes = matchedRoutes(c);
+  const target = routes.find(r => r.method !== 'ALL');
+  if (!target) return null;
   const scopes = new Set<GrantScope>();
-  for (const { handler } of matchedRoutes(c)) {
+  for (const { handler } of routes.filter(r => r.method === target.method && r.path === target.path)) {
     // Sub-apps with their own onError are mounted wrapped; the declared function sits beneath.
     const original = (handler as any)[COMPOSED_HANDLER] ?? handler;
     if (original[SCOPE_TAG]) scopes.add(original[SCOPE_TAG]);
@@ -179,28 +207,38 @@ function declaredScope(c: Context<AppEnv>): GrantScope | null {
   return scopes.size === 1 ? [...scopes][0] : null;
 }
 
-/** Global gate: no alternate route, cookie fallback, or Campus Pass upgrade. */
-export async function guardGrant(c: Context<AppEnv>, token: string): Promise<Response | null> {
-  if (c.env.GRANTS_ENABLED !== 'true') return grantError(c, 'grants_disabled', 'Temporary inference access is disabled.', 503);
+type GrantFailure = { code: string; message: string; status: 401 | 403 | 503 };
+
+/** Every grant check, writing nothing to the response, so a live stream can revalidate. */
+export async function checkGrant(c: Context<AppEnv>, token: string):
+  Promise<{ grant: InferenceGrant; owner: UserKeyRow } | GrantFailure> {
+  if (c.env.GRANTS_ENABLED !== 'true') return { code: 'grants_disabled', message: 'Temporary inference access is disabled.', status: 503 };
   const parts = token.slice(GRANT_PREFIX.length).split('.');
   const name = parts.length === 3 ? parts.shift()! : null;
   const payload = await unseal(c.env, 'access', parts.join('.'));
   if (!payload || typeof payload.id !== 'string' || typeof payload.exp !== 'number')
-    return grantError(c, 'invalid_token', 'Invalid inference token.', 401);
+    return { code: 'invalid_token', message: 'Invalid inference token.', status: 401 };
   if ((payload.name ?? null) !== name)
-    return grantError(c, 'invalid_token', 'Token name does not match its signed permission.', 401);
+    return { code: 'invalid_token', message: 'Token name does not match its signed permission.', status: 401 };
   // Signed expiry remains distinguishable even after its database row is deleted.
-  if (payload.exp <= nowSeconds()) return grantError(c, 'token_expired', 'Authorize again to continue.', 401);
+  if (payload.exp <= nowSeconds()) return { code: 'token_expired', message: 'Authorize again to continue.', status: 401 };
   const grant = await c.env.DB.prepare('SELECT * FROM inference_grants WHERE id = ?').bind(payload.id).first<InferenceGrant>();
   const owner = grant && await c.env.DB.prepare(`SELECT ${USER_ACTIVITY_COLUMNS} FROM user_keys WHERE email = ? AND revoked = 0`)
     .bind(grant.owner_email).first<UserKeyRow>();
   if (!grant || grant.name !== name || grant.expires_at !== payload.exp || !owner || await hash(owner.bayleaf_token) !== grant.owner_token_hash)
-    return grantError(c, 'invalid_token', 'Inference access was revoked. Authorize again.', 401);
+    return { code: 'invalid_token', message: 'Inference access was revoked. Authorize again.', status: 401 };
   const scope = declaredScope(c);
   if (!scope || !grantScopes(grant).includes(scope))
-    return grantError(c, 'insufficient_scope', 'This app token does not permit this operation.', 403);
-  c.set('inferenceGrant', grant);
-  c.set('grantOwner', owner);
+    return { code: 'insufficient_scope', message: 'This app token does not permit this operation.', status: 403 };
+  return { grant, owner };
+}
+
+/** Global gate: no alternate route, cookie fallback, or Campus Pass upgrade. */
+export async function guardGrant(c: Context<AppEnv>, token: string): Promise<Response | null> {
+  const result = await checkGrant(c, token);
+  if ('code' in result) return grantError(c, result.code, result.message, result.status);
+  c.set('inferenceGrant', result.grant);
+  c.set('grantOwner', result.owner);
   return null;
 }
 

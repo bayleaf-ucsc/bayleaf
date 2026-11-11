@@ -711,8 +711,13 @@ three inference scopes. Roll out as: apply `0020`, deploy, then re-run its two
 backfill UPDATEs once (rows the old Worker inserted in between would fail closed). Routes opt in with `requireScope`; the global gate admits a grant only
 where exactly one declared scope matches and the grant holds it, so an undeclared
 route denies every app token. User-facing name is "app token"; "grant", operation IDs,
-the token prefix and the dashboard anchor are unchanged. Design, planned inbox and
-sandbox-file scopes, and exclusions: `SCOPES.md`. Statements below describe the
+the token prefix and the dashboard anchor are unchanged. Inbox scopes
+(`inboxes.messages.read`, `inboxes.messages.manage`), deployed 2026-11-10 (Worker
+`6daf7666`, evidence in `GRANTS.md`), are bound to 1–16 of the grantor's own active inboxes (`inboxes_json`,
+migration `0021`, apply before deploying), checked at issuance, approval and
+exchange; visitors choose inboxes on the consent page, and the facade's `owner()`
+checks the `{id}` binding. Design, planned sandbox-file scopes, and exclusions:
+`SCOPES.md`. Statements below describe the
 deployed inference-only revision.
 
 **Model-set revision deployed 2026-10-13:** migration `0016`
