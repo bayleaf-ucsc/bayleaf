@@ -9,7 +9,9 @@
  *   POST /search   Search the web (Tavily)
  *   POST /fetch    Fetch and extract page content from one or more URLs (Tavily Extract)
  *
- * Auth: resolveAuth() — Campus Pass and keyed users both get access.
+ * Auth: resolveAuth(). Campus Pass and keyed users both get access, as do app tokens
+ * holding web.search / web.fetch. All draw on BayLeaf's shared provider account:
+ * there is no per-user web budget.
  * No per-user state, no D1 rows needed (stateless service).
  */
 
@@ -17,6 +19,7 @@ import { OpenAPIHono, createRoute } from '@hono/zod-openapi';
 import type { AppEnv } from '../types';
 import { resolveAuth } from '../utils/auth';
 import { searchWeb, fetchPage } from '../web';
+import { requireScope } from '../grants';
 import {
   WebSearchRequestSchema,
   WebSearchResponseSchema,
@@ -32,6 +35,7 @@ export const webRoutes = new OpenAPIHono<AppEnv>();
 const searchRoute = createRoute({
   method: 'post',
   path: '/search',
+  middleware: [requireScope('web.search')] as const,
   operationId: 'webSearch',
   tags: ['Web'],
   summary: 'Search the web',
@@ -107,6 +111,7 @@ webRoutes.openapi(searchRoute, async (c) => {
 const fetchRoute = createRoute({
   method: 'post',
   path: '/fetch',
+  middleware: [requireScope('web.fetch')] as const,
   operationId: 'webFetch',
   tags: ['Web'],
   summary: 'Fetch page content',

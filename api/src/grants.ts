@@ -1,6 +1,8 @@
 /** Temporary inference authority. Only metadata is persisted; inference uses
  * the owner's existing backend limits and the standard lane's provider policy. */
-import type { Context } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
+import { matchedRoutes } from 'hono/route';
+import { COMPOSED_HANDLER } from 'hono/utils/constants';
 import type { AppEnv, Bindings, InferenceGrant, UserKeyRow } from './types';
 import { standardModelId } from './standardModels';
 import { ALT_BACKENDS, isBackendEnabled } from './constants';
@@ -87,8 +89,13 @@ export function storedGrantModels(row: { models_json: string }): string[] {
   try { return grantModelIds(JSON.parse(row.models_json)) ?? []; } catch { return []; }
 }
 
-export async function issueGrant(env: Bindings, row: UserKeyRow, apiOrigin: string, models: string[], expiresAt: number,
-  clientName: string | null = null, redirectUri: string | null = null) {
+/** Issuance/list response fields describing authority. `model` stays a legacy alias. */
+export function grantAuthority(scopes: GrantScope[], models: string[]) {
+  return { scopes, models, ...(models.length ? { model: models[0] } : {}) };
+}
+
+export async function issueGrant(env: Bindings, row: UserKeyRow, apiOrigin: string, scopes: GrantScope[], models: string[],
+  expiresAt: number, clientName: string | null = null, redirectUri: string | null = null) {
   const ownerHash = await hash(row.bayleaf_token);
   for (let attempt = 0; attempt < 8; attempt++) {
     const id = crypto.randomUUID();
@@ -96,13 +103,14 @@ export async function issueGrant(env: Bindings, row: UserKeyRow, apiOrigin: stri
     // Database uniqueness makes this safe under concurrent issuance. Expired
     // rows awaiting cleanup also reserve their names, without a history table.
     const inserted = await env.DB.prepare(`INSERT INTO inference_grants
-      (id, name, owner_email, owner_token_hash, models_json, expires_at, created_at, client_name, redirect_uri)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id`)
-      .bind(id, name, row.email, ownerHash, JSON.stringify(models), expiresAt, nowSeconds(), clientName, redirectUri).first();
+      (id, name, owner_email, owner_token_hash, models_json, scopes_json, expires_at, created_at, client_name, redirect_uri)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id`)
+      .bind(id, name, row.email, ownerHash, JSON.stringify(models), JSON.stringify(scopes), expiresAt, nowSeconds(),
+        clientName, redirectUri).first();
     if (!inserted) continue;
     const token = GRANT_PREFIX + name + '.' + await seal(env, 'access', { id, name, exp: expiresAt });
     return { grant_id: id, name, key: token, access_token: token, token_type: 'Bearer' as const,
-      models, model: models[0], expires_at: expiresAt, expires_in: Math.max(0, expiresAt - nowSeconds()),
+      ...grantAuthority(scopes, models), expires_at: expiresAt, expires_in: Math.max(0, expiresAt - nowSeconds()),
       base_url: `${apiOrigin}/v1` };
   }
   return null;
@@ -119,6 +127,56 @@ function memorableName(): string {
   // Use a 32-character alphabet for unbiased low-five-bit indexing.
   const suffixAlphabet = '0123456789abcdefghjkmnpqrstvwxyz';
   return `${ADJECTIVES[bytes[0] & 15]}-${ANIMALS[bytes[1] & 15]}-${Array.from(bytes.slice(2), b => suffixAlphabet[b & 31]).join('')}`;
+}
+
+/** App-token scopes (SCOPES.md), in canonical order, with consent-page wording. */
+export const GRANT_SCOPES = {
+  'inference.chat': 'Chat with the models listed below, using your allowance',
+  'inference.responses': 'Use the Responses API with those models (OpenRouter models only)',
+  'inference.decisions': 'Ask those models typed questions (choice, yes/no, score)',
+  'usage.read': 'See your remaining inference allowances',
+  'identity.read': 'Learn your BayLeaf account email address',
+  'web.search': 'Search the web through BayLeaf',
+  'web.fetch': 'Fetch web pages through BayLeaf',
+} as const;
+export type GrantScope = keyof typeof GRANT_SCOPES;
+const ALL_SCOPES = Object.keys(GRANT_SCOPES) as GrantScope[];
+/** Narrow default for issuance requests that omit scopes. Rows issued before scopes
+ * existed were backfilled with all three inference.* scopes by migration 0020. */
+export const DEFAULT_SCOPES: GrantScope[] = ['inference.chat'];
+export const needsModels = (scopes: GrantScope[]) => scopes.some(s => s.startsWith('inference.'));
+const SCOPE_TAG = Symbol('bayleaf.grantScope');
+
+/** Canonical scope set: known names only, deduplicated, in GRANT_SCOPES order. */
+export function grantScopeIds(value: unknown): GrantScope[] | null {
+  if (!Array.isArray(value) || value.length < 1 || value.length > ALL_SCOPES.length * 2) return null;
+  if (!value.every(s => typeof s === 'string' && (ALL_SCOPES as string[]).includes(s))) return null;
+  return ALL_SCOPES.filter(s => value.includes(s));
+}
+
+/** Persisted scopes, failing closed on malformed or missing (NULL) rows. */
+export function grantScopes(row: { scopes_json: string | null }): GrantScope[] {
+  try { return grantScopeIds(JSON.parse(row.scopes_json ?? 'null')) ?? []; } catch { return []; }
+}
+
+/**
+ * Route middleware declaring which scope admits app tokens to this route. A no-op at
+ * request time: the global gate reads the tag from Hono's matched routes before any
+ * handler runs, so a route without this middleware denies every app token.
+ */
+export function requireScope(scope: GrantScope): MiddlewareHandler<AppEnv> {
+  return Object.assign(async (_c: Context<AppEnv>, next: () => Promise<void>) => { await next(); }, { [SCOPE_TAG]: scope });
+}
+
+/** The single scope declared by the matched routes. Ambiguity fails closed. */
+function declaredScope(c: Context<AppEnv>): GrantScope | null {
+  const scopes = new Set<GrantScope>();
+  for (const { handler } of matchedRoutes(c)) {
+    // Sub-apps with their own onError are mounted wrapped; the declared function sits beneath.
+    const original = (handler as any)[COMPOSED_HANDLER] ?? handler;
+    if (original[SCOPE_TAG]) scopes.add(original[SCOPE_TAG]);
+  }
+  return scopes.size === 1 ? [...scopes][0] : null;
 }
 
 /** Global gate: no alternate route, cookie fallback, or Campus Pass upgrade. */
@@ -138,8 +196,9 @@ export async function guardGrant(c: Context<AppEnv>, token: string): Promise<Res
     .bind(grant.owner_email).first<UserKeyRow>();
   if (!grant || grant.name !== name || grant.expires_at !== payload.exp || !owner || await hash(owner.bayleaf_token) !== grant.owner_token_hash)
     return grantError(c, 'invalid_token', 'Inference access was revoked. Authorize again.', 401);
-  if (c.req.method !== 'POST' || !['/v1/chat/completions', '/v1/responses', '/v1/decisions'].includes(c.req.path))
-    return grantError(c, 'insufficient_scope', 'This token permits only plaintext inference with its specified models.', 403);
+  const scope = declaredScope(c);
+  if (!scope || !grantScopes(grant).includes(scope))
+    return grantError(c, 'insufficient_scope', 'This app token does not permit this operation.', 403);
   c.set('inferenceGrant', grant);
   c.set('grantOwner', owner);
   return null;

@@ -119,7 +119,7 @@ try {
   const authorize = spec.paths['/grants/authorize'].get;
   assert.equal(authorize.operationId, 'authorizeInferenceClient');
   assert.deepEqual(authorize.security, []);
-  assert.deepEqual(authorize.parameters.map(p => p.name).sort(), ['client_id', 'response_type', 'model', 'models', 'expires_in', 'state', 'code_challenge', 'code_challenge_method'].sort());
+  assert.deepEqual(authorize.parameters.map(p => p.name).sort(), ['client_id', 'response_type', 'scopes', 'model', 'models', 'expires_in', 'state', 'code_challenge', 'code_challenge_method'].sort());
   assert.equal(authorize.parameters.find(p => p.name === 'models').required, false);
   assert.equal(authorize.parameters.find(p => p.name === 'model').required, false);
   assert.ok(authorize.responses['303'].headers.Location);
@@ -139,7 +139,7 @@ try {
    assert.equal(catalogResponse.status, 200, 'Catalog is public');
    const catalog = await catalogResponse.json();
     assert.deepEqual(catalog.skills, [
-      { name: 'bayleaf-platform', version: '6-inboxes', files: ['bayleaf-platform.md'] },
+      { name: 'bayleaf-platform', version: '7-inboxes', files: ['bayleaf-platform.md'] },
       { name: 'bayleaf-inboxes', version: '3', files: ['bayleaf-inboxes.md'] },
     ]);
    const skillResponse = await get(catalogBase + 'bayleaf-platform/bayleaf-platform.md');
@@ -196,13 +196,13 @@ try {
     }
     const pilotHeaders = { 'X-Test-Deployment': 'pilot' };
     const pilotCatalog = await (await get(catalogBase + 'index.json', pilotHeaders)).json();
-    assert.equal(pilotCatalog.skills.find(s => s.name === 'bayleaf-platform').version, '6-inboxes-pilot');
+    assert.equal(pilotCatalog.skills.find(s => s.name === 'bayleaf-platform').version, '7-inboxes-pilot');
     assert.equal(pilotCatalog.skills.find(s => s.name === 'bayleaf-inboxes').version, '1-pilot');
     assert.ok((await (await get(inboxSkillPath, pilotHeaders)).text()).includes('Operator-only pilot'));
     assert.ok((await (await get('/docs/inboxes.md', pilotHeaders)).text()).includes('Other accounts receive 404'));
     const disabledHeaders = { 'X-Test-Deployment': 'alternate' };
     const disabledCatalog = await (await get(catalogBase + 'index.json', disabledHeaders)).json();
-    assert.deepEqual(disabledCatalog.skills, [{ name: 'bayleaf-platform', version: '6', files: ['bayleaf-platform.md'] }]);
+    assert.deepEqual(disabledCatalog.skills, [{ name: 'bayleaf-platform', version: '7', files: ['bayleaf-platform.md'] }]);
     assert.equal((await get(inboxSkillPath, disabledHeaders)).status, 404, 'Stale skill URL must not claim disabled access');
     assert.ok((await (await get('/docs/inboxes.md', disabledHeaders)).text()).includes('Status: not enabled'));
    for (const phrase of ['https://api.bayleaf.dev/llms.txt', 'Google Workspace', 'Canvas LMS',

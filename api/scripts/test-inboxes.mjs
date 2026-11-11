@@ -16,7 +16,7 @@ const bundle = await build({ absWorkingDir: root, stdin: { resolveDir: root, con
   export default { ...app, async fetch(req, env, ctx) {
     if (new URL(req.url).pathname === '/__test/grant') {
       const row = await env.DB.prepare('SELECT * FROM user_keys WHERE email=?').bind('owner@example.test').first();
-      return Response.json(await issueGrant(env, row, 'https://api.example.test', ['openrouter:test/open'], Math.floor(Date.now()/1000)+600));
+      return Response.json(await issueGrant(env, row, 'https://api.example.test', ['inference.chat', 'inference.responses', 'inference.decisions'], ['openrouter:test/open'], Math.floor(Date.now()/1000)+600));
     }
     const headers = new Headers(req.headers);
     if (headers.has('X-Test-Origin')) { headers.set('Origin', headers.get('X-Test-Origin')); headers.delete('X-Test-Origin'); }

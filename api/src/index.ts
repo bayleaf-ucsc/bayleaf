@@ -80,7 +80,7 @@ app.openAPIRegistry.registerComponent('securitySchemes', 'Bearer', {
   type: 'http',
   scheme: 'bearer',
   description:
-    'Ordinary BayLeaf API key (`sk-bayleaf-...`), or a controller-managed sandbox credential (`sk-bayleaf-sandbox-...`) bound to an owner and machine with separate custody and revocation. Both use the owner\'s allowances; sandbox credentials are not operator credentials. Temporary inference tokens (`sk-bayleaf-grant-...`) permit only POST /v1/chat/completions, /v1/responses and /v1/decisions with their specified models. On supported routes, campus users may omit a key for Campus Pass access. Consult operation-specific restrictions, especially grant management.',
+    'Ordinary BayLeaf API key (`sk-bayleaf-...`), or a controller-managed sandbox credential (`sk-bayleaf-sandbox-...`) bound to an owner and machine with separate custody and revocation. Both use the owner\'s allowances; sandbox credentials are not operator credentials. App tokens (`sk-bayleaf-grant-...`) permit only the routes their scopes admit (see Grants), with inference limited to their specified models. On supported routes, campus users may omit a key for Campus Pass access. Consult operation-specific restrictions, especially grant management.',
 });
 
 // ── CORS middleware ───────────────────────────────────────────────
@@ -258,10 +258,10 @@ app.doc31('/docs/openapi.json', (c) => ({
   externalDocs: { description: 'Agent onboarding and integration workflows (wider than the HTTP API)', url: 'https://api.bayleaf.dev/llms.txt' },
   tags: [
     { name: 'Decisions', description: 'Typed probabilistic standard inference, sharing backend policy, credentials and allowances with generative inference.' },
-    { name: 'LLM', description: 'Standard OpenAI-compatible inference, discovery and allowance inspection. Use backend-qualified model IDs; enabled providers and model eligibility are discovered live. On campus-supported operations an empty security alternative means Campus Pass eligibility is still required. Temporary tokens permit only their specified model and inference paths.' },
-    { name: 'Sealed', description: 'Hardware-attested confidential inference using client-verified EHBP encryption; requires a compatible Tinfoil SDK. An empty security alternative on inference means eligible Campus Pass, not unconditional anonymous access. Temporary inference tokens are excluded.' },
+    { name: 'LLM', description: 'Standard OpenAI-compatible inference, discovery and allowance inspection. Use backend-qualified model IDs; enabled providers and model eligibility are discovered live. On campus-supported operations an empty security alternative means Campus Pass eligibility is still required. App tokens permit only their scoped inference paths and specified models.' },
+    { name: 'Sealed', description: 'Hardware-attested confidential inference using client-verified EHBP encryption; requires a compatible Tinfoil SDK. An empty security alternative on inference means eligible Campus Pass, not unconditional anonymous access. App tokens are excluded.' },
     { name: 'Sandbox', description: 'Sandboxed Linux code execution and file I/O' },
-    { name: 'Web', description: 'Web search and page content fetching. An empty security alternative means eligible Campus Pass, not unconditional anonymous access. Temporary inference tokens are excluded.' },
+    { name: 'Web', description: 'Web search and page content fetching on the shared BayLeaf provider account; there is no per-user web budget. An empty security alternative means eligible Campus Pass, not unconditional anonymous access. App tokens need the web.search or web.fetch scope.' },
     { name: 'Meta', description: 'API metadata and documentation' },
     { name: 'Directory', description: 'On-demand lookup of one person in the public UCSC campus directory by CruzID. Personal access only; uncached; no search or enumeration.' },
     { name: 'Grants', description: GRANT_WORKFLOW },

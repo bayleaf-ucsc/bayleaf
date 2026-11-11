@@ -71,6 +71,11 @@ const mf = new Miniflare(convertV4MiniflareOptions({ port: process.argv.includes
       { id: 'test/no-operation', hugging_face_id: 'test/no-operation', architecture: { output_modalities: [] } },
     ] });
     if (url.hostname === 'huggingface.co') return new Response('weights');
+    if (url.hostname === 'api.tavily.com') return Response.json(url.pathname === '/search'
+      ? { results: [{ title: 'Synthetic', url: 'https://example.test/', content: 'Synthetic result.' }], answer: 'Synthetic.' }
+      : { results: [{ url: 'https://example.test/', raw_content: 'Synthetic page.' }], failed_results: [] });
+    if (url.hostname === 'openrouter.ai' && url.pathname.endsWith('/auth/key'))
+      return Response.json({ data: { limit: 1, limit_remaining: 1, usage: 0, usage_daily: 0, limit_reset: 'daily' } });
     if (url.hostname === 'openrouter.ai' && url.pathname.endsWith('/keys/synthetic-key-hash')) return Response.json({ data: {
       hash: 'synthetic-key-hash', disabled: false, limit: 5, limit_remaining: 5, usage: 0,
       usage_daily: 0, usage_weekly: 0, usage_monthly: 0, limit_reset: 'daily', created_at: new Date().toISOString(),
@@ -134,16 +139,20 @@ async function expect(response, status, code) {
   if (code) assert.equal(value.error?.code, code);
   return value;
 }
-async function mint(lifetime = 3600) {
-  return expect(await request('/grants', { key: 'sk-bayleaf-owner', json: { model, expires_in: lifetime } }), 200);
+// Owners are needed before 0020 (backfill fixture) and after all migrations; idempotent.
+const addOwners = () => db.batch([['owner@example.test', 'sk-bayleaf-owner'], ['other@example.test', 'sk-bayleaf-other']].map(([email, token]) =>
+  db.prepare('INSERT OR IGNORE INTO user_keys(email, bayleaf_token, or_key_secret, or_key_hash) VALUES (?, ?, ?, ?)').bind(email, token, 'synthetic-existing-provider-key', 'synthetic-key-hash')));
+const INFERENCE = ['inference.chat', 'inference.responses', 'inference.decisions'];
+async function mint(lifetime = 3600, scopes) {
+  return expect(await request('/grants', { key: 'sk-bayleaf-owner', json: { model, scopes, expires_in: lifetime } }), 200);
 }
 async function client(redirect_uri = 'http://127.0.0.1:5173/') {
   return expect(await request('/grants/clients', { json: { client_name: '<script>untrusted app</script>', redirect_uri } }), 200);
 }
-async function start(redirect_uri = 'http://127.0.0.1:5173/', selectedModel = model, headers = {}) {
+async function start(redirect_uri = 'http://127.0.0.1:5173/', selectedModel = model, headers = {}, scopes) {
   const { client_id } = await client(redirect_uri);
   const verifier = randomBytes(32).toString('base64url');
-  const query = new URLSearchParams({ client_id, response_type: 'code', ...(Array.isArray(selectedModel) ? { models: JSON.stringify(selectedModel) } : { model: selectedModel }), expires_in: '3600', state: 'synthetic-random-state', code_challenge: digest(verifier), code_challenge_method: 'S256' });
+  const query = new URLSearchParams({ client_id, response_type: 'code', ...(Array.isArray(selectedModel) ? { models: JSON.stringify(selectedModel) } : selectedModel ? { model: selectedModel } : {}), ...(scopes ? { scopes: JSON.stringify(scopes) } : {}), expires_in: '3600', state: 'synthetic-random-state', code_challenge: digest(verifier), code_challenge_method: 'S256' });
   const res = await request('/grants/authorize?' + query, { headers });
   assert.equal(res.status, 303);
   const flowCookie = res.headers.getSetCookie().find(c => c.startsWith('bl_grant_flow=')).split(';')[0];
@@ -205,14 +214,33 @@ try {
         const indexes = (await db.prepare("SELECT name FROM sqlite_master WHERE type='index'").all()).results.map(i => i.name);
         for (const name of ['inference_grants_owner', 'inference_grants_expiry', 'inference_grants_owner_name', 'grant_transactions_expiry']) assert.ok(indexes.includes(name));
       });
+    } else if (file === '0020_grant_scopes.sql') {
+      await check('scope migration backfills existing grants and pending authorizations with their implicit inference authority', async () => {
+        await addOwners();
+        const id = 'backfill-grant', name = 'calm-otter-back', exp = Math.floor(Date.now() / 1000) + 3600;
+        const models = JSON.stringify(['openrouter:' + model, 'openrouter:test/decision']);
+        await db.prepare(`INSERT INTO inference_grants(id,name,owner_email,owner_token_hash,models_json,expires_at,created_at)
+          VALUES (?,?,?,?,?,?,?)`).bind(id, name, 'owner@example.test', digest('sk-bayleaf-owner'), models, exp, exp - 3600).run();
+        await db.prepare(`INSERT INTO grant_transactions(id,browser_hash,client_id,client_name,redirect_uri,models_json,lifetime,challenge,state,expires_at)
+          VALUES ('backfill-transaction','synthetic','synthetic','synthetic','https://example.test/',?,60,'synthetic','synthetic',?)`).bind(models, exp).run();
+        for (const statement of prepared) await db.prepare(statement).run();
+        for (const table of ['inference_grants', 'grant_transactions'])
+          for (const row of (await db.prepare(`SELECT scopes_json FROM ${table}`).all()).results) assert.deepEqual(JSON.parse(row.scopes_json), INFERENCE);
+        const data = Buffer.from(JSON.stringify({ id, name, exp })).toString('base64url');
+        const key = 'sk-bayleaf-grant-' + name + '.' + data + '.' + createHmac('sha256', secret).update('bayleaf-grants:v1:access:' + data).digest('base64url');
+        await expect(await infer(key), 200);
+        await expect(await infer(key, { input: 'synthetic' }, '/v1/responses'), 200);
+        await expect(await request('/v1/decisions', { key, json: { model: 'openrouter:test/decision', state: 's', questions: { yes: { type: 'noul', instructions: 'Yes?' } } } }), 200);
+        await db.prepare("DELETE FROM grant_transactions WHERE id='backfill-transaction'").run();
+        await db.prepare('DELETE FROM inference_grants WHERE id=?').bind(id).run();
+      });
     } else for (const statement of prepared) await db.prepare(statement).run();
   }
-  for (const [email, token] of [['owner@example.test', 'sk-bayleaf-owner'], ['other@example.test', 'sk-bayleaf-other']])
-    await db.prepare('INSERT INTO user_keys(email, bayleaf_token, or_key_secret, or_key_hash) VALUES (?, ?, ?, ?)').bind(email, token, 'synthetic-existing-provider-key', 'synthetic-key-hash').run();
+  await addOwners();
 
   let direct;
   await check('direct issuance shares owner credential and supports both inference endpoints and streaming', async () => {
-    direct = await mint(); assert.equal(direct.key, direct.access_token); assert.equal(direct.model, 'openrouter:' + model);
+    direct = await mint(3600, INFERENCE); assert.equal(direct.key, direct.access_token); assert.equal(direct.model, 'openrouter:' + model);
     assert.match(direct.name, /^[a-z]+-[a-z]+-[0-9a-z]{4}$/);
     assert.ok(direct.key.startsWith('sk-bayleaf-grant-' + direct.name + '.'));
     assert.equal(direct.base_url, api + '/v1');
@@ -222,14 +250,17 @@ try {
     const stream = await infer(direct.key, { stream: true }); assert.equal(stream.status, 200); assert.match(await stream.text(), /DONE/);
   });
   await check('scope gate denies all other surfaces even with an owner cookie or campus address', async () => {
-    for (const [method, path] of [['GET', '/v1/models'], ['GET', '/v1/auth/key'], ['POST', '/grants'], ['DELETE', '/key'], ['POST', '/sandbox/exec'], ['POST', '/web/search'], ['POST', '/sealed/v1/chat/completions'], ['GET', '/docs/gws-oauth-client.json'], ['GET', '/grants'], ['POST', '/v1/completions'], ['POST', '/api/v1/chat/completions']])
+    for (const [method, path] of [['GET', '/v1/models'], ['GET', '/v1/auth/key'], ['POST', '/grants'], ['DELETE', '/key'], ['POST', '/sandbox/exec'], ['POST', '/web/search'], ['POST', '/sealed/v1/chat/completions'], ['GET', '/docs/gws-oauth-client.json'], ['GET', '/grants'], ['POST', '/v1/completions'], ['POST', '/api/v1/chat/completions'],
+      // Declared scopes attach to a method and an exact route, not a path prefix.
+      ['GET', '/v1/chat/completions'], ['POST', '/v1/chat/completions/'], ['POST', '/v1/decisions/x'],
+      ['GET', '/whoami'], ['GET', '/usage'], ['GET', '/inboxes'], ['PUT', '/sandbox/files/home/daytona/bayleaf-apps/x/a']])
       await expect(await request(path, { key: direct.key, cookie: ownerCookie, method, headers: { 'CF-Connecting-IP': '192.0.2.1' } }), 403, 'insufficient_scope');
     await expect(await infer(direct.key, { model: 'other/model' }), 403, 'insufficient_scope');
     for (const extra of [{ models: [model] }, { route: 'fallback' }, { plugins: [] }]) await expect(await infer(direct.key, extra), 403, 'insufficient_scope');
   });
   await check('multi-model issuance stores canonical sets and authorizes each member without widening routing', async () => {
     const models = ['openrouter:' + model, 'openrouter:test/uncurated-open'];
-    const issued = await expect(await request('/grants', { key: 'sk-bayleaf-owner', json: { models, expires_in: 600 } }), 200);
+    const issued = await expect(await request('/grants', { key: 'sk-bayleaf-owner', json: { models, scopes: INFERENCE, expires_in: 600 } }), 200);
     assert.deepEqual(issued.models, models); assert.equal(issued.model, models[0]);
     const stored = await db.prepare('SELECT models_json FROM inference_grants WHERE id=?').bind(issued.grant_id).first();
     assert.deepEqual(JSON.parse(stored.models_json), models);
@@ -260,7 +291,7 @@ try {
 
   await check('one token covers text and decisions using the same owner credential, without wrong-slot authority', async () => {
     const token = await expect(await request('/grants', { key: 'sk-bayleaf-owner', json: {
-      models: ['openrouter:' + model, 'openrouter:test/decision'], expires_in: 3600,
+      models: ['openrouter:' + model, 'openrouter:test/decision'], scopes: INFERENCE, expires_in: 3600,
     } }), 200);
     const input = { model: 'openrouter:test/decision', state: { message: 'Synthetic' },
       questions: { yes: { type: 'noul', instructions: 'Yes?' } } };
@@ -278,6 +309,76 @@ try {
   await check('grant issuance denies published weights without ZDR or a usable standard operation', async () => {
     for (const model of ['openrouter:test/non-zdr', 'openrouter:test/no-operation'])
       await expect(await request('/grants', { key: 'sk-bayleaf-owner', json: { models: [model], expires_in: 60 } }), 403, 'model_not_allowed');
+  });
+  await check('scope validation is exact and legacy requests carry the three inference scopes', async () => {
+    const grant = json => request('/grants', { key: 'sk-bayleaf-owner', json: { expires_in: 60, ...json } });
+    for (const scopes of [['web.crawl'], ['web.search', 'web.crawl']]) await expect(await grant({ scopes }), 400, 'invalid_scope');
+    // Shape errors stop at schema validation, before scope vocabulary checks.
+    for (const scopes of [[], 'web.search', ['web.search', 7]]) await expect(await grant({ scopes }), 400);
+    await expect(await grant({ scopes: ['web.search', 'usage.read'], models: ['openrouter:' + model] }), 400, 'invalid_request');
+    await expect(await grant({ scopes: ['web.search'], model }), 400, 'invalid_request');
+    await expect(await grant({ scopes: ['inference.chat'] }), 400, 'invalid_request');
+    await expect(await grant({ scopes: ['inference.chat'], models: ['openrouter:test/closed'] }), 403, 'model_not_allowed');
+    // Omitted scopes mean chat only; Responses and Decisions must be requested.
+    const narrow = await mint(60);
+    assert.deepEqual(narrow.scopes, ['inference.chat']);
+    await expect(await infer(narrow.key), 200);
+    await expect(await infer(narrow.key, { input: 'synthetic' }, '/v1/responses'), 403, 'insufficient_scope');
+    await expect(await request('/v1/decisions', { key: narrow.key, json: { model, state: 's', questions: { yes: { type: 'noul', instructions: 'Yes?' } } } }), 403, 'insufficient_scope');
+  });
+  await check('each route admits only its declared scope; NULL or malformed scopes fail closed', async () => {
+    const scoped = async (scopes, models) => expect(await request('/grants', { key: 'sk-bayleaf-owner', json: { scopes, models, expires_in: 600 } }), 200);
+    const decision = { model, state: 's', questions: { yes: { type: 'noul', instructions: 'Yes?' } } };
+    const web = await scoped(['web.search']);
+    assert.deepEqual(web.scopes, ['web.search']); assert.deepEqual(web.models, []); assert.ok(!('model' in web));
+    assert.equal((await expect(await request('/web/search', { key: web.key, json: { query: 'synthetic' } }), 200)).results.length, 1);
+    await expect(await request('/web/fetch', { key: web.key, json: { url: 'https://example.test/' } }), 403, 'insufficient_scope');
+    await expect(await infer(web.key), 403, 'insufficient_scope');
+    await expect(await request('/v1/decisions', { key: web.key, json: decision }), 403, 'insufficient_scope');
+    for (const path of ['/whoami', '/usage']) await expect(await request(path, { key: web.key }), 403, 'insufficient_scope');
+    const identity = await scoped(['identity.read']);
+    assert.deepEqual(await expect(await request('/whoami', { key: identity.key }), 200), { credential: 'grant', email: 'owner@example.test' });
+    await expect(await request('/usage', { key: identity.key }), 403, 'insufficient_scope');
+    await expect(await request('/usage', { key: (await scoped(['usage.read'])).key }), 200);
+    const mixed = await scoped(['web.search', 'inference.chat'], ['openrouter:' + model]);
+    assert.deepEqual(mixed.scopes, ['inference.chat', 'web.search']); assert.equal(mixed.model, 'openrouter:' + model);
+    await expect(await infer(mixed.key), 200);
+    await expect(await infer(mixed.key, { input: 'synthetic' }, '/v1/responses'), 403, 'insufficient_scope');
+    await expect(await request('/v1/decisions', { key: mixed.key, json: decision }), 403, 'insufficient_scope');
+    // Migration 0020 backfills old rows; any NULL afterwards is fail-closed.
+    const legacy = await mint(3600, INFERENCE);
+    await expect(await infer(legacy.key), 200);
+    await db.prepare('UPDATE inference_grants SET scopes_json=NULL WHERE id=?').bind(legacy.grant_id).run();
+    await expect(await infer(legacy.key), 403, 'insufficient_scope');
+    await expect(await infer(legacy.key, { input: 'synthetic' }, '/v1/responses'), 403, 'insufficient_scope');
+    const listed = (await expect(await request('/grants', { key: 'sk-bayleaf-owner' }), 200)).grants;
+    assert.deepEqual(listed.find(g => g.id === legacy.grant_id).scopes, []);
+    assert.deepEqual(listed.find(g => g.id === mixed.grant_id).scopes, ['inference.chat', 'web.search']);
+    const listedWeb = listed.find(g => g.id === web.grant_id);
+    assert.deepEqual(listedWeb.scopes, ['web.search']); assert.deepEqual(listedWeb.models, []); assert.ok(!('model' in listedWeb));
+    for (const malformed of ['"oops"', '["nope"]', '[]', 'not json']) {
+      await db.prepare('UPDATE inference_grants SET scopes_json=? WHERE id=?').bind(malformed, legacy.grant_id).run();
+      await expect(await infer(legacy.key), 403, 'insufficient_scope');
+    }
+  });
+  await check('visitor consent names each scope, discloses identity, and lists models only for inference', async () => {
+    const flow = await start('http://localhost:5173/', ['openrouter:' + model], {}, ['identity.read', 'inference.chat']);
+    const html = await (await request(flow.path, { cookie: flow.cookie })).text();
+    assert.ok(html.includes('Learn your BayLeaf account email address') && html.includes('Authorized models'));
+    assert.match(html, /will learn that you are <strong>owner@example\.test<\/strong>/);
+    assert.ok(!html.includes('inference.responses'));
+    const issued = await expect(await exchange(flow, await code(flow)), 200);
+    assert.deepEqual(issued.scopes, ['inference.chat', 'identity.read']);
+    assert.equal((await expect(await request('/whoami', { key: issued.key }), 200)).email, 'owner@example.test');
+    await expect(await infer(issued.key), 200);
+    await expect(await request('/usage', { key: issued.key }), 403, 'insufficient_scope');
+    const usage = await start('http://localhost:5173/', null, {}, ['usage.read']);
+    const usageHtml = await (await request(usage.path, { cookie: usage.cookie })).text();
+    assert.ok(usageHtml.includes('See your remaining inference allowances'));
+    assert.ok(!usageHtml.includes('Authorized models') && !usageHtml.includes('will learn that you are'));
+    const usageToken = await expect(await exchange(usage, await code(usage)), 200);
+    assert.deepEqual(usageToken.scopes, ['usage.read']); assert.deepEqual(usageToken.models, []);
+    await expect(await request('/usage', { key: usageToken.key }), 200);
   });
   await check('keyed decision 401 heals once while budget 403 cannot mint more credit', async () => {
     const original = await db.prepare('SELECT or_key_secret,or_key_hash FROM user_keys WHERE email=?').bind('owner@example.test').first();
@@ -298,7 +399,7 @@ try {
   await check('browser multi-model consent and exchange preserve every model and recheck all backend gates', async () => {
     const headers = { 'X-Harness-Backends': 'true' };
     const models = ['openrouter:' + model, 'bedrock:test-model'];
-    const flow = await start('http://localhost:5173/', models, headers);
+    const flow = await start('http://localhost:5173/', models, headers, INFERENCE);
     const html = await (await request(flow.path, { cookie: flow.cookie, headers })).text();
     for (const selected of models) assert.ok(html.includes(selected));
     const tx = await db.prepare('SELECT models_json FROM grant_transactions WHERE id=?').bind(flow.id).first();
@@ -311,7 +412,7 @@ try {
     assert.deepEqual(issued.models, models);
     for (const selected of models) await expect(await infer(issued.key, { model: selected }, '/v1/chat/completions', headers), 200);
     await expect(await request('/v1/decisions', { key: issued.key, json: { model: models[1], state: 'synthetic', questions: { yes: { type: 'noul', instructions: 'Synthetic?' } } } }), 503, 'backend_disabled');
-    const stopped = await start('http://localhost:5173/', models, headers);
+    const stopped = await start('http://localhost:5173/', models, headers, INFERENCE);
     const stoppedCode = await code(stopped); stopped.headers = {};
     await expect(await exchange(stopped, stoppedCode), 403, 'model_not_allowed');
     const { client_id } = await client();
@@ -338,7 +439,7 @@ try {
     const headers = { 'X-Harness-Backends': 'true' };
     for (const selectedModel of ['bedrock:test-model', 'vertex:gemini-2.5-flash']) {
       await expect(await request('/grants', { key: 'sk-bayleaf-owner', json: { model: selectedModel, expires_in: 600 } }), 403, 'model_not_allowed');
-      const token = await expect(await request('/grants', { key: 'sk-bayleaf-owner', headers, json: { model: selectedModel, expires_in: 600 } }), 200);
+      const token = await expect(await request('/grants', { key: 'sk-bayleaf-owner', headers, json: { model: selectedModel, scopes: INFERENCE, expires_in: 600 } }), 200);
       assert.equal(token.model, selectedModel);
       await expect(await infer(token.key, { model: selectedModel }, '/v1/chat/completions', headers), 200);
       await expect(await infer(token.key, { model: selectedModel }), 503, 'backend_disabled');
@@ -391,8 +492,8 @@ try {
   });
   await check('unnamed signed-token envelopes work only with canonical model-set authority until expiry or revocation', async () => {
     const id = crypto.randomUUID(), exp = Math.floor(Date.now() / 1000) + 600;
-    await db.prepare(`INSERT INTO inference_grants(id,owner_email,owner_token_hash,models_json,expires_at,created_at)
-      VALUES (?,?,?,?,?,?)`).bind(id, 'owner@example.test', digest('sk-bayleaf-owner'), JSON.stringify(['openrouter:' + model]), exp, exp - 600).run();
+    await db.prepare(`INSERT INTO inference_grants(id,owner_email,owner_token_hash,models_json,scopes_json,expires_at,created_at)
+      VALUES (?,?,?,?,?,?,?)`).bind(id, 'owner@example.test', digest('sk-bayleaf-owner'), JSON.stringify(['openrouter:' + model]), '["inference.chat"]', exp, exp - 600).run();
     const data = Buffer.from(JSON.stringify({id,exp})).toString('base64url');
     const sig = createHmac('sha256', secret).update('bayleaf-grants:v1:access:' + data).digest('base64url');
     const legacy = 'sk-bayleaf-grant-' + data + '.' + sig;
@@ -489,7 +590,8 @@ try {
     const redirect = await request('/grants/manage', { cookie: ownerCookie });
     assert.equal(redirect.status, 303); assert.equal(redirect.headers.get('Location'), '/dashboard#temporary-inference-tokens');
     const page = await request('/dashboard', { cookie: ownerCookie }); const html = await page.text();
-    assert.equal(page.status, 200); assert.match(html, /Temporary inference tokens/); assert.match(html, /Copy token/);
+    assert.equal(page.status, 200); assert.match(html, /App tokens/);
+    assert.match(html, /name="scope" value="inference.chat" checked/); assert.match(html, /Copy token/);
     // SSR smoke checks establish presentation/headers, not runtime secrecy.
     assert.equal(page.headers.get('Cache-Control'), 'no-store');
     assert.equal(page.headers.get('X-Frame-Options'), 'DENY');

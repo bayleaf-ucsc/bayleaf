@@ -1,14 +1,19 @@
 import type { FC } from 'hono/jsx';
 import { cardStyle } from './layout';
-import { describeSeconds } from '../grants';
+import { describeSeconds, GRANT_SCOPES } from '../grants';
 
-/** Recognition metadata is rendered; issued credentials stay in a JS closure. */
+/** App tokens. Recognition metadata is rendered; issued credentials stay in a JS closure. */
 export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }> = ({ model, maxSeconds }) => (
   <section id="temporary-inference-tokens" class={cardStyle}>
     <style>{`
       #temporary-inference-tokens { overflow-wrap: anywhere; }
       #temporary-inference-tokens label { display: block; margin-top: .8rem; font-weight: 600; }
       #temporary-inference-tokens input, #temporary-inference-tokens select { width: 100%; padding: .55rem; font: inherit; border: 1px solid #767676; border-radius: 4px; background: white; color: inherit; }
+      #temporary-inference-tokens fieldset { margin-top: .8rem; border: 1px solid #767676; border-radius: 4px; }
+      #temporary-inference-tokens legend { font-weight: 600; }
+      #temporary-inference-tokens fieldset label { font-weight: normal; margin-top: .35rem; }
+      #temporary-inference-tokens input[type=checkbox] { width: auto; margin-right: .4rem; }
+      #grant-model-group[hidden] { display: none; }
       #temporary-inference-tokens button { margin: .5rem .5rem .5rem 0; padding: .55rem .8rem; font: inherit; cursor: pointer; border: 1px solid #003c6c; border-radius: 4px; background: #003c6c; color: white; }
       #temporary-inference-tokens button:disabled { opacity: .6; cursor: default; }
       #grant-list { list-style: none; padding: 0; }
@@ -18,18 +23,27 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }>
       #grant-list .grant-actions { display: inline-flex; gap: .35rem; }
       #grant-list button { font-size: .85rem; padding: .35rem .5rem; margin: 0; }
     `}</style>
-    <h2>Temporary inference tokens</h2>
-    <p>For scripts and apps using up to 16 standard-inference models. Each token draws
-      on your existing allowance and expires automatically. Its name is safe to
+    <h2>App tokens</h2>
+    <p>For scripts and apps, limited to the scopes you choose and, for inference, up to
+      16 standard-inference models. Each token draws on your existing allowance and
+      expires automatically. Its name is safe to
       share; its full credential is available only through Copy token.</p>
     <details>
       <summary>Create a token</summary>
       <form id="grant-form">
-        <label for="grant-model">Models (select 1–16)</label>
-        <select id="grant-model" multiple size={8} required disabled data-recommended={model} aria-describedby="grant-model-status">
-          <option value="">Loading model catalog…</option>
-        </select>
-        <p id="grant-model-status" role="status"></p>
+        <fieldset id="grant-scopes">
+          <legend>Scopes (select at least one)</legend>
+          {Object.entries(GRANT_SCOPES).map(([scope, description]) => (
+            <label><input type="checkbox" name="scope" value={scope} checked={scope === 'inference.chat'}/>{description} (<code>{scope}</code>)</label>
+          ))}
+        </fieldset>
+        <div id="grant-model-group">
+          <label for="grant-model">Models for inference scopes (select 1–16)</label>
+          <select id="grant-model" multiple size={8} required disabled data-recommended={model} aria-describedby="grant-model-status">
+            <option value="">Loading model catalog…</option>
+          </select>
+          <p id="grant-model-status" role="status"></p>
+        </div>
         <label for="grant-seconds">Lifetime in seconds (maximum {maxSeconds}, {describeSeconds(maxSeconds)})</label>
         <input id="grant-seconds" type="number" min="1" max={maxSeconds} value={Math.min(3600, maxSeconds)} required aria-describedby="grant-seconds-hint"/>
         <p id="grant-seconds-hint"><small>86400 is one day; 604800 is one week.</small></p>
@@ -37,7 +51,7 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }>
       </form>
     </details>
     <p id="grant-status" role="status"></p>
-    <ul id="grant-list" aria-label="Your temporary inference tokens"></ul>
+    <ul id="grant-list" aria-label="Your app tokens"></ul>
     <p><small>Copy is available for tokens created in this page until you reload.
       You can revoke any listed token, including tokens authorized for apps.</small></p>
     <script dangerouslySetInnerHTML={{ __html: `
@@ -46,7 +60,16 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }>
   const credentials = new Map();
   const modelSelect = document.getElementById('grant-model');
   const createButton = document.getElementById('create-grant');
-  let expiryTimer;
+  const modelGroup = document.getElementById('grant-model-group');
+  const scopeBoxes = Array.from(document.querySelectorAll('#grant-scopes input[name=scope]'));
+  let catalogReady = false, expiryTimer;
+  const checkedScopes = () => scopeBoxes.filter(box => box.checked).map(box => box.value);
+  const wantsModels = () => checkedScopes().some(scope => scope.startsWith('inference.'));
+  function syncScopes() {
+    const inference = wantsModels(); modelGroup.hidden = !inference; modelSelect.required = inference;
+    createButton.disabled = inference && !catalogReady;
+  }
+  for (const box of scopeBoxes) box.onchange = syncScopes;
   async function request(path, init) {
     const response = await fetch(path, init); const body = await response.json();
     if (!response.ok) throw new Error(body.error?.message || 'Request failed'); return body;
@@ -73,7 +96,7 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }>
     }
     const ids = models.map(m => m.id);
     modelSelect.value = ids.includes(qualifiedRecommended) ? qualifiedRecommended : ids[0] || '';
-    modelSelect.disabled = !ids.length; createButton.disabled = !ids.length;
+    catalogReady = ids.length > 0; modelSelect.disabled = !catalogReady; syncScopes();
     document.getElementById('grant-model-status').textContent = ids.length
       ? 'Select 1–16 models. Use Command or Control to select multiple entries. Sealed is separate.' : 'No model catalog is available. Reload to retry.';
   }
@@ -84,13 +107,15 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }>
       Math.min(2147483647, Math.max(1000, Math.min(...grants.map(g => g.expires_at)) * 1000 - Date.now() + 100)));
     const list = document.getElementById('grant-list'); list.replaceChildren();
     for (const id of credentials.keys()) if (!grants.some(g => g.id === id)) credentials.delete(id);
-    if (!grants.length) { const item = document.createElement('li'); item.textContent = 'No active temporary inference tokens.'; list.append(item); }
+    if (!grants.length) { const item = document.createElement('li'); item.textContent = 'No active app tokens.'; list.append(item); }
     for (const grant of grants) {
       const name = grant.name || 'Earlier token ' + grant.id.slice(0, 8);
       const item = document.createElement('li');
       const identity = document.createElement('span'); identity.className = 'grant-identity';
       const title = document.createElement('strong'); title.textContent = name; title.tabIndex = 0;
-      const details = 'Standard inference only. Models: ' + (grant.models || [grant.model]).join(', ') + '. ' +
+      const models = grant.models?.length ? grant.models : grant.model ? [grant.model] : [];
+      const details = 'Scopes: ' + (grant.scopes?.length ? grant.scopes.join(', ') : 'none listed') + '. ' +
+        (models.length ? 'Models: ' + models.join(', ') + '. ' : '') +
         (grant.redirect_uri ? (grant.client_name || 'App') + ' · ' + new URL(grant.redirect_uri).origin : 'Created directly.') +
         ' Expires ' + new Date(grant.expires_at * 1000).toLocaleString();
       title.title = details; title.setAttribute('aria-label', name + '. ' + details);
@@ -122,15 +147,22 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }>
   document.getElementById('grant-form').onsubmit = async event => {
     event.preventDefault(); const button = document.getElementById('create-grant'); button.disabled = true;
     try {
-      const models = Array.from(modelSelect.selectedOptions, option => option.value).filter(Boolean);
-      if (!models.length || models.length > 16) throw new Error('Select between 1 and 16 models.');
+      const scopes = checkedScopes();
+      if (!scopes.length) throw new Error('Select at least one scope.');
+      const payload = { scopes, expires_in: Number(document.getElementById('grant-seconds').value) };
+      if (wantsModels()) {
+        const models = Array.from(modelSelect.selectedOptions, option => option.value).filter(Boolean);
+        if (!models.length || models.length > 16) throw new Error('Select between 1 and 16 models.');
+        payload.models = models;
+      }
       const result = await request('/grants', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ models, expires_in: Number(document.getElementById('grant-seconds').value) }) });
+        body: JSON.stringify(payload) });
       credentials.set(result.grant_id, result.access_token);
       status.textContent = result.name + ': token created.'; await refresh();
     } catch (e) { status.textContent = e.message; }
-    finally { button.disabled = false; }
+    finally { syncScopes(); }
   };
+  syncScopes();
   refresh().catch(e => { status.textContent = e.message; });
   loadModels().catch(() => { document.getElementById('grant-model-status').textContent = 'Could not load models. Reload to retry.'; });
 })();

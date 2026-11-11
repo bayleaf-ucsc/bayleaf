@@ -478,6 +478,16 @@ export async function downloadFile(
 }
 
 /**
+ * Paths uploadFile cannot pass safely to Toolbox's execute. It splits argv
+ * shell-style, honoring single quotes (see sandboxBrowser.ts), but runs no
+ * shell, so single-quoting is the whole defense and a quote inside the path
+ * would break out of it. Control characters are refused alongside.
+ */
+export function unsafeUploadPath(path: string): boolean {
+  return /['\x00-\x1f\x7f]/.test(path);
+}
+
+/**
  * Upload a file to a sandbox.
  * Creates parent directories automatically via mkdir -p.
  */
@@ -487,14 +497,16 @@ export async function uploadFile(
   body: ArrayBuffer,
   env: Bindings,
 ): Promise<void> {
-  // Ensure parent directory exists
+  if (unsafeUploadPath(path)) throw new Error('Unsafe upload path.');
+  // Ensure parent directory exists. Quoted as one argument: unquoted, a path
+  // with spaces became several mkdir arguments, creating directories elsewhere.
   const parent = path.replace(/\/[^/]+$/, '');
   if (parent && parent !== path) {
     await fetch(toolboxUrl(env, sandboxId, '/process/execute'), {
       method: 'POST',
       headers: authHeaders(env),
       body: JSON.stringify({
-        command: `mkdir -p ${parent}`,
+        command: `mkdir -p -- '${parent}'`,
         timeout: 5000,
       }),
     });

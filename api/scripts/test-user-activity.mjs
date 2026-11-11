@@ -13,7 +13,7 @@ const bundle = await build({ absWorkingDir: root, stdin: { resolveDir: root, con
   import { resolveAuth } from './src/utils/auth';
   import { getSession, setSessionCookie } from './src/utils/session';
   import { provisionToken } from './src/provision';
-  import { issueGrant } from './src/grants';
+  import { issueGrant, requireScope } from './src/grants';
   const app = new Hono();
   app.post('/touch', async c => {
     const {email, last, now} = await c.req.json();
@@ -28,9 +28,9 @@ const bundle = await build({ absWorkingDir: root, stdin: { resolveDir: root, con
   app.get('/session', async c => c.json(await getSession(c)));
   app.post('/grant', async c => {
     const row = await c.env.DB.prepare('SELECT * FROM user_keys WHERE email=?').bind('legacy@example.test').first();
-    return c.json(await issueGrant(c.env, row, 'https://api.test', ['openrouter:test/model'], Math.floor(Date.now()/1000)+3600));
+    return c.json(await issueGrant(c.env, row, 'https://api.test', ['inference.chat', 'inference.responses', 'inference.decisions'], ['openrouter:test/model'], Math.floor(Date.now()/1000)+3600));
   });
-  app.post('/v1/chat/completions', async c => {
+  app.post('/v1/chat/completions', requireScope('inference.chat'), async c => {
     const auth = await resolveAuth(c);
     return auth instanceof Response ? auth : c.json({email:auth.userEmail});
   });
