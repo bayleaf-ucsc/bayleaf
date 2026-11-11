@@ -10,6 +10,7 @@ import { enforceGrantModel, requireScope } from '../grants';
 import { standardModelId, supportsOpenRouterOperation } from '../standardModels';
 import { checkOpenWeightModel } from '../openWeight';
 import { ALT_BACKENDS, isBackendEnabled } from '../constants';
+import { prepareDecisionMedia, supportsDecisionMedia } from '../decisionMedia';
 import { enforceCampusRpd, upstreamCredentialUnavailable } from './proxy';
 
 export const decisionsRoutes = new OpenAPIHono<AppEnv>();
@@ -26,11 +27,11 @@ decisionsRoutes.openapi(createRoute({
   method: 'post', path: '/decisions', operationId: 'createDecision', tags: ['Decisions'],
   middleware: [requireScope('inference.decisions')] as const,
   summary: 'Evaluate typed decision questions',
-  description: 'Choice, Noul (probability of yes), and ordered Score inference. Uses existing backend credentials and allowances, including model-set temporary tokens and Campus Pass. OpenRouter published weights and ZDR are mandatory. Media is reserved but rejected until the upstream transport is verified; no silent media removal or text fallback. Other standard backends currently offer zero decision models. For encrypted decisions, use POST /sealed/v1/decisions through a Tinfoil SDK instead; that lane uses Tinfoil\'s native schema.',
+  description: 'Choice, Noul (probability of yes), and ordered Score inference. Uses existing credentials and allowances, including scoped app tokens and Campus Pass. Published weights and ZDR are mandatory. Embedded media uses the qualified Cloudflare Clef adapter with no fallback; unsupported media fails rather than being dropped or transcribed. Other backends currently offer zero decision models. Sealed decisions use Tinfoil\'s native schema, with no media parity claimed.',
   security: [{ Bearer: [] }, {}] as Record<string, string[]>[],
   request: { body: { required: true, content: { 'application/json': { schema: DecisionRequestSchema } } } },
   responses: { 200: { description: 'Native typed answers and usage', content: { 'application/json': { schema: DecisionResponseSchema } } },
-    400: { description: 'Invalid input, unsupported operation or unverified media transport', ...error },
+    400: { description: 'Invalid input, unsupported operation, media format, routing or limit', ...error },
     401: { description: 'Invalid or expired credential', ...error }, 403: { description: 'Model ineligible or outside token scope', ...error },
     413: { description: 'Encoded request too large', ...error }, 429: { description: 'Shared allowance exhausted', ...error },
     502: { description: 'Invalid upstream response', ...error }, 503: { description: 'Backend disabled or unavailable', ...error } },
@@ -49,14 +50,16 @@ decisionsRoutes.openapi(createRoute({
     return c.json({ error: { code: 403, message: 'Published open weights could not be verified for this model.' } }, 403) as any;
   if (!await supportsOpenRouterOperation(id, 'decisions'))
     return c.json({ error: { code: 400, message: 'Decision capability and ZDR availability could not be verified for this model.' } }, 400) as any;
-  if ([body.images, body.audio, body.videos].some(v => v?.length))
-    return c.json({ error: { code: 400, message: 'Embedded media transport is not yet verified for this backend. Media has not been forwarded.' } }, 400) as any;
+  const media = prepareDecisionMedia(body, id.slice(11));
+  if ('error' in media) return c.json({ error: { code: 400, message: media.error } }, 400) as any;
+  if (media.modalities.length && !await supportsDecisionMedia(id.slice(11), media.modalities))
+    return c.json({ error: { code: 400, message: 'Media capability and the pinned Cloudflare ZDR endpoint could not be verified.' } }, 400) as any;
   const quota = await enforceCampusRpd(c.env, auth); if (quota) return quota as any;
   const credential = await resolveBackendCredential(auth, 'openrouter', c.env);
   if (!credential) return upstreamCredentialUnavailable(c) as any;
   // Allowlisted body and headers: never forward caller tracing/identity or media by accident.
-  const payload = { model: id.slice(11), state: body.state, questions: body.questions,
-    provider: { ...body.provider, data_collection: 'deny', zdr: true } };
+  const payload = { model: id.slice(11), state: media.state, questions: body.questions,
+    provider: { ...media.provider, data_collection: 'deny', zdr: true } };
   const response = await sendWithHeal(credential, c.env, secret => fetch('https://openrouter.ai/api/alpha/decisions', {
     method: 'POST', redirect: 'manual', headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),

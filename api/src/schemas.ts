@@ -19,9 +19,9 @@ const DecisionQuestionSchema = z.discriminatedUnion('type', [
     criteria: z.array(DecisionContextSchema).min(1).max(128) }).strict(),
 ]);
 const EmbeddedDecisionMediaSchema = z.union([
-  z.string().regex(/^data:(image|audio|video)\/[a-zA-Z0-9.+-]+;base64,(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
+  z.string().startsWith('data:').max(24 * 1024 * 1024),
   z.object({ content_type: z.string().regex(/^(image|audio|video)\/[a-zA-Z0-9.+-]+$/),
-    base64: z.string().min(4).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/) }).strict(),
+    base64: z.string().min(4).max(24 * 1024 * 1024) }).strict(),
 ]).openapi('EmbeddedDecisionMedia');
 export const DecisionRequestSchema = z.object({
   model: z.string().min(1).max(256), state: DecisionContextSchema,
@@ -38,7 +38,7 @@ export const DecisionRequestSchema = z.object({
   audio: z.array(EmbeddedDecisionMediaSchema).max(4).optional(),
   videos: z.array(EmbeddedDecisionMediaSchema).max(2).optional(),
 }).strict().openapi('DecisionRequest', {
-  description: 'Typed decision questions over text or structured JSON. Embedded media fields reserve the multimodal contract: requests containing media are currently rejected until the backend transport is verified. No remote URLs, tracing or broadcast fields.',
+  description: 'Typed decisions over text/JSON and qualified embedded media. Clef/Clef Flash accept PNG/JPEG; Clef Omni additionally accepts PCM16 WAV and conventional MP4 without edit lists/fragments. Media pins Cloudflare with no fallback and forced ZDR. See Decisions guidance for conservative byte, duration and text limits. No remote URLs, nested media parts, uploads, tracing or broadcast fields.',
 });
 const DecisionProbabilitySchema = z.number().min(0).max(1);
 export const DecisionResponseSchema = z.object({

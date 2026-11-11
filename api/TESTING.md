@@ -1144,3 +1144,31 @@ The interim `/windows` PowerShell aliases (described above) were then removed:
 `src/windowsClaim.ts`, its routes and tests are gone, and a Windows curl that
 cannot reuse the connection now fails visibly via `--fail-early`. If that ever
 happens, the PowerShell bootstrap is recoverable from git history (commit 7d1f494).
+## Multimodal decisions (#98, 2026-11-11)
+
+`npm run test:decisions` now uses generated PNG/JPEG, PCM WAV and MP4 fixtures.
+It needs local `ffmpeg` with libx264 as well as the installed npm dependencies;
+there are no live credentials or upstream calls. `npm run test:grants` additionally
+checks decision-scoped app-token media, model/scope denial and pinned routing.
+
+Explicit live qualification: `node scripts/smoke-decision-media.mjs --live`.
+Without `--live` it exits before reading credentials or generating fixtures.
+Requires macOS `say` (synthetic speech), ffmpeg, and a private OpenRouter management
+key file, default `~/.tokens/openrouter-mgmt`, overridable with
+`OPENROUTER_MANAGEMENT_KEY_FILE`. A file may contain one raw token or a shell
+assignment; the runner extracts it without executing the file or printing it.
+It creates one $0.25 lifetime-capped key expiring after an hour, runs at most 12
+serial inference attempts through the local workerd route with live upstreams,
+and deletes/verifies absence of that exact key in `finally`. Run only with approved
+spend; each run creates another cap. It never deploys, changes a user's key, or
+claims production authentication/allowance qualification. Add `--production` to
+test the deployed BayLeaf route instead: reads one private BayLeaf owner credential
+from `BAYLEAF_API_KEY_FILE` (default `~/.tokens/bayleaf-api`), tests ordinary-key
+images, issues one 10-minute `inference.decisions` app token for the three Clef slugs,
+tests audio/video, then revokes and verifies the exact token. Production allows at
+most 13 positive inference attempts (including eligible Campus Pass) and caps the
+requested provider price at $0.30/M input and zero output. It shares the owner's
+allowance and has no separate upstream lifetime cap. Off-campus runs verify keyless
+denial, not positive campus inference. Console evidence uses
+synthetic content only. See `DECISIONS.md` for evidence and deliberately narrow
+formats/limits.

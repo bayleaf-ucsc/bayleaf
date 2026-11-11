@@ -24,24 +24,120 @@ not a compatibility or accuracy test. Jev lacks qualifying weight evidence.
 
 ## Multimodal contract
 
-Optional `images`, `audio`, `videos` accept embedded data URLs or objects with
-`content_type` and `base64`. Remote URLs, tracing and broadcast fields are rejected.
-Encoded requests are limited to 36 MiB before JSON parsing. Counts reserve Clef
-Omni's documented maximum of four images, four audio clips and two videos.
+### 2026-11-11 deployed qualified subset
 
-**Nonempty media currently returns 400 without forwarding.** OpenRouter's published
-DecisionsRequest schema does not include these fields. Adding a model's advertised
-input modalities is not proof that a route forwards its bytes. Before enabling
-media, implement and verify a backend adapter against synthetic and live fixtures,
-validate modality-specific MIME/base64 and decoded-size bounds, and qualify
-per-endpoint support under enforced ZDR. Unsupported media must never be dropped.
-Do not add persistent upload storage or provider-side files as an implicit fallback.
+Issue #98 is reopened: OpenRouter now documents media parts in the top-level
+`state` array at `/api/alpha/decisions`. Its ZDR endpoint catalog lists Cloudflare
+for Clef, Clef Flash and Clef Omni, and all three public weight repositories resolve.
+The qualified subset was deployed as Worker
+`9d290e2c-00f8-4c2e-a51f-a628d5d6470b`, with synthetic-media production checks
+and a $1 maximum live-test budget. Unsupported formats/combinations remain denied.
 
-Remaining qualification is tracked in [issue #98](https://github.com/bayleaf-ucsc/bayleaf/issues/98).
+Exposure scope for this revision: expose HTTP/OpenAPI and llms.txt guidance;
+retain the existing dashboard/model-set consent (no new authority). Hosted
+OpenChamber, Chat and desktop adapters remain deferred to the operator until a
+separately approved adapter qualification. Sealed is unchanged and has no claimed
+media parity. No uploads, retained media, new credentials for users or new budgets.
 
-Cloudflare's direct Clef Omni contract documents size/duration limits, possible text
-state truncation and conditional handling of video soundtracks. Its contract is not
-proof of OpenRouter compatibility. ZDR availability must be discovered, not predicted.
+Optional `images`, `audio`, `videos` retain BayLeaf's embedded data URL or
+`{content_type, base64}` envelope. `decisionMedia.ts` translates it into OpenRouter's
+top-level `state` array: text first, images in array order, audio in array order,
+then videos in array order. Structured text state is JSON-serialized to one string.
+OpenRouter does **not** accept our top-level media fields directly. Its
+[multimodal guide](https://openrouter.ai/docs/guides/community/multimodal-decisions)
+now documents `image_url`, `input_audio`, and `video_url` parts, provider adapters,
+and explicit capability failures rather than dropping unsupported bytes.
+
+The adapter permits only exact Clef/Clef Flash/Clef Omni slugs, pinned to
+`provider.only=["cloudflare"]`, `allow_fallbacks:false`, `zdr:true`, and
+`data_collection:"deny"`. Alternate provider routing is rejected, not silently
+overridden. Each media request checks the model's live modalities and a healthy
+Cloudflare entry in `/api/v1/endpoints/zdr` with `safety_retention:false`. Published
+weight checks and operation checks remain mandatory. No separate enable switch.
+
+Initial, intentionally narrower bounds:
+
+| Input | Deployed support / limits |
+|---|---|
+| Images | PNG/JPEG, valid signature/dimension headers, ≤16 megapixels each, ≤4 images. Combined decoded bytes: Flash ≤24 KiB; Clef/Omni ≤128 KiB. |
+| Audio | Omni only; PCM16 RIFF/WAVE, mono/stereo, 8–48 kHz, ≤4 clips, ≤8 MiB and 300 seconds each. |
+| Video | Omni only; conventional MP4, ≤2 clips, ≤16 MiB and 60 seconds per movie/track. Reject fragments, edit lists and version-1 duration headers. |
+| Combined | Audio/video ≤16 MiB decoded; encoded body ≤36 MiB. State ≤1,800 UTF-8 bytes and state+questions ≤12,000 bytes. Conservative media+text token estimate ≤60,000. |
+
+Strict canonical base64, decoded sizes, MIME/header matching and duration metadata
+are checked before inference. Header checks bound conventional inputs, not prove
+that an arbitrary codec stream is valid or will decode. No remote URLs, nested
+media parts in state/questions, assets, uploads, retained media, implicit OCR or
+transcription fallback. Unsupported formats fail explicitly. Small image limits
+leave conservative headroom for Workers AI's base64-length preflight and Flash's
+smaller live context; resize/recompress locally. WebP and compressed audio remain
+unqualified, despite upstream support. Arbitrary provider/model media parity is
+not claimed. Text-only requests retain their prior routing and size behavior,
+except that native media parts in JSON context are explicitly denied.
+
+Cloudflare documents roughly 2K text-state truncation on Clef/Clef Flash; the media
+state byte ceiling avoids relying on that truncation. Omni samples video at 2 fps.
+Cloudflare's direct contract says video soundtracks are heard only when **every**
+video has a soundtrack. The adapter rejects mixing videos with and without audio.
+It also rejects still images together with videos: the live mixed-input test
+confused the red still image with the blue video. Separate these requests.
+
+### Live compatibility evidence (2026-11-11)
+
+`scripts/smoke-decision-media.mjs --live` runs the actual local workerd route with
+real OpenRouter/Hugging Face fetches, not a direct-provider substitute. It creates
+one disposable $0.25 lifetime-capped OpenRouter key, allows at most 12 serial
+inference attempts, uses synthetic local fixtures, and deletes/verifies absence of
+the exact key in `finally`. The existing management key worked after correcting
+the runner to extract a token from a shell-assignment file; an initial malformed
+Authorization request spent nothing and was not evidence of key expiry.
+
+- First run: 11 successful inference responses, reported cost **$0.000731806**.
+  PNG/JPEG red/blue discrimination passed on all three models; standalone spoken
+  pineapple/elephant and red/blue video discrimination passed on Omni. A three-media
+  request read video and speech, but confused the still image, so that combination
+  was subsequently blocked.
+- Final candidate run: 12/12 successful responses, reported cost **$0.000807256**.
+  Repeated image/audio/video checks passed, spoken video soundtrack was recognized,
+  and mixed separate WAV + video retained the spoken word and video color.
+  All calls returned Cloudflare and typed Noul/Choice/Score answers; Omni returned
+  revision `cloudflare/clef-omni-20261009`. Wrong modality, remote URL, alternate
+  routing and still-image/video mixing returned 400 without an inference call.
+- Total reported inference cost: **$0.001539062**. Both disposable keys were deleted
+  and exact deletion verified. Immediate upstream aggregate usage lagged the sum
+  of response costs: this is not proof of completed spend settlement. The two
+  lifetime caps totaled $0.50, below the approved $1 ceiling.
+
+### Production smoke (2026-11-11)
+
+`node scripts/smoke-decision-media.mjs --live --production` passed against
+`https://api.bayleaf.dev` after deployment:
+
+- Six ordinary-key PNG/JPEG discrimination requests passed across all three models.
+- Six `inference.decisions` app-token requests passed: two contrasting speech clips,
+  two contrasting videos, a spoken video soundtrack and separate audio+video.
+- Every success returned Cloudflare and all requested typed answers. Production
+  reported inference cost was **$0.000807256**, bringing all local/live + production
+  testing to **$0.002346318**. The runner limits attempts and sets provider maximum
+  input price to $0.30/M with free output; production reuses the owner's allowance,
+  not the local runner's disposable upstream key.
+- Wrong modality, remote media, alternate routing and still-image/video mixing
+  returned 400. Selecting a model outside the token's set returned 403. The exact
+  test app token was revoked, absent from the owner list, and rejected with 401.
+- The existing $5 allowance was unchanged. Immediate aggregate usage did not yet
+  reflect response costs, so spend settlement remains unqualified.
+- This machine was off-campus. Campus Pass assessment returned `campus_network:false`
+  and keyless media returned 401. Positive on-campus media is **not** claimed.
+
+These simple contrasting fixtures establish transport compatibility and some
+content sensitivity, **not** calibration, representative accuracy, video temporal
+reasoning, maximum-boundary decoder behavior, multiple-video soundtrack fidelity,
+or installed client adapter parity. Synthetic HTTP tests cover byte-preserving
+translation, input bounds, endpoint/ZDR uncertainty, and no silent media fallback;
+the grant harness covers scoped inference and shared allowance behavior. Positive
+on-campus media, broader format/provider qualification and deferred client adapters
+remain explicit exclusions, not blockers to this bounded release. Tracking and
+completion evidence: [issue #98](https://github.com/bayleaf-ucsc/bayleaf/issues/98).
 
 ## Exposure decision (approved: API first)
 

@@ -157,6 +157,14 @@ API to keep a retired capability appearing functional.
 
 ## Refinement log
 
+- 2026-11-11 (multimodal decisions, deployed): OpenRouter's documented
+  media-in-state transport and live ZDR endpoint evidence clear the earlier
+  upstream blocker, not the rollout gate. Actual local Worker + capped live
+  upstream checks exposed still-image/video identity confusion, now explicitly
+  denied; HTTP/llms exposure remains API-first, with client adapters deferred.
+  Production ordinary-key and scoped-token checks passed after deployment;
+  off-campus keyless denial does not establish positive Campus Pass media.
+
 - 2026-11-04 (CollabMD retirement, local only): Removed managed-room discovery,
   installer and owner password delivery. Generic public/private previews remain
   available; all remaining managed apps are private. Registration crash recovery

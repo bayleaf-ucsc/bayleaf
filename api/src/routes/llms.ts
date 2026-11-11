@@ -791,9 +791,22 @@ Use ordinary keys, eligible Campus Pass, or app tokens permitting that model.
 No new provider account, credential, or budget is needed. OpenRouter published weights
 and ZDR remain required; no decision-specific enablement switch exists.
 
-Embedded ${bt}images${bt}, ${bt}audio${bt}, and ${bt}videos${bt} reserve the multimodal
-contract, but nonempty media is currently rejected because OpenRouter transport has
-not been verified. No remote media fetching or silent transcription/text fallback.
+Embedded ${bt}images${bt} support PNG/JPEG on Clef, Clef Flash and Clef Omni;
+Omni additionally accepts PCM16 WAV audio and conventional MP4 video (no edit lists
+or fragments). Use the top-level ${bt}images${bt}, ${bt}audio${bt}, ${bt}videos${bt}
+arrays, with data URLs or ${bt}{content_type, base64}${bt} objects, not media parts
+inside JSON context. BayLeaf translates them into OpenRouter state parts, pins the
+Cloudflare endpoint without fallback, and verifies its live ZDR availability.
+No remote media fetching, uploads, or silent transcription/text fallback.
+Conservative limits: at most 4 images (24 KiB total decoded on Flash, 128 KiB on
+Clef/Omni), 4 WAV clips (8 MiB/300 seconds each), and 2 MP4 clips (16 MiB/60 seconds
+each); audio/video together at most 16 MiB decoded. Audio is PCM16, 8–48 kHz,
+mono/stereo. State is at most 1,800 UTF-8 bytes with media; state plus questions
+at most 12,000 bytes, with a conservative combined media/context budget.
+Omni samples video at 2 fps. Do not combine still images with video: qualification
+found cross-media identity confusion. Videos with and without soundtracks cannot
+be mixed, because upstream may omit audio. These are compatibility checks, not
+evidence of calibrated probabilities or reliable real-world judgments.
 Read [the generated contract](https://api.bayleaf.dev/docs#tag/decisions) and
 [qualification notes](https://github.com/bayleaf-ucsc/bayleaf/blob/main/api/DECISIONS.md).
 ${sealedEnabled ? `

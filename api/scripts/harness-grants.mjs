@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { Script } from 'node:vm';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
+import { image, embedded } from './decision-fixtures.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const api = 'http://localhost:8789';
@@ -67,9 +68,14 @@ const mf = new Miniflare(convertV4MiniflareOptions({ port: process.argv.includes
       { id: model, name: 'Synthetic model', hugging_face_id: 'test/open-model', architecture: { output_modalities: ['text'] }, pricing: { prompt: '0', completion: '0' } },
       { id: 'test/uncurated-open', name: 'Uncurated model', hugging_face_id: 'test/uncurated-open', architecture: { output_modalities: ['text'] }, pricing: { prompt: '0', completion: '0' } },
       { id: 'test/closed', name: 'Closed', hugging_face_id: '' },
-      { id: 'test/decision', name: 'Decision', hugging_face_id: 'test/decision', architecture: { output_modalities: ['decisions'] } },
+       { id: 'test/decision', name: 'Decision', hugging_face_id: 'test/decision', architecture: { output_modalities: ['decisions'] } },
+       { id: 'cloudflare/clef-flash', name: 'Clef Flash', hugging_face_id: 'Cloudflare/clef-flash',
+         architecture: { output_modalities: ['decisions'], input_modalities: ['text', 'image'] } },
       ...(url.searchParams.get('zdr') === 'true' ? [] : [{ id: 'test/non-zdr', hugging_face_id: 'test/non-zdr', architecture: { output_modalities: ['text'] } }]),
       { id: 'test/no-operation', hugging_face_id: 'test/no-operation', architecture: { output_modalities: [] } },
+    ] });
+    if (url.hostname === 'openrouter.ai' && url.pathname === '/api/v1/endpoints/zdr') return Response.json({ data: [
+      { model_id: 'cloudflare/clef-flash', provider_name: 'Cloudflare', tag: 'cloudflare', status: 0, safety_retention: false },
     ] });
     if (url.hostname === 'huggingface.co') return new Response('weights');
     if (url.hostname === 'api.tavily.com') return Response.json(url.pathname === '/search'
@@ -109,7 +115,11 @@ const mf = new Miniflare(convertV4MiniflareOptions({ port: process.argv.includes
         return Response.json({ error: { code: 401, message: 'Invalid synthetic provider key' } }, { status: 401 });
       assert.equal(authorization, decisionAuthMode === 'heal' ? 'Bearer synthetic-healed-provider-key' : 'Bearer synthetic-existing-provider-key');
       if (decisionAuthMode === 'budget') return Response.json({ error: { code: 403, message: 'Budget exhausted' } }, { status: 403 });
-      const body = await req.json(); assert.equal(body.model, 'test/decision');
+      const body = await req.json(); assert.ok(['test/decision', 'cloudflare/clef-flash'].includes(body.model));
+      if (body.model === 'cloudflare/clef-flash') {
+        assert.deepEqual(body.provider.only, ['cloudflare']); assert.equal(body.provider.allow_fallbacks, false);
+        assert.equal(body.state[1].type, 'image_url');
+      }
       decisionRequests.push(body);
       assert.equal(body.provider.zdr, true); assert.equal(body.provider.data_collection, 'deny');
       upstreamCalls++;
@@ -306,6 +316,22 @@ try {
     await expect(await request('/v1/decisions', { key: singleton.key, json: input }), 403, 'insufficient_scope');
     await expect(await request('/v1/decisions', { key: token.key, json: { ...input,
       provider: { zdr: false, data_collection: 'allow' } } }), 200);
+  });
+  await check('scoped app tokens use validated media without widening model or provider authority', async () => {
+    const token = await expect(await request('/grants', { key: 'sk-bayleaf-owner', json: {
+      models: ['openrouter:cloudflare/clef-flash'], scopes: ['inference.decisions'], expires_in: 60,
+    } }), 200);
+    const input = { model: 'cloudflare/clef-flash', state: 'Synthetic', images: [embedded('image/png', await image('red'))],
+      questions: { yes: { type: 'noul', instructions: 'Is it red?' } } };
+    await expect(await request('/v1/decisions', { key: token.key, json: input }), 200);
+    const before = upstreamCalls;
+    await expect(await request('/v1/decisions', { key: token.key, json: { ...input, model: 'cloudflare/clef' } }), 403, 'insufficient_scope');
+    await expect(await request('/v1/decisions', { key: token.key, json: { ...input, provider: { only: ['deepinfra'] } } }), 400);
+    const chatOnly = await expect(await request('/grants', { key: 'sk-bayleaf-owner', json: {
+      models: ['openrouter:cloudflare/clef-flash'], scopes: ['inference.chat'], expires_in: 60,
+    } }), 200);
+    await expect(await request('/v1/decisions', { key: chatOnly.key, json: input }), 403, 'insufficient_scope');
+    assert.equal(upstreamCalls, before);
   });
   await check('grant issuance denies published weights without ZDR or a usable standard operation', async () => {
     for (const model of ['openrouter:test/non-zdr', 'openrouter:test/no-operation'])

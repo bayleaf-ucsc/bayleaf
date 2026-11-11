@@ -739,9 +739,16 @@ Read `DECISIONS.md` and run `npm run test:decisions` as well as grant tests.
 Decision inference reuses backend enablement, credentials and allowances: no
 independent decision switch. The OpenRouter catalog query includes text and
 decision outputs; weight-verdict cache keys are v2. Request-time operation checks
-reject a slug in the wrong slot. Embedded media fields are schema-supported but
-nonempty media is rejected until OpenRouter transport is qualified, even if its
-catalog advertises input modalities. Hosted/desktop adapters are explicitly deferred.
+reject a slug in the wrong slot. **2026-11-11 deployed and production-qualified**
+(`9d290e2c-00f8-4c2e-a51f-a628d5d6470b`):
+`decisionMedia.ts` translates top-level embedded PNG/JPEG, PCM16 WAV and conventional
+MP4 into native OpenRouter state parts for the Cloudflare Clef endpoint, pinned with
+no fallback and live ZDR checks. Ordinary-key images and scoped-token audio/video
+passed live checks; off-campus keyless denial passed, positive campus media remains
+unverified. Read `DECISIONS.md` for conservative limits, cross-media confusion,
+soundtrack restrictions and live evidence. Do not bypass the adapter using nested
+media parts or broaden formats/providers without qualification. Hosted/desktop
+adapters remain explicitly deferred.
 
 Enabled in production on 2026-09-29 with a one-hour maximum, raised to 30 days on
 2026-11-02 for CI secrets (see `GRANTS.md`). Read `GRANTS.md`
