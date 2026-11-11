@@ -5,6 +5,7 @@ import { createHmac, createHash, randomBytes, generateKeyPairSync } from 'node:c
 import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { Script } from 'node:vm';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -592,6 +593,10 @@ try {
     const page = await request('/dashboard', { cookie: ownerCookie }); const html = await page.text();
     assert.equal(page.status, 200); assert.match(html, /App tokens/);
     assert.match(html, /name="scope" value="inference.chat" checked/); assert.match(html, /Copy token/);
+    // Inline scripts live in template literals, where escapes are consumed: compile what ships.
+    const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+    assert.ok(scripts.length, 'dashboard has inline scripts');
+    for (const source of scripts) new Script(source);
     // SSR smoke checks establish presentation/headers, not runtime secrecy.
     assert.equal(page.headers.get('Cache-Control'), 'no-store');
     assert.equal(page.headers.get('X-Frame-Options'), 'DENY');

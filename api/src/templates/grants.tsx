@@ -83,7 +83,7 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number; i
   // Manage does not imply read: say what each checked inbox scope reveals.
   const inboxEffect = () => checkedScopes().includes('inboxes.messages.read')
     ? 'The app can read everything a chosen inbox has stored or will receive.'
-    : 'The app can archive or unarchive messages whose handles it already knows, seeing each one\'s sender and subject (or HTTP method and path), never its body.';
+    : "The app can archive or unarchive messages whose handles it already knows, seeing each one's sender and subject (or HTTP method and path), never its body.";
   // A failed load waits for the user: only an explicit scope toggle retries it.
   for (const box of scopeBoxes) box.onchange = () => { if (inboxesState === 'failed') inboxesState = 'unloaded'; syncScopes(); };
   async function request(path, init) {
