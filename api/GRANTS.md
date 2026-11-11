@@ -206,7 +206,8 @@ Content-Type: application/json
 ```
 
 Add `"scopes": [...]` to request other authority; without it the token gets
-`inference.chat` only. The result contains `grant_id`, `name`, `key` (also
+`inference.chat` only. Keep `models` only while an `inference.*` scope is selected:
+a request for, say, just `web.search` must omit `models` or it is rejected. The result contains `grant_id`, `name`, `key` (also
 `access_token`), `token_type: Bearer`, `scopes`, `models`, legacy `model` (the first
 entry, only when `models` is nonempty), `base_url`, `expires_at` (Unix seconds), and `expires_in`. Copy the token
 into the inference client's API-key setting. Do not put it in URLs or logs.
@@ -293,8 +294,9 @@ JSON `error.code: "token_expired"`. This works even after cleanup removes the gr
 row because the token's expiry is signed. Revoked, forged, or otherwise invalid
 tokens receive `401 invalid_token`. The header is exposed to browser JavaScript.
 
-Wrong-model or out-of-scope requests receive `403 insufficient_scope`; unknown or
-empty scopes at issuance or authorization receive `400 invalid_scope`. Offer a
+Wrong-model or out-of-scope requests receive `403 insufficient_scope`; unknown scope
+names at issuance or authorization receive `400 invalid_scope`, while an empty or
+non-string `scopes` array fails request validation as `400 invalid_request`. Offer a
 manual authorization action after a 401; do not build an automatic redirect loop.
 Fresh approval creates a new grant, rather than silently refreshing the old one.
 Expiry/revocation prevents new requests; it does not abort an in-flight completion.

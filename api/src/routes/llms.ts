@@ -590,7 +590,7 @@ are not interchangeable; eligible Campus Pass requests omit the header:
 To learn whose account a credential acts for, call ${bt}GET /whoami${bt}. It returns
 ${bt}{"credential": "key" | "sandbox" | "grant" | "campus", "email": ...}${bt}, with a null email under
 Campus Pass, and has no side effects. App tokens are refused unless they hold
-${bt}identity.read${bt}, which the grantor approved knowing the app learns their email.
+${bt}identity.read${bt}, which reveals the grantor's email to whoever holds the token.
 
 BayLeaf applies a daily limit to each backend: some are price-based and others
 are request-based. Your current limits and remaining allowance are shown in the
@@ -705,8 +705,9 @@ Two workflows produce the same token type:
 Request only the scopes the app needs. The inference scopes (chat completions,
 Responses, decisions) are bound to 1–16 selected standard-inference models; the
 others let an app check the grantor's remaining allowance, learn the grantor's
-BayLeaf email (only with explicit consent naming the app), or use web search and
-fetch. Web tools run on BayLeaf's shared provider account, not a per-user budget,
+BayLeaf email, or use web search and fetch. In visitor authorization, the consent
+page names the app and states the email disclosure; a directly issued token with
+${bt}identity.read${bt} has no consent page, so anyone holding it can read your email. Web tools run on BayLeaf's shared provider account, not a per-user budget,
 so a leaked web token gives off-campus web access until it expires or is revoked.
 Omitting scopes requests chat completions only; request Responses or decisions
 explicitly. The exact scope

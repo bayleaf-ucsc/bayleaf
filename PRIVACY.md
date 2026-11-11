@@ -102,9 +102,11 @@ ITS-operated or ITS-supported one.
   app processes or separately created previews. See the
   [historical qualification record](api/COLLABMD.md).
 - **App tokens (API, opt-in when enabled):** approving an app gives it a
-  temporary bearer token, limited to the scopes listed on the consent page,
-  against your existing allowance. If you approve the identity scope, the app
-  learns your BayLeaf email address. BayLeaf
+  temporary bearer token, limited to the scopes listed on the consent page.
+  Inference scopes use your existing allowance; web search and fetch scopes use
+  BayLeaf's shared web-search account, which has no per-user budget. If you
+  approve the identity scope, the app learns your BayLeaf email address (a token
+  you issue yourself with that scope reveals it to anyone holding the token). BayLeaf
    stores grant metadata (owner, token name, permitted scopes and models, expiry, optional app name and callback)
   and short-lived authorization transactions, not a permanent app registration.
   Expired records are removed by hourly cleanup while the feature is enabled;

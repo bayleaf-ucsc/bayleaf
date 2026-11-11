@@ -78,11 +78,11 @@ Sandbox (persistent Linux execution, files and browser workspaces), web search a
 page extraction, Campus Pass, app tokens, Standard versus Sealed inference, privacy
 boundaries, and switching providers or disconnecting BayLeaf.
 
-App tokens are narrow, expiring, revocable tokens that let a community app, script or
+${c.env.GRANTS_ENABLED === 'true' ? `App tokens are narrow, expiring, revocable tokens that let a community app, script or
 CI secret use just a slice of BayLeaf access: inference with specific models, usage,
 identity, or web search/fetch. Mint one from the dashboard, or POST /grants with an
 ordinary key or sandbox credential; llms.txt has details.
-${c.env.INBOXES_ENABLED === 'true' ? '\nFor receiving email, webhook events, form submissions or callbacks in custom workflows,\nload bayleaf-inboxes. It covers reception and storage, not sending or automatic execution.\n' : ''}
+` : ''}${c.env.INBOXES_ENABLED === 'true' ? '\nFor receiving email, webhook events, form submissions or callbacks in custom workflows,\nload bayleaf-inboxes. It covers reception and storage, not sending or automatic execution.\n' : ''}
 
 ${c.env.INBOXES_ENABLED === 'true' && c.env.INBOXES_PILOT_OWNER ? 'Inboxes is operator-only; check /inboxes/limits for optional restricted-email creation availability.\n' : ''}
 This is a guide to possibilities, not a claim that tools are installed or access is
