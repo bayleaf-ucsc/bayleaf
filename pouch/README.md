@@ -612,6 +612,16 @@ folder; missing paths are muted. An `http(s)` link shows its host and asks befor
 because navigation is outside `connect-src` and the link address itself can carry data to
 that site. Other schemes are plain text.
 
+An `openui-lang` reply can include Pouch's `QRCode(value, label?)` component,
+for example `root = Stack([QRCode("https://bayleaf.dev", "Open on your phone")])`.
+It encodes locally into DOM-built SVG with a four-module white quiet zone,
+visible selectable payload and a Copy button, without fetching or opening the
+payload. Limits: 1024 UTF-8 bytes per code, four codes per block. This conveys
+text, not files or reachability, and does not hide secrets from the model or
+conversation history. No camera permission or P2P service is involved (#152).
+Checks: `node test/qr-node.mjs` and `node test/qr-browser.mjs` (independent
+decoding, real-page light/dark and phone-width rendering, offline replay).
+
 Subagent views and steering, with a gated fake model: `node test/subagent-browser.mjs`.
 Agent graphs: `node test/graphs-node.mjs` (routing, caps, join, cycles, detach) and
 `node test/graphs-browser.mjs` (G1-G12 in the page), both on the rule-based fake in

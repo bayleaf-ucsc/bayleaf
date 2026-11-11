@@ -144,6 +144,7 @@ export function renderMarkdown(text: string, ctx: MarkdownContext, ro: RenderOpt
       doc,
       md: (s) => renderMarkdown(s, ctx, { ui: false }),
       inline: (s) => renderMarkdown(s, ctx, { ui: false, inline: true }),
+      copy: (s) => ctx.copy(s),
     });
     if (!ui) return codeBlock(n);
     const dropped = ui.errors.length ? `, ${ui.errors.length} problem${ui.errors.length === 1 ? '' : 's'}` : '';
