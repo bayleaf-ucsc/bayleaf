@@ -585,7 +585,7 @@ are not interchangeable; eligible Campus Pass requests omit the header:
 |--------|-------------|
 | **Ordinary API key** (${bt}sk-bayleaf-...${bt}) | Account credential for model discovery, supported inference lanes, sandbox/web tools, and issuing/managing app tokens. Provision free at https://api.bayleaf.dev/. |
 | **Campus Pass** (omit header) | On the UCSC campus network. No key needed for inference, web search/fetch, and other supported routes. Sandbox access requires a personal key. |
-| **App token** (${bt}sk-bayleaf-grant-...${bt}) | Only its granted scopes (selected standard-inference models, allowance, identity, web tools) until expiry or revocation. No discovery, Sealed, sandbox, other owner services, account management, or token issuance. |
+| **App token** (${bt}sk-bayleaf-grant-...${bt}) | Only its granted scopes (selected standard-inference models, allowance, identity, web tools${input.inboxesEnabled ? ', reading or archiving in chosen inboxes' : ''}) until expiry or revocation. No discovery, Sealed, sandbox, other owner services, account management, or token issuance. |
 
 To learn whose account a credential acts for, call ${bt}GET /whoami${bt}. It returns
 ${bt}{"credential": "key" | "sandbox" | "grant" | "campus", "email": ...}${bt}, with a null email under
@@ -709,7 +709,13 @@ BayLeaf email, or use web search and fetch. In visitor authorization, the consen
 page names the app and states the email disclosure; a directly issued token with
 ${bt}identity.read${bt} has no consent page, so anyone holding it can read your email. Web tools run on BayLeaf's shared provider account, not a per-user budget,
 so a leaked web token gives off-campus web access until it expires or is revoked.
-Omitting scopes requests chat completions only; request Responses or decisions
+${input.inboxesEnabled ? `Inbox scopes let an app, script or CI job read messages in, or archive them in,
+1–16 of the grantor's own inboxes. Directly issued tokens name them (see
+${bt}GET /grants/inboxes${bt}); in visitor authorization the app requests only the scope
+and the visitor chooses inboxes on the consent page. The app can read everything a
+chosen inbox has stored or will receive until expiry or revocation. App tokens never
+list, create, change or destroy inboxes, delete messages or manage sender credentials.
+` : ''}Omitting scopes requests chat completions only; request Responses or decisions
 explicitly. The exact scope
 list, routes and errors are in the **Grants** introduction linked below.
 
@@ -957,8 +963,9 @@ desktop agents can load their ${bt}bayleaf-inboxes${bt} skill. Refreshed hosted
 OpenChamber setups use their short sandbox orientation and shared Inboxes
 MCP tools; older hosted setups retain the earlier recipe skill until deliberate setup.
 Reception stores data only: it never activates an agent, replies or runs tools.
-Manage with an ordinary BayLeaf key or sandbox credential, not Campus Pass,
-app tokens or a browser session. No inference key is provisioned.
+Manage with an ordinary BayLeaf key or sandbox credential, not Campus Pass
+or a browser session. An [app token](#app-tokens) with an inbox scope can only read,
+or archive in, the inboxes it is bound to. No inference key is provisioned.
 Before creation, fetch authenticated GET /inboxes/limits (getInboxLimits), even
 with no existing inboxes. It reports effective deployed quotas and your remaining
 slots/storage, not static defaults. Active plus destroying inboxes count toward

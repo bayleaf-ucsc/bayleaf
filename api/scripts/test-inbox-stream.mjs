@@ -77,7 +77,8 @@ before(async () => {
       ACQUIRE_GATE: async () => { acquireGate.started(); await acquireGate.wait; return new Response('ok'); } },
     bindings: { INBOXES_ENABLED: 'true', INBOX_STREAM_SECONDS: String(seconds), INBOX_STREAM_POLL_MS: '50', INBOX_STREAM_WRITE_MS: '250',
       OIDC_CLIENT_SECRET: 'synthetic', DAYTONA_API_URL: 'https://daytona.invalid', DAYTONA_API_KEY: 'synthetic',
-      DAYTONA_DEPLOYMENT_LABEL: 'synthetic', CAMPUS_IP_RANGES: '192.0.2.0/24', GRANTS_ENABLED: 'false', PREVIEWS_ENABLED: 'false' } });
+      DAYTONA_DEPLOYMENT_LABEL: 'synthetic', CAMPUS_IP_RANGES: '192.0.2.0/24', GRANTS_ENABLED: 'true', GRANTS_MAX_SECONDS: '600',
+      PREVIEWS_ENABLED: 'false' } });
   mf = new Miniflare(convertV4MiniflareOptions({ workers: [apiWorker('api', 'api.example.test', 30),
     { name: 'inbox', modules: true, script: inbox, compatibilityDate: '2026-08-01', routes: ['*.bayleaf-inboxes.dev/*'],
       compatibilityFlags: ['nodejs_compat'],
@@ -276,6 +277,26 @@ for (const mode of ['destroy', 'ttl', 'ordinary revoke', 'ordinary rotate', 'gen
     } finally { s.abort(); }
   });
 }
+
+test('a bound app-token stream ends with auth_revoked once its grant is revoked', { timeout: 12000 }, async () => {
+  const u = await setup();
+  const grant = await (await call(u, '/grants', { method: 'POST',
+    body: JSON.stringify({ scopes: ['inboxes.messages.read'], inboxes: [u.inbox.id], expires_in: 600 }) })).json();
+  assert.deepEqual(grant.inboxes, [u.inbox.id], JSON.stringify(grant));
+  const owner = { ...u }; u.key = grant.access_token;
+  const s = await ready(u);
+  try {
+    await post(u);
+    assert.equal((await s.event('message.received')).data.event_id, 'evt_1', 'app token follows its bound inbox');
+    const start = Date.now();
+    assert.equal((await call(owner, `/grants/${grant.grant_id}`, { method: 'DELETE' })).status, 200);
+    // Reauthorization must not write to the streaming context (stillOwner, not owner()).
+    assert.equal((await s.event('end')).data.reason, 'auth_revoked');
+    assert.ok(Date.now() - start < 5000, 'short revocation bound');
+    assert.equal((await call(u, `/inboxes/${u.inbox.id}/events`)).status, 401, 'reconnect is refused');
+    await until(async () => await count(u) === 0);
+  } finally { s.abort(); }
+});
 
 test('retirement fences an already-open SSE and restored generation without waiting for physical cleanup', { timeout: 12000 }, async () => {
   const u = await setup();

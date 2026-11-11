@@ -28,7 +28,7 @@ const bundle = await build({ absWorkingDir: root, stdin: { resolveDir: root, con
   app.get('/session', async c => c.json(await getSession(c)));
   app.post('/grant', async c => {
     const row = await c.env.DB.prepare('SELECT * FROM user_keys WHERE email=?').bind('legacy@example.test').first();
-    return c.json(await issueGrant(c.env, row, 'https://api.test', ['inference.chat', 'inference.responses', 'inference.decisions'], ['openrouter:test/model'], Math.floor(Date.now()/1000)+3600));
+    return c.json(await issueGrant(c.env, row, 'https://api.test', { scopes: ['inference.chat', 'inference.responses', 'inference.decisions'], models: ['openrouter:test/model'], inboxes: [] }, Math.floor(Date.now()/1000)+3600));
   });
   app.post('/v1/chat/completions', requireScope('inference.chat'), async c => {
     const auth = await resolveAuth(c);

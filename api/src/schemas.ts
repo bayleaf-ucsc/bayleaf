@@ -479,15 +479,17 @@ export const SandboxExposeSlotSchema = z.object({
 const GrantModelSchema = z.string().min(1).max(200);
 const GrantModelsListSchema = z.array(GrantModelSchema).min(1).max(16).describe('Authorized backend-qualified standard model slugs, without inference type tags. Every model must be eligible. Sealed is excluded. Required with any inference.* scope, rejected without one.');
 // Scope names are validated in grants.ts so the vocabulary has one owner.
-const GrantScopesSchema = z.array(z.string()).min(1).max(16).describe('App-token scopes: inference.chat, inference.responses, inference.decisions, usage.read, identity.read, web.search, web.fetch. Omitted means ["inference.chat"] only; request inference.responses or inference.decisions explicitly.').openapi({ example: ['inference.chat', 'web.search'] });
+const GrantScopesSchema = z.array(z.string()).min(1).max(16).describe('App-token scopes: inference.chat, inference.responses, inference.decisions, usage.read, identity.read, web.search, web.fetch, inboxes.messages.read, inboxes.messages.manage. Omitted means ["inference.chat"] only; request inference.responses or inference.decisions explicitly.').openapi({ example: ['inference.chat', 'web.search'] });
 const GrantAuthorityFields = {
   scopes: z.array(z.string()).describe('Granted scopes in canonical order.'),
   models: z.array(GrantModelSchema).max(16).describe('Authorized models; empty when the token has no inference.* scope.'),
   model: z.string().optional().describe('Compatibility alias for the first authorized model; absent when models is empty.'),
+  inboxes: z.array(z.string()).max(16).describe('Bound inbox handles (ibx_...); empty when the token has no inboxes.* scope. For visitor authorization, the inboxes the visitor chose on the consent page.'),
 };
 export const GrantRequestSchema = z.object({
   scopes: GrantScopesSchema.optional(),
   models: GrantModelsListSchema.optional(),
+  inboxes: z.array(z.string()).min(1).max(16).optional().describe('Inbox handles (ibx_...) bound to inboxes.* scopes: 1–16 of your own active inboxes (see GET /grants/inboxes). Required with any inboxes.* scope, rejected without one. Visitor authorization does not accept this field: visitors choose on the consent page.'),
   model: GrantModelSchema.optional().describe('Legacy singleton shorthand, mutually exclusive with models. Bare OpenRouter slugs remain accepted.').openapi({ example: 'openrouter:qwen/qwen3.8-27b' }),
   expires_in: z.number().int().positive().describe('Requested lifetime in seconds. The runtime administrator maximum is enforced by rejection, never clamping; invalid_lifetime reports the current maximum.').openapi({ example: 600 }),
 }).strict().refine(v => v.model === undefined || v.models === undefined, 'Specify models or model, not both.').openapi('GrantRequest');
@@ -540,6 +542,10 @@ export const GrantListSchema = z.object({ grants: z.array(z.object({
   redirect_uri: z.string().nullable().describe('Bound callback URI; null for direct issuance.'),
 })) }).describe('Active grant metadata for the current owner. Credentials cannot be recovered through listing.').openapi('GrantList');
 
+export const GrantInboxesSchema = z.object({ inboxes: z.array(z.object({
+  id: z.string().describe('Inbox handle to bind.'), type: z.enum(['email', 'http']), label: z.string().nullable(),
+  address: z.string().optional().describe('Email inboxes.'), url: z.string().optional().describe('http inboxes.'),
+})) }).describe('Active inboxes the caller owns; empty when Inboxes is unavailable.').openapi('GrantInboxes');
 export const GrantModelsSchema = z.object({
   models: z.array(z.object({ id: z.string().describe('Backend-qualified selectable model ID.'), name: z.string().describe('Display label.') })),
   backends: z.array(z.object({ id: z.string(), label: z.string(),

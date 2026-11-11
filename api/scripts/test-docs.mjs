@@ -140,7 +140,7 @@ try {
    const catalog = await catalogResponse.json();
     assert.deepEqual(catalog.skills, [
       { name: 'bayleaf-platform', version: '7-inboxes', files: ['bayleaf-platform.md'] },
-      { name: 'bayleaf-inboxes', version: '3', files: ['bayleaf-inboxes.md'] },
+      { name: 'bayleaf-inboxes', version: '4', files: ['bayleaf-inboxes.md'] },
     ]);
    const skillResponse = await get(catalogBase + 'bayleaf-platform/bayleaf-platform.md');
    assert.equal(skillResponse.status, 200, 'Skill is public');
@@ -178,7 +178,7 @@ try {
       assert.match(hosted, /do not bypass|not shell calls/);
     }
     for (const phrase of ['guidance, not inbox tools or credentials', 'Do not ask for a key in',
-      'Campus Pass and temporary inference tokens do not work', 'Sealed inference does not encrypt']) {
+      'Campus Pass does not work', 'Sealed inference does not encrypt']) {
       assert.ok(inboxSkill.includes(phrase), phrase);
     }
     const workflowResponse = await get('/docs/inboxes.md');

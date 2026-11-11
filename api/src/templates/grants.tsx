@@ -3,7 +3,7 @@ import { cardStyle } from './layout';
 import { describeSeconds, GRANT_SCOPES } from '../grants';
 
 /** App tokens. Recognition metadata is rendered; issued credentials stay in a JS closure. */
-export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }> = ({ model, maxSeconds }) => (
+export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number; inboxesEnabled?: boolean }> = ({ model, maxSeconds, inboxesEnabled = false }) => (
   <section id="temporary-inference-tokens" class={cardStyle}>
     <style>{`
       #temporary-inference-tokens { overflow-wrap: anywhere; }
@@ -13,7 +13,7 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }>
       #temporary-inference-tokens legend { font-weight: 600; }
       #temporary-inference-tokens fieldset label { font-weight: normal; margin-top: .35rem; }
       #temporary-inference-tokens input[type=checkbox] { width: auto; margin-right: .4rem; }
-      #grant-model-group[hidden] { display: none; }
+      #grant-model-group[hidden], #grant-inbox-group[hidden] { display: none; }
       #temporary-inference-tokens button { margin: .5rem .5rem .5rem 0; padding: .55rem .8rem; font: inherit; cursor: pointer; border: 1px solid #003c6c; border-radius: 4px; background: #003c6c; color: white; }
       #temporary-inference-tokens button:disabled { opacity: .6; cursor: default; }
       #grant-list { list-style: none; padding: 0; }
@@ -33,7 +33,7 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }>
       <form id="grant-form">
         <fieldset id="grant-scopes">
           <legend>Scopes (select at least one)</legend>
-          {Object.entries(GRANT_SCOPES).map(([scope, description]) => (
+          {Object.entries(GRANT_SCOPES).filter(([scope]) => inboxesEnabled || !scope.startsWith('inboxes.')).map(([scope, description]) => (
             <label><input type="checkbox" name="scope" value={scope} checked={scope === 'inference.chat'}/>{description} (<code>{scope}</code>)</label>
           ))}
         </fieldset>
@@ -44,6 +44,11 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }>
           </select>
           <p id="grant-model-status" role="status"></p>
         </div>
+        {inboxesEnabled && <fieldset id="grant-inbox-group" hidden aria-describedby="grant-inbox-status">
+          <legend>Inboxes for inbox scopes (select 1–16)</legend>
+          <div id="grant-inbox-choices"></div>
+          <p id="grant-inbox-status" role="status"></p>
+        </fieldset>}
         <label for="grant-seconds">Lifetime in seconds (maximum {maxSeconds}, {describeSeconds(maxSeconds)})</label>
         <input id="grant-seconds" type="number" min="1" max={maxSeconds} value={Math.min(3600, maxSeconds)} required aria-describedby="grant-seconds-hint"/>
         <p id="grant-seconds-hint"><small>86400 is one day; 604800 is one week.</small></p>
@@ -62,12 +67,17 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }>
   const createButton = document.getElementById('create-grant');
   const modelGroup = document.getElementById('grant-model-group');
   const scopeBoxes = Array.from(document.querySelectorAll('#grant-scopes input[name=scope]'));
-  let catalogReady = false, expiryTimer;
+  const inboxGroup = document.getElementById('grant-inbox-group');
+  let catalogReady = false, inboxesState = 'unloaded', expiryTimer;
   const checkedScopes = () => scopeBoxes.filter(box => box.checked).map(box => box.value);
   const wantsModels = () => checkedScopes().some(scope => scope.startsWith('inference.'));
+  const wantsInboxes = () => !!inboxGroup && checkedScopes().some(scope => scope.startsWith('inboxes.'));
+  const checkedInboxes = () => Array.from(document.querySelectorAll('#grant-inbox-choices input[name=inbox]:checked'), box => box.value);
   function syncScopes() {
     const inference = wantsModels(); modelGroup.hidden = !inference; modelSelect.required = inference;
-    createButton.disabled = inference && !catalogReady;
+    const inbox = wantsInboxes(); if (inboxGroup) inboxGroup.hidden = !inbox;
+    if (inbox && inboxesState === 'unloaded') loadInboxes();
+    createButton.disabled = (inference && !catalogReady) || (inbox && (inboxesState !== 'ready' || !checkedInboxes().length));
   }
   for (const box of scopeBoxes) box.onchange = syncScopes;
   async function request(path, init) {
@@ -100,6 +110,28 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }>
     document.getElementById('grant-model-status').textContent = ids.length
       ? 'Select 1–16 models. Use Command or Control to select multiple entries. Sealed is separate.' : 'No model catalog is available. Reload to retry.';
   }
+  async function loadInboxes() {
+    inboxesState = 'loading'; const inboxStatus = document.getElementById('grant-inbox-status');
+    inboxStatus.textContent = 'Loading your inboxes…';
+    try {
+      const { inboxes } = await request('/grants/inboxes');
+      const choices = document.getElementById('grant-inbox-choices'); choices.replaceChildren();
+      for (const inbox of inboxes) {
+        const label = document.createElement('label'); const box = document.createElement('input');
+        box.type = 'checkbox'; box.name = 'inbox'; box.value = inbox.id; box.onchange = syncScopes;
+        const title = document.createElement('strong'); title.textContent = inbox.label || inbox.id;
+        label.append(box, title);
+        const where = inbox.address || inbox.url;
+        if (where) { const code = document.createElement('code'); code.textContent = where; label.append(' ', code); }
+        choices.append(label);
+      }
+      inboxesState = inboxes.length ? 'ready' : 'empty';
+      inboxStatus.textContent = inboxes.length
+        ? 'Select 1–16 inboxes. The app can read everything a chosen inbox has stored or will receive.'
+        : 'You have no active inboxes. Create one, or clear the inbox scopes to create a token.';
+    } catch { inboxesState = 'unloaded'; inboxStatus.textContent = 'Could not load your inboxes. Toggle an inbox scope to retry.'; }
+    syncScopes();
+  }
   async function refresh() {
     const { grants } = await request('/grants');
     clearTimeout(expiryTimer);
@@ -116,6 +148,7 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }>
       const models = grant.models?.length ? grant.models : grant.model ? [grant.model] : [];
       const details = 'Scopes: ' + (grant.scopes?.length ? grant.scopes.join(', ') : 'none listed') + '. ' +
         (models.length ? 'Models: ' + models.join(', ') + '. ' : '') +
+        (grant.inboxes?.length ? 'Inboxes: ' + grant.inboxes.join(', ') + '. ' : '') +
         (grant.redirect_uri ? (grant.client_name || 'App') + ' · ' + new URL(grant.redirect_uri).origin : 'Created directly.') +
         ' Expires ' + new Date(grant.expires_at * 1000).toLocaleString();
       title.title = details; title.setAttribute('aria-label', name + '. ' + details);
@@ -154,6 +187,11 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number }>
         const models = Array.from(modelSelect.selectedOptions, option => option.value).filter(Boolean);
         if (!models.length || models.length > 16) throw new Error('Select between 1 and 16 models.');
         payload.models = models;
+      }
+      if (wantsInboxes()) {
+        const inboxes = checkedInboxes();
+        if (!inboxes.length || inboxes.length > 16) throw new Error('Select between 1 and 16 inboxes.');
+        payload.inboxes = inboxes;
       }
       const result = await request('/grants', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload) });

@@ -735,9 +735,10 @@ export const DashboardPage: FC<{
   sealedUsage?: SealedUsage;
   grantsEnabled?: boolean;
   grantMaxSeconds?: number;
+  inboxesEnabled?: boolean;
   sealedRecommendedModel?: string;
   altBackendUsage?: AltBackendUsage[];
-}> = ({ session, row, orKey, recommendedModel, sandboxInfo, gwsEnabled, sealedEnabled, sealedUsage, grantsEnabled, grantMaxSeconds = 3600, sealedRecommendedModel, altBackendUsage }) => {
+}> = ({ session, row, orKey, recommendedModel, sandboxInfo, gwsEnabled, sealedEnabled, sealedUsage, grantsEnabled, grantMaxSeconds = 3600, inboxesEnabled = false, sealedRecommendedModel, altBackendUsage }) => {
   const greeting = session.name
     ? `Welcome, ${session.name} (${session.email})`
     : `Welcome, ${session.email}`;
@@ -750,7 +751,7 @@ export const DashboardPage: FC<{
 
       <KeyCard hasKey={hasKey} />
 
-      {grantsEnabled && <TemporaryInferenceTokens model={recommendedModel} maxSeconds={grantMaxSeconds}/>}
+      {grantsEnabled && <TemporaryInferenceTokens model={recommendedModel} maxSeconds={grantMaxSeconds} inboxesEnabled={inboxesEnabled}/>}
 
       {hasKey && orKey && row && <StandardLlmCard orKey={orKey} recommendedModel={recommendedModel} altBackendUsage={altBackendUsage ?? []} />}
 

@@ -19,11 +19,37 @@ on new tokens until they request `inference.decisions` or `inference.responses`.
 Responses include `scopes`; the `model` alias appears only when `models` is
 nonempty. Routes declare a scope with `requireScope`; the global gate denies an
 app token on any route without exactly one declared scope that the token holds.
-Inboxes and sandbox-file scopes are planned; Sealed and sandbox execution are
-deferred. The `sk-bayleaf-grant-` prefix, operation IDs and the
+Inbox scopes (deployed 2026-11-10, migration `0021`): `inboxes.messages.read` and `inboxes.messages.manage`
+(archive/unarchive), bound to `inboxes`, 1–16 of the grantor's own active inbox
+handles (see [Inbox scopes](#inbox-scopes-deployed-2026-11-10)). Sandbox-file
+scopes are planned; Sealed and sandbox execution are deferred. The `sk-bayleaf-grant-` prefix, operation IDs and the
 `/dashboard#temporary-inference-tokens` anchor are unchanged. Sections below
 record the inference-only contract and its rollout history; where they list
 exclusions, the scopes above take precedence.
+
+### Inbox scopes (deployed 2026-11-10)
+
+Deployed 2026-11-10 (Worker `6daf7666-01d3-4493-98ed-3217e67b70f2`, migration `0021` applied). Production smoke passed 27 checks with the owner's key against two disposable 15-minute http inboxes: `GET /grants/inboxes`, binding validation (missing, unknown), a read token bound to A listing, reading text, metadata and events on A while denied (`insufficient_scope`) on sibling B, list, limits (by the scope gate itself), create, destroy, message delete, archive, credentials and inference; a manage token archiving but not reading; revocation giving 401; tokens revoked and inboxes destroyed afterwards. The scopes smoke from the first slice still passes 20/20. Not yet exercised in production: the consent-page inbox picker and the dashboard picker (need a human login).
+
+`inboxes.messages.read` admits `GET /inboxes/{id}`, its events (finite and
+stream), message list, one message and its `text`, `body`, `attachments/{index}`
+and `har`, and `export`. `inboxes.messages.manage` admits only
+`PATCH /inboxes/{id}/messages/{mid}` (archive/unarchive) and does not imply read.
+Both need `inboxes`; `inboxes` without an inbox scope, or the reverse, is
+`400 invalid_request`. Ownership of every handle is checked at issuance, approval
+and exchange (`403 inbox_not_allowed` otherwise), and requests to an unbound `{id}`
+get `403 insufficient_scope`. App tokens never list, create, change or destroy
+inboxes, delete messages or manage sender credentials. Tokens are revalidated on
+every inbox call, so a live event stream ends once the token is revoked or expires.
+
+Direct issuance names `inboxes` in `POST /grants`; `GET /grants/inboxes` lists the
+caller's bindable inboxes. Visitor authorization cannot name them, because an app
+cannot know a visitor's handles: `/grants/authorize` rejects an `inboxes` query
+parameter, the visitor ticks inboxes on the consent page, and the exchanged token
+reports the chosen `inboxes`. Inbox content is stored and sender-controlled, so an
+approved app can read everything a bound inbox has stored or will receive until
+expiry or revocation. Minting stays attenuation: ordinary keys and sandbox
+credentials already do everything these scopes allow.
 
 Deployed 2026-11-10 (Worker `1a104f1d-2541-4dd5-aebf-0f11da29229f`): migration `0020` applied, backfill re-run after deploy, all 3 production grants scoped. Production smoke passed 20 checks with the owner's key (default chat-only issuance and inference, decisions/whoami denial, a `web.search`+`identity.read` token searching and reflecting the grantor while denied on fetch, usage, chat, grants, sandbox and inboxes, `usage.read`, validation errors, list scopes, revocation of every created token). A real Toolbox upload to a path with a space and literal `$(id)` created one directory and no strays; a quoted path got 400. Not yet exercised in production: the browser consent page and dashboard form (need a human login).
 
@@ -159,8 +185,9 @@ Direct issuance and visitor authorization produce the same token type. Only
 `POST /v1/responses` currently supports OpenRouter only; `POST /v1/decisions`
 also accepts temporary tokens, with the request model required to belong to
 the authorized set. Each needs its `inference.*` scope. Apart from the
-non-inference scopes above, there is no model listing, Sealed, inbox, sandbox,
-account management, minting, or refresh capability.
+non-inference scopes above (including bound inbox reading and archiving), there is
+no model listing, Sealed, inbox management, sandbox, account management, minting,
+or refresh capability.
 Fallback model lists, route overrides, and provider plugins are rejected.
 OpenRouter retains its published-weights check on inference. Backend-specific
 enablement gates and existing provider policies continue to apply.
@@ -207,9 +234,10 @@ Content-Type: application/json
 
 Add `"scopes": [...]` to request other authority; without it the token gets
 `inference.chat` only. Keep `models` only while an `inference.*` scope is selected:
-a request for, say, just `web.search` must omit `models` or it is rejected. The result contains `grant_id`, `name`, `key` (also
+a request for, say, just `web.search` must omit `models` or it is rejected. Inbox
+scopes likewise need `inboxes` (handles from `GET /grants/inboxes`). The result contains `grant_id`, `name`, `key` (also
 `access_token`), `token_type: Bearer`, `scopes`, `models`, legacy `model` (the first
-entry, only when `models` is nonempty), `base_url`, `expires_at` (Unix seconds), and `expires_in`. Copy the token
+entry, only when `models` is nonempty), `inboxes`, `base_url`, `expires_at` (Unix seconds), and `expires_in`. Copy the token
 into the inference client's API-key setting. Do not put it in URLs or logs.
 
 Use `GET /grants` to list your active grants and `DELETE /grants/{grant_id}` to
@@ -236,7 +264,9 @@ requests. No client secret or refresh token is issued.
    `code_challenge` (base64url SHA-256 of verifier), `code_challenge_method=S256`.
 4. BayLeaf signs the visitor in if needed and shows explicit consent naming the
    account, destination origin, exact callback, every scope and model, and duration
-   (with `identity.read`, that the app will learn the visitor's email). App names are
+   (with `identity.read`, that the app will learn the visitor's email). With an
+   inbox scope, the visitor chooses which of their inboxes to share there; apps do
+   not send `inboxes`. App names are
    visibly self-supplied. No remembered app-level consent. The legacy `model`
    singleton query parameter is accepted instead of `models`, never alongside it.
 5. BayLeaf redirects to the exact callback with `code` and `state`, or with
@@ -305,13 +335,14 @@ Expiry/revocation prevents new requests; it does not abort an in-flight completi
 ## Storage and operation
 
 `inference_grants` holds ID, owner email, owner-key fingerprint, models, scopes
-(`scopes_json`, from migration `0020`; NULL fails closed), timestamps,
+(`scopes_json`, from migration `0020`; NULL fails closed), bound inbox handles
+(`inboxes_json`, from migration `0021`; NULL without an inbox scope), timestamps,
 and optional app name/callback. Tokens are signed using purpose-separated HMAC;
 the signature is the credential verifier, not a stored plaintext secret. Tokens
 cannot be used as login cookies, client descriptors, or consent proofs.
 
 `grant_transactions` holds browser-proof and code hashes, PKCE challenge, app
-metadata, authorized models and scopes, state, and (after approval) owner-key fingerprint and grant deadline.
+metadata, authorized models and scopes, state, and (after approval) owner-key fingerprint, grant deadline and chosen inboxes.
 Both tables persist only `models_json TEXT NOT NULL`, with no singular model
 column. The optional HTTP `model` input shorthand and first-model response alias
 do not create a second source of stored authority.
