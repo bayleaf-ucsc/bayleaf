@@ -90,11 +90,11 @@ export function storedGrantModels(row: { models_json: string }): string[] {
 }
 
 /** Everything a grant may do: scopes plus the resources they are bound to. */
-export interface GrantAuthority { scopes: GrantScope[]; models: string[]; inboxes: string[] }
+export interface GrantAuthority { scopes: GrantScope[]; models: string[]; inboxes: string[]; sandboxDirs: string[] }
 
 /** Issuance/list response fields describing authority. `model` stays a legacy alias. */
-export function grantAuthority({ scopes, models, inboxes }: GrantAuthority) {
-  return { scopes, models, ...(models.length ? { model: models[0] } : {}), inboxes };
+export function grantAuthority({ scopes, models, inboxes, sandboxDirs }: GrantAuthority) {
+  return { scopes, models, ...(models.length ? { model: models[0] } : {}), inboxes, sandbox_dirs: sandboxDirs };
 }
 
 export async function issueGrant(env: Bindings, row: UserKeyRow, apiOrigin: string, authority: GrantAuthority,
@@ -106,10 +106,12 @@ export async function issueGrant(env: Bindings, row: UserKeyRow, apiOrigin: stri
     // Database uniqueness makes this safe under concurrent issuance. Expired
     // rows awaiting cleanup also reserve their names, without a history table.
     const inserted = await env.DB.prepare(`INSERT INTO inference_grants
-      (id, name, owner_email, owner_token_hash, models_json, scopes_json, inboxes_json, expires_at, created_at, client_name, redirect_uri)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id`)
+      (id, name, owner_email, owner_token_hash, models_json, scopes_json, inboxes_json, sandbox_dirs_json, expires_at, created_at,
+        client_name, redirect_uri)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id`)
       .bind(id, name, row.email, ownerHash, JSON.stringify(authority.models), JSON.stringify(authority.scopes),
-        authority.inboxes.length ? JSON.stringify(authority.inboxes) : null, expiresAt, nowSeconds(),
+        authority.inboxes.length ? JSON.stringify(authority.inboxes) : null,
+        authority.sandboxDirs.length ? JSON.stringify(authority.sandboxDirs) : null, expiresAt, nowSeconds(),
         clientName, redirectUri).first();
     if (!inserted) continue;
     const token = GRANT_PREFIX + name + '.' + await seal(env, 'access', { id, name, exp: expiresAt });
@@ -144,6 +146,8 @@ export const GRANT_SCOPES = {
   'web.fetch': 'Fetch web pages through BayLeaf',
   'inboxes.messages.read': 'Read messages in the inboxes chosen below',
   'inboxes.messages.manage': 'Archive or unarchive messages in those inboxes',
+  'sandbox.files.read': 'Read files in the sandbox folders listed below',
+  'sandbox.files.write': 'Create or overwrite files in those sandbox folders',
 } as const;
 export type GrantScope = keyof typeof GRANT_SCOPES;
 const ALL_SCOPES = Object.keys(GRANT_SCOPES) as GrantScope[];
@@ -152,6 +156,32 @@ const ALL_SCOPES = Object.keys(GRANT_SCOPES) as GrantScope[];
 export const DEFAULT_SCOPES: GrantScope[] = ['inference.chat'];
 export const needsModels = (scopes: GrantScope[]) => scopes.some(s => s.startsWith('inference.'));
 export const needsInboxes = (scopes: GrantScope[]) => scopes.some(s => s.startsWith('inboxes.'));
+export const needsSandboxDirs = (scopes: GrantScope[]) => scopes.some(s => s.startsWith('sandbox.files.'));
+
+/** Folder names, never paths: BayLeaf fixes the root, so an app cannot ask for ~ or /. */
+export const SANDBOX_APPS_ROOT = '/home/daytona/bayleaf-apps/';
+export function grantSandboxDirs(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 16) return null;
+  if (!value.every(d => typeof d === 'string' && /^[a-z0-9][a-z0-9-]{0,62}$/.test(d))) return null;
+  return [...new Set(value as string[])];
+}
+export function storedGrantSandboxDirs(row: { sandbox_dirs_json: string | null }): string[] {
+  try { return grantSandboxDirs(JSON.parse(row.sandbox_dirs_json ?? 'null')) ?? []; } catch { return []; }
+}
+
+/**
+ * Whether a sandbox file path lies inside one of the bound folders. Lexical only (SCOPES.md):
+ * the prefix keeps its trailing slash so `journal-old` never matches `journal`, at least one
+ * segment must follow, and no segment may be empty, `.` or `..`. Quotes and control
+ * characters are refused too, matching what uploadFile can pass safely.
+ */
+export function insideSandboxDirs(path: string, dirs: string[]): boolean {
+  if (/['\\\x00-\x1f\x7f]/.test(path)) return false;
+  const dir = dirs.find(d => path.startsWith(SANDBOX_APPS_ROOT + d + '/'));
+  if (!dir) return false;
+  const rest = path.slice((SANDBOX_APPS_ROOT + dir + '/').length).split('/');
+  return rest.every(segment => segment !== '' && segment !== '.' && segment !== '..');
+}
 
 /** Canonical inbox binding: 1–16 distinct handles. Ownership is checked against the
  * inbox Worker at issuance, consent and exchange, not here. */

@@ -52,7 +52,7 @@ docsRoutes.get('/SKILL.md', (c) => c.redirect('/llms.txt', 301));
 docsRoutes.get('/opencode/skills/index.json', (c) => c.json({
   skills: [
     { name: 'bayleaf-platform', version: c.env.INBOXES_ENABLED === 'true'
-      ? (c.env.INBOXES_PILOT_OWNER ? '7-inboxes-pilot' : '7-inboxes') : '7', files: ['bayleaf-platform.md'] },
+      ? (c.env.INBOXES_PILOT_OWNER ? '8-inboxes-pilot' : '8-inboxes') : '8', files: ['bayleaf-platform.md'] },
     ...(c.env.INBOXES_ENABLED === 'true' ? [{ name: 'bayleaf-inboxes',
       version: c.env.INBOXES_PILOT_OWNER ? '1-pilot' : '4', files: ['bayleaf-inboxes.md'] }] : []),
   ],
@@ -80,7 +80,7 @@ boundaries, and switching providers or disconnecting BayLeaf.
 
 ${c.env.GRANTS_ENABLED === 'true' ? `App tokens are narrow, expiring, revocable tokens that let a community app, script or
 CI secret use just a slice of BayLeaf access: inference with specific models, usage,
-identity, or web search/fetch. Mint one from the dashboard, or POST /grants with an
+identity, web search/fetch, or files in named Sandbox folders. Mint one from the dashboard, or POST /grants with an
 ordinary key or sandbox credential; llms.txt has details.
 ` : ''}${c.env.INBOXES_ENABLED === 'true' ? '\nFor receiving email, webhook events, form submissions or callbacks in custom workflows,\nload bayleaf-inboxes. It covers reception and storage, not sending or automatic execution.\n' : ''}
 

@@ -1,6 +1,6 @@
 import type { FC } from 'hono/jsx';
 import { cardStyle } from './layout';
-import { describeSeconds, GRANT_SCOPES } from '../grants';
+import { describeSeconds, GRANT_SCOPES, SANDBOX_APPS_ROOT } from '../grants';
 
 /** App tokens. Recognition metadata is rendered; issued credentials stay in a JS closure. */
 export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number; inboxesEnabled?: boolean }> = ({ model, maxSeconds, inboxesEnabled = false }) => (
@@ -13,7 +13,7 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number; i
       #temporary-inference-tokens legend { font-weight: 600; }
       #temporary-inference-tokens fieldset label { font-weight: normal; margin-top: .35rem; }
       #temporary-inference-tokens input[type=checkbox] { width: auto; margin-right: .4rem; }
-      #grant-model-group[hidden], #grant-inbox-group[hidden] { display: none; }
+      #grant-model-group[hidden], #grant-inbox-group[hidden], #grant-sandbox-group[hidden] { display: none; }
       #temporary-inference-tokens button { margin: .5rem .5rem .5rem 0; padding: .55rem .8rem; font: inherit; cursor: pointer; border: 1px solid #003c6c; border-radius: 4px; background: #003c6c; color: white; }
       #temporary-inference-tokens button:disabled { opacity: .6; cursor: default; }
       #grant-list { list-style: none; padding: 0; }
@@ -49,6 +49,13 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number; i
           <div id="grant-inbox-choices"></div>
           <p id="grant-inbox-status" role="status"></p>
         </fieldset>}
+        <div id="grant-sandbox-group" hidden>
+          <label for="grant-sandbox-dirs">Sandbox folders for sandbox file scopes (1–16 names, comma or space separated)</label>
+          <input id="grant-sandbox-dirs" type="text" autocomplete="off" spellcheck={false} data-root={SANDBOX_APPS_ROOT} aria-describedby="grant-sandbox-status grant-sandbox-hint"/>
+          <p id="grant-sandbox-status" role="status"></p>
+          <p id="grant-sandbox-hint"><small>Each name uses lowercase letters, digits and hyphens, starts with a letter or digit, and has at most 63 characters.
+            Using the token wakes your sandbox, creating one if you have none.</small></p>
+        </div>
         <label for="grant-seconds">Lifetime in seconds (maximum {maxSeconds}, {describeSeconds(maxSeconds)})</label>
         <input id="grant-seconds" type="number" min="1" max={maxSeconds} value={Math.min(3600, maxSeconds)} required aria-describedby="grant-seconds-hint"/>
         <p id="grant-seconds-hint"><small>86400 is one day; 604800 is one week.</small></p>
@@ -68,17 +75,35 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number; i
   const modelGroup = document.getElementById('grant-model-group');
   const scopeBoxes = Array.from(document.querySelectorAll('#grant-scopes input[name=scope]'));
   const inboxGroup = document.getElementById('grant-inbox-group');
+  const sandboxGroup = document.getElementById('grant-sandbox-group');
+  const sandboxInput = document.getElementById('grant-sandbox-dirs');
   let catalogReady = false, inboxesState = 'unloaded', expiryTimer;
   const checkedScopes = () => scopeBoxes.filter(box => box.checked).map(box => box.value);
   const wantsModels = () => checkedScopes().some(scope => scope.startsWith('inference.'));
   const wantsInboxes = () => !!inboxGroup && checkedScopes().some(scope => scope.startsWith('inboxes.'));
+  const wantsSandboxDirs = () => checkedScopes().some(scope => scope.startsWith('sandbox.files.'));
+  // Folder names, never paths. No backslashes here: this script sits in a TS template literal.
+  const validDir = dir => /^[a-z0-9][a-z0-9-]{0,62}$/.test(dir);
+  const sandboxDirs = () => [...new Set(sandboxInput.value.split(/[, ]+/).filter(Boolean))];
+  const sandboxDirsValid = dirs => dirs.length >= 1 && dirs.length <= 16 && dirs.every(validDir);
+  function syncSandboxDirs() {
+    const dirs = sandboxDirs(), invalid = dirs.filter(dir => !validDir(dir));
+    sandboxInput.setAttribute('aria-invalid', String(dirs.length > 0 && !sandboxDirsValid(dirs)));
+    document.getElementById('grant-sandbox-status').textContent = !dirs.length ? 'Enter at least one folder name.'
+      : invalid.length ? 'Not a valid folder name: ' + invalid.join(', ') + '.'
+      : dirs.length > 16 ? 'At most 16 folders.'
+      : 'The app can reach ' + dirs.map(dir => sandboxInput.dataset.root + dir + '/').join(', ') + ' and everything below.';
+  }
   const checkedInboxes = () => Array.from(document.querySelectorAll('#grant-inbox-choices input[name=inbox]:checked'), box => box.value);
   function syncScopes() {
     const inference = wantsModels(); modelGroup.hidden = !inference; modelSelect.required = inference;
     const inbox = wantsInboxes(); if (inboxGroup) inboxGroup.hidden = !inbox;
     if (inbox && inboxesState === 'unloaded') loadInboxes();
+    const sandbox = wantsSandboxDirs(); sandboxGroup.hidden = !sandbox; sandboxInput.required = sandbox;
+    if (sandbox) syncSandboxDirs();
     if (inboxesState === 'ready') document.getElementById('grant-inbox-status').textContent = 'Select 1–16 inboxes. ' + inboxEffect();
-    createButton.disabled = (inference && !catalogReady) || (inbox && (inboxesState !== 'ready' || !checkedInboxes().length));
+    createButton.disabled = (inference && !catalogReady) || (inbox && (inboxesState !== 'ready' || !checkedInboxes().length))
+      || (sandbox && !sandboxDirsValid(sandboxDirs()));
   }
   // Manage does not imply read: say what each checked inbox scope reveals.
   const inboxEffect = () => checkedScopes().includes('inboxes.messages.read')
@@ -86,6 +111,7 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number; i
     : "The app can archive or unarchive messages whose handles it already knows, seeing each one's sender and subject (or HTTP method and path), never its body.";
   // A failed load waits for the user: only an explicit scope toggle retries it.
   for (const box of scopeBoxes) box.onchange = () => { if (inboxesState === 'failed') inboxesState = 'unloaded'; syncScopes(); };
+  sandboxInput.oninput = syncScopes;
   async function request(path, init) {
     const response = await fetch(path, init); const body = await response.json();
     if (!response.ok) throw new Error(body.error?.message || 'Request failed'); return body;
@@ -153,6 +179,7 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number; i
       const details = 'Scopes: ' + (grant.scopes?.length ? grant.scopes.join(', ') : 'none listed') + '. ' +
         (models.length ? 'Models: ' + models.join(', ') + '. ' : '') +
         (grant.inboxes?.length ? 'Inboxes: ' + grant.inboxes.join(', ') + '. ' : '') +
+        (grant.sandbox_dirs?.length ? 'Sandbox folders: ' + grant.sandbox_dirs.join(', ') + '. ' : '') +
         (grant.redirect_uri ? (grant.client_name || 'App') + ' · ' + new URL(grant.redirect_uri).origin : 'Created directly.') +
         ' Expires ' + new Date(grant.expires_at * 1000).toLocaleString();
       title.title = details; title.setAttribute('aria-label', name + '. ' + details);
@@ -196,6 +223,11 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number; i
         const inboxes = checkedInboxes();
         if (!inboxes.length || inboxes.length > 16) throw new Error('Select between 1 and 16 inboxes.');
         payload.inboxes = inboxes;
+      }
+      if (wantsSandboxDirs()) {
+        const dirs = sandboxDirs();
+        if (!sandboxDirsValid(dirs)) throw new Error('Enter 1–16 valid sandbox folder names.');
+        payload.sandbox_dirs = dirs;
       }
       const result = await request('/grants', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload) });

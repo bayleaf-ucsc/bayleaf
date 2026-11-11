@@ -127,7 +127,7 @@ src/
     llms.ts             llmsRoutes: /llms.txt and the agent-facing skill prose
     proxy.ts            proxyRoutes: POST /responses, POST /chat/completions, /v1/* catch-all
     sealed.ts           sealedRoutes: BayLeaf Sealed EHBP ciphertext relay (issue #55, enabled; fails closed)
-    sandbox.ts          sandboxRoutes: GET / (status), POST /exec, POST /poke, GET|PUT /files/*, DELETE /
+    sandbox.ts          sandboxRoutes: GET / (status), POST /exec, POST /poke, GET|PUT /files/* (app-token folder check), DELETE /
     web.ts              webRoutes: POST /search, POST /fetch (OpenAPI-documented)
     wellknown.ts        Standard + opt-in Sealed OpenCode discovery and curated remote configs
 migrations/             D1 schema, applied in order (0001 user_keys … 0010 preview access policy)
@@ -716,8 +716,12 @@ the token prefix and the dashboard anchor are unchanged. Inbox scopes
 `6daf7666`, evidence in `GRANTS.md`), are bound to 1–16 of the grantor's own active inboxes (`inboxes_json`,
 migration `0021`, apply before deploying), checked at issuance, approval and
 exchange; visitors choose inboxes on the consent page, and the facade's `owner()`
-checks the `{id}` binding. Design, planned sandbox-file scopes, and exclusions:
-`SCOPES.md`. Statements below describe the
+checks the `{id}` binding. Sandbox-file scopes (`sandbox.files.read` for
+`GET /sandbox/files/*`, `sandbox.files.write` for `PUT`) deployed
+2026-11-11 (Worker `ee81bde1-12cf-4344-b4c3-541bbea6a500`): bound to `sandbox_dirs`, 1–16 app-named folders under
+`/home/daytona/bayleaf-apps/` (`sandbox_dirs_json`, migration `0022`, applied), enforced by a lexical decoded-path check in `routes/sandbox.ts`
+middleware (`insideSandboxDirs`). No listing, exec, status, keep-alive or delete.
+Design, open questions and exclusions: `SCOPES.md`. Statements below describe the
 deployed inference-only revision.
 
 **Model-set revision deployed 2026-10-13:** migration `0016`
@@ -847,7 +851,7 @@ this facet; run `npm run test:hf` and `npm run test:docs`.
 /sandbox                GET: sandbox status (keyed only, no side effects)
 /sandbox/exec           POST: bash execution (keyed only, persistent)
 /sandbox/poke           POST: refresh inactivity timer / wake sandbox (keyed only)
-/sandbox/files/*        GET: download file, PUT: upload file (keyed only)
+/sandbox/files/*        GET: download file, PUT: upload file (keyed; app tokens only in bound folders)
 /sandbox                DELETE: destroy user's sandbox (keyed or session)
 /web/search              POST: web search (Tavily)
 /web/fetch               POST: fetch page content from one or more URLs (Tavily Extract)

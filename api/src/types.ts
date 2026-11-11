@@ -204,6 +204,8 @@ export interface InferenceGrant {
   scopes_json: string | null;
   /** JSON array of bound inbox handles; NULL when no inboxes.* scope (migration 0021). */
   inboxes_json: string | null;
+  /** JSON array of bound ~/bayleaf-apps folder names; NULL without sandbox.files.* (0022). */
+  sandbox_dirs_json: string | null;
   expires_at: number;
   created_at: number;
   client_name: string | null;
@@ -220,6 +222,8 @@ export interface GrantTransaction {
   scopes_json: string | null;
   /** Chosen by the visitor on the consent page, so NULL until approval. */
   inboxes_json: string | null;
+  /** Named by the app at initiation and shown on the consent page. */
+  sandbox_dirs_json: string | null;
   lifetime: number;
   challenge: string;
   state: string;

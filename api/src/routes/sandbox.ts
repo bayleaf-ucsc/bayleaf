@@ -15,8 +15,8 @@
  *   POST /poke         Refresh the inactivity timer to prevent auto-stop (keyed only)
  *   POST /expose       Wrap an already-running HTTP service (keyed only, gated POC)
  *   DELETE /expose/:slot Revoke the caller's preview (keyed only)
- *   GET  /files/*      Download a file by absolute path (keyed only)
- *   PUT  /files/*      Upload a file by absolute path (keyed only)
+ *   GET  /files/*      Download a file by absolute path (keyed, or app token in bound folders)
+ *   PUT  /files/*      Upload a file by absolute path (keyed, or app token in bound folders)
  *   DELETE /            Destroy the user's sandbox (keyed or session)
  */
 
@@ -40,6 +40,7 @@ import {
   createSignedPreview,
 } from '../daytona';
 import { previewsEnabled, registerUserPreview, revokeUserPreview } from './previews';
+import { grantError, insideSandboxDirs, requireScope, storedGrantSandboxDirs, type GrantScope } from '../grants';
 import {
   SandboxExecRequestSchema,
   SandboxExecResponseSchema,
@@ -311,7 +312,9 @@ sandboxRoutes.openAPIRegistry.registerPath({
   summary: 'Download a file',
   description:
     'Downloads a file from the user\'s persistent sandbox by absolute path. ' +
-    'Requires a BayLeaf API key (`sk-bayleaf-...`); Campus Pass cannot access files (no persistent sandbox).',
+    'Requires a BayLeaf API key (`sk-bayleaf-...`) or sandbox credential; Campus Pass cannot access files (no persistent sandbox). ' +
+    'An app token with `sandbox.files.read` may read only under its bound `/home/daytona/bayleaf-apps/<name>/` folders; ' +
+    'its use wakes the grantor\'s sandbox and creates one if none exists.',
   security: [{ Bearer: [] }],
   request: {
     params: z.object({
@@ -327,7 +330,7 @@ sandboxRoutes.openAPIRegistry.registerPath({
       content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
     },
     403: {
-      description: 'File access requires a BayLeaf API key',
+      description: 'File access requires a BayLeaf API key, or (insufficient_scope) an app token lacks the scope or the path is outside its bound folders',
       content: { 'application/json': { schema: ApiErrorSchema } },
     },
     404: {
@@ -341,7 +344,19 @@ sandboxRoutes.openAPIRegistry.registerPath({
   },
 });
 
-sandboxRoutes.get('/files/*', async (c) => {
+/**
+ * App tokens reach file routes only with a sandbox.files.* scope (checked by the global
+ * gate) and only inside their bound ~/bayleaf-apps folders (checked here, on the decoded
+ * path, so %2E%2E arrives as `..` and is refused). Other credentials pass straight through.
+ */
+const fileScope = (scope: GrantScope) => [requireScope(scope), async (c: any, next: () => Promise<void>) => {
+  const grant = c.get('inferenceGrant');
+  if (grant && !insideSandboxDirs(c.req.path.replace(/^\/sandbox\/files/, ''), storedGrantSandboxDirs(grant)))
+    return grantError(c, 'insufficient_scope', 'This app token may only use files inside its bound ~/bayleaf-apps folders.', 403);
+  await next();
+}] as const;
+
+sandboxRoutes.get('/files/*', ...fileScope('sandbox.files.read'), async (c) => {
   const auth = await resolveAuth(c);
   if (auth instanceof Response) return auth;
 
@@ -388,7 +403,9 @@ sandboxRoutes.openAPIRegistry.registerPath({
   description:
     'Uploads a file to the user\'s persistent sandbox by absolute path. ' +
     'Parent directories are created automatically. ' +
-    'Requires a BayLeaf API key (`sk-bayleaf-...`).',
+    'Requires a BayLeaf API key (`sk-bayleaf-...`) or sandbox credential. ' +
+    'An app token with `sandbox.files.write` may write only under its bound `/home/daytona/bayleaf-apps/<name>/` folders; ' +
+    'its use wakes the grantor\'s sandbox and creates one if none exists.',
   security: [{ Bearer: [] }],
   request: {
     params: z.object({
@@ -420,7 +437,7 @@ sandboxRoutes.openAPIRegistry.registerPath({
       content: { 'application/json': { schema: ApiErrorSchema } },
     },
     403: {
-      description: 'File access requires a BayLeaf API key',
+      description: 'File access requires a BayLeaf API key, or (insufficient_scope) an app token lacks the scope or the path is outside its bound folders',
       content: { 'application/json': { schema: ApiErrorSchema } },
     },
     502: {
@@ -430,7 +447,7 @@ sandboxRoutes.openAPIRegistry.registerPath({
   },
 });
 
-sandboxRoutes.put('/files/*', async (c) => {
+sandboxRoutes.put('/files/*', ...fileScope('sandbox.files.write'), async (c) => {
   const auth = await resolveAuth(c);
   if (auth instanceof Response) return auth;
 

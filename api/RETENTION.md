@@ -277,8 +277,8 @@ describe those apps.
 | State | Retention |
 |---|---|
 | Signed client descriptor (app-supplied name and exact callback) | Valid ten minutes; held by the app, with no app-registration row |
-| Authorization transaction: descriptor, callback, app name, models, scopes, lifetime, state, browser-proof hash, PKCE challenge; after approval, code hash, owner email and key fingerprint, and chosen inbox handles | Expires within ten minutes; approved code within two minutes; successful exchange or denial deletes the row |
-| Grant: ID, memorable name (named-token revision), owner email and key fingerprint, models, scopes, bound inbox handles (migration `0021`), creation/expiry, optional app name and callback | Until expiry (administrator maximum: one hour initially, 30 days since 2026-11-02) or individual revocation |
+| Authorization transaction: descriptor, callback, app name, models, scopes, lifetime, state, browser-proof hash, PKCE challenge, app-named sandbox folders (migration `0022`, applied 2026-11-11); after approval, code hash, owner email and key fingerprint, and chosen inbox handles | Expires within ten minutes; approved code within two minutes; successful exchange or denial deletes the row |
+| Grant: ID, memorable name (named-token revision), owner email and key fingerprint, models, scopes, bound inbox handles (migration `0021`), bound sandbox folder names (migration `0022`, applied 2026-11-11), creation/expiry, optional app name and callback | Until expiry (administrator maximum: one hour initially, 30 days since 2026-11-02) or individual revocation |
 | Browser proof and login-return cookies (`bl_grant_flow`, `bl_grant_return`) | Host-only, HttpOnly, SameSite=Lax, Secure on HTTPS; at most ten minutes |
 
 The hourly scheduler deletes expired transaction and grant rows, normally within
@@ -289,7 +289,10 @@ remembered app consent, or per-grant inference-content/usage ledger. An app toke
 with the `identity.read` scope discloses the grantor's BayLeaf email to the app
 holding it; the consent page says so before approval. An inbox scope lets the app read the chosen inboxes' stored content, which Inboxes
 retains under its own schedule, not ZDR; grants store only the inbox handles, never
-that content.
+that content. A sandbox-file scope lets the app read or write files in the named
+folders of the grantor's sandbox, which persist under the sandbox's own retention
+(the 90-day inactivity reaper, which token use postpones); grants store only the
+folder names, never file content.
 
 See [GRANTS.md](GRANTS.md) for the grant/token distinction, expiry and revocation
 semantics, and rollout status.

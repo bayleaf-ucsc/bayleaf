@@ -10,7 +10,7 @@ import { eligibleStandardModel, standardModelCatalog } from '../standardModels';
 import { BaseLayout, renderPage } from '../templates/layout';
 import { describeSeconds, hash, issueGrant, maxGrantSeconds, nowSeconds, randomSecret, seal, unseal, validCallback, grantError, grantModelIds, storedGrantModels,
   GRANT_SCOPES, DEFAULT_SCOPES, grantAuthority, grantScopeIds, grantScopes, needsModels, needsInboxes, grantInboxIds,
-  storedGrantInboxes, type GrantScope } from '../grants';
+  storedGrantInboxes, needsSandboxDirs, grantSandboxDirs, storedGrantSandboxDirs, SANDBOX_APPS_ROOT, type GrantScope } from '../grants';
 import { GrantRequestSchema, GrantTokenSchema, GrantErrorSchema, ClientDescriptorRequestSchema,
   ClientDescriptorSchema, GrantExchangeSchema, GrantListSchema, GrantModelsSchema, GrantAuthorizeQuerySchema, ApiErrorSchema,
   GrantInboxesSchema } from '../schemas';
@@ -26,18 +26,20 @@ export const GRANT_WORKFLOW = `App tokens (formerly temporary inference tokens) 
 - web.search and web.fetch: POST /web/search and /web/fetch, on BayLeaf's shared provider account (there is no per-user web budget)
 - inboxes.messages.read: GET /inboxes/{id}, its events and event stream, messages, one message with its text, body, attachments and har, and export, for bound inboxes only
 - inboxes.messages.manage: PATCH /inboxes/{id}/messages/{mid} (archive or unarchive) for bound inboxes only; it does not imply read
+- sandbox.files.read: GET /sandbox/files/* inside bound sandbox folders only
+- sandbox.files.write: PUT /sandbox/files/* inside bound sandbox folders only; it does not imply read
 
-Any inference.* scope requires models, 1–16 standard-inference models; models without an inference.* scope are rejected. Any inboxes.* scope requires inboxes, 1–16 of the grantor's own active inbox handles, checked at issuance, approval and exchange (403 inbox_not_allowed otherwise); inboxes without an inboxes.* scope are rejected. Inbox content is stored and sender-controlled: a bound token reads everything the inbox has stored or will receive until expiry or revocation, and a live event stream ends when the token is revoked or expires. Omitting scopes requests inference.chat only; request inference.responses or inference.decisions explicitly. Every other route refuses app tokens, including Sealed, model discovery, listing, creating, changing or destroying inboxes, deleting messages, inbox credentials, sandbox, account management and renewal. Model fallbacks, routing overrides and provider plugins are unavailable. Tokens work wherever copied within their scope/model/lifetime restriction; they are not origin-bound.
+Any inference.* scope requires models, 1–16 standard-inference models; models without an inference.* scope are rejected. Any inboxes.* scope requires inboxes, 1–16 of the grantor's own active inbox handles, checked at issuance, approval and exchange (403 inbox_not_allowed otherwise); inboxes without an inboxes.* scope are rejected. Inbox content is stored and sender-controlled: a bound token reads everything the inbox has stored or will receive until expiry or revocation, and a live event stream ends when the token is revoked or expires. Any sandbox.files.* scope requires sandbox_dirs, 1–16 folder names (lowercase letters, digits and hyphens, at most 63 characters); sandbox_dirs without a sandbox.files.* scope are rejected. Each name grants /home/daytona/bayleaf-apps/<name>/ and everything below it. The check is lexical on the decoded path: the path must continue past the folder, and empty, . or .. segments, quotes, backslashes and control characters are refused (403 insufficient_scope). Using such a token wakes the grantor's sandbox and creates one if none exists; another app naming the same folder shares it. Omitting scopes requests inference.chat only; request inference.responses or inference.decisions explicitly. Every other route refuses app tokens, including Sealed, model discovery, listing, creating, changing or destroying inboxes, deleting messages, inbox credentials, sandbox status, exec, keep-alive, deletion or file listing, account management and renewal. Model fallbacks, routing overrides and provider plugins are unavailable. Tokens work wherever copied within their scope/model/lifetime restriction; they are not origin-bound.
 
 ### Direct issuance
 
-Use your ordinary BayLeaf key, or the signed-in dashboard. Get the selectable catalog from GET /grants/models, POST /grants with scopes (omitted means inference.chat only), models when an inference.* scope is requested (a JSON array of 1–16 backend-qualified slugs, without inference type tags), inboxes when an inboxes.* scope is requested (handles from GET /grants/inboxes) and lifetime, then use the returned access_token, scopes, models and base_url. Legacy model singleton shorthand remains accepted, mutually exclusive with models; responses include model, the first entry, only when models is nonempty. List metadata or revoke by identifier; credentials are recoverable only at issuance. The public name is a recognition aid, not a secret. Legacy grants may be unnamed.
+Use your ordinary BayLeaf key, or the signed-in dashboard. Get the selectable catalog from GET /grants/models, POST /grants with scopes (omitted means inference.chat only), models when an inference.* scope is requested (a JSON array of 1–16 backend-qualified slugs, without inference type tags), inboxes when an inboxes.* scope is requested (handles from GET /grants/inboxes), sandbox_dirs when a sandbox.files.* scope is requested, and lifetime, then use the returned access_token, scopes, models and base_url. Legacy model singleton shorthand remains accepted, mutually exclusive with models; responses include model, the first entry, only when models is nonempty. List metadata or revoke by identifier; credentials are recoverable only at issuance. The public name is a recognition aid, not a secret. Legacy grants may be unnamed.
 
 ### Visitor-funded browser authorization
 
 1. Retain random state and a cryptographically random PKCE verifier in the initiating tab. Compute the base64url SHA-256 challenge without padding.
 2. POST /grants/clients with an app label and exact callback URI. The signed descriptor creates no permanent app registry.
-3. Navigate the browser, not fetch(), to GET /grants/authorize with the documented query fields. Encode scopes and models as JSON array query values, or use the legacy model singleton instead of models, never both. BayLeaf handles sign-in and explicit consent listing every scope and model; identity.read is shown as disclosing the visitor's email to the app. Apps cannot know visitors' inbox handles, so they request only an inboxes.* scope (an inboxes query parameter is rejected) and the visitor chooses inboxes on the consent page; the exchanged token reports them as inboxes. Mere login grants nothing.
+3. Navigate the browser, not fetch(), to GET /grants/authorize with the documented query fields. Encode scopes and models as JSON array query values, or use the legacy model singleton instead of models, never both. BayLeaf handles sign-in and explicit consent listing every scope and model; identity.read is shown as disclosing the visitor's email to the app. Apps cannot know visitors' inbox handles, so they request only an inboxes.* scope (an inboxes query parameter is rejected) and the visitor chooses inboxes on the consent page; the exchanged token reports them as inboxes. Sandbox folder names, by contrast, are the app's own namespace: the app names them as a sandbox_dirs JSON array query value, and the consent page shows each exact path. Mere login grants nothing.
 4. The exact callback receives code and state, or error=access_denied and state. Verify state before exchange and remove callback parameters from the address bar.
 5. POST JSON to /grants/token with the code, original verifier, descriptor and exact callback. The code can be consumed once. Lifetime starts at approval, not exchange. No client secret or refresh token is issued.
 
@@ -167,15 +169,27 @@ async function validateInboxes(c: Context<AppEnv>, scopes: GrantScope[], inboxes
   return null;
 }
 
-/** Authority persisted on a grant or transaction, shaped for validateGrant/validateInboxes. */
-function storedAuthority(row: { scopes_json: string | null; models_json: string; inboxes_json: string | null }) {
+/** Folder names a sandbox.files.* scope binds. Pure grammar: there is nothing to own
+ * until an app writes, and BayLeaf fixes the root. undefined means the request named none. */
+function validateSandboxDirs(c: Context<AppEnv>, scopes: GrantScope[], dirs: string[] | null | undefined): Response | null {
+  if (!needsSandboxDirs(scopes)) return dirs === undefined ? null
+    : grantError(c, 'invalid_request', 'sandbox_dirs apply only to sandbox.files.* scopes.', 400);
+  if (!dirs?.length) return grantError(c, 'invalid_request',
+    'sandbox.files.* scopes need sandbox_dirs: 1–16 folder names of lowercase letters, digits and hyphens.', 400);
+  return null;
+}
+
+/** Authority persisted on a grant or transaction, shaped for the validators. */
+function storedAuthority(row: { scopes_json: string | null; models_json: string; inboxes_json: string | null;
+  sandbox_dirs_json: string | null }) {
   const scopes = grantScopes(row);
   return { scopes, models: needsModels(scopes) ? storedGrantModels(row) : undefined,
-    inboxes: needsInboxes(scopes) ? storedGrantInboxes(row) : undefined };
+    inboxes: needsInboxes(scopes) ? storedGrantInboxes(row) : undefined,
+    sandboxDirs: needsSandboxDirs(scopes) ? storedGrantSandboxDirs(row) : undefined };
 }
 
 grantRoutes.openapi(createRoute({ method: 'post', path: '/', operationId: 'createTemporaryInferenceToken', tags: ['Grants'],
-  summary: 'Create an app token', description: 'Delegate chosen scopes of your existing allowance for a positive number of seconds. Omitted scopes mean inference.chat only. Any inference.* scope needs 1–16 plaintext models, as backend-qualified models or legacy model singleton shorthand, never both; models without one are rejected. Every model is checked for eligibility. Any inboxes.* scope needs inboxes, 1–16 of your own active inbox handles (see GET /grants/inboxes); inboxes without one are rejected. Excessive lifetimes fail with the current maximum. Tokens cannot mint or renew grants. The returned name is a public recognition aid, also bound into the signed token prefix.',
+  summary: 'Create an app token', description: 'Delegate chosen scopes of your existing allowance for a positive number of seconds. Omitted scopes mean inference.chat only. Any inference.* scope needs 1–16 plaintext models, as backend-qualified models or legacy model singleton shorthand, never both; models without one are rejected. Every model is checked for eligibility. Any inboxes.* scope needs inboxes, 1–16 of your own active inbox handles (see GET /grants/inboxes); inboxes without one are rejected. Any sandbox.files.* scope needs sandbox_dirs, 1–16 folder names under /home/daytona/bayleaf-apps/; sandbox_dirs without one are rejected. Excessive lifetimes fail with the current maximum. Tokens cannot mint or renew grants. The returned name is a public recognition aid, also bound into the signed token prefix.',
   security: [{ Bearer: [] }, { BrowserSession: [] }] as Record<string, string[]>[], request: { body: { required: true, content: json(GrantRequestSchema) } },
   responses: { 200: { description: 'Credential shown only at issuance', content: json(GrantTokenSchema) }, ...errors },
 }), async c => {
@@ -185,11 +199,12 @@ grantRoutes.openapi(createRoute({ method: 'post', path: '/', operationId: 'creat
   const models = body.models !== undefined ? grantModelIds(body.models)
     : body.model !== undefined ? grantModelIds(body.model, true) : undefined;
   const inboxes = body.inboxes !== undefined ? grantInboxIds(body.inboxes) : undefined;
+  const sandboxDirs = body.sandbox_dirs !== undefined ? grantSandboxDirs(body.sandbox_dirs) : undefined;
   const rejection = await validateGrant(c, scopes, models, body.expires_in)
-    ?? await validateInboxes(c, scopes!, inboxes, row);
+    ?? validateSandboxDirs(c, scopes!, sandboxDirs) ?? await validateInboxes(c, scopes!, inboxes, row);
   if (rejection) return rejection as any;
   const token = await issueGrant(c.env, row, new URL(c.req.url).origin,
-    { scopes: scopes!, models: models ?? [], inboxes: inboxes ?? [] }, nowSeconds() + body.expires_in);
+    { scopes: scopes!, models: models ?? [], inboxes: inboxes ?? [], sandboxDirs: sandboxDirs ?? [] }, nowSeconds() + body.expires_in);
   return token ? c.json(token) : grantError(c, 'issuance_unavailable', 'Could not allocate a token name. Try again.', 503) as any;
 });
 
@@ -198,12 +213,12 @@ grantRoutes.openapi(createRoute({ method: 'get', path: '/', operationId: 'listIn
   responses: { 200: { description: 'Active grants, never credentials', content: json(GrantListSchema) }, ...errors },
 }), async c => {
   const row = await owner(c); if (row instanceof Response) return row as any;
-  const results = await c.env.DB.prepare(`SELECT id, name, models_json, scopes_json, inboxes_json, expires_at, created_at, client_name, redirect_uri
+  const results = await c.env.DB.prepare(`SELECT id, name, models_json, scopes_json, inboxes_json, sandbox_dirs_json, expires_at, created_at, client_name, redirect_uri
     FROM inference_grants WHERE owner_email = ? AND owner_token_hash = ? AND expires_at > ? ORDER BY created_at DESC`)
     .bind(row.email, await hash(row.bayleaf_token), nowSeconds()).all<InferenceGrant>();
-  return c.json({ grants: results.results.map(({ models_json, scopes_json, inboxes_json, ...grant }) =>
+  return c.json({ grants: results.results.map(({ models_json, scopes_json, inboxes_json, sandbox_dirs_json, ...grant }) =>
     ({ ...grant, ...grantAuthority({ scopes: grantScopes({ scopes_json }), models: storedGrantModels({ models_json }),
-      inboxes: storedGrantInboxes({ inboxes_json }) }) })) });
+      inboxes: storedGrantInboxes({ inboxes_json }), sandboxDirs: storedGrantSandboxDirs({ sandbox_dirs_json }) }) })) });
 });
 
 grantRoutes.openapi(createRoute({ method: 'get', path: '/inboxes', operationId: 'listAppTokenInboxes', tags: ['Grants'],
@@ -240,7 +255,7 @@ grantRoutes.openapi(createRoute({ method: 'delete', path: '/{id}', operationId: 
 
 grantRoutes.openapi(createRoute({ method: 'post', path: '/clients', operationId: 'describeInferenceClient', tags: ['Grants'],
   summary: 'Obtain an expiring client descriptor without registration', security: [],
-  description: 'No database row is created. Navigate the browser to /grants/authorize with client_id, response_type=code, optional scopes (JSON array; omitted means inference.chat only), models (JSON array) or legacy model singleton when an inference.* scope is requested (never inboxes: the visitor chooses those at consent), expires_in, random state, code_challenge (base64url SHA-256 of a random verifier), and code_challenge_method=S256. After sign-in and explicit consent, the exact callback receives code and state, or error=access_denied and state. Validate state, then exchange via POST /grants/token. HTTPS callbacks and exact HTTP localhost/127.0.0.1/[::1] callbacks are supported.',
+  description: 'No database row is created. Navigate the browser to /grants/authorize with client_id, response_type=code, optional scopes (JSON array; omitted means inference.chat only), models (JSON array) or legacy model singleton when an inference.* scope is requested (never inboxes: the visitor chooses those at consent), sandbox_dirs (JSON array of folder names) when a sandbox.files.* scope is requested, expires_in, random state, code_challenge (base64url SHA-256 of a random verifier), and code_challenge_method=S256. After sign-in and explicit consent, the exact callback receives code and state, or error=access_denied and state. Validate state, then exchange via POST /grants/token. HTTPS callbacks and exact HTTP localhost/127.0.0.1/[::1] callbacks are supported.',
   request: { body: { required: true, content: json(ClientDescriptorRequestSchema) } },
   responses: { 200: { description: 'Stateless signed descriptor, valid for ten minutes', content: json(ClientDescriptorSchema) }, ...errors },
 }), async c => {
@@ -306,13 +321,19 @@ grantRoutes.get('/authorize', async c => {
       return grantError(c, 'invalid_request', 'Visitors choose inboxes on the consent page; omit inboxes.', 400);
     if (needsInboxes(scopes!) && !inboxesAvailable(c))
       return grantError(c, 'inbox_not_allowed', 'Inboxes are unavailable on this deployment.', 403);
+    // Unlike inbox handles, folder names are the app's own namespace: it names them here.
+    let sandboxDirs: string[] | null | undefined;
+    if (q.sandbox_dirs !== undefined) {
+      try { sandboxDirs = grantSandboxDirs(JSON.parse(q.sandbox_dirs)); } catch { sandboxDirs = null; }
+    }
+    const dirRejection = validateSandboxDirs(c, scopes!, sandboxDirs); if (dirRejection) return dirRejection;
     id = crypto.randomUUID();
     const proof = randomSecret();
     await c.env.DB.prepare(`INSERT INTO grant_transactions
-      (id, browser_hash, client_id, client_name, redirect_uri, models_json, scopes_json, lifetime, challenge, state, expires_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, await hash(proof), q.client_id, descriptor.client_name,
-        descriptor.redirect_uri, JSON.stringify(models ?? []), JSON.stringify(scopes), Number(q.expires_in), q.code_challenge,
-        q.state, nowSeconds() + 600).run();
+      (id, browser_hash, client_id, client_name, redirect_uri, models_json, scopes_json, sandbox_dirs_json, lifetime, challenge, state, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, await hash(proof), q.client_id, descriptor.client_name,
+        descriptor.redirect_uri, JSON.stringify(models ?? []), JSON.stringify(scopes), sandboxDirs ? JSON.stringify(sandboxDirs) : null,
+        Number(q.expires_in), q.code_challenge, q.state, nowSeconds() + 600).run();
     setCookie(c, FLOW_COOKIE, proof, cookieOptions(c));
     return c.redirect(`/grants/authorize?request=${id}`, 303);
   }
@@ -323,8 +344,9 @@ grantRoutes.get('/authorize', async c => {
     setCookie(c, RETURN_COOKIE, id, cookieOptions(c));
     return c.redirect('/login', 303);
   }
-  const { scopes, models } = storedAuthority(tx);
-  const rejection = await validateGrant(c, scopes, models, tx.lifetime); if (rejection) return rejection;
+  const { scopes, models, sandboxDirs } = storedAuthority(tx);
+  const rejection = await validateGrant(c, scopes, models, tx.lifetime) ?? validateSandboxDirs(c, scopes, sandboxDirs);
+  if (rejection) return rejection;
   const choices = needsInboxes(scopes) ? await ownerInboxes(c, await getActiveRow(session.email, c.env)) : undefined;
   const approval = await seal(c.env, 'consent', { id, email: session.email, exp: tx.expires_at });
   return renderPage(c, <BaseLayout title="Authorize app"><section class="grant-panel">
@@ -335,6 +357,11 @@ grantRoutes.get('/authorize', async c => {
     <ul>{scopes.map(scope => <li><strong>{GRANT_SCOPES[scope]}</strong> <code>{scope}</code></li>)}</ul>
     {scopes.includes('identity.read') && <p>The app will learn that you are <strong>{session.email}</strong>.</p>}
     {models && <><p>Authorized models:</p><ul>{models.map(model => <li><strong>{model}</strong></li>)}</ul></>}
+    {sandboxDirs && <><p>Sandbox folders (named by the app; another app using the same name would share it):</p>
+      <ul>{sandboxDirs.map(dir => <li><code>{SANDBOX_APPS_ROOT + dir + '/'}</code></li>)}</ul>
+      <p>{scopes.includes('sandbox.files.read') ? 'The app can read any file in these folders, whoever wrote it. ' : ''}
+        {scopes.includes('sandbox.files.write') ? 'The app can create or overwrite files there; treat them as untrusted if your own agents read them. ' : ''}
+        Using the token wakes your BayLeaf Sandbox, and creates one if you have none.</p></>}
     <p>Destination: <strong>{new URL(tx.redirect_uri).origin}</strong></p>
     <p>Exact callback: <code>{tx.redirect_uri}</code></p>
     <p>Lifetime: <strong>{describeSeconds(tx.lifetime)}</strong> from approval, until about <strong>{new Date((nowSeconds() + tx.lifetime) * 1000).toUTCString()}</strong>.</p>
@@ -373,8 +400,9 @@ grantRoutes.post('/authorize', async c => {
     if (!removed) return grantError(c, 'invalid_request', 'Already answered.', 400);
     callback.searchParams.set('error', 'access_denied');
   } else {
-    const { scopes, models } = storedAuthority(tx);
-    const rejection = await validateGrant(c, scopes, models, tx.lifetime); if (rejection) return rejection;
+    const { scopes, models, sandboxDirs } = storedAuthority(tx);
+    const rejection = await validateGrant(c, scopes, models, tx.lifetime) ?? validateSandboxDirs(c, scopes, sandboxDirs);
+    if (rejection) return rejection;
     const row = await ensureUserRow(session.email, c.env);
     if (!row) return grantError(c, 'account_unavailable', 'Could not prepare your account.', 503);
     const chosen = [body.inbox ?? []].flat().filter((v): v is string => typeof v === 'string');
@@ -408,11 +436,13 @@ grantRoutes.openapi(createRoute({ method: 'post', path: '/token', operationId: '
   const row = await getActiveRow(tx.owner_email, c.env);
   if (!row || await hash(row.bayleaf_token) !== tx.owner_token_hash)
     return grantError(c, 'invalid_grant', 'Account credential changed. Authorize again.', 400) as any;
-  const { scopes, models, inboxes } = storedAuthority(tx);
-  const rejection = await validateGrant(c, scopes, models, tx.lifetime) ?? await validateInboxes(c, scopes, inboxes, row);
+  const { scopes, models, inboxes, sandboxDirs } = storedAuthority(tx);
+  const rejection = await validateGrant(c, scopes, models, tx.lifetime) ?? validateSandboxDirs(c, scopes, sandboxDirs)
+    ?? await validateInboxes(c, scopes, inboxes, row);
   if (rejection) return rejection as any;
   const token = await issueGrant(c.env, row, new URL(c.req.url).origin,
-    { scopes, models: models ?? [], inboxes: inboxes ?? [] }, tx.grant_expires_at!, tx.client_name, tx.redirect_uri);
+    { scopes, models: models ?? [], inboxes: inboxes ?? [], sandboxDirs: sandboxDirs ?? [] }, tx.grant_expires_at!,
+    tx.client_name, tx.redirect_uri);
   return token ? c.json(token) : grantError(c, 'issuance_unavailable', 'Could not allocate a token name. Authorize again.', 503) as any;
 });
 
