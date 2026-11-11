@@ -25,8 +25,8 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number; i
     `}</style>
     <h2>App tokens</h2>
     <p>For scripts and apps, limited to the scopes you choose and, for inference, up to
-      16 standard-inference models. Each token draws on your existing allowance and
-      expires automatically. Its name is safe to
+      16 standard-inference models. Inference draws on your existing allowance; every
+      token expires automatically. Its name is safe to
       share; its full credential is available only through Copy token.</p>
     <details>
       <summary>Create a token</summary>

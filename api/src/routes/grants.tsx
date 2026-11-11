@@ -327,7 +327,7 @@ grantRoutes.get('/authorize', async c => {
     <p>Exact callback: <code>{tx.redirect_uri}</code></p>
     <p>Lifetime: <strong>{describeSeconds(tx.lifetime)}</strong> from approval, until about <strong>{new Date((nowSeconds() + tx.lifetime) * 1000).toUTCString()}</strong>.</p>
     {tx.lifetime > 86400 && <p>This token lasts longer than a day. Revoke it from your dashboard when the app no longer needs it.</p>}
-    <p>Inference uses your existing allowance. The app receives a bearer token usable wherever it is copied, until expiry or revocation. BayLeaf retains no inference content; the app may handle or store what you enter.</p>
+    <p>{models && 'Inference uses your existing allowance. '}The app receives a bearer token usable wherever it is copied, until expiry or revocation.{models && ' BayLeaf retains no inference content; the app may handle or store what you enter.'}</p>
     <form method="post" action="/grants/authorize">
       <input type="hidden" name="request" value={id}/><input type="hidden" name="approval" value={approval}/>
       {choices && <fieldset><legend>Inboxes this app may use</legend>
@@ -410,7 +410,7 @@ function GrantStyles() {
   return <style>{`
     .grant-panel { overflow-wrap: anywhere; }
     .grant-panel label { display: block; margin-top: 1rem; font-weight: 600; }
-    .grant-panel input:not([type=hidden]) { display: block; width: 100%; padding: .65rem; font: inherit; border: 1px solid #767676; border-radius: 4px; }
+    .grant-panel input:not([type=hidden]):not([type=checkbox]) { display: block; width: 100%; padding: .65rem; font: inherit; border: 1px solid #767676; border-radius: 4px; }
     .grant-panel button { padding: .65rem 1rem; margin: .75rem .5rem .75rem 0; font: inherit; cursor: pointer; border: 1px solid #003c6c; border-radius: 4px; background: #003c6c; color: white; }
     .grant-panel li { margin-bottom: 1rem; }
     .grant-panel label.grant-choice { font-weight: normal; margin-top: .5rem; }
