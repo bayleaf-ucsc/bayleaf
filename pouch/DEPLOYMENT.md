@@ -255,6 +255,26 @@ cache headers. README "Install and the offline copy" has the policy.
 
 ## Current artifact
 
+### 2026-11-11: QR output (#152)
+
+- `7f5138a` (label `7f5138a 2026-11-11`), clean `main`, built with `npm ci`
+  and `node build.mjs` (all existing runtimes enabled). `node deploy.mjs --check`
+  passed before `node deploy.mjs`: 43 checksum-listed files, 151 MiB; both model
+  catalogs match the lock. Only `pouch.html` and `SHA256SUMS` needed uploading.
+- HTML SHA-256: `f71b9cfdbd53baafec6b79462af41361ff5424ad98ac7eaca02974cd91a4befa`.
+- Cloudflare version: `3dafcfb9-d2b7-47b1-a5fa-ea79564d7188`.
+- Deployment verified `/`, `/pouch.html`, `/SHA256SUMS`, seven shell files and
+  35 runtime parts: exact bytes and expected cache/security policies. A fresh
+  Chromium context loaded the live site, verified the enclave, showed build
+  `7f5138a` in the trust panel and reported no page errors. No inference sent.
+- QR rendering evidence remains the local Chromium/WebKit screenshot-decoding
+  tests in JOURNEYS UI8, not a live-model or physical-phone qualification.
+- An existing offline browser copy correctly offered an update from
+  `2b0f4347df5b` to `f71b9cfdbd53`; the agent did not accept it or change that
+  profile's customized skills. Existing offline copies require person approval.
+
+### Previous deployment evidence
+
 - `c07a469` (label `c07a469 2026-11-02`), `main` after merging #155 (openui-lang UI blocks
   in replies, JOURNEYS section 18), built from a clean checkout of `origin/main` with
   `npm ci` and `node build.mjs`, deployed with `node deploy.mjs` (`--check` first: the
