@@ -8,6 +8,8 @@
     "deploy": "wrangler deploy",
     "pretest:previews": "node scripts/build-sandbox-cli.mjs && python3 scripts/build-sandbox-plugin.py",
     "pretest:grants": "node scripts/build-sandbox-cli.mjs && python3 scripts/build-sandbox-plugin.py",
+    "pretest:grant-inboxes": "node scripts/build-sandbox-cli.mjs && python3 scripts/build-sandbox-plugin.py",
+    "pretest:grant-sandbox-files": "node scripts/build-sandbox-cli.mjs && python3 scripts/build-sandbox-plugin.py",
     "pretest:sandbox-browser": "node scripts/build-sandbox-cli.mjs && python3 scripts/build-sandbox-plugin.py",
     "build:sandbox-cli": "npm ci --prefix sandbox-cli --ignore-scripts --no-audit --no-fund && node scripts/build-sandbox-cli.mjs",
     "pretest:docs": "node scripts/build-sandbox-cli.mjs",
