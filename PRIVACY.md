@@ -111,8 +111,13 @@ ITS-operated or ITS-supported one.
   inboxes you choose have stored or will receive, until the token expires or you
   revoke it. The separate archive scope alone lets it archive or unarchive messages
   whose handles it already knows, seeing each one's sender and subject (or HTTP
-  method and path) but never its body. BayLeaf
-   stores grant metadata (owner, token name, permitted scopes, models and inboxes, expiry, optional app name and callback)
+  method and path) but never its body. If you approve a sandbox file read scope
+  (when available), the app can read every file in the named folders under
+  `/home/daytona/bayleaf-apps/` in your BayLeaf Sandbox, whoever wrote it; a write
+  scope lets it create or overwrite files there. The app chooses the folder names, and
+  another app using the same name shares that folder. Using such a token wakes your
+  sandbox and creates one if you have none. BayLeaf
+   stores grant metadata (owner, token name, permitted scopes, models, inboxes and sandbox folder names, expiry, optional app name and callback)
   and short-lived authorization transactions, not a permanent app registration.
   Expired records are removed by hourly cleanup while the feature is enabled;
   D1 backup retention also applies. The receiving app may handle or retain what

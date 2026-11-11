@@ -4,7 +4,8 @@ Design for generalizing temporary inference tokens ([GRANTS.md](GRANTS.md), issu
 into tokens that reach bounded slices of the BayLeaf API. **Status: steps 1–2 and the
 first slice of step 3 (usage, identity and web scopes, scope storage and consent)
 deployed 2026-11-10; evidence in [GRANTS.md](GRANTS.md). Inbox scopes deployed
-2026-11-10 too (migration `0021`). Sandbox-file scopes are next.**
+2026-11-10 too (migration `0021`). Sandbox-file scopes deployed
+2026-11-11 (migration `0022`).**
 
 ## Why
 
@@ -53,9 +54,9 @@ string (model slugs already contain `:`, `/` and `.`):
 - **Minting is attenuation.** A credential may mint only authority it already
   holds. Today every scope is something an ordinary key or sandbox credential can
   already do, including the inbox scopes (both credentials already read and
-  archive their owner's inboxes). Check this still holds whenever a family is added
-  (sandbox-file scopes next): a scope must never exceed the minting credential's
-  own reach.
+  archive their owner's inboxes) and the sandbox-file scopes (both already read and
+  write any file in their owner's sandbox). Check this still holds whenever a family
+  is added: a scope must never exceed the minting credential's own reach.
 
 ## Scopes
 
@@ -133,18 +134,45 @@ create, change or destroy inboxes, delete messages, or manage sender credentials
 
 ## Sandbox files
 
-**Root.** Bound dirs are slugs (`[a-z0-9][a-z0-9-]{0,62}`), never paths. The root is
-fixed and visible: `/home/daytona/bayleaf-apps/<slug>/`. Being visible lets visitors
-browse, back up and delete what apps stored about them.
+**Status: deployed 2026-11-11** (Worker `ee81bde1-12cf-4344-b4c3-541bbea6a500`, migration `0022` applied). The
+owner's stated goal is a semi-working implementation, revised as real-world uses
+appear, not a finished design: expect practice to settle the open questions below.
 
-**Path check**, in the Worker, before any sandbox call. A request path is allowed
-only if, for some bound slug:
+**Scopes.** `sandbox.files.read` admits `GET /sandbox/files/*` and
+`sandbox.files.write` admits `PUT /sandbox/files/*`, each only inside the token's
+bound folders. Neither implies the other. There is no listing route (apps keep their
+own index file) and no exec, status, poke (keep-alive) or delete.
+
+**Root.** `sandbox_dirs` is 1–16 folder names (`^[a-z0-9][a-z0-9-]{0,62}$`, duplicates
+collapsed), never paths. The root is fixed and visible: each name grants
+`/home/daytona/bayleaf-apps/<name>/` and everything below it. Being visible lets
+visitors browse, back up and delete what apps stored about them. `sandbox_dirs`
+without a `sandbox.files.*` scope, or the reverse, is `400 invalid_request`.
+
+**Apps name the folders.** Unlike inbox handles, folder names are the app's own
+namespace, not something the visitor already owns, so the grammar is the only check
+at issuance, consent and exchange. Direct issuance names `sandbox_dirs` in
+`POST /grants`; visitor authorization names them in the `/grants/authorize` query as
+a JSON array. The consent page shows each exact path, notes that another app using
+the same name would share the folder, discloses that the app can read any file there
+whoever wrote it (read) or create and overwrite files (write), and says that using the
+token wakes the visitor's sandbox and creates one if none exists. The exchanged token
+and `GET /grants` report `sandbox_dirs`.
+
+**Path check** (`insideSandboxDirs` in `src/grants.ts`), in route middleware before
+any sandbox call. It is lexical, on the path as Hono has already percent-decoded it
+(so `%2E%2E` arrives as `..` and is refused). A request path is allowed only if, for
+some bound name:
 
 - it starts with `/home/daytona/bayleaf-apps/<slug>/` (the trailing slash matters:
   `journal-old` must not match `journal`);
 - after that prefix it has at least one segment, and no segment is empty, `.` or
   `..`;
-- it contains no NUL, control characters or backslashes.
+- it contains no NUL, control characters, backslashes or single quotes (quotes
+  match what `uploadFile` can pass safely).
+
+Anything else is `403 insufficient_scope`. Ordinary keys and sandbox credentials
+skip the check.
 
 The bare directory `…/journal/` is rejected by the empty-segment rule: it is not a
 file. No listing route is added; apps keep their own index file.
@@ -162,12 +190,13 @@ to `…/my dir/$(id)/a.txt` created exactly that one directory, with no strays.
 
 **Symlinks.** Uploads cannot create symlinks, so escaping the root needs one that
 the owner (or the owner's agent) already placed inside it. Accepted residual risk
-for v1; documented on the consent screen's help text, not mitigated with a realpath
-check.
+for v1, not mitigated with a realpath check. The consent page does not currently
+mention it.
 
 **Wake and create.** Token calls may wake a sleeping sandbox and may create one if
-the grantor has none (today's `ensureSandbox` behavior). The consent screen says
-"may create your BayLeaf Sandbox" when the grantor has none. Risk is bounded: a
+the grantor has none (today's `ensureSandbox` behavior). The consent page says so
+for every sandbox-file request, whether or not the visitor already has a sandbox.
+Risk is bounded: a
 leaked token can create at most one machine, the grantor's own. A breached app
 backend holding many visitors' tokens could create one per visitor who consented to
 that app. Token use counts as activity and postpones the 90-day reaper.
@@ -216,6 +245,11 @@ nothing, which fails closed. It is an explicit column per resource type, like
 `models_json`, not the generic `resources_json` once proposed here. Roll out as:
 apply `0021`, then deploy (the old Worker ignores the column; the new one needs it).
 
+Migration `0022` (applied 2026-11-11) adds nullable `sandbox_dirs_json` to both tables
+on the same pattern: NULL without a sandbox-file scope, and NULL or malformed binds
+nothing. Unlike `inboxes_json`, transactions hold it from initiation, because the app
+names the folders. Roll out the same way: apply `0022`, then deploy.
+
 ## Exposure decisions
 
 Per the capability playbook (`bayleaf-powered-agent-capabilities.md`), recorded
@@ -232,6 +266,12 @@ For the inbox slice: no hosted tool (sandbox agents already
 hold a credential that reads their own inboxes); the `bayleaf-inboxes` desktop skill
 and `llms.txt` mention bounded app tokens for apps, scripts and CI jobs.
 
+For the sandbox-file slice (deployed 2026-11-11): no hosted tool (sandbox agents
+already read and write their own files and can mint with `POST /grants`); the
+`bayleaf-platform` desktop skill names the scope family; `llms.txt` describes folder
+binding, app-named folders and the wake/create effect, and the OpenAPI file routes
+note app-token access.
+
 Consequential defaults: narrow default plus backfill (above). `identity.read`
 email disclosure and `scopes_json` storage approved as designed.
 
@@ -242,8 +282,26 @@ User-facing "temporary inference token" becomes **app token**. The
 
 ## Open questions
 
-- Consent wording per scope and per binding (dir slugs). Inbox choices show each
-  inbox's label (or handle) and address or URL.
+- Consent wording per scope and per binding. Inbox choices show each inbox's label
+  (or handle) and address or URL; sandbox folders show exact paths.
+
+Sandbox files, to be settled by real uses rather than in advance:
+
+- **Shared folder names across apps.** Two apps asking for `journal` share one
+  folder and can read or clobber each other's files. The consent page says so; a
+  per-app prefix or registry would prevent it but adds the app identity BayLeaf has
+  avoided.
+- **Visitor confirmation or renaming.** The visitor currently accepts the app's
+  names as-is. Should consent let them rename a folder (and the token report the
+  chosen name), or require explicit confirmation when a folder already exists?
+- **Listing.** No listing route: apps keep their own index file. A bound
+  `sandbox.files.list` may be needed if real apps keep losing track of files.
+- **Symlink realpath check.** Accepted residual risk today; a realpath check would
+  cost a Toolbox call per request.
+- **Size limits.** The upload route sets no body limit of its own (Cloudflare's
+  request ceiling applies) and there is no per-token or per-folder quota, so a
+  leaked write token can fill the grantor's disk until expiry or revocation.
+- **Consent mentions of symlinks.** The page does not mention the symlink caveat.
 
 ## Order of work
 
@@ -251,4 +309,5 @@ User-facing "temporary inference token" becomes **app token**. The
 2. Declared route scopes and gate, behavior-identical: inference scopes only. (Done.)
 3. Remaining families one at a time, each with tests: usage/identity/web (deployed
    2026-11-10, with scope storage and per-scope consent), inboxes (deployed
-   2026-11-10, with consent-time inbox selection), sandbox files.
+   2026-11-10, with consent-time inbox selection), sandbox files (deployed
+   2026-11-11 with app-named folders, Worker `ee81bde1-12cf-4344-b4c3-541bbea6a500`, `0022` applied).

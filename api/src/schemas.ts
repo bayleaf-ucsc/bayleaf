@@ -479,16 +479,18 @@ export const SandboxExposeSlotSchema = z.object({
 const GrantModelSchema = z.string().min(1).max(200);
 const GrantModelsListSchema = z.array(GrantModelSchema).min(1).max(16).describe('Authorized backend-qualified standard model slugs, without inference type tags. Every model must be eligible. Sealed is excluded. Required with any inference.* scope, rejected without one.');
 // Scope names are validated in grants.ts so the vocabulary has one owner.
-const GrantScopesSchema = z.array(z.string()).min(1).max(16).describe('App-token scopes: inference.chat, inference.responses, inference.decisions, usage.read, identity.read, web.search, web.fetch, inboxes.messages.read, inboxes.messages.manage. Omitted means ["inference.chat"] only; request inference.responses or inference.decisions explicitly.').openapi({ example: ['inference.chat', 'web.search'] });
+const GrantScopesSchema = z.array(z.string()).min(1).max(16).describe('App-token scopes: inference.chat, inference.responses, inference.decisions, usage.read, identity.read, web.search, web.fetch, inboxes.messages.read, inboxes.messages.manage, sandbox.files.read, sandbox.files.write. Omitted means ["inference.chat"] only; request inference.responses or inference.decisions explicitly.').openapi({ example: ['inference.chat', 'web.search'] });
 const GrantAuthorityFields = {
   scopes: z.array(z.string()).describe('Granted scopes in canonical order.'),
   models: z.array(GrantModelSchema).max(16).describe('Authorized models; empty when the token has no inference.* scope.'),
   model: z.string().optional().describe('Compatibility alias for the first authorized model; absent when models is empty.'),
+  sandbox_dirs: z.array(z.string()).max(16).describe('Bound folder names under /home/daytona/bayleaf-apps/; empty when the token has no sandbox.files.* scope.'),
   inboxes: z.array(z.string()).max(16).describe('Bound inbox handles (ibx_...); empty when the token has no inboxes.* scope. For visitor authorization, the inboxes the visitor chose on the consent page.'),
 };
 export const GrantRequestSchema = z.object({
   scopes: GrantScopesSchema.optional(),
   models: GrantModelsListSchema.optional(),
+  sandbox_dirs: z.array(z.string()).min(1).max(16).optional().describe('Folder names (lowercase letters, digits, hyphens; at most 63 characters) bound to sandbox.files.* scopes. Each grants /home/daytona/bayleaf-apps/<name>/ and everything below it. Required with any sandbox.files.* scope, rejected without one.').openapi({ example: ['journal'] }),
   inboxes: z.array(z.string()).min(1).max(16).optional().describe('Inbox handles (ibx_...) bound to inboxes.* scopes: 1–16 of your own active inboxes (see GET /grants/inboxes). Required with any inboxes.* scope, rejected without one. Visitor authorization does not accept this field: visitors choose on the consent page.'),
   model: GrantModelSchema.optional().describe('Legacy singleton shorthand, mutually exclusive with models. Bare OpenRouter slugs remain accepted.').openapi({ example: 'openrouter:qwen/qwen3.8-27b' }),
   expires_in: z.number().int().positive().describe('Requested lifetime in seconds. The runtime administrator maximum is enforced by rejection, never clamping; invalid_lifetime reports the current maximum.').openapi({ example: 600 }),
@@ -526,6 +528,7 @@ export const GrantExchangeSchema = z.object({
 export const GrantAuthorizeQuerySchema = z.object({
   client_id: z.string().describe('Signed descriptor returned by POST /grants/clients.'),
   response_type: z.literal('code'), scopes: z.string().optional().describe('JSON array of app-token scopes. Omitted means ["inference.chat"] only.'),
+  sandbox_dirs: z.string().optional().describe('JSON array of folder names for sandbox.files.* scopes, shown to the visitor as /home/daytona/bayleaf-apps/<name>/ on the consent page.'),
   model: GrantModelSchema.optional().describe('Legacy singleton shorthand, mutually exclusive with models.'),
   models: z.string().optional().describe('JSON array of 1–16 backend-qualified model slugs, mutually exclusive with model. Example: ["openrouter:qwen/qwen3.8-27b"].'),
   expires_in: z.string().describe('Requested positive integer lifetime in seconds, as a query string; the runtime ceiling still applies.'),

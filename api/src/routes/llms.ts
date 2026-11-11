@@ -585,7 +585,7 @@ are not interchangeable; eligible Campus Pass requests omit the header:
 |--------|-------------|
 | **Ordinary API key** (${bt}sk-bayleaf-...${bt}) | Account credential for model discovery, supported inference lanes, sandbox/web tools, and issuing/managing app tokens. Provision free at https://api.bayleaf.dev/. |
 | **Campus Pass** (omit header) | On the UCSC campus network. No key needed for inference, web search/fetch, and other supported routes. Sandbox access requires a personal key. |
-| **App token** (${bt}sk-bayleaf-grant-...${bt}) | Only its granted scopes (selected standard-inference models, allowance, identity, web tools${input.inboxesEnabled ? ', reading or archiving in chosen inboxes' : ''}) until expiry or revocation. No discovery, Sealed, sandbox, other owner services, account management, or token issuance. |
+| **App token** (${bt}sk-bayleaf-grant-...${bt}) | Only its granted scopes (selected standard-inference models, allowance, identity, web tools${input.inboxesEnabled ? ', reading or archiving in chosen inboxes' : ''}, files in named sandbox folders) until expiry or revocation. No discovery, Sealed, other sandbox operations, other owner services, account management, or token issuance. |
 
 To learn whose account a credential acts for, call ${bt}GET /whoami${bt}. It returns
 ${bt}{"credential": "key" | "sandbox" | "grant" | "campus", "email": ...}${bt}, with a null email under
@@ -715,15 +715,25 @@ ${bt}GET /grants/inboxes${bt}); in visitor authorization the app requests only t
 and the visitor chooses inboxes on the consent page. The app can read everything a
 chosen inbox has stored or will receive until expiry or revocation. App tokens never
 list, create, change or destroy inboxes, delete messages or manage sender credentials.
-` : ''}Omitting scopes requests chat completions only; request Responses or decisions
+` : ''}Sandbox-file scopes (${bt}sandbox.files.read${bt}, ${bt}sandbox.files.write${bt}) let an app
+keep a user's data in that user's own BayLeaf Sandbox. They are bound to
+${bt}sandbox_dirs${bt}, 1–16 folder names, each granting
+${bt}/home/daytona/bayleaf-apps/<name>/${bt} and everything below it. Folder names are the
+app's own namespace, so apps name them in both workflows (for visitor authorization,
+a JSON array query value); the consent page shows the exact paths, and another app
+using the same name would share the folder. Using the token wakes the grantor's
+sandbox and creates one if none exists. There is no listing (keep your own index
+file), exec, status, keep-alive or deletion. Treat files an app wrote as untrusted
+input to your own agents.
+Omitting scopes requests chat completions only; request Responses or decisions
 explicitly. The exact scope
 list, routes and errors are in the **Grants** introduction linked below.
 
 Backend enablement and eligibility policies still apply; disabled backends cannot
 issue usable tokens. ${bt}POST /v1/responses${bt} currently supports OpenRouter only.
 Sealed is separate: BayLeaf cannot inspect its encrypted model field to enforce
-model-set authority. App tokens cannot list models, use the sandbox or other owner
-services, manage accounts, or mint or renew tokens. Model fallbacks, routing overrides, and
+model-set authority. App tokens cannot list models, use the sandbox beyond bound
+folder files, use other owner services, manage accounts, or mint or renew tokens. Model fallbacks, routing overrides, and
 provider plugins are unavailable with these tokens. Select multiple slugs with
 ${bt}models${bt}; the legacy ${bt}model${bt} field remains singleton shorthand. Models are
 not type-tagged in grants: the requested operation is checked later against model
@@ -1131,7 +1141,7 @@ network access. Workdir defaults to ${bt}/home/daytona/workspace${bt} if omitted
 - A personal BayLeaf key is required, including on campus.
 - The sandbox persists across requests.
 
-File I/O (keyed users only):
+File I/O (keyed users; app tokens only in their bound ${bt}~/bayleaf-apps${bt} folders, see App tokens):
 
 - ${bt}GET /sandbox/files/{path}${bt} returns raw file bytes.
 - ${bt}PUT /sandbox/files/{path}${bt} uploads bytes (parent dirs auto-created).

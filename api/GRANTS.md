@@ -22,7 +22,9 @@ app token on any route without exactly one declared scope that the token holds.
 Inbox scopes (deployed 2026-11-10, migration `0021`): `inboxes.messages.read` and `inboxes.messages.manage`
 (archive/unarchive), bound to `inboxes`, 1–16 of the grantor's own active inbox
 handles (see [Inbox scopes](#inbox-scopes-deployed-2026-11-10)). Sandbox-file
-scopes are planned; Sealed and sandbox execution are deferred. The `sk-bayleaf-grant-` prefix, operation IDs and the
+scopes deployed 2026-11-11 (see
+[Sandbox-file scopes](#sandbox-file-scopes-deployed-2026-11-11)); Sealed
+and sandbox execution are deferred. The `sk-bayleaf-grant-` prefix, operation IDs and the
 `/dashboard#temporary-inference-tokens` anchor are unchanged. Sections below
 record the inference-only contract and its rollout history; where they list
 exclusions, the scopes above take precedence.
@@ -50,6 +52,34 @@ reports the chosen `inboxes`. Inbox content is stored and sender-controlled, so 
 approved app can read everything a bound inbox has stored or will receive until
 expiry or revocation. Minting stays attenuation: ordinary keys and sandbox
 credentials already do everything these scopes allow.
+
+### Sandbox-file scopes (deployed 2026-11-11)
+
+Deployed 2026-11-11 (Worker `ee81bde1-12cf-4344-b4c3-541bbea6a500`, migration `0022`, nullable `sandbox_dirs_json` on both tables, applied). Production smoke (owner's key, disposable ~/bayleaf-apps/scope-smoke/ folder, removed afterward) passed 18 checks: missing or path-shaped sandbox_dirs rejected with 400; a write token created a file at a path containing a space and a read token read it back; read-only cannot PUT, write-only cannot GET; a sibling prefix, the folder itself, a path outside the root and an unnormalized literal `..` request all got 403 insufficient_scope; exec, status, keep-alive and delete were denied; the owner saw exactly one file and no stray directories; tokens were revoked. With the owner signed in, the dashboard folder input rejected `Bad_Name` with Create disabled, previewed /home/daytona/bayleaf-apps/journal/ for `journal`, and the consent page for both scopes showed the folder path, the shared-name note and the read, write and wake disclosures; Cancel denied cleanly. Approving a visitor consent and exchanging its code remain production-untested, covered by test:grant-sandbox-files.
+
+Design, rationale and open questions are in
+[SCOPES.md](SCOPES.md#sandbox-files); the aim is a semi-working first cut, revised as
+real uses appear.
+
+`sandbox.files.read` admits `GET /sandbox/files/*` and `sandbox.files.write` admits
+`PUT /sandbox/files/*`, only inside the bound `sandbox_dirs`: 1–16 folder names
+(lowercase letters, digits and hyphens, at most 63 characters, starting with a letter
+or digit), each granting `/home/daytona/bayleaf-apps/<name>/` and everything below.
+Both need `sandbox_dirs`; `sandbox_dirs` without a sandbox-file scope, or the reverse,
+is `400 invalid_request`. The path check is lexical on the decoded path (trailing-slash
+prefix, at least one further segment, no empty, `.` or `..` segments, no quotes,
+backslashes or control characters); anything else is `403 insufficient_scope`.
+Symlinks already inside a folder are an accepted residual risk. There is no listing,
+exec, status, keep-alive or delete.
+
+Direct issuance names `sandbox_dirs` in `POST /grants`. Unlike inboxes, visitor apps
+name the folders themselves (a `sandbox_dirs` JSON array in the `/grants/authorize`
+query), because the names are the app's namespace. The consent page shows each exact
+path, notes that another app using the same name would share it, discloses read and
+write effects, and says that using the token wakes the visitor's sandbox and creates
+one if none exists. Files an app writes are untrusted input for the owner's own coding
+agents. Minting stays attenuation: ordinary keys and sandbox credentials already read
+and write every file.
 
 Deployed 2026-11-10 (Worker `1a104f1d-2541-4dd5-aebf-0f11da29229f`): migration `0020` applied, backfill re-run after deploy, all 3 production grants scoped. Production smoke passed 20 checks with the owner's key (default chat-only issuance and inference, decisions/whoami denial, a `web.search`+`identity.read` token searching and reflecting the grantor while denied on fetch, usage, chat, grants, sandbox and inboxes, `usage.read`, validation errors, list scopes, revocation of every created token). A real Toolbox upload to a path with a space and literal `$(id)` created one directory and no strays; a quoted path got 400. The browser consent page and dashboard form were exercised later that day with the owner signed in, during the inbox-scope rollout (see Inbox scopes); approving a visitor consent and exchanging its code remains production-untested, covered only by the synthetic harnesses.
 
@@ -185,8 +215,9 @@ Direct issuance and visitor authorization produce the same token type. Only
 `POST /v1/responses` currently supports OpenRouter only; `POST /v1/decisions`
 also accepts temporary tokens, with the request model required to belong to
 the authorized set. Each needs its `inference.*` scope. Apart from the
-non-inference scopes above (including bound inbox reading and archiving), there is
-no model listing, Sealed, inbox management, sandbox, account management, minting,
+non-inference scopes above (including bound inbox reading and archiving, and
+bound sandbox-folder file reads and writes), there is no model listing, Sealed,
+inbox management, other sandbox operations, account management, minting,
 or refresh capability.
 Fallback model lists, route overrides, and provider plugins are rejected.
 OpenRouter retains its published-weights check on inference. Backend-specific
@@ -235,9 +266,10 @@ Content-Type: application/json
 Add `"scopes": [...]` to request other authority; without it the token gets
 `inference.chat` only. Keep `models` only while an `inference.*` scope is selected:
 a request for, say, just `web.search` must omit `models` or it is rejected. Inbox
-scopes likewise need `inboxes` (handles from `GET /grants/inboxes`). The result contains `grant_id`, `name`, `key` (also
+scopes likewise need `inboxes` (handles from `GET /grants/inboxes`), and sandbox-file
+scopes need `sandbox_dirs` (folder names). The result contains `grant_id`, `name`, `key` (also
 `access_token`), `token_type: Bearer`, `scopes`, `models`, legacy `model` (the first
-entry, only when `models` is nonempty), `inboxes`, `base_url`, `expires_at` (Unix seconds), and `expires_in`. Copy the token
+entry, only when `models` is nonempty), `inboxes`, `sandbox_dirs`, `base_url`, `expires_at` (Unix seconds), and `expires_in`. Copy the token
 into the inference client's API-key setting. Do not put it in URLs or logs.
 
 Use `GET /grants` to list your active grants and `DELETE /grants/{grant_id}` to
@@ -260,13 +292,14 @@ requests. No client secret or refresh token is issued.
 2. `POST /grants/clients` with JSON `client_name` and `redirect_uri`. Save the
    returned `client_id` (an expiring signed descriptor). This writes no database row.
 3. Navigate to `/grants/authorize` with query parameters:
-   `client_id`, `response_type=code`, optional `scopes` and `models` (JSON array query values), `expires_in`, `state`,
+   `client_id`, `response_type=code`, optional `scopes`, `models` and `sandbox_dirs` (JSON array query values), `expires_in`, `state`,
    `code_challenge` (base64url SHA-256 of verifier), `code_challenge_method=S256`.
 4. BayLeaf signs the visitor in if needed and shows explicit consent naming the
    account, destination origin, exact callback, every scope and model, and duration
    (with `identity.read`, that the app will learn the visitor's email). With an
    inbox scope, the visitor chooses which of their inboxes to share there; apps do
-   not send `inboxes`. App names are
+   not send `inboxes`. With a sandbox-file scope, the app names the folders and the
+   page shows each exact path. App names are
    visibly self-supplied. No remembered app-level consent. The legacy `model`
    singleton query parameter is accepted instead of `models`, never alongside it.
 5. BayLeaf redirects to the exact callback with `code` and `state`, or with
@@ -336,13 +369,15 @@ Expiry/revocation prevents new requests; it does not abort an in-flight completi
 
 `inference_grants` holds ID, owner email, owner-key fingerprint, models, scopes
 (`scopes_json`, from migration `0020`; NULL fails closed), bound inbox handles
-(`inboxes_json`, from migration `0021`; NULL without an inbox scope), timestamps,
+(`inboxes_json`, from migration `0021`; NULL without an inbox scope), bound sandbox
+folder names (`sandbox_dirs_json`, from migration `0022`, applied 2026-11-11; NULL
+without a sandbox-file scope), timestamps,
 and optional app name/callback. Tokens are signed using purpose-separated HMAC;
 the signature is the credential verifier, not a stored plaintext secret. Tokens
 cannot be used as login cookies, client descriptors, or consent proofs.
 
 `grant_transactions` holds browser-proof and code hashes, PKCE challenge, app
-metadata, authorized models and scopes, state, and (after approval) owner-key fingerprint, grant deadline and chosen inboxes.
+metadata, authorized models, scopes and app-named sandbox folders, state, and (after approval) owner-key fingerprint, grant deadline and chosen inboxes.
 Both tables persist only `models_json TEXT NOT NULL`, with no singular model
 column. The optional HTTP `model` input shorthand and first-model response alias
 do not create a second source of stored authority.
