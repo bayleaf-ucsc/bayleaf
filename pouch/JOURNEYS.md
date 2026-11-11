@@ -160,7 +160,7 @@ Watching files (slice, Desk and Analyst personas; `test/watch-browser.mjs` 16 ch
 ### 7. Leave
 - L1 ok: Erase all removes every trace this origin stored; the reloaded page says so, and that empty databases are recreated at start. (t7)
 - L2 ok: deleting one session erases its transcript (its own IndexedDB database), its change records and its notes; Shift held shows a no-confirm trash button per row on desktop. Sessions saved before per-session storage are marked legacy: deleting one stops and resets it, and the shared legacy database is dropped once none is left. (t10a: marker scan of every store of every database)
-- L3 ok: a "borrowed computer" reminder: export, then erase, before closing (first-visit card, storage sheet, Erase confirm).
+- L3 ok: borrowed-computer guidance: use a private/incognito window, take work out, then close every private window; downloads remain. Normal-window fallback: Download all, then Erase all (first-visit card and storage sheet; Erase confirm explains device folders are untouched). #139 resolved with browser hygiene, not a separate storage mode. Cross-browser private-mode behavior is not yet qualified.
 - L4 ?: forgetting the key leaves files and sessions intact, and says so.
 
 ### 8. Work offline

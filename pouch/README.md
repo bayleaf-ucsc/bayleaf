@@ -273,6 +273,22 @@ the optional Transformers.js model's hash-checked files) and loopback http on th
 (used only for the Localhost provider you set up). An auditor checks the file's hash and
 that its CSP is as stated.
 
+### Borrowed computers
+
+Using a borrowed computer? Open Pouch in a private/incognito window. Before leaving,
+take your work with you and close every private window. Downloaded files remain on
+the computer unless you remove them. Files saved in mounted device folders remain too.
+If you already started in a normal window, Download all, then Erase all before leaving;
+Erase all does not remove downloads or files in mounted device folders.
+
+Use the browser's temporary-storage boundary rather than a Pouch-specific borrowed-device
+storage mode (#139). Private-session storage covers the key, sessions, browser files,
+cached models/add-ons and the offline copy. It ends when the browser's private session
+ends, not necessarily when one tab or window closes. Pouch does not detect private mode.
+Browser API availability, quotas and offline support can differ in private mode; this
+guidance is not a cross-browser qualification claim. Private browsing does not protect
+against the machine's administrator, monitoring software or a compromised browser.
+
 ## Architecture: trust boundaries the build checks
 
 Pouch is meant for highly sensitive data, so its trust claims shape its modules, and the
@@ -1685,5 +1701,4 @@ Sandbox `exec`, `poke` and every `files` command create or wake the VM (the API'
 
 - Where transparent releases will live and how to make "check the hash" a ritual people
   actually perform (issue #138). On mobile, opening a file from disk is awkward.
-- Storage mode chosen at sign-in: borrowed computer versus my device (issue #139).
 - In-page agent tools over OPFS and `showDirectoryPicker`, with write confirmation.
