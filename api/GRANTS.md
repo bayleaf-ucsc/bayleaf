@@ -295,8 +295,9 @@ row because the token's expiry is signed. Revoked, forged, or otherwise invalid
 tokens receive `401 invalid_token`. The header is exposed to browser JavaScript.
 
 Wrong-model or out-of-scope requests receive `403 insufficient_scope`; unknown scope
-names at issuance or authorization receive `400 invalid_scope`, while an empty or
-non-string `scopes` array fails request validation as `400 invalid_request`. Offer a
+names receive `400 invalid_scope`. An empty or non-string `scopes` array is
+`400 invalid_request` at `POST /grants` (request-schema validation) but
+`400 invalid_scope` at `GET /grants/authorize`, which parses its JSON query value. Offer a
 manual authorization action after a 401; do not build an automatic redirect loop.
 Fresh approval creates a new grant, rather than silently refreshing the old one.
 Expiry/revocation prevents new requests; it does not abort an in-flight completion.

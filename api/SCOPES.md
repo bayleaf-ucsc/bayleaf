@@ -36,8 +36,9 @@ string (model slugs already contain `:`, `/` and `.`):
 ```
 
 - No scope implies another. `inboxes.messages.manage` does not imply `.read`.
-- Unknown scope names get `400 invalid_scope`; an empty or non-string `scopes`
-  array fails request-schema validation first, as `400 invalid_request`.
+- Unknown scope names get `400 invalid_scope`. An empty or non-string `scopes`
+  array is `400 invalid_request` at `POST /grants` (schema validation runs first)
+  and `400 invalid_scope` at `GET /grants/authorize` (JSON query value).
 - A scope family that needs a resource type requires a non-empty binding of it:
   `inference.*` needs `models`, `inboxes.*` needs `inboxes`, `sandbox.files.*`
   needs `sandbox_dirs`. A binding with no scope that uses it is rejected, not ignored.
