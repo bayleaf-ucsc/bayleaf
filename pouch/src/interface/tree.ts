@@ -66,7 +66,9 @@ export function createTreeRegion(app: App): TreeRegion {
       'tmp: memory, gone when you reload.',
       'Mounted folders (Mount): real folders on your device. A read-write mount lets the agent change your files.',
       'What leaves this page: your messages and the files the agent reads, encrypted to the attested enclave.',
-      'On a borrowed computer: Download all, then Erase all before you leave.',
+      'Using a borrowed computer? Open Pouch in a private/incognito window. Before leaving, take your work with you and close every private window. Downloaded files remain on the computer unless you remove them.',
+      'Already working in a normal window? Download all, then Erase all before you leave. Erase all does not remove downloaded files or files in mounted device folders.',
+      'Private browsing makes browser storage temporary, including your key, sessions, browser files and cached add-ons/models. Browser support and storage limits vary; it does not protect you from monitoring by the computer’s administrator.',
     ].join('\n\n'));
   }
 

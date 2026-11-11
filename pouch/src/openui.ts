@@ -9,12 +9,17 @@
 // (forward references allowed, the last definition wins) and component calls.
 // State ($vars), actions and functions (@Name), queries and operators are not
 // supported; a statement that uses them is dropped and the rest still renders.
-// The components are OpenChamber's, so a program renders the same in both;
+// The components follow OpenChamber's, with Pouch's QRCode extension;
 // the ui-blocks skill (defaults.ts) teaches them to the agent.
 //
 // The program cannot reach the network or the page: every node is built with
 // createElement and textContent, markdown props go through renderMarkdown, and
 // there are no links, images, styles or event handlers from the program.
+
+import qrcode from 'qrcode-generator';
+
+// The encoder's default is Latin-1. Use explicit UTF-8, including astral characters.
+qrcode.stringToBytes = (s: string) => Array.from(new TextEncoder().encode(s));
 
 // Classes, so a component call or a reference is never mistaken for an object literal.
 class Call {
@@ -124,6 +129,7 @@ export interface UiContext {
   doc?: Document;
   md(text: string): Node[];      // block markdown
   inline(text: string): Node[];  // one line of markdown, no paragraph
+  copy?(text: string): unknown;
 }
 const TONES = new Set(['neutral', 'info', 'success', 'warning', 'error']);
 const MAX_NODES = 2000, MAX_POINTS = 500;
@@ -135,6 +141,7 @@ export function renderUi(src: string, ctx: UiContext): { node: HTMLElement; erro
   const entry = stmts.has('root') ? 'root' : first;
   if (!entry) return null;
   let budget = MAX_NODES;
+  let qrBudget = 4; // Encoding is CPU work too: references must not amplify it unboundedly.
   const resolving = new Set<string>();
   const active = new Set<Call>(); // calls being rendered, for cycles through lists
 
@@ -199,6 +206,48 @@ export function renderUi(src: string, ctx: UiContext): { node: HTMLElement; erro
     Card: (a, c) => { const t = text(a[0]); return el('section', 'oui-card', t ? el('div', 'oui-title', ...ctx.inline(t)) : null, ...items(a[1], c)); },
     Details: (a, c) => el('details', 'oui-details', el('summary', null, ...ctx.inline(text(a[0]) ?? '')), ...items(a[1], c)),
     Text: (a, c) => { const t = text(a[0]); return t == null ? warn(c, 'needs markdown text') : el('div', 'oui-text', ...ctx.md(t)); },
+    QRCode: (a, c) => {
+      const value = deref(a[0]);
+      if (typeof value !== 'string' || !value.length) return warn(c, 'needs a nonempty string payload');
+      // Check length before allocating UTF-8 bytes. Never truncate or normalize a payload.
+      if (value.length > 1024) return warn(c, 'payload exceeds 1024 UTF-8 bytes');
+      const bytes = new TextEncoder().encode(value);
+      if (bytes.length > 1024) return warn(c, 'payload exceeds 1024 UTF-8 bytes');
+      if (new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes) !== value) return warn(c, 'payload contains invalid Unicode');
+      if (qrBudget-- <= 0) return warn(c, 'at most 4 QR codes per block');
+      const qr = qrcode(0, 'M');
+      try { qr.addData(value, 'Byte'); qr.make(); } catch { return warn(c, 'could not encode payload'); }
+      const label = text(a[1]) || 'QR code', size = qr.getModuleCount(), side = size + 8;
+      const NS = 'http://www.w3.org/2000/svg', svg = doc.createElementNS(NS, 'svg');
+      svg.setAttribute('viewBox', `0 0 ${side} ${side}`);
+      svg.setAttribute('width', String(side * 4)); svg.setAttribute('height', String(side * 4));
+      svg.style.setProperty('--qr-grid', `${side}px`);
+      svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', label);
+      svg.setAttribute('shape-rendering', 'crispEdges');
+      // A four-module white quiet zone and fixed black/white survive dark themes.
+      const bg = doc.createElementNS(NS, 'rect');
+      bg.setAttribute('width', String(side)); bg.setAttribute('height', String(side)); bg.setAttribute('fill', '#fff');
+      const path = doc.createElementNS(NS, 'path');
+      let d = '';
+      for (let y = 0; y < size; y++) for (let x = 0; x < size;) {
+        if (!qr.isDark(y, x)) { x++; continue; }
+        const start = x++;
+        while (x < size && qr.isDark(y, x)) x++;
+        d += `M${start + 4} ${y + 4}h${x - start}v1h-${x - start}z`;
+      }
+      path.setAttribute('d', d); path.setAttribute('fill', '#000');
+      svg.append(bg, path);
+      const copy = ctx.copy ? el('button', null, 'Copy payload') : null;
+      if (copy) {
+        copy.type = 'button';
+        copy.addEventListener('click', async () => {
+          try { await ctx.copy?.(value); copy.textContent = 'Copied'; } catch { copy.textContent = 'Copy failed'; }
+        });
+      }
+      return el('figure', 'oui-qr', el('figcaption', 'oui-title', label), svg,
+        el('code', 'oui-qr-payload', value), copy,
+        el('small', 'oui-label', 'Payload is visible in this conversation. Scan only if you trust it.'));
+    },
     Badge: (a) => toned(el('span', 'oui-badge', text(a[0]) ?? ''), a[1]),
     Callout: (a) => { const t = text(a[2]); return toned(el('div', 'oui-callout', t ? el('strong', 'oui-title', t) : null, ...ctx.md(text(a[0]) ?? '')), a[1]); },
     KeyValue: (a, c) => el('dl', 'oui-kv', ...(arr(a[0]) ?? []).flatMap((x) => {

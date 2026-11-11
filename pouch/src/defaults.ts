@@ -372,7 +372,7 @@ files to DuckDB, and COPY ... TO writes new files into /work.
 `,
   '/skills/ui-blocks/SKILL.md': `---
 name: ui-blocks
-description: Show tables, charts, stats, steps and cards in a reply with an openui-lang block. Read before writing one.
+description: Show tables, charts, stats, steps, cards and QR codes in a reply with an openui-lang block. Read before writing one.
 ---
 
 # UI blocks
@@ -398,6 +398,9 @@ Components (Tone is "neutral", "info", "success", "warning" or "error"):
 - Card(title, children); Details(title, children): collapsed until opened
 - Tabs([Tab(label, children), ...])
 - Text(markdown); Badge(label, tone?); Callout(markdown, tone?, title?)
+- QRCode(value, label?): encode a nonempty string as a QR code, with visible
+  payload text and a Copy button. Pouch extension, generated locally, no network.
+  At most 1024 UTF-8 bytes per code and 4 codes per block; never truncates.
 - KeyValue([{label: "Size", value: 12}, ...])
 - Table(columns, rows): columns ["A", "B"], rows [["x", 1], ["y", 2]]
 - Stat(label, value, delta?, tone?): one key number; delta like "+12%"
@@ -413,6 +416,13 @@ children is always a list, even of one: \`Tab("Trend", [chart])\`, not
 \`Tab("Trend", chart)\`. Card holds no Card. Each Series has one value per label.
 A unit is printed after each number: use a word ("USD", "trees"), not "$". If a part is wrong,
 Pouch drops it and lists the problem under "Program" below the block.
+
+For a phone handoff, use e.g. \`root = Stack([QRCode("https://bayleaf.dev", "Open BayLeaf on your phone")])\`.
+A QR code only conveys text: it does not upload files, make local URLs reachable,
+grant access, or transfer anything by itself. Do not invent a public URL for a
+Pouch file. The person decides whether to scan. Payloads are in model context
+and conversation history: do not promise secret-ticket handling or put a
+credential in a QR code without the person's explicit request.
 `,
   '/skills/skill-authoring/SKILL.md': `---
 name: skill-authoring

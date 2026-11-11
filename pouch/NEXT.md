@@ -5,7 +5,6 @@ for scope) and `DEPLOYMENT.md` first. Tracked in issues:
 
 - Review bot tuning: #136.
 - Tagged public releases and an independent hash log: #138.
-- Storage mode for borrowed computers: #139.
 - Sign-in QR code and a phishing warning on approval: #140.
 - Trusted core (sans-IO Rust, formally verified protocols): #143.
 
@@ -13,6 +12,11 @@ for scope) and `DEPLOYMENT.md` first. Tracked in issues:
 dirs, need `playwright` (and `md-unit.mjs` needs `linkedom`), which `package.json` does
 not declare, and some steps predate the current UI (t7's per-file Undo). The
 qualification rework below replaces them.
+
+Borrowed computers (#139): resolved with private/incognito-window guidance in the
+first-visit card and storage sheet, plus Download all / Erase all as the normal-window
+fallback, not a separate storage mode. Cross-browser private-mode qualification remains
+an evidence gap, not a claim made by this resolution.
 
 ## Add-ons
 

@@ -48,6 +48,11 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [
   { name: 'broken-inboxes', modules: true, compatibilityDate: '2026-08-01', script: `import { WorkerEntrypoint } from 'cloudflare:workers';
     export class InboxManagement extends WorkerEntrypoint { listInboxes() { throw new Error('synthetic outage'); } }
     export default { fetch() { return new Response(null, { status: 503 }); } };` },
+  // The real service never throws: its failures arrive as a returned { error }.
+  { ...apiWorker('api-erroring'), serviceBindings: { INBOXES: { name: 'erroring-inboxes', entrypoint: 'InboxManagement' } } },
+  { name: 'erroring-inboxes', modules: true, compatibilityDate: '2026-08-01', script: `import { WorkerEntrypoint } from 'cloudflare:workers';
+    export class InboxManagement extends WorkerEntrypoint { listInboxes() { return { error: 'unavailable' }; } }
+    export default { fetch() { return new Response(null, { status: 503 }); } };` },
 ] }));
 
 const migrate = async (db, dir) => {
@@ -190,12 +195,14 @@ try {
   assert.match(empty.html, /<button[^>]*value="approve"[^>]*disabled/, 'approve disabled without inboxes');
   assert.ok(!empty.html.includes('name="inbox"'));
 
-  await expect(await call('sk-bayleaf-a', 'GET', '/grants/inboxes', { worker: 'api-down' }), 503, 'inboxes_unavailable', 'outage listing');
-  await expect(await issue('sk-bayleaf-a', { scopes: READ, inboxes: [A.id] }, 'api-down'), 503, 'inboxes_unavailable', 'outage issuance');
-  const down = await start('a@example.test', {}, 'api-down');
-  assert.match(down.html, /could not be loaded/, 'outage is not reported as an empty inbox list');
-  assert.doesNotMatch(down.html, /no active inboxes/i);
-  assert.match(down.html, /<button[^>]*value="approve"[^>]*disabled/, 'approve disabled during an outage');
+  for (const worker of ['api-down', 'api-erroring']) {
+    await expect(await call('sk-bayleaf-a', 'GET', '/grants/inboxes', { worker }), 503, 'inboxes_unavailable', `${worker} listing`);
+    await expect(await issue('sk-bayleaf-a', { scopes: READ, inboxes: [A.id] }, worker), 503, 'inboxes_unavailable', `${worker} issuance`);
+    const down = await start('a@example.test', {}, worker);
+    assert.match(down.html, /could not be loaded/, `${worker}: outage is not reported as an empty inbox list`);
+    assert.doesNotMatch(down.html, /no active inboxes/i);
+    assert.match(down.html, /<button[^>]*value="approve"[^>]*disabled/, `${worker}: approve disabled during an outage`);
+  }
 
   // Manage does not imply read, and the disclosure must not claim it does.
   const manageOnly = await start('a@example.test', { scopes: JSON.stringify(['inboxes.messages.manage']) });

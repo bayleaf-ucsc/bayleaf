@@ -138,8 +138,10 @@ async function ownerInboxes(c: Context<AppEnv>, row: UserKeyRow | null): Promise
   const generation = row?.account_generation;
   if (!inboxesAvailable(c) || !generation || (c.env.INBOXES_PILOT_OWNER && generation !== c.env.INBOXES_PILOT_OWNER)) return [];
   try {
-    const result = await c.env.INBOXES!.listInboxes(generation) as { inboxes?: (InboxChoice & { state: string })[] };
-    return (result?.inboxes ?? []).filter(i => i.state === 'active')
+    // The RPC reports failure by returning { error }, not only by throwing.
+    const result = await c.env.INBOXES!.listInboxes(generation) as { error?: string; inboxes?: (InboxChoice & { state: string })[] };
+    if (!result || result.error || !Array.isArray(result.inboxes)) return null;
+    return result.inboxes.filter(i => i.state === 'active')
       .map(({ id, type, label, address, url }) => ({ id, type, label, address, url }));
   } catch { return null; }
 }
