@@ -21,11 +21,11 @@ Use standard base URL https://api.bayleaf.dev/v1. Obtain the current recommended
 | Ordinary BayLeaf key | Personal account access; issue at [the dashboard](/dashboard). Send Authorization: Bearer with the key. |
 | Dedicated sandbox credential | Controller-managed access bound to one owner and machine, with separate rotation/revocation from the ordinary key. Shares the owner's allowances, not extra credit. No automatic expiry; kept in Daytona Secrets, not copied into guest files. See [custody and lifecycle](https://github.com/bayleaf-ucsc/bayleaf/blob/main/api/SANDBOX-CREDENTIALS.md). |
 | Campus Pass | Omit Authorization on campus-supported operations. [GET /campus-pass](/campus-pass) checks network, approximate quota and standard shared credit without spending a request. |
-| Temporary inference token | Selected-model-set, expiring standard inference using an owner's allowance. See the Grants workflow and exact schemas below. No tools, discovery or Sealed. |
+| App token | Expiring, scoped delegation of an owner's account: selected-model standard inference, allowance and identity reads, web search/fetch. See the Grants workflow and exact schemas below. No discovery, inboxes, sandbox or Sealed. |
 | Browser session | BayLeaf's own dashboard/grant management; not a cross-origin app credential. Cookie-authenticated writes require the BayLeaf origin. |
-| Inboxes | ${env.INBOXES_ENABLED === 'true' ? 'Enabled' : 'Disabled'} on this deployment. Owner operations accept ordinary keys and sandbox credentials only: not Campus Pass, temporary inference tokens or browser sessions. |
+| Inboxes | ${env.INBOXES_ENABLED === 'true' ? 'Enabled' : 'Disabled'} on this deployment. Owner operations accept ordinary keys and sandbox credentials only: not Campus Pass, app tokens or browser sessions. |
 
-Public operations explicitly declare no authentication. An empty alternative on a campus-supported operation means keyless access is conditional on the trusted campus network, not that arbitrary off-campus requests are accepted. Sandbox and personal usage inspection require personal access. GET /whoami reflects the account email and credential kind a caller acts for (null email under Campus Pass; temporary inference tokens refused). GET /directory/{cruzid} reflects one public campus directory entry for personal-key callers, uncached and capped per account.
+Public operations explicitly declare no authentication. An empty alternative on a campus-supported operation means keyless access is conditional on the trusted campus network, not that arbitrary off-campus requests are accepted. Sandbox and personal usage inspection require personal access. GET /whoami reflects the account email and credential kind a caller acts for (null email under Campus Pass; app tokens only with the identity.read scope). GET /directory/{cruzid} reflects one public campus directory entry for personal-key callers, uncached and capped per account.
 
 ## Inference and privacy boundaries
 
@@ -43,7 +43,7 @@ Inboxes are ${env.INBOXES_ENABLED === 'true' ? 'enabled' : 'disabled'}${env.INBO
 
 Budget units differ: dollars versus request counts. Use GET /usage or the dashboard for personal allowances, and GET /campus-pass for keyless standard readiness. Unknown metadata is not zero credit. Availability checks are advisory, never reservations or model-health guarantees.
 
-Temporary inference tokens are ${env.GRANTS_ENABLED === 'true' ? 'enabled' : 'disabled'}; the current maximum lifetime is ${maxGrantSeconds(env)} seconds. Follow the Grants workflow for direct issuance or visitor consent. Exact fields, expiry units, authentication alternatives and error examples are attached to those operations and schemas, not maintained as a second table in the agent guide.
+App tokens are ${env.GRANTS_ENABLED === 'true' ? 'enabled' : 'disabled'}; the current maximum lifetime is ${maxGrantSeconds(env)} seconds. Follow the Grants workflow for direct issuance or visitor consent. Exact fields, expiry units, authentication alternatives and error examples are attached to those operations and schemas, not maintained as a second table in the agent guide.
 
-Always handle the actual response: eligibility, quotas, models and providers can change after discovery. Error schemas are operation-specific. Temporary-token expiry/revocation requires explicit authorization again, not automatic renewal. Keep credentials out of URLs, logs and public page source.`;
+Always handle the actual response: eligibility, quotas, models and providers can change after discovery. Error schemas are operation-specific. App-token expiry/revocation requires explicit authorization again, not automatic renewal. Keep credentials out of URLs, logs and public page source.`;
 }

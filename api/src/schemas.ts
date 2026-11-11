@@ -86,7 +86,7 @@ export const UsageResponseSchema = z.object({
 }).openapi('UsageResponse');
 
 export const WhoamiResponseSchema = z.object({
-  credential: z.enum(['key', 'sandbox', 'campus']).describe('key: ordinary personal API key. sandbox: controller-managed sandbox credential, acting for its owner. campus: anonymous Campus Pass; no person is identified.'),
+  credential: z.enum(['key', 'sandbox', 'grant', 'campus']).describe('key: ordinary personal API key. sandbox: controller-managed sandbox credential, acting for its owner. grant: app token holding identity.read, reflecting the grantor who approved it. campus: anonymous Campus Pass; no person is identified.'),
   email: z.string().nullable().describe('Account email the caller acts on behalf of, as recorded at sign-in. Null for Campus Pass.'),
 }).openapi('WhoamiResponse');
 
@@ -477,19 +477,26 @@ export const SandboxExposeSlotSchema = z.object({
 // Temporary inference grants: seconds are positive; administrator policy sets
 // the ceiling at runtime so clients receive the current maximum on rejection.
 const GrantModelSchema = z.string().min(1).max(200);
-const GrantModelsListSchema = z.array(GrantModelSchema).min(1).max(16).describe('Authorized backend-qualified standard model slugs, without inference type tags. Every model must be eligible. Sealed is excluded.');
+const GrantModelsListSchema = z.array(GrantModelSchema).min(1).max(16).describe('Authorized backend-qualified standard model slugs, without inference type tags. Every model must be eligible. Sealed is excluded. Required with any inference.* scope, rejected without one.');
+// Scope names are validated in grants.ts so the vocabulary has one owner.
+const GrantScopesSchema = z.array(z.string()).min(1).max(16).describe('App-token scopes: inference.chat, inference.responses, inference.decisions, usage.read, identity.read, web.search, web.fetch. Omitted means ["inference.chat"] only; request inference.responses or inference.decisions explicitly.').openapi({ example: ['inference.chat', 'web.search'] });
+const GrantAuthorityFields = {
+  scopes: z.array(z.string()).describe('Granted scopes in canonical order.'),
+  models: z.array(GrantModelSchema).max(16).describe('Authorized models; empty when the token has no inference.* scope.'),
+  model: z.string().optional().describe('Compatibility alias for the first authorized model; absent when models is empty.'),
+};
 export const GrantRequestSchema = z.object({
+  scopes: GrantScopesSchema.optional(),
   models: GrantModelsListSchema.optional(),
   model: GrantModelSchema.optional().describe('Legacy singleton shorthand, mutually exclusive with models. Bare OpenRouter slugs remain accepted.').openapi({ example: 'openrouter:qwen/qwen3.8-27b' }),
   expires_in: z.number().int().positive().describe('Requested lifetime in seconds. The runtime administrator maximum is enforced by rejection, never clamping; invalid_lifetime reports the current maximum.').openapi({ example: 600 }),
-}).strict().refine(v => (v.model !== undefined) !== (v.models !== undefined), 'Specify models or model, not both.').openapi('GrantRequest');
+}).strict().refine(v => v.model === undefined || v.models === undefined, 'Specify models or model, not both.').openapi('GrantRequest');
 export const GrantTokenSchema = z.object({
   grant_id: z.string().describe('Grant identifier for management/revocation; called id in the list response.'),
   name: z.string().describe('Public recognition name, not a credential. Bound into the signed token; names are unique among this owner\'s retained grants.'),
   key: z.string().describe('Compatibility alias for access_token, identical secret value.'),
   access_token: z.string().describe('Opaque bearer credential, shown only at issuance. Send in Authorization, never URLs or logs; keep out of public page source.'),
-  token_type: z.literal('Bearer'), models: GrantModelsListSchema,
-  model: z.string().describe('Compatibility alias for the first authorized model.'),
+  token_type: z.literal('Bearer'), ...GrantAuthorityFields,
   expires_at: z.number().int().describe('Absolute expiry, Unix seconds. Visitor-authorized lifetime starts at approval, not exchange.'),
   expires_in: z.number().int().describe('Seconds remaining at issuance/exchange, not a new lifetime allocation.'),
    base_url: z.string().describe('Standard inference base URL. Append /chat/completions, /decisions, or /responses (OpenRouter only).'),
@@ -516,18 +523,18 @@ export const GrantExchangeSchema = z.object({
 // ?request= continuation; registering this must never install public validation.
 export const GrantAuthorizeQuerySchema = z.object({
   client_id: z.string().describe('Signed descriptor returned by POST /grants/clients.'),
-  response_type: z.literal('code'), model: GrantModelSchema.optional().describe('Legacy singleton shorthand, mutually exclusive with models.'),
+  response_type: z.literal('code'), scopes: z.string().optional().describe('JSON array of app-token scopes. Omitted means ["inference.chat"] only.'),
+  model: GrantModelSchema.optional().describe('Legacy singleton shorthand, mutually exclusive with models.'),
   models: z.string().optional().describe('JSON array of 1–16 backend-qualified model slugs, mutually exclusive with model. Example: ["openrouter:qwen/qwen3.8-27b"].'),
   expires_in: z.string().describe('Requested positive integer lifetime in seconds, as a query string; the runtime ceiling still applies.'),
   state: z.string().min(1).max(256).describe('Cryptographically random application state, retained by the initiating tab and verified on callback.'),
   code_challenge: z.string().regex(/^[A-Za-z0-9_-]{43}$/).describe('Base64url SHA-256 of the verifier, without padding.'),
   code_challenge_method: z.literal('S256'),
-}).refine(v => (v.model !== undefined) !== (v.models !== undefined), 'Specify models or model, not both.').openapi('GrantAuthorizeQuery');
+}).refine(v => v.model === undefined || v.models === undefined, 'Specify models or model, not both.').openapi('GrantAuthorizeQuery');
 export const GrantListSchema = z.object({ grants: z.array(z.object({
   id: z.string().describe('Same identifier as grant_id in the issuance response. Use to revoke this grant.'),
   name: z.string().nullable().describe('Public recognition name; null for older unnamed grants.'),
-  models: GrantModelsListSchema,
-  model: z.string().describe('Compatibility alias for the first authorized model.'),
+  ...GrantAuthorityFields,
   expires_at: z.number().int().describe('Expiry, Unix seconds.'), created_at: z.number().int().describe('Creation time, Unix seconds.'),
   client_name: z.string().nullable().describe('App-supplied consent label; null for direct issuance.'),
   redirect_uri: z.string().nullable().describe('Bound callback URI; null for direct issuance.'),

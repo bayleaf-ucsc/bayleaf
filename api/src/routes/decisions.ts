@@ -6,7 +6,7 @@ import type { AppEnv } from '../types';
 import { DecisionRequestSchema, DecisionResponseSchema, ApiErrorSchema } from '../schemas';
 import { resolveAuth } from '../utils/auth';
 import { resolveBackendCredential, sendWithHeal } from '../utils/backend';
-import { enforceGrantModel } from '../grants';
+import { enforceGrantModel, requireScope } from '../grants';
 import { standardModelId, supportsOpenRouterOperation } from '../standardModels';
 import { checkOpenWeightModel } from '../openWeight';
 import { ALT_BACKENDS, isBackendEnabled } from '../constants';
@@ -24,6 +24,7 @@ decisionsRoutes.use('/decisions', async (c, next) => { c.header('Cache-Control',
 const error = { content: { 'application/json': { schema: ApiErrorSchema } } };
 decisionsRoutes.openapi(createRoute({
   method: 'post', path: '/decisions', operationId: 'createDecision', tags: ['Decisions'],
+  middleware: [requireScope('inference.decisions')] as const,
   summary: 'Evaluate typed decision questions',
   description: 'Choice, Noul (probability of yes), and ordered Score inference. Uses existing backend credentials and allowances, including model-set temporary tokens and Campus Pass. OpenRouter published weights and ZDR are mandatory. Media is reserved but rejected until the upstream transport is verified; no silent media removal or text fallback. Other standard backends currently offer zero decision models. For encrypted decisions, use POST /sealed/v1/decisions through a Tinfoil SDK instead; that lane uses Tinfoil\'s native schema.',
   security: [{ Bearer: [] }, {}] as Record<string, string[]>[],

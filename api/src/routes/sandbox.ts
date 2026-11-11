@@ -32,6 +32,7 @@ import {
   execCommand,
   downloadFile,
   uploadFile,
+  unsafeUploadPath,
   findSandboxByLabel,
   getSandboxInfo,
   refreshActivity,
@@ -414,6 +415,10 @@ sandboxRoutes.openAPIRegistry.registerPath({
         },
       },
     },
+    400: {
+      description: 'Path contains a single quote or control character',
+      content: { 'application/json': { schema: ApiErrorSchema } },
+    },
     403: {
       description: 'File access requires a BayLeaf API key',
       content: { 'application/json': { schema: ApiErrorSchema } },
@@ -436,6 +441,12 @@ sandboxRoutes.put('/files/*', async (c) => {
   }
 
   const filePath = c.req.path.replace(/^\/sandbox\/files/, '');
+  // Refused before resolving the sandbox, so a bad path never wakes compute.
+  if (unsafeUploadPath(filePath)) {
+    return c.json({
+      error: { message: 'Upload paths cannot contain single quotes or control characters.', code: 400 },
+    }, 400);
+  }
 
   try {
     const body = await c.req.arrayBuffer();

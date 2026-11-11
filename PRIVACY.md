@@ -101,9 +101,13 @@ ITS-operated or ITS-supported one.
   room URLs no longer grant access. Retirement does not terminate existing local
   app processes or separately created previews. See the
   [historical qualification record](api/COLLABMD.md).
-- **Temporary inference access (API, opt-in when enabled):** approving an app
-  gives it a temporary bearer token against your existing allowance. BayLeaf
-   stores grant metadata (owner, token name, permitted models, expiry, optional app name and callback)
+- **App tokens (API, opt-in when enabled):** approving an app gives it a
+  temporary bearer token, limited to the scopes listed on the consent page.
+  Inference scopes use your existing allowance; web search and fetch scopes use
+  BayLeaf's shared web-search account, which has no per-user budget. If you
+  approve the identity scope, the app learns your BayLeaf email address (a token
+  you issue yourself with that scope reveals it to anyone holding the token). BayLeaf
+   stores grant metadata (owner, token name, permitted scopes and models, expiry, optional app name and callback)
   and short-lived authorization transactions, not a permanent app registration.
   Expired records are removed by hourly cleanup while the feature is enabled;
   D1 backup retention also applies. The receiving app may handle or retain what

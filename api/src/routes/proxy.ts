@@ -19,7 +19,7 @@ import { resolveBackendCredential, sendWithHeal } from '../utils/backend';
 import { getGCPAccessToken } from '../utils/gcp';
 import { checkAndIncrement, inspectCounter, parseLimit } from '../utils/campusRpd';
 import { checkOpenWeightModel, hasPublishedWeights, openRouterSlug } from '../openWeight';
-import { enforceGrantModel } from '../grants';
+import { enforceGrantModel, requireScope } from '../grants';
 import { fetchBedrockModels, supportsOpenRouterOperation, supportsOpenRouterModels } from '../standardModels';
 import {
   ChatCompletionRequestSchema,
@@ -175,6 +175,7 @@ async function forwardJson(
 const responsesRoute = createRoute({
   method: 'post',
   path: '/responses',
+  middleware: [requireScope('inference.responses')] as const,
   operationId: 'createResponse',
   tags: ['LLM'],
   summary: 'Responses API',
@@ -267,6 +268,7 @@ proxyRoutes.openapi(responsesRoute, async (c) => {
 const chatCompletionsRoute = createRoute({
   method: 'post',
   path: '/chat/completions',
+  middleware: [requireScope('inference.chat')] as const,
   operationId: 'chatCompletions',
   tags: ['LLM'],
   summary: 'Chat Completions',

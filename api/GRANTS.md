@@ -1,6 +1,34 @@
-# Temporary inference tokens
+# App tokens (temporary inference tokens)
 
 Implementation for [issue #76](https://github.com/bayleaf-ucsc/bayleaf/issues/76).
+
+## Scopes (deployed 2026-11-10)
+
+Temporary inference tokens are being generalized into **app tokens** that carry
+scopes; the design and its reasoning are in [SCOPES.md](SCOPES.md). Deployed: `inference.chat`, `inference.responses` and
+`inference.decisions` (bound to 1–16 models), `usage.read` (`GET /usage`),
+`identity.read` (`GET /whoami`, returning credential `grant` and the grantor's
+email), `web.search` and `web.fetch`. Web tools use BayLeaf's shared Tavily
+account: there is no per-user web budget. `models` is required with any
+`inference.*` scope and rejected otherwise. Omitted `scopes` means
+`inference.chat` only. Migration `0020` adds
+`scopes_json` and backfills existing rows with the three inference scopes they
+implicitly held; NULL afterwards fails closed. **Expected breakage:** visitor apps
+that relied on implicit decisions or Responses authority get `insufficient_scope`
+on new tokens until they request `inference.decisions` or `inference.responses`.
+Responses include `scopes`; the `model` alias appears only when `models` is
+nonempty. Routes declare a scope with `requireScope`; the global gate denies an
+app token on any route without exactly one declared scope that the token holds.
+Inboxes and sandbox-file scopes are planned; Sealed and sandbox execution are
+deferred. The `sk-bayleaf-grant-` prefix, operation IDs and the
+`/dashboard#temporary-inference-tokens` anchor are unchanged. Sections below
+record the inference-only contract and its rollout history; where they list
+exclusions, the scopes above take precedence.
+
+Deployed 2026-11-10 (Worker `1a104f1d-2541-4dd5-aebf-0f11da29229f`): migration `0020` applied, backfill re-run after deploy, all 3 production grants scoped. Production smoke passed 20 checks with the owner's key (default chat-only issuance and inference, decisions/whoami denial, a `web.search`+`identity.read` token searching and reflecting the grantor while denied on fetch, usage, chat, grants, sandbox and inboxes, `usage.read`, validation errors, list scopes, revocation of every created token). A real Toolbox upload to a path with a space and literal `$(id)` created one directory and no strays; a quoted path got 400. Not yet exercised in production: the browser consent page and dashboard form (need a human login).
+
+## Rollout history
+
 Enabled in production on 2026-09-29 with a one-hour maximum lifetime. The maximum
 was raised to 30 days (`GRANTS_MAX_SECONDS=2592000`) on 2026-11-02 so a course's
 CI workflow (for example, a push-triggered review bot) can hold a model-scoped
@@ -61,8 +89,9 @@ issuance, clipboard copy, and revocation. These are not live provider tests.
 
 ## Memorable names and the dashboard
 
-“Temporary inference token” is the user-facing term. A **grant** is the underlying
-permission; an ordinary **API key** is the separate, broader account credential.
+“App token” is now the user-facing term (formerly “temporary inference token”). A
+**grant** is the underlying permission; an ordinary **API key** is the separate,
+broader account credential.
 
 The main dashboard has a separate Temporary inference tokens card between the
 API key and service sections. Creation is in a disclosure; each active token entry
@@ -117,8 +146,8 @@ OpenChamber browser denied clipboard access; its error path displayed no secret.
   display name, valid for ten minutes. Stateless on BayLeaf. Not a developer identity.
 - **Authorization transaction:** a ten-minute browser-bound consent attempt;
   after approval the code lasts at most two minutes and is redeemable once.
-- **Grant:** one owner's permission to use 1–16 backend-qualified standard-inference models
-  until a deadline. One grant corresponds to one bearer token. No renewal.
+- **Grant:** one owner's permission to exercise a set of scopes (inference ones bound
+  to 1–16 backend-qualified standard-inference models) until a deadline. One grant corresponds to one bearer token. No renewal.
 - **Token / temporary key:** a signed credential exercising that grant. It is
   transferable, not cryptographically bound to an app or browser origin.
 - **Allowance:** the owner's existing backend-specific budget or request quota,
@@ -129,8 +158,9 @@ Direct issuance and visitor authorization produce the same token type. Only
 `POST /v1/chat/completions` accepts tokens for all enabled standard backends;
 `POST /v1/responses` currently supports OpenRouter only; `POST /v1/decisions`
 also accepts temporary tokens, with the request model required to belong to
-the authorized set. No model listing,
-Sealed, web tools, sandbox, account management, minting, or refresh capability.
+the authorized set. Each needs its `inference.*` scope. Apart from the
+non-inference scopes above, there is no model listing, Sealed, inbox, sandbox,
+account management, minting, or refresh capability.
 Fallback model lists, route overrides, and provider plugins are rejected.
 OpenRouter retains its published-weights check on inference. Backend-specific
 enablement gates and existing provider policies continue to apply.
@@ -175,8 +205,11 @@ Content-Type: application/json
 {"models":["<backend-qualified model ID>","<another backend-qualified model ID>"],"expires_in":3600}
 ```
 
-The result contains `grant_id`, `name`, `key` (also `access_token`), `token_type: Bearer`,
-`models`, legacy `model` (the first entry), `base_url`, `expires_at` (Unix seconds), and `expires_in`. Copy the token
+Add `"scopes": [...]` to request other authority; without it the token gets
+`inference.chat` only. Keep `models` only while an `inference.*` scope is selected:
+a request for, say, just `web.search` must omit `models` or it is rejected. The result contains `grant_id`, `name`, `key` (also
+`access_token`), `token_type: Bearer`, `scopes`, `models`, legacy `model` (the first
+entry, only when `models` is nonempty), `base_url`, `expires_at` (Unix seconds), and `expires_in`. Copy the token
 into the inference client's API-key setting. Do not put it in URLs or logs.
 
 Use `GET /grants` to list your active grants and `DELETE /grants/{grant_id}` to
@@ -199,10 +232,11 @@ requests. No client secret or refresh token is issued.
 2. `POST /grants/clients` with JSON `client_name` and `redirect_uri`. Save the
    returned `client_id` (an expiring signed descriptor). This writes no database row.
 3. Navigate to `/grants/authorize` with query parameters:
-   `client_id`, `response_type=code`, `models` (a JSON array query value), `expires_in`, `state`,
+   `client_id`, `response_type=code`, optional `scopes` and `models` (JSON array query values), `expires_in`, `state`,
    `code_challenge` (base64url SHA-256 of verifier), `code_challenge_method=S256`.
 4. BayLeaf signs the visitor in if needed and shows explicit consent naming the
-   account, destination origin, exact callback, every model, and duration. App names are
+   account, destination origin, exact callback, every scope and model, and duration
+   (with `identity.read`, that the app will learn the visitor's email). App names are
    visibly self-supplied. No remembered app-level consent. The legacy `model`
    singleton query parameter is accepted instead of `models`, never alongside it.
 5. BayLeaf redirects to the exact callback with `code` and `state`, or with
@@ -260,20 +294,24 @@ JSON `error.code: "token_expired"`. This works even after cleanup removes the gr
 row because the token's expiry is signed. Revoked, forged, or otherwise invalid
 tokens receive `401 invalid_token`. The header is exposed to browser JavaScript.
 
-Wrong-model or out-of-scope requests receive `403 insufficient_scope`. Offer a
+Wrong-model or out-of-scope requests receive `403 insufficient_scope`; unknown scope
+names receive `400 invalid_scope`. An empty or non-string `scopes` array is
+`400 invalid_request` at `POST /grants` (request-schema validation) but
+`400 invalid_scope` at `GET /grants/authorize`, which parses its JSON query value. Offer a
 manual authorization action after a 401; do not build an automatic redirect loop.
 Fresh approval creates a new grant, rather than silently refreshing the old one.
 Expiry/revocation prevents new requests; it does not abort an in-flight completion.
 
 ## Storage and operation
 
-`inference_grants` holds ID, owner email, owner-key fingerprint, models, timestamps,
+`inference_grants` holds ID, owner email, owner-key fingerprint, models, scopes
+(`scopes_json`, from migration `0020`; NULL fails closed), timestamps,
 and optional app name/callback. Tokens are signed using purpose-separated HMAC;
 the signature is the credential verifier, not a stored plaintext secret. Tokens
 cannot be used as login cookies, client descriptors, or consent proofs.
 
 `grant_transactions` holds browser-proof and code hashes, PKCE challenge, app
-metadata, authorized models, state, and (after approval) owner-key fingerprint and grant deadline.
+metadata, authorized models and scopes, state, and (after approval) owner-key fingerprint and grant deadline.
 Both tables persist only `models_json TEXT NOT NULL`, with no singular model
 column. The optional HTTP `model` input shorthand and first-model response alias
 do not create a second source of stored authority.
@@ -294,7 +332,11 @@ account-limit path. OpenRouter uses its existing per-owner provisioning/healing 
    Migration `0016` requires both grant tables to be completely empty and fails
    before dropping tables otherwise. Do not delete rows to bypass this gate;
    pause issuance, let existing work expire and clean up normally, then recheck.
-   Initial enablement also requires `GRANTS_ENABLED=true`.
+   Initial enablement also requires `GRANTS_ENABLED=true`. The scoped revision
+   additionally requires, in order: apply migration `0020` (backfills existing
+   rows with the three inference scopes), deploy the Worker, then re-run the
+   migration's two idempotent backfill UPDATEs once, since rows the old Worker
+   inserted in between have NULL scopes and would fail closed.
 3. Verify real campus login, direct dashboard issuance, and a local callback with
    a small real inference request. Local synthetic tests do not verify live OIDC.
 4. Disable `GRANTS_ENABLED` and deploy to stop new issuance and token use. Cleanup

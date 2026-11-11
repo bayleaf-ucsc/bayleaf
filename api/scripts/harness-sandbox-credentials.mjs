@@ -128,7 +128,13 @@ try{
   for(const path of ['/usage','/v1/models','/sandbox','/sandbox/.well-known/opencode/config'])await ok(await req(path,bearer));
   await ok(await req('/web/search',bearer,{query:'synthetic'}));
   const grant=await ok(await req('/grants',ordinary,{model:'test/open',expires_in:300}));
+  // Sandbox agents mint app tokens with plain HTTP (SCOPES.md exposure decisions).
+  const appToken=await ok(await req('/grants',bearer,{scopes:['usage.read'],expires_in:300}));
+  assert.deepEqual(appToken.scopes,['usage.read']);
   await db.prepare('UPDATE user_keys SET revoked=1 WHERE email=?').bind(email).run();
+  const refused=await req('/grants',bearer,{scopes:['usage.read'],expires_in:300});
+  assert.equal(refused.status,403,'minting needs the owner\'s current ordinary key');
+  assert.equal((await refused.json()).error.code,'personal_account_required');
   assert.equal((await req('/usage',ordinary)).status,401);
   await ok(await req('/usage',bearer));
   const infer=key=>req('/v1/chat/completions',key,{model:'test/open',messages:[{role:'user',content:'synthetic'}]});

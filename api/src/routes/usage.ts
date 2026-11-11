@@ -5,11 +5,12 @@ import { resolveAuth } from '../utils/auth';
 import { ALT_BACKENDS, isBackendEnabled, OPENROUTER_API } from '../constants';
 import { parseLimit } from '../utils/campusRpd';
 import { UsageResponseSchema } from '../schemas';
+import { requireScope } from '../grants';
 
 export const usageRoutes = new OpenAPIHono<AppEnv>();
-usageRoutes.openapi(createRoute({ method:'get', path:'/', tags:['LLM'], operationId:'inspectUsage',
+usageRoutes.openapi(createRoute({ method:'get', path:'/', tags:['LLM'], operationId:'inspectUsage', middleware:[requireScope('usage.read')] as const,
   summary:'Inspect personal inference allowances without spending or provisioning',
-  description:'Personal keys only. Budgets are shared across clients. USD and request counts are distinct. Null means unknown, not unlimited. Disabled backends are omitted. Provider failures are reported per budget.',
+  description:'Personal keys, or app tokens with usage.read (the grantor\'s allowances). Budgets are shared across clients. USD and request counts are distinct. Null means unknown, not unlimited. Disabled backends are omitted. Provider failures are reported per budget.',
   security:[{Bearer:[]}], responses:{
     200:{description:'Current account allowances',content:{'application/json':{schema:UsageResponseSchema}}},
     401:{description:'Personal key required'},403:{description:'Personal key required'},

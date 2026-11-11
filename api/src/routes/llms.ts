@@ -109,8 +109,8 @@ Choose the access you need:
   API key for model discovery, inference, and the other supported services.
 - [API keys and Campus Pass](#api-keys-and-campus-pass): account access and allowances.
 - [Build browser apps with Campus Pass](#build-browser-apps-with-campus-pass): static HTML/JS that uses keyless inference when the visitor is eligible.
-- [Temporary inference tokens](#temporary-inference-tokens): give a script or app
-  selected-model-set, expiring access, or let each visitor authorize their own allowance.
+- [App tokens](#app-tokens): give a script, CI job or app scoped, expiring access
+  (selected models, allowance, identity, web tools), or let each visitor authorize their own.
 - [Standard LLM inference](#standard-llm-inference): the full model catalog and
   backend-qualified model IDs, distinct from curated onboarding recommendations.
 ${sealedEnabled ? '- [Sealed LLM inference](#sealed-llm-inference): a separate encrypted path requiring\n  an attestation-capable client and an ordinary API key or Campus Pass.' : ''}
@@ -500,8 +500,8 @@ it from the dashboard, paste it into a terminal, or store it in a config file.
 The OpenCode integration above uses this internally; any other agent (Goose, pi,
 custom MCP servers, etc.) can do the same thing.
 
-This hands over the ordinary account API key. For an app that only needs temporary
-inference, use the [temporary-token authorization flow](#temporary-inference-tokens)
+This hands over the ordinary account API key. For an app that only needs scoped
+access, use the [app-token authorization flow](#app-tokens)
 instead; the two handoffs grant different authority.
 
 The flow uses two codes (modeled on RFC 8628 OAuth device authorization grant):
@@ -583,14 +583,14 @@ are not interchangeable; eligible Campus Pass requests omit the header:
 
 | Method | When to use |
 |--------|-------------|
-| **Ordinary API key** (${bt}sk-bayleaf-...${bt}) | Account credential for model discovery, supported inference lanes, sandbox/web tools, and issuing/managing temporary tokens. Provision free at https://api.bayleaf.dev/. |
+| **Ordinary API key** (${bt}sk-bayleaf-...${bt}) | Account credential for model discovery, supported inference lanes, sandbox/web tools, and issuing/managing app tokens. Provision free at https://api.bayleaf.dev/. |
 | **Campus Pass** (omit header) | On the UCSC campus network. No key needed for inference, web search/fetch, and other supported routes. Sandbox access requires a personal key. |
-| **Temporary inference token** (${bt}sk-bayleaf-grant-...${bt}) | One backend-qualified standard-inference model until expiry or revocation. No discovery, Sealed, other tools, account management, or token issuance. |
+| **App token** (${bt}sk-bayleaf-grant-...${bt}) | Only its granted scopes (selected standard-inference models, allowance, identity, web tools) until expiry or revocation. No discovery, Sealed, sandbox, other owner services, account management, or token issuance. |
 
 To learn whose account a credential acts for, call ${bt}GET /whoami${bt}. It returns
-${bt}{"credential": "key" | "sandbox" | "campus", "email": ...}${bt}, with a null email under
-Campus Pass, and has no side effects. Temporary tokens are refused, so an app holding
-one cannot learn who granted it.
+${bt}{"credential": "key" | "sandbox" | "grant" | "campus", "email": ...}${bt}, with a null email under
+Campus Pass, and has no side effects. App tokens are refused unless they hold
+${bt}identity.read${bt}, which reveals the grantor's email to whoever holds the token.
 
 BayLeaf applies a daily limit to each backend: some are price-based and others
 are request-based. Your current limits and remaining allowance are shown in the
@@ -601,8 +601,8 @@ Increased limits are [available upon request](https://github.com/bayleaf-ucsc/ba
 ${bt}GET /v1/auth/key${bt} reports the OpenRouter-shaped spend fields plus
 ${bt}data.bayleaf${bt}: OpenRouter spend, per-user request quotas for enabled alternate
 standard backends, and a Campus Pass counter when applicable. Read the backend
-blocks rather than treating OpenRouter dollars as a universal quota. Temporary
-tokens cannot inspect this endpoint; use the ordinary API key.
+blocks rather than treating OpenRouter dollars as a universal quota. App tokens
+cannot inspect this endpoint; use ${bt}GET /usage${bt} with the ${bt}usage.read${bt} scope.
 
 ### Build browser apps with Campus Pass
 
@@ -645,8 +645,8 @@ If you are an agent building a demo:
   changed), 429 (network allowance exhausted), and upstream budget/provider errors
   remain possible after a successful check. Render generated text with
   ${bt}textContent${bt}, not unsanitized ${bt}innerHTML${bt}.
-- For off-campus use, offer an optional visitor-authorized temporary inference
-  token as described below, rather than shipping your ordinary key in page source.
+- For off-campus use, offer an optional visitor-authorized app token as
+  described below, rather than shipping your ordinary key in page source.
   The app's own storage and privacy choices are separate from BayLeaf's ZDR path.
 
 Minimal JS building blocks (wire ${bt}generate${bt} to a user-operated button,
@@ -685,13 +685,12 @@ async function generate(prompt) {
 }
 ${fence}
 
-### Temporary inference tokens
+### App tokens
 
 Status: ${input.grantsEnabled ? 'enabled' : 'not enabled on this deployment'}.
 
-A temporary inference token represents one **grant**: permission to use a selected
-set of backend-qualified standard-inference models until an explicit deadline. BayLeaf
-issues and validates it. It is not an upstream provider key. All tokens belonging
+An app token (formerly a temporary inference token) represents one **grant**: a set
+of scopes until an explicit deadline. BayLeaf issues and validates it. It is not an upstream provider key. All tokens belonging
 to an owner share that owner's existing backend allowance with their ordinary API
 key. Creating more tokens does not create more credit or reset request quotas.
 
@@ -700,25 +699,33 @@ Two workflows produce the same token type:
 - **Direct issuance:** you or your authorized agent creates a token for a script,
   local app, or creator-sponsored demo.
 - **Visitor authorization:** each app visitor signs in to BayLeaf and explicitly
-  approves temporary inference access against their own allowance. No copied API
+  approves an app token against their own allowance. No copied API
   key or permanent app registration is required.
 
-Tokens support ${bt}POST /v1/chat/completions${bt} for every enabled standard backend.
-${bt}POST /v1/responses${bt} currently supports OpenRouter only. Backend enablement
-and eligibility policies still apply; disabled backends cannot issue usable tokens.
-Sealed is separate: BayLeaf cannot inspect its encrypted model field to enforce
-model-set authority. Temporary tokens cannot list models, use web/sandbox tools,
-manage accounts, or mint or renew tokens. Model fallbacks, routing overrides, and
-provider plugins are unavailable with these tokens.
+Request only the scopes the app needs. The inference scopes (chat completions,
+Responses, decisions) are bound to 1–16 selected standard-inference models; the
+others let an app check the grantor's remaining allowance, learn the grantor's
+BayLeaf email, or use web search and fetch. In visitor authorization, the consent
+page names the app and states the email disclosure; a directly issued token with
+${bt}identity.read${bt} has no consent page, so anyone holding it can read your email. Web tools run on BayLeaf's shared provider account, not a per-user budget,
+so a leaked web token gives off-campus web access until it expires or is revoked.
+Omitting scopes requests chat completions only; request Responses or decisions
+explicitly. The exact scope
+list, routes and errors are in the **Grants** introduction linked below.
 
-Tokens also support ${bt}POST /v1/decisions${bt} for eligible decision models. Select
-multiple slugs with ${bt}models${bt}; the legacy ${bt}model${bt} field remains singleton
-shorthand. Models are not type-tagged in grants: the requested operation is checked
-later against model capabilities. All selected models share the owner's allowances.
+Backend enablement and eligibility policies still apply; disabled backends cannot
+issue usable tokens. ${bt}POST /v1/responses${bt} currently supports OpenRouter only.
+Sealed is separate: BayLeaf cannot inspect its encrypted model field to enforce
+model-set authority. App tokens cannot list models, use the sandbox or other owner
+services, manage accounts, or mint or renew tokens. Model fallbacks, routing overrides, and
+provider plugins are unavailable with these tokens. Select multiple slugs with
+${bt}models${bt}; the legacy ${bt}model${bt} field remains singleton shorthand. Models are
+not type-tagged in grants: the requested operation is checked later against model
+capabilities. All selected models share the owner's allowances.
 
 #### Names and dashboard controls
 
-Use the [Temporary inference tokens card](https://api.bayleaf.dev/dashboard#temporary-inference-tokens)
+Use the [app tokens card](https://api.bayleaf.dev/dashboard#temporary-inference-tokens)
 to create, copy, or revoke tokens. Creation uses the full model catalog, grouped by
 backend with prefixes preserved. A token's public name (for example
 ${bt}snarky-aardvark-7k3m${bt}) and expiry appear on one compact line; restrictions and
@@ -731,12 +738,12 @@ delivered to apps, can be listed and revoked but their credentials cannot be
 retrieved from the dashboard. Treat the token itself as opaque: applications do
 not need to parse its signed payload. Keep full credentials out of URLs and logs.
 
-#### Build with temporary tokens
+#### Build with app tokens
 
-For creator-sponsored scripts, discover a selectable model, issue a token with your
-ordinary key or dashboard, and pass its opaque credential, returned model and base
-URL to the intended app. Choose the duration needed, not a dollar estimate. Campus
-Pass cannot own grants; temporary tokens cannot manage or renew themselves.
+For creator-sponsored scripts and CI secrets, choose scopes (and, for inference,
+selectable models), issue a token with your ordinary key or dashboard, and pass its
+opaque credential, returned models and base URL to the intended app. Choose the duration needed, not a dollar estimate. Campus
+Pass cannot own grants; app tokens cannot manage or renew themselves.
 
 For visitor-funded apps, retain random state and a PKCE verifier in the initiating
 tab, obtain a signed client descriptor, and navigate the visitor to BayLeaf for
@@ -764,7 +771,7 @@ For classification, yes/no probabilities, and ordered rubric scores, use
 ${bt}POST /v1/decisions${bt}. Send a backend-qualified model, text or JSON ${bt}state${bt},
 and named Choice, Noul, or Score ${bt}questions${bt}. Noul is a probability, not a
 Boolean; choose thresholds using task-specific evaluation and allow abstention.
-Use ordinary keys, eligible Campus Pass, or temporary tokens permitting that model.
+Use ordinary keys, eligible Campus Pass, or app tokens permitting that model.
 No new provider account, credential, or budget is needed. OpenRouter published weights
 and ZDR remain required; no decision-specific enablement switch exists.
 
@@ -801,14 +808,14 @@ ${fence}
 
 Supports ${bt}stream: true${bt} for SSE streaming and ordinary OpenAI request
 parameters (${bt}temperature${bt}, ${bt}max_tokens${bt}, ${bt}tools${bt}, etc.). Use an
-ordinary API key, Campus Pass where eligible, or a temporary token matching the
-model. Temporary tokens have the narrower permissions described above.
+ordinary API key, Campus Pass where eligible, or an app token matching the
+model. App tokens have the narrower permissions described above.
 
 For consistent vision support, pin a known-working OpenRouter provider on every request with ${bt}"provider": {"only": ["EXACT-PROVIDER-SLUG"], "allow_fallbacks": false}${bt} in the JSON body (copy the exact endpoint slug from the model's OpenRouter page); unavailable or non-ZDR endpoints fail rather than switch providers.
 
 Chat Completions routes by backend prefix. ${bt}POST /v1/responses${bt} is currently
 OpenRouter-only. Other supported ${bt}/v1/*${bt} passthroughs require an ordinary key
-or eligible Campus Pass; a temporary token cannot use them.
+or eligible Campus Pass; an app token cannot use them.
 
 #### Model catalog and namespaces
 
@@ -821,7 +828,7 @@ Use the full live catalog, not the curated models suggested for onboarding:
 
 - ${bt}GET /v1/models${bt}: enabled standard backends, authenticated with an ordinary
   API key or eligible Campus Pass.
-- ${bt}GET /grants/models${bt}: the temporary-token selector's catalog and backend
+- ${bt}GET /grants/models${bt}: the app-token selector's catalog and backend
   availability, authenticated with an ordinary key or BayLeaf browser session.
 - ${bt}GET /recommended-model${bt}: current recommended default, unauthenticated.
 
@@ -951,7 +958,7 @@ OpenChamber setups use their short sandbox orientation and shared Inboxes
 MCP tools; older hosted setups retain the earlier recipe skill until deliberate setup.
 Reception stores data only: it never activates an agent, replies or runs tools.
 Manage with an ordinary BayLeaf key or sandbox credential, not Campus Pass,
-temporary inference tokens or a browser session. No inference key is provisioned.
+app tokens or a browser session. No inference key is provisioned.
 Before creation, fetch authenticated GET /inboxes/limits (getInboxLimits), even
 with no existing inboxes. It reports effective deployed quotas and your remaining
 slots/storage, not static defaults. Active plus destroying inboxes count toward
@@ -1154,8 +1161,8 @@ For a GUI task, deliberately start the sandbox and Desktop first. Computer-use
 methods under ${bt}/sandbox/computer/*${bt} never create, wake or start either.
 Open ${bt}POST /sandbox/computer/session${bt} with an empty JSON object, then send
 the returned opaque ${bt}session${bt} in each method's JSON body alongside your
-ordinary key or sandbox credential in Authorization. Campus Pass, temporary
-inference tokens and browser cookies do not authorize desktop access.
+ordinary key or sandbox credential in Authorization. Campus Pass, app
+tokens and browser cookies do not authorize desktop access.
 
 Use single mouse/keyboard actions, screenshots (full or compressed, optionally a
 region), display info and advisory windows. All methods use POST so handles stay

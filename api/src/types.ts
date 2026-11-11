@@ -200,6 +200,8 @@ export interface InferenceGrant {
   owner_email: string;
   owner_token_hash: string;
   models_json: string;
+  /** JSON array of GrantScope. Migration 0020 backfilled older rows; NULL fails closed. */
+  scopes_json: string | null;
   expires_at: number;
   created_at: number;
   client_name: string | null;
@@ -213,6 +215,7 @@ export interface GrantTransaction {
   client_name: string;
   redirect_uri: string;
   models_json: string;
+  scopes_json: string | null;
   lifetime: number;
   challenge: string;
   state: string;

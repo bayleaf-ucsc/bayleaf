@@ -701,6 +701,20 @@ Sleeping-link owner resume is deferred to issue #85.
 
 ### Temporary inference tokens (issue #76)
 
+**Scoped revision (app tokens), deployed 2026-11-10** (Worker `1a104f1d-2541-4dd5-aebf-0f11da29229f`, evidence in `GRANTS.md`): grants carry scopes
+(`GRANT_SCOPES` in `src/grants.ts`): the three `inference.*` scopes bound to
+models, plus `usage.read`, `identity.read` (`/whoami` reports `grant` and the
+grantor's email) and `web.search`/`web.fetch` (BayLeaf's shared Tavily account, no
+per-user web budget). Omitted scopes mean `inference.chat` only; NULL
+`scopes_json` fails closed, so migration `0020` backfills existing rows with the
+three inference scopes. Roll out as: apply `0020`, deploy, then re-run its two
+backfill UPDATEs once (rows the old Worker inserted in between would fail closed). Routes opt in with `requireScope`; the global gate admits a grant only
+where exactly one declared scope matches and the grant holds it, so an undeclared
+route denies every app token. User-facing name is "app token"; "grant", operation IDs,
+the token prefix and the dashboard anchor are unchanged. Design, planned inbox and
+sandbox-file scopes, and exclusions: `SCOPES.md`. Statements below describe the
+deployed inference-only revision.
+
 **Model-set revision deployed 2026-10-13:** migration `0016`
 rebuilds grants and authorization transactions with required `models_json` and
 retires the singular `model` columns. A production read-only check found both
@@ -743,7 +757,8 @@ The name is bound into the signature and readable token prefix; legacy unnamed
 tokens remain valid. `templates/grants.tsx` places create/copy/revoke controls in
 the main dashboard, displaying recognition metadata only. Temporary credentials
 remain in a JS closure until reload; no secret input or Show button. Keep “grant”
-for permissions/protocol identifiers and “temporary inference token” for users.
+for permissions/protocol identifiers and “app token” (formerly “temporary
+inference token”) for users.
 `llms.txt` distinguishes ordinary keys, temporary tokens, standard inference, and Sealed.
 
 The all-standard-backend follow-up was deployed on 2026-09-29. `standardModels.ts`
@@ -843,7 +858,7 @@ this facet; run `npm run test:hf` and `npm run test:docs`.
 /sealed/.well-known/opencode/config   GET: Authenticated Sealed OpenCode config
 /recommended-model      Current recommended model slug + display name (JSON, unauthenticated)
 /campus-pass            Read-only keyless standard inference availability for the caller
-/whoami                 Caller's own account email + credential kind (null email for Campus Pass; grants refused)
+/whoami                 Caller's own account email + credential kind (null email for Campus Pass; app tokens only with identity.read)
 /directory/{cruzid}     One public campus directory entry as JSON (personal key; uncached; daily cap)
 /hf/catalog             GET: approved HF releases (keyless; issue #121)
 /hf/catalog/{ns}/{repo} GET: one repository's approved releases, with per-file mirror state
