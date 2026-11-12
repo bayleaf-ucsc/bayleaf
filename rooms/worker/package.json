@@ -1,0 +1,17 @@
+{
+  "name": "bayleaf-rooms",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler d1 migrations apply bayleaf-rooms --local --persist-to /tmp/rooms-prod-state && wrangler dev --local --port 8791 --local-upstream localhost:8791 --persist-to /tmp/rooms-prod-state --test-scheduled --var ROOMS_ENABLED:true --var COMPACT_ENTRIES:200",
+    "test": "node test/run.mjs"
+  },
+  "dependencies": {
+    "yjs": "13.6.27"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.64.0",
+    "wrangler": "4.123.0",
+    "y-protocols": "^1.0.7"
+  }
+}
