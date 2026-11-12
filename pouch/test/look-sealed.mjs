@@ -7,6 +7,7 @@
 // the text and the shape.
 //   set -a; source ~/.tokens/bayleaf-api; set +a; node test/look-sealed.mjs
 import assert from 'node:assert/strict';
+import { signInSealed, assertLiveRequests } from './sealed-auth.mjs';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -55,11 +56,7 @@ try {
   page.on('dialog', (d) => d.dismiss());
   await page.goto(url);
   await page.click('#welcome button >> text=Got it').catch(() => {});
-  await page.click('#auth');
-  await page.waitForSelector('#sheet[open] #key-input', { timeout: 10000 });
-  await page.fill('#key-input', 'BAYLEAF_API_KEY=' + key);
-  await page.click('#sheet .key-form button[type=submit]');
-  await page.waitForSelector('#badge.ok', { timeout: 60000 });
+  await signInSealed(page, 'BAYLEAF_API_KEY=' + key);
   const label = await page.$eval('#model', (s, m) => [...s.options].find((o) => o.value === m)?.textContent ?? null, MODEL);
   if (!label || !/images/.test(label)) { console.log(`SKIP: ${MODEL} is not in the catalog as a model marked images (${label})`); process.exitCode = 0; } else {
     await page.selectOption('#model', MODEL);
@@ -85,7 +82,7 @@ try {
     await page.screenshot({ path: join(shots, 'look-sealed.png') });
     console.log(JSON.stringify({ model: MODEL, requests: sent, attempts: n, lookCalls: looks, thumbnails: thumbs,
       text: /BLUE\s*TRIANGLE\s*42/i.test(reply), number42: /42/.test(reply), triangle: /triangle/i.test(reply), blue: /blue/i.test(reply), replyChars: reply.length, outside }, null, 1));
-    assert.ok(sent <= CAP, 'request cap');
+    assertLiveRequests(n, CAP);
     assert.ok(looks >= 1, 'the model called look'); assert.ok(thumbs >= 1, 'the card shows what was sent');
     assert.ok(/42/.test(reply) && /triangle/i.test(reply) && /blue/i.test(reply), 'the reply names the text, the shape and its colour');
     console.log(`done (${at()}): screenshot ${join(shots, 'look-sealed.png')}`);

@@ -6,6 +6,7 @@
 //   set -a; source ~/.tokens/bayleaf-api; set +a; node test/ul-sealed.mjs
 // Prints an outline (tools called, labels, final replies), not model internals.
 import assert from 'node:assert/strict';
+import { signInSealed, assertLiveRequests } from './sealed-auth.mjs';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -41,13 +42,10 @@ try {
     return r.continue();
   });
   const page = await context.newPage();
-  page.on('dialog', (d) => d.accept(d.type() === 'prompt' ? key : undefined));
+  page.on('dialog', (d) => d.dismiss());
   await page.goto(url);
   await page.click('#welcome button >> text=Got it').catch(() => {});
-  await page.click('#auth');
-  await page.fill('#key-input', key);
-  await page.click('button:has-text("Save key")');
-  await page.waitForSelector('#badge.ok', { timeout: 60000 });
+  await signInSealed(page, key);
   const model = await page.inputValue('#model');
   const T = { timeout: 180000 };
   const idle = () => page.waitForFunction(() => document.getElementById('send-label').textContent === 'Send', null, T);
@@ -87,6 +85,7 @@ try {
   };
   for (const [k, v] of Object.entries(checks)) console.log(v ? 'ok' : 'FAIL', k);
   console.log(`requests: ${n} (cap ${CAP}), ${Math.round((Date.now() - t0) / 1000)} s, model ${model}`);
+  assertLiveRequests(n, CAP);
   if (Object.values(checks).some((v) => !v)) process.exitCode = 1;
 } finally {
   await context.close().catch(() => {});

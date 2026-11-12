@@ -11,6 +11,7 @@
 // deletes the session is refused.
 // Run: node test/batchF-browser.mjs
 import assert from 'node:assert/strict';
+import { signInSealed, assertLiveRequests } from './sealed-auth.mjs';
 import { readFileSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -26,7 +27,7 @@ const stub = `
 import { createFake } from './test/graph-fixture.js';
 window.fake = createFake();
 export class TinfoilAI {
-  constructor() { this.openAIOptions = { apiKey: 'fake' };
+  constructor(options) { (window.connectionKeys ??= []).push(options?.bearerToken); this.openAIOptions = { apiKey: 'fake' };
     this.chat = { completions: { create: async () => { throw new Error('the old plaintext title path was used'); } } };
     this.secureClient = { fetch: (u, i) => window.fake.fetch(u, i) };
   }
@@ -175,6 +176,7 @@ try {
   assert.equal(await page.$$eval('#session-list li.session[aria-current="true"]', (l) => l.length), 0, 'no row is current in a draft');
   assert.equal(await page.evaluate(() => document.activeElement?.id), 'input', 'the composer has focus');
   assert.equal(await page.$('#log .msg'), null, 'the transcript is empty');
+  assert.match(await page.textContent('#log'), /appears in the sidebar and is saved only when you send your first message/, 'the empty state explains why there is no row');
   await rule(page, { who: 'main', when: '/Badly worded/.test(c.since)', reply: 'Reply one.' });
   await rule(page, { who: 'main', when: '/later one/.test(c.since)', reply: 'Reply two.' });
   await send(page, 'Badly worded first message'); await idle(page);
@@ -281,6 +283,50 @@ try {
   ok('a send during a first-message revert is refused with a status line; both texts end up in the box (2a)');
 
   await page.screenshot({ path: join(shots, 'batchF-tray-terminal.png') });
+
+  // #150: the actual Run script action, not a model explaining the error.
+  await term(page, `printf '%s' "const fs = require('fs');" > /work/node-style.js`);
+  await page.locator('[aria-label="Actions for node-style.js"]').dispatchEvent('click');
+  await page.click('#sheet-actions button >> text=Run script');
+  await page.waitForSelector('#sheet[open] .run-out', T);
+  assert.match(await page.textContent('.run-out'), /Use the global fs \(fs.readFile, fs.writeFile\)/);
+  ok('Run script explains the Node boundary and names the global fs');
+
+  // #149: a verified enclave while the key verdict is held must not let the
+  // shared live-suite helper return. No real key or inference is involved.
+  await s.context.close();
+  s = await open('delayed-key-check');
+  const authPage = s.page;
+  let release, checking;
+  const verdict = new Promise((r) => { release = r; });
+  const started = new Promise((r) => { checking = r; });
+  await authPage.route('https://api.bayleaf.dev/usage', async (r) => {
+    if (!r.request().headers().authorization) return r.fulfill({ json: {} });
+    checking(); await verdict;
+    return r.fulfill({ json: {} });
+  });
+  await authPage.fill('#input', 'Draft held until signed in');
+  let signedIn = false;
+  const signing = signInSealed(authPage, 'BAYLEAF_API_KEY=sk-bayleaf-test149').then(() => { signedIn = true; });
+  try {
+    await Promise.race([started, sleep(10000).then(() => { throw new Error('key check did not start'); })]);
+    await authPage.waitForSelector('#badge.ok', T);
+    assert.equal(await authPage.locator('#sheet[open]').count(), 1);
+    assert.equal(await authPage.locator('#auth.on').count(), 0);
+    await sleep(200);
+    assert.equal(signedIn, false, 'green shield is not signed in');
+    assert.equal(await authPage.evaluate(() => Object.values(window.fake.requests).flat().length), 0);
+  } finally { release(); }
+  await signing;
+  assert.equal(await authPage.inputValue('#input'), 'Draft held until signed in');
+  await send(authPage, 'Authenticated turn');
+  await authPage.waitForFunction(() => (window.fake.requests.main?.length ?? 0) > 0, null, T);
+  await idle(authPage);
+  assert.equal(await authPage.evaluate(() => window.connectionKeys.at(-1)), 'sk-bayleaf-test149', 'reconnected client uses the checked key');
+  assert.throws(() => assertLiveRequests(0, 5), /at least one/);
+  assert.throws(() => assertLiveRequests(6, 5), /cap exceeded/);
+  assertLiveRequests(1, 5);
+  ok('live-suite sign-in waits for the delayed key verdict, then uses the checked key; zero requests and over-cap runs fail');
   assert.deepEqual(errors, []);
 } finally {
   await s?.context.close().catch(() => {});

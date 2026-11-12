@@ -150,7 +150,13 @@ export async function runRequest(quickjs: QuickJSWASMModule, req: RunRequest, { 
 }
 
 function describe(err: { name?: string; message?: string; stack?: string } | string | number | boolean | null | undefined) {
-  if (err && typeof err === 'object') return `${err.name ?? 'Error'}: ${err.message ?? ''}${err.stack ? '\n' + err.stack : ''}`.trim();
+  if (err && typeof err === 'object') {
+    // Explain the runtime boundary, without adding a pretend Node loader or
+    // changing scripts that define their own require (or use typeof require).
+    const hint = err.name === 'ReferenceError' && /^['"]?require['"]? is not defined$/.test(err.message ?? '')
+      ? '\nPouch runs JavaScript, not Node.js: there is no require. Use the global fs (fs.readFile, fs.writeFile), without importing it.' : '';
+    return `${err.name ?? 'Error'}: ${err.message ?? ''}${err.stack ? '\n' + err.stack : ''}${hint}`.trim();
+  }
   return String(err);
 }
 

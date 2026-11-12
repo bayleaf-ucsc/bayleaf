@@ -4,6 +4,7 @@
 // Turn 1 pastes a long document so compaction has older turns to summarize.
 //   set -a; source ~/.tokens/bayleaf-api; set +a; node test/batchE-sealed.mjs
 import assert from 'node:assert/strict';
+import { signInSealed, assertLiveRequests } from './sealed-auth.mjs';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -41,11 +42,7 @@ try {
   page.on('dialog', (d) => d.dismiss());
   await page.goto(url);
   await page.click('#welcome button >> text=Got it').catch(() => {});
-  await page.click('#auth');
-  await page.waitForSelector('#sheet[open] #key-input', { timeout: 10000 });
-  await page.fill('#key-input', 'BAYLEAF_API_KEY=' + key);
-  await page.click('#sheet .key-form button[type=submit]');
-  await page.waitForSelector('#badge.ok', { timeout: 60000 });
+  await signInSealed(page, 'BAYLEAF_API_KEY=' + key);
   const T = { timeout: 240000 };
   const idle = () => page.waitForFunction(() => document.getElementById('send-label').textContent === 'Send', null, T);
   const model = await page.inputValue('#model');
@@ -72,7 +69,7 @@ try {
   log.push(['compact', await page.textContent('#status'), detail.slice(0, 140), n]);
   void hint;
   console.log(JSON.stringify({ model, log, requests: n }, null, 1));
-  assert.ok(n <= CAP);
+  assertLiveRequests(n, CAP);
 } finally {
   await context.close(); server.close();
   rmSync(scratch, { recursive: true, force: true });

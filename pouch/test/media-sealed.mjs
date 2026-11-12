@@ -11,6 +11,7 @@
 // Needs the look tool (PR #128, branch pouch-look): run it on a merge of both.
 //   set -a; source ~/.tokens/bayleaf-api; set +a; node test/media-sealed.mjs
 import assert from 'node:assert/strict';
+import { signInSealed, assertLiveRequests } from './sealed-auth.mjs';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -66,11 +67,7 @@ try {
   page.on('dialog', (d) => d.dismiss());
   await page.goto(url);
   await page.click('#welcome button >> text=Got it').catch(() => {});
-  await page.click('#auth');
-  await page.waitForSelector('#sheet[open] #key-input', { timeout: 10000 });
-  await page.fill('#key-input', 'BAYLEAF_API_KEY=' + key);
-  await page.click('#sheet .key-form button[type=submit]');
-  await page.waitForSelector('#badge.ok', { timeout: 60000 });
+  await signInSealed(page, 'BAYLEAF_API_KEY=' + key);
   const label = await page.$eval('#model', (s, m) => [...s.options].find((o) => o.value === m)?.textContent ?? null, MODEL);
   if (!label || !/images/.test(label)) { console.log(`SKIP: ${MODEL} is not in the catalog as a model marked images (${label})`); process.exitCode = 0; } else {
     await page.selectOption('#model', MODEL);
@@ -104,7 +101,7 @@ try {
     console.log(JSON.stringify({ model: MODEL, requests: sent, attempts: n, mediaToolCalls: bash, lookCalls: looks, thumbnails: thumbs,
       one: one >= 0, two: two >= 0, inOrder: one >= 0 && two > one, red: red >= 0, blue: blue >= 0, colorsInOrder: red >= 0 && blue > red, replyChars: reply.length, outside }, null, 1));
     console.log('REPLY (fixture description, no user data):', reply.slice(0, 600));
-    assert.ok(sent <= CAP, 'request cap');
+    assertLiveRequests(n, CAP);
     console.log(`done (${at()}): screenshot ${join(shots, 'media-sealed.png')}`);
   }
 } finally {

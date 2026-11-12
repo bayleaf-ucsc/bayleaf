@@ -15,6 +15,7 @@
 //   FAKE=1 FAKE_REPLY=reply.md node test/ui-sealed.mjs   (replay a recorded reply through the same verdicts)
 //   set -a; source ~/.tokens/bayleaf-api; set +a; node test/ui-sealed.mjs   (MODEL=kimi-k3, CAP=12)
 import assert from 'node:assert/strict';
+import { signInSealed, assertLiveRequests } from './sealed-auth.mjs';
 import { readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { duckdbPage, scratch, installDuckdb } from './duckdb-journey-browser.mjs';
@@ -95,10 +96,7 @@ try {
   await page.click('#welcome button >> text=Got it').catch(() => {});
   if (FAKE) await context.route('https://api.bayleaf.dev/sealed/models', (r) => r.fulfill({ json: { data: [{ id: 'fake', name: 'fake', tool_calling: true, multimodal: false, endpoints: ['/v1/chat/completions'] }] } }));
   else {
-    await page.click('#auth');
-    await page.waitForSelector('#sheet[open] #key-input', { timeout: 10000 });
-    await page.fill('#key-input', 'BAYLEAF_API_KEY=' + key);
-    await page.click('#sheet .key-form button[type=submit]');
+    await signInSealed(page, 'BAYLEAF_API_KEY=' + key);
   }
   await page.waitForSelector('#badge.ok', { timeout: 60000 });
   if (await page.$eval('#model', (s, m) => [...s.options].some((o) => o.value === m), MODEL)) await page.selectOption('#model', MODEL);
@@ -159,7 +157,7 @@ try {
   }, null, 1));
   console.log('PROGRAM (fixture analysis, no user data):\n' + program.slice(0, 2500));
   console.log('REPLY TEXT:', first.reply.slice(0, 600));
-  assert.ok(sent <= CAP, 'request cap');
+  assertLiveRequests(FAKE ? await page.evaluate(() => Object.values(window.fake.requests).flat().length) : n, CAP);
   outline = null;
 } catch (e) {
   console.log('FAILED:', e.message.split('\n')[0]);

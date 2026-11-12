@@ -7,6 +7,7 @@
 //   set -a; source ~/.tokens/bayleaf-api; set +a; node test/batchD-sealed.mjs
 // Prints an outline (tools, labels, replies), not model internals.
 import assert from 'node:assert/strict';
+import { signInSealed, assertLiveRequests } from './sealed-auth.mjs';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -44,11 +45,7 @@ try {
   page.on('dialog', (d) => { console.log('NATIVE DIALOG', d.message()); d.dismiss(); });
   await page.goto(url);
   await page.click('#welcome button >> text=Got it').catch(() => {});
-  await page.click('#auth');
-  await page.waitForSelector('#sheet[open] #key-input', { timeout: 10000 });
-  await page.fill('#key-input', 'BAYLEAF_API_KEY=' + key); // the whole line, as pasted from the token file
-  await page.click('#sheet .key-form button[type=submit]');
-  await page.waitForSelector('#badge.ok', { timeout: 60000 });
+  await signInSealed(page, 'BAYLEAF_API_KEY=' + key); // exercise whole-line paste too
   const T = { timeout: 240000 };
   const idle = () => page.waitForFunction(() => document.getElementById('send-label').textContent === 'Send', null, T);
   const settle = async () => { await idle(); await page.waitForTimeout(2500); await idle(); };
@@ -98,6 +95,10 @@ try {
   out.c = { ...afterEnter, sentAsTurn: users.some((u) => /After stop/.test(u)), requests: n - c0, reply: (await lastReply()).slice(0, 120) };
   console.log('(c)', JSON.stringify(out.c));
   console.log('total requests', n, 'of cap', CAP);
+  assertLiveRequests(n, CAP);
+  assert.ok(out.a.woke && out.a.offers, 'watch must wake and offer another review');
+  assert.ok(out.b.trayButton && out.b.mainFreed, 'foreground subagent must be backgroundable');
+  assert.ok(out.c.sentAsTurn, 'Enter after Stop must send the new turn');
 } finally {
   await context.close().catch(() => {});
   server.close();

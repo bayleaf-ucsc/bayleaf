@@ -2,15 +2,16 @@
 // BayLeaf Sealed (batch A): how many requests the one-shot panel costs (41
 // before), and whether the result renders as a success.
 //   POUCH_OUT=/tmp/pouch-qa/distA node build.mjs
+//   set -a; source ~/.tokens/bayleaf-api-test; set +a
 //   POUCH_OUT=/tmp/pouch-qa/distA node test/batchA-sealed.mjs
 // Spends real requests. Hard cap CAP (default 20) at the network route: the
 // request past it is aborted in the browser and Stop all is pressed. The key
-// is pasted from ~/.tokens/bayleaf-api as its whole NAME=value line (fix 7).
+// is supplied via BAYLEAF_API_KEY and pasted as a whole NAME=value line (fix 7).
 // Prints counts and what the page shows, never request content.
 import assert from 'node:assert/strict';
+import { signInSealed, assertLiveRequests } from './sealed-auth.mjs';
 import { readFileSync, mkdtempSync, rmSync, mkdirSync, existsSync } from 'node:fs';
 import { join, resolve, extname } from 'node:path';
-import { homedir } from 'node:os';
 import { createServer } from 'node:http';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || '/Users/adam/Desktop/openchamber-maxwell/node_modules/playwright/index.mjs');
 const root = resolve(import.meta.dirname, '..');
@@ -33,8 +34,8 @@ much easier to get around since they widened the sidewalks.
 So plan for feet: remove parking minimums, widen sidewalks, and let mixed uses
 back in.
 `;
-const line = readFileSync(join(homedir(), '.tokens/bayleaf-api'), 'utf8').split('\n').find((l) => /sk-bayleaf-/.test(l));
-assert.ok(line, 'no key line in ~/.tokens/bayleaf-api');
+const key = process.env.BAYLEAF_API_KEY;
+assert.ok(key, 'BAYLEAF_API_KEY not set');
 
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.webmanifest': 'application/manifest+json', '.png': 'image/png' };
 const server = createServer((req, res) => {
@@ -56,15 +57,9 @@ try {
   page = await context.newPage();
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('http://127.0.0.1:8763/pouch.html');
-  await page.waitForSelector('#badge.ok', { timeout: 60000 });
   await page.click('#welcome button >> text=Got it').catch(() => {});
   // Fix 7, for real: paste the whole NAME=value line.
-  await page.click('#auth');
-  await page.waitForSelector('#sheet[open] #key-input');
-  await page.fill('#key-input', line.trim());
-  await page.click('#sheet .key-form button[type=submit]');
-  await page.waitForSelector('#auth.on', { timeout: 30000 });
-  await page.waitForSelector('#badge.ok', { timeout: 60000 });
+  await signInSealed(page, 'BAYLEAF_API_KEY=' + key);
   console.log('signed in from a NAME=value line; usage:', await page.textContent('#composer-usage-num').catch(() => '?'));
   // The draft, uploaded into /work.
   const chooser = page.waitForEvent('filechooser');
@@ -106,6 +101,12 @@ try {
   const usageRow = await page.$$eval('#usage-body table.tokens tr.current td', (n) => n.map((x) => x.textContent)).catch(() => []);
   await page.screenshot({ path: join(shots, 'batchA-sealed-usage.png') });
   console.log(JSON.stringify({ requests: sent, refusedOverCap: refused, seconds: Math.round((Date.now() - t0) / 1000), trayMax, usageRow, ...out, reply: out.reply.slice(0, 1200), errors }, null, 1));
+  assertLiveRequests(sent, CAP);
+  assert.equal(refused, 0, 'panel must complete within the request cap');
+  assert.equal(out.error, false);
+  assert.ok(out.numbered > 0, 'panel must produce numbered suggestions');
+  assert.equal(out.noReport, false, 'panel must return its reports');
+  assert.deepEqual(errors, []);
 } finally {
   await context.close();
   server.close();

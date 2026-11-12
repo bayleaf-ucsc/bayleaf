@@ -5,7 +5,10 @@
 // `run` on a small CSV (the play-test's four harness errors).
 //   set -a; source ~/.tokens/bayleaf-api; set +a; node test/batchC-sealed.mjs
 // Prints an outline (tools called, event lines, final reply), not model internals.
+// ONLY=2 seeds feb.csv through the UI and runs only the background-subagent
+// half, so a capped files-waiting run need not be repeated to check that half.
 import assert from 'node:assert/strict';
+import { signInSealed, assertLiveRequests } from './sealed-auth.mjs';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -44,12 +47,7 @@ try {
   page.on('dialog', (d) => { console.log('NATIVE DIALOG', d.message()); d.dismiss(); });
   await page.goto(url);
   await page.click('#welcome button >> text=Got it').catch(() => {});
-  await page.click('#auth');
-  await page.click('text=Paste a key you already have').catch(() => {});
-  await page.waitForSelector('#sheet[open] #key-input', { timeout: 10000 });
-  await page.fill('#key-input', key);
-  await page.click('#sheet .key-form button[type=submit]');
-  await page.waitForSelector('#badge.ok', { timeout: 60000 });
+  await signInSealed(page, key);
   const model = await page.inputValue('#model');
   const T = { timeout: 240000 };
   const idle = () => page.waitForFunction(() => document.getElementById('send-label').textContent === 'Send', null, T);
@@ -59,6 +57,9 @@ try {
   const files = (p) => page.evaluate(async (p) => { let d = await navigator.storage.getDirectory(); for (const k of p.split('/').filter(Boolean)) d = await d.getDirectoryHandle(k).catch(() => null); if (!d) return null; const out = []; for await (const [k] of d.entries()) out.push(k); return out.sort(); }, p);
   const read = (p) => page.evaluate(async (p) => { const parts = p.split('/').filter(Boolean); let d = await navigator.storage.getDirectory(); for (const k of parts.slice(0, -1)) d = await d.getDirectoryHandle(k); return (await (await d.getFileHandle(parts.at(-1))).getFile()).text(); }, p).catch(() => null);
 
+  const onlySubagent = process.env.ONLY === '2';
+  let woke = null, merged = null;
+  if (!onlySubagent) {
   // ── 1. Files waiting ──
   await page.fill('#input', 'I need to merge my monthly spending CSVs (jan, feb, mar) into one /work/data/all.csv with a month column. They are not uploaded yet; I will put them in /work/data in a minute.');
   await page.press('#input', 'Enter');
@@ -80,12 +81,23 @@ try {
   const csv = { jan: 'date,amount\n2026-01-03,12.50\n2026-01-15,40.00\n2026-01-20,7.25\n', feb: 'date,amount\n2026-02-01,60.00\n2026-02-14,9.99\n', mar: 'date,amount\n2026-03-02,8.25\n2026-03-15,30.00\n2026-03-28,4.75\n' };
   await chooser.setFiles(Object.entries(csv).map(([m, t]) => ({ name: m + '.csv', mimeType: 'text/csv', buffer: Buffer.from(t) })));
   for (let i = 0; n === before && i < 200; i++) await page.waitForTimeout(100);
-  const woke = n > before;
+   woke = n > before;
   if (woke) await settle();
   const all = await read('data/all.csv');
   const labels = await page.evaluate(() => [...document.querySelectorAll('#log .msg.from.watch, #log .msg.user')].map((m) => m.textContent.slice(0, 200)).slice(-2));
   console.log('TURN 2', JSON.stringify({ woke, labels, tools: (await tools()).slice(turn1.tools.length), reply: (await replies()).at(-1)?.slice(0, 400), all, requests: n, requestsAfterUpload: n - before }, null, 1));
-  const merged = !!all && ['jan', 'feb', 'mar'].every((m) => all.includes(m) || all.includes(`2026-0${{ jan: 1, feb: 2, mar: 3 }[m]}`)) && all.trim().split('\n').length >= 9;
+  merged = !!all && ['jan', 'feb', 'mar'].every((m) => all.includes(m) || all.includes(`2026-0${{ jan: 1, feb: 2, mar: 3 }[m]}`)) && all.trim().split('\n').length >= 9;
+  } else {
+    if ((await page.getAttribute('#app', 'data-panel')) !== 'files') await page.click('#rail [data-panel="files"]');
+    await page.locator('[aria-label="Actions for work"]').dispatchEvent('click');
+    await page.click('#sheet-actions button >> text=New folder here');
+    await page.fill('#name-input', 'data'); await page.press('#name-input', 'Enter');
+    await page.waitForSelector('#tree .row[data-path="/work/data"]', { state: 'attached' });
+    await page.locator('[aria-label="Actions for data"]').dispatchEvent('click');
+    const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('#sheet-actions button >> text=Upload files here')]);
+    await chooser.setFiles({ name: 'feb.csv', mimeType: 'text/csv', buffer: Buffer.from('date,amount\n2026-02-01,60.00\n2026-02-14,9.99\n') });
+    await page.waitForSelector('#tree .row[data-path="/work/data/feb.csv"]', { state: 'attached' });
+  }
 
   // ── 2. A background subagent that must use run ──
   const b2 = n;
@@ -95,7 +107,7 @@ try {
     await page.waitForTimeout(200);
     if (n > CAP) break;
     const st = await page.evaluate(() => document.querySelector('#log .subagent .sa-status')?.textContent ?? '');
-    if (/finished|failed|stopped/.test(st) && document) break;
+    if (/finished|failed|stopped/.test(st)) break;
   }
   await settle().catch(() => {});
   const card = await page.evaluate(() => [...document.querySelectorAll('#log .subagent')].map((c) => c.querySelector('.sa-head')?.textContent).join(' | '));
@@ -103,6 +115,14 @@ try {
   console.log('PART 2', JSON.stringify({ card, total, requests: n - b2 }, null, 1));
   console.log(`model ${model}; ${n} requests; ${((Date.now() - t0) / 1000).toFixed(0)} s`);
   console.log(`RESULT files-waiting: woke=${woke} merged=${merged}; subagent run: total=${JSON.stringify(total)} (expect 69.99) toolErrors in card: ${/tool error/.test(card)}`);
+  assertLiveRequests(n, CAP);
+  if (!onlySubagent) {
+    assert.ok(woke, 'upload must wake the agent');
+    assert.ok(merged, 'all three months must be merged');
+  }
+  assert.ok(total != null && /\b69\.99\b/.test(total), 'background subagent must write the sum 69.99');
+  assert.match(card, /finished/i, 'subagent must finish');
+  assert.doesNotMatch(card, /tool err|failed|stopped/i, 'subagent must finish successfully');
   await page.screenshot({ path: '/tmp/pouch-qa/shots/batchC-sealed-final.png' });
 } finally {
   await context.close();

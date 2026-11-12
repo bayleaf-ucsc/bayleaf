@@ -5,6 +5,7 @@
 //   set -a; source ~/.tokens/bayleaf-api; set +a; node test/watch-sealed.mjs
 // Prints an outline (tools called, event lines, final reply), not model internals.
 import assert from 'node:assert/strict';
+import { signInSealed, assertLiveRequests } from './sealed-auth.mjs';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -40,12 +41,10 @@ try {
     return r.continue();
   });
   const page = await context.newPage();
-  page.on('dialog', (d) => d.accept(d.type() === 'prompt' ? key : undefined));
+  page.on('dialog', (d) => d.dismiss());
   await page.goto(url);
   await page.click('#welcome button >> text=Got it').catch(() => {});
-  await page.click('#auth');
-  await page.click('text=Paste a key you already have');
-  await page.waitForSelector('#badge.ok', { timeout: 60000 });
+  await signInSealed(page, key);
   const model = await page.inputValue('#model');
   const T = { timeout: 180000 };
   const idle = () => page.waitForFunction(() => document.getElementById('send-label').textContent === 'Send', null, T);
@@ -83,6 +82,11 @@ try {
   const work = await page.evaluate(async () => { const out = []; const walk = async (d, p) => { for await (const [k, h] of d.entries()) { if (h.kind === 'directory') await walk(h, p + k + '/'); else out.push(p + k); } }; await walk(await navigator.storage.getDirectory(), ''); return out; });
   console.log('TURN 2', JSON.stringify({ woke, labels, tools: (await tools()).slice(turn1.tools.length), reply: (await replies()).at(-1)?.slice(0, 800), work, requests: n, requestsAfterDrop: n - before }, null, 1));
   console.log(`model ${model}; ${n} requests; ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+  assertLiveRequests(n, CAP);
+  assert.ok(turn1.tray.length > 0, 'the first turn must register a watch');
+  assert.ok(woke, 'uploading the CSVs must wake the agent');
+  assert.ok(labels.length > 0, 'the watch event must appear in the transcript');
+  assert.ok(work.some((p) => /\.csv$/.test(p) && !/\/(jan|feb|mar)\.csv$/.test(p)), 'the journey must produce a merged CSV');
   await page.screenshot({ path: '/tmp/pouch-qa/shots/watch-sealed-final.png' });
 } finally {
   await context.close();

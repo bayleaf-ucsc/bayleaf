@@ -4,6 +4,7 @@
 // written to main's in file from the terminal reaches main mid-turn.
 //   set -a; source ~/.tokens/bayleaf-api; set +a; node test/batchF-sealed.mjs
 import assert from 'node:assert/strict';
+import { signInSealed, assertLiveRequests } from './sealed-auth.mjs';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -43,11 +44,7 @@ try {
   page.on('dialog', (d) => d.dismiss());
   await page.goto(url);
   await page.click('#welcome button >> text=Got it').catch(() => {});
-  await page.click('#auth');
-  await page.waitForSelector('#sheet[open] #key-input', { timeout: 10000 });
-  await page.fill('#key-input', 'BAYLEAF_API_KEY=' + key);
-  await page.click('#sheet .key-form button[type=submit]');
-  await page.waitForSelector('#badge.ok', { timeout: 60000 });
+  await signInSealed(page, 'BAYLEAF_API_KEY=' + key);
   const T = { timeout: 120000 };
   const idle = () => page.waitForFunction(() => document.getElementById('send-label').textContent === 'Send', null, T);
   async function term(cmd) {
@@ -88,6 +85,7 @@ try {
   const last = await page.$$eval('#log .msg.assistant, #log .assistant', (l) => l.at(-1)?.textContent ?? '');
   log.push(['turn 2 reply', at(), last.slice(-160), 'tray showed steer: ' + trayHad, n]);
   assert.match(last, /PINEAPPLE/i);
+  assertLiveRequests(n, CAP);
   await page.screenshot({ path: '/tmp/pouch-qa/shots/batchF-sealed.png' });
 } catch (e) {
   const page = context.pages().at(-1);

@@ -17,6 +17,7 @@
 // Prints an outline, the sheet and the index (fixture text, no user data).
 //   set -a; source ~/.tokens/bayleaf-api; set +a; node test/parakeet-sealed.mjs
 import assert from 'node:assert/strict';
+import { signInSealed, assertLiveRequests } from './sealed-auth.mjs';
 import { readFileSync, mkdtempSync, rmSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -95,11 +96,7 @@ try {
   await page.goto(url);
   await page.click('#welcome button >> text=Got it').catch(() => {});
   if (!(await page.evaluate(async () => !!(await navigator.gpu?.requestAdapter())?.features.has('shader-f16')))) { console.log('SKIP: no WebGPU with shader-f16 here'); process.exit(0); }
-  await page.click('#auth');
-  await page.waitForSelector('#sheet[open] #key-input', { timeout: 10000 });
-  await page.fill('#key-input', 'BAYLEAF_API_KEY=' + key);
-  await page.click('#sheet .key-form button[type=submit]');
-  await page.waitForSelector('#badge.ok', { timeout: 60000 });
+  await signInSealed(page, 'BAYLEAF_API_KEY=' + key);
   const label = await page.$eval('#model', (s, id) => [...s.options].find((o) => o.value === id)?.textContent ?? null, MODEL);
   if (!label) { console.log(`SKIP: ${MODEL} is not in the Sealed catalog`); process.exit(0); }
   await page.selectOption('#model', MODEL);
@@ -147,7 +144,7 @@ try {
   console.log('SHEET:', got.sheet.title, '\n' + got.sheet.body);
   console.log('INDEX (fixture text, no user data):\n' + index.slice(0, 2000));
   console.log('REPLY:', reply.slice(0, 500));
-  assert.ok(sent <= CAP, 'request cap');
+  assertLiveRequests(n, CAP);
   assert.deepEqual(outside, []);
   assert.ok(stamps.length >= 4, 'the index cites times');
 } finally {

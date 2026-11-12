@@ -368,7 +368,7 @@ export function createTranscriptRegion(app: App): TranscriptRegion {
     const out: HTMLElement[] = [];
     if (!view?.items.length) {
       out.push(el('p', { className: 'notice' + (attachError ? ' bad' : ''), textContent: attachError ? attachError : app.state.agent
-        ? 'Ask Pouch to read, write or reorganize files in /work or a mounted folder. ' + (app.providers.localhostPicked() ? 'Files stay in this browser; model requests go to your server on this computer.' : 'Everything stays in this browser; model requests are sealed.')
+        ? 'Ask Pouch to read, write or reorganize files in /work or a mounted folder. ' + (app.providers.localhostPicked() ? 'Files stay in this browser; model requests go to your server on this computer.' : 'Everything stays in this browser; model requests are sealed.') + (!app.sessionList.sessions.current ? ' This session appears in the sidebar and is saved only when you send your first message.' : '')
         : (app.boot.agentError ?? 'Starting...') }));
     }
     const nextCache: ReplyCache = new Map();

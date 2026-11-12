@@ -4,6 +4,7 @@
 // from the link in its reply, in Preview, Static; a screenshot is saved.
 //   set -a; source ~/.tokens/bayleaf-api; set +a; node test/batchG-sealed.mjs
 import assert from 'node:assert/strict';
+import { signInSealed, assertLiveRequests } from './sealed-auth.mjs';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -51,11 +52,7 @@ try {
   page.on('dialog', (d) => d.dismiss());
   await page.goto(url);
   await page.click('#welcome button >> text=Got it').catch(() => {});
-  await page.click('#auth');
-  await page.waitForSelector('#sheet[open] #key-input', { timeout: 10000 });
-  await page.fill('#key-input', 'BAYLEAF_API_KEY=' + key);
-  await page.click('#sheet .key-form button[type=submit]');
-  await page.waitForSelector('#badge.ok', { timeout: 60000 });
+  await signInSealed(page, 'BAYLEAF_API_KEY=' + key);
   const model = await page.$eval('#model', (s) => s.value);
   await page.keyboard.press('Control+`'); await page.waitForSelector('#term-input', { state: 'visible', timeout: 5000 });
   await page.fill('#term-input', `printf 'region,quarter,sales\\nNorth,Q1,120\\nNorth,Q2,135\\nSouth,Q1,90\\nSouth,Q2,110\\nEast,Q1,75\\nEast,Q2,95\\n' > /work/sales.csv`);
@@ -76,7 +73,7 @@ try {
   const remote = raw.match(/(src|href)\s*=\s*["']?https?:[^"' >]+/gi) ?? [];
   console.log(JSON.stringify({ requests: sent, attempts: n, mode, bytes: raw.length, hasScript: /<script/i.test(raw), remote, outside }, null, 1));
   assert.deepEqual(mode, ['Preview', 'Static']);
-  assert.ok(sent <= CAP, 'request cap');
+  assertLiveRequests(n, CAP);
   console.log(`PASS (${at()}): screenshot ${join(shots, 'batchG-sealed-report.png')}`);
 } finally {
   await context.close();

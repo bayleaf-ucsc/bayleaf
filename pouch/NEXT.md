@@ -91,6 +91,13 @@ Next:
 
 ## Qualification rework
 
+The browser `*-sealed` suites share `test/sealed-auth.mjs` (#149): sign in
+through the key form and wait for the signed-in indicator, closed sheet and
+verified enclave, not the green shield alone. `test/batchF-browser.mjs` holds
+the deterministic delayed-key-check regression. Keys come from
+`BAYLEAF_API_KEY` (including batch A); prefer the dedicated test key below.
+This repair does not implement the tier/record-replay rework.
+
 Journeys are slow with local inference.
 - Tiers: T0 node units (seconds, every change); T1 browser journeys on scripted or
   replayed model output (minutes, parallel, default gate, no quota, no GPU);
