@@ -40,8 +40,10 @@ ITS-operated or ITS-supported one.
   cookie and network headers are redacted/dropped for HTTP, not a general secret
   scrubber. Write credentials are hashed, shown once and revocable; email sender
   identity is not yet verified. Arrivals never trigger inference, forwarding,
-  replies or agent execution. Campus-wide access remains disabled pending rollout
-  qualification. See [the Inboxes contract](inbox/DESIGN.md).
+  replies or agent execution. Authenticated campus owners have had access since
+  October 21, 2026; the remaining qualification tests are accepted limitations
+  (see [Inboxes qualification](inbox/QUALIFICATION.md)). See
+  [the Inboxes contract](inbox/DESIGN.md).
 - **Inboxes operational telemetry:** fixed-window aggregate counts cover email and
   webhook acceptance/rejection, inbox lifecycle and cleanup outcomes. Records
   contain no inbox/account identifiers, addresses, sender IPs, headers, paths,
@@ -56,6 +58,36 @@ ITS-operated or ITS-supported one.
   path or query. Preview applications, inbox receipt URLs, authenticated diagnostics
   and plaintext `/llms.txt` requests are excluded. Capability-host referrers are
   discarded at source and rejected by the collector.
+- **Rooms (authenticated campus community, opt-in):** BayLeaf Rooms on
+  `bayleaf-rooms.dev` deliberately stores what participants add to a room: JSON
+  entries, or Yjs document updates in co-editing rooms. Each room keeps its
+  entries, its label, its credentials' labels, scopes and expiry, and a SHA-256
+  digest of each credential secret (the secret itself is shown once and not
+  stored) in its own Cloudflare Durable Object. A separate D1 database indexes
+  each room's owner (an opaque account generation, never an email), label,
+  codec, and creation and expiry times. This is **not zero-data-retention storage
+  or zero operator access**: the administrator and Cloudflare can technically
+  access stored content. Every link holder can read and export the whole room,
+  and credential labels are visible to every participant, so use pseudonyms. In
+  ordinary rooms the server stamps each entry with the label of the credential
+  that wrote it; co-editing rooms carry no such stamp. Presence (cursors, names,
+  "ready" signals) is relayed live to connected participants, held only in
+  memory while relayed and never stored. Apps, including BayLeaf's own client
+  library, keep room links in the participant's browser storage on their device.
+  Rooms set no cookies and never run inference, code or agents. The Rooms
+  Worker has observability disabled and logs no IP addresses, content, labels or
+  credentials; Cloudflare processes connection metadata as for every BayLeaf
+  Worker (see edge logs below). Rooms are for live activities, not records: keep
+  grades, rosters and real-name mappings out. See
+  [the Rooms contract](rooms/docs/rooms-v2.md) and
+  [design](rooms/DESIGN.md).
+- **Rooms operational telemetry:** aggregate counts in fixed 15-minute windows
+  (room lifecycle, appends and their bytes, connections, presence relays and
+  fan-out frames), split only by room format and a fixed outcome. They exclude
+  room and credential identifiers, labels, owners, IP addresses, paths, content
+  and presence state, are kept for at most 90 days like other telemetry, and are
+  never published. Counting is best-effort and switched off entirely when Rooms
+  telemetry is disabled.
 - **Identity (Chat and API):** CruzID, email, and display name from CILogon at
   sign-in. The email is used to identify your account, route you to the right
   groups, and (for the API) tag upstream requests for per-user rate limiting.
@@ -241,6 +273,27 @@ version-controlled alongside the code that enforces them:
   The mechanism is deployed for community inboxes;
   full live retirement/recovery qualification remains unfinished and is an
   explicitly accepted limitation of community availability.
+- **Rooms:** each room has a fixed expiry, by default **30 days** after creation
+  and never more than **90 days** ahead. Use never extends it. The owner can move
+  it earlier or later, each time at most 90 days ahead, so a room lasts beyond 90
+  days only through deliberate owner extensions. At expiry, owner deletion or
+  account retirement, the room follows one destruction path: connected
+  participants are disconnected, the room's Durable Object storage is deleted in
+  one atomic operation, and its index row is removed. A scheduled sweep every 15
+  minutes retries any destruction that did not finish. Revoked credentials keep
+  their label and digest in the room until it ends. Idempotency records are
+  pruned after 24 hours. Cloudflare keeps
+  [point-in-time recovery history for Durable Object SQLite storage for 30 days](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/#pitr-point-in-time-recovery-api),
+  so a deleted room's content remains technically recoverable by the operator
+  for up to **30 days** after deletion; D1 Paid recovery history can likewise
+  retain deleted index rows for **30 days**. Participants' exports and the copies
+  their browsers hold are outside BayLeaf's reach. On account retirement the API
+  records the retirement in the same transaction as identity deletion and retries
+  daily until Rooms acknowledges it; Rooms then keeps a permanent fence (the
+  opaque account generation and a timestamp, linkable account metadata) so the
+  retired account can never own rooms again, and destroys every room it owned.
+  This handoff is eventual: link holders can keep using a room between identity
+  deletion and acknowledgement.
 - [API retention policy](api/RETENTION.md): prompts and completions are **not
   stored**. Accounts and their keys are eligible for daily cleanup after **18
   calendar months** without activity, measured from the later of account creation
@@ -277,7 +330,8 @@ version-controlled alongside the code that enforces them:
 
 - **Delete on demand.** In Chat, *Settings → Data Controls* lets you delete
   individual conversations or all of them. In the API dashboard you can revoke
-  your key and destroy your sandbox.
+  your key and destroy your sandbox. Room owners can revoke room links or delete
+  a room through the API; any link holder can export a room first.
 - **Export.** *Settings → Data Controls → Export Chats* in the Chat interface
   gives you a JSON dump of everything BayLeaf holds for you.
 - **Records hold.** If you are subject to a litigation hold, audit, or CPRA
@@ -316,6 +370,7 @@ research-and-education identity broker.
   `bayleaf-proxies.dev`, and hosts the private operational
   telemetry Worker/D1 collector described above, plus Inboxes Email Routing,
   receiving Worker, private R2 payload storage and separate D1 metadata/search,
+  the Rooms Worker with per-room Durable Object storage and its D1 owner index,
   and R2 storage of approved public model artifacts (no user data).
 - [Daytona](https://www.daytona.io/): sandboxed Linux execution environments
   for the Code Sandbox feature (opt-in).

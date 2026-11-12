@@ -25,6 +25,25 @@ HTTP header redaction. Operator/provider access remains possible. Account-retire
 and recovery integration retain test limitations accepted for community availability. See
 [`inbox/DESIGN.md`](../inbox/DESIGN.md) and [`inbox/QUALIFICATION.md`](../inbox/QUALIFICATION.md).
 
+**Separate opt-in boundary:** Rooms also intentionally stores content. This
+campus service has its own Worker (`bayleaf-rooms`, on `bayleaf-rooms.dev`), one
+SQLite-backed Durable Object per room and a D1 owner index; the API reaches it
+only through the `ROOMS` service binding and stores no room content itself.
+A room holds participant entries (JSON, or Yjs updates in co-editing rooms),
+labels, scopes and SHA-256 digests of credential secrets; the index holds the
+opaque account generation, label, codec and timestamps. Presence is relayed in
+memory and never stored. Each room has a fixed expiry (default 30 days, at most
+90 days ahead, moved only by its owner; use never renews it). Expiry, owner
+deletion and account retirement share one destruction path: sockets close, Durable
+Object storage is deleted atomically, then the index row is removed; a 15-minute
+cron retries stuck or overdue rooms. Durable Object point-in-time recovery keeps
+history for 30 days and D1 Paid Time Travel for 30 days, so deletion is not
+immediate erasure. Account deletion writes a `room_retirements` ledger row in the
+same transaction as identity deletion; a daily job retries `ROOMS.retireOwner`
+until acknowledged, and the Rooms D1 keeps a permanent `retired_owners` fence.
+Operator/provider access remains possible. See [`rooms/DESIGN.md`](../rooms/DESIGN.md)
+and [`rooms/QUALIFICATION.md`](../rooms/QUALIFICATION.md).
+
 ---
 
 ## Plaintext OpenRouter Traffic

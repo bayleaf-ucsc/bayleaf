@@ -75,6 +75,12 @@ this is why step 3's approval gate precedes both publishing and notifying.
 
 ## Refinement log
 
+- 2026-11-11 (Rooms #159): New opt-in content store; drafted with the facet and approved
+  as drafted, no user email (no existing data affected). Disclosed the Durable Object
+  30-day PITR residual and that owners can keep extending expiry 90 days at a time.
+  Telemetry wording changed from "none at launch" to active once Adam approved the
+  vocabulary in the same review; keep notice and activation in one decision.
+
 - 2026-11-04 (CollabMD retirement, initially local): Replaced active room-sharing
   disclosure with an explicit undeployed retirement note; existing documents,
   sidecars and collaborator copies remain. No retention policy change, publication,
