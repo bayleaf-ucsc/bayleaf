@@ -139,7 +139,16 @@ Private `metric-buckets` reads (hour buckets, last 24 h) returned rows for all s
 `room.*` names from source `rooms`, each carrying only closed-vocabulary attributes
 (`codec`, `outcome`, `kind`) and no identifiers. Counts match the two production
 smoke runs (for example `room.lifecycle` json/created 3 and json/deleted 3,
-`room.appends` json/scope 2). Item 6 below is therefore complete.
+`room.appends` json/scope 2).
+
+A second read at the export grain (`bucket=900000`) shows the aligned window
+starting 2026-11-12T07:15Z for all six names, every row with `samples` 1 (one
+export, no duplicate): `room.lifecycle` json created/deleted 3/3 and yjs 1/1,
+`room.appends` json accepted 2, frozen 2, scope 2 and yjs accepted 2,
+`room.append.bytes` 34 and 76, `room.connections` opened 6, `room.presence`
+relayed 2, `room.fanout.frames` entry 8 and presence 8. That window holds the
+three smoke runs of that quarter hour (one aborted early by local DNS caching
+after creating and deleting its room). Item 6 below is therefore complete.
 
 ## Activation checklist (all operator gates; completed 2026-11-11, readback 2026-11-12)
 
