@@ -117,6 +117,7 @@ bayleaf/
 │   ├── llms.txt          # Agent-facing gloss of surfaces; defers to api.bayleaf.dev/llms.txt
 │   └── images/           # og-card.png + the script that generates it
 ├── inbox/                # BayLeaf Inboxes Worker (#97; authenticated campus owners)
+├── rooms/                # BayLeaf Rooms Worker (#159; shared state for static apps)
 ├── sandbox/              # Public BayLeaf Sandboxes home → https://sandbox.bayleaf.dev
 ├── telemetry/            # Live first-party collector/D1; private data, public status (#112)
 ├── politics/             # Dependency audit, VPATs, position papers
@@ -151,6 +152,15 @@ content, so it is outside the API's ZDR/ZOA posture. Deployed for operator-only
 email/webhook qualification, now available to authenticated campus owners;
 optional creation-only DKIM domain allowlists are enabled for new email inboxes.
 **Read `inbox/AGENTS.md` and `inbox/DESIGN.md` before working on it.**
+
+`rooms/` is the separate `bayleaf-rooms` Worker (issue #159): durable shared
+logs (JSON or Yjs) with live WebSocket relay for static apps, served to
+participants on `bayleaf-rooms.dev` through capability links, with one Durable
+Object per room and its own D1 owner index. Owners manage rooms only through the
+API's `ROOMS` service binding (`/rooms` on `api.bayleaf.dev`). It intentionally
+stores participant content, so it is outside the API's ZDR/ZOA posture. BayLeaf
+relays, it does not arbitrate. **Read `rooms/AGENTS.md` and `rooms/DESIGN.md`
+before working on it.**
 
 Place scripts and analysis machinery for a specific service inside that service's
 directory (for example, `api/scripts/` or `chat/analysis/`), not at the
@@ -257,7 +267,9 @@ Chat root, Proxies apex entry/recovery and Inboxes apex entry (never tenant orig
 or authenticated diagnostics), five native OWUI aggregate metrics, existing synthetic probe summaries,
 and aggregate deletion-job reports. Fixed 15-minute Inboxes receipt/lifecycle/
 cleanup metrics are also approved, without addresses, inbox/account identifiers,
-paths, credentials or content. All have a 90-day active maximum; provider
+paths, credentials or content. Fixed 15-minute Rooms aggregates (6 names, 30
+series, policy 5) are approved likewise, without room/credential/owner identifiers,
+labels, content or presence state, and are never published. All have a 90-day active maximum; provider
 recovery history and derived-artifact expiry are documented in `PRIVACY.md`.
 Browser records contain no visitor identifiers or retained IPs: only a coarse
 campus/other/unknown network category is derived transiently at the collector.

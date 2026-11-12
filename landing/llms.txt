@@ -30,7 +30,8 @@ them to Chat or Sandboxes.
 
 ## Optional
 
-- [bayleaf-proxies.dev](https://bayleaf-proxies.dev/llms.txt) and [bayleaf-inboxes.dev](https://bayleaf-inboxes.dev/llms.txt): auxiliary domains that serve user-created resources (sandbox app previews and inboxes), kept apart from bayleaf.dev for cookie isolation.
+- [bayleaf-proxies.dev](https://bayleaf-proxies.dev/llms.txt), [bayleaf-inboxes.dev](https://bayleaf-inboxes.dev/llms.txt) and [bayleaf-rooms.dev](https://bayleaf-rooms.dev/): auxiliary domains that serve user-created resources (sandbox app previews, inboxes and rooms), kept apart from bayleaf.dev for cookie isolation.
+- BayLeaf Rooms: durable shared state with live relay for static apps you build (class activities, co-editing, presence), shared through capability links; see the [Rooms guide](https://api.bayleaf.dev/docs/rooms.md) and the [API guide](https://api.bayleaf.dev/llms.txt).
 
 - [Source repository](https://github.com/bayleaf-ucsc/bayleaf): public configuration and code for every service.
 - [BayLeaf Blog](https://blog.bayleaf.dev/): writing about the project.

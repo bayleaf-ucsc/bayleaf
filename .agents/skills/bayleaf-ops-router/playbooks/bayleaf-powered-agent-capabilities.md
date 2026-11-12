@@ -157,6 +157,11 @@ API to keep a retired capability appearing functional.
 
 ## Refinement log
 
+- 2026-11-11 (Rooms #159): Skills only, no MCP tools, by decision. A skill-only capability
+  must still be gated in the sandbox plugin (it loads every `skills/` folder); unlike
+  Inboxes it stays under shared MCP. Matrix in `rooms/QUALIFICATION.md`. Desktop discovery
+  verified live: the catalog skill surfaced in a harness immediately after the API deploy.
+
 - 2026-11-11 (multimodal decisions, deployed): OpenRouter's documented
   media-in-state transport and live ZDR endpoint evidence clear the earlier
   upstream blocker, not the rollout gate. Actual local Worker + capped live

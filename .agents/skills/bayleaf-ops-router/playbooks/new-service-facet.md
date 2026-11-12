@@ -58,6 +58,15 @@ traffic without changing the Worker.
 
 ## Refinement log
 
+- 2026-11-11 (Rooms #159, deployed to campus): Spike, then four AX playtests, then a binding
+  `DESIGN.md` let four directory-scoped subagents build Worker, API, telemetry and docs in
+  parallel; one RPC method list was the integration check. Before the API deploy, compare
+  live vars and main's commits, and carry main-only code into the worktree rather than
+  merging. A collector writer map is replace-only: re-put the whole map from the operator's
+  local `.dev.vars.production.json`, cross-checked against each service's token file, and
+  deploy the new source's policy before the map names it. New zones need a Workers Custom
+  Domain (Wrangler OAuth lacks DNS write); local negative DNS caching can hide it for 30 min.
+
 - 2026-10-24 (computer-use, local only): Existing owner auth and sandbox provider
   carry screenshot/input transit without new storage or a new provider. Separate
   API transit posture from persistent guest/agent history; activation remains an
