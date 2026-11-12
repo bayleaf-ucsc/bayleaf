@@ -152,6 +152,8 @@ const r2 = await post(w.secret, "same", { type: "arg.create", text: "hi" });
 check(r1.seq === r2.seq, "idempotent retry returns the same seq");
 const rd = await part(j, m.secret, "/redact", "POST", { seq: r1.seq });
 const after = await (await part(j, w.secret, "/log?after=0")).json();
+for (const q of ["limit=-1", "limit=abc", "after=-5", "after=1.5", "limit=0"])
+  check((await part(j, w.secret, `/log?${q}`)).status === 400, `log read refuses ${q} (SQLite LIMIT -1 means unlimited)`);
 check(rd.status === 200 && after.entries[0].redacted && after.entries[0].cred === "students", "redact keeps seq and cred, tombstones data");
 const sock = async (key) => {                                // raw socket: plain JSON presence, no provider
   const { url } = await (await part(j, key, "/tickets", "POST", { after: 0 })).json();

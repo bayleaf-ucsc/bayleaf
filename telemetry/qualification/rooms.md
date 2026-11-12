@@ -133,7 +133,15 @@ At proposal time the code matched the proposal exactly so review could decide.
 Both drops were approved and are implemented: dropping `codec` from connections and `room.compactions`
 would give 6 names and 30 series.
 
-## Activation checklist (all operator gates; completed at launch, 2026-11-11)
+## Live readback (2026-11-12)
+
+Private `metric-buckets` reads (hour buckets, last 24 h) returned rows for all six
+`room.*` names from source `rooms`, each carrying only closed-vocabulary attributes
+(`codec`, `outcome`, `kind`) and no identifiers. Counts match the two production
+smoke runs (for example `room.lifecycle` json/created 3 and json/deleted 3,
+`room.appends` json/scope 2). Item 6 below is therefore complete.
+
+## Activation checklist (all operator gates; completed 2026-11-11, readback 2026-11-12)
 
 1. Operator approves this vocabulary (or a revised one), including the series
    count and the small-number publication rule. Record date and scope here.

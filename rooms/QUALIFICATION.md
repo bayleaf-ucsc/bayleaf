@@ -19,7 +19,7 @@ room credentials. Owner credentials are ordinary keys, sandbox credentials and
 | Surface / verbs | Decision and reason | Discovery + invocation | Auth / consent boundary | Delivery / follow-up owner | Verification |
 |---|---|---|---|---|---|
 | Desktop OpenChamber / OpenCode, all owner verbs | **Expose.** Agents build the apps that use rooms; the HTTP API plus a skill suffices | Catalog skill `bayleaf-rooms` in `api/src/routes/docs.ts`, pointing at `/docs/rooms.md`; curl/fetch with the user's key | Server enforces owner, quotas, expiry. No native approval: the skill tells agents to ask before create, delete, revoke and before sharing links | API deploy; catalog version bump for existing clients | Pending: fresh-session discovery prompt, authorized create/issue/delete, negative discovery while disabled |
-| Hosted OpenChamber, all owner verbs | **Expose.** Same reason; the sandbox credential is the sanctioned owner path | Plugin skill `api/sandbox-plugin/skills/bayleaf-rooms/SKILL.md`; curl with `$BAYLEAF_API_KEY` to `api.bayleaf.dev` only | Same server enforcement. Credential substituted by Daytona for `api.bayleaf.dev` only; skill forbids putting it in apps or links | Plugin commit, push, then API pin. Plugin `index.mjs`/`test.mjs` need a Rooms gate and updated skill-set assertions (not yet done) | Pending: installed skill text and pin read back, behavioral discovery in a fresh session |
+| Hosted OpenChamber, all owner verbs | **Expose.** Same reason; the sandbox credential is the sanctioned owner path | Plugin skill `api/sandbox-plugin/skills/bayleaf-rooms/SKILL.md`; curl with `$BAYLEAF_API_KEY` to `api.bayleaf.dev` only | Same server enforcement. Credential substituted by Daytona for `api.bayleaf.dev` only; skill forbids putting it in apps or links | Plugin `c13babd` (gated on `BAYLEAF_ROOMS_ENABLED`, kept under shared MCP; 36/36 plugin tests), then API pin | Pending: installed skill text and pin read back, behavioral discovery in a fresh session |
 | MCP tools (hosted shared MCP, plugin tools) | **Omit**, by decision. Rooms is multi-step app building, better taught than wrapped; secrets would land in tool output | None | n/a | Revisit if AX shows agents failing with curl | Negative discovery: no `rooms` tool in plugin or shared MCP inventory |
 | BayLeaf Chat | **Omit**, by decision. No owner credential path in Chat; copying room content into Chat adds stored history | None | n/a | Revisit on a concrete course request | Negative discovery: no Chat tool, model or prompt mentions Rooms as usable |
 | API dashboard card | **Expose.** Owners need to see expiry and delete without an agent | Card listing rooms with label, codec, expiry, delete | Session-gated; delete confirms | API deploy | Pending: real owner login, list, delete of a synthetic room |
@@ -55,9 +55,10 @@ skill appeared in a live harness catalog right after the API deploy.
 
 Review fixes from PR #164 (check-then-use revalidation, yjs update validation, expired-socket ending,
 byte-accurate caps, provider storage and reconnect fixes, manage-scope consent wording) redeployed the
-same day: Worker `57bca987`, API `c050152b`; `prod-smoke.mjs` 19/19 again, 0 rooms left.
+same day: Worker `57bca987`, API `c050152b`; `prod-smoke.mjs` 19/19 again, 0 rooms left. Round 2 (log range parsing, upgrade revalidation, paged export) redeployed
+2026-11-12: Worker `5c59d23e`, smoke 19/19.
 
-Pending: one exported telemetry window from real traffic; deployed fan-out
+Telemetry: exported windows read back privately on 2026-11-12 (all six names, closed vocabulary only). Pending: deployed fan-out
 measurement; browser proof against production; retirement exercised live.
 Note: a client that looked up `bayleaf-rooms.dev` before the domain existed may
 cache the negative answer for up to 30 minutes (zone SOA minimum 1800 s).

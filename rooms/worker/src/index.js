@@ -546,7 +546,7 @@ export class Room extends DurableObject {
   }
 
   exportRoom(format) {
-    const all = this.read(0, 1_000_000);
+    const all = this.readAll();
     if (format === "yjs") return { content_type: "application/octet-stream", body: yjsExport(all.map((e) => e.data)) };
     return { content_type: "application/x-ndjson", body: all.map((e) => JSON.stringify(e)).join("\n") + "\n" };
   }
@@ -635,9 +635,10 @@ export class Room extends DurableObject {
           max_appends_per_second: this.L.MAX_APPENDS_PER_SECOND, ticket_seconds: TICKET_MS / 1000 } });
 
     if (path === "/log" && req.method === "GET") {
-      const after = Number(url.searchParams.get("after") ?? 0);
-      const limit = Math.min(Number(url.searchParams.get("limit") ?? 500), 1000);
-      return json({ entries: this.read(after, limit), head: this.head });
+      // Integers only: SQLite reads LIMIT -1 as "no limit", which would bypass paging.
+      const after = Number(url.searchParams.get("after") ?? 0), limit = Number(url.searchParams.get("limit") ?? 500);
+      if (!Number.isInteger(after) || after < 0 || !Number.isInteger(limit) || limit < 1) return fail(400, "invalid_range");
+      return json({ entries: this.read(after, Math.min(limit, 1000)), head: this.head });
     }
 
     if (path === "/log" && req.method === "POST") {
@@ -720,6 +721,17 @@ export class Room extends DurableObject {
 
   // --- The log ------------------------------------------------------------
 
+  // Every retained entry, paged like live replay; the room byte cap bounds the total.
+  readAll() {
+    const out = [];
+    for (let after = 0; ; ) {
+      const page = this.read(after, 500);
+      out.push(...page);
+      if (page.length < 500) return out;
+      after = page[page.length - 1].seq;
+    }
+  }
+
   countAppend(outcome, bytes) {
     this.count("room.appends", { codec: this.codec, outcome });
     if (bytes) this.count("room.append.bytes", { codec: this.codec, outcome }, bytes);
@@ -792,7 +804,7 @@ export class Room extends DurableObject {
   // merge that still fails leaves the log as it is: never wedge the room.
   compact() {
     const head = this.head;
-    const u8 = yjsMerge(this.read(0, 1_000_000).map((e) => e.data));
+    const u8 = yjsMerge(this.readAll().map((e) => e.data));
     if (!u8) return;
     const merged = b64encode(u8);
     const ts = Date.now();
@@ -816,7 +828,7 @@ export class Room extends DurableObject {
     const ticket = url.searchParams.get("ticket");
     const t = this.sql.exec("SELECT * FROM tickets WHERE ticket = ?", ticket).toArray()[0];
     this.sql.exec("DELETE FROM tickets WHERE ticket = ?", ticket);       // single use
-    const cred = t && t.exp >= Date.now() ? this.credById(t.cred_id) : null;
+    const cred = t && t.exp >= Date.now() ? this.current(t.cred_id) : null;   // current(): not mid-teardown or expired
     if (!cred) { this.count("room.connections", { outcome: "auth_failed" }); return this.reject(t ? "credential" : "ticket"); }
     if (this.ctx.getWebSockets().length >= this.L.MAX_SOCKETS_PER_ROOM) {
       this.count("room.connections", { outcome: "room_busy" });
