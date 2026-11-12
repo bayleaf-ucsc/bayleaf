@@ -85,9 +85,9 @@ try {
   for (const room of made) {
     try {                                 // one failed delete must not strand the other room
       const d = await owner(`/${room}`, "DELETE");
-      check(d.status === 200, `delete ${room}`);
+      check(d.status === 200, "delete smoke-test room");
       check((await fetch(`${BASE}/${room}`)).status === 404, "deleted room is gone on bayleaf-rooms.dev");
-    } catch (e) { check(false, `delete ${room}: ${e.message}`); }
+    } catch (e) { check(false, `delete smoke-test room: ${e.name}`); }
   }
 }
 console.log(failures ? `\n${failures} failed` : "\nproduction smoke test passed");
