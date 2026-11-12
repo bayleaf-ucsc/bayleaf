@@ -7,12 +7,15 @@ Local only (`wrangler dev --local`); not deployed. Code: `worker/src/index.js`
 ## Run it
 
 ```bash
-cd rooms/worker && npm install && printf 'OWNER_TOKEN=dev-owner\n' > .dev.vars
-npm run dev                        # terminal 1
-node test/spike.mjs                # terminal 2: 41 checks
+cd rooms/worker && npm install && printf 'DEV_OWNER_TOKEN=dev-owner\n' > .dev.vars
+npm run dev                        # terminal 1, on :8791
+node test/spike.mjs                # terminal 2: the spike checks
 # stop and restart `npm run dev`, then:
 node test/spike.mjs verify         # state survived the restart
 ```
+
+`npm test` runs the whole local suite (these checks, the restart check and the
+production-contract checks) against fresh state, managing wrangler itself.
 
 ## What passed
 

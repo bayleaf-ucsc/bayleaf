@@ -36,6 +36,18 @@ As in `rooms-v2.md`, plus:
 - Failed `rk_`/ticket authentication counts against a separate `REJECT_LIMIT`
   rate-limit binding keyed by room id, so a leaked URL cannot drain the
   legitimate budget. A missing binding fails closed (503).
+- A yjs append is validated by applying it to a scratch `Y.Doc` before it is
+  stored; an update that does not apply is 400 `yjs_update_invalid`, so the log
+  never holds bytes that would break compaction or catch-up.
+- Every handler revalidates the room (still live) and its credential (not
+  revoked, not expired) after its last `await` and before mutating, so a
+  revoke, delete or expiry that lands mid-request is never outrun.
+- A socket ends when its credential expires, not only on revoke: the Durable
+  Object alarm is set to the earlier of `expires_at` and the earliest live
+  credential expiry, and on firing sends `end` `expired` to those sockets.
+- The provider stores `{room, key, base}` together under one page-stable
+  `storageKey`, so a page reloaded without a fragment finds its link, and a
+  stored key is always read back with the room and base it was issued for.
 
 ## Owner RPC: `class RoomManagement extends WorkerEntrypoint`
 
@@ -82,12 +94,14 @@ D1 (`rooms/worker/migrations/`):
 
 Durable Object SQLite: as in the spike (meta, creds with `scopes`, entries,
 chunks, idem, tickets), plus `bytes` in meta for the room cap. Idempotency rows
-older than 24 hours are pruned on append.
+older than 24 hours are pruned on the next append after that; otherwise they are
+removed when the room ends.
 
 Lifecycle (DECISIONS.md item 11): a fixed `expires_at` (default 30 days, at most
 90 days ahead). Use never renews it. There is one destruction path, `destroy(reason)`:
 mark the D1 row `destroying` → `end` to sockets → `deleteAll` → delete the D1 row.
-The DO alarm fires at `expires_at`. A cron every 15 minutes is the backstop: it
+The DO alarm fires at `expires_at` (or earlier, to end sockets of an expiring
+credential, then re-arms). A cron every 15 minutes is the backstop: it
 destroys index rows past expiry or stuck in `destroying`, at most 20 per run.
 
 ## Limits (env vars, read by `getLimits`)
@@ -108,34 +122,34 @@ As with Inboxes:
   (`api/src/userRetention.ts`). Its columns match the inbox ledger
   (`generation, retired_at, fenced_at, checked_at`), so one retry routine serves
   both services.
-- A daily API job retries `ROOMS.retireOwner` until it succeeds.
+- A daily API job retries `ROOMS.retireOwner` until it succeeds. Each call is
+  bounded to 8 seconds; a timeout leaves `fenced_at` NULL and ends that ledger's
+  pass for the run, so a hung binding never blocks the rest of the job.
 - `retireOwner` keeps working while `ROOMS_ENABLED` is off.
 
-## Telemetry (proposal for review; DECISIONS.md item 13)
+## Telemetry (approved 2026-11-11; DECISIONS.md item 13)
 
 These are aggregate counts in fixed 15-minute windows, written to the existing
 collector by a dedicated writer key, `ROOMS_TELEMETRY_WRITE_SECRET`, behind the
-switch `ROOMS_TELEMETRY_ENABLED` (off until approved). Never included: room or
-credential ids, labels, owners, IPs, paths, content or presence state.
+switch `ROOMS_TELEMETRY_ENABLED`. Never included: room or credential ids, labels,
+owners, IPs, paths, content or presence state.
 
 | Name | Unit | Attributes (closed vocabularies) |
 |---|---|---|
 | `room.lifecycle` | `1` | `codec` json\|yjs; `outcome` created\|expired\|deleted\|retired |
 | `room.appends` | `1` | `codec`; `outcome` accepted\|frozen\|too_large\|room_full\|scope\|rate_limited |
 | `room.append.bytes` | `By` | `codec`; `outcome` accepted |
-| `room.connections` | `1` | `codec`; `outcome` opened\|auth_failed\|room_busy |
+| `room.connections` | `1` | `outcome` opened\|auth_failed\|room_busy |
 | `room.presence` | `1` | `outcome` relayed\|rate_limited\|too_large |
 | `room.fanout.frames` | `1` | `kind` entry\|presence (frames sent: the cost signal) |
-| `room.compactions` | `1` | `outcome` compacted |
 
 Counting is best-effort. A Durable Object keeps counters in memory and adds them
 to `metric_windows` at most every 10 s and when it hibernates or is destroyed;
 counts since the last write are lost if the object is evicted. The 15-minute cron
-exports completed windows and deletes them. **Approved 2026-11-11 with two
-changes:** `room.connections` carries no `codec`, and `room.compactions` is
-dropped. That leaves 6 names and 30 fixed series, never published
-(`telemetry/qualification/rooms.md`). Policy and validator changes in `telemetry/` need Adam's review before
-the switch turns on.
+exports completed windows and deletes them. Adam approved the proposal on
+2026-11-11 with two changes: `room.connections` carries no `codec`, and
+`room.compactions` is dropped. That leaves 6 names and 30 fixed series (policy 5),
+never published (`telemetry/qualification/rooms.md`).
 
 ## Kill switches and deploy order
 
@@ -163,7 +177,9 @@ the switch turns on.
 - **App-token scopes** for the owner plane, following `api/src/grants.ts` and
   `SCOPES.md`. Proposed:
   - `rooms.read`: limits, list, get, export
-  - `rooms.manage`: create, update, delete, credentials
+  - `rooms.manage`: create, update, delete, credentials. Every participant link
+    can read and export its room, so `rooms.manage` effectively grants read of
+    every room too.
 - App tokens cover the whole account, not single rooms: `rooms.manage`
   creates rooms and `rooms.read` lists them, which a room-bound token couldn't
   do. To share one room, use its capability link.

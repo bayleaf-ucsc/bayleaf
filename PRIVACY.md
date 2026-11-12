@@ -281,8 +281,9 @@ version-controlled alongside the code that enforces them:
   participants are disconnected, the room's Durable Object storage is deleted in
   one atomic operation, and its index row is removed. A scheduled sweep every 15
   minutes retries any destruction that did not finish. Revoked credentials keep
-  their label and digest in the room until it ends. Idempotency records are
-  pruned after 24 hours. Cloudflare keeps
+  their label and digest in the room until it ends. Idempotency records older
+  than 24 hours are pruned on the room's next append; otherwise they are deleted
+  when the room ends. Cloudflare keeps
   [point-in-time recovery history for Durable Object SQLite storage for 30 days](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/#pitr-point-in-time-recovery-api),
   so a deleted room's content remains technically recoverable by the operator
   for up to **30 days** after deletion; D1 Paid recovery history can likewise

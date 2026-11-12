@@ -193,8 +193,31 @@ for (const s of [s3, s4, s5]) s.ws.close();
 const store = new Map(), storage = { setItem: (k, v) => store.set(k, v), getItem: (k) => store.get(k), removeItem: (k) => store.delete(k) };
 const pa = new BayLeafRoomProvider(Y, new Y.Doc(), { base: BASE, link: "#" + w.link_fragment, storage, storageKey: "deck:projector" });
 const pb = new BayLeafRoomProvider(Y, new Y.Doc(), { base: BASE, link: "#" + qr.link_fragment, storage, storageKey: "deck:student" });
-check(store.get("deck:projector") === w.secret && store.get("deck:student") === qr.secret, "storageKey keeps two links to one room apart");
+const stored = (k) => JSON.parse(store.get(k) ?? "null");
+check(stored("deck:projector")?.key === w.secret && stored("deck:student")?.key === qr.secret, "storageKey keeps two links to one room apart");
 pa.destroy(); pb.destroy();
+// A reload has no link and no room: the stored record supplies both, for its own base only.
+const pr2 = new BayLeafRoomProvider(Y, new Y.Doc(), { base: BASE, storage, storageKey: "deck:student" });
+check(pr2.room === j && pr2.key === qr.secret, "a reload with no link restores room and key from storage");
+pr2.destroy();
+let leaked = null;
+try { leaked = new BayLeafRoomProvider(Y, new Y.Doc(), { base: "https://attacker.example", storage, storageKey: "deck:student" }); } catch {}
+check(leaked === null, "a stored key is never used with a different base");
+
+// Provider: a 429 to the first whoami is retried, not cached as the answer.
+const realFetch = globalThis.fetch;
+let busy = 1;
+globalThis.fetch = (u, o) => (busy-- > 0 && String(u) === `${BASE}/${pr}`
+  ? Promise.resolve(new Response('{"error":"rate_limited"}', { status: 429 })) : realFetch(u, o));
+const pw = new BayLeafRoomProvider(Y, new Y.Doc(), { base: BASE, link: "#" + pc[0].link_fragment, storage: null });
+check(await until(() => pw.synced) && pw.can("append"), "a 429 whoami is retried: the provider syncs and can append");
+globalThis.fetch = realFetch;
+// Provider: overlapping reconnects leave exactly one socket.
+pw.reconnect(); pw.reconnect(); pw.connect();
+await until(() => pw.ws?.readyState === 1);
+await sleep(1500);
+check((await owner(`/${pr}`)).body.sockets === 1, "overlapping reconnects leave one socket, not several");
+pw.destroy();
 await owner(`/${j}`, "DELETE");
 check((await part(j, w.secret, "/")).status === 404, "deleted room is gone");
 

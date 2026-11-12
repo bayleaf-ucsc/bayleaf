@@ -63,6 +63,20 @@ await W.page.click(".ProseMirror"); await W.page.keyboard.press("End");
 await W.page.keyboard.type("after the thaw.", { delay: 15 });
 check(await converged() && (await text(K)).includes("after the thaw."), "an edit after unfreezing still converges");
 
+// Reload with the link already scrubbed: the stored {room, key, base} reconnects.
+await K.page.goto(`${PAGE}?base=${encodeURIComponent(BASE)}`);
+await K.page.waitForSelector(".ProseMirror[contenteditable=true]", { timeout: 20_000 }).catch(() => {});
+check(await until(async () => (await text(K).catch(() => "")) === (await text(W))), "a reload without the link restores the room from storage");
+// A different base gets nothing: the stored key never leaves for another origin.
+const leak = [];
+K.page.on("request", (r) => { if (r.url().startsWith("http://localhost:9")) leak.push(r.url()); });
+await K.page.goto(`${PAGE}?base=${encodeURIComponent("http://localhost:9")}`);
+await K.page.waitForTimeout(1500);
+check(leak.length === 0, "a page pointed at another base does not send the stored key there");
+K.log.errors.length = 0;          // that page throws "needs a link" by design
+await K.page.goto(`${PAGE}?base=${encodeURIComponent(BASE)}`);
+await K.page.waitForSelector(".ProseMirror[contenteditable=true]", { timeout: 20_000 });
+
 // One Yjs, one ProseMirror core, nothing noisy.
 for (const c of [K, W]) {
   const copies = (re) => new Set(c.log.urls.filter((u) => re.test(u)).map((u) => u.replace(/\?.*/, ""))).size;

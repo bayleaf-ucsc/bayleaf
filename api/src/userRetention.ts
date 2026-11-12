@@ -5,6 +5,8 @@ import type { Bindings } from './types';
 import { OPENROUTER_API, TINFOIL_ADMIN_API } from './constants';
 
 const BATCH_SIZE = 20; // Two bounded 8-second provider calls each, below cron's wall-time limit.
+const RETIRE_RPC_TIMEOUT_MS = 8000; // Same bound for a service binding's retireOwner.
+const TIMED_OUT = Symbol('timed out');
 export interface RetentionUser {
   email: string;
   created_at: number | null;
@@ -82,16 +84,22 @@ export async function retireInactiveUser(env: Bindings, user: RetentionUser, now
  * reconciled; this bounded job returning zero is not a restore safety check.
  */
 async function cleanupRetirements(env: Bindings, now: number, ledger: 'inbox_retirements' | 'room_retirements',
-  service: { retireOwner(owner: string): Promise<unknown> } | undefined): Promise<number> {
+  service: { retireOwner(owner: string): Promise<unknown> } | undefined, timeoutMs: number): Promise<number> {
   let replayFailures = 0;
-  for (const pending of [true, false]) {
+  passes: for (const pending of [true, false]) {
     const rows = (await env.DB.prepare(`SELECT generation FROM ${ledger}
       WHERE fenced_at IS ${pending ? '' : 'NOT '}NULL ORDER BY checked_at,generation LIMIT ?`)
       .bind(BATCH_SIZE).all<{ generation: string }>()).results;
     for (const row of rows) {
       await env.DB.prepare(`UPDATE ${ledger} SET checked_at=? WHERE generation=?`).bind(now, row.generation).run();
       try {
-        const result = await service?.retireOwner(row.generation) as { retired?: boolean } | undefined;
+        // A hung binding must not stall the rest of the job: give up on this
+        // ledger for this run, leaving fenced_at NULL so the next run retries.
+        let timer = 0;
+        const result = await Promise.race([service?.retireOwner(row.generation),
+          new Promise<typeof TIMED_OUT>(resolve => { timer = setTimeout(() => resolve(TIMED_OUT), timeoutMs); })])
+          .finally(() => clearTimeout(timer)) as { retired?: boolean } | typeof TIMED_OUT | undefined;
+        if (result === TIMED_OUT) { if (!pending) replayFailures++; break passes; }
         if (result?.retired === true) await env.DB.prepare(`UPDATE ${ledger}
           SET fenced_at=COALESCE(fenced_at,?) WHERE generation=?`).bind(now, row.generation).run();
         else if (!pending) replayFailures++;
@@ -102,9 +110,11 @@ async function cleanupRetirements(env: Bindings, now: number, ledger: 'inbox_ret
     .first<{ n: number }>())!.n;
 }
 
-export const cleanupRetiredInboxes = (env: Bindings, now: number) => cleanupRetirements(env, now, 'inbox_retirements', env.INBOXES);
+export const cleanupRetiredInboxes = (env: Bindings, now: number, timeoutMs = RETIRE_RPC_TIMEOUT_MS) =>
+  cleanupRetirements(env, now, 'inbox_retirements', env.INBOXES, timeoutMs);
 /** retireOwner works while ROOMS_ENABLED is off, so the switch never gates this. */
-export const cleanupRetiredRooms = (env: Bindings, now: number) => cleanupRetirements(env, now, 'room_retirements', env.ROOMS);
+export const cleanupRetiredRooms = (env: Bindings, now: number, timeoutMs = RETIRE_RPC_TIMEOUT_MS) =>
+  cleanupRetirements(env, now, 'room_retirements', env.ROOMS, timeoutMs);
 
 async function removeProviderKey(url: string, credential: string | undefined): Promise<boolean> {
   if (!credential) return false;

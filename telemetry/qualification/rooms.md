@@ -3,13 +3,26 @@
 **Status: approved by Adam 2026-11-11 with two changes (see below), activation at
 the Rooms launch.** Approved changes: `room.connections` carries no `codec`
 (auth failures need no room format), and `room.compactions` is dropped. That
-leaves 6 names and 30 fixed series. Counts are never published.
+leaves 6 names and 30 fixed series. Counts are never published. Deployed
+2026-11-11: collector `bayleaf-telemetry` version `a8d9859f` with
+`ROOMS_METRICS_ENABLED` true and a dedicated `rooms` writer (evidence in
+`rooms/QUALIFICATION.md`). The approved vocabulary is `ROOM_VOCABULARY` in
+`src/policies.js` (policy 5), enforced by `src/validate.js`.
 
-**Original status: proposed, not approved, not deployed, not enabled.** The vocabulary below
-is implemented locally in `src/policies.js` (`ROOM_VOCABULARY`, policy 5) and
-`src/validate.js` so that review can examine exact code and tests. Nothing here
-authorizes deployment, collection, secret provisioning or publication. Source of
-the proposal: `rooms/DESIGN.md`, section "Telemetry (proposal for review)".
+## Approved vocabulary: 6 names, 30 fixed series
+
+| Metric | Unit | Attributes | Series | Operator question |
+|---|---|---|---|---|
+| `room.lifecycle` | `1` | `codec` json\|yjs; `outcome` created\|expired\|deleted\|retired | 8 | Adoption; are rooms ending by expiry, owner deletion or account retirement as designed? |
+| `room.appends` | `1` | `codec`; `outcome` accepted\|frozen\|too_large\|room_full\|scope\|rate_limited | 12 | Use volume; are limits (entry size, room cap, rate, read-only) hit, and by which codec? |
+| `room.append.bytes` | `By` | `codec`; `outcome` accepted | 2 | Storage growth and cost; is `MAX_ENTRY_BYTES_*` sized right? |
+| `room.connections` | `1` | `outcome` opened\|auth_failed\|room_busy | 3 | Live usage; credential guessing or broken links; socket cap pressure |
+| `room.presence` | `1` | `outcome` relayed\|rate_limited\|too_large | 3 | Presence volume and whether its 1 KiB / 5/s limits bite |
+| `room.fanout.frames` | `1` | `kind` entry\|presence | 2 | Frames sent: the actual relay cost (Durable Object egress/CPU) |
+
+Sections marked historical below are the original proposal as reviewed, kept for
+the record. Where they differ from this table, this table is current; the
+exclusions, privacy argument and retention sections still apply unchanged.
 
 Source `rooms` uses the existing authenticated `POST /v1/metrics` protocol, schema
 1, policy 5 (policy 4 plus this source; no other policy change). It gets its own
@@ -25,11 +38,10 @@ window and is unchanged on retry, at most one point per series per batch. Every
 attribute listed for a name is required; unknown names, attributes or values are
 rejected for the whole batch. Missing points/windows are unknown, not zero.
 
-## Vocabulary: 7 names, 34 fixed series
+## Vocabulary: 7 names, 34 fixed series (original proposal, historical)
 
-`rooms/DESIGN.md` claims 33 series. The product of the listed vocabularies is
-**34** (`ROOM_SERIES`, asserted in `test/rooms.test.js`); the design doc should be
-corrected by its owner.
+At proposal time `rooms/DESIGN.md` claimed 33 series, while the product of the
+listed vocabularies was **34** (`ROOM_SERIES` then asserted 34).
 
 | Metric | Unit | Attributes | Series | Operator question |
 |---|---|---|---|---|
@@ -96,7 +108,7 @@ failure must never fail a participant request. Rooms should bound local storage
 and export eligibility as Inboxes does (sealed windows, 24-hour local expiry,
 durable batch UUID, only HTTP 202 acknowledges); that is Rooms-side work.
 
-## Recommendations (keep/drop)
+## Recommendations (keep/drop; historical, adopted as the two approved changes)
 
 - `room.lifecycle`: **keep.** Needed to verify expiry and retirement paths work.
 - `room.appends`: **keep.** Core limit-tuning and abuse signal.
@@ -117,11 +129,11 @@ durable batch UUID, only HTTP 202 acknowledges); that is Rooms-side work.
   success-only count cannot answer "is compaction healthy". As proposed it mostly
   restates appends / `COMPACT_ENTRIES`.
 
-These recommendations are not implemented: the code matches the proposal exactly
-so review can decide. Dropping `codec` from connections and `room.compactions`
+At proposal time the code matched the proposal exactly so review could decide.
+Both drops were approved and are implemented: dropping `codec` from connections and `room.compactions`
 would give 6 names and 30 series.
 
-## Activation checklist (all operator gates)
+## Activation checklist (all operator gates; completed at launch, 2026-11-11)
 
 1. Operator approves this vocabulary (or a revised one), including the series
    count and the small-number publication rule. Record date and scope here.
@@ -142,8 +154,8 @@ would give 6 names and 30 series.
 
 ## Local evidence
 
-`npm test` in `telemetry/`: 109 passing (2026-11-11), including
-`test/rooms.test.js`: the full 34-series matrix round-trips through validation;
+`npm test` in `telemetry/` (2026-11-11), including `test/rooms.test.js`: the full
+30-series matrix round-trips through validation;
 unknown attributes, values, names, units, codec on codec-less names, cross-source
 names, non-delta or misaligned windows and duplicate series are rejected; the
 receiver is off by default, accepts only the `rooms` writer, deduplicates retries

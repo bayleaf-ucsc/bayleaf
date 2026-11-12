@@ -7,6 +7,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import http from "node:http";
+import * as Y from "yjs";
 
 const BASE = process.env.ROOMS_BASE ?? "http://localhost:8791";
 const TOKEN = process.env.DEV_OWNER_TOKEN ?? "dev-owner";
@@ -31,7 +32,7 @@ const rows = (roomId) => d1(`SELECT * FROM rooms WHERE room_id = '${roomId}'`);
 async function room(who, opts = {}, cred = { role: "write", label: "w" }) {
   const r = (await owner(who, "/rooms", "POST", opts)).body;
   const c = (await owner(who, `/rooms/${r.room_id}/credentials`, "POST", cred)).body.credentials[0];
-  return { id: r.room_id, key: c.secret, cred: c };
+  return { id: r.room_id, key: c.secret, cred: c, ownerId: who };
 }
 async function sock(id, key) {
   const { url } = await (await part(id, key, "/tickets", "POST", { after: 0 })).json();
@@ -196,6 +197,93 @@ if (phase === "main") {
 
   check(d1("SELECT COUNT(*) AS n FROM metric_windows")[0].n === 0, "telemetry off: nothing accumulates in metric_windows");
 
+  // --- Yjs appends must be updates, not just base64 ----------------------------
+  const yv = acct("yjsvalid");
+  const yr = await room(yv, { codec: "yjs" });
+  const garbage = Buffer.from([255, 255, 255, 255, 1, 2, 3]).toString("base64");
+  const gh = await part(yr.id, yr.key, "/log", "POST", { data: garbage }, { "Idempotency-Key": "g1" });
+  check(gh.status === 400 && (await gh.json()).error === "yjs_update_invalid", "HTTP append of a malformed Yjs update: 400 yjs_update_invalid");
+  const ys = await sock(yr.id, yr.key);
+  ys.ws.send(JSON.stringify({ type: "append", idem: "g2", data: garbage }));
+  check(await until(() => ys.frames.some((f) => f.type === "error" && f.idem === "g2" && f.error === "yjs_update_invalid")),
+    "WebSocket append of a malformed Yjs update: error yjs_update_invalid");
+  const yd = new Y.Doc(); yd.getText("t").insert(0, "still fine");
+  const good = Buffer.from(Y.encodeStateAsUpdate(yd)).toString("base64");
+  const gok = await part(yr.id, yr.key, "/log", "POST", { data: good }, { "Idempotency-Key": "g3" });
+  const yexp = new Uint8Array(await (await part(yr.id, yr.key, "/export?format=yjs")).arrayBuffer());
+  const yback = new Y.Doc(); Y.applyUpdate(yback, yexp);
+  check(gok.status === 200 && (await gok.json()).seq === 1 && yback.getText("t").toString() === "still fine",
+    "the refused update was never stored: a valid one is seq 1 and export rebuilds it");
+  ys.ws.close();
+
+  // --- Revalidate before mutate: a revoke or delete while the body is in flight -
+  // The handler authenticates, then awaits the body; the owner acts meanwhile.
+  const slow = (id, key, path, body, headers = {}) => {
+    const buf = Buffer.from(JSON.stringify(body));
+    let finish;
+    const done = new Promise((resolve) => {
+      const req = http.request(`${BASE}/${id}${path}`, { method: "POST", headers: { Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json", "Content-Length": buf.length, ...headers } },
+        (res) => { let b = ""; res.on("data", (d) => (b += d)); res.on("end", () => resolve({ status: res.statusCode, body: b })); });
+      req.write(buf.subarray(0, 1));
+      finish = () => req.end(buf.subarray(1));
+    });
+    return { done, finish: () => finish() };
+  };
+  const tr = await room(acct("toctou"));
+  const own = (await owner(tr.ownerId, `/rooms/${tr.id}`)).body;
+  const sa = slow(tr.id, tr.key, "/log", { data: "raced" }, { "Idempotency-Key": "race" });
+  await sleep(500);
+  await owner(tr.ownerId, `/rooms/${tr.id}/credentials/${tr.cred.credential_id}`, "DELETE");
+  sa.finish();
+  const sar = await sa.done;
+  const others = (await owner(tr.ownerId, `/rooms/${tr.id}/credentials`, "POST", { role: "read", label: "check" })).body.credentials[0];
+  const trlog = await (await part(tr.id, others.secret, "/log?after=0")).json();
+  check(own?.head === 0 && sar.status === 401 && trlog.head === 0 && trlog.entries.length === 0,
+    `an append whose credential is revoked mid-request does not land (${sar.status}, head ${trlog.head})`);
+  const td = await room(acct("toctou-del"));
+  const st = slow(td.id, td.key, "/tickets", { after: 0 });
+  await sleep(500);
+  await owner(td.ownerId, `/rooms/${td.id}`, "DELETE");
+  st.finish();
+  const str = await st.done;
+  check(str.status === 404 && rows(td.id).length === 0, `a ticket requested across a room delete is refused (${str.status})`);
+
+  // --- Silent sockets end when their credential expires -------------------------
+  const ce = await room(acct("credexp"));
+  const short = (await owner(ce.ownerId, `/rooms/${ce.id}/credentials`, "POST", { role: "write", label: "short",
+    expires_at: new Date(Date.now() + 2500).toISOString() })).body.credentials[0];
+  const cs = await sock(ce.id, short.secret), keep = await sock(ce.id, ce.key);
+  check(await until(() => cs.ended() === "expired", 10_000), "a silent socket gets end 'expired' when its credential expires");
+  check(!keep.ended(), "a socket on a live credential stays open");
+  keep.ws.close();
+
+  // --- Concurrent issues cannot overrun the cap or interleave -------------------
+  const ci = await room(acct("issue"));
+  const batch = (p) => owner(ci.ownerId, `/rooms/${ci.id}/credentials`, "POST", { role: "read",
+    labels: Array.from({ length: 60 }, (_, i) => `${p}${i}`) });
+  const both = await Promise.all([batch("a"), batch("b")]);
+  const cl = (await owner(ci.ownerId, `/rooms/${ci.id}/credentials`)).body.credentials;
+  check(both.filter((r) => r.status === 201).length === 1 && both.some((r) => r.body?.error === "credential_limit") && cl.length === 61,
+    `two concurrent 60-credential issues: one lands whole, one is refused (${cl.length} credentials)`);
+  const dup = await Promise.all([0, 1].map(() => owner(ci.ownerId, `/rooms/${ci.id}/credentials`, "POST", { role: "read", labels: ["same", "twin"] })));
+  const cl2 = (await owner(ci.ownerId, `/rooms/${ci.id}/credentials`)).body.credentials;
+  check(dup.filter((r) => r.status === 201).length === 1 && dup.some((r) => r.body?.error === "label_taken") && cl2.length === 63,
+    "two concurrent issues of the same labels: one lands, one is label_taken");
+
+  // --- Byte caps are UTF-8 bytes -----------------------------------------------
+  const u = await room(acct("utf8"));
+  const wide = await part(u.id, u.key, "/log", "POST", { data: "中".repeat(30_000) }, { "Idempotency-Key": "wide" });
+  check(wide.status === 413, "a JSON entry of 30,000 CJK characters (90 KB UTF-8) exceeds the 64 KiB entry cap");
+  const p1 = await sock(u.id, u.key), p2 = await sock(u.id, u.key);
+  p1.ws.send(JSON.stringify({ type: "presence", state: "中".repeat(1000) }));
+  check(await until(() => p1.frames.some((f) => f.error === "presence_too_large")), "non-ASCII presence over 1 KiB UTF-8 is 413 presence_too_large");
+  await sleep(250);
+  p1.ws.send(JSON.stringify({ type: "presence", state: "中".repeat(300) }));
+  check(await until(() => p2.frames.some((f) => f.type === "presence" && f.peer.state?.length === 300)) && !p1.ended(),
+    "presence under the cap still relays, and the socket survives");
+  p1.ws.close(); p2.ws.close();
+
   // --- Leave a room for the kill-switch phase ----------------------------------
   const k = acct("killswitch");
   const kr = await room(k);
@@ -261,6 +349,27 @@ if (phase === "low") {
     `cron exports to the collector (${received.length} batch, ${sent.length} points)`);
   check(sent.every((pt) => pt.kind === "sum" && pt.temporality === "delta" && typeof pt.attributes === "object"), "points are delta sums with attribute objects");
   check(d1("SELECT COUNT(*) AS n FROM metric_windows WHERE window_start < " + (Date.now() - 1800000))[0].n === 0, "exported windows are deleted");
+  // The room cap counts UTF-8 bytes: 1500 "é" is 1502 UTF-16 units but 3002 bytes.
+  const u = await room(w);
+  const u1 = await part(u.id, u.key, "/log", "POST", { data: "é".repeat(1500) }, { "Idempotency-Key": "u1" });
+  const u2 = await part(u.id, u.key, "/log", "POST", { data: "é".repeat(1500) }, { "Idempotency-Key": "u2" });
+  check(u1.status === 200 && u2.status === 507 && (await owner(w, `/rooms/${u.id}`)).body.bytes === 3002,
+    "room bytes are UTF-8: a second 3 KB non-ASCII entry is room_full under a 4 KiB cap");
+  await part(u.id, u.key, "/redact", "POST", { seq: 1 });
+
+  // A full yjs room that is already one merged entry is not recompacted on every refusal.
+  const yf = await room(w, { codec: "yjs" });
+  const ydoc = new Y.Doc(), noise = () => Array.from({ length: 900 }, () => String.fromCharCode(97 + Math.floor(Math.random() * 26))).join("");
+  const upd = () => { const sv = Y.encodeStateVector(ydoc); ydoc.getText("t").insert(0, noise()); return Buffer.from(Y.encodeStateAsUpdate(ydoc, sv)).toString("base64"); };
+  const ys = [];
+  for (let i = 0; i < 5; i++) ys.push((await part(yf.id, yf.key, "/log", "POST", { data: upd() }, { "Idempotency-Key": `y${i}` })).status);
+  const first = (await (await part(yf.id, yf.key, "/log?after=0")).json()).entries;
+  await sleep(50);
+  const again = (await part(yf.id, yf.key, "/log", "POST", { data: upd() }, { "Idempotency-Key": "y9" })).status;
+  const second = (await (await part(yf.id, yf.key, "/log?after=0")).json()).entries;
+  check(ys.includes(507) && again === 507 && first.length === 1 && second.length === 1 && first[0].ts === second[0].ts,
+    `a full, compacted yjs room refuses without recompacting (${ys.join(",")}; merged entry ts unchanged)`);
+
   for (const s of [p, q, ...socks]) s.ws.close();
   stubServer.close();
 }

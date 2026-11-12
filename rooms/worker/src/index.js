@@ -36,7 +36,8 @@ const CHUNK = 1024 * 1024;            // compacted state is split under the 2 MB
 const TICKET_MS = 60_000;
 const IDEM_MS = DAY;                  // idempotency keys are honored for 24 hours
 // Presence lives in the socket attachment (2 KiB platform cap), so it stays small.
-// In yjs rooms it is an opaque base64 y-protocols Awareness update.
+// In yjs rooms it is an opaque base64 y-protocols Awareness update. Measured in
+// UTF-8 bytes of its JSON; the other half of the cap is headroom for conn, cred, pts.
 const MAX_PRESENCE = 1024;
 const PRESENCE_MS = 200;              // at most 5/s per connection
 
@@ -68,6 +69,24 @@ const b64encode = (u8) => {
   for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000));
   return btoa(s);
 };
+const utf8 = (s) => new TextEncoder().encode(s).length;      // caps count stored bytes, not UTF-16 units
+// A Yjs update is valid if a fresh document accepts it. Base64 alone is not enough:
+// one malformed update would make every later Y.mergeUpdates throw.
+const yjsValid = (u8) => { try { Y.applyUpdate(new Y.Doc(), u8); return true; } catch { return false; } };
+// Merge, skipping updates no document could apply; null if merging still fails.
+const yjsMerge = (datas) => {
+  const all = [];
+  for (const d of datas) try { all.push(b64decode(d)); } catch {}
+  if (all.length > 1) try { return Y.mergeUpdates(all); } catch {}    // one update merges to itself, unchecked
+  try { return Y.mergeUpdates(all.filter(yjsValid)); } catch { return null; }
+};
+// Export never fails: if even the valid updates will not merge, rebuild the
+// state in a document (losing only structs still waiting on missing history).
+const yjsExport = (datas) => yjsMerge(datas) ?? (() => {
+  const doc = new Y.Doc();
+  for (const d of datas) try { Y.applyUpdate(doc, b64decode(d)); } catch {}
+  return Y.encodeStateAsUpdate(doc);
+})();
 const bearer = (req) => (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "") || null;
 const iso = (ms) => (ms == null ? null : new Date(Number(ms)).toISOString());
 const isLabel = (l) => typeof l === "string" && l.length <= 64 && !/[\u0000-\u001f\u007f]/.test(l);
@@ -453,6 +472,7 @@ export class Room extends DurableObject {
 
   async create({ room_id, label, codec, expires_at }) {
     if (this.exists) throw new Error("exists");
+    this.destroying = false;
     this.setMeta("room_id", room_id);
     this.setMeta("label", label);
     this.setMeta("codec", codec);
@@ -489,6 +509,13 @@ export class Room extends DurableObject {
       return { error: "invalid" };
     const exp = body.expires_at === undefined ? null : Date.parse(body.expires_at);
     if (exp !== null && !(exp > Date.now())) return { error: "invalid" };
+    // Hash first: no await may separate the checks from the inserts, or concurrent
+    // issues interleave past the cap or leave a partial batch.
+    const made = await Promise.all(labels.map(async (label) => {
+      const secret = randomId("rk_", 24);
+      return { label, id: randomId("c_", 9), secret, hash: await sha256(secret) };
+    }));
+    if (!this.exists || this.destroying) return { error: "not_found" };
     const count = this.sql.exec("SELECT COUNT(*) AS n FROM creds").one().n;
     if (count + labels.length > max) return { error: "credential_limit", max };
     // All or nothing: check every label (and duplicates within the request) first.
@@ -499,15 +526,12 @@ export class Room extends DurableObject {
       seen.add(label);
     }
     const set = SCOPES.filter((s) => scopes.includes(s));      // canonical order, no duplicates
-    const out = [];
-    for (const label of labels) {
-      const id = randomId("c_", 9), secret = randomId("rk_", 24);
-      this.sql.exec("INSERT INTO creds (id, label, scopes, hash, expires_at) VALUES (?, ?, ?, ?, ?)",
-        id, label, set.join(","), await sha256(secret), exp);
-      out.push({ credential_id: id, label, scopes: set, secret, link_fragment: `room=${this.meta("room_id")}&key=${secret}`,
-        expires_at: iso(exp) });
-    }
-    return { credentials: out };
+    this.ctx.storage.transactionSync(() => {
+      for (const c of made) this.sql.exec("INSERT INTO creds (id, label, scopes, hash, expires_at) VALUES (?, ?, ?, ?, ?)",
+        c.id, c.label, set.join(","), c.hash, exp);
+    });
+    return { credentials: made.map(({ id, label, secret }) => ({ credential_id: id, label, scopes: set, secret,
+      link_fragment: `room=${this.meta("room_id")}&key=${secret}`, expires_at: iso(exp) })) };
   }
 
   credentials() {
@@ -523,12 +547,13 @@ export class Room extends DurableObject {
 
   exportRoom(format) {
     const all = this.read(0, 1_000_000);
-    if (format === "yjs") return { content_type: "application/octet-stream", body: Y.mergeUpdates(all.map((e) => b64decode(e.data))) };
+    if (format === "yjs") return { content_type: "application/octet-stream", body: yjsExport(all.map((e) => e.data)) };
     return { content_type: "application/x-ndjson", body: all.map((e) => JSON.stringify(e)).join("\n") + "\n" };
   }
 
   // Called only through destroyRoom(), after the D1 row is marked destroying.
   async teardown(reason) {
+    this.destroying = true;               // handlers resuming from an await must not write (see current)
     if (this.exists) {
       this.count("room.lifecycle", { codec: this.codec, outcome: reason });
       for (const ws of this.ctx.getWebSockets()) this.end(ws, reason === "retired" ? "deleted" : reason);
@@ -540,10 +565,11 @@ export class Room extends DurableObject {
     this.schema();
   }
 
-  // --- One alarm, two jobs: expiry and the telemetry flush ----------------
+  // --- One alarm, three jobs: expiry, the telemetry flush, ending sockets
+  // whose credential expires while they are silent ---------------------------
 
   async schedule() {
-    const at = Math.min(this.exists ? this.expiresAt : Infinity, this.flushAt ?? Infinity);
+    const at = Math.min(this.exists ? this.expiresAt : Infinity, this.flushAt ?? Infinity, this.nextCredExpiry());
     if (at === Infinity) await this.ctx.storage.deleteAlarm();
     else await this.ctx.storage.setAlarm(at);
   }
@@ -555,10 +581,20 @@ export class Room extends DurableObject {
     }
   }
 
+  // Earliest expiry among live credentials that hold a socket.
+  nextCredExpiry() {
+    if (!this.exists) return Infinity;
+    for (const { id, expires_at } of this.sql.exec(`SELECT id, expires_at FROM creds
+        WHERE revoked = 0 AND expires_at > ? ORDER BY expires_at`, Date.now()))
+      if (this.ctx.getWebSockets(id).length) return expires_at;
+    return Infinity;
+  }
+
   async alarm() {
     this.flushAt = null;
     await this.metrics.flush().catch(() => {});
     if (this.exists && Date.now() >= this.expiresAt) return this.expire();
+    this.endStale(this.ctx.getWebSockets());
     await this.schedule();
   }
 
@@ -586,9 +622,10 @@ export class Room extends DurableObject {
     }
     if (path === "/live") return this.live(req, url);
 
-    const cred = await this.authenticate(req);
+    let cred = await this.authenticate(req);
     if (!cred) return this.reject("credential");
     if (await limited(this.env.ACCEPT_LIMIT, this.meta("room_id"))) return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
+    if (!(cred = this.current(cred.id))) return this.stale();
     const need = (scope) => cred.scopes.includes(scope);
 
     if (path === "/" && req.method === "GET")
@@ -609,6 +646,7 @@ export class Room extends DurableObject {
       if (!idem) return fail(400, "idempotency_key_required");
       const body = await req.json().catch(() => null);
       if (!body || !("data" in body)) return fail(400, "data_required");
+      if (!(cred = this.current(cred.id))) return this.stale();
       const r = this.append(cred, idem, body.data);
       if (r.retry_after) return json({ error: r.error, retry_after: r.retry_after }, r.status, { "Retry-After": String(Math.ceil(r.retry_after)) });
       return r.error ? fail(r.status, r.error) : json({ seq: r.seq, ts: iso(r.ts) });
@@ -616,6 +654,7 @@ export class Room extends DurableObject {
 
     if (path === "/tickets" && req.method === "POST") {
       const body = await req.json().catch(() => ({}));
+      if (!(cred = this.current(cred.id))) return this.stale();
       const ticket = randomId("t_");
       this.sql.exec("DELETE FROM tickets WHERE exp < ?", Date.now());
       this.sql.exec("INSERT INTO tickets VALUES (?, ?, ?, ?)", ticket, cred.id, Number(body.after ?? 0), Date.now() + TICKET_MS);
@@ -632,10 +671,11 @@ export class Room extends DurableObject {
       if (!need("manage")) return fail(403, "scope", { need: "manage" });
       if (this.codec === "yjs") return fail(409, "redact_unavailable_for_codec");
       const { seq } = await req.json().catch(() => ({}));
+      if (!(cred = this.current(cred.id))) return this.stale();
       const row = this.sql.exec("SELECT data FROM entries WHERE seq = ?", seq).toArray()[0];
       if (!row) return fail(404, "no_such_entry");
       this.sql.exec("UPDATE entries SET data = 'null', redacted = 1 WHERE seq = ?", seq);
-      this.setMeta("bytes", this.bytes - (row.data?.length ?? 0) + 4);
+      this.setMeta("bytes", Math.max(0, this.bytes - utf8(row.data ?? "") + 4));
       this.broadcast({ type: "entry", entry: this.read(seq - 1, 1)[0] });
       return json({ seq, redacted: true });
     }
@@ -661,6 +701,22 @@ export class Room extends DurableObject {
     if (!c || c.revoked || (c.expires_at && c.expires_at <= Date.now())) return null;
     return { ...c, scopes: c.scopes ? c.scopes.split(",") : [] };
   }
+  // Why a credential's sockets must end: "revoked", "expired", or null if still valid.
+  credEnd(id) {
+    const c = this.sql.exec("SELECT revoked, expires_at FROM creds WHERE id = ?", id ?? "").toArray()[0];
+    return !c || c.revoked ? "revoked" : c.expires_at && c.expires_at <= Date.now() ? "expired" : null;
+  }
+
+  // Revalidate before mutate. Every await in a handler is a window in which the
+  // room can be torn down or expire and the credential be revoked or expire, so
+  // a handler calls this after its last await and writes only if it gets a cred.
+  current(id) {
+    if (!this.exists || this.destroying || Date.now() >= this.expiresAt) return null;
+    return this.credById(id);
+  }
+  stale() {
+    return this.exists && !this.destroying && Date.now() < this.expiresAt ? fail(401, "credential") : fail(404, "not_found");
+  }
 
   // --- The log ------------------------------------------------------------
 
@@ -684,29 +740,35 @@ export class Room extends DurableObject {
     const prior = this.sql.exec("SELECT seq, ts FROM idem WHERE cred_id = ? AND key = ?", cred.id, idem).toArray()[0];
     if (prior) return { ...prior, duplicate: true };
     if (this.mode === "read_only") { this.countAppend("frozen"); return { status: 409, error: "read_only" }; }
-    let text;
-    if (this.codec === "yjs") {
+    const yjs = this.codec === "yjs";
+    let text, bytes;
+    if (yjs) {
       if (typeof data !== "string") return { status: 400, error: "yjs_data_must_be_base64" };
-      try { b64decode(data); } catch { return { status: 400, error: "yjs_data_must_be_base64" }; }
+      try { bytes = b64decode(data); } catch { return { status: 400, error: "yjs_data_must_be_base64" }; }
       text = data;
     } else text = JSON.stringify(data) ?? "null";
-    if (text.length > this.maxEntry) { this.countAppend("too_large"); return { status: 413, error: "entry_too_large" }; }
+    const size = yjs ? text.length : utf8(text);         // base64 is ASCII
+    if (size > this.maxEntry) { this.countAppend("too_large"); return { status: 413, error: "entry_too_large" }; }
     const wait = this.takeToken();
     if (wait) { this.countAppend("rate_limited"); return { status: 429, error: "rate_limited", retry_after: wait }; }
-    // Yjs rooms count post-compaction size, so compact before refusing.
-    if (this.bytes + text.length > this.L.MAX_ROOM_BYTES && this.codec === "yjs") this.compact();
-    if (this.bytes + text.length > this.L.MAX_ROOM_BYTES) { this.countAppend("room_full"); return { status: 507, error: "room_full" }; }
+    // After the token, so a flood of invalid updates is paced like any other.
+    if (yjs && !yjsValid(bytes)) return { status: 400, error: "yjs_update_invalid" };
+    // Yjs rooms count post-compaction size, so compact before refusing, unless
+    // the log is already one merged entry.
+    if (this.bytes + size > this.L.MAX_ROOM_BYTES && yjs &&
+        this.sql.exec("SELECT COUNT(*) AS n FROM entries").one().n > 1) this.compact();
+    if (this.bytes + size > this.L.MAX_ROOM_BYTES) { this.countAppend("room_full"); return { status: 507, error: "room_full" }; }
     const seq = this.head + 1, ts = Date.now();
     // Commons decision: yjs entries carry no cred (rooms/DECISIONS.md, item 4).
     this.sql.exec("INSERT INTO entries (seq, ts, cred, data) VALUES (?, ?, ?, ?)",
-      seq, ts, this.codec === "yjs" ? null : cred.label, text);
+      seq, ts, yjs ? null : cred.label, text);
     this.sql.exec("DELETE FROM idem WHERE ts < ?", ts - IDEM_MS);
     this.sql.exec("INSERT INTO idem VALUES (?, ?, ?, ?)", cred.id, idem, seq, ts);
     this.setMeta("head", seq);
-    this.setMeta("bytes", this.bytes + text.length);
-    this.countAppend("accepted", text.length);
+    this.setMeta("bytes", this.bytes + size);
+    this.countAppend("accepted", size);
     this.broadcast({ type: "entry", entry: this.format({ seq, ts, cred: cred.label, data: text }) });
-    if (this.codec === "yjs" && this.sql.exec("SELECT COUNT(*) AS n FROM entries").one().n >= this.L.COMPACT_ENTRIES) this.compact();
+    if (yjs && this.sql.exec("SELECT COUNT(*) AS n FROM entries").one().n >= this.L.COMPACT_ENTRIES) this.compact();
     return { seq, ts };
   }
 
@@ -725,10 +787,14 @@ export class Room extends DurableObject {
   }
 
   // Merge every update into one. Yjs updates are idempotent, so a client that
-  // already holds part of the merged state can apply it again harmlessly.
+  // already holds part of the merged state can apply it again harmlessly. An
+  // entry no document could apply is skipped (it was never an update), and a
+  // merge that still fails leaves the log as it is: never wedge the room.
   compact() {
     const head = this.head;
-    const merged = b64encode(Y.mergeUpdates(this.read(0, 1_000_000).map((e) => b64decode(e.data))));
+    const u8 = yjsMerge(this.read(0, 1_000_000).map((e) => e.data));
+    if (!u8) return;
+    const merged = b64encode(u8);
     const ts = Date.now();
     this.sql.exec("DELETE FROM entries");
     this.sql.exec("DELETE FROM chunks");
@@ -774,13 +840,14 @@ export class Room extends DurableObject {
     this.count("room.connections", { outcome: "opened" });
     server.send(JSON.stringify({ type: "ready", head: this.head, mode: this.mode, conn, peers }));
     this.broadcast({ type: "presence", peer: { conn, cred: cred.label, state: null } }, server);
+    if (cred.expires_at) await this.schedule();         // end it even if it never speaks again
     return new Response(null, { status: 101, webSocket: client });
   }
 
   webSocketMessage(ws, raw) {
     const a = ws.deserializeAttachment();
-    const cred = this.credById(a.cred_id);
-    if (!cred) return this.end(ws, "revoked");
+    const cred = this.current(a.cred_id);
+    if (!cred) return this.end(ws, this.credEnd(a.cred_id) ?? "expired");
     let msg;
     try { msg = JSON.parse(raw); } catch { return ws.send(JSON.stringify({ type: "error", status: 400, error: "json" })); }
     const scope = { append: "append", presence: "presence" }[msg.type];
@@ -796,15 +863,16 @@ export class Room extends DurableObject {
     } else if (msg.type === "presence") {
       // Delta fan-out: one frame per change, to the others only. Never stored.
       const state = msg.state ?? null, now = Date.now();
-      if (JSON.stringify(state).length > MAX_PRESENCE) {
+      const tooLarge = () => {
         this.count("room.presence", { outcome: "too_large" });
         return ws.send(JSON.stringify({ type: "error", status: 413, error: "presence_too_large" }));
-      }
+      };
+      if (utf8(JSON.stringify(state)) > MAX_PRESENCE) return tooLarge();
       if (now - a.pts < PRESENCE_MS) {
         this.count("room.presence", { outcome: "rate_limited" });
         return ws.send(JSON.stringify({ type: "error", status: 429, error: "presence_rate", retry_after: PRESENCE_MS / 1000 }));
       }
-      ws.serializeAttachment({ ...a, state, pts: now });
+      try { ws.serializeAttachment({ ...a, state, pts: now }); } catch { return tooLarge(); }
       this.count("room.presence", { outcome: "relayed" });
       this.broadcast({ type: "presence", peer: { conn: a.conn, cred: a.cred, state } }, ws);
     }
@@ -830,12 +898,26 @@ export class Room extends DurableObject {
     });
   }
 
+  // A credential can expire while its socket stays silent, so every broadcast
+  // ends sockets whose credential is no longer valid instead of sending to them.
   broadcast(frame, except) {
     const s = JSON.stringify(frame);
     let n = 0;
-    for (const ws of this.ctx.getWebSockets()) if (ws !== except) { try { ws.send(s); n++; } catch {} }
+    for (const ws of this.endStale(this.ctx.getWebSockets())) if (ws !== except) { try { ws.send(s); n++; } catch {} }
     const kind = frame.type === "entry" ? "entry" : frame.type === "presence" || frame.type === "left" ? "presence" : null;
     if (kind && n) this.count("room.fanout.frames", { kind }, n);
+  }
+
+  // Ends sockets whose credential was revoked or has expired; returns the rest.
+  // One lookup per credential, not per socket.
+  endStale(sockets) {
+    const why = new Map();
+    return sockets.filter((ws) => {
+      const id = ws.deserializeAttachment()?.cred_id;
+      if (!why.has(id)) why.set(id, this.credEnd(id));
+      if (why.get(id)) this.end(ws, why.get(id));
+      return !why.get(id);
+    });
   }
 
   end(ws, reason) {
