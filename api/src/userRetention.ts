@@ -59,8 +59,10 @@ export async function retireInactiveUser(env: Bindings, user: RetentionUser, now
   // Capture the exact old generation while it still exists, only if the atomic
   // eligibility claim succeeded. This durable ledger never targets a later user
   // at the same email and survives provider-key outbox completion.
-  statements.push(env.DB.prepare(`INSERT OR IGNORE INTO inbox_retirements(generation,retired_at)
-    SELECT account_generation,? FROM user_keys WHERE email=? AND ${exists}`).bind(now, user.email, id));
+  for (const ledger of ['inbox_retirements', 'room_retirements']) {
+    statements.push(env.DB.prepare(`INSERT OR IGNORE INTO ${ledger}(generation,retired_at)
+      SELECT account_generation,? FROM user_keys WHERE email=? AND ${exists}`).bind(now, user.email, id));
+  }
   for (const [table, column] of [
     ['inference_grants', 'owner_email'], ['grant_transactions', 'owner_email'],
     ['service_sessions', 'email'], ['service_login_flows', 'email'], ['claim_codes', 'approved_by'],
@@ -73,31 +75,36 @@ export async function retireInactiveUser(env: Bindings, user: RetentionUser, now
 }
 
 /** Eventual cross-service logical revocation. Replay acknowledged fences too,
- * so inbox-only recovery can be reconciled offline from this separate ledger.
+ * so inbox- or room-only recovery can be reconciled offline from these separate ledgers.
  * Neither pilot/exposure flags nor provider deletion failures gate this work.
  * Restore hazard: rolling back both databases can resurrect retired inbox access
  * and surviving content. Keep Inboxes disabled until retirement history is
  * reconciled; this bounded job returning zero is not a restore safety check.
  */
-export async function cleanupRetiredInboxes(env: Bindings, now: number): Promise<number> {
+async function cleanupRetirements(env: Bindings, now: number, ledger: 'inbox_retirements' | 'room_retirements',
+  service: { retireOwner(owner: string): Promise<unknown> } | undefined): Promise<number> {
   let replayFailures = 0;
   for (const pending of [true, false]) {
-    const rows = (await env.DB.prepare(`SELECT generation FROM inbox_retirements
+    const rows = (await env.DB.prepare(`SELECT generation FROM ${ledger}
       WHERE fenced_at IS ${pending ? '' : 'NOT '}NULL ORDER BY checked_at,generation LIMIT ?`)
       .bind(BATCH_SIZE).all<{ generation: string }>()).results;
     for (const row of rows) {
-      await env.DB.prepare('UPDATE inbox_retirements SET checked_at=? WHERE generation=?').bind(now, row.generation).run();
+      await env.DB.prepare(`UPDATE ${ledger} SET checked_at=? WHERE generation=?`).bind(now, row.generation).run();
       try {
-        const result = await env.INBOXES?.retireOwner(row.generation) as { retired?: boolean } | undefined;
-        if (result?.retired === true) await env.DB.prepare(`UPDATE inbox_retirements
+        const result = await service?.retireOwner(row.generation) as { retired?: boolean } | undefined;
+        if (result?.retired === true) await env.DB.prepare(`UPDATE ${ledger}
           SET fenced_at=COALESCE(fenced_at,?) WHERE generation=?`).bind(now, row.generation).run();
         else if (!pending) replayFailures++;
       } catch { if (!pending) replayFailures++; /* Retain ledger, never log identity or raw errors. */ }
     }
   }
-  return replayFailures + (await env.DB.prepare('SELECT COUNT(*) AS n FROM inbox_retirements WHERE fenced_at IS NULL')
+  return replayFailures + (await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${ledger} WHERE fenced_at IS NULL`)
     .first<{ n: number }>())!.n;
 }
+
+export const cleanupRetiredInboxes = (env: Bindings, now: number) => cleanupRetirements(env, now, 'inbox_retirements', env.INBOXES);
+/** retireOwner works while ROOMS_ENABLED is off, so the switch never gates this. */
+export const cleanupRetiredRooms = (env: Bindings, now: number) => cleanupRetirements(env, now, 'room_retirements', env.ROOMS);
 
 async function removeProviderKey(url: string, credential: string | undefined): Promise<boolean> {
   if (!credential) return false;
@@ -129,8 +136,8 @@ export async function cleanupInactiveUsers(env: Bindings, now = Math.floor(Date.
     else report.recheckSkipped++;
   }
   // Run before provider cleanup: an upstream credential outage must not delay
-  // inbox revocation. `pending` also marks aggregate deletion telemetry partial.
-  report.pending = await cleanupRetiredInboxes(env, now);
+  // inbox or room revocation. `pending` also marks aggregate deletion telemetry partial.
+  report.pending = await cleanupRetiredInboxes(env, now) + await cleanupRetiredRooms(env, now);
   const { results: pending } = await env.DB.prepare(`SELECT * FROM user_retention_outbox
     ORDER BY created_at, id LIMIT ?`).bind(BATCH_SIZE)
     .all<{ id: string; or_key_hash: string | null; tinfoil_key: string | null }>();

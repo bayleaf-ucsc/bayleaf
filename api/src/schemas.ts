@@ -757,6 +757,88 @@ export const InboxCredentialListSchema = z.object({ credentials: z.array(InboxCr
 export const InboxCredentialRevokeSchema = z.object({ id: z.string(), revoked: z.literal(true) }).openapi('InboxCredentialRevoke',
   { description: 'Hard delete, rechecked at receipt reservation. Authentication remains required even if no credentials remain. Create a replacement credential to restore authorized delivery; revocation never reopens anonymous reception.' });
 
+// ── BayLeaf Rooms (issue #159; contract in rooms/DESIGN.md) ───────
+//
+// As with Inboxes, the Rooms Worker's RPC validates every input again and owns response
+// detail: request schemas are strict but shallow, responses documented, not enforced.
+// Timestamps are ISO 8601 strings, as in the public contract (rooms/docs/rooms-v2.md).
+
+const RoomCodecSchema = z.enum(['json', 'yjs']).describe('Fixed at creation. json: an opaque log of JSON entries. yjs: every entry is a Yjs update, compacted server-side; use the BayLeaf provider. No redact in yjs rooms.');
+const RoomModeSchema = z.enum(['open', 'read_only']).describe('read_only freezes the log: appends get 409, reads, export and presence continue. open unfreezes.');
+const RoomScopeSchema = z.enum(['presence', 'append', 'manage']);
+const RoomLabelSchema = z.string().min(1).max(64);
+const RoomExpirySchema = z.string().max(64).describe('ISO 8601 time, after now and at most max_life_days (default 90) ahead. The room ends then, whatever its activity.');
+export const RoomIdParamsSchema = z.object({ id: z.string().min(1).max(64).describe('Room id (r_...), the same id participants use on bayleaf-rooms.dev.') });
+export const RoomCredentialParamsSchema = RoomIdParamsSchema.extend({ cid: z.string().min(1).max(64).describe('Credential id (c_...), never the rk_ secret.') });
+
+export const RoomCreateRequestSchema = z.object({
+  label: RoomLabelSchema.optional().describe('Room label, visible to every participant. Use a pseudonymous title, never real names.'),
+  codec: RoomCodecSchema.optional().describe('Default json. Use yjs for co-editing (shared text, rich text, outlines).'),
+  expires_at: RoomExpirySchema.optional().describe('Default 30 days from now (default_life_days), at most 90 ahead. Leave a buffer past your last use for export.'),
+}).strict().openapi('RoomCreateRequest');
+
+export const RoomUpdateRequestSchema = z.object({
+  label: RoomLabelSchema.optional(),
+  expires_at: RoomExpirySchema.optional().describe('Move the end either way, up to max_life_days ahead. Use never extends it: only this does.'),
+  mode: RoomModeSchema.optional(),
+}).strict().refine(v => Object.keys(v).length > 0, 'Specify label, expires_at or mode.')
+  .openapi('RoomUpdateRequest', { description: 'At least one of label, expires_at or mode.' });
+
+export const RoomCredentialRequestSchema = z.object({
+  scopes: z.array(RoomScopeSchema).max(3).optional().describe('Every credential reads the log, exports and receives presence. presence sends presence, append writes the log, manage redacts (JSON rooms). [] is read-only. Not combinable with role.'),
+  role: z.enum(['read', 'write', 'manage']).optional().describe('Shorthand: read = [], write = [presence, append], manage = all three. Not combinable with scopes.'),
+  label: RoomLabelSchema.optional().describe('One credential. Unique per room and visible to every participant: use a pseudonym (students, projector, s01), never a real name.'),
+  labels: z.array(RoomLabelSchema).min(1).max(100).optional().describe('Many credentials with the same scopes, one per label. Not combinable with label.'),
+  expires_at: z.string().max(64).optional().describe('Optional ISO 8601 credential expiry. Omit for the room\'s lifetime.'),
+}).strict()
+  .refine(v => (v.scopes === undefined) !== (v.role === undefined), 'Specify exactly one of scopes or role.')
+  .refine(v => (v.label === undefined) !== (v.labels === undefined), 'Specify exactly one of label or labels.')
+  .openapi('RoomCredentialRequest', { description: 'Exactly one of scopes or role, and exactly one of label or labels. A projected link (a QR code on a slide) is effectively public: give it only presence.' });
+
+export const RoomExportQuerySchema = z.object({
+  format: z.enum(['jsonl', 'yjs']).optional().describe('jsonl (default): one JSON entry per line. yjs (yjs rooms only): one merged Yjs update; Y.applyUpdate(new Y.Doc(), bytes) rebuilds the document.'),
+}).strict().openapi('RoomExportQuery');
+
+export const RoomCredentialSchema = z.object({
+  credential_id: z.string(), label: z.string(), scopes: z.array(RoomScopeSchema),
+  expires_at: z.string().nullable().describe('Null means the room\'s lifetime.'),
+  revoked: z.boolean(),
+}).passthrough().openapi('RoomCredential', { description: 'Metadata only. Secrets are shown once at issuance and cannot be read back.' });
+
+export const RoomSchema = z.object({
+  room_id: z.string().describe('Participant URL is https://bayleaf-rooms.dev/{room_id}.'),
+  label: z.string().nullable(), codec: RoomCodecSchema, mode: RoomModeSchema,
+  expires_at: z.string().describe('Fixed end of the room. Use never extends it; PATCH does.'),
+  created_at: z.string(),
+  head: z.number().int().optional().describe('Highest stored seq.'),
+  bytes: z.number().int().optional().describe('Retained entry bytes, against max_room_bytes. GET /rooms/{id} only.'),
+  sockets: z.number().int().optional().describe('Open participant sockets. GET /rooms/{id} only.'),
+  credentials: z.array(RoomCredentialSchema).optional().describe('GET /rooms/{id} only.'),
+}).passthrough().openapi('Room');
+
+export const RoomListSchema = z.object({ rooms: z.array(RoomSchema) }).openapi('RoomList');
+
+export const RoomLimitsSchema = z.object({
+  rooms_used: z.number().int(), max_rooms: z.number().int(), max_credentials_per_room: z.number().int(),
+  max_entry_bytes: z.object({ json: z.number().int(), yjs: z.number().int() }),
+  max_room_bytes: z.number().int(), max_sockets_per_room: z.number().int(), max_appends_per_second: z.number().int(),
+  presence: z.object({ max_bytes: z.number().int(), per_second: z.number() }),
+  default_life_days: z.number().int(), max_life_days: z.number().int(),
+}).passthrough().openapi('RoomLimits', { description: 'The limits the Rooms Worker actually enforces, including deployed overrides, plus your room count.' });
+
+export const RoomDeleteSchema = z.object({ deleted: z.literal(true) }).openapi('RoomDelete',
+  { description: 'The relay ended for everyone: open sockets got end "deleted", then every request 404s. Participants keep only what they exported or their clients hold.' });
+
+export const RoomCredentialIssuedSchema = z.object({ credentials: z.array(RoomCredentialSchema.omit({ revoked: true }).extend({
+  secret: z.string().describe('rk_... Shown exactly once. Participants send it as Authorization: Bearer on bayleaf-rooms.dev, never in a URL query.'),
+  link_fragment: z.string().describe('Exactly room=...&key=... Append as #fragment to your app URL: browsers never send fragments to the page host.'),
+})) }).openapi('RoomCredentialIssued');
+
+export const RoomCredentialListSchema = z.object({ credentials: z.array(RoomCredentialSchema) }).openapi('RoomCredentialList');
+
+export const RoomCredentialRevokeSchema = z.object({ credential_id: z.string(), revoked: z.literal(true) }).openapi('RoomCredentialRevoke',
+  { description: 'That credential\'s open sockets got end "revoked"; its link stops working at once.' });
+
 // ── HF artifact gateway (issue #121) ──────────────────────────────
 
 export const HfArtifactFileSchema = z.object({

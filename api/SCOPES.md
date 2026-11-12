@@ -5,7 +5,8 @@ into tokens that reach bounded slices of the BayLeaf API. **Status: steps 1–2 
 first slice of step 3 (usage, identity and web scopes, scope storage and consent)
 deployed 2026-11-10; evidence in [GRANTS.md](GRANTS.md). Inbox scopes deployed
 2026-11-10 too (migration `0021`). Sandbox-file scopes deployed
-2026-11-11 (migration `0022`).**
+2026-11-11 (migration `0022`). Rooms scopes are implemented locally with the Rooms
+facade (issue #159), not deployed.**
 
 ## Why
 
@@ -73,6 +74,8 @@ string (model slugs already contain `:`, `/` and `.`):
 | `inboxes.messages.manage` | inbox IDs | `PATCH /inboxes/{id}/messages/{mid}` (archive/unarchive) | The same Action archives what it processed: an at-least-once pipeline with no state of its own |
 | `sandbox.files.read` | sandbox dirs | `GET /sandbox/files/*` under each bound dir | An app persisting a visitor's data in that visitor's own sandbox |
 | `sandbox.files.write` | sandbox dirs | `PUT /sandbox/files/*` under each bound dir | Same |
+| `rooms.read` | none (all the grantor's rooms) | `GET /rooms/limits`, `/rooms`, `/rooms/{id}`, `/rooms/{id}/export` | A nightly Action archiving a class board's export into a repo |
+| `rooms.manage` | none (all the grantor's rooms) | `POST /rooms`, `PATCH`/`DELETE /rooms/{id}`, `/rooms/{id}/credentials` (issue, list, revoke) | A CI job or script that sets up each week's room and participant links |
 
 Web search and fetch run on BayLeaf's shared Tavily account, as they do for keys and
 Campus Pass: there is no per-user web budget to spend or exhaust. The scope extends
@@ -205,6 +208,28 @@ that app. Token use counts as activity and postpones the 90-day reaper.
 coding agents (a possible prompt-injection channel). The visible, clearly named
 root makes their origin legible to people and agents.
 
+## Rooms
+
+**Unbound, unlike inboxes (decision, 2026-11-11).** `rooms.*` scopes bind no
+resource: a token reaches every room the grantor has or later creates. Reasons:
+
+- Creation and listing are account-wide by nature, and `rooms.manage` exists for
+  the workflow that creates rooms. A room-id binding would make those two
+  operations impossible to grant, or require a second, unbound scope anyway.
+- Rooms are short-lived (at most 90 days), so a bound id list would go stale
+  between issuance and use more often than an inbox list.
+- Per-room delegation already has a better mechanism: the `rk_` capability link,
+  with its own presence/append/manage scopes, expiry and revocation. To let someone
+  into one room, issue a room link, not an app token.
+
+Consequences the consent page states: `rooms.read` exports everything participants
+stored in every room; `rooms.manage` can delete rooms and mint participant links,
+including writing ones. Neither implies the other. Minting remains attenuation:
+ordinary keys and sandbox credentials already hold both. Requesting a `rooms.*`
+scope while Rooms is unavailable is `400 invalid_scope` at issuance, consent and
+exchange. No migration: there is no binding column. The facade resolves the
+grantor's `account_generation` exactly as for an ordinary key.
+
 ## Enforcement
 
 `guardGrant` (`src/grants.ts`) used to hardcode three inference paths. Now
@@ -271,6 +296,11 @@ already read and write their own files and can mint with `POST /grants`); the
 `bayleaf-platform` desktop skill names the scope family; `llms.txt` describes folder
 binding, app-named folders and the wake/create effect, and the OpenAPI file routes
 note app-token access.
+
+For the rooms slice (local, not deployed): no hosted tool and no MCP tools (rooms are
+skills-only by decision; sandbox agents call `/rooms` with `curl`); the hosted and
+desktop `bayleaf-rooms` skills and `llms.txt` mention room scopes for scripts and CI
+jobs, and steer per-room sharing to capability links.
 
 Consequential defaults: narrow default plus backfill (above). `identity.read`
 email disclosure and `scopes_json` storage approved as designed.
