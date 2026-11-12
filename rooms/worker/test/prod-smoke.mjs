@@ -83,9 +83,11 @@ try {
   for (const d of docs) d.p.destroy();
 } finally {
   for (const room of made) {
-    const d = await owner(`/${room}`, "DELETE");
-    check(d.status === 200, `delete ${room}`);
-    check((await fetch(`${BASE}/${room}`)).status === 404, "deleted room is gone on bayleaf-rooms.dev");
+    try {                                 // one failed delete must not strand the other room
+      const d = await owner(`/${room}`, "DELETE");
+      check(d.status === 200, `delete ${room}`);
+      check((await fetch(`${BASE}/${room}`)).status === 404, "deleted room is gone on bayleaf-rooms.dev");
+    } catch (e) { check(false, `delete ${room}: ${e.message}`); }
   }
 }
 console.log(failures ? `\n${failures} failed` : "\nproduction smoke test passed");

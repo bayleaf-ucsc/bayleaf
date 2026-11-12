@@ -1,7 +1,10 @@
 # Rooms qualification
 
-Status as of **2026-11-11**: local only. Nothing is deployed, and no row below has
-live evidence yet. Contract: [DESIGN.md](DESIGN.md). Deployment and recovery:
+Status as of **2026-11-11**: deployed and open to campus (API version `70e0ea4b`,
+Worker `3a399ca6`); evidence under "Launch evidence" below. Still pending: one
+exported telemetry window from real traffic, the deployed fan-out measurement,
+the browser proof against production, retirement exercised live, and the matrix
+rows still marked Pending. Contract: [DESIGN.md](DESIGN.md). Deployment and recovery:
 [OPERATIONS.md](OPERATIONS.md). Exposure decisions: DECISIONS.md item 13 (Adam,
 2026-11-11), recorded here per
 `.agents/skills/bayleaf-ops-router/playbooks/bayleaf-powered-agent-capabilities.md`.
@@ -20,7 +23,7 @@ room credentials. Owner credentials are ordinary keys, sandbox credentials and
 | MCP tools (hosted shared MCP, plugin tools) | **Omit**, by decision. Rooms is multi-step app building, better taught than wrapped; secrets would land in tool output | None | n/a | Revisit if AX shows agents failing with curl | Negative discovery: no `rooms` tool in plugin or shared MCP inventory |
 | BayLeaf Chat | **Omit**, by decision. No owner credential path in Chat; copying room content into Chat adds stored history | None | n/a | Revisit on a concrete course request | Negative discovery: no Chat tool, model or prompt mentions Rooms as usable |
 | API dashboard card | **Expose.** Owners need to see expiry and delete without an agent | Card listing rooms with label, codec, expiry, delete | Session-gated; delete confirms | API deploy | Pending: real owner login, list, delete of a synthetic room |
-| App-token scopes | **Expose.** `rooms.read` (limits, list, get, export), `rooms.manage` (create, update, delete, credentials), following `api/src/grants.ts` and `SCOPES.md` | Consent page lists the scopes | Grant gate; `rooms.manage` lets an app mint room links and delete rooms | API deploy | Pending: scope denial both ways, export under `rooms.read` only |
+| App-token scopes | **Expose.** `rooms.read` (limits, list, get, export), `rooms.manage` (create, update, delete, credentials), following `api/src/grants.ts` and `SCOPES.md` | Consent page lists the scopes | Grant gate; `rooms.manage` lets an app mint room links (each can read and export its room, so effectively read too) and delete rooms | API deploy | Pending: scope denial both ways, export under `rooms.read` only |
 | API docs (`/llms.txt`, OpenAPI tag `Rooms`, `apiReference.ts`, `/docs/rooms.md`) | **Expose.** Canonical orientation and exact contracts | Published docs | Docs only | API deploy | Pending: `npm run test:docs`, live readback |
 | `landing/llms.txt` | **Expose** (auxiliary-domains line and a one-line gloss deferring to the API guide) | Static | n/a | Pages on push to `main` | Pending: published readback |
 | Landing page (`landing/index.html`) | **Omit.** Inboxes are absent too; the page is the project frame, not a catalog. Adding it would also trigger the VPAT re-measurement | None | n/a | Revisit when the "Inboxes and Rooms" family is presented to people | n/a |
@@ -49,6 +52,10 @@ End to end: `rooms/worker/test/prod-smoke.mjs` passed 19/19 with Adam's key
 freeze with presence flowing, ndjson and yjs exports, two providers converging),
 and left zero rooms (API `rooms_used` 0, D1 count 0). The desktop `bayleaf-rooms`
 skill appeared in a live harness catalog right after the API deploy.
+
+Review fixes from PR #164 (check-then-use revalidation, yjs update validation, expired-socket ending,
+byte-accurate caps, provider storage and reconnect fixes, manage-scope consent wording) redeployed the
+same day: Worker `57bca987`, API `c050152b`; `prod-smoke.mjs` 19/19 again, 0 rooms left.
 
 Pending: one exported telemetry window from real traffic; deployed fan-out
 measurement; browser proof against production; retirement exercised live.

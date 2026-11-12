@@ -247,6 +247,7 @@ All requests send Authorization: Bearer rk_.... Base: https://bayleaf-rooms.dev.
 - POST /{room}/log body {"data": <JSON>} with header Idempotency-Key: <uuid>
   (required) returns {seq, ts}, durable before the response. The same key on retry
   returns the original result and never duplicates. 409 read_only when frozen.
+  In yjs rooms, an update that does not apply is 400 yjs_update_invalid.
 - GET /{room}/log?after=<seq>&limit=500 returns {entries:[{seq, ts, cred, data}], head}.
   Page until entries is empty.
 - GET /{room}/export returns JSON lines of every retained entry.
@@ -274,11 +275,13 @@ ws.onmessage = (m) => {
   if (f.type === "presence") peers.set(f.peer.conn, f.peer);  // {conn, cred, state}
   if (f.type === "left") peers.delete(f.conn);
   if (f.type === "ack") settle(f.idem, f.seq);
-  if (f.type === "error") retryOrFail(f.idem, f.status, f.retry_after);  // 409 read_only, 413, 429
+  if (f.type === "error") retryOrFail(f.idem, f.status, f.retry_after);  // 400, 409 read_only, 413, 429
   if (f.type === "end") onEnd(f.reason);       // revoked | deleted | expired: stop; otherwise reconnect
 };
-ws.send(JSON.stringify({ type: "append", idem: crypto.randomUUID(), data: {} }));  // append scope
-ws.send(JSON.stringify({ type: "presence", state: { nick: "Owl" } }));            // presence scope, never stored
+ws.onopen = () => {                           // sending while CONNECTING throws
+  ws.send(JSON.stringify({ type: "append", idem: crypto.randomUUID(), data: {} }));  // append scope
+  ws.send(JSON.stringify({ type: "presence", state: { nick: "Owl" } }));            // presence scope, never stored
+};
 \`\`\`
 
 Presence is ephemeral and never stored. ready carries a snapshot of everyone else
@@ -331,7 +334,8 @@ import map from the tested Tiptap 3 demo, which needs no build step:
 https://github.com/bayleaf-ucsc/bayleaf/blob/main/rooms/worker/client/demo/editor.html
 
 Create the editor (or set the caret name) on synced. Lock it unless
-provider.can("append") and status is connected; edits racing a freeze are queued,
+provider.can("append") and status is connected, so also while read_only, diverged
+or ended; edits racing a freeze are queued,
 never dropped. diverged means a local edit can never sync (an enormous paste, or a
 link without append): tell the person and reload from the room. Unsent edits live in
 memory only. GET /{room}/export?format=yjs returns one merged update:

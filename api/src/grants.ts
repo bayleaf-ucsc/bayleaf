@@ -149,7 +149,7 @@ export const GRANT_SCOPES = {
   'sandbox.files.read': 'Read files in the sandbox folders listed below',
   'sandbox.files.write': 'Create or overwrite files in those sandbox folders',
   'rooms.read': 'See all your rooms, their participant labels and usage, and export their content',
-  'rooms.manage': 'Create, change and delete any of your rooms, and issue or revoke their participant links',
+  'rooms.manage': 'Create, change and delete any of your rooms, and issue or revoke their participant links (which can read and export the rooms)',
 } as const;
 export type GrantScope = keyof typeof GRANT_SCOPES;
 const ALL_SCOPES = Object.keys(GRANT_SCOPES) as GrantScope[];

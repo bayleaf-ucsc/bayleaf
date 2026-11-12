@@ -40,6 +40,7 @@ cron retries stuck or overdue rooms. Durable Object point-in-time recovery keeps
 history for 30 days and D1 Paid Time Travel for 30 days, so deletion is not
 immediate erasure. Account deletion writes a `room_retirements` ledger row in the
 same transaction as identity deletion; a daily job retries `ROOMS.retireOwner`
+(each call bounded to 8 seconds; a timeout leaves the row for the next run)
 until acknowledged, and the Rooms D1 keeps a permanent `retired_owners` fence.
 Operator/provider access remains possible. See [`rooms/DESIGN.md`](../rooms/DESIGN.md)
 and [`rooms/QUALIFICATION.md`](../rooms/QUALIFICATION.md).

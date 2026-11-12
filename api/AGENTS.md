@@ -840,7 +840,8 @@ rollout record in `chat/DESIGN.md` and `PREVIEWS.md`.
 
 ### Rooms owner facade (issue #159)
 
-Local, not deployed; `ROOMS_ENABLED` is `"false"` in source. `routes/rooms.ts`
+Deployed and open to campus 2026-11-11 (API version `70e0ea4b`, Rooms Worker
+`3a399ca6`); `ROOMS_ENABLED` is `"true"`. `routes/rooms.ts`
 mounts `/rooms` (OpenAPI tag `Rooms`) and relays to the separate `bayleaf-rooms`
 Worker's `RoomManagement` RPC over the `ROOMS` service binding, on the Inboxes
 pattern: disabled 404 before auth, auth before Zod, 4 KiB bodies, owner identity is

@@ -9,9 +9,13 @@ import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const now = Date.parse('2026-10-19T12:34:56Z')/1000;
 const bundle = await build({absWorkingDir:root,stdin:{resolveDir:root,contents:`
-  import { cleanupInactiveUsers, retireInactiveUser, accountCutoff } from './src/userRetention';
+  import { cleanupInactiveUsers, cleanupRetiredRooms, retireInactiveUser, accountCutoff } from './src/userRetention';
   export default {async fetch(req,env) {
-    const {mode,now,user} = await req.json();
+    const {mode,now,user,rooms} = await req.json();
+    if(rooms) {
+      const retireOwner = rooms==='hang' ? () => new Promise(() => {}) : async () => ({retired:true});
+      return Response.json(await cleanupRetiredRooms({...env,ROOMS:{retireOwner}},now,50));
+    }
     if(user) {
       try { return Response.json(await retireInactiveUser(env,user,now,accountCutoff(now))); }
       catch { return Response.json({transactionFailed:true}); }
@@ -143,7 +147,15 @@ try {
   assert.equal((await query('SELECT tinfoil_key FROM user_keys WHERE email=?',expired)).tinfoil_key,'tk_new');
   assert.ok(providerCalls.every(c=>!c.url.includes('tk_new')&&!c.url.includes('new-or')));
   assert.equal((await query('SELECT count(*) AS n FROM users')).n,15,'only eligible accounts removed, one recreated');
-  console.log('PASS account retention: timestamps, cutoff, exemptions, sandbox/session dependencies, atomic fresh checks, dry-run, provider outbox retries and returning identities');
+
+  // A hung Rooms RPC times out, leaves every fence unset for retry, and returns.
+  await db.prepare('INSERT INTO room_retirements(generation,retired_at) VALUES (?,?)').bind('generation-second',now).run();
+  const started=Date.now();
+  assert.equal(await request({rooms:'hang'}),2,'both rooms fences still pending');
+  assert.ok(Date.now()-started<5000,'hung retireOwner does not block the job');
+  assert.equal((await query('SELECT count(*) AS n FROM room_retirements WHERE fenced_at IS NULL')).n,2);
+  assert.equal(await request({rooms:'ok'}),0,'next run fences both');
+  console.log('PASS account retention: timestamps, cutoff, exemptions, sandbox/session dependencies, atomic fresh checks, dry-run, provider outbox retries, hung Rooms RPC and returning identities');
 } finally {await mf.dispose();}
 
 const unit=await build({absWorkingDir:root,entryPoints:['src/userRetention.ts'],bundle:true,write:false,format:'esm'});

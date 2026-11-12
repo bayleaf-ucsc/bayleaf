@@ -5,8 +5,8 @@ into tokens that reach bounded slices of the BayLeaf API. **Status: steps 1–2 
 first slice of step 3 (usage, identity and web scopes, scope storage and consent)
 deployed 2026-11-10; evidence in [GRANTS.md](GRANTS.md). Inbox scopes deployed
 2026-11-10 too (migration `0021`). Sandbox-file scopes deployed
-2026-11-11 (migration `0022`). Rooms scopes are implemented locally with the Rooms
-facade (issue #159), not deployed.**
+2026-11-11 (migration `0022`). Rooms scopes deployed 2026-11-11 with the Rooms
+facade (issue #159; API version `70e0ea4b`, migration `0023`).**
 
 ## Why
 
@@ -224,7 +224,9 @@ resource: a token reaches every room the grantor has or later creates. Reasons:
 
 Consequences the consent page states: `rooms.read` exports everything participants
 stored in every room; `rooms.manage` can delete rooms and mint participant links,
-including writing ones. Neither implies the other. Minting remains attenuation:
+including writing ones. Every participant link can read and export its room, so
+`rooms.manage` effectively grants read of every room too; only `rooms.read` grants
+read without the power to change or share. Minting remains attenuation:
 ordinary keys and sandbox credentials already hold both. Requesting a `rooms.*`
 scope while Rooms is unavailable is `400 invalid_scope` at issuance, consent and
 exchange. No migration: there is no binding column. The facade resolves the
@@ -297,7 +299,7 @@ already read and write their own files and can mint with `POST /grants`); the
 binding, app-named folders and the wake/create effect, and the OpenAPI file routes
 note app-token access.
 
-For the rooms slice (local, not deployed): no hosted tool and no MCP tools (rooms are
+For the rooms slice (deployed 2026-11-11): no hosted tool and no MCP tools (rooms are
 skills-only by decision; sandbox agents call `/rooms` with `curl`); the hosted and
 desktop `bayleaf-rooms` skills and `llms.txt` mention room scopes for scripts and CI
 jobs, and steer per-room sharing to capability links.

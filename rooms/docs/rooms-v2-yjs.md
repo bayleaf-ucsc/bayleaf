@@ -72,8 +72,8 @@ y-codemirror.next take the same Awareness). Unsent edits live in memory only: a
 reload while offline loses them. Use `Y.RelativePosition` (or the editor's
 comment/mark features) to anchor annotations so they survive concurrent edits.
 
-Lock the editor whenever it can't sync: when `!provider.can("append")` and while
-status is `read_only` (the owner froze the room). Edits that race a freeze are
+Lock the editor whenever it can't sync: when `!provider.can("append")`, and while
+status is `read_only` (the owner froze the room), `diverged` or `ended`. Edits that race a freeze are
 kept and sent in order if the room reopens; the provider never drops one, because
 a gap in one client's updates stalls all its later edits on every peer.
 

@@ -5,6 +5,12 @@
 //
 // You pass your own Y module, so the page never loads two copies of Yjs.
 // The provider imports nothing.
+//
+// The link is scrubbed from the address bar and {room, key, base} is kept in
+// `storage` (localStorage by default) under `storageKey`, by default
+// "bayleaf-room:" + the page path in a browser, else "bayleaf-room:" + room.
+// A reload with no link restores the room from there. A stored key is used only
+// with the base it was stored for, so a page cannot be pointed elsewhere to leak it.
 // Unacknowledged updates stay in an outbox and are resent with the same
 // idempotency key after reconnecting, so a lost ack never duplicates or drops
 // an edit. Spike gap: no IndexedDB persistence across reloads.
@@ -20,7 +26,8 @@
 //   409 read_only  the room is frozen: keep the outbox, stop sending, report
 //                  "read_only" (lock the editor); resend in order on unfreeze.
 //   429            the room is busy: wait retry_after, then resend the outbox in order.
-//   413, 403, 507  this edit can never sync (too large, no append scope, room full):
+//   413, 403, 507, 400  this edit can never sync (too large, no append scope,
+//                  room full, not a valid update):
 //                  report "diverged" and stop sending.
 //                  The app reloads from the room; the local edit is lost.
 
@@ -36,11 +43,15 @@ export class BayLeafRoomProvider {
       room = f.get("room") ?? room; key = f.get("key") ?? key;
       if (room && key && globalThis.history && globalThis.location?.hash) history.replaceState(null, "", location.pathname + location.search);
     }
-    // One stored key per storageKey. A page holding two links to the same room
-    // (projector and student, say) must name them apart, or one overwrites the other.
-    storageKey ??= `bayleaf-room:${room}`;
-    if (storage && room && key) storage.setItem(storageKey, key);
-    if (storage && room && !key) key = storage.getItem(storageKey);
+    // One stored link per storageKey. A page holding two links (projector and
+    // student, say) must name them apart, or one overwrites the other.
+    storageKey ??= `bayleaf-room:${globalThis.location?.pathname ?? room}`;
+    if (storage && room && key) storage.setItem(storageKey, JSON.stringify({ room, key, base }));
+    else if (storage && !key) {
+      let s = null;
+      try { s = JSON.parse(storage.getItem(storageKey)); } catch {}
+      if (s?.base === base && s.key && (!room || s.room === room)) ({ room, key } = s);
+    }
     if (!room || !key) throw new Error("BayLeafRoomProvider needs a link (#room=...&key=...) or room and key");
     Object.assign(this, { Y, ydoc, base, room, key, storage, storageKey, batchMs });
     this.lastSeq = 0; this.outbox = new Map(); this.buffer = []; this.listeners = {};
@@ -78,25 +89,41 @@ export class BayLeafRoomProvider {
     this.status = status; this.emit("status", { status });
   }
 
+  // Each attempt has a generation; a newer attempt (reconnect, retry) makes every
+  // older fetch, socket and handler stale, so only one socket is ever current.
   async connect() {
     if (this.ended) return;
+    const gen = this.gen = (this.gen ?? 0) + 1;
+    const live = () => gen === this.gen && !this.ended;
     try {
       const auth = { Authorization: `Bearer ${this.key}`, "Content-Type": "application/json" };
       if (!this.whoami) {
         const r = await fetch(`${this.base}/${this.room}`, { headers: auth });
+        if (!live()) return;
         if (r.status === 401 || r.status === 404) return this.finish(r.status === 401 ? "revoked" : "deleted");
+        if (!r.ok) return this.retry(gen);                   // 429, 503: not an answer about us
         this.whoami = await r.json();
       }
       const t = await fetch(`${this.base}/${this.room}/tickets`, { method: "POST", headers: auth, body: JSON.stringify({ after: this.lastSeq }) });
+      if (!live()) return;
       if (t.status === 401 || t.status === 404) return this.finish(t.status === 401 ? "revoked" : "deleted");
+      if (!t.ok) return this.retry(gen);
       const { url } = await t.json();
+      if (!live()) return;
       const ws = this.ws = new WebSocket(url);
-      ws.onmessage = (m) => this.frame(JSON.parse(m.data));
-      ws.onclose = () => { this.ws = null; if (!this.ended) { this.setStatus("connecting"); this.retry(); } };
-    } catch { this.retry(); }
+      ws.onmessage = (m) => { if (this.ws === ws) this.frame(JSON.parse(m.data)); };
+      ws.onclose = () => {
+        if (this.ws !== ws) return;
+        this.ws = null;
+        if (!this.ended) { this.setStatus("connecting"); this.retry(gen); }
+      };
+    } catch { if (live()) this.retry(gen); }
   }
 
-  retry() { setTimeout(() => this.connect(), this.backoff); this.backoff = Math.min(this.backoff * 2, 30_000); }
+  retry(gen) {
+    setTimeout(() => { if (gen === this.gen) this.connect(); }, this.backoff);
+    this.backoff = Math.min(this.backoff * 2, 30_000);
+  }
 
   frame(f) {
     if (f.type === "entry") {
@@ -124,7 +151,7 @@ export class BayLeafRoomProvider {
     } else if (f.type === "error") {
       if (f.error?.startsWith("presence")) { if (f.status === 429) this.queuePresence(); }
       else if (f.status === 409) this.setStatus("read_only");                    // keep it; resend on unfreeze
-      else if (f.status === 413 || f.status === 403 || f.status === 507) this.diverge(f.error);
+      else if (f.status === 413 || f.status === 403 || f.status === 507 || f.status === 400) this.diverge(f.error);
       else if (f.status === 429 && !this.rtimer)                                 // one paced resend of the whole outbox, in order
         this.rtimer = setTimeout(() => { this.rtimer = null; this.resend(); }, Math.max(1000 * (f.retry_after ?? 1), 250));
       this.emit("error", f);
@@ -176,7 +203,8 @@ export class BayLeafRoomProvider {
   // Useful when the app detects network change; tests use it to simulate loss.
   reconnect() {
     const ws = this.ws;
-    if (ws) { ws.onclose = ws.onmessage = null; ws.close(); this.ws = null; }
+    this.ws = null;                                       // its handlers are now stale
+    if (ws) { ws.onclose = ws.onmessage = null; ws.close(); }
     if (!this.ended) { this.setStatus("connecting"); this.connect(); }
   }
 

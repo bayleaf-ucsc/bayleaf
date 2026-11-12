@@ -89,6 +89,7 @@ All requests: `Authorization: Bearer rk_...`.
 - `POST /{room}/log` (append) body `{"data": <JSON>}`, header `Idempotency-Key: <uuid>`
   (required) → `{seq, ts}`. Durable before the response. Same key on retry
   returns the original result and never duplicates. 409 `read_only` when frozen.
+  In yjs rooms, an update that does not apply is 400 `yjs_update_invalid`.
 - `GET /{room}/log?after=<seq>&limit=500` → `{entries:[{seq, ts, cred, data}], head}`.
   Page until `entries` is empty.
 - `GET /{room}/export` → JSON lines of every retained entry.
@@ -116,11 +117,13 @@ ws.onmessage = (m) => {
   if (f.type === "presence") peers.set(f.peer.conn, f.peer);  // {conn, cred, state}: one peer changed or joined
   if (f.type === "left") peers.delete(f.conn);
   if (f.type === "ack") settle(f.idem, f.seq);
-  if (f.type === "error") retryOrFail(f.idem, f.status, f.retry_after);  // 409 read_only, 413, 429
+  if (f.type === "error") retryOrFail(f.idem, f.status, f.retry_after);  // 400, 409 read_only, 413, 429
   if (f.type === "end") onEnd(f.reason);       // revoked | deleted | expired: stop; otherwise reconnect
 };
-ws.send(JSON.stringify({ type: "append", idem: crypto.randomUUID(), data: {} }));  // append scope
-ws.send(JSON.stringify({ type: "presence", state: { nick: "Owl" } }));            // presence scope, not stored
+ws.onopen = () => {                           // sending while CONNECTING throws
+  ws.send(JSON.stringify({ type: "append", idem: crypto.randomUUID(), data: {} }));  // append scope
+  ws.send(JSON.stringify({ type: "presence", state: { nick: "Owl" } }));            // presence scope, not stored
+};
 ```
 
 Presence is ephemeral and never stored. `ready` carries a snapshot of everyone else
