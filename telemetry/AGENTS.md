@@ -8,6 +8,7 @@ See `qualification/inboxes.md`; never add addresses, resource ids, paths or payl
 Export extends that matrix to 31 fixed series with `inbox.export.pages` (`1`) and
 `inbox.export.bytes` (`By`), only transport `http|email` and outcome `emitted`.
 These are best-effort completed-generation counters, not client-delivery evidence.
+Rooms source/policy 5 (6 names, 30 series) approved 2026-11-11; see `qualification/rooms.md`. Counts are never published.
 
 Read root `AGENTS.md` first. Issue [#112](https://github.com/bayleaf-ucsc/bayleaf/issues/112)
 tracks this work. On 2026-10-20 the operator explicitly approved deployment and

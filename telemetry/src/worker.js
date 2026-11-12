@@ -145,6 +145,7 @@ export function createWorker({ otlp, clock = Date.now } = {}) {
           if (!source) return response({ error: 'unauthorized' }, 401);
           if (source === 'daytona' && env.DAYTONA_OTLP_ENABLED !== 'true') return response({ error: 'disabled' }, 503);
           if (source === 'inboxes' && env.INBOXES_METRICS_ENABLED !== 'true') return response({ error: 'disabled' }, 503);
+          if (source === 'rooms' && env.ROOMS_METRICS_ENABLED !== 'true') return response({ error: 'disabled' }, 503);
         }
         if (!await takeBudget(env.TELEMETRY_DB, source, klass, now)) return response({ error: 'rate_limited' }, isOtlp ? 503 : 429, cors);
         const payload = isOtlp ? await otlp(request, { source, now }) : await boundedJson(request);

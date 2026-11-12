@@ -52,7 +52,7 @@ test('metric buckets require the operator bearer and the exact parameter set', a
   assert.equal(r.headers.get('Cache-Control'), 'no-store');
   const body = await r.json();
   assert.deepEqual(Object.keys(body).sort(), Object.keys(openapi.components.schemas.MetricBucketRowResponse.properties).sort());
-  assert.deepEqual({ ...body, as_of: 0 }, { schema_version: 1, policy_version: 4, as_of: 0, from: NOW - HOUR, to: NOW,
+  assert.deepEqual({ ...body, as_of: 0 }, { schema_version: 1, policy_version: 5, as_of: 0, from: NOW - HOUR, to: NOW,
     name: 'webui.users.active', bucket: 60000, limit: 2000, truncated: false, rows: [] });
 });
 

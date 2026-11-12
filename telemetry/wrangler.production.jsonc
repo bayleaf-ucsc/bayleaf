@@ -11,6 +11,7 @@
   "vars": {
     "TELEMETRY_ENABLED": "true",
     "INBOXES_METRICS_ENABLED": "true",
+    "ROOMS_METRICS_ENABLED": "true",
     "BROWSER_ENABLED": "true",
     "DAYTONA_WEBHOOKS_ENABLED": "true",
     "DAYTONA_OTLP_ENABLED": "true",
