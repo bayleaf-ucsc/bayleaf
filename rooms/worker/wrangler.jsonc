@@ -1,0 +1,71 @@
+// BayLeaf Rooms (issue #159): participant plane on bayleaf-rooms.dev, owner RPC
+// (RoomManagement) bound only to the API Worker. Contract: rooms/DESIGN.md.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bayleaf-rooms",
+  "account_id": "1a49fb69291d42e23c4ed4dcffce5bbc",
+  "main": "src/index.js",
+  // At or after 2026-02-24, deleteAll() also deletes the alarm (rooms/AGENTS.md).
+  "compatibility_date": "2026-08-01",
+
+  // Reachable only through the route below and the API's service binding.
+  "workers_dev": false,
+  "preview_urls": false,
+
+  // Disabled on purpose: request logs and traces could capture room content,
+  // credentials or tickets. Never enable it to debug.
+  "observability": { "enabled": false },
+
+  "routes": [{ "pattern": "bayleaf-rooms.dev", "custom_domain": true }],
+
+  // The provider is served as bytes, not bundled as a module.
+  "rules": [{ "type": "Text", "globs": ["**/client/y-bayleaf.js"], "fallthrough": false }],
+
+  "durable_objects": {
+    "bindings": [{ "name": "ROOM", "class_name": "Room" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+
+  // Owner index, retirement fence and telemetry windows. PLACEHOLDER id: run
+  // `npx wrangler d1 create bayleaf-rooms` before the first deploy and paste the
+  // returned id here (rooms/OPERATIONS.md). Local dev accepts the placeholder.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "bayleaf-rooms",
+      "database_id": "6f0017bc-c31f-4fb6-b9f6-6f992d8d8893",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // Keyed by room id. Accepted traffic spends ACCEPT_LIMIT after authentication;
+  // failed rk_/ticket authentication spends REJECT_LIMIT instead, so a leaked URL
+  // cannot drain a room's legitimate budget. Namespaces 15901-2 are unused elsewhere.
+  "ratelimits": [
+    { "name": "ACCEPT_LIMIT", "namespace_id": "15901", "simple": { "limit": 1000, "period": 60 } },
+    { "name": "REJECT_LIMIT", "namespace_id": "15902", "simple": { "limit": 30, "period": 60 } }
+  ],
+
+  // Expiry backstop (at most 20 rooms per run) and telemetry export.
+  "triggers": { "crons": ["*/15 * * * *"] },
+
+  "vars": {
+    // Kill switch: exactly "true" opens the participant plane and the owner RPC.
+    // Off in source; set "true" here in the deploying change once the API is ready.
+    "ROOMS_ENABLED": "true",
+    // Off until the telemetry vocabulary is approved; also needs the secret
+    // ROOMS_TELEMETRY_WRITE_SECRET (wrangler secret put), a dedicated rooms writer.
+    "ROOMS_TELEMETRY_ENABLED": "true",
+    // Limits (DESIGN.md, "Limits"); getLimits reports exactly these.
+    "MAX_ROOMS_PER_OWNER": "20",
+    "MAX_CREDENTIALS_PER_ROOM": "100",
+    "MAX_ENTRY_BYTES_JSON": "65536",
+    "MAX_ENTRY_BYTES_YJS": "1048576",
+    "MAX_ROOM_BYTES": "10485760",
+    "MAX_SOCKETS_PER_ROOM": "200",
+    "MAX_APPENDS_PER_SECOND": "50",
+    "DEFAULT_LIFE_DAYS": "30",
+    "MAX_LIFE_DAYS": "90",
+    "COMPACT_ENTRIES": "500"
+  }
+}

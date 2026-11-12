@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BayLeaf Rooms: Tiptap demo</title>
+<!--
+  One copy of Yjs and one copy of ProseMirror's core (model, state, view,
+  transform), or collaboration breaks silently. Every package that imports them
+  is loaded with esm.sh `?external=`, which leaves those imports bare so this
+  import map resolves each to a single URL. `external` propagates to the
+  packages esm.sh pulls in on their behalf (e.g. @tiptap/pm/commands).
+-->
+<script type="importmap">
+{
+  "imports": {
+    "yjs": "https://esm.sh/yjs@13.6.27",
+    "y-protocols/awareness": "https://esm.sh/y-protocols@1.0.7/awareness?external=yjs",
+    "prosemirror-model": "https://esm.sh/prosemirror-model@1.25.13",
+    "prosemirror-transform": "https://esm.sh/prosemirror-transform@1.12.5?external=prosemirror-model",
+    "prosemirror-state": "https://esm.sh/prosemirror-state@1.4.4?external=prosemirror-model,prosemirror-transform",
+    "prosemirror-view": "https://esm.sh/prosemirror-view@1.42.9?external=prosemirror-model,prosemirror-state,prosemirror-transform",
+    "@tiptap/pm/model": "https://esm.sh/@tiptap/pm@3.33.1/model?external=prosemirror-model,prosemirror-state,prosemirror-transform,prosemirror-view",
+    "@tiptap/pm/state": "https://esm.sh/@tiptap/pm@3.33.1/state?external=prosemirror-model,prosemirror-state,prosemirror-transform,prosemirror-view",
+    "@tiptap/pm/view": "https://esm.sh/@tiptap/pm@3.33.1/view?external=prosemirror-model,prosemirror-state,prosemirror-transform,prosemirror-view",
+    "@tiptap/pm/transform": "https://esm.sh/@tiptap/pm@3.33.1/transform?external=prosemirror-model,prosemirror-state,prosemirror-transform,prosemirror-view",
+    "@tiptap/pm/commands": "https://esm.sh/@tiptap/pm@3.33.1/commands?external=prosemirror-model,prosemirror-state,prosemirror-transform,prosemirror-view",
+    "@tiptap/pm/history": "https://esm.sh/@tiptap/pm@3.33.1/history?external=prosemirror-model,prosemirror-state,prosemirror-transform,prosemirror-view",
+    "@tiptap/pm/keymap": "https://esm.sh/@tiptap/pm@3.33.1/keymap?external=prosemirror-model,prosemirror-state,prosemirror-transform,prosemirror-view",
+    "@tiptap/pm/schema-list": "https://esm.sh/@tiptap/pm@3.33.1/schema-list?external=prosemirror-model,prosemirror-state,prosemirror-transform,prosemirror-view",
+    "@tiptap/pm/dropcursor": "https://esm.sh/@tiptap/pm@3.33.1/dropcursor?external=prosemirror-model,prosemirror-state,prosemirror-transform,prosemirror-view",
+    "@tiptap/pm/gapcursor": "https://esm.sh/@tiptap/pm@3.33.1/gapcursor?external=prosemirror-model,prosemirror-state,prosemirror-transform,prosemirror-view",
+    "@tiptap/core": "https://esm.sh/@tiptap/core@3.33.1?external=@tiptap/pm",
+    "@tiptap/core/jsx-runtime": "https://esm.sh/@tiptap/core@3.33.1/jsx-runtime?external=@tiptap/pm",
+    "@tiptap/starter-kit": "https://esm.sh/@tiptap/starter-kit@3.33.1?external=@tiptap/core,@tiptap/pm",
+    "@tiptap/y-tiptap": "https://esm.sh/@tiptap/y-tiptap@3.3.0?external=yjs,prosemirror-model,prosemirror-state,prosemirror-transform,prosemirror-view",
+    "@tiptap/extension-collaboration": "https://esm.sh/@tiptap/extension-collaboration@3.33.1?external=@tiptap/core,@tiptap/pm,@tiptap/y-tiptap,yjs",
+    "@tiptap/extension-collaboration-caret": "https://esm.sh/@tiptap/extension-collaboration-caret@3.33.1?external=@tiptap/core,@tiptap/pm,@tiptap/y-tiptap"
+  }
+}
+</script>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 44rem; margin: 2rem auto; padding: 0 1rem; }
+  #status { padding: .4rem .7rem; border-radius: .3rem; background: #eee; }
+  #status[data-s="connected"] { background: #dfd; }
+  #status[data-s="read_only"], #status[data-s="connecting"] { background: #ffd; }
+  #status[data-s="diverged"], #status[data-s="ended"] { background: #fdd; }
+  #editor { border: 1px solid #ccc; border-radius: .3rem; padding: .5rem 1rem; min-height: 8rem; margin-top: 1rem; }
+  #editor [contenteditable="false"] { color: #666; }
+  .ProseMirror { outline: none; min-height: 7rem; }
+  /* CollaborationCaret ships no CSS: these are its documented class names. */
+  .collaboration-carets__caret { position: relative; margin: 0 -1px; border-left: 1px solid; border-right: 1px solid; word-break: normal; pointer-events: none; }
+  .collaboration-carets__label { position: absolute; top: -1.4em; left: -1px; font-size: 12px; font-weight: 600; line-height: normal;
+    color: #000; padding: .1rem .3rem; border-radius: 3px 3px 3px 0; white-space: nowrap; user-select: none; }
+</style>
+</head>
+<body>
+<p id="status" data-s="connecting">connecting...</p>
+<div id="editor"></div>
+<button id="forget">Forget this room on this device</button>
+<script type="module">
+import * as Y from "yjs";
+import * as awarenessProtocol from "y-protocols/awareness";
+import { Editor } from "@tiptap/core";
+import StarterKit from "@tiptap/starter-kit";
+import Collaboration from "@tiptap/extension-collaboration";
+import CollaborationCaret from "@tiptap/extension-collaboration-caret";
+import { BayLeafRoomProvider } from "../y-bayleaf.js";
+
+const base = new URLSearchParams(location.search).get("base") ?? "http://localhost:8788";
+const ydoc = new Y.Doc();
+const provider = new BayLeafRoomProvider(Y, ydoc, { base, link: location.hash, storage: localStorage, awarenessProtocol });
+const banner = document.querySelector("#status");
+let editor = null;
+
+const MESSAGES = {
+  connecting: "connecting...",
+  connected: "connected: edits sync live",
+  read_only: "the owner froze this room: read only",
+  diverged: "this edit could not sync: reload",
+  ended: "this room is no longer available",
+};
+// The editor is writable only while the provider can sync and the credential may write.
+function render(status) {
+  const readCred = !provider.can("append");
+  banner.dataset.s = status;
+  banner.textContent = MESSAGES[status] + (readCred && status === "connected" ? " (view only)" : "");
+  editor?.setEditable(status === "connected" && !readCred);
+}
+provider.on("status", ({ status }) => render(status));
+
+// whoami (and so cred_label) exists only after the first fetch: build the editor on "synced".
+provider.on("synced", () => {
+  const name = provider.whoami.cred_label;
+  const palette = ["#f9a8a8", "#fcd29f", "#b8e6a0", "#9fd8f2", "#c7b6f5", "#f5b6e0"];   // y-tiptap accepts only #rrggbb
+  const color = palette[[...name].reduce((h, c) => h + c.charCodeAt(0), 0) % palette.length];
+  editor = new Editor({
+    element: document.querySelector("#editor"),
+    extensions: [
+      StarterKit.configure({ undoRedo: false }),   // Collaboration brings its own (Yjs) undo
+      Collaboration.configure({ document: ydoc }),
+      CollaborationCaret.configure({ provider, user: { name, color } }),
+    ],
+  });
+  render(provider.status);
+});
+
+document.querySelector("#forget").onclick = () => { provider.forget(); provider.destroy(); location.replace(location.pathname + location.search); };
+Object.assign(window, { Y, ydoc, provider, getEditor: () => editor });   // for tests and the console
+</script>
+</body>
+</html>
