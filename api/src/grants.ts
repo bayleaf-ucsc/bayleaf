@@ -148,6 +148,8 @@ export const GRANT_SCOPES = {
   'inboxes.messages.manage': 'Archive or unarchive messages in those inboxes',
   'sandbox.files.read': 'Read files in the sandbox folders listed below',
   'sandbox.files.write': 'Create or overwrite files in those sandbox folders',
+  'rooms.read': 'See all your rooms, their participant labels and usage, and export their content',
+  'rooms.manage': 'Create, change and delete any of your rooms, and issue or revoke their participant links',
 } as const;
 export type GrantScope = keyof typeof GRANT_SCOPES;
 const ALL_SCOPES = Object.keys(GRANT_SCOPES) as GrantScope[];
@@ -157,6 +159,8 @@ export const DEFAULT_SCOPES: GrantScope[] = ['inference.chat'];
 export const needsModels = (scopes: GrantScope[]) => scopes.some(s => s.startsWith('inference.'));
 export const needsInboxes = (scopes: GrantScope[]) => scopes.some(s => s.startsWith('inboxes.'));
 export const needsSandboxDirs = (scopes: GrantScope[]) => scopes.some(s => s.startsWith('sandbox.files.'));
+/** Rooms scopes bind no resource: they reach every room of the grantor (SCOPES.md). */
+export const needsRooms = (scopes: GrantScope[]) => scopes.some(s => s.startsWith('rooms.'));
 
 /** Folder names, never paths: BayLeaf fixes the root, so an app cannot ask for ~ or /. */
 export const SANDBOX_APPS_ROOT = '/home/daytona/bayleaf-apps/';

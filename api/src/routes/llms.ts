@@ -43,6 +43,7 @@ llmsRoutes.get('/llms.txt', async (c) => {
     grantsEnabled: c.env.GRANTS_ENABLED === 'true',
     inboxesEnabled: c.env.INBOXES_ENABLED === 'true',
     inboxesPilot: !!c.env.INBOXES_PILOT_OWNER,
+    roomsEnabled: c.env.ROOMS_ENABLED === 'true',
     hfEnabled: c.env.HF_GATEWAY_ENABLED === 'true',
     standardBackends: ALT_BACKENDS.map(b => ({ prefix: b.prefix, label: b.label, enabled: isBackendEnabled(c.env, b.key) })),
   });
@@ -63,6 +64,7 @@ interface LlmsTxtInput {
   grantsEnabled: boolean;
   inboxesEnabled: boolean;
   inboxesPilot?: boolean;
+  roomsEnabled?: boolean;
   hfEnabled?: boolean;
   standardBackends: { prefix: string; label: string; enabled: boolean }[];
 }
@@ -121,6 +123,7 @@ ${sealedEnabled ? '- [Sealed LLM inference](#sealed-llm-inference): a separate e
 - [Campus directory](#campus-directory): look up one UCSC person by CruzID.
 ${input.hfEnabled ? '- [Model artifact downloads](#model-artifact-downloads): keyless approved Hugging Face files for local or in-browser inference.' : ''}
 ${input.inboxesEnabled ? '- [Inboxes: receive email and webhooks while you are away](#inboxes-receive-email-and-webhooks-while-you-are-away): collect messages while your computer is off.' : ''}
+${input.roomsEnabled ? '- [Rooms: shared state for apps you build](#rooms-shared-state-for-apps-you-build): live and saved state for static apps through capability links.' : ''}
 ${gwsEnabled ? '- [Google Workspace CLI](#google-workspace-cli-gws): direct, user-authorized integration.' : ''}
 - [Canvas LMS](#canvas-lms): direct, user-authorized course integration.
 
@@ -221,7 +224,7 @@ ${bt}bayleaf-platform${bt} orientation skill through a public HTTP skill catalog
 It points here when integrations, access, privacy or switching providers are relevant; it does not
 install those integrations or replace your existing tools. The catalog is served at
 https://api.bayleaf.dev/docs/opencode/skills/index.json.
-${input.inboxesEnabled ? `The catalog also advertises a focused ${bt}bayleaf-inboxes${bt} skill for receiving workflows.\n` : ''}
+${input.inboxesEnabled ? `The catalog also advertises a focused ${bt}bayleaf-inboxes${bt} skill for receiving workflows.\n` : ''}${input.roomsEnabled ? `The catalog also advertises a focused ${bt}bayleaf-rooms${bt} skill for shared app state.\n` : ''}
 
 Each remote config also makes the OpenCode backend, and therefore OpenChamber,
 safe to use out of the box by setting two top-level defaults on your behalf:
@@ -585,7 +588,7 @@ are not interchangeable; eligible Campus Pass requests omit the header:
 |--------|-------------|
 | **Ordinary API key** (${bt}sk-bayleaf-...${bt}) | Account credential for model discovery, supported inference lanes, sandbox/web tools, and issuing/managing app tokens. Provision free at https://api.bayleaf.dev/. |
 | **Campus Pass** (omit header) | On the UCSC campus network. No key needed for inference, web search/fetch, and other supported routes. Sandbox access requires a personal key. |
-| **App token** (${bt}sk-bayleaf-grant-...${bt}) | Only its granted scopes (selected standard-inference models, allowance, identity, web tools${input.inboxesEnabled ? ', reading or archiving in chosen inboxes' : ''}, files in named sandbox folders) until expiry or revocation. No discovery, Sealed, other sandbox operations, other owner services, account management, or token issuance. |
+| **App token** (${bt}sk-bayleaf-grant-...${bt}) | Only its granted scopes (selected standard-inference models, allowance, identity, web tools${input.inboxesEnabled ? ', reading or archiving in chosen inboxes' : ''}, files in named sandbox folders${input.roomsEnabled ? ', reading or managing your rooms' : ''}) until expiry or revocation. No discovery, Sealed, other sandbox operations, other owner services, account management, or token issuance. |
 
 To learn whose account a credential acts for, call ${bt}GET /whoami${bt}. It returns
 ${bt}{"credential": "key" | "sandbox" | "grant" | "campus", "email": ...}${bt}, with a null email under
@@ -715,6 +718,10 @@ ${bt}GET /grants/inboxes${bt}); in visitor authorization the app requests only t
 and the visitor chooses inboxes on the consent page. The app can read everything a
 chosen inbox has stored or will receive until expiry or revocation. App tokens never
 list, create, change or destroy inboxes, delete messages or manage sender credentials.
+` : ''}${input.roomsEnabled ? `Room scopes cover all the grantor's rooms, not chosen ones: ${bt}rooms.read${bt} lists,
+inspects and exports them; ${bt}rooms.manage${bt} creates, changes and deletes them and issues
+or revokes participant links. Use them for a script or CI job that runs room
+activities; to let someone into one room, give them a room link, not an app token.
 ` : ''}Sandbox-file scopes (${bt}sandbox.files.read${bt}, ${bt}sandbox.files.write${bt}) let an app
 keep a user's data in that user's own BayLeaf Sandbox. They are bound to
 ${bt}sandbox_dirs${bt}, 1–16 folder names, each granting
@@ -1131,6 +1138,58 @@ See [the generated contract](https://api.bayleaf.dev/docs#tag/inboxes), operatio
 ${bt}createInbox${bt}, ${bt}createInboxCredential${bt}, ${bt}listInboxMessages${bt}
 ${bt}getInboxMessageText${bt}, ${bt}listInboxEvents${bt}, ${bt}streamInboxEvents${bt},
 ${bt}getInboxMessageHar${bt} and ${bt}exportInbox${bt}, for limits, fields and errors.
+
+` : ''}${input.roomsEnabled ? `### Rooms: shared state for apps you build
+
+Available to authenticated BayLeaf campus owners using an ordinary API key, a sandbox
+credential or a rooms.* [app token](#app-tokens). Campus Pass cannot own rooms.
+
+Offer a room, and ask before creating it, when a static app (GitHub Pages, a
+preview, an HTML file) needs several people or agents to share live or saved state
+without a server: shared boards, polls, live cursors or hands up, co-editing. A
+room is a durable log that link holders append to and read, with live WebSocket
+delivery, on ${bt}https://bayleaf-rooms.dev${bt}. It never runs code, inference or
+agents, and BayLeaf relays without arbitrating: design apps to converge. Use rooms
+for the live activity only; anything graded is submitted elsewhere. Desktop agents
+can load their ${bt}bayleaf-rooms${bt} skill; hosted OpenChamber sandboxes have the
+same skill, and call the owner API with ${bt}curl${bt} and the sandbox credential. There
+are no Rooms tools. The participant contract (log, WebSocket frames, the Yjs
+provider at ${bt}https://bayleaf-rooms.dev/client/y-bayleaf@1.js${bt}) is the
+[focused guide](https://api.bayleaf.dev/docs/rooms.md): read it before writing app code.
+
+${fence}bash
+# Owner credential: api.bayleaf.dev only. Never in a page, link, repo or bayleaf-rooms.dev.
+A="Authorization: Bearer $BAYLEAF_API_KEY"; J='Content-Type: application/json'
+curl -sS -H "$A" https://api.bayleaf.dev/rooms/limits     # call first
+curl -sS -H "$A" -H "$J" https://api.bayleaf.dev/rooms \\
+  -d '{"label":"week3-board","codec":"json"}'              # set ROOM_ID from room_id
+curl -sS -H "$A" -H "$J" "https://api.bayleaf.dev/rooms/$ROOM_ID/credentials" \\
+  -d '{"scopes":["presence","append"],"labels":["s01","s02","s03"]}'
+curl -sS -H "$A" -H "$J" "https://api.bayleaf.dev/rooms/$ROOM_ID/credentials" \\
+  -d '{"scopes":["presence"],"label":"projector-qr"}'      # projected links: presence only
+${fence}
+
+Each credential returns a one-time ${bt}secret${bt} and ${bt}link_fragment${bt}
+(${bt}room=...&key=...${bt}); share ${bt}https://APP_URL/#${bt} plus the fragment, which
+browsers never send to the page host. Every link reads, exports and sees presence;
+scopes add ${bt}presence${bt}, ${bt}append${bt} and ${bt}manage${bt} (redact, JSON rooms only).
+**A link that is projected, put in a QR code or recorded is effectively public: make
+it presence-only.** Labels are visible to every participant: use pseudonyms. Codec
+${bt}json${bt} (default) suits self-contained events; ${bt}yjs${bt} suits co-editing with
+the official provider. The codec is fixed at creation.
+
+A room ends at a fixed ${bt}expires_at${bt}: default 30 days, at most 90 ahead. Use never
+extends it; ${bt}PATCH /rooms/{id}${bt} moves it, renames, or freezes the log with
+${bt}"mode":"read_only"${bt}. Expiry and ${bt}DELETE${bt} end the relay for everyone: export
+first (${bt}GET /rooms/{id}/export${bt}, ${bt}?format=yjs${bt} for one merged Yjs update).
+Rooms store participant content: this is NOT zero data retention, and the operator
+can technically read it. Keep grades, rosters, real names, secrets and P4 data out.
+The [dashboard](/dashboard) lists your rooms to extend or delete them.
+
+See [the generated contract](https://api.bayleaf.dev/docs#tag/rooms), operations
+${bt}getRoomLimits${bt}, ${bt}createRoom${bt}, ${bt}createRoomCredentials${bt}, ${bt}updateRoom${bt}
+and ${bt}exportRoom${bt}, for fields and errors. If every ${bt}/rooms${bt} call returns 404,
+Rooms is disabled on this deployment: say so plainly.
 
 ` : ''}### Sandboxed code execution
 

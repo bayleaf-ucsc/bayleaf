@@ -7,6 +7,7 @@ import type { Session, UserKeyRow, OpenRouterKey } from '../types';
 import type { SandboxInfo } from '../daytona';
 import type { TinfoilBillingUsage } from '../tinfoil';
 import { TemporaryInferenceTokens } from './grants';
+import { RoomsCard } from './rooms';
 import {
   BaseLayout,
   RecommendedModelHint,
@@ -736,9 +737,10 @@ export const DashboardPage: FC<{
   grantsEnabled?: boolean;
   grantMaxSeconds?: number;
   inboxesEnabled?: boolean;
+  roomsEnabled?: boolean;
   sealedRecommendedModel?: string;
   altBackendUsage?: AltBackendUsage[];
-}> = ({ session, row, orKey, recommendedModel, sandboxInfo, gwsEnabled, sealedEnabled, sealedUsage, grantsEnabled, grantMaxSeconds = 3600, inboxesEnabled = false, sealedRecommendedModel, altBackendUsage }) => {
+}> = ({ session, row, orKey, recommendedModel, sandboxInfo, gwsEnabled, sealedEnabled, sealedUsage, grantsEnabled, grantMaxSeconds = 3600, inboxesEnabled = false, roomsEnabled = false, sealedRecommendedModel, altBackendUsage }) => {
   const greeting = session.name
     ? `Welcome, ${session.name} (${session.email})`
     : `Welcome, ${session.email}`;
@@ -751,13 +753,15 @@ export const DashboardPage: FC<{
 
       <KeyCard hasKey={hasKey} />
 
-      {grantsEnabled && <TemporaryInferenceTokens model={recommendedModel} maxSeconds={grantMaxSeconds} inboxesEnabled={inboxesEnabled}/>}
+      {grantsEnabled && <TemporaryInferenceTokens model={recommendedModel} maxSeconds={grantMaxSeconds} inboxesEnabled={inboxesEnabled} roomsEnabled={roomsEnabled}/>}
 
       {hasKey && orKey && row && <StandardLlmCard orKey={orKey} recommendedModel={recommendedModel} altBackendUsage={altBackendUsage ?? []} />}
 
       {row && sealedEnabled && sealedRecommendedModel && <SealedLlmCard recommendedModel={sealedRecommendedModel} usage={sealedUsage} />}
 
       {row && <SandboxCard sandboxInfo={sandboxInfo ?? null} />}
+
+      {row && roomsEnabled && <RoomsCard />}
 
       {hasKey && <WebCard />}
 

@@ -15,7 +15,7 @@ const bundle = await build({ absWorkingDir: root, stdin: { resolveDir: root, con
     if (request.headers.get('X-Test-Deployment') === 'pilot') {
       return worker.fetch(request, { ...env, INBOXES_PILOT_OWNER: 'synthetic-owner' }, ctx);
     }
-    return worker.fetch(request, alternate ? { ...env, GRANTS_ENABLED: 'false', SEALED_ENABLED: 'false', INBOXES_ENABLED: 'false',
+    return worker.fetch(request, alternate ? { ...env, GRANTS_ENABLED: 'false', SEALED_ENABLED: 'false', INBOXES_ENABLED: 'false', ROOMS_ENABLED: 'false',
       INBOXES_PILOT_OWNER: 'synthetic-owner',
       BEDROCK_ENABLED: 'true', VERTEX_ENABLED: 'true', RECOMMENDED_MODEL: 'test/alternate' } : env, ctx);
   }};
@@ -27,7 +27,7 @@ const mf = new Miniflare(convertV4MiniflareOptions({
     compatibilityDate: '2025-01-31', compatibilityFlags: ['nodejs_compat'],
     bindings: { RECOMMENDED_MODEL: 'test/model', GRANTS_ENABLED: 'true', GRANTS_MAX_SECONDS: '900',
        SEALED_ENABLED: 'true', SEALED_RECOMMENDED_MODEL: 'test-sealed', SEALED_CURATED_MODELS: '',
-       TINFOIL_API_KEY: 'synthetic-tinfoil-key', INBOXES_ENABLED: 'true',
+       TINFOIL_API_KEY: 'synthetic-tinfoil-key', INBOXES_ENABLED: 'true', ROOMS_ENABLED: 'true',
        BEDROCK_ENABLED: 'false', VERTEX_ENABLED: 'false',
        CAMPUS_IP_RANGES: '192.0.2.0/24', CAMPUS_POOL_KEY: 'synthetic-campus-key',
       GWS_CLIENT_ID: 'synthetic-client', GWS_CLIENT_SECRET: 'synthetic-secret', GWS_PROJECT_ID: 'synthetic-project' },
@@ -139,9 +139,22 @@ try {
    assert.equal(catalogResponse.status, 200, 'Catalog is public');
    const catalog = await catalogResponse.json();
     assert.deepEqual(catalog.skills, [
-      { name: 'bayleaf-platform', version: '8-inboxes', files: ['bayleaf-platform.md'] },
+      { name: 'bayleaf-platform', version: '8-inboxes-rooms', files: ['bayleaf-platform.md'] },
       { name: 'bayleaf-inboxes', version: '4', files: ['bayleaf-inboxes.md'] },
+      { name: 'bayleaf-rooms', version: '1', files: ['bayleaf-rooms.md'] },
     ]);
+    const roomSkill = await (await get(catalogBase + 'bayleaf-rooms/bayleaf-rooms.md')).text();
+    assert.match(roomSkill, /^---\nname: bayleaf-rooms\ndescription: .+\n---\n/);
+    for (const phrase of ['https://api.bayleaf.dev/docs/rooms.md', 'presence-only', 'Do not ask for a key in chat', 'outside BayLeaf\'s ZDR'])
+      assert.ok(roomSkill.includes(phrase), phrase);
+    const roomGuide = await (await get('/docs/rooms.md')).text();
+    for (const phrase of ['Status: available', 'https://bayleaf-rooms.dev/client/y-bayleaf@1.js', 'rooms/worker/client/demo/editor.html',
+      'effectively public: give it\n   only presence', 'operator can technically read', 'docs#tag/rooms'])
+      assert.ok(roomGuide.includes(phrase), phrase);
+    const roomOperations = Object.entries(spec.paths).filter(([path]) => path.startsWith('/rooms')).flatMap(([, ops]) => Object.values(ops));
+    assert.equal(roomOperations.length, 10);
+    assert.ok(roomOperations.every(op => op.tags[0] === 'Rooms' && JSON.stringify(op.security) === '[{"Bearer":[]}]'));
+    assert.ok(spec.info.description.includes('Rooms are enabled'));
    const skillResponse = await get(catalogBase + 'bayleaf-platform/bayleaf-platform.md');
    assert.equal(skillResponse.status, 200, 'Skill is public');
    assert.match(skillResponse.headers.get('content-type'), /text\/markdown/);
@@ -196,13 +209,15 @@ try {
     }
     const pilotHeaders = { 'X-Test-Deployment': 'pilot' };
     const pilotCatalog = await (await get(catalogBase + 'index.json', pilotHeaders)).json();
-    assert.equal(pilotCatalog.skills.find(s => s.name === 'bayleaf-platform').version, '8-inboxes-pilot');
+    assert.equal(pilotCatalog.skills.find(s => s.name === 'bayleaf-platform').version, '8-inboxes-pilot-rooms');
     assert.equal(pilotCatalog.skills.find(s => s.name === 'bayleaf-inboxes').version, '1-pilot');
     assert.ok((await (await get(inboxSkillPath, pilotHeaders)).text()).includes('Operator-only pilot'));
     assert.ok((await (await get('/docs/inboxes.md', pilotHeaders)).text()).includes('Other accounts receive 404'));
     const disabledHeaders = { 'X-Test-Deployment': 'alternate' };
     const disabledCatalog = await (await get(catalogBase + 'index.json', disabledHeaders)).json();
     assert.deepEqual(disabledCatalog.skills, [{ name: 'bayleaf-platform', version: '8', files: ['bayleaf-platform.md'] }]);
+    assert.equal((await get(catalogBase + 'bayleaf-rooms/bayleaf-rooms.md', disabledHeaders)).status, 404);
+    assert.ok((await (await get('/docs/rooms.md', disabledHeaders)).text()).includes('Status: not enabled'));
     assert.equal((await get(inboxSkillPath, disabledHeaders)).status, 404, 'Stale skill URL must not claim disabled access');
     assert.ok((await (await get('/docs/inboxes.md', disabledHeaders)).text()).includes('Status: not enabled'));
    for (const phrase of ['https://api.bayleaf.dev/llms.txt', 'Google Workspace', 'Canvas LMS',
@@ -236,6 +251,7 @@ try {
     assert.ok(llms.includes('https://api.bayleaf.dev/docs/inboxes.md'));
   const operations = new Set(Object.values(spec.paths).flatMap(path => Object.values(path).map(op => op.operationId)));
    for (const id of ['createTemporaryInferenceToken', 'describeInferenceClient', 'authorizeInferenceClient', 'exchangeInferenceCode', 'inspectCampusPass',
+     'getRoomLimits', 'createRoom', 'createRoomCredentials', 'updateRoom', 'exportRoom',
      'createInbox', 'createInboxCredential', 'listInboxMessages', 'getInboxMessageText', 'listInboxEvents', 'streamInboxEvents', 'getInboxMessageHar', 'exportInbox']) {
     assert.ok(llms.includes(id) && operations.has(id), `Guide must link an existing operation: ${id}`);
   }
@@ -252,6 +268,8 @@ try {
   assert.ok(alternateLlms.includes('Status: not enabled on this deployment'));
    assert.ok(!alternateLlms.includes('### Sealed LLM inference'));
    assert.ok(!/inboxes|createInbox|getInboxMessageText/.test(alternateLlms), 'Disabled inboxes have no guide section or TOC entry');
+   assert.ok(!/bayleaf-rooms|createRoom|#rooms-/.test(alternateLlms), 'Disabled rooms have no guide section or TOC entry');
+   assert.ok(alternate.info.description.includes('Rooms are disabled'));
   console.log('PASS: workerd documentation ownership, grant contracts/navigation, security alternatives, links and deployment-aware prose');
   if (process.argv.includes('--serve')) {
     console.log(`Synthetic local docs preview: ${await mf.ready}/docs`);

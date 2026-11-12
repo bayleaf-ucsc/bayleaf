@@ -25,6 +25,9 @@ export interface Bindings {
   INBOX_STREAM_SECONDS?: string;
   INBOX_STREAM_POLL_MS?: string;
   INBOX_STREAM_WRITE_MS?: string;
+  // BayLeaf Rooms (issue #159) owner RPC. Fail closed unless exactly "true".
+  ROOMS?: RoomManagement;
+  ROOMS_ENABLED?: string;
 
   // GCP / Vertex AI
   // Master kill-switch for the Vertex backend. When not exactly the string
@@ -192,6 +195,8 @@ export interface Variables {
   grantOwner?: UserKeyRow;
   /** Inbox owner: the caller's account_generation, set by the inbox auth middleware. */
   inboxOwner?: string;
+  /** Room owner: the caller's account_generation, set by the rooms auth middleware. */
+  roomOwner?: string;
 }
 
 export interface InferenceGrant {
@@ -308,6 +313,13 @@ export type TinfoilKeyCreated = TinfoilKey;
 export type InboxManagement = Record<'getLimits' | 'createInbox' | 'listInboxes' | 'getInbox' | 'updateInbox' | 'destroyInbox' | 'listMessages' |
   'getMessage' | 'getMessageText' | 'getMessageBody' | 'getAttachment' | 'setArchived' | 'deleteMessage' | 'createCredential' |
   'listCredentials' | 'revokeCredential' | 'listEvents' | 'acquireEventStream' | 'readEventStream' | 'releaseEventStream' | 'exportInbox' | 'getMessageHar' | 'retireOwner',
+  (owner: string, ...args: unknown[]) => Promise<unknown>>;
+
+/** `bayleaf-rooms` RoomManagement RPC stub (rooms/DESIGN.md). Every method takes the
+ * owner's account_generation first and returns JSON or `{error}`, never throws by contract.
+ * exportRoom returns `{content_type, body}` with a string or Uint8Array body. */
+export type RoomManagement = Record<'getLimits' | 'createRoom' | 'listRooms' | 'getRoom' | 'updateRoom' | 'deleteRoom' |
+  'issueCredentials' | 'listCredentials' | 'revokeCredential' | 'exportRoom' | 'retireOwner',
   (owner: string, ...args: unknown[]) => Promise<unknown>>;
 
 /** Hono app environment type */

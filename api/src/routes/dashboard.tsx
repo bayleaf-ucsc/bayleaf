@@ -136,5 +136,5 @@ dashboardRoutes.get('/dashboard', async (c) => {
     month: sealedMonth,
   } : undefined;
 
-  return renderPage(c, <DashboardPage session={session} row={row} orKey={orKey} recommendedModel={c.env.RECOMMENDED_MODEL} sandboxInfo={sandboxInfo} gwsEnabled={gwsEnabled} sealedEnabled={sealedEnabled} sealedUsage={sealedUsage} grantsEnabled={c.env.GRANTS_ENABLED === 'true'} grantMaxSeconds={maxGrantSeconds(c.env)} inboxesEnabled={c.env.INBOXES_ENABLED === 'true' && !!c.env.INBOXES} sealedRecommendedModel={c.env.SEALED_RECOMMENDED_MODEL} altBackendUsage={altBackendUsage} />);
+  return renderPage(c, <DashboardPage session={session} row={row} orKey={orKey} recommendedModel={c.env.RECOMMENDED_MODEL} sandboxInfo={sandboxInfo} gwsEnabled={gwsEnabled} sealedEnabled={sealedEnabled} sealedUsage={sealedUsage} grantsEnabled={c.env.GRANTS_ENABLED === 'true'} grantMaxSeconds={maxGrantSeconds(c.env)} inboxesEnabled={c.env.INBOXES_ENABLED === 'true' && !!c.env.INBOXES} roomsEnabled={c.env.ROOMS_ENABLED === 'true' && !!c.env.ROOMS} sealedRecommendedModel={c.env.SEALED_RECOMMENDED_MODEL} altBackendUsage={altBackendUsage} />);
 });

@@ -664,6 +664,8 @@ def service_environment():
     env = dict(os.environ)
     # Explicit server configuration, never an inherited ambient feature flag.
     env['BAYLEAF_INBOXES_ENABLED'] = 'true' if read('request.json', {}).get('inboxes_enabled') is True else 'false'
+    # Rooms loads only a hosted skill, never MCP tools (rooms/DESIGN.md, Exposure).
+    env['BAYLEAF_ROOMS_ENABLED'] = 'true' if read('request.json', {}).get('rooms_enabled') is True else 'false'
     env['BAYLEAF_SHARED_MCP'] = 'true' if read('state/shared-mcp.json', {}).get('installed') is True else 'false'
     for name in list(env):
         if re.match(r'^(BAYLEAF|OPENROUTER|TINFOIL|OPENAI|ANTHROPIC)_.*(KEY|TOKEN|SECRET|PASSWORD|AUTH)$', name) \
@@ -767,7 +769,9 @@ def configure():
             'activeProjectId': 'bayleaf-workspace', 'themeId': 'bayleaf-light',
             'lightThemeId': 'bayleaf-light', 'themeVariant': 'light', 'useSystemTheme': False})
     inboxes = read('request.json', {}).get('inboxes_enabled') is True
-    return hashlib.sha256((key + ':inboxes=' + str(inboxes) + json.dumps(config, sort_keys=True)).encode()).hexdigest()
+    # Appended only when on, so fingerprints from before Rooms existed stay unchanged.
+    rooms = ':rooms=True' if read('request.json', {}).get('rooms_enabled') is True else ''
+    return hashlib.sha256((key + ':inboxes=' + str(inboxes) + rooms + json.dumps(config, sort_keys=True)).encode()).hexdigest()
 
 
 def environment(backend_port=None):

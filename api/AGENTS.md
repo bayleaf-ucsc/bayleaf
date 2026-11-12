@@ -838,6 +838,24 @@ established. Production Chat runs upstream Lathe 0.31.0 with wrapping enabled;
 private and public isolated tests plus production-tool exposure smoke passed. See the
 rollout record in `chat/DESIGN.md` and `PREVIEWS.md`.
 
+### Rooms owner facade (issue #159)
+
+Local, not deployed; `ROOMS_ENABLED` is `"false"` in source. `routes/rooms.ts`
+mounts `/rooms` (OpenAPI tag `Rooms`) and relays to the separate `bayleaf-rooms`
+Worker's `RoomManagement` RPC over the `ROOMS` service binding, on the Inboxes
+pattern: disabled 404 before auth, auth before Zod, 4 KiB bodies, owner identity is
+`account_generation`, no inference provisioning, inert exports. Read
+`../rooms/DESIGN.md` first. Ordinary keys, sandbox credentials and the account-wide
+`rooms.read`/`rooms.manage` app-token scopes own rooms (`SCOPES.md`); Campus Pass
+does not. The dashboard card uses session-only `/dashboard/rooms` endpoints (list,
+set end 90 days ahead, delete), hidden from the spec; it never shows `rk_` secrets.
+Migration `0023` adds `room_retirements`, written with identity deletion; the daily
+account-retention run retries `ROOMS.retireOwner`, which works while disabled.
+Docs: `/docs/rooms.md` (participant contract), the `bayleaf-rooms` desktop skill,
+`llms.txt` and `apiReference.ts`. Hosted sandboxes get the plugin's skill when the
+setup request carries `rooms_enabled`. Deploy order: Rooms Worker, then `0023`,
+then the API. Run `npm run test:rooms` and `npm run test:docs`.
+
 ### HF artifact gateway (issue #121)
 
 Deployed 2026-11-01. `routes/hf.ts` serves approved Hugging Face model artifacts
@@ -876,6 +894,7 @@ this facet; run `npm run test:hf` and `npm run test:docs`.
 /campus-pass            Read-only keyless standard inference availability for the caller
 /whoami                 Caller's own account email + credential kind (null email for Campus Pass; app tokens only with identity.read)
 /directory/{cruzid}     One public campus directory entry as JSON (personal key; uncached; daily cap)
+/rooms                  Rooms owner facade (issue #159): limits, rooms, credentials, export; 404 unless enabled
 /hf/catalog             GET: approved HF releases (keyless; issue #121)
 /hf/catalog/{ns}/{repo} GET: one repository's approved releases, with per-file mirror state
 /hf/{ns}/{repo}/resolve/{revision}/{path}  GET|HEAD: approved artifact bytes from R2 (Range supported)

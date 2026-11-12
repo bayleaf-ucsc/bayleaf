@@ -3,7 +3,7 @@ import { cardStyle } from './layout';
 import { describeSeconds, GRANT_SCOPES, SANDBOX_APPS_ROOT } from '../grants';
 
 /** App tokens. Recognition metadata is rendered; issued credentials stay in a JS closure. */
-export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number; inboxesEnabled?: boolean }> = ({ model, maxSeconds, inboxesEnabled = false }) => (
+export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number; inboxesEnabled?: boolean; roomsEnabled?: boolean }> = ({ model, maxSeconds, inboxesEnabled = false, roomsEnabled = false }) => (
   <section id="temporary-inference-tokens" class={cardStyle}>
     <style>{`
       #temporary-inference-tokens { overflow-wrap: anywhere; }
@@ -33,7 +33,7 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number; i
       <form id="grant-form">
         <fieldset id="grant-scopes">
           <legend>Scopes (select at least one)</legend>
-          {Object.entries(GRANT_SCOPES).filter(([scope]) => inboxesEnabled || !scope.startsWith('inboxes.')).map(([scope, description]) => (
+          {Object.entries(GRANT_SCOPES).filter(([scope]) => (inboxesEnabled || !scope.startsWith('inboxes.')) && (roomsEnabled || !scope.startsWith('rooms.'))).map(([scope, description]) => (
             <label><input type="checkbox" name="scope" value={scope} checked={scope === 'inference.chat'}/>{description} (<code>{scope}</code>)</label>
           ))}
         </fieldset>

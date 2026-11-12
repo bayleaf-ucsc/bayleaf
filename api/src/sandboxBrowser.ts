@@ -433,6 +433,8 @@ export class SandboxBrowser {
         }
         const inboxesEnabled = this.env.INBOXES_ENABLED === 'true' && !!this.env.INBOXES &&
           (!this.env.INBOXES_PILOT_OWNER || row.account_generation === this.env.INBOXES_PILOT_OWNER);
+        // Hosted bayleaf-rooms skill only; the plugin adds no Rooms tools.
+        const roomsEnabled = this.env.ROOMS_ENABLED === 'true' && !!this.env.ROOMS;
         if (op.deadline <= now()) { await this.retire(op, 'expired'); return; }
         if (['failed', 'stopped', 'expired'].includes(op.phase)) { await this.retire(op, op.phase, op.error); return; }
         if (op.phase === 'ready') return;
@@ -538,7 +540,7 @@ export class SandboxBrowser {
             // published adapters without changing owner credential authority.
             await upload(this.env, id, ROOT, 'cli-assets.json', JSON.stringify(sandboxCliAssets));
             await upload(this.env, id, ROOT, 'request.next.json', JSON.stringify({ operation: op.operation, deadline: op.setupDeadline,
-              restart: op.restart, inboxes_enabled: inboxesEnabled }));
+              restart: op.restart, inboxes_enabled: inboxesEnabled, rooms_enabled: roomsEnabled }));
             if (def.credential) {
               if (!access?.placeholder) fail('sandbox_access_unavailable');
               await upload(this.env, id, ROOT, 'credentials/incoming', access!.placeholder!);

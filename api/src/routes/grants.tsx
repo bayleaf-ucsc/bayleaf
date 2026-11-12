@@ -10,7 +10,7 @@ import { eligibleStandardModel, standardModelCatalog } from '../standardModels';
 import { BaseLayout, renderPage } from '../templates/layout';
 import { describeSeconds, hash, issueGrant, maxGrantSeconds, nowSeconds, randomSecret, seal, unseal, validCallback, grantError, grantModelIds, storedGrantModels,
   GRANT_SCOPES, DEFAULT_SCOPES, grantAuthority, grantScopeIds, grantScopes, needsModels, needsInboxes, grantInboxIds,
-  storedGrantInboxes, needsSandboxDirs, grantSandboxDirs, storedGrantSandboxDirs, SANDBOX_APPS_ROOT, type GrantScope } from '../grants';
+  storedGrantInboxes, needsSandboxDirs, needsRooms, grantSandboxDirs, storedGrantSandboxDirs, SANDBOX_APPS_ROOT, type GrantScope } from '../grants';
 import { GrantRequestSchema, GrantTokenSchema, GrantErrorSchema, ClientDescriptorRequestSchema,
   ClientDescriptorSchema, GrantExchangeSchema, GrantListSchema, GrantModelsSchema, GrantAuthorizeQuerySchema, ApiErrorSchema,
   GrantInboxesSchema } from '../schemas';
@@ -28,8 +28,10 @@ export const GRANT_WORKFLOW = `App tokens (formerly temporary inference tokens) 
 - inboxes.messages.manage: PATCH /inboxes/{id}/messages/{mid} (archive or unarchive) for bound inboxes only; it does not imply read
 - sandbox.files.read: GET /sandbox/files/* inside bound sandbox folders only
 - sandbox.files.write: PUT /sandbox/files/* inside bound sandbox folders only; it does not imply read
+- rooms.read: GET /rooms/limits, /rooms, /rooms/{id} and /rooms/{id}/export, for all the grantor's rooms
+- rooms.manage: POST /rooms, PATCH and DELETE /rooms/{id}, and /rooms/{id}/credentials (issue, list, revoke), for all the grantor's rooms; it does not imply read
 
-Any inference.* scope requires models, 1–16 standard-inference models; models without an inference.* scope are rejected. Any inboxes.* scope requires inboxes, 1–16 of the grantor's own active inbox handles, checked at issuance, approval and exchange (403 inbox_not_allowed otherwise); inboxes without an inboxes.* scope are rejected. Inbox content is stored and sender-controlled: a bound token reads everything the inbox has stored or will receive until expiry or revocation, and a live event stream ends when the token is revoked or expires. Any sandbox.files.* scope requires sandbox_dirs, 1–16 folder names (lowercase letters, digits and hyphens, at most 63 characters); sandbox_dirs without a sandbox.files.* scope are rejected. Each name grants /home/daytona/bayleaf-apps/<name>/ and everything below it. The check is lexical on the decoded path: the path must continue past the folder, and empty, . or .. segments, quotes, backslashes and control characters are refused (403 insufficient_scope). Using such a token wakes the grantor's sandbox and creates one if none exists; another app naming the same folder shares it. Omitting scopes requests inference.chat only; request inference.responses or inference.decisions explicitly. Every other route refuses app tokens, including Sealed, model discovery, listing, creating, changing or destroying inboxes, deleting messages, inbox credentials, sandbox status, exec, keep-alive, deletion or file listing, account management and renewal. Model fallbacks, routing overrides and provider plugins are unavailable. Tokens work wherever copied within their scope/model/lifetime restriction; they are not origin-bound.
+Any inference.* scope requires models, 1–16 standard-inference models; models without an inference.* scope are rejected. Any inboxes.* scope requires inboxes, 1–16 of the grantor's own active inbox handles, checked at issuance, approval and exchange (403 inbox_not_allowed otherwise); inboxes without an inboxes.* scope are rejected. Inbox content is stored and sender-controlled: a bound token reads everything the inbox has stored or will receive until expiry or revocation, and a live event stream ends when the token is revoked or expires. Any sandbox.files.* scope requires sandbox_dirs, 1–16 folder names (lowercase letters, digits and hyphens, at most 63 characters); sandbox_dirs without a sandbox.files.* scope are rejected. Each name grants /home/daytona/bayleaf-apps/<name>/ and everything below it. The check is lexical on the decoded path: the path must continue past the folder, and empty, . or .. segments, quotes, backslashes and control characters are refused (403 insufficient_scope). Using such a token wakes the grantor's sandbox and creates one if none exists; another app naming the same folder shares it. rooms.* scopes bind no resource: they reach every room the grantor has or creates, and rooms.manage can mint participant links with any room scope; per-room delegation is a room capability link, not an app token. Requesting a rooms.* scope while Rooms is unavailable is 400 invalid_scope. Omitting scopes requests inference.chat only; request inference.responses or inference.decisions explicitly. Every other route refuses app tokens, including Sealed, model discovery, listing, creating, changing or destroying inboxes, deleting messages, inbox credentials, sandbox status, exec, keep-alive, deletion or file listing, account management and renewal. Model fallbacks, routing overrides and provider plugins are unavailable. Tokens work wherever copied within their scope/model/lifetime restriction; they are not origin-bound.
 
 ### Direct issuance
 
@@ -120,6 +122,7 @@ async function validateGrant(c: Context<AppEnv>, scopes: GrantScope[] | null, mo
   if (!Number.isSafeInteger(lifetime) || lifetime < 1 || lifetime > max)
     return grantError(c, 'invalid_lifetime', `expires_in must be a positive integer no greater than ${max} seconds.`, 400);
   if (!scopes) return grantError(c, 'invalid_scope', `scopes must be a nonempty array of: ${Object.keys(GRANT_SCOPES).join(', ')}.`, 400);
+  if (needsRooms(scopes) && !roomsAvailable(c)) return grantError(c, 'invalid_scope', 'Rooms are unavailable on this deployment.', 400);
   if (!needsModels(scopes)) return models === undefined ? null
     : grantError(c, 'invalid_request', 'models apply only to inference.* scopes.', 400);
   if (models === undefined) return grantError(c, 'invalid_request', 'Specify models (or legacy model) for inference.* scopes.', 400);
@@ -128,6 +131,7 @@ async function validateGrant(c: Context<AppEnv>, scopes: GrantScope[] | null, mo
   return null;
 }
 
+const roomsAvailable = (c: Context<AppEnv>) => c.env.ROOMS_ENABLED === 'true' && !!c.env.ROOMS;
 const inboxesAvailable = (c: Context<AppEnv>) => c.env.INBOXES_ENABLED === 'true' && !!c.env.INBOXES;
 type InboxChoice = { id: string; type: string; label: string | null; address?: string; url?: string };
 
@@ -364,6 +368,9 @@ grantRoutes.get('/authorize', async c => {
       <p>{scopes.includes('sandbox.files.read') ? 'The app can read any file in these folders, whoever wrote it. ' : ''}
         {scopes.includes('sandbox.files.write') ? 'The app can create or overwrite files there; treat them as untrusted if your own agents read them. ' : ''}
         Using the token wakes your BayLeaf Sandbox, and creates one if you have none.</p></>}
+    {needsRooms(scopes) && <p>This covers every room you have or create, not one chosen room.
+      {scopes.includes('rooms.read') ? ' The app can read and export everything participants stored in them.' : ''}
+      {scopes.includes('rooms.manage') ? ' The app can delete rooms and hand out participant links, including links that can write.' : ''}</p>}
     <p>Destination: <strong>{new URL(tx.redirect_uri).origin}</strong></p>
     <p>Exact callback: <code>{tx.redirect_uri}</code></p>
     <p>Lifetime: <strong>{describeSeconds(tx.lifetime)}</strong> from approval, until about <strong>{new Date((nowSeconds() + tx.lifetime) * 1000).toUTCString()}</strong>.</p>

@@ -69,7 +69,10 @@
   ],
 
   "services": [
-    { "binding": "INBOXES", "service": "bayleaf-inboxes", "entrypoint": "InboxManagement" }
+    { "binding": "INBOXES", "service": "bayleaf-inboxes", "entrypoint": "InboxManagement" },
+    // BayLeaf Rooms owner RPC (issue #159; see rooms/DESIGN.md). Deploy the bayleaf-rooms
+    // Worker before any API deploy that includes this binding.
+    { "binding": "ROOMS", "service": "bayleaf-rooms", "entrypoint": "RoomManagement" }
   ],
 
   // Environment variables (set via wrangler secret or dashboard)
@@ -97,6 +100,9 @@
     "HF_GATEWAY_ENABLED": "true",
     // Community access: no operator-only account-generation restriction.
     "INBOXES_PILOT_OWNER": "",
+    // BayLeaf Rooms facade, issue #159. /rooms is 404 unless exactly "true". Not yet
+    // deployed: flip at launch, after the Rooms Worker and migration 0023 (rooms/DESIGN.md).
+    "ROOMS_ENABLED": "true",
     // GCP Vertex AI Configuration
     //
     // VERTEX_ENABLED is the master kill-switch for the Vertex backend. It must

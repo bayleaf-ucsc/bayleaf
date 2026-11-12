@@ -51,6 +51,7 @@ import { SESSION_COOKIE } from './constants';
 import { GRANT_PREFIX, guardGrant, cleanupGrants } from './grants';
 import { previewRoutes, handlePreviewHost, cleanupPreviews } from './routes/previews';
 import { inboxRoutes } from './routes/inboxes';
+import { roomRoutes, roomDashboardRoutes } from './routes/rooms';
 import { diagnosticRoutes } from './routes/diagnostics';
 export { PreviewConnections } from './routes/previews';
 import { RecommendedModelResponseSchema, HealthResponseSchema } from './schemas';
@@ -227,6 +228,10 @@ app.route('/grants', grantRoutes);
 app.route('/previews', previewRoutes);
 // BayLeaf Inboxes (issue #97): owner facade, 404 unless enabled.
 app.route('/inboxes', inboxRoutes);
+// BayLeaf Rooms (issue #159): owner facade, 404 unless enabled. The dashboard card's
+// session endpoints mount before the dashboard page itself.
+app.route('/rooms', roomRoutes);
+app.route('/dashboard/rooms', roomDashboardRoutes);
 app.route('/diagnostics', diagnosticRoutes);
 app.route('/', llmsRoutes);
 app.route('/', authRoutes);
@@ -266,6 +271,7 @@ app.doc31('/docs/openapi.json', (c) => ({
     { name: 'Directory', description: 'On-demand lookup of one person in the public UCSC campus directory by CruzID. Personal access only; uncached; no search or enumeration.' },
     { name: 'Grants', description: GRANT_WORKFLOW },
     { name: 'Inboxes', description: 'Owner-managed email and HTTP reception with bounded stored content, outside the inference ZDR boundary; requires an ordinary key or sandbox credential.' },
+    { name: 'Rooms', description: 'Owner-managed durable shared state for static apps: logs of JSON entries or Yjs updates relayed live to participants holding capability links on bayleaf-rooms.dev. Stores participant content, outside the inference ZDR boundary; requires an ordinary key, sandbox credential or rooms.* app token.' },
     { name: 'Artifacts', description: 'Keyless, read-only delivery of approved Hugging Face model artifacts from this origin, for clients whose network egress is limited to it. Not a Hub proxy: approved files are mirrored ahead of time and requests never reach Hugging Face.' },
     { name: 'Previews', description: 'Transient preview registration for the designated installation, with explicit public or private access policy.' },
   ],

@@ -82,6 +82,31 @@ class InstallerTests(unittest.TestCase):
         m.atomic('request.json', {'inboxes_enabled': 'true'})
         self.assertEqual(m.service_environment()['BAYLEAF_INBOXES_ENABLED'], 'false')
 
+    def test_rooms_feature_flag_comes_only_from_server_request(self):
+        with patch.dict(m.os.environ, {'BAYLEAF_ROOMS_ENABLED': 'true'}):
+            self.assertEqual(m.service_environment()['BAYLEAF_ROOMS_ENABLED'], 'false')
+        m.atomic('request.json', {'rooms_enabled': True})
+        self.assertEqual(m.service_environment()['BAYLEAF_ROOMS_ENABLED'], 'true')
+        m.atomic('request.json', {'rooms_enabled': 'true'})
+        self.assertEqual(m.service_environment()['BAYLEAF_ROOMS_ENABLED'], 'false')
+
+    def test_openchamber_launch_and_fingerprint_use_server_rooms_flag(self):
+        (self.root/'credentials').mkdir()
+        (self.root/'credentials/owner-key').write_text('dtn_secret_synthetic')
+        with patch.object(m.Path, 'home', return_value=self.root/'home'), patch.dict(m.os.environ,
+                {'BAYLEAF_ROOMS_ENABLED': 'true'}):
+            m.atomic('request.json', {'inboxes_enabled': True})
+            before = m.configure()
+            _, env = m.start_openchamber(43210)
+            self.assertEqual(env['BAYLEAF_ROOMS_ENABLED'], 'false')
+            m.atomic('request.json', {'inboxes_enabled': True, 'rooms_enabled': False})
+            self.assertEqual(m.configure(), before, 'rooms off leaves earlier fingerprints unchanged')
+            m.atomic('request.json', {'inboxes_enabled': True, 'rooms_enabled': True})
+            after = m.configure()
+            self.assertNotEqual(before, after)
+            _, env = m.start_openchamber(43210)
+            self.assertEqual(env['BAYLEAF_ROOMS_ENABLED'], 'true')
+
     def test_openchamber_launch_and_fingerprint_use_server_inboxes_flag(self):
         (self.root/'credentials').mkdir()
         (self.root/'credentials/owner-key').write_text('dtn_secret_synthetic')
