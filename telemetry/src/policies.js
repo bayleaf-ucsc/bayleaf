@@ -1,7 +1,7 @@
 // Versioned collection policy, deliberately separate from physical storage.
 // Changing these allowlists is a privacy review, not merely a schema migration.
 import { DAYTONA_METRICS } from '../daytona/policy.js';
-export const POLICY_VERSION = 4; // Daytona policy 3 plus inbox aggregate metrics.
+export const POLICY_VERSION = 5; // Policy 4 plus proposed room aggregate metrics (review required).
 export const SCHEMA_VERSION = 1;
 export const DAY = 86_400_000;
 export const LIMITS = Object.freeze({ bodyBytes: 65_536, points: 100, readRows: 500, aggregateRows: 2000,
@@ -15,12 +15,12 @@ export const ORIGINS = {
   'https://chat.bayleaf.dev': 'chat', 'https://api.bayleaf.dev': 'api',
   'https://bayleaf-proxies.dev': 'proxies', 'https://bayleaf-inboxes.dev': 'inboxes',
 };
-export const SOURCES = ['owui', 'chat-retention', 'api-retention', 'sandbox-reaper', 'probe', 'daytona', 'inboxes'];
+export const SOURCES = ['owui', 'chat-retention', 'api-retention', 'sandbox-reaper', 'probe', 'daytona', 'inboxes', 'rooms'];
 export const SOURCE_CLASSES = {
   owui: ['metrics'], 'chat-retention': ['deletions'],
   'api-retention': ['deletions'], 'sandbox-reaper': ['deletions'], probe: ['probes'],
   daytona: ['metrics', 'lifecycle'],
-  inboxes: ['metrics'],
+  inboxes: ['metrics'], rooms: ['metrics'],
 };
 export const JOBS = ['chat-retention', 'sandbox-reaper', 'preview-expiry', 'grant-expiry',
   'session-expiry', 'credential-cleanup', 'user-retention'];
@@ -61,7 +61,21 @@ export const DELETION_COUNTS = {
 };
 export const ROUTES = ['/', '/health', '/api/chat/completions', '/api/v1/chats/',
   '/api/v1/auths/', '/ws/socket.io/', '/api/version', '/api/v1/chats/{id}', '/_other', 'unmatched', 'other'];
+// Rooms: closed per-attribute vocabularies; every attribute is required. 34 fixed series.
+const CODECS = ['json', 'yjs'];
+export const ROOM_VOCABULARY = {
+  'room.lifecycle': { codec: CODECS, outcome: ['created', 'expired', 'deleted', 'retired'] },
+  'room.appends': { codec: CODECS, outcome: ['accepted', 'frozen', 'too_large', 'room_full', 'scope', 'rate_limited'] },
+  'room.append.bytes': { codec: CODECS, outcome: ['accepted'] },
+  'room.connections': { outcome: ['opened', 'auth_failed', 'room_busy'] },
+  'room.presence': { outcome: ['relayed', 'rate_limited', 'too_large'] },
+  'room.fanout.frames': { kind: ['entry', 'presence'] },
+};
+export const ROOM_SERIES = Object.values(ROOM_VOCABULARY)
+  .reduce((n, attrs) => n + Object.values(attrs).reduce((m, v) => m * v.length, 1), 0);
 export const METRICS = {
+  ...Object.fromEntries(Object.entries(ROOM_VOCABULARY).map(([name, attrs]) => [name,
+    { source: 'rooms', kind: 'sum', unit: name === 'room.append.bytes' ? 'By' : '1', attributes: Object.keys(attrs) }])),
   ...DAYTONA_METRICS,
   'inbox.receipts': { source: 'inboxes', kind: 'sum', unit: '1', attributes: ['transport', 'outcome'] },
   'inbox.lifecycle': { source: 'inboxes', kind: 'sum', unit: '1', attributes: ['transport', 'outcome'] },

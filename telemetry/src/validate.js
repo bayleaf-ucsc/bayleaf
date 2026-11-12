@@ -1,5 +1,6 @@
 import { SCHEMA_VERSION, POLICY_VERSION, LIMITS, DESTINATIONS, SOURCES, SOURCE_CLASSES,
-  SOURCE_JOBS, OUTCOMES, LAYERS, PHASES, EVENTS, METRICS, ROUTES, ORIGINS, DELETION_COUNTS, probeResult, retentionMs } from './policies.js';
+  SOURCE_JOBS, OUTCOMES, LAYERS, PHASES, EVENTS, METRICS, ROUTES, ORIGINS, DELETION_COUNTS, ROOM_VOCABULARY,
+  ROOM_SERIES, probeResult, retentionMs } from './policies.js';
 import { STATES, REGIONS, CLASSES, BUCKET_MS } from '../daytona/policy.js';
 
 export class Invalid extends Error {}
@@ -56,13 +57,16 @@ function metric(p, now, ttl, source) {
   if ((spec.source ?? 'owui') !== source) fail();
   const inboxMetric = ['inbox.receipts', 'inbox.lifecycle', 'inbox.cleanup', 'inbox.export.pages', 'inbox.export.bytes'].includes(p.name);
   if ((source === 'inboxes') !== inboxMetric) fail();
-  if (inboxMetric) {
+  const roomMetric = Object.hasOwn(ROOM_VOCABULARY, p.name);
+  if ((source === 'rooms') !== roomMetric) fail();
+  if (inboxMetric || roomMetric) {
     keys(p, ['name', 'kind', 'unit', 'observed_at', 'start_at', 'temporality', 'monotonic', 'value', 'attributes'],
       ['name', 'kind', 'unit', 'observed_at', 'start_at', 'temporality', 'monotonic', 'value', 'attributes']);
     keys(p.attributes, spec.attributes, spec.attributes);
     if (p.start_at % 900000 !== 0 || p.observed_at !== p.start_at + 900000 || p.temporality !== 'delta') fail();
-    if (p.name !== 'inbox.cleanup') choice(p.attributes.transport, ['http', 'email']);
-    choice(p.attributes.outcome, p.name === 'inbox.receipts'
+    if (roomMetric) for (const [k, values] of Object.entries(ROOM_VOCABULARY[p.name])) choice(p.attributes[k], values);
+    else if (p.name !== 'inbox.cleanup') choice(p.attributes.transport, ['http', 'email']);
+    if (inboxMetric) choice(p.attributes.outcome, p.name === 'inbox.receipts'
       ? ['accepted', 'auth', 'rate', 'quota', 'size', 'unknown_address', 'failure']
       : p.name === 'inbox.lifecycle' ? ['created', 'destroy_requested', 'destroyed']
         : p.name === 'inbox.cleanup' ? ['expired', 'stale', 'retried', 'destroyed_messages', 'reconciled', 'success', 'failure']
@@ -79,7 +83,8 @@ function metric(p, now, ttl, source) {
     if (k === 'sandbox_class') choice(v, CLASSES);
   }
   if (source === 'daytona') keys(p.attributes, spec.attributes, spec.attributes);
-  const attributes = inboxMetric ? { ...(p.name === 'inbox.cleanup' ? {} : { transport: p.attributes.transport }),
+  const attributes = roomMetric ? Object.fromEntries(spec.attributes.map(k => [k, p.attributes[k]]))
+    : inboxMetric ? { ...(p.name === 'inbox.cleanup' ? {} : { transport: p.attributes.transport }),
     outcome: p.attributes.outcome } : p.attributes;
   const base = { name: p.name, kind: p.kind, unit: p.unit, observed_at: p.observed_at, attributes,
     ...('time_unix_nano' in p ? { time_unix_nano: nanos(p.time_unix_nano, p.observed_at) } : {}) };
@@ -142,7 +147,9 @@ export function validate(klass, input, env, now = Date.now()) {
   if (klass === 'metrics') {
     if (!Array.isArray(input.points) || !input.points.length || input.points.length > LIMITS.points) fail();
     const points = input.points.map(p => metric(p, now, ttl, input.source));
-    if (input.source === 'inboxes' && (points.length > 31 || points.some(p => p.observed_at !== observed) ||
+    // Fixed matrices: at most one point per series, all in the envelope's window.
+    const series = { inboxes: 31, rooms: ROOM_SERIES }[input.source];
+    if (series && (points.length > series || points.some(p => p.observed_at !== observed) ||
         new Set(points.map(p => canonical([p.name, p.attributes]))).size !== points.length)) fail();
     // Envelope expiry cannot retire a point before its own observation window.
     if (points.some(p => p.observed_at > observed)) fail();
