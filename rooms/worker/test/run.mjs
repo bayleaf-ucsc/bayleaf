@@ -7,7 +7,9 @@ import { spawn, execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 
 const PERSIST = "/tmp/rooms-prod-state";
-const BASE_VARS = { ROOMS_ENABLED: "true", COMPACT_ENTRIES: "200" };
+// DEV_OWNER_TOKEN opens the local owner shim; passed here so a fresh checkout
+// needs no .dev.vars. Production never sets it (OPERATIONS.md).
+const BASE_VARS = { ROOMS_ENABLED: "true", COMPACT_ENTRIES: "200", DEV_OWNER_TOKEN: "dev-owner" };
 const PHASES = [
   { name: "main", vars: {}, run: [["test/spike.mjs"], ["test/prod.mjs", "main"]] },
   { name: "low", vars: { MAX_SOCKETS_PER_ROOM: "3", MAX_ROOM_BYTES: "4096", ROOMS_TELEMETRY_ENABLED: "true",

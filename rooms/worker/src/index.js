@@ -594,7 +594,7 @@ export class Room extends DurableObject {
     this.flushAt = null;
     await this.metrics.flush().catch(() => {});
     if (this.exists && Date.now() >= this.expiresAt) return this.expire();
-    this.endStale(this.ctx.getWebSockets());
+    this.endStale();
     await this.schedule();
   }
 
@@ -915,21 +915,24 @@ export class Room extends DurableObject {
   broadcast(frame, except) {
     const s = JSON.stringify(frame);
     let n = 0;
-    for (const ws of this.endStale(this.ctx.getWebSockets())) if (ws !== except) { try { ws.send(s); n++; } catch {} }
+    const ended = this.endStale();
+    for (const ws of this.ctx.getWebSockets()) if (ws !== except && !ended.has(ws)) { try { ws.send(s); n++; } catch {} }
     const kind = frame.type === "entry" ? "entry" : frame.type === "presence" || frame.type === "left" ? "presence" : null;
     if (kind && n) this.count("room.fanout.frames", { kind }, n);
   }
 
   // Ends sockets whose credential was revoked or has expired; returns the rest.
   // One lookup per credential, not per socket.
-  endStale(sockets) {
-    const why = new Map();
-    return sockets.filter((ws) => {
-      const id = ws.deserializeAttachment()?.cred_id;
-      if (!why.has(id)) why.set(id, this.credEnd(id));
-      if (why.get(id)) this.end(ws, why.get(id));
-      return !why.get(id);
-    });
+  // Ends the sockets of revoked or expired credentials; returns the sockets ended.
+  // Sockets are tagged with their credential id, so this reads at most
+  // MAX_CREDENTIALS_PER_ROOM rows and never deserializes an attachment: it runs
+  // on every broadcast, and a per-socket sweep made presence fan-out O(N²).
+  endStale() {
+    const ended = new Set();
+    for (const { id, revoked } of this.sql.exec(`SELECT id, revoked FROM creds
+        WHERE revoked = 1 OR (expires_at IS NOT NULL AND expires_at <= ?)`, Date.now()))
+      for (const ws of this.ctx.getWebSockets(id)) { this.end(ws, revoked ? "revoked" : "expired"); ended.add(ws); }
+    return ended;
   }
 
   end(ws, reason) {

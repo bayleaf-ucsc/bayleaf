@@ -45,6 +45,11 @@ As in `rooms-v2.md`, plus:
 - A socket ends when its credential expires, not only on revoke: the Durable
   Object alarm is set to the earlier of `expires_at` and the earliest live
   credential expiry, and on firing sends `end` `expired` to those sockets.
+  Every broadcast also ends the sockets of revoked or expired credentials
+  before sending, in case the alarm lags. It finds them by querying the stale
+  credentials and their socket tags, never by reading every socket's
+  attachment: a per-socket sweep on each frame made presence fan-out O(N²)
+  and got a 200-socket room shed by the runtime (`1013`) on 2026-11-12.
 - The provider stores `{room, key, base}` together under one page-stable
   `storageKey`, so a page reloaded without a fragment finds its link, and a
   stored key is always read back with the room and base it was issued for.

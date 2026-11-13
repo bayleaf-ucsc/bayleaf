@@ -1,10 +1,12 @@
 # Rooms qualification
 
-Status as of **2026-11-11**: deployed and open to campus (API version `70e0ea4b`,
-Worker `3a399ca6`); evidence under "Launch evidence" below. Still pending: one
-exported telemetry window from real traffic, the deployed fan-out measurement,
-the browser proof against production, retirement exercised live, and the matrix
-rows still marked Pending. Contract: [DESIGN.md](DESIGN.md). Deployment and recovery:
+Status as of **2026-11-12**: deployed and open to campus (Worker `4f3ad454`);
+evidence under "Launch evidence" and "Post-launch qualification" below. **Known
+defect:** presence at the published limits gets a room shed by the runtime (see
+the fan-out results); batched presence is the proposed fix, a wire-format change
+not yet designed. Still pending: the live retirement (armed, fires at the
+2026-11-13 08:17 UTC retention run), the phone-on-another-network and dashboard
+checks, and the fresh-session discovery playtests. Contract: [DESIGN.md](DESIGN.md). Deployment and recovery:
 [OPERATIONS.md](OPERATIONS.md). Exposure decisions: DECISIONS.md item 13 (Adam,
 2026-11-11), recorded here per
 `.agents/skills/bayleaf-ops-router/playbooks/bayleaf-powered-agent-capabilities.md`.
@@ -63,6 +65,71 @@ measurement; browser proof against production; retirement exercised live.
 Note: a client that looked up `bayleaf-rooms.dev` before the domain existed may
 cache the negative answer for up to 30 minutes (zone SOA minimum 1800 s).
 
+## Post-launch qualification (2026-11-12, Pacific)
+
+Raw logs in `/tmp/rooms-prod-*.log` on the operator's machine, outside the
+repository. Every synthetic room was deleted and confirmed 404.
+
+**Deployed fan-out** (`rooms/worker/test/prod-fanout.mjs`, one laptop client, one
+clock, real network; client CPU 2.7 s of 19.5 s wall, so not client-bound):
+
+| Workload | Result |
+|---|---|
+| Ramp one room to 200 sockets, then one more | 200 ready in 3.1 s; the 201st gets 429 `room_busy` |
+| 50 appends/s over the socket, 200 listeners, 20 s | 200,000 frames, 0 dropped, 0 errors; p50 50, p95 128, p99 138 ms |
+| Audience deck: 150 presence-only phones + read-only projector, Poisson tap every ~5 s | projector p50 34, p99 140 ms; burst of 150 taps in 2 s: p99 185 ms, 11k frames/s |
+| 12 y-bayleaf writers, one keystroke each per 500 ms | p50 54, p99 148 ms; converged |
+| **Presence, 200 sockets at 1/s or 5/s** | **FAIL:** every socket closed by the runtime with `1013 Service overloaded` within 1.3–3 s; ~2–10% of frames delivered |
+| Presence, 50 senders at 5/s to 200 sockets | sockets survive, but p50 415–700 ms and growing queues |
+
+Diagnosis: a Durable Object sustains roughly 16–20k outbound frames/s, and
+per-peer presence frames scale as N² (200 × 5/s demands ~200k/s). Billing
+analytics show no `exceededCpuErrors`; the signal is Worker
+`scriptThrewException` plus client `1013` closes. Worker `4f3ad454` replaced the
+per-broadcast sweep of every socket attachment with a query of stale credentials
+by socket tag (DESIGN.md), which is sound (135/135 local, smoke 19/19) but did
+not raise the ceiling. Not an accepted limitation: the published limits let an
+honest class kill its own room.
+
+Cost (Durable Objects pricing, 2026-10-18; Cloudflare GraphQL analytics):
+audience deck about $0.0025 per room-hour; a room saturated at 50 appends/s about
+$1.44 per room-hour beyond the monthly row allowance, dominated by ~8 SQLite rows
+written per append (worth reducing).
+
+**Browser proof** (`rooms/worker/test/prod-browser.mjs`, the production provider
+`@1` swapped in by route): two isolated contexts co-edit, show carets, reload and
+catch up (611 ms); a mid-edit freeze locks both editors in 657 ms and queued edits
+sync after unfreeze with nothing dropped; a 1.15 MB paste reports `diverged`
+(caught client-side, so the server's own rejection was not exercised); the yjs
+export rebuilds the text with plain `yjs`; the provider is served with
+`Access-Control-Allow-Origin: *` and `max-age=3600`, byte-identical to source.
+Two contexts on one machine; the different-networks check is pending.
+
+**Scopes** (`rooms/worker/test/prod-scopes.mjs`, 49/49 twice): `rooms.read`
+reads and exports, refused every write; `rooms.manage` creates, updates, issues,
+revokes and deletes but is refused limits, list, get and export (it reads only
+through links it mints, and it can delete any of the owner's rooms);
+`identity.read` refused all nine verbs; Campus Pass 403; revoked grants 401.
+
+**Restore drill** (`rooms/worker/test/restore-drill.mjs`, local, 37/37):
+retirement erases Durable Object content and ends sockets; restoring the Rooms D1
+alone does not resurrect content but removes the fence, so the retired owner
+could create a new room and collect content until reconciliation, and ghost rows
+count against quota. The OPERATIONS.md order (disable, replay ledger, verify,
+reopen) cleared every case. `retireOwner` works while disabled. Not drilled: API
+D1 restored alone; Durable Object point-in-time recovery.
+
+**Exposure readbacks:** `npm run test:docs` passes; `/llms.txt`,
+`/docs/rooms.md`, the OpenAPI `Rooms` tag (10 routes), the desktop skill catalog
+and `bayleaf.dev/llms.txt` read back live; no Rooms tool in the plugin at the pin
+or the shared MCP, none in Chat source; production serves plugin `c13babd`. A
+local checkout of the submodule at an older commit would have rolled the hosted
+skill back on the next API deploy: check `git submodule status` before deploying.
+
+**Live retirement (armed):** a synthetic account on the `.invalid` domain with no
+provider keys or sandbox, two rooms and a watcher socket, backdated 24 months;
+the only eligible account. Driver: `rooms/worker/test/prod-retire.mjs`.
+
 ## Rollout checklist
 
 Run in order; record dated evidence in this file, raw logs in a private path
@@ -100,32 +167,32 @@ outside the repository.
 The spike's fan-out numbers are local only (FACET-PLAN.md risks). Against
 production, with synthetic rooms and the operator's key:
 
-- [ ] Ramp sockets in one room to `MAX_SOCKETS_PER_ROOM` (200), then one more
+- [x] Ramp sockets in one room to `MAX_SOCKETS_PER_ROOM` (200), then one more
       (expect 429 `room_busy`).
 - [ ] At 50 appends/s and at the presence limit, measure delivery latency
       percentiles to every socket, dropped or delayed frames, and Durable Object
       CPU/duration from billing metrics (observability stays off).
-- [ ] Repeat with a 30–150 phone presence-only workload shape (audience-cursor
+- [x] Repeat with a 30–150 phone presence-only workload shape (audience-cursor
       deck in DECISIONS.md) to price fan-in rooms.
-- [ ] Record cost per room-hour; adjust limits only by DESIGN.md change.
-- [ ] Delete every synthetic room and confirm 404.
+- [x] Record cost per room-hour; adjust limits only by DESIGN.md change.
+- [x] Delete every synthetic room and confirm 404.
 
 ### Browser proof against production
 
 - [ ] Load `client/demo/editor.html` (Tiptap 3, pinned import map) with
       `https://bayleaf-rooms.dev/client/y-bayleaf@1.js` in two real browsers on
       different networks; co-edit, show carets, reload, catch up.
-- [ ] Freeze mid-edit: editors report `read_only`, queued edits sync after
+- [x] Freeze mid-edit: editors report `read_only`, queued edits sync after
       unfreeze, nothing dropped. Oversize paste reports `diverged`.
-- [ ] Export `?format=yjs` and rebuild the document with no BayLeaf dependency.
-- [ ] Provider served with `Access-Control-Allow-Origin: *` and one-hour cache.
+- [x] Export `?format=yjs` and rebuild the document with no BayLeaf dependency.
+- [x] Provider served with `Access-Control-Allow-Origin: *` and one-hour cache.
 
 ### Retirement and recovery
 
 - [ ] Synthetic owner retirement: ledger row written with identity deletion,
       daily job acknowledges, fence present, rooms destroyed, sockets ended.
-- [ ] `retireOwner` succeeds while `ROOMS_ENABLED` is off.
-- [ ] Local restore drill for the recovery steps in OPERATIONS.md.
+- [x] `retireOwner` succeeds while `ROOMS_ENABLED` is off.
+- [x] Local restore drill for the recovery steps in OPERATIONS.md.
 
 ### Exposure verification
 
