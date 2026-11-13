@@ -1099,7 +1099,13 @@
   <p>Approve <strong>BayLeaf Pouch</strong> in the tab that just opened, after checking that it shows this code:</p>
   <p style="font-size:1.6rem;font-family:var(--mono);text-align:center" id="claim-code"></p>
   <p class="pending" id="claim-state">Waiting for approval...</p>
-  <p style="font-size:.85rem">If no tab opened, visit <code id="claim-url"></code>. This hands over your personal BayLeaf key, which is stored in this browser.</p>
+  <div id="claim-options">
+    <p><a id="claim-continue" target="_blank" rel="noopener noreferrer">Continue on this device</a> (opens a new tab)</p>
+    <p>Or scan with another device:</p>
+    <img id="claim-qr" alt="QR code for the approval link below" style="display:block;max-width:100%;height:auto;margin:0 auto;image-rendering:pixelated">
+    <p style="font-size:.85rem;overflow-wrap:anywhere">Approval link: <code id="claim-url"></code></p>
+  </div>
+  <p style="font-size:.85rem">Check that the code on the approval page matches this one. Approval hands over your personal BayLeaf key, which is stored in this browser. Return here after approving on either device.</p>
   <button id="claim-cancel" type="button">Cancel</button>
 </dialog>
 <dialog id="sheet">

@@ -1,6 +1,7 @@
 // Credential: device claim, the key form and Erase everything.
 
 import * as store from '../store.ts';
+import qrcode from 'qrcode-generator';
 import { $, el } from '../dom.ts';
 import { extractKey } from '../usage.ts';
 import { claimInitiate, claimPoll, usageOf } from '../bayleaf-api.ts';
@@ -28,16 +29,22 @@ export function createAuthRegion(app: App): AuthRegion {
     if (!r.ok) return app.state.status('Could not start sign-in (HTTP ' + r.status + ').', 'bad');
     const c: ClaimStart = await r.json();
     $('claim-code').textContent = c.user_code;
+    $('claim-options').hidden = false;
     $('claim-url').textContent = c.claim_url;
+    $<HTMLAnchorElement>('claim-continue').href = c.claim_url;
+    // Encode only the public approval URL, never the polling secret or API key.
+    const qr = qrcode(0, 'M');
+    qr.addData(c.claim_url, 'Byte'); qr.make();
+    $<HTMLImageElement>('claim-qr').src = qr.createDataURL(5, 20);
     $('claim-state').textContent = 'Waiting for approval...'; $('claim-state').className = 'pending';
     $<HTMLDialogElement>('claim').showModal();
-    window.open(c.claim_url, '_blank', 'noopener');
     const stop = new AbortController();
     $('claim-cancel').onclick = () => { stop.abort(); $<HTMLDialogElement>('claim').close(); };
     const deadline = Date.now() + c.expires_in * 1000;
     while (!stop.signal.aborted && Date.now() < deadline) {
       await new Promise<void>((res) => setTimeout(res, (c.poll_interval || 3) * 1000));
       if (stop.signal.aborted) return;
+      if (Date.now() >= deadline) break;
       let p;
       try { p = await claimPoll(c.device_code, stop.signal); }
       catch { continue; } // transient network error: keep polling
@@ -50,7 +57,13 @@ export function createAuthRegion(app: App): AuthRegion {
       }
       $('claim-state').textContent = body.status === 'denied' ? 'Denied.' : 'This code expired. Close and try again.';
       $('claim-state').className = 'bad';
+      $('claim-options').hidden = true;
       return;
+    }
+    if (!stop.signal.aborted) {
+      $('claim-state').textContent = 'This code expired. Close and try again.';
+      $('claim-state').className = 'bad';
+      $('claim-options').hidden = true;
     }
   }
   function renderAuth() {

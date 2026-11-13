@@ -634,7 +634,7 @@ function ApprovalPage({ session, userCode, record, approveTok, denyTok }: Approv
       <body>
         <h1>Authorize {record.client}</h1>
         <p>
-          Only approve if you just started this connection from your terminal.
+          Only approve a sign-in you started yourself, in an app or terminal you opened.
         </p>
         <div class="ident">
           <p style="margin: 0 0 0.5rem 0;">
@@ -649,13 +649,23 @@ function ApprovalPage({ session, userCode, record, approveTok, denyTok }: Approv
           </p>
         </div>
         <p>
-          On approval, your BayLeaf API key will be sent to the requesting terminal
-          (only that one time, only that one terminal). The key never appears on
-          screen and is not written to your shell history.
+          The requesting client calls itself <strong>{record.client}</strong>.
+          This name is supplied by the client, not a verified identity.
+        </p>
+        <p>
+          Approval sends your personal BayLeaf API key to that client. This is full
+          API access, not access limited to this app: it can use your inference
+          allowance, search and fetch the web, run code and access files in your
+          sandbox, and manage your inboxes and rooms. Access lasts until the key
+          is revoked from your <a href="/dashboard">API dashboard</a>; revoking
+          it also disconnects other clients using the same key.
         </p>
         <p class="warn">
-          If you didn't initiate this request, or the request code doesn't match
-          your terminal, click <strong>Deny</strong>.
+          <strong>Do not approve a code or QR link someone sent you.</strong>
+          {' '}An attacker can send their own sign-in request to get your key.
+          Check that this code matches the app or terminal where you started
+          sign-in. If you did not start it, or the code does not match, click
+          <strong> Deny</strong>.
         </p>
         <div class="actions">
           <form method="post" action="/auth/claim/approve">
