@@ -232,8 +232,8 @@ BayLeaf publishes its full retention schedules in the public source repo,
 version-controlled alongside the code that enforces them:
 
 - [Chat retention policy](chat/RETENTION.md): conversations are auto-deleted
-  **30 days** after their last activity (from 2026-12-14; 90 days before then,
-  with the change announced 2026-11-14). Unreferenced uploads are swept daily
+  **30 days** after their last activity (since 2026-11-14, previously 90 days;
+  applied the same day it was announced, without a grace period). Unreferenced uploads are swept daily
   once at least **24 hours** old; deleting a conversation does not itself delete
   its attachments. Chat account rows, including profiles and settings, are
   scheduled for deletion after **18 calendar months** without activity, measured

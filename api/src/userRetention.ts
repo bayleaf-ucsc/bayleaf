@@ -30,7 +30,7 @@ export function accountCutoff(now: number, months = 18): number {
 }
 
 // Re-evaluated inside the atomic retirement transaction, not just discovery.
-// Existing sandbox ownership blocks account retirement: the separate 90-day
+// Existing sandbox ownership blocks account retirement: the separate 30-day
 // reaper must remove compute and clear credentials first. Never wake it here.
 const ELIGIBLE = `u.retention_exempt = 0 AND u.retention_hold = 0
   AND typeof(u.created_at) = 'integer' AND typeof(u.last_active_at) = 'integer'

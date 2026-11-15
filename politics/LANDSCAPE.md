@@ -978,7 +978,7 @@ these feedback controls. No public source reviewed establishes ZDR or ZOA for UC
 Gemini services.
 
 BayLeaf Chat stores conversation history in an encrypted database for 30 days after
-last activity (effective 2026-12-14; 90 days before then); the user and service administrator can access it. Its ordinary
+last activity (effective 2026-11-14; 90 days before then); the user and service administrator can access it. Its ordinary
 inference path uses OpenRouter endpoints designated ZDR. BayLeaf does not store a
 separate copy of prompts or completions in that path. Its API also offers an optional
 client-verified route encrypted to a Tinfoil enclave. The operator relays ciphertext

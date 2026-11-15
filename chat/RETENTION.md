@@ -21,8 +21,8 @@ email, Canvas, etc.) before the retention window closes.
 
 | Data class | Retention period | Clock |
 |---|---|---|
-| Active conversations | **30 days** since last activity (from 2026-12-14; 90 days before) | `updated_at` timestamp |
-| Archived conversations | **30 days** since last activity (from 2026-12-14; 90 days before) | `updated_at` timestamp (archival does not reset or alter the clock) |
+| Active conversations | **30 days** since last activity (from 2026-11-14; 90 days before) | `updated_at` timestamp |
+| Archived conversations | **30 days** since last activity (from 2026-11-14; 90 days before) | `updated_at` timestamp (archival does not reset or alter the clock) |
 | Uploaded files attached to conversations | Inherited from owning conversation | Deleting the conversation does **not** delete the file (see note below); the file becomes an orphan and is removed by the sweep described in the next row |
 | Orphan files (no live conversation or knowledge-base reference) | Deleted on next cleanup run after a **24-hour grace window** | `created_at` timestamp |
 | Temporary conversations | Ephemeral (OWUI handles) | Not persisted |
@@ -128,21 +128,22 @@ on **July 27, 2026**. The cleanup job no longer contains sunrise logic or reads
 Users were notified via email on April 28, 2026, with instructions to export
 via Settings > Data Controls > Export Chats.
 
-### 2b. Shortening to 30 days (announced 2026-11-14, effective 2026-12-14)
+### 2b. Shortening to 30 days (2026-11-14, no grace period)
 
-The window shrinks from 90 to 30 days in **one step**, not a gradual glide, so
-that only one policy is ever in force and every run is easy to reason about.
-The 90-day rule continues unchanged until `RETENTION_DAYS` is set to `30` before
-the scheduled run on **2026-12-14** (6am Pacific). That run deletes, in one
-pass, every conversation then inactive for more than 30 days. Because the
-announcement precedes the change by 30 days, nobody gets less than the new
-window: any conversation opened, continued or edited after the announcement
-keeps a fresh 30-day clock from that activity. No code changes; the sunrise
-logic removed in July is not reintroduced.
+The window was cut from 90 to 30 days on **2026-11-14**, in one step and with
+no sunrise. A 30-day notice period announced earlier that day was withdrawn
+within hours: the operator chose a single policy in force immediately over
+weeks of a scheduled future change, so that there is one state to reason about.
+Unlike the April 2026 introduction, users received no advance export window.
+The Chat banner explains the change after the fact.
 
-Announcement: a persistent Chat banner from 2026-11-14 and an email to users.
-No other privacy-relevant change is made between announcement and flip.
-Persistent BayLeaf API sandboxes move to 30 days on the same date (see
+`RETENTION_DAYS=30` was added to the job spec, and an operator-attended live run
+of the same script on 2026-11-14 (about 17:08 Pacific) deleted every conversation
+then inactive for more than 30 days: **324 of 535 scanned conversations, across
+112 accounts**, plus 28 attachments those deletions orphaned. One held account
+was skipped and no accounts were deleted. Managed-database backups retain the
+deleted rows until they age out on DigitalOcean's schedule. Persistent BayLeaf
+API sandboxes moved to 30 days the same day (see
 [`api/RETENTION.md`](../api/RETENTION.md)).
 
 ---
@@ -320,7 +321,7 @@ schemas, actual storage deletion, or concurrent writes during discovery.
 |---|---|---|
 | `OWUI_URL` | `https://chat.bayleaf.dev` | Target instance |
 | `OWUI_TOKEN` | (secret) | Long-lived admin JWT (10-year expiry, signed with `WEBUI_SECRET_KEY`) |
-| `RETENTION_DAYS` | `90` until 2026-12-14, then `30` | Set in the job spec; the script's built-in default stays 90 |
+| `RETENTION_DAYS` | `90` until 2026-11-14, then `30` | Set in the job spec; the script's built-in default stays 90 |
 | `ORPHAN_GRACE_SECONDS` | `86400` | Min age of an orphan before deletion (24h default protects temporary-chat uploads) |
 | `USER_RETENTION_MONTHS` | `18` | Calendar months of account inactivity; positive integer |
 | `DRY_RUN` | `false` | Set to `true` for dry-run mode; `--live` flag also available |
@@ -450,7 +451,7 @@ removed.
 | Running | User tool call | Full VM filesystem |
 | Stopped | 15 min idle (`auto_stop_minutes`) | Full VM filesystem (dormant) |
 | Archived | 60 min after stop (`auto_archive_minutes`) | VM image compressed |
-| **Deleted** | **30 days without recorded activity (from 2026-12-14; 90 days before), by the API's daily reaper; Daytona auto-delete is disabled** | **Nothing: permanently removed** |
+| **Deleted** | **30 days without recorded activity (from 2026-11-14; 90 days before), by the API's daily reaper; Daytona auto-delete is disabled** | **Nothing: permanently removed** |
 
 Users who need to preserve sandbox artifacts long-term should copy them out
 via a private file server started with `bash` and published with

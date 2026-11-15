@@ -8,7 +8,7 @@ const bundle = await build({ entryPoints: ['src/sandboxReaper.ts'], bundle: true
 const { reapInactiveSandboxes, SANDBOX_REAPER_CRON } = await import(
   `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
 const now = Date.parse('2026-10-06T08:17:00Z');
-const cutoff = now - 90 * 86400000;
+const cutoff = now - 30 * 86400000;
 const machine = (id, overrides = {}) => ({ id, state: 'archived', desiredState: 'archived',
   labels: { 'chat.bayleaf.dev': 'synthetic@ucsc.edu' },
   lastActivityAt: new Date(cutoff).toISOString(), ...overrides });

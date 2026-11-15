@@ -3,7 +3,7 @@ import { revokeSandboxCredentials } from './sandboxCredentials';
 import { DAYTONA_DEFAULT_API_URL } from './constants';
 
 export const SANDBOX_REAPER_CRON = '17 8 * * *';
-const INACTIVITY_MS = 90 * 24 * 60 * 60 * 1000;
+const INACTIVITY_MS = 30 * 24 * 60 * 60 * 1000; // 90 days until 2026-11-14
 // Operator-owned existence-probe fixture: passive status reads must not need
 // artificial activity to retain it. Only the configured deployment's exact owner
 // label qualifies; ordinary users cannot opt out with a separate exemption label.

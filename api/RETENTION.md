@@ -311,7 +311,7 @@ holding it; the consent page says so before approval. An inbox scope lets the ap
 retains under its own schedule, not ZDR; grants store only the inbox handles, never
 that content. A sandbox-file scope lets the app read or write files in the named
 folders of the grantor's sandbox, which persist under the sandbox's own retention
-(the 30-day inactivity reaper from 2026-12-14, 90-day before then, which token use postpones); grants store only the
+(the 30-day inactivity reaper from 2026-11-14, 90-day before then, which token use postpones); grants store only the
 folder names, never file content.
 
 See [GRANTS.md](GRANTS.md) for the grant/token distinction, expiry and revocation
@@ -323,7 +323,7 @@ semantics, and rollout status.
 
 | User type | Sandbox lifecycle | Auto-delete |
 |---|---|---|
-| Keyed | New creation policy: medium (2 vCPU, 4 GiB RAM, 8 GiB disk), stop after 1 hour idle, archive after 24 hours stopped | Daily deletion after **30 days without Daytona-recorded activity** from 2026-12-14 (90 days from 2026-10-06 until then) |
+| Keyed | New creation policy: medium (2 vCPU, 4 GiB RAM, 8 GiB disk), stop after 1 hour idle, archive after 24 hours stopped | Daily deletion after **30 days without Daytona-recorded activity** from 2026-11-14 (90 days from 2026-10-06 until then) |
 | Campus Pass | Ephemeral: created per-request, destroyed immediately after | Immediate |
 
 Sandbox content (filesystem, installed packages, user files) lives entirely on
@@ -339,14 +339,15 @@ old supervisor until the next deliberate setup/restart installs the new layout.
 Users who need to preserve sandbox artifacts should copy them out before the
 30-day inactivity window closes.
 
-**Shortening to 30 days (announced 2026-11-14, effective 2026-12-14).** The
-window drops from 90 to 30 days in one step, alongside Chat conversations (see
-[`chat/RETENTION.md`](../chat/RETENTION.md) §2b). `INACTIVITY_MS` in
-`src/sandboxReaper.ts` changes from 90 to 30 days in a deploy before the
-2026-12-14 08:17 UTC run, which then deletes every stopped/archived machine
-inactive for more than 30 days in one pass, subject to the usual fresh
-recheck. Account retirement still waits for the reaper, so the 18-month
-account clock is unaffected. Daytona-recorded activity includes Toolbox calls,
+**Shortening to 30 days (2026-11-14, no grace period).** The window dropped
+from 90 to 30 days in one step, alongside Chat conversations (see
+[`chat/RETENTION.md`](../chat/RETENTION.md) §2b). Worker
+`ab33ca27-18bf-4a1b-973e-f458641ebdd2` set `INACTIVITY_MS` in
+`src/sandboxReaper.ts` to 30 days on 2026-11-14. Its first 30-day sweep is the
+2026-11-15 08:17 UTC run, which deletes every stopped/archived machine inactive
+for more than 30 days in one pass, subject to the usual fresh recheck. Account
+retirement still waits for the reaper, so the 18-month account clock is
+unaffected. Daytona-recorded activity includes Toolbox calls,
 preview/SSH interactions, explicit keepalive, and lifecycle state changes. Status
 reads do not renew activity. This is not an exact last-human-interaction clock.
 
@@ -355,7 +356,7 @@ from hourly credential cleanup. `SANDBOX_REAPER_MODE=delete` is deployed;
 `dry-run` inspects without deleting, other values disable the sweep. It scans all inventory
 pages, restricts ownership to `DAYTONA_DEPLOYMENT_LABEL`, and re-fetches candidates
 before deleting only stopped/archived machines with unchanged ownership and
-activity older than the inactivity window (30 days from 2026-12-14; 90 before). Invalid/missing timestamps and active/transitional
+activity older than the inactivity window (30 days from 2026-11-14; 90 before). Invalid/missing timestamps and active/transitional
 machines are skipped. Deletion is verified before clearing cached IDs by exact ID.
 Browser status already treats a missing machine as absent; preview leases expire
 within 24 hours, well before the inactivity cutoff. The reaper does not contact
@@ -557,7 +558,7 @@ platform-log or provider retention schedules.
 | Plaintext model-policy verdicts | Cloudflare `MODEL_STATUS` KV | 24 hours for positive and definite-negative; unknown is not stored |
 | Directory lookup counters (hashed account + date, count only) | Cloudflare `CAMPUS_RPD` KV | 36 hours |
 | User identity/activity and credentials (D1) | Cloudflare D1 | Daily eligibility after 18 calendar months of user inactivity, subject to known timestamps, exemptions/holds and resource dependencies; provider revocations retried |
-| Sandbox content | Daytona | 30 days after last activity (from 2026-12-14; 90 before) |
+| Sandbox content | Daytona | 30 days after last activity (from 2026-11-14; 90 before) |
 | API session state | Client cookie | 24 hours |
 | Sandboxes session metadata | Cloudflare D1 and host-only client cookie | 24 hours, then scheduled cleanup; explicit logout removes the session row |
 | Edge logs | Cloudflare | ~72 hours (platform default) |

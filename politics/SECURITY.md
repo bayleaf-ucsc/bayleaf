@@ -136,7 +136,7 @@ BayLeaf applies ZDR everywhere and pursues ZOA where practical.
   database. It is not soft-deleted or retained in a recoverable tombstone.
 - **Automated 30-day retention.** Conversations (active and archived) and
   their attached uploaded files are automatically deleted after 30 days of
-  inactivity (keyed on `updated_at`), effective 2026-12-14; the period was
+  inactivity (keyed on `updated_at`), effective 2026-11-14; the period was
   90 days before then. Enforcement is via a daily scheduled
   job (DO App Platform Job, `chat/retention_cleanup.py`) that operates
   through the OWUI admin API rather than direct database access. Full
@@ -149,13 +149,12 @@ BayLeaf applies ZDR everywhere and pursues ZOA where practical.
   activity occurred on or after that date. The grace period expires
   2026-07-27, guaranteeing every user a full 90-day export window from the
   announcement date.
-- **Shortening to 30 days.** On 2026-11-14 the operator announced that the
-  inactivity period for conversations and persistent API sandboxes would drop
-  from 90 to 30 days, effective 2026-12-14. The 90-day rule applies until the
-  first scheduled cleanup run on 2026-12-14, which deletes the backlog of
-  conversations inactive for 30–90 days in one pass. The 30-day notice window
-  gives every user time to export, and any conversation touched in that window
-  starts a fresh 30-day clock. The rationale is data minimization for a
+- **Shortening to 30 days.** On 2026-11-14 the inactivity period for
+  conversations and persistent API sandboxes dropped from 90 to 30 days,
+  applied the same day without a grace period. An operator-attended run that
+  day deleted the backlog of conversations inactive for 30–90 days (324
+  conversations across 112 accounts) in one pass; the sandbox reaper's first
+  30-day sweep followed at 08:17 UTC on 2026-11-15. The rationale is data minimization for a
   single-operator service ("if you can't protect it, don't collect it"),
   UCSC records guidance that chat/IM non-records be deleted promptly, and the
   role of Chat as a working surface rather than a system of record (course work
@@ -272,7 +271,7 @@ For ownership, political profile, and exit paths for each provider, see the
 - Campus-pass users: ephemeral (created and destroyed per request)
 - Keyed users: persistent VM filesystem; idle-stop after 15 minutes, archive
   60 minutes later, permanent deletion by a daily reaper after 30 days without
-  recorded activity (effective 2026-12-14; 90 days before then)
+  recorded activity (effective 2026-11-14; 90 days before then)
 - File upload/download restricted to keyed users only
 - No separate S3/FUSE persistent volume: deleting a sandbox permanently deletes
   its filesystem
