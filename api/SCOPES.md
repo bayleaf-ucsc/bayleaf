@@ -202,7 +202,7 @@ for every sandbox-file request, whether or not the visitor already has a sandbox
 Risk is bounded: a
 leaked token can create at most one machine, the grantor's own. A breached app
 backend holding many visitors' tokens could create one per visitor who consented to
-that app. Token use counts as activity and postpones the 90-day reaper.
+that app. Token use counts as activity and postpones the inactivity reaper (30 days from 2026-12-14; 90 before).
 
 **Untrusted data.** Files an app writes are untrusted input for the owner's own
 coding agents (a possible prompt-injection channel). The visible, clearly named

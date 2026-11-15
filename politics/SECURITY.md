@@ -134,9 +134,10 @@ BayLeaf applies ZDR everywhere and pursues ZOA where practical.
 - **User-initiated deletion is honest.** When a user deletes a conversation
   through the Chat interface, the record is removed from the application
   database. It is not soft-deleted or retained in a recoverable tombstone.
-- **Automated 90-day retention.** Conversations (active and archived) and
-  their attached uploaded files are automatically deleted after 90 days of
-  inactivity (keyed on `updated_at`). Enforcement is via a daily scheduled
+- **Automated 30-day retention.** Conversations (active and archived) and
+  their attached uploaded files are automatically deleted after 30 days of
+  inactivity (keyed on `updated_at`), effective 2026-12-14; the period was
+  90 days before then. Enforcement is via a daily scheduled
   job (DO App Platform Job, `chat/retention_cleanup.py`) that operates
   through the OWUI admin API rather than direct database access. Full
   policy, algorithm, and audit posture are documented in
@@ -148,16 +149,27 @@ BayLeaf applies ZDR everywhere and pursues ZOA where practical.
   activity occurred on or after that date. The grace period expires
   2026-07-27, guaranteeing every user a full 90-day export window from the
   announcement date.
+- **Shortening to 30 days.** On 2026-11-14 the operator announced that the
+  inactivity period for conversations and persistent API sandboxes would drop
+  from 90 to 30 days, effective 2026-12-14. The 90-day rule applies until the
+  first scheduled cleanup run on 2026-12-14, which deletes the backlog of
+  conversations inactive for 30–90 days in one pass. The 30-day notice window
+  gives every user time to export, and any conversation touched in that window
+  starts a fresh 30-day clock. The rationale is data minimization for a
+  single-operator service ("if you can't protect it, don't collect it"),
+  UCSC records guidance that chat/IM non-records be deleted promptly, and the
+  role of Chat as a working surface rather than a system of record (course work
+  such as Brace is submitted to Canvas).
 - **Records hold.** Conversations belonging to users in a `hold:*` group
   (e.g. `hold:litigation-2026`, `hold:audit-q2`) are exempt from automatic
   deletion for the duration of the hold. `hold:*` is protected from OAuth
   group-sync clobbering via `OAUTH_BLOCKED_GROUPS`.
 - **Accounts, configurations, and operational data** (user accounts,
   workspace models, tools, functions, knowledge bases) are retained
-  indefinitely while in use; out of scope for the 90-day conversation
-  retention window.
+  indefinitely while in use; out of scope for the conversation retention
+  window.
 - **Backups.** DigitalOcean's managed-database backup schedule applies.
-  User-deleted records and records expired under the 90-day policy age out
+  User-deleted records and records expired under the retention policy age out
   of backups according to that schedule; BayLeaf does not perform manual
   backup scrubs.
 - **Service wind-down.** If BayLeaf is decommissioned, the operator will
@@ -259,7 +271,8 @@ For ownership, political profile, and exit paths for each provider, see the
 
 - Campus-pass users: ephemeral (created and destroyed per request)
 - Keyed users: persistent VM filesystem; idle-stop after 15 minutes, archive
-  60 minutes later, permanent deletion 90 days after archive
+  60 minutes later, permanent deletion by a daily reaper after 30 days without
+  recorded activity (effective 2026-12-14; 90 days before then)
 - File upload/download restricted to keyed users only
 - No separate S3/FUSE persistent volume: deleting a sandbox permanently deletes
   its filesystem

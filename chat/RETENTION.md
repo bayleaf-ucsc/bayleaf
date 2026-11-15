@@ -21,8 +21,8 @@ email, Canvas, etc.) before the retention window closes.
 
 | Data class | Retention period | Clock |
 |---|---|---|
-| Active conversations | **90 days** since last activity | `updated_at` timestamp |
-| Archived conversations | **90 days** since last activity | `updated_at` timestamp (archival does not reset or alter the clock) |
+| Active conversations | **30 days** since last activity (from 2026-12-14; 90 days before) | `updated_at` timestamp |
+| Archived conversations | **30 days** since last activity (from 2026-12-14; 90 days before) | `updated_at` timestamp (archival does not reset or alter the clock) |
 | Uploaded files attached to conversations | Inherited from owning conversation | Deleting the conversation does **not** delete the file (see note below); the file becomes an orphan and is removed by the sweep described in the next row |
 | Orphan files (no live conversation or knowledge-base reference) | Deleted on next cleanup run after a **24-hour grace window** | `created_at` timestamp |
 | Temporary conversations | Ephemeral (OWUI handles) | Not persisted |
@@ -77,6 +77,22 @@ directly rewritten by this job.
 An eligible person can sign in again to create a fresh account, but old profile
 settings and manually assigned access are not restored automatically.
 
+**Self-descriptions follow the account clock (known gap).** The OWUI `user` row
+mixes the fields needed to recognize and authorize an account (`email`, `name`,
+`role`, `oauth`, group membership) with free text people write about themselves
+(`bio`, `gender`, `date_of_birth`, `status_message`, `info`, `variables`, and
+`settings`, including the personal system prompt at `settings.ui.system`). BayLeaf's
+intended rule is that self-descriptions expire after an inactivity window as
+short as the conversation window while recognition and access persist on the 18-month clock.
+It is not enforced: in OWUI v0.13.3 the admin `UserUpdateForm`
+(`POST /api/v1/users/{id}/update`) accepts only `role`, `name`, `email`,
+`profile_image_url` and `password`, and the self-service endpoints that can
+write the other fields refresh the target's `last_active_at` on authentication
+(`utils/auth.py`), so a job acting as the user would reset the clock it enforces.
+Direct database writes and image patches were considered and declined
+(2026-11-14) in favor of an upstream admin route. Until then, these fields are
+retained with the account and users are told to clear them themselves.
+
 **Initial enforcement (2026-10-18 Pacific):** a read-only inventory found 11
 eligible ordinary accounts without stored profile content, saved settings, or
 group memberships. With operator approval and no extra rollout grace period,
@@ -89,10 +105,17 @@ details are recorded in this public policy.
 - UCSC Records & Information Management classifies chat/instant messages as
   **non-records** that should be *"deleted promptly, or as soon as they are no
   longer immediately useful."* ([source](https://recordsretention.ucsc.edu/home/ucsc-retention/electronic-messages-as-business-records/))
-- 90 days exceeds "promptly" but provides a practical grace period covering one
-  academic quarter plus buffer. This is shorter than the default retention of
-  most institutional messaging systems (Gmail, Slack) and materially limits P3
-  data exposure.
+- 30 days is closer to "promptly" while still spanning an ordinary gap in use
+  (a missed week, spring break, most of winter break). The original 90-day
+  window was chosen to cover a quarter plus buffer; it was shortened because
+  Chat is a working surface rather than a system of record, and because a
+  single operator should not hold more conversation data than necessary ("if
+  you can't protect it, don't collect it"). Coursework that must outlast the
+  window belongs in the course's own system of record (Brace, for example,
+  submits conversations to Canvas).
+- Membership data (email, name, group memberships such as course access) keeps
+  the separate 18-month account clock so that course access provisioned early
+  survives a whole academic year with slack.
 
 ### 2a. Sunrise Grace Period
 
@@ -104,6 +127,23 @@ on **July 27, 2026**. The cleanup job no longer contains sunrise logic or reads
 
 Users were notified via email on April 28, 2026, with instructions to export
 via Settings > Data Controls > Export Chats.
+
+### 2b. Shortening to 30 days (announced 2026-11-14, effective 2026-12-14)
+
+The window shrinks from 90 to 30 days in **one step**, not a gradual glide, so
+that only one policy is ever in force and every run is easy to reason about.
+The 90-day rule continues unchanged until `RETENTION_DAYS` is set to `30` before
+the scheduled run on **2026-12-14** (6am Pacific). That run deletes, in one
+pass, every conversation then inactive for more than 30 days. Because the
+announcement precedes the change by 30 days, nobody gets less than the new
+window: any conversation opened, continued or edited after the announcement
+keeps a fresh 30-day clock from that activity. No code changes; the sunrise
+logic removed in July is not reintroduced.
+
+Announcement: a persistent Chat banner from 2026-11-14 and an email to users.
+No other privacy-relevant change is made between announcement and flip.
+Persistent BayLeaf API sandboxes move to 30 days on the same date (see
+[`api/RETENTION.md`](../api/RETENTION.md)).
 
 ---
 
@@ -130,7 +170,7 @@ lifted.
 Users may delete individual conversations or all conversations at any time via
 OWUI's Data Controls interface. This is immediate and permanent. The retention
 policy sets a ceiling, not a floor: users are encouraged to delete conversations
-they no longer need before the 90-day window.
+they no longer need before the 30-day window.
 
 ---
 
@@ -280,7 +320,7 @@ schemas, actual storage deletion, or concurrent writes during discovery.
 |---|---|---|
 | `OWUI_URL` | `https://chat.bayleaf.dev` | Target instance |
 | `OWUI_TOKEN` | (secret) | Long-lived admin JWT (10-year expiry, signed with `WEBUI_SECRET_KEY`) |
-| `RETENTION_DAYS` | `90` | Configurable; default matches this policy |
+| `RETENTION_DAYS` | `90` until 2026-12-14, then `30` | Set in the job spec; the script's built-in default stays 90 |
 | `ORPHAN_GRACE_SECONDS` | `86400` | Min age of an orphan before deletion (24h default protects temporary-chat uploads) |
 | `USER_RETENTION_MONTHS` | `18` | Calendar months of account inactivity; positive integer |
 | `DRY_RUN` | `false` | Set to `true` for dry-run mode; `--live` flag also available |
@@ -385,7 +425,7 @@ history accessible to the administrator.
   - Knowledge base content (admin-managed, separate lifecycle)
   - Memories (OWUI's persistent memory feature; out of scope for v1)
   - Code Sandbox data (see §7a below)
-- The 90-day conversation retention applies uniformly to all users including
+- The conversation retention window applies uniformly to all users including
   admins. Admin accounts are exempt only from the 18-month account rule.
 - Shared conversations: deletion removes the share link. Recipients who
   previously viewed a shared chat lose access.
@@ -403,18 +443,18 @@ installed packages.
 destruction. When a sandbox is deleted, all user data within it is permanently
 removed.
 
-**Retention lifecycle (managed by Daytona, not BayLeaf):**
+**Retention lifecycle (stop/archive by Daytona, deletion by the BayLeaf API's daily reaper):**
 
 | State | Trigger | Data preserved |
 |---|---|---|
 | Running | User tool call | Full VM filesystem |
 | Stopped | 15 min idle (`auto_stop_minutes`) | Full VM filesystem (dormant) |
 | Archived | 60 min after stop (`auto_archive_minutes`) | VM image compressed |
-| **Deleted** | **90 days after archive (`auto_delete_minutes` = 129600)** | **Nothing: permanently removed** |
+| **Deleted** | **30 days without recorded activity (from 2026-12-14; 90 days before), by the API's daily reaper; Daytona auto-delete is disabled** | **Nothing: permanently removed** |
 
 Users who need to preserve sandbox artifacts long-term should copy them out
 via a private file server started with `bash` and published with
-`expose(target="http:<port>", access="private")`, or a Git repository before the 90-day
+`expose(target="http:<port>", access="private")`, or a Git repository before the 30-day
 inactivity window closes. Any tool call resets the idle clock, so active users
 are never affected.
 
@@ -424,9 +464,9 @@ at least 24 hours, with expiry checked on later submissions; this is not an
 independent 24-hour deletion job. Sandbox deletion removes this data with the
 rest of the filesystem. Python memory itself is lost on stop/restart or timeout.
 
-This aligns with the 90-day retention window for conversation data (§2), giving
-users a consistent expectation: inactive data is cleaned up after one quarter
-of inactivity regardless of where it lives.
+This aligns with the conversation window (§2), giving users a consistent
+expectation: inactive work is cleaned up after 30 days of inactivity regardless
+of where it lives. See [`api/RETENTION.md`](../api/RETENTION.md) for the reaper.
 
 ---
 

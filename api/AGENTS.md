@@ -605,7 +605,7 @@ HTTP behavior; `examples/campus-pass.html` exercises real cross-origin JS.
 
 ### Daily sandbox inactivity reaper
 
-`src/sandboxReaper.ts` owns the 90-day inactivity sweep at 08:17 UTC, distinct
+`src/sandboxReaper.ts` owns the inactivity sweep (90 days; 30 from 2026-12-14) at 08:17 UTC, distinct
 from hourly preview/grant cleanup. Deployed 2026-10-06 with
 `SANDBOX_REAPER_MODE=delete`; `dry-run` inspects without deletion. Read `RETENTION.md`
 before enabling it or performing initial overdue cleanup. Uses only Daytona

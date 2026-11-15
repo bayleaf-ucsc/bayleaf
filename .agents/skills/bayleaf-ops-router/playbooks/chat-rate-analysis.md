@@ -95,9 +95,10 @@ is the current policy. Label that column as a comparison, not deployed behavior.
 
 ## Interpretation limits
 
-- Retention is 90 days **since chat activity**, not since each message. Old
-  messages can survive in active chats. Analyze a fixed recent timestamp range
-  rather than treating all retained messages as an uncensored historical sample.
+- Retention is 30 days **since chat activity** (90 days before 2026-12-14), not
+  since each message. Old messages can survive in active chats. Analyze a fixed
+  recent timestamp range rather than treating all retained messages as an
+  uncensored historical sample.
 - Deleted chats, temporary chats, rejected attempts and unsaved activity are
   absent. Stored failed attempts can remain. Regenerations, edits, imports,
   multiple model responses and cloned IDs make message counts differ from inlet

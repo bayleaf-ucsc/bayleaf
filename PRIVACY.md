@@ -232,13 +232,19 @@ BayLeaf publishes its full retention schedules in the public source repo,
 version-controlled alongside the code that enforces them:
 
 - [Chat retention policy](chat/RETENTION.md): conversations are auto-deleted
-  **90 days** after their last activity. Unreferenced uploads are swept daily
+  **30 days** after their last activity (from 2026-12-14; 90 days before then,
+  with the change announced 2026-11-14). Unreferenced uploads are swept daily
   once at least **24 hours** old; deleting a conversation does not itself delete
   its attachments. Chat account rows, including profiles and settings, are
   scheduled for deletion after **18 calendar months** without activity, measured
   from the later of account creation and last authenticated activity. Temporary
   chats count as activity; a connected browser can also keep an account active.
-  Admin and held accounts are exempt from account deletion. This Chat-only rule
+  Admin and held accounts are exempt from account deletion. Anything you write
+  about yourself in your profile or settings (bio, gender, date of birth, status
+  message, personal system prompt) currently lasts as long as the account, not
+  the shorter conversation clock, because Open WebUI offers no administrator
+  route to clear those fields alone. Delete them yourself when you no longer
+  want them stored. This Chat-only rule
   does not erase every associated resource or delete separate API accounts or
   sandboxes. Cleanup logs contain aggregate counts and content-free diagnostics,
   never identifiers.
@@ -304,7 +310,7 @@ version-controlled alongside the code that enforces them:
   an API key does not delete the user or sandbox, or reset the account clock.
   Held and explicitly exempt accounts are preserved, as are accounts with unknown,
   invalid or future timestamps. Cleanup waits for sandbox resources and other
-  access dependencies to clear; persistent sandboxes have their separate **90-day**
+  access dependencies to clear; persistent sandboxes have their separate **30-day**
   inactivity policy. Account retirement removes local account/key and associated
   authorization/session records, with upstream key revocations retried if a provider
   is unavailable. Permanent preview-name reservations remain to prevent origin

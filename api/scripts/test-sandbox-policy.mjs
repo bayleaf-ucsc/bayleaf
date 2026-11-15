@@ -68,7 +68,7 @@ const html = await page.text();
 assert.equal(page.status,200);
 assert.doesNotMatch(html,/collabmd/i,'retired collaborative editor is absent from discovery');
 assert.ok(!html.includes('browser-continue') && !html.includes('browser-stop'));
-assert.ok(html.includes('90 days are deleted') && html.includes('same sandbox files'));
+assert.ok(html.includes('30 days are deleted') && html.includes('same sandbox files'));
 assert.ok(!/<details[^>]*\sopen(?:\s|>)/.test(html),'SSR diagnostics start collapsed');
 const scripts=[...html.matchAll(/<script nonce="([^"]+)">([\s\S]*?)<\/script>/g)];
 assert.equal(scripts.length,1);
