@@ -65,6 +65,23 @@ Playbooks are living artifacts; rough drafts are expected (issue #65). Rules:
 4. A playbook that has never been run is a guess. Say so when loading one
    with an empty refinement log.
 
+## Private snapshots
+
+Playbooks that say "snapshot privately" mean exported valves, configs, app
+specs, before/after pulls, deploy logs and qualification state. These often
+hold credentials, so they never go in the repository, a worktree or a public
+backup. Put them on the operator's machine under:
+
+```
+~/.local/state/bayleaf-ops/<YYYY-MM-DD>-<change>/   (folder 700, files 600)
+```
+
+Not in `~/.tokens`: that folder is for credentials only, and in 2026-10 it
+filled up with about 1,460 rollout files. Retention: once a change is verified
+and recorded, keep its rollback bundle (what you would redeploy to undo it)
+and delete the rest of the snapshot. When the next change to the same service
+on the same instance is verified, delete the older rollback bundle.
+
 ## Recording convention
 
 All services here deploy without committing ("deploy first, commit later").

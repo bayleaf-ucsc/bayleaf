@@ -26,7 +26,7 @@ drifted (the 2026-08-25 run found a week of accumulated drift in one pull).
   roster-based membership as deliberately outside this backup.
 - For global admin edits, also save `owui-cli --json configs show` and
   `owui-cli --json configs admin` to private, mode-restricted files outside the
-  repository. These exports can contain credentials. Record only explicitly
+  repository (see Private snapshots in `../SKILL.md`). These exports can contain credentials. Record only explicitly
   reviewed non-secret values in DESIGN.md; never copy the full exports into
   the public backup. Without a prior private config snapshot, report current
   values rather than claiming an exact before/after diff.

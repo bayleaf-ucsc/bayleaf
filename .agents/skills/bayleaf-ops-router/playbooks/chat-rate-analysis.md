@@ -59,7 +59,8 @@ admission log, a count of provider completions, or a token/cost measure.
    give every retained message one sample of that owner's recent activity, so
    heavy users are weighted more. Zero-activity accounts/windows are excluded.
 6. **[HUMAN GATE]** Decide whether to change submission policy. Analysis alone
-   does not authorize valve edits. If approved, snapshot live valves privately,
+   does not authorize valve edits. If approved, snapshot live valves privately (see Private snapshots in
+   `../SKILL.md`),
    change only the intended fields, verify readback and unrelated-field
    preservation, then update DESIGN and any non-secret recovery overrides.
    `sliding_window_minutes` is in **minutes**: 24 hours = 1440; 3600 = 60 hours.
