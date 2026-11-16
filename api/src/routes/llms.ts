@@ -768,6 +768,13 @@ selectable models), issue a token with your ordinary key or dashboard, and pass 
 opaque credential, returned models and base URL to the intended app. Choose the duration needed, not a dollar estimate. Campus
 Pass cannot own grants; app tokens cannot manage or renew themselves.
 
+When many people should each create their own token with the same settings (for
+example, students adding a CI secret), share a prefilled link:
+${bt}https://api.bayleaf.dev/grants/new?label=...&scopes=a,b&models=openrouter:vendor/model&expires_in=SECONDS${bt}
+(${bt}sandbox_dirs${bt} is also accepted; inbox scopes are not). Each person signs in,
+reviews the settings, and copies a token drawn on their own allowance without it
+appearing on screen. The dashboard's *Copy prefilled link* button builds these links.
+
 For visitor-funded apps, retain random state and a PKCE verifier in the initiating
 tab, obtain a signed client descriptor, and navigate the visitor to BayLeaf for
 explicit consent. Verify state on the callback before exchanging its single-use

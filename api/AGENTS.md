@@ -777,6 +777,11 @@ for permissions/protocol identifiers and “app token” (formerly “temporary
 inference token”) for users.
 `llms.txt` distinguishes ordinary keys, temporary tokens, standard inference, and Sealed.
 
+Prefilled token links (`/grants/new?...`, deployed 2026-11-16, Worker `2bbd4680`): a
+browser-only page, hidden from the spec, where a signed-in person issues a token with
+link-chosen settings and copies it unseen. One parser (`linkRequest`) serves GET
+render and POST issuance; no inbox scopes. See GRANTS.md.
+
 The all-standard-backend follow-up was deployed on 2026-09-29. `standardModels.ts`
 canonicalizes model IDs, checks backend eligibility and supplies `/grants/models`
 for the full dropdown (prefixes preserved, disabled backends unselectable).

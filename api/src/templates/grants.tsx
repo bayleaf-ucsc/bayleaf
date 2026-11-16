@@ -61,6 +61,15 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number; i
         <p id="grant-seconds-hint"><small>86400 is one day; 604800 is one week.</small></p>
         <button id="create-grant" type="submit" disabled>Create token</button>
       </form>
+      <fieldset>
+        <legend>Or share these settings as a link</legend>
+        <p><small>Anyone who opens the link signs in and creates their own token with these settings, drawing on
+          their own allowance, then copies it without it appearing on screen. Inbox scopes cannot be shared this way.</small></p>
+        <label for="grant-link-label">Label shown on the link's page (optional)</label>
+        <input id="grant-link-label" type="text" maxlength={80} autocomplete="off" placeholder="CMPM 121 review bot"/>
+        <button id="copy-grant-link" type="button" disabled>Copy prefilled link</button>
+        <p id="grant-link-status" role="status"></p>
+      </fieldset>
     </details>
     <p id="grant-status" role="status"></p>
     <ul id="grant-list" aria-label="Your app tokens"></ul>
@@ -72,6 +81,7 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number; i
   const credentials = new Map();
   const modelSelect = document.getElementById('grant-model');
   const createButton = document.getElementById('create-grant');
+  const linkButton = document.getElementById('copy-grant-link');
   const modelGroup = document.getElementById('grant-model-group');
   const scopeBoxes = Array.from(document.querySelectorAll('#grant-scopes input[name=scope]'));
   const inboxGroup = document.getElementById('grant-inbox-group');
@@ -104,7 +114,26 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number; i
     if (inboxesState === 'ready') document.getElementById('grant-inbox-status').textContent = 'Select 1–16 inboxes. ' + inboxEffect();
     createButton.disabled = (inference && !catalogReady) || (inbox && (inboxesState !== 'ready' || !checkedInboxes().length))
       || (sandbox && !sandboxDirsValid(sandboxDirs()));
+    linkButton.disabled = !checkedScopes().length || inbox || (inference && !catalogReady) || (sandbox && !sandboxDirsValid(sandboxDirs()));
   }
+  // Commas, colons and slashes are legal in a query; leaving them readable keeps links hand-editable.
+  const readable = value => encodeURIComponent(value).replace(/%(2C|3A|2F)/gi, decodeURIComponent);
+  linkButton.onclick = async () => {
+    const linkStatus = document.getElementById('grant-link-status');
+    const params = [], label = document.getElementById('grant-link-label').value.trim();
+    if (label) params.push(['label', label]);
+    params.push(['scopes', checkedScopes().join(',')]);
+    if (wantsModels()) {
+      const models = Array.from(modelSelect.selectedOptions, option => option.value).filter(Boolean);
+      if (!models.length || models.length > 16) { linkStatus.textContent = 'Select between 1 and 16 models.'; return; }
+      params.push(['models', models.join(',')]);
+    }
+    if (wantsSandboxDirs()) params.push(['sandbox_dirs', sandboxDirs().join(',')]);
+    params.push(['expires_in', document.getElementById('grant-seconds').value]);
+    const link = location.origin + '/grants/new?' + params.map(([k, v]) => k + '=' + readable(v)).join('&');
+    try { await navigator.clipboard.writeText(link); linkStatus.textContent = 'Link copied: ' + link; }
+    catch { linkStatus.textContent = 'Clipboard unavailable. Link: ' + link; }
+  };
   // Manage does not imply read: say what each checked inbox scope reveals.
   const inboxEffect = () => checkedScopes().includes('inboxes.messages.read')
     ? 'The app can read everything a chosen inbox has stored or will receive.'
@@ -180,7 +209,8 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number; i
         (models.length ? 'Models: ' + models.join(', ') + '. ' : '') +
         (grant.inboxes?.length ? 'Inboxes: ' + grant.inboxes.join(', ') + '. ' : '') +
         (grant.sandbox_dirs?.length ? 'Sandbox folders: ' + grant.sandbox_dirs.join(', ') + '. ' : '') +
-        (grant.redirect_uri ? (grant.client_name || 'App') + ' · ' + new URL(grant.redirect_uri).origin : 'Created directly.') +
+        (grant.redirect_uri ? (grant.client_name || 'App') + ' · ' + new URL(grant.redirect_uri).origin
+          : grant.client_name ? 'Created from a link: ' + grant.client_name + '.' : 'Created directly.') +
         ' Expires ' + new Date(grant.expires_at * 1000).toLocaleString();
       title.title = details; title.setAttribute('aria-label', name + '. ' + details);
       identity.append(title);

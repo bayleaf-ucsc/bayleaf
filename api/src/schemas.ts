@@ -541,7 +541,7 @@ export const GrantListSchema = z.object({ grants: z.array(z.object({
   name: z.string().nullable().describe('Public recognition name; null for older unnamed grants.'),
   ...GrantAuthorityFields,
   expires_at: z.number().int().describe('Expiry, Unix seconds.'), created_at: z.number().int().describe('Creation time, Unix seconds.'),
-  client_name: z.string().nullable().describe('App-supplied consent label; null for direct issuance.'),
+  client_name: z.string().nullable().describe('App-supplied consent label, or the label of a prefilled link (with a null redirect_uri); null for direct issuance.'),
   redirect_uri: z.string().nullable().describe('Bound callback URI; null for direct issuance.'),
 })) }).describe('Active grant metadata for the current owner. Credentials cannot be recovered through listing.').openapi('GrantList');
 

@@ -7,7 +7,7 @@ import { getSession } from '../utils/session';
 import { resolveAuth } from '../utils/auth';
 import { ensureUserRow, getActiveRow } from '../provision';
 import { eligibleStandardModel, standardModelCatalog } from '../standardModels';
-import { BaseLayout, renderPage } from '../templates/layout';
+import { BaseLayout, ErrorPage, renderPage } from '../templates/layout';
 import { describeSeconds, hash, issueGrant, maxGrantSeconds, nowSeconds, randomSecret, seal, unseal, validCallback, grantError, grantModelIds, storedGrantModels,
   GRANT_SCOPES, DEFAULT_SCOPES, grantAuthority, grantScopeIds, grantScopes, needsModels, needsInboxes, grantInboxIds,
   storedGrantInboxes, needsSandboxDirs, needsRooms, grantSandboxDirs, storedGrantSandboxDirs, SANDBOX_APPS_ROOT, type GrantScope } from '../grants';
@@ -287,9 +287,11 @@ grantRoutes.openAPIRegistry.registerPath(createRoute({
       headers: z.object({ Location: z.string().describe('Navigation destination, not a JSON response.') }) }, ...errors },
 }));
 
+/** Either a consent transaction id or a prefilled link's query; both return to fixed paths. */
 export function consumeGrantReturnTo(c: Context<AppEnv>): string | null {
   const id = getCookie(c, RETURN_COOKIE);
   deleteCookie(c, RETURN_COOKIE, { path: '/' });
+  if (id?.startsWith('new?')) return `/grants/${id}`;
   return id && /^[a-f0-9-]{36}$/.test(id) ? `/grants/authorize?request=${id}` : null;
 }
 
@@ -360,17 +362,7 @@ grantRoutes.get('/authorize', async c => {
     <h1>Give this app an app token?</h1>
     <p>Signed in as <strong>{session.email}</strong>.</p>
     <p><strong>{tx.client_name}</strong> (a name supplied by the app) asks to:</p>
-    <ul>{scopes.map(scope => <li><strong>{GRANT_SCOPES[scope]}</strong> <code>{scope}</code></li>)}</ul>
-    {scopes.includes('identity.read') && <p>The app will learn that you are <strong>{session.email}</strong>.</p>}
-    {models && <><p>Authorized models:</p><ul>{models.map(model => <li><strong>{model}</strong></li>)}</ul></>}
-    {sandboxDirs && <><p>Sandbox folders (named by the app; another app using the same name would share it):</p>
-      <ul>{sandboxDirs.map(dir => <li><code>{SANDBOX_APPS_ROOT + dir + '/'}</code></li>)}</ul>
-      <p>{scopes.includes('sandbox.files.read') ? 'The app can read any file in these folders, whoever wrote it. ' : ''}
-        {scopes.includes('sandbox.files.write') ? 'The app can create or overwrite files there; treat them as untrusted if your own agents read them. ' : ''}
-        Using the token wakes your BayLeaf Sandbox, and creates one if you have none.</p></>}
-    {needsRooms(scopes) && <p>This covers every room you have or create, not one chosen room.
-      {scopes.includes('rooms.read') ? ' The app can read and export everything participants stored in them.' : ''}
-      {scopes.includes('rooms.manage') ? ' The app can delete rooms and hand out participant links, including links that can write. Every link can read and export its room, so the app can effectively read all of them.' : ''}</p>}
+    <AuthorityDetails email={session.email} scopes={scopes} models={models} sandboxDirs={sandboxDirs}/>
     <p>Destination: <strong>{new URL(tx.redirect_uri).origin}</strong></p>
     <p>Exact callback: <code>{tx.redirect_uri}</code></p>
     <p>Lifetime: <strong>{describeSeconds(tx.lifetime)}</strong> from approval, until about <strong>{new Date((nowSeconds() + tx.lifetime) * 1000).toUTCString()}</strong>.</p>
@@ -453,6 +445,122 @@ grantRoutes.openapi(createRoute({ method: 'post', path: '/token', operationId: '
     { scopes, models: models ?? [], inboxes: inboxes ?? [], sandboxDirs: sandboxDirs ?? [] }, tx.grant_expires_at!,
     tx.client_name, tx.redirect_uri);
   return token ? c.json(token) : grantError(c, 'issuance_unavailable', 'Could not allocate a token name. Authorize again.', 503) as any;
+});
+
+/** Shared by consent and prefilled links: one description of what a grant can do. */
+function AuthorityDetails({ email, scopes, models, sandboxDirs }: { email: string; scopes: GrantScope[];
+  models?: string[]; sandboxDirs?: string[] }) {
+  return <>
+    <ul>{scopes.map(scope => <li><strong>{GRANT_SCOPES[scope]}</strong> <code>{scope}</code></li>)}</ul>
+    {scopes.includes('identity.read') && <p>The app will learn that you are <strong>{email}</strong>.</p>}
+    {models && <><p>Authorized models:</p><ul>{models.map(model => <li><strong>{model}</strong></li>)}</ul></>}
+    {sandboxDirs && <><p>Sandbox folders (named by the app; another app using the same name would share it):</p>
+      <ul>{sandboxDirs.map(dir => <li><code>{SANDBOX_APPS_ROOT + dir + '/'}</code></li>)}</ul>
+      <p>{scopes.includes('sandbox.files.read') ? 'The app can read any file in these folders, whoever wrote it. ' : ''}
+        {scopes.includes('sandbox.files.write') ? 'The app can create or overwrite files there; treat them as untrusted if your own agents read them. ' : ''}
+        Using the token wakes your BayLeaf Sandbox, and creates one if you have none.</p></>}
+    {needsRooms(scopes) && <p>This covers every room you have or create, not one chosen room.
+      {scopes.includes('rooms.read') ? ' The app can read and export everything participants stored in them.' : ''}
+      {scopes.includes('rooms.manage') ? ' The app can delete rooms and hand out participant links, including links that can write. Every link can read and export its room, so the app can effectively read all of them.' : ''}</p>}
+  </>;
+}
+
+/**
+ * Prefilled links (/grants/new?...): someone else, such as an instructor, chooses the settings;
+ * the signed-in person issues a token against their own allowance and copies it, never seeing it.
+ * The query is the whole request: GET renders it and POST re-parses it, so they cannot disagree.
+ * Comma-separated lists keep links legible in assignment instructions.
+ */
+const LINK_PARAMS = ['label', 'scopes', 'models', 'sandbox_dirs', 'expires_in'];
+type LinkRequest = { label: string | null; scopes: GrantScope[]; models?: string[]; sandboxDirs?: string[]; lifetime: number };
+
+async function linkRequest(c: Context<AppEnv>, search: string): Promise<LinkRequest | string> {
+  if (search.length > 2048) return 'This link is too long.';
+  const q = new URLSearchParams(search);
+  const unknown = [...new Set(q.keys())].filter(key => !LINK_PARAMS.includes(key));
+  if (unknown.length) return `Unknown link parameters: ${unknown.join(', ')}. Use ${LINK_PARAMS.join(', ')}.`;
+  if (LINK_PARAMS.some(key => q.getAll(key).length > 1)) return 'Give each link parameter at most once.';
+  const list = (key: string) => q.get(key)!.split(',').map(s => s.trim()).filter(Boolean);
+  const label = q.get('label')?.trim() || null;
+  if (label && label.length > 80) return 'The label must be at most 80 characters.';
+  const scopes = q.has('scopes') ? grantScopeIds(list('scopes')) : DEFAULT_SCOPES;
+  if (!scopes) return `scopes must be a comma-separated list of: ${Object.keys(GRANT_SCOPES).join(', ')}.`;
+  // Only the person signing in knows their inbox handles, so a link cannot name them.
+  if (needsInboxes(scopes)) return 'Links cannot request inbox scopes. Create this token from your dashboard instead.';
+  const models = q.has('models') ? grantModelIds(list('models')) : undefined;
+  if (models === null) return 'models must be a comma-separated list of 1–16 backend-qualified models, such as openrouter:vendor/model.';
+  const sandboxDirs = q.has('sandbox_dirs') ? grantSandboxDirs(list('sandbox_dirs')) : undefined;
+  const rejection = await validateGrant(c, scopes, models, Number(q.get('expires_in')))
+    ?? validateSandboxDirs(c, scopes, sandboxDirs);
+  if (rejection) return ((await rejection.json()) as { error: { message: string } }).error.message;
+  return { label, scopes, models, sandboxDirs: sandboxDirs ?? undefined, lifetime: Number(q.get('expires_in')) };
+}
+
+grantRoutes.get('/new', async c => {
+  const search = new URL(c.req.url).search.slice(1);
+  const link = await linkRequest(c, search);
+  if (typeof link === 'string') return renderPage(c, <ErrorPage title="This token link does not work" message={link}/>, 400);
+  const session = await getSession(c);
+  if (!session) {
+    setCookie(c, RETURN_COOKIE, 'new?' + search, cookieOptions(c));
+    return c.redirect('/login', 303);
+  }
+  const { label, scopes, models, sandboxDirs, lifetime } = link;
+  return renderPage(c, <BaseLayout title="Create an app token"><section class="grant-panel">
+    <GrantStyles/>
+    <h1>Create an app token</h1>
+    <p>Signed in as <strong>{session.email}</strong>.</p>
+    {label && <p>For: <strong>{label}</strong> (a label written by whoever made this link)</p>}
+    <p>This link fills in the settings for a new token. The token will be able to:</p>
+    <AuthorityDetails email={session.email} scopes={scopes} models={models} sandboxDirs={sandboxDirs}/>
+    <p>Lifetime: <strong>{describeSeconds(lifetime)}</strong> from when you create it, until about <strong>{new Date((nowSeconds() + lifetime) * 1000).toUTCString()}</strong>.</p>
+    <p>{models && 'Inference uses your own allowance. '}The token works wherever it is pasted, until it expires or you
+      revoke it from <a href="/dashboard#temporary-inference-tokens">your dashboard</a>. Only paste it where you trust the
+      instructions, such as a repository secret.</p>
+    <button id="link-create" type="button" data-link={search}>Create token and copy</button>
+    <button id="link-copy" type="button" hidden>Copy token again</button>
+    <p id="link-status" role="status"></p>
+    <p><small>The token is copied to your clipboard and never shown on screen, so this page is safe to screen-share.
+      Reloading forgets it; create another if you lose it.</small></p>
+    <script dangerouslySetInnerHTML={{ __html: `
+(() => {
+  const create = document.getElementById('link-create'), again = document.getElementById('link-copy');
+  const status = document.getElementById('link-status');
+  let credential = null, name = '', expiresAt = 0;
+  async function copy() {
+    if (expiresAt * 1000 <= Date.now()) { credential = null; again.hidden = true; throw new Error(name + ' has expired. Reload to create another.'); }
+    await navigator.clipboard.writeText(credential);
+  }
+  create.onclick = async () => {
+    create.disabled = true; status.textContent = 'Creating token…';
+    try {
+      const response = await fetch('/grants/new', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ link: create.dataset.link }) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message || 'Request failed');
+      credential = body.access_token; name = body.name; expiresAt = body.expires_at; again.hidden = false;
+      create.textContent = 'Token created';
+    } catch (e) { status.textContent = e.message; create.disabled = false; return; }
+    try { await copy(); status.textContent = name + ' created and copied. Paste it where your instructions say.'; }
+    catch { status.textContent = name + ' created. Press Copy token again to copy it.'; }
+  };
+  again.onclick = async () => {
+    try { await copy(); status.textContent = name + ' copied.'; }
+    catch (e) { status.textContent = e.message.includes('expired') ? e.message : 'Clipboard unavailable. The token has not been displayed.'; }
+  };
+})();
+` }}/>
+  </section></BaseLayout>);
+});
+
+grantRoutes.post('/new', async c => {
+  const row = await owner(c); if (row instanceof Response) return row;
+  const body = await c.req.json().catch(() => null) as { link?: unknown } | null;
+  const link = typeof body?.link === 'string' ? await linkRequest(c, body.link) : 'Send the link to submit.';
+  if (typeof link === 'string') return grantError(c, 'invalid_request', link, 400);
+  const token = await issueGrant(c.env, row, new URL(c.req.url).origin, { scopes: link.scopes, models: link.models ?? [],
+    inboxes: [], sandboxDirs: link.sandboxDirs ?? [] }, nowSeconds() + link.lifetime, link.label);
+  return token ? c.json(token) : grantError(c, 'issuance_unavailable', 'Could not allocate a token name. Try again.', 503);
 });
 
 // Preserve bookmarks while consolidating the controls into the main dashboard.

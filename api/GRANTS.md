@@ -195,6 +195,36 @@ and a headless Chrome check of full-credential clipboard copy, absence from DOM
 and visible text, loss of Copy after reload, and revocation. The embedded
 OpenChamber browser denied clipboard access; its error path displayed no secret.
 
+### Prefilled token links (deployed 2026-11-16, Worker `2bbd4680-b2fd-4ba0-9667-031515a3f26e`)
+
+For instructors and others who need many people to each create a token with
+the same settings, such as a CI review bot's repository secret. A link like
+
+```text
+https://api.bayleaf.dev/grants/new?label=CMPM%20121%20review%20bot&scopes=inference.chat&models=openrouter:vendor/model&expires_in=2592000
+```
+
+opens a page (after sign-in, via the grant return cookie) that lists what the
+token can do, using the same wording as visitor consent, and has a single *Create
+token and copy* button. The credential goes straight to the clipboard and is never
+rendered, so the page is screen-share safe. The person issues against their own
+allowance; the link's author gains nothing and never sees the token.
+
+Parameters are `label` (at most 80 characters), `scopes`, `models` and
+`sandbox_dirs` (comma-separated), and `expires_in` in seconds. Unknown or repeated
+parameters fail, so typos do not silently widen or narrow a token. Inbox scopes are
+refused: only the signer knows their inbox handles. A broken link renders an
+explanation before sign-in. `POST /grants/new` (session, same-origin) re-parses the
+same query string, so the page and issuance cannot disagree. The label is stored as
+`client_name` with a null `redirect_uri`; the dashboard tooltip shows “Created from
+a link”. The dashboard's create form has a *Copy prefilled link* builder that
+writes these links from the form's current settings.
+
+This is not a delegation protocol: unlike visitor-funded authorization, no app
+receives the token, and nothing binds where it is pasted. The label is
+author-supplied text on a BayLeaf page, the same trust level as an app's consent
+name.
+
 ## Terms and authority
 
 - **App / OAuth client:** software asking for access. No durable app registry.

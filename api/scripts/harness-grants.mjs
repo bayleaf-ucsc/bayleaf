@@ -635,6 +635,34 @@ try {
     const challenge = spec.paths['/grants/authorize'].get.parameters.find(param => param.name === 'code_challenge_method');
     assert.deepEqual(challenge.schema.enum, ['S256']);
   });
+  await check('prefilled links return through login and issue labelled tokens that never appear in the page', async () => {
+    const query = `label=${encodeURIComponent('<b>CI</b> bot')}&scopes=inference.chat,usage.read&models=openrouter:${model}&expires_in=600`;
+    const anonymous = await request('/grants/new?' + query);
+    assert.equal(anonymous.status, 303); assert.equal(anonymous.headers.get('Location'), '/login');
+    const returnCookie = anonymous.headers.getSetCookie().find(c => c.startsWith('bl_grant_return=')).split(';')[0];
+    const back = await request('/callback?code=synthetic&state=s', { cookie: 'oauth_state=s; ' + returnCookie });
+    assert.equal(back.headers.get('Location'), '/grants/new?' + query);
+    const page = await request('/grants/new?' + query, { cookie: ownerCookie }); const html = await page.text();
+    assert.equal(page.status, 200, html);
+    assert.ok(html.includes('&lt;b&gt;CI&lt;/b&gt; bot') && html.includes('usage.read') && html.includes('openrouter:' + model));
+    assert.ok(!html.includes('sk-bayleaf-grant-'), 'No credential in the page');
+    assert.equal(page.headers.get('Cache-Control'), 'no-store'); assert.equal(page.headers.get('X-Frame-Options'), 'DENY');
+    for (const [, source] of html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)) new Script(source);
+    await expect(await request('/grants/new', { cookie: ownerCookie, json: { link: query } }), 403, 'invalid_origin');
+    const issued = await expect(await request('/grants/new', { cookie: ownerCookie, origin: api, json: { link: query } }), 200);
+    assert.deepEqual(issued.scopes, ['inference.chat', 'usage.read']); assert.deepEqual(issued.models, ['openrouter:' + model]);
+    assert.ok(issued.expires_in > 590 && issued.expires_in <= 600);
+    const row = await db.prepare('SELECT client_name, redirect_uri FROM inference_grants WHERE id=?').bind(issued.grant_id).first();
+    assert.deepEqual({ ...row }, { client_name: '<b>CI</b> bot', redirect_uri: null });
+    await expect(await infer(issued.key), 200);
+    // Broken links fail before sign-in, as a readable page rather than JSON.
+    for (const [bad, text] of [[query + '&model=x', 'Unknown link parameters: model'], ['scopes=inboxes.messages.read&expires_in=60', 'inbox scopes'],
+      [`models=openrouter:${model}&expires_in=999999`, 'no greater than 3600'], ['scopes=inference.chat&expires_in=60', 'Specify models'],
+      [`scopes=usage.read&models=openrouter:${model}&expires_in=60`, 'models apply only'], ['scopes=usage.read,bogus&expires_in=60', 'comma-separated list of']]) {
+      const res = await request('/grants/new?' + bad); assert.equal(res.status, 400, bad); assert.ok((await res.text()).includes(text), bad);
+    }
+    await expect(await request('/grants/new', { cookie: ownerCookie, origin: api, json: { link: 'scopes=inboxes.messages.read&expires_in=60' } }), 400, 'invalid_request');
+  });
   await check('scheduled cleanup removes expired metadata and preserves active grants', async () => {
     const active = await mint();
     await db.prepare('UPDATE grant_transactions SET expires_at=0').run();
