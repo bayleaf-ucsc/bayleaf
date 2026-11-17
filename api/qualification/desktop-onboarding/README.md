@@ -26,6 +26,13 @@ was agent-operated in the operator's genuine signed-in OpenChamber browser with
 explicit authorization and a verified matching request code. Neither required
 institutional sign-in inside a guest, Cloudflare secrets, or fabricated sessions.
 
+## Hosted macOS follow-up (2026-11-17)
+
+[Daytona v2](macos-daytona.md) passed the desktop smoke on macOS 26.6.2 arm64
+with OpenChamber 2.7.2 and OpenCode 2.3.0. A separate gesture probe verified
+a click through the same viewer used to capture the result. This was not a
+full GUI onboarding replay and did not supersede the Cua baseline.
+
 ## Evidence custody
 
 Only sanitized markdown belongs here. Private screenshots, action traces,

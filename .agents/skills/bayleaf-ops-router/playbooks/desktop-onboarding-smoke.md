@@ -2,7 +2,7 @@
 source-skill: bayleaf-ops-router
 description: Reproduce reported OpenChamber desktop onboarding failures in disposable platform environments.
 status: exercised-components
-last-reviewed: 2026-11-11
+last-reviewed: 2026-11-17
 ---
 
 # Desktop onboarding incident response
@@ -11,10 +11,19 @@ Use after an onboarding error report or for an explicitly requested release
 qualification. This is **incident response, not scheduled monitoring**, a video
 production workflow, or a promise of upstream stability. Related work: [#69](https://github.com/bayleaf-ucsc/bayleaf/issues/69).
 
-Read `api/AGENTS.md` and `GETTING-STARTED.md`. Load `daytona-api` for Windows/Linux
-or `cua-router` and its sandbox guidance for macOS. Paths below are repo-relative.
+Read `api/AGENTS.md` and `GETTING-STARTED.md`. Load `daytona-api` for hosted
+guests or `cua-router` for local macOS if available. The repo-relative platform
+records below stand on their own; Darknut's global skills are not required.
 The platform instructions were derived from successful runs; this assembled
 playbook has not yet had an independent clean-room replay.
+
+## Pick the coverage before provisioning
+
+| Level | When | What counts |
+|---|---|---|
+| API regression | Routine claim or discovery changes | `cd api && npm run test:claim-curl`. No credentials or rented desktop. Not live login or inference. |
+| Desktop smoke | Installer, bundled OpenCode or BayLeaf setup changes | Install the official app, complete the claim, relaunch and independently verify one synthetic file task. Record steps exercised via guest shell or CLI. |
+| User-path qualification | Release gate or reported GUI failure | Drive the actual installer and OpenChamber UI in a disposable guest. Observe, act and verify the visible result on the same desktop. Use shell for staging and independent checks, not in place of the UI steps being qualified. |
 
 ## Dispatch brief
 
@@ -44,8 +53,12 @@ record, with the other records available on demand.
 - **[HUMAN GATE]** Establish paid-compute and inference budget, maximum lifetime,
   temporary credential custody, and cleanup ownership. Approval of this document
   is not standing permission to provision resources or approve arbitrary claims.
-- The laptop is the macOS **controller only**. Never install the test app on the
-  host, reuse its app configuration, or modify its permissions/networking as setup.
+- The operator's computer is the **controller only**, regardless of OS. Never
+  install the test app on the host, reuse its configuration, dispatch guest input
+  through its keyboard or clipboard, or change its permissions or networking.
+  For handoff, arrange the new operator's own provider access, a named trusted
+  BayLeaf claim approver, and project-approved compute spending. Do not depend
+  on Darknut, a personal billing balance or someone else's browser session.
 - Arrange trusted-browser sign-in before starting ten-minute claims. If no valid
   session exists, ask the operator to sign in on their trusted machine, not the guest.
 
@@ -66,15 +79,23 @@ Read only the selected detailed record, including its limitations:
   package's root-owned helper at mode 4755, **not** `--no-sandbox`. First record
   the failure; apply this repair only for the same verified package/condition.
   An old PATH OpenCode required using the explicit bundled CLI instead.
-- **macOS:** `api/qualification/desktop-onboarding/macos.md`. Create an owned
+- **macOS, local:** `api/qualification/desktop-onboarding/macos.md`. Prefer for
+  routine runs on a capable Apple silicon Mac. Create an owned
   Cua/Lume task VM from a retained base; never boot/install into the base itself.
   Check cache dry-run and disk headroom before create. The successful guest was
   macOS 26.5.2 arm64. Use the official ZIP, checksum, Apple signature and Gatekeeper
   checks inside the guest. This does not qualify a novice DMG workflow. Direct
   authenticated guest CLI control worked while daemon-backed control did not;
   follow that record rather than installing a host driver or disabling a VPN.
+- **macOS, hosted:** `api/qualification/desktop-onboarding/macos-daytona.md`.
+  Use Daytona v2 for a non-Mac operator, a release batch, or a hosted
+  reproduction. Check live price and stock; stage the cases and approval
+  handoff before buying a day. Pin every guest to the approved reservation,
+  verify renewal is off, and verify the guest's actual wall-clock lifetime.
+  Persistence preserves disk on stop but does not extend the timeout. If
+  neither Mac route is available, report macOS as **blocked**, not passed.
 
-For Daytona, verify returned lifecycle settings: `autoDeleteInterval: 0` means
+For legacy Daytona Windows/Linux, verify returned lifecycle settings: `autoDeleteInterval: 0` means
 delete on stop, whereas `-1` disabled it in the exercised API. Preserve disk
 across idle stop and verify a separate maximum-lifetime backstop. For local Cua,
 the requested TTL was not reflected in `expires_at`; an exact-owned-guest watchdog
@@ -89,9 +110,11 @@ provided the backstop. A requested timeout is not evidence of enforcement.
    during splash screens; blind coordinate clicks can trigger starter prompts.
    **Do not send a default-provider prompt.** Record accidental requests honestly.
 3. Open the built-in terminal and check which OpenCode executable it resolves.
-   Run the current documented `opencode auth login https://api.bayleaf.dev` there,
+   For user-path qualification run `opencode auth login https://api.bayleaf.dev` there,
    using the explicit bundled executable if PATH is contaminated. Never erase an
    existing database to make the command work. Capture the public claim URL only.
+   For smoke, the same bundled executable over guest SSH is acceptable: keep
+   the claim client alive through approval and confirm `Connected`/`Done`.
 4. The coordinator opens that exact URL in the operator's trusted signed-in
    browser. With explicit authorization for this run, the agent may verify the
    account and matching request code, click **Approve**, and confirm the Approved
@@ -118,6 +141,9 @@ provided the backstop. A requested timeout is not evidence of enforcement.
   compare exact bytes/hash. A model saying “done” is not proof. Capture the GUI
   tool result and provider/model. Report application cost as client-reported,
   not an enforced cap or reconciled provider invoice.
+- For smoke, the installed CLI may produce the task output instead. Record
+  the exact bytes or digest, and leave desktop prompt submission, GUI tool
+  result and conversation persistence untested unless separately observed.
 - Actually close/quit and relaunch the guest app, verifying process/window
   turnover and restored conversation/result/model. This qualifies app relaunch,
   **not** OS reboot, sleep/resume, fresh service cold start, or another inference
@@ -172,3 +198,7 @@ without approval. Sanitized markdown may be proposed for git; raw artifacts may 
   delete-on-idle-stop handoff loss; recorded Linux sandbox/PATH repairs and an
   accidental default-provider request. macOS used guest-only direct control with
   VPN unchanged. Trusted-browser agent approval succeeded without privileged bypass.
+- 2026-11-17: Added the hosted Mac route after a desktop smoke and a separate
+  guest click probe. The checkout's five-minute wall-clock default deleted
+  the first guest; a persistent replacement preserved disk. Browser approval
+  alone did not prove that an interrupted guest client saved the login.
