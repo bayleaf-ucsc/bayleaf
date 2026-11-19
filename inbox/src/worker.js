@@ -551,8 +551,10 @@ async function handleFetch(request, env, ctx) {
         '- Access and details: https://api.bayleaf.dev/llms.txt\n',
       { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
       if (path !== '/') return notFound();
+      const headers = diagnosticHeaders(env.BROWSER_ARRIVALS_ENABLED === 'true');
+      headers.append('Link', '</llms.txt>; rel="describedby"');
       return new Response(request.method === 'HEAD' ? null : publicDiagnosticPage('inboxes', enabled(env),
-        env.BROWSER_ARRIVALS_ENABLED === 'true'), { headers: diagnosticHeaders(env.BROWSER_ARRIVALS_ENABLED === 'true') });
+        env.BROWSER_ARRIVALS_ENABLED === 'true'), { headers });
     }
     return notFound();
   }

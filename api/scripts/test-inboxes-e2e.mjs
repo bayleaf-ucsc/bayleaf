@@ -183,7 +183,9 @@ try {
     const worker = await mf.getWorker(host === DOMAIN ? 'bayleaf-inboxes' : 'api');
     const home = await worker.fetch('https://' + host + '/');
     ok(home.status === 200 && home.headers.get('content-type').includes('text/html') && !(await home.text()).includes('<script'), 'public HTML defaults uninstrumented');
-    ok((await worker.fetch('https://' + host + '/', { method: 'HEAD' })).status === 200, 'public HEAD');
+    const head = await worker.fetch('https://' + host + '/', { method: 'HEAD' });
+    ok(head.status === 200 && [home, head].every(r => r.headers.get('Link') === '</llms.txt>; rel="describedby"'),
+      'public GET and HEAD advertise the same-origin agent guide');
     ok((await worker.fetch('https://' + host + '/llms.txt')).headers.get('content-type').includes('text/plain'), 'plaintext discovery preserved');
   }
   const text = await json(await call('sk-bayleaf-a', 'GET', `/inboxes/${web.id}/messages/${mid}/text`), 200, 'text');

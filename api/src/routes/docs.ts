@@ -37,6 +37,7 @@ docsRoutes.get('/', (c) => {
   <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
 </body>
 </html>`;
+  c.header('Link', '</llms.txt>; rel="describedby"');
   return c.html(html);
 });
 

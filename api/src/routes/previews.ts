@@ -486,10 +486,11 @@ export async function handlePreviewHost(c: Context<AppEnv>): Promise<Response> {
     }
     if (discovery.hostname === (c.env.PREVIEWS_DOMAIN || 'bayleaf-proxies.dev')) {
       if (['GET', 'HEAD'].includes(c.req.method) && ['/', '/unavailable'].includes(discovery.pathname)) {
+        const headers = diagnosticHeaders(c.env.PREVIEW_BROWSER_ARRIVALS_ENABLED === 'true');
+        if (discovery.pathname === '/') headers.append('Link', '</llms.txt>; rel="describedby"');
         return new Response(c.req.method === 'HEAD' ? null : publicDiagnosticPage('proxies', configured(c.env),
           c.env.PREVIEW_BROWSER_ARRIVALS_ENABLED === 'true', discovery.pathname === '/unavailable'),
-        { status: discovery.pathname === '/unavailable' ? 404 : 200,
-          headers: diagnosticHeaders(c.env.PREVIEW_BROWSER_ARRIVALS_ENABLED === 'true') });
+        { status: discovery.pathname === '/unavailable' ? 404 : 200, headers });
       }
       return failure(404);
     }

@@ -49,6 +49,7 @@ dashboardRoutes.get('/', async (c) => {
     }
   }
 
+  c.header('Link', '</llms.txt>; rel="describedby"');
   return renderPage(
     c,
     <LandingPage

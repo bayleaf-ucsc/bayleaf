@@ -128,7 +128,10 @@ try {
   const continuation = await get('/grants/authorize?request=nonexistent');
   assert.equal(continuation.status, 400);
   assert.ok((await continuation.json()).error.message.includes('different browser'), 'Registry must not install public-query validation');
-  const shell = await (await get('/docs')).text();
+  const docsPage = await get('/docs');
+  assert.equal(docsPage.headers.get('Link'), '</llms.txt>; rel="describedby"');
+  assert.equal((await get('/')).headers.get('Link'), '</llms.txt>; rel="describedby"');
+  const shell = await docsPage.text();
   assert.ok(shell.includes('data-url="/docs/openapi.json"'));
   assert.ok(!shell.includes('<header') && !shell.includes('docs-navigation'), 'Keep the original plain Scalar shell');
   assert.ok(shell.includes('lang="en"'));

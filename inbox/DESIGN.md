@@ -80,7 +80,8 @@ The receiver's `BROWSER_ARRIVALS_ENABLED=true` independently gates apex `/`
 arrival instrumentation. Receipt hosts and all their paths remain reception-only:
 GET/HEAD still capture deliveries; unknown/destroyed URLs still answer identical
 JSON errors. Never instrument those URLs. `/llms.txt` is apex-only plaintext
-discovery, not a reserved receipt-host path. Deployment and collection activation
+discovery, advertised by the apex HTML response with `Link: </llms.txt>; rel="describedby"`.
+It is not a reserved receipt-host path. Deployment and collection activation
 were explicitly approved; actual browser readback passed. See
 `../telemetry/qualification/diagnostics.md` for versions, real owner-login evidence
 and the separately tracked private-preview navigation check.

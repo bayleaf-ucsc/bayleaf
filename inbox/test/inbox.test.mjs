@@ -1072,7 +1072,9 @@ describe('BayLeaf Inboxes contract', () => {
       assert.match(discovery.text, /https:\/\/api\.bayleaf\.dev\/llms\.txt/);
       assert.equal((await h.http(`https://${DOMAIN}/llms.txt`, { method: 'HEAD' })).text, '');
       const discoveryOwner = owner(), discoveryInbox = await h.create(discoveryOwner, 'http');
-      assert.equal((await h.http(new URL('/llms.txt', discoveryInbox.url))).status, 200);
+      const receipt = await h.http(new URL('/llms.txt', discoveryInbox.url));
+      assert.equal(receipt.status, 200);
+      assert.equal(receipt.headers.get('Link'), null);
       assert.equal((await h.list(discoveryOwner, discoveryInbox.id)).messages[0].preview.path, '/llms.txt', 'Inbox paths stay sender-owned');
       const g = await h.http(`https://${DOMAIN}/`);
       assert.equal(g.status, 200);

@@ -45,6 +45,8 @@ assert.equal(calls.length, discoveryCalls, 'Discovery never authenticates or wak
 
 let response = await request('/');
 assert.equal(response.status, 200);
+assert.equal(response.headers.get('Link'), '</llms.txt>; rel="describedby"');
+assert.equal((await request('/', { method: 'HEAD' })).headers.get('Link'), '</llms.txt>; rel="describedby"');
 assert.equal(response.headers.get('Referrer-Policy'), 'strict-origin', 'native sign-in forms need an Origin header');
 let html = await response.text();
 assert(html.includes('OpenChamber'));

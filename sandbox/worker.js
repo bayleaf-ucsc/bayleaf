@@ -68,6 +68,7 @@ export default {
         const current = session ? await api.readSession({ session }) : null;
         const page = await renderSandboxPage(current?.user ?? null,
           { browserArrivalsEnabled: env.BROWSER_ARRIVALS_ENABLED === 'true' });
+        if (!current?.user) page.headers.append('Link', '</llms.txt>; rel="describedby"');
         if (session && !current) page.headers.append('Set-Cookie', cookie(SESSION, '', 0));
         return request.method === 'HEAD' ? new Response(null, page) : page;
       }

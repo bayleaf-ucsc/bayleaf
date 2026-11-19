@@ -45,7 +45,9 @@ Addresses remain text so inspection cannot accidentally deliver a GET receipt.
 Unknown/expired/revoked preview browser navigations all redirect with no-referrer
 to the same apex `/unavailable`, with no tenant material in the destination.
 The recovery page returns 404. Non-navigation failures retain machine-readable
-behavior. Neither service reserves application/receipt `/llms.txt` paths.
+behavior. Both apex homepages advertise their own `/llms.txt` with
+`Link: </llms.txt>; rel="describedby"`. Neither service reserves
+application/receipt `/llms.txt` paths or adds discovery metadata to them.
 
 ## Deliberate agent exposure
 
