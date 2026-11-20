@@ -1,14 +1,14 @@
 {
   "repository": "https://github.com/open-webui/open-webui",
-  "tag": "v0.13.3",
-  "commit": "b0e6098e940942281d9c83f3529ea117287a3a22",
+  "tag": "v0.13.4",
+  "commit": "0666e59d26a4d056e0bacee41742486badd71cf8",
   "files": {
     "LICENSE": "5f1bd74c48bf13ab0f82e177ad9e637313b92533d20ead2593d49347a47fc232",
     "env.py": "e7d3457cae9a9dfdff1526ec985b8af73a278193da311098dca5d7825bc7c6f9",
     "instrumentors.py": "d1013de555e977585a70d80c5dc9731cadb639927a8e240cda718471c0bba59d",
     "metrics.py": "76c4bfa784288510480a5a9aa4a1500a3e6e3ab0fce5cbfee9e916e6eb06bc41",
-    "pyproject.toml": "38d36072eb76178f9587a57c7e6de85a6cca2d666ea7baffa23d1b73b15f5607",
-    "requirements.txt": "947f986da0e75822517415ea9cf0bd50c4ed76676d9b0abab2e45029dbce1f1b",
+    "pyproject.toml": "cf8273e469ee07211a5b7021c9e7b73f6fc6fc60e8e8459c7eac85462c94cc7e",
+    "requirements.txt": "3d907c6101b8499b79300329d8fc976e23c21414f32fd30c9b5c5f3c20cc906a",
     "setup.py": "6c8101c59f8b62857ba4f28002b1736c9c36f5e58e99426c285137bf69817b24"
   }
 }

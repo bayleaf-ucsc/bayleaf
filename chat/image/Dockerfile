@@ -1,7 +1,7 @@
 # Build from repository root. Pin a resolved image digest at release time using
-# --build-arg OWUI_IMAGE=ghcr.io/open-webui/open-webui:v0.13.3@sha256:...
+# --build-arg OWUI_IMAGE=ghcr.io/open-webui/open-webui:v0.13.4@sha256:...
 # Source checks below are mandatory even with an immutable image digest.
-ARG OWUI_IMAGE=ghcr.io/open-webui/open-webui:v0.13.3@sha256:46b59158e6558eeb980bc828e0f1b30238ad24d82ed84d5e5eda1dab2a082f14
+ARG OWUI_IMAGE=ghcr.io/open-webui/open-webui:v0.13.4@sha256:d5168bfbc28609eff5bea1b438dd864cf64d185cf6582c02244865e18385b901
 FROM ${OWUI_IMAGE}
 COPY chat/image/startup_patch.py chat/image/source_policy.py chat/image/runtime.py /opt/bayleaf-otlp/
 COPY chat/image/upstream/ /opt/bayleaf-otlp/upstream/

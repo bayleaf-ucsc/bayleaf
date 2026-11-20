@@ -94,6 +94,14 @@ configs to restore if step 4's changes misbehave: re-push with
 
 ## Refinement log
 
+- 2026-11-20 (v0.13.4): Direct Connections was already enabled in production.
+  After reviewing the expanded Tether model path, Adam chose to keep it opt-in.
+  Both builds, amd64 boot, arm64 five-minute metrics, and Chromium arrival
+  checks passed. Deployment `9532730e` passed guarded startup, health, version,
+  Tether discovery, and Basic/Help API checks. Desktop pairing and human browser
+  checks were not exercised. `chat/release.py deploy --dry-run` pushes the
+  fingerprint-named image to GHCR but does not alter the app spec.
+
 - 2026-11-10 (v0.13.3 preparation): Upstream guarded sources/package pins were
   unchanged; frontend hashes needed refresh. Both builds, all 16 Chromium cases,
   synthetic existing-PG upgrade, five-minute PG/TLS export and amd64 boot/inference

@@ -5,11 +5,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 HASHES = {
-    'build/index.html': 'ef15e5999dc3f8ae80d1cdf8013cbd788dac24cfc2f5d2a6dba42b391e10a65d',
-    'backend/open_webui/config.py': 'e1ccda60fa000c8008bd2da169b8b38b5e56ccb092d89218606a186cfdcb025c',
+    'build/index.html': 'c2fe02890b312042147858a8156aaff690c0a2208595602bcd98ef2214d6d806',
+    'backend/open_webui/config.py': '2fbbf686652656b1bc1e425fa9c4b219a4730b84e19d63858bbc05d1ba688bb8',
     'backend/start.sh': '29ef1237701355ea895c85b06992a3e0ef60dd5a8c218cfbf6d403df540bf5dd',
-    'build/_app/immutable/nodes/0.D2dVsOLW.js': '0202ef342d12b784a88a9d6a89e1960196d96e88c0327e97c99fcb1432e15ae2',
-    'build/_app/immutable/nodes/53.D_OC8Apn.js': '75b90502ebeda577c7171c9ac54d601f12609f32dfd8c5430f30c7a0329f4a34',
+    'build/_app/immutable/nodes/0.CAO82wNH.js': '66ed6b3bc428fdf3c9ef116637fa9ff1dec563b26a701e3d660210858c84e931',
+    'build/_app/immutable/nodes/53.Dg9TGR5C.js': 'c59af62dfe6785164d677911b21a3732e92c497064dae4cb665ae861ea1dfd5c',
 }
 STOCK_LOADER = b''  # Exact pinned image has an empty loader, not an owned plugin registry.
 

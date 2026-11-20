@@ -102,6 +102,11 @@ through the appropriate playbook, don't paper over it in the backup.
 
 ## Refinement log
 
+- 2026-11-20 (OWUI v0.13.4): Refreshed an expired admin JWT before deployment.
+  Private pre/post resources, hidden base, and admin valve JSON were unchanged.
+  Six global config defaults appeared; the app spec changed only the Open
+  WebUI image reference. Compare valve JSON rather than auxiliary log files.
+
 - 2026-11-10 (OWUI v0.13.3): Refreshed complete private pre/post resources,
   hidden base, valves and app spec were byte-identical. Only 18 new global config
   keys and the unset admin chat-read limit appeared; no existing setting changed.
