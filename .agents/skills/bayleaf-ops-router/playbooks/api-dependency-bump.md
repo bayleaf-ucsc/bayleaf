@@ -45,6 +45,8 @@ change that alters request handling in a way that could touch the ZOA posture
    installed copy with `npm ls <pkg>` and run `npm audit`; regenerate the
    lockfile and inspect it for unrelated changes. A nested override scoped to
    Wrangler does not necessarily cover a directly installed Miniflare.
+   Check the patched resolution against `npm audit` again: the registry can
+   report advisories or affected ranges that GitHub has not yet indexed.
 
 4. Type check: `npx tsc --noEmit` in `api/`. Expected: no errors.
 5. Deploy only if requested: `npm run deploy`. For development-only patches,
@@ -78,6 +80,8 @@ previous upload. For local dependency edits, reverse only this run's changes
 and reinstall; never restore whole files that contain unrelated user work.
 
 ## Refinement log
+
+- 2026-11-20: The SDK allows either major of `@hono/node-server`; GitHub's suggested patch on the old major did not address all advisories, and npm caught additional affected 2.x versions. The CLI/MCP checks passed with 2.1.6. For a repo-wide sweep, finish parent installs before running nested qualification suites that import from the parent's `node_modules`. Deployed API `438b3c1a-0262-437b-aa29-592743b25b65`; public JSON, Campus Pass identity and catalog, and owner-only grant denial passed. On campus, a request without a bearer is not necessarily anonymous.
 
 - 2026-11-04 (Nanobot retirement): The Nanobot asset/build instructions in the
   2026-10-26 record below are historical. That managed surface is retired; use

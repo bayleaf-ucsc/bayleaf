@@ -2,7 +2,7 @@
   "name": "inbox-dkim-research",
   "private": true,
   "type": "module",
-  "dependencies": { "mailauth": "8.0.1" },
+  "dependencies": { "mailauth": "8.0.5" },
   "scripts": {
     "test": "node --test dkim.test.mjs",
     "probe": "node crypto-probe.mjs",
