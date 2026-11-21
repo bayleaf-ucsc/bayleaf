@@ -106,7 +106,14 @@ authRoutes.get('/callback', async (c) => {
     return renderPage(c, <ErrorPage title="Login Failed" message="Failed to get user information." />, 500);
   }
 
-  const user = await userResponse.json() as { email: string; name: string; picture?: string };
+  const user = await userResponse.json() as { email: string; name: string; picture?: string; idp?: string };
+
+  // The authorize-time idphint is user-editable, so check which IdP actually
+  // asserted this identity; otherwise any CILogon IdP releasing an @ucsc.edu
+  // email would pass the domain check below.
+  if (c.env.OIDC_REQUIRED_IDP && user.idp !== c.env.OIDC_REQUIRED_IDP) {
+    return renderPage(c, <ErrorPage title="Access Denied" message="Sign in through the UCSC identity provider." />, 403);
+  }
 
   // Verify email domain
   if (!user.email.endsWith(`@${c.env.ALLOWED_EMAIL_DOMAIN}`)) {

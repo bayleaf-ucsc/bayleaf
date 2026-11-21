@@ -129,6 +129,20 @@ BayLeaf applies ZDR everywhere and pursues ZOA where practical.
   sizes, executed-model metadata on non-streaming responses, and billing metadata
   remain outside ZOA; the requested model field and body remain opaque to BayLeaf.
 
+  The same circularity applies one level up, and BayLeaf does not escape it by
+  default. The recommended onboarding (`opencode auth login
+  https://api.bayleaf.dev/sealed`) loads a BayLeaf-served remote config that
+  names the verifier plugin and version (`SEALED_PLUGIN`). A malicious or
+  compromised deploy could name a different package that reads plaintext before
+  encryption. So for remote-config users, "BayLeaf cannot read Sealed content"
+  holds only while BayLeaf's deploys are honest; users who pin the plugin in
+  their own `opencode.json`, as `llms.txt` describes, remove that dependency.
+  More broadly, every BayLeaf remote config (standard, Sealed and Sandbox) also
+  delivers BayLeaf-served skills, and the Sandbox config a BayLeaf-pinned
+  plugin, into the user's local agent. That is the convenience remote config
+  sells, and it makes BayLeaf a code and instruction supplier to those agents.
+  Security-sensitive users should copy the config locally and pin it.
+
 ### 2.4 Retention and deletion
 
 - **User-initiated deletion is honest.** When a user deletes a conversation
@@ -181,7 +195,7 @@ BayLeaf applies ZDR everywhere and pursues ZOA where practical.
 ### 3.1 Chat
 
 - **Identity provider:** CILogon (InCommon Federation), OIDC protocol
-- **IdP hint:** UCSC (`urn:mace:incommon:ucsc.edu`)
+- **IdP hint:** UCSC (`urn:mace:incommon:ucsc.edu`). The hint only preselects and is user-editable. The API enforces it at `/callback` by requiring CILogon's `idp` claim to equal this value (`OIDC_REQUIRED_IDP`). Chat currently enforces only the `@ucsc.edu` email domain, so for Chat the guarantee depends on no other CILogon IdP asserting a `ucsc.edu` email.
 - **No password login**: OAuth only; direct signup disabled
 - **Group sync:** CILogon `affiliation` claim (e.g. `Faculty@ucsc.edu`) synced to
   Open WebUI groups on each login; full reconcile (adds and removes)

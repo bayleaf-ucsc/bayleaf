@@ -56,7 +56,8 @@ written to any store or log. The provider operates under zero-data-retention
 request metadata is retained provider-side.
 
 The user's email is injected as the `user` field in upstream requests (keyed
-users only; campus-pass users send `"campus-anonymous"`). OpenRouter receives
+users only; campus-pass users send `"campus-anonymous"`), overwriting any
+caller-supplied value. OpenRouter receives
 this for per-user rate limiting but does not retain it under ZDR.
 
 Plaintext inference permits a model only when OpenRouter publishes a nonempty

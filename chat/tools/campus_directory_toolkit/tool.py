@@ -1,6 +1,28 @@
 from typing import *
+import time
+from collections import deque
 import aiohttp
 from bs4 import BeautifulSoup
+
+# Aggregate politeness cap: bounds all traffic BayLeaf concentrates onto the
+# campus directory, not any one user's use. Module-level, so it is shared by
+# every chat in this OWUI process (one container). Deliberately looser than the
+# API's /directory policy (exact CruzID, per-account daily cap): name search is
+# the useful general-access feature here, and upstream load is what we limit.
+_SEARCHES_PER_MINUTE = 20
+_SEARCHES_PER_DAY = 1000
+_recent: deque = deque()
+
+
+def _admit() -> bool:
+    now = time.monotonic()
+    while _recent and now - _recent[0] > 86400:
+        _recent.popleft()
+    last_minute = sum(1 for t in _recent if now - t < 60)
+    if last_minute >= _SEARCHES_PER_MINUTE or len(_recent) >= _SEARCHES_PER_DAY:
+        return False
+    _recent.append(now)
+    return True
 
 
 class Tools:
@@ -58,6 +80,8 @@ class Tools:
         Advice:
             It may be necessary to run multiple searches to account for nicknames or alternate spellings. This whole thing is mostly just an example of integrating with campus systems, so the user might be better off using the directory site directly for critical tasks.
         """
+        if not _admit():
+            return [{"error": "BayLeaf's campus directory lookups are busy right now (shared limit). Try again later or use https://campusdirectory.ucsc.edu/ directly."}]
         # Create a fresh session for this search
         async with aiohttp.ClientSession(headers=self.headers) as session:
             try:

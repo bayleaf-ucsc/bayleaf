@@ -27,8 +27,9 @@ next. Run them in order:
 
 3. **`facets.py`**: LLM facet extraction: for each conversation, emits
    `{topic, language, summary}`. The summary is written to omit names, emails, IDs,
-   and other identifying detail. Routes through OpenRouter with zero data retention
-   (`data_collection: deny`). Writes `facets.jsonl`.
+   and other identifying detail. Routes through OpenRouter with `zdr: true`
+   (zero data retention) and `data_collection: deny` (no training); every LLM and
+   embedding call in the pipeline sets both. Writes `facets.jsonl`.
 
 4. **`cluster.py`**: embeds each summary (OpenRouter embeddings) and clusters with
    HDBSCAN on cosine distance. Noise points are the long tail; they are kept separate
@@ -64,3 +65,10 @@ file.
 `corpus.jsonl` and every intermediate artifact contain real conversation text and
 must **not** be committed to this public repo. Only the `.py` scripts and this README
 live here; run the pipeline in a scratch directory outside the repo.
+
+Delete the dump, `corpus.jsonl`, `compact.jsonl`, `facets.jsonl` and the cluster
+files within 30 days of the export, matching Chat's conversation retention (an
+export must not outlive the chats it copied). Keep only `gist.json`, which holds
+cluster-level descriptions. `PRIVACY.md` discloses this analysis; a material
+change to it (raw-text reading, longer retention, non-ZDR routing) needs a
+`PRIVACY.md` update first.

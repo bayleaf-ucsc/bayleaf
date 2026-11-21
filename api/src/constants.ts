@@ -28,7 +28,13 @@ export async function discoverOIDC(issuer: string): Promise<OIDCEndpoints> {
 
 export const OPENROUTER_API = 'https://openrouter.ai/api/v1';
 
-/** Exact verifier/transport pin, shared by discovery and onboarding prose. */
+/**
+ * Exact verifier/transport pin, shared by discovery and onboarding prose.
+ * Trust note: remote-config users run whatever verifier BayLeaf names here, so
+ * for them Sealed's "BayLeaf cannot read it" holds only while BayLeaf's deploys
+ * are honest. Users who pin the plugin in their own opencode.json (llms.txt
+ * explains how) remove that dependency. See politics/SECURITY.md.
+ */
 export const SEALED_PLUGIN = 'opencode-tinfoil@0.3.1';
 
 /**

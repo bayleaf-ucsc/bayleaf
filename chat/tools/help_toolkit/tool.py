@@ -66,6 +66,9 @@ class Tools:
 
     @property
     def _signing_key(self) -> str:
+        # Falls back to OWUI's session key. Invites carry no aud/typ, but cannot
+        # be confused with sessions: sessions lack `grp`, invites lack `id`, and
+        # only admins mint invites. Set INVITE_SIGNING_KEY to decouple rotation.
         return self.valves.INVITE_SIGNING_KEY or WEBUI_SECRET_KEY
 
     # ── Informational ───────────────────────────────────────────────

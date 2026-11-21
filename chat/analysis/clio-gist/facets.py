@@ -74,7 +74,7 @@ async def one(client, sem, rec):
             {"role": "user", "content": text},
         ],
         "response_format": {"type": "json_object"},
-        "provider": {"data_collection": "deny"},
+        "provider": {"data_collection": "deny", "zdr": True},
     }
     async with sem:
         for attempt in range(4):

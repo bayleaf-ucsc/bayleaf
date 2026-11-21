@@ -2,6 +2,13 @@
  * Session Token Utilities
  * 
  * JWT sessions (HS256) via hono/jwt, cookies via hono/cookie.
+ *
+ * OIDC_CLIENT_SECRET doubles as the HMAC key here and, purpose-separated, for
+ * grant envelopes, computer-use handles and claim CSRF tokens (one fewer secret
+ * to provision). Accepted costs: anyone holding it (including the IdP side) can
+ * forge any of these, and rotating the CILogon secret signs everyone out and
+ * invalidates outstanding app tokens. PREVIEWS_SECRET shows the split pattern
+ * if that trade-off changes.
  */
 
 import type { Context } from 'hono';

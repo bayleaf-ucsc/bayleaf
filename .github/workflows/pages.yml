@@ -16,6 +16,9 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
+# Actions are pinned to major tags, not SHAs: all are first-party `actions/*`
+# (GitHub's own supply chain, which this workflow already trusts to run). Pin by
+# SHA before adding any third-party action.
 jobs:
   build:
     runs-on: ubuntu-latest

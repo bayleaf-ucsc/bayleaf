@@ -94,7 +94,12 @@ ITS-operated or ITS-supported one.
 - **Conversations (Chat only):** messages, attachments, and chat metadata are
   stored in BayLeaf Chat's encrypted PostgreSQL database so you can return to
   past conversations. They are accessible only to you and the system
-  administrator.
+  administrator. The administrator may occasionally run an aggregate usage
+  analysis ([`chat/analysis/clio-gist`](chat/analysis/clio-gist/README.md)):
+  an LLM, reached only through ZDR endpoints, writes a de-identified summary of
+  each conversation, and the administrator reads cluster-level descriptions of
+  what BayLeaf is used for. The conversation export and intermediate files are
+  deleted within 30 days.
 - **Sandbox files (Chat and API, opt-in):** if you use the Code Sandbox, files
   you create live inside a per-user Daytona VM. There is no persistent volume
   backing it: deleting the sandbox is final.
@@ -356,6 +361,12 @@ zero-data-retention via OpenRouter, Sealed inference uses client-verified
 confidential computing through Tinfoil, infrastructure vendors are bound by
 their own data-protection terms, and authentication is handled by a non-profit
 research-and-education identity broker.
+
+When you explicitly connect and select a personal model endpoint in Chat,
+that endpoint is not a BayLeaf-selected subprocessor. It receives the model
+request, which can include prior conversation context. BayLeaf does not verify
+its retention policy, and BayLeaf's inference ZDR promise does not cover it.
+Use only endpoints you trust and are authorized to send that data to.
 
 - [OpenRouter](https://openrouter.ai/): LLM request routing. BayLeaf restricts
   upstream traffic to ZDR providers; see

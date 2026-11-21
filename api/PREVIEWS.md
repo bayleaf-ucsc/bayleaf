@@ -324,6 +324,11 @@ revoking any known hostname closes its sockets. Its service workers, caches,
 and local storage cannot control the next origin. The flat hostname works with the existing
 single-level wildcard certificate; a nested `{nonce}.{cruzid}` shape would need
 additional TLS provisioning and would still be same-site for cookie purposes.
+`bayleaf-proxies.dev` is not on the Public Suffix List. Listing it would make
+each preview its own site, but the Origin and `__Host-` cookie defenses below
+do not depend on it. Residual: a public preview's script can set
+parent-domain cookies that clutter visitors' other previews, and any keyholder
+gets a BayLeaf-branded hostname. A PSL submission remains open, not refused.
 
 Service workers are allowed on nonce origins. Root-relative
 `Service-Worker-Allowed` headers are preserved, supporting root-scoped workers.

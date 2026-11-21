@@ -48,7 +48,7 @@ async def embed(client, sem, text):
                 r = await client.post(
                     "https://openrouter.ai/api/v1/embeddings",
                     headers={"Authorization": f"Bearer {KEY}"},
-                    json={"model": EMBED_MODEL, "input": text},
+                    json={"model": EMBED_MODEL, "input": text, "provider": {"data_collection": "deny", "zdr": True}},
                     timeout=60,
                 )
                 if r.status_code == 429 and attempt < 3:

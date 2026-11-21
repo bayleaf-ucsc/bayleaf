@@ -39,7 +39,7 @@ const bundle = await build({ absWorkingDir: root, stdin: { resolveDir: root, con
     finally { Date.now = realNow; }
   }};
 ` }, bundle: true, write: false, format: 'esm', platform: 'browser', target: 'es2022', external: ['cloudflare:workers'], loader: { '.py': 'text', '.md': 'text' } });
-let upstreamCalls = 0, decisionAuthMode = '', keyProvisionCalls = 0;
+let upstreamCalls = 0, decisionAuthMode = '', keyProvisionCalls = 0, userinfoIdp = 'urn:test:home-idp';
 const bindings = { GRANTS_ENABLED: 'true', GRANTS_MAX_SECONDS: '3600', OIDC_CLIENT_SECRET: secret,
   OPENROUTER_PROVISIONING_KEY: 'synthetic-management-key',
   KEY_NAME_TEMPLATE: 'Synthetic {email}',
@@ -48,7 +48,7 @@ const bindings = { GRANTS_ENABLED: 'true', GRANTS_MAX_SECONDS: '3600', OIDC_CLIE
   GCP_SERVICE_ACCOUNT_PRIVATE_KEY: generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }),
   ALLOWED_EMAIL_DOMAIN: 'example.test', RECOMMENDED_MODEL: model, CAMPUS_IP_RANGES: '192.0.2.0/24',
   CAMPUS_POOL_KEY: 'synthetic-campus-key',
-  OIDC_ISSUER: 'https://identity.example.test', OIDC_CLIENT_ID: 'synthetic-client', OIDC_SCOPES: 'openid email',
+  OIDC_ISSUER: 'https://identity.example.test', OIDC_CLIENT_ID: 'synthetic-client', OIDC_SCOPES: 'openid email', OIDC_REQUIRED_IDP: 'urn:test:home-idp',
   OIDC_LOGIN_BUTTON_TEXT: 'Synthetic login', SPENDING_LIMIT_DOLLARS: '1', SPENDING_LIMIT_RESET: 'daily',
   OPENCODE_CURATED_MODELS: '', SEALED_CURATED_MODELS: '', SEALED_RECOMMENDED_MODEL: '',
 };
@@ -62,7 +62,7 @@ const mf = new Miniflare(convertV4MiniflareOptions({ port: process.argv.includes
     if (url.hostname === 'identity.example.test') {
       if (url.pathname.endsWith('/.well-known/openid-configuration')) return Response.json({ authorization_endpoint: 'https://identity.example.test/authorize', token_endpoint: 'https://identity.example.test/token', userinfo_endpoint: 'https://identity.example.test/userinfo' });
       if (url.pathname === '/token') return Response.json({ access_token: 'synthetic-oidc-token' });
-      if (url.pathname === '/userinfo') return Response.json({ email: 'owner@example.test', name: 'Synthetic User' });
+      if (url.pathname === '/userinfo') return Response.json({ email: 'owner@example.test', name: 'Synthetic User', idp: userinfoIdp });
     }
     if (url.hostname === 'openrouter.ai' && url.pathname.endsWith('/models')) return Response.json({ data: [
       { id: model, name: 'Synthetic model', hugging_face_id: 'test/open-model', architecture: { output_modalities: ['text'] }, pricing: { prompt: '0', completion: '0' } },
@@ -129,6 +129,8 @@ const mf = new Miniflare(convertV4MiniflareOptions({ port: process.argv.includes
     assert.ok(url.pathname.endsWith('/chat/completions') || url.pathname.endsWith('/responses'), 'No provider-key provisioning or other upstream operation');
     assert.equal(req.headers.get('Authorization'), 'Bearer synthetic-existing-provider-key');
     const body = await req.json(); assert.ok([model, 'test/uncurated-open'].includes(body.model));
+    assert.equal(body.provider?.zdr, true); assert.equal(body.provider?.data_collection, 'deny');
+    assert.notEqual(body.user, 'spoof@example.test');
     upstreamCalls++;
     return body.stream ? new Response('data: {"choices":[]}\n\ndata: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
       : Response.json({ choices: [{ message: { content: 'Synthetic inference succeeded.' } }], model: body.model });
@@ -258,6 +260,16 @@ try {
     assert.ok(direct.expires_at > Date.now() / 1000);
     await expect(await infer(direct.key), 200);
     await expect(await infer(direct.key, { input: 'synthetic only' }, '/v1/responses'), 200);
+    // Callers cannot loosen retention; the upstream mock asserts zdr:true on every forward.
+    await expect(await infer(direct.key, { provider: { zdr: false, data_collection: 'allow' }, user: 'spoof@example.test' }), 200);
+    await expect(await infer(direct.key, { input: 'synthetic only', provider: { zdr: false } }, '/v1/responses'), 200);
+    // OpenRouter server-side tools would leave the ZDR provider set: refused for every caller.
+    const beforeTools = upstreamCalls;
+    for (const [extra, path] of [[{ web_search_options: {} }, '/v1/chat/completions'],
+      [{ input: 'synthetic', tools: [{ type: 'web_search_preview' }] }, '/v1/responses'],
+      [{ tools: [{ type: 'openrouter:web_search' }] }, '/v1/chat/completions']])
+      await expect(await infer('sk-bayleaf-owner', extra, path), 400);
+    assert.equal(upstreamCalls, beforeTools);
     const stream = await infer(direct.key, { stream: true }); assert.equal(stream.status, 200); assert.match(await stream.text(), /DONE/);
   });
   await check('scope gate denies all other surfaces even with an owner cookie or campus address', async () => {
@@ -564,6 +576,28 @@ try {
     const callback = await request('/callback?code=synthetic&state=' + state, { cookie: [oauthCookie, returnCookie, flow.flowCookie].join('; ') });
     assert.equal(callback.headers.get('Location'), flow.path);
     assert.ok(callback.headers.getSetCookie().some(c => c.startsWith('bayleaf_session=')));
+  });
+  await check('session key routes require the BayLeaf Origin', async () => {
+    const login = await request('/login'); const oauthCookie = login.headers.getSetCookie()[0].split(';')[0];
+    const state = new URL(login.headers.get('Location')).searchParams.get('state');
+    const callback = await request('/callback?code=synthetic&state=' + state, { cookie: oauthCookie });
+    const session = callback.headers.getSetCookie().find(c => c.startsWith('bayleaf_session=')).split(';')[0];
+    for (const method of ['POST', 'DELETE']) {
+      assert.equal((await request('/key', { method, cookie: session })).status, 403);
+      assert.equal((await request('/key', { method, cookie: session, headers: { Origin: 'https://evil.bayleaf.dev' } })).status, 403);
+    }
+    // Same-origin passes the gate (409: the owner already holds a key).
+    assert.equal((await request('/key', { method: 'POST', cookie: session, headers: { Origin: new URL(api).origin } })).status, 409);
+  });
+  await check('login asserted by another IdP is refused even with an allowed email domain', async () => {
+    userinfoIdp = 'urn:test:other-idp';
+    try {
+      const login = await request('/login'); const oauthCookie = login.headers.getSetCookie()[0].split(';')[0];
+      const state = new URL(login.headers.get('Location')).searchParams.get('state');
+      const callback = await request('/callback?code=synthetic&state=' + state, { cookie: oauthCookie });
+      assert.equal(callback.status, 403);
+      assert.ok(!callback.headers.getSetCookie().some(c => c.startsWith('bayleaf_session=')));
+    } finally { userinfoIdp = 'urn:test:home-idp'; }
   });
   await check('PKCE, exact descriptor/callback binding, atomic single-use code exchange, same token powers', async () => {
     const flow = await start('http://localhost:5173/'); const value = await code(flow);

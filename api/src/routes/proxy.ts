@@ -78,14 +78,51 @@ export async function enforceCampusRpd(
   );
 }
 
-/** Inject the `user` field for OR per-user analytics. */
+/**
+ * Set the `user` field for OR per-user attribution. Always overwritten, never
+ * caller-chosen, so one caller cannot attribute traffic to another address.
+ */
 function injectUser(body: { user?: string }, auth: AuthResult): void {
-  if (body.user) return;
   if (auth.userEmail) {
     body.user = auth.userEmail;
   } else if (auth.isCampusMode) {
     body.user = 'campus-anonymous';
+  } else {
+    delete body.user;
   }
+}
+
+/**
+ * Pin ZDR in the request body as well as in OpenRouter account settings.
+ *
+ * The account-level ZDR-only setting is on, but it is invisible to anyone
+ * auditing this repository. Overwriting here (not rejecting) makes the
+ * guarantee legible from source; it is belt and suspenders. Caller routing
+ * preferences (order, only, sort, ...) survive; the retention fields cannot be
+ * loosened. Mirrors the allowlisted payload in decisions.ts.
+ */
+function forceZdr(body: Record<string, unknown>): void {
+  const p = body.provider;
+  const provider = p && typeof p === 'object' && !Array.isArray(p) ? p : {};
+  body.provider = { ...provider, data_collection: 'deny', zdr: true };
+}
+
+/**
+ * Refuse OpenRouter server-side tools (web search via Exa, PDF/OCR parsing, ...).
+ *
+ * They send request content to processors outside the ZDR provider set and
+ * PRIVACY.md's subprocessor list, and on Campus Pass they bill the shared pool
+ * key. Rejected rather than stripped so callers never silently lose a search
+ * they asked for; BayLeaf's own /web/search and /web/fetch are the alternative.
+ */
+const SERVER_TOOL_FIELDS = ['plugins', 'web_search_options'] as const;
+function rejectServerTools(c: Context<AppEnv>, body: Record<string, unknown>): Response | null {
+  // Tool entries OpenRouter executes itself; client-executed function/custom tools pass.
+  const serverTool = Array.isArray(body.tools) && body.tools.some(t =>
+    /^(web_search|openrouter:)/.test(String((t as { type?: unknown } | null)?.type ?? '')));
+  const field = serverTool ? 'tools' : SERVER_TOOL_FIELDS.find(key => key in body);
+  return field ? c.json({ error: { code: 400, message:
+    `\`${field}\` (OpenRouter server-side tools) is not supported. Use /web/search or /web/fetch; see https://api.bayleaf.dev/llms.txt.` } }, 400) : null;
 }
 
 /** Ordinary keys and all their temporary tokens share one atomic daily counter. */
@@ -237,6 +274,8 @@ proxyRoutes.openapi(responsesRoute, async (c) => {
   const model = openRouterSlug(body.model);
   const grantRejection = enforceGrantModel(c, body);
   if (grantRejection) return grantRejection as any;
+  const toolRejection = rejectServerTools(c, body);
+  if (toolRejection) return toolRejection as any;
   if (await checkOpenWeightModel(model, c.env) !== 'open') {
     return openWeightForbidden(c, model) as any;
   }
@@ -248,6 +287,7 @@ proxyRoutes.openapi(responsesRoute, async (c) => {
     return c.json({ error: { message: 'This model does not have verified text-generation support.', code: 400 } }, 400) as any;
 
   injectUser(body, auth);
+  forceZdr(body);
 
   // Proxy passthrough: forwarding the upstream response verbatim. The actual
   // response shape comes from OpenRouter, not from our Zod schema.
@@ -279,7 +319,9 @@ const chatCompletionsRoute = createRoute({
     'provider (for example, for consistent vision support), include `"provider": {"only": ["EXACT-PROVIDER-SLUG"], "allow_fallbacks": false}` ' +
     'on every request. Copy the exact endpoint slug from the model\'s OpenRouter page; ' +
     'unavailable or non-ZDR endpoints fail rather than switch providers. ' +
-    '`provider.order` alone is a preference, not a strict pin; custom routing headers are not forwarded.',
+    '`provider.order` alone is a preference, not a strict pin; custom routing headers are not forwarded. ' +
+    'ZDR is always enforced (`provider.zdr`/`data_collection` are overwritten). OpenRouter server-side tools ' +
+    '(`plugins`, `web_search_options`, `web_search*` tool types) are rejected with 400; use `/web/search` and `/web/fetch`.',
   security: [{ Bearer: [] }, {}] as Record<string, string[]>[],
   request: {
     body: {
@@ -330,6 +372,8 @@ proxyRoutes.openapi(chatCompletionsRoute, async (c) => {
   // Prefix routing
   const grantRejection = enforceGrantModel(c, body);
   if (grantRejection) return grantRejection as any;
+  const toolRejection = rejectServerTools(c, body);
+  if (toolRejection) return toolRejection as any;
   const modelStr = typeof body.model === 'string' ? body.model : '';
   
   if (modelStr.startsWith('vertex:')) {
@@ -399,6 +443,7 @@ proxyRoutes.openapi(chatCompletionsRoute, async (c) => {
     if (fallbackRejection) return fallbackRejection as any;
     if (!await supportsOpenRouterOperation(model, 'text'))
       return c.json({ error: { message: 'This model does not have verified text-generation support.', code: 400 } }, 400) as any;
+    forceZdr(body);
     const cred = await resolveBackendCredential(auth, 'openrouter', c.env);
     if (!cred) return upstreamCredentialUnavailable(c) as any;
 
@@ -706,6 +751,8 @@ async function handleProxy(c: Context<AppEnv>): Promise<Response> {
       return openWeightForbidden(c, 'unknown');
     }
     if (typeof body.model !== 'string') return openWeightForbidden(c, 'unknown');
+    const toolRejection = rejectServerTools(c, body);
+    if (toolRejection) return toolRejection;
 
     const model = openRouterSlug(body.model);
     if (await checkOpenWeightModel(model, c.env) !== 'open') {
@@ -717,6 +764,7 @@ async function handleProxy(c: Context<AppEnv>): Promise<Response> {
     if (fallbackRejection) return fallbackRejection;
     if (!await supportsOpenRouterOperation(model, 'text'))
       return c.json({ error: { message: 'Use /v1/decisions for decision models.', code: 400 } }, 400);
+    forceZdr(body);
     const cred = await resolveBackendCredential(auth, 'openrouter', c.env);
     if (!cred) return upstreamCredentialUnavailable(c);
     return sendWithHeal(cred, c.env, (secret) =>

@@ -14,6 +14,10 @@ Two layered commitments:
   streamed through to the upstream provider with **no local caching** and are
   **never written to D1, logs, or any store** (see `RETENTION.md`). Only ZDR
   provider endpoints are reachable, so providers retain only request metadata.
+  The OpenRouter account's ZDR-only setting is the primary control; plaintext
+  forwards also overwrite `provider.zdr` and `data_collection` in the body
+  (`forceZdr` in `routes/proxy.ts`) so outside auditors can see it in source.
+  `npm run test:grants` asserts it.
 - **ZOA posture** — the API additionally exposes **no operator interface to read
   request content in flight**: Workers Observability is **disabled**
   (`wrangler.jsonc`), there is no request-body logging, and no interactive shell

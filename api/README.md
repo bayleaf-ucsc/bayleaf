@@ -119,7 +119,8 @@ Then configure `OIDC_ISSUER` and related vars in `wrangler.jsonc`, and set `OIDC
 | `ALLOWED_EMAIL_DOMAIN` | Restrict to this email domain | `ucsc.edu` |
 | `OIDC_ISSUER` | OIDC provider issuer URL (endpoints discovered via .well-known) | `https://cilogon.org` |
 | `OIDC_SCOPES` | Space-separated OIDC scopes | `openid email profile org.cilogon.userinfo` |
-| `OIDC_AUTHORIZE_PARAMS` | Extra query params for authorize URL | `idphint=urn:mace:incommon:ucsc.edu` |
+| `OIDC_AUTHORIZE_PARAMS` | Extra query params for authorize URL (a hint, not enforcement) | `idphint=urn:mace:incommon:ucsc.edu` |
+| `OIDC_REQUIRED_IDP` | Optional: userinfo `idp` claim must equal this (CILogon) | `urn:mace:incommon:ucsc.edu` |
 | `OIDC_LOGIN_BUTTON_TEXT` | Login button label | `Sign in with UCSC` |
 | `CAMPUS_IP_RANGES` | CIDR ranges for Campus Pass (comma-separated, empty = disabled) | `128.114.0.0/16,169.233.0.0/16` |
 | `DAYTONA_API_URL` | Sandbox provider control plane URL | `https://app.daytona.io/api` |
@@ -155,14 +156,14 @@ For an encrypted ordinary-response and full tool-use canary, export
 | `OPENROUTER_PROVISIONING_KEY` | OpenRouter provisioning API key |
 | `OIDC_CLIENT_ID` | OIDC provider client ID |
 | `OIDC_CLIENT_SECRET` | OIDC provider client secret |
-| `CAMPUS_POOL_KEY` | Shared OpenRouter key for Campus Pass |
+| `CAMPUS_POOL_KEY` | Shared OpenRouter key for Campus Pass. Its spend limit is set by the operator in the OpenRouter console, not by code; values are not recorded here |
 | `DAYTONA_API_KEY` | Sandbox provider API key |
 | `GWS_CLIENT_ID` | Google Workspace CLI OAuth client ID (optional, enables GWS distribution) |
 | `GWS_CLIENT_SECRET` | Google Workspace CLI OAuth client secret |
 | `GWS_PROJECT_ID` | GCP project ID for the OAuth client |
 | `TINFOIL_ADMIN_KEY` | Sealed lane: mints and deletes per-user Tinfoil keys. Higher blast radius than the OpenRouter provisioning key, because Tinfoil re-reveals key secrets on read. |
 | `TINFOIL_API_KEY` | Sealed lane: org key, used only for the plaintext catalog at `/sealed/models` |
-| `CAMPUS_SEALED_KEY` | Sealed lane: shared pool key for Campus Pass, which has no email and so cannot hold a per-user key |
+| `CAMPUS_SEALED_KEY` | Sealed lane: shared pool key for Campus Pass, which has no email and so cannot hold a per-user key. Its limit is set by the operator in the Tinfoil console, not by code; values are not recorded here |
 
 ## Campus Pass
 

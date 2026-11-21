@@ -10,9 +10,13 @@
  * automatically; new days get a fresh key).
  *
  * Race / consistency notes:
- * - KV get+put is not atomic. Two simultaneous requests at count=N-1 can both
- *   pass and write count=N+1, overshooting by one. Acceptable for a 100/day
- *   per-IP cap; if precision matters later, switch to a Durable Object.
+ * - KV get+put is not atomic. A burst of N parallel requests can all read the
+ *   same count and all pass, so a deliberate client can exceed the cap by
+ *   roughly its concurrency, not just by one. Accepted: this is a fairness
+ *   guard, not a spend control. The dollar backstop is the pool keys' own
+ *   limits, set by the operator in the OpenRouter and Tinfoil consoles. If
+ *   precision matters later, switch to a Durable Object or D1 UPDATE…RETURNING
+ *   (as enforceKeyedBackendRpd does).
  * - KV is eventually consistent globally (~60s). Brief over-cap windows are
  *   possible if a single client hops PoPs. Also acceptable.
  */

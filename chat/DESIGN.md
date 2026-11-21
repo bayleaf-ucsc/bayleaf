@@ -309,7 +309,7 @@ All env vars are set with scope `RUN_AND_BUILD_TIME` unless noted.
 | `OPENID_PROVIDER_URL` | `https://cilogon.org/.well-known/openid-configuration` | CILogon OIDC |
 | `OAUTH_PROVIDER_NAME` | `UCSC` | Login button label |
 | `OAUTH_SCOPES` | `openid email profile org.cilogon.userinfo` | Includes affiliation claim |
-| `OAUTH_AUTHORIZE_PARAMS` | `{"idphint":"urn:mace:incommon:ucsc.edu"}` | Preselect UCSC IdP (requires v0.8.11+) |
+| `OAUTH_AUTHORIZE_PARAMS` | `{"idphint":"urn:mace:incommon:ucsc.edu"}` | Preselect UCSC IdP (requires v0.8.11+). A user-editable hint, not enforcement: Chat does not check the `idp` claim (the API does, via `OIDC_REQUIRED_IDP`) |
 | `OAUTH_ALLOWED_DOMAINS` | `ucsc.edu` | Exact email-domain gate on every OAuth callback; not a wildcard or suffix match |
 | `ENABLE_OAUTH_PERSISTENT_CONFIG` | `false` | Keep the deployment environment authoritative for the OAuth domain gate |
 | `OAUTH_CLIENT_ID` | `cilogon:/client_id/...` | CILogon client |
@@ -373,6 +373,11 @@ These are observed current values, not a before/after diff: earlier resource
 backups did not capture global admin settings. No production settings were
 changed during this backup.
 
+- Workspace Tools/Functions: creation and import are admin-only (default user
+  permissions leave `workspace.tools` and functions off; confirmed by the
+  operator 2026-11-21). This is load-bearing:
+  tool valves hold the Daytona key, Google client secret and instructor
+  Canvas/GitHub tokens, and arbitrary user Python would reach them.
 - Automations: `automations.enable=false`; default user permission
   `user.permissions.features.automations=false`. This is OWUI user automation,
   not the separate DigitalOcean retention-cleanup job.
@@ -728,7 +733,7 @@ grants).
 |----|------|-------------|
 | `lathe` | Code Sandbox | Coding agent tools backed by per-user Daytona sandbox VMs (see below) |
 | `web_context_toolkit` | Web Context | Tavily-backed web search and page-content extraction in one toolkit (valve: API key) |
-| `campus_directory_toolkit` | Campus Directory | Scrapes UCSC campus directory with CSRF handling |
+| `campus_directory_toolkit` | Campus Directory | Scrapes UCSC campus directory with CSRF handling. General-access name search, bounded by a process-wide politeness cap (20 searches/min, 1000/day across all users) so BayLeaf does not concentrate load on upstream. Looser than the API's `/directory` (exact CruzID, per-account cap) by design |
 | `whole_document_retrieval` | Whole Document Retrieval | Agentic KB retrieval — list and read full documents by file ID, bypassing vector/embedding search. Access-controlled via `__user__` and `__model_knowledge__`. |
 
 The former YouTube stub, Random Choice example, DateTime Converter, and
@@ -940,6 +945,18 @@ URL leaves its initiating conversation. Each Lathe registration is an independen
 lease because upstream no longer sends a stable slot. The gateway does not
 manage sandbox wake/sleep or service relaunch. See
 [the gateway contract and evidence](../api/PREVIEWS.md).
+
+**Accepted risk: the model chooses public access.** `access="public"` and
+`public_headers_acknowledged` are model-supplied arguments; Lathe asks for no
+human confirmation, and nothing beyond docstring guidance stops a public VNC
+desktop, terminal or IDE. A prompt-injected or confused model could therefore
+publish remote control of the user's sandbox. This is deliberate. Sandboxes
+are meant for wild exploration: a mistake there is recoverable with
+`destroy()` and a fresh machine, which is the point of not running agents on
+your own computer. Gating VNC alone would be theatre, since a few shell
+commands can expose a terminal or desktop through any `http:<port>` or an
+outbound tunnel. The real boundary is what the user puts in the sandbox: do not
+log in to accounts there that you would not hand to a stranger with the URL.
 
 The gateway supports WebSockets, service workers on fresh nonce origins, and
 server-managed application cookies. JavaScript-managed original cookie names
@@ -1287,7 +1304,7 @@ Slides are scope-ready in the capability registry but have no handlers yet.
 - `google_client_id` — Google OAuth client ID
 - `google_client_secret` — Google OAuth client secret
 - `base_url` — OWUI base URL for the OAuth callback (e.g. `https://chat.bayleaf.dev`)
-- `enabled_capabilities` — Comma-separated capability ceiling (default: `drive.readonly`)
+- `enabled_capabilities` — Comma-separated capability ceiling (default: `drive.readonly`). Production read back 2026-11-21: `drive.readonly,gmail.readonly,calendar.readonly,spreadsheets.readonly`, so no GWS write channel (calendar invites, drafts) is live
 
 ### Tool Valves (credentials configured in admin UI)
 

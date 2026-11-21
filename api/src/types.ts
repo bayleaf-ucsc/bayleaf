@@ -87,6 +87,7 @@ export interface Bindings {
   OIDC_ISSUER: string;             // e.g. "https://cilogon.org" or "https://accounts.google.com"
   OIDC_SCOPES: string;             // e.g. "openid email profile org.cilogon.userinfo"
   OIDC_AUTHORIZE_PARAMS: string;   // Extra query params for /authorize (e.g. "idphint=urn:mace:incommon:ucsc.edu")
+  OIDC_REQUIRED_IDP?: string;      // If set, userinfo `idp` must equal it (CILogon; the hint above is only a preselection)
   OIDC_LOGIN_BUTTON_TEXT: string;  // e.g. "Sign in with UCSC"
   
   // Campus Pass configuration

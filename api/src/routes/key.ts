@@ -23,8 +23,14 @@ import { getActiveRow, provisionToken } from '../provision';
 
 export const keyRoutes = new OpenAPIHono<AppEnv>();
 
-/** Session-required middleware for all /key routes */
+/**
+ * Session-required middleware for all /key routes. Cookie-authenticated writes
+ * must carry the BayLeaf Origin (the index.ts policy, as in grants and rooms);
+ * SameSite=Lax already blocks cross-site use, this also stops same-site hosts.
+ */
 keyRoutes.use('/key', async (c, next) => {
+  if (c.req.header('Origin') !== new URL(c.req.url).origin)
+    return c.json({ error: { message: 'Submit from the dashboard.', code: 403 } }, 403);
   const session = await getSession(c);
   if (!session) return c.json({ error: 'Unauthorized' }, 401);
   c.set('session', session);

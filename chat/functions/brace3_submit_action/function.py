@@ -23,6 +23,11 @@ CANVAS_ORIGIN = "https://canvas.ucsc.edu"
 API_ROOT = f"{CANVAS_ORIGIN}/api/v1"
 COLLAPSE_RESULT_AFTER_BYTES = 256
 
+# Provenance: the transcript is built from the student's stored chat, which OWUI
+# lets its owner edit (assistant turns included; see chat/DESIGN.md on chats as
+# user-malleable documents). The upload is the student's submitted document,
+# not evidence of what the model said. Grade it as authored work.
+
 
 def assignment_id_from_url(value):
     url = urlsplit(value.strip())

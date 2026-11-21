@@ -260,6 +260,8 @@
     "OIDC_ISSUER": "https://cilogon.org",
     "OIDC_SCOPES": "openid email profile org.cilogon.userinfo",
     "OIDC_AUTHORIZE_PARAMS": "idphint=urn:mace:incommon:ucsc.edu",
+    // idphint only preselects; users can edit it. This is the enforced check.
+    "OIDC_REQUIRED_IDP": "urn:mace:incommon:ucsc.edu",
     "OIDC_LOGIN_BUTTON_TEXT": "Sign in with UCSC",
 
     // Campus Pass: allow on-campus users to access without personal API keys

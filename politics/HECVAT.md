@@ -388,7 +388,7 @@ See START HERE section above.
 
 - **DigitalOcean**: App Platform, Managed PostgreSQL 17, Spaces. Holds user accounts, conversation histories, file uploads. Under DO's published DPA.
 - **Cloudflare**: Workers, D1, KV, DNS, TLS. Holds API key mappings; all traffic transits Cloudflare's edge. Under Cloudflare's published DPA.
-- **OpenRouter**: LLM gateway. Prompts/completions in transit. ZDR providers only (enforced by OpenRouter configuration).
+- **OpenRouter**: LLM gateway. Prompts/completions in transit. ZDR providers only, enforced by the OpenRouter account's ZDR-only setting; the API additionally overwrites `provider.zdr: true` and `data_collection: "deny"` on every forwarded request, regardless of caller input, so the guarantee is visible in source.
 - **Tinfoil**: Active API Sealed confidential inference. The compatible client
   verifies attestation and encrypts the requested model and body; BayLeaf relays
   ciphertext and cannot inspect either. Non-streaming usage metadata may reveal
@@ -683,7 +683,7 @@ No custom DPAs or FERPA addenda are in place with these parties beyond their sta
 
 **Answer:** Yes.
 
-**Additional Information:** Design principles from `SECURITY.md §7`: proxy indirection (users never hold raw provider keys), fail-closed multi-backend inference, a fail-closed open-weight model policy for API plaintext, reliance on Tinfoil's current open-weight Sealed catalog, caller-controlled API instructions, provider-agnostic OIDC, screen-sharing safety (API keys never displayed in plaintext), single-administrator model. Secrets never committed; TLS and at-rest encryption by default; SSO-only with no password login; stealth-toolkit pattern to limit which tools are exposed on which models.
+**Additional Information:** Design principles from `SECURITY.md §7`: proxy indirection (users never hold raw provider keys), fail-closed multi-backend inference, a fail-closed open-weight model policy for API plaintext, reliance on Tinfoil's current open-weight Sealed catalog, caller-controlled API instructions, provider-agnostic OIDC, screen-sharing safety (API keys never displayed in plaintext), single-administrator model. Secrets never committed; TLS and at-rest encryption by default; SSO-only with no password login; per-model tool binding to limit which tools are exposed on which models.
 
 ---
 
@@ -790,7 +790,7 @@ See START HERE section.
 
 **Answer:** Yes.
 
-**Additional Information:** Authentication is performed via CILogon, which is operated by Internet2 and federated with InCommon (the US R&E federation, eduGAIN-affiliated). UCSC is the asserting IdP for BayLeaf users.
+**Additional Information:** Authentication is performed via CILogon, which is operated by Internet2 and federated with InCommon (the US R&E federation, eduGAIN-affiliated). UCSC is the asserting IdP for BayLeaf users: the API rejects logins whose CILogon `idp` claim is not `urn:mace:incommon:ucsc.edu`; Chat preselects that IdP and enforces the `@ucsc.edu` email domain, but does not yet check the `idp` claim.
 
 ---
 
@@ -1894,7 +1894,7 @@ See START HERE section.
 
 **Answer:** Informally, yes: aligned with NIST AI RMF concepts and with UCSC AI Council guidance.
 
-**Additional Information:** `SECURITY.md` and `FERPA.md` capture the substantive risk analysis (data flows, contractual protections, ZDR boundary, confidential-inference boundary, model provenance, subprocessor political profile). Specific risk categories addressed: model-provider data retention (mitigated by ZDR routing or Sealed confidential inference); API plaintext use of proprietary or unverifiable models (denied by the Hugging Face provenance check); Sealed catalog composition (currently open-weight, monitored as a provider dependency rather than enforced by BayLeaf); prompt-injection via tool-using models (mitigated by stealth-toolkit pattern limiting which tools are exposed on which models and by user-in-the-loop confirmation for OAuth-scoped capabilities like GWS); environmental cost (disclosed in `DEPENDENCIES.md`); vendor lock-in (dependency audit with documented exit paths); over-reliance on upstream model providers with divergent political profiles (documented in `DEPENDENCIES.md`).
+**Additional Information:** `SECURITY.md` and `FERPA.md` capture the substantive risk analysis (data flows, contractual protections, ZDR boundary, confidential-inference boundary, model provenance, subprocessor political profile). Specific risk categories addressed: model-provider data retention (mitigated by ZDR routing or Sealed confidential inference); API plaintext use of proprietary or unverifiable models (denied by the Hugging Face provenance check); Sealed catalog composition (currently open-weight, monitored as a provider dependency rather than enforced by BayLeaf); prompt-injection via tool-using models (partially mitigated by per-model tool binding, per-chat per-capability OAuth consent for GWS with a read-only capability ceiling, and confirmation for Canvas submission; the residual GWS-plus-web-extraction exfiltration risk is disclosed to users); environmental cost (disclosed in `DEPENDENCIES.md`); vendor lock-in (dependency audit with documented exit paths); over-reliance on upstream model providers with divergent political profiles (documented in `DEPENDENCIES.md`).
 
 ---
 
@@ -2034,8 +2034,8 @@ See START HERE section.
 
 - **Transport-layer validation:** Cloudflare WAF applies managed rules including OWASP core patterns.
 - **Request-schema validation:** the API validates OpenAI-compatible chat request schemas before forwarding.
-- **Prompt-injection resistance:** tools that would take privileged actions (e.g. Google Workspace write operations via `gws_toolkit`, Canvas submissions via `brace3_submit_action`) require explicit user consent or user-in-the-loop confirmation via OWUI's event-emitter modals, not model-alone decisions. (The legacy Brace2 action was retired on 2026-09-30.)
-- **Tool-exposure minimization:** the "stealth toolkit" pattern (see `../chat/DESIGN.md §3a`) restricts which tools any given model can call. Tools that expose internal state (groups, access grants) are never exposed on general-purpose models.
+- **Prompt-injection resistance (partial):** Google Workspace access via `gws_toolkit` requires a per-chat OAuth consent for each capability (`gws_authorize`), bounded by an admin capability ceiling (`enabled_capabilities`, configured read-only); after consent the model acts without per-action confirmation. Canvas submissions via `brace3_submit_action` require an explicit user confirmation modal. A chat with both GWS read access and web extraction enabled can still be steered by injected content into sending data to an attacker-chosen URL; this "lethal trifecta" risk is disclosed to users in `../GETTING-STARTED.md` rather than mitigated in code. (The legacy Brace2 action was retired on 2026-09-30.)
+- **Tool-exposure minimization:** tools are bound per workspace model via `toolIds` and gated by per-tool access grants (see `../chat/DESIGN.md §3a`); the earlier "stealth toolkit" filter injection is retired. Tools that expose internal state (groups, access grants) are bound to the Help model and enforce their own access checks at invocation time.
 - **Rate limiting:** the `rate_limit_filter` caps requests per user (10/min, 50/hr, 100/3hr) and applies globally.
 - **Not implemented:** automated DLP scanning of user prompts for sensitive content.
 
@@ -2127,7 +2127,7 @@ See START HERE section.
 
 **Q:** Do you leverage LLM model tuning or other model validation mechanisms?
 
-**Answer:** No fine-tuning. Validation takes the form of (a) curated system prompts per workspace model, (b) `help_filter` / `brace*_filter` stealth-injection of curated tool surfaces, (c) operator-driven behavioral testing of new model/tool combinations before they are exposed to campus users.
+**Answer:** No fine-tuning. Validation takes the form of (a) curated system prompts per workspace model, (b) curated tool surfaces bound per workspace model (`toolIds`), (c) operator-driven behavioral testing of new model/tool combinations before they are exposed to campus users.
 
 **Additional Information:**
 
@@ -2805,7 +2805,7 @@ See START HERE section.
 
 **Q:** Do you have safeguards in place to protect institutional data and data privacy from unintended AI queries or processing?
 
-**Answer:** Yes. OpenRouter ZDR contracts, Tinfoil Sealed confidential inference, the API's fail-closed open-weight policy, SSO-only access, per-user isolation, rate limiting, stealth-toolkit pattern, no cross-user memory, and explicit user consent for external-action tools (GWS, Canvas submission).
+**Answer:** Yes. OpenRouter ZDR contracts, Tinfoil Sealed confidential inference, the API's fail-closed open-weight policy, SSO-only access, per-user isolation, rate limiting, per-model tool binding, no cross-user memory, and explicit user consent for external-action tools (per-chat per-capability consent for GWS, per-action confirmation for Canvas submission).
 
 **Additional Information:**
 

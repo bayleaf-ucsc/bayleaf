@@ -87,7 +87,10 @@ export async function resolveAuth(
     return { isCampusMode: false, credential: 'sandbox', userEmail: row.email, userKeyRow: row, clientIp };
   }
 
-  // Bayleaf proxy token — resolve via D1
+  // Bayleaf proxy token — resolve via D1. Stored in plaintext, unlike grant and
+  // sandbox credentials (hashed): the dashboard's Copy button and the claim flow
+  // re-deliver the existing key, which a hash cannot do. Accepted cost: a leaked
+  // D1 export yields working keys (revocable from the dashboard).
   if (providedKey.startsWith(BAYLEAF_TOKEN_PREFIX)) {
     const row = await c.env.DB.prepare(
       `SELECT ${USER_ACTIVITY_COLUMNS} FROM user_keys WHERE bayleaf_token = ? AND revoked = 0`,
