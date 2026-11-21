@@ -172,6 +172,8 @@ After the restart, you'll be back at the OpenChamber main screen, but instead of
 
 ![OpenChamber's selected GLM model and its tooltip, with the BayLeaf provider highlighted to confirm the connection.](docs-assets/openchamber-bayleaf-model.png)
 
+**Optional last step:** OpenChamber has a second, separate kind of inference provider that the BayLeaf login does not touch. Its *classification providers* are small decision models it asks quick questions about your work, powering features like Auto model selection and a permission safety net. To do that, OpenChamber says they can receive your latest message, excerpts of the recent conversation, and the details of actions the agent asks permission for. None of the built-in choices go through BayLeaf. To keep everything on BayLeaf's privacy setup, open Settings, go to **Providers → Classification providers**, and make sure **Off** is selected. Off is the default for a fresh install, but it's worth checking, especially if you ever accepted a free promotion. With it off, OpenChamber simply hides the features that need it.
+
 If you ever need to disconnect OpenChamber from the BayLeaf API (unlikely), you can use the command:
 
 ```sh

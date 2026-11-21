@@ -425,6 +425,43 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('-opencode.tool.webfetch',config['plugins'])
         self.assertNotIn('update',config)
 
+    def configure_with(self, placeholder):
+        (self.root/'credentials').mkdir(exist_ok=True)
+        (self.root/'credentials/incoming').write_text(placeholder)
+        with patch.object(m.Path,'home',return_value=self.root/'home'):
+            return m.configure()
+
+    def test_fresh_openchamber_selects_bayleaf_classifier_idempotently(self):
+        first = self.configure_with('dtn_secret_one')
+        endpoint = {'version':1,'endpoint':{**m.CLASSIFIER,'key':'dtn_secret_one'}}
+        self.assertEqual(m.read('openchamber/classification.json'), {'version':1,'source':'custom'})
+        self.assertEqual(m.read('openchamber/classifier-endpoint.json'), endpoint)
+        self.assertEqual((self.root/'openchamber/classifier-endpoint.json').stat().st_mode & 0o777, 0o600)
+        self.assertNotIn('dtn_secret', (self.root/'config/opencode/opencode.json').read_text())
+        self.assertEqual(self.configure_with('dtn_secret_one'), first)
+        self.assertEqual(m.read('openchamber/classifier-endpoint.json'), endpoint)
+
+    def test_classifier_choices_survive_and_only_our_placeholder_follows_rotation(self):
+        self.configure_with('dtn_secret_one')
+        m.atomic('openchamber/classification.json', {'version':1,'source':'off'})
+        self.configure_with('dtn_secret_two')
+        self.assertEqual(m.read('openchamber/classification.json')['source'], 'off')
+        self.assertEqual(m.read('openchamber/classifier-endpoint.json')['endpoint']['key'], 'dtn_secret_two')
+        owner = {'version':1,'endpoint':{**m.CLASSIFIER,'key':'sk-bayleaf-typed-by-owner'}}
+        m.atomic('openchamber/classifier-endpoint.json', owner)
+        self.configure_with('dtn_secret_three')
+        self.assertEqual(m.read('openchamber/classifier-endpoint.json'), owner)
+
+    def test_owner_endpoint_without_saved_source_is_not_replaced(self):
+        custom = {'version':1,'endpoint':{'url':'https://decide.example/v1','model':'mine'}}
+        m.atomic('openchamber/classifier-endpoint.json', custom)
+        self.configure_with('dtn_secret_one')
+        self.assertEqual(m.read('openchamber/classifier-endpoint.json'), custom)
+        self.assertIsNone(m.read('openchamber/classification.json'))
+        (self.root/'openchamber/classifier-endpoint.json').write_text('{corrupt')
+        self.configure_with('dtn_secret_one')
+        self.assertEqual((self.root/'openchamber/classifier-endpoint.json').read_text(), '{corrupt')
+
     def test_first_opencode_install_delegates_to_openchamber_and_reuses_binary(self):
         home=self.root/'home'
         with patch.object(m.Path,'home',return_value=home), patch.object(m,'request'), \

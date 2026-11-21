@@ -768,10 +768,33 @@ def configure():
             'projects': [{'id': 'bayleaf-workspace', 'path': workspace, 'label': 'workspace'}],
             'activeProjectId': 'bayleaf-workspace', 'themeId': 'bayleaf-light',
             'lightThemeId': 'bayleaf-light', 'themeVariant': 'light', 'useSystemTheme': False})
+    seed_classifier(key)
     inboxes = read('request.json', {}).get('inboxes_enabled') is True
     # Appended only when on, so fingerprints from before Rooms existed stay unchanged.
     rooms = ':rooms=True' if read('request.json', {}).get('rooms_enabled') is True else ''
     return hashlib.sha256((key + ':inboxes=' + str(inboxes) + rooms + json.dumps(config, sort_keys=True)).encode()).hexdigest()
+
+
+# OpenChamber's classifier (Auto routing, permission safety net) through the
+# open-weight, ZDR plaintext decisions lane (issue #168). OpenChamber reads
+# these files on every decision, so no restart is needed.
+CLASSIFIER = {'url': 'https://api.bayleaf.dev/v1/decisions', 'model': 'openrouter:cloudflare/clef-flash'}
+
+
+def seed_classifier(key):
+    """Select BayLeaf Clef only while the owner has made no classifier choice."""
+    path = ROOT / 'openchamber/classifier-endpoint.json'
+    saved = read('openchamber/classifier-endpoint.json')
+    endpoint = saved.get('endpoint') if isinstance(saved, dict) else None
+    ours = isinstance(endpoint, dict) and all(endpoint.get(k) == v for k, v in CLASSIFIER.items())
+    # Follow a reissued placeholder, but never replace a key the owner typed.
+    if ours and SANDBOX_PLACEHOLDER.fullmatch(endpoint.get('key', '')) and endpoint['key'] != key:
+        atomic('openchamber/classifier-endpoint.json', {'version': 1, 'endpoint': {**CLASSIFIER, 'key': key}})
+    if (ROOT / 'openchamber/classification.json').exists() or (path.exists() and not ours):
+        return
+    # Endpoint first: interrupted seeding leaves no choice behind and retries.
+    atomic('openchamber/classifier-endpoint.json', {'version': 1, 'endpoint': {**CLASSIFIER, 'key': key}})
+    atomic('openchamber/classification.json', {'version': 1, 'source': 'custom'})
 
 
 def environment(backend_port=None):

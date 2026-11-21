@@ -432,6 +432,18 @@ it does not patch the application or change desktop defaults. Later theme and
 project choices survive setup. Original global tooling/configuration is
 not overwritten; project-local configuration still participates normally.
 
+Issue #168: while the owner has no classifier choice (no
+`openchamber/classification.json`, and no `classifier-endpoint.json` other than
+BayLeaf's), setup selects OpenChamber's **Custom endpoint** classifier:
+`https://api.bayleaf.dev/v1/decisions` with `openrouter:cloudflare/clef-flash`
+and the sandbox placeholder as its bearer key (0600, never sent to the browser,
+substituted only by Daytona egress). This enables Auto routing and the permission
+safety net through the open-weight ZDR decisions lane; classification receives
+recent message excerpts and permission-action details. An Off choice or another
+provider survives setup. A reissued placeholder updates only an endpoint that is
+still BayLeaf's and still holds a placeholder. Clef probabilities are heuristics,
+not authorization guarantees.
+
 The ordinary owner key intentionally delegates broad API authority to code
 running as that sandbox owner. It is never placed in argv, breadcrumbs, logs,
 browser URLs, or setup stdout. Inference stays on BayLeaf's ZDR path; sandbox
