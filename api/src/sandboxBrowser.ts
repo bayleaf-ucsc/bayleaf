@@ -12,7 +12,7 @@ import { getAccountRow, activeSandboxCredential, ensureSandboxCredential, revoke
 import { DAYTONA_DEFAULT_API_URL, DAYTONA_DEFAULT_PROXY_URL } from './constants';
 import { persistentSandboxParams } from './daytona';
 import { registerBrowserPreview, revokeUserPreview, previewsEnabled } from './routes/previews';
-import { SERVICE_DEFS, serviceDef, type ServiceId, type ServiceDef } from './serviceDefs';
+import { SERVICE_DEFS, serviceDef, managedAppAuth, type ServiceId, type ServiceDef } from './serviceDefs';
 
 const LINK_SECONDS = 24 * 3600;
 const SETUP_SECONDS = 20 * 60;
@@ -31,6 +31,7 @@ interface Operation {
   email: string;
   operation: string;
   ownerKeyHash: string;
+  appAuthVersion?: 2; // Older operations must finish with the password already uploaded.
   phase: Phase;
   step: Step;
   deadline: number;
@@ -157,7 +158,8 @@ const dueAt = (op: Operation) => op.phase === 'ready' ? op.deadline * 1000 :
   op.phase === 'opening' ? Math.min(op.nextAt ?? 0, op.setupDeadline * 1000, op.deadline * 1000) :
   !op.invalidated || op.cleanupPending ? op.nextAt ?? 0 : Infinity;
 
-// Reconstructible per-operation application credential, never DO metadata.
+// Reconstructible application credential, never DO metadata. OpenCode Web
+// keeps it across link generations so renewing access doesn't interrupt a turn.
 // Never returned in management responses. Apps may expose their own WS token
 // through the authenticated application (ttyd /token).
 // Purpose-separated from preview encryption/session signing.
@@ -165,8 +167,10 @@ async function managedAppSecret(env: Bindings, op: Operation): Promise<string> {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey('raw', encoder.encode(env.PREVIEWS_SECRET),
     {name:'HMAC', hash:'SHA-256'}, false, ['sign']);
-  const bytes = await crypto.subtle.sign('HMAC', key,
-    encoder.encode(`bayleaf:${op.service}:bootstrap:v1:${op.operation}:${op.ownerKeyHash}`));
+  const context = op.service === 'opencode-web' && op.appAuthVersion === 2
+    ? `bayleaf:${op.service}:bootstrap:v2:${op.ownerKeyHash}`
+    : `bayleaf:${op.service}:bootstrap:v1:${op.operation}:${op.ownerKeyHash}`;
+  const bytes = await crypto.subtle.sign('HMAC', key, encoder.encode(context));
   return Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2,'0')).join('');
 }
 
@@ -387,6 +391,7 @@ export class SandboxBrowser {
         // Link lifetime is independent of compute and the bounded installer.
         const deadline = now() + LINK_SECONDS;
         const op: Operation = { email, service: def.id, operation: crypto.randomUUID(), ownerKeyHash: hash,
+          ...(def.id === 'opencode-web' ? { appAuthVersion: 2 as const } : {}),
           phase: 'opening', step: 'discover', progress: 'locating_sandbox', deadline,
           setupDeadline: Math.min(now() + SETUP_SECONDS, deadline), updatedAt: now(), startedAt: now(), restart: u.pathname === '/restart',
           previousFailure: previous?.phase === 'failed' ? { at:previous.updatedAt,
@@ -545,7 +550,7 @@ export class SandboxBrowser {
               if (!access?.placeholder) fail('sandbox_access_unavailable');
               await upload(this.env, id, ROOT, 'credentials/incoming', access!.placeholder!);
             }
-            if (['jupyter', 'ttyd'].includes(def.id)) {
+            if (managedAppAuth(def.slot)) {
               await upload(this.env, id, ROOT, 'credentials/app-secret', await managedAppSecret(this.env, op));
             }
             if (def.id === 'jupyter') await upload(this.env, id, ROOT, 'jupyter-adapter.py', jupyterSource);
@@ -605,7 +610,7 @@ export class SandboxBrowser {
               if (!r.ok) fail('preview_unavailable');
               const signed = await r.json() as { url: string };
               const preview = await registerBrowserPreview(this.env, op.email, signed.url, op.deadline, op.ownerKeyHash, def.slot,
-                ['jupyter','ttyd'].includes(def.id) ? await managedAppSecret(this.env, op) : undefined);
+                managedAppAuth(def.slot) ? await managedAppSecret(this.env, op) : undefined);
               if (preview instanceof Response) fail('preview_unavailable');
               else {
                 // The gateway's post-login redirect uses the same fixed landing path.

@@ -164,7 +164,7 @@ Desktop's Toolbox-managed activation does not run this installer.
 
 Use `BAYLEAF_API_KEY` when present. MCP children without it read the existing
 managed `credentials/owner-key` from fixed BayLeaf service locations, in order
-browser, ttyd, jupyter, code-server, dufs. No new credential
+browser, opencode-web, ttyd, jupyter, code-server, dufs. No new credential
 copy is persisted. Files must be regular, same-UID, mode 0600 or stricter, bounded
 and not final-component symlinks. An invalid present environment/file fails closed.
 Literal `dtn_secret_` placeholders are preserved for Daytona HTTPS substitution.

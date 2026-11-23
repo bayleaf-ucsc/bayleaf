@@ -1,5 +1,36 @@
 # Browser sandbox lifecycle
 
+**OpenCode Web deployed 2026-11-23:** the Sandboxes dashboard adds a
+second AI agent app, `opencode-web`. It installs a verified OpenCode 2.4.1
+Linux amd64 package into its own state root, serves on reserved port 8795,
+and uses the same BayLeaf discovery, provider, plugin and shared CLI/MCP
+bootstrap as OpenChamber. The apps share `~/workspace` but not histories or
+settings. Credential custody, machine provisioning (`daytona-medium`) and
+sleep policy are unchanged. The private `__opencode-web` slot injects
+native Basic auth after the existing owner/origin checks. The app password
+is tied to the sandbox credential, not the preview link, so link renewal
+alone does not restart the app. Existing first-release runtimes migrate once
+on their next deliberate setup. The browser does not
+need an OpenCode pairing cookie. No new public API, migration, desktop setup,
+or BayLeaf Chat tool is introduced. The legacy `/sandbox/browser/*` HTTP routes
+continue to operate on OpenChamber.
+
+API Worker `72b01f88-2463-43c5-8b6b-295aff03af68`; Sandboxes Worker
+`a4f15dac-295e-409a-b378-d06205d65cca`. Public readback confirmed the new card.
+Live qualification in the operator's signed-in OpenChamber browser panel:
+first setup reached ready in 18 seconds with OpenChamber already running.
+The private link opened native OpenCode without separate pairing; the new
+session used `~/workspace` and streamed a BayLeaf DeepSeek turn that invoked
+BayLeaf Web Search and returned an IANA source. A separate unauthenticated
+API read got 401. Left both apps running; independent stop/reopen was not
+exercised live.
+
+Follow-up API version `538ab810-219c-496a-8656-85d743b0a0b9` keeps the
+app password across relinks and adds the OpenCode Web credential location
+to the shared CLI/MCP fallback. Offline regression suites passed. Deployment
+did not restart any sandbox app; existing installs adopt the changes on
+their next deliberate setup.
+
 **Desktop (deployed 2026-10-24):** a private `computeruse`-driver service that
 starts Daytona's own noVNC desktop through Toolbox instead of the installer and
 never creates a sandbox. See [`DESKTOP.md`](DESKTOP.md).

@@ -9,7 +9,7 @@ import type { AppEnv, Bindings } from '../types';
 import { getSession } from '../utils/session';
 import { PreviewRegistrationSchema, PreviewRegistrationResponseSchema, PreviewLabelSchema, PreviewUpstreamHeadersSchema } from '../schemas';
 import { upstreamCookies, wrapApplicationCookies } from '../previewCookies';
-import { managedSlot, managedAccess, managedLanding } from '../serviceDefs';
+import { managedSlot, managedAccess, managedLanding, managedAppAuth } from '../serviceDefs';
 import { SERVICE_ORIGIN } from '../serviceSessions';
 import { diagnosticHeaders, publicDiagnosticPage } from '../templates/diagnostics';
 
@@ -385,13 +385,13 @@ export async function issueDesktopEmbed(env: Bindings, email: string): Promise<{
 
 export async function registerBrowserPreview(env: Bindings, email: string, url: string, expiresAt: number, ownerKeyHash: string, slot = '__browser', appSecret?: string) {
   if (env.BROWSER_SANDBOX_ENABLED !== 'true' || !managedSlot(slot)) return failure(503);
-  const requiresAppSecret = ['__jupyter','__ttyd'].includes(slot);
-  if (requiresAppSecret !== (appSecret !== undefined) || (appSecret !== undefined && !/^[a-f0-9]{64}$/.test(appSecret))) return failure(400);
+  const auth = managedAppAuth(slot);
+  if (!!auth !== (appSecret !== undefined) || (appSecret !== undefined && !/^[a-f0-9]{64}$/.test(appSecret))) return failure(400);
   return registerPreview(env, { ...apiPolicy(env), id: '__browser' }, {
     owner: { subject: email, email }, upstream_url: url, access: managedAccess(slot),
-    ...(appSecret ? { upstream_headers: slot === '__jupyter'
+    ...(appSecret ? { upstream_headers: auth === 'token'
       ? { Authorization: `token ${appSecret}` }
-      : { Authorization: `Basic ${btoa('bayleaf:' + appSecret)}` } } : {}),
+      : { Authorization: `Basic ${btoa(`${auth}:${appSecret}`)}` } } : {}),
   }, slot, { expiresAt, ownerKeyHash });
 }
 

@@ -49,6 +49,10 @@ SERVICES = {
         'install': 'install', 'configure': 'configure', 'prepare': 'prepare_openchamber',
         'start': 'start_openchamber', 'bootstrap': 'bootstrap', 'health': 'health_openchamber',
         'health_path': '/health', 'starting': 'starting_openchamber'},
+    'opencode-web': {'release': 'opencode-web-2.4.1-v1', 'port': 8795, 'directory': 'opencode-web',
+        'install': 'install_opencode_web', 'configure': 'configure_opencode_web', 'prepare': 'prepare_plain_service',
+        'start': 'start_opencode_web', 'bootstrap': 'bootstrap_opencode_web', 'health': 'health_opencode_web',
+        'health_path': '/api/info', 'starting': 'starting_opencode_web'},
     'code-server': {'release': 'code-server-managed-v1', 'port': 8791, 'directory': 'code-server',
         'install': 'install_code_server', 'configure': 'configure_code_server', 'prepare': 'prepare_plain_service',
         'start': 'start_code_server', 'bootstrap': 'bootstrap_plain_service', 'health': 'health_code_server',
@@ -259,6 +263,8 @@ def health():
             target = urllib.request.Request(target, headers={'Authorization':'token '+(ROOT / 'credentials/app-secret').read_text().strip()})
         if SERVICE == 'ttyd':
             target = urllib.request.Request(target, headers={'Authorization':'Basic '+ttyd_token()})
+        if SERVICE == 'opencode-web':
+            target = urllib.request.Request(target, headers={'Authorization':opencode_basic(managed_app_secret())})
         with opener.open(target, timeout=3) as response:
             data = json.loads(response.read(65536))
         return adapter('health', data)
@@ -268,6 +274,10 @@ def health():
 
 def health_openchamber(data):
     return isinstance(data, dict) and isinstance(data.get('openchamberVersion'), str) and data.get('isOpenCodeReady') is True
+
+
+def health_opencode_web(data):
+    return isinstance(data, dict) and data.get('version') == OPENCODE_WEB_VERSION
 
 
 def health_code_server(data):
@@ -419,26 +429,51 @@ def verified_archive(repo, asset_name, stage):
         digest = asset.get('digest', '')
         if asset.get('browser_download_url') != url or not re.fullmatch(r'sha256:[0-9a-f]{64}', digest):
             raise ValueError('digest')
-        archive = stage / 'archive.tar.gz'
-        actual = hashlib.sha256()
-        deadline = time.monotonic() + 600
-        size = 0
-        with urllib.request.urlopen(url, timeout=30) as response, archive.open('wb') as output:
-            while chunk := response.read(1024*1024):
-                size += len(chunk)
-                if size > MAX_ARCHIVE_BYTES or time.monotonic() > deadline:
-                    raise ValueError('download limit')
-                actual.update(chunk)
-                output.write(chunk)
-        if actual.hexdigest() != digest[7:]:
-            raise ValueError('checksum')
-        unpack = stage / 'unpack'
-        extract_checked_archive(archive, unpack)
-        return unpack, {'tag': tag, 'asset': name, 'sha256': digest[7:]}
+        return verified_tarball(url, stage, hashlib.sha256(), bytes.fromhex(digest[7:])), \
+            {'tag': tag, 'asset': name, 'sha256': digest[7:]}
     except Failure:
         raise
     except Exception:
         raise Failure('release_verification_failed') from None
+
+
+def verified_tarball(url, stage, actual, digest):
+    archive = stage / 'archive.tar.gz'
+    deadline = time.monotonic() + 600
+    size = 0
+    with urllib.request.urlopen(url, timeout=30) as response, archive.open('wb') as output:
+        while chunk := response.read(1024*1024):
+            size += len(chunk)
+            if size > MAX_ARCHIVE_BYTES or time.monotonic() > deadline:
+                raise ValueError('download limit')
+            actual.update(chunk)
+            output.write(chunk)
+    if actual.digest() != digest:
+        raise ValueError('checksum')
+    unpack = stage / 'unpack'
+    extract_checked_archive(archive, unpack)
+    return unpack
+
+
+OPENCODE_WEB_VERSION = '2.4.1'
+OPENCODE_WEB_INTEGRITY = 'FYQAnneVlLmqy862674vvRVkj8yHuZAFHJGV3UCGQxo8aKG58IHPKrspbxruVajnIEpb0t8PeO63H/oW4vJG5A=='
+
+
+def verified_opencode_web(_repo, _asset_name, stage):
+    if platform.system() != 'Linux' or platform.machine() not in ('x86_64', 'amd64'):
+        raise Failure('unsupported_architecture')
+    asset = f'cli-linux-x64-{OPENCODE_WEB_VERSION}.tgz'
+    url = 'https://registry.npmjs.org/@opencode/cli-linux-x64/-/' + asset
+    try:
+        unpack = verified_tarball(url, stage, hashlib.sha512(), base64.b64decode(OPENCODE_WEB_INTEGRITY))
+        return unpack, {'tag': OPENCODE_WEB_VERSION, 'asset': asset, 'sha512': OPENCODE_WEB_INTEGRITY}
+    except Exception:
+        raise Failure('release_verification_failed') from None
+
+
+def install_opencode_web(progress):
+    return install_archive(progress, None, None, 'bin/opencode', lambda _: 'package',
+        'installing_opencode', free_bytes=1024**3, memory_bytes=2*1024**3, download=verified_opencode_web)
 
 
 def install_code_server(progress):
@@ -483,7 +518,7 @@ def install_ttyd(progress):
         'installing_ttyd', free_bytes=16*1024**2, download=verified_ttyd)
 
 
-def ttyd_secret():
+def managed_app_secret():
     path = ROOT / 'credentials/app-secret'
     try:
         path.chmod(0o600)
@@ -496,13 +531,13 @@ def ttyd_secret():
 
 
 def ttyd_token():
-    return base64.b64encode(('bayleaf:' + ttyd_secret()).encode()).decode()
+    return base64.b64encode(('bayleaf:' + managed_app_secret()).encode()).decode()
 
 
 def configure_ttyd():
     accept_placeholder()
     (Path.home() / 'workspace').mkdir(parents=True, exist_ok=True)
-    return hashlib.sha256(ttyd_secret().encode()).hexdigest()
+    return hashlib.sha256(managed_app_secret().encode()).hexdigest()
 
 
 def start_ttyd(backend_port):
@@ -512,7 +547,7 @@ def start_ttyd(backend_port):
     # /token intentionally gives the authenticated owner the WS AuthToken.
     # Credentials stay out of setup commands/logs, but ttyd requires local argv.
     return [str(ROOT/'releases'/RELEASE/'ttyd'), '--port', str(PORT),
-        '--interface', '0.0.0.0', '--writable', '--credential', 'bayleaf:'+ttyd_secret(),
+        '--interface', '0.0.0.0', '--writable', '--credential', 'bayleaf:'+managed_app_secret(),
         '--cwd', str(Path.home()/'workspace'), '--debug', '1', '/bin/bash'], service_environment()
 
 
@@ -700,17 +735,9 @@ def accept_placeholder():
         raise Failure('credential_invalid')
 
 
-def configure():
-    incoming = ROOT / 'credentials/incoming'
-    credential = ROOT / 'credentials/owner-key'
-    if incoming.exists():
-        os.chmod(incoming, 0o600)
-        os.replace(incoming, credential)
-    if not credential.exists():
-        raise Failure('credential_missing')
-    key = credential.read_text().strip()
-    if not re.fullmatch(r'dtn_secret_[A-Za-z0-9_-]+', key):
-        raise Failure('credential_invalid')
+def configure_agent():
+    accept_placeholder()
+    key = (ROOT / 'credentials/owner-key').read_text().strip()
     config = read('config/opencode/opencode.json', {})
     config.setdefault('websearch', {'provider':'bayleaf'})
     plugins = config.setdefault('plugins', [])
@@ -735,6 +762,15 @@ def configure():
     # Fresh Daytona snapshots need not contain the shared working directory.
     # The exec API creates it too, but browser-first setup must be independent.
     (Path.home() / 'workspace').mkdir(parents=True, exist_ok=True)
+    inboxes = read('request.json', {}).get('inboxes_enabled') is True
+    # Appended only when on, so fingerprints from before Rooms existed stay unchanged.
+    rooms = ':rooms=True' if read('request.json', {}).get('rooms_enabled') is True else ''
+    fingerprint = hashlib.sha256((key + ':inboxes=' + str(inboxes) + rooms + json.dumps(config, sort_keys=True)).encode()).hexdigest()
+    return key, fingerprint
+
+
+def configure():
+    key, fingerprint = configure_agent()
     # Custom themes are supported upstream, so the pinned application stays intact.
     if not (ROOT / 'openchamber/themes/bayleaf-light.json').exists():
         atomic('openchamber/themes/bayleaf-light.json', {
@@ -769,10 +805,12 @@ def configure():
             'activeProjectId': 'bayleaf-workspace', 'themeId': 'bayleaf-light',
             'lightThemeId': 'bayleaf-light', 'themeVariant': 'light', 'useSystemTheme': False})
     seed_classifier(key)
-    inboxes = read('request.json', {}).get('inboxes_enabled') is True
-    # Appended only when on, so fingerprints from before Rooms existed stay unchanged.
-    rooms = ':rooms=True' if read('request.json', {}).get('rooms_enabled') is True else ''
-    return hashlib.sha256((key + ':inboxes=' + str(inboxes) + rooms + json.dumps(config, sort_keys=True)).encode()).hexdigest()
+    return fingerprint
+
+
+def configure_opencode_web():
+    _, fingerprint = configure_agent()
+    return hashlib.sha256((fingerprint + ':' + managed_app_secret()).encode()).hexdigest()
 
 
 # OpenChamber's classifier (Auto routing, permission safety net) through the
@@ -797,7 +835,7 @@ def seed_classifier(key):
     atomic('openchamber/classification.json', {'version': 1, 'source': 'custom'})
 
 
-def environment(backend_port=None):
+def agent_environment():
     env = service_environment()
     # Never inherit an external-server attachment from unrelated sandbox work.
     for key in ['OPENCODE_HOST', 'OPENCODE_SKIP_START', 'OPENCHAMBER_SKIP_OPENCODE_START',
@@ -807,6 +845,11 @@ def environment(backend_port=None):
     for key, folder in [('XDG_CONFIG_HOME','config'), ('XDG_DATA_HOME','data'),
                         ('XDG_CACHE_HOME','cache'), ('XDG_STATE_HOME','state')]:
         env[key] = str(ROOT / folder)
+    return env
+
+
+def environment(backend_port=None):
+    env = agent_environment()
     prefix = ROOT / 'releases' / RELEASE
     bins = prefix / 'bin'
     env.update(OPENCHAMBER_DATA_DIR=str(ROOT / 'openchamber'),
@@ -824,6 +867,23 @@ def environment(backend_port=None):
         env.update(OPENCODE_PORT=str(backend_port), OPENCODE_PASSWORD=password,
             OPENCODE_SERVER_PASSWORD=password, BAYLEAF_OPENCODE_URL=f'http://127.0.0.1:{backend_port}')
     return env
+
+
+def opencode_basic(password):
+    return 'Basic ' + base64.b64encode(('opencode:' + password).encode()).decode()
+
+
+def start_opencode_web(_backend_port):
+    env = agent_environment()
+    password = managed_app_secret()
+    env.update(OPENCODE_PASSWORD=password, OPENCODE_SERVER_PASSWORD=password,
+        BAYLEAF_OPENCODE_URL=f'http://127.0.0.1:{PORT}')
+    executable = ROOT / 'releases' / RELEASE / 'bin/opencode'
+    return [str(executable), 'serve', '--hostname', '0.0.0.0', '--port', str(PORT)], env
+
+
+def bootstrap_opencode_web(_backend_port, operation, report):
+    bootstrap(PORT, operation, report=report, password=managed_app_secret())
 
 
 def ensure_opencode(operation):
@@ -846,11 +906,12 @@ def ensure_opencode(operation):
         raise Failure('opencode_installation_failed') from None
 
 
-def bootstrap(backend_port, operation, origin='https://api.bayleaf.dev/sandbox', report=lambda step: None):
+def bootstrap(backend_port, operation, origin='https://api.bayleaf.dev/sandbox', report=lambda step: None, password=None):
     """Register the V2 integration and credential. No secrets in argv/output."""
-    password = read('credentials/opencode-password.json')
+    if password is None:
+        password = read('credentials/opencode-password.json')
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    authorization = 'Basic ' + base64.b64encode(('opencode:'+password).encode()).decode()
+    authorization = opencode_basic(password)
     def api(path, body=None, method=None):
         # OpenChamber can open this location before discovery finishes. Connect
         # and wait here: the server default becoming ready is not workspace readiness.

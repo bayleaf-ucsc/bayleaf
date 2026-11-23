@@ -42,12 +42,17 @@ try {
   assert.equal(await credential({ BAYLEAF_API_KEY: key }, dir), key);
   await rejects(() => credential({}, dir), 'credential_missing_or_invalid');
   await rejects(() => credential({ BAYLEAF_API_KEY: 'bad' }, dir), 'credential_missing_or_invalid');
-   const folder = join(dir, '.local/share/bayleaf/jupyter/credentials');
+  const folder = join(dir, '.local/share/bayleaf/jupyter/credentials');
   await mkdir(folder, { recursive: true });
   await writeFile(join(folder, 'owner-key'), key, { mode: 0o600 });
   assert.equal(await credential({}, dir), key);
   await chmod(join(folder, 'owner-key'), 0o644);
   await rejects(() => credential({}, dir), 'credential_unavailable');
+  const openCodeOnly = join(dir, 'opencode-only');
+  const openCodeCreds = join(openCodeOnly, '.local/share/bayleaf/opencode-web/credentials');
+  await mkdir(openCodeCreds, { recursive: true });
+  await writeFile(join(openCodeCreds, 'owner-key'), 'dtn_secret_opencode_fixture', { mode: 0o600 });
+  assert.equal(await credential({}, openCodeOnly), 'dtn_secret_opencode_fixture');
   await rejects(() => c.call('click', { x: 1, y: 2 }), 'session_required');
   await c.call('open_session');
   const session = JSON.parse(await readFile(store.path, 'utf8'));

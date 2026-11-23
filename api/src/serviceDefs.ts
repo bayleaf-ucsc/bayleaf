@@ -24,6 +24,14 @@ export const SERVICE_DEFS = {
     errors: [...COMMON_ERRORS, 'node_22_required', 'credential_missing', 'credential_invalid',
       'provider_configuration_unavailable', 'opencode_installation_failed'],
   },
+  'opencode-web': {
+    id: 'opencode-web', root: '/home/daytona/.local/share/bayleaf/opencode-web', port: 8795,
+    slot: '__opencode-web', credential: true, memoryGiB: 2, driver: 'installer',
+    steps: [...COMMON_STEPS, 'installing_opencode', 'starting_opencode_web',
+      'waiting_for_opencode', 'connecting_bayleaf', 'loading_tools'],
+    errors: [...COMMON_ERRORS, 'credential_missing', 'credential_invalid',
+      'provider_configuration_unavailable', 'release_verification_failed', 'unsupported_architecture'],
+  },
   'code-server': {
     id: 'code-server', root: '/home/daytona/.local/share/bayleaf/code-server', port: 8791,
     slot: '__code-server', credential: true, memoryGiB: 2, driver: 'installer',
@@ -56,6 +64,8 @@ export const serviceDef = (id: unknown): ServiceDef | undefined =>
 export const managedSlot = (slot: string) => Object.values(SERVICE_DEFS).some(def => def.slot === slot);
 /** Fixed policy, never a caller-selected public/private switch. */
 export const managedAccess = (_slot: string) => 'private' as const;
+export const managedAppAuth = (slot: string) =>
+  slot === '__jupyter' ? 'token' : slot === '__ttyd' ? 'bayleaf' : slot === '__opencode-web' ? 'opencode' : null;
 /** Fixed post-login landing path for a managed slot; never caller-selected. */
 export const managedLanding = (slot: string) => {
   const def = Object.values(SERVICE_DEFS).find(def => def.slot === slot);

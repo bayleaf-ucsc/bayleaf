@@ -53,7 +53,8 @@ Reconfirm these source locations at each run. New clients join this inventory.
 | Desktop OpenChamber / OpenCode | Standard and Sealed discovery/config in `api/src/routes/wellknown.ts`; setup guidance in `GETTING-STARTED.md` and `llms.ts`; any user-facing skill/plugin distribution identified there | What onboarding actually installs, useful advertised triggers, user consent, updates for existing installations, Standard/Sealed differences |
 | Main agent reference and HTTP docs | `api/src/routes/llms.ts` (`https://api.bayleaf.dev/llms.txt`), code-owned OpenAPI routes/schemas and `apiReference.ts` | Workflow orientation and accurate availability; exact contracts remain generated, not duplicated |
 
-OpenChamber is the primary graphical agent surface on desktop and in the sandbox;
+OpenChamber is the primary graphical agent surface on desktop. OpenCode Web
+is a second hosted surface on the same BayLeaf agent bootstrap;
 review transferability of workflows without assuming identical capabilities or
 credential boundaries. Nanobot was retired on 2026-11-04 and is excluded from
 current exposure decisions. Earlier refinement entries remain historical evidence.
