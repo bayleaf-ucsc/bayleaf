@@ -17,6 +17,32 @@ spec.loader.exec_module(m)
 
 
 class InstallerTests(unittest.TestCase):
+    def test_opencode_web_has_isolated_state_and_native_auth(self):
+        home = self.root / 'home'
+        home.mkdir()
+        secret = 'a' * 64
+        (self.root / 'credentials').mkdir()
+        (self.root / 'credentials/app-secret').write_text(secret)
+        (self.root / 'credentials/incoming').write_text('dtn_secret_synthetic')
+        with patch.object(m.Path, 'home', return_value=home), \
+                patch.object(m, 'RELEASE', m.SERVICES['opencode-web']['release']), \
+                patch.object(m, 'PORT', 8795):
+            fingerprint = m.configure_opencode_web()
+            argv, env = m.start_opencode_web(None)
+            self.assertEqual(argv[1:], ['serve', '--hostname', '0.0.0.0', '--port', '8795'])
+            self.assertNotIn(secret, ' '.join(argv))
+            self.assertEqual(env['OPENCODE_PASSWORD'], secret)
+            self.assertEqual(env['BAYLEAF_API_KEY'], 'dtn_secret_synthetic')
+            self.assertEqual(env['XDG_DATA_HOME'], str(self.root / 'data'))
+            self.assertEqual(env['BAYLEAF_OPENCODE_URL'], 'http://127.0.0.1:8795')
+            self.assertTrue((home / 'workspace').is_dir())
+            self.assertFalse((self.root / 'openchamber').exists())
+            with patch.object(m, 'bootstrap') as bootstrap:
+                m.bootstrap_opencode_web(None, 'test', None)
+                bootstrap.assert_called_once_with(8795, 'test', report=None, password=secret)
+            (self.root / 'credentials/app-secret').write_text('b' * 64)
+            self.assertNotEqual(m.configure_opencode_web(), fingerprint)
+
     def test_openchamber_shared_mcp_config_and_owner_conflict(self):
         home = self.root/'home'
         executable = home/'.local/share/bayleaf/cli/bayleaf.mjs'

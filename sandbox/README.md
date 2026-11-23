@@ -29,6 +29,11 @@ from its card and opened in a separate tab. The page CSP permits no frames.
 The existing embed adapter/gateway capability remains available but is not used
 by this page.
 
+**OpenCode Web deployed 2026-11-23:** a second AI agent card, alongside
+OpenChamber. It shares project files and the BayLeaf allowance, but not agent
+conversations or app settings. It uses the existing private gateway and managed
+setup/stop lifecycle. New sandbox sizing stays `daytona-medium`.
+
 ## Managed-service seams
 
 - `api/src/serviceDefs.ts` provides orchestration metadata: service ID, state root,

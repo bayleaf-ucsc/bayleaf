@@ -15,8 +15,9 @@ implementation names. Use them where operational precision matters, not as
 service branding. This playbook is for operators, never ship it to sandbox agents.
 
 Read `api/AGENTS.md` and `api/SANDBOX-BROWSER.md` for the canonical contracts.
-OpenChamber is the primary graphical agent surface on desktop and in the sandbox;
-favor transferable workflows while respecting their different execution boundaries.
+OpenChamber is the primary graphical agent surface on desktop. Hosted OpenCode
+Web is a second interface alongside hosted OpenChamber; favor
+transferable project instructions and skills without assuming shared app state.
 Nanobot was retired on 2026-11-04. Earlier evidence below is historical, not a
 requirement to rebuild, publish, install or restart its retired adapter.
 `api/sandbox-plugin` is a submodule of `bayleaf-ucsc/opencode-sandbox`, owning
@@ -48,9 +49,9 @@ config, and deployment. There is no npm publication workflow for the plugin.
    behavior. The internal plugin event stream has no HTTP connection-marker event:
    waiting for one hangs. Subscribe before requesting permission to avoid reply races.
 5. Fresh setup installs current OpenChamber in an updater-compatible global npm
-   prefix and delegates OpenCode installation to OpenChamber. `RELEASE` versions
-   our layout, not application versions. Do not add an independent OpenCode pin
-   or binary override. Test in an isolated HOME/XDG root, not the operator's service.
+   prefix and delegates its OpenCode installation to OpenChamber. Do not override
+   that binary. The separate native OpenCode Web service owns its own pinned binary,
+   state and private preview. Test in an isolated HOME/XDG root, not the operator's service.
    `scripts/test-openchamber-onboarding.py --prefix <global-prefix>` verifies the
    current upstream installer, discovery, and update-prefix ownership. Read the
    upstream module before changing this bridge: 2.1.1's web install action refuses
@@ -94,6 +95,18 @@ rebuild the derived pin and redeploy the Worker. Application rollback is a separ
 explicit operation on the user-owned installation. Preserve user files and histories.
 
 ## Evidence and refinement log
+
+- 2026-11-23 (approved OpenCode Web deploy): deployed API and then Sandboxes
+  without a plugin publication or migration. Public readback passed. After
+  operator UCSC sign-in, the OpenChamber browser panel verified managed setup,
+  native session creation and a streamed BayLeaf Web Search turn. Left the
+  app running for hands-on use; live stop/reopen was not exercised.
+
+- 2026-11-23 (OpenCode Web candidate, local): the loose Daytona signed preview
+  set an OpenCode pairing cookie but subsequent browser requests got 401.
+  The managed service reuses owner-gated upstream Basic auth instead. The
+  synthetic gateway and real OpenCode with emulated header injection passed
+  session creation; production gateway qualification remains pending.
 
 - 2026-11-04 (approved Nanobot/CollabMD retirement rollout): Deployed API
   `16453c35-0daf-4909-93b3-4cc44088f0f0` and Sandboxes

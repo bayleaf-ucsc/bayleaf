@@ -25,7 +25,7 @@ const management = {
   async managed(input) {
     calls.push(['managed', input]);
     if (input.operation === 'wake-existing' && failWake) throw Error('synthetic unavailable');
-    if (input.operation !== 'wake-existing' && !['openchamber', 'code-server', 'dufs', 'ttyd'].includes(input.service))
+    if (input.operation !== 'wake-existing' && !['openchamber', 'opencode-web', 'code-server', 'dufs', 'ttyd'].includes(input.service))
       return { status: 400, body: { error: 'invalid_operation' } };
     return { status: 200, body: { phase: 'idle', machine: 'absent' } };
   },
@@ -51,7 +51,7 @@ assert.equal(response.headers.get('Referrer-Policy'), 'strict-origin', 'native s
 let html = await response.text();
 assert(html.includes('OpenChamber'));
 assert(!/nanobot/i.test(html), 'retired agent is not advertised');
-assert(html.includes('primary graphical agent surface in both places'));
+assert(html.includes('OpenCode Web'));
 assert(html.includes('code-server'));
 assert(html.includes('Files (dufs)'));
 assert(html.includes('Shell (ttyd)'));
@@ -61,7 +61,7 @@ assert(html.includes('A small computer in the cloud'));
 assert(html.includes('install it on your own computer'));
 assert(!html.includes('App help &amp; diagnostics'));
 assert(html.includes('class="callout"'), 'retention warning is outside disclosures');
-for (const url of ['https://openchamber.dev/',
+for (const url of ['https://openchamber.dev/', 'https://opencode.ai/docs/cli/web',
   'https://github.com/coder/code-server', 'https://jupyter.org/',
   'https://github.com/sigoden/dufs', 'https://tsl0922.github.io/ttyd/']) {
   assert(html.includes('href="'+url+'">'+url+'</a>'), 'upstream URL is fully visible');
@@ -110,12 +110,13 @@ for (let i=0; i<3; i++) {
 }
 assert.equal(mutations().length, 1, 'refresh and status never repeat login wake');
 assert(html.includes('id="code-server-start"'));
+assert(html.includes('id="opencode-web-start"'));
 assert(!html.includes('screen-connect') && !html.includes('screen-frame') && !html.includes('<iframe'), 'signed-in hero remains static');
 assert(html.includes('Start with OpenChamber'));
 assert.match(html, /id="desktop-open"[^>]+target="_blank"/);
 const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(match=>match[1]);
 assert.equal(new Set(ids).size,ids.length,'service controls have unique ids');
-for (const service of ['code-server', 'dufs', 'ttyd', 'unknown']) {
+for (const service of ['opencode-web', 'code-server', 'dufs', 'ttyd', 'unknown']) {
   const path='/services/'+service;
   assert.equal((await request(path+'/status')).status,401);
   assert.equal((await request(path+'/status',{cookie:sessionCookie})).status,service!=='unknown'?200:400);

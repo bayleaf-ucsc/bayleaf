@@ -39,7 +39,21 @@ export const SERVICES = [{
   errors: {...ERRORS, node_22_required:'Your sandbox’s software needs an update. Contact BayLeaf support.',
     provider_configuration_unavailable:'Could not connect your sandbox to BayLeaf. Try again.',
     opencode_installation_failed:'OpenChamber could not install OpenCode. Retry setup to try the download again.'},
-}, {
+ }, {
+   id: 'opencode-web', name: 'OpenCode Web', endpoint: '/services/opencode-web', launch: 'Open',
+   group: 'AI agents', url: 'https://opencode.ai/docs/cli/web',
+   description: 'Use the native OpenCode web interface to work with an agent through text, files, and commands.',
+   intro: 'First launch installs OpenCode and creates your sandbox if needed.',
+   help: 'OpenCode Web uses BayLeaf inference, tools, and skills. If it opens to an empty Projects list, choose Add project and open /home/daytona/workspace.',
+   notes: ['Uses your shared BayLeaf allowance. Conversations and app settings are separate from OpenChamber and BayLeaf Chat.',
+     'Work cannot run while the sandbox is asleep. Stop app closes this interface, not other apps or detached jobs.'],
+   labels: {...LABELS, starting:'Starting OpenCode Web', installing_opencode:'Installing verified OpenCode release',
+     starting_opencode_web:'Starting OpenCode Web', waiting_for_opencode:'Waiting for OpenCode to respond',
+     connecting_bayleaf:'Connecting your BayLeaf account', loading_tools:'Loading BayLeaf tools and skills'},
+   errors: {...ERRORS, provider_configuration_unavailable:'Could not connect OpenCode to BayLeaf. Try setup again.',
+     release_verification_failed:'The OpenCode release could not be verified. Try again later.',
+     unsupported_architecture:'This managed release needs a Linux amd64 sandbox. Contact BayLeaf support.'},
+ }, {
    id: 'code-server', name: 'VS Code (code-server)', endpoint: '/services/code-server', launch: 'Open',
    group: 'Code & data', url: 'https://github.com/coder/code-server',
    description: 'Read, edit, and search code. Useful for understanding what an agent built and making your own changes.',
