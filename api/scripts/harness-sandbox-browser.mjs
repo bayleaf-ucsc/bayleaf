@@ -89,7 +89,7 @@ const credentialsUploaded=[];
 const vault = new Map();
 let failCreate=false, creationRequests=0, rejectCreate=0;
 let computerUse=[], desktopUp=false, desktopCasing='pascal', desktopStartFails=false, registeredAtDesktopStop;
-let jupyterAuth, ttydAuth, opencodeAuth, stopFails=false, stops=0;
+let jupyterAuth, ttydAuth, opencodeAuth, wrongOpencodeOrigin=false, stopFails=false, stops=0;
 const machine = () => ({ id: machineId, state, memory, public: isPublic, labels: { 'synthetic-chat': email } });
 const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
   name: 'browser-harness', modules: true, script: bundle.outputFiles[0].text,
@@ -164,6 +164,11 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
         if (u.searchParams.get('path').endsWith('request.next.json')) {
           incomingOperation = JSON.parse(text);
           assert(incomingOperation.deadline<=Math.floor(Date.now()/1000)+20*60);
+          if (u.searchParams.get('path').includes('/opencode-web/')) {
+            const preview = await db.prepare("SELECT hostname FROM preview_registrations WHERE slot='__opencode-web'").first();
+            assert(preview, 'private origin must be registered before launching OpenCode');
+            assert.equal(incomingOperation.preview_origin, `https://${preview.hostname}`);
+          } else assert.equal(incomingOperation.preview_origin, undefined);
         }
         if (u.searchParams.get('path').endsWith('credentials/incoming')) {
           assert(text.startsWith('dtn_secret_')); credentialsUploaded.push(u.searchParams.get('path'));
@@ -201,6 +206,9 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
       if (appService) return Response.json({exitCode:0,result:JSON.stringify({
         schema:1,service:wrongService?'openchamber':appService,operation:incomingOperation.operation,
         updated_at:Math.floor(Date.now()/1000),phase:'ready',ready:true,
+        ...(appService === 'opencode-web' ? {
+          preview_origin:wrongOpencodeOrigin?'https://stale.example.test':incomingOperation.preview_origin,
+        } : {}),
          port:appService==='dufs'?8790:appService==='jupyter'?8793:appService==='ttyd'?8794:appService==='opencode-web'?8795:8791,
         timeline:[{step:appService==='dufs'?'installing_dufs':'installing_code_server',at:Math.floor(Date.now()/1000)}],
       })});
@@ -622,14 +630,22 @@ try {
     assert.equal((await status()).url,sibling);
     await req(tt('__expire'));assert.equal((await(await req(tt('status'))).json()).url,undefined);
   });
-   await check('OpenCode Web uses private gateway auth for session creation without an app cookie',async()=>{
+   await check('OpenCode Web configures the private origin before readiness and gates terminal traffic',async()=>{
      const path=action=>'/__test/'+action+'?service=opencode-web';
      const sibling=(await status()).url;
      assert.equal((await worker.fetch(api+'/sandbox/expose',{method:'POST',headers:{Authorization:'Bearer sk-bayleaf-rotated',
        'Content-Type':'application/json'},body:JSON.stringify({port:8795,access:'public'})})).status,400);
      await req(path('start'),{method:'POST'});
      let op;
+     for(let i=0;i<14;i++){op=await(await req(path('__tick'))).json();if(op.url)break;}
+     assert.equal(op.step,'prepare');
+     assert.equal(op.phase,'opening');
+     assert.equal((await (await req(path('status'))).json()).url,undefined);
+     const pendingUrl=op.url, calls=previewCalls;
+     await req(path('__registration-crash'));
      for(let i=0;i<14;i++){op=await(await req(path('__tick'))).json();if(op.phase==='ready')break;}
+     assert.equal(op.url,pendingUrl,'registration replay reuses the exact origin');
+     assert.equal(previewCalls,calls);
      assert.equal(op.phase,'ready');assert.equal((await status()).url,sibling);
      const row=await db.prepare("SELECT * FROM preview_registrations WHERE slot='__opencode-web'").first();
      assert.equal(row.access,'private');
@@ -646,6 +662,14 @@ try {
      assert.equal((await post({...cookie,'X-Test-Origin':origin,Authorization:'Bearer spoofed'})).status,200);
      assert.equal(lastForwarded.authorization,'Basic '+Buffer.from('opencode:'+opencodeAuth).toString('base64'));
      assert.equal(lastForwarded.cookie,undefined,'no browser cookie required by the upstream');
+     const terminal=headers=>worker.fetch(op.url+'api/pty/fixture/connect',{headers:{...headers,Upgrade:'websocket'}});
+     assert.equal((await terminal({'X-Test-Origin':origin})).status,401);
+     assert.equal((await terminal({...cookie,'X-Test-Origin':'https://evil.test'})).status,403);
+     const socket=await terminal({...cookie,'X-Test-Origin':origin});
+     assert.equal(socket.status,101);socket.webSocket.accept();
+     assert.equal(lastForwarded.origin,origin);
+     assert.equal(lastForwarded.authorization,'Basic '+Buffer.from('opencode:'+opencodeAuth).toString('base64'));
+     socket.webSocket.close();
      const firstAuth=opencodeAuth, firstUrl=op.url;
      await req(path('__expire'));
      assert.equal((await (await req(path('status'))).json()).url,undefined);
@@ -653,7 +677,8 @@ try {
      for(let i=0;i<14;i++){op=await(await req(path('__tick'))).json();if(op.phase==='ready')break;}
      assert.equal(op.phase,'ready');
      assert.notEqual(op.url,firstUrl,'relink creates a fresh origin');
-     assert.equal(opencodeAuth,firstAuth,'relink keeps the running process password');
+     assert.equal(opencodeAuth,firstAuth,'relink keeps the app password');
+     assert.equal(incomingOperation.preview_origin,new URL(op.url).origin,'relink configures only its replacement origin');
      const fresh=await db.prepare("SELECT * FROM preview_registrations WHERE slot='__opencode-web'").first();
      const freshOrigin=new URL(op.url).origin;
      const freshSession=jwt({aud:freshOrigin,generation:fresh.generation,exp:fresh.expires_at},previewSecret);
@@ -663,6 +688,14 @@ try {
      assert.equal(lastForwarded.authorization,'Basic '+Buffer.from('opencode:'+firstAuth).toString('base64'));
      await req(path('__expire'));
      assert.equal((await status()).url,sibling);
+     wrongOpencodeOrigin=true;
+     try {
+       await req(path('start'),{method:'POST'});
+       for(let i=0;i<14;i++){op=await(await req(path('__tick'))).json();if(op.phase==='failed')break;}
+       assert.equal(op.phase,'failed');
+       assert.equal(op.error,'preview_unavailable');
+       assert.equal(await db.prepare("SELECT hostname FROM preview_registrations WHERE slot='__opencode-web'").first(),null);
+     } finally { wrongOpencodeOrigin=false; }
    });
    await check('Jupyter owner stop closes sockets, revokes access, and preserves siblings',async()=>{
     const jp=action=>'/__test/'+action+'?service=jupyter';

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Installer failure-injection tests. No network, packages, or real user files."""
 import importlib.util
+import contextlib
 import json
 import os
 import io
@@ -24,12 +25,14 @@ class InstallerTests(unittest.TestCase):
         (self.root / 'credentials').mkdir()
         (self.root / 'credentials/app-secret').write_text(secret)
         (self.root / 'credentials/incoming').write_text('dtn_secret_synthetic')
+        origin = 'https://owner-private-' + 'a' * 24 + '.bayleaf-proxies.dev'
+        m.atomic('request.json', {'preview_origin': origin})
         with patch.object(m.Path, 'home', return_value=home), \
                 patch.object(m, 'RELEASE', m.SERVICES['opencode-web']['release']), \
                 patch.object(m, 'PORT', 8795):
             fingerprint = m.configure_opencode_web()
             argv, env = m.start_opencode_web(None)
-            self.assertEqual(argv[1:], ['serve', '--hostname', '0.0.0.0', '--port', '8795'])
+            self.assertEqual(argv[1:], ['serve', '--hostname', '0.0.0.0', '--port', '8795', '--cors', origin])
             self.assertNotIn(secret, ' '.join(argv))
             self.assertEqual(env['OPENCODE_PASSWORD'], secret)
             self.assertEqual(env['BAYLEAF_API_KEY'], 'dtn_secret_synthetic')
@@ -42,6 +45,35 @@ class InstallerTests(unittest.TestCase):
                 bootstrap.assert_called_once_with(8795, 'test', report=None, password=secret)
             (self.root / 'credentials/app-secret').write_text('b' * 64)
             self.assertNotEqual(m.configure_opencode_web(), fingerprint)
+            (self.root / 'credentials/app-secret').write_text(secret)
+            fresh = origin.replace('a' * 24, 'b' * 24)
+            m.atomic('request.json', {'preview_origin': fresh})
+            self.assertNotEqual(m.configure_opencode_web(), fingerprint)
+            self.assertEqual(m.start_opencode_web(None)[0][-2:], ['--cors', fresh])
+            for invalid in (None, '*', origin + '/', origin + ':443', origin.replace('-private-', '-public-')):
+                m.atomic('request.json', {'preview_origin': invalid})
+                with self.assertRaisesRegex(m.Failure, 'preview_unavailable'):
+                    m.configure_opencode_web()
+
+    def test_opencode_web_health_requires_the_exact_preview_origin(self):
+        origin = 'https://owner-private-' + 'a' * 24 + '.bayleaf-proxies.dev'
+        m.atomic('request.json', {'preview_origin': origin})
+        m.atomic('state/runtime.json', {'release': m.RELEASE, 'configured': True})
+        opener = Mock()
+        preflight, info = Mock(), Mock()
+        info.read.return_value = json.dumps({'version': m.OPENCODE_WEB_VERSION}).encode()
+        with patch.object(m, 'SERVICE', 'opencode-web'), patch.object(m, 'alive', return_value=True), \
+                patch.object(m, 'managed_app_secret', return_value='a'*64), \
+                patch.object(m.urllib.request, 'build_opener', return_value=opener):
+            opener.open.side_effect = [contextlib.nullcontext(preflight)]
+            preflight.headers = {'Access-Control-Allow-Origin': '*'}
+            self.assertFalse(m.health())
+            preflight.headers = {'Access-Control-Allow-Origin': origin}
+            opener.open.side_effect = [contextlib.nullcontext(preflight), contextlib.nullcontext(info)]
+            self.assertTrue(m.health())
+            probe = opener.open.call_args_list[-2].args[0]
+            self.assertEqual(probe.method, 'OPTIONS')
+            self.assertEqual(probe.get_header('Origin'), origin)
 
     def test_openchamber_shared_mcp_config_and_owner_conflict(self):
         home = self.root/'home'

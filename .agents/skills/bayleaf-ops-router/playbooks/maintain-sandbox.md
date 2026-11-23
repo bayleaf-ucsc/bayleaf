@@ -96,6 +96,13 @@ explicit operation on the user-owned installation. Preserve user files and histo
 
 ## Evidence and refinement log
 
+- 2026-11-23 (approved OpenCode Web terminal rollout): unlike Nanobot's post-registration
+  reconfiguration, register the origin first so OpenCode launches once with
+  exact `--cors`. An HTTP readiness check alone missed the PTY-specific origin
+  checks. Local real 2.4.1 ticket/WS and synthetic lifecycle passed. Deployed
+  API only; no plugin publication or automatic app restart. Adam restarted
+  OpenCode Web and confirmed the terminal works in his signed-in sandbox.
+
 - 2026-11-23 (approved OpenCode Web deploy): deployed API and then Sandboxes
   without a plugin publication or migration. Public readback passed. After
   operator UCSC sign-in, the OpenChamber browser panel verified managed setup,

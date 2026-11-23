@@ -1,5 +1,25 @@
 # Browser sandbox lifecycle
 
+**OpenCode Web terminal fix (deployed 2026-11-23):** the controller registers
+the owner-gated preview before launching OpenCode, then passes only its exact
+HTTPS origin to `serve --cors`. OpenCode 2.4.1 checks the origin of terminal
+ticket requests and WebSocket upgrades against the request host or its
+configured origins. Daytona rewrites the host to loopback, so chat could
+work while terminal attachment failed. Local readiness now requires a
+preflight echoing the exact origin as well as the authenticated health check.
+The dashboard does not advertise the link until those checks pass.
+
+After rollout, use **Restart OpenCode Web** to pick up the fix on an existing
+ready link. A replacement hostname restarts only OpenCode Web to apply the
+new origin; reopening a still-valid link does not. The app password and saved
+state persist, but in-flight work in that app can be interrupted. No other app
+or shared sandbox restart is required. Local 2.4.1 terminal ticket, WebSocket,
+and shell command passed with a simulated loopback host. API Worker
+`6e2d3b9d-f75a-474d-8363-9118785bcb46` is active at 100%; rollback version
+`44942116-4be3-4de4-a4d3-2b2bd4946034`. Public API and Sandboxes readback
+passed. No app was restarted by deployment. Adam restarted OpenCode Web
+and confirmed that the terminal works in his signed-in sandbox.
+
 **OpenCode Web deployed 2026-11-23:** the Sandboxes dashboard adds a
 second AI agent app, `opencode-web`. It installs a verified OpenCode 2.4.1
 Linux amd64 package into its own state root, serves on reserved port 8795,
@@ -8,9 +28,8 @@ bootstrap as OpenChamber. The apps share `~/workspace` but not histories or
 settings. Credential custody, machine provisioning (`daytona-medium`) and
 sleep policy are unchanged. The private `__opencode-web` slot injects
 native Basic auth after the existing owner/origin checks. The app password
-is tied to the sandbox credential, not the preview link, so link renewal
-alone does not restart the app. Existing first-release runtimes migrate once
-on their next deliberate setup. The browser does not
+is tied to the sandbox credential, not the preview link. Existing first-release
+runtimes migrate once on their next deliberate setup. The browser does not
 need an OpenCode pairing cookie. No new public API, migration, desktop setup,
 or BayLeaf Chat tool is introduced. The legacy `/sandbox/browser/*` HTTP routes
 continue to operate on OpenChamber.

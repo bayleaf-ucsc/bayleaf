@@ -264,11 +264,19 @@ def health():
         if SERVICE == 'ttyd':
             target = urllib.request.Request(target, headers={'Authorization':'Basic '+ttyd_token()})
         if SERVICE == 'opencode-web':
+            origin = opencode_preview_origin()
+            # Daytona rewrites Host to loopback. Verify the running server
+            # accepts the browser's real Origin independently of that Host.
+            preflight = urllib.request.Request(target, method='OPTIONS', headers={
+                'Origin': origin, 'Access-Control-Request-Method': 'GET'})
+            with opener.open(preflight, timeout=3) as response:
+                if response.headers.get('Access-Control-Allow-Origin') != origin:
+                    return False
             target = urllib.request.Request(target, headers={'Authorization':opencode_basic(managed_app_secret())})
         with opener.open(target, timeout=3) as response:
             data = json.loads(response.read(65536))
         return adapter('health', data)
-    except (OSError, ValueError):
+    except (OSError, ValueError, Failure):
         return False
 
 
@@ -298,13 +306,15 @@ def inspect():
     runtime_events = runtime.get('timeline', []) if runtime.get('operation') == operation.get('operation') else []
     events = sorted(operation.get('timeline', []) + runtime_events,
                     key=lambda e:(e['at'], e['step'] in ('ready', 'failed')))[-40:]
+    ready = health()
     return {'schema': SCHEMA, 'service': SERVICE, 'operation': operation.get('operation'),
         'phase': operation.get('phase', 'unchecked'), 'error': operation.get('error'),
         'progress': events[-1]['step'] if events else operation.get('phase','unchecked'),
         'timeline': events, 'started_at': operation.get('started_at'),
         'updated_at': operation.get('updated_at'), 'release': RELEASE,
         'installed': read('state/installation.json', {}).get('release') == RELEASE,
-        'ready': health(), 'running': alive(runtime.get('process')), 'port': PORT}
+        'ready': ready, 'running': alive(runtime.get('process')), 'port': PORT,
+        **({'preview_origin': read('request.json', {}).get('preview_origin')} if SERVICE == 'opencode-web' and ready else {})}
 
 
 def install(progress):
@@ -808,9 +818,20 @@ def configure():
     return fingerprint
 
 
+def opencode_preview_origin():
+    origin = read('request.json', {}).get('preview_origin')
+    # The controller supplies a private preview hostname, never user input.
+    # Accept only one canonical HTTPS origin, not a URL or wildcard.
+    if not isinstance(origin, str) or len(origin) > 261 or not re.fullmatch(
+            r'https://[a-z0-9-]+-private-[a-f0-9]{24}(?:\.[a-z0-9-]+){2,}', origin):
+        raise Failure('preview_unavailable')
+    return origin
+
+
 def configure_opencode_web():
+    origin = opencode_preview_origin()
     _, fingerprint = configure_agent()
-    return hashlib.sha256((fingerprint + ':' + managed_app_secret()).encode()).hexdigest()
+    return hashlib.sha256((fingerprint + ':' + managed_app_secret() + ':' + origin).encode()).hexdigest()
 
 
 # OpenChamber's classifier (Auto routing, permission safety net) through the
@@ -879,7 +900,8 @@ def start_opencode_web(_backend_port):
     env.update(OPENCODE_PASSWORD=password, OPENCODE_SERVER_PASSWORD=password,
         BAYLEAF_OPENCODE_URL=f'http://127.0.0.1:{PORT}')
     executable = ROOT / 'releases' / RELEASE / 'bin/opencode'
-    return [str(executable), 'serve', '--hostname', '0.0.0.0', '--port', str(PORT)], env
+    return [str(executable), 'serve', '--hostname', '0.0.0.0', '--port', str(PORT),
+        '--cors', opencode_preview_origin()], env
 
 
 def bootstrap_opencode_web(_backend_port, operation, report):

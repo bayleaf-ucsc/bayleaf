@@ -159,7 +159,7 @@ const dueAt = (op: Operation) => op.phase === 'ready' ? op.deadline * 1000 :
   !op.invalidated || op.cleanupPending ? op.nextAt ?? 0 : Infinity;
 
 // Reconstructible application credential, never DO metadata. OpenCode Web
-// keeps it across link generations so renewing access doesn't interrupt a turn.
+// keeps it across link generations; the origin is configured separately.
 // Never returned in management responses. Apps may expose their own WS token
 // through the authenticated application (ttyd /token).
 // Purpose-separated from preview encryption/session signing.
@@ -512,7 +512,11 @@ export class SandboxBrowser {
               op.step = 'wake'; op.progress = 'starting_sandbox';
             }
           } else if (op.step === 'wake') {
-            if (m.state === 'started') { op.step = 'prepare'; op.progress = 'preparing_setup'; }
+            if (m.state === 'started') {
+              // OpenCode needs the exact private origin on its initial argv.
+              op.step = def.id === 'opencode-web' ? 'register' : 'prepare';
+              op.progress = def.id === 'opencode-web' ? 'registering_preview' : 'preparing_setup';
+            }
             else if (['stopped', 'archived'].includes(m.state) && !op.wakeRequested) {
               op.wakeRequested = true; await this.save(op);
               const r = await platform(this.env, `/sandbox/${encodeURIComponent(id)}/start`, 'POST');
@@ -539,13 +543,21 @@ export class SandboxBrowser {
               await computerUse(this.env, id, 'start');
             }
           } else if (op.step === 'prepare') {
+            if (def.id === 'opencode-web' && !op.url) {
+              // An in-flight operation from the previous recipe may have
+              // reached prepare before this deployment.
+              op.step = 'register'; op.progress = 'registering_preview';
+              await this.schedule(op, Date.now() + 1000);
+              return;
+            }
             await execute(this.env, id, `bash -c 'umask 077; mkdir -p ${ROOT}/credentials; chmod 700 ${ROOT} ${ROOT}/credentials'`);
             await upload(this.env, id, ROOT, 'setup.next.py', setupSource);
             // Parent-owned shared CLI; deliberate setup partitions independently
             // published adapters without changing owner credential authority.
             await upload(this.env, id, ROOT, 'cli-assets.json', JSON.stringify(sandboxCliAssets));
             await upload(this.env, id, ROOT, 'request.next.json', JSON.stringify({ operation: op.operation, deadline: op.setupDeadline,
-              restart: op.restart, inboxes_enabled: inboxesEnabled, rooms_enabled: roomsEnabled }));
+              restart: op.restart, inboxes_enabled: inboxesEnabled, rooms_enabled: roomsEnabled,
+              ...(def.id === 'opencode-web' && op.url ? { preview_origin: new URL(op.url).origin } : {}) }));
             if (def.credential) {
               if (!access?.placeholder) fail('sandbox_access_unavailable');
               await upload(this.env, id, ROOT, 'credentials/incoming', access!.placeholder!);
@@ -589,7 +601,13 @@ export class SandboxBrowser {
               }
               if (result.phase === 'ready' && result.ready === true && result.port === def.port &&
                   (result.service === def.id || (def.id === 'openchamber' && result.service === undefined))) {
-                op.step = 'register'; op.progress = 'registering_preview';
+                if (def.id === 'opencode-web' && op.url) {
+                  if (result.preview_origin !== new URL(op.url).origin || await this.linkDeadline(op) <= now())
+                    fail('preview_unavailable');
+                  op.phase = 'ready'; op.progress = 'ready';
+                } else {
+                  op.step = 'register'; op.progress = 'registering_preview';
+                }
               }
             }
           } else if (op.step === 'register') {
@@ -604,7 +622,6 @@ export class SandboxBrowser {
               const url = `https://${existing.hostname}/`;
               op.url = 'landing' in def ? new URL(def.landing, url).href : url;
               op.deadline = Math.min(op.deadline, existing.expires_at);
-              op.phase = 'ready'; op.progress = 'ready';
             } else {
               const r = await platform(this.env, `/sandbox/${encodeURIComponent(id)}/ports/${def.port}/signed-preview-url?expiresInSeconds=${Math.max(1, op.deadline - now())}`);
               if (!r.ok) fail('preview_unavailable');
@@ -616,8 +633,12 @@ export class SandboxBrowser {
                 // The gateway's post-login redirect uses the same fixed landing path.
                 op.url = 'landing' in def ? new URL(def.landing, preview.url).href : preview.url;
                 op.deadline = Math.floor(Date.parse(preview.expires_at) / 1000);
-                op.phase = 'ready'; op.progress = 'ready';
               }
+            }
+            if (def.id === 'opencode-web') {
+              op.step = 'prepare'; op.progress = 'preparing_setup';
+            } else {
+              op.phase = 'ready'; op.progress = 'ready';
             }
           }
         }

@@ -29,7 +29,7 @@ export const SERVICE_DEFS = {
     slot: '__opencode-web', credential: true, memoryGiB: 2, driver: 'installer',
     steps: [...COMMON_STEPS, 'installing_opencode', 'starting_opencode_web',
       'waiting_for_opencode', 'connecting_bayleaf', 'loading_tools'],
-    errors: [...COMMON_ERRORS, 'credential_missing', 'credential_invalid',
+    errors: [...COMMON_ERRORS, 'credential_missing', 'credential_invalid', 'preview_unavailable',
       'provider_configuration_unavailable', 'release_verification_failed', 'unsupported_architecture'],
   },
   'code-server': {
