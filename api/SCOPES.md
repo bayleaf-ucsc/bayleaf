@@ -193,8 +193,10 @@ to `…/my dir/$(id)/a.txt` created exactly that one directory, with no strays.
 
 **Symlinks.** Uploads cannot create symlinks, so escaping the root needs one that
 the owner (or the owner's agent) already placed inside it. Accepted residual risk
-for v1, not mitigated with a realpath check. The consent page does not currently
-mention it.
+for v1, not mitigated with a realpath check. The consent and prefilled-link pages
+and the dashboard hint now warn that a link inside a bound folder can expose files
+outside it. Reproduced end to end on 2026-11-24: a read token bound to one folder read
+a file in another home directory folder through a symlink to the home directory.
 
 **Wake and create.** Token calls may wake a sleeping sandbox and may create one if
 the grantor has none (today's `ensureSandbox` behavior). The consent page says so
@@ -333,7 +335,6 @@ Sandbox files, to be settled by real uses rather than in advance:
 - **Size limits.** The upload route sets no body limit of its own (Cloudflare's
   request ceiling applies) and there is no per-token or per-folder quota, so a
   leaked write token can fill the grantor's disk until expiry or revocation.
-- **Consent mentions of symlinks.** The page does not mention the symlink caveat.
 
 ## Order of work
 

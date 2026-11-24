@@ -69,7 +69,8 @@ Both need `sandbox_dirs`; `sandbox_dirs` without a sandbox-file scope, or the re
 is `400 invalid_request`. The path check is lexical on the decoded path (trailing-slash
 prefix, at least one further segment, no empty, `.` or `..` segments, no quotes,
 backslashes or control characters); anything else is `403 insufficient_scope`.
-Symlinks already inside a folder are an accepted residual risk. There is no listing,
+Symlinks already inside a folder are an accepted residual risk; the consent and
+prefilled-link pages warn about them. There is no listing,
 exec, status, keep-alive or delete.
 
 Direct issuance names `sandbox_dirs` in `POST /grants`. Unlike inboxes, visitor apps

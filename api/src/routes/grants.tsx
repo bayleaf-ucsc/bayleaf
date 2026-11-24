@@ -458,7 +458,10 @@ function AuthorityDetails({ email, scopes, models, sandboxDirs }: { email: strin
       <ul>{sandboxDirs.map(dir => <li><code>{SANDBOX_APPS_ROOT + dir + '/'}</code></li>)}</ul>
       <p>{scopes.includes('sandbox.files.read') ? 'The app can read any file in these folders, whoever wrote it. ' : ''}
         {scopes.includes('sandbox.files.write') ? 'The app can create or overwrite files there; treat them as untrusted if your own agents read them. ' : ''}
-        Using the token wakes your BayLeaf Sandbox, and creates one if you have none.</p></>}
+        Using the token wakes your BayLeaf Sandbox, and creates one if you have none.</p>
+      <p><strong>A link (symlink) inside these folders opens what it points to.</strong> If you or your
+        agents put one there, for example to share a project, the app can follow it to files outside
+        these folders, such as your whole home folder.</p></>}
     {needsRooms(scopes) && <p>This covers every room you have or create, not one chosen room.
       {scopes.includes('rooms.read') ? ' The app can read and export everything participants stored in them.' : ''}
       {scopes.includes('rooms.manage') ? ' The app can delete rooms and hand out participant links, including links that can write. Every link can read and export its room, so the app can effectively read all of them.' : ''}</p>}

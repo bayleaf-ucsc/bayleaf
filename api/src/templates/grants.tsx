@@ -54,7 +54,8 @@ export const TemporaryInferenceTokens: FC<{ model: string; maxSeconds: number; i
           <input id="grant-sandbox-dirs" type="text" autocomplete="off" spellcheck={false} data-root={SANDBOX_APPS_ROOT} aria-describedby="grant-sandbox-status grant-sandbox-hint"/>
           <p id="grant-sandbox-status" role="status"></p>
           <p id="grant-sandbox-hint"><small>Each name uses lowercase letters, digits and hyphens, starts with a letter or digit, and has at most 63 characters.
-            Using the token wakes your sandbox, creating one if you have none.</small></p>
+            Using the token wakes your sandbox, creating one if you have none. A symlink inside a folder
+            lets the token follow it outside the folder, so keep links out of folders you share.</small></p>
         </div>
         <label for="grant-seconds">Lifetime in seconds (maximum {maxSeconds}, {describeSeconds(maxSeconds)})</label>
         <input id="grant-seconds" type="number" min="1" max={maxSeconds} value={Math.min(3600, maxSeconds)} required aria-describedby="grant-seconds-hint"/>
