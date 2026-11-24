@@ -70,6 +70,9 @@ export interface Bindings {
 
   // KV namespace for Campus Pass per-IP RPD counters
   CAMPUS_RPD: KVNamespace;
+  // Workers rate limit on creating device claims, per client IP. Optional so
+  // tests and local dev without the binding are unaffected (no limit applied).
+  CLAIM_INITIATE_LIMIT?: { limit(options: { key: string }): Promise<{ success: boolean }> };
   // OpenRouter model decisions only. No prompts or completions are cached.
   MODEL_STATUS: KVNamespace;
 

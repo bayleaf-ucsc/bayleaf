@@ -60,6 +60,8 @@
  *     created_at: number,            // ms since epoch (initiate time)
  *     initiator_ip: string | null,   // CF-Connecting-IP at initiate time
  *     initiator_country: string | null, // CF-IPCountry at initiate time
+ *     initiator_asn: number | null,  // request.cf.asn at initiate time (0024)
+ *     initiator_network: string | null, // request.cf.asOrganization (0024)
  *     expires_at: number,            // ms since epoch
  *     approved_by: string | null,    // email of approving user
  *   }
@@ -79,6 +81,16 @@
  * - Existing-key delivery: we hand back the user's current dashboard key. If
  *   they don't have one yet, we mint one (same code path as POST /key).
  *   Revocation from the dashboard invalidates the key everywhere it's used.
+ * - Attacker-initiated phishing (RFC 8628 §5.4): the two codes stop someone who
+ *   only watches the user_code, not someone who *starts* the claim and sends the
+ *   victim its claim_url. That attacker holds the device_code. Defences here:
+ *   the attacker-chosen client label never heads the page; the page compares
+ *   where the claim started with where it is being approved (utils/claimOrigin);
+ *   a different network or country requires an explicit, server-checked
+ *   confirmation; and claim creation is rate-limited per IP to bound bulk link
+ *   minting. Residual risk: an attacker on the victim's own network (same IP or
+ *   ASN, e.g. one campus NAT) gets no extra prompt, and a coached victim can
+ *   still tick the box. Cross-device approval (Pouch's QR code) stays supported.
  */
 
 import { Hono } from 'hono';
@@ -89,6 +101,11 @@ import { getSession } from '../utils/session';
 import { ensureUserRow } from '../provision';
 import { renderPage, ErrorPage } from '../templates/layout';
 import { setCookie, getCookie, deleteCookie } from 'hono/cookie';
+import { bucketKey } from '../utils/ip';
+import {
+  compareOrigins, describeOrigin, needsOriginConfirmation, normalizeCountry, originOf,
+  type NetworkOrigin, type OriginMatch,
+} from '../utils/claimOrigin';
 
 export const claimRoutes = new Hono<AppEnv>();
 
@@ -127,6 +144,35 @@ interface ClaimRecord {
   initiator_country: string | null;
   approved_by: string | null;
   curl_platform: 'windows' | 'unix' | null;
+  // Migration 0024. Null for older rows and when the edge omits the fields.
+  initiator_asn?: number | null;
+  initiator_network?: string | null;
+}
+
+/** Where a stored claim started, in the same shape as a live request origin. */
+function initiatorOrigin(record: ClaimRecord): NetworkOrigin {
+  return {
+    ip: record.initiator_ip,
+    // Stored raw from CF-IPCountry; normalize like a live origin (drops XX/T1).
+    country: normalizeCountry(record.initiator_country),
+    asn: record.initiator_asn ?? null,
+    network: record.initiator_network ?? null,
+  };
+}
+
+/**
+ * Per-IP flood bound on creating claims. Returns a 429 response when the
+ * caller is over the limit, or null to continue. No binding (tests, local
+ * dev) means no limit; a missing client IP shares one bucket.
+ */
+async function claimRateLimited(c: Context<AppEnv>): Promise<Response | null> {
+  const limiter = c.env.CLAIM_INITIATE_LIMIT;
+  if (!limiter) return null;
+  const ip = c.req.header('CF-Connecting-IP');
+  const { success } = await limiter.limit({ key: `claim:${ip ? bucketKey(ip) : 'unknown'}` });
+  if (success) return null;
+  c.header('Retry-After', '60');
+  return c.json({ error: 'Too many sign-in requests from this network. Wait a minute and try again.' }, 429);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -284,11 +330,13 @@ async function createClaim(
     const createdAt = Date.now();
     const initiatorIp = c.req.header('CF-Connecting-IP') ?? null;
     const initiatorCountry = c.req.header('CF-IPCountry') ?? null;
+    // Network identity for the approval page's origin comparison (claimOrigin.ts).
+    const origin = originOf(c.req.raw);
     const result = await claimDb(c).prepare(
       `INSERT OR IGNORE INTO claim_codes
        (device_code, user_code, status, client, created_at, expires_at,
-        initiator_ip, initiator_country, curl_platform)
-       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
+        initiator_ip, initiator_country, curl_platform, initiator_asn, initiator_network)
+       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       deviceCode,
       userCode,
@@ -298,6 +346,8 @@ async function createClaim(
       initiatorIp,
       initiatorCountry,
       curlPlatform ?? null,
+      origin.asn,
+      origin.network,
     ).run();
     if (result.meta.changes !== 1) continue;
 
@@ -330,6 +380,9 @@ claimRoutes.post('/initiate', async (c) => {
     // fall through with default label
   }
 
+  const limited = await claimRateLimited(c);
+  if (limited) return limited;
+
   const claim = await createClaim(c, clientLabel);
   if (!claim) return c.json({ error: 'Could not create a claim.' }, 500);
 
@@ -349,6 +402,8 @@ claimRoutes.get('/curl/start/:mode/:platform', async (c) => {
   if (mode !== 'standard' && mode !== 'sealed') return c.body(null, 404);
   const platform = c.req.param('platform').toLowerCase() === 'windows_nt' ? 'windows' : 'unix';
   const client = mode === 'sealed' ? 'OpenCode for BayLeaf Sealed' : 'OpenCode for BayLeaf';
+  const limited = await claimRateLimited(c);
+  if (limited) return limited;
   const claim = await createClaim(c, client, platform);
   if (!claim) return c.text('Could not create a claim.', 500);
   setCookie(c, CURL_DEVICE_COOKIE, claim.deviceCode, {
@@ -479,6 +534,8 @@ claimRoutes.get('/', async (c) => {
 
   const approveTok = await csrfToken(c.env.OIDC_CLIENT_SECRET, session.email, userCode, 'approve');
   const denyTok = await csrfToken(c.env.OIDC_CLIENT_SECRET, session.email, userCode, 'deny');
+  const initiator = initiatorOrigin(record);
+  const approver = originOf(c.req.raw);
   return renderPage(
     c,
     <ApprovalPage
@@ -487,6 +544,9 @@ claimRoutes.get('/', async (c) => {
       record={record}
       approveTok={approveTok}
       denyTok={denyTok}
+      initiator={initiator}
+      approver={approver}
+      match={compareOrigins(initiator, approver)}
     />,
   );
 });
@@ -535,6 +595,13 @@ claimRoutes.post('/approve', async (c) => {
   }
 
   // action === 'approve'
+  // Re-derive the origin comparison here rather than trusting the page: an
+  // approval from a different network than the one that started the claim
+  // must carry the explicit confirmation the page asks for.
+  if (needsOriginConfirmation(compareOrigins(initiatorOrigin(record), originOf(c.req.raw)))
+      && String((form as Record<string, unknown>).confirm_origin ?? '') !== 'yes') {
+    return renderPage(c, <ErrorPage title="Confirmation needed" message="This sign-in request started on a different network than yours. Go back, read where it came from, and tick the box only if you started it yourself. If someone sent you this link, choose Deny." />, 400);
+  }
   const token = await ensureUserToken(session.email, c.env);
   if (!token) {
     return renderPage(c, <ErrorPage title="Could not provision a key" message="Failed to provision your BayLeaf API key. Try the dashboard's Get key flow first, then run the setup command again." />, 500);
@@ -597,12 +664,24 @@ interface ApprovalPageProps {
   record: ClaimRecord;
   approveTok: string;
   denyTok: string;
+  initiator: NetworkOrigin;
+  approver: NetworkOrigin;
+  match: OriginMatch;
 }
 
-function ApprovalPage({ session, userCode, record, approveTok, denyTok }: ApprovalPageProps) {
-  const ipLine = record.initiator_ip
-    ? `from ${record.initiator_ip}${record.initiator_country ? ` (${record.initiator_country})` : ''}`
-    : 'from an unknown address';
+const ORIGIN_NOTICE: Record<OriginMatch, string> = {
+  'same-ip': '',
+  'same-network': '',
+  'different-network': 'This request started on a different network than the one you are on now.',
+  'different-country': 'This request started in a different country than the one you are in now.',
+  unknown: 'BayLeaf could not confirm that this request started on your network.',
+};
+
+function ApprovalPage({ session, userCode, record, approveTok, denyTok, initiator, approver, match }: ApprovalPageProps) {
+  // The client label is attacker-choosable, so it never heads the page; the
+  // heading is neutral and the label is shown as an unverified claim.
+  const confirm = needsOriginConfirmation(match);
+  const startedFrom = `${describeOrigin(initiator)}${initiator.ip ? ` (${initiator.ip})` : ''}`;
 
   // Inline styles only here — this page is one-shot, no need to thread CSS through layout.
   return (
@@ -610,7 +689,7 @@ function ApprovalPage({ session, userCode, record, approveTok, denyTok }: Approv
       <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Authorize — BayLeaf API</title>
+        <title>Approve sign-in — BayLeaf API</title>
         {html`<style>
           * { box-sizing: border-box; }
           body { font-family: system-ui,-apple-system,sans-serif; line-height: 1.6;
@@ -629,10 +708,17 @@ function ApprovalPage({ session, userCode, record, approveTok, denyTok }: Approv
           .actions { margin-top: 1.5rem; }
           .warn { font-size: 0.9rem; color: #7a5a00; background: #fff8e1; border: 1px solid #ffd54f;
             padding: 0.75rem; border-radius: 4px; margin-top: 1rem; }
+          .origin { background: white; border: 1px solid #ccc; border-radius: 6px; padding: 1rem; margin: 1rem 0; }
+          .origin p { margin: 0 0 0.5rem 0; }
+          .origin p:last-child { margin-bottom: 0; }
+          .origin-mismatch { background: #fdecea; border: 2px solid #b3261e; color: #5f2120; }
+          .confirm { display: flex; gap: 0.5rem; align-items: flex-start; margin: 0 0 1rem 0; }
+          .confirm input { margin-top: 0.35rem; width: 1.1rem; height: 1.1rem; flex: none; }
+          .approve-form { display: block; }
         </style>`}
       </head>
       <body>
-        <h1>Authorize {record.client}</h1>
+        <h1>Approve a sign-in request?</h1>
         <p>
           Only approve a sign-in you started yourself, in an app or terminal you opened.
         </p>
@@ -640,17 +726,25 @@ function ApprovalPage({ session, userCode, record, approveTok, denyTok }: Approv
           <p style="margin: 0 0 0.5rem 0;">
             <strong>Request code:</strong> <span class="request-code">{userCode}</span>
           </p>
-          <p style="margin: 0 0 0.5rem 0;">
+          <p style="margin: 0;">
             <strong>Signed in as:</strong> {session.email}
-          </p>
-          <p class="meta" style="margin: 0;">
-            Request {ipLine}.
             {' '}<a href="/logout">Switch account</a>
           </p>
         </div>
+        <div class={confirm ? 'origin origin-mismatch' : 'origin'}>
+          <p><strong>Request started from:</strong> {startedFrom}</p>
+          <p><strong>You are on:</strong> {describeOrigin(approver)}</p>
+          {confirm && (
+            <p>
+              <strong>{ORIGIN_NOTICE[match]}</strong>
+              {' '}That is expected if you started sign-in on another device, such as
+              your phone or a remote machine. If someone sent you this link, choose Deny.
+            </p>
+          )}
+        </div>
         <p>
-          The requesting client calls itself <strong>{record.client}</strong>.
-          This name is supplied by the client, not a verified identity.
+          An app that calls itself <strong>{record.client}</strong> is asking for your key.
+          BayLeaf does not verify this name: whoever starts a sign-in request can choose it.
         </p>
         <p>
           Approval sends your personal BayLeaf API key to that client. This is full
@@ -668,10 +762,18 @@ function ApprovalPage({ session, userCode, record, approveTok, denyTok }: Approv
           <strong> Deny</strong>.
         </p>
         <div class="actions">
-          <form method="post" action="/auth/claim/approve">
+          <form method="post" action="/auth/claim/approve" class={confirm ? 'approve-form' : undefined}>
             <input type="hidden" name="code" value={userCode} />
             <input type="hidden" name="action" value="approve" />
             <input type="hidden" name="token" value={approveTok} />
+            {confirm && (
+              <div class="confirm">
+                <input type="checkbox" id="confirm_origin" name="confirm_origin" value="yes" required />
+                <label for="confirm_origin">
+                  I started this sign-in myself on another device or network.
+                </label>
+              </div>
+            )}
             <button type="submit" class="approve">Approve</button>
           </form>
           <form method="post" action="/auth/claim/approve">
@@ -711,6 +813,12 @@ function ResultPage({ kind, client }: ResultPageProps) {
       <body>
         <h1>{title}</h1>
         <p>{msg}</p>
+        {kind === 'approved' && (
+          <p>
+            Did not start this yourself? Revoke your key now on the{' '}
+            <a href="/dashboard">API dashboard</a>. That cuts off whoever received it.
+          </p>
+        )}
       </body>
     </html>
   );

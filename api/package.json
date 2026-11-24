@@ -19,6 +19,7 @@
     "test:previews": "python3 scripts/test-preview-fixture.py && node scripts/harness-previews.mjs",
     "test:grants": "node scripts/harness-grants.mjs",
     "test:decisions": "node scripts/test-decisions.mjs",
+    "test:claim-approval": "node scripts/test-claim-approval.mjs",
     "test:sealed-dashboard": "node scripts/test-sealed-dashboard.mjs",
     "test:sealed-models": "node scripts/test-sealed-models.mjs",
     "test:claim-curl": "node scripts/test-claim-curl.mjs",

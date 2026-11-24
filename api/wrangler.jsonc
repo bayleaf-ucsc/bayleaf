@@ -60,6 +60,16 @@
     }
   ],
 
+  // Flood bound for creating device claims (POST /auth/claim/initiate and the
+  // OpenCode curl start), keyed by client IP (/64 for IPv6). Generous on
+  // purpose: a class setting up OpenCode together can share one campus NAT
+  // address. This bounds bulk link minting and claim-table growth; it is not
+  // the phishing defence (one phishing link needs one claim). Namespace 16001
+  // is unused elsewhere (Rooms 15901-2, Inboxes 9701-2, probe 1001, telemetry 1002-4).
+  "ratelimits": [
+    { "name": "CLAIM_INITIATE_LIMIT", "namespace_id": "16001", "simple": { "limit": 60, "period": 60 } }
+  ],
+
   // BayLeaf Inboxes owner RPC (issue #97, local proof of concept; see inbox/DESIGN.md).
   // Deploy the bayleaf-inboxes Worker before any API deploy that includes this binding.
   // HF artifact gateway (issue #121): approved public model artifacts only,

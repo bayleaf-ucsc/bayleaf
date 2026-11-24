@@ -539,6 +539,16 @@ social engineering: "I see your code is XXXX, please approve..."), but they can'
 poll for the resulting key without the ${bt}device_code${bt}, which never leaves
 the terminal through a visible or browser-facing channel.
 
+The two codes do **not** stop an attacker who starts a claim themselves and sends
+you its approval link (RFC 8628 calls this remote phishing): they already hold the
+${bt}device_code${bt}. So the approval page never shows the client's self-chosen name
+as its heading, and it shows where the request started next to where you are. If
+those are different networks or countries, approving requires ticking a box that
+you started the sign-in yourself (normal when you start on one device and approve
+on another, such as Pouch's QR code). Creating claims is also rate-limited per IP.
+An attacker on your own network (for example the same campus NAT) gets no extra
+prompt, so the rule stays the same: never approve a link someone else sent you.
+
 A minimal driver script (POSIX ${bt}sh${bt} + ${bt}curl${bt} + ${bt}python3${bt}):
 
 ${fence}bash
