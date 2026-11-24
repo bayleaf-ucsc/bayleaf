@@ -81,10 +81,10 @@ const EMAIL = 'student@ucsc.edu';
 const sessionCookie = `bayleaf_session=${await sign({ email: EMAIL, name: 'Student', exp: Math.floor(Date.now() / 1000) + 3600 }, SECRET)}`;
 
 /** A request carrying Cloudflare edge facts, as the Worker would see it. */
-function edgeRequest(url, { ip, country, asn, network, init = {} }) {
+function edgeRequest(url, { ip, country, asn, network, init = {}, countryHeader = true }) {
   const headers = new Headers(init.headers ?? {});
   if (ip) headers.set('CF-Connecting-IP', ip);
-  if (country) headers.set('CF-IPCountry', country);
+  if (country && countryHeader) headers.set('CF-IPCountry', country);
   const req = new Request(url, { ...init, headers });
   Object.defineProperty(req, 'cf', { value: { asn, asOrganization: network, country } });
   return req;
@@ -126,6 +126,15 @@ const phish = await initiate(ATTACKER, 'CMPM 121 Autograder');
 const stored = claims.find((r) => r.user_code === phish.user_code);
 assert.equal(stored.initiator_asn, 14061);
 assert.equal(stored.initiator_network, 'DigitalOcean');
+assert.equal(stored.initiator_country, 'US');
+
+// The stored country is normalized and falls back to request.cf.country, so a
+// missing header cannot turn a cross-border approval into same-network.
+const noHeader = await initiate({ ...HOME, ip: '73.9.9.9', country: 'DE', countryHeader: false }, 'fallback');
+assert.equal(claims.find((r) => r.user_code === noHeader.user_code).initiator_country, 'DE');
+assert.match(await page(noHeader.user_code, HOME), /different country than the one you are in now/);
+const tor = await initiate({ ...ATTACKER, country: 'T1' }, 'tor');
+assert.equal(claims.find((r) => r.user_code === tor.user_code).initiator_country, null);
 
 // ── Phishing scenario: different network needs explicit confirmation ─
 const phishPage = await page(phish.user_code, HOME);
@@ -141,6 +150,11 @@ const approveTok = tokenFrom(phishPage, 'approve');
 const blocked = await submit(phish.user_code, HOME, { action: 'approve', token: approveTok });
 assert.equal(blocked.status, 400);
 assert.equal(stored.status, 'pending', 'unconfirmed cross-network approval must not approve');
+// The 400 is a fresh approval form (a stale page may have had no checkbox).
+const blockedPage = await blocked.text();
+assert.match(blockedPage, /Approval needs one more step/);
+assert.match(blockedPage, /name="confirm_origin" value="yes" required/);
+assert.ok(tokenFrom(blockedPage, 'approve') && tokenFrom(blockedPage, 'deny'), 'fresh form carries both actions');
 const wrongValue = await submit(phish.user_code, HOME, { action: 'approve', token: approveTok, confirm_origin: 'on' });
 assert.equal(wrongValue.status, 400);
 assert.equal(stored.status, 'pending');

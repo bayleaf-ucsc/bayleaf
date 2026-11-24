@@ -59,7 +59,7 @@
  *     client: string,                // sanitized requesting client name
  *     created_at: number,            // ms since epoch (initiate time)
  *     initiator_ip: string | null,   // CF-Connecting-IP at initiate time
- *     initiator_country: string | null, // CF-IPCountry at initiate time
+ *     initiator_country: string | null, // normalized CF-IPCountry / request.cf.country
  *     initiator_asn: number | null,  // request.cf.asn at initiate time (0024)
  *     initiator_network: string | null, // request.cf.asOrganization (0024)
  *     expires_at: number,            // ms since epoch
@@ -329,9 +329,11 @@ async function createClaim(
     const deviceCode = generateDeviceCode();
     const createdAt = Date.now();
     const initiatorIp = c.req.header('CF-Connecting-IP') ?? null;
-    const initiatorCountry = c.req.header('CF-IPCountry') ?? null;
     // Network identity for the approval page's origin comparison (claimOrigin.ts).
     const origin = originOf(c.req.raw);
+    // Normalized, with the request.cf fallback, so the country check at approval
+    // sees the same value the live origin would.
+    const initiatorCountry = origin.country;
     const result = await claimDb(c).prepare(
       `INSERT OR IGNORE INTO claim_codes
        (device_code, user_code, status, client, created_at, expires_at,
@@ -598,9 +600,16 @@ claimRoutes.post('/approve', async (c) => {
   // Re-derive the origin comparison here rather than trusting the page: an
   // approval from a different network than the one that started the claim
   // must carry the explicit confirmation the page asks for.
-  if (needsOriginConfirmation(compareOrigins(initiatorOrigin(record), originOf(c.req.raw)))
-      && String((form as Record<string, unknown>).confirm_origin ?? '') !== 'yes') {
-    return renderPage(c, <ErrorPage title="Confirmation needed" message="This sign-in request started on a different network than yours. Go back, read where it came from, and tick the box only if you started it yourself. If someone sent you this link, choose Deny." />, 400);
+  const initiator = initiatorOrigin(record);
+  const approver = originOf(c.req.raw);
+  const match = compareOrigins(initiator, approver);
+  if (needsOriginConfirmation(match) && String((form as Record<string, unknown>).confirm_origin ?? '') !== 'yes') {
+    // Re-render a fresh form from the current comparison: the page that was
+    // submitted may predate a network change and have had no checkbox at all.
+    const denyTok = await csrfToken(c.env.OIDC_CLIENT_SECRET, session.email, userCode, 'deny');
+    return renderPage(c, <ApprovalPage session={session} userCode={userCode} record={record}
+      approveTok={submittedToken} denyTok={denyTok} initiator={initiator} approver={approver}
+      match={match} confirmationMissing />, 400);
   }
   const token = await ensureUserToken(session.email, c.env);
   if (!token) {
@@ -659,6 +668,7 @@ claimRoutes.get('/poll', async (c) => {
 // ── Pages ─────────────────────────────────────────────────────────
 
 interface ApprovalPageProps {
+  confirmationMissing?: boolean;
   session: Session;
   userCode: string;
   record: ClaimRecord;
@@ -677,7 +687,7 @@ const ORIGIN_NOTICE: Record<OriginMatch, string> = {
   unknown: 'BayLeaf could not confirm that this request started on your network.',
 };
 
-function ApprovalPage({ session, userCode, record, approveTok, denyTok, initiator, approver, match }: ApprovalPageProps) {
+function ApprovalPage({ session, userCode, record, approveTok, denyTok, initiator, approver, match, confirmationMissing }: ApprovalPageProps) {
   // The client label is attacker-choosable, so it never heads the page; the
   // heading is neutral and the label is shown as an unverified claim.
   const confirm = needsOriginConfirmation(match);
@@ -719,6 +729,13 @@ function ApprovalPage({ session, userCode, record, approveTok, denyTok, initiato
       </head>
       <body>
         <h1>Approve a sign-in request?</h1>
+        {confirmationMissing && (
+          <p class="warn">
+            <strong>Approval needs one more step.</strong> This request started on a different
+            network than yours. Tick the box below only if you started it yourself. If someone
+            sent you this link, choose Deny.
+          </p>
+        )}
         <p>
           Only approve a sign-in you started yourself, in an app or terminal you opened.
         </p>
