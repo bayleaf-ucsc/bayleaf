@@ -41,85 +41,26 @@ default context points at the personal `Just Adam` team.
 
 **Image choice.** Use version-specific standard-image tags (currently
 `v0.13.5`), not rolling `main` or `slim`. BayLeaf stores uploads in DO Spaces
-via OWUI's S3 provider (§1, Object Storage). Before v0.12.0, the slim image
-omitted S3 support and refused to start with S3 storage configured. Upstream
-v0.12.0 adds S3 support to slim, but BayLeaf retains the standard image;
-switching image variants requires separate dependency and upload qualification.
+via OWUI's S3 provider (§1, Object Storage). Upstream's slim image also supports
+S3, but switching variants requires separate dependency and upload qualification.
 
-**Native aggregate telemetry (2026-10-20).** The live rung-4 build adds the
-qualified source minimization to the v0.13.3 standard image (upgraded 2026-11-10), pinned by
-immutable upstream index
-`sha256:46b59158e6558eeb980bc828e0f1b30238ad24d82ed84d5e5eda1dab2a082f14`.
-The service command is `python /opt/bayleaf-otlp/startup_patch.py`, not the former
-echo-and-start wrapper. Exact source/package guards run at build and startup;
-the entrypoint prints guarded startup markers and retains the exec handoff to
-uvicorn PID 1. Never bypass these guards or enable unpatched native metrics.
+**Upgrades and rollback.** The database is at Alembic head `5e7a2c9d4b13`, which
+keeps messages only in `chat_message` rows. The v0.13.4 image cannot boot on it,
+so rolling back past v0.13.5 means restoring a database backup. Follow the
+`owui-version-bump` playbook; per-release records are `image/UPGRADE-*.md` and
+[`evidence/open-webui-upgrades.md`](evidence/open-webui-upgrades.md). A healthy
+`/health` does not rule out pool exhaustion or an authentication storm:
+`pg_stat_statements` is enabled in the application database for normalized query
+counters (never raw parameters or chat content).
 
-Native qualification used deployment `b36b8678-f928-4db2-81e1-a3ebcb35fc34` from
-published source `1d56584c4d2b8576413ad615e625addab70e0f7e`. The first build failed unpacking the
-pinned upstream image (`unexpected EOF`); one unchanged-source retry succeeded.
-One instance, one worker, the original size/pool and retention job were preserved.
-Repository-push auto-deploy remains **disabled**, so documentation publication
-does not restart Chat. This is not an OWUI upgrade or schema migration.
-
-**OWUI v0.13.5 upgrade (2026-11-25):** deployment
-`5830cd44-3739-4feb-8f63-9ea4ffb5323d` moved all 296 chats into `chat_message`
-rows. The v0.13.4 image cannot boot on the migrated database, so rollback means a
-database restore. See [`image/UPGRADE-0.13.5.md`](image/UPGRADE-0.13.5.md) and, for
-the release before it, [`image/UPGRADE-0.13.4.md`](image/UPGRADE-0.13.4.md).
-
-**OWUI v0.13.3 upgrade (2026-11-10):** deployment
-`4e42953a-2d5f-4e64-acfa-869693edc362` reached ACTIVE from published source
-`12927dced930c71a453ab9e9905bc836a398c44f`. Both builds, all 16 Chromium arrival
-cases, a synthetic existing-database upgrade, full five-minute arm64 PG/TLS export
-and amd64 boot/inference passed. The telemetry adapter/dependency pins are
-unchanged; frontend guards were refreshed. All three migrations completed through
-`9f6c2a8d1b43`; image-only rollback is not qualified. Today's managed database
-backup was verified. Exact build checkout, source guards, server PID 1,
-health/version and authenticated Basic/Help inference passed in production.
-The complete app spec, resources, hidden base model, grants and valves remained
-byte-identical. Existing global settings were unchanged; new defaults include
-90-day renewable session expiry, 50,000-character full-text threshold, disabled
-auto tool approval/labels, keyword tool search and no chat-read character limit.
-Tool search remains disabled and terminal connections empty. Saved retrieval
-values remain 3/3/1000. Served arrival assets match qualified bytes. Adam confirmed
-the production experience works and accepted the upgrade; individual browser
-sign-in/tool/skill/upload scenarios were not itemized.
-See [`image/UPGRADE-0.13.3.md`](image/UPGRADE-0.13.3.md).
-
-**OWUI v0.13.0 upgrade (2026-11-04 Pacific):** deployment
-`79af5c90-9217-45ac-ad66-6399a8846ec3` reached ACTIVE from published source
-`364ac9e731234b39fa4a15293140f4dd36356ecd`. Both architecture builds, amd64
-boot/inference, full five-minute arm64 PostgreSQL/TLS export, all 16 Chromium
-arrival cases and a synthetic existing-database upgrade passed. The telemetry
-source adapter was adapted to upstream middleware changes without changing the
-collection policy. Three migrations completed through `e42c8f710a36`; an
-image-only rollback is not qualified. Today's managed PG backup was verified.
-Production guards, PID 1, health/version and authenticated Basic/Help inference
-passed. The complete app spec stayed unchanged. Full private pre/post pulls
-found only the new true `is_active` field on all nine tools; sources, schemas,
-valves, models, skills, grants and the hidden underlying model were unchanged.
-Config added comments off, notifications on and empty Mistral OCR params.
-Adam explicitly accepted the new notification inbox and 1024 tool-call default;
-sub-agents remain disabled with their saved finite limits. Served arrival assets
-match the qualified bytes. Adam confirmed fresh CILogon sign-in, Sandbox and
-web-context tools work and accepted the upgrade. Upload scenarios were not
-itemized; the 1024-round limit was deliberately not exercised. See
-[`image/UPGRADE-0.13.0.md`](image/UPGRADE-0.13.0.md).
-
-**OWUI v0.12.4 upgrade (2026-10-27):** deployment
-`c63a7deb-02c0-4261-880c-8a0eb8d0b2bd` reached ACTIVE from published source
-`09aeebff5d2ffef6fc835607472f3e9158be9df0`. Both architecture builds, full arm64
-PostgreSQL/TLS metrics export, amd64 boot/inference and all 16 real Chromium
-arrival cases passed. No migration source changes; guarded telemetry dependencies
-and minimized adapter bytes are unchanged. The image now uses Python 3.12 / Debian
-13. Guarded startup, PID 1, health/version and authenticated Basic/Help responses
-passed in production. The complete app spec and resource definitions stayed
-unchanged. New config defaults are an empty LDAP fallback domain, lazy skills off
-and empty UI visibility settings. Lathe 1.3.3 source/valves survived unchanged.
-See [`image/UPGRADE-0.12.4.md`](image/UPGRADE-0.12.4.md) for qualification and rollback;
-Adam confirmed the production experience works after deployment; individual
-browser/tool/upload scenarios were not itemized.
+**Native aggregate telemetry.** The live rung-4 build adds the qualified source
+minimization to the standard image, whose immutable upstream index is pinned in
+`image/Dockerfile`. The service command is
+`python /opt/bayleaf-otlp/startup_patch.py`. Exact source/package guards run at
+build and startup; the entrypoint prints guarded startup markers and retains the
+exec handoff to uvicorn PID 1. Never bypass these guards or enable unpatched
+native metrics. DigitalOcean builds nothing from GitHub, so publishing
+documentation does not restart Chat.
 
 Only aggregate native metrics are enabled: `ENABLE_OTEL=true`,
 `ENABLE_OTEL_METRICS=true`, traces/logs false, five-minute export
@@ -139,104 +80,34 @@ thread using one dedicated read-only PostgreSQL connection (200-ms statement,
 100-ms lock and pool-wait limits), not the application pool. No individual request
 stream, identity, prompt or completion is exported by this lane.
 
-The bounded five-minute on/off production gate passed: CPU changed −1.534
-percentage points; loopback health/version p95 changed +2.50%, with no HTTP errors
-or observed pool/cancellation errors; one metrics connection; warmed callback
-probes 7.934–11.427 ms. RSS peak on was approximately 1.64 GB (off approximately
-1.82 GB), not a long-term memory/capacity guarantee for this 2-GB instance. These
-sequential windows are not matched campus-user load or full user-request p95.
-Live private collector readback verified all five metric names, approved
-dimensions, the observed source batch bound and **90-day active expiry**. No
-gauge values were retained in qualification evidence. See
-[`native-production.md`](../telemetry/qualification/native-production.md).
+The collector applies **90-day active expiry**. Production overhead evidence is in
+[`native-production.md`](../telemetry/qualification/native-production.md); it is
+not a long-term memory or capacity guarantee for this 2-GB instance.
 The 120-points/minute retry budget still has the documented lost-ack headroom
 limitation. Five-minute paging reduces freshness; the active-user gauge still
 counts the previous three minutes, not five-minute unique users. Collector
 freshness matters because dedicated exporter errors are suppressed.
 
 For source shutdown set all four OTel enable flags to literal `false`, retaining
-the guarded entrypoint. Full rollback restores the protected pre-change upstream
-image/spec and prior wrapper **with native export disabled**, preserving all
-unrelated settings. Never combine the unpatched image with enabled metrics.
+the guarded entrypoint. To drop the guarded build entirely, use the unmodified
+upstream image of the **same OWUI version** (older ones cannot boot on the current
+database) **with native export disabled**, preserving all unrelated settings. Never combine the unpatched image with enabled metrics.
 Collector admission off alone does not stop source export. Every OWUI version
 upgrade must regenerate and requalify the guarded artifact before activation.
 
-**Signed-out root arrivals (2026-10-20).** Current deployment
-`a5319b41-56ca-452d-a74e-bee904458baf` is ACTIVE from published source
-`13a3a67b6642e49429ac22483121df9e389057ab`, preserving the native configuration
-above. `BAYLEAF_CHAT_ARRIVALS_ENABLED=true` independently installs a guarded
+**Signed-out root arrivals.** `BAYLEAF_CHAT_ARRIVALS_ENABLED=true` independently
+installs a guarded
 first-party static loader/module. One initial public-root document may send one
 identity-free arrival only after ordinary session resolution renders the sign-in
 card; existing token markers, direct auth entries and private deep links are
 excluded. The client sends only schema version, destination `chat` and null
 referrer, with no credentials/referrer. The collector stores schema 2/policy 3
-records with approved coarse network classification and 90-day expiry. Actual
-anonymous HTTP → HTTPS → auth browser delivery, stored readback, served asset
-hashes and native-export continuity passed; signed-in non-collection has isolated
-local browser proof, not a new live authenticated test. See
+records with approved coarse network classification and 90-day expiry. Signed-in
+non-collection has isolated local browser proof, not a live authenticated test. See
 [`chat-arrivals.md`](../telemetry/qualification/chat-arrivals.md). Set this one
 switch to `false` to disable arrivals without changing native metrics. Do not add
 `FRONTEND_BUILD_DIR` or `STATIC_DIR` overrides; the pinned asset installer refuses
 them. Recovery must preserve this explicit switch as well as the native settings.
-
-**Resolved incident and upgrade (2026-10-18).** Promoted v0.12.3 after Adam confirmed at
-least a day of issue-free personal-service use. Only the image tag changed;
-the startup harness and environment were preserved. This addresses the v0.12.0
-socket reconnect/authentication storm documented in upstream
-[issue #32338](https://github.com/open-webui/open-webui/issues/32338) and fixed
-by [PR #32341](https://github.com/open-webui/open-webui/pull/32341), released in
-v0.12.1. Before the upgrade, the main Python thread sustained 88–93% CPU,
-authentication-related queries dominated approximately 168 SQL calls/second,
-and application requests hit database-pool timeouts despite a healthy `/health`.
-A restart alone immediately reproduced the load. The database showed no
-long-running queries or blocked locks. Enabled `pg_stat_statements` in the
-application database without a restart; DO had already loaded its collector.
-Normalized query counters, not raw parameters or chat content, identified the
-authentication amplification.
-
-Both new migrations completed (`b8f2c6d91a04` → `c92da83b017f` →
-`0bd252b206fb`); the harness preceded server PID 1, health passed, and
-`/api/version` reported `0.12.3`. Initial 15-second samples fell to 1.3–1.9%
-CPU with one 26.3% interval, and 1.7–9.7 SQL calls/second. Startup logs showed
-no session errors or pool timeouts. Four subsequent 20-second samples measured
-19.8%, 9.1%, 2.0%, and 11.7% CPU, with 9.1 then approximately 2 SQL calls/second;
-all eight observed application database connections were idle. Adam confirmed
-normal-browser sign-in was working after recovery. Existing browser tabs must
-reload to receive the frontend fix. Today's managed database backup was verified. The expired
-admin JWT and unresponsive UI prevented a fresh pre-upgrade resource pull;
-recovery proceeded using the managed backup and preserved app spec rather than
-blocking on the failed service. After token renewal, authenticated Basic and Help
-inference returned the expected smoke-test response (1.0 and 7.9 seconds).
-Full private pulls captured 9 tools, 6 functions, 8 skills and 4 workspace
-models. Tool/function sources and tool schemas matched the repository after
-normalizing schema order. Model differences were new null voice defaults;
-known Brace3 metadata drift remained outside this upgrade. The live Code Sandbox
-skill had three added decorative characters, left untouched pending confirmation.
-The hidden base model remained active, hidden and wildcard-user readable.
-Adam accepted incident closure after recovery and authenticated inference
-verification. Full Basic/Help browser/tool/upload acceptance is a deferred
-follow-up, not a completed check. Monitoring and capacity design are separate
-post-incident work.
-The private specs are under the session's temporary
-`bayleaf-upgrade-20261018` directory. Image-only rollback is not qualified
-across the new migration revision. No diagnostic hook, pool increase, or
-additional worker was deployed.
-
-**Upgrade evidence (2026-10-12).** Promoted v0.12.0 after Adam confirmed personal
-service soak. Deployment `737f9787-eb3e-4d6c-b26d-3041322d1fd7` reached ACTIVE;
-all six Alembic migrations completed, the startup harness preceded server PID 1,
-health passed, and `/api/version` reported `0.12.0`. Authenticated admin Basic
-and Help inference returned the expected smoke-test response. Full private
-before/after pulls (9 tools, 6 functions, 8 skills, 4 workspace models) differed
-only by newly assigned version-history IDs; content, sources, images and grants
-were unchanged. The hidden base model remained active with wildcard-user read.
-Environment settings were unchanged and all names were documented here.
-Snapshots and the previous deployment spec are under
-`~/.tokens/bayleaf-owui-upgrade-20261012`; today's managed database backup was
-verified, with no laptop database access opened. Adam confirmed that the browser
-experience feels good after the upgrade; fresh CILogon sign-in was not separately
-verified. Reverting the
-image alone is not a verified rollback across the new migration revision.
 
 ### Domain & Ingress
 
@@ -372,26 +243,31 @@ OWUI is configured (via admin UI, not env vars) with an OpenRouter API
 connection that exposes all ZDR-eligible models. The OpenRouter API key is
 stored in OWUI's admin settings, not in the app spec.
 
-### Global Admin Settings Snapshot (2026-11-04)
+### Global Admin Settings
 
-Read back from the live persistent config and admin API after operator edits.
-These are observed current values, not a before/after diff: earlier resource
-backups did not capture global admin settings. No production settings were
-changed during this backup.
+Live persistent config and admin API values, last read back 2026-11-25. These
+live in OWUI's database, not in the resource backups.
 
 - Workspace Tools/Functions: creation and import are admin-only (default user
-  permissions leave `workspace.tools` and functions off; confirmed by the
-  operator 2026-11-21). This is load-bearing:
+  permissions leave `workspace.tools` and functions off). This is load-bearing:
   tool valves hold the Daytona key, Google client secret and instructor
   Canvas/GitHub tokens, and arbitrary user Python would reach them.
 - Automations: `automations.enable=false`; default user permission
   `user.permissions.features.automations=false`. This is OWUI user automation,
-  not the separate DigitalOcean retention-cleanup job.
-- Comments: `comments.enable=false`; new notification inbox:
-  `notifications.enable=true`. Adam accepted the default-on inbox on upgrade.
-  Tool-call rounds now use upstream's 1024 default. Sub-agents remain disabled
-  with saved limits of 20 concurrent, 20 async, 30 iterations and 30,000 output
-  characters. The upgrade added empty `rag.mistral_ocr_params={}`.
+  not the separate DigitalOcean retention-cleanup job. Automation webhooks
+  default on but are inert while automations are off.
+- Comments: `comments.enable=false`; notification inbox:
+  `notifications.enable=true`. Tool-call rounds use upstream's 1024 default.
+  Sub-agents are disabled, with saved limits of 20 concurrent, 20 async, 30
+  iterations and 30,000 output characters.
+- Sessions: 30-day JWT expiry, 90-day renewable session expiry.
+- Retrieval: `rag.top_k` and reranker `top_k` are 3, chunk size 1000, full-text
+  threshold 50,000 characters (upstream's newer retrieval defaults do not apply).
+- Tool search, tool permissions and automatic tool approval are disabled. Tool
+  output and chat-read character limits are unset.
+- Skills: `skills.lazy_loading.enable=true`. Attached skills appear by name and
+  description until the model loads one. When off, OWUI preloads the bodies and
+  records them as hidden tool calls that the model mistakes for its own.
 - Context compaction: `chat.context_compaction.enable=true`, token threshold
   `80000`, token cap `80000`, retention percentage `40`. The compaction model
   and prompt-template overrides are both empty strings.
@@ -400,29 +276,20 @@ changed during this backup.
   task-model params are `{}`.
 - Global default model params: `{"custom_params": {}}`.
 - Global default model capabilities: file context, vision, file upload, image
-  generation, code interpreter, citations, status updates, usage and builtin
-  tools enabled; web search, terminal and memory disabled. Default builtin-tool
-  overrides disable memory, notes, channels and chats.
-
-**Changes on 2026-11-25 (v0.13.5):**
-
-- Default builtin-tool overrides also disable `users` (directory lookup) and
-  `tools` (`create_tool`). A missing category means on, and a model with its own
-  `builtinTools` does not inherit these: set both there too. Every OWUI upgrade
-  must check for new categories.
-- `skills.lazy_loading.enable=true`: attached skills appear by name and description
-  until the model loads one. When off, OWUI preloads the bodies and records them as
-  hidden tool calls that the model mistakes for its own.
-- Default `terminal` capability is on, deliberately; no shared machines are
-  configured. `video_generation.enable=false`; the default model capability is
-  true but hidden in the UI while that switch is off.
+  generation, code interpreter, terminal, citations, status updates, usage and
+  builtin tools enabled; web search and memory disabled. `terminal` is on
+  deliberately; no shared machines are configured. `video_generation.enable=false`
+  site-wide; the model default is true but hidden in the UI while that is off.
+- Default builtin-tool overrides disable memory, notes, channels, chats, `users`
+  (directory lookup) and `tools` (`create_tool`). A missing category means on, and
+  a model with its own `builtinTools` does not inherit these: set both there too.
+  Every OWUI upgrade must check for new categories.
 
 These global defaults are distinct from saved workspace-model definitions and
 do not establish which capabilities a particular model actually exposes. The
-full resource pull found no new prompt, parameter, capability or binding changes
-in Basic, Help, Basic Canary or Brace. The hidden shared base model was verified
-active, hidden and wildcard-user readable. Full config exports can contain
-credentials and stay private; only these reviewed settings belong in the repo.
+hidden shared base model must stay active, hidden and wildcard-user readable.
+Full config exports can contain credentials and stay private; only these reviewed
+settings belong in the repo.
 
 ### 1a. Group Management & Naming Convention
 
@@ -774,139 +641,32 @@ default guidance and fails closed; headerless public calls may fall back to Dayt
 signed URL if wrapping fails. The installation credential is an admin valve
 backed by the API's `PREVIEWS_INSTALLATION_KEY` Worker Secret.
 
-**Hardening upgrade (2026-10-27):** promoted personally playtested 1.3.3 from
-BayLeaf's 1.3.0 (SHA-256
-`0fb5de39473418d2c8578a5f1f7660b1272466d5dc17e0d53138457a6787cdad`).
-All 837 offline tests passed. Browser clicks now refuse ambiguous or covered
-targets before sending input. Background completion notices are sandbox-owned,
-claimed by a later tool result in the originating chat, with duration measured
-from sandbox launch/completion records. Nothing wakes an idle chat.
-Requirements, valve definitions and tool signatures are unchanged. Exact live
-source readback, all 14 existing valves, Code Sandbox name/grants and health 200
-passed without restart. Full private pre/post resource reconciliation found only
-Lathe source/schema changes; the hidden Basic base model was checked separately.
-The existing Code Sandbox skill needed no change. Rollback source and valves,
-plus full private snapshots: `~/.tokens/bayleaf-lathe-133-20261027/`.
-Model-mediated BayLeaf playtesting remains with Adam.
+Upgrade history is in [`evidence/lathe-upgrades.md`](evidence/lathe-upgrades.md);
+follow the `spinoff-module-bump` playbook. Dependencies are `httpx`,
+`pydantic>=2`, `cachetools` and `PyYAML`. OWUI installs requirements when code
+changes, so an upgrade does not by itself require an app restart.
 
-**Upgrade (2026-10-21):** promoted Adam's personally used upstream 1.1.0
-(SHA-256 `d5fea4351de5cb065a2d1696c729e0358d79740a878ed29a2dcb3a0d0eeb0937`).
-All 510 upstream offline tests passed. Production source and complete generated
-schema matched; supported existing valves, Code Sandbox name, and grants were
-preserved, and health passed without restart. New `onboarding_instructions` and
-`handbook_url` valves remain empty. Dependencies are now `httpx`, `pydantic>=2`,
-`cachetools`, and `PyYAML`; Lathe no longer requires Pydantic AI or httpx-ws.
-Rollback and full private before/after snapshots:
-`~/.tokens/bayleaf-lathe-rollout-20261021`.
-Full pre/post pulls found only Lathe source/schema changes before the companion
-Code Sandbox skill update. The skill's updated guidance was deployed and read
-back, preserving its existing live decorative suffixes outside the repo copy.
-
-Python sessions are now owned by a supervisor inside the sandbox, keyed by
-deployment, caller, conversation, and sandbox. Worker-local caches no longer
-select interpreter identity. Old Daytona interpreter variables are not migrated:
-users must rerun setup. Stop/restart or timeout loses Python memory, not saved
+Python sessions are owned by a supervisor inside the sandbox, keyed by
+deployment, caller, conversation, and sandbox. Worker-local caches do not
+select interpreter identity. Stop/restart or timeout loses Python memory, not saved
 workspace files. Session journals and bounded code/output records live under
 `/home/daytona/.local/share/lathe/python`; completed records expire on later
 submissions after at least 24 hours. Uncertain execution must not be blindly
 replayed. This does not establish live multi-worker OWUI qualification.
 
-`delegate`, `handoff`, built-in volume support, and managed application target
-shortcuts have been removed. `expose` now only publishes an already-running
-`http:<port>` service; optional applications are installed/launched with `bash`.
-Adam confirmed production playtesting works. Automated live model-mediated
-qualification was not run: the upstream deployment collector still lacks
-chat/message filtering and must not use Adam's admin identity.
+Completed bash logs and exit evidence are kept for 24 hours, or until sandbox
+stop/restart. Search results and text previews are bounded. The first-call snapshot
+includes discovered skill names, descriptions and paths; full skill bodies still
+require `read(path)`. Background completion notices are sandbox-owned and claimed
+by a later tool result in the originating chat: nothing wakes an idle chat. Browser
+clicks refuse ambiguous or covered targets before sending input. `expose` only
+publishes an already-running `http:<port>` service; start applications with `bash`.
 
-**Refactor upgrade (2026-10-12):** promoted the unchanged personally used 0.32.0
-build (SHA-256 `d7d26ad8151fa0a85e76fadc583585060a001863c4059c59f750f4ea907c45b3`).
-All 494 upstream offline tests and six isolated BayLeaf OWUI checks passed:
-complete source/schema, bash, write/read, interpreter, view, and delegate.
-The additional first-time-agent scenario timed out; that broader workflow is
-not qualified by this run. Production readback matched the personal source and
-complete schema; all valves, the Code Sandbox name, and grants were preserved.
-Health returned 200, with no restart. Full private before/after pulls found only
-the Lathe source/schema changes; the hidden Basic base model was checked separately.
-Snapshots are under `~/.tokens/bayleaf-lathe-refactor-20261012-193329`.
-Adam confirmed production playtesting works. A foreground diagnostic rerun
-exposed an upstream deployment-harness isolation bug: the suite used Adam's
-admin identity, and its Socket.IO collector accepted unrelated chats' events.
-An in-memory request-ID filter eliminated that false delegation failure; all
-six core checks passed again. The first-time scenario still timed out after
-240 seconds without a tool-status event, so its cause remains undiagnosed.
-Further live qualification should use a dedicated synthetic account, not Adam's
-admin session. The separate Docker monitor already uses a synthetic identity.
-Upstream repair and regression-test proposal:
-[Lathe #107](https://github.com/rndmcnlly/lathe/issues/107).
-
-No tools, parameter contracts, dependencies, valves, or preview protocol were
-added. Search now returns bounded concrete paths/hits, text previews are bounded,
-and completed bash logs/exit evidence are retained for 24 hours (or until sandbox
-stop/restart). Delegate references have an aggregate 50-KiB limit and fail rather
-than silently clip. Interpreter identity is separated from evictable chat notices;
-it remains local to one loaded toolkit instance, not durable across OWUI reloads
-or workers. Failure reporting and workspace readiness checks were hardened.
-
-**Production reconciliation (2026-10-11):** pulled Adam's subsequent 0.31.2
-deployment back into the repository, byte-identical to upstream `74b42c2`.
-The first-call snapshot now includes discovered skill names, descriptions, and
-paths using the same catalog builder as explicit `onboard()`; full skill bodies
-still require `read(path)`. Dependencies and tool schema are unchanged. The full
-private pull is under `~/.tokens/bayleaf-prod-pull-20261011-120432`; unrelated
-Brace3 metadata-format differences were left untouched.
-
-**Earlier upgrade (2026-10-11):** deployed unchanged upstream 0.31.1, commit `9642168`
-(SHA-256 `00d56dc8125891ba0d30b5c71cb1a7abdb5171c60b4208e2e6b512c385ab1567`).
-This adds agent-facing skill-discovery paths to onboarding and the workspace
-snapshot, with no mechanical, dependency, valve, or tool-signature changes.
-Adam explicitly waived personal-instance testing and long-term soak for the
-hackathon rollout. All 323 upstream unit tests passed. Production source readback
-matched upstream; valves, tool name, grants, and generated schema were unchanged.
-Health returned 200; no restart was needed. Full private before/after pulls
-found only the expected Lathe source/version changes, apart from rotating metadata.
-Rollback and reconciliation snapshots are under
-`~/.tokens/bayleaf-lathe-rollout-20261011`. Human model-mediated playtesting
-remains separate.
-
-**Previous upgrade (2026-10-08):** the deployed and vendored source was upstream 0.31.0,
-commit `4cd5663`, byte-identical to the personal Chat deployment (SHA-256
-`816b84af2c2e24d6f6024d49f55a8ef9d1faf23057a425da4a77a7d746e8e29c`).
-All 347 upstream offline tests passed. After refreshing the expired admin token,
-BayLeaf source and complete generated schema were verified, all valves and tool
-grants/name were preserved, and the Code Sandbox skill content and grants/active
-state were read back. Health returned 200; no app restart was needed. Six isolated
-OWUI core checks passed (source/schema, bash, write/read, interpreter, view,
-delegate); the additional first-time-agent check failed because Basic skipped
-the overview manual. Private before/after backups are under
-`~/.tokens/bayleaf-lathe-upgrade-20261008`. Full reconciliation found only the
-Lathe source/schema and Code Sandbox skill changes. The new
-`expose(..., upstream_headers={...})` parameter configures fixed application
+`expose(..., upstream_headers={...})` configures fixed application
 headers independently of public/private policy. Nonempty headers require exact
 boolean `upstream_headers_applied: true` from BayLeaf's registration endpoint:
 missing acknowledgement fails closed with no direct fallback in either mode.
-API support was deployed separately in issue #86. Values remain in Chat tool arguments,
-and applications can reflect them.
-
-Production Basic → loaded Lathe `expose` → BayLeaf API → Daytona qualification
-verified public HTTP injection of fixed Basic credentials and a custom header,
-including replacement of browser spoof values. Private header-bearing exposure
-returned a wrapped URL and denied unauthenticated requests with HTTP 401.
-The focused headerless regression passed: public HTTP 200 served the fixture
-with no injected Authorization or custom header, preserving gateway filtering.
-The fixture used a separately tracked `/tmp/lathe-smoke-*` directory and port
-8943 in the coordinated API test sandbox; existing applications were untouched.
-Two harness assumptions needed correction: private denial can be 401 rather than
-a redirect, and BayLeaf filters unconfigured custom browser headers. Each run
-revoked its exact leases, verified preview 404s, and removed only its fixture.
-All six previews from the three production-smoke runs were revoked and returned
-404. Final read-only cleanup verification found no `/tmp/lathe-smoke-*`
-directories and no listener on 8943. Sandbox
-`6dc25038-2a83-4061-a4a7-5ebbc845d14e` was preserved by coordination decision:
-work of unestablished provenance had appeared outside this fixture. The final
-read-only check no longer found `workspace/headercheck.py`; this session did not
-remove it or change port 8765. No claim of whole-sandbox teardown is made.
-The isolated suite cleaned up its separate staging toolkit and sandbox.
-Human workload playtesting remains separate.
+Values remain in Chat tool arguments, and applications can reflect them.
 
 **What it does.** Gives any OWUI model a coding-agent tool surface — `lathe`,
 `bash`, `read`, `write`, `edit`, `glob`, `grep`, `view`, `interpret`,
@@ -979,29 +739,9 @@ log in to accounts there that you would not hand to a stranger with the URL.
 
 The gateway supports WebSockets, service workers on fresh nonce origins, and
 server-managed application cookies. JavaScript-managed original cookie names
-are not supported. Browser caches can outlive the server-side grant. The
-current 1-GiB sandbox OOM-killed code-server during qualification; a disposable
-4-GiB test confirmed core IDE and terminal operation. This did not change
-BayLeaf's default sandbox size at that time. On 2026-09-30, Adam approved
-2-GiB RAM for new Chat sandboxes after his expected workload hit the 1-GiB
-limit; existing sandboxes remain unchanged. The off-ramp policy still applies.
-
-**Historical project-rooted services (Lathe 0.30.7, removed in 1.0).** These
-managed target shortcuts no longer work in 1.1.0; install and launch services
-with `bash`, then publish `http:<port>`. The former behavior was:
-`dufs:/home/daytona/workspace/project`
-serves a selected directory; `code-server:/home/daytona/workspace/project`
-opens the IDE there. Bare names use the whole workspace. Named service roots
-must exist inside the workspace after symlink resolution. Each dufs/code-server
-instance uses a fixed port and refuses a mismatched existing root rather than
-replacing the running service. Managed dufs enables upload, delete, search,
-folder ZIP downloads, and file hashes without permitting symlinks outside its
-served root. Older running dufs processes using `--allow-all` must be stopped
-before re-exposure; do not stop users' services automatically. Code-server's
-opening folder is not filesystem confinement, and both managed code-server and
-ttyd require private access. Python static-site serving can still follow symlinks
-inside the served directory. These controls do not confine a model-controlled
-shell or an arbitrary `http:<port>` service.
+are not supported. Browser caches can outlive the server-side grant. A 1-GiB
+sandbox can OOM-kill code-server; new Chat sandboxes get 2 GiB (below), and
+existing sandboxes are unchanged. The off-ramp policy still applies.
 
 **UserValves.** Users can configure `env_vars` (a JSON object of environment
 variables like `{"GITHUB_TOKEN":"ghp_..."}`) that are injected into every
@@ -1027,17 +767,16 @@ committed, selected non-secret overrides may be tracked):
 - `auto_create_sandbox` — Automatically create a sandbox when none exists for the user (default: `true`; disable for deployments where sandboxes are provisioned externally)
 - `sandbox_missing_message` — Custom message returned to the agent when no sandbox exists and auto-create is off (empty falls back to a generic message)
 
-**Provisioning policy (2026-10-06).** Live Lathe has `auto_create_sandbox=false`.
+**Provisioning policy.** Live Lathe has `auto_create_sandbox=false`.
 Missing-sandbox errors direct users to `https://api.bayleaf.dev/`, UCSC sign-in,
 and “Set up sandbox,” then back to Chat to retry. Existing sandboxes still
 resume normally. The two non-secret overrides are saved in
 `tools/lathe/valves.public.json`; this is a partial configuration, not a full
 valve backup. Merge it into existing valves, never replace credentials with it.
-Live readback verified these two changes and unchanged remaining valves.
 
 - `sandbox_create_overrides`: JSON of extra Daytona create args. Cannot override `name`, `labels`, or `volumes`. Snapshot resources come from the snapshot; current Daytona rejects cpu/memory overrides with a snapshot (including the default). The disposable custom-shape test used `buildInfo`.
 
-**New-sandbox shape (2026-09-30).** The configured creation override is
+**New-sandbox shape.** The configured creation override is
 `{"cpu":1,"memory":2,"disk":3,"buildInfo":{"dockerfileContent":"FROM daytonaio/sandbox:0.9.0\n"}}`.
 This uses the same base image as `daytona-small` but requests 2 GiB rather than
 its fixed 1-GiB allocation. No test TTL is included in production. CPU, disk,
@@ -1047,71 +786,6 @@ The eight legacy 1-GiB sandboxes remain small. Adam will advise users in person
 about opting into a fresh 2-GiB sandbox: first export any files they need, then
 deliberately destroy and recreate their own environment. Destruction is permanent;
 there is no automatic migration or file preservation across recreation.
-
-**Upgrade evidence (2026-09-17).** Full OWUI regression passed 7/7 scenarios:
-source/schema, bash, write/read, interpreter, view, delegate, and protected expose.
-A separate smoke test invoked production `lathe` and received a protected CruzID
-URL. Original grants and existing valves were preserved. Rollback source/valves
-and full before/after snapshots are private under
-`~/.tokens/bayleaf-lathe-rollout-20260917`. The service restart completed as
-deployment `a25ae1e8-7d81-481b-aa09-e6f57c595b1b`; the OWUI image remains v0.11.3.
-OWUI installs requirements when code changes. This restart was a precaution
-against cached imports across the dependency major-version change, not evidence
-that missing-dependency installation requires restarting. Personal proxy
-dogfooding was deferred; the coordinated rollout was explicitly approved.
-
-**Upgrade evidence (2026-09-18).** Version 0.28.0 was explicitly approved for
-rollout despite a short soak because it closes the unwrapped bearer-token SSH
-path. Upstream unit tests passed 722/722. Production source matched upstream
-byte-for-byte, access grants and valves were preserved, `/health` returned 200,
-and the protected-expose smoke test returned an owner-authenticated URL with no
-upstream hostname. The same production smoke confirmed that `expose("ssh")` is
-refused without returning access material. Rollback snapshots are private under
-`~/.tokens/bayleaf-lathe-rollout-20260918`.
-
-**Upgrade evidence (2026-09-20).** Version 0.29.6 and BayLeaf's integrated v2
-wrapper contract were deployed together. Upstream's 118 offline tests, the
-25-check workerd/D1 preview suite, TypeScript checks, isolated private and public
-OWUI exposure tests, and production-tool private/public smokes passed. The
-production public URL served the tracked fixture without login; private returned
-only an owner-authenticated CruzID URL; neither exposed the Daytona hostname.
-SSH refusal still passed. The full isolated seven-scenario run passed its first
-six checks, then its final model-mediated expose timed out; the same path passed
-separately before and after that nondeterministic timeout. Rollback snapshots are
-private under `~/.tokens/bayleaf-lathe-rollout-20260920`.
-
-**Upgrade evidence (2026-09-24).** Version 0.30.5 was deployed from the source
-running on `chat.adamsmith.as`, byte-identical to upstream `main`. The personal
-install was from the same day; Adam explicitly waived the usual soak gate. This
-version raises the Open WebUI floor to 0.11.0 (BayLeaf runs 0.11.3) and changes
-sandbox lifecycle, command cleanup, delegation, and file searches; its admin
-valves, dependencies, and tool names/parameters are unchanged. Upstream Python
-CI and CodeQL passed. The isolated live monitor passed source/schema, bash,
-write/read, and interpreter checks; its view check failed when the model called
-`lathe("overview")` instead of `view`. BayLeaf production source matched the
-candidate byte-for-byte after deployment; grants, active state, and valves
-were preserved, and `/health` returned 200. Rollback snapshots are private
-under `~/.tokens/bayleaf-lathe-rollout-20260924`. A model-mediated BayLeaf
-playtest passed: Basic selected Code Sandbox, called Lathe `bash`, and returned
-the expected `lathe-0305-ok` output.
-
-**Upgrade evidence (2026-09-30).** Lathe 0.30.7 was promoted from the personal
-instance after Adam confirmed sufficient use; it matched upstream byte-for-byte.
-All 276 offline tests passed and upstream's isolated live monitor was green.
-BayLeaf's staging suite passed all six core scenarios on retry after an initial
-delegation timeout. Model-mediated preview attempts failed at tool selection or
-call budget, not an observed preview service failure. Direct upstream-tool calls
-against a disposable real sandbox verified the 1-CPU / 2-GiB / 3-GiB creation
-shape and Linux cgroup limit, project-rooted private/public static previews,
-anonymous private-access denial, and managed public IDE refusal. The initial
-direct private check omitted the trusted OWUI user ID and correctly failed
-closed; the corrected identity fixture passed. Test preview registrations were
-revoked and sandbox deletion verified. Production source, all valves, grants,
-and display name were read back after deployment; `/health` returned 200.
-The Code Sandbox skill was updated. Secret-bearing rollback snapshots and full
-before/after backups remain private under
-`~/.tokens/bayleaf-lathe-upgrade-20260930-132308`. No existing user sandbox was
-resized or destroyed. Human post-upgrade workload testing remains pending.
 
 ### Restricted Course Tools
 
@@ -1749,6 +1423,7 @@ explore the API surface directly.
 ```
 chat/
 ├── DESIGN.md               # This file
+├── evidence/               # Dated upgrade records (Open WebUI, Lathe)
 ├── models/
 │   ├── basic/
 │   │   ├── model.json      # Params, meta, system prompt, capabilities

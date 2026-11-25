@@ -93,7 +93,9 @@ revert the image tag. Prod is the staging server; treat it accordingly.
    and skill lists all move together.
 6. Run `chat/release.py check --record` (refuses if the checkout differs from
    what runs) and update the `Current version` line in `chat/AGENTS.md`.
-7. Diff the live spec's env vars against `chat/DESIGN.md` §1 and sync drift.
+7. Diff the live spec's env vars against `chat/DESIGN.md` §1 and sync drift. Put
+   the dated record in `chat/image/UPGRADE-<version>.md`; DESIGN keeps only current
+   facts (including the rollback limit and reviewed settings).
 8. Record: one coordinated commit, e.g. `update: OWUI v0.X.Y with model config
    sync and backup pull`.
 

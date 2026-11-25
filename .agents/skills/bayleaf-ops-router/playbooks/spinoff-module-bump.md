@@ -75,7 +75,8 @@ diff between instances is the change record.
    source only; avoid rollout helpers that also rewrite valves.
 4. Preserve existing BayLeaf valves; never copy personal-instance credentials or
    lifecycle defaults. Set any new valves in the BayLeaf admin panel; note non-secret valve
-   defaults in `chat/DESIGN.md` if they're worth recording.
+   defaults in `chat/DESIGN.md` if they're worth recording: current facts only.
+   Dated Lathe rollout records go at the top of `chat/evidence/lathe-upgrades.md`.
 5. **[HUMAN GATE]** Exercise the tool in prod through its model (Code Sandbox
    via Basic; Google Workspace via its consent flow).
 6. Run `backup-reconcile.md` to capture meta + source into the repo.

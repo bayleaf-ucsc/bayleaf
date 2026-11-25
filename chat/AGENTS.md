@@ -209,12 +209,13 @@ content changes; don't chase them.
    `upstream/` files and `SOURCE.json` hashes), preserving unrelated spec
    settings and the guarded entrypoint. No commit is needed yet.
 6. Deploy this checkout: `chat/release.py deploy open-webui` (run as a monitored
-   background command). It reads the live spec itself and changes only the image digest.
+   background command). It reads the live spec itself and changes only that component's image tag.
 7. Wait for ACTIVE deployment phase, then verify health:
    `curl -sS -o /dev/null -w '%{http_code}' https://chat.bayleaf.dev/health`
 8. Once accepted, run `chat/release.py check --record`, update the
    `Current version` line in this file, and commit.
-9. Diff the live spec env vars against DESIGN.md §1 and sync any drift.
+9. Diff the live spec env vars against DESIGN.md §1 and sync any drift. Update
+   DESIGN.md's current facts only; the upgrade record goes in `image/UPGRADE-<version>.md`.
 
 ## Customization Route
 

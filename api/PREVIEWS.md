@@ -3,7 +3,7 @@
 Status: public and owner-authenticated HTTP/WebSocket gateway deployed and
 enabled. BayLeaf Chat runs upstream Lathe 0.31.0, including registration-scoped
 upstream headers. API/plugin rollout and live qualification are recorded below;
-Chat deployment evidence is in `chat/DESIGN.md`.
+Chat deployment evidence is in `chat/evidence/lathe-upgrades.md`.
 
 ## Contract
 

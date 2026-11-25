@@ -105,6 +105,7 @@ bayleaf/
 │   └── package.json
 ├── chat/               # BayLeaf Chat — Open WebUI config & backup (has its own AGENTS.md)
 │   ├── DESIGN.md       # Full architecture, env vars, recovery procedure
+│   ├── evidence/       # Dated upgrade records, for diagnosis
 │   ├── image/          # Production image: pinned OWUI + guarded startup patch
 │   ├── models/         # Workspace model definitions (JSON + avatars)
 │   ├── tools/          # Custom toolkit source code
@@ -205,7 +206,8 @@ contradicted, in the playbook itself. They will earn their keep only through
 practice, not by being followed faithfully.
 
 Keep process and evidence apart: skills and playbooks hold only current,
-reusable procedure. Dated run notes, deployment ids and results go in a sibling
+reusable procedure, and design documents (such as `chat/DESIGN.md`) only current
+configuration. Dated run notes, deployment ids and results go in a sibling
 `evidence/` file, read only for diagnosis. Promote any lesson the next run needs
 into the procedure before recording the run.
 
