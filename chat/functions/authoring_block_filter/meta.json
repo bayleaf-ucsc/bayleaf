@@ -1,0 +1,18 @@
+{
+  "id": "authoring_block_filter",
+  "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
+  "name": "Authoring block filter",
+  "type": "filter",
+  "meta": {
+    "description": "Removes model-driven workspace authoring tools from every chat, including admins' chats.",
+    "manifest": {
+      "title": "Authoring block filter",
+      "description": "Removes model-driven workspace authoring tools from every chat, including admins' chats."
+    },
+    "toggle": false
+  },
+  "is_active": true,
+  "is_global": true,
+  "updated_at": 1795635784,
+  "created_at": 1795635784
+}

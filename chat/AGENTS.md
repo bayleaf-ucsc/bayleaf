@@ -30,12 +30,12 @@ Managed via `doctl --context bayleaf`.
 - **App ID**: `f1a1e758-62e9-4e99-90cb-212cab12958d`
 - **Images**: built locally by `chat/release.py` (`open-webui` from
   `chat/image/Dockerfile` on the immutable standard
-  `ghcr.io/open-webui/open-webui:v0.13.4` base; `retention-cleanup` from
+  `ghcr.io/open-webui/open-webui:v0.13.5` base; `retention-cleanup` from
   `chat/Dockerfile.retention`), pushed to the public package
   `ghcr.io/bayleaf-ucsc/bayleaf-chat` and deployed by a never-reused tag that embeds
   the files' fingerprint. Accepted tags and digests are
   recorded in `chat/DEPLOYED.json`. DigitalOcean builds nothing from GitHub.
-- **Current version**: `v0.13.4`
+- **Current version**: `v0.13.5`
 - **Database**: Managed PostgreSQL 17 (`bayleaf-chat-db`, ID `ea8c7549-e761-44e1-a9c3-e45e478a5202`)
 - **Storage**: DO Spaces (`bayleaf-ucsc-storage`, bucket-scoped access key)
 
@@ -291,7 +291,7 @@ short `;`-chained statements, or climb to rung 4 (custom Dockerfile)
 where you have a real shell script as a file.
 
 Verify after deploy: grep the deploy logs for
-`[bayleaf] v0.13.4 metrics source minimization verified` (printed only after
+`[bayleaf] v0.13.5 metrics source minimization verified` (printed only after
 the rung-4 guards pass), confirm OWUI's banner and `Started server process [1]`
 appear after it, and check `/health` returns 200. With the historical rung-3
 command above, grep for its sentinel instead. The v0.12.4 image replaces that

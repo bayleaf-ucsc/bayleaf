@@ -40,7 +40,7 @@ default context points at the personal `Just Adam` team.
 | **HTTP port** | `8080` |
 
 **Image choice.** Use version-specific standard-image tags (currently
-`v0.13.3`), not rolling `main` or `slim`. BayLeaf stores uploads in DO Spaces
+`v0.13.5`), not rolling `main` or `slim`. BayLeaf stores uploads in DO Spaces
 via OWUI's S3 provider (§1, Object Storage). Before v0.12.0, the slim image
 omitted S3 support and refused to start with S3 storage configured. Upstream
 v0.12.0 adds S3 support to slim, but BayLeaf retains the standard image;
@@ -61,6 +61,12 @@ pinned upstream image (`unexpected EOF`); one unchanged-source retry succeeded.
 One instance, one worker, the original size/pool and retention job were preserved.
 Repository-push auto-deploy remains **disabled**, so documentation publication
 does not restart Chat. This is not an OWUI upgrade or schema migration.
+
+**OWUI v0.13.5 upgrade (2026-11-25):** deployment
+`5830cd44-3739-4feb-8f63-9ea4ffb5323d` moved all 296 chats into `chat_message`
+rows. The v0.13.4 image cannot boot on the migrated database, so rollback means a
+database restore. See [`image/UPGRADE-0.13.5.md`](image/UPGRADE-0.13.5.md) and, for
+the release before it, [`image/UPGRADE-0.13.4.md`](image/UPGRADE-0.13.4.md).
 
 **OWUI v0.13.3 upgrade (2026-11-10):** deployment
 `4e42953a-2d5f-4e64-acfa-869693edc362` reached ACTIVE from published source
@@ -397,6 +403,19 @@ changed during this backup.
   generation, code interpreter, citations, status updates, usage and builtin
   tools enabled; web search, terminal and memory disabled. Default builtin-tool
   overrides disable memory, notes, channels and chats.
+
+**Changes on 2026-11-25 (v0.13.5):**
+
+- Default builtin-tool overrides also disable `users` (directory lookup) and
+  `tools` (`create_tool`). A missing category means on, and a model with its own
+  `builtinTools` does not inherit these: set both there too. Every OWUI upgrade
+  must check for new categories.
+- `skills.lazy_loading.enable=true`: attached skills appear by name and description
+  until the model loads one. When off, OWUI preloads the bodies and records them as
+  hidden tool calls that the model mistakes for its own.
+- Default `terminal` capability is on, deliberately; no shared machines are
+  configured. `video_generation.enable=false`; the default model capability is
+  true but hidden in the UI while that switch is off.
 
 These global defaults are distinct from saved workspace-model definitions and
 do not establish which capabilities a particular model actually exposes. The
@@ -1335,6 +1354,7 @@ pipeline. Each is in `functions/<id>/` with `function.py` and `meta.json`.
 |----|------|--------|--------|-------------|
 | `rate_limit_filter` | filter | yes | **yes** | Per-user rate limiting (10/min, 100/hr, 1000/60hr sliding windows) |
 | `basic_prompt_filter` | filter | no | **yes** | Assembles per-request system-prompt augmentations for the Basic model (OAuth role + chat-storage context); attached via Basic's `filterIds`. See issue #44. |
+| `authoring_block_filter` | filter | yes | **yes** | Removes `create_skill` and `create_tool` from every chat, including admins'; keeps `view_skill`. `request` hook, so it runs after OWUI resolves builtin tools. |
 | `depth_limit_filter` | filter | no | no | Archived: divides max response tokens by user-turn count |
 | `brace3_submit_action` | action | no | yes | Model-bound button to submit a structured Brace3 transcript to an HTML-upload assignment in course 94741. |
 | `brace3_canvas_system_prompt_filter` | filter | no | yes | Fetches system prompt from Canvas page by title "Brace3 System Prompt" (Brace v3). Derives course ID from model ID (`brace3-NNN`). Raises on missing page. Valve: `CANVAS_ACCESS_TOKEN`. Toolkit bound separately on the model. |
@@ -1777,6 +1797,10 @@ chat/
 └── functions/
     ├── rate_limit_filter/
     │   ├── function.py
+    │   └── meta.json
+    ├── authoring_block_filter/ # No model-driven tool or skill creation (active)
+    │   ├── function.py
+    │   ├── test_function.py
     │   └── meta.json
     ├── depth_limit_filter/
     │   ├── function.py

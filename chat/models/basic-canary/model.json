@@ -87,7 +87,9 @@
       "code_interpreter": false,
       "tasks": false,
       "automations": false,
-      "calendar": false
+      "calendar": false,
+      "users": false,
+      "tools": false
     },
     "skillIds": [
       "google-workspace",

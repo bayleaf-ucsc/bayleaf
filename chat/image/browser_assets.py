@@ -5,11 +5,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 HASHES = {
-    'build/index.html': 'c2fe02890b312042147858a8156aaff690c0a2208595602bcd98ef2214d6d806',
-    'backend/open_webui/config.py': '2fbbf686652656b1bc1e425fa9c4b219a4730b84e19d63858bbc05d1ba688bb8',
+    'build/index.html': '230d4fc80b3516caf3e67c0cbd6e4f93f2f931f22151cda6a9aa22ea265b8df2',
+    'backend/open_webui/config.py': '29bd6c5edc5bacd447833a0e853053e5abc103b3bc6f6cc1eeecdc9c78a5e96e',
     'backend/start.sh': '29ef1237701355ea895c85b06992a3e0ef60dd5a8c218cfbf6d403df540bf5dd',
-    'build/_app/immutable/nodes/0.CAO82wNH.js': '66ed6b3bc428fdf3c9ef116637fa9ff1dec563b26a701e3d660210858c84e931',
-    'build/_app/immutable/nodes/53.Dg9TGR5C.js': 'c59af62dfe6785164d677911b21a3732e92c497064dae4cb665ae861ea1dfd5c',
+    'build/_app/immutable/nodes/0.CFbyTGWJ.js': 'c2c2ae360b3debbed0e0800f87b519bbb9f8847ee33d2b858db469098a80ffdf',
+    'build/_app/immutable/nodes/53.Cfm1ciYE.js': 'ce19f5fe78aaad201c9fc9885a909b5038bacb75359bb832aab3a479fd7980f1',
 }
 STOCK_LOADER = b''  # Exact pinned image has an empty loader, not an owned plugin registry.
 

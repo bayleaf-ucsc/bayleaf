@@ -2,7 +2,7 @@
 source-skill: bayleaf-ops-router
 description: Upgrade the Open WebUI version powering BayLeaf Chat, exercising Basic and Help in prod, with the no-staging tension made explicit.
 status: rough
-last-reviewed: 2026-10-22
+last-reviewed: 2026-11-25
 ---
 
 # OWUI Version Bump
@@ -26,6 +26,12 @@ revert the image tag. Prod is the staging server; treat it accordingly.
 - Read the release notes for every version between current and target
   (current version is recorded in `chat/AGENTS.md`, "Infrastructure").
   Flag DB migrations, env var changes, plugin API changes, auth changes.
+- Diff `get_builtin_tools` (`backend/open_webui/utils/tools.py`) for new builtin
+  categories: a missing key means on, and model lists do not inherit the global
+  ones. Pre-seed unwanted categories as false before deploying.
+- App Platform keeps the old instance serving while the new one migrates. When a
+  migration changes the storage format, check afterward for chats updated during
+  the overlap.
 - If DB migrations are involved, consider an explicit `pg_dump` of the
   managed Postgres (DO has PITR, but belt-and-suspenders).
 
@@ -93,6 +99,15 @@ configs to restore if step 4's changes misbehave: re-push with
 `owui-cli models update chat/models/<id>/model.json`.
 
 ## Refinement log
+
+- 2026-11-25 (v0.13.5): Adam waived the full-day soak (release ten hours old).
+  One-way chat-history migration: the old image's refusal to boot was proved on a
+  synthetic database, and a `pg_dump` was taken just before deployment. Pushing the
+  image first with `--dry-run` kept the dump-to-migration gap short. A new
+  default-on builtin category would have exposed the user directory; it was
+  pre-seeded off. Both builds, export, boot, 16 Chromium cases, deployment
+  `5830cd44` and the retention dry run passed. Adam confirmed skill lazy loading
+  in the browser; uploads, Sandbox and branching chats were not reported.
 
 - 2026-11-20 (v0.13.4): Direct Connections was already enabled in production.
   After reviewing the expanded Tether model path, Adam chose to keep it opt-in.

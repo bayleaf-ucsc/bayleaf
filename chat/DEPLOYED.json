@@ -1,9 +1,9 @@
 {
   "open-webui": {
-    "owui": "v0.13.4",
-    "image": "ghcr.io/bayleaf-ucsc/bayleaf-chat:open-webui-v0.13.4-7940727a4ba1",
-    "digest": "sha256:653cf21c43f3130ba4450372a2908f56f3ff5d7dddc178841e4392d113760a63",
-    "fingerprint": "7940727a4ba191ebda62dca10c711c3948e1208ae346de0436866041b57a3be1"
+    "owui": "v0.13.5",
+    "image": "ghcr.io/bayleaf-ucsc/bayleaf-chat:open-webui-v0.13.5-fce9977148c0",
+    "digest": "sha256:bed21deaf8e9281654ad571dfa8b9703fb600092a4828f9b4614af3cf6d8045c",
+    "fingerprint": "fce9977148c002637d709772c98dcfe8a06dc6245ab244346bb9b6e5a3acb582"
   },
   "retention-cleanup": {
     "image": "ghcr.io/bayleaf-ucsc/bayleaf-chat:retention-cleanup-0cf7a52b3cda",

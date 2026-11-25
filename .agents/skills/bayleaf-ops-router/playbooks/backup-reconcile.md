@@ -102,6 +102,11 @@ through the appropriate playbook, don't paper over it in the backup.
 
 ## Refinement log
 
+- 2026-11-25 (OWUI v0.13.5): Full private pre/post pulls found only the intended
+  builtin-tool keys and the new filter. Saving the model defaults form also wrote a
+  hidden `video_generation: true`: diff the config after UI edits and ask. Known
+  metadata drift was left alone; the instance `version_id` stays out of the repo.
+
 - 2026-11-20 (OWUI v0.13.4): Refreshed an expired admin JWT before deployment.
   Private pre/post resources, hidden base, and admin valve JSON were unchanged.
   Six global config defaults appeared; the app spec changed only the Open

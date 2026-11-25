@@ -47,7 +47,9 @@
       "web_search": false,
       "tasks": false,
       "subagents": false,
-      "time": false
+      "time": false,
+      "users": false,
+      "tools": false
     },
     "toolIds": [
       "brace3_canvas_toolkit",
